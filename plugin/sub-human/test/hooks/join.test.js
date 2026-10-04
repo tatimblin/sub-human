@@ -20,8 +20,9 @@ test('no args creates a room, joins as orch, prints the code and injects the rol
   assert.equal(hso(r).hookEventName, 'UserPromptExpansion');
   assert.ok(c.startsWith(`SUB-HUMAN role=orch name=orch room=${code}`), c.slice(0, 80));
   const orchMd = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'sub-human', 'orchestrator.md'), 'utf8').trim();
-  assert.ok(c.includes(orchMd.slice(0, 200)), 'role text injected');
+  assert.ok(c.includes(orchMd), 'the whole role text injected, unclipped');
   assert.match(c, /ROSTER\n- orch \(orchestrator\)/);
+  assert.doesNotMatch(`${r.json.systemMessage}\n${c.split('\n\n')[1]}`, /watch|observer/i, 'no observer role in the invite');
   assert.match(c, /ROOM DIGEST/);
   w.code = code;
   assert.equal(w.members().orch.pid, process.pid);
@@ -66,6 +67,7 @@ test('failures block with a reason and log nothing', () => {
     ['bob otter-0000', /no room otter-0000/],
     [`bob`, /usage/],
     [`bob ${w.code} extra`, /usage/],
+    [`bob ${w.code} watch`, /usage/],
     [`orch ${w.code}`, /reserved/],
     [`b@d ${w.code}`, /invalid name/],
   ];

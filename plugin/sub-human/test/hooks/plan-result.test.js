@@ -60,19 +60,72 @@ test('member: planWasEdited:true with identical bytes still counts as an objecti
   assert.equal(w.entries().at(-1).kind, 'objection');
 });
 
-test('member: bypassPermissions / dontAsk never sign off', () => {
-  for (const mode of ['bypassPermissions', 'dontAsk']) {
+test('member: dontAsk never signs off', () => {
+  const { w, canonical, h } = member();
+  const r = w.hook('plan-result', postExit(canonical, {}, 'dontAsk'), { as: 'alice' });
+  const es = w.entries();
+  assert.equal(es.filter(e => e.kind === 'signoff').length, 0);
+  const s = es.at(-1);
+  assert.equal(s.kind, 'status');
+  assert.match(s.text, /dontAsk mode/);
+  assert.match(ctx(r), /REFUSED alice's sign-off/);
+  assert.match(ctx(r), /Do NOT implement this plan/);
+  assert.deepEqual(w.lib(() => room.signoffMatrix(h)).missing, ['alice', 'bob']);
+});
+
+test('member: manual modes sign off with no mode warning and no extra status', () => {
+  for (const mode of ['default', 'plan']) {
     const { w, canonical, h } = member();
     const r = w.hook('plan-result', postExit(canonical, {}, mode), { as: 'alice' });
     const es = w.entries();
-    assert.equal(es.filter(e => e.kind === 'signoff').length, 0, mode);
-    const s = es.at(-1);
-    assert.equal(s.kind, 'status');
-    assert.match(s.text, new RegExp(`${mode} mode`));
-    assert.match(ctx(r), /REFUSED alice's sign-off/);
-    assert.match(ctx(r), /Do NOT implement this plan/);
-    assert.deepEqual(w.lib(() => room.signoffMatrix(h)).missing, ['alice', 'bob']);
+    const e = es.at(-1);
+    assert.deepEqual([e.kind, e.via, e.plan_hash], ['signoff', 'human', h], mode);
+    assert.equal(es.filter(x => x.kind === 'status').length, 0, mode);
+    assert.equal(ctx(r), `Recorded alice's sign-off on room plan ${h} (#${e.id}). Do NOT implement this plan; wait for an assignment from the room.`);
   }
+});
+
+test('member: auto / acceptEdits / bypassPermissions still sign off, log a status and tell the Claude not to act', () => {
+  for (const mode of ['auto', 'acceptEdits', 'bypassPermissions']) {
+    const { w, canonical, h } = member();
+    const r = w.hook('plan-result', postExit(canonical, {}, mode), { as: 'alice' });
+    assert.equal(r.code, 0, r.stderr);
+    const es = w.entries();
+    const so = es.find(e => e.kind === 'signoff');
+    assert.deepEqual([so.from, so.via, so.plan_hash], ['alice', 'human', h], mode);
+    assert.deepEqual(w.lib(() => room.signoffMatrix(h)).missing, ['bob'], mode);
+    const st = es.at(-1);
+    assert.deepEqual([st.kind, st.via, st.from, st.to, st.plan_hash, st.refs], ['status', 'system', 'alice', 'alice', h, [so.id]], mode);
+    assert.equal(st.text, `alice approved with ${mode} mode on; their Claude was told not to act`);
+    const c = ctx(r);
+    assert.ok(c.startsWith(`Recorded alice's sign-off on room plan ${h} (#${so.id}). Do NOT implement this plan`), c);
+    assert.match(c, new RegExp(`You are now in ${mode} mode\\. Do NOT implement the room plan or edit files for it`));
+    assert.match(c, /Tell alice in one line: press Shift\+Tab to return to manual mode if they didn't mean to switch\./);
+  }
+});
+
+test('member: an unknown or missing mode signs off with the strongest do-not-act wording', () => {
+  for (const mode of [undefined, 'somethingNew']) {
+    const { w, canonical, h } = member();
+    const input = postExit(canonical, {}, mode);
+    if (mode === undefined) delete input.permission_mode;
+    const r = w.hook('plan-result', input, { as: 'alice' });
+    const es = w.entries();
+    assert.equal(es.at(-1).kind, 'signoff', String(mode));
+    assert.equal(es.filter(x => x.kind === 'status').length, 0);
+    const c = ctx(r);
+    assert.match(c, /mode is unknown here/);
+    assert.match(c, /Whatever your mode, do NOT implement the room plan, edit files, or run commands for it/);
+    assert.match(c, /Shift\+Tab/);
+    assert.deepEqual(w.lib(() => room.signoffMatrix(h)).missing, ['bob']);
+  }
+});
+
+test('member: an edited approval in auto mode is an objection and still carries the mode warning', () => {
+  const { w, canonical } = member();
+  const r = w.hook('plan-result', postExit(canonical + '\n- extra\n', { planWasEdited: true }, 'auto'), { as: 'alice' });
+  assert.equal(w.entries().at(-1).kind, 'objection');
+  assert.match(ctx(r), /You are now in auto mode\./);
 });
 
 test('member: no pending_review (a local plan) -> no opinion, nothing logged', () => {

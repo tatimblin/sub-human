@@ -37,6 +37,7 @@ test('identity: join validates names, reserved names and roles', () => {
   for (const r of ['orch', 'room', 'all', 'system', 'ROOM']) assert.match(j(r).error, /reserved/, r);
   assert.match(j('alice', 'orch').error, /joins as "orch"/);
   assert.match(j('alice', 'admin').error, /invalid role/);
+  assert.match(j('alice', 'observer').error, /invalid role/, 'roles are orch and member only');
   assert.match(identity.join({ code: 'nope-0000', name: 'alice', role: 'member', pid: process.pid }).error, /no room/);
   assert.match(j('alice', 'member', { session_id: '../../x' }).error, /session_id/);
   assert.deepEqual(j('orch', 'orch'), { ok: true });

@@ -48,11 +48,11 @@ async function ready(env) {
 const payload = r => JSON.parse(r.result.content[0].text);
 const errText = r => { assert.equal(r.result.isError, true, JSON.stringify(r)); return r.result.content[0].text; };
 
-test('mcp: tools/list returns post, read, plan; unknown methods and tools fail', async () => {
+test('mcp: tools/list returns post, read, plan, watch; unknown methods and tools fail', async () => {
   h.freshHome();
   const s = await ready();
   const r = await s.call('tools/list', {});
-  assert.deepEqual(r.result.tools.map(t => t.name).sort(), ['plan', 'post', 'read']);
+  assert.deepEqual(r.result.tools.map(t => t.name).sort(), ['plan', 'post', 'read', 'watch']);
   assert.deepEqual(r.result.tools.find(t => t.name === 'post').inputSchema.properties.kind.enum, room.AGENT_KINDS);
   assert.equal((await s.call('nope/method', {})).error.code, -32601);
   assert.equal((await s.tool('await_human', { after_seq: 0 })).error.code, -32602);

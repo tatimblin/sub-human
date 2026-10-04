@@ -11,6 +11,9 @@
  *       null when absent, not leading, not a JSON object, or a field has the wrong type
  *       (room: room code, approval: string, approvers: names[], review: 12-hex hash; each optional).
  *   body(text) -> string                 the text after the frontmatter (all of it when there is none)
+ *   PLAN_NOTICE                          the fixed line every room plan's body must start with (the approval
+ *                                        dialog says "ready to execute"; this line tells members what approving means)
+ *   hasNotice(text) -> bool              the first non-blank body line is exactly PLAN_NOTICE (trailing spaces ok)
  *   isStub(text) -> bool                 frontmatter with `review` and essentially no body (<= 200 chars)
  *   hash12(bytes) -> string              first 12 hex of sha256 (same as room.hash12)
  *   storeCanonical(code, bytes) -> hash  writes <roomDir>/plans/<hash>.md (atomic, idempotent)
@@ -28,6 +31,8 @@ const FM_RE = /^---\nsub-human: ([^\n]*)\n---(?:\n|$)/;
 const HASH_RE = /^[0-9a-f]{12}$/;
 const STUB_BODY_MAX = 200;
 const EDIT_SUMMARY_MAX = 2000;
+
+const PLAN_NOTICE = '> **Room plan — approving this is your sign-off for the room. Your Claude will not run it. Choose "2. Yes, manually approve edits".**';
 
 const hash12 = data => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12);
 
@@ -51,6 +56,11 @@ function body(text) {
   const s = Buffer.isBuffer(text) ? text.toString('utf8') : String(text);
   const m = s.match(FM_RE);
   return m ? s.slice(m[0].length) : s;
+}
+
+function hasNotice(text) {
+  const first = body(text).split('\n').find(l => l.trim() !== '');
+  return first != null && first.replace(/\s+$/, '') === PLAN_NOTICE;
 }
 
 function isStub(text) {
@@ -114,4 +124,4 @@ function editSummary(a, b) {
   return s;
 }
 
-module.exports = { parseFrontmatter, body, isStub, hash12, storeCanonical, canonical, stubFor, editSummary, FM_RE };
+module.exports = { PLAN_NOTICE, parseFrontmatter, body, hasNotice, isStub, hash12, storeCanonical, canonical, stubFor, editSummary, FM_RE };

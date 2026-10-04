@@ -29,6 +29,10 @@ run(input => {
   const tool = input.tool_name || '';
   const ti = input.tool_input || {};
   if (tool.startsWith(MCP_PREFIX)) {
+    // `watch` blocks for up to 50 minutes; only the background room-feed agent may call it.
+    if (tool === MCP_PREFIX + 'watch' && input.agent_type !== 'sub-human:room') {
+      return deny('sub-human: only the background room agent (sub-human:room) may call watch.');
+    }
     if (whoami(input)) pre('allow', 'sub-human: room tool for a joined session.');
     return;
   }

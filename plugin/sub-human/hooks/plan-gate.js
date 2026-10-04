@@ -5,8 +5,11 @@
 //
 // ORCHESTRATOR: the canonical plan is the file at tool_input.planFilePath (else tool_input.plan).
 //   It must carry `sub-human: {"room":CODE,"approval":"all","approvers":[…]}` frontmatter with
-//   approvers ⊇ every joined, not-left member. A new hash is stored and published as plan_rev
-//   (via system). Deny naming the missing approvers until every approver signed that hash; then
+//   approvers = the orchestrator's choice (non-empty, every name a joined, not-left member, never orch;
+//   the gate does not add anyone), and its body must start with plan.PLAN_NOTICE. The gate never rewrites the orch's bytes. A new hash is stored and published as plan_rev
+//   (via system), naming the approvers and the joined members who are not. Deny while ANY human in the
+//   room (approver or not) has an objection standing on that hash (their latest via=human signoff or
+//   objection on it wins), and naming the missing approvers until every approver signed it; then
 //   allow WITH updatedInput, which is what skips the dialog (spike 2). Fails closed.
 //
 // MEMBER: a plan without sub-human frontmatter is the member's own and passes through. A room
@@ -17,7 +20,7 @@
 const fs = require('node:fs');
 const { room, plan, pre, deny, run, names, whoami, activeMembers, members, writePending, readState, writeState, clearContextOnAccept } = require('./common.js');
 
-const FM_HELP = code => `The plan file must start with:\n---\nsub-human: {"room":"${code}","approval":"all","approvers":[…every member…]}\n---`;
+const FM_HELP = code => `The plan file must start with:\n---\nsub-human: {"room":"${code}","approval":"all","approvers":[…the members you chose…]}\n---\n${plan.PLAN_NOTICE}`;
 
 function planText(ti) {
   if (typeof ti.planFilePath === 'string' && ti.planFilePath) {
@@ -33,37 +36,64 @@ function orch(me, ti) {
   if (!fm) return deny(`ROOM-GATE: the plan has no sub-human frontmatter. ${FM_HELP(me.code)}`);
   if (fm.room !== me.code) return deny(`ROOM-GATE: the plan's frontmatter names room ${JSON.stringify(fm.room)}, but this room is ${me.code}. ${FM_HELP(me.code)}`);
   if (fm.approval !== 'all') return deny(`ROOM-GATE: the frontmatter must say "approval":"all". ${FM_HELP(me.code)}`);
+  if (!plan.hasNotice(text)) return deny(`ROOM-GATE: the plan must start, right after the frontmatter, with this exact line (members' approval dialog says "ready to execute"; this line tells them what approving means):\n${plan.PLAN_NOTICE}\nAdd it as the first body line and call ExitPlanMode again. Stay in plan mode.`);
   const approvers = Array.isArray(fm.approvers) ? fm.approvers.map(String) : [];
-  const known = new Set(members(me.code).filter(m => m.role !== 'orch').map(m => m.name));
-  const required = activeMembers(me.code);
-  const lacking = required.filter(n => !approvers.includes(n));
-  if (lacking.length) return deny(`ROOM-GATE: approvers must include every joined member; add ${names(lacking)} to "approvers". Stay in plan mode.`);
-  const unknown = approvers.filter(n => !known.has(n));
+  if (!approvers.length) return deny('ROOM-GATE: "approvers" is empty. Choose who must sign off: anyone who asked to approve, contributed substantively, or owns part of the work. If nobody has joined yet, wait; stay in plan mode.');
+  if (approvers.includes('orch')) return deny('ROOM-GATE: remove "orch" from "approvers": the orchestrator never signs off. Stay in plan mode.');
+  const all = members(me.code);
+  const left = new Set(all.filter(m => m.role !== 'orch' && m.left_at).map(m => m.name));
+  const active = new Set(activeMembers(me.code));
+  const gone = approvers.filter(n => left.has(n) && !active.has(n));
+  if (gone.length) return deny(`ROOM-GATE: ${names(gone)} left the room; remove them from "approvers". Stay in plan mode.`);
+  const unknown = approvers.filter(n => !active.has(n));
   if (unknown.length) return deny(`ROOM-GATE: ${names(unknown)} never joined this room; remove them from "approvers". Stay in plan mode.`);
-  if (!approvers.length) return deny('ROOM-GATE: nobody has joined the room yet, so nobody can approve. Wait for members to join; stay in plan mode.');
 
   const hash = plan.hash12(text);
   const cur = room.currentPlan();
   let published = '';
   if (!cur || cur.hash !== hash || JSON.stringify(cur.approvers || []) !== JSON.stringify(approvers)) {
     plan.storeCanonical(me.code, Buffer.from(text, 'utf8'));
-    const e = room.append({ kind: 'plan_rev', text: `plan ${hash}`, plan_hash: hash, approvers }, { via: 'system', from: me.name, system: true });
+    const e = room.append({ kind: 'plan_rev', text: `plan ${hash}. ${whoApproves(me.code, approvers)}`, plan_hash: hash, approvers }, { via: 'system', from: me.name, system: true });
     published = ` Published as plan_rev #${e.id}${cur && cur.hash !== hash ? ` (replaces ${cur.hash}; earlier sign-offs no longer count)` : ''}.`;
+  }
+  const blocking = objections(hash);
+  if (blocking.length) {
+    const list = blocking.map(e => `${e.from} (#${e.id})`).join(', ');
+    return deny(`ROOM-GATE: plan ${hash} is blocked by an objection from ${list}. Any human in the room can block a plan. Read it, revise the plan to address it (a new hash clears it) or ask them in the room; stay in plan mode.${published}`);
   }
   const m = room.signoffMatrix(hash, approvers);
   if (!m.complete) {
-    noticeOnce(me, hash, m.missing);
+    noticeOnce(me, hash, m.missing, approvers);
     return deny(`ROOM-GATE: plan ${hash} lacks sign-off from ${names(m.missing)}. Ask them by name; stay in plan mode.${published}`);
   }
   pre('allow', `ROOM-GATE: plan ${hash} signed by ${names(approvers)} in room ${me.code}.`, { updatedInput: ti });
 }
 
+/** "Approvers: …" plus, when some joined members are not approvers, the line telling them how to join in or block. */
+function whoApproves(code, approvers) {
+  const others = activeMembers(code).filter(n => !approvers.includes(n));
+  const line = `Approvers: ${names(approvers)}.`;
+  return others.length ? `${line}\nNot approvers: ${names(others)}. Anyone can say they want to approve, or object to block.` : line;
+}
+
+/** Human objections standing on this hash, from anyone in the room: per person, their latest via=human
+ *  signoff or objection on the hash wins (an approve after an objection withdraws it). */
+function objections(hash) {
+  const latest = new Map();
+  for (const raw of room.readAll()) {
+    const e = room.normalize(raw);
+    if (e.via !== 'human' || e.plan_hash !== hash) continue;
+    if (e.kind === 'objection' || e.kind === 'signoff') latest.set(e.from, e);
+  }
+  return [...latest.values()].filter(e => e.kind === 'objection');
+}
+
 /** Tell the room (via system, so no model has to post from plan mode) once per (hash, missing set). */
-function noticeOnce(me, hash, missing) {
+function noticeOnce(me, hash, missing, approvers) {
   const key = { hash, missing: [...missing].sort() };
   const last = readState(me, 'gate_notice');
   if (last && JSON.stringify(last) === JSON.stringify(key)) return;
-  room.append({ kind: 'status', to: 'room', text: `plan ${hash} is waiting for sign-off from ${names(missing)}` }, { via: 'system', from: me.name, system: true });
+  room.append({ kind: 'status', to: 'room', text: `plan ${hash} is waiting for sign-off from ${names(missing)}. ${whoApproves(me.code, approvers)}` }, { via: 'system', from: me.name, system: true });
   writeState(me, 'gate_notice', key);
 }
 

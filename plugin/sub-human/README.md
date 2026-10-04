@@ -39,6 +39,10 @@ The command shows as `/sub-human:sub-human` in the picker and transcript; typing
 
 Room notices reach your session through the plugin's `room` monitor, so even an idle session wakes up for them. Your Claude surfaces each one in a line and acts only when you are addressed or when you ask.
 
+Joining doesn't make you an approver. The orchestrator picks the approvers for each plan: anyone who asks, and anyone who contributed substantively. To approve, say so in the room (`@room I want to approve this`). To block a plan, object to it: any human objection on the current plan blocks it, whether or not you're an approver.
+
+When the room is waiting on you, the plugin alerts **you**, not just your Claude. See [Alerts](#alerts) and [Status bar](#status-bar).
+
 ## Saying something to the room: `@room`
 
 ```
@@ -63,15 +67,21 @@ The orchestrator writes a plan file whose first lines are:
 ---
 sub-human: {"room":"otter-4821","approval":"all","approvers":["alice","bob"]}
 ---
+> **Room plan — approving this is your sign-off for the room. Your Claude will not run it. Choose "2. Yes, manually approve edits".**
 ```
 
-`approval: "all"` means every approver must sign, and `approvers` must name every joined member; the gate refuses a plan that leaves anyone out. When the orchestrator calls ExitPlanMode, a hook publishes the plan to the room as `plan_rev` with its hash, then denies the exit and names everyone who hasn't signed.
+The line after the frontmatter is fixed (`PLAN_NOTICE` in `lib/plan.js`); the gate denies a plan that doesn't start with it. It's there because the native dialog says "ready to execute", and approving a room plan only records your sign-off.
 
-In each member's session, the member's Claude enters plan mode, writes a one-line stub and calls ExitPlanMode. A hook swaps in the room's exact plan text, so **the native dialog shows the canonical plan**, not something your Claude wrote.
+`approval: "all"` means every approver must sign. The gate enforces exactly the `approvers` in the frontmatter, which the orchestrator chooses per plan. When the orchestrator calls ExitPlanMode, a hook publishes the plan to the room as `plan_rev` with its hash, then denies the exit and names everyone who hasn't signed. Any human objection on that hash, from anyone, also keeps it blocked.
+
+When a plan is published, your Claude says `plan <hash> is ready — say 'review'`. It opens the dialog only when you ask, so it doesn't interrupt you mid-task. Then it enters plan mode, writes a one-line stub and calls ExitPlanMode. A hook swaps in the room's exact plan text, so **the native dialog shows the canonical plan**, not something your Claude wrote.
+
+Choose **"2. Yes, manually approve edits"**.
 
 | You do | Recorded |
 |---|---|
-| Approve (manual approval) | `signoff via=human` against that plan hash. Your Claude is told not to implement; it waits for an assignment. |
+| Approve with "2. Yes, manually approve edits" | `signoff via=human` against that plan hash. Your Claude is told not to implement; it waits for an assignment. |
+| Approve with auto mode | The sign-off still counts. Your Claude is told not to act, and you're told to press Shift+Tab to get back out of auto mode. |
 | Edit with Ctrl+G, then approve | `objection via=human` with your edited text. No sign-off. |
 | "Tell Claude what to change" + feedback | `objection via=human` with your feedback. |
 | Esc | Nothing. |
@@ -80,9 +90,56 @@ Any revision of the plan has a new hash and voids every sign-off. Once every app
 
 Review in default permission mode. A review is refused in bypass or auto mode, and while `showClearContextOnPlanAccept` is on: that "clear context" approval starts a new session that implements immediately and records no sign-off. Choose plain manual approval.
 
+## Alerts
+
+The `room` monitor (`sub-human tail`) alerts you directly when:
+
+- **your sign-off is needed**: a plan is published that names you in `approvers`, and you haven't signed it. At most one alert per plan hash.
+- **an entry is addressed to you** (`to` is your name). At most one alert every 30 seconds.
+
+An alert is a macOS notification ("sub-human", via `osascript display notification`) plus a terminal bell on your Claude Code window. Both are best-effort.
+
+- The notification targets no app, so it raises no Automation permission prompt. Whether it appears depends on **System Settings › Notifications › Script Editor**.
+- The bell is written to the terminal of your `claude` process. The monitor itself has no controlling terminal.
+- The orchestrator never alerts. Entries more than 10 minutes old (a monitor catching up) never alert.
+
+To turn alerts off, set `SUB_HUMAN_NOTIFY=0` in the environment you start `claude` from.
+
+## Status bar
+
+`sub-human statusline` shows the room in Claude Code's status line, so you can always see it:
+
+```
+⬡ dingo-8953 · tristan · plan b7ca39 2/3 · approver
+⬡ dingo-8953 · tristan · ⚠ your sign-off needed (plan b7ca39 1/3) · ✉ 1 for you
+⬡ dingo-8953 · orch · plan b7ca39 2/3 ✖ 1 objection waiting on bob
+⬡ dingo-8953 · tristan · plan b7ca39 3/3 ✔ · approver
+```
+
+- `⚠ your sign-off needed` (bold yellow) means the current plan names you as an approver, you haven't signed, and there's no decision yet.
+- `✉ N for you` counts entries addressed to you since you last spoke in the room.
+- `✔` means the plan is decided.
+- Outside a room it prints nothing, so it's safe to use as your global status line.
+
+A plugin can't set the main status line: its `settings.json` honors only `agent` and `subagentStatusLine`. Add this to `~/.claude/settings.json` (all projects) or to a project's `.claude/settings.json` yourself, with the absolute path of this plugin:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/ABSOLUTE/PATH/TO/plugin/sub-human/bin/sub-human statusline",
+    "refreshInterval": 5
+  }
+}
+```
+
+`refreshInterval` is optional. Without it, the bar updates only on session events, which go quiet while you're idle. The command finds your room by `session_id`, falling back to process ancestry. It reads one session index, `members.json` and the room log. Set `NO_COLOR=1` for plain text. If you already have a status line, call `sub-human statusline` from your script and append its output.
+
+The segments are a list in `statusline/segments.js` (`room`, `seat`, `plan`, `approver`, `mail`). Add a field by adding a segment.
+
 ## Room storage
 
-Rooms live in `~/.sub-human/rooms/<CODE>/`, or under `$SUB_HUMAN_HOME` if set. Each room has an append-only JSON-lines log in which every entry carries `from`, `via` (`human`, `agent` or `system`), `kind`, and a `prev` hash of the previous line, so tampering is visible. Canonical plans are stored alongside it by hash. The `sub-human` CLI in `bin/` offers read-only `read`, `digest`, `who`, `watch` and `tail`; nothing writes the log except the plugin's MCP tools and hooks.
+Rooms live in `~/.sub-human/rooms/<CODE>/`, or under `$SUB_HUMAN_HOME` if set. Each room has an append-only JSON-lines log in which every entry carries `from`, `via` (`human`, `agent` or `system`), `kind`, and a `prev` hash of the previous line, so tampering is visible. Canonical plans are stored alongside it by hash. The `sub-human` CLI in `bin/` offers read-only `read`, `digest`, `who`, `watch`, `tail`, `statusline` and `agent-statusline`; nothing writes the log except the plugin's MCP tools and hooks.
 
 ## Threat model
 

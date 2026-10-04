@@ -2,8 +2,8 @@
 'use strict';
 /**
  * plugin/sub-human/mcp/room-server.js: the room's stdio MCP server (JSON-RPC 2.0, one message per line).
- * Zero dependencies. Ported from demo/bin/room-mcp, without await_human: sessions are woken by the
- * plugin monitor (`sub-human tail`), not by a blocking tool.
+ * Zero dependencies. Ported from demo/bin/room-mcp. Sessions are woken by the plugin monitor (`sub-human
+ * tail`); the one blocking tool, watch, only feeds the optional room agent's transcript.
  *
  * Identity: this server is a direct child of claude and has no CLAUDE_PID, so the caller is
  * identity.claudePid({ppid:true}) = process.ppid, resolved with identity.resolveByPid() on every call
@@ -17,6 +17,13 @@
  *       skipping its own Claude's posts; at most 100, oldest first.
  *   plan()   {hash, approvers, matrix, decided, stub, plan}: `stub` is the exact text a member writes to its
  *       plan file to review; `plan` is the canonical plan text. The model never has to copy plan bytes.
+ *   watch()  for the sub-human:room feed agent only (a background subagent whose transcript is the room feed).
+ *       Blocks until the room log has entries after cursor feed-<name> (first call: from this seat's join, at
+ *       most the last WATCH_FIRST entries), waits WATCH_COALESCE_MS more so a burst comes back as one batch,
+ *       and returns them as readable text (every entry, any author, at most WATCH_MAX per call). Sends
+ *       notifications/progress every SUB_HUMAN_WATCH_PROGRESS_MS (60 s) when the call has a progressToken,
+ *       which keeps Claude Code's MCP idle timeout from firing; returns "(quiet)" after SUB_HUMAN_WATCH_MS
+ *       (50 min). Left the room -> "STOP: ...". Costs no tokens while blocked.
  */
 
 const path = require('node:path');
@@ -25,6 +32,14 @@ const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
 const planLib = require(path.join(__dirname, '..', 'lib', 'plan.js'));
 
 const READ_MAX = 100;
+const envMs = (k, d) => (Number(process.env[k]) > 0 ? Number(process.env[k]) : d);
+const WATCH_MS = envMs('SUB_HUMAN_WATCH_MS', 50 * 60 * 1000);
+const WATCH_PROGRESS_MS = envMs('SUB_HUMAN_WATCH_PROGRESS_MS', 60 * 1000);
+const WATCH_COALESCE_MS = envMs('SUB_HUMAN_WATCH_COALESCE_MS', 1500);
+const WATCH_POLL_MS = envMs('SUB_HUMAN_WATCH_POLL_MS', 500);
+const WATCH_FIRST = 15;
+const WATCH_MAX = 30;
+const WATCH_TEXT_MAX = 1500;
 
 // ---------- transport ----------
 let closed = false;
@@ -78,6 +93,11 @@ const TOOLS = [
     },
   },
   {
+    name: 'watch',
+    description: 'ONLY for the sub-human:room feed agent; never call it from your main session (it blocks for up to 50 minutes). Waits for new room entries and returns them as text. Call it again after every result; stop when it returns STOP.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'plan',
     description: 'The room\'s current plan: {hash, approvers, matrix, decided, stub, plan}. To review it, write `stub` verbatim as your plan file and call ExitPlanMode; the plugin shows your human the canonical plan. `plan` is the plan text.',
     inputSchema: { type: 'object', properties: {} },
@@ -128,6 +148,65 @@ function plan(me) {
   });
 }
 
+// ---------- watch (async: replies later) ----------
+const pending = new Map(); // request id -> cancel()
+
+function feedLine(e) {
+  const n = room.normalize(e);
+  const meta = [n.to !== 'room' && `→ ${n.to}`, n.plan_hash && `plan ${n.plan_hash.slice(0, 6)}`,
+    Array.isArray(n.approvers) && `approvers ${n.approvers.join(',')}`].filter(Boolean).join(' ');
+  const body = String(n.text || '');
+  const t = Array.from(body);
+  const clipped = t.length > WATCH_TEXT_MAX ? t.slice(0, WATCH_TEXT_MAX).join('') + `… (cut; read({ids:[${n.id}]}) for all)` : body;
+  return `#${n.id} ${String(n.at || '').slice(11, 16)} ${room.who(n)} · ${n.kind}${meta ? ` · ${meta}` : ''}\n` +
+    clipped.split('\n').map(l => '  ' + l).join('\n');
+}
+
+function watch(id, me, progressToken) {
+  const cursor = `feed-${me.name}`;
+  let after = room.getCursor(cursor);
+  if (!(after > 0)) {
+    const all = room.readAll();
+    const joined = all.filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1);
+    const last = all.length ? all.at(-1).id : 0;
+    after = Math.max(joined ? joined.id - 1 : 0, last - WATCH_FIRST);
+  }
+  const code = me.code;
+  const got = [];
+  let done = false, coalesce = null, ticks = 0;
+  const finish = result => {
+    if (done) return;
+    done = true;
+    pending.delete(id);
+    stop(); clearTimeout(timer); clearTimeout(coalesce); clearInterval(beat); clearInterval(still);
+    if (result) reply(id, result);
+  };
+  const stop = room.follow(after, e => {
+    if (done || got.length >= WATCH_MAX) return;
+    got.push(e);
+    if (got.length >= WATCH_MAX) return flush();
+    if (!coalesce) coalesce = setTimeout(flush, WATCH_COALESCE_MS);
+  }, { intervalMs: WATCH_POLL_MS });
+  function flush() {
+    if (done) return;
+    room.bind(code);
+    room.setCursor(cursor, got.at(-1).id);
+    finish(text(`room ${code}, ${got.length} new:\n\n` + got.map(feedLine).join('\n\n')));
+  }
+  const timer = setTimeout(() => finish(text(`(quiet: nothing new in room ${code}; call watch again)`)), WATCH_MS);
+  const beat = progressToken == null ? null : setInterval(() => {
+    ticks++;
+    send({ jsonrpc: '2.0', method: 'notifications/progress', params: { progressToken, progress: ticks, message: `watching ${code}` } });
+  }, WATCH_PROGRESS_MS);
+  // Leaving the room (or switching rooms) ends the feed.
+  const still = setInterval(() => {
+    const now = whoami();
+    if (!now || now.code !== code || now.name !== me.name) finish(text(`STOP: ${me.name} is no longer in room ${code}. End now without calling any tool.`));
+    else room.bind(code);
+  }, Math.max(WATCH_POLL_MS * 4, 2000));
+  pending.set(id, () => finish(null));
+}
+
 function callTool(params) {
   const name = params && params.name;
   const args = (params && params.arguments) || {};
@@ -137,7 +216,7 @@ function callTool(params) {
   try {
     if (name === 'post') return post(me, args);
     if (name === 'read') return read(me, args);
-    return plan(me);
+    if (name === 'plan') return plan(me);
   } catch (e) {
     return text(`refused: ${e.message}`, true);
   }
@@ -159,13 +238,22 @@ function handle(msg) {
         instructions: 'sub-human room tools. post as your human\'s Claude; read entries by id; plan() for the shared plan and its review stub.',
       });
     case 'notifications/initialized':
-    case 'notifications/cancelled':
       return;
+    case 'notifications/cancelled': {
+      const cancel = params && pending.get(params.requestId);
+      if (cancel) cancel();
+      return;
+    }
     case 'ping':
       return reply(id, {});
     case 'tools/list':
       return reply(id, { tools: TOOLS });
     case 'tools/call': {
+      if (params && params.name === 'watch') {
+        const me = whoami();
+        if (!me) return reply(id, text('STOP: not in a room. End now without calling any tool.', true));
+        try { return watch(id, me, params._meta ? params._meta.progressToken : undefined); } catch (e) { return reply(id, text(`error: ${e.message}`, true)); }
+      }
       let r;
       try { r = callTool(params); } catch (e) { r = text(`error: ${e.message}`, true); }
       if (r === null) return fail(id, -32602, `unknown tool ${params && params.name}`);

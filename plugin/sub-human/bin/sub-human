@@ -19,13 +19,28 @@
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
  *   sub-human who                      this session's identity: "<name> (<role>) in <code>"
  *   sub-human watch [CODE]             a live, colored feed for humans in a terminal
+ *   sub-human statusline
+ *       For Claude Code's `statusLine` setting: reads its JSON from stdin, resolves the room by session_id
+ *       (then process ancestry) and prints one line, e.g. `⬡ dingo-8953 · tristan · plan b7ca39 2/3 ✔`, with
+ *       `⚠ your sign-off needed` / `✉ N for you` in color when the room waits on this person. Prints nothing
+ *       when the session is not in a room. Segments: statusline/segments.js.
+ *   sub-human agent-statusline
+ *       For `subagentStatusLine`: one {"id","content"} JSON line per room-feed agent row (task name "room",
+ *       or a description starting "sub-human room"); every other row keeps its default rendering.
+ *
+ * tail also alerts the human (E6, statusline/alert.js): a macOS notification plus a BEL on the claude
+ * terminal when their sign-off becomes needed (once per plan hash) or an entry is addressed to them (at most
+ * once per 30 s). SUB_HUMAN_NOTIFY=0 turns alerts off; SUB_HUMAN_ALERT_FILE=path writes them to a file.
  *
  * Without --room / CODE, the room is this session's (process ancestry -> registered claude pid).
  */
 
+const fs = require('node:fs');
 const path = require('node:path');
 const identity = require(path.join(__dirname, '..', 'lib', 'identity.js'));
 const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
+const segments = require(path.join(__dirname, '..', 'statusline', 'segments.js'));
+const { createAlerter } = require(path.join(__dirname, '..', 'statusline', 'alert.js'));
 
 const NOT_IN_ROOM = 'not in a room; run /sub-human';
 
@@ -114,10 +129,19 @@ function tail(args) {
       if (h > saved) { saved = h; room.bind(s.code); room.setCursor(reader, h); }
     };
     const show = visibleTo(me);
+    const alerter = createAlerter({
+      me, dir: room.dir(), pid: me.pid,
+      lookup: hash => {
+        room.bind(s.code);
+        const es = room.readAll();
+        return { signedByMe: !!room.signoffMatrix(hash, undefined, es).signed[me.name], decided: !!room.decided(hash, es) };
+      },
+    });
     s.stop = room.follow(after, e => {
       if (s.dead) return;
       if (e.id <= processed) { saved = 0; room.setCursor(reader, 0); } // the log was reset under us
       processed = e.id;
+      try { alerter.onEntry(e); } catch { /* alerts are best-effort */ }
       if (!show(e)) return s.save();
       inflight.push(e.id);
       process.stdout.write(room.tailLine(e) + '\n', () => { inflight.shift(); s.save(); });
@@ -149,6 +173,54 @@ function tail(args) {
     if (!(max > 0)) die(`bad --max-seconds "${flags['max-seconds']}"`);
     setTimeout(() => { clearInterval(timer); stopSess(); }, max * 1000); // node exits once stdout drains
   }
+}
+
+// ---------- statusline / agent-statusline ----------
+function readStdinJson() {
+  if (process.stdin.isTTY) return {};
+  try { return JSON.parse(fs.readFileSync(0, 'utf8') || '{}') || {}; } catch { return {}; }
+}
+
+/** This session's seat: by session_id first, then process ancestry. Null (cheaply) when nobody is registered. */
+function statusSelf(input) {
+  const sid = input && typeof input.session_id === 'string' ? input.session_id : null;
+  const bySid = sid ? identity.resolveBySession(sid) : null;
+  if (bySid) return bySid;
+  try {
+    if (!fs.readdirSync(path.join(identity.home(), 'sessions', 'by-pid')).length) return null;
+  } catch { return null; }
+  return identity.resolveSelf();
+}
+
+function roomStatus(input) {
+  const me = statusSelf(input);
+  if (!me) return null;
+  room.bind(me.code);
+  return segments.state(me, room.readAll());
+}
+
+function statusline() {
+  let line = '';
+  try {
+    const st = roomStatus(readStdinJson());
+    if (st) line = segments.render(st, { color: segments.useColor() });
+  } catch { /* never break the status bar */ }
+  if (line) process.stdout.write(line + '\n');
+}
+
+const isRoomTask = t => !!t && typeof t.id === 'string' &&
+  (t.name === 'room' || /^sub-human room\b/i.test(String(t.description || '')));
+
+function agentStatusline() {
+  try {
+    const input = readStdinJson();
+    const rows = Array.isArray(input.tasks) ? input.tasks.filter(isRoomTask) : [];
+    if (!rows.length) return;
+    const st = roomStatus(input);
+    if (!st) return;
+    const content = segments.render(st, { color: segments.useColor(), segments: segments.SEGMENTS.filter(x => x.name !== 'seat') });
+    for (const t of rows) process.stdout.write(JSON.stringify({ id: t.id, content }) + '\n');
+  } catch { /* keep the default rows */ }
 }
 
 // ---------- read / digest / who / watch ----------
@@ -205,9 +277,9 @@ function watch(args) {
 }
 
 const [cmd, ...args] = process.argv.slice(2);
-const cmds = { tail, read, digest, who, watch };
+const cmds = { tail, read, digest, who, watch, statusline, 'agent-statusline': agentStatusline };
 try {
-  (cmds[cmd] || (() => die('usage: sub-human tail|read [--id N,M]|digest|who|watch [CODE]')))(args);
+  (cmds[cmd] || (() => die('usage: sub-human tail|read [--id N,M]|digest|who|watch [CODE]|statusline|agent-statusline')))(args);
 } catch (e) {
   die(e.message, 2);
 }

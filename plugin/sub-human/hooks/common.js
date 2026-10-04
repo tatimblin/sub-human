@@ -56,7 +56,7 @@ const names = list => list.length <= 1 ? list.join('') : `${list.slice(0, -1).jo
 /** readMembers() ({name: record}) as an array, in join order. */
 const members = code => Object.values(identity.readMembers(code) || {}).filter(m => m && m.name);
 const hasLeft = m => !!m.left_at;
-/** Joined, not-left, non-orchestrator members: every one must be a plan approver. */
+/** Joined, not-left, non-orchestrator members: the people the orchestrator may choose approvers from. */
 const activeMembers = code => members(code).filter(m => m.role !== 'orch' && !hasLeft(m)).map(m => m.name);
 
 /**
@@ -117,14 +117,18 @@ function safeDigest() {
 function clip(s, n = CAP) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 
 function contextBlock(me, lead) {
-  const who = me.role === 'orch'
+  const role = me.role === 'orch' ? 'orch' : 'member';
+  const who = role === 'orch'
     ? `You are the ORCHESTRATOR of sub-human room ${me.code}. Members join with: /sub-human NAME ${me.code}`
     : `You are ${me.name}'s Claude in sub-human room ${me.code}. Your human is ${me.name}.`;
-  const head = `SUB-HUMAN role=${me.role === 'orch' ? 'orch' : 'member'} name=${me.name} room=${me.code}${lead ? ` (${lead})` : ''}`;
+  const head = `SUB-HUMAN role=${role} name=${me.name} room=${me.code}${lead ? ` (${lead})` : ''}`;
   const parts = [head, who];
-  const role = roleText(me.role);
-  if (role) parts.push(role);
-  parts.push(`ROSTER\n${roster(me.code)}`);
+  const rosterPart = `ROSTER\n${roster(me.code)}`;
+  const text = roleText(role);
+  // The roster must survive the cap: clip the role text first, then the digest takes what is left.
+  const fixed = parts.join('\n\n').length + rosterPart.length + 4;
+  if (text) parts.push(clip(text, Math.max(500, CAP - fixed - 300)));
+  parts.push(rosterPart);
   parts.push(`DIGEST\n${safeDigest()}`);
   return clip(parts.join('\n\n'));
 }

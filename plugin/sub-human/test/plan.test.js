@@ -75,3 +75,16 @@ test('plan: editSummary is a short line diff', () => {
   const big = plan.editSummary('x\n'.repeat(5000), 'y\n'.repeat(5000));
   assert.ok(big.length <= 2000, String(big.length));
 });
+
+test('plan: PLAN_NOTICE must be the first non-blank body line; orchestrator.md carries it verbatim', () => {
+  const fm = FM({ room: 'otter-4821', approval: 'all', approvers: ['alice'] });
+  assert.match(plan.PLAN_NOTICE, /^> \*\*Room plan — approving this is your sign-off for the room\. Your Claude will not run it\. Choose "2\. Yes, manually approve edits"\.\*\*$/);
+  assert.equal(plan.hasNotice(fm + plan.PLAN_NOTICE + '\n# Plan\n'), true);
+  assert.equal(plan.hasNotice(fm + '\n' + plan.PLAN_NOTICE + '  \n# Plan\n'), true);
+  assert.equal(plan.hasNotice(fm + plan.PLAN_NOTICE), true);
+  assert.equal(plan.hasNotice(fm + '# Plan\n' + plan.PLAN_NOTICE + '\n'), false, 'not first');
+  assert.equal(plan.hasNotice(fm + plan.PLAN_NOTICE.replace('2.', '1.') + '\n'), false, 'altered');
+  assert.equal(plan.hasNotice(fm), false);
+  const orch = fs.readFileSync(path.join(h.PLUGIN, 'skills', 'sub-human', 'orchestrator.md'), 'utf8');
+  assert.ok(orch.includes('---\n' + plan.PLAN_NOTICE + '\n'), 'orchestrator.md template has the notice right after the frontmatter');
+});

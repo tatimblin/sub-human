@@ -45,6 +45,17 @@ test('guard table', () => {
   }
 });
 
+test('guard: only the background room agent may call watch', () => {
+  const w = new World({ orch: 'sleep', alice: 'act' });
+  const watch = 'mcp__plugin_sub-human_room__watch';
+  const main = w.hook('guard', pre(watch, {}), { as: 'alice' });
+  assert.equal(decision(main), 'deny', 'the main Claude must not block itself on watch');
+  const other = w.hook('guard', { ...pre(watch, {}), agent_type: 'general-purpose' }, { as: 'alice' });
+  assert.equal(decision(other), 'deny');
+  const roomAgent = w.hook('guard', { ...pre(watch, {}), agent_type: 'sub-human:room', agent_id: 'a1' }, { as: 'alice' });
+  assert.equal(decision(roomAgent), 'allow');
+});
+
 test('guard: the default home ~/.sub-human is protected too', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
   const r = w.hook('guard', pre('Write', { file_path: '~/.sub-human/rooms/x', content: 'x' }), { as: 'alice', env: { SUB_HUMAN_HOME: undefined } });
