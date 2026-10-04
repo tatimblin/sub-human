@@ -61,7 +61,7 @@ test('cli tail: silent before join, then the member filter', async () => {
   assert.equal(room.getCursor('tail-alice'), 14);
 });
 
-test('cli tail: orch sees everything not authored by orch', async () => {
+test('cli tail: orch sees everything not authored by orch, plus its own hook-written decisions', async () => {
   h.freshHome();
   const { code } = h.register('orch', 'orch');
   room.bind(code);
@@ -73,9 +73,10 @@ test('cli tail: orch sees everything not authored by orch', async () => {
   say('orch', 'orch own', {}, 'agent');
   sys('plan_rev', 'orch', { plan_hash: 'abcdef012345', approvers: ['alice'] });
   sys('member_left', 'bob');
+  sys('decision', 'orch', { plan_hash: 'abcdef012345' });  // #7: written under orch's name by the hook
   say('alice', 'end');
   await t.until('"end"');
-  assert.deepEqual(t.ids(), [2, 3, 6, 7], t.out);
+  assert.deepEqual(t.ids(), [2, 3, 6, 7, 8], t.out);
 });
 
 test('cli tail: survives a restart via its cursor; switches when the session changes rooms', async () => {

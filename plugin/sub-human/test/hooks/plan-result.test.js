@@ -93,12 +93,16 @@ test('orch: decision once per hash with refs to the sign-offs; otherwise a statu
   assert.match(e.text, /lacks sign-off from alice and bob/);
 
   const a = w.sign('alice', h), b = w.sign('bob', h);
-  w.hook('plan-result', postExit(text), { as: 'orch' });
+  let r = w.hook('plan-result', postExit(text), { as: 'orch' });
   e = w.entries().at(-1);
   assert.deepEqual([e.kind, e.via, e.plan_hash, e.refs], ['decision', 'system', h, [a.id, b.id]]);
+  // The hook hands over the next step directly; the orch must not wait for its own decision notice.
+  const ctx = (r.json && r.json.hookSpecificOutput && r.json.hookSpecificOutput.additionalContext) || '';
+  assert.match(ctx, new RegExp(`Decision #${e.id} .*Post the assignments`));
   const n = w.entries().length;
-  w.hook('plan-result', postExit(text), { as: 'orch' });
+  r = w.hook('plan-result', postExit(text), { as: 'orch' });
   assert.equal(w.entries().length, n, 'at most one decision per hash');
+  assert.match(r.json.hookSpecificOutput.additionalContext, new RegExp(`Decision #${e.id} `), 'a repeat exit still names the existing decision');
   assert.ok(w.lib(() => room.decided(h)));
 
   w.hook('plan-result', postExit('# other\n'), { as: 'orch' });

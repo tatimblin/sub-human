@@ -111,3 +111,90 @@ These are API-equivalent figures, deduplicated by message id.
 - The two plan files the probes created were deleted: `~/.claude/plans/task-create-hello-txt-containing-snug-rocket.md` and `…-dreamy-aho.md`.
 - The pre-existing `room-*` tmux sessions and `~/.claude` settings were not touched.
 - Probe transcripts are still in `~/.claude/projects/-private-tmp-sh-probe-work-*`, and the probe tree is still at `/tmp/sh-probe/`.
+
+## Live verification
+
+Run on 2026-10-04 from 12:23 to 12:41 local time, with Claude Code 2.1.281, against `plugin/sub-human` as built (unit tests 76/76).
+
+**Setup.**
+- Room `eagle-3407`. `SUB_HUMAN_HOME=/tmp/sh-live/home`.
+- Working dirs `/tmp/sh-live/{orch,alice,bob}` are copies of `demo/app.pristine`.
+- Each tmux session (`shl-*`, 220 columns) was launched by `/tmp/sh-live/start.sh`, which unsets every inherited `CLAUDE*` variable.
+- orch ran on the default model (Opus 5.5). alice and bob ran with `--model sonnet` (Sonnet 5). A throwaway 4th session, `eve`, ran on haiku.
+- This account starts every session in **auto mode**.
+- **Evidence.** The log is `/tmp/sh-live/home/rooms/eagle-3407/log.jsonl` (34 entries). The orch keypress record is `/tmp/sh-live/orch-keys.txt`. Copies of the three plan files are in `/tmp/sh-live/plans-copy/`. Helpers: `/tmp/sh-live/tx.js` (transcript timeline) and `/tmp/sh-live/cost.js`.
+
+### Results
+
+| # | Criterion | Result | Evidence |
+|---|---|---|---|
+| 1 | Join and identity | **PASS** | `/sub-human` printed `eagle-3407`. `members.json` has distinct PIDs: orch 58517, alice 58519, bob 58521. `member_joined` was logged at #1 (bob) and #2 (alice). Eve's `/sub-human alice eagle-3407` was blocked: `name taken: "alice" is already in eagle-3407`. alice's Claude ran exactly `CLAUDE_PID=58521 sub-human who` (bob's PID, confirmed in the transcript), and it printed `alice (member) in eagle-3407`. A `room.post` by alice's Claude was logged as #4 `from=alice via=agent kind=say`. |
+| 2 | `@room` verbatim | **PASS** | `@room  héllo — "q" $HOME \`x\`` was logged as #5, `via=human`. Its text is ` héllo — "q" $HOME \`x\``: a byte-for-byte match with everything after the `@room ` prefix, keeping the second leading space. alice's transcript has only a `system/informational` entry and no assistant turn. After `/clear` (new session id `eb6b4c8c`, same PID), `@room after clear, still alice` was logged as #6 `from=alice via=human`. |
+| 3 | Monitor wake | **PASS** | #5 was appended at 19:26:45.965. Its task-notification reached orch at 46.378 and bob at 46.395, about 0.4 s later. Idle orch started a turn (`room.read` of #5 at 48.055), and so did bob. |
+| 4 | Gate | **PASS** (one sub-check not run) | Seeded by alice's #7 and bob's #8 (`@room`). orch drafted the plan by itself. #11 `plan_rev plan_hash=fdd5fc8b91d3 approvers=["alice","bob"] via=system`. `plans/fdd5fc8b91d3.md` matched orch's plan file under `cmp`. The deny reason was `ROOM-GATE: plan fdd5fc8b91d3 lacks sign-off from alice and bob…`. #12 `status via=system`: "plan fdd5fc8b91d3 is waiting for sign-off from alice and bob". No dialog appeared in orch at any time. **Open risk resolved: orch *can* call `room.post` in plan mode** (#13, #14, #18, #20, #23 and #24 were all posted from plan mode). Not run: a deny for a forced `approvers:["alice"]`, because nobody may type into orch (unit tests cover it). |
+| 5 | Member native approval | **PASS**; drift case **PARTIAL** | alice's Claude opened the review **unprompted** on `plan_rev` (see finding F3). Its stub differed from the canonical plan, yet the dialog showed the canonical plan: `cmp` matched alice's plan file to `plans/fdd5fc8b91d3.md`, and the frontmatter appeared in the dialog. Option 2, "Yes, manually approve edits", logged #15 `signoff via=human from=alice plan_hash=fdd5fc8b91d3`. alice's Claude did not implement: there were no tool calls and no file changes in `/tmp/sh-live/alice` for the whole run (checked with `find -newer`). Drift case: alice was asked to append "- Max limit is 500." to the stub, and her Claude **refused** after 3.5 minutes of thinking. The forced-drift path was therefore not exercised live. The ordinary stub-versus-canonical swap worked in all three reviews. |
+| 6 | Decline voids sign-off | **PASS** (Ctrl+G edit not tested) | bob chose "Tell Claude what to change" and typed a reason. The Stop hook logged #17 `objection via=human from=bob plan_hash=fdd5fc8b91d3`, with the exact text. orch treated it as a conflict with alice's #7 and asked her (#18). After alice's `@room` #19, orch revised the plan to `5bd074bd0aef` (#21 `plan_rev`). `room.plan` then showed `signed:{alice:null,bob:null}`, and the gate status #22 named "alice and bob". alice's sign-off on h (#15) did not carry over. Esc on a review (alice, 19:31:22) logged nothing and caused no loop. |
+| 7 | Auto-approve | **PARTIAL**, then fixed in code | bob signed h′ (#25) and alice signed h′ (#27). orch's ExitPlanMode was allowed with **no dialog**. #28 `decision plan_hash=5bd074bd0aef refs=[27,25] via=system`. `validateChain()` returned `{ok:true,count:31}`. **The assignments did not follow by themselves.** orch ended its turn saying it would post them "when the decision entry lands", but its tail filters out `from=orch` entries, so it was never woken (bug B1). After **one manual nudge** (see the keypress log below), orch posted the assignments: #29 (phase: diverge), #30 to alice and #31 to bob, each with owner, file, contract and what "done" means, citing #28. |
+| 8 | Leave | **PASS** | bob's `/exit` showed the "Background work is running" dialog, and option 1 logged #32 `member_left from=bob via=system "bob left (prompt_input_exit)"`. `members.json` has bob's `left_at`. orch then posted #33 (bob left) and #34 (who takes the tests?). |
+
+There were no loops and the rate limiter never triggered. The most agent posts in any one minute was 4, from orch at 19:27–19:28.
+
+### Every keypress sent to orch
+
+1. 12:23:49. `Down`, then `Enter`, on the trust dialog to choose "Yes, I trust this folder".
+2. 12:24:04. `/sub-human`, then `Enter`. This Enter only accepted the slash-command autocomplete; the prompt still showed `/sub-human [NAME CODE]`.
+3. 12:24:22. A second `Enter`, which submitted the command. Nothing else was typed into orch until step 4.
+4. 12:39–12:40. **One manual nudge**, at the coordinator's request, to recover from bug B1: `Decision #28 is logged for plan 5bd074bd0aef. Post the assignments to the room now, citing #28.` followed by Enter.
+   - The first attempt with `send-keys` failed with `client is read-only`, because read-only tmux clients were attached to the `shl-*` sessions.
+   - The same text was then delivered with `tmux set-buffer` + `paste-buffer`, and Enter as a CR with `paste-buffer -r`.
+
+### Bugs and findings
+
+- **B1: the orchestrator deadlocks after `decision`. Found, then fixed by the coordinator during the run. Not re-verified live.**
+  - Cause: the hook writes `decision` as `from=orch via=system`, and `bin/sub-human tail` drops every `from=orch` entry for the orch, so the notice never arrives. orch had ended its turn waiting for it, which is a conditional wait like spike R3.
+  - Fix:
+    - `hooks/plan-result.js` (orch branch) returns `additionalContext`: "Decision #N is logged… Post the assignments to the room now".
+    - `bin/sub-human` `tail` now passes the orch its own `via=system` `decision` entries.
+  - Re-run criterion 7 once to confirm that no nudge is needed.
+- **F2: the default option in the member dialog is "1. Yes, and use auto mode".**
+  - In this account, sessions start in auto mode. The member's Claude enters plan mode itself, so the gate sees `permission_mode=plan` and its "refuse in auto/bypass" check never fires.
+  - A reflexive Enter records a valid sign-off **and** switches the member to auto mode. After that, an assignment could be implemented without the human saying "go".
+  - Suggested fixes:
+    - `hooks/plan-result.js`: read `permission_mode` from the PostToolUse input. When it is `auto` or `acceptEdits`, inject "you are now in auto mode; still do not implement until NAME says go".
+    - README: say "choose option 2".
+- **F3: member Claudes open the review dialog unprompted on `plan_rev`** (`skills/sub-human/member.md`, step 3).
+  - Both reviews popped up within about 8 s of `plan_rev`, while the humans might have been typing. Keystrokes meant for the prompt can land in the dialog, and Enter selects option 1.
+  - Suggested fix: announce the plan and enter the review only when NAME says so (e.g. "review"), or at least only when NAME's last prompt is not mid-turn.
+- **F4: Claude Code's prompt suggestions propose `@room …` text.**
+  - Ghost text appeared in the members' prompts, e.g. `@room I want to build...`, `@room fine by me, 50 is fine` and `@room yes, I'll take test/tasks.test.js…`.
+  - Accepting a suggestion and pressing Enter posts **model-written words as `via=human`**. `at-room.js` cannot tell them apart.
+  - Suggested fixes: README, tell members to disable prompt suggestions, or at least never to accept an `@room` suggestion. `member.md`: avoid ending turns with "you can type @room …" phrasing, which seeds the suggestions.
+- **F5 (minor): stale status after an objection.** After bob objected, bob's Claude said "Alice already signed off; the plan's now waiting on just you". That is true but implies bob should simply approve.
+  - Suggested fix (`member.md`): after an objection, say the orchestrator will revise, and don't restate the matrix.
+- **F6 (minor): paths in orch's plan and assignments are relative to the repo.** They say `demo/app/src/server.js`, but members work from the app root.
+  - Suggested fix (`orchestrator.md`): write paths relative to the members' working copy.
+- **F7 (minor, docs): bare `/sub-human` needs two Enters.** With no arguments, the first Enter only accepts the autocomplete. The README could say so.
+- **F8 (environment): read-only tmux clients block `tmux send-keys`.** It fails with `client is read-only`. `paste-buffer` still works. This matters only for test harnesses.
+
+### Approximate cost
+
+These are API-equivalent figures, deduplicated by message id, at Opus 5.5 $5/$25 and Sonnet 5 $3/$15 per MTok, with cache reads at 0.1× and cache writes at 1.25×.
+- orch (Opus 5.5): about $1.6.
+- alice (Sonnet 5): about $1.0. That includes the 3.5-minute drift refusal.
+- bob (Sonnet 5): about $0.8.
+- eve: $0.
+
+**Total: about $3.4.**
+
+### Verdict
+
+**Ready for a supervised trial with two real people, after one live re-run of criterion 7 with the B1 fix.**
+- Identity binding, verbatim `@room`, monitor wake-ups, the gate, native sign-off, objection capture, the hash chain and leave all worked live, with no loops.
+- Before an unsupervised trial, fix F2 (the default dialog option approves into auto mode) and F3 (the unprompted dialog pop-up). Mention F4 (`@room` prompt suggestions) in the README.
+
+### Cleanup
+
+- The `shl-orch`, `shl-alice`, `shl-bob` and `shl-eve` tmux sessions were killed. No `--plugin-dir …/sub-human` claude, `room-server.js` or `sub-human tail` processes from this run remain.
+- A Ghostty `sub-human watch eagle-3407` "room feed" window is still open. It was not started by this run and was left alone.
+- The three plan files this run created were deleted from `~/.claude/plans/`, after copying them to `/tmp/sh-live/plans-copy/`: `pure-knitting-heron.md` (orch), `partitioned-wishing-stream.md` (alice) and `compiled-growing-graham.md` (bob).
+- `/tmp/sh-live/home` is kept as evidence.

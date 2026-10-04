@@ -73,7 +73,9 @@ function visibleTo(me) {
   const toMe = e => e.to === me.name;
   const toRoom = e => !e.to || e.to === 'room' || e.to === 'all';
   return e => {
-    if (e.from === me.name) return false;
+    // Hooks write some entries under the session's own name (e.g. the orch's `decision`); the
+    // orchestrator still needs to see its decisions.
+    if (e.from === me.name) return me.role === 'orch' && e.via === 'system' && e.kind === 'decision';
     if (me.role === 'orch') return true;
     if (toMe(e)) return true;
     if (e.via === 'human') return true;

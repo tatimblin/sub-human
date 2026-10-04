@@ -41,8 +41,14 @@ run(input => {
   if (cur && cur.code === code && cur.name === name && cur.role !== 'orch') {
     return success(cur, 'already joined');
   }
-  if (cur) return block(`this session is already ${cur.name} in room ${cur.code}; start a new session to join another.`);
+  if (cur && cur.role === 'orch') return block(`this session is the orchestrator of room ${cur.code}; start a new session to join a room.`);
   if (!identity.roomExists(code)) return block(`no room ${code}. Check the code with the orchestrator.`);
+  if (cur) {
+    // Switching rooms: leave the old one exactly as exiting the session would.
+    identity.leave(cur.code, cur.name);
+    room.bind(cur.code);
+    room.append({ kind: 'member_left', text: `${cur.name} left (switched rooms)` }, { via: 'system', from: cur.name, system: true });
+  }
   const r = identity.join({ code, name, role: 'member', ...base });
   if (!r || !r.ok) return block(`could not join ${code} as ${name}: ${(r && r.error) || 'unknown error'}`);
   room.bind(code);

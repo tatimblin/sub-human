@@ -31,14 +31,16 @@ function orch(me, input) {
   const approvers = cur ? (cur.approvers || []) : [];
   const m = cur && hash === cur.hash ? room.signoffMatrix(cur.hash, approvers) : null;
   if (m && m.complete && approvers.length) {
-    if (room.decided(cur.hash)) return;
-    room.append({
+    const prior = room.decided(cur.hash);
+    const d = prior || room.append({
       kind: 'decision',
       text: `Plan mode exited on plan ${cur.hash}, signed by ${names(approvers)}.`,
       plan_hash: cur.hash,
       refs: approvers.map(n => m.signed[n]),
     }, { via: 'system', from: me.name, system: true });
-    return;
+    const id = typeof d === 'object' && d ? d.id : d;
+    // Hand the next step over now: the orchestrator must not wait for its own decision notice.
+    return context('PostToolUse', `Decision #${id} is logged for plan ${cur.hash}, signed by ${names(approvers)}. Post the assignments to the room now, citing #${id}.`);
   }
   const why = !cur ? 'no plan_rev exists'
     : hash !== cur.hash ? `it does not match the current plan_rev ${cur.hash}`

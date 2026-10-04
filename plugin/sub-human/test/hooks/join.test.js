@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { World, fixture, hso } = require('./helpers.js');
+const { World, fixture, hso, identity } = require('./helpers.js');
 
 const expand = args => ({ ...fixture('user-prompt-expansion'), command_args: args, prompt: `/sub-human:sub-human ${args}`.trim() });
 
@@ -78,11 +78,33 @@ test('failures block with a reason and log nothing', () => {
   assert.equal(w.entries().length, 0);
 });
 
-test('a joined member cannot create or join another room from the same session', () => {
+test('a joined member cannot create a room, but joining another room switches to it', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
   let r = w.hook('join', expand(''), { as: 'alice' });
   assert.equal(r.json.decision, 'block');
   assert.match(r.json.reason, /already alice/);
   r = w.hook('join', expand(`alice ${w.code}`), { as: 'alice' });
   assert.equal(r.json.decision, undefined, 'same name and room: idempotent');
+
+  const oldCode = w.code;
+  const newCode = w.lib(() => identity.newCode());
+  r = w.hook('join', expand(`alice ${newCode}`), { as: 'alice' });
+  assert.equal(r.json.decision, undefined, r.json.reason);
+  assert.match(r.json.systemMessage, new RegExp(`joined room ${newCode} as alice`));
+  const left = w.entries().at(-1);
+  assert.deepEqual([left.kind, left.from, left.via], ['member_left', 'alice', 'system'], 'old room logs the departure');
+  assert.ok(w.members().alice.left_at, 'old seat marked left');
+  w.code = newCode;
+  const joined = w.entries().at(-1);
+  assert.deepEqual([joined.kind, joined.from], ['member_joined', 'alice'], 'new room logs the arrival');
+  assert.ok(!w.members().alice.left_at);
+  w.code = oldCode;
+});
+
+test('the orchestrator cannot switch rooms', () => {
+  const w = new World({ orch: 'act' });
+  const other = w.lib(() => identity.newCode());
+  const r = w.hook('join', expand(`orchy ${other}`), { as: 'orch' });
+  assert.equal(r.json.decision, 'block');
+  assert.match(r.json.reason, /orchestrator of room/);
 });
