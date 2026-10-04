@@ -1,0 +1,182 @@
+#!/usr/bin/env node
+// chat: a human seat in the room. No model in the loop: what you type is appended byte-exact,
+// stamped from=$ROOM_USER, via=human. Everyone else's entries stream in above the prompt.
+//
+//   plain text            say, to the room
+//   /ask <text>           ask your own Claude (seat); wakes only your seat
+//   /proposal /question <text>
+//   /object <text>        objection, bound to the current plan hash
+//   /plan                 show the current plan hash and file
+//   /signoff [note]       sign the current plan hash (filled in for you)
+//   /revoke [note]        revoke your sign-off on the current plan hash
+//   /paste [ask|proposal|question|object]   multi-line block; finish with a line "/end"
+//   /done [text]          run the tests; post done with evidence (refuses if red)
+//   /test                 run the tests, show the result to you only
+//   /status               sign-off matrix, open items, decisions
+//   /help                 list commands
+
+const path = require('node:path');
+const readline = require('node:readline');
+const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
+
+const USER = process.env.ROOM_USER;
+const VIA = 'human';
+const TTY = !!process.stdout.isTTY;
+const colors = { orch: '\x1b[35m', facilitator: '\x1b[35m', alice: '\x1b[36m', bob: '\x1b[33m' };
+const reset = '\x1b[0m', dim = '\x1b[2m', bold = '\x1b[1m', red = '\x1b[31m', green = '\x1b[32m';
+
+if (!USER) {
+  console.error('ROOM_USER is not set.');
+  process.exit(2);
+}
+
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: TTY });
+rl.setPrompt(`${colors[USER] || ''}${USER}${reset} › `);
+
+function print(line) {
+  if (TTY) {
+    readline.clearLine(process.stdout, 0);
+    readline.cursorTo(process.stdout, 0);
+  }
+  console.log(line);
+  if (TTY) rl.prompt(true);
+}
+
+const help = `${dim}Type to post as ${USER} (to the room). Commands:
+  /ask <text>            ask your own Claude (only your seat wakes)
+  /proposal <text>  /question <text>  /object <text> (bound to the current plan)
+  /plan                  show the current plan     /signoff [note]  sign it    /revoke [note]
+  /paste [ask|proposal|question|object]   multi-line block, end with a line "/end"
+  /test  run the suite   /done [text]  post done with test evidence
+  /status  sign-offs, open items, decisions        /help${reset}`;
+
+function post(kind, text, extra = {}) {
+  try {
+    const e = room.append({ kind, text, ...extra }, { via: VIA });
+    print(`${dim}  ↳ posted #${e.id} (${kind}${e.plan_hash ? ` plan=${e.plan_hash}` : ''}${e.to !== 'room' ? ` → ${e.to}` : ''})${reset}`);
+  } catch (err) {
+    print(`${red}✖ ${err.message}${reset}`);
+  }
+}
+
+function requirePlan() {
+  const p = room.currentPlan();
+  if (!p) print(`${red}✖ no plan has been published yet${reset}`);
+  return p;
+}
+
+function status() {
+  const lines = [`${bold}room status${reset}`];
+  const p = room.currentPlan();
+  if (p) {
+    const m = room.signoffMatrix(p.hash);
+    lines.push(`  plan ${bold}${p.hash}${reset} ${dim}#${p.id} ${p.path}${reset}`);
+    for (const h of room.humans()) {
+      lines.push(`    ${m.signed[h] ? `${green}✔${reset} ${dim}#${m.signed[h]}${reset}` : `${dim}–${reset}`} ${(colors[h] || '') + h + reset}`);
+    }
+    lines.push(m.complete ? `    ${green}all humans signed${reset}` : `    ${dim}waiting on: ${m.missing.join(', ') || '(ROOM_HUMANS unset)'}${reset}`);
+  } else lines.push(`  ${dim}no plan yet${reset}`);
+  const done = room.readAll().filter(e => e.kind === 'done');
+  const doneBy = [...new Set(done.map(e => e.from))];
+  if (doneBy.length) lines.push(`  done: ${doneBy.map(n => `${n} #${done.filter(e => e.from === n).at(-1).id}`).join(', ')}`);
+  for (const s of room.digestSections().filter(s => /objections|decisions/.test(s.title || ''))) {
+    lines.push(`  ${bold}${s.title}${reset}`);
+    if (!s.lines.length) lines.push(`  ${dim}  (none)${reset}`);
+    for (const l of s.lines) lines.push('  ' + l.text);
+  }
+  return lines.join('\n');
+}
+
+function test() {
+  print(`${dim}running npm test…${reset}`);
+  const r = room.runTests();
+  print(r.ok ? `${green}✔ ${r.pass}/${r.total} pass${reset}` : `${red}✖ ${r.pass}/${r.total} pass${reset}\n  ${r.failed.join('\n  ')}`);
+}
+
+function done(note) {
+  print(`${dim}running npm test before posting done…${reset}`);
+  const r = room.postDone(note, { via: VIA });
+  if (r.ok) print(`${green}  ↳ posted #${r.entry.id} done (npm test ${r.result.pass}/${r.result.total} pass)${reset}`);
+  else print(`${red}✖ not posting done: npm test ${r.result.pass}/${r.result.total} pass\n  ${r.result.failed.join('\n  ')}${reset}`);
+}
+
+function showPlan() {
+  const p = room.readPlan();
+  if (!p) return print(`${dim}no plan has been published yet${reset}`);
+  const drift = p.fileHash && p.fileHash !== p.hash ? `\n${red}  file has changed since plan ${p.hash} was published (now ${p.fileHash})${reset}` : '';
+  print(`${bold}plan ${p.hash}${reset} ${dim}#${p.id} ${p.file}${reset}${drift}\n${p.content == null ? `${red}(plan file not found)${reset}` : p.content}`);
+}
+
+// Byte-exact commands: the text is everything after "/cmd " exactly as typed.
+const withText = {
+  ask: t => post('ask', t, { to: USER }),
+  proposal: t => post('proposal', t),
+  question: t => post('question', t),
+  concern: t => withText.object(t),
+  object: t => {
+    const p = room.currentPlan();
+    post('objection', t, p ? { plan_hash: p.hash } : {});
+  },
+  say: t => post('say', t),
+};
+
+let paste = null; // {kind, lines}
+
+function onLine(line) {
+  if (paste) {
+    if (line === '/end') {
+      const { kind, lines } = paste;
+      paste = null;
+      return withText[kind](lines.join('\n'));
+    }
+    if (line === '/cancel') { paste = null; return print(`${dim}paste cancelled${reset}`); }
+    paste.lines.push(line);
+    return;
+  }
+  if (!line.trim()) return TTY && rl.prompt();
+  const m = line.match(/^\/(\w+)(?: ([\s\S]*))?$/);
+  if (!m) return post('say', line);
+  const [, cmd, arg = ''] = m;
+  switch (cmd) {
+    case 'help': return print(help);
+    case 'status': return print(status());
+    case 'test': return test();
+    case 'done': return done(arg);
+    case 'plan': return showPlan();
+    case 'signoff':
+    case 'revoke': {
+      const p = requirePlan();
+      if (!p) return;
+      return post(cmd, arg.trim() ? arg : `${cmd} plan ${p.hash}`, { plan_hash: p.hash });
+    }
+    case 'agree': return print(`${dim}/agree is gone: use /signoff to sign the current plan hash${reset}`);
+    case 'paste': {
+      const kind = arg.trim() || 'say';
+      if (!withText[kind]) return print(`${red}✖ /paste takes one of: ask, proposal, question, object${reset}`);
+      paste = { kind, lines: [] };
+      return print(`${dim}pasting (${kind}); finish with a line "/end", or "/cancel"${reset}`);
+    }
+    default:
+      if (withText[cmd] && cmd !== 'say') {
+        if (!arg.trim()) return print(`${red}✖ /${cmd} needs text${reset}`);
+        return withText[cmd](arg);
+      }
+      return print(`${dim}unknown command /${cmd} (try /help)${reset}`);
+  }
+}
+
+console.log(`${bold}You are ${USER}.${reset} Everything you type is posted verbatim, stamped ${USER} (human).`);
+console.log(help + '\n');
+
+room.follow(room.lastId(), e => {
+  if (e.from === USER && e.via !== 'agent') return; // your own words; your seat's posts still show
+  const n = room.normalize(e);
+  const label = (colors[n.from] || '') + bold + room.who(n) + reset;
+  const meta = [n.kind, n.to !== 'room' && `→ ${n.to}`, n.refs && `refs ${n.refs.map(r => '#' + r).join(',')}`,
+    n.plan_hash && `plan ${n.plan_hash}`].filter(Boolean).join(' · ');
+  print(`${dim}#${n.id}${reset} ${label} ${dim}(${meta})${reset}\n  ${String(n.text).replace(/\n/g, '\n  ')}\n`);
+}, { intervalMs: 500 });
+
+rl.on('line', onLine);
+rl.on('close', () => process.exit(0));
+if (TTY) rl.prompt();

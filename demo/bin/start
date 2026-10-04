@@ -1,0 +1,79 @@
+#!/bin/zsh
+# start <role>: run one participant's session. The launcher, not the model, sets identity.
+#
+# v2 (default) roles:
+#   orch     the orchestrator: claude --agent room-orchestrator (interactive, never -p). It runs
+#            unattended; nobody types into it. Its window is an ops console only.
+#   <human>  any name in ROOM_HUMANS: demo/bin/chat as that human (via=human). The host is just
+#            one of these.
+#   watch    the spectator feed
+# Env: ROOM_HUMANS (default "alice bob").
+#
+# v1 (DEMO_V1=1, set by `launch --v1`): the old persona demo. DEMO_HUMANS marks seats played by a person.
+role=$1
+root=${0:A:h:h:h}
+cd "$root" || exit 1
+
+if [[ -z $DEMO_V1 ]]; then
+  export ROOM_HUMANS=${ROOM_HUMANS:-"alice bob"}
+  humans=(${=${ROOM_HUMANS//,/ }})
+  case $role in
+    watch)
+      export ROOM_USER=watch
+      exec demo/bin/room watch ;;
+    orch)
+      export ROOM_USER=orch
+      export CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT=0
+      unset CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS   # seats must stay plain background subagents
+      settings=()
+      if [[ -f demo/room-settings.json ]]; then
+        settings=(--settings demo/room-settings.json)
+      else
+        print -u2 "start: warning: demo/room-settings.json not found; running without room hooks (no plan gate)"
+        sleep 2
+      fi
+      # Seats get mcp__room__* from their inline server; acceptEdits does not cover MCP tools, so allow
+      # them here too (harmless if room-settings.json also allows them).
+      seats=(${humans/#/seat-})
+      # The humans go into the system prompt so the orchestrator never has to run `echo $ROOM_HUMANS`.
+      exec claude -n room-orch --agent room-orchestrator --permission-mode default $settings \
+        --allowedTools "mcp__room__await_human,mcp__room__post,mcp__room__read" \
+        --append-system-prompt "Room humans (from \$ROOM_HUMANS, set by the launcher): ${humans[*]}. Spawn one seat per name: ${(j:, :)seats}." ;;
+    *)
+      if (( ${humans[(Ie)$role]} )); then
+        export ROOM_USER=$role
+        exec demo/bin/chat
+      fi
+      print -u2 "start: unknown role '$role' (expected orch, watch, or one of: ${humans[*]})"
+      exit 2 ;;
+  esac
+fi
+
+# ---------------- v1: persona seats (retired path, kept runnable) ----------------
+export ROOM_USER=$role
+humans=(${=DEMO_HUMANS})
+
+if [[ $role == watch ]]; then
+  exec demo/bin/room watch
+fi
+
+if (( ${humans[(Ie)$role]} )); then
+  exec demo/bin/chat
+fi
+
+brief="$(cat demo/personas/$role.md)"
+if (( ${#humans} )); then
+  brief+="
+
+## This run: live humans
+These seats are played by a real person typing in a chat window, with no model in the loop: ${humans[*]}.
+- Treat their words as theirs. They reply in human time, so if \`room wait\` times out, just wait again.
+- They may hold firmer positions or state constraints that aren't in any brief. Take what they say at face value.
+- If the facilitator assigns build work to a human, the human decides whether to code it themselves or ask for it to be built for them.
+- Facilitator: when a human asks for their part to be built, spawn a subagent to build it on their behalf. Post the result as a status message saying it was built for them, and have them confirm it with \`done\`."
+fi
+
+exec claude -n "$role" \
+  --permission-mode auto \
+  --append-system-prompt "$brief" \
+  "You are $role in the shared room. Begin."

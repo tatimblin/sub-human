@@ -1,0 +1,182 @@
+#!/usr/bin/env node
+// room: CLI over demo/lib/room.js (envelope v2). Everything this binary writes is via:"agent";
+// the author is $ROOM_USER, set by the launcher, never by the caller.
+//
+//   room post [--kind K] [--to X] [--refs 1,2] [--plan-hash H] [--] [text...]
+//                                   post (text from args, else stdin, byte-exact). kind default: say
+//   room done [note...]             run the app's tests; post done with evidence (refuses if red)
+//   room read [--all] | --id N[,M] [--json]
+//                                   unread entries (cursor), the whole log, or specific entries in full
+//   room wait [--timeout SECONDS]   block until someone else posts, then print
+//   room tail --for NAME [--after N] [--max-seconds S]
+//                                   stream one-line notices (<=240 chars); skips NAME's own entries and
+//                                   asks addressed to seats. Lossless across restarts: it resumes after
+//                                   the saved cursor <ROOM_DIR>/tail-NAME.cursor (else the log's end) and
+//                                   advances it only after a line is flushed. --after N overrides the
+//                                   start. --max-seconds S exits cleanly after S s (set it just under the
+//                                   Monitor's timeout so no line is in flight when the watch expires).
+//   room digest                     print the compaction digest (<=9,500 chars)
+//   room watch                      live, colored feed for a spectator
+
+const fs = require('node:fs');
+const path = require('node:path');
+const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
+
+const VIA = 'agent';
+
+function die(msg, code = 2) {
+  process.stderr.write(msg + '\n');
+  process.exit(code);
+}
+
+function user() {
+  try { return room.currentUser(); } catch (e) { die(e.message, 2); }
+}
+
+function parseFlags(args, spec) {
+  const flags = {}, rest = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--') { rest.push(...args.slice(i + 1)); break; }
+    if (a.startsWith('--') && a.slice(2) in spec) {
+      if (spec[a.slice(2)]) flags[a.slice(2)] = args[++i];
+      else flags[a.slice(2)] = true;
+      if (flags[a.slice(2)] === undefined) die(`${a} needs a value`);
+    } else rest.push(a);
+  }
+  return { flags, rest };
+}
+
+const intList = s => String(s).split(',').filter(Boolean).map(x => {
+  const n = Number(x.replace(/^#/, ''));
+  if (!Number.isInteger(n) || n <= 0) die(`bad id "${x}"`);
+  return n;
+});
+
+function post(args) {
+  user();
+  const { flags, rest } = parseFlags(args, { kind: 1, to: 1, refs: 1, 'plan-hash': 1 });
+  const kind = flags.kind || 'say';
+  if (kind === 'done') die('Use `room done [note]`: it runs the tests and attaches the result. A bare done claim is not accepted.');
+  let text = rest.join(' ');
+  if (!rest.length && !process.stdin.isTTY) {
+    text = fs.readFileSync(0, 'utf8');
+    if (text.endsWith('\n')) text = text.slice(0, -1); // the shell's trailing newline, nothing else
+  }
+  const entry = { kind, text };
+  if (flags.to) entry.to = flags.to;
+  if (flags.refs) entry.refs = intList(flags.refs);
+  if (flags['plan-hash']) entry.plan_hash = flags['plan-hash'];
+  try {
+    const e = room.append(entry, { via: VIA });
+    room.setCursor(e.from, e.id);
+    console.log(`posted #${e.id} as ${e.from} (${e.kind})`);
+  } catch (e) { die(e.message, 2); }
+}
+
+function done(args) {
+  user();
+  const r = room.postDone(args.join(' '), { via: VIA });
+  if (!r.ok) {
+    process.stderr.write(`not posting done: npm test ${r.result.pass}/${r.result.total} pass\n`);
+    r.result.failed.forEach(f => process.stderr.write('  ' + f + '\n'));
+    process.exit(1);
+  }
+  console.log(`posted #${r.entry.id} done (npm test ${r.result.pass}/${r.result.total} pass, verified by room)`);
+}
+
+function read(args) {
+  const { flags } = parseFlags(args, { all: 0, id: 1, json: 0 });
+  const show = es => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : room.fmt(e) + '\n'));
+  if (flags.id) {
+    const es = room.readById(intList(flags.id));
+    if (!es.length) die('(no such entries)', 1);
+    return show(es);
+  }
+  const u = user();
+  const es = flags.all ? room.readAll() : room.readAfter(room.getCursor(u));
+  if (!es.length) return console.log('(no new messages)');
+  show(es);
+  room.setCursor(u, room.lastId());
+}
+
+async function wait(args) {
+  const u = user();
+  const { flags } = parseFlags(args, { timeout: 1 });
+  const timeout = Number(flags.timeout || 300) * 1000;
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const es = room.readAfter(room.getCursor(u));
+    if (es.some(e => e.from !== u || e.via === 'human')) {
+      es.forEach(e => console.log(room.fmt(e) + '\n'));
+      room.setCursor(u, es.at(-1).id);
+      return;
+    }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  console.log(`(no new messages after ${timeout / 1000}s; call wait again)`);
+}
+
+function tail(args) {
+  const { flags } = parseFlags(args, { for: 1, after: 1, 'max-seconds': 1 });
+  const me = flags.for;
+  if (!me || !room.NAME_RE.test(me)) die('usage: room tail --for <name> [--after N] [--max-seconds S]');
+  const reader = `tail-${me}`;
+  let after;
+  if (flags.after != null) {
+    after = Number(String(flags.after).replace(/^#/, ''));
+    if (!Number.isInteger(after) || after < 0) die(`bad --after "${flags.after}"`);
+  } else {
+    const saved = room.getCursor(reader);
+    const last = room.lastId();
+    after = saved > 0 && saved <= last ? saved : last; // a cursor past the end means the log was reset
+  }
+  room.setCursor(reader, after);
+  // The cursor is the highest id h such that every notice for ids <= h has been flushed to stdout.
+  const inflight = []; // ids of written-but-unflushed notices, ascending
+  let processed = after, saved = after;
+  const save = () => {
+    const h = inflight.length ? inflight[0] - 1 : processed;
+    if (h > saved) { saved = h; room.setCursor(reader, h); }
+  };
+  process.stdout.on('error', () => process.exit(0));
+  const skip = e => e.from === me || (e.kind === 'ask' && e.to && e.to !== 'room' && e.to !== 'all');
+  const stop = room.follow(after, e => {
+    if (e.id <= processed) { saved = 0; room.setCursor(reader, 0); } // the log was reset under us
+    processed = e.id;
+    if (skip(e)) return save();
+    inflight.push(e.id);
+    process.stdout.write(room.tailLine(e) + '\n', () => { inflight.shift(); save(); });
+  });
+  const max = Number(flags['max-seconds']);
+  if (flags['max-seconds'] != null) {
+    if (!(max > 0)) die(`bad --max-seconds "${flags['max-seconds']}"`);
+    setTimeout(() => { stop(); save(); }, max * 1000); // the interval is gone; node exits once stdout drains
+  }
+}
+
+function digest() {
+  process.stdout.write(room.digest() + '\n');
+}
+
+function watch() {
+  const colors = { orch: '\x1b[35m', facilitator: '\x1b[35m', alice: '\x1b[36m', bob: '\x1b[33m' };
+  const kindColor = { decision: '\x1b[1;32m', signoff: '\x1b[32m', agree: '\x1b[32m', revoke: '\x1b[31m',
+    objection: '\x1b[31m', concern: '\x1b[31m', done: '\x1b[1;32m', plan_rev: '\x1b[1;34m' };
+  const reset = '\x1b[0m', dim = '\x1b[2m';
+  console.log(`${dim}watching ${room.logPath()}${reset}\n`);
+  room.follow(0, e => {
+    const n = room.normalize(e);
+    const label = n.via === 'agent' ? `${dim}${room.who(n)}${reset}` : `\x1b[1m${room.who(n)}${reset}`;
+    const who = (colors[n.from] || '\x1b[37m') + label + reset;
+    const kind = (kindColor[e.kind] || dim) + n.kind + reset;
+    const meta = [n.to !== 'room' && `→ ${n.to}`, n.refs && `refs ${n.refs.map(r => '#' + r).join(',')}`,
+      n.plan_hash && `plan ${n.plan_hash}`, n.evidence && `tests ${n.evidence.pass}/${n.evidence.total}`].filter(Boolean).join('  ');
+    console.log(`${dim}#${n.id} ${String(n.at).slice(11, 19)}${reset}  ${who}  ${kind}  ${dim}${meta}${reset}`);
+    console.log(String(n.text).split('\n').map(l => '    ' + l).join('\n') + '\n');
+  }, { intervalMs: 500 });
+}
+
+const [cmd, ...args] = process.argv.slice(2);
+const cmds = { post, done, read, wait, tail, digest, watch };
+(cmds[cmd] || (() => die('usage: room post|done|read|wait|tail|digest|watch')))(args);

@@ -1,0 +1,261 @@
+#!/usr/bin/env node
+'use strict';
+// room-mcp: a seat's stdio MCP server (JSON-RPC 2.0, one JSON message per line). Zero dependencies.
+// Identity comes only from env: ROOM_USER (the human this seat serves), ROOM_VIA (default "agent").
+// The model never names itself; every post is stamped from=$ROOM_USER by demo/lib/room.js.
+//
+// Tools:
+//   await_human({after_seq})   block until an entry with id > after_seq is to:<me>, a directive to me
+//                              (or to all), a plan_rev, or a shutdown for me/room/all. Skips this seat's
+//                              own posts. Returns the qualifying raw entries as a JSON array, or
+//                              {timeout:true, last_seq} after ROOM_MCP_AWAIT_MS (default 55 min).
+//                              Sends notifications/progress every ROOM_MCP_PROGRESS_MS (default 60 s)
+//                              when the call carried _meta.progressToken.
+//   post({kind, text, refs?, plan_hash?, to?})   kinds: status proposal objection question done.
+//                              done runs the app's tests (postDone) and is refused when red.
+//   read({ids})                full entries by id.
+//
+// Env for tests: ROOM_DIR, ROOM_APP_DIR, ROOM_MCP_AWAIT_MS, ROOM_MCP_PROGRESS_MS, ROOM_MCP_POLL_MS.
+
+const fs = require('node:fs');
+const path = require('node:path');
+const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
+
+const ME = process.env.ROOM_USER || '';
+const VIA = process.env.ROOM_VIA || 'agent';
+const num = (v, d) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+const AWAIT_MS = num(process.env.ROOM_MCP_AWAIT_MS, 55 * 60 * 1000);
+const PROGRESS_MS = num(process.env.ROOM_MCP_PROGRESS_MS, 60 * 1000);
+const POLL_MS = num(process.env.ROOM_MCP_POLL_MS, 250);
+const ALLOWED_KINDS = ['status', 'proposal', 'objection', 'question', 'done'];
+const REJECTED = {
+  signoff: 'Seats cannot sign off. Ask your human to type /signoff in their chat client.',
+  revoke: 'Seats cannot revoke. Ask your human to type /revoke in their chat client.',
+  say: 'Seats do not speak for their human. Use status, proposal, objection or question, and cite their words with refs.',
+  plan_rev: 'plan_rev is written only by the plan hook.',
+};
+
+// ---------- transport ----------
+let closed = false;
+function send(msg) {
+  if (closed) return;
+  try { process.stdout.write(JSON.stringify(msg) + '\n'); } catch { shutdown(); }
+}
+process.stdout.on('error', () => shutdown());
+const reply = (id, result) => send({ jsonrpc: '2.0', id, result });
+const fail = (id, code, message) => send({ jsonrpc: '2.0', id, error: { code, message } });
+const text = (s, isError) => ({ content: [{ type: 'text', text: s }], ...(isError ? { isError: true } : {}) });
+
+// ---------- pending await_human calls (so cancel/disconnect leave no pollers) ----------
+const pending = new Map(); // request id -> cancel()
+
+function shutdown() {
+  if (closed) return;
+  closed = true;
+  for (const cancel of pending.values()) cancel();
+  pending.clear();
+  process.exit(0);
+}
+
+// ---------- identity helpers ----------
+function agentId() {
+  const env = process.env.ROOM_AGENT_ID;
+  if (env) return env;
+  // roster.json is written by the SubagentStart hook. Accept {agent_id: human} or {key: {human, agent_id}}.
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(room.dir(), 'roster.json'), 'utf8'));
+    let found;
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === 'string' && v === ME) found = k;
+      else if (v && typeof v === 'object' && (v.human || k) === ME && v.agent_id) found = v.agent_id;
+    }
+    return found;
+  } catch { return undefined; }
+}
+
+function qualifies(e) {
+  if (e.from === ME && e.via !== 'human') return false; // this seat's own posts
+  const to = e.to || 'room';
+  if (e.kind === 'plan_rev') return true;
+  if (e.kind === 'shutdown') return to === ME || to === 'room' || to === 'all';
+  if (e.kind === 'directive' && to === 'all') return true;
+  return to === ME;
+}
+
+// ---------- tools ----------
+const TOOLS = [
+  {
+    name: 'await_human',
+    description: `Block until something needs ${ME || 'this seat'}'s Claude: an entry addressed to ${ME || 'you'} (their /ask), an orchestrator directive to you, a new plan_rev, or a shutdown. Returns the raw log entries as a JSON array, or {"timeout":true,"last_seq":N} after ~55 min (then just call again with after_seq=last_seq). Costs nothing while blocked.`,
+    inputSchema: {
+      type: 'object',
+      properties: { after_seq: { type: 'integer', minimum: 0, description: 'Highest entry id you have already handled (0 at start).' } },
+      required: ['after_seq'],
+    },
+  },
+  {
+    name: 'post',
+    description: `Post to the room as ${ME || 'your human'}'s Claude (from=${ME || '$ROOM_USER'}, via=agent; you cannot change this). kind: status | proposal | objection | question | done. Cite human words by id in refs, never re-type them. done runs the app's tests and is refused when they fail. objection gets the current plan hash if you omit plan_hash.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ALLOWED_KINDS },
+        text: { type: 'string', description: '1-4 sentences, plus file paths.' },
+        refs: { type: 'array', items: { type: 'integer', minimum: 1 }, description: 'Entry ids this post acts on.' },
+        plan_hash: { type: 'string', pattern: '^[0-9a-f]{12}$' },
+        to: { type: 'string', description: 'Default "room".' },
+      },
+      required: ['kind', 'text'],
+    },
+  },
+  {
+    name: 'read',
+    description: 'Read full log entries by id. Returns a JSON array.',
+    inputSchema: {
+      type: 'object',
+      properties: { ids: { type: 'array', items: { type: 'integer', minimum: 1 } } },
+      required: ['ids'],
+    },
+  },
+];
+
+function awaitHuman(reqId, args, progressToken) {
+  const after = Number.isInteger(args.after_seq) && args.after_seq >= 0 ? args.after_seq : Number(args.after_seq) || 0;
+  return new Promise(resolve => {
+    const hits = [];
+    let lastSeq = after, done = false, ticks = 0, stop = null, scheduled = false;
+    const finish = result => {
+      if (done) return;
+      done = true;
+      if (stop) stop();
+      clearTimeout(timer);
+      clearInterval(beat);
+      pending.delete(reqId);
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish(text(JSON.stringify({ timeout: true, last_seq: lastSeq }))), AWAIT_MS);
+    const beat = progressToken == null ? null : setInterval(() => {
+      ticks++;
+      send({ jsonrpc: '2.0', method: 'notifications/progress',
+        params: { progressToken, progress: ticks, message: `waiting for ${ME} (after #${lastSeq})` } });
+    }, PROGRESS_MS);
+    pending.set(reqId, () => finish(null));
+    stop = room.follow(after, e => {
+      if (done) return;
+      if (e.id > lastSeq) lastSeq = e.id;
+      if (!qualifies(e)) return;
+      hits.push(e);
+      // follow() delivers a whole read in one synchronous pass; batch it before returning.
+      if (!scheduled) { scheduled = true; queueMicrotask(() => finish(text(JSON.stringify(hits)))); }
+    }, { intervalMs: POLL_MS });
+    if (done) stop();
+  });
+}
+
+function post(args) {
+  const { kind, text: body, refs, plan_hash, to } = args;
+  if (REJECTED[kind]) return text(`refused: ${REJECTED[kind]}`, true);
+  if (!ALLOWED_KINDS.includes(kind)) return text(`refused: kind must be one of ${ALLOWED_KINDS.join(', ')}`, true);
+  const opts = { via: VIA };
+  const aid = VIA === 'agent' ? agentId() : undefined;
+  if (aid && typeof aid === 'string' && aid.length <= 64) opts.agent_id = aid;
+  try {
+    if (kind === 'done') {
+      const r = room.postDone(typeof body === 'string' ? body : '', opts);
+      if (!r.ok) {
+        return text(`refused: npm test ${r.result.pass}/${r.result.total} pass. Not posting done.\n${r.result.failed.join('\n')}`, true);
+      }
+      return text(JSON.stringify(r.entry));
+    }
+    const entry = { kind, text: body };
+    if (to !== undefined) entry.to = to;
+    if (refs !== undefined) entry.refs = refs;
+    if (plan_hash !== undefined) entry.plan_hash = plan_hash;
+    if (kind === 'objection' && !entry.plan_hash) {
+      const p = room.currentPlan();
+      if (p) entry.plan_hash = p.hash;
+    }
+    return text(JSON.stringify(room.append(entry, opts)));
+  } catch (e) {
+    return text(`refused: ${e.message}`, true);
+  }
+}
+
+function read(args) {
+  const ids = Array.isArray(args.ids) ? args.ids : [args.ids];
+  if (!ids.length || !ids.every(i => Number.isInteger(Number(i)) && Number(i) > 0)) return text('ids must be positive integers', true);
+  return text(JSON.stringify(room.readById(ids.map(Number))));
+}
+
+async function callTool(id, params) {
+  const name = params && params.name;
+  const args = (params && params.arguments) || {};
+  const token = params && params._meta ? params._meta.progressToken : undefined;
+  if (!ME) return text('ROOM_USER is not set; this server cannot post or wait. The seat definition must set it.', true);
+  if (name === 'await_human') return awaitHuman(id, args, token);
+  if (name === 'post') return post(args);
+  if (name === 'read') return read(args);
+  return null;
+}
+
+async function handle(msg) {
+  if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') {
+    if (msg && msg.id != null && !('result' in msg) && !('error' in msg)) fail(msg.id, -32600, 'invalid request');
+    return;
+  }
+  const { id, method, params } = msg;
+  const isNote = id === undefined || id === null;
+  switch (method) {
+    case 'initialize':
+      return reply(id, {
+        protocolVersion: (params && params.protocolVersion) || '2025-06-18',
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: 'room', version: '0.2.0' },
+        instructions: `Room tools for ${ME}'s seat. Loop on await_human; post with post; never re-type human words.`,
+      });
+    case 'notifications/initialized':
+      return;
+    case 'notifications/cancelled': {
+      const cancel = params && pending.get(params.requestId);
+      if (cancel) cancel();
+      return;
+    }
+    case 'ping':
+      return reply(id, {});
+    case 'tools/list':
+      return reply(id, { tools: TOOLS });
+    case 'tools/call': {
+      try {
+        const r = await callTool(id, params);
+        if (r === null) {
+          if (!pending.has(id) && params && ['await_human', 'post', 'read'].includes(params.name)) return; // cancelled
+          return fail(id, -32602, `unknown tool ${params && params.name}`);
+        }
+        return reply(id, r);
+      } catch (e) {
+        return reply(id, text(`error: ${e.message}`, true));
+      }
+    }
+    default:
+      if (!isNote) fail(id, -32601, `method not found: ${method}`);
+  }
+}
+
+// ---------- stdin ----------
+let buf = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => {
+  buf += chunk;
+  let nl;
+  while ((nl = buf.indexOf('\n')) >= 0) {
+    const line = buf.slice(0, nl).trim();
+    buf = buf.slice(nl + 1);
+    if (!line) continue;
+    let msg;
+    try { msg = JSON.parse(line); } catch { send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); continue; }
+    handle(msg);
+  }
+});
+process.stdin.on('end', shutdown);
+process.stdin.on('close', shutdown);
+for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, shutdown);

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(demo/bin/room:*)",
+      "Bash(npm test:*)",
+      "Bash(node:*)",
+      "Edit(demo/**)",
+      "Write(demo/**)"
+    ]
+  }
+}

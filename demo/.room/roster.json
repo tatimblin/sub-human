@@ -1,0 +1,22 @@
+{
+  "alice": {
+    "human": "alice",
+    "agent_id": "a9fc9380539b00697",
+    "agent_type": "seat-alice",
+    "session_id": "b343a72b-2697-4fd0-b1c5-738e7bc52568",
+    "live": true,
+    "up_id": 1,
+    "started_at": "2026-10-04T16:16:34.400Z",
+    "last_seq": 0
+  },
+  "bob": {
+    "human": "bob",
+    "agent_id": "a44ef8e82c4fc259c",
+    "agent_type": "seat-bob",
+    "session_id": "b343a72b-2697-4fd0-b1c5-738e7bc52568",
+    "live": true,
+    "up_id": 2,
+    "started_at": "2026-10-04T16:16:35.198Z",
+    "last_seq": 0
+  }
+}
