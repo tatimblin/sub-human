@@ -73,6 +73,22 @@ test('mcp: every tool errors until the parent session joins, then works without 
   await s.close();
 });
 
+test('mcp: watch survives a backlog larger than one batch (no crash), and pages through it', async () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  room.bind(code);
+  room.append({ kind: 'say', text: 'first' }, { via: 'human', from: 'bob' });
+  const s = await ready({ SUB_HUMAN_WATCH_COALESCE_MS: '50', SUB_HUMAN_WATCH_POLL_MS: '50' });
+  const text = r => r.result.content[0].text;
+  assert.match(text(await s.tool('watch', {})), /1 new/);  // sets the cursor
+  for (let i = 0; i < 40; i++) room.append({ kind: 'say', text: `m${i}` }, { via: 'human', from: 'bob' });
+  const a = await s.tool('watch', {});
+  assert.ok(!a.error && !a.result.isError, JSON.stringify(a));
+  assert.match(text(a), /30 new/);
+  assert.match(text(await s.tool('watch', {})), /10 new/);
+  assert.equal(await s.close(), 0);
+});
+
 test('mcp: post is stamped from the ancestry identity, not env; system and human kinds are refused', async () => {
   h.freshHome();
   const { code } = h.register('alice');

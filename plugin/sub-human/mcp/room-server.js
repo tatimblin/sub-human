@@ -184,7 +184,8 @@ function watch(id, me, progressToken) {
   const stop = room.follow(after, e => {
     if (done || got.length >= WATCH_MAX) return;
     got.push(e);
-    if (got.length >= WATCH_MAX) return flush();
+    // follow() replays a backlog synchronously, before stop/timer/intervals exist: flush on the next tick.
+    if (got.length >= WATCH_MAX) { clearTimeout(coalesce); coalesce = setTimeout(flush, 0); return; }
     if (!coalesce) coalesce = setTimeout(flush, WATCH_COALESCE_MS);
   }, { intervalMs: WATCH_POLL_MS });
   function flush() {
