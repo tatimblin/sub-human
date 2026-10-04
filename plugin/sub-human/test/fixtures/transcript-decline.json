@@ -1,0 +1,80 @@
+[
+ {
+  "parentUuid": "f84b",
+  "isSidechain": false,
+  "message": {
+   "model": "claude-sonnet-5",
+   "id": "msg_011",
+   "type": "message",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "tool_use",
+     "id": "toolu_01TPMFGmTb2Mn5x1RBLn3zrG",
+     "name": "ExitPlanMode",
+     "input": {
+      "plan": "---\nsub-human: {}\n---\n",
+      "planFilePath": "/Users/x/.claude/plans/task-snug-rocket.md"
+     },
+     "caller": {
+      "type": "direct"
+     }
+    }
+   ],
+   "stop_reason": "tool_use"
+  },
+  "type": "assistant",
+  "uuid": "a5cd"
+ },
+ {
+  "parentUuid": "a5cd",
+  "isSidechain": false,
+  "promptId": "b7f2",
+  "type": "user",
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "type": "tool_result",
+     "content": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\nOBJECT: use 3 retries not 5\n\nNote: The user's next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they'd prefer you to work, consider saving that to memory for future sessions.",
+     "is_error": true,
+     "tool_use_id": "toolu_01TPMFGmTb2Mn5x1RBLn3zrG"
+    }
+   ]
+  },
+  "uuid": "7cba",
+  "toolUseResult": "Error: …",
+  "toolDenialKind": "user-rejected",
+  "userFeedback": "OBJECT: use 3 retries not 5"
+ },
+ {
+  "parentUuid": "7cba",
+  "isSidechain": false,
+  "type": "user",
+  "message": {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "[Request interrupted by user for tool use]"
+    }
+   ]
+  },
+  "uuid": "8d01"
+ },
+ {
+  "parentUuid": "8d01",
+  "isSidechain": false,
+  "message": {
+   "role": "assistant",
+   "content": [
+    {
+     "type": "text",
+     "text": "Understood."
+    }
+   ]
+  },
+  "type": "assistant",
+  "uuid": "9e12"
+ }
+]

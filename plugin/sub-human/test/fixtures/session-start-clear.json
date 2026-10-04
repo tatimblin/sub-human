@@ -1,0 +1,9 @@
+{
+ "session_id": "8cea5671-97a8-49c2-bcdb-4a62d51b6a18",
+ "transcript_path": "/Users/x/.claude/projects/-private-tmp-sh-probe-work-p3/e2fc1ca3-eebb-4bbd-a8f1-beb254598180.jsonl",
+ "cwd": "/private/tmp/sh-probe/work/p3",
+ "scratchpad_dir": "/private/tmp/claude-501/-private-tmp-sh-probe-work-p3/e2fc1ca3-eebb-4bbd-a8f1-beb254598180/scratchpad",
+ "hook_event_name": "SessionStart",
+ "source": "clear",
+ "model": "claude-haiku-4-5-20251001"
+}

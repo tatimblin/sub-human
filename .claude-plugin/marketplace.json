@@ -1,0 +1,18 @@
+{
+  "name": "sub-human",
+  "owner": {
+    "name": "Tristan Timblin",
+    "email": "tatimblin@gmail.com"
+  },
+  "metadata": {
+    "description": "Marketplace for the sub-human plugin."
+  },
+  "plugins": [
+    {
+      "name": "sub-human",
+      "source": "./plugin/sub-human",
+      "description": "Shared planning rooms across Claude Code sessions on one machine, with per-member native plan approval.",
+      "version": "0.1.0"
+    }
+  ]
+}

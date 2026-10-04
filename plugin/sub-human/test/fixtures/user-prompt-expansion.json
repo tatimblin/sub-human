@@ -1,0 +1,14 @@
+{
+ "session_id": "e2fc1ca3-eebb-4bbd-a8f1-beb254598180",
+ "transcript_path": "/Users/x/.claude/projects/-private-tmp-sh-probe-work-p3/e2fc1ca3-eebb-4bbd-a8f1-beb254598180.jsonl",
+ "cwd": "/private/tmp/sh-probe/work/p3",
+ "scratchpad_dir": "/private/tmp/claude-501/-private-tmp-sh-probe-work-p3/e2fc1ca3-eebb-4bbd-a8f1-beb254598180/scratchpad",
+ "prompt_id": "aa928a81-fa3b-493c-89f2-f4b6cf0a02cf",
+ "permission_mode": "default",
+ "hook_event_name": "UserPromptExpansion",
+ "expansion_type": "slash_command",
+ "command_name": "sub-human:sub-human",
+ "command_args": "alice otter-1234",
+ "command_source": "plugin",
+ "prompt": "/sub-human:sub-human alice otter-1234"
+}

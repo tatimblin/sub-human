@@ -1,6 +1,0 @@
-#!/bin/zsh
-# reset: clear the room and restore the app to its starting state.
-root=${0:A:h:h:h}
-rm -rf "$root/demo/.room" "$root/demo/PLAN.md" "$root/demo/app"
-cp -R "$root/demo/app.pristine" "$root/demo/app"
-echo "room cleared, app restored"

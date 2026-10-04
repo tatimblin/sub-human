@@ -1,0 +1,211 @@
+#!/usr/bin/env node
+'use strict';
+/**
+ * plugin/sub-human/bin/sub-human: the read-only CLI over the room (ported from demo/bin/room). There is no
+ * post command: writes come only from the plugin's hooks and the MCP server.
+ *
+ *   sub-human tail [ignored args...] [--max-seconds S]
+ *       The plugin monitor's command. Silent until resolveSelf() finds this session's registration (checked
+ *       every SUB_HUMAN_RESOLVE_MS, default 2000), then follows that room and prints one tailLine per
+ *       relevant entry, flushed. It re-resolves on the same interval and switches (or goes silent) if the
+ *       session's room or name changes. Resumes from the cursor tail-<name> and advances it only after a
+ *       line is flushed, so a restart loses nothing.
+ *         orch sees every entry not authored by orch.
+ *         a member sees entries to it, via=human entries from others, orch's posts to the room, and
+ *         via=system entries to the room (plan_rev, decision, member_joined/left, status). Never its own
+ *         entries, never other Claudes' chatter.
+ *   sub-human read [--id N[,M]] [--json] [--room CODE]
+ *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
+ *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
+ *   sub-human who                      this session's identity: "<name> (<role>) in <code>"
+ *   sub-human watch [CODE]             a live, colored feed for humans in a terminal
+ *
+ * Without --room / CODE, the room is this session's (process ancestry -> registered claude pid).
+ */
+
+const path = require('node:path');
+const identity = require(path.join(__dirname, '..', 'lib', 'identity.js'));
+const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
+
+const NOT_IN_ROOM = 'not in a room; run /sub-human';
+
+function die(msg, code = 2) {
+  process.stderr.write(msg + '\n');
+  process.exit(code);
+}
+
+function parseFlags(args, spec) {
+  const flags = {}, rest = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--') { rest.push(...args.slice(i + 1)); break; }
+    if (a.startsWith('--') && a.slice(2) in spec) {
+      if (spec[a.slice(2)]) flags[a.slice(2)] = args[++i];
+      else flags[a.slice(2)] = true;
+      if (flags[a.slice(2)] === undefined) die(`${a} needs a value`);
+    } else rest.push(a);
+  }
+  return { flags, rest };
+}
+
+const intList = s => String(s).split(',').filter(Boolean).map(x => {
+  const n = Number(x.replace(/^#/, ''));
+  if (!Number.isInteger(n) || n <= 0) die(`bad id "${x}"`);
+  return n;
+});
+
+/** Bind the room: an explicit code, else this session's. Returns {code, me|null}. */
+function bindRoom(explicit) {
+  if (explicit) {
+    if (!identity.roomExists(explicit)) die(`no room "${explicit}"`, 1);
+    room.bind(explicit);
+    const me = identity.resolveSelf();
+    return { code: explicit, me: me && me.code === explicit ? me : null };
+  }
+  const me = identity.resolveSelf();
+  if (!me) die(NOT_IN_ROOM, 1);
+  room.bind(me.code);
+  return { code: me.code, me };
+}
+
+// ---------- tail ----------
+function visibleTo(me) {
+  const toMe = e => e.to === me.name;
+  const toRoom = e => !e.to || e.to === 'room' || e.to === 'all';
+  return e => {
+    if (e.from === me.name) return false;
+    if (me.role === 'orch') return true;
+    if (toMe(e)) return true;
+    if (e.via === 'human') return true;
+    if (e.via === 'system') return toRoom(e);
+    if (e.from === 'orch') return toRoom(e);
+    return false;
+  };
+}
+
+function tail(args) {
+  const { flags } = parseFlags(args, { 'max-seconds': 1 });
+  const resolveMs = Number(process.env.SUB_HUMAN_RESOLVE_MS) > 0 ? Number(process.env.SUB_HUMAN_RESOLVE_MS) : 2000;
+  const pollMs = Number(process.env.SUB_HUMAN_POLL_MS) > 0 ? Number(process.env.SUB_HUMAN_POLL_MS) : 250;
+  process.stdout.on('error', () => process.exit(0));
+
+  let sess = null; // {key, code, name, stop, save, dead}
+
+  function start(me) {
+    room.bind(me.code);
+    const reader = `tail-${me.name}`;
+    const last = room.lastId();
+    let after = room.getCursor(reader);
+    if (!(after > 0 && after <= last)) {
+      // First watch for this name: start at its join so nothing between join and resolve is lost.
+      const joined = room.readAll().filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1);
+      after = joined ? joined.id : last;
+    }
+    room.setCursor(reader, after);
+    const s = { key: `${me.code}/${me.name}/${me.role}`, code: me.code, dead: false };
+    // The cursor is the highest id h such that every notice for ids <= h has been flushed to stdout.
+    const inflight = [];
+    let processed = after, saved = after;
+    s.save = () => {
+      if (s.dead) return;
+      const h = inflight.length ? inflight[0] - 1 : processed;
+      if (h > saved) { saved = h; room.bind(s.code); room.setCursor(reader, h); }
+    };
+    const show = visibleTo(me);
+    s.stop = room.follow(after, e => {
+      if (s.dead) return;
+      if (e.id <= processed) { saved = 0; room.setCursor(reader, 0); } // the log was reset under us
+      processed = e.id;
+      if (!show(e)) return s.save();
+      inflight.push(e.id);
+      process.stdout.write(room.tailLine(e) + '\n', () => { inflight.shift(); s.save(); });
+    }, { intervalMs: pollMs });
+    sess = s;
+  }
+
+  function stopSess() {
+    if (!sess) return;
+    sess.stop();
+    sess.save();
+    sess.dead = true;
+    sess = null;
+  }
+
+  function check() {
+    let me = null;
+    try { me = identity.resolveSelf(); } catch { /* transient ps failure: keep the current state */ return; }
+    const key = me ? `${me.code}/${me.name}/${me.role}` : null;
+    if (sess && sess.key === key) return;
+    stopSess();
+    if (me) start(me);
+  }
+
+  check();
+  const timer = setInterval(check, resolveMs);
+  if (flags['max-seconds'] != null) {
+    const max = Number(flags['max-seconds']);
+    if (!(max > 0)) die(`bad --max-seconds "${flags['max-seconds']}"`);
+    setTimeout(() => { clearInterval(timer); stopSess(); }, max * 1000); // node exits once stdout drains
+  }
+}
+
+// ---------- read / digest / who / watch ----------
+function read(args) {
+  const { flags } = parseFlags(args, { id: 1, json: 0, room: 1 });
+  const { me } = bindRoom(flags.room);
+  const show = es => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : room.fmt(e) + '\n'));
+  if (flags.id) {
+    const es = room.readById(intList(flags.id));
+    if (!es.length) die('(no such entries)', 1);
+    return show(es);
+  }
+  if (!me) return show(room.readAll().slice(-50));
+  const cursor = `read-${me.name}`;
+  const es = room.readAfter(room.getCursor(cursor));
+  if (!es.length) return console.log('(no new messages)');
+  show(es);
+  room.setCursor(cursor, es.at(-1).id);
+}
+
+function digest(args) {
+  const { flags } = parseFlags(args, { room: 1 });
+  bindRoom(flags.room);
+  process.stdout.write(room.digest() + '\n');
+}
+
+function who() {
+  const me = identity.resolveSelf();
+  if (!me) die(NOT_IN_ROOM, 1);
+  console.log(`${me.name} (${me.role}) in ${me.code}`);
+}
+
+function watch(args) {
+  const { rest } = parseFlags(args, {});
+  bindRoom(rest[0]);
+  const palette = ['\x1b[36m', '\x1b[33m', '\x1b[32m', '\x1b[34m', '\x1b[31m', '\x1b[37m'];
+  const colorOf = name => name === 'orch' ? '\x1b[35m'
+    : palette[[...String(name)].reduce((a, c) => (a + c.codePointAt(0)) % palette.length, 0)];
+  const kindColor = { decision: '\x1b[1;32m', signoff: '\x1b[32m', objection: '\x1b[31m', plan_rev: '\x1b[1;34m',
+    member_joined: '\x1b[2;32m', member_left: '\x1b[2;31m' };
+  const reset = '\x1b[0m', dim = '\x1b[2m';
+  console.log(`${dim}watching ${room.logPath()}${reset}\n`);
+  room.follow(0, e => {
+    const n = room.normalize(e);
+    const label = n.via === 'human' ? `\x1b[1m${room.who(n)}${reset}` : `${dim}${room.who(n)}${reset}`;
+    const whoStr = colorOf(n.from) + label + reset;
+    const kind = (kindColor[n.kind] || dim) + n.kind + reset;
+    const meta = [n.to !== 'room' && `→ ${n.to}`, n.refs && `refs ${n.refs.map(r => '#' + r).join(',')}`,
+      n.plan_hash && `plan ${n.plan_hash}`, Array.isArray(n.approvers) && `approvers ${n.approvers.join(',')}`]
+      .filter(Boolean).join('  ');
+    console.log(`${dim}#${n.id} ${String(n.at).slice(11, 19)}${reset}  ${whoStr}  ${kind}  ${dim}${meta}${reset}`);
+    console.log(String(n.text).split('\n').map(l => '    ' + l).join('\n') + '\n');
+  }, { intervalMs: 500 });
+}
+
+const [cmd, ...args] = process.argv.slice(2);
+const cmds = { tail, read, digest, who, watch };
+try {
+  (cmds[cmd] || (() => die('usage: sub-human tail|read [--id N,M]|digest|who|watch [CODE]')))(args);
+} catch (e) {
+  die(e.message, 2);
+}
