@@ -39,15 +39,6 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.js\""
           }
         ]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/plan-backup.js\""
-          }
-        ]
       }
     ],
     "PostToolUse": [
@@ -59,19 +50,36 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/plan-result.js\""
           }
         ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-map.js\""
+          }
+        ]
       }
     ],
-    "Stop": [
+    "SubagentStop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop-feedback.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-hold.js\""
           }
         ]
       }
     ],
     "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-launcher.js\""
+          }
+        ]
+      },
       {
         "matcher": "compact|clear|resume",
         "hooks": [
@@ -98,6 +106,27 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.js\""
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "idle_prompt|permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/presence.js\""
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/presence.js\""
           }
         ]
       }
