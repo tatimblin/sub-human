@@ -27,14 +27,19 @@ The room works like subagents. **The orchestrator's** panel lists every member d
 **A member's** panel has a single row named after the room, e.g. `marmot-2509`. The other members sit inside it, one level down. Members get no status line: the room row's text carries what the status line would have said (`⚠ your sign-off needed`, `✉ 1 for you`, plan progress). Inside the room, the orchestrator's posts are labelled `facilitator`:
 
 ```
-Alice's panel                         Enter on marmot-2509          Enter on bob
-● main                                main › marmot-2509            main › marmot-2509 › bob
-◯ marmot-2509  plan 593da0 1/2 ·      facilitator posts, plan       bob's words + bob's Claude
-               ⚠ your sign-off needed revs, decision                (labelled separately)
-                                      ◯ bob   working
+Alice's panel                         Enter on marmot-2509          ↓ to bob, Enter
+● main                                ◯ main                        ◯ main
+◯ marmot-2509  plan 593da0 1/2 ·      ● marmot-2509                 ◯ marmot-2509
+               ⚠ your sign-off needed   └ bob   working               └●bob   working
+                                      (facilitator posts, plan      (bob's words + bob's Claude,
+                                       revs, decision)               labelled separately)
 ```
 
-Esc steps back out one level. All row views are read-only; talking happens in `main`.
+Verified in P0 (`docs/experiments/P0-nested-rows.md`):
+- **No breadcrumb, and Esc doesn't step back a level.** Go back up with ↑ to the parent row and Enter.
+- **A second Esc kills the agent you're viewing.** Killing the room kills its members too. See Risks for the recovery.
+
+All row views are read-only; talking happens in `main`.
 
 When a plan is published, each approver gets a native form in their own terminal:
 
@@ -53,7 +58,7 @@ Full plan: ~/.sub-human/rooms/marmot-2509/plans/593da0.md   (or: sub-human plan)
 | Join | `/sub-human [NAME] [CODE]` from your own session. The CODE may be left out when exactly one room is open. | user |
 | Identity | Hooks use the session id. The MCP server uses its parent claude pid via a direct lookup, not an ancestry walk. Process-start checks and forgery guards are dropped. | user, 09 |
 | Orchestrator | The plugin agent `sub-human:orchestrator`, launched with `claude --agent sub-human:orchestrator --permission-mode plan`. Hooks see `agent_type`, and `tools:` excludes Bash. | 08 |
-| Rows | **Orchestrator:** a `participant` row per member. **Member:** one row named after the room, with the other members nested inside it as that row's own child rows (**probe P0**; fallback: members listed inside orch's view as readable text, with `sub-human watch NAME` for a full thread). Each row is a `participant` agent (haiku, background). Each makes one `hold({member})` MCP call that never returns and streams progress. `subagentStatusLine` computes the row text from the log. Agent id → participant is mapped in **PostToolUse(Agent)**. A SubagentStop hook re-holds the call. | E1, E3 |
+| Rows | **Orchestrator:** a `participant` row per member. **Member:** a `room` agent (haiku, background, tools `Agent` + `hold`). In one message it spawns a `participant` child per other member and calls `hold`. When `hold` returns `JOINED` or `RESPAWN NAME`, it spawns that child again (depth 2 of the default limit of 3; P0). Every row is held in a `hold` call. `subagentStatusLine` also renders nested rows. To tell rooms from members, PostToolUse(Agent) records child → room: there, `agent_id` is the room and `tool_response.agentId` is the child. Each makes one `hold({member})` MCP call that never returns and streams progress. `subagentStatusLine` computes the row text from the log. Agent id → participant is mapped in **PostToolUse(Agent)**. A SubagentStop hook re-holds the call. | E1, E3 |
 | Row view | Read-only. Talking happens in `main` (`@room`, or ask your Claude). `sub-human watch NAME` prints a person's full thread. | E1 |
 | Sign-off | The room server sends `elicitation/create` to each approver when a `plan_rev` arrives. Approve logs `signoff via=human`; object logs `objection via=human` with the reason. Esc re-offers the form after 10 minutes, or when the user says "review". A new revision cancels the stale form. | E2 |
 | Plan text | A 3-line summary, the path, and `sub-human plan`, which prints the full plan. | E2 |
@@ -91,14 +96,9 @@ Full plan: ~/.sub-human/rooms/marmot-2509/plans/593da0.md   (or: sub-human plan)
 - `README.md`;
 - tests.
 
-## Probe first (P0)
+## Probe P0: done
 
-Does Claude Code's agent panel show a background subagent's own child agents when you open that subagent? A member's room-row agent would start child rows for the other members.
-
-- **If it does**, members get true nested rows.
-- **If it doesn't**, use the fallback in the Design table.
-
-One probe session settles it (agent B, before building rows).
+True nesting works in 2.1.281. The details are in `docs/experiments/P0-nested-rows.md`.
 
 ## Build (subagents in parallel, each owning separate files)
 
@@ -155,6 +155,6 @@ The **Ghostty view** is optional: for a live look, `scripts/demo.sh --windows` a
 | Risk | Fallback |
 |---|---|
 | A haiku participant agent doesn't spawn rows reliably on join or rejoin (E1 needed a nudge on rejoin) | Make the join context list exact Agent calls. The restore hook re-prompts. A row that's still missing shows in the status line as `⚠ rows: 1 missing`. |
-| Esc inside a row view aborts `hold` | The SubagentStop re-hold hook restarts it. Verified in S11. |
+| Esc twice kills the row agent being viewed. SubagentStop does **not** fire for that. | **Member row killed:** the hold server sees the cancelled call and returns `RESPAWN NAME` to the room's `hold`, and the room spawns the row again in about 5 s (verified in P0). The dead row stays as a duplicate until `/clear`. **Room row killed:** a monitor line wakes `main` to spawn the room again. This is untested and goes in the build verification (S11). |
 | `on-skill-invoke` monitor isn't restored after `--resume` | Session-restore asks the human to rerun `/sub-human`. If that's flaky, go back to `always` with a silent tail. |
 | Agents B and C both need the room server | Already split: `mcp/hold.js` (B) and `mcp/signoff.js` (C), wired into `room-server.js` by A. |
