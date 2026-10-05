@@ -42,7 +42,8 @@ test('20 hostile strings after "@room " are logged byte-identical, via human, an
   for (const s of HOSTILE) {
     const r = w.hook('at-room', submit('@room ' + s), { as: 'alice' });
     blocked(r);
-    assert.match(r.json.reason, /posted to room .* as #\d+/);
+    assert.match(r.json.reason, /^✓ posted to [a-z]+-\d+ as #\d+$/);
+    assert.doesNotMatch(r.json.reason, /block|error|sub-human:/i);
   }
   const es = w.entries();
   assert.equal(es.length, 20);
@@ -77,6 +78,7 @@ test('pasted_content blocks are unwrapped and marked normalized', () => {
 
 test('task notifications, slash commands and plain prompts are not posted', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
+  // a task notification that quotes "@room" is never treated as a post
   for (const p of ['<task-notification>\n<event>@room x</event>\n</task-notification>', '/sub-human:sub-human alice x', 'hello @room', '@roomy', 'Room: x']) {
     const r = w.hook('at-room', submit(p), { as: 'alice' });
     assert.equal((r.json || {}).decision, undefined, p);
@@ -88,15 +90,15 @@ test('orchestrator and non-members are refused; an empty post is refused', () =>
   const w = new World({ orch: 'act', alice: 'sleep' });
   let r = w.hook('at-room', submit('@room hi'), { as: 'orch' });
   blocked(r);
-  assert.match(r.json.reason, /orchestrator is unattended; join from another session/);
+  assert.match(r.json.reason, /^✗ not posted: this is the orchestrator's session, which runs unattended\. Join from another session/);
   const w2 = new World({ orch: 'sleep', alice: 'act' });
   r = w2.hook('at-room', submit('@room    '), { as: 'alice' });
   blocked(r);
-  assert.match(r.json.reason, /nothing to post/);
+  assert.match(r.json.reason, /^✗ not posted: there is nothing after @room/);
   const w3 = new World({ orch: 'sleep' });
   r = w3.hook('at-room', submit('@room hi'));
   blocked(r);
-  assert.match(r.json.reason, /not in a room/);
+  assert.match(r.json.reason, /^✗ not posted: this session is not in a room/);
   assert.equal(w.entries().length + w2.entries().length + w3.entries().length, 0);
 });
 
@@ -108,10 +110,41 @@ test('the next ordinary prompt injects the member\'s unseen @room posts, once', 
   let r = w.hook('at-room', submit('what is next?'), { as: 'alice' });
   assert.equal(r.json.decision, undefined);
   const c = ctx(r);
-  assert.match(c, /alice posted to room .* directly with @room/);
-  assert.match(c, /#1 "first words"/);
-  assert.match(c, /#3 "second"/);
+  assert.match(c, /alice typed these straight into room .* with @room/);
+  assert.match(c, /^Your human posted #1 to the room: "first words"$/m);
+  assert.match(c, /^Your human posted #3 to the room: "second"$/m);
+  assert.match(c, /do not re-post/);
   assert.doesNotMatch(c, /bob speaks/);
   r = w.hook('at-room', submit('and now?'), { as: 'alice' });
   assert.equal(r.stdout, '', 'already seen');
+});
+
+test('receipt shows the number and the unwrap note, and nothing else', () => {
+  const w = new World({ orch: 'sleep', alice: 'act' });
+  let r = w.hook('at-room', submit('@room hello'), { as: 'alice' });
+  const code = r.json.reason.match(/posted to (\S+) as/)[1];
+  assert.equal(r.json.reason, `✓ posted to ${code} as #1`);
+  r = w.hook('at-room', submit('@room \n\n<pasted_content id="1">\nA\n</pasted_content id="1">\n'), { as: 'alice' });
+  assert.equal(r.json.reason, `✓ posted to ${code} as #2 (pasted text unwrapped)`);
+  assert.equal(r.json.systemMessage, undefined, 'systemMessage is not rendered on a blocked prompt');
+});
+
+test('a task notification turn also gets the unseen @room posts', () => {
+  const w = new World({ orch: 'sleep', alice: 'act' });
+  w.hook('at-room', submit('@room ship it'), { as: 'alice' });
+  const r = w.hook('at-room', submit('<task-notification>\n<event>ROOM #2 orch: ok</event>\n</task-notification>'), { as: 'alice' });
+  assert.equal(r.json.decision, undefined);
+  assert.match(ctx(r), /^Your human posted #1 to the room: "ship it"$/m);
+  assert.equal(w.entries().length, 1, 'the notification was not posted');
+});
+
+test('the unseen window starts at the seat\'s first post, not at the start of the log', () => {
+  const w = new World({ orch: 'sleep', alice: 'act' });
+  // an earlier seat named alice (e.g. before a leave and rejoin) posted long ago
+  w.append({ kind: 'say', text: 'old alice words' }, { via: 'human', from: 'alice' });
+  w.append({ kind: 'say', text: 'orch reply' }, { via: 'agent', from: 'orch' });
+  w.hook('at-room', submit('@room new words'), { as: 'alice' });
+  const c = ctx(w.hook('at-room', submit('hi'), { as: 'alice' }));
+  assert.match(c, /#3 to the room: "new words"/);
+  assert.doesNotMatch(c, /old alice words/);
 });
