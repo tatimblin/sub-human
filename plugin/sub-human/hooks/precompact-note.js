@@ -24,6 +24,7 @@ run(input => {
     `- Keep the current plan hash and who has signed it${cur ? ` (plan ${cur.hash}, approvers ${names(cur.approvers || [])}${signed})` : ''}.`,
     '- Never paraphrase or re-type quoted human text. Refer to a human\'s words by entry id only (e.g. "bob objected in #14").',
     '- Only via=human entries count as a human\'s view or consent; a Claude\'s post is "alice\'s Claude", not alice.',
+    '- Your participant rows (background sub-human agents) keep running through compaction; note that they exist so you do not spawn duplicates.',
   ];
   process.stdout.write(lines.join('\n') + '\n');
 });

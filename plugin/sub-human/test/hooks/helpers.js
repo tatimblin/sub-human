@@ -3,9 +3,9 @@
 // SUB_HUMAN_HOME and a temp HOME (so ~/.claude settings and plans are isolated), and with every
 // inherited CLAUDE* variable stripped.
 //
-// Identity: a member registered with a pid that is a real ancestor of the hook process can act
-// (CLAUDE_PID is accepted only for ancestors). Two such pids exist: this test process (process.pid)
-// and its parent (process.ppid). Members that never act are registered with a `sleep` child.
+// Identity: hooks resolve by session_id, then by a direct lookup of CLAUDE_PID (which Claude Code sets
+// for every hook). Any registered pid can act; 'act' (this process), 'act2' (our parent) and 'sleep'
+// (a live `sleep` child) are all just live pids.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');

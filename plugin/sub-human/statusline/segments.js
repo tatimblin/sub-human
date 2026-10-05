@@ -1,8 +1,20 @@
 'use strict';
 /**
  * plugin/sub-human/statusline/segments.js: what the room looks like from one seat, as a short status line.
- * Shared by `sub-human statusline` (the main status line), `sub-human agent-statusline` (the room agent's
- * row in the agent panel) and the tail's alerts (lib/room.js does the reading; this file only derives).
+ * Shared by `sub-human statusline` (the main status line), `sub-human agent-statusline` (the participant and
+ * room rows in the agent panel) and the tail's alerts.
+ *
+ * Entry points for bin/sub-human (each takes the parsed stdin JSON and returns the text to print, '' for none;
+ * neither throws):
+ *   statusline(input) -> string        `statusLine`: e.g. "⬡ marmot-2509 · orch · plan 593da0 1/2 waiting on bob"
+ *       plus "⚠ rows: N missing" when the seat's rows have no live hold (lib/rows.js missingRows).
+ *   agentStatusline(input) -> string   `subagentStatusLine`: one {"id","content"} JSON line per row task in
+ *       input.tasks, found through the row map (lib/rows.js readRowMap), else by description (a member name or
+ *       the room code). participant rows -> "alice  ✓ signed 593da0 · idle"; the room row -> "marmot-2509  plan
+ *       593da0 1/2 · ⚠ your sign-off needed"; nested participant rows likewise. A killed row reads
+ *       "bob  (reconnecting)" inside a room, "bob  ⚠ row stopped" at top level ("bob  left" once bob has left).
+ *       Other tasks keep their default.
+ *   The seat comes from input.session_id (identity.resolveBySession), else identity.resolveSelf().
  *
  *   state(me, entries) -> {code, name, role, plan, forMe, needed}
  *       me = {code, name, role} (identity.resolve*). entries = the room log (room.readAll()).
@@ -94,6 +106,11 @@ const SEGMENTS = [
     name: 'mail',
     render: (st, c) => st.forMe > 0 ? `${c.warn}✉ ${st.forMe} for you${c.reset}` : null,
   },
+  {
+    // Filled in by statusline() (lib/rows.js missingRows); absent in plain state().
+    name: 'rows',
+    render: (st, c) => st.rowsMissing && st.rowsMissing.length ? `${c.warn}⚠ rows: ${st.rowsMissing.length} missing${c.reset}` : null,
+  },
 ];
 
 function render(st, { color = false, segments = SEGMENTS, sep = ' · ' } = {}) {
@@ -101,4 +118,66 @@ function render(st, { color = false, segments = SEGMENTS, sep = ' · ' } = {}) {
   return segments.map(s => s.render(st, c)).filter(Boolean).join(sep);
 }
 
-module.exports = { state, render, SEGMENTS, colors, useColor };
+// ---------- entry points (bin/sub-human statusline | agent-statusline) ----------
+const path = require('node:path');
+const LIB = path.join(__dirname, '..', 'lib');
+const lazy = name => require(path.join(LIB, name));
+
+function seatOf(input) {
+  const identity = lazy('identity.js');
+  let me = null;
+  try { if (input && typeof input.session_id === 'string') me = identity.resolveBySession(input.session_id); } catch { me = null; }
+  if (!me) { try { me = identity.resolveSelf(); } catch { me = null; } }
+  return me && me.code ? me : null;
+}
+
+function statusline(input = {}, { env = process.env } = {}) {
+  try {
+    const me = seatOf(input);
+    if (!me) return '';
+    const rows = lazy('rows.js');
+    const st = state(me, rows.readLog(me.code));
+    try { st.rowsMissing = rows.missingRows(me.code, me); } catch { st.rowsMissing = []; }
+    return render(st, { color: useColor(env) });
+  } catch { return ''; }
+}
+
+function agentStatusline(input = {}, { env = process.env } = {}) {
+  try {
+    const tasks = Array.isArray(input && input.tasks) ? input.tasks : [];
+    if (!tasks.length) return '';
+    const me = seatOf(input);
+    if (!me) return '';
+    const rows = lazy('rows.js');
+    const identity = lazy('identity.js');
+    const map = rows.readRowMap(me.code);
+    const members = identity.readMembers(me.code) || {};
+    const entries = rows.readLog(me.code);
+    const color = useColor(env);
+    const out = [];
+    for (const t of tasks) {
+      if (!t || typeof t.id !== 'string') continue;
+      let rec = map[t.id];
+      if (!rec) {
+        const d = String(t.description || '').trim();
+        if (d === me.code) rec = { kind: 'room', name: d };
+        else if (members[d] && d !== me.name) rec = { kind: 'participant', name: d, parent: null };
+        else continue;
+      }
+      let content;
+      if (rec.kind === 'room') {
+        content = t.status === 'killed' || t.status === 'failed'
+          ? rows.rowLine(rec.name, '⚠ room row stopped')
+          : rows.rowLine(rec.name, rows.rowText(me.code, me.code, me.name, { entries, members, color }));
+      } else if ((t.status === 'killed' || t.status === 'failed') && members[rec.name] && !members[rec.name].left_at) {
+        content = rows.rowLine(rec.name, rec.parent ? '(reconnecting)' : '⚠ row stopped');
+      } else {
+        content = rows.rowLine(rec.name, rows.rowText(me.code, rec.name, me.name, { entries, members, color }));
+      }
+      out.push(JSON.stringify({ id: t.id, content }));
+    }
+    return out.join('\n');
+  } catch { return ''; }
+}
+
+module.exports = { state, render, SEGMENTS, colors, useColor, statusline, agentStatusline, seatOf };

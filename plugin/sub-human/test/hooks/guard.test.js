@@ -3,7 +3,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { World, fixture, decision } = require('./helpers.js');
+const { World, fixture, decision, PLUGIN } = require('./helpers.js');
+
+const BIN = path.join(PLUGIN, 'bin', 'sub-human');
 
 const pre = (tool_name, tool_input) => ({ ...fixture('pre-mcp'), tool_name, tool_input, mcp_server: undefined });
 
@@ -21,6 +23,17 @@ test('guard table', () => {
     ['Bash', { command: 'sub-human read --id 3,4' }, 'alice', 'allow'],
     ['Bash', { command: 'sub-human digest' }, 'alice', 'allow'],
     ['Bash', { command: 'sub-human who' }, 'alice', 'allow'],
+    ['Bash', { command: 'sub-human plan' }, 'alice', 'allow'],
+    ['Bash', { command: 'sub-human plan abcdef012345' }, 'alice', 'allow'],
+    ['Bash', { command: 'sub-human watch bob' }, 'alice', 'allow'],
+    ['Bash', { command: `${BIN} digest` }, 'alice', 'allow'],
+    ['Bash', { command: `"${BIN}" watch bob` }, 'alice', 'allow'],
+    ['Bash', { command: '/tmp/evil/bin/sub-human digest' }, 'alice', undefined],
+    ['Bash', { command: 'sub-human watch bob; rm x' }, 'alice', undefined],
+    ['Bash', { command: 'sub-human plan $(rm x)' }, 'alice', undefined],
+    ['mcp__plugin_sub-human_room__hold', { member: 'bob' }, 'alice', 'deny'], // main thread: never
+    ['mcp__plugin_sub-human_room__review', {}, 'alice', 'allow'],
+    ['mcp__plugin_sub-human_room__watch', {}, 'alice', 'allow'],
     ['Bash', { command: 'sub-human read --id 3; rm -rf /' }, 'alice', undefined],
     ['Bash', { command: 'sub-human post hi' }, 'alice', undefined],
     ['Bash', { command: 'sub-human who && echo x' }, 'alice', undefined],
@@ -45,21 +58,16 @@ test('guard table', () => {
   }
 });
 
-test('guard: only the background room agent may call watch', () => {
-  const w = new World({ orch: 'sleep', alice: 'act' });
-  const watch = 'mcp__plugin_sub-human_room__watch';
-  const main = w.hook('guard', pre(watch, {}), { as: 'alice' });
-  assert.equal(decision(main), 'deny', 'the main Claude must not block itself on watch');
-  const other = w.hook('guard', { ...pre(watch, {}), agent_type: 'general-purpose' }, { as: 'alice' });
-  assert.equal(decision(other), 'deny');
-  const roomAgent = w.hook('guard', { ...pre(watch, {}), agent_type: 'sub-human:room', agent_id: 'a1' }, { as: 'alice' });
-  assert.equal(decision(roomAgent), 'allow');
-});
-
 test('guard: the default home ~/.sub-human is protected too', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
   const r = w.hook('guard', pre('Write', { file_path: '~/.sub-human/rooms/x', content: 'x' }), { as: 'alice', env: { SUB_HUMAN_HOME: undefined } });
   assert.equal(decision(r), 'deny');
   const r2 = w.hook('guard', pre('Write', { file_path: path.join(w.userHome, '.sub-human', 'rooms', 'x'), content: 'x' }), { env: { SUB_HUMAN_HOME: undefined } });
   assert.equal(decision(r2), 'deny');
+});
+
+test('guard: hold is allowed for row subagents only', () => {
+  const w = new World({ orch: 'sleep', alice: 'act' });
+  const r = w.hook('guard', { ...pre('mcp__plugin_sub-human_room__hold', { room: w.code }), agent_id: 'a1', agent_type: 'sub-human:room' }, { as: 'alice' });
+  assert.equal(decision(r), 'allow');
 });

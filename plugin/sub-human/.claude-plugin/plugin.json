@@ -1,11 +1,16 @@
 {
   "name": "sub-human",
   "version": "0.1.0",
-  "description": "Plan together from separate Claude Code sessions on one machine: an unattended orchestrator facilitates a shared room, each member keeps their own Claude, and every member approves the room's plan in their own native plan dialog.",
+  "description": "Plan together from separate Claude Code sessions on one machine: an unattended orchestrator facilitates a shared room, members show up as rows in the agent panel, and each approver signs off on the room's plan in a native form in their own terminal.",
   "author": {
     "name": "Tristan Timblin",
     "email": "tatimblin@gmail.com"
   },
   "license": "UNLICENSED",
-  "keywords": ["collaboration", "planning", "pairing", "multiplayer"]
+  "keywords": [
+    "collaboration",
+    "planning",
+    "pairing",
+    "multiplayer"
+  ]
 }

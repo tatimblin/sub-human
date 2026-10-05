@@ -26,7 +26,7 @@ test('orch: publishes plan_rev from the plan FILE bytes, then denies naming ever
   assert.equal(r.code, 0, r.stderr);
   assert.equal(decision(r), 'deny');
   const h = plan.hash12(text);
-  assert.ok(reason(r).startsWith(`ROOM-GATE: plan ${h} lacks sign-off from alice and bob. Ask them by name; stay in plan mode.`), reason(r));
+  assert.ok(reason(r).startsWith(`ROOM-GATE: plan ${h} lacks sign-off from alice and bob. The sign-off form is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan mode.`), reason(r));
   assert.match(reason(r), /Published as plan_rev #1/);
   const es = w.entries();
   assert.deepEqual([es[0].kind, es[0].via, es[0].plan_hash, es[0].approvers], ['plan_rev', 'system', h, ['alice', 'bob']]);
@@ -200,65 +200,17 @@ test('not in a room: no opinion', () => {
 
 // ---------- member ----------
 
-test('member: stub -> plan file overwritten with canonical bytes, ask + updatedInput, pending_review recorded', () => {
-  const w = new World({ orch: 'sleep', alice: 'act' });
-  const canonical = roomPlan(w.code, ['alice'], '# CANONICAL PLAN\n\n- step one\n');
-  const h = w.publish(canonical, ['alice']);
-  const stub = w.lib(() => plan.stubFor(w.code, h));
-  const input = exitPlan(w, stub);
-  const r = w.hook('plan-gate', input, { as: 'alice' });
-  assert.equal(r.code, 0, r.stderr);
-  assert.equal(decision(r), 'ask');
-  assert.match(reason(r), new RegExp(`room ${w.code}'s plan ${h}`));
-  assert.deepEqual(hso(r).updatedInput, { ...input.tool_input, plan: canonical });
-  assert.equal(fs.readFileSync(input.tool_input.planFilePath, 'utf8'), canonical);
-  const pending = JSON.parse(fs.readFileSync(path.join(w.memberDir('alice'), 'pending_review.json'), 'utf8'));
-  assert.equal(pending.hash, h);
-  assert.equal(pending.pid, process.pid);
-  assert.equal(pending.tool_use_id, input.tool_use_id);
-  assert.equal(w.entries().length, 1, 'the member gate logs nothing');
-});
-
-test('member: drifted file text still shows the canonical plan', () => {
+test('member: ExitPlanMode passes through untouched, room frontmatter or not; nothing is logged', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
   const canonical = roomPlan(w.code, ['alice'], '# CANONICAL\n');
   w.publish(canonical, ['alice']);
-  const input = exitPlan(w, roomPlan(w.code, ['alice'], '# CANONICAL\n- sneaky extra line\n'));
-  const r = w.hook('plan-gate', input, { as: 'alice' });
-  assert.equal(decision(r), 'ask');
-  assert.equal(fs.readFileSync(input.tool_input.planFilePath, 'utf8'), canonical);
-});
-
-test('member: a local plan without frontmatter passes through untouched', () => {
-  const w = new World({ orch: 'sleep', alice: 'act' });
-  w.publish(roomPlan(w.code, ['alice']), ['alice']);
-  const input = exitPlan(w, '# My own plan\n1. refactor\n');
-  const r = w.hook('plan-gate', input, { as: 'alice' });
-  assert.equal(r.stdout, '');
-  assert.equal(fs.readFileSync(input.tool_input.planFilePath, 'utf8'), '# My own plan\n1. refactor\n');
-  assert.equal(fs.existsSync(path.join(w.memberDir('alice'), 'pending_review.json')), false);
-});
-
-test('member: denied while showClearContextOnPlanAccept is on (user or project settings)', () => {
-  const w = new World({ orch: 'sleep', alice: 'act' });
-  const h = w.publish(roomPlan(w.code, ['alice']), ['alice']);
-  const stub = w.lib(() => plan.stubFor(w.code, h));
-  for (const f of [path.join(w.userHome, '.claude', 'settings.json'), path.join(w.cwd, '.claude', 'settings.local.json')]) {
-    fs.mkdirSync(path.dirname(f), { recursive: true });
-    fs.writeFileSync(f, JSON.stringify({ showClearContextOnPlanAccept: true }));
-    const input = exitPlan(w, stub);
+  for (const text of ['# My own plan\n1. refactor\n', canonical]) {
+    const input = exitPlan(w, text);
     const r = w.hook('plan-gate', input, { as: 'alice' });
-    assert.equal(decision(r), 'deny');
-    assert.match(reason(r), /turn off clear-context-on-accept to review room plans/);
-    assert.match(reason(r), /"showClearContextOnPlanAccept": false/);
-    assert.equal(fs.readFileSync(input.tool_input.planFilePath, 'utf8'), stub, 'file not overwritten');
-    fs.unlinkSync(f);
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.stdout, '');
+    assert.equal(fs.readFileSync(input.tool_input.planFilePath, 'utf8'), text);
   }
-});
-
-test('member: nothing to review without a plan_rev', () => {
-  const w = new World({ orch: 'sleep', alice: 'act' });
-  const r = w.hook('plan-gate', exitPlan(w, `---\nsub-human: {"room":"${w.code}"}\n---\n`), { as: 'alice' });
-  assert.equal(decision(r), 'deny');
-  assert.match(reason(r), /nothing to review/);
+  assert.equal(w.entries().length, 1, 'only the plan_rev');
+  assert.equal(fs.existsSync(path.join(w.memberDir('alice'), 'pending_review.json')), false);
 });

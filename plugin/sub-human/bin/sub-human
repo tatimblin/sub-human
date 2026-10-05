@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * plugin/sub-human/bin/sub-human: the read-only CLI over the room (ported from demo/bin/room). There is no
- * post command: writes come only from the plugin's hooks and the MCP server.
+ * plugin/sub-human/bin/sub-human: the read-only CLI over the room. There is no post command: writes come only
+ * from the plugin's hooks and the MCP server. Without --room / CODE, the room is this session's
+ * (identity.resolveSelf(): the session id env, then the nearest registered ancestor claude pid).
  *
  *   sub-human tail [ignored args...] [--max-seconds S]
  *       The plugin monitor's command. Silent until resolveSelf() finds this session's registration (checked
@@ -10,37 +11,34 @@
  *       relevant entry, flushed. It re-resolves on the same interval and switches (or goes silent) if the
  *       session's room or name changes. Resumes from the cursor tail-<name> and advances it only after a
  *       line is flushed, so a restart loses nothing.
- *         orch sees every entry not authored by orch.
+ *         orch sees every entry not authored by orch, plus its own hook-written decisions.
  *         a member sees entries to it, via=human entries from others, orch's posts to the room, and
- *         via=system entries to the room (plan_rev, decision, member_joined/left, status). Never its own
- *         entries, never other Claudes' chatter.
+ *         via=system entries to the room. Never its own entries, never other Claudes' chatter.
+ *       It also alerts the human (statusline/alert.js, best-effort).
  *   sub-human read [--id N[,M]] [--json] [--room CODE]
  *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
  *   sub-human who                      this session's identity: "<name> (<role>) in <code>"
- *   sub-human watch [CODE]             a live, colored feed for humans in a terminal
- *   sub-human statusline
- *       For Claude Code's `statusLine` setting: reads its JSON from stdin, resolves the room by session_id
- *       (then process ancestry) and prints one line, e.g. `⬡ dingo-8953 · tristan · plan b7ca39 2/3 ✔`, with
- *       `⚠ your sign-off needed` / `✉ N for you` in color when the room waits on this person. Prints nothing
- *       when the session is not in a room. Segments: statusline/segments.js.
- *   sub-human agent-statusline
- *       For `subagentStatusLine`: one {"id","content"} JSON line per room-feed agent row (task name "room",
- *       or a description starting "sub-human room"); every other row keeps its default rendering.
- *
- * tail also alerts the human (E6, statusline/alert.js): a macOS notification plus a BEL on the claude
- * terminal when their sign-off becomes needed (once per plan hash) or an entry is addressed to them (at most
- * once per 30 s). SUB_HUMAN_NOTIFY=0 turns alerts off; SUB_HUMAN_ALERT_FILE=path writes them to a file.
- *
- * Without --room / CODE, the room is this session's (process ancestry -> registered claude pid).
+ *   sub-human plan [HASH] [--path] [--room CODE]
+ *       the current plan's canonical text (or the plan HASH, a unique prefix of at least 4 hex chars).
+ *       --path prints only its file path.
+ *   sub-human watch NAME [--room CODE] [--follow|--no-follow]
+ *       NAME's thread: their own words, their Claude's posts (labelled "NAME's Claude"), their sign-offs and
+ *       objections, their joins/leaves, and entries addressed to them. The orchestrator's posts are labelled
+ *       "facilitator". Follows live when stdout is a terminal (or with --follow).
+ *   sub-human statusline | agent-statusline
+ *       Claude Code's statusLine / subagentStatusLine commands (statusline/*, owner B). Never fail: on any
+ *       error they print nothing and exit 0.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
 const identity = require(path.join(__dirname, '..', 'lib', 'identity.js'));
 const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
-const segments = require(path.join(__dirname, '..', 'statusline', 'segments.js'));
-const { createAlerter } = require(path.join(__dirname, '..', 'statusline', 'alert.js'));
+const planLib = require(path.join(__dirname, '..', 'lib', 'plan.js'));
+const SL = path.join(__dirname, '..', 'statusline');
+/** Optional modules (statusline/*, owner B) are loaded lazily so a problem there never breaks tail/read. */
+function optional(file) { try { return require(path.join(SL, file)); } catch { return null; } }
 
 const NOT_IN_ROOM = 'not in a room; run /sub-human';
 
@@ -129,7 +127,8 @@ function tail(args) {
       if (h > saved) { saved = h; room.bind(s.code); room.setCursor(reader, h); }
     };
     const show = visibleTo(me);
-    const alerter = createAlerter({
+    const alertMod = optional('alert.js');
+    const alerter = alertMod && alertMod.createAlerter && alertMod.createAlerter({
       me, dir: room.dir(), pid: me.pid,
       lookup: hash => {
         room.bind(s.code);
@@ -141,7 +140,7 @@ function tail(args) {
       if (s.dead) return;
       if (e.id <= processed) { saved = 0; room.setCursor(reader, 0); } // the log was reset under us
       processed = e.id;
-      try { alerter.onEntry(e); } catch { /* alerts are best-effort */ }
+      try { if (alerter) alerter.onEntry(e); } catch { /* alerts are best-effort */ }
       if (!show(e)) return s.save();
       inflight.push(e.id);
       process.stdout.write(room.tailLine(e) + '\n', () => { inflight.shift(); s.save(); });
@@ -175,55 +174,47 @@ function tail(args) {
   }
 }
 
-// ---------- statusline / agent-statusline ----------
+// ---------- statusline / agent-statusline: dispatch to statusline/* (owner B) ----------
 function readStdinJson() {
   if (process.stdin.isTTY) return {};
   try { return JSON.parse(fs.readFileSync(0, 'utf8') || '{}') || {}; } catch { return {}; }
 }
 
-/** This session's seat: by session_id first, then process ancestry. Null (cheaply) when nobody is registered. */
-function statusSelf(input) {
-  const sid = input && typeof input.session_id === 'string' ? input.session_id : null;
-  const bySid = sid ? identity.resolveBySession(sid) : null;
-  if (bySid) return bySid;
-  try {
-    if (!fs.readdirSync(path.join(identity.home(), 'sessions', 'by-pid')).length) return null;
-  } catch { return null; }
-  return identity.resolveSelf();
-}
-
-function roomStatus(input) {
-  const me = statusSelf(input);
-  if (!me) return null;
-  room.bind(me.code);
-  return segments.state(me, room.readAll());
-}
-
-function statusline() {
-  let line = '';
-  try {
-    const st = roomStatus(readStdinJson());
-    if (st) line = segments.render(st, { color: segments.useColor() });
-  } catch { /* never break the status bar */ }
-  if (line) process.stdout.write(line + '\n');
-}
-
-const isRoomTask = t => !!t && typeof t.id === 'string' &&
-  (t.name === 'room' || /^sub-human room\b/i.test(String(t.description || '')));
-
-function agentStatusline() {
+/** Run B's renderer; whatever goes wrong, print nothing and exit 0 (never break Claude Code's bars). */
+function dispatchStatus(kind) {
   try {
     const input = readStdinJson();
-    const rows = Array.isArray(input.tasks) ? input.tasks.filter(isRoomTask) : [];
-    if (!rows.length) return;
-    const st = roomStatus(input);
-    if (!st) return;
-    const content = segments.render(st, { color: segments.useColor(), segments: segments.SEGMENTS.filter(x => x.name !== 'seat') });
-    for (const t of rows) process.stdout.write(JSON.stringify({ id: t.id, content }) + '\n');
-  } catch { /* keep the default rows */ }
+    const out = renderStatus(kind, input);
+    if (typeof out === 'string' && out) process.stdout.write(out.endsWith('\n') ? out : out + '\n');
+  } catch { /* keep the default rendering */ }
 }
+/**
+ * B's statusline/index.js ({statusline(input), agentStatusline(input)} -> text) when present; otherwise the
+ * segments.js renderer: one line for the main bar, and {"id","content"} lines for room-feed agent rows.
+ */
+function renderStatus(kind, input) {
+  const mod = optional('index.js');
+  if (mod) {
+    const fn = kind === 'agent' ? mod.agentStatusline : mod.statusline;
+    if (typeof fn === 'function') return fn(input);
+  }
+  const segments = optional('segments.js');
+  if (!segments) return '';
+  const sid = input && typeof input.session_id === 'string' ? input.session_id : null;
+  const me = (sid && identity.resolveBySession(sid)) || identity.resolveSelf();
+  if (!me) return '';
+  room.bind(me.code);
+  const st = segments.state(me, room.readAll());
+  if (kind !== 'agent') return segments.render(st, { color: segments.useColor() });
+  const isRoomTask = t => !!t && typeof t.id === 'string' && (t.name === 'room' || /^sub-human room\b/i.test(String(t.description || '')));
+  const rows = Array.isArray(input.tasks) ? input.tasks.filter(isRoomTask) : [];
+  const content = segments.render(st, { color: segments.useColor(), segments: segments.SEGMENTS.filter(x => x.name !== 'seat') });
+  return rows.map(t => JSON.stringify({ id: t.id, content })).join('\n');
+}
+const statusline = () => dispatchStatus('main');
+const agentStatusline = () => dispatchStatus('agent');
 
-// ---------- read / digest / who / watch ----------
+// ---------- read / digest / who ----------
 function read(args) {
   const { flags } = parseFlags(args, { id: 1, json: 0, room: 1 });
   const { me } = bindRoom(flags.room);
@@ -253,33 +244,77 @@ function who() {
   console.log(`${me.name} (${me.role}) in ${me.code}`);
 }
 
+// ---------- plan ----------
+function plan(args) {
+  const { flags, rest } = parseFlags(args, { room: 1, path: 0 });
+  const { code } = bindRoom(flags.room);
+  let hash = rest[0];
+  if (hash) {
+    if (!/^[0-9a-f]{4,12}$/.test(hash)) die(`bad plan hash "${hash}"`);
+    let files = [];
+    try { files = fs.readdirSync(room.plansDir()).filter(f => /^[0-9a-f]{12}\.md$/.test(f) && f.startsWith(hash)); } catch { /* none */ }
+    if (files.length > 1) die(`plan hash "${hash}" is ambiguous: ${files.map(f => f.slice(0, 12)).join(', ')}`, 1);
+    if (!files.length) die(`no plan ${hash} in room ${code}`, 1);
+    hash = files[0].slice(0, 12);
+  } else {
+    const cur = room.currentPlan();
+    if (!cur) die(`room ${code} has no plan yet`, 1);
+    hash = cur.hash;
+  }
+  if (flags.path) return console.log(planLib.planPath(code, hash));
+  const bytes = planLib.canonical(code, hash);
+  if (!bytes) die(`the text of plan ${hash} is missing from room ${code}`, 1);
+  process.stdout.write(bytes);
+  if (bytes.length && bytes[bytes.length - 1] !== 10) process.stdout.write('\n');
+}
+
+// ---------- watch NAME ----------
+/** Who an entry is from, as a person reading a thread would say it. */
+function label(e) {
+  if (e.via === 'system') return 'room';
+  if (e.from === 'orch') return 'facilitator';
+  return e.via === 'agent' ? `${e.from}'s Claude` : e.from;
+}
+
+function inThread(name) {
+  return e => e.from === name || e.to === name;
+}
+
 function watch(args) {
-  const { rest } = parseFlags(args, {});
-  bindRoom(rest[0]);
-  const palette = ['\x1b[36m', '\x1b[33m', '\x1b[32m', '\x1b[34m', '\x1b[31m', '\x1b[37m'];
-  const colorOf = name => name === 'orch' ? '\x1b[35m'
-    : palette[[...String(name)].reduce((a, c) => (a + c.codePointAt(0)) % palette.length, 0)];
-  const kindColor = { decision: '\x1b[1;32m', signoff: '\x1b[32m', objection: '\x1b[31m', plan_rev: '\x1b[1;34m',
-    member_joined: '\x1b[2;32m', member_left: '\x1b[2;31m' };
-  const reset = '\x1b[0m', dim = '\x1b[2m';
-  console.log(`${dim}watching ${room.logPath()}${reset}\n`);
-  room.follow(0, e => {
-    const n = room.normalize(e);
-    const label = n.via === 'human' ? `\x1b[1m${room.who(n)}${reset}` : `${dim}${room.who(n)}${reset}`;
-    const whoStr = colorOf(n.from) + label + reset;
-    const kind = (kindColor[n.kind] || dim) + n.kind + reset;
-    const meta = [n.to !== 'room' && `→ ${n.to}`, n.refs && `refs ${n.refs.map(r => '#' + r).join(',')}`,
-      n.plan_hash && `plan ${n.plan_hash}`, Array.isArray(n.approvers) && `approvers ${n.approvers.join(',')}`]
-      .filter(Boolean).join('  ');
-    console.log(`${dim}#${n.id} ${String(n.at).slice(11, 19)}${reset}  ${whoStr}  ${kind}  ${dim}${meta}${reset}`);
-    console.log(String(n.text).split('\n').map(l => '    ' + l).join('\n') + '\n');
-  }, { intervalMs: 500 });
+  const { flags, rest } = parseFlags(args, { room: 1, follow: 0, 'no-follow': 0 });
+  const name = rest[0];
+  if (!name) die('usage: sub-human watch NAME [--room CODE] [--follow|--no-follow]');
+  if (!identity.NAME_RE.test(name)) die(`bad name "${name}"`);
+  const { code } = bindRoom(flags.room);
+  const color = process.stdout.isTTY && !('NO_COLOR' in process.env);
+  const c = (code_, s) => color ? `\x1b[${code_}m${s}\x1b[0m` : s;
+  const kindColor = { decision: '1;32', signoff: '32', objection: '31', plan_rev: '1;34', member_joined: '2;32', member_left: '2;31' };
+  const show = inThread(name);
+  const print = raw => {
+    const e = room.normalize(raw);
+    if (!show(e)) return;
+    const who = label(e);
+    const whoStr = e.via === 'human' ? c('1', who) : who === 'facilitator' ? c('35', who) : c('2', who);
+    const meta = [e.to && e.to !== 'room' && `→ ${e.to === name ? name : e.to}`, e.refs && e.refs.length && `refs ${e.refs.map(r => '#' + r).join(',')}`,
+      e.plan_hash && `plan ${e.plan_hash.slice(0, 6)}`].filter(Boolean).join('  ');
+    console.log(`${c('2', `#${e.id} ${String(e.at || '').slice(11, 19)}`)}  ${whoStr}  ${c(kindColor[e.kind] || '2', e.kind)}${meta ? '  ' + c('2', meta) : ''}`);
+    console.log(String(e.text ?? '').split('\n').map(l => '    ' + l).join('\n') + '\n');
+  };
+  const follow = flags.follow ? true : flags['no-follow'] ? false : !!process.stdout.isTTY;
+  if (!follow) {
+    const es = room.readAll().filter(e => show(room.normalize(e)));
+    if (!es.length) return console.log(`(nothing from or to ${name} in room ${code})`);
+    return es.forEach(print);
+  }
+  console.log(c('2', `${name}'s thread in room ${code} (Ctrl-C to stop)`) + '\n');
+  process.stdout.on('error', () => process.exit(0));
+  room.follow(0, print, { intervalMs: 500 });
 }
 
 const [cmd, ...args] = process.argv.slice(2);
-const cmds = { tail, read, digest, who, watch, statusline, 'agent-statusline': agentStatusline };
+const cmds = { tail, read, digest, who, plan, watch, statusline, 'agent-statusline': agentStatusline };
 try {
-  (cmds[cmd] || (() => die('usage: sub-human tail|read [--id N,M]|digest|who|watch [CODE]|statusline|agent-statusline')))(args);
+  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | plan [HASH] | watch NAME | statusline | agent-statusline')))(args);
 } catch (e) {
   die(e.message, 2);
 }

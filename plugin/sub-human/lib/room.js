@@ -33,6 +33,7 @@
  * Plan and decisions:
  *   currentPlan() -> {id, hash, approvers}|null      the latest plan_rev
  *   planRev(hash) -> Entry|null                      the latest plan_rev with that hash
+ *   revNumber(hash) -> int|null                      1-based position of hash among the distinct plan hashes
  *   signoffMatrix(hash, approvers?) -> {hash, signed: {name: id|null}, missing, complete}
  *       approvers default to that plan_rev's. Per approver, the latest via=human signoff or objection
  *       carrying plan_hash === hash wins: an objection voids an earlier signoff.
@@ -257,6 +258,14 @@ function planRev(hash, entries = readAll()) {
   return entries.filter(e => e.kind === 'plan_rev' && e.plan_hash === hash).at(-1) || null;
 }
 
+/** 1-based revision number of a plan hash: its position among the distinct hashes the room has published. */
+function revNumber(hash, entries = readAll()) {
+  const seen = [];
+  for (const e of entries) if (e.kind === 'plan_rev' && e.plan_hash && !seen.includes(e.plan_hash)) seen.push(e.plan_hash);
+  const i = seen.indexOf(hash);
+  return i < 0 ? null : i + 1;
+}
+
 function signoffMatrix(hash, approvers, entries = readAll()) {
   if (!Array.isArray(approvers)) {
     const rev = planRev(hash, entries);
@@ -405,7 +414,7 @@ module.exports = {
   bind, code, dir, logPath, plansDir,
   readAll, readById, readAfter, lastId, follow, normalize,
   append, validateChain,
-  hash12, currentPlan, planRev, signoffMatrix, decided,
+  hash12, currentPlan, planRev, revNumber, signoffMatrix, decided,
   tailLine, fmt, who, digestSections, digest,
   getCursor, setCursor,
 };

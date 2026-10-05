@@ -1,0 +1,6 @@
+{
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "\"${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/row-status\""
+  }
+}

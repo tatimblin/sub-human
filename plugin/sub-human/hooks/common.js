@@ -1,12 +1,11 @@
 'use strict';
-// Shared plumbing for the sub-human hooks. Ported from demo/hooks/common.js (seat helpers removed).
+// Shared plumbing for the sub-human hooks.
 //
-// Hooks are trusted code run by Claude Code itself, never by a model. Identity is resolved by the
-// hook payload's session_id first, then by CLAUDE_PID (validated as an ancestor by the lib), because
-// /clear changes the session_id but not the claude process.
+// Hooks are trusted code run by Claude Code itself, never by a model. Identity is resolved from the
+// hook payload's session_id first, then from CLAUDE_PID (Claude Code sets it for every hook it runs)
+// by a direct lookup of the registered pid: /clear changes the session_id but not the claude process.
 
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 
 const PLUGIN_ROOT = path.join(__dirname, '..');
@@ -60,7 +59,7 @@ const hasLeft = m => !!m.left_at;
 const activeMembers = code => members(code).filter(m => m.role !== 'orch' && !hasLeft(m)).map(m => m.name);
 
 /**
- * Resolve who this hook runs for: {code, name, role, pid, ...} or null.
+ * Resolve who this hook runs for: {code, name, role, session_id, pid} or null.
  * session_id first, then CLAUDE_PID. Binds room.js to the member's room.
  */
 function whoami(input = {}) {
@@ -72,8 +71,12 @@ function whoami(input = {}) {
   }
   if (!me || !me.code || !me.name) return null;
   room.bind(me.code);
-  const rec = (identity.readMembers(me.code) || {})[me.name] || {};
-  return { ...me, pid: me.pid || rec.pid, session_id: rec.session_id || null };
+  return me;
+}
+
+/** Best-effort presence write for the resolved member. */
+function presence(me, state, detail) {
+  try { if (me) identity.writePresence(me.code, me.name, state, detail); } catch { /* best-effort */ }
 }
 
 // ---------- per-member state under rooms/<code>/members/<name>/ ----------
@@ -91,11 +94,6 @@ function writeState(me, key, value) {
   fs.renameSync(tmp, p);
 }
 function clearState(me, key) { try { fs.unlinkSync(statePath(me, key)); } catch { /* absent */ } }
-
-/** pending_review: set by the member plan-gate, read by plan-result / stop-feedback. */
-const readPending = me => readState(me, 'pending_review');
-const writePending = (me, v) => writeState(me, 'pending_review', v);
-const clearPending = me => clearState(me, 'pending_review');
 
 // ---------- role text and the context block the join / restore hooks inject ----------
 function roleText(role) {
@@ -116,18 +114,38 @@ function safeDigest() {
 
 function clip(s, n = CAP) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 
-function contextBlock(me, lead) {
+/** lib/rows.js rowCalls() (owned by the rows module); '' when it is missing or fails. */
+function rowCalls(me) {
+  try {
+    const rows = require(path.join(LIB, 'rows.js'));
+    return String(rows.rowCalls(me, identity.readMembers(me.code)) || '').trim();
+  } catch (e) {
+    process.stderr.write(`sub-human: rows unavailable: ${e && e.message}\n`);
+    return '';
+  }
+}
+
+/** The seat as a session title: "⬡ marmot-2509 · alice". */
+const seatTitle = me => `⬡ ${me.code} · ${me.name}`;
+
+/**
+ * The context the join / restore hooks inject: head, who you are, role text, ROWS (rowCalls), roster,
+ * digest. The ROWS section and the roster survive the cap; the role text and then the digest are clipped.
+ */
+function contextBlock(me, lead, { rowsLead = '' } = {}) {
   const role = me.role === 'orch' ? 'orch' : 'member';
   const who = role === 'orch'
-    ? `You are the ORCHESTRATOR of sub-human room ${me.code}. Members join with: /sub-human NAME ${me.code}`
+    ? `You are the ORCHESTRATOR of sub-human room ${me.code}. Members join with: /sub-human NAME (or /sub-human NAME ${me.code})`
     : `You are ${me.name}'s Claude in sub-human room ${me.code}. Your human is ${me.name}.`;
   const head = `SUB-HUMAN role=${role} name=${me.name} room=${me.code}${lead ? ` (${lead})` : ''}`;
-  const parts = [head, who];
+  const calls = rowCalls(me);
+  const rowsPart = calls ? `ROWS\n${rowsLead}${calls}` : '';
   const rosterPart = `ROSTER\n${roster(me.code)}`;
   const text = roleText(role);
-  // The roster must survive the cap: clip the role text first, then the digest takes what is left.
-  const fixed = parts.join('\n\n').length + rosterPart.length + 4;
+  const fixed = [head, who, rowsPart, rosterPart].join('\n\n').length + 8;
+  const parts = [head, who];
   if (text) parts.push(clip(text, Math.max(500, CAP - fixed - 300)));
+  if (rowsPart) parts.push(rowsPart);
   parts.push(rosterPart);
   parts.push(`DIGEST\n${safeDigest()}`);
   return clip(parts.join('\n\n'));
@@ -147,27 +165,13 @@ function isUnder(p, dir, base = process.cwd()) {
   return false;
 }
 
-const claudeConfigDir = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
-const plansRoot = () => path.join(claudeConfigDir(), 'plans');
-
-/** True when showClearContextOnPlanAccept is on in any settings layer (user, project, local). */
-function clearContextOnAccept(cwd) {
-  const files = [path.join(claudeConfigDir(), 'settings.json')];
-  const proj = process.env.CLAUDE_PROJECT_DIR || cwd;
-  if (proj) files.push(path.join(proj, '.claude', 'settings.json'), path.join(proj, '.claude', 'settings.local.json'));
-  if (cwd && cwd !== proj) files.push(path.join(cwd, '.claude', 'settings.json'), path.join(cwd, '.claude', 'settings.local.json'));
-  return files.some(f => {
-    try { return JSON.parse(fs.readFileSync(f, 'utf8')).showClearContextOnPlanAccept === true; } catch { return false; }
-  });
-}
-
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
 
 module.exports = {
   identity, room, plan, PLUGIN_ROOT, CAP,
   readInput, out, pre, deny, context, run, names,
-  members, hasLeft, activeMembers, whoami,
-  memberDir, readState, writeState, clearState, readPending, writePending, clearPending,
-  roleText, roster, safeDigest, clip, contextBlock,
-  isUnder, realish, claudeConfigDir, plansRoot, clearContextOnAccept, stamp,
+  members, hasLeft, activeMembers, whoami, presence,
+  memberDir, readState, writeState, clearState,
+  roleText, roster, safeDigest, clip, rowCalls, seatTitle, contextBlock,
+  isUnder, realish, stamp,
 };

@@ -1,83 +1,69 @@
 # sub-human
 
-A Claude Code plugin for planning together from separate sessions. One session becomes the room's **orchestrator**: an unattended Claude that facilitates, writes the shared plan and splits the work. Everyone else, the host included, **joins** from their own normal Claude Code session and keeps their own Claude. Each member approves the room's plan in Claude Code's **native plan-approval dialog**, and the orchestrator's plan goes through only when every member has signed the exact same plan.
+A Claude Code plugin for planning together from separate sessions on one machine. People join a session the way it spawns subagents.
 
-Nothing replaces Claude Code: tests, status and "done" are ordinary Claude Code work. The plugin adds a room log, a join command, an `@room` prefix, and hooks that bind identity and gate plan approval.
+- One session is the room's **orchestrator**: an unattended Claude that facilitates, writes the shared plan and splits the work. Its agent panel shows one row per member.
+- Everyone else, the host included, **joins** from their own normal Claude Code session and keeps their own Claude. Their panel shows one row for the room, with the other members inside it.
+- When a plan is published, each approver gets a **native sign-off form** in their own terminal. The orchestrator's plan goes through only when every approver has approved the exact same plan.
+
+Nothing replaces Claude Code: tests, status and "done" are ordinary Claude Code work. The plugin adds a room log, a join command, an `@room` prefix, panel rows, the sign-off form, and hooks that bind identity and gate the plan.
 
 ## Install
 
-From this repo, without installing:
-
-```
-claude --plugin-dir plugin/sub-human
-```
-
-Or install through the bundled marketplace (the repo root holds `.claude-plugin/marketplace.json`):
+From this repo, without installing, pass `--plugin-dir plugin/sub-human` (as below). Or install through the bundled marketplace (the repo root holds `.claude-plugin/marketplace.json`):
 
 ```
 claude plugin marketplace add /path/to/sub-human
 claude plugin install sub-human@sub-human
 ```
 
-Requires Node on `PATH`. Run `claude plugin validate plugin/sub-human` to check the plugin.
+Then drop `--plugin-dir …` from the commands below. Requires Node on `PATH`. `claude plugin validate plugin/sub-human` checks the plugin. Accept workspace trust when asked: the panel rows don't render without it.
 
-### Settings for the status line and the room feed
+## Launch
 
-A plugin can't set the main status line or the agent-panel rows, so pass them yourself with `--settings`. That flag adds a settings layer for this launch only and leaves `~/.claude/settings.json` alone. From the repo root:
-
-```
-cat > /tmp/sub-human-settings.json <<EOF
-{
-  "statusLine":         { "type": "command", "command": "$PWD/plugin/sub-human/bin/sub-human statusline", "refreshInterval": 5 },
-  "subagentStatusLine": { "type": "command", "command": "$PWD/plugin/sub-human/bin/sub-human agent-statusline" }
-}
-EOF
-```
-
-- `statusLine` shows the room on your status bar (see [Status bar](#status-bar)).
-- `subagentStatusLine` replaces the room-feed agent's row in the agent panel with the same room summary. Other agents' rows stay as they are.
-- Optional: add `"showTurnDuration": false` to hide the "✻ Waiting for 1 background agent to finish" line (see [The room feed](#the-room-feed)). It also hides "Worked for 12s".
-
-## Try it
-
-Three terminal windows on one machine, all in this repo. Create `/tmp/sub-human-settings.json` first (above).
-
-1. **Window 1, the orchestrator.** Run `claude --plugin-dir plugin/sub-human --settings /tmp/sub-human-settings.json`, then type `/sub-human` and press Enter twice (the first Enter accepts the picker's completion). It prints an invite code such as `otter-4821`. Don't type in this window again.
-2. **Window 2, alice.** Run the same `claude` command, then `/sub-human alice otter-4821`. Her Claude starts the room feed in the background.
-3. **Window 3, bob.** The same, with `/sub-human bob otter-4821`.
-4. **Talk.** In alice's window: `@room let's add retries to the fetcher, 3 attempts with backoff`. She sees `✓ posted to otter-4821 as #3`, and bob's window and the orchestrator get the notice. In bob's: `@room fine, but cap the total wait at 10s`.
-5. **Plan.** The orchestrator drafts a plan and publishes it. Each approver's Claude says `plan <hash> is ready — say 'review'`. In each approver's window, type `review` and choose **"2. Yes, manually approve edits"**. To block it instead, choose "Tell Claude what to change" and say why.
-6. **Decide and work.** When every approver has signed, the orchestrator records the decision and posts assignments. Tell your Claude `go`. It posts a `status`, does the work in a background subagent, and posts a `status` with the result when it's done.
-
-To watch the whole log in a fourth window, run `plugin/sub-human/bin/sub-human watch otter-4821`.
-
-## Host flow
-
-1. **Open a room.** In one session, run `/sub-human` with no arguments. That session becomes the orchestrator, and the plugin prints an invite code such as `otter-4821`. Leave this window alone: nobody types into the orchestrator, the host included. It talks only through the room.
-2. **Join it yourself.** Start a second session (in your working copy) and run `/sub-human YOURNAME otter-4821`. The host is a member like anyone else.
-3. Share the code with the others on this machine.
-
-The orchestrator enters plan mode itself when the room is ready to draft. It never uses Bash, so it shouldn't raise permission prompts in its unattended window.
-
-## Joining
+**The orchestrator** (one window, which nobody types in after this):
 
 ```
-/sub-human NAME CODE
+claude --plugin-dir plugin/sub-human --agent sub-human:orchestrator --permission-mode plan
 ```
 
-The command shows as `/sub-human:sub-human` in the picker and transcript; typing the bare `/sub-human` works. A join hook binds `NAME` to your session before the model sees anything, so the model can never pick or change your name. A name that is already in the room is refused. Your identity survives `/clear` and compaction.
+Then type `/sub-human` and press Enter (twice if the picker completes it first). It prints an invite code such as `marmot-2509`. The orchestrator has no Bash and writes only its plan file, so it raises no permission prompts.
 
-Room notices reach your session through the plugin's `room` monitor, so even an idle session wakes up for them. Your Claude surfaces each one in a line and acts only when you are addressed or when you ask.
+**Each member**, the host included, in their own window and working copy:
 
-### The room feed
+```
+claude --plugin-dir plugin/sub-human
+```
 
-Right after you join, your Claude starts the room feed: a background agent (`sub-human:room`, on Haiku) whose transcript mirrors the room log. Open it from the agent panel (↓ to manage) to read the room as it happens. It runs for your whole session and stops when you leave.
+Then `/sub-human NAME`, or `/sub-human NAME CODE` when more than one room is open. A join hook binds `NAME` to your session before the model sees anything, so your Claude can never pick or change your name. A name already in the room is refused. Your identity survives `/clear` and compaction.
 
-While it runs, Claude Code shows **"✻ Waiting for 1 background agent to finish"** after each turn, where it would otherwise show "Worked for 12s". That's normal. Your prompt is free: type, use `@room` and work as usual. No agent setting removes the line. `"showTurnDuration": false` in your settings hides it, together with the "Worked for" line.
+The command shows as `/sub-human:sub-human` in the picker and transcript; typing the bare `/sub-human` works.
 
-Joining doesn't make you an approver. The orchestrator chooses the approvers for each plan: anyone who asks, and anyone who contributed substantively. To be one, say so in the room (`@room I want to approve this`). Anyone can block a plan by objecting to it: any human objection on the current plan blocks it, whether or not you're an approver.
+## What each person sees
 
-When the room is waiting on you, the plugin alerts **you**, not just your Claude. See [Alerts](#alerts) and [Status bar](#status-bar).
+**The orchestrator's** panel has one row per member, with text computed from the room log:
+
+```
+● main
+◯ alice   ✓ signed 593da0 · idle
+◯ bob     ⚠ reviewing 593da0 · ✖ 1 objection (#31)
+```
+
+**A member's** panel has a single row named after the room. The room row's text is the room's state: plan progress, `⚠ your sign-off needed`, `✉ 1 for you`. Members get no status line.
+
+```
+● main
+◯ marmot-2509  plan 593da0 1/2 · ⚠ your sign-off needed
+```
+
+- **Enter** on the room row opens it: the facilitator's posts, plan revisions and the decision. The other members are rows inside it; Enter on one shows that person's words and their Claude's posts, labelled separately.
+- **↑ then Enter** goes back up a level. There's no breadcrumb, and Esc doesn't step back.
+- **Esc twice kills the row you're viewing.** It comes back by itself within a few seconds. The dead copy stays listed until `/clear`.
+- Rows are read-only. You talk in `main`: with `@room`, or by asking your Claude.
+
+Room notices also reach your Claude through the plugin's `room` monitor, so even an idle session wakes for them. Your Claude tells you each one in a line, and acts only when you're addressed or you ask.
+
+While the rows run, Claude Code shows **"✻ Waiting for N background agents to finish"** after each turn. That's normal; your prompt is free. `"showTurnDuration": false` in your settings hides it, along with "Worked for 12s".
 
 ## Saying something to the room: `@room`
 
@@ -86,112 +72,110 @@ When the room is waiting on you, the plugin alerts **you**, not just your Claude
 room: same thing, with no @ picker
 ```
 
-A prompt starting with `@room ` or `room:` is posted **verbatim** as your words (`via=human`) by a hook, and the prompt is blocked, so no model turn runs and nothing is paraphrased. The receipt looks like this:
+A prompt starting with `@room ` or `room:` is posted **verbatim** as your words (`via=human`) by a hook. No model turn runs and nothing is paraphrased. The receipt reads:
 
 ```
 ⏺ UserPromptSubmit operation blocked by hook:
-  ✓ posted to otter-4821 as #17
+  ✓ posted to marmot-2509 as #17
 ```
 
-The first line is Claude Code's wording for any prompt a hook handles, and a plugin can't change it. The post went through; "blocked" only means your Claude didn't get a turn. A post that failed reads `✗ not posted: …` with the reason.
+"Blocked" is Claude Code's wording for any prompt a hook handles; the post went through. A failed post reads `✗ not posted: …` with the reason.
 
-Your Claude learns of your posts at its next turn (your next prompt, or the next room notice), as "Your human posted #17 to the room: …".
+- Leading and internal spaces, unicode, `$`, backticks and quotes arrive byte-exact. Multiline: `\` + Enter or Ctrl+J.
+- Typing `@room` opens the file picker; a space closes it. Don't press Tab. `room:` avoids the picker.
+- Check prompt suggestions before accepting one: a suggested `@room …` line is your Claude's wording, and accepting it posts it as yours.
 
-- Trailing spaces are trimmed by the terminal UI; leading and internal spaces, unicode, `$`, backticks and quotes arrive byte-exact.
-- Multiline: `\` + Enter or Ctrl+J inserts a newline.
-- Long pastes are unwrapped from Claude Code's `<pasted_content>` wrapper. Pasted tabs become 4 spaces, and the entry is marked `normalized:true`.
-- Typing `@room` opens the file picker; a space closes it. Don't press Tab, which completes a file name. `room:` avoids the picker entirely.
-- Check prompt suggestions before you accept one. A suggested `@room …` line is your Claude's wording, and accepting it posts it as yours.
+Anything else you type goes to your own Claude. Its posts show as "NAME's Claude" (`via=agent`) and never count as your words or your consent.
 
-Anything else you type goes to your own Claude. When it posts to the room, the post is labelled "NAME's Claude" (`via=agent`) and never counts as your words or your consent.
+## Signing off
 
-## Approving the plan
+The orchestrator chooses the approvers for each plan: anyone who asks (`@room I want to approve this`) and anyone who shaped the plan or owns part of it. Joining alone doesn't make you one. Anyone in the room can block a plan by objecting.
 
-The orchestrator writes a plan file whose first lines are:
+When a plan names you, this form appears in your terminal within a second, whether you're idle or mid-turn:
 
 ```
----
-sub-human: {"room":"otter-4821","approval":"all","approvers":["alice","bob"]}
----
-> **Room plan — approving this is your sign-off for the room. Your Claude will not run it. Choose "2. Yes, manually approve edits".**
+sub-human · room marmot-2509 · plan 593da0 (rev 2)
+GET /tasks?limit&after: cursor paging, bare array, max 50
+Full plan: ~/.sub-human/rooms/marmot-2509/plans/593da0.md   (or: sub-human plan)
+  ❯ Approve      Object
+  Reason (if objecting): ____
 ```
-
-The line after the frontmatter is fixed (`PLAN_NOTICE` in `lib/plan.js`); the gate denies a plan that doesn't start with it. It's there because the native dialog says "ready to execute", and approving a room plan only records your sign-off.
-
-`approval: "all"` means every approver must sign. The gate enforces exactly the `approvers` in the frontmatter, which the orchestrator chooses for each plan. When the orchestrator calls ExitPlanMode, a hook publishes the plan to the room as `plan_rev` with its hash, then denies the exit and names everyone who hasn't signed. Any human objection on that hash, from anyone, also keeps it blocked.
-
-When a plan is published, your Claude says `plan <hash> is ready — say 'review'`. It opens the dialog only when you ask, so it doesn't interrupt you mid-task. Then it enters plan mode, writes a one-line stub and calls ExitPlanMode. A hook swaps in the room's exact plan text, so **the native dialog shows the canonical plan**, not something your Claude wrote.
-
-Choose **"2. Yes, manually approve edits"**. Option 1 also records your sign-off, but it switches your session into auto mode, which you then have to leave with Shift+Tab (see the table).
 
 | You do | Recorded |
 |---|---|
-| Approve with "2. Yes, manually approve edits" | `signoff via=human` against that plan hash. Your Claude is told not to implement; it waits for an assignment. |
-| Approve with auto mode | The sign-off still counts. Your Claude is told not to act, and you're told to press Shift+Tab to get back out of auto mode. |
-| Edit with Ctrl+G, then approve | `objection via=human` with your edited text. No sign-off. |
-| "Tell Claude what to change" + feedback | `objection via=human` with your feedback. |
-| Esc | Nothing. |
+| Approve | `signoff via=human` against that plan hash. |
+| Object, with a reason | `objection via=human`, with your reason byte for byte. It blocks the plan. |
+| Esc | Nothing. The form comes back in 10 minutes, or right away when you tell your Claude "review". |
 
-Any revision of the plan has a new hash and voids every sign-off. Once every approver has signed the current hash, the orchestrator's ExitPlanMode goes through with no dialog, and a hook writes the `decision` with references to each sign-off. The orchestrator then posts assignments: owners, files, contracts and what "done" means.
+Your Claude can't answer the form and runs no turn for it. A new revision of the plan replaces a form you haven't answered, and voids every earlier sign-off. You never enter plan mode to sign off.
 
-Review in default permission mode. A review is refused in bypass or auto mode, and while `showClearContextOnPlanAccept` is on: that "clear context" approval starts a new session that implements immediately and records no sign-off. Choose plain manual approval.
+When every approver has signed the current hash, the orchestrator's plan mode ends with no dialog. A hook writes the `decision`, citing each sign-off, and the orchestrator posts assignments: owners, files, contracts and what "done" means.
 
 ## Doing the work
 
-The plugin adds nothing to how work runs: it is ordinary Claude Code work. When you say go on an assignment, your Claude posts a short `status` ("starting X in the background") and runs anything longer than a couple of minutes in one of Claude Code's own background subagents, so your session stays free. You can watch it in your agent panel. When it finishes, your Claude posts a `status` to the room with the result and the evidence it saw: test counts, a commit, a path. It never reports a result it didn't see.
+When you say go on your assignment, your Claude posts a `status` ("starting X in the background") and runs the work in one of Claude Code's own background subagents, so your session stays free. When it finishes, your Claude posts a `status` with the evidence it saw: test counts, a commit, a path.
 
-Shared jobs that belong to nobody (run the whole suite, check that two parts fit) go to the orchestrator. It runs them in its own background subagent and posts the `status` itself. Nobody can approve permission prompts in the orchestrator's window, so a step that needs one comes back to a member.
+Shared jobs that belong to nobody (run the whole suite, check two parts fit) go to the orchestrator, which runs them in its own background subagent. Nobody can approve prompts in its window, so a step that needs one comes back to a member.
 
-## Alerts
+## The `sub-human` CLI
 
-The `room` monitor (`sub-human tail`) alerts you directly when:
+`plugin/sub-human/bin/sub-human` reads the room. Inside a room session it finds your room by itself; it never writes the log.
 
-- **your sign-off is needed**: a plan is published that names you in `approvers`, and you haven't signed it. At most one alert per plan hash.
-- **an entry is addressed to you** (`to` is your name). At most one alert every 30 seconds.
+| Command | Prints |
+|---|---|
+| `read` | The room log. |
+| `digest` | The room's current state in a few lines. |
+| `who` | Members and their presence. |
+| `plan [hash]` | The current plan, or the one with that hash. |
+| `watch NAME` | NAME's full thread: their own words, their Claude's posts (labelled), and their sign-offs and objections. |
+| `statusline` | The orchestrator's status line (below). |
 
-An alert is a macOS notification ("sub-human", via `osascript display notification`) plus a terminal bell on your Claude Code window. Both are best-effort.
+`tail` (the room monitor) and `agent-statusline` (the panel rows) are internal.
 
-- The notification targets no app, so it raises no Automation permission prompt. Whether it appears depends on **System Settings › Notifications › Script Editor**.
-- The bell is written to the terminal of your `claude` process. The monitor itself has no controlling terminal.
-- The orchestrator never alerts. Entries more than 10 minutes old (a monitor catching up) never alert.
+## Status line for the orchestrator (optional)
 
-To turn alerts off, set `SUB_HUMAN_NOTIFY=0` in the environment you start `claude` from.
-
-## Status bar
-
-`sub-human statusline` shows the room in Claude Code's status line, so you can always see it:
+The rows come from the plugin's own settings. The main status line can't, so pass it with `--settings`, which adds a settings layer for this launch only:
 
 ```
-⬡ dingo-8953 · tristan · plan b7ca39 2/3 · approver
-⬡ dingo-8953 · tristan · ⚠ your sign-off needed (plan b7ca39 1/3) · ✉ 1 for you
-⬡ dingo-8953 · orch · plan b7ca39 2/3 ✖ 1 objection waiting on bob
-⬡ dingo-8953 · tristan · plan b7ca39 3/3 ✔ · approver
+cat > /tmp/sub-human-orch.json <<EOF
+{ "statusLine": { "type": "command", "command": "$PWD/plugin/sub-human/bin/sub-human statusline", "refreshInterval": 5 } }
+EOF
+claude --plugin-dir plugin/sub-human --agent sub-human:orchestrator --permission-mode plan --settings /tmp/sub-human-orch.json
 ```
 
-- `⚠ your sign-off needed` (bold yellow) means the current plan names you as an approver, you haven't signed, and there's no decision yet.
-- `✉ N for you` counts entries addressed to you since you last spoke in the room.
-- `✔` means the plan is decided.
-- Outside a room it prints nothing, so it's safe to use as your global status line.
-
-A plugin can't set the main status line. Pass it with `--settings` as in [Settings](#settings-for-the-status-line-and-the-room-feed), or put the same `statusLine` block in `~/.claude/settings.json` (all projects) or a project's `.claude/settings.json` yourself, with the absolute path of this plugin.
-
-`refreshInterval` is optional. Without it, the bar updates only on session events, which go quiet while you're idle. The command finds your room by `session_id`, falling back to process ancestry. It reads one session index, `members.json` and the room log. Set `NO_COLOR=1` for plain text. If you already have a status line, call `sub-human statusline` from your script and append its output.
-
-The segments are a list in `statusline/segments.js` (`room`, `seat`, `plan`, `approver`, `mail`). Add a field by adding a segment.
+It reads `⬡ marmot-2509 · orch · plan 593da0 1/2 ✔`. Outside a room it prints nothing. Set `NO_COLOR=1` for plain text.
 
 ## Room storage
 
-Rooms live in `~/.sub-human/rooms/<CODE>/`, or under `$SUB_HUMAN_HOME` if set. Each room has an append-only JSON-lines log in which every entry carries `from`, `via` (`human`, `agent` or `system`), `kind`, and a `prev` hash of the previous line, so tampering is visible. Canonical plans are stored alongside it by hash. The `sub-human` CLI in `bin/` offers read-only `read`, `digest`, `who`, `watch`, `tail`, `statusline` and `agent-statusline`; nothing writes the log except the plugin's MCP tools and hooks.
+Rooms live in `~/.sub-human/rooms/<CODE>/`, or under `$SUB_HUMAN_HOME`. Each has an append-only JSON-lines log in which every entry carries `from`, `via` (`human`, `agent` or `system`), `kind` and a `prev` hash of the previous line, so edits are visible. Plans are stored by hash in `plans/`, and row state in `rows/`.
 
 ## Threat model
 
-Everyone runs as the same OS user on the same machine. Identity is bound by hooks and resolved from process ancestry, and a guard hook denies other tools' writes into `~/.sub-human`. This prevents **accidental** misattribution: one person's Claude posting as someone else, a model inventing a sign-off, a paraphrase passing as someone's words. It does **not** stop a hostile local user, who can write the files directly. The hash chain makes such edits visible; it doesn't prevent them.
+Everyone in a room is a collaborator, running as the same OS user on the same machine. Names aren't defended against forgery. What the plugin guarantees is that **a Claude can never sign off or speak as its human**:
+
+- A sign-off or objection comes only from the native form, which the human answers. No model tool records one.
+- Your words reach the room only through `@room`, posted by a hook. Your Claude's posts are always labelled `via=agent`.
+- A guard hook denies tool writes into the room directory, so a Claude can't edit the log.
+
+It doesn't stop a hostile local user, who can write the files directly. The hash chain makes such edits visible; it doesn't prevent them.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| "Unknown command" for `/sub-human` | Launch with `--plugin-dir plugin/sub-human`, or install the plugin. |
+| `/sub-human` with no name opened a room in my working session | With no name, `/sub-human` always opens a room and makes that session the orchestrator. Launch the orchestrator in its own window with `--agent sub-human:orchestrator --permission-mode plan` (no Bash, plan mode), and join from your working session with `/sub-human NAME`. |
+| `/sub-human NAME` asks for a code | More than one room is open; add the CODE. |
+| No rows in the panel | Accept workspace trust for this folder. After `--resume`, your Claude is told to re-create them. |
+| A row vanished after Esc | It returns within a few seconds. |
+| No sign-off form | Check `sub-human plan` names you. If you dismissed it, tell your Claude "review". |
+| The orchestrator is waiting | Its status names who hasn't signed. They answer the form or object. |
 
 ## Limits
 
-- **Same machine only.** All sessions must share the room directory. A network relay is future work.
-- Agent posts are rate-limited (6 per minute per member) to stop Claudes waking each other in a loop.
+- **Same machine only.** All sessions share the room directory.
+- Agent posts are rate-limited (6 per minute per member), so Claudes can't wake each other in a loop.
 
 ## Leaving
 
-`/exit` in a session with the room monitor running asks "Background work is running…" with three options. Choose **1, "Exit and stop tasks"**: the monitor stops and the room records `member_left`. `/clear` does not leave the room.
+`/exit` asks "Background work is running…". Choose **1, "Exit and stop tasks"**: the room records `member_left`, and your row disappears from everyone's panel. `/clear` does not leave the room.

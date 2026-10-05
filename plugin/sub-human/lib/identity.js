@@ -1,43 +1,44 @@
 'use strict';
 /**
  * plugin/sub-human/lib/identity.js: where rooms live, who is in them, and which Claude session is asking.
- * CommonJS, zero dependencies, Node 24. Identity is bound at join by a hook and resolved later from process
- * ancestry; it is never chosen by the model.
+ * CommonJS, zero dependencies, Node 24. Identity is bound at join by a hook and never chosen by the model.
+ * Participants are collaborators: there is no process-ancestry proof and no pid-start check. A seat is
+ * found by a direct lookup of the session id (hooks) or of a registered claude pid (MCP server, CLI).
  *
  * Location:
  *   home() -> string                     SUB_HUMAN_HOME, else ~/.sub-human (read on every call)
  *   roomDir(code) -> string              <home>/rooms/<code>
  *   newCode() -> string                  "otter-4821": a fresh room, created with an exclusive mkdir
  *   roomExists(code) -> bool
+ *   openRooms() -> [code]                rooms with a live orchestrator (not left, pid alive), newest first
  *
  * Members (<roomDir>/members.json, written under a lock, atomically):
- *   readMembers(code) -> {name: {name, role, pid, pid_start, session_id, cwd, joined_at, left_at?}}
+ *   readMembers(code) -> {name: {name, role, pid, session_id, cwd, joined_at, left_at?}}
  *   join({code, name, role, pid, session_id, cwd}) -> {ok, error?, rejoin?}
  *       role is "orch" or "member". NAME_RE; reserved names orch, room, all, system (only role orch may use
- *       "orch", and role orch must use it). A name held by a different live process (same pid_start) is
- *       "name taken"; a name whose holder is dead or has left is rebound (rejoin:true). Writes the indexes
- *       <home>/sessions/by-pid/<pid>.json and <home>/sessions/by-sid/<sid>.json.
- *   leave(code, name) -> bool            sets left_at and drops the indexes that point at it
+ *       "orch", and role orch must use it). A name held by a different live, not-left pid is "name taken";
+ *       otherwise the name is (re)bound. One seat per claude pid: joining elsewhere retires its previous seat.
+ *       Writes the indexes <home>/sessions/by-pid/<pid>.json and <home>/sessions/by-sid/<sid>.json.
+ *   leave(code, name) -> bool            sets left_at and drops the by-pid index. The by-sid index stays so
+ *                                        lastSeat() can find the seat when that session is resumed.
+ *   rebindSession(pid, sid) -> bool      after /clear: point a new session id at the seat registered for pid
  *
- * Processes (macOS / Linux, via `ps`):
- *   pidStart(pid) -> string|null         the lstart string; null when the process is gone
- *   isAlive(pid) -> bool
- *   ancestors(pid) -> [{pid, comm}]      parent first, from one `ps -A -o pid=,ppid=,comm=` walk
- *   claudePid({ppid}?) -> int|null       the claude process serving this one:
- *       {ppid:true} (the MCP server, a direct child of claude with no CLAUDE_PID) -> process.ppid;
- *       else CLAUDE_PID, accepted only if it is a real ancestor of process.pid;
- *       else the nearest ancestor whose comm basename is "claude".
+ * Resolution (each returns {code, name, role, session_id, pid} or null):
+ *   resolveBySession(sid)                hooks: the payload's session_id
+ *   resolveByPid(pid)                    the MCP server: process.ppid, a direct lookup of a registered pid
+ *   resolveSelf()                        the CLI and monitor: CLAUDE_CODE_SESSION_ID (set by Claude Code for
+ *                                        Bash, monitors, hooks and the status line), then CLAUDE_PID (same
+ *                                        children), then the nearest ancestor pid with a registration
+ *   lastSeat(sid) -> {code, name, role}|null   the seat a session id last held, left or not (for --resume)
+ *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set)
  *
- * Resolution (each checks the recorded pid_start against the live process, so a reused pid never matches):
- *   resolveByPid(pid) -> {code, name, role}|null
- *   resolveBySession(sid) -> {code, name, role}|null
- *   resolveSelf() -> {code, name, role, pid}|null   first registered pid among process.pid and its ancestors
- *   rebindSession(pid, sid) -> bool      after /clear: point a new session id at an existing registration
+ * Presence (<roomDir>/presence/<name>.json = {state, at, detail?}):
+ *   writePresence(code, name, state, detail?)   state: working (prompt submitted / joined) | idle (idle_prompt)
+ *                                               | permission (permission_prompt) | error (StopFailure; detail = code)
+ *   readPresence(code) -> {name: {state, at, detail?}}
  *
- * Also: withLock(lockPath, fn) (the lockfile helper room.js shares), readJson, writeJsonAtomic,
- *   readMembersFile(file), NAME_RE, CODE_RE, RESERVED, ANIMALS.
- * A CLAUDE_PID that is not an ancestor never resolves: nothing here trusts env for identity except as a hint
- * that is checked against the process tree.
+ * Also: withLock(lockPath, fn) (the lockfile helper room.js shares), isAlive, readJson, writeJsonAtomic,
+ *   readMembersFile(file), NAME_RE, CODE_RE, RESERVED, ANIMALS, PRESENCE_STATES.
  */
 
 const fs = require('node:fs');
@@ -50,6 +51,7 @@ const CODE_RE = /^[a-z]+-\d{4}$/;
 const SID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const RESERVED = ['orch', 'room', 'all', 'system'];
 const ROLES = ['orch', 'member'];
+const PRESENCE_STATES = ['working', 'idle', 'permission', 'error'];
 const ANIMALS = [
   'otter', 'badger', 'beaver', 'bison', 'camel', 'cheetah', 'condor', 'coyote',
   'crane', 'dingo', 'dolphin', 'eagle', 'egret', 'falcon', 'ferret', 'finch',
@@ -72,6 +74,7 @@ const roomExists = code => typeof code === 'string' && CODE_RE.test(code) && fs.
 const byPidFile = pid => path.join(home(), 'sessions', 'by-pid', `${Number(pid)}.json`);
 const bySidFile = sid => path.join(home(), 'sessions', 'by-sid', `${sid}.json`);
 const membersFile = code => path.join(roomDir(code), 'members.json');
+const presenceDir = code => path.join(roomDir(code), 'presence');
 
 function newCode() {
   fs.mkdirSync(roomsDir(), { recursive: true });
@@ -136,55 +139,6 @@ function withLock(lock, fn, LockError = Error) {
   }
 }
 
-// ---------- processes ----------
-const psEnv = () => ({ ...process.env, LC_ALL: 'C', LANG: 'C' });
-
-function pidStart(pid) {
-  pid = Number(pid);
-  if (!Number.isInteger(pid) || pid <= 0) return null;
-  const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', env: psEnv() });
-  const s = (r.stdout || '').trim().replace(/\s+/g, ' ');
-  return r.status === 0 && s ? s : null;
-}
-
-function processTable() {
-  const r = spawnSync('ps', ['-A', '-o', 'pid=,ppid=,comm='], { encoding: 'utf8', env: psEnv(), maxBuffer: 16 << 20 });
-  const table = new Map();
-  for (const line of (r.stdout || '').split('\n')) {
-    const m = line.match(/^\s*(\d+)\s+(\d+)\s?(.*)$/);
-    if (m) table.set(Number(m[1]), { ppid: Number(m[2]), comm: m[3].trim() });
-  }
-  return table;
-}
-
-function ancestors(pid = process.pid) {
-  const table = processTable();
-  const out = [];
-  const seen = new Set([Number(pid)]);
-  let cur = table.get(Number(pid));
-  while (cur && cur.ppid > 0 && !seen.has(cur.ppid)) {
-    seen.add(cur.ppid);
-    const parent = table.get(cur.ppid);
-    out.push({ pid: cur.ppid, comm: parent ? parent.comm : '' });
-    cur = parent;
-  }
-  return out;
-}
-
-const isClaudeComm = comm => {
-  const c = String(comm || '');
-  return path.basename(c) === 'claude' || path.basename(c.split(/\s+/)[0]) === 'claude';
-};
-
-function claudePid({ ppid = false } = {}) {
-  if (ppid) return process.ppid > 1 ? process.ppid : null;
-  const chain = ancestors(process.pid);
-  const env = Number(process.env.CLAUDE_PID);
-  if (Number.isInteger(env) && env > 0 && chain.some(a => a.pid === env)) return env;
-  const c = chain.find(a => isClaudeComm(a.comm));
-  return c ? c.pid : null;
-}
-
 // ---------- members ----------
 const readMembersFile = file => readJson(file, {}) || {};
 function readMembers(code) {
@@ -192,6 +146,7 @@ function readMembers(code) {
 }
 
 const fail = error => ({ ok: false, error });
+const validPid = pid => Number.isInteger(pid) && pid > 0;
 
 function join({ code, name, role, pid, session_id, cwd } = {}) {
   if (!roomExists(code)) return fail(`no room "${code}"`);
@@ -200,8 +155,7 @@ function join({ code, name, role, pid, session_id, cwd } = {}) {
   if (RESERVED.includes(name.toLowerCase()) && !(name === 'orch' && role === 'orch')) return fail(`"${name}" is reserved`);
   if (role === 'orch' && name !== 'orch') return fail('the orchestrator joins as "orch"');
   pid = Number(pid);
-  const start = pidStart(pid);
-  if (!start) return fail(`process ${pid} is not running`);
+  if (!validPid(pid)) return fail(`invalid pid "${pid}"`);
   if (session_id != null && (typeof session_id !== 'string' || !SID_RE.test(session_id))) return fail('invalid session_id');
 
   let result;
@@ -210,24 +164,20 @@ function join({ code, name, role, pid, session_id, cwd } = {}) {
     const cur = members[name];
     let rejoin = false;
     if (cur) {
-      const holderLive = !cur.left_at && isAlive(cur.pid) && pidStart(cur.pid) === cur.pid_start;
-      if (holderLive && cur.pid !== pid) { result = fail(`name taken: "${name}" is already in ${code}`); return; }
+      if (!cur.left_at && cur.pid !== pid && isAlive(cur.pid)) { result = fail(`name taken: "${name}" is already in ${code}`); return; }
       rejoin = true;
     }
-    // A process belongs to one room seat at a time: retire its previous registration.
+    // One seat per claude process: retire its previous registration.
     const prev = readJson(byPidFile(pid));
-    if (prev && (prev.code !== code || prev.name !== name) && prev.pid_start === start) {
+    if (prev && (prev.code !== code || prev.name !== name)) {
       try {
-        if (prev.code === code) { if (members[prev.name] && members[prev.name].pid === pid) members[prev.name].left_at = new Date().toISOString(); }
+        if (prev.code === code) { if (members[prev.name] && members[prev.name].pid === pid && !members[prev.name].left_at) members[prev.name].left_at = new Date().toISOString(); }
         else markLeft(prev.code, prev.name, pid);
       } catch { /* old room gone */ }
     }
-    if (prev && prev.session_id && prev.session_id !== session_id) rm(bySidFile(prev.session_id));
-    if (cur && cur.session_id && cur.session_id !== session_id && cur.pid !== pid) rm(bySidFile(cur.session_id));
-    members[name] = { name, role, pid, pid_start: start, session_id: session_id || null, cwd: cwd || null,
-      joined_at: new Date().toISOString() };
+    members[name] = { name, role, pid, session_id: session_id || null, cwd: cwd || null, joined_at: new Date().toISOString() };
     writeJsonAtomic(membersFile(code), members);
-    const rec = { code, name, role, pid, pid_start: start, session_id: session_id || null };
+    const rec = { code, name, role, pid, session_id: session_id || null };
     writeJsonAtomic(byPidFile(pid), rec);
     if (session_id) writeJsonAtomic(bySidFile(session_id), rec);
     result = rejoin ? { ok: true, rejoin: true } : { ok: true };
@@ -258,47 +208,7 @@ function leave(code, name) {
   if (!m) return false;
   const p = readJson(byPidFile(m.pid));
   if (p && p.code === code && p.name === name) rm(byPidFile(m.pid));
-  if (m.session_id) {
-    const s = readJson(bySidFile(m.session_id));
-    if (s && s.code === code && s.name === name) rm(bySidFile(m.session_id));
-  }
   return true;
-}
-
-// ---------- resolution ----------
-function resolveByPid(pid) {
-  pid = Number(pid);
-  if (!Number.isInteger(pid) || pid <= 0) return null;
-  const rec = readJson(byPidFile(pid));
-  if (!rec || !rec.pid_start || !roomExists(rec.code)) return null;
-  if (pidStart(pid) !== rec.pid_start) return null;
-  const m = readMembers(rec.code)[rec.name];
-  if (!m || m.left_at || m.pid !== pid || m.pid_start !== rec.pid_start) return null;
-  return { code: rec.code, name: rec.name, role: m.role };
-}
-
-function resolveBySession(sid) {
-  if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
-  const rec = readJson(bySidFile(sid));
-  return rec ? resolveByPid(rec.pid) : null;
-}
-
-function resolveSelf() {
-  const table = processTable();
-  let pid = process.pid;
-  const seen = new Set();
-  // Walk the table directly so one `ps -A` covers the whole chain; resolveByPid checks the start time.
-  while (pid > 1 && !seen.has(pid)) {
-    seen.add(pid);
-    if (fs.existsSync(byPidFile(pid))) {
-      const r = resolveByPid(pid);
-      if (r) return { ...r, pid };
-    }
-    const row = table.get(pid);
-    if (!row) break;
-    pid = row.ppid;
-  }
-  return null;
 }
 
 function rebindSession(pid, sid) {
@@ -313,19 +223,114 @@ function rebindSession(pid, sid) {
     if (m.session_id && m.session_id !== sid) rm(bySidFile(m.session_id));
     m.session_id = sid;
     writeJsonAtomic(membersFile(who.code), members);
-    const rec = { ...readJson(byPidFile(pid)), session_id: sid };
-    writeJsonAtomic(byPidFile(pid), rec);
+    const rec = { code: who.code, name: who.name, role: m.role, pid: m.pid, session_id: sid };
+    writeJsonAtomic(byPidFile(m.pid), rec);
     writeJsonAtomic(bySidFile(sid), rec);
     ok = true;
   });
   return ok;
 }
 
+// ---------- resolution ----------
+const seat = (code, m) => ({ code, name: m.name, role: m.role, session_id: m.session_id || null, pid: m.pid });
+
+function resolveByPid(pid) {
+  pid = Number(pid);
+  if (!validPid(pid)) return null;
+  const rec = readJson(byPidFile(pid));
+  if (!rec || !roomExists(rec.code)) return null;
+  const m = readMembers(rec.code)[rec.name];
+  if (!m || m.left_at || m.pid !== pid) return null;
+  return seat(rec.code, m);
+}
+
+function resolveBySession(sid) {
+  if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
+  const rec = readJson(bySidFile(sid));
+  if (!rec || !roomExists(rec.code)) return null;
+  const m = readMembers(rec.code)[rec.name];
+  if (!m || m.left_at || m.session_id !== sid) return null;
+  return seat(rec.code, m);
+}
+
+function lastSeat(sid) {
+  if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
+  const rec = readJson(bySidFile(sid));
+  if (!rec || !roomExists(rec.code) || !NAME_RE.test(String(rec.name))) return null;
+  return { code: rec.code, name: rec.name, role: rec.role === 'orch' ? 'orch' : 'member' };
+}
+
+const claudePid = () => { const p = Number(process.env.CLAUDE_PID); return validPid(p) ? p : null; };
+
+function parentTable() {
+  const r = spawnSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, maxBuffer: 16 << 20 });
+  const t = new Map();
+  for (const line of (r.stdout || '').split('\n')) {
+    const m = line.match(/^\s*(\d+)\s+(\d+)/);
+    if (m) t.set(Number(m[1]), Number(m[2]));
+  }
+  return t;
+}
+
+function resolveSelf() {
+  const bySid = resolveBySession(process.env.CLAUDE_CODE_SESSION_ID);
+  if (bySid) return bySid;
+  const env = claudePid();
+  if (env) { const r = resolveByPid(env); if (r) return r; }
+  // Fallback: the nearest ancestor that has a registration (only registered pids are looked up).
+  let table = null;
+  let pid = process.pid;
+  const seen = new Set();
+  while (pid > 1 && !seen.has(pid)) {
+    seen.add(pid);
+    if (fs.existsSync(byPidFile(pid))) { const r = resolveByPid(pid); if (r) return r; }
+    if (!table) table = parentTable();
+    const pp = pid === process.pid ? process.ppid : table.get(pid);
+    if (!pp) break;
+    pid = pp;
+  }
+  return null;
+}
+
+// ---------- rooms ----------
+function openRooms() {
+  let codes;
+  try { codes = fs.readdirSync(roomsDir()).filter(c => CODE_RE.test(c)); } catch { return []; }
+  const open = [];
+  for (const code of codes) {
+    const o = readMembers(code).orch;
+    if (o && o.role === 'orch' && !o.left_at && isAlive(o.pid)) open.push({ code, at: o.joined_at || '' });
+  }
+  return open.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)).map(r => r.code);
+}
+
+// ---------- presence ----------
+function writePresence(code, name, state, detail) {
+  if (!NAME_RE.test(String(name)) || !PRESENCE_STATES.includes(state)) return false;
+  const v = { state, at: new Date().toISOString() };
+  if (detail) v.detail = String(detail).slice(0, 200);
+  try { writeJsonAtomic(path.join(presenceDir(code), `${name}.json`), v); return true; } catch { return false; }
+}
+
+function readPresence(code) {
+  const out = {};
+  let files;
+  try { files = fs.readdirSync(presenceDir(code)); } catch { return out; }
+  for (const f of files) {
+    if (!f.endsWith('.json')) continue;
+    const name = f.slice(0, -5);
+    const v = readJson(path.join(presenceDir(code), f));
+    if (NAME_RE.test(name) && v && PRESENCE_STATES.includes(v.state)) out[name] = v;
+  }
+  return out;
+}
+
 module.exports = {
-  NAME_RE, CODE_RE, RESERVED, ANIMALS,
-  home, roomDir, newCode, roomExists,
-  readMembers, readMembersFile, join, leave,
-  pidStart, isAlive, ancestors, claudePid,
-  resolveByPid, resolveBySession, resolveSelf, rebindSession,
+  NAME_RE, CODE_RE, RESERVED, ANIMALS, PRESENCE_STATES,
+  home, roomDir, newCode, roomExists, openRooms,
+  readMembers, readMembersFile, join, leave, rebindSession,
+  isAlive, claudePid,
+  resolveByPid, resolveBySession, resolveSelf, lastSeat,
+  writePresence, readPresence,
   withLock, readJson, writeJsonAtomic,
 };

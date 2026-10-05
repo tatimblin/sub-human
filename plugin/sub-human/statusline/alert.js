@@ -104,7 +104,7 @@ function createAlerter({ me, dir, pid, env = process.env, now = () => Date.now()
       st.plans = [...st.plans, e.plan_hash].slice(-MAX_HASHES);
       if (file) writeState(file, st);
       deliver('signoff', `${me.code}: your sign-off is needed`,
-        `Plan ${e.plan_hash.slice(0, 6)} waits on you. Say "review" in your Claude Code session.`);
+        `Plan ${e.plan_hash.slice(0, 6)} waits on you: the sign-off form is in your Claude Code session.`);
       return true;
     }
     if (e.to === me.name && e.from !== me.name) {

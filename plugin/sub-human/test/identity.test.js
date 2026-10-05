@@ -1,5 +1,5 @@
 'use strict';
-// Tests for lib/identity.js: codes, membership, process ancestry, resolution.
+// Tests for lib/identity.js: codes, membership, resolution (session id, registered pid, resolveSelf), open rooms, presence.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -7,8 +7,6 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
 const identity = require(path.join(h.LIB, 'identity.js'));
-
-const byPid = pid => path.join(identity.home(), 'sessions', 'by-pid', `${pid}.json`);
 
 test('identity: home, room codes are word-NNNN from the animal list and unique', () => {
   const home = h.freshHome();
@@ -40,11 +38,12 @@ test('identity: join validates names, reserved names and roles', () => {
   assert.match(j('alice', 'observer').error, /invalid role/, 'roles are orch and member only');
   assert.match(identity.join({ code: 'nope-0000', name: 'alice', role: 'member', pid: process.pid }).error, /no room/);
   assert.match(j('alice', 'member', { session_id: '../../x' }).error, /session_id/);
+  assert.match(j('alice', 'member', { pid: 'x' }).error, /invalid pid/);
   assert.deepEqual(j('orch', 'orch'), { ok: true });
   const m = identity.readMembers(code).orch;
   assert.equal(m.role, 'orch');
   assert.equal(m.pid, process.pid);
-  assert.equal(m.pid_start, identity.pidStart(process.pid));
+  assert.equal(m.pid_start, undefined, 'no process-start records');
   assert.equal(m.session_id, 's1');
   assert.equal(m.cwd, '/x');
   assert.ok(m.joined_at);
@@ -66,42 +65,42 @@ test('identity: a live holder makes the name taken; the same pid rejoins; a dead
   assert.deepEqual(identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: 'sb' }), { ok: true, rejoin: true });
   assert.equal(identity.readMembers(code).alice.pid, process.pid);
   assert.equal(identity.resolveByPid(other.pid), null);
-  // Joining a dead pid is refused outright.
-  const dead = await h.deadPid();
-  assert.match(identity.join({ code, name: 'bob', role: 'member', pid: dead }).error, /not running/);
 });
 
-test('identity: leave frees the name and drops the indexes', () => {
+test('identity: leave frees the name, drops the pid index, keeps lastSeat for --resume', () => {
   h.freshHome();
   const { code } = h.register('alice');
+  const sid = `sess-alice-${process.pid}`;
   assert.equal(identity.resolveByPid(process.pid).name, 'alice');
   assert.equal(identity.leave(code, 'alice'), true);
   assert.ok(identity.readMembers(code).alice.left_at);
   assert.equal(identity.resolveByPid(process.pid), null);
-  assert.equal(identity.resolveBySession(`sess-alice-${process.pid}`), null);
+  assert.equal(identity.resolveBySession(sid), null);
+  assert.deepEqual(identity.lastSeat(sid), { code, name: 'alice', role: 'member' });
+  assert.equal(identity.lastSeat('nope'), null);
   assert.equal(identity.leave(code, 'alice'), false);
   const s = h.spawnSleeper();
   assert.deepEqual(identity.join({ code, name: 'alice', role: 'member', pid: s.pid }), { ok: true, rejoin: true });
   s.kill();
 });
 
-test('identity: process helpers (pidStart, isAlive, ancestors)', async () => {
-  assert.match(identity.pidStart(process.pid), /\d{4}$/);
-  assert.equal(identity.isAlive(process.pid), true);
-  const dead = await h.deadPid();
-  assert.equal(identity.isAlive(dead), false);
-  assert.equal(identity.pidStart(dead), null);
-  assert.equal(identity.pidStart(-1), null);
-  const chain = identity.ancestors(process.pid);
-  assert.equal(chain[0].pid, process.ppid);
-  assert.ok(chain.some(a => a.pid === 1) || chain.length > 0);
-  const r = spawnSync(process.execPath, ['-e',
-    `const i=require(${JSON.stringify(path.join(h.LIB, 'identity.js'))});console.log(JSON.stringify(i.ancestors(process.pid).map(a=>a.pid)))`],
-  { env: h.childEnv(), encoding: 'utf8' });
-  assert.ok(JSON.parse(r.stdout).includes(process.pid), 'the test process is an ancestor of its child');
+test('identity: resolution returns {code, name, role, session_id, pid} by a direct lookup', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  const want = { code, name: 'alice', role: 'member', session_id: `sess-alice-${process.pid}`, pid: process.pid };
+  assert.deepEqual(identity.resolveByPid(process.pid), want);
+  assert.deepEqual(identity.resolveBySession(want.session_id), want);
+  assert.equal(identity.resolveBySession('../../etc/passwd'), null);
+  assert.equal(identity.resolveByPid(-1), null);
+  assert.equal(identity.resolveByPid(1), null, 'an unregistered pid');
+  // A stale index (the member record moved on) never resolves.
+  const members = identity.readMembers(code);
+  members.alice.pid = 1;
+  fs.writeFileSync(path.join(identity.roomDir(code), 'members.json'), JSON.stringify(members));
+  assert.equal(identity.resolveByPid(process.pid), null);
 });
 
-/** Run `fn` source in a child and return its JSON output. */
+/** Run `src` (a function source) in a child and return its JSON output. */
 function inChild(src, env = {}) {
   const r = spawnSync(process.execPath, ['-e', `const i=require(${JSON.stringify(path.join(h.LIB, 'identity.js'))});` +
     `console.log(JSON.stringify((${src})()))`], { env: h.childEnv(env), encoding: 'utf8' });
@@ -109,58 +108,64 @@ function inChild(src, env = {}) {
   return JSON.parse(r.stdout);
 }
 
-test('identity: claudePid accepts CLAUDE_PID only when it is a real ancestor', () => {
+test('identity: rebindSession after /clear; resolveSelf by CLAUDE_CODE_SESSION_ID, then CLAUDE_PID, then ancestors', () => {
   h.freshHome();
+  const { code } = h.register('alice');
   const bob = h.spawnSleeper();
-  // Ancestor: the test process is the child's parent.
-  assert.equal(inChild('() => i.claudePid()', { CLAUDE_PID: String(process.pid) }), process.pid);
-  // Not an ancestor: a live sibling process. Never accepted.
-  const got = inChild('() => i.claudePid()', { CLAUDE_PID: String(bob.pid) });
-  assert.notEqual(got, bob.pid);
-  // ppid mode (the MCP server) ignores env entirely.
-  assert.equal(inChild('() => i.claudePid({ppid:true})', { CLAUDE_PID: String(bob.pid) }), process.pid);
-  // And resolution never follows a non-ancestor CLAUDE_PID: bob is registered, alice (this pid) is the self.
-  const code = h.newRoom();
   identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sbob' });
-  h.register('alice', 'member', process.pid, code);
-  const self = inChild('() => i.resolveSelf()', { CLAUDE_PID: String(bob.pid) });
-  assert.equal(self.name, 'alice');
-  assert.equal(inChild(`() => i.resolveByPid(i.claudePid())`, { CLAUDE_PID: String(bob.pid) }), null);
-  bob.kill();
-});
-
-test('identity: resolveByPid rejects a pid_start mismatch (reused pid)', () => {
-  h.freshHome();
-  const { code } = h.register('alice');
-  assert.deepEqual(identity.resolveByPid(process.pid), { code, name: 'alice', role: 'member' });
-  const rec = JSON.parse(fs.readFileSync(byPid(process.pid), 'utf8'));
-  fs.writeFileSync(byPid(process.pid), JSON.stringify({ ...rec, pid_start: 'Thu Jan  1 00:00:00 1970' }));
-  assert.equal(identity.resolveByPid(process.pid), null);
-  assert.equal(identity.resolveBySession(`sess-alice-${process.pid}`), null);
-  assert.equal(inChild('() => i.resolveSelf()', { SUB_HUMAN_HOME: identity.home() }), null);
-  // The member record's start time is checked too.
-  fs.writeFileSync(byPid(process.pid), JSON.stringify(rec));
-  assert.equal(identity.resolveByPid(process.pid).name, 'alice');
-  const members = identity.readMembers(code);
-  members.alice.pid_start = 'x';
-  fs.writeFileSync(path.join(identity.roomDir(code), 'members.json'), JSON.stringify(members));
-  assert.equal(identity.resolveByPid(process.pid), null);
-});
-
-test('identity: resolveBySession, rebindSession after /clear, resolveSelf from a child', () => {
-  h.freshHome();
-  const { code } = h.register('alice');
-  assert.deepEqual(identity.resolveBySession(`sess-alice-${process.pid}`), { code, name: 'alice', role: 'member' });
-  assert.equal(identity.resolveBySession('../../etc/passwd'), null);
   assert.equal(identity.rebindSession(process.pid, 'new-sid'), true);
   assert.equal(identity.resolveBySession('new-sid').name, 'alice');
   assert.equal(identity.resolveBySession(`sess-alice-${process.pid}`), null);
   assert.equal(identity.readMembers(code).alice.session_id, 'new-sid');
-  const self = inChild('() => i.resolveSelf()');
-  assert.deepEqual(self, { code, name: 'alice', role: 'member', pid: process.pid });
+  assert.equal(identity.rebindSession(process.pid, '../x'), false);
+  // 1. the session id Claude Code sets for Bash and monitors.
+  assert.equal(inChild('() => i.resolveSelf().name', { CLAUDE_CODE_SESSION_ID: 'sbob' }), 'bob');
+  // 2. CLAUDE_PID (a stale session id after /clear falls through to it).
+  assert.equal(inChild('() => i.resolveSelf().name', { CLAUDE_CODE_SESSION_ID: 'stale', CLAUDE_PID: String(bob.pid) }), 'bob');
+  // 3. the nearest registered ancestor (this test process is the child's parent).
+  assert.deepEqual(inChild('() => i.resolveSelf()'), { code, name: 'alice', role: 'member', session_id: 'new-sid', pid: process.pid });
+  assert.equal(inChild('() => i.claudePid()', { CLAUDE_PID: '4242' }), 4242);
+  assert.equal(inChild('() => i.claudePid()'), null);
   // One registration per process: joining another room retires the first.
   const code2 = h.newRoom();
   h.register('carol', 'member', process.pid, code2);
   assert.ok(identity.readMembers(code).alice.left_at);
   assert.equal(identity.resolveByPid(process.pid).code, code2);
+  bob.kill();
+});
+
+test('identity: openRooms lists rooms with a live, present orchestrator', async () => {
+  h.freshHome();
+  assert.deepEqual(identity.openRooms(), []);
+  const a = h.newRoom();
+  h.register('orch', 'orch', process.pid, a);
+  identity.newCode(); // a room with nobody in it is not open
+  await h.sleep(5);
+  const b = h.newRoom();
+  const s = h.spawnSleeper();
+  identity.join({ code: b, name: 'orch', role: 'orch', pid: s.pid });
+  assert.deepEqual(identity.openRooms().sort(), [a, b].sort());
+  assert.equal(identity.openRooms()[0], b, 'newest first');
+  s.kill();
+  await h.until(() => !identity.isAlive(s.pid));
+  assert.deepEqual(identity.openRooms(), [a], 'dead orch');
+  identity.leave(a, 'orch');
+  assert.deepEqual(identity.openRooms(), [], 'orch left');
+});
+
+test('identity: presence is a per-member file; readPresence returns valid states only', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  assert.deepEqual(identity.readPresence(code), {});
+  assert.equal(identity.writePresence(code, 'alice', 'idle'), true);
+  assert.equal(identity.writePresence(code, 'bob', 'error', 'rate_limit'), true);
+  assert.equal(identity.writePresence(code, 'bob', 'bogus'), false);
+  assert.equal(identity.writePresence(code, '../x', 'idle'), false);
+  const p = identity.readPresence(code);
+  assert.deepEqual(Object.keys(p).sort(), ['alice', 'bob']);
+  assert.equal(p.alice.state, 'idle');
+  assert.deepEqual([p.bob.state, p.bob.detail], ['error', 'rate_limit']);
+  assert.ok(Date.parse(p.alice.at));
+  assert.ok(fs.existsSync(path.join(identity.roomDir(code), 'presence', 'alice.json')));
+  for (const st of identity.PRESENCE_STATES) assert.equal(identity.writePresence(code, 'carol', st), true, st);
 });

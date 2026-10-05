@@ -1,24 +1,19 @@
 #!/usr/bin/env node
 'use strict';
-// PreToolUse(ExitPlanMode): the room's plan gate. Ported from demo/hooks/gate-exitplan.js and
-// plan-publish.js.
+// PreToolUse(ExitPlanMode): the room's plan gate. ORCHESTRATOR ONLY; for anyone else (a member planning
+// their own work, or a session not in a room) the hook says nothing and ExitPlanMode behaves as usual.
 //
-// ORCHESTRATOR: the canonical plan is the file at tool_input.planFilePath (else tool_input.plan).
-//   It must carry `sub-human: {"room":CODE,"approval":"all","approvers":[…]}` frontmatter with
-//   approvers = the orchestrator's choice (non-empty, every name a joined, not-left member, never orch;
-//   the gate does not add anyone), and its body must start with plan.PLAN_NOTICE. The gate never rewrites the orch's bytes. A new hash is stored and published as plan_rev
-//   (via system), naming the approvers and the joined members who are not. Deny while ANY human in the
-//   room (approver or not) has an objection standing on that hash (their latest via=human signoff or
-//   objection on it wins), and naming the missing approvers until every approver signed it; then
-//   allow WITH updatedInput, which is what skips the dialog (spike 2). Fails closed.
-//
-// MEMBER: a plan without sub-human frontmatter is the member's own and passes through. A room
-//   stub/review: overwrite the plan file with the canonical bytes of the current plan (the dialog
-//   renders the file from disk), return ask + updatedInput, and remember pending_review so
-//   plan-result / stop-feedback can log the human's verdict. Denied while
-//   showClearContextOnPlanAccept is on: that path fires no PostToolUse and implements at once.
+// The canonical plan is the file at tool_input.planFilePath (else tool_input.plan). It must carry
+// `sub-human: {"room":CODE,"approval":"all","approvers":[…]}` frontmatter with approvers = the
+// orchestrator's choice (non-empty, every name a joined, not-left member, never orch; the gate does not
+// add anyone), and its body must start with plan.PLAN_NOTICE. The gate never rewrites the orch's bytes.
+// A new hash (or approver list) is stored and published as plan_rev (via system); each approver's room
+// server then pushes the sign-off form (mcp/signoff.js). Deny while ANY human in the room (approver or
+// not) has an objection standing on that hash (their latest via=human signoff or objection on it wins),
+// and, naming the missing approvers, until every approver signed it; then allow WITH updatedInput, which
+// is what skips the dialog. Fails closed.
 const fs = require('node:fs');
-const { room, plan, pre, deny, run, names, whoami, activeMembers, members, writePending, readState, writeState, clearContextOnAccept } = require('./common.js');
+const { room, plan, pre, deny, run, names, whoami, activeMembers, members, readState, writeState } = require('./common.js');
 
 const FM_HELP = code => `The plan file must start with:\n---\nsub-human: {"room":"${code}","approval":"all","approvers":[…the members you chose…]}\n---\n${plan.PLAN_NOTICE}`;
 
@@ -36,7 +31,7 @@ function orch(me, ti) {
   if (!fm) return deny(`ROOM-GATE: the plan has no sub-human frontmatter. ${FM_HELP(me.code)}`);
   if (fm.room !== me.code) return deny(`ROOM-GATE: the plan's frontmatter names room ${JSON.stringify(fm.room)}, but this room is ${me.code}. ${FM_HELP(me.code)}`);
   if (fm.approval !== 'all') return deny(`ROOM-GATE: the frontmatter must say "approval":"all". ${FM_HELP(me.code)}`);
-  if (!plan.hasNotice(text)) return deny(`ROOM-GATE: the plan must start, right after the frontmatter, with this exact line (members' approval dialog says "ready to execute"; this line tells them what approving means):\n${plan.PLAN_NOTICE}\nAdd it as the first body line and call ExitPlanMode again. Stay in plan mode.`);
+  if (!plan.hasNotice(text)) return deny(`ROOM-GATE: the plan must start, right after the frontmatter, with this exact line (it tells anyone reading the plan how sign-off works):\n${plan.PLAN_NOTICE}\nAdd it as the first body line and call ExitPlanMode again. Stay in plan mode.`);
   const approvers = Array.isArray(fm.approvers) ? fm.approvers.map(String) : [];
   if (!approvers.length) return deny('ROOM-GATE: "approvers" is empty. Choose who must sign off: anyone who asked to approve, contributed substantively, or owns part of the work. If nobody has joined yet, wait; stay in plan mode.');
   if (approvers.includes('orch')) return deny('ROOM-GATE: remove "orch" from "approvers": the orchestrator never signs off. Stay in plan mode.');
@@ -64,7 +59,7 @@ function orch(me, ti) {
   const m = room.signoffMatrix(hash, approvers);
   if (!m.complete) {
     noticeOnce(me, hash, m.missing, approvers);
-    return deny(`ROOM-GATE: plan ${hash} lacks sign-off from ${names(m.missing)}. Ask them by name; stay in plan mode.${published}`);
+    return deny(`ROOM-GATE: plan ${hash} lacks sign-off from ${names(m.missing)}. The sign-off form is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan mode.${published}`);
   }
   pre('allow', `ROOM-GATE: plan ${hash} signed by ${names(approvers)} in room ${me.code}.`, { updatedInput: ti });
 }
@@ -97,30 +92,9 @@ function noticeOnce(me, hash, missing, approvers) {
   writeState(me, 'gate_notice', key);
 }
 
-function member(me, ti, input) {
-  const text = planText(ti);
-  const fm = text == null ? null : plan.parseFrontmatter(text);
-  if (!fm) return; // the member's own local plan: not ours
-  if (fm.room && fm.room !== me.code) return deny(`ROOM-REVIEW: this plan names room ${fm.room}, but you are ${me.name} in room ${me.code}.`);
-  if (clearContextOnAccept(input.cwd)) {
-    return deny('ROOM-REVIEW: turn off clear-context-on-accept to review room plans: set "showClearContextOnPlanAccept": false in your Claude Code settings (that approval path records nothing and starts implementing immediately). Then call ExitPlanMode again.');
-  }
-  const cur = room.currentPlan();
-  if (!cur) return deny(`ROOM-REVIEW: nothing to review; room ${me.code} has no plan yet. Wait for the orchestrator to publish one.`);
-  const bytes = plan.canonical(me.code, cur.hash);
-  if (!bytes) return deny(`ROOM-REVIEW: the stored text of plan ${cur.hash} is missing from room ${me.code}; ask the orchestrator to re-publish.`);
-  const canonical = bytes.toString('utf8');
-  if (typeof ti.planFilePath === 'string' && ti.planFilePath) fs.writeFileSync(ti.planFilePath, canonical);
-  writePending(me, { hash: cur.hash, pid: me.pid, tool_use_id: input.tool_use_id || null, ts: new Date().toISOString() });
-  const stale = fm.review && fm.review !== cur.hash ? ` (you asked for ${fm.review}; the current plan is ${cur.hash})` : '';
-  pre('ask', `ROOM-REVIEW: ${me.name}, this is room ${me.code}'s plan ${cur.hash}${stale}. Approve to sign off; edit it or tell Claude what to change to object.`,
-    { updatedInput: { ...ti, plan: canonical } });
-}
-
 run(input => {
   const me = whoami(input);
   if (!me) return;
   const ti = input.tool_input || {};
   if (me.role === 'orch') return orch(me, ti);
-  return member(me, ti, input);
 }, err => deny(`ROOM-GATE: the gate hook failed (${err.message}). Stay in plan mode and tell the host.`));

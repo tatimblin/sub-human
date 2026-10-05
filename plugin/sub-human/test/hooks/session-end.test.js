@@ -5,10 +5,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { World, fixture, identity, ctx, hso, roomPlan } = require('./helpers.js');
 
-test('session-end: logs member_left and marks the member left; reason clear is skipped', () => {
+test('session-end: logs member_left and marks the member left; reasons clear and resume are skipped', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
   let r = w.hook('session-end', { ...fixture('session-end'), reason: 'clear' }, { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
+  w.hook('session-end', { ...fixture('session-end'), reason: 'resume' }, { as: 'alice' });
   assert.equal(w.entries().length, 0);
   assert.equal(w.members().alice.left_at, undefined);
 

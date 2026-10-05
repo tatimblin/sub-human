@@ -175,6 +175,12 @@ test('room: plan, approvers matrix, objection voids a sign-off, decided', () => 
   sys('plan_rev', { plan_hash: H2, approvers: ['alice', 'bob'] });
   assert.equal(room.currentPlan().hash, H2);
   assert.equal(room.planRev(H1).plan_hash, H1);
+  assert.equal(room.revNumber(H1), 1);
+  assert.equal(room.revNumber(H2), 2);
+  sys('plan_rev', { plan_hash: H1, approvers: ['alice', 'bob'] });
+  assert.equal(room.revNumber(H1), 1, 'a republished hash keeps its revision number');
+  assert.equal(room.revNumber('ffffffffffff'), null);
+  sys('plan_rev', { plan_hash: H2, approvers: ['alice', 'bob'] });
   assert.deepEqual(room.signoffMatrix(H2).missing, ['alice', 'bob']);
   assert.equal(room.decided(H1), null);
   const d = sys('decision', { plan_hash: H1, refs: [s3.id] });
