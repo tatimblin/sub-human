@@ -10,6 +10,7 @@ const identity = require(path.join(h.LIB, 'identity.js'));
 const signoff = require(path.join(h.PLUGIN, 'mcp', 'signoff.js'));
 
 process.env.SUB_HUMAN_FORM_POLL_MS = '60000'; // tests drive tick() by hand
+process.env.SUB_HUMAN_FORM_MIN_MS = '0';      // no stray-key guard unless a test sets one
 
 const flush = () => new Promise(r => setImmediate(r));
 
@@ -49,7 +50,9 @@ function world({ name = 'alice', role = 'member', caps = { elicitation: {} } } =
   return w;
 }
 
-test('signoff: a plan_rev naming me pushes one 3-line form; approve logs a hash-bound via=human signoff', async t => {
+const DECIDE_ASK = 'Approve this plan?  Accept (Enter) = Approve · Decline (↓ Enter) = Object, say why · Esc = later';
+
+test('signoff: a plan_rev naming me pushes one zero-field 4-line form; Accept logs a hash-bound via=human signoff', async t => {
   const w = world();
   t.after(() => w.s.stop());
   w.s.tick();
@@ -61,18 +64,14 @@ test('signoff: a plan_rev naming me pushes one 3-line form; approve logs a hash-
   const r = w.last();
   assert.equal(r.method, 'elicitation/create');
   assert.equal(r.params.message, [
-    `sub-human · room ${w.code} · plan ${hash.slice(0, 6)} (rev 1)`,
-    'GET /tasks paging',
-    `Full plan: ${planLib.planPath(w.code, hash)}   (or: sub-human plan)`,
+    `Room ${w.code} · plan ${hash.slice(0, 6)} (rev 1) · full plan: ${planLib.planPath(w.code, hash)}`,
+    'GET /tasks paging · cursor paging, bare array, max 50 · tests',
+    ' ',
+    DECIDE_ASK,
   ].join('\n'));
-  const sch = r.params.requestedSchema;
-  assert.deepEqual(sch.required, ['decision']);
-  assert.deepEqual(sch.properties.decision.enum, ['approve', 'object']);
-  assert.deepEqual(sch.properties.decision.enumNames, ['Approve (sign off)', 'Object (blocks the plan)']);
-  assert.equal(sch.properties.decision.description, 'GET /tasks paging · cursor paging, bare array, max 50 · tests');
-  assert.equal(sch.properties.reason.type, 'string');
+  assert.deepEqual(r.params.requestedSchema, { type: 'object', properties: {} }, 'no fields: focus starts on Accept, Enter answers');
 
-  r.resolve({ action: 'accept', content: { decision: 'approve' } });
+  r.resolve({ action: 'accept', content: {} });
   await flush();
   const e = w.entries().at(-1);
   assert.deepEqual([e.kind, e.via, e.from, e.plan_hash], ['signoff', 'human', 'alice', hash]);
@@ -81,40 +80,112 @@ test('signoff: a plan_rev naming me pushes one 3-line form; approve logs a hash-
   assert.equal(w.requests.length, 1, 'answered: not offered again');
 });
 
-test('signoff: Object records the reason byte for byte', async t => {
+test('signoff: a long plan is packed into the two summary lines; the message never exceeds 4 lines', async t => {
+  const w = world();
+  t.after(() => w.s.stop());
+  const body = Array.from({ length: 30 }, (_, i) => `## Step ${i + 1}\nDo the thing number ${i + 1} carefully.`).join('\n\n');
+  w.publish(body);
+  w.s.tick();
+  const lines = w.last().params.message.split('\n');
+  assert.equal(lines.length, 4);
+  assert.match(lines[1], /^Step 1 · Do the thing number 1 carefully\. · Step 2/);
+  assert.match(lines[2], /^Do the thing number 3 carefully\. · Step 4/);
+  for (const l of lines.slice(1, 3)) assert.ok(Array.from(l).length <= 120, l);
+  assert.deepEqual(planLib.packed('# A\n- b\n- c', 2, 5), ['A · b', 'c']);
+  assert.deepEqual(planLib.packed('', 2), []);
+});
+
+test('signoff: Decline opens the reason form; Accept there records the reason byte for byte', async t => {
   const w = world();
   t.after(() => w.s.stop());
   const hash = w.publish('# P\n');
   w.s.tick();
+  w.last().resolve({ action: 'decline' });
+  await flush(); await flush();
+  assert.equal(w.requests.length, 2, 'reason form at once');
+  const r = w.last();
+  assert.equal(r.params.message, [
+    `Object to plan ${hash.slice(0, 6)} (rev 1) · room ${w.code}`,
+    'Type what the room should change, then press Enter twice. Sent exactly as typed; it blocks the plan.',
+    'Decline = back to Approve/Object · Esc = later',
+  ].join('\n'));
+  assert.deepEqual(r.params.requestedSchema, {
+    type: 'object', properties: { reason: { type: 'string', title: 'What should change?', minLength: 1 } }, required: ['reason'],
+  });
   const reason = 'cap at 10s total, not per-try; keep <retry> & "backoff" — 3 attempts $HOME `x`\n  second line\t🎉 ';
-  w.last().resolve({ action: 'accept', content: { decision: 'object', reason } });
+  r.resolve({ action: 'accept', content: { reason } });
   await flush();
   const e = w.entries().at(-1);
   assert.deepEqual([e.kind, e.via, e.from, e.plan_hash], ['objection', 'human', 'alice', hash]);
   assert.equal(e.text, reason);
   w.s.tick();
-  assert.equal(w.requests.length, 1);
+  assert.equal(w.requests.length, 2);
 });
 
-test('signoff: Object without a reason records nothing and re-asks at once with a warning', async t => {
+test('signoff: a blank reason records nothing and re-asks with a warning; Decline there goes back to Approve/Object', async t => {
   const w = world();
   t.after(() => w.s.stop());
   w.publish('# P\n');
   w.s.tick();
-  w.last().resolve({ action: 'accept', content: { decision: 'object', reason: '  \n' } });
+  w.last().resolve({ action: 'decline' });
+  await flush(); await flush();
+  w.last().resolve({ action: 'accept', content: { reason: '  \n' } });
   await flush(); await flush();
   assert.equal(w.entries().length, 1, 'only the plan_rev');
-  assert.equal(w.requests.length, 2, 're-asked');
-  assert.match(w.last().params.message.split('\n')[0], /· ⚠ an objection needs a reason$/);
-  assert.equal(w.last().params.message.split('\n').length, 3);
-  w.last().resolve({ action: 'accept', content: { decision: 'object', reason: 'too broad' } });
+  assert.equal(w.requests.length, 3, 're-asked');
+  assert.match(w.last().params.message.split('\n')[0], /^⚠ An objection needs a reason\. · Object to plan /);
+  assert.ok(w.last().params.requestedSchema.properties.reason);
+  w.last().resolve({ action: 'decline' });
+  await flush(); await flush();
+  assert.equal(w.requests.length, 4, 'back to the decide form');
+  assert.deepEqual(w.last().params.requestedSchema.properties, {});
+  assert.equal(w.last().params.message.split('\n')[3], DECIDE_ASK);
+  w.last().resolve({ action: 'accept', content: {} });
   await flush();
-  assert.equal(w.entries().at(-1).text, 'too broad');
-  w.s.tick();
-  assert.equal(w.requests.length, 2);
+  assert.equal(w.entries().at(-1).kind, 'signoff');
+  assert.equal(w.entries().length, 2);
 });
 
-test('signoff: decline and Esc log nothing; re-offered only after SUB_HUMAN_REOFFER_MS', async t => {
+test('signoff: an Accept faster than SUB_HUMAN_FORM_MIN_MS is a stray key: not recorded, the form comes back with a note', async t => {
+  process.env.SUB_HUMAN_FORM_MIN_MS = '5000';
+  const w = world();
+  t.after(() => { w.s.stop(); process.env.SUB_HUMAN_FORM_MIN_MS = '0'; });
+  w.publish('# P\n');
+  w.s.tick();
+  w.last().resolve({ action: 'accept', content: {} });
+  await flush(); await flush();
+  assert.equal(w.entries().length, 1, 'nothing recorded');
+  assert.equal(w.requests.length, 2);
+  assert.deepEqual(w.last().params.message.split('\n').slice(1), ['P', '⚠ Not recorded: that Enter came too fast (a stray key?). Press Enter again to approve.', DECIDE_ASK]);
+  const realNow = Date.now;
+  t.after(() => { Date.now = realNow; });
+  Date.now = () => realNow() + 5001;
+  w.last().resolve({ action: 'accept', content: {} });
+  await flush();
+  assert.equal(w.entries().at(-1).kind, 'signoff');
+});
+
+test('signoff: Esc on the reason form records nothing and waits out the re-offer delay', async t => {
+  const w = world();
+  t.after(() => w.s.stop());
+  w.publish('# P\n');
+  w.s.tick();
+  w.last().resolve({ action: 'decline' });
+  await flush(); await flush();
+  w.last().resolve({ action: 'cancel' });
+  await flush(); await flush();
+  w.s.tick();
+  assert.equal(w.requests.length, 2);
+  assert.equal(w.entries().length, 1);
+  const realNow = Date.now;
+  t.after(() => { Date.now = realNow; });
+  Date.now = () => realNow() + 10 * 60 * 1000 + 1;
+  w.s.tick();
+  assert.equal(w.requests.length, 3);
+  assert.deepEqual(w.last().params.requestedSchema.properties, {}, 'starts over at Approve/Object');
+});
+
+test('signoff: Esc logs nothing; re-offered only after SUB_HUMAN_REOFFER_MS', async t => {
   process.env.SUB_HUMAN_REOFFER_MS = '150';
   const w = world();
   t.after(() => { w.s.stop(); delete process.env.SUB_HUMAN_REOFFER_MS; });
@@ -127,7 +198,7 @@ test('signoff: decline and Esc log nothing; re-offered only after SUB_HUMAN_REOF
   await h.sleep(200);
   w.s.tick();
   assert.equal(w.requests.length, 2, 're-offered after the timer');
-  w.last().resolve({ action: 'decline' });
+  w.last().resolve({ action: 'cancel' });
   await flush();
   w.s.tick();
   assert.equal(w.requests.length, 2);
@@ -168,12 +239,12 @@ test('signoff: a newer plan_rev cancels the open form with notifications/cancell
   w.s.tick();
   assert.deepEqual(w.notes, [{ method: 'notifications/cancelled', params: { requestId: old.id, reason: `plan ${h1} was replaced by ${h2}` } }]);
   assert.equal(w.requests.length, 2);
-  assert.deepEqual(w.last().params.message.split('\n').slice(0, 2), [`sub-human · room ${w.code} · plan ${h2.slice(0, 6)} (rev 2)`, 'v2']);
+  assert.deepEqual(w.last().params.message.split('\n').slice(0, 2), [`Room ${w.code} · plan ${h2.slice(0, 6)} (rev 2) · full plan: ${planLib.planPath(w.code, h2)}`, 'v2']);
   // a late answer to the stale form is ignored
-  old.resolve({ action: 'accept', content: { decision: 'approve' } });
+  old.resolve({ action: 'accept', content: {} });
   await flush();
   assert.equal(w.entries().filter(e => e.kind === 'signoff').length, 0);
-  w.last().resolve({ action: 'accept', content: { decision: 'approve' } });
+  w.last().resolve({ action: 'accept', content: {} });
   await flush();
   const e = w.entries().at(-1);
   assert.deepEqual([e.kind, e.plan_hash], ['signoff', h2]);
@@ -224,7 +295,7 @@ test('signoff: review() re-offers at once after Esc and never reveals the answer
   assert.equal(r.isError, undefined);
   assert.match(r.content[0].text, new RegExp(`Opened the sign-off form for plan ${hash} in alice's terminal`));
   assert.equal(w.requests.length, 2);
-  w.last().resolve({ action: 'accept', content: { decision: 'approve' } });
+  w.last().resolve({ action: 'accept', content: {} });
   await flush();
   assert.equal(w.entries().at(-1).kind, 'signoff');
   // after answering, review still re-offers (the human may change their mind)
@@ -287,14 +358,17 @@ test('signoff e2e: room-server pushes the form, a mock client objects, the stale
   const forms = () => got.filter(m => m.method === 'elicitation/create');
   const h1 = pub('# v1\n');
   assert.ok(await h.until(() => forms().length === 1, 5000), 'form pushed');
-  assert.match(forms()[0].params.message, new RegExp(`^sub-human · room ${code} · plan ${h1.slice(0, 6)} \\(rev 1\\)\nv1\nFull plan: `));
+  assert.match(forms()[0].params.message, new RegExp(`^Room ${code} · plan ${h1.slice(0, 6)} \\(rev 1\\) · full plan: .*\nv1\n`));
   const h2 = pub('# v2\n');
   assert.ok(await h.until(() => forms().length === 2, 5000), 'new form pushed');
   const cancelled = got.find(m => m.method === 'notifications/cancelled');
   assert.ok(cancelled, 'stale form cancelled');
   assert.equal(cancelled.params.requestId, forms()[0].id);
   const reason = 'not per-try; keep <retry> & "backoff" — `x`';
-  send({ id: forms()[1].id, result: { action: 'accept', content: { decision: 'object', reason } } });
+  send({ id: forms()[1].id, result: { action: 'decline' } });
+  assert.ok(await h.until(() => forms().length === 3, 5000), 'reason form pushed');
+  assert.ok(forms()[2].params.requestedSchema.properties.reason);
+  send({ id: forms()[2].id, result: { action: 'accept', content: { reason } } });
   const obj = await h.until(() => { room.bind(code); return room.readAll().find(e => e.kind === 'objection'); }, 5000);
   assert.ok(obj, 'objection logged');
   assert.deepEqual([obj.via, obj.from, obj.plan_hash, obj.text], ['human', 'alice', h2, reason]);

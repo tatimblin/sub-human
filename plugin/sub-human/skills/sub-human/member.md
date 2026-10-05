@@ -20,9 +20,11 @@ Make **the room-row call below** (under ROWS) now, exactly as written: one backg
 
 ## Sign-off
 
-When a plan names NAME as an approver, a **native form** appears in this terminal by itself: room, plan hash, a short summary, the full plan's path, and **Approve / Object** with a reason. NAME answers it directly; you don't run it and can't answer it.
-- Approve records NAME's sign-off; Object records NAME's objection with their reason, word for word.
-- Esc dismisses it and records nothing. It comes back in 10 minutes, or when NAME says **"review"**: then call `mcp__plugin_sub-human_room__review`.
+When a plan names NAME as an approver, a **native form** appears in this terminal by itself: room, plan hash, the full plan's path, a two-line summary, and **"Approve this plan?"** with **Accept = Approve**, **Decline = Object**. NAME answers it directly; you don't run it and can't answer it.
+- **Approve:** Enter (focus starts on Accept). Records NAME's sign-off.
+- **Object:** ↓ then Enter; a second form asks what should change; NAME types it and presses Enter twice. Records NAME's objection with their words, byte for byte. Decline on that second form goes back.
+- **Esc** dismisses it and records nothing. It comes back in 10 minutes, or at once when you call `mcp__plugin_sub-human_room__review`.
+- **Call `review` immediately** when NAME says "review", or says anything in chat that sounds like an answer while their sign-off is pending ("go ahead", "looks good", "approve", "I object…", "change X first"). The form comes back and NAME answers there. Never record consent yourself, never post their objection for them, and never tell them it is recorded: only the form records it.
 - A newer plan replaces the form; an earlier sign-off no longer counts.
 - **Never use plan mode for sign-off.** Don't EnterPlanMode or ExitPlanMode for the room's plan.
 - To read the whole plan, call `mcp__plugin_sub-human_room__plan`; in a shell, `sub-human plan` prints it and `sub-human watch <person>` prints one person's full thread.
@@ -32,7 +34,8 @@ When a plan names NAME as an approver, a **native form** appears in this termina
 | Event | Action |
 |---|---|
 | `question`/`say` with `to=NAME` | Tell NAME; offer a draft reply for NAME to send with `@room`. |
-| `plan_rev` naming NAME | Tell NAME in one line that the form is up (or say "review" if it was dismissed). Post nothing. |
+| `plan_rev` naming NAME | Tell NAME in one line that the form is up: Enter approves, ↓ Enter objects. Post nothing. |
+| NAME approves or objects in chat while a sign-off is pending | Call `review` now so the form comes back. Record nothing yourself. |
 | `decision` | Tell NAME (cite #id). **Implement nothing** until an assignment names NAME. |
 | An assignment names NAME | Tell NAME the part, files and contract. Start after NAME says go. Stay in NAME's files; to cross the contract, post a `question`. |
 | NAME asks about the room | Answer from read/plan; cite ids. |

@@ -19,6 +19,10 @@
  *   canonical(code, hash) -> Buffer|null the stored bytes
  *   planPath(code, hash) -> string       <roomDir>/plans/<hash>.md
  *   summary(text, lines=3) -> string     at most `lines` short lines (frontmatter `summary`, then headings/text)
+ *   packed(text, lines=2, width=120) -> string[]
+ *                                        the summary items packed into at most `lines` display lines of at most
+ *                                        `width` code points each, joined with " · " (the sign-off form shows
+ *                                        only 4 message lines, each cut at the terminal width)
  */
 
 const fs = require('node:fs');
@@ -108,4 +112,24 @@ function summary(text, lines = 3) {
   }).join('\n');
 }
 
-module.exports = { PLAN_NOTICE, parseFrontmatter, body, hasNotice, hash12, storeCanonical, canonical, planPath, summary, FM_RE };
+/**
+ * The summary items (up to 40) packed greedily into at most `lines` lines of at most `width` code points,
+ * joined with " · ". An item longer than `width` gets a line of its own (the terminal cuts it). Items that
+ * don't fit are dropped: the form's first line carries the full plan's path.
+ */
+function packed(text, lines = 2, width = 120) {
+  const items = summary(text, 40).split('\n').filter(Boolean);
+  const out = [];
+  let cur = '';
+  for (const it of items) {
+    if (out.length >= lines) break;
+    const next = cur ? `${cur} · ${it}` : it;
+    if (!cur || Array.from(next).length <= width) { cur = next; continue; }
+    out.push(cur);
+    cur = out.length < lines ? it : '';
+  }
+  if (cur && out.length < lines) out.push(cur);
+  return out;
+}
+
+module.exports = { PLAN_NOTICE, parseFrontmatter, body, hasNotice, hash12, storeCanonical, canonical, planPath, summary, packed, FM_RE };

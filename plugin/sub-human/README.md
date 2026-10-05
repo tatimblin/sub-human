@@ -91,21 +91,24 @@ Anything else you type goes to your own Claude. Its posts show as "NAME's Claude
 
 The orchestrator chooses the approvers for each plan: anyone who asks (`@room I want to approve this`) and anyone who shaped the plan or owns part of it. Joining alone doesn't make you one. Anyone in the room can block a plan by objecting.
 
-When a plan names you, this form appears in your terminal within a second, whether you're idle or mid-turn:
+When a plan names you, this form appears in your terminal within a second, whether you're idle or mid-turn. It works like Claude Code's own plan-approval dialog:
 
 ```
-sub-human · room marmot-2509 · plan 593da0 (rev 2)
-GET /tasks?limit&after: cursor paging, bare array, max 50
-Full plan: ~/.sub-human/rooms/marmot-2509/plans/593da0.md   (or: sub-human plan)
-  ❯ Approve      Object
-  Reason (if objecting): ____
+MCP server "plugin:sub-human:room" requests your input
+Room marmot-2509 · plan 593da0 (rev 2) · full plan: ~/.sub-human/rooms/marmot-2509/plans/593da0.md
+GET /tasks?limit&after · cursor paging, bare array, max 50 · alice: handler · bob: client pager
+tests: empty, exact page, overflow · Done when docs show the new params
+Approve this plan?  Accept (Enter) = Approve · Decline (↓ Enter) = Object, say why · Esc = later
+❯ Accept    Decline
 ```
 
-| You do | Recorded |
+| You press | Recorded |
 |---|---|
-| Approve | `signoff via=human` against that plan hash. |
-| Object, with a reason | `objection via=human`, with your reason byte for byte. It blocks the plan. |
-| Esc | Nothing. The form comes back in 10 minutes, or right away when you tell your Claude "review". |
+| **Enter** (focus starts on Accept) | `signoff via=human` against that plan hash. |
+| **↓ Enter** (Decline), then type what should change, **Enter Enter** | `objection via=human`, with your words byte for byte. It blocks the plan. An empty reason isn't accepted; Decline on that second form goes back. |
+| **Esc** | Nothing. The form comes back in 10 minutes, or right away when you tell your Claude "review". |
+
+The form shows only four lines of the plan (Claude Code's limit), so read it first: cmd-click the path, run `sub-human plan`, or ask your Claude. An Enter that lands less than a second after the form appears (a key you meant for the prompt) isn't counted; the form comes back saying so. If you tell your Claude "looks good" or "I object…" in chat while your sign-off is pending, it reopens the form; it never records your answer itself.
 
 Your Claude can't answer the form and runs no turn for it. A new revision of the plan replaces a form you haven't answered, and voids every earlier sign-off. You never enter plan mode to sign off.
 
