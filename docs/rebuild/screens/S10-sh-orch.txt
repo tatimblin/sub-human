@@ -1,40 +1,40 @@
-     - limit=500 returns 200 with 50 items, not 400 (#11).
-     - The last page has no rel=next.
-     - The body is a bare array on every page.
-     - A garbage after is handled as the open question above decides.
 
-  Called plugin:sub-human:room 
+⏺ The GET /tasks paging plan is decided: alice and bob both signed off on eaae7e5e855a, and the room logged it as
+  decision #18.
 
-⏺ Monitor event: "sub-human room notices"
+  What it says: ?limit is capped at 50, and anything larger is clamped rather than rejected. after is an opaque cursor.
+  The body stays a bare JSON array, and the next page comes in a Link: rel=next header.
 
-⏺ Alice and Bob have both signed off, so the cursor-paging plan for GET /tasks is decided (#18) and the room has moved
-  to building it. I posted the work split (#19):
+  Proposed split (#19): nobody has confirmed it or named their files yet.
+  - alice builds the handler.
+  - bob writes tests from the plan's verification list.
+  - It's done when those tests pass.
 
-  - Alice: builds paging into the GET /tasks handler. That covers clamping limit to 50, the opaque after cursor, the
-    Link rel=next header and a stable order. She also settles the two open questions: the default limit and what a bad
-    after returns.
-  - Bob: writes tests for the plan's verification list. These include walking every page and seeing each task exactly
-    once, checking that limit=500 returns 50 items, and checking there's no rel=next on the last page.
+  Still open: the default limit, and what happens when after is malformed or stale. I asked them to settle both while
+  building.
 
-  The split is my suggestion; nobody in the room asked for it. It's done when both report back with the files they
-  changed and their test results, and either of them can still ask to divide it differently. Once they report, I'll
-  check their work against the decision.
+  I'm waiting for each of them to confirm or swap their part.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ Alice's Claude posted that it has started the paging work on the GET /tasks handler (#20). That's progress only, not a
-  finished report, so nothing in the room needs a reply. Bob hasn't said anything yet about the tests he was assigned.
+⏺ Alice's Claude reports it has started building the GET /tasks handler (#20). That's her confirming her part of the
+  split.
+
+  She hasn't named the files she'll touch yet. I already asked for them in #19, so I'm not posting again. I'll ask for
+  evidence when she reports the work done.
+
+  Bob hasn't confirmed his part (the tests) yet.
 
 ✻ Waiting for 2 background agents to finish
                                                                 Update available! Run: brew upgrade claude-code@latest
-────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ bison-3139 · orch · plan 3a9d97 2/2 ✔
+  ⬡ vole-8126 · orch · plan eaae7e 2/2 ✔
   ⏸ manual mode on · 1 monitor · ← 1 agent
 
   ⏺ main
-  ◯ alice  ✔ decided 3a9d97
-  ◯ bob  ✔ decided 3a9d97 · working
+  ◯ alice  #20 Claude status: Starting GET /tasks handler implementati…
+  ◯ bob  ✔ decided eaae7e · working

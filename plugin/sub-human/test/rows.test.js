@@ -35,6 +35,7 @@ test('rowCalls: orch gets one participant call per active member; none for orch 
   assert.doesNotMatch(t, /description: "carol"/);
   assert.doesNotMatch(t, /description: "orch"/);
   assert.match(t, /member_joined NAME/);
+  assert.match(t, /only when it says NAME has no row running/);
   const none = rows.rowCalls({ code, name: 'orch', role: 'orch' }, { orch: ms.orch });
   assert.match(none, /No members yet/);
 });
@@ -105,6 +106,13 @@ test('rowText: human objection, stale presence ignored, decided, left, mail for 
   assert.equal(rows.rowText(code, 'zed', 'orch'), 'not in the room');
   fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: 5, at: new Date().toISOString(), kind: 'decision', via: 'system', from: 'orch', plan_hash: H, text: 'go' }) + '\n');
   assert.match(rows.rowText(code, 'alice', 'orch'), /^✔ decided 593da0/);
+  // build phase: the latest status after the decision (with its evidence) replaces "decided"
+  fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: 6, at: new Date().toISOString(), kind: 'status', via: 'agent', from: 'alice', to: 'room', text: 'starting the handler' }) + '\n');
+  fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: 7, at: new Date().toISOString(), kind: 'status', via: 'agent', from: 'alice', to: 'room', text: 'handler done,\n12/12 tests pass in test/tasks.test.js' }) + '\n');
+  const t = rows.rowText(code, 'alice', 'orch');
+  assert.match(t, /^#7 Claude status: handler done, 12\/12 tests pass/);
+  assert.ok(Array.from(t).length <= rows.ROW_MAX);
+  assert.match(rows.rowText(code, 'bob', 'orch'), /^✔ decided 593da0/, 'no status from bob yet');
 });
 
 test('rowText: no plan falls back to the last activity; output is clipped to ROW_MAX', () => {
@@ -141,4 +149,21 @@ test('missingRows: orch lists members without a live hold after the grace period
   assert.deepEqual(rows.missingRows(code, { code, name: 'alice', role: 'member' }), []);
   fs.writeFileSync(rows.holdsFile(code, 'alice'), JSON.stringify({ pid: 999999, at: new Date().toISOString(), members: [], room: true }));
   assert.deepEqual(rows.missingRows(code, { code, name: 'alice', role: 'member' }), [code], 'dead server pid: not live');
+});
+
+test('joinNote: a member_joined notice says whether the row already runs here (live holds), so only a missing row is spawned', () => {
+  const { code } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }]);
+  const orch = { code, name: 'orch', role: 'orch' };
+  assert.match(rows.joinNote(orch, 'bob'), /bob has no row running; spawn it now: Agent sub-human:participant, description "bob", prompt "member: bob"/);
+  rows.writeHolds(code, 'orch', { members: ['bob'] });
+  assert.match(rows.joinNote(orch, 'bob'), /bob's row is already running .*make NO Agent call/);
+  assert.match(rows.joinNote(orch, 'alice'), /alice has no row running/);
+  fs.writeFileSync(rows.holdsFile(code, 'orch'), JSON.stringify({ pid: 999999, at: new Date().toISOString(), members: ['bob'], room: false }));
+  assert.match(rows.joinNote(orch, 'bob'), /no row running/, 'dead hold server: not running');
+  const alice = { code, name: 'alice', role: 'member' };
+  assert.match(rows.joinNote(alice, 'bob'), /room row is not running/);
+  rows.writeHolds(code, 'alice', { room: true });
+  assert.match(rows.joinNote(alice, 'bob'), /your room row adds bob by itself; make NO Agent call/);
+  assert.equal(rows.joinNote(alice, 'alice'), '');
+  assert.equal(rows.joinNote(alice, 'orch'), '');
 });

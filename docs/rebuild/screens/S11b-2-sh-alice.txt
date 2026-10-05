@@ -4,12 +4,9 @@
   ▝▝ ▝▝    /private/tmp/sh-demo/alice
 
 
-  Called plugin:sub-human:room 
-
-⏺ sub-human:participant(bob)
-  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
-
-  Called plugin:sub-human:room 
+⏺ Calling plugin:sub-human:room · 4m 4s…
+  ⎿  #26 facilitator → bob · status: Welcome back, bob. Ignore #25: you're still an approver of plan eaae7e5e855a, which
+     was decided in #18. You still have the verification tests from #19, and my review o…
 
 
 
@@ -27,14 +24,17 @@
 
 
 
-✻ Ruminating… (20m 21s · ↓ 9.2k tokens · thinking)
+
+
+
+✻ Coalescing… (4m 6s · ↓ 2.0k tokens)
   ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────────────── bison-3139 ─
-❯ Message @sub-human:room…
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────── bob ─
+❯ Message @sub-human:participa……
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ↑/↓ to select · ctrl+x ctrl+k to stop all agents
 
   ◯ main
-❯ ⏺ bison-3139  plan 3a9d97 2/2 ✔ · ✉ 2 for you
-  ◯ bison-3139  plan 3a9d97 2/2 ✔ · ✉ 2 for you
+  ◯ vole-8126  plan eaae7e 2/2 ✔ · ✉ 2 for you
+❯ └ ⏺ bob  ✔ decided eaae7e · working

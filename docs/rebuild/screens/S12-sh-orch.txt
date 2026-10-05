@@ -1,16 +1,16 @@
 
-  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
-
   Called plugin:sub-human:room 
 
-⏺ Bob left the room (#23), and since he owned the verification tests, I asked Alice whether she'd take them over (#25).
-  He rejoined right after (#24), so his row is back in the panel.
+⏺ Bob left the room (#23) and then came back almost immediately (#24). His row was still running, so I didn't start a
+  new one.
 
-  I posted to Bob (#26) that the plan is decided and Alice reports the handler is done in src/server.js. The same post
-  tells him the tests are still his and that #25 can be ignored.
+  My post #25 went out after his return without my knowing. It told alice he was gone and asked whether she or I would
+  take over his verification tests. I followed up with #26, telling bob to ignore #25: he is still an approver of the
+  decided plan (eaae7e5e855a), he still has the tests, and my review of alice's build is in #22.
 
-  My earlier question to Alice (#22) is still unanswered: what does a garbage or tampered after return? I'm waiting on
-  that answer and on Bob's test report.
+  Still waiting on:
+  - alice: whether she'll fix the two problems I flagged in #22, or wants the room to accept them as a plan revision.
+  - bob: confirmation that he's taking the verification tests.
 
 ✻ Waiting for 2 background agents to finish
 
@@ -18,23 +18,23 @@
 
   Called plugin:sub-human:room 
 
-⏺ Agent "bob" finished · 19s
+⏺ Bob left the room again (#27), so his verification tests have no owner. In #28 I re-asked alice whether she'll take
+  them or wants me to run them in the background.
 
-⏺ Bob has left the room again, this time by exiting his session (#27), and his row has closed. That leaves the
-  verification tests with no owner.
+  Alice still owes two answers:
+  - who runs the verification tests (#28)
+  - whether she'll fix the two problems from my review in #22, or wants the room to accept them as a plan revision
 
-  I asked Alice again (#28) whether she'll take the tests, or whether I should run them as a background job.
+  If bob is gone for good, any revision of the plan will drop him as an approver.
 
-  Her answer to #22 is also still outstanding: what a garbage or tampered after returns. Nothing else happens until she
-  replies to one of these or Bob rejoins.
-
-✻ Waiting for 1 background agent to finish
+✻ Waiting for 2 background agents to finish
                                                                 Update available! Run: brew upgrade claude-code@latest
-────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ bison-3139 · orch · plan 3a9d97 2/2 ✔
-  ⏸ manual mode on · 1 monitor · /tasks to see subagents · ← 1 agent
+  ⬡ vole-8126 · orch · plan eaae7e 2/2 ✔
+  ⏸ manual mode on · 1 monitor · ← 1 agent
 
   ⏺ main
-  ◯ alice  ✔ decided 3a9d97 · working
+  ◯ alice  #21 Claude status: GET /tasks handler complete. Cursor pagi…
+  ◯ bob  left

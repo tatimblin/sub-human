@@ -60,5 +60,5 @@ test('restore: lists only the missing rows (orch after compact / clear)', () => 
   ctx = restore(orch, 'clear', `sess-orch-${orch}-2`);
   assert.deepEqual(calls(ctx), []);
   assert.match(ctx, /already running/);
-  assert.match(ctx, /When a member_joined NAME entry arrives/, 'future joins still get rows');
+  assert.match(ctx, /Each member_joined NAME notice ends with "row: …"/, 'future joins still get rows');
 });

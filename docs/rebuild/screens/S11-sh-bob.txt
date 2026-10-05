@@ -1,40 +1,40 @@
 
-⏺ Monitor event: "sub-human room notices"
-
-⏺ New plan 3a9d9726e017 is ready for your sign-off. Press Enter to approve, or ↓ then Enter to object.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #15 alice approved plan 3a9d9726e017. Waiting on your sign-off.
+⏺ #15 alice approved plan eaae7e5e855a. Waiting for your sign-off.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #16 orch status: plan is waiting for your sign-off. (Alice is already in.)
+⏺ Plan eaae7e5e855a is still waiting for your sign-off. The form should still be available — approve or object when
+  you're ready.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #18 decision: Plan 3a9d9726e017 is signed by alice and bob. Ready to move forward.
+⏺ #18 decision: Plan eaae7e5e855a is finalized — signed by you and alice. Ready to move to implementation once
+  assignments are made.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #19 orch status: assignments going out. Alice is implementing GET /tasks paging (clamping, opaque after, Link
-  rel=next, stable order, settle default limit). The rest of your assignment got cut off — want me to read the full
-  message?
+⏺ #19 orch status: Moving into the build phase. Suggested split: alice builds the GET /tasks handler (clamping limit to
+  50, opaque after cursor, stable sort, Link: rel=next…
+
+  Waiting to see if you get assigned work on this.
 
 ✻ Waiting for 2 background agents to finish
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · bob ─
-❯ ready to start implementing
+──────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · bob ─
+❯ @room what's my assignment?
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ bison-3139  plan 3a9d97 2/2 ✔
+  ◯ vole-8126  plan eaae7e 2/2 ✔

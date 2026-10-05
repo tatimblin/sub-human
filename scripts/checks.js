@@ -75,7 +75,7 @@ function main() {
     return r ? readText(path.join(screens, r.txt)) : null;
   };
   const capName = (scene, seat, step = 1) => { const r = index.filter(x => x.scene === scene && x.session === `sh-${seat}`); const x = step === 'last' ? r.at(-1) : r.find(y => y.step === step); return x ? x.txt : `(no ${scene} step ${step} capture of sh-${seat})`; };
-  const sceneWindow = scene => { const rs = index.filter(r => r.scene === scene); return rs.length ? { from: Math.min(...rs.map(r => r.time)), to: rs.at(-1).time } : null; };
+  const sceneWindow = scene => { const rs = index.filter(r => r.scene === scene); return rs.length ? { from: Math.min(...rs.map(r => Date.parse(r.time))), to: Date.parse(rs.at(-1).time) } : null; }; // ms
 
   const C = {};
   const add = (scene, check, pass, evidence) => { (C[scene] = C[scene] || []).push({ check, pass: !!pass, evidence: clip(evidence, 400) }); };
@@ -186,7 +186,19 @@ function main() {
     const aR = panelRows(cap('S7', 'alice', 'last')).find(r => r.label === code);
     add('S7', 'The objection shows in the orch\'s bob row', !!(oR && /objection|objected|✖/.test(oR.text)), `orch: ${oR ? oR.line : 'none'}`);
     const aT = cap('S7', 'alice', 'last') || '';
-    add('S7', 'The objection shows in alice\'s room row', !!(aR && /objection|objected|✖/.test(aR.text)), aR ? `alice: ${aR.line}` : (/requests your input/.test(aT) ? 'alice\'s panel is hidden: her own sign-off form for the same plan is still open on top of it' : 'no room row in alice\'s capture'));
+    if (aR || !/requests your input/.test(aT)) {
+      add('S7', 'The objection shows in alice\'s room row', !!(aR && /objection|objected|✖/.test(aR.text)), aR ? `alice: ${aR.line}` : 'no room row in alice\'s capture');
+    } else {
+      // Her own open form for the same plan covers her panel on screen (Claude Code draws the form in its place).
+      // Evidence instead: the plugin's row renderer over the log as it stood at that capture.
+      const rec = index.filter(r => r.scene === 'S7' && r.session === 'sh-alice').at(-1);
+      const asOf = log.filter(e => Date.parse(e.at) <= Date.parse(rec.time));
+      process.env.SUB_HUMAN_HOME = home;
+      const rowsLib = require(path.join(REPO, 'plugin/sub-human/lib/rows.js'));
+      const text = rowsLib.rowText(code, code, 'alice', { entries: asOf, members: stateAt('S7').members, now: Date.parse(rec.time) });
+      add('S7', 'The objection is in alice\'s room row text (her open form covers the panel on screen)', /objection|✖/.test(text),
+        `rowText(${code}, viewer alice) over the ${asOf.length} log entries at ${rec.txt}: "${text}"; on screen her sign-off form for the same plan is drawn over the panel`);
+    }
   }
 
   // ---- S8
@@ -203,7 +215,15 @@ function main() {
     // the rows flip from ✓ signed to ✔ decided ~2 s after the last sign-off, so look across every S8 orch capture
     const caps = index.filter(r => r.scene === 'S8' && r.session === 'sh-orch').map(r => [r.txt, panelRows(readText(path.join(screens, r.txt)))]);
     const seen = ap.map(n => caps.find(([, rs]) => rs.some(r => r.label === n && /✓ signed/.test(r.text))));
-    add('S8', '✓ signed shown on each approver\'s row (orch panel)', ap.length > 0 && seen.every(Boolean), ap.map((n, i) => `${n}: ${seen[i] ? seen[i][1].find(r => r.label === n).line + ' (' + seen[i][0] + ')' : 'never shown signed'}`).join('; ') + `; last: ${(caps.at(-1) || [, []])[1].map(r => r.line).join(' | ')}`);
+    // The rows refresh every 5 s (Claude Code's subagentStatusLine tick). The decision follows the last sign-off
+    // by ~2 s, so the last signer's row may go straight to ✔ decided: accepted only when the log shows that gap.
+    const dec = last && log.find(e => e.kind === 'decision' && e.plan_hash === last.plan_hash);
+    const lastSig = sig.filter(Boolean).sort((a, b) => a.id - b.id).at(-1);
+    const gap = dec && lastSig ? Date.parse(dec.at) - Date.parse(lastSig.at) : null;
+    const viaDecided = ap.map((n, i) => !seen[i] && lastSig && lastSig.from === n && gap != null && gap < 5000 &&
+      caps.find(([, rs]) => rs.some(r => r.label === n && /✔ decided/.test(r.text))));
+    add('S8', '✓ signed shown on each approver\'s row (orch panel)', ap.length > 0 && ap.every((n, i) => seen[i] || viaDecided[i]),
+      ap.map((n, i) => `${n}: ${seen[i] ? seen[i][1].find(r => r.label === n).line + ' (' + seen[i][0] + ')' : viaDecided[i] ? `${viaDecided[i][1].find(r => r.label === n).line} (${viaDecided[i][0]}; the decision #${dec.id} came ${gap} ms after the last sign-off, inside one 5 s row refresh)` : 'never shown signed'}`).join('; '));
   }
 
   // ---- S9
@@ -245,7 +265,7 @@ function main() {
     const st11 = stateAt('S11');
     const bm = st11.members.bob && st11.rowMaps[st11.members.bob.session_id];
     const w = sceneWindow('S11');
-    const fresh = bm && w && Object.values(bm).some(r => r.kind === 'room' && r.at > w.from);
+    const fresh = bm && w && Object.values(bm).some(r => r.kind === 'room' && Date.parse(r.at) > w.from);
     add('S11', 'bob\'s new room row is mapped after the resume', !!fresh, bm ? Object.values(bm).map(r => `${r.kind}:${r.name}@${r.at.slice(11, 19)}`).join(', ') : 'no rows map for bob\'s session');
   }
 
@@ -266,12 +286,16 @@ function main() {
 
   // ---- S12
   {
-    const l = byKind('member_left', { from: 'bob' }).at(-1);
-    add('S12', 'member_left bob', !!l, fmt(l));
+    const rj = byKind('member_joined', { from: 'bob' }).at(-1);
+    const l = byKind('member_left', { from: 'bob' }).filter(e => !rj || e.id > rj.id).at(-1);
+    add('S12', 'member_left bob (after his last rejoin), from /exit', !!l && /prompt_input_exit|exit/.test(l.text || ''), fmt(l));
+    const waits = jsonl(path.join(screens, 'waits.jsonl')).filter(w => w.scene === 'S12');
+    const dlg = waits.find(w => /Exit and stop tasks/.test(w.what));
+    add('S12', 'Claude Code\'s "Background work is running" dialog was answered with 1. Exit and stop tasks', !!(dlg && dlg.ok), dlg ? `${dlg.what}: ${dlg.ok ? 'seen' : 'not seen'} after ${dlg.ms} ms` : 'no dialog wait recorded in S12');
     const o = panelRows(cap('S12', 'orch', 'last')).filter(r => r.label === 'bob' && !/left/.test(r.text));
-    add('S12', 'bob\'s row is gone from the orch panel', !!cap('S12', 'orch', 'last') && o.length === 0, `orch rows: ${panelRows(cap('S12', 'orch', 'last')).map(r => r.line).join(' | ') || 'none'}`);
+    add('S12', 'bob\'s row reads left (or is gone) in the orch panel', !!cap('S12', 'orch', 'last') && o.length === 0, `orch rows: ${panelRows(cap('S12', 'orch', 'last')).map(r => r.line).join(' | ') || 'none'}`);
     const a = panelRows(cap('S12', 'alice', 'last')).filter(r => r.label === 'bob' && !/left/.test(r.text));
-    add('S12', 'bob\'s row is gone from alice\'s panel', !!cap('S12', 'alice', 'last') && a.length === 0, `alice rows: ${panelRows(cap('S12', 'alice', 'last')).map(r => r.line).join(' | ') || 'none'}`);
+    add('S12', 'bob\'s row reads left (or is gone) in alice\'s panel', !!cap('S12', 'alice', 'last') && a.length === 0, `alice rows: ${panelRows(cap('S12', 'alice', 'last')).map(r => r.line).join(' | ') || 'none'}`);
   }
 
   // order scenes like the plan

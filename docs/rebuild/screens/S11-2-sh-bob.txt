@@ -1,40 +1,40 @@
 
+⏺ Plan eaae7e5e855a is ready for sign-off — the form should appear now for you and alice to review.
+
+✻ Crunched for 1s · done 11:57 AM
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ New plan 3a9d9726e017 is ready for your sign-off. Press Enter to approve, or ↓ then Enter to object.
+⏺ #15 alice approved plan eaae7e5e855a. Waiting for your sign-off.
 
-✻ Brewed for 1s · done 8:25 AM
-
-⏺ Monitor event: "sub-human room notices"
-
-⏺ #15 alice approved plan 3a9d9726e017. Waiting on your sign-off.
-
-✻ Crunched for 1s · done 8:25 AM
+✻ Churned for 1s · done 11:57 AM
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #16 orch status: plan is waiting for your sign-off. (Alice is already in.)
+⏺ Plan eaae7e5e855a is still waiting for your sign-off. The form should still be available — approve or object when
+  you're ready.
 
-✻ Baked for 2s · done 8:25 AM
-
-⏺ Monitor event: "sub-human room notices"
-
-⏺ #18 decision: Plan 3a9d9726e017 is signed by alice and bob. Ready to move forward.
-
-✻ Sautéed for 2s · done 8:25 AM
+✻ Sautéed for 0s · done 11:57 AM
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #19 orch status: assignments going out. Alice is implementing GET /tasks paging (clamping, opaque after, Link
-  rel=next, stable order, settle default limit). The rest of your assignment got cut off — want me to read the full
-  message?
+⏺ #18 decision: Plan eaae7e5e855a is finalized — signed by you and alice. Ready to move to implementation once
+  assignments are made.
 
-✻ Crunched for 3s · done 8:25 AM
+✻ Crunched for 2s · done 11:57 AM
 
-⏺ Background agent "bison-3139" didn't finish before the previous session ended
-                  tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking
-─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · bob ─
+⏺ Monitor event: "sub-human room notices"
+
+⏺ #19 orch status: Moving into the build phase. Suggested split: alice builds the GET /tasks handler (clamping limit to
+  50, opaque after cursor, stable sort, Link: rel=next…
+
+  Waiting to see if you get assigned work on this.
+
+✻ Baked for 1s · done 11:57 AM
+
+⏺ Background agent "vole-8126" didn't finish before the previous session ended
+                     tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux.conf for wheel scroll
+──────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · bob ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ manual mode on · ? for shortcuts · ← 1 agent

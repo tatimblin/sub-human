@@ -1,0 +1,40 @@
+
+  orch found two drifts in your build against decision #18. A malformed or stale after cursor silently restarts at page
+  1 (src/store.js:50-58), which can repeat tasks—the plan said to clamp and state what happens past the limit.
+
+  Would you like to draft a reply? For example: @room I'll fix the cursor handling in store.js to match the plan — clamp
+  at 50 and error if past it.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ bob left the room (#23).
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ bob rejoined (#24).
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ alice, orch is asking (#25):
+
+  Bob left and had the verification tests in split #19. Will you take them on? (Any later plan revision will proceed
+  without him as an approver.)
+
+  Draft a reply? For example: @room Yes, I can handle the verification tests. or @room I need help with those — can orch
+  keep them or assign to someone else?
+
+✻ Waiting for 2 background agents to finish
+                                                                Update available! Run: brew upgrade claude-code@latest
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · alice ─
+❯ fix the cursor handling
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ accept edits on · 1 monitor · ← 1 agent · ↓ to manage
+
+  ⏺ main
+  ◯ vole-8126  plan eaae7e 2/2 ✔ · ✉ 2 for you

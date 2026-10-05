@@ -7,25 +7,22 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">alice · S5</text>
 <g fill="#d6dbe5">
-<text x="12" y="72" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="72" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> #3 — </text>
-<text x="66.6" y="72" font-weight="bold" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">bob</text>
-<text x="90" y="72" textLength="132.6" lengthAdjust="spacing" xml:space="preserve"> joined the room.</text>
+<text x="27.6" y="72" font-weight="bold" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">#3 bob[system] member_joined:</text>
+<text x="253.8" y="72" textLength="163.8" lengthAdjust="spacing" xml:space="preserve"> bob joined the room.</text>
 <text x="12" y="106" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="106" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="106" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
 <text x="129" y="106" fill="#949494" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> background agent to finish</text>
 <text x="12" y="140" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
 <text x="27.6" y="140" fill="#ffd700" textLength="335.4" lengthAdjust="spacing" xml:space="preserve">UserPromptSubmit operation blocked by hook:</text>
-<text x="27.6" y="157" fill="#ffd700" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✓ posted to bison-3139 as #4</text>
+<text x="27.6" y="157" fill="#ffd700" textLength="210.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✓ posted to vole-8126 as #4</text>
 <text x="12" y="191" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
 <text x="19.8" y="191" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
 <text x="12" y="225" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="225" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> #6 — </text>
-<text x="66.6" y="225" font-weight="bold" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">bob</text>
-<text x="90" y="225" textLength="296.4" lengthAdjust="spacing" xml:space="preserve"> (say): &quot;I want to approve this. Keep </text>
-<text x="386.4" y="225" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
-<text x="425.4" y="225" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> opaque, not a page number.&quot;</text>
+<text x="27.6" y="225" font-weight="bold" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">#6 bob[human] say:</text>
+<text x="168" y="225" textLength="234" lengthAdjust="spacing" xml:space="preserve"> I want to approve this. Keep </text>
+<text x="402" y="225" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="441" y="225" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> opaque, not a page number.</text>
 <text x="12" y="259" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="259" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="259" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
@@ -33,34 +30,30 @@
 <text x="12" y="293" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
 <text x="19.8" y="293" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
 <text x="12" y="327" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="327" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> #7 — </text>
-<text x="66.6" y="327" font-weight="bold" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">orch</text>
-<text x="97.8" y="327" textLength="234" lengthAdjust="spacing" xml:space="preserve"> (question to you): bob wants </text>
-<text x="331.8" y="327" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
-<text x="370.8" y="327" textLength="561.6" lengthAdjust="spacing" xml:space="preserve"> to be opaque (#6), but a bare array (#4) has nowhere to return the next</text>
-<text x="12" y="344" textLength="405.6" lengthAdjust="spacing" xml:space="preserve">  cursor. Should it go in a response header such as </text>
-<text x="417.6" y="344" fill="#afd7ff" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">Link</text>
-<text x="448.8" y="344" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> or </text>
-<text x="480" y="344" fill="#afd7ff" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">X-Next-Cursor</text>
-<text x="581.4" y="344" textLength="218.4" lengthAdjust="spacing" xml:space="preserve">, or should the body change?</text>
-<text x="12" y="378" textLength="608.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  What's your take—header, body change, or something else? You can reply with </text>
-<text x="620.4" y="378" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">@room</text>
-<text x="659.4" y="378" xml:space="preserve">.</text>
-<text x="12" y="412" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="412" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="412" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="412" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="446" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="446" fill="#ffd700" textLength="335.4" lengthAdjust="spacing" xml:space="preserve">UserPromptSubmit operation blocked by hook:</text>
-<text x="27.6" y="463" fill="#ffd700" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✓ posted to bison-3139 as #8</text>
-<text x="12" y="497" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="497" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="514" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · alice ─</text>
+<text x="27.6" y="327" font-weight="bold" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">#7 orch[agent] question to=alice:</text>
+<text x="285" y="327" textLength="85.8" lengthAdjust="spacing" xml:space="preserve"> bob wants </text>
+<text x="370.8" y="327" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="409.8" y="327" textLength="507" lengthAdjust="spacing" xml:space="preserve"> to be opaque (#6), but a bare array (#4) leaves no body field to</text>
+<text x="12" y="344" textLength="780" lengthAdjust="spacing" xml:space="preserve">  return the cursor in. Should the next cursor come in a response header, or do you see another way?</text>
+<text x="12" y="378" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="378" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="378" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="378" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="412" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="412" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="446" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="446" textLength="897" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Plan 80930cc0525d is ready for your sign-off. A form should appear in your terminal — Enter to approve, ↓ Enter to</text>
+<text x="12" y="463" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">  object.</text>
+<text x="12" y="497" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="497" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="497" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="497" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="514" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · alice ─</text>
 <text x="12" y="548" fill="#afd7ff" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
 <text x="27.6" y="565" fill="#afd7ff" font-weight="bold" textLength="421.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">MCP server “plugin:sub-human:room” requests your input</text>
-<text x="27.6" y="599" fill="#949494" textLength="834.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Room bison-3139 · plan 6a33e8 (rev 1) · full plan: /tmp/sh-demo/home/rooms/bison-3139/plans/6a33e89fc359.md</text>
-<text x="27.6" y="616" fill="#949494" textLength="889.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Deciding: cursor paging for `GET /tasks`. The query takes `?limit` and an opaque `?after`. The body stays a bare …</text>
-<text x="27.6" y="633" fill="#949494" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">Context</text>
+<text x="27.6" y="599" fill="#949494" textLength="819" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Room vole-8126 · plan 80930c (rev 1) · full plan: /tmp/sh-demo/home/rooms/vole-8126/plans/80930cc0525d.md</text>
+<text x="27.6" y="616" fill="#949494" textLength="889.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Deciding: how `GET /tasks` pages its results. Cursor paging with `?limit` and an opaque `?after`, a bare-array bo…</text>
+<text x="27.6" y="633" fill="#949494" textLength="889.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Context · alice proposed cursor paging for `GET /tasks`: `?limit&amp;after`, a bare-array response, at most 50 items …</text>
 <text x="27.6" y="650" fill="#949494" textLength="748.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Approve this plan?  Accept (Enter) = Approve · Decline (↓ Enter) = Object, say why · Esc = later</text>
 <text x="27.6" y="684" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯</text>
 <text x="35.4" y="684" fill="#87d787" font-weight="bold" textLength="70.2" lengthAdjust="spacing" xml:space="preserve"> Accept  </text>

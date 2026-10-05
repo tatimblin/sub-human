@@ -1,40 +1,40 @@
 
-
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ Plan 6a33e89fc359 is ready for your sign-off. Press Enter to approve, or ↓ then Enter to object.
+⏺ #12 orch status: The plan was revised for your objection (#11) — now any limit over 50 clamps to 50 instead of
+  returning a 400. All earlier sign-offs are void. The form should reappear for you to review and sign off on the
+  updated version.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #12 orch status: plan revised for your objection (#11). Now limits above 50 clamp to 50 instead of returning 400. You
-  and alice get new sign-off forms.
+⏺ Plan eaae7e5e855a is ready for sign-off — the form should appear now for you and alice to review.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ New plan 3a9d9726e017 is ready for your sign-off. Press Enter to approve, or ↓ then Enter to object.
+⏺ #15 alice approved plan eaae7e5e855a. Waiting for your sign-off.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #15 alice approved plan 3a9d9726e017. Waiting on your sign-off.
+⏺ Plan eaae7e5e855a is still waiting for your sign-off. The form should still be available — approve or object when
+  you're ready.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-✽ Razzle-dazzling… (1s · thinking)
-  ⎿  Tip: You can control how big a workflow is just by prompting. Ask for a small workflow, cap it with "use at most 5
-     agents", or set a default with Dynamic workflow size in /config.
+✽ Synthesizing… (1s · thinking)
+  ⎿  Tip: Name your conversations with /rename to find them easily in /resume later
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · bob ─
+──────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · bob ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ manual mode on · 1 monitor · esc to interrupt · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ bison-3139  plan 3a9d97 2/2
+  ◯ vole-8126  plan eaae7e 2/2

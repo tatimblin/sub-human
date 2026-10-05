@@ -1,40 +1,40 @@
-     - alice: proposed the feature and chose the response shape (#4, #8).
-     - bob: asked to approve, and set the opaque-cursor and clamping requirements (#6, #11).
-
      Verification
 
-     - With more than 50 tasks, limit=50 returns 50 items plus a Link rel=next. Following each next link until none is
-       left yields every task exactly once.
-     - limit=500 returns 200 with 50 items, not 400 (#11).
-     - The last page has no rel=next.
-     - The body is a bare array on every page.
-     - A garbage after is handled as the open question above decides.
+     - First page with no after returns at most limit items (never more than 50) and a rel=next Link header when more
+       items remain.
+     - Following rel=next links walks every task exactly once, with no duplicates or gaps.
+     - The last page has no rel=next link.
+     - limit=500 returns 200 with at most 50 items, not a 400.
+     - The body is always a bare JSON array.
 
   Called plugin:sub-human:room 
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ Alice and Bob have both signed off, so the cursor-paging plan for GET /tasks is decided (#18) and the room has moved
-  to building it. I posted the work split (#19):
+⏺ The GET /tasks paging plan is decided: alice and bob both signed off on eaae7e5e855a, and the room logged it as
+  decision #18.
 
-  - Alice: builds paging into the GET /tasks handler. That covers clamping limit to 50, the opaque after cursor, the
-    Link rel=next header and a stable order. She also settles the two open questions: the default limit and what a bad
-    after returns.
-  - Bob: writes tests for the plan's verification list. These include walking every page and seeing each task exactly
-    once, checking that limit=500 returns 50 items, and checking there's no rel=next on the last page.
+  What it says: ?limit is capped at 50, and anything larger is clamped rather than rejected. after is an opaque cursor.
+  The body stays a bare JSON array, and the next page comes in a Link: rel=next header.
 
-  The split is my suggestion; nobody in the room asked for it. It's done when both report back with the files they
-  changed and their test results, and either of them can still ask to divide it differently. Once they report, I'll
-  check their work against the decision.
+  Proposed split (#19): nobody has confirmed it or named their files yet.
+  - alice builds the handler.
+  - bob writes tests from the plan's verification list.
+  - It's done when those tests pass.
+
+  Still open: the default limit, and what happens when after is malformed or stale. I asked them to settle both while
+  building.
+
+  I'm waiting for each of them to confirm or swap their part.
 
 ✻ Waiting for 2 background agents to finish
                                                                 Update available! Run: brew upgrade claude-code@latest
-────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ bison-3139 · orch · plan 3a9d97 2/2 ✔
+  ⬡ vole-8126 · orch · plan eaae7e 2/2 ✔
   ⏸ manual mode on · 1 monitor · ← 1 agent
 
   ⏺ main
-  ◯ alice  ✔ decided 3a9d97 · working
-  ◯ bob  ✔ decided 3a9d97 · working
+  ◯ alice  ✔ decided eaae7e · working
+  ◯ bob  ✔ decided eaae7e · working

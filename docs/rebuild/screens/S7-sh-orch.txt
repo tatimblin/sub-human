@@ -1,3 +1,8 @@
+  │ pages             │        │ 50 (#4)                                       │                                   │
+  ├───────────────────┼────────┼───────────────────────────────────────────────┼───────────────────────────────────┤
+  │ How GET /tasks    │ bob    │ Agrees, and wants to be an approver (#6)      │ after must be opaque, not a page  │
+  │ pages             │        │                                               │ number                            │
+  └───────────────────┴────────┴───────────────────────────────────────────────┴───────────────────────────────────┘
 
 ✻ Waiting for 2 background agents to finish
 
@@ -5,36 +10,31 @@
 
 ⏺ Updated plan
   ⎿  /plan to preview
-  ⎿  Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan 6a33e89fc359 lacks sign-off from alice and bob. The 
+  ⎿  Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan 80930cc0525d lacks sign-off from alice and bob. The 
      sign-off form is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan 
      mode. Published as plan_rev #9.
 
-⏺ I've written the room plan on cursor paging for GET /tasks, and the room published it as plan_rev #9 (hash
-  6a33e89fc359). It now needs sign-off from both Alice and Bob. The sign-off form is already in each of their terminals,
-  so nothing gets posted while I wait.
+⏺ I wrote the room plan and published it as plan_rev #9 (hash 80930cc0525d). It now waits on sign-offs from both
+  approvers, alice and bob.
 
-  The plan settles these points:
-  - Request: GET /tasks?limit=N&after=CURSOR, with limit capped at 50 and after an opaque cursor rather than a page
-    number.
-  - Response: the body stays a bare array of tasks, as it is today.
-  - Next page: the next cursor comes back in a Link header with rel="next", which is left off on the last page.
-  - Order: pages come in a stable order on a unique field, so no task is skipped or repeated.
+  Proposed: GET /tasks uses ?limit (max 50) and an opaque ?after cursor. The body stays a bare JSON array. The next
+  page's URL goes in a Link: rel=next header, which is left out on the last page.
 
-  Two questions are still open in the plan but don't block sign-off:
-  - What limit defaults to, and whether a value over 50 is cut down to 50 or rejected with a 400 error.
-  - What a bad or tampered after value returns; the plan suggests a 400 error.
+  Still open in the plan:
+  - What limit defaults to, and whether a value over 50 is clamped or rejected with a 400.
+  - What happens when after is malformed or stale; the plan suggests a 400.
 
-  Alice and Bob are the approvers: Alice proposed the feature and chose the response shape, and Bob asked to approve and
-  set the opaque-cursor rule. I'm staying in plan mode and will retry when a sign-off arrives.
+  Both approvers already have the sign-off form in their own terminals, so I've posted nothing. I'm staying in plan mode
+  until a sign-off or objection arrives.
 
 ✻ Waiting for 2 background agents to finish
                                                                 Update available! Run: brew upgrade claude-code@latest
-────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ bison-3139 · orch · plan 6a33e8 0/2 waiting on alice,bob
+  ⬡ vole-8126 · orch · plan 80930c 0/2 waiting on alice,bob
   ⏸ plan mode on · 1 monitor · ← 1 agent
 
   ⏺ main
-  ◯ alice  ⚠ reviewing 6a33e8 · working
-  ◯ bob  ⚠ reviewing 6a33e8 · working
+  ◯ alice  ⚠ reviewing 80930c · working
+  ◯ bob  ⚠ reviewing 80930c · working

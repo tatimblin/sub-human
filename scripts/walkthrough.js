@@ -28,7 +28,7 @@ const SCENES = {
   S10: ['Background work', 'alice\'s Claude runs her part in a native background subagent; her status with evidence in the others\' rows'],
   S11: ['Resilience', 'Rows survive /clear in alice\'s session; bob resumes and his rows are re-created after the restore prompt'],
   S11b: ['Nested view', 'alice opens the room row and sees bob inside, then opens bob to read his thread; ↑ to the parent row + Enter goes back (no breadcrumb)'],
-  S12: ['Leave', 'bob exits, and his row disappears from the orch and alice panels'],
+  S12: ['Leave', 'bob runs /exit and chooses "1. Exit and stop tasks" in Claude Code\'s background-work dialog; member_left; his row reads left in the orch and alice panels'],
 };
 const ORDER = Object.keys(SCENES);
 const SEAT_ORDER = ['orch', 'alice', 'bob'];

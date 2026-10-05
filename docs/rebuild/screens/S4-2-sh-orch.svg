@@ -7,35 +7,37 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">orch · S4</text>
 <g fill="#d6dbe5">
-<rect x="27.6" y="93" width="163.8" height="17" fill="#00afaf"/>
 <text x="12" y="72" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="72" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="106" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="106" fill="#000000" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">sub-human:participant</text>
-<text x="191.4" y="106" textLength="39" lengthAdjust="spacing" xml:space="preserve">(bob)</text>
-<text x="12" y="123" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
-<text x="51" y="123" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
-<text x="191.4" y="123" fill="#949494" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
+<text x="19.8" y="72" textLength="912.6" lengthAdjust="spacing" xml:space="preserve"> Bob has joined room vole-8126, and I've started his row. There's no plan yet, so there's nothing to post to him. I'm</text>
+<text x="12" y="89" textLength="460.2" lengthAdjust="spacing" xml:space="preserve">  waiting for alice to say what she wants the room to plan.</text>
+<text x="12" y="123" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="123" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="123" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="123" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="12" y="157" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="157" textLength="920.4" lengthAdjust="spacing" xml:space="preserve"> Bob has joined room bison-3139, and his row is now in the agent panel next to Alice's. I didn't post anything to him,</text>
-<text x="12" y="174" textLength="865.8" lengthAdjust="spacing" xml:space="preserve">  since there's no plan to point him to yet. My question to Alice (#2) about what the room should plan is still</text>
-<text x="12" y="191" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">  unanswered.</text>
-<text x="12" y="225" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="225" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="225" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="225" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="259" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="259" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="27.6" y="293" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="12" y="327" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="327" textLength="592.8" lengthAdjust="spacing" xml:space="preserve"> Alice made the first proposal (#4): add cursor paging to GET /tasks, using </text>
-<text x="612.6" y="327" fill="#afd7ff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">?limit</text>
-<text x="659.4" y="327" textLength="39" lengthAdjust="spacing" xml:space="preserve"> and </text>
-<text x="698.4" y="327" fill="#afd7ff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">?after</text>
-<text x="745.2" y="327" textLength="195" lengthAdjust="spacing" xml:space="preserve">, returning a bare array,</text>
-<text x="12" y="344" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">  with a maximum page size of 50.</text>
-<text x="12" y="378" textLength="936" lengthAdjust="spacing" xml:space="preserve">  I asked Bob (#5) where he stands on the response shape and the limit, and whether it would break anything on his side.</text>
-<text x="12" y="395" textLength="405.6" lengthAdjust="spacing" xml:space="preserve">  I'll wait for his position before drafting a plan.</text>
+<text x="19.8" y="157" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="27.6" y="191" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="225" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="225" textLength="507" lengthAdjust="spacing" xml:space="preserve"> Alice made the room's first proposal (#4): add cursor paging to </text>
+<text x="526.8" y="225" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="604.8" y="225" textLength="54.6" lengthAdjust="spacing" xml:space="preserve"> using </text>
+<text x="659.4" y="225" fill="#afd7ff" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">?limit&amp;after</text>
+<text x="753" y="225" textLength="171.6" lengthAdjust="spacing" xml:space="preserve">. The response stays a</text>
+<text x="12" y="242" textLength="889.2" lengthAdjust="spacing" xml:space="preserve">  bare array, with at most 50 items per page. I asked bob whether he agrees and whether that shape would cause any</text>
+<text x="12" y="259" textLength="522.6" lengthAdjust="spacing" xml:space="preserve">  problem on his side. Nothing goes into the plan until he answers.</text>
+<text x="12" y="293" textLength="811.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ┌──────────────────────┬────────┬──────────────────────────────────────────────────────┬─────────────┐</text>
+<text x="12" y="310" textLength="811.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  │       Question       │ Person │                       Position                       │   Concern   │</text>
+<text x="12" y="327" textLength="811.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ├──────────────────────┼────────┼──────────────────────────────────────────────────────┼─────────────┤</text>
+<text x="12" y="344" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  │ How </text>
+<text x="74.4" y="344" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="152.4" y="344" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> pages │ alice  │ Cursor paging, </text>
+<text x="409.8" y="344" fill="#afd7ff" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">?limit&amp;after</text>
+<text x="503.4" y="344" textLength="319.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">, bare array, max 50 (#4) │ none raised │</text>
+<text x="12" y="361" textLength="811.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ├──────────────────────┼────────┼──────────────────────────────────────────────────────┼─────────────┤</text>
+<text x="12" y="378" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  │ How </text>
+<text x="74.4" y="378" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="152.4" y="378" textLength="670.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> pages │ bob    │ waiting on his reply to #5                           │ unknown     │</text>
+<text x="12" y="395" textLength="811.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  └──────────────────────┴────────┴──────────────────────────────────────────────────────┴─────────────┘</text>
 <text x="12" y="429" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="429" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="429" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
@@ -43,17 +45,20 @@
 <text x="12" y="463" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
 <text x="19.8" y="463" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
 <text x="19.8" y="497" textLength="241.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Calling plugin:sub-human:room…</text>
-<text x="12" y="531" fill="#d78787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✽</text>
-<text x="27.6" y="531" fill="#d78787" textLength="93.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Coalescing… </text>
-<text x="121.2" y="531" fill="#949494" textLength="54.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(3s · ↓</text>
-<text x="183.6" y="531" fill="#949494" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">163 tokens · thought for 2s)</text>
-<text x="12" y="548" fill="#949494" textLength="358.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  Tip: Use /theme to change the color theme</text>
+<text x="12" y="531" fill="#d78787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="531" fill="#d78787" textLength="39" lengthAdjust="spacing" xml:space="preserve">Ioniz</text>
+<text x="66.6" y="531" fill="#ffaf87" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">ing</text>
+<text x="90" y="531" fill="#d78787" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">… </text>
+<text x="105.6" y="531" fill="#949494" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(2s · thought for 2s)</text>
+<text x="12" y="548" fill="#949494" textLength="561.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  Tip: You have 4 plugins you haven't used lately. Disable them with </text>
+<text x="573.6" y="548" fill="#afd7ff" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">/plugin</text>
+<text x="628.2" y="548" fill="#949494" textLength="319.8" lengthAdjust="spacing" xml:space="preserve"> to free up context and speed up startup.</text>
 <text x="511.2" y="565" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="565" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="582" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─</text>
+<text x="12" y="582" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─</text>
 <text x="12" y="599" fill="#949494" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
-<text x="27.6" y="633" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⬡ bison-3139 · orch</text>
+<text x="27.6" y="633" fill="#949494" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⬡ vole-8126 · orch</text>
 <text x="27.6" y="650" fill="#5fafaf" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ plan mode on</text>
 <text x="136.8" y="650" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="160.2" y="650" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
@@ -62,7 +67,7 @@
 <text x="12" y="701" fill="#949494" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ alice  </text>
 <text x="97.8" y="701" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
 <text x="152.4" y="701" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
-<text x="175.8" y="701" fill="#949494" opacity="0.6" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">#4 say 7s</text>
+<text x="175.8" y="701" fill="#949494" opacity="0.6" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">#4 say 9s</text>
 <text x="12" y="718" fill="#949494" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ bob  </text>
-<text x="82.2" y="718" fill="#949494" opacity="0.6" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">#6 say 2s</text>
+<text x="82.2" y="718" fill="#949494" opacity="0.6" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">#6 say 4s</text>
 </g></svg>

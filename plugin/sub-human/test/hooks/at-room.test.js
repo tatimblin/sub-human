@@ -1,7 +1,11 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { World, fixture, hso, ctx } = require('./helpers.js');
+const path = require('node:path');
+const { World, fixture, hso, ctx, PLUGIN } = require('./helpers.js');
+const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
+/** The seat's rows are running: its hold server (this live test process) holds them. */
+const rowsRunning = (w, name, held) => w.lib(() => rows.writeHolds(w.code, name, held));
 
 // The 20 hostile strings from demo/test/room.test.js.
 const HOSTILE = [
@@ -104,6 +108,7 @@ test('orchestrator and non-members are refused; an empty post is refused', () =>
 
 test('the next ordinary prompt injects the member\'s unseen @room posts, once', () => {
   const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  rowsRunning(w, 'alice', { room: true });
   w.hook('at-room', submit('@room first words'), { as: 'alice' });
   w.append({ kind: 'say', text: 'bob speaks' }, { via: 'human', from: 'bob' });
   w.hook('at-room', submit('@room second'), { as: 'alice' });
@@ -151,7 +156,6 @@ test('the unseen window starts at the seat\'s first post, not at the start of th
 
 // ---------- A8: cross-session peer messages never post as the human ----------
 const fs = require('node:fs');
-const path = require('node:path');
 const { identity } = require('./helpers.js');
 
 test('a cross-session peer message is never posted: envelope, receiver prefix, or a peer origin in the transcript', () => {
@@ -181,6 +185,7 @@ test('a cross-session peer message is never posted: envelope, receiver prefix, o
 
 test('sessionTitle shows the seat once per session id; prompts mark presence working', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
+  rowsRunning(w, 'alice', { room: true });
   let r = w.hook('at-room', submit('hello'), { as: 'alice' });
   assert.equal(hso(r).sessionTitle, `⬡ ${w.code} · alice`);
   assert.equal(hso(r).hookEventName, 'UserPromptSubmit');
@@ -193,4 +198,27 @@ test('sessionTitle shows the seat once per session id; prompts mark presence wor
   // non-members get nothing
   const w3 = new World({ orch: 'sleep' });
   assert.equal(w3.hook('at-room', submit('hi')).stdout, '');
+});
+
+test('a seat whose rows are not running gets the missing Agent calls with each prompt, until they hold', () => {
+  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  let c = ctx(w.hook('at-room', submit('what did I miss?'), { as: 'alice' }));
+  assert.match(c, /SUB-HUMAN ROWS: your room row is not running in this session/);
+  assert.match(c, new RegExp(`Agent\\(\\{subagent_type: "sub-human:room", description: "${w.code}", prompt: "room: ${w.code}\\\\nmembers: bob"`));
+  // a notice that wakes the session gets it too; a slash command does not
+  assert.match(ctx(w.hook('at-room', submit('<task-notification>\n<event>#3 bob[human] say "hi"</event>\n</task-notification>'), { as: 'alice' })), /SUB-HUMAN ROWS/);
+  assert.equal(w.hook('at-room', submit('/clear'), { as: 'alice' }).stdout, '');
+  // just spawned (rows/<session>.json records it) but not holding yet: not listed again
+  w.lib(() => rows.recordRow(w.code, w.sid.alice, 'agent-1', { kind: 'room', name: w.code }));
+  assert.equal(w.hook('at-room', submit('and now?'), { as: 'alice' }).stdout, '');
+  // holding: nothing to say
+  rowsRunning(w, 'alice', { room: true });
+  assert.equal(w.hook('at-room', submit('ok'), { as: 'alice' }).stdout, '');
+  // the orch: members past the join grace with no live hold
+  w.lib(() => { const ms = identity.readMembers(w.code); for (const m of Object.values(ms)) m.joined_at = new Date(Date.now() - 120_000).toISOString(); fs.writeFileSync(path.join(w.home, 'rooms', w.code, 'members.json'), JSON.stringify(ms)); });
+  rowsRunning(w, 'orch', { members: ['alice'] });
+  c = ctx(w.hook('at-room', submit('<task-notification>\n<event>#4 alice[human] say "x"</event>\n</task-notification>'), { as: 'orch' }));
+  assert.match(c, /your rows for bob are not running/);
+  assert.match(c, /description: "bob", prompt: "member: bob"/);
+  assert.doesNotMatch(c, /description: "alice"/);
 });

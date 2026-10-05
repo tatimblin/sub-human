@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 734" width="960" height="734" role="img" aria-label="bob · S11" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13">
+<rect x="0.5" y="0.5" width="959" height="733" rx="9" fill="#16181d" stroke="#3a3e48"/>
+<path d="M0.5 30V9.5a9 9 0 0 1 9-9h941a9 9 0 0 1 9 9V30z" fill="#22252c"/>
+<line x1="0.5" y1="30" x2="959.5" y2="30" stroke="#3a3e48"/>
+<circle cx="16" cy="15" r="5.5" fill="#ff5f57"/>
+<circle cx="34" cy="15" r="5.5" fill="#febc2e"/>
+<circle cx="52" cy="15" r="5.5" fill="#28c840"/>
+<text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">bob · S11</text>
+<g fill="#d6dbe5">
+<rect x="12" y="416" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="416" width="124.8" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="450" width="109.2" height="17" fill="#00afaf"/>
+<text x="12" y="89" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="89" fill="#949494" textLength="234" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Sautéed for 0s · done 11:57 AM</text>
+<text x="12" y="123" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="123" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="157" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="157" font-weight="bold" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">#18 decision:</text>
+<text x="129" y="157" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> Plan </text>
+<text x="175.8" y="157" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">eaae7e5e855a</text>
+<text x="269.4" y="157" textLength="600.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> is finalized — signed by you and alice. Ready to move to implementation once</text>
+<text x="12" y="174" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">  assignments are made.</text>
+<text x="12" y="208" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="208" fill="#949494" textLength="241.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Crunched for 2s · done 11:57 AM</text>
+<text x="12" y="242" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="242" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="276" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="276" font-weight="bold" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">#19 orch</text>
+<text x="90" y="276" textLength="561.6" lengthAdjust="spacing" xml:space="preserve"> status: Moving into the build phase. Suggested split: alice builds the </text>
+<text x="651.6" y="276" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="729.6" y="276" textLength="148.2" lengthAdjust="spacing" xml:space="preserve"> handler (clamping </text>
+<text x="877.8" y="276" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="916.8" y="276" textLength="23.4" lengthAdjust="spacing" xml:space="preserve"> to</text>
+<text x="12" y="293" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">  50, opaque </text>
+<text x="113.4" y="293" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="152.4" y="293" textLength="171.6" lengthAdjust="spacing" xml:space="preserve"> cursor, stable sort, </text>
+<text x="324" y="293" fill="#afd7ff" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">Link: rel=next</text>
+<text x="433.2" y="293" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">…</text>
+<text x="12" y="327" textLength="390" lengthAdjust="spacing" xml:space="preserve">  Waiting to see if you get assigned work on this.</text>
+<text x="12" y="361" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="361" fill="#949494" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Baked for 1s · done 11:57 AM</text>
+<text x="12" y="395" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="395" textLength="600.6" lengthAdjust="spacing" xml:space="preserve"> Background agent &quot;vole-8126&quot; didn't finish before the previous session ended</text>
+<text x="12" y="429" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="27.6" y="429" fill="#ffffff" textLength="124.8" lengthAdjust="spacing" xml:space="preserve">what did I miss?</text>
+<text x="12" y="463" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="463" fill="#000000" font-weight="bold" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">sub-human:room</text>
+<text x="136.8" y="463" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">(vole-8126)</text>
+<text x="12" y="480" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
+<text x="51" y="480" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
+<text x="191.4" y="480" fill="#949494" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
+<text x="12" y="514" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="514" textLength="928.2" lengthAdjust="spacing" xml:space="preserve"> Since your approval (#17), the plan got finalized (#18 decision). The orchestrator then posted status #19 about moving</text>
+<text x="12" y="531" textLength="397.8" lengthAdjust="spacing" xml:space="preserve">  into the build phase, suggesting alice takes the </text>
+<text x="409.8" y="531" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="487.8" y="531" textLength="421.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> handler. There's also been more recent activity — #21</text>
+<text x="12" y="548" textLength="686.4" lengthAdjust="spacing" xml:space="preserve">  from alice and #22 from orch most recently. Let me check what those latest posts were.</text>
+<text x="12" y="582" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="582" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="582" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
+<text x="129" y="582" fill="#949494" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> background agent to finish</text>
+<text x="152.4" y="599" fill="#949494" textLength="780" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking</text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · bob ─</text>
+<text x="12" y="633" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="27.6" y="667" fill="#949494" textLength="468" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ manual mode on · ? for shortcuts · ← 1 agent · ↓ to manage</text>
+<text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
+<text x="12" y="718" fill="#949494" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ vole-8126  </text>
+<text x="129" y="718" fill="#98c379" textLength="132.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">plan eaae7e 2/2 ✔</text>
+<text x="261.6" y="718" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="285" y="718" fill="#e5c07b" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✉ 1 for you</text>
+</g></svg>

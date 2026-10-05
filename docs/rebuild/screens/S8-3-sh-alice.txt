@@ -1,40 +1,40 @@
-
-⏺ Monitor event: "sub-human room notices"
-
-⏺ #11 — bob (objection): cap the page at 50 and say what happens past it — limit=500 must clamp, not 400.
+⏺ #12 orch[agent] status: I revised the plan for bob's objection (#11): any limit over 50 now clamps to 50 and never
+  returns a 400. The revision voids all earlier sign-offs, so alice and bob, please review the new version.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #12 — orch (status): The plan is revised for bob's objection (#11): a limit above 50 now clamps to 50 instead of
-  returning 400. This voids any sign-off, so you'll get a new form.
+⏺ Plan eaae7e5e855a is ready for your sign-off. The form should appear — review the revised version and enter your
+  sign-off.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ A new sign-off form is up for the revised plan 3a9d9726e017.
+⏺ #16 orch[system] status: plan eaae7e5e855a is waiting for sign-off from bob. Approvers: alice and bob.
 
-  Enter to approve, or ↓ then Enter to object.
-
-✻ Waiting for 2 background agents to finish
-
-⏺ Monitor event: "sub-human room notices"
-
-⏺ #16 — orch (status): plan 3a9d9726e017 is waiting for bob's sign-off now. (You've approved.)
+  Your approval is recorded. Bob's sign-off is next.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-✽ Swirling… (0s · ↓ 15 tokens · thinking)
-  ⎿  Tip: Press Shift+Enter to send a multi-line message
+⏺ #17 bob[human] signoff: bob approved plan eaae7e5e855a.
+
+  Plan is approved. Both you and bob have signed off.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+✽ Synthesizing… (1s · thinking)
+  ⎿  Tip: Continue your session in Claude Code Desktop with /desktop
                                                                 Update available! Run: brew upgrade claude-code@latest
-───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · alice ─
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · alice ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ manual mode on · 1 monitor · esc to interrupt · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ bison-3139  plan 3a9d97 1/2
+  ◯ vole-8126  plan eaae7e 2/2

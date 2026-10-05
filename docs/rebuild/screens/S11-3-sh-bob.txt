@@ -1,0 +1,40 @@
+
+
+✻ Sautéed for 0s · done 11:57 AM
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ #18 decision: Plan eaae7e5e855a is finalized — signed by you and alice. Ready to move to implementation once
+  assignments are made.
+
+✻ Crunched for 2s · done 11:57 AM
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ #19 orch status: Moving into the build phase. Suggested split: alice builds the GET /tasks handler (clamping limit to
+  50, opaque after cursor, stable sort, Link: rel=next…
+
+  Waiting to see if you get assigned work on this.
+
+✻ Baked for 1s · done 11:57 AM
+
+⏺ Background agent "vole-8126" didn't finish before the previous session ended
+
+❯ what did I miss?
+
+⏺ sub-human:room(vole-8126)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+⏺ Since your approval (#17), the plan got finalized (#18 decision). The orchestrator then posted status #19 about moving
+  into the build phase, suggesting alice takes the GET /tasks handler. There's also been more recent activity — #21
+  from alice and #22 from orch most recently. Let me check what those latest posts were.
+
+✻ Waiting for 1 background agent to finish
+                  tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking
+──────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · bob ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · ? for shortcuts · ← 1 agent · ↓ to manage
+
+  ⏺ main
+  ◯ vole-8126  plan eaae7e 2/2 ✔ · ✉ 1 for you

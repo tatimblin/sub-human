@@ -3,37 +3,37 @@
 ▝▜██████▀  Opus 5.5 (1M context) · Claude Max
   ▝▝ ▝▝    @sub-human:orchestrator · /private/tmp/sh-demo/orch
 
+⚠ 3 MCP servers need authentication · run /mcp
 
 ❯ /sub-human:sub-human
-  ⎿  UserPromptExpansion says: room bison-3139 open · others join with: /sub-human NAME (or /sub-human NAME bison-3139)
+  ⎿  UserPromptExpansion says: room vole-8126 open · others join with: /sub-human NAME (or /sub-human NAME vole-8126)
 
-⏺ The room bison-3139 is open, but nobody has joined yet. Members join by running /sub-human NAME bison-3139 in their
-  own Claude Code session. I'll add a row for each person as they arrive.
+⏺ Room vole-8126 is open, and no one has joined yet. Members join with /sub-human NAME vole-8126. When someone joins,
+  I'll start a row for them and begin facilitating.
 
-✻ Sautéed for 2s · done 8:14 AM · 1 monitor still running
+✻ Baked for 3s · done 11:56 AM · 1 monitor still running
 
 ⏺ Monitor event: "sub-human room notices"
 
 ⏺ sub-human:participant(alice)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ Calling plugin:sub-human:room…
+  Called plugin:sub-human:room 
+
+⏺ Alice has joined room vole-8126. I started her row and posted her a welcome. It says we're in the converge phase and
+  asks what she wants the room to plan. There's no plan yet, so there was no plan hash to send her. I'm waiting for her
+  reply or for someone else to join.
+
+✻ Waiting for 1 background agent to finish
 
 
 
 
-
-
-
-
-
-✢ Schlepping… (7s · ↓ 418 tokens · thought for 1s)
-  ⎿  Tip: Use /theme to change the color theme
-                     tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux.conf for wheel scroll
-────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+                  tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ bison-3139 · orch
+  ⬡ vole-8126 · orch
   ⏸ plan mode on · 1 monitor · ← 1 agent
 
   ⏺ main

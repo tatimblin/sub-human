@@ -14,6 +14,8 @@
  *         orch sees every entry not authored by orch, plus its own hook-written decisions.
  *         a member sees entries to it, via=human entries from others, orch's posts to the room, and
  *         via=system entries to the room. Never its own entries, never other Claudes' chatter.
+ *       A member_joined line ends with lib/rows.js joinNote(): whether that member's row is already running in
+ *       this session (live holds file), and the Agent call to make only when it isn't.
  *       It also alerts the human (statusline/alert.js, best-effort).
  *   sub-human read [--id N[,M]] [--json] [--room CODE]
  *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
@@ -127,6 +129,13 @@ function tail(args) {
       if (h > saved) { saved = h; room.bind(s.code); room.setCursor(reader, h); }
     };
     const show = visibleTo(me);
+    const rowsMod = require(path.join(__dirname, '..', 'lib', 'rows.js'));
+    // member_joined: say whether that member's row already runs here, so the model spawns only a missing one
+    const line = e => {
+      let note = '';
+      if (e.kind === 'member_joined') { try { note = rowsMod.joinNote(me, e.from); } catch { /* plain line */ } }
+      return room.tailLine(e) + (note ? ` · ${note}` : '');
+    };
     const alertMod = optional('alert.js');
     const alerter = alertMod && alertMod.createAlerter && alertMod.createAlerter({
       me, dir: room.dir(), pid: me.pid,
@@ -143,7 +152,7 @@ function tail(args) {
       try { if (alerter) alerter.onEntry(e); } catch { /* alerts are best-effort */ }
       if (!show(e)) return s.save();
       inflight.push(e.id);
-      process.stdout.write(room.tailLine(e) + '\n', () => { inflight.shift(); s.save(); });
+      process.stdout.write(line(e) + '\n', () => { inflight.shift(); s.save(); });
     }, { intervalMs: pollMs });
     sess = s;
   }

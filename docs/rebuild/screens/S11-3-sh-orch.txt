@@ -1,0 +1,40 @@
+
+  She also set the default limit to 10, which answers an open question, but the room hasn't agreed to it yet.
+
+  I asked alice in #22 whether she'll fix these or wants the room to accept them as a plan revision.
+
+  The tests are her own, in test/health.test.js. Bob was meant to write the tests from the plan's verification list, but
+  he hasn't confirmed that part yet.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+  Called plugin:sub-human:room 
+
+⏺ Monitor event: "sub-human room notices"
+
+  Called plugin:sub-human:room 
+
+⏺ Bob left the room (#23) and then came back almost immediately (#24). His row was still running, so I didn't start a
+  new one.
+
+  My post #25 went out after his return without my knowing. It told alice he was gone and asked whether she or I would
+  take over his verification tests. I followed up with #26, telling bob to ignore #25: he is still an approver of the
+  decided plan (eaae7e5e855a), he still has the tests, and my review of alice's build is in #22.
+
+  Still waiting on:
+  - alice: whether she'll fix the two problems I flagged in #22, or wants the room to accept them as a plan revision.
+  - bob: confirmation that he's taking the verification tests.
+
+✻ Waiting for 2 background agents to finish
+                                                                Update available! Run: brew upgrade claude-code@latest
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⬡ vole-8126 · orch · plan eaae7e 2/2 ✔
+  ⏸ manual mode on · 1 monitor · ← 1 agent
+
+  ⏺ main
+  ◯ alice  #21 Claude status: GET /tasks handler complete. Cursor pagi…
+  ◯ bob  ✔ decided eaae7e · working

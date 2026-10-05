@@ -1,40 +1,40 @@
-  ⎿  Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan 3a9d9726e017 lacks sign-off from alice and bob. The 
-     sign-off form is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan 
-     mode. Published as plan_rev #13 (replaces 6a33e89fc359; earlier sign-offs no longer count).
+     - Next page: when more results exist, the response carries Link: </tasks?limit=N&after=CURSOR>; rel="next" (#8). On
+       the last page there is no rel=next link.
+     - Sort order must be stable so cursors stay valid between requests.
 
-⏺ Bob objected to the first plan (#11): a limit over 50 must be cut down to 50, not rejected with a 400 error. I revised
-  the plan to say that, so limit=500 now returns 50 items.
+     Open questions (to close before or during the build)
 
-  - Plan changes: I dropped that point from the open questions, added a check that limit=500 returns 50 items, and noted
-    that Bob set this rule.
-  - Room notice: I posted a status (#12) saying the revision voids any sign-off on the old plan.
-  - Republished: the revised plan went out as plan_rev #13 (hash 3a9d9726e017).
+     - What limit defaults to when it is omitted.
+     - What happens when after is malformed or stale (suggest 400).
 
-  Alice and Bob each need to sign off again; their new forms are already in their terminals. The only open question left
-  is what limit defaults to when it's omitted. I'm staying in plan mode until a sign-off arrives.
+     Set aside
 
-✻ Waiting for 2 background agents to finish
+     - Page-number or offset paging: bob wants an opaque cursor (#6).
+     - An envelope body ({items, next}): alice wants a bare array (#4, #8).
 
-⏺ Monitor event: "sub-human room notices"
-  ⎿  Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan 3a9d9726e017 lacks sign-off from bob. The sign-off form
-     is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan mode.
+     Approvers
 
-⏺ Alice has signed off on the revised plan (#15, hash 3a9d9726e017). It still needs Bob's sign-off, and his form is
-  already in his terminal. I'll retry when it arrives, staying in plan mode until then.
+     - alice: proposed the design (#4) and settled where the cursor goes (#8).
+     - bob: asked to approve, set the opaque-cursor rule (#6) and the clamp rule (#11).
 
-✻ Waiting for 2 background agents to finish
+     Verification
 
-⏺ Monitor event: "sub-human room notices"
+     - First page with no after returns at most limit items (never more than 50) and a rel=next Link header when more
+       items remain.
+     - Following rel=next links walks every task exactly once, with no duplicates or gaps.
+     - The last page has no rel=next link.
+     - limit=500 returns 200 with at most 50 items, not a 400.
+     - The body is always a bare JSON array.
 
-✽ Wibbling… 
-  ⎿  Tip: Use /theme to change the color theme
+✽ Infusing… (3s · ↓ 31 tokens · thinking)
+  ⎿  Tip: You have 4 plugins you haven't used lately. Disable them with /plugin to free up context and speed up startup.
                                                                 Update available! Run: brew upgrade claude-code@latest
-────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ bison-3139 · orch · plan 3a9d97 2/2
-  ⏸ plan mode on · 1 monitor · ← 1 agent
+  ⬡ vole-8126 · orch · plan eaae7e 2/2 ✔
+  ⏸ manual mode on · 1 monitor · ← 1 agent
 
   ⏺ main
-  ◯ alice  ✓ signed 3a9d97 · working
-  ◯ bob  ⚠ reviewing 3a9d97 · working
+  ◯ alice  ✔ decided eaae7e · working
+  ◯ bob  ✔ decided eaae7e · working

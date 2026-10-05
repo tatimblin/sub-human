@@ -173,6 +173,7 @@ It doesn't stop a hostile local user, who can write the files directly. The hash
 | A row vanished after Esc | It returns within a few seconds. |
 | No sign-off form | Check `sub-human plan` names you. If you dismissed it, tell your Claude "review". |
 | The orchestrator is waiting | Its status names who hasn't signed. They answer the form or object. |
+| The orchestrator's window shows a permission prompt to read a member's files | Nobody answers prompts there. Launch it with `--add-dir` for the members' working copies (reads only; it has no Bash), or ask the member to run that check. |
 
 ## Limits
 
@@ -181,4 +182,22 @@ It doesn't stop a hostile local user, who can write the files directly. The hash
 
 ## Leaving
 
-`/exit` asks "Background work is running…". Choose **1, "Exit and stop tasks"**: the room records `member_left`, and your row disappears from everyone's panel. `/clear` does not leave the room.
+`/exit` (or Ctrl+D twice) asks:
+
+```
+Background work is running
+The following will stop when you exit:
+  monitor · sub-human room notices
+  subagent · marmot-2509
+❯ 1. Exit and stop tasks
+  2. Move to background and exit
+  3. Stay
+```
+
+Choose **1, "Exit and stop tasks"** (Enter). The room records `member_left`, and your row reads `left` in everyone's panel until you rejoin. The dialog comes from Claude Code itself: your room row is a background agent, and Claude Code asks before stopping any background agent at exit. A plugin can't mark an agent as safe to stop, so the prompt can't be avoided.
+
+**2, "Move to background and exit"** also leaves the room: `member_left` is logged the same way. Claude Code then keeps a copy of your conversation running as a background session (it prints its id and `claude stop ID`). That copy isn't in the room: the room's monitor is stopped, its posts are refused, and its room row can't hold. Stop it with `claude stop ID`, or rejoin from a normal session with `/sub-human NAME`.
+
+**3, "Stay"** (or Esc) keeps you in the room.
+
+`/clear` does not leave the room.

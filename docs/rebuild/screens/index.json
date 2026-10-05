@@ -2,61 +2,61 @@
  {
   "scene": "S1",
   "session": "sh-orch",
-  "caption": "The orch runs /sub-human: invite code banner, status line ⬡ bison-3139 · orch",
+  "caption": "The orch runs /sub-human: invite code banner, status line ⬡ vole-8126 · orch",
   "step": 1,
-  "time": "2026-10-05T15:14:16.503Z",
+  "time": "2026-10-05T18:56:18.070Z",
   "svg": "S1-sh-orch.svg",
   "txt": "S1-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 0,
   "log": []
  },
  {
   "scene": "S1",
   "session": "sh-alice",
-  "caption": "The orch runs /sub-human: invite code banner, status line ⬡ bison-3139 · orch",
+  "caption": "The orch runs /sub-human: invite code banner, status line ⬡ vole-8126 · orch",
   "step": 1,
-  "time": "2026-10-05T15:14:16.516Z",
+  "time": "2026-10-05T18:56:18.084Z",
   "svg": "S1-sh-alice.svg",
   "txt": "S1-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 0,
   "log": []
  },
  {
   "scene": "S1",
   "session": "sh-bob",
-  "caption": "The orch runs /sub-human: invite code banner, status line ⬡ bison-3139 · orch",
+  "caption": "The orch runs /sub-human: invite code banner, status line ⬡ vole-8126 · orch",
   "step": 1,
-  "time": "2026-10-05T15:14:16.526Z",
+  "time": "2026-10-05T18:56:18.095Z",
   "svg": "S1-sh-bob.svg",
   "txt": "S1-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 0,
   "log": []
  },
  {
   "scene": "S2",
   "session": "sh-orch",
-  "caption": "alice joins with /sub-human alice (no code): one bison-3139 row for her, an alice row for the orch",
+  "caption": "alice joins with /sub-human alice (no code): one vole-8126 row for her, an alice row for the orch",
   "step": 1,
-  "time": "2026-10-05T15:14:25.034Z",
+  "time": "2026-10-05T18:56:29.498Z",
   "svg": "S2-sh-orch.svg",
   "txt": "S2-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 2,
   "log": [
    {
     "id": 1,
-    "at": "2026-10-05T15:14:17.141Z",
+    "at": "2026-10-05T18:56:18.733Z",
     "from": "alice",
     "via": "system",
     "kind": "member_joined",
@@ -64,12 +64,12 @@
    },
    {
     "id": 2,
-    "at": "2026-10-05T15:14:24.367Z",
+    "at": "2026-10-05T18:56:25.344Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
     "to": "alice",
-    "text": "Welcome, alice. We're starting with converge: what should this room plan?",
+    "text": "Welcome, alice. We're in the converge phase. What do you want the room to plan?",
     "refs": [
      1
     ]
@@ -79,19 +79,19 @@
  {
   "scene": "S2",
   "session": "sh-alice",
-  "caption": "alice joins with /sub-human alice (no code): one bison-3139 row for her, an alice row for the orch",
+  "caption": "alice joins with /sub-human alice (no code): one vole-8126 row for her, an alice row for the orch",
   "step": 1,
-  "time": "2026-10-05T15:14:25.050Z",
+  "time": "2026-10-05T18:56:29.516Z",
   "svg": "S2-sh-alice.svg",
   "txt": "S2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 2,
   "log": [
    {
     "id": 1,
-    "at": "2026-10-05T15:14:17.141Z",
+    "at": "2026-10-05T18:56:18.733Z",
     "from": "alice",
     "via": "system",
     "kind": "member_joined",
@@ -99,12 +99,12 @@
    },
    {
     "id": 2,
-    "at": "2026-10-05T15:14:24.367Z",
+    "at": "2026-10-05T18:56:25.344Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
     "to": "alice",
-    "text": "Welcome, alice. We're starting with converge: what should this room plan?",
+    "text": "Welcome, alice. We're in the converge phase. What do you want the room to plan?",
     "refs": [
      1
     ]
@@ -114,19 +114,19 @@
  {
   "scene": "S2",
   "session": "sh-bob",
-  "caption": "alice joins with /sub-human alice (no code): one bison-3139 row for her, an alice row for the orch",
+  "caption": "alice joins with /sub-human alice (no code): one vole-8126 row for her, an alice row for the orch",
   "step": 1,
-  "time": "2026-10-05T15:14:25.062Z",
+  "time": "2026-10-05T18:56:29.526Z",
   "svg": "S2-sh-bob.svg",
   "txt": "S2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 2,
   "log": [
    {
     "id": 1,
-    "at": "2026-10-05T15:14:17.141Z",
+    "at": "2026-10-05T18:56:18.733Z",
     "from": "alice",
     "via": "system",
     "kind": "member_joined",
@@ -134,12 +134,12 @@
    },
    {
     "id": 2,
-    "at": "2026-10-05T15:14:24.367Z",
+    "at": "2026-10-05T18:56:25.344Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
     "to": "alice",
-    "text": "Welcome, alice. We're starting with converge: what should this room plan?",
+    "text": "Welcome, alice. We're in the converge phase. What do you want the room to plan?",
     "refs": [
      1
     ]
@@ -151,17 +151,17 @@
   "session": "sh-orch",
   "caption": "bob joins: the orch panel has alice and bob rows; each member panel has only the room row",
   "step": 1,
-  "time": "2026-10-05T15:14:36.585Z",
+  "time": "2026-10-05T18:56:43.240Z",
   "svg": "S3-sh-orch.svg",
   "txt": "S3-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 3,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-05T15:14:25.688Z",
+    "at": "2026-10-05T18:56:30.171Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -174,17 +174,17 @@
   "session": "sh-alice",
   "caption": "bob joins: the orch panel has alice and bob rows; each member panel has only the room row",
   "step": 1,
-  "time": "2026-10-05T15:14:36.603Z",
+  "time": "2026-10-05T18:56:43.254Z",
   "svg": "S3-sh-alice.svg",
   "txt": "S3-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 3,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-05T15:14:25.688Z",
+    "at": "2026-10-05T18:56:30.171Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -197,17 +197,17 @@
   "session": "sh-bob",
   "caption": "bob joins: the orch panel has alice and bob rows; each member panel has only the room row",
   "step": 1,
-  "time": "2026-10-05T15:14:36.615Z",
+  "time": "2026-10-05T18:56:43.265Z",
   "svg": "S3-sh-bob.svg",
   "txt": "S3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 3,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-05T15:14:25.688Z",
+    "at": "2026-10-05T18:56:30.171Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -220,17 +220,17 @@
   "session": "sh-orch",
   "caption": "alice posts with @room: receipt ✓ posted … as #N; the rows update in the other panels",
   "step": 1,
-  "time": "2026-10-05T15:14:41.485Z",
+  "time": "2026-10-05T18:56:48.141Z",
   "svg": "S4-sh-orch.svg",
   "txt": "S4-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 5,
   "log": [
    {
     "id": 4,
-    "at": "2026-10-05T15:14:37.293Z",
+    "at": "2026-10-05T18:56:43.951Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -238,12 +238,12 @@
    },
    {
     "id": 5,
-    "at": "2026-10-05T15:14:40.483Z",
+    "at": "2026-10-05T18:56:47.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "bob",
-    "text": "bob, alice proposes cursor paging for GET /tasks (#4). Where do you stand on the shape and the limit, and would it break anything on your side?",
+    "text": "bob, alice proposed cursor paging for GET /tasks in #4. What's your position, and would that shape cause any problem for your side?",
     "refs": [
      4
     ]
@@ -255,17 +255,17 @@
   "session": "sh-alice",
   "caption": "alice posts with @room: receipt ✓ posted … as #N; the rows update in the other panels",
   "step": 1,
-  "time": "2026-10-05T15:14:41.501Z",
+  "time": "2026-10-05T18:56:48.155Z",
   "svg": "S4-sh-alice.svg",
   "txt": "S4-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 5,
   "log": [
    {
     "id": 4,
-    "at": "2026-10-05T15:14:37.293Z",
+    "at": "2026-10-05T18:56:43.951Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -273,12 +273,12 @@
    },
    {
     "id": 5,
-    "at": "2026-10-05T15:14:40.483Z",
+    "at": "2026-10-05T18:56:47.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "bob",
-    "text": "bob, alice proposes cursor paging for GET /tasks (#4). Where do you stand on the shape and the limit, and would it break anything on your side?",
+    "text": "bob, alice proposed cursor paging for GET /tasks in #4. What's your position, and would that shape cause any problem for your side?",
     "refs": [
      4
     ]
@@ -290,17 +290,17 @@
   "session": "sh-bob",
   "caption": "alice posts with @room: receipt ✓ posted … as #N; the rows update in the other panels",
   "step": 1,
-  "time": "2026-10-05T15:14:41.512Z",
+  "time": "2026-10-05T18:56:48.166Z",
   "svg": "S4-sh-bob.svg",
   "txt": "S4-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 5,
   "log": [
    {
     "id": 4,
-    "at": "2026-10-05T15:14:37.293Z",
+    "at": "2026-10-05T18:56:43.951Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -308,12 +308,12 @@
    },
    {
     "id": 5,
-    "at": "2026-10-05T15:14:40.483Z",
+    "at": "2026-10-05T18:56:47.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "bob",
-    "text": "bob, alice proposes cursor paging for GET /tasks (#4). Where do you stand on the shape and the limit, and would it break anything on your side?",
+    "text": "bob, alice proposed cursor paging for GET /tasks in #4. What's your position, and would that shape cause any problem for your side?",
     "refs": [
      4
     ]
@@ -325,17 +325,17 @@
   "session": "sh-orch",
   "caption": "bob asks to approve and adds a constraint (@room, via=human)",
   "step": 2,
-  "time": "2026-10-05T15:14:46.306Z",
+  "time": "2026-10-05T18:56:52.966Z",
   "svg": "S4-2-sh-orch.svg",
   "txt": "S4-2-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 6,
   "log": [
    {
     "id": 4,
-    "at": "2026-10-05T15:14:37.293Z",
+    "at": "2026-10-05T18:56:43.951Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -343,19 +343,19 @@
    },
    {
     "id": 5,
-    "at": "2026-10-05T15:14:40.483Z",
+    "at": "2026-10-05T18:56:47.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "bob",
-    "text": "bob, alice proposes cursor paging for GET /tasks (#4). Where do you stand on the shape and the limit, and would it break anything on your side?",
+    "text": "bob, alice proposed cursor paging for GET /tasks in #4. What's your position, and would that shape cause any problem for your side?",
     "refs": [
      4
     ]
    },
    {
     "id": 6,
-    "at": "2026-10-05T15:14:42.126Z",
+    "at": "2026-10-05T18:56:48.801Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -368,17 +368,17 @@
   "session": "sh-alice",
   "caption": "bob asks to approve and adds a constraint (@room, via=human)",
   "step": 2,
-  "time": "2026-10-05T15:14:46.319Z",
+  "time": "2026-10-05T18:56:52.978Z",
   "svg": "S4-2-sh-alice.svg",
   "txt": "S4-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 6,
   "log": [
    {
     "id": 4,
-    "at": "2026-10-05T15:14:37.293Z",
+    "at": "2026-10-05T18:56:43.951Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -386,19 +386,19 @@
    },
    {
     "id": 5,
-    "at": "2026-10-05T15:14:40.483Z",
+    "at": "2026-10-05T18:56:47.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "bob",
-    "text": "bob, alice proposes cursor paging for GET /tasks (#4). Where do you stand on the shape and the limit, and would it break anything on your side?",
+    "text": "bob, alice proposed cursor paging for GET /tasks in #4. What's your position, and would that shape cause any problem for your side?",
     "refs": [
      4
     ]
    },
    {
     "id": 6,
-    "at": "2026-10-05T15:14:42.126Z",
+    "at": "2026-10-05T18:56:48.801Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -411,17 +411,17 @@
   "session": "sh-bob",
   "caption": "bob asks to approve and adds a constraint (@room, via=human)",
   "step": 2,
-  "time": "2026-10-05T15:14:46.330Z",
+  "time": "2026-10-05T18:56:52.989Z",
   "svg": "S4-2-sh-bob.svg",
   "txt": "S4-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 6,
   "log": [
    {
     "id": 4,
-    "at": "2026-10-05T15:14:37.293Z",
+    "at": "2026-10-05T18:56:43.951Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -429,19 +429,19 @@
    },
    {
     "id": 5,
-    "at": "2026-10-05T15:14:40.483Z",
+    "at": "2026-10-05T18:56:47.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "bob",
-    "text": "bob, alice proposes cursor paging for GET /tasks (#4). Where do you stand on the shape and the limit, and would it break anything on your side?",
+    "text": "bob, alice proposed cursor paging for GET /tasks in #4. What's your position, and would that shape cause any problem for your side?",
     "refs": [
      4
     ]
    },
    {
     "id": 6,
-    "at": "2026-10-05T15:14:42.126Z",
+    "at": "2026-10-05T18:56:48.801Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -454,22 +454,22 @@
   "session": "sh-orch",
   "caption": "The orch asks alice a question before drafting (#7)",
   "step": 1,
-  "time": "2026-10-05T15:24:47.142Z",
+  "time": "2026-10-05T18:56:54.677Z",
   "svg": "S5-sh-orch.svg",
   "txt": "S5-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 7,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-05T15:14:47.025Z",
+    "at": "2026-10-05T18:56:54.437Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "alice",
-    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) has nowhere to return the next cursor. Should it go in a response header such as `Link` or `X-Next-Cursor`, or should the body change shape?",
+    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) leaves no body field to return the cursor in. Should the next cursor come in a response header, or do you see another way?",
     "refs": [
      4,
      6
@@ -482,22 +482,22 @@
   "session": "sh-alice",
   "caption": "The orch asks alice a question before drafting (#7)",
   "step": 1,
-  "time": "2026-10-05T15:24:47.155Z",
+  "time": "2026-10-05T18:56:54.692Z",
   "svg": "S5-sh-alice.svg",
   "txt": "S5-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 7,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-05T15:14:47.025Z",
+    "at": "2026-10-05T18:56:54.437Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "alice",
-    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) has nowhere to return the next cursor. Should it go in a response header such as `Link` or `X-Next-Cursor`, or should the body change shape?",
+    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) leaves no body field to return the cursor in. Should the next cursor come in a response header, or do you see another way?",
     "refs": [
      4,
      6
@@ -510,22 +510,22 @@
   "session": "sh-bob",
   "caption": "The orch asks alice a question before drafting (#7)",
   "step": 1,
-  "time": "2026-10-05T15:24:47.167Z",
+  "time": "2026-10-05T18:56:54.704Z",
   "svg": "S5-sh-bob.svg",
   "txt": "S5-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 7,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-05T15:14:47.025Z",
+    "at": "2026-10-05T18:56:54.437Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "alice",
-    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) has nowhere to return the next cursor. Should it go in a response header such as `Link` or `X-Next-Cursor`, or should the body change shape?",
+    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) leaves no body field to return the cursor in. Should the next cursor come in a response header, or do you see another way?",
     "refs": [
      4,
      6
@@ -538,22 +538,22 @@
   "session": "sh-orch",
   "caption": "The orch drafts a plan: rows read drafting; the orch's own status line",
   "step": 2,
-  "time": "2026-10-05T15:25:03.071Z",
+  "time": "2026-10-05T18:57:13.391Z",
   "svg": "S5-2-sh-orch.svg",
   "txt": "S5-2-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 10,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-05T15:14:47.025Z",
+    "at": "2026-10-05T18:56:54.437Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "alice",
-    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) has nowhere to return the next cursor. Should it go in a response header such as `Link` or `X-Next-Cursor`, or should the body change shape?",
+    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) leaves no body field to return the cursor in. Should the next cursor come in a response header, or do you see another way?",
     "refs": [
      4,
      6
@@ -561,7 +561,7 @@
    },
    {
     "id": 8,
-    "at": "2026-10-05T15:24:47.823Z",
+    "at": "2026-10-05T18:56:55.311Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -569,12 +569,12 @@
    },
    {
     "id": 9,
-    "at": "2026-10-05T15:24:59.220Z",
+    "at": "2026-10-05T18:57:09.649Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 6a33e89fc359. Approvers: alice and bob.",
-    "plan_hash": "6a33e89fc359",
+    "text": "plan 80930cc0525d. Approvers: alice and bob.",
+    "plan_hash": "80930cc0525d",
     "approvers": [
      "alice",
      "bob"
@@ -582,11 +582,11 @@
    },
    {
     "id": 10,
-    "at": "2026-10-05T15:24:59.222Z",
+    "at": "2026-10-05T18:57:09.650Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 6a33e89fc359 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan 80930cc0525d is waiting for sign-off from alice and bob. Approvers: alice and bob."
    }
   ]
  },
@@ -595,22 +595,22 @@
   "session": "sh-alice",
   "caption": "The orch drafts a plan: rows read drafting; the orch's own status line",
   "step": 2,
-  "time": "2026-10-05T15:25:03.085Z",
+  "time": "2026-10-05T18:57:13.406Z",
   "svg": "S5-2-sh-alice.svg",
   "txt": "S5-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 10,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-05T15:14:47.025Z",
+    "at": "2026-10-05T18:56:54.437Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "alice",
-    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) has nowhere to return the next cursor. Should it go in a response header such as `Link` or `X-Next-Cursor`, or should the body change shape?",
+    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) leaves no body field to return the cursor in. Should the next cursor come in a response header, or do you see another way?",
     "refs": [
      4,
      6
@@ -618,7 +618,7 @@
    },
    {
     "id": 8,
-    "at": "2026-10-05T15:24:47.823Z",
+    "at": "2026-10-05T18:56:55.311Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -626,12 +626,12 @@
    },
    {
     "id": 9,
-    "at": "2026-10-05T15:24:59.220Z",
+    "at": "2026-10-05T18:57:09.649Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 6a33e89fc359. Approvers: alice and bob.",
-    "plan_hash": "6a33e89fc359",
+    "text": "plan 80930cc0525d. Approvers: alice and bob.",
+    "plan_hash": "80930cc0525d",
     "approvers": [
      "alice",
      "bob"
@@ -639,11 +639,11 @@
    },
    {
     "id": 10,
-    "at": "2026-10-05T15:24:59.222Z",
+    "at": "2026-10-05T18:57:09.650Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 6a33e89fc359 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan 80930cc0525d is waiting for sign-off from alice and bob. Approvers: alice and bob."
    }
   ]
  },
@@ -652,22 +652,22 @@
   "session": "sh-bob",
   "caption": "The orch drafts a plan: rows read drafting; the orch's own status line",
   "step": 2,
-  "time": "2026-10-05T15:25:03.096Z",
+  "time": "2026-10-05T18:57:13.417Z",
   "svg": "S5-2-sh-bob.svg",
   "txt": "S5-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 10,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-05T15:14:47.025Z",
+    "at": "2026-10-05T18:56:54.437Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "alice",
-    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) has nowhere to return the next cursor. Should it go in a response header such as `Link` or `X-Next-Cursor`, or should the body change shape?",
+    "text": "alice, bob wants `after` to be opaque (#6), but a bare array (#4) leaves no body field to return the cursor in. Should the next cursor come in a response header, or do you see another way?",
     "refs": [
      4,
      6
@@ -675,7 +675,7 @@
    },
    {
     "id": 8,
-    "at": "2026-10-05T15:24:47.823Z",
+    "at": "2026-10-05T18:56:55.311Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -683,12 +683,12 @@
    },
    {
     "id": 9,
-    "at": "2026-10-05T15:24:59.220Z",
+    "at": "2026-10-05T18:57:09.649Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 6a33e89fc359. Approvers: alice and bob.",
-    "plan_hash": "6a33e89fc359",
+    "text": "plan 80930cc0525d. Approvers: alice and bob.",
+    "plan_hash": "80930cc0525d",
     "approvers": [
      "alice",
      "bob"
@@ -696,11 +696,11 @@
    },
    {
     "id": 10,
-    "at": "2026-10-05T15:24:59.222Z",
+    "at": "2026-10-05T18:57:09.650Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 6a33e89fc359 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan 80930cc0525d is waiting for sign-off from alice and bob. Approvers: alice and bob."
    }
   ]
  },
@@ -709,12 +709,12 @@
   "session": "sh-orch",
   "caption": "Plan published: the native sign-off form in alice's and bob's terminals (summary, path, Approve/Object)",
   "step": 1,
-  "time": "2026-10-05T15:25:04.284Z",
+  "time": "2026-10-05T18:57:14.613Z",
   "svg": "S6-sh-orch.svg",
   "txt": "S6-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 10,
   "log": []
  },
@@ -723,12 +723,12 @@
   "session": "sh-alice",
   "caption": "Plan published: the native sign-off form in alice's and bob's terminals (summary, path, Approve/Object)",
   "step": 1,
-  "time": "2026-10-05T15:25:04.298Z",
+  "time": "2026-10-05T18:57:14.627Z",
   "svg": "S6-sh-alice.svg",
   "txt": "S6-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 10,
   "log": []
  },
@@ -737,12 +737,12 @@
   "session": "sh-bob",
   "caption": "Plan published: the native sign-off form in alice's and bob's terminals (summary, path, Approve/Object)",
   "step": 1,
-  "time": "2026-10-05T15:25:04.309Z",
+  "time": "2026-10-05T18:57:14.638Z",
   "svg": "S6-sh-bob.svg",
   "txt": "S6-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 10,
   "log": []
  },
@@ -751,12 +751,12 @@
   "session": "sh-orch",
   "caption": "bob objects in his form with a typed reason (before the log shows it)",
   "step": 1,
-  "time": "2026-10-05T15:25:07.894Z",
+  "time": "2026-10-05T18:57:18.256Z",
   "svg": "S7-sh-orch.svg",
   "txt": "S7-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 10,
   "log": []
  },
@@ -765,12 +765,12 @@
   "session": "sh-alice",
   "caption": "bob objects in his form with a typed reason (before the log shows it)",
   "step": 1,
-  "time": "2026-10-05T15:25:07.908Z",
+  "time": "2026-10-05T18:57:18.273Z",
   "svg": "S7-sh-alice.svg",
   "txt": "S7-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 10,
   "log": []
  },
@@ -779,12 +779,12 @@
   "session": "sh-bob",
   "caption": "bob objects in his form with a typed reason (before the log shows it)",
   "step": 1,
-  "time": "2026-10-05T15:25:07.920Z",
+  "time": "2026-10-05T18:57:18.285Z",
   "svg": "S7-sh-bob.svg",
   "txt": "S7-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 10,
   "log": []
  },
@@ -793,22 +793,22 @@
   "session": "sh-orch",
   "caption": "bob's objection (via=human, reason byte-exact) shows in the orch and alice rows",
   "step": 2,
-  "time": "2026-10-05T15:25:14.346Z",
+  "time": "2026-10-05T18:57:24.709Z",
   "svg": "S7-2-sh-orch.svg",
   "txt": "S7-2-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 11,
   "log": [
    {
     "id": 11,
-    "at": "2026-10-05T15:25:08.092Z",
+    "at": "2026-10-05T18:57:18.465Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "cap the page at 50 and say what happens past it — `limit=500` must clamp, not 400",
-    "plan_hash": "6a33e89fc359"
+    "plan_hash": "80930cc0525d"
    }
   ]
  },
@@ -817,22 +817,22 @@
   "session": "sh-alice",
   "caption": "bob's objection (via=human, reason byte-exact) shows in the orch and alice rows",
   "step": 2,
-  "time": "2026-10-05T15:25:14.360Z",
+  "time": "2026-10-05T18:57:24.723Z",
   "svg": "S7-2-sh-alice.svg",
   "txt": "S7-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 11,
   "log": [
    {
     "id": 11,
-    "at": "2026-10-05T15:25:08.092Z",
+    "at": "2026-10-05T18:57:18.465Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "cap the page at 50 and say what happens past it — `limit=500` must clamp, not 400",
-    "plan_hash": "6a33e89fc359"
+    "plan_hash": "80930cc0525d"
    }
   ]
  },
@@ -841,22 +841,22 @@
   "session": "sh-bob",
   "caption": "bob's objection (via=human, reason byte-exact) shows in the orch and alice rows",
   "step": 2,
-  "time": "2026-10-05T15:25:14.371Z",
+  "time": "2026-10-05T18:57:24.735Z",
   "svg": "S7-2-sh-bob.svg",
   "txt": "S7-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 11,
   "log": [
    {
     "id": 11,
-    "at": "2026-10-05T15:25:08.092Z",
+    "at": "2026-10-05T18:57:18.465Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "cap the page at 50 and say what happens past it — `limit=500` must clamp, not 400",
-    "plan_hash": "6a33e89fc359"
+    "plan_hash": "80930cc0525d"
    }
   ]
  },
@@ -865,33 +865,33 @@
   "session": "sh-orch",
   "caption": "The orch revises: the stale form is replaced by the new revision's form",
   "step": 1,
-  "time": "2026-10-05T15:25:20.022Z",
+  "time": "2026-10-05T18:57:29.704Z",
   "svg": "S8-sh-orch.svg",
   "txt": "S8-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 14,
   "log": [
    {
     "id": 12,
-    "at": "2026-10-05T15:25:16.413Z",
+    "at": "2026-10-05T18:57:26.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "The plan is revised for bob's objection (#11): a `limit` above 50 now clamps to 50 instead of returning 400. This voids any sign-off on 6a33e89fc359, so alice and bob will each get a new form.",
+    "text": "I revised the plan for bob's objection (#11): any `limit` over 50 now clamps to 50 and never returns a 400. The revision voids all earlier sign-offs, so alice and bob, please review the new version.",
     "refs": [
      11
     ]
    },
    {
     "id": 13,
-    "at": "2026-10-05T15:25:17.901Z",
+    "at": "2026-10-05T18:57:27.494Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 3a9d9726e017. Approvers: alice and bob.",
-    "plan_hash": "3a9d9726e017",
+    "text": "plan eaae7e5e855a. Approvers: alice and bob.",
+    "plan_hash": "eaae7e5e855a",
     "approvers": [
      "alice",
      "bob"
@@ -899,11 +899,11 @@
    },
    {
     "id": 14,
-    "at": "2026-10-05T15:25:17.904Z",
+    "at": "2026-10-05T18:57:27.495Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from alice and bob. Approvers: alice and bob."
    }
   ]
  },
@@ -912,33 +912,33 @@
   "session": "sh-alice",
   "caption": "The orch revises: the stale form is replaced by the new revision's form",
   "step": 1,
-  "time": "2026-10-05T15:25:20.035Z",
+  "time": "2026-10-05T18:57:29.720Z",
   "svg": "S8-sh-alice.svg",
   "txt": "S8-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 14,
   "log": [
    {
     "id": 12,
-    "at": "2026-10-05T15:25:16.413Z",
+    "at": "2026-10-05T18:57:26.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "The plan is revised for bob's objection (#11): a `limit` above 50 now clamps to 50 instead of returning 400. This voids any sign-off on 6a33e89fc359, so alice and bob will each get a new form.",
+    "text": "I revised the plan for bob's objection (#11): any `limit` over 50 now clamps to 50 and never returns a 400. The revision voids all earlier sign-offs, so alice and bob, please review the new version.",
     "refs": [
      11
     ]
    },
    {
     "id": 13,
-    "at": "2026-10-05T15:25:17.901Z",
+    "at": "2026-10-05T18:57:27.494Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 3a9d9726e017. Approvers: alice and bob.",
-    "plan_hash": "3a9d9726e017",
+    "text": "plan eaae7e5e855a. Approvers: alice and bob.",
+    "plan_hash": "eaae7e5e855a",
     "approvers": [
      "alice",
      "bob"
@@ -946,11 +946,11 @@
    },
    {
     "id": 14,
-    "at": "2026-10-05T15:25:17.904Z",
+    "at": "2026-10-05T18:57:27.495Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from alice and bob. Approvers: alice and bob."
    }
   ]
  },
@@ -959,33 +959,33 @@
   "session": "sh-bob",
   "caption": "The orch revises: the stale form is replaced by the new revision's form",
   "step": 1,
-  "time": "2026-10-05T15:25:20.047Z",
+  "time": "2026-10-05T18:57:29.732Z",
   "svg": "S8-sh-bob.svg",
   "txt": "S8-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 14,
   "log": [
    {
     "id": 12,
-    "at": "2026-10-05T15:25:16.413Z",
+    "at": "2026-10-05T18:57:26.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "The plan is revised for bob's objection (#11): a `limit` above 50 now clamps to 50 instead of returning 400. This voids any sign-off on 6a33e89fc359, so alice and bob will each get a new form.",
+    "text": "I revised the plan for bob's objection (#11): any `limit` over 50 now clamps to 50 and never returns a 400. The revision voids all earlier sign-offs, so alice and bob, please review the new version.",
     "refs": [
      11
     ]
    },
    {
     "id": 13,
-    "at": "2026-10-05T15:25:17.901Z",
+    "at": "2026-10-05T18:57:27.494Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 3a9d9726e017. Approvers: alice and bob.",
-    "plan_hash": "3a9d9726e017",
+    "text": "plan eaae7e5e855a. Approvers: alice and bob.",
+    "plan_hash": "eaae7e5e855a",
     "approvers": [
      "alice",
      "bob"
@@ -993,11 +993,11 @@
    },
    {
     "id": 14,
-    "at": "2026-10-05T15:25:17.904Z",
+    "at": "2026-10-05T18:57:27.495Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from alice and bob. Approvers: alice and bob."
    }
   ]
  },
@@ -1006,33 +1006,33 @@
   "session": "sh-orch",
   "caption": "alice approves the revision: ✓ signed on her row",
   "step": 2,
-  "time": "2026-10-05T15:25:23.400Z",
+  "time": "2026-10-05T18:57:33.049Z",
   "svg": "S8-2-sh-orch.svg",
   "txt": "S8-2-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 15,
   "log": [
    {
     "id": 12,
-    "at": "2026-10-05T15:25:16.413Z",
+    "at": "2026-10-05T18:57:26.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "The plan is revised for bob's objection (#11): a `limit` above 50 now clamps to 50 instead of returning 400. This voids any sign-off on 6a33e89fc359, so alice and bob will each get a new form.",
+    "text": "I revised the plan for bob's objection (#11): any `limit` over 50 now clamps to 50 and never returns a 400. The revision voids all earlier sign-offs, so alice and bob, please review the new version.",
     "refs": [
      11
     ]
    },
    {
     "id": 13,
-    "at": "2026-10-05T15:25:17.901Z",
+    "at": "2026-10-05T18:57:27.494Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 3a9d9726e017. Approvers: alice and bob.",
-    "plan_hash": "3a9d9726e017",
+    "text": "plan eaae7e5e855a. Approvers: alice and bob.",
+    "plan_hash": "eaae7e5e855a",
     "approvers": [
      "alice",
      "bob"
@@ -1040,20 +1040,20 @@
    },
    {
     "id": 14,
-    "at": "2026-10-05T15:25:17.904Z",
+    "at": "2026-10-05T18:57:27.495Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from alice and bob. Approvers: alice and bob."
    },
    {
     "id": 15,
-    "at": "2026-10-05T15:25:21.671Z",
+    "at": "2026-10-05T18:57:31.365Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff",
-    "text": "alice approved plan 3a9d9726e017",
-    "plan_hash": "3a9d9726e017"
+    "text": "alice approved plan eaae7e5e855a",
+    "plan_hash": "eaae7e5e855a"
    }
   ]
  },
@@ -1062,33 +1062,33 @@
   "session": "sh-alice",
   "caption": "alice approves the revision: ✓ signed on her row",
   "step": 2,
-  "time": "2026-10-05T15:25:23.414Z",
+  "time": "2026-10-05T18:57:33.064Z",
   "svg": "S8-2-sh-alice.svg",
   "txt": "S8-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
-  "logTo": 15,
+  "room": "vole-8126",
+  "logTo": 16,
   "log": [
    {
     "id": 12,
-    "at": "2026-10-05T15:25:16.413Z",
+    "at": "2026-10-05T18:57:26.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "The plan is revised for bob's objection (#11): a `limit` above 50 now clamps to 50 instead of returning 400. This voids any sign-off on 6a33e89fc359, so alice and bob will each get a new form.",
+    "text": "I revised the plan for bob's objection (#11): any `limit` over 50 now clamps to 50 and never returns a 400. The revision voids all earlier sign-offs, so alice and bob, please review the new version.",
     "refs": [
      11
     ]
    },
    {
     "id": 13,
-    "at": "2026-10-05T15:25:17.901Z",
+    "at": "2026-10-05T18:57:27.494Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 3a9d9726e017. Approvers: alice and bob.",
-    "plan_hash": "3a9d9726e017",
+    "text": "plan eaae7e5e855a. Approvers: alice and bob.",
+    "plan_hash": "eaae7e5e855a",
     "approvers": [
      "alice",
      "bob"
@@ -1096,20 +1096,28 @@
    },
    {
     "id": 14,
-    "at": "2026-10-05T15:25:17.904Z",
+    "at": "2026-10-05T18:57:27.495Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from alice and bob. Approvers: alice and bob."
    },
    {
     "id": 15,
-    "at": "2026-10-05T15:25:21.671Z",
+    "at": "2026-10-05T18:57:31.365Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff",
-    "text": "alice approved plan 3a9d9726e017",
-    "plan_hash": "3a9d9726e017"
+    "text": "alice approved plan eaae7e5e855a",
+    "plan_hash": "eaae7e5e855a"
+   },
+   {
+    "id": 16,
+    "at": "2026-10-05T18:57:33.051Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "status",
+    "text": "plan eaae7e5e855a is waiting for sign-off from bob. Approvers: alice and bob."
    }
   ]
  },
@@ -1118,33 +1126,33 @@
   "session": "sh-bob",
   "caption": "alice approves the revision: ✓ signed on her row",
   "step": 2,
-  "time": "2026-10-05T15:25:23.426Z",
+  "time": "2026-10-05T18:57:33.077Z",
   "svg": "S8-2-sh-bob.svg",
   "txt": "S8-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
-  "logTo": 15,
+  "room": "vole-8126",
+  "logTo": 16,
   "log": [
    {
     "id": 12,
-    "at": "2026-10-05T15:25:16.413Z",
+    "at": "2026-10-05T18:57:26.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "The plan is revised for bob's objection (#11): a `limit` above 50 now clamps to 50 instead of returning 400. This voids any sign-off on 6a33e89fc359, so alice and bob will each get a new form.",
+    "text": "I revised the plan for bob's objection (#11): any `limit` over 50 now clamps to 50 and never returns a 400. The revision voids all earlier sign-offs, so alice and bob, please review the new version.",
     "refs": [
      11
     ]
    },
    {
     "id": 13,
-    "at": "2026-10-05T15:25:17.901Z",
+    "at": "2026-10-05T18:57:27.494Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 3a9d9726e017. Approvers: alice and bob.",
-    "plan_hash": "3a9d9726e017",
+    "text": "plan eaae7e5e855a. Approvers: alice and bob.",
+    "plan_hash": "eaae7e5e855a",
     "approvers": [
      "alice",
      "bob"
@@ -1152,20 +1160,28 @@
    },
    {
     "id": 14,
-    "at": "2026-10-05T15:25:17.904Z",
+    "at": "2026-10-05T18:57:27.495Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from alice and bob. Approvers: alice and bob."
    },
    {
     "id": 15,
-    "at": "2026-10-05T15:25:21.671Z",
+    "at": "2026-10-05T18:57:31.365Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff",
-    "text": "alice approved plan 3a9d9726e017",
-    "plan_hash": "3a9d9726e017"
+    "text": "alice approved plan eaae7e5e855a",
+    "plan_hash": "eaae7e5e855a"
+   },
+   {
+    "id": 16,
+    "at": "2026-10-05T18:57:33.051Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "status",
+    "text": "plan eaae7e5e855a is waiting for sign-off from bob. Approvers: alice and bob."
    }
   ]
  },
@@ -1174,33 +1190,33 @@
   "session": "sh-orch",
   "caption": "Both approve the revision: ✓ signed on both rows; matrix complete",
   "step": 3,
-  "time": "2026-10-05T15:25:26.245Z",
+  "time": "2026-10-05T18:57:38.523Z",
   "svg": "S8-3-sh-orch.svg",
   "txt": "S8-3-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
-  "logTo": 17,
+  "room": "vole-8126",
+  "logTo": 18,
   "log": [
    {
     "id": 12,
-    "at": "2026-10-05T15:25:16.413Z",
+    "at": "2026-10-05T18:57:26.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "The plan is revised for bob's objection (#11): a `limit` above 50 now clamps to 50 instead of returning 400. This voids any sign-off on 6a33e89fc359, so alice and bob will each get a new form.",
+    "text": "I revised the plan for bob's objection (#11): any `limit` over 50 now clamps to 50 and never returns a 400. The revision voids all earlier sign-offs, so alice and bob, please review the new version.",
     "refs": [
      11
     ]
    },
    {
     "id": 13,
-    "at": "2026-10-05T15:25:17.901Z",
+    "at": "2026-10-05T18:57:27.494Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 3a9d9726e017. Approvers: alice and bob.",
-    "plan_hash": "3a9d9726e017",
+    "text": "plan eaae7e5e855a. Approvers: alice and bob.",
+    "plan_hash": "eaae7e5e855a",
     "approvers": [
      "alice",
      "bob"
@@ -1208,37 +1224,50 @@
    },
    {
     "id": 14,
-    "at": "2026-10-05T15:25:17.904Z",
+    "at": "2026-10-05T18:57:27.495Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from alice and bob. Approvers: alice and bob."
    },
    {
     "id": 15,
-    "at": "2026-10-05T15:25:21.671Z",
+    "at": "2026-10-05T18:57:31.365Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff",
-    "text": "alice approved plan 3a9d9726e017",
-    "plan_hash": "3a9d9726e017"
+    "text": "alice approved plan eaae7e5e855a",
+    "plan_hash": "eaae7e5e855a"
    },
    {
     "id": 16,
-    "at": "2026-10-05T15:25:23.555Z",
+    "at": "2026-10-05T18:57:33.051Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from bob. Approvers: alice and bob."
    },
    {
     "id": 17,
-    "at": "2026-10-05T15:25:25.027Z",
+    "at": "2026-10-05T18:57:34.694Z",
     "from": "bob",
     "via": "human",
     "kind": "signoff",
-    "text": "bob approved plan 3a9d9726e017",
-    "plan_hash": "3a9d9726e017"
+    "text": "bob approved plan eaae7e5e855a",
+    "plan_hash": "eaae7e5e855a"
+   },
+   {
+    "id": 18,
+    "at": "2026-10-05T18:57:36.591Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "decision",
+    "text": "Plan mode exited on plan eaae7e5e855a, signed by alice and bob.",
+    "plan_hash": "eaae7e5e855a",
+    "refs": [
+     15,
+     17
+    ]
    }
   ]
  },
@@ -1247,33 +1276,33 @@
   "session": "sh-alice",
   "caption": "Both approve the revision: ✓ signed on both rows; matrix complete",
   "step": 3,
-  "time": "2026-10-05T15:25:26.259Z",
+  "time": "2026-10-05T18:57:38.538Z",
   "svg": "S8-3-sh-alice.svg",
   "txt": "S8-3-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
-  "logTo": 17,
+  "room": "vole-8126",
+  "logTo": 18,
   "log": [
    {
     "id": 12,
-    "at": "2026-10-05T15:25:16.413Z",
+    "at": "2026-10-05T18:57:26.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "The plan is revised for bob's objection (#11): a `limit` above 50 now clamps to 50 instead of returning 400. This voids any sign-off on 6a33e89fc359, so alice and bob will each get a new form.",
+    "text": "I revised the plan for bob's objection (#11): any `limit` over 50 now clamps to 50 and never returns a 400. The revision voids all earlier sign-offs, so alice and bob, please review the new version.",
     "refs": [
      11
     ]
    },
    {
     "id": 13,
-    "at": "2026-10-05T15:25:17.901Z",
+    "at": "2026-10-05T18:57:27.494Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 3a9d9726e017. Approvers: alice and bob.",
-    "plan_hash": "3a9d9726e017",
+    "text": "plan eaae7e5e855a. Approvers: alice and bob.",
+    "plan_hash": "eaae7e5e855a",
     "approvers": [
      "alice",
      "bob"
@@ -1281,37 +1310,50 @@
    },
    {
     "id": 14,
-    "at": "2026-10-05T15:25:17.904Z",
+    "at": "2026-10-05T18:57:27.495Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from alice and bob. Approvers: alice and bob."
    },
    {
     "id": 15,
-    "at": "2026-10-05T15:25:21.671Z",
+    "at": "2026-10-05T18:57:31.365Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff",
-    "text": "alice approved plan 3a9d9726e017",
-    "plan_hash": "3a9d9726e017"
+    "text": "alice approved plan eaae7e5e855a",
+    "plan_hash": "eaae7e5e855a"
    },
    {
     "id": 16,
-    "at": "2026-10-05T15:25:23.555Z",
+    "at": "2026-10-05T18:57:33.051Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from bob. Approvers: alice and bob."
    },
    {
     "id": 17,
-    "at": "2026-10-05T15:25:25.027Z",
+    "at": "2026-10-05T18:57:34.694Z",
     "from": "bob",
     "via": "human",
     "kind": "signoff",
-    "text": "bob approved plan 3a9d9726e017",
-    "plan_hash": "3a9d9726e017"
+    "text": "bob approved plan eaae7e5e855a",
+    "plan_hash": "eaae7e5e855a"
+   },
+   {
+    "id": 18,
+    "at": "2026-10-05T18:57:36.591Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "decision",
+    "text": "Plan mode exited on plan eaae7e5e855a, signed by alice and bob.",
+    "plan_hash": "eaae7e5e855a",
+    "refs": [
+     15,
+     17
+    ]
    }
   ]
  },
@@ -1320,33 +1362,33 @@
   "session": "sh-bob",
   "caption": "Both approve the revision: ✓ signed on both rows; matrix complete",
   "step": 3,
-  "time": "2026-10-05T15:25:26.271Z",
+  "time": "2026-10-05T18:57:38.549Z",
   "svg": "S8-3-sh-bob.svg",
   "txt": "S8-3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
-  "logTo": 17,
+  "room": "vole-8126",
+  "logTo": 18,
   "log": [
    {
     "id": 12,
-    "at": "2026-10-05T15:25:16.413Z",
+    "at": "2026-10-05T18:57:26.211Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "The plan is revised for bob's objection (#11): a `limit` above 50 now clamps to 50 instead of returning 400. This voids any sign-off on 6a33e89fc359, so alice and bob will each get a new form.",
+    "text": "I revised the plan for bob's objection (#11): any `limit` over 50 now clamps to 50 and never returns a 400. The revision voids all earlier sign-offs, so alice and bob, please review the new version.",
     "refs": [
      11
     ]
    },
    {
     "id": 13,
-    "at": "2026-10-05T15:25:17.901Z",
+    "at": "2026-10-05T18:57:27.494Z",
     "from": "orch",
     "via": "system",
     "kind": "plan_rev",
-    "text": "plan 3a9d9726e017. Approvers: alice and bob.",
-    "plan_hash": "3a9d9726e017",
+    "text": "plan eaae7e5e855a. Approvers: alice and bob.",
+    "plan_hash": "eaae7e5e855a",
     "approvers": [
      "alice",
      "bob"
@@ -1354,37 +1396,50 @@
    },
    {
     "id": 14,
-    "at": "2026-10-05T15:25:17.904Z",
+    "at": "2026-10-05T18:57:27.495Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from alice and bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from alice and bob. Approvers: alice and bob."
    },
    {
     "id": 15,
-    "at": "2026-10-05T15:25:21.671Z",
+    "at": "2026-10-05T18:57:31.365Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff",
-    "text": "alice approved plan 3a9d9726e017",
-    "plan_hash": "3a9d9726e017"
+    "text": "alice approved plan eaae7e5e855a",
+    "plan_hash": "eaae7e5e855a"
    },
    {
     "id": 16,
-    "at": "2026-10-05T15:25:23.555Z",
+    "at": "2026-10-05T18:57:33.051Z",
     "from": "orch",
     "via": "system",
     "kind": "status",
-    "text": "plan 3a9d9726e017 is waiting for sign-off from bob. Approvers: alice and bob."
+    "text": "plan eaae7e5e855a is waiting for sign-off from bob. Approvers: alice and bob."
    },
    {
     "id": 17,
-    "at": "2026-10-05T15:25:25.027Z",
+    "at": "2026-10-05T18:57:34.694Z",
     "from": "bob",
     "via": "human",
     "kind": "signoff",
-    "text": "bob approved plan 3a9d9726e017",
-    "plan_hash": "3a9d9726e017"
+    "text": "bob approved plan eaae7e5e855a",
+    "plan_hash": "eaae7e5e855a"
+   },
+   {
+    "id": 18,
+    "at": "2026-10-05T18:57:36.591Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "decision",
+    "text": "Plan mode exited on plan eaae7e5e855a, signed by alice and bob.",
+    "plan_hash": "eaae7e5e855a",
+    "refs": [
+     15,
+     17
+    ]
    }
   ]
  },
@@ -1393,34 +1448,21 @@
   "session": "sh-orch",
   "caption": "Automatic exit: the orch leaves plan mode with no dialog; decision; assignments; rows read ✓ decided",
   "step": 1,
-  "time": "2026-10-05T15:25:38.062Z",
+  "time": "2026-10-05T18:57:47.524Z",
   "svg": "S9-sh-orch.svg",
   "txt": "S9-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 19,
   "log": [
    {
-    "id": 18,
-    "at": "2026-10-05T15:25:26.872Z",
-    "from": "orch",
-    "via": "system",
-    "kind": "decision",
-    "text": "Plan mode exited on plan 3a9d9726e017, signed by alice and bob.",
-    "plan_hash": "3a9d9726e017",
-    "refs": [
-     15,
-     17
-    ]
-   },
-   {
     "id": 19,
-    "at": "2026-10-05T15:25:31.860Z",
+    "at": "2026-10-05T18:57:41.173Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "Decision #18 is in, so we're moving to the build. alice: implement paging in the GET /tasks handler (clamping, opaque `after`, Link rel=next, stable order), and settle the default `limit` and the bad-`after` response. bob: write tests for the plan's Verification list, including a full walk with each task seen exactly once, `limit=500` returning 50, and no rel=next on the last page. Done means both report back with the files touched and test results. Say so now if you'd split it differently.",
+    "text": "The plan is decided (#18), so we're moving into the build. Suggested split: alice builds the `GET /tasks` handler (clamping `limit` to 50, an opaque `after` cursor, a stable sort, the `Link: rel=next` header, a bare-array body), and bob writes the tests from the plan's Verification list. It's done when those tests pass. Please each confirm or swap, name the files you'll touch, and close the two open questions (the default `limit` and how a bad `after` is handled) as you build.",
     "refs": [
      18
     ]
@@ -1432,34 +1474,21 @@
   "session": "sh-alice",
   "caption": "Automatic exit: the orch leaves plan mode with no dialog; decision; assignments; rows read ✓ decided",
   "step": 1,
-  "time": "2026-10-05T15:25:38.077Z",
+  "time": "2026-10-05T18:57:47.539Z",
   "svg": "S9-sh-alice.svg",
   "txt": "S9-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 19,
   "log": [
    {
-    "id": 18,
-    "at": "2026-10-05T15:25:26.872Z",
-    "from": "orch",
-    "via": "system",
-    "kind": "decision",
-    "text": "Plan mode exited on plan 3a9d9726e017, signed by alice and bob.",
-    "plan_hash": "3a9d9726e017",
-    "refs": [
-     15,
-     17
-    ]
-   },
-   {
     "id": 19,
-    "at": "2026-10-05T15:25:31.860Z",
+    "at": "2026-10-05T18:57:41.173Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "Decision #18 is in, so we're moving to the build. alice: implement paging in the GET /tasks handler (clamping, opaque `after`, Link rel=next, stable order), and settle the default `limit` and the bad-`after` response. bob: write tests for the plan's Verification list, including a full walk with each task seen exactly once, `limit=500` returning 50, and no rel=next on the last page. Done means both report back with the files touched and test results. Say so now if you'd split it differently.",
+    "text": "The plan is decided (#18), so we're moving into the build. Suggested split: alice builds the `GET /tasks` handler (clamping `limit` to 50, an opaque `after` cursor, a stable sort, the `Link: rel=next` header, a bare-array body), and bob writes the tests from the plan's Verification list. It's done when those tests pass. Please each confirm or swap, name the files you'll touch, and close the two open questions (the default `limit` and how a bad `after` is handled) as you build.",
     "refs": [
      18
     ]
@@ -1471,34 +1500,21 @@
   "session": "sh-bob",
   "caption": "Automatic exit: the orch leaves plan mode with no dialog; decision; assignments; rows read ✓ decided",
   "step": 1,
-  "time": "2026-10-05T15:25:38.088Z",
+  "time": "2026-10-05T18:57:47.550Z",
   "svg": "S9-sh-bob.svg",
   "txt": "S9-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 19,
   "log": [
    {
-    "id": 18,
-    "at": "2026-10-05T15:25:26.872Z",
-    "from": "orch",
-    "via": "system",
-    "kind": "decision",
-    "text": "Plan mode exited on plan 3a9d9726e017, signed by alice and bob.",
-    "plan_hash": "3a9d9726e017",
-    "refs": [
-     15,
-     17
-    ]
-   },
-   {
     "id": 19,
-    "at": "2026-10-05T15:25:31.860Z",
+    "at": "2026-10-05T18:57:41.173Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
-    "text": "Decision #18 is in, so we're moving to the build. alice: implement paging in the GET /tasks handler (clamping, opaque `after`, Link rel=next, stable order), and settle the default `limit` and the bad-`after` response. bob: write tests for the plan's Verification list, including a full walk with each task seen exactly once, `limit=500` returning 50, and no rel=next on the last page. Done means both report back with the files touched and test results. Say so now if you'd split it differently.",
+    "text": "The plan is decided (#18), so we're moving into the build. Suggested split: alice builds the `GET /tasks` handler (clamping `limit` to 50, an opaque `after` cursor, a stable sort, the `Link: rel=next` header, a bare-array body), and bob writes the tests from the plan's Verification list. It's done when those tests pass. Please each confirm or swap, name the files you'll touch, and close the two open questions (the default `limit` and how a bad `after` is handled) as you build.",
     "refs": [
      18
     ]
@@ -1510,21 +1526,21 @@
   "session": "sh-orch",
   "caption": "alice's Claude works in a native background subagent; her status shows in the others' rows",
   "step": 1,
-  "time": "2026-10-05T15:25:50.959Z",
+  "time": "2026-10-05T18:57:59.727Z",
   "svg": "S10-sh-orch.svg",
   "txt": "S10-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 20,
   "log": [
    {
     "id": 20,
-    "at": "2026-10-05T15:25:45.489Z",
+    "at": "2026-10-05T18:57:54.568Z",
     "from": "alice",
     "via": "agent",
     "kind": "status",
-    "text": "Starting paging implementation for GET /tasks handler in the background.",
+    "text": "Starting GET /tasks handler implementation in the background.",
     "refs": [
      19
     ]
@@ -1536,21 +1552,21 @@
   "session": "sh-alice",
   "caption": "alice's Claude works in a native background subagent; her status shows in the others' rows",
   "step": 1,
-  "time": "2026-10-05T15:25:50.973Z",
+  "time": "2026-10-05T18:57:59.742Z",
   "svg": "S10-sh-alice.svg",
   "txt": "S10-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 20,
   "log": [
    {
     "id": 20,
-    "at": "2026-10-05T15:25:45.489Z",
+    "at": "2026-10-05T18:57:54.568Z",
     "from": "alice",
     "via": "agent",
     "kind": "status",
-    "text": "Starting paging implementation for GET /tasks handler in the background.",
+    "text": "Starting GET /tasks handler implementation in the background.",
     "refs": [
      19
     ]
@@ -1562,21 +1578,21 @@
   "session": "sh-bob",
   "caption": "alice's Claude works in a native background subagent; her status shows in the others' rows",
   "step": 1,
-  "time": "2026-10-05T15:25:50.985Z",
+  "time": "2026-10-05T18:57:59.758Z",
   "svg": "S10-sh-bob.svg",
   "txt": "S10-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 20,
   "log": [
    {
     "id": 20,
-    "at": "2026-10-05T15:25:45.489Z",
+    "at": "2026-10-05T18:57:54.568Z",
     "from": "alice",
     "via": "agent",
     "kind": "status",
-    "text": "Starting paging implementation for GET /tasks handler in the background.",
+    "text": "Starting GET /tasks handler implementation in the background.",
     "refs": [
      19
     ]
@@ -1588,21 +1604,32 @@
   "session": "sh-orch",
   "caption": "alice's status with evidence (test output) in the others' rows",
   "step": 2,
-  "time": "2026-10-05T15:32:34.815Z",
+  "time": "2026-10-05T18:59:54.714Z",
   "svg": "S10-2-sh-orch.svg",
   "txt": "S10-2-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
-  "logTo": 20,
+  "room": "vole-8126",
+  "logTo": 21,
   "log": [
    {
     "id": 20,
-    "at": "2026-10-05T15:25:45.489Z",
+    "at": "2026-10-05T18:57:54.568Z",
     "from": "alice",
     "via": "agent",
     "kind": "status",
-    "text": "Starting paging implementation for GET /tasks handler in the background.",
+    "text": "Starting GET /tasks handler implementation in the background.",
+    "refs": [
+     19
+    ]
+   },
+   {
+    "id": 21,
+    "at": "2026-10-05T18:59:44.235Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "status",
+    "text": "GET /tasks handler complete. Cursor pagination with opaque cursors, limit clamping (max 50), stable sort by createdAt+ID, Link header for rel=next. 11 tests pass. Paths: src/server.js (handler), src/store.js (pagination logic), test/health.test.js (tests). Commit: 759aa71.",
     "refs": [
      19
     ]
@@ -1614,21 +1641,32 @@
   "session": "sh-alice",
   "caption": "alice's status with evidence (test output) in the others' rows",
   "step": 2,
-  "time": "2026-10-05T15:32:34.829Z",
+  "time": "2026-10-05T18:59:54.728Z",
   "svg": "S10-2-sh-alice.svg",
   "txt": "S10-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
-  "logTo": 20,
+  "room": "vole-8126",
+  "logTo": 21,
   "log": [
    {
     "id": 20,
-    "at": "2026-10-05T15:25:45.489Z",
+    "at": "2026-10-05T18:57:54.568Z",
     "from": "alice",
     "via": "agent",
     "kind": "status",
-    "text": "Starting paging implementation for GET /tasks handler in the background.",
+    "text": "Starting GET /tasks handler implementation in the background.",
+    "refs": [
+     19
+    ]
+   },
+   {
+    "id": 21,
+    "at": "2026-10-05T18:59:44.235Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "status",
+    "text": "GET /tasks handler complete. Cursor pagination with opaque cursors, limit clamping (max 50), stable sort by createdAt+ID, Link header for rel=next. 11 tests pass. Paths: src/server.js (handler), src/store.js (pagination logic), test/health.test.js (tests). Commit: 759aa71.",
     "refs": [
      19
     ]
@@ -1640,21 +1678,32 @@
   "session": "sh-bob",
   "caption": "alice's status with evidence (test output) in the others' rows",
   "step": 2,
-  "time": "2026-10-05T15:32:34.840Z",
+  "time": "2026-10-05T18:59:54.739Z",
   "svg": "S10-2-sh-bob.svg",
   "txt": "S10-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
-  "logTo": 20,
+  "room": "vole-8126",
+  "logTo": 21,
   "log": [
    {
     "id": 20,
-    "at": "2026-10-05T15:25:45.489Z",
+    "at": "2026-10-05T18:57:54.568Z",
     "from": "alice",
     "via": "agent",
     "kind": "status",
-    "text": "Starting paging implementation for GET /tasks handler in the background.",
+    "text": "Starting GET /tasks handler implementation in the background.",
+    "refs": [
+     19
+    ]
+   },
+   {
+    "id": 21,
+    "at": "2026-10-05T18:59:44.235Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "status",
+    "text": "GET /tasks handler complete. Cursor pagination with opaque cursors, limit clamping (max 50), stable sort by createdAt+ID, Link header for rel=next. 11 tests pass. Paths: src/server.js (handler), src/store.js (pagination logic), test/health.test.js (tests). Commit: 759aa71.",
     "refs": [
      19
     ]
@@ -1664,38 +1713,27 @@
  {
   "scene": "S11",
   "session": "sh-orch",
-  "caption": "Rows survive /clear in alice's session",
+  "caption": "Rows survive /clear in alice's session (still one room row)",
   "step": 1,
-  "time": "2026-10-05T15:34:19.930Z",
+  "time": "2026-10-05T19:00:07.838Z",
   "svg": "S11-sh-orch.svg",
   "txt": "S11-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 22,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-05T15:33:57.069Z",
-    "from": "alice",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging implementation complete. Modified src/server.js: opaque base64 cursors, default limit 15, clamping to 50, stable sort (createdAt DESC, id DESC), bare array response, Link rel=next header. All 12 tests pass.",
-    "refs": [
-     20
-    ]
-   },
-   {
     "id": 22,
-    "at": "2026-10-05T15:34:03.441Z",
+    "at": "2026-10-05T18:59:58.994Z",
     "from": "orch",
     "via": "agent",
-    "kind": "question",
+    "kind": "say",
     "to": "alice",
-    "text": "alice, #21 matches #18 and settles the default `limit` at 15. What does a garbage or tampered `after` return in src/server.js, the other open question?",
+    "text": "I reviewed this against decision #18; alice's build drifts in two places. A malformed or stale `after` silently restarts at page 1 (src/store.js:50-58). That can repeat tasks, and the plan suggested a 400 instead. The `rel=next` link echoes the raw `limit` rather than the clamped one (src/server.js:38), and the default of 10 still needs room agreement. alice, will you fix these, or should the room accept them as a plan revision?",
     "refs": [
-     21,
-     18
+     18,
+     21
     ]
    }
   ]
@@ -1703,38 +1741,27 @@
  {
   "scene": "S11",
   "session": "sh-alice",
-  "caption": "Rows survive /clear in alice's session",
+  "caption": "Rows survive /clear in alice's session (still one room row)",
   "step": 1,
-  "time": "2026-10-05T15:34:19.950Z",
+  "time": "2026-10-05T19:00:07.852Z",
   "svg": "S11-sh-alice.svg",
   "txt": "S11-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 22,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-05T15:33:57.069Z",
-    "from": "alice",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging implementation complete. Modified src/server.js: opaque base64 cursors, default limit 15, clamping to 50, stable sort (createdAt DESC, id DESC), bare array response, Link rel=next header. All 12 tests pass.",
-    "refs": [
-     20
-    ]
-   },
-   {
     "id": 22,
-    "at": "2026-10-05T15:34:03.441Z",
+    "at": "2026-10-05T18:59:58.994Z",
     "from": "orch",
     "via": "agent",
-    "kind": "question",
+    "kind": "say",
     "to": "alice",
-    "text": "alice, #21 matches #18 and settles the default `limit` at 15. What does a garbage or tampered `after` return in src/server.js, the other open question?",
+    "text": "I reviewed this against decision #18; alice's build drifts in two places. A malformed or stale `after` silently restarts at page 1 (src/store.js:50-58). That can repeat tasks, and the plan suggested a 400 instead. The `rel=next` link echoes the raw `limit` rather than the clamped one (src/server.js:38), and the default of 10 still needs room agreement. alice, will you fix these, or should the room accept them as a plan revision?",
     "refs": [
-     21,
-     18
+     18,
+     21
     ]
    }
   ]
@@ -1742,38 +1769,27 @@
  {
   "scene": "S11",
   "session": "sh-bob",
-  "caption": "Rows survive /clear in alice's session",
+  "caption": "Rows survive /clear in alice's session (still one room row)",
   "step": 1,
-  "time": "2026-10-05T15:34:19.963Z",
+  "time": "2026-10-05T19:00:07.866Z",
   "svg": "S11-sh-bob.svg",
   "txt": "S11-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 22,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-05T15:33:57.069Z",
-    "from": "alice",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging implementation complete. Modified src/server.js: opaque base64 cursors, default limit 15, clamping to 50, stable sort (createdAt DESC, id DESC), bare array response, Link rel=next header. All 12 tests pass.",
-    "refs": [
-     20
-    ]
-   },
-   {
     "id": 22,
-    "at": "2026-10-05T15:34:03.441Z",
+    "at": "2026-10-05T18:59:58.994Z",
     "from": "orch",
     "via": "agent",
-    "kind": "question",
+    "kind": "say",
     "to": "alice",
-    "text": "alice, #21 matches #18 and settles the default `limit` at 15. What does a garbage or tampered `after` return in src/server.js, the other open question?",
+    "text": "I reviewed this against decision #18; alice's build drifts in two places. A malformed or stale `after` silently restarts at page 1 (src/store.js:50-58). That can repeat tasks, and the plan suggested a 400 instead. The `rel=next` link echoes the raw `limit` rather than the clamped one (src/server.js:38), and the default of 10 still needs room agreement. alice, will you fix these, or should the room accept them as a plan revision?",
     "refs": [
-     21,
-     18
+     18,
+     21
     ]
    }
   ]
@@ -1781,51 +1797,40 @@
  {
   "scene": "S11",
   "session": "sh-orch",
-  "caption": "bob restarts with --continue (resume): the restore prompt re-creates his rows",
+  "caption": "bob is back with --continue: the restore context is in, but no turn has run yet (no rows)",
   "step": 2,
-  "time": "2026-10-05T15:34:35.551Z",
+  "time": "2026-10-05T19:00:17.123Z",
   "svg": "S11-2-sh-orch.svg",
   "txt": "S11-2-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
-  "logTo": 26,
+  "room": "vole-8126",
+  "logTo": 25,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-05T15:33:57.069Z",
-    "from": "alice",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging implementation complete. Modified src/server.js: opaque base64 cursors, default limit 15, clamping to 50, stable sort (createdAt DESC, id DESC), bare array response, Link rel=next header. All 12 tests pass.",
-    "refs": [
-     20
-    ]
-   },
-   {
     "id": 22,
-    "at": "2026-10-05T15:34:03.441Z",
+    "at": "2026-10-05T18:59:58.994Z",
     "from": "orch",
     "via": "agent",
-    "kind": "question",
+    "kind": "say",
     "to": "alice",
-    "text": "alice, #21 matches #18 and settles the default `limit` at 15. What does a garbage or tampered `after` return in src/server.js, the other open question?",
+    "text": "I reviewed this against decision #18; alice's build drifts in two places. A malformed or stale `after` silently restarts at page 1 (src/store.js:50-58). That can repeat tasks, and the plan suggested a 400 instead. The `rel=next` link echoes the raw `limit` rather than the clamped one (src/server.js:38), and the default of 10 still needs room agreement. alice, will you fix these, or should the room accept them as a plan revision?",
     "refs": [
-     21,
-     18
+     18,
+     21
     ]
    },
    {
     "id": 23,
-    "at": "2026-10-05T15:34:26.029Z",
+    "at": "2026-10-05T19:00:10.493Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
-    "text": "bob left (other)"
+    "text": "bob left (prompt_input_exit)"
    },
    {
     "id": 24,
-    "at": "2026-10-05T15:34:26.659Z",
+    "at": "2026-10-05T19:00:13.269Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -1833,31 +1838,15 @@
    },
    {
     "id": 25,
-    "at": "2026-10-05T15:34:30.028Z",
+    "at": "2026-10-05T19:00:15.667Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "alice",
-    "text": "bob has left, and he owned the verification tests from #19. alice, will you take them, or should I run them as a background job against src/server.js?",
+    "text": "bob has left the room (#23). He had the verification tests in the #19 split, and any later revision of the plan will go ahead without him as an approver. alice, will you take the verification tests, or should I run them in the background against your commit 759aa71?",
     "refs": [
-     23,
-     19
-    ]
-   },
-   {
-    "id": 26,
-    "at": "2026-10-05T15:34:33.534Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "to": "bob",
-    "text": "Welcome back, bob. Plan 3a9d9726e017 is decided (#18), and alice reports the handler is done in src/server.js (#21). The verification tests from #19 are still yours, so please disregard #25.",
-    "refs": [
-     24,
-     18,
      19,
-     21,
-     25
+     23
     ]
    }
   ]
@@ -1865,51 +1854,40 @@
  {
   "scene": "S11",
   "session": "sh-alice",
-  "caption": "bob restarts with --continue (resume): the restore prompt re-creates his rows",
+  "caption": "bob is back with --continue: the restore context is in, but no turn has run yet (no rows)",
   "step": 2,
-  "time": "2026-10-05T15:34:35.566Z",
+  "time": "2026-10-05T19:00:17.137Z",
   "svg": "S11-2-sh-alice.svg",
   "txt": "S11-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
-  "logTo": 26,
+  "room": "vole-8126",
+  "logTo": 25,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-05T15:33:57.069Z",
-    "from": "alice",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging implementation complete. Modified src/server.js: opaque base64 cursors, default limit 15, clamping to 50, stable sort (createdAt DESC, id DESC), bare array response, Link rel=next header. All 12 tests pass.",
-    "refs": [
-     20
-    ]
-   },
-   {
     "id": 22,
-    "at": "2026-10-05T15:34:03.441Z",
+    "at": "2026-10-05T18:59:58.994Z",
     "from": "orch",
     "via": "agent",
-    "kind": "question",
+    "kind": "say",
     "to": "alice",
-    "text": "alice, #21 matches #18 and settles the default `limit` at 15. What does a garbage or tampered `after` return in src/server.js, the other open question?",
+    "text": "I reviewed this against decision #18; alice's build drifts in two places. A malformed or stale `after` silently restarts at page 1 (src/store.js:50-58). That can repeat tasks, and the plan suggested a 400 instead. The `rel=next` link echoes the raw `limit` rather than the clamped one (src/server.js:38), and the default of 10 still needs room agreement. alice, will you fix these, or should the room accept them as a plan revision?",
     "refs": [
-     21,
-     18
+     18,
+     21
     ]
    },
    {
     "id": 23,
-    "at": "2026-10-05T15:34:26.029Z",
+    "at": "2026-10-05T19:00:10.493Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
-    "text": "bob left (other)"
+    "text": "bob left (prompt_input_exit)"
    },
    {
     "id": 24,
-    "at": "2026-10-05T15:34:26.659Z",
+    "at": "2026-10-05T19:00:13.269Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -1917,30 +1895,213 @@
    },
    {
     "id": 25,
-    "at": "2026-10-05T15:34:30.028Z",
+    "at": "2026-10-05T19:00:15.667Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "alice",
-    "text": "bob has left, and he owned the verification tests from #19. alice, will you take them, or should I run them as a background job against src/server.js?",
+    "text": "bob has left the room (#23). He had the verification tests in the #19 split, and any later revision of the plan will go ahead without him as an approver. alice, will you take the verification tests, or should I run them in the background against your commit 759aa71?",
     "refs": [
-     23,
-     19
+     19,
+     23
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S11",
+  "session": "sh-bob",
+  "caption": "bob is back with --continue: the restore context is in, but no turn has run yet (no rows)",
+  "step": 2,
+  "time": "2026-10-05T19:00:17.148Z",
+  "svg": "S11-2-sh-bob.svg",
+  "txt": "S11-2-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "vole-8126",
+  "logTo": 25,
+  "log": [
+   {
+    "id": 22,
+    "at": "2026-10-05T18:59:58.994Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "alice",
+    "text": "I reviewed this against decision #18; alice's build drifts in two places. A malformed or stale `after` silently restarts at page 1 (src/store.js:50-58). That can repeat tasks, and the plan suggested a 400 instead. The `rel=next` link echoes the raw `limit` rather than the clamped one (src/server.js:38), and the default of 10 still needs room agreement. alice, will you fix these, or should the room accept them as a plan revision?",
+    "refs": [
+     18,
+     21
+    ]
+   },
+   {
+    "id": 23,
+    "at": "2026-10-05T19:00:10.493Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-05T19:00:13.269Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob rejoined (resumed)"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-05T19:00:15.667Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "alice",
+    "text": "bob has left the room (#23). He had the verification tests in the #19 split, and any later revision of the plan will go ahead without him as an approver. alice, will you take the verification tests, or should I run them in the background against your commit 759aa71?",
+    "refs": [
+     19,
+     23
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S11",
+  "session": "sh-orch",
+  "caption": "bob's first prompt after the resume: his Claude re-creates the room row from the restore prompt",
+  "step": 3,
+  "time": "2026-10-05T19:00:28.693Z",
+  "svg": "S11-3-sh-orch.svg",
+  "txt": "S11-3-sh-orch.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "vole-8126",
+  "logTo": 26,
+  "log": [
+   {
+    "id": 22,
+    "at": "2026-10-05T18:59:58.994Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "alice",
+    "text": "I reviewed this against decision #18; alice's build drifts in two places. A malformed or stale `after` silently restarts at page 1 (src/store.js:50-58). That can repeat tasks, and the plan suggested a 400 instead. The `rel=next` link echoes the raw `limit` rather than the clamped one (src/server.js:38), and the default of 10 still needs room agreement. alice, will you fix these, or should the room accept them as a plan revision?",
+    "refs": [
+     18,
+     21
+    ]
+   },
+   {
+    "id": 23,
+    "at": "2026-10-05T19:00:10.493Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-05T19:00:13.269Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob rejoined (resumed)"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-05T19:00:15.667Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "alice",
+    "text": "bob has left the room (#23). He had the verification tests in the #19 split, and any later revision of the plan will go ahead without him as an approver. alice, will you take the verification tests, or should I run them in the background against your commit 759aa71?",
+    "refs": [
+     19,
+     23
     ]
    },
    {
     "id": 26,
-    "at": "2026-10-05T15:34:33.534Z",
+    "at": "2026-10-05T19:00:18.493Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
     "to": "bob",
-    "text": "Welcome back, bob. Plan 3a9d9726e017 is decided (#18), and alice reports the handler is done in src/server.js (#21). The verification tests from #19 are still yours, so please disregard #25.",
+    "text": "Welcome back, bob. Ignore #25: you're still an approver of plan eaae7e5e855a, which was decided in #18. You still have the verification tests from #19, and my review of alice's build is in #22.",
     "refs": [
-     24,
      18,
+     24,
+     25
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S11",
+  "session": "sh-alice",
+  "caption": "bob's first prompt after the resume: his Claude re-creates the room row from the restore prompt",
+  "step": 3,
+  "time": "2026-10-05T19:00:28.709Z",
+  "svg": "S11-3-sh-alice.svg",
+  "txt": "S11-3-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "vole-8126",
+  "logTo": 26,
+  "log": [
+   {
+    "id": 22,
+    "at": "2026-10-05T18:59:58.994Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "alice",
+    "text": "I reviewed this against decision #18; alice's build drifts in two places. A malformed or stale `after` silently restarts at page 1 (src/store.js:50-58). That can repeat tasks, and the plan suggested a 400 instead. The `rel=next` link echoes the raw `limit` rather than the clamped one (src/server.js:38), and the default of 10 still needs room agreement. alice, will you fix these, or should the room accept them as a plan revision?",
+    "refs": [
+     18,
+     21
+    ]
+   },
+   {
+    "id": 23,
+    "at": "2026-10-05T19:00:10.493Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-05T19:00:13.269Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob rejoined (resumed)"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-05T19:00:15.667Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "alice",
+    "text": "bob has left the room (#23). He had the verification tests in the #19 split, and any later revision of the plan will go ahead without him as an approver. alice, will you take the verification tests, or should I run them in the background against your commit 759aa71?",
+    "refs": [
      19,
-     21,
+     23
+    ]
+   },
+   {
+    "id": 26,
+    "at": "2026-10-05T19:00:18.493Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "to": "bob",
+    "text": "Welcome back, bob. Ignore #25: you're still an approver of plan eaae7e5e855a, which was decided in #18. You still have the verification tests from #19, and my review of alice's build is in #22.",
+    "refs": [
+     18,
+     24,
      25
     ]
    }
@@ -1949,51 +2110,40 @@
  {
   "scene": "S11",
   "session": "sh-bob",
-  "caption": "bob restarts with --continue (resume): the restore prompt re-creates his rows",
-  "step": 2,
-  "time": "2026-10-05T15:34:35.580Z",
-  "svg": "S11-2-sh-bob.svg",
-  "txt": "S11-2-sh-bob.txt",
+  "caption": "bob's first prompt after the resume: his Claude re-creates the room row from the restore prompt",
+  "step": 3,
+  "time": "2026-10-05T19:00:28.720Z",
+  "svg": "S11-3-sh-bob.svg",
+  "txt": "S11-3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 26,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-05T15:33:57.069Z",
-    "from": "alice",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging implementation complete. Modified src/server.js: opaque base64 cursors, default limit 15, clamping to 50, stable sort (createdAt DESC, id DESC), bare array response, Link rel=next header. All 12 tests pass.",
-    "refs": [
-     20
-    ]
-   },
-   {
     "id": 22,
-    "at": "2026-10-05T15:34:03.441Z",
+    "at": "2026-10-05T18:59:58.994Z",
     "from": "orch",
     "via": "agent",
-    "kind": "question",
+    "kind": "say",
     "to": "alice",
-    "text": "alice, #21 matches #18 and settles the default `limit` at 15. What does a garbage or tampered `after` return in src/server.js, the other open question?",
+    "text": "I reviewed this against decision #18; alice's build drifts in two places. A malformed or stale `after` silently restarts at page 1 (src/store.js:50-58). That can repeat tasks, and the plan suggested a 400 instead. The `rel=next` link echoes the raw `limit` rather than the clamped one (src/server.js:38), and the default of 10 still needs room agreement. alice, will you fix these, or should the room accept them as a plan revision?",
     "refs": [
-     21,
-     18
+     18,
+     21
     ]
    },
    {
     "id": 23,
-    "at": "2026-10-05T15:34:26.029Z",
+    "at": "2026-10-05T19:00:10.493Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
-    "text": "bob left (other)"
+    "text": "bob left (prompt_input_exit)"
    },
    {
     "id": 24,
-    "at": "2026-10-05T15:34:26.659Z",
+    "at": "2026-10-05T19:00:13.269Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -2001,30 +2151,28 @@
    },
    {
     "id": 25,
-    "at": "2026-10-05T15:34:30.028Z",
+    "at": "2026-10-05T19:00:15.667Z",
     "from": "orch",
     "via": "agent",
     "kind": "question",
     "to": "alice",
-    "text": "bob has left, and he owned the verification tests from #19. alice, will you take them, or should I run them as a background job against src/server.js?",
+    "text": "bob has left the room (#23). He had the verification tests in the #19 split, and any later revision of the plan will go ahead without him as an approver. alice, will you take the verification tests, or should I run them in the background against your commit 759aa71?",
     "refs": [
-     23,
-     19
+     19,
+     23
     ]
    },
    {
     "id": 26,
-    "at": "2026-10-05T15:34:33.534Z",
+    "at": "2026-10-05T19:00:18.493Z",
     "from": "orch",
     "via": "agent",
     "kind": "status",
     "to": "bob",
-    "text": "Welcome back, bob. Plan 3a9d9726e017 is decided (#18), and alice reports the handler is done in src/server.js (#21). The verification tests from #19 are still yours, so please disregard #25.",
+    "text": "Welcome back, bob. Ignore #25: you're still an approver of plan eaae7e5e855a, which was decided in #18. You still have the verification tests from #19, and my review of alice's build is in #22.",
     "refs": [
-     24,
      18,
-     19,
-     21,
+     24,
      25
     ]
    }
@@ -2035,12 +2183,12 @@
   "session": "sh-orch",
   "caption": "alice opens the room row: bob listed inside it, one level down (no breadcrumb)",
   "step": 1,
-  "time": "2026-10-05T15:34:39.111Z",
+  "time": "2026-10-05T19:00:34.668Z",
   "svg": "S11b-sh-orch.svg",
   "txt": "S11b-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 26,
   "log": []
  },
@@ -2049,12 +2197,12 @@
   "session": "sh-alice",
   "caption": "alice opens the room row: bob listed inside it, one level down (no breadcrumb)",
   "step": 1,
-  "time": "2026-10-05T15:34:39.126Z",
+  "time": "2026-10-05T19:00:34.684Z",
   "svg": "S11b-sh-alice.svg",
   "txt": "S11b-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 26,
   "log": []
  },
@@ -2063,12 +2211,12 @@
   "session": "sh-bob",
   "caption": "alice opens the room row: bob listed inside it, one level down (no breadcrumb)",
   "step": 1,
-  "time": "2026-10-05T15:34:39.137Z",
+  "time": "2026-10-05T19:00:34.696Z",
   "svg": "S11b-sh-bob.svg",
   "txt": "S11b-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 26,
   "log": []
  },
@@ -2077,12 +2225,12 @@
   "session": "sh-orch",
   "caption": "alice opens bob's row inside the room: bob's thread, his words and his Claude's, labelled",
   "step": 2,
-  "time": "2026-10-05T15:34:42.528Z",
+  "time": "2026-10-05T19:00:38.887Z",
   "svg": "S11b-2-sh-orch.svg",
   "txt": "S11b-2-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 26,
   "log": []
  },
@@ -2091,12 +2239,12 @@
   "session": "sh-alice",
   "caption": "alice opens bob's row inside the room: bob's thread, his words and his Claude's, labelled",
   "step": 2,
-  "time": "2026-10-05T15:34:42.542Z",
+  "time": "2026-10-05T19:00:38.901Z",
   "svg": "S11b-2-sh-alice.svg",
   "txt": "S11b-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 26,
   "log": []
  },
@@ -2105,12 +2253,12 @@
   "session": "sh-bob",
   "caption": "alice opens bob's row inside the room: bob's thread, his words and his Claude's, labelled",
   "step": 2,
-  "time": "2026-10-05T15:34:42.554Z",
+  "time": "2026-10-05T19:00:38.913Z",
   "svg": "S11b-2-sh-bob.svg",
   "txt": "S11b-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 26,
   "log": []
  },
@@ -2119,12 +2267,12 @@
   "session": "sh-orch",
   "caption": "Back up one level with ↑ to the parent row + Enter",
   "step": 3,
-  "time": "2026-10-05T15:34:45.931Z",
+  "time": "2026-10-05T19:00:43.132Z",
   "svg": "S11b-3-sh-orch.svg",
   "txt": "S11b-3-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 26,
   "log": []
  },
@@ -2133,12 +2281,12 @@
   "session": "sh-alice",
   "caption": "Back up one level with ↑ to the parent row + Enter",
   "step": 3,
-  "time": "2026-10-05T15:34:45.946Z",
+  "time": "2026-10-05T19:00:43.149Z",
   "svg": "S11b-3-sh-alice.svg",
   "txt": "S11b-3-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 26,
   "log": []
  },
@@ -2147,31 +2295,31 @@
   "session": "sh-bob",
   "caption": "Back up one level with ↑ to the parent row + Enter",
   "step": 3,
-  "time": "2026-10-05T15:34:45.957Z",
+  "time": "2026-10-05T19:00:43.160Z",
   "svg": "S11b-3-sh-bob.svg",
   "txt": "S11b-3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 26,
   "log": []
  },
  {
   "scene": "S12",
   "session": "sh-orch",
-  "caption": "bob exits: his row disappears from the orch and alice panels (member_left)",
+  "caption": "bob exits (/exit, then 1. Exit and stop tasks): member_left; his row reads left in the orch and alice panels",
   "step": 1,
-  "time": "2026-10-05T15:34:58.372Z",
+  "time": "2026-10-05T19:00:57.148Z",
   "svg": "S12-sh-orch.svg",
   "txt": "S12-sh-orch.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 28,
   "log": [
    {
     "id": 27,
-    "at": "2026-10-05T15:34:49.006Z",
+    "at": "2026-10-05T19:00:49.002Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -2179,15 +2327,15 @@
    },
    {
     "id": 28,
-    "at": "2026-10-05T15:34:52.066Z",
+    "at": "2026-10-05T19:00:52.065Z",
     "from": "orch",
     "via": "agent",
-    "kind": "question",
+    "kind": "status",
     "to": "alice",
-    "text": "bob has left again, so the verification tests have no owner, and #25 stands. alice, will you take them, or should I run them as a background job?",
+    "text": "bob has left again (#27), so my question in #25 is open again. alice, will you take the verification tests, or should I run them in the background?",
     "refs": [
-     27,
-     25
+     25,
+     27
     ]
    }
   ]
@@ -2195,19 +2343,19 @@
  {
   "scene": "S12",
   "session": "sh-alice",
-  "caption": "bob exits: his row disappears from the orch and alice panels (member_left)",
+  "caption": "bob exits (/exit, then 1. Exit and stop tasks): member_left; his row reads left in the orch and alice panels",
   "step": 1,
-  "time": "2026-10-05T15:34:58.387Z",
+  "time": "2026-10-05T19:00:57.162Z",
   "svg": "S12-sh-alice.svg",
   "txt": "S12-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 28,
   "log": [
    {
     "id": 27,
-    "at": "2026-10-05T15:34:49.006Z",
+    "at": "2026-10-05T19:00:49.002Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -2215,15 +2363,15 @@
    },
    {
     "id": 28,
-    "at": "2026-10-05T15:34:52.066Z",
+    "at": "2026-10-05T19:00:52.065Z",
     "from": "orch",
     "via": "agent",
-    "kind": "question",
+    "kind": "status",
     "to": "alice",
-    "text": "bob has left again, so the verification tests have no owner, and #25 stands. alice, will you take them, or should I run them as a background job?",
+    "text": "bob has left again (#27), so my question in #25 is open again. alice, will you take the verification tests, or should I run them in the background?",
     "refs": [
-     27,
-     25
+     25,
+     27
     ]
    }
   ]
@@ -2231,19 +2379,19 @@
  {
   "scene": "S12",
   "session": "sh-bob",
-  "caption": "bob exits: his row disappears from the orch and alice panels (member_left)",
+  "caption": "bob exits (/exit, then 1. Exit and stop tasks): member_left; his row reads left in the orch and alice panels",
   "step": 1,
-  "time": "2026-10-05T15:34:58.398Z",
+  "time": "2026-10-05T19:00:57.174Z",
   "svg": "S12-sh-bob.svg",
   "txt": "S12-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "bison-3139",
+  "room": "vole-8126",
   "logTo": 28,
   "log": [
    {
     "id": 27,
-    "at": "2026-10-05T15:34:49.006Z",
+    "at": "2026-10-05T19:00:49.002Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -2251,15 +2399,15 @@
    },
    {
     "id": 28,
-    "at": "2026-10-05T15:34:52.066Z",
+    "at": "2026-10-05T19:00:52.065Z",
     "from": "orch",
     "via": "agent",
-    "kind": "question",
+    "kind": "status",
     "to": "alice",
-    "text": "bob has left again, so the verification tests have no owner, and #25 stands. alice, will you take them, or should I run them as a background job?",
+    "text": "bob has left again (#27), so my question in #25 is open again. alice, will you take the verification tests, or should I run them in the background?",
     "refs": [
-     27,
-     25
+     25,
+     27
     ]
    }
   ]

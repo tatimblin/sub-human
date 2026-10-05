@@ -19,7 +19,10 @@
 <text x="97.8" y="89" fill="#949494" textLength="171.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Haiku 4.5 · Claude Max</text>
 <text x="12" y="106" fill="#d78787" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ▝▝ ▝▝  </text>
 <text x="97.8" y="106" fill="#949494" textLength="187.2" lengthAdjust="spacing" xml:space="preserve">/private/tmp/sh-demo/bob</text>
-<text x="651.6" y="650" fill="#ffd700" textLength="280.8" lengthAdjust="spacing" xml:space="preserve">auto mode unavailable for this model</text>
+<text x="12" y="140" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠</text>
+<text x="27.6" y="140" fill="#ffd700" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">3 MCP servers need authentication</text>
+<text x="285" y="140" fill="#949494" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · run /mcp</text>
+<text x="152.4" y="650" fill="#949494" textLength="780" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking</text>
 <text x="12" y="667" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
 <text x="12" y="684" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="701" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>

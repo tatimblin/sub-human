@@ -1,40 +1,40 @@
 
-❯ /sub-human:sub-human alice
-  ⎿  UserPromptExpansion says: sub-human: joined room bison-3139 as alice.
+ ▐▛███▛█   Claude Code v2.1.281
+▝▜██████▀  Haiku 4.5 · Claude Max
+  ▝▝ ▝▝    /private/tmp/sh-demo/alice
 
-⏺ sub-human:room(bison-3139)
+
+❯ /sub-human:sub-human alice
+  ⎿  UserPromptExpansion says: sub-human: joined room vole-8126 as alice.
+
+⏺ sub-human:room(vole-8126)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ Ready. I'm working with you in room bison-3139. The room monitor is running in the background.
-
-  I'll relay any messages or decisions from the orchestrator and other members, handle assignments when they come your
-  way, and help you post to the room when you need to.
-
-  What's on your mind?
+⏺ Room vole-8126 is set up and ready. What can I help you with?
 
 ✻ Waiting for 1 background agent to finish
 
 ⏺ Monitor event: "sub-human room notices"
+  ⎿  Invalid tool parameters
 
-⏺ #2 — orch (status): Welcome, alice. We're starting with converge: what should this room plan?
-
-  What would you like to tell the room about what this plan should cover? You can reply with @room <your answer>.
-
-✻ Waiting for 1 background agent to finish
+⏺ PushNotification(Room vole-8126: Orch asking what you want to plan)
+  ⎿  Not sent because you're active in this terminal.
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #3 — bob joined the room.
+⏺ #2 orch[agent] status: Welcome, alice. We're in the converge phase. What do you want the room to plan?
+
+  #3 bob[system] member_joined: bob joined the room.
 
 ✻ Waiting for 1 background agent to finish
 
 ⏺ UserPromptSubmit operation blocked by hook:
-  ✓ posted to bison-3139 as #4
+  ✓ posted to vole-8126 as #4
                                                                 Update available! Run: brew upgrade claude-code@latest
-───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · alice ─
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · alice ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ bison-3139  3 here
+  ◯ vole-8126  3 here · ✉ 1 for you

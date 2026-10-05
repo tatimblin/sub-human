@@ -1,0 +1,18 @@
+{
+  "orch": {
+    "name": "orch",
+    "role": "orch",
+    "pid": 62697,
+    "session_id": "87f74412-c252-4204-8316-efc1ac602070",
+    "cwd": "/private/tmp/sh-demo/orch",
+    "joined_at": "2026-10-05T18:56:12.938Z"
+  },
+  "alice": {
+    "name": "alice",
+    "role": "member",
+    "pid": 62705,
+    "session_id": "9eab63ac-948a-41f3-b5ef-6134d66f5351",
+    "cwd": "/private/tmp/sh-demo/alice",
+    "joined_at": "2026-10-05T18:56:18.731Z"
+  }
+}

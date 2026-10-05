@@ -7,281 +7,69 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">alice · S10</text>
 <g fill="#d6dbe5">
-<rect x="12" y="161" width="39" height="17" fill="#5f0000"/>
-<rect x="51" y="161" width="358.8" height="17" fill="#5f0000"/>
-<rect x="12" y="178" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="178" width="46.8" height="17" fill="#005f00"/>
-<rect x="97.8" y="178" width="148.2" height="17" fill="#005f00"/>
-<rect x="246" y="178" width="7.8" height="17" fill="#008700"/>
-<rect x="253.8" y="178" width="7.8" height="17" fill="#005f00"/>
-<rect x="261.6" y="178" width="70.2" height="17" fill="#008700"/>
-<rect x="331.8" y="178" width="15.6" height="17" fill="#005f00"/>
-<rect x="347.4" y="178" width="31.2" height="17" fill="#005f00"/>
-<rect x="378.6" y="178" width="7.8" height="17" fill="#005f00"/>
-<rect x="386.4" y="178" width="93.6" height="17" fill="#005f00"/>
-<rect x="480" y="178" width="7.8" height="17" fill="#005f00"/>
-<rect x="12" y="212" width="39" height="17" fill="#5f0000"/>
-<rect x="51" y="212" width="265.2" height="17" fill="#5f0000"/>
-<rect x="12" y="229" width="39" height="17" fill="#5f0000"/>
-<rect x="51" y="229" width="499.2" height="17" fill="#5f0000"/>
-<rect x="12" y="246" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="246" width="62.4" height="17" fill="#005f00"/>
-<rect x="113.4" y="246" width="7.8" height="17" fill="#005f00"/>
-<rect x="121.2" y="246" width="31.2" height="17" fill="#005f00"/>
-<rect x="152.4" y="246" width="7.8" height="17" fill="#005f00"/>
-<rect x="160.2" y="246" width="132.6" height="17" fill="#005f00"/>
-<rect x="292.8" y="246" width="109.2" height="17" fill="#008700"/>
-<rect x="402" y="246" width="23.4" height="17" fill="#005f00"/>
-<rect x="12" y="263" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="263" width="15.6" height="17" fill="#005f00"/>
-<rect x="66.6" y="263" width="39" height="17" fill="#008700"/>
-<rect x="105.6" y="263" width="7.8" height="17" fill="#005f00"/>
-<rect x="113.4" y="263" width="132.6" height="17" fill="#008700"/>
-<rect x="246" y="263" width="15.6" height="17" fill="#005f00"/>
-<rect x="261.6" y="263" width="109.2" height="17" fill="#005f00"/>
-<rect x="370.8" y="263" width="15.6" height="17" fill="#005f00"/>
-<rect x="386.4" y="263" width="140.4" height="17" fill="#005f00"/>
-<rect x="526.8" y="263" width="7.8" height="17" fill="#008700"/>
-<rect x="534.6" y="263" width="7.8" height="17" fill="#005f00"/>
-<rect x="542.4" y="263" width="85.8" height="17" fill="#008700"/>
-<rect x="628.2" y="263" width="15.6" height="17" fill="#005f00"/>
-<rect x="12" y="280" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="280" width="46.8" height="17" fill="#005f00"/>
-<rect x="97.8" y="280" width="70.2" height="17" fill="#005f00"/>
-<rect x="168" y="280" width="195" height="17" fill="#005f00"/>
-<rect x="12" y="348" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="348" width="499.2" height="17" fill="#005f00"/>
-<rect x="12" y="365" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="365" width="62.4" height="17" fill="#005f00"/>
-<rect x="113.4" y="365" width="7.8" height="17" fill="#005f00"/>
-<rect x="121.2" y="365" width="93.6" height="17" fill="#005f00"/>
-<rect x="214.8" y="365" width="7.8" height="17" fill="#005f00"/>
-<rect x="222.6" y="365" width="31.2" height="17" fill="#005f00"/>
-<rect x="253.8" y="365" width="23.4" height="17" fill="#005f00"/>
-<rect x="12" y="382" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="382" width="15.6" height="17" fill="#005f00"/>
-<rect x="66.6" y="382" width="39" height="17" fill="#005f00"/>
-<rect x="105.6" y="382" width="78" height="17" fill="#005f00"/>
-<rect x="183.6" y="382" width="7.8" height="17" fill="#005f00"/>
-<rect x="191.4" y="382" width="132.6" height="17" fill="#005f00"/>
-<rect x="324" y="382" width="7.8" height="17" fill="#005f00"/>
-<rect x="331.8" y="382" width="78" height="17" fill="#005f00"/>
-<rect x="409.8" y="382" width="7.8" height="17" fill="#005f00"/>
-<rect x="417.6" y="382" width="7.8" height="17" fill="#005f00"/>
-<rect x="12" y="399" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="399" width="15.6" height="17" fill="#005f00"/>
-<rect x="66.6" y="399" width="46.8" height="17" fill="#005f00"/>
-<rect x="113.4" y="399" width="7.8" height="17" fill="#005f00"/>
-<rect x="121.2" y="399" width="46.8" height="17" fill="#005f00"/>
-<rect x="168" y="399" width="7.8" height="17" fill="#005f00"/>
-<rect x="175.8" y="399" width="31.2" height="17" fill="#005f00"/>
-<rect x="207" y="399" width="70.2" height="17" fill="#005f00"/>
-<rect x="277.2" y="399" width="62.4" height="17" fill="#005f00"/>
-<rect x="339.6" y="399" width="7.8" height="17" fill="#005f00"/>
-<rect x="347.4" y="399" width="62.4" height="17" fill="#005f00"/>
-<rect x="409.8" y="399" width="15.6" height="17" fill="#005f00"/>
-<rect x="12" y="416" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="416" width="7.8" height="17" fill="#005f00"/>
-<rect x="12" y="433" width="39" height="17" fill="#005f00"/>
-<rect x="12" y="450" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="450" width="444.6" height="17" fill="#005f00"/>
-<rect x="12" y="467" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="467" width="62.4" height="17" fill="#005f00"/>
-<rect x="113.4" y="467" width="7.8" height="17" fill="#005f00"/>
-<rect x="121.2" y="467" width="93.6" height="17" fill="#005f00"/>
-<rect x="214.8" y="467" width="7.8" height="17" fill="#005f00"/>
-<rect x="222.6" y="467" width="101.4" height="17" fill="#005f00"/>
-<rect x="324" y="467" width="23.4" height="17" fill="#005f00"/>
-<rect x="12" y="484" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="484" width="15.6" height="17" fill="#005f00"/>
-<rect x="66.6" y="484" width="39" height="17" fill="#005f00"/>
-<rect x="105.6" y="484" width="78" height="17" fill="#005f00"/>
-<rect x="183.6" y="484" width="46.8" height="17" fill="#005f00"/>
-<rect x="230.4" y="484" width="7.8" height="17" fill="#005f00"/>
-<rect x="238.2" y="484" width="31.2" height="17" fill="#005f00"/>
-<rect x="269.4" y="484" width="124.8" height="17" fill="#005f00"/>
-<rect x="394.2" y="484" width="62.4" height="17" fill="#005f00"/>
-<rect x="456.6" y="484" width="15.6" height="17" fill="#005f00"/>
-<rect x="472.2" y="484" width="62.4" height="17" fill="#005f00"/>
-<rect x="534.6" y="484" width="7.8" height="17" fill="#005f00"/>
-<rect x="542.4" y="484" width="54.6" height="17" fill="#005f00"/>
-<rect x="597" y="484" width="15.6" height="17" fill="#005f00"/>
-<rect x="12" y="501" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="501" width="15.6" height="17" fill="#005f00"/>
-<rect x="66.6" y="501" width="39" height="17" fill="#005f00"/>
-<rect x="105.6" y="501" width="202.8" height="17" fill="#005f00"/>
-<rect x="308.4" y="501" width="39" height="17" fill="#005f00"/>
-<rect x="347.4" y="501" width="7.8" height="17" fill="#005f00"/>
-<rect x="355.2" y="501" width="23.4" height="17" fill="#005f00"/>
-<rect x="378.6" y="501" width="15.6" height="17" fill="#005f00"/>
-<rect x="12" y="518" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="518" width="15.6" height="17" fill="#005f00"/>
-<rect x="66.6" y="518" width="46.8" height="17" fill="#005f00"/>
-<rect x="113.4" y="518" width="109.2" height="17" fill="#005f00"/>
-<rect x="222.6" y="518" width="15.6" height="17" fill="#005f00"/>
-<rect x="238.2" y="518" width="15.6" height="17" fill="#005f00"/>
-<rect x="253.8" y="518" width="62.4" height="17" fill="#005f00"/>
-<rect x="316.2" y="518" width="39" height="17" fill="#005f00"/>
-<rect x="355.2" y="518" width="15.6" height="17" fill="#005f00"/>
-<rect x="370.8" y="518" width="31.2" height="17" fill="#005f00"/>
-<rect x="12" y="535" width="39" height="17" fill="#005f00"/>
-<rect x="51" y="535" width="7.8" height="17" fill="#005f00"/>
-<rect x="12" y="552" width="39" height="17" fill="#005f00"/>
-<text x="12" y="89" fill="#afd7ff" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
-<text x="19.8" y="106" fill="#afd7ff" font-weight="bold" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">Edit file</text>
-<text x="97.8" y="106" fill="#949494" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">· </text>
-<text x="113.4" y="106" textLength="234" lengthAdjust="spacing" xml:space="preserve">from the general-purpose agent</text>
-<text x="19.8" y="123" fill="#949494" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">src/server.js</text>
-<text x="12" y="140" fill="#4e4e4e" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌</text>
-<text x="12" y="157" fill="#ffffff" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  1 </text>
-<text x="51" y="157" fill="#ff005f" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">import</text>
-<text x="97.8" y="157" fill="#ffffff" textLength="140.4" lengthAdjust="spacing" xml:space="preserve"> { createServer } </text>
-<text x="238.2" y="157" fill="#ff005f" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">from</text>
-<text x="277.2" y="157" fill="#d7d787" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">'node:http'</text>
-<text x="363" y="157" fill="#ffffff" xml:space="preserve">;</text>
-<text x="12" y="174" fill="#d75f5f" textLength="39" lengthAdjust="spacing" xml:space="preserve">  2 -</text>
-<text x="51" y="174" fill="#ffffff" textLength="358.8" lengthAdjust="spacing" xml:space="preserve">import { createTask, seed } from './store.js';</text>
-<text x="12" y="191" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve">  2 +</text>
-<text x="51" y="191" fill="#ff005f" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">import</text>
-<text x="97.8" y="191" fill="#ffffff" textLength="148.2" lengthAdjust="spacing" xml:space="preserve"> { createTask, seed</text>
-<text x="246" y="191" fill="#ffffff" xml:space="preserve">,</text>
-<text x="261.6" y="191" fill="#ffffff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">allTasks </text>
-<text x="331.8" y="191" fill="#ffffff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">} </text>
-<text x="347.4" y="191" fill="#ff005f" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">from</text>
-<text x="386.4" y="191" fill="#d7d787" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">'./store.js'</text>
-<text x="480" y="191" fill="#ffffff" xml:space="preserve">;</text>
-<text x="12" y="208" fill="#ffffff" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  3 </text>
-<text x="12" y="225" fill="#d75f5f" textLength="39" lengthAdjust="spacing" xml:space="preserve">  4 -</text>
-<text x="51" y="225" fill="#ffffff" textLength="265.2" lengthAdjust="spacing" xml:space="preserve">function send(res, status, body) {</text>
-<text x="12" y="242" fill="#d75f5f" textLength="39" lengthAdjust="spacing" xml:space="preserve">  5 -</text>
-<text x="51" y="242" fill="#ffffff" textLength="499.2" lengthAdjust="spacing" xml:space="preserve">  res.writeHead(status, { 'content-type': 'application/json' });</text>
-<text x="12" y="259" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve">  4 +</text>
-<text x="51" y="259" fill="#5fd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">function</text>
-<text x="121.2" y="259" fill="#afd700" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">send</text>
-<text x="152.4" y="259" fill="#ffffff" xml:space="preserve">(</text>
-<text x="160.2" y="259" fill="#ff8700" textLength="132.6" lengthAdjust="spacing" xml:space="preserve">res, status, body</text>
-<text x="292.8" y="259" fill="#ff8700" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">, headers = {}</text>
-<text x="402" y="259" fill="#ffffff" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">) {</text>
-<text x="12" y="276" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve">  5 +</text>
-<text x="66.6" y="276" fill="#5fd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">const</text>
-<text x="113.4" y="276" fill="#ffffff" textLength="132.6" lengthAdjust="spacing" xml:space="preserve">defaultHeaders = </text>
-<text x="246" y="276" fill="#ffffff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">{ </text>
-<text x="261.6" y="276" fill="#d7d787" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">'content-type'</text>
-<text x="370.8" y="276" fill="#ffffff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">: </text>
-<text x="386.4" y="276" fill="#d7d787" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">'application/json'</text>
-<text x="526.8" y="276" fill="#ffffff" xml:space="preserve">,</text>
-<text x="542.4" y="276" fill="#ffffff" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">...headers </text>
-<text x="628.2" y="276" fill="#ffffff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">};</text>
-<text x="12" y="293" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve">  6 +</text>
-<text x="51" y="293" fill="#ffffff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">  res.</text>
-<text x="97.8" y="293" fill="#afd700" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">writeHead</text>
-<text x="168" y="293" fill="#ffffff" textLength="195" lengthAdjust="spacing" xml:space="preserve">(status, defaultHeaders);</text>
-<text x="12" y="310" fill="#ffffff" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  7 </text>
-<text x="43.2" y="310" fill="#ffffff" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">   res.</text>
-<text x="97.8" y="310" fill="#afd700" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">end</text>
-<text x="121.2" y="310" fill="#ffffff" xml:space="preserve">(</text>
-<text x="129" y="310" fill="#afd700" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">JSON</text>
-<text x="160.2" y="310" fill="#ffffff" xml:space="preserve">.</text>
-<text x="168" y="310" fill="#afd700" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">stringify</text>
-<text x="238.2" y="310" fill="#ffffff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">(body));</text>
-<text x="12" y="327" fill="#ffffff" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  8 </text>
-<text x="43.2" y="327" fill="#ffffff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve"> }</text>
-<text x="12" y="344" fill="#ffffff" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  9 </text>
-<text x="12" y="361" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 10 +</text>
-<text x="51" y="361" fill="#6c6c6c" textLength="499.2" lengthAdjust="spacing" xml:space="preserve">// Generate an opaque base64 cursor from task's createdAt and id</text>
-<text x="12" y="378" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 11 +</text>
-<text x="51" y="378" fill="#5fd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">function</text>
-<text x="121.2" y="378" fill="#afd700" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">encodeCursor</text>
-<text x="214.8" y="378" fill="#ffffff" xml:space="preserve">(</text>
-<text x="222.6" y="378" fill="#ff8700" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">task</text>
-<text x="253.8" y="378" fill="#ffffff" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">) {</text>
-<text x="12" y="395" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 12 +</text>
-<text x="66.6" y="395" fill="#5fd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">const</text>
-<text x="105.6" y="395" fill="#ffffff" textLength="78" lengthAdjust="spacing" xml:space="preserve"> cursor = </text>
-<text x="183.6" y="395" fill="#d7d787" xml:space="preserve">`</text>
-<text x="191.4" y="395" fill="#ffffff" textLength="132.6" lengthAdjust="spacing" xml:space="preserve">${task.createdAt}</text>
-<text x="324" y="395" fill="#d7d787" xml:space="preserve">|</text>
-<text x="331.8" y="395" fill="#ffffff" textLength="78" lengthAdjust="spacing" xml:space="preserve">${task.id}</text>
-<text x="409.8" y="395" fill="#d7d787" xml:space="preserve">`</text>
-<text x="417.6" y="395" fill="#ffffff" xml:space="preserve">;</text>
-<text x="12" y="412" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 13 +</text>
-<text x="66.6" y="412" fill="#ff005f" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">return</text>
-<text x="121.2" y="412" fill="#afd700" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">Buffer</text>
-<text x="168" y="412" fill="#ffffff" xml:space="preserve">.</text>
-<text x="175.8" y="412" fill="#afd700" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">from</text>
-<text x="207" y="412" fill="#ffffff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">(cursor).</text>
-<text x="277.2" y="412" fill="#afd700" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">toString</text>
-<text x="339.6" y="412" fill="#ffffff" xml:space="preserve">(</text>
-<text x="347.4" y="412" fill="#d7d787" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">'base64'</text>
-<text x="409.8" y="412" fill="#ffffff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">);</text>
-<text x="12" y="429" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 14 +</text>
-<text x="51" y="429" fill="#ffffff" xml:space="preserve">}</text>
-<text x="12" y="446" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 15 +</text>
-<text x="12" y="463" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 16 +</text>
-<text x="51" y="463" fill="#6c6c6c" textLength="444.6" lengthAdjust="spacing" xml:space="preserve">// Parse an opaque base64 cursor back to createdAt and id</text>
-<text x="12" y="480" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 17 +</text>
-<text x="51" y="480" fill="#5fd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">function</text>
-<text x="121.2" y="480" fill="#afd700" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">decodeCursor</text>
-<text x="214.8" y="480" fill="#ffffff" xml:space="preserve">(</text>
-<text x="222.6" y="480" fill="#ff8700" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">encodedCursor</text>
-<text x="324" y="480" fill="#ffffff" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">) {</text>
-<text x="12" y="497" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 18 +</text>
-<text x="66.6" y="497" fill="#5fd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">const</text>
-<text x="105.6" y="497" fill="#ffffff" textLength="78" lengthAdjust="spacing" xml:space="preserve"> cursor = </text>
-<text x="183.6" y="497" fill="#afd700" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">Buffer</text>
-<text x="230.4" y="497" fill="#ffffff" xml:space="preserve">.</text>
-<text x="238.2" y="497" fill="#afd700" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">from</text>
-<text x="269.4" y="497" fill="#ffffff" textLength="124.8" lengthAdjust="spacing" xml:space="preserve">(encodedCursor, </text>
-<text x="394.2" y="497" fill="#d7d787" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">'base64'</text>
-<text x="456.6" y="497" fill="#ffffff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">).</text>
-<text x="472.2" y="497" fill="#afd700" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">toString</text>
-<text x="534.6" y="497" fill="#ffffff" xml:space="preserve">(</text>
-<text x="542.4" y="497" fill="#d7d787" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">'utf-8'</text>
-<text x="597" y="497" fill="#ffffff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">);</text>
-<text x="12" y="514" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 19 +</text>
-<text x="66.6" y="514" fill="#5fd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">const</text>
-<text x="105.6" y="514" fill="#ffffff" textLength="202.8" lengthAdjust="spacing" xml:space="preserve"> [createdAt, id] = cursor.</text>
-<text x="308.4" y="514" fill="#afd700" textLength="39" lengthAdjust="spacing" xml:space="preserve">split</text>
-<text x="347.4" y="514" fill="#ffffff" xml:space="preserve">(</text>
-<text x="355.2" y="514" fill="#d7d787" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">'|'</text>
-<text x="378.6" y="514" fill="#ffffff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">);</text>
-<text x="12" y="531" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 20 +</text>
-<text x="66.6" y="531" fill="#ff005f" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">return</text>
-<text x="113.4" y="531" fill="#ffffff" textLength="109.2" lengthAdjust="spacing" xml:space="preserve"> { createdAt, </text>
-<text x="222.6" y="531" fill="#afd700" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
-<text x="238.2" y="531" fill="#ffffff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">: </text>
-<text x="253.8" y="531" fill="#afd700" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">parseInt</text>
-<text x="316.2" y="531" fill="#ffffff" textLength="39" lengthAdjust="spacing" xml:space="preserve">(id, </text>
-<text x="355.2" y="531" fill="#af87ff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">10</text>
-<text x="370.8" y="531" fill="#ffffff" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">) };</text>
-<text x="12" y="548" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 21 +</text>
-<text x="51" y="548" fill="#ffffff" xml:space="preserve">}</text>
-<text x="12" y="565" fill="#5fd75f" textLength="39" lengthAdjust="spacing" xml:space="preserve"> 22 +</text>
-<text x="12" y="582" fill="#ffffff" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> 23 </text>
-<text x="51" y="582" fill="#ff005f" textLength="39" lengthAdjust="spacing" xml:space="preserve">async</text>
-<text x="97.8" y="582" fill="#5fd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">function</text>
-<text x="168" y="582" fill="#afd700" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">readJson</text>
-<text x="230.4" y="582" fill="#ffffff" xml:space="preserve">(</text>
-<text x="238.2" y="582" fill="#ff8700" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">req</text>
-<text x="261.6" y="582" fill="#ffffff" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">) {</text>
-<text x="12" y="599" fill="#ffffff" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> 24 </text>
-<text x="66.6" y="599" fill="#5fd7ff" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">let</text>
-<text x="90" y="599" fill="#ffffff" textLength="54.6" lengthAdjust="spacing" xml:space="preserve"> raw = </text>
-<text x="144.6" y="599" fill="#d7d787" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">''</text>
-<text x="160.2" y="599" fill="#ffffff" xml:space="preserve">;</text>
-<text x="12" y="616" fill="#4e4e4e" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌</text>
-<text x="12" y="633" textLength="265.2" lengthAdjust="spacing" xml:space="preserve"> Do you want to make this edit to </text>
-<text x="277.2" y="633" font-weight="bold" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">server.js</text>
-<text x="347.4" y="633" xml:space="preserve">?</text>
-<text x="19.8" y="650" fill="#afd7ff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯</text>
-<text x="35.4" y="650" fill="#949494" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">1. </text>
-<text x="58.8" y="650" fill="#afd7ff" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">Yes</text>
-<text x="35.4" y="667" fill="#949494" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">2. </text>
-<text x="58.8" y="667" textLength="148.2" lengthAdjust="spacing" xml:space="preserve">Yes, and switch to </text>
-<text x="207" y="667" font-weight="bold" textLength="491.4" lengthAdjust="spacing" xml:space="preserve">accept edits (auto-approve file edits and common file commands)</text>
-<text x="698.4" y="667" textLength="140.4" lengthAdjust="spacing" xml:space="preserve"> for this session </text>
-<text x="838.8" y="667" font-weight="bold" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">(shift+tab)</text>
-<text x="35.4" y="684" fill="#949494" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">3. </text>
-<text x="58.8" y="684" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">No</text>
-<text x="19.8" y="718" fill="#949494" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Esc to cancel · Tab to amend</text>
+<rect x="12" y="263" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="263" width="717.6" height="17" fill="#3a3a3a"/>
+<text x="12" y="72" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="72" font-weight="bold" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">#18 orch[system] decision:</text>
+<text x="230.4" y="72" textLength="709.8" lengthAdjust="spacing" xml:space="preserve"> Plan eaae7e5e855a is approved and finalized. Ready for implementation when assignments are</text>
+<text x="12" y="89" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">  made.</text>
+<text x="12" y="123" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="123" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="123" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="123" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="157" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="157" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="191" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="191" font-weight="bold" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">#19 orch[agent] status:</text>
+<text x="207" y="191" textLength="725.4" lengthAdjust="spacing" xml:space="preserve"> The plan is decided (#18), so we're moving into the build. Suggested split: alice builds the</text>
+<text x="27.6" y="208" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="105.6" y="208" textLength="148.2" lengthAdjust="spacing" xml:space="preserve"> handler (clamping </text>
+<text x="253.8" y="208" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="292.8" y="208" textLength="140.4" lengthAdjust="spacing" xml:space="preserve"> to 50, an opaque </text>
+<text x="433.2" y="208" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="472.2" y="208" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> cursor, a stable sort, the </text>
+<text x="690.6" y="208" fill="#afd7ff" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">Link: rel=next</text>
+<text x="799.8" y="208" textLength="78" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> header…).</text>
+<text x="12" y="242" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="242" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="242" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="242" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="276" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="27.6" y="276" fill="#ffffff" textLength="717.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">go — do your part of the decided plan in a background subagent and post status with evidence</text>
+<text x="27.6" y="310" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="344" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="344" font-weight="bold" textLength="39" lengthAdjust="spacing" xml:space="preserve">Agent</text>
+<text x="66.6" y="344" textLength="374.4" lengthAdjust="spacing" xml:space="preserve">(Implement GET /tasks cursor pagination handler)</text>
+<text x="12" y="361" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
+<text x="51" y="361" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
+<text x="191.4" y="361" fill="#949494" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
+<text x="12" y="395" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="395" textLength="920.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Posted starting status (#20). Implementation subagent is running — I'll post results with evidence when it completes.</text>
+<text x="12" y="429" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="429" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="429" fill="#949494" font-weight="bold" xml:space="preserve">3</text>
+<text x="129" y="429" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="463" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="463" textLength="499.2" lengthAdjust="spacing" xml:space="preserve"> Agent &quot;Implement GET /tasks cursor pagination handler&quot; finished</text>
+<text x="519" y="463" fill="#949494" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 1m 40s</text>
+<text x="27.6" y="497" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="531" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="531" textLength="912.6" lengthAdjust="spacing" xml:space="preserve"> Done. Status posted (#21) with implementation details, test count, file paths, and commit. The GET /tasks handler is</text>
+<text x="12" y="548" textLength="592.8" lengthAdjust="spacing" xml:space="preserve">  ready with cursor pagination, opaque cursors, and Link headers as planned.</text>
+<text x="12" y="582" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="582" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="582" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="582" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="511.2" y="599" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
+<text x="690.6" y="599" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · alice ─</text>
+<text x="12" y="633" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="27.6" y="667" fill="#afafff" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏵⏵ accept edits on</text>
+<text x="168" y="667" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="191.4" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
+<text x="261.6" y="667" fill="#949494" textLength="405.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · /tasks to see subagents · ← 1 agent · ↓ to manage</text>
+<text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
+<text x="12" y="718" fill="#949494" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ vole-8126  </text>
+<text x="129" y="718" fill="#98c379" textLength="132.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">plan eaae7e 2/2 ✔</text>
 </g></svg>

@@ -12,6 +12,7 @@
  *               (the other active members except the orch and me). The room agent spawns those children.
  *       only = rowsNeeded(...) limits the calls to the rows that are missing; only = [] says the rows are intact
  *       and lists no calls (a second spawn would duplicate a row).
+ *   joinNote(me, name, {held}?) -> "row: …" suffix for a member_joined notice: running (no call) or the call to make
  *   rowsNeeded(code, me, {members, held}) -> names (orch) or [code] (member): rows with no live hold in `held`
  *       (= readHolds(code, me.name), null = nothing held). No grace period: used by join / restore.
  * Lifecycle: a row lives as long as its viewer is in the room. A participant row does NOT end when its member
@@ -24,7 +25,8 @@
  *   rowText(code, name, viewer, {color, entries, members, now}?) -> string (<= ROW_MAX chars, no label)
  *       name === code (or null): the member's room row, from viewer's seat: plan progress, objections,
  *         "⚠ your sign-off needed", "✉ N for you".
- *       otherwise: NAME's state as viewer sees it, e.g. "✓ signed 593da0 · idle",
+ *       otherwise: NAME's state as viewer sees it, e.g. "✓ signed 593da0 · idle", and after the decision
+ *         their latest status: "#24 Claude status: handler done, 12/12 tests pass",
  *         "⚠ reviewing 593da0 · ✖ 1 objection (#31)", "left".
  *   rowLine(label, text) -> "label  text"   what a row shows (the row content replaces the whole label)
  *
@@ -62,6 +64,7 @@ function writeJsonAtomic(file, value) {
 }
 const clip = (s, n = ROW_MAX) => { const a = Array.from(String(s)); return a.length > n ? a.slice(0, n - 1).join('') + '…' : a.join(''); };
 const h6 = h => String(h || '').slice(0, 6);
+const oneLine = s => String(s || '').replace(/\s+/g, ' ').trim();
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const isAlive = pid => { try { process.kill(Number(pid), 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 function ago(iso, now = Date.now()) {
@@ -114,7 +117,7 @@ function rowCalls(me, members, { only = null } = {}) {
     } else {
       lines.push('No members yet.');
     }
-    lines.push(`When a member_joined NAME entry arrives, make this call for NAME (same message as anything else you do): ${participantCall('NAME')}. If NAME already has a row (a rejoin), the call is refused; that is fine, do not retry.`);
+    lines.push(`Each member_joined NAME notice ends with "row: …", read from your live rows: make ${participantCall('NAME')} only when it says NAME has no row running (same message as anything else you do). When it says the row is already running (a rejoin), make NO Agent call.`);
     lines.push('A row stays when its member leaves (it reads "left") and comes back to life when they rejoin; it ends when you leave. Never spawn a row for yourself, and never call the hold tool yourself.');
     return lines.join('\n');
   }
@@ -131,6 +134,24 @@ function rowCalls(me, members, { only = null } = {}) {
     roomCall(me.code, names),
     `It shows the room as one row labelled ${me.code}, with the other members inside it, and adds new members by itself. Spawn it once per session; never call the hold tool yourself.`,
   ].join('\n');
+}
+
+/**
+ * What a member_joined notice (bin/sub-human tail) tells this seat about NAME's row, from the live holds file:
+ * spawn only when the row is not running. A spawn of a running row is denied by hooks/row-guard.js, which
+ * Claude Code renders as a red error, so the notice prevents the attempt. '' for my own join.
+ */
+function joinNote(me, name, { held } = {}) {
+  if (!me || !me.code || !name || name === me.name || name === 'orch') return '';
+  const h = held === undefined ? readHolds(me.code, me.name) : held;
+  if (me.role === 'orch') {
+    return h && h.members.includes(name)
+      ? `row: ${name}'s row is already running (it shows the rejoin by itself); make NO Agent call`
+      : `row: ${name} has no row running; spawn it now: Agent sub-human:participant, description "${name}", prompt "member: ${name}", run_in_background`;
+  }
+  return h && h.room
+    ? `row: your room row adds ${name} by itself; make NO Agent call`
+    : 'row: your room row is not running; make the room-row call from ROWS';
 }
 
 /** Rows this seat should have but `held` (readHolds) shows no live hold for. Orch: names; member: [code]. */
@@ -251,9 +272,9 @@ function currentPlan(es) {
   for (const e of es) if (e.kind === 'plan_rev' && e.plan_hash) p = { id: e.id, hash: e.plan_hash, approvers: Array.isArray(e.approvers) ? e.approvers : [] };
   if (!p) return null;
   const verdict = {}; // name -> {kind, id}: latest via=human signoff/objection on this hash
-  let decided = false;
+  let decided = 0; // the decision's id
   for (const e of es) {
-    if (e.kind === 'decision' && e.plan_hash === p.hash) decided = true;
+    if (e.kind === 'decision' && e.plan_hash === p.hash && !decided) decided = e.id;
     if (e.via !== 'human' || e.plan_hash !== p.hash) continue;
     const k = normKind(e);
     if (k === 'signoff' || k === 'objection') verdict[e.from] = { kind: k, id: e.id };
@@ -290,7 +311,10 @@ function participantText(code, name, viewer, es, ms, now, c) {
   const p = currentPlan(es);
   if (p) {
     const v = p.verdict[name];
-    if (p.decided) parts.push(c.ok(`✔ decided ${h6(p.hash)}`));
+    // Build phase: their latest status after the decision (with its evidence) replaces "decided".
+    const st = p.decided ? es.filter(e => e.from === name && e.id > p.decided && e.kind === 'status').at(-1) : null;
+    if (st) parts.push(`#${st.id} ${st.via === 'agent' ? 'Claude ' : ''}status: ${oneLine(st.text)}`);
+    else if (p.decided) parts.push(c.ok(`✔ decided ${h6(p.hash)}`));
     else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ signed ${h6(p.hash)}`));
     else if (v && v.kind === 'objection') parts.push(c.warn(`✖ objected ${h6(p.hash)} (#${v.id})`));
     else if (p.approvers.includes(name)) parts.push(c.warn(`⚠ reviewing ${h6(p.hash)}`));
@@ -358,7 +382,7 @@ const rowLine = (label, text) => (text ? `${label}  ${text}` : label);
 
 module.exports = {
   PARTICIPANT, ROOM_AGENT, ROW_MAX,
-  rowCalls, rowsNeeded, participantCall, roomCall, parseSpawn,
+  rowCalls, rowsNeeded, joinNote, participantCall, roomCall, parseSpawn,
   rowText, rowLine, readLog, currentPlan,
   recordRow, forgetRow, readRowMap, rowsDir, mapFile,
   writeHolds, readHolds, holdsFile, missingRows,

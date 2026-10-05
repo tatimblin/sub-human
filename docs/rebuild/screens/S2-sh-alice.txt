@@ -5,21 +5,17 @@
 
 
 ❯ /sub-human:sub-human alice
-  ⎿  UserPromptExpansion says: sub-human: joined room bison-3139 as alice.
+  ⎿  UserPromptExpansion says: sub-human: joined room vole-8126 as alice.
 
-⏺ sub-human:room(bison-3139)
+⏺ sub-human:room(vole-8126)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ Ready. I'm working with you in room bison-3139. The room monitor is running in the background.
-
-  I'll relay any messages or decisions from the orchestrator and other members, handle assignments when they come your
-  way, and help you post to the room when you need to.
-
-  What's on your mind?
+⏺ Room vole-8126 is set up and ready. What can I help you with?
 
 ✻ Waiting for 1 background agent to finish
 
 ⏺ Monitor event: "sub-human room notices"
+  ⎿  Invalid tool parameters
 
 
 
@@ -28,13 +24,17 @@
 
 
 
-· Thinking… 
-  ⎿  Tip: Use /memory to view and manage Claude memory
-                                                                                  auto mode unavailable for this model
-───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · alice ─
+
+
+
+
+· Onioning… (3s · ↓ 200 tokens · thought for 3s)
+  ⎿  Tip: Use /statusline to set up a custom status line that will display beneath the input box
+                  tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · alice ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ manual mode on · 1 monitor · esc to interrupt · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ bison-3139  2 here
+  ◯ vole-8126  2 here · ✉ 1 for you

@@ -18,9 +18,13 @@
  *                        [--text-has S] [--timeout S] [--what TEXT]
  *   demo-lib.js approve-until <session> --kind K [wait-log filters] [--timeout S]
  *                        play the seat's human while its Claude works: answer each permission dialog
- *                        with option 2 ("Yes, and …" for the session; else 1. Yes) until the log matches
+ *                        with option 2 ("Yes, and …" for the session; else 1. Yes) until the log matches;
+ *                        with --quiet S, then keep at it until its background agents are done (only the room
+ *                        row left in its panel) and no dialog has shown for S seconds
  *   demo-lib.js wait-holds <seat> <name> [--timeout S]   wait until <seat>'s room server holds <name>'s row
  *                                                  (rows/holds-<seat>.json, fresh)
+ *   demo-lib.js member-field <name> <field>       print members.json[name][field] ('' if none)
+ *   demo-lib.js wait-member <name> <field> --not V [--timeout S]   wait until that field differs from V
  *   demo-lib.js count --kind K [same filters]     print the count now
  *   demo-lib.js last-id --kind K [same filters]   print the id of the last matching entry (0 if none)
  *   demo-lib.js log-max                           print the highest log id
@@ -28,7 +32,8 @@
  *   demo-lib.js readonly <session>                exit 0 if a read-only client is attached
  *
  * Every wait appends {scene, what, ok, ms, time} to $SNAP_DIR/waits.jsonl (scene from $DEMO_SCENE)
- * and exits 1 on timeout (demo.sh treats that as best-effort and keeps going).
+ * and exits 1 on timeout (demo.sh treats that as best-effort and keeps going). --timeout 0 waits with no
+ * limit (a person's own step in --human mode), printing a reminder every minute.
  *
  * Keys: when a read-only client is attached (ours or anyone's), tmux may refuse send-keys ("client is
  * read-only": it checks the best client it can find, even one on another session). So keys go through a writable helper client attached to a tiny
@@ -112,7 +117,11 @@ async function until(what, timeoutS, fn) {
     let v;
     try { v = fn(); } catch { v = false; }
     if (v) { record(what, true, Date.now() - t0); process.stderr.write(`  ✓ ${what} (${((Date.now() - t0) / 1000).toFixed(1)}s)\n`); return v; }
-    if (Date.now() - t0 > timeoutS * 1000) { record(what, false, Date.now() - t0); process.stderr.write(`  ✗ timeout ${timeoutS}s: ${what}\n`); return false; }
+    if (timeoutS > 0 && Date.now() - t0 > timeoutS * 1000) { record(what, false, Date.now() - t0); process.stderr.write(`  ✗ timeout ${timeoutS}s: ${what}\n`); return false; }
+    if (!(timeoutS > 0) && Date.now() - (until.nudged || t0) > 60_000) {
+      until.nudged = Date.now();
+      process.stderr.write(`  … still waiting for you (${Math.round((Date.now() - t0) / 60_000)} min, no time limit): ${what}\n`);
+    }
     await sleep(700);
   }
 }
@@ -187,7 +196,7 @@ async function submit(session, text) {
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const o = opts(rest);
-  const T = +(o.timeout || 60);
+  const T = o.timeout == null ? 60 : +o.timeout; // 0 = no limit
   switch (cmd) {
     case 'type': typeText(o._[0], o._.slice(1).join(' ')); return 0;
     case 'keys': await keys(o._[0], o._.slice(1)); return 0;
@@ -226,10 +235,18 @@ async function main() {
     case 'approve-until': {
       const n = +(o.count || 1);
       const what = o.what || `${o._[0]}: approve its Claude's permission dialogs until ${n}× ${o.kind}${o.from ? ` from ${o.from}` : ''}`;
-      let approvals = 0, last = 0;
-      const ok = await until(what, T, () => {
-        if (filterLog(o).length >= n) return true;
+      let approvals = 0, last = 0, met = 0, calm = 0;
+      const quietMs = +(o.quiet || 0) * 1000;
+      const { panelRows } = require('./checks.js');
+      const ok = await until(what + (quietMs ? `, then its background agents finish` : ''), T, () => {
         const p = pane(o._[0]);
+        if (!met && filterLog(o).length >= n) met = Date.now();
+        if (met && !quietMs) return true;
+        if (met) {
+          const busy = /Do you want to /.test(p) || panelRows(p).some(r => !r.nested && r.label !== roomCode());
+          if (busy) calm = 0; else if (!calm) calm = Date.now();
+          if (calm && Date.now() - calm >= quietMs) return true;
+        }
         const m = /Do you want to ([^\n?]*)\?/.exec(p);
         if (m && /❯\s*1\. Yes/.test(p) && Date.now() - last > 2500) {
           last = Date.now();
@@ -250,6 +267,21 @@ async function main() {
       const ok = await until(o.what || `${o._[0]}'s room holds ${o._[1]}'s row`, T, () => {
         const h = JSON.parse(fs.readFileSync(f(), 'utf8'));
         return Date.now() - Date.parse(h.at) < 90_000 && (h.members || []).includes(o._[1]);
+      });
+      return ok ? 0 : 1;
+    }
+    case 'member-field': {
+      const home = process.env.SUB_HUMAN_HOME || path.join(require('node:os').homedir(), '.sub-human');
+      const ms = JSON.parse(fs.readFileSync(path.join(home, 'rooms', roomCode() || '-', 'members.json'), 'utf8'));
+      process.stdout.write(String((ms[o._[0]] || {})[o._[1]] ?? '') + '\n');
+      return 0;
+    }
+    case 'wait-member': {
+      const home = process.env.SUB_HUMAN_HOME || path.join(require('node:os').homedir(), '.sub-human');
+      const f = () => path.join(home, 'rooms', roomCode() || '-', 'members.json');
+      const ok = await until(o.what || `${o._[0]}'s ${o._[1]} changes`, T, () => {
+        const v = (JSON.parse(fs.readFileSync(f(), 'utf8'))[o._[0]] || {})[o._[1]];
+        return v != null && String(v) !== String(o.not);
       });
       return ok ? 0 : 1;
     }

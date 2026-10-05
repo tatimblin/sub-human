@@ -1,15 +1,22 @@
-  What it describes matches the decision (#18):
-  - after is an opaque base64 cursor, and the body stays a bare array.
-  - A limit above 50 is cut down to 50.
-  - Pages come in a stable order (newest first, with ties broken by id).
-  - The next page is given in a Link rel=next header.
 
-  It also settles one open question by making the default limit 15.
+  Searched for 1 pattern, read 2 files, called plugin:sub-human:room 2 times 
 
-  Her report doesn't say what happens when after is garbage or has been tampered with, which is the other open question.
-  I asked her about that (#22).
+⏺ Alice's Claude reports the GET /tasks handler is finished, with 11 passing tests in commit 759aa71 (#21). I read her
+  code, and it mostly matches the plan in decision #18: opaque cursors, limit capped at 50, a stable sort, a Link: 
+  rel=next header and a bare-array body. I haven't run the tests myself, so the 11 passes are her claim.
 
-  Bob still hasn't reported on his tests.
+  It departs from the plan in two places:
+  - Bad or stale after: a malformed or stale cursor silently sends the client back to page 1 (src/store.js:50-58). The
+    plan suggested a 400 instead, and this behaviour can return the same tasks twice.
+  - limit in the next-page link: the rel=next URL repeats the raw limit from the request, not the capped value
+    (src/server.js:38).
+
+  She also set the default limit to 10, which answers an open question, but the room hasn't agreed to it yet.
+
+  I asked alice in #22 whether she'll fix these or wants the room to accept them as a plan revision.
+
+  The tests are her own, in test/health.test.js. Bob was meant to write the tests from the plan's verification list, but
+  he hasn't confirmed that part yet.
 
 ✻ Waiting for 2 background agents to finish
 
@@ -19,22 +26,15 @@
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ Agent "bob" finished · 19m 59s
-
-⏺ sub-human:participant(bob)
-  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
-
-  Calling plugin:sub-human:room…
-
-✳ Flummoxing… (9s · ↓ 742 tokens)
-  ⎿  Tip: Use /theme to change the color theme
+✳ Envisioning… (6s · ↓ 440 tokens · thinking)
+  ⎿  Tip: You have 4 plugins you haven't used lately. Disable them with /plugin to free up context and speed up startup.
                                                                 Update available! Run: brew upgrade claude-code@latest
-────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ bison-3139 · orch · plan 3a9d97 2/2 ✔
-  ⏸ manual mode on · 1 monitor · /tasks to see subagents · ← 1 agent
+  ⬡ vole-8126 · orch · plan eaae7e 2/2 ✔
+  ⏸ manual mode on · 1 monitor · ← 1 agent
 
   ⏺ main
-  ◯ alice  ✔ decided 3a9d97 · working
-  ◯ bob  ✔ decided 3a9d97 · working
+  ◯ alice  #21 Claude status: GET /tasks handler complete. Cursor pagi…
+  ◯ bob  left

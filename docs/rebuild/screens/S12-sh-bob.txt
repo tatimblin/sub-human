@@ -1,5 +1,5 @@
 Resume this session with:
-claude --resume "⬡ bison-3139 · bob"
+claude --resume "⬡ vole-8126 · bob"
 
 
 
@@ -37,4 +37,4 @@ claude --resume "⬡ bison-3139 · bob"
 
 
 
-Pane is dead (status 0, Mon Oct  5 08:34:49 2026)
+Pane is dead (status 0, Mon Oct  5 12:00:49 2026)

@@ -7,84 +7,75 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">orch · S9</text>
 <g fill="#d6dbe5">
-<text x="12" y="55" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">     - </text>
-<text x="66.6" y="55" font-weight="bold" textLength="39" lengthAdjust="spacing" xml:space="preserve">alice</text>
-<text x="105.6" y="55" textLength="475.8" lengthAdjust="spacing" xml:space="preserve">: proposed the feature and chose the response shape (#4, #8).</text>
-<text x="12" y="72" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">     - </text>
-<text x="66.6" y="72" font-weight="bold" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">bob</text>
-<text x="90" y="72" textLength="639.6" lengthAdjust="spacing" xml:space="preserve">: asked to approve, and set the opaque-cursor and clamping requirements (#6, #11).</text>
-<text x="51" y="106" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Verification</text>
-<text x="12" y="140" textLength="249.6" lengthAdjust="spacing" xml:space="preserve">     - With more than 50 tasks, </text>
-<text x="261.6" y="140" fill="#afd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">limit=50</text>
-<text x="324" y="140" textLength="195" lengthAdjust="spacing" xml:space="preserve"> returns 50 items plus a </text>
-<text x="519" y="140" fill="#afd7ff" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">Link rel=next</text>
-<text x="620.4" y="140" textLength="312" lengthAdjust="spacing" xml:space="preserve">. Following each next link until none is</text>
-<text x="12" y="157" textLength="335.4" lengthAdjust="spacing" xml:space="preserve">       left yields every task exactly once.</text>
-<text x="12" y="174" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">     - </text>
-<text x="66.6" y="174" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">limit=500</text>
-<text x="136.8" y="174" textLength="327.6" lengthAdjust="spacing" xml:space="preserve"> returns 200 with 50 items, not 400 (#11).</text>
-<text x="12" y="191" textLength="218.4" lengthAdjust="spacing" xml:space="preserve">     - The last page has no </text>
-<text x="230.4" y="191" fill="#afd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">rel=next</text>
-<text x="292.8" y="191" xml:space="preserve">.</text>
-<text x="12" y="208" textLength="358.8" lengthAdjust="spacing" xml:space="preserve">     - The body is a bare array on every page.</text>
-<text x="12" y="225" textLength="132.6" lengthAdjust="spacing" xml:space="preserve">     - A garbage </text>
-<text x="144.6" y="225" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
-<text x="183.6" y="225" textLength="366.6" lengthAdjust="spacing" xml:space="preserve"> is handled as the open question above decides.</text>
-<text x="27.6" y="259" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="12" y="293" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="293" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="327" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="327" textLength="522.6" lengthAdjust="spacing" xml:space="preserve"> Alice and Bob have both signed off, so the cursor-paging plan for </text>
-<text x="542.4" y="327" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
-<text x="620.4" y="327" textLength="312" lengthAdjust="spacing" xml:space="preserve"> is decided (#18) and the room has moved</text>
-<text x="12" y="344" textLength="374.4" lengthAdjust="spacing" xml:space="preserve">  to building it. I posted the work split (#19):</text>
-<text x="12" y="378" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
-<text x="43.2" y="378" font-weight="bold" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">Alice:</text>
-<text x="90" y="378" textLength="187.2" lengthAdjust="spacing" xml:space="preserve"> builds paging into the </text>
-<text x="277.2" y="378" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
-<text x="355.2" y="378" textLength="241.8" lengthAdjust="spacing" xml:space="preserve"> handler. That covers clamping </text>
-<text x="597" y="378" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
-<text x="636" y="378" textLength="148.2" lengthAdjust="spacing" xml:space="preserve"> to 50, the opaque </text>
-<text x="784.2" y="378" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
-<text x="823.2" y="378" textLength="93.6" lengthAdjust="spacing" xml:space="preserve"> cursor, the</text>
-<text x="43.2" y="395" fill="#afd7ff" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">Link rel=next</text>
-<text x="144.6" y="395" textLength="631.8" lengthAdjust="spacing" xml:space="preserve"> header and a stable order. She also settles the two open questions: the default </text>
-<text x="776.4" y="395" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
-<text x="815.4" y="395" textLength="117" lengthAdjust="spacing" xml:space="preserve"> and what a bad</text>
-<text x="43.2" y="412" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
-<text x="82.2" y="412" textLength="70.2" lengthAdjust="spacing" xml:space="preserve"> returns.</text>
-<text x="12" y="429" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
-<text x="43.2" y="429" font-weight="bold" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">Bob:</text>
-<text x="74.4" y="429" textLength="850.2" lengthAdjust="spacing" xml:space="preserve"> writes tests for the plan's verification list. These include walking every page and seeing each task exactly</text>
-<text x="12" y="446" textLength="187.2" lengthAdjust="spacing" xml:space="preserve">    once, checking that </text>
-<text x="199.2" y="446" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">limit=500</text>
-<text x="269.4" y="446" textLength="335.4" lengthAdjust="spacing" xml:space="preserve"> returns 50 items, and checking there's no </text>
-<text x="604.8" y="446" fill="#afd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">rel=next</text>
-<text x="667.2" y="446" textLength="140.4" lengthAdjust="spacing" xml:space="preserve"> on the last page.</text>
-<text x="12" y="480" textLength="889.2" lengthAdjust="spacing" xml:space="preserve">  The split is my suggestion; nobody in the room asked for it. It's done when both report back with the files they</text>
-<text x="12" y="497" textLength="897" lengthAdjust="spacing" xml:space="preserve">  changed and their test results, and either of them can still ask to divide it differently. Once they report, I'll</text>
-<text x="12" y="514" textLength="312" lengthAdjust="spacing" xml:space="preserve">  check their work against the decision.</text>
+<text x="51" y="55" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Verification</text>
+<text x="12" y="89" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">     - First page with no </text>
+<text x="214.8" y="89" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="253.8" y="89" textLength="132.6" lengthAdjust="spacing" xml:space="preserve"> returns at most </text>
+<text x="386.4" y="89" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="425.4" y="89" textLength="265.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> items (never more than 50) and a </text>
+<text x="690.6" y="89" fill="#afd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">rel=next</text>
+<text x="753" y="89" textLength="171.6" lengthAdjust="spacing" xml:space="preserve"> Link header when more</text>
+<text x="12" y="106" textLength="156" lengthAdjust="spacing" xml:space="preserve">       items remain.</text>
+<text x="12" y="123" textLength="132.6" lengthAdjust="spacing" xml:space="preserve">     - Following </text>
+<text x="144.6" y="123" fill="#afd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">rel=next</text>
+<text x="207" y="123" textLength="507" lengthAdjust="spacing" xml:space="preserve"> links walks every task exactly once, with no duplicates or gaps.</text>
+<text x="12" y="140" textLength="218.4" lengthAdjust="spacing" xml:space="preserve">     - The last page has no </text>
+<text x="230.4" y="140" fill="#afd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">rel=next</text>
+<text x="292.8" y="140" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> link.</text>
+<text x="12" y="157" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">     - </text>
+<text x="66.6" y="157" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">limit=500</text>
+<text x="136.8" y="157" textLength="358.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> returns 200 with at most 50 items, not a 400.</text>
+<text x="12" y="174" textLength="343.2" lengthAdjust="spacing" xml:space="preserve">     - The body is always a bare JSON array.</text>
+<text x="27.6" y="208" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="242" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="242" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="276" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="276" textLength="39" lengthAdjust="spacing" xml:space="preserve"> The </text>
+<text x="58.8" y="276" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="136.8" y="276" textLength="756.6" lengthAdjust="spacing" xml:space="preserve"> paging plan is decided: alice and bob both signed off on eaae7e5e855a, and the room logged it as</text>
+<text x="12" y="293" textLength="117" lengthAdjust="spacing" xml:space="preserve">  decision #18.</text>
+<text x="27.6" y="327" font-weight="bold" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">What it says:</text>
+<text x="136.8" y="327" fill="#afd7ff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">?limit</text>
+<text x="183.6" y="327" textLength="553.8" lengthAdjust="spacing" xml:space="preserve"> is capped at 50, and anything larger is clamped rather than rejected. </text>
+<text x="737.4" y="327" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="776.4" y="327" textLength="163.8" lengthAdjust="spacing" xml:space="preserve"> is an opaque cursor.</text>
+<text x="12" y="344" textLength="507" lengthAdjust="spacing" xml:space="preserve">  The body stays a bare JSON array, and the next page comes in a </text>
+<text x="519" y="344" fill="#afd7ff" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">Link: rel=next</text>
+<text x="628.2" y="344" textLength="62.4" lengthAdjust="spacing" xml:space="preserve"> header.</text>
+<text x="27.6" y="378" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">Proposed split (#19):</text>
+<text x="191.4" y="378" textLength="390" lengthAdjust="spacing" xml:space="preserve"> nobody has confirmed it or named their files yet.</text>
+<text x="12" y="395" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">  - alice builds the handler.</text>
+<text x="12" y="412" textLength="429" lengthAdjust="spacing" xml:space="preserve">  - bob writes tests from the plan's verification list.</text>
+<text x="12" y="429" textLength="280.8" lengthAdjust="spacing" xml:space="preserve">  - It's done when those tests pass.</text>
+<text x="27.6" y="463" font-weight="bold" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">Still open:</text>
+<text x="113.4" y="463" textLength="101.4" lengthAdjust="spacing" xml:space="preserve"> the default </text>
+<text x="214.8" y="463" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="253.8" y="463" textLength="187.2" lengthAdjust="spacing" xml:space="preserve">, and what happens when </text>
+<text x="441" y="463" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="480" y="463" textLength="444.6" lengthAdjust="spacing" xml:space="preserve"> is malformed or stale. I asked them to settle both while</text>
+<text x="12" y="480" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">  building.</text>
+<text x="12" y="514" textLength="475.8" lengthAdjust="spacing" xml:space="preserve">  I'm waiting for each of them to confirm or swap their part.</text>
 <text x="12" y="548" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="548" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="548" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
 <text x="129" y="548" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="511.2" y="565" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="565" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="582" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─</text>
+<text x="12" y="582" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─</text>
 <text x="12" y="599" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
-<text x="27.6" y="633" fill="#949494" textLength="296.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⬡ bison-3139 · orch · plan 3a9d97 2/2 </text>
-<text x="324" y="633" fill="#98c379" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔</text>
+<text x="27.6" y="633" fill="#949494" textLength="288.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⬡ vole-8126 · orch · plan eaae7e 2/2 </text>
+<text x="316.2" y="633" fill="#98c379" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔</text>
 <text x="27.6" y="650" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ manual mode on · </text>
 <text x="175.8" y="650" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
 <text x="246" y="650" fill="#949494" textLength="93.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent</text>
 <text x="12" y="684" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
 <text x="12" y="701" fill="#949494" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ alice  </text>
-<text x="97.8" y="701" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided 3a9d97</text>
+<text x="97.8" y="701" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided eaae7e</text>
 <text x="222.6" y="701" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="246" y="701" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
 <text x="12" y="718" fill="#949494" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ bob  </text>
-<text x="82.2" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided 3a9d97</text>
+<text x="82.2" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided eaae7e</text>
 <text x="207" y="718" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="230.4" y="718" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
 </g></svg>

@@ -3,6 +3,7 @@
 ▝▜██████▀  Haiku 4.5 · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/bob
 
+⚠ 3 MCP servers need authentication · run /mcp
 
 
 
@@ -32,8 +33,7 @@
 
 
 
-
-                                                                                  auto mode unavailable for this model
+                  tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

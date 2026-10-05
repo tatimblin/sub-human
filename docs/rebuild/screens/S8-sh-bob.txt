@@ -1,38 +1,38 @@
-⏺ #5 orch question to you: alice proposes cursor paging for GET /tasks (#4). Where do you stand on the shape and the
-  limit, and would it break anything on your side?
-
-  Want me to draft a reply you can send with @room?
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #8 alice say: put the next cursor in a Link header (rel=next), keep the body a bare array
+⏺ #8 alice says: "put the next cursor in a Link header (rel=next) and keep the body a bare array"
+
+  Alice is adding a detail about the implementation. Want to weigh in, or are you good with that approach?
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ Plan 6a33e89fc359 is ready for your sign-off. Press Enter to approve, or ↓ then Enter to object.
+⏺ Plan 80930cc0525d is ready for sign-off — you and alice are both approvers. A form should appear in your terminal.
+  Press Enter to approve, or ↓ then Enter to object with your notes.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #12 orch status: plan revised for your objection (#11). Now limits above 50 clamp to 50 instead of returning 400. You
-  and alice get new sign-off forms.
+⏺ #12 orch status: The plan was revised for your objection (#11) — now any limit over 50 clamps to 50 instead of
+  returning a 400. All earlier sign-offs are void. The form should reappear for you to review and sign off on the
+  updated version.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
-─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · bob ─
+──────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · bob ─
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   MCP server “plugin:sub-human:room” requests your input
 
-  Room bison-3139 · plan 3a9d97 (rev 2) · full plan: /tmp/sh-demo/home/rooms/bison-3139/plans/3a9d9726e017.md
-  Deciding: cursor paging for `GET /tasks`. The query takes `?limit` and an opaque `?after`. The body stays a bare …
-  Context
+  Room vole-8126 · plan eaae7e (rev 2) · full plan: /tmp/sh-demo/home/rooms/vole-8126/plans/eaae7e5e855a.md
+  Deciding: how `GET /tasks` pages its results. Cursor paging with `?limit` and an opaque `?after`, a bare-array bo…
+  Context · alice proposed cursor paging for `GET /tasks`: `?limit&after`, a bare-array response, at most 50 items …
   Approve this plan?  Accept (Enter) = Approve · Decline (↓ Enter) = Object, say why · Esc = later
 
   ❯ Accept    Decline

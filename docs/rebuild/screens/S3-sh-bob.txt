@@ -3,18 +3,18 @@
 ▝▜██████▀  Haiku 4.5 · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/bob
 
+⚠ 3 MCP servers need authentication · run /mcp
 
 ❯ /sub-human:sub-human bob
-  ⎿  UserPromptExpansion says: sub-human: joined room bison-3139 as bob.
+  ⎿  UserPromptExpansion says: sub-human: joined room vole-8126 as bob.
 
-⏺ sub-human:room(bison-3139)
+⏺ sub-human:room(vole-8126)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ I'm bob's Claude in room bison-3139, ready to help. The room is set up with alice and an orchestrator. What would you
-  like to work on?
+⏺ Hi bob, I'm ready to help in room vole-8126. The room is set up with alice as the other member, and the orchestrator
+  is managing the plan. Let me know what you'd like to work on or if you have any questions about the room.
 
-✻ Waiting for 1 background agent to finish
-
+✻ Waiting for 2 background agents to finish
 
 
 
@@ -31,10 +31,10 @@
 
 
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · bob ─
+──────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · bob ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ bison-3139  3 here
+  ◯ vole-8126  3 here

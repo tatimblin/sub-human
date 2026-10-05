@@ -1,9 +1,10 @@
 
+  ⎿  UserPromptExpansion says: room vole-8126 open · others join with: /sub-human NAME (or /sub-human NAME vole-8126)
 
-⏺ The room bison-3139 is open, but nobody has joined yet. Members join by running /sub-human NAME bison-3139 in their
-  own Claude Code session. I'll add a row for each person as they arrive.
+⏺ Room vole-8126 is open, and no one has joined yet. Members join with /sub-human NAME vole-8126. When someone joins,
+  I'll start a row for them and begin facilitating.
 
-✻ Sautéed for 2s · done 8:14 AM · 1 monitor still running
+✻ Baked for 3s · done 11:56 AM · 1 monitor still running
 
 ⏺ Monitor event: "sub-human room notices"
 
@@ -12,9 +13,9 @@
 
   Called plugin:sub-human:room 
 
-⏺ Alice has joined room bison-3139, and her row is now in the agent panel. I posted a welcome to her (#2) that opens the
-  first phase: agreeing on what the room is planning, and asked what she wants to plan. Nobody has proposed anything
-  yet, so there's no plan. I'll pick up again when she replies or someone else joins.
+⏺ Alice has joined room vole-8126. I started her row and posted her a welcome. It says we're in the converge phase and
+  asks what she wants the room to plan. There's no plan yet, so there was no plan hash to send her. I'm waiting for her
+  reply or for someone else to join.
 
 ✻ Waiting for 1 background agent to finish
 
@@ -23,16 +24,15 @@
 ⏺ sub-human:participant(bob)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ Bob has joined room bison-3139, and his row is now in the agent panel next to Alice's. I didn't post anything to him,
-  since there's no plan to point him to yet. My question to Alice (#2) about what the room should plan is still
-  unanswered.
+⏺ Bob has joined room vole-8126, and I've started his row. There's no plan yet, so there's nothing to post to him. I'm
+  waiting for alice to say what she wants the room to plan.
 
 ✻ Waiting for 2 background agents to finish
                                                                 Update available! Run: brew upgrade claude-code@latest
-────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ bison-3139 · orch
+  ⬡ vole-8126 · orch
   ⏸ plan mode on · 1 monitor · ← 1 agent
 
   ⏺ main

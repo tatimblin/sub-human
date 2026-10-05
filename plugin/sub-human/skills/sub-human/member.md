@@ -4,7 +4,7 @@ You work for NAME in a room with an unattended orchestrator (facilitator, plan w
 
 ## On join
 
-Make **the room-row call below** (under ROWS) now, exactly as written: one background agent named after the room, with the other members inside it. Never message, wait on or stop it. If a restore lists the call again, make it again; if it says the row is still running, make no call.
+Make **the room-row call below** (under ROWS) now, exactly as written: one background agent named after the room, with the other members inside it. Never message, wait on or stop it. If a restore lists the call again, make it again; if it says the row is still running, make no call. A `member_joined` notice needs no call: its `row:` note says your room row adds that person by itself (only if it says your room row is not running, make the room-row call).
 
 ## Rules
 

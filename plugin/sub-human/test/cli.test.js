@@ -79,6 +79,26 @@ test('cli tail: orch sees everything not authored by orch, plus its own hook-wri
   assert.deepEqual(t.ids(), [2, 3, 6, 7, 8], t.out);
 });
 
+test('cli tail: a member_joined notice says whether that row already runs (live holds), for the orch and a member', async () => {
+  h.freshHome();
+  const { code } = h.register('orch', 'orch');
+  room.bind(code);
+  const rows = require(path.join(h.LIB, 'rows.js'));
+  const t = startTail();
+  await h.sleep(300);
+  sys('member_joined', 'bob');                                     // #1 first join: no row yet
+  await t.until('member_joined');
+  rows.writeHolds(code, 'orch', { members: ['bob'] });             // the orch's bob row is now held
+  sys('member_left', 'bob');                                       // #2
+  sys('member_joined', 'bob');                                     // #3 rejoin: the row survived
+  await h.until(() => t.lines().length >= 3, 3000);
+  const [first, , rejoin] = t.lines();
+  assert.match(first, /^#1 bob\[system\] member_joined .* · row: bob has no row running; spawn it now: Agent sub-human:participant, description "bob", prompt "member: bob"/);
+  assert.match(rejoin, /^#3 bob\[system\] member_joined .* · row: bob's row is already running .*make NO Agent call$/);
+  assert.doesNotMatch(t.lines()[1], / · row:/, 'only member_joined carries the note');
+  for (const l of t.lines()) assert.ok(l.length <= 240, l);
+});
+
 test('cli tail: survives a restart via its cursor; switches when the session changes rooms', async () => {
   h.freshHome();
   const { code } = h.register('alice');

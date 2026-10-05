@@ -3,6 +3,7 @@
 ▝▜██████▀  Haiku 4.5 · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/bob
 
+⚠ 3 MCP servers need authentication · run /mcp
 
 
 
@@ -32,8 +33,7 @@
 
 
 
-
-                     tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux.conf for wheel scroll
+                                                                                  auto mode unavailable for this model
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
