@@ -4,12 +4,20 @@
  * CommonJS, zero dependencies. Reads the room log, members.json and presence files; writes only <room>/rows/.
  *
  * Spawning (text for the model; join.js, session-restore.js and the role text append it, never hand-copy):
- *   rowCalls(me, members) -> string
+ *   rowCalls(me, members, {only}?) -> string
  *       me = {code, name, role}; members = readMembers(code) (object by name) or an array of {name, role, left_at?}.
  *       orch:   one background sub-human:participant per active member, labelled by the member's name,
  *               prompt "member: NAME".
  *       member: one background sub-human:room, labelled by the room code, prompt "room: CODE\nmembers: a, b"
  *               (the other active members except the orch and me). The room agent spawns those children.
+ *       only = rowsNeeded(...) limits the calls to the rows that are missing; only = [] says the rows are intact
+ *       and lists no calls (a second spawn would duplicate a row).
+ *   rowsNeeded(code, me, {members, held}) -> names (orch) or [code] (member): rows with no live hold in `held`
+ *       (= readHolds(code, me.name), null = nothing held). No grace period: used by join / restore.
+ * Lifecycle: a row lives as long as its viewer is in the room. A participant row does NOT end when its member
+ *   leaves; it reads "left" and comes back to life on rejoin (mcp/hold.js keeps holding). One live hold per
+ *   (viewer, kind, name): hold.js refuses a second with "STOP: duplicate row", and hooks/row-guard.js
+ *   (PreToolUse Agent) denies the spawn itself when the row's hold is already live, so no dead copy appears.
  *   participantCall(name), roomCall(code, names)   the single Agent call lines
  *
  * Row text (deterministic from the log + members.json + <room>/presence/<name>.json {state, at}):
@@ -90,29 +98,47 @@ const participantCall = name =>
 const roomCall = (code, names) =>
   `Agent({subagent_type: "${ROOM_AGENT}", description: "${code}", prompt: "room: ${code}\\nmembers: ${names.length ? names.join(', ') : '(none)'}", run_in_background: true})`;
 
-function rowCalls(me, members) {
+function rowCalls(me, members, { only = null } = {}) {
   if (!me || !me.code) return '';
   const others = memberList(members).filter(m => isActive(m) && m.name !== me.name);
+  const want = Array.isArray(only) ? new Set(only) : null;
   if (me.role === 'orch') {
-    const names = others.filter(m => !isOrch(m)).map(m => m.name);
+    const all = others.filter(m => !isOrch(m)).map(m => m.name);
+    const names = want ? all.filter(n => want.has(n)) : all;
     const lines = ['PARTICIPANT ROWS (do this now; it costs nothing while they wait):'];
     if (names.length) {
       lines.push(`Make exactly these Agent tool calls, all in ONE message, then carry on (write nothing about them):`);
       for (const n of names) lines.push(participantCall(n));
+    } else if (want && all.length) {
+      lines.push('Your rows are already running (their holds are live). Make no Agent calls for them now; a second copy would duplicate a row in the panel.');
     } else {
       lines.push('No members yet.');
     }
-    lines.push(`When a member_joined NAME entry arrives, make this call for NAME (same message as anything else you do): ${participantCall('NAME')}`);
-    lines.push('A row ends by itself when its member leaves. Never spawn a row for yourself, and never call the hold tool yourself.');
+    lines.push(`When a member_joined NAME entry arrives, make this call for NAME (same message as anything else you do): ${participantCall('NAME')}. If NAME already has a row (a rejoin), the call is refused; that is fine, do not retry.`);
+    lines.push('A row stays when its member leaves (it reads "left") and comes back to life when they rejoin; it ends when you leave. Never spawn a row for yourself, and never call the hold tool yourself.');
     return lines.join('\n');
   }
   const names = others.filter(m => !isOrch(m)).map(m => m.name);
+  if (want && !want.has(me.code)) {
+    return [
+      'ROOM ROW: already running (its hold is live). Make no Agent call for it now; a second copy would duplicate the room row in the panel.',
+      'It adds and keeps the other members\' rows by itself; never call the hold tool yourself.',
+    ].join('\n');
+  }
   return [
     `ROOM ROW (do this now; it costs nothing while it waits):`,
     `Make exactly this one Agent tool call, then carry on (write nothing about it):`,
     roomCall(me.code, names),
     `It shows the room as one row labelled ${me.code}, with the other members inside it, and adds new members by itself. Spawn it once per session; never call the hold tool yourself.`,
   ].join('\n');
+}
+
+/** Rows this seat should have but `held` (readHolds) shows no live hold for. Orch: names; member: [code]. */
+function rowsNeeded(code, me, { members, held = null } = {}) {
+  const ms = memberList(members || readMembers(code));
+  const h = held || { members: [], room: false };
+  if (me.role === 'orch') return ms.filter(m => isActive(m) && !isOrch(m) && m.name !== me.name && !h.members.includes(m.name)).map(m => m.name);
+  return h.room ? [] : [code];
 }
 
 /** Which row an Agent(...) spawn is: from subagent_type plus the prompt / description / name. */
@@ -332,7 +358,7 @@ const rowLine = (label, text) => (text ? `${label}  ${text}` : label);
 
 module.exports = {
   PARTICIPANT, ROOM_AGENT, ROW_MAX,
-  rowCalls, participantCall, roomCall, parseSpawn,
+  rowCalls, rowsNeeded, participantCall, roomCall, parseSpawn,
   rowText, rowLine, readLog, currentPlan,
   recordRow, forgetRow, readRowMap, rowsDir, mapFile,
   writeHolds, readHolds, holdsFile, missingRows,

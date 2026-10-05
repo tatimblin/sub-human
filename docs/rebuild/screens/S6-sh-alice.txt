@@ -1,0 +1,40 @@
+
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ #6 — bob (say): "I want to approve this. Keep after opaque, not a page number."
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ #7 — orch (question to you): bob wants after to be opaque (#6), but a bare array (#4) has nowhere to return the next
+  cursor. Should it go in a response header such as Link or X-Next-Cursor, or should the body change?
+
+  What's your take—header, body change, or something else? You can reply with @room.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ UserPromptSubmit operation blocked by hook:
+  ✓ posted to bison-3139 as #8
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ A sign-off form is up for plan 6a33e89fc359 — you and bob are the approvers.
+
+  Enter to approve, or ↓ then Enter to object (you'll be asked what should change). Esc to dismiss.
+
+✻ Waiting for 2 background agents to finish
+───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · alice ─
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  MCP server “plugin:sub-human:room” requests your input
+
+  Room bison-3139 · plan 6a33e8 (rev 1) · full plan: /tmp/sh-demo/home/rooms/bison-3139/plans/6a33e89fc359.md
+  Deciding: cursor paging for `GET /tasks`. The query takes `?limit` and an opaque `?after`. The body stays a bare …
+  Context
+  Approve this plan?  Accept (Enter) = Approve · Decline (↓ Enter) = Object, say why · Esc = later
+
+  ❯ Accept    Decline
+
+  Esc to cancel · ↑/↓ to navigate

@@ -1,0 +1,40 @@
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ New plan 3a9d9726e017 is ready for your sign-off. Press Enter to approve, or ↓ then Enter to object.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ #15 alice approved plan 3a9d9726e017. Waiting on your sign-off.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ #16 orch status: plan is waiting for your sign-off. (Alice is already in.)
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ #18 decision: Plan 3a9d9726e017 is signed by alice and bob. Ready to move forward.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ #19 orch status: assignments going out. Alice is implementing GET /tasks paging (clamping, opaque after, Link
+  rel=next, stable order, settle default limit). The rest of your assignment got cut off — want me to read the full
+  message?
+
+✻ Waiting for 2 background agents to finish
+                                                                Update available! Run: brew upgrade claude-code@latest
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · bob ─
+❯ read it
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
+
+  ⏺ main
+  ◯ bison-3139  plan 3a9d97 2/2 ✔

@@ -1,0 +1,40 @@
+  That conflicts with Alice's proposal (#4) to return a bare array. With an opaque cursor, the client can't work out the
+  next one from the last item, so the response has to hand it back somewhere. A bare array has no field for that.
+
+  I asked Alice (#7) which she prefers: put the next cursor in a response header (such as Link or X-Next-Cursor), or
+  change the body shape. The plan waits on her answer.
+
+  ┌────────────────────────────┬────────┬──────────────────────────────────┬──────────────────┐
+  │          Question          │ Person │             Position             │     Concern      │
+  ├────────────────────────────┼────────┼──────────────────────────────────┼──────────────────┤
+  │ Paging style               │ alice  │ ?limit and ?after, max 50        │ –                │
+  ├────────────────────────────┼────────┼──────────────────────────────────┼──────────────────┤
+  │ Response shape             │ alice  │ bare array                       │ –                │
+  ├────────────────────────────┼────────┼──────────────────────────────────┼──────────────────┤
+  │ What after is              │ bob    │ opaque cursor, not a page number │ wants to approve │
+  ├────────────────────────────┼────────┼──────────────────────────────────┼──────────────────┤
+  │ Where the next cursor goes │ alice  │ open (asked in #7)               │ –                │
+  └────────────────────────────┴────────┴──────────────────────────────────┴──────────────────┘
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Updated plan
+  ⎿  /plan to preview
+  ⎿  Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan 6a33e89fc359 lacks sign-off from alice and bob. The 
+     sign-off form is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan 
+     mode. Published as plan_rev #9.
+
+✽ Misting… (16s · ↓ 1.1k tokens · thinking)
+  ⎿  Tip: Use /theme to change the color theme
+                                                                Update available! Run: brew upgrade claude-code@latest
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⬡ bison-3139 · orch · plan 6a33e8 0/2 waiting on alice,bob
+  ⏸ plan mode on · 1 monitor · ← 1 agent
+
+  ⏺ main
+  ◯ alice  ⚠ reviewing 6a33e8
+  ◯ bob  ⚠ reviewing 6a33e8 · working

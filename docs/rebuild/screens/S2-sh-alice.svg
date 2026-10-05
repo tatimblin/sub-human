@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 734" width="960" height="734" role="img" aria-label="alice · S2" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13">
+<rect x="0.5" y="0.5" width="959" height="733" rx="9" fill="#16181d" stroke="#3a3e48"/>
+<path d="M0.5 30V9.5a9 9 0 0 1 9-9h941a9 9 0 0 1 9 9V30z" fill="#22252c"/>
+<line x1="0.5" y1="30" x2="959.5" y2="30" stroke="#3a3e48"/>
+<circle cx="16" cy="15" r="5.5" fill="#ff5f57"/>
+<circle cx="34" cy="15" r="5.5" fill="#febc2e"/>
+<circle cx="52" cy="15" r="5.5" fill="#28c840"/>
+<text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">alice · S2</text>
+<g fill="#d6dbe5">
+<rect x="27.6" y="59" width="46.8" height="17" fill="#000000"/>
+<rect x="27.6" y="76" width="39" height="17" fill="#000000"/>
+<rect x="12" y="144" width="7.8" height="17" fill="#3a3a3a"/>
+<rect x="19.8" y="144" width="7.8" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="144" width="202.8" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="195" width="109.2" height="17" fill="#00afaf"/>
+<text x="12" y="72" fill="#d78787" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ▐</text>
+<text x="27.6" y="72" fill="#d78787" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▛███▛█</text>
+<text x="97.8" y="72" font-weight="bold" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">Claude Code</text>
+<text x="191.4" y="72" fill="#949494" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">v2.1.281</text>
+<text x="12" y="89" fill="#d78787" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▝▜</text>
+<text x="27.6" y="89" fill="#d78787" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█████</text>
+<text x="66.6" y="89" fill="#d78787" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█▀</text>
+<text x="97.8" y="89" fill="#949494" textLength="171.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Haiku 4.5 · Claude Max</text>
+<text x="12" y="106" fill="#d78787" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ▝▝ ▝▝  </text>
+<text x="97.8" y="106" fill="#949494" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">/private/tmp/sh-demo/alice</text>
+<text x="12" y="157" fill="#4e4e4e" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯</text>
+<text x="27.6" y="157" fill="#ffffff" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">/sub-human:sub-human alice</text>
+<text x="12" y="174" fill="#949494" textLength="577.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  UserPromptExpansion says: sub-human: joined room bison-3139 as alice.</text>
+<text x="12" y="208" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="208" fill="#000000" font-weight="bold" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">sub-human:room</text>
+<text x="136.8" y="208" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">(bison-3139)</text>
+<text x="12" y="225" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
+<text x="51" y="225" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
+<text x="191.4" y="225" fill="#949494" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
+<text x="12" y="259" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="259" textLength="288.6" lengthAdjust="spacing" xml:space="preserve"> Ready. I'm working with you in room </text>
+<text x="308.4" y="259" font-weight="bold" textLength="78" lengthAdjust="spacing" xml:space="preserve">bison-3139</text>
+<text x="386.4" y="259" textLength="374.4" lengthAdjust="spacing" xml:space="preserve">. The room monitor is running in the background.</text>
+<text x="12" y="293" textLength="920.4" lengthAdjust="spacing" xml:space="preserve">  I'll relay any messages or decisions from the orchestrator and other members, handle assignments when they come your</text>
+<text x="12" y="310" textLength="421.2" lengthAdjust="spacing" xml:space="preserve">  way, and help you post to the room when you need to.</text>
+<text x="12" y="344" textLength="171.6" lengthAdjust="spacing" xml:space="preserve">  What's on your mind?</text>
+<text x="12" y="378" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="378" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="378" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
+<text x="129" y="378" fill="#949494" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> background agent to finish</text>
+<text x="12" y="412" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="412" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="565" fill="#d78787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">·</text>
+<text x="27.6" y="565" fill="#d78787" textLength="78" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Thinking… </text>
+<text x="12" y="582" fill="#949494" textLength="421.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  Tip: Use /memory to view and manage Claude memory</text>
+<text x="651.6" y="599" fill="#ffd700" textLength="280.8" lengthAdjust="spacing" xml:space="preserve">auto mode unavailable for this model</text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · alice ─</text>
+<text x="12" y="633" fill="#949494" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="27.6" y="667" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ manual mode on · </text>
+<text x="175.8" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
+<text x="246" y="667" fill="#949494" textLength="351" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · esc to interrupt · ← 1 agent · ↓ to manage</text>
+<text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
+<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ bison-3139  </text>
+<text x="136.8" y="718" fill="#949494" opacity="0.6" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">2 here</text>
+</g></svg>

@@ -114,11 +114,18 @@ function safeDigest() {
 
 function clip(s, n = CAP) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 
-/** lib/rows.js rowCalls() (owned by the rows module); '' when it is missing or fails. */
+/**
+ * lib/rows.js rowCalls() (owned by the rows module); '' when it is missing or fails. Lists only the rows with
+ * no live hold in this seat's hold server (rows/holds-NAME.json): rows survive /clear, compaction and a
+ * re-run of /sub-human, and a second spawn would duplicate them. After --resume the server is new, so all.
+ */
 function rowCalls(me) {
   try {
     const rows = require(path.join(LIB, 'rows.js'));
-    return String(rows.rowCalls(me, identity.readMembers(me.code)) || '').trim();
+    const members = identity.readMembers(me.code);
+    const held = rows.readHolds(me.code, me.name);
+    const only = held ? rows.rowsNeeded(me.code, me, { members, held }) : null;
+    return String(rows.rowCalls(me, members, { only }) || '').trim();
   } catch (e) {
     process.stderr.write(`sub-human: rows unavailable: ${e && e.message}\n`);
     return '';
@@ -132,14 +139,14 @@ const seatTitle = me => `⬡ ${me.code} · ${me.name}`;
  * The context the join / restore hooks inject: head, who you are, role text, ROWS (rowCalls), roster,
  * digest. The ROWS section and the roster survive the cap; the role text and then the digest are clipped.
  */
-function contextBlock(me, lead, { rowsLead = '' } = {}) {
+function contextBlock(me, lead, { rowsLead = '', rowsText = null } = {}) {
   const role = me.role === 'orch' ? 'orch' : 'member';
   const who = role === 'orch'
     ? `You are the ORCHESTRATOR of sub-human room ${me.code}. Members join with: /sub-human NAME (or /sub-human NAME ${me.code})`
     : `You are ${me.name}'s Claude in sub-human room ${me.code}. Your human is ${me.name}.`;
   const head = `SUB-HUMAN role=${role} name=${me.name} room=${me.code}${lead ? ` (${lead})` : ''}`;
-  const calls = rowCalls(me);
-  const rowsPart = calls ? `ROWS\n${rowsLead}${calls}` : '';
+  const calls = rowsText == null ? rowCalls(me) : '';
+  const rowsPart = rowsText != null ? `ROWS\n${rowsText}` : calls ? `ROWS\n${rowsLead}${calls}` : '';
   const rosterPart = `ROSTER\n${roster(me.code)}`;
   const text = roleText(role);
   const fixed = [head, who, rowsPart, rosterPart].join('\n\n').length + 8;

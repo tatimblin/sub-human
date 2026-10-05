@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 734" width="960" height="734" role="img" aria-label="alice · S11b" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13">
+<rect x="0.5" y="0.5" width="959" height="733" rx="9" fill="#16181d" stroke="#3a3e48"/>
+<path d="M0.5 30V9.5a9 9 0 0 1 9-9h941a9 9 0 0 1 9 9V30z" fill="#22252c"/>
+<line x1="0.5" y1="30" x2="959.5" y2="30" stroke="#3a3e48"/>
+<circle cx="16" cy="15" r="5.5" fill="#ff5f57"/>
+<circle cx="34" cy="15" r="5.5" fill="#febc2e"/>
+<circle cx="52" cy="15" r="5.5" fill="#28c840"/>
+<text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">alice · S11b</text>
+<g fill="#d6dbe5">
+<text x="12" y="89" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="89" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="89" fill="#949494" font-weight="bold" xml:space="preserve">4</text>
+<text x="129" y="89" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="123" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="123" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="157" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="157" textLength="226.2" lengthAdjust="spacing" xml:space="preserve"> Bob has left the room (#23).</text>
+<text x="12" y="191" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="191" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="191" fill="#949494" font-weight="bold" xml:space="preserve">3</text>
+<text x="129" y="191" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="225" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="225" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="259" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="259" textLength="257.4" lengthAdjust="spacing" xml:space="preserve"> Bob has rejoined the room (#24).</text>
+<text x="12" y="293" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="293" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="293" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="293" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="327" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="327" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="361" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="361" textLength="390" lengthAdjust="spacing" xml:space="preserve"> Orchestrator has another question for you (#25): </text>
+<text x="409.8" y="361" font-weight="bold" textLength="530.4" lengthAdjust="spacing" xml:space="preserve">&quot;bob has left, and he owned the verification tests from #19. alice, </text>
+<text x="27.6" y="378" font-weight="bold" textLength="655.2" lengthAdjust="spacing" xml:space="preserve">will you take them, or should I run them as a background job against src/server.js?&quot;</text>
+<text x="12" y="412" textLength="928.2" lengthAdjust="spacing" xml:space="preserve">  They're asking whether you'll handle the verification tests yourself, or if they should run them automatically. A few</text>
+<text x="12" y="429" textLength="195" lengthAdjust="spacing" xml:space="preserve">  ways you could respond:</text>
+<text x="12" y="463" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="463" font-weight="bold" textLength="234" lengthAdjust="spacing" xml:space="preserve">&quot;Run them as a background job&quot;</text>
+<text x="277.2" y="463" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> — let the orchestrator handle it</text>
+<text x="12" y="480" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="480" font-weight="bold" textLength="124.8" lengthAdjust="spacing" xml:space="preserve">&quot;I'll take them&quot;</text>
+<text x="168" y="480" textLength="273" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> — you'll verify the implementation</text>
+<text x="12" y="497" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="497" font-weight="bold" textLength="304.2" lengthAdjust="spacing" xml:space="preserve">&quot;Run them, and I'll review the results&quot;</text>
+<text x="347.4" y="497" textLength="288.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> — background run with your oversight</text>
+<text x="12" y="531" textLength="171.6" lengthAdjust="spacing" xml:space="preserve">  Which works for you?</text>
+<text x="12" y="565" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="565" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="565" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="565" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="511.2" y="582" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
+<text x="690.6" y="582" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
+<text x="12" y="599" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · alice ─</text>
+<text x="12" y="616" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="27.6" y="616" opacity="0.6" textLength="475.8" lengthAdjust="spacing" xml:space="preserve">@room 400 Bad Request with error message about invalid cursor</text>
+<text x="12" y="633" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="27.6" y="650" fill="#949494" textLength="101.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">↑/↓ to select</text>
+<text x="12" y="684" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ ⏺ main</text>
+<text x="12" y="701" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ bison-3139  </text>
+<text x="136.8" y="701" fill="#98c379" textLength="132.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">plan 3a9d97 2/2 ✔</text>
+<text x="269.4" y="701" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="292.8" y="701" fill="#e5c07b" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✉ 2 for you</text>
+<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ bison-3139  </text>
+<text x="136.8" y="718" fill="#98c379" textLength="132.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">plan 3a9d97 2/2 ✔</text>
+<text x="269.4" y="718" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="292.8" y="718" fill="#e5c07b" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✉ 2 for you</text>
+</g></svg>

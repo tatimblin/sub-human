@@ -1,0 +1,40 @@
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Updated plan
+  ⎿  /plan to preview
+  ⎿  Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan 6a33e89fc359 lacks sign-off from alice and bob. The 
+     sign-off form is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan 
+     mode. Published as plan_rev #9.
+
+⏺ I've written the room plan on cursor paging for GET /tasks, and the room published it as plan_rev #9 (hash
+  6a33e89fc359). It now needs sign-off from both Alice and Bob. The sign-off form is already in each of their terminals,
+  so nothing gets posted while I wait.
+
+  The plan settles these points:
+  - Request: GET /tasks?limit=N&after=CURSOR, with limit capped at 50 and after an opaque cursor rather than a page
+    number.
+  - Response: the body stays a bare array of tasks, as it is today.
+  - Next page: the next cursor comes back in a Link header with rel="next", which is left off on the last page.
+  - Order: pages come in a stable order on a unique field, so no task is skipped or repeated.
+
+  Two questions are still open in the plan but don't block sign-off:
+  - What limit defaults to, and whether a value over 50 is cut down to 50 or rejected with a 400 error.
+  - What a bad or tampered after value returns; the plan suggests a 400 error.
+
+  Alice and Bob are the approvers: Alice proposed the feature and chose the response shape, and Bob asked to approve and
+  set the opaque-cursor rule. I'm staying in plan mode and will retry when a sign-off arrives.
+
+✻ Waiting for 2 background agents to finish
+                                                                Update available! Run: brew upgrade claude-code@latest
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⬡ bison-3139 · orch · plan 6a33e8 0/2 waiting on alice,bob
+  ⏸ plan mode on · 1 monitor · ← 1 agent
+
+  ⏺ main
+  ◯ alice  ⚠ reviewing 6a33e8 · working
+  ◯ bob  ⚠ reviewing 6a33e8 · working

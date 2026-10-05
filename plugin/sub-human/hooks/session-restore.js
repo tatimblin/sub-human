@@ -6,12 +6,22 @@
 //   resume   a new claude process with the old session id. If the seat is still live, rebind the new pid;
 //            if session-end marked it left, rejoin the same name (when the room still exists) and log
 //            member_joined "rejoined (resumed)".
-// Context = role text + ROWS (lib/rows.js rowCalls(), led by a "re-create your rows" line: rows are lost
-// on --resume and after a killed row) + roster + digest. sessionTitle shows the seat.
+// Context = role text + ROWS (lib/rows.js rowCalls() via common.js, which lists only the rows with no live
+// hold: rows survive /clear and compaction, and a re-spawn duplicated the room row in the S11 demo run) +
+// roster + digest. On --resume the hold server is new, so every row is listed. sessionTitle shows the seat.
+const path = require('node:path');
 const { identity, room, run, out, whoami, presence, contextBlock, seatTitle } = require('./common.js');
+const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
 
-const RECREATE = 'Your participant rows are gone (they do not survive --resume). Re-create them now, exactly as written:\n';
-const CHECK = 'Your participant rows normally survive this. Re-create a row below only if it is missing from your agent panel, exactly as written:\n';
+const RECREATE = 'Your rows are not running (they do not survive --resume). Create them now, exactly as written:\n';
+const PARTIAL = 'Your other rows are still running; only the rows below are missing. Make only these calls, exactly as written:\n';
+
+/** The lead for the ROWS section: empty when nothing is missing (rowCalls then says the rows are intact). */
+function rowsLead(me) {
+  const held = rows.readHolds(me.code, me.name);
+  if (!held) return RECREATE;
+  return rows.rowsNeeded(me.code, me, { held }).length ? PARTIAL : '';
+}
 
 function reseat(input) {
   const me = whoami(input);
@@ -41,6 +51,6 @@ run(input => {
   if (!me) return;
   room.bind(me.code);
   presence(me, 'working');
-  const text = contextBlock(me, `restored after ${input.source || 'start'}`, { rowsLead: input.source === 'resume' ? RECREATE : CHECK });
+  const text = contextBlock(me, `restored after ${input.source || 'start'}`, { rowsLead: rowsLead(me) });
   out({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text, sessionTitle: seatTitle(me) } });
 });

@@ -71,6 +71,7 @@ seat=\$1; shift
 for v in \$(env | grep -o '^CLAUDE[A-Z_]*'); do unset "\$v"; done
 unset ANTHROPIC_MODEL
 export SUB_HUMAN_HOME="$SUB_HUMAN_HOME"
+export SUB_HUMAN_DEBUG="${SUB_HUMAN_DEBUG:-1}"
 cd "$BASE/\$seat" || exit 1
 exec claude "\$@"
 EOF
@@ -112,7 +113,7 @@ setup() {
     rm -rf "$BASE"
     mkdir -p "$SUB_HUMAN_HOME"
     for seat in "${SEATS[@]}"; do cp -R "$REPO/demo/app.pristine" "$BASE/$seat"; done
-    mkdir -p "$SNAP_DIR"; rm -f "$SNAP_DIR"/*.svg "$SNAP_DIR"/*.txt "$SNAP_DIR/index.json" "$SNAP_DIR/waits.jsonl"
+    mkdir -p "$SNAP_DIR"; rm -rf "$SNAP_DIR"/*.svg "$SNAP_DIR"/*.txt "$SNAP_DIR/index.json" "$SNAP_DIR/waits.jsonl" "$SNAP_DIR/state"
   fi
   write_launcher
   local fresh=()
@@ -138,7 +139,12 @@ open_windows() {
 
 # ---------- step helpers ------------------------------------------------------------------------
 
-snap() { node "$REPO/scripts/snap.js" "$SESSIONS" "$SCENE" "$1"; }
+snap() { # caption — capture the panes, and keep the room's rows/ + members.json as of this step (evidence)
+  node "$REPO/scripts/snap.js" "$SESSIONS" "$SCENE" "$1"
+  local r; r=$(room); [ -n "$r" ] || return 0
+  mkdir -p "$SNAP_DIR/state/$SCENE"
+  cp "$SUB_HUMAN_HOME/rooms/$r/members.json" "$SUB_HUMAN_HOME/rooms/$r"/rows/*.json "$SNAP_DIR/state/$SCENE/" 2>/dev/null || true
+}
 
 # act SEAT "instruction for a human" CMD… — run CMD unless SEAT is played by a human
 act() {
@@ -156,21 +162,25 @@ keys() { local s=$1; shift; $LIB keys "sh-$s" "$@"; }
 wait_log() { $LIB wait-log "$@"; }
 wait_pane() { $LIB wait-pane "sh-$1" "$2" --timeout "${3:-60}"; }
 
-FORM_RE='requests your input|Approve'
+FORM_RE='requests your input|Approve this plan'
 
-form_approve() { # seat
+# The sign-off form (mcp/signoff.js): stage 1 has no fields, focus on [Accept]. An Accept sooner than 1 s
+# after the form appears is treated as a stray key and re-offered, so let it sit first.
+form_approve() { # seat — Enter = Accept = Approve
   wait_pane "$1" "$FORM_RE" "$(T 30)" || return 1
-  sleep 1
-  keys "$1" Right Space Down Down Enter            # E2: approving is → Space ↓ ↓ Enter
+  sleep 1.5
+  keys "$1" Enter
 }
-form_object() { # seat reason
+form_object_fill() { # seat reason — ↓ Enter = Decline = Object; stage 2 has one box; type the reason
   wait_pane "$1" "$FORM_RE" "$(T 30)" || return 1
-  sleep 1
-  keys "$1" Right Down Space Down                  # E2: objecting is → ↓ Space ↓ type ↓ Enter
-  $LIB type "sh-$1" "$2"
-  sleep 0.5
+  sleep 1.5
   keys "$1" Down Enter
+  wait_pane "$1" "Object to plan" 15 || return 1
+  sleep 1
+  $LIB literal "sh-$1" "$2"
+  sleep 0.5
 }
+form_submit() { keys "$1" Enter Enter; }   # Enter leaves the box for [Accept], Enter sends
 
 ROOM=""
 room() { [ -n "$ROOM" ] || ROOM=$($LIB wait-room --timeout 5 2>/dev/null); echo "$ROOM"; }
@@ -190,8 +200,8 @@ S1() { # orch opens the room
 S2() { # alice joins without a code
   act alice "type /sub-human alice" submit alice "/sub-human alice"
   wait_log --kind member_joined --from alice --timeout "$(T 60)"
-  wait_pane alice "$(room)" "$(T 90)"
-  wait_pane orch "alice" "$(T 90)"
+  wait_pane alice "$(panel_row "$(room)")" "$(T 90)"
+  wait_pane orch "$(panel_row alice)" "$(T 90)"
   sleep 5
   snap "alice joins with /sub-human alice (no code): one $(room) row for her, an alice row for the orch"
 }
@@ -199,8 +209,9 @@ S2() { # alice joins without a code
 S3() { # bob joins
   act bob "type /sub-human bob" submit bob "/sub-human bob"
   wait_log --kind member_joined --from bob --timeout "$(T 60)"
-  wait_pane bob "$(room)" "$(T 90)"
-  wait_pane orch "bob" "$(T 90)"
+  wait_pane bob "$(panel_row "$(room)")" "$(T 90)"
+  wait_pane orch "$(panel_row bob)" "$(T 90)"
+  $LIB wait-holds alice bob --timeout 60   # alice's room adds bob's row (hold returns JOINED bob)
   sleep 8
   snap "bob joins: the orch panel has alice and bob rows; each member panel has only the room row"
 }
@@ -220,9 +231,27 @@ S4() { # @room posts
   snap "bob asks to approve and adds a constraint (@room, via=human)"
 }
 
-S5() { # the orch drafts
+# Scripted human answers when the orch asks a member a question before it drafts (seat → @room reply).
+ANSWER_alice="@room put the next cursor in a Link header (rel=next) and keep the body a bare array"
+ANSWER_bob="@room fine by me, as long as \`after\` stays opaque"
+
+S5() { # the orch drafts; a question to a member gets that member's scripted human answer
+  local seen=0 i
+  for i in 1 2 3; do
+    wait_log --kind plan_rev,question --from orch --after "$seen" --timeout 240 --what "orch drafts a plan or asks a member" || break
+    local q; q=$($LIB last-id --kind plan_rev,question --from orch)
+    [ "$($LIB count --kind plan_rev)" -gt 0 ] && break
+    local to; to=$(node -e 'const {readLog,roomCode}=require(process.argv[1]);const l=readLog(roomCode()),q=+process.argv[2],e=l.find(x=>x.id===q);if(e&&!l.some(x=>x.id>q&&x.from===e.to&&x.via==="human"))process.stdout.write(e.to||"")' "$REPO/scripts/snap.js" "$q")
+    seen=$q
+    case "$to" in alice|bob)
+      local var="ANSWER_$to"
+      snap "The orch asks $to a question before drafting (#$q)"
+      act "$to" "answer the orch's question with @room" submit "$to" "${!var}"
+      wait_log --kind say --from "$to" --via human --after "$q" --timeout "$(T 60)" ;;
+    esac
+  done
   wait_pane orch "[Pp]lan|[Ww]rit|draft" 120
-  sleep 5
+  sleep 3
   snap "The orch drafts a plan: rows read drafting; the orch's own status line"
 }
 
@@ -236,9 +265,9 @@ S6() { # plan published → native forms
 
 S7() { # bob objects
   local reason='cap the page at 50 and say what happens past it — `limit=500` must clamp, not 400'
-  act bob "in the form choose Object and type the reason: $reason" form_object bob "$reason"
-  sleep 1
+  act bob "in the form choose Object and type the reason: $reason" form_object_fill bob "$reason"
   snap "bob objects in his form with a typed reason (before the log shows it)"
+  act bob "press Enter twice to send the objection" form_submit bob
   wait_log --kind objection --from bob --via human --latest-plan --timeout "$(T 60)"
   sleep 6
   snap "bob's objection (via=human, reason byte-exact) shows in the orch and alice rows"
@@ -251,57 +280,76 @@ S8() { # revision, both approve
   snap "The orch revises: the stale form is replaced by the new revision's form"
   act alice "choose Approve in the form" form_approve alice
   wait_log --kind signoff --from alice --via human --latest-plan --timeout "$(T 60)"
+  sleep 1.5
+  snap "alice approves the revision: ✓ signed on her row"
   act bob "choose Approve in the form" form_approve bob
   wait_log --kind signoff --from bob --via human --latest-plan --timeout "$(T 60)"
-  sleep 4
+  sleep 1
   snap "Both approve the revision: ✓ signed on both rows; matrix complete"
 }
 
 S9() { # automatic exit
   wait_log --kind decision --latest-plan --timeout 180
-  wait_pane orch "assign|Assign" 180
+  local d; d=$($LIB last-id --kind decision)
+  wait_log --kind status,say,proposal --from orch --via agent --after "$d" --timeout 180 --what "orch posts assignments after the decision"
   sleep 6
   snap "Automatic exit: the orch leaves plan mode with no dialog; decision; assignments; rows read ✓ decided"
 }
 
-S10() { # background work
+S10() { # background work; alice (scripted) answers her own Claude's permission dialogs, as she would
   local before; before=$($LIB log-max)
   act alice "type: go" submit alice "go — do your part of the decided plan in a background subagent and post status with evidence"
   wait_log --kind status --from alice --after "$before" --timeout "$(T 180)"
   sleep 5
   snap "alice's Claude works in a native background subagent; her status shows in the others' rows"
-  wait_log --kind status --from alice --after "$before" --count 2 --timeout "$(T 400)"
-  sleep 3
+  act alice "approve your Claude's permission prompts until it posts its result" \
+    $LIB approve-until sh-alice --kind status --from alice --after "$before" --count 2 --timeout "$(T 480)"
+  is_human alice && wait_log --kind status --from alice --after "$before" --count 2 --timeout "$(T 480)"
+  sleep 4
   snap "alice's status with evidence (test output) in the others' rows"
 }
 
-S11() { # resilience: /clear in alice, --resume in bob
+panel_row() { echo "^\s*(❯\s*)?(└\s*)?[⏺◯]\s+$1(\s|$)"; }   # a row line in the agent panel
+
+S11() { # resilience: /clear in alice, resume in bob
   act alice "type /clear" submit alice "/clear"
-  sleep 15
-  wait_pane alice "$(room)" 60
-  snap "Rows survive /clear in alice's session"
+  sleep 10
+  wait_pane alice "$(panel_row "$(room)")" 60
+  sleep 3
+  snap "Rows survive /clear in alice's session (still one room row)"
   act bob "exit claude (/exit) and restart it with --continue" submit bob "/exit"
   sleep 4
   start_seat bob --continue   # the pane stays (remain-on-exit); respawn it resumed
   $LIB ready sh-bob --timeout 90
-  wait_pane bob "$(room)" "$(T 120)"
-  sleep 8
-  snap "bob restarts with --continue (resume): the restore prompt re-creates his rows"
+  sleep 3
+  snap "bob is back with --continue: the restore context is in, but no turn has run yet (no rows)"
+  # SessionStart context starts no model turn: the rows come back on bob's first prompt
+  act bob "type: what did I miss?" submit bob "what did I miss?"
+  wait_pane bob "$(panel_row "$(room)")" "$(T 120)"
+  sleep 5
+  snap "bob's first prompt after the resume: his Claude re-creates the room row from the restore prompt"
 }
 
-S11b() { # nested view in alice's panel: ↓ manage, ↓ room, Enter; ↓ bob, Enter; ↑ + Enter back
-  act alice "focus the agent panel (↓), select the room row (↓), Enter" keys alice Down Down Enter
+S11b() { # nested view in alice's panel: select the room row, Enter; ↓ bob, Enter; ↑ + Enter back
+  # alice's room re-adds bob's row after his resume (hold returns JOINED bob): wait for its live hold
+  $LIB wait-holds alice bob --timeout 90
+  act alice "focus the agent panel (↓ until the room row is selected), Enter" sh_select alice "$(room)"
+  act alice "" keys alice Enter
   sleep 3
   snap "alice opens the room row: bob listed inside it, one level down (no breadcrumb)"
-  act alice "↓ to bob, Enter" keys alice Down Enter
+  act alice "↓ to bob, Enter" sh_select alice bob
+  act alice "" keys alice Enter
   sleep 3
   snap "alice opens bob's row inside the room: bob's thread, his words and his Claude's, labelled"
-  act alice "↑ to the room row, Enter (Esc twice would stop the row)" keys alice Up Enter
+  act alice "↑ to the room row, Enter (Esc twice would stop the row)" sh_select alice "$(room)" --key Up
+  act alice "" keys alice Enter
   sleep 3
   snap "Back up one level with ↑ to the parent row + Enter"
-  act alice "↑ to main, Enter" keys alice Up Enter
+  act alice "↑ to main, Enter" sh_select alice main --key Up
+  act alice "" keys alice Enter
   sleep 2
 }
+sh_select() { local s=$1; shift; $LIB select-row "sh-$s" "$@"; }
 
 S12() { # leave
   act bob "type /exit" submit bob "/exit"
@@ -319,6 +367,15 @@ if [ "$WINDOWS" = 2 ]; then write_launcher; open_windows; exit 0; fi
 if [ -n "$ONLY$FROM" ]; then RESET=0; fi
 setup
 [ -z "$ROOM" ] && [ -d "$SUB_HUMAN_HOME/rooms" ] && ROOM=$(room) && export SUB_HUMAN_ROOM="$ROOM"
+
+prune_index() { # scenes… — drop their captures from screens/index.json before re-running them
+  node -e 'const fs=require("fs"),f=process.argv[1],drop=new Set(process.argv.slice(2));let i=[];try{i=JSON.parse(fs.readFileSync(f,"utf8"))}catch{};fs.writeFileSync(f,JSON.stringify(i.filter(r=>!drop.has(r.scene)),null,1)+"\n")' "$SNAP_DIR/index.json" "$@"
+}
+if [ "$RESET" = 0 ]; then
+  run=(); on=0; [ -z "$FROM" ] && on=1
+  for x in "${ALL[@]}"; do [ "$x" = "$FROM" ] && on=1; [ "$on" = 1 ] || continue; [ -n "$ONLY" ] && [[ "$ONLY" != *",$x,"* ]] && continue; run+=("$x"); done
+  [ ${#run[@]} -gt 0 ] && prune_index "${run[@]}"
+fi
 
 started=0; [ -z "$FROM" ] && started=1
 for SCENE in "${ALL[@]}"; do

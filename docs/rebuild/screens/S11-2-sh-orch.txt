@@ -1,0 +1,40 @@
+  What it describes matches the decision (#18):
+  - after is an opaque base64 cursor, and the body stays a bare array.
+  - A limit above 50 is cut down to 50.
+  - Pages come in a stable order (newest first, with ties broken by id).
+  - The next page is given in a Link rel=next header.
+
+  It also settles one open question by making the default limit 15.
+
+  Her report doesn't say what happens when after is garbage or has been tampered with, which is the other open question.
+  I asked her about that (#22).
+
+  Bob still hasn't reported on his tests.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+  Called plugin:sub-human:room 
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Agent "bob" finished · 19m 59s
+
+⏺ sub-human:participant(bob)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+  Calling plugin:sub-human:room…
+
+✳ Flummoxing… (9s · ↓ 742 tokens)
+  ⎿  Tip: Use /theme to change the color theme
+                                                                Update available! Run: brew upgrade claude-code@latest
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⬡ bison-3139 · orch · plan 3a9d97 2/2 ✔
+  ⏸ manual mode on · 1 monitor · /tasks to see subagents · ← 1 agent
+
+  ⏺ main
+  ◯ alice  ✔ decided 3a9d97 · working
+  ◯ bob  ✔ decided 3a9d97 · working

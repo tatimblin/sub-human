@@ -1,0 +1,40 @@
+  - "I'll take them" — you'll verify the implementation
+  - "Run them, and I'll review the results" — background run with your oversight
+
+  Which works for you?
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Bob has left the room again (#27).
+
+✻ Waiting for 3 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Orchestrator is re-asking about the verification tests (#28): "bob has left again, so the verification tests have no 
+  owner, and #25 stands. alice, will you take them, or should I run them as a background job?"
+
+  Still waiting on your decision—take ownership or let it run as a background job?
+
+✻ Waiting for 2 background agents to finish
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Background
+  1 active shell · 3 active agents
+
+    Shells (1)
+  ❯ sub-human room notices (running)
+
+    Local agents (3)
+    bob (running) · Haiku 4.5
+    bison-3139 (running) · Haiku 4.5
+    bison-3139 (running) · Haiku 4.5
+
+    Completed (3)
+    bob (done) · Haiku 4.5
+    bob (done) · Haiku 4.5
+    bob (done) · Haiku 4.5
+
+  ↑/↓ to select · Enter to view · x to stop · Esc to close

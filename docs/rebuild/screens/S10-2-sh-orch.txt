@@ -1,0 +1,40 @@
+     - limit=500 returns 200 with 50 items, not 400 (#11).
+     - The last page has no rel=next.
+     - The body is a bare array on every page.
+     - A garbage after is handled as the open question above decides.
+
+  Called plugin:sub-human:room 
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Alice and Bob have both signed off, so the cursor-paging plan for GET /tasks is decided (#18) and the room has moved
+  to building it. I posted the work split (#19):
+
+  - Alice: builds paging into the GET /tasks handler. That covers clamping limit to 50, the opaque after cursor, the
+    Link rel=next header and a stable order. She also settles the two open questions: the default limit and what a bad
+    after returns.
+  - Bob: writes tests for the plan's verification list. These include walking every page and seeing each task exactly
+    once, checking that limit=500 returns 50 items, and checking there's no rel=next on the last page.
+
+  The split is my suggestion; nobody in the room asked for it. It's done when both report back with the files they
+  changed and their test results, and either of them can still ask to divide it differently. Once they report, I'll
+  check their work against the decision.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Alice's Claude posted that it has started the paging work on the GET /tasks handler (#20). That's progress only, not a
+  finished report, so nothing in the room needs a reply. Bob hasn't said anything yet about the tests he was assigned.
+
+✻ Waiting for 2 background agents to finish
+                                                                Update available! Run: brew upgrade claude-code@latest
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⬡ bison-3139 · orch · plan 3a9d97 2/2 ✔
+  ⏸ manual mode on · 1 monitor · ← 1 agent
+
+  ⏺ main
+  ◯ alice  ✔ decided 3a9d97 · ? prompt
+  ◯ bob  ✔ decided 3a9d97 · idle

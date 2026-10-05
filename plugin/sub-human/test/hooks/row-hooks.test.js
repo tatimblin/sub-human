@@ -93,11 +93,13 @@ test('row-hold: blocks a row agent that stops while its member is present (cappe
   rows.recordRow(code, 'sid-orch', 'a2', { kind: 'participant', name: 'bob', parent: null });
   assert.equal(stop('a2', 'left').json, null);
   assert.equal(rows.readRowMap(code).a2, undefined, 'a finished row is forgotten');
-  // The member left: no block, row forgotten.
+  // The member left: the row is still wanted (it reads "left" and comes back on rejoin).
   rows.recordRow(code, 'sid-orch', 'a3', { kind: 'participant', name: 'bob', parent: null });
   identity.leave(code, 'bob');
+  assert.equal(stop('a3', 'hmm').json.decision, 'block');
+  // The viewer left: no block.
+  identity.leave(code, 'orch');
   assert.equal(stop('a3', 'hmm').json, null);
-  assert.equal(rows.readRowMap(code).a3, undefined);
   // The room row re-holds with its room code while this seat is in the room.
   rows.recordRow(code, 'sid-alice', 'r1', { kind: 'room', name: code, parent: null });
   r = stop('r1', '', 'sub-human:room', 'sid-alice');
@@ -132,4 +134,27 @@ test('row-launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that 
   });
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /^\{"id":"a1","content":"alice {2}joined"\}\n?$/);
+});
+
+test('row-guard: denies spawning a row whose hold is live in this session; allows the rest', () => {
+  const { code } = world(['orch', 'alice', 'bob']);
+  const pre = (sid, ti, parent) => hook('row-guard', {
+    session_id: sid, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: ti,
+    ...(parent ? { agent_id: parent, agent_type: 'sub-human:room' } : {}),
+  });
+  const bob = { subagent_type: 'sub-human:participant', description: 'bob', prompt: 'member: bob', run_in_background: true };
+  const roomRow = { subagent_type: 'sub-human:room', description: code, prompt: `room: ${code}\nmembers: bob`, run_in_background: true };
+  assert.equal(pre('sid-alice', roomRow).stdout, '', 'nothing held yet');
+  assert.equal(pre('sid-alice', bob, 'room1').stdout, '');
+  rows.writeHolds(code, 'alice', { members: ['bob'], room: true }); // this test process = a live hold server
+  const d = pre('sid-alice', roomRow).json.hookSpecificOutput;
+  assert.equal(d.permissionDecision, 'deny');
+  assert.match(d.permissionDecisionReason, /already running/);
+  assert.equal(pre('sid-alice', bob, 'room1').json.hookSpecificOutput.permissionDecision, 'deny');
+  // The orch's rejoin spawn for bob: denied while orch's row for bob is live (it survived bob's leave).
+  rows.writeHolds(code, 'orch', { members: ['alice'] });
+  assert.equal(pre('sid-orch', bob).stdout, '', 'orch holds no bob row: allowed');
+  rows.writeHolds(code, 'orch', { members: ['alice', 'bob'] });
+  assert.equal(pre('sid-orch', bob).json.hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(pre('sid-orch', { subagent_type: 'Explore', description: 'bob', prompt: 'x' }).stdout, '', 'other agents untouched');
 });

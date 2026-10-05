@@ -1,0 +1,40 @@
+
+  The plan settles these points:
+  - Request: GET /tasks?limit=N&after=CURSOR, with limit capped at 50 and after an opaque cursor rather than a page
+    number.
+  - Response: the body stays a bare array of tasks, as it is today.
+  - Next page: the next cursor comes back in a Link header with rel="next", which is left off on the last page.
+  - Order: pages come in a stable order on a unique field, so no task is skipped or repeated.
+
+  Two questions are still open in the plan but don't block sign-off:
+  - What limit defaults to, and whether a value over 50 is cut down to 50 or rejected with a 400 error.
+  - What a bad or tampered after value returns; the plan suggests a 400 error.
+
+  Alice and Bob are the approvers: Alice proposed the feature and chose the response shape, and Bob asked to approve and
+  set the opaque-cursor rule. I'm staying in plan mode and will retry when a sign-off arrives.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Updated plan
+  ⎿  /plan to preview
+
+⏺ Updated plan
+  ⎿  /plan to preview
+
+⏺ Updated plan
+  ⎿  /plan to preview
+
+✽ Processing… (5s · ↓ 466 tokens)
+  ⎿  Tip: Use /theme to change the color theme
+                                                                Update available! Run: brew upgrade claude-code@latest
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⬡ bison-3139 · orch · plan 6a33e8 0/2 ✖ 1 objection waiting on alice,bob
+  ⏸ plan mode on · 1 monitor · ← 1 agent
+
+  ⏺ main
+  ◯ alice  ⚠ reviewing 6a33e8 · working
+  ◯ bob  ✖ objected 6a33e8 (#11)

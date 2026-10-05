@@ -66,6 +66,7 @@ New per-session files (row state) live in `<room>/rows/`. They're owned by B.
 | PreToolUse | `ExitPlanMode` | `plan-gate.js` | C |
 | PreToolUse | `Bash\|Write\|Edit\|MultiEdit\|NotebookEdit\|mcp__plugin_sub-human_room__.*` | `guard.js` | A |
 | PostToolUse | `ExitPlanMode` | `plan-result.js` | C (orch only) |
+| PreToolUse | `Agent\|Task` | `row-guard.js` (deny a row spawn whose hold is live) | B |
 | PostToolUse | `Agent\|Task` | `row-map.js` | B |
 | SubagentStop | — | `row-hold.js` | B |
 | SessionStart | all | `row-launcher.js` (writes the subagentStatusLine launcher) | B |
@@ -122,7 +123,7 @@ The `ctx` object:
 - `rowCalls(me, members)`: text for the model listing the exact Agent calls to make. A's `join.js` and `session-restore.js` and D's role text use it; don't hand-copy it.
 - `rowText(code, participantName, viewerName)`: deterministic row text from the log and presence.
 
-**Orchestrator rows.** One background `sub-human:participant` per member. Its prompt is `member: NAME`. It calls `hold({member: NAME})` once and never returns while NAME is in the room. It returns `STOP` when NAME leaves.
+**Orchestrator rows.** One background `sub-human:participant` per member. Its prompt is `member: NAME`. It calls `hold({member: NAME})` once and never returns while the viewer is in the room: when NAME leaves the row reads `left` and is live again on rejoin (one row per member, ever). `hold` returns `STOP` when the viewer leaves, or at once for a duplicate (a second live hold for the same row); `hooks/row-guard.js` (PreToolUse Agent) denies the duplicate spawn itself.
 
 **Member rows.** One background `sub-human:room` agent, labelled with the room code.
 - It spawns a `sub-human:participant` child for each **other** member except the orch. It also calls `hold({room: CODE})`, which returns `JOINED NAME` or `RESPAWN NAME`; on either, it spawns that child and holds again.

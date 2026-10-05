@@ -1,0 +1,40 @@
+Resume this session with:
+claude --resume "⬡ bison-3139 · bob"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Pane is dead (status 0, Mon Oct  5 08:34:49 2026)

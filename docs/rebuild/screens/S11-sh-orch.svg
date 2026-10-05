@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 734" width="960" height="734" role="img" aria-label="orch · S11" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13">
+<rect x="0.5" y="0.5" width="959" height="733" rx="9" fill="#16181d" stroke="#3a3e48"/>
+<path d="M0.5 30V9.5a9 9 0 0 1 9-9h941a9 9 0 0 1 9 9V30z" fill="#22252c"/>
+<line x1="0.5" y1="30" x2="959.5" y2="30" stroke="#3a3e48"/>
+<circle cx="16" cy="15" r="5.5" fill="#ff5f57"/>
+<circle cx="34" cy="15" r="5.5" fill="#febc2e"/>
+<circle cx="52" cy="15" r="5.5" fill="#28c840"/>
+<text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">orch · S11</text>
+<g fill="#d6dbe5">
+<text x="12" y="89" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="89" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="123" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="123" textLength="514.8" lengthAdjust="spacing" xml:space="preserve"> Alice's Claude posted that it has started the paging work on the </text>
+<text x="534.6" y="123" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="612.6" y="123" textLength="335.4" lengthAdjust="spacing" xml:space="preserve"> handler (#20). That's progress only, not a</text>
+<text x="12" y="140" textLength="920.4" lengthAdjust="spacing" xml:space="preserve">  finished report, so nothing in the room needs a reply. Bob hasn't said anything yet about the tests he was assigned.</text>
+<text x="12" y="174" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="174" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="174" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="174" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="208" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="208" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="27.6" y="242" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="253.8" y="242" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="261.6" y="242" fill="#949494" textLength="54.6" lengthAdjust="spacing" xml:space="preserve"> times </text>
+<text x="12" y="276" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="276" textLength="429" lengthAdjust="spacing" xml:space="preserve"> Alice's Claude reports the paging work is finished in </text>
+<text x="448.8" y="276" fill="#afd7ff" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">src/server.js</text>
+<text x="550.2" y="276" textLength="374.4" lengthAdjust="spacing" xml:space="preserve">, with all 12 tests passing (#21). I haven't run</text>
+<text x="12" y="293" textLength="382.2" lengthAdjust="spacing" xml:space="preserve">  anything myself; the test result is its report.</text>
+<text x="12" y="327" textLength="366.6" lengthAdjust="spacing" xml:space="preserve">  What it describes matches the decision (#18):</text>
+<text x="12" y="344" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="344" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="82.2" y="344" textLength="475.8" lengthAdjust="spacing" xml:space="preserve"> is an opaque base64 cursor, and the body stays a bare array.</text>
+<text x="12" y="361" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">  - A </text>
+<text x="58.8" y="361" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="97.8" y="361" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> above 50 is cut down to 50.</text>
+<text x="12" y="378" textLength="561.6" lengthAdjust="spacing" xml:space="preserve">  - Pages come in a stable order (newest first, with ties broken by id).</text>
+<text x="12" y="395" textLength="249.6" lengthAdjust="spacing" xml:space="preserve">  - The next page is given in a </text>
+<text x="261.6" y="395" fill="#afd7ff" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">Link rel=next</text>
+<text x="363" y="395" textLength="62.4" lengthAdjust="spacing" xml:space="preserve"> header.</text>
+<text x="12" y="429" textLength="452.4" lengthAdjust="spacing" xml:space="preserve">  It also settles one open question by making the default </text>
+<text x="464.4" y="429" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="503.4" y="429" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> 15.</text>
+<text x="12" y="463" textLength="335.4" lengthAdjust="spacing" xml:space="preserve">  Her report doesn't say what happens when </text>
+<text x="347.4" y="463" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="386.4" y="463" textLength="561.6" lengthAdjust="spacing" xml:space="preserve"> is garbage or has been tampered with, which is the other open question.</text>
+<text x="12" y="480" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">  I asked her about that (#22).</text>
+<text x="12" y="514" textLength="319.8" lengthAdjust="spacing" xml:space="preserve">  Bob still hasn't reported on his tests.</text>
+<text x="12" y="548" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="548" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="548" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="548" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="511.2" y="565" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
+<text x="690.6" y="565" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
+<text x="12" y="582" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─</text>
+<text x="12" y="599" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="27.6" y="633" fill="#949494" textLength="296.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⬡ bison-3139 · orch · plan 3a9d97 2/2 </text>
+<text x="324" y="633" fill="#98c379" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔</text>
+<text x="27.6" y="650" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ manual mode on · </text>
+<text x="175.8" y="650" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
+<text x="246" y="650" fill="#949494" textLength="93.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent</text>
+<text x="12" y="684" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
+<text x="12" y="701" fill="#949494" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ alice  </text>
+<text x="97.8" y="701" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided 3a9d97</text>
+<text x="222.6" y="701" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="246" y="701" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
+<text x="12" y="718" fill="#949494" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ bob  </text>
+<text x="82.2" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided 3a9d97</text>
+<text x="207" y="718" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="230.4" y="718" fill="#949494" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">idle</text>
+</g></svg>

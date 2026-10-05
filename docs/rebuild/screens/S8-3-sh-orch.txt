@@ -1,0 +1,40 @@
+  ⎿  Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan 3a9d9726e017 lacks sign-off from alice and bob. The 
+     sign-off form is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan 
+     mode. Published as plan_rev #13 (replaces 6a33e89fc359; earlier sign-offs no longer count).
+
+⏺ Bob objected to the first plan (#11): a limit over 50 must be cut down to 50, not rejected with a 400 error. I revised
+  the plan to say that, so limit=500 now returns 50 items.
+
+  - Plan changes: I dropped that point from the open questions, added a check that limit=500 returns 50 items, and noted
+    that Bob set this rule.
+  - Room notice: I posted a status (#12) saying the revision voids any sign-off on the old plan.
+  - Republished: the revised plan went out as plan_rev #13 (hash 3a9d9726e017).
+
+  Alice and Bob each need to sign off again; their new forms are already in their terminals. The only open question left
+  is what limit defaults to when it's omitted. I'm staying in plan mode until a sign-off arrives.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+  ⎿  Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan 3a9d9726e017 lacks sign-off from bob. The sign-off form
+     is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan mode.
+
+⏺ Alice has signed off on the revised plan (#15, hash 3a9d9726e017). It still needs Bob's sign-off, and his form is
+  already in his terminal. I'll retry when it arrives, staying in plan mode until then.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+✽ Wibbling… 
+  ⎿  Tip: Use /theme to change the color theme
+                                                                Update available! Run: brew upgrade claude-code@latest
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⬡ bison-3139 · orch · plan 3a9d97 2/2
+  ⏸ plan mode on · 1 monitor · ← 1 agent
+
+  ⏺ main
+  ◯ alice  ✓ signed 3a9d97 · working
+  ◯ bob  ⚠ reviewing 3a9d97 · working

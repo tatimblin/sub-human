@@ -33,7 +33,7 @@ test('session-restore: the digest is capped; ROWS asks to re-create rows only if
   const c = ctx(r);
   assert.ok(c.length <= 9500);
   assert.match(c, /ROSTER\n/);
-  if (hasRows()) assert.match(c, /ROWS\nYour participant rows normally survive this\. Re-create a row below only if it is missing/);
+  if (hasRows()) assert.match(c, /ROWS\nYour rows are not running[^]*subagent_type: "sub-human:room"/, 'no live hold: the room row is listed');
   assert.equal(hso(r).sessionTitle, `⬡ ${w.code} · alice`);
   const r2 = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'alice' });
   assert.match(ctx(r2), /restored after compact/);
@@ -51,7 +51,7 @@ test('session-restore: --resume after the session ended rejoins the seat with a 
   assert.equal(r.code, 0, r.stderr);
   const c = ctx(r);
   assert.ok(c.startsWith(`SUB-HUMAN role=member name=alice room=${w.code} (restored after resume)`), c.slice(0, 100));
-  if (hasRows()) assert.match(c, /ROWS\nYour participant rows are gone \(they do not survive --resume\)\. Re-create them now/);
+  if (hasRows()) assert.match(c, /ROWS\nYour rows are not running \(they do not survive --resume\)\. Create them now/);
   const m = w.members().alice;
   assert.equal(m.left_at, undefined);
   assert.equal(m.pid, process.pid);

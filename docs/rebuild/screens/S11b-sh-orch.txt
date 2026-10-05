@@ -1,0 +1,40 @@
+  Her report doesn't say what happens when after is garbage or has been tampered with, which is the other open question.
+  I asked her about that (#22).
+
+  Bob still hasn't reported on his tests.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+  Called plugin:sub-human:room 
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Agent "bob" finished · 19m 59s
+
+⏺ sub-human:participant(bob)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+  Called plugin:sub-human:room 
+
+⏺ Bob left the room (#23), and since he owned the verification tests, I asked Alice whether she'd take them over (#25).
+  He rejoined right after (#24), so his row is back in the panel.
+
+  I posted to Bob (#26) that the plan is decided and Alice reports the handler is done in src/server.js. The same post
+  tells him the tests are still his and that #25 can be ignored.
+
+  My earlier question to Alice (#22) is still unanswered: what does a garbage or tampered after return? I'm waiting on
+  that answer and on Bob's test report.
+
+✻ Waiting for 2 background agents to finish
+                                                                Update available! Run: brew upgrade claude-code@latest
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⬡ bison-3139 · orch · plan 3a9d97 2/2 ✔
+  ⏸ manual mode on · 1 monitor · /tasks to see subagents · ← 1 agent
+
+  ⏺ main
+  ◯ alice  ✔ decided 3a9d97 · working
+  ◯ bob  ✔ decided 3a9d97 · working

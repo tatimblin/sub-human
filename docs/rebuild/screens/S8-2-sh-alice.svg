@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 734" width="960" height="734" role="img" aria-label="alice · S8" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13">
+<rect x="0.5" y="0.5" width="959" height="733" rx="9" fill="#16181d" stroke="#3a3e48"/>
+<path d="M0.5 30V9.5a9 9 0 0 1 9-9h941a9 9 0 0 1 9 9V30z" fill="#22252c"/>
+<line x1="0.5" y1="30" x2="959.5" y2="30" stroke="#3a3e48"/>
+<circle cx="16" cy="15" r="5.5" fill="#ff5f57"/>
+<circle cx="34" cy="15" r="5.5" fill="#febc2e"/>
+<circle cx="52" cy="15" r="5.5" fill="#28c840"/>
+<text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">alice · S8</text>
+<g fill="#d6dbe5">
+<text x="12" y="72" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="72" fill="#ffd700" textLength="335.4" lengthAdjust="spacing" xml:space="preserve">UserPromptSubmit operation blocked by hook:</text>
+<text x="27.6" y="89" fill="#ffd700" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✓ posted to bison-3139 as #8</text>
+<text x="12" y="123" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="123" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="157" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="157" textLength="249.6" lengthAdjust="spacing" xml:space="preserve"> A sign-off form is up for plan </text>
+<text x="269.4" y="157" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">6a33e89fc359</text>
+<text x="363" y="157" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> — you and bob are the approvers.</text>
+<text x="27.6" y="191" font-weight="bold" textLength="39" lengthAdjust="spacing" xml:space="preserve">Enter</text>
+<text x="66.6" y="191" textLength="124.8" lengthAdjust="spacing" xml:space="preserve"> to approve, or </text>
+<text x="191.4" y="191" font-weight="bold" textLength="93.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">↓ then Enter</text>
+<text x="285" y="191" textLength="382.2" lengthAdjust="spacing" xml:space="preserve"> to object (you'll be asked what should change). </text>
+<text x="667.2" y="191" font-weight="bold" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">Esc</text>
+<text x="690.6" y="191" textLength="93.6" lengthAdjust="spacing" xml:space="preserve"> to dismiss.</text>
+<text x="12" y="225" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="225" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="225" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="225" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="259" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="259" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="293" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="293" textLength="54.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> #11 — </text>
+<text x="74.4" y="293" font-weight="bold" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">bob</text>
+<text x="97.8" y="293" textLength="499.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (objection): cap the page at 50 and say what happens past it — </text>
+<text x="597" y="293" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">limit=500</text>
+<text x="667.2" y="293" textLength="163.8" lengthAdjust="spacing" xml:space="preserve"> must clamp, not 400.</text>
+<text x="12" y="327" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="327" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="327" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="327" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="361" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="361" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="395" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="395" textLength="54.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> #12 — </text>
+<text x="74.4" y="395" font-weight="bold" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">orch</text>
+<text x="105.6" y="395" textLength="468" lengthAdjust="spacing" xml:space="preserve"> (status): The plan is revised for bob's objection (#11): a </text>
+<text x="573.6" y="395" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="612.6" y="395" textLength="288.6" lengthAdjust="spacing" xml:space="preserve"> above 50 now clamps to 50 instead of</text>
+<text x="12" y="412" textLength="522.6" lengthAdjust="spacing" xml:space="preserve">  returning 400. This voids any sign-off, so you'll get a new form.</text>
+<text x="12" y="446" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="446" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="446" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="446" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="480" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="480" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="514" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="514" textLength="374.4" lengthAdjust="spacing" xml:space="preserve"> A new sign-off form is up for the revised plan </text>
+<text x="394.2" y="514" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">3a9d9726e017</text>
+<text x="487.8" y="514" xml:space="preserve">.</text>
+<text x="27.6" y="548" font-weight="bold" textLength="39" lengthAdjust="spacing" xml:space="preserve">Enter</text>
+<text x="66.6" y="548" textLength="124.8" lengthAdjust="spacing" xml:space="preserve"> to approve, or </text>
+<text x="191.4" y="548" font-weight="bold" textLength="93.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">↓ then Enter</text>
+<text x="285" y="548" textLength="85.8" lengthAdjust="spacing" xml:space="preserve"> to object.</text>
+<text x="12" y="582" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="582" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="582" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="582" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="511.2" y="599" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
+<text x="690.6" y="599" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · alice ─</text>
+<text x="12" y="633" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="27.6" y="667" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ manual mode on · </text>
+<text x="175.8" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
+<text x="246" y="667" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
+<text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
+<text x="12" y="718" fill="#949494" textLength="241.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ bison-3139  plan 3a9d97 1/2</text>
+</g></svg>

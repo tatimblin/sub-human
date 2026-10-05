@@ -3,10 +3,12 @@
  * plugin/sub-human/mcp/hold.js: the `hold` tool, a room-server plug-in (create(ctx) -> {tools, call}).
  * It keeps participant rows open in the agent panel at zero tokens (E3 "A2", P0 nested rows).
  *
- *   hold({member: NAME})   called once by a sub-human:participant row agent. Blocks while NAME is in the room,
- *       streaming notifications/progress (the latest entry of NAME's thread, re-sent every BEAT_MS so the MCP
- *       idle timeout never fires). Returns "STOP: ..." when NAME leaves, when this seat leaves, when NAME is
- *       this seat, or when another row for NAME is already held here (duplicate spawn).
+ *   hold({member: NAME})   called once by a sub-human:participant row agent. Blocks for as long as this seat is in
+ *       the room, streaming notifications/progress (the latest entry of NAME's thread, re-sent every BEAT_MS so
+ *       the MCP idle timeout never fires). NAME leaving does NOT end it: the row reads "left" (lib/rows.js
+ *       rowText) and is live again on rejoin, so leave/rejoin never makes a second row. Returns "STOP: ..." when
+ *       this seat leaves, when NAME is this seat or was never in the room, or when another row for NAME is
+ *       already held here ("STOP: duplicate row": the newcomer ends, the first row stays).
  *   hold({room: CODE})     called by the member's sub-human:room row agent. Blocks; returns
  *       "JOINED a b"   other members (not the orch, not me) with no live hold here: someone joined, or the
  *                      room never spawned their row. A name is announced only after GRACE_MS without a hold
@@ -15,7 +17,8 @@
  *       "RESPAWN a"    a's hold here was cancelled (Esc twice on the row; P0) while a is still in the room.
  *                      Checked after RESPAWN_DELAY_MS; dropped when the room hold itself was cancelled too
  *                      (killing the room cascades to its children).
- *       Both can come back together, one line each. "STOP: ..." when this seat left the room.
+ *       Both can come back together, one line each. "STOP: ..." when this seat left the room, or
+ *       "STOP: duplicate row" at once when another room row already holds here (e.g. re-spawned after /clear).
  * One server serves the whole claude session (main + every subagent), so it sees every row's hold.
  * Liveness goes to <room>/rows/holds-<me>.json (lib/rows.js) for the status line's "rows missing" check.
  *
@@ -48,7 +51,7 @@ function entryLine(e) {
 
 const TOOL = {
   name: 'hold',
-  description: 'ONLY for sub-human row agents (sub-human:participant, sub-human:room). Never call it from your main session: it blocks for as long as the room lasts. {member: NAME} holds NAME\'s row open and returns STOP when NAME leaves. {room: CODE} holds the room row and returns "JOINED NAME..." or "RESPAWN NAME..." (spawn those rows, then hold again) or STOP.',
+  description: 'ONLY for sub-human row agents (sub-human:participant, sub-human:room). Never call it from your main session: it blocks for as long as the room lasts. {member: NAME} holds NAME\'s row open (also while NAME is away) and returns STOP when you leave the room. {room: CODE} holds the room row and returns "JOINED NAME..." or "RESPAWN NAME..." (spawn those rows, then hold again) or STOP.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -167,8 +170,7 @@ function create(ctx) {
       const { fresh } = readEntries(code);
       for (const h of [...holds.values()].filter(x => x.code === code)) {
         if (h.kind === 'member') {
-          const leftEntry = fresh.find(e => e.kind === 'member_left' && e.from === h.name);
-          if (!present(ms, h.name) || leftEntry) { finish(h, `STOP: ${h.name} left room ${code}. ${END}`); continue; }
+          // NAME leaving keeps the row (it reads "left"); only this seat leaving ends it (above).
           const mine = fresh.filter(e => e.from === h.name || e.to === h.name);
           if (mine.length) progress(h, entryLine(mine.at(-1)));
         } else {
@@ -224,7 +226,8 @@ function create(ctx) {
     if (name !== 'hold') return null;
     let cur = who0;
     if (!cur) { try { cur = ctx.whoami(); } catch { cur = null; } }
-    if (!cur) return text(`STOP: not in a room. ${END}`);
+    const early = s => { log('RETURN now', meta.id, args.member || args.room || '', s); return text(s); };
+    if (!cur) return early(`STOP: not in a room. ${END}`);
     me = cur; meAt = Date.now();
     seat = seat && seat.code === cur.code && seat.name === cur.name ? seat : { code: cur.code, name: cur.name };
     const code = cur.code;
@@ -233,17 +236,19 @@ function create(ctx) {
     const h = { id: meta.id, token: meta.progressToken, n: 0, msg: '', sentAt: 0, code, started: Date.now() };
 
     if (member) {
-      if (!NAME_RE.test(member)) return text(`STOP: "${member}" is not a member name. ${END}`);
-      if (member === cur.name) return text(`STOP: that is you; rows are for the others. ${END}`);
+      if (!NAME_RE.test(member)) return early(`STOP: "${member}" is not a member name. ${END}`);
+      if (member === cur.name) return early(`STOP: that is you; rows are for the others. ${END}`);
       const ms = members(code);
-      if (!present(ms, member)) return text(`STOP: ${member} is not in room ${code}. ${END}`);
-      if (memberHolds(code).some(x => x.name === member)) return text(`STOP: ${member}'s row is already open. ${END}`);
+      // A member who left is still a row (it reads "left"); only a name never in the room is refused.
+      if (!ms[member]) return early(`STOP: ${member} is not in room ${code}. ${END}`);
+      if (memberHolds(code).some(x => x.name === member)) return early(`STOP: duplicate row: ${member}'s row is already open. ${END}`);
       Object.assign(h, { kind: 'member', name: member });
       expect.delete(`${code}/${member}`);
       const last = readEntries(code).entries.filter(e => e.from === member || e.to === member).at(-1);
       h.msg = last ? entryLine(last) : `${member} · in room ${code}`;
     } else if (roomCode) {
-      if (roomCode !== code) return text(`STOP: you are in room ${code}, not ${roomCode}. ${END}`);
+      if (roomCode !== code) return early(`STOP: you are in room ${code}, not ${roomCode}. ${END}`);
+      if (roomHolds(code).length) return early(`STOP: duplicate row: room ${code} already has its row. ${END}`);
       const now = Date.now();
       const ms = members(code);
       // Children spawned in the same message as this call are on their way: expect them before announcing.

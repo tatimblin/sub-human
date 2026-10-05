@@ -134,7 +134,7 @@ True nesting works in 2.1.281. The details are in `docs/experiments/P0-nested-ro
 | S10 | Background work | alice's Claude runs her part in a native background subagent, shown in her panel; her `status` with evidence in the others' rows | Status cites evidence |
 | S11 | Resilience | Rows survive `/clear` in alice's session; bob runs `--resume`, then rows are re-created after the restore prompt | Rows present after both |
 | S11b | Nested view | alice opens the room row (main › marmot-2509) and sees bob inside, then opens bob (main › marmot-2509 › bob) to read his thread; Esc returns | Breadcrumb and nesting match |
-| S12 | Leave | bob exits, and his row disappears from the orch and alice panels | `member_left` |
+| S12 | Leave | bob exits; his row stays (one row per person, ever) and reads `left` in the orch and alice panels, and comes back to life if he rejoins | `member_left` |
 
 The **Ghostty view** is optional: for a live look, `scripts/demo.sh --windows` attaches read-only Ghostty windows to the three tmux sessions. Real window screenshots (`screencapture -l`) need Screen Recording permission, so they're opt-in. The SVG captures are the deterministic record.
 

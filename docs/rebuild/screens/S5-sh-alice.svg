@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 734" width="960" height="734" role="img" aria-label="alice · S5" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13">
+<rect x="0.5" y="0.5" width="959" height="733" rx="9" fill="#16181d" stroke="#3a3e48"/>
+<path d="M0.5 30V9.5a9 9 0 0 1 9-9h941a9 9 0 0 1 9 9V30z" fill="#22252c"/>
+<line x1="0.5" y1="30" x2="959.5" y2="30" stroke="#3a3e48"/>
+<circle cx="16" cy="15" r="5.5" fill="#ff5f57"/>
+<circle cx="34" cy="15" r="5.5" fill="#febc2e"/>
+<circle cx="52" cy="15" r="5.5" fill="#28c840"/>
+<text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">alice · S5</text>
+<g fill="#d6dbe5">
+<text x="12" y="72" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="72" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="106" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="106" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> #2 — </text>
+<text x="66.6" y="106" font-weight="bold" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">orch</text>
+<text x="97.8" y="106" textLength="655.2" lengthAdjust="spacing" xml:space="preserve"> (status): Welcome, alice. We're starting with converge: what should this room plan?</text>
+<text x="12" y="140" textLength="725.4" lengthAdjust="spacing" xml:space="preserve">  What would you like to tell the room about what this plan should cover? You can reply with </text>
+<text x="737.4" y="140" fill="#afd7ff" textLength="148.2" lengthAdjust="spacing" xml:space="preserve">@room &lt;your answer&gt;</text>
+<text x="885.6" y="140" xml:space="preserve">.</text>
+<text x="12" y="174" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="174" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="174" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
+<text x="129" y="174" fill="#949494" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> background agent to finish</text>
+<text x="12" y="208" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="208" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="242" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="242" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> #3 — </text>
+<text x="66.6" y="242" font-weight="bold" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">bob</text>
+<text x="90" y="242" textLength="132.6" lengthAdjust="spacing" xml:space="preserve"> joined the room.</text>
+<text x="12" y="276" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="276" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="276" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
+<text x="129" y="276" fill="#949494" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> background agent to finish</text>
+<text x="12" y="310" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="310" fill="#ffd700" textLength="335.4" lengthAdjust="spacing" xml:space="preserve">UserPromptSubmit operation blocked by hook:</text>
+<text x="27.6" y="327" fill="#ffd700" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✓ posted to bison-3139 as #4</text>
+<text x="12" y="361" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="361" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="395" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="395" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> #6 — </text>
+<text x="66.6" y="395" font-weight="bold" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">bob</text>
+<text x="90" y="395" textLength="296.4" lengthAdjust="spacing" xml:space="preserve"> (say): &quot;I want to approve this. Keep </text>
+<text x="386.4" y="395" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="425.4" y="395" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> opaque, not a page number.&quot;</text>
+<text x="12" y="429" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="429" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="429" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="429" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="463" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="463" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="497" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="497" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> #7 — </text>
+<text x="66.6" y="497" font-weight="bold" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">orch</text>
+<text x="97.8" y="497" textLength="234" lengthAdjust="spacing" xml:space="preserve"> (question to you): bob wants </text>
+<text x="331.8" y="497" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="370.8" y="497" textLength="561.6" lengthAdjust="spacing" xml:space="preserve"> to be opaque (#6), but a bare array (#4) has nowhere to return the next</text>
+<text x="12" y="514" textLength="405.6" lengthAdjust="spacing" xml:space="preserve">  cursor. Should it go in a response header such as </text>
+<text x="417.6" y="514" fill="#afd7ff" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">Link</text>
+<text x="448.8" y="514" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> or </text>
+<text x="480" y="514" fill="#afd7ff" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">X-Next-Cursor</text>
+<text x="581.4" y="514" textLength="218.4" lengthAdjust="spacing" xml:space="preserve">, or should the body change?</text>
+<text x="12" y="548" textLength="608.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  What's your take—header, body change, or something else? You can reply with </text>
+<text x="620.4" y="548" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">@room</text>
+<text x="659.4" y="548" xml:space="preserve">.</text>
+<text x="12" y="582" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="582" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="582" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="582" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="511.2" y="599" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
+<text x="690.6" y="599" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · alice ─</text>
+<text x="12" y="633" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="27.6" y="667" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ manual mode on · </text>
+<text x="175.8" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
+<text x="246" y="667" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
+<text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
+<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ bison-3139  </text>
+<text x="136.8" y="718" fill="#949494" opacity="0.6" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">3 here</text>
+<text x="183.6" y="718" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="207" y="718" fill="#e5c07b" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✉ 1 for you</text>
+</g></svg>

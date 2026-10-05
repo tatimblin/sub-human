@@ -1,0 +1,40 @@
+  Two questions are still open in the plan but don't block sign-off:
+  - What limit defaults to, and whether a value over 50 is cut down to 50 or rejected with a 400 error.
+  - What a bad or tampered after value returns; the plan suggests a 400 error.
+
+  Alice and Bob are the approvers: Alice proposed the feature and chose the response shape, and Bob asked to approve and
+  set the opaque-cursor rule. I'm staying in plan mode and will retry when a sign-off arrives.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Updated plan
+  ⎿  /plan to preview
+
+⏺ Updated plan
+  ⎿  /plan to preview
+
+⏺ Updated plan
+  ⎿  /plan to preview
+
+⏺ Updated plan
+  ⎿  /plan to preview
+
+  Called plugin:sub-human:room 
+  ⎿  Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan 3a9d9726e017 lacks sign-off from alice and bob. The 
+     sign-off form is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan 
+     mode. Published as plan_rev #13 (replaces 6a33e89fc359; earlier sign-offs no longer count).
+
+✻ Processing… (11s · ↓ 1.1k tokens)
+  ⎿  Tip: Use /theme to change the color theme
+                                                                Update available! Run: brew upgrade claude-code@latest
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⬡ bison-3139 · orch · plan 3a9d97 0/2 waiting on alice,bob
+  ⏸ plan mode on · 1 monitor · ← 1 agent
+
+  ⏺ main
+  ◯ alice  ⚠ reviewing 3a9d97 · working
+  ◯ bob  ⚠ reviewing 3a9d97 · working

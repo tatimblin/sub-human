@@ -1,0 +1,278 @@
+{
+ "S1": [
+  {
+   "check": "Room dir exists with a log and members.json",
+   "pass": true,
+   "evidence": "/tmp/sh-demo/home/rooms/bison-3139: members orch, alice, bob"
+  },
+  {
+   "check": "The orch session runs agent_type sub-human:orchestrator, registered as role orch",
+   "pass": true,
+   "evidence": "pane header shows \"@sub-human:orchestrator\"; members.json orch.role=orch"
+  },
+  {
+   "check": "Invite banner and status line ⬡ bison-3139 · orch",
+   "pass": true,
+   "evidence": "banner present; status line \"⬡ bison-3139 · orch\" (S1-sh-orch.txt)"
+  }
+ ],
+ "S2": [
+  {
+   "check": "member_joined alice",
+   "pass": true,
+   "evidence": "#1 alice system member_joined: alice joined"
+  },
+  {
+   "check": "Row ids mapped: alice's room row, the orch's alice row",
+   "pass": true,
+   "evidence": "rows/a14906a5…json room row yes; orch map alice → a1c5c07e2eb828f03"
+  },
+  {
+   "check": "alice's panel: one bison-3139 row and no status line",
+   "pass": true,
+   "evidence": "alice rows: ◯ bison-3139 2 here; status line: none"
+  },
+  {
+   "check": "orch panel has an alice row",
+   "pass": true,
+   "evidence": "orch rows: ◯ alice working"
+  }
+ ],
+ "S3": [
+  {
+   "check": "member_joined bob",
+   "pass": true,
+   "evidence": "#3 bob system member_joined: bob joined"
+  },
+  {
+   "check": "Row ids mapped: bob's room row, the orch's bob row",
+   "pass": false,
+   "evidence": "rows/9892d3b0…json room row yes; orch map bob → none"
+  },
+  {
+   "check": "orch: 2 rows (alice, bob)",
+   "pass": true,
+   "evidence": "orch rows: ◯ alice working | ◯ bob working"
+  },
+  {
+   "check": "members: 1 row each (bison-3139)",
+   "pass": true,
+   "evidence": "alice: ◯ bison-3139 3 here · ✉ 1 for you; bob: ◯ bison-3139 3 here"
+  }
+ ],
+ "S4": [
+  {
+   "check": "alice's @room text identical byte for byte, via=human",
+   "pass": true,
+   "evidence": "#4 via=human text === typed (71 bytes)"
+  },
+  {
+   "check": "alice's @room ran 0 model turns",
+   "pass": true,
+   "evidence": "211b9ad0…: hook receipt for #4, no assistant message before the next user/notification entry"
+  },
+  {
+   "check": "bob's @room text identical byte for byte, via=human",
+   "pass": true,
+   "evidence": "#6 via=human text === typed (63 bytes)"
+  },
+  {
+   "check": "bob's @room ran 0 model turns",
+   "pass": true,
+   "evidence": "9892d3b0…: queued prompt removed with reason dropped_by_hook (#6); it never reached the model"
+  },
+  {
+   "check": "Receipt ✓ posted … as #N in alice's pane",
+   "pass": true,
+   "evidence": "\"posted to bison-3139 as #4\""
+  },
+  {
+   "check": "The orch's alice row updates with her post",
+   "pass": true,
+   "evidence": "orch alice row: ◯ alice #4 say 2s"
+  }
+ ],
+ "S5": [
+  {
+   "check": "The orch's own status line is shown",
+   "pass": true,
+   "evidence": "status line: \"⬡ bison-3139 · orch\""
+  }
+ ],
+ "S6": [
+  {
+   "check": "plan_rev published",
+   "pass": true,
+   "evidence": "#9 orch system plan_rev 6a33e8: plan 6a33e89fc359. Approvers: alice and bob. approvers alice,bob"
+  },
+  {
+   "check": "Form sent to each approver within 1 s",
+   "pass": true,
+   "evidence": "elicitation/create offers after plan_rev #9: 30 ms, 192 ms (2 servers, 2 approvers; mcp-debug.log)"
+  },
+  {
+   "check": "alice's pane shows the form: room/plan line, summary, path, Approve/Object",
+   "pass": true,
+   "evidence": "\"plan 6a33e8\", \"full plan: …md\", \"Approve this plan? … Object\" in S6-sh-alice.txt"
+  },
+  {
+   "check": "bob's pane shows the form: room/plan line, summary, path, Approve/Object",
+   "pass": true,
+   "evidence": "\"plan 6a33e8\", \"full plan: …md\", \"Approve this plan? … Object\" in S6-sh-bob.txt"
+  }
+ ],
+ "S7": [
+  {
+   "check": "objection via=human from bob on the plan",
+   "pass": true,
+   "evidence": "#11 bob human objection 6a33e8: cap the page at 50 and say what happens past it — `limit=500` must clamp, not 400"
+  },
+  {
+   "check": "Reason identical byte for byte",
+   "pass": true,
+   "evidence": "logged === typed: cap the page at 50 and say what happens past it — `limit=500` must clamp, not 400"
+  },
+  {
+   "check": "bob's form shown filled in (Object + reason) before submit",
+   "pass": true,
+   "evidence": "S7-sh-bob.txt: \"Object to plan\" form, reason typed"
+  },
+  {
+   "check": "The objection shows in the orch's bob row",
+   "pass": true,
+   "evidence": "orch: ◯ bob ✖ objected 6a33e8 (#11)"
+  },
+  {
+   "check": "The objection shows in alice's room row",
+   "pass": false,
+   "evidence": "alice's panel is hidden: her own sign-off form for the same plan is still open on top of it"
+  }
+ ],
+ "S8": [
+  {
+   "check": "The orch revised: a second plan_rev",
+   "pass": true,
+   "evidence": "#9 6a33e8, #13 3a9d97"
+  },
+  {
+   "check": "Stale open form cancelled when the revision arrived",
+   "pass": true,
+   "evidence": "58465 signoff: cancel sh-58465-1 plan 6a33e89fc359 was replaced by 3a9d9726e017"
+  },
+  {
+   "check": "Matrix complete: every approver signed 3a9d97 via=human",
+   "pass": true,
+   "evidence": "alice: #15, bob: #17"
+  },
+  {
+   "check": "✓ signed shown on each approver's row (orch panel)",
+   "pass": false,
+   "evidence": "alice: ◯ alice ✓ signed 3a9d97 · working (S8-3-sh-orch.txt); bob: never shown signed; last: ◯ alice ✓ signed 3a9d97 · working | ◯ bob ⚠ reviewing 3a9d97 · working"
+  }
+ ],
+ "S9": [
+  {
+   "check": "decision refs both sign-offs",
+   "pass": true,
+   "evidence": "#18 refs [15,17], signoffs [15,17]"
+  },
+  {
+   "check": "Hash chain valid",
+   "pass": true,
+   "evidence": "validateChain ok over 28 entries"
+  },
+  {
+   "check": "Orch left plan mode with no dialog",
+   "pass": true,
+   "evidence": "S9-sh-orch.txt: approval dialog absent; \"plan mode on\" gone"
+  },
+  {
+   "check": "Assignments posted after the decision",
+   "pass": true,
+   "evidence": "#19 orch agent status: Decision #18 is in, so we're moving to the build. alice: implement paging in the GET /tas…"
+  },
+  {
+   "check": "Rows read ✓ decided",
+   "pass": true,
+   "evidence": "◯ alice ✔ decided 3a9d97 · working | ◯ bob ✔ decided 3a9d97 · working"
+  }
+ ],
+ "S10": [
+  {
+   "check": "alice posted status entries after the decision",
+   "pass": true,
+   "evidence": "#20 alice agent status: Starting paging implementation for GET /tasks handler in the background. ; #21 alice agent status: Paging implementation complete. Modified src/server.js: opaque base64 cursors, default li…"
+  },
+  {
+   "check": "Status cites evidence (tests, path or commit)",
+   "pass": true,
+   "evidence": "#21 alice agent status: Paging implementation complete. Modified src/server.js: opaque base64 cursors, default li…"
+  },
+  {
+   "check": "alice's work runs in a native background subagent (shown in her panel)",
+   "pass": true,
+   "evidence": "background agent visible in alice's S10 capture"
+  },
+  {
+   "check": "Her status shows in the orch's alice row",
+   "pass": false,
+   "evidence": "orch alice row: ◯ alice ✔ decided 3a9d97 · ? prompt"
+  }
+ ],
+ "S11": [
+  {
+   "check": "Rows present after /clear in alice's session (one bison-3139 row)",
+   "pass": false,
+   "evidence": "alice rows: ◯ bison-3139 plan 3a9d97 2/2 ✔ · ✉ 1 for you | ◯ bison-3139 plan 3a9d97 2/2 ✔ · ✉ 1 for you (S11-sh-alice.txt)"
+  },
+  {
+   "check": "Rows re-created after bob's --continue (bison-3139 row)",
+   "pass": false,
+   "evidence": "bob rows: none (S11-2-sh-bob.txt)"
+  },
+  {
+   "check": "bob's new room row is mapped after the resume",
+   "pass": false,
+   "evidence": "room:bison-3139@15:14:29, participant:alice@15:14:32"
+  }
+ ],
+ "S11b": [
+  {
+   "check": "Opening the room row shows bob nested inside it",
+   "pass": false,
+   "evidence": "viewing ?; rows: ◯ bison-3139 plan 3a9d97 2/2 ✔ · ✉ 2 for you | ◯ bison-3139 plan 3a9d97 2/2 ✔ · ✉ 2 for you"
+  },
+  {
+   "check": "Opening bob shows his thread (labelled entries)",
+   "pass": false,
+   "evidence": "viewing ?; no labelled entries (S11b-2-sh-alice.txt)"
+  },
+  {
+   "check": "No breadcrumb (P0 correction); ↑ + Enter returns to the parent",
+   "pass": false,
+   "evidence": "breadcrumb absent; step 3 not back on the room row"
+  }
+ ],
+ "S12": [
+  {
+   "check": "member_left bob",
+   "pass": true,
+   "evidence": "#27 bob system member_left: bob left (prompt_input_exit)"
+  },
+  {
+   "check": "bob's row is gone from the orch panel",
+   "pass": true,
+   "evidence": "orch rows: ◯ alice ✔ decided 3a9d97 · working"
+  },
+  {
+   "check": "bob's row is gone from alice's panel",
+   "pass": true,
+   "evidence": "alice rows: none"
+  }
+ ],
+ "_meta": {
+  "cost": "≈ $1.18 (list-price estimate from transcript token usage since the first capture)",
+  "run": "room bison-3139, 28 log entries, 66 captures",
+  "note": "Run 2 (room bison-3139), before the duplicate-row fix. S6–S8 forms were answered by scripted keys on the redesigned form. S10's permission dialogs were approved by the scripted human after the scripted wait had timed out. S11–S12 were re-run with --from S11 using the old S11/S11b key steps."
+ }
+}

@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.281
+▝▜██████▀  Opus 5.5 (1M context) · Claude Max
+  ▝▝ ▝▝    @sub-human:orchestrator · /private/tmp/sh-demo/orch
+
+
+❯ /sub-human:sub-human
+  ⎿  UserPromptExpansion says: room bison-3139 open · others join with: /sub-human NAME (or /sub-human NAME bison-3139)
+
+⏺ The room bison-3139 is open, but nobody has joined yet. Members join by running /sub-human NAME bison-3139 in their
+  own Claude Code session. I'll add a row for each person as they arrive.
+
+✻ Sautéed for 2s · done 8:14 AM · 1 monitor still running
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ sub-human:participant(alice)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+⏺ Calling plugin:sub-human:room…
+
+
+
+
+
+
+
+
+
+✢ Schlepping… (7s · ↓ 418 tokens · thought for 1s)
+  ⎿  Tip: Use /theme to change the color theme
+                     tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux.conf for wheel scroll
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · orch ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⬡ bison-3139 · orch
+  ⏸ plan mode on · 1 monitor · ← 1 agent
+
+  ⏺ main
+  ◯ alice  working

@@ -65,7 +65,7 @@ test('hold: tool definition and argument errors', async () => {
   assert.match(textOf(await Promise.resolve(w.plug.call('hold', null, { member: 'alice' }, { id: 99 }))), /^STOP: not in a room/);
 });
 
-test('hold {member}: blocks with progress, streams the thread, dedupes, STOPs when the member leaves', async () => {
+test('hold {member}: blocks with progress, streams the thread, refuses a duplicate, keeps holding when the member leaves', async () => {
   const w = setup(['orch', 'alice', 'bob'], 'orch');
   w.add('alice', 'say');
   const a = w.call({ member: 'alice' });
@@ -80,13 +80,49 @@ test('hold {member}: blocks with progress, streams the thread, dedupes, STOPs wh
   const n = w.progress.length;
   await sleep(250);
   assert.ok(w.progress.length > n, 'heartbeat keeps the idle timeout away');
-  assert.match(textOf(await w.call({ member: 'alice' }).p), /already open/, 'one row per member');
+  assert.match(textOf(await w.call({ member: 'alice' }).p), /^STOP: duplicate row: alice's row is already open/, 'one row per member');
   assert.deepEqual(rows.readHolds(w.code, 'orch').members, ['alice']);
   w.add('alice', 'member_left', { via: 'system' });
   w.leave('alice');
-  assert.match(textOf(await a.p), /^STOP: alice left room marmot-2509/);
+  assert.ok(await pending(a.p, 200), 'the row outlives the leave (it reads "left")');
+  assert.match(w.progress.at(-1).message, /alice · member_left/);
+  assert.deepEqual(rows.readHolds(w.code, 'orch').members, ['alice']);
+});
+
+test('hold: duplicate holds are refused for both kinds; the first one stays', async () => {
+  const w = setup(['orch', 'alice', 'bob'], 'alice');
+  const r1 = w.call({ room: w.code });
+  const b1 = w.call({ member: 'bob' });
+  assert.ok(await pending(r1.p) && await pending(b1.p));
+  assert.match(textOf(await w.call({ room: w.code }).p), /^STOP: duplicate row: room marmot-2509 already has its row/, 'room row re-spawned after /clear');
+  assert.match(textOf(await w.call({ member: 'bob' }).p), /^STOP: duplicate row/);
+  assert.ok(await pending(r1.p) && await pending(b1.p), 'the originals keep holding');
+  assert.deepEqual(rows.readHolds(w.code, 'alice'), { ...rows.readHolds(w.code, 'alice'), members: ['bob'], room: true });
+});
+
+test('hold: leave + rejoin keeps one hold per member, announces nothing, and spawns no second row', async () => {
+  const w = setup(['orch', 'alice', 'bob'], 'alice');
+  const r1 = w.call({ room: w.code });
+  const b1 = w.call({ member: 'bob' });
+  await sleep(30);
+  w.add('bob', 'member_left', { via: 'system' });
+  w.leave('bob');
+  await sleep(100);
+  w.join('bob');                             // rejoin: same name, left_at cleared
+  w.add('bob', 'member_joined', { via: 'system' });
+  assert.ok(await pending(r1.p, 500), 'no JOINED for a member whose row is still held (well past the grace period)');
+  assert.ok(await pending(b1.p), 'the same row is live again');
+  assert.match(textOf(await w.call({ member: 'bob' }).p), /^STOP: duplicate row/);
+  assert.deepEqual(rows.readHolds(w.code, 'alice').members, ['bob']);
+  // A row spawned for a member who already left still holds (reads "left") instead of finishing at once.
+  w.leave('bob');
+  w.cancel(b1.id);
   await sleep(150);
-  assert.deepEqual(rows.readHolds(w.code, 'orch').members, []);
+  const b2 = w.call({ member: 'bob' });
+  assert.ok(await pending(b2.p), 'a left member is still a row');
+  w.leaveMe();
+  assert.match(textOf(await b2.p), /^STOP: alice is no longer in room/, 'it ends when the viewer leaves');
+  assert.match(textOf(await r1.p), /^STOP/);
 });
 
 test('hold: every hold STOPs when this seat leaves the room', async () => {
@@ -157,6 +193,6 @@ test('hold {member} on the orch side: a cancelled row is simply dropped', async 
   assert.equal(textOf(await a.p), '(cancelled)');
   const a2 = w.call({ member: 'alice' });
   assert.ok(await pending(a2.p), 'a new row for alice may hold again');
-  w.leave('alice');
+  w.leaveMe();
   assert.match(textOf(await a2.p), /^STOP/);
 });

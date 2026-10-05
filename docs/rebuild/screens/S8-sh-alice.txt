@@ -1,0 +1,40 @@
+
+
+⏺ UserPromptSubmit operation blocked by hook:
+  ✓ posted to bison-3139 as #8
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ A sign-off form is up for plan 6a33e89fc359 — you and bob are the approvers.
+
+  Enter to approve, or ↓ then Enter to object (you'll be asked what should change). Esc to dismiss.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ #11 — bob (objection): cap the page at 50 and say what happens past it — limit=500 must clamp, not 400.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ #12 — orch (status): The plan is revised for bob's objection (#11): a limit above 50 now clamps to 50 instead of
+  returning 400. This voids any sign-off, so you'll get a new form.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ bison-3139 · alice ─
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  MCP server “plugin:sub-human:room” requests your input
+
+  Room bison-3139 · plan 3a9d97 (rev 2) · full plan: /tmp/sh-demo/home/rooms/bison-3139/plans/3a9d9726e017.md
+  Deciding: cursor paging for `GET /tasks`. The query takes `?limit` and an opaque `?after`. The body stays a bare …
+  Context
+  Approve this plan?  Accept (Enter) = Approve · Decline (↓ Enter) = Object, say why · Esc = later
+
+  ❯ Accept    Decline
+
+  Esc to cancel · ↑/↓ to navigate
