@@ -15,7 +15,7 @@ This rebuild swaps today's custom pieces for those native ones. It also adds a s
 
 ## What the user sees
 
-Every session in a room looks like this (orch's view):
+The room works like subagents. **The orchestrator's** panel lists every member directly, because they are its children:
 
 ```
 ⬡ marmot-2509 · orch · plan 593da0 1/2 ✔                       ← status line
@@ -24,7 +24,17 @@ Every session in a room looks like this (orch's view):
 ◯ bob     ⚠ reviewing 593da0 · ✖ 1 objection (#31)
 ```
 
-Alice's view shows `◯ orch` and `◯ bob`. Enter goes into a row, and `main` comes back out.
+**A member's** panel has a single row, `orch`, which is the room. The other members sit inside it, one level down:
+
+```
+Alice's panel              Enter on orch                 Enter on bob
+● main                     main › orch                   main › orch › bob
+◯ orch  plan 593da0 2/2    orch's posts, plan revs,       bob's words + bob's Claude
+                           decision                       (labelled separately)
+                           ◯ bob   working
+```
+
+Esc steps back out one level. All row views are read-only; talking happens in `main`.
 
 When a plan is published, each approver gets a native form in their own terminal:
 
@@ -43,7 +53,7 @@ Full plan: ~/.sub-human/rooms/marmot-2509/plans/593da0.md   (or: sub-human plan)
 | Join | `/sub-human [NAME] [CODE]` from your own session. The CODE may be left out when exactly one room is open. | user |
 | Identity | Hooks use the session id. The MCP server uses its parent claude pid via a direct lookup, not an ancestry walk. Process-start checks and forgery guards are dropped. | user, 09 |
 | Orchestrator | The plugin agent `sub-human:orchestrator`, launched with `claude --agent sub-human:orchestrator --permission-mode plan`. Hooks see `agent_type`, and `tools:` excludes Bash. | 08 |
-| Rows | A `participant` agent (haiku, background) per other participant. Each makes one `hold({member})` MCP call that never returns and streams progress. `subagentStatusLine` computes the row text from the log. Agent id → participant is mapped in **PostToolUse(Agent)**. A SubagentStop hook re-holds the call. | E1, E3 |
+| Rows | **Orchestrator:** a `participant` row per member. **Member:** one `orch` row, with the other members nested inside it as that row's own child rows (**probe P0**; fallback: members listed inside orch's view as readable text, with `sub-human watch NAME` for a full thread). Each row is a `participant` agent (haiku, background). Each makes one `hold({member})` MCP call that never returns and streams progress. `subagentStatusLine` computes the row text from the log. Agent id → participant is mapped in **PostToolUse(Agent)**. A SubagentStop hook re-holds the call. | E1, E3 |
 | Row view | Read-only. Talking happens in `main` (`@room`, or ask your Claude). `sub-human watch NAME` prints a person's full thread. | E1 |
 | Sign-off | The room server sends `elicitation/create` to each approver when a `plan_rev` arrives. Approve logs `signoff via=human`; object logs `objection via=human` with the reason. Esc re-offers the form after 10 minutes, or when the user says "review". A new revision cancels the stale form. | E2 |
 | Plan text | A 3-line summary, the path, and `sub-human plan`, which prints the full plan. | E2 |
@@ -81,6 +91,15 @@ Full plan: ~/.sub-human/rooms/marmot-2509/plans/593da0.md   (or: sub-human plan)
 - `README.md`;
 - tests.
 
+## Probe first (P0)
+
+Does Claude Code's agent panel show a background subagent's own child agents when you open that subagent? A member's `orch` row agent would start child rows for the other members.
+
+- **If it does**, members get true nested rows.
+- **If it doesn't**, use the fallback in the Design table.
+
+One probe session settles it (agent B, before building rows).
+
 ## Build (subagents in parallel, each owning separate files)
 
 | Agent | Owns | Delivers |
@@ -104,8 +123,8 @@ Full plan: ~/.sub-human/rooms/marmot-2509/plans/593da0.md   (or: sub-human plan)
 | # | Scene | What the screenshot must show | Checks |
 |---|---|---|---|
 | S1 | The orch starts and runs `/sub-human` | The invite code banner; the status line `⬡ CODE · orch` | Room dir exists; `agent_type` is orchestrator |
-| S2 | alice joins with `/sub-human alice` (no code) | The join receipt; alice's panel with an `orch` row; the orch panel with an `alice` row | `member_joined`; row ids mapped |
-| S3 | bob joins | A row for each other participant in all three panels | 2 rows per session |
+| S2 | alice joins with `/sub-human alice` (no code) | The join receipt; alice's panel with one `orch` row; the orch panel with an `alice` row | `member_joined`; row ids mapped |
+| S3 | bob joins | The orch panel has alice and bob rows; each member panel has only `orch` | orch: 2 rows; members: 1 row each |
 | S4 | alice runs `@room …` | The receipt `✓ posted … as #N`; the rows update in the others' panels | Text identical byte for byte; `via=human`; 0 model turns |
 | S5 | The orch drafts a plan | Rows read `drafting`; the orch's own status line | — |
 | S6 | Plan published | **The native form** in alice's and bob's terminals, with summary, path, Approve/Object | Form shown within 1 s |
@@ -114,6 +133,7 @@ Full plan: ~/.sub-human/rooms/marmot-2509/plans/593da0.md   (or: sub-human plan)
 | S9 | Automatic exit | The orch leaves plan mode with no dialog; decision; assignments; rows read `✓ decided` | `decision` refs both sign-offs; chain valid |
 | S10 | Background work | alice's Claude runs her part in a native background subagent, shown in her panel; her `status` with evidence in the others' rows | Status cites evidence |
 | S11 | Resilience | Rows survive `/clear` in alice's session; bob runs `--resume`, then rows are re-created after the restore prompt | Rows present after both |
+| S11b | Nested view | alice opens orch (main › orch) and sees bob inside, then opens bob (main › orch › bob) to read his thread; Esc returns | Breadcrumb and nesting match |
 | S12 | Leave | bob exits, and his row disappears from the orch and alice panels | `member_left` |
 
 The **Ghostty view** is optional: for a live look, `scripts/demo.sh --windows` attaches read-only Ghostty windows to the three tmux sessions. Real window screenshots (`screencapture -l`) need Screen Recording permission, so they're opt-in. The SVG captures are the deterministic record.
