@@ -38,6 +38,10 @@
 // a monitor notice (<task-notification>) and the launch `/sub-human` when it is the session's first prompt.
 // Those still get the pull digest and the row calls below.
 //
+// Join / leave notices (lib/notices.js): another member's join, or settled leave, that the FileChanged
+// notification (hooks/notice.js) did not show this member yet goes out as `systemMessage` (shown to the human,
+// not sent to the model; the model sees joins and leaves only in the pull digest). Cursor notice-NAME.
+//
 // Also: marks presence "working" and sets sessionTitle to the seat's address ("NAME.CODE", the name
 // SendMessage / ListAgents use) on the first prompt of each session id; session-restore.js sets it on restore.
 // Not for the orch, whose title is its launch name (-n orch.CODE).
@@ -46,6 +50,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { room, identity, out, run, whoami, readState, writeState, clip, presence } = require('./common.js');
 const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
+const notices = require(path.join(__dirname, '..', 'lib', 'notices.js'));
 
 const PASTE = /(?:\n\n)?<pasted_content id="?(\w+)"?>\n([\s\S]*?)\n?<\/pasted_content id="?\1"?>\n?/g;
 
@@ -162,6 +167,26 @@ function forgeryCheck(job) {
   setTimeout(tick, CHECK_POLL_MS);
 }
 
+/** Join / leave notice lines for me that no notification showed yet, or null; advances cursor notice-NAME. */
+function noticeLines(me) {
+  if (me.role === 'orch') return null;
+  const key = `notice-${me.name}`;
+  const all = room.readAll();
+  let after = room.getCursor(key);
+  if (!after) { const j = all.filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1); after = j ? j.id : 0; }
+  const ns = notices.joinLeave(all, me.name).filter(n => n.id > after);
+  const waiting = ns.filter(n => !n.settled); // a leave inside its settle window: decide on a later prompt
+  const last = all.length ? all.at(-1).id : 0;
+  const upTo = waiting.length ? Math.min(...waiting.map(n => n.id)) - 1 : last;
+  if (upTo > after) room.setCursor(key, upTo);
+  const seen = notices.shown(me.code, me.name);
+  const show = ns.filter(n => n.settled && !seen.has(n.id));
+  if (!show.length) return null;
+  notices.markShown(me.code, me.name, show.map(n => n.id), 'prompt');
+  const ms = identity.readMembers(me.code) || {};
+  return show.map(n => notices.text(me.code, n, ms)).join('\n');
+}
+
 const PULL_CAP = 1500;
 const PULL_HEAD = 'Room since your last turn (pull lane; full text: the room MCP tool read({ids})):';
 
@@ -275,8 +300,12 @@ if (process.argv[2] === '--forgery-check') {
     if (!me || slash) { if (title) out({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', ...top } }); return; }
     let pull = null;
     try { pull = pullDigest(me); } catch { /* best-effort */ }
+    let notice = null;
+    try { notice = noticeLines(me); } catch { /* best-effort */ }
     const text = [pull, proposalReminders(me, notification), missingRowsText(me, input)].filter(Boolean).join('\n\n') || null;
-    if (text || title) out({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', ...(text ? { additionalContext: clip(text) } : {}), ...top } });
+    if (text || title || notice) {
+      out({ ...(notice ? { systemMessage: notice } : {}), hookSpecificOutput: { hookEventName: 'UserPromptSubmit', ...(text ? { additionalContext: clip(text) } : {}), ...top } });
+    }
     return;
   }
 

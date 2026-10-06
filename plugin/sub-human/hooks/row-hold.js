@@ -2,7 +2,7 @@
 'use strict';
 // SubagentStop: keep a row agent holding while its row is still wanted (E1/E3 "cheap insurance").
 // A row agent only stops on its own when `hold` returned something other than its instruction (an error,
-// an MCP timeout, a server restart) and Haiku gave up. Then, if the row's participant (or, for the room row,
+// an MCP timeout, a server restart) and the row's model gave up. Then, if the row's participant (or, for the room row,
 // this seat) is still in the room, block the stop and tell it to hold again; at most MAX_BLOCKS per agent.
 // A participant row is wanted while this seat is in the room, even after its member left (it reads "left").
 // An Esc-kill does NOT fire SubagentStop (P0); hold.js's RESPAWN covers that. A row that stops for good

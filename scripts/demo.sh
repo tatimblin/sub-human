@@ -2,7 +2,7 @@
 # demo.sh — drive the slim-build walkthrough scenes S1–S10 with two member seats in detached tmux
 # sessions (sh-alice, sh-bob) and snap every pane after every step (scripts/snap.js → docs/rebuild/screens/).
 #
-#   scripts/demo.sh [--windows] [--pause] [--only S6[,S7]] [--from S6] [--to S3] [--member-model haiku] [--no-reset]
+#   scripts/demo.sh [--windows] [--pause] [--only S6[,S7]] [--from S6] [--to S3] [--member-model MODEL] [--no-reset]
 #                   (--to: stop after that scene; a fresh run unless --from/--only is given too)
 #   scripts/demo.sh stop            kill the sh-* tmux sessions (never numbered ones)
 #
@@ -29,7 +29,7 @@ COLS=120; ROWS=40
 ORCH_COLS=200; ORCH_ROWS=50   # a --bg session renders at 200 columns: claude logs replays that
 
 WINDOWS=0; PAUSE="${SUB_HUMAN_DEMO_PAUSE:-0}"; ONLY=""; FROM=""; TO=""; RESET=1
-MEMBER_MODEL=haiku
+MEMBER_MODEL=""   # empty: the seats use the user's default model; --member-model MODEL opts in
 
 case "${1:-}" in
   stop)
@@ -212,6 +212,9 @@ S1() { # alice joins with no room open: the room is created and the headless orc
 S2() { # bob joins
   submit bob "/sub-human bob"
   wait_log --kind member_joined --from bob --timeout 60
+  # the join notice: a Claude Code notification in alice's pane (about 5 s), no model turn; kept as evidence
+  mkdir -p "$SNAP_DIR/state/S2"
+  wait_pane alice "⬡ bob joined" 25 --what "alice sees the join notice (notification, no model turn)" && $LIB pane sh-alice > "$SNAP_DIR/state/S2/notice-alice.txt"
   wait_pane bob "$(panel_row "$(room)")" 90
   $LIB wait-holds orch bob --timeout 120
   $LIB wait-holds alice bob --timeout 90
@@ -293,7 +296,7 @@ S5() { # bob objects with a note, alice agrees; the orch revises; both agree →
 
 S6() { # shared tasks: alice's Claude adds, then claims, the orch applies natively; a non-owner done is refused; owner done
   local before; before=$($LIB log-max)
-  # explicit tool name: in run osprey-3059 Haiku used post ("taking this") instead of the task tool. add leaves
+  # explicit tool name: in run osprey-3059 the model used post ("taking this") instead of the task tool. add leaves
   # the task pending with no owner (lynx-5140), and claim needs its id: so add, then claim by id.
   submit alice "put \"cursor paging handler\" on the room task list: call the mcp__plugin_sub-human_room__task tool with op \"add\", subject \"cursor paging handler\". Only that tool call: do not use post, do not edit any file"
   wait_log --kind task_req --from alice --after "$before" --timeout 120
@@ -306,7 +309,7 @@ S6() { # shared tasks: alice's Claude adds, then claims, the orch applies native
   sleep 7
   snap "alice's Claude calls task(add), then task(claim #$t): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it"
   local b2; b2=$($LIB log-max)
-  # explicit: Haiku otherwise answers in text and never calls the tool (learning run badger-3918)
+  # explicit: the model may otherwise answer in text and never calls the tool (learning run badger-3918)
   submit bob "call the mcp__plugin_sub-human_room__task tool now with op \"done\", id \"$t\", evidence \"I ran the tests, 3/3 pass\". It is alice's task; send the request anyway and report the tool's reply in one line"
   wait_log --kind task_req --from bob --after "$b2" --timeout 120
   $LIB wait-orch-idle --after "$b2" --timeout 180
@@ -386,6 +389,10 @@ S10() { # leave: both exit → reap completes task 1 and stops the orch
   local before; before=$($LIB log-max)
   exit_seat alice
   wait_log --kind member_left --from alice --after "$before" --timeout 30
+  # the leave notice reaches bob once the leave has settled (8 s with no rejoin); no model turn
+  mkdir -p "$SNAP_DIR/state/S10"
+  wait_pane bob "⬡ alice left" 30 --what "bob sees alice's leave notice after the 8 s settle (notification, no model turn)" && $LIB pane sh-bob > "$SNAP_DIR/state/S10/notice-bob.txt"
+  $LIB wait-idle sh-bob --timeout 30
   exit_seat bob
   wait_log --kind member_left --from bob --after "$before" --timeout 30
   sleep 2

@@ -4,7 +4,7 @@ A Claude Code plugin for working together from separate sessions on one machine.
 
 - **`@room`** posts your exact words to the room. A hook posts them, so no model paraphrases them.
 - **Claudes talk to each other natively,** with Claude Code's own `SendMessage` and `ListAgents`, addressed `NAME.CODE`.
-- **A headless helper, the orch,** starts with the room. It keeps the room's shared task list, and it helps plan only when someone asks.
+- **A headless helper, the orch,** starts with the room. It keeps the room's shared task list, and it helps plan only when someone asks. It messages people only when they addressed it or when its own action needs telling.
 - **Consent is a card.** When a proposal names you, a question card opens in your own terminal. Only your answer there records agreement. No Claude can give it.
 
 ## Install
@@ -84,6 +84,8 @@ A prompt that starts with `@room ` or `room:` is posted **verbatim** as your wor
 Anything else you type goes to your own Claude. Its posts are labelled as your Claude's (`via=agent`) and never count as your words.
 
 **How the room reaches your Claude.** Other people's own words, anything addressed to you, a proposal naming you, and decisions or task changes that concern you wake your Claude through the plugin's `room` monitor, batched one wake per burst. The rest of the room waits and reaches your Claude as a short "Room since your last turn" note on your next prompt. A leave shows only after 8 s away, so a quick leave and rejoin shows nothing.
+
+**Joins and leaves.** When someone joins or leaves, everyone in the room sees one line, `⬡ bob joined vole-8126 (alice, bob here)` or `⬡ bob left vole-8126`, as a Claude Code notification at that moment, and the room row reads `+bob joined` or `−bob left` for two minutes. If the notification could not show, the line appears on your next prompt instead. None of this runs your Claude: it sees joins and leaves only in its "Room since your last turn" note.
 
 **Claude to Claude.** Ask your Claude to "ask alice's Claude what the cursor format is". It calls `SendMessage` to `alice.vole-8126`, and alice's pane shows `› Message from @bob.vole-8126: …`. Those messages come from Claudes, not people.
 

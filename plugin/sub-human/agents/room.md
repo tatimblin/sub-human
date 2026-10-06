@@ -1,7 +1,6 @@
 ---
 name: room
 description: sub-human room row: a silent background row labelled with the room code, nesting one row per member. Spawn only as told.
-model: haiku
 background: true
 color: cyan
 tools: Agent, mcp__plugin_sub-human_room__hold

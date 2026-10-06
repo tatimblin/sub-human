@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.281
+▝▜██████▀  Opus 5.5 (1M context) · Claude Max
+  ▝▝ ▝▝    /private/tmp/sh-demo/alice
+
+
+❯ /sub-human:sub-human alice                                                                                            
+  ⎿  UserPromptExpansion says: sub-human: opened room gecko-5061 as alice · others: /sub-human NAME
+
+⏺ sub-human:room(gecko-5061)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+⏺ You're in room gecko-5061; no one else has joined yet.
+
+✻ Waiting for 1 background agent to finish
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                             ⬡ bob joined gecko-5061 (alice, bob here)
+───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─
+❯                                                      
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on · 1 monitor · ← 1 agent · ↓ to manage                                                                 
+
+  ⏺ main                                                                                                                
+  ◯ gecko-5061  1 here                                                                                                

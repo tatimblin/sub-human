@@ -1,8 +1,8 @@
 
-  Called plugin:sub-human:room 
-
-⏺ Your objection noted: add a test for a cursor past the end—after=zzz must return 400, not 500. (Alice agrees; that
-  condition is captured in the plan.)
+⏺ Your objection to proposal 1d69888ae02f (the cursor-paging plan for GET /tasks) is recorded as #8, along with your
+  note: add a test for a cursor past the end, where after=zzz must return 400, not 500. Decision #9 lists you as
+  objecting and alice as agreeing. The plan isn't settled, so I haven't built anything. The full plan is at
+  /tmp/sh-demo/home/rooms/gecko-5061/plans/1d69888ae02f.md.
 
 ✻ Waiting for 2 background agents to finish
 
@@ -11,22 +11,22 @@
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  ☐ Consent 
 
-Agree to proposal 95beccba5f70?
+Agree to proposal c04d0c9623ce?
 
 ❯ 1. Not yet                      ┌────────────────────────────────────────────────────────────────────────────────────┐
-  2. Agree                        │ Cursor paging for GET /tasks (room stoat-3644)                                     │
+  2. Agree                        │ Plan: cursor paging for GET /tasks                                                 │
   3. Object                       │                                                                                    │
-                                  │ Being decided: how GET /tasks lists tasks, newest first, with cursor paging.       │
-                                  │ Approvers: alice, bob.                                                             │
+                                  │ Deciding: how GET /tasks lists tasks: ?limit&after, an opaque cursor, newest       │
+                                  │ first. This was asked for in #5 by bob: "@orch let's plan cursor paging fo…        │
                                   │                                                                                    │
                                   │ Context                                                                            │
                                   │                                                                                    │
-                                  │ - src/server.js:28-31: GET /tasks returns 501, with a TODO to agree on the design  │
-                                  │ in the room first.                                                                 │
-                                  │ - src/store.js stands in for a Postgres tasks table: ~4M rows, ~30 inserts/s at    │
-                                  │ peak. allTasks() returns insertion order.                                          │
-                                  │ - seed() gives several tasks the same createdAt (bulk imports), so createdAt alone │
-                                  │  can't order pages reliably.                                                       │
+                                  │ - src/server.js returns 501 for GET /tasks, with this TODO: "list tasks, newest    │
+                                  │ first, paginated. Agree on the design in the room first."                          │
+                                  │ - src/store.js stands in for a Postgres tasks table with about 4M rows and about   │
+                                  │ 30 inserts/s at peak. allTasks() returns every task in insertion order. …          │
+                                  │ - In #3 alice asked bob to take the parser tests. In #4 bob said "sure, once we've │
+                                  │  agreed how paging works".                                                         │
                                   │                                                                                    │
                                   ├─── ✂ ─── 9 lines hidden ───────────────────────────────────────────────────────────┤
                                   └────────────────────────────────────────────────────────────────────────────────────┘
@@ -37,4 +37,4 @@ Agree to proposal 95beccba5f70?
   Chat about this
 
 Enter to select · ↑/↓ to navigate · n to add notes · Esc to cancel
-─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.stoat-3644 ─
+─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.gecko-5061 ─

@@ -7,66 +7,91 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">bob · S5</text>
 <g fill="#d6dbe5">
-<rect x="12" y="195" width="15.6" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="195" width="639.6" height="17" fill="#3a3a3a"/>
-<text x="12" y="72" textLength="39" lengthAdjust="spacing" xml:space="preserve">  1. </text>
-<text x="51" y="72" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">Default and max limit</text>
-<text x="214.8" y="72" textLength="600.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> — they suggest 20/100. Should a too-large limit get clamped or return a 400?</text>
-<text x="12" y="89" textLength="39" lengthAdjust="spacing" xml:space="preserve">  2. </text>
-<text x="51" y="89" font-weight="bold" textLength="117" lengthAdjust="spacing" xml:space="preserve">Cursor encoding</text>
-<text x="168" y="89" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> — Tasks share </text>
-<text x="285" y="89" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
-<text x="355.2" y="89" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">, so they propose sorting by </text>
-<text x="581.4" y="89" fill="#afd7ff" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">createdAt DESC, id DESC</text>
-<text x="760.8" y="89" textLength="163.8" lengthAdjust="spacing" xml:space="preserve"> and encoding both in</text>
-<text x="12" y="106" textLength="312" lengthAdjust="spacing" xml:space="preserve">     the cursor. Does that work for you?</text>
-<text x="12" y="140" textLength="444.6" lengthAdjust="spacing" xml:space="preserve">  They're also waiting for alice's view before proposing.</text>
-<text x="12" y="174" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="174" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="174" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="174" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="208" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="27.6" y="208" fill="#ffffff" textLength="639.6" lengthAdjust="spacing" xml:space="preserve">@room @orch fine with that; 400 on a bad cursor. please propose it to alice and me</text>
-<text x="12" y="242" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="242" fill="#ffd700" textLength="429" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Operation stopped by hook: ✓ posted to stoat-3644 as #9</text>
-<text x="12" y="276" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="276" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="310" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="310" textLength="436.8" lengthAdjust="spacing" xml:space="preserve"> Orch is asking one more thing before proposing: should </text>
-<text x="456.6" y="310" fill="#afd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">limit&gt;50</text>
-<text x="519" y="310" textLength="429" lengthAdjust="spacing" xml:space="preserve"> be clamped to 50, or return a 400? (You said 400 for a</text>
-<text x="12" y="327" textLength="405.6" lengthAdjust="spacing" xml:space="preserve">  bad cursor, but this is about an oversized limit.)</text>
-<text x="12" y="361" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="361" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="361" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="361" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="395" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="395" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="429" fill="#949494" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺ </text>
-<text x="27.6" y="429" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">User answered Claude's questions:</text>
-<text x="12" y="446" fill="#949494" textLength="366.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  · Agree to proposal 6a996388768f? → Object</text>
-<text x="12" y="480" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="480" textLength="546" lengthAdjust="spacing" xml:space="preserve"> Bob objected to the proposal. Let me check the room for your concern.</text>
-<text x="12" y="497" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
-<text x="51" y="497" fill="#ff87af" textLength="491.4" lengthAdjust="spacing" xml:space="preserve">Error: No such tool available: mcp__plugin_sub_human_room__read</text>
-<text x="12" y="531" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="531" textLength="241.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Calling plugin:sub-human:room…</text>
-<text x="12" y="565" fill="#d78787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="565" fill="#d78787" textLength="78" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Sautéing… </text>
-<text x="105.6" y="565" fill="#949494" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(14s · ↓</text>
-<text x="175.8" y="565" fill="#949494" textLength="101.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">996 tokens · </text>
-<text x="277.2" y="565" fill="#b2b2b2" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">thinking</text>
-<text x="339.6" y="565" fill="#949494" xml:space="preserve">)</text>
-<text x="12" y="582" fill="#949494" textLength="335.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  Tip: Connect Claude to your IDE · /ide</text>
+<rect x="12" y="331" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="331" width="733.2" height="17" fill="#3a3a3a"/>
+<text x="12" y="55" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="55" textLength="405.6" lengthAdjust="spacing" xml:space="preserve"> Alice's Claude says it changed nothing. Here's how </text>
+<text x="425.4" y="55" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">createTask</text>
+<text x="503.4" y="55" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> in </text>
+<text x="534.6" y="55" fill="#afd7ff" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">src/store.js</text>
+<text x="628.2" y="55" textLength="85.8" lengthAdjust="spacing" xml:space="preserve"> picks ids:</text>
+<text x="12" y="89" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="89" font-weight="bold" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">Counter:</text>
+<text x="113.4" y="89" fill="#afd7ff" textLength="117" lengthAdjust="spacing" xml:space="preserve">let nextId = 1;</text>
+<text x="230.4" y="89" textLength="241.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> at module scope (line 5), and </text>
+<text x="472.2" y="89" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">createTask</text>
+<text x="550.2" y="89" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (line 7) assigns </text>
+<text x="690.6" y="89" fill="#afd7ff" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">id: nextId++</text>
+<text x="784.2" y="89" textLength="156" lengthAdjust="spacingAndGlyphs" xml:space="preserve">. Ids go 1, 2, 3… in</text>
+<text x="12" y="106" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">    the order tasks are inserted.</text>
+<text x="12" y="123" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="123" font-weight="bold" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">Lifetime:</text>
+<text x="113.4" y="123" textLength="296.4" lengthAdjust="spacing" xml:space="preserve"> the counter goes back to 1 only when </text>
+<text x="409.8" y="123" fill="#afd7ff" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">reset()</text>
+<text x="464.4" y="123" textLength="483.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> runs (line 20). Ids aren't reused within a run, and since the</text>
+<text x="12" y="140" textLength="405.6" lengthAdjust="spacing" xml:space="preserve">    store is in-memory they don't survive a restart.</text>
+<text x="12" y="157" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="157" font-weight="bold" textLength="78" lengthAdjust="spacing" xml:space="preserve">Seed data:</text>
+<text x="129" y="157" fill="#afd7ff" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">seed(n=237)</text>
+<text x="214.8" y="157" textLength="109.2" lengthAdjust="spacing" xml:space="preserve"> goes through </text>
+<text x="324" y="157" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">createTask</text>
+<text x="402" y="157" textLength="382.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">, so seeded ids are 1–237. Every 3 tasks share a </text>
+<text x="784.2" y="157" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
+<text x="854.4" y="157" textLength="93.6" lengthAdjust="spacing" xml:space="preserve"> value (base</text>
+<text x="12" y="174" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">    + floor(i/3) minutes).</text>
+<text x="12" y="191" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="191" font-weight="bold" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">Paging:</text>
+<text x="97.8" y="191" textLength="335.4" lengthAdjust="spacing" xml:space="preserve"> ids are unique and always increasing, but </text>
+<text x="433.2" y="191" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
+<text x="503.4" y="191" textLength="171.6" lengthAdjust="spacing" xml:space="preserve"> repeats. A cursor on </text>
+<text x="675" y="191" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
+<text x="745.2" y="191" textLength="156" lengthAdjust="spacing" xml:space="preserve"> alone would skip or</text>
+<text x="12" y="208" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">    repeat rows. Using </text>
+<text x="191.4" y="208" fill="#afd7ff" textLength="117" lengthAdjust="spacing" xml:space="preserve">(createdAt, id)</text>
+<text x="308.4" y="208" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> or </text>
+<text x="339.6" y="208" fill="#afd7ff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
+<text x="355.2" y="208" textLength="546" lengthAdjust="spacing" xml:space="preserve"> alone would be stable. The file header says the store stands in for a</text>
+<text x="12" y="225" textLength="514.8" lengthAdjust="spacing" xml:space="preserve">    Postgres table with about 4M rows taking about 30 inserts/sec.</text>
+<text x="12" y="259" textLength="928.2" lengthAdjust="spacing" xml:space="preserve">  That's relevant to the paging agreement you said in #4 you're waiting on. I haven't posted any of this to the room. I</text>
+<text x="12" y="276" textLength="156" lengthAdjust="spacing" xml:space="preserve">  can if you'd like.</text>
+<text x="12" y="310" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="310" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="310" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="310" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="344" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="27.6" y="344" fill="#ffffff" textLength="733.2" lengthAdjust="spacing" xml:space="preserve">@room @orch let's plan cursor paging for GET /tasks: ?limit&amp;after, opaque cursor, newest first</text>
+<text x="12" y="378" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="378" fill="#ffd700" textLength="429" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Operation stopped by hook: ✓ posted to gecko-5061 as #5</text>
+<text x="12" y="412" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="412" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="446" fill="#949494" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺ </text>
+<text x="27.6" y="446" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">User answered Claude's questions:</text>
+<text x="12" y="463" fill="#949494" textLength="366.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  · Agree to proposal 1d69888ae02f? → Object</text>
+<text x="12" y="497" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="497" textLength="538.2" lengthAdjust="spacing" xml:space="preserve"> Your objection to proposal 1d69888ae02f (the cursor-paging plan for </text>
+<text x="558" y="497" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="636" y="497" textLength="280.8" lengthAdjust="spacing" xml:space="preserve">) is recorded as #8, along with your</text>
+<text x="12" y="514" textLength="405.6" lengthAdjust="spacing" xml:space="preserve">  note: add a test for a cursor past the end, where </text>
+<text x="417.6" y="514" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
+<text x="487.8" y="514" textLength="397.8" lengthAdjust="spacing" xml:space="preserve"> must return 400, not 500. Decision #9 lists you as</text>
+<text x="12" y="531" textLength="834.6" lengthAdjust="spacing" xml:space="preserve">  objecting and alice as agreeing. The plan isn't settled, so I haven't built anything. The full plan is at</text>
+<text x="27.6" y="548" fill="#afd7ff" textLength="436.8" lengthAdjust="spacing" xml:space="preserve">/tmp/sh-demo/home/rooms/gecko-5061/plans/1d69888ae02f.md</text>
+<text x="464.4" y="548" xml:space="preserve">.</text>
+<text x="12" y="582" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="582" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="582" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="582" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="511.2" y="599" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="599" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.stoat-3644 ─</text>
-<text x="12" y="633" fill="#949494" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.gecko-5061 ─</text>
+<text x="12" y="633" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="27.6" y="633" opacity="0.6" textLength="444.6" lengthAdjust="spacing" xml:space="preserve">@room @orch please add the after=zzz 400 test to the plan</text>
 <text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
-<text x="27.6" y="667" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ manual mode on · </text>
-<text x="175.8" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
-<text x="246" y="667" fill="#949494" textLength="351" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · esc to interrupt · ← 1 agent · ↓ to manage</text>
+<text x="27.6" y="667" fill="#ffd700" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏵⏵ auto mode on</text>
+<text x="144.6" y="667" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="168" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
+<text x="238.2" y="667" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
 <text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
-<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ stoat-3644  </text>
-<text x="136.8" y="718" fill="#e5c07b" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✖ blocked 6a9963</text>
+<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ gecko-5061  </text>
+<text x="136.8" y="718" fill="#e5c07b" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✖ blocked 1d6988</text>
 </g></svg>

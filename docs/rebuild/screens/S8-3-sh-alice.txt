@@ -1,6 +1,6 @@
 
  ▐▛███▛█   Claude Code v2.1.281
-▝▜██████▀  Haiku 4.5 · Claude Max
+▝▜██████▀  Opus 5.5 (1M context) · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/alice
 
 
@@ -8,7 +8,7 @@
 
 ❯ @room bob, are you back? the parser tests are done
 
-⏺ Operation stopped by hook: ✓ posted to stoat-3644 as #33
+⏺ Operation stopped by hook: ✓ posted to gecko-5061 as #25
 
 
 
@@ -31,10 +31,10 @@
 
 
                                                                 Update available! Run: brew upgrade claude-code@latest
-───────────────────────────────────────────────────────────────────────────────────────────────────── alice.stoat-3644 ─
+───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
+  ⏵⏵ auto mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ stoat-3644  ✔ decided 95becc · tasks: all 1 done
+  ◯ gecko-5061  ✔ decided c04d0c · tasks: all 1 done

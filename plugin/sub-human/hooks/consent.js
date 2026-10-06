@@ -30,7 +30,7 @@ function named(pending, input) {
 
 /**
  * No hash named, but the question is plainly about a proposal ("Do you agree with the paging proposal?") and
- * exactly one is pending for me, and the input names no other hex id: that one (Haiku dropped the hash in run
+ * exactly one is pending for me, and the input names no other hex id: that one (the model may drop the hash, as in run
  * raven-3365). An unrelated question (no "propos…") or an ambiguous one (two pending) stays untouched (S2 F9).
  */
 function onlyPending(pending, input) {

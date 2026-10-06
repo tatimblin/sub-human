@@ -26,7 +26,7 @@
 <text x="97.8" y="89" fill="#999999" textLength="405.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">@sub-human:orchestrator · /private/tmp/sh-demo/alice</text>
 <text x="12" y="140" fill="#505050" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯</text>
 <text x="27.6" y="140" fill="#ffffff" textLength="156" lengthAdjust="spacing" xml:space="preserve">/sub-human:sub-human</text>
-<text x="12" y="157" fill="#999999" textLength="507" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  UserPromptExpansion says: sub-human: orch of room stoat-3644</text>
+<text x="12" y="157" fill="#999999" textLength="507" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  UserPromptExpansion says: sub-human: orch of room gecko-5061</text>
 <text x="12" y="191" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
 <text x="27.6" y="191" fill="#000000" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">sub-human:participant</text>
 <text x="191.4" y="191" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">(alice)</text>
@@ -34,7 +34,7 @@
 <text x="51" y="208" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
 <text x="191.4" y="208" fill="#999999" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
 <text x="12" y="242" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="242" textLength="1138.8" lengthAdjust="spacing" xml:space="preserve"> I've joined room stoat-3644 and added alice's row. Task #1 (&quot;room stoat-3644 open&quot;) is now in progress, and I'm waiting for messages or requests.</text>
+<text x="19.8" y="242" textLength="889.2" lengthAdjust="spacing" xml:space="preserve"> Joined room gecko-5061: alice's row is running and task 1 (&quot;room gecko-5061 open&quot;) is in progress, owned by room.</text>
 <text x="12" y="276" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="276" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="276" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
@@ -48,7 +48,7 @@
 <text x="51" y="361" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
 <text x="191.4" y="361" fill="#999999" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
 <text x="12" y="395" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="395" textLength="756.6" lengthAdjust="spacing" xml:space="preserve"> Bob joined the room (#2), so I've added a row for him next to alice's. No requests yet; waiting.</text>
+<text x="19.8" y="395" textLength="436.8" lengthAdjust="spacing" xml:space="preserve"> Bob joined room gecko-5061, and his row is now running.</text>
 <text x="12" y="429" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="429" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="429" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
@@ -62,10 +62,10 @@
 <text x="277.2" y="701" fill="#999999" font-weight="bold" xml:space="preserve">0</text>
 <text x="285" y="701" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> open)</text>
 <text x="27.6" y="718" fill="#d77757" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◼ </text>
-<text x="43.2" y="718" font-weight="bold" textLength="156" lengthAdjust="spacing" xml:space="preserve">room stoat-3644 open</text>
+<text x="43.2" y="718" font-weight="bold" textLength="156" lengthAdjust="spacing" xml:space="preserve">room gecko-5061 open</text>
 <text x="1135.2" y="735" fill="#ffc107" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="1314.6" y="735" fill="#ffc107" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="752" fill="#888888" textLength="1560" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── orch.stoat-3644 ─</text>
+<text x="12" y="752" fill="#888888" textLength="1560" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── orch.gecko-5061 ─</text>
 <text x="12" y="769" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="786" fill="#888888" textLength="1560" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
 <text x="27.6" y="803" fill="#48968c" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ plan mode on</text>
@@ -74,7 +74,7 @@
 <text x="324" y="803" fill="#999999" textLength="288.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ctrl+t to hide tasks · ↓ to manage</text>
 <text x="12" y="837" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
 <text x="12" y="854" fill="#999999" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ alice  </text>
-<text x="97.8" y="854" fill="#999999" opacity="0.6" textLength="78" lengthAdjust="spacing" xml:space="preserve">#3 say 13s</text>
+<text x="97.8" y="854" fill="#999999" opacity="0.6" textLength="78" lengthAdjust="spacing" xml:space="preserve">#3 say 14s</text>
 <text x="12" y="871" fill="#999999" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ bob  </text>
 <text x="82.2" y="871" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
 </g></svg>

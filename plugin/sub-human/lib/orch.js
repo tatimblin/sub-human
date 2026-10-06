@@ -9,7 +9,7 @@
  *       env is clean (no CLAUDE_* from the parent; only HOME USER LOGNAME SHELL PATH TERM LANG TMPDIR). The
  *       orch's own env comes from the --settings launch flag: SUB_HUMAN_HOME, SUB_HUMAN_ROOM,
  *       CLAUDE_CODE_TASK_LIST_ID=sh-CODE, CLAUDE_CODE_ENABLE_TODO_TOOLS=1, plus crossSessionInbound "accept".
- *       No --model: plan mode runs on Sonnet regardless (S1 F2). cwd is the joiner's: --bg refuses an
+ *       No --model: the orch runs on the user's default model (plan mode's own pick). cwd is the joiner's: --bg refuses an
  *       untrusted cwd (S1 F3). No file is written into ~/.claude: the orch creates the "room CODE open" task.
  *   spawn({code, cwd, ...}) -> {ok, job?, error?}      runs it, parses "backgrounded · <job> · orch.CODE",
  *       records members.json orch {job, spawned_at} (pid is filled when the orch's /sub-human binds it)

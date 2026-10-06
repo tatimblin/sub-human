@@ -25,7 +25,7 @@
 <text x="97.8" y="89" fill="#999999" textLength="405.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">@sub-human:orchestrator · /private/tmp/sh-demo/alice</text>
 <text x="12" y="140" fill="#505050" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯</text>
 <text x="27.6" y="140" fill="#ffffff" textLength="156" lengthAdjust="spacing" xml:space="preserve">/sub-human:sub-human</text>
-<text x="12" y="157" fill="#999999" textLength="507" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  UserPromptExpansion says: sub-human: orch of room stoat-3644</text>
+<text x="12" y="157" fill="#999999" textLength="507" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  UserPromptExpansion says: sub-human: orch of room gecko-5061</text>
 <text x="12" y="191" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
 <text x="27.6" y="191" fill="#000000" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">sub-human:participant</text>
 <text x="191.4" y="191" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">(alice)</text>
@@ -33,7 +33,7 @@
 <text x="51" y="208" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
 <text x="191.4" y="208" fill="#999999" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
 <text x="12" y="242" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="242" textLength="1138.8" lengthAdjust="spacing" xml:space="preserve"> I've joined room stoat-3644 and added alice's row. Task #1 (&quot;room stoat-3644 open&quot;) is now in progress, and I'm waiting for messages or requests.</text>
+<text x="19.8" y="242" textLength="889.2" lengthAdjust="spacing" xml:space="preserve"> Joined room gecko-5061: alice's row is running and task 1 (&quot;room gecko-5061 open&quot;) is in progress, owned by room.</text>
 <text x="12" y="276" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="276" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="276" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
@@ -47,10 +47,10 @@
 <text x="277.2" y="718" fill="#999999" font-weight="bold" xml:space="preserve">0</text>
 <text x="285" y="718" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> open)</text>
 <text x="27.6" y="735" fill="#d77757" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◼ </text>
-<text x="43.2" y="735" font-weight="bold" textLength="156" lengthAdjust="spacing" xml:space="preserve">room stoat-3644 open</text>
+<text x="43.2" y="735" font-weight="bold" textLength="156" lengthAdjust="spacing" xml:space="preserve">room gecko-5061 open</text>
 <text x="1135.2" y="752" fill="#ffc107" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="1314.6" y="752" fill="#ffc107" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="769" fill="#888888" textLength="1560" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── orch.stoat-3644 ─</text>
+<text x="12" y="769" fill="#888888" textLength="1560" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── orch.gecko-5061 ─</text>
 <text x="12" y="786" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="803" fill="#888888" textLength="1560" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
 <text x="27.6" y="820" fill="#48968c" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ plan mode on</text>

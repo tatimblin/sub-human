@@ -7,6 +7,6 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="792" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">orch · S10</text>
 <g fill="#d6dbe5">
-<text x="12" y="55" textLength="592.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Couldn't read logs for 2a0771d4 — job not found — it may have already exited</text>
-<text x="12" y="72" textLength="592.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Couldn't read logs for 2a0771d4 — job not found — it may have already exited</text>
+<text x="12" y="55" textLength="592.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Couldn't read logs for 30177c08 — job not found — it may have already exited</text>
+<text x="12" y="72" textLength="592.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Couldn't read logs for 30177c08 — job not found — it may have already exited</text>
 </g></svg>

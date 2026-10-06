@@ -1,35 +1,35 @@
 
-  I also reminded him that the plan requires a test that after=zzz returns 400. His message only says "3/3 pass" without
-  listing the tests, so I can't tell whether that one is included.
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Task #2, "cursor paging handler", is now claimed by alice and marked in progress, as she asked in #17.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-  Searched for 1 pattern, read 1 file, called plugin:sub-human:room 
+  Called plugin:sub-human:room 
 
-⏺ I marked task #2 ("cursor paging handler") complete because alice's Claude, the owner's side, sent the done request
-  (#28: "handler in, npm test 3/3 pass"). The files I can see don't back that up yet:
+⏺ I didn't apply bob's request in #19 to mark task #2 done. The task is claimed by alice (#17), so only her done request
+  can complete it, and it stays in progress. I told bob this in #20 and suggested he add his own task for the parser
+  tests.
 
-  - src/server.js in /private/tmp/sh-demo/alice still answers GET /tasks with 501 "not implemented", the same code I
-    read before.
-  - test/ has only health.test.js, which is one test, not three.
-  - The test the plan requires (after=zzz must return 400, #13) isn't there.
+✻ Waiting for 2 background agents to finish
 
-  The handler may live in another checkout or not have been saved. I posted this to alice (#30), asked where the code
-  is, and asked whether to reopen #2. The question of whether a limit above 50 is cut to 50 or rejected with a 400 is
-  also still open.
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Task #2, the cursor paging handler, is now marked completed on alice's own done request (#21). Her evidence is
+  recorded in the task: "handler in, npm test 3/3 pass". I haven't run the tests myself.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ UserPromptSubmit operation blocked by hook:
-  the orch takes no typed input; use @room or ask your Claude to message orch.stoat-3644
+  the orch takes no typed input; use @room or ask your Claude to message orch.gecko-5061
 
   2 tasks (1 done, 1 in progress, 0 open)
-  ◼ room stoat-3644 open
+  ◼ room gecko-5061 open
   ✔ cursor paging handler
                                                                 Update available! Run: brew upgrade claude-code@latest
-────────────────────────────────────────────────────────────────────────────────────────────────────── orch.stoat-3644 ─
+────────────────────────────────────────────────────────────────────────────────────────────────────── orch.gecko-5061 ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ plan mode on · ← 1 agent · 1 monitor · ctrl+t to hide tasks · ↓ to manage

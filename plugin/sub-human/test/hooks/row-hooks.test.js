@@ -228,12 +228,12 @@ test('row agents: a stray typed message gets the one-line read-only reply, then 
   }
 });
 
-test('row agents: descriptions are at most 125 chars each; model haiku, background, hold-only tools', () => {
+test('row agents: descriptions are at most 125 chars each; no model key (rows inherit the session model), background, hold-only tools', () => {
   for (const f of ['room.md', 'participant.md']) {
     const s = fs.readFileSync(path.join(PLUGIN, 'agents', f), 'utf8');
     const d = /^description: (.*)$/m.exec(s)[1];
     assert.ok(Array.from(d).length <= 125, `${f}: ${d.length}`);
-    assert.match(s, /^model: haiku$/m);
+    assert.doesNotMatch(s, /^model:/m, `${f} prescribes no model`);
     assert.match(s, /^background: true$/m);
     assert.match(s, /^tools: .*mcp__plugin_sub-human_room__hold$/m);
   }

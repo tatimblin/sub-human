@@ -58,6 +58,17 @@ const PHASE0 = {
   injected: { orch: 7740, alice: 12082, bob: 13268, total: 33090 },
 };
 
+/** stoat-3644, the previous slim run (commit da12d4d; seats on Haiku, the orch on the default model), from its checks.json. */
+const STOAT = {
+  run: 'stoat-3644',
+  wakes: { orch: 11, alice: 8, bob: 9, total: 28 },
+  noise: { captures: 55, lines: 167, perCapture: 3.04, perCaptureExWaiting: 1.22, monitor: 65, waiting: 100, hookError: 0, blocked: 2, invalid: 0 },
+  joinChars: { orch: 721, alice: 1096, bob: 1090 },
+  injected: { orch: 2356, alice: 5681, bob: 5666, total: 13703 },
+  red: 26,
+  cardsPerCard: 2.75,
+};
+
 const jsonl = f => { try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } };
 const textOf = c => (typeof c === 'string' ? c : Array.isArray(c) ? c.map(x => (x && (x.text || (typeof x.content === 'string' ? x.content : ''))) || '').join('\n') : '');
 const isToolResult = e => Array.isArray(e.message && e.message.content) && e.message.content.length > 0 && e.message.content.every(c => c && c.type === 'tool_result');
@@ -103,7 +114,7 @@ function trigger(e) {
   return null;
 }
 
-const HASH_RE = /proposal\s+([0-9a-f]{6,12})\b/;  // the member text asks for "proposal <hash>"; Haiku often writes 6 hex
+const HASH_RE = /proposal\s+([0-9a-f]{6,12})\b/;  // the member text asks for "proposal <hash>"; a model may write only 6 hex
 /** Consent-card calls in one transcript's entries: [{at, hash, toCard, after}]. */
 function cardTurns(es) {
   const out = [];
@@ -258,4 +269,4 @@ if (require.main === module) {
   process.stdout.write(JSON.stringify(measure({ screens, home: o.home || process.env.SUB_HUMAN_HOME || '/tmp/sh-demo/home' }), null, 1) + '\n');
 }
 
-module.exports = { measure, BASELINE, PHASE0, NOISE, trigger, seatTranscriptMetrics, cardTurns, isRed };
+module.exports = { measure, BASELINE, PHASE0, STOAT, NOISE, trigger, seatTranscriptMetrics, cardTurns, isRed };

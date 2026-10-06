@@ -4,12 +4,12 @@
 
 
 ❯ /sub-human:sub-human
-  ⎿  UserPromptExpansion says: sub-human: orch of room stoat-3644
+  ⎿  UserPromptExpansion says: sub-human: orch of room gecko-5061
 
 ⏺ sub-human:participant(alice)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ I've joined room stoat-3644 and added alice's row. Task #1 ("room stoat-3644 open") is now in progress, and I'm waiting for messages or requests.
+⏺ Joined room gecko-5061: alice's row is running and task 1 ("room gecko-5061 open") is in progress, owned by room.
 
 ✻ Waiting for 1 background agent to finish
 
@@ -18,7 +18,7 @@
 ⏺ sub-human:participant(bob)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ Bob joined the room (#2), so I've added a row for him next to alice's. No requests yet; waiting.
+⏺ Bob joined room gecko-5061, and his row is now running.
 
 ✻ Waiting for 2 background agents to finish
 
@@ -37,9 +37,9 @@
 
 
   1 tasks (0 done, 1 in progress, 0 open)
-  ◼ room stoat-3644 open
+  ◼ room gecko-5061 open
                                                                                                                                                 Update available! Run: brew upgrade claude-code@latest
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── orch.stoat-3644 ─
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── orch.gecko-5061 ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ plan mode on · ← 1 agent · 1 monitor · ctrl+t to hide tasks · ↓ to manage

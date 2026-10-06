@@ -23,7 +23,7 @@
 
 - Spawn in the **joiner's cwd**. `--bg` refuses an untrusted cwd.
 - Use a clean env: `env -i` plus `HOME USER LOGNAME SHELL PATH TERM LANG TMPDIR`, plus the `--settings` env from the plan.
-- Plan mode runs the orch on Sonnet 5, so there's no `--model` flag.
+- No `--model` flag: the orch runs on the user's default model. (The plugin prescribes no model anywhere; the user or agent decides.)
 
 ### 3. No file-written sentinel
 
@@ -60,7 +60,7 @@ PostToolUse fires for refused updates with `success:false`. Skip those.
 - Drop answers with `afkTimeoutMs`, with no `answers`, or with a stale hash. `Not yet` records nothing.
 - Post `additionalContext`: "Recorded. Agreeing is not a go-ahead to build; wait for the decision and your people."
 - Reminders say the closed card is fine to reopen.
-- The member text (D) needs one line saying that when a proposal names you, you call AskUserQuestion with the hash. Without that line, Haiku ignored the monitor line.
+- The member text (D) needs one line saying that when a proposal names you, you call AskUserQuestion with the hash. Without that line, the model in S2 ignored the monitor line.
 - **Proposer:** "propose this" goes to `propose({path})`. Optionally, PostToolUse(ExitPlanMode) may offer to propose, with no deny.
 
 ## Known issues from the Phase 0 run (assign to the owners named)
@@ -78,7 +78,7 @@ PostToolUse fires for refused updates with `success:false`. Skip those.
 - **The coordinator has already deleted** the plan's subtracted files: `mcp/signoff.js`, `hooks/plan-gate.js`, `hooks/plan-result.js`, `hooks/precompact-note.js`, `statusline/alert.js`, and the main status line. Don't recreate them.
 - **Tests:** `node --test plugin/sub-human/test` with zero dependencies. Your tests must pass. Failures in another owner's files aren't yours to fix.
 - **Live probes** are optional and cheap:
-  - `--model haiku` (the orch will be Sonnet anyway);
+  - on the user's default model (the plugin prescribes none);
   - `/tmp/p2-<owner>/`, tmux sessions `p2-<owner>-*`;
   - launch with `env -i` + `--setting-sources project,local`;
   - kill everything you start.

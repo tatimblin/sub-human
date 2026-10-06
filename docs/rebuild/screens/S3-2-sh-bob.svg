@@ -7,69 +7,92 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">bob · S3</text>
 <g fill="#d6dbe5">
-<rect x="12" y="246" width="15.6" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="246" width="358.8" height="17" fill="#3a3a3a"/>
-<rect x="12" y="314" width="15.6" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="314" width="663" height="17" fill="#3a3a3a"/>
-<text x="12" y="89" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="89" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> You're in room stoat-3644.</text>
-<text x="12" y="123" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="123" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="123" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
-<text x="129" y="123" fill="#949494" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> background agent to finish</text>
-<text x="12" y="157" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="157" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="191" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="191" textLength="600.6" lengthAdjust="spacing" xml:space="preserve"> Alice says: &quot;bob, can you take the parser tests? handler's in src/server.js&quot;</text>
-<text x="12" y="225" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="225" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="225" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="225" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="259" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="27.6" y="259" fill="#ffffff" textLength="358.8" lengthAdjust="spacing" xml:space="preserve">@room sure, once we've agreed how paging works</text>
-<text x="12" y="293" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="293" fill="#ffd700" textLength="429" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Operation stopped by hook: ✓ posted to stoat-3644 as #4</text>
-<text x="12" y="327" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="27.6" y="327" fill="#ffffff" textLength="663" lengthAdjust="spacing" xml:space="preserve">ask alice's Claude how createTask in src/store.js picks ids. just ask, change nothing</text>
-<text x="12" y="344" fill="#949494" textLength="873.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  “How does `createTask` in `src/store.js` pick IDs?” → sent to alice.stoat-3644 — another Claude session on </text>
-<text x="51" y="361" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">this machine</text>
-<text x="12" y="395" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="395" textLength="436.8" lengthAdjust="spacing" xml:space="preserve"> Message sent to alice's Claude. Waiting for a response.</text>
-<text x="12" y="429" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="429" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="429" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="429" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="463" fill="#949494" textLength="249.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">› Message from @alice.stoat-3644</text>
-<text x="261.6" y="463" fill="#949494" font-style="italic" textLength="678.6" lengthAdjust="spacing" xml:space="preserve">: `createTask` uses a simple auto-incrementing counter: a module-level `nextId` starts </text>
-<text x="12" y="480" fill="#949494" font-style="italic" textLength="273" lengthAdjust="spacingAndGlyphs" xml:space="preserve">at 1, and each call to `createTask…</text>
-<text x="285" y="480" fill="#949494" textLength="148.2" lengthAdjust="spacing" xml:space="preserve"> (ctrl+o to expand)</text>
-<text x="12" y="514" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="514" textLength="171.6" lengthAdjust="spacing" xml:space="preserve"> Alice's Claude says: </text>
-<text x="191.4" y="514" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">createTask</text>
-<text x="269.4" y="514" textLength="436.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> uses a simple auto-incrementing counter—a module-level </text>
-<text x="706.2" y="514" fill="#afd7ff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">nextId</text>
-<text x="753" y="514" textLength="171.6" lengthAdjust="spacing" xml:space="preserve"> starts at 1, and each</text>
-<text x="12" y="531" textLength="296.4" lengthAdjust="spacing" xml:space="preserve">  call assigns the current value with </text>
-<text x="308.4" y="531" fill="#afd7ff" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">id: nextId++</text>
-<text x="402" y="531" textLength="522.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">, then increments. So IDs are sequential integers (1, 2, 3, …). The</text>
-<text x="27.6" y="548" fill="#afd7ff" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">reset()</text>
-<text x="82.2" y="548" textLength="132.6" lengthAdjust="spacing" xml:space="preserve"> function resets </text>
-<text x="214.8" y="548" fill="#afd7ff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">nextId</text>
-<text x="261.6" y="548" textLength="163.8" lengthAdjust="spacing" xml:space="preserve"> back to 1 for tests.</text>
+<rect x="12" y="93" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="93" width="663" height="17" fill="#3a3a3a"/>
+<text x="12" y="72" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="72" fill="#ffd700" textLength="429" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Operation stopped by hook: ✓ posted to gecko-5061 as #4</text>
+<text x="12" y="106" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="27.6" y="106" fill="#ffffff" textLength="663" lengthAdjust="spacing" xml:space="preserve">ask alice's Claude how createTask in src/store.js picks ids. just ask, change nothing</text>
+<text x="12" y="123" fill="#949494" textLength="803.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  “Ask how createTask picks ids” → sent to alice.gecko-5061 — another Claude session on this machine</text>
+<text x="12" y="140" fill="#949494" textLength="280.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  Allowed by auto mode classifier</text>
+<text x="12" y="174" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="174" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> I asked alice's Claude how </text>
+<text x="238.2" y="174" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">createTask</text>
+<text x="316.2" y="174" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> in </text>
+<text x="347.4" y="174" fill="#afd7ff" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">src/store.js</text>
+<text x="441" y="174" textLength="507" lengthAdjust="spacing" xml:space="preserve"> picks ids and said not to change anything. The message is queued</text>
+<text x="12" y="191" textLength="889.2" lengthAdjust="spacing" xml:space="preserve">  in that session, but nothing confirms it's been read yet. I'll pass the answer along when it comes back. Your #4</text>
+<text x="12" y="208" textLength="343.2" lengthAdjust="spacing" xml:space="preserve">  reply to alice is also posted in the room.</text>
+<text x="12" y="242" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="242" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="242" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="242" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="276" fill="#949494" textLength="249.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">› Message from @alice.gecko-5061</text>
+<text x="261.6" y="276" fill="#949494" font-style="italic" textLength="670.8" lengthAdjust="spacing" xml:space="preserve">: createTask in src/store.js gets its ids from a module-level counter that goes up by </text>
+<text x="12" y="293" fill="#949494" font-style="italic" textLength="265.2" lengthAdjust="spacing" xml:space="preserve">one per task. Nothing was changed.</text>
+<text x="277.2" y="293" fill="#949494" textLength="148.2" lengthAdjust="spacing" xml:space="preserve"> (ctrl+o to expand)</text>
+<text x="12" y="327" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="327" textLength="405.6" lengthAdjust="spacing" xml:space="preserve"> Alice's Claude says it changed nothing. Here's how </text>
+<text x="425.4" y="327" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">createTask</text>
+<text x="503.4" y="327" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> in </text>
+<text x="534.6" y="327" fill="#afd7ff" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">src/store.js</text>
+<text x="628.2" y="327" textLength="85.8" lengthAdjust="spacing" xml:space="preserve"> picks ids:</text>
+<text x="12" y="361" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="361" font-weight="bold" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">Counter:</text>
+<text x="113.4" y="361" fill="#afd7ff" textLength="117" lengthAdjust="spacing" xml:space="preserve">let nextId = 1;</text>
+<text x="230.4" y="361" textLength="241.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> at module scope (line 5), and </text>
+<text x="472.2" y="361" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">createTask</text>
+<text x="550.2" y="361" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (line 7) assigns </text>
+<text x="690.6" y="361" fill="#afd7ff" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">id: nextId++</text>
+<text x="784.2" y="361" textLength="156" lengthAdjust="spacingAndGlyphs" xml:space="preserve">. Ids go 1, 2, 3… in</text>
+<text x="12" y="378" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">    the order tasks are inserted.</text>
+<text x="12" y="395" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="395" font-weight="bold" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">Lifetime:</text>
+<text x="113.4" y="395" textLength="296.4" lengthAdjust="spacing" xml:space="preserve"> the counter goes back to 1 only when </text>
+<text x="409.8" y="395" fill="#afd7ff" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">reset()</text>
+<text x="464.4" y="395" textLength="483.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> runs (line 20). Ids aren't reused within a run, and since the</text>
+<text x="12" y="412" textLength="405.6" lengthAdjust="spacing" xml:space="preserve">    store is in-memory they don't survive a restart.</text>
+<text x="12" y="429" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="429" font-weight="bold" textLength="78" lengthAdjust="spacing" xml:space="preserve">Seed data:</text>
+<text x="129" y="429" fill="#afd7ff" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">seed(n=237)</text>
+<text x="214.8" y="429" textLength="109.2" lengthAdjust="spacing" xml:space="preserve"> goes through </text>
+<text x="324" y="429" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">createTask</text>
+<text x="402" y="429" textLength="382.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">, so seeded ids are 1–237. Every 3 tasks share a </text>
+<text x="784.2" y="429" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
+<text x="854.4" y="429" textLength="93.6" lengthAdjust="spacing" xml:space="preserve"> value (base</text>
+<text x="12" y="446" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">    + floor(i/3) minutes).</text>
+<text x="12" y="463" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="463" font-weight="bold" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">Paging:</text>
+<text x="97.8" y="463" textLength="335.4" lengthAdjust="spacing" xml:space="preserve"> ids are unique and always increasing, but </text>
+<text x="433.2" y="463" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
+<text x="503.4" y="463" textLength="171.6" lengthAdjust="spacing" xml:space="preserve"> repeats. A cursor on </text>
+<text x="675" y="463" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
+<text x="745.2" y="463" textLength="156" lengthAdjust="spacing" xml:space="preserve"> alone would skip or</text>
+<text x="12" y="480" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">    repeat rows. Using </text>
+<text x="191.4" y="480" fill="#afd7ff" textLength="117" lengthAdjust="spacing" xml:space="preserve">(createdAt, id)</text>
+<text x="308.4" y="480" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> or </text>
+<text x="339.6" y="480" fill="#afd7ff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
+<text x="355.2" y="480" textLength="546" lengthAdjust="spacing" xml:space="preserve"> alone would be stable. The file header says the store stands in for a</text>
+<text x="12" y="497" textLength="514.8" lengthAdjust="spacing" xml:space="preserve">    Postgres table with about 4M rows taking about 30 inserts/sec.</text>
+<text x="12" y="531" textLength="928.2" lengthAdjust="spacing" xml:space="preserve">  That's relevant to the paging agreement you said in #4 you're waiting on. I haven't posted any of this to the room. I</text>
+<text x="12" y="548" textLength="156" lengthAdjust="spacing" xml:space="preserve">  can if you'd like.</text>
 <text x="12" y="582" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="582" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="582" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
 <text x="129" y="582" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="511.2" y="599" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="599" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.stoat-3644 ─</text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.gecko-5061 ─</text>
 <text x="12" y="633" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="27.6" y="633" opacity="0.6" textLength="319.8" lengthAdjust="spacing" xml:space="preserve">ask alice what paging mechanism she wants</text>
+<text x="27.6" y="633" opacity="0.6" textLength="273" lengthAdjust="spacing" xml:space="preserve">@room let's page on (createdAt, id)</text>
 <text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
-<text x="27.6" y="667" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ manual mode on · </text>
-<text x="175.8" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
-<text x="246" y="667" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
+<text x="27.6" y="667" fill="#ffd700" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏵⏵ auto mode on</text>
+<text x="144.6" y="667" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="168" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
+<text x="238.2" y="667" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
 <text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
-<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ stoat-3644  </text>
-<text x="136.8" y="718" fill="#949494" opacity="0.6" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">2 here</text>
+<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ gecko-5061  </text>
+<text x="136.8" y="718" fill="#949494" opacity="0.6" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">+alice joined</text>
+<text x="238.2" y="718" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="261.6" y="718" fill="#949494" opacity="0.6" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">2 here</text>
 </g></svg>

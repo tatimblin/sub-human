@@ -6,7 +6,7 @@
 // server; a dead server pid or a stale file means nothing is held, e.g. after --resume). Covers main
 // re-spawning after /clear and the orch re-spawning a member's row on "NAME rejoined" (the row survived the
 // leave). A member seat also never spawns a participant row from its main session, nor one for itself: its
-// participant rows are spawned inside its room row (Haiku once added a stray participant(self) call to the
+// participant rows are spawned inside its room row (a model once added a stray participant(self) call to the
 // join's single room-row call). Silent otherwise; never blocks anything else.
 const path = require('node:path');
 const identity = require(path.join(__dirname, '..', 'lib', 'identity.js'));

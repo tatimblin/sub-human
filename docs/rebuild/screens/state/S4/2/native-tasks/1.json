@@ -1,9 +1,0 @@
-{
-  "id": "1",
-  "subject": "room stoat-3644 open",
-  "description": "Room stoat-3644 is open (members: alice). Stays in_progress until a message says \"room closed\".",
-  "status": "in_progress",
-  "blocks": [],
-  "blockedBy": [],
-  "owner": "room"
-}

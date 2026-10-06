@@ -60,13 +60,13 @@
     "status": "idle"
   },
   {
-    "pid": 39336,
-    "id": "2a0771d4",
+    "pid": 83864,
+    "id": "30177c08",
     "cwd": "/private/tmp/sh-demo/alice",
     "kind": "background",
-    "startedAt": 1791257776688,
-    "sessionId": "2a0771d4-8fbe-426b-9590-7bfe5abb5c5c",
-    "name": "orch.stoat-3644",
+    "startedAt": 1791269179435,
+    "sessionId": "30177c08-c1f0-4e1b-b0af-f6f4a4e067d8",
+    "name": "orch.gecko-5061",
     "status": "busy",
     "state": "working"
   }

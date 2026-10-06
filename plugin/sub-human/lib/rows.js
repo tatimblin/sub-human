@@ -27,7 +27,8 @@
  *   rowText(code, name, viewer, {color, entries, members, now}?) -> string (<= ROW_MAX chars, no label)
  *       Proposals: `proposal` entries with a hash (lib/proposal.js); answers = latest via=human signoff /
  *       objection with that proposal_hash; a system `decision` closes one. Segments that do not fit are dropped.
- *       name === code (or null): the member's room row, from viewer's seat: "⚠ your answer needed 3fa2c1",
+ *       name === code (or null): the member's room row, from viewer's seat: first a join / settled leave of the
+ *         last 2 min ("+bob joined", "−bob left"; lib/notices.js rowSegment), then "⚠ your answer needed 3fa2c1",
  *         "✓ agreed 3fa2c1 1/2", "✖ objected (#31)", "✔ decided 3fa2c1" ("✖ blocked 3fa2c1" when someone objected), "proposal 3fa2c1 0/2", else "N here";
  *         then "✉ N for you", then lib/tasks.js summary(code, viewer) ("tasks 3 open · #2 you · #4 bob").
  *       otherwise: NAME's state as viewer sees it: "✓ agreed 3fa2c1", "✖ objected (#31)", "⚠ reviewing 3fa2c1",
@@ -418,6 +419,10 @@ function participantText(code, name, viewer, es, ms, now, c, tasks) {
 
 function roomText(code, viewer, es, ms, now, c, summary) {
   const parts = [];
+  // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left" (lib/notices.js)
+  let move = '';
+  try { move = require('./notices.js').rowSegment(es, viewer, { now }); } catch { /* optional */ }
+  if (move) parts.push(c.dim(move));
   const ps = proposals(es);
   const need = viewer ? awaiting(ps, viewer) : [];
   const p = viewer ? latestFor(ps, viewer) : ps.at(-1);

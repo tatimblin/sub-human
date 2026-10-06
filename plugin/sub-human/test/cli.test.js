@@ -93,7 +93,7 @@ test('cli tail: a member whose room row runs is not pushed a join (no row-call i
   assert.doesNotMatch(t.out, /Agent|row:/);
 });
 
-test('cli tail: orch push is to/@orch, objections on its proposals, decisions, task_req', async () => {
+test('cli tail: orch push is to/@orch, objections on its proposals, task_req (not decisions)', async () => {
   h.freshHome();
   const { code } = h.register('orch', 'orch');
   room.bind(code);
@@ -107,11 +107,11 @@ test('cli tail: orch push is to/@orch, objections on its proposals, decisions, t
   sys('member_left', 'bob');                                                                   // #6 pull
   say('alice', '', { kind: 'objection', proposal_hash: H1, text: 'no' });                      // #7 objection on its proposal: push
   room.append({ kind: 'task_req', op: 'add', subject: 'parser tests' }, { via: 'agent', from: 'bob' }); // #8 push
-  sys('decision', 'room', { proposal_hash: H1 });                                              // #9 push
+  sys('decision', 'room', { proposal_hash: H1 });                                              // #9 pull
   say('alice', '@orch end');                                                                   // #10 push
   await t.until('"@orch end"');
   await h.sleep(400);
-  assert.deepEqual(t.ids(), [7, 8, 9, 10], t.out);
+  assert.deepEqual(t.ids(), [7, 8, 10], t.out);
   assert.equal(t.batches(), 1);
 });
 

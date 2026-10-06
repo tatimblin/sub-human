@@ -25,6 +25,10 @@
  *       is not running in this session (the orch's participant row, a member's room row); the line then ends
  *       with that note and the Agent call. A join whose row runs is never pushed, so no notice invites a call
  *       that row-guard would deny. The orch is also pushed the join when the note is unavailable.
+ *       Join / leave notices (members only; lib/notices.js): another member's join, or their leave once it has
+ *       settled SUB_HUMAN_LEAVE_MS with no rejoin, is written to this session's notice file
+ *       (<home>/notices/<session_id>.json), never to stdout: hooks/notice.js's FileChanged hook shows it to the
+ *       human as a notification, so it costs no model turn.
  *   sub-human read [N[,M] | --id N[,M]] [--json] [--room CODE]
  *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
@@ -187,8 +191,34 @@ function tail(args) {
       process.stdout.write([room.stateLine(me, entries), ...out].join('\n') + '\n', done);
     }
 
+    // Join / leave notices for the human (members only): to the notice file, not stdout (no wake).
+    const noticesMod = me.role === 'orch' ? null : optional(path.join(__dirname, '..', 'lib', 'notices.js'));
+    const delivered = new Set();
+    const timers = new Set();
+    const deliver = () => {
+      if (s.dead || !noticesMod) return;
+      try {
+        room.bind(s.code);
+        const now = Date.now();
+        const ms = identity.readMembers(s.code) || {};
+        const sid = ms[me.name] && ms[me.name].session_id;
+        const ns = noticesMod.joinLeave(room.readAll(), me.name, { now, settle: leaveMs })
+          .filter(n => n.settled && !delivered.has(n.id) && now - Date.parse(n.at) < noticesMod.FRESH_MS + leaveMs);
+        if (!ns.length || !sid) return;
+        for (const n of ns) delivered.add(n.id);
+        noticesMod.write(sid, ns.map(n => ({ id: n.id, code: s.code, name: me.name, text: noticesMod.text(s.code, n, ms), at: new Date(now).toISOString() })), now);
+      } catch { /* best effort: the next prompt's systemMessage (at-room.js) still shows it */ }
+    };
+    const onMove = e => {
+      if (!noticesMod || e.from === me.name || e.from === 'orch') return;
+      if (Date.now() - Date.parse(e.at) > noticesMod.FRESH_MS) return; // an old entry replayed from the cursor
+      const t = setTimeout(() => { timers.delete(t); deliver(); }, e.kind === 'member_left' ? leaveMs + 250 : 300);
+      timers.add(t);
+    };
+
     const stopFollow = room.follow(after, e => {
       if (s.dead) return;
+      if (e.kind === 'member_joined' || e.kind === 'member_left') onMove(e);
       if (e.id <= processed) { saved = 0; room.setCursor(reader, 0); } // the log was reset under us
       processed = e.id;
       if (e.kind === 'member_joined' && held.has(e.from)) {
@@ -211,6 +241,7 @@ function tail(args) {
     }, { intervalMs: pollMs });
     s.stop = () => {
       stopFollow();
+      for (const t of timers) clearTimeout(t);
       clearTimeout(quietT); clearTimeout(maxT);
       for (const h of held.values()) clearTimeout(h.timer);
     };

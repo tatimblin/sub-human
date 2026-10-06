@@ -1,10 +1,22 @@
-  bob's objection: "add a test for a cursor past the end — [38;2;177;185;249mafter=zzz[39m must 400, not 500". I revised the plan and proposed version 2 to both of them (#15). It now:
-  - requires a test that [38;2;177;185;249mGET /tasks?after=zzz[39m returns 400, never 500;
-  - separates two cases: a garbled cursor like [38;2;177;185;249mzzz[39m returns 400, while a valid cursor that points past the last task returns an empty page, as alice said in #8.
+  Nobody has answered a card yet.
 
-  Version 2 replaces version 1, so alice's sign-off no longer counts. Both of them need to answer the new card, and I explained this in the room (#16).
+[38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
 
-  One question is still open in the plan: whether a [38;2;177;185;249mlimit[39m above 50 gets cut down to 50 or rejected with a 400.
+[38;2;255;255;255m⏺[39m Monitor event: "sub-human room notices"
+
+[38;2;78;186;101m⏺[39m [1mUpdated plan[0m
+[38;2;153;153;153m  ⎿  /plan to preview[39m
+
+[38;2;78;186;101m⏺[39m [1mUpdated plan[0m
+[38;2;153;153;153m  ⎿  /plan to preview[39m
+
+  [38;2;153;153;153mCalled plugin:sub-human:room [39m
+
+[38;2;255;255;255m⏺[39m Bob objected to the first paging plan (#8), so I revised it and sent it out again as #10. Bob and alice each need to answer the new card, and alice's earlier sign-off doesn't carry over.
+
+  His note: "add a test for a cursor past the end — [38;2;177;185;249mafter=zzz[39m must 400, not 500". The revision adds:
+  - [1mHis test:[0m [38;2;177;185;249mafter=zzz[39m must return 400. A cursor that can't be read always returns 400, never 500.
+  - [1mA second test I added:[0m a valid cursor pointing past the oldest task returns an empty page with no next cursor. His note mixed the two cases, so the plan now covers both.
 
 [38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
 
@@ -12,39 +24,27 @@
 
   [38;2;153;153;153mCalled plugin:sub-human:room [39m
 
-[38;2;255;255;255m⏺[39m The paging plan for [38;2;177;185;249mGET /tasks[39m is decided: alice (#17) and bob (#18) both signed off on version 2, and the room recorded the decision (#19).
-
-  I posted it to the room (#20) and flagged two things still to settle:
-  - [1mOpen question:[0m if [38;2;177;185;249mlimit[39m is over 50 or not a whole number, does the API cut it to 50 or return a 400? Neither of them has said, so the handler shouldn't ship until they do.
-  - [1mWork split:[0m bob said in #4 he'd take the tests once paging was agreed. Nobody has taken the handler in [38;2;177;185;249msrc/server.js[39m yet.
-
-  Nobody has sent a task request, so the room's task list is unchanged. I'll wait for task requests or further messages.
+[38;2;255;255;255m⏺[39m The paging plan is decided: bob and alice both signed the revised proposal (#11, #12, room decision #13). I added task #2, "cursor paging handler", owned by alice and still pending, as she asked in
+  #14.
 
 [38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
 
 [38;2;255;255;255m⏺[39m Monitor event: "sub-human room notices"
 
-[38;2;255;255;255m⏺[39m alice's Claude sent a task request (#21), so I added task #2, "cursor paging handler", to the room's list with alice as owner. It's still pending, since the request didn't ask to start it. The
-  description covers the agreed paging plan (#19) and notes that the over-50 [38;2;177;185;249mlimit[39m question is still open.
+[38;2;255;255;255m⏺[39m Task #2, "cursor paging handler", is now claimed by alice and marked in progress, as she asked in #17.
 
 [38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
 
-[38;2;255;255;255m⏺[39m Monitor event: "sub-human room notices"
-
-[38;2;255;255;255m⏺[39m alice's Claude claimed task #2, "cursor paging handler" (#24), so it's now in progress with alice as owner.
-
-[38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
-
-  [1m[38;2;153;153;153m2[0m[38;2;153;153;153m tasks ([1m0[0m[38;2;153;153;153m done, [1m2[0m[38;2;153;153;153m in progress, [1m0[0m[38;2;153;153;153m open)[39m
-  [38;2;215;119;87m◼ [1m[39mroom stoat-3644 open[0m
+ [38;2;153;153;153m [1m2[0m[38;2;153;153;153m tasks ([1m0[0m[38;2;153;153;153m done, [1m2[0m[38;2;153;153;153m in progress, [1m0[0m[38;2;153;153;153m open)[39m
+  [38;2;215;119;87m◼ [1m[39mroom gecko-5061 open[0m
   [38;2;215;119;87m◼ [1m[39mcursor paging handler[0m
 
+[38;2;153;153;153m❯ [39m
 ❯ 
-❯ 
-                                           [38;2;153;153;153mctrl+t[39m [38;2;153;153;153mto hide [39m [38;2;153;153;153masks · ↓ to manage[39m
+                                           [38;2;153;153;153mesc to[39m [38;2;153;153;153minterrup[39m [38;2;153;153;153m · ctrl+t to hide tasks · ↓ to manage[39m
                                            [38;2;153;153;153mctrl+t[39m [38;2;153;153;153mto hide [39m [38;2;153;153;153masks · ↓ to manage[39m
 
-           [32m✔ decided 95becc[38;2;153;153;153m · ◼ #2 cursor paging handler[39m
-         [32m✔ ✔ decided 95becc[38;2;153;153;153m · ◼ #2 cursor paging handler · [33m? prompt[39m
-         [32m✔ decided 95becc[38;2;153;153;153m · [2midle[0m
+           [32m✔ decided c04d0c[38;2;153;153;153m · ◼ #2 cursor paging handler[39m
+         [32m✔ ✔ decided c04d0c[38;2;153;153;153m · ◼ #2 cursor paging handler[39m
+         [32m✔ decided c04d0c[38;2;153;153;153m · [2midle[0m
 

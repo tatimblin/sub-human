@@ -16,7 +16,7 @@
 <text x="12" y="89" fill="#d78787" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▝▜</text>
 <text x="27.6" y="89" fill="#d78787" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█████</text>
 <text x="66.6" y="89" fill="#d78787" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">█▀</text>
-<text x="97.8" y="89" fill="#949494" textLength="171.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Haiku 4.5 · Claude Max</text>
+<text x="97.8" y="89" fill="#949494" textLength="265.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Opus 5.5 (1M context) · Claude Max</text>
 <text x="12" y="106" fill="#d78787" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ▝▝ ▝▝  </text>
 <text x="97.8" y="106" fill="#949494" textLength="187.2" lengthAdjust="spacing" xml:space="preserve">/private/tmp/sh-demo/bob</text>
 <text x="511.2" y="650" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
@@ -24,7 +24,8 @@
 <text x="12" y="667" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
 <text x="12" y="684" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="701" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
-<text x="27.6" y="718" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ manual mode on · </text>
-<text x="175.8" y="718" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
-<text x="246" y="718" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
+<text x="27.6" y="718" fill="#ffd700" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏵⏵ auto mode on</text>
+<text x="144.6" y="718" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="168" y="718" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
+<text x="238.2" y="718" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
 </g></svg>

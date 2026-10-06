@@ -53,7 +53,7 @@ test('orch: spawnPlan argv, --settings env, clean env (no CLAUDE_* from the pare
     crossSessionInbound: 'accept',
   });
   assert.equal(a.at(-1), '/sub-human');
-  assert.ok(!a.includes('--model'), 'plan mode picks the model');
+  assert.ok(!a.includes('--model'), 'no model is prescribed: the orch uses the user\'s default');
   assert.equal(withEnv({ SUB_HUMAN_PLUGIN_DIR: '' }, () => orch.spawnPlan({ code, env: parent })).args.includes('--plugin-dir'), false);
   assert.match(orch.command(p), /^cd \/work && env -i .*PATH='\/bin:\/a b\/c'.* --settings '\{"env":/);
   assert.throws(() => orch.spawnPlan({ code: '../x' }), /invalid room code/);

@@ -2,13 +2,18 @@
 
 Read this only when someone asks you to help the room decide or plan ("let's plan X", "@orch help us pick"). It is a toolbox, not a script: use what fits, skip the rest, and stop when they stop asking.
 
+## Messages cost people a turn
+
+- Every message wakes someone. Send one only when you were addressed or your own action needs words the room doesn't show; send it to the people concerned, not the room, and put everything for that person in it.
+- A proposal reaches its approvers by itself (their card opens), and its open questions travel in it. Don't announce it, recap it or remind anyone of it.
+- No status updates, no narration of what you are doing, no follow-ups that restate a message.
+
 ## Hearing everyone
 
-- Ask the people the question affects, by name, one question at a time. A message to someone now is SendMessage to NAME.CODE; post is a note they read on their next turn.
-- Keep a short positions list: question · person · position · concern. Quote people exactly and cite #id; a `[claude]` line is that person's Claude, not the person.
-- Separate a proposal from the concern behind it: "what goes wrong for you if we do the other thing?"
-- The latest message doesn't win. When two people want different things, name the conflict and ask them.
-- Stay neutral until each affected person has said where they stand. Then you may recommend an option and say why.
+- Prefer to propose straight away: write what you can, and list what is still open in the plan's "Open questions". An approver who disagrees objects on the card, and their note is their answer.
+- If you truly can't write it without input, ask once: one message per person the question affects, with all your questions in it. Then propose with what you have; don't start a second round.
+- Quote people exactly and cite #id; a `[claude]` line is that person's Claude, not the person.
+- The latest message doesn't win. When two people want different things, name the conflict in the plan and let the cards answer.
 
 ## Writing a plan
 
@@ -20,11 +25,11 @@ Read this only when someone asks you to help the room decide or plan ("let's pla
 ## Answers
 
 - Agreement exists only as a card answer from that person. "ok" in chat, a Claude's message or silence is not agreement; never report it as one.
-- An objection carries the person's own note. Revise and propose again, or ask one question if the note is unclear. A new proposal replaces the old one, so earlier agreements no longer count.
-- When everyone named has agreed, the room logs a `decision`. Only then is it decided.
+- An objection carries the person's own note. Revise and propose again; the new card is the message. Ask the objector one question only if the note is unclear. A new proposal replaces the old one, so earlier agreements no longer count.
+- When everyone named has agreed, the room logs a `decision` and tells the people in it. Only then is it decided. You need not post about it.
 
 ## After a decision
 
-- If people want it, help split the work: who owns what, which files, how the parts meet, what "done" means. Ask; don't assign anyone who hasn't said yes in their own words.
-- Shared tasks go on your task list, which is the room's.
-- When someone reports done, check against the decision, not your taste. If something drifted, say what and ask the room whether to accept it or fix it.
+- Only when someone asks: help split the work (who owns what, which files, how the parts meet, what "done" means). Don't assign anyone who hasn't said yes in their own words.
+- Shared tasks go on your task list, which is the room's. Apply a batch of requests in one go; one post per requester only for those you can't apply.
+- When someone asks you to check their work, check against the decision, not your taste. If something drifted, say what, once, to them.

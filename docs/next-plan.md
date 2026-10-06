@@ -276,9 +276,9 @@ Also 06's: 40 entries, 6 addressed to alice, ≤ 6 alice wakes, the rest as one 
 | Risk | Fallback |
 |---|---|
 | A card costs a turn, and a Claude may ignore the notice | Consent is only delayed, never forged. The digest repeats "proposal P awaits your answer". S2 fails → elicitation. |
-| AskUserQuestion is deferred; Haiku may call it malformed (cf. #5) | The hook rewrites the input regardless; the notice names the tool. Measure in S2. |
-| Rows cost Haiku turns and show "Waiting for N background agents" every turn | Accepted (decision 1). README explains; the user may set `showTurnDuration:false` themselves. Hold returns only on JOINED/RESPAWN/STOP. |
-| Stray text into a row costs a Haiku turn or reaches it late | P0-d hint where the input is; one-line answer. Never posted. |
+| AskUserQuestion is deferred; a model may call it malformed (cf. #5) | The hook rewrites the input regardless; the notice names the tool. Measure in S2. |
+| Rows cost row-agent turns (on the session's own model) and show "Waiting for N background agents" every turn | Accepted (decision 1). README explains; the user may set `showTurnDuration:false` themselves. Hold returns only on JOINED/RESPAWN/STOP. |
+| Stray text into a row costs a row-agent turn or reaches it late | P0-d hint where the input is; one-line answer. Never posted. |
 | `rewakeSummary` is `@internal`; row-rewake costs a cold-cache turn per resume | Drop `rewakeSummary` if it breaks; restore's `RECREATE` on the next prompt still works. |
 | Task tools missing in `--bg` plan mode, or `TaskCompleted` doesn't fire there (S1) | Orch runs `default` mode for tasks; if Task tools are absent, `lib/tasks.js` keeps `<room>/tasks.json` itself (same contract, not native). |
 | Each task request wakes the orch | Settle coalesces bursts into one push; orch applies all pending in one message. If over target, pull lane for `task_req` + apply on the next orch wake. |

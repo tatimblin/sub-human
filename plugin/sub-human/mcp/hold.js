@@ -20,6 +20,8 @@
  *       Both can come back together, one line each. "STOP: ..." when this seat left the room, or
  *       "STOP: duplicate row" at once when another room row already holds here (e.g. re-spawned after /clear).
  * One server serves the whole claude session (main + every subagent), so it sees every row's hold.
+ * The room hold's progress line shows joins and leaves as notices ("⬡ bob joined CODE (alice, bob here)", "⬡ bob
+ * left CODE" once the leave has settled 8 s; a quick leave + rejoin shows nothing; lib/notices.js), not as raw entries.
  * Every progress line ends with HINT ("read-only · talk in main (@room)"): text typed into a row view is not
  * posted (Claude Code queues it for the row agent), so the line says where to talk instead.
  * Liveness goes to <room>/rows/holds-<me>.json (lib/rows.js) for row-guard, join notes and rewake. A room hold
@@ -34,6 +36,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
+const notices = require(path.join(__dirname, '..', 'lib', 'notices.js'));
 
 const envMs = (k, d) => (Number(process.env[k]) > 0 ? Number(process.env[k]) : d);
 const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
@@ -182,12 +185,24 @@ function create(ctx) {
         } else {
           const reply = roomReply(code, missing(code, ms, now));
           if (reply) { finish(h, reply); continue; }
-          if (fresh.length) progress(h, entryLine(fresh.at(-1)));
+          const plain = fresh.filter(e => e.kind !== 'member_joined' && e.kind !== 'member_left');
+          if (plain.length) progress(h, entryLine(plain.at(-1)));
+          const move = newMove(h, code, ms, now);
+          if (move) progress(h, move);
         }
         if (holds.has(h.id) && now - h.sentAt >= BEAT_MS) progress(h);
       }
     }
     if (seat && now - (seat.savedAt || 0) >= BEAT_MS / 2) { seat.savedAt = now; saveSeat(); }
+  }
+
+  /** The newest join / settled leave this room hold has not shown yet, as a notice line (marks them shown). */
+  function newMove(h, code, ms, now) {
+    const { entries } = readEntries(code);
+    const fresh = notices.joinLeave(entries, me && me.name, { now }).filter(n => n.settled && !h.moves.has(n.id));
+    for (const n of fresh) h.moves.add(n.id);
+    const n = fresh.filter(x => now - Date.parse(x.at) < notices.FRESH_MS).at(-1);
+    return n ? clip(notices.text(code, n, ms)) : '';
   }
 
   function startTimer() {
@@ -264,9 +279,12 @@ function create(ctx) {
       roomGone.delete(code);
       const reply = roomReply(code, missing(code, ms, now));
       if (reply) { log('RETURN now', meta.id, reply); roomEnded.set(code, now); saveSeat(); return text(reply); }
-      Object.assign(h, { kind: 'room', name: code });
-      const last = readEntries(code).entries.at(-1);
-      h.msg = last ? entryLine(last) : `room ${code}`;
+      Object.assign(h, { kind: 'room', name: code, moves: new Set() });
+      const es = readEntries(code).entries;
+      const last = es.filter(e => e.kind !== 'member_joined' && e.kind !== 'member_left').at(-1);
+      // a re-called room hold (after JOINED) still shows the join that brought it back, if it is recent
+      const move = newMove(h, code, ms, now);
+      h.msg = move || (last ? entryLine(last) : `room ${code}`);
     } else {
       return text('hold needs {member: NAME} (participant row) or {room: CODE} (room row).', true);
     }

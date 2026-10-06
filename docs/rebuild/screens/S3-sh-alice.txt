@@ -1,22 +1,22 @@
 
  ▐▛███▛█   Claude Code v2.1.281
-▝▜██████▀  Haiku 4.5 · Claude Max
+▝▜██████▀  Opus 5.5 (1M context) · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/alice
 
 
 ❯ /sub-human:sub-human alice
-  ⎿  UserPromptExpansion says: sub-human: opened room stoat-3644 as alice · others: /sub-human NAME
+  ⎿  UserPromptExpansion says: sub-human: opened room gecko-5061 as alice · others: /sub-human NAME
 
-⏺ sub-human:room(stoat-3644)
+⏺ sub-human:room(gecko-5061)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ Room stoat-3644 is set up and ready.
+⏺ You're in room gecko-5061; no one else has joined yet.
 
 ✻ Waiting for 1 background agent to finish
 
 ❯ @room bob, can you take the parser tests? handler's in src/server.js
 
-⏺ Operation stopped by hook: ✓ posted to stoat-3644 as #3
+⏺ Operation stopped by hook: ✓ posted to gecko-5061 as #3
 
 
 
@@ -31,10 +31,10 @@
 
 
                                                                 Update available! Run: brew upgrade claude-code@latest
-───────────────────────────────────────────────────────────────────────────────────────────────────── alice.stoat-3644 ─
+───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
+  ⏵⏵ auto mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ stoat-3644  2 here
+  ◯ gecko-5061  +bob joined · 2 here

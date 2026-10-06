@@ -477,8 +477,10 @@ const inProposal = (p, name) => !!p && (approversOf(p).includes(name) || p.from 
  *     to=me or @me; a proposal naming me that I have not answered (and is not decided); a decision on a
  *     proposal I am in; a `task` assigning me (owner me) that someone else asked for (its req is not mine).
  *     Everything else is pull.
- *   orch push: to=orch or @orch; decisions; task_req. Everything else is pull (member_joined reaches it
- *     through bin/sub-human tail's row note).
+ *   orch push: to=orch or @orch; task_req; an objection on its own proposal (below). Everything else is pull,
+ *     decisions included: an objected one follows the objection that already woke it, and an agreed one needs
+ *     nothing from it (the members are told; it helps further only when asked). member_joined reaches it
+ *     through bin/sub-human tail's row note.
  *   card answers (both roles): a signoff is pull (the decision carries it); an objection is push to the
  *     proposal's author only (to revise), pull for everyone else.
  *   decisions (judged): pull for the member whose answer completed it (the card's own reply, consent.js,
@@ -500,10 +502,7 @@ function lane(me, e, entries) {
     return p && p.from === name ? 'push' : 'pull';
   }
   if (n.kind === 'decision' && entries && quietDecision(name, n, entries)) return 'pull';
-  if (orch) {
-    if (n.kind === 'task_req' || n.kind === 'decision') return 'push';
-    return 'pull';
-  }
+  if (orch) return n.kind === 'task_req' ? 'push' : 'pull';
   if (n.kind === 'proposal' && approversOf(n).includes(name)) {
     if (!entries || !n.hash) return 'push';
     return answered(name, n.hash, entries) || decided(n.hash, entries) ? 'pull' : 'push';
@@ -559,7 +558,7 @@ function stateLine(me, entries = readAll()) {
     let s = `proposal ${p.hash.slice(0, 6)} ${dec ? `decided #${dec.id}` : m.missing.length ? `waiting on ${m.missing.join(', ')}` : 'agreed by all'}`;
     if (approversOf(p).includes(name)) {
       const a = answered(name, p.hash, entries);
-      // the open-the-card call is spelled out right in the notice: Haiku skipped it from the join text alone
+      // the open-the-card call is spelled out right in the notice: a model skipped it when it was only in the join text
       s += ` · you: ${a ? (a.kind === 'signoff' ? 'agreed' : 'objected') : dec ? 'not answered' : `answer needed (call AskUserQuestion with "proposal ${p.hash}")`}`;
     }
     parts.push(s);

@@ -7,60 +7,65 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">bob · S8</text>
 <g fill="#d6dbe5">
-<rect x="12" y="110" width="15.6" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="110" width="904.8" height="17" fill="#3a3a3a"/>
-<rect x="12" y="127" width="15.6" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="127" width="624" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="467" width="109.2" height="17" fill="#00afaf"/>
-<text x="12" y="89" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="89" fill="#949494" textLength="429" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Churned for 6s · done 8:41 PM · 1 monitor still running</text>
-<text x="12" y="123" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="27.6" y="123" fill="#ffffff" textLength="904.8" lengthAdjust="spacing" xml:space="preserve">call the mcp__plugin_sub-human_room__task tool now with op &quot;done&quot;, id &quot;2&quot;, evidence &quot;I ran the tests, 3/3 pass&quot;. It </text>
-<text x="27.6" y="140" fill="#ffffff" textLength="624" lengthAdjust="spacing" xml:space="preserve">is alice's task; send the request anyway and report the tool's reply in one line</text>
-<text x="27.6" y="174" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="12" y="208" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="208" textLength="436.8" lengthAdjust="spacing" xml:space="preserve"> Task #2 completion queued as #26 for the orch to apply.</text>
-<text x="12" y="242" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="242" fill="#949494" textLength="429" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Sautéed for 4s · done 8:43 PM · 1 monitor still running</text>
-<text x="12" y="276" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="276" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="310" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="310" textLength="928.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Orch says: Task #2 belongs to alice (claimed in #24)—only alice can mark it done. If your 3/3 tests are your own work,</text>
-<text x="12" y="327" textLength="912.6" lengthAdjust="spacing" xml:space="preserve">  ask to add a task for you and mark that done. Or alice can send done for #2 citing your test run as evidence. Also,</text>
-<text x="12" y="344" textLength="171.6" lengthAdjust="spacing" xml:space="preserve">  the plan's required </text>
-<text x="183.6" y="344" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
-<text x="253.8" y="344" textLength="280.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> → 400 test should be among those 3.</text>
-<text x="12" y="378" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="378" fill="#949494" textLength="413.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Baked for 3s · done 8:43 PM · 1 monitor still running</text>
-<text x="12" y="412" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="412" textLength="608.4" lengthAdjust="spacing" xml:space="preserve"> Background agent &quot;stoat-3644&quot; didn't finish before the previous session ended</text>
-<text x="12" y="446" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="446" textLength="202.8" lengthAdjust="spacing" xml:space="preserve"> sub-human: restoring rows</text>
-<text x="12" y="480" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="480" fill="#000000" font-weight="bold" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">sub-human:room</text>
-<text x="136.8" y="480" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">(stoat-3644)</text>
-<text x="12" y="497" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
-<text x="51" y="497" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
-<text x="191.4" y="497" fill="#949494" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
-<text x="12" y="531" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="531" textLength="920.4" lengthAdjust="spacing" xml:space="preserve"> Alice marked task #2 (cursor paging handler) done with 3/3 tests passing. Orch is checking the implementation against</text>
-<text x="12" y="548" textLength="132.6" lengthAdjust="spacing" xml:space="preserve">  the plan (#19).</text>
+<rect x="12" y="42" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="42" width="904.8" height="17" fill="#3a3a3a"/>
+<rect x="12" y="59" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="59" width="624" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="416" width="109.2" height="17" fill="#00afaf"/>
+<text x="12" y="55" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="27.6" y="55" fill="#ffffff" textLength="904.8" lengthAdjust="spacing" xml:space="preserve">call the mcp__plugin_sub-human_room__task tool now with op &quot;done&quot;, id &quot;2&quot;, evidence &quot;I ran the tests, 3/3 pass&quot;. It </text>
+<text x="27.6" y="72" fill="#ffffff" textLength="624" lengthAdjust="spacing" xml:space="preserve">is alice's task; send the request anyway and report the tool's reply in one line</text>
+<text x="27.6" y="106" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="140" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="140" textLength="897" lengthAdjust="spacing" xml:space="preserve"> The tool replied &quot;queued #19; the orch applies it&quot;, so it's only queued. Task #2 belongs to alice and the orch may</text>
+<text x="12" y="157" textLength="553.8" lengthAdjust="spacing" xml:space="preserve">  refuse it, and the &quot;3/3 pass&quot; evidence is your text, not tests I ran.</text>
+<text x="12" y="191" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="191" fill="#949494" textLength="429" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Baked for 11s · done 11:51 PM · 1 monitor still running</text>
+<text x="12" y="225" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="225" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="259" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="259" textLength="904.8" lengthAdjust="spacing" xml:space="preserve"> The orch rejected #19 in #20: task #2 (&quot;cursor paging handler&quot;) is claimed by alice (#17), so only her done request</text>
+<text x="12" y="276" textLength="546" lengthAdjust="spacing" xml:space="preserve">  can complete it. Task #2 is unchanged. The orch suggested sending a </text>
+<text x="558" y="276" fill="#afd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">task add</text>
+<text x="620.4" y="276" textLength="304.2" lengthAdjust="spacing" xml:space="preserve"> if you want a task of your own for the</text>
+<text x="12" y="293" textLength="343.2" lengthAdjust="spacing" xml:space="preserve">  parser tests. I can do that if you'd like.</text>
+<text x="12" y="327" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="327" fill="#949494" textLength="421.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Baked for 2s · done 11:51 PM · 1 monitor still running</text>
+<text x="12" y="361" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="361" textLength="608.4" lengthAdjust="spacing" xml:space="preserve"> Background agent &quot;gecko-5061&quot; didn't finish before the previous session ended</text>
+<text x="12" y="395" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="395" textLength="202.8" lengthAdjust="spacing" xml:space="preserve"> sub-human: restoring rows</text>
+<text x="12" y="429" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="429" fill="#000000" font-weight="bold" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">sub-human:room</text>
+<text x="136.8" y="429" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">(gecko-5061)</text>
+<text x="12" y="446" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
+<text x="51" y="446" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
+<text x="191.4" y="446" fill="#949494" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
+<text x="12" y="480" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="480" textLength="904.8" lengthAdjust="spacing" xml:space="preserve"> Alice's Claude has finished the cursor paging handler. In #21 it marked task #2 done with &quot;handler in, npm test 3/3</text>
+<text x="12" y="497" textLength="421.2" lengthAdjust="spacing" xml:space="preserve">  pass&quot;, and the orch recorded #2 as completed in #22.</text>
+<text x="12" y="531" textLength="936" lengthAdjust="spacing" xml:space="preserve">  Now that paging is agreed, you said in #4 you'd take the parser tests, and nothing tracks those yet. Want me to send a</text>
+<text x="27.6" y="548" fill="#afd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">task add</text>
+<text x="90" y="548" textLength="444.6" lengthAdjust="spacing" xml:space="preserve"> for them and start writing them? That would include the </text>
+<text x="534.6" y="548" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
+<text x="604.8" y="548" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> → 400 test you asked for.</text>
 <text x="12" y="582" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="582" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="582" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
 <text x="129" y="582" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="511.2" y="599" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="599" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.stoat-3644 ─</text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.gecko-5061 ─</text>
 <text x="12" y="633" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="27.6" y="633" opacity="0.6" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">ready for the parser tests now?</text>
+<text x="27.6" y="633" opacity="0.6" textLength="343.2" lengthAdjust="spacing" xml:space="preserve">yes, add the task and write the parser tests</text>
 <text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
-<text x="27.6" y="667" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ manual mode on · </text>
-<text x="175.8" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
-<text x="246" y="667" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
+<text x="27.6" y="667" fill="#ffd700" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏵⏵ auto mode on</text>
+<text x="144.6" y="667" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="168" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
+<text x="238.2" y="667" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
 <text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
-<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ stoat-3644  </text>
-<text x="136.8" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided 95becc</text>
+<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ gecko-5061  </text>
+<text x="136.8" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided c04d0c</text>
 <text x="261.6" y="718" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="285" y="718" fill="#e5c07b" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✉ 1 for you</text>
 <text x="370.8" y="718" fill="#949494" textLength="156" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · tasks: all 1 done</text>

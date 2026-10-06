@@ -1,7 +1,7 @@
 {
   "id": "2",
   "subject": "cursor paging handler",
-  "description": "Implement GET /tasks cursor paging in src/server.js per decided plan #19 (proposal 95beccba5f70): createdAt DESC, id DESC; opaque base64url {createdAt,id} cursor; limit default 20 max 50; {items, nextCursor}; past-end cursor → empty page; malformed cursor (e.g. after=zzz) → 400 not 500. Open: limit>50 clamp vs 400. (req #21 by alice)",
+  "description": "Implement GET /tasks cursor paging in src/server.js per decided proposal c04d0c9623ce (#13). (req #14 by alice)",
   "owner": "alice",
   "status": "in_progress",
   "blocks": [],

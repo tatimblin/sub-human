@@ -1,7 +1,6 @@
 ---
 name: participant
 description: sub-human participant row: a silent background row showing one room member. Spawn only with the exact call given.
-model: haiku
 background: true
 color: cyan
 tools: mcp__plugin_sub-human_room__hold

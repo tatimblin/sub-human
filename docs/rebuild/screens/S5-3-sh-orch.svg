@@ -10,53 +10,62 @@
 <text x="12" y="72" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
 <text x="27.6" y="72" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
 <text x="12" y="89" fill="#999999" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
-<text x="12" y="123" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="123" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
-<text x="12" y="140" fill="#999999" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
-<text x="12" y="174" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="174" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
-<text x="12" y="191" fill="#999999" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
-<text x="27.6" y="225" fill="#999999" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="253.8" y="225" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
-<text x="261.6" y="225" fill="#999999" textLength="54.6" lengthAdjust="spacing" xml:space="preserve"> times </text>
-<text x="12" y="259" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="259" textLength="811.2" lengthAdjust="spacing" xml:space="preserve"> The paging plan isn't decided yet: alice signed off on the first version (#12), but bob objected (#13).</text>
-<text x="12" y="293" textLength="460.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  bob's objection: &quot;add a test for a cursor past the end — </text>
-<text x="472.2" y="293" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
-<text x="542.4" y="293" textLength="725.4" lengthAdjust="spacing" xml:space="preserve"> must 400, not 500&quot;. I revised the plan and proposed version 2 to both of them (#15). It now:</text>
-<text x="12" y="310" textLength="195" lengthAdjust="spacing" xml:space="preserve">  - requires a test that </text>
-<text x="207" y="310" fill="#b1b9f9" textLength="156" lengthAdjust="spacing" xml:space="preserve">GET /tasks?after=zzz</text>
-<text x="363" y="310" textLength="187.2" lengthAdjust="spacing" xml:space="preserve"> returns 400, never 500;</text>
-<text x="12" y="327" textLength="366.6" lengthAdjust="spacing" xml:space="preserve">  - separates two cases: a garbled cursor like </text>
-<text x="378.6" y="327" fill="#b1b9f9" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">zzz</text>
-<text x="402" y="327" textLength="850.2" lengthAdjust="spacing" xml:space="preserve"> returns 400, while a valid cursor that points past the last task returns an empty page, as alice said in #8.</text>
-<text x="12" y="361" textLength="1177.8" lengthAdjust="spacing" xml:space="preserve">  Version 2 replaces version 1, so alice's sign-off no longer counts. Both of them need to answer the new card, and I explained this in the room (#16).</text>
-<text x="12" y="395" textLength="405.6" lengthAdjust="spacing" xml:space="preserve">  One question is still open in the plan: whether a </text>
-<text x="417.6" y="395" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
-<text x="456.6" y="395" textLength="413.4" lengthAdjust="spacing" xml:space="preserve"> above 50 gets cut down to 50 or rejected with a 400.</text>
-<text x="12" y="429" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="429" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="429" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="429" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="463" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="463" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="27.6" y="497" fill="#999999" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="12" y="531" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="531" textLength="163.8" lengthAdjust="spacing" xml:space="preserve"> The paging plan for </text>
-<text x="183.6" y="531" fill="#b1b9f9" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
-<text x="261.6" y="531" textLength="858" lengthAdjust="spacing" xml:space="preserve"> is decided: alice (#17) and bob (#18) both signed off on version 2, and the room recorded the decision (#19).</text>
-<text x="12" y="565" textLength="553.8" lengthAdjust="spacing" xml:space="preserve">  I posted it to the room (#20) and flagged two things still to settle:</text>
-<text x="12" y="582" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
-<text x="43.2" y="582" font-weight="bold" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">Open question:</text>
-<text x="152.4" y="582" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> if </text>
-<text x="183.6" y="582" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
-<text x="222.6" y="582" textLength="1154.4" lengthAdjust="spacing" xml:space="preserve"> is over 50 or not a whole number, does the API cut it to 50 or return a 400? Neither of them has said, so the handler shouldn't ship until they do.</text>
-<text x="12" y="599" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
-<text x="43.2" y="599" font-weight="bold" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">Work split:</text>
-<text x="129" y="599" textLength="717.6" lengthAdjust="spacing" xml:space="preserve"> bob said in #4 he'd take the tests once paging was agreed. Nobody has taken the handler in </text>
-<text x="846.6" y="599" fill="#b1b9f9" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">src/server.js</text>
-<text x="948" y="599" textLength="39" lengthAdjust="spacing" xml:space="preserve"> yet.</text>
-<text x="12" y="633" textLength="936" lengthAdjust="spacing" xml:space="preserve">  Nobody has sent a task request, so the room's task list is unchanged. I'll wait for task requests or further messages.</text>
+<text x="27.6" y="123" fill="#999999" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="157" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="157" textLength="928.2" lengthAdjust="spacing" xml:space="preserve"> Bob and alice each have an approval card open for the GET /tasks paging plan (proposal #6), which bob asked for in #5.</text>
+<text x="12" y="191" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="191" font-weight="bold" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">Design:</text>
+<text x="97.8" y="191" textLength="304.2" lengthAdjust="spacing" xml:space="preserve"> results are sorted newest first, with </text>
+<text x="402" y="191" fill="#b1b9f9" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
+<text x="417.6" y="191" textLength="140.4" lengthAdjust="spacing" xml:space="preserve"> breaking ties on </text>
+<text x="558" y="191" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
+<text x="628.2" y="191" textLength="343.2" lengthAdjust="spacing" xml:space="preserve">. The opaque cursor encodes the last item's </text>
+<text x="971.4" y="191" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
+<text x="1041.6" y="191" textLength="39" lengthAdjust="spacing" xml:space="preserve"> and </text>
+<text x="1080.6" y="191" fill="#b1b9f9" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
+<text x="1096.2" y="191" textLength="429" lengthAdjust="spacing" xml:space="preserve">, so new inserts don't make pages skip or repeat rows. </text>
+<text x="1525.2" y="191" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="12" y="208" textLength="327.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    defaults to 20, with a maximum of 100.</text>
+<text x="12" y="225" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="225" font-weight="bold" textLength="210.6" lengthAdjust="spacing" xml:space="preserve">Open questions in the plan:</text>
+<text x="12" y="242" textLength="124.8" lengthAdjust="spacing" xml:space="preserve">    - Whether a </text>
+<text x="136.8" y="242" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="175.8" y="242" textLength="374.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> above 100 returns an error or is capped at 100.</text>
+<text x="12" y="259" textLength="273" lengthAdjust="spacing" xml:space="preserve">    - Whether results come back as </text>
+<text x="285" y="259" fill="#b1b9f9" textLength="148.2" lengthAdjust="spacing" xml:space="preserve">{items, nextCursor}</text>
+<text x="433.2" y="259" textLength="319.8" lengthAdjust="spacing" xml:space="preserve"> or as a plain list with the cursor in a </text>
+<text x="753" y="259" fill="#b1b9f9" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">Link</text>
+<text x="784.2" y="259" textLength="62.4" lengthAdjust="spacing" xml:space="preserve"> header.</text>
+<text x="12" y="276" textLength="351" lengthAdjust="spacing" xml:space="preserve">    - Whether paging backwards is needed now.</text>
+<text x="12" y="293" textLength="319.8" lengthAdjust="spacing" xml:space="preserve">    - Whether alice takes the handler in </text>
+<text x="331.8" y="293" fill="#b1b9f9" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">src/server.js</text>
+<text x="433.2" y="293" textLength="273" lengthAdjust="spacing" xml:space="preserve"> while bob writes the parser tests.</text>
+<text x="12" y="327" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">  Nobody has answered a card yet.</text>
+<text x="12" y="361" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="361" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="361" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="361" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="395" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="395" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="429" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="429" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
+<text x="12" y="446" fill="#999999" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
+<text x="12" y="480" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="480" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
+<text x="12" y="497" fill="#999999" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
+<text x="27.6" y="531" fill="#999999" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="565" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="565" textLength="1458.6" lengthAdjust="spacing" xml:space="preserve"> Bob objected to the first paging plan (#8), so I revised it and sent it out again as #10. Bob and alice each need to answer the new card, and alice's earlier sign-off doesn't carry over.</text>
+<text x="12" y="599" textLength="405.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  His note: &quot;add a test for a cursor past the end — </text>
+<text x="417.6" y="599" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
+<text x="487.8" y="599" textLength="304.2" lengthAdjust="spacing" xml:space="preserve"> must 400, not 500&quot;. The revision adds:</text>
+<text x="12" y="616" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="616" font-weight="bold" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">His test:</text>
+<text x="121.2" y="616" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
+<text x="191.4" y="616" textLength="592.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> must return 400. A cursor that can't be read always returns 400, never 500.</text>
+<text x="12" y="633" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="633" font-weight="bold" textLength="171.6" lengthAdjust="spacing" xml:space="preserve">A second test I added:</text>
+<text x="214.8" y="633" textLength="1146.6" lengthAdjust="spacing" xml:space="preserve"> a valid cursor pointing past the oldest task returns an empty page with no next cursor. His note mixed the two cases, so the plan now covers both.</text>
 <text x="12" y="667" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="667" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="667" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
@@ -78,8 +87,7 @@
 <text x="277.2" y="701" fill="#999999" font-weight="bold" xml:space="preserve">0</text>
 <text x="285" y="701" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> open)</text>
 <text x="27.6" y="718" fill="#d77757" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◼ </text>
-<text x="43.2" y="718" font-weight="bold" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">room stoa</text>
-<text x="121.2" y="718" font-weight="bold" textLength="78" lengthAdjust="spacing" xml:space="preserve">-3644 open</text>
+<text x="43.2" y="718" font-weight="bold" textLength="156" lengthAdjust="spacing" xml:space="preserve">room gecko-5061 open</text>
 <text x="12" y="752" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="769" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="347.4" y="786" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">ctrl+t</text>
@@ -88,11 +96,11 @@
 <text x="347.4" y="803" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">ctrl+t</text>
 <text x="402" y="803" fill="#999999" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">to hide </text>
 <text x="472.2" y="803" fill="#999999" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">asks · ↓ to manage</text>
-<text x="97.8" y="837" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided 95becc</text>
+<text x="97.8" y="837" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided c04d0c</text>
 <text x="222.6" y="837" fill="#999999" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="246" y="837" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
-<text x="82.2" y="854" fill="#98c379" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ ✔ decided 95becc</text>
+<text x="82.2" y="854" fill="#98c379" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ ✔ decided c04d0c</text>
 <text x="222.6" y="854" fill="#999999" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="246" y="854" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
-<text x="82.2" y="871" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided 95becc</text>
+<text x="82.2" y="871" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided c04d0c</text>
 </g></svg>

@@ -2,19 +2,19 @@
   "alice": {
     "name": "alice",
     "role": "member",
-    "pid": 52682,
-    "session_id": "d7440f47-f196-4fec-bbef-e65e2a6c34aa",
+    "pid": 99822,
+    "session_id": "2ce7cbe3-c028-4ce6-bb42-9ef391cb0ca1",
     "cwd": "/private/tmp/sh-demo/alice",
-    "joined_at": "2026-10-06T03:36:16.095Z"
+    "joined_at": "2026-10-06T06:46:18.814Z"
   },
   "orch": {
     "name": "orch",
     "role": "orch",
-    "pid": 39336,
-    "session_id": "2a0771d4-8fbe-426b-9590-7bfe5abb5c5c",
+    "pid": 83864,
+    "session_id": "30177c08-c1f0-4e1b-b0af-f6f4a4e067d8",
     "cwd": "/private/tmp/sh-demo/alice",
-    "joined_at": "2026-10-06T03:36:16.898Z",
-    "job": "2a0771d4",
-    "spawned_at": "2026-10-06T03:36:16.668Z"
+    "joined_at": "2026-10-06T06:46:19.663Z",
+    "job": "30177c08",
+    "spawned_at": "2026-10-06T06:46:19.395Z"
   }
 }

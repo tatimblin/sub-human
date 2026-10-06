@@ -163,6 +163,15 @@ function main() {
     add('S2', 'The orch\'s panel lists alice and bob', ['alice', 'bob'].every(n => orr.some(r => r.label === n)), orr.map(r => r.line).join(' | ') || 'none');
     const n = orchTurns(span('S2'));
     add('S2', 'The orch spent at most 2 model calls on the join (its row spawn)', n <= 2, `${n} orch assistant messages in S2`);
+    // the join notice to alice: a notification at once, the room row's "+bob joined", and no model turn for it
+    const jn = new RegExp(`⬡ bob joined ${esc(code)} \\(([^)]*)\\)`).exec(readText(path.join(screens, 'state', 'S2', 'notice-alice.txt')) || '');
+    const via = j && shownVia('alice', j.id);
+    add('S2', `alice sees "⬡ bob joined ${code} (alice, bob here)" at once (a notification, not a model turn)`, jn && /alice/.test(jn[1]) && /bob/.test(jn[1]) && via === 'notification',
+      `${jn ? `"${jn[0]}" in alice's pane (state/S2/notice-alice.txt)` : 'not seen in alice\'s pane'}; rows/notices-alice.json: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
+    const arow = panelRows(cap('S2', 'alice')).find(r => r.label === code);
+    add('S2', 'alice\'s room row reads "+bob joined"', !!(arow && /\+bob joined/.test(arow.text)), arow ? arow.line : `no ${code} row in ${capName('S2', 'alice')}`);
+    const woke = j ? entries('alice').filter(e => e.timestamp > j.at && e.timestamp <= (span('S2') || {}).to && metrics.trigger(e) && /member_joined/.test(textOf(e.message && e.message.content))) : [];
+    add('S2', 'The join woke no model turn in alice\'s session', woke.length === 0, `${woke.length} room wake(s) in alice's transcript carrying the join`);
   }
 
   // ---- S3: pairing, no plan
@@ -182,9 +191,10 @@ function main() {
     add('S3', `bob's Claude calls SendMessage to alice.${code}`, sm.length >= 1, sm.length ? `SendMessage {to: "${sm[0].input.to}", message: "${clip(sm[0].input.message || sm[0].input.content, 80)}"}` : 'no SendMessage to alice');
     const pe = peerIn(inSpan(entries('alice'), s), 'bob');
     add('S3', 'alice\'s Claude receives it as a peer message from bob (origin.kind peer)', pe.length >= 1, pe.length ? `origin {kind: peer, name: ${pe[0].origin.name}, verifiedPeerPid: ${pe[0].origin.verifiedPeerPid}}: "${clip(pe[0].origin.body, 80)}"` : 'no peer entry from bob');
-    const back = toolUses(inSpan(entries('alice'), s), 'SendMessage').filter(c => String((c.input || {}).to || '') === `bob.${code}`);
+    // a reply goes to bob.CODE, or to the peer socket the incoming message came from ("uds:…", Claude Code's reply address)
+    const back = toolUses(inSpan(entries('alice'), s), 'SendMessage').filter(c => { const to = String((c.input || {}).to || ''); return to === `bob.${code}` || /^uds:/.test(to); });
     const pb = peerIn(inSpan(entries('bob'), s), 'alice');
-    add('S3', 'alice\'s Claude answers natively (SendMessage back; bob receives it)', back.length >= 1 && pb.length >= 1, `alice SendMessage to bob: ${back.length}; peer entries from alice in bob's transcript: ${pb.length}${pb[0] ? ` ("${clip(pb[0].origin.body, 70)}")` : ''}`);
+    add('S3', 'alice\'s Claude answers natively (SendMessage back; bob receives it)', back.length >= 1 && pb.length >= 1, `alice SendMessage back (bob.${code} or the uds: reply address): ${back.length}${back[0] ? ` (to ${back[0].input.to})` : ''}; peer entries from alice in bob's transcript: ${pb.length}${pb[0] ? ` ("${clip(pb[0].origin.body, 70)}")` : ''}`);
     const cards = ['alice', 'bob'].flatMap(x => toolUses(inSpan(entries(x), s), 'AskUserQuestion'));
     add('S3', 'No card and no proposal', cards.length === 0 && !logIn(s).some(x => x.kind === 'proposal'), `${cards.length} AskUserQuestion calls; proposals in S3: ${logIn(s).filter(x => x.kind === 'proposal').length}`);
     const n = orchTurns(s);
@@ -348,18 +358,36 @@ function main() {
       `members.json orch.stopped_at ${members.orch && members.orch.stopped_at}; claude agents --json at the last S10 snap ${ag ? (running ? `still lists ${running.id} (${running.state})` : `has no ${job}`) : 'not saved'}`);
     const tj = readJson(path.join(roomDir, 'tasks.json'), null);
     add('S10', '<room>/tasks.json stays', Array.isArray(tj), tj ? `${tj.length} task(s) kept` : 'missing');
+    const ln = new RegExp(`⬡ alice left ${esc(code)}`).exec(readText(path.join(screens, 'state', 'S10', 'notice-bob.txt')) || '');
+    const via = la && shownVia('bob', la.id);
+    const early = la && lb && Date.parse(lb.at) - Date.parse(la.at) < 8000;
+    add('S10', `bob sees "⬡ alice left ${code}" once the leave settled (8 s), as a notification`, ln && via === 'notification' && !early,
+      `${ln ? `"${ln[0]}" in bob's pane (state/S10/notice-bob.txt)` : 'not seen in bob\'s pane'}; rows/notices-bob.json: #${la ? la.id : '?'} shown via ${via || 'nothing'}; bob left ${la && lb ? ((Date.parse(lb.at) - Date.parse(la.at)) / 1000).toFixed(1) : '?'} s after alice`);
+  }
+
+  // ---- Notices: every human saw a join/leave notice
+  {
+    const moves = log.filter(e => (e.kind === 'member_joined' || e.kind === 'member_left') && e.via === 'system' && e.from !== 'orch');
+    const per = ['alice', 'bob'].map(n => {
+      const rec = readJson(path.join(roomDir, 'rows', `notices-${n}.json`), {});
+      const lg = Array.isArray(rec.log) ? rec.log : [];
+      const items = lg.map(x => { const e = log.find(y => y.id === x.id); return `#${x.id} ${e ? `${e.from} ${e.kind === 'member_left' ? 'left' : 'joined'}` : '?'} via ${x.via}`; });
+      return { n, lg, items };
+    });
+    add('S10', 'Each human saw a join/leave notice (rows/notices-NAME.json: what was shown, and how)', per.every(p => p.lg.length > 0),
+      per.map(p => `${p.n}: ${p.items.join(', ') || 'none'}`).join('; ') + `; ${moves.length} joins/leaves of members in the log`);
   }
 
   // ---- Metrics vs vole-8126 and Phase 0 (otter-0813)
   const M = metrics.measure({ screens, home, code });
   if (M.error) add('Metrics', 'Run metrics computed', false, M.error);
   else {
-    const B = metrics.BASELINE, P = metrics.PHASE0;
+    const B = metrics.BASELINE, P = metrics.PHASE0, S = metrics.STOAT;
     const per = x => `${x} ${M.seats[x].wakes.turns}`;
-    add('Metrics', `Room-caused model wakes ≤ ${TARGET.wakes} (vole-8126 ${B.wakes.total}; Phase 0 ${P.wakes.total})`, M.total.wakes <= TARGET.wakes,
+    add('Metrics', `Room-caused model wakes ≤ ${TARGET.wakes} (vole-8126 ${B.wakes.total}; Phase 0 ${P.wakes.total}; stoat-3644 ${S.wakes.total})`, M.total.wakes <= TARGET.wakes,
       `${M.total.wakes} wakes (${['orch', 'alice', 'bob'].map(per).join(', ')}); Monitor events, peer deliveries and row-rewake that started a turn`);
-    add('Metrics', 'Member join text small (report)', M.total.joinChars.every(n => n > 0 && n <= 1200), `alice ${M.seats.alice.injected.join}, bob ${M.seats.bob.injected.join} chars (vole-8126 ${B.joinChars.alice}/${B.joinChars.bob}; Phase 0 ${P.joinChars.alice}/${P.joinChars.bob})`);
-    add('Metrics', `UI noise lines per capture ≤ 1.4 (vole-8126 ${B.noise.perCapture}; Phase 0 ${P.noise.perCapture})`, M.total.noise.perCapture <= 1.4,
+    add('Metrics', 'Member join text small (report)', M.total.joinChars.every(n => n > 0 && n <= 1200), `alice ${M.seats.alice.injected.join}, bob ${M.seats.bob.injected.join} chars (vole-8126 ${B.joinChars.alice}/${B.joinChars.bob}; Phase 0 ${P.joinChars.alice}/${P.joinChars.bob}; stoat-3644 ${S.joinChars.alice}/${S.joinChars.bob})`);
+    add('Metrics', `UI noise lines per capture ≤ 1.4 (vole-8126 ${B.noise.perCapture}; Phase 0 ${P.noise.perCapture}; stoat-3644 ${S.noise.perCapture})`, M.total.noise.perCapture <= 1.4,
       `${M.total.noise.lines} lines / ${M.total.noise.captures} captures = ${M.total.noise.perCapture} (excl. "Waiting for": ${M.total.noise.perCaptureExWaiting})`);
     add('Metrics', 'No red or "hook error" lines in any capture', M.total.noise.red === 0 && M.total.noise.hookError === 0, `red lines ${M.total.noise.red}, "hook error" lines ${M.total.noise.hookError}`);
     add('Metrics', 'Model calls per card ≤ 3 on the approver\'s model (report)', M.total.cards.count > 0 && M.total.cards.perCard <= 3,
@@ -370,13 +398,19 @@ function main() {
   const res = {};
   for (const k of order) if (C[k]) res[k] = C[k];
   res._meta = { cost: cost(), run: `room ${code}, ${log.length} log entries, ${index.length} captures, orch job ${job}`, note: o.note || '' };
-  if (!M.error) res._metrics = { run: { room: code, ...M }, baseline: metrics.BASELINE, phase0: metrics.PHASE0, target: TARGET };
+  if (!M.error) res._metrics = { run: { room: code, ...M }, baseline: metrics.BASELINE, phase0: metrics.PHASE0, prev: metrics.STOAT, target: TARGET };
   fs.writeFileSync(out, JSON.stringify(res, null, 1) + '\n');
   let p = 0, f = 0;
   for (const k of order) for (const c of res[k] || []) { c.pass ? p++ : f++; process.stdout.write(`${c.pass ? 'PASS' : 'FAIL'} ${k} ${c.check}${c.pass ? '' : ' — ' + c.evidence}\n`); }
   process.stdout.write(`checks: ${p} pass / ${f} fail -> ${path.relative(process.cwd(), out)} (${res._meta.cost})\n`);
 
   // ---------- helpers that need the run's context ----------
+  /** How log entry id was shown to name as a join/leave notice ("notification" | "prompt"), from rows/notices-NAME.json. */
+  function shownVia(name, id) {
+    const rec = readJson(path.join(roomDir, 'rows', `notices-${name}.json`), {});
+    const x = (Array.isArray(rec.log) ? rec.log : []).find(y => y.id === id);
+    return x ? x.via : null;
+  }
   function noModelTurn(seat, e) {
     if (!e) return { pass: false, evidence: 'no entry' };
     for (const f of seatFiles(seat)) {

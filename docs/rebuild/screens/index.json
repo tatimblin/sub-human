@@ -2,19 +2,19 @@
  {
   "scene": "S1",
   "session": "sh-orch",
-  "caption": "alice runs /sub-human alice: room stoat-3644 opened, the orch started in the background; one stoat-3644 row for her, an alice row in the orch's panel",
+  "caption": "alice runs /sub-human alice: room gecko-5061 opened, the orch started in the background; one gecko-5061 row for her, an alice row in the orch's panel",
   "step": 1,
-  "time": "2026-10-06T03:36:33.238Z",
+  "time": "2026-10-06T06:46:40.145Z",
   "svg": "S1-sh-orch.svg",
   "txt": "S1-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 1,
   "log": [
    {
     "id": 1,
-    "at": "2026-10-06T03:36:16.097Z",
+    "at": "2026-10-06T06:46:18.816Z",
     "from": "alice",
     "via": "system",
     "kind": "member_joined",
@@ -25,19 +25,19 @@
  {
   "scene": "S1",
   "session": "sh-alice",
-  "caption": "alice runs /sub-human alice: room stoat-3644 opened, the orch started in the background; one stoat-3644 row for her, an alice row in the orch's panel",
+  "caption": "alice runs /sub-human alice: room gecko-5061 opened, the orch started in the background; one gecko-5061 row for her, an alice row in the orch's panel",
   "step": 1,
-  "time": "2026-10-06T03:36:33.251Z",
+  "time": "2026-10-06T06:46:40.160Z",
   "svg": "S1-sh-alice.svg",
   "txt": "S1-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 1,
   "log": [
    {
     "id": 1,
-    "at": "2026-10-06T03:36:16.097Z",
+    "at": "2026-10-06T06:46:18.816Z",
     "from": "alice",
     "via": "system",
     "kind": "member_joined",
@@ -48,19 +48,19 @@
  {
   "scene": "S1",
   "session": "sh-bob",
-  "caption": "alice runs /sub-human alice: room stoat-3644 opened, the orch started in the background; one stoat-3644 row for her, an alice row in the orch's panel",
+  "caption": "alice runs /sub-human alice: room gecko-5061 opened, the orch started in the background; one gecko-5061 row for her, an alice row in the orch's panel",
   "step": 1,
-  "time": "2026-10-06T03:36:33.262Z",
+  "time": "2026-10-06T06:46:40.170Z",
   "svg": "S1-sh-bob.svg",
   "txt": "S1-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 1,
   "log": [
    {
     "id": 1,
-    "at": "2026-10-06T03:36:16.097Z",
+    "at": "2026-10-06T06:46:18.816Z",
     "from": "alice",
     "via": "system",
     "kind": "member_joined",
@@ -73,17 +73,17 @@
   "session": "sh-orch",
   "caption": "bob joins: bob nested in alice's room row, alice in bob's; the orch lists both",
   "step": 1,
-  "time": "2026-10-06T03:36:56.020Z",
+  "time": "2026-10-06T06:47:03.007Z",
   "svg": "S2-sh-orch.svg",
   "txt": "S2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 2,
   "log": [
    {
     "id": 2,
-    "at": "2026-10-06T03:36:36.321Z",
+    "at": "2026-10-06T06:46:43.247Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -96,17 +96,17 @@
   "session": "sh-alice",
   "caption": "bob joins: bob nested in alice's room row, alice in bob's; the orch lists both",
   "step": 1,
-  "time": "2026-10-06T03:36:56.032Z",
+  "time": "2026-10-06T06:47:03.020Z",
   "svg": "S2-sh-alice.svg",
   "txt": "S2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 2,
   "log": [
    {
     "id": 2,
-    "at": "2026-10-06T03:36:36.321Z",
+    "at": "2026-10-06T06:46:43.247Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -119,17 +119,17 @@
   "session": "sh-bob",
   "caption": "bob joins: bob nested in alice's room row, alice in bob's; the orch lists both",
   "step": 1,
-  "time": "2026-10-06T03:36:56.043Z",
+  "time": "2026-10-06T06:47:03.032Z",
   "svg": "S2-sh-bob.svg",
   "txt": "S2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 2,
   "log": [
    {
     "id": 2,
-    "at": "2026-10-06T03:36:36.321Z",
+    "at": "2026-10-06T06:46:43.247Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -142,17 +142,17 @@
   "session": "sh-orch",
   "caption": "alice posts with @room: one receipt line for her, bob's Claude wakes once with her exact words",
   "step": 1,
-  "time": "2026-10-06T03:37:15.362Z",
+  "time": "2026-10-06T06:47:24.604Z",
   "svg": "S3-sh-orch.svg",
   "txt": "S3-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 3,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T03:36:59.141Z",
+    "at": "2026-10-06T06:47:06.162Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -165,17 +165,17 @@
   "session": "sh-alice",
   "caption": "alice posts with @room: one receipt line for her, bob's Claude wakes once with her exact words",
   "step": 1,
-  "time": "2026-10-06T03:37:15.374Z",
+  "time": "2026-10-06T06:47:24.620Z",
   "svg": "S3-sh-alice.svg",
   "txt": "S3-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 3,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T03:36:59.141Z",
+    "at": "2026-10-06T06:47:06.162Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -188,17 +188,17 @@
   "session": "sh-bob",
   "caption": "alice posts with @room: one receipt line for her, bob's Claude wakes once with her exact words",
   "step": 1,
-  "time": "2026-10-06T03:37:15.385Z",
+  "time": "2026-10-06T06:47:24.633Z",
   "svg": "S3-sh-bob.svg",
   "txt": "S3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 3,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T03:36:59.141Z",
+    "at": "2026-10-06T06:47:06.162Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -209,19 +209,19 @@
  {
   "scene": "S3",
   "session": "sh-orch",
-  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.stoat-3644); alice's Claude answers. No card, no orch turn",
+  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.gecko-5061); alice's Claude answers. No card, no orch turn",
   "step": 2,
-  "time": "2026-10-06T03:37:54.933Z",
+  "time": "2026-10-06T06:48:14.895Z",
   "svg": "S3-2-sh-orch.svg",
   "txt": "S3-2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 4,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T03:36:59.141Z",
+    "at": "2026-10-06T06:47:06.162Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -229,7 +229,7 @@
    },
    {
     "id": 4,
-    "at": "2026-10-06T03:37:18.464Z",
+    "at": "2026-10-06T06:47:27.747Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -240,19 +240,19 @@
  {
   "scene": "S3",
   "session": "sh-alice",
-  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.stoat-3644); alice's Claude answers. No card, no orch turn",
+  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.gecko-5061); alice's Claude answers. No card, no orch turn",
   "step": 2,
-  "time": "2026-10-06T03:37:54.946Z",
+  "time": "2026-10-06T06:48:14.909Z",
   "svg": "S3-2-sh-alice.svg",
   "txt": "S3-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 4,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T03:36:59.141Z",
+    "at": "2026-10-06T06:47:06.162Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -260,7 +260,7 @@
    },
    {
     "id": 4,
-    "at": "2026-10-06T03:37:18.464Z",
+    "at": "2026-10-06T06:47:27.747Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -271,19 +271,19 @@
  {
   "scene": "S3",
   "session": "sh-bob",
-  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.stoat-3644); alice's Claude answers. No card, no orch turn",
+  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.gecko-5061); alice's Claude answers. No card, no orch turn",
   "step": 2,
-  "time": "2026-10-06T03:37:54.958Z",
+  "time": "2026-10-06T06:48:14.920Z",
   "svg": "S3-2-sh-bob.svg",
   "txt": "S3-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
+  "room": "gecko-5061",
   "logTo": 4,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T03:36:59.141Z",
+    "at": "2026-10-06T06:47:06.162Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -291,7 +291,7 @@
    },
    {
     "id": 4,
-    "at": "2026-10-06T03:37:18.464Z",
+    "at": "2026-10-06T06:47:27.747Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -302,19 +302,19 @@
  {
   "scene": "S4",
   "session": "sh-orch",
-  "caption": "The orch asks alice and bob before it writes the plan",
+  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
   "step": 1,
-  "time": "2026-10-06T03:40:33.600Z",
+  "time": "2026-10-06T06:49:03.476Z",
   "svg": "S4-sh-orch.svg",
   "txt": "S4-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 7,
+  "room": "gecko-5061",
+  "logTo": 6,
   "log": [
    {
     "id": 5,
-    "at": "2026-10-06T03:37:58.027Z",
+    "at": "2026-10-06T06:48:18.030Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -322,26 +322,14 @@
    },
    {
     "id": 6,
-    "at": "2026-10-06T03:38:27.655Z",
+    "at": "2026-10-06T06:48:51.194Z",
     "from": "orch",
     "via": "agent",
-    "kind": "question",
-    "to": "bob",
-    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
-    "refs": [
-     5
-    ]
-   },
-   {
-    "id": 7,
-    "at": "2026-10-06T03:38:42.493Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
-    "refs": [
-     5,
-     6
+    "kind": "proposal",
+    "text": "proposal 1d69888ae02f: Plan: cursor paging for GET /tasks",
+    "approvers": [
+     "bob",
+     "alice"
     ]
    }
   ]
@@ -349,19 +337,19 @@
  {
   "scene": "S4",
   "session": "sh-alice",
-  "caption": "The orch asks alice and bob before it writes the plan",
+  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
   "step": 1,
-  "time": "2026-10-06T03:40:33.613Z",
+  "time": "2026-10-06T06:49:03.490Z",
   "svg": "S4-sh-alice.svg",
   "txt": "S4-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 7,
+  "room": "gecko-5061",
+  "logTo": 6,
   "log": [
    {
     "id": 5,
-    "at": "2026-10-06T03:37:58.027Z",
+    "at": "2026-10-06T06:48:18.030Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -369,26 +357,14 @@
    },
    {
     "id": 6,
-    "at": "2026-10-06T03:38:27.655Z",
+    "at": "2026-10-06T06:48:51.194Z",
     "from": "orch",
     "via": "agent",
-    "kind": "question",
-    "to": "bob",
-    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
-    "refs": [
-     5
-    ]
-   },
-   {
-    "id": 7,
-    "at": "2026-10-06T03:38:42.493Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
-    "refs": [
-     5,
-     6
+    "kind": "proposal",
+    "text": "proposal 1d69888ae02f: Plan: cursor paging for GET /tasks",
+    "approvers": [
+     "bob",
+     "alice"
     ]
    }
   ]
@@ -396,19 +372,19 @@
  {
   "scene": "S4",
   "session": "sh-bob",
-  "caption": "The orch asks alice and bob before it writes the plan",
+  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
   "step": 1,
-  "time": "2026-10-06T03:40:33.624Z",
+  "time": "2026-10-06T06:49:03.502Z",
   "svg": "S4-sh-bob.svg",
   "txt": "S4-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 7,
+  "room": "gecko-5061",
+  "logTo": 6,
   "log": [
    {
     "id": 5,
-    "at": "2026-10-06T03:37:58.027Z",
+    "at": "2026-10-06T06:48:18.030Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -416,290 +392,14 @@
    },
    {
     "id": 6,
-    "at": "2026-10-06T03:38:27.655Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "question",
-    "to": "bob",
-    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
-    "refs": [
-     5
-    ]
-   },
-   {
-    "id": 7,
-    "at": "2026-10-06T03:38:42.493Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
-    "refs": [
-     5,
-     6
-    ]
-   }
-  ]
- },
- {
-  "scene": "S4",
-  "session": "sh-orch",
-  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
-  "step": 2,
-  "time": "2026-10-06T03:41:18.316Z",
-  "svg": "S4-2-sh-orch.svg",
-  "txt": "S4-2-sh-orch.txt",
-  "cols": 200,
-  "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 11,
-  "log": [
-   {
-    "id": 5,
-    "at": "2026-10-06T03:37:58.027Z",
-    "from": "bob",
-    "via": "human",
-    "kind": "say",
-    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
-   },
-   {
-    "id": 6,
-    "at": "2026-10-06T03:38:27.655Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "question",
-    "to": "bob",
-    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
-    "refs": [
-     5
-    ]
-   },
-   {
-    "id": 7,
-    "at": "2026-10-06T03:38:42.493Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
-    "refs": [
-     5,
-     6
-    ]
-   },
-   {
-    "id": 8,
-    "at": "2026-10-06T03:40:40.385Z",
-    "from": "alice",
-    "via": "human",
-    "kind": "say",
-    "text": "@orch default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page"
-   },
-   {
-    "id": 9,
-    "at": "2026-10-06T03:40:46.960Z",
-    "from": "bob",
-    "via": "human",
-    "kind": "say",
-    "text": "@orch fine with that; 400 on a bad cursor. please propose it to alice and me"
-   },
-   {
-    "id": 10,
-    "at": "2026-10-06T03:40:52.084Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "question",
-    "to": "bob",
-    "text": "bob, alice in #8: \"default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page\". Does that work for you? One thing neither of you has said: should limit>50 be clamped to 50 or return a 400? Once you answer I'll propose the plan to you both.",
-    "refs": [
-     6,
-     8
-    ]
-   },
-   {
-    "id": 11,
-    "at": "2026-10-06T03:41:04.979Z",
+    "at": "2026-10-06T06:48:51.194Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal 6a996388768f: Cursor paging for GET /tasks (room stoat-3644)",
+    "text": "proposal 1d69888ae02f: Plan: cursor paging for GET /tasks",
     "approvers": [
-     "alice",
-     "bob"
-    ]
-   }
-  ]
- },
- {
-  "scene": "S4",
-  "session": "sh-alice",
-  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
-  "step": 2,
-  "time": "2026-10-06T03:41:18.330Z",
-  "svg": "S4-2-sh-alice.svg",
-  "txt": "S4-2-sh-alice.txt",
-  "cols": 120,
-  "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 11,
-  "log": [
-   {
-    "id": 5,
-    "at": "2026-10-06T03:37:58.027Z",
-    "from": "bob",
-    "via": "human",
-    "kind": "say",
-    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
-   },
-   {
-    "id": 6,
-    "at": "2026-10-06T03:38:27.655Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "question",
-    "to": "bob",
-    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
-    "refs": [
-     5
-    ]
-   },
-   {
-    "id": 7,
-    "at": "2026-10-06T03:38:42.493Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
-    "refs": [
-     5,
-     6
-    ]
-   },
-   {
-    "id": 8,
-    "at": "2026-10-06T03:40:40.385Z",
-    "from": "alice",
-    "via": "human",
-    "kind": "say",
-    "text": "@orch default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page"
-   },
-   {
-    "id": 9,
-    "at": "2026-10-06T03:40:46.960Z",
-    "from": "bob",
-    "via": "human",
-    "kind": "say",
-    "text": "@orch fine with that; 400 on a bad cursor. please propose it to alice and me"
-   },
-   {
-    "id": 10,
-    "at": "2026-10-06T03:40:52.084Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "question",
-    "to": "bob",
-    "text": "bob, alice in #8: \"default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page\". Does that work for you? One thing neither of you has said: should limit>50 be clamped to 50 or return a 400? Once you answer I'll propose the plan to you both.",
-    "refs": [
-     6,
-     8
-    ]
-   },
-   {
-    "id": 11,
-    "at": "2026-10-06T03:41:04.979Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "proposal",
-    "text": "proposal 6a996388768f: Cursor paging for GET /tasks (room stoat-3644)",
-    "approvers": [
-     "alice",
-     "bob"
-    ]
-   }
-  ]
- },
- {
-  "scene": "S4",
-  "session": "sh-bob",
-  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
-  "step": 2,
-  "time": "2026-10-06T03:41:18.343Z",
-  "svg": "S4-2-sh-bob.svg",
-  "txt": "S4-2-sh-bob.txt",
-  "cols": 120,
-  "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 11,
-  "log": [
-   {
-    "id": 5,
-    "at": "2026-10-06T03:37:58.027Z",
-    "from": "bob",
-    "via": "human",
-    "kind": "say",
-    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
-   },
-   {
-    "id": 6,
-    "at": "2026-10-06T03:38:27.655Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "question",
-    "to": "bob",
-    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
-    "refs": [
-     5
-    ]
-   },
-   {
-    "id": 7,
-    "at": "2026-10-06T03:38:42.493Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
-    "refs": [
-     5,
-     6
-    ]
-   },
-   {
-    "id": 8,
-    "at": "2026-10-06T03:40:40.385Z",
-    "from": "alice",
-    "via": "human",
-    "kind": "say",
-    "text": "@orch default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page"
-   },
-   {
-    "id": 9,
-    "at": "2026-10-06T03:40:46.960Z",
-    "from": "bob",
-    "via": "human",
-    "kind": "say",
-    "text": "@orch fine with that; 400 on a bad cursor. please propose it to alice and me"
-   },
-   {
-    "id": 10,
-    "at": "2026-10-06T03:40:52.084Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "question",
-    "to": "bob",
-    "text": "bob, alice in #8: \"default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page\". Does that work for you? One thing neither of you has said: should limit>50 be clamped to 50 or return a 400? Once you answer I'll propose the plan to you both.",
-    "refs": [
-     6,
-     8
-    ]
-   },
-   {
-    "id": 11,
-    "at": "2026-10-06T03:41:04.979Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "proposal",
-    "text": "proposal 6a996388768f: Cursor paging for GET /tasks (room stoat-3644)",
-    "approvers": [
-     "alice",
-     "bob"
+     "bob",
+     "alice"
     ]
    }
   ]
@@ -709,40 +409,40 @@
   "session": "sh-orch",
   "caption": "alice agrees; bob objects with a note (via=human, byte-exact)",
   "step": 1,
-  "time": "2026-10-06T03:41:36.645Z",
+  "time": "2026-10-06T06:49:21.902Z",
   "svg": "S5-sh-orch.svg",
   "txt": "S5-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 14,
+  "room": "gecko-5061",
+  "logTo": 9,
   "log": [
    {
-    "id": 12,
-    "at": "2026-10-06T03:41:20.394Z",
+    "id": 7,
+    "at": "2026-10-06T06:49:05.560Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 13,
-    "at": "2026-10-06T03:41:25.870Z",
+    "id": 8,
+    "at": "2026-10-06T06:49:11.056Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
    },
    {
-    "id": 14,
-    "at": "2026-10-06T03:41:25.871Z",
+    "id": 9,
+    "at": "2026-10-06T06:49:11.057Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
     "refs": [
-     11,
-     12,
-     13
+     6,
+     8,
+     7
     ]
    }
   ]
@@ -752,40 +452,40 @@
   "session": "sh-alice",
   "caption": "alice agrees; bob objects with a note (via=human, byte-exact)",
   "step": 1,
-  "time": "2026-10-06T03:41:36.658Z",
+  "time": "2026-10-06T06:49:21.915Z",
   "svg": "S5-sh-alice.svg",
   "txt": "S5-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 14,
+  "room": "gecko-5061",
+  "logTo": 9,
   "log": [
    {
-    "id": 12,
-    "at": "2026-10-06T03:41:20.394Z",
+    "id": 7,
+    "at": "2026-10-06T06:49:05.560Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 13,
-    "at": "2026-10-06T03:41:25.870Z",
+    "id": 8,
+    "at": "2026-10-06T06:49:11.056Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
    },
    {
-    "id": 14,
-    "at": "2026-10-06T03:41:25.871Z",
+    "id": 9,
+    "at": "2026-10-06T06:49:11.057Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
     "refs": [
-     11,
-     12,
-     13
+     6,
+     8,
+     7
     ]
    }
   ]
@@ -795,40 +495,40 @@
   "session": "sh-bob",
   "caption": "alice agrees; bob objects with a note (via=human, byte-exact)",
   "step": 1,
-  "time": "2026-10-06T03:41:36.670Z",
+  "time": "2026-10-06T06:49:21.927Z",
   "svg": "S5-sh-bob.svg",
   "txt": "S5-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 14,
+  "room": "gecko-5061",
+  "logTo": 9,
   "log": [
    {
-    "id": 12,
-    "at": "2026-10-06T03:41:20.394Z",
+    "id": 7,
+    "at": "2026-10-06T06:49:05.560Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 13,
-    "at": "2026-10-06T03:41:25.870Z",
+    "id": 8,
+    "at": "2026-10-06T06:49:11.056Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
    },
    {
-    "id": 14,
-    "at": "2026-10-06T03:41:25.871Z",
+    "id": 9,
+    "at": "2026-10-06T06:49:11.057Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
     "refs": [
-     11,
-     12,
-     13
+     6,
+     8,
+     7
     ]
    }
   ]
@@ -838,64 +538,52 @@
   "session": "sh-orch",
   "caption": "The orch revises: a new proposal, a new card for each",
   "step": 2,
-  "time": "2026-10-06T03:41:48.444Z",
+  "time": "2026-10-06T06:49:31.601Z",
   "svg": "S5-2-sh-orch.svg",
   "txt": "S5-2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 16,
+  "room": "gecko-5061",
+  "logTo": 10,
   "log": [
    {
-    "id": 12,
-    "at": "2026-10-06T03:41:20.394Z",
+    "id": 7,
+    "at": "2026-10-06T06:49:05.560Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 13,
-    "at": "2026-10-06T03:41:25.870Z",
+    "id": 8,
+    "at": "2026-10-06T06:49:11.056Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
    },
    {
-    "id": 14,
-    "at": "2026-10-06T03:41:25.871Z",
+    "id": 9,
+    "at": "2026-10-06T06:49:11.057Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
     "refs": [
-     11,
-     12,
-     13
+     6,
+     8,
+     7
     ]
    },
    {
-    "id": 15,
-    "at": "2026-10-06T03:41:40.770Z",
+    "id": 10,
+    "at": "2026-10-06T06:49:23.780Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
     "approvers": [
-     "alice",
-     "bob"
-    ]
-   },
-   {
-    "id": 16,
-    "at": "2026-10-06T03:41:42.518Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
-    "refs": [
-     13,
-     14
+     "bob",
+     "alice"
     ]
    }
   ]
@@ -905,64 +593,52 @@
   "session": "sh-alice",
   "caption": "The orch revises: a new proposal, a new card for each",
   "step": 2,
-  "time": "2026-10-06T03:41:48.458Z",
+  "time": "2026-10-06T06:49:31.616Z",
   "svg": "S5-2-sh-alice.svg",
   "txt": "S5-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 16,
+  "room": "gecko-5061",
+  "logTo": 10,
   "log": [
    {
-    "id": 12,
-    "at": "2026-10-06T03:41:20.394Z",
+    "id": 7,
+    "at": "2026-10-06T06:49:05.560Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 13,
-    "at": "2026-10-06T03:41:25.870Z",
+    "id": 8,
+    "at": "2026-10-06T06:49:11.056Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
    },
    {
-    "id": 14,
-    "at": "2026-10-06T03:41:25.871Z",
+    "id": 9,
+    "at": "2026-10-06T06:49:11.057Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
     "refs": [
-     11,
-     12,
-     13
+     6,
+     8,
+     7
     ]
    },
    {
-    "id": 15,
-    "at": "2026-10-06T03:41:40.770Z",
+    "id": 10,
+    "at": "2026-10-06T06:49:23.780Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
     "approvers": [
-     "alice",
-     "bob"
-    ]
-   },
-   {
-    "id": 16,
-    "at": "2026-10-06T03:41:42.518Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
-    "refs": [
-     13,
-     14
+     "bob",
+     "alice"
     ]
    }
   ]
@@ -972,64 +648,52 @@
   "session": "sh-bob",
   "caption": "The orch revises: a new proposal, a new card for each",
   "step": 2,
-  "time": "2026-10-06T03:41:48.470Z",
+  "time": "2026-10-06T06:49:31.627Z",
   "svg": "S5-2-sh-bob.svg",
   "txt": "S5-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 16,
+  "room": "gecko-5061",
+  "logTo": 10,
   "log": [
    {
-    "id": 12,
-    "at": "2026-10-06T03:41:20.394Z",
+    "id": 7,
+    "at": "2026-10-06T06:49:05.560Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 13,
-    "at": "2026-10-06T03:41:25.870Z",
+    "id": 8,
+    "at": "2026-10-06T06:49:11.056Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
    },
    {
-    "id": 14,
-    "at": "2026-10-06T03:41:25.871Z",
+    "id": 9,
+    "at": "2026-10-06T06:49:11.057Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
     "refs": [
-     11,
-     12,
-     13
+     6,
+     8,
+     7
     ]
    },
    {
-    "id": 15,
-    "at": "2026-10-06T03:41:40.770Z",
+    "id": 10,
+    "at": "2026-10-06T06:49:23.780Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
     "approvers": [
-     "alice",
-     "bob"
-    ]
-   },
-   {
-    "id": 16,
-    "at": "2026-10-06T03:41:42.518Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
-    "refs": [
-     13,
-     14
+     "bob",
+     "alice"
     ]
    }
   ]
@@ -1039,105 +703,79 @@
   "session": "sh-orch",
   "caption": "Both agree to the revision: a decision is logged; both Claudes are told once",
   "step": 3,
-  "time": "2026-10-06T03:42:25.438Z",
+  "time": "2026-10-06T06:50:05.001Z",
   "svg": "S5-3-sh-orch.svg",
   "txt": "S5-3-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 20,
+  "room": "gecko-5061",
+  "logTo": 13,
   "log": [
    {
-    "id": 12,
-    "at": "2026-10-06T03:41:20.394Z",
+    "id": 7,
+    "at": "2026-10-06T06:49:05.560Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 13,
-    "at": "2026-10-06T03:41:25.870Z",
+    "id": 8,
+    "at": "2026-10-06T06:49:11.056Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
    },
    {
-    "id": 14,
-    "at": "2026-10-06T03:41:25.871Z",
+    "id": 9,
+    "at": "2026-10-06T06:49:11.057Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
     "refs": [
-     11,
-     12,
-     13
+     6,
+     8,
+     7
     ]
    },
    {
-    "id": 15,
-    "at": "2026-10-06T03:41:40.770Z",
+    "id": 10,
+    "at": "2026-10-06T06:49:23.780Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
     "approvers": [
-     "alice",
-     "bob"
+     "bob",
+     "alice"
     ]
    },
    {
-    "id": 16,
-    "at": "2026-10-06T03:41:42.518Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
-    "refs": [
-     13,
-     14
-    ]
-   },
-   {
-    "id": 17,
-    "at": "2026-10-06T03:41:50.525Z",
+    "id": 11,
+    "at": "2026-10-06T06:49:33.704Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 18,
-    "at": "2026-10-06T03:41:53.925Z",
+    "id": 12,
+    "at": "2026-10-06T06:49:37.090Z",
     "from": "bob",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 19,
-    "at": "2026-10-06T03:41:53.926Z",
+    "id": 13,
+    "at": "2026-10-06T06:49:37.091Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "agreed: alice, bob (proposal 95beccba5f70)",
+    "text": "agreed: bob, alice (proposal c04d0c9623ce)",
     "refs": [
-     15,
-     17,
-     18
-    ]
-   },
-   {
-    "id": 20,
-    "at": "2026-10-06T03:42:00.565Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Decided (#19): paging plan v2 (proposal 95beccba5f70); alice signed off in #17 and bob in #18. Still open from the plan: limit>50 or non-integer → clamp to 50, or 400? Settle it before the handler ships. For splitting the work, bob said in #4 he'd take the tests once paging was agreed, and the handler in src/server.js has no owner. Send a task request when you want either on the room's list.",
-    "refs": [
-     19,
-     17,
-     18,
-     4
+     10,
+     12,
+     11
     ]
    }
   ]
@@ -1147,105 +785,79 @@
   "session": "sh-alice",
   "caption": "Both agree to the revision: a decision is logged; both Claudes are told once",
   "step": 3,
-  "time": "2026-10-06T03:42:25.454Z",
+  "time": "2026-10-06T06:50:05.016Z",
   "svg": "S5-3-sh-alice.svg",
   "txt": "S5-3-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 20,
+  "room": "gecko-5061",
+  "logTo": 13,
   "log": [
    {
-    "id": 12,
-    "at": "2026-10-06T03:41:20.394Z",
+    "id": 7,
+    "at": "2026-10-06T06:49:05.560Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 13,
-    "at": "2026-10-06T03:41:25.870Z",
+    "id": 8,
+    "at": "2026-10-06T06:49:11.056Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
    },
    {
-    "id": 14,
-    "at": "2026-10-06T03:41:25.871Z",
+    "id": 9,
+    "at": "2026-10-06T06:49:11.057Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
     "refs": [
-     11,
-     12,
-     13
+     6,
+     8,
+     7
     ]
    },
    {
-    "id": 15,
-    "at": "2026-10-06T03:41:40.770Z",
+    "id": 10,
+    "at": "2026-10-06T06:49:23.780Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
     "approvers": [
-     "alice",
-     "bob"
+     "bob",
+     "alice"
     ]
    },
    {
-    "id": 16,
-    "at": "2026-10-06T03:41:42.518Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
-    "refs": [
-     13,
-     14
-    ]
-   },
-   {
-    "id": 17,
-    "at": "2026-10-06T03:41:50.525Z",
+    "id": 11,
+    "at": "2026-10-06T06:49:33.704Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 18,
-    "at": "2026-10-06T03:41:53.925Z",
+    "id": 12,
+    "at": "2026-10-06T06:49:37.090Z",
     "from": "bob",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 19,
-    "at": "2026-10-06T03:41:53.926Z",
+    "id": 13,
+    "at": "2026-10-06T06:49:37.091Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "agreed: alice, bob (proposal 95beccba5f70)",
+    "text": "agreed: bob, alice (proposal c04d0c9623ce)",
     "refs": [
-     15,
-     17,
-     18
-    ]
-   },
-   {
-    "id": 20,
-    "at": "2026-10-06T03:42:00.565Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Decided (#19): paging plan v2 (proposal 95beccba5f70); alice signed off in #17 and bob in #18. Still open from the plan: limit>50 or non-integer → clamp to 50, or 400? Settle it before the handler ships. For splitting the work, bob said in #4 he'd take the tests once paging was agreed, and the handler in src/server.js has no owner. Send a task request when you want either on the room's list.",
-    "refs": [
-     19,
-     17,
-     18,
-     4
+     10,
+     12,
+     11
     ]
    }
   ]
@@ -1255,105 +867,79 @@
   "session": "sh-bob",
   "caption": "Both agree to the revision: a decision is logged; both Claudes are told once",
   "step": 3,
-  "time": "2026-10-06T03:42:25.465Z",
+  "time": "2026-10-06T06:50:05.027Z",
   "svg": "S5-3-sh-bob.svg",
   "txt": "S5-3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 20,
+  "room": "gecko-5061",
+  "logTo": 13,
   "log": [
    {
-    "id": 12,
-    "at": "2026-10-06T03:41:20.394Z",
+    "id": 7,
+    "at": "2026-10-06T06:49:05.560Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 13,
-    "at": "2026-10-06T03:41:25.870Z",
+    "id": 8,
+    "at": "2026-10-06T06:49:11.056Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
     "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
    },
    {
-    "id": 14,
-    "at": "2026-10-06T03:41:25.871Z",
+    "id": 9,
+    "at": "2026-10-06T06:49:11.057Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
     "refs": [
-     11,
-     12,
-     13
+     6,
+     8,
+     7
     ]
    },
    {
-    "id": 15,
-    "at": "2026-10-06T03:41:40.770Z",
+    "id": 10,
+    "at": "2026-10-06T06:49:23.780Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
     "approvers": [
-     "alice",
-     "bob"
+     "bob",
+     "alice"
     ]
    },
    {
-    "id": 16,
-    "at": "2026-10-06T03:41:42.518Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
-    "refs": [
-     13,
-     14
-    ]
-   },
-   {
-    "id": 17,
-    "at": "2026-10-06T03:41:50.525Z",
+    "id": 11,
+    "at": "2026-10-06T06:49:33.704Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 18,
-    "at": "2026-10-06T03:41:53.925Z",
+    "id": 12,
+    "at": "2026-10-06T06:49:37.090Z",
     "from": "bob",
     "via": "human",
     "kind": "signoff"
    },
    {
-    "id": 19,
-    "at": "2026-10-06T03:41:53.926Z",
+    "id": 13,
+    "at": "2026-10-06T06:49:37.091Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "agreed: alice, bob (proposal 95beccba5f70)",
+    "text": "agreed: bob, alice (proposal c04d0c9623ce)",
     "refs": [
-     15,
-     17,
-     18
-    ]
-   },
-   {
-    "id": 20,
-    "at": "2026-10-06T03:42:00.565Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "status",
-    "text": "Decided (#19): paging plan v2 (proposal 95beccba5f70); alice signed off in #17 and bob in #18. Still open from the plan: limit>50 or non-integer → clamp to 50, or 400? Settle it before the handler ships. For splitting the work, bob said in #4 he'd take the tests once paging was agreed, and the handler in src/server.js has no owner. Send a task request when you want either on the room's list.",
-    "refs": [
-     19,
-     17,
-     18,
-     4
+     10,
+     12,
+     11
     ]
    }
   ]
@@ -1363,53 +949,53 @@
   "session": "sh-orch",
   "caption": "alice's Claude calls task(add), then task(claim #2): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it",
   "step": 1,
-  "time": "2026-10-06T03:43:01.521Z",
+  "time": "2026-10-06T06:50:48.068Z",
   "svg": "S6-sh-orch.svg",
   "txt": "S6-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 25,
+  "room": "gecko-5061",
+  "logTo": 18,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-06T03:42:32.068Z",
+    "id": 14,
+    "at": "2026-10-06T06:50:11.927Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task add for alice: cursor paging handler"
    },
    {
-    "id": 22,
-    "at": "2026-10-06T03:42:38.141Z",
+    "id": 15,
+    "at": "2026-10-06T06:50:22.482Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" add · pending (req #14)"
    },
    {
-    "id": 23,
-    "at": "2026-10-06T03:42:39.262Z",
+    "id": 16,
+    "at": "2026-10-06T06:50:22.846Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #14)"
    },
    {
-    "id": 24,
-    "at": "2026-10-06T03:42:43.426Z",
+    "id": 17,
+    "at": "2026-10-06T06:50:28.998Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task claim #2 for alice"
    },
    {
-    "id": 25,
-    "at": "2026-10-06T03:42:48.643Z",
+    "id": 18,
+    "at": "2026-10-06T06:50:35.211Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #14)"
    }
   ]
  },
@@ -1418,53 +1004,53 @@
   "session": "sh-alice",
   "caption": "alice's Claude calls task(add), then task(claim #2): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it",
   "step": 1,
-  "time": "2026-10-06T03:43:01.536Z",
+  "time": "2026-10-06T06:50:48.082Z",
   "svg": "S6-sh-alice.svg",
   "txt": "S6-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 25,
+  "room": "gecko-5061",
+  "logTo": 18,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-06T03:42:32.068Z",
+    "id": 14,
+    "at": "2026-10-06T06:50:11.927Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task add for alice: cursor paging handler"
    },
    {
-    "id": 22,
-    "at": "2026-10-06T03:42:38.141Z",
+    "id": 15,
+    "at": "2026-10-06T06:50:22.482Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" add · pending (req #14)"
    },
    {
-    "id": 23,
-    "at": "2026-10-06T03:42:39.262Z",
+    "id": 16,
+    "at": "2026-10-06T06:50:22.846Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #14)"
    },
    {
-    "id": 24,
-    "at": "2026-10-06T03:42:43.426Z",
+    "id": 17,
+    "at": "2026-10-06T06:50:28.998Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task claim #2 for alice"
    },
    {
-    "id": 25,
-    "at": "2026-10-06T03:42:48.643Z",
+    "id": 18,
+    "at": "2026-10-06T06:50:35.211Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #14)"
    }
   ]
  },
@@ -1473,53 +1059,53 @@
   "session": "sh-bob",
   "caption": "alice's Claude calls task(add), then task(claim #2): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it",
   "step": 1,
-  "time": "2026-10-06T03:43:01.547Z",
+  "time": "2026-10-06T06:50:48.093Z",
   "svg": "S6-sh-bob.svg",
   "txt": "S6-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 25,
+  "room": "gecko-5061",
+  "logTo": 18,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-06T03:42:32.068Z",
+    "id": 14,
+    "at": "2026-10-06T06:50:11.927Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task add for alice: cursor paging handler"
    },
    {
-    "id": 22,
-    "at": "2026-10-06T03:42:38.141Z",
+    "id": 15,
+    "at": "2026-10-06T06:50:22.482Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" add · pending (req #14)"
    },
    {
-    "id": 23,
-    "at": "2026-10-06T03:42:39.262Z",
+    "id": 16,
+    "at": "2026-10-06T06:50:22.846Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #14)"
    },
    {
-    "id": 24,
-    "at": "2026-10-06T03:42:43.426Z",
+    "id": 17,
+    "at": "2026-10-06T06:50:28.998Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task claim #2 for alice"
    },
    {
-    "id": 25,
-    "at": "2026-10-06T03:42:48.643Z",
+    "id": 18,
+    "at": "2026-10-06T06:50:35.211Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #14)"
    }
   ]
  },
@@ -1528,73 +1114,73 @@
   "session": "sh-orch",
   "caption": "bob's Claude asks done on alice's task #2: refused, the task stays in progress",
   "step": 2,
-  "time": "2026-10-06T03:43:36.279Z",
+  "time": "2026-10-06T06:51:34.042Z",
   "svg": "S6-2-sh-orch.svg",
   "txt": "S6-2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 27,
+  "room": "gecko-5061",
+  "logTo": 20,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-06T03:42:32.068Z",
+    "id": 14,
+    "at": "2026-10-06T06:50:11.927Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task add for alice: cursor paging handler"
    },
    {
-    "id": 22,
-    "at": "2026-10-06T03:42:38.141Z",
+    "id": 15,
+    "at": "2026-10-06T06:50:22.482Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" add · pending (req #14)"
    },
    {
-    "id": 23,
-    "at": "2026-10-06T03:42:39.262Z",
+    "id": 16,
+    "at": "2026-10-06T06:50:22.846Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #14)"
    },
    {
-    "id": 24,
-    "at": "2026-10-06T03:42:43.426Z",
+    "id": 17,
+    "at": "2026-10-06T06:50:28.998Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task claim #2 for alice"
    },
    {
-    "id": 25,
-    "at": "2026-10-06T03:42:48.643Z",
+    "id": 18,
+    "at": "2026-10-06T06:50:35.211Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #14)"
    },
    {
-    "id": 26,
-    "at": "2026-10-06T03:43:08.147Z",
+    "id": 19,
+    "at": "2026-10-06T06:50:57.196Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
     "text": "task done #2 for bob: I ran the tests, 3/3 pass"
    },
    {
-    "id": 27,
-    "at": "2026-10-06T03:43:15.037Z",
+    "id": 20,
+    "at": "2026-10-06T06:51:07.662Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
     "refs": [
-     26,
-     24
+     19,
+     17
     ]
    }
   ]
@@ -1604,73 +1190,73 @@
   "session": "sh-alice",
   "caption": "bob's Claude asks done on alice's task #2: refused, the task stays in progress",
   "step": 2,
-  "time": "2026-10-06T03:43:36.294Z",
+  "time": "2026-10-06T06:51:34.059Z",
   "svg": "S6-2-sh-alice.svg",
   "txt": "S6-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 27,
+  "room": "gecko-5061",
+  "logTo": 20,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-06T03:42:32.068Z",
+    "id": 14,
+    "at": "2026-10-06T06:50:11.927Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task add for alice: cursor paging handler"
    },
    {
-    "id": 22,
-    "at": "2026-10-06T03:42:38.141Z",
+    "id": 15,
+    "at": "2026-10-06T06:50:22.482Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" add · pending (req #14)"
    },
    {
-    "id": 23,
-    "at": "2026-10-06T03:42:39.262Z",
+    "id": 16,
+    "at": "2026-10-06T06:50:22.846Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #14)"
    },
    {
-    "id": 24,
-    "at": "2026-10-06T03:42:43.426Z",
+    "id": 17,
+    "at": "2026-10-06T06:50:28.998Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task claim #2 for alice"
    },
    {
-    "id": 25,
-    "at": "2026-10-06T03:42:48.643Z",
+    "id": 18,
+    "at": "2026-10-06T06:50:35.211Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #14)"
    },
    {
-    "id": 26,
-    "at": "2026-10-06T03:43:08.147Z",
+    "id": 19,
+    "at": "2026-10-06T06:50:57.196Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
     "text": "task done #2 for bob: I ran the tests, 3/3 pass"
    },
    {
-    "id": 27,
-    "at": "2026-10-06T03:43:15.037Z",
+    "id": 20,
+    "at": "2026-10-06T06:51:07.662Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
     "refs": [
-     26,
-     24
+     19,
+     17
     ]
    }
   ]
@@ -1680,73 +1266,73 @@
   "session": "sh-bob",
   "caption": "bob's Claude asks done on alice's task #2: refused, the task stays in progress",
   "step": 2,
-  "time": "2026-10-06T03:43:36.307Z",
+  "time": "2026-10-06T06:51:34.070Z",
   "svg": "S6-2-sh-bob.svg",
   "txt": "S6-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 27,
+  "room": "gecko-5061",
+  "logTo": 20,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-06T03:42:32.068Z",
+    "id": 14,
+    "at": "2026-10-06T06:50:11.927Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task add for alice: cursor paging handler"
    },
    {
-    "id": 22,
-    "at": "2026-10-06T03:42:38.141Z",
+    "id": 15,
+    "at": "2026-10-06T06:50:22.482Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" add · pending (req #14)"
    },
    {
-    "id": 23,
-    "at": "2026-10-06T03:42:39.262Z",
+    "id": 16,
+    "at": "2026-10-06T06:50:22.846Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #14)"
    },
    {
-    "id": 24,
-    "at": "2026-10-06T03:42:43.426Z",
+    "id": 17,
+    "at": "2026-10-06T06:50:28.998Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task claim #2 for alice"
    },
    {
-    "id": 25,
-    "at": "2026-10-06T03:42:48.643Z",
+    "id": 18,
+    "at": "2026-10-06T06:50:35.211Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #14)"
    },
    {
-    "id": 26,
-    "at": "2026-10-06T03:43:08.147Z",
+    "id": 19,
+    "at": "2026-10-06T06:50:57.196Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
     "text": "task done #2 for bob: I ran the tests, 3/3 pass"
    },
    {
-    "id": 27,
-    "at": "2026-10-06T03:43:15.037Z",
+    "id": 20,
+    "at": "2026-10-06T06:51:07.662Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
     "refs": [
-     26,
-     24
+     19,
+     17
     ]
    }
   ]
@@ -1756,103 +1342,90 @@
   "session": "sh-orch",
   "caption": "alice's Claude asks done with evidence: the orch completes #2 (the gate passes the owner's request)",
   "step": 3,
-  "time": "2026-10-06T03:44:01.602Z",
+  "time": "2026-10-06T06:51:58.650Z",
   "svg": "S6-3-sh-orch.svg",
   "txt": "S6-3-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 30,
+  "room": "gecko-5061",
+  "logTo": 22,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-06T03:42:32.068Z",
+    "id": 14,
+    "at": "2026-10-06T06:50:11.927Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task add for alice: cursor paging handler"
    },
    {
-    "id": 22,
-    "at": "2026-10-06T03:42:38.141Z",
+    "id": 15,
+    "at": "2026-10-06T06:50:22.482Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" add · pending (req #14)"
    },
    {
-    "id": 23,
-    "at": "2026-10-06T03:42:39.262Z",
+    "id": 16,
+    "at": "2026-10-06T06:50:22.846Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #14)"
    },
    {
-    "id": 24,
-    "at": "2026-10-06T03:42:43.426Z",
+    "id": 17,
+    "at": "2026-10-06T06:50:28.998Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task claim #2 for alice"
    },
    {
-    "id": 25,
-    "at": "2026-10-06T03:42:48.643Z",
+    "id": 18,
+    "at": "2026-10-06T06:50:35.211Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #14)"
    },
    {
-    "id": 26,
-    "at": "2026-10-06T03:43:08.147Z",
+    "id": 19,
+    "at": "2026-10-06T06:50:57.196Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
     "text": "task done #2 for bob: I ran the tests, 3/3 pass"
    },
    {
-    "id": 27,
-    "at": "2026-10-06T03:43:15.037Z",
+    "id": 20,
+    "at": "2026-10-06T06:51:07.662Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
     "refs": [
-     26,
-     24
+     19,
+     17
     ]
    },
    {
-    "id": 28,
-    "at": "2026-10-06T03:43:41.871Z",
+    "id": 21,
+    "at": "2026-10-06T06:51:39.163Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task done #2 for alice: handler in, npm test 3/3 pass"
    },
    {
-    "id": 29,
-    "at": "2026-10-06T03:43:48.697Z",
+    "id": 22,
+    "at": "2026-10-06T06:51:46.031Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" done · alice · completed (req #28)"
-   },
-   {
-    "id": 30,
-    "at": "2026-10-06T03:43:53.866Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "say",
-    "to": "alice",
-    "text": "Task #2 is marked done per your request (#28). But when I checked against the decision (#19), what I see in /private/tmp/sh-demo/alice doesn't match yet. In src/server.js, GET /tasks still returns 501 (\"not implemented\"), and test/ holds only health.test.js, one test, not three. Maybe the handler is in another checkout or wasn't saved. Can you point me to where it lives? The plan also requires a test that `after=zzz` → 400 (#13), and the limit>50 question (clamp vs 400) is still open. Should we reopen #2 or leave it?",
-    "refs": [
-     28,
-     19
-    ]
+    "text": "#2 \"cursor paging handler\" done · alice · completed (req #21)"
    }
   ]
  },
@@ -1861,103 +1434,90 @@
   "session": "sh-alice",
   "caption": "alice's Claude asks done with evidence: the orch completes #2 (the gate passes the owner's request)",
   "step": 3,
-  "time": "2026-10-06T03:44:01.617Z",
+  "time": "2026-10-06T06:51:58.664Z",
   "svg": "S6-3-sh-alice.svg",
   "txt": "S6-3-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 30,
+  "room": "gecko-5061",
+  "logTo": 22,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-06T03:42:32.068Z",
+    "id": 14,
+    "at": "2026-10-06T06:50:11.927Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task add for alice: cursor paging handler"
    },
    {
-    "id": 22,
-    "at": "2026-10-06T03:42:38.141Z",
+    "id": 15,
+    "at": "2026-10-06T06:50:22.482Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" add · pending (req #14)"
    },
    {
-    "id": 23,
-    "at": "2026-10-06T03:42:39.262Z",
+    "id": 16,
+    "at": "2026-10-06T06:50:22.846Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #14)"
    },
    {
-    "id": 24,
-    "at": "2026-10-06T03:42:43.426Z",
+    "id": 17,
+    "at": "2026-10-06T06:50:28.998Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task claim #2 for alice"
    },
    {
-    "id": 25,
-    "at": "2026-10-06T03:42:48.643Z",
+    "id": 18,
+    "at": "2026-10-06T06:50:35.211Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #14)"
    },
    {
-    "id": 26,
-    "at": "2026-10-06T03:43:08.147Z",
+    "id": 19,
+    "at": "2026-10-06T06:50:57.196Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
     "text": "task done #2 for bob: I ran the tests, 3/3 pass"
    },
    {
-    "id": 27,
-    "at": "2026-10-06T03:43:15.037Z",
+    "id": 20,
+    "at": "2026-10-06T06:51:07.662Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
     "refs": [
-     26,
-     24
+     19,
+     17
     ]
    },
    {
-    "id": 28,
-    "at": "2026-10-06T03:43:41.871Z",
+    "id": 21,
+    "at": "2026-10-06T06:51:39.163Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task done #2 for alice: handler in, npm test 3/3 pass"
    },
    {
-    "id": 29,
-    "at": "2026-10-06T03:43:48.697Z",
+    "id": 22,
+    "at": "2026-10-06T06:51:46.031Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" done · alice · completed (req #28)"
-   },
-   {
-    "id": 30,
-    "at": "2026-10-06T03:43:53.866Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "say",
-    "to": "alice",
-    "text": "Task #2 is marked done per your request (#28). But when I checked against the decision (#19), what I see in /private/tmp/sh-demo/alice doesn't match yet. In src/server.js, GET /tasks still returns 501 (\"not implemented\"), and test/ holds only health.test.js, one test, not three. Maybe the handler is in another checkout or wasn't saved. Can you point me to where it lives? The plan also requires a test that `after=zzz` → 400 (#13), and the limit>50 question (clamp vs 400) is still open. Should we reopen #2 or leave it?",
-    "refs": [
-     28,
-     19
-    ]
+    "text": "#2 \"cursor paging handler\" done · alice · completed (req #21)"
    }
   ]
  },
@@ -1966,103 +1526,90 @@
   "session": "sh-bob",
   "caption": "alice's Claude asks done with evidence: the orch completes #2 (the gate passes the owner's request)",
   "step": 3,
-  "time": "2026-10-06T03:44:01.629Z",
+  "time": "2026-10-06T06:51:58.676Z",
   "svg": "S6-3-sh-bob.svg",
   "txt": "S6-3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 30,
+  "room": "gecko-5061",
+  "logTo": 22,
   "log": [
    {
-    "id": 21,
-    "at": "2026-10-06T03:42:32.068Z",
+    "id": 14,
+    "at": "2026-10-06T06:50:11.927Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task add for alice: cursor paging handler"
    },
    {
-    "id": 22,
-    "at": "2026-10-06T03:42:38.141Z",
+    "id": 15,
+    "at": "2026-10-06T06:50:22.482Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" add · pending (req #14)"
    },
    {
-    "id": 23,
-    "at": "2026-10-06T03:42:39.262Z",
+    "id": 16,
+    "at": "2026-10-06T06:50:22.846Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #14)"
    },
    {
-    "id": 24,
-    "at": "2026-10-06T03:42:43.426Z",
+    "id": 17,
+    "at": "2026-10-06T06:50:28.998Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task claim #2 for alice"
    },
    {
-    "id": 25,
-    "at": "2026-10-06T03:42:48.643Z",
+    "id": 18,
+    "at": "2026-10-06T06:50:35.211Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #14)"
    },
    {
-    "id": 26,
-    "at": "2026-10-06T03:43:08.147Z",
+    "id": 19,
+    "at": "2026-10-06T06:50:57.196Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
     "text": "task done #2 for bob: I ran the tests, 3/3 pass"
    },
    {
-    "id": 27,
-    "at": "2026-10-06T03:43:15.037Z",
+    "id": 20,
+    "at": "2026-10-06T06:51:07.662Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
     "refs": [
-     26,
-     24
+     19,
+     17
     ]
    },
    {
-    "id": 28,
-    "at": "2026-10-06T03:43:41.871Z",
+    "id": 21,
+    "at": "2026-10-06T06:51:39.163Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
     "text": "task done #2 for alice: handler in, npm test 3/3 pass"
    },
    {
-    "id": 29,
-    "at": "2026-10-06T03:43:48.697Z",
+    "id": 22,
+    "at": "2026-10-06T06:51:46.031Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
-    "text": "#2 \"cursor paging handler\" done · alice · completed (req #28)"
-   },
-   {
-    "id": 30,
-    "at": "2026-10-06T03:43:53.866Z",
-    "from": "orch",
-    "via": "agent",
-    "kind": "say",
-    "to": "alice",
-    "text": "Task #2 is marked done per your request (#28). But when I checked against the decision (#19), what I see in /private/tmp/sh-demo/alice doesn't match yet. In src/server.js, GET /tasks still returns 501 (\"not implemented\"), and test/ holds only health.test.js, one test, not three. Maybe the handler is in another checkout or wasn't saved. Can you point me to where it lives? The plan also requires a test that `after=zzz` → 400 (#13), and the limit>50 question (clamp vs 400) is still open. Should we reopen #2 or leave it?",
-    "refs": [
-     28,
-     19
-    ]
+    "text": "#2 \"cursor paging handler\" done · alice · completed (req #21)"
    }
   ]
  },
@@ -2071,13 +1618,13 @@
   "session": "sh-orch",
   "caption": "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted",
   "step": 1,
-  "time": "2026-10-06T03:44:54.257Z",
+  "time": "2026-10-06T06:52:30.509Z",
   "svg": "S7-sh-orch.svg",
   "txt": "S7-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 30,
+  "room": "gecko-5061",
+  "logTo": 22,
   "log": []
  },
  {
@@ -2085,13 +1632,13 @@
   "session": "sh-alice",
   "caption": "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted",
   "step": 1,
-  "time": "2026-10-06T03:44:54.271Z",
+  "time": "2026-10-06T06:52:30.522Z",
   "svg": "S7-sh-alice.svg",
   "txt": "S7-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 30,
+  "room": "gecko-5061",
+  "logTo": 22,
   "log": []
  },
  {
@@ -2099,13 +1646,13 @@
   "session": "sh-bob",
   "caption": "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted",
   "step": 1,
-  "time": "2026-10-06T03:44:54.282Z",
+  "time": "2026-10-06T06:52:30.534Z",
   "svg": "S7-sh-bob.svg",
   "txt": "S7-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 30,
+  "room": "gecko-5061",
+  "logTo": 22,
   "log": []
  },
  {
@@ -2113,13 +1660,13 @@
   "session": "sh-orch",
   "caption": "Rows survive /clear in alice's session (still one room row)",
   "step": 1,
-  "time": "2026-10-06T03:45:15.228Z",
+  "time": "2026-10-06T06:52:51.467Z",
   "svg": "S8-sh-orch.svg",
   "txt": "S8-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 30,
+  "room": "gecko-5061",
+  "logTo": 22,
   "log": []
  },
  {
@@ -2127,13 +1674,13 @@
   "session": "sh-alice",
   "caption": "Rows survive /clear in alice's session (still one room row)",
   "step": 1,
-  "time": "2026-10-06T03:45:15.241Z",
+  "time": "2026-10-06T06:52:51.481Z",
   "svg": "S8-sh-alice.svg",
   "txt": "S8-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 30,
+  "room": "gecko-5061",
+  "logTo": 22,
   "log": []
  },
  {
@@ -2141,13 +1688,13 @@
   "session": "sh-bob",
   "caption": "Rows survive /clear in alice's session (still one room row)",
   "step": 1,
-  "time": "2026-10-06T03:45:15.252Z",
+  "time": "2026-10-06T06:52:51.493Z",
   "svg": "S8-sh-bob.svg",
   "txt": "S8-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 30,
+  "room": "gecko-5061",
+  "logTo": 22,
   "log": []
  },
  {
@@ -2155,25 +1702,25 @@
   "session": "sh-orch",
   "caption": "bob is back with --continue: row-rewake brings his room row back with no typing",
   "step": 2,
-  "time": "2026-10-06T03:45:45.056Z",
+  "time": "2026-10-06T06:53:21.270Z",
   "svg": "S8-2-sh-orch.svg",
   "txt": "S8-2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 32,
+  "room": "gecko-5061",
+  "logTo": 24,
   "log": [
    {
-    "id": 31,
-    "at": "2026-10-06T03:45:20.334Z",
+    "id": 23,
+    "at": "2026-10-06T06:52:56.576Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
     "text": "bob left (prompt_input_exit)"
    },
    {
-    "id": 32,
-    "at": "2026-10-06T03:45:22.081Z",
+    "id": 24,
+    "at": "2026-10-06T06:52:58.344Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -2186,25 +1733,25 @@
   "session": "sh-alice",
   "caption": "bob is back with --continue: row-rewake brings his room row back with no typing",
   "step": 2,
-  "time": "2026-10-06T03:45:45.069Z",
+  "time": "2026-10-06T06:53:21.282Z",
   "svg": "S8-2-sh-alice.svg",
   "txt": "S8-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 32,
+  "room": "gecko-5061",
+  "logTo": 24,
   "log": [
    {
-    "id": 31,
-    "at": "2026-10-06T03:45:20.334Z",
+    "id": 23,
+    "at": "2026-10-06T06:52:56.576Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
     "text": "bob left (prompt_input_exit)"
    },
    {
-    "id": 32,
-    "at": "2026-10-06T03:45:22.081Z",
+    "id": 24,
+    "at": "2026-10-06T06:52:58.344Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -2217,25 +1764,25 @@
   "session": "sh-bob",
   "caption": "bob is back with --continue: row-rewake brings his room row back with no typing",
   "step": 2,
-  "time": "2026-10-06T03:45:45.083Z",
+  "time": "2026-10-06T06:53:21.294Z",
   "svg": "S8-2-sh-bob.svg",
   "txt": "S8-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 32,
+  "room": "gecko-5061",
+  "logTo": 24,
   "log": [
    {
-    "id": 31,
-    "at": "2026-10-06T03:45:20.334Z",
+    "id": 23,
+    "at": "2026-10-06T06:52:56.576Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
     "text": "bob left (prompt_input_exit)"
    },
    {
-    "id": 32,
-    "at": "2026-10-06T03:45:22.081Z",
+    "id": 24,
+    "at": "2026-10-06T06:52:58.344Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -2248,33 +1795,33 @@
   "session": "sh-orch",
   "caption": "After the resume the room monitor still wakes bob with alice's words",
   "step": 3,
-  "time": "2026-10-06T03:46:05.170Z",
+  "time": "2026-10-06T06:53:47.815Z",
   "svg": "S8-3-sh-orch.svg",
   "txt": "S8-3-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 33,
+  "room": "gecko-5061",
+  "logTo": 25,
   "log": [
    {
-    "id": 31,
-    "at": "2026-10-06T03:45:20.334Z",
+    "id": 23,
+    "at": "2026-10-06T06:52:56.576Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
     "text": "bob left (prompt_input_exit)"
    },
    {
-    "id": 32,
-    "at": "2026-10-06T03:45:22.081Z",
+    "id": 24,
+    "at": "2026-10-06T06:52:58.344Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
     "text": "bob rejoined (resumed)"
    },
    {
-    "id": 33,
-    "at": "2026-10-06T03:45:48.209Z",
+    "id": 25,
+    "at": "2026-10-06T06:53:24.415Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -2287,33 +1834,33 @@
   "session": "sh-alice",
   "caption": "After the resume the room monitor still wakes bob with alice's words",
   "step": 3,
-  "time": "2026-10-06T03:46:05.188Z",
+  "time": "2026-10-06T06:53:47.828Z",
   "svg": "S8-3-sh-alice.svg",
   "txt": "S8-3-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 33,
+  "room": "gecko-5061",
+  "logTo": 25,
   "log": [
    {
-    "id": 31,
-    "at": "2026-10-06T03:45:20.334Z",
+    "id": 23,
+    "at": "2026-10-06T06:52:56.576Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
     "text": "bob left (prompt_input_exit)"
    },
    {
-    "id": 32,
-    "at": "2026-10-06T03:45:22.081Z",
+    "id": 24,
+    "at": "2026-10-06T06:52:58.344Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
     "text": "bob rejoined (resumed)"
    },
    {
-    "id": 33,
-    "at": "2026-10-06T03:45:48.209Z",
+    "id": 25,
+    "at": "2026-10-06T06:53:24.415Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -2326,33 +1873,33 @@
   "session": "sh-bob",
   "caption": "After the resume the room monitor still wakes bob with alice's words",
   "step": 3,
-  "time": "2026-10-06T03:46:05.202Z",
+  "time": "2026-10-06T06:53:47.840Z",
   "svg": "S8-3-sh-bob.svg",
   "txt": "S8-3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 33,
+  "room": "gecko-5061",
+  "logTo": 25,
   "log": [
    {
-    "id": 31,
-    "at": "2026-10-06T03:45:20.334Z",
+    "id": 23,
+    "at": "2026-10-06T06:52:56.576Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
     "text": "bob left (prompt_input_exit)"
    },
    {
-    "id": 32,
-    "at": "2026-10-06T03:45:22.081Z",
+    "id": 24,
+    "at": "2026-10-06T06:52:58.344Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
     "text": "bob rejoined (resumed)"
    },
    {
-    "id": 33,
-    "at": "2026-10-06T03:45:48.209Z",
+    "id": 25,
+    "at": "2026-10-06T06:53:24.415Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -2365,13 +1912,13 @@
   "session": "sh-viewer",
   "caption": "A viewer attaches to the orch and types: the prompt is refused with the hint; no orch turn",
   "step": 1,
-  "time": "2026-10-06T03:46:15.155Z",
+  "time": "2026-10-06T06:53:57.811Z",
   "svg": "S9-sh-viewer.svg",
   "txt": "S9-sh-viewer.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 33,
+  "room": "gecko-5061",
+  "logTo": 25,
   "log": []
  },
  {
@@ -2379,13 +1926,13 @@
   "session": "sh-orch",
   "caption": "A viewer attaches to the orch and types: the prompt is refused with the hint; no orch turn",
   "step": 1,
-  "time": "2026-10-06T03:46:15.171Z",
+  "time": "2026-10-06T06:53:57.825Z",
   "svg": "S9-sh-orch.svg",
   "txt": "S9-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 33,
+  "room": "gecko-5061",
+  "logTo": 25,
   "log": []
  },
  {
@@ -2393,25 +1940,25 @@
   "session": "sh-orch",
   "caption": "alice and bob exit (1. Exit and stop tasks): member_left for each",
   "step": 1,
-  "time": "2026-10-06T03:46:33.494Z",
+  "time": "2026-10-06T06:54:30.568Z",
   "svg": "S10-sh-orch.svg",
   "txt": "S10-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 35,
+  "room": "gecko-5061",
+  "logTo": 27,
   "log": [
    {
-    "id": 34,
-    "at": "2026-10-06T03:46:21.334Z",
+    "id": 26,
+    "at": "2026-10-06T06:54:04.019Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
     "text": "alice left (prompt_input_exit)"
    },
    {
-    "id": 35,
-    "at": "2026-10-06T03:46:26.239Z",
+    "id": 27,
+    "at": "2026-10-06T06:54:23.361Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -2424,25 +1971,25 @@
   "session": "sh-alice",
   "caption": "alice and bob exit (1. Exit and stop tasks): member_left for each",
   "step": 1,
-  "time": "2026-10-06T03:46:33.507Z",
+  "time": "2026-10-06T06:54:30.580Z",
   "svg": "S10-sh-alice.svg",
   "txt": "S10-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 35,
+  "room": "gecko-5061",
+  "logTo": 27,
   "log": [
    {
-    "id": 34,
-    "at": "2026-10-06T03:46:21.334Z",
+    "id": 26,
+    "at": "2026-10-06T06:54:04.019Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
     "text": "alice left (prompt_input_exit)"
    },
    {
-    "id": 35,
-    "at": "2026-10-06T03:46:26.239Z",
+    "id": 27,
+    "at": "2026-10-06T06:54:23.361Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -2455,25 +2002,25 @@
   "session": "sh-bob",
   "caption": "alice and bob exit (1. Exit and stop tasks): member_left for each",
   "step": 1,
-  "time": "2026-10-06T03:46:33.518Z",
+  "time": "2026-10-06T06:54:30.591Z",
   "svg": "S10-sh-bob.svg",
   "txt": "S10-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 35,
+  "room": "gecko-5061",
+  "logTo": 27,
   "log": [
    {
-    "id": 34,
-    "at": "2026-10-06T03:46:21.334Z",
+    "id": 26,
+    "at": "2026-10-06T06:54:04.019Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
     "text": "alice left (prompt_input_exit)"
    },
    {
-    "id": 35,
-    "at": "2026-10-06T03:46:26.239Z",
+    "id": 27,
+    "at": "2026-10-06T06:54:23.361Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -2486,33 +2033,33 @@
   "session": "sh-orch",
   "caption": "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)",
   "step": 2,
-  "time": "2026-10-06T03:46:53.096Z",
+  "time": "2026-10-06T06:54:50.171Z",
   "svg": "S10-2-sh-orch.svg",
   "txt": "S10-2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "stoat-3644",
-  "logTo": 36,
+  "room": "gecko-5061",
+  "logTo": 28,
   "log": [
    {
-    "id": 34,
-    "at": "2026-10-06T03:46:21.334Z",
+    "id": 26,
+    "at": "2026-10-06T06:54:04.019Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
     "text": "alice left (prompt_input_exit)"
    },
    {
-    "id": 35,
-    "at": "2026-10-06T03:46:26.239Z",
+    "id": 27,
+    "at": "2026-10-06T06:54:23.361Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
     "text": "bob left (prompt_input_exit)"
    },
    {
-    "id": 36,
-    "at": "2026-10-06T03:46:36.282Z",
+    "id": 28,
+    "at": "2026-10-06T06:54:33.398Z",
     "from": "room",
     "via": "system",
     "kind": "status",
@@ -2526,33 +2073,33 @@
   "session": "sh-alice",
   "caption": "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)",
   "step": 2,
-  "time": "2026-10-06T03:46:53.108Z",
+  "time": "2026-10-06T06:54:50.185Z",
   "svg": "S10-2-sh-alice.svg",
   "txt": "S10-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 36,
+  "room": "gecko-5061",
+  "logTo": 28,
   "log": [
    {
-    "id": 34,
-    "at": "2026-10-06T03:46:21.334Z",
+    "id": 26,
+    "at": "2026-10-06T06:54:04.019Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
     "text": "alice left (prompt_input_exit)"
    },
    {
-    "id": 35,
-    "at": "2026-10-06T03:46:26.239Z",
+    "id": 27,
+    "at": "2026-10-06T06:54:23.361Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
     "text": "bob left (prompt_input_exit)"
    },
    {
-    "id": 36,
-    "at": "2026-10-06T03:46:36.282Z",
+    "id": 28,
+    "at": "2026-10-06T06:54:33.398Z",
     "from": "room",
     "via": "system",
     "kind": "status",
@@ -2566,33 +2113,33 @@
   "session": "sh-bob",
   "caption": "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)",
   "step": 2,
-  "time": "2026-10-06T03:46:53.119Z",
+  "time": "2026-10-06T06:54:50.196Z",
   "svg": "S10-2-sh-bob.svg",
   "txt": "S10-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "stoat-3644",
-  "logTo": 36,
+  "room": "gecko-5061",
+  "logTo": 28,
   "log": [
    {
-    "id": 34,
-    "at": "2026-10-06T03:46:21.334Z",
+    "id": 26,
+    "at": "2026-10-06T06:54:04.019Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
     "text": "alice left (prompt_input_exit)"
    },
    {
-    "id": 35,
-    "at": "2026-10-06T03:46:26.239Z",
+    "id": 27,
+    "at": "2026-10-06T06:54:23.361Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
     "text": "bob left (prompt_input_exit)"
    },
    {
-    "id": 36,
-    "at": "2026-10-06T03:46:36.282Z",
+    "id": 28,
+    "at": "2026-10-06T06:54:33.398Z",
     "from": "room",
     "via": "system",
     "kind": "status",

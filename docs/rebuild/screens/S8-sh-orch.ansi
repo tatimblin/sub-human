@@ -1,6 +1,7 @@
-[38;2;255;255;255m⏺[39m Monitor event: "sub-human room notices"
 
-[38;2;255;255;255m⏺[39m alice's Claude claimed task #2, "cursor paging handler" (#24), so it's now in progress with alice as owner.
+  His note: "add a test for a cursor past the end — [38;2;177;185;249mafter=zzz[39m must 400, not 500". The revision adds:
+  - [1mHis test:[0m [38;2;177;185;249mafter=zzz[39m must return 400. A cursor that can't be read always returns 400, never 500.
+  - [1mA second test I added:[0m a valid cursor pointing past the oldest task returns an empty page with no next cursor. His note mixed the two cases, so the plan now covers both.
 
 [38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
 
@@ -8,35 +9,34 @@
 
   [38;2;153;153;153mCalled plugin:sub-human:room [39m
 
-[38;2;255;255;255m⏺[39m I didn't mark task #2 done. bob's Claude asked to complete it (#26: "I ran the tests, 3/3 pass"), but the task belongs to alice, who claimed it in #24. Only her own done request can complete it.
-  Task #2 stays in progress with alice as owner.
-
-  I posted the reason to bob (#27) and gave him two options:
-  - If the passing tests are his own test work, he can ask me to add a task for him and mark that one done.
-  - Or alice can send the done request for #2 and cite his test run as evidence.
-
-  I also reminded him that the plan requires a test that [38;2;177;185;249mafter=zzz[39m returns 400. His message only says "3/3 pass" without listing the tests, so I can't tell whether that one is included.
+[38;2;255;255;255m⏺[39m The paging plan is decided: bob and alice both signed the revised proposal (#11, #12, room decision #13). I added task #2, "cursor paging handler", owned by alice and still pending, as she asked in
+  #14.
 
 [38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
 
 [38;2;255;255;255m⏺[39m Monitor event: "sub-human room notices"
 
-  [38;2;153;153;153mSearched for [1m1[0m[38;2;153;153;153m pattern, read [1m1[0m[38;2;153;153;153m file, called plugin:sub-human:room [39m
+[38;2;255;255;255m⏺[39m Task #2, "cursor paging handler", is now claimed by alice and marked in progress, as she asked in #17.
 
-[38;2;255;255;255m⏺[39m I marked task #2 ("cursor paging handler") complete because alice's Claude, the owner's side, sent the done request (#28: "handler in, npm test 3/3 pass"). The files I can see don't back that up
-  yet:
+[38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
+[38;2;255;255;255m⏺[39m
+[38;2;255;255;255m⏺[39m Monitor event: "sub-human room notices"
 
-  - [38;2;177;185;249msrc/server.js[39m in [38;2;177;185;249m/private/tmp/sh-demo/alice[39m still answers [38;2;177;185;249mGET /tasks[39m with 501 "not implemented", the same code I read before.
-  - [38;2;177;185;249mtest/[39m has only [38;2;177;185;249mhealth.test.js[39m, which is one test, not three.
-  - The test the plan requires ([38;2;177;185;249mafter=zzz[39m must return 400, #13) isn't there.
+  [38;2;153;153;153mCalled plugin:sub-human:room [39m
 
-  The handler may live in another checkout or not have been saved. I posted this to alice (#30), asked where the code is, and asked whether to reopen #2. The question of whether a [38;2;177;185;249mlimit[39m above 50 is
-  cut to 50 or rejected with a 400 is also still open.
+[38;2;255;255;255m⏺[39m I didn't apply bob's request in #19 to mark task #2 done. The task is claimed by alice (#17), so only her done request can complete it, and it stays in progress. I told bob this in #20 and suggested
+  he add his own task for the parser tests.
+
+[38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
+
+[38;2;255;255;255m⏺[39m Monitor event: "sub-human room notices"
+
+[38;2;255;255;255m⏺[39m Task #2, the cursor paging handler, is now marked completed on alice's own done request (#21). Her evidence is recorded in the task: "handler in, npm test 3/3 pass". I haven't run the tests myself.
 
 [38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
   [1m[38;2;153;153;153m2[0m[38;2;153;153;153m tasks ([1m1[0m[38;2;153;153;153m done, [1m1[0m[38;2;153;153;153m in progress, [1m0[0m[38;2;153;153;153m open)[39m
   [1m[38;2;153;153;153m2[0m[38;2;153;153;153m tasks ([1m1[0m[38;2;153;153;153m done, [1m1[0m[38;2;153;153;153m in progress, [1m0[0m[38;2;153;153;153m open)[39m
-  [38;2;215;119;87m◼ [1m[39mroom stoa[0;9m[38;2;153;153;153mg[0;1m-3644 open[0m
+  [38;2;215;119;87m◼ [1m[39mroom gecko-5061 open[0m
   [38;2;78;186;101m✔ [9m[38;2;153;153;153mcursor paging handler[0m
 
 ❯ 

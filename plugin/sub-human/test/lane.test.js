@@ -131,7 +131,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   assert.equal(L(d, room.readAll()), 'push');
 });
 
-test('lane: orch push is to/@orch, objections on its proposals, decisions, task_req; the rest is pull', () => {
+test('lane: orch push is to/@orch, objections on its proposals, task_req; the rest (decisions too) is pull', () => {
   fresh();
   const L = (e, es) => room.lane(ORCH, e, es);
   const mine = prop('orch', H1, ['alice', 'bob']);                        // #1 own: none
@@ -144,12 +144,12 @@ test('lane: orch push is to/@orch, objections on its proposals, decisions, task_
   const joined = sys('member_joined', {}, 'carol');                        // #8 pull (tail adds the row note)
   const s1 = answer('alice', 'signoff', H1);                               // #9 signoff on its proposal: pull (the decision carries it)
   const o2 = answer('alice', 'objection', H2, { text: 'no' });             // #10 answer on bob's: pull
-  const dec = sys('decision', { proposal_hash: H1 }, 'orch');              // #11 push, even written as orch
+  const dec = sys('decision', { proposal_hash: H1 }, 'orch');              // #11 pull: nothing for the orch to act on
   const req = taskReq('bob', 'add', { subject: 'parser tests' });          // #12 push
   const t = task({ task_id: 2, owner: 'bob', status: 'pending', req: 12 }); // #13 its own mirror: pull
   const ownPost = agent('orch', 'say');                                    // #14 none
   const want = [[mine, 'none'], [theirs, 'pull'], [words, 'pull'], [atOrch, 'push'], [toOrch, 'push'], [chatter, 'pull'],
-    [left, 'pull'], [joined, 'pull'], [s1, 'pull'], [o2, 'push'], [dec, 'push'], [req, 'push'], [t, 'pull'], [ownPost, 'none']];
+    [left, 'pull'], [joined, 'pull'], [s1, 'pull'], [o2, 'push'], [dec, 'pull'], [req, 'push'], [t, 'pull'], [ownPost, 'none']];
   for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
   const all = room.readAll();
   assert.equal(L(s1, all), 'pull');
@@ -186,10 +186,10 @@ test('lane (P3 wakes): @-addressed human words, card answers and quiet decisions
   assert.deepEqual([a1, o1, a2, s2].map(e => L(ORCH, e)), ['pull', 'push', 'pull', 'pull'], 'only an objection wakes the proposer');
   assert.equal(L(ALICE, d1), 'pull', 'an objected decision: nothing for a non-proposer');
   assert.equal(L(BOB, d1), 'pull', 'bob completed it (told by his card reply)');
-  assert.equal(L(ORCH, d1), 'push', 'the proposer revises');
+  assert.equal(L(ORCH, d1), 'pull', 'the objection already woke the proposer to revise');
   assert.equal(L(ALICE, d2), 'push', 'an agreed decision reaches the approver who did not complete it');
   assert.equal(L(BOB, d2), 'pull', 'bob completed it');
-  assert.equal(L(ORCH, d2), 'push');
+  assert.equal(L(ORCH, d2), 'pull', 'an agreed decision needs nothing from the orch');
   // A member's own proposal: an objected decision still reaches its author.
   prop('alice', 'cccccccccccc', ['bob']);
   const o3 = answer('bob', 'objection', 'cccccccccccc', { text: 'no' });

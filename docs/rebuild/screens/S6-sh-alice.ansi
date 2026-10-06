@@ -1,40 +1,40 @@
+  - [1mCursor past the end:[0m a valid cursor that points past the oldest task returns an empty page with no next cursor.
 
+  The plan leaves two questions open:
+  - [1mLimits:[0m is a default of 20 and a max of 100 right, and should a limit over 100 return 400 or be capped at 100?
+  - [1mResponse shape:[0m should results come back as [38;5;153m{items, nextCursor}[39m, or as a plain list with the cursor in a [38;5;153mLink[39m
+    header?
 
-[38;5;246m⏺[39m [1mUpdate[0m(src/server.js)
+  In #4 bob said he'd take the parser tests once paging was agreed. Should I start on the handler in [38;5;153msrc/server.js[39m, or
+  do you want to settle the two open questions first?
 
-[38;5;153m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-[39m [1m[38;5;153mEdit file[0m
- [38;5;246msrc/server.js[39m
-[38;5;239m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
-[2m[38;5;231m  1 [0m[38;5;231m [38;5;197mimport[38;5;231m { createServer } [38;5;197mfrom[38;5;231m [38;5;186m'node:http'[38;5;231m;[39m
-[38;5;167m[48;5;52m  2 -[38;5;231mimport { createTask, seed } from './store.js';
-[38;5;77m[48;5;22m  2 +[38;5;197mimport[38;5;231m { createTask, seed[48;5;28m,[48;5;22m [48;5;28mallTasks [48;5;22m} [38;5;197mfrom[38;5;231m [38;5;186m'./store.js'[38;5;231m;
-[2m[49m  3 [0m[38;5;231m [39m
-[2m[38;5;231m  4 [0m[38;5;231m [38;5;81mfunction[38;5;231m [38;5;148msend[38;5;231m([38;5;208mres, status, body[38;5;231m) {[39m
-[2m[38;5;231m  5 [0m[38;5;231m   res.[38;5;148mwriteHead[38;5;231m(status, { [38;5;186m'content-type'[38;5;231m: [38;5;186m'application/json'[38;5;231m });[39m
-[2m[38;5;231m  6 [0m[38;5;231m   res.[38;5;148mend[38;5;231m([38;5;148mJSON[38;5;231m.[38;5;148mstringify[38;5;231m(body));[39m
-[2m[38;5;231m  7 [0m[38;5;231m }[39m
-[2m[38;5;231m  8 [0m[38;5;231m [39m
-[38;5;77m[48;5;22m  9 +[38;5;81mfunction[38;5;231m [38;5;148mencodeCursor[38;5;231m([38;5;208mtask[38;5;231m) {
-[38;5;77m 10 +[38;5;231m  [38;5;81mconst[38;5;231m data = [38;5;148mJSON[38;5;231m.[38;5;148mstringify[38;5;231m({ [38;5;148mcreatedAt[38;5;231m: task.createdAt, [38;5;148mid[38;5;231m: task.id });
-[38;5;77m 11 +[38;5;231m  [38;5;197mreturn[38;5;231m [38;5;148mBuffer[38;5;231m.[38;5;148mfrom[38;5;231m(data).[38;5;148mtoString[38;5;231m([38;5;186m'base64url'[38;5;231m);
-[38;5;77m 12 +[38;5;231m}
-[38;5;77m 13 +[38;5;231m
-[38;5;77m 14 +[38;5;81mfunction[38;5;231m [38;5;148mdecodeCursor[38;5;231m([38;5;208mcursor[38;5;231m) {
-[38;5;77m 15 +[38;5;231m  [38;5;197mtry[38;5;231m {
-[38;5;77m 16 +[38;5;231m    [38;5;81mconst[38;5;231m data = [38;5;148mBuffer[38;5;231m.[38;5;148mfrom[38;5;231m(cursor, [38;5;186m'base64url'[38;5;231m).[38;5;148mtoString[38;5;231m([38;5;186m'utf8'[38;5;231m);
-[38;5;77m 17 +[38;5;231m    [38;5;197mreturn[38;5;231m [38;5;148mJSON[38;5;231m.[38;5;148mparse[38;5;231m(data);
-[38;5;77m 18 +[38;5;231m  } [38;5;197mcatch[38;5;231m {
-[38;5;77m 19 +[38;5;231m    [38;5;197mreturn[38;5;231m [38;5;141mnull[38;5;231m;
-[38;5;77m 20 +[38;5;231m  }
-[38;5;77m 21 +[38;5;231m}
-[38;5;77m 22 +[38;5;231m
-[2m[49m 23 [0m[38;5;231m [38;5;197masync[38;5;231m [38;5;81mfunction[38;5;231m [38;5;148mreadJson[38;5;231m([38;5;208mreq[38;5;231m) {[39m
-[2m[38;5;231m 24 [0m[38;5;231m   [38;5;81mlet[38;5;231m raw = [38;5;186m''[38;5;231m;[39m
-[38;5;239m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
-[39m Do you want to make this edit to [1mserver.js[0m?
- [38;5;153m❯[39m [38;5;246m1. [38;5;153mYes[39m
-   [38;5;246m2. [39mYes, and switch to [1maccept edits (auto-approve file edits and common file commands)[0m for this session [1m(shift+tab)[0m
-   [38;5;246m3. [39mNo
+[38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
 
- [38;5;246mEsc to cancel · Tab to amend[39m
+[38;5;239m[48;5;237m❯ [38;5;231mput "cursor paging handler" on the room task list: call the mcp__plugin_sub-human_room__task tool with op "add", [39m
+  [38;5;231msubject "cursor paging handler". Only that tool call: do not use post, do not edit any file[39m
+
+[49m  [38;5;246mCalled plugin:sub-human:room [39m
+
+[38;5;231m⏺[39m I asked orch to add "cursor paging handler" to the room task list; the request is #14 and orch applies it. I didn't
+  post anything or edit any files.
+
+[38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mclaim it for me: call the mcp__plugin_sub-human_room__task tool with op "claim", id "2". Only that tool call: do not [39m
+  [38;5;231mstart the work, do not edit any file[39m
+
+[49m  [38;5;246mCalled plugin:sub-human:room [39m
+
+[38;5;231m⏺[39m I sent the claim for task #2 ("cursor paging handler"); the request is #17 and orch still has to apply it. The room
+  already shows the task with you as owner in #16, from orch handling the earlier add, so this request repeats that. I
+  haven't started the work or touched any files.
+
+[38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
+                                                                [38;5;220mUpdate available! Run: [1mbrew upgrade claude-code@latest[0m
+[38;5;244m───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─
+[39m❯ [2mgo ahead and build the paging handler[0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;220m⏵⏵ auto mode on[38;5;246m · [38;5;44m1 monitor[38;5;246m · ← 1 agent · ↓ to manage[39m
+
+[1m  ⏺ main[0m
+[38;5;246m  ◯ gecko-5061  [32m✔ decided c04d0c[38;5;246m · tasks 1 open · #2 you[39m

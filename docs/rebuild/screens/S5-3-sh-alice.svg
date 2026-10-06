@@ -7,20 +7,14 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">alice · S5</text>
 <g fill="#d6dbe5">
-<rect x="51" y="467" width="31.2" height="17" fill="#5f0000"/>
-<rect x="82.2" y="467" width="811.2" height="17" fill="#5f0000"/>
-<rect x="51" y="484" width="31.2" height="17" fill="#005f00"/>
-<rect x="82.2" y="484" width="46.8" height="17" fill="#005f00"/>
-<rect x="129" y="484" width="249.6" height="17" fill="#005f00"/>
-<rect x="378.6" y="484" width="31.2" height="17" fill="#005f00"/>
-<rect x="409.8" y="484" width="7.8" height="17" fill="#005f00"/>
-<rect x="417.6" y="484" width="93.6" height="17" fill="#005f00"/>
-<rect x="511.2" y="484" width="382.2" height="17" fill="#005f00"/>
-<text x="12" y="55" fill="#949494" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺ </text>
-<text x="27.6" y="55" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">User answered Claude's questions:</text>
-<text x="12" y="72" fill="#949494" textLength="358.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  · Agree to proposal 6a996388768f? → Agree</text>
-<text x="12" y="106" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="106" textLength="834.6" lengthAdjust="spacing" xml:space="preserve"> Your approval is recorded (#12). Waiting for bob to sign off on the proposal before we start implementing.</text>
+<text x="12" y="72" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="72" textLength="374.4" lengthAdjust="spacing" xml:space="preserve"> You agreed to orch's plan for cursor paging on </text>
+<text x="394.2" y="72" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="472.2" y="72" textLength="429" lengthAdjust="spacing" xml:space="preserve"> (proposal 1d6988), and your answer is posted as #7. It</text>
+<text x="12" y="89" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">  orders tasks newest first with </text>
+<text x="269.4" y="89" fill="#afd7ff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
+<text x="285" y="89" textLength="663" lengthAdjust="spacing" xml:space="preserve"> as the tiebreaker and pages from the last item seen. Bob hasn't answered yet, so I'm</text>
+<text x="12" y="106" textLength="421.2" lengthAdjust="spacing" xml:space="preserve">  holding off on building anything until it's decided.</text>
 <text x="12" y="140" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="140" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="140" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
@@ -29,72 +23,58 @@
 <text x="19.8" y="174" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
 <text x="12" y="208" fill="#949494" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺ </text>
 <text x="27.6" y="208" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">User answered Claude's questions:</text>
-<text x="12" y="225" fill="#949494" textLength="358.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  · Agree to proposal 95beccba5f70? → Agree</text>
-<text x="12" y="259" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="259" textLength="499.2" lengthAdjust="spacing" xml:space="preserve"> Approval recorded (#17). Waiting for bob to approve v2 as well.</text>
-<text x="12" y="293" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="293" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="293" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="293" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="225" fill="#949494" textLength="358.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  · Agree to proposal c04d0c9623ce? → Agree</text>
+<text x="27.6" y="259" fill="#949494" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">Searched for </text>
+<text x="129" y="259" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="136.8" y="259" fill="#949494" textLength="117" lengthAdjust="spacing" xml:space="preserve"> patterns, ran </text>
+<text x="253.8" y="259" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
+<text x="261.6" y="259" fill="#949494" textLength="117" lengthAdjust="spacing" xml:space="preserve"> shell command </text>
+<text x="12" y="293" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="293" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
 <text x="12" y="327" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="327" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="361" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="361" textLength="811.2" lengthAdjust="spacing" xml:space="preserve"> Proposal approved by both alice and bob (#19). Starting implementation of cursor paging for GET /tasks.</text>
-<text x="27.6" y="395" fill="#949494" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">Searched for </text>
-<text x="129" y="395" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
-<text x="136.8" y="395" fill="#949494" textLength="117" lengthAdjust="spacing" xml:space="preserve"> pattern, read </text>
-<text x="253.8" y="395" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="261.6" y="395" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve"> files, ran </text>
-<text x="355.2" y="395" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
-<text x="363" y="395" fill="#949494" textLength="109.2" lengthAdjust="spacing" xml:space="preserve"> shell command</text>
-<text x="12" y="429" fill="#ff87af" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="429" font-weight="bold" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">Update</text>
-<text x="74.4" y="429" textLength="117" lengthAdjust="spacing" xml:space="preserve">(src/server.js)</text>
-<text x="12" y="446" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
-<text x="51" y="446" fill="#4e4e4e" textLength="187.2" lengthAdjust="spacing" xml:space="preserve">User rejected update to </text>
-<text x="238.2" y="446" fill="#4e4e4e" font-weight="bold" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">src/server.js</text>
-<text x="51" y="463" fill="#ffffff" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> 1  </text>
-<text x="82.2" y="463" fill="#ff005f" opacity="0.6" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">import</text>
-<text x="129" y="463" fill="#ffffff" opacity="0.6" textLength="140.4" lengthAdjust="spacing" xml:space="preserve"> { createServer } </text>
-<text x="269.4" y="463" fill="#ff005f" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">from</text>
-<text x="308.4" y="463" fill="#d7d787" opacity="0.6" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">'node:http'</text>
-<text x="394.2" y="463" fill="#ffffff" opacity="0.6" xml:space="preserve">;</text>
-<text x="51" y="480" fill="#d75f5f" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> 2 -</text>
-<text x="82.2" y="480" fill="#ffffff" opacity="0.6" textLength="811.2" lengthAdjust="spacing" xml:space="preserve">import { createTask, seed } from './store.js';                                                          </text>
-<text x="51" y="497" fill="#5fd75f" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> 2 +</text>
-<text x="82.2" y="497" fill="#ff005f" opacity="0.6" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">import</text>
-<text x="129" y="497" fill="#ffffff" opacity="0.6" textLength="249.6" lengthAdjust="spacing" xml:space="preserve"> { createTask, seed, allTasks } </text>
-<text x="378.6" y="497" fill="#ff005f" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">from</text>
-<text x="417.6" y="497" fill="#d7d787" opacity="0.6" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">'./store.js'</text>
-<text x="511.2" y="497" fill="#ffffff" opacity="0.6" textLength="382.2" lengthAdjust="spacing" xml:space="preserve">;                                                </text>
-<text x="51" y="514" fill="#ffffff" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> 3  </text>
-<text x="51" y="531" fill="#ffffff" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> 4  </text>
-<text x="82.2" y="531" fill="#5fd7ff" opacity="0.6" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">function</text>
-<text x="152.4" y="531" fill="#afd700" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">send</text>
-<text x="183.6" y="531" fill="#ffffff" opacity="0.6" xml:space="preserve">(</text>
-<text x="191.4" y="531" fill="#ff8700" opacity="0.6" textLength="132.6" lengthAdjust="spacing" xml:space="preserve">res, status, body</text>
-<text x="324" y="531" fill="#ffffff" opacity="0.6" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">) {</text>
-<text x="51" y="548" fill="#ffffff" opacity="0.6" textLength="78" lengthAdjust="spacing" xml:space="preserve"> 5    res.</text>
-<text x="129" y="548" fill="#afd700" opacity="0.6" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">writeHead</text>
-<text x="199.2" y="548" fill="#ffffff" opacity="0.6" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">(status, { </text>
-<text x="285" y="548" fill="#d7d787" opacity="0.6" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">'content-type'</text>
-<text x="394.2" y="548" fill="#ffffff" opacity="0.6" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">: </text>
-<text x="409.8" y="548" fill="#d7d787" opacity="0.6" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">'application/json'</text>
-<text x="550.2" y="548" fill="#ffffff" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> });</text>
+<text x="19.8" y="327" textLength="897" lengthAdjust="spacing" xml:space="preserve"> The paging plan is decided: you agreed in #11 and bob signed off in #12, so the room recorded it as agreed in #13.</text>
+<text x="12" y="361" textLength="928.2" lengthAdjust="spacing" xml:space="preserve">  This version came after bob objected in #8 to the first one, which you'd also agreed to. It covers his request in two</text>
+<text x="12" y="378" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">  cases:</text>
+<text x="12" y="395" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="395" font-weight="bold" textLength="132.6" lengthAdjust="spacing" xml:space="preserve">Malformed cursor:</text>
+<text x="175.8" y="395" textLength="54.6" lengthAdjust="spacing" xml:space="preserve"> a bad </text>
+<text x="230.4" y="395" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="269.4" y="395" textLength="124.8" lengthAdjust="spacing" xml:space="preserve"> value, such as </text>
+<text x="394.2" y="395" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
+<text x="464.4" y="395" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">, returns a 400 instead of a 500.</text>
+<text x="12" y="412" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="412" font-weight="bold" textLength="156" lengthAdjust="spacing" xml:space="preserve">Cursor past the end:</text>
+<text x="199.2" y="412" textLength="709.8" lengthAdjust="spacing" xml:space="preserve"> a valid cursor that points past the oldest task returns an empty page with no next cursor.</text>
+<text x="12" y="446" textLength="288.6" lengthAdjust="spacing" xml:space="preserve">  The plan leaves two questions open:</text>
+<text x="12" y="463" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="463" font-weight="bold" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">Limits:</text>
+<text x="97.8" y="463" textLength="803.4" lengthAdjust="spacing" xml:space="preserve"> is a default of 20 and a max of 100 right, and should a limit over 100 return 400 or be capped at 100?</text>
+<text x="12" y="480" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="480" font-weight="bold" textLength="117" lengthAdjust="spacing" xml:space="preserve">Response shape:</text>
+<text x="160.2" y="480" textLength="226.2" lengthAdjust="spacing" xml:space="preserve"> should results come back as </text>
+<text x="386.4" y="480" fill="#afd7ff" textLength="148.2" lengthAdjust="spacing" xml:space="preserve">{items, nextCursor}</text>
+<text x="534.6" y="480" textLength="327.6" lengthAdjust="spacing" xml:space="preserve">, or as a plain list with the cursor in a </text>
+<text x="862.2" y="480" fill="#afd7ff" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">Link</text>
+<text x="12" y="497" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">    header?</text>
+<text x="12" y="531" textLength="787.8" lengthAdjust="spacing" xml:space="preserve">  In #4 bob said he'd take the parser tests once paging was agreed. Should I start on the handler in </text>
+<text x="799.8" y="531" fill="#afd7ff" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">src/server.js</text>
+<text x="901.2" y="531" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">, or</text>
+<text x="12" y="548" textLength="413.4" lengthAdjust="spacing" xml:space="preserve">  do you want to settle the two open questions first?</text>
 <text x="12" y="582" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="582" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="582" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
 <text x="129" y="582" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="511.2" y="599" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="599" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">───────────────────────────────────────────────────────────────────────────────────────────────────── alice.stoat-3644 ─</text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─</text>
 <text x="12" y="633" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="27.6" y="633" opacity="0.6" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">implement it</text>
+<text x="27.6" y="633" opacity="0.6" textLength="366.6" lengthAdjust="spacing" xml:space="preserve">go ahead and build the handler in src/server.js</text>
 <text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
-<text x="27.6" y="667" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ manual mode on · </text>
-<text x="175.8" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
-<text x="246" y="667" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
+<text x="27.6" y="667" fill="#ffd700" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏵⏵ auto mode on</text>
+<text x="144.6" y="667" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="168" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
+<text x="238.2" y="667" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
 <text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
-<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ stoat-3644  </text>
-<text x="136.8" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided 95becc</text>
+<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ gecko-5061  </text>
+<text x="136.8" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided c04d0c</text>
 </g></svg>

@@ -1,22 +1,23 @@
 
  ▐▛███▛█   Claude Code v2.1.281
-▝▜██████▀  Haiku 4.5 · Claude Max
+▝▜██████▀  Opus 5.5 (1M context) · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/bob
 
 
 ❯ /sub-human:sub-human bob
-  ⎿  UserPromptExpansion says: sub-human: joined stoat-3644 as bob (alice, orch here)
+  ⎿  UserPromptExpansion says: sub-human: joined gecko-5061 as bob (alice, orch here)
 
-⏺ sub-human:room(stoat-3644)
+⏺ sub-human:room(gecko-5061)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ You're in room stoat-3644.
+⏺ You've joined room gecko-5061 with alice.
 
 ✻ Waiting for 1 background agent to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ Alice says: "bob, can you take the parser tests? handler's in src/server.js"
+⏺ In #3, alice asked: "bob, can you take the parser tests? handler's in src/server.js". I haven't answered for you. Tell
+  me whether you'll take them and I'll reply in the room.
 
 ✻ Waiting for 2 background agents to finish
 
@@ -29,12 +30,11 @@
 
 
 
-
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.stoat-3644 ─
-❯ run the parser tests
+─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.gecko-5061 ─
+❯ yes, I'll take the parser tests
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
+  ⏵⏵ auto mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ stoat-3644  2 here
+  ◯ gecko-5061  +alice joined · 2 here
