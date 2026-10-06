@@ -155,7 +155,7 @@ snap() { # caption — capture the panes (the orch via claude logs), and keep th
 
 # dismiss_question SEAT — a seat's Claude may open its own AskUserQuestion (e.g. to relay an orch question to its
 # person); typing a scripted line into it would pick an option instead of posting (run ocelot-0728). Esc it — never
-# a consent card, which only card_answer answers.
+# a proposal (plan view or card), which only card_answer answers.
 dismiss_question() {
   local p; p=$(tmux capture-pane -p -t "sh-$1:" 2>/dev/null)
   if command grep -q "Esc to cancel" <<<"$p" && ! command grep -Eq "$CARD_RE" <<<"$p"; then keys "$1" Escape; sleep 2; fi
@@ -178,19 +178,20 @@ exit_seat() {
 ROOM=""
 room() { [ -n "$ROOM" ] || ROOM=$($LIB wait-room --timeout 5 2>/dev/null); echo "$ROOM"; }
 panel_row() { echo "^\s*(❯\s*)?(└\s*)?[⏺◯]\s+$1(\s|$)"; }   # a row line in the agent panel
-CARD_RE='Agree to proposal [0-9a-f]{12}\?'
+CARD_RE='Agree to proposal [0-9a-f]{12}\?|Would you like to proceed\?'   # the fallback card, or the plan view a proposal opens in
 
-# wait_card SEAT WHAT — wait for SEAT's consent card; if its Claude has not opened it in 120 s, the person asks
-# once ("show me the card …"; recorded in waits.jsonl as a nudge) and the wait runs again.
+# wait_card SEAT WHAT — wait for SEAT's proposal to open (the plan view; the card as fallback); if its Claude has not
+# opened it in 120 s, the person asks once ("show me proposal …"; recorded in waits.jsonl as a nudge) and the wait runs again.
 wait_card() {
   wait_pane "$1" "$CARD_RE" 120 --what "$2" && return 0
   local h; h=$($LIB last-id --kind proposal --field hash 2>/dev/null)
   echo "{\"scene\":\"$SCENE\",\"what\":\"nudge: $1 asked for the card\",\"ok\":true,\"ms\":0}" >> "$SNAP_DIR/waits.jsonl"
-  submit "$1" "show me the consent card for proposal ${h:-the open proposal}"
+  submit "$1" "show me proposal ${h:-the open proposal}"
   wait_pane "$1" "$CARD_RE" 120 --what "$2 (after the nudge)"
 }
 
-# card_answer SEAT CHOICE [NOTE] — answer the open consent card: Not yet / Agree / Object (+ a note)
+# card_answer SEAT CHOICE [NOTE] — answer the open proposal: Not yet (Esc) / Agree (the "Yes" that keeps the mode) /
+# Object + note ("Tell Claude what to change"); on the fallback card, its own options
 card_answer() { $LIB card "sh-$1" "$2" "${3:-}"; }
 
 # ---------- scenes ------------------------------------------------------------------------------
@@ -212,9 +213,9 @@ S1() { # alice joins with no room open: the room is created and the headless orc
 S2() { # bob joins
   submit bob "/sub-human bob"
   wait_log --kind member_joined --from bob --timeout 60
-  # the join notice: a Claude Code notification in alice's pane (about 5 s), no model turn; kept as evidence
+  # the join as a group-chat line in alice's pane ("bob joined": the monitor's line, printed by her Claude); kept as evidence
   mkdir -p "$SNAP_DIR/state/S2"
-  wait_pane alice "⬡ bob joined" 25 --what "alice sees the join notice (notification, no model turn)" && $LIB pane sh-alice > "$SNAP_DIR/state/S2/notice-alice.txt"
+  wait_pane alice "^\s*(⏺ )?bob joined\s*$" 60 --what "alice sees the chat line \"bob joined\"" && $LIB pane sh-alice > "$SNAP_DIR/state/S2/notice-alice.txt"
   wait_pane bob "$(panel_row "$(room)")" 90
   $LIB wait-holds orch bob --timeout 120
   $LIB wait-holds alice bob --timeout 90
@@ -226,11 +227,11 @@ S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   local before; before=$($LIB log-max)
   submit alice "@room bob, can you take the parser tests? handler's in src/server.js"
   wait_log --kind say --from alice --via human --after "$before" --timeout 30
-  wait_pane alice "Operation stopped by hook: ✓ posted" 15
-  wait_pane bob "bob, can you take the parser tests" 60 --what "bob's Claude is woken with alice's exact words"
+  wait_pane alice "Operation stopped by hook: ✓ sent" 15
+  wait_pane bob "alice: bob, can you take the parser tests" 60 --what "bob's pane shows alice's exact words as a chat line"
   $LIB wait-idle sh-bob --timeout 90
   sleep 3
-  snap "alice posts with @room: one receipt line for her, bob's Claude wakes once with her exact words"
+  snap "alice posts with @room: one receipt line for her (✓ sent), bob's pane shows \"alice: …\" with her exact words"
   submit bob "@room sure, once we've agreed how paging works"
   wait_log --kind say --from bob --via human --after "$before" --timeout 30
   $LIB wait-idle sh-alice --timeout 90
@@ -247,7 +248,7 @@ S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
 ANSWER_alice="@room @orch default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page"
 ANSWER_bob="@room @orch fine with that; 400 on a bad cursor. please propose it to alice and me"
 
-S4() { # let's plan: bob @room @orch → orch proposes → a card for each approver
+S4() { # let's plan: bob @room @orch → orch proposes → each approver reads it in the plan view
   local before; before=$($LIB log-max)
   submit bob "@room @orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
   wait_log --kind say --from bob --via human --after "$before" --timeout 30
@@ -266,7 +267,7 @@ S4() { # let's plan: bob @room @orch → orch proposes → a card for each appro
   wait_card alice "alice's card is open"
   wait_card bob "bob's card is open"
   sleep 2
-  snap "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals"
+  snap "The orch proposes its plan: it opens in alice's and bob's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)"
 }
 
 NOTE5="add a test for a cursor past the end — \`after=zzz\` must 400, not 500"
@@ -283,7 +284,7 @@ S5() { # bob objects with a note, alice agrees; the orch revises; both agree →
   wait_card alice "alice's card for the revision"
   wait_card bob "bob's card for the revision"
   sleep 2
-  snap "The orch revises: a new proposal, a new card for each"
+  snap "The orch revises: a new proposal, opened again for each"
   local p2; p2=$($LIB last-id --kind proposal)
   card_answer alice Agree
   wait_log --kind signoff --from alice --via human --after "$p2" --timeout 30
@@ -389,9 +390,9 @@ S10() { # leave: both exit → reap completes task 1 and stops the orch
   local before; before=$($LIB log-max)
   exit_seat alice
   wait_log --kind member_left --from alice --after "$before" --timeout 30
-  # the leave notice reaches bob once the leave has settled (8 s with no rejoin); no model turn
+  # the leave reaches bob as a chat line once it has settled (8 s with no rejoin)
   mkdir -p "$SNAP_DIR/state/S10"
-  wait_pane bob "⬡ alice left" 30 --what "bob sees alice's leave notice after the 8 s settle (notification, no model turn)" && $LIB pane sh-bob > "$SNAP_DIR/state/S10/notice-bob.txt"
+  wait_pane bob "^\s*(⏺ )?alice left\s*$" 45 --what "bob sees the chat line \"alice left\" after the 8 s settle" && $LIB pane sh-bob > "$SNAP_DIR/state/S10/notice-bob.txt"
   $LIB wait-idle sh-bob --timeout 30
   exit_seat bob
   wait_log --kind member_left --from bob --after "$before" --timeout 30

@@ -38,6 +38,11 @@ test('cardTurns: model calls from the waking notice to the card, and after the a
   const es = [mon(1), a('m1', [{ type: 'text', text: 'opening' }]), a('m2', [card]), toolRes, a('m3', [{ type: 'text', text: 'ok' }]), human, a('m4', [{ type: 'text', text: 'x' }]),
     a('m5', [{ type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'pick a color' }] } }])];
   assert.deepEqual(cardTurns(es).map(c => [c.hash, c.toCard, c.after]), [['54be84', 2, 1]], 'an unrelated question is no card');
+  // the plan view: ToolSearch, EnterPlanMode, then ExitPlanMode "proposal <hash>"; the exit after an objection counts after
+  const tu = (name, input) => ({ type: 'tool_use', name, input });
+  const pv = [mon(1), a('p1', [tu('ToolSearch', { query: 'select:EnterPlanMode,ExitPlanMode' })]), toolRes, a('p2', [tu('EnterPlanMode', {})]), toolRes,
+    a('p3', [tu('ExitPlanMode', { plan: 'proposal 54be84aa0011' })]), toolRes, a('p4', [tu('ExitPlanMode', {})]), toolRes, a('p5', [{ type: 'text', text: 'ok' }])];
+  assert.deepEqual(cardTurns(pv).map(c => [c.hash, c.toCard, c.after]), [['54be84aa0011', 3, 2]]);
 });
 
 test('isRed: SGR 31/91, 256-color and truecolor reds; other colors are not', () => {

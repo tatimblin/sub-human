@@ -19,6 +19,14 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/at-room.js\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\""
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -41,7 +49,7 @@
         ]
       },
       {
-        "matcher": "AskUserQuestion",
+        "matcher": "AskUserQuestion|EnterPlanMode|ExitPlanMode",
         "hooks": [
           {
             "type": "command",
@@ -61,7 +69,7 @@
         ]
       },
       {
-        "matcher": "AskUserQuestion|ExitPlanMode",
+        "matcher": "AskUserQuestion|EnterPlanMode|ExitPlanMode",
         "hooks": [
           {
             "type": "command",
@@ -75,6 +83,27 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tasks.js\""
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\""
           }
         ]
       }
@@ -95,14 +124,6 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-launcher.js\""
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/notice.js\""
           }
         ]
       },
@@ -134,10 +155,6 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.js\""
-          },
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/notice.js\""
           }
         ]
       }
@@ -169,16 +186,6 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tasks.js\""
-          }
-        ]
-      }
-    ],
-    "FileChanged": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/notice.js\""
           }
         ]
       }

@@ -32,7 +32,9 @@
  *   demo-lib.js readonly <session>                exit 0 if a read-only client is attached
  *   demo-lib.js wait-idle <session> [--timeout S] [--quiet S]   wait until the main prompt is idle (no
  *                                                  "esc to interrupt" and the pane unchanged for --quiet S, 3)
- *   demo-lib.js card <session> <Not yet|Agree|Object> [note]   answer the open consent card (n adds a note)
+ *   demo-lib.js card <session> <Not yet|Agree|Object> [note]   answer the open proposal: in the plan view (Agree =
+ *                                                  the "Yes" that keeps the seat's mode, Object = "Tell Claude what
+ *                                                  to change" + note, Not yet = Esc) or, the fallback, on the card
  *   demo-lib.js wait-native-task <subject> [--timeout S]   wait until the orch's native list has it
  *   demo-lib.js wait-tasks [--owner N] [--id N] [--status S] [--timeout S]   wait on <room>/tasks.json
  *   demo-lib.js task-id --owner N                 print the id of N's newest task in <room>/tasks.json
@@ -68,7 +70,7 @@ const tgt = s => (s.includes(':') ? s : `${s}:`);
 const KEY_BYTES = {
   Enter: '\r', Esc: '\x1b', Escape: '\x1b', Tab: '\t', BTab: '\x1b[Z', Space: ' ', BSpace: '\x7f',
   Up: '\x1b[A', Down: '\x1b[B', Right: '\x1b[C', Left: '\x1b[D', 'C-c': '\x03', 'C-d': '\x04', 'C-j': '\n',
-  'C-u': '\x15', 'C-l': '\x0c',
+  'C-u': '\x15', 'C-l': '\x0c', PageDown: '\x1b[6~', PageUp: '\x1b[5~',
 };
 const SEND_KEYS = { Esc: 'Escape', Space: 'Space', BSpace: 'BSpace', BTab: 'BTab' };
 
@@ -164,6 +166,17 @@ function cardState(p) {
   const opts = [];
   for (let i = q + 1; i < lines.length && opts.length < 4; i++) {
     const m = /^\s*(❯)?\s*(\d)\.\s+(Not yet|Agree|Object|Type something|Chat about this)\b/.exec(lines[i]);
+    if (m) opts.push({ cur: !!m[1], n: +m[2], label: m[3] });
+  }
+  return opts.length ? { opts } : null;
+}
+
+/** The plan-approval dialog a room review opens in (hooks/consent.js), or null: its option lines. */
+function planState(p) {
+  if (!/Would you like to proceed\?/.test(p) || !/Tell Claude what to change|No, keep planning/.test(p)) return null;
+  const opts = [];
+  for (const l of p.split('\n')) {
+    const m = /^\s*(❯)?\s*(\d)\.\s+(Yes, [^\n]*?|Tell Claude what to change|No, keep planning)\s*$/.exec(l);
     if (m) opts.push({ cur: !!m[1], n: +m[2], label: m[3] });
   }
   return opts.length ? { opts } : null;
@@ -340,7 +353,7 @@ async function main() {
           keys(o._[0], ['Esc']).catch(() => {});
           last = null; return false;
         }
-        const busy = /esc to interrupt/.test(p) || cardState(p);
+        const busy = /esc to interrupt/.test(p) || cardState(p) || planState(p);
         const body = p.replace(/\d+[smh]\b|[✻✶✳✢·✽*]/g, '');
         if (busy || body !== last) { last = body; since = Date.now(); return false; }
         return Date.now() - since >= quiet;
@@ -350,8 +363,30 @@ async function main() {
     case 'card': {
       const [session, choice, ...noteParts] = o._;
       const note = noteParts.join(' ');
-      if (!(await until(`${session}: consent card open`, T, () => cardState(pane(session))))) return 1;
+      if (!(await until(`${session}: proposal open (plan view or card)`, T, () => planState(pane(session)) || cardState(pane(session))))) return 1;
       await sleep(1200);
+      const pv = planState(pane(session));
+      if (pv) {
+        if (choice === 'Not yet') { await keys(session, ['Escape']); record(`${session}: closed the plan view (Esc)`, true, 0); return 0; }
+        // read it all, as a person would: PgDn to the end, where the hook's line names the proposal and the "Yes" that keeps the mode
+        for (let i = 0; i < 40 && !/room proposal [0-9a-f]{12}/.test(pane(session)); i++) { await keys(session, ['PageDown']); await sleep(250); }
+        const keep = (/Agree: "([^"]+)" keeps/.exec(pane(session).replace(/\s*\n\s*│?\s*/g, ' ')) || [])[1];
+        const want = choice === 'Agree'
+          ? pv.opts.find(x => x.label === keep) || pv.opts.find(x => /^Yes/.test(x.label))
+          : pv.opts.find(x => /Tell Claude what to change|No, keep planning/.test(x.label));
+        if (!want) { process.stderr.write(`no option for ${choice}\n`); return 1; }
+        for (let i = 0; i < 6; i++) {
+          const cur = (planState(pane(session)) || pv).opts.find(x => x.cur);
+          if (!cur || cur.n === want.n) break;
+          await keys(session, [cur.n < want.n ? 'Down' : 'Up']);
+          await sleep(300);
+        }
+        if (choice === 'Object') { await literal(session, note || 'object'); await sleep(600); }
+        await keys(session, ['Enter']);
+        await sleep(1500);
+        record(`${session}: answered in the plan view ${choice}${choice === 'Object' ? ` with note "${note}"` : ` (${want.label})`}`, true, 0);
+        return 0;
+      }
       let st = cardState(pane(session));
       const want = st.opts.find(x => x.label === choice);
       if (!want) { process.stderr.write(`no option ${choice}\n`); return 1; }

@@ -20,8 +20,8 @@
  *       Both can come back together, one line each. "STOP: ..." when this seat left the room, or
  *       "STOP: duplicate row" at once when another room row already holds here (e.g. re-spawned after /clear).
  * One server serves the whole claude session (main + every subagent), so it sees every row's hold.
- * The room hold's progress line shows joins and leaves as notices ("⬡ bob joined CODE (alice, bob here)", "⬡ bob
- * left CODE" once the leave has settled 8 s; a quick leave + rejoin shows nothing; lib/notices.js), not as raw entries.
+ * The room hold's progress line shows joins and leaves as chat lines ("bob joined", "bob left" once the leave has
+ * settled 8 s; a quick leave + rejoin shows nothing; lib/notices.js), and entries as room.chatLines (no ids).
  * Every progress line ends with HINT ("read-only · talk in main (@room)"): text typed into a row view is not
  * posted (Claude Code queues it for the row agent), so the line says where to talk instead.
  * Liveness goes to <room>/rows/holds-<me>.json (lib/rows.js) for row-guard, join notes and rewake. A room hold
@@ -37,6 +37,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
 const notices = require(path.join(__dirname, '..', 'lib', 'notices.js'));
+const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
 
 const envMs = (k, d) => (Number(process.env[k]) > 0 ? Number(process.env[k]) : d);
 const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
@@ -49,14 +50,9 @@ const HINT = ' · read-only · talk in main (@room)';
 const oneLine = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
 const clip = (s, n = MSG_MAX) => { const a = Array.from(s); return a.length > n ? a.slice(0, n - 1).join('') + '…' : s; };
 
-function who(e) {
-  if (e.via === 'system') return e.from === 'orch' ? 'room' : e.from;
-  if (e.via === 'agent') return e.from === 'orch' ? 'facilitator' : `${e.from}'s Claude`;
-  return e.from;
-}
+/** An entry as its group-chat line, no id: "alice: say 1", "orch (to alice): which cursor?", "alice left". */
 function entryLine(e) {
-  const to = e.to && e.to !== 'room' ? ` → ${e.to}` : '';
-  return clip(`#${e.id} ${who(e)}${to} · ${e.kind}: ${oneLine(e.text)}`);
+  return clip(oneLine(room.chatLines(e).filter(l => !l.startsWith(room.FOR_CLAUDE)).join(' ')));
 }
 
 const TOOL = {

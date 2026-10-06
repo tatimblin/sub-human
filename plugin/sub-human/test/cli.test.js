@@ -18,8 +18,11 @@ function startTail(env = {}) {
   const child = spawn(h.BIN, ['tail', '/plugin/root', '/project/dir'], { env: h.childEnv({ ...FAST, ...env }) });
   children.add(child);
   const t = { child, out: '', exited: new Promise(r => child.on('exit', code => r(code))) };
-  child.stdout.on('data', d => { t.out += d; });
+  t.writes = 0;
+  child.stdout.on('data', d => { t.out += d; t.writes++; });
   t.lines = () => t.out.split('\n').filter(Boolean);
+  t.chat = () => t.lines().filter(l => !l.startsWith('(for Claude)'));
+  t.forClaude = () => t.lines().filter(l => l.startsWith('(for Claude)'));
   t.entries = () => t.lines().filter(l => /^#\d+ /.test(l));
   t.ids = () => t.entries().map(l => Number(l.split(' ')[0].slice(1)));
   t.batches = () => t.lines().filter(l => l.startsWith('room now: ')).length;
@@ -64,20 +67,32 @@ test('cli tail: silent before join, then the member push lane, settled into one 
   room.append({ kind: 'retract', text: 'peer-forged', refs: [16] }, { via: 'system', from: 'bob', system: true }); // #17 push (#16 was mine to hear)
   room.append({ kind: 'task', op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'pending' }, { via: 'system', from: 'orch', system: true }); // #18 assigns me: push
   say('bob', 'last ' + 'w'.repeat(600));                                                // #19 push, full text
-  await t.until('www"');
+  await t.until('w'.repeat(210) + '\n');
   await h.sleep(500);
-  assert.deepEqual(t.ids(), [3, 5, 11, 12, 14, 15, 17, 18, 19], t.out);
-  assert.equal(t.batches(), 1, 'one burst, one write');
-  assert.equal(t.lines()[0], `room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed (call AskUserQuestion with "proposal ${H2}")`);
-  assert.match(t.entries()[0], /^#3 bob\[human\] say "bob says hi"$/);
-  assert.match(t.entries()[2], new RegExp(`^#11 orch\\[agent\\] proposal proposal=${H2} approvers=alice "`), 'the full 12-hex hash');
-  assert.match(t.entries()[3], / · row: your room row is not running/);
-  assert.ok(t.out.includes('w'.repeat(600)), 'full text, not clipped at 240');
+  assert.equal(t.writes, 1, 'one burst, one write');
+  assert.deepEqual(t.chat(), [
+    'bob: bob says hi',
+    "bob's Claude (to you): q for alice",
+    'orch proposed: orch proposes',
+    'carol joined',
+    "carol's Claude: carol: anyone on @alice docs?",
+    'room: decided (room decision)',
+    "room: a message shown as bob's was removed: it came from another Claude session, not from bob",
+    'room: task "docs" pending, owner you',
+    'bob: last ' + 'w'.repeat(390), // a monitor line is cut at 500 chars: long text wraps at 400 code points
+    'w'.repeat(210),
+  ], t.out);
+  assert.doesNotMatch(t.chat().join('\n'), /#\d/, 'no ids in what the human sees');
+  assert.deepEqual(t.forClaude().map(l => l.slice(0, 40)), ['(for Claude) room now: proposal bbbbbb w', '(for Claude) row: your room row is not r']);
+  assert.ok(t.forClaude()[0].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed (`), t.forClaude()[0]);
+  assert.ok(t.forClaude()[0].includes(`"proposal ${H2}"`), 'the card call carries the full hash');
   await h.until(() => room.getCursor('tail-alice') === 19, 2000);
   assert.equal(room.getCursor('tail-alice'), 19);
+  const notices = require(path.join(h.LIB, 'notices.js'));
+  assert.ok(notices.shown(code, 'alice').has(12), 'the join is recorded as shown (at-room.js does not repeat it)');
 });
 
-test('cli tail: a member whose room row runs is not pushed a join (no row-call invite)', async () => {
+test('cli tail: a member sees every join as a chat line; with its room row running, no row-call invite', async () => {
   h.freshHome();
   const { code } = h.register('alice');
   room.bind(code);
@@ -86,10 +101,10 @@ test('cli tail: a member whose room row runs is not pushed a join (no row-call i
   sys('member_joined', 'alice');                         // #1
   const t = startTail();
   await h.sleep(300);
-  sys('member_joined', 'bob');                           // #2 the room row nests bob by itself: not pushed
+  sys('member_joined', 'bob');                           // #2 the room row nests bob by itself: a chat line only
   say('bob', 'hi');                                      // #3
-  await t.until('"hi"');
-  assert.deepEqual(t.ids(), [3], t.out);
+  await t.until('bob: hi\n');
+  assert.deepEqual(t.lines(), ['bob joined', 'bob: hi'], t.out);
   assert.doesNotMatch(t.out, /Agent|row:/);
 });
 
@@ -149,7 +164,7 @@ test('cli tail: while unseated it never runs ps and looks the seat up only every
   h.register('alice', 'member', process.pid, code);
   sys('member_joined', 'alice');
   say('bob', 'hello');
-  await t.until('"hello"', 5000);
+  await t.until('bob: hello', 5000);
   assert.ok(Date.now() - t0 >= 1500, `seated after ${Date.now() - t0} ms, before the unseated interval`);
   assert.ok(!fs.existsSync(marker), 'no ps walk with CLAUDE_PID set');
 });
@@ -198,9 +213,9 @@ test('cli tail: a steady trickle is cut into batches at the settle max; held ids
   await h.sleep(300);
   for (let i = 0; i < 10; i++) { say('bob', `tick ${i}`); await h.sleep(200); }
   assert.ok(room.getCursor('tail-alice') < 11, 'buffered ids are not past the cursor yet');
-  await t.until('"tick 9"');
-  assert.deepEqual(t.ids(), [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-  const b = t.batches();
+  await t.until('bob: tick 9\n');
+  assert.deepEqual(t.lines(), Array.from({ length: 10 }, (_, i) => `bob: tick ${i}`));
+  const b = t.writes;
   assert.ok(b >= 2 && b <= 4, `${b} batches`);
 });
 
@@ -211,18 +226,18 @@ test('cli tail: survives a restart via its cursor; switches when the session cha
   sys('member_joined', 'alice');                         // #1
   say('bob', 'history');                                 // #2: after the join, so it is delivered
   const a = startTail();
-  await a.until('"history"');
+  await a.until('bob: history');
   say('bob', 'first watch');                             // #3
-  await a.until('"first watch"');
+  await a.until('bob: first watch');
   await a.stop();
   say('bob', 'posted in the gap');                       // #4: nobody is watching
   room.append({ kind: 'status', text: 'own, skipped' }, { via: 'agent', from: 'alice' }); // #5
   assert.equal(room.getCursor('tail-alice'), 3, 'the first tail saved its cursor');
   const b = startTail();
-  await b.until('"posted in the gap"');
+  await b.until('bob: posted in the gap');
   say('bob', 'after restart');                           // #6
-  await b.until('"after restart"');
-  assert.deepEqual(b.ids(), [4, 6], b.out);
+  await b.until('bob: after restart');
+  assert.deepEqual(b.lines(), ['bob: posted in the gap', 'bob: after restart'], b.out);
   await h.until(() => room.getCursor('tail-alice') === 6, 2000);
   assert.equal(room.getCursor('tail-alice'), 6);
   // The session joins another room: the tail re-resolves and follows the new one.
@@ -231,7 +246,7 @@ test('cli tail: survives a restart via its cursor; switches when the session cha
   room.bind(code2);
   sys('member_joined', 'carol');
   say('dave', 'hello from room two');
-  await b.until('"hello from room two"');
+  await b.until('dave: hello from room two');
   room.bind(code);
   say('bob', 'old room, no longer watched');
   await h.sleep(400);

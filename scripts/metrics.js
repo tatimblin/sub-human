@@ -23,7 +23,8 @@
  *   `perCaptureExWaiting` without "Waiting for". "Operation stopped by hook" (the @room receipt) is counted
  *   apart as `receipts`, not noise. `red`: lines drawn in a red foreground (from the .ansi capture) or
  *   reading "hook error".
- * - cards: for each consent card (an AskUserQuestion call naming a proposal hash) in a member transcript,
+ * - cards: for each consent card or plan-view review (an AskUserQuestion or ExitPlanMode call naming a proposal
+ *   hash) in a member transcript,
  *   the model calls (distinct assistant message ids) from the entry that woke the turn to the card call
  *   (`toCard`, the card call included) and from the answer to the end of that turn (`after`).
  */
@@ -122,7 +123,8 @@ function cardTurns(es) {
   for (let i = 0; i < main.length; i++) {
     const e = main[i];
     if (e.type !== 'assistant') continue;
-    const call = (e.message.content || []).find(c => c && c.type === 'tool_use' && c.name === 'AskUserQuestion' && HASH_RE.test(JSON.stringify(c.input || {})));
+    // the card, or the plan view (ExitPlanMode "proposal <hash>": hooks/consent.js shows the proposal in the plan dialog)
+    const call = (e.message.content || []).find(c => c && c.type === 'tool_use' && (c.name === 'AskUserQuestion' || c.name === 'ExitPlanMode') && HASH_RE.test(JSON.stringify(c.input || {})));
     if (!call) continue;
     // back to the entry that started this turn (a user entry that is not a tool result)
     let s = i - 1;

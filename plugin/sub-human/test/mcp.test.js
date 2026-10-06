@@ -152,7 +152,8 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   assert.deepEqual(e.approvers, ['alice', 'bob'], 'orch and the departed carol are not approvers');
   assert.equal(e.path, path.join(identity.roomDir(code), 'plans', `${e.hash}.md`));
   assert.equal(fs.readFileSync(e.path, 'utf8'), text);
-  assert.match(msg, new RegExp(`alice is an approver: call AskUserQuestion now with the question "proposal ${e.hash}"`));
+  assert.match(msg, new RegExp(`alice is an approver: call EnterPlanMode, then ExitPlanMode with plan "proposal ${e.hash}" now`));
+  assert.doesNotMatch(msg, /#\d/, 'no entry ids for a Claude to repeat');
   // The same proposal again is not re-appended.
   assert.match((await s.tool('propose', { text })).result.content[0].text, /already open/);
   assert.equal(room.readAll().filter(x => x.kind === 'proposal').length, 1);
@@ -163,7 +164,7 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   const e2 = room.readAll().at(-1);
   assert.deepEqual(e2.approvers, ['bob']);
   assert.equal(e2.hash, require('node:crypto').createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0, 12));
-  assert.doesNotMatch(r2, /AskUserQuestion/);
+  assert.doesNotMatch(r2, /EnterPlanMode|AskUserQuestion/);
   fs.unlinkSync(f);
   // Refusals.
   assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['zed'] })), /not in the room: zed/);

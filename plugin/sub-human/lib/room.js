@@ -446,6 +446,86 @@ function line(e, { full = false, entries } = {}) {
 }
 const tailLine = e => line(e);
 
+// ---------- chat rendering (what a human sees; no ids) ----------
+const CHAT_WRAP = 400;   // code points per output line: Claude Code cuts a monitor line at 500 chars
+const CHAT_MAX = 1500;   // code points of one message shown; the rest stays in the log
+const FOR_CLAUDE = '(for Claude)';
+
+/** Who an entry is from, as a group chat names them: "bob", "bob's Claude", "orch", "room". */
+function chatWho(e) {
+  if (e.via === 'system') return 'room';
+  if (e.from === 'orch') return 'orch';
+  if (e.via === 'agent') return `${e.from}'s Claude`;
+  return e.drafted === 'agent' ? `${e.from} (Claude's wording)` : e.from;
+}
+
+/** Split one text line into pieces of at most n code points, at a space when there is one. */
+function wrap(lineText, n = CHAT_WRAP) {
+  const out = [];
+  let cps = Array.from(lineText);
+  while (cps.length > n) {
+    let cut = cps.lastIndexOf(' ', n);
+    if (cut < n / 2) cut = n;
+    out.push(cps.slice(0, cut).join('').trimEnd());
+    cps = cps.slice(cut);
+    while (cps[0] === ' ') cps.shift();
+  }
+  out.push(cps.join(''));
+  return out;
+}
+
+/** The human-facing sentence for an entry (may span lines); `cut` is true when the text was shortened. */
+function chatBody(e, viewer) {
+  const n = normalize(e);
+  const t = String(n.text ?? '');
+  const you = x => (x && x === viewer ? 'you' : x);
+  switch (n.kind) {
+    case 'member_joined': return { head: `${n.from} ${/\brejoined\b/.test(t) ? 'rejoined' : 'joined'}`, text: '' };
+    case 'member_left': return { head: `${n.from} left`, text: '' };
+    case 'proposal': return { head: `${chatWho(n)} proposed`, text: t.replace(/^proposal [0-9a-f]{6,64}:\s*/, '') };
+    case 'signoff': return { head: `${n.from} agreed to the proposal`, text: '' };
+    case 'objection':
+      return n.via === 'human' && n.proposal_hash
+        ? { head: `${n.from} objected to the proposal`, text: n.text == null || /^Object$/.test(t) ? '' : t }
+        : { head: chatWho(n), text: t };
+    case 'decision': {
+      const s = t.replace(/\s*\(proposal [0-9a-f]+\)\s*$/, '');
+      return { head: 'room', text: /^objected:/.test(s) ? `not agreed (${s})` : `decided (${s})` };
+    }
+    case 'task': {
+      const status = n.status ? ` ${n.status}` : '';
+      return { head: 'room', text: `task "${n.subject || n.task_id || '?'}"${status}${n.owner ? `, owner ${you(n.owner)}` : ''}` };
+    }
+    case 'task_req': return { head: chatWho(n), text: `asks to ${n.op} task "${n.subject || n.task_id || '?'}"` };
+    case 'retract': return { head: 'room', text: `a message shown as ${n.from}'s was removed: it came from another Claude session, not from ${n.from}` };
+    default: {
+      const to = n.to && n.to !== 'room' ? ` (to ${you(n.to)})` : '';
+      return { head: `${chatWho(n)}${to}`, text: t };
+    }
+  }
+}
+
+/**
+ * One entry as group-chat lines, no ids: "bob: sure, once we've agreed", "bob's Claude: …", "bob joined",
+ * "bob left". Multi-line text keeps its lines (each wrapped at CHAT_WRAP code points); a text longer than
+ * CHAT_MAX is cut with a visible "[cut: …]" and a "(for Claude) …" line naming the read call for the rest.
+ * A text line that itself starts with "(for Claude)" is prefixed with "> ", so a post can't pass as one.
+ * viewer: the reader's name ("to you", "owner you").
+ */
+function chatLines(e, { viewer } = {}) {
+  const { head, text } = chatBody(e, viewer);
+  if (!text) return [head];
+  const cps = Array.from(text);
+  const cut = cps.length > CHAT_MAX;
+  const shown = cut ? cps.slice(0, CHAT_MAX).join('') + ' [cut: the rest is in the room log]' : text;
+  const lines = shown.split(/\r?\n/).map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+  if (!lines.length) return [head];
+  lines[0] = `${head}: ${lines[0].replace(/^\s+/, '')}`;
+  const out = lines.flatMap((l, i) => wrap(i && l.trimStart().startsWith(FOR_CLAUDE) ? `> ${l.trimStart()}` : l));
+  if (cut) out.push(`${FOR_CLAUDE} that message is cut at ${CHAT_MAX}/${cps.length} chars; read({ids:[${e.id}]}) has all of it`);
+  return out;
+}
+
 // ---------- lanes ----------
 const esc = s => s.replace(/[.]/g, '\\.');
 /** "@name" anywhere in the text (case-insensitive, not part of a longer name). */
@@ -473,7 +553,7 @@ const inProposal = (p, name) => !!p && (approversOf(p).includes(name) || p.from 
  * is the entry-only one (push is then a superset of the judged push).
  *   none: my own entries (hook-written system decision/task entries are not "mine"), retracted entries.
  *   retract: push to its victim and to whoever the retracted entry would have pushed; none otherwise.
- *   member push: others' via=human entries, except a `say` @-addressed only to others (@orch, @bob: pull);
+ *   member push: others' via=human entries (every person's words, @-addressed to others too: a group chat);
  *     to=me or @me; a proposal naming me that I have not answered (and is not decided); a decision on a
  *     proposal I am in; a `task` assigning me (owner me) that someone else asked for (its req is not mine).
  *     Everything else is pull.
@@ -516,7 +596,7 @@ function lane(me, e, entries) {
     const req = entries.find(x => x.id === n.req);
     return req && (req.by || req.from) === name ? 'pull' : 'push';
   }
-  if (n.via === 'human') return n.kind === 'say' && addressedElsewhere(n.text) ? 'pull' : 'push';
+  if (n.via === 'human') return 'push'; // a group chat: every person's own words reach every member
   return 'pull';
 }
 
@@ -536,13 +616,6 @@ function quietDecision(name, d, entries) {
   return false;
 }
 
-/** The text @-addresses a room member (or the orch); called after mentions(text, me) was false. */
-function addressedElsewhere(text) {
-  const names = new Set(['orch', ...Object.keys(readMembersHere())].map(x => x.toLowerCase()));
-  for (const m of String(text ?? '').matchAll(/(^|[^A-Za-z0-9_.-])@([A-Za-z0-9_-]+)/g)) if (names.has(m[2].toLowerCase())) return true;
-  return false;
-}
-
 /** "room now: proposal 3fa2c1 waiting on bob · you: answer needed · away: bob", from the log as it is now. */
 function stateLine(me, entries = readAll()) {
   const parts = [];
@@ -559,7 +632,7 @@ function stateLine(me, entries = readAll()) {
     if (approversOf(p).includes(name)) {
       const a = answered(name, p.hash, entries);
       // the open-the-card call is spelled out right in the notice: a model skipped it when it was only in the join text
-      s += ` · you: ${a ? (a.kind === 'signoff' ? 'agreed' : 'objected') : dec ? 'not answered' : `answer needed (call AskUserQuestion with "proposal ${p.hash}")`}`;
+      s += ` · you: ${a ? (a.kind === 'signoff' ? 'agreed' : 'objected') : dec ? 'not answered' : `answer needed (call EnterPlanMode, then ExitPlanMode with plan "proposal ${p.hash}")`}`;
     }
     parts.push(s);
   }
@@ -677,6 +750,6 @@ module.exports = {
   readAll, readById, readAfter, lastId, follow, normalize,
   append, validateChain,
   hash12, proposal, proposals, answers, signoffMatrix: answers, answered, decided,
-  line, tailLine, lane, stateLine, retractedIds, mentions, fmt, who, digestSections, digest,
+  line, tailLine, chatLines, chatWho, FOR_CLAUDE, CHAT_MAX, CHAT_WRAP, lane, stateLine, retractedIds, mentions, fmt, who, digestSections, digest,
   getCursor, setCursor,
 };

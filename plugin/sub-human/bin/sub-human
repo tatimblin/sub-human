@@ -16,19 +16,23 @@
  *       so a restart loses nothing.
  *       Settle: entries are batched and written as ONE block (one notification, one turn) after
  *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most (the orch: 3000 / 10000,
- *       SUB_HUMAN_ORCH_SETTLE_MS / SUB_HUMAN_ORCH_SETTLE_MAX_MS). The block opens with
- *       room.stateLine() ("room now: …", computed at send time), then one room.line(e, {full}) per entry;
- *       each entry is judged again against the log at send time (retracted / answered / decided entries are
- *       dropped). A member_left X is held SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time both notices
- *       are dropped, otherwise it goes out marked "· away 8s+".
- *       member_joined: another member's join is pushed only when lib/rows.js joinNote() says the row for it
- *       is not running in this session (the orch's participant row, a member's room row); the line then ends
- *       with that note and the Agent call. A join whose row runs is never pushed, so no notice invites a call
- *       that row-guard would deny. The orch is also pushed the join when the note is unavailable.
- *       Join / leave notices (members only; lib/notices.js): another member's join, or their leave once it has
- *       settled SUB_HUMAN_LEAVE_MS with no rejoin, is written to this session's notice file
- *       (<home>/notices/<session_id>.json), never to stdout: hooks/notice.js's FileChanged hook shows it to the
- *       human as a notification, so it costs no model turn.
+ *       SUB_HUMAN_ORCH_SETTLE_MS / SUB_HUMAN_ORCH_SETTLE_MAX_MS). Each entry is judged again against the log at
+ *       send time (retracted / answered / decided entries are dropped). A member_left X is held
+ *       SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time both notices are dropped.
+ *       A member's block is a group chat (room.chatLines, no ids): "bob: <exact words>", "bob's Claude: …",
+ *       "bob joined", "bob left", which the member's Claude prints as they are and nothing else (member.md).
+ *       Lines meant only for Claude start with "(for Claude)": the room state when the batch has a proposal,
+ *       answer or decision (room.stateLine, with the card call), a cut message's read call, a missing room
+ *       row's Agent call. Claude Code has no surface that puts a persistent line in the transcript without a
+ *       model turn (a FileChanged systemMessage is a 5 s footer notification, a monitor event always wakes the
+ *       model), so this one wake prints the lines.
+ *       Members get every other member's join and settled leave (not the orch's), recorded as shown in
+ *       <room>/rows/notices-NAME.json (lib/notices.js; at-room.js shows on the next prompt any the monitor
+ *       never sent).
+ *       The orch's block opens with room.stateLine() ("room now: …"), then one room.line(e, {full}) per entry
+ *       (ids kept: its tools take them), a leave marked "· away 8s+". Its member_joined is pushed when
+ *       lib/rows.js joinNote() says that member's row is not running (the line ends with the note and the
+ *       Agent call), or when the note is unavailable; a join whose row runs is never pushed.
  *   sub-human read [N[,M] | --id N[,M]] [--json] [--room CODE]
  *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
@@ -96,16 +100,19 @@ function bindRoom(explicit) {
 
 // ---------- tail ----------
 /**
- * The push lane (room.lane), plus another member's member_joined when lib/rows.js joinNote() says that row is
- * not running in this session (the note carries the Agent call). A join whose row already runs is not pushed,
- * so a notice never invites a call that row-guard would deny. The orch, which spawns a participant row per
- * member only from this push, is pushed the join also when the note is unavailable.
+ * The push lane (room.lane). A member also gets every other member's join and leave (a group chat line). The
+ * orch gets another member's member_joined when lib/rows.js joinNote() says that row is not running (the note
+ * carries the Agent call) or when the note is unavailable; a join whose row already runs is not pushed to it,
+ * so a notice never invites a call that row-guard would deny.
  */
 const SPAWN_NOTE = /no row running|is not running/;
+const isMove = e => e.kind === 'member_joined' || e.kind === 'member_left';
 function visibleTo(me) {
+  if (me.role !== 'orch') return (e, entries) => room.lane(me, e, entries) === 'push' || (isMove(e) && e.via === 'system' && e.from !== me.name && e.from !== 'orch');
   return (e, entries, note = '') => room.lane(me, e, entries) === 'push'
-    || (e.kind === 'member_joined' && e.from !== me.name && (SPAWN_NOTE.test(note) || (me.role === 'orch' && !note)));
+    || (e.kind === 'member_joined' && e.from !== me.name && (SPAWN_NOTE.test(note) || !note));
 }
+const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
 const envMs = (k, d) => (Number(process.env[k]) > 0 ? Number(process.env[k]) : d);
 
 function tail(args) {
@@ -182,43 +189,40 @@ function tail(args) {
       room.bind(s.code);
       const entries = room.readAll();
       const out = [];
-      for (const { e, away } of ready) {
-        const note = joinNote(e);
-        if (show(e, entries, note)) out.push(room.line(e, { full: true }) + (away ? ` · away ${Math.round(leaveMs / 1000)}s+` : '') + (note ? ` · ${note}` : ''));
+      if (me.role === 'orch') {
+        for (const { e, away } of ready) {
+          const note = joinNote(e);
+          if (show(e, entries, note)) out.push(room.line(e, { full: true }) + (away ? ` · away ${Math.round(leaveMs / 1000)}s+` : '') + (note ? ` · ${note}` : ''));
+        }
+        const done = () => { for (const p of ready) inflight.delete(p.e.id); s.save(); };
+        if (!out.length) return done();
+        return process.stdout.write([room.stateLine(me, entries), ...out].join('\n') + '\n', done);
       }
+      // a member: group-chat lines, then the lines for Claude only
+      const seen = noticesMod ? noticesMod.shown(s.code, me.name) : new Set();
+      const moved = [], forClaude = [];
+      let state = false;
+      for (const { e } of ready) {
+        if (isMove(e) && seen.has(e.id)) continue; // at-room.js already showed it on a prompt
+        if (!show(e, entries)) continue;
+        out.push(...room.chatLines(e, { viewer: me.name }));
+        if (isMove(e)) moved.push(e.id);
+        if (STATE_KINDS.has(e.kind)) state = true;
+        const note = e.kind === 'member_joined' ? joinNote(e) : '';
+        if (SPAWN_NOTE.test(note)) forClaude.push(`${room.FOR_CLAUDE} ${note}`);
+      }
+      if (state) forClaude.unshift(`${room.FOR_CLAUDE} ${room.stateLine(me, entries)}`);
       const done = () => { for (const p of ready) inflight.delete(p.e.id); s.save(); };
       if (!out.length) return done();
-      process.stdout.write([room.stateLine(me, entries), ...out].join('\n') + '\n', done);
+      if (moved.length && noticesMod) { try { noticesMod.markShown(s.code, me.name, moved, 'monitor'); } catch { /* best effort */ } }
+      process.stdout.write([...out, ...forClaude].join('\n') + '\n', done);
     }
 
-    // Join / leave notices for the human (members only): to the notice file, not stdout (no wake).
+    // Join / leave lines (members): lib/notices.js records what was shown, so at-room.js never repeats one.
     const noticesMod = me.role === 'orch' ? null : optional(path.join(__dirname, '..', 'lib', 'notices.js'));
-    const delivered = new Set();
-    const timers = new Set();
-    const deliver = () => {
-      if (s.dead || !noticesMod) return;
-      try {
-        room.bind(s.code);
-        const now = Date.now();
-        const ms = identity.readMembers(s.code) || {};
-        const sid = ms[me.name] && ms[me.name].session_id;
-        const ns = noticesMod.joinLeave(room.readAll(), me.name, { now, settle: leaveMs })
-          .filter(n => n.settled && !delivered.has(n.id) && now - Date.parse(n.at) < noticesMod.FRESH_MS + leaveMs);
-        if (!ns.length || !sid) return;
-        for (const n of ns) delivered.add(n.id);
-        noticesMod.write(sid, ns.map(n => ({ id: n.id, code: s.code, name: me.name, text: noticesMod.text(s.code, n, ms), at: new Date(now).toISOString() })), now);
-      } catch { /* best effort: the next prompt's systemMessage (at-room.js) still shows it */ }
-    };
-    const onMove = e => {
-      if (!noticesMod || e.from === me.name || e.from === 'orch') return;
-      if (Date.now() - Date.parse(e.at) > noticesMod.FRESH_MS) return; // an old entry replayed from the cursor
-      const t = setTimeout(() => { timers.delete(t); deliver(); }, e.kind === 'member_left' ? leaveMs + 250 : 300);
-      timers.add(t);
-    };
 
     const stopFollow = room.follow(after, e => {
       if (s.dead) return;
-      if (e.kind === 'member_joined' || e.kind === 'member_left') onMove(e);
       if (e.id <= processed) { saved = 0; room.setCursor(reader, 0); } // the log was reset under us
       processed = e.id;
       if (e.kind === 'member_joined' && held.has(e.from)) {
@@ -241,7 +245,6 @@ function tail(args) {
     }, { intervalMs: pollMs });
     s.stop = () => {
       stopFollow();
-      for (const t of timers) clearTimeout(t);
       clearTimeout(quietT); clearTimeout(maxT);
       for (const h of held.values()) clearTimeout(h.timer);
     };

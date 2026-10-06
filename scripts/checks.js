@@ -24,7 +24,7 @@ const DEMO = {
   note5: 'add a test for a cursor past the end — `after=zzz` must 400, not 500',
   viewer9: "hi orch, what's next?",
 };
-const TARGET = { wakes: 12 };
+const TARGET = { wakes: 18 }; // group chat: joins, leaves and every person's words now wake each member once per burst
 
 function args() {
   const a = process.argv.slice(2), o = {};
@@ -163,15 +163,18 @@ function main() {
     add('S2', 'The orch\'s panel lists alice and bob', ['alice', 'bob'].every(n => orr.some(r => r.label === n)), orr.map(r => r.line).join(' | ') || 'none');
     const n = orchTurns(span('S2'));
     add('S2', 'The orch spent at most 2 model calls on the join (its row spawn)', n <= 2, `${n} orch assistant messages in S2`);
-    // the join notice to alice: a notification at once, the room row's "+bob joined", and no model turn for it
-    const jn = new RegExp(`⬡ bob joined ${esc(code)} \\(([^)]*)\\)`).exec(readText(path.join(screens, 'state', 'S2', 'notice-alice.txt')) || '');
+    // the join as a group-chat line in alice's pane: the monitor's "bob joined", printed by her Claude as is
+    const jt = readText(path.join(screens, 'state', 'S2', 'notice-alice.txt')) || '';
+    const jl = /^\s*(⏺ )?bob joined\s*$/m.exec(jt);
     const via = j && shownVia('alice', j.id);
-    add('S2', `alice sees "⬡ bob joined ${code} (alice, bob here)" at once (a notification, not a model turn)`, jn && /alice/.test(jn[1]) && /bob/.test(jn[1]) && via === 'notification',
-      `${jn ? `"${jn[0]}" in alice's pane (state/S2/notice-alice.txt)` : 'not seen in alice\'s pane'}; rows/notices-alice.json: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
+    add('S2', 'alice sees the chat line "bob joined" (a lasting line, no room code, no ids)', jl && via === 'monitor',
+      `${jl ? `"${jl[0].trim()}" in alice's pane (state/S2/notice-alice.txt)` : 'not seen in alice\'s pane'}; rows/notices-alice.json: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
     const arow = panelRows(cap('S2', 'alice')).find(r => r.label === code);
     add('S2', 'alice\'s room row reads "+bob joined"', !!(arow && /\+bob joined/.test(arow.text)), arow ? arow.line : `no ${code} row in ${capName('S2', 'alice')}`);
-    const woke = j ? entries('alice').filter(e => e.timestamp > j.at && e.timestamp <= (span('S2') || {}).to && metrics.trigger(e) && /member_joined/.test(textOf(e.message && e.message.content))) : [];
-    add('S2', 'The join woke no model turn in alice\'s session', woke.length === 0, `${woke.length} room wake(s) in alice's transcript carrying the join`);
+    const woke = j ? monitorIn(entries('alice')).filter(e => e.timestamp > j.at && e.timestamp <= (span('S2') || {}).to && /bob joined/.test(textOf(e.message && e.message.content))) : [];
+    const rep = woke[0] && replyAfter('alice', woke[0]);
+    add('S2', 'The join woke alice\'s Claude once, and it printed only the chat line', woke.length === 1 && rep && rep.text.trim() === 'bob joined' && !rep.tools.length,
+      `${woke.length} room wake(s) carrying the join; her Claude wrote ${rep ? JSON.stringify(clip(rep.text, 120)) : 'nothing'}${rep && rep.tools.length ? ` and called ${rep.tools.join(', ')}` : ''}`);
   }
 
   // ---- S3: pairing, no plan
@@ -181,12 +184,16 @@ function main() {
     const anyA = log.find(x => x.kind === 'say' && x.from === 'alice' && x.via === 'human');
     add('S3', 'alice\'s @room text byte-exact, via=human', !!e, e ? `#${e.id} === typed (${Buffer.byteLength(e.text)} bytes)` : `first alice say: ${fmt(anyA)}`);
     const t = cap('S3', 'alice') || '';
-    const rc = e && new RegExp(`Operation stopped by hook: ✓ posted to ${esc(code)} as #${e.id}`).test(t);
-    add('S3', 'One receipt line "Operation stopped by hook: ✓ posted to CODE as #N"; no "blocked by hook"', rc && !/blocked by hook/.test(t), rc ? `receipt for #${e.id} in ${capName('S3', 'alice')}` : `no receipt in ${capName('S3', 'alice')}`);
+    const rc = e && /Operation stopped by hook: ✓ sent\s*$/m.test(t);
+    add('S3', 'One receipt line "Operation stopped by hook: ✓ sent" (no room code, no id); no "blocked by hook"', rc && !/blocked by hook/.test(t) && !/✓ posted|as #\d/.test(t), rc ? `receipt for #${e.id} in ${capName('S3', 'alice')}` : `no receipt in ${capName('S3', 'alice')}`);
     const turn = noModelTurn('alice', e);
     add('S3', 'alice\'s @room ran no model turn', turn.pass, turn.evidence);
     const mw = monitorIn(inSpan(entries('bob'), s)).filter(x => e && textOf(x.message.content).includes(e.text));
     add('S3', 'bob\'s Claude is woken once with alice\'s exact words', mw.length === 1, `${mw.length} Monitor event(s) in bob's transcript carrying #${e ? e.id : '?'} verbatim`);
+    const br = mw[0] && replyAfter('bob', mw[0]);
+    const want = e ? `alice: ${e.text}` : '';
+    add('S3', 'bob\'s Claude printed exactly "alice: <her words>", with no preface, ids or reply', br && br.text.trim() === want && !br.tools.length,
+      br ? `bob's Claude wrote ${JSON.stringify(clip(br.text, 160))}${br.tools.length ? ` and called ${br.tools.join(', ')}` : ''}` : 'no reply after the wake');
     const sm = toolUses(inSpan(entries('bob'), s), 'SendMessage').filter(c => String((c.input || {}).to || '') === `alice.${code}`);
     add('S3', `bob's Claude calls SendMessage to alice.${code}`, sm.length >= 1, sm.length ? `SendMessage {to: "${sm[0].input.to}", message: "${clip(sm[0].input.message || sm[0].input.content, 80)}"}` : 'no SendMessage to alice');
     const pe = peerIn(inSpan(entries('alice'), s), 'bob');
@@ -212,11 +219,16 @@ function main() {
       p1 ? `${fmt(p1)} approvers ${p1.approvers.join(',')}; plans/${p1.hash}.md ${fs.existsSync(path.join(roomDir, 'plans', `${p1.hash}.md`)) ? 'present' : 'missing'}` : 'no proposal');
     const ow = ask && entries('orch').find(e => e.timestamp > ask.at && metrics.trigger(e));
     add('S4', 'The orch is woken by bob\'s @orch line', !!ow, ow ? `${metrics.trigger(ow)} at ${ow.timestamp.slice(11, 19)}` : 'no orch wake after it');
+    // the proposal opens in the native plan dialog (scrollable, hooks/consent.js); the card is the fallback
+    let title = '';
+    try { title = (fs.readFileSync(path.join(roomDir, 'plans', `${p1.hash}.md`), 'utf8').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').replace(/[*_`]/g, '').trim()).find(Boolean) || '').slice(0, 40); } catch { /* none */ }
     for (const seat of ['alice', 'bob']) {
       const t = cap('S4', seat, 'last') || '';
+      const view = /Would you like to proceed\?/.test(t) && /Tell Claude what to change|No, keep planning/.test(t) && !!title && t.includes(title);
       const m = new RegExp(`Agree to proposal (${p1 ? esc(p1.hash) : '[0-9a-f]{12}'})\\?`).exec(t);
       const opts = /1\. Not yet/.test(t) && /2\. Agree/.test(t) && /3\. Object/.test(t);
-      add('S4', `${seat}'s native card: "Agree to proposal HASH?" with Not yet / Agree / Object and the plan beside it`, m && opts && /Consent/.test(t), m ? `${m[0]}; options ${opts ? 'Not yet/Agree/Object' : 'missing'} (${capName('S4', seat, 'last')})` : `no card in ${capName('S4', seat, 'last')}`);
+      add('S4', `${seat} reads the proposal in the native plan view (Yes / Tell Claude what to change), or on the fallback card`, view || (m && opts && /Consent/.test(t)),
+        view ? `plan view showing "${title}" (${capName('S4', seat, 'last')})` : m ? `card ${m[0]}; options ${opts ? 'Not yet/Agree/Object' : 'missing'} (${capName('S4', seat, 'last')})` : `no plan view or card in ${capName('S4', seat, 'last')}`);
     }
   }
 
@@ -358,10 +370,10 @@ function main() {
       `members.json orch.stopped_at ${members.orch && members.orch.stopped_at}; claude agents --json at the last S10 snap ${ag ? (running ? `still lists ${running.id} (${running.state})` : `has no ${job}`) : 'not saved'}`);
     const tj = readJson(path.join(roomDir, 'tasks.json'), null);
     add('S10', '<room>/tasks.json stays', Array.isArray(tj), tj ? `${tj.length} task(s) kept` : 'missing');
-    const ln = new RegExp(`⬡ alice left ${esc(code)}`).exec(readText(path.join(screens, 'state', 'S10', 'notice-bob.txt')) || '');
+    const ln = /^\s*(⏺ )?alice left\s*$/m.exec(readText(path.join(screens, 'state', 'S10', 'notice-bob.txt')) || '');
     const via = la && shownVia('bob', la.id);
     const early = la && lb && Date.parse(lb.at) - Date.parse(la.at) < 8000;
-    add('S10', `bob sees "⬡ alice left ${code}" once the leave settled (8 s), as a notification`, ln && via === 'notification' && !early,
+    add('S10', 'bob sees the chat line "alice left" once the leave settled (8 s)', ln && via === 'monitor' && !early,
       `${ln ? `"${ln[0]}" in bob's pane (state/S10/notice-bob.txt)` : 'not seen in bob\'s pane'}; rows/notices-bob.json: #${la ? la.id : '?'} shown via ${via || 'nothing'}; bob left ${la && lb ? ((Date.parse(lb.at) - Date.parse(la.at)) / 1000).toFixed(1) : '?'} s after alice`);
   }
 
@@ -378,6 +390,19 @@ function main() {
       per.map(p => `${p.n}: ${p.items.join(', ') || 'none'}`).join('; ') + `; ${moves.length} joins/leaves of members in the log`);
   }
 
+  // ---- No entry ids in what people see: the members' panes outside the agent panel
+  {
+    const hits = [];
+    for (const r of index.filter(x => x.session === 'sh-alice' || x.session === 'sh-bob')) {
+      const lines = (readText(path.join(screens, r.txt)) || '').split('\n');
+      const end = lines.findIndex(l => /^\s*(❯\s*)?[⏺●◯]\s+main\b/.test(l));
+      for (const l of end < 0 ? lines : lines.slice(0, end)) {
+        if (/(^|[\s(])#\d+\b/.test(l) && !/\btasks?\b|◼/.test(l)) hits.push(`${r.txt}: ${clip(l, 90)}`);
+      }
+    }
+    add('S10', 'No room entry ids (#N) in the members\' panes (task numbers aside)', hits.length === 0, hits.length ? `${hits.length} line(s): ${hits.slice(0, 4).join(' | ')}` : `none in ${index.filter(x => x.session === 'sh-alice' || x.session === 'sh-bob').length} captures`);
+  }
+
   // ---- Metrics vs vole-8126 and Phase 0 (otter-0813)
   const M = metrics.measure({ screens, home, code });
   if (M.error) add('Metrics', 'Run metrics computed', false, M.error);
@@ -390,8 +415,9 @@ function main() {
     add('Metrics', `UI noise lines per capture ≤ 1.4 (vole-8126 ${B.noise.perCapture}; Phase 0 ${P.noise.perCapture}; stoat-3644 ${S.noise.perCapture})`, M.total.noise.perCapture <= 1.4,
       `${M.total.noise.lines} lines / ${M.total.noise.captures} captures = ${M.total.noise.perCapture} (excl. "Waiting for": ${M.total.noise.perCaptureExWaiting})`);
     add('Metrics', 'No red or "hook error" lines in any capture', M.total.noise.red === 0 && M.total.noise.hookError === 0, `red lines ${M.total.noise.red}, "hook error" lines ${M.total.noise.hookError}`);
-    add('Metrics', 'Model calls per card ≤ 3 on the approver\'s model (report)', M.total.cards.count > 0 && M.total.cards.perCard <= 3,
-      `${M.total.cards.count} cards: ${M.total.cards.toCard} call(s) to open, ${M.total.cards.after} after the answer (avg ${M.total.cards.perCard})`);
+    // a plan-view review: ToolSearch + EnterPlanMode + ExitPlanMode to open, one reply (plus the exit after an objection)
+    add('Metrics', 'Model calls per review ≤ 5 on the approver\'s model (report)', M.total.cards.count > 0 && M.total.cards.perCard <= 5,
+      `${M.total.cards.count} reviews: ${M.total.cards.toCard} call(s) to open, ${M.total.cards.after} after the answer (avg ${M.total.cards.perCard})`);
   }
 
   const order = ['Metrics', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10'];
@@ -405,7 +431,28 @@ function main() {
   process.stdout.write(`checks: ${p} pass / ${f} fail -> ${path.relative(process.cwd(), out)} (${res._meta.cost})\n`);
 
   // ---------- helpers that need the run's context ----------
-  /** How log entry id was shown to name as a join/leave notice ("notification" | "prompt"), from rows/notices-NAME.json. */
+  /**
+   * The assistant turn a wake started in seat's transcript: its text (all text blocks, in order) and tool names,
+   * up to the next prompt or notice.
+   */
+  function replyAfter(seat, wake) {
+    const f = seatFiles(seat).find(x => path.basename(x) === wake._file);
+    if (!f) return null;
+    const es = jsonl(f).filter(e => !e.isSidechain);
+    const i = es.findIndex(e => e.uuid === wake.uuid);
+    if (i < 0) return null;
+    const text = [], tools = [];
+    for (const e of es.slice(i + 1)) {
+      if (e.type === 'user' && !e.isMeta && !(Array.isArray(e.message && e.message.content) && e.message.content.every(c => c && c.type === 'tool_result'))) break;
+      if (e.type !== 'assistant') continue;
+      for (const c of e.message.content || []) {
+        if (c && c.type === 'text') text.push(c.text);
+        if (c && c.type === 'tool_use') tools.push(c.name);
+      }
+    }
+    return { text: text.join('\n'), tools };
+  }
+  /** How log entry id was shown to name as a join/leave line ("monitor" | "prompt" | "notification"), from rows/notices-NAME.json. */
   function shownVia(name, id) {
     const rec = readJson(path.join(roomDir, 'rows', `notices-${name}.json`), {});
     const x = (Array.isArray(rec.log) ? rec.log : []).find(y => y.id === id);
@@ -417,7 +464,8 @@ function main() {
       const es = jsonl(f);
       const q = es.find(x => x.type === 'queue-operation' && x.operation === 'remove' && x.reason === 'dropped_by_hook' && typeof x.content === 'string' && x.content.endsWith(e.text));
       if (q) return { pass: true, evidence: `${path.basename(f).slice(0, 8)}…: queued prompt removed by the hook (#${e.id}); it never reached the model` };
-      const i = es.findIndex(x => x.type === 'system' && typeof x.content === 'string' && x.content.includes(`posted to ${code} as #${e.id}`));
+      // the receipt carries no id: the first "✓ sent" system line at or after the entry (within 10 s)
+      const i = es.findIndex(x => x.type === 'system' && typeof x.content === 'string' && /✓ sent/.test(x.content) && x.timestamp >= new Date(Date.parse(e.at) - 2000).toISOString() && x.timestamp <= new Date(Date.parse(e.at) + 10_000).toISOString());
       if (i < 0) continue;
       for (let j = i + 1; j < es.length; j++) {
         const x = es[j];

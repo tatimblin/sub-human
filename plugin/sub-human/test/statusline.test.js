@@ -88,7 +88,7 @@ test('agentStatusline: a member\'s room row and the nested rows inside it (after
   const out = agentStatusline({ session_id: 'sid-alice', tasks }, { env }).split('\n').map(l => JSON.parse(l));
   assert.match(out[0].content, new RegExp(`^${code}  ⚠ your answer needed b7ca39`));
   assert.deepEqual(out.slice(1), [
-    { id: 'c1', content: 'bob  ✖ objected (#2)' },
+    { id: 'c1', content: 'bob  ✖ objected' },
     { id: 'c2', content: 'carol  (reconnecting)' },
   ]);
   for (const o of out) assert.ok(Array.from(o.content).length <= code.length + 2 + rows.ROW_MAX);

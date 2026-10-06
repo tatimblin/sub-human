@@ -10,7 +10,8 @@
 //     we unwrap it and record normalized:true (pasted tabs already became 4 spaces upstream);
 //   - suppressOriginalPrompt only works inside hookSpecificOutput.
 //   - Rendering (2.1.281, fixes/D #9): success is continue:false + stopReason, which keeps the human's
-//     "❯ @room …" row and adds one "Operation stopped by hook: ✓ posted to CODE as #N" line. The model
+//     "❯ @room …" row and adds one "Operation stopped by hook: ✓ sent" line (no entry id: people never see
+//     ids). The model
 //     sees the prompt and that line on its next turn natively, so no "unseen own posts" note is needed.
 //     Refusals stay decision:block + suppressOriginalPrompt, so refused or forged text never reaches it.
 //
@@ -27,7 +28,8 @@
 // (an accepted prompt suggestion, a copied draft), the entry carries drafted:"agent". It is still posted.
 //
 // For any other prompt from a joined member (including a task notification that wakes the session), the
-// pull lane since the last turn is added as context: "Room since your last turn" (cursor ctx-NAME, ≤1.5k).
+// pull lane since the last turn is added as context: "Room since your last turn", group-chat lines with no
+// ids (room.chatLines; cursor ctx-NAME, ≤1.5k).
 //
 // Rows: a seat whose rows are not running (no live hold; e.g. its Claude skipped the restore prompt after
 // --resume) gets the exact missing Agent calls again with every ordinary prompt or notice, until they run.
@@ -38,9 +40,10 @@
 // a monitor notice (<task-notification>) and the launch `/sub-human` when it is the session's first prompt.
 // Those still get the pull digest and the row calls below.
 //
-// Join / leave notices (lib/notices.js): another member's join, or settled leave, that the FileChanged
-// notification (hooks/notice.js) did not show this member yet goes out as `systemMessage` (shown to the human,
-// not sent to the model; the model sees joins and leaves only in the pull digest). Cursor notice-NAME.
+// Join / leave lines (lib/notices.js): another member's join, or settled leave, that the room monitor did not
+// print for this member yet ("bob joined", "bob left"; e.g. the monitor was not running) goes out on a typed
+// prompt as `systemMessage` (shown to the human, not sent to the model). Never on a monitor notice: that
+// notice carries its own lines. Cursor notice-NAME.
 //
 // Also: marks presence "working" and sets sessionTitle to the seat's address ("NAME.CODE", the name
 // SendMessage / ListAgents use) on the first prompt of each session id; session-restore.js sets it on restore.
@@ -188,7 +191,7 @@ function noticeLines(me) {
 }
 
 const PULL_CAP = 1500;
-const PULL_HEAD = 'Room since your last turn (pull lane; full text: the room MCP tool read({ids})):';
+const PULL_HEAD = 'Room since your last turn (context for you, not for the user: mention it only if they ask):';
 
 /** "Room since your last turn": pull-lane entries after cursor ctx-NAME, newest kept under PULL_CAP; advances it. */
 function pullDigest(me) {
@@ -203,7 +206,8 @@ function pullDigest(me) {
   }
   const last = all.length ? all[all.length - 1].id : 0;
   if (last > after) room.setCursor(key, last);
-  const lines = all.filter(e => e.id > after && room.lane(me, e, all) === 'pull').map(e => room.line(e));
+  const lines = all.filter(e => e.id > after && room.lane(me, e, all) === 'pull')
+    .map(e => room.chatLines(e, { viewer: me.name }).join('\n'));
   if (!lines.length) return null;
   const kept = [];
   let size = PULL_HEAD.length;
@@ -213,7 +217,7 @@ function pullDigest(me) {
     size += lines[i].length + 1;
   }
   const dropped = lines.length - kept.length;
-  const more = dropped ? [`(${dropped} earlier ${dropped === 1 ? 'entry' : 'entries'} not shown: \`sub-human read\` or read({ids}))`] : [];
+  const more = dropped ? [`(${dropped} earlier ${dropped === 1 ? 'entry' : 'entries'} not shown: \`sub-human read\` or the room read tool)`] : [];
   return [PULL_HEAD, ...more, ...kept].join('\n');
 }
 
@@ -301,7 +305,7 @@ if (process.argv[2] === '--forgery-check') {
     let pull = null;
     try { pull = pullDigest(me); } catch { /* best-effort */ }
     let notice = null;
-    try { notice = noticeLines(me); } catch { /* best-effort */ }
+    try { if (!notification) notice = noticeLines(me); } catch { /* best-effort */ }
     const text = [pull, proposalReminders(me, notification), missingRowsText(me, input)].filter(Boolean).join('\n\n') || null;
     if (text || title || notice) {
       out({ ...(notice ? { systemMessage: notice } : {}), hookSpecificOutput: { hookEventName: 'UserPromptSubmit', ...(text ? { additionalContext: clip(text) } : {}), ...top } });
@@ -322,7 +326,7 @@ if (process.argv[2] === '--forgery-check') {
   spawnForgeryCheck(me, input, e.id);
   out({
     continue: false,
-    stopReason: `✓ posted to ${me.code} as #${e.id}${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`,
+    stopReason: `✓ sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`,
     hookSpecificOutput: { hookEventName: 'UserPromptSubmit', ...top },
   });
 });

@@ -2,7 +2,7 @@
   {
     "name": "room",
     "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sub-human\" tail",
-    "description": "sub-human room notices",
+    "description": "sub-human room",
     "when": "always"
   }
 ]

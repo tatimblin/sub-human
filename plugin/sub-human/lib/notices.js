@@ -1,28 +1,31 @@
 'use strict';
 /**
- * plugin/sub-human/lib/notices.js: join / leave notices for every human in the room, shown without a model turn.
- * CommonJS, zero dependencies. A notice is one line, "⬡ bob joined stoat-3644 (alice, bob here)" /
- * "⬡ bob left stoat-3644". The member's Claude sees joins and leaves only in its pull digest (at-room.js).
+ * plugin/sub-human/lib/notices.js: join / leave lines for every human in the room, as a group chat shows them:
+ * "bob joined", "bob rejoined", "bob left" (no room code, no ids).
  *
- * Where a human sees it (all deterministic, none runs their model):
- *   1. at the moment: a Claude Code footer notification. The seat's room monitor (bin/sub-human tail) writes the
- *      notice to <home>/notices/<session_id>.json; hooks/notice.js watches that file (SessionStart `watchPaths`)
- *      and its FileChanged hook returns it as `systemMessage`, which Claude Code shows as a notification and
- *      does not send to the model. The hook records what it showed (<room>/rows/notices-<name>.json).
+ * Where a human sees them:
+ *   1. at the moment, as a persistent line in their session: the seat's room monitor (bin/sub-human tail) prints
+ *      them with the room's other chat lines and the member's Claude prints them as given (member.md). Claude
+ *      Code 2.1.281 has no surface that puts a persistent line in the transcript without a model turn: a
+ *      FileChanged hook's systemMessage is a 5 s footer notification (key "env-hook", replaced by the next one),
+ *      and a monitor event always wakes the model. The monitor records what it printed (markShown, via
+ *      "monitor").
  *   2. for a while after: the room row's text ("+bob joined", "−bob left"; lib/rows.js rowText) and the room
  *      row view's progress line (mcp/hold.js).
- *   3. if (1) never showed it (no watcher, a restarted monitor): the next prompt's `systemMessage` (at-room.js).
+ *   3. if (1) never printed it (no monitor running): the next typed prompt's `systemMessage` (at-room.js).
+ *   The notice file below (hooks/notice.js, FileChanged) is no longer written by the monitor; it stays for a
+ *   caller that wants a transient footer notification.
  *
  *   joinLeave(entries, viewer, {now, settleMs}) -> [{id, kind, name, at, settled, rejoin}]
  *       others' member_joined / member_left (never the orch's or viewer's own), in log order. A leave settles
  *       settleMs (SUB_HUMAN_LEAVE_MS, 8 s, the same as the monitor's) after it; a leave followed by a rejoin
  *       within settleMs is no notice, and neither is that rejoin.
- *   text(code, n, members) -> the notice line; rowSegment(entries, viewer, {now}) -> "+bob joined" | "−bob left" | ''
- *       (the newest settled notice of the last ROW_MS, 2 min)
+ *   text(code, n, members) -> "bob joined" | "bob rejoined" | "bob left"; rowSegment(entries, viewer, {now}) ->
+ *       "+bob joined" | "−bob left" | '' (the newest settled notice of the last ROW_MS, 2 min)
  *   file(sid), write(sid, items), read(file) -> {items: [{id, code, name, text, at}]}   the watched file
  *       (items of the last FILE_KEEP_MS are kept, so two notices in one burst both show)
- *   shown(code, name) -> Set(ids), markShown(code, name, ids, via)   what a hook already showed this member, and how
- *       (<room>/rows/notices-<name>.json {shown, log: [{id, via: notification|prompt, at}]})
+ *   shown(code, name) -> Set(ids), markShown(code, name, ids, via)   what was already shown to this member, and how
+ *       (<room>/rows/notices-<name>.json {shown, log: [{id, via: monitor|prompt|notification, at}]})
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -58,11 +61,9 @@ function here(members) {
   return list.filter(m => m && m.name && !m.left_at && m.role !== 'orch' && m.name !== 'orch').map(m => m.name);
 }
 
-function text(code, n, members) {
-  if (n.kind === 'member_left') return `⬡ ${n.name} left ${code}`;
-  const names = here(members);
-  if (!names.includes(n.name)) names.push(n.name);
-  return `⬡ ${n.name} ${n.rejoin ? 'rejoined' : 'joined'} ${code} (${names.join(', ')} here)`;
+function text(code, n, members) { // code and members are unused since the chat form; kept for callers
+  if (n.kind === 'member_left') return `${n.name} left`;
+  return `${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
 }
 
 function rowSegment(es, viewer, { now = Date.now() } = {}) {
@@ -106,7 +107,7 @@ const shownFile = (code, name) => path.join(identity.roomDir(code), 'rows', `not
 function shown(code, name) {
   try { const v = JSON.parse(fs.readFileSync(shownFile(code, name), 'utf8')); return new Set(Array.isArray(v.shown) ? v.shown : []); } catch { return new Set(); }
 }
-/** Record ids as shown to name, and how (`via`: "notification" from the FileChanged hook, "prompt" from at-room). */
+/** Record ids as shown to name, and how (`via`: "monitor" from bin/sub-human tail, "prompt" from at-room, "notification" from the FileChanged hook). */
 function markShown(code, name, ids, via = 'notification') {
   if (!ids.length) return;
   const f = shownFile(code, name);

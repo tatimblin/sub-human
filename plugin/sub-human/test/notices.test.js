@@ -1,7 +1,6 @@
 'use strict';
-// Join / leave notices (lib/notices.js) and where they surface without a model turn: the room row text
-// (lib/rows.js), the room hold's progress line (mcp/hold.js) and the notice file the room monitor writes
-// (bin/sub-human tail; never stdout).
+// Join / leave lines (lib/notices.js) and where they surface: the room monitor's chat lines (bin/sub-human
+// tail), the room row text (lib/rows.js) and the room hold's progress line (mcp/hold.js).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -37,9 +36,9 @@ test('notices.joinLeave: others only, leaves settle after 8 s, a quick leave + r
 
 test('notices.text and rowSegment: the one-line notice and the room row segment', () => {
   const ms = { ...MEMBERS, carol: { name: 'carol', role: 'member', left_at: at(0) } };
-  assert.equal(notices.text(CODE, { kind: 'member_joined', name: 'bob' }, ms), `⬡ bob joined ${CODE} (alice, bob here)`);
-  assert.equal(notices.text(CODE, { kind: 'member_joined', name: 'bob', rejoin: true }, ms), `⬡ bob rejoined ${CODE} (alice, bob here)`);
-  assert.equal(notices.text(CODE, { kind: 'member_left', name: 'bob' }, ms), `⬡ bob left ${CODE}`);
+  assert.equal(notices.text(CODE, { kind: 'member_joined', name: 'bob' }, ms), 'bob joined');
+  assert.equal(notices.text(CODE, { kind: 'member_joined', name: 'bob', rejoin: true }, ms), 'bob rejoined');
+  assert.equal(notices.text(CODE, { kind: 'member_left', name: 'bob' }, ms), 'bob left');
   const es = [mv(1, 'member_joined', 'bob', 0)];
   assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 5_000 }), '+bob joined');
   assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 130_000 }), '', 'gone after 2 minutes');
@@ -100,8 +99,8 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   const r = plug.call('hold', me, { room: CODE }, { id: 2, progressToken: 'r' });
   await h.sleep(60);
   add('bob', 'member_joined', 'bob joined');
-  await h.until(() => progress.some(m => m.startsWith(`⬡ bob joined ${CODE} (alice, bob here)`)), 2000);
-  assert.ok(progress.some(m => m === `⬡ bob joined ${CODE} (alice, bob here)${hold.HINT}`), progress.join('\n'));
+  await h.until(() => progress.some(m => m.startsWith('bob joined')), 2000);
+  assert.ok(progress.some(m => m === `bob joined${hold.HINT}`), progress.join('\n'));
   assert.ok(!progress.some(m => /member_joined/.test(m)), 'no raw member_joined line');
   const n = progress.length;
   add('bob', 'member_left', 'bob left'); ms.bob.left_at = new Date().toISOString(); save();
@@ -111,9 +110,9 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   assert.ok(!progress.slice(n).some(m => /bob left|bob rejoined|member_left/.test(m)), progress.slice(n).join('\n'));
   add('bob', 'member_left', 'bob left'); ms.bob.left_at = new Date().toISOString(); save();
   await h.sleep(100);
-  assert.ok(!progress.some(m => m.startsWith(`⬡ bob left ${CODE}`)), 'not before it settles');
-  await h.until(() => progress.some(m => m.startsWith(`⬡ bob left ${CODE}`)), 2000);
-  assert.ok(progress.some(m => m === `⬡ bob left ${CODE}${hold.HINT}`));
+  assert.ok(!progress.some(m => m.startsWith('bob left')), 'not before it settles');
+  await h.until(() => progress.some(m => m.startsWith('bob left')), 2000);
+  assert.ok(progress.some(m => m === `bob left${hold.HINT}`));
   who = null; // this seat leaves: both holds end
   const ends = await Promise.race([Promise.all([b, r]), h.sleep(1000).then(() => null)]);
   assert.ok(ends && ends.every(x => /^STOP/.test(x.content[0].text)), 'both holds return STOP');
@@ -122,7 +121,7 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   }
 });
 
-// ---------- the room monitor writes the notice file, never stdout ----------
+// ---------- the room monitor prints joins and leaves as chat lines (no notice file) ----------
 const FAST = { CLAUDE_PID: String(process.pid), SUB_HUMAN_RESOLVE_MS: '100', SUB_HUMAN_UNSEATED_MS: '100', SUB_HUMAN_POLL_MS: '50', SUB_HUMAN_SETTLE_MS: '300', SUB_HUMAN_SETTLE_MAX_MS: '1000', SUB_HUMAN_LEAVE_MS: '600' };
 function startTail() {
   const child = spawn(h.BIN, ['tail'], { env: h.childEnv(FAST) });
@@ -132,7 +131,7 @@ function startTail() {
 }
 const sys = (kind, from, text) => room.append({ kind, text: text || `${from} ${kind}` }, { via: 'system', from, system: true });
 
-test('cli tail (member): a join and a settled leave go to the notice file, not stdout; a quick round trip writes nothing', async () => {
+test('cli tail (member): a join and a settled leave are chat lines on stdout; a quick round trip prints nothing', async () => {
   h.freshHome();
   const code = h.newRoom();
   room.bind(code);
@@ -144,19 +143,20 @@ test('cli tail (member): a join and a settled leave go to the notice file, not s
   try {
     await h.sleep(400);
     sys('member_joined', 'bob', 'bob joined');                 // #2
-    await h.until(() => notices.read(f).items.length === 1, 3000);
-    assert.deepEqual(notices.read(f).items.map(x => [x.id, x.name, x.text]), [[2, 'alice', `⬡ bob joined ${code} (alice, bob here)`]]);
+    await h.until(() => t.out === 'bob joined\n', 3000);
+    assert.equal(t.out, 'bob joined\n');
+    assert.deepEqual([...notices.shown(code, 'alice')], [2], 'recorded as shown (via monitor)');
     sys('member_left', 'bob', 'bob left');                     // #3
     await h.sleep(200);
-    sys('member_joined', 'bob', 'bob rejoined');               // #4, 200 ms later: neither is a notice
+    sys('member_joined', 'bob', 'bob rejoined');               // #4, 200 ms later: neither is a line
     await h.sleep(1200);
-    assert.equal(notices.read(f).items.length, 1, JSON.stringify(notices.read(f)));
+    assert.equal(t.out, 'bob joined\n');
     sys('member_left', 'bob', 'bob left');                     // #5
     await h.sleep(300);
-    assert.equal(notices.read(f).items.length, 1, 'still settling');
-    await h.until(() => notices.read(f).items.length === 2, 3000);
-    assert.equal(notices.read(f).items.at(-1).text, `⬡ bob left ${code}`);
-    assert.doesNotMatch(t.out, /member_joined|member_left/, 'nothing reached stdout (no wake)');
+    assert.equal(t.out, 'bob joined\n', 'still settling');
+    await h.until(() => t.out.includes('bob left'), 3000);
+    assert.equal(t.out, 'bob joined\nbob left\n');
+    assert.equal(notices.read(f).items.length, 0, 'no notice file');
   } finally { t.child.kill(); }
 });
 

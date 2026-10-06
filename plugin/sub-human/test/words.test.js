@@ -46,7 +46,8 @@ test('words: member template is <= 900 chars raw and filled for 5 members, with 
 
 test('words: member text carries the mechanics (identity, address, @room, quoting, consent, card, tasks)', () => {
   const t = read(MEMBER);
-  for (const s of ['{NAME}\'s Claude', 'room {CODE}', '"you", not by name', '@room', 'exact words', 'cite #id',
+  for (const s of ['{NAME}\'s Claude', 'room {CODE}', '"you", not by name', '@room', 'exact words', 'group chat',
+    'chat lines exactly as given', 'nothing else', '(for Claude)', 'never print it', 'room ids',
     'SendMessage', 'ListAgents', '{ADDR_EXAMPLE}', 'AskUserQuestion', 'hash', 'reopen', 'agreed, confirmed or approved',
     'commitment', 'task', 'propose', PREFIX]) {
     assert.ok(t.includes(s), `member.md lacks "${s}"`);
@@ -67,7 +68,7 @@ test('words: orch fill is short and names the room task; agent body holds the ap
   assert.ok(fm.description.length <= 200, `orch description is ${fm.description.length} chars`);
   assert.ok(body.length <= 1900, `orch body is ${body.length} chars`);
   for (const s of ['TaskCreate', 'TaskUpdate', 'one message', '(req #N by NAME)', 'evidence (#N)', 'completed',
-    'owner\'s done request', 'room closed', 'Task 1', 'SendMessage', 'propose', 'cite #id', 'No Bash',
+    'owner\'s done request', 'room closed', 'Task 1', 'SendMessage', 'propose', 'no #ids', 'No Bash',
     'agreed, confirmed or approved', 'never ask here', 'one message per person', 'not the room', 'No status', 'open questions', 'one round']) {
     assert.ok(body.includes(s), `orch body lacks "${s}"`);
   }

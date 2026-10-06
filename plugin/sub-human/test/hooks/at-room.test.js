@@ -48,7 +48,8 @@ const posted = r => {
   assert.equal(r.json.reason, undefined);
   assert.equal(hso(r).hookEventName, 'UserPromptSubmit');
   assert.equal(hso(r).suppressOriginalPrompt, undefined, 'the human\'s prompt stays on screen');
-  assert.match(r.json.stopReason, /^✓ posted to [a-z]+-\d+ as #\d+/);
+  assert.match(r.json.stopReason, /^✓ sent/);
+  assert.doesNotMatch(r.json.stopReason, /#\d/, 'people never see entry ids');
   return r.json.stopReason;
 };
 
@@ -58,7 +59,7 @@ test('20 hostile strings after "@room " are logged byte-identical, via human, an
   for (const s of HOSTILE) {
     const r = w.hook('at-room', submit('@room ' + s), { as: 'alice' });
     const receipt = posted(r);
-    assert.match(receipt, /^✓ posted to [a-z]+-\d+ as #\d+$/);
+    assert.equal(receipt, '✓ sent');
     assert.doesNotMatch(receipt, /block|error|sub-human:/i);
   }
   const es = w.entries();
@@ -118,13 +119,12 @@ test('orchestrator and non-members are refused; an empty post is refused', () =>
   assert.equal(w.entries().length + w2.entries().length + w3.entries().length, 0);
 });
 
-test('receipt shows the number and the unwrap note, and nothing else', () => {
+test('receipt is "✓ sent" plus the unwrap note, and nothing else (no room code, no id)', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
   let r = w.hook('at-room', submit('@room hello'), { as: 'alice' });
-  const code = posted(r).match(/posted to (\S+) as/)[1];
-  assert.equal(r.json.stopReason, `✓ posted to ${code} as #1`);
+  assert.equal(posted(r), '✓ sent');
   r = w.hook('at-room', submit('@room \n\n<pasted_content id="1">\nA\n</pasted_content id="1">\n'), { as: 'alice' });
-  assert.equal(r.json.stopReason, `✓ posted to ${code} as #2 (pasted text unwrapped)`);
+  assert.equal(r.json.stopReason, '✓ sent (pasted text unwrapped)');
   assert.equal(r.json.systemMessage, undefined, 'systemMessage is not rendered with continue:false');
 });
 
@@ -230,15 +230,16 @@ test('an ordinary prompt gets the pull lane since the last turn, once; push and 
   assert.equal(r.json.decision, undefined);
   const c = ctx(r);
   assert.match(c, /^Room since your last turn/);
-  assert.match(c, /^#2 bob\[agent\] say "bob's Claude: parser done"$/m);
-  assert.match(c, /^#5 carol\[system\] member_joined /m);
+  assert.match(c, /^bob's Claude: bob's Claude: parser done$/m);
+  assert.match(c, /^carol joined$/m);
+  assert.doesNotMatch(c, /#\d/, 'no ids');
   for (const x of ['before alice joined', 'bob speaks', 'which cursor', 'my words']) assert.doesNotMatch(c, new RegExp(x));
   // the cursor moved: nothing new, nothing said
   assert.equal(w.hook('at-room', submit('and now?'), { as: 'alice' }).stdout, '');
   // a task notification turn gets it too; a slash command neither shows nor consumes it
   w.append({ kind: 'status', text: 'tests green' }, { via: 'agent', from: 'bob' }); // #7
   assert.equal(w.hook('at-room', submit('/clear'), { as: 'alice' }).stdout, '');
-  assert.match(ctx(w.hook('at-room', submit('<task-notification>\n<event>x</event>\n</task-notification>'), { as: 'alice' })), /^#7 bob\[agent\] status "tests green"$/m);
+  assert.match(ctx(w.hook('at-room', submit('<task-notification>\n<event>x</event>\n</task-notification>'), { as: 'alice' })), /^bob's Claude: tests green$/m);
 });
 
 test('the pull digest hides retracted entries and keeps the newest under 1.5k chars', () => {
@@ -250,7 +251,7 @@ test('the pull digest hides retracted entries and keeps the newest under 1.5k ch
   assert.ok(c.length <= 1500, `${c.length} chars`);
   assert.doesNotMatch(c, /step 30 /, 'retracted');
   assert.match(c, /step 29 /);
-  assert.doesNotMatch(c, /retract refs=#30/, 'a retract is pushed by the monitor, not pulled');
+  assert.doesNotMatch(c, /was removed/, 'a retract is pushed by the monitor, not pulled');
   assert.match(c, /\(\d+ earlier entries not shown/);
   assert.doesNotMatch(c, /step 1 /);
 });

@@ -25,14 +25,15 @@
  *
  * Row text (deterministic from the log + members.json + <room>/presence/<name>.json {state, at}):
  *   rowText(code, name, viewer, {color, entries, members, now}?) -> string (<= ROW_MAX chars, no label)
+ *       No entry ids (people never see them); task ids ("#2") are the room task list's numbers.
  *       Proposals: `proposal` entries with a hash (lib/proposal.js); answers = latest via=human signoff /
  *       objection with that proposal_hash; a system `decision` closes one. Segments that do not fit are dropped.
  *       name === code (or null): the member's room row, from viewer's seat: first a join / settled leave of the
  *         last 2 min ("+bob joined", "−bob left"; lib/notices.js rowSegment), then "⚠ your answer needed 3fa2c1",
- *         "✓ agreed 3fa2c1 1/2", "✖ objected (#31)", "✔ decided 3fa2c1" ("✖ blocked 3fa2c1" when someone objected), "proposal 3fa2c1 0/2", else "N here";
+ *         "✓ agreed 3fa2c1 1/2", "✖ objected", "✔ decided 3fa2c1" ("✖ blocked 3fa2c1" when someone objected), "proposal 3fa2c1 0/2", else "N here";
  *         then "✉ N for you", then lib/tasks.js summary(code, viewer) ("tasks 3 open · #2 you · #4 bob").
- *       otherwise: NAME's state as viewer sees it: "✓ agreed 3fa2c1", "✖ objected (#31)", "⚠ reviewing 3fa2c1",
- *         "✔ decided 3fa2c1" (after it, their latest status: "#24 Claude status: handler done"), then their
+ *       otherwise: NAME's state as viewer sees it: "✓ agreed 3fa2c1", "✖ objected", "⚠ reviewing 3fa2c1",
+ *         "✔ decided 3fa2c1" (after it, their latest status: "Claude status: handler done"), then their
  *         open task on the room list ("◼ #2 parser tests"), presence, mail; "left".
  *   rowLine(label, text) -> "label  text"   what a row shows (the row content replaces the whole label)
  *
@@ -393,10 +394,10 @@ function participantText(code, name, viewer, es, ms, now, c, tasks) {
     const v = p.verdict[name];
     // Build phase: their latest status after the decision replaces "decided".
     const st = p.decided ? es.filter(e => e.from === name && e.id > p.decided && e.kind === 'status').at(-1) : null;
-    if (st) parts.push(`#${st.id} ${st.via === 'agent' ? 'Claude ' : ''}status: ${oneLine(st.text)}`);
+    if (st) parts.push(`${st.via === 'agent' ? 'Claude ' : ''}status: ${oneLine(st.text)}`);
     else if (p.decided) parts.push(decidedText(p, c));
     else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${h6(p.hash)}`));
-    else if (v && v.kind === 'objection') parts.push(c.warn(`✖ objected (#${v.id})`));
+    else if (v && v.kind === 'objection') parts.push(c.warn('✖ objected'));
     else if (p.approvers.includes(name)) parts.push(c.warn(`⚠ reviewing ${h6(p.hash)}`));
   }
   const t = openTask(tasks, name);
@@ -411,7 +412,7 @@ function participantText(code, name, viewer, es, ms, now, c, tasks) {
   }
   if (!parts.length || (parts.length === 1 && pres)) {
     const last = es.filter(e => e.from === name && e.kind !== 'member_joined' && e.kind !== 'member_left').at(-1);
-    if (last) parts.push(c.dim(`#${last.id} ${last.via === 'agent' ? 'Claude ' : ''}${normKind(last)} ${ago(last.at, now)}`));
+    if (last) parts.push(c.dim(`${last.via === 'agent' ? 'Claude ' : ''}${normKind(last)} ${ago(last.at, now)}`));
     else if (!parts.length) parts.push(c.dim('joined'));
   }
   return fit(parts);
@@ -433,7 +434,7 @@ function roomText(code, viewer, es, ms, now, c, summary) {
     const n = `${p.agreed}/${p.approvers.length}`;
     if (p.decided) parts.push(decidedText(p, c));
     else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${h6(p.hash)} ${n}`));
-    else if (v && v.kind === 'objection') parts.push(c.warn(`✖ objected (#${v.id})`));
+    else if (v && v.kind === 'objection') parts.push(c.warn('✖ objected'));
     else parts.push(`proposal ${h6(p.hash)} ${n}`);
     if (!p.decided && p.objectors.some(x => x !== viewer)) parts.push(c.warn(`✖ ${plural(p.objectors.filter(x => x !== viewer).length, 'objection')}`));
   } else {

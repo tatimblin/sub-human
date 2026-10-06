@@ -4,7 +4,7 @@
  *
  *   task({op: add|claim|release|done, id?, subject?, detail?, evidence?, for?})
  *     add needs subject; claim, release and done need id; done needs evidence. Appends a task_req entry
- *     (via agent, from the resolved member; owner = for || me) and returns "queued #N; the orch applies it".
+ *     (via agent, from the resolved member; owner = for || me) and returns "queued; the orch applies it".
  *     The orch applies requests to its native task list (the room's list). With no live orch it returns
  *     "no orch: the room task list is unavailable" and appends nothing.
  */
@@ -51,8 +51,8 @@ function create(ctx) {
     }
     const task = { op: r.op, owner };
     for (const k of ['id', 'subject', 'detail', 'evidence']) if (r[k] !== undefined) task[k] = r[k];
-    const e = room.append({ kind: 'task_req', text: tasks.requestText(task), ...task }, { via: 'agent', from: me.name });
-    return text(`queued #${e.id}; the orch applies it`);
+    room.append({ kind: 'task_req', text: tasks.requestText(task), ...task }, { via: 'agent', from: me.name });
+    return text('queued; the orch applies it');
   }
 
   return { tools: [TOOL], call };

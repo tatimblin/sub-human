@@ -160,7 +160,7 @@ test('lane: orch push is to/@orch, objections on its proposals, task_req; the re
   assert.equal(req.by, 'bob');
 });
 
-test('lane (P3 wakes): @-addressed human words, card answers and quiet decisions', () => {
+test('lane (P3 wakes): every person\'s words reach every member (a group chat), card answers and quiet decisions', () => {
   const code = fresh();
   h.register('alice', 'member', process.pid, code);
   const BOB = { name: 'bob', role: 'member' };
@@ -168,7 +168,7 @@ test('lane (P3 wakes): @-addressed human words, card answers and quiet decisions
   const atBob = human('carol', 'say', { text: '@orch @bob take a look' });
   const plain = human('bob', 'say', { text: 'alice, can you take the parser tests?' });
   const email = human('bob', 'say', { text: 'mail ops@orch.example' });
-  for (const [e, l] of [[atOrch, 'pull'], [atBob, 'pull'], [plain, 'push'], [email, 'push']]) assert.equal(room.lane(ALICE, e), l, `#${e.id}`);
+  for (const [e, l] of [[atOrch, 'push'], [atBob, 'push'], [plain, 'push'], [email, 'push']]) assert.equal(room.lane(ALICE, e), l, `#${e.id}`);
   assert.equal(room.lane(BOB, atBob), 'push', 'bob is named');
   assert.equal(room.lane(ORCH, atOrch), 'push');
   // Round 1: alice agrees, bob objects last; round 2: alice agrees, bob agrees last. The orch proposed.

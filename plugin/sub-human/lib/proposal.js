@@ -27,7 +27,9 @@
  *       under a lock: appends the answer, then the decision when the matrix is complete.
  *   decision(hash, entries?) -> Entry|null
  *   humans(code) -> [name]         members present who can approve
- *   reminder(p, name) -> string    the re-ask wording that worked in S2 (the closed card is fine to reopen)
+ *   viewable(p, code?) -> bool     the plan dialog can show it: stored, <= VIEW_MAX chars, no control or bidi
+ *                                  characters (the dialog withholds approval for those); else the card
+ *   reminder(p, name) -> string    the re-ask wording (a review closed without an answer is fine to reopen)
  *   planPath(code, hash), read(code, hash) -> string|null
  */
 
@@ -42,6 +44,8 @@ const HASH_RE = /^[0-9a-f]{12}$/;
 const QUESTION_RE = /^Agree to proposal ([0-9a-f]{12})\?$/;
 const PREVIEW_MAX = 2000;   // S2 F5: the card withholds a preview longer than 2000 (JS .length)
 const PREVIEW_LINES = 20;   // S2 F5: about 24 lines show at 50 rows; keep a margin
+const VIEW_MAX = 200000;   // the plan dialog withholds approval above 200,000 chars (2.1.281)
+const UNSAFE_RE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/;
 const SUMMARY_MAX = 1200;
 const SUMMARY_LINES = 12;
 const FILE_MAX = 256 * 1024;
@@ -152,7 +156,14 @@ function cardQuestion(p) {
 const cardFor = ps => ({ questions: ps.slice(0, 4).map(cardQuestion) });
 const card = p => cardFor([p]);
 
-const reminder = (p, name) => `proposal ${p.hash} still awaits ${name}'s answer (an earlier card that closed without an answer is fine). Call AskUserQuestion with "proposal ${p.hash}" now.`;
+function viewable(p, code = room.code()) {
+  const t = read(code, p.hash);
+  return t != null && t.length <= VIEW_MAX && !UNSAFE_RE.test(t.replace(/\r\n/g, '\n'));
+}
+
+/** How the model opens proposal hash for its person: the plan view (the hooks fall back to the card). */
+const openCall = hash => `call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`;
+const reminder = (p, name) => `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}.`;
 
 // ---------- writing ----------
 function expand(p, cwd) {
@@ -248,7 +259,7 @@ function record(me, p, answer = {}) {
 }
 
 module.exports = {
-  HASH_RE, QUESTION_RE, PREVIEW_MAX, PREVIEW_LINES, CHOICES, ProposalError,
-  create, proposals, pendingFor, card, cardFor, question, preview, matrix, record, decision, humans, reminder,
+  HASH_RE, QUESTION_RE, PREVIEW_MAX, PREVIEW_LINES, VIEW_MAX, CHOICES, ProposalError,
+  create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, record, decision, humans, reminder,
   planPath, read, hash12,
 };

@@ -12,7 +12,7 @@ Read this only when someone asks you to help the room decide or plan ("let's pla
 
 - Prefer to propose straight away: write what you can, and list what is still open in the plan's "Open questions". An approver who disagrees objects on the card, and their note is their answer.
 - If you truly can't write it without input, ask once: one message per person the question affects, with all your questions in it. Then propose with what you have; don't start a second round.
-- Quote people exactly and cite #id; a `[claude]` line is that person's Claude, not the person.
+- Quote people exactly and say who said it, never #ids (people don't see them); a `[claude]` line is that person's Claude, not the person.
 - The latest message doesn't win. When two people want different things, name the conflict in the plan and let the cards answer.
 
 ## Writing a plan

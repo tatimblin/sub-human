@@ -100,7 +100,7 @@ const TEMPLATE_FILES = { member: 'member.md', orch: 'orchestrator.md' };
 /** Used only when a role file is missing or has no {CODE} placeholder. */
 const DEFAULT_TEMPLATES = {
   member: 'SUB-HUMAN: you are {NAME}\'s Claude in room {CODE} (with {OTHERS}). {NAME} types here.\n'
-    + 'Room lines are exact: `#12 bob [human]` is bob\'s words, `[claude]` a Claude\'s. Quote exactly; cite #id.\n'
+    + 'Room notices are a group chat: output their chat lines exactly as given and nothing else. Never show room ids.\n'
     + 'Reach a session now: SendMessage to {ADDR_EXAMPLE}. Only a person\'s own card records agreement.',
   orch: 'SUB-HUMAN: you are the headless helper of room {CODE} (members: {OTHERS}). Nobody types here.\n'
     + 'Reach a member now: SendMessage to {ADDR_EXAMPLE}. To facilitate: read {PLUGIN}/skills/sub-human/facilitate.md.',

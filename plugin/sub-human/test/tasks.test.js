@@ -155,7 +155,7 @@ test('task tool: no orch, refusals, queued request', () => {
 
   r = api.call('task', me, { op: 'add', subject: 'parser tests', detail: 'cover the edge cases', for: 'bob' });
   const e = room.readAll().at(-1);
-  assert.equal(out(r), `queued #${e.id}; the orch applies it`);
+  assert.equal(out(r), 'queued; the orch applies it');
   assert.deepEqual([e.kind, e.from, e.via], ['task_req', 'alice', 'agent']);
   assert.deepEqual(tasks.reqOf(e), { op: 'add', id: null, subject: 'parser tests', detail: 'cover the edge cases', evidence: null, owner: 'bob', status: null, req: null, by: 'alice' });
 

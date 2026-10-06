@@ -103,7 +103,7 @@ test('rowText (participant): proposal states from the orch view, presence, and t
   assert.match(rows.rowText(code, 'bob', 'orch'), /◼ #2 parser tests$/);
 });
 
-test('rowText (participant): objection with its id, decided, status after the decision, left, mail', () => {
+test('rowText (participant): objection (no entry id), decided, status after the decision, left, mail', () => {
   const { code, dir } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }, { name: 'carol', left_at: 'x' }], [
     prop(['alice', 'bob']),
     answer('bob', 'objection', H, { text: 'no' }),
@@ -111,8 +111,8 @@ test('rowText (participant): objection with its id, decided, status after the de
     { kind: 'say', from: 'bob', via: 'agent', to: 'alice' },
   ]);
   const tasks = [];
-  assert.equal(rows.rowText(code, 'bob', 'orch', { tasks }), '✖ objected (#2)');
-  assert.equal(rows.rowText(code, 'bob', 'alice', { tasks }), '✖ objected (#2) · ✉ 2 for you');
+  assert.equal(rows.rowText(code, 'bob', 'orch', { tasks }), '✖ objected');
+  assert.equal(rows.rowText(code, 'bob', 'alice', { tasks }), '✖ objected · ✉ 2 for you');
   assert.equal(rows.rowText(code, 'carol', 'orch', { tasks }), 'left');
   assert.equal(rows.rowText(code, 'zed', 'orch', { tasks }), 'not in the room');
   const add = e => fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: rows.readLog(code).length + 1, at: new Date().toISOString(), to: 'room', ...e }) + '\n');
@@ -120,7 +120,7 @@ test('rowText (participant): objection with its id, decided, status after the de
   assert.equal(rows.rowText(code, 'alice', 'orch', { tasks }), '✖ blocked 593da0', 'bob objected: the closed proposal is blocked, not decided');
   add({ kind: 'status', via: 'agent', from: 'alice', text: 'handler done,\n12/12 tests pass in test/tasks.test.js and more words here' });
   const t = rows.rowText(code, 'alice', 'orch', { tasks });
-  assert.match(t, /^#6 Claude status: handler done, 12\/12 tests pass/);
+  assert.match(t, /^Claude status: handler done, 12\/12 tests pass/);
   fitsRow(t);
   assert.equal(rows.rowText(code, 'bob', 'orch', { tasks }), '✖ blocked 593da0', 'no status from bob yet');
 });
@@ -144,7 +144,7 @@ test('rowText (room row): answer needed, agreed, objected, decided, mail and the
   assert.equal(rows.rowText(code, code, 'alice', o()), '⚠ your answer needed 593da0 · ✉ 1 for you');
   assert.equal(rows.rowText(code, code, 'bob', o()), '✓ agreed 593da0 1/2');
   es.push(...mk([{}, {}, {}, answer('alice', 'objection')]).slice(3));
-  assert.equal(rows.rowText(code, code, 'alice', o()), '✖ objected (#4)');
+  assert.equal(rows.rowText(code, code, 'alice', o()), '✖ objected');
   assert.equal(rows.rowText(code, code, 'bob', o()), '✓ agreed 593da0 1/2 · ✖ 1 objection');
   es.push({ id: 5, at: new Date().toISOString(), ...decision() });
   assert.equal(rows.rowText(code, code, 'bob', o()), '✖ blocked 593da0', 'alice objected');

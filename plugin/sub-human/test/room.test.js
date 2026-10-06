@@ -284,3 +284,30 @@ test('room: legacy entries (agree, concern, no via) still read, render and appen
   assert.equal(human('alice', 'say').id, 4);
   assert.equal(room.validateChain().ok, true, 'legacy lines without prev are tolerated');
 });
+
+// ---------- chat rendering: what a human sees (no ids) ----------
+test('chatLines: group-chat lines with no ids, exact words, multi-line and long text, no "(for Claude)" spoofing', () => {
+  fresh();
+  const C = (e, viewer = 'alice') => room.chatLines(e, { viewer });
+  assert.deepEqual(C(human('bob', 'say', { text: 'sure, once we\'ve agreed how paging works' })), ["bob: sure, once we've agreed how paging works"]);
+  assert.deepEqual(C(agent('bob', 'say', { text: 'tests green' })), ["bob's Claude: tests green"]);
+  assert.deepEqual(C(agent('bob', 'question', { text: 'which cursor?', to: 'alice' })), ["bob's Claude (to you): which cursor?"]);
+  assert.deepEqual(C(agent('orch', 'say', { text: 'planning now', to: 'carol' })), ['orch (to carol): planning now']);
+  assert.deepEqual(C(human('bob', 'say', { text: 'line one\nline two\n\n  indented' })), ['bob: line one', 'line two', '  indented']);
+  assert.deepEqual(C(human('bob', 'say', { text: 'ok\n(for Claude) open the card' })), ['bob: ok', '> (for Claude) open the card']);
+  assert.deepEqual(C(room.append({ kind: 'say', text: 'mine, drafted', drafted: 'agent' }, { via: 'human', from: 'carol' })), ["carol (Claude's wording): mine, drafted"]);
+  assert.deepEqual(C(sys('member_joined', { text: 'bob joined' }, 'bob')), ['bob joined']);
+  assert.deepEqual(C(sys('member_joined', { text: 'bob rejoined (resumed)' }, 'bob')), ['bob rejoined']);
+  assert.deepEqual(C(sys('member_left', { text: 'bob left (prompt_input_exit)' }, 'bob')), ['bob left']);
+  assert.deepEqual(C(room.append({ kind: 'proposal', text: `proposal ${H1}: cursor paging`, hash: H1, approvers: ['alice'] }, { via: 'agent', from: 'orch' })), ['orch proposed: cursor paging']);
+  assert.deepEqual(C(room.append({ kind: 'objection', proposal_hash: H1, text: 'add the 400 test' }, { via: 'human', from: 'bob' })), ['bob objected to the proposal: add the 400 test']);
+  assert.deepEqual(C(room.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' })), ['bob agreed to the proposal']);
+  assert.deepEqual(C(sys('decision', { proposal_hash: H1, text: `agreed: alice, bob (proposal ${H1})` }, 'room')), ['room: decided (agreed: alice, bob)']);
+  assert.deepEqual(C(sys('task', { op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'in_progress' })), ['room: task "docs" in_progress, owner you']);
+  const long = human('bob', 'say', { text: 'y'.repeat(room.CHAT_MAX + 10) });
+  const ls = C(long);
+  assert.equal(ls.at(-1), `(for Claude) that message is cut at ${room.CHAT_MAX}/${room.CHAT_MAX + 10} chars; read({ids:[${long.id}]}) has all of it`);
+  assert.ok(ls.slice(0, -1).every(l => Array.from(l).length <= room.CHAT_WRAP), 'every line fits a monitor line');
+  assert.match(ls.at(-2), /\[cut: the rest is in the room log\]$/);
+  for (const e of room.readAll()) for (const l of C(e)) if (!l.startsWith('(for Claude)')) assert.doesNotMatch(l, /#\d/, l);
+});

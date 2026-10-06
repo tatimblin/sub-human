@@ -147,7 +147,7 @@ const CORE = [
   },
   {
     name: 'propose',
-    description: 'Ask people to agree to text or a file. Each answers a card in their own terminal. approvers: default all humans.',
+    description: 'Ask people to agree to text or a file. Each answers in their own terminal. approvers: default all humans.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -189,9 +189,9 @@ function propose(me, args) {
     if (e instanceof proposal.ProposalError) return text(`refused: ${e.message}`, true);
     throw e;
   }
-  const lines = [`proposal ${r.hash} ${r.again ? 'is already open' : `posted as #${r.entry.id}`}; approvers: ${r.approvers.join(', ')}. Text: ${r.path}`];
-  lines.push('Each approver answers a card in their own terminal. Never say anyone agreed until the room records it.');
-  if (r.approvers.includes(me.name)) lines.push(`${me.name} is an approver: call AskUserQuestion now with the question "proposal ${r.hash}" so ${me.name} can answer on the card.`);
+  const lines = [`proposal ${r.hash} ${r.again ? 'is already open' : 'proposed'} to ${r.approvers.join(', ')}. Text: ${r.path}`];
+  lines.push('Each approver reads and answers it in their own terminal. Never say anyone agreed until the room records it.');
+  if (r.approvers.includes(me.name)) lines.push(`${me.name} is an approver: ${proposal.openCall(r.hash)} now so ${me.name} can read and answer it.`);
   return text(lines.join('\n'));
 }
 

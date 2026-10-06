@@ -71,13 +71,13 @@ test('hold {member}: blocks with progress, streams the thread, refuses a duplica
   const a = w.call({ member: 'alice' });
   assert.ok(await pending(a.p), 'blocks');
   assert.equal(w.progress[0].token, `t${a.id}`);
-  assert.equal(w.progress[0].message, `#1 alice · say: say 1${hold.HINT}`);
+  assert.equal(w.progress[0].message, `alice: say 1${hold.HINT}`);
   assert.match(hold.HINT, /read-only · talk in main \(@room\)$/);
   w.add('bob', 'say');                       // not alice's thread
   w.add('orch', 'question', { via: 'agent', to: 'alice' });
   await sleep(80);
-  assert.match(w.progress.at(-1).message, /^#3 facilitator → alice · question/);
-  assert.ok(!w.progress.some(p => /#2/.test(p.message)), 'other threads are not streamed');
+  assert.match(w.progress.at(-1).message, /^orch \(to alice\): question 3/);
+  assert.ok(!w.progress.some(p => /^bob/.test(p.message)), 'other threads are not streamed');
   const n = w.progress.length;
   await sleep(250);
   assert.ok(w.progress.length > n, 'heartbeat keeps the idle timeout away');
@@ -86,7 +86,7 @@ test('hold {member}: blocks with progress, streams the thread, refuses a duplica
   w.add('alice', 'member_left', { via: 'system' });
   w.leave('alice');
   assert.ok(await pending(a.p, 200), 'the row outlives the leave (it reads "left")');
-  assert.match(w.progress.at(-1).message, /alice · member_left/);
+  assert.match(w.progress.at(-1).message, /^alice left/);
   assert.deepEqual(rows.readHolds(w.code, 'orch').members, ['alice']);
 });
 

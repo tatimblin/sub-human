@@ -18,15 +18,15 @@ const REPO = path.resolve(__dirname, '..');
 const SCENES = {
   Metrics: ['Slim build vs the baselines', 'Room-caused wakes ≤ 12 (vole-8126: 39, Phase 0 otter-0813: 23, previous slim run stoat-3644: 28); small join text; noise ≈ 1.4 per capture; no red lines; model calls per card'],
   S1: ['alice joins with no room open', 'Room created; the orch started as a background job (no window); one room row for alice; the orch lists alice; room task #1'],
-  S2: ['bob joins', 'bob nested in alice\'s room row, alice in bob\'s; the orch lists both; no stray rows; alice sees "⬡ bob joined …" as a notification and "+bob joined" on her room row, with no model turn'],
+  S2: ['bob joins', 'bob nested in alice\'s room row, alice in bob\'s; the orch lists both; no stray rows; alice sees the chat line "bob joined" and "+bob joined" on her room row'],
   S3: ['Pairing with no plan', '@room both ways (receipt line, one wake, exact words); bob\'s Claude asks alice\'s Claude by SendMessage and gets an answer; no card; the orch is not woken'],
-  S4: ['"Let\'s plan"', 'bob @room @orch let\'s plan …; the orch writes a plan and proposes it; the native consent card in both terminals'],
+  S4: ['"Let\'s plan"', 'bob @room @orch let\'s plan …; the orch writes a plan and proposes it; it opens in the native plan view in both terminals'],
   S5: ['Object, revise, agree', 'bob objects with a note (byte-exact); the orch revises; both agree; a decision citing both'],
   S6: ['Shared tasks', 'alice\'s Claude adds and claims a task; the orch applies it natively; rows and sub-human tasks show it; a non-owner done reaches the task tool and is refused (the gate check is marked SYNTHETIC when the orch declined before reaching it); the owner\'s done with evidence completes it'],
   S7: ['Stray typing in a row view', 'The row view shows the read-only hint; nothing is posted; the typed text reaches the row only when its hold next returns (then the one-line read-only reply), or not at all'],
   S8: ['Resilience', '/clear keeps alice\'s rows; bob --continue: rows return with no prompt (row-rewake) and the monitor still wakes him'],
   S9: ['The orch takes no typed input', 'A viewer attaches (claude attach) and types: refused with the hint; no orch turn'],
-  S10: ['Leave', 'alice exits; bob sees "⬡ alice left …" once the leave settles (8 s); bob exits; the reaper completes task 1 and stops the orch; claude agents no longer lists it; each human saw a join/leave notice'],
+  S10: ['Leave', 'alice exits; bob sees the chat line "alice left" once the leave settles (8 s); bob exits; the reaper completes task 1 and stops the orch; claude agents no longer lists it; each human saw a join/leave notice'],
 };
 const ORDER = Object.keys(SCENES);
 const SEAT_ORDER = ['orch', 'viewer', 'alice', 'bob'];
@@ -74,13 +74,13 @@ function metricsSection(m) {
   rows.push(['… excluding "Waiting for N background agents"', R.total.noise.perCaptureExWaiting, B.noise.perCaptureExWaiting, g(P, 'noise', 'perCaptureExWaiting'), g(S, 'noise', 'perCaptureExWaiting')]);
   for (const [k, label] of [['monitor', '"Monitor event" lines'], ['waiting', '"Waiting for N background agents" lines'], ['hookError', '"hook error" lines'], ['blocked', '"blocked by hook" lines'], ['invalid', '"Invalid tool parameters" lines']]) rows.push([`${label} (all captures)`, R.total.noise[k], B.noise[k], g(P, 'noise', k), g(S, 'noise', k)]);
   rows.push(['Red or "hook error" lines (all captures)', R.total.noise.red, null, null, g(S, 'red')]);
-  rows.push(['Model calls per consent card (open + after the answer)', R.total.cards.perCard, null, null, g(S, 'cardsPerCard')]);
+  rows.push(['Model calls per proposal review (open + after the answer)', R.total.cards.perCard, null, null, g(S, 'cardsPerCard')]);
   return `<section id="metrics-table">
 <header><h2><span class="sid">M</span>Slim build vs baselines</h2><p class="must">This run (room ${esc(R.room)}, ${esc(R.total.noise.captures)} captures of the orch, alice and bob) against vole-8126 (${esc(B.noise.captures)} captures), the Phase 0 run otter-0813 (${esc(g(P, 'noise', 'captures'))} captures)${S ? ` and the previous slim run ${esc(S.run)} (${esc(g(S, 'noise', 'captures'))} captures; its seats ran on Haiku)` : ''}, all measured by scripts/metrics.js from the seats' transcripts and the pane captures. The orch's pane is <code>claude logs</code> of its background job.</p></header>
 <div class="metrics"><table><thead><tr><th>Metric</th><th>vole-8126</th><th>Phase 0</th>${S ? `<th>${esc(S.run)}</th>` : ''}<th>this run</th><th>vs vole</th><th>vs Phase 0</th>${S ? `<th>vs ${esc(S.run)}</th>` : ''}</tr></thead><tbody>
 ${rows.map(([l, now, base, p0, prev]) => `<tr><td>${esc(l)}</td><td>${esc(base == null ? '–' : base)}</td><td>${esc(p0 == null ? '–' : p0)}</td>${S ? `<td>${esc(prev == null ? '–' : prev)}</td>` : ''}<td>${esc(now == null ? '–' : now)}</td>${delta(now, base)}${delta(now, p0)}${S ? delta(now, prev) : ''}</tr>`).join('\n')}
 </tbody></table>
-<p class="note">Wakes: a sub-human Monitor event, a peer delivery (SendMessage from another session) or the row-rewake wake that starts an assistant turn; adjacent triggers in one turn count once. Monitor notices delivered this run: ${esc(R.total.notices)}. Noise: lines matching "Monitor event", "Waiting for N background agents", "hook error", "blocked by hook" or "Invalid tool parameters", over every capture; the @room receipt "Operation stopped by hook: ✓ posted …" is not noise (${esc(R.total.noise.receipts)} receipt lines). Red lines are read from the colored captures. Cards: ${esc(R.total.cards.count)} consent cards, ${esc(R.total.cards.toCard)} model call(s) to open one and ${esc(R.total.cards.after)} after the answer, on average.</p></div>
+<p class="note">Wakes: a sub-human Monitor event, a peer delivery (SendMessage from another session) or the row-rewake wake that starts an assistant turn; adjacent triggers in one turn count once. Monitor notices delivered this run: ${esc(R.total.notices)}. Noise: lines matching "Monitor event", "Waiting for N background agents", "hook error", "blocked by hook" or "Invalid tool parameters", over every capture; the @room receipt "Operation stopped by hook: ✓ sent" is not noise (${esc(R.total.noise.receipts)} receipt lines). Red lines are read from the colored captures. Reviews: ${esc(R.total.cards.count)} proposals opened (plan view or card), ${esc(R.total.cards.toCard)} model call(s) to open one and ${esc(R.total.cards.after)} after the answer, on average.</p></div>
 </section>`;
 }
 
