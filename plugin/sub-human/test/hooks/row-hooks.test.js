@@ -158,3 +158,56 @@ test('row-guard: denies spawning a row whose hold is live in this session; allow
   assert.equal(pre('sid-orch', bob).json.hookSpecificOutput.permissionDecision, 'deny');
   assert.equal(pre('sid-orch', { subagent_type: 'Explore', description: 'bob', prompt: 'x' }).stdout, '', 'other agents untouched');
 });
+
+// ---------- row-rewake (SessionStart resume, asyncRewake): exit 2 + calls on stderr wakes the model ----------
+const rewake = (sid, extra = {}, source = 'resume') =>
+  hook('row-rewake', { session_id: sid, hook_event_name: 'SessionStart', source }, { SUB_HUMAN_REWAKE_WAIT_MS: '0', ...extra });
+
+test('row-rewake: a resumed member with no room row -> exit 2 with the room-row call on stderr', () => {
+  const { code } = world(['orch', 'alice', 'bob']);
+  const r = rewake('sid-alice');
+  assert.equal(r.code, 2, r.stderr);
+  assert.equal(r.stdout, '');
+  assert.ok(r.stderr.includes(rows.roomCall(code, ['bob'])), r.stderr);
+  assert.match(r.stderr, /resumed/);
+  assert.match(r.stderr, /Write no text/);
+});
+
+test('row-rewake: a resumed orch gets only the missing participant rows', () => {
+  const { code } = world(['orch', 'alice', 'bob']);
+  rows.writeHolds(code, 'orch', { members: ['alice'] });
+  const r = rewake('sid-orch');
+  assert.equal(r.code, 2, r.stderr);
+  assert.ok(r.stderr.includes(rows.participantCall('bob')), r.stderr);
+  assert.ok(!r.stderr.includes(rows.participantCall('alice')), 'a held row is not re-created');
+});
+
+test('row-rewake: silent exit 0 when nothing is missing, outside a room, with no members, or not a resume', () => {
+  const { code } = world(['orch', 'alice', 'bob']);
+  rows.writeHolds(code, 'alice', { members: ['bob'], room: true });
+  rows.writeHolds(code, 'orch', { members: ['alice', 'bob'] });
+  for (const r of [rewake('sid-alice'), rewake('sid-orch'), rewake('sid-nobody'), rewake('sid-bob', {}, 'startup')]) {
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.stdout + r.stderr, '');
+  }
+  world(['orch']);
+  const r = rewake('sid-orch');
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stderr, '');
+});
+
+test('row-rewake: registered in hooks.json for SessionStart resume with asyncRewake', () => {
+  const cfg = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8'));
+  const e = cfg.hooks.SessionStart.find(x => x.hooks.some(h => /row-rewake\.js/.test(h.command)));
+  assert.ok(e, 'registered');
+  assert.equal(e.matcher, 'resume');
+  assert.equal(e.hooks[0].asyncRewake, true);
+});
+
+test('row agents: a stray typed message gets the one-line read-only reply, then hold again', () => {
+  for (const f of ['room.md', 'participant.md']) {
+    const s = fs.readFileSync(path.join(PLUGIN, 'agents', f), 'utf8');
+    assert.ok(s.includes('`read-only row — type in main with @room`'), f);
+    assert.match(s, /SAME message you call `hold` again/, f);
+  }
+});

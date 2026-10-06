@@ -61,7 +61,7 @@ The command shows as `/sub-human:sub-human` in the picker and transcript; typing
 - **Esc twice kills the row you're viewing.** It comes back by itself within a few seconds. The dead copy stays listed until `/clear`.
 - Rows are read-only. You talk in `main`: with `@room`, or by asking your Claude.
 
-Room notices also reach your Claude through the plugin's `room` monitor, so even an idle session wakes for them. Your Claude tells you each one in a line, and acts only when you're addressed or you ask.
+Room notices that concern you (addressed to you, a plan naming you, a decision or assignment) reach your Claude through the plugin's `room` monitor, so even an idle session wakes for them. They arrive batched, one wake per burst, opening with a `room now:` state line. The rest of the room's traffic waits and reaches your Claude as "Room since your last turn" context on your next prompt. A leave shows only after 8 s away; a quick leave and rejoin shows nothing.
 
 While the rows run, Claude Code shows **"✻ Waiting for N background agents to finish"** after each turn. That's normal; your prompt is free. `"showTurnDuration": false` in your settings hides it, along with "Worked for 12s".
 
@@ -173,6 +173,7 @@ It doesn't stop a hostile local user, who can write the files directly. The hash
 | A row vanished after Esc | It returns within a few seconds. |
 | No sign-off form | Check `sub-human plan` names you. If you dismissed it, tell your Claude "review". |
 | The orchestrator is waiting | Its status names who hasn't signed. They answer the form or object. |
+| A push notification arrives on room notices | Claude Code's Monitor wakes invite a PushNotification when `agentPushNotifEnabled` is on in your settings. To never get them, set `"agentPushNotifEnabled": false`, or launch with `--settings '{"agentPushNotifEnabled":false}'`. |
 | The orchestrator's window shows a permission prompt to read a member's files | Nobody answers prompts there. Launch it with `--add-dir` for the members' working copies (reads only; it has no Bash), or ask the member to run that check. |
 
 ## Limits

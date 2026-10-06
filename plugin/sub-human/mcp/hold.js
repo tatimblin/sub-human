@@ -20,6 +20,8 @@
  *       Both can come back together, one line each. "STOP: ..." when this seat left the room, or
  *       "STOP: duplicate row" at once when another room row already holds here (e.g. re-spawned after /clear).
  * One server serves the whole claude session (main + every subagent), so it sees every row's hold.
+ * Every progress line ends with HINT ("read-only · talk in main (@room)"): text typed into a row view is not
+ * posted (Claude Code queues it for the row agent), so the line says where to talk instead.
  * Liveness goes to <room>/rows/holds-<me>.json (lib/rows.js) for the status line's "rows missing" check.
  *
  * Env (ms): SUB_HUMAN_HOLD_BEAT_MS 20000, SUB_HUMAN_HOLD_POLL_MS 1000, SUB_HUMAN_HOLD_GRACE_MS 20000,
@@ -35,6 +37,8 @@ const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
 const ANNOUNCE_MAX = 3;
 const MSG_MAX = 200;
 const END = 'End now without calling any tool.';
+// Shown on every progress line, right above the row view's input box: the row takes no input (A-rows #1).
+const HINT = ' · read-only · talk in main (@room)';
 
 const oneLine = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
 const clip = (s, n = MSG_MAX) => { const a = Array.from(s); return a.length > n ? a.slice(0, n - 1).join('') + '…' : s; };
@@ -103,7 +107,7 @@ function create(ctx) {
     h.sentAt = Date.now();
     if (h.token == null) return;
     h.n++;
-    try { ctx.progress(h.token, h.n, h.msg); } catch { /* client gone */ }
+    try { ctx.progress(h.token, h.n, h.msg + HINT); } catch { /* client gone */ }
   }
 
   function finish(h, s) {
@@ -279,4 +283,4 @@ function create(ctx) {
   return { tools: [TOOL], call, anonymous: ['hold'], _state: { holds, expect, respawn } };
 }
 
-module.exports = { create, TOOL, entryLine };
+module.exports = { create, TOOL, entryLine, HINT };

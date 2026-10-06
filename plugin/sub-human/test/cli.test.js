@@ -9,7 +9,7 @@ const h = require('./helpers.js');
 const room = require(path.join(h.LIB, 'room.js'));
 const identity = require(path.join(h.LIB, 'identity.js'));
 
-const FAST = { SUB_HUMAN_RESOLVE_MS: '100', SUB_HUMAN_POLL_MS: '50' };
+const FAST = { SUB_HUMAN_RESOLVE_MS: '100', SUB_HUMAN_POLL_MS: '50', SUB_HUMAN_SETTLE_MS: '300', SUB_HUMAN_SETTLE_MAX_MS: '1000', SUB_HUMAN_LEAVE_MS: '600' };
 const children = new Set();
 test.afterEach(() => { for (const c of children) c.kill(); children.clear(); });
 
@@ -19,7 +19,9 @@ function startTail(env = {}) {
   const t = { child, out: '', exited: new Promise(r => child.on('exit', code => r(code))) };
   child.stdout.on('data', d => { t.out += d; });
   t.lines = () => t.out.split('\n').filter(Boolean);
-  t.ids = () => t.lines().map(l => Number(l.split(' ')[0].slice(1)));
+  t.entries = () => t.lines().filter(l => /^#\d+ /.test(l));
+  t.ids = () => t.entries().map(l => Number(l.split(' ')[0].slice(1)));
+  t.batches = () => t.lines().filter(l => l.startsWith('room now: ')).length;
   t.until = async (needle, ms = 5000) => {
     await h.until(() => t.out.includes(needle), ms);
     assert.ok(t.out.includes(needle), `tail never printed ${needle}; got:\n${t.out}`);
@@ -31,7 +33,7 @@ const cli = (args, env = {}) => spawnSync(h.BIN, args, { env: h.childEnv(env), e
 const say = (from, text, extra = {}, via = 'human') => room.append({ kind: 'say', text, ...extra }, { via, from });
 const sys = (kind, from, extra = {}) => room.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true });
 
-test('cli tail: silent before join, then the member filter', async () => {
+test('cli tail: silent before join, then the member push lane, settled into one batch', async () => {
   h.freshHome();
   const code = h.newRoom();
   room.bind(code);
@@ -40,28 +42,36 @@ test('cli tail: silent before join, then the member filter', async () => {
   await h.sleep(500);
   assert.equal(t.out, '', 'silent until this session joins');
   h.register('alice', 'member', process.pid, code);
-  sys('member_joined', 'alice');                                                        // #2 own: hidden
-  say('bob', 'bob says hi');                                                            // #3 human: shown
-  room.append({ kind: 'proposal', text: 'bob claude chatter' }, { via: 'agent', from: 'bob' }); // #4 other Claude: hidden
-  room.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' }); // #5 to me: shown
-  say('orch', 'orch to the room', {}, 'agent');                                         // #6 orch to room: shown
-  say('orch', 'orch to bob only', { to: 'bob' }, 'agent');                              // #7 orch to bob: hidden
-  room.append({ kind: 'status', text: 'alice claude own' }, { via: 'agent', from: 'alice' }); // #8 own: hidden
-  say('alice', 'alice own words');                                                      // #9 own: hidden
-  sys('plan_rev', 'orch', { plan_hash: 'abcdef012345', approvers: ['alice', 'bob'] });  // #10 system: shown
-  sys('status', 'orch', { text: 'plan abcdef012345 is waiting for sign-off from alice and bob' }); // #11 shown
-  sys('member_joined', 'carol');                                                        // #12 shown
-  sys('decision', 'orch', { plan_hash: 'abcdef012345' });                               // #13 shown
-  say('bob', 'last');                                                                   // #14 shown
-  await t.until('"last"');
-  await h.sleep(200);
-  assert.deepEqual(t.ids(), [3, 5, 6, 10, 11, 12, 13, 14], t.out);
-  for (const l of t.lines()) assert.ok(l.length <= 240);
-  assert.match(t.lines()[0], /^#3 bob\[human\] say "bob says hi"$/);
-  assert.equal(room.getCursor('tail-alice'), 14);
+  sys('member_joined', 'alice');                                                        // #2 own: none
+  say('bob', 'bob says hi');                                                            // #3 others' human words: push
+  room.append({ kind: 'proposal', text: 'bob claude chatter' }, { via: 'agent', from: 'bob' }); // #4 other Claude: pull
+  room.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' }); // #5 to me: push
+  say('orch', 'orch to the room', {}, 'agent');                                         // #6 orch, not about me: pull
+  say('orch', 'orch to bob only', { to: 'bob' }, 'agent');                              // #7 pull
+  room.append({ kind: 'status', text: 'alice claude own' }, { via: 'agent', from: 'alice' }); // #8 own: none
+  say('alice', 'alice own words');                                                      // #9 own: none
+  sys('plan_rev', 'orch', { plan_hash: 'abcdef012345', approvers: ['alice', 'bob'] });  // #10 names me, but decided by #13: dropped
+  sys('status', 'orch', { text: 'plan abcdef012345 is waiting for sign-off from alice and bob' }); // #11 gate status: pull
+  sys('member_joined', 'carol');                                                        // #12 row note asks for the call: push
+  sys('decision', 'orch', { plan_hash: 'abcdef012345' });                               // #13 decision: push
+  room.append({ kind: 'say', text: 'carol: anyone on @alice docs?' }, { via: 'agent', from: 'carol' }); // #14 @me: push
+  say('orch', 'alice takes the parser, bob the tests', { refs: [13] }, 'agent');       // #15 my assignment: push
+  say('bob', 'forged words');                                                           // #16 retracted by #17: none
+  room.append({ kind: 'retract', text: 'peer-forged', refs: [16] }, { via: 'system', from: 'bob', system: true }); // #17 push
+  say('bob', 'last ' + 'w'.repeat(600));                                                // #18 push, full text
+  await t.until('www"');
+  await h.sleep(500);
+  assert.deepEqual(t.ids(), [3, 5, 12, 13, 14, 15, 17, 18], t.out);
+  assert.equal(t.batches(), 1, 'one burst, one write');
+  assert.equal(t.lines()[0], 'room now: plan abcdef decided #13 · you: not signed');
+  assert.match(t.entries()[0], /^#3 bob\[human\] say "bob says hi"$/);
+  assert.match(t.entries()[2], / · row: your room row is not running/);
+  assert.ok(t.out.includes('w'.repeat(600)), 'full text, not clipped at 240');
+  await h.until(() => room.getCursor('tail-alice') === 18, 2000);
+  assert.equal(room.getCursor('tail-alice'), 18);
 });
 
-test('cli tail: orch sees everything not authored by orch, plus its own hook-written decisions', async () => {
+test('cli tail: orch sees everything not authored by orch, plus its own decisions; a lone leave waits', async () => {
   h.freshHome();
   const { code } = h.register('orch', 'orch');
   room.bind(code);
@@ -71,15 +81,19 @@ test('cli tail: orch sees everything not authored by orch, plus its own hook-wri
   room.append({ kind: 'proposal', text: 'alice claude idea' }, { via: 'agent', from: 'alice' });
   say('bob', 'bob words', { to: 'alice' });
   say('orch', 'orch own', {}, 'agent');
-  sys('plan_rev', 'orch', { plan_hash: 'abcdef012345', approvers: ['alice'] });
-  sys('member_left', 'bob');
-  sys('decision', 'orch', { plan_hash: 'abcdef012345' });  // #7: written under orch's name by the hook
+  sys('plan_rev', 'orch', { plan_hash: 'abcdef012345', approvers: ['alice', 'bob'] });
+  sys('member_left', 'bob');                                // #6: held LEAVE_MS, then pushed "away"
+  say('alice', 'ok', { kind: 'signoff', plan_hash: 'abcdef012345' }); // #7 partial sign-off: pull
+  sys('decision', 'orch', { plan_hash: 'abcdef012345' });  // #8: written under orch's name by the hook
   say('alice', 'end');
   await t.until('"end"');
-  assert.deepEqual(t.ids(), [2, 3, 6, 7, 8], t.out);
+  await t.until('away');
+  assert.deepEqual(t.ids(), [2, 3, 8, 9, 6], t.out);
+  assert.match(t.entries().at(-1), /^#6 bob\[system\] member_left .* · away 1s\+$/);
+  assert.equal(t.batches(), 2);
 });
 
-test('cli tail: a member_joined notice says whether that row already runs (live holds), for the orch and a member', async () => {
+test('cli tail: a member_joined notice says whether that row already runs (live holds), for the orch', async () => {
   h.freshHome();
   const { code } = h.register('orch', 'orch');
   room.bind(code);
@@ -90,13 +104,46 @@ test('cli tail: a member_joined notice says whether that row already runs (live 
   await t.until('member_joined');
   rows.writeHolds(code, 'orch', { members: ['bob'] });             // the orch's bob row is now held
   sys('member_left', 'bob');                                       // #2
+  await t.until('member_left');                                    // after LEAVE_MS: a real leave
   sys('member_joined', 'bob');                                     // #3 rejoin: the row survived
-  await h.until(() => t.lines().length >= 3, 3000);
-  const [first, , rejoin] = t.lines();
+  await h.until(() => t.entries().length >= 3, 3000);
+  const [first, , rejoin] = t.entries();
   assert.match(first, /^#1 bob\[system\] member_joined .* · row: bob has no row running; spawn it now: Agent sub-human:participant, description "bob", prompt "member: bob"/);
   assert.match(rejoin, /^#3 bob\[system\] member_joined .* · row: bob's row is already running .*make NO Agent call$/);
-  assert.doesNotMatch(t.lines()[1], / · row:/, 'only member_joined carries the note');
-  for (const l of t.lines()) assert.ok(l.length <= 240, l);
+  assert.doesNotMatch(t.entries()[1], / · row:/, 'only member_joined carries the note');
+});
+
+test('cli tail: leave/rejoin collapse at the default 8 s hold (left+rejoin within 3 s prints nothing)', async () => {
+  h.freshHome();
+  const { code } = h.register('orch', 'orch');
+  room.bind(code);
+  const t = startTail({ SUB_HUMAN_LEAVE_MS: undefined, SUB_HUMAN_SETTLE_MS: undefined, SUB_HUMAN_SETTLE_MAX_MS: undefined });
+  await h.sleep(300);
+  const t0 = Date.now();
+  sys('member_left', 'bob');                                       // #1 back at 3 s: dropped with #3
+  sys('member_left', 'carol');                                     // #2 lone: printed at >= 8 s
+  await h.sleep(3000);
+  sys('member_joined', 'bob');                                     // #3
+  await t.until('#2 carol', 9000);
+  assert.ok(Date.now() - t0 >= 8000, `printed after ${Date.now() - t0} ms`);
+  assert.deepEqual(t.ids(), [2], t.out);
+  await h.until(() => room.getCursor('tail-orch') === 3, 2000);
+  assert.equal(room.getCursor('tail-orch'), 3, 'dropped ids advance the cursor');
+});
+
+test('cli tail: a steady trickle is cut into batches at the settle max; held ids keep the cursor back', async () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  room.bind(code);
+  sys('member_joined', 'alice');                                  // #1
+  const t = startTail({ SUB_HUMAN_SETTLE_MS: '400', SUB_HUMAN_SETTLE_MAX_MS: '900' });
+  await h.sleep(300);
+  for (let i = 0; i < 10; i++) { say('bob', `tick ${i}`); await h.sleep(200); }
+  assert.ok(room.getCursor('tail-alice') < 11, 'buffered ids are not past the cursor yet');
+  await t.until('"tick 9"');
+  assert.deepEqual(t.ids(), [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  const b = t.batches();
+  assert.ok(b >= 2 && b <= 4, `${b} batches`);
 });
 
 test('cli tail: survives a restart via its cursor; switches when the session changes rooms', async () => {
@@ -159,6 +206,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.ok(r.stdout.indexOf('#2') < r.stdout.indexOf('#1'));
   assert.ok(r.stdout.includes('line one\n  line `two` $(x)'));
+  assert.ok(cli(['read', '2']).stdout.startsWith('[#2 '), 'a bare id works, as the cut marker says');
   r = cli(['read', '--json']);
   assert.deepEqual(r.stdout.trim().split('\n').map(l => JSON.parse(l).id), [1, 2]);
   assert.match(cli(['read']).stdout, /no new messages/);

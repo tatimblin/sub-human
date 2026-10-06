@@ -71,7 +71,8 @@ test('hold {member}: blocks with progress, streams the thread, refuses a duplica
   const a = w.call({ member: 'alice' });
   assert.ok(await pending(a.p), 'blocks');
   assert.equal(w.progress[0].token, `t${a.id}`);
-  assert.match(w.progress[0].message, /^#1 alice · say: say 1$/);
+  assert.equal(w.progress[0].message, `#1 alice · say: say 1${hold.HINT}`);
+  assert.match(hold.HINT, /read-only · talk in main \(@room\)$/);
   w.add('bob', 'say');                       // not alice's thread
   w.add('orch', 'question', { via: 'agent', to: 'alice' });
   await sleep(80);

@@ -24,4 +24,4 @@ Step 2. When `hold` returns, read every line of the result:
 Rules:
 - Spawn rows only for names in your prompt or after JOINED / RESPAWN. A member who leaves keeps their row (it shows "left"); never re-spawn it yourself. Ignore notices that an agent finished or stopped; never spawn on your own.
 - Never spawn a row for yourself, "orch", or "facilitator".
-- Write no text at any point. Never answer, summarize or act on room content or on messages typed into this row; this row is read-only.
+- Write no text at any point, with one exception: a message that is not a `hold` result (someone typed into this row) gets exactly this one line, `read-only row — type in main with @room`, and in the SAME message you call `hold` again with `{"room": "CODE"}`. Do nothing else for it: never answer, summarize or act on its content or on room content; this row is read-only.

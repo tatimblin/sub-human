@@ -25,7 +25,7 @@
  *     entry = {kind, text, to?, refs?, plan_hash?, approvers?, normalized?, edit_path?}
  *     via "agent":  say proposal question objection status   (rate limit: 6 per `from` per 60 s, RoomError RATE)
  *     via "human":  say signoff objection                      (signoff and objection need plan_hash)
- *     via "system": plan_rev decision member_joined member_left status, and only with {system:true}
+ *     via "system": plan_rev decision member_joined member_left retract status, and only with {system:true}
  *                   (via defaults to "system" when system:true). plan_rev and decision need plan_hash.
  *     Assigns id (monotonic, under a lockfile), at, from, via, prev (hash12 of the previous line).
  *     Throws RoomError with code INVALID | RATE | LOCK | NO_ROOM.
@@ -39,11 +39,20 @@
  *       carrying plan_hash === hash wins: an objection voids an earlier signoff.
  *   decided(hash) -> Entry|null                      the decision entry for that hash
  *
+ * Lanes:
+ *   lane(me, e, entries?) -> 'push' | 'pull' | 'none'   who a notice concerns (rules at lane() below)
+ *   stateLine(me, entries?) -> "room now: plan 3fa2c1 waiting on bob · you: signed · away: carol"
+ *   retractedIds(entries?) -> Set, mentions(text, name) -> bool ("@name")
+ *
  * Rendering:
- *   tailLine(e) (<= 240 chars), fmt(e), who(e) ("alice" | "alice's Claude" | "room"),
+ *   line(e, {full}) one notice line. full: the exact text (JSON-quoted) up to TEXT_MAX = 2,000 code points,
+ *     then `[cut at 2000/N: sub-human read ID]`; without full, <= 240 chars with the same marker when cut.
+ *     Never a bare "…". With {entries}, a retracted entry renders as its header + "[retracted by #N]".
+ *     A drafted:"agent" entry's header carries "(NAME, Claude's wording)". tailLine(e) = line(e).
+ *   fmt(e, {entries}?), who(e) ("alice" | "alice's Claude" | "room"),
  *   digest() (<= 9,500 chars: members, plan + approvers + matrix, open objections/questions, decisions,
- *   last 10 human entries), validateChain() -> {ok, badAt?}
- * Constants: KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, VIAS, DIGEST_CAP, TAIL_MAX, NAME_RE,
+ *   last 10 human entries in full by the line() rule; retracted entries left out), validateChain() -> {ok, badAt?}
+ * Constants: KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, VIAS, DIGEST_CAP, TAIL_MAX, TEXT_MAX, NAME_RE,
  *   RATE_MAX, RATE_WINDOW_MS. Error class: RoomError.
  */
 
@@ -54,18 +63,19 @@ const identity = require('./identity.js');
 
 const AGENT_KINDS = ['say', 'proposal', 'question', 'objection', 'status'];
 const HUMAN_KINDS = ['say', 'signoff', 'objection'];
-const SYSTEM_ONLY_KINDS = ['plan_rev', 'decision', 'member_joined', 'member_left'];
+const SYSTEM_ONLY_KINDS = ['plan_rev', 'decision', 'member_joined', 'member_left', 'retract'];
 const SYSTEM_KINDS = [...SYSTEM_ONLY_KINDS, 'status'];
 const KINDS = [...new Set([...AGENT_KINDS, ...HUMAN_KINDS, ...SYSTEM_KINDS])];
 const KINDS_BY_VIA = { agent: AGENT_KINDS, human: HUMAN_KINDS, system: SYSTEM_KINDS };
 const VIAS = ['human', 'agent', 'system'];
 const DIGEST_CAP = 9500;
 const TAIL_MAX = 240;
+const TEXT_MAX = 2000;
 const RATE_MAX = 6;
 const RATE_WINDOW_MS = 60_000;
 const NAME_RE = identity.NAME_RE;
 const HASH_RE = /^[0-9a-f]{12}$/;
-const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'plan_hash', 'approvers', 'normalized', 'edit_path']);
+const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'plan_hash', 'approvers', 'normalized', 'edit_path', 'drafted']);
 
 class RoomError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -162,7 +172,7 @@ function validate(entry, opts) {
     if (!ENTRY_FIELDS.has(k)) bad(`field "${k}" is not settable by callers`);
   }
   const via = opts.via || (opts.system === true ? 'system' : undefined);
-  const { kind, text, to = 'room', refs, plan_hash, approvers, normalized, edit_path } = entry;
+  const { kind, text, to = 'room', refs, plan_hash, approvers, normalized, edit_path, drafted } = entry;
   if (typeof opts.from !== 'string' || !NAME_RE.test(opts.from)) bad(`invalid from "${opts.from}"`);
   if (!VIAS.includes(via)) bad(`via must be one of ${VIAS.join(', ')}`);
   if (!KINDS.includes(kind)) bad(`unknown kind "${kind}". Use one of: ${KINDS_BY_VIA[via].join(', ')}`);
@@ -186,11 +196,13 @@ function validate(entry, opts) {
     bad('approvers must be an array of names');
   }
   if (normalized !== undefined && typeof normalized !== 'boolean') bad('normalized must be a boolean');
+  if (drafted !== undefined && drafted !== 'agent') bad('drafted must be "agent"');
   if (edit_path !== undefined && (typeof edit_path !== 'string' || !edit_path || edit_path.length > 1024)) bad('invalid edit_path');
   if (kind === 'signoff' && !plan_hash) bad('signoff requires plan_hash');
   if (kind === 'objection' && via === 'human' && !plan_hash) bad('a human objection requires plan_hash');
   if ((kind === 'plan_rev' || kind === 'decision') && !plan_hash) bad(`${kind} requires plan_hash`);
-  return { via, kind, text, to, refs, plan_hash, approvers, normalized, edit_path };
+  if (kind === 'retract' && !(refs && refs.length)) bad('retract requires refs (the retracted ids)');
+  return { via, kind, text, to, refs, plan_hash, approvers, normalized, edit_path, drafted };
 }
 
 function append(entry, opts = {}) {
@@ -225,6 +237,7 @@ function append(entry, opts = {}) {
     if (v.approvers) e.approvers = v.approvers;
     if (v.normalized !== undefined) e.normalized = v.normalized;
     if (v.edit_path) e.edit_path = v.edit_path;
+    if (v.drafted) e.drafted = v.drafted;
     e.text = v.text;
     e.prev = hash12(prevLine);
     const prefix = raw && !raw.endsWith('\n') ? '\n' : '';
@@ -292,11 +305,24 @@ const who = e => {
   return e.via === 'agent' && e.from !== 'orch' ? `${e.from}'s Claude` : e.from;
 };
 const oneLine = s => String(s).replace(/\s+/g, ' ').trim();
-const clip = (s, n) => { const cps = Array.from(s); return cps.length > n ? cps.slice(0, n).join('') + '…' : s; };
+
+/**
+ * An entry's text, JSON-quoted (so always one line), at most n code points. Longer text never ends in a bare
+ * "…": the quote closes and an explicit marker names the call that fetches the rest. exact keeps whitespace.
+ */
+function quote(e, n, { exact = false } = {}) {
+  const raw = String(e.text ?? '');
+  const t = exact ? raw : oneLine(raw);
+  const cps = Array.from(t);
+  if (cps.length <= n) return JSON.stringify(t);
+  return `${JSON.stringify(cps.slice(0, n).join(''))} [cut at ${n}/${cps.length}: sub-human read ${e.id}]`;
+}
 
 function header(e) {
   const n = normalize(e);
-  const parts = [`#${n.id}`, `${n.from}${n.via ? `[${n.via}]` : ''}`, n.kind];
+  const parts = [`#${n.id}`, `${n.from}${n.via ? `[${n.via}]` : ''}`];
+  if (n.drafted === 'agent') parts.push(`(${n.from}, Claude's wording)`);
+  parts.push(n.kind);
   if (n.to && n.to !== 'room') parts.push(`to=${n.to}`);
   if (n.refs && n.refs.length) {
     const r = n.refs.slice(0, 5).map(x => '#' + x).join(',');
@@ -307,18 +333,100 @@ function header(e) {
   return parts.join(' ');
 }
 
-function tailLine(e) {
+/**
+ * One notice line. full: the header plus the exact text up to TEXT_MAX code points, then
+ * `[cut at 2000/N: sub-human read ID]`. Otherwise a compact line of at most TAIL_MAX chars (whitespace
+ * collapsed), with the same explicit marker when the text is cut.
+ */
+function line(e, { full = false, entries } = {}) {
+  if (entries) {
+    const by = entries.find(x => x.kind === 'retract' && x.via === 'system' && (x.refs || []).includes(e.id));
+    if (by) return `${header(e).slice(0, TAIL_MAX - 40)} [retracted by #${by.id}]`;
+  }
+  if (full) return `${header(e)} ${quote(e, TEXT_MAX, { exact: true })}`;
   const head = header(e).slice(0, TAIL_MAX - 3);
   let n = 200;
   for (;;) {
-    const line = `${head} ${JSON.stringify(clip(oneLine(e.text || ''), n))}`;
-    if (line.length <= TAIL_MAX) return line;
-    if (n === 0) return line.slice(0, TAIL_MAX);
-    n = Math.max(0, n - Math.max(1, line.length - TAIL_MAX));
+    const l = `${head} ${quote(e, n)}`;
+    if (l.length <= TAIL_MAX) return l;
+    if (n === 0) return l.slice(0, TAIL_MAX);
+    n = Math.max(0, n - Math.max(1, l.length - TAIL_MAX));
   }
 }
+const tailLine = e => line(e);
 
-const fmt = e => `[${header(e)} ${String(e.at || '').slice(11, 19)}]\n${e.text}`;
+// ---------- lanes ----------
+const esc = s => s.replace(/[.]/g, '\\.');
+/** "@name" anywhere in the text (case-insensitive, not part of a longer name). */
+const mentions = (text, name) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
+/** The bare name as a word ("alice takes the parser"). */
+const names = (text, name) => new RegExp(`(^|[^A-Za-z0-9_-])${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
+/** Ids retracted by a via=system `retract` entry. */
+const retractedIds = (entries = readAll()) =>
+  new Set(entries.filter(e => e.kind === 'retract' && e.via === 'system').flatMap(e => e.refs || []));
+
+/**
+ * Which lane entry e takes for session me ({name, role}): 'push' (the monitor wakes me), 'pull' (the
+ * "Room since your last turn" digest at my next prompt) or 'none' (never shown: my own entries, retracted ones).
+ * Pass `entries` (the log as of now) to judge against current state: retractions, a plan_rev I already signed
+ * or that was decided or superseded, an orch post that cites a decision, a partial sign-off (orch). Without
+ * `entries` the answer is the entry-only one (push is then a superset of the judged push).
+ *   everyone: a `retract` is push (its victim's Claude included); the retracted entry is none.
+ *   member push: to=me or @me; a decision; a plan_rev/proposal whose approvers include me (pending);
+ *     others' human words (via=human say/objection); an orch post to the room that names me and cites a
+ *     decision (my assignment). Everything else is pull.
+ *   orch push: everything not its own, plus its own hook-written decisions; a sign-off that leaves the
+ *     matrix incomplete is pull.
+ */
+function lane(me, e, entries) {
+  const name = me && me.name;
+  const orch = !!me && me.role === 'orch';
+  const n = normalize(e);
+  if (n.kind === 'retract') return 'push'; // to everyone, its victim included (the hook writes it under the victim's name)
+  if (n.from === name) return orch && n.via === 'system' && n.kind === 'decision' ? 'push' : 'none';
+  if (entries && retractedIds(entries).has(n.id)) return 'none';
+  if (orch) {
+    if (n.kind === 'signoff' && entries && n.plan_hash) return signoffMatrix(n.plan_hash, undefined, entries).complete ? 'push' : 'pull';
+    return 'push';
+  }
+  if (n.to === name || mentions(n.text, name)) return 'push';
+  if (n.kind === 'decision') return 'push';
+  if ((n.kind === 'plan_rev' || n.kind === 'proposal') && Array.isArray(n.approvers) && n.approvers.includes(name)) {
+    if (!entries || !n.plan_hash) return 'push';
+    const stale = signoffMatrix(n.plan_hash, n.approvers, entries).signed[name] || decided(n.plan_hash, entries)
+      || (n.kind === 'plan_rev' && entries.some(x => x.kind === 'plan_rev' && x.id > n.id));
+    return stale ? 'pull' : 'push';
+  }
+  if (n.via === 'human' && (n.kind === 'say' || n.kind === 'objection')) return 'push';
+  if (n.from === 'orch' && n.via === 'agent' && n.to === 'room' && n.refs && n.refs.length && names(n.text, name)) {
+    if (!entries) return 'push';
+    const decisions = new Set(entries.filter(x => x.kind === 'decision').map(x => x.id));
+    return n.refs.some(r => decisions.has(r)) ? 'push' : 'pull';
+  }
+  return 'pull';
+}
+
+/** "room now: plan eaae7e decided #18 · you: signed · away: bob", computed from the log as it is now. */
+function stateLine(me, entries = readAll()) {
+  const parts = [];
+  const plan = currentPlan(entries);
+  if (!plan) parts.push('no plan yet');
+  else {
+    const dec = decided(plan.hash, entries);
+    const m = signoffMatrix(plan.hash, plan.approvers, entries);
+    parts.push(`plan ${plan.hash.slice(0, 6)} ${dec ? `decided #${dec.id}` : m.missing.length ? `waiting on ${m.missing.join(', ')}` : 'signed by all'}`);
+    if (me && plan.approvers.includes(me.name)) parts.push(`you: ${m.signed[me.name] ? 'signed' : dec ? 'not signed' : 'sign-off needed'}`);
+  }
+  const away = Object.values(readMembersHere()).filter(m => m && m.left_at && m.name !== (me && me.name)).map(m => m.name);
+  if (away.length) parts.push(`away: ${away.join(', ')}`);
+  return `room now: ${parts.join(' · ')}`;
+}
+
+/** Full text for read(). With `entries`, a retracted entry says so (its text stays, for the record). */
+function fmt(e, { entries } = {}) {
+  const by = entries && entries.find(x => x.kind === 'retract' && x.via === 'system' && (x.refs || []).includes(e.id));
+  return `[${header(e)} ${String(e.at || '').slice(11, 19)}]${by ? ` [retracted by #${by.id}: ${oneLine(by.text)}]` : ''}\n${e.text}`;
+}
 
 function readMembersHere() {
   try { return identity.readMembersFile(path.join(dir(), 'members.json')); } catch { return {}; }
@@ -326,6 +434,8 @@ function readMembersHere() {
 
 /** The ordered digest sections; items carry an id so the cap can trim the oldest first. */
 function digestSections(entries = readAll()) {
+  const gone = retractedIds(entries);
+  entries = entries.filter(e => !gone.has(e.id));
   const members = readMembersHere();
   const memberLines = Object.values(members).map(m => {
     const last = entries.filter(e => e.from === m.name && e.via !== 'system').at(-1);
@@ -348,11 +458,11 @@ function digestSections(entries = readAll()) {
   }
   const open = entries.map(normalize)
     .filter(e => (e.kind === 'objection' || e.kind === 'question') && !closedBy.has(e.id))
-    .map(e => ({ id: e.id, text: `  #${e.id} ${who(e)} ${e.kind}${e.plan_hash ? ` plan=${e.plan_hash.slice(0, 6)}` : ''}: ${JSON.stringify(clip(oneLine(e.text), 120))}` }));
+    .map(e => ({ id: e.id, text: `  #${e.id} ${who(e)} ${e.kind}${e.plan_hash ? ` plan=${e.plan_hash.slice(0, 6)}` : ''}: ${quote(e, 120)}` }));
   const decisions = entries.filter(e => e.kind === 'decision')
-    .map(e => ({ id: e.id, text: `  #${e.id} plan=${e.plan_hash || '-'}: ${JSON.stringify(clip(oneLine(e.text), 120))}` }));
+    .map(e => ({ id: e.id, text: `  #${e.id} plan=${e.plan_hash || '-'}: ${quote(e, 120)}` }));
   const human = entries.filter(e => e.via === 'human').slice(-10)
-    .map(e => ({ id: e.id, text: `  #${e.id} ${e.from} ${e.kind}: ${JSON.stringify(clip(oneLine(e.text), 160))}` }));
+    .map(e => ({ id: e.id, text: `  #${e.id} ${e.from}${e.drafted === 'agent' ? ` (${e.from}, Claude's wording)` : ''} ${e.kind}: ${quote(e, TEXT_MAX, { exact: true })}` }));
 
   return [
     { title: `members of ${code() || 'this room'}`, lines: memberLines },
@@ -385,7 +495,7 @@ function digest(entries = readAll()) {
       const i = s.lines.findIndex(l => l.id != null);
       if (i >= 0 && (!oldest || s.lines[i].id < oldest.s.lines[oldest.i].id)) oldest = { s, i };
     }
-    if (!oldest) return text.slice(0, DIGEST_CAP - 1) + '…';
+    if (!oldest) { const tag = '\n[digest cut at the cap: sub-human digest]'; return text.slice(0, DIGEST_CAP - tag.length) + tag; }
     oldest.s.lines.splice(oldest.i, 1);
     trimmed++;
     text = renderSections(sections, trimmed);
@@ -409,12 +519,12 @@ const setCursor = (name, n) => {
 };
 
 module.exports = {
-  KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, VIAS, DIGEST_CAP, TAIL_MAX, NAME_RE, RATE_MAX, RATE_WINDOW_MS,
+  KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, VIAS, DIGEST_CAP, TAIL_MAX, TEXT_MAX, NAME_RE, RATE_MAX, RATE_WINDOW_MS,
   RoomError,
   bind, code, dir, logPath, plansDir,
   readAll, readById, readAfter, lastId, follow, normalize,
   append, validateChain,
   hash12, currentPlan, planRev, revNumber, signoffMatrix, decided,
-  tailLine, fmt, who, digestSections, digest,
+  line, tailLine, lane, stateLine, retractedIds, mentions, fmt, who, digestSections, digest,
   getCursor, setCursor,
 };

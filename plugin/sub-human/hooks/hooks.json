@@ -97,6 +97,18 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-restore.js\""
           }
         ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-rewake.js\"",
+            "asyncRewake": true,
+            "rewakeSummary": "sub-human: restoring rows",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "PreCompact": [

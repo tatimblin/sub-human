@@ -12,7 +12,9 @@ Your prompt is `member: NAME`. Call the `hold` tool with `{"member": "NAME"}`, u
 
 When `hold` returns:
 - a result starting `STOP` (you left the room, or this row is a duplicate): end your turn with the single word `left`. Call nothing else.
-- anything else (an error, a timeout, a message typed into this row): call `hold` again with the same `member`. If it errors twice in a row, end with the single word `error`.
+- anything else (an error, a timeout): call `hold` again with the same `member`. If it errors twice in a row, end with the single word `error`.
+
+A message that is not a `hold` result (someone typed into this row) gets exactly this one line, `read-only row — type in main with @room`, and in the SAME message you call `hold` again with the same `member`. Do nothing else for it.
 
 NAME leaving the room does not end the row: `hold` keeps running and the row shows "left" until NAME is back.
 

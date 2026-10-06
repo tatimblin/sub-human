@@ -7,17 +7,22 @@
  *
  *   sub-human tail [ignored args...] [--max-seconds S]
  *       The plugin monitor's command. Silent until resolveSelf() finds this session's registration (checked
- *       every SUB_HUMAN_RESOLVE_MS, default 2000), then follows that room and prints one tailLine per
- *       relevant entry, flushed. It re-resolves on the same interval and switches (or goes silent) if the
- *       session's room or name changes. Resumes from the cursor tail-<name> and advances it only after a
- *       line is flushed, so a restart loses nothing.
- *         orch sees every entry not authored by orch, plus its own hook-written decisions.
- *         a member sees entries to it, via=human entries from others, orch's posts to the room, and
- *         via=system entries to the room. Never its own entries, never other Claudes' chatter.
+ *       every SUB_HUMAN_RESOLVE_MS, default 2000), then follows that room and prints the push lane
+ *       (room.lane(me, e) === 'push'; the pull lane is at-room.js's per-prompt digest). It re-resolves on the
+ *       same interval and switches (or goes silent) if the session's room or name changes. Resumes from the
+ *       cursor tail-<name> and advances it only past entries that were flushed or dropped, so a restart
+ *       loses nothing.
+ *       Settle: entries are batched and written as ONE block (one notification, one turn) after
+ *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most. The block opens with
+ *       room.stateLine() ("room now: …", computed at send time), then one room.line(e, {full}) per entry;
+ *       each entry is judged again against the log at send time (retracted / signed / decided / superseded
+ *       entries are dropped). A member_left X is held SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time
+ *       both notices are dropped, otherwise it goes out marked "· away 8s+".
  *       A member_joined line ends with lib/rows.js joinNote(): whether that member's row is already running in
- *       this session (live holds file), and the Agent call to make only when it isn't.
+ *       this session (live holds file), and the Agent call to make only when it isn't. A member is pushed
+ *       another member's join only when that note asks for the room-row call.
  *       It also alerts the human (statusline/alert.js, best-effort).
- *   sub-human read [--id N[,M]] [--json] [--room CODE]
+ *   sub-human read [N[,M] | --id N[,M]] [--json] [--room CODE]
  *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
  *   sub-human who                      this session's identity: "<name> (<role>) in <code>"
@@ -84,29 +89,23 @@ function bindRoom(explicit) {
 }
 
 // ---------- tail ----------
+/** The push lane (room.lane), plus, for a member, a member_joined whose row note asks for the room-row call. */
 function visibleTo(me) {
-  const toMe = e => e.to === me.name;
-  const toRoom = e => !e.to || e.to === 'room' || e.to === 'all';
-  return e => {
-    // Hooks write some entries under the session's own name (e.g. the orch's `decision`); the
-    // orchestrator still needs to see its decisions.
-    if (e.from === me.name) return me.role === 'orch' && e.via === 'system' && e.kind === 'decision';
-    if (me.role === 'orch') return true;
-    if (toMe(e)) return true;
-    if (e.via === 'human') return true;
-    if (e.via === 'system') return toRoom(e);
-    if (e.from === 'orch') return toRoom(e);
-    return false;
-  };
+  return (e, entries, note = '') => room.lane(me, e, entries) === 'push'
+    || (me.role !== 'orch' && e.kind === 'member_joined' && e.from !== me.name && /not running/.test(note));
 }
+const envMs = (k, d) => (Number(process.env[k]) > 0 ? Number(process.env[k]) : d);
 
 function tail(args) {
   const { flags } = parseFlags(args, { 'max-seconds': 1 });
-  const resolveMs = Number(process.env.SUB_HUMAN_RESOLVE_MS) > 0 ? Number(process.env.SUB_HUMAN_RESOLVE_MS) : 2000;
-  const pollMs = Number(process.env.SUB_HUMAN_POLL_MS) > 0 ? Number(process.env.SUB_HUMAN_POLL_MS) : 250;
+  const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS', 2000);
+  const pollMs = envMs('SUB_HUMAN_POLL_MS', 250);
+  const settleMs = envMs('SUB_HUMAN_SETTLE_MS', 1500);       // flush after this long with nothing new
+  const settleMaxMs = envMs('SUB_HUMAN_SETTLE_MAX_MS', 5000); // or this long after the batch's first entry
+  const leaveMs = envMs('SUB_HUMAN_LEAVE_MS', 8000);         // a member_left waits this long for a rejoin
   process.stdout.on('error', () => process.exit(0));
 
-  let sess = null; // {key, code, name, stop, save, dead}
+  let sess = null; // {key, code, stop, save, dead}
 
   function start(me) {
     room.bind(me.code);
@@ -121,20 +120,20 @@ function tail(args) {
     room.setCursor(reader, after);
     const s = { key: `${me.code}/${me.name}/${me.role}`, code: me.code, dead: false };
     // The cursor is the highest id h such that every notice for ids <= h has been flushed to stdout.
-    const inflight = [];
+    // inflight: ids buffered for the next batch, held (member_left), or being written.
+    const inflight = new Set();
     let processed = after, saved = after;
     s.save = () => {
       if (s.dead) return;
-      const h = inflight.length ? inflight[0] - 1 : processed;
+      const h = inflight.size ? Math.min(...inflight) - 1 : processed;
       if (h > saved) { saved = h; room.bind(s.code); room.setCursor(reader, h); }
     };
     const show = visibleTo(me);
     const rowsMod = require(path.join(__dirname, '..', 'lib', 'rows.js'));
     // member_joined: say whether that member's row already runs here, so the model spawns only a missing one
-    const line = e => {
-      let note = '';
-      if (e.kind === 'member_joined') { try { note = rowsMod.joinNote(me, e.from); } catch { /* plain line */ } }
-      return room.tailLine(e) + (note ? ` · ${note}` : '');
+    const joinNote = e => {
+      if (e.kind !== 'member_joined') return '';
+      try { return rowsMod.joinNote(me, e.from); } catch { return ''; }
     };
     const alertMod = optional('alert.js');
     const alerter = alertMod && alertMod.createAlerter && alertMod.createAlerter({
@@ -145,15 +144,70 @@ function tail(args) {
         return { signedByMe: !!room.signoffMatrix(hash, undefined, es).signed[me.name], decided: !!room.decided(hash, es) };
       },
     });
-    s.stop = room.follow(after, e => {
+
+    // Settle: candidates wait in `pending` and go out as ONE write (one notification, one turn), after
+    // settleMs of quiet or settleMaxMs at most. Each is judged again against the log at flush time (lane with
+    // entries: retracted, signed, decided, superseded), and every pushed entry is at least settleMs old, so a
+    // forged @room line is retracted (at-room's checker) before it could be pushed.
+    const pending = []; // {e, at, away}
+    const held = new Map(); // name -> {e, timer}: member_left waiting leaveMs for a rejoin
+    let quietT = null, maxT = null;
+    const arm = () => {
+      clearTimeout(quietT);
+      quietT = setTimeout(flush, settleMs);
+      if (!maxT) maxT = setTimeout(flush, settleMaxMs);
+    };
+    const enqueue = (e, away = false) => { pending.push({ e, at: Date.now(), away }); arm(); };
+    function flush() {
+      clearTimeout(quietT); clearTimeout(maxT); quietT = maxT = null;
+      if (s.dead) return;
+      const now = Date.now();
+      const young = pending.filter(p => now - p.at < settleMs - 5);
+      const ready = pending.filter(p => !young.includes(p)).sort((x, y) => x.e.id - y.e.id);
+      pending.length = 0;
+      pending.push(...young);
+      if (young.length) arm();
+      if (!ready.length) return;
+      room.bind(s.code);
+      const entries = room.readAll();
+      const out = [];
+      for (const { e, away } of ready) {
+        const note = joinNote(e);
+        if (show(e, entries, note)) out.push(room.line(e, { full: true }) + (away ? ` · away ${Math.round(leaveMs / 1000)}s+` : '') + (note ? ` · ${note}` : ''));
+      }
+      const done = () => { for (const p of ready) inflight.delete(p.e.id); s.save(); };
+      if (!out.length) return done();
+      process.stdout.write([room.stateLine(me, entries), ...out].join('\n') + '\n', done);
+    }
+
+    const stopFollow = room.follow(after, e => {
       if (s.dead) return;
       if (e.id <= processed) { saved = 0; room.setCursor(reader, 0); } // the log was reset under us
       processed = e.id;
       try { if (alerter) alerter.onEntry(e); } catch { /* alerts are best-effort */ }
-      if (!show(e)) return s.save();
-      inflight.push(e.id);
-      process.stdout.write(line(e) + '\n', () => { inflight.shift(); s.save(); });
+      if (e.kind === 'member_joined' && held.has(e.from)) {
+        // left and back within leaveMs: neither notice is sent
+        const h = held.get(e.from);
+        clearTimeout(h.timer);
+        held.delete(e.from);
+        inflight.delete(h.e.id);
+        return s.save();
+      }
+      if (!show(e, undefined, e.kind === 'member_joined' ? 'not running' : '')) return s.save();
+      inflight.add(e.id);
+      if (e.kind === 'member_left') {
+        const prev = held.get(e.from);
+        if (prev) { clearTimeout(prev.timer); held.delete(e.from); enqueue(prev.e, true); }
+        held.set(e.from, { e, timer: setTimeout(() => { held.delete(e.from); enqueue(e, true); }, leaveMs) });
+        return;
+      }
+      enqueue(e);
     }, { intervalMs: pollMs });
+    s.stop = () => {
+      stopFollow();
+      clearTimeout(quietT); clearTimeout(maxT);
+      for (const h of held.values()) clearTimeout(h.timer);
+    };
     sess = s;
   }
 
@@ -225,9 +279,11 @@ const agentStatusline = () => dispatchStatus('agent');
 
 // ---------- read / digest / who ----------
 function read(args) {
-  const { flags } = parseFlags(args, { id: 1, json: 0, room: 1 });
+  const { flags, rest } = parseFlags(args, { id: 1, json: 0, room: 1 });
+  if (!flags.id && rest.length) flags.id = rest.join(','); // `sub-human read 22`, as the cut marker says
   const { me } = bindRoom(flags.room);
-  const show = es => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : room.fmt(e) + '\n'));
+  const all = flags.json ? null : room.readAll();
+  const show = es => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : room.fmt(e, { entries: all }) + '\n'));
   if (flags.id) {
     const es = room.readById(intList(flags.id));
     if (!es.length) die('(no such entries)', 1);
