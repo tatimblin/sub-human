@@ -10,7 +10,10 @@
  */
 
 const path = require('node:path');
-const tasks = require(path.join(__dirname, '..', 'lib', 'tasks.js'));
+const LIB = path.join(__dirname, '..', 'lib');
+const tasks = require(path.join(LIB, 'tasks.js'));
+const identity = require(path.join(LIB, 'identity.js'));
+const room = require(path.join(LIB, 'room.js'));
 
 const S = d => ({ type: 'string', description: d });
 const TOOL = {
@@ -34,15 +37,12 @@ const TOOL = {
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 };
 
-function create(ctx) {
-  const lib = f => require(path.join(__dirname, '..', 'lib', f));
-  const identity = ctx.identity || lib('identity.js');
-  const room = ctx.room || lib('room.js');
+function create(ctx = {}) {
   const text = ctx.text || ((s, isError) => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) }));
 
   function orchLive(code) {
     const o = identity.readMembers(code).orch;
-    return !!(o && o.role === 'orch' && !o.left_at && identity.isAlive(o.pid));
+    return !!(o && o.role === 'orch' && identity.seatAlive(o));
   }
 
   function call(name, me, args) {

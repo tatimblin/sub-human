@@ -10,7 +10,7 @@ const { spawn, spawnSync } = require('node:child_process');
 
 const PLUGIN = path.join(__dirname, '..', '..');
 for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE')) delete process.env[k];
-delete process.env.ROOM_DIR;
+delete process.env.SUB_HUMAN_TEST_ROOM_DIR;
 const identity = require(path.join(PLUGIN, 'lib', 'identity.js'));
 const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
 
@@ -134,6 +134,36 @@ test('row-launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that 
   });
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /^\{"id":"a1","content":"alice {2}joined"\}\n?$/);
+});
+
+test('row-launcher: a temp-dir plugin root is refused unless allowed; stable roots run first, newest first, a deleted root is skipped', () => {
+  const { home } = world(['orch']);
+  const f = path.join(home, 'bin', 'row-status');
+  const mkRoot = base => { fs.mkdirSync(path.join(base, 'bin'), { recursive: true }); fs.writeFileSync(path.join(base, 'bin', 'sub-human'), ''); return base; };
+  const tmpRoot = mkRoot(fs.mkdtempSync(path.join(os.tmpdir(), 'sh-root-')));
+  // refused: nothing is written
+  let r = hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' }, { CLAUDE_PLUGIN_ROOT: tmpRoot, SUB_HUMAN_ALLOW_TMP_ROOT: undefined });
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stderr, /temp dir/);
+  assert.ok(!fs.existsSync(f));
+  const launcher = require(path.join(PLUGIN, 'hooks', 'row-launcher.js'));
+  assert.equal(launcher.isTempRoot(tmpRoot), true);
+  assert.equal(launcher.isTempRoot(PLUGIN), false);
+  // allowed (tests, the demo): it is recorded, but after any stable root
+  r = hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' }, { CLAUDE_PLUGIN_ROOT: tmpRoot, SUB_HUMAN_ALLOW_TMP_ROOT: '1' });
+  assert.equal(r.code, 0, r.stderr);
+  hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' }, { CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_ALLOW_TMP_ROOT: '1' });
+  const body = fs.readFileSync(f, 'utf8');
+  const at = s => body.indexOf(`exec node '${path.join(s, 'bin', 'sub-human')}'`);
+  assert.ok(at(PLUGIN) >= 0 && at(tmpRoot) > at(PLUGIN), body);
+  // a session that does not allow temp roots drops them
+  hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' }, { CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_ALLOW_TMP_ROOT: undefined });
+  assert.equal(fs.readFileSync(f, 'utf8').indexOf(tmpRoot), -1);
+  // the launcher itself skips a root whose CLI is gone and prints nothing
+  assert.equal(spawnSync('/bin/sh', [f], { encoding: 'utf8', env: { PATH: process.env.PATH } }).status, 0);
+  const gone = launcher.launcherBody(['/nonexistent/root']);
+  assert.equal(spawnSync('/bin/sh', ['-c', gone], { encoding: 'utf8' }).stdout, '');
+  assert.equal(fs.statSync(path.join(home, 'bin')).mode & 0o777, 0o700);
 });
 
 test('row-guard: denies spawning a row whose hold is live in this session; allows the rest', () => {

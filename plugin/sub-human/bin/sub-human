@@ -12,8 +12,12 @@
  *       when neither is set), every SUB_HUMAN_UNSEATED_MS (default 10000). Once seated it re-resolves every
  *       SUB_HUMAN_RESOLVE_MS (2000), follows that room and prints the push lane (room.lane(me, e) === 'push';
  *       the pull lane is at-room.js's per-prompt digest), switching (or going silent) if the seat changes.
- *       Resumes from the cursor tail-<name> and advances it only past entries that were flushed or dropped,
- *       so a restart loses nothing.
+ *       Resumes from the cursor tail-<name> (without re-reading the log from byte 0) and advances it only past
+ *       entries that were flushed or dropped, so a restart loses nothing.
+ *       It never exits on an error (Claude Code never re-arms a monitor that exited): it logs to stderr
+ *       (rate-limited), backs off and carries on; only --max-seconds or a signal ends it. Every
+ *       SUB_HUMAN_TAIL_HEALTH_MS (5000) it checks the log's hash chain from the log.idx checkpoint (one
+ *       "room log check: …" line per break) and, as the orch, runs orch.watchdog(code). The loop is lib/tail.js.
  *       Settle: entries are batched and written as ONE block (one notification, one turn) after
  *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most (the orch: 3000 / 10000,
  *       SUB_HUMAN_ORCH_SETTLE_MS / SUB_HUMAN_ORCH_SETTLE_MAX_MS). Each entry is judged again against the log at
@@ -54,10 +58,10 @@ const path = require('node:path');
 const LIB = path.join(__dirname, '..', 'lib');
 const identity = require(path.join(LIB, 'identity.js'));
 const room = require(path.join(LIB, 'room.js'));
-const rows = require(path.join(LIB, 'rows.js'));
-const notices = require(path.join(LIB, 'notices.js'));
 const tasks = require(path.join(LIB, 'tasks.js'));
 const config = require(path.join(LIB, 'config.js'));
+const cc = require(path.join(LIB, 'cc.js'));
+const tailLib = require(path.join(LIB, 'tail.js'));
 const statusline = require(path.join(__dirname, '..', 'statusline', 'index.js'));
 
 const NOT_IN_ROOM = 'not in a room; run /sub-human';
@@ -101,195 +105,32 @@ function bindRoom(explicit) {
   return { code: me.code, me };
 }
 
-// ---------- tail ----------
-/**
- * The push lane (room.lane). A member also gets every other member's join and leave (a group chat line). The
- * orch gets another member's member_joined when lib/rows.js joinNote() says that row is not running (the note
- * carries the Agent call) or when the note is unavailable; a join whose row already runs is not pushed to it,
- * so a notice never invites a call that row-guard would deny.
- */
-const SPAWN_NOTE = /no row running|is not running/;
-const isMove = e => e.kind === 'member_joined' || e.kind === 'member_left';
-function visibleTo(me) {
-  if (me.role !== 'orch') return (e, entries) => room.lane(me, e, entries) === 'push' || (isMove(e) && e.via === 'system' && e.from !== me.name && e.from !== 'orch');
-  return (e, entries, note = '') => room.lane(me, e, entries) === 'push'
-    || (e.kind === 'member_joined' && e.from !== me.name && (SPAWN_NOTE.test(note) || !note));
-}
-const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
-const { envMs } = config;
-
+// ---------- tail: lib/tail.js runTail ----------
 function tail(args) {
   const { flags } = parseFlags(args, { 'max-seconds': 1 });
-  const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS', config.RESOLVE_MS);
-  const unseatedMs = envMs('SUB_HUMAN_UNSEATED_MS', Math.max(resolveMs, config.UNSEATED_MS)); // no seat: look up this rarely
-  const pollMs = envMs('SUB_HUMAN_POLL_MS', config.TAIL_POLL_MS);
-  const memberSettleMs = envMs('SUB_HUMAN_SETTLE_MS', config.SETTLE_MS);           // flush after this long with nothing new
-  const memberSettleMaxMs = envMs('SUB_HUMAN_SETTLE_MAX_MS', config.SETTLE_MAX_MS); // or this long after the batch's first entry
-  // The headless orch waits longer (nobody watches its latency), so a burst of answers, task requests or a
-  // join lands as one turn: SUB_HUMAN_ORCH_SETTLE_MS / SUB_HUMAN_ORCH_SETTLE_MAX_MS, unless the member values
-  // are set explicitly.
-  const orchSettleMs = envMs('SUB_HUMAN_ORCH_SETTLE_MS', process.env.SUB_HUMAN_SETTLE_MS ? memberSettleMs : config.ORCH_SETTLE_MS);
-  const orchSettleMaxMs = envMs('SUB_HUMAN_ORCH_SETTLE_MAX_MS', process.env.SUB_HUMAN_SETTLE_MAX_MS ? memberSettleMaxMs : config.ORCH_SETTLE_MAX_MS);
-  const leaveMs = envMs('SUB_HUMAN_LEAVE_MS', config.LEAVE_SETTLE_MS); // a member_left waits this long for a rejoin
-  process.stdout.on('error', () => process.exit(0));
-
-  let sess = null; // {key, code, stop, save, dead}
-
-  function start(me) {
-    room.bind(me.code);
-    const reader = `tail-${me.name}`;
-    const last = room.lastId();
-    let after = room.getCursor(reader);
-    if (!(after > 0 && after <= last)) {
-      // First watch for this name: start at its join so nothing between join and resolve is lost.
-      const joined = room.readAll().filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1);
-      after = joined ? joined.id : last;
-    }
-    room.setCursor(reader, after);
-    const s = { key: `${me.code}/${me.name}/${me.role}`, code: me.code, dead: false };
-    const settleMs = me.role === 'orch' ? orchSettleMs : memberSettleMs;
-    const settleMaxMs = me.role === 'orch' ? orchSettleMaxMs : memberSettleMaxMs;
-    // The cursor is the highest id h such that every notice for ids <= h has been flushed to stdout.
-    // inflight: ids buffered for the next batch, held (member_left), or being written.
-    const inflight = new Set();
-    let processed = after, saved = after;
-    s.save = () => {
-      if (s.dead) return;
-      const h = inflight.size ? Math.min(...inflight) - 1 : processed;
-      if (h > saved) { saved = h; room.bind(s.code); room.setCursor(reader, h); }
-    };
-    const show = visibleTo(me);
-    // member_joined: say whether that member's row already runs here, so only a missing one is spawned
-    const joinNote = e => {
-      if (e.kind !== 'member_joined') return '';
-      try { return rows.joinNote(me, e.from); } catch { return ''; }
-    };
-
-    // Settle: candidates wait in `pending` and go out as ONE write (one notification, one turn), after
-    // settleMs of quiet or settleMaxMs at most. Each is judged again against the log at flush time (lane with
-    // entries: retracted, signed, decided, superseded), and every pushed entry is at least settleMs old, so a
-    // forged @room line is retracted (at-room's checker) before it could be pushed.
-    const pending = []; // {e, at, away}
-    const held = new Map(); // name -> {e, timer}: member_left waiting leaveMs for a rejoin
-    let quietT = null, maxT = null;
-    const arm = () => {
-      clearTimeout(quietT);
-      quietT = setTimeout(flush, settleMs);
-      if (!maxT) maxT = setTimeout(flush, settleMaxMs);
-    };
-    const enqueue = (e, away = false) => { pending.push({ e, at: Date.now(), away }); arm(); };
-    function flush() {
-      clearTimeout(quietT); clearTimeout(maxT); quietT = maxT = null;
-      if (s.dead) return;
-      const now = Date.now();
-      const young = pending.filter(p => now - p.at < settleMs - 5);
-      const ready = pending.filter(p => !young.includes(p)).sort((x, y) => x.e.id - y.e.id);
-      pending.length = 0;
-      pending.push(...young);
-      if (young.length) arm();
-      if (!ready.length) return;
-      room.bind(s.code);
-      const entries = room.readAll();
-      const out = [];
-      if (me.role === 'orch') {
-        for (const { e, away } of ready) {
-          const note = joinNote(e);
-          if (show(e, entries, note)) out.push(room.line(e, { full: true }) + (away ? ` · away ${Math.round(leaveMs / 1000)}s+` : '') + (note ? ` · ${note}` : ''));
-        }
-        const done = () => { for (const p of ready) inflight.delete(p.e.id); s.save(); };
-        if (!out.length) return done();
-        return process.stdout.write([room.stateLine(me, entries), ...out].join('\n') + '\n', done);
-      }
-      // a member: group-chat lines, then the lines for Claude only
-      const seen = notices.shown(s.code, me.name);
-      const moved = [], forClaude = [];
-      let state = false;
-      for (const { e } of ready) {
-        if (isMove(e) && seen.has(e.id)) continue; // at-room.js already showed it on a prompt
-        if (!show(e, entries)) continue;
-        out.push(...room.chatLines(e, { viewer: me.name }));
-        if (isMove(e)) moved.push(e.id);
-        if (STATE_KINDS.has(e.kind)) state = true;
-        const note = e.kind === 'member_joined' ? joinNote(e) : '';
-        if (SPAWN_NOTE.test(note)) forClaude.push(`${room.FOR_CLAUDE} ${note}`);
-      }
-      if (state) forClaude.unshift(`${room.FOR_CLAUDE} ${room.stateLine(me, entries)}`);
-      const done = () => { for (const p of ready) inflight.delete(p.e.id); s.save(); };
-      if (!out.length) return done();
-      if (moved.length) { try { notices.markShown(s.code, me.name, moved, 'monitor'); } catch { /* best effort */ } }
-      process.stdout.write([...out, ...forClaude].join('\n') + '\n', done);
-    }
-
-    const stopFollow = room.follow(after, e => {
-      if (s.dead) return;
-      if (e.id <= processed) { saved = 0; room.setCursor(reader, 0); } // the log was reset under us
-      processed = e.id;
-      if (e.kind === 'member_joined' && held.has(e.from)) {
-        // left and back within leaveMs: neither notice is sent
-        const h = held.get(e.from);
-        clearTimeout(h.timer);
-        held.delete(e.from);
-        inflight.delete(h.e.id);
-        return s.save();
-      }
-      if (!show(e, undefined, e.kind === 'member_joined' ? 'no row running' : '')) return s.save();
-      inflight.add(e.id);
-      if (e.kind === 'member_left') {
-        const prev = held.get(e.from);
-        if (prev) { clearTimeout(prev.timer); held.delete(e.from); enqueue(prev.e, true); }
-        held.set(e.from, { e, timer: setTimeout(() => { held.delete(e.from); enqueue(e, true); }, leaveMs) });
-        return;
-      }
-      enqueue(e);
-    }, { intervalMs: pollMs });
-    s.stop = () => {
-      stopFollow();
-      clearTimeout(quietT); clearTimeout(maxT);
-      for (const h of held.values()) clearTimeout(h.timer);
-    };
-    sess = s;
-  }
-
-  function stopSess() {
-    if (!sess) return;
-    sess.stop();
-    sess.save();
-    sess.dead = true;
-    sess = null;
-  }
-
-  // Without a seat, look it up cheaply: the env Claude Code sets for monitors, no `ps` walk (that runs only
-  // when neither variable is set, e.g. a hand-run tail), and only every unseatedMs.
-  const hasEnv = !!(process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_PID);
-  const lookup = () => hasEnv
-    ? identity.resolveBySession(process.env.CLAUDE_CODE_SESSION_ID) || (identity.claudePid() && identity.resolveByPid(identity.claudePid())) || null
-    : identity.resolveSelf();
-
-  let timer = null, stopped = false;
-  function check() {
-    let me = null;
-    try { me = lookup(); } catch { /* transient failure: keep the current state */ return schedule(); }
-    const key = me ? `${me.code}/${me.name}/${me.role}` : null;
-    if (!(sess && sess.key === key)) {
-      stopSess();
-      if (me) start(me);
-    }
-    schedule();
-  }
-  function schedule() {
-    if (stopped) return;
-    timer = setTimeout(check, sess ? resolveMs : unseatedMs);
-  }
-
-  check();
+  let maxSeconds = null;
   if (flags['max-seconds'] != null) {
-    const max = Number(flags['max-seconds']);
-    if (!(max > 0)) die(`bad --max-seconds "${flags['max-seconds']}"`);
-    setTimeout(() => { stopped = true; clearTimeout(timer); stopSess(); }, max * 1000); // node exits once stdout drains
+    maxSeconds = Number(flags['max-seconds']);
+    if (!(maxSeconds > 0)) die(`bad --max-seconds "${flags['max-seconds']}"`);
   }
+  process.stdout.on('error', () => process.exit(0)); // the reader is gone: nobody to notify
+  // The monitor is never re-armed once it exits, so a stray error is logged and the loop carries on.
+  const lastResort = e => { try { process.stderr.write(`sub-human tail: unexpected error: ${e && e.stack || e}\n`); } catch { /* closed */ } };
+  process.on('uncaughtException', lastResort);
+  process.on('unhandledRejection', lastResort);
+  // Without a seat, look it up cheaply: the env Claude Code sets for monitors, no `ps` walk (that runs only
+  // when neither variable is set, e.g. a hand-run tail). The env is fixed at spawn: after /clear the session
+  // id is stale, and CLAUDE_PID still finds the seat.
+  const sid = cc.sessionId(), pid = cc.claudePid();
+  const lookup = sid || pid
+    ? () => (sid && identity.resolveBySession(sid)) || (pid && identity.resolveByPid(pid)) || null
+    : () => identity.resolveSelf();
+  tailLib.runTail({ write: (text, done) => process.stdout.write(text, done), lookup, maxSeconds });
 }
 
 // ---------- agent-statusline: dispatch to statusline/* ----------
+// Not hooks/common.js readInput: requiring hooks/common.js arms the seat-key signer (via=human writes), which
+// the CLI and the monitor must never load.
 function readStdinJson() {
   if (process.stdin.isTTY) return {};
   try { return JSON.parse(fs.readFileSync(0, 'utf8') || '{}') || {}; } catch { return {}; }
@@ -380,7 +221,7 @@ function watch(args) {
   const print = raw => {
     const e = room.normalize(raw);
     if (!show(e)) return;
-    const who = label(e);
+    const who = label(e) + (room.unverifiedHuman(e) ? ' (unverified)' : '');
     const whoStr = e.via === 'human' ? c('1', who) : who === 'facilitator' ? c('35', who) : c('2', who);
     const meta = [e.to && e.to !== 'room' && `→ ${e.to === name ? name : e.to}`, e.refs && e.refs.length && `refs ${e.refs.map(r => '#' + r).join(',')}`,
       (e.hash || e.proposal_hash) && `proposal ${(e.hash || e.proposal_hash).slice(0, 6)}`,

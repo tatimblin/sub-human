@@ -1,8 +1,8 @@
 'use strict';
 /**
- * plugin/sub-human/lib/consent.js: the one fold of the room log into proposal / consent state. Pure (no I/O),
- * CommonJS, zero dependencies beyond room/store.js normalize. stateLine and lane() (lib/room/*), the rows
- * (lib/rows.js) and the consent gate (lib/proposal.js, hooks/consent.js) all read this, so they cannot disagree.
+ * plugin/sub-human/lib/consent.js: the one fold of the room log into proposal / consent state. Pure apart from
+ * room/store.js humanTrust (reads the seats' public keys), CommonJS, zero dependencies beyond room/store.js.
+ * stateLine and lane() (lib/room/*), the rows (lib/rows.js) and the consent gate (lib/proposal.js, hooks/consent.js) all read this, so they cannot disagree.
  *
  *   fold(entries) -> F   memoized per entries array (same array, same length and last id -> same F)
  *     F.proposals  Map hash -> {id, hash, from, approvers, path, entry}   the LATEST proposal entry per hash,
@@ -21,6 +21,9 @@
  *   - Only valid 12-hex hashes (sha256/12 of the plan bytes, lib/proposal.js) count.
  *   - The latest proposal entry per hash wins (approvers, path, author). Answers attach to the hash (the text),
  *     wherever they sit in the log.
+ *   - A via=human answer counts only when store.humanTrust says it is the person's: signed with the seat's key
+ *     (which only hook processes hold), or unsigned from a seat that has no key at all (a room from before seat
+ *     keys). A bad sig, or an unsigned answer from a seat with a key, is ignored.
  *   - Per person, the latest via=human signoff / objection wins: an objection voids that person's earlier
  *     signoff (and a later signoff replaces an objection). A legacy via=human `revoke` clears the answer.
  *   - A decision is as recorded: the latest via=system decision with that proposal_hash closes it.
@@ -29,7 +32,7 @@
  * "latest" and the decision's refs agree for everything the hooks write.
  */
 
-const { normalize } = require('./room/store.js');
+const { normalize, humanTrust } = require('./room/store.js');
 
 const HASH_RE = /^[0-9a-f]{12}$/;
 const isHash = h => typeof h === 'string' && HASH_RE.test(h);
@@ -68,7 +71,7 @@ function compute(list) {
     const h = e.proposal_hash;
     if (!isHash(h)) continue;
     if (e.kind === 'decision') { if (e.via === 'system') decisions.set(h, e); continue; }
-    if (e.via !== 'human' || typeof e.from !== 'string') continue;
+    if (e.via !== 'human' || typeof e.from !== 'string' || humanTrust(raw) === 'unverified') continue;
     if (ANSWER_KINDS.has(e.kind)) {
       if (!answers.has(h)) answers.set(h, new Map());
       answers.get(h).set(e.from, { kind: e.kind, id: e.id, entry: e });

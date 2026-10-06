@@ -95,7 +95,7 @@ test('lock: processes racing a planted stale lock never assign the same log id',
   const dir = h.tmpDir('sh-lockrace-');
   const dead = await h.deadPid();
   fs.writeFileSync(path.join(dir, 'log.jsonl.lock'), `${dead} ${os.hostname()} 0`);
-  const script = `process.env.ROOM_DIR=${JSON.stringify(dir)};const r=require(${JSON.stringify(path.join(h.LIB, 'room.js'))});`
+  const script = `process.env.SUB_HUMAN_TEST_ROOM_DIR=${JSON.stringify(dir)};require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.js'))}).arm();const r=require(${JSON.stringify(path.join(h.LIB, 'room.js'))});`
     + `const t=Number(process.argv[1]);while(Date.now()<t){}for(let i=0;i<15;i++)r.append({kind:'say',text:'x'+i},{via:'human',from:'alice'});`;
   const start = Date.now() + 500;
   await Promise.all(Array.from({ length: 6 }, () => new Promise((resolve, reject) => {

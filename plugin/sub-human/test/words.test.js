@@ -67,7 +67,7 @@ test('words: orch fill is short and names the room task; agent body holds the ap
   assert.equal(fm.name, 'orchestrator');
   assert.ok(fm.description.length <= 200, `orch description is ${fm.description.length} chars`);
   assert.ok(body.length <= 1900, `orch body is ${body.length} chars`);
-  for (const s of ['TaskCreate', 'TaskUpdate', 'one message', '(req #N by NAME)', 'evidence (#N)', 'completed',
+  for (const s of ['TaskCreate', 'TaskUpdate', 'one message', 'metadata {req: N, by: NAME}', 'only status completed', 'drops every field', 'completed',
     'owner\'s done request', 'room closed', 'Task 1', 'SendMessage', 'propose', 'no #ids', 'No Bash',
     'agreed, confirmed or approved', 'never ask here', 'one message per person', 'not the room', 'No status', 'open questions', 'one round']) {
     assert.ok(body.includes(s), `orch body lacks "${s}"`);

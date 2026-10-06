@@ -10,7 +10,7 @@ const { spawn, spawnSync } = require('node:child_process');
 
 const PLUGIN = path.join(__dirname, '..');
 for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE')) delete process.env[k];
-delete process.env.ROOM_DIR;
+delete process.env.SUB_HUMAN_TEST_ROOM_DIR;
 const identity = require(path.join(PLUGIN, 'lib', 'identity.js'));
 const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
 const segments = require(path.join(PLUGIN, 'statusline', 'segments.js'));

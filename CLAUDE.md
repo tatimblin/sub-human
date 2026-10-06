@@ -4,7 +4,7 @@ A Claude Code plugin for working together from separate sessions on one machine.
 
 ## Layout
 
-- `plugin/sub-human/`: the plugin. `hooks/` (hooks.json + one script per hook), `lib/` (room log and chain, identity, orch spawn and reap, rows, tasks, proposals, `cc.js` internals), `mcp/` (room server, hold, task tool), `agents/` (orchestrator, room row, participant), `bin/sub-human` (CLI and monitor tail), `skills/`, `monitors/`, `statusline/`, `test/`.
+- `plugin/sub-human/`: the plugin. `hooks/` (hooks.json + one script per hook), `lib/` (`room/` log store, validation, lanes and rendering behind `room.js`; `consent.js` the one proposal fold; `tail.js` the monitor loop; identity, `lock.js`, `io.js`, `config.js` timings, orch spawn/reap/watchdog, rows, tasks, proposals, `cc.js` internals), `mcp/` (room server, hold, task tool), `agents/` (orchestrator, room row, participant), `bin/sub-human` (CLI and monitor tail), `skills/`, `monitors/`, `statusline/`, `test/`.
 - `scripts/`: demo and evidence tools. `demo.sh` drives the walkthrough in tmux, `demo-lib.js` holds its tmux and log helpers, `snap.js` captures panes, `checks.js` + `checks/*.js` hold the per-scene checks, `metrics.js` the run metrics, and `walkthrough.js` builds the HTML. `baselines.json` holds earlier runs, thresholds and prices. `lib/` has shared helpers: `paths.js` is the only place scripts import plugin paths. `probe-cc.js` checks the internals list. The tests are in `scripts/test/`.
 - `demo/app.pristine/`: the small app each demo seat gets a copy of.
 - `docs/rebuild/`: the latest walkthrough (`walkthrough.html`, `checks.json`). `screens/` is generated and gitignored.

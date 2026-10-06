@@ -3,10 +3,11 @@
  * plugin/sub-human/lib/room.js: the room log (envelope v3). A facade over lib/room/*, so callers keep one
  * require. CommonJS, zero dependencies, Node 24.
  *
- *   room/store.js     binding (bind, code, dir, logPath; ROOM_DIR for tests), reading (readAll, readById,
+ *   room/store.js     binding (bind, code, dir, logPath; SUB_HUMAN_TEST_ROOM_DIR for tests), reading (readAll, readById,
  *                     readAfter, lastId, follow, normalize, readView), append (the only writer), validateChain
  *                     (whole log), verifyChain (incremental, from the log.idx checkpoint), hash12, cursors
- *                     (getCursor, setCursor)
+ *                     (getCursor, setCursor), the human capability (verifyHuman, unverifiedHuman: via=human
+                     entries carry an Ed25519 sig only hook processes can make), isYoungProvisional
  *   room/validate.js  the envelope rules append() enforces: which kinds each via may write, settable fields,
  *                     task fields; RoomError (INVALID | RATE | LOCK | NO_ROOM)
  *   room/lanes.js     proposal queries (proposal, proposals, answers, answered, decided) and lane(me, e,
@@ -30,6 +31,7 @@ module.exports = {
   follow: store.follow, normalize: store.normalize, append: store.append, validateChain: store.validateChain,
   verifyChain: store.verifyChain, readView: store.readView,
   getCursor: store.getCursor, setCursor: store.setCursor,
+  verifyHuman: store.verifyHuman, unverifiedHuman: store.unverifiedHuman, isYoungProvisional: store.isYoungProvisional, PROVISIONAL_MS: store.PROVISIONAL_MS, humanTrust: store.humanTrust,
 
   proposal: lanes.proposal, proposals: lanes.proposals, answers: lanes.answers, answered: lanes.answered,
   decided: lanes.decided, lane: lanes.lane, retractedIds: lanes.retractedIds,

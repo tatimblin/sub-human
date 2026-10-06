@@ -38,7 +38,7 @@ test('mirror: creates and updates land in tasks.json with a task entry; the room
   assert.deepEqual(w.list(), []);
   assert.equal(w.taskEntries().length, 0);
 
-  r = w.run(create(2, 'parser tests', { description: 'cover edges (req #7 by bob)' }));
+  r = w.run(create(2, 'parser tests', { description: 'cover edges', metadata: { req: 7, by: 'bob' } }));
   assert.equal(r.code, 0, r.stderr);
   w.run(update(2, { owner: 'bob' }));
   w.run(update(2, { status: 'in_progress' }, { statusChange: { from: 'pending', to: 'in_progress' } }));
@@ -50,11 +50,11 @@ test('mirror: creates and updates land in tasks.json with a task entry; the room
   assert.equal(ents[1].owner, 'bob');
 
   // description-only change: mirror unchanged, no entry
-  w.run(update(2, { description: 'cover edges (req #7 by bob)\nevidence (#9): green' }));
+  w.run(update(2, { description: 'cover edges, green', metadata: { req: 9 } }));
   assert.equal(w.taskEntries().length, 4);
   w.run(update(2, { status: 'completed' }, { statusChange: { from: 'in_progress', to: 'completed' } }));
   const last = w.taskEntries().at(-1);
-  assert.deepEqual([last.op, last.status], ['done', 'completed']);
+  assert.deepEqual([last.op, last.status, last.req], ['done', 'completed', undefined]);
   assert.equal(w.list()[0].status, 'completed');
   // delete removes it
   w.run(update(2, { status: 'deleted' }));
@@ -107,6 +107,7 @@ test('gate: TaskCompleted exits 2 unless the owner asked for done; room task 1 u
   r = w.run(completed(2, 'parser tests'));
   assert.equal(r.code, 2);
   assert.match(r.stderr, /only bob may complete #2; ask them/);
+  assert.match(r.stderr, /Nothing in that TaskUpdate was saved.*status only in a TaskUpdate of its own/s);
 
   w.append({ kind: 'task_req', text: 'task done #2', op: 'done', id: '2', evidence: 'looks done', owner: 'alice' }, { via: 'agent', from: 'alice' });
   assert.equal(w.run(completed(2, 'parser tests')).code, 2);
@@ -133,4 +134,57 @@ test('orch detection before binding: SUB_HUMAN_ROOM + agent_type', () => {
   const r2 = w.hook('tasks', { ...create(3, 'not orch'), agent_type: 'general-purpose' }, { env: { SUB_HUMAN_ROOM: w.code } });
   assert.equal(r2.code, 0, r2.stderr);
   assert.deepEqual(w.list().map(t => t.id), ['2']);
+});
+
+test('mirror: the req link comes from metadata (no description tag), then the task file, then the legacy tag', () => {
+  const w = world();
+  w.run(create(2, 'parser tests', { description: 'cover edges', metadata: { req: 7, by: 'bob' } }));
+  assert.equal(w.taskEntries().at(-1).req, 7);
+  // a status-only call: the task file's metadata (merged by an earlier call) supplies the req
+  w.writeNative({ id: '2', subject: 'parser tests', description: 'cover edges', status: 'in_progress', owner: 'bob', metadata: { req: 12, by: 'bob' } });
+  w.run(update(2, { owner: 'bob', status: 'in_progress' }));
+  assert.equal(w.taskEntries().at(-1).req, 12);
+  w.run(update(2, { status: 'completed', metadata: { req: '15' } }, { statusChange: { from: 'in_progress', to: 'completed' } }));
+  assert.deepEqual([w.taskEntries().at(-1).op, w.taskEntries().at(-1).req], ['done', 15]);
+  // a task written before metadata: the description tag still links it
+  w.run(create(3, 'old', { description: 'x (req #4 by alice)' }));
+  assert.equal(w.taskEntries().at(-1).req, 4);
+});
+
+test('mirror: tasks.json is a pure fold of the task entries; deleting it and refolding gives the same file', () => {
+  const w = world();
+  w.run(create(1, `room ${w.code} open`));
+  w.run(create(2, 'parser tests', { metadata: { req: 7 } }));
+  w.run(create(3, 'docs', { metadata: { req: 8 } }));
+  w.run(update(2, { owner: 'bob', status: 'in_progress' }, { statusChange: { from: 'pending', to: 'in_progress' } }));
+  w.run(update(3, { addBlockedBy: ['2'] }));
+  w.run(update(2, { owner: null, status: 'pending' }));
+  w.run(update(3, { status: 'deleted' }));
+  const file = path.join(w.home, 'rooms', w.code, 'tasks.json');
+  const before = fs.readFileSync(file, 'utf8');
+  assert.deepEqual(JSON.parse(before), [{ id: '2', subject: 'parser tests', status: 'pending', owner: null, blockedBy: [] }]);
+  assert.deepEqual(w.lib(() => tasks.fold(w.entries())), JSON.parse(before));
+  fs.unlinkSync(file);
+  w.lib(() => tasks.refold(w.code, w.entries()));
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+  assert.equal(fs.existsSync(path.join(w.home, 'rooms', w.code, 'tasks.room.json')), false);
+});
+
+test('gate: reads owner and metadata from the native task file', () => {
+  const w = world();
+  // _internal metadata: treated as the room's own task, refused until closing
+  w.writeNative({ id: '5', subject: 'internal', status: 'in_progress', owner: 'bob', metadata: { _internal: true } });
+  w.append({ kind: 'task_req', text: 'task done #5', op: 'done', id: '5', evidence: 'x', owner: 'bob' }, { via: 'agent', from: 'bob' });
+  let r = w.run(completed(5, 'internal'));
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /stays open until the room closes/);
+  // the owner is the file's, not the mirror's
+  w.writeNative({ id: '6', subject: 'parser tests', status: 'in_progress', owner: 'alice', metadata: { req: 99 } });
+  w.append({ kind: 'task_req', text: 'task done #6', op: 'done', id: '6', evidence: 'green', owner: 'bob' }, { via: 'agent', from: 'bob' });
+  r = w.run(completed(6, 'parser tests'));
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /only alice may complete #6/);
+  const d = w.append({ kind: 'task_req', text: 'task done #6', op: 'done', id: '6', evidence: 'green', owner: 'alice' }, { via: 'agent', from: 'alice' });
+  w.writeNative({ id: '6', subject: 'parser tests', status: 'in_progress', owner: 'alice', metadata: { req: d.id } });
+  assert.equal(w.run(completed(6, 'parser tests')).code, 0);
 });

@@ -22,6 +22,9 @@ const rows = require(path.join(LIB, 'rows.js'));
 const { readJson, writeJsonAtomic } = require(path.join(LIB, 'io.js'));
 const text = require(path.join(LIB, 'text.js'));
 const config = require(path.join(LIB, 'config.js'));
+// Every hook process may write via=human (a person's own typed words or card answers): install the seat-key
+// signer (hooks/seat-key.js). The MCP server and the CLI never load this file, so they cannot.
+require('./seat-key.js').arm();
 
 const CAP = config.CONTEXT_CAP;
 

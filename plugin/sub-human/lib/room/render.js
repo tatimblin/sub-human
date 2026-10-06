@@ -15,17 +15,21 @@
  *     away: carol"  (waiting on = no answer yet, objected = current answer is an objection; lib/consent.js fold)
  *   digest(entries?)         <= DIGEST_CAP chars: members, open proposals + approvers + answers, open
  *     objections/questions, decisions, last 10 human entries in full by the line() rule; retracted entries
- *     left out.
+ *     and provisional posts still inside their origin check (store.isYoungProvisional) left out.
  *   FOR_CLAUDE               "(for Claude)": the prefix of chat lines meant only for the model
+ *   UNVERIFIED               "(unverified)": after the name of a via=human entry whose sig does not verify
+ *     (store.unverifiedHuman: a legacy line, or one written around append). It stays readable, never as the
+ *     person's own words; the consent fold ignores it.
  */
 
-const { code, readAll, normalize, readMembersHere } = require('./store.js');
+const { code, readAll, normalize, readMembersHere, unverifiedHuman, isYoungProvisional } = require('./store.js');
 const { proposals, answers, answered, decided, approversOf, retractedIds } = require('./lanes.js');
 const { oneLine } = require('../text.js');
 const { fold } = require('../consent.js');
 const { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP, CHAT_LINES_MAX, CHAT_NEST } = require('../config.js');
 
 const FOR_CLAUDE = '(for Claude)';
+const UNVERIFIED = '(unverified)';
 const NEST = CHAT_NEST; // "  │ ": every continuation line of a message, so none can pass as a line of its own
 
 /**
@@ -70,6 +74,7 @@ function quote(e, n, { exact = false } = {}) {
 function header(e) {
   const n = normalize(e);
   const parts = [`#${n.id}`, `${n.from}${n.via ? `[${n.via}]` : ''}`];
+  if (unverifiedHuman(e)) parts.push(UNVERIFIED);
   if (n.drafted === 'agent') parts.push(`(${n.from}, Claude's wording)`);
   parts.push(n.kind);
   if (n.to && n.to !== 'room') parts.push(`to=${n.to}`);
@@ -117,8 +122,12 @@ function chatWho(e) {
   if (e.via === 'system') return 'room';
   if (e.from === 'orch') return 'orch';
   if (e.via === 'agent') return `${e.from}'s Claude`;
+  if (unverifiedHuman(e)) return `${e.from} ${UNVERIFIED}`;
   return e.drafted === 'agent' ? `${e.from} (Claude's wording)` : e.from;
 }
+
+/** The person's name for a via=human line, with the unverified marker when its sig does not verify. */
+const humanName = e => (unverifiedHuman(e) ? `${e.from} ${UNVERIFIED}` : e.from);
 
 /** Split one text line into pieces of at most n code points (rest: the later pieces), at a space when there is one. */
 function wrap(lineText, n = CHAT_WRAP, rest = n) {
@@ -145,10 +154,10 @@ function chatBody(e, viewer) {
     case 'member_joined': return { head: `${n.from} ${/\brejoined\b/.test(t) ? 'rejoined' : 'joined'}`, text: '' };
     case 'member_left': return { head: `${n.from} left`, text: '' };
     case 'proposal': return { head: `${chatWho(n)} proposed`, text: t.replace(/^proposal [0-9a-f]{6,64}:\s*/, '') };
-    case 'signoff': return { head: `${n.from} agreed to the proposal`, text: '' };
+    case 'signoff': return { head: `${humanName(e)} agreed to the proposal`, text: '' };
     case 'objection':
       return n.via === 'human' && n.proposal_hash
-        ? { head: `${n.from} objected to the proposal`, text: n.text == null || /^Object$/.test(t) ? '' : t }
+        ? { head: `${humanName(e)} objected to the proposal`, text: n.text == null || /^Object$/.test(t) ? '' : t }
         : { head: chatWho(n), text: t };
     case 'decision': {
       const s = t.replace(/\s*\(proposal [0-9a-f]+\)\s*$/, '');
@@ -275,8 +284,9 @@ function digestSections(entries = readAll()) {
     .map(e => ({ id: e.id, text: `  #${e.id} ${who(e)} ${e.kind}${e.proposal_hash ? ` proposal=${e.proposal_hash}` : ''}: ${e.text == null ? '(no notes)' : quote(e, 120)}` }));
   const decisions = entries.map(normalize).filter(e => e.kind === 'decision')
     .map(e => ({ id: e.id, text: `  #${e.id} proposal=${e.proposal_hash || '-'}: ${quote(e, 120)}` }));
-  const human = entries.filter(e => e.via === 'human').slice(-10)
-    .map(e => ({ id: e.id, text: `  #${e.id} ${e.from}${e.drafted === 'agent' ? ` (${e.from}, Claude's wording)` : ''} ${e.kind}: ${e.text == null ? '(no notes)' : quote(e, TEXT_MAX, { exact: true })}` }));
+  const now = Date.now();
+  const human = entries.filter(e => e.via === 'human' && !isYoungProvisional(e, now)).slice(-10)
+    .map(e => ({ id: e.id, text: `  #${e.id} ${humanName(e)}${e.drafted === 'agent' ? ` (${e.from}, Claude's wording)` : ''} ${e.kind}: ${e.text == null ? '(no notes)' : quote(e, TEXT_MAX, { exact: true })}` }));
 
   return [
     { title: `members of ${code() || 'this room'}`, lines: memberLines },
@@ -318,6 +328,6 @@ function digest(entries = readAll()) {
 }
 
 module.exports = {
-  FOR_CLAUDE,
+  FOR_CLAUDE, UNVERIFIED,
   line, tailLine, chatLines, fmt, who, stateLine, digest,
 };

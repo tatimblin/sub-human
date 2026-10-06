@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 const PLUGIN = path.join(__dirname, '..');
 Object.assign(process.env, {
@@ -15,6 +16,7 @@ Object.assign(process.env, {
 const identity = require(path.join(PLUGIN, 'lib', 'identity.js'));
 const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
 const hold = require(path.join(PLUGIN, 'mcp', 'hold.js'));
+const seatKey = require(path.join(PLUGIN, 'hooks', 'seat-key.js'));
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const textOf = r => r && r.content && r.content[0] && r.content[0].text;
@@ -30,8 +32,12 @@ function setup(names, self) {
   const save = () => fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
   save();
   let id = 0;
-  const add = (from, kind, extra = {}) => fs.appendFileSync(path.join(dir, 'log.jsonl'),
-    JSON.stringify({ id: ++id, at: new Date().toISOString(), from, via: 'human', kind, text: `${kind} ${id}`, to: 'room', ...extra }) + '\n');
+  // signed as the at-room hook signs a person's post (hooks/seat-key.js), so it reads as theirs, not "(unverified)"
+  const add = (from, kind, extra = {}) => {
+    const e = { id: ++id, at: new Date().toISOString(), from, via: 'human', kind, text: `${kind} ${id}`, to: 'room', ...extra };
+    if (e.via === 'human') { e.room = code; e.sig = crypto.sign(null, Buffer.from(JSON.stringify(e)), seatKey.ensure(code, from)).toString('base64'); }
+    fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify(e) + '\n');
+  };
   let me = { code, name: self, role: self === 'orch' ? 'orch' : 'member' };
   const progress = [];
   const cancels = new Map();

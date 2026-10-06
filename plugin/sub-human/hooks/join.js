@@ -19,9 +19,11 @@
 // The claude pid comes from CLAUDE_PID, which Claude Code sets for every hook it runs.
 // Failure blocks the prompt with a reason (no model turn). Success injects the mechanics block (common.js
 // contextBlock: the role template filled + ROWS) and a one-line systemMessage; bypass-permissions mode gets a warning.
+// The member's seat key (<home>/keys/<code>/<name>.key, hooks/seat-key.js) is created here.
 // UserPromptExpansion output has no sessionTitle; at-room.js (UserPromptSubmit) sets it (NAME.CODE) on the next prompt.
 const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
 const orch = require('../lib/orch.js');
+const seatKey = require('./seat-key.js');
 
 const COMMANDS = new Set(['sub-human:sub-human', 'sub-human']);
 const ORCH_AGENT = 'sub-human:orchestrator';
@@ -138,6 +140,9 @@ run(input => {
   const r = identity.join({ code, name, role: 'member', ...base });
   if (!r || !r.ok) return block(`could not join ${code} as ${name}: ${(r && r.error) || 'unknown error'}`);
   room.bind(code);
+  // The seat's key (hooks/seat-key.js): via=human posts and answers are signed with it. A failure here is not
+  // fatal: the first post creates it.
+  try { seatKey.ensure(code, name); } catch (e) { process.stderr.write(`sub-human: seat key: ${e.message}\n`); }
   room.append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}` }, { via: 'system', from: name, system: true });
   const note = ensureOrch(code, cwd, name);
   const me = { code, name, role: 'member', pid, session_id: input.session_id || null, address: identity.address(name, code) };

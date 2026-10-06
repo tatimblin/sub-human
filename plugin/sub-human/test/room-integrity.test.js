@@ -124,7 +124,7 @@ test('readAll: cached per process, sees appends from other processes, rewrites a
   const code = fresh();
   say('alice', 'one');
   assert.equal(room.readAll().length, 1);
-  const r = spawnSync(process.execPath, ['-e', `const r=require(${JSON.stringify(path.join(h.LIB, 'room.js'))});r.bind(${JSON.stringify(code)});r.append({kind:'say',text:'two'},{via:'human',from:'bob'})`], { env: h.childEnv() });
+  const r = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.js'))}).arm();const r=require(${JSON.stringify(path.join(h.LIB, 'room.js'))});r.bind(${JSON.stringify(code)});r.append({kind:'say',text:'two'},{via:'human',from:'bob'})`], { env: h.childEnv() });
   assert.equal(r.status, 0, String(r.stderr));
   assert.deepEqual(room.readAll().map(e => e.text), ['one', 'two']);
   const a = room.readAll();

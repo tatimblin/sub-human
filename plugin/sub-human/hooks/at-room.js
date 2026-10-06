@@ -3,42 +3,52 @@
 // UserPromptSubmit: "@room TEXT" or "room:TEXT" posts the human's exact words (via human) and ends the
 // prompt, so no model turn runs and nothing is paraphrased.
 //
-// The payload has no `source` field, so we skip slash commands by prefix. Notes from
-// the probes:
+// Who wrote the prompt: `source` (docs/internals/cc-2.1.281.md §8) is "user" for the interactive composer and
+// "sdk" for -p; "system" (peer / channel messages, task notifications), the wakeups and "poll_event" are
+// machine-injected and never post. Payloads may still omit it while the field rolls out (older builds had
+// none: docs/archive/spike-results-3.md, P2), so slash commands are skipped by prefix. Notes from the probes:
 //   - the TUI trims trailing whitespace before the hook sees the prompt (documented, accepted);
 //   - a long paste arrives wrapped as \n\n<pasted_content id="N">\n…\n</pasted_content id="N">\n;
-//     we unwrap it and record normalized:true (pasted tabs already became 4 spaces upstream);
+//     we unwrap it (cc.unwrapPasted) and record normalized:true (pasted tabs already became 4 spaces upstream);
 //   - suppressOriginalPrompt only works inside hookSpecificOutput.
-//   - Rendering: success is continue:false + stopReason, which keeps the human's
-//     "❯ @room …" row and adds one "Operation stopped by hook: ✓ sent" line (no entry id: people never see
-//     ids). The model
-//     sees the prompt and that line on its next turn natively, so no "unseen own posts" note is needed.
-//     Refusals stay decision:block + suppressOriginalPrompt, so refused or forged text never reaches it.
+//   - Rendering (docs/archive/fixes/D-hook-rendering.md #9): success is continue:false + stopReason, which keeps
+//     the human's "❯ @room …" row and adds one "Operation stopped by hook: ✓ sent" line (no entry id: people
+//     never see ids). The model sees the prompt and that line on its next turn natively, so no "unseen own
+//     posts" note is needed. Refusals stay decision:block + suppressOriginalPrompt, so refused or forged text
+//     never reaches it.
 //
-// Cross-session peer messages: UserPromptSubmit also fires for a message another session
-// (or any same-user process) wrote to this session's socket, with no origin field, and the transcript
-// entry (origin.kind "peer") is written only after the hook returns. So:
-//   - a prompt carrying the <cross-session-message …> envelope or the "Another Claude session sent a
-//     message" prefix is refused at once;
-//   - every post is then checked after the fact: a detached checker (this file, --forgery-check) polls
-//     transcript_path for this prompt_id and, if that entry came from a peer, appends a system `retract`
-//     of #N ("peer-forged"). The tail settle (1.5 s) is longer than the check, so a forged line is not pushed.
+// The post is signed with the seat's key (hooks/seat-key.js, armed by common.js): only a hook can write
+// via=human, and readers mark an unsigned via=human line "(unverified)".
 //
-// Drafted by Claude: when the posted text appears verbatim in the last assistant message
-// (an accepted prompt suggestion, a copied draft), the entry carries drafted:"agent". It is still posted.
+// Cross-session peer messages (docs/archive/native2/01-session-messaging.md §2): UserPromptSubmit also fires
+// for a message another session (or any same-user process) wrote to this session's socket. So:
+//   - a prompt with source "system" + the envelope or the "Another Claude session sent a message" prefix
+//     (cc.isPeerPrompt), or with any machine source, is refused at once;
+//   - with no `source` in the payload, the transcript entry (origin.kind "peer") is written only after the
+//     hook returns, so the post is written provisional:true and checked after the fact: a detached checker
+//     (this file, --forgery-check) polls transcript_path for this prompt_id and, if that entry came from a
+//     peer (cc.entryIsPeer), appends a system `retract` of #N ("peer-forged"). Until store.PROVISIONAL_MS has
+//     passed, a provisional post stays out of the pull digest below and the compaction digest, and the tail
+//     holds it as well (room.isYoungProvisional), so a forged line is never delivered before its retract. When the transcript
+//     never shows the prompt inside the window, the post stands (fail-open, by design: a slow disk must not
+//     eat a person's words).
+//
+// Drafted by Claude (docs/archive/fixes/B-model-behavior.md #11): when the posted text appears verbatim in the
+// last assistant message (an accepted prompt suggestion, a copied draft), the entry carries drafted:"agent".
+// It is still posted.
 //
 // For any other prompt from a joined member (including a task notification that wakes the session), the
 // pull lane since the last turn is added as context: "Room since your last turn", group-chat lines with no
-// ids (room.chatLines; cursor ctx-NAME, ≤1.5k).
+// ids (room.chatLines; cursor ctx-NAME, ≤1.5k). It reads room.readView({after: cursor}), never the whole log.
 //
 // Rows: a seat whose rows are not running (no live hold; e.g. its Claude skipped the restore prompt after
 // --resume) gets the exact missing Agent calls again with every ordinary prompt or notice, until they run.
 // A row spawned in the last minute (rows/<session>.json) may not hold yet, so it is never re-listed.
 //
-// The orch takes no typed input (nobody sits at its terminal; people reach it through @room): in the orch's session every prompt is refused with a hint,
-// typed text and typed slash commands alike, except a peer delivery (the <cross-session-message envelope),
-// a monitor notice (<task-notification>) and the launch `/sub-human` when it is the session's first prompt.
-// Those still get the pull digest and the row calls below.
+// The orch takes no typed input (nobody sits at its terminal; people reach it through @room): in the orch's
+// session every prompt is refused with a hint, typed text and typed slash commands alike, except a peer
+// delivery (the <cross-session-message envelope), a monitor notice (<task-notification>) and the launch
+// `/sub-human` when it is the session's first prompt. Those still get the pull digest and the row calls below.
 //
 // Join / leave lines (lib/notices.js): another member's join, or settled leave, that the room monitor did not
 // print for this member yet ("bob joined", "bob left"; e.g. the monitor was not running) goes out on a typed
@@ -57,8 +67,7 @@ const notices = require(path.join(__dirname, '..', 'lib', 'notices.js'));
 const proposal = require(path.join(__dirname, '..', 'lib', 'proposal.js'));
 const { oneLine } = require(path.join(__dirname, '..', 'lib', 'text.js'));
 const config = require(path.join(__dirname, '..', 'lib', 'config.js'));
-
-const PASTE = /(?:\n\n)?<pasted_content id="?(\w+)"?>\n([\s\S]*?)\n?<\/pasted_content id="?\1"?>\n?/g;
+const cc = require(path.join(__dirname, '..', 'lib', 'cc.js'));
 
 function parse(prompt) {
   if (prompt.startsWith('@room ')) return prompt.slice('@room '.length);
@@ -67,47 +76,19 @@ function parse(prompt) {
   return null;
 }
 
-function unwrap(text) {
-  let normalized = false;
-  const t = text.replace(PASTE, (_, _id, body) => { normalized = true; return body; });
-  return { text: t, normalized };
-}
-
 const block = (reason, extra = {}) => out({
   decision: 'block', reason,
   hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true, ...extra },
 });
 
-const PEER_ENVELOPE = /<cross-session-message\b/;
-const PEER_PREFIX = /^\s*Another Claude session sent a message/;
 const TAIL_BYTES = config.TRANSCRIPT_TAIL_BYTES;
-
-const isPeer = prompt => PEER_PREFIX.test(prompt) || PEER_ENVELOPE.test(prompt.slice(0, 2000));
-
 /** The last TAIL_BYTES of a JSONL transcript as parsed entries (oldest first); [] when unreadable. */
-function transcriptTail(file) {
-  if (typeof file !== 'string' || !file) return [];
-  let text;
-  try {
-    const fd = fs.openSync(file, 'r');
-    try {
-      const size = fs.fstatSync(fd).size;
-      const n = Math.min(size, TAIL_BYTES);
-      const buf = Buffer.alloc(n);
-      fs.readSync(fd, buf, 0, n, size - n);
-      text = buf.toString('utf8');
-    } finally { fs.closeSync(fd); }
-  } catch { return []; }
-  const es = [];
-  for (const line of text.split('\n')) {
-    if (!line) continue;
-    try { es.push(JSON.parse(line)); } catch { /* the cut first line, or a torn last one */ }
-  }
-  return es;
-}
+const transcriptTail = file => cc.readEntries(file, { tailBytes: TAIL_BYTES });
+const contentText = cc.contentText;
 
-const contentText = c => typeof c === 'string' ? c
-  : Array.isArray(c) ? c.map(b => (b && b.type === 'text' && typeof b.text === 'string') ? b.text : '').join('\n') : '';
+/** Sources a person types from (the composer, -p). Absent: an older payload, checked after the fact. */
+const TYPED_SOURCES = new Set(['user', 'sdk']);
+const hasSource = input => input.source !== undefined && input.source !== null;
 
 /**
  * This prompt's own user entries in the transcript: null while none is on disk yet, else 'peer' when one
@@ -116,7 +97,7 @@ const contentText = c => typeof c === 'string' ? c
 function promptOrigin(entries, promptId) {
   const mine = entries.filter(e => e && e.type === 'user' && e.promptId === promptId);
   if (!mine.length) return null;
-  const peer = mine.some(e => (e.origin && e.origin.kind === 'peer') || isPeer(contentText(e.message && e.message.content)));
+  const peer = mine.some(cc.entryIsPeer);
   return peer ? 'peer' : 'typed';
 }
 
@@ -176,12 +157,13 @@ function forgeryCheck(job) {
 function noticeLines(me) {
   if (me.role === 'orch') return null;
   const key = `notice-${me.name}`;
-  const all = room.readAll();
   let after = room.getCursor(key);
+  // joins and leaves are non-chat entries, so the view (no chat before the cursor) holds every one of them
+  const all = room.readView({ after: after || Infinity });
   if (!after) { const j = all.filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1); after = j ? j.id : 0; }
   const ns = notices.joinLeave(all, me.name).filter(n => n.id > after);
   const waiting = ns.filter(n => !n.settled); // a leave inside its settle window: decide on a later prompt
-  const last = all.length ? all.at(-1).id : 0;
+  const last = room.lastId();
   const upTo = waiting.length ? Math.min(...waiting.map(n => n.id)) - 1 : last;
   if (upTo > after) room.setCursor(key, upTo);
   const seen = notices.shown(me.code, me.name);
@@ -198,7 +180,7 @@ const PULL_HEAD = 'Room since your last turn (context for you, not for the user:
 function pullDigest(me) {
   const key = `ctx-${me.name}`;
   let after = room.getCursor(key);
-  const all = room.readAll();
+  const all = after ? room.readView({ after }) : room.readAll(); // the whole log only on a seat's first prompt
   if (!after) {
     // First prompt of this seat: start at its join (the join block already carried the history).
     const joined = Date.parse(((identity.readMembers(me.code) || {})[me.name] || {}).joined_at || '');
@@ -207,7 +189,10 @@ function pullDigest(me) {
   }
   const last = all.length ? all[all.length - 1].id : 0;
   if (last > after) room.setCursor(key, last);
-  const lines = all.filter(e => e.id > after && room.lane(me, e, all) === 'pull')
+  // A provisional post still inside its origin check is never shown. (A person's post is push or none for every
+  // viewer, so it reaches others through the tail, which settles longer; this keeps the digest safe regardless.)
+  const now = Date.now();
+  const lines = all.filter(e => e.id > after && !room.isYoungProvisional(e, now) && room.lane(me, e, all) === 'pull')
     .map(e => room.chatLines(e, { viewer: me.name }).join('\n'));
   if (!lines.length) return null;
   const kept = [];
@@ -241,7 +226,7 @@ function titleFor(me, input) {
 function proposalReminders(me, notification) {
   if (me.role === 'orch' || notification) return null;
   try {
-    const ps = proposal.pendingFor(me) || [];
+    const ps = proposal.pendingFor(me, room.readView({ after: Infinity })) || [];
     return ps.length ? ps.map(p => proposal.reminder(p, me.name)).join('\n') : null;
   } catch (e) { logError(e, 'at-room reminders'); return null; }
 }
@@ -258,8 +243,8 @@ function firstPrompt(input) {
 
 /** For an orch session: null when the prompt may run (peer delivery, monitor notice, launch command), else the refusal. */
 function orchRefusal(me, input, prompt) {
-  if (/^\s*<cross-session-message\b/.test(prompt) || PEER_PREFIX.test(prompt)) return null;
-  if (prompt.startsWith('<task-notification>')) return null;
+  if (/^\s*<cross-session-message\b/.test(prompt) || cc.PEER_PREFIX.test(prompt)) return null;
+  if (cc.isTaskNotification(prompt)) return null;
   if (LAUNCH.test(prompt) && firstPrompt(input)) return null;
   return orchHint(me);
 }
@@ -288,7 +273,7 @@ if (process.argv[2] === '--forgery-check') {
   forgeryCheck(JSON.parse(process.argv[3]));
 } else run(input => {
   const prompt = typeof input.prompt === 'string' ? input.prompt : '';
-  const notification = prompt.startsWith('<task-notification>');
+  const notification = cc.isTaskNotification(prompt);
   const slash = prompt.startsWith('/');
   const raw = notification || slash ? null : parse(prompt);
   const me = whoami(input);
@@ -313,17 +298,23 @@ if (process.argv[2] === '--forgery-check') {
     return;
   }
 
-  if (isPeer(prompt)) {
+  // With no source field, cc.isPeerPrompt falls back to the text check (envelope or prefix).
+  if (cc.isPeerPrompt(input)) {
     return block('✗ not posted: this prompt came from another Claude session, not from you. Only your own typed @room posts as your words.', top);
   }
+  if (hasSource(input) && !TYPED_SOURCES.has(input.source)) {
+    return block(`✗ not posted: this prompt was not typed by you (source "${String(input.source).slice(0, 40)}"). Only your own typed @room posts as your words.`, top);
+  }
   if (!me) return block('✗ not posted: this session is not in a room. Join one first with /sub-human NAME [CODE].');
-  const { text, normalized } = unwrap(raw);
+  const { text, normalized } = cc.unwrapPasted(raw);
   if (!text.trim()) return block('✗ not posted: there is nothing after @room.', top);
   const entry = { kind: 'say', text };
   if (normalized) entry.normalized = true;
   if (draftedByAgent(text, lastAssistantText(transcriptTail(input.transcript_path), input.prompt_id))) entry.drafted = 'agent';
-  const e = room.append(entry, { via: 'human', from: me.name });
-  spawnForgeryCheck(me, input, e.id);
+  // A typed source is known now; without one the post is provisional until the transcript check has run.
+  const check = !hasSource(input);
+  const e = room.append(entry, { via: 'human', from: me.name, provisional: check });
+  if (check) spawnForgeryCheck(me, input, e.id);
   out({
     continue: false,
     stopReason: `✓ sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`,

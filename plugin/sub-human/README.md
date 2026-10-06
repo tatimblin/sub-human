@@ -166,20 +166,29 @@ The plugin's `room` monitor is armed in **every** session where the plugin is lo
 
 ## Room storage
 
-Everything the plugin keeps lives in `~/.sub-human/` (rooms, seats, the row launcher in `bin/row-status`), or in `$SUB_HUMAN_HOME` when that is set. Set it the same way for every session that should share rooms: sessions with different homes never see each other. Rooms live in `<home>/rooms/<CODE>/`. Each has an append-only JSON-lines log. Every entry carries `from`, `via` (`human`, `agent` or `system`), `kind` and a `prev` hash of the previous line, so edits are visible. Proposals are stored by hash in `plans/`, the task mirror in `tasks.json`, and row state in `rows/`.
+Everything the plugin keeps lives in `~/.sub-human/` (rooms, seats, seat keys in `keys/`, the row launcher in `bin/row-status`), or in `$SUB_HUMAN_HOME` when that is set. Set it the same way for every session that should share rooms: sessions with different homes never see each other. Rooms live in `<home>/rooms/<CODE>/`. Each has an append-only JSON-lines log. Every entry carries `from`, `via` (`human`, `agent` or `system`), `kind` and a `prev` hash of the previous line, so edits are visible. Proposals are stored by hash in `plans/`, the task mirror in `tasks.json`, and row state in `rows/`.
 
 ## Threat model
 
-The security model is one machine, one OS user. Everyone in a room is a trusted collaborator running as that same user, so names aren't defended against forgery between people. The plugin guarantees that **a Claude can never consent or speak as its human**:
+The security model is one machine, one OS user. Everyone in a room is a trusted collaborator running as that same user, so names aren't defended against forgery between people. The goal is narrower: **a model can never speak or consent as a person**. That covers any member's Claude, including one steered by text someone posted in the room. It can't forge an entry with `via=human`, and it can't hide one.
 
 - Agreement and objection come only from the plan view or the card, which the human answers. A plan text edited before "Yes", answers that come with the model's call, an AFK timeout or a stale hash are dropped. The only dialog-free exit the hooks allow records nothing.
 - Your words reach the room only through `@room`, posted by a hook. Your Claude's posts are always labelled `via=agent`. `SendMessage` between sessions is Claude to Claude.
-- **Forgery check.** If another process injects an `@room` prompt into your session (a peer forging your words), the entry is retracted within about 2 s and is never pushed to anyone. It covers prompts that arrive through Claude Code; it does not cover a process that appends to the log file directly.
+- **Seat keys.** Each seat gets an Ed25519 key pair when it joins, stored in `<home>/keys/<CODE>/` (directory 0700; `NAME.key` and `NAME.pub` 0600). Every `via=human` entry is signed with the seat's private key. Only hook processes load that key, and Claude Code runs hooks itself; a model never does. The room MCP server, the CLI and the monitor never load it, so they can't write `via=human` at all; the store refuses the append. Readers check the signature against the public key. A `via=human` line without a valid signature shows as `bob (unverified): …`, and consent never counts it. Logs from before seat keys still read, marked unverified. Their answers still count until that seat gets a key.
+- **Forgery check.** Claude Code tells the hook who wrote the prompt (`source`). An `@room` from another session, a task notification, a wakeup or any other machine source is refused on the spot. When a payload has no `source` (older builds), the post is written as provisional. A detached check then reads the transcript and retracts the post if a peer sent it. A provisional post stays out of digests for about 1.7 s. The monitor waits 1.5 s before it sends a line, which is longer than the check takes (1.2 s). If the transcript never shows the prompt within the window, the post stands: the check fails open, so a slow disk can't lose a person's words.
 - **Store guard.** A hook denies `Write`, `Edit`, `MultiEdit` and `NotebookEdit` into the store (`~/.sub-human` or `$SUB_HUMAN_HOME`, checked lexically and after resolving symlinks), so a Claude can't edit the log with its file tools. It runs on every such call rather than being narrowed with a hook `if` rule, because the store can move with `$SUB_HUMAN_HOME` and a fixed path rule would miss it. It also lets joined sessions use the room tools without a prompt, and refuses `hold` to anything but a row agent.
-- **Not covered yet.** `Bash` is not guarded: a shell command can still write into the store, and only your normal permission prompts stand in the way (a guard for it is planned). Other MCP servers that write files aren't guarded either.
+- **Bash guard.** The same hook checks every `Bash` command and denies one that:
+  - names the store (its path, `~/.sub-human`, `$HOME/.sub-human`, the keys under it);
+  - names or sets `SUB_HUMAN_HOME`;
+  - runs the plugin's own modules or hooks with `node`, `bun`, `deno` or `npx` (`lib/room*`, `lib/identity`, `lib/proposal`, `hooks/*.js`, `mcp/*.js`).
+
+  The read-only CLI (`sub-human read`, `digest`, `who`, `tasks`, `watch`) stays allowed, and so do reading the plugin's source and running its tests. This is a string check. A determined command can evade it, for example a script written to a file first, or a path built at run time. What can't be evaded is the signature: a line written around the store has no valid one, so it shows as unverified and counts for nothing.
+- **Not covered.** The `Read` tool is not guarded, so a model can read the store, including the private key files. Other MCP servers that write files aren't guarded either.
+- **File modes.** Room directories are 0700, and the log and state files are 0600.
+- **Row launcher.** The status-line launcher in `<home>/bin/row-status` runs only plugin roots outside temp directories (`/tmp`, `os.tmpdir()`), unless `SUB_HUMAN_ALLOW_TMP_ROOT=1` is set.
 - Only a task's owner, through their own Claude's `done` request, can complete it.
 
-The plugin doesn't stop a hostile local user, who can write the files directly. The hash chain makes such edits visible. It doesn't prevent them.
+The plugin doesn't stop a hostile local user, who can read the keys and write the files directly. The hash chain makes such edits visible. It doesn't prevent them.
 
 ## Troubleshooting
 

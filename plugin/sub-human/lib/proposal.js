@@ -78,7 +78,7 @@ function store(code, buf) {
   return hash;
 }
 
-const bind = me => { if (me && me.code && !process.env.ROOM_DIR) room.bind(me.code); };
+const bind = me => { if (me && me.code && !process.env.SUB_HUMAN_TEST_ROOM_DIR) room.bind(me.code); };
 const entriesOf = (me, entries) => { if (entries) return entries; bind(me); return room.readAll(); };
 
 function humans(code) {

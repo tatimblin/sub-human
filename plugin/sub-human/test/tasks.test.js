@@ -169,3 +169,25 @@ test('task tool: no orch, refusals, queued request', () => {
   // the orch itself is told to use its native tools
   assert.match(out(api.call('task', { code, name: 'orch', role: 'orch' }, { op: 'add', subject: 'x' })), /TaskCreate/);
 });
+
+test('gate: task.req (the native metadata) is tried first; fold keeps the last snapshot per task', () => {
+  const code = h.newRoom();
+  const t = { id: '2', subject: 'parser tests', owner: 'bob' };
+  const a = req('bob', 'done', 2, { evidence: 'first' });
+  const b = req('bob', 'done', 2, { evidence: 'second' });
+  assert.equal(tasks.gate(code, t, [a, b]).req.id, b.id);
+  assert.equal(tasks.gate(code, { ...t, req: a.id }, [a, b]).req.id, a.id);
+  assert.equal(tasks.gate(code, { ...t, req: 999 }, [a, b]).req.id, b.id);
+
+  const ent = (task_id, extra) => ({ id: nextId++, via: 'system', kind: 'task', task_id, subject: 's' + task_id, status: 'pending', ...extra });
+  assert.deepEqual(tasks.fold([
+    ent('3', { owner: 'bob' }), ent('2', { status: 'in_progress', owner: 'alice', blockedBy: ['3'] }), ent('3', {}),
+    ent('4', {}), ent('4', { op: 'delete', status: 'deleted' }), { ...ent('5', {}), via: 'agent' }, ent('1', { subject: `room ${code} open` }),
+  ]), [
+    { id: '2', subject: 's2', status: 'in_progress', owner: 'alice', blockedBy: ['3'] },
+    { id: '3', subject: 's3', status: 'pending', owner: null, blockedBy: [] },
+  ]);
+  assert.equal(tasks.metaReq({ req: '14', by: 'bob' }), 14);
+  assert.equal(tasks.metaReq({ req: 'x' }), null);
+  assert.equal(tasks.metaReq(null), null);
+});

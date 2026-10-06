@@ -97,7 +97,10 @@ function tmpDir(prefix = 'sub-human-test-', t) {
 // ---- env -----------------------------------------------------------------------------------------
 const stripClaude = env => { for (const k of Object.keys(env)) if (k.startsWith('CLAUDE')) delete env[k]; return env; };
 stripClaude(process.env);
-delete process.env.ROOM_DIR;
+delete process.env.SUB_HUMAN_TEST_ROOM_DIR;
+// via=human appends need the seat signer that hooks/common.js installs in every hook process
+// (hooks/seat-key.js). A test process is trusted the same way; required lazily, so preloading loads no lib/.
+globalThis[Symbol.for('sub-human.human-signer')] = (code, name) => require(path.join(PLUGIN, 'hooks', 'seat-key.js')).ensure(code, name);
 
 let identityMod = null; // loaded on first use, so preloading this file does not load lib/
 const identity = () => identityMod || (identityMod = require(path.join(LIB, 'identity.js')));
@@ -126,7 +129,7 @@ function register(name, role = 'member', pid = process.pid, code = current || ne
 function childEnv(extra = {}) {
   const env = stripClaude({ ...process.env });
   delete env.NODE_TEST_CONTEXT;
-  delete env.ROOM_DIR;
+  delete env.SUB_HUMAN_TEST_ROOM_DIR;
   for (const [k, v] of Object.entries(extra)) { if (v === undefined) delete env[k]; else env[k] = v; }
   return env;
 }

@@ -41,6 +41,17 @@ module.exports = {
   FOLLOW_POLL_MS: 250,             // room.follow default poll
   WATCH_POLL_MS: 500,              // `sub-human watch --follow` poll
 
+  // ---------- the monitor loop's health (lib/tail.js; wave 2 agent F) ----------
+  // A monitor whose process exits is never re-armed in that Claude process, so the tail never exits on an
+  // error: it logs (rate-limited), backs off and carries on. Every TAIL_HEALTH_MS it checks the log's hash
+  // chain from the log.idx checkpoint and, while it is the orch, runs orch.watchdog(code).
+  TAIL_HEALTH_MS: 5000,            // SUB_HUMAN_TAIL_HEALTH_MS
+  TAIL_BACKOFF_MS: 1000,           // SUB_HUMAN_TAIL_BACKOFF_MS: first retry delay after an error, doubled per failure
+  TAIL_BACKOFF_MAX_MS: 30_000,     // SUB_HUMAN_TAIL_BACKOFF_MAX_MS
+  TAIL_ERROR_LOG_MS: 60_000,       // SUB_HUMAN_TAIL_ERROR_LOG_MS: one stderr line per error site per this long
+  // Seated, the poll loop must have ticked within this long, or the next seat check restarts the session.
+  TAIL_STALL_MS: 60_000,           // SUB_HUMAN_TAIL_STALL_MS
+
   // ---------- locks (lib/lock.js) ----------
   // Locks are held for milliseconds. A waiter gives up (throws LOCK) after the timeout.
   LOCK_TIMEOUT_MS: 15_000,

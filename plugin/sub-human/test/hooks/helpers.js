@@ -36,7 +36,7 @@ function sleeper() {
 function baseEnv(extra = {}) {
   const e = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (k.startsWith('CLAUDE') || k === 'NODE_TEST_CONTEXT' || k === 'ROOM_DIR' || k === 'SUB_HUMAN_HOME') continue;
+    if (k.startsWith('CLAUDE') || k === 'NODE_TEST_CONTEXT' || k === 'SUB_HUMAN_TEST_ROOM_DIR' || k === 'SUB_HUMAN_HOME') continue;
     e[k] = v;
   }
   return { ...e, ...extra };
@@ -45,12 +45,12 @@ function baseEnv(extra = {}) {
 /** Run fn with process.env.SUB_HUMAN_HOME (and the lib's room binding) pointed at this test's home. */
 function withHome(home, fn) {
   const old = process.env.SUB_HUMAN_HOME;
-  const oldRoomDir = process.env.ROOM_DIR;
+  const oldRoomDir = process.env.SUB_HUMAN_TEST_ROOM_DIR;
   process.env.SUB_HUMAN_HOME = home;
-  delete process.env.ROOM_DIR;
+  delete process.env.SUB_HUMAN_TEST_ROOM_DIR;
   try { return fn(); } finally {
     if (old === undefined) delete process.env.SUB_HUMAN_HOME; else process.env.SUB_HUMAN_HOME = old;
-    if (oldRoomDir !== undefined) process.env.ROOM_DIR = oldRoomDir;
+    if (oldRoomDir !== undefined) process.env.SUB_HUMAN_TEST_ROOM_DIR = oldRoomDir;
   }
 }
 

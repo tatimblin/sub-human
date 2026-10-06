@@ -28,8 +28,10 @@ test('guard table', () => {
     ['NotebookEdit', { notebook_path: path.join(H, 'n.ipynb'), new_source: '' }, 'alice', 'deny'],
     ['Write', { file_path: path.join(w.cwd, 'app.js'), content: 'x' }, 'alice', undefined],
     ['Write', { file_path: path.join(w.cwd, '.sub-human-notes.md'), content: 'x' }, 'alice', undefined],
-    ['Bash', { command: `echo x >> ${H}/rooms/log.jsonl` }, 'alice', undefined], // Bash is not guarded any more
+    ['Bash', { command: `echo x >> ${H}/rooms/log.jsonl` }, 'alice', 'deny'], // the store, by path (test/hooks/security.test.js has the full table)
+    ['Bash', { command: `node -e "require('${path.join(H, '..')}/x/sub-human/lib/room.js')"` }, 'alice', 'deny'],
     ['Bash', { command: 'sub-human read' }, 'alice', undefined],
+    ['Bash', { command: 'npm test' }, null, undefined],
   ];
   for (const [tool, input, as, want] of T) {
     const r = w.hook('guard', pre(tool, input), as ? { as } : {});

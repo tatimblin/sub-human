@@ -31,7 +31,7 @@ const HOSTILE = [
 
 test('room: concurrent appends from 5 processes x 20 give 100 sequential ids and a valid prev chain', async () => {
   const code = fresh();
-  const script = `const r=require(${JSON.stringify(path.join(h.LIB, 'room.js'))});r.bind(process.env.CODE);` +
+  const script = `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.js'))}).arm();const r=require(${JSON.stringify(path.join(h.LIB, 'room.js'))});r.bind(process.env.CODE);` + // a hook-like (armed) writer
     `for(let i=0;i<20;i++)r.append({kind:'say',text:process.env.WHO+' '+i},{via:'human',from:process.env.WHO});`;
   await Promise.all(['p1', 'p2', 'p3', 'p4', 'p5'].map(u => new Promise((resolve, reject) => {
     const c = spawn(process.execPath, ['-e', script], { env: h.childEnv({ CODE: code, WHO: u }), stdio: 'inherit' });
@@ -65,14 +65,14 @@ test('room: a stale lock from a dead process is cleaned up', () => {
   assert.equal(human('alice', 'say').id, 1);
 });
 
-test('room: ROOM_DIR overrides the binding', () => {
+test('room: SUB_HUMAN_TEST_ROOM_DIR overrides the binding', () => {
   fresh();
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'room-dir-'));
-  process.env.ROOM_DIR = d;
+  process.env.SUB_HUMAN_TEST_ROOM_DIR = d;
   try {
     human('alice', 'say');
     assert.ok(fs.existsSync(path.join(d, 'log.jsonl')));
-  } finally { delete process.env.ROOM_DIR; }
+  } finally { delete process.env.SUB_HUMAN_TEST_ROOM_DIR; }
   assert.equal(room.readAll().length, 0);
 });
 
@@ -209,7 +209,8 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
     `{"id":2,"at":"2026-10-04T00:00:01.000Z","from":"alice","via":"human","kind":"signoff","plan_hash":"${H1}","text":"ok"}\n`);
   assert.equal(room.proposal(H1).kind, 'proposal');
   assert.equal(room.answers(H1).complete, true);
-  assert.match(room.line(room.readAll()[1]), new RegExp(`^#2 alice\\[human\\] signoff proposal=${H1} "ok"$`));
+  // a keyless legacy answer still counts, and reads as unverified (no seat key signed it)
+  assert.match(room.line(room.readAll()[1]), new RegExp(`^#2 alice\\[human\\] \\(unverified\\) signoff proposal=${H1} "ok"$`));
 });
 
 test('room: tailLine is <= 240 chars for hostile text; who() labels', () => {

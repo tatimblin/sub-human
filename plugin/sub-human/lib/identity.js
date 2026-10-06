@@ -100,11 +100,11 @@ const address = (name, code) => `${name}.${code}`;
 const presenceDir = code => path.join(roomDir(code), 'presence');
 
 function newCode() {
-  fs.mkdirSync(roomsDir(), { recursive: true });
+  fs.mkdirSync(roomsDir(), { recursive: true, mode: 0o700 }); // the home and rooms/ too when new: private
   for (let i = 0; i < 200; i++) {
     const word = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
     const code = `${word}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
-    try { fs.mkdirSync(roomDir(code)); return code; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    try { fs.mkdirSync(roomDir(code), { mode: 0o700 }); return code; } catch (e) { if (e.code !== 'EEXIST') throw e; }
   }
   throw new Error('could not allocate a room code');
 }

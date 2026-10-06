@@ -4,50 +4,46 @@
  * plugin/sub-human/hooks/tasks.js: the room task list's mirror and gate. Orch only: in any other session it
  * exits 0 at once, so members' private task lists are never touched.
  *
- * PostToolUse TaskCreate|TaskUpdate (mirror): applies the call to <room>/tasks.json
- *   ([{id, subject, status, owner, blockedBy}]) and appends a `task` entry via system
- *   {op: add|claim|release|done|update|delete, id, subject, owner, status, req}. A refused call
- *   (tool_response.success false, or an error) is skipped. Fields come from tool_input and tool_response;
- *   what they leave unknown is read from the orch's native task file (read only; never written).
- *   The room-open task ("room CODE open", owner room) is left out of both.
- * TaskCompleted (gate): exit 2 with the reason (shown to the orch) unless lib/tasks.js gate() passes.
+ * PostToolUse TaskCreate|TaskUpdate (mirror): appends a `task` entry via system
+ *   {op: add|claim|release|done|update|delete, id, subject, owner, status, blockedBy, req} (the task's whole
+ *   state after the call), then rewrites <room>/tasks.json as lib/tasks.js fold() of every `task` entry, so the
+ *   file is derivable from the log alone. A refused call (tool_response.success false, or an error) is skipped.
+ *   Fields come from tool_input and tool_response; what they leave unknown is read from the orch's native task
+ *   file (cc.taskFile; read only, never written). req: tool_input.metadata.req, then the task file's
+ *   metadata.req, then (tasks written before metadata) the description's "(req #14 by bob)" tag.
+ *   The room-open task ("room CODE open", owner room) and _internal tasks are left out of both.
+ * TaskCompleted (gate): exit 2 with the reason (shown to the orch) unless lib/tasks.js gate() passes. The
+ *   input has no metadata, so owner and metadata come from the task file (which still has the old status).
+ *   A refusal drops every field of that TaskUpdate, so the reason tells the orch to send status alone.
  *
- * The orch: the session resolves to the room's orch seat, or (before binding) SUB_HUMAN_ROOM is set and
- * agent_type is sub-human:orchestrator.
+ * The orch: the session resolves (common.js resolveSeat) to the room's orch seat, or (before binding)
+ * SUB_HUMAN_ROOM is set and agent_type is sub-human:orchestrator.
  */
 
-const fs = require('node:fs');
 const path = require('node:path');
 const LIB = path.join(__dirname, '..', 'lib');
+const { readInput, resolveSeat } = require('./common.js');
 const identity = require(path.join(LIB, 'identity.js'));
 const room = require(path.join(LIB, 'room.js'));
 const tasks = require(path.join(LIB, 'tasks.js'));
-const { readJson, writeJsonAtomic } = require(path.join(LIB, 'io.js'));
+const cc = require(path.join(LIB, 'cc.js'));
+const { readJson } = require(path.join(LIB, 'io.js'));
 const { withLock } = require(path.join(LIB, 'lock.js'));
 
-function readInput() {
-  let raw = '';
-  try { raw = fs.readFileSync(0, 'utf8'); } catch { /* no stdin */ }
-  return raw.trim() ? JSON.parse(raw) : {};
-}
-
 function orchRoom(input) {
-  let me = null;
-  try { me = identity.resolveBySession(input.session_id); } catch { /* none */ }
-  if (!me) { const pid = identity.claudePid(); if (pid) { try { me = identity.resolveByPid(pid); } catch { /* none */ } } }
+  const me = resolveSeat(input);
   if (me) return me.role === 'orch' ? me.code : null;
   const code = process.env.SUB_HUMAN_ROOM;
   if (code && identity.CODE_RE.test(code) && input.agent_type === 'sub-human:orchestrator' && identity.roomExists(code)) return code;
   return null;
 }
 
-const listId = code => process.env.CLAUDE_CODE_TASK_LIST_ID || `sh-${code}`;
-const readNative = (code, id) => (/^\d+$/.test(String(id)) ? readJson(path.join(tasks.nativeDir(listId(code)), `${id}.json`)) : null);
-const roomIdsFile = code => path.join(identity.roomDir(code), 'tasks.room.json');
-const roomIds = code => new Set((readJson(roomIdsFile(code), []) || []).map(String));
+const listId = code => cc.taskListId() || `sh-${code}`;
+const readNative = (code, id) => (/^\d+$/.test(String(id)) ? readJson(cc.taskFile(listId(code), id)) : null);
 const internal = t => !!(t && t.metadata && t.metadata._internal);
+const RETRY = 'Nothing in that TaskUpdate was saved. Resend its other fields without status; change status only in a TaskUpdate of its own.';
 
-/** The req number the orch cites in a description: "(req #14 by bob)" or "evidence (#15): …"; the last wins. */
+/** Legacy: the req number cited in a description, "(req #14 by bob)" or "evidence (#15): …"; the last wins. */
 function reqNumber(desc) {
   const all = [...String(desc || '').matchAll(/(?:req #|evidence \(#)(\d+)/g)];
   return all.length ? Number(all.at(-1)[1]) : null;
@@ -74,10 +70,9 @@ function mirror(code, input) {
   if (created && internal(inp)) return;
 
   room.bind(code);
-  let logged = null;
   withLock(tasks.listPath(code) + '.lock', () => {
-    const current = tasks.list(code);
-    const prev = current.find(t => t.id === id) || null;
+    const log = room.readAll();
+    const prev = tasks.fold(log).find(t => t.id === id) || null;
     const native = readNative(code, id);
     if (internal(native)) return;
     const base = prev ? { ...prev } : native ? {
@@ -93,39 +88,36 @@ function mirror(code, input) {
     if (Array.isArray(inp.addBlockedBy)) next.blockedBy = [...new Set([...(next.blockedBy || []), ...inp.addBlockedBy.map(String)])];
     if (!next.subject && native && native.subject) next.subject = native.subject;
 
-    const known = roomIds(code);
-    if (known.has(id) || tasks.isRoomTask(next, code)) {
-      if (!known.has(id)) writeJsonAtomic(roomIdsFile(code), [...known, id]);
-      if (prev) tasks.writeList(code, current.filter(t => t.id !== id));
-      return;
-    }
+    // the room-open task never enters the log or the mirror (its subject is in the native file)
+    if (tasks.isRoomTask(next, code) || tasks.isRoomTask(native, code)) return;
     const op = opFor(prev, next, created);
-    const rest = current.filter(t => t.id !== id);
-    tasks.writeList(code, op === 'delete' ? rest : [...rest, next]);
-    if (!created && same(prev, next)) return; // description-only change: no log entry
-    const req = reqNumber(inp.description || (native && native.description));
-    logged = { op, id, subject: next.subject, owner: next.owner, status: op === 'delete' ? 'deleted' : next.status, ...(req ? { req } : {}) };
+    if (!created && same(prev, next)) return; // description- or metadata-only change: no log entry
+    const req = tasks.metaReq(inp.metadata) || tasks.metaReq(native && native.metadata)
+      || reqNumber(inp.description || (native && native.description));
+    const t = { op, id, subject: next.subject, owner: next.owner, status: op === 'delete' ? 'deleted' : next.status,
+      blockedBy: next.blockedBy || [], ...(req ? { req } : {}) };
+    const text = `#${t.id} "${t.subject}" ${t.op}${t.owner ? ` · ${t.owner}` : ''} · ${t.status}${t.req ? ` (req #${t.req})` : ''}`;
+    room.append({ kind: 'task', text, ...t }, { via: 'system', from: 'orch', system: true });
+    tasks.refold(code, room.readAll());
   });
-  if (!logged) return;
-  const t = logged;
-  const text = `#${t.id} "${t.subject}" ${t.op}${t.owner ? ` · ${t.owner}` : ''} · ${t.status}${t.req ? ` (req #${t.req})` : ''}`;
-  room.append({ kind: 'task', text, ...t }, { via: 'system', from: 'orch', system: true });
 }
 
 function gateHook(code, input) {
   const id = String(input.task_id || '');
   const native = readNative(code, id) || {};
-  const m = tasks.list(code).find(t => t.id === id) || {};
+  room.bind(code);
+  const log = room.readAll();
+  const m = tasks.fold(log).find(t => t.id === id) || {};
   const task = {
     id,
     subject: input.task_subject || native.subject || m.subject || '',
     owner: native.owner !== undefined ? native.owner : m.owner,
+    req: tasks.metaReq(native.metadata),
   };
-  if (internal(native) || roomIds(code).has(id)) task.owner = 'room';
-  room.bind(code);
-  const r = tasks.gate(code, task, room.readAll());
+  if (internal(native)) task.owner = 'room';
+  const r = tasks.gate(code, task, log);
   if (r.ok) return;
-  process.stderr.write(r.reason + '\n');
+  process.stderr.write(`${r.reason}\n${RETRY}\n`);
   process.exitCode = 2;
 }
 

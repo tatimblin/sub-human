@@ -7,8 +7,8 @@
  *
  * Binding (which room the calls below act on):
  *   bind(code)            set the active room (<home>/rooms/<code>); returns code
- *   ROOM_DIR              env override of the directory, for tests; wins over bind()
- *   code() -> string|null the bound code (or the basename of ROOM_DIR)
+ *   SUB_HUMAN_TEST_ROOM_DIR  env override of the directory, for tests; wins over bind()
+ *   code() -> string|null the bound code (or the basename of SUB_HUMAN_TEST_ROOM_DIR)
  *   dir(), logPath()      <roomDir>, <roomDir>/log.jsonl
  *
  * Reading:
@@ -24,14 +24,27 @@
  *   getCursor(name), setCursor(name, n)      <roomDir>/<name>.cursor, written atomically
  *
  * Writing:
- *   append(entry, {via, from, system}) -> Entry
+ *   append(entry, {via, from, system, provisional}) -> Entry
  *     validate() (validate.js) first; then, under the log lock: id (monotonic), at, from, via, prev (hash12
- *     of the previous line); task_req gets `by` = from. It reads only the log's tail, never the whole file, and
+ *     of the previous line); task_req gets `by` = from. provisional: true marks a post whose origin check is
+ *     still running (hooks/at-room.js); see isYoungProvisional.
+ *     via "human" needs the seat's key: the process must have installed a signer (globalThis[SIGNER], set by
+ *     hooks/seat-key.js arm(), which hooks/common.js runs in every hook process; never in the MCP server or
+ *     the CLI). The entry then carries room (the code) and ends with sig = Ed25519 over the line without sig. No signer, or no key for
+ *     (room, from) -> RoomError INVALID; nothing is written. It reads only the log's tail, never the whole file, and
  *     refuses a serialized line over LOG_LINE_MAX_BYTES (INVALID). Agent posts are rate limited: RATE_MAX per `from`
  *     per RATE_WINDOW_MS (RoomError RATE). Throws RoomError INVALID | RATE | LOCK | NO_ROOM.
  *   validateChain() -> {ok, count, badAt?, line?}       the whole chain
  *   verifyChain({fromOffset, prev, save}?) -> {ok, count, checked, offset, id, hash, from, badAt?, line?}
  *     only the bytes after the checkpoint in <roomDir>/log.idx, which it advances
+ *
+ * The human capability (keys under <home>/keys/<code>/, dir 0700; hooks/seat-key.js creates them):
+ *   verifyHuman(e) -> bool       e is via=human and its sig verifies against <code>/<from>.pub (public key
+ *                                only: readers, the MCP server included, never load a private key)
+ *   unverifiedHuman(e) -> bool   via=human without a valid sig (a legacy line, or one written around append)
+ *   humanTrust(e) -> 'verified' | 'legacy' | 'unverified' | null   (legacy: unsigned from a seat with no key)
+ *   keyDir(code?), pubPath(name, code?), canonical(e), SIGNER
+ *   isYoungProvisional(e, now?)  a provisional post younger than PROVISIONAL_MS (the at-room check window)
  *   readView({after}) -> Entry[]   non-chat entries + entries with id > after + retract targets, without
  *     parsing the whole log (log.idx marks the non-chat lines); what a hook judges lanes against
  *   hash12(data)
@@ -53,9 +66,10 @@ function bind(c) {
   active = c;
   return c;
 }
-const code = () => (process.env.ROOM_DIR ? path.basename(process.env.ROOM_DIR) : active);
+const TEST_DIR = 'SUB_HUMAN_TEST_ROOM_DIR';
+const code = () => (process.env[TEST_DIR] ? path.basename(process.env[TEST_DIR]) : active);
 function dir() {
-  if (process.env.ROOM_DIR) return process.env.ROOM_DIR;
+  if (process.env[TEST_DIR]) return process.env[TEST_DIR];
   if (!active) throw new RoomError('NO_ROOM', 'no room bound; run /sub-human');
   return identity.roomDir(active);
 }
@@ -203,6 +217,93 @@ function readMembersHere() {
   try { return identity.readMembersFile(path.join(dir(), 'members.json')); } catch { return {}; }
 }
 
+// ---------- the human capability ----------
+/**
+ * via=human means "a person typed or answered this in their own terminal". Only hook processes (run by Claude
+ * Code itself, never by a model) can write it: append() signs with the seat's private key, which it gets from
+ * the signer a hook process installs (hooks/seat-key.js arm()). The MCP server and the CLI never install one, so
+ * they cannot write via=human at all. Readers verify with the public key. Single machine, single OS user: this
+ * stops a model (its tools, the room MCP server) from forging a person, not a hostile local user.
+ */
+const SIGNER = Symbol.for('sub-human.human-signer');
+const KEY_PART_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+function keyDir(c = code()) {
+  if (typeof c !== 'string' || !KEY_PART_RE.test(c) || c.startsWith('.')) throw new RoomError('INVALID', `invalid room code "${c}"`);
+  return path.join(identity.home(), 'keys', c);
+}
+function pubPath(name, c = code()) {
+  if (typeof name !== 'string' || !KEY_PART_RE.test(name) || name.startsWith('.')) throw new RoomError('INVALID', `invalid name "${name}"`);
+  return path.join(keyDir(c), `${name}.pub`);
+}
+/** The bytes a sig covers: the stored entry without sig, in its stored key order. */
+const canonical = e => { const { sig, ...rest } = e; return JSON.stringify(rest); };
+
+function humanKey(from) {
+  const signer = globalThis[SIGNER];
+  let key = null;
+  if (typeof signer === 'function') { try { key = signer(code(), from); } catch { key = null; } }
+  if (!key) throw new RoomError('INVALID', 'via "human" is written only by sub-human\'s hooks for a person\'s own typed words or answers; post as via "agent"');
+  return key;
+}
+
+const pubCache = new Map(); // file -> {mtimeMs, size, key}
+function publicKey(name, c) {
+  let file;
+  try { file = pubPath(name, c); } catch { return null; }
+  let st;
+  try { st = fs.statSync(file); } catch { pubCache.delete(file); return null; }
+  const hit = pubCache.get(file);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.key;
+  let key = null;
+  try { key = crypto.createPublicKey(fs.readFileSync(file, 'utf8')); } catch { key = null; }
+  if (key && key.asymmetricKeyType !== 'ed25519') key = null;
+  pubCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, key });
+  return key;
+}
+
+const verdicts = new Map(); // code \0 canonical \0 sig -> bool (bounded)
+const VERDICTS_MAX = 4096;
+/** The room a via=human entry was signed in: its `room` field (append stamps it), else the bound room. */
+const roomOf = e => (typeof e.room === 'string' ? e.room : code());
+
+function verifyHuman(e) {
+  if (!e || e.via !== 'human' || typeof e.sig !== 'string' || typeof e.from !== 'string') return false;
+  const c = roomOf(e);
+  if (!c) return false;
+  const data = canonical(e);
+  const k = `${c}\0${data}\0${e.sig}`;
+  const hit = verdicts.get(k);
+  if (hit !== undefined) return hit;
+  const pub = publicKey(e.from, c);
+  if (!pub) return false; // no verdict cached: the key may appear later
+  let ok = false;
+  try { ok = crypto.verify(null, Buffer.from(data, 'utf8'), pub, Buffer.from(e.sig, 'base64')); } catch { ok = false; }
+  if (verdicts.size >= VERDICTS_MAX) verdicts.clear();
+  verdicts.set(k, ok);
+  return ok;
+}
+const unverifiedHuman = e => !!e && e.via === 'human' && !verifyHuman(e);
+/**
+ * How far a via=human entry is the person's: 'verified' (its sig verifies), 'legacy' (no sig, and the seat has
+ * no key: a room from before seat keys, or a reader that cannot tell which room; shown "(unverified)" but still
+ * counted as an answer), 'unverified' (anything else: a bad sig, or no sig from a seat that has a key; never
+ * counted). null when not via=human.
+ */
+function humanTrust(e) {
+  if (!e || e.via !== 'human') return null;
+  if (verifyHuman(e)) return 'verified';
+  if (e.sig !== undefined || typeof e.from !== 'string') return 'unverified';
+  const c = roomOf(e);
+  if (!c) return 'legacy';
+  let file;
+  try { file = pubPath(e.from, c); } catch { return 'unverified'; }
+  return fs.existsSync(file) ? 'unverified' : 'legacy';
+}
+
+/** How long a provisional post stays out of digests: the at-room check window plus its last poll and append. */
+const PROVISIONAL_MS = () => config.envMs('SUB_HUMAN_FORGERY_MS', config.FORGERY_WINDOW_MS) + 2 * config.FORGERY_POLL_MS + 250;
+const isYoungProvisional = (e, now = Date.now()) => !!e && e.provisional === true && now - Date.parse(e.at) < PROVISIONAL_MS();
+
 // ---------- writing ----------
 /**
  * Under the log lock, read only the log's tail: the last line (its hash12 is the new prev), the last parseable
@@ -210,9 +311,11 @@ function readMembersHere() {
  */
 function append(entry, opts = {}) {
   const v = validate(entry, opts);
-  fs.mkdirSync(dir(), { recursive: true });
+  const d = dir(); // NO_ROOM before the key check
+  const key = v.via === 'human' ? humanKey(opts.from) : null;
+  fs.mkdirSync(d, { recursive: true, mode: 0o700 });
   return withLock(logPath() + '.lock', () => {
-    const fd = fs.openSync(logPath(), 'a+');
+    const fd = fs.openSync(logPath(), 'a+', 0o600);
     try {
       const size = fs.fstatSync(fd).size;
       let endsNl = true;
@@ -244,8 +347,11 @@ function append(entry, opts = {}) {
       if (v.normalized !== undefined) e.normalized = v.normalized;
       if (v.edit_path) e.edit_path = v.edit_path;
       if (v.drafted) e.drafted = v.drafted;
+      if (opts.provisional === true) e.provisional = true;
       if (v.text !== undefined) e.text = v.text;
+      if (key) e.room = code(); // the key's room, so a reader that is not bound to it can still verify
       e.prev = hash12(prevLine || '');
+      if (key) e.sig = crypto.sign(null, Buffer.from(JSON.stringify(e), 'utf8'), key).toString('base64');
       const line = JSON.stringify(e);
       const bytes = Buffer.byteLength(line, 'utf8');
       if (bytes > config.LOG_LINE_MAX_BYTES) {
@@ -489,5 +595,6 @@ module.exports = {
   bind, code, dir, logPath, hash12,
   readAll, readById, readAfter, lastId, follow, normalize, readMembersHere,
   append, validateChain, verifyChain, readView,
+  SIGNER, keyDir, pubPath, canonical, verifyHuman, unverifiedHuman, humanTrust, PROVISIONAL_MS, isYoungProvisional,
   getCursor, setCursor,
 };
