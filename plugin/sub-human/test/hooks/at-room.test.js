@@ -106,7 +106,7 @@ test('orchestrator and non-members are refused; an empty post is refused', () =>
   const w = new World({ orch: 'act', alice: 'sleep' });
   let r = w.hook('at-room', submit('@room hi'), { as: 'orch' });
   blocked(r);
-  assert.match(r.json.reason, /^✗ not posted: this is the orchestrator's session, which runs unattended\. Join from another session/);
+  assert.equal(r.json.reason, `the orch takes no typed input; use @room or ask your Claude to message orch.${w.code}`);
   const w2 = new World({ orch: 'sleep', alice: 'act' });
   r = w2.hook('at-room', submit('@room    '), { as: 'alice' });
   blocked(r);
@@ -255,17 +255,20 @@ test('the pull digest hides retracted entries and keeps the newest under 1.5k ch
   assert.doesNotMatch(c, /step 1 /);
 });
 
-test('sessionTitle shows the seat once per session id; prompts mark presence working', () => {
+test('sessionTitle is the address NAME.CODE once per session id; prompts mark presence working', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
   rowsRunning(w, 'alice', { room: true });
   let r = w.hook('at-room', submit('hello'), { as: 'alice' });
-  assert.equal(hso(r).sessionTitle, `⬡ ${w.code} · alice`);
+  assert.equal(hso(r).sessionTitle, `alice.${w.code}`);
   assert.equal(hso(r).hookEventName, 'UserPromptSubmit');
   assert.equal(r.json.sessionTitle, undefined, 'only inside hookSpecificOutput');
   r = w.hook('at-room', submit('again'), { as: 'alice' });
   assert.equal(r.stdout, '');
   r = w.hook('at-room', { ...submit('after clear'), session_id: '8cea5671-97a8-49c2-bcdb-4a62d51b6a18' }, { as: 'alice', session: false });
-  assert.equal(hso(r).sessionTitle, `⬡ ${w.code} · alice`);
+  assert.equal(hso(r).sessionTitle, `alice.${w.code}`);
+  // the join prompt itself sets it when the seat already resolves; the orch never (its title is -n orch.CODE)
+  const w2 = new World({ orch: 'act', bob: 'sleep' });
+  assert.equal(hso(w2.hook('at-room', submit('<task-notification>\n<event>x</event>\n</task-notification>'), { as: 'orch' })).sessionTitle, undefined);
   assert.equal(w.lib(() => identity.readPresence(w.code)).alice.state, 'working');
   // non-members get nothing
   const w3 = new World({ orch: 'sleep' });
@@ -293,4 +296,45 @@ test('a seat whose rows are not running gets the missing Agent calls with each p
   assert.match(c, /your rows for bob are not running/);
   assert.match(c, /description: "bob", prompt: "member: bob"/);
   assert.doesNotMatch(c, /description: "alice"/);
+});
+
+// ---------- decision 4: the orch takes no typed input ----------
+test('the orch refuses typed prompts and typed slash commands; peer deliveries, notices and the first /sub-human pass', () => {
+  const w = new World({ orch: 'act', alice: 'sleep' });
+  rowsRunning(w, 'orch', { members: ['alice'] });
+  const hint = `the orch takes no typed input; use @room or ask your Claude to message orch.${w.code}`;
+  const transcript = path.join(w.cwd, 'orch.jsonl');
+  jsonl(transcript, [{ type: 'user', promptId: 'p-launch', message: { role: 'user', content: '/sub-human' } }]);
+  const at = (p, extra = {}) => w.hook('at-room', { ...submit(p), transcript_path: transcript, prompt_id: 'p-now', ...extra }, { as: 'orch' });
+  for (const p of ['hi from a viewer', '/sub-human', '/sub-human:sub-human', '/clear', '/model haiku', '@room hi', 'look: <cross-session-message from="x">',
+    'Room: x', '']) {
+    const r = at(p);
+    blocked(r);
+    assert.equal(r.json.reason, hint, JSON.stringify(p));
+  }
+  const peer = '<cross-session-message from="uds:/tmp/cc-socks/1.sock" from-name="bob.x" from-mode="prompting">\nD1: add a task\n</cross-session-message>';
+  for (const p of [peer, '<task-notification>\n<event>#3 bob[human] say "@orch hi"</event>\n</task-notification>', 'Another Claude session sent a message:\nhi']) {
+    assert.notEqual((at(p).json || {}).decision, 'block', p);
+  }
+  // the launch /sub-human is allowed only as the session's first prompt (no earlier prompt in the transcript)
+  assert.notEqual((at('/sub-human', { transcript_path: path.join(w.cwd, 'none.jsonl'), prompt_id: 'p-launch' }).json || {}).decision, 'block');
+  assert.notEqual((at('/sub-human', { prompt_id: 'p-launch' }).json || {}).decision, 'block', 'the launch prompt itself, re-read');
+  assert.equal(w.entries().length, 0, 'nothing posted');
+  // a member's slash commands and prompts are untouched
+  const m = new World({ orch: 'sleep', alice: 'act' });
+  rowsRunning(m, 'alice', { room: true });
+  assert.notEqual((m.hook('at-room', submit('/clear'), { as: 'alice' }).json || {}).decision, 'block');
+});
+
+test('a member gets lib/proposal.js reminder() for a proposal awaiting their answer, not on a monitor notice', () => {
+  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  rowsRunning(w, 'alice', { room: true });
+  const H = 'abcdef012345';
+  w.append({ kind: 'proposal', text: 'cursor paging plan', hash: H, approvers: ['alice', 'bob'] }, { via: 'agent', from: 'orch' });
+  let c = ctx(w.hook('at-room', submit('what now?'), { as: 'alice' }));
+  assert.match(c, new RegExp(`proposal ${H} still awaits alice's answer`));
+  assert.equal(ctx(w.hook('at-room', submit('<task-notification>\n<event>x</event>\n</task-notification>'), { as: 'alice' })), undefined);
+  w.append({ kind: 'signoff', proposal_hash: H }, { via: 'human', from: 'alice' });
+  c = ctx(w.hook('at-room', submit('and now?'), { as: 'alice' })) || '';
+  assert.doesNotMatch(c, /still awaits/);
 });

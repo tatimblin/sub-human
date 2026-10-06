@@ -76,7 +76,7 @@ test('identity: leave frees the name, drops the pid index, keeps lastSeat for --
   assert.ok(identity.readMembers(code).alice.left_at);
   assert.equal(identity.resolveByPid(process.pid), null);
   assert.equal(identity.resolveBySession(sid), null);
-  assert.deepEqual(identity.lastSeat(sid), { code, name: 'alice', role: 'member' });
+  assert.deepEqual(identity.lastSeat(sid), { code, name: 'alice', role: 'member', address: `alice.${code}` });
   assert.equal(identity.lastSeat('nope'), null);
   assert.equal(identity.leave(code, 'alice'), false);
   const s = h.spawnSleeper();
@@ -84,11 +84,13 @@ test('identity: leave frees the name, drops the pid index, keeps lastSeat for --
   s.kill();
 });
 
-test('identity: resolution returns {code, name, role, session_id, pid} by a direct lookup', () => {
+test('identity: resolution returns {code, name, role, session_id, pid, address} by a direct lookup', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const want = { code, name: 'alice', role: 'member', session_id: `sess-alice-${process.pid}`, pid: process.pid };
+  const want = { code, name: 'alice', role: 'member', session_id: `sess-alice-${process.pid}`, pid: process.pid, address: `alice.${code}` };
   assert.deepEqual(identity.resolveByPid(process.pid), want);
+  const idx = JSON.parse(fs.readFileSync(path.join(identity.home(), 'sessions', 'by-pid', `${process.pid}.json`), 'utf8'));
+  assert.equal(idx.address, `alice.${code}`, 'the index record carries the address');
   assert.deepEqual(identity.resolveBySession(want.session_id), want);
   assert.equal(identity.resolveBySession('../../etc/passwd'), null);
   assert.equal(identity.resolveByPid(-1), null);
@@ -123,7 +125,7 @@ test('identity: rebindSession after /clear; resolveSelf by CLAUDE_CODE_SESSION_I
   // 2. CLAUDE_PID (a stale session id after /clear falls through to it).
   assert.equal(inChild('() => i.resolveSelf().name', { CLAUDE_CODE_SESSION_ID: 'stale', CLAUDE_PID: String(bob.pid) }), 'bob');
   // 3. the nearest registered ancestor (this test process is the child's parent).
-  assert.deepEqual(inChild('() => i.resolveSelf()'), { code, name: 'alice', role: 'member', session_id: 'new-sid', pid: process.pid });
+  assert.deepEqual(inChild('() => i.resolveSelf()'), { code, name: 'alice', role: 'member', session_id: 'new-sid', pid: process.pid, address: `alice.${code}` });
   assert.equal(inChild('() => i.claudePid()', { CLAUDE_PID: '4242' }), 4242);
   assert.equal(inChild('() => i.claudePid()'), null);
   // One registration per process: joining another room retires the first.
@@ -134,23 +136,47 @@ test('identity: rebindSession after /clear; resolveSelf by CLAUDE_CODE_SESSION_I
   bob.kill();
 });
 
-test('identity: openRooms lists rooms with a live, present orchestrator', async () => {
+test('identity: openRooms lists rooms with >= 1 live seat (no orch needed) that are not closing', async () => {
   h.freshHome();
   assert.deepEqual(identity.openRooms(), []);
   const a = h.newRoom();
-  h.register('orch', 'orch', process.pid, a);
+  h.register('alice', 'member', process.pid, a);
   identity.newCode(); // a room with nobody in it is not open
   await h.sleep(5);
   const b = h.newRoom();
   const s = h.spawnSleeper();
-  identity.join({ code: b, name: 'orch', role: 'orch', pid: s.pid });
+  identity.join({ code: b, name: 'bob', role: 'member', pid: s.pid });
   assert.deepEqual(identity.openRooms().sort(), [a, b].sort());
   assert.equal(identity.openRooms()[0], b, 'newest first');
+  assert.deepEqual(identity.liveMembers(b), ['bob']);
   s.kill();
   await h.until(() => !identity.isAlive(s.pid));
-  assert.deepEqual(identity.openRooms(), [a], 'dead orch');
-  identity.leave(a, 'orch');
-  assert.deepEqual(identity.openRooms(), [], 'orch left');
+  assert.deepEqual(identity.openRooms(), [a], 'dead member');
+  assert.deepEqual(identity.liveMembers(b), []);
+  // an orch seat alone keeps a room open (a quick rejoin finds it) until the reaper marks it closing
+  const o = h.spawnSleeper();
+  identity.join({ code: b, name: 'orch', role: 'orch', pid: o.pid });
+  assert.deepEqual(identity.openRooms().sort(), [a, b].sort());
+  assert.deepEqual(identity.liveMembers(b), [], 'the orch is not a member');
+  identity.setOrch(b, { closing: new Date().toISOString() });
+  assert.equal(identity.roomClosing(b), true);
+  assert.deepEqual(identity.openRooms(), [a], 'closing');
+  o.kill();
+  identity.leave(a, 'alice');
+  assert.deepEqual(identity.openRooms(), [], 'member left');
+});
+
+test('identity: members.json orch {job, pid}: setOrch before the bind, kept across the bind', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const pre = identity.setOrch(code, { job: 'ab12cd34', spawned_at: '2026-10-05T00:00:00.000Z' });
+  assert.deepEqual(pre, { name: 'orch', role: 'orch', pid: null, job: 'ab12cd34', spawned_at: '2026-10-05T00:00:00.000Z' });
+  assert.deepEqual(identity.join({ code, name: 'orch', role: 'orch', pid: process.pid, session_id: 'so' }), { ok: true, rejoin: true });
+  const m = identity.readMembers(code).orch;
+  assert.equal(m.job, 'ab12cd34');
+  assert.equal(m.pid, process.pid);
+  assert.equal(identity.resolveByPid(process.pid).address, `orch.${code}`);
+  assert.throws(() => identity.setOrch('nope-0000', {}), /no room/);
 });
 
 test('identity: presence is a per-member file; readPresence returns valid states only', () => {

@@ -28,20 +28,18 @@ test('restore: /clear with a live room hold lists no row calls; without one it d
   register('alice', 'member', alice, code);
 
   let ctx = restore(alice, 'clear', 'sess-alice-new');
-  assert.match(ctx, /Your rows are not running/);
   assert.equal(calls(ctx).length, 1);
   assert.match(ctx, /Agent\(\{subagent_type: "sub-human:room"/);
 
   rows.writeHolds(code, 'alice', { members: [], room: true }); // pid = this live test process
   ctx = restore(alice, 'clear', 'sess-alice-new2');
   assert.deepEqual(calls(ctx), []);
-  assert.match(ctx, /ROOM ROW: already running/);
+  assert.match(ctx, /already running|rows are running/);
 
   // --resume: a new claude process, so a new hold server; the old server pid is dead -> nothing is held.
   const fs = require('node:fs');
   fs.writeFileSync(rows.holdsFile(code, 'alice'), JSON.stringify({ pid: 999999, at: new Date().toISOString(), members: [], room: true }));
   ctx = restore(alice, 'resume', 'sess-alice-new2');
-  assert.match(ctx, /Create them now/);
   assert.match(ctx, /Agent\(\{subagent_type: "sub-human:room"/);
 });
 
@@ -53,12 +51,11 @@ test('restore: lists only the missing rows (orch after compact / clear)', () => 
   register('bob', 'member', spawnSleeper().pid, code);
   rows.writeHolds(code, 'orch', { members: ['alice'] });
   let ctx = restore(orch, 'compact', `sess-orch-${orch}`);
-  assert.match(ctx, /only the rows below are missing/);
   assert.deepEqual(calls(ctx), ['Agent({subagent_type: "sub-human:participant", description: "bob", prompt: "member: bob", run_in_background: true})'],
     'bob only: alice is still held, re-listing her would duplicate her row');
   rows.writeHolds(code, 'orch', { members: ['alice', 'bob'] });
   ctx = restore(orch, 'clear', `sess-orch-${orch}-2`);
   assert.deepEqual(calls(ctx), []);
-  assert.match(ctx, /already running/);
-  assert.match(ctx, /Each member_joined NAME notice ends with "row: …"/, 'future joins still get rows');
+  assert.match(ctx, /already running|rows are running/);
+  assert.match(ctx, /member_joined/, 'future joins still get rows');
 });

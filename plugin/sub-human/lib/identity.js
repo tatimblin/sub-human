@@ -10,20 +10,28 @@
  *   roomDir(code) -> string              <home>/rooms/<code>
  *   newCode() -> string                  "otter-4821": a fresh room, created with an exclusive mkdir
  *   roomExists(code) -> bool
- *   openRooms() -> [code]                rooms with a live orchestrator (not left, pid alive), newest first
+ *   openRooms() -> [code]                rooms with >= 1 live seat (any role: not left, pid alive) that are not
+ *                                        closing, newest first. No orch seat is needed: the first member opens it.
+ *   roomClosing(code) -> bool            members.json orch.closing is set (the reaper is shutting the room down)
  *
  * Members (<roomDir>/members.json, written under a lock, atomically):
  *   readMembers(code) -> {name: {name, role, pid, session_id, cwd, joined_at, left_at?}}
+ *       The "orch" record also carries {job, spawned_at, closing?, stopped_at?} (lib/orch.js); before the
+ *       spawned orch binds, it is {name:"orch", role:"orch", pid:null, job, spawned_at}.
+ *   setOrch(code, patch) -> record       merge patch into members.orch under the lock (creates the record)
+ *   liveMembers(code) -> [name]          non-orch seats that are not left and whose pid is alive
  *   join({code, name, role, pid, session_id, cwd}) -> {ok, error?, rejoin?}
  *       role is "orch" or "member". NAME_RE; reserved names orch, room, all, system (only role orch may use
  *       "orch", and role orch must use it). A name held by a different live, not-left pid is "name taken";
  *       otherwise the name is (re)bound. One seat per claude pid: joining elsewhere retires its previous seat.
+ *       The orch record keeps its job / spawned_at across a (re)bind.
  *       Writes the indexes <home>/sessions/by-pid/<pid>.json and <home>/sessions/by-sid/<sid>.json.
  *   leave(code, name) -> bool            sets left_at and drops the by-pid index. The by-sid index stays so
  *                                        lastSeat() can find the seat when that session is resumed.
  *   rebindSession(pid, sid) -> bool      after /clear: point a new session id at the seat registered for pid
  *
- * Resolution (each returns {code, name, role, session_id, pid} or null):
+ * Resolution (each returns the identity record {code, name, role, session_id, pid, address} or null;
+ * address = "NAME.CODE", the session title other Claudes reach it by with SendMessage):
  *   resolveBySession(sid)                hooks: the payload's session_id
  *   resolveByPid(pid)                    the MCP server: process.ppid, a direct lookup of a registered pid
  *   resolveSelf()                        the CLI and monitor: CLAUDE_CODE_SESSION_ID (set by Claude Code for
@@ -74,6 +82,7 @@ const roomExists = code => typeof code === 'string' && CODE_RE.test(code) && fs.
 const byPidFile = pid => path.join(home(), 'sessions', 'by-pid', `${Number(pid)}.json`);
 const bySidFile = sid => path.join(home(), 'sessions', 'by-sid', `${sid}.json`);
 const membersFile = code => path.join(roomDir(code), 'members.json');
+const address = (name, code) => `${name}.${code}`;
 const presenceDir = code => path.join(roomDir(code), 'presence');
 
 function newCode() {
@@ -146,6 +155,7 @@ function readMembers(code) {
 }
 
 const fail = error => ({ ok: false, error });
+const ORCH_FIELDS = ['job', 'spawned_at', 'closing'];
 const validPid = pid => Number.isInteger(pid) && pid > 0;
 
 function join({ code, name, role, pid, session_id, cwd } = {}) {
@@ -175,9 +185,11 @@ function join({ code, name, role, pid, session_id, cwd } = {}) {
         else markLeft(prev.code, prev.name, pid);
       } catch { /* old room gone */ }
     }
-    members[name] = { name, role, pid, session_id: session_id || null, cwd: cwd || null, joined_at: new Date().toISOString() };
+    const keep = {};
+    if (role === 'orch' && cur) for (const k of ORCH_FIELDS) if (cur[k] != null) keep[k] = cur[k];
+    members[name] = { name, role, pid, session_id: session_id || null, cwd: cwd || null, joined_at: new Date().toISOString(), ...keep };
     writeJsonAtomic(membersFile(code), members);
-    const rec = { code, name, role, pid, session_id: session_id || null };
+    const rec = { code, name, role, pid, session_id: session_id || null, address: address(name, code) };
     writeJsonAtomic(byPidFile(pid), rec);
     if (session_id) writeJsonAtomic(bySidFile(session_id), rec);
     result = rejoin ? { ok: true, rejoin: true } : { ok: true };
@@ -223,7 +235,7 @@ function rebindSession(pid, sid) {
     if (m.session_id && m.session_id !== sid) rm(bySidFile(m.session_id));
     m.session_id = sid;
     writeJsonAtomic(membersFile(who.code), members);
-    const rec = { code: who.code, name: who.name, role: m.role, pid: m.pid, session_id: sid };
+    const rec = { code: who.code, name: who.name, role: m.role, pid: m.pid, session_id: sid, address: address(who.name, who.code) };
     writeJsonAtomic(byPidFile(m.pid), rec);
     writeJsonAtomic(bySidFile(sid), rec);
     ok = true;
@@ -232,7 +244,7 @@ function rebindSession(pid, sid) {
 }
 
 // ---------- resolution ----------
-const seat = (code, m) => ({ code, name: m.name, role: m.role, session_id: m.session_id || null, pid: m.pid });
+const seat = (code, m) => ({ code, name: m.name, role: m.role, session_id: m.session_id || null, pid: m.pid, address: address(m.name, code) });
 
 function resolveByPid(pid) {
   pid = Number(pid);
@@ -257,7 +269,7 @@ function lastSeat(sid) {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
   const rec = readJson(bySidFile(sid));
   if (!rec || !roomExists(rec.code) || !NAME_RE.test(String(rec.name))) return null;
-  return { code: rec.code, name: rec.name, role: rec.role === 'orch' ? 'orch' : 'member' };
+  return { code: rec.code, name: rec.name, role: rec.role === 'orch' ? 'orch' : 'member', address: address(rec.name, rec.code) };
 }
 
 const claudePid = () => { const p = Number(process.env.CLAUDE_PID); return validPid(p) ? p : null; };
@@ -293,15 +305,33 @@ function resolveSelf() {
 }
 
 // ---------- rooms ----------
+const liveSeat = m => !!m && !!m.name && !m.left_at && isAlive(m.pid);
+const liveMembers = code => Object.values(readMembers(code)).filter(m => liveSeat(m) && m.role !== 'orch').map(m => m.name);
+const roomClosing = code => { const o = readMembers(code).orch; return !!(o && o.closing); };
+
 function openRooms() {
   let codes;
   try { codes = fs.readdirSync(roomsDir()).filter(c => CODE_RE.test(c)); } catch { return []; }
   const open = [];
   for (const code of codes) {
-    const o = readMembers(code).orch;
-    if (o && o.role === 'orch' && !o.left_at && isAlive(o.pid)) open.push({ code, at: o.joined_at || '' });
+    const ms = readMembers(code);
+    if (ms.orch && ms.orch.closing) continue;
+    const live = Object.values(ms).filter(liveSeat);
+    if (live.length) open.push({ code, at: live.map(m => m.joined_at || '').sort().at(-1) });
   }
   return open.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)).map(r => r.code);
+}
+
+function setOrch(code, patch = {}) {
+  if (!roomExists(code)) throw new Error(`no room "${code}"`);
+  let rec;
+  withLock(membersFile(code) + '.lock', () => {
+    const members = readMembers(code);
+    rec = { name: 'orch', role: 'orch', pid: null, ...(members.orch || {}), ...patch };
+    members.orch = rec;
+    writeJsonAtomic(membersFile(code), members);
+  });
+  return rec;
 }
 
 // ---------- presence ----------
@@ -327,8 +357,8 @@ function readPresence(code) {
 
 module.exports = {
   NAME_RE, CODE_RE, RESERVED, ANIMALS, PRESENCE_STATES,
-  home, roomDir, newCode, roomExists, openRooms,
-  readMembers, readMembersFile, join, leave, rebindSession,
+  home, roomDir, newCode, roomExists, openRooms, roomClosing, address,
+  readMembers, readMembersFile, join, leave, rebindSession, setOrch, liveMembers,
   isAlive, claudePid,
   resolveByPid, resolveBySession, resolveSelf, lastSeat,
   writePresence, readPresence,

@@ -74,69 +74,127 @@ test('row map: records per session, merges across sessions (/clear), forgets', (
   assert.equal(Object.keys(rows.readRowMap(code)).length, 2, 'holds files are not row maps');
 });
 
-test('rowText: orch view of members through a plan', () => {
-  const { code } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }], [
+const prop = (approvers, hash = H, extra = {}) => ({ kind: 'proposal', via: 'human', from: 'alice', hash, approvers, path: `plans/${hash}.md`, ...extra });
+const answer = (from, kind, hash = H, extra = {}) => ({ via: 'human', from, kind, proposal_hash: hash, ...extra });
+const decision = (hash = H) => ({ kind: 'decision', via: 'system', from: 'orch', proposal_hash: hash, text: 'agreed by all' });
+const fitsRow = t => assert.ok(Array.from(t.replace(/\x1b\[[0-9;]*m/g, '')).length <= rows.ROW_MAX, `"${t}" over ROW_MAX`);
+
+test('rowText (participant): proposal states from the orch view, presence, and the open task', () => {
+  const { code, dir } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }], [
     { kind: 'say', from: 'alice', via: 'human' },
-    plan(['alice', 'bob']),
-    human('alice', 'signoff'),
-    { kind: 'objection', from: 'bob', via: 'agent', plan_hash: H },
+    prop(['alice', 'bob']),
+    answer('alice', 'signoff'),
   ]);
-  assert.equal(rows.rowText(code, 'alice', 'orch'), '✓ signed 593da0');
-  assert.equal(rows.rowText(code, 'bob', 'orch'), '⚠ reviewing 593da0 · ✖ 1 objection (#4)');
-  fs.mkdirSync(path.join(rows.rowsDir(code), '..', 'presence'), { recursive: true });
-  fs.writeFileSync(path.join(rows.rowsDir(code), '..', 'presence', 'alice.json'), JSON.stringify({ state: 'idle', at: new Date().toISOString() }));
-  assert.equal(rows.rowText(code, 'alice', 'orch'), '✓ signed 593da0 · idle');
-  fs.writeFileSync(path.join(rows.rowsDir(code), '..', 'presence', 'bob.json'), JSON.stringify({ state: 'asking', at: new Date().toISOString() }));
-  assert.equal(rows.rowText(code, 'bob', 'orch'), '⚠ reviewing 593da0 · ✖ 1 objection (#4) · ? prompt');
+  const tasks = [];
+  assert.equal(rows.rowText(code, 'alice', 'orch', { tasks }), '✓ agreed 593da0');
+  assert.equal(rows.rowText(code, 'bob', 'orch', { tasks }), '⚠ reviewing 593da0');
+  fs.mkdirSync(path.join(dir, 'presence'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'presence', 'alice.json'), JSON.stringify({ state: 'idle', at: new Date().toISOString() }));
+  assert.equal(rows.rowText(code, 'alice', 'orch', { tasks }), '✓ agreed 593da0 · idle');
+  const list = [
+    { id: '1', subject: 'room marmot-2509 open', status: 'in_progress', owner: 'room' },
+    { id: '2', subject: 'parser tests', status: 'in_progress', owner: 'bob' },
+    { id: '3', subject: 'docs', status: 'completed', owner: 'alice' },
+  ];
+  assert.equal(rows.rowText(code, 'bob', 'orch', { tasks: list }), '⚠ reviewing 593da0 · ◼ #2 parser tests');
+  assert.equal(rows.rowText(code, 'alice', 'orch', { tasks: list }), '✓ agreed 593da0 · idle', 'a completed task is not open');
+  // default source: <room>/tasks.json (the mirror), when lib/tasks.js is absent or fails
+  fs.writeFileSync(path.join(dir, 'tasks.json'), JSON.stringify(list));
+  assert.match(rows.rowText(code, 'bob', 'orch'), /◼ #2 parser tests$/);
 });
 
-test('rowText: human objection, stale presence ignored, decided, left, mail for the viewer', () => {
-  const old = new Date(Date.now() - 60_000).toISOString();
+test('rowText (participant): objection with its id, decided, status after the decision, left, mail', () => {
   const { code, dir } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }, { name: 'carol', left_at: 'x' }], [
-    plan(['alice', 'bob']),
-    human('bob', 'objection', { text: 'no' }),
+    prop(['alice', 'bob']),
+    answer('bob', 'objection', H, { text: 'no' }),
     { kind: 'say', from: 'bob', via: 'agent', to: 'alice' },
     { kind: 'say', from: 'bob', via: 'agent', to: 'alice' },
   ]);
-  fs.mkdirSync(path.join(dir, 'presence'));
-  fs.writeFileSync(path.join(dir, 'presence', 'bob.json'), JSON.stringify({ state: 'idle', at: old }));
-  assert.equal(rows.rowText(code, 'bob', 'orch'), '✖ objected 593da0 (#2)', 'bob posted after the idle write: presence dropped');
-  assert.equal(rows.rowText(code, 'bob', 'alice'), '✖ objected 593da0 (#2) · ✉ 2 for you');
-  assert.equal(rows.rowText(code, 'carol', 'orch'), 'left');
-  assert.equal(rows.rowText(code, 'zed', 'orch'), 'not in the room');
-  fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: 5, at: new Date().toISOString(), kind: 'decision', via: 'system', from: 'orch', plan_hash: H, text: 'go' }) + '\n');
-  assert.match(rows.rowText(code, 'alice', 'orch'), /^✔ decided 593da0/);
-  // build phase: the latest status after the decision (with its evidence) replaces "decided"
-  fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: 6, at: new Date().toISOString(), kind: 'status', via: 'agent', from: 'alice', to: 'room', text: 'starting the handler' }) + '\n');
-  fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: 7, at: new Date().toISOString(), kind: 'status', via: 'agent', from: 'alice', to: 'room', text: 'handler done,\n12/12 tests pass in test/tasks.test.js' }) + '\n');
-  const t = rows.rowText(code, 'alice', 'orch');
-  assert.match(t, /^#7 Claude status: handler done, 12\/12 tests pass/);
-  assert.ok(Array.from(t).length <= rows.ROW_MAX);
-  assert.match(rows.rowText(code, 'bob', 'orch'), /^✔ decided 593da0/, 'no status from bob yet');
+  const tasks = [];
+  assert.equal(rows.rowText(code, 'bob', 'orch', { tasks }), '✖ objected (#2)');
+  assert.equal(rows.rowText(code, 'bob', 'alice', { tasks }), '✖ objected (#2) · ✉ 2 for you');
+  assert.equal(rows.rowText(code, 'carol', 'orch', { tasks }), 'left');
+  assert.equal(rows.rowText(code, 'zed', 'orch', { tasks }), 'not in the room');
+  const add = e => fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: rows.readLog(code).length + 1, at: new Date().toISOString(), to: 'room', ...e }) + '\n');
+  add(decision());
+  assert.equal(rows.rowText(code, 'alice', 'orch', { tasks }), '✔ decided 593da0');
+  add({ kind: 'status', via: 'agent', from: 'alice', text: 'handler done,\n12/12 tests pass in test/tasks.test.js and more words here' });
+  const t = rows.rowText(code, 'alice', 'orch', { tasks });
+  assert.match(t, /^#6 Claude status: handler done, 12\/12 tests pass/);
+  fitsRow(t);
+  assert.equal(rows.rowText(code, 'bob', 'orch', { tasks }), '✔ decided 593da0', 'no status from bob yet');
 });
 
-test('rowText: no plan falls back to the last activity; output is clipped to ROW_MAX', () => {
-  const { code } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }], [{ kind: 'say', from: 'alice', via: 'human' }]);
-  assert.match(rows.rowText(code, 'alice', 'orch'), /^#1 say \d+s$/);
-  assert.equal(rows.rowText(code, 'bob', 'orch'), 'joined');
-  const long = rows.rowText(code, 'alice', 'orch', { entries: [plan(['alice']), human('alice', 'objection')].map((e, i) => ({ id: i + 1, at: new Date().toISOString(), ...e, plan_hash: 'f'.repeat(12) })) });
-  assert.ok(Array.from(long).length <= rows.ROW_MAX);
-});
-
-test('rowText: the room row carries plan progress and the viewer\'s alerts', () => {
+test('rowText (participant): a hashless proposal post or a retracted answer counts for nothing; propose() entries count whatever their via', () => {
   const { code } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }], [
-    { kind: 'say', from: 'alice', via: 'human' },
+    { kind: 'proposal', via: 'agent', from: 'bob', text: 'how about' },
+    prop(['bob'], H, { via: 'agent' }),
+    answer('bob', 'signoff'),
+    { kind: 'retract', via: 'system', from: 'bob', refs: [3] },
   ]);
-  assert.equal(rows.rowText(code, code, 'alice'), '3 here');
-  const es = [plan(['alice', 'bob']), human('bob', 'signoff'), { kind: 'say', from: 'orch', via: 'agent', to: 'alice' }]
-    .map((e, i) => ({ id: i + 1, at: new Date().toISOString(), text: 'x', ...e }));
-  assert.equal(rows.rowText(code, code, 'alice', { entries: es }), 'plan 593da0 1/2 · ⚠ your sign-off needed · ✉ 1 for you');
-  assert.equal(rows.rowText(code, code, 'bob', { entries: es }), 'plan 593da0 1/2');
-  es.push({ id: 4, at: new Date().toISOString(), kind: 'objection', via: 'human', from: 'alice', plan_hash: H });
-  assert.equal(rows.rowText(code, code, 'bob', { entries: es }), 'plan 593da0 1/2 · ✖ 1 objection');
-  assert.equal(rows.rowText(code, null, 'bob', { entries: es }), 'plan 593da0 1/2 · ✖ 1 objection');
-  const colored = rows.rowText(code, code, 'alice', { entries: es.slice(0, 3), color: true });
-  assert.match(colored, /\x1b\[33m⚠ your sign-off needed\x1b\[0m/);
+  assert.equal(rows.rowText(code, 'bob', 'orch', { tasks: [] }), '⚠ reviewing 593da0');
+});
+
+test('rowText (room row): answer needed, agreed, objected, decided, mail and the task summary', () => {
+  const { code } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }], [{ kind: 'say', from: 'alice', via: 'human' }]);
+  assert.equal(rows.rowText(code, code, 'alice', { taskSummary: '' }), '2 here', 'humans only: the orch is headless');
+  const mk = list => list.map((e, i) => ({ id: i + 1, at: new Date().toISOString(), text: 'x', to: 'room', ...e }));
+  const es = mk([prop(['alice', 'bob']), answer('bob', 'signoff'), { kind: 'say', from: 'orch', via: 'agent', to: 'alice' }]);
+  const o = extra => ({ entries: es, taskSummary: '', ...extra });
+  assert.equal(rows.rowText(code, code, 'alice', o()), '⚠ your answer needed 593da0 · ✉ 1 for you');
+  assert.equal(rows.rowText(code, code, 'bob', o()), '✓ agreed 593da0 1/2');
+  es.push(...mk([{}, {}, {}, answer('alice', 'objection')]).slice(3));
+  assert.equal(rows.rowText(code, code, 'alice', o()), '✖ objected (#4)');
+  assert.equal(rows.rowText(code, code, 'bob', o()), '✓ agreed 593da0 1/2 · ✖ 1 objection');
+  es.push({ id: 5, at: new Date().toISOString(), ...decision() });
+  assert.equal(rows.rowText(code, code, 'bob', o()), '✔ decided 593da0');
+  assert.equal(rows.rowText(code, code, 'bob', o({ taskSummary: 'tasks 3 open · #2 you · #4 bob' })), '✔ decided 593da0 · tasks 3 open · #2 you · #4 bob');
+  // a second pending proposal for the viewer
+  es.push(...mk([{}, {}, {}, {}, {}, prop(['alice'], 'abcdef000000'), prop(['alice', 'bob'], '3fa2c1000000')]).slice(5));
+  assert.equal(rows.rowText(code, code, 'alice', o()), '⚠ your answer needed 3fa2c1 +1');
+  const colored = rows.rowText(code, code, 'alice', o({ color: true }));
+  assert.match(colored, /\x1b\[33m⚠ your answer needed 3fa2c1 \+1\x1b\[0m/);
+});
+
+test('rowText: every fixture stays within ROW_MAX; segments that do not fit are dropped whole', () => {
+  const { code } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }]);
+  const long = 'tasks 12 open · #2 you · #4 bob · #7 carol · #9 dave · #11 erin · #13 frank';
+  const es = [prop(['alice', 'bob']), { kind: 'say', from: 'orch', via: 'agent', to: 'alice' }].map((e, i) => ({ id: i + 1, at: new Date().toISOString(), text: 'x', ...e }));
+  const room = rows.rowText(code, code, 'alice', { entries: es, taskSummary: long });
+  assert.equal(room, '⚠ your answer needed 593da0 · ✉ 1 for you', 'the summary does not fit: dropped, not cut');
+  fitsRow(room);
+  const tasks = [{ id: '22', subject: 'a very long subject line about the parser and its many tests', status: 'pending', owner: 'bob' }];
+  const p = rows.rowText(code, 'bob', 'alice', { entries: es, tasks });
+  assert.equal(p, '⚠ reviewing 593da0 · ◼ #22 a very long subject line ab…');
+  fitsRow(p);
+  for (const viewer of ['alice', 'bob', 'orch']) for (const name of [code, 'alice', 'bob']) {
+    fitsRow(rows.rowText(code, name, viewer, { entries: es, tasks, taskSummary: long }));
+    fitsRow(rows.rowText(code, name, viewer, { entries: es, tasks, taskSummary: long, color: true }));
+  }
+  assert.equal(rows.fit(['x'.repeat(80)]).length, rows.ROW_MAX);
+});
+
+test('rowText (room row): lib/tasks.js summary(code, viewer) is used when present; a throwing one is ignored', () => {
+  const { code } = makeRoom([{ name: 'orch' }, { name: 'alice' }]);
+  const file = path.join(PLUGIN, 'lib', 'tasks.js');
+  const real = fs.existsSync(file);
+  if (real) {
+    fs.writeFileSync(path.join(rows.rowsDir(code), '..', 'tasks.json'), JSON.stringify([
+      { id: '2', subject: 'parser tests', status: 'in_progress', owner: 'alice' },
+      { id: '4', subject: 'docs', status: 'pending', owner: 'bob' },
+      { id: '5', subject: 'old', status: 'completed', owner: 'bob' },
+    ]));
+    assert.equal(rows.rowText(code, code, 'alice', { entries: [] }), '1 here · tasks 2 open · #2 you · #4 bob');
+    assert.equal(rows.rowText(code, 'alice', 'bob', { entries: [] }), '◼ #2 parser tests', 'participant row: tasks.mine()');
+    return;
+  }
+  const id = require.resolve(path.join(PLUGIN, 'lib', 'rows.js')).replace(/rows\.js$/, 'tasks.js');
+  require.cache[id] = { id, filename: id, loaded: true, exports: { summary: (c, v) => `tasks 1 open · #2 ${v}`, list: () => [] } };
+  try {
+    assert.equal(rows.rowText(code, code, 'alice', { entries: [] }), '1 here · tasks 1 open · #2 alice');
+    require.cache[id].exports = { summary: () => { throw new Error('boom'); } };
+    assert.equal(rows.rowText(code, code, 'alice', { entries: [] }), '1 here');
+  } finally { delete require.cache[id]; }
 });
 
 test('missingRows: orch lists members without a live hold after the grace period; member checks its room row', () => {
@@ -161,9 +219,47 @@ test('joinNote: a member_joined notice says whether the row already runs here (l
   fs.writeFileSync(rows.holdsFile(code, 'orch'), JSON.stringify({ pid: 999999, at: new Date().toISOString(), members: ['bob'], room: false }));
   assert.match(rows.joinNote(orch, 'bob'), /no row running/, 'dead hold server: not running');
   const alice = { code, name: 'alice', role: 'member' };
-  assert.match(rows.joinNote(alice, 'bob'), /room row is not running/);
+  assert.equal(rows.joinNote(alice, 'bob'), `row: your room row is not running; spawn it now: ${rows.roomCall(code, ['bob'])}`);
   rows.writeHolds(code, 'alice', { room: true });
   assert.match(rows.joinNote(alice, 'bob'), /your room row adds bob by itself; make NO Agent call/);
   assert.equal(rows.joinNote(alice, 'alice'), '');
   assert.equal(rows.joinNote(alice, 'orch'), '');
+});
+
+test('joinNote (Phase 0 fix): a room hold between its JOINED return and the re-call still counts as running', () => {
+  const { code } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }]);
+  const alice = { code, name: 'alice', role: 'member' };
+  // hold.js writes room:false + roomUntil while the room agent re-calls hold after "JOINED bob"
+  rows.writeHolds(code, 'alice', { members: [], room: false, roomUntil: Date.now() + 30_000 });
+  assert.equal(rows.readHolds(code, 'alice').room, true);
+  assert.match(rows.joinNote(alice, 'bob'), /make NO Agent call/);
+  assert.doesNotMatch(rows.joinNote(alice, 'bob'), /not running|Agent\(/);
+  assert.deepEqual(rows.rowsNeeded(code, alice, { held: rows.readHolds(code, 'alice') }), []);
+  rows.writeHolds(code, 'alice', { members: [], room: false, roomUntil: Date.now() - 1 });
+  assert.equal(rows.readHolds(code, 'alice').room, false, 'the gap expired: the row really stopped');
+  assert.match(rows.joinNote(alice, 'bob'), /not running/);
+});
+
+test('orch (headless --bg): rowCalls / rowsNeeded / joinNote ignore members.json\'s orch {job, pid} record', () => {
+  const { code, dir } = makeRoom([{ name: 'alice' }, { name: 'bob' }, { name: 'carol', left_at: 'x' }]);
+  const ms = JSON.parse(fs.readFileSync(path.join(dir, 'members.json'), 'utf8'));
+  ms.orch = { job: 'job-123', pid: process.pid, role: 'orch', name: 'orch', session_id: 'sid-orch' };
+  fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
+  const orch = { code, name: 'orch', role: 'orch' };
+  const t = rows.rowCalls(orch, ms);
+  assert.equal((t.match(/Agent\(/g) || []).length, 3, 'alice, bob + the NAME template in the join rule');
+  assert.doesNotMatch(t, /description: "(orch|carol)"/);
+  assert.deepEqual(rows.rowsNeeded(code, orch, { members: ms }), ['alice', 'bob']);
+  rows.writeHolds(code, 'orch', { members: ['alice'] });
+  const held = rows.readHolds(code, 'orch');
+  assert.deepEqual(rows.rowsNeeded(code, orch, { members: ms, held }), ['bob']);
+  const only = rows.rowCalls(orch, ms, { only: ['bob'] });
+  assert.match(only, /description: "bob"/);
+  assert.doesNotMatch(only, /description: "alice", prompt/);
+  assert.match(rows.joinNote(orch, 'bob'), /bob has no row running; spawn it now: Agent sub-human:participant, description "bob"/);
+  // the orch\'s own record without a name field (contract: orch:{job, pid}) is still not a member
+  ms.orch = { job: 'job-123', pid: process.pid };
+  assert.deepEqual(rows.rowsNeeded(code, orch, { members: ms }), ['alice', 'bob']);
+  assert.deepEqual(rows.rowsNeeded(code, { code, name: 'alice', role: 'member' }, { members: ms }), [code]);
+  assert.match(rows.rowCalls({ code, name: 'alice', role: 'member' }, ms), /members: bob"/);
 });

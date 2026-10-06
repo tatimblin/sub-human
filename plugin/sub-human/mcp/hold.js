@@ -22,10 +22,13 @@
  * One server serves the whole claude session (main + every subagent), so it sees every row's hold.
  * Every progress line ends with HINT ("read-only · talk in main (@room)"): text typed into a row view is not
  * posted (Claude Code queues it for the row agent), so the line says where to talk instead.
- * Liveness goes to <room>/rows/holds-<me>.json (lib/rows.js) for the status line's "rows missing" check.
+ * Liveness goes to <room>/rows/holds-<me>.json (lib/rows.js) for row-guard, join notes and rewake. A room hold
+ * that returned JOINED/RESPAWN still counts as running for ROOM_GAP_MS (roomUntil) while its agent re-calls,
+ * so a join notice read in that gap never invites a second room row (Phase 0: red row-guard error).
  *
  * Env (ms): SUB_HUMAN_HOLD_BEAT_MS 20000, SUB_HUMAN_HOLD_POLL_MS 1000, SUB_HUMAN_HOLD_GRACE_MS 20000,
- *   SUB_HUMAN_HOLD_RESPAWN_MS 1500, SUB_HUMAN_HOLD_WHO_MS 3000 (how often `me` is re-resolved).
+ *   SUB_HUMAN_HOLD_RESPAWN_MS 1500, SUB_HUMAN_HOLD_WHO_MS 3000 (how often `me` is re-resolved),
+ *   SUB_HUMAN_HOLD_ROOM_GAP_MS 30000.
  */
 
 const fs = require('node:fs');
@@ -55,14 +58,8 @@ function entryLine(e) {
 
 const TOOL = {
   name: 'hold',
-  description: 'ONLY for sub-human row agents (sub-human:participant, sub-human:room). Never call it from your main session: it blocks for as long as the room lasts. {member: NAME} holds NAME\'s row open (also while NAME is away) and returns STOP when you leave the room. {room: CODE} holds the room row and returns "JOINED NAME..." or "RESPAWN NAME..." (spawn those rows, then hold again) or STOP.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      member: { type: 'string', description: 'The participant this row shows.' },
-      room: { type: 'string', description: 'The room code (room row only).' },
-    },
-  },
+  description: 'Row agents only (sub-human:participant, sub-human:room). Never call it yourself: it blocks while the room lasts.',
+  inputSchema: { type: 'object', properties: { member: { type: 'string' }, room: { type: 'string' } } },
 };
 
 function create(ctx) {
@@ -71,6 +68,7 @@ function create(ctx) {
   const GRACE_MS = envMs('SUB_HUMAN_HOLD_GRACE_MS', 20_000);
   const RESPAWN_MS = envMs('SUB_HUMAN_HOLD_RESPAWN_MS', 1500);
   const WHO_MS = envMs('SUB_HUMAN_HOLD_WHO_MS', 3000);
+  const ROOM_GAP_MS = envMs('SUB_HUMAN_HOLD_ROOM_GAP_MS', 30_000);
   const log = (...a) => { try { ctx.log && ctx.log('hold', ...a); } catch { /* debug only */ } };
   const text = s => (ctx.text ? ctx.text(s) : { content: [{ type: 'text', text: s }] });
 
@@ -113,7 +111,9 @@ function create(ctx) {
   function finish(h, s) {
     if (!holds.has(h.id)) return;
     holds.delete(h.id);
-    if (h.kind === 'room') roomEnded.set(h.code, Date.now());
+    // A room hold returning JOINED/RESPAWN is re-called by its row agent at once: the row is still running.
+    if (h.kind === 'room' && !/^STOP\b/.test(s)) roomEnded.set(h.code, Date.now());
+    else if (h.kind === 'room') roomEnded.delete(h.code);
     log('RETURN', h.id, s);
     h.resolve(text(s));
     saveSeat();
@@ -122,9 +122,11 @@ function create(ctx) {
 
   function saveSeat() {
     if (!seat) return;
+    const ended = roomEnded.get(seat.code);
     rows.writeHolds(seat.code, seat.name, {
       members: memberHolds(seat.code).map(h => h.name),
       room: roomHolds(seat.code).length > 0,
+      roomUntil: ended ? ended + ROOM_GAP_MS : 0,
     });
   }
 
@@ -200,6 +202,7 @@ function create(ctx) {
     holds.delete(h.id);
     log('CANCELLED', h.id, h.kind, h.name || h.code);
     h.resolve(text(`(cancelled)`));
+    if (h.kind === 'room') roomEnded.delete(h.code);
     saveSeat();
     if (h.kind === 'room') { roomGone.set(h.code, Date.now()); respawn.delete(h.code); }
     else {
@@ -260,7 +263,7 @@ function create(ctx) {
       for (const n of others(code, ms)) if (!live.has(n) && !expect.has(`${code}/${n}`)) expect.set(`${code}/${n}`, { at: now, n: 0 });
       roomGone.delete(code);
       const reply = roomReply(code, missing(code, ms, now));
-      if (reply) { log('RETURN now', meta.id, reply); return text(reply); }
+      if (reply) { log('RETURN now', meta.id, reply); roomEnded.set(code, now); saveSeat(); return text(reply); }
       Object.assign(h, { kind: 'room', name: code });
       const last = readEntries(code).entries.at(-1);
       h.msg = last ? entryLine(last) : `room ${code}`;

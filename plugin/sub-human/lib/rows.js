@@ -12,7 +12,9 @@
  *               (the other active members except the orch and me). The room agent spawns those children.
  *       only = rowsNeeded(...) limits the calls to the rows that are missing; only = [] says the rows are intact
  *       and lists no calls (a second spawn would duplicate a row).
- *   joinNote(me, name, {held}?) -> "row: …" suffix for a member_joined notice: running (no call) or the call to make
+ *   joinNote(me, name, {held}?) -> "row: …" suffix for a member_joined notice (bin/sub-human tail): running (no
+ *       call) or the call to make. For a member it is about the ROOM row (which adds NAME by itself), so a join
+ *       never invites a room-row call while that row is live; row-guard.js stays the backstop.
  *   rowsNeeded(code, me, {members, held}) -> names (orch) or [code] (member): rows with no live hold in `held`
  *       (= readHolds(code, me.name), null = nothing held). No grace period: used by join / restore.
  * Lifecycle: a row lives as long as its viewer is in the room. A participant row does NOT end when its member
@@ -23,19 +25,23 @@
  *
  * Row text (deterministic from the log + members.json + <room>/presence/<name>.json {state, at}):
  *   rowText(code, name, viewer, {color, entries, members, now}?) -> string (<= ROW_MAX chars, no label)
- *       name === code (or null): the member's room row, from viewer's seat: plan progress, objections,
- *         "⚠ your sign-off needed", "✉ N for you".
- *       otherwise: NAME's state as viewer sees it, e.g. "✓ signed 593da0 · idle", and after the decision
- *         their latest status: "#24 Claude status: handler done, 12/12 tests pass",
- *         "⚠ reviewing 593da0 · ✖ 1 objection (#31)", "left".
+ *       Proposals: `proposal` entries with a hash (lib/proposal.js); answers = latest via=human signoff /
+ *       objection with that proposal_hash; a system `decision` closes one. Segments that do not fit are dropped.
+ *       name === code (or null): the member's room row, from viewer's seat: "⚠ your answer needed 3fa2c1",
+ *         "✓ agreed 3fa2c1 1/2", "✖ objected (#31)", "✔ decided 3fa2c1", "proposal 3fa2c1 0/2", else "N here";
+ *         then "✉ N for you", then lib/tasks.js summary(code, viewer) ("tasks 3 open · #2 you · #4 bob").
+ *       otherwise: NAME's state as viewer sees it: "✓ agreed 3fa2c1", "✖ objected (#31)", "⚠ reviewing 3fa2c1",
+ *         "✔ decided 3fa2c1" (after it, their latest status: "#24 Claude status: handler done"), then their
+ *         open task on the room list ("◼ #2 parser tests"), presence, mail; "left".
  *   rowLine(label, text) -> "label  text"   what a row shows (the row content replaces the whole label)
  *
  * Agent -> row map (<room>/rows/<session_id>.json = {byAgent: {agentId: {kind, name, parent, at}}}):
  *   parseSpawn(toolInput, members, code) -> {kind: 'participant'|'room', name}|null
  *   recordRow(code, sessionId, agentId, rec), forgetRow(code, agentId), readRowMap(code) -> {agentId: rec}
  *       readRowMap merges every session file in the room: /clear changes session_id (P0), agent ids don't.
- *   Hold liveness (written by mcp/hold.js): writeHolds(code, name, {members, room}), readHolds(code, name)
- *       <room>/rows/holds-<name>.json = {pid, at, members: [names], room: bool}
+ *   Hold liveness (written by mcp/hold.js): writeHolds(code, name, {members, room, roomUntil}), readHolds(code, name)
+ *       <room>/rows/holds-<name>.json = {pid, at, members: [names], room: bool, roomUntil?}; readHolds folds
+ *       roomUntil into room (a room hold between its JOINED return and the re-call is still running).
  *   missingRows(code, me, {now}) -> [names]   active members whose row has no live hold (after a grace period)
  *
  * Constants: PARTICIPANT ('sub-human:participant'), ROOM_AGENT ('sub-human:room'), ROW_MAX.
@@ -149,9 +155,10 @@ function joinNote(me, name, { held } = {}) {
       ? `row: ${name}'s row is already running (it shows the rejoin by itself); make NO Agent call`
       : `row: ${name} has no row running; spawn it now: Agent sub-human:participant, description "${name}", prompt "member: ${name}", run_in_background`;
   }
-  return h && h.room
-    ? `row: your room row adds ${name} by itself; make NO Agent call`
-    : 'row: your room row is not running; make the room-row call from ROWS';
+  if (h && h.room) return `row: your room row adds ${name} by itself; make NO Agent call`;
+  const names = memberList(readMembers(me.code)).filter(m => isActive(m) && !isOrch(m) && m.name !== me.name).map(m => m.name);
+  if (!names.includes(name)) names.push(name);
+  return `row: your room row is not running; spawn it now: ${roomCall(me.code, names)}`;
 }
 
 /** Rows this seat should have but `held` (readHolds) shows no live hold for. Orch: names; member: [code]. */
@@ -242,13 +249,21 @@ function forgetRow(code, agentId) {
 
 // ---------- hold liveness (mcp/hold.js writes, the status line reads) ----------
 const holdsFile = (code, name) => path.join(rowsDir(code), `holds-${name}.json`);
-function writeHolds(code, name, { members = [], room = false } = {}) {
-  try { writeJsonAtomic(holdsFile(code, name), { pid: process.pid, at: new Date().toISOString(), members: [...new Set(members)].sort(), room: !!room }); } catch { /* best effort */ }
+function writeHolds(code, name, { members = [], room = false, roomUntil = 0 } = {}) {
+  const rec = { pid: process.pid, at: new Date().toISOString(), members: [...new Set(members)].sort(), room: !!room };
+  if (!room && roomUntil) rec.roomUntil = new Date(roomUntil).toISOString();
+  try { writeJsonAtomic(holdsFile(code, name), rec); } catch { /* best effort */ }
 }
+/**
+ * The live holds of NAME's hold server, or null. `room` stays true until `roomUntil`: a room hold that just
+ * returned JOINED/RESPAWN is being re-called by its row agent, so the room row is still running (P0: a join
+ * notice read in that gap invited a second room-row spawn, which row-guard then denied in red).
+ */
 function readHolds(code, name, now = Date.now()) {
   const h = readJson(holdsFile(code, name), null);
   if (!h || !isAlive(h.pid) || now - Date.parse(h.at) > HOLDS_STALE_MS) return null;
-  return h;
+  const members = Array.isArray(h.members) ? h.members : [];
+  return { ...h, members, room: !!h.room || (!!h.roomUntil && now < Date.parse(h.roomUntil)) };
 }
 
 /** Rows this seat should have but holds nothing for. Orch: members. Member: the room row ([code]). */
@@ -266,22 +281,84 @@ const ESC = '\x1b[';
 const paint = on => (on
   ? { warn: s => `${ESC}33m${s}${ESC}0m`, ok: s => `${ESC}32m${s}${ESC}0m`, dim: s => `${ESC}2m${s}${ESC}0m` }
   : { warn: s => s, ok: s => s, dim: s => s });
+const plainLen = s => Array.from(String(s).replace(/\x1b\[[0-9;]*m/g, '')).length;
+const SEP = ' · ';
 
-function currentPlan(es) {
-  let p = null;
-  for (const e of es) if (e.kind === 'plan_rev' && e.plan_hash) p = { id: e.id, hash: e.plan_hash, approvers: Array.isArray(e.approvers) ? e.approvers : [] };
-  if (!p) return null;
-  const verdict = {}; // name -> {kind, id}: latest via=human signoff/objection on this hash
-  let decided = 0; // the decision's id
-  for (const e of es) {
-    if (e.kind === 'decision' && e.plan_hash === p.hash && !decided) decided = e.id;
-    if (e.via !== 'human' || e.plan_hash !== p.hash) continue;
-    const k = normKind(e);
-    if (k === 'signoff' || k === 'objection') verdict[e.from] = { kind: k, id: e.id };
+/** Join segments with " · ", keeping whole segments while they fit in ROW_MAX; a lone first one is clipped. */
+function fit(parts) {
+  const ps = parts.filter(Boolean);
+  if (!ps.length) return '';
+  let out = ps[0], len = plainLen(ps[0]);
+  if (len > ROW_MAX) return clip(ps[0].replace(/\x1b\[[0-9;]*m/g, ''));
+  for (const p of ps.slice(1)) {
+    const l = plainLen(p);
+    if (len + SEP.length + l > ROW_MAX) break;
+    out += SEP + p; len += SEP.length + l;
   }
-  const signed = p.approvers.filter(n => verdict[n] && verdict[n].kind === 'signoff').length;
-  const objectors = Object.keys(verdict).filter(n => verdict[n].kind === 'objection');
-  return { ...p, verdict, decided, signed, total: p.approvers.length, objectors };
+  return out;
+}
+
+const propHash = e => e.proposal_hash || e.hash || e.plan_hash || null;
+const retracted = es => new Set(es.filter(e => e.kind === 'retract' && e.via === 'system').flatMap(e => e.refs || []));
+
+/**
+ * Proposals in log order: {id, hash, approvers, verdict: {name: {kind, id}}, decided (decision id), agreed,
+ * objectors}. A proposal is a `proposal` entry with a hash (lib/proposal.js); answers are the latest via=human
+ * signoff/objection carrying its proposal_hash; a system `decision` with that hash closes it.
+ */
+function proposals(es) {
+  const gone = retracted(es);
+  const list = [], by = new Map();
+  for (const e of es) {
+    if (gone.has(e.id)) continue;
+    const h = propHash(e);
+    if (!h) continue;
+    if (e.kind === 'proposal' && (e.hash || e.proposal_hash)) { // via propose (any via); a hashless post is chatter
+      if (by.has(h)) continue;
+      const p = { id: e.id, hash: h, from: e.from, approvers: Array.isArray(e.approvers) ? e.approvers : [], verdict: {}, decided: 0 };
+      list.push(p); by.set(h, p);
+      continue;
+    }
+    const p = by.get(h);
+    if (!p) continue;
+    if (e.kind === 'decision' && e.via === 'system') { if (!p.decided) p.decided = e.id; continue; }
+    const k = normKind(e);
+    if (e.via === 'human' && (k === 'signoff' || k === 'objection')) p.verdict[e.from] = { kind: k, id: e.id };
+  }
+  for (const p of list) {
+    p.agreed = p.approvers.filter(n => p.verdict[n] && p.verdict[n].kind === 'signoff').length;
+    p.objectors = Object.keys(p.verdict).filter(n => p.verdict[n].kind === 'objection');
+  }
+  return list;
+}
+/** Undecided proposals that name `name` and that `name` has not answered (newest last). */
+const awaiting = (ps, name) => ps.filter(p => !p.decided && p.approvers.includes(name) && !p.verdict[name]);
+/** The proposal a row reports for `name`: the newest that names them, else the newest. */
+const latestFor = (ps, name) => ps.filter(p => p.approvers.includes(name)).at(-1) || ps.at(-1) || null;
+
+// ---------- tasks (lib/tasks.js, owner F; optional until it exists) ----------
+function tasksMod() { try { return require('./tasks.js'); } catch { return null; } }
+function taskList(code) {
+  const t = tasksMod();
+  if (t && typeof t.list === 'function') { try { const l = t.list(code); if (Array.isArray(l)) return l; } catch { /* fall back */ } }
+  const l = readJson(path.join(roomDir(code), 'tasks.json'), []);
+  return Array.isArray(l) ? l : [];
+}
+function taskSummary(code, viewer) {
+  const t = tasksMod();
+  if (!t || typeof t.summary !== 'function') return '';
+  try { return oneLine(t.summary(code, viewer) || ''); } catch { return ''; }
+}
+/** NAME's open tasks: lib/tasks.js mine(code, name), else filtered from the mirror. */
+function mineOf(code, name) {
+  const t = tasksMod();
+  if (t && typeof t.mine === 'function') { try { const l = t.mine(code, name); if (Array.isArray(l)) return l; } catch { /* fall back */ } }
+  return taskList(code);
+}
+/** NAME's open task on the room list: in progress first, else the first pending. */
+function openTask(list, name) {
+  const mine = list.filter(t => t && t.owner === name && t.status !== 'completed' && t.status !== 'deleted' && !(t.metadata && t.metadata._internal));
+  return mine.find(t => t.status === 'in_progress') || mine[0] || null;
 }
 
 function presenceOf(code, name, es, now) {
@@ -303,28 +380,24 @@ function presenceOf(code, name, es, now) {
   return clip(s, 12);
 }
 
-function participantText(code, name, viewer, es, ms, now, c) {
+function participantText(code, name, viewer, es, ms, now, c, tasks) {
   const m = ms.find(x => x.name === name);
   if (!m) return 'not in the room';
   if (m.left_at) return 'left';
   const parts = [];
-  const p = currentPlan(es);
+  const p = latestFor(proposals(es), name);
   if (p) {
     const v = p.verdict[name];
-    // Build phase: their latest status after the decision (with its evidence) replaces "decided".
+    // Build phase: their latest status after the decision replaces "decided".
     const st = p.decided ? es.filter(e => e.from === name && e.id > p.decided && e.kind === 'status').at(-1) : null;
     if (st) parts.push(`#${st.id} ${st.via === 'agent' ? 'Claude ' : ''}status: ${oneLine(st.text)}`);
     else if (p.decided) parts.push(c.ok(`✔ decided ${h6(p.hash)}`));
-    else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ signed ${h6(p.hash)}`));
-    else if (v && v.kind === 'objection') parts.push(c.warn(`✖ objected ${h6(p.hash)} (#${v.id})`));
+    else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${h6(p.hash)}`));
+    else if (v && v.kind === 'objection') parts.push(c.warn(`✖ objected (#${v.id})`));
     else if (p.approvers.includes(name)) parts.push(c.warn(`⚠ reviewing ${h6(p.hash)}`));
-    if (!p.decided && !(v && v.kind === 'objection')) {
-      // Their Claude's objections on this plan since their last verdict.
-      const since = v ? v.id : 0;
-      const objs = es.filter(e => e.from === name && e.id > since && e.plan_hash === p.hash && normKind(e) === 'objection');
-      if (objs.length) parts.push(c.warn(`✖ ${plural(objs.length, 'objection')} (#${objs.at(-1).id})`));
-    }
   }
+  const t = openTask(tasks, name);
+  if (t) parts.push(`◼ #${t.id} ${clip(oneLine(t.subject), 28)}`);
   const pres = presenceOf(code, name, es, now);
   if (pres) parts.push(pres === 'idle' ? c.dim(pres) : c.warn(pres));
   if (viewer && viewer !== name) {
@@ -338,23 +411,26 @@ function participantText(code, name, viewer, es, ms, now, c) {
     if (last) parts.push(c.dim(`#${last.id} ${last.via === 'agent' ? 'Claude ' : ''}${normKind(last)} ${ago(last.at, now)}`));
     else if (!parts.length) parts.push(c.dim('joined'));
   }
-  return parts.join(' · ');
+  return fit(parts);
 }
 
-function roomText(code, viewer, es, ms, now, c) {
+function roomText(code, viewer, es, ms, now, c, summary) {
   const parts = [];
-  const p = currentPlan(es);
-  if (p) {
-    const base = `plan ${h6(p.hash)} ${p.signed}/${p.total}`;
+  const ps = proposals(es);
+  const need = viewer ? awaiting(ps, viewer) : [];
+  const p = viewer ? latestFor(ps, viewer) : ps.at(-1);
+  if (need.length) {
+    parts.push(c.warn(`⚠ your answer needed ${h6(need.at(-1).hash)}${need.length > 1 ? ` +${need.length - 1}` : ''}`));
+  } else if (p) {
     const v = viewer && p.verdict[viewer];
-    const needMe = !p.decided && viewer && p.approvers.includes(viewer) && !(v && v.kind === 'signoff');
-    if (p.decided) parts.push(c.ok(`${base} ✔`));
-    else parts.push(base);
-    if (!p.decided && p.objectors.length) parts.push(c.warn(`✖ ${plural(p.objectors.length, 'objection')}`));
-    if (needMe) parts.push(c.warn('⚠ your sign-off needed'));
+    const n = `${p.agreed}/${p.approvers.length}`;
+    if (p.decided) parts.push(c.ok(`✔ decided ${h6(p.hash)}`));
+    else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${h6(p.hash)} ${n}`));
+    else if (v && v.kind === 'objection') parts.push(c.warn(`✖ objected (#${v.id})`));
+    else parts.push(`proposal ${h6(p.hash)} ${n}`);
+    if (!p.decided && p.objectors.some(x => x !== viewer)) parts.push(c.warn(`✖ ${plural(p.objectors.filter(x => x !== viewer).length, 'objection')}`));
   } else {
-    const here = ms.filter(isActive).length;
-    parts.push(c.dim(`${here} here`));
+    parts.push(c.dim(`${ms.filter(m => isActive(m) && !isOrch(m)).length} here`));
   }
   if (viewer) {
     let lastOwn = 0;
@@ -362,20 +438,24 @@ function roomText(code, viewer, es, ms, now, c) {
     const mail = es.filter(e => e.id > lastOwn && e.to === viewer && e.from !== viewer).length;
     if (mail) parts.push(c.warn(`✉ ${mail} for you`));
   }
-  return parts.join(' · ');
+  if (summary) parts.push(summary);
+  return fit(parts);
 }
 
+/**
+ * opts: {color, entries, members, now, tasks (list; default lib/tasks.js mine(code, name), else <room>/tasks.json),
+ *        taskSummary (string, default tasks.summary(code, viewer))}.
+ */
 function rowText(code, name, viewer, opts = {}) {
   const now = opts.now || Date.now();
   const es = opts.entries || readLog(code);
   const ms = memberList(opts.members || readMembers(code));
   const c = paint(!!opts.color);
-  const raw = name == null || name === code ? roomText(code, viewer, es, ms, now, c) : participantText(code, name, viewer, es, ms, now, c);
-  // Clip on the visible text; colored output is short enough by construction (each segment is clipped by
-  // the ROW_MAX check below on its plain form).
-  if (!opts.color) return clip(raw);
-  const plain = raw.replace(/\x1b\[[0-9;]*m/g, '');
-  return Array.from(plain).length > ROW_MAX ? clip(plain) : raw;
+  if (name == null || name === code) {
+    const summary = opts.taskSummary != null ? oneLine(opts.taskSummary) : taskSummary(code, viewer);
+    return roomText(code, viewer, es, ms, now, c, summary);
+  }
+  return participantText(code, name, viewer, es, ms, now, c, Array.isArray(opts.tasks) ? opts.tasks : mineOf(code, name));
 }
 
 const rowLine = (label, text) => (text ? `${label}  ${text}` : label);
@@ -383,7 +463,7 @@ const rowLine = (label, text) => (text ? `${label}  ${text}` : label);
 module.exports = {
   PARTICIPANT, ROOM_AGENT, ROW_MAX,
   rowCalls, rowsNeeded, joinNote, participantCall, roomCall, parseSpawn,
-  rowText, rowLine, readLog, currentPlan,
+  rowText, rowLine, readLog, proposals, openTask, taskList, fit,
   recordRow, forgetRow, readRowMap, rowsDir, mapFile,
   writeHolds, readHolds, holdsFile, missingRows,
 };

@@ -8,7 +8,7 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 const h = require('./helpers.js');
 const room = require(path.join(h.LIB, 'room.js'));
-const plan = require(path.join(h.LIB, 'plan.js'));
+const identity = require(path.join(h.LIB, 'identity.js'));
 
 const servers = new Set();
 test.afterEach(() => { for (const c of servers) c.kill(); servers.clear(); });
@@ -58,16 +58,19 @@ async function ready(env, server, capabilities = {}) {
 const payload = r => JSON.parse(r.result.content[0].text);
 const errText = r => { assert.equal(r.result.isError, true, JSON.stringify(r)); return r.result.content[0].text; };
 
-test('mcp: tools/list has post, read, plan plus plug-in tools and no watch; unknown methods and tools fail', async () => {
+test('mcp: tools/list has post, read, propose plus plug-in tools, no plan/watch/review; unknown methods and tools fail', async () => {
   h.freshHome();
   const s = await ready();
   const r = await s.call('tools/list', {});
   const names = r.result.tools.map(t => t.name);
-  for (const n of ['post', 'read', 'plan']) assert.ok(names.includes(n), n);
-  assert.ok(!names.includes('watch'), 'watch is gone');
-  if (fs.existsSync(path.join(h.PLUGIN, 'mcp', 'signoff.js'))) assert.ok(names.includes('review'), 'signoff plug-in loaded');
+  assert.deepEqual(names.slice(0, 3), ['post', 'read', 'propose']);
+  for (const n of ['watch', 'plan', 'review']) assert.ok(!names.includes(n), `${n} is gone`);
+  if (fs.existsSync(path.join(h.PLUGIN, 'mcp', 'hold.js'))) assert.ok(names.includes('hold'), 'hold plug-in loaded');
   assert.equal(new Set(names).size, names.length, 'no duplicate tool names');
-  assert.deepEqual(r.result.tools.find(t => t.name === 'post').inputSchema.properties.kind.enum, room.AGENT_KINDS);
+  assert.deepEqual(r.result.tools.find(t => t.name === 'post').inputSchema.properties.kind.enum, ['say', 'question', 'status']);
+  // Schema budget (plan §2: post, read, propose, task, hold <= 1,100 together): the core three stay <= 800.
+  const core = JSON.stringify(r.result.tools.slice(0, 3)).length;
+  assert.ok(core <= 800, `core tool schemas ${core} chars`);
   assert.equal((await s.call('nope/method', {})).error.code, -32601);
   assert.equal((await s.tool('await_human', { after_seq: 0 })).error.code, -32602);
   assert.equal((await s.tool('watch', {})).error.code, -32602);
@@ -79,7 +82,7 @@ test('mcp: every tool errors until the parent session joins, then works without 
   h.freshHome();
   const code = h.newRoom();
   const s = await ready();
-  for (const [name, args] of [['post', { kind: 'say', text: 'x' }], ['read', {}], ['plan', {}]]) {
+  for (const [name, args] of [['post', { kind: 'say', text: 'x' }], ['read', {}], ['propose', { text: 'x' }]]) {
     assert.equal(errText(await s.tool(name, args)), 'not in a room; run /sub-human');
   }
   h.register('alice', 'member', process.pid, code);
@@ -95,10 +98,10 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
   require(path.join(h.LIB, 'identity.js')).join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sb' });
   // A forged CLAUDE_PID pointing at bob changes nothing: the server uses its parent.
   const s = await ready({ CLAUDE_PID: String(bob.pid) });
-  const e = payload(await s.tool('post', { kind: 'proposal', text: 'split auth into its own module', refs: [1], to: 'bob' }));
-  assert.deepEqual([e.from, e.via, e.kind, e.to, e.refs], ['alice', 'agent', 'proposal', 'bob', [1]]);
-  for (const kind of ['signoff', 'plan_rev', 'decision', 'member_joined', 'member_left', 'nope']) {
-    assert.match(errText(await s.tool('post', { kind, text: 'x', plan_hash: 'abcdef012345' })), /refused: kind must be one of/, kind);
+  const e = payload(await s.tool('post', { kind: 'question', text: 'split auth into its own module?', refs: [1], to: 'bob' }));
+  assert.deepEqual([e.from, e.via, e.kind, e.to, e.refs], ['alice', 'agent', 'question', 'bob', [1]]);
+  for (const kind of ['proposal', 'objection', 'signoff', 'plan_rev', 'decision', 'member_joined', 'member_left', 'task_req', 'nope']) {
+    assert.match(errText(await s.tool('post', { kind, text: 'x', proposal_hash: 'abcdef012345' })), /refused: kind must be one of/, kind);
   }
   const forged = payload(await s.tool('post', { kind: 'say', text: 'x', from: 'bob', via: 'human' }));
   assert.deepEqual([forged.from, forged.via], ['alice', 'agent'], 'extra arguments are ignored');
@@ -112,44 +115,67 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
   bob.kill();
 });
 
-test('mcp: objection gets the current plan hash; read returns unseen entries then by id; plan() shape', async () => {
+test('mcp: read returns unseen entries (skipping own posts) then by id', async () => {
   h.freshHome();
   const { code } = h.register('alice');
   room.bind(code);
-  const bytes = `---\nsub-human: ${JSON.stringify({ room: code, approval: 'all', approvers: ['alice', 'bob'] })}\n---\n# Plan\nstep 1\n`;
-  const hash = plan.storeCanonical(code, bytes);
   const s = await ready();
-  assert.deepEqual(payload(await s.tool('plan')), { hash: null, rev: null, approvers: [], matrix: null, decided: null, path: null, plan: null });
-  room.append({ kind: 'plan_rev', text: `plan ${hash}`, plan_hash: hash, approvers: ['alice', 'bob'] }, { via: 'system', from: 'orch', system: true });
-  room.append({ kind: 'signoff', text: 'ok', plan_hash: hash }, { via: 'human', from: 'bob' });
-  const obj = payload(await s.tool('post', { kind: 'objection', text: 'step 1 is unsafe' }));
-  assert.equal(obj.plan_hash, hash);
-  // read: unseen, skipping alice's own Claude posts, advancing the cursor.
-  const unseen = payload(await s.tool('read'));
-  assert.deepEqual(unseen.map(e => e.kind), ['plan_rev', 'signoff']);
+  room.append({ kind: 'say', text: 'hi' }, { via: 'human', from: 'bob' });
+  await s.tool('post', { kind: 'status', text: 'mine' });
+  assert.deepEqual(payload(await s.tool('read')).map(e => e.text), ['hi']);
   assert.deepEqual(payload(await s.tool('read')), []);
   room.append({ kind: 'say', text: 'bob here' }, { via: 'human', from: 'bob' });
   assert.deepEqual(payload(await s.tool('read')).map(e => e.text), ['bob here']);
   assert.deepEqual(payload(await s.tool('read', { ids: [3, 1] })).map(e => e.id), [3, 1]);
   assert.match(errText(await s.tool('read', { ids: [0] })), /positive/);
-  const p = payload(await s.tool('plan'));
-  assert.equal(p.hash, hash);
-  assert.deepEqual(p.approvers, ['alice', 'bob']);
-  assert.deepEqual(p.matrix.missing, ['alice']);
-  assert.equal(p.decided, null);
-  assert.equal(p.rev, 1);
-  assert.equal(p.path, path.join(require(path.join(h.LIB, 'identity.js')).roomDir(code), 'plans', `${hash}.md`));
-  assert.equal(fs.readFileSync(p.path, 'utf8'), bytes);
-  assert.equal(p.plan, bytes);
-  assert.deepEqual(Object.keys(p).sort(), ['approvers', 'decided', 'hash', 'matrix', 'path', 'plan', 'rev']);
-  const bytes2 = bytes.replace('step 1', 'step 1b');
-  const hash2 = plan.storeCanonical(code, bytes2);
-  room.append({ kind: 'plan_rev', text: `plan ${hash2}`, plan_hash: hash2, approvers: ['alice'] }, { via: 'system', from: 'orch', system: true });
-  assert.equal(payload(await s.tool('plan')).rev, 2);
   await s.close();
 });
 
-// ---------- plug-in contract: a copy of the server beside a fake hold.js and a broken signoff.js ----------
+test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, path}; approvers default to humans present', async () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  const bob = h.spawnSleeper(), carol = h.spawnSleeper(), orch = h.spawnSleeper();
+  identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sb' });
+  identity.join({ code, name: 'carol', role: 'member', pid: carol.pid, session_id: 'sc' });
+  identity.join({ code, name: 'orch', role: 'orch', pid: orch.pid, session_id: 'so' });
+  identity.leave(code, 'carol');
+  room.bind(code);
+  const s = await ready();
+  const text = '# Cursor paging\n\n1. add cursor param\n2. tests\n';
+  const r = await s.tool('propose', { text });
+  const msg = r.result.content[0].text;
+  const e = room.readAll().at(-1);
+  assert.equal(e.kind, 'proposal');
+  assert.equal(e.via, 'agent');
+  assert.equal(e.from, 'alice');
+  assert.match(e.hash, /^[0-9a-f]{12}$/);
+  assert.deepEqual(e.approvers, ['alice', 'bob'], 'orch and the departed carol are not approvers');
+  assert.equal(e.path, path.join(identity.roomDir(code), 'plans', `${e.hash}.md`));
+  assert.equal(fs.readFileSync(e.path, 'utf8'), text);
+  assert.match(msg, new RegExp(`alice is an approver: call AskUserQuestion now with the question "proposal ${e.hash}"`));
+  // The same proposal again is not re-appended.
+  assert.match((await s.tool('propose', { text })).result.content[0].text, /already open/);
+  assert.equal(room.readAll().filter(x => x.kind === 'proposal').length, 1);
+  // path: bytes are hashed as-is; a proposer who is not an approver gets no card line.
+  const f = path.join(os.tmpdir(), `sh-plan-${process.pid}.md`);
+  fs.writeFileSync(f, '# other\nbody\n');
+  const r2 = (await s.tool('propose', { path: f, approvers: ['@bob'] })).result.content[0].text;
+  const e2 = room.readAll().at(-1);
+  assert.deepEqual(e2.approvers, ['bob']);
+  assert.equal(e2.hash, require('node:crypto').createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0, 12));
+  assert.doesNotMatch(r2, /AskUserQuestion/);
+  fs.unlinkSync(f);
+  // Refusals.
+  assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['zed'] })), /not in the room: zed/);
+  assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['orch'] })), /people/);
+  assert.match(errText(await s.tool('propose', { text: 'x', path: f })), /exactly one/);
+  assert.match(errText(await s.tool('propose', { path: '/nonexistent/plan.md' })), /no such file/);
+  assert.match(errText(await s.tool('propose', { text: '  \n' })), /empty/);
+  await s.close();
+  for (const p of [bob, carol, orch]) p.kill();
+});
+
+// ---------- plug-in contract: a copy of the server beside a fake hold.js and a broken task.js ----------
 const FAKE_HOLD = `
 let log = [];
 exports.create = ctx => ({
@@ -176,7 +202,7 @@ exports.create = ctx => ({
     if (name === 'anon') return ctx.text(me ? 'me ' + me.name : 'anonymous');
     if (name === 'info') {
       const w = ctx.whoami();
-      return ctx.text(JSON.stringify({ who: w && w.name, caps: ctx.clientCaps(), libs: [typeof ctx.room.append, typeof ctx.identity.resolveByPid, typeof ctx.planLib.canonical], meta }));
+      return ctx.text(JSON.stringify({ who: w && w.name, caps: ctx.clientCaps(), libs: [typeof ctx.room.append, typeof ctx.identity.resolveByPid, typeof ctx.proposal.create], meta }));
     }
   },
 });
@@ -188,7 +214,7 @@ function fakeServer() {
   fs.copyFileSync(h.MCP, path.join(dir, 'mcp', 'room-server.js'));
   fs.symlinkSync(h.LIB, path.join(dir, 'lib'));
   fs.writeFileSync(path.join(dir, 'mcp', 'hold.js'), FAKE_HOLD);
-  fs.writeFileSync(path.join(dir, 'mcp', 'signoff.js'), 'throw new Error("half-written");');
+  fs.writeFileSync(path.join(dir, 'mcp', 'task.js'), 'throw new Error("half-written");');
   return path.join(dir, 'mcp', 'room-server.js');
 }
 
@@ -197,8 +223,8 @@ test('mcp: plug-ins get the ctx contract (request/response routing, progress, on
   const server = fakeServer();
   const s = await ready({ SUB_HUMAN_DEBUG: '1' }, server, { elicitation: {} });
   const names = (await s.call('tools/list', {})).result.tools.map(t => t.name);
-  assert.deepEqual(names, ['post', 'read', 'plan', 'ask', 'slow', 'anon', 'info'], 'broken signoff.js skipped, core wins a clash');
-  assert.match(fs.readFileSync(path.join(process.env.SUB_HUMAN_HOME, 'mcp-debug.log'), 'utf8'), /plugin failed signoff\.js/);
+  assert.deepEqual(names, ['post', 'read', 'propose', 'ask', 'slow', 'anon', 'info'], 'broken task.js skipped, core wins a clash');
+  assert.match(fs.readFileSync(path.join(process.env.SUB_HUMAN_HOME, 'mcp-debug.log'), 'utf8'), /plugin failed task\.js/);
   // Not joined: plug-in tools error like core ones, except the anonymous ones.
   assert.equal(errText(await s.tool('ask')), 'not in a room; run /sub-human');
   assert.equal((await s.tool('anon')).result.content[0].text, 'anonymous');

@@ -1,6 +1,6 @@
 ---
 name: room
-description: sub-human room row. A silent background row, labelled with the room code, that holds one sub-human:participant row per other member inside it. Spawn it only with the exact Agent call the sub-human context gives (description = the room code, prompt "room: CODE" plus a members line, run_in_background true). Never spawn it for anything else.
+description: sub-human room row: a silent background row labelled with the room code, nesting one row per member. Spawn only as told.
 model: haiku
 background: true
 color: cyan

@@ -197,3 +197,46 @@ test('hold {member} on the orch side: a cancelled row is simply dropped', async 
   w.leaveMe();
   assert.match(textOf(await a2.p), /^STOP/);
 });
+
+test('hold {room}: after JOINED the room row still reads as running while it re-calls (no second room row invited)', async () => {
+  process.env.SUB_HUMAN_HOLD_ROOM_GAP_MS = '300';
+  try {
+    // seat "erin": earlier tests' hold servers still tick for "alice" and share SUB_HUMAN_HOME lookups
+    const w = setup(['orch', 'erin', 'bob'], 'erin');
+    const me = { code: w.code, name: 'erin', role: 'member' };
+    const r1 = w.call({ room: w.code });
+    w.call({ member: 'bob' });
+    await sleep(40);
+    assert.equal(rows.readHolds(w.code, 'erin').room, true);
+    w.join('carol');
+    assert.equal(textOf(await r1.p), 'JOINED carol');
+    const h = rows.readHolds(w.code, 'erin');
+    assert.equal(h.room, true, 'between the return and the re-call');
+    assert.match(rows.joinNote(me, 'carol'), /your room row adds carol by itself; make NO Agent call/);
+    assert.deepEqual(rows.rowsNeeded(w.code, me, { held: h }), []);
+    w.call({ member: 'carol' });
+    await sleep(350);
+    assert.equal(rows.readHolds(w.code, 'erin').room, false, 'never re-called within the gap: not running');
+    const r2 = w.call({ room: w.code });
+    assert.ok(await pending(r2.p, 40));
+    assert.equal(rows.readHolds(w.code, 'erin').room, true);
+    w.cancel(r2.id);
+    assert.equal(rows.readHolds(w.code, 'erin').room, false, 'an Esc-killed room row is not running');
+  } finally { delete process.env.SUB_HUMAN_HOLD_ROOM_GAP_MS; }
+});
+
+test('hold: every progress line ends with the read-only hint and stays within 200 chars + hint', async () => {
+  const w = setup(['orch', 'alice', 'bob'], 'alice');
+  const r = w.call({ room: w.code });
+  w.call({ member: 'bob' });
+  await sleep(30);
+  w.add('bob', 'say', { text: 'y'.repeat(500) });
+  await sleep(200);
+  assert.ok(w.progress.length > 0);
+  for (const p of w.progress) {
+    assert.ok(p.message.endsWith(hold.HINT), p.message);
+    assert.ok(Array.from(p.message).length <= 200 + hold.HINT.length);
+  }
+  w.leaveMe();
+  await r.p;
+});

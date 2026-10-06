@@ -12,7 +12,6 @@ const PLUGIN_ROOT = path.join(__dirname, '..');
 const LIB = path.join(PLUGIN_ROOT, 'lib');
 const identity = require(path.join(LIB, 'identity.js'));
 const room = require(path.join(LIB, 'room.js'));
-const plan = require(path.join(LIB, 'plan.js'));
 
 const CAP = 9500; // the CLI caps SessionStart / prompt context at 10k
 
@@ -95,22 +94,39 @@ function writeState(me, key, value) {
 }
 function clearState(me, key) { try { fs.unlinkSync(statePath(me, key)); } catch { /* absent */ } }
 
-// ---------- role text and the context block the join / restore hooks inject ----------
-function roleText(role) {
-  const root = process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT;
-  const f = path.join(root, 'skills', 'sub-human', role === 'orch' ? 'orchestrator.md' : 'member.md');
-  try { return fs.readFileSync(f, 'utf8').trim(); } catch { return ''; }
+// ---------- the mechanics block the join / restore hooks inject (<= BLOCK_MAX chars with 5 members) ----------
+const BLOCK_MAX = 900;
+const TEMPLATE_FILES = { member: 'member.md', orch: 'orchestrator.md' };
+/** Used only when a role file is missing or has no {CODE} placeholder. */
+const DEFAULT_TEMPLATES = {
+  member: 'SUB-HUMAN: you are {NAME}\'s Claude in room {CODE} (with {OTHERS}). {NAME} types here.\n'
+    + 'Room lines are exact: `#12 bob [human]` is bob\'s words, `[claude]` a Claude\'s. Quote exactly; cite #id.\n'
+    + 'Reach a session now: SendMessage to {ADDR_EXAMPLE}. Only a person\'s own card records agreement.',
+  orch: 'SUB-HUMAN: you are the headless helper of room {CODE} (members: {OTHERS}). Nobody types here.\n'
+    + 'Reach a member now: SendMessage to {ADDR_EXAMPLE}. To facilitate: read {PLUGIN}/skills/sub-human/facilitate.md.',
+};
+
+const pluginRoot = () => process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT;
+
+/** D's template for the role (skills/sub-human/member.md | orchestrator.md), with placeholders unfilled. */
+function template(role) {
+  const r = role === 'orch' ? 'orch' : 'member';
+  let t = '';
+  try { t = fs.readFileSync(path.join(pluginRoot(), 'skills', 'sub-human', TEMPLATE_FILES[r]), 'utf8').trim(); } catch { /* default */ }
+  return t.includes('{CODE}') ? t : DEFAULT_TEMPLATES[r];
 }
 
-function roster(code) {
-  const ms = members(code);
-  if (!ms.length) return '(nobody yet)';
-  return ms.map(m => `- ${m.name}${m.role === 'orch' ? ' (orchestrator)' : ''}${hasLeft(m) ? ' (left)' : ''}`).join('\n');
+/** The placeholder values: {NAME} {CODE} {OTHERS} {ADDR_EXAMPLE} {PLUGIN}. */
+function fillVars(me, ms = members(me.code)) {
+  const live = ms.filter(m => !hasLeft(m) && m.name !== me.name);
+  const humans = live.filter(m => m.role !== 'orch').map(m => m.name);
+  const others = me.role === 'orch' ? humans : [...humans, 'orch'];
+  const ex = humans[0] || (me.role === 'orch' ? 'NAME' : 'orch');
+  return { NAME: me.name, CODE: me.code, OTHERS: others.length ? others.join(', ') : 'nobody yet', ADDR_EXAMPLE: identity.address(ex, me.code), PLUGIN: pluginRoot() };
 }
+const fill = (t, vars) => t.replace(/\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/g, (_, k) => vars[k]);
 
-function safeDigest() {
-  try { return String(room.digest() || ''); } catch (e) { return `(digest unavailable: ${e.message})`; }
-}
+const roleText = (role, me) => (me ? fill(template(role), fillVars(me)) : template(role));
 
 function clip(s, n = CAP) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 
@@ -122,40 +138,49 @@ function clip(s, n = CAP) { return s.length > n ? s.slice(0, n - 1) + '…' : s;
 function rowCalls(me) {
   try {
     const rows = require(path.join(LIB, 'rows.js'));
-    const members = identity.readMembers(me.code);
+    const ms = identity.readMembers(me.code);
     const held = rows.readHolds(me.code, me.name);
-    const only = held ? rows.rowsNeeded(me.code, me, { members, held }) : null;
-    return String(rows.rowCalls(me, members, { only }) || '').trim();
+    const only = held ? rows.rowsNeeded(me.code, me, { members: ms, held }) : null;
+    return String(rows.rowCalls(me, ms, { only }) || '').trim();
   } catch (e) {
     process.stderr.write(`sub-human: rows unavailable: ${e && e.message}\n`);
     return '';
   }
 }
 
-/** The seat as a session title: "⬡ marmot-2509 · alice". */
-const seatTitle = me => `⬡ ${me.code} · ${me.name}`;
+/**
+ * rowCalls() cut to its Agent(...) lines when the full text would overflow the block. Several participant
+ * calls (the orch) become one call pattern plus the names, so the block stays inside the budget with 5 members.
+ */
+function compactRows(text, me) {
+  const calls = text.split('\n').map(l => l.trim()).filter(l => /^Agent\(\{.*\}\)$/.test(l));
+  const tail = me.role === 'orch' ? '\nOn member_joined, follow its "row:" note.' : '';
+  if (!calls.length) return `Your rows are running; make no Agent call for them.${tail}`;
+  const who = calls.map(c => /subagent_type: "sub-human:participant", description: "([^"]+)"/.exec(c)).filter(Boolean).map(m => m[1]);
+  if (who.length > 1 && who.length === calls.length) {
+    const pattern = calls[0].split(`"${who[0]}"`).join('"NAME"').split(` ${who[0]}"`).join(' NAME"');
+    return `Make one Agent call per name, all in one message, now; write nothing about them:\n${pattern}\nNAME = ${who.join(', ')}${tail}`;
+  }
+  return `Make ${calls.length === 1 ? 'this Agent call' : 'these Agent calls, in one message,'} now, exactly as written; write nothing about it:\n${calls.join('\n')}${tail}`;
+}
+
+/** The seat as a session title: its native address "alice.vole-8126" (SendMessage / ListAgents reach it by it). */
+const seatTitle = me => identity.address(me.name, me.code);
 
 /**
- * The context the join / restore hooks inject: head, who you are, role text, ROWS (rowCalls), roster,
- * digest. The ROWS section and the roster survive the cap; the role text and then the digest are clipped.
+ * The context the join / restore hooks inject: D's template filled for this seat, then ROWS (rowCalls, cut
+ * to the bare calls when the whole block would pass BLOCK_MAX). lead (e.g. "restored after clear") is a
+ * short last line. No roster or digest: others' words arrive by the monitor and the per-prompt digest.
  */
 function contextBlock(me, lead, { rowsLead = '', rowsText = null } = {}) {
-  const role = me.role === 'orch' ? 'orch' : 'member';
-  const who = role === 'orch'
-    ? `You are the ORCHESTRATOR of sub-human room ${me.code}. Members join with: /sub-human NAME (or /sub-human NAME ${me.code})`
-    : `You are ${me.name}'s Claude in sub-human room ${me.code}. Your human is ${me.name}.`;
-  const head = `SUB-HUMAN role=${role} name=${me.name} room=${me.code}${lead ? ` (${lead})` : ''}`;
-  const calls = rowsText == null ? rowCalls(me) : '';
-  const rowsPart = rowsText != null ? `ROWS\n${rowsText}` : calls ? `ROWS\n${rowsLead}${calls}` : '';
-  const rosterPart = `ROSTER\n${roster(me.code)}`;
-  const text = roleText(role);
-  const fixed = [head, who, rowsPart, rosterPart].join('\n\n').length + 8;
-  const parts = [head, who];
-  if (text) parts.push(clip(text, Math.max(500, CAP - fixed - 300)));
-  if (rowsPart) parts.push(rowsPart);
-  parts.push(rosterPart);
-  parts.push(`DIGEST\n${safeDigest()}`);
-  return clip(parts.join('\n\n'));
+  const text = roleText(me.role, me);
+  const tail = lead ? `\n(${lead})` : '';
+  let rows = rowsText != null ? rowsText : rowCalls(me);
+  if (rows && rowsText == null) {
+    const full = `${rowsLead}${rows}`;
+    rows = `${text}\n\nROWS\n${full}${tail}`.length <= BLOCK_MAX ? full : compactRows(rows, me);
+  }
+  return clip(`${text}${rows ? `\n\nROWS\n${rows}` : ''}${tail}`);
 }
 
 // ---------- paths ----------
@@ -175,10 +200,10 @@ function isUnder(p, dir, base = process.cwd()) {
 const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
 
 module.exports = {
-  identity, room, plan, PLUGIN_ROOT, CAP,
+  identity, room, PLUGIN_ROOT, CAP, BLOCK_MAX,
   readInput, out, pre, deny, context, run, names,
   members, hasLeft, activeMembers, whoami, presence,
   memberDir, readState, writeState, clearState,
-  roleText, roster, safeDigest, clip, rowCalls, seatTitle, contextBlock,
+  template, fillVars, roleText, clip, rowCalls, compactRows, seatTitle, contextBlock,
   isUnder, realish, stamp,
 };

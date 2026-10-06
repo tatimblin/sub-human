@@ -17,7 +17,6 @@ const HOOKS = path.join(PLUGIN, 'hooks');
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const identity = require(path.join(PLUGIN, 'lib', 'identity.js'));
 const room = require(path.join(PLUGIN, 'lib', 'room.js'));
-const plan = require(path.join(PLUGIN, 'lib', 'plan.js'));
 
 const fixture = name => JSON.parse(fs.readFileSync(path.join(FIXTURES, name + '.json'), 'utf8'));
 
@@ -85,23 +84,14 @@ class World {
 
   entries() { return this.lib(() => room.readAll()); }
   append(entry, opts) { return this.lib(() => room.append(entry, opts)); }
-  sign(name, hash, kind = 'signoff') { return this.append({ kind, text: kind, plan_hash: hash }, { via: 'human', from: name }); }
   members() { return this.lib(() => identity.readMembers(this.code)); }
   memberDir(name) { return path.join(this.home, 'rooms', this.code, 'members', name); }
-
-  /** Publish a plan the way the orch gate does (store + plan_rev). */
-  publish(text, approvers) {
-    return this.lib(() => {
-      const h = plan.storeCanonical(this.code, Buffer.from(text));
-      room.append({ kind: 'plan_rev', text: `plan ${h}`, plan_hash: h, approvers }, { via: 'system', from: 'orch', system: true });
-      return h;
-    });
-  }
 
   /** Run hook `name` with stdin `input`, as identity `as` (sets CLAUDE_PID and session_id). */
   hook(name, input, { as, env = {}, session = true } = {}) {
     const inp = { ...input, cwd: this.cwd };
-    const e = baseEnv({ SUB_HUMAN_HOME: this.home, HOME: this.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, ...env });
+    // Never launch a real orch: `claude` is /usr/bin/false unless a test passes a stub (SUB_HUMAN_CLAUDE).
+    const e = baseEnv({ SUB_HUMAN_HOME: this.home, HOME: this.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0', ...env });
     if (as) {
       e.CLAUDE_PID = String(this.pid[as]);
       if (session) inp.session_id = this.sid[as];
@@ -126,6 +116,6 @@ const roomPlan = (code, approvers, body = '# Plan\n\n1. add pagination\n', appro
   `---\nsub-human: ${JSON.stringify({ room: code, approval, approvers })}\n---\n${body}`;
 
 module.exports = {
-  PLUGIN, HOOKS, identity, room, plan, fixture, sleeper, baseEnv, withHome, sid, World,
+  PLUGIN, HOOKS, identity, room, fixture, sleeper, baseEnv, withHome, sid, World,
   hso, decision, reason, ctx, roomPlan,
 };

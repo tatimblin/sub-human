@@ -1,6 +1,6 @@
 ---
 name: participant
-description: sub-human participant row. A silent background row showing one room member in the agent panel. Spawn it only with the exact Agent call the sub-human context gives (description = the member's name, prompt "member: NAME", run_in_background true). Never spawn it for anything else.
+description: sub-human participant row: a silent background row showing one room member. Spawn only with the exact call given.
 model: haiku
 background: true
 color: cyan

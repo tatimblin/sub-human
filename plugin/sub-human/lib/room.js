@@ -17,31 +17,37 @@
  *   readAfter(seq, filterFn?) -> Entry[]
  *   lastId() -> int
  *   follow(afterSeq, onEntry, {intervalMs}) -> stop()   polls the log file bound at call time
- *   normalize(entry)                         legacy display mapping (concern -> objection, agree -> signoff)
+ *   normalize(entry)                         legacy display mapping (concern -> objection, agree -> signoff,
+ *                                            plan_rev -> proposal {hash}, plan_hash -> proposal_hash)
  *   getCursor(name), setCursor(name, n)      <roomDir>/<name>.cursor, written atomically
  *
  * Writing:
  *   append(entry, {via, from, system}) -> Entry
- *     entry = {kind, text, to?, refs?, plan_hash?, approvers?, normalized?, edit_path?}
- *     via "agent":  say proposal question objection status   (rate limit: 6 per `from` per 60 s, RoomError RATE)
- *     via "human":  say signoff objection                      (signoff and objection need plan_hash)
- *     via "system": plan_rev decision member_joined member_left retract status, and only with {system:true}
- *                   (via defaults to "system" when system:true). plan_rev and decision need plan_hash.
+ *     entry = {kind, text, to?, refs?, normalized?, edit_path?, drafted?,
+ *              hash?, approvers?, path?          (proposal: hash required)
+ *              proposal_hash?                    (signoff, human objection, decision: required)
+ *              op?, id?, subject?, detail?, evidence?, owner?, status?, req?, blockedBy?   (task_req, task)}
+ *     via "agent":  say question status proposal task_req   (rate limit: 6 per `from` per 60 s, RoomError RATE)
+ *     via "human":  say signoff objection proposal
+ *     via "system": decision member_joined member_left retract task status, and only with {system:true}
+ *                   (via defaults to "system" when system:true).
+ *     task_req / task: the caller's `id` (the task id) is stored as `task_id`, since `id` is the log id;
+ *     task_req gets `by` = from; their text defaults to a one-line summary ("claim #2 parser tests").
  *     Assigns id (monotonic, under a lockfile), at, from, via, prev (hash12 of the previous line).
  *     Throws RoomError with code INVALID | RATE | LOCK | NO_ROOM.
  *
- * Plan and decisions:
- *   currentPlan() -> {id, hash, approvers}|null      the latest plan_rev
- *   planRev(hash) -> Entry|null                      the latest plan_rev with that hash
- *   revNumber(hash) -> int|null                      1-based position of hash among the distinct plan hashes
- *   signoffMatrix(hash, approvers?) -> {hash, signed: {name: id|null}, missing, complete}
- *       approvers default to that plan_rev's. Per approver, the latest via=human signoff or objection
- *       carrying plan_hash === hash wins: an objection voids an earlier signoff.
- *   decided(hash) -> Entry|null                      the decision entry for that hash
+ * Proposals and decisions (a proposal is {hash, approvers[], path?}; answers carry proposal_hash):
+ *   proposal(hash, entries?) -> Entry|null           the latest proposal with that hash
+ *   proposals(entries?) -> Entry[]                   the latest entry per distinct hash, in log order
+ *   answers(hash, approvers?, entries?) -> {hash, signed: {name: id|null}, missing, complete}
+ *       (alias signoffMatrix) approvers default to that proposal's. Per approver, the latest via=human
+ *       signoff or objection carrying proposal_hash === hash wins: an objection voids an earlier signoff.
+ *   answered(name, hash, entries?) -> Entry|null     name's latest via=human answer on hash
+ *   decided(hash, entries?) -> Entry|null            the decision entry for that hash
  *
  * Lanes:
  *   lane(me, e, entries?) -> 'push' | 'pull' | 'none'   who a notice concerns (rules at lane() below)
- *   stateLine(me, entries?) -> "room now: plan 3fa2c1 waiting on bob · you: signed · away: carol"
+ *   stateLine(me, entries?) -> "room now: proposal 3fa2c1 waiting on bob · you: answer needed · away: carol"
  *   retractedIds(entries?) -> Set, mentions(text, name) -> bool ("@name")
  *
  * Rendering:
@@ -50,10 +56,10 @@
  *     Never a bare "…". With {entries}, a retracted entry renders as its header + "[retracted by #N]".
  *     A drafted:"agent" entry's header carries "(NAME, Claude's wording)". tailLine(e) = line(e).
  *   fmt(e, {entries}?), who(e) ("alice" | "alice's Claude" | "room"),
- *   digest() (<= 9,500 chars: members, plan + approvers + matrix, open objections/questions, decisions,
- *   last 10 human entries in full by the line() rule; retracted entries left out), validateChain() -> {ok, badAt?}
- * Constants: KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, VIAS, DIGEST_CAP, TAIL_MAX, TEXT_MAX, NAME_RE,
- *   RATE_MAX, RATE_WINDOW_MS. Error class: RoomError.
+ *   digest() (<= 9,500 chars: members, open proposals + approvers + answers, open objections/questions,
+ *   decisions, last 10 human entries in full by the line() rule; retracted entries left out), validateChain()
+ * Constants: KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, TASK_OPS, VIAS, DIGEST_CAP,
+ *   TAIL_MAX, TEXT_MAX, NAME_RE, RATE_MAX, RATE_WINDOW_MS. Error class: RoomError.
  */
 
 const fs = require('node:fs');
@@ -61,9 +67,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const identity = require('./identity.js');
 
-const AGENT_KINDS = ['say', 'proposal', 'question', 'objection', 'status'];
-const HUMAN_KINDS = ['say', 'signoff', 'objection'];
-const SYSTEM_ONLY_KINDS = ['plan_rev', 'decision', 'member_joined', 'member_left', 'retract'];
+const AGENT_KINDS = ['say', 'question', 'status', 'proposal', 'task_req'];
+const HUMAN_KINDS = ['say', 'signoff', 'objection', 'proposal'];
+const SYSTEM_ONLY_KINDS = ['decision', 'member_joined', 'member_left', 'retract', 'task'];
+const TASK_OPS = ['add', 'claim', 'release', 'done'];
 const SYSTEM_KINDS = [...SYSTEM_ONLY_KINDS, 'status'];
 const KINDS = [...new Set([...AGENT_KINDS, ...HUMAN_KINDS, ...SYSTEM_KINDS])];
 const KINDS_BY_VIA = { agent: AGENT_KINDS, human: HUMAN_KINDS, system: SYSTEM_KINDS };
@@ -74,8 +81,11 @@ const TEXT_MAX = 2000;
 const RATE_MAX = 6;
 const RATE_WINDOW_MS = 60_000;
 const NAME_RE = identity.NAME_RE;
-const HASH_RE = /^[0-9a-f]{12}$/;
-const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'plan_hash', 'approvers', 'normalized', 'edit_path', 'drafted']);
+const HASH_RE = /^[0-9a-f]{6,64}$/;
+const TASK_FIELDS = ['op', 'task_id', 'subject', 'detail', 'evidence', 'owner', 'status', 'req', 'blockedBy'];
+const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'hash', 'approvers', 'path', 'proposal_hash', 'normalized',
+  'edit_path', 'drafted', 'id', 'by', ...TASK_FIELDS]);
+const TASK_KINDS = ['task_req', 'task'];
 
 class RoomError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -159,6 +169,9 @@ function normalize(e) {
   const n = { ...e };
   if (n.kind === 'concern') n.kind = 'objection';
   if (n.kind === 'agree' && n.plan_hash) n.kind = 'signoff';
+  if (n.kind === 'plan_rev') { n.kind = 'proposal'; if (n.plan_hash && !n.hash) n.hash = n.plan_hash; }
+  else if (n.plan_hash && !n.proposal_hash) n.proposal_hash = n.plan_hash;
+  delete n.plan_hash;
   if (n.to == null) n.to = 'room';
   return n;
 }
@@ -172,7 +185,14 @@ function validate(entry, opts) {
     if (!ENTRY_FIELDS.has(k)) bad(`field "${k}" is not settable by callers`);
   }
   const via = opts.via || (opts.system === true ? 'system' : undefined);
-  const { kind, text, to = 'room', refs, plan_hash, approvers, normalized, edit_path, drafted } = entry;
+  const { kind, to = 'room', refs, hash, approvers, path: ppath, proposal_hash, normalized, edit_path, drafted } = entry;
+  const isTask = TASK_KINDS.includes(kind);
+  if (entry.id !== undefined && !isTask) bad('field "id" is not settable by callers');
+  if (entry.by !== undefined && !(kind === 'task_req' && entry.by === opts.from)) bad('field "by" is not settable by callers (task_req stamps it)');
+  for (const k of TASK_FIELDS) if (entry[k] !== undefined && !isTask) bad(`field "${k}" is only for task_req and task entries`);
+  const task = isTask ? taskFields(kind, entry) : null;
+  const text = entry.text === undefined && task ? taskText(kind, task) : entry.text;
+  const bareAnswer = entry.text === undefined && (kind === 'signoff' || (kind === 'objection' && via === 'human'));
   if (typeof opts.from !== 'string' || !NAME_RE.test(opts.from)) bad(`invalid from "${opts.from}"`);
   if (!VIAS.includes(via)) bad(`via must be one of ${VIAS.join(', ')}`);
   if (!KINDS.includes(kind)) bad(`unknown kind "${kind}". Use one of: ${KINDS_BY_VIA[via].join(', ')}`);
@@ -183,26 +203,68 @@ function validate(entry, opts) {
   } else if (!KINDS_BY_VIA[via].includes(kind)) {
     bad(`kind "${kind}" is not valid via ${via}. Use one of: ${KINDS_BY_VIA[via].join(', ')}`);
   }
-  if (typeof text !== 'string') bad('text must be a string');
-  if (!text.trim()) bad('text is empty');
+  if (!bareAnswer) {
+    if (typeof text !== 'string') bad('text must be a string');
+    if (!text.trim()) bad('text is empty');
+  }
   if (typeof to !== 'string' || !NAME_RE.test(to)) bad(`invalid to "${to}"`);
   if (refs !== undefined && (!Array.isArray(refs) || !refs.every(r => Number.isInteger(r) && r > 0))) {
     bad('refs must be an array of positive integers');
   }
-  if (plan_hash !== undefined && (typeof plan_hash !== 'string' || !HASH_RE.test(plan_hash))) {
-    bad('plan_hash must be 12 lowercase hex chars');
+  for (const [k, v] of [['hash', hash], ['proposal_hash', proposal_hash]]) {
+    if (v !== undefined && (typeof v !== 'string' || !HASH_RE.test(v))) bad(`${k} must be 6-64 lowercase hex chars`);
   }
   if (approvers !== undefined && (!Array.isArray(approvers) || !approvers.every(a => typeof a === 'string' && NAME_RE.test(a)))) {
     bad('approvers must be an array of names');
   }
   if (normalized !== undefined && typeof normalized !== 'boolean') bad('normalized must be a boolean');
   if (drafted !== undefined && drafted !== 'agent') bad('drafted must be "agent"');
-  if (edit_path !== undefined && (typeof edit_path !== 'string' || !edit_path || edit_path.length > 1024)) bad('invalid edit_path');
-  if (kind === 'signoff' && !plan_hash) bad('signoff requires plan_hash');
-  if (kind === 'objection' && via === 'human' && !plan_hash) bad('a human objection requires plan_hash');
-  if ((kind === 'plan_rev' || kind === 'decision') && !plan_hash) bad(`${kind} requires plan_hash`);
+  for (const [k, v] of [['edit_path', edit_path], ['path', ppath]]) {
+    if (v !== undefined && (typeof v !== 'string' || !v || v.length > 1024)) bad(`invalid ${k}`);
+  }
+  if (kind === 'proposal' && !hash) bad('proposal requires hash');
+  if (kind !== 'proposal' && (hash !== undefined || ppath !== undefined)) bad('hash and path are only for proposals');
+  if (kind === 'signoff' && !proposal_hash) bad('signoff requires proposal_hash');
+  if (kind === 'objection' && via === 'human' && !proposal_hash) bad('a human objection requires proposal_hash');
+  if (kind === 'decision' && !proposal_hash) bad('decision requires proposal_hash');
   if (kind === 'retract' && !(refs && refs.length)) bad('retract requires refs (the retracted ids)');
-  return { via, kind, text, to, refs, plan_hash, approvers, normalized, edit_path, drafted };
+  return { via, kind, text, to, refs, hash, approvers, path: ppath, proposal_hash, normalized, edit_path, drafted, task };
+}
+
+const taskIdOk = v => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(v)) || (Number.isInteger(v) && v > 0);
+const optStr = (k, v, max) => { if (v !== undefined && (typeof v !== 'string' || v.length > max)) bad(`${k} must be a string of at most ${max} chars`); };
+
+/** The task fields of a task_req / task entry, checked; the caller's `id` (the task id) becomes task_id. */
+function taskFields(kind, entry) {
+  const t = {};
+  const tid = entry.task_id !== undefined ? entry.task_id : entry.id;
+  if (tid !== undefined) { if (!taskIdOk(tid)) bad('the task id must be a positive integer or a short id string'); t.task_id = String(tid); }
+  if (entry.op !== undefined) t.op = entry.op;
+  if (kind === 'task_req') {
+    if (!TASK_OPS.includes(t.op)) bad(`task_req op must be one of: ${TASK_OPS.join(', ')}`);
+    if (t.op === 'add' && !(typeof entry.subject === 'string' && entry.subject.trim())) bad('add needs a subject');
+    if (t.op !== 'add' && t.task_id === undefined) bad(`${t.op} needs the task id`);
+    if (t.op === 'done' && !(typeof entry.evidence === 'string' && entry.evidence.trim())) bad('done needs evidence');
+  } else if (t.op !== undefined && (typeof t.op !== 'string' || !/^[a-z_]{1,20}$/.test(t.op))) bad('invalid task op');
+  optStr('subject', entry.subject, 500);
+  optStr('detail', entry.detail, 4000);
+  optStr('evidence', entry.evidence, 4000);
+  optStr('status', entry.status, 32);
+  if (entry.owner !== undefined && entry.owner !== null && !(typeof entry.owner === 'string' && NAME_RE.test(entry.owner))) bad(`invalid owner "${entry.owner}"`);
+  if (entry.req !== undefined && !(Number.isInteger(entry.req) && entry.req > 0)) bad('req must be a log id');
+  if (entry.blockedBy !== undefined && !(Array.isArray(entry.blockedBy) && entry.blockedBy.every(taskIdOk))) bad('blockedBy must be task ids');
+  for (const k of ['subject', 'detail', 'evidence', 'status', 'owner', 'req']) if (entry[k] !== undefined && entry[k] !== null) t[k] = entry[k];
+  if (entry.blockedBy !== undefined) t.blockedBy = entry.blockedBy.map(String);
+  return t;
+}
+
+/** "claim #2 parser tests" / "#2 parser tests: in_progress, owner bob": the default text of a task entry. */
+function taskText(kind, t) {
+  const id = t.task_id ? `#${t.task_id}` : '';
+  const head = [t.op, id, t.subject].filter(Boolean).join(' ');
+  if (kind === 'task_req') return head + (t.op === 'done' && t.evidence ? `; evidence: ${t.evidence}` : '');
+  const tail = [t.status, t.owner && `owner ${t.owner}`].filter(Boolean).join(', ');
+  return (head || 'task') + (tail ? `: ${tail}` : '');
 }
 
 function append(entry, opts = {}) {
@@ -233,12 +295,18 @@ function append(entry, opts = {}) {
     const prevLine = lines.length ? lines[lines.length - 1] : '';
     const e = { id: last + 1, at: new Date(now).toISOString(), from: opts.from, via: v.via, kind: v.kind, to: v.to };
     if (v.refs && v.refs.length) e.refs = v.refs;
-    if (v.plan_hash) e.plan_hash = v.plan_hash;
+    if (v.hash) e.hash = v.hash;
     if (v.approvers) e.approvers = v.approvers;
+    if (v.path) e.path = v.path;
+    if (v.proposal_hash) e.proposal_hash = v.proposal_hash;
+    if (v.task) {
+      if (v.kind === 'task_req') e.by = opts.from;
+      Object.assign(e, v.task);
+    }
     if (v.normalized !== undefined) e.normalized = v.normalized;
     if (v.edit_path) e.edit_path = v.edit_path;
     if (v.drafted) e.drafted = v.drafted;
-    e.text = v.text;
+    if (v.text !== undefined) e.text = v.text;
     e.prev = hash12(prevLine);
     const prefix = raw && !raw.endsWith('\n') ? '\n' : '';
     fs.appendFileSync(logPath(), prefix + JSON.stringify(e) + '\n');
@@ -261,33 +329,39 @@ function validateChain() {
   return { ok: true, count: lines.length };
 }
 
-// ---------- plan / decisions ----------
-function currentPlan(entries = readAll()) {
-  const p = entries.filter(e => e.kind === 'plan_rev' && e.plan_hash).at(-1);
-  return p ? { id: p.id, hash: p.plan_hash, approvers: Array.isArray(p.approvers) ? p.approvers : [] } : null;
-}
-
-function planRev(hash, entries = readAll()) {
-  return entries.filter(e => e.kind === 'plan_rev' && e.plan_hash === hash).at(-1) || null;
-}
-
-/** 1-based revision number of a plan hash: its position among the distinct hashes the room has published. */
-function revNumber(hash, entries = readAll()) {
-  const seen = [];
-  for (const e of entries) if (e.kind === 'plan_rev' && e.plan_hash && !seen.includes(e.plan_hash)) seen.push(e.plan_hash);
-  const i = seen.indexOf(hash);
-  return i < 0 ? null : i + 1;
-}
-
-function signoffMatrix(hash, approvers, entries = readAll()) {
-  if (!Array.isArray(approvers)) {
-    const rev = planRev(hash, entries);
-    approvers = rev && Array.isArray(rev.approvers) ? rev.approvers : [];
+// ---------- proposals / decisions ----------
+/** The latest proposal entry (legacy plan_rev included) with that hash. */
+function proposal(hash, entries = readAll()) {
+  let p = null;
+  for (const raw of entries) {
+    if (raw.kind !== 'proposal' && raw.kind !== 'plan_rev') continue;
+    const n = normalize(raw);
+    if (n.hash === hash) p = n;
   }
+  return p;
+}
+
+/** The latest proposal per distinct hash, in log order of that latest entry. */
+function proposals(entries = readAll()) {
+  const byHash = new Map();
+  for (const raw of entries) {
+    if (raw.kind !== 'proposal' && raw.kind !== 'plan_rev') continue;
+    const n = normalize(raw);
+    if (!n.hash) continue;
+    byHash.delete(n.hash);
+    byHash.set(n.hash, n);
+  }
+  return [...byHash.values()];
+}
+
+const approversOf = p => (p && Array.isArray(p.approvers) ? p.approvers : []);
+
+function answers(hash, approvers, entries = readAll()) {
+  if (!Array.isArray(approvers)) approvers = approversOf(proposal(hash, entries));
   const signed = Object.fromEntries(approvers.map(n => [n, null]));
   for (const raw of entries) {
     const e = normalize(raw);
-    if (e.via !== 'human' || e.plan_hash !== hash || !(e.from in signed)) continue;
+    if (e.via !== 'human' || e.proposal_hash !== hash || !(e.from in signed)) continue;
     if (e.kind === 'signoff') signed[e.from] = e.id;
     else if (e.kind === 'objection' || e.kind === 'revoke') signed[e.from] = null;
   }
@@ -295,8 +369,18 @@ function signoffMatrix(hash, approvers, entries = readAll()) {
   return { hash, signed, missing, complete: !!hash && approvers.length > 0 && missing.length === 0 };
 }
 
+/** name's latest via=human signoff or objection on hash, or null. */
+function answered(name, hash, entries = readAll()) {
+  let a = null;
+  for (const raw of entries) {
+    const e = normalize(raw);
+    if (e.via === 'human' && e.from === name && e.proposal_hash === hash && (e.kind === 'signoff' || e.kind === 'objection')) a = e;
+  }
+  return a;
+}
+
 function decided(hash, entries = readAll()) {
-  return entries.filter(e => e.kind === 'decision' && e.plan_hash === hash).at(-1) || null;
+  return entries.map(normalize).filter(e => e.kind === 'decision' && e.proposal_hash === hash).at(-1) || null;
 }
 
 // ---------- rendering ----------
@@ -328,8 +412,14 @@ function header(e) {
     const r = n.refs.slice(0, 5).map(x => '#' + x).join(',');
     parts.push(`refs=${r}${n.refs.length > 5 ? ',…' : ''}`);
   }
-  if (n.plan_hash) parts.push(`plan=${n.plan_hash.slice(0, 6)}`);
+  if (n.hash) parts.push(`proposal=${n.hash}`);
+  if (n.proposal_hash) parts.push(`proposal=${n.proposal_hash}`);
   if (Array.isArray(n.approvers)) parts.push(`approvers=${n.approvers.slice(0, 8).join(',') || '-'}`);
+  if (n.kind === 'task_req' || n.kind === 'task') {
+    if (n.task_id) parts.push(`task=#${n.task_id}`);
+    if (n.owner) parts.push(`owner=${n.owner}`);
+    if (n.req) parts.push(`req=#${n.req}`);
+  }
   return parts.join(' ');
 }
 
@@ -343,6 +433,7 @@ function line(e, { full = false, entries } = {}) {
     const by = entries.find(x => x.kind === 'retract' && x.via === 'system' && (x.refs || []).includes(e.id));
     if (by) return `${header(e).slice(0, TAIL_MAX - 40)} [retracted by #${by.id}]`;
   }
+  if (e.text == null) return full ? header(e) : header(e).slice(0, TAIL_MAX);
   if (full) return `${header(e)} ${quote(e, TEXT_MAX, { exact: true })}`;
   const head = header(e).slice(0, TAIL_MAX - 3);
   let n = 200;
@@ -359,65 +450,90 @@ const tailLine = e => line(e);
 const esc = s => s.replace(/[.]/g, '\\.');
 /** "@name" anywhere in the text (case-insensitive, not part of a longer name). */
 const mentions = (text, name) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
-/** The bare name as a word ("alice takes the parser"). */
-const names = (text, name) => new RegExp(`(^|[^A-Za-z0-9_-])${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
 /** Ids retracted by a via=system `retract` entry. */
 const retractedIds = (entries = readAll()) =>
   new Set(entries.filter(e => e.kind === 'retract' && e.via === 'system').flatMap(e => e.refs || []));
 
+/** The retracted entry's own lane decides a retract's: whoever would have been woken by it hears it was forged. */
+function retractLane(me, n, entries) {
+  if (n.from === (me && me.name)) return 'push'; // its victim (the hook writes it under the victim's name)
+  if (!entries) return 'push';
+  const byId = new Map(entries.map(x => [x.id, x]));
+  return (n.refs || []).some(r => byId.has(r) && lane(me, byId.get(r)) === 'push') ? 'push' : 'none';
+}
+
+/** Whether name is in proposal p: an approver or its author. */
+const inProposal = (p, name) => !!p && (approversOf(p).includes(name) || p.from === name);
+
 /**
  * Which lane entry e takes for session me ({name, role}): 'push' (the monitor wakes me), 'pull' (the
- * "Room since your last turn" digest at my next prompt) or 'none' (never shown: my own entries, retracted ones).
- * Pass `entries` (the log as of now) to judge against current state: retractions, a plan_rev I already signed
- * or that was decided or superseded, an orch post that cites a decision, a partial sign-off (orch). Without
- * `entries` the answer is the entry-only one (push is then a superset of the judged push).
- *   everyone: a `retract` is push (its victim's Claude included); the retracted entry is none.
- *   member push: to=me or @me; a decision; a plan_rev/proposal whose approvers include me (pending);
- *     others' human words (via=human say/objection); an orch post to the room that names me and cites a
- *     decision (my assignment). Everything else is pull.
- *   orch push: everything not its own, plus its own hook-written decisions; a sign-off that leaves the
- *     matrix incomplete is pull.
+ * "Room since your last turn" digest at my next prompt) or 'none' (never shown). Pass `entries` (the log as
+ * of now) to judge against current state: retractions, a proposal I already answered or that was decided, the
+ * proposal a decision or an answer belongs to, the request a task entry applied. Without `entries` the answer
+ * is the entry-only one (push is then a superset of the judged push).
+ *   none: my own entries (hook-written system decision/task entries are not "mine"), retracted entries.
+ *   retract: push to its victim and to whoever the retracted entry would have pushed; none otherwise.
+ *   member push: others' via=human entries; to=me or @me; a proposal naming me that I have not answered
+ *     (and is not decided); a decision on a proposal I am in; a `task` assigning me (owner me) that someone
+ *     else asked for (its req is not mine). Everything else is pull.
+ *   orch push: to=orch or @orch; answers (signoff/objection) on its own proposals; decisions; task_req.
+ *     Everything else is pull (member_joined reaches it through bin/sub-human tail's row note).
  */
 function lane(me, e, entries) {
   const name = me && me.name;
   const orch = !!me && me.role === 'orch';
   const n = normalize(e);
-  if (n.kind === 'retract') return 'push'; // to everyone, its victim included (the hook writes it under the victim's name)
-  if (n.from === name) return orch && n.via === 'system' && n.kind === 'decision' ? 'push' : 'none';
+  if (n.kind === 'retract') return retractLane(me, n, entries);
+  if (n.from === name && !(n.via === 'system' && (n.kind === 'decision' || n.kind === 'task'))) return 'none';
   if (entries && retractedIds(entries).has(n.id)) return 'none';
-  if (orch) {
-    if (n.kind === 'signoff' && entries && n.plan_hash) return signoffMatrix(n.plan_hash, undefined, entries).complete ? 'push' : 'pull';
-    return 'push';
-  }
   if (n.to === name || mentions(n.text, name)) return 'push';
-  if (n.kind === 'decision') return 'push';
-  if ((n.kind === 'plan_rev' || n.kind === 'proposal') && Array.isArray(n.approvers) && n.approvers.includes(name)) {
-    if (!entries || !n.plan_hash) return 'push';
-    const stale = signoffMatrix(n.plan_hash, n.approvers, entries).signed[name] || decided(n.plan_hash, entries)
-      || (n.kind === 'plan_rev' && entries.some(x => x.kind === 'plan_rev' && x.id > n.id));
-    return stale ? 'pull' : 'push';
+  if (orch) {
+    if (n.kind === 'task_req' || n.kind === 'decision') return 'push';
+    if ((n.kind === 'signoff' || n.kind === 'objection') && n.via === 'human' && n.proposal_hash) {
+      if (!entries) return 'push';
+      const p = proposal(n.proposal_hash, entries);
+      return p && p.from === name ? 'push' : 'pull';
+    }
+    return 'pull';
   }
-  if (n.via === 'human' && (n.kind === 'say' || n.kind === 'objection')) return 'push';
-  if (n.from === 'orch' && n.via === 'agent' && n.to === 'room' && n.refs && n.refs.length && names(n.text, name)) {
-    if (!entries) return 'push';
-    const decisions = new Set(entries.filter(x => x.kind === 'decision').map(x => x.id));
-    return n.refs.some(r => decisions.has(r)) ? 'push' : 'pull';
+  if (n.kind === 'proposal' && approversOf(n).includes(name)) {
+    if (!entries || !n.hash) return 'push';
+    return answered(name, n.hash, entries) || decided(n.hash, entries) ? 'pull' : 'push';
   }
+  if (n.kind === 'decision') {
+    if (approversOf(n).includes(name) || !entries) return 'push';
+    return inProposal(proposal(n.proposal_hash, entries), name) ? 'push' : 'pull';
+  }
+  if (n.kind === 'task' && n.owner === name) {
+    if (!n.req || !entries) return 'push';
+    const req = entries.find(x => x.id === n.req);
+    return req && (req.by || req.from) === name ? 'pull' : 'push';
+  }
+  if (n.via === 'human') return 'push';
   return 'pull';
 }
 
-/** "room now: plan eaae7e decided #18 · you: signed · away: bob", computed from the log as it is now. */
+/** "room now: proposal 3fa2c1 waiting on bob · you: answer needed · away: bob", from the log as it is now. */
 function stateLine(me, entries = readAll()) {
   const parts = [];
-  const plan = currentPlan(entries);
-  if (!plan) parts.push('no plan yet');
-  else {
-    const dec = decided(plan.hash, entries);
-    const m = signoffMatrix(plan.hash, plan.approvers, entries);
-    parts.push(`plan ${plan.hash.slice(0, 6)} ${dec ? `decided #${dec.id}` : m.missing.length ? `waiting on ${m.missing.join(', ')}` : 'signed by all'}`);
-    if (me && plan.approvers.includes(me.name)) parts.push(`you: ${m.signed[me.name] ? 'signed' : dec ? 'not signed' : 'sign-off needed'}`);
+  const name = me && me.name;
+  const all = proposals(entries);
+  const open = all.filter(p => !decided(p.hash, entries));
+  const last = all.at(-1);
+  const shown = open.length ? open.slice(-3) : last ? [last] : [];
+  if (!shown.length) parts.push('no proposals');
+  for (const p of shown) {
+    const dec = decided(p.hash, entries);
+    const m = answers(p.hash, approversOf(p), entries);
+    let s = `proposal ${p.hash.slice(0, 6)} ${dec ? `decided #${dec.id}` : m.missing.length ? `waiting on ${m.missing.join(', ')}` : 'agreed by all'}`;
+    if (approversOf(p).includes(name)) {
+      const a = answered(name, p.hash, entries);
+      s += ` · you: ${a ? (a.kind === 'signoff' ? 'agreed' : 'objected') : dec ? 'not answered' : 'answer needed'}`;
+    }
+    parts.push(s);
   }
-  const away = Object.values(readMembersHere()).filter(m => m && m.left_at && m.name !== (me && me.name)).map(m => m.name);
+  if (open.length > shown.length) parts.push(`+${open.length - shown.length} more open`);
+  const away = Object.values(readMembersHere()).filter(m => m && m.left_at && m.name !== name).map(m => m.name);
   if (away.length) parts.push(`away: ${away.join(', ')}`);
   return `room now: ${parts.join(' · ')}`;
 }
@@ -425,7 +541,7 @@ function stateLine(me, entries = readAll()) {
 /** Full text for read(). With `entries`, a retracted entry says so (its text stays, for the record). */
 function fmt(e, { entries } = {}) {
   const by = entries && entries.find(x => x.kind === 'retract' && x.via === 'system' && (x.refs || []).includes(e.id));
-  return `[${header(e)} ${String(e.at || '').slice(11, 19)}]${by ? ` [retracted by #${by.id}: ${oneLine(by.text)}]` : ''}\n${e.text}`;
+  return `[${header(e)} ${String(e.at || '').slice(11, 19)}]${by ? ` [retracted by #${by.id}: ${oneLine(by.text)}]` : ''}\n${e.text ?? `(${e.kind}, no notes)`}`;
 }
 
 function readMembersHere() {
@@ -442,15 +558,20 @@ function digestSections(entries = readAll()) {
     return { text: `  ${m.name} (${m.role})${m.left_at ? ' LEFT' : ''} last post ${last ? `#${last.id} ${String(last.at).slice(11, 19)}` : '-'}` };
   });
 
-  const plan = currentPlan(entries);
   const planLines = [];
-  if (plan) {
-    const m = signoffMatrix(plan.hash, plan.approvers, entries);
-    const dec = decided(plan.hash, entries);
-    planLines.push({ text: `  plan=${plan.hash} (#${plan.id}) approvers: ${plan.approvers.join(' ') || '(none)'}${dec ? ` DECIDED #${dec.id}` : ''}` });
-    for (const n of plan.approvers) planLines.push({ text: `  ${m.signed[n] ? '✔' : '–'} ${n}${m.signed[n] ? ` #${m.signed[n]}` : ''}` });
+  const props = proposals(entries);
+  const undecided = props.filter(p => !decided(p.hash, entries));
+  for (const p of undecided.length ? undecided : props.slice(-1)) {
+    const m = answers(p.hash, approversOf(p), entries);
+    const dec = decided(p.hash, entries);
+    planLines.push({ text: `  proposal=${p.hash} (#${p.id} by ${who(p)}${p.path ? `, ${p.path}` : ''}) approvers: ${approversOf(p).join(' ') || '(none)'}${dec ? ` DECIDED #${dec.id}` : ''}` });
+    for (const n of approversOf(p)) {
+      const a = answered(n, p.hash, entries);
+      planLines.push({ text: `  ${m.signed[n] ? '✔' : a ? '✗' : '–'} ${n}${a ? ` #${a.id}` : ''}` });
+    }
     if (!dec) planLines.push({ text: `  waiting on: ${m.missing.join(', ') || '(nobody)'}` });
-  } else planLines.push({ text: '  (no plan yet)' });
+  }
+  if (!planLines.length) planLines.push({ text: '  (no proposals)' });
 
   const closedBy = new Set();
   for (const e of entries) {
@@ -458,15 +579,15 @@ function digestSections(entries = readAll()) {
   }
   const open = entries.map(normalize)
     .filter(e => (e.kind === 'objection' || e.kind === 'question') && !closedBy.has(e.id))
-    .map(e => ({ id: e.id, text: `  #${e.id} ${who(e)} ${e.kind}${e.plan_hash ? ` plan=${e.plan_hash.slice(0, 6)}` : ''}: ${quote(e, 120)}` }));
-  const decisions = entries.filter(e => e.kind === 'decision')
-    .map(e => ({ id: e.id, text: `  #${e.id} plan=${e.plan_hash || '-'}: ${quote(e, 120)}` }));
+    .map(e => ({ id: e.id, text: `  #${e.id} ${who(e)} ${e.kind}${e.proposal_hash ? ` proposal=${e.proposal_hash}` : ''}: ${e.text == null ? '(no notes)' : quote(e, 120)}` }));
+  const decisions = entries.map(normalize).filter(e => e.kind === 'decision')
+    .map(e => ({ id: e.id, text: `  #${e.id} proposal=${e.proposal_hash || '-'}: ${quote(e, 120)}` }));
   const human = entries.filter(e => e.via === 'human').slice(-10)
-    .map(e => ({ id: e.id, text: `  #${e.id} ${e.from}${e.drafted === 'agent' ? ` (${e.from}, Claude's wording)` : ''} ${e.kind}: ${quote(e, TEXT_MAX, { exact: true })}` }));
+    .map(e => ({ id: e.id, text: `  #${e.id} ${e.from}${e.drafted === 'agent' ? ` (${e.from}, Claude's wording)` : ''} ${e.kind}: ${e.text == null ? '(no notes)' : quote(e, TEXT_MAX, { exact: true })}` }));
 
   return [
     { title: `members of ${code() || 'this room'}`, lines: memberLines },
-    { title: 'current plan and sign-offs', lines: planLines },
+    { title: 'open proposals and answers', lines: planLines },
     { title: 'open objections and questions', lines: open },
     { title: 'decisions', lines: decisions },
     { title: 'last 10 human entries', lines: human },
@@ -519,12 +640,12 @@ const setCursor = (name, n) => {
 };
 
 module.exports = {
-  KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, VIAS, DIGEST_CAP, TAIL_MAX, TEXT_MAX, NAME_RE, RATE_MAX, RATE_WINDOW_MS,
+  KINDS, AGENT_KINDS, HUMAN_KINDS, SYSTEM_KINDS, SYSTEM_ONLY_KINDS, TASK_OPS, VIAS, DIGEST_CAP, TAIL_MAX, TEXT_MAX, NAME_RE, RATE_MAX, RATE_WINDOW_MS,
   RoomError,
   bind, code, dir, logPath, plansDir,
   readAll, readById, readAfter, lastId, follow, normalize,
   append, validateChain,
-  hash12, currentPlan, planRev, revNumber, signoffMatrix, decided,
+  hash12, proposal, proposals, answers, signoffMatrix: answers, answered, decided,
   line, tailLine, lane, stateLine, retractedIds, mentions, fmt, who, digestSections, digest,
   getCursor, setCursor,
 };

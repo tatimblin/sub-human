@@ -72,83 +72,106 @@ test('digest: human entries carry full text up to 2,000 chars, then the cut mark
   assert.ok(!/…"/.test(d));
 });
 
-test('lane: member push/pull/none table', () => {
+const prop = (from, hash, approvers, via = 'agent') => room.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via, from });
+const answer = (from, kind, hash, extra = {}) => room.append({ kind, proposal_hash: hash, ...extra }, { via: 'human', from });
+const taskReq = (from, op, extra = {}) => room.append({ kind: 'task_req', op, ...extra }, { via: 'agent', from });
+const task = (extra = {}) => room.append({ kind: 'task', op: 'update', ...extra }, { via: 'system', from: 'orch', system: true });
+
+test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)', () => {
   fresh();
   const L = (e, es) => room.lane(ALICE, e, es);
   const own = human('alice', 'say');                                       // #1
-  const words = human('bob', 'say');                                       // #2
-  const chatter = agent('bob', 'proposal');                                // #3
+  const words = human('bob', 'say');                                       // #2 others' human words
+  const chatter = agent('bob', 'status');                                  // #3
   const toMe = agent('bob', 'question', { to: 'alice' });                  // #4
   const at = agent('carol', 'say', { text: 'ping @Alice, and @alicex' }); // #5
   const atOther = agent('carol', 'say', { text: 'ping @alicex' });         // #6
-  const orchRoom = agent('orch', 'say', { text: 'converging now' });       // #7
-  const rev1 = sys('plan_rev', { plan_hash: H1, approvers: ['alice', 'bob'] }); // #8
-  const revBob = sys('plan_rev', { plan_hash: H2, approvers: ['bob'] });   // #9
-  const gate = sys('status', { text: 'plan waiting for sign-off from alice' }); // #10
-  const join = sys('member_joined', {}, 'carol');                          // #11
-  const sign = human('bob', 'signoff', { plan_hash: H1 });                 // #12
-  const obj = human('bob', 'objection', { plan_hash: H1 });                // #13
-  const dec = sys('decision', { plan_hash: H2 });                          // #14
-  const assign = agent('orch', 'say', { text: 'alice owns the parser', refs: [14] }); // #15
-  const notAssign = agent('orch', 'say', { text: 'alice owns the parser?', refs: [2] }); // #16
-  const ownJoin = sys('member_joined', {}, 'alice');                       // #17
-  const retract = sys('retract', { text: 'forged', refs: [2] }, 'alice');  // #18: written under the victim's name
-  const prop = agent('orch', 'proposal', { approvers: ['alice'] });        // #19
+  const orchRoom = agent('orch', 'say', { text: 'alice owns the parser' }); // #7 names me, no @: pull
+  const p1 = prop('orch', H1, ['alice', 'bob']);                           // #8 names me, pending
+  const pBob = prop('orch', H2, ['bob']);                                  // #9 not mine
+  const join = sys('member_joined', {}, 'carol');                          // #10
+  const sign = answer('bob', 'signoff', H1);                               // #11 others' human answer: push
+  const dec2 = sys('decision', { proposal_hash: H2 }, 'room');             // #12 a proposal I am not in
+  const dec1 = sys('decision', { proposal_hash: H1 }, 'room');             // #13 mine
+  const ownJoin = sys('member_joined', {}, 'alice');                       // #14
+  const retract = sys('retract', { text: 'forged', refs: [2] }, 'alice');  // #15 written under the victim's name
+  const req = taskReq('bob', 'add', { subject: 'parser tests', owner: 'alice' }); // #16 bob asks for alice
+  const assigned = task({ task_id: 2, subject: 'parser tests', owner: 'alice', status: 'pending', req: 16 }); // #17 push
+  const myReq = taskReq('alice', 'claim', { id: 3 });                      // #18 own: none
+  const claimed = task({ task_id: 3, owner: 'alice', status: 'in_progress', req: 18 }); // #19 I asked: pull
+  const bobsTask = task({ task_id: 4, owner: 'bob', status: 'in_progress', req: 16 }); // #20 pull
+  const ownAnswer = answer('alice', 'objection', H1, { text: 'clamp, do not 400' }); // #21 own: none
   const want = [
     [own, 'none'], [words, 'push'], [chatter, 'pull'], [toMe, 'push'], [at, 'push'], [atOther, 'pull'], [orchRoom, 'pull'],
-    [rev1, 'push'], [revBob, 'pull'], [gate, 'pull'], [join, 'pull'], [sign, 'pull'], [obj, 'push'], [dec, 'push'],
-    [assign, 'push'], [notAssign, 'push'], [ownJoin, 'none'], [retract, 'push'], [prop, 'push'],
+    [p1, 'push'], [pBob, 'pull'], [join, 'pull'], [sign, 'push'], [dec2, 'push'], [dec1, 'push'], [ownJoin, 'none'],
+    [retract, 'push'], [req, 'pull'], [assigned, 'push'], [myReq, 'none'], [claimed, 'push'], [bobsTask, 'pull'], [ownAnswer, 'none'],
   ];
   for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
-  // Judged against the log: #2 is retracted; #8 superseded by #9; #16 cites no decision.
+  // Judged against the log: #2 retracted; #8 answered by me (#21) and decided; #12's proposal is not mine; #19 I asked for.
   const all = room.readAll();
   assert.equal(L(words, all), 'none');
-  assert.equal(L(rev1, all), 'pull');
-  assert.equal(L(notAssign, all), 'pull');
-  assert.equal(L(assign, all), 'push');
-  assert.equal(L(retract, all), 'push');
-  // A pending plan_rev drops out once I sign it, or once it is decided.
+  assert.equal(L(p1, all), 'pull');
+  assert.equal(L(dec2, all), 'pull');
+  assert.equal(L(dec1, all), 'push');
+  assert.equal(L(assigned, all), 'push');
+  assert.equal(L(claimed, all), 'pull');
+  assert.equal(L(retract, all), 'push', 'its victim hears it');
+  assert.equal(room.lane({ name: 'carol', role: 'member' }, retract, all), 'push', 'carol was pushed #2');
+  assert.equal(room.lane({ name: 'bob', role: 'member' }, retract, all), 'none', 'bob wrote #2 (it was never his push)');
+  // A pending proposal stays push until I answer it, then pull.
   fresh();
-  const r = sys('plan_rev', { plan_hash: H1, approvers: ['alice'] });
+  const r = prop('bob', H1, ['alice', 'bob'], 'human');
   assert.equal(L(r, room.readAll()), 'push');
-  human('alice', 'signoff', { plan_hash: H1 });
+  answer('alice', 'signoff', H1);
   assert.equal(L(r, room.readAll()), 'pull');
+  // The proposer hears the decision on its own proposal.
+  fresh();
+  prop('alice', H1, ['bob']);
+  const d = sys('decision', { proposal_hash: H1 }, 'room');
+  assert.equal(L(d, room.readAll()), 'push');
 });
 
-test('lane: orch sees everything but its own entries (its decisions excepted); a partial sign-off is pull', () => {
+test('lane: orch push is to/@orch, answers on its proposals, decisions, task_req; the rest is pull', () => {
   fresh();
   const L = (e, es) => room.lane(ORCH, e, es);
-  const rev = sys('plan_rev', { plan_hash: H1, approvers: ['alice', 'bob'] });
-  const mine = agent('orch', 'say');
-  const chatter = agent('alice', 'status');
-  const left = sys('member_left', {}, 'bob');
-  const s1 = human('alice', 'signoff', { plan_hash: H1 });
-  assert.equal(L(rev), 'none');
-  assert.equal(L(mine), 'none');
-  assert.equal(L(chatter), 'push');
-  assert.equal(L(left), 'push');
-  assert.equal(L(s1), 'push');
-  assert.equal(L(s1, room.readAll()), 'pull', 'bob has not signed');
-  const s2 = human('bob', 'signoff', { plan_hash: H1 });
-  assert.equal(L(s2, room.readAll()), 'push', 'completes the matrix');
-  const dec = sys('decision', { plan_hash: H1 });
-  assert.equal(L(dec), 'push', 'its own hook-written decision');
+  const mine = prop('orch', H1, ['alice', 'bob']);                        // #1 own: none
+  const theirs = prop('bob', H2, ['alice'], 'human');                      // #2 pull
+  const words = human('alice', 'say');                                     // #3 human chatter: pull
+  const atOrch = human('bob', 'say', { text: '@orch let us plan cursor paging' }); // #4 push
+  const toOrch = agent('alice', 'question', { to: 'orch' });              // #5 push
+  const chatter = agent('alice', 'status');                                // #6 pull
+  const left = sys('member_left', {}, 'bob');                              // #7 pull
+  const joined = sys('member_joined', {}, 'carol');                        // #8 pull (tail adds the row note)
+  const s1 = answer('alice', 'signoff', H1);                               // #9 answer on its proposal: push
+  const o2 = answer('alice', 'objection', H2, { text: 'no' });             // #10 answer on bob's: pull
+  const dec = sys('decision', { proposal_hash: H1 }, 'orch');              // #11 push, even written as orch
+  const req = taskReq('bob', 'add', { subject: 'parser tests' });          // #12 push
+  const t = task({ task_id: 2, owner: 'bob', status: 'pending', req: 12 }); // #13 its own mirror: pull
+  const ownPost = agent('orch', 'say');                                    // #14 none
+  const want = [[mine, 'none'], [theirs, 'pull'], [words, 'pull'], [atOrch, 'push'], [toOrch, 'push'], [chatter, 'pull'],
+    [left, 'pull'], [joined, 'pull'], [s1, 'push'], [o2, 'push'], [dec, 'push'], [req, 'push'], [t, 'pull'], [ownPost, 'none']];
+  for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
+  const all = room.readAll();
+  assert.equal(L(s1, all), 'push');
+  assert.equal(L(o2, all), 'pull', 'not its proposal');
+  assert.equal(L(req, all), 'push');
+  assert.equal(req.by, 'bob');
 });
 
-test('stateLine: plan, my sign-off, who is away', () => {
+test('stateLine: open proposals, my answer, who is away', () => {
   const code = fresh();
-  assert.equal(room.stateLine(ALICE), 'room now: no plan yet');
+  assert.equal(room.stateLine(ALICE), 'room now: no proposals');
   h.register('alice', 'member', process.pid, code);
   const bob = h.spawnSleeper();
   identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 's-b', cwd: '/tmp' });
   identity.leave(code, 'bob');
-  sys('plan_rev', { plan_hash: H1, approvers: ['alice', 'bob'] });
-  assert.match(room.stateLine(ALICE), /^room now: plan aaaaaa waiting on alice, bob · you: sign-off needed/);
-  human('alice', 'signoff', { plan_hash: H1 });
-  assert.match(room.stateLine(ALICE), /^room now: plan aaaaaa waiting on bob · you: signed/);
-  human('bob', 'signoff', { plan_hash: H1 });
-  const d = sys('decision', { plan_hash: H1 });
-  assert.equal(room.stateLine(ALICE), `room now: plan aaaaaa decided #${d.id} · you: signed · away: bob`);
+  prop('orch', H1, ['alice', 'bob']);
+  assert.match(room.stateLine(ALICE), /^room now: proposal aaaaaa waiting on alice, bob · you: answer needed/);
+  answer('alice', 'signoff', H1);
+  assert.match(room.stateLine(ALICE), /^room now: proposal aaaaaa waiting on bob · you: agreed/);
+  answer('bob', 'objection', H1, { text: 'no' });
+  const d = sys('decision', { proposal_hash: H1 }, 'room');
+  assert.equal(room.stateLine(ALICE), `room now: proposal aaaaaa decided #${d.id} · you: agreed · away: bob`);
   assert.doesNotMatch(room.stateLine({ name: 'carol', role: 'member' }), /you:/);
   bob.kill();
 });

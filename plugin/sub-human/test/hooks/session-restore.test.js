@@ -8,35 +8,33 @@ const { World, fixture, identity, ctx, hso, roomPlan } = require('./helpers.js')
 const NEW_SID = '8cea5671-97a8-49c2-bcdb-4a62d51b6a18';
 const hasRows = () => { try { require('../../lib/rows.js'); return true; } catch { return false; } };
 
-test('session-restore: after /clear, rebinds the new session id by CLAUDE_PID and re-injects role + digest', () => {
+test('session-restore: after /clear, rebinds the new session id by CLAUDE_PID and re-injects the mechanics block', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
   w.append({ kind: 'say', text: 'hello room' }, { via: 'human', from: 'alice' });
   const r = w.hook('session-restore', { ...fixture('session-start-clear'), session_id: NEW_SID }, { as: 'alice', session: false });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(hso(r).hookEventName, 'SessionStart');
   const c = ctx(r);
-  assert.ok(c.startsWith(`SUB-HUMAN role=member name=alice room=${w.code} (restored after clear)`), c.slice(0, 100));
-  const memberMd = fs.readFileSync(path.join(__dirname, '..', '..', 'skills', 'sub-human', 'member.md'), 'utf8').trim();
-  assert.ok(c.includes(memberMd.slice(0, 200)));
-  assert.match(c, /ROOM DIGEST/);
-  assert.match(c, /hello room/);
-  assert.ok(c.length <= 9500);
+  assert.ok(c.startsWith(`SUB-HUMAN: you are alice's Claude in room ${w.code}`), c.slice(0, 100));
+  assert.doesNotMatch(c, /\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/);
+  assert.match(c, /\(restored after clear\)$/);
+  assert.ok(c.length <= 1200, `block ${c.length}`);
+  assert.equal(hso(r).sessionTitle, `alice.${w.code}`, 'the native address');
   assert.equal(w.members().alice.session_id, NEW_SID);
-  assert.deepEqual(w.lib(() => identity.resolveBySession(NEW_SID)), { code: w.code, name: 'alice', role: 'member', session_id: NEW_SID, pid: process.pid });
+  assert.deepEqual(w.lib(() => identity.resolveBySession(NEW_SID)), { code: w.code, name: 'alice', role: 'member', session_id: NEW_SID, pid: process.pid, address: `alice.${w.code}` });
   assert.equal(w.lib(() => identity.resolveBySession(w.sid.alice)), null, 'old session id dropped');
 });
 
-test('session-restore: the digest is capped; ROWS asks to re-create rows only if missing after clear/compact', () => {
+test('session-restore: ROWS asks to re-create rows only if missing after clear/compact; the orch gets its block', () => {
   const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
-  for (let i = 0; i < 40; i++) w.append({ kind: 'say', text: 'y'.repeat(400) + i }, { via: 'human', from: 'alice' });
   const r = w.hook('session-restore', { ...fixture('session-start-clear'), session_id: NEW_SID }, { as: 'alice', session: false });
   const c = ctx(r);
-  assert.ok(c.length <= 9500);
-  assert.match(c, /ROSTER\n/);
-  if (hasRows()) assert.match(c, /ROWS\nYour rows are not running[^]*subagent_type: "sub-human:room"/, 'no live hold: the room row is listed');
-  assert.equal(hso(r).sessionTitle, `⬡ ${w.code} · alice`);
+  if (hasRows()) assert.match(c, /ROWS\n[^]*subagent_type: "sub-human:room"/, 'no live hold: the room row is listed');
   const r2 = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'alice' });
   assert.match(ctx(r2), /restored after compact/);
+  const ro = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'orch' });
+  assert.ok(ctx(ro).startsWith(`SUB-HUMAN: you are the headless helper of room ${w.code}`), ctx(ro).slice(0, 80));
+  assert.equal(hso(ro).sessionTitle, `orch.${w.code}`);
 });
 
 test('session-restore: --resume after the session ended rejoins the seat with a new pid and asks to re-create rows', () => {
@@ -50,8 +48,8 @@ test('session-restore: --resume after the session ended rejoins the seat with a 
   const r = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'resume', session_id: oldSid }, { as: 'alice', session: false });
   assert.equal(r.code, 0, r.stderr);
   const c = ctx(r);
-  assert.ok(c.startsWith(`SUB-HUMAN role=member name=alice room=${w.code} (restored after resume)`), c.slice(0, 100));
-  if (hasRows()) assert.match(c, /ROWS\nYour rows are not running \(they do not survive --resume\)\. Create them now/);
+  assert.ok(c.startsWith(`SUB-HUMAN: you are alice's Claude in room ${w.code}`) && c.endsWith('(restored after resume)'), c.slice(0, 100));
+  if (hasRows()) assert.match(c, /ROWS\n[^]*subagent_type: "sub-human:room"/);
   const m = w.members().alice;
   assert.equal(m.left_at, undefined);
   assert.equal(m.pid, process.pid);
@@ -61,11 +59,11 @@ test('session-restore: --resume after the session ended rejoins the seat with a 
   assert.equal(w.lib(() => identity.resolveByPid(process.pid)).name, 'alice');
 });
 
-test('session-restore: --resume into a closed room (orch gone) does nothing', () => {
+test('session-restore: --resume into a closing or closed room does nothing', () => {
   const w = new World({ orch: 'sleep', alice: 'sleep' });
   const oldSid = w.sid.alice;
-  w.hook('session-end', fixture('session-end'), { as: 'alice' });
-  w.lib(() => identity.leave(w.code, 'orch'));
+  w.hook('session-end', fixture('session-end'), { as: 'alice' }); // the last member: the reaper starts (grace 0 here)
+  w.lib(() => identity.setOrch(w.code, { closing: new Date().toISOString() }));
   w.pid.alice = process.pid;
   const r = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'resume', session_id: oldSid }, { as: 'alice', session: false });
   assert.equal(r.stdout, '');

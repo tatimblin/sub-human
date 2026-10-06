@@ -32,7 +32,7 @@
         ]
       },
       {
-        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__plugin_sub-human_room__.*",
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|mcp__plugin_sub-human_room__.*",
         "hooks": [
           {
             "type": "command",

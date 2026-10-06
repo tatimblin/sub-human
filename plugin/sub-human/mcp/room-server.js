@@ -9,14 +9,14 @@
  * names itself. Not joined -> every core tool returns "not in a room; run /sub-human".
  *
  * Core tools:
- *   post({kind, text, to?, refs?, plan_hash?})   kinds: say proposal question objection status; via "agent",
- *       from = the resolved member. An objection without plan_hash gets the current plan's hash.
+ *   post({kind, text, to?, refs?})   kinds: say question status; via "agent", from = the resolved member.
  *   read({ids?})   with ids: those entries in full. Without: this member's unseen entries (cursor mcp-<name>),
  *       skipping its own Claude's posts; at most 100, oldest first.
- *   plan()   {hash, rev, approvers, matrix, decided, path, plan}: the current plan, its revision number, the
- *       sign-off matrix, the decision id (or null), the canonical file path and its text.
+ *   propose({text|path, approvers?})   lib/proposal.create: stores plans/<hash>.md, appends `proposal`
+ *       {hash, approvers, path}; approvers default to the humans present. Each approver answers a consent
+ *       card (hooks/consent.js); a proposer who is also an approver is told to open the card now.
  *
- * Plug-ins: ./hold.js (rows) and ./signoff.js (sign-off form) are loaded when present; a missing or broken
+ * Plug-ins: ./hold.js (rows) and ./task.js (the room task list) are loaded when present; a missing or broken
  * one is logged and skipped. Each exports create(ctx) -> {tools, call(name, me, args, meta), stop?,
  * anonymous?}. call returns a result or a Promise of one; meta = {id, progressToken}. A plug-in's tool is
  * called with me = null (instead of the "not in a room" error) only when its name is in `anonymous`.
@@ -33,7 +33,7 @@
  *   onCancel(requestId, fn)           fn(reason) when the client cancels that tools/call (once)
  *   whoami()                          resolveByPid(process.ppid), binds room.js; me or null
  *   clientCaps()                      the client capabilities from initialize (e.g. .elicitation)
- *   room, identity, planLib           the libs
+ *   room, identity, proposal          the libs
  *   text(s, isError)                  an MCP text result
  *   log(...a)                         $SUB_HUMAN_HOME/mcp-debug.log, only when SUB_HUMAN_DEBUG=1
  * A tools/call cancelled by the client gets no reply, even if its Promise settles later.
@@ -43,10 +43,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const identity = require(path.join(__dirname, '..', 'lib', 'identity.js'));
 const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
-const planLib = require(path.join(__dirname, '..', 'lib', 'plan.js'));
+const proposal = require(path.join(__dirname, '..', 'lib', 'proposal.js'));
 
 const READ_MAX = 100;
-const PLUGINS = ['hold.js', 'signoff.js'];
+const PLUGINS = ['hold.js', 'task.js'];
+const POST_KINDS = ['say', 'question', 'status'];
 
 // ---------- transport ----------
 let closed = false;
@@ -120,54 +121,52 @@ let clientCapabilities = {};
 const ctx = {
   send, notify, request, cancelRequest, progress, onCancel, whoami,
   clientCaps: () => clientCapabilities,
-  room, identity, planLib, text, log,
+  room, identity, proposal, text, log,
 };
 
 // ---------- core tools ----------
 const CORE = [
   {
     name: 'post',
-    description: 'Post to the room as your human\'s Claude (from and via are stamped by the room; you cannot change them). kind: say | proposal | question | objection | status. Cite human words by id in refs; never re-type them. An objection gets the current plan hash if you omit plan_hash. At most 6 posts a minute.',
+    description: 'A note to the room, read on others\' next turn. refs: cited #ids.',
     inputSchema: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: room.AGENT_KINDS },
-        text: { type: 'string', description: '1-4 sentences, plus file paths.' },
-        to: { type: 'string', description: 'A member name; default "room".' },
-        refs: { type: 'array', items: { type: 'integer', minimum: 1 }, description: 'Entry ids this post acts on.' },
-        plan_hash: { type: 'string', pattern: '^[0-9a-f]{12}$' },
+        kind: { type: 'string', enum: POST_KINDS },
+        text: { type: 'string' },
+        to: { type: 'string' },
+        refs: { type: 'array', items: { type: 'integer' } },
       },
       required: ['kind', 'text'],
     },
   },
   {
     name: 'read',
-    description: 'Read the room. With ids: those entries in full. Without: entries you have not seen yet. Returns a JSON array.',
-    inputSchema: {
-      type: 'object',
-      properties: { ids: { type: 'array', items: { type: 'integer', minimum: 1 } } },
-    },
+    description: 'Entries by ids, else unseen ones.',
+    inputSchema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'integer' } } } },
   },
   {
-    name: 'plan',
-    description: 'The room\'s current plan: {hash, rev, approvers, matrix, decided, path, plan}. `plan` is the canonical plan text and `path` its file. Sign-off happens in your human\'s own form, never through you.',
-    inputSchema: { type: 'object', properties: {} },
+    name: 'propose',
+    description: 'Ask people to agree to text or a file. Each answers a card in their own terminal. approvers: default all humans.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string' },
+        path: { type: 'string' },
+        approvers: { type: 'array', items: { type: 'string' } },
+      },
+    },
   },
 ];
 
 function post(me, args) {
-  const { kind, text: body, to, refs, plan_hash } = args;
-  if (!room.AGENT_KINDS.includes(kind)) {
-    return text(`refused: kind must be one of ${room.AGENT_KINDS.join(', ')}. Sign-offs and human objections come only from your human, through their sign-off form.`, true);
+  const { kind, text: body, to, refs } = args;
+  if (!POST_KINDS.includes(kind)) {
+    return text(`refused: kind must be one of ${POST_KINDS.join(', ')}. To ask for agreement, use propose; only people answer it, on their own card.`, true);
   }
   const entry = { kind, text: body };
   if (to !== undefined) entry.to = to;
   if (refs !== undefined) entry.refs = refs;
-  if (plan_hash !== undefined) entry.plan_hash = plan_hash;
-  if (kind === 'objection' && !entry.plan_hash) {
-    const p = room.currentPlan();
-    if (p) entry.plan_hash = p.hash;
-  }
   return json(room.append(entry, { via: 'agent', from: me.name }));
 }
 
@@ -184,21 +183,16 @@ function read(me, args) {
   return json(unseen.length > READ_MAX ? unseen.slice(-READ_MAX) : unseen);
 }
 
-function plan(me) {
-  const entries = room.readAll();
-  const p = room.currentPlan(entries);
-  if (!p) return json({ hash: null, rev: null, approvers: [], matrix: null, decided: null, path: null, plan: null });
-  const bytes = planLib.canonical(me.code, p.hash);
-  const dec = room.decided(p.hash, entries);
-  return json({
-    hash: p.hash,
-    rev: room.revNumber(p.hash, entries),
-    approvers: p.approvers,
-    matrix: room.signoffMatrix(p.hash, p.approvers, entries),
-    decided: dec ? dec.id : null,
-    path: path.join(identity.roomDir(me.code), 'plans', `${p.hash}.md`),
-    plan: bytes ? bytes.toString('utf8') : null,
-  });
+function propose(me, args) {
+  let r;
+  try { r = proposal.create(me, args); } catch (e) {
+    if (e instanceof proposal.ProposalError) return text(`refused: ${e.message}`, true);
+    throw e;
+  }
+  const lines = [`proposal ${r.hash} ${r.again ? 'is already open' : `posted as #${r.entry.id}`}; approvers: ${r.approvers.join(', ')}. Text: ${r.path}`];
+  lines.push('Each approver answers a card in their own terminal. Never say anyone agreed until the room records it.');
+  if (r.approvers.includes(me.name)) lines.push(`${me.name} is an approver: call AskUserQuestion now with the question "proposal ${r.hash}" so ${me.name} can answer on the card.`);
+  return text(lines.join('\n'));
 }
 
 // ---------- plug-ins ----------
@@ -254,7 +248,7 @@ function callTool(id, params) {
   if (isCore) {
     let r;
     try {
-      r = name === 'post' ? post(me, args) : name === 'read' ? read(me, args) : plan(me);
+      r = name === 'post' ? post(me, args) : name === 'read' ? read(me, args) : propose(me, args);
     } catch (e) { r = text(`refused: ${e.message}`, true); }
     return settle(id, r);
   }
@@ -284,8 +278,8 @@ function handle(msg) {
       return reply(id, {
         protocolVersion: (params && params.protocolVersion) || '2025-06-18',
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'room', version: '0.4.0' },
-        instructions: 'sub-human room tools. post as your human\'s Claude; read entries by id; plan() for the shared plan. Your human signs off in their own form; never for them.',
+        serverInfo: { name: 'room', version: '0.5.0' },
+        instructions: 'sub-human room tools. post: a note as your human\'s Claude. read: entries by id. propose: ask people to agree; each answers their own card, never through you.',
       });
     case 'notifications/initialized':
       return;

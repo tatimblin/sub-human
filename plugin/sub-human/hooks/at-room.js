@@ -33,11 +33,18 @@
 // --resume) gets the exact missing Agent calls again with every ordinary prompt or notice, until they run.
 // A row spawned in the last minute (rows/<session>.json) may not hold yet, so it is never re-listed.
 //
-// Also: marks presence "working" and sets sessionTitle to the seat ("⬡ CODE · NAME") once per session.
+// The orch takes no typed input (decision 4): in the orch's session every prompt is refused with a hint,
+// typed text and typed slash commands alike, except a peer delivery (the <cross-session-message envelope),
+// a monitor notice (<task-notification>) and the launch `/sub-human` when it is the session's first prompt.
+// Those still get the pull digest and the row calls below.
+//
+// Also: marks presence "working" and sets sessionTitle to the seat's address ("NAME.CODE", the name
+// SendMessage / ListAgents use) on the first prompt of each session id; session-restore.js sets it on restore.
+// Not for the orch, whose title is its launch name (-n orch.CODE).
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { room, identity, out, run, whoami, readState, writeState, clip, presence, seatTitle } = require('./common.js');
+const { room, identity, out, run, whoami, readState, writeState, clip, presence } = require('./common.js');
 const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
 
 const PASTE = /(?:\n\n)?<pasted_content id="?(\w+)"?>\n([\s\S]*?)\n?<\/pasted_content id="?\1"?>\n?/g;
@@ -185,13 +192,47 @@ function pullDigest(me) {
   return [PULL_HEAD, ...more, ...kept].join('\n');
 }
 
-/** sessionTitle once per session id (stored per member). */
+/** The seat's address, "alice.vole-8126": the session title that SendMessage and ListAgents address. */
+const address = me => me.address || `${me.name}.${me.code}`;
+
+/** sessionTitle once per session id (stored per member); never for the orch (its title is -n orch.CODE). */
 function titleFor(me, input) {
-  if (!input.session_id) return null;
+  if (!input.session_id || me.role === 'orch') return null;
   const t = readState(me, 'title');
   if (t && t.session_id === input.session_id) return null;
   writeState(me, 'title', { session_id: input.session_id });
-  return seatTitle(me);
+  return address(me);
+}
+
+/**
+ * lib/proposal.js reminder() for each proposal that names this member and awaits their answer (the digest's
+ * "proposal P awaits your answer"); null for the orch, on a monitor notice (its push line just said it), or none.
+ */
+function proposalReminders(me, notification) {
+  if (me.role === 'orch' || notification) return null;
+  try {
+    const proposal = require(path.join(__dirname, '..', 'lib', 'proposal.js'));
+    const ps = proposal.pendingFor(me) || [];
+    return ps.length ? ps.map(p => proposal.reminder(p, me.name)).join('\n') : null;
+  } catch { return null; }
+}
+
+// ---------- the orch takes no typed input ----------
+const LAUNCH = /^\/(?:sub-human:)?sub-human(?:\s|$)/;
+const orchHint = me => `the orch takes no typed input; use @room or ask your Claude to message ${address(me)}`;
+
+/** True when no earlier prompt of this session is in its transcript (a fresh session has none, or no file). */
+function firstPrompt(input) {
+  const es = transcriptTail(input.transcript_path);
+  return !es.some(e => e && e.type === 'user' && !e.isMeta && e.promptId && e.promptId !== input.prompt_id && !e.isSidechain);
+}
+
+/** For an orch session: null when the prompt may run (peer delivery, monitor notice, launch command), else the refusal. */
+function orchRefusal(me, input, prompt) {
+  if (/^\s*<cross-session-message\b/.test(prompt) || PEER_PREFIX.test(prompt)) return null;
+  if (prompt.startsWith('<task-notification>')) return null;
+  if (LAUNCH.test(prompt) && firstPrompt(input)) return null;
+  return orchHint(me);
 }
 
 const SPAWN_GRACE_MS = 60 * 1000;
@@ -222,6 +263,10 @@ if (process.argv[2] === '--forgery-check') {
   const slash = prompt.startsWith('/');
   const raw = notification || slash ? null : parse(prompt);
   const me = whoami(input);
+  if (me && me.role === 'orch') {
+    const refusal = orchRefusal(me, input, prompt);
+    if (refusal) return block(refusal);
+  }
   if (me) presence(me, 'working');
   const title = me ? titleFor(me, input) : null;
   const top = title ? { sessionTitle: title } : {};
@@ -230,7 +275,7 @@ if (process.argv[2] === '--forgery-check') {
     if (!me || slash) { if (title) out({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', ...top } }); return; }
     let pull = null;
     try { pull = pullDigest(me); } catch { /* best-effort */ }
-    const text = [pull, missingRowsText(me, input)].filter(Boolean).join('\n\n') || null;
+    const text = [pull, proposalReminders(me, notification), missingRowsText(me, input)].filter(Boolean).join('\n\n') || null;
     if (text || title) out({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', ...(text ? { additionalContext: clip(text) } : {}), ...top } });
     return;
   }
@@ -239,7 +284,6 @@ if (process.argv[2] === '--forgery-check') {
     return block('✗ not posted: this prompt came from another Claude session, not from you. Only your own typed @room posts as your words.', top);
   }
   if (!me) return block('✗ not posted: this session is not in a room. Join one first with /sub-human NAME [CODE].');
-  if (me.role === 'orch') return block(`✗ not posted: this is the orchestrator's session, which runs unattended. Join from another session with /sub-human NAME ${me.code} and post from there.`, top);
   const { text, normalized } = unwrap(raw);
   if (!text.trim()) return block('✗ not posted: there is nothing after @room.', top);
   const entry = { kind: 'say', text };

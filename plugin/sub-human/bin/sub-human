@@ -6,46 +6,47 @@
  * (identity.resolveSelf(): the session id env, then the nearest registered ancestor claude pid).
  *
  *   sub-human tail [ignored args...] [--max-seconds S]
- *       The plugin monitor's command. Silent until resolveSelf() finds this session's registration (checked
- *       every SUB_HUMAN_RESOLVE_MS, default 2000), then follows that room and prints the push lane
- *       (room.lane(me, e) === 'push'; the pull lane is at-room.js's per-prompt digest). It re-resolves on the
- *       same interval and switches (or goes silent) if the session's room or name changes. Resumes from the
- *       cursor tail-<name> and advances it only past entries that were flushed or dropped, so a restart
- *       loses nothing.
+ *       The plugin monitor's command (monitors.json `when: always`, so it runs in every session). Silent until
+ *       this session has a seat. While it has none it stays cheap: it looks the seat up only by
+ *       CLAUDE_CODE_SESSION_ID / CLAUDE_PID (both set for monitors; no `ps` ancestor walk, which is used only
+ *       when neither is set), every SUB_HUMAN_UNSEATED_MS (default 10000). Once seated it re-resolves every
+ *       SUB_HUMAN_RESOLVE_MS (2000), follows that room and prints the push lane (room.lane(me, e) === 'push';
+ *       the pull lane is at-room.js's per-prompt digest), switching (or going silent) if the seat changes.
+ *       Resumes from the cursor tail-<name> and advances it only past entries that were flushed or dropped,
+ *       so a restart loses nothing.
  *       Settle: entries are batched and written as ONE block (one notification, one turn) after
  *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most. The block opens with
  *       room.stateLine() ("room now: …", computed at send time), then one room.line(e, {full}) per entry;
- *       each entry is judged again against the log at send time (retracted / signed / decided / superseded
- *       entries are dropped). A member_left X is held SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time
- *       both notices are dropped, otherwise it goes out marked "· away 8s+".
- *       A member_joined line ends with lib/rows.js joinNote(): whether that member's row is already running in
- *       this session (live holds file), and the Agent call to make only when it isn't. A member is pushed
- *       another member's join only when that note asks for the room-row call.
- *       It also alerts the human (statusline/alert.js, best-effort).
+ *       each entry is judged again against the log at send time (retracted / answered / decided entries are
+ *       dropped). A member_left X is held SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time both notices
+ *       are dropped, otherwise it goes out marked "· away 8s+".
+ *       member_joined: another member's join is pushed only when lib/rows.js joinNote() says the row for it
+ *       is not running in this session (the orch's participant row, a member's room row); the line then ends
+ *       with that note and the Agent call. A join whose row runs is never pushed, so no notice invites a call
+ *       that row-guard would deny. The orch is also pushed the join when the note is unavailable.
  *   sub-human read [N[,M] | --id N[,M]] [--json] [--room CODE]
  *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
  *   sub-human who                      this session's identity: "<name> (<role>) in <code>"
- *   sub-human plan [HASH] [--path] [--room CODE]
- *       the current plan's canonical text (or the plan HASH, a unique prefix of at least 4 hex chars).
- *       --path prints only its file path.
+ *   sub-human tasks [--json] [--room CODE]
+ *       the room's shared task list (lib/tasks.js list(code), the orch's native list mirrored to
+ *       <room>/tasks.json): "#2 in_progress  bob  parser tests". --json prints the array.
  *   sub-human watch NAME [--room CODE] [--follow|--no-follow]
- *       NAME's thread: their own words, their Claude's posts (labelled "NAME's Claude"), their sign-offs and
- *       objections, their joins/leaves, and entries addressed to them. The orchestrator's posts are labelled
+ *       NAME's thread: their own words, their Claude's posts (labelled "NAME's Claude"), their answers,
+ *       their joins/leaves, and entries addressed to them. The orchestrator's posts are labelled
  *       "facilitator". Follows live when stdout is a terminal (or with --follow).
- *   sub-human statusline | agent-statusline
- *       Claude Code's statusLine / subagentStatusLine commands (statusline/*, owner B). Never fail: on any
- *       error they print nothing and exit 0.
+ *   sub-human agent-statusline
+ *       Claude Code's subagentStatusLine command (statusline/*, owner R). Never fails: on any error it prints
+ *       nothing and exits 0.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
 const identity = require(path.join(__dirname, '..', 'lib', 'identity.js'));
 const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
-const planLib = require(path.join(__dirname, '..', 'lib', 'plan.js'));
 const SL = path.join(__dirname, '..', 'statusline');
-/** Optional modules (statusline/*, owner B) are loaded lazily so a problem there never breaks tail/read. */
-function optional(file) { try { return require(path.join(SL, file)); } catch { return null; } }
+/** Optional modules (statusline/*, lib/tasks.js) are loaded lazily so a problem there never breaks tail/read. */
+function optional(file) { try { return require(file); } catch { return null; } }
 
 const NOT_IN_ROOM = 'not in a room; run /sub-human';
 
@@ -89,16 +90,23 @@ function bindRoom(explicit) {
 }
 
 // ---------- tail ----------
-/** The push lane (room.lane), plus, for a member, a member_joined whose row note asks for the room-row call. */
+/**
+ * The push lane (room.lane), plus another member's member_joined when lib/rows.js joinNote() says that row is
+ * not running in this session (the note carries the Agent call). A join whose row already runs is not pushed,
+ * so a notice never invites a call that row-guard would deny. The orch, which spawns a participant row per
+ * member only from this push, is pushed the join also when the note is unavailable.
+ */
+const SPAWN_NOTE = /no row running|is not running/;
 function visibleTo(me) {
   return (e, entries, note = '') => room.lane(me, e, entries) === 'push'
-    || (me.role !== 'orch' && e.kind === 'member_joined' && e.from !== me.name && /not running/.test(note));
+    || (e.kind === 'member_joined' && e.from !== me.name && (SPAWN_NOTE.test(note) || (me.role === 'orch' && !note)));
 }
 const envMs = (k, d) => (Number(process.env[k]) > 0 ? Number(process.env[k]) : d);
 
 function tail(args) {
   const { flags } = parseFlags(args, { 'max-seconds': 1 });
   const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS', 2000);
+  const unseatedMs = envMs('SUB_HUMAN_UNSEATED_MS', Math.max(resolveMs, 10_000)); // no seat: look up this rarely
   const pollMs = envMs('SUB_HUMAN_POLL_MS', 250);
   const settleMs = envMs('SUB_HUMAN_SETTLE_MS', 1500);       // flush after this long with nothing new
   const settleMaxMs = envMs('SUB_HUMAN_SETTLE_MAX_MS', 5000); // or this long after the batch's first entry
@@ -129,21 +137,12 @@ function tail(args) {
       if (h > saved) { saved = h; room.bind(s.code); room.setCursor(reader, h); }
     };
     const show = visibleTo(me);
-    const rowsMod = require(path.join(__dirname, '..', 'lib', 'rows.js'));
-    // member_joined: say whether that member's row already runs here, so the model spawns only a missing one
+    const rowsMod = optional(path.join(__dirname, '..', 'lib', 'rows.js'));
+    // member_joined: say whether that member's row already runs here, so only a missing one is spawned
     const joinNote = e => {
-      if (e.kind !== 'member_joined') return '';
+      if (e.kind !== 'member_joined' || !rowsMod) return '';
       try { return rowsMod.joinNote(me, e.from); } catch { return ''; }
     };
-    const alertMod = optional('alert.js');
-    const alerter = alertMod && alertMod.createAlerter && alertMod.createAlerter({
-      me, dir: room.dir(), pid: me.pid,
-      lookup: hash => {
-        room.bind(s.code);
-        const es = room.readAll();
-        return { signedByMe: !!room.signoffMatrix(hash, undefined, es).signed[me.name], decided: !!room.decided(hash, es) };
-      },
-    });
 
     // Settle: candidates wait in `pending` and go out as ONE write (one notification, one turn), after
     // settleMs of quiet or settleMaxMs at most. Each is judged again against the log at flush time (lane with
@@ -184,7 +183,6 @@ function tail(args) {
       if (s.dead) return;
       if (e.id <= processed) { saved = 0; room.setCursor(reader, 0); } // the log was reset under us
       processed = e.id;
-      try { if (alerter) alerter.onEntry(e); } catch { /* alerts are best-effort */ }
       if (e.kind === 'member_joined' && held.has(e.from)) {
         // left and back within leaveMs: neither notice is sent
         const h = held.get(e.from);
@@ -193,7 +191,7 @@ function tail(args) {
         inflight.delete(h.e.id);
         return s.save();
       }
-      if (!show(e, undefined, e.kind === 'member_joined' ? 'not running' : '')) return s.save();
+      if (!show(e, undefined, e.kind === 'member_joined' ? 'no row running' : '')) return s.save();
       inflight.add(e.id);
       if (e.kind === 'member_left') {
         const prev = held.get(e.from);
@@ -219,63 +217,51 @@ function tail(args) {
     sess = null;
   }
 
+  // Without a seat, look it up cheaply: the env Claude Code sets for monitors, no `ps` walk (that runs only
+  // when neither variable is set, e.g. a hand-run tail), and only every unseatedMs.
+  const hasEnv = !!(process.env.CLAUDE_CODE_SESSION_ID || process.env.CLAUDE_PID);
+  const lookup = () => hasEnv
+    ? identity.resolveBySession(process.env.CLAUDE_CODE_SESSION_ID) || (identity.claudePid() && identity.resolveByPid(identity.claudePid())) || null
+    : identity.resolveSelf();
+
+  let timer = null, stopped = false;
   function check() {
     let me = null;
-    try { me = identity.resolveSelf(); } catch { /* transient ps failure: keep the current state */ return; }
+    try { me = lookup(); } catch { /* transient failure: keep the current state */ return schedule(); }
     const key = me ? `${me.code}/${me.name}/${me.role}` : null;
-    if (sess && sess.key === key) return;
-    stopSess();
-    if (me) start(me);
+    if (!(sess && sess.key === key)) {
+      stopSess();
+      if (me) start(me);
+    }
+    schedule();
+  }
+  function schedule() {
+    if (stopped) return;
+    timer = setTimeout(check, sess ? resolveMs : unseatedMs);
   }
 
   check();
-  const timer = setInterval(check, resolveMs);
   if (flags['max-seconds'] != null) {
     const max = Number(flags['max-seconds']);
     if (!(max > 0)) die(`bad --max-seconds "${flags['max-seconds']}"`);
-    setTimeout(() => { clearInterval(timer); stopSess(); }, max * 1000); // node exits once stdout drains
+    setTimeout(() => { stopped = true; clearTimeout(timer); stopSess(); }, max * 1000); // node exits once stdout drains
   }
 }
 
-// ---------- statusline / agent-statusline: dispatch to statusline/* (owner B) ----------
+// ---------- agent-statusline: dispatch to statusline/* (owner R) ----------
 function readStdinJson() {
   if (process.stdin.isTTY) return {};
   try { return JSON.parse(fs.readFileSync(0, 'utf8') || '{}') || {}; } catch { return {}; }
 }
 
-/** Run B's renderer; whatever goes wrong, print nothing and exit 0 (never break Claude Code's bars). */
-function dispatchStatus(kind) {
+/** R's agentStatusline(input) -> text ({"id","content"} lines); whatever goes wrong, print nothing and exit 0. */
+function agentStatusline() {
   try {
-    const input = readStdinJson();
-    const out = renderStatus(kind, input);
+    const mod = optional(path.join(SL, 'index.js')) || optional(path.join(SL, 'segments.js'));
+    const out = mod && typeof mod.agentStatusline === 'function' ? mod.agentStatusline(readStdinJson()) : '';
     if (typeof out === 'string' && out) process.stdout.write(out.endsWith('\n') ? out : out + '\n');
   } catch { /* keep the default rendering */ }
 }
-/**
- * B's statusline/index.js ({statusline(input), agentStatusline(input)} -> text) when present; otherwise the
- * segments.js renderer: one line for the main bar, and {"id","content"} lines for room-feed agent rows.
- */
-function renderStatus(kind, input) {
-  const mod = optional('index.js');
-  if (mod) {
-    const fn = kind === 'agent' ? mod.agentStatusline : mod.statusline;
-    if (typeof fn === 'function') return fn(input);
-  }
-  const segments = optional('segments.js');
-  if (!segments) return '';
-  const sid = input && typeof input.session_id === 'string' ? input.session_id : null;
-  const me = (sid && identity.resolveBySession(sid)) || identity.resolveSelf();
-  if (!me) return '';
-  room.bind(me.code);
-  const st = segments.state(me, room.readAll());
-  if (kind !== 'agent') return segments.render(st, { color: segments.useColor() });
-  const isRoomTask = t => !!t && typeof t.id === 'string' && (t.name === 'room' || /^sub-human room\b/i.test(String(t.description || '')));
-  const rows = Array.isArray(input.tasks) ? input.tasks.filter(isRoomTask) : [];
-  const content = segments.render(st, { color: segments.useColor(), segments: segments.SEGMENTS.filter(x => x.name !== 'seat') });
-  return rows.map(t => JSON.stringify({ id: t.id, content })).join('\n');
-}
-const statusline = () => dispatchStatus('main');
-const agentStatusline = () => dispatchStatus('agent');
 
 // ---------- read / digest / who ----------
 function read(args) {
@@ -309,28 +295,28 @@ function who() {
   console.log(`${me.name} (${me.role}) in ${me.code}`);
 }
 
-// ---------- plan ----------
-function plan(args) {
-  const { flags, rest } = parseFlags(args, { room: 1, path: 0 });
+// ---------- tasks ----------
+/** lib/tasks.js list(code) (owner F); until it exists, <room>/tasks.json as the mirror writes it. */
+function taskList(code) {
+  const tasks = optional(path.join(__dirname, '..', 'lib', 'tasks.js'));
+  if (tasks && typeof tasks.list === 'function') return tasks.list(code) || [];
+  try { const t = JSON.parse(fs.readFileSync(path.join(room.dir(), 'tasks.json'), 'utf8')); return Array.isArray(t) ? t : []; } catch { return []; }
+}
+
+function tasksCmd(args) {
+  const { flags } = parseFlags(args, { json: 0, room: 1 });
   const { code } = bindRoom(flags.room);
-  let hash = rest[0];
-  if (hash) {
-    if (!/^[0-9a-f]{4,12}$/.test(hash)) die(`bad plan hash "${hash}"`);
-    let files = [];
-    try { files = fs.readdirSync(room.plansDir()).filter(f => /^[0-9a-f]{12}\.md$/.test(f) && f.startsWith(hash)); } catch { /* none */ }
-    if (files.length > 1) die(`plan hash "${hash}" is ambiguous: ${files.map(f => f.slice(0, 12)).join(', ')}`, 1);
-    if (!files.length) die(`no plan ${hash} in room ${code}`, 1);
-    hash = files[0].slice(0, 12);
-  } else {
-    const cur = room.currentPlan();
-    if (!cur) die(`room ${code} has no plan yet`, 1);
-    hash = cur.hash;
+  let list;
+  try { list = taskList(code); } catch (e) { die(`the room task list is unavailable: ${e.message}`, 1); }
+  list = list.filter(t => t && !(t.metadata && t.metadata._internal));
+  if (flags.json) return console.log(JSON.stringify(list));
+  if (!list.length) return console.log(`(no tasks in room ${code})`);
+  const w = Math.max(...list.map(t => String(t.status || '').length));
+  const o = Math.max(...list.map(t => String(t.owner || '-').length));
+  for (const t of list) {
+    const blocked = Array.isArray(t.blockedBy) && t.blockedBy.length ? `  (blocked by ${t.blockedBy.map(b => '#' + b).join(',')})` : '';
+    console.log(`#${t.id}  ${String(t.status || '').padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${String(t.subject ?? '').replace(/\s+/g, ' ')}${blocked}`);
   }
-  if (flags.path) return console.log(planLib.planPath(code, hash));
-  const bytes = planLib.canonical(code, hash);
-  if (!bytes) die(`the text of plan ${hash} is missing from room ${code}`, 1);
-  process.stdout.write(bytes);
-  if (bytes.length && bytes[bytes.length - 1] !== 10) process.stdout.write('\n');
 }
 
 // ---------- watch NAME ----------
@@ -342,7 +328,7 @@ function label(e) {
 }
 
 function inThread(name) {
-  return e => e.from === name || e.to === name;
+  return e => e.from === name || e.to === name || (e.kind === 'task' && e.owner === name);
 }
 
 function watch(args) {
@@ -353,7 +339,7 @@ function watch(args) {
   const { code } = bindRoom(flags.room);
   const color = process.stdout.isTTY && !('NO_COLOR' in process.env);
   const c = (code_, s) => color ? `\x1b[${code_}m${s}\x1b[0m` : s;
-  const kindColor = { decision: '1;32', signoff: '32', objection: '31', plan_rev: '1;34', member_joined: '2;32', member_left: '2;31' };
+  const kindColor = { decision: '1;32', signoff: '32', objection: '31', proposal: '1;34', task_req: '36', task: '36', member_joined: '2;32', member_left: '2;31' };
   const show = inThread(name);
   const print = raw => {
     const e = room.normalize(raw);
@@ -361,7 +347,8 @@ function watch(args) {
     const who = label(e);
     const whoStr = e.via === 'human' ? c('1', who) : who === 'facilitator' ? c('35', who) : c('2', who);
     const meta = [e.to && e.to !== 'room' && `→ ${e.to === name ? name : e.to}`, e.refs && e.refs.length && `refs ${e.refs.map(r => '#' + r).join(',')}`,
-      e.plan_hash && `plan ${e.plan_hash.slice(0, 6)}`].filter(Boolean).join('  ');
+      (e.hash || e.proposal_hash) && `proposal ${(e.hash || e.proposal_hash).slice(0, 6)}`,
+      e.task_id && `task #${e.task_id}`].filter(Boolean).join('  ');
     console.log(`${c('2', `#${e.id} ${String(e.at || '').slice(11, 19)}`)}  ${whoStr}  ${c(kindColor[e.kind] || '2', e.kind)}${meta ? '  ' + c('2', meta) : ''}`);
     console.log(String(e.text ?? '').split('\n').map(l => '    ' + l).join('\n') + '\n');
   };
@@ -377,9 +364,9 @@ function watch(args) {
 }
 
 const [cmd, ...args] = process.argv.slice(2);
-const cmds = { tail, read, digest, who, plan, watch, statusline, 'agent-statusline': agentStatusline };
+const cmds = { tail, read, digest, who, tasks: tasksCmd, watch, 'agent-statusline': agentStatusline };
 try {
-  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | plan [HASH] | watch NAME | statusline | agent-statusline')))(args);
+  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | agent-statusline')))(args);
 } catch (e) {
   die(e.message, 2);
 }

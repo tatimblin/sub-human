@@ -6,9 +6,11 @@
 //   resume   a new claude process with the old session id. If the seat is still live, rebind the new pid;
 //            if session-end marked it left, rejoin the same name (when the room still exists) and log
 //            member_joined "rejoined (resumed)".
-// Context = role text + ROWS (lib/rows.js rowCalls() via common.js, which lists only the rows with no live
-// hold: rows survive /clear and compaction, and a re-spawn duplicated the room row in the S11 demo run) +
-// roster + digest. On --resume the hold server is new, so every row is listed. sessionTitle shows the seat.
+//            A room that is closing (the reaper is stopping its orch) is not rejoined.
+// Context = the same mechanics block as join (common.js contextBlock: D's template filled + ROWS, i.e.
+// lib/rows.js rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
+// a re-spawn duplicated the room row in the S11 demo run). On --resume the hold server is new, so every row is
+// listed. sessionTitle = the native address NAME.CODE (SendMessage / ListAgents reach the session by it).
 const path = require('node:path');
 const { identity, room, run, out, whoami, presence, contextBlock, seatTitle } = require('./common.js');
 const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
@@ -38,7 +40,7 @@ function reseat(input) {
   if (input.source !== 'resume' || !pid) return null;
   const last = identity.lastSeat(input.session_id);
   if (!last) return null;
-  if (last.role !== 'orch' && !identity.openRooms().includes(last.code)) return null;
+  if (identity.roomClosing(last.code) || (last.role !== 'orch' && !identity.openRooms().includes(last.code))) return null;
   const r = identity.join({ code: last.code, name: last.name, role: last.role, pid, session_id: input.session_id, cwd: input.cwd });
   if (!r || !r.ok) return null;
   room.bind(last.code);
