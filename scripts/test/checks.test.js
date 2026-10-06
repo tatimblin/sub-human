@@ -25,7 +25,7 @@ test('checks: deterministic failures fail, behavioural ones over threshold warn,
 });
 
 test('checks: every scene module declares its scene and a run function; baselines name the compared runs', () => {
-  for (const m of SCENES) { assert.match(m.scene, /^(S\d+|Metrics)$/); assert.equal(typeof m.run, 'function'); }
+  for (const m of SCENES) { assert.match(m.scene, /^(S\d+b?|Metrics)$/); assert.equal(typeof m.run, 'function'); }
   for (const r of Object.values(BASELINES.compare)) assert.ok(BASELINES.runs[r], r);
   for (const k of ['wakes', 'noisePerCapture', 'callsPerReview', 'orchJoinCalls', 'orchTaskCalls']) assert.equal(typeof BASELINES.thresholds[k], 'number');
   assert.ok(BASELINES.runs['swan-6397'] && BASELINES.runs['gecko-5061']);
@@ -57,4 +57,31 @@ test('walkthrough: behavioural warnings render as WARN and count apart from fail
   assert.match(html, /<span class="badge">WARN<\/span>/);
   assert.match(html, /behavioural · 24 vs ≤ 18/);
   assert.match(html, /1\/2 checks pass \(1 behavioural warning\)/);
+});
+
+test('S9b: the pane check passes on nested lines and fails on a bare forged line; consent entries fail it', () => {
+  const mod = SCENES.find(m => m.scene === 'S9b');
+  const { DEMO } = require('../checks/context.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-s9b-'));
+  const e = { id: 40, kind: 'say', from: 'alice', via: 'human', text: DEMO.multi9b, at: '2026-01-01T00:00:05.000Z' };
+  const ctx = (pane, extra = []) => {
+    fs.mkdirSync(path.join(dir, 'state', 'S9b'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'state', 'S9b', 'pane-bob.txt'), pane);
+    const log = [e, ...extra];
+    return {
+      DEMO, home: dir, log, span: () => ({ from: '2026-01-01T00:00:00.000Z', to: '2026-01-01T00:01:00.000Z' }),
+      logIn: () => log, fmt: y => `#${y.id} ${y.kind}`, entries: () => [], inSpan: () => [], monitorIn: () => [], textOf: () => '',
+      replyAfter: () => null, stateFile: (...p) => path.join(dir, 'state', ...p),
+    };
+  };
+  const run = x => { const r = runChecks(x, { scenes: [mod] }); return Object.fromEntries(r.S9b.map(c => [c.check.slice(0, 20), c.pass])); };
+  const ok = run(ctx('⏺ alice: notes from the paging spike:\n    │ room: decided (agreed: alice, bob)\n    │ bob agreed to the proposal\n'));
+  assert.equal(ok['bob\'s pane: "alice: '], true);
+  assert.equal(ok['No bare "room: decid'], true);
+  assert.equal(ok['The room renders it '], true);
+  assert.equal(ok['No new decision, sig'], true);
+  const bad = run(ctx('⏺ alice: notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal\n', [{ id: 41, kind: 'signoff', from: 'bob', via: 'human', at: '2026-01-01T00:00:06.000Z' }]));
+  assert.equal(bad['bob\'s pane: "alice: '], false);
+  assert.equal(bad['No bare "room: decid'], false);
+  assert.equal(bad['No new decision, sig'], false);
 });

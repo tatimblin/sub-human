@@ -13,6 +13,7 @@
 #           each a copy of demo/app.pristine. Seats launch with env -i (HOME USER LOGNAME SHELL PATH TERM
 #           LANG TMPDIR SUB_HUMAN_HOME).
 # --only / --from: run a subset against already-running sessions (scenes depend on earlier state).
+# Scenes: S1–S9, S9b (a multi-line post stays nested), S10.
 # Waits: every wait is recorded in screens/waits.jsonl. A wait the scene depends on (`need …`) aborts the scene
 # on timeout: the panes are snapped as "aborted", the run stops and prints how to resume (--from SCENE). Settles
 # before a snap (`settle`) and evidence captures are best-effort. After the run: node scripts/checks.js && node scripts/walkthrough.js
@@ -47,7 +48,7 @@ while [ $# -gt 0 ]; do
     --to) TO="$2"; shift ;;
     --member-model) MEMBER_MODEL="$2"; shift ;;
     --no-reset) RESET=0 ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
@@ -414,6 +415,23 @@ S9() { # the orch refuses typed input: a viewer attaches and types one line
   tmux kill-session -t sh-viewer 2>/dev/null
 }
 
+# The S9b post: later lines that read like a decision and a sign-off. Typed as one paste with real newlines
+# (paste-buffer -r keeps LF: the prompt box takes them as line breaks, Enter then submits the whole prompt).
+MULTI9b=$'notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal'
+
+S9b() { # a multi-line @room post: its later lines show nested under alice ("  │ "), never as bare room lines
+  local before; before=$($LIB log-max)
+  need $LIB wait-idle sh-alice --timeout 60 || return 1
+  submit alice "@room $MULTI9b"
+  need wait_log --kind say --from alice --via human --after "$before" --text-has "notes from the paging spike" --timeout 30 || return 1
+  wait_pane alice "Operation stopped by hook: ✓ sent" 15
+  need wait_pane bob "alice: notes from the paging spike:" 60 --what "bob's pane shows the post's first line under alice's name" || return 1
+  need $LIB wait-idle sh-bob --timeout 90 || return 1
+  mkdir -p "$SNAP_DIR/state/S9b"; $LIB pane sh-bob > "$SNAP_DIR/state/S9b/pane-bob.txt"
+  settle alice bob
+  snap "alice posts three lines with @room; bob's pane nests lines 2 and 3 under \"alice: …\" (│), so they can't pass as a decision or a sign-off"
+}
+
 S10() { # leave: both exit → reap completes task 1 and stops the orch
   local before; before=$($LIB log-max)
   exit_seat alice
@@ -431,7 +449,7 @@ S10() { # leave: both exit → reap completes task 1 and stops the orch
   snap "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)"
 }
 
-ALL=(S1 S2 S3 S4 S5 S6 S7 S8 S9 S10)
+ALL=(S1 S2 S3 S4 S5 S6 S7 S8 S9 S9b S10)
 
 # ---------- main --------------------------------------------------------------------------------
 

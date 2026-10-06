@@ -21,6 +21,7 @@ const DEMO = {
   bob4: "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first",
   note5: 'add a test for a cursor past the end — `after=zzz` must 400, not 500',
   viewer9: "hi orch, what's next?",
+  multi9b: 'notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal',
 };
 
 function context({ screens, home, room }) {

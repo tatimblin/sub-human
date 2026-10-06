@@ -28,9 +28,9 @@ const { clip } = require('./lib/io.js');
 const { context } = require('./checks/context.js');
 const BASELINES = require('./baselines.json');
 
-const SCENES = ['s01-open', 's02-join', 's03-pairing', 's04-plan', 's05-consent', 's06-tasks', 's07-row-view', 's08-resilience', 's09-orch-typing', 's10-leave', 'run-metrics']
+const SCENES = ['s01-open', 's02-join', 's03-pairing', 's04-plan', 's05-consent', 's06-tasks', 's07-row-view', 's08-resilience', 's09-orch-typing', 's09b-multiline', 's10-leave', 'run-metrics']
   .map(m => require(`./checks/${m}.js`));
-const ORDER = ['Metrics', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10'];
+const ORDER = ['Metrics', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S9b', 'S10'];
 
 function args(argv) {
   const o = {};

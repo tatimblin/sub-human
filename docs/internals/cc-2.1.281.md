@@ -201,3 +201,7 @@ function Zho(e,n,r){if(!(n?/^[a-zA-Z0-9_|, -]+$/:/^[a-zA-Z0-9_|]+$/).test(e))ret
 ## Contract and probe
 
 Every assumption above is an entry in `CONTRACT` in `plugin/sub-human/lib/cc.js` (id, literal search string(s), stability, note), and each export there carries `@cc <search>` and `@stability`. `node scripts/probe-cc.js [--json]` finds the installed binary (`CLAUDE_BIN`, then `claude` on PATH with symlinks resolved, then the Homebrew Caskroom), greps it for every search string and exits 1 on any miss. Search strings that embed minified names (`Mk`, `aP`, `eYn` …) are build-specific: on a new build, a FAIL there means "re-read this spot", not necessarily "the behavior changed".
+
+## Observed: Monitor strips leading whitespace from event lines
+
+Seen in live run penguin-3531 and confirmed with a probe Monitor: an event line `"  │ x"` reaches the model as `"│ x"`. There is no binary search string for this yet, so it is not in `lib/cc.js` CONTRACT. Effect on the plugin: a nested chat line is marked by the `│` glyph, not by CHAT_NEST's leading spaces. Never rely on leading indentation in monitor output.
