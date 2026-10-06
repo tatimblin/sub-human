@@ -1,0 +1,10 @@
+{
+ "input": {
+  "prompt": "hi",
+  "session_id": "026b95e5-8672-48f0-b22d-364b8df934de",
+  "pid": 40267
+ },
+ "status": 0,
+ "stdout": "{\"decision\":\"block\",\"reason\":\"the orch takes no typed input; use @room or ask your Claude to message orch.badger-3918\",\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"suppressOriginalPrompt\":true}}",
+ "stderr": ""
+}

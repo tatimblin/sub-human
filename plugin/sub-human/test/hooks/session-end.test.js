@@ -50,8 +50,8 @@ test('session-end: the last member leaving starts the detached reaper: closing, 
   assert.equal(r.code, 0, r.stderr);
   assert.ok(await until(() => fs.existsSync(log)), 'claude stop ran');
   assert.deepEqual(JSON.parse(fs.readFileSync(log, 'utf8').trim()), ['stop', 'feed0042']);
-  const o = w.members().orch;
-  assert.ok(o.closing && o.left_at && o.stopped_at);
+  // the reaper marks the orch stopped and left just after `claude stop` returns
+  assert.ok(await until(() => { const o = w.members().orch; return o.closing && o.left_at && o.stopped_at; }), 'orch marked closing, stopped, left');
   const st = w.entries().find(e => e.kind === 'status');
   assert.deepEqual([st.to, st.via, st.text], ['orch', 'system', 'room closed: complete task 1']);
   assert.deepEqual(w.lib(() => identity.openRooms()), []);

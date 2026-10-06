@@ -3,23 +3,29 @@
 /**
  * metrics: per-seat cost-of-the-room measurements for one demo run, from evidence only.
  *
- *   node scripts/metrics.js [--screens DIR]     print the run's metrics as JSON
- *   require('./metrics.js').measure({screens})  same, as an object (used by checks.js)
+ *   node scripts/metrics.js [--screens DIR] [--home DIR]   print the run's metrics as JSON
+ *   require('./metrics.js').measure({screens, home})       same, as an object (used by checks.js)
  *
- * The run window is the first..last capture in screens/index.json (+30 s); a seat's transcripts are the
- * top-level ~/.claude/projects/-private-tmp-sh-demo-SEAT/*.jsonl files with entries inside it (read-only).
+ * The run window is the first..last capture in screens/index.json (+30 s). Seats and their transcripts
+ * (read-only): alice and bob are the top-level ~/.claude/projects/-private-tmp-sh-demo-SEAT/*.jsonl files; the
+ * orch is a `claude --bg` job started in the joiner's folder, so its transcript is the file named after
+ * members.json orch.session_id (wherever it is), and that file is left out of the folder's member seat.
  *
  * - wakes: room-caused model turns: a user entry that is a sub-human Monitor event (origin.kind
  *   task-notification, "Monitor event: …sub-human…"), a peer delivery (origin.kind peer), or the
- *   row-rewake wake (its stderr text "sub-human: this session was resumed…"), followed in file order by an
+ *   row-rewake wake (its text "sub-human: this session was resumed…"), followed in file order by an
  *   assistant message before the next user prompt. Adjacent triggers that start one turn count once.
- *   `notices` counts the Monitor-event entries themselves (the vole-8126 baseline counted these: 39).
+ *   `notices` counts the Monitor-event entries themselves.
  * - injected: chars of hook additionalContext the seat's model received: `join` (UserPromptExpansion, the
  *   /sub-human join block), `total` (every hook_additional_context attachment, incl. restores and digests).
  * - noise: UI lines per capture of the seat's pane: "Monitor event", "Waiting for N background agents",
  *   "hook error", "blocked by hook", "Invalid tool parameters"; `perCapture` = all of them / captures,
  *   `perCaptureExWaiting` without "Waiting for". "Operation stopped by hook" (the @room receipt) is counted
- *   apart as `receipts`, not noise.
+ *   apart as `receipts`, not noise. `red`: lines drawn in a red foreground (from the .ansi capture) or
+ *   reading "hook error".
+ * - cards: for each consent card (an AskUserQuestion call naming a proposal hash) in a member transcript,
+ *   the model calls (distinct assistant message ids) from the entry that woke the turn to the card call
+ *   (`toCard`, the card call included) and from the answer to the end of that turn (`after`).
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -43,16 +49,46 @@ const BASELINE = {
   joinChars: { orch: 7662, alice: 5732, bob: 5768 },
   injected: { orch: 7782, alice: 12987, bob: 13542, total: 34311 },
 };
+/** otter-0813, the Phase 0 run (commit d08fec8), measured by this file's previous version (docs/rebuild/checks.json then). */
+const PHASE0 = {
+  run: 'otter-0813',
+  wakes: { orch: 8, alice: 8, bob: 7, total: 23 },
+  noise: { captures: 69, lines: 249, perCapture: 3.61, perCaptureExWaiting: 1.9, monitor: 124, waiting: 118, hookError: 7, blocked: 0, invalid: 0 },
+  joinChars: { orch: 7620, alice: 4968, bob: 4994 },
+  injected: { orch: 7740, alice: 12082, bob: 13268, total: 33090 },
+};
 
 const jsonl = f => { try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } };
 const textOf = c => (typeof c === 'string' ? c : Array.isArray(c) ? c.map(x => (x && (x.text || (typeof x.content === 'string' ? x.content : ''))) || '').join('\n') : '');
 const isToolResult = e => Array.isArray(e.message && e.message.content) && e.message.content.length > 0 && e.message.content.every(c => c && c.type === 'tool_result');
 
-function transcripts(seat, from, to, projects) {
-  const dir = path.join(projects || path.join(os.homedir(), '.claude', 'projects'), `-private-tmp-sh-demo-${seat}`);
+const projectsDir = p => p || path.join(os.homedir(), '.claude', 'projects');
+
+/** The orch session id from <home>/rooms/<code>/members.json (the newest room), or null. */
+function orchSession(home, code) {
+  if (!home) return null;
+  try {
+    const rooms = path.join(home, 'rooms');
+    const c = code || fs.readdirSync(rooms).map(d => ({ d, m: fs.statSync(path.join(rooms, d)).mtimeMs })).sort((a, b) => b.m - a.m)[0].d;
+    const o = JSON.parse(fs.readFileSync(path.join(rooms, c, 'members.json'), 'utf8')).orch;
+    return (o && o.session_id) || null;
+  } catch { return null; }
+}
+
+/** Transcript files of a seat: [{file, es}] limited to the window. */
+function transcripts(seat, from, to, projects, orchSid) {
+  const base = projectsDir(projects);
   let files = [];
-  try { files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')).map(f => path.join(dir, f)); } catch { return []; }
-  return files.map(f => ({ file: f, es: jsonl(f) })).filter(({ es }) => es.some(e => e.timestamp && e.timestamp >= from && e.timestamp <= to))
+  if (seat === 'orch') {
+    if (!orchSid) return [];
+    try { for (const d of fs.readdirSync(base)) { const f = path.join(base, d, `${orchSid}.jsonl`); if (fs.existsSync(f)) files.push(f); } } catch { return []; }
+  } else {
+    const dir = path.join(base, `-private-tmp-sh-demo-${seat}`);
+    try { files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl') && (!orchSid || f !== `${orchSid}.jsonl`)).map(f => path.join(dir, f)); } catch { return []; }
+  }
+  return files.map(f => ({ file: f, es: jsonl(f) }))
+    .filter(({ es }) => seat === 'orch' || !es.some(e => e.agentSetting === 'sub-human:orchestrator')) // another room's orch in this folder
+    .filter(({ es }) => es.some(e => e.timestamp && e.timestamp >= from && e.timestamp <= to))
     .map(t => ({ ...t, es: t.es.filter(e => !e.timestamp || (e.timestamp >= from && e.timestamp <= to)) }));
 }
 
@@ -67,9 +103,41 @@ function trigger(e) {
   return null;
 }
 
+const HASH_RE = /proposal\s+([0-9a-f]{6,12})\b/;  // the member text asks for "proposal <hash>"; Haiku often writes 6 hex
+/** Consent-card calls in one transcript's entries: [{at, hash, toCard, after}]. */
+function cardTurns(es) {
+  const out = [];
+  const main = es.filter(e => !e.isSidechain && (e.type === 'user' || e.type === 'assistant'));
+  for (let i = 0; i < main.length; i++) {
+    const e = main[i];
+    if (e.type !== 'assistant') continue;
+    const call = (e.message.content || []).find(c => c && c.type === 'tool_use' && c.name === 'AskUserQuestion' && HASH_RE.test(JSON.stringify(c.input || {})));
+    if (!call) continue;
+    // back to the entry that started this turn (a user entry that is not a tool result)
+    let s = i - 1;
+    const starts = x => x.type === 'user' && !isToolResult(x) && (!x.isMeta || (x.origin && x.origin.kind === 'peer'));
+    while (s >= 0 && !starts(main[s])) s--;
+    const ids = new Set();
+    for (let j = s + 1; j <= i; j++) if (main[j].type === 'assistant') ids.add(main[j].message.id || main[j].uuid);
+    // forward to the end of the turn
+    const after = new Set();
+    let j = i + 1;
+    for (; j < main.length; j++) {
+      const x = main[j];
+      if (starts(x)) break;
+      if (x.type === 'assistant') { const id = x.message.id || x.uuid; if (!ids.has(id)) after.add(id); }
+    }
+    out.push({ at: e.timestamp, hash: HASH_RE.exec(JSON.stringify(call.input))[1], toCard: ids.size, after: after.size });
+  }
+  // the card call and its answer can be split over several assistant entries with one message id: dedupe by call
+  const seen = new Set();
+  return out.filter(c => { const k = c.at + c.hash; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
 function seatTranscriptMetrics(ts) {
   const w = { turns: 0, notices: 0, peer: 0, rewake: 0, rowNotifications: 0, humanPrompts: 0 };
   const inj = { join: 0, total: 0, count: 0, byEvent: {} };
+  const cards = [];
   for (const { es } of ts) {
     let pending = null; // a trigger waiting for its assistant message
     for (const e of es) {
@@ -83,7 +151,8 @@ function seatTranscriptMetrics(ts) {
       }
       if (e.isSidechain) continue;
       if (e.type === 'assistant') { if (pending) { w.turns++; pending = null; } continue; }
-      if (e.type !== 'user' || e.isMeta || isToolResult(e)) continue;
+      // a peer delivery is written isMeta; any other meta entry is not a prompt
+      if (e.type !== 'user' || (e.isMeta && !(e.origin && e.origin.kind === 'peer')) || isToolResult(e)) continue;
       const k = trigger(e);
       if (k) {
         if (k === 'monitor') w.notices++; else w[k]++;
@@ -95,13 +164,27 @@ function seatTranscriptMetrics(ts) {
       if (kind === 'task-notification') w.rowNotifications++;
       else w.humanPrompts++;
     }
+    cards.push(...cardTurns(es));
   }
-  return { wakes: w, injected: inj };
+  return { wakes: w, injected: inj, cards };
+}
+
+/** A line drawn in a red foreground: SGR 31/91, 256-color reds, or a truecolor red. */
+function isRed(line) {
+  for (const m of line.matchAll(/\x1b\[([0-9;]*)m/g)) {
+    const p = m[1].split(';').map(Number);
+    for (let i = 0; i < p.length; i++) {
+      if (p[i] === 31 || p[i] === 91) return true;
+      if (p[i] === 38 && p[i + 1] === 5) { if ([1, 9, 124, 160, 161, 196, 197, 203, 204, 210].includes(p[i + 2])) return true; i += 2; continue; }
+      if (p[i] === 38 && p[i + 1] === 2) { const [r, g, b] = p.slice(i + 2, i + 5); if (r >= 200 && g <= 115 && b <= 140 && r - g >= 120) return true; i += 4; }
+    }
+  }
+  return false;
 }
 
 function noiseFor(screens, index, seat) {
   const caps = index.filter(r => r.session === `sh-${seat}`);
-  const n = { captures: caps.length, lines: 0, receipts: 0 };
+  const n = { captures: caps.length, lines: 0, receipts: 0, red: 0 };
   for (const k of Object.keys(NOISE)) n[k] = 0;
   for (const r of caps) {
     let t = '';
@@ -112,46 +195,57 @@ function noiseFor(screens, index, seat) {
       for (const [k, re] of Object.entries(NOISE)) if (re.test(l)) { n[k]++; hit = true; }
       if (hit) n.lines++;
     }
+    let a = null;
+    try { a = fs.readFileSync(path.join(screens, r.txt.replace(/\.txt$/, '.ansi')), 'utf8'); } catch { /* none */ }
+    for (const l of (a || t).split('\n')) if ((a && isRed(l)) || /hook error/i.test(l.replace(/\x1b\[[0-9;]*m/g, ''))) n.red++;
   }
   n.perCapture = caps.length ? +(n.lines / caps.length).toFixed(2) : null;
   n.perCaptureExWaiting = caps.length ? +((n.lines - n.waiting) / caps.length).toFixed(2) : null;
   return n;
 }
 
-function measure({ screens, projects } = {}) {
+function measure({ screens, projects, home, code } = {}) {
   const index = (() => { try { return JSON.parse(fs.readFileSync(path.join(screens, 'index.json'), 'utf8')); } catch { return []; } })();
   const times = index.map(r => r.time).filter(Boolean).sort();
   if (!times.length) return { error: `no captures in ${screens}` };
   // the run starts a little before the first capture (S1's /sub-human); stop 30 s after the last one
   const from = new Date(Date.parse(times[0]) - 120_000).toISOString();
   const to = new Date(Date.parse(times.at(-1)) + 30_000).toISOString();
+  const orchSid = orchSession(home || process.env.SUB_HUMAN_HOME, code);
   const seats = {};
-  const all = { lines: 0, captures: 0, waiting: 0 };
+  const all = { lines: 0, captures: 0, waiting: 0, red: 0 };
   let wakes = 0;
+  const cards = [];
   for (const seat of SEATS) {
-    const ts = transcripts(seat, from, to, projects);
+    const ts = transcripts(seat, from, to, projects, orchSid);
     const m = seatTranscriptMetrics(ts);
     const noise = noiseFor(screens, index, seat);
     seats[seat] = { transcripts: ts.map(t => path.basename(t.file).slice(0, 8)), ...m, noise };
     wakes += m.wakes.turns;
-    all.lines += noise.lines; all.captures += noise.captures; all.waiting += noise.waiting;
+    if (seat !== 'orch') cards.push(...m.cards.map(c => ({ seat, ...c })));
+    all.lines += noise.lines; all.captures += noise.captures; all.waiting += noise.waiting; all.red += noise.red;
   }
   const kinds = Object.keys(NOISE);
   const sum = k => SEATS.reduce((a, s) => a + seats[s].noise[k], 0);
+  const avg = k => (cards.length ? +(cards.reduce((a, c) => a + c[k], 0) / cards.length).toFixed(2) : null);
   return {
     window: { from, to },
+    orchSession: orchSid,
     seats,
     total: {
       wakes,
+      roomWakesMembers: seats.alice.wakes.turns + seats.bob.wakes.turns,
       notices: SEATS.reduce((a, s) => a + seats[s].wakes.notices, 0),
       joinChars: SEATS.filter(s => s !== 'orch').map(s => seats[s].injected.join),
       injectedTotal: SEATS.reduce((a, s) => a + seats[s].injected.total, 0),
+      cards: { count: cards.length, toCard: avg('toCard'), after: avg('after'), perCard: cards.length ? +(cards.reduce((a, c) => a + c.toCard + c.after, 0) / cards.length).toFixed(2) : null, list: cards },
       noise: {
         captures: all.captures, lines: all.lines,
         perCapture: all.captures ? +(all.lines / all.captures).toFixed(2) : null,
         perCaptureExWaiting: all.captures ? +((all.lines - all.waiting) / all.captures).toFixed(2) : null,
         ...Object.fromEntries(kinds.map(k => [k, sum(k)])),
         receipts: sum('receipts'),
+        red: all.red,
       },
     },
   };
@@ -161,7 +255,7 @@ if (require.main === module) {
   const a = process.argv.slice(2), o = {};
   for (let i = 0; i < a.length; i++) if (a[i].startsWith('--')) o[a[i].slice(2)] = a[++i];
   const screens = path.resolve(o.screens || path.join(__dirname, '..', 'docs/rebuild/screens'));
-  process.stdout.write(JSON.stringify(measure({ screens }), null, 1) + '\n');
+  process.stdout.write(JSON.stringify(measure({ screens, home: o.home || process.env.SUB_HUMAN_HOME || '/tmp/sh-demo/home' }), null, 1) + '\n');
 }
 
-module.exports = { measure, BASELINE, NOISE, trigger, seatTranscriptMetrics };
+module.exports = { measure, BASELINE, PHASE0, NOISE, trigger, seatTranscriptMetrics, cardTurns, isRed };

@@ -30,3 +30,22 @@ test('wakes: adjacent notices that start one turn count once; a notice absorbed 
   assert.equal(m.wakes.rowNotifications, 1);
   assert.deepEqual([m.injected.join, m.injected.total], [4, 6]);
 });
+
+test('cardTurns: model calls from the waking notice to the card, and after the answer to the end of the turn', () => {
+  const { cardTurns } = require('../metrics.js');
+  const a = (id, content) => ({ type: 'assistant', timestamp: `t${id}`, message: { id, content } });
+  const card = { type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'agree?', header: 'proposal 54be84' }] } };
+  const es = [mon(1), a('m1', [{ type: 'text', text: 'opening' }]), a('m2', [card]), toolRes, a('m3', [{ type: 'text', text: 'ok' }]), human, a('m4', [{ type: 'text', text: 'x' }]),
+    a('m5', [{ type: 'tool_use', name: 'AskUserQuestion', input: { questions: [{ question: 'pick a color' }] } }])];
+  assert.deepEqual(cardTurns(es).map(c => [c.hash, c.toCard, c.after]), [['54be84', 2, 1]], 'an unrelated question is no card');
+});
+
+test('isRed: SGR 31/91, 256-color and truecolor reds; other colors are not', () => {
+  const { isRed } = require('../metrics.js');
+  assert.ok(isRed('\x1b[31mError\x1b[39m'));
+  assert.ok(isRed('\x1b[38;5;196mx'));
+  assert.ok(isRed('\x1b[38;2;255;107;128mhook failed'));
+  assert.ok(!isRed('\x1b[38;5;220mUpdate available'));
+  assert.ok(!isRed('\x1b[38;2;215;119;87mClaude Code'));
+  assert.ok(!isRed('plain'));
+});

@@ -16,23 +16,20 @@ const path = require('node:path');
 const REPO = path.resolve(__dirname, '..');
 
 const SCENES = {
-  Metrics: ['Phase 0 vs baseline', 'Room-caused wakes ≤ 26 (vole-8126: 39); UI noise per capture below vole-8126'],
-  S1: ['The orch starts and runs /sub-human', 'The invite code banner; the status line ⬡ CODE · orch'],
-  S2: ['alice joins with /sub-human alice (no code)', 'The join receipt; alice\'s panel with one room row (no status line); the orch panel with an alice row'],
-  S3: ['bob joins', 'The orch panel has alice and bob rows; each member panel has only the room row'],
-  S4: ['alice runs @room …', 'The receipt ✓ posted … as #N; the rows update in the others\' panels'],
-  S5: ['The orch drafts a plan', 'Rows read drafting; the orch\'s own status line'],
-  S6: ['Plan published', 'The native form in alice\'s and bob\'s terminals, with summary, path, Approve/Object'],
-  S7: ['bob objects with a reason', 'bob\'s form filled in; the objection appears in the orch and alice rows'],
-  S8: ['The orch revises and both approve', 'Forms replaced (stale cancelled); ✓ signed on both rows'],
-  S9: ['Automatic exit', 'The orch leaves plan mode with no dialog; decision; assignments; rows read ✓ decided'],
-  S10: ['Background work', 'alice\'s Claude runs her part in a native background subagent; her status with evidence in the others\' rows'],
-  S11: ['Resilience', 'Rows survive /clear in alice\'s session; bob resumes and row-rewake brings his rows back with no prompt from him'],
-  S11b: ['Nested view', 'alice opens the room row and sees bob inside, then opens bob to read his thread; ↑ to the parent row + Enter goes back (no breadcrumb)'],
-  S12: ['Leave', 'bob runs /exit and chooses "1. Exit and stop tasks" in Claude Code\'s background-work dialog; member_left; his row reads left in the orch and alice panels'],
+  Metrics: ['Slim build vs both baselines', 'Room-caused wakes ≤ 12 (vole-8126: 39, Phase 0 otter-0813: 23); small join text; noise ≈ 1.4 per capture; no red lines; model calls per card'],
+  S1: ['alice joins with no room open', 'Room created; the orch started as a background job (no window); one room row for alice; the orch lists alice; room task #1'],
+  S2: ['bob joins', 'bob nested in alice\'s room row, alice in bob\'s; the orch lists both; no stray rows'],
+  S3: ['Pairing with no plan', '@room both ways (receipt line, one wake, exact words); bob\'s Claude asks alice\'s Claude by SendMessage and gets an answer; no card; the orch is not woken'],
+  S4: ['"Let\'s plan"', 'bob @room @orch let\'s plan …; the orch writes a plan and proposes it; the native consent card in both terminals'],
+  S5: ['Object, revise, agree', 'bob objects with a note (byte-exact); the orch revises; both agree; a decision citing both'],
+  S6: ['Shared tasks', 'alice\'s Claude adds and claims a task; the orch applies it natively; rows and sub-human tasks show it; a non-owner done is refused; the owner\'s done with evidence completes it'],
+  S7: ['Stray typing in a row view', 'The row view shows the read-only hint; nothing is posted; the row\'s one-line reply'],
+  S8: ['Resilience', '/clear keeps alice\'s rows; bob --continue: rows return with no prompt (row-rewake) and the monitor still wakes him'],
+  S9: ['The orch takes no typed input', 'A viewer attaches (claude attach) and types: refused with the hint; no orch turn'],
+  S10: ['Leave', 'Both exit; the reaper completes task 1 and stops the orch; claude agents no longer lists it'],
 };
 const ORDER = Object.keys(SCENES);
-const SEAT_ORDER = ['orch', 'alice', 'bob'];
+const SEAT_ORDER = ['orch', 'viewer', 'alice', 'bob'];
 
 function args() {
   const a = process.argv.slice(2), o = {};
@@ -56,32 +53,34 @@ function inlineSvg(file) {
   return s.replace(/<svg\b([^>]*)>/, (m, attrs) => '<svg' + attrs.replace(/\s(width|height)="[^"]*"/g, '') + ' preserveAspectRatio="xMinYMin meet">');
 }
 
-/** "Phase 0 vs baseline" table from checks.json _metrics ({run, baseline}); '' when absent. */
+/** "Slim build vs baselines" table from checks.json _metrics ({run, baseline, phase0}); '' when absent. */
 function metricsSection(m) {
   if (!m || !m.run || !m.baseline) return '';
-  const R = m.run, B = m.baseline, seats = ['orch', 'alice', 'bob'];
-  const cell = (now, base, lowerIsBetter = true) => {
-    if (now == null) return '<td>–</td><td>–</td><td></td>';
-    const d = base == null ? null : now - base;
-    const cls = d == null || d === 0 ? '' : (d < 0) === lowerIsBetter ? 'better' : 'worse';
+  const R = m.run, B = m.baseline, P = m.phase0 || {}, seats = ['orch', 'alice', 'bob'];
+  const g = (o, ...ks) => ks.reduce((x, k) => (x == null ? x : x[k]), o);
+  const delta = (now, base) => {
+    if (now == null || base == null) return '<td></td>';
+    const d = now - base;
+    const cls = d === 0 ? '' : d < 0 ? 'better' : 'worse';
     const pct = base ? ` (${d > 0 ? '+' : ''}${Math.round((d / base) * 100)}%)` : '';
-    return `<td>${esc(base == null ? '–' : base)}</td><td class="${cls}">${esc(now)}</td><td class="${cls}">${d == null ? '' : esc((d > 0 ? '+' : '') + (Math.round(d * 100) / 100) + pct)}</td>`;
+    return `<td class="${cls}">${esc((d > 0 ? '+' : '') + (Math.round(d * 100) / 100) + pct)}</td>`;
   };
   const rows = [];
-  for (const s of seats) rows.push([`Room-caused model wakes · ${s}`, R.seats[s].wakes.turns, B.wakes[s]]);
-  rows.push(['Room-caused model wakes · total (target ≤ 26)', R.total.wakes, B.wakes.total]);
-  for (const s of seats) rows.push([`Join block chars · ${s}`, R.seats[s].injected.join, B.joinChars && B.joinChars[s]]);
-  for (const s of seats) rows.push([`Hook-injected chars over the run · ${s}`, R.seats[s].injected.total, B.injected && B.injected[s]]);
-  for (const s of seats) rows.push([`UI noise lines per capture · ${s}`, R.seats[s].noise.perCapture, null]);
-  rows.push(['UI noise lines per capture · all seats', R.total.noise.perCapture, B.noise.perCapture]);
-  rows.push(['… excluding "Waiting for N background agents"', R.total.noise.perCaptureExWaiting, B.noise.perCaptureExWaiting]);
-  for (const [k, label] of [['monitor', '"Monitor event" lines'], ['waiting', '"Waiting for N background agents" lines'], ['hookError', '"hook error" lines'], ['blocked', '"blocked by hook" lines'], ['invalid', '"Invalid tool parameters" lines']]) rows.push([`${label} (all captures)`, R.total.noise[k], B.noise[k]]);
-  return `<section id="phase0-metrics">
-<header><h2><span class="sid">P0</span>Phase 0 vs baseline</h2><p class="must">This run (room ${esc(R.room)}, ${esc(R.total.noise.captures)} captures) against vole-8126 (${esc(B.noise.captures)} captures), both measured by scripts/metrics.js from the seats' transcripts and the pane captures.</p></header>
-<div class="metrics"><table><thead><tr><th>Metric</th><th>vole-8126</th><th>this run</th><th>change</th></tr></thead><tbody>
-${rows.map(([l, now, base]) => `<tr><td>${esc(l)}</td>${cell(now, base)}</tr>`).join('\n')}
+  for (const s of seats) rows.push([`Room-caused model wakes · ${s}`, R.seats[s].wakes.turns, B.wakes[s], g(P, 'wakes', s)]);
+  rows.push(['Room-caused model wakes · total (target ≤ 12)', R.total.wakes, B.wakes.total, g(P, 'wakes', 'total')]);
+  for (const s of seats) rows.push([`Join block chars · ${s}`, R.seats[s].injected.join, g(B, 'joinChars', s), g(P, 'joinChars', s)]);
+  for (const s of seats) rows.push([`Hook-injected chars over the run · ${s}`, R.seats[s].injected.total, g(B, 'injected', s), g(P, 'injected', s)]);
+  rows.push(['UI noise lines per capture · all seats (target ≈ 1.4)', R.total.noise.perCapture, B.noise.perCapture, g(P, 'noise', 'perCapture')]);
+  rows.push(['… excluding "Waiting for N background agents"', R.total.noise.perCaptureExWaiting, B.noise.perCaptureExWaiting, g(P, 'noise', 'perCaptureExWaiting')]);
+  for (const [k, label] of [['monitor', '"Monitor event" lines'], ['waiting', '"Waiting for N background agents" lines'], ['hookError', '"hook error" lines'], ['blocked', '"blocked by hook" lines'], ['invalid', '"Invalid tool parameters" lines']]) rows.push([`${label} (all captures)`, R.total.noise[k], B.noise[k], g(P, 'noise', k)]);
+  rows.push(['Red or "hook error" lines (all captures)', R.total.noise.red, null, null]);
+  rows.push(['Model calls per consent card (open + after the answer)', R.total.cards.perCard, null, null]);
+  return `<section id="metrics-table">
+<header><h2><span class="sid">M</span>Slim build vs baselines</h2><p class="must">This run (room ${esc(R.room)}, ${esc(R.total.noise.captures)} captures of the orch, alice and bob) against vole-8126 (${esc(B.noise.captures)} captures) and the Phase 0 run otter-0813 (${esc(g(P, 'noise', 'captures'))} captures), all measured by scripts/metrics.js from the seats' transcripts and the pane captures. The orch's pane is <code>claude logs</code> of its background job.</p></header>
+<div class="metrics"><table><thead><tr><th>Metric</th><th>vole-8126</th><th>Phase 0</th><th>slim</th><th>vs vole</th><th>vs Phase 0</th></tr></thead><tbody>
+${rows.map(([l, now, base, p0]) => `<tr><td>${esc(l)}</td><td>${esc(base == null ? '–' : base)}</td><td>${esc(p0 == null ? '–' : p0)}</td><td>${esc(now == null ? '–' : now)}</td>${delta(now, base)}${delta(now, p0)}</tr>`).join('\n')}
 </tbody></table>
-<p class="note">Wakes: a sub-human Monitor event, a peer delivery or the row-rewake wake that starts an assistant turn (adjacent triggers in one turn count once). Notices delivered this run: ${esc(R.total.notices)} (baseline 39). Noise: lines matching "Monitor event", "Waiting for N background agents", "hook error", "blocked by hook" or "Invalid tool parameters", over every capture of that seat; the @room receipt "Operation stopped by hook: ✓ posted …" is not noise (${esc(R.total.noise.receipts)} receipt lines). Per-seat noise has no baseline split.</p></div>
+<p class="note">Wakes: a sub-human Monitor event, a peer delivery (SendMessage from another session) or the row-rewake wake that starts an assistant turn; adjacent triggers in one turn count once. Monitor notices delivered this run: ${esc(R.total.notices)}. Noise: lines matching "Monitor event", "Waiting for N background agents", "hook error", "blocked by hook" or "Invalid tool parameters", over every capture; the @room receipt "Operation stopped by hook: ✓ posted …" is not noise (${esc(R.total.noise.receipts)} receipt lines). Red lines are read from the colored captures. Cards: ${esc(R.total.cards.count)} consent cards, ${esc(R.total.cards.toCard)} model call(s) to open one and ${esc(R.total.cards.after)} after the answer, on average.</p></div>
 </section>`;
 }
 
@@ -164,7 +163,7 @@ ${steps.length ? stepHtml : '<p class="nochecks">No screens captured for this sc
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>sub-human walkthrough</title>
+<title>sub-human slim build</title>
 <style>
 :root {
   --bg: #f6f6f3; --surface: #ffffff; --ink: #1d1f23; --muted: #626872; --line: #dddcd5;
@@ -254,8 +253,8 @@ footer { color: var(--muted); font-size: 13px; margin-top: 28px; }
 </head>
 <body>
 <div class="wrap">
-<h1>sub-human walkthrough</h1>
-<p class="sub">${esc(summary)}. Each scene shows the orchestrator, alice and bob terminals captured from tmux, the room-log entries written during the step, and the checks. Click a pane to enlarge it.${meta.note ? ' ' + esc(meta.note) : ''}</p>
+<h1>sub-human walkthrough · slim build</h1>
+<p class="sub">${esc(summary)}. Each scene shows the orch (its background job, via <code>claude logs</code>), alice and bob terminals, the room-log entries written during the step, and the checks. Click a pane to enlarge it.${meta.note ? ' ' + esc(meta.note) : ''}</p>
 ${metricsHtml}
 <nav class="toc">${toc}</nav>
 ${sections || '<p class="nochecks">No captures yet: run scripts/demo.sh.</p>'}

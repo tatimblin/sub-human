@@ -30,6 +30,19 @@
  *   demo-lib.js log-max                           print the highest log id
  *   demo-lib.js latest-plan                       print the latest plan_rev hash
  *   demo-lib.js readonly <session>                exit 0 if a read-only client is attached
+ *   demo-lib.js wait-idle <session> [--timeout S] [--quiet S]   wait until the main prompt is idle (no
+ *                                                  "esc to interrupt" and the pane unchanged for --quiet S, 3)
+ *   demo-lib.js card <session> <Not yet|Agree|Object> [note]   answer the open consent card (n adds a note)
+ *   demo-lib.js wait-native-task <subject> [--timeout S]   wait until the orch's native list has it
+ *   demo-lib.js wait-tasks [--owner N] [--id N] [--status S] [--timeout S]   wait on <room>/tasks.json
+ *   demo-lib.js task-id --owner N                 print the id of N's newest task in <room>/tasks.json
+ *   demo-lib.js wait-orch-idle [--after ID] [--timeout S]   wait until the orch's transcript has an
+ *                                                  end_turn after log entry ID and 6 s of quiet
+ *   demo-lib.js orch-transcript                   print the orch session's transcript path
+ *   demo-lib.js synthetic-gate <id>               run hooks/tasks.js as the orch's TaskCompleted for task <id> over the
+ *                                                  real log; print {status, stderr} (exit 2 = refused)
+ *   demo-lib.js synthetic-orch-prompt             run hooks/at-room.js as the orch's UserPromptSubmit for a
+ *                                                  typed "hi" (CLAUDE_PID = the orch's pid); print its output
  *
  * Every wait appends {scene, what, ok, ms, time} to $SNAP_DIR/waits.jsonl (scene from $DEMO_SCENE)
  * and exits 1 on timeout (demo.sh treats that as best-effort and keeps going). --timeout 0 waits with no
@@ -124,6 +137,36 @@ async function until(what, timeoutS, fn) {
     }
     await sleep(700);
   }
+}
+
+
+const HOME_DIR = () => process.env.SUB_HUMAN_HOME || path.join(require('node:os').homedir(), '.sub-human');
+const roomFile = f => path.join(HOME_DIR(), 'rooms', roomCode() || '-', f);
+const readJ = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
+function orchTranscript() {
+  const o = readJ(roomFile('members.json'), {}).orch || {};
+  if (!o.session_id) return null;
+  const proj = path.join(require('node:os').homedir(), '.claude', 'projects');
+  for (const d of fs.readdirSync(proj)) {
+    const f = path.join(proj, d, `${o.session_id}.jsonl`);
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
+function readJsonl(f) {
+  try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; }
+}
+/** The ❯ line index and option labels of an open consent card, or null. */
+function cardState(p) {
+  const lines = p.split('\n');
+  const q = lines.findIndex(l => /Agree to proposal [0-9a-f]{12}\?/.test(l));
+  if (q < 0) return null;
+  const opts = [];
+  for (let i = q + 1; i < lines.length && opts.length < 4; i++) {
+    const m = /^\s*(❯)?\s*(\d)\.\s+(Not yet|Agree|Object|Type something|Chat about this)\b/.exec(lines[i]);
+    if (m) opts.push({ cur: !!m[1], n: +m[2], label: m[3] });
+  }
+  return opts.length ? { opts } : null;
 }
 
 function filterLog(o) {
@@ -284,6 +327,107 @@ async function main() {
         return v != null && String(v) !== String(o.not);
       });
       return ok ? 0 : 1;
+    }
+
+    case 'wait-idle': {
+      const quiet = (o.quiet == null ? 3 : +o.quiet) * 1000;
+      let last = null, since = 0;
+      const ok = await until(o.what || `${o._[0]} idle`, T, () => {
+        const p = pane(o._[0]);
+        // the scripted human declines unplanned work: a permission dialog gets Esc (recorded in waits.jsonl)
+        if (/Do you want to proceed\?|Do you want to (make this edit|create)/.test(p) && /Esc to cancel/.test(p)) {
+          record(`${o._[0]}: the human declined a permission dialog (Esc): ${(/^\s*(\S.*)\n\s*Run shell command|Do you want to [^\n]*/m.exec(p) || [''])[0].trim().slice(0, 80)}`, true, 0);
+          keys(o._[0], ['Esc']).catch(() => {});
+          last = null; return false;
+        }
+        const busy = /esc to interrupt/.test(p) || cardState(p);
+        const body = p.replace(/\d+[smh]\b|[✻✶✳✢·✽*]/g, '');
+        if (busy || body !== last) { last = body; since = Date.now(); return false; }
+        return Date.now() - since >= quiet;
+      });
+      return ok ? 0 : 1;
+    }
+    case 'card': {
+      const [session, choice, ...noteParts] = o._;
+      const note = noteParts.join(' ');
+      if (!(await until(`${session}: consent card open`, T, () => cardState(pane(session))))) return 1;
+      await sleep(1200);
+      let st = cardState(pane(session));
+      const want = st.opts.find(x => x.label === choice);
+      if (!want) { process.stderr.write(`no option ${choice}\n`); return 1; }
+      for (let i = 0; i < 6; i++) {
+        st = cardState(pane(session));
+        const cur = st && st.opts.find(x => x.cur);
+        if (!cur || cur.label === choice) break;
+        await keys(session, [cur.n < want.n ? 'Down' : 'Up']);
+        await sleep(300);
+      }
+      if (note) {
+        await keys(session, ['n']);
+        await sleep(800);
+        await literal(session, note);
+        await sleep(600);
+      }
+      await keys(session, ['Enter']);
+      await sleep(1500);
+      // a review step ("Submit answers") takes one more Enter
+      const p = pane(session);
+      if (/Submit answers|Review your answers/i.test(p) && /❯\s*1\.\s*Submit/.test(p)) { await keys(session, ['Enter']); await sleep(800); }
+      record(`${session}: answered the card ${choice}${note ? ` with note "${note}"` : ''}`, true, 0);
+      return 0;
+    }
+    case 'wait-native-task': {
+      const subj = o._[0];
+      const ok = await until(o.what || `orch's native list has "${subj}"`, T, () => {
+        const dir = path.join(require('node:os').homedir(), '.claude', 'tasks', `sh-${roomCode()}`);
+        return fs.readdirSync(dir).filter(f => f.endsWith('.json')).some(f => (readJ(path.join(dir, f), {}) || {}).subject === subj);
+      });
+      return ok ? 0 : 1;
+    }
+    case 'wait-tasks': {
+      const ok = await until(o.what || `tasks.json has a task${o.id ? ' #' + o.id : ''}${o.owner ? ' owned by ' + o.owner : ''}${o.status ? ' ' + o.status : ''}`, T, () =>
+        (readJ(roomFile('tasks.json'), []) || []).some(t => (!o.id || String(t.id) === String(o.id)) && (!o.owner || t.owner === o.owner) && (!o.status || t.status === o.status)));
+      return ok ? 0 : 1;
+    }
+    case 'task-id': {
+      const t = (readJ(roomFile('tasks.json'), []) || []).filter(x => !o.owner || x.owner === o.owner).at(-1);
+      process.stdout.write((t ? t.id : '') + '\n');
+      return t ? 0 : 1;
+    }
+    case 'orch-transcript': { const f = orchTranscript(); process.stdout.write((f || '') + '\n'); return f ? 0 : 1; }
+    case 'wait-orch-idle': {
+      const after = o.after != null ? readLog(roomCode()).find(e => e.id === +o.after) : null;
+      const t0 = after ? after.at : new Date().toISOString();
+      let n = -1, since = Date.now();
+      const ok = await until(o.what || `the orch's turn after #${o.after || 'now'} ends`, T, () => {
+        const es = readJsonl(orchTranscript());
+        if (es.length !== n) { n = es.length; since = Date.now(); return false; }
+        const lastA = es.filter(e => e.type === 'assistant' && e.timestamp > t0).at(-1);
+        return !!lastA && lastA.message && lastA.message.stop_reason === 'end_turn' && Date.now() - since > 6000;
+      });
+      return ok ? 0 : 1;
+    }
+    case 'synthetic-gate': {
+      const o2 = readJ(roomFile('members.json'), {}).orch || {};
+      const plugin = path.join(REPO, 'plugin', 'sub-human');
+      const input = { hook_event_name: 'TaskCompleted', session_id: o2.session_id, task_id: String(o._[0]), task_subject: '' };
+      const r = require('node:child_process').spawnSync(process.execPath, [path.join(plugin, 'hooks', 'tasks.js')], {
+        input: JSON.stringify(input), encoding: 'utf8',
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, SUB_HUMAN_HOME: HOME_DIR(), CLAUDE_PID: String(o2.pid || ''), CLAUDE_PLUGIN_ROOT: plugin, CLAUDE_CODE_TASK_LIST_ID: `sh-${roomCode()}` },
+      });
+      process.stdout.write(JSON.stringify({ input, status: r.status, stdout: (r.stdout || '').trim(), stderr: (r.stderr || '').trim(), logMax: Math.max(0, ...readLog(roomCode()).map(e => e.id)) }, null, 1) + '\n');
+      return 0;
+    }
+    case 'synthetic-orch-prompt': {
+      const o2 = readJ(roomFile('members.json'), {}).orch || {};
+      const plugin = path.join(REPO, 'plugin', 'sub-human');
+      const input = { hook_event_name: 'UserPromptSubmit', session_id: o2.session_id, transcript_path: orchTranscript() || '', cwd: process.cwd(), prompt: 'hi', prompt_id: 'synthetic-1', permission_mode: 'plan' };
+      const r = require('node:child_process').spawnSync(process.execPath, [path.join(plugin, 'hooks', 'at-room.js')], {
+        input: JSON.stringify(input), encoding: 'utf8',
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, SUB_HUMAN_HOME: HOME_DIR(), CLAUDE_PID: String(o2.pid || ''), CLAUDE_PLUGIN_ROOT: plugin },
+      });
+      process.stdout.write(JSON.stringify({ input: { prompt: input.prompt, session_id: input.session_id, pid: o2.pid }, status: r.status, stdout: (r.stdout || '').trim(), stderr: (r.stderr || '').trim() }, null, 1) + '\n');
+      return 0;
     }
     case 'count': process.stdout.write(filterLog(o).length + '\n'); return 0;
     case 'last-id': { const e = filterLog(o).at(-1); process.stdout.write((e ? e.id : 0) + '\n'); return e ? 0 : 1; }

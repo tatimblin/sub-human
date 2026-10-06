@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * checks: compute docs/rebuild/checks.json from the evidence a scripts/demo.sh run left behind.
+ * checks: compute docs/rebuild/checks.json from the evidence a scripts/demo.sh run (slim build) left behind.
  *
- *   node scripts/checks.js [--screens DIR] [--out FILE] [--home DIR] [--room CODE]
+ *   node scripts/checks.js [--screens DIR] [--out FILE] [--home DIR] [--room CODE] [--note TEXT]
  *
- * Evidence only, nothing assumed: the room log ($SUB_HUMAN_HOME/rooms/CODE/log.jsonl), members.json,
- * the rows/ files, $SUB_HUMAN_HOME/mcp-debug.log (SUB_HUMAN_DEBUG=1), the pane captures
- * (screens/index.json + *.txt) and the seats' Claude Code transcripts (read-only). A check whose
- * evidence is missing fails and says so. Output: {scene: [{check, pass, evidence}], _meta: {cost, run, note}}.
+ * Evidence only, nothing assumed: the room log ($SUB_HUMAN_HOME/rooms/CODE/log.jsonl), members.json, tasks.json,
+ * plans/, the per-step state demo.sh saved (screens/state/SCENE/N: members.json, rows/, tasks.json,
+ * `claude agents --json`, `sub-human tasks`, the orch's native task files; S6/gate-bob.json, S9/synthetic-prompt.json),
+ * the pane captures (screens/index.json + *.txt; the orch's pane is `claude logs <job>`) and the seats' Claude Code
+ * transcripts (read-only; the orch's is the file named after its session id). A check whose evidence is missing
+ * fails and says so. Output: {scene: [{check, pass, evidence}], _meta: {cost, run, note}, _metrics}.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -17,10 +19,12 @@ const metrics = require('./metrics.js');
 
 const REPO = path.resolve(__dirname, '..');
 const DEMO = {
-  alice4: "let's add cursor paging to GET /tasks: ?limit&after, bare array, max 50",
-  bob4: "I want to approve this. Keep `after` opaque, not a page number.",
-  reason7: 'cap the page at 50 and say what happens past it — `limit=500` must clamp, not 400',
+  alice3: "bob, can you take the parser tests? handler's in src/server.js",
+  bob4: "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first",
+  note5: 'add a test for a cursor past the end — `after=zzz` must 400, not 500',
+  viewer9: "hi orch, what's next?",
 };
+const TARGET = { wakes: 12 };
 
 function args() {
   const a = process.argv.slice(2), o = {};
@@ -32,6 +36,7 @@ const readText = f => { try { return fs.readFileSync(f, 'utf8'); } catch { retur
 const jsonl = f => (readText(f) || '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
 const clip = (s, n = 160) => { s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const textOf = c => (typeof c === 'string' ? c : Array.isArray(c) ? c.map(x => (x && (x.text || (typeof x.content === 'string' ? x.content : ''))) || '').join('\n') : '');
 
 /** Panel rows of a capture: the lines below the prompt box that start with ⏺/◯/● (agent panel). */
 function panelRows(txt) {
@@ -49,8 +54,7 @@ function panelRows(txt) {
 }
 /** Status line under the prompt (the ⬡ line between the prompt box and the panel). */
 function statusLine(txt) {
-  const lines = (txt || '').split('\n');
-  const l = lines.filter(x => /^\s*⬡\s/.test(x)).at(-1);
+  const l = (txt || '').split('\n').filter(x => /^\s*⬡\s/.test(x)).at(-1);
   return l ? l.trim() : '';
 }
 
@@ -64,336 +68,351 @@ function main() {
   const roomDir = path.join(home, 'rooms', code);
   const log = jsonl(path.join(roomDir, 'log.jsonl'));
   const members = readJson(path.join(roomDir, 'members.json'), {});
-  const debug = (readText(path.join(home, 'mcp-debug.log')) || '').split('\n');
-  const rowsDir = path.join(roomDir, 'rows');
-  const rowMaps = {};
-  try { for (const f of fs.readdirSync(rowsDir)) if (/^[0-9a-f-]{36}\.json$/.test(f)) rowMaps[f.slice(0, -5)] = (readJson(path.join(rowsDir, f), {}) || {}).byAgent || {}; } catch { /* none */ }
+  const orchSid = members.orch && members.orch.session_id;
+  const job = members.orch && members.orch.job;
+  const projects = path.join(os.homedir(), '.claude', 'projects');
 
-  // captures: cap(scene, seat, step) -> text; step 'last' = the scene's last step
-  const cap = (scene, seat, step = 1) => {
-    const rs = index.filter(r => r.scene === scene && r.session === `sh-${seat}`);
-    const r = step === 'last' ? rs.at(-1) : rs.find(x => x.step === step);
-    return r ? readText(path.join(screens, r.txt)) : null;
+  // ---- captures and per-step state
+  const caps = (scene, seat) => index.filter(r => r.scene === scene && r.session === `sh-${seat}`);
+  const cap = (scene, seat, step = 1) => { const rs = caps(scene, seat); const r = step === 'last' ? rs.at(-1) : rs.find(x => x.step === step); return r ? readText(path.join(screens, r.txt)) : null; };
+  const capName = (scene, seat, step = 1) => { const rs = caps(scene, seat); const r = step === 'last' ? rs.at(-1) : rs.find(x => x.step === step); return r ? r.txt : `(no ${scene} step ${step} capture of sh-${seat})`; };
+  const win = scene => { const rs = index.filter(r => r.scene === scene); return rs.length ? { from: rs.map(r => r.time).sort()[0], to: rs.map(r => r.time).sort().at(-1) } : null; };
+  // a scene's window runs from the previous scene's last capture to its own last capture
+  const sceneOrder = [...new Set(index.map(r => r.scene))];
+  const span = scene => {
+    const w = win(scene); if (!w) return null;
+    const i = sceneOrder.indexOf(scene);
+    const prev = i > 0 ? win(sceneOrder[i - 1]) : null;
+    return { from: prev ? prev.to : new Date(Date.parse(w.from) - 180_000).toISOString(), to: w.to };
   };
-  const capName = (scene, seat, step = 1) => { const r = index.filter(x => x.scene === scene && x.session === `sh-${seat}`); const x = step === 'last' ? r.at(-1) : r.find(y => y.step === step); return x ? x.txt : `(no ${scene} step ${step} capture of sh-${seat})`; };
-  const sceneWindow = scene => { const rs = index.filter(r => r.scene === scene); return rs.length ? { from: Math.min(...rs.map(r => Date.parse(r.time))), to: Date.parse(rs.at(-1).time) } : null; }; // ms
+  const stateDir = (scene, step) => {
+    const d = path.join(screens, 'state', scene);
+    let steps = [];
+    try { steps = fs.readdirSync(d).filter(x => /^\d+$/.test(x)).map(Number).sort((a, b) => a - b); } catch { /* none */ }
+    const s = step === 'last' ? steps.at(-1) : step;
+    return s ? path.join(d, String(s)) : null;
+  };
+  const st = (scene, step, file, d) => { const dir = stateDir(scene, step); return dir ? readJson(path.join(dir, file), d) : d; };
+  const stText = (scene, step, file) => { const dir = stateDir(scene, step); return dir ? readText(path.join(dir, file)) : null; };
+  const nativeTasks = (scene, step) => { const dir = stateDir(scene, step); const d = dir && path.join(dir, 'native-tasks'); try { return fs.readdirSync(d).map(f => readJson(path.join(d, f), null)).filter(Boolean); } catch { return []; } };
+
+  // ---- transcripts
+  const seatFiles = seat => {
+    if (seat === 'orch') { const f = []; try { for (const d of fs.readdirSync(projects)) { const p = path.join(projects, d, `${orchSid}.jsonl`); if (orchSid && fs.existsSync(p)) f.push(p); } } catch { /* none */ } return f; }
+    const dir = path.join(projects, `-private-tmp-sh-demo-${seat}`);
+    try { return fs.readdirSync(dir).filter(f => f.endsWith('.jsonl') && f !== `${orchSid}.jsonl`).map(f => path.join(dir, f)); } catch { return []; }
+  };
+  const tcache = {};
+  const entries = seat => (tcache[seat] = tcache[seat] || seatFiles(seat).flatMap(f => jsonl(f).map(e => ({ ...e, _file: path.basename(f) }))).filter(e => e.agentSetting !== 'sub-human:orchestrator' || seat === 'orch'));
+  const inSpan = (es, s) => (s ? es.filter(e => e.timestamp && e.timestamp > s.from && e.timestamp <= s.to) : []);
+  const toolUses = (es, name) => es.filter(e => e.type === 'assistant' && !e.isSidechain).flatMap(e => (e.message.content || []).filter(c => c && c.type === 'tool_use' && (!name || c.name === name || new RegExp(name).test(c.name))).map(c => ({ ...c, at: e.timestamp })));
+  const assistantIds = es => new Set(es.filter(e => e.type === 'assistant' && !e.isSidechain).map(e => e.message.id || e.uuid));
+  const peerIn = (es, from) => es.filter(e => e.type === 'user' && e.origin && e.origin.kind === 'peer' && (!from || String(e.origin.name || '').startsWith(from + '.')));
+  const monitorIn = es => es.filter(e => metrics.trigger(e) === 'monitor');
 
   const C = {};
-  const add = (scene, check, pass, evidence) => { (C[scene] = C[scene] || []).push({ check, pass: !!pass, evidence: clip(evidence, 400) }); };
+  const add = (scene, check, pass, evidence) => { (C[scene] = C[scene] || []).push({ check, pass: !!pass, evidence: clip(evidence, 420) }); };
   const byKind = (k, f = {}) => log.filter(e => e.kind === k && Object.entries(f).every(([a, b]) => e[a] === b));
-  const fmt = e => (e ? `#${e.id} ${e.from} ${e.via} ${e.kind}${e.plan_hash ? ' ' + e.plan_hash.slice(0, 6) : ''}: ${clip(e.text, 90)}` : 'none');
+  const fmt = e => (e ? `#${e.id} ${e.from} ${e.via} ${e.kind}${e.hash ? ' ' + e.hash.slice(0, 6) : ''}${e.proposal_hash ? ' ' + e.proposal_hash.slice(0, 6) : ''}: ${clip(e.text, 90)}` : 'none');
+  const logIn = s => (s ? log.filter(e => e.at > s.from && e.at <= s.to) : []);
+  const orchTurns = s => assistantIds(inSpan(entries('orch'), s)).size;
 
-  // ---- S1
+  // ---- S1: alice joins, no room open
   {
-    const t = cap('S1', 'orch');
-    add('S1', 'Room dir exists with a log and members.json', fs.existsSync(roomDir) && !!members.orch, `${roomDir}: members ${Object.keys(members).join(', ') || 'none'}`);
-    const agent = t && /@sub-human:orchestrator/.test(t);
-    add('S1', 'The orch session runs agent_type sub-human:orchestrator, registered as role orch', agent && members.orch && members.orch.role === 'orch',
-      `pane header ${agent ? 'shows' : 'lacks'} "@sub-human:orchestrator"; members.json orch.role=${members.orch && members.orch.role}`);
-    const banner = t && new RegExp(`room ${esc(code)} open`).test(t);
-    const sl = statusLine(t);
-    add('S1', `Invite banner and status line ⬡ ${code} · orch`, banner && sl.startsWith(`⬡ ${code} · orch`), `banner ${banner ? 'present' : 'missing'}; status line "${sl}" (${capName('S1', 'orch')})`);
+    const s = span('S1');
+    const ms = st('S1', 1, 'members.json', members);
+    add('S1', 'Room created: log, members.json with alice (member) and the orch (job id)', fs.existsSync(path.join(roomDir, 'log.jsonl')) && ms.alice && ms.alice.role === 'member' && ms.orch && ms.orch.job,
+      `${roomDir}: alice ${ms.alice ? ms.alice.role : 'missing'}, orch job ${ms.orch ? ms.orch.job : 'missing'}`);
+    const ag = st('S1', 1, 'agents.json', []);
+    const a = ag.find(x => x.id === job || x.sessionId === orchSid);
+    add('S1', `The orch is a background job titled orch.${code} (claude agents --json), not a tmux seat`, a && a.kind === 'background' && a.name === `orch.${code}`,
+      a ? `id ${a.id} kind ${a.kind} name ${a.name} state ${a.state} cwd ${a.cwd}` : `no agent with id ${job} in state/S1/1/agents.json`);
+    const oc = cap('S1', 'orch') || '';
+    add('S1', 'The orch bound itself as orch of the room (agent sub-human:orchestrator, pid, session id)', ms.orch && ms.orch.role === 'orch' && ms.orch.pid && ms.orch.session_id && /@sub-human:orchestrator/.test(oc),
+      `members.json orch role=${ms.orch && ms.orch.role} pid=${ms.orch && ms.orch.pid}; "${(/UserPromptExpansion says: [^\n]*/.exec(oc) || ['no join line'])[0]}" in ${capName('S1', 'orch')} (claude logs ${job})`);
+    const rcpt = /sub-human: opened room ([a-z]+-\d{4}) as alice · others: \/sub-human NAME/.exec(cap('S1', 'alice') || '');
+    add('S1', 'alice\'s join line: "opened room CODE as alice · others: /sub-human NAME"', rcpt && rcpt[1] === code, rcpt ? rcpt[0] : `not in ${capName('S1', 'alice')}`);
+    const ar = panelRows(cap('S1', 'alice'));
+    add('S1', `alice's panel: one ${code} row`, ar.filter(r => !r.nested).length === 1 && ar[0].label === code, ar.map(r => r.line).join(' | ') || 'no rows');
+    const orr = panelRows(oc);
+    const holds = st('S1', 1, 'holds-orch.json', {});
+    add('S1', 'The orch\'s panel lists alice', orr.some(r => r.label === 'alice') && (holds.members || []).includes('alice'),
+      `orch rows: ${orr.map(r => r.line).join(' | ') || 'none'}; rows/holds-orch.json members ${JSON.stringify(holds.members || [])}`);
+    const t1 = nativeTasks('S1', 1).find(t => t.id === '1');
+    add('S1', `Room task #1 "room ${code} open" on the orch's native list (in_progress, owner room)`, t1 && t1.subject === `room ${code} open` && t1.status === 'in_progress' && t1.owner === 'room',
+      t1 ? `~/.claude/tasks/sh-${code}/1.json: "${t1.subject}" ${t1.status} owner ${t1.owner}` : 'no 1.json in the S1 copy of the native list');
+    const j = entries('alice').filter(e => e.attachment && e.attachment.type === 'hook_additional_context' && e.attachment.hookEvent === 'UserPromptExpansion').map(e => [].concat(e.attachment.content).join('\n'))[0] || '';
+    const fillLen = j.split('\n\nROWS\n')[0].length;
+    add('S1', 'Member join block small: text ≤ 900 chars, with ROWS ≤ 1,200', j && fillLen <= 900 && j.length <= 1200, `alice's join additionalContext ${j.length} chars (mechanics text ${fillLen}, ROWS ${j.length - fillLen})`);
+    void s;
   }
 
-  // ---- S2 / S3
-  // rows/ and members.json as demo.sh saved them at the scene's last snap (rows are forgotten when they end)
-  const stateAt = scene => {
-    const d = path.join(screens, 'state', scene);
-    const ms = readJson(path.join(d, 'members.json'), null);
-    const maps = {};
-    try { for (const f of fs.readdirSync(d)) if (/^[0-9a-f-]{36}\.json$/.test(f)) maps[f.slice(0, -5)] = (readJson(path.join(d, f), {}) || {}).byAgent || {}; } catch { /* none */ }
-    return ms ? { members: ms, rowMaps: maps } : { members, rowMaps };
-  };
-  const joinCheck = (scene, name) => {
-    const j = byKind('member_joined', { from: name })[0];
-    add(scene, `member_joined ${name}`, j && j.via === 'system', fmt(j));
-    const { members: msAt, rowMaps: mapsAt } = stateAt(scene);
-    const m = msAt[name];
-    const map = m && mapsAt[m.session_id];
-    const roomRow = map && Object.values(map).find(r => r.kind === 'room' && r.name === code);
-    const orchMap = msAt.orch && mapsAt[msAt.orch.session_id];
-    const pRow = orchMap && Object.entries(orchMap).find(([, r]) => r.kind === 'participant' && r.name === name);
-    add(scene, `Row ids mapped: ${name}'s room row, the orch's ${name} row`, !!roomRow && !!pRow,
-      `rows/${m ? m.session_id.slice(0, 8) : '?'}…json room row ${roomRow ? 'yes' : 'no'}; orch map ${name} → ${pRow ? pRow[0] : 'none'}`);
-  };
-  joinCheck('S2', 'alice');
+  // ---- S2: bob joins
   {
-    const a = panelRows(cap('S2', 'alice')), oRows = panelRows(cap('S2', 'orch'));
-    const sl = statusLine(cap('S2', 'alice'));
-    add('S2', `alice's panel: one ${code} row and no status line`, a.length === 1 && a[0].label === code && !sl, `alice rows: ${a.map(r => r.line).join(' | ') || 'none'}; status line: ${sl || 'none'}`);
-    add('S2', 'orch panel has an alice row', oRows.some(r => r.label === 'alice'), `orch rows: ${oRows.map(r => r.line).join(' | ') || 'none'}`);
-  }
-  joinCheck('S3', 'bob');
-  {
-    const oRows = panelRows(cap('S3', 'orch')), a = panelRows(cap('S3', 'alice')), b = panelRows(cap('S3', 'bob'));
-    add('S3', 'orch: 2 rows (alice, bob)', oRows.length === 2 && oRows.some(r => r.label === 'alice') && oRows.some(r => r.label === 'bob'), `orch rows: ${oRows.map(r => r.line).join(' | ')}`);
-    add('S3', `members: 1 row each (${code})`, a.length === 1 && b.length === 1 && a[0].label === code && b[0].label === code, `alice: ${a.map(r => r.line).join(' | ')}; bob: ${b.map(r => r.line).join(' | ')}`);
+    const j = byKind('member_joined', { from: 'bob' })[0];
+    add('S2', 'member_joined bob (via system)', j && j.via === 'system', fmt(j));
+    const rc = /sub-human: joined ([a-z]+-\d{4}) as bob \(([^)]*)\)/.exec(cap('S2', 'bob') || '');
+    add('S2', 'bob\'s join line: "joined CODE as bob (alice, orch here)"', rc && rc[1] === code && /alice/.test(rc[2]) && /orch/.test(rc[2]), rc ? rc[0] : `not in ${capName('S2', 'bob')}`);
+    const ha = st('S2', 1, 'holds-alice.json', {}), hb = st('S2', 1, 'holds-bob.json', {}), ho = st('S2', 1, 'holds-orch.json', {});
+    add('S2', 'Rows: bob nested in alice\'s room row, alice in bob\'s, both in the orch\'s', ha.room && (ha.members || []).includes('bob') && hb.room && (hb.members || []).includes('alice') && ['alice', 'bob'].every(n => (ho.members || []).includes(n)),
+      `holds-alice ${JSON.stringify({ room: ha.room, members: ha.members })}; holds-bob ${JSON.stringify({ room: hb.room, members: hb.members })}; holds-orch ${JSON.stringify(ho.members)}`);
+    const br = panelRows(cap('S2', 'bob'));
+    const top = br.filter(r => !r.nested);
+    add('S2', `bob's panel: only the ${code} row at the top level (no stray participant row)`, top.length === 1 && top[0].label === code, br.map(r => r.line).join(' | ') || 'no rows');
+    const orr = panelRows(cap('S2', 'orch'));
+    add('S2', 'The orch\'s panel lists alice and bob', ['alice', 'bob'].every(n => orr.some(r => r.label === n)), orr.map(r => r.line).join(' | ') || 'none');
+    const n = orchTurns(span('S2'));
+    add('S2', 'The orch spent at most 2 model calls on the join (its row spawn)', n <= 2, `${n} orch assistant messages in S2`);
   }
 
-  // ---- S4
+  // ---- S3: pairing, no plan
   {
-    for (const [seat, text] of [['alice', DEMO.alice4], ['bob', DEMO.bob4]]) {
-      const e = log.find(x => x.kind === 'say' && x.from === seat && x.via === 'human');
-      add('S4', `${seat}'s @room text identical byte for byte, via=human`, e && e.text === text, e ? `#${e.id} via=${e.via} text ${e.text === text ? '===' : '!=='} typed (${Buffer.byteLength(e.text)} bytes)` : 'no say via=human');
-      const turn = noModelTurn(seat, e);
-      add('S4', `${seat}'s @room ran 0 model turns`, turn.pass, turn.evidence);
-    }
-    const e = log.find(x => x.kind === 'say' && x.from === 'alice' && x.via === 'human');
-    const t = cap('S4', 'alice');
-    // Phase 0 (0.5): success is continue:false + stopReason: one "Operation stopped by hook: ✓ posted to CODE as #N"
-    // line under the human's own ❯ @room row, and no "blocked by hook" header
-    const rc = e && t && new RegExp(`Operation stopped by hook: ✓ posted to ${esc(code)} as #${e.id}`).test(t);
-    add('S4', 'Receipt "Operation stopped by hook: ✓ posted to CODE as #N" in alice\'s pane', rc, rc ? `"Operation stopped by hook: ✓ posted to ${code} as #${e.id}" (${capName('S4', 'alice')})` : `not found in ${capName('S4', 'alice')}`);
+    const s = span('S3');
+    const e = log.find(x => x.kind === 'say' && x.from === 'alice' && x.via === 'human' && x.text === DEMO.alice3);
+    const anyA = log.find(x => x.kind === 'say' && x.from === 'alice' && x.via === 'human');
+    add('S3', 'alice\'s @room text byte-exact, via=human', !!e, e ? `#${e.id} === typed (${Buffer.byteLength(e.text)} bytes)` : `first alice say: ${fmt(anyA)}`);
+    const t = cap('S3', 'alice') || '';
+    const rc = e && new RegExp(`Operation stopped by hook: ✓ posted to ${esc(code)} as #${e.id}`).test(t);
+    add('S3', 'One receipt line "Operation stopped by hook: ✓ posted to CODE as #N"; no "blocked by hook"', rc && !/blocked by hook/.test(t), rc ? `receipt for #${e.id} in ${capName('S3', 'alice')}` : `no receipt in ${capName('S3', 'alice')}`);
+    const turn = noModelTurn('alice', e);
+    add('S3', 'alice\'s @room ran no model turn', turn.pass, turn.evidence);
+    const mw = monitorIn(inSpan(entries('bob'), s)).filter(x => e && textOf(x.message.content).includes(e.text));
+    add('S3', 'bob\'s Claude is woken once with alice\'s exact words', mw.length === 1, `${mw.length} Monitor event(s) in bob's transcript carrying #${e ? e.id : '?'} verbatim`);
+    const sm = toolUses(inSpan(entries('bob'), s), 'SendMessage').filter(c => String((c.input || {}).to || '') === `alice.${code}`);
+    add('S3', `bob's Claude calls SendMessage to alice.${code}`, sm.length >= 1, sm.length ? `SendMessage {to: "${sm[0].input.to}", message: "${clip(sm[0].input.message || sm[0].input.content, 80)}"}` : 'no SendMessage to alice');
+    const pe = peerIn(inSpan(entries('alice'), s), 'bob');
+    add('S3', 'alice\'s Claude receives it as a peer message from bob (origin.kind peer)', pe.length >= 1, pe.length ? `origin {kind: peer, name: ${pe[0].origin.name}, verifiedPeerPid: ${pe[0].origin.verifiedPeerPid}}: "${clip(pe[0].origin.body, 80)}"` : 'no peer entry from bob');
+    const back = toolUses(inSpan(entries('alice'), s), 'SendMessage').filter(c => String((c.input || {}).to || '') === `bob.${code}`);
+    const pb = peerIn(inSpan(entries('bob'), s), 'alice');
+    add('S3', 'alice\'s Claude answers natively (SendMessage back; bob receives it)', back.length >= 1 && pb.length >= 1, `alice SendMessage to bob: ${back.length}; peer entries from alice in bob's transcript: ${pb.length}${pb[0] ? ` ("${clip(pb[0].origin.body, 70)}")` : ''}`);
+    const cards = ['alice', 'bob'].flatMap(x => toolUses(inSpan(entries(x), s), 'AskUserQuestion'));
+    add('S3', 'No card and no proposal', cards.length === 0 && !logIn(s).some(x => x.kind === 'proposal'), `${cards.length} AskUserQuestion calls; proposals in S3: ${logIn(s).filter(x => x.kind === 'proposal').length}`);
+    const n = orchTurns(s);
+    add('S3', 'The orch was not woken', n === 0, `${n} orch assistant messages in S3 (${s ? s.from.slice(11, 19) + '–' + s.to.slice(11, 19) : 'no window'})`);
+  }
+
+  // ---- S4: let's plan
+  const props = log.filter(e => e.kind === 'proposal' && e.hash);
+  {
+    const s = span('S4');
+    const ask = log.find(e => e.kind === 'say' && e.from === 'bob' && e.via === 'human' && e.text === DEMO.bob4);
+    add('S4', 'bob\'s "@room @orch let\'s plan …" byte-exact, via=human', !!ask, ask ? `#${ask.id}` : 'not logged verbatim');
+    const p1 = props[0];
+    add('S4', 'The orch proposes: proposal from orch naming alice and bob, plan stored by hash', p1 && p1.from === 'orch' && ['alice', 'bob'].every(n => (p1.approvers || []).includes(n)) && fs.existsSync(path.join(roomDir, 'plans', `${p1.hash}.md`)),
+      p1 ? `${fmt(p1)} approvers ${p1.approvers.join(',')}; plans/${p1.hash}.md ${fs.existsSync(path.join(roomDir, 'plans', `${p1.hash}.md`)) ? 'present' : 'missing'}` : 'no proposal');
+    const ow = ask && entries('orch').find(e => e.timestamp > ask.at && metrics.trigger(e));
+    add('S4', 'The orch is woken by bob\'s @orch line', !!ow, ow ? `${metrics.trigger(ow)} at ${ow.timestamp.slice(11, 19)}` : 'no orch wake after it');
     for (const seat of ['alice', 'bob']) {
-      const caps = index.filter(r => r.scene === 'S4' && r.session === `sh-${seat}`);
-      const hits = caps.map(r => [r.txt, (readText(path.join(screens, r.txt)) || '').split('\n').filter(l => /blocked by hook/i.test(l)).length]).filter(([, n]) => n);
-      add('S4', `No "blocked by hook" header in ${seat}'s S4 panes`, caps.length > 0 && hits.length === 0,
-        caps.length ? (hits.length ? hits.map(([f, n]) => `${f}: ${n}`).join(', ') : `0 lines in ${caps.length} captures`) : 'no S4 captures');
-    }
-    const oRows = panelRows(cap('S4', 'orch'));
-    const ar = oRows.find(r => r.label === 'alice');
-    add('S4', 'The orch\'s alice row updates with her post', !!(ar && e && ar.text.includes(`#${e.id}`)), `orch alice row: ${ar ? ar.line : 'none'}`);
-  }
-
-  // ---- S5 (no checks in the plan; record what the screen shows)
-  {
-    const sl = statusLine(cap('S5', 'orch'));
-    add('S5', 'The orch\'s own status line is shown', sl.startsWith(`⬡ ${code} · orch`), `status line: "${sl}"`);
-  }
-
-  // ---- S6
-  const revs = log.filter(e => e.kind === 'plan_rev' && e.plan_hash);
-  {
-    const r1 = revs[0];
-    add('S6', 'plan_rev published', !!r1, fmt(r1) + (r1 ? ` approvers ${r1.approvers.join(',')}` : ''));
-    if (r1) {
-      const offers = debug.map(l => /^(\S+) (\d+) signoff: offer (?:\S+ )*?(sh-\S+) (\w+)$/.exec(l)).filter(m => m && m[4] === r1.plan_hash);
-      const t0 = Date.parse(r1.at);
-      const firstByPid = new Map();
-      for (const m of offers) if (!firstByPid.has(m[2])) firstByPid.set(m[2], Date.parse(m[1]) - t0);
-      const lags = [...firstByPid.values()];
-      add('S6', 'Form sent to each approver within 1 s', lags.length >= r1.approvers.length && lags.every(x => x >= 0 && x < 1000),
-        `elicitation/create offers after plan_rev #${r1.id}: ${lags.map(x => x + ' ms').join(', ') || 'none'} (${lags.length} servers, ${r1.approvers.length} approvers; mcp-debug.log)`);
-      for (const seat of ['alice', 'bob']) {
-        const t = cap('S6', seat) || '';
-        const ok = /requests your input/.test(t) && t.includes(`plan ${r1.plan_hash.slice(0, 6)}`) && /full plan: \S+\.md/i.test(t) && /Approve this plan\?/.test(t) && /Object/.test(t);
-        add('S6', `${seat}'s pane shows the form: room/plan line, summary, path, Approve/Object`, ok, ok ? `"plan ${r1.plan_hash.slice(0, 6)}", "full plan: …md", "Approve this plan? … Object" in ${capName('S6', seat)}` : `form text incomplete in ${capName('S6', seat)}`);
-      }
+      const t = cap('S4', seat, 'last') || '';
+      const m = new RegExp(`Agree to proposal (${p1 ? esc(p1.hash) : '[0-9a-f]{12}'})\\?`).exec(t);
+      const opts = /1\. Not yet/.test(t) && /2\. Agree/.test(t) && /3\. Object/.test(t);
+      add('S4', `${seat}'s native card: "Agree to proposal HASH?" with Not yet / Agree / Object and the plan beside it`, m && opts && /Consent/.test(t), m ? `${m[0]}; options ${opts ? 'Not yet/Agree/Object' : 'missing'} (${capName('S4', seat, 'last')})` : `no card in ${capName('S4', seat, 'last')}`);
     }
   }
 
-  // ---- S7
+  // ---- S5: object with a note, revise, both agree
   {
-    const r1 = revs[0];
-    const ob = r1 && log.find(e => e.kind === 'objection' && e.from === 'bob' && e.plan_hash === r1.plan_hash);
-    add('S7', 'objection via=human from bob on the plan', ob && ob.via === 'human', fmt(ob));
-    add('S7', 'Reason identical byte for byte', ob && ob.text === DEMO.reason7, ob ? `logged ${ob.text === DEMO.reason7 ? '===' : '!=='} typed: ${ob.text}` : 'no objection');
-    const filled = cap('S7', 'bob', 1) || '';
-    const tail = DEMO.reason7.slice(-30); // the box shows the end of a long reason
-    add('S7', 'bob\'s form shown filled in (Object + reason) before submit', /Object to plan/.test(filled) && filled.includes(tail), `${capName('S7', 'bob', 1)}: ${/Object to plan/.test(filled) ? '"Object to plan" form' : 'no objection form'}, reason ${filled.includes(tail) ? 'typed' : 'absent'}`);
-    const oR = panelRows(cap('S7', 'orch', 'last')).find(r => r.label === 'bob');
-    const aR = panelRows(cap('S7', 'alice', 'last')).find(r => r.label === code);
-    add('S7', 'The objection shows in the orch\'s bob row', !!(oR && /objection|objected|✖/.test(oR.text)), `orch: ${oR ? oR.line : 'none'}`);
-    const aT = cap('S7', 'alice', 'last') || '';
-    if (aR || !/requests your input/.test(aT)) {
-      add('S7', 'The objection shows in alice\'s room row', !!(aR && /objection|objected|✖/.test(aR.text)), aR ? `alice: ${aR.line}` : 'no room row in alice\'s capture');
-    } else {
-      // Her own open form for the same plan covers her panel on screen (Claude Code draws the form in its place).
-      // Evidence instead: the plugin's row renderer over the log as it stood at that capture.
-      const rec = index.filter(r => r.scene === 'S7' && r.session === 'sh-alice').at(-1);
-      const asOf = log.filter(e => Date.parse(e.at) <= Date.parse(rec.time));
-      process.env.SUB_HUMAN_HOME = home;
-      const rowsLib = require(path.join(REPO, 'plugin/sub-human/lib/rows.js'));
-      const text = rowsLib.rowText(code, code, 'alice', { entries: asOf, members: stateAt('S7').members, now: Date.parse(rec.time) });
-      add('S7', 'The objection is in alice\'s room row text (her open form covers the panel on screen)', /objection|✖/.test(text),
-        `rowText(${code}, viewer alice) over the ${asOf.length} log entries at ${rec.txt}: "${text}"; on screen her sign-off form for the same plan is drawn over the panel`);
+    const p1 = props[0], p2 = props[1];
+    const ob = p1 && log.find(e => e.kind === 'objection' && e.from === 'bob' && e.proposal_hash === p1.hash);
+    add('S5', 'bob\'s objection via=human; the note byte-exact', ob && ob.via === 'human' && ob.text === DEMO.note5, ob ? `${fmt(ob)} (${ob.text === DEMO.note5 ? '===' : '!=='} typed)` : 'no objection');
+    const sa = p1 && log.find(e => e.kind === 'signoff' && e.from === 'alice' && e.proposal_hash === p1.hash);
+    add('S5', 'alice\'s agreement on the first proposal via=human', sa && sa.via === 'human', fmt(sa));
+    add('S5', 'The orch revised: a second proposal with a new hash', p2 && p2.from === 'orch' && p2.hash !== p1.hash, p2 ? `${p1.hash.slice(0, 6)} → ${p2.hash.slice(0, 6)} (#${p2.id})` : 'no revision');
+    const sig = p2 ? ['alice', 'bob'].map(n => log.find(e => e.kind === 'signoff' && e.via === 'human' && e.from === n && e.proposal_hash === p2.hash)) : [];
+    const d = p2 && log.find(e => e.kind === 'decision' && e.proposal_hash === p2.hash);
+    add('S5', 'Both agree on the revision; the decision cites both answers', sig.length === 2 && sig.every(Boolean) && d && sig.every(x => (d.refs || []).includes(x.id)) && /^agreed: /.test(d.text),
+      d ? `${fmt(d)} refs [${(d.refs || []).join(',')}]` : `signoffs ${sig.map(x => (x ? '#' + x.id : 'missing')).join(', ')}; no decision`);
+    const late = p2 ? log.filter(e => (e.kind === 'signoff' || e.kind === 'objection') && e.proposal_hash === p1.hash && e.id > p2.id) : [];
+    add('S5', 'No answer recorded on the old hash after the revision', late.length === 0, late.length ? late.map(fmt).join('; ') : `none after #${p2 ? p2.id : '?'}`);
+    const human = ['alice', 'bob'].map(n => log.filter(e => e.from === n && (e.kind === 'signoff' || e.kind === 'objection') && e.via !== 'human').length);
+    add('S5', 'Every answer came from a card (via=human); no Claude answered', human.every(x => x === 0), `non-human answers: alice ${human[0]}, bob ${human[1]}`);
+    { const ch = chainOk(home, code); add('S5', 'Hash chain valid', ch.ok, ch.evidence); }
+  }
+
+  // ---- S6: shared tasks
+  {
+    const s = span('S6');
+    const reqA = log.find(e => e.kind === 'task_req' && e.from === 'alice' && (e.op === 'add' || e.op === 'claim') && e.at > (s ? s.from : ''));
+    add('S6', 'alice\'s Claude calls task (add/claim): a task_req via=agent', reqA && reqA.via === 'agent', fmt(reqA));
+    const l1 = st('S6', 1, 'tasks.json', []);
+    const t = l1.find(x => x.owner === 'alice' && x.status === 'in_progress');
+    add('S6', 'The orch applies it natively: tasks.json has it, owner alice, in_progress', !!t, t ? `#${t.id} "${t.subject}" ${t.status} ${t.owner} (state/S6/1/tasks.json)` : `tasks.json at S6 step 1: ${JSON.stringify(l1)}`);
+    const tc = toolUses(inSpan(entries('orch'), s), '^Task(Create|Update)$');
+    add('S6', 'The orch used native TaskCreate/TaskUpdate', tc.some(c => c.name === 'TaskCreate') && tc.some(c => c.name === 'TaskUpdate'), tc.map(c => `${c.name}(${clip(JSON.stringify(c.input), 70)})`).slice(0, 4).join('; ') || 'none');
+    const tid = t && t.id;
+    const ar = panelRows(cap('S6', 'alice', 1)).find(r => r.label === code);
+    add('S6', 'alice\'s room row shows the task summary', !!(ar && /tasks? \d+ open|#\d+ you/.test(ar.text)), ar ? ar.line : 'no room row');
+    const cli = stText('S6', 1, 'sub-human-tasks.txt') || '';
+    add('S6', '`sub-human tasks` lists it', !!tid && new RegExp(`#${tid}\\b.*in_progress.*alice`).test(cli), clip(cli, 200) || 'no output saved');
+    const reqB = log.find(e => e.kind === 'task_req' && e.from === 'bob' && e.op === 'done' && String(e.task_id || e.id_) === String(tid));
+    const reqB2 = reqB || log.find(e => e.kind === 'task_req' && e.from === 'bob' && e.op === 'done');
+    const l2 = st('S6', 2, 'tasks.json', []);
+    const t2 = l2.find(x => String(x.id) === String(tid));
+    const gate = readJson(path.join(screens, 'state', 'S6', 'gate-bob.json'), null);
+    const liveGate = (() => {
+      const es = inSpan(entries('orch'), span('S6')).filter(e => reqB2 && e.timestamp > reqB2.at);
+      const hit = es.find(e => /TaskCompleted hook|only alice may complete/.test(JSON.stringify(e.message || e.attachment || '')));
+      return hit ? 'the live gate refused the orch\'s TaskUpdate' : 'the orch did not attempt it (no completing TaskUpdate after bob\'s request)';
+    })();
+    add('S6', 'A non-owner done (bob on alice\'s task) is refused: the gate says only alice may complete it; the task stays in progress',
+      reqB2 && t2 && t2.status === 'in_progress' && gate && gate.status === 2 && /only alice may complete/.test(gate.stderr),
+      `${fmt(reqB2)}; after it: #${tid} ${t2 ? t2.status : '?'} (state/S6/2); gate over the real log: exit ${gate ? gate.status : '?'} "${gate ? gate.stderr : ''}"; ${liveGate}`);
+    const reqA2 = log.find(e => e.kind === 'task_req' && e.from === 'alice' && e.op === 'done');
+    const done = reqA2 && log.find(e => e.kind === 'task' && e.op === 'done' && String(e.task_id) === String(tid) && e.req === reqA2.id);
+    const l3 = st('S6', 3, 'tasks.json', []);
+    add('S6', 'The owner\'s done with evidence completes it; the task entry cites her request', done && (l3.find(x => String(x.id) === String(tid)) || {}).status === 'completed',
+      `${fmt(reqA2)} evidence "${reqA2 ? reqA2.evidence : ''}"; ${fmt(done)}`);
+    const wakesS6 = assistantIds(inSpan(entries('orch'), s)).size;
+    add('S6', 'The orch\'s task work stayed small (≤ 12 model calls for the three requests)', wakesS6 <= 12, `${wakesS6} orch assistant messages in S6`);
+  }
+
+  // ---- S7: stray typing in a row view
+  {
+    const s = span('S7');
+    const t = cap('S7', 'alice') || '';
+    const viewing = new RegExp(`─ ${esc(code)} ─`).test(t);
+    const hint = /read-only · talk in main \(@room\)/.test(t);
+    add('S7', 'alice\'s room row view shows the read-only hint where she typed', viewing && hint && /❯ x\b/.test(t), `${viewing ? `viewing ${code}` : 'not in the row view'}; hint ${hint ? 'shown' : 'missing'}; typed x ${/❯ x\b/.test(t) ? 'shown' : 'missing'} (${capName('S7', 'alice')})`);
+    const posted = logIn(s).filter(e => e.from === 'alice');
+    add('S7', 'Nothing is posted', posted.length === 0, posted.length ? posted.map(fmt).join('; ') : 'no alice entries in S7');
+    const reply = rowReply('alice', s ? s.from : '');
+    add('S7', 'The row answers the stray text with the one-line read-only reply', !!reply, reply ? `${reply.at.slice(11, 19)} "${clip(reply.text, 80)}" (${reply.file})` : 'no "read-only row" reply in alice\'s row transcripts by the end of the run: the text waits until the row\'s hold returns (a join, rejoin or stop)');
+  }
+
+  // ---- S8: resilience
+  {
+    const s = span('S8');
+    const a1 = panelRows(cap('S8', 'alice', 1));
+    const ms1 = st('S8', 1, 'members.json', {}), ms0 = st('S7', 'last', 'members.json', null) || st('S6', 'last', 'members.json', {});
+    const leftA = logIn(s).filter(e => e.kind === 'member_left' && e.from === 'alice');
+    add('S8', `/clear in alice: new session id, same seat, still one ${code} row, no member_left`, ms1.alice && ms0.alice && ms1.alice.session_id !== ms0.alice.session_id && a1.filter(r => r.label === code).length === 1 && !leftA.length && new RegExp(`alice\\.${esc(code)}`).test(cap('S8', 'alice', 1) || ''),
+      `session ${ms0.alice ? ms0.alice.session_id.slice(0, 8) : '?'} → ${ms1.alice ? ms1.alice.session_id.slice(0, 8) : '?'}; rows ${a1.map(r => r.line).join(' | ')}; member_left ${leftA.length}`);
+    const left = logIn(s).find(e => e.kind === 'member_left' && e.from === 'bob');
+    const back = left && log.find(e => e.kind === 'member_joined' && e.from === 'bob' && e.id > left.id);
+    add('S8', 'bob /exit + --continue: member_left then "rejoined (resumed)"', left && back && /resumed/.test(back.text), `${fmt(left)} → ${fmt(back)}`);
+    const b2 = panelRows(cap('S8', 'bob', 2));
+    const bcap = caps('S8', 'bob')[1];
+    let ev = 'no capture', ok = false;
+    if (left && bcap) {
+      const es = entries('bob').filter(e => e.timestamp > left.at && e.timestamp <= bcap.time && !e.isSidechain);
+      const prompts = es.filter(e => e.type === 'user' && !e.isMeta && !metrics.trigger(e) && !(e.origin && e.origin.kind === 'task-notification') && !(Array.isArray(e.message && e.message.content) && e.message.content.every(c => c && c.type === 'tool_result')));
+      const wake = es.find(e => metrics.trigger(e) === 'rewake');
+      const call = wake && es.find(e => e.type === 'assistant' && e.timestamp >= wake.timestamp && JSON.stringify(e.message.content).includes('"Agent"'));
+      ok = !!wake && !!call && prompts.length === 0 && b2.filter(r => r.label === code).length === 1 && b2.filter(r => !r.nested).length === 1;
+      ev = `${wake ? `row-rewake wake ${wake.timestamp.slice(11, 19)}` : 'no row-rewake wake'}; ${call ? `Agent call ${call.timestamp.slice(11, 19)}` : 'no Agent call'}; ${prompts.length} prompt(s) from bob; rows ${b2.map(r => r.line).join(' | ') || 'none'}`;
     }
+    add('S8', 'bob\'s room row is back with no prompt (row-rewake), no duplicate rows', ok, ev);
+    const say = log.find(e => e.kind === 'say' && e.from === 'alice' && e.via === 'human' && back && e.id > back.id);
+    const mw = say && entries('bob').filter(e => e.timestamp > say.at && metrics.trigger(e) === 'monitor' && textOf(e.message.content).includes(say.text));
+    add('S8', 'The monitor still wakes bob after the resume', mw && mw.length >= 1, say ? `${fmt(say)} → ${mw.length} Monitor event(s) in bob's transcript with it` : 'no alice @room after the resume');
   }
 
-  // ---- S8
-  const last = revs.at(-1);
+  // ---- S9: the orch refuses typed input
   {
-    add('S8', 'The orch revised: a second plan_rev', revs.length >= 2, revs.map(r => `#${r.id} ${r.plan_hash.slice(0, 6)}`).join(', '));
-    if (revs.length >= 2) {
-      const stale = debug.filter(l => / signoff: cancel \S+ plan (\w+) was replaced by (\w+)/.test(l));
-      add('S8', 'Stale open form cancelled when the revision arrived', stale.length > 0, stale.map(l => clip(l.replace(/^\S+ /, ''), 120)).join(' ; ') || 'no cancel in mcp-debug.log (an answered form needs none)');
-    }
-    const ap = last ? last.approvers : [];
-    const sig = ap.map(n => log.find(e => e.kind === 'signoff' && e.via === 'human' && e.from === n && e.plan_hash === (last && last.plan_hash)));
-    add('S8', `Matrix complete: every approver signed ${last ? last.plan_hash.slice(0, 6) : ''} via=human`, ap.length > 0 && sig.every(Boolean), ap.map((n, i) => `${n}: ${sig[i] ? '#' + sig[i].id : 'missing'}`).join(', '));
-    // the rows flip from ✓ signed to ✔ decided ~2 s after the last sign-off, so look across every S8 orch capture
-    const caps = index.filter(r => r.scene === 'S8' && r.session === 'sh-orch').map(r => [r.txt, panelRows(readText(path.join(screens, r.txt)))]);
-    const seen = ap.map(n => caps.find(([, rs]) => rs.some(r => r.label === n && /✓ signed/.test(r.text))));
-    // The rows refresh every 5 s (Claude Code's subagentStatusLine tick). The decision follows the last sign-off
-    // by ~2 s, so the last signer's row may go straight to ✔ decided: accepted only when the log shows that gap.
-    const dec = last && log.find(e => e.kind === 'decision' && e.plan_hash === last.plan_hash);
-    const lastSig = sig.filter(Boolean).sort((a, b) => a.id - b.id).at(-1);
-    const gap = dec && lastSig ? Date.parse(dec.at) - Date.parse(lastSig.at) : null;
-    const viaDecided = ap.map((n, i) => !seen[i] && lastSig && lastSig.from === n && gap != null && gap < 5000 &&
-      caps.find(([, rs]) => rs.some(r => r.label === n && /✔ decided/.test(r.text))));
-    add('S8', '✓ signed shown on each approver\'s row (orch panel)', ap.length > 0 && ap.every((n, i) => seen[i] || viaDecided[i]),
-      ap.map((n, i) => `${n}: ${seen[i] ? seen[i][1].find(r => r.label === n).line + ' (' + seen[i][0] + ')' : viaDecided[i] ? `${viaDecided[i][1].find(r => r.label === n).line} (${viaDecided[i][0]}; the decision #${dec.id} came ${gap} ms after the last sign-off, inside one 5 s row refresh)` : 'never shown signed'}`).join('; '));
+    const s = span('S9');
+    const v = cap('S9', 'viewer') || '';
+    add('S9', 'A viewer attached with claude attach and typed: the prompt is refused with the hint', /the orch takes no typed input; use @room or ask your Claude to message orch\./.test(v),
+      (/the orch takes no typed input[^\n]*/.exec(v) || [`no refusal in ${capName('S9', 'viewer')}`])[0]);
+    const typed = entries('orch').filter(e => e.type === 'user' && textOf(e.message && e.message.content).includes(DEMO.viewer9));
+    const n = orchTurns(s);
+    add('S9', 'The typed text never reached the orch\'s model; no orch turn', typed.length === 0 && n === 0, `${typed.length} transcript entries with the typed text; ${n} orch assistant messages in S9`);
+    const syn = readJson(path.join(screens, 'state', 'S9', 'synthetic-prompt.json'), null);
+    const so = syn && (() => { try { return JSON.parse(syn.stdout); } catch { return null; } })();
+    add('S9', 'The orch\'s UserPromptSubmit hook blocks a typed prompt (synthetic payload as the orch)', so && so.decision === 'block' && /takes no typed input/.test(so.reason),
+      so ? `decision ${so.decision}: "${so.reason}" (session ${syn.input.session_id.slice(0, 8)}, pid ${syn.input.pid})` : 'no synthetic run saved');
   }
 
-  // ---- S9
+  // ---- S10: leave
   {
-    const d = last && log.find(e => e.kind === 'decision' && e.plan_hash === last.plan_hash);
-    const sigIds = last ? log.filter(e => e.kind === 'signoff' && e.via === 'human' && e.plan_hash === last.plan_hash).map(e => e.id) : [];
-    add('S9', 'decision refs both sign-offs', d && sigIds.length >= 2 && sigIds.every(id => (d.refs || []).includes(id)), d ? `#${d.id} refs [${(d.refs || []).join(',')}], signoffs [${sigIds.join(',')}]` : 'no decision');
-    { const ch = chainOk(home, code); add('S9', 'Hash chain valid', ch.ok, ch.evidence); }
-    const t = cap('S9', 'orch') || '';
-    const dialog = /Would you like to proceed|Ready to code\?|Yes, and auto-accept/.test(t);
-    const planOn = /plan mode on/.test(t);
-    add('S9', 'Orch left plan mode with no dialog', !!t && !dialog && !planOn, `${capName('S9', 'orch')}: approval dialog ${dialog ? 'present' : 'absent'}; "plan mode on" ${planOn ? 'still shown' : 'gone'}`);
-    const asg = d && log.find(e => e.id > d.id && e.from === 'orch' && e.via === 'agent' && /assign|owner|owns|alice/i.test(e.text || ''));
-    add('S9', 'Assignments posted after the decision', !!asg, fmt(asg));
-    const oRows = panelRows(t);
-    add('S9', 'Rows read ✓ decided', oRows.length > 0 && oRows.every(r => /decided/.test(r.text)), oRows.map(r => r.line).join(' | ') || 'no rows');
+    const s = span('S10');
+    const la = logIn(s).find(e => e.kind === 'member_left' && e.from === 'alice'), lb = logIn(s).find(e => e.kind === 'member_left' && e.from === 'bob');
+    add('S10', 'Both leave: member_left alice and bob', la && lb, `${fmt(la)}; ${fmt(lb)}`);
+    const cl = log.find(e => e.kind === 'status' && e.to === 'orch' && e.via === 'system' && /room closed/.test(e.text));
+    add('S10', 'The reaper marks the room closing and tells the orch "room closed: complete task 1"', cl && members.orch && members.orch.closing, `${fmt(cl)}; members.json orch.closing ${members.orch && members.orch.closing}`);
+    const t1 = nativeTasks('S10', 'last').find(t => t.id === '1');
+    const t1live = readJson(path.join(os.homedir(), '.claude', 'tasks', `sh-${code}`, '1.json'), null);
+    const done1 = (t1 && t1.status === 'completed') || (t1live && t1live.status === 'completed');
+    add('S10', 'The orch completes task 1 (the gate allows it while closing)', done1, `task 1: ${t1 ? t1.status : t1live ? t1live.status : 'no file'} (S10 copy) ${t1live ? `/ ${t1live.status} (live)` : ''}`);
+    const ag = st('S10', 'last', 'agents.json', null);
+    const running = ag && ag.find(x => x.id === job || x.sessionId === orchSid);
+    add('S10', 'The orch is stopped: claude agents no longer lists it', members.orch && members.orch.stopped_at && ag && !running,
+      `members.json orch.stopped_at ${members.orch && members.orch.stopped_at}; claude agents --json at the last S10 snap ${ag ? (running ? `still lists ${running.id} (${running.state})` : `has no ${job}`) : 'not saved'}`);
+    const tj = readJson(path.join(roomDir, 'tasks.json'), null);
+    add('S10', '<room>/tasks.json stays', Array.isArray(tj), tj ? `${tj.length} task(s) kept` : 'missing');
   }
 
-  // ---- S10
-  {
-    const d = log.find(e => e.kind === 'decision');
-    const st = log.filter(e => e.kind === 'status' && e.from === 'alice' && (!d || e.id > d.id));
-    add('S10', 'alice posted status entries after the decision', st.length >= 2, st.map(fmt).join(' ; ') || 'none');
-    const ev = st.find(e => /\b\d+\s*(tests?|pass(ed|ing)?|checks?)\b|\bpass(ed)?\b.*\d|✓|\bcommit [0-9a-f]{6,}|\S+\.(js|ts|json)\b/i.test(e.text || ''));
-    add('S10', 'Status cites evidence (tests, path or commit)', !!ev, fmt(ev));
-    const all = index.filter(r => r.scene === 'S10' && r.session === 'sh-alice').map(r => readText(path.join(screens, r.txt)) || '').join('\n');
-    const bg = /general-purpose|Backgrounded agent|run_in_background/.test(all) || panelRows(cap('S10', 'alice')).some(r => r.label !== code);
-    add('S10', 'alice\'s work runs in a native background subagent (shown in her panel)', bg, bg ? 'background agent visible in alice\'s S10 capture' : 'no background agent in alice\'s S10 captures');
-    const oR = panelRows(cap('S10', 'orch', 'last')).find(r => r.label === 'alice');
-    add('S10', 'Her status shows in the orch\'s alice row', !!(oR && /status/.test(oR.text)), `orch alice row: ${oR ? oR.line : 'none'}`);
-  }
-
-  // ---- S11
-  {
-    const a = panelRows(cap('S11', 'alice', 1));
-    add('S11', `Rows present after /clear in alice's session (one ${code} row)`, a.filter(r => r.label === code).length === 1, `alice rows: ${a.map(r => r.line).join(' | ') || 'none'} (${capName('S11', 'alice', 1)})`);
-    const b = panelRows(cap('S11', 'bob', 'last'));
-    add('S11', `Rows re-created after bob's --continue (${code} row)`, b.some(r => r.label === code), `bob rows: ${b.map(r => r.line).join(' | ') || 'none'} (${capName('S11', 'bob', 'last')})`);
-    // Phase 0 (0.9): row-rewake brings the rows back with no prompt. Evidence: bob's transcript entries between
-    // his member_left (the /exit) and the last S11 capture hold the row-rewake wake and no prompt of his.
-    {
-      const w11 = sceneWindow('S11');
-      const left = byKind('member_left', { from: 'bob' }).find(e => w11 && Date.parse(e.at) >= w11.from);
-      const lastCap = index.filter(r => r.scene === 'S11' && r.session === 'sh-bob').at(-1);
-      const fallback = index.some(r => r.scene === 'S11' && /^FALLBACK/.test(r.caption || ''));
-      let ev = 'no member_left for bob in S11 or no capture';
-      let ok = false;
-      if (left && lastCap) {
-        const from = left.at, to = lastCap.time;
-        const es = transcriptFor('bob').files.flatMap(f => jsonl(f)).filter(e => e.timestamp && e.timestamp > from && e.timestamp <= to && !e.isSidechain);
-        const prompts = es.filter(e => e.type === 'user' && !e.isMeta && !metrics.trigger(e) && !(e.origin && e.origin.kind === 'task-notification') &&
-          !(Array.isArray(e.message && e.message.content) && e.message.content.every(c => c && c.type === 'tool_result')));
-        const wake = es.find(e => metrics.trigger(e) === 'rewake');
-        const after = wake && es.find(e => e.type === 'assistant' && e.timestamp >= wake.timestamp && JSON.stringify(e.message.content).includes('"Agent"'));
-        ok = !!wake && !!after && prompts.length === 0 && !fallback && b.some(r => r.label === code);
-        ev = `${wake ? `row-rewake wake at ${wake.timestamp.slice(11, 19)}` : 'no row-rewake wake'}; ${after ? `Agent call at ${after.timestamp.slice(11, 19)}` : 'no Agent call after it'}; ` +
-          `${prompts.length} prompt(s) from bob between his /exit (#${left.id}) and ${lastCap.txt}${prompts.length ? ': ' + prompts.map(e => clip(typeof e.message.content === 'string' ? e.message.content : JSON.stringify(e.message.content), 60)).join(' / ') : ''}` +
-          (fallback ? '; FALLBACK used: the driver typed "what did I miss?"' : '');
-      }
-      add('S11', 'bob\'s rows came back with no prompt (row-rewake woke his Claude)', ok, ev);
-    }
-    const st11 = stateAt('S11');
-    const bm = st11.members.bob && st11.rowMaps[st11.members.bob.session_id];
-    const w = sceneWindow('S11');
-    const fresh = bm && w && Object.values(bm).some(r => r.kind === 'room' && Date.parse(r.at) > w.from);
-    add('S11', 'bob\'s new room row is mapped after the resume', !!fresh, bm ? Object.values(bm).map(r => `${r.kind}:${r.name}@${r.at.slice(11, 19)}`).join(', ') : 'no rows map for bob\'s session');
-  }
-
-  // ---- S11b
-  {
-    const s1 = cap('S11b', 'alice', 1) || '', s2 = cap('S11b', 'alice', 2) || '', s3 = cap('S11b', 'alice', 3) || '';
-    const rows1 = panelRows(s1);
-    const nested = rows1.find(r => r.label === 'bob' && r.nested);
-    const viewing = new RegExp(`─ ${esc(code)} ─`).test(s1); // the prompt box is titled after the viewed agent
-    add('S11b', 'Opening the room row shows bob nested inside it', !!nested && viewing, `viewing ${viewing ? code : '?'}; rows: ${rows1.map(r => r.line).join(' | ') || 'none'}`);
-    const view2 = /─ bob ─/.test(s2);
-    const thread = (s2.match(/#\d+ (bob|bob's Claude|room|facilitator)( → \S+)? · [a-z_]+: .*/g) || []);
-    add('S11b', 'Opening bob shows his thread (labelled entries)', view2 && thread.length > 0, `viewing ${view2 ? 'bob' : '?'}; ${thread.length ? thread.slice(-2).join(' / ') : 'no labelled entries'} (${capName('S11b', 'alice', 2)})`);
-    const bc = /main\s*›/.test(s1 + s2 + s3);
-    const back = new RegExp(`─ ${esc(code)} ─`).test(s3);
-    add('S11b', 'No breadcrumb (P0 correction); ↑ + Enter returns to the parent', !bc && back, `breadcrumb ${bc ? 'found' : 'absent'}; step 3 ${back ? `views ${code} again` : 'not back on the room row'}`);
-  }
-
-  // ---- S12
-  {
-    const rj = byKind('member_joined', { from: 'bob' }).at(-1);
-    const l = byKind('member_left', { from: 'bob' }).filter(e => !rj || e.id > rj.id).at(-1);
-    add('S12', 'member_left bob (after his last rejoin), from /exit', !!l && /prompt_input_exit|exit/.test(l.text || ''), fmt(l));
-    const waits = jsonl(path.join(screens, 'waits.jsonl')).filter(w => w.scene === 'S12');
-    const dlg = waits.find(w => /Exit and stop tasks/.test(w.what));
-    add('S12', 'Claude Code\'s "Background work is running" dialog was answered with 1. Exit and stop tasks', !!(dlg && dlg.ok), dlg ? `${dlg.what}: ${dlg.ok ? 'seen' : 'not seen'} after ${dlg.ms} ms` : 'no dialog wait recorded in S12');
-    const o = panelRows(cap('S12', 'orch', 'last')).filter(r => r.label === 'bob' && !/left/.test(r.text));
-    add('S12', 'bob\'s row reads left (or is gone) in the orch panel', !!cap('S12', 'orch', 'last') && o.length === 0, `orch rows: ${panelRows(cap('S12', 'orch', 'last')).map(r => r.line).join(' | ') || 'none'}`);
-    const a = panelRows(cap('S12', 'alice', 'last')).filter(r => r.label === 'bob' && !/left/.test(r.text));
-    add('S12', 'bob\'s row reads left (or is gone) in alice\'s panel', !!cap('S12', 'alice', 'last') && a.length === 0, `alice rows: ${panelRows(cap('S12', 'alice', 'last')).map(r => r.line).join(' | ') || 'none'}`);
-  }
-
-  // ---- Metrics: Phase 0 vs the vole-8126 baseline (scripts/metrics.js; transcripts + captures)
-  const M = metrics.measure({ screens });
+  // ---- Metrics vs vole-8126 and Phase 0 (otter-0813)
+  const M = metrics.measure({ screens, home, code });
   if (M.error) add('Metrics', 'Run metrics computed', false, M.error);
   else {
-    const B = metrics.BASELINE;
-    const per = s => `${s} ${M.seats[s].wakes.turns}`;
-    add('Metrics', `Room-caused model wakes ≤ 26 (baseline ${B.wakes.total})`, M.total.wakes <= 26,
-      `${M.total.wakes} wakes (${['orch', 'alice', 'bob'].map(per).join(', ')}) from Monitor events, peer deliveries and row-rewake in the seats' transcripts; baseline orch ${B.wakes.orch}, alice ${B.wakes.alice}, bob ${B.wakes.bob}`);
-    add('Metrics', 'UI noise lines per capture below the baseline', M.total.noise.perCapture < B.noise.perCapture,
-      `${M.total.noise.lines} lines / ${M.total.noise.captures} captures = ${M.total.noise.perCapture} (excl. "Waiting for": ${M.total.noise.perCaptureExWaiting}); baseline ${B.noise.perCapture} (${B.noise.perCaptureExWaiting})`);
+    const B = metrics.BASELINE, P = metrics.PHASE0;
+    const per = x => `${x} ${M.seats[x].wakes.turns}`;
+    add('Metrics', `Room-caused model wakes ≤ ${TARGET.wakes} (vole-8126 ${B.wakes.total}; Phase 0 ${P.wakes.total})`, M.total.wakes <= TARGET.wakes,
+      `${M.total.wakes} wakes (${['orch', 'alice', 'bob'].map(per).join(', ')}); Monitor events, peer deliveries and row-rewake that started a turn`);
+    add('Metrics', 'Member join text small (report)', M.total.joinChars.every(n => n > 0 && n <= 1200), `alice ${M.seats.alice.injected.join}, bob ${M.seats.bob.injected.join} chars (vole-8126 ${B.joinChars.alice}/${B.joinChars.bob}; Phase 0 ${P.joinChars.alice}/${P.joinChars.bob})`);
+    add('Metrics', `UI noise lines per capture ≤ 1.4 (vole-8126 ${B.noise.perCapture}; Phase 0 ${P.noise.perCapture})`, M.total.noise.perCapture <= 1.4,
+      `${M.total.noise.lines} lines / ${M.total.noise.captures} captures = ${M.total.noise.perCapture} (excl. "Waiting for": ${M.total.noise.perCaptureExWaiting})`);
+    add('Metrics', 'No red or "hook error" lines in any capture', M.total.noise.red === 0 && M.total.noise.hookError === 0, `red lines ${M.total.noise.red}, "hook error" lines ${M.total.noise.hookError}`);
+    add('Metrics', 'Model calls per card ≤ 3 on the approver\'s model (report)', M.total.cards.count > 0 && M.total.cards.perCard <= 3,
+      `${M.total.cards.count} cards: ${M.total.cards.toCard} call(s) to open, ${M.total.cards.after} after the answer (avg ${M.total.cards.perCard})`);
   }
 
-  // order scenes like the plan
-  const order = ['Metrics', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11', 'S11b', 'S12'];
+  const order = ['Metrics', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10'];
   const res = {};
   for (const k of order) if (C[k]) res[k] = C[k];
-  res._meta = { cost: cost(), run: `room ${code}, ${log.length} log entries, ${index.length} captures`, note: o.note || '' };
-  if (!M.error) res._metrics = { run: { room: code, ...M }, baseline: metrics.BASELINE };
+  res._meta = { cost: cost(), run: `room ${code}, ${log.length} log entries, ${index.length} captures, orch job ${job}`, note: o.note || '' };
+  if (!M.error) res._metrics = { run: { room: code, ...M }, baseline: metrics.BASELINE, phase0: metrics.PHASE0, target: TARGET };
   fs.writeFileSync(out, JSON.stringify(res, null, 1) + '\n');
   let p = 0, f = 0;
   for (const k of order) for (const c of res[k] || []) { c.pass ? p++ : f++; process.stdout.write(`${c.pass ? 'PASS' : 'FAIL'} ${k} ${c.check}${c.pass ? '' : ' — ' + c.evidence}\n`); }
   process.stdout.write(`checks: ${p} pass / ${f} fail -> ${path.relative(process.cwd(), out)} (${res._meta.cost})\n`);
 
   // ---------- helpers that need the run's context ----------
-  function transcriptFor(seat) {
-    const m = members[seat];
-    const dir = path.join(os.homedir(), '.claude', 'projects', `-private-tmp-sh-demo-${seat}`);
-    let files = [];
-    try { files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')).map(f => path.join(dir, f)); } catch { /* none */ }
-    return { files, sid: m && m.session_id };
-  }
   function noModelTurn(seat, e) {
     if (!e) return { pass: false, evidence: 'no entry' };
-    const { files } = transcriptFor(seat);
-    for (const f of files) {
+    for (const f of seatFiles(seat)) {
       const es = jsonl(f);
-      // typed mid-turn: the prompt is queued, and the hook drops it before the model sees it
       const q = es.find(x => x.type === 'queue-operation' && x.operation === 'remove' && x.reason === 'dropped_by_hook' && typeof x.content === 'string' && x.content.endsWith(e.text));
-      if (q) return { pass: true, evidence: `${path.basename(f).slice(0, 8)}…: queued prompt removed with reason dropped_by_hook (#${e.id}); it never reached the model` };
+      if (q) return { pass: true, evidence: `${path.basename(f).slice(0, 8)}…: queued prompt removed by the hook (#${e.id}); it never reached the model` };
       const i = es.findIndex(x => x.type === 'system' && typeof x.content === 'string' && x.content.includes(`posted to ${code} as #${e.id}`));
       if (i < 0) continue;
       for (let j = i + 1; j < es.length; j++) {
         const x = es[j];
-        if (x.type === 'user' && !x.isMeta) return { pass: true, evidence: `${path.basename(f).slice(0, 8)}…: hook receipt for #${e.id}, no assistant message before the next user/notification entry` };
+        if (x.type === 'user' && !x.isMeta) return { pass: true, evidence: `${path.basename(f).slice(0, 8)}…: hook receipt for #${e.id}, no assistant message before the next prompt or notice` };
         if (x.type === 'assistant') return { pass: false, evidence: `assistant message right after the receipt for #${e.id}` };
       }
       return { pass: true, evidence: `${path.basename(f).slice(0, 8)}…: hook receipt for #${e.id} is the last turn activity` };
     }
     return { pass: false, evidence: `no hook receipt for #${e.id} in ${seat}'s transcripts` };
   }
+  /** A row subagent's "read-only row" text in a seat's subagent transcripts after `since`. */
+  function rowReply(seat, since) {
+    const dir = path.join(projects, `-private-tmp-sh-demo-${seat}`);
+    let ds = [];
+    try { ds = fs.readdirSync(dir).filter(d => fs.existsSync(path.join(dir, d, 'subagents'))); } catch { return null; }
+    for (const d of ds) for (const f of fs.readdirSync(path.join(dir, d, 'subagents')).filter(x => x.endsWith('.jsonl'))) {
+      for (const e of jsonl(path.join(dir, d, 'subagents', f))) {
+        if (e.type !== 'assistant' || !e.timestamp || e.timestamp < since) continue;
+        const tx = (e.message.content || []).find(c => c && c.type === 'text' && /read-only row/.test(c.text));
+        if (tx) return { at: e.timestamp, text: tx.text, file: f };
+      }
+    }
+    return null;
+  }
   function cost() {
-    // Approximate: tokens from every transcript (main + subagents) of the three seats, at list prices.
+    // Approximate: tokens from every transcript (main + subagents) of the seats and the orch, at list prices.
     const price = m => (/haiku/.test(m) ? [1, 5, 1.25, 0.1] : /sonnet/.test(m) ? [3, 15, 3.75, 0.3] : [5, 25, 6.25, 0.5]);
     let usd = 0;
-    const since = index.length ? index.map(r => r.time).sort()[0].slice(0, 19) : '';
+    const since = index.length ? new Date(Date.parse(index.map(r => r.time).sort()[0]) - 180_000).toISOString() : '';
     const seen = new Set();
-    const walk = d => { let es = []; try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const x of es) { const p = path.join(d, x.name); if (x.isDirectory()) walk(p); else if (x.name.endsWith('.jsonl')) { for (const e of jsonl(p)) { const u = e.message && e.message.usage; if (!u || e.type !== 'assistant' || (since && e.timestamp < since)) continue; const id = e.message.id || e.uuid; if (seen.has(id)) continue; seen.add(id); const [i, o2, cw, cr] = price(e.message.model || ''); usd += ((u.input_tokens || 0) * i + (u.output_tokens || 0) * o2 + (u.cache_creation_input_tokens || 0) * cw + (u.cache_read_input_tokens || 0) * cr) / 1e6; } } } };
-    for (const seat of ['orch', 'alice', 'bob']) walk(path.join(os.homedir(), '.claude', 'projects', `-private-tmp-sh-demo-${seat}`));
-    return `≈ $${usd.toFixed(2)} (list-price estimate from transcript token usage since the first capture)`;
+    const byModel = {};
+    const walk = d => { let es = []; try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const x of es) { const p = path.join(d, x.name); if (x.isDirectory()) walk(p); else if (x.name.endsWith('.jsonl')) { for (const e of jsonl(p)) { const u = e.message && e.message.usage; if (!u || e.type !== 'assistant' || (since && e.timestamp < since)) continue; const id = e.message.id || e.uuid; if (seen.has(id)) continue; seen.add(id); const m = e.message.model || ''; const [i, o2, cw, cr] = price(m); const c = ((u.input_tokens || 0) * i + (u.output_tokens || 0) * o2 + (u.cache_creation_input_tokens || 0) * cw + (u.cache_read_input_tokens || 0) * cr) / 1e6; usd += c; byModel[m] = (byModel[m] || 0) + c; } } } };
+    for (const seat of ['alice', 'bob']) walk(path.join(projects, `-private-tmp-sh-demo-${seat}`)); // the orch's transcript is in alice's folder
+    return `≈ $${usd.toFixed(2)} (${Object.entries(byModel).map(([m, c]) => `${m.replace(/^claude-/, '')} $${c.toFixed(2)}`).join(', ')}; list-price estimate from transcript token usage since the run started)`;
   }
 }
 
 function chainOk(home, code) {
-  // the plugin's own verifier (prev = hash of the previous raw line)
   process.env.SUB_HUMAN_HOME = home;
   const room = require(path.join(REPO, 'plugin/sub-human/lib/room.js'));
   room.bind(code);

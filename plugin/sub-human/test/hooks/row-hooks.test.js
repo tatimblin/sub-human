@@ -159,6 +159,22 @@ test('row-guard: denies spawning a row whose hold is live in this session; allow
   assert.equal(pre('sid-orch', { subagent_type: 'Explore', description: 'bob', prompt: 'x' }).stdout, '', 'other agents untouched');
 });
 
+test('row-guard: a member never spawns a participant row from main, nor one for itself', () => {
+  const { code } = world(['orch', 'alice', 'bob']);
+  const pre = (sid, ti, parent) => hook('row-guard', {
+    session_id: sid, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: ti,
+    ...(parent ? { agent_id: parent, agent_type: 'sub-human:room' } : {}),
+  });
+  const p = name => ({ subagent_type: 'sub-human:participant', description: name, prompt: name, run_in_background: true });
+  assert.equal(pre('sid-bob', p('bob')).json.hookSpecificOutput.permissionDecision, 'deny', 'main, self');
+  assert.equal(pre('sid-bob', p('alice')).json.hookSpecificOutput.permissionDecision, 'deny', 'main, other');
+  assert.equal(pre('sid-bob', p('bob'), 'room1').json.hookSpecificOutput.permissionDecision, 'deny', 'inside the room row, self');
+  assert.equal(pre('sid-bob', p('alice'), 'room1').stdout, '', 'inside the room row: allowed');
+  assert.equal(pre('sid-orch', p('alice')).stdout, '', 'the orch spawns participant rows from main');
+  const roomRow = { subagent_type: 'sub-human:room', description: code, prompt: `room: ${code}\nmembers: alice`, run_in_background: true };
+  assert.equal(pre('sid-bob', roomRow).stdout, '', 'the room row itself is allowed');
+});
+
 // ---------- row-rewake (SessionStart resume, asyncRewake): exit 2 + calls on stderr wakes the model ----------
 const rewake = (sid, extra = {}, source = 'resume') =>
   hook('row-rewake', { session_id: sid, hook_event_name: 'SessionStart', source }, { SUB_HUMAN_REWAKE_WAIT_MS: '0', ...extra });

@@ -28,7 +28,7 @@
  *       Proposals: `proposal` entries with a hash (lib/proposal.js); answers = latest via=human signoff /
  *       objection with that proposal_hash; a system `decision` closes one. Segments that do not fit are dropped.
  *       name === code (or null): the member's room row, from viewer's seat: "⚠ your answer needed 3fa2c1",
- *         "✓ agreed 3fa2c1 1/2", "✖ objected (#31)", "✔ decided 3fa2c1", "proposal 3fa2c1 0/2", else "N here";
+ *         "✓ agreed 3fa2c1 1/2", "✖ objected (#31)", "✔ decided 3fa2c1" ("✖ blocked 3fa2c1" when someone objected), "proposal 3fa2c1 0/2", else "N here";
  *         then "✉ N for you", then lib/tasks.js summary(code, viewer) ("tasks 3 open · #2 you · #4 bob").
  *       otherwise: NAME's state as viewer sees it: "✓ agreed 3fa2c1", "✖ objected (#31)", "⚠ reviewing 3fa2c1",
  *         "✔ decided 3fa2c1" (after it, their latest status: "#24 Claude status: handler done"), then their
@@ -331,6 +331,8 @@ function proposals(es) {
   }
   return list;
 }
+/** A closed proposal: "✔ decided HASH" when everyone agreed, "✖ blocked HASH" when someone objected. */
+const decidedText = (p, c) => (p.objectors.length ? c.warn(`✖ blocked ${h6(p.hash)}`) : c.ok(`✔ decided ${h6(p.hash)}`));
 /** Undecided proposals that name `name` and that `name` has not answered (newest last). */
 const awaiting = (ps, name) => ps.filter(p => !p.decided && p.approvers.includes(name) && !p.verdict[name]);
 /** The proposal a row reports for `name`: the newest that names them, else the newest. */
@@ -391,7 +393,7 @@ function participantText(code, name, viewer, es, ms, now, c, tasks) {
     // Build phase: their latest status after the decision replaces "decided".
     const st = p.decided ? es.filter(e => e.from === name && e.id > p.decided && e.kind === 'status').at(-1) : null;
     if (st) parts.push(`#${st.id} ${st.via === 'agent' ? 'Claude ' : ''}status: ${oneLine(st.text)}`);
-    else if (p.decided) parts.push(c.ok(`✔ decided ${h6(p.hash)}`));
+    else if (p.decided) parts.push(decidedText(p, c));
     else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${h6(p.hash)}`));
     else if (v && v.kind === 'objection') parts.push(c.warn(`✖ objected (#${v.id})`));
     else if (p.approvers.includes(name)) parts.push(c.warn(`⚠ reviewing ${h6(p.hash)}`));
@@ -424,7 +426,7 @@ function roomText(code, viewer, es, ms, now, c, summary) {
   } else if (p) {
     const v = viewer && p.verdict[viewer];
     const n = `${p.agreed}/${p.approvers.length}`;
-    if (p.decided) parts.push(c.ok(`✔ decided ${h6(p.hash)}`));
+    if (p.decided) parts.push(decidedText(p, c));
     else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${h6(p.hash)} ${n}`));
     else if (v && v.kind === 'objection') parts.push(c.warn(`✖ objected (#${v.id})`));
     else parts.push(`proposal ${h6(p.hash)} ${n}`);

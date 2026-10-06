@@ -102,6 +102,7 @@ function snap(session, scene, caption, opts = {}) {
   const base = (step === 1 ? `${scene}-${session}` : `${scene}-${step}-${session}`).replace(/[^A-Za-z0-9._-]/g, '_');
   fs.writeFileSync(path.join(dir, base + '.svg'), render(cap.text, { title: opts.title || titleFor(session, scene), cols: cap.cols, rows: cap.rows }));
   fs.writeFileSync(path.join(dir, base + '.txt'), strip(cap.text));
+  fs.writeFileSync(path.join(dir, base + '.ansi'), cap.text); // colors kept: metrics counts red lines from it
 
   const rec = { scene, session, caption, step, time: new Date().toISOString(), svg: base + '.svg', txt: base + '.txt', cols: cap.cols, rows: cap.rows };
   const code = opts.room !== undefined ? opts.room : roomCode();

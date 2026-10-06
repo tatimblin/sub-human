@@ -117,12 +117,12 @@ test('rowText (participant): objection with its id, decided, status after the de
   assert.equal(rows.rowText(code, 'zed', 'orch', { tasks }), 'not in the room');
   const add = e => fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: rows.readLog(code).length + 1, at: new Date().toISOString(), to: 'room', ...e }) + '\n');
   add(decision());
-  assert.equal(rows.rowText(code, 'alice', 'orch', { tasks }), '✔ decided 593da0');
+  assert.equal(rows.rowText(code, 'alice', 'orch', { tasks }), '✖ blocked 593da0', 'bob objected: the closed proposal is blocked, not decided');
   add({ kind: 'status', via: 'agent', from: 'alice', text: 'handler done,\n12/12 tests pass in test/tasks.test.js and more words here' });
   const t = rows.rowText(code, 'alice', 'orch', { tasks });
   assert.match(t, /^#6 Claude status: handler done, 12\/12 tests pass/);
   fitsRow(t);
-  assert.equal(rows.rowText(code, 'bob', 'orch', { tasks }), '✔ decided 593da0', 'no status from bob yet');
+  assert.equal(rows.rowText(code, 'bob', 'orch', { tasks }), '✖ blocked 593da0', 'no status from bob yet');
 });
 
 test('rowText (participant): a hashless proposal post or a retracted answer counts for nothing; propose() entries count whatever their via', () => {
@@ -147,8 +147,10 @@ test('rowText (room row): answer needed, agreed, objected, decided, mail and the
   assert.equal(rows.rowText(code, code, 'alice', o()), '✖ objected (#4)');
   assert.equal(rows.rowText(code, code, 'bob', o()), '✓ agreed 593da0 1/2 · ✖ 1 objection');
   es.push({ id: 5, at: new Date().toISOString(), ...decision() });
-  assert.equal(rows.rowText(code, code, 'bob', o()), '✔ decided 593da0');
-  assert.equal(rows.rowText(code, code, 'bob', o({ taskSummary: 'tasks 3 open · #2 you · #4 bob' })), '✔ decided 593da0 · tasks 3 open · #2 you · #4 bob');
+  assert.equal(rows.rowText(code, code, 'bob', o()), '✖ blocked 593da0', 'alice objected');
+  assert.equal(rows.rowText(code, code, 'bob', o({ taskSummary: 'tasks 3 open · #2 you · #4 bob' })), '✖ blocked 593da0 · tasks 3 open · #2 you · #4 bob');
+  const agreedEs = mk([prop(['alice', 'bob']), answer('bob', 'signoff'), answer('alice', 'signoff'), decision()]);
+  assert.equal(rows.rowText(code, code, 'bob', { entries: agreedEs, taskSummary: '' }), '✔ decided 593da0', 'everyone agreed');
   // a second pending proposal for the viewer
   es.push(...mk([{}, {}, {}, {}, {}, prop(['alice'], 'abcdef000000'), prop(['alice', 'bob'], '3fa2c1000000')]).slice(5));
   assert.equal(rows.rowText(code, code, 'alice', o()), '⚠ your answer needed 3fa2c1 +1');
