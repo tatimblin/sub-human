@@ -1,40 +1,40 @@
+     - npm test with reset() + seed(237):
+       - walking the pages with limit 20 returns all 237 ids exactly once, in createdAt DESC, id DESC order, and the
+         last page has next_cursor: null
+       - a page boundary that falls inside a shared timestamp neither skips nor repeats a row
+       - limit=0, -1, abc, 101 → 400; a garbage after → 400
+       - bob's objection asked for this: "add a test for a cursor past the end — after=zzz must 400, not 500". So
+         after=zzz → 400 {error: 'invalid cursor'}, never 500. To make that hold, cursor decode (base64url → JSON.parse
+         → check that c is an ISO date string and i is a positive integer) runs inside try/catch, and any failure maps
+         to 400.
+       - a well-formed cursor that sorts below every task (e.g. the last page's final item) → 200 {items: [], 
+         next_cursor: null}
+       - inserting a task between page fetches does not change the later pages
+     - By hand: npm start, then curl 'localhost:3000/tasks?limit=5' and follow next_cursor.
 
+     Open questions
 
-⏺ Operation stopped by hook: ✓ posted to gecko-5061 as #5
+     1. Is a default limit of 20 and a max of 100 right?
+     2. For an out-of-range limit, should the server return 400 (proposed) or clamp to the max?
+     3. Is the response shape {items, next_cursor} right, or do you want a different key (e.g. next), or a Link header?
+     4. Should the cursor be signed or encrypted, or is base64 JSON enough for now?
 
-⏺ Monitor event: "sub-human room notices"
+     Approvers
 
-⏺ User answered Claude's questions:
-  ⎿  · Agree to proposal 1d69888ae02f? → Object
+     - bob: asked for this plan and is writing the paging tests.
+     - alice: works on the handler in src/server.js and asked bob to take the tests.
 
-⏺ Your objection to proposal 1d69888ae02f (the cursor-paging plan for GET /tasks) is recorded as #8, along with your
-  note: add a test for a cursor past the end, where after=zzz must return 400, not 500. Decision #9 lists you as
-  objecting and alice as agreeing. The plan isn't settled, so I haven't built anything. The full plan is at
-  /tmp/sh-demo/home/rooms/gecko-5061/plans/1d69888ae02f.md.
-
-✻ Waiting for 2 background agents to finish
-
-⏺ Monitor event: "sub-human room notices"
-
-⏺ User answered Claude's questions:
-  ⎿  · Agree to proposal c04d0c9623ce? → Agree
-
-  Searched for 1 pattern 
-
-⏺ I recorded your agreement to the revised plan c04d0c9623ce as #12. Decision #13 shows you and alice both agreed.
-
-  The revision includes the test from your objection: after=zzz must return 400, not 500 (plan lines 18 and 43). One
-  question is still open in the plan (line 27): whether 20 is the right default limit and 100 the right max, and whether
-  a limit above 100 should return 400 or be clamped to 100.
-
-  You said in #4 you'd take the parser tests once paging was agreed. Want me to start on those?
+⏺ You agreed to orch's revised paging plan, and so did alice, so the room has settled it. The plan now includes your
+  test that after=zzz gets a 400, not a 500. It still has four open questions: default and max limit, whether to reject
+  or cap an out-of-range limit, the response key, and whether to sign the cursor. I haven't started on the parser tests;
+  say when you want me to.
 
 ✻ Waiting for 2 background agents to finish
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.gecko-5061 ─
-❯ yes, start on the parser tests
+──────────────────────────────────────────────────────────────────────────────────────────────────────── bob.swan-6397 ─
+❯ write the parser tests
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏵⏵ auto mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ gecko-5061  ✔ decided c04d0c
+  ◯ swan-6397  ✔ decided fba8c9

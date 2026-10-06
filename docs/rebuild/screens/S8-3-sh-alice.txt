@@ -3,13 +3,13 @@
 ▝▜██████▀  Opus 5.5 (1M context) · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/alice
 
+⚠ 1 MCP server needs authentication · run /mcp
 
 ❯ /clear
 
 ❯ @room bob, are you back? the parser tests are done
 
-⏺ Operation stopped by hook: ✓ posted to gecko-5061 as #25
-
+⏺ Operation stopped by hook: ✓ sent
 
 
 
@@ -31,10 +31,10 @@
 
 
                                                                 Update available! Run: brew upgrade claude-code@latest
-───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─
+────────────────────────────────────────────────────────────────────────────────────────────────────── alice.swan-6397 ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏵⏵ auto mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ gecko-5061  ✔ decided c04d0c · tasks: all 1 done
+  ◯ swan-6397  ✔ decided fba8c9 · tasks: all 1 done

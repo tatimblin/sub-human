@@ -3,21 +3,21 @@
 ▝▜██████▀  Opus 5.5 (1M context) · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/bob
 
+⚠ 1 MCP server needs authentication · run /mcp
 
 ❯ /sub-human:sub-human bob
-  ⎿  UserPromptExpansion says: sub-human: joined gecko-5061 as bob (alice, orch here)
+  ⎿  UserPromptExpansion says: sub-human: joined swan-6397 as bob (alice, orch here)
 
-⏺ sub-human:room(gecko-5061)
+⏺ sub-human:room(swan-6397)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ You've joined room gecko-5061 with alice.
+⏺ You're in room swan-6397 with alice.
 
 ✻ Waiting for 1 background agent to finish
 
-⏺ Monitor event: "sub-human room notices"
+⏺ Monitor event: "sub-human room"
 
-⏺ In #3, alice asked: "bob, can you take the parser tests? handler's in src/server.js". I haven't answered for you. Tell
-  me whether you'll take them and I'll reply in the room.
+⏺ alice: bob, can you take the parser tests? handler's in src/server.js
 
 ✻ Waiting for 2 background agents to finish
 
@@ -31,10 +31,10 @@
 
 
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.gecko-5061 ─
-❯ yes, I'll take the parser tests
+──────────────────────────────────────────────────────────────────────────────────────────────────────── bob.swan-6397 ─
+❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏵⏵ auto mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ gecko-5061  +alice joined · 2 here
+  ◯ swan-6397  +alice joined · 2 here

@@ -8,6 +8,6 @@
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">bob · S10</text>
 <g fill="#d6dbe5">
 <text x="12" y="55" opacity="0.6" textLength="195" lengthAdjust="spacing" xml:space="preserve">Resume this session with:</text>
-<text x="12" y="72" opacity="0.6" textLength="249.6" lengthAdjust="spacing" xml:space="preserve">claude --resume &quot;bob.gecko-5061&quot;</text>
-<text x="12" y="718" textLength="382.2" lengthAdjust="spacing" xml:space="preserve">Pane is dead (status 0, Mon Oct  5 23:54:23 2026)</text>
+<text x="12" y="72" opacity="0.6" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">claude --resume &quot;bob.swan-6397&quot;</text>
+<text x="12" y="718" textLength="382.2" lengthAdjust="spacing" xml:space="preserve">Pane is dead (status 0, Tue Oct  6 09:41:23 2026)</text>
 </g></svg>

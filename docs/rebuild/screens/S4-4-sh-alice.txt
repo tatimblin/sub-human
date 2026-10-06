@@ -1,0 +1,40 @@
+⏺ Entered plan mode
+  Claude is now exploring and designing an implementation approach.
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   - Cursor on createdAt alone: loses rows when timestamps tie.                                                       ↑
+
+   Files
+
+   - src/server.js: parse and validate limit/after, plus cursor encode/decode helpers, in the GET /tasks branch.
+   - src/store.js: no change needed. The handler sorts and filters allTasks(). Optionally add listTasks({limit, 
+     after}) so the handler matches the SQL shape.
+   - test/tasks-paging.test.js (new): parser and paging tests. In the room, alice asked bob to take the parser tests.
+     bob said "sure, once we've agreed how paging works".
+
+   Verification
+
+   - npm test with reset() + seed(237):
+     - walking the pages with limit 20 returns all 237 ids exactly once, in createdAt DESC, id DESC order, and the
+       last page has next_cursor: null
+     - a page boundary that falls inside a shared timestamp neither skips nor repeats a row
+     - limit=0, -1, abc, 101 → 400; a garbage after → 400
+     - inserting a task between page fetches does not change the later pages
+   - By hand: npm start, then curl 'localhost:3000/tasks?limit=5' and follow next_cursor.
+
+   Open questions
+
+   1. Is a default limit of 20 and a max of 100 right?
+   2. For an out-of-range limit, should the server return 400 (proposed) or clamp to the max?
+   3. Is the response shape {items, next_cursor} right, or do you want a different key (e.g. next), or a Link header?
+   4. Should the cursor be signed or encrypted, or is base64 JSON enough for now?
+
+   Approvers                                                                                                          ↓
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Claude has written up a plan and is ready to execute. Would you like to proceed?
+
+   ❯ 1. Yes, and use auto mode
+     2. Yes, manually approve edits
+     3. Tell Claude what to change
+        shift+tab to approve with this feedback
+
+   ctrl+g to edit in VS Code · ~/.claude/plans/hidden-soaring-hennessy.md

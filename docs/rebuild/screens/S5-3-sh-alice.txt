@@ -1,40 +1,40 @@
+       - limit=0, -1, abc, 101 → 400; a garbage after → 400
+       - bob's objection asked for this: "add a test for a cursor past the end — after=zzz must 400, not 500". So
+         after=zzz → 400 {error: 'invalid cursor'}, never 500. To make that hold, cursor decode (base64url → JSON.parse
+         → check that c is an ISO date string and i is a positive integer) runs inside try/catch, and any failure maps
+         to 400.
+       - a well-formed cursor that sorts below every task (e.g. the last page's final item) → 200 {items: [], 
+         next_cursor: null}
+       - inserting a task between page fetches does not change the later pages
+     - By hand: npm start, then curl 'localhost:3000/tasks?limit=5' and follow next_cursor.
 
-⏺ You agreed to orch's plan for cursor paging on GET /tasks (proposal 1d6988), and your answer is posted as #7. It
-  orders tasks newest first with id as the tiebreaker and pages from the last item seen. Bob hasn't answered yet, so I'm
-  holding off on building anything until it's decided.
+     Open questions
+
+     1. Is a default limit of 20 and a max of 100 right?
+     2. For an out-of-range limit, should the server return 400 (proposed) or clamp to the max?
+     3. Is the response shape {items, next_cursor} right, or do you want a different key (e.g. next), or a Link header?
+     4. Should the cursor be signed or encrypted, or is base64 JSON enough for now?
+
+     Approvers
+
+     - bob: asked for this plan and is writing the paging tests.
+     - alice: works on the handler in src/server.js and asked bob to take the tests.
+
+⏺ You agreed to the revised paging plan, which adds bob's fix so a bad cursor like after=zzz returns 400 instead of 500.
+  bob hasn't answered yet.
 
 ✻ Waiting for 2 background agents to finish
 
-⏺ Monitor event: "sub-human room notices"
+⏺ Monitor event: "sub-human room"
 
-⏺ User answered Claude's questions:
-  ⎿  · Agree to proposal c04d0c9623ce? → Agree
-
-  Searched for 2 patterns, ran 1 shell command 
-
-⏺ Monitor event: "sub-human room notices"
-
-⏺ The paging plan is decided: you agreed in #11 and bob signed off in #12, so the room recorded it as agreed in #13.
-
-  This version came after bob objected in #8 to the first one, which you'd also agreed to. It covers his request in two
-  cases:
-  - Malformed cursor: a bad after value, such as after=zzz, returns a 400 instead of a 500.
-  - Cursor past the end: a valid cursor that points past the oldest task returns an empty page with no next cursor.
-
-  The plan leaves two questions open:
-  - Limits: is a default of 20 and a max of 100 right, and should a limit over 100 return 400 or be capped at 100?
-  - Response shape: should results come back as {items, nextCursor}, or as a plain list with the cursor in a Link
-    header?
-
-  In #4 bob said he'd take the parser tests once paging was agreed. Should I start on the handler in src/server.js, or
-  do you want to settle the two open questions first?
+⏺ room: decided (agreed: bob, alice)
 
 ✻ Waiting for 2 background agents to finish
                                                                 Update available! Run: brew upgrade claude-code@latest
-───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─
-❯ go ahead and build the handler in src/server.js
+────────────────────────────────────────────────────────────────────────────────────────────────────── alice.swan-6397 ─
+❯ implement the GET /tasks handler in src/server.js
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏵⏵ auto mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ gecko-5061  ✔ decided c04d0c
+  ◯ swan-6397  ✔ decided fba8c9

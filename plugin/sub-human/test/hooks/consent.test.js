@@ -287,6 +287,32 @@ test('review: "Tell Claude what to change" records an objection with the note by
   assert.equal(review(w), null);
 });
 
+test('review: a room tool call after "Tell Claude what to change" records the objection now and is denied with the exit', () => {
+  const { w, hash } = world();
+  const file = path.join(w.userHome, '.claude', 'plans', 'obj2.md');
+  const note = 'add a test for a cursor past the end — `after=zzz` must 400, not 500';
+  const tp0 = transcript(w, file, null, { id: 'tu1', input: { plan: `proposal ${hash}` } });
+  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' });
+  w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp0 }), { as: 'bob' });
+  const tp = transcript(w, file, { tool_use_id: 'tu1', is_error: true, content: said(note) });
+  // Outside plan mode, or with no review open, a room tool call is untouched.
+  assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'auto', tool_input: { text: note }, transcript_path: tp }), { as: 'bob' }).stdout, '');
+  assert.equal(w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'plan', tool_input: { text: note }, transcript_path: tp }), { as: 'alice' }).stdout, '');
+  // bob's Claude tries to post his note itself: denied, the objection recorded byte-exact (via=human), exit next.
+  const r = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: 'plan', tool_input: { kind: 'say', text: note }, transcript_path: tp }), { as: 'bob' });
+  assert.equal(decision(r), 'deny');
+  assert.match(reason(r), /bob objected to proposal .*Post nothing about the review\. First call ExitPlanMode now/);
+  assert.doesNotMatch(reason(r), /#\d/);
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]]);
+  assert.equal(review(w).phase, 'exiting');
+  // The exit: silent, back to auto, the plan file removed; nothing recorded twice.
+  assert.equal(hso(w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'bob' })).decision.updatedPermissions[0].mode, 'auto');
+  assert.equal(fs.existsSync(file), false);
+  assert.match(ctx(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_response: { plan: null } }), { as: 'bob' })), /review is closed and the mode is restored/);
+  assert.equal(answers(w).length, 1);
+  assert.equal(review(w), null);
+});
+
 test('review: no plan path closes the review silently and falls back to the card; the person\'s own plan is untouched', () => {
   const { w, hash } = world();
   const empty = path.join(w.cwd, 'empty.jsonl');

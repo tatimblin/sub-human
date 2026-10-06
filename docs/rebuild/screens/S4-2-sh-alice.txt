@@ -1,0 +1,40 @@
+⏺ Entered plan mode
+  Claude is now exploring and designing an implementation approach.
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   - src/store.js: allTasks() returns tasks in insertion order. Each task looks like {id, title, done, createdAt}.    ↑
+   - It stands in for a Postgres table with about 4M rows and about 30 inserts/s at peak. So offset paging would be
+     slow and would drift as new rows arrive.
+   - Tasks share timestamps. seed() gives every 3 tasks the same createdAt ("as bulk imports do in production"). A
+     cursor built only on createdAt would skip or repeat rows at page edges.
+
+   Proposed design
+
+   - Order: createdAt DESC, id DESC. id breaks ties, so the order is total and stable.
+   - Request: GET /tasks?limit=N&after=CURSOR
+     - limit: default 20, max 100. If it is not a positive integer, or is over the max, the server returns 400 (it
+       does not clamp).
+     - after: optional. Leave it out to get the first (newest) page.
+   - Cursor: base64url of JSON.stringify({c: createdAt, i: id}) for the last item on the page. Clients treat it as
+     opaque. If it does not decode or validate, the server returns 400 {error: 'invalid cursor'}.
+   - Keyset filter: keep a row when createdAt < c OR (createdAt == c AND id < i). In Postgres this becomes WHERE 
+     (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3+1, backed by an index on (created_at 
+     DESC, id DESC).
+   - Response: 200 {items: [...], next_cursor: string|null}. Fetch limit+1 rows; next_cursor is null when there are
+     no more rows.
+   - New inserts while paging: they go at the head of the list, so a client walking the pages never sees duplicates
+     or gaps. It also won't see the new rows until it starts again from the first page.
+
+   Set aside
+
+   - Offset/page numbers: O(offset) on 4M rows, and pages shift whenever inserts happen.
+   - Cursor on id alone: this only works if id order always matches createdAt order. Backdated or imported rows (like
+     seed's createdAt) break that.                                                                                    ↓
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Claude has written up a plan and is ready to execute. Would you like to proceed?
+
+   ❯ 1. Yes, and use auto mode
+     2. Yes, manually approve edits
+     3. Tell Claude what to change
+        shift+tab to approve with this feedback
+
+   ctrl+g to edit in VS Code · ~/.claude/plans/hidden-soaring-hennessy.md

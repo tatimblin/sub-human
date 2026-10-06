@@ -3,7 +3,7 @@
 ▝▜██████▀  Opus 5.5 (1M context) · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/bob
 
-
+⚠ 1 MCP server needs authentication · run /mcp
 
 
 

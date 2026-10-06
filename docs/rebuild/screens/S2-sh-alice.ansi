@@ -3,23 +3,23 @@
 [38;5;174m▝▜[48;5;16m█████[49m█▀[39m  [38;5;246mOpus 5.5 (1M context) · Claude Max[39m
 [38;5;174m  ▝▝ ▝▝  [39m  [38;5;246m/private/tmp/sh-demo/alice[39m
 
+[38;5;220m⚠[39m [38;5;220m1 MCP server needs authentication[38;5;246m · run /mcp[39m
 
 [38;5;239m[48;5;237m❯[39m [38;5;231m/sub-human:sub-human alice[39m
-[38;5;246m[49m  ⎿  UserPromptExpansion says: sub-human: opened room gecko-5061 as alice · others: /sub-human NAME[39m
+[38;5;246m[49m  ⎿  UserPromptExpansion says: sub-human: opened room swan-6397 as alice · others: /sub-human NAME[39m
 
-[38;5;114m⏺[39m [1m[38;5;16m[48;5;37msub-human:room[0m(gecko-5061)
+[38;5;114m⏺[39m [1m[38;5;16m[48;5;37msub-human:room[0m(swan-6397)
 [38;5;246m  ⎿  [39mBackgrounded agent[38;5;246m (↓ to manage · ctrl+o to expand)[39m
 
-[38;5;231m⏺[39m You're in room gecko-5061; no one else has joined yet.
+[38;5;231m⏺[39m You've joined room swan-6397. Nobody else is in it yet.
 
 [38;5;246m✻[39m [38;5;246mWaiting for [1m1[0m[38;5;246m background agent to finish[39m
 
+[38;5;231m⏺[39m Monitor event: "sub-human room"
 
+[38;5;231m⏺[39m bob joined
 
-
-
-
-
+[38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
 
 
 
@@ -31,10 +31,10 @@
 
 
                                                                 [38;5;220mUpdate available! Run: [1mbrew upgrade claude-code@latest[0m
-[38;5;244m───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─
-[39m❯ 
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────── alice.swan-6397 ─
+[39m❯ [2mhey bob[0m
 [38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 [39m  [38;5;220m⏵⏵ auto mode on[38;5;246m · [38;5;44m1 monitor[38;5;246m · ← 1 agent · ↓ to manage[39m
 
 [1m  ⏺ main[0m
-[38;5;246m  ◯ gecko-5061  [2m+bob joined[0m[38;5;246m · [2m2 here[0m
+[38;5;246m  ◯ swan-6397  [2m+bob joined[0m[38;5;246m · [2m2 here[0m

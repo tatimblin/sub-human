@@ -7,112 +7,102 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="792" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">orch · S4</text>
 <g fill="#d6dbe5">
-<rect x="27.6" y="161" width="163.8" height="17" fill="#0891b2"/>
-<rect x="27.6" y="178" width="163.8" height="17" fill="#0891b2"/>
-<text x="12" y="55" fill="#999999" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
-<text x="51" y="55" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
-<text x="191.4" y="55" fill="#999999" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
-<text x="12" y="89" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="89" textLength="889.2" lengthAdjust="spacing" xml:space="preserve"> Joined room gecko-5061: alice's row is running and task 1 (&quot;room gecko-5061 open&quot;) is in progress, owned by room.</text>
-<text x="12" y="106" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="106" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="106" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
-<text x="129" y="106" fill="#999999" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> background agent to finish</text>
-<text x="12" y="123" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="123" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="123" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
-<text x="129" y="123" fill="#999999" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> background agent to finish</text>
-<text x="12" y="157" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="157" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="174" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="174" fill="#000000" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">sub-human:participant</text>
-<text x="191.4" y="174" textLength="39" lengthAdjust="spacing" xml:space="preserve">(bob)</text>
-<text x="12" y="191" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="191" fill="#000000" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">sub-human:participant</text>
-<text x="191.4" y="191" textLength="39" lengthAdjust="spacing" xml:space="preserve">(bob)</text>
-<text x="12" y="208" fill="#999999" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
-<text x="51" y="208" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
-<text x="191.4" y="208" fill="#999999" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
+<rect x="27.6" y="127" width="163.8" height="17" fill="#0891b2"/>
+<text x="12" y="72" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="72" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="72" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
+<text x="129" y="72" fill="#999999" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> background agent to finish</text>
+<text x="12" y="106" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="106" textLength="249.6" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room&quot;</text>
+<text x="12" y="140" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="140" fill="#000000" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">sub-human:participant</text>
+<text x="191.4" y="140" textLength="39" lengthAdjust="spacing" xml:space="preserve">(bob)</text>
+<text x="12" y="157" fill="#999999" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
+<text x="51" y="157" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
+<text x="191.4" y="157" fill="#999999" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
+<text x="12" y="191" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="191" textLength="436.8" lengthAdjust="spacing" xml:space="preserve"> Bob joined room swan-6397, so I started his member row.</text>
+<text x="12" y="225" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="225" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="225" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="225" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="12" y="242" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="242" textLength="436.8" lengthAdjust="spacing" xml:space="preserve"> Bob joined room gecko-5061, and his row is now running.</text>
-<text x="12" y="259" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="259" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="259" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="259" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="276" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="276" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="276" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="276" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="293" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="293" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="310" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="310" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="27.6" y="327" fill="#999999" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">Searched for </text>
-<text x="129" y="327" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
-<text x="136.8" y="327" fill="#999999" textLength="117" lengthAdjust="spacing" xml:space="preserve"> pattern, read </text>
-<text x="253.8" y="327" fill="#999999" font-weight="bold" xml:space="preserve">5</text>
-<text x="261.6" y="327" fill="#999999" textLength="54.6" lengthAdjust="spacing" xml:space="preserve"> files </text>
-<text x="27.6" y="344" fill="#999999" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">Searched for </text>
-<text x="129" y="344" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
-<text x="136.8" y="344" fill="#999999" textLength="117" lengthAdjust="spacing" xml:space="preserve"> pattern, read </text>
-<text x="253.8" y="344" fill="#999999" font-weight="bold" xml:space="preserve">5</text>
-<text x="261.6" y="344" fill="#999999" textLength="54.6" lengthAdjust="spacing" xml:space="preserve"> files </text>
-<text x="12" y="378" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="378" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
-<text x="12" y="395" fill="#999999" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
-<text x="27.6" y="429" fill="#999999" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="12" y="446" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="446" textLength="928.2" lengthAdjust="spacing" xml:space="preserve"> Bob and alice each have an approval card open for the GET /tasks paging plan (proposal #6), which bob asked for in #5.</text>
-<text x="12" y="463" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="463" textLength="928.2" lengthAdjust="spacing" xml:space="preserve"> Bob and alice each have an approval card open for the GET /tasks paging plan (proposal #6), which bob asked for in #5.</text>
+<text x="19.8" y="242" textLength="249.6" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room&quot;</text>
+<text x="12" y="259" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="259" textLength="249.6" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room&quot;</text>
+<text x="27.6" y="276" fill="#999999" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">Searched for </text>
+<text x="129" y="276" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
+<text x="136.8" y="276" fill="#999999" textLength="117" lengthAdjust="spacing" xml:space="preserve"> pattern, read </text>
+<text x="253.8" y="276" fill="#999999" font-weight="bold" xml:space="preserve">5</text>
+<text x="261.6" y="276" fill="#999999" textLength="54.6" lengthAdjust="spacing" xml:space="preserve"> files </text>
+<text x="27.6" y="293" fill="#999999" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">Searched for </text>
+<text x="129" y="293" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
+<text x="136.8" y="293" fill="#999999" textLength="117" lengthAdjust="spacing" xml:space="preserve"> pattern, read </text>
+<text x="253.8" y="293" fill="#999999" font-weight="bold" xml:space="preserve">5</text>
+<text x="261.6" y="293" fill="#999999" textLength="54.6" lengthAdjust="spacing" xml:space="preserve"> files </text>
+<text x="12" y="310" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="310" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
+<text x="12" y="327" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="327" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
+<text x="12" y="344" fill="#999999" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
+<text x="27.6" y="378" fill="#999999" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="395" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="395" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> I sent the paging plan for </text>
+<text x="238.2" y="395" fill="#b1b9f9" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="316.2" y="395" textLength="460.2" lengthAdjust="spacing" xml:space="preserve"> to bob and alice for approval. Nobody has answered it yet.</text>
+<text x="12" y="412" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="412" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> I sent the paging plan for </text>
+<text x="238.2" y="412" fill="#b1b9f9" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="316.2" y="412" textLength="460.2" lengthAdjust="spacing" xml:space="preserve"> to bob and alice for approval. Nobody has answered it yet.</text>
+<text x="12" y="429" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="429" font-weight="bold" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">Order:</text>
+<text x="90" y="429" textLength="156" lengthAdjust="spacing" xml:space="preserve"> newest first, with </text>
+<text x="246" y="429" fill="#b1b9f9" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
+<text x="261.6" y="429" textLength="530.4" lengthAdjust="spacing" xml:space="preserve"> breaking ties. In the sample data every three tasks share the same </text>
+<text x="792" y="429" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
+<text x="862.2" y="429" textLength="522.6" lengthAdjust="spacing" xml:space="preserve">, so paging on time alone would skip or repeat tasks at page edges.</text>
+<text x="12" y="446" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="446" font-weight="bold" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">Order:</text>
+<text x="90" y="446" textLength="156" lengthAdjust="spacing" xml:space="preserve"> newest first, with </text>
+<text x="246" y="446" fill="#b1b9f9" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
+<text x="261.6" y="446" textLength="522.6" lengthAdjust="spacing" xml:space="preserve"> breaking ties. In the sample data every three tasks sharesthe same</text>
+<text x="784.2" y="446" fill="#b1b9f9" textLength="78" lengthAdjust="spacing" xml:space="preserve">AcreatedAt</text>
+<text x="862.2" y="446" textLength="522.6" lengthAdjust="spacing" xml:space="preserve">, so paging on time alone would skip or repeat tasks at page edges.</text>
+<text x="12" y="463" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="463" font-weight="bold" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">Paging:e</text>
+<text x="105.6" y="463" fill="#b1b9f9" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">?limit&amp;after</text>
+<text x="199.2" y="463" xml:space="preserve">,</text>
+<text x="207" y="463" fill="#b1b9f9" xml:space="preserve">t</text>
+<text x="214.8" y="463" textLength="39" lengthAdjust="spacing" xml:space="preserve">where</text>
+<text x="253.8" y="463" fill="#b1b9f9" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">oafter</text>
+<text x="300.6" y="463" textLength="429" lengthAdjust="spacing" xml:space="preserve"> is an opaque base64 cursor built from the last task's </text>
+<text x="729.6" y="463" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
+<text x="799.8" y="463" textLength="39" lengthAdjust="spacing" xml:space="preserve"> and </text>
+<text x="838.8" y="463" fill="#b1b9f9" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
+<text x="854.4" y="463" xml:space="preserve">.</text>
 <text x="12" y="480" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
-<text x="43.2" y="480" font-weight="bold" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">Design:</text>
-<text x="97.8" y="480" textLength="304.2" lengthAdjust="spacing" xml:space="preserve"> results are sorted newest first, with </text>
-<text x="402" y="480" fill="#b1b9f9" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
-<text x="417.6" y="480" textLength="140.4" lengthAdjust="spacing" xml:space="preserve"> breaking ties on </text>
-<text x="558" y="480" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
-<text x="628.2" y="480" textLength="343.2" lengthAdjust="spacing" xml:space="preserve">. The opaque cursor encodes the last item's </text>
-<text x="971.4" y="480" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
-<text x="1041.6" y="480" textLength="39" lengthAdjust="spacing" xml:space="preserve"> and </text>
-<text x="1080.6" y="480" fill="#b1b9f9" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
-<text x="1096.2" y="480" textLength="429" lengthAdjust="spacing" xml:space="preserve">, so new inserts don't make pages skip or repeat rows. </text>
-<text x="1525.2" y="480" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="43.2" y="480" font-weight="bold" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">Response:</text>
+<text x="121.2" y="480" fill="#b1b9f9" textLength="156" lengthAdjust="spacing" xml:space="preserve">{items, next_cursor}</text>
+<text x="277.2" y="480" xml:space="preserve">.</text>
 <text x="12" y="497" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
-<text x="43.2" y="497" font-weight="bold" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">Design:</text>
-<text x="97.8" y="497" textLength="304.2" lengthAdjust="spacing" xml:space="preserve"> results are sorted newest first, with </text>
-<text x="402" y="497" fill="#b1b9f9" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
-<text x="417.6" y="497" textLength="140.4" lengthAdjust="spacing" xml:space="preserve"> breaking ties on </text>
-<text x="558" y="497" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
-<text x="628.2" y="497" textLength="343.2" lengthAdjust="spacing" xml:space="preserve">. The opaque cursor encodes the last item's </text>
-<text x="971.4" y="497" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">createdAt</text>
-<text x="1041.6" y="497" textLength="39" lengthAdjust="spacing" xml:space="preserve"> and </text>
-<text x="1080.6" y="497" fill="#b1b9f9" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">id</text>
-<text x="1096.2" y="497" textLength="429" lengthAdjust="spacing" xml:space="preserve">, so new inserts don't make pages skip or repeat rows. </text>
-<text x="1525.2" y="497" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
-<text x="12" y="514" textLength="327.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    defaults to 20, with a maximum of 100.</text>
-<text x="12" y="531" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
-<text x="43.2" y="531" font-weight="bold" textLength="210.6" lengthAdjust="spacing" xml:space="preserve">Open questions in the plan:</text>
-<text x="12" y="548" textLength="124.8" lengthAdjust="spacing" xml:space="preserve">    - Whether a </text>
-<text x="136.8" y="548" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
-<text x="175.8" y="548" textLength="163.8" lengthAdjust="spacing" xml:space="preserve"> above 100 returns an</text>
-<text x="347.4" y="548" textLength="39" lengthAdjust="spacing" xml:space="preserve">error</text>
-<text x="386.4" y="548" fill="#b1b9f9" xml:space="preserve">u</text>
-<text x="394.2" y="548" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">or</text>
-<text x="409.8" y="548" fill="#b1b9f9" xml:space="preserve">o</text>
-<text x="417.6" y="548" textLength="335.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">is cappedaat 100.list with the cursor in a </text>
-<text x="753" y="548" fill="#b1b9f9" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">Link</text>
-<text x="784.2" y="548" textLength="62.4" lengthAdjust="spacing" xml:space="preserve"> header.</text>
-<text x="12" y="565" textLength="273" lengthAdjust="spacing" xml:space="preserve">    - Whether results come back as </text>
-<text x="285" y="565" fill="#b1b9f9" textLength="148.2" lengthAdjust="spacing" xml:space="preserve">{items, nextCursor}</text>
-<text x="433.2" y="565" textLength="319.8" lengthAdjust="spacing" xml:space="preserve"> or as a plain list with the cursor in a </text>
-<text x="753" y="565" fill="#b1b9f9" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">Link</text>
-<text x="784.2" y="565" textLength="62.4" lengthAdjust="spacing" xml:space="preserve"> header.</text>
-<text x="12" y="582" textLength="351" lengthAdjust="spacing" xml:space="preserve">    - Whether paging backwards is needed now.</text>
-<text x="12" y="599" textLength="319.8" lengthAdjust="spacing" xml:space="preserve">    - Whether alice takes the handler in </text>
-<text x="331.8" y="599" fill="#b1b9f9" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">src/server.js</text>
-<text x="433.2" y="599" textLength="273" lengthAdjust="spacing" xml:space="preserve"> while bob writes the parser tests.</text>
-<text x="12" y="616" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  No</text>
-<text x="12" y="633" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">  Nobody has answered a card yet.</text>
+<text x="43.2" y="497" font-weight="bold" textLength="78" lengthAdjust="spacing" xml:space="preserve">Bad input:</text>
+<text x="121.2" y="497" textLength="54.6" lengthAdjust="spacing" xml:space="preserve"> a bad </text>
+<text x="175.8" y="497" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="214.8" y="497" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> or cursor gets a 400 error.</text>
+<text x="12" y="531" textLength="296.4" lengthAdjust="spacing" xml:space="preserve">  The plan leaves four questions open:</text>
+<text x="12" y="548" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">  1. Is a default </text>
+<text x="152.4" y="548" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="191.4" y="548" textLength="234" lengthAdjust="spacing" xml:space="preserve"> of 20 and a max of 100 right?</text>
+<text x="12" y="565" textLength="218.4" lengthAdjust="spacing" xml:space="preserve">  2. Should an out-of-range </text>
+<text x="230.4" y="565" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="269.4" y="565" textLength="273" lengthAdjust="spacing" xml:space="preserve"> get ar400oorebehcapped at the max?</text>
+<text x="12" y="582" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">  3. Is </text>
+<text x="74.4" y="582" fill="#b1b9f9" textLength="156" lengthAdjust="spacing" xml:space="preserve">{items, next_cursor}</text>
+<text x="230.4" y="582" textLength="202.8" lengthAdjust="spacing" xml:space="preserve"> the right response shape?</text>
+<text x="12" y="599" textLength="265.2" lengthAdjust="spacing" xml:space="preserve">  4. Does the cursor need signing?</text>
+<text x="12" y="633" textLength="132.6" lengthAdjust="spacing" xml:space="preserve">  The plan is in </text>
+<text x="144.6" y="633" fill="#b1b9f9" textLength="475.8" lengthAdjust="spacing" xml:space="preserve">/Users/tristantimblin/.claude/plans/mellow-sniffing-magpie.md</text>
+<text x="620.4" y="633" xml:space="preserve">.</text>
 <text x="12" y="650" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="650" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="650" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
@@ -138,22 +128,29 @@
 <text x="277.2" y="701" fill="#999999" font-weight="bold" xml:space="preserve">0</text>
 <text x="285" y="701" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> open)</text>
 <text x="27.6" y="718" fill="#d77757" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◼ </text>
-<text x="43.2" y="718" font-weight="bold" textLength="156" lengthAdjust="spacing" xml:space="preserve">room gecko-5061 open</text>
-<text x="12" y="752" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="43.2" y="718" font-weight="bold" textLength="148.2" lengthAdjust="spacing" xml:space="preserve">room swan-6397 open</text>
+<text x="214.8" y="735" fill="#888888" textLength="920.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="1135.2" y="735" fill="#ffc107" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
+<text x="1314.6" y="735" fill="#ffc107" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
+<text x="1556.4" y="735" fill="#888888" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ─</text>
+<text x="12" y="752" fill="#888888" textLength="1560" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── orch.swan-6397 ─</text>
 <text x="12" y="769" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="347.4" y="786" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">ctrl+t</text>
-<text x="402" y="786" fill="#999999" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">to hide </text>
-<text x="472.2" y="786" fill="#999999" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">asks · ↓ to manage</text>
-<text x="347.4" y="803" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">ctrl+t</text>
-<text x="402" y="803" fill="#999999" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">to hide </text>
-<text x="472.2" y="803" fill="#999999" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">asks · ↓ to manage</text>
-<text x="97.8" y="837" fill="#e5c07b" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠ reviewing 1d6988</text>
+<text x="12" y="786" fill="#888888" textLength="1560" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="27.6" y="803" fill="#48968c" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ plan mode on</text>
+<text x="136.8" y="803" fill="#999999" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · </text>
+<text x="253.8" y="803" fill="#00cccc" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
+<text x="324" y="803" fill="#999999" textLength="288.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ctrl+t to hide tasks · ↓ to manage</text>
+<text x="12" y="837" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
+<text x="74.4" y="837" fill="#999999" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">e  </text>
+<text x="97.8" y="837" fill="#e5c07b" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠ reviewing f43c2a</text>
 <text x="238.2" y="837" fill="#999999" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="261.6" y="837" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
-<text x="82.2" y="854" fill="#e5c07b" textLength="156" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠ ⚠ reviewing 1d6988</text>
+<text x="12" y="854" fill="#999999" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ alice  </text>
+<text x="97.8" y="854" fill="#e5c07b" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠ reviewing f43c2a</text>
 <text x="238.2" y="854" fill="#999999" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="261.6" y="854" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
-<text x="82.2" y="871" fill="#e5c07b" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠ reviewing 1d6988</text>
+<text x="43.2" y="871" fill="#999999" textLength="39" lengthAdjust="spacing" xml:space="preserve">bob  </text>
+<text x="82.2" y="871" fill="#e5c07b" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠ reviewing f43c2a</text>
 <text x="222.6" y="871" fill="#999999" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="246" y="871" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
 </g></svg>

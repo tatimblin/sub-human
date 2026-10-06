@@ -2,19 +2,19 @@
  {
   "scene": "S1",
   "session": "sh-orch",
-  "caption": "alice runs /sub-human alice: room gecko-5061 opened, the orch started in the background; one gecko-5061 row for her, an alice row in the orch's panel",
+  "caption": "alice runs /sub-human alice: room swan-6397 opened, the orch started in the background; one swan-6397 row for her, an alice row in the orch's panel",
   "step": 1,
-  "time": "2026-10-06T06:46:40.145Z",
+  "time": "2026-10-06T16:33:52.752Z",
   "svg": "S1-sh-orch.svg",
   "txt": "S1-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 1,
   "log": [
    {
     "id": 1,
-    "at": "2026-10-06T06:46:18.816Z",
+    "at": "2026-10-06T16:33:36.355Z",
     "from": "alice",
     "via": "system",
     "kind": "member_joined",
@@ -25,19 +25,19 @@
  {
   "scene": "S1",
   "session": "sh-alice",
-  "caption": "alice runs /sub-human alice: room gecko-5061 opened, the orch started in the background; one gecko-5061 row for her, an alice row in the orch's panel",
+  "caption": "alice runs /sub-human alice: room swan-6397 opened, the orch started in the background; one swan-6397 row for her, an alice row in the orch's panel",
   "step": 1,
-  "time": "2026-10-06T06:46:40.160Z",
+  "time": "2026-10-06T16:33:52.764Z",
   "svg": "S1-sh-alice.svg",
   "txt": "S1-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 1,
   "log": [
    {
     "id": 1,
-    "at": "2026-10-06T06:46:18.816Z",
+    "at": "2026-10-06T16:33:36.355Z",
     "from": "alice",
     "via": "system",
     "kind": "member_joined",
@@ -48,19 +48,19 @@
  {
   "scene": "S1",
   "session": "sh-bob",
-  "caption": "alice runs /sub-human alice: room gecko-5061 opened, the orch started in the background; one gecko-5061 row for her, an alice row in the orch's panel",
+  "caption": "alice runs /sub-human alice: room swan-6397 opened, the orch started in the background; one swan-6397 row for her, an alice row in the orch's panel",
   "step": 1,
-  "time": "2026-10-06T06:46:40.170Z",
+  "time": "2026-10-06T16:33:52.774Z",
   "svg": "S1-sh-bob.svg",
   "txt": "S1-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 1,
   "log": [
    {
     "id": 1,
-    "at": "2026-10-06T06:46:18.816Z",
+    "at": "2026-10-06T16:33:36.355Z",
     "from": "alice",
     "via": "system",
     "kind": "member_joined",
@@ -73,17 +73,17 @@
   "session": "sh-orch",
   "caption": "bob joins: bob nested in alice's room row, alice in bob's; the orch lists both",
   "step": 1,
-  "time": "2026-10-06T06:47:03.007Z",
+  "time": "2026-10-06T16:34:15.649Z",
   "svg": "S2-sh-orch.svg",
   "txt": "S2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 2,
   "log": [
    {
     "id": 2,
-    "at": "2026-10-06T06:46:43.247Z",
+    "at": "2026-10-06T16:33:55.855Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -96,17 +96,17 @@
   "session": "sh-alice",
   "caption": "bob joins: bob nested in alice's room row, alice in bob's; the orch lists both",
   "step": 1,
-  "time": "2026-10-06T06:47:03.020Z",
+  "time": "2026-10-06T16:34:15.663Z",
   "svg": "S2-sh-alice.svg",
   "txt": "S2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 2,
   "log": [
    {
     "id": 2,
-    "at": "2026-10-06T06:46:43.247Z",
+    "at": "2026-10-06T16:33:55.855Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -119,17 +119,17 @@
   "session": "sh-bob",
   "caption": "bob joins: bob nested in alice's room row, alice in bob's; the orch lists both",
   "step": 1,
-  "time": "2026-10-06T06:47:03.032Z",
+  "time": "2026-10-06T16:34:15.674Z",
   "svg": "S2-sh-bob.svg",
   "txt": "S2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 2,
   "log": [
    {
     "id": 2,
-    "at": "2026-10-06T06:46:43.247Z",
+    "at": "2026-10-06T16:33:55.855Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -140,19 +140,19 @@
  {
   "scene": "S3",
   "session": "sh-orch",
-  "caption": "alice posts with @room: one receipt line for her, bob's Claude wakes once with her exact words",
+  "caption": "alice posts with @room: one receipt line for her (✓ sent), bob's pane shows \"alice: …\" with her exact words",
   "step": 1,
-  "time": "2026-10-06T06:47:24.604Z",
+  "time": "2026-10-06T16:34:35.090Z",
   "svg": "S3-sh-orch.svg",
   "txt": "S3-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 3,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T06:47:06.162Z",
+    "at": "2026-10-06T16:34:18.787Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -163,19 +163,19 @@
  {
   "scene": "S3",
   "session": "sh-alice",
-  "caption": "alice posts with @room: one receipt line for her, bob's Claude wakes once with her exact words",
+  "caption": "alice posts with @room: one receipt line for her (✓ sent), bob's pane shows \"alice: …\" with her exact words",
   "step": 1,
-  "time": "2026-10-06T06:47:24.620Z",
+  "time": "2026-10-06T16:34:35.103Z",
   "svg": "S3-sh-alice.svg",
   "txt": "S3-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 3,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T06:47:06.162Z",
+    "at": "2026-10-06T16:34:18.787Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -186,19 +186,19 @@
  {
   "scene": "S3",
   "session": "sh-bob",
-  "caption": "alice posts with @room: one receipt line for her, bob's Claude wakes once with her exact words",
+  "caption": "alice posts with @room: one receipt line for her (✓ sent), bob's pane shows \"alice: …\" with her exact words",
   "step": 1,
-  "time": "2026-10-06T06:47:24.633Z",
+  "time": "2026-10-06T16:34:35.115Z",
   "svg": "S3-sh-bob.svg",
   "txt": "S3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 3,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T06:47:06.162Z",
+    "at": "2026-10-06T16:34:18.787Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -209,19 +209,19 @@
  {
   "scene": "S3",
   "session": "sh-orch",
-  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.gecko-5061); alice's Claude answers. No card, no orch turn",
+  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.swan-6397); alice's Claude answers. No card, no orch turn",
   "step": 2,
-  "time": "2026-10-06T06:48:14.895Z",
+  "time": "2026-10-06T16:35:24.011Z",
   "svg": "S3-2-sh-orch.svg",
   "txt": "S3-2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 4,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T06:47:06.162Z",
+    "at": "2026-10-06T16:34:18.787Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -229,7 +229,7 @@
    },
    {
     "id": 4,
-    "at": "2026-10-06T06:47:27.747Z",
+    "at": "2026-10-06T16:34:38.222Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -240,19 +240,19 @@
  {
   "scene": "S3",
   "session": "sh-alice",
-  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.gecko-5061); alice's Claude answers. No card, no orch turn",
+  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.swan-6397); alice's Claude answers. No card, no orch turn",
   "step": 2,
-  "time": "2026-10-06T06:48:14.909Z",
+  "time": "2026-10-06T16:35:24.023Z",
   "svg": "S3-2-sh-alice.svg",
   "txt": "S3-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 4,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T06:47:06.162Z",
+    "at": "2026-10-06T16:34:18.787Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -260,7 +260,7 @@
    },
    {
     "id": 4,
-    "at": "2026-10-06T06:47:27.747Z",
+    "at": "2026-10-06T16:34:38.222Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -271,19 +271,19 @@
  {
   "scene": "S3",
   "session": "sh-bob",
-  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.gecko-5061); alice's Claude answers. No card, no orch turn",
+  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.swan-6397); alice's Claude answers. No card, no orch turn",
   "step": 2,
-  "time": "2026-10-06T06:48:14.920Z",
+  "time": "2026-10-06T16:35:24.034Z",
   "svg": "S3-2-sh-bob.svg",
   "txt": "S3-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 4,
   "log": [
    {
     "id": 3,
-    "at": "2026-10-06T06:47:06.162Z",
+    "at": "2026-10-06T16:34:18.787Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -291,7 +291,7 @@
    },
    {
     "id": 4,
-    "at": "2026-10-06T06:47:27.747Z",
+    "at": "2026-10-06T16:34:38.222Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -302,19 +302,19 @@
  {
   "scene": "S4",
   "session": "sh-orch",
-  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
+  "caption": "The orch proposes its plan: it opens in alice's and bob's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)",
   "step": 1,
-  "time": "2026-10-06T06:49:03.476Z",
+  "time": "2026-10-06T16:36:10.474Z",
   "svg": "S4-sh-orch.svg",
   "txt": "S4-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 6,
   "log": [
    {
     "id": 5,
-    "at": "2026-10-06T06:48:18.030Z",
+    "at": "2026-10-06T16:35:27.154Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -322,11 +322,11 @@
    },
    {
     "id": 6,
-    "at": "2026-10-06T06:48:51.194Z",
+    "at": "2026-10-06T16:35:56.163Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal 1d69888ae02f: Plan: cursor paging for GET /tasks",
+    "text": "proposal f43c2a785536: Plan: cursor paging for GET /tasks",
     "approvers": [
      "bob",
      "alice"
@@ -337,19 +337,19 @@
  {
   "scene": "S4",
   "session": "sh-alice",
-  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
+  "caption": "The orch proposes its plan: it opens in alice's and bob's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)",
   "step": 1,
-  "time": "2026-10-06T06:49:03.490Z",
+  "time": "2026-10-06T16:36:10.487Z",
   "svg": "S4-sh-alice.svg",
   "txt": "S4-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 6,
   "log": [
    {
     "id": 5,
-    "at": "2026-10-06T06:48:18.030Z",
+    "at": "2026-10-06T16:35:27.154Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -357,11 +357,11 @@
    },
    {
     "id": 6,
-    "at": "2026-10-06T06:48:51.194Z",
+    "at": "2026-10-06T16:35:56.163Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal 1d69888ae02f: Plan: cursor paging for GET /tasks",
+    "text": "proposal f43c2a785536: Plan: cursor paging for GET /tasks",
     "approvers": [
      "bob",
      "alice"
@@ -372,19 +372,19 @@
  {
   "scene": "S4",
   "session": "sh-bob",
-  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
+  "caption": "The orch proposes its plan: it opens in alice's and bob's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)",
   "step": 1,
-  "time": "2026-10-06T06:49:03.502Z",
+  "time": "2026-10-06T16:36:10.498Z",
   "svg": "S4-sh-bob.svg",
   "txt": "S4-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 6,
   "log": [
    {
     "id": 5,
-    "at": "2026-10-06T06:48:18.030Z",
+    "at": "2026-10-06T16:35:27.154Z",
     "from": "bob",
     "via": "human",
     "kind": "say",
@@ -392,11 +392,151 @@
    },
    {
     "id": 6,
-    "at": "2026-10-06T06:48:51.194Z",
+    "at": "2026-10-06T16:35:56.163Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal 1d69888ae02f: Plan: cursor paging for GET /tasks",
+    "text": "proposal f43c2a785536: Plan: cursor paging for GET /tasks",
+    "approvers": [
+     "bob",
+     "alice"
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S4",
+  "session": "sh-alice",
+  "caption": "alice reads the whole proposal in the plan view: PgDn, page 2",
+  "step": 2,
+  "time": "2026-10-06T16:36:12.228Z",
+  "svg": "S4-2-sh-alice.svg",
+  "txt": "S4-2-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "swan-6397",
+  "logTo": 6,
+  "log": [
+   {
+    "id": 5,
+    "at": "2026-10-06T16:35:27.154Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
+   },
+   {
+    "id": 6,
+    "at": "2026-10-06T16:35:56.163Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal f43c2a785536: Plan: cursor paging for GET /tasks",
+    "approvers": [
+     "bob",
+     "alice"
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S4",
+  "session": "sh-alice",
+  "caption": "alice reads the whole proposal in the plan view: PgDn, page 3",
+  "step": 3,
+  "time": "2026-10-06T16:36:13.701Z",
+  "svg": "S4-3-sh-alice.svg",
+  "txt": "S4-3-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "swan-6397",
+  "logTo": 6,
+  "log": [
+   {
+    "id": 5,
+    "at": "2026-10-06T16:35:27.154Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
+   },
+   {
+    "id": 6,
+    "at": "2026-10-06T16:35:56.163Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal f43c2a785536: Plan: cursor paging for GET /tasks",
+    "approvers": [
+     "bob",
+     "alice"
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S4",
+  "session": "sh-alice",
+  "caption": "alice reads the whole proposal in the plan view: PgDn, page 4",
+  "step": 4,
+  "time": "2026-10-06T16:36:15.185Z",
+  "svg": "S4-4-sh-alice.svg",
+  "txt": "S4-4-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "swan-6397",
+  "logTo": 6,
+  "log": [
+   {
+    "id": 5,
+    "at": "2026-10-06T16:35:27.154Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
+   },
+   {
+    "id": 6,
+    "at": "2026-10-06T16:35:56.163Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal f43c2a785536: Plan: cursor paging for GET /tasks",
+    "approvers": [
+     "bob",
+     "alice"
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S4",
+  "session": "sh-alice",
+  "caption": "alice reads the whole proposal in the plan view: PgDn, page 5",
+  "step": 5,
+  "time": "2026-10-06T16:36:16.657Z",
+  "svg": "S4-5-sh-alice.svg",
+  "txt": "S4-5-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "swan-6397",
+  "logTo": 6,
+  "log": [
+   {
+    "id": 5,
+    "at": "2026-10-06T16:35:27.154Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
+   },
+   {
+    "id": 6,
+    "at": "2026-10-06T16:35:56.163Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal f43c2a785536: Plan: cursor paging for GET /tasks",
     "approvers": [
      "bob",
      "alice"
@@ -409,24 +549,24 @@
   "session": "sh-orch",
   "caption": "alice agrees; bob objects with a note (via=human, byte-exact)",
   "step": 1,
-  "time": "2026-10-06T06:49:21.902Z",
+  "time": "2026-10-06T16:36:36.380Z",
   "svg": "S5-sh-orch.svg",
   "txt": "S5-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 9,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-06T06:49:05.560Z",
+    "at": "2026-10-06T16:36:18.082Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 8,
-    "at": "2026-10-06T06:49:11.056Z",
+    "at": "2026-10-06T16:36:27.116Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
@@ -434,11 +574,11 @@
    },
    {
     "id": 9,
-    "at": "2026-10-06T06:49:11.057Z",
+    "at": "2026-10-06T16:36:27.117Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
+    "text": "objected: bob · agreed: alice (proposal f43c2a785536)",
     "refs": [
      6,
      8,
@@ -452,24 +592,24 @@
   "session": "sh-alice",
   "caption": "alice agrees; bob objects with a note (via=human, byte-exact)",
   "step": 1,
-  "time": "2026-10-06T06:49:21.915Z",
+  "time": "2026-10-06T16:36:36.393Z",
   "svg": "S5-sh-alice.svg",
   "txt": "S5-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 9,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-06T06:49:05.560Z",
+    "at": "2026-10-06T16:36:18.082Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 8,
-    "at": "2026-10-06T06:49:11.056Z",
+    "at": "2026-10-06T16:36:27.116Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
@@ -477,11 +617,11 @@
    },
    {
     "id": 9,
-    "at": "2026-10-06T06:49:11.057Z",
+    "at": "2026-10-06T16:36:27.117Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
+    "text": "objected: bob · agreed: alice (proposal f43c2a785536)",
     "refs": [
      6,
      8,
@@ -495,24 +635,24 @@
   "session": "sh-bob",
   "caption": "alice agrees; bob objects with a note (via=human, byte-exact)",
   "step": 1,
-  "time": "2026-10-06T06:49:21.927Z",
+  "time": "2026-10-06T16:36:36.405Z",
   "svg": "S5-sh-bob.svg",
   "txt": "S5-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 9,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-06T06:49:05.560Z",
+    "at": "2026-10-06T16:36:18.082Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 8,
-    "at": "2026-10-06T06:49:11.056Z",
+    "at": "2026-10-06T16:36:27.116Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
@@ -520,11 +660,11 @@
    },
    {
     "id": 9,
-    "at": "2026-10-06T06:49:11.057Z",
+    "at": "2026-10-06T16:36:27.117Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
+    "text": "objected: bob · agreed: alice (proposal f43c2a785536)",
     "refs": [
      6,
      8,
@@ -536,26 +676,26 @@
  {
   "scene": "S5",
   "session": "sh-orch",
-  "caption": "The orch revises: a new proposal, a new card for each",
+  "caption": "The orch revises: a new proposal, opened again for each",
   "step": 2,
-  "time": "2026-10-06T06:49:31.601Z",
+  "time": "2026-10-06T16:36:52.497Z",
   "svg": "S5-2-sh-orch.svg",
   "txt": "S5-2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 10,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-06T06:49:05.560Z",
+    "at": "2026-10-06T16:36:18.082Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 8,
-    "at": "2026-10-06T06:49:11.056Z",
+    "at": "2026-10-06T16:36:27.116Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
@@ -563,11 +703,11 @@
    },
    {
     "id": 9,
-    "at": "2026-10-06T06:49:11.057Z",
+    "at": "2026-10-06T16:36:27.117Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
+    "text": "objected: bob · agreed: alice (proposal f43c2a785536)",
     "refs": [
      6,
      8,
@@ -576,11 +716,11 @@
    },
    {
     "id": 10,
-    "at": "2026-10-06T06:49:23.780Z",
+    "at": "2026-10-06T16:36:39.221Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
+    "text": "proposal fba8c9fb596a: Plan: cursor paging for GET /tasks",
     "approvers": [
      "bob",
      "alice"
@@ -591,26 +731,26 @@
  {
   "scene": "S5",
   "session": "sh-alice",
-  "caption": "The orch revises: a new proposal, a new card for each",
+  "caption": "The orch revises: a new proposal, opened again for each",
   "step": 2,
-  "time": "2026-10-06T06:49:31.616Z",
+  "time": "2026-10-06T16:36:52.510Z",
   "svg": "S5-2-sh-alice.svg",
   "txt": "S5-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 10,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-06T06:49:05.560Z",
+    "at": "2026-10-06T16:36:18.082Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 8,
-    "at": "2026-10-06T06:49:11.056Z",
+    "at": "2026-10-06T16:36:27.116Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
@@ -618,11 +758,11 @@
    },
    {
     "id": 9,
-    "at": "2026-10-06T06:49:11.057Z",
+    "at": "2026-10-06T16:36:27.117Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
+    "text": "objected: bob · agreed: alice (proposal f43c2a785536)",
     "refs": [
      6,
      8,
@@ -631,11 +771,11 @@
    },
    {
     "id": 10,
-    "at": "2026-10-06T06:49:23.780Z",
+    "at": "2026-10-06T16:36:39.221Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
+    "text": "proposal fba8c9fb596a: Plan: cursor paging for GET /tasks",
     "approvers": [
      "bob",
      "alice"
@@ -646,26 +786,26 @@
  {
   "scene": "S5",
   "session": "sh-bob",
-  "caption": "The orch revises: a new proposal, a new card for each",
+  "caption": "The orch revises: a new proposal, opened again for each",
   "step": 2,
-  "time": "2026-10-06T06:49:31.627Z",
+  "time": "2026-10-06T16:36:52.522Z",
   "svg": "S5-2-sh-bob.svg",
   "txt": "S5-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 10,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-06T06:49:05.560Z",
+    "at": "2026-10-06T16:36:18.082Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 8,
-    "at": "2026-10-06T06:49:11.056Z",
+    "at": "2026-10-06T16:36:27.116Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
@@ -673,11 +813,11 @@
    },
    {
     "id": 9,
-    "at": "2026-10-06T06:49:11.057Z",
+    "at": "2026-10-06T16:36:27.117Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
+    "text": "objected: bob · agreed: alice (proposal f43c2a785536)",
     "refs": [
      6,
      8,
@@ -686,11 +826,11 @@
    },
    {
     "id": 10,
-    "at": "2026-10-06T06:49:23.780Z",
+    "at": "2026-10-06T16:36:39.221Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
+    "text": "proposal fba8c9fb596a: Plan: cursor paging for GET /tasks",
     "approvers": [
      "bob",
      "alice"
@@ -703,24 +843,24 @@
   "session": "sh-orch",
   "caption": "Both agree to the revision: a decision is logged; both Claudes are told once",
   "step": 3,
-  "time": "2026-10-06T06:50:05.001Z",
+  "time": "2026-10-06T16:37:25.425Z",
   "svg": "S5-3-sh-orch.svg",
   "txt": "S5-3-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 13,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-06T06:49:05.560Z",
+    "at": "2026-10-06T16:36:18.082Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 8,
-    "at": "2026-10-06T06:49:11.056Z",
+    "at": "2026-10-06T16:36:27.116Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
@@ -728,11 +868,11 @@
    },
    {
     "id": 9,
-    "at": "2026-10-06T06:49:11.057Z",
+    "at": "2026-10-06T16:36:27.117Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
+    "text": "objected: bob · agreed: alice (proposal f43c2a785536)",
     "refs": [
      6,
      8,
@@ -741,11 +881,11 @@
    },
    {
     "id": 10,
-    "at": "2026-10-06T06:49:23.780Z",
+    "at": "2026-10-06T16:36:39.221Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
+    "text": "proposal fba8c9fb596a: Plan: cursor paging for GET /tasks",
     "approvers": [
      "bob",
      "alice"
@@ -753,25 +893,25 @@
    },
    {
     "id": 11,
-    "at": "2026-10-06T06:49:33.704Z",
+    "at": "2026-10-06T16:36:55.778Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 12,
-    "at": "2026-10-06T06:49:37.090Z",
+    "at": "2026-10-06T16:37:00.375Z",
     "from": "bob",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 13,
-    "at": "2026-10-06T06:49:37.091Z",
+    "at": "2026-10-06T16:37:00.375Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "agreed: bob, alice (proposal c04d0c9623ce)",
+    "text": "agreed: bob, alice (proposal fba8c9fb596a)",
     "refs": [
      10,
      12,
@@ -785,24 +925,24 @@
   "session": "sh-alice",
   "caption": "Both agree to the revision: a decision is logged; both Claudes are told once",
   "step": 3,
-  "time": "2026-10-06T06:50:05.016Z",
+  "time": "2026-10-06T16:37:25.438Z",
   "svg": "S5-3-sh-alice.svg",
   "txt": "S5-3-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 13,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-06T06:49:05.560Z",
+    "at": "2026-10-06T16:36:18.082Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 8,
-    "at": "2026-10-06T06:49:11.056Z",
+    "at": "2026-10-06T16:36:27.116Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
@@ -810,11 +950,11 @@
    },
    {
     "id": 9,
-    "at": "2026-10-06T06:49:11.057Z",
+    "at": "2026-10-06T16:36:27.117Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
+    "text": "objected: bob · agreed: alice (proposal f43c2a785536)",
     "refs": [
      6,
      8,
@@ -823,11 +963,11 @@
    },
    {
     "id": 10,
-    "at": "2026-10-06T06:49:23.780Z",
+    "at": "2026-10-06T16:36:39.221Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
+    "text": "proposal fba8c9fb596a: Plan: cursor paging for GET /tasks",
     "approvers": [
      "bob",
      "alice"
@@ -835,25 +975,25 @@
    },
    {
     "id": 11,
-    "at": "2026-10-06T06:49:33.704Z",
+    "at": "2026-10-06T16:36:55.778Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 12,
-    "at": "2026-10-06T06:49:37.090Z",
+    "at": "2026-10-06T16:37:00.375Z",
     "from": "bob",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 13,
-    "at": "2026-10-06T06:49:37.091Z",
+    "at": "2026-10-06T16:37:00.375Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "agreed: bob, alice (proposal c04d0c9623ce)",
+    "text": "agreed: bob, alice (proposal fba8c9fb596a)",
     "refs": [
      10,
      12,
@@ -867,24 +1007,24 @@
   "session": "sh-bob",
   "caption": "Both agree to the revision: a decision is logged; both Claudes are told once",
   "step": 3,
-  "time": "2026-10-06T06:50:05.027Z",
+  "time": "2026-10-06T16:37:25.450Z",
   "svg": "S5-3-sh-bob.svg",
   "txt": "S5-3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 13,
   "log": [
    {
     "id": 7,
-    "at": "2026-10-06T06:49:05.560Z",
+    "at": "2026-10-06T16:36:18.082Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 8,
-    "at": "2026-10-06T06:49:11.056Z",
+    "at": "2026-10-06T16:36:27.116Z",
     "from": "bob",
     "via": "human",
     "kind": "objection",
@@ -892,11 +1032,11 @@
    },
    {
     "id": 9,
-    "at": "2026-10-06T06:49:11.057Z",
+    "at": "2026-10-06T16:36:27.117Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "objected: bob · agreed: alice (proposal 1d69888ae02f)",
+    "text": "objected: bob · agreed: alice (proposal f43c2a785536)",
     "refs": [
      6,
      8,
@@ -905,11 +1045,11 @@
    },
    {
     "id": 10,
-    "at": "2026-10-06T06:49:23.780Z",
+    "at": "2026-10-06T16:36:39.221Z",
     "from": "orch",
     "via": "agent",
     "kind": "proposal",
-    "text": "proposal c04d0c9623ce: Plan: cursor paging for GET /tasks",
+    "text": "proposal fba8c9fb596a: Plan: cursor paging for GET /tasks",
     "approvers": [
      "bob",
      "alice"
@@ -917,25 +1057,25 @@
    },
    {
     "id": 11,
-    "at": "2026-10-06T06:49:33.704Z",
+    "at": "2026-10-06T16:36:55.778Z",
     "from": "alice",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 12,
-    "at": "2026-10-06T06:49:37.090Z",
+    "at": "2026-10-06T16:37:00.375Z",
     "from": "bob",
     "via": "human",
     "kind": "signoff"
    },
    {
     "id": 13,
-    "at": "2026-10-06T06:49:37.091Z",
+    "at": "2026-10-06T16:37:00.375Z",
     "from": "room",
     "via": "system",
     "kind": "decision",
-    "text": "agreed: bob, alice (proposal c04d0c9623ce)",
+    "text": "agreed: bob, alice (proposal fba8c9fb596a)",
     "refs": [
      10,
      12,
@@ -949,17 +1089,17 @@
   "session": "sh-orch",
   "caption": "alice's Claude calls task(add), then task(claim #2): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it",
   "step": 1,
-  "time": "2026-10-06T06:50:48.068Z",
+  "time": "2026-10-06T16:38:04.417Z",
   "svg": "S6-sh-orch.svg",
   "txt": "S6-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 18,
   "log": [
    {
     "id": 14,
-    "at": "2026-10-06T06:50:11.927Z",
+    "at": "2026-10-06T16:37:31.932Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -967,7 +1107,7 @@
    },
    {
     "id": 15,
-    "at": "2026-10-06T06:50:22.482Z",
+    "at": "2026-10-06T16:37:39.415Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -975,7 +1115,7 @@
    },
    {
     "id": 16,
-    "at": "2026-10-06T06:50:22.846Z",
+    "at": "2026-10-06T16:37:40.037Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -983,7 +1123,7 @@
    },
    {
     "id": 17,
-    "at": "2026-10-06T06:50:28.998Z",
+    "at": "2026-10-06T16:37:46.534Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -991,7 +1131,7 @@
    },
    {
     "id": 18,
-    "at": "2026-10-06T06:50:35.211Z",
+    "at": "2026-10-06T16:37:51.875Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1004,17 +1144,17 @@
   "session": "sh-alice",
   "caption": "alice's Claude calls task(add), then task(claim #2): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it",
   "step": 1,
-  "time": "2026-10-06T06:50:48.082Z",
+  "time": "2026-10-06T16:38:04.431Z",
   "svg": "S6-sh-alice.svg",
   "txt": "S6-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 18,
   "log": [
    {
     "id": 14,
-    "at": "2026-10-06T06:50:11.927Z",
+    "at": "2026-10-06T16:37:31.932Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1022,7 +1162,7 @@
    },
    {
     "id": 15,
-    "at": "2026-10-06T06:50:22.482Z",
+    "at": "2026-10-06T16:37:39.415Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1030,7 +1170,7 @@
    },
    {
     "id": 16,
-    "at": "2026-10-06T06:50:22.846Z",
+    "at": "2026-10-06T16:37:40.037Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1038,7 +1178,7 @@
    },
    {
     "id": 17,
-    "at": "2026-10-06T06:50:28.998Z",
+    "at": "2026-10-06T16:37:46.534Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1046,7 +1186,7 @@
    },
    {
     "id": 18,
-    "at": "2026-10-06T06:50:35.211Z",
+    "at": "2026-10-06T16:37:51.875Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1059,17 +1199,17 @@
   "session": "sh-bob",
   "caption": "alice's Claude calls task(add), then task(claim #2): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it",
   "step": 1,
-  "time": "2026-10-06T06:50:48.093Z",
+  "time": "2026-10-06T16:38:04.444Z",
   "svg": "S6-sh-bob.svg",
   "txt": "S6-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 18,
   "log": [
    {
     "id": 14,
-    "at": "2026-10-06T06:50:11.927Z",
+    "at": "2026-10-06T16:37:31.932Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1077,7 +1217,7 @@
    },
    {
     "id": 15,
-    "at": "2026-10-06T06:50:22.482Z",
+    "at": "2026-10-06T16:37:39.415Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1085,7 +1225,7 @@
    },
    {
     "id": 16,
-    "at": "2026-10-06T06:50:22.846Z",
+    "at": "2026-10-06T16:37:40.037Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1093,7 +1233,7 @@
    },
    {
     "id": 17,
-    "at": "2026-10-06T06:50:28.998Z",
+    "at": "2026-10-06T16:37:46.534Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1101,7 +1241,7 @@
    },
    {
     "id": 18,
-    "at": "2026-10-06T06:50:35.211Z",
+    "at": "2026-10-06T16:37:51.875Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1114,17 +1254,17 @@
   "session": "sh-orch",
   "caption": "bob's Claude asks done on alice's task #2: refused, the task stays in progress",
   "step": 2,
-  "time": "2026-10-06T06:51:34.042Z",
+  "time": "2026-10-06T16:38:39.166Z",
   "svg": "S6-2-sh-orch.svg",
   "txt": "S6-2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 20,
   "log": [
    {
     "id": 14,
-    "at": "2026-10-06T06:50:11.927Z",
+    "at": "2026-10-06T16:37:31.932Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1132,7 +1272,7 @@
    },
    {
     "id": 15,
-    "at": "2026-10-06T06:50:22.482Z",
+    "at": "2026-10-06T16:37:39.415Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1140,7 +1280,7 @@
    },
    {
     "id": 16,
-    "at": "2026-10-06T06:50:22.846Z",
+    "at": "2026-10-06T16:37:40.037Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1148,7 +1288,7 @@
    },
    {
     "id": 17,
-    "at": "2026-10-06T06:50:28.998Z",
+    "at": "2026-10-06T16:37:46.534Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1156,7 +1296,7 @@
    },
    {
     "id": 18,
-    "at": "2026-10-06T06:50:35.211Z",
+    "at": "2026-10-06T16:37:51.875Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1164,23 +1304,22 @@
    },
    {
     "id": 19,
-    "at": "2026-10-06T06:50:57.196Z",
+    "at": "2026-10-06T16:38:12.180Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
-    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+    "text": "task done #2 for bob: bob checking the owner gate; no tests run"
    },
    {
     "id": 20,
-    "at": "2026-10-06T06:51:07.662Z",
+    "at": "2026-10-06T16:38:19.564Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
+    "text": "Couldn't mark \"cursor paging handler\" done: it's claimed by alice, so only her done request can complete it.",
     "refs": [
-     19,
-     17
+     19
     ]
    }
   ]
@@ -1190,17 +1329,17 @@
   "session": "sh-alice",
   "caption": "bob's Claude asks done on alice's task #2: refused, the task stays in progress",
   "step": 2,
-  "time": "2026-10-06T06:51:34.059Z",
+  "time": "2026-10-06T16:38:39.180Z",
   "svg": "S6-2-sh-alice.svg",
   "txt": "S6-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 20,
   "log": [
    {
     "id": 14,
-    "at": "2026-10-06T06:50:11.927Z",
+    "at": "2026-10-06T16:37:31.932Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1208,7 +1347,7 @@
    },
    {
     "id": 15,
-    "at": "2026-10-06T06:50:22.482Z",
+    "at": "2026-10-06T16:37:39.415Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1216,7 +1355,7 @@
    },
    {
     "id": 16,
-    "at": "2026-10-06T06:50:22.846Z",
+    "at": "2026-10-06T16:37:40.037Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1224,7 +1363,7 @@
    },
    {
     "id": 17,
-    "at": "2026-10-06T06:50:28.998Z",
+    "at": "2026-10-06T16:37:46.534Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1232,7 +1371,7 @@
    },
    {
     "id": 18,
-    "at": "2026-10-06T06:50:35.211Z",
+    "at": "2026-10-06T16:37:51.875Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1240,23 +1379,22 @@
    },
    {
     "id": 19,
-    "at": "2026-10-06T06:50:57.196Z",
+    "at": "2026-10-06T16:38:12.180Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
-    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+    "text": "task done #2 for bob: bob checking the owner gate; no tests run"
    },
    {
     "id": 20,
-    "at": "2026-10-06T06:51:07.662Z",
+    "at": "2026-10-06T16:38:19.564Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
+    "text": "Couldn't mark \"cursor paging handler\" done: it's claimed by alice, so only her done request can complete it.",
     "refs": [
-     19,
-     17
+     19
     ]
    }
   ]
@@ -1266,17 +1404,17 @@
   "session": "sh-bob",
   "caption": "bob's Claude asks done on alice's task #2: refused, the task stays in progress",
   "step": 2,
-  "time": "2026-10-06T06:51:34.070Z",
+  "time": "2026-10-06T16:38:39.191Z",
   "svg": "S6-2-sh-bob.svg",
   "txt": "S6-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 20,
   "log": [
    {
     "id": 14,
-    "at": "2026-10-06T06:50:11.927Z",
+    "at": "2026-10-06T16:37:31.932Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1284,7 +1422,7 @@
    },
    {
     "id": 15,
-    "at": "2026-10-06T06:50:22.482Z",
+    "at": "2026-10-06T16:37:39.415Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1292,7 +1430,7 @@
    },
    {
     "id": 16,
-    "at": "2026-10-06T06:50:22.846Z",
+    "at": "2026-10-06T16:37:40.037Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1300,7 +1438,7 @@
    },
    {
     "id": 17,
-    "at": "2026-10-06T06:50:28.998Z",
+    "at": "2026-10-06T16:37:46.534Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1308,7 +1446,7 @@
    },
    {
     "id": 18,
-    "at": "2026-10-06T06:50:35.211Z",
+    "at": "2026-10-06T16:37:51.875Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1316,23 +1454,22 @@
    },
    {
     "id": 19,
-    "at": "2026-10-06T06:50:57.196Z",
+    "at": "2026-10-06T16:38:12.180Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
-    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+    "text": "task done #2 for bob: bob checking the owner gate; no tests run"
    },
    {
     "id": 20,
-    "at": "2026-10-06T06:51:07.662Z",
+    "at": "2026-10-06T16:38:19.564Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
+    "text": "Couldn't mark \"cursor paging handler\" done: it's claimed by alice, so only her done request can complete it.",
     "refs": [
-     19,
-     17
+     19
     ]
    }
   ]
@@ -1342,17 +1479,17 @@
   "session": "sh-orch",
   "caption": "alice's Claude asks done with evidence: the orch completes #2 (the gate passes the owner's request)",
   "step": 3,
-  "time": "2026-10-06T06:51:58.650Z",
+  "time": "2026-10-06T16:39:03.073Z",
   "svg": "S6-3-sh-orch.svg",
   "txt": "S6-3-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 22,
   "log": [
    {
     "id": 14,
-    "at": "2026-10-06T06:50:11.927Z",
+    "at": "2026-10-06T16:37:31.932Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1360,7 +1497,7 @@
    },
    {
     "id": 15,
-    "at": "2026-10-06T06:50:22.482Z",
+    "at": "2026-10-06T16:37:39.415Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1368,7 +1505,7 @@
    },
    {
     "id": 16,
-    "at": "2026-10-06T06:50:22.846Z",
+    "at": "2026-10-06T16:37:40.037Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1376,7 +1513,7 @@
    },
    {
     "id": 17,
-    "at": "2026-10-06T06:50:28.998Z",
+    "at": "2026-10-06T16:37:46.534Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1384,7 +1521,7 @@
    },
    {
     "id": 18,
-    "at": "2026-10-06T06:50:35.211Z",
+    "at": "2026-10-06T16:37:51.875Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1392,28 +1529,27 @@
    },
    {
     "id": 19,
-    "at": "2026-10-06T06:50:57.196Z",
+    "at": "2026-10-06T16:38:12.180Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
-    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+    "text": "task done #2 for bob: bob checking the owner gate; no tests run"
    },
    {
     "id": 20,
-    "at": "2026-10-06T06:51:07.662Z",
+    "at": "2026-10-06T16:38:19.564Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
+    "text": "Couldn't mark \"cursor paging handler\" done: it's claimed by alice, so only her done request can complete it.",
     "refs": [
-     19,
-     17
+     19
     ]
    },
    {
     "id": 21,
-    "at": "2026-10-06T06:51:39.163Z",
+    "at": "2026-10-06T16:38:44.461Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1421,7 +1557,7 @@
    },
    {
     "id": 22,
-    "at": "2026-10-06T06:51:46.031Z",
+    "at": "2026-10-06T16:38:50.405Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1434,17 +1570,17 @@
   "session": "sh-alice",
   "caption": "alice's Claude asks done with evidence: the orch completes #2 (the gate passes the owner's request)",
   "step": 3,
-  "time": "2026-10-06T06:51:58.664Z",
+  "time": "2026-10-06T16:39:03.087Z",
   "svg": "S6-3-sh-alice.svg",
   "txt": "S6-3-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 22,
   "log": [
    {
     "id": 14,
-    "at": "2026-10-06T06:50:11.927Z",
+    "at": "2026-10-06T16:37:31.932Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1452,7 +1588,7 @@
    },
    {
     "id": 15,
-    "at": "2026-10-06T06:50:22.482Z",
+    "at": "2026-10-06T16:37:39.415Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1460,7 +1596,7 @@
    },
    {
     "id": 16,
-    "at": "2026-10-06T06:50:22.846Z",
+    "at": "2026-10-06T16:37:40.037Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1468,7 +1604,7 @@
    },
    {
     "id": 17,
-    "at": "2026-10-06T06:50:28.998Z",
+    "at": "2026-10-06T16:37:46.534Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1476,7 +1612,7 @@
    },
    {
     "id": 18,
-    "at": "2026-10-06T06:50:35.211Z",
+    "at": "2026-10-06T16:37:51.875Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1484,28 +1620,27 @@
    },
    {
     "id": 19,
-    "at": "2026-10-06T06:50:57.196Z",
+    "at": "2026-10-06T16:38:12.180Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
-    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+    "text": "task done #2 for bob: bob checking the owner gate; no tests run"
    },
    {
     "id": 20,
-    "at": "2026-10-06T06:51:07.662Z",
+    "at": "2026-10-06T16:38:19.564Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
+    "text": "Couldn't mark \"cursor paging handler\" done: it's claimed by alice, so only her done request can complete it.",
     "refs": [
-     19,
-     17
+     19
     ]
    },
    {
     "id": 21,
-    "at": "2026-10-06T06:51:39.163Z",
+    "at": "2026-10-06T16:38:44.461Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1513,7 +1648,7 @@
    },
    {
     "id": 22,
-    "at": "2026-10-06T06:51:46.031Z",
+    "at": "2026-10-06T16:38:50.405Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1526,17 +1661,17 @@
   "session": "sh-bob",
   "caption": "alice's Claude asks done with evidence: the orch completes #2 (the gate passes the owner's request)",
   "step": 3,
-  "time": "2026-10-06T06:51:58.676Z",
+  "time": "2026-10-06T16:39:03.098Z",
   "svg": "S6-3-sh-bob.svg",
   "txt": "S6-3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 22,
   "log": [
    {
     "id": 14,
-    "at": "2026-10-06T06:50:11.927Z",
+    "at": "2026-10-06T16:37:31.932Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1544,7 +1679,7 @@
    },
    {
     "id": 15,
-    "at": "2026-10-06T06:50:22.482Z",
+    "at": "2026-10-06T16:37:39.415Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1552,7 +1687,7 @@
    },
    {
     "id": 16,
-    "at": "2026-10-06T06:50:22.846Z",
+    "at": "2026-10-06T16:37:40.037Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1560,7 +1695,7 @@
    },
    {
     "id": 17,
-    "at": "2026-10-06T06:50:28.998Z",
+    "at": "2026-10-06T16:37:46.534Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1568,7 +1703,7 @@
    },
    {
     "id": 18,
-    "at": "2026-10-06T06:50:35.211Z",
+    "at": "2026-10-06T16:37:51.875Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1576,28 +1711,27 @@
    },
    {
     "id": 19,
-    "at": "2026-10-06T06:50:57.196Z",
+    "at": "2026-10-06T16:38:12.180Z",
     "from": "bob",
     "via": "agent",
     "kind": "task_req",
-    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+    "text": "task done #2 for bob: bob checking the owner gate; no tests run"
    },
    {
     "id": 20,
-    "at": "2026-10-06T06:51:07.662Z",
+    "at": "2026-10-06T16:38:19.564Z",
     "from": "orch",
     "via": "agent",
     "kind": "say",
     "to": "bob",
-    "text": "I can't apply #19 (\"task done #2 for bob\"). Task #2 \"cursor paging handler\" is claimed by alice (#17), so only her done request can complete it. If you want a task for your parser tests, send a task add.",
+    "text": "Couldn't mark \"cursor paging handler\" done: it's claimed by alice, so only her done request can complete it.",
     "refs": [
-     19,
-     17
+     19
     ]
    },
    {
     "id": 21,
-    "at": "2026-10-06T06:51:39.163Z",
+    "at": "2026-10-06T16:38:44.461Z",
     "from": "alice",
     "via": "agent",
     "kind": "task_req",
@@ -1605,7 +1739,7 @@
    },
    {
     "id": 22,
-    "at": "2026-10-06T06:51:46.031Z",
+    "at": "2026-10-06T16:38:50.405Z",
     "from": "orch",
     "via": "system",
     "kind": "task",
@@ -1618,12 +1752,12 @@
   "session": "sh-orch",
   "caption": "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted",
   "step": 1,
-  "time": "2026-10-06T06:52:30.509Z",
+  "time": "2026-10-06T16:39:34.984Z",
   "svg": "S7-sh-orch.svg",
   "txt": "S7-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 22,
   "log": []
  },
@@ -1632,12 +1766,12 @@
   "session": "sh-alice",
   "caption": "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted",
   "step": 1,
-  "time": "2026-10-06T06:52:30.522Z",
+  "time": "2026-10-06T16:39:34.999Z",
   "svg": "S7-sh-alice.svg",
   "txt": "S7-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 22,
   "log": []
  },
@@ -1646,12 +1780,12 @@
   "session": "sh-bob",
   "caption": "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted",
   "step": 1,
-  "time": "2026-10-06T06:52:30.534Z",
+  "time": "2026-10-06T16:39:35.011Z",
   "svg": "S7-sh-bob.svg",
   "txt": "S7-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 22,
   "log": []
  },
@@ -1660,12 +1794,12 @@
   "session": "sh-orch",
   "caption": "Rows survive /clear in alice's session (still one room row)",
   "step": 1,
-  "time": "2026-10-06T06:52:51.467Z",
+  "time": "2026-10-06T16:39:55.981Z",
   "svg": "S8-sh-orch.svg",
   "txt": "S8-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 22,
   "log": []
  },
@@ -1674,12 +1808,12 @@
   "session": "sh-alice",
   "caption": "Rows survive /clear in alice's session (still one room row)",
   "step": 1,
-  "time": "2026-10-06T06:52:51.481Z",
+  "time": "2026-10-06T16:39:55.995Z",
   "svg": "S8-sh-alice.svg",
   "txt": "S8-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 22,
   "log": []
  },
@@ -1688,12 +1822,12 @@
   "session": "sh-bob",
   "caption": "Rows survive /clear in alice's session (still one room row)",
   "step": 1,
-  "time": "2026-10-06T06:52:51.493Z",
+  "time": "2026-10-06T16:39:56.007Z",
   "svg": "S8-sh-bob.svg",
   "txt": "S8-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 22,
   "log": []
  },
@@ -1702,17 +1836,17 @@
   "session": "sh-orch",
   "caption": "bob is back with --continue: row-rewake brings his room row back with no typing",
   "step": 2,
-  "time": "2026-10-06T06:53:21.270Z",
+  "time": "2026-10-06T16:40:25.907Z",
   "svg": "S8-2-sh-orch.svg",
   "txt": "S8-2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 24,
   "log": [
    {
     "id": 23,
-    "at": "2026-10-06T06:52:56.576Z",
+    "at": "2026-10-06T16:40:01.123Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -1720,7 +1854,7 @@
    },
    {
     "id": 24,
-    "at": "2026-10-06T06:52:58.344Z",
+    "at": "2026-10-06T16:40:02.884Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -1733,17 +1867,17 @@
   "session": "sh-alice",
   "caption": "bob is back with --continue: row-rewake brings his room row back with no typing",
   "step": 2,
-  "time": "2026-10-06T06:53:21.282Z",
+  "time": "2026-10-06T16:40:25.920Z",
   "svg": "S8-2-sh-alice.svg",
   "txt": "S8-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 24,
   "log": [
    {
     "id": 23,
-    "at": "2026-10-06T06:52:56.576Z",
+    "at": "2026-10-06T16:40:01.123Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -1751,7 +1885,7 @@
    },
    {
     "id": 24,
-    "at": "2026-10-06T06:52:58.344Z",
+    "at": "2026-10-06T16:40:02.884Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -1764,17 +1898,17 @@
   "session": "sh-bob",
   "caption": "bob is back with --continue: row-rewake brings his room row back with no typing",
   "step": 2,
-  "time": "2026-10-06T06:53:21.294Z",
+  "time": "2026-10-06T16:40:25.932Z",
   "svg": "S8-2-sh-bob.svg",
   "txt": "S8-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 24,
   "log": [
    {
     "id": 23,
-    "at": "2026-10-06T06:52:56.576Z",
+    "at": "2026-10-06T16:40:01.123Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -1782,7 +1916,7 @@
    },
    {
     "id": 24,
-    "at": "2026-10-06T06:52:58.344Z",
+    "at": "2026-10-06T16:40:02.884Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -1795,17 +1929,17 @@
   "session": "sh-orch",
   "caption": "After the resume the room monitor still wakes bob with alice's words",
   "step": 3,
-  "time": "2026-10-06T06:53:47.815Z",
+  "time": "2026-10-06T16:40:44.536Z",
   "svg": "S8-3-sh-orch.svg",
   "txt": "S8-3-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 25,
   "log": [
    {
     "id": 23,
-    "at": "2026-10-06T06:52:56.576Z",
+    "at": "2026-10-06T16:40:01.123Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -1813,7 +1947,7 @@
    },
    {
     "id": 24,
-    "at": "2026-10-06T06:52:58.344Z",
+    "at": "2026-10-06T16:40:02.884Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -1821,7 +1955,7 @@
    },
    {
     "id": 25,
-    "at": "2026-10-06T06:53:24.415Z",
+    "at": "2026-10-06T16:40:29.072Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -1834,17 +1968,17 @@
   "session": "sh-alice",
   "caption": "After the resume the room monitor still wakes bob with alice's words",
   "step": 3,
-  "time": "2026-10-06T06:53:47.828Z",
+  "time": "2026-10-06T16:40:44.552Z",
   "svg": "S8-3-sh-alice.svg",
   "txt": "S8-3-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 25,
   "log": [
    {
     "id": 23,
-    "at": "2026-10-06T06:52:56.576Z",
+    "at": "2026-10-06T16:40:01.123Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -1852,7 +1986,7 @@
    },
    {
     "id": 24,
-    "at": "2026-10-06T06:52:58.344Z",
+    "at": "2026-10-06T16:40:02.884Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -1860,7 +1994,7 @@
    },
    {
     "id": 25,
-    "at": "2026-10-06T06:53:24.415Z",
+    "at": "2026-10-06T16:40:29.072Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -1873,17 +2007,17 @@
   "session": "sh-bob",
   "caption": "After the resume the room monitor still wakes bob with alice's words",
   "step": 3,
-  "time": "2026-10-06T06:53:47.840Z",
+  "time": "2026-10-06T16:40:44.563Z",
   "svg": "S8-3-sh-bob.svg",
   "txt": "S8-3-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 25,
   "log": [
    {
     "id": 23,
-    "at": "2026-10-06T06:52:56.576Z",
+    "at": "2026-10-06T16:40:01.123Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -1891,7 +2025,7 @@
    },
    {
     "id": 24,
-    "at": "2026-10-06T06:52:58.344Z",
+    "at": "2026-10-06T16:40:02.884Z",
     "from": "bob",
     "via": "system",
     "kind": "member_joined",
@@ -1899,7 +2033,7 @@
    },
    {
     "id": 25,
-    "at": "2026-10-06T06:53:24.415Z",
+    "at": "2026-10-06T16:40:29.072Z",
     "from": "alice",
     "via": "human",
     "kind": "say",
@@ -1912,12 +2046,12 @@
   "session": "sh-viewer",
   "caption": "A viewer attaches to the orch and types: the prompt is refused with the hint; no orch turn",
   "step": 1,
-  "time": "2026-10-06T06:53:57.811Z",
+  "time": "2026-10-06T16:40:54.547Z",
   "svg": "S9-sh-viewer.svg",
   "txt": "S9-sh-viewer.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 25,
   "log": []
  },
@@ -1926,12 +2060,12 @@
   "session": "sh-orch",
   "caption": "A viewer attaches to the orch and types: the prompt is refused with the hint; no orch turn",
   "step": 1,
-  "time": "2026-10-06T06:53:57.825Z",
+  "time": "2026-10-06T16:40:54.564Z",
   "svg": "S9-sh-orch.svg",
   "txt": "S9-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 25,
   "log": []
  },
@@ -1940,17 +2074,17 @@
   "session": "sh-orch",
   "caption": "alice and bob exit (1. Exit and stop tasks): member_left for each",
   "step": 1,
-  "time": "2026-10-06T06:54:30.568Z",
+  "time": "2026-10-06T16:41:30.888Z",
   "svg": "S10-sh-orch.svg",
   "txt": "S10-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 27,
   "log": [
    {
     "id": 26,
-    "at": "2026-10-06T06:54:04.019Z",
+    "at": "2026-10-06T16:41:00.699Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
@@ -1958,7 +2092,7 @@
    },
    {
     "id": 27,
-    "at": "2026-10-06T06:54:23.361Z",
+    "at": "2026-10-06T16:41:23.640Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -1971,17 +2105,17 @@
   "session": "sh-alice",
   "caption": "alice and bob exit (1. Exit and stop tasks): member_left for each",
   "step": 1,
-  "time": "2026-10-06T06:54:30.580Z",
+  "time": "2026-10-06T16:41:30.900Z",
   "svg": "S10-sh-alice.svg",
   "txt": "S10-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 27,
   "log": [
    {
     "id": 26,
-    "at": "2026-10-06T06:54:04.019Z",
+    "at": "2026-10-06T16:41:00.699Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
@@ -1989,7 +2123,7 @@
    },
    {
     "id": 27,
-    "at": "2026-10-06T06:54:23.361Z",
+    "at": "2026-10-06T16:41:23.640Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -2002,17 +2136,17 @@
   "session": "sh-bob",
   "caption": "alice and bob exit (1. Exit and stop tasks): member_left for each",
   "step": 1,
-  "time": "2026-10-06T06:54:30.591Z",
+  "time": "2026-10-06T16:41:30.910Z",
   "svg": "S10-sh-bob.svg",
   "txt": "S10-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 27,
   "log": [
    {
     "id": 26,
-    "at": "2026-10-06T06:54:04.019Z",
+    "at": "2026-10-06T16:41:00.699Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
@@ -2020,7 +2154,7 @@
    },
    {
     "id": 27,
-    "at": "2026-10-06T06:54:23.361Z",
+    "at": "2026-10-06T16:41:23.640Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -2033,17 +2167,17 @@
   "session": "sh-orch",
   "caption": "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)",
   "step": 2,
-  "time": "2026-10-06T06:54:50.171Z",
+  "time": "2026-10-06T16:41:50.496Z",
   "svg": "S10-2-sh-orch.svg",
   "txt": "S10-2-sh-orch.txt",
   "cols": 200,
   "rows": 50,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 28,
   "log": [
    {
     "id": 26,
-    "at": "2026-10-06T06:54:04.019Z",
+    "at": "2026-10-06T16:41:00.699Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
@@ -2051,7 +2185,7 @@
    },
    {
     "id": 27,
-    "at": "2026-10-06T06:54:23.361Z",
+    "at": "2026-10-06T16:41:23.640Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -2059,7 +2193,7 @@
    },
    {
     "id": 28,
-    "at": "2026-10-06T06:54:33.398Z",
+    "at": "2026-10-06T16:41:33.687Z",
     "from": "room",
     "via": "system",
     "kind": "status",
@@ -2073,17 +2207,17 @@
   "session": "sh-alice",
   "caption": "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)",
   "step": 2,
-  "time": "2026-10-06T06:54:50.185Z",
+  "time": "2026-10-06T16:41:50.510Z",
   "svg": "S10-2-sh-alice.svg",
   "txt": "S10-2-sh-alice.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 28,
   "log": [
    {
     "id": 26,
-    "at": "2026-10-06T06:54:04.019Z",
+    "at": "2026-10-06T16:41:00.699Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
@@ -2091,7 +2225,7 @@
    },
    {
     "id": 27,
-    "at": "2026-10-06T06:54:23.361Z",
+    "at": "2026-10-06T16:41:23.640Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -2099,7 +2233,7 @@
    },
    {
     "id": 28,
-    "at": "2026-10-06T06:54:33.398Z",
+    "at": "2026-10-06T16:41:33.687Z",
     "from": "room",
     "via": "system",
     "kind": "status",
@@ -2113,17 +2247,17 @@
   "session": "sh-bob",
   "caption": "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)",
   "step": 2,
-  "time": "2026-10-06T06:54:50.196Z",
+  "time": "2026-10-06T16:41:50.521Z",
   "svg": "S10-2-sh-bob.svg",
   "txt": "S10-2-sh-bob.txt",
   "cols": 120,
   "rows": 40,
-  "room": "gecko-5061",
+  "room": "swan-6397",
   "logTo": 28,
   "log": [
    {
     "id": 26,
-    "at": "2026-10-06T06:54:04.019Z",
+    "at": "2026-10-06T16:41:00.699Z",
     "from": "alice",
     "via": "system",
     "kind": "member_left",
@@ -2131,7 +2265,7 @@
    },
    {
     "id": 27,
-    "at": "2026-10-06T06:54:23.361Z",
+    "at": "2026-10-06T16:41:23.640Z",
     "from": "bob",
     "via": "system",
     "kind": "member_left",
@@ -2139,7 +2273,7 @@
    },
    {
     "id": 28,
-    "at": "2026-10-06T06:54:33.398Z",
+    "at": "2026-10-06T16:41:33.687Z",
     "from": "room",
     "via": "system",
     "kind": "status",

@@ -1,40 +1,40 @@
+     - src/server.js: parse and validate limit/after, plus cursor encode/decode helpers, in the GET /tasks branch.
+     - src/store.js: no change needed. The handler sorts and filters allTasks(). Optionally add listTasks({limit, 
+       after}) so the handler matches the SQL shape.
+     - test/tasks-paging.test.js (new): parser and paging tests. In the room, alice asked bob to take the parser tests.
+       bob said "sure, once we've agreed how paging works".
 
-✻ Waiting for 2 background agents to finish
+     Verification
 
-› Message from @bob.gecko-5061: Question from bob's Claude: how does createTask in src/store.js pick ids? Just looking 
-for an explanation, so please do… (ctrl+o to expand)
+     - npm test with reset() + seed(237):
+       - walking the pages with limit 20 returns all 237 ids exactly once, in createdAt DESC, id DESC order, and the
+         last page has next_cursor: null
+       - a page boundary that falls inside a shared timestamp neither skips nor repeats a row
+       - limit=0, -1, abc, 101 → 400; a garbage after → 400
+       - inserting a task between page fetches does not change the later pages
+     - By hand: npm start, then curl 'localhost:3000/tasks?limit=5' and follow next_cursor.
 
-  Searched for 1 pattern, ran 1 shell command 
-  ⎿  “Explain createTask id assignment to bob's Claude” → uds:/tmp/cc-socks/99830.sock
-  ⎿  Allowed by auto mode classifier
+     Open questions
 
-⏺ Bob's Claude asked how createTask in src/store.js picks ids, and I sent it the answer without changing anything. The
-  message is queued in its session.
+     1. Is a default limit of 20 and a max of 100 right?
+     2. For an out-of-range limit, should the server return 400 (proposed) or clamp to the max?
+     3. Is the response shape {items, next_cursor} right, or do you want a different key (e.g. next), or a Link header?
+     4. Should the cursor be signed or encrypted, or is base64 JSON enough for now?
 
-  - How ids work: a counter at the top of the file starts at 1 and goes up by one for each new task (src/store.js:5,
-    src/store.js:8). It goes back to 1 only when reset() runs, and since the store is in memory, it also starts over
-    when the process restarts.
-  - What matters for paging: ids never repeat, but timestamps do, because seed() gives every 3 tasks the same timestamp.
-    Paging on the timestamp alone would skip or repeat rows. Paging on the id, or on the timestamp with the id as a
-    tiebreaker, avoids that. That's relevant to the paging question Bob raised in #4.
+     Approvers
 
-✻ Waiting for 2 background agents to finish
+     - bob: asked for this plan and is writing the paging tests.
+     - alice: works on the handler in src/server.js and asked bob to take the tests.
 
-⏺ Monitor event: "sub-human room notices"
-
-⏺ User answered Claude's questions:
-  ⎿  · Agree to proposal 1d69888ae02f? → Agree
-
-⏺ You agreed to orch's plan for cursor paging on GET /tasks (proposal 1d6988), and your answer is posted as #7. It
-  orders tasks newest first with id as the tiebreaker and pages from the last item seen. Bob hasn't answered yet, so I'm
-  holding off on building anything until it's decided.
+⏺ You agreed to orch's plan for cursor paging on GET /tasks. bob hasn't answered yet, and nothing gets built until the
+  room decides.
 
 ✻ Waiting for 2 background agents to finish
                                                                 Update available! Run: brew upgrade claude-code@latest
-───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─
-❯ propose a paging approach to bob
+────────────────────────────────────────────────────────────────────────────────────────────────────── alice.swan-6397 ─
+❯ @room +1, key the cursor on createdAt and id
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏵⏵ auto mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ gecko-5061  ✖ blocked 1d6988
+  ◯ swan-6397  ✖ blocked f43c2a

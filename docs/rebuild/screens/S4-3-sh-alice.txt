@@ -1,0 +1,40 @@
+⏺ Entered plan mode
+  Claude is now exploring and designing an implementation approach.
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+     opaque. If it does not decode or validate, the server returns 400 {error: 'invalid cursor'}.                     ↑
+   - Keyset filter: keep a row when createdAt < c OR (createdAt == c AND id < i). In Postgres this becomes WHERE 
+     (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3+1, backed by an index on (created_at 
+     DESC, id DESC).
+   - Response: 200 {items: [...], next_cursor: string|null}. Fetch limit+1 rows; next_cursor is null when there are
+     no more rows.
+   - New inserts while paging: they go at the head of the list, so a client walking the pages never sees duplicates
+     or gaps. It also won't see the new rows until it starts again from the first page.
+
+   Set aside
+
+   - Offset/page numbers: O(offset) on 4M rows, and pages shift whenever inserts happen.
+   - Cursor on id alone: this only works if id order always matches createdAt order. Backdated or imported rows (like
+     seed's createdAt) break that.
+   - Cursor on createdAt alone: loses rows when timestamps tie.
+
+   Files
+
+   - src/server.js: parse and validate limit/after, plus cursor encode/decode helpers, in the GET /tasks branch.
+   - src/store.js: no change needed. The handler sorts and filters allTasks(). Optionally add listTasks({limit, 
+     after}) so the handler matches the SQL shape.
+   - test/tasks-paging.test.js (new): parser and paging tests. In the room, alice asked bob to take the parser tests.
+     bob said "sure, once we've agreed how paging works".
+
+   Verification
+
+   - npm test with reset() + seed(237):
+     - walking the pages with limit 20 returns all 237 ids exactly once, in createdAt DESC, id DESC order, and the    ↓
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Claude has written up a plan and is ready to execute. Would you like to proceed?
+
+   ❯ 1. Yes, and use auto mode
+     2. Yes, manually approve edits
+     3. Tell Claude what to change
+        shift+tab to approve with this feedback
+
+   ctrl+g to edit in VS Code · ~/.claude/plans/hidden-soaring-hennessy.md

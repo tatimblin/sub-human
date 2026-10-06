@@ -7,51 +7,58 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">alice · S6</text>
 <g fill="#d6dbe5">
-<rect x="12" y="178" width="15.6" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="178" width="912.6" height="17" fill="#3a3a3a"/>
-<rect x="12" y="195" width="15.6" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="195" width="280.8" height="17" fill="#3a3a3a"/>
-<rect x="12" y="365" width="15.6" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="365" width="889.2" height="17" fill="#3a3a3a"/>
-<rect x="12" y="382" width="15.6" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="382" width="717.6" height="17" fill="#3a3a3a"/>
-<text x="27.6" y="72" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="12" y="106" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="106" textLength="904.8" lengthAdjust="spacing" xml:space="preserve"> I asked orch to add &quot;cursor paging handler&quot; to the room task list; the request is #14 and orch applies it. I didn't</text>
-<text x="12" y="123" textLength="265.2" lengthAdjust="spacing" xml:space="preserve">  post anything or edit any files.</text>
-<text x="12" y="157" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="157" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="157" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="157" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="191" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="27.6" y="191" fill="#ffffff" textLength="912.6" lengthAdjust="spacing" xml:space="preserve">claim it for me: call the mcp__plugin_sub-human_room__task tool with op &quot;claim&quot;, id &quot;2&quot;. Only that tool call: do not </text>
-<text x="27.6" y="208" fill="#ffffff" textLength="280.8" lengthAdjust="spacing" xml:space="preserve">start the work, do not edit any file</text>
-<text x="27.6" y="242" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="12" y="276" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="276" textLength="904.8" lengthAdjust="spacing" xml:space="preserve"> I sent the claim for task #2 (&quot;cursor paging handler&quot;); the request is #17 and orch still has to apply it. The room</text>
-<text x="12" y="293" textLength="920.4" lengthAdjust="spacing" xml:space="preserve">  already shows the task with you as owner in #16, from orch handling the earlier add, so this request repeats that. I</text>
-<text x="12" y="310" textLength="374.4" lengthAdjust="spacing" xml:space="preserve">  haven't started the work or touched any files.</text>
-<text x="12" y="344" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="344" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="344" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="344" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="378" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="27.6" y="378" fill="#ffffff" textLength="889.2" lengthAdjust="spacing" xml:space="preserve">the handler is in and npm test passes 3/3. call the mcp__plugin_sub-human_room__task tool with op &quot;done&quot;, id &quot;2&quot;, </text>
-<text x="27.6" y="395" fill="#ffffff" textLength="717.6" lengthAdjust="spacing" xml:space="preserve">evidence &quot;handler in, npm test 3/3 pass&quot;. Only that tool call: do not edit or check any file</text>
-<text x="27.6" y="429" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="12" y="463" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="463" textLength="920.4" lengthAdjust="spacing" xml:space="preserve"> I sent the done request for task #2 with your evidence (&quot;handler in, npm test 3/3 pass&quot;); it's #21 and orch still has</text>
-<text x="12" y="480" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">  to apply it.</text>
-<text x="12" y="514" textLength="912.6" lengthAdjust="spacing" xml:space="preserve">  Before that, in #19 bob's Claude tried to mark #2 done for bob, saying &quot;I ran the tests, 3/3 pass&quot;. Orch refused in</text>
-<text x="12" y="531" textLength="928.2" lengthAdjust="spacing" xml:space="preserve">  #20 because the task is claimed by you. Neither of us read or ran anything here, so the 3/3 result comes from you and</text>
-<text x="12" y="548" textLength="319.8" lengthAdjust="spacing" xml:space="preserve">  from bob's Claude, not a check of mine.</text>
+<rect x="12" y="93" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="93" width="881.4" height="17" fill="#3a3a3a"/>
+<rect x="12" y="110" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="110" width="709.8" height="17" fill="#3a3a3a"/>
+<rect x="12" y="263" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="263" width="912.6" height="17" fill="#3a3a3a"/>
+<rect x="12" y="280" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="280" width="280.8" height="17" fill="#3a3a3a"/>
+<rect x="12" y="433" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="433" width="889.2" height="17" fill="#3a3a3a"/>
+<rect x="12" y="450" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="450" width="717.6" height="17" fill="#3a3a3a"/>
+<text x="12" y="72" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="72" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="72" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="72" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="106" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="27.6" y="106" fill="#ffffff" textLength="881.4" lengthAdjust="spacing" xml:space="preserve">put &quot;cursor paging handler&quot; on the room task list: call the mcp__plugin_sub-human_room__task tool with op &quot;add&quot;, </text>
+<text x="27.6" y="123" fill="#ffffff" textLength="709.8" lengthAdjust="spacing" xml:space="preserve">subject &quot;cursor paging handler&quot;. Only that tool call: do not use post, do not edit any file</text>
+<text x="27.6" y="157" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="191" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="191" textLength="920.4" lengthAdjust="spacing" xml:space="preserve"> I sent &quot;cursor paging handler&quot; to orch to add to the room task list. It's queued, and I'll know it's on the list once</text>
+<text x="12" y="208" textLength="117" lengthAdjust="spacing" xml:space="preserve">  orch adds it.</text>
+<text x="12" y="242" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="242" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="242" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="242" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="276" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="27.6" y="276" fill="#ffffff" textLength="912.6" lengthAdjust="spacing" xml:space="preserve">claim it for me: call the mcp__plugin_sub-human_room__task tool with op &quot;claim&quot;, id &quot;2&quot;. Only that tool call: do not </text>
+<text x="27.6" y="293" fill="#ffffff" textLength="280.8" lengthAdjust="spacing" xml:space="preserve">start the work, do not edit any file</text>
+<text x="27.6" y="327" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="361" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="361" textLength="897" lengthAdjust="spacing" xml:space="preserve"> I sent orch a claim on task 2 for you, and it's queued. The room already listed you as the owner of &quot;cursor paging</text>
+<text x="12" y="378" textLength="522.6" lengthAdjust="spacing" xml:space="preserve">  handler&quot;, so this may change nothing. I haven't started the work.</text>
+<text x="12" y="412" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="412" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="412" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="412" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="446" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="27.6" y="446" fill="#ffffff" textLength="889.2" lengthAdjust="spacing" xml:space="preserve">the handler is in and npm test passes 3/3. call the mcp__plugin_sub-human_room__task tool with op &quot;done&quot;, id &quot;2&quot;, </text>
+<text x="27.6" y="463" fill="#ffffff" textLength="717.6" lengthAdjust="spacing" xml:space="preserve">evidence &quot;handler in, npm test 3/3 pass&quot;. Only that tool call: do not edit or check any file</text>
+<text x="27.6" y="497" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="531" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="531" textLength="912.6" lengthAdjust="spacing" xml:space="preserve"> I asked orch to mark task 2 done, with your note &quot;handler in, npm test 3/3 pass&quot;. It's queued, so orch hasn't marked</text>
+<text x="12" y="548" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">  it done yet.</text>
 <text x="12" y="582" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="582" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="582" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
 <text x="129" y="582" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="511.2" y="599" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="599" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─</text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────── alice.swan-6397 ─</text>
 <text x="12" y="633" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
 <text x="27.6" y="667" fill="#ffd700" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏵⏵ auto mode on</text>
@@ -59,7 +66,7 @@
 <text x="168" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
 <text x="238.2" y="667" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
 <text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
-<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ gecko-5061  </text>
-<text x="136.8" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided c04d0c</text>
-<text x="261.6" y="718" fill="#949494" textLength="156" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · tasks: all 1 done</text>
+<text x="12" y="718" fill="#949494" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ swan-6397  </text>
+<text x="129" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided fba8c9</text>
+<text x="253.8" y="718" fill="#949494" textLength="156" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · tasks: all 1 done</text>
 </g></svg>

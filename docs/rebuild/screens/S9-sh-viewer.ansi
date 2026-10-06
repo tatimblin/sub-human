@@ -1,40 +1,40 @@
 
+[38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
 
-[38;5;231m⏺[39m Monitor event: "sub-human room notices"
+[38;5;231m⏺[39m Monitor event: "sub-human room"
 
-[38;5;231m⏺[39m Task #2, "cursor paging handler", is now claimed by alice and marked in progress, as she asked in #17.
+[38;5;231m⏺[39m Task 2, "cursor paging handler", is now in progress with alice as owner, as she asked.
 
 [38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
 
-[38;5;231m⏺[39m Monitor event: "sub-human room notices"
+[38;5;231m⏺[39m Monitor event: "sub-human room"
 
   [38;5;246mCalled plugin:sub-human:room [39m
 
-[38;5;231m⏺[39m I didn't apply bob's request in #19 to mark task #2 done. The task is claimed by alice (#17), so only her done request
-  can complete it, and it stays in progress. I told bob this in #20 and suggested he add his own task for the parser
-  tests.
+[38;5;231m⏺[39m bob asked to mark task 2, "cursor paging handler", as done, but alice has claimed it, so I didn't. I told bob only
+  alice's done request can complete it; the task is still in progress under alice.
 
 [38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
 
-[38;5;231m⏺[39m Monitor event: "sub-human room notices"
+[38;5;231m⏺[39m Monitor event: "sub-human room"
 
-[38;5;231m⏺[39m Task #2, the cursor paging handler, is now marked completed on alice's own done request (#21). Her evidence is
-  recorded in the task: "handler in, npm test 3/3 pass". I haven't run the tests myself.
+[38;5;231m⏺[39m Task 2, "cursor paging handler", is now completed at alice's request. Her evidence, which I added to the task without
+  checking it: "handler in, npm test 3/3 pass".
 
 [38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
 
 [38;5;220m⏺[39m [38;5;220mUserPromptSubmit operation blocked by hook:[39m
-  [38;5;220mthe orch takes no typed input; use @room or ask your Claude to message orch.gecko-5061[39m
+  [38;5;220mthe orch takes no typed input; use @room or ask your Claude to message orch.swan-6397[39m
 
   [1m[38;5;246m2[0m[38;5;246m tasks ([1m1[0m[38;5;246m done, [1m1[0m[38;5;246m in progress, [1m0[0m[38;5;246m open)[39m
-  [38;5;174m◼ [1m[39mroom gecko-5061 open[0m
+  [38;5;174m◼ [1m[39mroom swan-6397 open[0m
   [38;5;114m✔ [9m[38;5;246mcursor paging handler[0m
                                                                 [38;5;220mUpdate available! Run: [1mbrew upgrade claude-code@latest[0m
-[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────── orch.gecko-5061 ─
+[38;5;244m─────────────────────────────────────────────────────────────────────────────────────────────────────── orch.swan-6397 ─
 [39m❯ 
 [38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 [39m  [38;5;73m⏸ plan mode on[38;5;246m · ← 1 agent · [38;5;44m1 monitor[38;5;246m · ctrl+t to hide tasks · ↓ to manage[39m
 
 [1m  ⏺ main[0m
-[38;5;246m  ◯ alice  [32m✔ decided c04d0c[39m
-[38;5;246m  ◯ bob  [32m✔ decided c04d0c[38;5;246m · [33mworking[39m
+[38;5;246m  ◯ alice  [32m✔ decided fba8c9[39m
+[38;5;246m  ◯ bob  [32m✔ decided fba8c9[38;5;246m · [33mworking[39m

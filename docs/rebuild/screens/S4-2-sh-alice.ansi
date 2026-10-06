@@ -1,0 +1,40 @@
+[38;5;73m⏺[39m Entered plan mode
+  [38;5;246mClaude is now exploring and designing an implementation approach.[39m
+[38;5;153m▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+[39m   - [38;5;153msrc/store.js[39m: [38;5;153mallTasks()[39m returns tasks in insertion order. Each task looks like [38;5;153m{id, title, done, createdAt}[39m.    [38;5;246m↑[39m
+   - It stands in for a Postgres table with about 4M rows and about 30 inserts/s at peak. So offset paging would be
+     slow and would drift as new rows arrive.
+   - [1mTasks share timestamps.[0m [38;5;153mseed()[39m gives every 3 tasks the same [38;5;153mcreatedAt[39m ("as bulk imports do in production"). A
+     cursor built only on [38;5;153mcreatedAt[39m would skip or repeat rows at page edges.
+
+   [1mProposed design[0m
+
+   - [1mOrder:[0m [38;5;153mcreatedAt DESC, id DESC[39m. [38;5;153mid[39m breaks ties, so the order is total and stable.
+   - [1mRequest:[0m [38;5;153mGET /tasks?limit=N&after=CURSOR[39m
+     - [38;5;153mlimit[39m: default 20, max 100. If it is not a positive integer, or is over the max, the server returns 400 (it
+       does not clamp).
+     - [38;5;153mafter[39m: optional. Leave it out to get the first (newest) page.
+   - [1mCursor:[0m base64url of [38;5;153mJSON.stringify({c: createdAt, i: id})[39m for the last item on the page. Clients treat it as
+     opaque. If it does not decode or validate, the server returns 400 [38;5;153m{error: 'invalid cursor'}[39m.
+   - [1mKeyset filter:[0m keep a row when [38;5;153mcreatedAt < c[39m OR ([38;5;153mcreatedAt == c[39m AND [38;5;153mid < i[39m). In Postgres this becomes [38;5;153mWHERE [39m
+     [38;5;153m(created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3+1[39m, backed by an index on [38;5;153m(created_at [39m
+     [38;5;153mDESC, id DESC)[39m.
+   - [1mResponse:[0m [38;5;153m200 {items: [...], next_cursor: string|null}[39m. Fetch [38;5;153mlimit+1[39m rows; [38;5;153mnext_cursor[39m is null when there are
+     no more rows.
+   - [1mNew inserts while paging:[0m they go at the head of the list, so a client walking the pages never sees duplicates
+     or gaps. It also won't see the new rows until it starts again from the first page.
+
+   [1mSet aside[0m
+
+   - [1mOffset/page numbers:[0m O(offset) on 4M rows, and pages shift whenever inserts happen.
+   - [1mCursor on [38;5;153mid[39m alone:[0m this only works if [38;5;153mid[39m order always matches [38;5;153mcreatedAt[39m order. Backdated or imported rows (like
+     [38;5;153mseed[39m's [38;5;153mcreatedAt[39m) break that.                                                                                    [38;5;246m↓[39m
+  [38;5;73m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+   [38;5;246mClaude has written up a plan and is ready to execute. Would you like to proceed?[39m
+
+   [38;5;153m❯[39m [38;5;246m1. [38;5;153mYes, and use auto mode[39m
+     [38;5;246m2. [39mYes, manually approve edits
+     [38;5;246m3. Tell Claude what to change[39m
+        [38;5;246mshift+tab to approve with this feedback[39m
+
+   [38;5;246mctrl+g to edit in VS Code · ~/.claude/plans/hidden-soaring-hennessy.md[39m

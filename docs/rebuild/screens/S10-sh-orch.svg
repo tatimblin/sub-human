@@ -7,37 +7,40 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="792" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">orch · S10</text>
 <g fill="#d6dbe5">
-<text x="12" y="72" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="72" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="106" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="106" textLength="803.4" lengthAdjust="spacing" xml:space="preserve"> Task #2, &quot;cursor paging handler&quot;, is now claimed by alice and marked in progress, as she asked in #17.</text>
-<text x="12" y="140" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="140" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="140" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="140" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="174" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="174" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="27.6" y="208" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="12" y="242" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="242" textLength="928.2" lengthAdjust="spacing" xml:space="preserve"> I didn't apply bob's request in #19 to mark task #2 done. The task is claimed by alice (#17), so only her done request</text>
-<text x="12" y="259" textLength="904.8" lengthAdjust="spacing" xml:space="preserve">  can complete it, and it stays in progress. I told bob this in #20 and suggested he add his own task for the parser</text>
-<text x="12" y="276" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">  tests.</text>
+<text x="12" y="55" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="55" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="55" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="55" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="89" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="89" textLength="249.6" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room&quot;</text>
+<text x="12" y="123" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="123" textLength="678.6" lengthAdjust="spacing" xml:space="preserve"> Task 2, &quot;cursor paging handler&quot;, is now in progress with alice as owner, as she asked.</text>
+<text x="12" y="157" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="157" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="157" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="157" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="191" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="191" textLength="249.6" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room&quot;</text>
+<text x="27.6" y="225" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="259" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="259" textLength="897" lengthAdjust="spacing" xml:space="preserve"> bob asked to mark task 2, &quot;cursor paging handler&quot;, as done, but alice has claimed it, so I didn't. I told bob only</text>
+<text x="12" y="276" textLength="639.6" lengthAdjust="spacing" xml:space="preserve">  alice's done request can complete it; the task is still in progress under alice.</text>
 <text x="12" y="310" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="310" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="310" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
 <text x="129" y="310" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="12" y="344" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="344" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="19.8" y="344" textLength="249.6" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room&quot;</text>
 <text x="12" y="378" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="378" textLength="865.8" lengthAdjust="spacing" xml:space="preserve"> Task #2, the cursor paging handler, is now marked completed on alice's own done request (#21). Her evidence is</text>
-<text x="12" y="395" textLength="686.4" lengthAdjust="spacing" xml:space="preserve">  recorded in the task: &quot;handler in, npm test 3/3 pass&quot;. I haven't run the tests myself.</text>
+<text x="19.8" y="378" textLength="920.4" lengthAdjust="spacing" xml:space="preserve"> Task 2, &quot;cursor paging handler&quot;, is now completed at alice's request. Her evidence, which I added to the task without</text>
+<text x="12" y="395" textLength="366.6" lengthAdjust="spacing" xml:space="preserve">  checking it: &quot;handler in, npm test 3/3 pass&quot;.</text>
 <text x="12" y="429" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="429" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="429" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
 <text x="129" y="429" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="12" y="463" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
 <text x="27.6" y="463" fill="#ffd700" textLength="335.4" lengthAdjust="spacing" xml:space="preserve">UserPromptSubmit operation blocked by hook:</text>
-<text x="27.6" y="480" fill="#ffd700" textLength="670.8" lengthAdjust="spacing" xml:space="preserve">the orch takes no typed input; use @room or ask your Claude to message orch.gecko-5061</text>
+<text x="27.6" y="480" fill="#ffd700" textLength="663" lengthAdjust="spacing" xml:space="preserve">the orch takes no typed input; use @room or ask your Claude to message orch.swan-6397</text>
 <text x="27.6" y="514" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
 <text x="35.4" y="514" fill="#949494" textLength="62.4" lengthAdjust="spacing" xml:space="preserve"> tasks (</text>
 <text x="97.8" y="514" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
@@ -47,12 +50,12 @@
 <text x="277.2" y="514" fill="#949494" font-weight="bold" xml:space="preserve">0</text>
 <text x="285" y="514" fill="#949494" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> open)</text>
 <text x="27.6" y="531" fill="#d78787" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◼ </text>
-<text x="43.2" y="531" font-weight="bold" textLength="156" lengthAdjust="spacing" xml:space="preserve">room gecko-5061 open</text>
+<text x="43.2" y="531" font-weight="bold" textLength="148.2" lengthAdjust="spacing" xml:space="preserve">room swan-6397 open</text>
 <text x="27.6" y="548" fill="#87d787" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ </text>
 <text x="43.2" y="548" fill="#949494" text-decoration="line-through" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">cursor paging handler</text>
 <text x="511.2" y="565" fill="#ffc107" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="565" fill="#ffc107" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="582" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────── orch.gecko-5061 ─</text>
+<text x="12" y="582" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────────── orch.swan-6397 ─</text>
 <text x="12" y="599" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
 <text x="27.6" y="633" fill="#5fafaf" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ plan mode on</text>

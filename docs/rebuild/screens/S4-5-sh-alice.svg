@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 734" width="960" height="734" role="img" aria-label="alice · S4" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13">
+<rect x="0.5" y="0.5" width="959" height="733" rx="9" fill="#16181d" stroke="#3a3e48"/>
+<path d="M0.5 30V9.5a9 9 0 0 1 9-9h941a9 9 0 0 1 9 9V30z" fill="#22252c"/>
+<line x1="0.5" y1="30" x2="959.5" y2="30" stroke="#3a3e48"/>
+<circle cx="16" cy="15" r="5.5" fill="#ff5f57"/>
+<circle cx="34" cy="15" r="5.5" fill="#febc2e"/>
+<circle cx="52" cy="15" r="5.5" fill="#28c840"/>
+<text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">alice · S4</text>
+<g fill="#d6dbe5">
+<text x="12" y="55" fill="#5fafaf" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="55" textLength="140.4" lengthAdjust="spacing" xml:space="preserve"> Entered plan mode</text>
+<text x="27.6" y="72" fill="#949494" textLength="507" lengthAdjust="spacing" xml:space="preserve">Claude is now exploring and designing an implementation approach.</text>
+<text x="12" y="89" fill="#afd7ff" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔</text>
+<text x="35.4" y="106" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Verification</text>
+<text x="932.4" y="106" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">↑</text>
+<text x="12" y="140" textLength="39" lengthAdjust="spacing" xml:space="preserve">   - </text>
+<text x="51" y="140" fill="#afd7ff" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">npm test</text>
+<text x="113.4" y="140" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> with </text>
+<text x="160.2" y="140" fill="#afd7ff" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">reset()</text>
+<text x="214.8" y="140" textLength="23.4" lengthAdjust="spacing" xml:space="preserve"> + </text>
+<text x="238.2" y="140" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">seed(237)</text>
+<text x="308.4" y="140" xml:space="preserve">:</text>
+<text x="12" y="157" textLength="592.8" lengthAdjust="spacing" xml:space="preserve">     - walking the pages with limit 20 returns all 237 ids exactly once, in </text>
+<text x="604.8" y="157" fill="#afd7ff" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">createdAt DESC, id DESC</text>
+<text x="784.2" y="157" textLength="117" lengthAdjust="spacing" xml:space="preserve"> order, and the</text>
+<text x="12" y="174" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">       last page has </text>
+<text x="175.8" y="174" fill="#afd7ff" textLength="132.6" lengthAdjust="spacing" xml:space="preserve">next_cursor: null</text>
+<text x="12" y="191" textLength="709.8" lengthAdjust="spacing" xml:space="preserve">     - a page boundary that falls inside a shared timestamp neither skips nor repeats a row</text>
+<text x="12" y="208" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">     - </text>
+<text x="66.6" y="208" fill="#afd7ff" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">limit=0</text>
+<text x="121.2" y="208" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">, </text>
+<text x="136.8" y="208" fill="#afd7ff" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">-1</text>
+<text x="152.4" y="208" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">, </text>
+<text x="168" y="208" fill="#afd7ff" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">abc</text>
+<text x="191.4" y="208" textLength="15.6" lengthAdjust="spacing" xml:space="preserve">, </text>
+<text x="207" y="208" fill="#afd7ff" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">101</text>
+<text x="230.4" y="208" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> → 400; a garbage </text>
+<text x="370.8" y="208" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="409.8" y="208" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> → 400</text>
+<text x="12" y="225" textLength="592.8" lengthAdjust="spacing" xml:space="preserve">     - inserting a task between page fetches does not change the later pages</text>
+<text x="12" y="242" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">   - By hand: </text>
+<text x="121.2" y="242" fill="#afd7ff" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">npm start</text>
+<text x="191.4" y="242" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">, then </text>
+<text x="246" y="242" fill="#afd7ff" textLength="273" lengthAdjust="spacing" xml:space="preserve">curl 'localhost:3000/tasks?limit=5'</text>
+<text x="519" y="242" textLength="93.6" lengthAdjust="spacing" xml:space="preserve"> and follow </text>
+<text x="612.6" y="242" fill="#afd7ff" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">next_cursor</text>
+<text x="698.4" y="242" xml:space="preserve">.</text>
+<text x="35.4" y="276" font-weight="bold" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">Open questions</text>
+<text x="12" y="310" textLength="421.2" lengthAdjust="spacing" xml:space="preserve">   1. Is a default limit of 20 and a max of 100 right?</text>
+<text x="12" y="327" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">   2. For an out-of-range </text>
+<text x="214.8" y="327" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="253.8" y="327" textLength="483.6" lengthAdjust="spacing" xml:space="preserve">, should the server return 400 (proposed) or clamp to the max?</text>
+<text x="12" y="344" textLength="218.4" lengthAdjust="spacing" xml:space="preserve">   3. Is the response shape </text>
+<text x="230.4" y="344" fill="#afd7ff" textLength="156" lengthAdjust="spacing" xml:space="preserve">{items, next_cursor}</text>
+<text x="386.4" y="344" textLength="351" lengthAdjust="spacing" xml:space="preserve"> right, or do you want a different key (e.g. </text>
+<text x="737.4" y="344" fill="#afd7ff" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">next</text>
+<text x="768.6" y="344" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">), or a </text>
+<text x="831" y="344" fill="#afd7ff" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">Link</text>
+<text x="862.2" y="344" textLength="62.4" lengthAdjust="spacing" xml:space="preserve"> header?</text>
+<text x="12" y="361" textLength="631.8" lengthAdjust="spacing" xml:space="preserve">   4. Should the cursor be signed or encrypted, or is base64 JSON enough for now?</text>
+<text x="35.4" y="395" font-weight="bold" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">Approvers</text>
+<text x="12" y="429" textLength="39" lengthAdjust="spacing" xml:space="preserve">   - </text>
+<text x="51" y="429" font-weight="bold" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">bob</text>
+<text x="74.4" y="429" textLength="421.2" lengthAdjust="spacing" xml:space="preserve">: asked for this plan and is writing the paging tests.</text>
+<text x="12" y="446" textLength="39" lengthAdjust="spacing" xml:space="preserve">   - </text>
+<text x="51" y="446" font-weight="bold" textLength="39" lengthAdjust="spacing" xml:space="preserve">alice</text>
+<text x="90" y="446" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">: works on the handler in </text>
+<text x="292.8" y="446" fill="#afd7ff" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">src/server.js</text>
+<text x="394.2" y="446" textLength="257.4" lengthAdjust="spacing" xml:space="preserve"> and asked bob to take the tests.</text>
+<text x="27.6" y="463" fill="#4e4e4e" textLength="904.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌</text>
+<text x="35.4" y="497" opacity="0.6" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="43.2" y="497" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> Hook </text>
+<text x="90" y="497" font-weight="bold" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">PreToolUse:ExitPlanMode</text>
+<text x="269.4" y="497" textLength="288.6" lengthAdjust="spacing" xml:space="preserve"> requires confirmation for this tool:</text>
+<text x="35.4" y="514" opacity="0.6" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="43.2" y="514" textLength="865.8" lengthAdjust="spacing" xml:space="preserve"> room proposal f43c2a785536 from orch, for alice (PgUp/PgDn scroll). Agree: &quot;Yes, and use auto mode&quot; keeps your</text>
+<text x="35.4" y="531" opacity="0.6" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="43.2" y="531" textLength="538.2" lengthAdjust="spacing" xml:space="preserve"> mode. Object: &quot;Tell Claude what to change&quot; + why. Esc: decide later.</text>
+<text x="35.4" y="548" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">settings.json to update hooks</text>
+<text x="27.6" y="582" fill="#5fafaf" textLength="904.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="35.4" y="599" fill="#949494" textLength="624" lengthAdjust="spacing" xml:space="preserve">Claude has written up a plan and is ready to execute. Would you like to proceed?</text>
+<text x="35.4" y="633" fill="#afd7ff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯</text>
+<text x="51" y="633" fill="#949494" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">1. </text>
+<text x="74.4" y="633" fill="#afd7ff" textLength="171.6" lengthAdjust="spacing" xml:space="preserve">Yes, and use auto mode</text>
+<text x="51" y="650" fill="#949494" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">2. </text>
+<text x="74.4" y="650" textLength="210.6" lengthAdjust="spacing" xml:space="preserve">Yes, manually approve edits</text>
+<text x="51" y="667" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">3. Tell Claude what to change</text>
+<text x="74.4" y="684" fill="#949494" textLength="304.2" lengthAdjust="spacing" xml:space="preserve">shift+tab to approve with this feedback</text>
+<text x="35.4" y="718" fill="#949494" textLength="546" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ctrl+g to edit in VS Code · ~/.claude/plans/hidden-soaring-hennessy.md</text>
+</g></svg>

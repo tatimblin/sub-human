@@ -100,7 +100,9 @@ function main() {
   const seatFiles = seat => {
     if (seat === 'orch') { const f = []; try { for (const d of fs.readdirSync(projects)) { const p = path.join(projects, d, `${orchSid}.jsonl`); if (orchSid && fs.existsSync(p)) f.push(p); } } catch { /* none */ } return f; }
     const dir = path.join(projects, `-private-tmp-sh-demo-${seat}`);
-    try { return fs.readdirSync(dir).filter(f => f.endsWith('.jsonl') && f !== `${orchSid}.jsonl`).map(f => path.join(dir, f)); } catch { return []; }
+    // not an orch's transcript (this run's, or an earlier run's orch that also started in alice's folder)
+    const isOrch = f => f === `${orchSid}.jsonl` || /"agentSetting":"sub-human:orchestrator"/.test((readText(path.join(dir, f)) || '').slice(0, 2000));
+    try { return fs.readdirSync(dir).filter(f => f.endsWith('.jsonl') && !isOrch(f)).map(f => path.join(dir, f)); } catch { return []; }
   };
   const tcache = {};
   const entries = seat => (tcache[seat] = tcache[seat] || seatFiles(seat).flatMap(f => jsonl(f).map(e => ({ ...e, _file: path.basename(f) }))).filter(e => e.agentSetting !== 'sub-human:orchestrator' || seat === 'orch'));
@@ -223,13 +225,21 @@ function main() {
     let title = '';
     try { title = (fs.readFileSync(path.join(roomDir, 'plans', `${p1.hash}.md`), 'utf8').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').replace(/[*_`]/g, '').trim()).find(Boolean) || '').slice(0, 40); } catch { /* none */ }
     for (const seat of ['alice', 'bob']) {
-      const t = cap('S4', seat, 'last') || '';
+      // the plan view's first page (S4 step 1: the title); later S4 steps are alice paging down
+      const st4 = caps('S4', seat).find(r => r.caption.startsWith('The orch proposes'))?.step ?? 'last';
+      const t = cap('S4', seat, st4) || '';
       const view = /Would you like to proceed\?/.test(t) && /Tell Claude what to change|No, keep planning/.test(t) && !!title && t.includes(title);
       const m = new RegExp(`Agree to proposal (${p1 ? esc(p1.hash) : '[0-9a-f]{12}'})\\?`).exec(t);
       const opts = /1\. Not yet/.test(t) && /2\. Agree/.test(t) && /3\. Object/.test(t);
       add('S4', `${seat} reads the proposal in the native plan view (Yes / Tell Claude what to change), or on the fallback card`, view || (m && opts && /Consent/.test(t)),
-        view ? `plan view showing "${title}" (${capName('S4', seat, 'last')})` : m ? `card ${m[0]}; options ${opts ? 'Not yet/Agree/Object' : 'missing'} (${capName('S4', seat, 'last')})` : `no plan view or card in ${capName('S4', seat, 'last')}`);
+        view ? `plan view showing "${title}" (${capName('S4', seat, st4)})` : m ? `card ${m[0]}; options ${opts ? 'Not yet/Agree/Object' : 'missing'} (${capName('S4', seat, st4)})` : `no plan view or card in ${capName('S4', seat, st4)}`);
     }
+    // alice pages through the whole proposal (PgDn) to its end: the hook's "room proposal HASH" line under the plan
+    const pages = caps('S4', 'alice').filter(r => /reads the whole proposal/.test(r.caption));
+    const endT = pages.length ? readText(path.join(screens, pages.at(-1).txt)) || '' : cap('S4', 'alice', caps('S4', 'alice').find(r => r.caption.startsWith('The orch proposes'))?.step ?? 'last') || '';
+    const endOk = p1 && new RegExp(`room proposal ${esc(p1.hash)}`).test(endT);
+    add('S4', 'alice reads the whole proposal: PgDn pages through the plan view to its end (the "room proposal HASH" line)', endOk && /Would you like to proceed\?/.test(endT),
+      `${pages.length} PgDn page capture(s) (${pages.map(r => r.txt).join(', ') || 'none'}); last shows ${endOk ? `"room proposal ${p1.hash}"` : 'no end line'}`);
   }
 
   // ---- S5: object with a note, revise, both agree
@@ -249,6 +259,26 @@ function main() {
     const human = ['alice', 'bob'].map(n => log.filter(e => e.from === n && (e.kind === 'signoff' || e.kind === 'objection') && e.via !== 'human').length);
     add('S5', 'Every answer came from a card (via=human); no Claude answered', human.every(x => x === 0), `non-human answers: alice ${human[0]}, bob ${human[1]}`);
     { const ch = chainOk(home, code); add('S5', 'Hash chain valid', ch.ok, ch.evidence); }
+    // after each review the seat is back in its own permission mode, and its session plan file is restored
+    // (put back as it was, or removed when it did not exist before: plans-before.txt vs the S5 last step's plans.txt)
+    const before = new Set((readText(path.join(screens, 'state', 'plans-before.txt')) || '').split('\n').filter(Boolean));
+    const after = stText('S5', 'last', 'plans.txt');
+    const MODE = { auto: /auto mode on/, acceptEdits: /accept edits on/, plan: /plan mode on/, default: /^(?![\s\S]*(auto mode on|accept edits on|plan mode on))/ };
+    for (const seat of ['alice', 'bob']) {
+      const t0 = index.length ? new Date(Date.parse(index.map(r => r.time).sort()[0]) - 180_000).toISOString() : '';
+      const es = entries(seat).filter(e => !e.isSidechain && e.timestamp && e.timestamp >= t0 && e.timestamp <= (span('S5') || {}).to); // this run's, up to S5's end
+      const mode0 = (es.find(e => e.permissionMode) || {}).permissionMode;
+      const reviews = toolUses(es, 'ExitPlanMode').filter(c => /^proposal [0-9a-f]{12}\b/.test(String((c.input || {}).plan || '')));
+      const enters = es.filter(e => e.attachment && e.attachment.type === 'plan_mode');
+      const exits = es.filter(e => e.attachment && e.attachment.type === 'plan_mode_exit');
+      const lastMode = (es.filter(e => e.permissionMode).at(-1) || {}).permissionMode;
+      const foot = cap('S5', seat, 'last') || '';
+      const files = [...new Set(enters.map(e => e.attachment.planFilePath).filter(Boolean))];
+      const left = after == null ? null : files.filter(f => after.split('\n').includes(path.basename(f)) && !before.has(path.basename(f)));
+      const ok = mode0 && reviews.length >= 2 && exits.length >= enters.length && lastMode === mode0 && MODE[mode0] && MODE[mode0].test(foot) && left && left.length === 0;
+      add('S5', `${seat}: after each review, back in the original permission mode and the session plan file restored`, ok,
+        `${reviews.length} reviews (${enters.length} plan_mode, ${exits.length} plan_mode_exit); mode ${mode0} → last ${lastMode}; footer ${(/⏵⏵ [a-z ]+ on|⏸ plan mode on/.exec(foot) || ['(no mode label)'])[0]} in ${capName('S5', seat, 'last')}; plan file ${files.map(f => path.basename(f)).join(', ') || 'none'}: ${left == null ? 'no plans.txt saved' : left.length ? 'still has the proposal' : before.size && files.some(f => before.has(path.basename(f))) ? 'restored' : 'removed (did not exist before)'}`);
+    }
   }
 
   // ---- S6: shared tasks

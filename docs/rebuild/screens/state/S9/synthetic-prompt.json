@@ -1,10 +1,10 @@
 {
  "input": {
   "prompt": "hi",
-  "session_id": "30177c08-c1f0-4e1b-b0af-f6f4a4e067d8",
-  "pid": 83864
+  "session_id": "b3132bf9-66ef-4cfb-9952-6bf91823b97b",
+  "pid": 4591
  },
  "status": 0,
- "stdout": "{\"decision\":\"block\",\"reason\":\"the orch takes no typed input; use @room or ask your Claude to message orch.gecko-5061\",\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"suppressOriginalPrompt\":true}}",
+ "stdout": "{\"decision\":\"block\",\"reason\":\"the orch takes no typed input; use @room or ask your Claude to message orch.swan-6397\",\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"suppressOriginalPrompt\":true}}",
  "stderr": ""
 }

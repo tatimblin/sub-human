@@ -9,11 +9,11 @@
 <g fill="#d6dbe5">
 <rect x="27.6" y="59" width="46.8" height="17" fill="#000000"/>
 <rect x="27.6" y="76" width="39" height="17" fill="#000000"/>
-<rect x="12" y="144" width="7.8" height="17" fill="#3a3a3a"/>
-<rect x="19.8" y="144" width="7.8" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="144" width="46.8" height="17" fill="#3a3a3a"/>
-<rect x="12" y="178" width="15.6" height="17" fill="#3a3a3a"/>
-<rect x="27.6" y="178" width="390" height="17" fill="#3a3a3a"/>
+<rect x="12" y="161" width="7.8" height="17" fill="#3a3a3a"/>
+<rect x="19.8" y="161" width="7.8" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="161" width="46.8" height="17" fill="#3a3a3a"/>
+<rect x="12" y="195" width="15.6" height="17" fill="#3a3a3a"/>
+<rect x="27.6" y="195" width="390" height="17" fill="#3a3a3a"/>
 <text x="12" y="72" fill="#d78787" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ▐</text>
 <text x="27.6" y="72" fill="#d78787" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▛███▛█</text>
 <text x="97.8" y="72" font-weight="bold" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">Claude Code</text>
@@ -24,15 +24,18 @@
 <text x="97.8" y="89" fill="#949494" textLength="265.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Opus 5.5 (1M context) · Claude Max</text>
 <text x="12" y="106" fill="#d78787" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ▝▝ ▝▝  </text>
 <text x="97.8" y="106" fill="#949494" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">/private/tmp/sh-demo/alice</text>
-<text x="12" y="157" fill="#4e4e4e" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯</text>
-<text x="27.6" y="157" fill="#ffffff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">/clear</text>
-<text x="12" y="191" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="27.6" y="191" fill="#ffffff" textLength="390" lengthAdjust="spacing" xml:space="preserve">@room bob, are you back? the parser tests are done</text>
-<text x="12" y="225" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="225" fill="#ffd700" textLength="436.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Operation stopped by hook: ✓ posted to gecko-5061 as #25</text>
+<text x="12" y="140" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠</text>
+<text x="27.6" y="140" fill="#ffd700" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">1 MCP server needs authentication</text>
+<text x="285" y="140" fill="#949494" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · run /mcp</text>
+<text x="12" y="174" fill="#4e4e4e" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯</text>
+<text x="27.6" y="174" fill="#ffffff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">/clear</text>
+<text x="12" y="208" fill="#4e4e4e" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="27.6" y="208" fill="#ffffff" textLength="390" lengthAdjust="spacing" xml:space="preserve">@room bob, are you back? the parser tests are done</text>
+<text x="12" y="242" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="242" fill="#ffd700" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Operation stopped by hook: ✓ sent</text>
 <text x="511.2" y="599" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="599" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─</text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────── alice.swan-6397 ─</text>
 <text x="12" y="633" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
 <text x="27.6" y="667" fill="#ffd700" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏵⏵ auto mode on</text>
@@ -40,7 +43,7 @@
 <text x="168" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
 <text x="238.2" y="667" fill="#949494" textLength="202.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent · ↓ to manage</text>
 <text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
-<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ gecko-5061  </text>
-<text x="136.8" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided c04d0c</text>
-<text x="261.6" y="718" fill="#949494" textLength="156" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · tasks: all 1 done</text>
+<text x="12" y="718" fill="#949494" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ swan-6397  </text>
+<text x="129" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided fba8c9</text>
+<text x="253.8" y="718" fill="#949494" textLength="156" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · tasks: all 1 done</text>
 </g></svg>

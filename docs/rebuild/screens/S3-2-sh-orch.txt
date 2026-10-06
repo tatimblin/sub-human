@@ -2,23 +2,24 @@
 ▝▜██████▀  Opus 5.5 (1M context) · Claude Max
   ▝▝ ▝▝    @sub-human:orchestrator · /private/tmp/sh-demo/alice
 
+⚠ 1 MCP server needs authentication · run /mcp
 
 ❯ /sub-human:sub-human
-  ⎿  UserPromptExpansion says: sub-human: orch of room gecko-5061
+  ⎿  UserPromptExpansion says: sub-human: orch of room swan-6397
 
 ⏺ sub-human:participant(alice)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ Joined room gecko-5061: alice's row is running and task 1 ("room gecko-5061 open") is in progress, owned by room.
+⏺ Joined room swan-6397 with alice. Task 1, "room swan-6397 open", is now in progress.
 
 ✻ Waiting for 1 background agent to finish
 
-⏺ Monitor event: "sub-human room notices"
+⏺ Monitor event: "sub-human room"
 
 ⏺ sub-human:participant(bob)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ Bob joined room gecko-5061, and his row is now running.
+⏺ Bob joined room swan-6397, so I started his member row.
 
 ✻ Waiting for 2 background agents to finish
 
@@ -35,16 +36,15 @@
 
 
 
-
   1 tasks (0 done, 1 in progress, 0 open)
-  ◼ room gecko-5061 open
+  ◼ room swan-6397 open
                                                                                                                                                 Update available! Run: brew upgrade claude-code@latest
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── orch.gecko-5061 ─
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── orch.swan-6397 ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ plan mode on · ← 1 agent · 1 monitor · ctrl+t to hide tasks · ↓ to manage
 
   ⏺ main
-  ◯ alice  working · #3 say 1m
-  ◯ bob  working · #4 say 42s
+  ◯ alice  working · say 58s
+  ◯ bob  working · say 38s
 

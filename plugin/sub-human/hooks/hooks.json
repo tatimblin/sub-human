@@ -49,7 +49,7 @@
         ]
       },
       {
-        "matcher": "AskUserQuestion|EnterPlanMode|ExitPlanMode",
+        "matcher": "AskUserQuestion|EnterPlanMode|ExitPlanMode|mcp__plugin_sub-human_room__.*",
         "hooks": [
           {
             "type": "command",

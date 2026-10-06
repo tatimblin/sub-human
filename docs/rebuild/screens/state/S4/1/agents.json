@@ -60,33 +60,33 @@
     "status": "idle"
   },
   {
-    "pid": 99830,
+    "pid": 5451,
+    "cwd": "/private/tmp/sh-demo/alice",
+    "kind": "interactive",
+    "startedAt": 1791304409728,
+    "sessionId": "6089fe29-6be2-465c-9d27-006cd1fd944c",
+    "name": "alice.swan-6397",
+    "status": "waiting",
+    "waitingFor": "permission prompt"
+  },
+  {
+    "pid": 5460,
     "cwd": "/private/tmp/sh-demo/bob",
     "kind": "interactive",
-    "startedAt": 1791269174258,
-    "sessionId": "18bf37b0-4f24-4111-91cb-a92f9fd74cdc",
-    "name": "bob.gecko-5061",
+    "startedAt": 1791304409736,
+    "sessionId": "0ee93884-ace7-463f-8c82-2d45790294a8",
+    "name": "bob.swan-6397",
     "status": "waiting",
-    "waitingFor": "input needed"
+    "waitingFor": "permission prompt"
   },
   {
-    "pid": 99822,
-    "cwd": "/private/tmp/sh-demo/alice",
-    "kind": "interactive",
-    "startedAt": 1791269174258,
-    "sessionId": "2ce7cbe3-c028-4ce6-bb42-9ef391cb0ca1",
-    "name": "alice.gecko-5061",
-    "status": "waiting",
-    "waitingFor": "input needed"
-  },
-  {
-    "pid": 83864,
-    "id": "30177c08",
+    "pid": 4591,
+    "id": "b3132bf9",
     "cwd": "/private/tmp/sh-demo/alice",
     "kind": "background",
-    "startedAt": 1791269179435,
-    "sessionId": "30177c08-c1f0-4e1b-b0af-f6f4a4e067d8",
-    "name": "orch.gecko-5061",
+    "startedAt": 1791304417013,
+    "sessionId": "b3132bf9-66ef-4cfb-9952-6bf91823b97b",
+    "name": "orch.swan-6397",
     "status": "busy",
     "state": "working"
   }

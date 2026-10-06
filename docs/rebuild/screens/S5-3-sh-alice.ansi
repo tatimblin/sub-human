@@ -1,40 +1,40 @@
+       - [38;5;153mlimit=0[39m, [38;5;153m-1[39m, [38;5;153mabc[39m, [38;5;153m101[39m → 400; a garbage [38;5;153mafter[39m → 400
+       - bob's objection asked for this: "add a test for a cursor past the end — [38;5;153mafter=zzz[39m must 400, not 500". So
+         [38;5;153mafter=zzz[39m → 400 [38;5;153m{error: 'invalid cursor'}[39m, never 500. To make that hold, cursor decode (base64url → [38;5;153mJSON.parse[39m
+         → check that [38;5;153mc[39m is an ISO date string and [38;5;153mi[39m is a positive integer) runs inside try/catch, and any failure maps
+         to 400.
+       - a well-formed cursor that sorts below every task (e.g. the last page's final item) → 200 [38;5;153m{items: [], [39m
+         [38;5;153mnext_cursor: null}[39m
+       - inserting a task between page fetches does not change the later pages
+     - By hand: [38;5;153mnpm start[39m, then [38;5;153mcurl 'localhost:3000/tasks?limit=5'[39m and follow [38;5;153mnext_cursor[39m.
 
-[38;5;231m⏺[39m You agreed to orch's plan for cursor paging on [38;5;153mGET /tasks[39m (proposal 1d6988), and your answer is posted as #7. It
-  orders tasks newest first with [38;5;153mid[39m as the tiebreaker and pages from the last item seen. Bob hasn't answered yet, so I'm
-  holding off on building anything until it's decided.
+     [1mOpen questions[0m
+
+     1. Is a default limit of 20 and a max of 100 right?
+     2. For an out-of-range [38;5;153mlimit[39m, should the server return 400 (proposed) or clamp to the max?
+     3. Is the response shape [38;5;153m{items, next_cursor}[39m right, or do you want a different key (e.g. [38;5;153mnext[39m), or a [38;5;153mLink[39m header?
+     4. Should the cursor be signed or encrypted, or is base64 JSON enough for now?
+
+     [1mApprovers[0m
+
+     - [1mbob[0m: asked for this plan and is writing the paging tests.
+     - [1malice[0m: works on the handler in [38;5;153msrc/server.js[39m and asked bob to take the tests.
+
+[38;5;231m⏺[39m You agreed to the revised paging plan, which adds bob's fix so a bad cursor like [38;5;153mafter=zzz[39m returns 400 instead of 500.
+  bob hasn't answered yet.
 
 [38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
 
-[38;5;231m⏺[39m Monitor event: "sub-human room notices"
+[38;5;231m⏺[39m Monitor event: "sub-human room"
 
-[38;5;246m⏺ [39mUser answered Claude's questions:
-[38;5;246m  ⎿  · Agree to proposal c04d0c9623ce? → Agree[39m
-
-  [38;5;246mSearched for [1m2[0m[38;5;246m patterns, ran [1m1[0m[38;5;246m shell command [39m
-
-[38;5;231m⏺[39m Monitor event: "sub-human room notices"
-
-[38;5;231m⏺[39m The paging plan is decided: you agreed in #11 and bob signed off in #12, so the room recorded it as agreed in #13.
-
-  This version came after bob objected in #8 to the first one, which you'd also agreed to. It covers his request in two
-  cases:
-  - [1mMalformed cursor:[0m a bad [38;5;153mafter[39m value, such as [38;5;153mafter=zzz[39m, returns a 400 instead of a 500.
-  - [1mCursor past the end:[0m a valid cursor that points past the oldest task returns an empty page with no next cursor.
-
-  The plan leaves two questions open:
-  - [1mLimits:[0m is a default of 20 and a max of 100 right, and should a limit over 100 return 400 or be capped at 100?
-  - [1mResponse shape:[0m should results come back as [38;5;153m{items, nextCursor}[39m, or as a plain list with the cursor in a [38;5;153mLink[39m
-    header?
-
-  In #4 bob said he'd take the parser tests once paging was agreed. Should I start on the handler in [38;5;153msrc/server.js[39m, or
-  do you want to settle the two open questions first?
+[38;5;231m⏺[39m room: decided (agreed: bob, alice)
 
 [38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
                                                                 [38;5;220mUpdate available! Run: [1mbrew upgrade claude-code@latest[0m
-[38;5;244m───────────────────────────────────────────────────────────────────────────────────────────────────── alice.gecko-5061 ─
-[39m❯ [2mgo ahead and build the handler in src/server.js[0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────── alice.swan-6397 ─
+[39m❯ [2mimplement the GET /tasks handler in src/server.js[0m
 [38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 [39m  [38;5;220m⏵⏵ auto mode on[38;5;246m · [38;5;44m1 monitor[38;5;246m · ← 1 agent · ↓ to manage[39m
 
 [1m  ⏺ main[0m
-[38;5;246m  ◯ gecko-5061  [32m✔ decided c04d0c[39m
+[38;5;246m  ◯ swan-6397  [32m✔ decided fba8c9[39m

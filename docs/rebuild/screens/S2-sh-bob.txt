@@ -3,14 +3,15 @@
 ▝▜██████▀  Opus 5.5 (1M context) · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/bob
 
+⚠ 1 MCP server needs authentication · run /mcp
 
 ❯ /sub-human:sub-human bob
-  ⎿  UserPromptExpansion says: sub-human: joined gecko-5061 as bob (alice, orch here)
+  ⎿  UserPromptExpansion says: sub-human: joined swan-6397 as bob (alice, orch here)
 
-⏺ sub-human:room(gecko-5061)
+⏺ sub-human:room(swan-6397)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ You've joined room gecko-5061 with alice.
+⏺ You're in room swan-6397 with alice.
 
 ✻ Waiting for 1 background agent to finish
 
@@ -29,12 +30,11 @@
 
 
 
-
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.gecko-5061 ─
+──────────────────────────────────────────────────────────────────────────────────────────────────────── bob.swan-6397 ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏵⏵ auto mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ gecko-5061  +alice joined · 2 here
+  ◯ swan-6397  +alice joined · 2 here

@@ -7,50 +7,55 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="792" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">orch · S6</text>
 <g fill="#d6dbe5">
-<text x="12" y="55" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">  Nobody has answered a card yet.</text>
-<text x="12" y="89" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="89" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="89" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="89" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="123" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="123" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="157" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="157" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
-<text x="12" y="174" fill="#999999" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
+<text x="12" y="55" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">  3. Is </text>
+<text x="74.4" y="55" fill="#b1b9f9" textLength="156" lengthAdjust="spacing" xml:space="preserve">{items, next_cursor}</text>
+<text x="230.4" y="55" textLength="202.8" lengthAdjust="spacing" xml:space="preserve"> the right response shape?</text>
+<text x="12" y="72" textLength="265.2" lengthAdjust="spacing" xml:space="preserve">  4. Does the cursor need signing?</text>
+<text x="12" y="106" textLength="132.6" lengthAdjust="spacing" xml:space="preserve">  The plan is in </text>
+<text x="144.6" y="106" fill="#b1b9f9" textLength="475.8" lengthAdjust="spacing" xml:space="preserve">/Users/tristantimblin/.claude/plans/mellow-sniffing-magpie.md</text>
+<text x="620.4" y="106" xml:space="preserve">.</text>
+<text x="12" y="140" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="140" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="140" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="140" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="174" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="174" textLength="249.6" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room&quot;</text>
 <text x="12" y="208" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
 <text x="27.6" y="208" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
 <text x="12" y="225" fill="#999999" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
-<text x="27.6" y="259" fill="#999999" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="12" y="293" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="293" textLength="1458.6" lengthAdjust="spacing" xml:space="preserve"> Bob objected to the first paging plan (#8), so I revised it and sent it out again as #10. Bob and alice each need to answer the new card, and alice's earlier sign-off doesn't carry over.</text>
-<text x="12" y="327" textLength="405.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  His note: &quot;add a test for a cursor past the end — </text>
-<text x="417.6" y="327" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
-<text x="487.8" y="327" textLength="304.2" lengthAdjust="spacing" xml:space="preserve"> must 400, not 500&quot;. The revision adds:</text>
-<text x="12" y="344" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
-<text x="43.2" y="344" font-weight="bold" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">His test:</text>
-<text x="121.2" y="344" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
-<text x="191.4" y="344" textLength="592.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> must return 400. A cursor that can't be read always returns 400, never 500.</text>
-<text x="12" y="361" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
-<text x="43.2" y="361" font-weight="bold" textLength="171.6" lengthAdjust="spacing" xml:space="preserve">A second test I added:</text>
-<text x="214.8" y="361" textLength="1146.6" lengthAdjust="spacing" xml:space="preserve"> a valid cursor pointing past the oldest task returns an empty page with no next cursor. His note mixed the two cases, so the plan now covers both.</text>
-<text x="12" y="395" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="395" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="395" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="395" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="429" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="429" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="27.6" y="463" fill="#999999" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
-<text x="12" y="497" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="497" textLength="1544.4" lengthAdjust="spacing" xml:space="preserve"> The paging plan is decided: bob and alice both signed the revised proposal (#11, #12, room decision #13). I added task #2, &quot;cursor paging handler&quot;, owned by alice and still pending, as she asked in</text>
-<text x="12" y="514" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">  #14.</text>
+<text x="12" y="259" fill="#4eba65" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="259" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
+<text x="12" y="276" fill="#999999" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
+<text x="27.6" y="310" fill="#999999" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="344" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="344" textLength="1544.4" lengthAdjust="spacing" xml:space="preserve"> I revised the paging plan for bob's objection and sent it to bob and alice as a new proposal. That replaces the old one, so alice's earlier agreement no longer counts, and neither has answered yet.</text>
+<text x="12" y="378" textLength="405.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  bob asked for &quot;a test for a cursor past the end — </text>
+<text x="417.6" y="378" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
+<text x="487.8" y="378" textLength="358.8" lengthAdjust="spacing" xml:space="preserve"> must 400, not 500&quot;. The plan now covers that:</text>
+<text x="12" y="395" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="395" font-weight="bold" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">Bad cursor:</text>
+<text x="129" y="395" textLength="468" lengthAdjust="spacing" xml:space="preserve"> anything that fails to decode or has the wrong shape, like </text>
+<text x="597" y="395" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
+<text x="667.2" y="395" textLength="335.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">, gets a 400 &quot;invalid cursor&quot;, never a 500.</text>
+<text x="12" y="412" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="412" font-weight="bold" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">Cursor past the last task:</text>
+<text x="246" y="412" textLength="616.2" lengthAdjust="spacing" xml:space="preserve"> a valid cursor with nothing after it returns an empty page and no next cursor.</text>
+<text x="12" y="446" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="446" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="446" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="446" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="480" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="480" textLength="249.6" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room&quot;</text>
+<text x="12" y="514" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="514" textLength="1302.6" lengthAdjust="spacing" xml:space="preserve"> bob and alice both agreed to the revised paging plan, so it's decided. I added task 2, &quot;cursor paging handler&quot;, as alice asked; it's owned by alice and still pending.</text>
 <text x="12" y="548" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="548" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="548" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
 <text x="129" y="548" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="12" y="582" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="582" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="19.8" y="582" textLength="249.6" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room&quot;</text>
 <text x="12" y="616" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="616" textLength="803.4" lengthAdjust="spacing" xml:space="preserve"> Task #2, &quot;cursor paging handler&quot;, is now claimed by alice and marked in progress, as she asked in #17.</text>
+<text x="19.8" y="616" textLength="678.6" lengthAdjust="spacing" xml:space="preserve"> Task 2, &quot;cursor paging handler&quot;, is now in progress with alice as owner, as she asked.</text>
 <text x="12" y="650" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="650" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="650" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
@@ -64,22 +69,20 @@
 <text x="277.2" y="684" fill="#999999" font-weight="bold" xml:space="preserve">0</text>
 <text x="285" y="684" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> open)</text>
 <text x="27.6" y="701" fill="#d77757" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◼ </text>
-<text x="43.2" y="701" font-weight="bold" textLength="156" lengthAdjust="spacing" xml:space="preserve">room gecko-5061 open</text>
+<text x="43.2" y="701" font-weight="bold" textLength="148.2" lengthAdjust="spacing" xml:space="preserve">room swan-6397 open</text>
 <text x="27.6" y="718" fill="#d77757" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◼ </text>
 <text x="43.2" y="718" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">cursor paging handler</text>
-<text x="12" y="752" fill="#999999" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="12" y="752" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="769" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
-<text x="347.4" y="786" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">esc to</text>
-<text x="402" y="786" fill="#999999" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">interrup</text>
-<text x="472.2" y="786" fill="#999999" textLength="288.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ctrl+t to hide tasks · ↓ to manage</text>
+<text x="347.4" y="786" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">ctrl+t</text>
+<text x="402" y="786" fill="#999999" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">to hide </text>
+<text x="472.2" y="786" fill="#999999" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">asks · ↓ to manage</text>
 <text x="347.4" y="803" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">ctrl+t</text>
 <text x="402" y="803" fill="#999999" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">to hide </text>
 <text x="472.2" y="803" fill="#999999" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">asks · ↓ to manage</text>
-<text x="97.8" y="837" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided c04d0c</text>
+<text x="97.8" y="837" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided fba8c9</text>
 <text x="222.6" y="837" fill="#999999" textLength="226.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ◼ #2 cursor paging handler</text>
-<text x="82.2" y="854" fill="#98c379" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ ✔ decided c04d0c</text>
+<text x="82.2" y="854" fill="#98c379" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ ✔ decided fba8c9</text>
 <text x="222.6" y="854" fill="#999999" textLength="226.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ◼ #2 cursor paging handler</text>
-<text x="82.2" y="871" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided c04d0c</text>
-<text x="207" y="871" fill="#999999" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
-<text x="230.4" y="871" fill="#999999" opacity="0.6" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">idle</text>
+<text x="82.2" y="871" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided fba8c9</text>
 </g></svg>

@@ -1,42 +1,42 @@
 
-  His note: "add a test for a cursor past the end — after=zzz must 400, not 500". The revision adds:
-  - His test: after=zzz must return 400. A cursor that can't be read always returns 400, never 500.
-  - A second test I added: a valid cursor pointing past the oldest task returns an empty page with no next cursor. His note mixed the two cases, so the plan now covers both.
+  Called plugin:sub-human:room 
+
+⏺ I revised the paging plan for bob's objection and sent it to bob and alice as a new proposal. That replaces the old one, so alice's earlier agreement no longer counts, and neither has answered yet.
+
+  bob asked for "a test for a cursor past the end — after=zzz must 400, not 500". The plan now covers that:
+  - Bad cursor: anything that fails to decode or has the wrong shape, like after=zzz, gets a 400 "invalid cursor", never a 500.
+  - Cursor past the last task: a valid cursor with nothing after it returns an empty page and no next cursor.
 
 ✻ Waiting for 2 background agents to finish
 
-⏺ Monitor event: "sub-human room notices"
+⏺ Monitor event: "sub-human room"
+
+⏺ bob and alice both agreed to the revised paging plan, so it's decided. I added task 2, "cursor paging handler", as alice asked; it's owned by alice and still pending.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room"
+
+⏺ Task 2, "cursor paging handler", is now in progress with alice as owner, as she asked.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room"
 
   Called plugin:sub-human:room 
 
-⏺ The paging plan is decided: bob and alice both signed the revised proposal (#11, #12, room decision #13). I added task #2, "cursor paging handler", owned by alice and still pending, as she asked in
-  #14.
+⏺ bob asked to mark task 2, "cursor paging handler", as done, but alice has claimed it, so I didn't. I told bob only alice's done request can complete it; the task is still in progress under alice.
 
 ✻ Waiting for 2 background agents to finish
 
-⏺ Monitor event: "sub-human room notices"
+⏺ Monitor event: "sub-human room"
 
-⏺ Task #2, "cursor paging handler", is now claimed by alice and marked in progress, as she asked in #17.
-
-✻ Waiting for 2 background agents to finish
-
-⏺ Monitor event: "sub-human room notices"
-
-  Called plugin:sub-human:room 
-
-⏺ I didn't apply bob's request in #19 to mark task #2 done. The task is claimed by alice (#17), so only her done request can complete it, and it stays in progress. I told bob this in #20 and suggested
-  he add his own task for the parser tests.
+⏺ Task 2, "cursor paging handler", is now completed at alice's request. Her evidence, which I added to the task without checking it: "handler in, npm test 3/3 pass".
 
 ✻ Waiting for 2 background agents to finish
 
-⏺ Monitor event: "sub-human room notices"
-
-⏺ Task #2, the cursor paging handler, is now marked completed on alice's own done request (#21). Her evidence is recorded in the task: "handler in, npm test 3/3 pass". I haven't run the tests myself.
-
-✻ Waiting for 2 background agents to finish
   2 tasks (1 done, 1 in progress, 0 open)
-  2 tasks (1 done, 1 in progress, 0 open)
-  ◼ room gecko-5061 open
+  ◼ room swan-6397 open
   ✔ cursor paging handler
 
 ❯ 
@@ -44,7 +44,7 @@
                                            ctrl+t to hide  asks · ↓ to manage
                                            ctrl+t to hide  asks · ↓ to manage
 
-
-                          ·
-                          · working
+           ✔ decided fba8c9
+         ✔ ✔ decided fba8c9
+         ✔ decided fba8c9 · working
 

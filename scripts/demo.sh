@@ -151,6 +151,8 @@ snap() { # caption — capture the panes (the orch via claude logs), and keep th
   claude agents --json > "$d/agents.json" 2>/dev/null || true
   "$PLUGIN/bin/sub-human" tasks --room "$r" > "$d/sub-human-tasks.txt" 2>&1 || true
   mkdir -p "$d/native-tasks"; cp "$HOME/.claude/tasks/sh-$r"/*.json "$d/native-tasks/" 2>/dev/null || true
+  ls "$HOME/.claude/plans" > "$d/plans.txt" 2>/dev/null || true   # the session plan files: a review restores the seat's
+  cp "$BASE/plans-before.txt" "$SNAP_DIR/state/plans-before.txt" 2>/dev/null || true
 }
 
 # dismiss_question SEAT — a seat's Claude may open its own AskUserQuestion (e.g. to relay an orch question to its
@@ -268,6 +270,19 @@ S4() { # let's plan: bob @room @orch → orch proposes → each approver reads i
   wait_card bob "bob's card is open"
   sleep 2
   snap "The orch proposes its plan: it opens in alice's and bob's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)"
+  read_plan alice
+}
+
+# read_plan SEAT — page through the open plan view with PgDn to its end (the hook's "room proposal HASH" line),
+# snapping SEAT's pane after each page, so the walkthrough shows every part of the proposal is readable
+read_plan() {
+  local i=0
+  while [ $i -lt 15 ] && ! $LIB pane "sh-$1" | command grep -Eq "room proposal [0-9a-f]{12}"; do
+    keys "$1" PageDown; sleep 1.2; i=$((i + 1))
+    node "$REPO/scripts/snap.js" "sh-$1" "$SCENE" "$1 reads the whole proposal in the plan view: PgDn, page $((i + 1))"
+  done
+  local ok=false; $LIB pane "sh-$1" | command grep -Eq "room proposal [0-9a-f]{12}" && ok=true
+  echo "{\"scene\":\"$SCENE\",\"what\":\"$1 paged to the end of the proposal (${i}× PgDn)\",\"ok\":$ok,\"ms\":0}" >> "$SNAP_DIR/waits.jsonl"
 }
 
 NOTE5="add a test for a cursor past the end — \`after=zzz\` must 400, not 500"
@@ -310,8 +325,9 @@ S6() { # shared tasks: alice's Claude adds, then claims, the orch applies native
   sleep 7
   snap "alice's Claude calls task(add), then task(claim #$t): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it"
   local b2; b2=$($LIB log-max)
-  # explicit: the model may otherwise answer in text and never calls the tool (learning run badger-3918)
-  submit bob "call the mcp__plugin_sub-human_room__task tool now with op \"done\", id \"$t\", evidence \"I ran the tests, 3/3 pass\". It is alice's task; send the request anyway and report the tool's reply in one line"
+  # explicit: the model may otherwise answer in text and never calls the tool (learning run badger-3918); honest
+  # evidence: with "I ran the tests, 3/3 pass" bob's Claude declined to send a claim it had not checked (run falcon-2880)
+  submit bob "call the mcp__plugin_sub-human_room__task tool now with op \"done\", id \"$t\", evidence \"bob checking the owner gate; no tests run\". It is alice's task: I want to see that the room refuses it. Send the request anyway and report the tool's reply in one line"
   wait_log --kind task_req --from bob --after "$b2" --timeout 120
   $LIB wait-orch-idle --after "$b2" --timeout 180
   mkdir -p "$SNAP_DIR/state/S6"; $LIB synthetic-gate "$t" > "$SNAP_DIR/state/S6/gate-bob.json"

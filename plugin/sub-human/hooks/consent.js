@@ -17,7 +17,8 @@
  *   Post(ExitPlanMode), phase shown: a person approved in the dialog -> signoff via=human when the text is the
  *     proposal unedited (Ctrl+G edits record nothing). Restore the plan file; if the chosen "Yes" changed the
  *     mode, phase 'restore' (EnterPlanMode + ExitPlanMode again, both silent, set it back).
- *   Stop / UserPromptSubmit: a review left open (feedback, Esc) is resolved and the model is told to exit it.
+ *   Stop / UserPromptSubmit / Pre(room tools): a review left open (feedback, Esc) is resolved and the model is told
+ *     to exit it (a room tool call is denied: the person's note is recorded already).
  *   Esc and "No" without text record nothing.
  * Pre(AskUserQuestion): the card, as in S2, only when the call names a proposal pending for me (or plainly asks
  *   about the only one); when the member could review it in the plan view instead, the call is redirected there.
@@ -279,6 +280,20 @@ function stop(input, me) {
   c.out({ decision: 'block', reason: `sub-human: ${me.name}'s room review is still open: ${what}.` });
 }
 
+/**
+ * Pre(room tool) while a review is still open in plan mode: after "Tell Claude what to change" no hook fires (a
+ * rejected call has no PostToolUse), and a Claude may post the person's note itself (run heron-0084). Record the
+ * objection now, deny the call, and tell it to exit first.
+ */
+function preRoomTool(input, me) {
+  const st = readReview(me);
+  if (!st || input.permission_mode !== 'plan' || !['shown', 'exiting'].includes(st.phase)) return;
+  const said = resolveShown(input, me, st);
+  st.phase = 'exiting';
+  writeReview(me, st);
+  c.deny(`sub-human: ${said ? said + ' ' : ''}Post nothing about the review. First ${EXIT_HOW}; then return to what you were doing.`);
+}
+
 /** UserPromptSubmit: a review left open by Esc (no hook fires then). Still in plan mode: exit it first. */
 function prompt(input, me) {
   const st = readReview(me);
@@ -343,6 +358,7 @@ c.run(input => {
   if (tool === 'ExitPlanMode' && ev === 'PreToolUse') return preExit(input, me);
   if (tool === 'ExitPlanMode' && ev === 'PermissionRequest') return permExit(input, me);
   if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return postExit(input, me);
+  if (/^mcp__plugin_sub-human_room__/.test(tool || '') && ev === 'PreToolUse') return preRoomTool(input, me);
   if (ev === 'Stop') return stop(input, me);
   if (ev === 'UserPromptSubmit') return prompt(input, me);
 }, err => { process.stderr.write(`sub-human consent: ${err && err.message || err}\n`); }); // never block a question or a plan

@@ -1,7 +1,7 @@
 {
   "id": "2",
   "subject": "cursor paging handler",
-  "description": "Implement GET /tasks cursor paging in src/server.js per decided proposal c04d0c9623ce (#13). (req #14 by alice)",
+  "description": "Implement GET /tasks cursor paging in src/server.js per decided proposal fba8c9 (createdAt DESC, id DESC; ?limit&after; base64url cursor; 400 on bad limit/cursor). (req #14 by alice)",
   "owner": "alice",
   "status": "in_progress",
   "blocks": [],

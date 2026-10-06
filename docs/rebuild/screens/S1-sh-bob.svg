@@ -19,6 +19,9 @@
 <text x="97.8" y="89" fill="#949494" textLength="265.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Opus 5.5 (1M context) · Claude Max</text>
 <text x="12" y="106" fill="#d78787" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ▝▝ ▝▝  </text>
 <text x="97.8" y="106" fill="#949494" textLength="187.2" lengthAdjust="spacing" xml:space="preserve">/private/tmp/sh-demo/bob</text>
+<text x="12" y="140" fill="#ffd700" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠</text>
+<text x="27.6" y="140" fill="#ffd700" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">1 MCP server needs authentication</text>
+<text x="285" y="140" fill="#949494" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · run /mcp</text>
 <text x="511.2" y="650" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="650" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
 <text x="12" y="667" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
