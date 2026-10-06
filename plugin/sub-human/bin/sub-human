@@ -15,7 +15,8 @@
  *       Resumes from the cursor tail-<name> and advances it only past entries that were flushed or dropped,
  *       so a restart loses nothing.
  *       Settle: entries are batched and written as ONE block (one notification, one turn) after
- *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most. The block opens with
+ *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most (the orch: 3000 / 10000,
+ *       SUB_HUMAN_ORCH_SETTLE_MS / SUB_HUMAN_ORCH_SETTLE_MAX_MS). The block opens with
  *       room.stateLine() ("room now: …", computed at send time), then one room.line(e, {full}) per entry;
  *       each entry is judged again against the log at send time (retracted / answered / decided entries are
  *       dropped). A member_left X is held SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time both notices
@@ -108,8 +109,13 @@ function tail(args) {
   const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS', 2000);
   const unseatedMs = envMs('SUB_HUMAN_UNSEATED_MS', Math.max(resolveMs, 10_000)); // no seat: look up this rarely
   const pollMs = envMs('SUB_HUMAN_POLL_MS', 250);
-  const settleMs = envMs('SUB_HUMAN_SETTLE_MS', 1500);       // flush after this long with nothing new
-  const settleMaxMs = envMs('SUB_HUMAN_SETTLE_MAX_MS', 5000); // or this long after the batch's first entry
+  const memberSettleMs = envMs('SUB_HUMAN_SETTLE_MS', 1500);       // flush after this long with nothing new
+  const memberSettleMaxMs = envMs('SUB_HUMAN_SETTLE_MAX_MS', 5000); // or this long after the batch's first entry
+  // The headless orch waits longer (nobody watches its latency), so a burst of answers, task requests or a
+  // join lands as one turn: SUB_HUMAN_ORCH_SETTLE_MS (3000) / SUB_HUMAN_ORCH_SETTLE_MAX_MS (10000), unless the
+  // member values are set explicitly.
+  const orchSettleMs = envMs('SUB_HUMAN_ORCH_SETTLE_MS', process.env.SUB_HUMAN_SETTLE_MS ? memberSettleMs : 3000);
+  const orchSettleMaxMs = envMs('SUB_HUMAN_ORCH_SETTLE_MAX_MS', process.env.SUB_HUMAN_SETTLE_MAX_MS ? memberSettleMaxMs : 10000);
   const leaveMs = envMs('SUB_HUMAN_LEAVE_MS', 8000);         // a member_left waits this long for a rejoin
   process.stdout.on('error', () => process.exit(0));
 
@@ -127,6 +133,8 @@ function tail(args) {
     }
     room.setCursor(reader, after);
     const s = { key: `${me.code}/${me.name}/${me.role}`, code: me.code, dead: false };
+    const settleMs = me.role === 'orch' ? orchSettleMs : memberSettleMs;
+    const settleMaxMs = me.role === 'orch' ? orchSettleMaxMs : memberSettleMaxMs;
     // The cursor is the highest id h such that every notice for ids <= h has been flushed to stdout.
     // inflight: ids buffered for the next batch, held (member_left), or being written.
     const inflight = new Set();

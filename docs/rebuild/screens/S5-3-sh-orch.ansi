@@ -1,0 +1,50 @@
+
+[38;2;78;186;101m⏺[39m [1mUpdated plan[0m
+[38;2;153;153;153m  ⎿  /plan to preview[39m
+
+[38;2;78;186;101m⏺[39m [1mUpdated plan[0m
+[38;2;153;153;153m  ⎿  /plan to preview[39m
+
+[38;2;78;186;101m⏺[39m [1mUpdated plan[0m
+[38;2;153;153;153m  ⎿  /plan to preview[39m
+
+  [38;2;153;153;153mCalled plugin:sub-human:room [1m2[0m[38;2;153;153;153m times [39m
+
+[38;2;255;255;255m⏺[39m The paging plan isn't decided yet: alice signed off on the first version (#12), but bob objected (#13).
+
+  bob's objection: "add a test for a cursor past the end — [38;2;177;185;249mafter=zzz[39m must 400, not 500". I revised the plan and proposed version 2 to both of them (#15). It now:
+  - requires a test that [38;2;177;185;249mGET /tasks?after=zzz[39m returns 400, never 500;
+  - separates two cases: a garbled cursor like [38;2;177;185;249mzzz[39m returns 400, while a valid cursor that points past the last task returns an empty page, as alice said in #8.
+
+  Version 2 replaces version 1, so alice's sign-off no longer counts. Both of them need to answer the new card, and I explained this in the room (#16).
+
+  One question is still open in the plan: whether a [38;2;177;185;249mlimit[39m above 50 gets cut down to 50 or rejected with a 400.
+
+[38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
+
+[38;2;255;255;255m⏺[39m Monitor event: "sub-human room notices"
+
+  [38;2;153;153;153mCalled plugin:sub-human:room [39m
+
+[38;2;255;255;255m⏺[39m The paging plan for [38;2;177;185;249mGET /tasks[39m is decided: alice (#17) and bob (#18) both signed off on version 2, and the room recorded the decision (#19).
+
+  I posted it to the room (#20) and flagged two things still to settle:
+  - [1mOpen question:[0m if [38;2;177;185;249mlimit[39m is over 50 or not a whole number, does the API cut it to 50 or return a 400? Neither of them has said, so the handler shouldn't ship until they do.
+  - [1mWork split:[0m bob said in #4 he'd take the tests once paging was agreed. Nobody has taken the handler in [38;2;177;185;249msrc/server.js[39m yet.
+
+  Nobody has sent a task request, so the room's task list is unchanged. I'll wait for task requests or further messages.
+
+[38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
+  [1m[38;2;153;153;153m1[0m[38;2;153;153;153m tasks ([1m0[0m[38;2;153;153;153m done, [1m1[0m[38;2;153;153;153m in progress, [1m0[0m[38;2;153;153;153m open)[39m
+  [1m[38;2;153;153;153m1[0m[38;2;153;153;153m tasks ([1m0[0m[38;2;153;153;153m done, [1m1[0m[38;2;153;153;153m in progress, [1m0[0m[38;2;153;153;153m open)[39m
+  [38;2;215;119;87m◼ [1m[39mroom stoa[0m [1m-3644 open[0m
+
+❯ 
+❯ 
+                                           [38;2;153;153;153mctrl+t[39m [38;2;153;153;153mto hide [39m [38;2;153;153;153masks · ↓ to manage[39m
+                                           [38;2;153;153;153mctrl+t[39m [38;2;153;153;153mto hide [39m [38;2;153;153;153masks · ↓ to manage[39m
+
+           [32m✔ decided 95becc[38;2;153;153;153m · [33mworking[39m
+         [32m✔ ✔ decided 95becc[38;2;153;153;153m · [33mworking[39m
+         [32m✔ decided 95becc[39m
+

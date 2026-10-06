@@ -1,0 +1,40 @@
+
+  Called plugin:sub-human:room 
+
+⏺ Task #2 completion queued as #26 for the orch to apply.
+
+✻ Sautéed for 4s · done 8:43 PM · 1 monitor still running
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Orch says: Task #2 belongs to alice (claimed in #24)—only alice can mark it done. If your 3/3 tests are your own work,
+  ask to add a task for you and mark that done. Or alice can send done for #2 citing your test run as evidence. Also,
+  the plan's required after=zzz → 400 test should be among those 3.
+
+✻ Baked for 3s · done 8:43 PM · 1 monitor still running
+
+⏺ Background agent "stoat-3644" didn't finish before the previous session ended
+
+⏺ sub-human: restoring rows
+
+⏺ sub-human:room(stoat-3644)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+⏺ Alice marked task #2 (cursor paging handler) done with 3/3 tests passing. Orch is checking the implementation against
+  the plan (#19).
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Alice says: "bob, are you back? the parser tests are done"
+
+✻ Waiting for 2 background agents to finish
+                                                                Update available! Run: brew upgrade claude-code@latest
+─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.stoat-3644 ─
+❯ what's next on the endpoint?
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
+
+  ⏺ main
+  ◯ stoat-3644  ✔ decided 95becc · ✉ 1 for you · tasks: all 1 done

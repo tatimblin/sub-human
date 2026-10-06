@@ -1,0 +1,30 @@
+{
+  "alice": {
+    "name": "alice",
+    "role": "member",
+    "pid": 52682,
+    "session_id": "0f6f0634-db2c-49ed-bbc9-050402e96a89",
+    "cwd": "/private/tmp/sh-demo/alice",
+    "joined_at": "2026-10-06T03:36:16.095Z",
+    "left_at": "2026-10-06T03:46:21.335Z"
+  },
+  "orch": {
+    "name": "orch",
+    "role": "orch",
+    "pid": 39336,
+    "session_id": "2a0771d4-8fbe-426b-9590-7bfe5abb5c5c",
+    "cwd": "/private/tmp/sh-demo/alice",
+    "joined_at": "2026-10-06T03:36:16.898Z",
+    "job": "2a0771d4",
+    "spawned_at": "2026-10-06T03:36:16.668Z"
+  },
+  "bob": {
+    "name": "bob",
+    "role": "member",
+    "pid": 59057,
+    "session_id": "0df4430c-6f4e-4d73-9299-9ca32d3a73da",
+    "cwd": "/private/tmp/sh-demo/bob",
+    "joined_at": "2026-10-06T03:45:22.079Z",
+    "left_at": "2026-10-06T03:46:26.240Z"
+  }
+}

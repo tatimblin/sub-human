@@ -1,0 +1,40 @@
+
+  1. Default and max limit — they suggest 20/100. Should a too-large limit get clamped or return a 400?
+  2. Cursor encoding — Tasks share createdAt, so they propose sorting by createdAt DESC, id DESC and encoding both in
+     the cursor. Does that work for you?
+
+  They're also waiting for alice's view before proposing.
+
+✻ Waiting for 2 background agents to finish
+
+❯ @room @orch fine with that; 400 on a bad cursor. please propose it to alice and me
+
+⏺ Operation stopped by hook: ✓ posted to stoat-3644 as #9
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Orch is asking one more thing before proposing: should limit>50 be clamped to 50, or return a 400? (You said 400 for a
+  bad cursor, but this is about an oversized limit.)
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ User answered Claude's questions:
+  ⎿  · Agree to proposal 6a996388768f? → Object
+
+⏺ Bob objected to the proposal. Let me check the room for your concern.
+  ⎿  Error: No such tool available: mcp__plugin_sub_human_room__read
+
+⏺ Calling plugin:sub-human:room…
+
+✻ Sautéing… (14s · ↓ 996 tokens · thinking)
+  ⎿  Tip: Connect Claude to your IDE · /ide
+                                                                Update available! Run: brew upgrade claude-code@latest
+─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.stoat-3644 ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · 1 monitor · esc to interrupt · ← 1 agent · ↓ to manage
+
+  ⏺ main
+  ◯ stoat-3644  ✖ blocked 6a9963

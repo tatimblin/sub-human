@@ -1,0 +1,50 @@
+
+  I added both to the draft plan and summed them up in the room (#7).
+
+  Still waiting on bob's answer to #6: the default and maximum [38;2;177;185;249mlimit[39m, and whether a too-large limit is reduced to the maximum or rejected with a 400. Once he answers, I'll finish the plan and send it
+  to alice and bob to approve.
+
+[38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
+
+[38;2;255;255;255m⏺[39m Monitor event: "sub-human room notices"
+
+[38;2;78;186;101m⏺[39m [1mUpdated plan[0m
+[38;2;153;153;153m  ⎿  /plan to preview[39m
+
+  [38;2;153;153;153mCalled plugin:sub-human:room [39m
+
+[38;2;255;255;255m⏺[39m Monitor event: "sub-human room notices"
+
+[38;2;78;186;101m⏺[39m [1mUpdated plan[0m
+[38;2;153;153;153m  ⎿  /plan to preview[39m
+
+  [38;2;153;153;153mCalled plugin:sub-human:room [39m
+
+[38;2;255;255;255m⏺[39m bob asked me to propose the paging plan to him and alice (#9), so I did (#11). Each of them has an approval card to answer, and neither has answered yet.
+
+  The plan uses the details they each gave:
+  - [1mOrder:[0m newest first, by [38;2;177;185;249mcreatedAt[39m then [38;2;177;185;249mid[39m, because some tasks share a timestamp.
+  - [1mLimit:[0m default 20, max 50 (alice, #8).
+  - [1mResponse:[0m [38;2;177;185;249m{items, nextCursor}[39m, where [38;2;177;185;249mnextCursor[39m is null when there are no more pages (alice, #8).
+  - [1mCursor past the end:[0m returns an empty page (alice, #8).
+  - [1mMalformed cursor:[0m returns a 400 (bob, #9).
+
+  One question is still open in the plan: whether a [38;2;177;185;249mlimit[39m above 50 (or not a positive number) gets cut down to 50 or rejected with a 400. Neither of them has said, so I didn't pick one. They can
+  settle it in the room or in their card's note.
+
+  The plan is decided only once the room records both card answers. Then I can help split the work: bob has offered to write the tests (#4), and the handler in [38;2;177;185;249msrc/server.js[39m has no owner yet.
+
+[38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
+  [1m[38;2;153;153;153m1[0m[38;2;153;153;153m tasks ([1m0[0m[38;2;153;153;153m done, [1m1[0m[38;2;153;153;153m in progress, [1m0[0m[38;2;153;153;153m open)[39m
+  [1m[38;2;153;153;153m1[0m[38;2;153;153;153m tasks ([1m0[0m[38;2;153;153;153m done, [1m1[0m[38;2;153;153;153m in progress, [1m0[0m[38;2;153;153;153m open)[39m
+  [38;2;215;119;87m◼ [1m[39mroom stoa[0m [1m-3644 open[0m
+
+❯ 
+❯ 
+                                           [38;2;153;153;153mctrl+t[39m [38;2;153;153;153mto hide [39m [38;2;153;153;153masks · ↓ to manage[39m
+                                           [38;2;153;153;153mctrl+t[39m [38;2;153;153;153mto hide [39m [38;2;153;153;153masks · ↓ to manage[39m
+
+           [33m⚠ reviewing 6a9963[38;2;153;153;153m · [33mworking[39m
+         [33m⚠ ⚠ reviewing 6a9963[38;2;153;153;153m · [33mworking[39m
+         [33m⚠ reviewing 6a9963[38;2;153;153;153m · [33mworking[39m
+

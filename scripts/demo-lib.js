@@ -430,7 +430,7 @@ async function main() {
       return 0;
     }
     case 'count': process.stdout.write(filterLog(o).length + '\n'); return 0;
-    case 'last-id': { const e = filterLog(o).at(-1); process.stdout.write((e ? e.id : 0) + '\n'); return e ? 0 : 1; }
+    case 'last-id': { const e = filterLog(o).at(-1); process.stdout.write((e ? (o.field ? e[o.field] ?? '' : e.id) : 0) + '\n'); return e ? 0 : 1; }
     case 'log-max': { const es = readLog(roomCode()); process.stdout.write((es.length ? Math.max(...es.map(e => e.id || 0)) : 0) + '\n'); return 0; }
     case 'latest-plan': { const lp = readLog(roomCode()).filter(e => e.kind === 'plan_rev').at(-1); process.stdout.write((lp ? lp.plan_hash : '') + '\n'); return lp ? 0 : 1; }
     default:

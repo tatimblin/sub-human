@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1584 904" width="1584" height="904" role="img" aria-label="orch · S6" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13">
+<rect x="0.5" y="0.5" width="1583" height="903" rx="9" fill="#16181d" stroke="#3a3e48"/>
+<path d="M0.5 30V9.5a9 9 0 0 1 9-9h1565a9 9 0 0 1 9 9V30z" fill="#22252c"/>
+<line x1="0.5" y1="30" x2="1583.5" y2="30" stroke="#3a3e48"/>
+<circle cx="16" cy="15" r="5.5" fill="#ff5f57"/>
+<circle cx="34" cy="15" r="5.5" fill="#febc2e"/>
+<circle cx="52" cy="15" r="5.5" fill="#28c840"/>
+<text x="792" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">orch · S6</text>
+<g fill="#d6dbe5">
+<text x="12" y="55" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="55" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="89" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="89" textLength="842.4" lengthAdjust="spacing" xml:space="preserve"> alice's Claude claimed task #2, &quot;cursor paging handler&quot; (#24), so it's now in progress with alice as owner.</text>
+<text x="12" y="123" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="123" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="123" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="123" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="157" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="157" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="27.6" y="191" fill="#999999" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<text x="12" y="225" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="225" textLength="1521" lengthAdjust="spacing" xml:space="preserve"> I didn't mark task #2 done. bob's Claude asked to complete it (#26: &quot;I ran the tests, 3/3 pass&quot;), but the task belongs to alice, who claimed it in #24. Only her own done request can complete it.</text>
+<text x="12" y="242" textLength="374.4" lengthAdjust="spacing" xml:space="preserve">  Task #2 stays in progress with alice as owner.</text>
+<text x="12" y="276" textLength="468" lengthAdjust="spacing" xml:space="preserve">  I posted the reason to bob (#27) and gave him two options:</text>
+<text x="12" y="293" textLength="834.6" lengthAdjust="spacing" xml:space="preserve">  - If the passing tests are his own test work, he can ask me to add a task for him and mark that one done.</text>
+<text x="12" y="310" textLength="624" lengthAdjust="spacing" xml:space="preserve">  - Or alice can send the done request for #2 and cite his test run as evidence.</text>
+<text x="12" y="344" textLength="444.6" lengthAdjust="spacing" xml:space="preserve">  I also reminded him that the plan requires a test that </text>
+<text x="456.6" y="344" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
+<text x="526.8" y="344" textLength="928.2" lengthAdjust="spacing" xml:space="preserve"> returns 400. His message only says &quot;3/3 pass&quot; without listing the tests, so I can't tell whether that one is included.</text>
+<text x="12" y="378" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="378" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="378" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="378" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="412" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="412" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="27.6" y="446" fill="#999999" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">Searched for </text>
+<text x="129" y="446" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
+<text x="136.8" y="446" fill="#999999" textLength="117" lengthAdjust="spacing" xml:space="preserve"> pattern, read </text>
+<text x="253.8" y="446" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
+<text x="261.6" y="446" fill="#999999" textLength="280.8" lengthAdjust="spacing" xml:space="preserve"> file, called plugin:sub-human:room </text>
+<text x="12" y="480" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="480" textLength="1521" lengthAdjust="spacing" xml:space="preserve"> I marked task #2 (&quot;cursor paging handler&quot;) complete because alice's Claude, the owner's side, sent the done request (#28: &quot;handler in, npm test 3/3 pass&quot;). The files I can see don't back that up</text>
+<text x="12" y="497" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">  yet:</text>
+<text x="12" y="531" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="531" fill="#b1b9f9" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">src/server.js</text>
+<text x="144.6" y="531" textLength="31.2" lengthAdjust="spacing" xml:space="preserve"> in </text>
+<text x="175.8" y="531" fill="#b1b9f9" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">/private/tmp/sh-demo/alice</text>
+<text x="378.6" y="531" textLength="117" lengthAdjust="spacing" xml:space="preserve"> still answers </text>
+<text x="495.6" y="531" fill="#b1b9f9" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="573.6" y="531" textLength="444.6" lengthAdjust="spacing" xml:space="preserve"> with 501 &quot;not implemented&quot;, the same code I read before.</text>
+<text x="12" y="548" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="548" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">test/</text>
+<text x="82.2" y="548" textLength="78" lengthAdjust="spacing" xml:space="preserve"> has only </text>
+<text x="160.2" y="548" fill="#b1b9f9" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">health.test.js</text>
+<text x="269.4" y="548" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">, which is one test, not three.</text>
+<text x="12" y="565" textLength="249.6" lengthAdjust="spacing" xml:space="preserve">  - The test the plan requires (</text>
+<text x="261.6" y="565" fill="#b1b9f9" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">after=zzz</text>
+<text x="331.8" y="565" textLength="273" lengthAdjust="spacing" xml:space="preserve"> must return 400, #13) isn't there.</text>
+<text x="12" y="599" textLength="1404" lengthAdjust="spacing" xml:space="preserve">  The handler may live in another checkout or not have been saved. I posted this to alice (#30), asked where the code is, and asked whether to reopen #2. The question of whether a </text>
+<text x="1416" y="599" fill="#b1b9f9" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="1455" y="599" textLength="93.6" lengthAdjust="spacing" xml:space="preserve"> above 50 is</text>
+<text x="12" y="616" textLength="421.2" lengthAdjust="spacing" xml:space="preserve">  cut to 50 or rejected with a 400 is also still open.</text>
+<text x="12" y="650" fill="#999999" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="650" fill="#999999" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="650" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="650" fill="#999999" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="27.6" y="684" fill="#999999" font-weight="bold" xml:space="preserve">2</text>
+<text x="35.4" y="684" fill="#999999" textLength="62.4" lengthAdjust="spacing" xml:space="preserve"> tasks (</text>
+<text x="97.8" y="684" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
+<text x="105.6" y="684" fill="#999999" textLength="54.6" lengthAdjust="spacing" xml:space="preserve"> done, </text>
+<text x="160.2" y="684" fill="#999999" font-weight="bold" xml:space="preserve">1</text>
+<text x="168" y="684" fill="#999999" textLength="109.2" lengthAdjust="spacing" xml:space="preserve"> in progress, </text>
+<text x="277.2" y="684" fill="#999999" font-weight="bold" xml:space="preserve">0</text>
+<text x="285" y="684" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> open)</text>
+<text x="27.6" y="701" fill="#d77757" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">◼ </text>
+<text x="43.2" y="701" font-weight="bold" textLength="156" lengthAdjust="spacing" xml:space="preserve">room stoat-3644 open</text>
+<text x="27.6" y="718" fill="#4eba65" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ </text>
+<text x="43.2" y="718" fill="#999999" text-decoration="line-through" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">cursor paging handler</text>
+<text x="12" y="752" fill="#999999" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="12" y="769" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="347.4" y="786" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">esc to</text>
+<text x="402" y="786" fill="#999999" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">interrup</text>
+<text x="472.2" y="786" fill="#999999" textLength="288.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ctrl+t to hide tasks · ↓ to manage</text>
+<text x="347.4" y="803" fill="#999999" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">ctrl+t</text>
+<text x="402" y="803" fill="#999999" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">to hide </text>
+<text x="472.2" y="803" fill="#999999" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">asks · ↓ to manage</text>
+<text x="207" y="854" fill="#999999" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · · </text>
+<text x="246" y="854" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
+<text x="207" y="871" fill="#999999" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
+<text x="230.4" y="871" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
+</g></svg>

@@ -68,7 +68,7 @@ test('cli tail: silent before join, then the member push lane, settled into one 
   await h.sleep(500);
   assert.deepEqual(t.ids(), [3, 5, 11, 12, 14, 15, 17, 18, 19], t.out);
   assert.equal(t.batches(), 1, 'one burst, one write');
-  assert.equal(t.lines()[0], `room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed`);
+  assert.equal(t.lines()[0], `room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed (call AskUserQuestion with "proposal ${H2}")`);
   assert.match(t.entries()[0], /^#3 bob\[human\] say "bob says hi"$/);
   assert.match(t.entries()[2], new RegExp(`^#11 orch\\[agent\\] proposal proposal=${H2} approvers=alice "`), 'the full 12-hex hash');
   assert.match(t.entries()[3], / · row: your room row is not running/);
@@ -93,7 +93,7 @@ test('cli tail: a member whose room row runs is not pushed a join (no row-call i
   assert.doesNotMatch(t.out, /Agent|row:/);
 });
 
-test('cli tail: orch push is to/@orch, answers on its proposals, decisions, task_req', async () => {
+test('cli tail: orch push is to/@orch, objections on its proposals, decisions, task_req', async () => {
   h.freshHome();
   const { code } = h.register('orch', 'orch');
   room.bind(code);
@@ -105,7 +105,7 @@ test('cli tail: orch push is to/@orch, answers on its proposals, decisions, task
   say('orch', 'orch own', {}, 'agent');                                                        // #4 none
   prop('orch', H1, ['alice', 'bob']);                                                          // #5 own: none
   sys('member_left', 'bob');                                                                   // #6 pull
-  say('alice', '', { kind: 'signoff', proposal_hash: H1, text: 'ok' });                        // #7 answer on its proposal: push
+  say('alice', '', { kind: 'objection', proposal_hash: H1, text: 'no' });                      // #7 objection on its proposal: push
   room.append({ kind: 'task_req', op: 'add', subject: 'parser tests' }, { via: 'agent', from: 'bob' }); // #8 push
   sys('decision', 'room', { proposal_hash: H1 });                                              // #9 push
   say('alice', '@orch end');                                                                   // #10 push
@@ -158,7 +158,7 @@ test('cli tail: leave/rejoin collapse at the default 8 s hold (left+rejoin withi
   h.freshHome();
   const { code } = h.register('orch', 'orch');
   room.bind(code);
-  const t = startTail({ SUB_HUMAN_LEAVE_MS: undefined, SUB_HUMAN_SETTLE_MS: undefined, SUB_HUMAN_SETTLE_MAX_MS: undefined });
+  const t = startTail({ SUB_HUMAN_LEAVE_MS: undefined, SUB_HUMAN_SETTLE_MS: undefined, SUB_HUMAN_SETTLE_MAX_MS: undefined, SUB_HUMAN_ORCH_SETTLE_MS: '1500' });
   await h.sleep(300);
   const t0 = Date.now();
   // member_left is pull in the Phase 2 lanes; addressing it to the orch makes it push, to exercise the hold.
@@ -171,6 +171,22 @@ test('cli tail: leave/rejoin collapse at the default 8 s hold (left+rejoin withi
   assert.deepEqual(t.ids(), [2], t.out);
   await h.until(() => room.getCursor('tail-orch') === 3, 2000);
   assert.equal(room.getCursor('tail-orch'), 3, 'dropped ids advance the cursor');
+});
+
+test('cli tail: the orch settles longer by default (two pushes 2 s apart are one batch)', async () => {
+  h.freshHome();
+  const { code } = h.register('orch', 'orch');
+  room.bind(code);
+  sys('member_joined', 'orch');
+  const t = startTail({ SUB_HUMAN_SETTLE_MS: undefined, SUB_HUMAN_SETTLE_MAX_MS: undefined });
+  await h.sleep(300);
+  say('alice', '@orch default 20, max 50');                       // #2
+  await h.sleep(2000);
+  say('bob', '@orch fine, please propose it');                    // #3
+  await t.until('#3 bob', 8000);
+  await h.sleep(300);
+  assert.deepEqual(t.ids(), [2, 3], t.out);
+  assert.equal(t.batches(), 1, t.out);
 });
 
 test('cli tail: a steady trickle is cut into batches at the settle max; held ids keep the cursor back', async () => {

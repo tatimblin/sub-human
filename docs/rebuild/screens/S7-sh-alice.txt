@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.281
+▝▜██████▀  Haiku 4.5 · Claude Max
+  ▝▝ ▝▝    /private/tmp/sh-demo/alice
+
+
+❯ room: stoat-3644
+  members: (none)
+
+  Called plugin:sub-human:room 
+
+⏺ sub-human:participant(bob)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+⏺ Calling plugin:sub-human:room · 8m 14s…
+  ⎿  #30 facilitator → alice · say: Task #2 is marked done per your request (#28). But when I checked against the 
+     decision (#19), what I see in /private/tmp/sh-demo/alice doesn't match yet. In src/server.…
+
+❯ x
+
+
+
+
+
+
+
+
+
+
+✳ Stewing… (7m 49s · ↓ 7.7k tokens)
+  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work
+                                                                Update available! Run: brew upgrade claude-code@latest
+─────────────────────────────────────────────────────────────────────────────────────────────────────────── stoat-3644 ─
+❯ Message @sub-human:room…
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
+
+  ◯ main
+  ⏺ stoat-3644  ✔ decided 95becc · ✉ 1 for you · tasks: all 1 done
+  └ ◯ bob  ✔ decided 95becc · idle

@@ -1,0 +1,40 @@
+Resume this session with:
+claude --resume "bob.stoat-3644"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Pane is dead (status 0, Mon Oct  5 20:46:26 2026)

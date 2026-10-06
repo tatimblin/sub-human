@@ -1,0 +1,50 @@
+  bob's objection: "add a test for a cursor past the end — after=zzz must 400, not 500". I revised the plan and proposed version 2 to both of them (#15). It now:
+  - requires a test that GET /tasks?after=zzz returns 400, never 500;
+  - separates two cases: a garbled cursor like zzz returns 400, while a valid cursor that points past the last task returns an empty page, as alice said in #8.
+
+  Version 2 replaces version 1, so alice's sign-off no longer counts. Both of them need to answer the new card, and I explained this in the room (#16).
+
+  One question is still open in the plan: whether a limit above 50 gets cut down to 50 or rejected with a 400.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+  Called plugin:sub-human:room 
+
+⏺ The paging plan for GET /tasks is decided: alice (#17) and bob (#18) both signed off on version 2, and the room recorded the decision (#19).
+
+  I posted it to the room (#20) and flagged two things still to settle:
+  - Open question: if limit is over 50 or not a whole number, does the API cut it to 50 or return a 400? Neither of them has said, so the handler shouldn't ship until they do.
+  - Work split: bob said in #4 he'd take the tests once paging was agreed. Nobody has taken the handler in src/server.js yet.
+
+  Nobody has sent a task request, so the room's task list is unchanged. I'll wait for task requests or further messages.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ alice's Claude sent a task request (#21), so I added task #2, "cursor paging handler", to the room's list with alice as owner. It's still pending, since the request didn't ask to start it. The
+  description covers the agreed paging plan (#19) and notes that the over-50 limit question is still open.
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ alice's Claude claimed task #2, "cursor paging handler" (#24), so it's now in progress with alice as owner.
+
+✻ Waiting for 2 background agents to finish
+
+  2 tasks (0 done, 2 in progress, 0 open)
+  ◼ room stoat-3644 open
+  ◼ cursor paging handler
+
+❯ 
+❯ 
+                                           ctrl+t to hide  asks · ↓ to manage
+                                           ctrl+t to hide  asks · ↓ to manage
+
+           ✔ decided 95becc · ◼ #2 cursor paging handler
+         ✔ ✔ decided 95becc · ◼ #2 cursor paging handler · ? prompt
+         ✔ decided 95becc · idle
+

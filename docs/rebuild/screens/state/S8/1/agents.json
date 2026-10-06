@@ -1,0 +1,91 @@
+[
+  {
+    "pid": 14474,
+    "id": "0a52ce26",
+    "cwd": "/Users/tristantimblin/repos/painterly-scene",
+    "kind": "background",
+    "startedAt": 1790330523920,
+    "sessionId": "0a52ce26-6183-4b0c-bc46-63e8432c4e50",
+    "name": "Fan out sub agents on threejs scene",
+    "status": "busy",
+    "state": "blocked"
+  },
+  {
+    "pid": 38545,
+    "cwd": "/Users/tristantimblin/repos",
+    "kind": "interactive",
+    "startedAt": 1790375024929,
+    "sessionId": "310228bc-3e3a-5bfd-b272-d2492175f6fa",
+    "name": "repos-4a",
+    "status": "idle"
+  },
+  {
+    "pid": 15698,
+    "id": "c3c49704",
+    "cwd": "/Users/tristantimblin/repos/whois.timblin.io",
+    "kind": "background",
+    "startedAt": 1790473555245,
+    "sessionId": "c4808a6b-f37d-4030-863a-ea033c104215",
+    "name": "Homepage grid and max-width container",
+    "status": "idle",
+    "state": "done"
+  },
+  {
+    "pid": 45050,
+    "cwd": "/Users/tristantimblin/repos",
+    "kind": "interactive",
+    "startedAt": 1790820792433,
+    "sessionId": "077d9f43-d169-5d28-b969-43d0494e8843",
+    "name": "repos-b1",
+    "status": "idle"
+  },
+  {
+    "pid": 67719,
+    "id": "85e940a1",
+    "cwd": "/Users/tristantimblin/repos/sub-human",
+    "kind": "background",
+    "startedAt": 1791071717481,
+    "sessionId": "85e940a1-5da6-439d-8a82-8b6f82787937",
+    "name": "⬡ bison-6376 · dana",
+    "status": "busy",
+    "state": "working"
+  },
+  {
+    "pid": 47424,
+    "cwd": "/Users/tristantimblin/repos/agent-web",
+    "kind": "interactive",
+    "startedAt": 1791071755238,
+    "sessionId": "4f43cc11-1dc6-4e15-aedf-6019ba9ea114",
+    "name": "agent-web-cb",
+    "status": "idle"
+  },
+  {
+    "pid": 52682,
+    "cwd": "/private/tmp/sh-demo/alice",
+    "kind": "interactive",
+    "startedAt": 1791257771563,
+    "sessionId": "0f6f0634-db2c-49ed-bbc9-050402e96a89",
+    "name": "alice.stoat-3644",
+    "status": "busy"
+  },
+  {
+    "pid": 52690,
+    "cwd": "/private/tmp/sh-demo/bob",
+    "kind": "interactive",
+    "startedAt": 1791257771589,
+    "sessionId": "0df4430c-6f4e-4d73-9299-9ca32d3a73da",
+    "name": "bob.stoat-3644",
+    "status": "busy"
+  },
+  {
+    "pid": 39336,
+    "id": "2a0771d4",
+    "cwd": "/private/tmp/sh-demo/alice",
+    "kind": "background",
+    "startedAt": 1791257776688,
+    "sessionId": "2a0771d4-8fbe-426b-9590-7bfe5abb5c5c",
+    "name": "orch.stoat-3644",
+    "status": "busy",
+    "state": "working"
+  }
+]

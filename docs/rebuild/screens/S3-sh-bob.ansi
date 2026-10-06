@@ -1,0 +1,40 @@
+
+[38;5;174m ▐[48;5;16m▛███▛█[39m[49m   [1mClaude Code[0m [38;5;246mv2.1.281[39m
+[38;5;174m▝▜[48;5;16m█████[49m█▀[39m  [38;5;246mHaiku 4.5 · Claude Max[39m
+[38;5;174m  ▝▝ ▝▝  [39m  [38;5;246m/private/tmp/sh-demo/bob[39m
+
+
+[38;5;239m[48;5;237m❯[39m [38;5;231m/sub-human:sub-human bob[39m
+[38;5;246m[49m  ⎿  UserPromptExpansion says: sub-human: joined stoat-3644 as bob (alice, orch here)[39m
+
+[38;5;114m⏺[39m [1m[38;5;16m[48;5;37msub-human:room[0m(stoat-3644)
+[38;5;246m  ⎿  [39mBackgrounded agent[38;5;246m (↓ to manage · ctrl+o to expand)[39m
+
+[38;5;231m⏺[39m You're in room stoat-3644.
+
+[38;5;246m✻[39m [38;5;246mWaiting for [1m1[0m[38;5;246m background agent to finish[39m
+
+[38;5;231m⏺[39m Monitor event: "sub-human room notices"
+
+[38;5;231m⏺[39m Alice says: "bob, can you take the parser tests? handler's in src/server.js"
+
+[38;5;246m✻[39m [38;5;246mWaiting for [1m2[0m[38;5;246m background agents to finish[39m
+
+
+
+
+
+
+
+
+
+
+
+                                                                [38;5;220mUpdate available! Run: [1mbrew upgrade claude-code@latest[0m
+[38;5;244m─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.stoat-3644 ─
+[39m❯ [2mrun the parser tests[0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;246m⏸ manual mode on · [38;5;44m1 monitor[38;5;246m · ← 1 agent · ↓ to manage[39m
+
+[1m  ⏺ main[0m
+[38;5;246m  ◯ stoat-3644  [2m2 here[0m

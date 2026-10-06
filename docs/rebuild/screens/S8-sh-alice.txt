@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.281
+▝▜██████▀  Haiku 4.5 · Claude Max
+  ▝▝ ▝▝    /private/tmp/sh-demo/alice
+
+
+❯ /clear
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                Update available! Run: brew upgrade claude-code@latest
+───────────────────────────────────────────────────────────────────────────────────────────────────── alice.stoat-3644 ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
+
+  ⏺ main
+  ◯ stoat-3644  ✔ decided 95becc · ✉ 1 for you · tasks: all 1 done

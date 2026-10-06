@@ -5,7 +5,8 @@
  * PostToolUse(AskUserQuestion|ExitPlanMode).
  *
  * Pre(AskUserQuestion): only when the call's input names a proposal pending for me (its hash, or a unique
- *   prefix of at least 6 hex), rewrite the call into the card: `ask` + updatedInput (Not yet / Agree / Object).
+ *   prefix of at least 6 hex), or says "propos…" while exactly one is pending for me and names no other id,
+ *   rewrite the call into the card: `ask` + updatedInput (Not yet / Agree / Object).
  *   Any other AskUserQuestion passes through untouched (S2 F9: an unrelated question was hijacked).
  * Post(AskUserQuestion): drop afkTimeoutMs, followUp, no answers, stale hashes and "Not yet". Otherwise append
  *   signoff|objection via=human (notes byte-exact), then the decision when complete (lib/proposal.record).
@@ -27,8 +28,23 @@ function named(pending, input) {
     || [...tokens].some(t => p.hash.startsWith(t) && pending.filter(q => q.hash.startsWith(t)).length === 1));
 }
 
+/**
+ * No hash named, but the question is plainly about a proposal ("Do you agree with the paging proposal?") and
+ * exactly one is pending for me, and the input names no other hex id: that one (Haiku dropped the hash in run
+ * raven-3365). An unrelated question (no "propos…") or an ambiguous one (two pending) stays untouched (S2 F9).
+ */
+function onlyPending(pending, input) {
+  if (pending.length !== 1) return [];
+  const s = JSON.stringify(input || {});
+  if (!/propos/i.test(s)) return [];
+  const other = (s.match(/\b[0-9a-f]{6,12}\b/g) || []).some(t => /[a-f]/.test(t) && /\d/.test(t) && !pending[0].hash.startsWith(t));
+  return other ? [] : pending;
+}
+
 function pre(input, me) {
-  const hit = named(proposal.pendingFor(me), input.tool_input);
+  const pending = proposal.pendingFor(me);
+  let hit = named(pending, input.tool_input);
+  if (!hit.length) hit = onlyPending(pending, input.tool_input);
   if (!hit.length) return;
   c.pre('ask', `room proposal ${hit.map(p => p.hash).join(', ')}`, { updatedInput: proposal.cardFor(hit) });
 }

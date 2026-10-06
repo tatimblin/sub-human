@@ -225,7 +225,7 @@ test('hold {room}: after JOINED the room row still reads as running while it re-
   } finally { delete process.env.SUB_HUMAN_HOLD_ROOM_GAP_MS; }
 });
 
-test('hold: every progress line ends with the read-only hint and stays within 200 chars + hint', async () => {
+test('hold: every progress line ends with the read-only hint and stays within 140 chars + hint', async () => {
   const w = setup(['orch', 'alice', 'bob'], 'alice');
   const r = w.call({ room: w.code });
   w.call({ member: 'bob' });
@@ -235,7 +235,7 @@ test('hold: every progress line ends with the read-only hint and stays within 20
   assert.ok(w.progress.length > 0);
   for (const p of w.progress) {
     assert.ok(p.message.endsWith(hold.HINT), p.message);
-    assert.ok(Array.from(p.message).length <= 200 + hold.HINT.length);
+    assert.ok(Array.from(p.message).length <= 140 + hold.HINT.length);
   }
   w.leaveMe();
   await r.p;

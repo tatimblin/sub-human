@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1584 904" width="1584" height="904" role="img" aria-label="orch · S10" font-family="ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13">
+<rect x="0.5" y="0.5" width="1583" height="903" rx="9" fill="#16181d" stroke="#3a3e48"/>
+<path d="M0.5 30V9.5a9 9 0 0 1 9-9h1565a9 9 0 0 1 9 9V30z" fill="#22252c"/>
+<line x1="0.5" y1="30" x2="1583.5" y2="30" stroke="#3a3e48"/>
+<circle cx="16" cy="15" r="5.5" fill="#ff5f57"/>
+<circle cx="34" cy="15" r="5.5" fill="#febc2e"/>
+<circle cx="52" cy="15" r="5.5" fill="#28c840"/>
+<text x="792" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">orch · S10</text>
+<g fill="#d6dbe5">
+<text x="12" y="55" textLength="592.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Couldn't read logs for 2a0771d4 — job not found — it may have already exited</text>
+<text x="12" y="72" textLength="592.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Couldn't read logs for 2a0771d4 — job not found — it may have already exited</text>
+</g></svg>

@@ -1,0 +1,12 @@
+{
+ "input": {
+  "hook_event_name": "TaskCompleted",
+  "session_id": "2a0771d4-8fbe-426b-9590-7bfe5abb5c5c",
+  "task_id": "2",
+  "task_subject": ""
+ },
+ "status": 2,
+ "stdout": "",
+ "stderr": "only alice may complete #2; ask them",
+ "logMax": 27
+}

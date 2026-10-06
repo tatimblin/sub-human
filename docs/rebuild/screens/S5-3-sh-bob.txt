@@ -1,0 +1,40 @@
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ Orch is asking one more thing before proposing: should limit>50 be clamped to 50, or return a 400? (You said 400 for a
+  bad cursor, but this is about an oversized limit.)
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ User answered Claude's questions:
+  ⎿  · Agree to proposal 6a996388768f? → Object
+
+⏺ Bob objected to the proposal. Let me check the room for your concern.
+  ⎿  Error: No such tool available: mcp__plugin_sub_human_room__read
+
+  Called plugin:sub-human:room 
+
+⏺ Your objection noted: add a test for a cursor past the end—after=zzz must return 400, not 500. (Alice agrees; that
+  condition is captured in the plan.)
+
+✻ Waiting for 2 background agents to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ User answered Claude's questions:
+  ⎿  · Agree to proposal 95beccba5f70? → Agree
+
+⏺ Plan locked in: alice and bob both agreed to v2 (proposal 95beccba5f70). Cursor paging for GET /tasks is set: default
+  limit 20, max 50, {items, nextCursor}, with 400 on bad cursors.
+
+✻ Waiting for 2 background agents to finish
+                                                                Update available! Run: brew upgrade claude-code@latest
+─────────────────────────────────────────────────────────────────────────────────────────────────────── bob.stoat-3644 ─
+❯ implement cursor paging for GET /tasks
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
+
+  ⏺ main
+  ◯ stoat-3644  ✔ decided 95becc

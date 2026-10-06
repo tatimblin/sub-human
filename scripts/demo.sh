@@ -153,7 +153,14 @@ snap() { # caption — capture the panes (the orch via claude logs), and keep th
   mkdir -p "$d/native-tasks"; cp "$HOME/.claude/tasks/sh-$r"/*.json "$d/native-tasks/" 2>/dev/null || true
 }
 
-submit() { $LIB wait-idle "sh-$1" --timeout 45 --quiet 2 >/dev/null 2>&1; $LIB submit "sh-$1" "$2"; }   # submit SEAT TEXT (once the seat is idle)
+# dismiss_question SEAT — a seat's Claude may open its own AskUserQuestion (e.g. to relay an orch question to its
+# person); typing a scripted line into it would pick an option instead of posting (run ocelot-0728). Esc it — never
+# a consent card, which only card_answer answers.
+dismiss_question() {
+  local p; p=$(tmux capture-pane -p -t "sh-$1:" 2>/dev/null)
+  if command grep -q "Esc to cancel" <<<"$p" && ! command grep -Eq "$CARD_RE" <<<"$p"; then keys "$1" Escape; sleep 2; fi
+}
+submit() { $LIB wait-idle "sh-$1" --timeout 45 --quiet 2 >/dev/null 2>&1; dismiss_question "$1"; $LIB submit "sh-$1" "$2"; }   # submit SEAT TEXT (once the seat is idle)
 keys() { local s=$1; shift; $LIB keys "sh-$s" "$@"; }
 wait_log() { $LIB wait-log "$@"; }
 wait_pane() { local s=$1 re=$2 t=${3:-60}; shift 2; [ $# -gt 0 ] && shift; $LIB wait-pane "sh-$s" "$re" --timeout "$t" "$@"; }
@@ -172,6 +179,16 @@ ROOM=""
 room() { [ -n "$ROOM" ] || ROOM=$($LIB wait-room --timeout 5 2>/dev/null); echo "$ROOM"; }
 panel_row() { echo "^\s*(❯\s*)?(└\s*)?[⏺◯]\s+$1(\s|$)"; }   # a row line in the agent panel
 CARD_RE='Agree to proposal [0-9a-f]{12}\?'
+
+# wait_card SEAT WHAT — wait for SEAT's consent card; if its Claude has not opened it in 120 s, the person asks
+# once ("show me the card …"; recorded in waits.jsonl as a nudge) and the wait runs again.
+wait_card() {
+  wait_pane "$1" "$CARD_RE" 120 --what "$2" && return 0
+  local h; h=$($LIB last-id --kind proposal --field hash 2>/dev/null)
+  echo "{\"scene\":\"$SCENE\",\"what\":\"nudge: $1 asked for the card\",\"ok\":true,\"ms\":0}" >> "$SNAP_DIR/waits.jsonl"
+  submit "$1" "show me the consent card for proposal ${h:-the open proposal}"
+  wait_pane "$1" "$CARD_RE" 120 --what "$2 (after the nudge)"
+}
 
 # card_answer SEAT CHOICE [NOTE] — answer the open consent card: Not yet / Agree / Object (+ a note)
 card_answer() { $LIB card "sh-$1" "$2" "${3:-}"; }
@@ -237,13 +254,14 @@ S4() { # let's plan: bob @room @orch → orch proposes → a card for each appro
     for seat in alice bob; do
       local var="ANSWER_$seat"
       $LIB wait-idle "sh-$seat" --timeout 60
+      local b; b=$($LIB log-max)
       submit "$seat" "${!var}"
-      wait_log --kind say --from "$seat" --via human --after "$before" --timeout 30
+      wait_log --kind say --from "$seat" --via human --after "$b" --timeout 30
     done
     wait_log --kind proposal --from orch --after "$before" --timeout 420 --what "the orch writes a plan and proposes it"
   fi
-  wait_pane alice "$CARD_RE" 120 --what "alice's card is open"
-  wait_pane bob "$CARD_RE" 120 --what "bob's card is open"
+  wait_card alice "alice's card is open"
+  wait_card bob "bob's card is open"
   sleep 2
   snap "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals"
 }
@@ -259,8 +277,8 @@ S5() { # bob objects with a note, alice agrees; the orch revises; both agree →
   sleep 4
   snap "alice agrees; bob objects with a note (via=human, byte-exact)"
   wait_log --kind proposal --from orch --after "$p1" --timeout 420 --what "the orch revises and proposes again"
-  wait_pane alice "$CARD_RE" 120 --what "alice's card for the revision"
-  wait_pane bob "$CARD_RE" 120 --what "bob's card for the revision"
+  wait_card alice "alice's card for the revision"
+  wait_card bob "bob's card for the revision"
   sleep 2
   snap "The orch revises: a new proposal, a new card for each"
   local p2; p2=$($LIB last-id --kind proposal)
@@ -273,24 +291,30 @@ S5() { # bob objects with a note, alice agrees; the orch revises; both agree →
   snap "Both agree to the revision: a decision is logged; both Claudes are told once"
 }
 
-S6() { # shared tasks: alice's Claude adds+claims, the orch applies natively; a non-owner done is refused; owner done
+S6() { # shared tasks: alice's Claude adds, then claims, the orch applies natively; a non-owner done is refused; owner done
   local before; before=$($LIB log-max)
-  submit alice "put \"cursor paging handler\" on the room task list and claim it for me"
+  # explicit tool name: in run osprey-3059 Haiku used post ("taking this") instead of the task tool. add leaves
+  # the task pending with no owner (lynx-5140), and claim needs its id: so add, then claim by id.
+  submit alice "put \"cursor paging handler\" on the room task list: call the mcp__plugin_sub-human_room__task tool with op \"add\", subject \"cursor paging handler\". Only that tool call: do not use post, do not edit any file"
   wait_log --kind task_req --from alice --after "$before" --timeout 120
-  wait_log --kind task --after "$before" --timeout 180 --what "the orch applies the request natively (task entry)"
-  $LIB wait-tasks --owner alice --status in_progress --timeout 120
+  wait_log --kind task --after "$before" --timeout 180 --what "the orch applies the add natively (task entry)"
+  local t; t=$($LIB task-id)
+  local b1; b1=$($LIB log-max)
+  submit alice "claim it for me: call the mcp__plugin_sub-human_room__task tool with op \"claim\", id \"$t\". Only that tool call: do not start the work, do not edit any file"
+  wait_log --kind task_req --from alice --after "$b1" --timeout 120
+  $LIB wait-tasks --owner alice --status in_progress --timeout 180
   sleep 7
-  snap "alice's Claude calls task(add, claim): the orch applies it with TaskCreate/TaskUpdate; the room row and sub-human tasks show it"
-  local t; t=$($LIB task-id --owner alice)
+  snap "alice's Claude calls task(add), then task(claim #$t): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it"
   local b2; b2=$($LIB log-max)
-  submit bob "use the room task tool to mark task #$t done, evidence: I ran the tests, 3/3 pass"
+  # explicit: Haiku otherwise answers in text and never calls the tool (learning run badger-3918)
+  submit bob "call the mcp__plugin_sub-human_room__task tool now with op \"done\", id \"$t\", evidence \"I ran the tests, 3/3 pass\". It is alice's task; send the request anyway and report the tool's reply in one line"
   wait_log --kind task_req --from bob --after "$b2" --timeout 120
   $LIB wait-orch-idle --after "$b2" --timeout 180
   mkdir -p "$SNAP_DIR/state/S6"; $LIB synthetic-gate "$t" > "$SNAP_DIR/state/S6/gate-bob.json"
   sleep 5
   snap "bob's Claude asks done on alice's task #$t: refused, the task stays in progress"
   local b3; b3=$($LIB log-max)
-  submit alice "the handler is in and npm test passes 3/3. use the room task tool to mark task #$t done with that evidence"
+  submit alice "the handler is in and npm test passes 3/3. call the mcp__plugin_sub-human_room__task tool with op \"done\", id \"$t\", evidence \"handler in, npm test 3/3 pass\". Only that tool call: do not edit or check any file"
   wait_log --kind task_req --from alice --after "$b3" --timeout 120
   $LIB wait-tasks --id "$t" --status completed --timeout 180
   sleep 7

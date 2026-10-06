@@ -90,7 +90,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   const p1 = prop('orch', H1, ['alice', 'bob']);                           // #8 names me, pending
   const pBob = prop('orch', H2, ['bob']);                                  // #9 not mine
   const join = sys('member_joined', {}, 'carol');                          // #10
-  const sign = answer('bob', 'signoff', H1);                               // #11 others' human answer: push
+  const sign = answer('bob', 'signoff', H1);                               // #11 others' card answer: pull
   const dec2 = sys('decision', { proposal_hash: H2 }, 'room');             // #12 a proposal I am not in
   const dec1 = sys('decision', { proposal_hash: H1 }, 'room');             // #13 mine
   const ownJoin = sys('member_joined', {}, 'alice');                       // #14
@@ -103,7 +103,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   const ownAnswer = answer('alice', 'objection', H1, { text: 'clamp, do not 400' }); // #21 own: none
   const want = [
     [own, 'none'], [words, 'push'], [chatter, 'pull'], [toMe, 'push'], [at, 'push'], [atOther, 'pull'], [orchRoom, 'pull'],
-    [p1, 'push'], [pBob, 'pull'], [join, 'pull'], [sign, 'push'], [dec2, 'push'], [dec1, 'push'], [ownJoin, 'none'],
+    [p1, 'push'], [pBob, 'pull'], [join, 'pull'], [sign, 'pull'], [dec2, 'push'], [dec1, 'push'], [ownJoin, 'none'],
     [retract, 'push'], [req, 'pull'], [assigned, 'push'], [myReq, 'none'], [claimed, 'push'], [bobsTask, 'pull'], [ownAnswer, 'none'],
   ];
   for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
@@ -131,7 +131,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   assert.equal(L(d, room.readAll()), 'push');
 });
 
-test('lane: orch push is to/@orch, answers on its proposals, decisions, task_req; the rest is pull', () => {
+test('lane: orch push is to/@orch, objections on its proposals, decisions, task_req; the rest is pull', () => {
   fresh();
   const L = (e, es) => room.lane(ORCH, e, es);
   const mine = prop('orch', H1, ['alice', 'bob']);                        // #1 own: none
@@ -142,20 +142,61 @@ test('lane: orch push is to/@orch, answers on its proposals, decisions, task_req
   const chatter = agent('alice', 'status');                                // #6 pull
   const left = sys('member_left', {}, 'bob');                              // #7 pull
   const joined = sys('member_joined', {}, 'carol');                        // #8 pull (tail adds the row note)
-  const s1 = answer('alice', 'signoff', H1);                               // #9 answer on its proposal: push
+  const s1 = answer('alice', 'signoff', H1);                               // #9 signoff on its proposal: pull (the decision carries it)
   const o2 = answer('alice', 'objection', H2, { text: 'no' });             // #10 answer on bob's: pull
   const dec = sys('decision', { proposal_hash: H1 }, 'orch');              // #11 push, even written as orch
   const req = taskReq('bob', 'add', { subject: 'parser tests' });          // #12 push
   const t = task({ task_id: 2, owner: 'bob', status: 'pending', req: 12 }); // #13 its own mirror: pull
   const ownPost = agent('orch', 'say');                                    // #14 none
   const want = [[mine, 'none'], [theirs, 'pull'], [words, 'pull'], [atOrch, 'push'], [toOrch, 'push'], [chatter, 'pull'],
-    [left, 'pull'], [joined, 'pull'], [s1, 'push'], [o2, 'push'], [dec, 'push'], [req, 'push'], [t, 'pull'], [ownPost, 'none']];
+    [left, 'pull'], [joined, 'pull'], [s1, 'pull'], [o2, 'push'], [dec, 'push'], [req, 'push'], [t, 'pull'], [ownPost, 'none']];
   for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
   const all = room.readAll();
-  assert.equal(L(s1, all), 'push');
+  assert.equal(L(s1, all), 'pull');
   assert.equal(L(o2, all), 'pull', 'not its proposal');
+  const o1 = answer('bob', 'objection', H1, { text: 'clamp' });
+  assert.equal(L(o1, room.readAll()), 'push', 'an objection on its own proposal wakes it (to revise)');
   assert.equal(L(req, all), 'push');
   assert.equal(req.by, 'bob');
+});
+
+test('lane (P3 wakes): @-addressed human words, card answers and quiet decisions', () => {
+  const code = fresh();
+  h.register('alice', 'member', process.pid, code);
+  const BOB = { name: 'bob', role: 'member' };
+  const atOrch = human('bob', 'say', { text: '@orch let us plan cursor paging' });
+  const atBob = human('carol', 'say', { text: '@orch @bob take a look' });
+  const plain = human('bob', 'say', { text: 'alice, can you take the parser tests?' });
+  const email = human('bob', 'say', { text: 'mail ops@orch.example' });
+  for (const [e, l] of [[atOrch, 'pull'], [atBob, 'pull'], [plain, 'push'], [email, 'push']]) assert.equal(room.lane(ALICE, e), l, `#${e.id}`);
+  assert.equal(room.lane(BOB, atBob), 'push', 'bob is named');
+  assert.equal(room.lane(ORCH, atOrch), 'push');
+  // Round 1: alice agrees, bob objects last; round 2: alice agrees, bob agrees last. The orch proposed.
+  prop('orch', H1, ['alice', 'bob']);
+  const a1 = answer('alice', 'signoff', H1);
+  const o1 = answer('bob', 'objection', H1, { text: 'clamp' });
+  const d1 = sys('decision', { proposal_hash: H1, text: 'objected: bob · agreed: alice', refs: [a1.id, o1.id] }, 'room');
+  prop('orch', H2, ['alice', 'bob']);
+  const a2 = answer('alice', 'signoff', H2);
+  const s2 = answer('bob', 'signoff', H2);
+  const d2 = sys('decision', { proposal_hash: H2, text: 'agreed: alice, bob', refs: [a2.id, s2.id] }, 'room');
+  const all = room.readAll();
+  const L = (me, e) => room.lane(me, e, all);
+  assert.deepEqual([a1, o1, a2, s2].map(e => L(ALICE, e)), ['none', 'pull', 'none', 'pull'], 'answers never wake another approver');
+  assert.deepEqual([a1, o1, a2, s2].map(e => L(ORCH, e)), ['pull', 'push', 'pull', 'pull'], 'only an objection wakes the proposer');
+  assert.equal(L(ALICE, d1), 'pull', 'an objected decision: nothing for a non-proposer');
+  assert.equal(L(BOB, d1), 'pull', 'bob completed it (told by his card reply)');
+  assert.equal(L(ORCH, d1), 'push', 'the proposer revises');
+  assert.equal(L(ALICE, d2), 'push', 'an agreed decision reaches the approver who did not complete it');
+  assert.equal(L(BOB, d2), 'pull', 'bob completed it');
+  assert.equal(L(ORCH, d2), 'push');
+  // A member's own proposal: an objected decision still reaches its author.
+  prop('alice', 'cccccccccccc', ['bob']);
+  const o3 = answer('bob', 'objection', 'cccccccccccc', { text: 'no' });
+  const d3 = sys('decision', { proposal_hash: 'cccccccccccc', text: 'objected: bob', refs: [o3.id] }, 'room');
+  const all3 = room.readAll();
+  assert.equal(room.lane(ALICE, o3, all3), 'push');
+  assert.equal(room.lane(ALICE, d3, all3), 'push');
 });
 
 test('stateLine: open proposals, my answer, who is away', () => {

@@ -1,0 +1,2604 @@
+[
+ {
+  "scene": "S1",
+  "session": "sh-orch",
+  "caption": "alice runs /sub-human alice: room stoat-3644 opened, the orch started in the background; one stoat-3644 row for her, an alice row in the orch's panel",
+  "step": 1,
+  "time": "2026-10-06T03:36:33.238Z",
+  "svg": "S1-sh-orch.svg",
+  "txt": "S1-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 1,
+  "log": [
+   {
+    "id": 1,
+    "at": "2026-10-06T03:36:16.097Z",
+    "from": "alice",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "alice joined"
+   }
+  ]
+ },
+ {
+  "scene": "S1",
+  "session": "sh-alice",
+  "caption": "alice runs /sub-human alice: room stoat-3644 opened, the orch started in the background; one stoat-3644 row for her, an alice row in the orch's panel",
+  "step": 1,
+  "time": "2026-10-06T03:36:33.251Z",
+  "svg": "S1-sh-alice.svg",
+  "txt": "S1-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 1,
+  "log": [
+   {
+    "id": 1,
+    "at": "2026-10-06T03:36:16.097Z",
+    "from": "alice",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "alice joined"
+   }
+  ]
+ },
+ {
+  "scene": "S1",
+  "session": "sh-bob",
+  "caption": "alice runs /sub-human alice: room stoat-3644 opened, the orch started in the background; one stoat-3644 row for her, an alice row in the orch's panel",
+  "step": 1,
+  "time": "2026-10-06T03:36:33.262Z",
+  "svg": "S1-sh-bob.svg",
+  "txt": "S1-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 1,
+  "log": [
+   {
+    "id": 1,
+    "at": "2026-10-06T03:36:16.097Z",
+    "from": "alice",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "alice joined"
+   }
+  ]
+ },
+ {
+  "scene": "S2",
+  "session": "sh-orch",
+  "caption": "bob joins: bob nested in alice's room row, alice in bob's; the orch lists both",
+  "step": 1,
+  "time": "2026-10-06T03:36:56.020Z",
+  "svg": "S2-sh-orch.svg",
+  "txt": "S2-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 2,
+  "log": [
+   {
+    "id": 2,
+    "at": "2026-10-06T03:36:36.321Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob joined"
+   }
+  ]
+ },
+ {
+  "scene": "S2",
+  "session": "sh-alice",
+  "caption": "bob joins: bob nested in alice's room row, alice in bob's; the orch lists both",
+  "step": 1,
+  "time": "2026-10-06T03:36:56.032Z",
+  "svg": "S2-sh-alice.svg",
+  "txt": "S2-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 2,
+  "log": [
+   {
+    "id": 2,
+    "at": "2026-10-06T03:36:36.321Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob joined"
+   }
+  ]
+ },
+ {
+  "scene": "S2",
+  "session": "sh-bob",
+  "caption": "bob joins: bob nested in alice's room row, alice in bob's; the orch lists both",
+  "step": 1,
+  "time": "2026-10-06T03:36:56.043Z",
+  "svg": "S2-sh-bob.svg",
+  "txt": "S2-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 2,
+  "log": [
+   {
+    "id": 2,
+    "at": "2026-10-06T03:36:36.321Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob joined"
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "session": "sh-orch",
+  "caption": "alice posts with @room: one receipt line for her, bob's Claude wakes once with her exact words",
+  "step": 1,
+  "time": "2026-10-06T03:37:15.362Z",
+  "svg": "S3-sh-orch.svg",
+  "txt": "S3-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 3,
+  "log": [
+   {
+    "id": 3,
+    "at": "2026-10-06T03:36:59.141Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "bob, can you take the parser tests? handler's in src/server.js"
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "session": "sh-alice",
+  "caption": "alice posts with @room: one receipt line for her, bob's Claude wakes once with her exact words",
+  "step": 1,
+  "time": "2026-10-06T03:37:15.374Z",
+  "svg": "S3-sh-alice.svg",
+  "txt": "S3-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 3,
+  "log": [
+   {
+    "id": 3,
+    "at": "2026-10-06T03:36:59.141Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "bob, can you take the parser tests? handler's in src/server.js"
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "session": "sh-bob",
+  "caption": "alice posts with @room: one receipt line for her, bob's Claude wakes once with her exact words",
+  "step": 1,
+  "time": "2026-10-06T03:37:15.385Z",
+  "svg": "S3-sh-bob.svg",
+  "txt": "S3-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 3,
+  "log": [
+   {
+    "id": 3,
+    "at": "2026-10-06T03:36:59.141Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "bob, can you take the parser tests? handler's in src/server.js"
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "session": "sh-orch",
+  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.stoat-3644); alice's Claude answers. No card, no orch turn",
+  "step": 2,
+  "time": "2026-10-06T03:37:54.933Z",
+  "svg": "S3-2-sh-orch.svg",
+  "txt": "S3-2-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 4,
+  "log": [
+   {
+    "id": 3,
+    "at": "2026-10-06T03:36:59.141Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "bob, can you take the parser tests? handler's in src/server.js"
+   },
+   {
+    "id": 4,
+    "at": "2026-10-06T03:37:18.464Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "sure, once we've agreed how paging works"
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "session": "sh-alice",
+  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.stoat-3644); alice's Claude answers. No card, no orch turn",
+  "step": 2,
+  "time": "2026-10-06T03:37:54.946Z",
+  "svg": "S3-2-sh-alice.svg",
+  "txt": "S3-2-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 4,
+  "log": [
+   {
+    "id": 3,
+    "at": "2026-10-06T03:36:59.141Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "bob, can you take the parser tests? handler's in src/server.js"
+   },
+   {
+    "id": 4,
+    "at": "2026-10-06T03:37:18.464Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "sure, once we've agreed how paging works"
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "session": "sh-bob",
+  "caption": "bob's Claude asks alice's Claude natively (SendMessage to alice.stoat-3644); alice's Claude answers. No card, no orch turn",
+  "step": 2,
+  "time": "2026-10-06T03:37:54.958Z",
+  "svg": "S3-2-sh-bob.svg",
+  "txt": "S3-2-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 4,
+  "log": [
+   {
+    "id": 3,
+    "at": "2026-10-06T03:36:59.141Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "bob, can you take the parser tests? handler's in src/server.js"
+   },
+   {
+    "id": 4,
+    "at": "2026-10-06T03:37:18.464Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "sure, once we've agreed how paging works"
+   }
+  ]
+ },
+ {
+  "scene": "S4",
+  "session": "sh-orch",
+  "caption": "The orch asks alice and bob before it writes the plan",
+  "step": 1,
+  "time": "2026-10-06T03:40:33.600Z",
+  "svg": "S4-sh-orch.svg",
+  "txt": "S4-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 7,
+  "log": [
+   {
+    "id": 5,
+    "at": "2026-10-06T03:37:58.027Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
+   },
+   {
+    "id": 6,
+    "at": "2026-10-06T03:38:27.655Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "bob",
+    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
+    "refs": [
+     5
+    ]
+   },
+   {
+    "id": 7,
+    "at": "2026-10-06T03:38:42.493Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
+    "refs": [
+     5,
+     6
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S4",
+  "session": "sh-alice",
+  "caption": "The orch asks alice and bob before it writes the plan",
+  "step": 1,
+  "time": "2026-10-06T03:40:33.613Z",
+  "svg": "S4-sh-alice.svg",
+  "txt": "S4-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 7,
+  "log": [
+   {
+    "id": 5,
+    "at": "2026-10-06T03:37:58.027Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
+   },
+   {
+    "id": 6,
+    "at": "2026-10-06T03:38:27.655Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "bob",
+    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
+    "refs": [
+     5
+    ]
+   },
+   {
+    "id": 7,
+    "at": "2026-10-06T03:38:42.493Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
+    "refs": [
+     5,
+     6
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S4",
+  "session": "sh-bob",
+  "caption": "The orch asks alice and bob before it writes the plan",
+  "step": 1,
+  "time": "2026-10-06T03:40:33.624Z",
+  "svg": "S4-sh-bob.svg",
+  "txt": "S4-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 7,
+  "log": [
+   {
+    "id": 5,
+    "at": "2026-10-06T03:37:58.027Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
+   },
+   {
+    "id": 6,
+    "at": "2026-10-06T03:38:27.655Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "bob",
+    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
+    "refs": [
+     5
+    ]
+   },
+   {
+    "id": 7,
+    "at": "2026-10-06T03:38:42.493Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
+    "refs": [
+     5,
+     6
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S4",
+  "session": "sh-orch",
+  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
+  "step": 2,
+  "time": "2026-10-06T03:41:18.316Z",
+  "svg": "S4-2-sh-orch.svg",
+  "txt": "S4-2-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 11,
+  "log": [
+   {
+    "id": 5,
+    "at": "2026-10-06T03:37:58.027Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
+   },
+   {
+    "id": 6,
+    "at": "2026-10-06T03:38:27.655Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "bob",
+    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
+    "refs": [
+     5
+    ]
+   },
+   {
+    "id": 7,
+    "at": "2026-10-06T03:38:42.493Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
+    "refs": [
+     5,
+     6
+    ]
+   },
+   {
+    "id": 8,
+    "at": "2026-10-06T03:40:40.385Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page"
+   },
+   {
+    "id": 9,
+    "at": "2026-10-06T03:40:46.960Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch fine with that; 400 on a bad cursor. please propose it to alice and me"
+   },
+   {
+    "id": 10,
+    "at": "2026-10-06T03:40:52.084Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "bob",
+    "text": "bob, alice in #8: \"default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page\". Does that work for you? One thing neither of you has said: should limit>50 be clamped to 50 or return a 400? Once you answer I'll propose the plan to you both.",
+    "refs": [
+     6,
+     8
+    ]
+   },
+   {
+    "id": 11,
+    "at": "2026-10-06T03:41:04.979Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal 6a996388768f: Cursor paging for GET /tasks (room stoat-3644)",
+    "approvers": [
+     "alice",
+     "bob"
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S4",
+  "session": "sh-alice",
+  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
+  "step": 2,
+  "time": "2026-10-06T03:41:18.330Z",
+  "svg": "S4-2-sh-alice.svg",
+  "txt": "S4-2-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 11,
+  "log": [
+   {
+    "id": 5,
+    "at": "2026-10-06T03:37:58.027Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
+   },
+   {
+    "id": 6,
+    "at": "2026-10-06T03:38:27.655Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "bob",
+    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
+    "refs": [
+     5
+    ]
+   },
+   {
+    "id": 7,
+    "at": "2026-10-06T03:38:42.493Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
+    "refs": [
+     5,
+     6
+    ]
+   },
+   {
+    "id": 8,
+    "at": "2026-10-06T03:40:40.385Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page"
+   },
+   {
+    "id": 9,
+    "at": "2026-10-06T03:40:46.960Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch fine with that; 400 on a bad cursor. please propose it to alice and me"
+   },
+   {
+    "id": 10,
+    "at": "2026-10-06T03:40:52.084Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "bob",
+    "text": "bob, alice in #8: \"default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page\". Does that work for you? One thing neither of you has said: should limit>50 be clamped to 50 or return a 400? Once you answer I'll propose the plan to you both.",
+    "refs": [
+     6,
+     8
+    ]
+   },
+   {
+    "id": 11,
+    "at": "2026-10-06T03:41:04.979Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal 6a996388768f: Cursor paging for GET /tasks (room stoat-3644)",
+    "approvers": [
+     "alice",
+     "bob"
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S4",
+  "session": "sh-bob",
+  "caption": "The orch proposes its plan: the native consent card (Not yet / Agree / Object) opens in alice's and bob's terminals",
+  "step": 2,
+  "time": "2026-10-06T03:41:18.343Z",
+  "svg": "S4-2-sh-bob.svg",
+  "txt": "S4-2-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 11,
+  "log": [
+   {
+    "id": 5,
+    "at": "2026-10-06T03:37:58.027Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
+   },
+   {
+    "id": 6,
+    "at": "2026-10-06T03:38:27.655Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "bob",
+    "text": "Drafting the plan from #5. Two things are open for you: (1) the default and max limit (say 20/100), and whether a too-large limit gets clamped or a 400. (2) Tasks share createdAt (see seed() in store.js), so the draft sorts by createdAt DESC, id DESC and the cursor encodes both. Does that work for you? I've also asked alice for her view before proposing.",
+    "refs": [
+     5
+    ]
+   },
+   {
+    "id": 7,
+    "at": "2026-10-06T03:38:42.493Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan: alice's Claude (a DM, not alice herself) says it has no structural concerns. It suggests the response {items, nextCursor: string|null} and a default limit of 50 with a max cap. Still open: the default/max limit and clamp vs 400, and the field name (nextCursor vs next). bob, your call on #6 decides these. Then I'll propose to alice and bob.",
+    "refs": [
+     5,
+     6
+    ]
+   },
+   {
+    "id": 8,
+    "at": "2026-10-06T03:40:40.385Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page"
+   },
+   {
+    "id": 9,
+    "at": "2026-10-06T03:40:46.960Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "say",
+    "text": "@orch fine with that; 400 on a bad cursor. please propose it to alice and me"
+   },
+   {
+    "id": 10,
+    "at": "2026-10-06T03:40:52.084Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "question",
+    "to": "bob",
+    "text": "bob, alice in #8: \"default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page\". Does that work for you? One thing neither of you has said: should limit>50 be clamped to 50 or return a 400? Once you answer I'll propose the plan to you both.",
+    "refs": [
+     6,
+     8
+    ]
+   },
+   {
+    "id": 11,
+    "at": "2026-10-06T03:41:04.979Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal 6a996388768f: Cursor paging for GET /tasks (room stoat-3644)",
+    "approvers": [
+     "alice",
+     "bob"
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S5",
+  "session": "sh-orch",
+  "caption": "alice agrees; bob objects with a note (via=human, byte-exact)",
+  "step": 1,
+  "time": "2026-10-06T03:41:36.645Z",
+  "svg": "S5-sh-orch.svg",
+  "txt": "S5-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 14,
+  "log": [
+   {
+    "id": 12,
+    "at": "2026-10-06T03:41:20.394Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 13,
+    "at": "2026-10-06T03:41:25.870Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "objection",
+    "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
+   },
+   {
+    "id": 14,
+    "at": "2026-10-06T03:41:25.871Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "refs": [
+     11,
+     12,
+     13
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S5",
+  "session": "sh-alice",
+  "caption": "alice agrees; bob objects with a note (via=human, byte-exact)",
+  "step": 1,
+  "time": "2026-10-06T03:41:36.658Z",
+  "svg": "S5-sh-alice.svg",
+  "txt": "S5-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 14,
+  "log": [
+   {
+    "id": 12,
+    "at": "2026-10-06T03:41:20.394Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 13,
+    "at": "2026-10-06T03:41:25.870Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "objection",
+    "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
+   },
+   {
+    "id": 14,
+    "at": "2026-10-06T03:41:25.871Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "refs": [
+     11,
+     12,
+     13
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S5",
+  "session": "sh-bob",
+  "caption": "alice agrees; bob objects with a note (via=human, byte-exact)",
+  "step": 1,
+  "time": "2026-10-06T03:41:36.670Z",
+  "svg": "S5-sh-bob.svg",
+  "txt": "S5-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 14,
+  "log": [
+   {
+    "id": 12,
+    "at": "2026-10-06T03:41:20.394Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 13,
+    "at": "2026-10-06T03:41:25.870Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "objection",
+    "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
+   },
+   {
+    "id": 14,
+    "at": "2026-10-06T03:41:25.871Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "refs": [
+     11,
+     12,
+     13
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S5",
+  "session": "sh-orch",
+  "caption": "The orch revises: a new proposal, a new card for each",
+  "step": 2,
+  "time": "2026-10-06T03:41:48.444Z",
+  "svg": "S5-2-sh-orch.svg",
+  "txt": "S5-2-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 16,
+  "log": [
+   {
+    "id": 12,
+    "at": "2026-10-06T03:41:20.394Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 13,
+    "at": "2026-10-06T03:41:25.870Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "objection",
+    "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
+   },
+   {
+    "id": 14,
+    "at": "2026-10-06T03:41:25.871Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "refs": [
+     11,
+     12,
+     13
+    ]
+   },
+   {
+    "id": 15,
+    "at": "2026-10-06T03:41:40.770Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "approvers": [
+     "alice",
+     "bob"
+    ]
+   },
+   {
+    "id": 16,
+    "at": "2026-10-06T03:41:42.518Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
+    "refs": [
+     13,
+     14
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S5",
+  "session": "sh-alice",
+  "caption": "The orch revises: a new proposal, a new card for each",
+  "step": 2,
+  "time": "2026-10-06T03:41:48.458Z",
+  "svg": "S5-2-sh-alice.svg",
+  "txt": "S5-2-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 16,
+  "log": [
+   {
+    "id": 12,
+    "at": "2026-10-06T03:41:20.394Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 13,
+    "at": "2026-10-06T03:41:25.870Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "objection",
+    "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
+   },
+   {
+    "id": 14,
+    "at": "2026-10-06T03:41:25.871Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "refs": [
+     11,
+     12,
+     13
+    ]
+   },
+   {
+    "id": 15,
+    "at": "2026-10-06T03:41:40.770Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "approvers": [
+     "alice",
+     "bob"
+    ]
+   },
+   {
+    "id": 16,
+    "at": "2026-10-06T03:41:42.518Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
+    "refs": [
+     13,
+     14
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S5",
+  "session": "sh-bob",
+  "caption": "The orch revises: a new proposal, a new card for each",
+  "step": 2,
+  "time": "2026-10-06T03:41:48.470Z",
+  "svg": "S5-2-sh-bob.svg",
+  "txt": "S5-2-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 16,
+  "log": [
+   {
+    "id": 12,
+    "at": "2026-10-06T03:41:20.394Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 13,
+    "at": "2026-10-06T03:41:25.870Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "objection",
+    "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
+   },
+   {
+    "id": 14,
+    "at": "2026-10-06T03:41:25.871Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "refs": [
+     11,
+     12,
+     13
+    ]
+   },
+   {
+    "id": 15,
+    "at": "2026-10-06T03:41:40.770Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "approvers": [
+     "alice",
+     "bob"
+    ]
+   },
+   {
+    "id": 16,
+    "at": "2026-10-06T03:41:42.518Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
+    "refs": [
+     13,
+     14
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S5",
+  "session": "sh-orch",
+  "caption": "Both agree to the revision: a decision is logged; both Claudes are told once",
+  "step": 3,
+  "time": "2026-10-06T03:42:25.438Z",
+  "svg": "S5-3-sh-orch.svg",
+  "txt": "S5-3-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 20,
+  "log": [
+   {
+    "id": 12,
+    "at": "2026-10-06T03:41:20.394Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 13,
+    "at": "2026-10-06T03:41:25.870Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "objection",
+    "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
+   },
+   {
+    "id": 14,
+    "at": "2026-10-06T03:41:25.871Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "refs": [
+     11,
+     12,
+     13
+    ]
+   },
+   {
+    "id": 15,
+    "at": "2026-10-06T03:41:40.770Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "approvers": [
+     "alice",
+     "bob"
+    ]
+   },
+   {
+    "id": 16,
+    "at": "2026-10-06T03:41:42.518Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
+    "refs": [
+     13,
+     14
+    ]
+   },
+   {
+    "id": 17,
+    "at": "2026-10-06T03:41:50.525Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 18,
+    "at": "2026-10-06T03:41:53.925Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 19,
+    "at": "2026-10-06T03:41:53.926Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "agreed: alice, bob (proposal 95beccba5f70)",
+    "refs": [
+     15,
+     17,
+     18
+    ]
+   },
+   {
+    "id": 20,
+    "at": "2026-10-06T03:42:00.565Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Decided (#19): paging plan v2 (proposal 95beccba5f70); alice signed off in #17 and bob in #18. Still open from the plan: limit>50 or non-integer → clamp to 50, or 400? Settle it before the handler ships. For splitting the work, bob said in #4 he'd take the tests once paging was agreed, and the handler in src/server.js has no owner. Send a task request when you want either on the room's list.",
+    "refs": [
+     19,
+     17,
+     18,
+     4
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S5",
+  "session": "sh-alice",
+  "caption": "Both agree to the revision: a decision is logged; both Claudes are told once",
+  "step": 3,
+  "time": "2026-10-06T03:42:25.454Z",
+  "svg": "S5-3-sh-alice.svg",
+  "txt": "S5-3-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 20,
+  "log": [
+   {
+    "id": 12,
+    "at": "2026-10-06T03:41:20.394Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 13,
+    "at": "2026-10-06T03:41:25.870Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "objection",
+    "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
+   },
+   {
+    "id": 14,
+    "at": "2026-10-06T03:41:25.871Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "refs": [
+     11,
+     12,
+     13
+    ]
+   },
+   {
+    "id": 15,
+    "at": "2026-10-06T03:41:40.770Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "approvers": [
+     "alice",
+     "bob"
+    ]
+   },
+   {
+    "id": 16,
+    "at": "2026-10-06T03:41:42.518Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
+    "refs": [
+     13,
+     14
+    ]
+   },
+   {
+    "id": 17,
+    "at": "2026-10-06T03:41:50.525Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 18,
+    "at": "2026-10-06T03:41:53.925Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 19,
+    "at": "2026-10-06T03:41:53.926Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "agreed: alice, bob (proposal 95beccba5f70)",
+    "refs": [
+     15,
+     17,
+     18
+    ]
+   },
+   {
+    "id": 20,
+    "at": "2026-10-06T03:42:00.565Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Decided (#19): paging plan v2 (proposal 95beccba5f70); alice signed off in #17 and bob in #18. Still open from the plan: limit>50 or non-integer → clamp to 50, or 400? Settle it before the handler ships. For splitting the work, bob said in #4 he'd take the tests once paging was agreed, and the handler in src/server.js has no owner. Send a task request when you want either on the room's list.",
+    "refs": [
+     19,
+     17,
+     18,
+     4
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S5",
+  "session": "sh-bob",
+  "caption": "Both agree to the revision: a decision is logged; both Claudes are told once",
+  "step": 3,
+  "time": "2026-10-06T03:42:25.465Z",
+  "svg": "S5-3-sh-bob.svg",
+  "txt": "S5-3-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 20,
+  "log": [
+   {
+    "id": 12,
+    "at": "2026-10-06T03:41:20.394Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 13,
+    "at": "2026-10-06T03:41:25.870Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "objection",
+    "text": "add a test for a cursor past the end — `after=zzz` must 400, not 500"
+   },
+   {
+    "id": 14,
+    "at": "2026-10-06T03:41:25.871Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "objected: bob · agreed: alice (proposal 6a996388768f)",
+    "refs": [
+     11,
+     12,
+     13
+    ]
+   },
+   {
+    "id": 15,
+    "at": "2026-10-06T03:41:40.770Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "proposal",
+    "text": "proposal 95beccba5f70: Cursor paging for GET /tasks (room stoat-3644)",
+    "approvers": [
+     "alice",
+     "bob"
+    ]
+   },
+   {
+    "id": 16,
+    "at": "2026-10-06T03:41:42.518Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Paging plan v2 is proposed to alice and bob, after bob's objection (#13). v2 adds a required test that `after=zzz` → 400, not 500. It also separates two cases: a malformed cursor → 400, and a well-formed cursor past the end → empty page (#8). v2 replaces v1, so alice's earlier sign-off (#12) doesn't carry over and both of you need to answer the new card. Still open: limit>50 → clamp or 400?",
+    "refs": [
+     13,
+     14
+    ]
+   },
+   {
+    "id": 17,
+    "at": "2026-10-06T03:41:50.525Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 18,
+    "at": "2026-10-06T03:41:53.925Z",
+    "from": "bob",
+    "via": "human",
+    "kind": "signoff"
+   },
+   {
+    "id": 19,
+    "at": "2026-10-06T03:41:53.926Z",
+    "from": "room",
+    "via": "system",
+    "kind": "decision",
+    "text": "agreed: alice, bob (proposal 95beccba5f70)",
+    "refs": [
+     15,
+     17,
+     18
+    ]
+   },
+   {
+    "id": 20,
+    "at": "2026-10-06T03:42:00.565Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "status",
+    "text": "Decided (#19): paging plan v2 (proposal 95beccba5f70); alice signed off in #17 and bob in #18. Still open from the plan: limit>50 or non-integer → clamp to 50, or 400? Settle it before the handler ships. For splitting the work, bob said in #4 he'd take the tests once paging was agreed, and the handler in src/server.js has no owner. Send a task request when you want either on the room's list.",
+    "refs": [
+     19,
+     17,
+     18,
+     4
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S6",
+  "session": "sh-orch",
+  "caption": "alice's Claude calls task(add), then task(claim #2): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it",
+  "step": 1,
+  "time": "2026-10-06T03:43:01.521Z",
+  "svg": "S6-sh-orch.svg",
+  "txt": "S6-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 25,
+  "log": [
+   {
+    "id": 21,
+    "at": "2026-10-06T03:42:32.068Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task add for alice: cursor paging handler"
+   },
+   {
+    "id": 22,
+    "at": "2026-10-06T03:42:38.141Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+   },
+   {
+    "id": 23,
+    "at": "2026-10-06T03:42:39.262Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-06T03:42:43.426Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task claim #2 for alice"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-06T03:42:48.643Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+   }
+  ]
+ },
+ {
+  "scene": "S6",
+  "session": "sh-alice",
+  "caption": "alice's Claude calls task(add), then task(claim #2): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it",
+  "step": 1,
+  "time": "2026-10-06T03:43:01.536Z",
+  "svg": "S6-sh-alice.svg",
+  "txt": "S6-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 25,
+  "log": [
+   {
+    "id": 21,
+    "at": "2026-10-06T03:42:32.068Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task add for alice: cursor paging handler"
+   },
+   {
+    "id": 22,
+    "at": "2026-10-06T03:42:38.141Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+   },
+   {
+    "id": 23,
+    "at": "2026-10-06T03:42:39.262Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-06T03:42:43.426Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task claim #2 for alice"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-06T03:42:48.643Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+   }
+  ]
+ },
+ {
+  "scene": "S6",
+  "session": "sh-bob",
+  "caption": "alice's Claude calls task(add), then task(claim #2): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it",
+  "step": 1,
+  "time": "2026-10-06T03:43:01.547Z",
+  "svg": "S6-sh-bob.svg",
+  "txt": "S6-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 25,
+  "log": [
+   {
+    "id": 21,
+    "at": "2026-10-06T03:42:32.068Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task add for alice: cursor paging handler"
+   },
+   {
+    "id": 22,
+    "at": "2026-10-06T03:42:38.141Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+   },
+   {
+    "id": 23,
+    "at": "2026-10-06T03:42:39.262Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-06T03:42:43.426Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task claim #2 for alice"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-06T03:42:48.643Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+   }
+  ]
+ },
+ {
+  "scene": "S6",
+  "session": "sh-orch",
+  "caption": "bob's Claude asks done on alice's task #2: refused, the task stays in progress",
+  "step": 2,
+  "time": "2026-10-06T03:43:36.279Z",
+  "svg": "S6-2-sh-orch.svg",
+  "txt": "S6-2-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 27,
+  "log": [
+   {
+    "id": 21,
+    "at": "2026-10-06T03:42:32.068Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task add for alice: cursor paging handler"
+   },
+   {
+    "id": 22,
+    "at": "2026-10-06T03:42:38.141Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+   },
+   {
+    "id": 23,
+    "at": "2026-10-06T03:42:39.262Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-06T03:42:43.426Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task claim #2 for alice"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-06T03:42:48.643Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+   },
+   {
+    "id": 26,
+    "at": "2026-10-06T03:43:08.147Z",
+    "from": "bob",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+   },
+   {
+    "id": 27,
+    "at": "2026-10-06T03:43:15.037Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "bob",
+    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "refs": [
+     26,
+     24
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S6",
+  "session": "sh-alice",
+  "caption": "bob's Claude asks done on alice's task #2: refused, the task stays in progress",
+  "step": 2,
+  "time": "2026-10-06T03:43:36.294Z",
+  "svg": "S6-2-sh-alice.svg",
+  "txt": "S6-2-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 27,
+  "log": [
+   {
+    "id": 21,
+    "at": "2026-10-06T03:42:32.068Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task add for alice: cursor paging handler"
+   },
+   {
+    "id": 22,
+    "at": "2026-10-06T03:42:38.141Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+   },
+   {
+    "id": 23,
+    "at": "2026-10-06T03:42:39.262Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-06T03:42:43.426Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task claim #2 for alice"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-06T03:42:48.643Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+   },
+   {
+    "id": 26,
+    "at": "2026-10-06T03:43:08.147Z",
+    "from": "bob",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+   },
+   {
+    "id": 27,
+    "at": "2026-10-06T03:43:15.037Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "bob",
+    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "refs": [
+     26,
+     24
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S6",
+  "session": "sh-bob",
+  "caption": "bob's Claude asks done on alice's task #2: refused, the task stays in progress",
+  "step": 2,
+  "time": "2026-10-06T03:43:36.307Z",
+  "svg": "S6-2-sh-bob.svg",
+  "txt": "S6-2-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 27,
+  "log": [
+   {
+    "id": 21,
+    "at": "2026-10-06T03:42:32.068Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task add for alice: cursor paging handler"
+   },
+   {
+    "id": 22,
+    "at": "2026-10-06T03:42:38.141Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+   },
+   {
+    "id": 23,
+    "at": "2026-10-06T03:42:39.262Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-06T03:42:43.426Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task claim #2 for alice"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-06T03:42:48.643Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+   },
+   {
+    "id": 26,
+    "at": "2026-10-06T03:43:08.147Z",
+    "from": "bob",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+   },
+   {
+    "id": 27,
+    "at": "2026-10-06T03:43:15.037Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "bob",
+    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "refs": [
+     26,
+     24
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S6",
+  "session": "sh-orch",
+  "caption": "alice's Claude asks done with evidence: the orch completes #2 (the gate passes the owner's request)",
+  "step": 3,
+  "time": "2026-10-06T03:44:01.602Z",
+  "svg": "S6-3-sh-orch.svg",
+  "txt": "S6-3-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 30,
+  "log": [
+   {
+    "id": 21,
+    "at": "2026-10-06T03:42:32.068Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task add for alice: cursor paging handler"
+   },
+   {
+    "id": 22,
+    "at": "2026-10-06T03:42:38.141Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+   },
+   {
+    "id": 23,
+    "at": "2026-10-06T03:42:39.262Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-06T03:42:43.426Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task claim #2 for alice"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-06T03:42:48.643Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+   },
+   {
+    "id": 26,
+    "at": "2026-10-06T03:43:08.147Z",
+    "from": "bob",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+   },
+   {
+    "id": 27,
+    "at": "2026-10-06T03:43:15.037Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "bob",
+    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "refs": [
+     26,
+     24
+    ]
+   },
+   {
+    "id": 28,
+    "at": "2026-10-06T03:43:41.871Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task done #2 for alice: handler in, npm test 3/3 pass"
+   },
+   {
+    "id": 29,
+    "at": "2026-10-06T03:43:48.697Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" done · alice · completed (req #28)"
+   },
+   {
+    "id": 30,
+    "at": "2026-10-06T03:43:53.866Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "alice",
+    "text": "Task #2 is marked done per your request (#28). But when I checked against the decision (#19), what I see in /private/tmp/sh-demo/alice doesn't match yet. In src/server.js, GET /tasks still returns 501 (\"not implemented\"), and test/ holds only health.test.js, one test, not three. Maybe the handler is in another checkout or wasn't saved. Can you point me to where it lives? The plan also requires a test that `after=zzz` → 400 (#13), and the limit>50 question (clamp vs 400) is still open. Should we reopen #2 or leave it?",
+    "refs": [
+     28,
+     19
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S6",
+  "session": "sh-alice",
+  "caption": "alice's Claude asks done with evidence: the orch completes #2 (the gate passes the owner's request)",
+  "step": 3,
+  "time": "2026-10-06T03:44:01.617Z",
+  "svg": "S6-3-sh-alice.svg",
+  "txt": "S6-3-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 30,
+  "log": [
+   {
+    "id": 21,
+    "at": "2026-10-06T03:42:32.068Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task add for alice: cursor paging handler"
+   },
+   {
+    "id": 22,
+    "at": "2026-10-06T03:42:38.141Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+   },
+   {
+    "id": 23,
+    "at": "2026-10-06T03:42:39.262Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-06T03:42:43.426Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task claim #2 for alice"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-06T03:42:48.643Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+   },
+   {
+    "id": 26,
+    "at": "2026-10-06T03:43:08.147Z",
+    "from": "bob",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+   },
+   {
+    "id": 27,
+    "at": "2026-10-06T03:43:15.037Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "bob",
+    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "refs": [
+     26,
+     24
+    ]
+   },
+   {
+    "id": 28,
+    "at": "2026-10-06T03:43:41.871Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task done #2 for alice: handler in, npm test 3/3 pass"
+   },
+   {
+    "id": 29,
+    "at": "2026-10-06T03:43:48.697Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" done · alice · completed (req #28)"
+   },
+   {
+    "id": 30,
+    "at": "2026-10-06T03:43:53.866Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "alice",
+    "text": "Task #2 is marked done per your request (#28). But when I checked against the decision (#19), what I see in /private/tmp/sh-demo/alice doesn't match yet. In src/server.js, GET /tasks still returns 501 (\"not implemented\"), and test/ holds only health.test.js, one test, not three. Maybe the handler is in another checkout or wasn't saved. Can you point me to where it lives? The plan also requires a test that `after=zzz` → 400 (#13), and the limit>50 question (clamp vs 400) is still open. Should we reopen #2 or leave it?",
+    "refs": [
+     28,
+     19
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S6",
+  "session": "sh-bob",
+  "caption": "alice's Claude asks done with evidence: the orch completes #2 (the gate passes the owner's request)",
+  "step": 3,
+  "time": "2026-10-06T03:44:01.629Z",
+  "svg": "S6-3-sh-bob.svg",
+  "txt": "S6-3-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 30,
+  "log": [
+   {
+    "id": 21,
+    "at": "2026-10-06T03:42:32.068Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task add for alice: cursor paging handler"
+   },
+   {
+    "id": 22,
+    "at": "2026-10-06T03:42:38.141Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" add · pending (req #21)"
+   },
+   {
+    "id": 23,
+    "at": "2026-10-06T03:42:39.262Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" claim · alice · pending (req #21)"
+   },
+   {
+    "id": 24,
+    "at": "2026-10-06T03:42:43.426Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task claim #2 for alice"
+   },
+   {
+    "id": 25,
+    "at": "2026-10-06T03:42:48.643Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" update · alice · in_progress (req #21)"
+   },
+   {
+    "id": 26,
+    "at": "2026-10-06T03:43:08.147Z",
+    "from": "bob",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task done #2 for bob: I ran the tests, 3/3 pass"
+   },
+   {
+    "id": 27,
+    "at": "2026-10-06T03:43:15.037Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "bob",
+    "text": "I can't apply #26: task #2 (\"cursor paging handler\") belongs to alice (claimed in #24), and only its owner's done request can complete it. If the 3/3 passing tests are your own test work, ask me to add a task for you and mark that done. Or alice can send done for #2 and cite your run as evidence. Also, the plan's required `after=zzz` → 400 test (#13) should be among those tests.",
+    "refs": [
+     26,
+     24
+    ]
+   },
+   {
+    "id": 28,
+    "at": "2026-10-06T03:43:41.871Z",
+    "from": "alice",
+    "via": "agent",
+    "kind": "task_req",
+    "text": "task done #2 for alice: handler in, npm test 3/3 pass"
+   },
+   {
+    "id": 29,
+    "at": "2026-10-06T03:43:48.697Z",
+    "from": "orch",
+    "via": "system",
+    "kind": "task",
+    "text": "#2 \"cursor paging handler\" done · alice · completed (req #28)"
+   },
+   {
+    "id": 30,
+    "at": "2026-10-06T03:43:53.866Z",
+    "from": "orch",
+    "via": "agent",
+    "kind": "say",
+    "to": "alice",
+    "text": "Task #2 is marked done per your request (#28). But when I checked against the decision (#19), what I see in /private/tmp/sh-demo/alice doesn't match yet. In src/server.js, GET /tasks still returns 501 (\"not implemented\"), and test/ holds only health.test.js, one test, not three. Maybe the handler is in another checkout or wasn't saved. Can you point me to where it lives? The plan also requires a test that `after=zzz` → 400 (#13), and the limit>50 question (clamp vs 400) is still open. Should we reopen #2 or leave it?",
+    "refs": [
+     28,
+     19
+    ]
+   }
+  ]
+ },
+ {
+  "scene": "S7",
+  "session": "sh-orch",
+  "caption": "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted",
+  "step": 1,
+  "time": "2026-10-06T03:44:54.257Z",
+  "svg": "S7-sh-orch.svg",
+  "txt": "S7-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 30,
+  "log": []
+ },
+ {
+  "scene": "S7",
+  "session": "sh-alice",
+  "caption": "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted",
+  "step": 1,
+  "time": "2026-10-06T03:44:54.271Z",
+  "svg": "S7-sh-alice.svg",
+  "txt": "S7-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 30,
+  "log": []
+ },
+ {
+  "scene": "S7",
+  "session": "sh-bob",
+  "caption": "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted",
+  "step": 1,
+  "time": "2026-10-06T03:44:54.282Z",
+  "svg": "S7-sh-bob.svg",
+  "txt": "S7-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 30,
+  "log": []
+ },
+ {
+  "scene": "S8",
+  "session": "sh-orch",
+  "caption": "Rows survive /clear in alice's session (still one room row)",
+  "step": 1,
+  "time": "2026-10-06T03:45:15.228Z",
+  "svg": "S8-sh-orch.svg",
+  "txt": "S8-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 30,
+  "log": []
+ },
+ {
+  "scene": "S8",
+  "session": "sh-alice",
+  "caption": "Rows survive /clear in alice's session (still one room row)",
+  "step": 1,
+  "time": "2026-10-06T03:45:15.241Z",
+  "svg": "S8-sh-alice.svg",
+  "txt": "S8-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 30,
+  "log": []
+ },
+ {
+  "scene": "S8",
+  "session": "sh-bob",
+  "caption": "Rows survive /clear in alice's session (still one room row)",
+  "step": 1,
+  "time": "2026-10-06T03:45:15.252Z",
+  "svg": "S8-sh-bob.svg",
+  "txt": "S8-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 30,
+  "log": []
+ },
+ {
+  "scene": "S8",
+  "session": "sh-orch",
+  "caption": "bob is back with --continue: row-rewake brings his room row back with no typing",
+  "step": 2,
+  "time": "2026-10-06T03:45:45.056Z",
+  "svg": "S8-2-sh-orch.svg",
+  "txt": "S8-2-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 32,
+  "log": [
+   {
+    "id": 31,
+    "at": "2026-10-06T03:45:20.334Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 32,
+    "at": "2026-10-06T03:45:22.081Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob rejoined (resumed)"
+   }
+  ]
+ },
+ {
+  "scene": "S8",
+  "session": "sh-alice",
+  "caption": "bob is back with --continue: row-rewake brings his room row back with no typing",
+  "step": 2,
+  "time": "2026-10-06T03:45:45.069Z",
+  "svg": "S8-2-sh-alice.svg",
+  "txt": "S8-2-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 32,
+  "log": [
+   {
+    "id": 31,
+    "at": "2026-10-06T03:45:20.334Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 32,
+    "at": "2026-10-06T03:45:22.081Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob rejoined (resumed)"
+   }
+  ]
+ },
+ {
+  "scene": "S8",
+  "session": "sh-bob",
+  "caption": "bob is back with --continue: row-rewake brings his room row back with no typing",
+  "step": 2,
+  "time": "2026-10-06T03:45:45.083Z",
+  "svg": "S8-2-sh-bob.svg",
+  "txt": "S8-2-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 32,
+  "log": [
+   {
+    "id": 31,
+    "at": "2026-10-06T03:45:20.334Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 32,
+    "at": "2026-10-06T03:45:22.081Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob rejoined (resumed)"
+   }
+  ]
+ },
+ {
+  "scene": "S8",
+  "session": "sh-orch",
+  "caption": "After the resume the room monitor still wakes bob with alice's words",
+  "step": 3,
+  "time": "2026-10-06T03:46:05.170Z",
+  "svg": "S8-3-sh-orch.svg",
+  "txt": "S8-3-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 33,
+  "log": [
+   {
+    "id": 31,
+    "at": "2026-10-06T03:45:20.334Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 32,
+    "at": "2026-10-06T03:45:22.081Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob rejoined (resumed)"
+   },
+   {
+    "id": 33,
+    "at": "2026-10-06T03:45:48.209Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "bob, are you back? the parser tests are done"
+   }
+  ]
+ },
+ {
+  "scene": "S8",
+  "session": "sh-alice",
+  "caption": "After the resume the room monitor still wakes bob with alice's words",
+  "step": 3,
+  "time": "2026-10-06T03:46:05.188Z",
+  "svg": "S8-3-sh-alice.svg",
+  "txt": "S8-3-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 33,
+  "log": [
+   {
+    "id": 31,
+    "at": "2026-10-06T03:45:20.334Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 32,
+    "at": "2026-10-06T03:45:22.081Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob rejoined (resumed)"
+   },
+   {
+    "id": 33,
+    "at": "2026-10-06T03:45:48.209Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "bob, are you back? the parser tests are done"
+   }
+  ]
+ },
+ {
+  "scene": "S8",
+  "session": "sh-bob",
+  "caption": "After the resume the room monitor still wakes bob with alice's words",
+  "step": 3,
+  "time": "2026-10-06T03:46:05.202Z",
+  "svg": "S8-3-sh-bob.svg",
+  "txt": "S8-3-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 33,
+  "log": [
+   {
+    "id": 31,
+    "at": "2026-10-06T03:45:20.334Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 32,
+    "at": "2026-10-06T03:45:22.081Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_joined",
+    "text": "bob rejoined (resumed)"
+   },
+   {
+    "id": 33,
+    "at": "2026-10-06T03:45:48.209Z",
+    "from": "alice",
+    "via": "human",
+    "kind": "say",
+    "text": "bob, are you back? the parser tests are done"
+   }
+  ]
+ },
+ {
+  "scene": "S9",
+  "session": "sh-viewer",
+  "caption": "A viewer attaches to the orch and types: the prompt is refused with the hint; no orch turn",
+  "step": 1,
+  "time": "2026-10-06T03:46:15.155Z",
+  "svg": "S9-sh-viewer.svg",
+  "txt": "S9-sh-viewer.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 33,
+  "log": []
+ },
+ {
+  "scene": "S9",
+  "session": "sh-orch",
+  "caption": "A viewer attaches to the orch and types: the prompt is refused with the hint; no orch turn",
+  "step": 1,
+  "time": "2026-10-06T03:46:15.171Z",
+  "svg": "S9-sh-orch.svg",
+  "txt": "S9-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 33,
+  "log": []
+ },
+ {
+  "scene": "S10",
+  "session": "sh-orch",
+  "caption": "alice and bob exit (1. Exit and stop tasks): member_left for each",
+  "step": 1,
+  "time": "2026-10-06T03:46:33.494Z",
+  "svg": "S10-sh-orch.svg",
+  "txt": "S10-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 35,
+  "log": [
+   {
+    "id": 34,
+    "at": "2026-10-06T03:46:21.334Z",
+    "from": "alice",
+    "via": "system",
+    "kind": "member_left",
+    "text": "alice left (prompt_input_exit)"
+   },
+   {
+    "id": 35,
+    "at": "2026-10-06T03:46:26.239Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   }
+  ]
+ },
+ {
+  "scene": "S10",
+  "session": "sh-alice",
+  "caption": "alice and bob exit (1. Exit and stop tasks): member_left for each",
+  "step": 1,
+  "time": "2026-10-06T03:46:33.507Z",
+  "svg": "S10-sh-alice.svg",
+  "txt": "S10-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 35,
+  "log": [
+   {
+    "id": 34,
+    "at": "2026-10-06T03:46:21.334Z",
+    "from": "alice",
+    "via": "system",
+    "kind": "member_left",
+    "text": "alice left (prompt_input_exit)"
+   },
+   {
+    "id": 35,
+    "at": "2026-10-06T03:46:26.239Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   }
+  ]
+ },
+ {
+  "scene": "S10",
+  "session": "sh-bob",
+  "caption": "alice and bob exit (1. Exit and stop tasks): member_left for each",
+  "step": 1,
+  "time": "2026-10-06T03:46:33.518Z",
+  "svg": "S10-sh-bob.svg",
+  "txt": "S10-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 35,
+  "log": [
+   {
+    "id": 34,
+    "at": "2026-10-06T03:46:21.334Z",
+    "from": "alice",
+    "via": "system",
+    "kind": "member_left",
+    "text": "alice left (prompt_input_exit)"
+   },
+   {
+    "id": 35,
+    "at": "2026-10-06T03:46:26.239Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   }
+  ]
+ },
+ {
+  "scene": "S10",
+  "session": "sh-orch",
+  "caption": "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)",
+  "step": 2,
+  "time": "2026-10-06T03:46:53.096Z",
+  "svg": "S10-2-sh-orch.svg",
+  "txt": "S10-2-sh-orch.txt",
+  "cols": 200,
+  "rows": 50,
+  "room": "stoat-3644",
+  "logTo": 36,
+  "log": [
+   {
+    "id": 34,
+    "at": "2026-10-06T03:46:21.334Z",
+    "from": "alice",
+    "via": "system",
+    "kind": "member_left",
+    "text": "alice left (prompt_input_exit)"
+   },
+   {
+    "id": 35,
+    "at": "2026-10-06T03:46:26.239Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 36,
+    "at": "2026-10-06T03:46:36.282Z",
+    "from": "room",
+    "via": "system",
+    "kind": "status",
+    "to": "orch",
+    "text": "room closed: complete task 1"
+   }
+  ]
+ },
+ {
+  "scene": "S10",
+  "session": "sh-alice",
+  "caption": "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)",
+  "step": 2,
+  "time": "2026-10-06T03:46:53.108Z",
+  "svg": "S10-2-sh-alice.svg",
+  "txt": "S10-2-sh-alice.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 36,
+  "log": [
+   {
+    "id": 34,
+    "at": "2026-10-06T03:46:21.334Z",
+    "from": "alice",
+    "via": "system",
+    "kind": "member_left",
+    "text": "alice left (prompt_input_exit)"
+   },
+   {
+    "id": 35,
+    "at": "2026-10-06T03:46:26.239Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 36,
+    "at": "2026-10-06T03:46:36.282Z",
+    "from": "room",
+    "via": "system",
+    "kind": "status",
+    "to": "orch",
+    "text": "room closed: complete task 1"
+   }
+  ]
+ },
+ {
+  "scene": "S10",
+  "session": "sh-bob",
+  "caption": "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)",
+  "step": 2,
+  "time": "2026-10-06T03:46:53.119Z",
+  "svg": "S10-2-sh-bob.svg",
+  "txt": "S10-2-sh-bob.txt",
+  "cols": 120,
+  "rows": 40,
+  "room": "stoat-3644",
+  "logTo": 36,
+  "log": [
+   {
+    "id": 34,
+    "at": "2026-10-06T03:46:21.334Z",
+    "from": "alice",
+    "via": "system",
+    "kind": "member_left",
+    "text": "alice left (prompt_input_exit)"
+   },
+   {
+    "id": 35,
+    "at": "2026-10-06T03:46:26.239Z",
+    "from": "bob",
+    "via": "system",
+    "kind": "member_left",
+    "text": "bob left (prompt_input_exit)"
+   },
+   {
+    "id": 36,
+    "at": "2026-10-06T03:46:36.282Z",
+    "from": "room",
+    "via": "system",
+    "kind": "status",
+    "to": "orch",
+    "text": "room closed: complete task 1"
+   }
+  ]
+ }
+]

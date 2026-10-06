@@ -1,0 +1,50 @@
+ ▐▛███▛█   Claude Code v2.1.281
+▝▜██████▀  Opus 5.5 (1M context) · Claude Max
+  ▝▝ ▝▝    @sub-human:orchestrator · /private/tmp/sh-demo/alice
+
+
+❯ /sub-human:sub-human
+  ⎿  UserPromptExpansion says: sub-human: orch of room stoat-3644
+
+⏺ sub-human:participant(alice)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+⏺ I've joined room stoat-3644 and added alice's row. Task #1 ("room stoat-3644 open") is now in progress, and I'm waiting for messages or requests.
+
+✻ Waiting for 1 background agent to finish
+
+⏺ Monitor event: "sub-human room notices"
+
+⏺ sub-human:participant(bob)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+⏺ Bob joined the room (#2), so I've added a row for him next to alice's. No requests yet; waiting.
+
+✻ Waiting for 2 background agents to finish
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  1 tasks (0 done, 1 in progress, 0 open)
+  ◼ room stoat-3644 open
+                                                                                                                                                Update available! Run: brew upgrade claude-code@latest
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── orch.stoat-3644 ─
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏸ plan mode on · ← 1 agent · 1 monitor · ctrl+t to hide tasks · ↓ to manage
+
+  ⏺ main
+  ◯ alice  working · #3 say 53s
+  ◯ bob  working · #4 say 34s
+

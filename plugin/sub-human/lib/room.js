@@ -473,11 +473,17 @@ const inProposal = (p, name) => !!p && (approversOf(p).includes(name) || p.from 
  * is the entry-only one (push is then a superset of the judged push).
  *   none: my own entries (hook-written system decision/task entries are not "mine"), retracted entries.
  *   retract: push to its victim and to whoever the retracted entry would have pushed; none otherwise.
- *   member push: others' via=human entries; to=me or @me; a proposal naming me that I have not answered
- *     (and is not decided); a decision on a proposal I am in; a `task` assigning me (owner me) that someone
- *     else asked for (its req is not mine). Everything else is pull.
- *   orch push: to=orch or @orch; answers (signoff/objection) on its own proposals; decisions; task_req.
- *     Everything else is pull (member_joined reaches it through bin/sub-human tail's row note).
+ *   member push: others' via=human entries, except a `say` @-addressed only to others (@orch, @bob: pull);
+ *     to=me or @me; a proposal naming me that I have not answered (and is not decided); a decision on a
+ *     proposal I am in; a `task` assigning me (owner me) that someone else asked for (its req is not mine).
+ *     Everything else is pull.
+ *   orch push: to=orch or @orch; decisions; task_req. Everything else is pull (member_joined reaches it
+ *     through bin/sub-human tail's row note).
+ *   card answers (both roles): a signoff is pull (the decision carries it); an objection is push to the
+ *     proposal's author only (to revise), pull for everyone else.
+ *   decisions (judged): pull for the member whose answer completed it (the card's own reply, consent.js,
+ *     already told that Claude), and an objected decision is pull for all but the proposer (nothing to act
+ *     on; a revision brings its own card).
  */
 function lane(me, e, entries) {
   const name = me && me.name;
@@ -487,13 +493,15 @@ function lane(me, e, entries) {
   if (n.from === name && !(n.via === 'system' && (n.kind === 'decision' || n.kind === 'task'))) return 'none';
   if (entries && retractedIds(entries).has(n.id)) return 'none';
   if (n.to === name || mentions(n.text, name)) return 'push';
+  if ((n.kind === 'signoff' || n.kind === 'objection') && n.proposal_hash) {
+    if (n.kind === 'signoff') return 'pull';
+    if (!entries) return 'push';
+    const p = proposal(n.proposal_hash, entries);
+    return p && p.from === name ? 'push' : 'pull';
+  }
+  if (n.kind === 'decision' && entries && quietDecision(name, n, entries)) return 'pull';
   if (orch) {
     if (n.kind === 'task_req' || n.kind === 'decision') return 'push';
-    if ((n.kind === 'signoff' || n.kind === 'objection') && n.via === 'human' && n.proposal_hash) {
-      if (!entries) return 'push';
-      const p = proposal(n.proposal_hash, entries);
-      return p && p.from === name ? 'push' : 'pull';
-    }
     return 'pull';
   }
   if (n.kind === 'proposal' && approversOf(n).includes(name)) {
@@ -509,8 +517,31 @@ function lane(me, e, entries) {
     const req = entries.find(x => x.id === n.req);
     return req && (req.by || req.from) === name ? 'pull' : 'push';
   }
-  if (n.via === 'human') return 'push';
+  if (n.via === 'human') return n.kind === 'say' && addressedElsewhere(n.text) ? 'pull' : 'push';
   return 'pull';
+}
+
+/**
+ * A decision that needs no wake for name: name's answer completed it (consent.js told that Claude in the
+ * card's reply), or it is an objected decision on a proposal name did not write.
+ */
+function quietDecision(name, d, entries) {
+  const byId = new Map(entries.map(x => [x.id, x]));
+  const answersIn = (d.refs || []).map(r => byId.get(r)).filter(x => x && (x.kind === 'signoff' || x.kind === 'objection'));
+  const last = answersIn.sort((a, b) => b.id - a.id)[0];
+  if (last && last.from === name && last.via === 'human') return true;
+  if (/^objected:/.test(String(d.text || ''))) {
+    const p = proposal(d.proposal_hash, entries);
+    return !(p && p.from === name);
+  }
+  return false;
+}
+
+/** The text @-addresses a room member (or the orch); called after mentions(text, me) was false. */
+function addressedElsewhere(text) {
+  const names = new Set(['orch', ...Object.keys(readMembersHere())].map(x => x.toLowerCase()));
+  for (const m of String(text ?? '').matchAll(/(^|[^A-Za-z0-9_.-])@([A-Za-z0-9_-]+)/g)) if (names.has(m[2].toLowerCase())) return true;
+  return false;
 }
 
 /** "room now: proposal 3fa2c1 waiting on bob · you: answer needed · away: bob", from the log as it is now. */
@@ -528,7 +559,8 @@ function stateLine(me, entries = readAll()) {
     let s = `proposal ${p.hash.slice(0, 6)} ${dec ? `decided #${dec.id}` : m.missing.length ? `waiting on ${m.missing.join(', ')}` : 'agreed by all'}`;
     if (approversOf(p).includes(name)) {
       const a = answered(name, p.hash, entries);
-      s += ` · you: ${a ? (a.kind === 'signoff' ? 'agreed' : 'objected') : dec ? 'not answered' : 'answer needed'}`;
+      // the open-the-card call is spelled out right in the notice: Haiku skipped it from the join text alone
+      s += ` · you: ${a ? (a.kind === 'signoff' ? 'agreed' : 'objected') : dec ? 'not answered' : `answer needed (call AskUserQuestion with "proposal ${p.hash}")`}`;
     }
     parts.push(s);
   }

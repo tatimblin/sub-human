@@ -1,0 +1,20 @@
+{
+  "alice": {
+    "name": "alice",
+    "role": "member",
+    "pid": 52682,
+    "session_id": "d7440f47-f196-4fec-bbef-e65e2a6c34aa",
+    "cwd": "/private/tmp/sh-demo/alice",
+    "joined_at": "2026-10-06T03:36:16.095Z"
+  },
+  "orch": {
+    "name": "orch",
+    "role": "orch",
+    "pid": 39336,
+    "session_id": "2a0771d4-8fbe-426b-9590-7bfe5abb5c5c",
+    "cwd": "/private/tmp/sh-demo/alice",
+    "joined_at": "2026-10-06T03:36:16.898Z",
+    "job": "2a0771d4",
+    "spawned_at": "2026-10-06T03:36:16.668Z"
+  }
+}

@@ -1,9 +1,101 @@
-{"scene":"setup","what":"sh-alice ready","ok":true,"ms":720,"time":"2026-10-06T02:10:31.013Z"}
-{"scene":"setup","what":"sh-bob ready","ok":true,"ms":12,"time":"2026-10-06T02:10:31.068Z"}
-{"scene":"S1","what":"sh-alice idle","ok":true,"ms":3583,"time":"2026-10-06T02:10:34.697Z"}
-{"scene":"S1","what":"room dir exists","ok":true,"ms":0,"time":"2026-10-06T02:10:36.784Z"}
-{"scene":"S1","what":"log: 1× member_joined from alice","ok":true,"ms":0,"time":"2026-10-06T02:10:36.817Z"}
-{"scene":"S1","what":"the orch job binds as orch of the room","ok":true,"ms":0,"time":"2026-10-06T02:10:36.849Z"}
-{"scene":"S1","what":"sh-alice pane ~ /^\\s*(❯\\s*)?(└\\s*)?[⏺◯]\\s+tiger-7150(\\s|$)/","ok":true,"ms":4991,"time":"2026-10-06T02:10:41.933Z"}
-{"scene":"S1","what":"orch's room holds alice's row","ok":true,"ms":2108,"time":"2026-10-06T02:10:44.070Z"}
-{"scene":"S4","what":"the orch proposes (or asks first)","ok":false,"ms":150306,"time":"2026-10-06T02:12:23.089Z"}
+{"scene":"setup","what":"sh-alice ready","ok":true,"ms":1420,"time":"2026-10-06T03:36:12.405Z"}
+{"scene":"setup","what":"sh-bob ready","ok":true,"ms":7,"time":"2026-10-06T03:36:12.443Z"}
+{"scene":"S1","what":"sh-alice idle","ok":true,"ms":2859,"time":"2026-10-06T03:36:15.336Z"}
+{"scene":"S1","what":"room dir exists","ok":true,"ms":0,"time":"2026-10-06T03:36:17.410Z"}
+{"scene":"S1","what":"log: 1× member_joined from alice","ok":true,"ms":0,"time":"2026-10-06T03:36:17.445Z"}
+{"scene":"S1","what":"the orch job binds as orch of the room","ok":true,"ms":0,"time":"2026-10-06T03:36:17.478Z"}
+{"scene":"S1","what":"sh-alice pane ~ /^\\s*(❯\\s*)?(└\\s*)?[⏺◯]\\s+stoat-3644(\\s|$)/","ok":true,"ms":3586,"time":"2026-10-06T03:36:21.161Z"}
+{"scene":"S1","what":"orch's room holds alice's row","ok":true,"ms":1405,"time":"2026-10-06T03:36:22.607Z"}
+{"scene":"S1","what":"orch's native list has \"room stoat-3644 open\"","ok":true,"ms":1406,"time":"2026-10-06T03:36:24.049Z"}
+{"scene":"S2","what":"sh-bob idle","ok":true,"ms":2159,"time":"2026-10-06T03:36:35.674Z"}
+{"scene":"S2","what":"log: 1× member_joined from bob","ok":true,"ms":0,"time":"2026-10-06T03:36:37.651Z"}
+{"scene":"S2","what":"sh-bob pane ~ /^\\s*(❯\\s*)?(└\\s*)?[⏺◯]\\s+stoat-3644(\\s|$)/","ok":true,"ms":2856,"time":"2026-10-06T03:36:40.540Z"}
+{"scene":"S2","what":"orch's room holds bob's row","ok":true,"ms":4213,"time":"2026-10-06T03:36:44.798Z"}
+{"scene":"S2","what":"alice's room holds bob's row","ok":true,"ms":0,"time":"2026-10-06T03:36:44.854Z"}
+{"scene":"S3","what":"sh-alice idle","ok":true,"ms":2140,"time":"2026-10-06T03:36:58.477Z"}
+{"scene":"S3","what":"log: 1× say from alice via=human","ok":true,"ms":1,"time":"2026-10-06T03:36:59.216Z"}
+{"scene":"S3","what":"sh-alice pane ~ /Operation stopped by hook: ✓ posted/","ok":true,"ms":6,"time":"2026-10-06T03:36:59.250Z"}
+{"scene":"S3","what":"bob's Claude is woken with alice's exact words","ok":true,"ms":4287,"time":"2026-10-06T03:37:03.566Z"}
+{"scene":"S3","what":"sh-bob idle","ok":true,"ms":3595,"time":"2026-10-06T03:37:07.195Z"}
+{"scene":"S3","what":"sh-bob idle","ok":true,"ms":2148,"time":"2026-10-06T03:37:17.792Z"}
+{"scene":"S3","what":"log: 1× say from bob via=human","ok":true,"ms":0,"time":"2026-10-06T03:37:18.538Z"}
+{"scene":"S3","what":"sh-alice idle","ok":true,"ms":7900,"time":"2026-10-06T03:37:26.466Z"}
+{"scene":"S3","what":"sh-bob idle","ok":true,"ms":2145,"time":"2026-10-06T03:37:28.659Z"}
+{"scene":"S3","what":"alice's pane shows a message from bob's Claude","ok":true,"ms":3592,"time":"2026-10-06T03:37:32.988Z"}
+{"scene":"S3","what":"sh-alice idle","ok":true,"ms":10035,"time":"2026-10-06T03:37:43.053Z"}
+{"scene":"S3","what":"bob's pane shows alice's Claude's answer","ok":true,"ms":6,"time":"2026-10-06T03:37:43.089Z"}
+{"scene":"S3","what":"sh-bob idle","ok":true,"ms":3610,"time":"2026-10-06T03:37:46.727Z"}
+{"scene":"S4","what":"sh-bob idle","ok":true,"ms":2152,"time":"2026-10-06T03:37:57.407Z"}
+{"scene":"S4","what":"log: 1× say from bob via=human","ok":true,"ms":0,"time":"2026-10-06T03:37:58.122Z"}
+{"scene":"S4","what":"the orch proposes (or asks first)","ok":false,"ms":150268,"time":"2026-10-06T03:40:28.420Z"}
+{"scene":"S4","what":"sh-alice idle","ok":true,"ms":3598,"time":"2026-10-06T03:40:37.485Z"}
+{"scene":"S4","what":"sh-alice idle","ok":true,"ms":2158,"time":"2026-10-06T03:40:39.722Z"}
+{"scene":"S4","what":"log: 1× say from alice via=human","ok":true,"ms":0,"time":"2026-10-06T03:40:40.459Z"}
+{"scene":"S4","what":"sh-bob idle","ok":true,"ms":3590,"time":"2026-10-06T03:40:44.077Z"}
+{"scene":"S4","what":"sh-bob idle","ok":true,"ms":2144,"time":"2026-10-06T03:40:46.295Z"}
+{"scene":"S4","what":"log: 1× say from bob via=human","ok":true,"ms":1,"time":"2026-10-06T03:40:47.031Z"}
+{"scene":"S4","what":"the orch writes a plan and proposes it","ok":true,"ms":18261,"time":"2026-10-06T03:41:05.320Z"}
+{"scene":"S4","what":"alice's card is open","ok":true,"ms":5721,"time":"2026-10-06T03:41:11.104Z"}
+{"scene":"S4","what":"bob's card is open","ok":true,"ms":6,"time":"2026-10-06T03:41:11.145Z"}
+{"scene":"S5","what":"sh-alice: consent card open","ok":true,"ms":6,"time":"2026-10-06T03:41:18.629Z"}
+{"scene":"S5","what":"sh-alice: answered the card Agree","ok":true,"ms":0,"time":"2026-10-06T03:41:21.977Z"}
+{"scene":"S5","what":"log: 1× signoff from alice via=human","ok":true,"ms":0,"time":"2026-10-06T03:41:22.027Z"}
+{"scene":"S5","what":"sh-bob: consent card open","ok":true,"ms":6,"time":"2026-10-06T03:41:22.065Z"}
+{"scene":"S5","what":"sh-bob: answered the card Object with note \"add a test for a cursor past the end — `after=zzz` must 400, not 500\"","ok":true,"ms":0,"time":"2026-10-06T03:41:27.440Z"}
+{"scene":"S5","what":"log: 1× objection from bob via=human","ok":true,"ms":0,"time":"2026-10-06T03:41:27.481Z"}
+{"scene":"S5","what":"the orch revises and proposes again","ok":true,"ms":4216,"time":"2026-10-06T03:41:41.149Z"}
+{"scene":"S5","what":"alice's card for the revision","ok":true,"ms":8,"time":"2026-10-06T03:41:41.213Z"}
+{"scene":"S5","what":"bob's card for the revision","ok":true,"ms":6,"time":"2026-10-06T03:41:41.251Z"}
+{"scene":"S5","what":"sh-alice: consent card open","ok":true,"ms":6,"time":"2026-10-06T03:41:48.761Z"}
+{"scene":"S5","what":"sh-alice: answered the card Agree","ok":true,"ms":0,"time":"2026-10-06T03:41:52.108Z"}
+{"scene":"S5","what":"log: 1× signoff from alice via=human","ok":true,"ms":0,"time":"2026-10-06T03:41:52.149Z"}
+{"scene":"S5","what":"sh-bob: consent card open","ok":true,"ms":7,"time":"2026-10-06T03:41:52.186Z"}
+{"scene":"S5","what":"sh-bob: answered the card Agree","ok":true,"ms":0,"time":"2026-10-06T03:41:55.512Z"}
+{"scene":"S5","what":"log: 1× decision","ok":true,"ms":0,"time":"2026-10-06T03:41:55.555Z"}
+{"scene":"S5","what":"sh-alice: the human declined a permission dialog (Esc): Do you want to make this edit to server.js?","ok":true,"ms":0,"time":"2026-10-06T03:42:06.294Z"}
+{"scene":"S5","what":"sh-alice idle","ok":true,"ms":15018,"time":"2026-10-06T03:42:10.606Z"}
+{"scene":"S5","what":"sh-bob idle","ok":true,"ms":3593,"time":"2026-10-06T03:42:14.249Z"}
+{"scene":"S6","what":"sh-alice idle","ok":true,"ms":2143,"time":"2026-10-06T03:42:27.898Z"}
+{"scene":"S6","what":"log: 1× task_req from alice","ok":true,"ms":3510,"time":"2026-10-06T03:42:32.142Z"}
+{"scene":"S6","what":"the orch applies the add natively (task entry)","ok":true,"ms":6326,"time":"2026-10-06T03:42:38.507Z"}
+{"scene":"S6","what":"sh-alice: the human declined a permission dialog (Esc): Do you want to make this edit to server.js?","ok":true,"ms":0,"time":"2026-10-06T03:42:38.608Z"}
+{"scene":"S6","what":"sh-alice idle","ok":true,"ms":2874,"time":"2026-10-06T03:42:41.474Z"}
+{"scene":"S6","what":"log: 1× task_req from alice","ok":true,"ms":1407,"time":"2026-10-06T03:42:43.642Z"}
+{"scene":"S6","what":"tasks.json has a task owned by alice in_progress","ok":true,"ms":5621,"time":"2026-10-06T03:42:49.315Z"}
+{"scene":"S6","what":"sh-bob idle","ok":true,"ms":2156,"time":"2026-10-06T03:43:04.006Z"}
+{"scene":"S6","what":"log: 1× task_req from bob","ok":true,"ms":3515,"time":"2026-10-06T03:43:08.245Z"}
+{"scene":"S6","what":"the orch's turn after #25 ends","ok":true,"ms":17714,"time":"2026-10-06T03:43:25.998Z"}
+{"scene":"S6","what":"sh-alice: the human declined a permission dialog (Esc): Do you want to make this edit to server.js?","ok":true,"ms":0,"time":"2026-10-06T03:43:36.607Z"}
+{"scene":"S6","what":"sh-alice idle","ok":true,"ms":2876,"time":"2026-10-06T03:43:39.477Z"}
+{"scene":"S6","what":"log: 1× task_req from alice","ok":true,"ms":2108,"time":"2026-10-06T03:43:42.331Z"}
+{"scene":"S6","what":"tasks.json has a task #2 completed","ok":true,"ms":7024,"time":"2026-10-06T03:43:49.396Z"}
+{"scene":"S7","what":"sh-alice: the human declined a permission dialog (Esc): Do you want to make this edit to server.js?","ok":true,"ms":0,"time":"2026-10-06T03:44:01.890Z"}
+{"scene":"S7","what":"sh-alice idle","ok":true,"ms":4302,"time":"2026-10-06T03:44:06.186Z"}
+{"scene":"S7","what":"sh-alice: panel cursor on stoat-3644","ok":true,"ms":0,"time":"2026-10-06T03:44:08.797Z"}
+{"scene":"S7","what":"sh-alice pane ~ /─ stoat-3644 ─/","ok":true,"ms":6,"time":"2026-10-06T03:44:09.026Z"}
+{"scene":"S7","what":"sh-alice idle","ok":true,"ms":2151,"time":"2026-10-06T03:44:13.250Z"}
+{"scene":"S7","what":"the row view shows the read-only hint where the text was typed","ok":false,"ms":20089,"time":"2026-10-06T03:44:34.106Z"}
+{"scene":"S7","what":"sh-alice: panel cursor on main","ok":true,"ms":0,"time":"2026-10-06T03:44:56.265Z"}
+{"scene":"S7","what":"sh-alice pane !~ /─ stoat-3644 ─/","ok":true,"ms":6,"time":"2026-10-06T03:44:56.485Z"}
+{"scene":"S8","what":"sh-alice idle","ok":true,"ms":2151,"time":"2026-10-06T03:45:00.037Z"}
+{"scene":"S8","what":"alice's session_id changes","ok":true,"ms":0,"time":"2026-10-06T03:45:02.014Z"}
+{"scene":"S8","what":"sh-alice pane ~ /^\\s*(❯\\s*)?(└\\s*)?[⏺◯]\\s+stoat-3644(\\s|$)/","ok":true,"ms":8,"time":"2026-10-06T03:45:10.081Z"}
+{"scene":"S8","what":"sh-bob idle","ok":true,"ms":2158,"time":"2026-10-06T03:45:17.697Z"}
+{"scene":"S8","what":"sh-bob pane ~ /❯ 1\\. Exit and stop tasks/","ok":true,"ms":7,"time":"2026-10-06T03:45:19.678Z"}
+{"scene":"S8","what":"log: 1× member_left from bob","ok":true,"ms":0,"time":"2026-10-06T03:45:20.385Z"}
+{"scene":"S8","what":"sh-bob ready","ok":true,"ms":1426,"time":"2026-10-06T03:45:22.899Z"}
+{"scene":"S8","what":"bob's room row is back with no prompt (row-rewake)","ok":true,"ms":2857,"time":"2026-10-06T03:45:25.792Z"}
+{"scene":"S8","what":"sh-bob idle","ok":true,"ms":10019,"time":"2026-10-06T03:45:35.852Z"}
+{"scene":"S8","what":"sh-alice idle","ok":true,"ms":2146,"time":"2026-10-06T03:45:47.515Z"}
+{"scene":"S8","what":"log: 1× say from alice via=human","ok":true,"ms":0,"time":"2026-10-06T03:45:48.248Z"}
+{"scene":"S8","what":"the monitor still wakes bob after the resume","ok":true,"ms":5025,"time":"2026-10-06T03:45:53.301Z"}
+{"scene":"S8","what":"sh-bob idle","ok":true,"ms":3609,"time":"2026-10-06T03:45:56.960Z"}
+{"scene":"S9","what":"sh-viewer pane ~ /orch\\.stoat-3644|─{20}/","ok":true,"ms":724,"time":"2026-10-06T03:46:06.232Z"}
+{"scene":"S9","what":"the attached orch refuses the typed prompt","ok":true,"ms":6,"time":"2026-10-06T03:46:10.043Z"}
+{"scene":"S10","what":"sh-alice idle","ok":true,"ms":2160,"time":"2026-10-06T03:46:18.660Z"}
+{"scene":"S10","what":"sh-alice pane ~ /❯ 1\\. Exit and stop tasks/","ok":true,"ms":6,"time":"2026-10-06T03:46:20.647Z"}
+{"scene":"S10","what":"log: 1× member_left from alice","ok":true,"ms":0,"time":"2026-10-06T03:46:21.385Z"}
+{"scene":"S10","what":"sh-bob idle","ok":true,"ms":2151,"time":"2026-10-06T03:46:23.565Z"}
+{"scene":"S10","what":"sh-bob pane ~ /❯ 1\\. Exit and stop tasks/","ok":true,"ms":7,"time":"2026-10-06T03:46:25.554Z"}
+{"scene":"S10","what":"log: 1× member_left from bob","ok":true,"ms":0,"time":"2026-10-06T03:46:26.290Z"}
+{"scene":"S10","what":"the reaper stops the orch","ok":true,"ms":9132,"time":"2026-10-06T03:46:42.895Z"}

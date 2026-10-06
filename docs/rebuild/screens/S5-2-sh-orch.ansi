@@ -1,0 +1,50 @@
+
+  The plan uses the details they each gave:
+  - [1mOrder:[0m newest first, by [38;2;177;185;249mcreatedAt[39m then [38;2;177;185;249mid[39m, because some tasks share a timestamp.
+  - [1mLimit:[0m default 20, max 50 (alice, #8).
+  - [1mResponse:[0m [38;2;177;185;249m{items, nextCursor}[39m, where [38;2;177;185;249mnextCursor[39m is null when there are no more pages (alice, #8).
+  - [1mCursor past the end:[0m returns an empty page (alice, #8).
+  - [1mMalformed cursor:[0m returns a 400 (bob, #9).
+
+  One question is still open in the plan: whether a [38;2;177;185;249mlimit[39m above 50 (or not a positive number) gets cut down to 50 or rejected with a 400. Neither of them has said, so I didn't pick one. They can
+  settle it in the room or in their card's note.
+
+  The plan is decided only once the room records both card answers. Then I can help split the work: bob has offered to write the tests (#4), and the handler in [38;2;177;185;249msrc/server.js[39m has no owner yet.
+
+[38;2;153;153;153m✻[39m [38;2;153;153;153mWaiting for [1m2[0m[38;2;153;153;153m background agents to finish[39m
+
+[38;2;255;255;255m⏺[39m Monitor event: "sub-human room notices"
+
+[38;2;78;186;101m⏺[39m [1mUpdated plan[0m
+[38;2;153;153;153m  ⎿  /plan to preview[39m
+
+[38;2;78;186;101m⏺[39m [1mUpdated plan[0m
+[38;2;153;153;153m  ⎿  /plan to preview[39m
+
+[38;2;78;186;101m⏺[39m [1mUpdated plan[0m
+[38;2;153;153;153m  ⎿  /plan to preview[39m
+
+  [38;2;153;153;153mCalled plugin:sub-human:room [1m2[0m[38;2;153;153;153m times [39m
+
+[38;2;255;255;255m⏺[39m The paging plan isn't decided yet: alice signed off on the first version (#12), but bob objected (#13).
+
+  bob's objection: "add a test for a cursor past the end — [38;2;177;185;249mafter=zzz[39m must 400, not 500". I revised the plan and proposed version 2 to both of them (#15). It now:
+  - requires a test that [38;2;177;185;249mGET /tasks?after=zzz[39m returns 400, never 500;
+  - separates two cases: a garbled cursor like [38;2;177;185;249mzzz[39m returns 400, while a valid cursor that points past the last task returns an empty page, as alice said in #8.
+
+  Version 2 replaces version 1, so alice's sign-off no longer counts. Both of them need to answer the new card, and I explained this in the room (#16).
+
+  One question is still open in the plan: whether a [38;2;177;185;249mlimit[39m above 50 gets cut down to 50 or rejected with a 400.
+[38;2;215;119;87m✻[39m [38;2;228;144;112mroom stoat-3644 open…[38;2;215;119;87m [38;2;153;153;153m(14s · ↓[39m [38;2;153;153;153m1.3k tokens)[39m
+[38;2;215;119;87m✶[38;2;153;153;153m [38;2;215;119;87mroom stoat-3644 open… [38;2;153;153;153m(16s · ↓[39m [38;2;153;153;153m1.4k tokens)[39m
+[38;2;153;153;153m  ⎿  [38;2;215;119;87m◼ [1m[39mroom s[0m [1moat-3644 open[0m
+
+[38;2;153;153;153m❯ [39m
+[38;2;153;153;153m❯ [39m
+                                           [38;2;153;153;153mesc to[39m [38;2;153;153;153minterrup[39m [38;2;153;153;153m · ctrl+t to hide tasks · ↓ to manage[39m
+                                           [38;2;153;153;153mesc to[39m [38;2;153;153;153minterrup[39m [38;2;153;153;153m · ctrl+t to hide tasks · ↓ to manage[39m
+
+           [33m⚠ reviewing 95becc[39m
+         [33m⚠ ⚠ reviewing 95becc[39m
+         [33m⚠ reviewing 95becc[39m
+

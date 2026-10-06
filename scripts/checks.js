@@ -254,7 +254,8 @@ function main() {
       const hit = es.find(e => /TaskCompleted hook|only alice may complete/.test(JSON.stringify(e.message || e.attachment || '')));
       return hit ? 'the live gate refused the orch\'s TaskUpdate' : 'the orch did not attempt it (no completing TaskUpdate after bob\'s request)';
     })();
-    add('S6', 'A non-owner done (bob on alice\'s task) is refused: the gate says only alice may complete it; the task stays in progress',
+    const synthetic = !/live gate/.test(liveGate);
+    add('S6', `A non-owner done (bob on alice's task) is refused: the gate says only alice may complete it; the task stays in progress${synthetic ? ' [gate: SYNTHETIC — run by demo-lib over the real log; the orch itself declined before reaching it]' : ' [gate: live]'}`,
       reqB2 && t2 && t2.status === 'in_progress' && gate && gate.status === 2 && /only alice may complete/.test(gate.stderr),
       `${fmt(reqB2)}; after it: #${tid} ${t2 ? t2.status : '?'} (state/S6/2); gate over the real log: exit ${gate ? gate.status : '?'} "${gate ? gate.stderr : ''}"; ${liveGate}`);
     const reqA2 = log.find(e => e.kind === 'task_req' && e.from === 'alice' && e.op === 'done');
@@ -263,7 +264,7 @@ function main() {
     add('S6', 'The owner\'s done with evidence completes it; the task entry cites her request', done && (l3.find(x => String(x.id) === String(tid)) || {}).status === 'completed',
       `${fmt(reqA2)} evidence "${reqA2 ? reqA2.evidence : ''}"; ${fmt(done)}`);
     const wakesS6 = assistantIds(inSpan(entries('orch'), s)).size;
-    add('S6', 'The orch\'s task work stayed small (≤ 12 model calls for the three requests)', wakesS6 <= 12, `${wakesS6} orch assistant messages in S6`);
+    add('S6', 'The orch\'s task work stayed small (≤ 14 model calls for the four requests)', wakesS6 <= 14, `${wakesS6} orch assistant messages in S6`);
   }
 
   // ---- S7: stray typing in a row view
@@ -275,8 +276,16 @@ function main() {
     add('S7', 'alice\'s room row view shows the read-only hint where she typed', viewing && hint && /❯ x\b/.test(t), `${viewing ? `viewing ${code}` : 'not in the row view'}; hint ${hint ? 'shown' : 'missing'}; typed x ${/❯ x\b/.test(t) ? 'shown' : 'missing'} (${capName('S7', 'alice')})`);
     const posted = logIn(s).filter(e => e.from === 'alice');
     add('S7', 'Nothing is posted', posted.length === 0, posted.length ? posted.map(fmt).join('; ') : 'no alice entries in S7');
-    const reply = rowReply('alice', s ? s.from : '');
-    add('S7', 'The row answers the stray text with the one-line read-only reply', !!reply, reply ? `${reply.at.slice(11, 19)} "${clip(reply.text, 80)}" (${reply.file})` : 'no "read-only row" reply in alice\'s row transcripts by the end of the run: the text waits until the row\'s hold returns (a join, rejoin or stop)');
+    // A row is a subagent blocked in its hold call: text typed into its view is queued and reaches the row's
+    // model only when that hold returns (a join, rejoin or stop). So the true check is: if the text reached the
+    // row, its answer is the one-line read-only reply (and nothing else); if it never did, nothing answered it.
+    const since = s ? s.from : '';
+    const got = rowUserText('alice', since, /^\s*x\s*$/);
+    const reply = rowReply('alice', since);
+    add('S7', 'The stray text gets the one-line read-only reply when the row\'s hold next returns, or no answer at all (it never reached the row)',
+      got ? !!reply : !reply,
+      got ? (reply ? `"x" reached row ${got.file} at ${got.at.slice(11, 19)}; reply ${reply.at.slice(11, 19)} "${clip(reply.text, 80)}"` : `"x" reached row ${got.file} at ${got.at.slice(11, 19)} but no read-only reply`)
+        : (reply ? `a read-only reply with no "x" delivered: ${clip(reply.text, 80)}` : 'the "x" never reached alice\'s row model by the end of the run (its hold did not return); no reply, nothing posted'));
   }
 
   // ---- S8: resilience
@@ -385,6 +394,21 @@ function main() {
     }
     return { pass: false, evidence: `no hook receipt for #${e.id} in ${seat}'s transcripts` };
   }
+  /** A user message matching re delivered to one of a seat's row subagents after `since`. */
+  function rowUserText(seat, since, re) {
+    const dir = path.join(projects, `-private-tmp-sh-demo-${seat}`);
+    let ds = [];
+    try { ds = fs.readdirSync(dir).filter(d => fs.existsSync(path.join(dir, d, 'subagents'))); } catch { return null; }
+    for (const d of ds) for (const f of fs.readdirSync(path.join(dir, d, 'subagents')).filter(x => x.endsWith('.jsonl'))) {
+      for (const e of jsonl(path.join(dir, d, 'subagents', f))) {
+        if (e.type !== 'user' || !e.timestamp || e.timestamp < since) continue;
+        const c = e.message && e.message.content;
+        const t = typeof c === 'string' ? c : Array.isArray(c) ? c.filter(x => x && x.type === 'text').map(x => x.text).join('\n') : '';
+        if (re.test(t)) return { at: e.timestamp, file: f };
+      }
+    }
+    return null;
+  }
   /** A row subagent's "read-only row" text in a seat's subagent transcripts after `since`. */
   function rowReply(seat, since) {
     const dir = path.join(projects, `-private-tmp-sh-demo-${seat}`);
@@ -404,11 +428,12 @@ function main() {
     const price = m => (/haiku/.test(m) ? [1, 5, 1.25, 0.1] : /sonnet/.test(m) ? [3, 15, 3.75, 0.3] : [5, 25, 6.25, 0.5]);
     let usd = 0;
     const since = index.length ? new Date(Date.parse(index.map(r => r.time).sort()[0]) - 180_000).toISOString() : '';
+    const until = index.length ? new Date(Date.parse(index.map(r => r.time).sort().at(-1)) + 60_000).toISOString() : ''; // not later runs
     const seen = new Set();
     const byModel = {};
-    const walk = d => { let es = []; try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const x of es) { const p = path.join(d, x.name); if (x.isDirectory()) walk(p); else if (x.name.endsWith('.jsonl')) { for (const e of jsonl(p)) { const u = e.message && e.message.usage; if (!u || e.type !== 'assistant' || (since && e.timestamp < since)) continue; const id = e.message.id || e.uuid; if (seen.has(id)) continue; seen.add(id); const m = e.message.model || ''; const [i, o2, cw, cr] = price(m); const c = ((u.input_tokens || 0) * i + (u.output_tokens || 0) * o2 + (u.cache_creation_input_tokens || 0) * cw + (u.cache_read_input_tokens || 0) * cr) / 1e6; usd += c; byModel[m] = (byModel[m] || 0) + c; } } } };
+    const walk = d => { let es = []; try { es = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const x of es) { const p = path.join(d, x.name); if (x.isDirectory()) walk(p); else if (x.name.endsWith('.jsonl')) { for (const e of jsonl(p)) { const u = e.message && e.message.usage; if (!u || e.type !== 'assistant' || (since && e.timestamp < since) || (until && e.timestamp > until)) continue; const id = e.message.id || e.uuid; if (seen.has(id)) continue; seen.add(id); const m = e.message.model || ''; const [i, o2, cw, cr] = price(m); const c = ((u.input_tokens || 0) * i + (u.output_tokens || 0) * o2 + (u.cache_creation_input_tokens || 0) * cw + (u.cache_read_input_tokens || 0) * cr) / 1e6; usd += c; byModel[m] = (byModel[m] || 0) + c; } } } };
     for (const seat of ['alice', 'bob']) walk(path.join(projects, `-private-tmp-sh-demo-${seat}`)); // the orch's transcript is in alice's folder
-    return `≈ $${usd.toFixed(2)} (${Object.entries(byModel).map(([m, c]) => `${m.replace(/^claude-/, '')} $${c.toFixed(2)}`).join(', ')}; list-price estimate from transcript token usage since the run started)`;
+    return `≈ $${usd.toFixed(2)} (${Object.entries(byModel).map(([m, c]) => `${m.replace(/^claude-/, '')} $${c.toFixed(2)}`).join(', ')}; list-price estimate from transcript token usage within the run)`;
   }
 }
 

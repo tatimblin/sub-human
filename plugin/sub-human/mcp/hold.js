@@ -38,7 +38,7 @@ const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
 const envMs = (k, d) => (Number(process.env[k]) > 0 ? Number(process.env[k]) : d);
 const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
 const ANNOUNCE_MAX = 3;
-const MSG_MAX = 200;
+const MSG_MAX = 140; // + HINT fits the two lines a row view shows at 120 columns (at 200 the hint was cut off, run stoat-3644)
 const END = 'End now without calling any tool.';
 // Shown on every progress line, right above the row view's input box: the row takes no input (A-rows #1).
 const HINT = ' · read-only · talk in main (@room)';
