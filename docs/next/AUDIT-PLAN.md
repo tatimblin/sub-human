@@ -1,6 +1,6 @@
 # Audit implementation plan
 
-Status: proposed, 2026-10-06. Sources:
+Status: done, 2026-10-06 (waves 0–4; live run narwhal-2294, 68/68 deterministic checks). Sources:
 - the five-way audit (best practices, architecture, clean code, robustness, tests and docs);
 - the binary read of Claude Code 2.1.281, kept at `docs/internals/cc-2.1.281.md`.
 

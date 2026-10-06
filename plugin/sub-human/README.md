@@ -7,6 +7,8 @@ A Claude Code plugin for working together from separate sessions on one machine.
 - **A headless helper, the orch,** starts with the room. It keeps the room's shared task list, and it helps plan only when someone asks. It messages people only when they addressed it or when its own action needs telling.
 - **Consent is yours.** When a proposal names you, it opens in Claude Code's own plan view in your terminal, all of it scrollable. Only your answer there records agreement. No Claude can give it.
 
+How it is built: [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md).
+
 ## Install
 
 From this repo, without installing, add `--plugin-dir plugin/sub-human` to `claude`. Or install it through the bundled marketplace:

@@ -1,6 +1,6 @@
 {
  "_doc": "Baselines and thresholds for scripts/checks.js and scripts/metrics.js. runs: per-run metrics (metrics.js shape, totals only). compare: which runs fill checks.json _metrics.{baseline,phase0,prev} (the walkthrough table). thresholds: the behavioural checks' limits (a value over its limit is a warning, not a failure) and the join-text sizes (deterministic). prices: USD per million tokens [input, output, cache write, cache read], matched by model-name substring in order; 'default' otherwise.",
- "compare": { "baseline": "vole-8126", "phase0": "otter-0813", "prev": "stoat-3644" },
+ "compare": { "baseline": "vole-8126", "phase0": "otter-0813", "prev": "swan-6397" },
  "thresholds": {
   "wakes": 18,
   "noisePerCapture": 1.4,
@@ -58,6 +58,17 @@
    "red": 0,
    "cardsPerCard": 3.75,
    "cost": "≈ $2.90 (opus-5-5)"
+  },
+  "narwhal-2294": {
+   "run": "narwhal-2294",
+   "note": "commit 138fec1 (waves 0-3; 73/73, 2 behavioural warnings), from its checks.json; seats and orch on the user's default model",
+   "wakes": { "orch": 8, "alice": 7, "bob": 8, "total": 23 },
+   "noise": { "captures": 56, "lines": 167, "perCapture": 2.98, "perCaptureExWaiting": 1.11, "monitor": 60, "waiting": 105, "hookError": 0, "blocked": 2, "invalid": 0 },
+   "joinChars": { "orch": 709, "alice": 1104, "bob": 1098 },
+   "injected": { "orch": 1953, "alice": 4206, "bob": 5035, "total": 11194 },
+   "red": 0,
+   "cardsPerCard": 3.75,
+   "cost": "≈ $2.72 (opus-5-5)"
   }
  },
  "prices": {

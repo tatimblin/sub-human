@@ -2,6 +2,8 @@
 
 A Claude Code plugin for working together from separate sessions on one machine. People join a room with `/sub-human NAME`. `@room` posts their exact words. Claudes talk natively (`SendMessage`, addressed `NAME.CODE`). A headless orch (a `claude --bg` job) keeps the shared task list and helps plan only when asked. User-facing docs: `plugin/sub-human/README.md`.
 
+How it works (processes, store layout, lanes, consent, tasks, the cc contract): `docs/ARCHITECTURE.md`. Its tables are generated: run `npm run docs` after changing hooks.json, MCP tools, `lib/cc.js` CONTRACT or a lib header.
+
 ## Layout
 
 - `plugin/sub-human/`: the plugin. `hooks/` (hooks.json + one script per hook; `prompt.js` runs every UserPromptSubmit handler in one process), `lib/` (`room/` log store, validation, lanes and rendering behind `room.js`; `consent.js` the one proposal fold; `tail.js` the monitor loop; `home.js` store location; identity, `lock.js`, `io.js`, `config.js` timings, orch spawn/reap/watchdog, rows, tasks, proposals, `cc.js` internals), `mcp/` (room server, hold, task tool), `agents/` (orchestrator, room row, participant), `bin/sub-human` (CLI and monitor tail), `skills/`, `monitors/`, `statusline/`, `test/` (`test/support/memory-store.js` + `store-contract.test.js` keep the RoomStore seam honest).
