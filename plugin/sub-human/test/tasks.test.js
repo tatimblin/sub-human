@@ -8,6 +8,7 @@ const h = require('./helpers.js');
 const identity = require(path.join(h.LIB, 'identity.js'));
 const room = require(path.join(h.LIB, 'room.js'));
 const tasks = require(path.join(h.LIB, 'tasks.js'));
+const io = require(path.join(h.LIB, 'io.js'));
 const taskPlugin = require(path.join(h.PLUGIN, 'mcp', 'task.js'));
 
 // ---------- validate ----------
@@ -92,9 +93,9 @@ test('gate: the room-open task completes only while the room is closing', () => 
   // closing read from members.json
   assert.equal(tasks.isClosing(code), false);
   const f = path.join(identity.roomDir(code), 'members.json');
-  identity.writeJsonAtomic(f, { ...identity.readMembers(code), closing: new Date().toISOString() });
+  io.writeJsonAtomic(f, { ...identity.readMembers(code), closing: new Date().toISOString() });
   assert.equal(tasks.gate(code, t1, []).ok, true);
-  identity.writeJsonAtomic(f, { orch: { name: 'orch', role: 'orch', pid: 1, closing: true } });
+  io.writeJsonAtomic(f, { orch: { name: 'orch', role: 'orch', pid: 1, closing: true } });
   assert.equal(tasks.isClosing(code), true);
 });
 

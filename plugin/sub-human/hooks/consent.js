@@ -2,7 +2,7 @@
 'use strict';
 /**
  * plugin/sub-human/hooks/consent.js: consent. A proposal opens in Claude Code's own plan-approval dialog (the
- * native, scrollable plan view: PgUp/PgDn read all of it); the AskUserQuestion card (S2) is the fallback.
+ * native, scrollable plan view: PgUp/PgDn read all of it); the AskUserQuestion card is the fallback.
  *
  * Review. The member's Claude calls EnterPlanMode, then ExitPlanMode "proposal <hash>":
  *   Pre(EnterPlanMode): a proposal is pending for me and my mode allows a review (default, acceptEdits, auto; not
@@ -20,7 +20,7 @@
  *   Stop / UserPromptSubmit / Pre(room tools): a review left open (feedback, Esc) is resolved and the model is told
  *     to exit it (a room tool call is denied: the person's note is recorded already).
  *   Esc and "No" without text record nothing.
- * Pre(AskUserQuestion): the card, as in S2, only when the call names a proposal pending for me (or plainly asks
+ * Pre(AskUserQuestion): the card, only when the call names a proposal pending for me (or plainly asks
  *   about the only one); when the member could review it in the plan view instead, the call is redirected there.
  * Post(AskUserQuestion): drop afkTimeoutMs, followUp, no answers, stale hashes and "Not yet". Otherwise append
  *   signoff|objection via=human (notes byte-exact), then the decision when complete (lib/proposal.record).
@@ -47,7 +47,7 @@ function named(pending, input) {
 /**
  * No hash named, but the question is plainly about a proposal ("Do you agree with the paging proposal?") and
  * exactly one is pending for me, and the input names no other hex id: that one (the model may drop the hash, as in run
- * raven-3365). An unrelated question (no "propos…") or an ambiguous one (two pending) stays untouched (S2 F9).
+ * raven-3365). An unrelated question (no "propos…") or an ambiguous one (two pending) stays untouched: a question about something else must not become a consent card.
  */
 function onlyPending(pending, input) {
   if (pending.length !== 1) return [];
@@ -70,9 +70,9 @@ function pre(input, me) {
 
 // ---------- the review in the native plan dialog ----------
 const REVIEW_MODES = ['default', 'acceptEdits', 'auto'];
-const readJson = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+const { readJson } = require(path.join(__dirname, '..', 'lib', 'io.js'));
 
-/** The clear-context approve option fires no PostToolUse and starts implementing (spike 3, P3): no review then. */
+/** The clear-context approve option fires no PostToolUse and starts implementing: no review then. */
 function clearContextOn(cwd) {
   const home = process.env.HOME || require('node:os').homedir();
   const files = [path.join(home, '.claude', 'settings.json')];
@@ -188,7 +188,7 @@ function preExit(input, me) {
   if (st.phase === 'shown' && st.tool_use_id && st.tool_use_id === input.tool_use_id) return ask(st, me); // the same call again
   if (st.phase === 'shown') { resolveShown(input, me, st); st.phase = 'exiting'; return writeReview(me, st); }
   if (st.phase !== 'entering') { st.phase = 'exiting'; return writeReview(me, st); }
-  // Only a call that names the proposal (S2 F9): the model's own input, from the transcript when the plan file
+  // Only a call that names the proposal (a plan the person asked for must never be swapped for one): the model's own input, from the transcript when the plan file
   // replaced it. A plan the model wrote for its person (plan mode entered for real work) passes through untouched.
   const pending = proposal.pendingFor(me).filter(p => proposal.viewable(p));
   const own = modelInput(input);
@@ -361,4 +361,4 @@ c.run(input => {
   if (/^mcp__plugin_sub-human_room__/.test(tool || '') && ev === 'PreToolUse') return preRoomTool(input, me);
   if (ev === 'Stop') return stop(input, me);
   if (ev === 'UserPromptSubmit') return prompt(input, me);
-}, err => { process.stderr.write(`sub-human consent: ${err && err.message || err}\n`); }); // never block a question or a plan
+}, () => {}); // run() logs the error; never block a question or a plan

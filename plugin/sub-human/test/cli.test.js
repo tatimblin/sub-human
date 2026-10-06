@@ -229,6 +229,8 @@ test('cli tail: survives a restart via its cursor; switches when the session cha
   await a.until('bob: history');
   say('bob', 'first watch');                             // #3
   await a.until('bob: first watch');
+  // The cursor is saved after stdout drains; stopping before then replays #3 (at-least-once), so wait.
+  await h.until(() => room.getCursor('tail-alice') === 3, 2000);
   await a.stop();
   say('bob', 'posted in the gap');                       // #4: nobody is watching
   room.append({ kind: 'status', text: 'own, skipped' }, { via: 'agent', from: 'alice' }); // #5

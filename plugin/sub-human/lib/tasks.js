@@ -28,11 +28,14 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const identity = require('./identity.js');
+const { readJson, writeJsonAtomic } = require('./io.js');
+const { clip, NAME_RE } = require('./text.js');
+const config = require('./config.js');
 
 const OPS = ['add', 'claim', 'release', 'done'];
-const SUBJECT_MAX = 200;
-const DETAIL_MAX = 2000;
-const EVIDENCE_MAX = 2000;
+const SUBJECT_MAX = config.TASK_SUBJECT_MAX;
+const DETAIL_MAX = config.TASK_DETAIL_MAX;
+const EVIDENCE_MAX = config.TASK_EVIDENCE_MAX;
 const SUMMARY_ITEMS = 3;
 const OPEN = new Set(['pending', 'in_progress']);
 
@@ -51,7 +54,7 @@ function isRoomTask(t, code) {
 }
 
 function list(code) {
-  const v = identity.readJson(listPath(code), []);
+  const v = readJson(listPath(code), []);
   return Array.isArray(v) ? v.filter(t => t && t.id != null).sort(byId) : [];
 }
 
@@ -60,7 +63,7 @@ function writeList(code, tasks) {
     id: String(t.id), subject: String(t.subject || ''), status: t.status || 'pending',
     owner: t.owner || null, blockedBy: Array.isArray(t.blockedBy) ? t.blockedBy.map(String) : [],
   })).sort(byId);
-  identity.writeJsonAtomic(listPath(code), clean);
+  writeJsonAtomic(listPath(code), clean);
   return clean;
 }
 
@@ -110,7 +113,7 @@ function validate(req) {
     out.evidence = evidence;
   }
   if (req.for != null && req.for !== '') {
-    if (typeof req.for !== 'string' || !identity.NAME_RE.test(req.for)) return no(`invalid name in for: "${req.for}"`);
+    if (typeof req.for !== 'string' || !NAME_RE.test(req.for)) return no(`invalid name in for: "${req.for}"`);
     if (['room', 'orch', 'all', 'system'].includes(req.for.toLowerCase())) return no(`"${req.for}" cannot own a task`);
     out.for = req.for;
   }
@@ -119,9 +122,8 @@ function validate(req) {
 
 function requestText(r) {
   const who = r.owner ? ` for ${r.owner}` : '';
-  const cut = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
-  if (r.op === 'add') return `task add${who}: ${r.subject}${r.detail ? ` (${cut(r.detail.replace(/\s+/g, ' '), 200)})` : ''}`;
-  if (r.op === 'done') return `task done #${r.id}${who}: ${cut(r.evidence.replace(/\s+/g, ' '), 400)}`;
+  if (r.op === 'add') return `task add${who}: ${r.subject}${r.detail ? ` (${clip(r.detail.replace(/\s+/g, ' '), config.TASK_REQ_DETAIL_SHOWN)})` : ''}`;
+  if (r.op === 'done') return `task done #${r.id}${who}: ${clip(r.evidence.replace(/\s+/g, ' '), config.TASK_REQ_EVIDENCE_SHOWN)}`;
   return `task ${r.op} #${r.id}${who}`;
 }
 
@@ -172,7 +174,7 @@ function gate(code, task, log = [], { closing } = {}) {
 }
 
 module.exports = {
-  OPS, SUBJECT_MAX, DETAIL_MAX, EVIDENCE_MAX,
+  OPS,
   list, summary, mine, validate, gate, reqOf, requestText,
   isRoomTask, isClosing, writeList, listPath, nativeDir,
 };

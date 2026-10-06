@@ -1,7 +1,7 @@
 'use strict';
 /**
  * plugin/sub-human/mcp/hold.js: the `hold` tool, a room-server plug-in (create(ctx) -> {tools, call}).
- * It keeps participant rows open in the agent panel at zero tokens (E3 "A2", P0 nested rows).
+ * It keeps participant rows open in the agent panel at zero tokens (nested under the room row).
  *
  *   hold({member: NAME})   called once by a sub-human:participant row agent. Blocks for as long as this seat is in
  *       the room, streaming notifications/progress (the latest entry of NAME's thread, re-sent every BEAT_MS so
@@ -14,8 +14,8 @@
  *                      room never spawned their row. A name is announced only after GRACE_MS without a hold
  *                      (so children spawned in the same message as this call are not double-announced), at
  *                      most ANNOUNCE_MAX times per name until its hold shows up.
- *       "RESPAWN a"    a's hold here was cancelled (Esc twice on the row; P0) while a is still in the room.
- *                      Checked after RESPAWN_DELAY_MS; dropped when the room hold itself was cancelled too
+ *       "RESPAWN a"    a's hold here was cancelled (Esc twice on the row) while a is still in the room.
+ *                      Checked after RESPAWN_MS; dropped when the room hold itself was cancelled too
  *                      (killing the room cascades to its children).
  *       Both can come back together, one line each. "STOP: ..." when this seat left the room, or
  *       "STOP: duplicate row" at once when another room row already holds here (e.g. re-spawned after /clear).
@@ -26,7 +26,7 @@
  * posted (Claude Code queues it for the row agent), so the line says where to talk instead.
  * Liveness goes to <room>/rows/holds-<me>.json (lib/rows.js) for row-guard, join notes and rewake. A room hold
  * that returned JOINED/RESPAWN still counts as running for ROOM_GAP_MS (roomUntil) while its agent re-calls,
- * so a join notice read in that gap never invites a second room row (Phase 0: red row-guard error).
+ * so a join notice read in that gap never invites a second room row (row-guard would deny it in red).
  *
  * Env (ms): SUB_HUMAN_HOLD_BEAT_MS 20000, SUB_HUMAN_HOLD_POLL_MS 1000, SUB_HUMAN_HOLD_GRACE_MS 20000,
  *   SUB_HUMAN_HOLD_RESPAWN_MS 1500, SUB_HUMAN_HOLD_WHO_MS 3000 (how often `me` is re-resolved),
@@ -38,17 +38,18 @@ const path = require('node:path');
 const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
 const notices = require(path.join(__dirname, '..', 'lib', 'notices.js'));
 const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
+const strs = require(path.join(__dirname, '..', 'lib', 'text.js'));
+const config = require(path.join(__dirname, '..', 'lib', 'config.js'));
 
-const envMs = (k, d) => (Number(process.env[k]) > 0 ? Number(process.env[k]) : d);
-const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
+const { envMs } = config;
+const { NAME_RE, oneLine } = strs;
 const ANNOUNCE_MAX = 3;
-const MSG_MAX = 140; // + HINT fits the two lines a row view shows at 120 columns (at 200 the hint was cut off, run stoat-3644)
+const MSG_MAX = config.HOLD_MSG_MAX; // + HINT fits the two lines a row view shows at 120 columns (at 200 the hint was cut off)
 const END = 'End now without calling any tool.';
-// Shown on every progress line, right above the row view's input box: the row takes no input (A-rows #1).
+// Shown on every progress line, right above the row view's input box: the row takes no input.
 const HINT = ' · read-only · talk in main (@room)';
 
-const oneLine = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
-const clip = (s, n = MSG_MAX) => { const a = Array.from(s); return a.length > n ? a.slice(0, n - 1).join('') + '…' : s; };
+const clip = (s, n = MSG_MAX) => strs.clip(s, n);
 
 /** An entry as its group-chat line, no id: "alice: say 1", "orch (to alice): which cursor?", "alice left". */
 function entryLine(e) {
@@ -62,12 +63,12 @@ const TOOL = {
 };
 
 function create(ctx) {
-  const BEAT_MS = envMs('SUB_HUMAN_HOLD_BEAT_MS', 20_000);
-  const POLL_MS = envMs('SUB_HUMAN_HOLD_POLL_MS', 1000);
-  const GRACE_MS = envMs('SUB_HUMAN_HOLD_GRACE_MS', 20_000);
-  const RESPAWN_MS = envMs('SUB_HUMAN_HOLD_RESPAWN_MS', 1500);
-  const WHO_MS = envMs('SUB_HUMAN_HOLD_WHO_MS', 3000);
-  const ROOM_GAP_MS = envMs('SUB_HUMAN_HOLD_ROOM_GAP_MS', 30_000);
+  const BEAT_MS = envMs('SUB_HUMAN_HOLD_BEAT_MS', config.HOLD_BEAT_MS);
+  const POLL_MS = envMs('SUB_HUMAN_HOLD_POLL_MS', config.HOLD_POLL_MS);
+  const GRACE_MS = envMs('SUB_HUMAN_HOLD_GRACE_MS', config.HOLD_GRACE_MS);
+  const RESPAWN_MS = envMs('SUB_HUMAN_HOLD_RESPAWN_MS', config.HOLD_RESPAWN_MS);
+  const WHO_MS = envMs('SUB_HUMAN_HOLD_WHO_MS', config.HOLD_WHO_MS);
+  const ROOM_GAP_MS = envMs('SUB_HUMAN_HOLD_ROOM_GAP_MS', config.HOLD_ROOM_GAP_MS);
   const log = (...a) => { try { ctx.log && ctx.log('hold', ...a); } catch { /* debug only */ } };
   const text = s => (ctx.text ? ctx.text(s) : { content: [{ type: 'text', text: s }] });
 
@@ -197,8 +198,8 @@ function create(ctx) {
     const { entries } = readEntries(code);
     const fresh = notices.joinLeave(entries, me && me.name, { now }).filter(n => n.settled && !h.moves.has(n.id));
     for (const n of fresh) h.moves.add(n.id);
-    const n = fresh.filter(x => now - Date.parse(x.at) < notices.FRESH_MS).at(-1);
-    return n ? clip(notices.text(code, n, ms)) : '';
+    const n = fresh.filter(x => now - Date.parse(x.at) < config.NOTICE_FRESH_MS).at(-1);
+    return n ? clip(notices.text(n)) : '';
   }
 
   function startTimer() {
@@ -229,7 +230,7 @@ function create(ctx) {
         if (memberHolds(code).some(x => x.name === h.name)) return;
         const live = roomHolds(code);
         const ended = roomEnded.get(code);
-        if (!live.length && !(ended && Date.now() - ended < 30_000)) return; // orch side: nobody respawns
+        if (!live.length && !(ended && Date.now() - ended < config.HOLD_RESPAWN_AFTER_RETURN_MS)) return; // orch side: nobody respawns
         if (!respawn.has(code)) respawn.set(code, new Set());
         respawn.get(code).add(h.name);
         expect.set(`${code}/${h.name}`, { at: Date.now(), n: 0 });

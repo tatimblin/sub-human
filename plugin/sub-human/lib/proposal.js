@@ -1,13 +1,12 @@
 'use strict';
 /**
- * plugin/sub-human/lib/proposal.js: proposals and the consent card. Replaces lib/plan.js for consent.
+ * plugin/sub-human/lib/proposal.js: proposals and the consent card.
  * CommonJS, zero dependencies, Node 24. Every write goes through room.append().
  *
- * Log entries (the Phase 2 contract):
+ * Log entries:
  *   proposal  via=agent, from = the proposer, {hash, approvers[], path, text}   (propose tool)
  *   signoff | objection  via=human, from = the approver, {proposal_hash, text?}  (consent.js, from the card;
- *             text = the card's notes, byte-exact, omitted when there are none; a room.js that
- *             requires text gets the bare label "Agree"/"Object" instead)
+ *             text = the card's notes, byte-exact, omitted when there are none)
  *   decision  via=system, from "room", {proposal_hash, refs: the answer ids, text "agreed: …" | "objected: …"}
  *             written once, when every approver has answered.
  *
@@ -39,17 +38,21 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const identity = require('./identity.js');
 const room = require('./room.js');
+const { withLock } = require('./lock.js');
+const { writeFileAtomic } = require('./io.js');
+const { clip } = require('./text.js');
+const config = require('./config.js');
 
 const HASH_RE = /^[0-9a-f]{12}$/;
 const QUESTION_RE = /^Agree to proposal ([0-9a-f]{12})\?$/;
-const PREVIEW_MAX = 2000;   // S2 F5: the card withholds a preview longer than 2000 (JS .length)
-const PREVIEW_LINES = 20;   // S2 F5: about 24 lines show at 50 rows; keep a margin
-const VIEW_MAX = 200000;   // the plan dialog withholds approval above 200,000 chars (2.1.281)
+const PREVIEW_MAX = config.PREVIEW_MAX;     // the card withholds a longer preview (JS .length)
+const PREVIEW_LINES = config.PREVIEW_LINES; // about 24 lines show at 50 rows; keep a margin
+const VIEW_MAX = config.VIEW_MAX;           // the plan dialog withholds approval above 200,000 chars
 const UNSAFE_RE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/;
-const SUMMARY_MAX = 1200;
-const SUMMARY_LINES = 12;
-const FILE_MAX = 256 * 1024;
-const CHOICES = { agree: 'Agree', object: 'Object', later: 'Not yet' };
+const SUMMARY_MAX = config.SUMMARY_MAX;
+const SUMMARY_LINES = config.SUMMARY_LINES;
+const FILE_MAX = config.PROPOSAL_FILE_MAX;
+const TITLE_MAX = config.PROPOSAL_TITLE_MAX;
 
 class ProposalError extends Error {}
 const refuse = m => { throw new ProposalError(m); };
@@ -63,18 +66,13 @@ function read(code, hash) {
 function store(code, buf) {
   const hash = hash12(buf);
   const file = planPath(code, hash);
-  if (!fs.existsSync(file)) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, buf);
-    fs.renameSync(tmp, file);
-  }
+  if (!fs.existsSync(file)) writeFileAtomic(file, buf);
   return hash;
 }
 
 const bind = me => { if (me && me.code && !process.env.ROOM_DIR) room.bind(me.code); };
 const entriesOf = (me, entries) => { if (entries) return entries; bind(me); return room.readAll(); };
-const retracted = entries => (typeof room.retractedIds === 'function' ? room.retractedIds(entries) : new Set());
+const retracted = entries => room.retractedIds(entries);
 
 function humans(code) {
   return Object.values(identity.readMembers(code) || {})
@@ -125,7 +123,7 @@ function summary(text) {
   let len = 0, used = 0;
   for (const l of lines) {
     if (out.length >= SUMMARY_LINES) break;
-    const s = l.length > 160 ? l.slice(0, 159) + '…' : l;
+    const s = clip(l, TITLE_MAX);
     if (len + s.length + 1 > SUMMARY_MAX) break;
     out.push(s); len += s.length + 1; used++;
   }
@@ -212,7 +210,7 @@ function create(me, args = {}, { cwd } = {}) {
     return { hash, approvers, path: stored, entry: entries.find(e => e.id === open.id), again: true };
   }
   const first = buf.toString('utf8').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').trim()).find(Boolean) || '';
-  const title = first.length > 160 ? first.slice(0, 159) + '…' : first;
+  const title = clip(first, TITLE_MAX);
   const entry = room.append({ kind: 'proposal', text: `proposal ${hash}: ${title}`, hash, approvers, path: stored },
     { via: 'agent', from: me.name });
   return { hash, approvers, path: stored, entry, again: false };
@@ -228,7 +226,7 @@ function record(me, p, answer = {}) {
   const choice = choiceOf(answer.choice);
   if (choice !== 'Agree' && choice !== 'Object') return { stale: true, why: 'no choice' };
   const lock = path.join(room.dir(), 'proposal.lock');
-  return identity.withLock(lock, () => {
+  return withLock(lock, () => {
     const entries = room.readAll();
     const cur = proposals(entries).find(x => x.hash === p.hash);
     if (!cur || !cur.approvers.includes(me.name) || decision(cur.hash, entries) || matrix(cur, entries).answers[me.name]) {
@@ -238,12 +236,7 @@ function record(me, p, answer = {}) {
     const kind = choice === 'Agree' ? 'signoff' : 'objection';
     const e = { kind, proposal_hash: cur.hash };
     if (notes !== undefined) e.text = notes; // byte-exact
-    let entry;
-    try { entry = room.append(e, { via: 'human', from: me.name }); } catch (err) {
-      // A room.js that still requires text on every entry: the bare label stands in for "no note".
-      if (notes !== undefined || !(err && err.code === 'INVALID' && /text/.test(err.message))) throw err;
-      entry = room.append({ ...e, text: choice }, { via: 'human', from: me.name });
-    }
+    const entry = room.append(e, { via: 'human', from: me.name });
     const m = matrix(cur, [...entries, entry]);
     let dec = null;
     if (m.complete) {
@@ -255,11 +248,11 @@ function record(me, p, answer = {}) {
         { via: 'system', from: 'room', system: true });
     }
     return { entry, decision: dec };
-  }, Error);
+  });
 }
 
 module.exports = {
-  HASH_RE, QUESTION_RE, PREVIEW_MAX, PREVIEW_LINES, VIEW_MAX, CHOICES, ProposalError,
+  QUESTION_RE, ProposalError,
   create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, record, decision, humans, reminder,
   planPath, read, hash12,
 };

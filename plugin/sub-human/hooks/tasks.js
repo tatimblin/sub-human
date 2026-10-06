@@ -22,6 +22,8 @@ const LIB = path.join(__dirname, '..', 'lib');
 const identity = require(path.join(LIB, 'identity.js'));
 const room = require(path.join(LIB, 'room.js'));
 const tasks = require(path.join(LIB, 'tasks.js'));
+const { readJson, writeJsonAtomic } = require(path.join(LIB, 'io.js'));
+const { withLock } = require(path.join(LIB, 'lock.js'));
 
 function readInput() {
   let raw = '';
@@ -40,9 +42,9 @@ function orchRoom(input) {
 }
 
 const listId = code => process.env.CLAUDE_CODE_TASK_LIST_ID || `sh-${code}`;
-const readNative = (code, id) => (/^\d+$/.test(String(id)) ? identity.readJson(path.join(tasks.nativeDir(listId(code)), `${id}.json`)) : null);
+const readNative = (code, id) => (/^\d+$/.test(String(id)) ? readJson(path.join(tasks.nativeDir(listId(code)), `${id}.json`)) : null);
 const roomIdsFile = code => path.join(identity.roomDir(code), 'tasks.room.json');
-const roomIds = code => new Set((identity.readJson(roomIdsFile(code), []) || []).map(String));
+const roomIds = code => new Set((readJson(roomIdsFile(code), []) || []).map(String));
 const internal = t => !!(t && t.metadata && t.metadata._internal);
 
 /** The req number the orch cites in a description: "(req #14 by bob)" or "evidence (#15): …"; the last wins. */
@@ -64,7 +66,7 @@ const same = (a, b) => !!a && !!b && a.subject === b.subject && a.status === b.s
 
 function mirror(code, input) {
   const resp = input.tool_response || {};
-  if (resp.success === false || resp.error) return; // refused (S1 F6)
+  if (resp.success === false || resp.error) return; // refused: the native list did not change
   const inp = input.tool_input || {};
   const created = input.tool_name === 'TaskCreate';
   const id = String(created ? (resp.task && resp.task.id) || '' : resp.taskId || inp.taskId || '');
@@ -73,7 +75,7 @@ function mirror(code, input) {
 
   room.bind(code);
   let logged = null;
-  identity.withLock(tasks.listPath(code) + '.lock', () => {
+  withLock(tasks.listPath(code) + '.lock', () => {
     const current = tasks.list(code);
     const prev = current.find(t => t.id === id) || null;
     const native = readNative(code, id);
@@ -93,7 +95,7 @@ function mirror(code, input) {
 
     const known = roomIds(code);
     if (known.has(id) || tasks.isRoomTask(next, code)) {
-      if (!known.has(id)) identity.writeJsonAtomic(roomIdsFile(code), [...known, id]);
+      if (!known.has(id)) writeJsonAtomic(roomIdsFile(code), [...known, id]);
       if (prev) tasks.writeList(code, current.filter(t => t.id !== id));
       return;
     }

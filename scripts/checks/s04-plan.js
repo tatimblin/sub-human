@@ -1,0 +1,40 @@
+'use strict';
+// S4: let's plan: bob @room @orch, the orch proposes, each approver reads it in the plan view
+const fs = require('node:fs');
+const path = require('node:path');
+const metrics = require('../metrics.js');
+const { readText, esc } = require('../lib/io.js');
+
+module.exports = {
+  scene: 'S4',
+  run(x, { det }) {
+    const { log, roomDir, props, DEMO } = x;
+    const ask = log.find(e => e.kind === 'say' && e.from === 'bob' && e.via === 'human' && e.text === DEMO.bob4);
+    det('bob\'s "@room @orch let\'s plan …" byte-exact, via=human', !!ask, ask ? `#${ask.id}` : 'not logged verbatim');
+    const p1 = props[0];
+    det('The orch proposes: proposal from orch naming alice and bob, plan stored by hash', p1 && p1.from === 'orch' && ['alice', 'bob'].every(n => (p1.approvers || []).includes(n)) && fs.existsSync(path.join(roomDir, 'plans', `${p1.hash}.md`)),
+      p1 ? `${x.fmt(p1)} approvers ${p1.approvers.join(',')}; plans/${p1.hash}.md ${fs.existsSync(path.join(roomDir, 'plans', `${p1.hash}.md`)) ? 'present' : 'missing'}` : 'no proposal');
+    const ow = ask && x.entries('orch').find(e => e.timestamp > ask.at && metrics.trigger(e));
+    det('The orch is woken by bob\'s @orch line', !!ow, ow ? `${metrics.trigger(ow)} at ${ow.timestamp.slice(11, 19)}` : 'no orch wake after it');
+    // the proposal opens in the native plan dialog (scrollable, hooks/consent.js); the card is the fallback
+    let title = '';
+    try { title = (fs.readFileSync(path.join(roomDir, 'plans', `${p1.hash}.md`), 'utf8').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').replace(/[*_`]/g, '').trim()).find(Boolean) || '').slice(0, 40); } catch { /* none */ }
+    const firstPage = seat => x.caps('S4', seat).find(r => r.caption.startsWith('The orch proposes'))?.step ?? 'last';
+    for (const seat of ['alice', 'bob']) {
+      // the plan view's first page (S4 step 1: the title); later S4 steps are alice paging down
+      const st4 = firstPage(seat);
+      const t = x.cap('S4', seat, st4) || '';
+      const view = /Would you like to proceed\?/.test(t) && /Tell Claude what to change|No, keep planning/.test(t) && !!title && t.includes(title);
+      const m = new RegExp(`Agree to proposal (${p1 ? esc(p1.hash) : '[0-9a-f]{12}'})\\?`).exec(t);
+      const opts = /1\. Not yet/.test(t) && /2\. Agree/.test(t) && /3\. Object/.test(t);
+      det(`${seat} reads the proposal in the native plan view (Yes / Tell Claude what to change), or on the fallback card`, view || (m && opts && /Consent/.test(t)),
+        view ? `plan view showing "${title}" (${x.capName('S4', seat, st4)})` : m ? `card ${m[0]}; options ${opts ? 'Not yet/Agree/Object' : 'missing'} (${x.capName('S4', seat, st4)})` : `no plan view or card in ${x.capName('S4', seat, st4)}`);
+    }
+    // alice pages through the whole proposal (PgDn) to its end: the hook's "room proposal HASH" line under the plan
+    const pages = x.caps('S4', 'alice').filter(r => /reads the whole proposal/.test(r.caption));
+    const endT = pages.length ? readText(path.join(x.screens, pages.at(-1).txt)) || '' : x.cap('S4', 'alice', firstPage('alice')) || '';
+    const endOk = p1 && new RegExp(`room proposal ${esc(p1.hash)}`).test(endT);
+    det('alice reads the whole proposal: PgDn pages through the plan view to its end (the "room proposal HASH" line)', endOk && /Would you like to proceed\?/.test(endT),
+      `${pages.length} PgDn page capture(s) (${pages.map(r => r.txt).join(', ') || 'none'}); last shows ${endOk ? `"room proposal ${p1.hash}"` : 'no end line'}`);
+  },
+};

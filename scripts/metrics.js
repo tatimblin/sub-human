@@ -30,7 +30,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
+const paths = require('./lib/paths.js');
 
 const SEATS = ['orch', 'alice', 'bob'];
 const NOISE = {
@@ -42,39 +42,17 @@ const NOISE = {
 };
 const REWAKE = 'sub-human: this session was resumed';
 
-/** vole-8126 (commit e83ffb5), recomputed with this file from its 69 captures and the seats' transcripts. */
-const BASELINE = {
-  run: 'vole-8126',
-  wakes: { orch: 12, alice: 17, bob: 10, total: 39 },
-  noise: { captures: 69, lines: 320, perCapture: 4.64, perCaptureExWaiting: 2.33, monitor: 145, waiting: 159, hookError: 5, blocked: 6, invalid: 5 },
-  joinChars: { orch: 7662, alice: 5732, bob: 5768 },
-  injected: { orch: 7782, alice: 12987, bob: 13542, total: 34311 },
-};
-/** otter-0813, the Phase 0 run (commit d08fec8), measured by this file's previous version (docs/rebuild/checks.json then). */
-const PHASE0 = {
-  run: 'otter-0813',
-  wakes: { orch: 8, alice: 8, bob: 7, total: 23 },
-  noise: { captures: 69, lines: 249, perCapture: 3.61, perCaptureExWaiting: 1.9, monitor: 124, waiting: 118, hookError: 7, blocked: 0, invalid: 0 },
-  joinChars: { orch: 7620, alice: 4968, bob: 4994 },
-  injected: { orch: 7740, alice: 12082, bob: 13268, total: 33090 },
-};
-
-/** stoat-3644, the previous slim run (commit da12d4d; seats on Haiku, the orch on the default model), from its checks.json. */
-const STOAT = {
-  run: 'stoat-3644',
-  wakes: { orch: 11, alice: 8, bob: 9, total: 28 },
-  noise: { captures: 55, lines: 167, perCapture: 3.04, perCaptureExWaiting: 1.22, monitor: 65, waiting: 100, hookError: 0, blocked: 2, invalid: 0 },
-  joinChars: { orch: 721, alice: 1096, bob: 1090 },
-  injected: { orch: 2356, alice: 5681, bob: 5666, total: 13703 },
-  red: 26,
-  cardsPerCard: 2.75,
-};
+/** Earlier runs to compare against (scripts/baselines.json runs; compare picks which fill checks.json _metrics). */
+const BASELINES = require('./baselines.json');
+const BASELINE = BASELINES.runs[BASELINES.compare.baseline];
+const PHASE0 = BASELINES.runs[BASELINES.compare.phase0];
+const STOAT = BASELINES.runs[BASELINES.compare.prev];
 
 const jsonl = f => { try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } };
 const textOf = c => (typeof c === 'string' ? c : Array.isArray(c) ? c.map(x => (x && (x.text || (typeof x.content === 'string' ? x.content : ''))) || '').join('\n') : '');
 const isToolResult = e => Array.isArray(e.message && e.message.content) && e.message.content.length > 0 && e.message.content.every(c => c && c.type === 'tool_result');
 
-const projectsDir = p => p || path.join(os.homedir(), '.claude', 'projects');
+const projectsDir = p => p || paths.projectsDir();
 
 /** The orch session id from <home>/rooms/<code>/members.json (the newest room), or null. */
 function orchSession(home, code) {
@@ -95,7 +73,7 @@ function transcripts(seat, from, to, projects, orchSid) {
     if (!orchSid) return [];
     try { for (const d of fs.readdirSync(base)) { const f = path.join(base, d, `${orchSid}.jsonl`); if (fs.existsSync(f)) files.push(f); } } catch { return []; }
   } else {
-    const dir = path.join(base, `-private-tmp-sh-demo-${seat}`);
+    const dir = path.join(base, path.basename(paths.seatProjectDir(seat)));
     try { files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl') && (!orchSid || f !== `${orchSid}.jsonl`)).map(f => path.join(dir, f)); } catch { return []; }
   }
   return files.map(f => ({ file: f, es: jsonl(f) }))
@@ -268,7 +246,7 @@ if (require.main === module) {
   const a = process.argv.slice(2), o = {};
   for (let i = 0; i < a.length; i++) if (a[i].startsWith('--')) o[a[i].slice(2)] = a[++i];
   const screens = path.resolve(o.screens || path.join(__dirname, '..', 'docs/rebuild/screens'));
-  process.stdout.write(JSON.stringify(measure({ screens, home: o.home || process.env.SUB_HUMAN_HOME || '/tmp/sh-demo/home' }), null, 1) + '\n');
+  process.stdout.write(JSON.stringify(measure({ screens, home: o.home || paths.demoHome() }), null, 1) + '\n');
 }
 
-module.exports = { measure, BASELINE, PHASE0, STOAT, NOISE, trigger, seatTranscriptMetrics, cardTurns, isRed };
+module.exports = { measure, BASELINES, BASELINE, PHASE0, STOAT, NOISE, trigger, seatTranscriptMetrics, cardTurns, isRed };

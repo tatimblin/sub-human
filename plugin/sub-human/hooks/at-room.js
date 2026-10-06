@@ -3,19 +3,19 @@
 // UserPromptSubmit: "@room TEXT" or "room:TEXT" posts the human's exact words (via human) and ends the
 // prompt, so no model turn runs and nothing is paraphrased.
 //
-// The payload has no `source` field (spike 3, P2), so we skip slash commands by prefix. Notes from
+// The payload has no `source` field, so we skip slash commands by prefix. Notes from
 // the probes:
 //   - the TUI trims trailing whitespace before the hook sees the prompt (documented, accepted);
 //   - a long paste arrives wrapped as \n\n<pasted_content id="N">\n…\n</pasted_content id="N">\n;
 //     we unwrap it and record normalized:true (pasted tabs already became 4 spaces upstream);
 //   - suppressOriginalPrompt only works inside hookSpecificOutput.
-//   - Rendering (2.1.281, fixes/D #9): success is continue:false + stopReason, which keeps the human's
+//   - Rendering: success is continue:false + stopReason, which keeps the human's
 //     "❯ @room …" row and adds one "Operation stopped by hook: ✓ sent" line (no entry id: people never see
 //     ids). The model
 //     sees the prompt and that line on its next turn natively, so no "unseen own posts" note is needed.
 //     Refusals stay decision:block + suppressOriginalPrompt, so refused or forged text never reaches it.
 //
-// Cross-session peer messages (native2/01 §2): UserPromptSubmit also fires for a message another session
+// Cross-session peer messages: UserPromptSubmit also fires for a message another session
 // (or any same-user process) wrote to this session's socket, with no origin field, and the transcript
 // entry (origin.kind "peer") is written only after the hook returns. So:
 //   - a prompt carrying the <cross-session-message …> envelope or the "Another Claude session sent a
@@ -24,7 +24,7 @@
 //     transcript_path for this prompt_id and, if that entry came from a peer, appends a system `retract`
 //     of #N ("peer-forged"). The tail settle (1.5 s) is longer than the check, so a forged line is not pushed.
 //
-// Drafted by Claude (fixes/B #11): when the posted text appears verbatim in the last assistant message
+// Drafted by Claude: when the posted text appears verbatim in the last assistant message
 // (an accepted prompt suggestion, a copied draft), the entry carries drafted:"agent". It is still posted.
 //
 // For any other prompt from a joined member (including a task notification that wakes the session), the
@@ -35,7 +35,7 @@
 // --resume) gets the exact missing Agent calls again with every ordinary prompt or notice, until they run.
 // A row spawned in the last minute (rows/<session>.json) may not hold yet, so it is never re-listed.
 //
-// The orch takes no typed input (decision 4): in the orch's session every prompt is refused with a hint,
+// The orch takes no typed input (nobody sits at its terminal; people reach it through @room): in the orch's session every prompt is refused with a hint,
 // typed text and typed slash commands alike, except a peer delivery (the <cross-session-message envelope),
 // a monitor notice (<task-notification>) and the launch `/sub-human` when it is the session's first prompt.
 // Those still get the pull digest and the row calls below.
@@ -51,9 +51,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { room, identity, out, run, whoami, readState, writeState, clip, presence } = require('./common.js');
+const { room, identity, out, run, logError, whoami, readState, writeState, clip, presence } = require('./common.js');
 const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
 const notices = require(path.join(__dirname, '..', 'lib', 'notices.js'));
+const proposal = require(path.join(__dirname, '..', 'lib', 'proposal.js'));
+const { oneLine } = require(path.join(__dirname, '..', 'lib', 'text.js'));
+const config = require(path.join(__dirname, '..', 'lib', 'config.js'));
 
 const PASTE = /(?:\n\n)?<pasted_content id="?(\w+)"?>\n([\s\S]*?)\n?<\/pasted_content id="?\1"?>\n?/g;
 
@@ -77,7 +80,7 @@ const block = (reason, extra = {}) => out({
 
 const PEER_ENVELOPE = /<cross-session-message\b/;
 const PEER_PREFIX = /^\s*Another Claude session sent a message/;
-const TAIL_BYTES = 512 * 1024;
+const TAIL_BYTES = config.TRANSCRIPT_TAIL_BYTES;
 
 const isPeer = prompt => PEER_PREFIX.test(prompt) || PEER_ENVELOPE.test(prompt.slice(0, 2000));
 
@@ -132,18 +135,17 @@ function lastAssistantText(entries, promptId) {
   return parts.join('\n');
 }
 
-const squash = s => String(s).replace(/\s+/g, ' ').trim();
 const DRAFT_MIN = 20; // shorter texts ("ok", "yes, ship it") show up in Claude's prose by chance
 
 /** True when the posted text is Claude's wording: "@room TEXT" in its last message, or a longer TEXT verbatim. */
 function draftedByAgent(text, assistant) {
-  const t = squash(text), a = squash(assistant);
+  const t = oneLine(text), a = oneLine(assistant);
   if (!t || !a) return false;
   return a.includes('@room ' + t) || a.includes('room:' + t) || (t.length >= DRAFT_MIN && a.includes(t));
 }
 
-const CHECK_POLL_MS = 150;
-const CHECK_WINDOW_MS = () => Number(process.env.SUB_HUMAN_FORGERY_MS) || 1200;
+const CHECK_POLL_MS = config.FORGERY_POLL_MS;
+const CHECK_WINDOW_MS = () => config.envMs('SUB_HUMAN_FORGERY_MS', config.FORGERY_WINDOW_MS);
 
 /** Start the after-the-fact origin check for post #id in a detached process; the hook does not wait. */
 function spawnForgeryCheck(me, input, id) {
@@ -186,11 +188,10 @@ function noticeLines(me) {
   const show = ns.filter(n => n.settled && !seen.has(n.id));
   if (!show.length) return null;
   notices.markShown(me.code, me.name, show.map(n => n.id), 'prompt');
-  const ms = identity.readMembers(me.code) || {};
-  return show.map(n => notices.text(me.code, n, ms)).join('\n');
+  return show.map(n => notices.text(n)).join('\n');
 }
 
-const PULL_CAP = 1500;
+const PULL_CAP = config.PULL_CAP;
 const PULL_HEAD = 'Room since your last turn (context for you, not for the user: mention it only if they ask):';
 
 /** "Room since your last turn": pull-lane entries after cursor ctx-NAME, newest kept under PULL_CAP; advances it. */
@@ -240,10 +241,9 @@ function titleFor(me, input) {
 function proposalReminders(me, notification) {
   if (me.role === 'orch' || notification) return null;
   try {
-    const proposal = require(path.join(__dirname, '..', 'lib', 'proposal.js'));
     const ps = proposal.pendingFor(me) || [];
     return ps.length ? ps.map(p => proposal.reminder(p, me.name)).join('\n') : null;
-  } catch { return null; }
+  } catch (e) { logError(e, 'at-room reminders'); return null; }
 }
 
 // ---------- the orch takes no typed input ----------
@@ -264,7 +264,7 @@ function orchRefusal(me, input, prompt) {
   return orchHint(me);
 }
 
-const SPAWN_GRACE_MS = 60 * 1000;
+const SPAWN_GRACE_MS = config.ROW_SPAWN_GRACE_MS;
 
 /** The Agent calls for this seat's rows with no live hold, or null when they all run (or were just spawned). */
 function missingRowsText(me, input) {

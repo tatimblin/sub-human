@@ -4,6 +4,12 @@
 // Hooks are trusted code run by Claude Code itself, never by a model. Identity is resolved from the
 // hook payload's session_id first, then from CLAUDE_PID (Claude Code sets it for every hook it runs)
 // by a direct lookup of the registered pid: /clear changes the session_id but not the claude process.
+//
+//   readInput({strict = true}?) -> object   the hook's stdin JSON ({} when empty). strict: a parse error
+//       throws (run() reports it); otherwise it gives {}.
+//   resolveSeat(input, {ancestry}?) -> {code, name, role, session_id, pid, address} | null   (see below)
+//   whoami(input)      resolveSeat, then binds room.js to the seat's room
+//   run(body, onError?), logError(err, where?), out, pre, deny, context   output helpers
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -12,14 +18,21 @@ const PLUGIN_ROOT = path.join(__dirname, '..');
 const LIB = path.join(PLUGIN_ROOT, 'lib');
 const identity = require(path.join(LIB, 'identity.js'));
 const room = require(path.join(LIB, 'room.js'));
+const rows = require(path.join(LIB, 'rows.js'));
+const { readJson, writeJsonAtomic } = require(path.join(LIB, 'io.js'));
+const text = require(path.join(LIB, 'text.js'));
+const config = require(path.join(LIB, 'config.js'));
 
-const CAP = 9500; // the CLI caps SessionStart / prompt context at 10k
+const CAP = config.CONTEXT_CAP;
 
-function readInput() {
+function readInput({ strict = true } = {}) {
   let raw = '';
   try { raw = fs.readFileSync(0, 'utf8'); } catch { /* no stdin */ }
   if (!raw.trim()) return {};
-  return JSON.parse(raw);
+  try { return JSON.parse(raw) || {}; } catch (e) {
+    if (strict) throw e;
+    return {};
+  }
 }
 
 const out = obj => { if (obj) process.stdout.write(JSON.stringify(obj) + '\n'); };
@@ -33,9 +46,15 @@ const deny = reason => pre('deny', reason);
 /** additionalContext for any event that supports it. */
 const context = (event, text, top = {}) => out({ ...top, hookSpecificOutput: { hookEventName: event, additionalContext: text } });
 
+/** Write an error to stderr (Claude Code shows hook stderr to the user only, never to the model). */
+function logError(err, where = 'hook') {
+  try { process.stderr.write(`sub-human ${where} error: ${err && err.stack || err}\n`); } catch { /* stderr closed */ }
+}
+
 /**
- * Run a hook body. On an unexpected error, onError(err, input) decides the output (gates fail
- * closed); otherwise print to stderr and exit 1, which Claude Code shows to the user only.
+ * Run a hook body. An unexpected error is always written to stderr. Then onError(err, input), when given,
+ * decides the output and the exit code (gates fail closed; the row hooks exit 0 so they never disturb the
+ * session); without one the hook exits 1, which Claude Code shows to the user only.
  */
 function run(body, onError) {
   let input;
@@ -43,33 +62,37 @@ function run(body, onError) {
     input = readInput();
     body(input);
   } catch (err) {
-    if (onError) { try { onError(err, input || {}); return; } catch { /* fall through */ } }
-    process.stderr.write(`sub-human hook error: ${err && err.stack || err}\n`);
+    logError(err);
+    if (onError) { try { onError(err, input || {}); return; } catch (e2) { logError(e2, 'hook onError'); } }
     process.exitCode = 1;
   }
 }
 
-const names = list => list.length <= 1 ? list.join('') : `${list.slice(0, -1).join(', ')} and ${list.at(-1)}`;
-
 /** readMembers() ({name: record}) as an array, in join order. */
 const members = code => Object.values(identity.readMembers(code) || {}).filter(m => m && m.name);
 const hasLeft = m => !!m.left_at;
-/** Joined, not-left, non-orchestrator members: the people the orchestrator may choose approvers from. */
-const activeMembers = code => members(code).filter(m => m.role !== 'orch' && !hasLeft(m)).map(m => m.name);
+
+const attempt = f => { try { return f(); } catch { return null; } };
 
 /**
- * Resolve who this hook runs for: {code, name, role, session_id, pid} or null.
- * session_id first, then CLAUDE_PID. Binds room.js to the member's room.
+ * Who this hook runs for: {code, name, role, session_id, pid, address} or null. In order: the payload's
+ * session_id; then CLAUDE_PID (Claude Code sets it for every hook) by a direct lookup of the registered
+ * pid; then, only with {ancestry: true}, identity.resolveSelf() (CLAUDE_CODE_SESSION_ID, CLAUDE_PID, then
+ * the nearest registered ancestor pid, which costs a `ps` table). The row hooks ask for the walk (a row
+ * hook may run without CLAUDE_PID, e.g. by hand); the others never walk, so an unjoined session stays
+ * cheap and a hook never borrows the seat of whatever claude process happens to be an ancestor.
  */
+function resolveSeat(input = {}, { ancestry = false } = {}) {
+  let me = input && input.session_id ? attempt(() => identity.resolveBySession(input.session_id)) : null;
+  if (!me) { const pid = identity.claudePid(); if (pid) me = attempt(() => identity.resolveByPid(pid)); }
+  if (!me && ancestry) me = attempt(() => identity.resolveSelf());
+  return me && me.code && me.name ? me : null;
+}
+
+/** resolveSeat, and bind room.js to the seat's room. */
 function whoami(input = {}) {
-  let me = null;
-  if (input.session_id) { try { me = identity.resolveBySession(input.session_id); } catch { me = null; } }
-  if (!me) {
-    const pid = identity.claudePid();
-    if (pid) { try { me = identity.resolveByPid(pid); } catch { me = null; } }
-  }
-  if (!me || !me.code || !me.name) return null;
-  room.bind(me.code);
+  const me = resolveSeat(input);
+  if (me) room.bind(me.code);
   return me;
 }
 
@@ -82,20 +105,12 @@ function presence(me, state, detail) {
 const memberDir = me => path.join(identity.roomDir(me.code), 'members', me.name);
 const statePath = (me, key) => path.join(memberDir(me), key + '.json');
 
-function readState(me, key) {
-  try { return JSON.parse(fs.readFileSync(statePath(me, key), 'utf8')); } catch { return null; }
-}
-function writeState(me, key, value) {
-  fs.mkdirSync(memberDir(me), { recursive: true });
-  const p = statePath(me, key);
-  const tmp = p + '.' + process.pid + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(value) + '\n');
-  fs.renameSync(tmp, p);
-}
+const readState = (me, key) => readJson(statePath(me, key), null);
+const writeState = (me, key, value) => writeJsonAtomic(statePath(me, key), value, { compact: true });
 function clearState(me, key) { try { fs.unlinkSync(statePath(me, key)); } catch { /* absent */ } }
 
 // ---------- the mechanics block the join / restore hooks inject (<= BLOCK_MAX chars with 5 members) ----------
-const BLOCK_MAX = 900;
+const BLOCK_MAX = config.BLOCK_MAX;
 const TEMPLATE_FILES = { member: 'member.md', orch: 'orchestrator.md' };
 /** Used only when a role file is missing or has no {CODE} placeholder. */
 const DEFAULT_TEMPLATES = {
@@ -108,7 +123,7 @@ const DEFAULT_TEMPLATES = {
 
 const pluginRoot = () => process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT;
 
-/** D's template for the role (skills/sub-human/member.md | orchestrator.md), with placeholders unfilled. */
+/** The role's template (skills/sub-human/member.md | orchestrator.md), with placeholders unfilled. */
 function template(role) {
   const r = role === 'orch' ? 'orch' : 'member';
   let t = '';
@@ -128,16 +143,15 @@ const fill = (t, vars) => t.replace(/\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/
 
 const roleText = (role, me) => (me ? fill(template(role), fillVars(me)) : template(role));
 
-function clip(s, n = CAP) { return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+const clip = (s, n = CAP) => text.clip(s, n);
 
 /**
- * lib/rows.js rowCalls() (owned by the rows module); '' when it is missing or fails. Lists only the rows with
- * no live hold in this seat's hold server (rows/holds-NAME.json): rows survive /clear, compaction and a
- * re-run of /sub-human, and a second spawn would duplicate them. After --resume the server is new, so all.
+ * lib/rows.js rowCalls(); '' when it fails. Lists only the rows with no live hold in this seat's hold
+ * server (rows/holds-NAME.json): rows survive /clear, compaction and a re-run of /sub-human, and a second
+ * spawn would duplicate them. After --resume the server is new, so all.
  */
 function rowCalls(me) {
   try {
-    const rows = require(path.join(LIB, 'rows.js'));
     const ms = identity.readMembers(me.code);
     const held = rows.readHolds(me.code, me.name);
     const only = held ? rows.rowsNeeded(me.code, me, { members: ms, held }) : null;
@@ -168,7 +182,7 @@ function compactRows(text, me) {
 const seatTitle = me => identity.address(me.name, me.code);
 
 /**
- * The context the join / restore hooks inject: D's template filled for this seat, then ROWS (rowCalls, cut
+ * The context the join / restore hooks inject: the role template filled for this seat, then ROWS (rowCalls, cut
  * to the bare calls when the whole block would pass BLOCK_MAX). lead (e.g. "restored after clear") is a
  * short last line. No roster or digest: others' words arrive by the monitor and the per-prompt digest.
  */
@@ -197,13 +211,10 @@ function isUnder(p, dir, base = process.cwd()) {
   return false;
 }
 
-const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
-
 module.exports = {
-  identity, room, PLUGIN_ROOT, CAP, BLOCK_MAX,
-  readInput, out, pre, deny, context, run, names,
-  members, hasLeft, activeMembers, whoami, presence,
-  memberDir, readState, writeState, clearState,
-  template, fillVars, roleText, clip, rowCalls, compactRows, seatTitle, contextBlock,
-  isUnder, realish, stamp,
+  identity, room, rows, BLOCK_MAX,
+  readInput, out, pre, deny, context, run, logError,
+  resolveSeat, whoami, presence,
+  readState, writeState, clearState,
+  clip, contextBlock, seatTitle, isUnder,
 };

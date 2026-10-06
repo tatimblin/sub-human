@@ -6,8 +6,12 @@
 // Identity: hooks resolve by session_id, then by a direct lookup of CLAUDE_PID (which Claude Code sets
 // for every hook). Any registered pid can act; 'act' (this process), 'act2' (our parent) and 'sleep'
 // (a live `sleep` child) are all just live pids.
+//
+// Temp dirs: ../helpers.js (required first) tracks every mkdtemp under os.tmpdir() and removes them on
+// exit, so World's homes are cleaned up without the tests doing anything. World.dispose() removes one
+// world early; new World(spec, { t }) does that in t.after.
+const common = require('../helpers.js');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn, spawnSync } = require('node:child_process');
@@ -57,11 +61,12 @@ const sid = () => crypto.randomUUID();
  * 'sleep'. "orch" is created first and owns the room code. Pass {room:false} for no room.
  */
 class World {
-  constructor(spec = {}, { room: makeRoom = true } = {}) {
-    this.home = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-hooks-'));
-    this.userHome = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-user-'));
+  constructor(spec = {}, { room: makeRoom = true, t } = {}) {
+    this.home = common.tmpDir('sh-hooks-');
+    this.userHome = common.tmpDir('sh-user-');
     fs.mkdirSync(path.join(this.userHome, '.claude', 'plans'), { recursive: true });
-    this.cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cwd-'));
+    this.cwd = common.tmpDir('sh-cwd-');
+    if (t && typeof t.after === 'function') t.after(() => this.dispose());
     this.pid = {};
     this.sid = {};
     this.code = null;
@@ -80,6 +85,11 @@ class World {
     this.sid[name] = s;
     if (announce) this.lib(() => room.append({ kind: 'member_joined', text: `${name} joined` }, { via: 'system', from: name, system: true }));
     return pid;
+  }
+
+  /** Remove this world's dirs now (they are removed on process exit anyway). */
+  dispose() {
+    for (const d of [this.home, this.userHome, this.cwd]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* gone */ } }
   }
 
   entries() { return this.lib(() => room.readAll()); }

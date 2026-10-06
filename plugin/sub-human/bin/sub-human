@@ -45,17 +45,20 @@
  *       their joins/leaves, and entries addressed to them. The orchestrator's posts are labelled
  *       "facilitator". Follows live when stdout is a terminal (or with --follow).
  *   sub-human agent-statusline
- *       Claude Code's subagentStatusLine command (statusline/*, owner R). Never fails: on any error it prints
+ *       Claude Code's subagentStatusLine command (statusline/*). Never fails: on any error it prints
  *       nothing and exits 0.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
-const identity = require(path.join(__dirname, '..', 'lib', 'identity.js'));
-const room = require(path.join(__dirname, '..', 'lib', 'room.js'));
-const SL = path.join(__dirname, '..', 'statusline');
-/** Optional modules (statusline/*, lib/tasks.js) are loaded lazily so a problem there never breaks tail/read. */
-function optional(file) { try { return require(file); } catch { return null; } }
+const LIB = path.join(__dirname, '..', 'lib');
+const identity = require(path.join(LIB, 'identity.js'));
+const room = require(path.join(LIB, 'room.js'));
+const rows = require(path.join(LIB, 'rows.js'));
+const notices = require(path.join(LIB, 'notices.js'));
+const tasks = require(path.join(LIB, 'tasks.js'));
+const config = require(path.join(LIB, 'config.js'));
+const statusline = require(path.join(__dirname, '..', 'statusline', 'index.js'));
 
 const NOT_IN_ROOM = 'not in a room; run /sub-human';
 
@@ -113,21 +116,21 @@ function visibleTo(me) {
     || (e.kind === 'member_joined' && e.from !== me.name && (SPAWN_NOTE.test(note) || !note));
 }
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
-const envMs = (k, d) => (Number(process.env[k]) > 0 ? Number(process.env[k]) : d);
+const { envMs } = config;
 
 function tail(args) {
   const { flags } = parseFlags(args, { 'max-seconds': 1 });
-  const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS', 2000);
-  const unseatedMs = envMs('SUB_HUMAN_UNSEATED_MS', Math.max(resolveMs, 10_000)); // no seat: look up this rarely
-  const pollMs = envMs('SUB_HUMAN_POLL_MS', 250);
-  const memberSettleMs = envMs('SUB_HUMAN_SETTLE_MS', 1500);       // flush after this long with nothing new
-  const memberSettleMaxMs = envMs('SUB_HUMAN_SETTLE_MAX_MS', 5000); // or this long after the batch's first entry
+  const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS', config.RESOLVE_MS);
+  const unseatedMs = envMs('SUB_HUMAN_UNSEATED_MS', Math.max(resolveMs, config.UNSEATED_MS)); // no seat: look up this rarely
+  const pollMs = envMs('SUB_HUMAN_POLL_MS', config.TAIL_POLL_MS);
+  const memberSettleMs = envMs('SUB_HUMAN_SETTLE_MS', config.SETTLE_MS);           // flush after this long with nothing new
+  const memberSettleMaxMs = envMs('SUB_HUMAN_SETTLE_MAX_MS', config.SETTLE_MAX_MS); // or this long after the batch's first entry
   // The headless orch waits longer (nobody watches its latency), so a burst of answers, task requests or a
-  // join lands as one turn: SUB_HUMAN_ORCH_SETTLE_MS (3000) / SUB_HUMAN_ORCH_SETTLE_MAX_MS (10000), unless the
-  // member values are set explicitly.
-  const orchSettleMs = envMs('SUB_HUMAN_ORCH_SETTLE_MS', process.env.SUB_HUMAN_SETTLE_MS ? memberSettleMs : 3000);
-  const orchSettleMaxMs = envMs('SUB_HUMAN_ORCH_SETTLE_MAX_MS', process.env.SUB_HUMAN_SETTLE_MAX_MS ? memberSettleMaxMs : 10000);
-  const leaveMs = envMs('SUB_HUMAN_LEAVE_MS', 8000);         // a member_left waits this long for a rejoin
+  // join lands as one turn: SUB_HUMAN_ORCH_SETTLE_MS / SUB_HUMAN_ORCH_SETTLE_MAX_MS, unless the member values
+  // are set explicitly.
+  const orchSettleMs = envMs('SUB_HUMAN_ORCH_SETTLE_MS', process.env.SUB_HUMAN_SETTLE_MS ? memberSettleMs : config.ORCH_SETTLE_MS);
+  const orchSettleMaxMs = envMs('SUB_HUMAN_ORCH_SETTLE_MAX_MS', process.env.SUB_HUMAN_SETTLE_MAX_MS ? memberSettleMaxMs : config.ORCH_SETTLE_MAX_MS);
+  const leaveMs = envMs('SUB_HUMAN_LEAVE_MS', config.LEAVE_SETTLE_MS); // a member_left waits this long for a rejoin
   process.stdout.on('error', () => process.exit(0));
 
   let sess = null; // {key, code, stop, save, dead}
@@ -156,11 +159,10 @@ function tail(args) {
       if (h > saved) { saved = h; room.bind(s.code); room.setCursor(reader, h); }
     };
     const show = visibleTo(me);
-    const rowsMod = optional(path.join(__dirname, '..', 'lib', 'rows.js'));
     // member_joined: say whether that member's row already runs here, so only a missing one is spawned
     const joinNote = e => {
-      if (e.kind !== 'member_joined' || !rowsMod) return '';
-      try { return rowsMod.joinNote(me, e.from); } catch { return ''; }
+      if (e.kind !== 'member_joined') return '';
+      try { return rows.joinNote(me, e.from); } catch { return ''; }
     };
 
     // Settle: candidates wait in `pending` and go out as ONE write (one notification, one turn), after
@@ -199,7 +201,7 @@ function tail(args) {
         return process.stdout.write([room.stateLine(me, entries), ...out].join('\n') + '\n', done);
       }
       // a member: group-chat lines, then the lines for Claude only
-      const seen = noticesMod ? noticesMod.shown(s.code, me.name) : new Set();
+      const seen = notices.shown(s.code, me.name);
       const moved = [], forClaude = [];
       let state = false;
       for (const { e } of ready) {
@@ -214,12 +216,9 @@ function tail(args) {
       if (state) forClaude.unshift(`${room.FOR_CLAUDE} ${room.stateLine(me, entries)}`);
       const done = () => { for (const p of ready) inflight.delete(p.e.id); s.save(); };
       if (!out.length) return done();
-      if (moved.length && noticesMod) { try { noticesMod.markShown(s.code, me.name, moved, 'monitor'); } catch { /* best effort */ } }
+      if (moved.length) { try { notices.markShown(s.code, me.name, moved, 'monitor'); } catch { /* best effort */ } }
       process.stdout.write([...out, ...forClaude].join('\n') + '\n', done);
     }
-
-    // Join / leave lines (members): lib/notices.js records what was shown, so at-room.js never repeats one.
-    const noticesMod = me.role === 'orch' ? null : optional(path.join(__dirname, '..', 'lib', 'notices.js'));
 
     const stopFollow = room.follow(after, e => {
       if (s.dead) return;
@@ -290,17 +289,16 @@ function tail(args) {
   }
 }
 
-// ---------- agent-statusline: dispatch to statusline/* (owner R) ----------
+// ---------- agent-statusline: dispatch to statusline/* ----------
 function readStdinJson() {
   if (process.stdin.isTTY) return {};
   try { return JSON.parse(fs.readFileSync(0, 'utf8') || '{}') || {}; } catch { return {}; }
 }
 
-/** R's agentStatusline(input) -> text ({"id","content"} lines); whatever goes wrong, print nothing and exit 0. */
+/** statusline agentStatusline(input) -> text ({"id","content"} lines); whatever goes wrong, print nothing and exit 0. */
 function agentStatusline() {
   try {
-    const mod = optional(path.join(SL, 'index.js')) || optional(path.join(SL, 'segments.js'));
-    const out = mod && typeof mod.agentStatusline === 'function' ? mod.agentStatusline(readStdinJson()) : '';
+    const out = statusline.agentStatusline(readStdinJson());
     if (typeof out === 'string' && out) process.stdout.write(out.endsWith('\n') ? out : out + '\n');
   } catch { /* keep the default rendering */ }
 }
@@ -338,12 +336,8 @@ function who() {
 }
 
 // ---------- tasks ----------
-/** lib/tasks.js list(code) (owner F); until it exists, <room>/tasks.json as the mirror writes it. */
-function taskList(code) {
-  const tasks = optional(path.join(__dirname, '..', 'lib', 'tasks.js'));
-  if (tasks && typeof tasks.list === 'function') return tasks.list(code) || [];
-  try { const t = JSON.parse(fs.readFileSync(path.join(room.dir(), 'tasks.json'), 'utf8')); return Array.isArray(t) ? t : []; } catch { return []; }
-}
+/** lib/tasks.js list(code): <room>/tasks.json as the mirror writes it. */
+const taskList = code => tasks.list(code) || [];
 
 function tasksCmd(args) {
   const { flags } = parseFlags(args, { json: 0, room: 1 });
@@ -402,7 +396,7 @@ function watch(args) {
   }
   console.log(c('2', `${name}'s thread in room ${code} (Ctrl-C to stop)`) + '\n');
   process.stdout.on('error', () => process.exit(0));
-  room.follow(0, print, { intervalMs: 500 });
+  room.follow(0, print, { intervalMs: config.WATCH_POLL_MS });
 }
 
 const [cmd, ...args] = process.argv.slice(2);

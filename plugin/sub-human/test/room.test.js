@@ -181,7 +181,6 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
   assert.deepEqual(m.signed, { alice: s1.id, bob: null });
   assert.deepEqual(m.missing, ['bob']);
   assert.equal(m.complete, false);
-  assert.equal(room.signoffMatrix, room.answers);
   human('mallory', 'signoff', { proposal_hash: H1 });
   human('bob', 'signoff', { proposal_hash: H1 });
   m = room.answers(H1);

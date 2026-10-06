@@ -47,7 +47,7 @@
  *                                                  typed "hi" (CLAUDE_PID = the orch's pid); print its output
  *
  * Every wait appends {scene, what, ok, ms, time} to $SNAP_DIR/waits.jsonl (scene from $DEMO_SCENE)
- * and exits 1 on timeout (demo.sh treats that as best-effort and keeps going). --timeout 0 waits with no
+ * and exits 1 on timeout (demo.sh's `need` aborts the scene on it; `settle` and evidence waits go on). --timeout 0 waits with no
  * limit (a person's own step in --human mode), printing a reminder every minute.
  *
  * Keys: when a read-only client is attached (ours or anyone's), tmux may refuse send-keys ("client is
@@ -59,8 +59,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync, spawn } = require('node:child_process');
 const { roomCode, readLog, strip } = require('./snap.js');
+const paths = require('./lib/paths.js');
+const { panelRows, cardState, planState } = require('./lib/panes.js');
 
-const REPO = path.resolve(__dirname, '..');
+const REPO = paths.REPO;
 const SNAP_DIR = process.env.SNAP_DIR ? path.resolve(process.env.SNAP_DIR) : path.join(REPO, 'docs/rebuild/screens');
 
 const tmux = (...a) => execFileSync('tmux', a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -142,13 +144,13 @@ async function until(what, timeoutS, fn) {
 }
 
 
-const HOME_DIR = () => process.env.SUB_HUMAN_HOME || path.join(require('node:os').homedir(), '.sub-human');
+const HOME_DIR = paths.home;
 const roomFile = f => path.join(HOME_DIR(), 'rooms', roomCode() || '-', f);
 const readJ = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
 function orchTranscript() {
   const o = readJ(roomFile('members.json'), {}).orch || {};
   if (!o.session_id) return null;
-  const proj = path.join(require('node:os').homedir(), '.claude', 'projects');
+  const proj = paths.projectsDir();
   for (const d of fs.readdirSync(proj)) {
     const f = path.join(proj, d, `${o.session_id}.jsonl`);
     if (fs.existsSync(f)) return f;
@@ -158,30 +160,6 @@ function orchTranscript() {
 function readJsonl(f) {
   try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; }
 }
-/** The ❯ line index and option labels of an open consent card, or null. */
-function cardState(p) {
-  const lines = p.split('\n');
-  const q = lines.findIndex(l => /Agree to proposal [0-9a-f]{12}\?/.test(l));
-  if (q < 0) return null;
-  const opts = [];
-  for (let i = q + 1; i < lines.length && opts.length < 4; i++) {
-    const m = /^\s*(❯)?\s*(\d)\.\s+(Not yet|Agree|Object|Type something|Chat about this)\b/.exec(lines[i]);
-    if (m) opts.push({ cur: !!m[1], n: +m[2], label: m[3] });
-  }
-  return opts.length ? { opts } : null;
-}
-
-/** The plan-approval dialog a room review opens in (hooks/consent.js), or null: its option lines. */
-function planState(p) {
-  if (!/Would you like to proceed\?/.test(p) || !/Tell Claude what to change|No, keep planning/.test(p)) return null;
-  const opts = [];
-  for (const l of p.split('\n')) {
-    const m = /^\s*(❯)?\s*(\d)\.\s+(Yes, [^\n]*?|Tell Claude what to change|No, keep planning)\s*$/.exec(l);
-    if (m) opts.push({ cur: !!m[1], n: +m[2], label: m[3] });
-  }
-  return opts.length ? { opts } : null;
-}
-
 function filterLog(o) {
   const code = roomCode();
   let es = readLog(code);
@@ -293,7 +271,6 @@ async function main() {
       const what = o.what || `${o._[0]}: approve its Claude's permission dialogs until ${n}× ${o.kind}${o.from ? ` from ${o.from}` : ''}`;
       let approvals = 0, last = 0, met = 0, calm = 0;
       const quietMs = +(o.quiet || 0) * 1000;
-      const { panelRows } = require('./checks.js');
       const ok = await until(what + (quietMs ? `, then its background agents finish` : ''), T, () => {
         const p = pane(o._[0]);
         if (!met && filterLog(o).length >= n) met = Date.now();
@@ -318,8 +295,7 @@ async function main() {
       return ok ? 0 : 1;
     }
     case 'wait-holds': {
-      const home = process.env.SUB_HUMAN_HOME || path.join(require('node:os').homedir(), '.sub-human');
-      const f = () => path.join(home, 'rooms', roomCode() || '-', 'rows', `holds-${o._[0]}.json`);
+      const f = () => roomFile(path.join('rows', `holds-${o._[0]}.json`));
       const ok = await until(o.what || `${o._[0]}'s room holds ${o._[1]}'s row`, T, () => {
         const h = JSON.parse(fs.readFileSync(f(), 'utf8'));
         return Date.now() - Date.parse(h.at) < 90_000 && (h.members || []).includes(o._[1]);
@@ -327,14 +303,12 @@ async function main() {
       return ok ? 0 : 1;
     }
     case 'member-field': {
-      const home = process.env.SUB_HUMAN_HOME || path.join(require('node:os').homedir(), '.sub-human');
-      const ms = JSON.parse(fs.readFileSync(path.join(home, 'rooms', roomCode() || '-', 'members.json'), 'utf8'));
+      const ms = JSON.parse(fs.readFileSync(roomFile('members.json'), 'utf8'));
       process.stdout.write(String((ms[o._[0]] || {})[o._[1]] ?? '') + '\n');
       return 0;
     }
     case 'wait-member': {
-      const home = process.env.SUB_HUMAN_HOME || path.join(require('node:os').homedir(), '.sub-human');
-      const f = () => path.join(home, 'rooms', roomCode() || '-', 'members.json');
+      const f = () => roomFile('members.json');
       const ok = await until(o.what || `${o._[0]}'s ${o._[1]} changes`, T, () => {
         const v = (JSON.parse(fs.readFileSync(f(), 'utf8'))[o._[0]] || {})[o._[1]];
         return v != null && String(v) !== String(o.not);
@@ -414,7 +388,7 @@ async function main() {
     case 'wait-native-task': {
       const subj = o._[0];
       const ok = await until(o.what || `orch's native list has "${subj}"`, T, () => {
-        const dir = path.join(require('node:os').homedir(), '.claude', 'tasks', `sh-${roomCode()}`);
+        const dir = paths.tasksDir(roomCode());
         return fs.readdirSync(dir).filter(f => f.endsWith('.json')).some(f => (readJ(path.join(dir, f), {}) || {}).subject === subj);
       });
       return ok ? 0 : 1;
@@ -444,18 +418,18 @@ async function main() {
     }
     case 'synthetic-gate': {
       const o2 = readJ(roomFile('members.json'), {}).orch || {};
-      const plugin = path.join(REPO, 'plugin', 'sub-human');
+      const plugin = paths.PLUGIN;
       const input = { hook_event_name: 'TaskCompleted', session_id: o2.session_id, task_id: String(o._[0]), task_subject: '' };
       const r = require('node:child_process').spawnSync(process.execPath, [path.join(plugin, 'hooks', 'tasks.js')], {
         input: JSON.stringify(input), encoding: 'utf8',
-        env: { PATH: process.env.PATH, HOME: process.env.HOME, SUB_HUMAN_HOME: HOME_DIR(), CLAUDE_PID: String(o2.pid || ''), CLAUDE_PLUGIN_ROOT: plugin, CLAUDE_CODE_TASK_LIST_ID: `sh-${roomCode()}` },
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, SUB_HUMAN_HOME: HOME_DIR(), CLAUDE_PID: String(o2.pid || ''), CLAUDE_PLUGIN_ROOT: plugin, CLAUDE_CODE_TASK_LIST_ID: paths.taskListId(roomCode()) },
       });
       process.stdout.write(JSON.stringify({ input, status: r.status, stdout: (r.stdout || '').trim(), stderr: (r.stderr || '').trim(), logMax: Math.max(0, ...readLog(roomCode()).map(e => e.id)) }, null, 1) + '\n');
       return 0;
     }
     case 'synthetic-orch-prompt': {
       const o2 = readJ(roomFile('members.json'), {}).orch || {};
-      const plugin = path.join(REPO, 'plugin', 'sub-human');
+      const plugin = paths.PLUGIN;
       const input = { hook_event_name: 'UserPromptSubmit', session_id: o2.session_id, transcript_path: orchTranscript() || '', cwd: process.cwd(), prompt: 'hi', prompt_id: 'synthetic-1', permission_mode: 'plan' };
       const r = require('node:child_process').spawnSync(process.execPath, [path.join(plugin, 'hooks', 'at-room.js')], {
         input: JSON.stringify(input), encoding: 'utf8',

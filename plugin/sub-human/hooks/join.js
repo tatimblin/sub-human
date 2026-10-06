@@ -14,7 +14,7 @@
 //   or `/sub-human` (a new room, no SUB_HUMAN_ROOM).
 // The claude pid comes from CLAUDE_PID, which Claude Code sets for every hook it runs.
 // Failure blocks the prompt with a reason (no model turn). Success injects the mechanics block (common.js
-// contextBlock: D's template filled + ROWS) and a one-line systemMessage; bypass-permissions mode gets a warning.
+// contextBlock: the role template filled + ROWS) and a one-line systemMessage; bypass-permissions mode gets a warning.
 // UserPromptExpansion output has no sessionTitle; at-room.js (UserPromptSubmit) sets it (NAME.CODE) on the next prompt.
 const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
 const orch = require('../lib/orch.js');

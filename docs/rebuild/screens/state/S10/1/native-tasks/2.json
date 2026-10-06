@@ -1,9 +1,0 @@
-{
-  "id": "2",
-  "subject": "cursor paging handler",
-  "description": "Implement GET /tasks cursor paging in src/server.js per decided proposal fba8c9 (createdAt DESC, id DESC; ?limit&after; base64url cursor; 400 on bad limit/cursor). (req #14 by alice)\nevidence (#21): handler in, npm test 3/3 pass (req #21 by alice)",
-  "owner": "alice",
-  "status": "completed",
-  "blocks": [],
-  "blockedBy": []
-}

@@ -1,0 +1,68 @@
+{
+ "_doc": "Baselines and thresholds for scripts/checks.js and scripts/metrics.js. runs: per-run metrics (metrics.js shape, totals only). compare: which runs fill checks.json _metrics.{baseline,phase0,prev} (the walkthrough table). thresholds: the behavioural checks' limits (a value over its limit is a warning, not a failure) and the join-text sizes (deterministic). prices: USD per million tokens [input, output, cache write, cache read], matched by model-name substring in order; 'default' otherwise.",
+ "compare": { "baseline": "vole-8126", "phase0": "otter-0813", "prev": "stoat-3644" },
+ "thresholds": {
+  "wakes": 18,
+  "noisePerCapture": 1.4,
+  "callsPerReview": 5,
+  "orchJoinCalls": 2,
+  "orchTaskCalls": 14,
+  "joinText": 900,
+  "joinBlock": 1200
+ },
+ "runs": {
+  "vole-8126": {
+   "run": "vole-8126",
+   "note": "commit e83ffb5, recomputed with metrics.js from its 69 captures and the seats' transcripts",
+   "wakes": { "orch": 12, "alice": 17, "bob": 10, "total": 39 },
+   "noise": { "captures": 69, "lines": 320, "perCapture": 4.64, "perCaptureExWaiting": 2.33, "monitor": 145, "waiting": 159, "hookError": 5, "blocked": 6, "invalid": 5 },
+   "joinChars": { "orch": 7662, "alice": 5732, "bob": 5768 },
+   "injected": { "orch": 7782, "alice": 12987, "bob": 13542, "total": 34311 }
+  },
+  "otter-0813": {
+   "run": "otter-0813",
+   "note": "the Phase 0 run (commit d08fec8), measured by metrics.js's previous version",
+   "wakes": { "orch": 8, "alice": 8, "bob": 7, "total": 23 },
+   "noise": { "captures": 69, "lines": 249, "perCapture": 3.61, "perCaptureExWaiting": 1.9, "monitor": 124, "waiting": 118, "hookError": 7, "blocked": 0, "invalid": 0 },
+   "joinChars": { "orch": 7620, "alice": 4968, "bob": 4994 },
+   "injected": { "orch": 7740, "alice": 12082, "bob": 13268, "total": 33090 }
+  },
+  "stoat-3644": {
+   "run": "stoat-3644",
+   "note": "the previous slim run (commit da12d4d; seats on Haiku, the orch on the default model), from its checks.json",
+   "wakes": { "orch": 11, "alice": 8, "bob": 9, "total": 28 },
+   "noise": { "captures": 55, "lines": 167, "perCapture": 3.04, "perCaptureExWaiting": 1.22, "monitor": 65, "waiting": 100, "hookError": 0, "blocked": 2, "invalid": 0 },
+   "joinChars": { "orch": 721, "alice": 1096, "bob": 1090 },
+   "injected": { "orch": 2356, "alice": 5681, "bob": 5666, "total": 13703 },
+   "red": 26,
+   "cardsPerCard": 2.75
+  },
+  "gecko-5061": {
+   "run": "gecko-5061",
+   "note": "commit d899ea6 (66/68), from its checks.json",
+   "wakes": { "orch": 8, "alice": 4, "bob": 7, "total": 19 },
+   "noise": { "captures": 52, "lines": 178, "perCapture": 3.42, "perCaptureExWaiting": 1.35, "monitor": 68, "waiting": 108, "hookError": 0, "blocked": 2, "invalid": 0 },
+   "joinChars": { "orch": 703, "alice": 1096, "bob": 1090 },
+   "injected": { "orch": 2564, "alice": 3937, "bob": 4502, "total": 11003 },
+   "red": 0,
+   "cardsPerCard": 2.75,
+   "cost": "≈ $2.59 (opus-5-5)"
+  },
+  "swan-6397": {
+   "run": "swan-6397",
+   "note": "commit 6d03f5f (71/73), from its checks.json; seats and orch on the user's default model",
+   "wakes": { "orch": 8, "alice": 7, "bob": 9, "total": 24 },
+   "noise": { "captures": 56, "lines": 169, "perCapture": 3.02, "perCaptureExWaiting": 1.11, "monitor": 60, "waiting": 107, "hookError": 0, "blocked": 2, "invalid": 0 },
+   "joinChars": { "orch": 700, "alice": 1093, "bob": 1087 },
+   "injected": { "orch": 1944, "alice": 4183, "bob": 5106, "total": 11233 },
+   "red": 0,
+   "cardsPerCard": 3.75,
+   "cost": "≈ $2.90 (opus-5-5)"
+  }
+ },
+ "prices": {
+  "haiku": [1, 5, 1.25, 0.1],
+  "sonnet": [3, 15, 3.75, 0.3],
+  "default": [5, 25, 6.25, 0.5]
+ }
+}

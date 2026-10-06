@@ -19,14 +19,12 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const { render } = require('./ansi-svg.js');
+const { home } = require('./lib/paths.js');
 
 const REPO = path.resolve(__dirname, '..');
 const SNAP_DIR = process.env.SNAP_DIR ? path.resolve(process.env.SNAP_DIR) : path.join(REPO, 'docs/rebuild/screens');
-
-function home() { return process.env.SUB_HUMAN_HOME || path.join(os.homedir(), '.sub-human'); }
 
 function roomCode() {
   if (process.env.SUB_HUMAN_ROOM) return process.env.SUB_HUMAN_ROOM;

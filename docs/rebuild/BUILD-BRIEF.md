@@ -1,11 +1,11 @@
-# Build brief: rebuild per `docs/rebuild-plan.md`
+# Build brief: rebuild per `docs/archive/rebuild-plan.md`
 
 Five agents work in parallel, A–E. Each owns separate files.
 
 **Read first:**
-- `docs/rebuild-plan.md`, the spec;
+- `docs/archive/rebuild-plan.md`, the spec;
 - `plugin/sub-human/README.md`;
-- the experiment reports your area cites, in `docs/experiments/E1..E3`, `P0` and `docs/native/*`.
+- the experiment reports your area cites, in `docs/archive/experiments/E1..E3`, `P0` and `docs/archive/native/*`.
 
 **Working prototypes** of the new mechanisms already exist. Borrow from them freely:
 

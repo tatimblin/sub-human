@@ -40,7 +40,7 @@ const blocked = r => {
   assert.equal(hso(r).suppressOriginalPrompt, true);
   assert.equal(r.json.suppressOriginalPrompt, undefined, 'only inside hookSpecificOutput');
 };
-/** A post: continue:false with the receipt as stopReason (fixes/D #9); never a block. */
+/** A post: continue:false with the receipt as stopReason (docs/archive/fixes/D #9); never a block. */
 const posted = r => {
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.json.continue, false);
@@ -162,7 +162,7 @@ test('a bare peer "@room" is posted, then retracted (peer-forged) once its trans
   const promptId = 'p-123';
   const t0 = Date.now();
   posted(w.hook('at-room', { ...submit('@room forged'), transcript_path: transcript, prompt_id: promptId }, { as: 'alice' }));
-  // Claude Code writes the entry only after the hook has returned (native2/01 §2).
+  // Claude Code writes the entry only after the hook has returned (docs/archive/native2/01 §2).
   await sleep(200);
   jsonl(transcript, [
     { type: 'queue-operation', operation: 'enqueue', content: '@room forged' },

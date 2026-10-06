@@ -13,8 +13,9 @@
 #           each a copy of demo/app.pristine. Seats launch with env -i (HOME USER LOGNAME SHELL PATH TERM
 #           LANG TMPDIR SUB_HUMAN_HOME).
 # --only / --from: run a subset against already-running sessions (scenes depend on earlier state).
-# Waits are best-effort: a timeout is recorded in screens/waits.jsonl, the panes are snapped anyway, and
-# the run continues. After the run: node scripts/checks.js && node scripts/walkthrough.js
+# Waits: every wait is recorded in screens/waits.jsonl. A wait the scene depends on (`need …`) aborts the scene
+# on timeout: the panes are snapped as "aborted", the run stops and prints how to resume (--from SCENE). Settles
+# before a snap (`settle`) and evidence captures are best-effort. After the run: node scripts/checks.js && node scripts/walkthrough.js
 set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -160,13 +161,20 @@ snap() { # caption — capture the panes (the orch via claude logs), and keep th
 # a proposal (plan view or card), which only card_answer answers.
 dismiss_question() {
   local p; p=$(tmux capture-pane -p -t "sh-$1:" 2>/dev/null)
-  if command grep -q "Esc to cancel" <<<"$p" && ! command grep -Eq "$CARD_RE" <<<"$p"; then keys "$1" Escape; sleep 2; fi
+  if command grep -q "Esc to cancel" <<<"$p" && ! command grep -Eq "$CARD_RE" <<<"$p"; then
+    keys "$1" Escape; $LIB wait-pane "sh-$1" "Esc to cancel" --absent --timeout 10 --what "$1: its own question closed" >/dev/null 2>&1
+  fi
 }
 submit() { $LIB wait-idle "sh-$1" --timeout 45 --quiet 2 >/dev/null 2>&1; dismiss_question "$1"; $LIB submit "sh-$1" "$2"; }   # submit SEAT TEXT (once the seat is idle)
 keys() { local s=$1; shift; $LIB keys "sh-$s" "$@"; }
 wait_log() { $LIB wait-log "$@"; }
 wait_pane() { local s=$1 re=$2 t=${3:-60}; shift 2; [ $# -gt 0 ] && shift; $LIB wait-pane "sh-$s" "$re" --timeout "$t" "$@"; }
-wait_orch() { local re=$1 t=${2:-60}; shift 2; $LIB wait-logs "$(orch_job)" "$re" --timeout "$t" "$@"; }
+
+# need CMD… — a wait the scene depends on: on timeout, note why and return 1 (the scene then returns: `need … || return 1`)
+ABORT=""
+need() { "$@" && return 0; ABORT="$SCENE: timed out waiting: $*"; return 1; }
+# settle SEAT… — best-effort: each seat's pane idle and unchanged for 2 s (max 30 s) before a snap
+settle() { local s; for s in "$@"; do $LIB wait-idle "sh-$s" --timeout 30 --quiet 2 --what "$s settled before the snap" >/dev/null 2>&1; done; return 0; }
 
 # exit_seat SEAT — /exit, then answer Claude Code's own "Background work is running" dialog (the room row
 # is a background agent) with "1. Exit and stop tasks": that ends the session and logs member_left.
@@ -201,48 +209,49 @@ card_answer() { $LIB card "sh-$1" "$2" "${3:-}"; }
 S1() { # alice joins with no room open: the room is created and the headless orch spawned
   submit alice "/sub-human alice"
   ROOM=$($LIB wait-room --timeout 60)
-  [ -n "$ROOM" ] && export SUB_HUMAN_ROOM="$ROOM"
-  wait_log --kind member_joined --from alice --timeout 60
-  $LIB wait-member orch pid --not "" --timeout 120 --what "the orch job binds as orch of the room"
+  [ -n "$ROOM" ] || { ABORT="S1: no room dir after /sub-human alice (60 s)"; return 1; }
+  export SUB_HUMAN_ROOM="$ROOM"
+  need wait_log --kind member_joined --from alice --timeout 60 || return 1
+  need $LIB wait-member orch pid --not "" --timeout 120 --what "the orch job binds as orch of the room" || return 1
   orch_view
-  wait_pane alice "$(panel_row "$(room)")" 90
-  $LIB wait-holds orch alice --timeout 120
-  $LIB wait-native-task "room $(room) open" --timeout 120
-  sleep 4
+  need wait_pane alice "$(panel_row "$(room)")" 90 || return 1
+  need $LIB wait-holds orch alice --timeout 120 || return 1
+  need $LIB wait-native-task "room $(room) open" --timeout 120 || return 1
+  settle alice
   snap "alice runs /sub-human alice: room $(room) opened, the orch started in the background; one $(room) row for her, an alice row in the orch's panel"
 }
 
 S2() { # bob joins
   submit bob "/sub-human bob"
-  wait_log --kind member_joined --from bob --timeout 60
+  need wait_log --kind member_joined --from bob --timeout 60 || return 1
   # the join as a group-chat line in alice's pane ("bob joined": the monitor's line, printed by her Claude); kept as evidence
   mkdir -p "$SNAP_DIR/state/S2"
   wait_pane alice "^\s*(⏺ )?bob joined\s*$" 60 --what "alice sees the chat line \"bob joined\"" && $LIB pane sh-alice > "$SNAP_DIR/state/S2/notice-alice.txt"
-  wait_pane bob "$(panel_row "$(room)")" 90
-  $LIB wait-holds orch bob --timeout 120
-  $LIB wait-holds alice bob --timeout 90
-  sleep 6
+  need wait_pane bob "$(panel_row "$(room)")" 90 || return 1
+  need $LIB wait-holds orch bob --timeout 120 || return 1
+  need $LIB wait-holds alice bob --timeout 90 || return 1
+  settle alice bob
   snap "bob joins: bob nested in alice's room row, alice in bob's; the orch lists both"
 }
 
 S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   local before; before=$($LIB log-max)
   submit alice "@room bob, can you take the parser tests? handler's in src/server.js"
-  wait_log --kind say --from alice --via human --after "$before" --timeout 30
+  need wait_log --kind say --from alice --via human --after "$before" --timeout 30 || return 1
   wait_pane alice "Operation stopped by hook: ✓ sent" 15
-  wait_pane bob "alice: bob, can you take the parser tests" 60 --what "bob's pane shows alice's exact words as a chat line"
-  $LIB wait-idle sh-bob --timeout 90
-  sleep 3
+  need wait_pane bob "alice: bob, can you take the parser tests" 60 --what "bob's pane shows alice's exact words as a chat line" || return 1
+  need $LIB wait-idle sh-bob --timeout 90 || return 1
+  settle alice
   snap "alice posts with @room: one receipt line for her (✓ sent), bob's pane shows \"alice: …\" with her exact words"
   submit bob "@room sure, once we've agreed how paging works"
-  wait_log --kind say --from bob --via human --after "$before" --timeout 30
-  $LIB wait-idle sh-alice --timeout 90
+  need wait_log --kind say --from bob --via human --after "$before" --timeout 30 || return 1
+  need $LIB wait-idle sh-alice --timeout 90 || return 1
   submit bob "ask alice's Claude how createTask in src/store.js picks ids. just ask, change nothing"
-  wait_pane alice "Message from @?bob\." 120 --what "alice's pane shows a message from bob's Claude"
-  $LIB wait-idle sh-alice --timeout 120
-  wait_pane bob "Message from @?alice\." 120 --what "bob's pane shows alice's Claude's answer"
-  $LIB wait-idle sh-bob --timeout 120
-  sleep 3
+  need wait_pane alice "Message from @?bob\." 120 --what "alice's pane shows a message from bob's Claude" || return 1
+  need $LIB wait-idle sh-alice --timeout 120 || return 1
+  need wait_pane bob "Message from @?alice\." 120 --what "bob's pane shows alice's Claude's answer" || return 1
+  need $LIB wait-idle sh-bob --timeout 120 || return 1
+  settle alice bob
   snap "bob's Claude asks alice's Claude natively (SendMessage to alice.$(room)); alice's Claude answers. No card, no orch turn"
 }
 
@@ -253,22 +262,22 @@ ANSWER_bob="@room @orch fine with that; 400 on a bad cursor. please propose it t
 S4() { # let's plan: bob @room @orch → orch proposes → each approver reads it in the plan view
   local before; before=$($LIB log-max)
   submit bob "@room @orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
-  wait_log --kind say --from bob --via human --after "$before" --timeout 30
+  need wait_log --kind say --from bob --via human --after "$before" --timeout 30 || return 1
   if ! wait_log --kind proposal --from orch --after "$before" --timeout 150 --what "the orch proposes (or asks first)"; then
     # the orch asked the people first (post to=NAME or SendMessage): each answers in one @room line
     snap "The orch asks alice and bob before it writes the plan"
     for seat in alice bob; do
       local var="ANSWER_$seat"
-      $LIB wait-idle "sh-$seat" --timeout 60
+      need $LIB wait-idle "sh-$seat" --timeout 60 || return 1
       local b; b=$($LIB log-max)
       submit "$seat" "${!var}"
-      wait_log --kind say --from "$seat" --via human --after "$b" --timeout 30
+      need wait_log --kind say --from "$seat" --via human --after "$b" --timeout 30 || return 1
     done
-    wait_log --kind proposal --from orch --after "$before" --timeout 420 --what "the orch writes a plan and proposes it"
+    need wait_log --kind proposal --from orch --after "$before" --timeout 420 --what "the orch writes a plan and proposes it" || return 1
   fi
-  wait_card alice "alice's card is open"
-  wait_card bob "bob's card is open"
-  sleep 2
+  need wait_card alice "alice's card is open" || return 1
+  need wait_card bob "bob's card is open" || return 1
+  sleep 2   # the plan view's first paint (wait-idle counts an open plan view as busy)
   snap "The orch proposes its plan: it opens in alice's and bob's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)"
   read_plan alice
 }
@@ -289,24 +298,25 @@ NOTE5="add a test for a cursor past the end — \`after=zzz\` must 400, not 500"
 
 S5() { # bob objects with a note, alice agrees; the orch revises; both agree → decision
   local p1; p1=$($LIB last-id --kind proposal)
-  card_answer alice Agree
-  wait_log --kind signoff --from alice --via human --after "$p1" --timeout 30
-  card_answer bob Object "$NOTE5"
-  wait_log --kind objection --from bob --via human --after "$p1" --timeout 30
-  sleep 4
+  need card_answer alice Agree || return 1
+  need wait_log --kind signoff --from alice --via human --after "$p1" --timeout 30 || return 1
+  need card_answer bob Object "$NOTE5" || return 1
+  need wait_log --kind objection --from bob --via human --after "$p1" --timeout 30 || return 1
+  settle alice bob
   snap "alice agrees; bob objects with a note (via=human, byte-exact)"
-  wait_log --kind proposal --from orch --after "$p1" --timeout 420 --what "the orch revises and proposes again"
-  wait_card alice "alice's card for the revision"
-  wait_card bob "bob's card for the revision"
-  sleep 2
+  need wait_log --kind proposal --from orch --after "$p1" --timeout 420 --what "the orch revises and proposes again" || return 1
+  need wait_card alice "alice's card for the revision" || return 1
+  need wait_card bob "bob's card for the revision" || return 1
+  sleep 2   # the plan view's first paint
   snap "The orch revises: a new proposal, opened again for each"
   local p2; p2=$($LIB last-id --kind proposal)
-  card_answer alice Agree
-  wait_log --kind signoff --from alice --via human --after "$p2" --timeout 30
-  card_answer bob Agree
-  wait_log --kind decision --after "$p2" --timeout 30
-  $LIB wait-idle sh-alice --timeout 90; $LIB wait-idle sh-bob --timeout 90
-  sleep 6
+  need card_answer alice Agree || return 1
+  need wait_log --kind signoff --from alice --via human --after "$p2" --timeout 30 || return 1
+  need card_answer bob Agree || return 1
+  need wait_log --kind decision --after "$p2" --timeout 30 || return 1
+  need $LIB wait-idle sh-alice --timeout 90 || return 1
+  need $LIB wait-idle sh-bob --timeout 90 || return 1
+  sleep 6   # the decision's notice reaches both seats after they go idle; no pane text to wait on
   snap "Both agree to the revision: a decision is logged; both Claudes are told once"
 }
 
@@ -315,46 +325,48 @@ S6() { # shared tasks: alice's Claude adds, then claims, the orch applies native
   # explicit tool name: in run osprey-3059 the model used post ("taking this") instead of the task tool. add leaves
   # the task pending with no owner (lynx-5140), and claim needs its id: so add, then claim by id.
   submit alice "put \"cursor paging handler\" on the room task list: call the mcp__plugin_sub-human_room__task tool with op \"add\", subject \"cursor paging handler\". Only that tool call: do not use post, do not edit any file"
-  wait_log --kind task_req --from alice --after "$before" --timeout 120
-  wait_log --kind task --after "$before" --timeout 180 --what "the orch applies the add natively (task entry)"
+  need wait_log --kind task_req --from alice --after "$before" --timeout 120 || return 1
+  need wait_log --kind task --after "$before" --timeout 180 --what "the orch applies the add natively (task entry)" || return 1
   local t; t=$($LIB task-id)
   local b1; b1=$($LIB log-max)
   submit alice "claim it for me: call the mcp__plugin_sub-human_room__task tool with op \"claim\", id \"$t\". Only that tool call: do not start the work, do not edit any file"
-  wait_log --kind task_req --from alice --after "$b1" --timeout 120
-  $LIB wait-tasks --owner alice --status in_progress --timeout 180
-  sleep 7
+  need wait_log --kind task_req --from alice --after "$b1" --timeout 120 || return 1
+  need $LIB wait-tasks --owner alice --status in_progress --timeout 180 || return 1
+  # the room row's task summary (what the S6 check reads); best-effort
+  wait_pane alice "$(room).*(tasks? [0-9]+ open|#[0-9]+ you)" 30 --what "alice's room row shows the task summary"
+  settle alice
   snap "alice's Claude calls task(add), then task(claim #$t): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it"
   local b2; b2=$($LIB log-max)
   # explicit: the model may otherwise answer in text and never calls the tool (learning run badger-3918); honest
   # evidence: with "I ran the tests, 3/3 pass" bob's Claude declined to send a claim it had not checked (run falcon-2880)
   submit bob "call the mcp__plugin_sub-human_room__task tool now with op \"done\", id \"$t\", evidence \"bob checking the owner gate; no tests run\". It is alice's task: I want to see that the room refuses it. Send the request anyway and report the tool's reply in one line"
-  wait_log --kind task_req --from bob --after "$b2" --timeout 120
-  $LIB wait-orch-idle --after "$b2" --timeout 180
+  need wait_log --kind task_req --from bob --after "$b2" --timeout 120 || return 1
+  need $LIB wait-orch-idle --after "$b2" --timeout 180 || return 1
   mkdir -p "$SNAP_DIR/state/S6"; $LIB synthetic-gate "$t" > "$SNAP_DIR/state/S6/gate-bob.json"
-  sleep 5
+  settle bob
   snap "bob's Claude asks done on alice's task #$t: refused, the task stays in progress"
   local b3; b3=$($LIB log-max)
   submit alice "the handler is in and npm test passes 3/3. call the mcp__plugin_sub-human_room__task tool with op \"done\", id \"$t\", evidence \"handler in, npm test 3/3 pass\". Only that tool call: do not edit or check any file"
-  wait_log --kind task_req --from alice --after "$b3" --timeout 120
-  $LIB wait-tasks --id "$t" --status completed --timeout 180
-  sleep 7
+  need wait_log --kind task_req --from alice --after "$b3" --timeout 120 || return 1
+  need $LIB wait-tasks --id "$t" --status completed --timeout 180 || return 1
+  settle alice
   snap "alice's Claude asks done with evidence: the orch completes #$t (the gate passes the owner's request)"
 }
 
 S7() { # stray typing into a row view: the hint is on the row's own progress line; the row answers in one line
   # when its hold next returns (a join/rejoin; S8's resume brings one). Nothing is posted.
-  $LIB wait-idle sh-alice --timeout 60
-  $LIB select-row sh-alice "$(room)"
+  need $LIB wait-idle sh-alice --timeout 60 || return 1
+  need $LIB select-row sh-alice "$(room)" || return 1
   keys alice Enter
-  wait_pane alice "─ $(room) ─" 10
-  sleep 2
+  need wait_pane alice "─ $(room) ─" 10 || return 1
+  sleep 2   # the row view's first paint
   submit alice "x"
   wait_pane alice "read-only · talk in main" 20 --what "the row view shows the read-only hint where the text was typed"
-  sleep 15
+  sleep 15  # deliberate dwell: room for the row to answer (it may not; the S7 check takes either)
   snap "alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted"
-  $LIB select-row sh-alice main
+  need $LIB select-row sh-alice main || return 1
   keys alice Enter
-  wait_pane alice "─ $(room) ─" 10 --absent
+  need wait_pane alice "─ $(room) ─" 10 --absent || return 1
   keys alice Up Up   # focus back on the prompt
   sleep 1
 }
@@ -362,26 +374,26 @@ S7() { # stray typing into a row view: the hint is on the row's own progress lin
 S8() { # resilience: /clear in alice keeps rows; bob /exit + --continue: rows return with no prompt; monitor wakes him
   local sid; sid=$($LIB member-field alice session_id)
   submit alice "/clear"
-  $LIB wait-member alice session_id --not "$sid" --timeout 30
-  sleep 8
-  wait_pane alice "$(panel_row "$(room)")" 60
+  need $LIB wait-member alice session_id --not "$sid" --timeout 30 || return 1
+  sleep 8   # the old row line can linger right after /clear: give the restore time before looking for the row
+  need wait_pane alice "$(panel_row "$(room)")" 60 || return 1
   snap "Rows survive /clear in alice's session (still one room row)"
   local before; before=$($LIB log-max)
   exit_seat bob
-  wait_log --kind member_left --from bob --after "$before" --timeout 30
+  need wait_log --kind member_left --from bob --after "$before" --timeout 30 || return 1
   sleep 1
   start_seat bob --continue
-  $LIB ready sh-bob --timeout 90
-  wait_pane bob "$(panel_row "$(room)")" 60 --what "bob's room row is back with no prompt (row-rewake)"
-  $LIB wait-idle sh-bob --timeout 60
-  sleep 4
+  need $LIB ready sh-bob --timeout 90 || return 1
+  need wait_pane bob "$(panel_row "$(room)")" 60 --what "bob's room row is back with no prompt (row-rewake)" || return 1
+  need $LIB wait-idle sh-bob --timeout 60 || return 1
+  settle alice bob
   snap "bob is back with --continue: row-rewake brings his room row back with no typing"
   local b2; b2=$($LIB log-max)
   submit alice "@room bob, are you back? the parser tests are done"
-  wait_log --kind say --from alice --via human --after "$b2" --timeout 30
-  wait_pane bob "are you back" 60 --what "the monitor still wakes bob after the resume"
-  $LIB wait-idle sh-bob --timeout 90
-  sleep 3
+  need wait_log --kind say --from alice --via human --after "$b2" --timeout 30 || return 1
+  need wait_pane bob "are you back" 60 --what "the monitor still wakes bob after the resume" || return 1
+  need $LIB wait-idle sh-bob --timeout 90 || return 1
+  settle alice
   snap "After the resume the room monitor still wakes bob with alice's words"
 }
 
@@ -390,8 +402,8 @@ S9() { # the orch refuses typed input: a viewer attaches and types one line
   tmux kill-session -t sh-viewer 2>/dev/null
   tmux new-session -d -s sh-viewer -x $COLS -y $ROWS "env -i HOME=\"$HOME\" USER=\"$USER\" LOGNAME=\"${LOGNAME:-$USER}\" PATH=\"$PATH\" TERM=xterm-256color LANG=\"${LANG:-en_US.UTF-8}\" TMPDIR=\"${TMPDIR:-/tmp/}\" claude attach $job"
   tmux set-option -t sh-viewer remain-on-exit on >/dev/null
-  $LIB wait-pane sh-viewer "orch\.$(room)|─{20}" --timeout 30
-  sleep 3
+  need $LIB wait-pane sh-viewer "orch\.$(room)|─{20}" --timeout 30 || return 1
+  sleep 3   # the attached view's first paint
   local before; before=$($LIB log-max)
   $LIB submit sh-viewer "hi orch, what's next?"
   $LIB wait-pane sh-viewer "takes no typed input" --timeout 30 --what "the attached orch refuses the typed prompt"
@@ -405,17 +417,17 @@ S9() { # the orch refuses typed input: a viewer attaches and types one line
 S10() { # leave: both exit → reap completes task 1 and stops the orch
   local before; before=$($LIB log-max)
   exit_seat alice
-  wait_log --kind member_left --from alice --after "$before" --timeout 30
+  need wait_log --kind member_left --from alice --after "$before" --timeout 30 || return 1
   # the leave reaches bob as a chat line once it has settled (8 s with no rejoin)
   mkdir -p "$SNAP_DIR/state/S10"
   wait_pane bob "^\s*(⏺ )?alice left\s*$" 45 --what "bob sees the chat line \"alice left\" after the 8 s settle" && $LIB pane sh-bob > "$SNAP_DIR/state/S10/notice-bob.txt"
-  $LIB wait-idle sh-bob --timeout 30
+  need $LIB wait-idle sh-bob --timeout 30 || return 1
   exit_seat bob
-  wait_log --kind member_left --from bob --after "$before" --timeout 30
-  sleep 2
+  need wait_log --kind member_left --from bob --after "$before" --timeout 30 || return 1
+  sleep 2   # the exited panes' last paint
   snap "alice and bob exit (1. Exit and stop tasks): member_left for each"
-  $LIB wait-member orch stopped_at --not "" --timeout 90 --what "the reaper stops the orch"
-  sleep 5
+  need $LIB wait-member orch stopped_at --not "" --timeout 90 --what "the reaper stops the orch" || return 1
+  sleep 5   # claude agents --json drops the stopped job a few seconds after stopped_at
   snap "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)"
 }
 
@@ -445,7 +457,15 @@ for SCENE in "${ALL[@]}"; do
   STEP=0
   if [ "$PAUSE" = 1 ]; then read -r -p "── next: $SCENE — press Enter " </dev/tty; fi
   say "── $SCENE"
+  ABORT=""
   "$SCENE"
+  if [ -n "$ABORT" ]; then
+    printf '\n\033[1;31m✗ %s\033[0m\n' "$ABORT" >&2
+    node -e 'process.stdout.write(JSON.stringify({ scene: process.argv[1], what: "scene aborted: " + process.argv[2], ok: false, ms: 0, time: new Date().toISOString() }) + "\n")' "$SCENE" "$ABORT" >> "$SNAP_DIR/waits.jsonl"
+    snap "$SCENE aborted: ${ABORT#*: }" || true
+    echo "the run stopped at $SCENE (later scenes need its state). Fix it, then: scripts/demo.sh --from $SCENE" >&2
+    exit 1
+  fi
   [ "$SCENE" = "$TO" ] && break
 done
 

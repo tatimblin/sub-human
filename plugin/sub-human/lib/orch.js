@@ -10,7 +10,7 @@
  *       orch's own env comes from the --settings launch flag: SUB_HUMAN_HOME, SUB_HUMAN_ROOM,
  *       CLAUDE_CODE_TASK_LIST_ID=sh-CODE, CLAUDE_CODE_ENABLE_TODO_TOOLS=1, plus crossSessionInbound "accept".
  *       No --model: the orch runs on the user's default model (plan mode's own pick). cwd is the joiner's: --bg refuses an
- *       untrusted cwd (S1 F3). No file is written into ~/.claude: the orch creates the "room CODE open" task.
+ *       untrusted cwd (a fresh temp dir is never trusted). No file is written into ~/.claude: the orch creates the "room CODE open" task.
  *   spawn({code, cwd, ...}) -> {ok, job?, error?}      runs it, parses "backgrounded · <job> · orch.CODE",
  *       records members.json orch {job, spawned_at} (pid is filled when the orch's /sub-human binds it)
  *   needsSpawn(code) -> bool    no orch record, the orch left, its bound pid died, or it never bound in 2 min
@@ -30,20 +30,21 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn: spawnChild, spawnSync } = require('node:child_process');
 const identity = require('./identity.js');
+const room = require('./room.js');
+const { readJson } = require('./io.js');
+const config = require('./config.js');
 
 const PLUGIN_ROOT = path.join(__dirname, '..');
 const AGENT = 'sub-human:orchestrator';
 const KEEP_ENV = ['HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'TERM', 'LANG', 'TMPDIR'];
-const GRACE_MS = 10_000;
-const WAIT_MS = 20_000;
-const BIND_MS = 120_000;
+const GRACE_MS = config.REAP_GRACE_MS;
+const WAIT_MS = config.REAP_WAIT_MS;
 const CLOSE_TEXT = 'room closed: complete task 1';
 
 const claudeBin = () => process.env.SUB_HUMAN_CLAUDE || 'claude';
 const taskListId = code => `sh-${code}`;
 const configDir = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 const tasksDir = code => path.join(configDir(), 'tasks', taskListId(code));
-const envMs = (k, d) => { const n = Number(process.env[k]); return Number.isFinite(n) && n >= 0 && process.env[k] !== '' ? n : d; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /** The parent's env reduced to the login basics (env -i plus these); USER/LOGNAME are needed to stay logged in. */
@@ -99,7 +100,7 @@ const JOB_RE = /backgrounded\s*·\s*([0-9a-z]{4,40})\b/i;
 
 function spawn(opts = {}) {
   const plan = spawnPlan(opts);
-  const r = spawnSync(plan.bin, plan.args, { cwd: plan.cwd, env: plan.env, encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync(plan.bin, plan.args, { cwd: plan.cwd, env: plan.env, encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'] });
   const text = `${r.stdout || ''}\n${r.stderr || ''}`;
   const m = JOB_RE.exec(text);
   if (r.error || !m) {
@@ -115,24 +116,28 @@ function needsSpawn(code, now = Date.now()) {
   if (!o || o.left_at) return true;
   if (o.pid) return !identity.isAlive(o.pid);
   if (!o.job) return true;
-  return now - Date.parse(o.spawned_at || 0) > BIND_MS;
+  return now - Date.parse(o.spawned_at || 0) > config.ORCH_BIND_MS;
 }
 
 /** Task 1 completed, or the list cleaned up (every visible task completed). Read only. */
 function roomTaskDone(code) {
   const dir = tasksDir(code);
   if (!fs.existsSync(dir)) return true;
-  const t = identity.readJson(path.join(dir, '1.json'));
+  const t = readJson(path.join(dir, '1.json'));
   return !t || t.status === 'completed';
 }
 
 function stopJob(job) {
   if (!job) return false;
-  const r = spawnSync(claudeBin(), ['stop', String(job)], { env: cleanEnv(), encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync(claudeBin(), ['stop', String(job)], { env: cleanEnv(), encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'] });
   return r.status === 0;
 }
 
-async function reap(code, { graceMs = envMs('SUB_HUMAN_REAP_GRACE_MS', GRACE_MS), waitMs = envMs('SUB_HUMAN_REAP_WAIT_MS', WAIT_MS), pollMs = 500 } = {}) {
+async function reap(code, {
+  graceMs = config.envMs('SUB_HUMAN_REAP_GRACE_MS', GRACE_MS, { allowZero: true }),
+  waitMs = config.envMs('SUB_HUMAN_REAP_WAIT_MS', WAIT_MS, { allowZero: true }),
+  pollMs = config.REAP_POLL_MS,
+} = {}) {
   if (!identity.roomExists(code)) return 'no-orch';
   await sleep(graceMs);
   if (identity.liveMembers(code).length) return 'cancelled';
@@ -140,7 +145,6 @@ async function reap(code, { graceMs = envMs('SUB_HUMAN_REAP_GRACE_MS', GRACE_MS)
   if (!o || (o.left_at && !o.job) || o.stopped_at || o.closing) return 'no-orch'; // closing: another reaper has it
   identity.setOrch(code, { closing: new Date().toISOString() });
   try {
-    const room = require('./room.js');
     room.bind(code);
     room.append({ kind: 'status', text: CLOSE_TEXT, to: 'orch' }, { via: 'system', from: 'room', system: true });
   } catch { /* the stop below still ends it */ }
@@ -161,8 +165,8 @@ function reapDetached(code) {
 }
 
 module.exports = {
-  AGENT, CLOSE_TEXT, KEEP_ENV, GRACE_MS, WAIT_MS,
-  cleanEnv, pluginDirFor, spawnPlan, command, spawn, needsSpawn, reap, reapDetached, stopJob, roomTaskDone,
+  CLOSE_TEXT,
+  pluginDirFor, spawnPlan, command, spawn, needsSpawn, reap, reapDetached,
   taskListId, tasksDir,
 };
 

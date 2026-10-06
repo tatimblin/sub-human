@@ -1,7 +1,7 @@
 'use strict';
 /**
  * plugin/sub-human/statusline/segments.js: the participant and room rows in the agent panel
- * (`sub-human agent-statusline`, Claude Code's subagentStatusLine). The main status line is gone (Phase 2).
+ * (`sub-human agent-statusline`, Claude Code's subagentStatusLine). There is no main status line.
  *
  *   agentStatusline(input, {env}?) -> string   one {"id","content"} JSON line per row task in input.tasks, found
  *       through the row map (lib/rows.js readRowMap), else by description (a member name or the room code).
@@ -14,13 +14,13 @@
  */
 const path = require('node:path');
 const LIB = path.join(__dirname, '..', 'lib');
-const lazy = name => require(path.join(LIB, name));
+const identity = require(path.join(LIB, 'identity.js'));
+const rows = require(path.join(LIB, 'rows.js'));
 
 const useColor = (env = process.env) => !('NO_COLOR' in env) && env.SUB_HUMAN_COLOR !== '0';
 const dead = t => t.status === 'killed' || t.status === 'failed';
 
 function seatOf(input) {
-  const identity = lazy('identity.js');
   let me = null;
   try { if (input && typeof input.session_id === 'string') me = identity.resolveBySession(input.session_id); } catch { me = null; }
   if (!me) { try { me = identity.resolveSelf(); } catch { me = null; } }
@@ -33,8 +33,7 @@ function agentStatusline(input = {}, { env = process.env } = {}) {
     if (!tasks.length) return '';
     const me = seatOf(input);
     if (!me) return '';
-    const rows = lazy('rows.js');
-    const members = lazy('identity.js').readMembers(me.code) || {};
+    const members = identity.readMembers(me.code) || {};
     const map = rows.readRowMap(me.code);
     const opts = { entries: rows.readLog(me.code), members, color: useColor(env) };
     const out = [];

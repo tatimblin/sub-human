@@ -1,6 +1,6 @@
 'use strict';
 // hooks/tasks.js: the PostToolUse TaskCreate|TaskUpdate mirror and the TaskCompleted gate (orch only).
-// Payload shapes are the ones S1 logged from a --bg orch (docs/next/S1-headless-orch.md §4).
+// Payload shapes are the ones S1 logged from a --bg orch (docs/archive/next/S1-headless-orch.md §4).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

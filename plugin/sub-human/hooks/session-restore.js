@@ -7,9 +7,9 @@
 //            if session-end marked it left, rejoin the same name (when the room still exists) and log
 //            member_joined "rejoined (resumed)".
 //            A room that is closing (the reaper is stopping its orch) is not rejoined.
-// Context = the same mechanics block as join (common.js contextBlock: D's template filled + ROWS, i.e.
+// Context = the same mechanics block as join (common.js contextBlock: the role template filled + ROWS, i.e.
 // lib/rows.js rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
-// a re-spawn duplicated the room row in the S11 demo run). On --resume the hold server is new, so every row is
+// a re-spawn would duplicate the room row). On --resume the hold server is new, so every row is
 // listed. sessionTitle = the native address NAME.CODE (SendMessage / ListAgents reach the session by it).
 const path = require('node:path');
 const { identity, room, run, out, whoami, presence, contextBlock, seatTitle } = require('./common.js');

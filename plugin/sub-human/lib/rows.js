@@ -1,6 +1,6 @@
 'use strict';
 /**
- * plugin/sub-human/lib/rows.js: participant rows in the agent panel (E1, E3, P0).
+ * plugin/sub-human/lib/rows.js: participant rows in the agent panel.
  * CommonJS, zero dependencies. Reads the room log, members.json and presence files; writes only <room>/rows/.
  *
  * Spawning (text for the model; join.js, session-restore.js and the role text append it, never hand-copy):
@@ -40,7 +40,7 @@
  * Agent -> row map (<room>/rows/<session_id>.json = {byAgent: {agentId: {kind, name, parent, at}}}):
  *   parseSpawn(toolInput, members, code) -> {kind: 'participant'|'room', name}|null
  *   recordRow(code, sessionId, agentId, rec), forgetRow(code, agentId), readRowMap(code) -> {agentId: rec}
- *       readRowMap merges every session file in the room: /clear changes session_id (P0), agent ids don't.
+ *       readRowMap merges every session file in the room: /clear changes session_id, agent ids don't.
  *   Hold liveness (written by mcp/hold.js): writeHolds(code, name, {members, room, roomUntil}), readHolds(code, name)
  *       <room>/rows/holds-<name>.json = {pid, at, members: [names], room: bool, roomUntil?}; readHolds folds
  *       roomUntil into room (a room hold between its JOINED return and the re-call is still running).
@@ -52,29 +52,22 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const identity = require('./identity.js');
+const room = require('./room.js');
+const tasks = require('./tasks.js');
+const notices = require('./notices.js');
+const { readJson, writeJsonAtomic, isAlive } = require('./io.js');
+const { withLock } = require('./lock.js');
+const text = require('./text.js');
+const { ROW_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS } = require('./config.js');
 
 const PARTICIPANT = 'sub-human:participant';
 const ROOM_AGENT = 'sub-human:room';
-const ROW_MAX = 60;
-const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
-const CODE_RE = /^[a-z]+-\d{4}$/;
-const PRESENCE_STALE_MS = 6 * 60 * 60 * 1000;
-const HOLDS_STALE_MS = 90 * 1000;
-const MISSING_GRACE_MS = 45 * 1000;
+const { NAME_RE, SID_SAFE, oneLine } = text;
 
 // ---------- small helpers ----------
-const readJson = (file, fallback = null) => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } };
-function writeJsonAtomic(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value));
-  fs.renameSync(tmp, file);
-}
-const clip = (s, n = ROW_MAX) => { const a = Array.from(String(s)); return a.length > n ? a.slice(0, n - 1).join('') + '…' : a.join(''); };
+const clip = (s, n = ROW_MAX) => text.clip(s, n);
 const h6 = h => String(h || '').slice(0, 6);
-const oneLine = s => String(s || '').replace(/\s+/g, ' ').trim();
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-const isAlive = pid => { try { process.kill(Number(pid), 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 function ago(iso, now = Date.now()) {
   const s = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
   if (!Number.isFinite(s)) return '';
@@ -101,7 +94,7 @@ const isActive = m => !!m && !m.left_at;
 const isOrch = m => m.role === 'orch' || m.name === 'orch';
 function readMembers(code) { try { return identity.readMembers(code) || {}; } catch { return {}; } }
 
-const normKind = e => (e.kind === 'concern' ? 'objection' : e.kind === 'agree' && e.plan_hash ? 'signoff' : e.kind);
+const normKind = e => room.normalize(e).kind;
 
 // ---------- spawning ----------
 const participantCall = name =>
@@ -197,32 +190,19 @@ function parseSpawn(input, members, code) {
 
 // ---------- the agent -> row map ----------
 const rowsDir = code => path.join(roomDir(code), 'rows');
-const SID_SAFE = /^[A-Za-z0-9_-]{1,128}$/;
 const mapFile = (code, sid) => path.join(rowsDir(code), `${SID_SAFE.test(String(sid)) ? sid : 'unknown'}.json`);
 
-function withLock(file, fn) {
-  const lock = file + '.lock';
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const deadline = Date.now() + 3000;
-  for (;;) {
-    try { fs.mkdirSync(lock); break; } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
-      try { if (Date.now() - fs.statSync(lock).mtimeMs > 5000) { fs.rmdirSync(lock); continue; } } catch { continue; }
-      if (Date.now() > deadline) break; // proceed unlocked rather than drop the record
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15);
-    }
-  }
-  try { return fn(); } finally { try { fs.rmdirSync(lock); } catch { /* gone */ } }
-}
+/** The row map's lock: wait up to ROWS_LOCK_TIMEOUT_MS, then throw (the hook logs it); never write unlocked. */
+const lockFile = (file, fn) => withLock(file + '.lock', fn, { timeoutMs: ROWS_LOCK_TIMEOUT_MS, staleMs: ROWS_LOCK_STALE_MS });
 
 function recordRow(code, sessionId, agentId, rec) {
   if (!code || !agentId) return false;
   const file = mapFile(code, sessionId);
-  withLock(file, () => {
+  lockFile(file, () => {
     const cur = readJson(file, {}) || {};
     const byAgent = cur.byAgent && typeof cur.byAgent === 'object' ? cur.byAgent : {};
     byAgent[agentId] = { ...rec, at: new Date().toISOString() };
-    writeJsonAtomic(file, { byAgent });
+    writeJsonAtomic(file, { byAgent }, { compact: true });
   });
   return true;
 }
@@ -242,9 +222,9 @@ function readRowMap(code) {
 
 function forgetRow(code, agentId) {
   for (const f of sessionFiles(code)) {
-    withLock(f, () => {
+    lockFile(f, () => {
       const m = readJson(f, null);
-      if (m && m.byAgent && m.byAgent[agentId]) { delete m.byAgent[agentId]; writeJsonAtomic(f, m); }
+      if (m && m.byAgent && m.byAgent[agentId]) { delete m.byAgent[agentId]; writeJsonAtomic(f, m, { compact: true }); }
     });
   }
 }
@@ -254,12 +234,12 @@ const holdsFile = (code, name) => path.join(rowsDir(code), `holds-${name}.json`)
 function writeHolds(code, name, { members = [], room = false, roomUntil = 0 } = {}) {
   const rec = { pid: process.pid, at: new Date().toISOString(), members: [...new Set(members)].sort(), room: !!room };
   if (!room && roomUntil) rec.roomUntil = new Date(roomUntil).toISOString();
-  try { writeJsonAtomic(holdsFile(code, name), rec); } catch { /* best effort */ }
+  try { writeJsonAtomic(holdsFile(code, name), rec, { compact: true }); } catch { /* best effort */ }
 }
 /**
  * The live holds of NAME's hold server, or null. `room` stays true until `roomUntil`: a room hold that just
- * returned JOINED/RESPAWN is being re-called by its row agent, so the room row is still running (P0: a join
- * notice read in that gap invited a second room-row spawn, which row-guard then denied in red).
+ * returned JOINED/RESPAWN is being re-called by its row agent, so the room row is still running (a join
+ * notice read in that gap would invite a second room-row spawn, which row-guard then denies in red).
  */
 function readHolds(code, name, now = Date.now()) {
   const h = readJson(holdsFile(code, name), null);
@@ -340,25 +320,8 @@ const awaiting = (ps, name) => ps.filter(p => !p.decided && p.approvers.includes
 /** The proposal a row reports for `name`: the newest that names them, else the newest. */
 const latestFor = (ps, name) => ps.filter(p => p.approvers.includes(name)).at(-1) || ps.at(-1) || null;
 
-// ---------- tasks (lib/tasks.js, owner F; optional until it exists) ----------
-function tasksMod() { try { return require('./tasks.js'); } catch { return null; } }
-function taskList(code) {
-  const t = tasksMod();
-  if (t && typeof t.list === 'function') { try { const l = t.list(code); if (Array.isArray(l)) return l; } catch { /* fall back */ } }
-  const l = readJson(path.join(roomDir(code), 'tasks.json'), []);
-  return Array.isArray(l) ? l : [];
-}
-function taskSummary(code, viewer) {
-  const t = tasksMod();
-  if (!t || typeof t.summary !== 'function') return '';
-  try { return oneLine(t.summary(code, viewer) || ''); } catch { return ''; }
-}
-/** NAME's open tasks: lib/tasks.js mine(code, name), else filtered from the mirror. */
-function mineOf(code, name) {
-  const t = tasksMod();
-  if (t && typeof t.mine === 'function') { try { const l = t.mine(code, name); if (Array.isArray(l)) return l; } catch { /* fall back */ } }
-  return taskList(code);
-}
+// ---------- tasks (lib/tasks.js: the mirror of the orch's native list) ----------
+const taskSummary = (code, viewer) => oneLine(tasks.summary(code, viewer) || '');
 /** NAME's open task on the room list: in progress first, else the first pending. */
 function openTask(list, name) {
   const mine = list.filter(t => t && t.owner === name && t.status !== 'completed' && t.status !== 'deleted' && !(t.metadata && t.metadata._internal));
@@ -384,7 +347,7 @@ function presenceOf(code, name, es, now) {
   return clip(s, 12);
 }
 
-function participantText(code, name, viewer, es, ms, now, c, tasks) {
+function participantText(code, name, viewer, es, ms, now, c, taskList) {
   const m = ms.find(x => x.name === name);
   if (!m) return 'not in the room';
   if (m.left_at) return 'left';
@@ -400,7 +363,7 @@ function participantText(code, name, viewer, es, ms, now, c, tasks) {
     else if (v && v.kind === 'objection') parts.push(c.warn('✖ objected'));
     else if (p.approvers.includes(name)) parts.push(c.warn(`⚠ reviewing ${h6(p.hash)}`));
   }
-  const t = openTask(tasks, name);
+  const t = openTask(taskList, name);
   if (t) parts.push(`◼ #${t.id} ${clip(oneLine(t.subject), 28)}`);
   const pres = presenceOf(code, name, es, now);
   if (pres) parts.push(pres === 'idle' ? c.dim(pres) : c.warn(pres));
@@ -421,8 +384,7 @@ function participantText(code, name, viewer, es, ms, now, c, tasks) {
 function roomText(code, viewer, es, ms, now, c, summary) {
   const parts = [];
   // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left" (lib/notices.js)
-  let move = '';
-  try { move = require('./notices.js').rowSegment(es, viewer, { now }); } catch { /* optional */ }
+  const move = notices.rowSegment(es, viewer, { now });
   if (move) parts.push(c.dim(move));
   const ps = proposals(es);
   const need = viewer ? awaiting(ps, viewer) : [];
@@ -451,7 +413,7 @@ function roomText(code, viewer, es, ms, now, c, summary) {
 }
 
 /**
- * opts: {color, entries, members, now, tasks (list; default lib/tasks.js mine(code, name), else <room>/tasks.json),
+ * opts: {color, entries, members, now, tasks (list; default lib/tasks.js mine(code, name)),
  *        taskSummary (string, default tasks.summary(code, viewer))}.
  */
 function rowText(code, name, viewer, opts = {}) {
@@ -463,7 +425,7 @@ function rowText(code, name, viewer, opts = {}) {
     const summary = opts.taskSummary != null ? oneLine(opts.taskSummary) : taskSummary(code, viewer);
     return roomText(code, viewer, es, ms, now, c, summary);
   }
-  return participantText(code, name, viewer, es, ms, now, c, Array.isArray(opts.tasks) ? opts.tasks : mineOf(code, name));
+  return participantText(code, name, viewer, es, ms, now, c, Array.isArray(opts.tasks) ? opts.tasks : tasks.mine(code, name));
 }
 
 const rowLine = (label, text) => (text ? `${label}  ${text}` : label);
@@ -471,7 +433,7 @@ const rowLine = (label, text) => (text ? `${label}  ${text}` : label);
 module.exports = {
   PARTICIPANT, ROOM_AGENT, ROW_MAX,
   rowCalls, rowsNeeded, joinNote, participantCall, roomCall, parseSpawn,
-  rowText, rowLine, readLog, proposals, openTask, taskList, fit,
+  rowText, rowLine, readLog, fit,
   recordRow, forgetRow, readRowMap, rowsDir, mapFile,
   writeHolds, readHolds, holdsFile, missingRows,
 };

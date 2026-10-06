@@ -35,10 +35,9 @@ test('notices.joinLeave: others only, leaves settle after 8 s, a quick leave + r
 });
 
 test('notices.text and rowSegment: the one-line notice and the room row segment', () => {
-  const ms = { ...MEMBERS, carol: { name: 'carol', role: 'member', left_at: at(0) } };
-  assert.equal(notices.text(CODE, { kind: 'member_joined', name: 'bob' }, ms), 'bob joined');
-  assert.equal(notices.text(CODE, { kind: 'member_joined', name: 'bob', rejoin: true }, ms), 'bob rejoined');
-  assert.equal(notices.text(CODE, { kind: 'member_left', name: 'bob' }, ms), 'bob left');
+  assert.equal(notices.text({ kind: 'member_joined', name: 'bob' }), 'bob joined');
+  assert.equal(notices.text({ kind: 'member_joined', name: 'bob', rejoin: true }), 'bob rejoined');
+  assert.equal(notices.text({ kind: 'member_left', name: 'bob' }), 'bob left');
   const es = [mv(1, 'member_joined', 'bob', 0)];
   assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 5_000 }), '+bob joined');
   assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 130_000 }), '', 'gone after 2 minutes');
@@ -55,22 +54,14 @@ test('rows.rowText: the room row leads with a recent join', () => {
   assert.equal(rows.rowText(CODE, CODE, 'alice', { entries: es, members: MEMBERS, now: T0 + 400_000, taskSummary: '' }), '2 here');
 });
 
-test('notices file: write merges a burst, read, shown / markShown', () => {
+test('notices shown / markShown: ids merge and sort; via is required', () => {
   h.freshHome();
   const code = h.newRoom();
-  const f = notices.ensure('sess-1');
-  assert.equal(f, path.join(process.env.SUB_HUMAN_HOME, 'notices', 'sess-1.json'));
-  assert.deepEqual(notices.read(f).items, []);
-  notices.write('sess-1', [{ id: 3, code, name: 'alice', text: 'a', at: new Date().toISOString() }]);
-  notices.write('sess-1', [{ id: 5, code, name: 'alice', text: 'b', at: new Date().toISOString() }]);
-  assert.deepEqual(notices.read(f).items.map(x => x.id), [3, 5]);
-  assert.equal(notices.file('../x'), null);
   assert.deepEqual([...notices.shown(code, 'alice')], []);
-  notices.markShown(code, 'alice', [3]);
-  notices.markShown(code, 'alice', [5, 3]);
+  notices.markShown(code, 'alice', [3], 'monitor');
+  notices.markShown(code, 'alice', [5, 3], 'prompt');
   assert.deepEqual([...notices.shown(code, 'alice')], [3, 5]);
-  notices.remove('sess-1');
-  assert.equal(fs.existsSync(f), false);
+  assert.throws(() => notices.markShown(code, 'alice', [6]), /via/);
 });
 
 // ---------- the room hold's progress line ----------
@@ -121,7 +112,7 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   }
 });
 
-// ---------- the room monitor prints joins and leaves as chat lines (no notice file) ----------
+// ---------- the room monitor prints joins and leaves as chat lines ----------
 const FAST = { CLAUDE_PID: String(process.pid), SUB_HUMAN_RESOLVE_MS: '100', SUB_HUMAN_UNSEATED_MS: '100', SUB_HUMAN_POLL_MS: '50', SUB_HUMAN_SETTLE_MS: '300', SUB_HUMAN_SETTLE_MAX_MS: '1000', SUB_HUMAN_LEAVE_MS: '600' };
 function startTail() {
   const child = spawn(h.BIN, ['tail'], { env: h.childEnv(FAST) });
@@ -135,8 +126,7 @@ test('cli tail (member): a join and a settled leave are chat lines on stdout; a 
   h.freshHome();
   const code = h.newRoom();
   room.bind(code);
-  const me = h.register('alice', 'member', process.pid, code);
-  const f = notices.file(`sess-alice-${me.pid}`);
+  h.register('alice', 'member', process.pid, code);
   sys('member_joined', 'alice');
   rows.writeHolds(code, 'alice', { room: true, members: ['bob'] }); // her rows run: no row note is pushed
   const t = startTail();
@@ -156,21 +146,5 @@ test('cli tail (member): a join and a settled leave are chat lines on stdout; a 
     assert.equal(t.out, 'bob joined\n', 'still settling');
     await h.until(() => t.out.includes('bob left'), 3000);
     assert.equal(t.out, 'bob joined\nbob left\n');
-    assert.equal(notices.read(f).items.length, 0, 'no notice file');
-  } finally { t.child.kill(); }
-});
-
-test('cli tail (orch): writes no notice file', async () => {
-  h.freshHome();
-  const code = h.newRoom();
-  room.bind(code);
-  const me = h.register('orch', 'orch', process.pid, code);
-  const t = startTail();
-  try {
-    await h.sleep(400);
-    sys('member_joined', 'bob', 'bob joined');
-    await h.until(() => t.out.includes('member_joined'), 3000);
-    await h.sleep(500);
-    assert.equal(fs.existsSync(notices.file(`sess-orch-${me.pid}`)), false);
   } finally { t.child.kill(); }
 });

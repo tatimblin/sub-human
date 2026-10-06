@@ -45,8 +45,8 @@
  *                                               | permission (permission_prompt) | error (StopFailure; detail = code)
  *   readPresence(code) -> {name: {state, at, detail?}}
  *
- * Also: withLock(lockPath, fn) (the lockfile helper room.js shares), isAlive, readJson, writeJsonAtomic,
- *   readMembersFile(file), NAME_RE, CODE_RE, RESERVED, ANIMALS, PRESENCE_STATES.
+ * Also: isAlive (lib/io.js), readMembersFile(file), NAME_RE, CODE_RE, RESERVED, ANIMALS, PRESENCE_STATES.
+ * members.json and the session indexes are written under lib/lock.js withLock, atomically (lib/io.js).
  */
 
 const fs = require('node:fs');
@@ -54,9 +54,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
-const CODE_RE = /^[a-z]+-\d{4}$/;
-const SID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+const { readJson, writeJsonAtomic, isAlive } = require('./io.js');
+const { withLock } = require('./lock.js');
+const { NAME_RE, CODE_RE, SID_SAFE: SID_RE } = require('./text.js');
+const { PRESENCE_DETAIL_MAX } = require('./config.js');
 const RESERVED = ['orch', 'room', 'all', 'system'];
 const ROLES = ['orch', 'member'];
 const PRESENCE_STATES = ['working', 'idle', 'permission', 'error'];
@@ -95,58 +96,7 @@ function newCode() {
   throw new Error('could not allocate a room code');
 }
 
-// ---------- files ----------
-function readJson(file, fallback = null) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
-}
-
-function writeJsonAtomic(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n');
-  fs.renameSync(tmp, file);
-}
-
 const rm = file => { try { fs.unlinkSync(file); } catch { /* already gone */ } };
-
-// ---------- locking (shared with room.js) ----------
-const sleepSync = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-
-function isAlive(pid) {
-  pid = Number(pid);
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
-}
-
-function lockStale(lock) {
-  let st, body;
-  try { st = fs.statSync(lock); body = fs.readFileSync(lock, 'utf8'); } catch { return false; }
-  const [pid, host] = body.split(' ');
-  if (host === os.hostname() && Number(pid) > 0 && !isAlive(Number(pid))) return true;
-  return Date.now() - st.mtimeMs > 10_000; // locks are held for milliseconds; 10 s means a crash
-}
-
-/** Run fn while holding an exclusive lockfile. A lock left by a dead process (or older than 10 s) is removed. */
-function withLock(lock, fn, LockError = Error) {
-  fs.mkdirSync(path.dirname(lock), { recursive: true });
-  const deadline = Date.now() + 15_000;
-  let fd;
-  for (;;) {
-    try { fd = fs.openSync(lock, 'wx'); break; } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
-      if (lockStale(lock)) { rm(lock); continue; }
-      if (Date.now() > deadline) { const err = new LockError(`could not acquire ${lock}`); err.code = 'LOCK'; throw err; }
-      sleepSync(2 + Math.floor(Math.random() * 8));
-    }
-  }
-  try {
-    fs.writeSync(fd, `${process.pid} ${os.hostname()} ${Date.now()}`);
-    return fn();
-  } finally {
-    fs.closeSync(fd);
-    rm(lock);
-  }
-}
 
 // ---------- members ----------
 const readMembersFile = file => readJson(file, {}) || {};
@@ -338,7 +288,7 @@ function setOrch(code, patch = {}) {
 function writePresence(code, name, state, detail) {
   if (!NAME_RE.test(String(name)) || !PRESENCE_STATES.includes(state)) return false;
   const v = { state, at: new Date().toISOString() };
-  if (detail) v.detail = String(detail).slice(0, 200);
+  if (detail) v.detail = String(detail).slice(0, PRESENCE_DETAIL_MAX);
   try { writeJsonAtomic(path.join(presenceDir(code), `${name}.json`), v); return true; } catch { return false; }
 }
 
@@ -362,5 +312,4 @@ module.exports = {
   isAlive, claudePid,
   resolveByPid, resolveBySession, resolveSelf, lastSeat,
   writePresence, readPresence,
-  withLock, readJson, writeJsonAtomic,
 };

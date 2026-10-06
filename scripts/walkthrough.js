@@ -7,7 +7,8 @@
  *
  * One section per scene: caption(s), the three panes side by side (stacked on narrow screens, click
  * to enlarge), the room-log excerpt, the scripted waits (screens/waits.jsonl) and the checks from
- * docs/rebuild/checks.json ({scene: [{check, pass, evidence}], _meta?: {cost, run, note}}).
+ * docs/rebuild/checks.json ({scene: [{check, pass, evidence, kind?, status?: pass|fail|warn}], _meta?: {cost, run, note}};
+ * a behavioural check over its threshold shows as WARN, apart from the failures).
  * The output is one self-contained HTML file: SVGs inlined, no external requests.
  */
 const fs = require('node:fs');
@@ -67,10 +68,10 @@ function metricsSection(m) {
   };
   const rows = [];
   for (const s of seats) rows.push([`Room-caused model wakes · ${s}`, R.seats[s].wakes.turns, B.wakes[s], g(P, 'wakes', s), g(S, 'wakes', s)]);
-  rows.push(['Room-caused model wakes · total (target ≤ 12)', R.total.wakes, B.wakes.total, g(P, 'wakes', 'total'), g(S, 'wakes', 'total')]);
+  rows.push([`Room-caused model wakes · total (target ≤ ${(m.target && m.target.wakes) ?? '?'})`, R.total.wakes, B.wakes.total, g(P, 'wakes', 'total'), g(S, 'wakes', 'total')]);
   for (const s of seats) rows.push([`Join block chars · ${s}`, R.seats[s].injected.join, g(B, 'joinChars', s), g(P, 'joinChars', s), g(S, 'joinChars', s)]);
   for (const s of seats) rows.push([`Hook-injected chars over the run · ${s}`, R.seats[s].injected.total, g(B, 'injected', s), g(P, 'injected', s), g(S, 'injected', s)]);
-  rows.push(['UI noise lines per capture · all seats (target ≈ 1.4)', R.total.noise.perCapture, B.noise.perCapture, g(P, 'noise', 'perCapture'), g(S, 'noise', 'perCapture')]);
+  rows.push([`UI noise lines per capture · all seats (target ≤ ${(m.target && m.target.noisePerCapture) ?? '?'})`, R.total.noise.perCapture, B.noise.perCapture, g(P, 'noise', 'perCapture'), g(S, 'noise', 'perCapture')]);
   rows.push(['… excluding "Waiting for N background agents"', R.total.noise.perCaptureExWaiting, B.noise.perCaptureExWaiting, g(P, 'noise', 'perCaptureExWaiting'), g(S, 'noise', 'perCaptureExWaiting')]);
   for (const [k, label] of [['monitor', '"Monitor event" lines'], ['waiting', '"Waiting for N background agents" lines'], ['hookError', '"hook error" lines'], ['blocked', '"blocked by hook" lines'], ['invalid', '"Invalid tool parameters" lines']]) rows.push([`${label} (all captures)`, R.total.noise[k], B.noise[k], g(P, 'noise', k), g(S, 'noise', k)]);
   rows.push(['Red or "hook error" lines (all captures)', R.total.noise.red, null, null, g(S, 'red')]);
@@ -107,12 +108,15 @@ function build({ screens, checksFile, out }) {
   }
   const sceneIds = [...new Set([...scenes.keys(), ...Object.keys(checksAll).filter(k => !k.startsWith('_'))])].sort((a, b) => sceneRank(a) - sceneRank(b));
 
-  let pass = 0, fail = 0;
-  for (const k of sceneIds) for (const c of checksAll[k] || []) c.pass ? pass++ : fail++;
+  // a check's status: pass | fail | warn (a behavioural check over its threshold; older checks.json has only pass)
+  const status = c => c.status || (c.pass ? 'pass' : 'fail');
+  let pass = 0, fail = 0, warn = 0;
+  for (const k of sceneIds) for (const c of checksAll[k] || []) { const s = status(c); s === 'pass' ? pass++ : s === 'warn' ? warn++ : fail++; }
+  const sceneStatus = cs => (!cs.length ? 'none' : cs.some(c => status(c) === 'fail') ? 'fail' : cs.some(c => status(c) === 'warn') ? 'warn' : 'pass');
 
   const toc = sceneIds.map(id => {
     const cs = checksAll[id] || [];
-    const st = cs.length ? (cs.every(c => c.pass) ? 'pass' : 'fail') : 'none';
+    const st = sceneStatus(cs);
     return `<a class="toc-item ${st}" href="#${esc(id)}"><span class="dot"></span>${esc(id)}<span class="toc-title">${esc((SCENES[id] || [id])[0])}</span></a>`;
   }).join('');
 
@@ -140,7 +144,7 @@ ${log.map(e => `<tr><td>${esc(e.id)}</td><td>${esc(fmtTime(e.at))}</td><td>${esc
 </tbody></table></details>` : '';
     const w = waits.filter(x => x.scene === id);
     const waitHtml = w.length ? `<details class="waits"><summary>Driver waits · ${w.filter(x => x.ok).length}/${w.length} met</summary><ul>${w.map(x => `<li class="${x.ok ? 'pass' : 'fail'}"><span class="mark">${x.ok ? '✓' : '✗'}</span>${esc(x.what)} <span class="ms">${(x.ms / 1000).toFixed(1)}s</span></li>`).join('')}</ul></details>` : '';
-    const checkHtml = cs.length ? `<ul class="checks">${cs.map(c => `<li class="${c.pass ? 'pass' : 'fail'}"><span class="badge">${c.pass ? 'PASS' : 'FAIL'}</span><div><strong>${esc(c.check)}</strong>${c.evidence ? `<p class="evidence">${esc(c.evidence)}</p>` : ''}</div></li>`).join('')}</ul>` : '<p class="nochecks">No checks recorded for this scene.</p>';
+    const checkHtml = cs.length ? `<ul class="checks">${cs.map(c => `<li class="${status(c)}"><span class="badge">${status(c).toUpperCase()}</span><div><strong>${esc(c.check)}</strong>${c.kind === 'behavioural' ? `<span class="kind">behavioural · ${esc(c.value)} vs ≤ ${esc(c.threshold)}</span>` : ''}${c.evidence ? `<p class="evidence">${esc(c.evidence)}</p>` : ''}</div></li>`).join('')}</ul>` : '<p class="nochecks">No checks recorded for this scene.</p>';
     return `<section id="${esc(id)}">
 <header><h2><span class="sid">${esc(id)}</span>${esc(title)}</h2><p class="must">Must show: ${esc(must)}</p></header>
 ${steps.length ? stepHtml : '<p class="nochecks">No screens captured for this scene.</p>'}
@@ -153,7 +157,7 @@ ${steps.length ? stepHtml : '<p class="nochecks">No screens captured for this sc
   const summary = [
     `${sceneIds.length} scene${sceneIds.length === 1 ? '' : 's'}`,
     `${index.length} capture${index.length === 1 ? '' : 's'}`,
-    pass + fail ? `${pass}/${pass + fail} checks pass` : 'no checks yet',
+    pass + fail + warn ? `${pass}/${pass + fail + warn} checks pass${warn ? ` (${warn} behavioural warning${warn === 1 ? '' : 's'})` : ''}` : 'no checks yet',
     meta.cost ? `run cost ${meta.cost}` : '',
     index.length ? `captured ${String(index[0].time).slice(0, 10)}` : '',
   ].filter(Boolean).join(' · ');
@@ -167,20 +171,20 @@ ${steps.length ? stepHtml : '<p class="nochecks">No screens captured for this sc
 <style>
 :root {
   --bg: #f6f6f3; --surface: #ffffff; --ink: #1d1f23; --muted: #626872; --line: #dddcd5;
-  --accent: #3b5bdb; --pass: #1f7a3e; --pass-bg: #e3f3e8; --fail: #b42318; --fail-bg: #fde8e6;
+  --accent: #3b5bdb; --pass: #1f7a3e; --pass-bg: #e3f3e8; --fail: #b42318; --fail-bg: #fde8e6; --warn: #9a6700; --warn-bg: #fdf3dc;
   --code-bg: #efeee9; --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #111317; --surface: #191c21; --ink: #e6e8ec; --muted: #9aa1ad; --line: #2c3038;
-    --accent: #8ea2ff; --pass: #5fd08a; --pass-bg: #15291d; --fail: #ff8a7a; --fail-bg: #331715;
+    --accent: #8ea2ff; --pass: #5fd08a; --pass-bg: #15291d; --fail: #ff8a7a; --fail-bg: #331715; --warn: #f0b45a; --warn-bg: #2e2412;
     --code-bg: #22262d; --shadow: none; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #111317; --surface: #191c21; --ink: #e6e8ec; --muted: #9aa1ad; --line: #2c3038;
-  --accent: #8ea2ff; --pass: #5fd08a; --pass-bg: #15291d; --fail: #ff8a7a; --fail-bg: #331715;
+  --accent: #8ea2ff; --pass: #5fd08a; --pass-bg: #15291d; --fail: #ff8a7a; --fail-bg: #331715; --warn: #f0b45a; --warn-bg: #2e2412;
   --code-bg: #22262d; --shadow: none; color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -194,7 +198,7 @@ nav.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 28px; }
 .toc-item { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); text-decoration: none; font-size: 13px; font-weight: 600; }
 .toc-item .toc-title { font-weight: 400; color: var(--muted); }
 .toc-item .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
-.toc-item.pass .dot { background: var(--pass); } .toc-item.fail .dot { background: var(--fail); }
+.toc-item.pass .dot { background: var(--pass); } .toc-item.fail .dot { background: var(--fail); } .toc-item.warn .dot { background: var(--warn); }
 section { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 18px 14px; margin: 0 0 22px; box-shadow: var(--shadow); scroll-margin-top: 12px; }
 section h2 { font-size: 19px; margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .sid { font: 600 13px ui-monospace, Menlo, monospace; color: var(--accent); border: 1px solid var(--accent); border-radius: 6px; padding: 0 6px; }
@@ -217,9 +221,10 @@ section h2 { font-size: 19px; margin: 0; display: flex; align-items: baseline; g
 .meta-grid { display: grid; gap: 12px; }
 .checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .checks li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; }
-.checks li.pass { background: var(--pass-bg); } .checks li.fail { background: var(--fail-bg); }
+.checks li.pass { background: var(--pass-bg); } .checks li.fail { background: var(--fail-bg); } .checks li.warn { background: var(--warn-bg); }
+.kind { display: block; color: var(--muted); font-size: 12px; }
 .badge { font: 700 11px ui-monospace, Menlo, monospace; padding: 2px 6px; border-radius: 4px; color: var(--surface); flex: none; margin-top: 2px; }
-.pass .badge { background: var(--pass); } .fail .badge { background: var(--fail); }
+.pass .badge { background: var(--pass); } .fail .badge { background: var(--fail); } .warn .badge { background: var(--warn); }
 .evidence { margin: 2px 0 0; color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
 .nochecks { color: var(--muted); font-size: 14px; margin: 0; }
 details { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
@@ -278,7 +283,7 @@ document.addEventListener('keydown', function (ev) {
 </html>
 `;
   fs.writeFileSync(out, html);
-  return { out, scenes: sceneIds.length, captures: index.length, pass, fail, bytes: Buffer.byteLength(html) };
+  return { out, scenes: sceneIds.length, captures: index.length, pass, fail, warn, bytes: Buffer.byteLength(html) };
 }
 
 module.exports = { build, SCENES };
@@ -290,5 +295,5 @@ if (require.main === module) {
     checksFile: path.resolve(o.checks || path.join(REPO, 'docs/rebuild/checks.json')),
     out: path.resolve(o.out || path.join(REPO, 'docs/rebuild/walkthrough.html')),
   });
-  process.stdout.write(`walkthrough: ${path.relative(process.cwd(), r.out)} — ${r.scenes} scenes, ${r.captures} captures, checks ${r.pass} pass / ${r.fail} fail, ${(r.bytes / 1024).toFixed(0)} KiB\n`);
+  process.stdout.write(`walkthrough: ${path.relative(process.cwd(), r.out)} — ${r.scenes} scenes, ${r.captures} captures, checks ${r.pass} pass / ${r.fail} fail / ${r.warn} warn, ${(r.bytes / 1024).toFixed(0)} KiB\n`);
 }
