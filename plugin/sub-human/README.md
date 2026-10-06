@@ -16,7 +16,7 @@ claude plugin marketplace add /path/to/sub-human
 claude plugin install sub-human@sub-human
 ```
 
-You need Node on `PATH`. `claude plugin validate plugin/sub-human` checks the plugin. Accept workspace trust for your folder: the orch starts in your working directory, and Claude Code refuses to start a background session in an untrusted folder.
+**Requirements.** Node 20 or newer on `PATH`: every hook, the room MCP server, the monitor and the row status line run `node`. macOS or Linux only (the row launcher is a POSIX shell script and the store relies on POSIX rename and file modes); Windows is not supported. `claude plugin validate plugin/sub-human` checks the plugin. Accept workspace trust for your folder: the orch starts in your working directory, and Claude Code refuses to start a background session in an untrusted folder.
 
 ## Join: one command
 
@@ -156,25 +156,27 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 
 ## The monitor footer
 
-The plugin's `room` monitor is armed in **every** session where the plugin is loaded, so it also survives `--resume` and `--continue`. Claude Code may count it in its footer (for example "1 monitor still running" or in the `/exit` dialog). Its line in your session reads `Monitor event: "sub-human room"`. Outside a room it does nothing: it polls at most every 10 s, doesn't call `ps`, and prints nothing.
+The plugin's `room` monitor is armed in **every** session where the plugin is loaded (`when: "always"`), so it also survives `--resume` and `--continue`; an on-skill-invoke monitor would not come back after a resume, and a monitor that exits is never re-armed in that process, so it never exits. The cost is one idle `node` process per Claude Code session while the plugin is enabled. Claude Code may count it in its footer (for example "1 monitor still running" or in the `/exit` dialog). Its line in your session reads `Monitor event: "sub-human room"`. Outside a room it does nothing: it polls at most every 10 s, doesn't call `ps`, and prints nothing.
 
 ## Settings worth knowing
 
 - **Push notifications.** When `agentPushNotifEnabled` is on in your settings, Claude Code's monitor wakes may send a push notification for room notices. To turn them off, set `"agentPushNotifEnabled": false`, or launch with `--settings '{"agentPushNotifEnabled":false}'`.
+- **Your own `subagentStatusLine` hides the row text.** The rows' text (who said what, tasks, presence) comes from the plugin's `subagentStatusLine`. Claude Code lets any `subagentStatusLine` in your user, project or local settings, or one passed with `--settings`, override a plugin's, so with one set the rows show your status line instead. Remove it (or run it only outside rooms) to get the room text back.
 - **Bypass mode.** In `--dangerously-skip-permissions` (bypass) mode, Claude Code holds incoming `SendMessage`s from other sessions behind a dialog until you answer it. The join message warns you. Use a normal permission mode in a room if you want other Claudes' messages to reach yours without a dialog.
 
 ## Room storage
 
-Rooms live in `~/.sub-human/rooms/<CODE>/`, or under `$SUB_HUMAN_HOME`. Each has an append-only JSON-lines log. Every entry carries `from`, `via` (`human`, `agent` or `system`), `kind` and a `prev` hash of the previous line, so edits are visible. Proposals are stored by hash in `plans/`, the task mirror in `tasks.json`, and row state in `rows/`.
+Everything the plugin keeps lives in `~/.sub-human/` (rooms, seats, the row launcher in `bin/row-status`), or in `$SUB_HUMAN_HOME` when that is set. Set it the same way for every session that should share rooms: sessions with different homes never see each other. Rooms live in `<home>/rooms/<CODE>/`. Each has an append-only JSON-lines log. Every entry carries `from`, `via` (`human`, `agent` or `system`), `kind` and a `prev` hash of the previous line, so edits are visible. Proposals are stored by hash in `plans/`, the task mirror in `tasks.json`, and row state in `rows/`.
 
 ## Threat model
 
-Everyone in a room is a trusted collaborator, running as the same OS user on the same machine, so names aren't defended against forgery. The plugin guarantees that **a Claude can never consent or speak as its human**:
+The security model is one machine, one OS user. Everyone in a room is a trusted collaborator running as that same user, so names aren't defended against forgery between people. The plugin guarantees that **a Claude can never consent or speak as its human**:
 
 - Agreement and objection come only from the plan view or the card, which the human answers. A plan text edited before "Yes", answers that come with the model's call, an AFK timeout or a stale hash are dropped. The only dialog-free exit the hooks allow records nothing.
 - Your words reach the room only through `@room`, posted by a hook. Your Claude's posts are always labelled `via=agent`. `SendMessage` between sessions is Claude to Claude.
-- If another process injects an `@room` prompt into your session (a peer forging your words), the entry is retracted within about 2 s and is never pushed to anyone.
-- A guard hook denies tool writes into the room directory, so a Claude can't edit the log.
+- **Forgery check.** If another process injects an `@room` prompt into your session (a peer forging your words), the entry is retracted within about 2 s and is never pushed to anyone. It covers prompts that arrive through Claude Code; it does not cover a process that appends to the log file directly.
+- **Store guard.** A hook denies `Write`, `Edit`, `MultiEdit` and `NotebookEdit` into the store (`~/.sub-human` or `$SUB_HUMAN_HOME`, checked lexically and after resolving symlinks), so a Claude can't edit the log with its file tools. It runs on every such call rather than being narrowed with a hook `if` rule, because the store can move with `$SUB_HUMAN_HOME` and a fixed path rule would miss it. It also lets joined sessions use the room tools without a prompt, and refuses `hold` to anything but a row agent.
+- **Not covered yet.** `Bash` is not guarded: a shell command can still write into the store, and only your normal permission prompts stand in the way (a guard for it is planned). Other MCP servers that write files aren't guarded either.
 - Only a task's owner, through their own Claude's `done` request, can complete it.
 
 The plugin doesn't stop a hostile local user, who can write the files directly. The hash chain makes such edits visible. It doesn't prevent them.

@@ -43,7 +43,7 @@ test('identity: join validates names, reserved names and roles', () => {
   const m = identity.readMembers(code).orch;
   assert.equal(m.role, 'orch');
   assert.equal(m.pid, process.pid);
-  assert.equal(m.pid_start, undefined, 'no process-start records');
+  assert.equal(m.pid_start, require(path.join(h.LIB, 'lock.js')).pidStart(process.pid), 'the process start time is stored with the pid');
   assert.equal(m.session_id, 's1');
   assert.equal(m.cwd, '/x');
   assert.ok(m.joined_at);
@@ -136,7 +136,7 @@ test('identity: rebindSession after /clear; resolveSelf by CLAUDE_CODE_SESSION_I
   bob.kill();
 });
 
-test('identity: openRooms lists rooms with >= 1 live seat (no orch needed) that are not closing', async () => {
+test('identity: openRooms lists rooms with >= 1 live member seat (no orch needed) that are not closing', async () => {
   h.freshHome();
   assert.deepEqual(identity.openRooms(), []);
   const a = h.newRoom();
@@ -153,14 +153,18 @@ test('identity: openRooms lists rooms with >= 1 live seat (no orch needed) that 
   await h.until(() => !identity.isAlive(s.pid));
   assert.deepEqual(identity.openRooms(), [a], 'dead member');
   assert.deepEqual(identity.liveMembers(b), []);
-  // an orch seat alone keeps a room open (a quick rejoin finds it) until the reaper marks it closing
+  // an orch seat alone does not keep a room open: it is an orphan room (join sweeps it), still roomOpen for a resume
   const o = h.spawnSleeper();
   identity.join({ code: b, name: 'orch', role: 'orch', pid: o.pid });
-  assert.deepEqual(identity.openRooms().sort(), [a, b].sort());
+  assert.deepEqual(identity.openRooms(), [a], 'orch-only room ignored');
+  assert.deepEqual(identity.orphanRooms(), [b]);
+  assert.equal(identity.roomOpen(b), true);
   assert.deepEqual(identity.liveMembers(b), [], 'the orch is not a member');
   identity.setOrch(b, { closing: new Date().toISOString() });
   assert.equal(identity.roomClosing(b), true);
   assert.deepEqual(identity.openRooms(), [a], 'closing');
+  assert.deepEqual(identity.orphanRooms(), [], 'closing rooms are not swept again');
+  assert.equal(identity.roomOpen(b), false);
   o.kill();
   identity.leave(a, 'alice');
   assert.deepEqual(identity.openRooms(), [], 'member left');
@@ -194,4 +198,58 @@ test('identity: presence is a per-member file; readPresence returns valid states
   assert.ok(Date.parse(p.alice.at));
   assert.ok(fs.existsSync(path.join(identity.roomDir(code), 'presence', 'alice.json')));
   for (const st of identity.PRESENCE_STATES) assert.equal(identity.writePresence(code, 'carol', st), true, st);
+});
+
+test('identity: pid reuse: a live pid with a different start time is not the seat (not live, not taken, not resolved)', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const s = h.spawnSleeper();
+  assert.deepEqual(identity.join({ code, name: 'alice', role: 'member', pid: s.pid, session_id: 'sa' }), { ok: true });
+  const start = identity.readMembers(code).alice.pid_start;
+  assert.ok(Number.isInteger(start), 'pid_start stored');
+  const idx = JSON.parse(fs.readFileSync(path.join(identity.home(), 'sessions', 'by-pid', `${s.pid}.json`), 'utf8'));
+  assert.equal(idx.pid_start, start, 'the by-pid index carries it too');
+  assert.deepEqual(identity.liveMembers(code), ['alice']);
+  assert.equal(identity.resolveByPid(s.pid).name, 'alice');
+  // Pretend the seat was registered by an older process that had this pid.
+  const file = path.join(identity.roomDir(code), 'members.json');
+  const ms = JSON.parse(fs.readFileSync(file, 'utf8'));
+  ms.alice.pid_start = start - 3600;
+  fs.writeFileSync(file, JSON.stringify(ms));
+  assert.equal(identity.isAlive(s.pid), true, 'the pid itself is alive');
+  assert.equal(identity.seatAlive(identity.readMembers(code).alice), false);
+  assert.deepEqual(identity.liveMembers(code), []);
+  assert.deepEqual(identity.openRooms(), []);
+  assert.equal(identity.resolveByPid(s.pid), null, 'a reused pid does not adopt the seat');
+  const other = h.spawnSleeper();
+  assert.deepEqual(identity.join({ code, name: 'alice', role: 'member', pid: other.pid, session_id: 'sb' }), { ok: true, rejoin: true }, 'not "name taken"');
+  // Legacy seats without pid_start are still judged by the pid alone.
+  delete ms.alice.pid_start; ms.alice.pid = s.pid;
+  fs.writeFileSync(file, JSON.stringify(ms));
+  assert.equal(identity.seatAlive(identity.readMembers(code).alice), true);
+  s.kill(); other.kill();
+});
+
+test('identity: leave drops the by-pid index (under the members lock) but keeps the by-sid one', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: 'sl' });
+  const byPid = path.join(identity.home(), 'sessions', 'by-pid', `${process.pid}.json`);
+  assert.ok(fs.existsSync(byPid));
+  assert.equal(identity.leave(code, 'alice'), true);
+  assert.equal(fs.existsSync(byPid), false);
+  assert.equal(identity.lastSeat('sl').name, 'alice');
+  assert.equal(identity.leave(code, 'alice'), false, 'already left');
+  assert.equal(fs.existsSync(path.join(identity.roomDir(code), 'members.json.lock')), false, 'lock released');
+});
+
+test('identity: updateOrch merges a patch under the lock, writes nothing for null, drops undefined keys', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  assert.equal(identity.updateOrch(code, () => null), null);
+  assert.deepEqual(identity.readMembers(code), {});
+  identity.updateOrch(code, o => { assert.equal(o, null); return { job: 'pending', claim: 'c1' }; });
+  const r = identity.updateOrch(code, o => ({ claim: undefined, job: o.job === 'pending' ? 'abcd1234' : 'x' }));
+  assert.deepEqual(r, { name: 'orch', role: 'orch', pid: null, job: 'abcd1234' });
+  assert.throws(() => identity.updateOrch('nope-0000', () => ({})), /no room/);
 });

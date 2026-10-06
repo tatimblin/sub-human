@@ -53,13 +53,24 @@ const clip = (s, n = MSG_MAX) => strs.clip(s, n);
 
 /** An entry as its group-chat line, no id: "alice: say 1", "orch (to alice): which cursor?", "alice left". */
 function entryLine(e) {
-  return clip(oneLine(room.chatLines(e).filter(l => !l.startsWith(room.FOR_CLAUDE)).join(' ')));
+  return clip(oneLine(room.chatLines(e).filter(l => !l.startsWith(room.FOR_CLAUDE)).map(l => (l.startsWith(room.CHAT_NEST) ? l.slice(room.CHAT_NEST.length) : l)).join(' ')));
 }
 
 const TOOL = {
   name: 'hold',
-  description: 'Row agents only (sub-human:participant, sub-human:room). Never call it yourself: it blocks while the room lasts.',
-  inputSchema: { type: 'object', properties: { member: { type: 'string' }, room: { type: 'string' } } },
+  title: 'sub-human row hold',
+  description: 'Internal to sub-human row agents (sub-human:participant with member, sub-human:room with room). '
+    + 'Keeps a status row open in the agent panel: it blocks for as long as the room lasts and returns only STOP, JOINED or RESPAWN lines. '
+    + 'Never call it from a main session or any other agent; it is refused there.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      member: { type: 'string', description: 'Participant rows: the member NAME from the row prompt "member: NAME".' },
+      room: { type: 'string', description: 'Room rows: the room CODE from the row prompt "room: CODE".' },
+    },
+    additionalProperties: false,
+  },
+  annotations: { readOnlyHint: true, openWorldHint: false },
 };
 
 function create(ctx) {

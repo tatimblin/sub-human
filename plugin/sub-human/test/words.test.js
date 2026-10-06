@@ -77,16 +77,16 @@ test('words: orch fill is short and names the room task; agent body holds the ap
 test('words: orchestrator tools are exactly the plan list (no Bash)', () => {
   const { fm } = frontmatter(read(AGENT));
   const tools = fm.tools.split(',').map(s => s.trim());
-  const want = ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent', 'SendMessage', 'ListAgents', 'ToolSearch',
+  const want = ['Read', 'Grep', 'Glob', 'Write', 'Edit', 'Agent(sub-human:participant)', 'Agent(general-purpose)', 'SendMessage', 'ListAgents', 'ToolSearch',
     'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet', ...['post', 'read', 'propose', 'hold'].map(t => PREFIX + t)];
   assert.deepEqual([...tools].sort(), [...want].sort());
   assert.ok(!tools.includes('Bash'));
 });
 
-test('words: SKILL.md allows only the live room tools', () => {
+test('words: SKILL.md allows only the live room tools (not hold: guard.js denies it to a main thread)', () => {
   const t = read(SKILL);
   const allowed = [...t.matchAll(/^\s+- (\S+)$/gm)].map(m => m[1]);
-  assert.deepEqual(allowed.sort(), ['post', 'read', 'propose', 'task', 'hold'].map(x => PREFIX + x).sort());
+  assert.deepEqual(allowed.sort(), ['post', 'read', 'propose', 'task'].map(x => PREFIX + x).sort());
   assert.match(t, /disable-model-invocation: true/);
   const { fm } = frontmatter(t);
   assert.ok(fm.description.length <= 250, `skill description is ${fm.description.length} chars`);

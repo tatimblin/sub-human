@@ -265,3 +265,25 @@ test('orch (headless --bg): rowCalls / rowsNeeded / joinNote ignore members.json
   assert.deepEqual(rows.rowsNeeded(code, { code, name: 'alice', role: 'member' }, { members: ms }), [code]);
   assert.match(rows.rowCalls({ code, name: 'alice', role: 'member' }, ms), /members: bob"/);
 });
+
+test('rowText: a proposal is named by its stored plan\'s title (clipped), not its hash', () => {
+  const { code, dir } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }]);
+  const h1 = 'c0ffee000001', h2 = 'c0ffee000002';
+  fs.mkdirSync(path.join(dir, 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'plans', `${h1}.md`), '\n## Cursor paging for /users\n\n1. after=\n');
+  fs.writeFileSync(path.join(dir, 'plans', `${h2}.md`), '# A very long proposal title that will not fit in a row\n');
+  const mk = list => list.map((e, i) => ({ id: i + 1, at: new Date().toISOString(), text: 'x', to: 'room', ...e }));
+  const es = mk([prop(['alice', 'bob'], h1), answer('bob', 'signoff', h1)]);
+  assert.equal(rows.rowText(code, code, 'alice', { entries: es, taskSummary: '' }), '⚠ your answer needed Cursor paging for /users');
+  assert.equal(rows.rowText(code, code, 'bob', { entries: es, taskSummary: '' }), '✓ agreed Cursor paging for /users 1/2');
+  es.push(...mk([{}, {}, answer('alice', 'signoff', h1), decision(h1)]).slice(2));
+  assert.equal(rows.rowText(code, 'alice', 'orch', { entries: es, tasks: [] }), '✔ decided Cursor paging for /users');
+  const long = mk([prop(['alice'], h2)]);
+  const t = rows.rowText(code, code, 'alice', { entries: long, taskSummary: '' });
+  assert.equal(t, '⚠ your answer needed A very long proposal ti…');
+  fitsRow(t);
+  // No stored plan: the entry's "proposal HASH: title" text, else the short hash.
+  const titled = mk([{ ...prop(['alice'], 'c0ffee000003'), text: 'proposal c0ffee000003: rename fetchUser' }]);
+  assert.equal(rows.rowText(code, code, 'alice', { entries: titled, taskSummary: '' }), '⚠ your answer needed rename fetchUser');
+  assert.equal(rows.rowText(code, code, 'alice', { entries: mk([prop(['alice'], 'c0ffee000004')]), taskSummary: '' }), '⚠ your answer needed c0ffee');
+});

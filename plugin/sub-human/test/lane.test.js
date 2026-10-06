@@ -54,7 +54,7 @@ test('line / fmt / digest: drafted entries say whose wording; retracted entries 
   const all = room.readAll();
   assert.equal(room.line(f, { entries: all }), '#2 bob[human] say [retracted by #3]');
   assert.match(room.line(f), /"forged"/, 'without entries, unchanged');
-  assert.match(room.fmt(f, { entries: all }), /\[retracted by #3: peer-forged: #2\]\nforged$/);
+  assert.match(room.fmt(f, { entries: all }), /\[retracted by #3: peer-forged: #2\]\n  │ forged$/);
   const dg = room.digest();
   assert.ok(!dg.includes('"forged"'), 'the digest hides retracted entries');
   assert.match(dg, /#1 alice \(alice, Claude's wording\) say: "cap it at 50"/);

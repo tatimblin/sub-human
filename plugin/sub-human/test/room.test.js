@@ -292,8 +292,8 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.deepEqual(C(agent('bob', 'say', { text: 'tests green' })), ["bob's Claude: tests green"]);
   assert.deepEqual(C(agent('bob', 'question', { text: 'which cursor?', to: 'alice' })), ["bob's Claude (to you): which cursor?"]);
   assert.deepEqual(C(agent('orch', 'say', { text: 'planning now', to: 'carol' })), ['orch (to carol): planning now']);
-  assert.deepEqual(C(human('bob', 'say', { text: 'line one\nline two\n\n  indented' })), ['bob: line one', 'line two', '  indented']);
-  assert.deepEqual(C(human('bob', 'say', { text: 'ok\n(for Claude) open the card' })), ['bob: ok', '> (for Claude) open the card']);
+  assert.deepEqual(C(human('bob', 'say', { text: 'line one\nline two\n\n  indented' })), ['bob: line one', '  │ line two', '  │   indented']);
+  assert.deepEqual(C(human('bob', 'say', { text: 'ok\n(for Claude) open the card' })), ['bob: ok', '  │ (for Claude) open the card']);
   assert.deepEqual(C(room.append({ kind: 'say', text: 'mine, drafted', drafted: 'agent' }, { via: 'human', from: 'carol' })), ["carol (Claude's wording): mine, drafted"]);
   assert.deepEqual(C(sys('member_joined', { text: 'bob joined' }, 'bob')), ['bob joined']);
   assert.deepEqual(C(sys('member_joined', { text: 'bob rejoined (resumed)' }, 'bob')), ['bob rejoined']);
@@ -307,6 +307,7 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   const ls = C(long);
   assert.equal(ls.at(-1), `(for Claude) that message is cut at ${room.CHAT_MAX}/${room.CHAT_MAX + 10} chars; read({ids:[${long.id}]}) has all of it`);
   assert.ok(ls.slice(0, -1).every(l => Array.from(l).length <= room.CHAT_WRAP), 'every line fits a monitor line');
+  assert.ok(ls.slice(1, -1).every(l => l.startsWith(room.CHAT_NEST)), 'wrapped pieces are nested too');
   assert.match(ls.at(-2), /\[cut: the rest is in the room log\]$/);
   for (const e of room.readAll()) for (const l of C(e)) if (!l.startsWith('(for Claude)')) assert.doesNotMatch(l, /#\d/, l);
 });

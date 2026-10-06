@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/join.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/join.js\"",
+            "timeout": 10
           }
         ]
       }
@@ -16,7 +17,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/at-room.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/at-room.js\"",
+            "timeout": 10
           }
         ]
       },
@@ -24,7 +26,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\"",
+            "timeout": 10
           }
         ]
       }
@@ -35,25 +38,28 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-guard.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-guard.js\"",
+            "timeout": 10
           }
         ]
       },
       {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit|mcp__plugin_sub-human_room__.*",
+        "matcher": "^(Write|Edit|MultiEdit|NotebookEdit)$|^mcp__plugin_sub-human_room__",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.js\"",
+            "timeout": 10
           }
         ]
       },
       {
-        "matcher": "AskUserQuestion|EnterPlanMode|ExitPlanMode|mcp__plugin_sub-human_room__.*",
+        "matcher": "^(AskUserQuestion|EnterPlanMode|ExitPlanMode)$|^mcp__plugin_sub-human_room__",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\"",
+            "timeout": 10
           }
         ]
       }
@@ -64,7 +70,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-map.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-map.js\"",
+            "timeout": 10
           }
         ]
       },
@@ -73,7 +80,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\"",
+            "timeout": 10
           }
         ]
       },
@@ -82,7 +90,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tasks.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tasks.js\"",
+            "timeout": 10
           }
         ]
       }
@@ -93,7 +102,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\"",
+            "timeout": 10
           }
         ]
       }
@@ -103,7 +113,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\"",
+            "timeout": 10
           }
         ]
       }
@@ -113,17 +124,21 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-hold.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-hold.js\"",
+            "timeout": 10
           }
         ]
       }
     ],
     "SessionStart": [
       {
+        "matcher": "startup|resume|clear|fork",
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-launcher.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/row-launcher.js\"",
+            "async": true,
+            "timeout": 10
           }
         ]
       },
@@ -132,7 +147,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-restore.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-restore.js\"",
+            "timeout": 10
           }
         ]
       },
@@ -154,7 +170,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.js\"",
+            "timeout": 5
           }
         ]
       }
@@ -165,7 +182,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/presence.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/presence.js\"",
+            "async": true,
+            "timeout": 10
           }
         ]
       }
@@ -175,7 +194,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/presence.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/presence.js\"",
+            "async": true,
+            "timeout": 10
           }
         ]
       }
@@ -185,7 +206,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tasks.js\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tasks.js\"",
+            "timeout": 10
           }
         ]
       }

@@ -7,9 +7,12 @@
  *     marker when cut. Never a bare "…". With {entries}, a retracted entry renders as its header +
  *     "[retracted by #N]". A drafted:"agent" entry's header carries "(NAME, Claude's wording)".
  *     tailLine(e) = line(e).
- *   chatLines(e, {viewer}) -> [string]   one entry as group-chat lines, no ids (below)
- *   fmt(e, {entries}?)       full text for read(); who(e) ("alice" | "alice's Claude" | "room")
- *   stateLine(me, entries?) -> "room now: proposal 3fa2c1 waiting on bob · you: answer needed · away: carol"
+ *   chatLines(e, {viewer}) -> [string]   one entry as group-chat lines, no ids; continuation lines nested
+ *     under the sender with CHAT_NEST ("  │ "), at most CHAT_LINES_MAX text lines (below)
+ *   fmt(e, {entries}?)       full text for `sub-human read`, body lines nested the same way;
+ *     who(e) ("alice" | "alice's Claude" | "room")
+ *   stateLine(me, entries?) -> "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed ·
+ *     away: carol"  (waiting on = no answer yet, objected = current answer is an objection; lib/consent.js fold)
  *   digest(entries?)         <= DIGEST_CAP chars: members, open proposals + approvers + answers, open
  *     objections/questions, decisions, last 10 human entries in full by the line() rule; retracted entries
  *     left out.
@@ -19,9 +22,32 @@
 const { code, readAll, normalize, readMembersHere } = require('./store.js');
 const { proposals, answers, answered, decided, approversOf, retractedIds } = require('./lanes.js');
 const { oneLine } = require('../text.js');
-const { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP } = require('../config.js');
+const { fold } = require('../consent.js');
+const { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP, CHAT_LINES_MAX, CHAT_NEST } = require('../config.js');
 
 const FOR_CLAUDE = '(for Claude)';
+const NEST = CHAT_NEST; // "  │ ": every continuation line of a message, so none can pass as a line of its own
+
+/**
+ * Characters that would let one line of text pass as another on a terminal or in a model's view: line
+ * breaks other than \n (\r returns the cursor and overwrites the sender), other C0 / C1 controls (escape
+ * sequences), and bidi overrides. Shown as U+FFFD; the log keeps the exact text.
+ */
+const BREAKS = /\r\n|[\r\v\f\u0085\u2028\u2029]/g;
+const UNSAFE = /[\u0000-\u0008\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
+/** id -> the via=system retract entry that retracted it, built once per entries array (line/fmt run per entry). */
+const retractMaps = new WeakMap();
+function retractedBy(entries, id) {
+  let m = retractMaps.get(entries);
+  if (!m || m.n !== entries.length) {
+    m = { n: entries.length, by: new Map() };
+    for (const x of entries) if (x && x.kind === 'retract' && x.via === 'system') for (const r of x.refs || []) if (!m.by.has(r)) m.by.set(r, x);
+    retractMaps.set(entries, m);
+  }
+  return m.by.get(id);
+}
+
+const safeText = t => String(t).replace(BREAKS, '\n').replace(UNSAFE, '\ufffd');
 
 const who = e => {
   if (e.via === 'system') return 'room';
@@ -36,8 +62,9 @@ function quote(e, n, { exact = false } = {}) {
   const raw = String(e.text ?? '');
   const t = exact ? raw : oneLine(raw);
   const cps = Array.from(t);
-  if (cps.length <= n) return JSON.stringify(t);
-  return `${JSON.stringify(cps.slice(0, n).join(''))} [cut at ${n}/${cps.length}: sub-human read ${e.id}]`;
+  const js = x => JSON.stringify(x).replace(/[\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, c => `\\u${c.charCodeAt(0).toString(16)}`);
+  if (cps.length <= n) return js(t);
+  return `${js(cps.slice(0, n).join(''))} [cut at ${n}/${cps.length}: sub-human read ${e.id}]`;
 }
 
 function header(e) {
@@ -68,7 +95,7 @@ function header(e) {
  */
 function line(e, { full = false, entries } = {}) {
   if (entries) {
-    const by = entries.find(x => x.kind === 'retract' && x.via === 'system' && (x.refs || []).includes(e.id));
+    const by = retractedBy(entries, e.id);
     if (by) return `${header(e).slice(0, TAIL_MAX - 40)} [retracted by #${by.id}]`;
   }
   if (e.text == null) return full ? header(e) : header(e).slice(0, TAIL_MAX);
@@ -93,8 +120,8 @@ function chatWho(e) {
   return e.drafted === 'agent' ? `${e.from} (Claude's wording)` : e.from;
 }
 
-/** Split one text line into pieces of at most n code points, at a space when there is one. */
-function wrap(lineText, n = CHAT_WRAP) {
+/** Split one text line into pieces of at most n code points (rest: the later pieces), at a space when there is one. */
+function wrap(lineText, n = CHAT_WRAP, rest = n) {
   const out = [];
   let cps = Array.from(lineText);
   while (cps.length > n) {
@@ -103,6 +130,7 @@ function wrap(lineText, n = CHAT_WRAP) {
     out.push(cps.slice(0, cut).join('').trimEnd());
     cps = cps.slice(cut);
     while (cps[0] === ' ') cps.shift();
+    n = rest;
   }
   out.push(cps.join(''));
   return out;
@@ -141,9 +169,12 @@ function chatBody(e, viewer) {
 
 /**
  * One entry as group-chat lines, no ids: "bob: sure, once we've agreed", "bob's Claude: …", "bob joined",
- * "bob left". Multi-line text keeps its lines (each wrapped at CHAT_WRAP code points); a text longer than
- * CHAT_MAX is cut with a visible "[cut: …]" and a "(for Claude) …" line naming the read call for the rest.
- * A text line that itself starts with "(for Claude)" is prefixed with "> ", so a post can't pass as one.
+ * "bob left". Only the first line starts at column 0 ("NAME: text"); every further line of the text, and
+ * every wrapped piece, starts with NEST ("  │ "), so a post can never make a line that reads as a bare
+ * "room: decided …", "bob agreed …", "alice: …" or "(for Claude) …" line. Lines are wrapped at CHAT_WRAP
+ * code points (NEST included). At most CHAT_LINES_MAX text lines show, then "  │ [+N more lines: read({ids:[ID]})]".
+ * A text longer than CHAT_MAX is cut with a visible "[cut: …]" and a "(for Claude) …" line naming the read
+ * call for the rest. \r, other controls and bidi overrides never reach the output (safeText).
  * viewer: the reader's name ("to you", "owner you").
  */
 function chatLines(e, { viewer } = {}) {
@@ -152,12 +183,23 @@ function chatLines(e, { viewer } = {}) {
   const cps = Array.from(text);
   const cut = cps.length > CHAT_MAX;
   const shown = cut ? cps.slice(0, CHAT_MAX).join('') + ' [cut: the rest is in the room log]' : text;
-  const lines = shown.split(/\r?\n/).map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+  let lines = safeText(shown).split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
   if (!lines.length) return [head];
+  const more = Math.max(0, lines.length - CHAT_LINES_MAX);
+  if (more) lines = lines.slice(0, CHAT_LINES_MAX);
   lines[0] = `${head}: ${lines[0].replace(/^\s+/, '')}`;
-  const out = lines.flatMap((l, i) => wrap(i && l.trimStart().startsWith(FOR_CLAUDE) ? `> ${l.trimStart()}` : l));
+  const nested = CHAT_WRAP - NEST.length;
+  const out = [];
+  lines.forEach((l, i) => wrap(l, i ? nested : CHAT_WRAP, nested).forEach((piece, j) => out.push(i || j ? NEST + piece : piece)));
+  if (more) out.push(`${NEST}[+${more} more line${more === 1 ? '' : 's'}: read({ids:[${e.id}]})]`);
   if (cut) out.push(`${FOR_CLAUDE} that message is cut at ${CHAT_MAX}/${cps.length} chars; read({ids:[${e.id}]}) has all of it`);
   return out;
+}
+
+/** "waiting on dave · objected: carol" for an undecided proposal's consent matrix (lib/consent.js), or '' when all agreed. */
+function waiting(m) {
+  return [m.missing.length && `waiting on ${m.missing.join(', ')}`, m.objected.length && `objected: ${m.objected.join(', ')}`]
+    .filter(Boolean).join(' · ');
 }
 
 /** "room now: proposal 3fa2c1 waiting on bob · you: answer needed · away: bob", from the log as it is now. */
@@ -171,8 +213,7 @@ function stateLine(me, entries = readAll()) {
   if (!shown.length) parts.push('no proposals');
   for (const p of shown) {
     const dec = decided(p.hash, entries);
-    const m = answers(p.hash, approversOf(p), entries);
-    let s = `proposal ${p.hash.slice(0, 6)} ${dec ? `decided #${dec.id}` : m.missing.length ? `waiting on ${m.missing.join(', ')}` : 'agreed by all'}`;
+    let s = `proposal ${p.hash.slice(0, 6)} ${dec ? `decided #${dec.id}` : waiting(fold(entries).matrix(p.hash)) || 'agreed by all'}`;
     if (approversOf(p).includes(name)) {
       const a = answered(name, p.hash, entries);
       // the open-the-card call is spelled out right in the notice: a model skipped it when it was only in the join text
@@ -186,10 +227,14 @@ function stateLine(me, entries = readAll()) {
   return `room now: ${parts.join(' · ')}`;
 }
 
-/** Full text for read(). With `entries`, a retracted entry says so (its text stays, for the record). */
+/**
+ * Full text for `sub-human read`: a "[#id …]" header line, then every line of the text nested under it (NEST),
+ * so the text can't fake another entry's header. With `entries`, a retracted entry says so (its text stays).
+ */
 function fmt(e, { entries } = {}) {
-  const by = entries && entries.find(x => x.kind === 'retract' && x.via === 'system' && (x.refs || []).includes(e.id));
-  return `[${header(e)} ${String(e.at || '').slice(11, 19)}]${by ? ` [retracted by #${by.id}: ${oneLine(by.text)}]` : ''}\n${e.text ?? `(${e.kind}, no notes)`}`;
+  const by = entries && retractedBy(entries, e.id);
+  const body = e.text == null ? `(${e.kind}, no notes)` : safeText(e.text).split('\n').map(l => NEST + l).join('\n');
+  return `[${header(e)} ${String(e.at || '').slice(11, 19)}]${by ? ` [retracted by #${by.id}: ${oneLine(by.text)}]` : ''}\n${body}`;
 }
 
 // ---------- the compaction digest ----------
@@ -214,7 +259,10 @@ function digestSections(entries = readAll()) {
       const a = answered(n, p.hash, entries);
       planLines.push({ text: `  ${m.signed[n] ? '✔' : a ? '✗' : '–'} ${n}${a ? ` #${a.id}` : ''}` });
     }
-    if (!dec) planLines.push({ text: `  waiting on: ${m.missing.join(', ') || '(nobody)'}` });
+    if (!dec) {
+      const f = fold(entries).matrix(p.hash);
+      planLines.push({ text: `  waiting on: ${f.missing.join(', ') || '(nobody)'}${f.objected.length ? ` · objected: ${f.objected.join(', ')}` : ''}` });
+    }
   }
   if (!planLines.length) planLines.push({ text: '  (no proposals)' });
 

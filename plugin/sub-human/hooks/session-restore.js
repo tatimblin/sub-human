@@ -11,9 +11,13 @@
 // lib/rows.js rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
 // a re-spawn would duplicate the room row). On --resume the hold server is new, so every row is
 // listed. sessionTitle = the native address NAME.CODE (SendMessage / ListAgents reach the session by it).
+// A plan-view review left behind (hooks/consent.js; members/NAME/review.json) is closed here: after clear or
+// resume always, after compact only when it is older than REVIEW_STALE_MS. The session plan file gets the
+// person's own text back (lib/proposal.js restoreStale) and the review state is cleared.
 const path = require('node:path');
-const { identity, room, run, out, whoami, presence, contextBlock, seatTitle } = require('./common.js');
+const { identity, room, run, out, whoami, presence, contextBlock, seatTitle, logError } = require('./common.js');
 const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
+const proposal = require(path.join(__dirname, '..', 'lib', 'proposal.js'));
 
 const RECREATE = 'Your rows are not running (they do not survive --resume). Create them now, exactly as written:\n';
 const PARTIAL = 'Your other rows are still running; only the rows below are missing. Make only these calls, exactly as written:\n';
@@ -40,7 +44,7 @@ function reseat(input) {
   if (input.source !== 'resume' || !pid) return null;
   const last = identity.lastSeat(input.session_id);
   if (!last) return null;
-  if (identity.roomClosing(last.code) || (last.role !== 'orch' && !identity.openRooms().includes(last.code))) return null;
+  if (identity.roomClosing(last.code) || (last.role !== 'orch' && !identity.roomOpen(last.code))) return null;
   const r = identity.join({ code: last.code, name: last.name, role: last.role, pid, session_id: input.session_id, cwd: input.cwd });
   if (!r || !r.ok) return null;
   room.bind(last.code);
@@ -52,6 +56,7 @@ run(input => {
   const me = reseat(input);
   if (!me) return;
   room.bind(me.code);
+  try { proposal.restoreStale(me, { force: input.source === 'clear' || input.source === 'resume' }); } catch (err) { logError(err, 'session-restore: review'); }
   presence(me, 'working');
   const text = contextBlock(me, `restored after ${input.source || 'start'}`, { rowsLead: rowsLead(me) });
   out({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text, sessionTitle: seatTitle(me) } });

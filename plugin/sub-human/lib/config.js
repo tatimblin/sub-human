@@ -61,6 +61,16 @@ module.exports = {
   REAP_POLL_MS: 500,
   ORCH_BIND_MS: 120_000,           // a spawned orch that never bound in this long is spawned again
 
+  // ---------- orch lifecycle: spawn claim, watchdog, seat liveness (lib/orch.js, lib/identity.js) ----------
+  // A {job:'pending'} spawn claim older than this is stale (its detached starter died or hung): the next
+  // join claims again. Longer than a stop + a spawn (2 x SPAWN_TIMEOUT_MS) plus the job lookup.
+  ORCH_CLAIM_MS: 90_000,           // SUB_HUMAN_ORCH_CLAIM_MS
+  // orch.watchdog reaps a room that has had no live member for this long (members that crashed leave no
+  // SessionEnd, so no reaper was started for them).
+  ORCH_ORPHAN_MS: 60_000,          // SUB_HUMAN_ORCH_ORPHAN_MS
+  // A seat's stored pid start time must match the live pid's within this (ps lstart has 1 s resolution).
+  PID_START_SLACK_S: 2,
+
   // ---------- hooks ----------
   FORGERY_WINDOW_MS: 1200,         // SUB_HUMAN_FORGERY_MS: how long at-room's checker polls the transcript
   FORGERY_POLL_MS: 150,
@@ -87,6 +97,15 @@ module.exports = {
   // ---------- room log (lib/room/*) ----------
   RATE_MAX: 6,                     // agent posts per `from` per RATE_WINDOW_MS
   RATE_WINDOW_MS: 60_000,
+
+  // ---------- room log integrity (lib/room/{store,validate,render}.js; wave 1 agent A) ----------
+  ENTRY_TEXT_MAX_BYTES: 16 * 1024, // an entry's text, UTF-8 bytes (validate)
+  ENTRY_REFS_MAX: 50,              // refs per entry (validate)
+  ENTRY_STR_MAX: 4000,             // any other string field, JS .length (validate)
+  ENTRY_LIST_MAX: 50,              // approvers / blockedBy entries (validate)
+  LOG_LINE_MAX_BYTES: 64 * 1024,   // one serialized log line, UTF-8 bytes (append refuses longer)
+  CHAT_LINES_MAX: 20,              // text lines shown per chat message; the rest is "[+N more lines: read(...)]"
+  CHAT_NEST: '  │ ',              // the prefix of every continuation line of a chat message
 
   // ---------- size caps (code points unless noted) ----------
   CONTEXT_CAP: 9500,               // hook additionalContext (the CLI caps SessionStart / prompt context at 10k)
@@ -115,4 +134,9 @@ module.exports = {
   TASK_EVIDENCE_MAX: 2000,
   TASK_REQ_DETAIL_SHOWN: 200,      // a task_req entry's text shows this much of the detail
   TASK_REQ_EVIDENCE_SHOWN: 400,
+
+  // ---------- consent (lib/consent.js, lib/proposal.js, lib/rows.js, hooks/consent.js, hooks/session-restore.js) ----------
+  ROW_TITLE_MAX: 24,               // a proposal's title in a panel row ("✔ decided Cursor paging")
+  REVIEW_LOCK_TIMEOUT_MS: 3000,    // members/NAME/review.json read-modify-write lock (hooks time out at 5-10 s)
+  REVIEW_STALE_MS: 30 * 60 * 1000, // a plan-view review open this long is stuck: session-restore restores the plan file
 };

@@ -68,9 +68,13 @@ test('mcp: tools/list has post, read, propose plus plug-in tools, no plan/watch/
   if (fs.existsSync(path.join(h.PLUGIN, 'mcp', 'hold.js'))) assert.ok(names.includes('hold'), 'hold plug-in loaded');
   assert.equal(new Set(names).size, names.length, 'no duplicate tool names');
   assert.deepEqual(r.result.tools.find(t => t.name === 'post').inputSchema.properties.kind.enum, ['say', 'question', 'status']);
-  // Schema budget (plan §2: post, read, propose, task, hold <= 1,100 together): the core three stay <= 800.
-  const core = JSON.stringify(r.result.tools.slice(0, 3)).length;
-  assert.ok(core <= 800, `core tool schemas ${core} chars`);
+  // Schema budget, model-facing fields only (name, description, inputSchema; annotations and title are client
+  // metadata). Descriptions are written for tool search (wave 1 D), so the budget is the core three <= 1,800 and
+  // all five <= 3,600 chars.
+  const facing = ts => JSON.stringify(ts.map(({ name, description, inputSchema }) => ({ name, description, inputSchema }))).length;
+  const core = facing(r.result.tools.slice(0, 3));
+  assert.ok(core <= 1800, `core tool schemas ${core} chars`);
+  assert.ok(facing(r.result.tools) <= 3600, `all tool schemas ${facing(r.result.tools)} chars`);
   assert.equal((await s.call('nope/method', {})).error.code, -32601);
   assert.equal((await s.tool('await_human', { after_seq: 0 })).error.code, -32602);
   assert.equal((await s.tool('watch', {})).error.code, -32602);

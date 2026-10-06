@@ -10,7 +10,10 @@
  *     state review = {phase:'entering', mode}. Otherwise untouched.
  *   Pre(ExitPlanMode), phase entering: back up the session's plan file (its path from the transcript's plan_mode
  *     attachment), write the canonical text there (the dialog renders the file) and `ask`. phase 'shown'.
- *     A later ExitPlanMode (after "Tell Claude what to change"): read the rejection from the transcript, record
+ *     The backup is written into review.json (atomically) BEFORE the plan file is overwritten; session-restore
+ *     puts a stale one back. Every review.json read-modify-write runs under proposal.withReview (a lock).
+ *     A later ExitPlanMode (after "Tell Claude what to change"): read the note (cc.planFeedback: the transcript's
+ *     structured userFeedback, else the "the user said:" text), record
  *     an objection with the note byte-exact, phase 'exiting'. No path / unsafe text: phase 'exiting' + card.
  *   PermissionRequest(ExitPlanMode), phase exiting: restore the plan file and allow with setMode <mode>: no dialog,
  *     the member is back in their own mode. Only this hook ever allows without the dialog; it records nothing.
@@ -31,6 +34,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const c = require('./common.js');
 const proposal = require(path.join(__dirname, '..', 'lib', 'proposal.js'));
+const cc = require(path.join(__dirname, '..', 'lib', 'cc.js'));
+const { writeFileAtomic } = require(path.join(__dirname, '..', 'lib', 'io.js'));
+const { TRANSCRIPT_TAIL_BYTES } = require(path.join(__dirname, '..', 'lib', 'config.js'));
 
 const RECORDED = 'Recorded. The room shows it (and any note) already: post nothing about it. Agreeing is not a go-ahead to build; wait for the decision and your people.';
 /** What was recorded, for the model; no entry ids (people never see them; a Claude repeated "#8"). */
@@ -70,83 +76,27 @@ function pre(input, me) {
 
 // ---------- the review in the native plan dialog ----------
 const REVIEW_MODES = ['default', 'acceptEdits', 'auto'];
-const { readJson } = require(path.join(__dirname, '..', 'lib', 'io.js'));
 
 /** The clear-context approve option fires no PostToolUse and starts implementing: no review then. */
-function clearContextOn(cwd) {
-  const home = process.env.HOME || require('node:os').homedir();
-  const files = [path.join(home, '.claude', 'settings.json')];
-  if (cwd) files.push(path.join(cwd, '.claude', 'settings.json'), path.join(cwd, '.claude', 'settings.local.json'));
-  return files.some(f => (readJson(f) || {}).showClearContextOnPlanAccept === true);
+const reviewable = input => REVIEW_MODES.includes(input.permission_mode) && !cc.clearContextOnPlanAccept(input.cwd);
+
+// review.json (lib/proposal.js); every handler that reads and writes it runs under proposal.withReview.
+const readReview = me => proposal.readReview(me);
+const writeReview = (me, st) => proposal.writeReview(me, st);
+const clearReview = me => proposal.clearReview(me);
+const restorePlan = st => proposal.restorePlan(st);
+
+/** The transcript's lines, read once per hook run (the tail: the review is always recent). */
+function lines(input) {
+  if (!input._lines) input._lines = cc.readLines(input.transcript_path, { tailBytes: TRANSCRIPT_TAIL_BYTES });
+  return input._lines;
 }
-const reviewable = input => REVIEW_MODES.includes(input.permission_mode) && !clearContextOn(input.cwd);
-
-const readReview = me => c.readState(me, 'review');
-const writeReview = (me, st) => c.writeState(me, 'review', st);
-const clearReview = me => c.clearState(me, 'review');
-
-function transcriptLines(input) {
-  try { return fs.readFileSync(input.transcript_path, 'utf8').split('\n'); } catch { return []; }
-}
-
 /** The session's plan file: from the input (when it exists), else the transcript's latest plan_mode attachment. */
-function planFile(input) {
-  const ti = input.tool_input || {};
-  if (typeof ti.planFilePath === 'string' && ti.planFilePath) return ti.planFilePath;
-  const lines = transcriptLines(input);
-  for (let k = lines.length - 1; k >= 0; k--) {
-    if (!lines[k].includes('"plan_mode"') || !lines[k].includes('planFilePath')) continue;
-    try { const a = JSON.parse(lines[k]).attachment; if (a && a.type === 'plan_mode' && a.planFilePath) return a.planFilePath; } catch { /* torn line */ }
-  }
-  return null;
-}
-
+const planFile = input => cc.planFile(lines(input), input.tool_input);
 /** The input the model itself gave this call (Claude Code swaps ExitPlanMode's plan for the plan file's text). */
-function modelInput(input) {
-  const id = input.tool_use_id;
-  if (!id) return null;
-  const lines = transcriptLines(input);
-  for (let k = lines.length - 1; k >= 0; k--) {
-    if (!lines[k].includes(id) || !lines[k].includes('"tool_use"')) continue;
-    try {
-      const b = (JSON.parse(lines[k]).message.content || []).find(x => x && x.type === 'tool_use' && x.id === id);
-      if (b) return b.input;
-    } catch { /* torn line */ }
-  }
-  return null;
-}
-
-/** The person's "Tell Claude what to change" text for that dialog, from the transcript; null when none (Esc). */
-function feedback(input, toolUseId) {
-  if (!toolUseId) return null;
-  const lines = transcriptLines(input);
-  for (let k = lines.length - 1; k >= 0; k--) {
-    if (!lines[k].includes(toolUseId) || !lines[k].includes('tool_result')) continue;
-    let msg;
-    try { msg = JSON.parse(lines[k]).message; } catch { continue; }
-    const block = (msg && Array.isArray(msg.content) ? msg.content : []).find(b => b && b.type === 'tool_result' && b.tool_use_id === toolUseId);
-    if (!block) continue;
-    const t = typeof block.content === 'string' ? block.content
-      : (Array.isArray(block.content) ? block.content : []).filter(b => b && b.type === 'text').map(b => b.text).join('\n');
-    const at = t.indexOf(SAID);
-    if (!block.is_error || at < 0) return null;
-    const rest = t.slice(at + SAID.length);
-    const end = rest.lastIndexOf(NOTE);
-    return end >= 0 ? rest.slice(0, end) : rest;
-  }
-  return null;
-}
-const SAID = 'the user said:\n';
-const NOTE = '\n\nNote: The user\'s next message';
-
-function restorePlan(st) {
-  if (!st || !st.file || st.restored) return;
-  try {
-    if (typeof st.backup === 'string') fs.writeFileSync(st.file, st.backup);
-    else fs.rmSync(st.file, { force: true });
-  } catch { /* best-effort */ }
-  st.restored = true;
-}
+const modelInput = input => cc.toolUseInput(lines(input), input.tool_use_id);
+/** The person's "Tell Claude what to change" note for that dialog (structured userFeedback first); null when none (Esc). */
+const feedback = (input, toolUseId) => cc.planFeedback(lines(input), toolUseId);
 
 /** Record an objection from the dialog's feedback, if any; returns the line for the model. */
 function resolveShown(input, me, st) {
@@ -203,9 +153,17 @@ function preExit(input, me) {
   let backup = null;
   try { backup = fs.readFileSync(file, 'utf8'); } catch { /* none yet */ }
   if (backup === text) backup = null; // left over from an earlier review: nothing of the person's to keep
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, text);
-  Object.assign(st, { phase: 'shown', hash: p.hash, from: p.from || null, file, backup, tool_use_id: input.tool_use_id || null });
+  // The backup is on disk (atomically) BEFORE the plan file is overwritten: a crash in between loses nothing,
+  // and session-restore puts a stale one back.
+  Object.assign(st, { hash: p.hash, from: p.from || null, file, backup, restored: false, tool_use_id: input.tool_use_id || null });
+  writeReview(me, st);
+  try { writeFileAtomic(file, text); } catch (err) {
+    c.logError(err, 'consent: plan file');
+    restorePlan(st);
+    Object.assign(st, { phase: 'exiting', card: p.hash });
+    return writeReview(me, st);
+  }
+  st.phase = 'shown';
   writeReview(me, st);
   ask(st, me, text);
 }
@@ -353,12 +311,13 @@ c.run(input => {
   const ev = input.hook_event_name, tool = input.tool_name;
   if (tool === 'AskUserQuestion' && ev === 'PreToolUse') return pre(input, me);
   if (tool === 'AskUserQuestion' && ev === 'PostToolUse') return postAsk(input, me);
-  if (tool === 'EnterPlanMode' && ev === 'PreToolUse') return preEnter(input, me);
-  if (tool === 'EnterPlanMode' && ev === 'PostToolUse') return postEnter(input, me);
-  if (tool === 'ExitPlanMode' && ev === 'PreToolUse') return preExit(input, me);
-  if (tool === 'ExitPlanMode' && ev === 'PermissionRequest') return permExit(input, me);
-  if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return postExit(input, me);
-  if (/^mcp__plugin_sub-human_room__/.test(tool || '') && ev === 'PreToolUse') return preRoomTool(input, me);
-  if (ev === 'Stop') return stop(input, me);
-  if (ev === 'UserPromptSubmit') return prompt(input, me);
+  const locked = fn => proposal.withReview(me, () => fn(input, me));
+  if (tool === 'EnterPlanMode' && ev === 'PreToolUse') return locked(preEnter);
+  if (tool === 'EnterPlanMode' && ev === 'PostToolUse') return postEnter(input, me); // reads only
+  if (tool === 'ExitPlanMode' && ev === 'PreToolUse') return locked(preExit);
+  if (tool === 'ExitPlanMode' && ev === 'PermissionRequest') return locked(permExit);
+  if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return locked(postExit);
+  if (/^mcp__plugin_sub-human_room__/.test(tool || '') && ev === 'PreToolUse') return locked(preRoomTool);
+  if (ev === 'Stop') return locked(stop);
+  if (ev === 'UserPromptSubmit') return locked(prompt);
 }, () => {}); // run() logs the error; never block a question or a plan

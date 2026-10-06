@@ -2,12 +2,13 @@
 /**
  * plugin/sub-human/lib/room/lanes.js: who a log entry concerns, and the proposal queries that decide it.
  *
- * Proposals and decisions (a proposal is {hash, approvers[], path?}; answers carry proposal_hash):
+ * Proposals and decisions (a proposal is {hash, approvers[], path?}; answers carry proposal_hash). Every query
+ * reads lib/consent.js fold(entries) (memoized per array), so stateLine, lane, the rows and the gate agree:
  *   proposal(hash, entries?) -> Entry|null           the latest proposal with that hash
  *   proposals(entries?) -> Entry[]                   the latest entry per distinct hash, in log order
  *   answers(hash, approvers?, entries?) -> {hash, signed: {name: id|null}, missing, complete}
- *       approvers default to that proposal's. Per approver, the latest via=human signoff or objection
- *       carrying proposal_hash === hash wins: an objection voids an earlier signoff.
+ *       approvers default to that proposal's. signed[name] = the id of name's current signoff (the latest
+ *       answer wins: an objection voids an earlier signoff); missing = approvers with no current signoff.
  *   answered(name, hash, entries?) -> Entry|null     name's latest via=human answer on hash
  *   decided(hash, entries?) -> Entry|null            the decision entry for that hash
  *   approversOf(p) -> [name]
@@ -18,75 +19,46 @@
  */
 
 const { readAll, normalize } = require('./store.js');
+const { fold } = require('../consent.js');
 
-// ---------- proposals / decisions ----------
-/** The latest proposal entry (legacy plan_rev included) with that hash. */
+// ---------- proposals / decisions (all read lib/consent.js fold: one set of semantics) ----------
+/** The latest (non-retracted) proposal entry, legacy plan_rev included, with that hash. */
 function proposal(hash, entries = readAll()) {
-  let p = null;
-  for (const raw of entries) {
-    if (raw.kind !== 'proposal' && raw.kind !== 'plan_rev') continue;
-    const n = normalize(raw);
-    if (n.hash === hash) p = n;
-  }
-  return p;
+  const p = fold(entries).proposals.get(hash);
+  return p ? p.entry : null;
 }
 
 /** The latest proposal per distinct hash, in log order of that latest entry. */
-function proposals(entries = readAll()) {
-  const byHash = new Map();
-  for (const raw of entries) {
-    if (raw.kind !== 'proposal' && raw.kind !== 'plan_rev') continue;
-    const n = normalize(raw);
-    if (!n.hash) continue;
-    byHash.delete(n.hash);
-    byHash.set(n.hash, n);
-  }
-  return [...byHash.values()];
-}
+const proposals = (entries = readAll()) => [...fold(entries).proposals.values()].map(p => p.entry);
 
 const approversOf = p => (p && Array.isArray(p.approvers) ? p.approvers : []);
 
 function answers(hash, approvers, entries = readAll()) {
-  if (!Array.isArray(approvers)) approvers = approversOf(proposal(hash, entries));
-  const signed = Object.fromEntries(approvers.map(n => [n, null]));
-  for (const raw of entries) {
-    const e = normalize(raw);
-    if (e.via !== 'human' || e.proposal_hash !== hash || !(e.from in signed)) continue;
-    if (e.kind === 'signoff') signed[e.from] = e.id;
-    else if (e.kind === 'objection' || e.kind === 'revoke') signed[e.from] = null;
-  }
-  const missing = approvers.filter(n => signed[n] == null);
-  return { hash, signed, missing, complete: !!hash && approvers.length > 0 && missing.length === 0 };
+  const m = fold(entries).matrix(hash, Array.isArray(approvers) ? approvers : undefined);
+  return { hash, signed: m.signed, missing: m.unsigned, complete: !!hash && m.approvers.length > 0 && m.unsigned.length === 0 };
 }
 
 /** name's latest via=human signoff or objection on hash, or null. */
 function answered(name, hash, entries = readAll()) {
-  let a = null;
-  for (const raw of entries) {
-    const e = normalize(raw);
-    if (e.via === 'human' && e.from === name && e.proposal_hash === hash && (e.kind === 'signoff' || e.kind === 'objection')) a = e;
-  }
-  return a;
+  const a = fold(entries).answerOf(hash, name);
+  return a ? a.entry : null;
 }
 
-function decided(hash, entries = readAll()) {
-  return entries.map(normalize).filter(e => e.kind === 'decision' && e.proposal_hash === hash).at(-1) || null;
-}
+const decided = (hash, entries = readAll()) => fold(entries).decisions.get(hash) || null;
 
 // ---------- lanes ----------
 const esc = s => s.replace(/[.]/g, '\\.');
 /** "@name" anywhere in the text (case-insensitive, not part of a longer name). */
 const mentions = (text, name) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
 /** Ids retracted by a via=system `retract` entry. */
-const retractedIds = (entries = readAll()) =>
-  new Set(entries.filter(e => e.kind === 'retract' && e.via === 'system').flatMap(e => e.refs || []));
+const retractedIds = (entries = readAll()) => new Set(fold(entries).retracted);
 
 /** The retracted entry's own lane decides a retract's: whoever would have been woken by it hears it was forged. */
 function retractLane(me, n, entries) {
   if (n.from === (me && me.name)) return 'push'; // its victim (the hook writes it under the victim's name)
   if (!entries) return 'push';
-  const byId = new Map(entries.map(x => [x.id, x]));
-  return (n.refs || []).some(r => byId.has(r) && lane(me, byId.get(r)) === 'push') ? 'push' : 'none';
+  const refs = new Set(n.refs || []);
+  return entries.some(x => refs.has(x.id) && lane(me, x) === 'push') ? 'push' : 'none';
 }
 
 /** Whether name is in proposal p: an approver or its author. */
@@ -120,7 +92,7 @@ function lane(me, e, entries) {
   const n = normalize(e);
   if (n.kind === 'retract') return retractLane(me, n, entries);
   if (n.from === name && !(n.via === 'system' && (n.kind === 'decision' || n.kind === 'task'))) return 'none';
-  if (entries && retractedIds(entries).has(n.id)) return 'none';
+  if (entries && fold(entries).retracted.has(n.id)) return 'none';
   if (n.to === name || mentions(n.text, name)) return 'push';
   if ((n.kind === 'signoff' || n.kind === 'objection') && n.proposal_hash) {
     if (n.kind === 'signoff') return 'pull';
@@ -152,9 +124,9 @@ function lane(me, e, entries) {
  * card's reply), or it is an objected decision on a proposal name did not write.
  */
 function quietDecision(name, d, entries) {
-  const byId = new Map(entries.map(x => [x.id, x]));
-  const answersIn = (d.refs || []).map(r => byId.get(r)).filter(x => x && (x.kind === 'signoff' || x.kind === 'objection'));
-  const last = answersIn.sort((a, b) => b.id - a.id)[0];
+  const refs = new Set(d.refs || []);
+  let last = null;
+  for (const x of entries) if (refs.has(x.id) && (x.kind === 'signoff' || x.kind === 'objection') && (!last || x.id > last.id)) last = x;
   if (last && last.from === name && last.via === 'human') return true;
   if (/^objected:/.test(String(d.text || ''))) {
     const p = proposal(d.proposal_hash, entries);

@@ -36,12 +36,15 @@ const HOST = os.hostname();
 
 // ---------- process start times ----------
 const starts = new Map();
+const PID_START_CACHE_MS = 30_000;
 
 /** Epoch seconds the process started, from ps; null when ps fails or the pid is gone. Cached per pid. */
-function pidStart(pid) {
+function pidStart(pid, { fresh = false } = {}) {
   pid = Number(pid);
   if (!Number.isInteger(pid) || pid <= 0) return null;
-  if (starts.has(pid)) return starts.get(pid);
+  // Cached briefly only: a long-running tail or MCP server would otherwise keep matching a reused pid.
+  const hit = starts.get(pid);
+  if (!fresh && hit && Date.now() - hit.at < PID_START_CACHE_MS) return hit.t;
   let t = null;
   try {
     const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 2000 });
@@ -49,7 +52,7 @@ function pidStart(pid) {
     const ms = s ? Date.parse(s) : NaN;
     if (Number.isFinite(ms)) t = Math.floor(ms / 1000);
   } catch { t = null; }
-  if (t != null) starts.set(pid, t);
+  if (t != null) starts.set(pid, { t, at: Date.now() });
   return t;
 }
 

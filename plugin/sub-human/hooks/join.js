@@ -4,8 +4,12 @@
 //   /sub-human NAME [CODE]  -> join CODE as NAME and log member_joined (via system). Without CODE: the one open
 //                              room; with no open room, create one and start its headless orch (lib/orch.js);
 //                              several open rooms is an error that lists the codes. A room is open while it
-//                              has a live seat and is not closing. Already in another room -> member_left
-//                              "switched rooms". Joining a room with no live orch (re)starts it.
+//                              has a live member seat and is not closing; rooms where only the orch is left
+//                              are swept first (orch.watchdog closes them once orphaned long enough).
+//                              Already in another room -> member_left "switched rooms". Joining a room with
+//                              no live orch (re)starts it: a {job:"pending"} claim under the members lock (a
+//                              concurrent join sees it and starts nothing), then a detached starter runs
+//                              `claude --bg`, so this hook never waits for the spawn.
 //   /sub-human              -> the orch's launch prompt: in a session whose agent_type is sub-human:orchestrator
 //                              and whose env has SUB_HUMAN_ROOM (both set by the spawn), bind it as "orch" of
 //                              that room. In a plain session it explains usage: the orch is started for you.
@@ -34,15 +38,28 @@ function success(me, lead, msg, input) {
   });
 }
 
-/** Start the room's orch when it has none running; '' or a short note for the systemMessage. */
-function ensureOrch(code, cwd) {
-  if (!orch.needsSpawn(code)) return '';
-  const r = orch.spawn({ code, cwd });
-  return r.ok ? '' : ` · no orch (${r.error}); /sub-human still works, but there is no room task list`;
+/** Start the room's orch (detached) when it has none running; '' or a short note for the systemMessage. */
+function ensureOrch(code, cwd, by) {
+  let last = null;
+  try {
+    last = identity.readMembers(code).orch || null;
+    const c = orch.claimSpawn(code, { by });
+    if (!c) return '';
+    orch.startDetached({ code, cwd, ...c });
+  } catch (e) {
+    return ` · no orch (${String(e.message || e).slice(0, 200)}); /sub-human still works, but there is no room task list`;
+  }
+  const failed = last && last.spawn_error ? ` (the last start failed: ${last.spawn_error})` : '';
+  return ` · starting the orch…${failed}`;
+}
+
+/** Close rooms where only the orch is left once they have been orphaned long enough (best effort). */
+function sweep() {
+  for (const c of identity.orphanRooms()) { try { orch.watchdog(c); } catch { /* next join retries */ } }
 }
 
 function others(code, name) {
-  const ms = Object.values(identity.readMembers(code)).filter(m => m && m.name && m.name !== name && !m.left_at && (m.role !== 'orch' || m.pid || m.job));
+  const ms = Object.values(identity.readMembers(code)).filter(m => m && m.name && m.name !== name && !m.left_at && (m.role !== 'orch' || m.pid || (m.job && m.job !== orch.PENDING)));
   return ms.map(m => m.name).join(', ');
 }
 
@@ -67,6 +84,7 @@ function bindOrch(input, base, cur, args) {
 
 /** The single open room, null for none (the caller creates one), or a block() for several. */
 function pickRoom() {
+  sweep();
   const open = identity.openRooms();
   if (open.length <= 1) return { code: open[0] || null };
   block(`${open.length} rooms are open (${open.join(', ')}); say which: /sub-human NAME CODE.`);
@@ -109,7 +127,7 @@ run(input => {
     if (identity.roomClosing(code)) return block(`room ${code} is closing; run /sub-human ${name} to open a new room.`);
   }
   if (cur && cur.code === code && cur.name === name) {
-    return success(cur, 'already joined', `in room ${cur.code} as ${name}${ensureOrch(code, cwd)}`, input);
+    return success(cur, 'already joined', `in room ${cur.code} as ${name}${ensureOrch(code, cwd, name)}`, input);
   }
   if (cur) {
     // Switching rooms: leave the old one exactly as exiting the session would.
@@ -121,7 +139,7 @@ run(input => {
   if (!r || !r.ok) return block(`could not join ${code} as ${name}: ${(r && r.error) || 'unknown error'}`);
   room.bind(code);
   room.append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}` }, { via: 'system', from: name, system: true });
-  const note = ensureOrch(code, cwd);
+  const note = ensureOrch(code, cwd, name);
   const me = { code, name, role: 'member', pid, session_id: input.session_id || null, address: identity.address(name, code) };
   const here = others(code, name);
   const msg = created

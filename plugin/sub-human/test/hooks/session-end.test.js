@@ -56,3 +56,19 @@ test('session-end: the last member leaving starts the detached reaper: closing, 
   assert.deepEqual([st.to, st.via, st.text], ['orch', 'system', 'room closed: complete task 1']);
   assert.deepEqual(w.lib(() => identity.openRooms()), []);
 });
+
+test('session-end: fits its budget: the reaper is detached, so a slow `claude stop` does not hold the hook', () => {
+  const w = new World({ alice: 'act' });
+  const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-stub-'));
+  const bin = path.join(stubDir, 'claude');
+  fs.writeFileSync(bin, `#!${process.execPath}\nAtomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);\n`);
+  fs.chmodSync(bin, 0o755);
+  w.lib(() => identity.setOrch(w.code, { job: 'feed0043' }));
+  w.join('orch', 'sleep');
+  const t0 = Date.now();
+  const r = w.hook('session-end', fixture('session-end'), { as: 'alice', env: { SUB_HUMAN_CLAUDE: bin } });
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(Date.now() - t0 < 1500, `took ${Date.now() - t0} ms`);
+  assert.ok(w.members().alice.left_at);
+  assert.ok(w.entries().some(e => e.kind === 'member_left'));
+});

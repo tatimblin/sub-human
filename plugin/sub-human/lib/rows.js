@@ -26,14 +26,16 @@
  * Row text (deterministic from the log + members.json + <room>/presence/<name>.json {state, at}):
  *   rowText(code, name, viewer, {color, entries, members, now}?) -> string (<= ROW_MAX chars, no label)
  *       No entry ids (people never see them); task ids ("#2") are the room task list's numbers.
- *       Proposals: `proposal` entries with a hash (lib/proposal.js); answers = latest via=human signoff /
- *       objection with that proposal_hash; a system `decision` closes one. Segments that do not fit are dropped.
+ *       Proposals: lib/consent.js fold (the same state stateLine and the consent gate read). A proposal is named
+ *       by its title (the stored plan's first line, clipped to ROW_TITLE_MAX; the 6-char hash when there is
+ *       none): rows are for people, and no tool call is made from them. Segments that do not fit are dropped.
  *       name === code (or null): the member's room row, from viewer's seat: first a join / settled leave of the
- *         last 2 min ("+bob joined", "−bob left"; lib/notices.js rowSegment), then "⚠ your answer needed 3fa2c1",
- *         "✓ agreed 3fa2c1 1/2", "✖ objected", "✔ decided 3fa2c1" ("✖ blocked 3fa2c1" when someone objected), "proposal 3fa2c1 0/2", else "N here";
+ *         last 2 min ("+bob joined", "−bob left"; lib/notices.js rowSegment), then "⚠ your answer needed Cursor paging",
+ *         "✓ agreed Cursor paging 1/2", "✖ objected", "✔ decided Cursor paging" ("✖ blocked …" when someone objected),
+ *         "proposal Cursor paging 0/2", else "N here";
  *         then "✉ N for you", then lib/tasks.js summary(code, viewer) ("tasks 3 open · #2 you · #4 bob").
- *       otherwise: NAME's state as viewer sees it: "✓ agreed 3fa2c1", "✖ objected", "⚠ reviewing 3fa2c1",
- *         "✔ decided 3fa2c1" (after it, their latest status: "Claude status: handler done"), then their
+ *       otherwise: NAME's state as viewer sees it: "✓ agreed Cursor paging", "✖ objected", "⚠ reviewing …",
+ *         "✔ decided …" (after it, their latest status: "Claude status: handler done"), then their
  *         open task on the room list ("◼ #2 parser tests"), presence, mail; "left".
  *   rowLine(label, text) -> "label  text"   what a row shows (the row content replaces the whole label)
  *
@@ -58,7 +60,9 @@ const notices = require('./notices.js');
 const { readJson, writeJsonAtomic, isAlive } = require('./io.js');
 const { withLock } = require('./lock.js');
 const text = require('./text.js');
-const { ROW_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS } = require('./config.js');
+const { fold } = require('./consent.js');
+const proposal = require('./proposal.js');
+const { ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS } = require('./config.js');
 
 const PARTICIPANT = 'sub-human:participant';
 const ROOM_AGENT = 'sub-human:room';
@@ -280,41 +284,29 @@ function fit(parts) {
   return out;
 }
 
-const propHash = e => e.proposal_hash || e.hash || e.plan_hash || null;
-const retracted = es => new Set(es.filter(e => e.kind === 'retract' && e.via === 'system').flatMap(e => e.refs || []));
-
 /**
- * Proposals in log order: {id, hash, approvers, verdict: {name: {kind, id}}, decided (decision id), agreed,
- * objectors}. A proposal is a `proposal` entry with a hash (lib/proposal.js); answers are the latest via=human
- * signoff/objection carrying its proposal_hash; a system `decision` with that hash closes it.
+ * Proposals in log order (of their latest entry), from lib/consent.js fold: {id, hash, approvers, verdict: {name:
+ * {kind, id}} (approvers' current answers), decided (decision id or 0), agreed (count), objectors, name (title)}.
  */
-function proposals(es) {
-  const gone = retracted(es);
-  const list = [], by = new Map();
-  for (const e of es) {
-    if (gone.has(e.id)) continue;
-    const h = propHash(e);
-    if (!h) continue;
-    if (e.kind === 'proposal' && (e.hash || e.proposal_hash)) { // via propose (any via); a hashless post is chatter
-      if (by.has(h)) continue;
-      const p = { id: e.id, hash: h, from: e.from, approvers: Array.isArray(e.approvers) ? e.approvers : [], verdict: {}, decided: 0 };
-      list.push(p); by.set(h, p);
-      continue;
-    }
-    const p = by.get(h);
-    if (!p) continue;
-    if (e.kind === 'decision' && e.via === 'system') { if (!p.decided) p.decided = e.id; continue; }
-    const k = normKind(e);
-    if (e.via === 'human' && (k === 'signoff' || k === 'objection')) p.verdict[e.from] = { kind: k, id: e.id };
-  }
-  for (const p of list) {
-    p.agreed = p.approvers.filter(n => p.verdict[n] && p.verdict[n].kind === 'signoff').length;
-    p.objectors = Object.keys(p.verdict).filter(n => p.verdict[n].kind === 'objection');
-  }
-  return list;
+function proposals(es, code) {
+  const f = fold(es);
+  return [...f.proposals.values()].map(fp => {
+    const m = f.matrix(fp.hash);
+    const verdict = {};
+    for (const n of fp.approvers) if (m.answers[n]) verdict[n] = m.answers[n];
+    const d = f.decisions.get(fp.hash);
+    return { id: fp.id, hash: fp.hash, from: fp.from, approvers: fp.approvers, verdict, decided: d ? d.id : 0,
+      agreed: m.agreed.length, objectors: m.objected, name: label(code, fp) };
+  });
 }
-/** A closed proposal: "✔ decided HASH" when everyone agreed, "✖ blocked HASH" when someone objected. */
-const decidedText = (p, c) => (p.objectors.length ? c.warn(`✖ blocked ${h6(p.hash)}`) : c.ok(`✔ decided ${h6(p.hash)}`));
+/** What a row calls a proposal: its title (lib/proposal.js title), clipped; the short hash when it has none. */
+function label(code, fp) {
+  let t = '';
+  try { t = code ? oneLine(proposal.title(code, fp.hash, fp.entry)) : ''; } catch { /* unreadable: the hash */ }
+  return t ? clip(t, ROW_TITLE_MAX) : h6(fp.hash);
+}
+/** A closed proposal: "✔ decided TITLE" when everyone agreed, "✖ blocked TITLE" when someone objected. */
+const decidedText = (p, c) => (p.objectors.length ? c.warn(`✖ blocked ${p.name}`) : c.ok(`✔ decided ${p.name}`));
 /** Undecided proposals that name `name` and that `name` has not answered (newest last). */
 const awaiting = (ps, name) => ps.filter(p => !p.decided && p.approvers.includes(name) && !p.verdict[name]);
 /** The proposal a row reports for `name`: the newest that names them, else the newest. */
@@ -352,16 +344,16 @@ function participantText(code, name, viewer, es, ms, now, c, taskList) {
   if (!m) return 'not in the room';
   if (m.left_at) return 'left';
   const parts = [];
-  const p = latestFor(proposals(es), name);
+  const p = latestFor(proposals(es, code), name);
   if (p) {
     const v = p.verdict[name];
     // Build phase: their latest status after the decision replaces "decided".
     const st = p.decided ? es.filter(e => e.from === name && e.id > p.decided && e.kind === 'status').at(-1) : null;
     if (st) parts.push(`${st.via === 'agent' ? 'Claude ' : ''}status: ${oneLine(st.text)}`);
     else if (p.decided) parts.push(decidedText(p, c));
-    else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${h6(p.hash)}`));
+    else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${p.name}`));
     else if (v && v.kind === 'objection') parts.push(c.warn('✖ objected'));
-    else if (p.approvers.includes(name)) parts.push(c.warn(`⚠ reviewing ${h6(p.hash)}`));
+    else if (p.approvers.includes(name)) parts.push(c.warn(`⚠ reviewing ${p.name}`));
   }
   const t = openTask(taskList, name);
   if (t) parts.push(`◼ #${t.id} ${clip(oneLine(t.subject), 28)}`);
@@ -386,18 +378,18 @@ function roomText(code, viewer, es, ms, now, c, summary) {
   // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left" (lib/notices.js)
   const move = notices.rowSegment(es, viewer, { now });
   if (move) parts.push(c.dim(move));
-  const ps = proposals(es);
+  const ps = proposals(es, code);
   const need = viewer ? awaiting(ps, viewer) : [];
   const p = viewer ? latestFor(ps, viewer) : ps.at(-1);
   if (need.length) {
-    parts.push(c.warn(`⚠ your answer needed ${h6(need.at(-1).hash)}${need.length > 1 ? ` +${need.length - 1}` : ''}`));
+    parts.push(c.warn(`⚠ your answer needed ${need.at(-1).name}${need.length > 1 ? ` +${need.length - 1}` : ''}`));
   } else if (p) {
     const v = viewer && p.verdict[viewer];
     const n = `${p.agreed}/${p.approvers.length}`;
     if (p.decided) parts.push(decidedText(p, c));
-    else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${h6(p.hash)} ${n}`));
+    else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${p.name} ${n}`));
     else if (v && v.kind === 'objection') parts.push(c.warn('✖ objected'));
-    else parts.push(`proposal ${h6(p.hash)} ${n}`);
+    else parts.push(`proposal ${p.name} ${n}`);
     if (!p.decided && p.objectors.some(x => x !== viewer)) parts.push(c.warn(`✖ ${plural(p.objectors.filter(x => x !== viewer).length, 'objection')}`));
   } else {
     parts.push(c.dim(`${ms.filter(m => isActive(m) && !isOrch(m)).length} here`));

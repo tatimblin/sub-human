@@ -48,6 +48,13 @@ const proposal = require(path.join(__dirname, '..', 'lib', 'proposal.js'));
 const READ_MAX = 100;
 const PLUGINS = ['hold.js', 'task.js'];
 const POST_KINDS = ['say', 'question', 'status'];
+// MCP revisions this server speaks (newest first): answer with the client's when listed, else our newest.
+const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
+const negotiateProtocol = v => (PROTOCOL_VERSIONS.includes(v) ? v : PROTOCOL_VERSIONS[0]);
+// serverInfo.version follows the plugin manifest, so one bump versions both.
+const VERSION = (() => {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || '0.0.0'; } catch { return '0.0.0'; }
+})();
 
 // ---------- transport ----------
 let closed = false;
@@ -128,34 +135,50 @@ const ctx = {
 const CORE = [
   {
     name: 'post',
-    description: 'A note to the room, read on others\' next turn. refs: cited #ids.',
+    title: 'Post to the room',
+    description: 'Post a note to the shared sub-human room as your human\'s Claude (labelled as yours, never as their words). '
+      + 'Members\' Claudes see it next turn; to reach one now, SendMessage it. For agreement use propose.',
     inputSchema: {
       type: 'object',
       properties: {
-        kind: { type: 'string', enum: POST_KINDS },
-        text: { type: 'string' },
-        to: { type: 'string' },
-        refs: { type: 'array', items: { type: 'integer' } },
+        kind: { type: 'string', enum: POST_KINDS, description: 'say: a note; question: wants an answer; status: progress or done.' },
+        text: { type: 'string', description: 'The note. Quote people exactly, no #ids.' },
+        to: { type: 'string', description: 'One member it is for (the room still sees it).' },
+        refs: { type: 'array', items: { type: 'integer' }, description: 'Room entry ids it cites.' },
       },
       required: ['kind', 'text'],
+      additionalProperties: false,
     },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     name: 'read',
-    description: 'Entries by ids, else unseen ones.',
-    inputSchema: { type: 'object', properties: { ids: { type: 'array', items: { type: 'integer' } } } },
-  },
-  {
-    name: 'propose',
-    description: 'Ask people to agree to text or a file. Each answers in their own terminal. approvers: default all humans.',
+    title: 'Read the room',
+    description: `Read the shared sub-human room log: with ids, those entries in full (e.g. a cut-off line); without, your unseen entries, oldest first, at most ${READ_MAX}.`,
     inputSchema: {
       type: 'object',
       properties: {
-        text: { type: 'string' },
-        path: { type: 'string' },
-        approvers: { type: 'array', items: { type: 'string' } },
+        ids: { type: 'array', items: { type: 'integer', minimum: 1 }, description: 'Entry ids; omit for unseen entries.' },
       },
+      additionalProperties: false,
     },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'propose',
+    title: 'Propose for agreement',
+    description: 'Ask people in the sub-human room to agree to a plan or decision (exactly one of text or path). '
+      + 'Each approver answers a card in their own terminal; never report agreement until the room records it. Same content reopens the open proposal.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The proposal text.' },
+        path: { type: 'string', description: 'A file (e.g. a plan) to propose instead of text.' },
+        approvers: { type: 'array', items: { type: 'string' }, description: 'Who must answer; default every human.' },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
 ];
 
@@ -276,9 +299,9 @@ function handle(msg) {
     case 'initialize':
       clientCapabilities = (params && params.capabilities) || {};
       return reply(id, {
-        protocolVersion: (params && params.protocolVersion) || '2025-06-18',
+        protocolVersion: negotiateProtocol(params && params.protocolVersion),
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'room', version: '0.5.0' },
+        serverInfo: { name: 'room', title: 'sub-human room', version: VERSION },
         instructions: 'sub-human room tools. post: a note as your human\'s Claude. read: entries by id. propose: ask people to agree; each answers their own card, never through you.',
       });
     case 'notifications/initialized':

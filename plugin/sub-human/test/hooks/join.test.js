@@ -6,6 +6,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { World, fixture, hso, identity, sleeper, withHome, PLUGIN } = require('./helpers.js');
 
+const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await new Promise(r => setTimeout(r, 30)); } return null; };
+const bgCalls = s => s.calls().filter(c => c.argv.includes('--bg'));
 const expand = args => ({ ...fixture('user-prompt-expansion'), command_args: args, prompt: `/sub-human:sub-human ${args}`.trim() });
 
 /** A stub claude that records its argv / env / cwd and prints the --bg line. */
@@ -19,20 +21,22 @@ function stub(code = 'x') {
   return { bin, calls: () => { try { return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch { return []; } } };
 }
 
-test('/sub-human NAME with no open room: opens a room, joins as a member, spawns the headless orch in the joiner\'s cwd', () => {
+test('/sub-human NAME with no open room: opens a room, joins as a member, spawns the headless orch (detached) in the joiner\'s cwd', async () => {
   const w = new World({}, { room: false });
   w.pid.alice = process.pid; w.sid.alice = 'aaaaaaaa-0000-4000-8000-000000000001';
   const s = stub();
   const r = w.hook('join', expand('alice'), { as: 'alice', env: { SUB_HUMAN_CLAUDE: s.bin, SUB_HUMAN_PLUGIN_DIR: PLUGIN } });
   assert.equal(r.code, 0, r.stderr);
-  const m = /^sub-human: opened room ([a-z]+-\d{4}) as alice · others: \/sub-human NAME$/.exec(r.json.systemMessage);
+  const m = /^sub-human: opened room ([a-z]+-\d{4}) as alice · others: \/sub-human NAME · starting the orch…$/.exec(r.json.systemMessage);
   assert.ok(m, r.json.systemMessage);
   w.code = m[1];
+  assert.ok(['pending', '0b500131'].includes(w.members().orch.job), 'claimed before the hook returned');
+  assert.ok(await until(() => w.members().orch.job === '0b500131'), 'the detached starter records members.json orch {job}');
   const ms = w.members();
   assert.equal(ms.alice.role, 'member');
-  assert.equal(ms.orch.job, '0b500131', 'members.json orch {job}');
   assert.equal(ms.orch.pid, null, 'pid filled when the orch binds');
-  const [call] = s.calls();
+  assert.equal(ms.orch.by, 'alice');
+  const [call] = bgCalls(s);
   assert.equal(call.cwd, fs.realpathSync(w.cwd));
   assert.deepEqual(call.argv.slice(0, 5), ['--bg', '-n', `orch.${w.code}`, '--plugin-dir', PLUGIN]);
   const settings = JSON.parse(call.argv[call.argv.indexOf('--settings') + 1]);
@@ -52,7 +56,7 @@ test('/sub-human NAME with no open room: opens a room, joins as a member, spawns
   const r2 = w.hook('join', expand('alice'), { as: 'alice', env: { SUB_HUMAN_CLAUDE: s.bin } });
   assert.match(r2.json.systemMessage, new RegExp(`in room ${w.code} as alice`));
   assert.equal(fs.readdirSync(path.join(w.home, 'rooms')).length, 1);
-  assert.equal(s.calls().length, 1);
+  assert.equal(bgCalls(s).length, 1);
 });
 
 test('the orch\'s launch /sub-human binds it (agent_type orchestrator + SUB_HUMAN_ROOM) and keeps the job', () => {
@@ -120,17 +124,74 @@ test('NAME CODE joins a room whose orch runs: no spawn; the message lists who is
   assert.equal(w.members().bob.session_id, w.sid.bob);
 });
 
-test('joining a room with no live orch restarts it; a failed spawn still joins and says "no orch"', () => {
+test('joining a room with no live orch restarts it; a failed start is retried by the next join, which says why', async () => {
   const w = new World({ alice: 'sleep' });
   w.pid.bob = process.pid; w.sid.bob = 'aaaaaaaa-0000-4000-8000-000000000007';
   const r = w.hook('join', expand(`bob ${w.code}`), { as: 'bob' }); // SUB_HUMAN_CLAUDE=/usr/bin/false
   assert.equal(r.json.decision, undefined);
-  assert.match(r.json.systemMessage, /^sub-human: joined [a-z]+-\d{4} as bob \(alice here\) · no orch \(.*\); \/sub-human still works/);
+  assert.equal(r.json.systemMessage, `sub-human: joined ${w.code} as bob (alice here) · starting the orch…`);
+  assert.ok(await until(() => w.members().orch.spawn_error), 'the starter records the failure');
+  assert.equal(w.members().orch.job, null);
   const s = stub(w.code);
   const r2 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
-  assert.doesNotMatch(r2.json.systemMessage, /no orch/);
-  assert.equal(s.calls().length, 1);
-  assert.equal(w.members().orch.job, '0b500131');
+  assert.match(r2.json.systemMessage, /· starting the orch… \(the last start failed: .+\)$/);
+  assert.ok(await until(() => w.members().orch.job === '0b500131'));
+  assert.equal(bgCalls(s).length, 1);
+  const r3 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
+  assert.doesNotMatch(r3.json.systemMessage, /starting/, 'a job that has not bound yet is not restarted');
+});
+
+test('two concurrent joins start one orch: the second sees the pending claim', async () => {
+  const w = new World({ alice: 'sleep' });
+  w.pid.bob = sleeper(); w.sid.bob = 'aaaaaaaa-0000-4000-8000-000000000015';
+  w.pid.carol = sleeper(); w.sid.carol = 'aaaaaaaa-0000-4000-8000-000000000016';
+  // the stub takes a while to dispatch, so both joins overlap the spawn
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-stub-'));
+  const log = path.join(dir, 'calls.jsonl');
+  const bin = path.join(dir, 'claude');
+  fs.writeFileSync(bin, `#!${process.execPath}\nrequire('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n` +
+    `if (process.argv.includes('--bg')) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400); console.log('backgrounded · 0b500131 · orch.x'); }\n`);
+  fs.chmodSync(bin, 0o755);
+  const { spawn: sp } = require('node:child_process');
+  const { baseEnv, HOOKS } = require('./helpers.js');
+  const run = who => new Promise(res => {
+    const env = baseEnv({ SUB_HUMAN_HOME: w.home, HOME: w.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_CLAUDE: bin, SUB_HUMAN_PLUGIN_DIR: '', CLAUDE_PID: String(w.pid[who]) });
+    const p = sp(process.execPath, [path.join(HOOKS, 'join.js')], { env, cwd: w.cwd });
+    let out = '';
+    p.stdout.on('data', d => { out += d; });
+    p.on('close', () => res(JSON.parse(out)));
+    p.stdin.end(JSON.stringify({ ...expand(`${who} ${w.code}`), cwd: w.cwd, session_id: w.sid[who] }));
+  });
+  const t0 = Date.now();
+  const [a, b] = await Promise.all([run('bob'), run('carol')]);
+  assert.ok(Date.now() - t0 < 5000, 'the hooks did not wait for the spawn');
+  const msgs = [a.systemMessage, b.systemMessage];
+  assert.equal(msgs.filter(m => /starting the orch/.test(m)).length, 1, msgs.join(' | '));
+  assert.ok(await until(() => w.members().orch.job === '0b500131'));
+  await new Promise(r => setTimeout(r, 300));
+  const calls = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(JSON.parse);
+  assert.equal(calls.filter(c => c.includes('--bg')).length, 1, 'one spawn');
+});
+
+test('NAME without CODE ignores a room where only the orch is left, opens a new one, and sweeps the orphan', async () => {
+  const w = new World({ orch: 'sleep' });
+  const orphan = w.code;
+  w.join('dave', 'sleep');
+  w.lib(() => {
+    // dave crashed long ago (pid dead, no SessionEnd): the orch observed the orphan 2 minutes ago
+    const file = path.join(identity.roomDir(orphan), 'members.json');
+    const ms = JSON.parse(fs.readFileSync(file, 'utf8'));
+    ms.dave.pid = 999999; ms.dave.joined_at = new Date(Date.now() - 600_000).toISOString();
+    ms.orch.job = 'feed0001'; ms.orch.orphan_since = new Date(Date.now() - 120_000).toISOString();
+    fs.writeFileSync(file, JSON.stringify(ms));
+  });
+  assert.deepEqual(w.lib(() => identity.openRooms()), []);
+  w.pid.erin = process.pid; w.sid.erin = 'aaaaaaaa-0000-4000-8000-000000000017';
+  const r = w.hook('join', expand('erin'), { as: 'erin' });
+  assert.equal(r.json.decision, undefined, r.json.reason);
+  const m = /^sub-human: opened room ([a-z]+-\d{4}) as erin/.exec(r.json.systemMessage);
+  assert.ok(m && m[1] !== orphan, r.json.systemMessage);
+  assert.ok(w.members().orch.closing, 'the orphan room was marked closing by the sweep');
 });
 
 test('bypass-permissions mode: the join systemMessage warns', () => {

@@ -3,7 +3,7 @@ name: room
 description: sub-human room row: a silent background row labelled with the room code, nesting one row per member. Spawn only as told.
 background: true
 color: cyan
-tools: Agent, mcp__plugin_sub-human_room__hold
+tools: Agent(sub-human:participant), mcp__plugin_sub-human_room__hold
 ---
 You are the room row. You only make tool calls; you never write text.
 

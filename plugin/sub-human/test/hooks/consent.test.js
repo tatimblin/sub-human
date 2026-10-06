@@ -345,3 +345,28 @@ test('review: no plan path closes the review silently and falls back to the card
   assert.equal(fs.existsSync(file), false);
   assert.equal(review(w), null);
 });
+
+test('review: the note comes from the structured userFeedback field; the backup is in review.json before the overwrite', () => {
+  const { w, hash } = world();
+  const file = path.join(w.userHome, '.claude', 'plans', 'fb.md');
+  fs.writeFileSync(file, 'bob\'s own plan\n');
+  const note = 'no "the user said:" prose here — keep `alias`\n  ✓';
+  const tp0 = transcript(w, file, null, { id: 'tu1', input: { plan: `proposal ${hash}` } });
+  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' });
+  w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp0 }), { as: 'bob' });
+  const st = review(w);
+  assert.deepEqual([st.phase, st.file, st.backup, st.restored], ['shown', file, 'bob\'s own plan\n', false]);
+  assert.equal(fs.readFileSync(file, 'utf8'), '# Rename fetchUser\n\n1. rename\n2. alias\n');
+  // The rejection line carries the raw note at the top level; its text has no "the user said:" at all.
+  const tp = path.join(w.cwd, 'fb.jsonl');
+  fs.writeFileSync(tp, [
+    { type: 'attachment', attachment: { type: 'plan_mode', planFilePath: file } },
+    { type: 'user', userFeedback: note, toolDenialKind: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', is_error: true, content: 'rejected' }] } },
+  ].map(l => JSON.stringify(l)).join('\n') + '\n');
+  const r = w.hook('consent', ev('Stop', null, { permission_mode: 'plan', stop_hook_active: false, transcript_path: tp }), { as: 'bob' });
+  assert.equal(r.json.decision, 'block');
+  assert.deepEqual(answers(w).map(x => [x.kind, x.from, x.text]), [['objection', 'bob', note]]);
+  w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'bob' });
+  assert.equal(fs.readFileSync(file, 'utf8'), 'bob\'s own plan\n', 'restored');
+  assert.ok(!fs.existsSync(path.join(w.memberDir('bob'), 'review.json.lock')), 'the lock is released');
+});

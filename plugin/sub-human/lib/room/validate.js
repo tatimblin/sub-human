@@ -9,9 +9,13 @@
  *   RoomError(code, message)   code: INVALID | RATE | LOCK | NO_ROOM
  * Rules: via "agent" writes say question status proposal task_req; via "human" say signoff objection proposal;
  * via "system" decision member_joined member_left retract task status, and only with {system: true}.
+ * Size caps (lib/config.js): text <= ENTRY_TEXT_MAX_BYTES UTF-8 bytes, refs <= ENTRY_REFS_MAX, approvers and
+ * blockedBy <= ENTRY_LIST_MAX, any other string field <= ENTRY_STR_MAX (JS .length) (narrower caps below win).
+ * append() also refuses a serialized line over LOG_LINE_MAX_BYTES.
  */
 
 const { NAME_RE } = require('../text.js');
+const { ENTRY_TEXT_MAX_BYTES, ENTRY_REFS_MAX, ENTRY_STR_MAX, ENTRY_LIST_MAX } = require('../config.js');
 
 const AGENT_KINDS = ['say', 'question', 'status', 'proposal', 'task_req'];
 const HUMAN_KINDS = ['say', 'signoff', 'objection', 'proposal'];
@@ -61,15 +65,24 @@ function validate(entry, opts) {
     if (typeof text !== 'string') bad('text must be a string');
     if (!text.trim()) bad('text is empty');
   }
+  if (typeof text === 'string') {
+    const bytes = Buffer.byteLength(text, 'utf8');
+    if (bytes > ENTRY_TEXT_MAX_BYTES) bad(`text is too long (${bytes} bytes; the limit is ${ENTRY_TEXT_MAX_BYTES}). Shorten it, or put the detail in a file and post its path`);
+  }
   if (typeof to !== 'string' || !NAME_RE.test(to)) bad(`invalid to "${to}"`);
   if (refs !== undefined && (!Array.isArray(refs) || !refs.every(r => Number.isInteger(r) && r > 0))) {
     bad('refs must be an array of positive integers');
   }
+  if (refs !== undefined && refs.length > ENTRY_REFS_MAX) bad(`too many refs (${refs.length}; the limit is ${ENTRY_REFS_MAX})`);
   for (const [k, v] of [['hash', hash], ['proposal_hash', proposal_hash]]) {
     if (v !== undefined && (typeof v !== 'string' || !HASH_RE.test(v))) bad(`${k} must be 6-64 lowercase hex chars`);
   }
   if (approvers !== undefined && (!Array.isArray(approvers) || !approvers.every(a => typeof a === 'string' && NAME_RE.test(a)))) {
     bad('approvers must be an array of names');
+  }
+  if (approvers !== undefined && approvers.length > ENTRY_LIST_MAX) bad(`too many approvers (${approvers.length}; the limit is ${ENTRY_LIST_MAX})`);
+  for (const [k, v] of Object.entries(entry)) {
+    if (k !== 'text' && typeof v === 'string' && v.length > ENTRY_STR_MAX) bad(`${k} is too long (the limit is ${ENTRY_STR_MAX} chars)`);
   }
   if (normalized !== undefined && typeof normalized !== 'boolean') bad('normalized must be a boolean');
   if (drafted !== undefined && drafted !== 'agent') bad('drafted must be "agent"');
@@ -107,6 +120,7 @@ function taskFields(kind, entry) {
   if (entry.owner !== undefined && entry.owner !== null && !(typeof entry.owner === 'string' && NAME_RE.test(entry.owner))) bad(`invalid owner "${entry.owner}"`);
   if (entry.req !== undefined && !(Number.isInteger(entry.req) && entry.req > 0)) bad('req must be a log id');
   if (entry.blockedBy !== undefined && !(Array.isArray(entry.blockedBy) && entry.blockedBy.every(taskIdOk))) bad('blockedBy must be task ids');
+  if (entry.blockedBy !== undefined && entry.blockedBy.length > ENTRY_LIST_MAX) bad(`too many blockedBy ids (the limit is ${ENTRY_LIST_MAX})`);
   for (const k of ['subject', 'detail', 'evidence', 'status', 'owner', 'req']) if (entry[k] !== undefined && entry[k] !== null) t[k] = entry[k];
   if (entry.blockedBy !== undefined) t.blockedBy = entry.blockedBy.map(String);
   return t;

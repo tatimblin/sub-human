@@ -80,7 +80,7 @@ test('cli tail: silent before join, then the member push lane, settled into one 
     "room: a message shown as bob's was removed: it came from another Claude session, not from bob",
     'room: task "docs" pending, owner you',
     'bob: last ' + 'w'.repeat(390), // a monitor line is cut at 500 chars: long text wraps at 400 code points
-    'w'.repeat(210),
+    '  │ ' + 'w'.repeat(210), // a continuation line is nested under its sender
   ], t.out);
   assert.doesNotMatch(t.chat().join('\n'), /#\d/, 'no ids in what the human sees');
   assert.deepEqual(t.forClaude().map(l => l.slice(0, 40)), ['(for Claude) room now: proposal bbbbbb w', '(for Claude) row: your room row is not r']);
@@ -157,7 +157,8 @@ test('cli tail: while unseated it never runs ps and looks the seat up only every
   const os = require('node:os');
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'sub-human-ps-'));
   const marker = path.join(bin, 'ps-ran');
-  fs.writeFileSync(path.join(bin, 'ps'), `#!/bin/sh\necho x >> "${marker}"\nexec /bin/ps "$@"\n`, { mode: 0o755 });
+  // Only the ancestry walk (`ps -A`) counts: once seated, the seat's start-time check may run `ps -p PID` once.
+  fs.writeFileSync(path.join(bin, 'ps'), `#!/bin/sh\ncase " $* " in *" -A "*) echo x >> "${marker}";; esac\nexec /bin/ps "$@"\n`, { mode: 0o755 });
   const t0 = Date.now();
   const t = startTail({ PATH: `${bin}:${process.env.PATH}`, SUB_HUMAN_UNSEATED_MS: '1500' });
   await h.sleep(200);
@@ -280,7 +281,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   r = cli(['read', '--id', '2,1']);
   assert.equal(r.status, 0, r.stderr);
   assert.ok(r.stdout.indexOf('#2') < r.stdout.indexOf('#1'));
-  assert.ok(r.stdout.includes('line one\n  line `two` $(x)'));
+  assert.ok(r.stdout.includes('  │ line one\n  │   line `two` $(x)'), 'every text line nested under the header');
   assert.ok(cli(['read', '2']).stdout.startsWith('[#2 '), 'a bare id works, as the cut marker says');
   r = cli(['read', '--json']);
   assert.deepEqual(r.stdout.trim().split('\n').map(l => JSON.parse(l).id), [1, 2]);

@@ -14,6 +14,8 @@
  *       Stores <roomDir>/plans/<hash>.md (hash = sha256/12 of the bytes) and appends `proposal`. approvers
  *       default to the humans present (not orch, not left). An identical open proposal is not re-appended.
  *       Throws ProposalError (message for the model) on bad input.
+ *   Reading the log goes through lib/consent.js fold (retracted entries out, latest proposal per hash, the
+ *   latest answer per person, an objection voids a signoff), the same fold stateLine, lane() and the rows read.
  *   proposals(entries) -> [p]      the latest proposal entry per hash, as {id, hash, approvers, path, from}
  *   pendingFor(me, entries?) -> [p] proposals naming me that I have not answered, undecided, not retracted
  *   card(p) -> {questions:[…]}     the AskUserQuestion input (Not yet first, Agree, Object)
@@ -21,15 +23,20 @@
  *   question(hash) -> "Agree to proposal <hash>?";  QUESTION_RE parses it back
  *   preview(p) -> string           the full text if <= PREVIEW_MAX chars and <= PREVIEW_LINES lines, else
  *                                  a summary plus the plan file's path
- *   matrix(p, entries?) -> {hash, approvers, answers:{name: {id, kind}|null}, agreed, objected, missing, complete}
+ *   matrix(p, entries?) -> {hash, approvers, answers:{name: {id, kind}|null}, agreed, objected, missing, complete, …}
  *   record(me, p, {choice:'Agree'|'Object', notes?}) -> {entry, decision}|{stale:true}
- *       under a lock: appends the answer, then the decision when the matrix is complete.
+ *       under a lock: appends the answer, then the decision when the matrix is complete. Idempotent: a person
+ *       who already answered that hash (or a decided / unknown one) is stale; one answer per person.
+ *   title(code, hash, entry?) -> string  the stored plan's first line (else the entry's title text, else '')
+ *   titleOf(text) -> string
  *   decision(hash, entries?) -> Entry|null
  *   humans(code) -> [name]         members present who can approve
  *   viewable(p, code?) -> bool     the plan dialog can show it: stored, <= VIEW_MAX chars, no control or bidi
  *                                  characters (the dialog withholds approval for those); else the card
  *   reminder(p, name) -> string    the re-ask wording (a review closed without an answer is fine to reopen)
  *   planPath(code, hash), read(code, hash) -> string|null
+ * The plan-view review state (members/NAME/review.json): readReview, writeReview, clearReview, withReview(me, fn)
+ *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
  */
 
 const fs = require('node:fs');
@@ -39,9 +46,10 @@ const crypto = require('node:crypto');
 const identity = require('./identity.js');
 const room = require('./room.js');
 const { withLock } = require('./lock.js');
-const { writeFileAtomic } = require('./io.js');
+const { writeFileAtomic, writeJsonAtomic, readJson } = require('./io.js');
 const { clip } = require('./text.js');
 const config = require('./config.js');
+const { fold } = require('./consent.js');
 
 const HASH_RE = /^[0-9a-f]{12}$/;
 const QUESTION_RE = /^Agree to proposal ([0-9a-f]{12})\?$/;
@@ -72,46 +80,39 @@ function store(code, buf) {
 
 const bind = me => { if (me && me.code && !process.env.ROOM_DIR) room.bind(me.code); };
 const entriesOf = (me, entries) => { if (entries) return entries; bind(me); return room.readAll(); };
-const retracted = entries => room.retractedIds(entries);
 
 function humans(code) {
   return Object.values(identity.readMembers(code) || {})
     .filter(m => m && m.name && m.role !== 'orch' && !m.left_at).map(m => m.name);
 }
 
-// ---------- reading the log ----------
-function proposals(entries) {
-  const gone = retracted(entries);
-  const by = new Map();
-  for (const e of entries) {
-    if (e.kind !== 'proposal' || !HASH_RE.test(String(e.hash)) || gone.has(e.id)) continue;
-    by.set(e.hash, { id: e.id, hash: e.hash, approvers: Array.isArray(e.approvers) ? e.approvers : [], path: e.path || null, from: e.from });
-  }
-  return [...by.values()];
-}
+// ---------- reading the log (lib/consent.js fold: the same semantics as stateLine, lane and the rows) ----------
+const shape = p => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
+const proposals = entries => [...fold(entries).proposals.values()].map(shape);
 
-const decision = (hash, entries = room.readAll()) => entries.filter(e => e.kind === 'decision' && e.via === 'system' && e.proposal_hash === hash).at(-1) || null;
+const decision = (hash, entries = room.readAll()) => fold(entries).decisions.get(hash) || null;
 
-function matrix(p, entries) {
-  entries = entries || room.readAll();
-  const gone = retracted(entries);
-  const answers = Object.fromEntries(p.approvers.map(n => [n, null]));
-  for (const e of entries) {
-    if (e.via !== 'human' || e.proposal_hash !== p.hash || gone.has(e.id)) continue;
-    if (e.kind !== 'signoff' && e.kind !== 'objection') continue;
-    if (e.from in answers && !answers[e.from]) answers[e.from] = { id: e.id, kind: e.kind }; // first answer counts
-  }
-  const by = kind => p.approvers.filter(n => answers[n] && answers[n].kind === kind);
-  const missing = p.approvers.filter(n => !answers[n]);
-  return { hash: p.hash, approvers: p.approvers, answers, agreed: by('signoff'), objected: by('objection'), missing,
-    complete: p.approvers.length > 0 && missing.length === 0 };
-}
+/** The answer matrix over p.approvers (the latest answer per person wins; an objection voids a signoff). */
+const matrix = (p, entries) => fold(entries || room.readAll()).matrix(p.hash, p.approvers);
 
 function pendingFor(me, entries) {
   if (!me || !me.name) return [];
-  entries = entriesOf(me, entries);
-  return proposals(entries).filter(p => p.approvers.includes(me.name)
-    && !decision(p.hash, entries) && !matrix(p, entries).answers[me.name]);
+  return fold(entriesOf(me, entries)).pending(me.name).map(shape);
+}
+
+/** A proposal's title: the first non-empty line of its text, heading / list / quote markers dropped. */
+const titleOf = text => String(text || '').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').trim()).find(Boolean) || '';
+const titles = new Map(); // hash -> title: plans are content-addressed, so a hash's title never changes
+/**
+ * The title people see for proposal hash: the stored plan's first line, else the entry's "proposal HASH: title"
+ * text, else ''. Not clipped (the caller clips to its width).
+ */
+function title(code, hash, entry) {
+  if (titles.has(hash)) return titles.get(hash);
+  const t = titleOf(read(code, hash));
+  if (t) { titles.set(hash, t); return t; }
+  const m = entry && /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(entry.text || ''));
+  return m ? m[1].trim() : '';
 }
 
 // ---------- the card ----------
@@ -209,9 +210,7 @@ function create(me, args = {}, { cwd } = {}) {
   if (open && !decision(hash, entries) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
     return { hash, approvers, path: stored, entry: entries.find(e => e.id === open.id), again: true };
   }
-  const first = buf.toString('utf8').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').trim()).find(Boolean) || '';
-  const title = clip(first, TITLE_MAX);
-  const entry = room.append({ kind: 'proposal', text: `proposal ${hash}: ${title}`, hash, approvers, path: stored },
+  const entry = room.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers, path: stored },
     { via: 'agent', from: me.name });
   return { hash, approvers, path: stored, entry, again: false };
 }
@@ -228,8 +227,11 @@ function record(me, p, answer = {}) {
   const lock = path.join(room.dir(), 'proposal.lock');
   return withLock(lock, () => {
     const entries = room.readAll();
-    const cur = proposals(entries).find(x => x.hash === p.hash);
-    if (!cur || !cur.approvers.includes(me.name) || decision(cur.hash, entries) || matrix(cur, entries).answers[me.name]) {
+    const f = fold(entries);
+    const cur = f.proposals.get(p.hash);
+    // Idempotent: one answer per person per proposal. A card and a plan view open at once, or a reopened card,
+    // never record twice, and the decision's refs are exactly the answers the fold reads as current.
+    if (!cur || !cur.approvers.includes(me.name) || f.decisions.has(cur.hash) || f.answerOf(cur.hash, me.name)) {
       return { stale: true, why: 'answered, decided or unknown' };
     }
     const notes = typeof answer.notes === 'string' && answer.notes.trim() ? answer.notes : undefined;
@@ -251,8 +253,54 @@ function record(me, p, answer = {}) {
   });
 }
 
+// ---------- the plan-view review state (hooks/consent.js, hooks/session-restore.js) ----------
+/**
+ * <room>/members/NAME/review.json: {phase, mode, at, hash?, from?, file?, backup?, restored?, tool_use_id?, …}.
+ * `backup` is the session plan file's text before the review overwrote it (null: there was none), recorded
+ * BEFORE the overwrite, so a crash between the two never loses the person's own plan.
+ */
+const reviewPath = me => path.join(identity.roomDir(me.code), 'members', me.name, 'review.json');
+const readReview = me => readJson(reviewPath(me), null);
+const writeReview = (me, st) => writeJsonAtomic(reviewPath(me), st, { compact: true });
+function clearReview(me) { try { fs.unlinkSync(reviewPath(me)); } catch { /* absent */ } }
+/** Every read-modify-write of review.json runs under this lock (hooks of one session can overlap). */
+const withReview = (me, fn) => withLock(reviewPath(me) + '.lock', fn, { timeoutMs: config.REVIEW_LOCK_TIMEOUT_MS });
+
+/** Put the session plan file back as it was before the review (atomically); marks st.restored. */
+function restorePlan(st) {
+  if (!st || !st.file || st.restored) return;
+  try {
+    if (typeof st.backup === 'string') writeFileAtomic(st.file, st.backup);
+    else fs.rmSync(st.file, { force: true });
+  } catch { /* best-effort */ }
+  st.restored = true;
+}
+
+/**
+ * A review left behind (the session restarted, or it has been open longer than REVIEW_STALE_MS): restore the
+ * plan file when it still holds the proposal's text (a file the person wrote since is left alone) and clear
+ * the state. force: the session restarted (/clear, --resume). Returns 'restored' | 'cleared' | null.
+ */
+function restoreStale(me, { force = false, now = Date.now() } = {}) {
+  if (!me || !me.code || !me.name) return null;
+  return withReview(me, () => {
+    const st = readReview(me);
+    if (!st) return null;
+    if (!force && !(now - (Number(st.at) || 0) > config.REVIEW_STALE_MS)) return null;
+    let out = 'cleared';
+    if (st.file && !st.restored && st.hash) {
+      let cur = null;
+      try { cur = fs.readFileSync(st.file); } catch { /* gone */ }
+      if (cur && hash12(cur) === st.hash) { restorePlan(st); out = 'restored'; }
+    }
+    clearReview(me);
+    return out;
+  });
+}
+
 module.exports = {
   QUESTION_RE, ProposalError,
+  reviewPath, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
   create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, record, decision, humans, reminder,
-  planPath, read, hash12,
+  planPath, read, hash12, title, titleOf,
 };

@@ -142,7 +142,8 @@ test('task tool: no orch, refusals, queued request', () => {
   room.bind(code);
   const api = taskPlugin.create(ctxFor());
   assert.deepEqual(api.tools.map(t => t.name), ['task']);
-  assert.ok(JSON.stringify(api.tools[0]).length <= 400);
+  const { name, description, inputSchema } = api.tools[0]; // model-facing fields; annotations are client metadata
+  assert.ok(JSON.stringify({ name, description, inputSchema }).length <= 900);
 
   assert.equal(out(api.call('task', me, { op: 'add', subject: 'parser tests' })), 'no orch: the room task list is unavailable');
   assert.equal(room.readAll().length, 0);

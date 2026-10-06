@@ -12,18 +12,26 @@
 const path = require('node:path');
 const tasks = require(path.join(__dirname, '..', 'lib', 'tasks.js'));
 
-const S = { type: 'string' };
+const S = d => ({ type: 'string', description: d });
 const TOOL = {
   name: 'task',
-  description: 'Ask the orch to change the room task list. add: subject; else id; done: evidence; for: owner.',
+  title: 'Request a room task change',
+  description: 'Ask the sub-human room\'s orch to change the shared room task list; it is queued and the orch applies it. '
+    + 'add needs subject; claim, release and done need id; done also needs evidence.',
   inputSchema: {
     type: 'object',
     properties: {
-      op: { type: 'string', enum: tasks.OPS },
-      id: S, subject: S, detail: S, evidence: S, for: S,
+      op: { type: 'string', enum: tasks.OPS, description: 'add, claim (take it), release (give it back) or done.' },
+      id: S('Task id, e.g. "3".'),
+      subject: S('add: a short title.'),
+      detail: S('Optional longer description.'),
+      evidence: S('done: what shows it is finished (a test run, a commit).'),
+      for: S('The member it is for; default you.'),
     },
     required: ['op'],
+    additionalProperties: false,
   },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 };
 
 function create(ctx) {
