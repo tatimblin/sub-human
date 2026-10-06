@@ -13,6 +13,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const metrics = require('./metrics.js');
 
 const REPO = path.resolve(__dirname, '..');
 const DEMO = {
@@ -139,8 +140,16 @@ function main() {
     }
     const e = log.find(x => x.kind === 'say' && x.from === 'alice' && x.via === 'human');
     const t = cap('S4', 'alice');
-    const rc = e && t && new RegExp(`posted to ${esc(code)} as #${e.id}`).test(t);
-    add('S4', 'Receipt ✓ posted … as #N in alice\'s pane', rc, rc ? `"posted to ${code} as #${e.id}"` : `not found in ${capName('S4', 'alice')}`);
+    // Phase 0 (0.5): success is continue:false + stopReason: one "Operation stopped by hook: ✓ posted to CODE as #N"
+    // line under the human's own ❯ @room row, and no "blocked by hook" header
+    const rc = e && t && new RegExp(`Operation stopped by hook: ✓ posted to ${esc(code)} as #${e.id}`).test(t);
+    add('S4', 'Receipt "Operation stopped by hook: ✓ posted to CODE as #N" in alice\'s pane', rc, rc ? `"Operation stopped by hook: ✓ posted to ${code} as #${e.id}" (${capName('S4', 'alice')})` : `not found in ${capName('S4', 'alice')}`);
+    for (const seat of ['alice', 'bob']) {
+      const caps = index.filter(r => r.scene === 'S4' && r.session === `sh-${seat}`);
+      const hits = caps.map(r => [r.txt, (readText(path.join(screens, r.txt)) || '').split('\n').filter(l => /blocked by hook/i.test(l)).length]).filter(([, n]) => n);
+      add('S4', `No "blocked by hook" header in ${seat}'s S4 panes`, caps.length > 0 && hits.length === 0,
+        caps.length ? (hits.length ? hits.map(([f, n]) => `${f}: ${n}`).join(', ') : `0 lines in ${caps.length} captures`) : 'no S4 captures');
+    }
     const oRows = panelRows(cap('S4', 'orch'));
     const ar = oRows.find(r => r.label === 'alice');
     add('S4', 'The orch\'s alice row updates with her post', !!(ar && e && ar.text.includes(`#${e.id}`)), `orch alice row: ${ar ? ar.line : 'none'}`);
@@ -262,6 +271,29 @@ function main() {
     add('S11', `Rows present after /clear in alice's session (one ${code} row)`, a.filter(r => r.label === code).length === 1, `alice rows: ${a.map(r => r.line).join(' | ') || 'none'} (${capName('S11', 'alice', 1)})`);
     const b = panelRows(cap('S11', 'bob', 'last'));
     add('S11', `Rows re-created after bob's --continue (${code} row)`, b.some(r => r.label === code), `bob rows: ${b.map(r => r.line).join(' | ') || 'none'} (${capName('S11', 'bob', 'last')})`);
+    // Phase 0 (0.9): row-rewake brings the rows back with no prompt. Evidence: bob's transcript entries between
+    // his member_left (the /exit) and the last S11 capture hold the row-rewake wake and no prompt of his.
+    {
+      const w11 = sceneWindow('S11');
+      const left = byKind('member_left', { from: 'bob' }).find(e => w11 && Date.parse(e.at) >= w11.from);
+      const lastCap = index.filter(r => r.scene === 'S11' && r.session === 'sh-bob').at(-1);
+      const fallback = index.some(r => r.scene === 'S11' && /^FALLBACK/.test(r.caption || ''));
+      let ev = 'no member_left for bob in S11 or no capture';
+      let ok = false;
+      if (left && lastCap) {
+        const from = left.at, to = lastCap.time;
+        const es = transcriptFor('bob').files.flatMap(f => jsonl(f)).filter(e => e.timestamp && e.timestamp > from && e.timestamp <= to && !e.isSidechain);
+        const prompts = es.filter(e => e.type === 'user' && !e.isMeta && !metrics.trigger(e) && !(e.origin && e.origin.kind === 'task-notification') &&
+          !(Array.isArray(e.message && e.message.content) && e.message.content.every(c => c && c.type === 'tool_result')));
+        const wake = es.find(e => metrics.trigger(e) === 'rewake');
+        const after = wake && es.find(e => e.type === 'assistant' && e.timestamp >= wake.timestamp && JSON.stringify(e.message.content).includes('"Agent"'));
+        ok = !!wake && !!after && prompts.length === 0 && !fallback && b.some(r => r.label === code);
+        ev = `${wake ? `row-rewake wake at ${wake.timestamp.slice(11, 19)}` : 'no row-rewake wake'}; ${after ? `Agent call at ${after.timestamp.slice(11, 19)}` : 'no Agent call after it'}; ` +
+          `${prompts.length} prompt(s) from bob between his /exit (#${left.id}) and ${lastCap.txt}${prompts.length ? ': ' + prompts.map(e => clip(typeof e.message.content === 'string' ? e.message.content : JSON.stringify(e.message.content), 60)).join(' / ') : ''}` +
+          (fallback ? '; FALLBACK used: the driver typed "what did I miss?"' : '');
+      }
+      add('S11', 'bob\'s rows came back with no prompt (row-rewake woke his Claude)', ok, ev);
+    }
     const st11 = stateAt('S11');
     const bm = st11.members.bob && st11.rowMaps[st11.members.bob.session_id];
     const w = sceneWindow('S11');
@@ -298,11 +330,24 @@ function main() {
     add('S12', 'bob\'s row reads left (or is gone) in alice\'s panel', !!cap('S12', 'alice', 'last') && a.length === 0, `alice rows: ${panelRows(cap('S12', 'alice', 'last')).map(r => r.line).join(' | ') || 'none'}`);
   }
 
+  // ---- Metrics: Phase 0 vs the vole-8126 baseline (scripts/metrics.js; transcripts + captures)
+  const M = metrics.measure({ screens });
+  if (M.error) add('Metrics', 'Run metrics computed', false, M.error);
+  else {
+    const B = metrics.BASELINE;
+    const per = s => `${s} ${M.seats[s].wakes.turns}`;
+    add('Metrics', `Room-caused model wakes ≤ 26 (baseline ${B.wakes.total})`, M.total.wakes <= 26,
+      `${M.total.wakes} wakes (${['orch', 'alice', 'bob'].map(per).join(', ')}) from Monitor events, peer deliveries and row-rewake in the seats' transcripts; baseline orch ${B.wakes.orch}, alice ${B.wakes.alice}, bob ${B.wakes.bob}`);
+    add('Metrics', 'UI noise lines per capture below the baseline', M.total.noise.perCapture < B.noise.perCapture,
+      `${M.total.noise.lines} lines / ${M.total.noise.captures} captures = ${M.total.noise.perCapture} (excl. "Waiting for": ${M.total.noise.perCaptureExWaiting}); baseline ${B.noise.perCapture} (${B.noise.perCaptureExWaiting})`);
+  }
+
   // order scenes like the plan
-  const order = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11', 'S11b', 'S12'];
+  const order = ['Metrics', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10', 'S11', 'S11b', 'S12'];
   const res = {};
   for (const k of order) if (C[k]) res[k] = C[k];
   res._meta = { cost: cost(), run: `room ${code}, ${log.length} log entries, ${index.length} captures`, note: o.note || '' };
+  if (!M.error) res._metrics = { run: { room: code, ...M }, baseline: metrics.BASELINE };
   fs.writeFileSync(out, JSON.stringify(res, null, 1) + '\n');
   let p = 0, f = 0;
   for (const k of order) for (const c of res[k] || []) { c.pass ? p++ : f++; process.stdout.write(`${c.pass ? 'PASS' : 'FAIL'} ${k} ${c.check}${c.pass ? '' : ' — ' + c.evidence}\n`); }

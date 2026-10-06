@@ -2,26 +2,26 @@
   "orch": {
     "name": "orch",
     "role": "orch",
-    "pid": 62697,
-    "session_id": "87f74412-c252-4204-8316-efc1ac602070",
+    "pid": 23215,
+    "session_id": "e75288ff-1ee0-41df-b37f-2ce5bb301721",
     "cwd": "/private/tmp/sh-demo/orch",
-    "joined_at": "2026-10-05T18:56:12.938Z"
+    "joined_at": "2026-10-06T00:06:16.413Z"
   },
   "alice": {
     "name": "alice",
     "role": "member",
-    "pid": 62705,
-    "session_id": "63ba0360-c371-4bb4-bc52-3c8a9972a2f9",
+    "pid": 23223,
+    "session_id": "80f53f7a-a73c-4420-89aa-97088604db13",
     "cwd": "/private/tmp/sh-demo/alice",
-    "joined_at": "2026-10-05T18:56:18.731Z"
+    "joined_at": "2026-10-06T00:06:21.475Z"
   },
   "bob": {
     "name": "bob",
     "role": "member",
-    "pid": 66771,
-    "session_id": "e7f9e953-3b8d-4341-9d40-b366f271b21b",
+    "pid": 26668,
+    "session_id": "8bc9d9ed-0180-489c-8b08-e67b759845c9",
     "cwd": "/private/tmp/sh-demo/bob",
-    "joined_at": "2026-10-05T19:00:13.267Z",
-    "left_at": "2026-10-05T19:00:49.004Z"
+    "joined_at": "2026-10-06T00:09:35.299Z",
+    "left_at": "2026-10-06T00:10:04.914Z"
   }
 }

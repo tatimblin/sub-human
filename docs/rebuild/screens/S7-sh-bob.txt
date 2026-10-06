@@ -1,35 +1,35 @@
 
-✻ Waiting for 2 background agents to finish
+✻ Waiting for 1 background agent to finish
+
+⏺ Monitor event: "sub-human room notices"
+  ⎿  Error: No such tool available: mcp__plugin_sub_human_room__post
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #5 orch asks: "bob, alice proposed cursor paging for GET /tasks in #4. What's your position, and would that shape
-  cause any problem for your side?"
-
-  Want to reply? I can help draft something for @room if you'd like.
+⏺ Orch is asking for your position on alice's proposal (#3)—the cursor paging for GET /tasks. Do you want to respond, or
+  should we discuss it first?
 
 ✻ Waiting for 2 background agents to finish
+
+❯ @room I want to approve this. Keep after opaque, not a page number.
+
+⏺ Operation stopped by hook: ✓ posted to otter-0813 as #4
+
+❯ @room fine by me, as long as after stays opaque
+
+⏺ Operation stopped by hook: ✓ posted to otter-0813 as #6
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ #8 alice says: "put the next cursor in a Link header (rel=next) and keep the body a bare array"
+⏺ Bob's posted approval signals. Calling review to bring up your sign-off form now.
 
-  Alice is adding a detail about the implementation. Want to weigh in, or are you good with that approach?
-
-✻ Waiting for 2 background agents to finish
-
-⏺ Monitor event: "sub-human room notices"
-
-⏺ Plan 80930cc0525d is ready for sign-off — you and alice are both approvers. A form should appear in your terminal.
-  Press Enter to approve, or ↓ then Enter to object with your notes.
-
-✻ Waiting for 2 background agents to finish
-──────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · bob ─
+⏺ Calling plugin:sub-human:room…
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ otter-0813 · bob ─
 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   MCP server “plugin:sub-human:room” requests your input
 
-  Object to plan 80930c (rev 1) · room vole-8126
+  Object to plan ff3c30 (rev 1) · room otter-0813
   Type what the room should change, then press Enter twice. Sent exactly as typed; it blocks the plan.
   Decline = back to Approve/Object · Esc = later
 

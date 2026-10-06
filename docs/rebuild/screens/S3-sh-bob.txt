@@ -3,18 +3,18 @@
 ▝▜██████▀  Haiku 4.5 · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/bob
 
-⚠ 3 MCP servers need authentication · run /mcp
 
 ❯ /sub-human:sub-human bob
-  ⎿  UserPromptExpansion says: sub-human: joined room vole-8126 as bob.
+  ⎿  UserPromptExpansion says: sub-human: joined room otter-0813 as bob.
 
-⏺ sub-human:room(vole-8126)
+⏺ sub-human:room(otter-0813)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ Hi bob, I'm ready to help in room vole-8126. The room is set up with alice as the other member, and the orchestrator
-  is managing the plan. Let me know what you'd like to work on or if you have any questions about the room.
+⏺ Ready. I'm your Claude in room otter-0813. What do you need?
 
-✻ Waiting for 2 background agents to finish
+✻ Waiting for 1 background agent to finish
+
+
 
 
 
@@ -31,10 +31,10 @@
 
 
                                                                 Update available! Run: brew upgrade claude-code@latest
-──────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · bob ─
+─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ otter-0813 · bob ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ vole-8126  3 here
+  ◯ otter-0813  3 here

@@ -10,7 +10,7 @@
 <rect x="27.6" y="59" width="46.8" height="17" fill="#000000"/>
 <rect x="27.6" y="76" width="39" height="17" fill="#000000"/>
 <rect x="27.6" y="178" width="163.8" height="17" fill="#00afaf"/>
-<rect x="854.4" y="586" width="85.8" height="17" fill="#00afaf"/>
+<rect x="846.6" y="586" width="93.6" height="17" fill="#00afaf"/>
 <text x="12" y="72" fill="#d78787" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> ▐</text>
 <text x="27.6" y="72" fill="#d78787" textLength="46.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">▛███▛█</text>
 <text x="97.8" y="72" font-weight="bold" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">Claude Code</text>
@@ -29,31 +29,28 @@
 <text x="51" y="208" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
 <text x="191.4" y="208" fill="#949494" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
 <text x="19.8" y="242" textLength="234" lengthAdjust="spacing" xml:space="preserve"> Calling plugin:sub-human:room</text>
-<text x="253.8" y="242" fill="#949494" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 4m 1s</text>
-<text x="316.2" y="242" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">…</text>
-<text x="12" y="259" fill="#949494" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  #26 facilitator → bob · status: Welcome back, bob. Ignore #25: you're still an approver of plan eaae7e5e855a, which</text>
-<text x="51" y="276" fill="#949494" textLength="655.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">was decided in #18. You still have the verification tests from #19, and my review o…</text>
+<text x="253.8" y="242" fill="#949494" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · 3m 12s</text>
+<text x="324" y="242" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">…</text>
+<text x="12" y="259" fill="#949494" textLength="678.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  #24 bob · member_joined: bob rejoined (resumed) · read-only · talk in main (@room)</text>
 <text x="12" y="548" fill="#d78787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✽</text>
-<text x="27.6" y="548" fill="#d7af87" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Channeling…</text>
-<text x="121.2" y="548" fill="#949494" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(4m 11s · ↓</text>
-<text x="214.8" y="548" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">7.8k tokens)</text>
+<text x="27.6" y="548" fill="#d7af87" textLength="101.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Sock-hopping…</text>
+<text x="136.8" y="548" fill="#949494" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(3m 25s · ↓</text>
+<text x="230.4" y="548" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">7.9k tokens)</text>
 <text x="12" y="565" fill="#949494" textLength="702" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work</text>
 <text x="511.2" y="582" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="582" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="599" fill="#00afaf" textLength="842.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
-<text x="854.4" y="599" fill="#000000" textLength="85.8" lengthAdjust="spacing" xml:space="preserve"> vole-8126 </text>
+<text x="12" y="599" fill="#00afaf" textLength="834.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">───────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
+<text x="846.6" y="599" fill="#000000" textLength="93.6" lengthAdjust="spacing" xml:space="preserve"> otter-0813 </text>
 <text x="940.2" y="599" fill="#00afaf" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─</text>
 <text x="12" y="616" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="27.6" y="616" opacity="0.6" textLength="187.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Message @sub-human:room…</text>
 <text x="12" y="633" fill="#00afaf" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
 <text x="27.6" y="650" fill="#949494" textLength="374.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">↑/↓ to select · ctrl+x ctrl+k to stop all agents</text>
 <text x="12" y="684" fill="#949494" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ main</text>
-<text x="12" y="701" font-weight="bold" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ ⏺ vole-8126  </text>
-<text x="129" y="701" fill="#98c379" font-weight="bold" textLength="132.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">plan eaae7e 2/2 ✔</text>
-<text x="261.6" y="701" font-weight="bold" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
-<text x="285" y="701" fill="#e5c07b" font-weight="bold" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✉ 2 for you</text>
+<text x="12" y="701" font-weight="bold" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ ⏺ otter-0813  </text>
+<text x="136.8" y="701" fill="#98c379" font-weight="bold" textLength="132.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">plan d1b85f 2/2 ✔</text>
 <text x="12" y="718" fill="#949494" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  └ ◯ bob  </text>
-<text x="97.8" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided eaae7e</text>
+<text x="97.8" y="718" fill="#98c379" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✔ decided d1b85f</text>
 <text x="222.6" y="718" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="246" y="718" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
 </g></svg>

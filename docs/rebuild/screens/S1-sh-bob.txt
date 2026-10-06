@@ -3,7 +3,7 @@
 ▝▜██████▀  Haiku 4.5 · Claude Max
   ▝▝ ▝▝    /private/tmp/sh-demo/bob
 
-⚠ 3 MCP servers need authentication · run /mcp
+
 
 
 

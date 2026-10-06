@@ -9,9 +9,8 @@
 ⏺ sub-human:participant(bob)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-  Calling plugin:sub-human:room · 4m 1s…
-  ⎿  #26 facilitator → bob · status: Welcome back, bob. Ignore #25: you're still an approver of plan eaae7e5e855a, which
-     was decided in #18. You still have the verification tests from #19, and my review o…
+  Calling plugin:sub-human:room · 3m 12s…
+  ⎿  #24 bob · member_joined: bob rejoined (resumed) · read-only · talk in main (@room)
 
 
 
@@ -27,14 +26,15 @@
 
 
 
-✽ Channeling… (4m 11s · ↓ 7.8k tokens)
+
+✽ Sock-hopping… (3m 25s · ↓ 7.9k tokens)
   ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work
                                                                 Update available! Run: brew upgrade claude-code@latest
-──────────────────────────────────────────────────────────────────────────────────────────────────────────── vole-8126 ─
+─────────────────────────────────────────────────────────────────────────────────────────────────────────── otter-0813 ─
 ❯ Message @sub-human:room…
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ↑/↓ to select · ctrl+x ctrl+k to stop all agents
 
   ◯ main
-❯ ⏺ vole-8126  plan eaae7e 2/2 ✔ · ✉ 2 for you
-  └ ◯ bob  ✔ decided eaae7e · working
+❯ ⏺ otter-0813  plan d1b85f 2/2 ✔
+  └ ◯ bob  ✔ decided d1b85f · working

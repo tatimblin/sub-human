@@ -2,9 +2,9 @@
   "orch": {
     "name": "orch",
     "role": "orch",
-    "pid": 62697,
-    "session_id": "87f74412-c252-4204-8316-efc1ac602070",
+    "pid": 23215,
+    "session_id": "e75288ff-1ee0-41df-b37f-2ce5bb301721",
     "cwd": "/private/tmp/sh-demo/orch",
-    "joined_at": "2026-10-05T18:56:12.938Z"
+    "joined_at": "2026-10-06T00:06:16.413Z"
   }
 }

@@ -1,40 +1,40 @@
-     Verification
+     2. What does GET /tasks with no limit return: everything as today, or a default of 50?
+     3. What does the server do with an invalid or garbled after? (limit over 50 is settled: it clamps, per #10.)
 
-     - First page with no after returns at most limit items (never more than 50) and a rel=next Link header when more
-       items remain.
-     - Following rel=next links walks every task exactly once, with no duplicates or gaps.
-     - The last page has no rel=next link.
-     - limit=500 returns 200 with at most 50 items, not a 400.
-     - The body is always a bare JSON array.
+     Owners and done
+
+     The owners are assigned after the decision. The work is done when:
+
+     - tests cover the first page, the next page via after, the last page, the 50 cap (limit=500 returns 200 with 50
+       items), and an invalid cursor;
+     - existing clients of GET /tasks still work.
 
   Called plugin:sub-human:room 
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ The GET /tasks paging plan is decided: alice and bob both signed off on eaae7e5e855a, and the room logged it as
-  decision #18.
+⏺ alice and bob both signed off on the revised plan (#15, #16), so the room logged decision #17 on plan d1b85f6e7669.
+  The plan adds cursor paging to GET /tasks. I posted the work split to the room (#18):
 
-  What it says: ?limit is capped at 50, and anything larger is clamped rather than rejected. after is an opaque cursor.
-  The body stays a bare JSON array, and the next page comes in a Link: rel=next header.
+  - alice: the server change. That means limit and after on the handler, the bare-array response, clamping limit over
+    50, and keeping after opaque. I asked her to post the handler's file path and how she settles three open questions:
+    a. How a client gets the next cursor from a bare array.
+    b. What happens when no limit is given.
+    c. How an invalid after is handled.
+  - bob: the contract tests and review. The tests cover the first page, the next page, the last page, limit=500
+    returning 200 with 50 items, an invalid cursor, and existing callers still working.
 
-  Proposed split (#19): nobody has confirmed it or named their files yet.
-  - alice builds the handler.
-  - bob writes tests from the plan's verification list.
-  - It's done when those tests pass.
-
-  Still open: the default limit, and what happens when after is malformed or stale. I asked them to settle both while
-  building.
-
-  I'm waiting for each of them to confirm or swap their part.
+  The work is done when bob's tests pass against alice's handler and both of them post test counts and file paths.
+  Nothing has been built yet; the next step is alice's handler path and her answers to those three questions.
 
 ✻ Waiting for 2 background agents to finish
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ otter-0813 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ vole-8126 · orch · plan eaae7e 2/2 ✔
+  ⬡ otter-0813 · orch · plan d1b85f 2/2 ✔
   ⏸ manual mode on · 1 monitor · ← 1 agent
 
   ⏺ main
-  ◯ alice  ✔ decided eaae7e · working
-  ◯ bob  ✔ decided eaae7e · working
+  ◯ alice  ✔ decided d1b85f · working
+  ◯ bob  ✔ decided d1b85f · working

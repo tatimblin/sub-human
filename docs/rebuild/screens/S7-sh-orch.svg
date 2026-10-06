@@ -7,71 +7,70 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">orch · S7</text>
 <g fill="#d6dbe5">
-<text x="12" y="55" textLength="904.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  │ pages             │        │ 50 (#4)                                       │                                   │</text>
-<text x="12" y="72" textLength="904.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ├───────────────────┼────────┼───────────────────────────────────────────────┼───────────────────────────────────┤</text>
-<text x="12" y="89" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  │ How </text>
-<text x="74.4" y="89" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
-<text x="152.4" y="89" textLength="491.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    │ bob    │ Agrees, and wants to be an approver (#6)      │ </text>
-<text x="643.8" y="89" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
-<text x="682.8" y="89" textLength="234" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> must be opaque, not a page  │</text>
-<text x="12" y="106" textLength="904.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  │ pages             │        │                                               │ number                            │</text>
-<text x="12" y="123" textLength="904.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  └───────────────────┴────────┴───────────────────────────────────────────────┴───────────────────────────────────┘</text>
-<text x="12" y="157" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="157" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="157" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="157" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="72" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="72" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="106" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="106" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="140" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="140" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
+<text x="12" y="157" fill="#949494" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
 <text x="12" y="191" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="191" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="225" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="225" font-weight="bold" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Updated plan</text>
-<text x="12" y="242" fill="#949494" textLength="163.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  /plan to preview</text>
-<text x="12" y="259" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
-<text x="51" y="259" fill="#ff87af" textLength="865.8" lengthAdjust="spacing" xml:space="preserve">Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan 80930cc0525d lacks sign-off from alice and bob. The </text>
-<text x="51" y="276" fill="#ff87af" textLength="881.4" lengthAdjust="spacing" xml:space="preserve">sign-off form is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan </text>
-<text x="51" y="293" fill="#ff87af" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">mode. Published as plan_rev #9.</text>
-<text x="12" y="327" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="327" textLength="865.8" lengthAdjust="spacing" xml:space="preserve"> I wrote the room plan and published it as plan_rev #9 (hash 80930cc0525d). It now waits on sign-offs from both</text>
-<text x="12" y="344" textLength="210.6" lengthAdjust="spacing" xml:space="preserve">  approvers, alice and bob.</text>
-<text x="27.6" y="378" font-weight="bold" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">Proposed:</text>
-<text x="105.6" y="378" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
-<text x="183.6" y="378" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> uses </text>
-<text x="230.4" y="378" fill="#afd7ff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">?limit</text>
-<text x="277.2" y="378" textLength="187.2" lengthAdjust="spacing" xml:space="preserve"> (max 50) and an opaque </text>
-<text x="464.4" y="378" fill="#afd7ff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">?after</text>
-<text x="511.2" y="378" textLength="397.8" lengthAdjust="spacing" xml:space="preserve"> cursor. The body stays a bare JSON array. The next</text>
-<text x="12" y="395" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">  page's URL goes in a </text>
-<text x="191.4" y="395" fill="#afd7ff" textLength="109.2" lengthAdjust="spacing" xml:space="preserve">Link: rel=next</text>
-<text x="300.6" y="395" textLength="343.2" lengthAdjust="spacing" xml:space="preserve"> header, which is left out on the last page.</text>
-<text x="27.6" y="429" font-weight="bold" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Still open in the plan:</text>
-<text x="12" y="446" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">  - What </text>
-<text x="82.2" y="446" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
-<text x="121.2" y="446" textLength="592.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> defaults to, and whether a value over 50 is clamped or rejected with a 400.</text>
-<text x="12" y="463" textLength="171.6" lengthAdjust="spacing" xml:space="preserve">  - What happens when </text>
-<text x="183.6" y="463" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
-<text x="222.6" y="463" textLength="374.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> is malformed or stale; the plan suggests a 400.</text>
-<text x="12" y="497" textLength="936" lengthAdjust="spacing" xml:space="preserve">  Both approvers already have the sign-off form in their own terminals, so I've posted nothing. I'm staying in plan mode</text>
-<text x="12" y="514" textLength="312" lengthAdjust="spacing" xml:space="preserve">  until a sign-off or objection arrives.</text>
+<text x="19.8" y="191" textLength="553.8" lengthAdjust="spacing" xml:space="preserve"> The plan is written. I'm sending it to alice and bob for sign-off now.</text>
+<text x="12" y="208" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
+<text x="51" y="208" fill="#ff87af" textLength="865.8" lengthAdjust="spacing" xml:space="preserve">Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan ff3c3001306b lacks sign-off from alice and bob. The </text>
+<text x="51" y="225" fill="#ff87af" textLength="881.4" lengthAdjust="spacing" xml:space="preserve">sign-off form is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan </text>
+<text x="51" y="242" fill="#ff87af" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">mode. Published as plan_rev #8.</text>
+<text x="12" y="276" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="276" textLength="241.8" lengthAdjust="spacing" xml:space="preserve"> The plan for cursor paging on </text>
+<text x="261.6" y="276" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="339.6" y="276" textLength="569.4" lengthAdjust="spacing" xml:space="preserve"> is published as plan_rev #8, but nothing is approved yet. It still needs</text>
+<text x="12" y="293" textLength="733.2" lengthAdjust="spacing" xml:space="preserve">  sign-off from both alice and bob, and each has the sign-off form open in their own terminal.</text>
+<text x="12" y="327" textLength="358.8" lengthAdjust="spacing" xml:space="preserve">  The plan follows what they said in the room:</text>
+<text x="12" y="344" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="344" font-weight="bold" textLength="85.8" lengthAdjust="spacing" xml:space="preserve">alice (#3):</text>
+<text x="136.8" y="344" fill="#afd7ff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">?limit</text>
+<text x="183.6" y="344" textLength="39" lengthAdjust="spacing" xml:space="preserve"> and </text>
+<text x="222.6" y="344" fill="#afd7ff" textLength="46.8" lengthAdjust="spacing" xml:space="preserve">?after</text>
+<text x="269.4" y="344" textLength="405.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> parameters, a bare array response, and a cap of 50.</text>
+<text x="12" y="361" textLength="31.2" lengthAdjust="spacing" xml:space="preserve">  - </text>
+<text x="43.2" y="361" font-weight="bold" textLength="101.4" lengthAdjust="spacing" xml:space="preserve">bob (#4, #6):</text>
+<text x="152.4" y="361" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="191.4" y="361" textLength="514.8" lengthAdjust="spacing" xml:space="preserve"> must be an opaque cursor, not a page number. He asked to approve.</text>
+<text x="12" y="395" textLength="514.8" lengthAdjust="spacing" xml:space="preserve">  Three questions are left in the plan to settle during the build:</text>
+<text x="12" y="412" textLength="561.6" lengthAdjust="spacing" xml:space="preserve">  - How a client gets the next cursor when the response is a bare array.</text>
+<text x="12" y="429" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">  - What </text>
+<text x="82.2" y="429" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">GET /tasks</text>
+<text x="160.2" y="429" textLength="132.6" lengthAdjust="spacing" xml:space="preserve"> returns when no </text>
+<text x="292.8" y="429" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="331.8" y="429" textLength="78" lengthAdjust="spacing" xml:space="preserve"> is given.</text>
+<text x="12" y="446" textLength="296.4" lengthAdjust="spacing" xml:space="preserve">  - How the server handles an invalid </text>
+<text x="308.4" y="446" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
+<text x="347.4" y="446" textLength="46.8" lengthAdjust="spacing" xml:space="preserve"> or a </text>
+<text x="394.2" y="446" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">limit</text>
+<text x="433.2" y="446" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> over 50.</text>
+<text x="12" y="480" textLength="780" lengthAdjust="spacing" xml:space="preserve">  alice's Claude has already said it &quot;will implement&quot; the change (#7), but there is no decision yet.</text>
+<text x="12" y="514" textLength="366.6" lengthAdjust="spacing" xml:space="preserve">  I'm staying in plan mode until they sign off.</text>
 <text x="12" y="548" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
 <text x="27.6" y="548" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
 <text x="121.2" y="548" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
 <text x="129" y="548" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
 <text x="511.2" y="565" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="565" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="582" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─</text>
+<text x="12" y="582" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ otter-0813 · orch ─</text>
 <text x="12" y="599" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
-<text x="27.6" y="633" fill="#949494" textLength="444.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⬡ vole-8126 · orch · plan 80930c 0/2 waiting on alice,bob</text>
+<text x="27.6" y="633" fill="#949494" textLength="452.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⬡ otter-0813 · orch · plan ff3c30 0/2 waiting on alice,bob</text>
 <text x="27.6" y="650" fill="#5fafaf" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ plan mode on</text>
 <text x="136.8" y="650" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="160.2" y="650" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
 <text x="230.4" y="650" fill="#949494" textLength="93.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent</text>
 <text x="12" y="684" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
 <text x="12" y="701" fill="#949494" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ alice  </text>
-<text x="97.8" y="701" fill="#e5c07b" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠ reviewing 80930c</text>
+<text x="97.8" y="701" fill="#e5c07b" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠ reviewing ff3c30</text>
 <text x="238.2" y="701" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="261.6" y="701" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
 <text x="12" y="718" fill="#949494" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ bob  </text>
-<text x="82.2" y="718" fill="#e5c07b" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠ reviewing 80930c</text>
+<text x="82.2" y="718" fill="#e5c07b" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⚠ reviewing ff3c30</text>
 <text x="222.6" y="718" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="246" y="718" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
 </g></svg>

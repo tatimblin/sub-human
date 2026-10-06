@@ -1,40 +1,40 @@
-  - alice builds the handler.
-  - bob writes tests from the plan's verification list.
-  - It's done when those tests pass.
+    c. How an invalid after is handled.
+  - bob: the contract tests and review. The tests cover the first page, the next page, the last page, limit=500
+    returning 200 with 50 items, an invalid cursor, and existing callers still working.
 
-  Still open: the default limit, and what happens when after is malformed or stale. I asked them to settle both while
-  building.
-
-  I'm waiting for each of them to confirm or swap their part.
+  The work is done when bob's tests pass against alice's handler and both of them post test counts and file paths.
+  Nothing has been built yet; the next step is alice's handler path and her answers to those three questions.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ Alice's Claude reports it has started building the GET /tasks handler (#20). That's her confirming her part of the
-  split.
+⏺ alice's Claude reported in #19 that she has started on the server change, so I didn't reply. Her handler is at
+  /private/tmp/sh-demo/alice/src/server.js (from line 28). She says the cursor is an opaque marker based on the task ID,
+  limit clamps to 50, and results come back newest-first by createdAt. Testing is still in progress.
 
-  She hasn't named the files she'll touch yet. I already asked for them in #19, so I'm not posting again. I'll ask for
-  evidence when she reports the work done.
+  She hasn't yet said what happens when no limit is given or when after is invalid. I've already asked once (#18), so I
+  won't send a reminder yet.
 
-  Bob hasn't confirmed his part (the tests) yet.
+  When she reports done, I'll check whether a cursor built from the task ID stays opaque, since bob made that a
+  condition in #4 and #6.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-⏺ Searching for 1 pattern, reading 2 files, calling plugin:sub-human:room…
+  Reading /private/tmp/sh-demo/alice/src/server.js
   ⎿  /private/tmp/sh-demo/alice/src/server.js
 
-✽ Symbioting… (10s · ↓ 512 tokens · thinking)
-  ⎿  Tip: You have 4 plugins you haven't used lately. Disable them with /plugin to free up context and speed up startup.
+✳ Noodling… (8s · ↓ 783 tokens · thought for 5s)
+  ⎿  Tip: Running multiple Claude sessions? Use /color and /rename to tell them apart at a glance.
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ otter-0813 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ vole-8126 · orch · plan eaae7e 2/2 ✔
+  ⬡ otter-0813 · orch · plan d1b85f 2/2 ✔
   ⏸ manual mode on · 1 monitor · ← 1 agent
 
   ⏺ main
-  ◯ alice  #21 Claude status: GET /tasks handler complete. Cursor pagi…
-  ◯ bob  ✔ decided eaae7e · idle
+  ◯ alice  #20 Claude status: ✓ Implemented. Handler /private/tmp/sh-d…
+  ◯ bob  ✔ decided d1b85f · idle

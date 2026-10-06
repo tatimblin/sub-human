@@ -70,14 +70,15 @@ write_launcher() {
   mkdir -p "$BASE"
   cat > "$BASE/launch.sh" <<EOF
 #!/usr/bin/env bash
-# launch.sh SEAT [claude args…] — clean env (we may be started from inside a Claude Code session)
+# launch.sh SEAT [claude args…] — a clean env: env -i, then only what a login shell would give. The tmux
+# server's global env may carry CLAUDE_CODE_* vars from whichever Claude Code session started it (and we
+# may be started from inside one): a seat must inherit none of them.
 seat=\$1; shift
-for v in \$(env | grep -o '^CLAUDE[A-Z_]*'); do unset "\$v"; done
-unset ANTHROPIC_MODEL
-export SUB_HUMAN_HOME="$SUB_HUMAN_HOME"
-export SUB_HUMAN_DEBUG="${SUB_HUMAN_DEBUG:-1}"
 cd "$BASE/\$seat" || exit 1
-exec claude "\$@"
+exec env -i HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-${USER:-}}" SHELL="${SHELL:-/bin/zsh}" \\
+  PATH="$PATH" TERM="\${TERM:-xterm-256color}" LANG="${LANG:-en_US.UTF-8}" TMPDIR="${TMPDIR:-/tmp/}" \\
+  SUB_HUMAN_HOME="$SUB_HUMAN_HOME" SUB_HUMAN_DEBUG="${SUB_HUMAN_DEBUG:-1}" \\
+  claude "\$@"
 EOF
   chmod +x "$BASE/launch.sh"
   cat > "$BASE/orch-settings.json" <<EOF
@@ -350,12 +351,20 @@ S11() { # resilience: /clear in alice, resume in bob
   start_seat bob --continue   # the pane stays (remain-on-exit); respawn it resumed
   $LIB ready sh-bob --timeout 90
   sleep 3
-  snap "bob is back with --continue: the restore context is in, but no turn has run yet (no rows)"
-  # SessionStart context starts no model turn: the rows come back on bob's first prompt
-  act bob "your Claude is back (--continue): type  what did I miss?  and press Enter" submit bob "what did I miss?"
-  wait_pane bob "$(panel_row "$(room)")" "$(TH bob 120)"
-  sleep 5
-  snap "bob's first prompt after the resume: his Claude re-creates the room row from the restore prompt"
+  snap "bob is back with --continue: SessionStart(resume) runs row-rewake in the background (asyncRewake)"
+  # Phase 0 (0.9): row-rewake.js wakes the model with the missing Agent calls, so the room row comes back
+  # with no prompt from bob. Nobody types here; checks.js verifies that from bob's transcript.
+  if wait_pane bob "$(panel_row "$(room)")" "$(T 45)" --what "bob's room row is back with no prompt (row-rewake)"; then
+    sleep 5
+    snap "bob's room row is back with no typing: row-rewake woke his Claude with the missing Agent call"
+  else
+    # fallback, recorded in waits.jsonl (the check above then fails): the pre-Phase-0 path, a first prompt
+    snap "row-rewake did not bring bob's room row back within 45 s"
+    act bob "your Claude is back (--continue) but its rows are not: type  what did I miss?  and press Enter" submit bob "what did I miss?"
+    wait_pane bob "$(panel_row "$(room)")" "$(TH bob 120)" --what "FALLBACK: bob's room row back after a typed prompt"
+    sleep 5
+    snap "FALLBACK: bob's first prompt after the resume brings the room row back"
+  fi
 }
 
 S11b() { # nested view in alice's panel: select the room row, Enter; ↓ bob, Enter; ↑ + Enter back

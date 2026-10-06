@@ -1,9 +1,21 @@
 {
+ "Metrics": [
+  {
+   "check": "Room-caused model wakes ≤ 26 (baseline 39)",
+   "pass": true,
+   "evidence": "23 wakes (orch 8, alice 8, bob 7) from Monitor events, peer deliveries and row-rewake in the seats' transcripts; baseline orch 12, alice 17, bob 10"
+  },
+  {
+   "check": "UI noise lines per capture below the baseline",
+   "pass": true,
+   "evidence": "249 lines / 69 captures = 3.61 (excl. \"Waiting for\": 1.9); baseline 4.64 (2.33)"
+  }
+ ],
  "S1": [
   {
    "check": "Room dir exists with a log and members.json",
    "pass": true,
-   "evidence": "/tmp/sh-demo/home/rooms/vole-8126: members orch, alice, bob"
+   "evidence": "/tmp/sh-demo/home/rooms/otter-0813: members orch, alice, bob"
   },
   {
    "check": "The orch session runs agent_type sub-human:orchestrator, registered as role orch",
@@ -11,9 +23,9 @@
    "evidence": "pane header shows \"@sub-human:orchestrator\"; members.json orch.role=orch"
   },
   {
-   "check": "Invite banner and status line ⬡ vole-8126 · orch",
+   "check": "Invite banner and status line ⬡ otter-0813 · orch",
    "pass": true,
-   "evidence": "banner present; status line \"⬡ vole-8126 · orch\" (S1-sh-orch.txt)"
+   "evidence": "banner present; status line \"⬡ otter-0813 · orch\" (S1-sh-orch.txt)"
   }
  ],
  "S2": [
@@ -25,12 +37,12 @@
   {
    "check": "Row ids mapped: alice's room row, the orch's alice row",
    "pass": true,
-   "evidence": "rows/9eab63ac…json room row yes; orch map alice → a47df31a0d1318b0e"
+   "evidence": "rows/54cd81b4…json room row yes; orch map alice → a693ee8cf55315d70"
   },
   {
-   "check": "alice's panel: one vole-8126 row and no status line",
+   "check": "alice's panel: one otter-0813 row and no status line",
    "pass": true,
-   "evidence": "alice rows: ◯ vole-8126 2 here · ✉ 1 for you; status line: none"
+   "evidence": "alice rows: ◯ otter-0813 2 here; status line: none"
   },
   {
    "check": "orch panel has an alice row",
@@ -42,12 +54,12 @@
   {
    "check": "member_joined bob",
    "pass": true,
-   "evidence": "#3 bob system member_joined: bob joined"
+   "evidence": "#2 bob system member_joined: bob joined"
   },
   {
    "check": "Row ids mapped: bob's room row, the orch's bob row",
    "pass": true,
-   "evidence": "rows/e7f9e953…json room row yes; orch map bob → a3fe2d34b71f66e3e"
+   "evidence": "rows/8bc9d9ed…json room row yes; orch map bob → a07a623bb485096e2"
   },
   {
    "check": "orch: 2 rows (alice, bob)",
@@ -55,77 +67,87 @@
    "evidence": "orch rows: ◯ alice working | ◯ bob working"
   },
   {
-   "check": "members: 1 row each (vole-8126)",
+   "check": "members: 1 row each (otter-0813)",
    "pass": true,
-   "evidence": "alice: ◯ vole-8126 3 here · ✉ 1 for you; bob: ◯ vole-8126 3 here"
+   "evidence": "alice: ◯ otter-0813 3 here; bob: ◯ otter-0813 3 here"
   }
  ],
  "S4": [
   {
    "check": "alice's @room text identical byte for byte, via=human",
    "pass": true,
-   "evidence": "#4 via=human text === typed (71 bytes)"
+   "evidence": "#3 via=human text === typed (71 bytes)"
   },
   {
    "check": "alice's @room ran 0 model turns",
    "pass": true,
-   "evidence": "9eab63ac…: hook receipt for #4, no assistant message before the next user/notification entry"
+   "evidence": "54cd81b4…: hook receipt for #3, no assistant message before the next user/notification entry"
   },
   {
    "check": "bob's @room text identical byte for byte, via=human",
    "pass": true,
-   "evidence": "#6 via=human text === typed (63 bytes)"
+   "evidence": "#4 via=human text === typed (63 bytes)"
   },
   {
    "check": "bob's @room ran 0 model turns",
    "pass": true,
-   "evidence": "6ddbaacd…: queued prompt removed with reason dropped_by_hook (#6); it never reached the model"
+   "evidence": "6ddbaacd…: queued prompt removed with reason dropped_by_hook (#4); it never reached the model"
   },
   {
-   "check": "Receipt ✓ posted … as #N in alice's pane",
+   "check": "Receipt \"Operation stopped by hook: ✓ posted to CODE as #N\" in alice's pane",
    "pass": true,
-   "evidence": "\"posted to vole-8126 as #4\""
+   "evidence": "\"Operation stopped by hook: ✓ posted to otter-0813 as #3\" (S4-sh-alice.txt)"
+  },
+  {
+   "check": "No \"blocked by hook\" header in alice's S4 panes",
+   "pass": true,
+   "evidence": "0 lines in 2 captures"
+  },
+  {
+   "check": "No \"blocked by hook\" header in bob's S4 panes",
+   "pass": true,
+   "evidence": "0 lines in 2 captures"
   },
   {
    "check": "The orch's alice row updates with her post",
    "pass": true,
-   "evidence": "orch alice row: ◯ alice #4 say 4s"
+   "evidence": "orch alice row: ◯ alice #3 say 4s"
   }
  ],
  "S5": [
   {
    "check": "The orch's own status line is shown",
    "pass": true,
-   "evidence": "status line: \"⬡ vole-8126 · orch\""
+   "evidence": "status line: \"⬡ otter-0813 · orch\""
   }
  ],
  "S6": [
   {
    "check": "plan_rev published",
    "pass": true,
-   "evidence": "#9 orch system plan_rev 80930c: plan 80930cc0525d. Approvers: alice and bob. approvers alice,bob"
+   "evidence": "#8 orch system plan_rev ff3c30: plan ff3c3001306b. Approvers: alice and bob. approvers alice,bob"
   },
   {
    "check": "Form sent to each approver within 1 s",
    "pass": true,
-   "evidence": "elicitation/create offers after plan_rev #9: 624 ms, 893 ms (2 servers, 2 approvers; mcp-debug.log)"
+   "evidence": "elicitation/create offers after plan_rev #8: 80 ms, 963 ms (2 servers, 2 approvers; mcp-debug.log)"
   },
   {
    "check": "alice's pane shows the form: room/plan line, summary, path, Approve/Object",
    "pass": true,
-   "evidence": "\"plan 80930c\", \"full plan: …md\", \"Approve this plan? … Object\" in S6-sh-alice.txt"
+   "evidence": "\"plan ff3c30\", \"full plan: …md\", \"Approve this plan? … Object\" in S6-sh-alice.txt"
   },
   {
    "check": "bob's pane shows the form: room/plan line, summary, path, Approve/Object",
    "pass": true,
-   "evidence": "\"plan 80930c\", \"full plan: …md\", \"Approve this plan? … Object\" in S6-sh-bob.txt"
+   "evidence": "\"plan ff3c30\", \"full plan: …md\", \"Approve this plan? … Object\" in S6-sh-bob.txt"
   }
  ],
  "S7": [
   {
    "check": "objection via=human from bob on the plan",
    "pass": true,
-   "evidence": "#11 bob human objection 80930c: cap the page at 50 and say what happens past it — `limit=500` must clamp, not 400"
+   "evidence": "#10 bob human objection ff3c30: cap the page at 50 and say what happens past it — `limit=500` must clamp, not 400"
   },
   {
    "check": "Reason identical byte for byte",
@@ -140,46 +162,46 @@
   {
    "check": "The objection shows in the orch's bob row",
    "pass": true,
-   "evidence": "orch: ◯ bob ✖ objected 80930c (#11)"
+   "evidence": "orch: ◯ bob ✖ objected ff3c30 (#10)"
   },
   {
    "check": "The objection is in alice's room row text (her open form covers the panel on screen)",
    "pass": true,
-   "evidence": "rowText(vole-8126, viewer alice) over the 11 log entries at S7-2-sh-alice.txt: \"plan 80930c 0/2 · ✖ 1 objection · ⚠ your sign-off needed\"; on screen her sign-off form for the same plan is drawn over the panel"
+   "evidence": "rowText(otter-0813, viewer alice) over the 11 log entries at S7-2-sh-alice.txt: \"plan ff3c30 0/2 · ✖ 1 objection · ⚠ your sign-off needed\"; on screen her sign-off form for the same plan is drawn over the panel"
   }
  ],
  "S8": [
   {
    "check": "The orch revised: a second plan_rev",
    "pass": true,
-   "evidence": "#9 80930c, #13 eaae7e"
+   "evidence": "#8 ff3c30, #13 d1b85f"
   },
   {
    "check": "Stale open form cancelled when the revision arrived",
    "pass": true,
-   "evidence": "62885 signoff: cancel sh-62885-1 plan 80930cc0525d was replaced by eaae7e5e855a"
+   "evidence": "23308 signoff: cancel sh-23308-1 plan ff3c3001306b was replaced by d1b85f6e7669"
   },
   {
-   "check": "Matrix complete: every approver signed eaae7e via=human",
+   "check": "Matrix complete: every approver signed d1b85f via=human",
    "pass": true,
-   "evidence": "alice: #15, bob: #17"
+   "evidence": "alice: #15, bob: #16"
   },
   {
    "check": "✓ signed shown on each approver's row (orch panel)",
    "pass": true,
-   "evidence": "alice: ◯ alice ✓ signed eaae7e (S8-2-sh-orch.txt); bob: ◯ bob ✔ decided eaae7e · working (S8-3-sh-orch.txt; the decision #18 came 1897 ms after the last sign-off, inside one 5 s row refresh)"
+   "evidence": "alice: ◯ alice ✓ signed d1b85f (S8-2-sh-orch.txt); bob: ◯ bob ✓ signed d1b85f (S8-3-sh-orch.txt)"
   }
  ],
  "S9": [
   {
    "check": "decision refs both sign-offs",
    "pass": true,
-   "evidence": "#18 refs [15,17], signoffs [15,17]"
+   "evidence": "#17 refs [15,16], signoffs [15,16]"
   },
   {
    "check": "Hash chain valid",
    "pass": true,
-   "evidence": "validateChain ok over 28 entries"
+   "evidence": "validateChain ok over 25 entries"
   },
   {
    "check": "Orch left plan mode with no dialog",
@@ -189,24 +211,24 @@
   {
    "check": "Assignments posted after the decision",
    "pass": true,
-   "evidence": "#19 orch agent status: The plan is decided (#18), so we're moving into the build. Suggested split: alice builds …"
+   "evidence": "#18 orch agent status: Decision #17 is logged: plan d1b85f is signed by alice and bob. alice owns the server cha…"
   },
   {
    "check": "Rows read ✓ decided",
    "pass": true,
-   "evidence": "◯ alice ✔ decided eaae7e · working | ◯ bob ✔ decided eaae7e · working"
+   "evidence": "◯ alice ✔ decided d1b85f · working | ◯ bob ✔ decided d1b85f · working"
   }
  ],
  "S10": [
   {
    "check": "alice posted status entries after the decision",
    "pass": true,
-   "evidence": "#20 alice agent status: Starting GET /tasks handler implementation in the background. ; #21 alice agent status: GET /tasks handler complete. Cursor pagination with opaque cursors, limit clamping (max 5…"
+   "evidence": "#19 alice agent status: Implementation started. Handler: /private/tmp/sh-demo/alice/src/server.js (lines 28+). Cu… ; #20 alice agent status: ✓ Implemented. Handler /private/tmp/sh-demo/alice/src/server.js (lines 28–59): `limit` (d…"
   },
   {
    "check": "Status cites evidence (tests, path or commit)",
    "pass": true,
-   "evidence": "#21 alice agent status: GET /tasks handler complete. Cursor pagination with opaque cursors, limit clamping (max 5…"
+   "evidence": "#19 alice agent status: Implementation started. Handler: /private/tmp/sh-demo/alice/src/server.js (lines 28+). Cu…"
   },
   {
    "check": "alice's work runs in a native background subagent (shown in her panel)",
@@ -216,48 +238,53 @@
   {
    "check": "Her status shows in the orch's alice row",
    "pass": true,
-   "evidence": "orch alice row: ◯ alice #21 Claude status: GET /tasks handler complete. Cursor pagi…"
+   "evidence": "orch alice row: ◯ alice #20 Claude status: ✓ Implemented. Handler /private/tmp/sh-d…"
   }
  ],
  "S11": [
   {
-   "check": "Rows present after /clear in alice's session (one vole-8126 row)",
+   "check": "Rows present after /clear in alice's session (one otter-0813 row)",
    "pass": true,
-   "evidence": "alice rows: ◯ vole-8126 plan eaae7e 2/2 ✔ · ✉ 1 for you (S11-sh-alice.txt)"
+   "evidence": "alice rows: ◯ otter-0813 plan d1b85f 2/2 ✔ (S11-sh-alice.txt)"
   },
   {
-   "check": "Rows re-created after bob's --continue (vole-8126 row)",
+   "check": "Rows re-created after bob's --continue (otter-0813 row)",
    "pass": true,
-   "evidence": "bob rows: ◯ vole-8126 plan eaae7e 2/2 ✔ · ✉ 1 for you (S11-3-sh-bob.txt)"
+   "evidence": "bob rows: ◯ otter-0813 plan d1b85f 2/2 ✔ · ✉ 1 for you (S11-3-sh-bob.txt)"
+  },
+  {
+   "check": "bob's rows came back with no prompt (row-rewake woke his Claude)",
+   "pass": true,
+   "evidence": "row-rewake wake at 00:09:35; Agent call at 00:09:37; 0 prompt(s) from bob between his /exit (#23) and S11-3-sh-bob.txt"
   },
   {
    "check": "bob's new room row is mapped after the resume",
    "pass": true,
-   "evidence": "room:vole-8126@18:56:33, participant:alice@18:56:36, room:vole-8126@19:00:22"
+   "evidence": "room:otter-0813@00:06:38, participant:alice@00:06:41, room:otter-0813@00:09:38, participant:alice@00:09:41"
   }
  ],
  "S11b": [
   {
    "check": "Opening the room row shows bob nested inside it",
    "pass": true,
-   "evidence": "viewing vole-8126; rows: ❯ ⏺ vole-8126 plan eaae7e 2/2 ✔ · ✉ 2 for you | └ ◯ bob ✔ decided eaae7e · working"
+   "evidence": "viewing otter-0813; rows: ❯ ⏺ otter-0813 plan d1b85f 2/2 ✔ | └ ◯ bob ✔ decided d1b85f · working"
   },
   {
    "check": "Opening bob shows his thread (labelled entries)",
    "pass": true,
-   "evidence": "viewing bob; #26 facilitator → bob · status: Welcome back, bob. Ignore #25: you're still an approver of plan eaae7e5e855a, which (S11b-2-sh-alice.txt)"
+   "evidence": "viewing bob; #24 bob · member_joined: bob rejoined (resumed) · read-only · talk in main (@room) (S11b-2-sh-alice.txt)"
   },
   {
    "check": "No breadcrumb (P0 correction); ↑ + Enter returns to the parent",
    "pass": true,
-   "evidence": "breadcrumb absent; step 3 views vole-8126 again"
+   "evidence": "breadcrumb absent; step 3 views otter-0813 again"
   }
  ],
  "S12": [
   {
    "check": "member_left bob (after his last rejoin), from /exit",
    "pass": true,
-   "evidence": "#27 bob system member_left: bob left (prompt_input_exit)"
+   "evidence": "#25 bob system member_left: bob left (prompt_input_exit)"
   },
   {
    "check": "Claude Code's \"Background work is running\" dialog was answered with 1. Exit and stop tasks",
@@ -267,17 +294,187 @@
   {
    "check": "bob's row reads left (or is gone) in the orch panel",
    "pass": true,
-   "evidence": "orch rows: ◯ alice #21 Claude status: GET /tasks handler complete. Cursor pagi… | ◯ bob left"
+   "evidence": "orch rows: ◯ alice #20 Claude status: ✓ Implemented. Handler /private/tmp/sh-d… | ◯ bob left"
   },
   {
    "check": "bob's row reads left (or is gone) in alice's panel",
    "pass": true,
-   "evidence": "alice rows: ◯ vole-8126 plan eaae7e 2/2 ✔ · ✉ 3 for you"
+   "evidence": "alice rows: ◯ otter-0813 plan d1b85f 2/2 ✔"
   }
  ],
  "_meta": {
-  "cost": "≈ $1.19 (list-price estimate from transcript token usage since the first capture)",
-  "run": "room vole-8126, 28 log entries, 69 captures",
-  "note": "One complete Claude-played run (no --human), demo.sh --windows from a fresh SUB_HUMAN_HOME; every screen and check is from room vole-8126. Members are haiku; the scripted humans type @room, answer the sign-off forms, approve alice's permission prompts and answer Claude Code's exit dialog with 1. Exit and stop tasks."
+  "cost": "≈ $1.01 (list-price estimate from transcript token usage since the first capture)",
+  "run": "room otter-0813, 25 log entries, 69 captures",
+  "note": "One complete Claude-played run on the Phase 0 build (510ef34), scripts/demo.sh from a fresh SUB_HUMAN_HOME, seats launched with env -i; every screen and check is from room otter-0813. Members are haiku; the scripted humans type @room, answer the sign-off forms, approve alice's permission prompts and answer Claude Code's exit dialog. bob's rows return after --continue with no prompt (row-rewake)."
+ },
+ "_metrics": {
+  "run": {
+   "room": "otter-0813",
+   "window": {
+    "from": "2026-10-06T00:04:20.816Z",
+    "to": "2026-10-06T00:10:43.051Z"
+   },
+   "seats": {
+    "orch": {
+     "transcripts": [
+      "87f74412",
+      "e75288ff"
+     ],
+     "wakes": {
+      "turns": 8,
+      "notices": 8,
+      "peer": 0,
+      "rewake": 0,
+      "rowNotifications": 0,
+      "humanPrompts": 1
+     },
+     "injected": {
+      "join": 7620,
+      "total": 7740,
+      "count": 2,
+      "byEvent": {
+       "UserPromptExpansion": 7620,
+       "PostToolUse": 120
+      }
+     },
+     "noise": {
+      "captures": 23,
+      "lines": 79,
+      "receipts": 0,
+      "monitor": 38,
+      "waiting": 34,
+      "hookError": 7,
+      "blocked": 0,
+      "invalid": 0,
+      "perCapture": 3.43,
+      "perCaptureExWaiting": 1.96
+     }
+    },
+    "alice": {
+     "transcripts": [
+      "54cd81b4",
+      "63ba0360",
+      "80f53f7a"
+     ],
+     "wakes": {
+      "turns": 8,
+      "notices": 8,
+      "peer": 0,
+      "rewake": 0,
+      "rowNotifications": 1,
+      "humanPrompts": 4
+     },
+     "injected": {
+      "join": 4968,
+      "total": 12082,
+      "count": 8,
+      "byEvent": {
+       "UserPromptExpansion": 4968,
+       "UserPromptSubmit": 1540,
+       "SessionStart": 5574
+      }
+     },
+     "noise": {
+      "captures": 23,
+      "lines": 88,
+      "receipts": 7,
+      "monitor": 44,
+      "waiting": 44,
+      "hookError": 0,
+      "blocked": 0,
+      "invalid": 0,
+      "perCapture": 3.83,
+      "perCaptureExWaiting": 1.91
+     }
+    },
+    "bob": {
+     "transcripts": [
+      "8bc9d9ed"
+     ],
+     "wakes": {
+      "turns": 7,
+      "notices": 6,
+      "peer": 0,
+      "rewake": 1,
+      "rowNotifications": 1,
+      "humanPrompts": 3
+     },
+     "injected": {
+      "join": 4994,
+      "total": 13268,
+      "count": 7,
+      "byEvent": {
+       "UserPromptExpansion": 4994,
+       "UserPromptSubmit": 2199,
+       "SessionStart": 6075
+      }
+     },
+     "noise": {
+      "captures": 23,
+      "lines": 82,
+      "receipts": 14,
+      "monitor": 42,
+      "waiting": 40,
+      "hookError": 0,
+      "blocked": 0,
+      "invalid": 0,
+      "perCapture": 3.57,
+      "perCaptureExWaiting": 1.83
+     }
+    }
+   },
+   "total": {
+    "wakes": 23,
+    "notices": 22,
+    "joinChars": [
+     4968,
+     4994
+    ],
+    "injectedTotal": 33090,
+    "noise": {
+     "captures": 69,
+     "lines": 249,
+     "perCapture": 3.61,
+     "perCaptureExWaiting": 1.9,
+     "monitor": 124,
+     "waiting": 118,
+     "hookError": 7,
+     "blocked": 0,
+     "invalid": 0,
+     "receipts": 21
+    }
+   }
+  },
+  "baseline": {
+   "run": "vole-8126",
+   "wakes": {
+    "orch": 12,
+    "alice": 17,
+    "bob": 10,
+    "total": 39
+   },
+   "noise": {
+    "captures": 69,
+    "lines": 320,
+    "perCapture": 4.64,
+    "perCaptureExWaiting": 2.33,
+    "monitor": 145,
+    "waiting": 159,
+    "hookError": 5,
+    "blocked": 6,
+    "invalid": 5
+   },
+   "joinChars": {
+    "orch": 7662,
+    "alice": 5732,
+    "bob": 5768
+   },
+   "injected": {
+    "orch": 7782,
+    "alice": 12987,
+    "bob": 13542,
+    "total": 34311
+   }
+  }
  }
 }

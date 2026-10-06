@@ -27,31 +27,28 @@
 <text x="12" y="191" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
 <text x="19.8" y="191" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
 <text x="12" y="225" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="225" textLength="327.6" lengthAdjust="spacing" xml:space="preserve"> alice, you have a notice from orch (#22):</text>
-<text x="27.6" y="259" font-weight="bold" textLength="444.6" lengthAdjust="spacing" xml:space="preserve">orch found two drifts in your build against decision #18.</text>
-<text x="472.2" y="259" textLength="171.6" lengthAdjust="spacing" xml:space="preserve"> A malformed or stale </text>
-<text x="643.8" y="259" fill="#afd7ff" textLength="39" lengthAdjust="spacing" xml:space="preserve">after</text>
-<text x="682.8" y="259" textLength="257.4" lengthAdjust="spacing" xml:space="preserve"> cursor silently restarts at page</text>
-<text x="12" y="276" textLength="858" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  1 (src/store.js:50-58), which can repeat tasks—the plan said to clamp and state what happens past the limit.</text>
-<text x="12" y="310" textLength="374.4" lengthAdjust="spacing" xml:space="preserve">  Would you like to draft a reply? For example: </text>
-<text x="386.4" y="310" fill="#afd7ff" textLength="561.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">@room I'll fix the cursor handling in store.js to match the plan — clamp</text>
-<text x="27.6" y="327" fill="#afd7ff" textLength="210.6" lengthAdjust="spacing" xml:space="preserve">at 50 and error if past it.</text>
-<text x="12" y="361" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="361" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="361" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="361" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="19.8" y="225" textLength="920.4" lengthAdjust="spacing" xml:space="preserve"> I see the orchestrator has flagged four issues with your implementation against the plan. Let me get the full details</text>
+<text x="12" y="242" textLength="257.4" lengthAdjust="spacing" xml:space="preserve">  so I can help you address them.</text>
+<text x="12" y="276" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="12" y="565" fill="#d78787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="565" fill="#ffaf87" xml:space="preserve">S</text>
+<text x="35.4" y="565" fill="#d78787" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">ymbioting… </text>
+<text x="121.2" y="565" fill="#949494" textLength="54.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(8s · ↓</text>
+<text x="183.6" y="565" fill="#949494" textLength="171.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">687 tokens · thinking)</text>
+<text x="12" y="582" fill="#949494" textLength="288.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  Tip: Share Claude Code and earn </text>
+<text x="300.6" y="582" fill="#d78787" textLength="23.4" lengthAdjust="spacing" xml:space="preserve">$10</text>
+<text x="324" y="582" fill="#949494" textLength="156" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> in usage credits · </text>
+<text x="480" y="582" fill="#d78787" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">/passes</text>
 <text x="511.2" y="599" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="599" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · alice ─</text>
-<text x="12" y="633" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
+<text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ otter-0813 · alice ─</text>
+<text x="12" y="633" fill="#949494" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="650" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
 <text x="27.6" y="667" fill="#afafff" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏵⏵ accept edits on</text>
 <text x="168" y="667" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="191.4" y="667" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
-<text x="261.6" y="667" fill="#949494" textLength="405.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · /tasks to see subagents · ← 1 agent · ↓ to manage</text>
+<text x="261.6" y="667" fill="#949494" textLength="553.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · /tasks to see subagents · esc to interrupt · ← 1 agent · ↓ to manage</text>
 <text x="12" y="701" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
-<text x="12" y="718" fill="#949494" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ vole-8126  </text>
-<text x="129" y="718" fill="#98c379" textLength="132.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">plan eaae7e 2/2 ✔</text>
-<text x="261.6" y="718" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
-<text x="285" y="718" fill="#e5c07b" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✉ 1 for you</text>
+<text x="12" y="718" fill="#949494" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ otter-0813  </text>
+<text x="136.8" y="718" fill="#98c379" textLength="132.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">plan d1b85f 2/2 ✔</text>
 </g></svg>

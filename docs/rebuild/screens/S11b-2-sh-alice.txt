@@ -4,9 +4,8 @@
   ▝▝ ▝▝    /private/tmp/sh-demo/alice
 
 
-⏺ Calling plugin:sub-human:room · 4m 4s…
-  ⎿  #26 facilitator → bob · status: Welcome back, bob. Ignore #25: you're still an approver of plan eaae7e5e855a, which
-     was decided in #18. You still have the verification tests from #19, and my review o…
+⏺ Calling plugin:sub-human:room · 3m 14s…
+  ⎿  #24 bob · member_joined: bob rejoined (resumed) · read-only · talk in main (@room)
 
 
 
@@ -27,7 +26,8 @@
 
 
 
-✻ Coalescing… (4m 6s · ↓ 2.0k tokens)
+
+✻ Seasoning… (3m 17s · ↓ 2.0k tokens)
   ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work
                                                                 Update available! Run: brew upgrade claude-code@latest
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────── bob ─
@@ -36,5 +36,5 @@
   ↑/↓ to select · ctrl+x ctrl+k to stop all agents
 
   ◯ main
-  ◯ vole-8126  plan eaae7e 2/2 ✔ · ✉ 2 for you
-❯ └ ⏺ bob  ✔ decided eaae7e · working
+  ◯ otter-0813  plan d1b85f 2/2 ✔
+❯ └ ⏺ bob  ✔ decided d1b85f · working

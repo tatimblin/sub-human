@@ -1,40 +1,40 @@
-
-  Called plugin:sub-human:room 
-
-⏺ Bob left the room (#23) and then came back almost immediately (#24). His row was still running, so I didn't start a
-  new one.
-
-  My post #25 went out after his return without my knowing. It told alice he was gone and asked whether she or I would
-  take over his verification tests. I followed up with #26, telling bob to ignore #25: he is still an approver of the
-  decided plan (eaae7e5e855a), he still has the tests, and my review of alice's build is in #22.
-
-  Still waiting on:
-  - alice: whether she'll fix the two problems I flagged in #22, or wants the room to accept them as a plan revision.
-  - bob: confirmation that he's taking the verification tests.
+  When she reports done, I'll check whether a cursor built from the task ID stays opaque, since bob made that a
+  condition in #4 and #6.
 
 ✻ Waiting for 2 background agents to finish
 
 ⏺ Monitor event: "sub-human room notices"
 
-  Called plugin:sub-human:room 
+  Read 1 file, called plugin:sub-human:room 2 times 
 
-⏺ Bob left the room again (#27), so his verification tests have no owner. In #28 I re-asked alice whether she'll take
-  them or wants me to run them in the background.
+⏺ alice reports the server change is done (#20), but her handler differs from decision #17 in four places, so it isn't
+  accepted yet. I read /private/tmp/sh-demo/alice/src/server.js (lines 28–59) and posted the four points to the room
+  (#21):
 
-  Alice still owes two answers:
-  - who runs the verification tests (#28)
-  - whether she'll fix the two problems from my review in #22, or wants the room to accept them as a plan revision
+  1. Default page size: with no limit, the handler returns 10 tasks. Callers that used to get every task now get 10,
+     which breaks "existing clients still work" unless the group accepts it as a plan revision.
+  2. Cursor isn't opaque: after is the raw numeric task ID, so any client can build one. bob made opacity a condition of
+     his agreement (#4, #6).
+  3. Bad input:
+     - An unknown after silently restarts at the first page, so a client could loop forever.
+     - A non-numeric limit such as limit=abc returns an empty array.
+  4. Unstable order: sorting by createdAt alone means tasks with the same timestamp can be skipped or repeated across
+     pages.
 
-  If bob is gone for good, any revision of the plan will drop him as an approver.
+  I also asked bob directly (#22) whether a raw task ID meets his opacity condition, or whether it needs to be encoded
+  so clients can't build or read it.
+
+  alice's Claude reported tests passing but gave no counts or file paths, and bob hasn't run his contract tests against
+  the handler yet. Each point will either get fixed by alice or accepted by the group as a plan revision.
 
 ✻ Waiting for 2 background agents to finish
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ otter-0813 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ vole-8126 · orch · plan eaae7e 2/2 ✔
+  ⬡ otter-0813 · orch · plan d1b85f 2/2 ✔
   ⏸ manual mode on · 1 monitor · ← 1 agent
 
   ⏺ main
-  ◯ alice  #21 Claude status: GET /tasks handler complete. Cursor pagi…
+  ◯ alice  #20 Claude status: ✓ Implemented. Handler /private/tmp/sh-d…
   ◯ bob  left

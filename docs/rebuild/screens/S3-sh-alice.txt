@@ -5,36 +5,36 @@
 
 
 ❯ /sub-human:sub-human alice
-  ⎿  UserPromptExpansion says: sub-human: joined room vole-8126 as alice.
+  ⎿  UserPromptExpansion says: sub-human: joined room otter-0813 as alice.
 
-⏺ sub-human:room(vole-8126)
+⏺ sub-human:room(otter-0813)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ Room vole-8126 is set up and ready. What can I help you with?
+⏺ Ready. alice is now in room otter-0813. Room row is live. Awaiting orchestrator and further context.
 
 ✻ Waiting for 1 background agent to finish
 
 ⏺ Monitor event: "sub-human room notices"
-  ⎿  Invalid tool parameters
 
-⏺ PushNotification(Room vole-8126: Orch asking what you want to plan)
-  ⎿  Not sent because you're active in this terminal.
+⏺ sub-human:room(otter-0813)
+  ⎿  Initializing…
+  ⎿  Error: sub-human: The room row otter-0813 is already running in this session (it shows leaves and rejoins by 
+     itself). Nothing to do; do not retry and do not mention it.
 
-⏺ Monitor event: "sub-human room notices"
+⏺ Bob has joined room otter-0813. Ready to proceed.
 
-⏺ #2 orch[agent] status: Welcome, alice. We're in the converge phase. What do you want the room to plan?
+✻ Waiting for 2 background agents to finish
 
-  #3 bob[system] member_joined: bob joined the room.
 
-✻ Waiting for 1 background agent to finish
+
 
 
 
                                                                 Update available! Run: brew upgrade claude-code@latest
-────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · alice ─
+───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ otter-0813 · alice ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ vole-8126  3 here · ✉ 1 for you
+  ◯ otter-0813  3 here

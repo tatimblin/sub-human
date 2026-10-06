@@ -1,40 +1,40 @@
-     - Next page: when more results exist, the response carries Link: </tasks?limit=N&after=CURSOR>; rel="next" (#8). On
-       the last page there is no rel=next link.
-     - Sort order must be stable so cursors stay valid between requests.
 
-     Open questions (to close before or during the build)
+⏺ Monitor event: "sub-human room notices"
 
-     - What limit defaults to when it is omitted.
-     - What happens when after is malformed or stale (suggest 400).
+  Called plugin:sub-human:room 
+  ⎿  Error: PreToolUse:ExitPlanMode hook error: ROOM-GATE: plan d1b85f6e7669 lacks sign-off from alice and bob. The 
+     sign-off form is already in their terminals; don't ask or post, end your turn and wait to be woken. Stay in plan 
+     mode. Published as plan_rev #13 (replaces ff3c3001306b; earlier sign-offs no longer count).
 
-     Set aside
+⏺ I revised the plan for bob's objection, and it is now waiting on fresh sign-offs from alice and bob. Nothing is
+  approved yet.
 
-     - Page-number or offset paging: bob wants an opaque cursor (#6).
-     - An envelope body ({items, next}): alice wants a bare array (#4, #8).
+  - The objection: bob objected in #10: "cap the page at 50 and say what happens past it — limit=500 must clamp, not
+    400".
+  - The revision: limit over 50 now clamps to 50. limit=500 returns 200 with at most 50 items, never a 400. The test
+    list covers this case.
+  - Publication: the revised plan went out as plan_rev #13 (hash d1b85f6e7669). It replaces ff3c3001306b, and earlier
+    sign-offs no longer count. I posted that in the room (#12).
+  - Still open: what the server does with an invalid after.
 
-     Approvers
+  alice's Claude agreed to the clamp in #11, but that isn't consent from alice. Only her own sign-off on the new hash
+  counts.
 
-     - alice: proposed the design (#4) and settled where the cursor goes (#8).
-     - bob: asked to approve, set the opaque-cursor rule (#6) and the clamp rule (#11).
+  I'm staying in plan mode until both of them sign off.
 
-     Verification
+✻ Waiting for 2 background agents to finish
 
-     - First page with no after returns at most limit items (never more than 50) and a rel=next Link header when more
-       items remain.
-     - Following rel=next links walks every task exactly once, with no duplicates or gaps.
-     - The last page has no rel=next link.
-     - limit=500 returns 200 with at most 50 items, not a 400.
-     - The body is always a bare JSON array.
+⏺ Monitor event: "sub-human room notices"
 
-✽ Infusing… (3s · ↓ 31 tokens · thinking)
-  ⎿  Tip: You have 4 plugins you haven't used lately. Disable them with /plugin to free up context and speed up startup.
+✽ Undulating… (1s · thinking)
+  ⎿  Tip: Running multiple Claude sessions? Use /color and /rename to tell them apart at a glance.
                                                                 Update available! Run: brew upgrade claude-code@latest
-─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─
+────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ otter-0813 · orch ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⬡ vole-8126 · orch · plan eaae7e 2/2 ✔
-  ⏸ manual mode on · 1 monitor · ← 1 agent
+  ⬡ otter-0813 · orch · plan d1b85f 1/2 waiting on bob
+  ⏸ plan mode on · 1 monitor · ← 1 agent
 
   ⏺ main
-  ◯ alice  ✔ decided eaae7e · working
-  ◯ bob  ✔ decided eaae7e · working
+  ◯ alice  ✓ signed d1b85f
+  ◯ bob  ✓ signed d1b85f

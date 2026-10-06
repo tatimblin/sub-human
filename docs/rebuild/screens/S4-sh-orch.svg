@@ -7,63 +7,66 @@
 <circle cx="52" cy="15" r="5.5" fill="#28c840"/>
 <text x="480" y="19" text-anchor="middle" fill="#9aa1ad" font-size="12" font-family="-apple-system, 'Segoe UI', system-ui, sans-serif">orch · S4</text>
 <g fill="#d6dbe5">
-<rect x="27.6" y="93" width="163.8" height="17" fill="#00afaf"/>
-<rect x="27.6" y="314" width="163.8" height="17" fill="#00afaf"/>
-<text x="12" y="72" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="72" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="106" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="106" fill="#000000" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">sub-human:participant</text>
-<text x="191.4" y="106" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">(alice)</text>
-<text x="12" y="123" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
-<text x="51" y="123" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
-<text x="191.4" y="123" fill="#949494" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
-<text x="27.6" y="157" fill="#949494" textLength="226.2" lengthAdjust="spacing" xml:space="preserve">Called plugin:sub-human:room </text>
+<rect x="27.6" y="212" width="163.8" height="17" fill="#00afaf"/>
+<rect x="27.6" y="365" width="163.8" height="17" fill="#00afaf"/>
+<text x="12" y="72" fill="#949494" textLength="928.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  UserPromptExpansion says: room otter-0813 open · others join with: /sub-human NAME (or /sub-human NAME otter-0813)</text>
+<text x="12" y="106" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="106" textLength="756.6" lengthAdjust="spacing" xml:space="preserve"> Room otter-0813 is open, but no one has joined yet, so there's nothing to do. Members join with </text>
+<text x="776.4" y="106" fill="#afd7ff" textLength="124.8" lengthAdjust="spacing" xml:space="preserve">/sub-human NAME </text>
+<text x="27.6" y="123" fill="#afd7ff" textLength="78" lengthAdjust="spacing" xml:space="preserve">otter-0813</text>
+<text x="105.6" y="123" textLength="358.8" lengthAdjust="spacing" xml:space="preserve">, and I'll respond when the first one arrives.</text>
+<text x="12" y="157" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="157" fill="#949494" textLength="421.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Worked for 2s · done 5:06 PM · 1 monitor still running</text>
 <text x="12" y="191" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="191" textLength="912.6" lengthAdjust="spacing" xml:space="preserve"> Alice has joined room vole-8126. I started her row and posted her a welcome. It says we're in the converge phase and</text>
-<text x="12" y="208" textLength="928.2" lengthAdjust="spacing" xml:space="preserve">  asks what she wants the room to plan. There's no plan yet, so there was no plan hash to send her. I'm waiting for her</text>
-<text x="12" y="225" textLength="280.8" lengthAdjust="spacing" xml:space="preserve">  reply or for someone else to join.</text>
-<text x="12" y="259" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="259" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="259" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
-<text x="129" y="259" fill="#949494" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> background agent to finish</text>
-<text x="12" y="293" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="293" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="12" y="327" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="27.6" y="327" fill="#000000" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">sub-human:participant</text>
-<text x="191.4" y="327" textLength="39" lengthAdjust="spacing" xml:space="preserve">(bob)</text>
-<text x="12" y="344" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
-<text x="51" y="344" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
-<text x="191.4" y="344" fill="#949494" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
-<text x="12" y="378" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="378" textLength="912.6" lengthAdjust="spacing" xml:space="preserve"> Bob has joined room vole-8126, and I've started his row. There's no plan yet, so there's nothing to post to him. I'm</text>
-<text x="12" y="395" textLength="460.2" lengthAdjust="spacing" xml:space="preserve">  waiting for alice to say what she wants the room to plan.</text>
-<text x="12" y="429" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
-<text x="27.6" y="429" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
-<text x="121.2" y="429" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
-<text x="129" y="429" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
-<text x="12" y="463" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
-<text x="19.8" y="463" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
-<text x="19.8" y="497" textLength="241.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> Calling plugin:sub-human:room…</text>
-<text x="12" y="531" fill="#d78787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✶</text>
-<text x="27.6" y="531" fill="#ffaf87" textLength="124.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Recombobulating…</text>
-<text x="160.2" y="531" fill="#949494" textLength="54.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(3s · ↓</text>
-<text x="222.6" y="531" fill="#949494" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">278 tokens · thought for 1s)</text>
-<text x="12" y="548" fill="#949494" textLength="561.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  Tip: You have 4 plugins you haven't used lately. Disable them with </text>
-<text x="573.6" y="548" fill="#afd7ff" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">/plugin</text>
-<text x="628.2" y="548" fill="#949494" textLength="319.8" lengthAdjust="spacing" xml:space="preserve"> to free up context and speed up startup.</text>
+<text x="19.8" y="191" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="225" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="225" fill="#000000" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">sub-human:participant</text>
+<text x="191.4" y="225" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">(alice)</text>
+<text x="12" y="242" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
+<text x="51" y="242" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
+<text x="191.4" y="242" fill="#949494" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
+<text x="12" y="276" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="276" textLength="748.8" lengthAdjust="spacing" xml:space="preserve"> I started alice's row since she had none. There's no plan yet, so I posted nothing to the room.</text>
+<text x="12" y="310" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="310" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="310" fill="#949494" font-weight="bold" xml:space="preserve">1</text>
+<text x="129" y="310" fill="#949494" textLength="210.6" lengthAdjust="spacing" xml:space="preserve"> background agent to finish</text>
+<text x="12" y="344" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="344" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="378" fill="#87d787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="27.6" y="378" fill="#000000" font-weight="bold" textLength="163.8" lengthAdjust="spacing" xml:space="preserve">sub-human:participant</text>
+<text x="191.4" y="378" textLength="39" lengthAdjust="spacing" xml:space="preserve">(bob)</text>
+<text x="12" y="395" fill="#949494" textLength="39" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  </text>
+<text x="51" y="395" textLength="140.4" lengthAdjust="spacing" xml:space="preserve">Backgrounded agent</text>
+<text x="191.4" y="395" fill="#949494" textLength="257.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> (↓ to manage · ctrl+o to expand)</text>
+<text x="12" y="429" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="429" textLength="741" lengthAdjust="spacing" xml:space="preserve"> I started bob's row since he had none. There's still no plan, so I posted nothing to the room.</text>
+<text x="12" y="463" fill="#949494" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">✻</text>
+<text x="27.6" y="463" fill="#949494" textLength="93.6" lengthAdjust="spacing" xml:space="preserve">Waiting for </text>
+<text x="121.2" y="463" fill="#949494" font-weight="bold" xml:space="preserve">2</text>
+<text x="129" y="463" fill="#949494" textLength="218.4" lengthAdjust="spacing" xml:space="preserve"> background agents to finish</text>
+<text x="12" y="497" fill="#ffffff" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏺</text>
+<text x="19.8" y="497" textLength="312" lengthAdjust="spacing" xml:space="preserve"> Monitor event: &quot;sub-human room notices&quot;</text>
+<text x="12" y="531" fill="#d78787" textLength="7.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">·</text>
+<text x="27.6" y="531" fill="#d78787" textLength="117" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Jitterbugging… </text>
+<text x="144.6" y="531" fill="#949494" textLength="54.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(2s · ↓</text>
+<text x="207" y="531" fill="#949494" textLength="101.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">163 tokens · </text>
+<text x="308.4" y="531" fill="#a8a8a8" textLength="62.4" lengthAdjust="spacing" xml:space="preserve">thinking</text>
+<text x="370.8" y="531" fill="#949494" xml:space="preserve">)</text>
+<text x="12" y="548" fill="#949494" textLength="764.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⎿  Tip: Running multiple Claude sessions? Use /color and /rename to tell them apart at a glance.</text>
 <text x="511.2" y="565" fill="#ffd700" textLength="179.4" lengthAdjust="spacing" xml:space="preserve">Update available! Run: </text>
 <text x="690.6" y="565" fill="#ffd700" font-weight="bold" textLength="241.8" lengthAdjust="spacing" xml:space="preserve">brew upgrade claude-code@latest</text>
-<text x="12" y="582" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · orch ─</text>
+<text x="12" y="582" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ otter-0813 · orch ─</text>
 <text x="12" y="599" fill="#949494" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="616" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
-<text x="27.6" y="633" fill="#949494" textLength="140.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⬡ vole-8126 · orch</text>
+<text x="27.6" y="633" fill="#949494" textLength="148.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⬡ otter-0813 · orch</text>
 <text x="27.6" y="650" fill="#5fafaf" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">⏸ plan mode on</text>
 <text x="136.8" y="650" fill="#949494" textLength="23.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · </text>
 <text x="160.2" y="650" fill="#00d7d7" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">1 monitor</text>
 <text x="230.4" y="650" fill="#949494" textLength="93.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve"> · ← 1 agent</text>
 <text x="12" y="684" font-weight="bold" textLength="62.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ⏺ main</text>
 <text x="12" y="701" fill="#949494" textLength="85.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ alice  </text>
-<text x="97.8" y="701" fill="#949494" opacity="0.6" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">#4 say 4s</text>
+<text x="97.8" y="701" fill="#949494" opacity="0.6" textLength="70.2" lengthAdjust="spacing" xml:space="preserve">#3 say 4s</text>
 <text x="12" y="718" fill="#949494" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ◯ bob  </text>
 <text x="82.2" y="718" fill="#e5c07b" textLength="54.6" lengthAdjust="spacing" xml:space="preserve">working</text>
 </g></svg>

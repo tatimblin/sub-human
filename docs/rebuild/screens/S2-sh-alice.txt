@@ -5,17 +5,15 @@
 
 
 ❯ /sub-human:sub-human alice
-  ⎿  UserPromptExpansion says: sub-human: joined room vole-8126 as alice.
+  ⎿  UserPromptExpansion says: sub-human: joined room otter-0813 as alice.
 
-⏺ sub-human:room(vole-8126)
+⏺ sub-human:room(otter-0813)
   ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
 
-⏺ Room vole-8126 is set up and ready. What can I help you with?
+⏺ Ready. alice is now in room otter-0813. Room row is live. Awaiting orchestrator and further context.
 
 ✻ Waiting for 1 background agent to finish
 
-⏺ Monitor event: "sub-human room notices"
-  ⎿  Invalid tool parameters
 
 
 
@@ -28,13 +26,15 @@
 
 
 
-· Onioning… (3s · ↓ 200 tokens · thought for 3s)
-  ⎿  Tip: Use /statusline to set up a custom status line that will display beneath the input box
-                  tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking
-────────────────────────────────────────────────────────────────────────────────────────────────── ⬡ vole-8126 · alice ─
+
+
+
+
+                                                                Update available! Run: brew upgrade claude-code@latest
+───────────────────────────────────────────────────────────────────────────────────────────────── ⬡ otter-0813 · alice ─
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  ⏸ manual mode on · 1 monitor · esc to interrupt · ← 1 agent · ↓ to manage
+  ⏸ manual mode on · 1 monitor · ← 1 agent · ↓ to manage
 
   ⏺ main
-  ◯ vole-8126  2 here · ✉ 1 for you
+  ◯ otter-0813  2 here

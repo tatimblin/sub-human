@@ -19,7 +19,7 @@
 <text x="97.8" y="89" fill="#949494" textLength="171.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Haiku 4.5 · Claude Max</text>
 <text x="12" y="106" fill="#d78787" textLength="70.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">  ▝▝ ▝▝  </text>
 <text x="97.8" y="106" fill="#949494" textLength="202.8" lengthAdjust="spacing" xml:space="preserve">/private/tmp/sh-demo/alice</text>
-<text x="175.8" y="650" fill="#949494" textLength="756.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux.conf for wheel scroll</text>
+<text x="651.6" y="650" fill="#ffd700" textLength="280.8" lengthAdjust="spacing" xml:space="preserve">auto mode unavailable for this model</text>
 <text x="12" y="667" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
 <text x="12" y="684" textLength="15.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">❯ </text>
 <text x="12" y="701" fill="#808080" textLength="936" lengthAdjust="spacingAndGlyphs" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</text>
