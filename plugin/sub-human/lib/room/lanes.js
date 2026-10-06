@@ -4,7 +4,8 @@
  *
  * Proposals and decisions (a proposal is {hash, approvers[], path?}; answers carry proposal_hash). Every query
  * reads lib/consent.js fold(entries) (memoized per array), so stateLine, lane, the rows and the gate agree:
- *   proposal(hash, entries?) -> Entry|null           the latest proposal with that hash
+ *   (entries: the log to judge against; lib/room.js Room passes its own)
+ *   proposal(hash, entries) -> Entry|null            the latest proposal with that hash
  *   proposals(entries?) -> Entry[]                   the latest entry per distinct hash, in log order
  *   answers(hash, approvers?, entries?) -> {hash, signed: {name: id|null}, missing, complete}
  *       approvers default to that proposal's. signed[name] = the id of name's current signoff (the latest
@@ -18,40 +19,40 @@
  *   retractedIds(entries?) -> Set
  */
 
-const { readAll, normalize } = require('./store.js');
+const { normalize } = require('./store.js');
 const { fold } = require('../consent.js');
 
 // ---------- proposals / decisions (all read lib/consent.js fold: one set of semantics) ----------
 /** The latest (non-retracted) proposal entry, legacy plan_rev included, with that hash. */
-function proposal(hash, entries = readAll()) {
+function proposal(hash, entries = []) {
   const p = fold(entries).proposals.get(hash);
   return p ? p.entry : null;
 }
 
 /** The latest proposal per distinct hash, in log order of that latest entry. */
-const proposals = (entries = readAll()) => [...fold(entries).proposals.values()].map(p => p.entry);
+const proposals = (entries = []) => [...fold(entries).proposals.values()].map(p => p.entry);
 
 const approversOf = p => (p && Array.isArray(p.approvers) ? p.approvers : []);
 
-function answers(hash, approvers, entries = readAll()) {
+function answers(hash, approvers, entries = []) {
   const m = fold(entries).matrix(hash, Array.isArray(approvers) ? approvers : undefined);
   return { hash, signed: m.signed, missing: m.unsigned, complete: !!hash && m.approvers.length > 0 && m.unsigned.length === 0 };
 }
 
 /** name's latest via=human signoff or objection on hash, or null. */
-function answered(name, hash, entries = readAll()) {
+function answered(name, hash, entries = []) {
   const a = fold(entries).answerOf(hash, name);
   return a ? a.entry : null;
 }
 
-const decided = (hash, entries = readAll()) => fold(entries).decisions.get(hash) || null;
+const decided = (hash, entries = []) => fold(entries).decisions.get(hash) || null;
 
 // ---------- lanes ----------
 const esc = s => s.replace(/[.]/g, '\\.');
 /** "@name" anywhere in the text (case-insensitive, not part of a longer name). */
 const mentions = (text, name) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
 /** Ids retracted by a via=system `retract` entry. */
-const retractedIds = (entries = readAll()) => new Set(fold(entries).retracted);
+const retractedIds = (entries = []) => new Set(fold(entries).retracted);
 
 /** The retracted entry's own lane decides a retract's: whoever would have been woken by it hears it was forged. */
 function retractLane(me, n, entries) {

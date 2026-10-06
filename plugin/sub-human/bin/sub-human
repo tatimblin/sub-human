@@ -31,7 +31,7 @@
  *       model turn (a FileChanged systemMessage is a 5 s footer notification, a monitor event always wakes the
  *       model), so this one wake prints the lines.
  *       Members get every other member's join and settled leave (not the orch's), recorded as shown in
- *       <room>/rows/notices-NAME.json (lib/notices.js; at-room.js shows on the next prompt any the monitor
+ *       the room document rows/notices-NAME (lib/notices.js; at-room.js shows on the next prompt any the monitor
  *       never sent).
  *       The orch's block opens with room.stateLine() ("room now: …"), then one room.line(e, {full}) per entry
  *       (ids kept: its tools take them), a leave marked "· away 8s+". Its member_joined is pushed when
@@ -43,7 +43,7 @@
  *   sub-human who                      this session's identity: "<name> (<role>) in <code>"
  *   sub-human tasks [--json] [--room CODE]
  *       the room's shared task list (lib/tasks.js list(code), the orch's native list mirrored to
- *       <room>/tasks.json): "#2 in_progress  bob  parser tests". --json prints the array.
+ *       the room document `tasks`): "#2 in_progress  bob  parser tests". --json prints the array.
  *   sub-human watch NAME [--room CODE] [--follow|--no-follow]
  *       NAME's thread: their own words, their Claude's posts (labelled "NAME's Claude"), their answers,
  *       their joins/leaves, and entries addressed to them. The orchestrator's posts are labelled
@@ -53,7 +53,6 @@
  *       nothing and exits 0.
  */
 
-const fs = require('node:fs');
 const path = require('node:path');
 const LIB = path.join(__dirname, '..', 'lib');
 const identity = require(path.join(LIB, 'identity.js'));
@@ -91,18 +90,16 @@ const intList = s => String(s).split(',').filter(Boolean).map(x => {
   return n;
 });
 
-/** Bind the room: an explicit code, else this session's. Returns {code, me|null}. */
-function bindRoom(explicit) {
+/** Open the room: an explicit code, else this session's. Returns {code, me|null, r: Room}. */
+function openRoom(explicit) {
   if (explicit) {
     if (!identity.roomExists(explicit)) die(`no room "${explicit}"`, 1);
-    room.bind(explicit);
     const me = identity.resolveSelf();
-    return { code: explicit, me: me && me.code === explicit ? me : null };
+    return { code: explicit, me: me && me.code === explicit ? me : null, r: room.open(explicit) };
   }
   const me = identity.resolveSelf();
   if (!me) die(NOT_IN_ROOM, 1);
-  room.bind(me.code);
-  return { code: me.code, me };
+  return { code: me.code, me, r: room.open(me.code) };
 }
 
 // ---------- tail: lib/tail.js runTail ----------
@@ -129,17 +126,14 @@ function tail(args) {
 }
 
 // ---------- agent-statusline: dispatch to statusline/* ----------
-// Not hooks/common.js readInput: requiring hooks/common.js arms the seat-key signer (via=human writes), which
+// lib/io.js readInput, never hooks/common.js: requiring that arms the seat-key signer (via=human writes), which
 // the CLI and the monitor must never load.
-function readStdinJson() {
-  if (process.stdin.isTTY) return {};
-  try { return JSON.parse(fs.readFileSync(0, 'utf8') || '{}') || {}; } catch { return {}; }
-}
+const { readInput } = require(path.join(LIB, 'io.js'));
 
 /** statusline agentStatusline(input) -> text ({"id","content"} lines); whatever goes wrong, print nothing and exit 0. */
 function agentStatusline() {
   try {
-    const out = statusline.agentStatusline(readStdinJson());
+    const out = statusline.agentStatusline(readInput({ strict: false }));
     if (typeof out === 'string' && out) process.stdout.write(out.endsWith('\n') ? out : out + '\n');
   } catch { /* keep the default rendering */ }
 }
@@ -148,26 +142,26 @@ function agentStatusline() {
 function read(args) {
   const { flags, rest } = parseFlags(args, { id: 1, json: 0, room: 1 });
   if (!flags.id && rest.length) flags.id = rest.join(','); // `sub-human read 22`, as the cut marker says
-  const { me } = bindRoom(flags.room);
-  const all = flags.json ? null : room.readAll();
+  const { me, r } = openRoom(flags.room);
+  const all = flags.json ? null : r.readAll();
   const show = es => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : room.fmt(e, { entries: all }) + '\n'));
   if (flags.id) {
-    const es = room.readById(intList(flags.id));
+    const es = r.readById(intList(flags.id));
     if (!es.length) die('(no such entries)', 1);
     return show(es);
   }
-  if (!me) return show(room.readAll().slice(-50));
+  if (!me) return show(r.readAll().slice(-50));
   const cursor = `read-${me.name}`;
-  const es = room.readAfter(room.getCursor(cursor));
+  const es = r.readAfter(r.getCursor(cursor));
   if (!es.length) return console.log('(no new messages)');
   show(es);
-  room.setCursor(cursor, es.at(-1).id);
+  r.setCursor(cursor, es.at(-1).id);
 }
 
 function digest(args) {
   const { flags } = parseFlags(args, { room: 1 });
-  bindRoom(flags.room);
-  process.stdout.write(room.digest() + '\n');
+  const { r } = openRoom(flags.room);
+  process.stdout.write(r.digest() + '\n');
 }
 
 function who() {
@@ -177,12 +171,12 @@ function who() {
 }
 
 // ---------- tasks ----------
-/** lib/tasks.js list(code): <room>/tasks.json as the mirror writes it. */
+/** lib/tasks.js list(code): the room document `tasks` as the mirror writes it. */
 const taskList = code => tasks.list(code) || [];
 
 function tasksCmd(args) {
   const { flags } = parseFlags(args, { json: 0, room: 1 });
-  const { code } = bindRoom(flags.room);
+  const { code } = openRoom(flags.room);
   let list;
   try { list = taskList(code); } catch (e) { die(`the room task list is unavailable: ${e.message}`, 1); }
   list = list.filter(t => t && !(t.metadata && t.metadata._internal));
@@ -213,7 +207,7 @@ function watch(args) {
   const name = rest[0];
   if (!name) die('usage: sub-human watch NAME [--room CODE] [--follow|--no-follow]');
   if (!identity.NAME_RE.test(name)) die(`bad name "${name}"`);
-  const { code } = bindRoom(flags.room);
+  const { code, r } = openRoom(flags.room);
   const color = process.stdout.isTTY && !('NO_COLOR' in process.env);
   const c = (code_, s) => color ? `\x1b[${code_}m${s}\x1b[0m` : s;
   const kindColor = { decision: '1;32', signoff: '32', objection: '31', proposal: '1;34', task_req: '36', task: '36', member_joined: '2;32', member_left: '2;31' };
@@ -231,13 +225,13 @@ function watch(args) {
   };
   const follow = flags.follow ? true : flags['no-follow'] ? false : !!process.stdout.isTTY;
   if (!follow) {
-    const es = room.readAll().filter(e => show(room.normalize(e)));
+    const es = r.readAll().filter(e => show(room.normalize(e)));
     if (!es.length) return console.log(`(nothing from or to ${name} in room ${code})`);
     return es.forEach(print);
   }
   console.log(c('2', `${name}'s thread in room ${code} (Ctrl-C to stop)`) + '\n');
   process.stdout.on('error', () => process.exit(0));
-  room.follow(0, print, { intervalMs: config.WATCH_POLL_MS });
+  r.watch(print, { after: 0, intervalMs: config.WATCH_POLL_MS });
 }
 
 const [cmd, ...args] = process.argv.slice(2);

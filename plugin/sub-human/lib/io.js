@@ -13,6 +13,10 @@
  *                                         otherwise pretty-printed (2 spaces) with a trailing newline.
  *   isAlive(pid) -> bool                  the pid exists (EPERM counts as alive: it exists, owned by another user)
  *   sleepSync(ms)                         block this thread (for the sync lock and poll loops in hooks)
+ *   readInput({strict = true}?) -> object the process's stdin JSON ({} when empty, or when stdin is a terminal).
+ *                                         strict: a parse error throws; otherwise it gives {}. Hooks (through
+ *                                         hooks/common.js) and bin/sub-human share it; the CLI must never load
+ *                                         hooks/common.js, which arms the human signer.
  */
 
 const fs = require('node:fs');
@@ -55,4 +59,15 @@ function isAlive(pid) {
 
 const sleepSync = ms => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
 
-module.exports = { readJson, writeFileAtomic, writeJsonAtomic, isAlive, sleepSync };
+function readInput({ strict = true } = {}) {
+  if (require('node:tty').isatty(0)) return {};
+  let raw = '';
+  try { raw = fs.readFileSync(0, 'utf8'); } catch { /* no stdin */ }
+  if (!raw.trim()) return {};
+  try { return JSON.parse(raw) || {}; } catch (e) {
+    if (strict) throw e;
+    return {};
+  }
+}
+
+module.exports = { readJson, writeFileAtomic, writeJsonAtomic, isAlive, sleepSync, readInput };

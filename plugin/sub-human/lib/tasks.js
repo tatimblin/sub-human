@@ -3,8 +3,8 @@
  * plugin/sub-human/lib/tasks.js: the room's shared task list. The headless orch's own native task list
  * (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list. Members ask for changes with the `task` tool
  * (mcp/task.js: a `task_req` log entry); the orch applies them with native TaskCreate/TaskUpdate;
- * hooks/tasks.js logs each applied change as a `task` entry and rewrites <room>/tasks.json as fold() of those
- * entries, and gates TaskCompleted. Rows and the CLI read only <room>/tasks.json, never ~/.claude. Zero dependencies.
+ * hooks/tasks.js logs each applied change as a `task` entry and rewrites the room document `tasks` as fold() of those
+ * entries, and gates TaskCompleted. Rows and the CLI read only that document (tasks.json in the room directory), never ~/.claude. Zero dependencies.
  *
  *   list(code) -> [{id, subject, status, owner, blockedBy}]   the mirror, in id order ([] when absent)
  *   fold(entries) -> the same shape, from the `task` entries alone (each is a full snapshot; delete removes)
@@ -16,7 +16,7 @@
  *   gate(code, task, log, {closing}?) -> {ok:true, req?} | {ok:false, reason}   TaskCompleted rule (task.req: a hint)
  *   reqOf(e) -> {op, id, subject, detail, evidence, owner, by}   a task_req entry's fields
  *   requestText(req) -> one-line text for a task_req entry
- *   isRoomTask(t, code?), isClosing(code), writeList(code, tasks), listPath(code), nativeDir(listId)
+ *   isRoomTask(t, code?), isClosing(code), writeList(code, tasks), withList(code, fn) (the mirror's lock), nativeDir(listId)
  *
  * Log entries (room.js stores the caller's task `id` as `task_id`, since `id` is the entry's own id):
  *   task_req (via agent): {kind:'task_req', from = by = requester, text, op, task_id, subject, detail, evidence, owner}
@@ -30,13 +30,12 @@
  * closing (members.json `closing`, set by the reaper); the mirror and summary leave it out.
  */
 
-const path = require('node:path');
 const identity = require('./identity.js');
 const cc = require('./cc.js');
-const { readJson, writeJsonAtomic } = require('./io.js');
 const { clip, NAME_RE } = require('./text.js');
 const config = require('./config.js');
 const { humanTrust } = require('./room/store.js');
+const room = require('./room.js');
 
 const OPS = ['add', 'claim', 'release', 'done'];
 const SUBJECT_MAX = config.TASK_SUBJECT_MAX;
@@ -45,7 +44,10 @@ const EVIDENCE_MAX = config.TASK_EVIDENCE_MAX;
 const SUMMARY_ITEMS = 3;
 const OPEN = new Set(['pending', 'in_progress']);
 
-const listPath = code => path.join(identity.roomDir(code), 'tasks.json');
+/** The mirror is the room document `tasks` (lib/room/store.js kv; tasks.json on disk). */
+const kvOf = code => room.open(code).store.kv;
+/** Run fn under the mirror's lock (hooks/tasks.js: read the log, append, refold, as one step). */
+const withList = (code, fn) => kvOf(code).lock('tasks', fn);
 /** Claude Code's task store for a list id (read only; the plugin never writes there). */
 const nativeDir = listId => cc.tasksDir(listId);
 
@@ -60,7 +62,8 @@ function isRoomTask(t, code) {
 }
 
 function list(code) {
-  const v = readJson(listPath(code), []);
+  let v = [];
+  try { v = kvOf(code).get('tasks', []); } catch { v = []; }
   return Array.isArray(v) ? v.filter(t => t && t.id != null).sort(byId) : [];
 }
 
@@ -71,7 +74,7 @@ const clean = (tasks, code) => tasks.filter(t => t && t.id != null && !isRoomTas
 
 function writeList(code, tasks) {
   const c = clean(tasks, code);
-  writeJsonAtomic(listPath(code), c);
+  kvOf(code).set('tasks', c);
   return c;
 }
 
@@ -207,5 +210,5 @@ function gate(code, task, log = [], { closing } = {}) {
 module.exports = {
   OPS,
   list, fold, refold, metaReq, summary, mine, validate, gate, reqOf, requestText,
-  isRoomTask, isClosing, writeList, listPath, nativeDir,
+  isRoomTask, isClosing, writeList, withList, nativeDir,
 };

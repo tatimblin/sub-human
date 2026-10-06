@@ -7,8 +7,8 @@
  * time (pid_start, epoch s, lib/lock.js pidStart), so a reused pid never keeps a dead seat alive or adopts it.
  *
  * Location:
- *   home() -> string                     SUB_HUMAN_HOME, else ~/.sub-human (read on every call)
- *   roomDir(code) -> string              <home>/rooms/<code>
+ *   home() -> string                     SUB_HUMAN_HOME, else ~/.sub-human (read on every call; lib/home.js)
+ *   roomDir(code) -> string              <home>/rooms/<code> (lib/home.js; validates the code)
  *   newCode() -> string                  "otter-4821": a fresh room, created with an exclusive mkdir
  *   roomExists(code) -> bool
  *   openRooms() -> [code]                rooms with >= 1 live member seat (role member) that are not closing,
@@ -18,18 +18,21 @@
  *                                        (join sweeps these through orch.watchdog)
  *   roomOpen(code) -> bool               not closing and has any live seat, the orch included (a resume may
  *                                        rejoin a room whose orch is waiting out the reap grace)
- *   roomClosing(code) -> bool            members.json orch.closing is set (the reaper is shutting the room down)
+ *   roomClosing(code) -> bool            members orch.closing is set (the reaper is shutting the room down)
  *
- * Members (<roomDir>/members.json, written under a lock, atomically):
- *   readMembers(code) -> {name: {name, role, pid, pid_start?, session_id, cwd, joined_at, left_at?}}
+ * Members (the room's members document, lib/room/store.js members: changed only through update(), atomic):
+ *   readMembers(code) -> {name: {name, role, pid, pid_start?, session_id, cwd, joined_at, seen_at?, left_at?}}
  *       The "orch" record also carries {job, spawned_at, closing?, stopped_at?, claim?, by?, ...} (lib/orch.js);
  *       before the spawned orch binds, it is {name:"orch", role:"orch", pid:null, job, spawned_at}, and while a
  *       spawn is in flight job is "pending".
  *   setOrch(code, patch) -> record       merge patch into members.orch under the lock (creates the record)
  *   updateOrch(code, fn) -> record|null  under the lock: fn(orch record or null, members) returns a patch to
  *                                        merge (the new record is returned) or null to write nothing (null)
- *   seatAlive(m) -> bool                 not left, pid alive, and its start time matches pid_start (a seat with
- *                                        no pid_start, or a pid whose start ps cannot read, counts as matching)
+ *   seatAlive(m) -> bool                 not left, and pid alive with its start time matching pid_start (a seat
+ *                                        with no pid_start, or a pid whose start ps cannot read, counts as
+ *                                        matching); a seat with no pid: its lease (seen_at) is fresh
+ *   heartbeat(me, now?) -> bool          renew me's lease, seen_at (at most every SEAT_BEAT_MS; the tail's health
+ *                                        tick and the hold server); leaseFresh(m, now?)
  *   liveMembers(code) -> [name]          non-orch seats that are seatAlive
  *   join({code, name, role, pid, session_id, cwd}) -> {ok, error?, rejoin?}
  *       role is "orch" or "member". NAME_RE; reserved names orch, room, all, system (only role orch may use
@@ -52,24 +55,26 @@
  *   lastSeat(sid) -> {code, name, role}|null   the seat a session id last held, left or not (for --resume)
  *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set; lib/cc.js)
  *
- * Presence (<roomDir>/presence/<name>.json = {state, at, detail?}):
+ * Presence (the room documents presence/<name> = {state, at, detail?}, lib/room/store.js kv):
  *   writePresence(code, name, state, detail?)   state: working (prompt submitted / joined) | idle (idle_prompt)
  *                                               | permission (permission_prompt) | error (StopFailure; detail = code)
  *   readPresence(code) -> {name: {state, at, detail?}}
  *
- * Also: isAlive (lib/io.js), readMembersFile(file), NAME_RE, CODE_RE, RESERVED, ANIMALS, PRESENCE_STATES.
- * members.json and the session indexes are written under lib/lock.js withLock, atomically (lib/io.js).
+ * Also: isAlive (lib/io.js), NAME_RE, CODE_RE, RESERVED, ANIMALS, PRESENCE_STATES.
+ * Room state (members, presence, the room list) goes through lib/room/store.js; members are changed only with
+ * members.update (atomic). The session indexes (<home>/sessions/, which seat a local pid or session id holds) are
+ * this machine's, not the room's, and stay here.
  */
 
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const { readJson, writeJsonAtomic, isAlive } = require('./io.js');
-const { withLock, pidStart } = require('./lock.js');
+const { home, roomDir } = require('./home.js');
+const { pidStart } = require('./lock.js');
 const { NAME_RE, CODE_RE, SID_SAFE: SID_RE } = require('./text.js');
-const { PRESENCE_DETAIL_MAX, PID_START_SLACK_S } = require('./config.js');
+const { PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS } = require('./config.js');
 const cc = require('./cc.js');
 const RESERVED = ['orch', 'room', 'all', 'system'];
 const ROLES = ['orch', 'member'];
@@ -86,25 +91,19 @@ const ANIMALS = [
 ];
 
 // ---------- location ----------
-const home = () => process.env.SUB_HUMAN_HOME || path.join(os.homedir(), '.sub-human');
-const roomsDir = () => path.join(home(), 'rooms');
-function roomDir(code) {
-  if (typeof code !== 'string' || !CODE_RE.test(code)) throw new Error(`invalid room code "${code}"`);
-  return path.join(roomsDir(), code);
-}
-const roomExists = code => typeof code === 'string' && CODE_RE.test(code) && fs.existsSync(roomDir(code));
+const store = require('./room/store.js');
+const roomExists = code => store.roomExists(code);
 const byPidFile = pid => path.join(home(), 'sessions', 'by-pid', `${Number(pid)}.json`);
 const bySidFile = sid => path.join(home(), 'sessions', 'by-sid', `${sid}.json`);
-const membersFile = code => path.join(roomDir(code), 'members.json');
 const address = (name, code) => `${name}.${code}`;
-const presenceDir = code => path.join(roomDir(code), 'presence');
+/** The room's members document (lib/room/store.js members: read(), update(fn) atomic). */
+const membersOf = code => store.open(code).members;
 
 function newCode() {
-  fs.mkdirSync(roomsDir(), { recursive: true, mode: 0o700 }); // the home and rooms/ too when new: private
   for (let i = 0; i < 200; i++) {
     const word = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
     const code = `${word}-${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
-    try { fs.mkdirSync(roomDir(code), { mode: 0o700 }); return code; } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    if (store.createRoom(code)) return code;
   }
   throw new Error('could not allocate a room code');
 }
@@ -112,9 +111,8 @@ function newCode() {
 const rm = file => { try { fs.unlinkSync(file); } catch { /* already gone */ } };
 
 // ---------- members ----------
-const readMembersFile = file => readJson(file, {}) || {};
 function readMembers(code) {
-  try { return readMembersFile(membersFile(code)); } catch { return {}; }
+  try { return membersOf(code).read(); } catch { return {}; }
 }
 
 const fail = error => ({ ok: false, error });
@@ -127,7 +125,36 @@ function startMatches(m) {
   const s = pidStart(m.pid);
   return s == null || Math.abs(s - Number(m.pid_start)) <= PID_START_SLACK_S;
 }
-const seatAlive = m => !!m && !!m.name && !m.left_at && validPid(m.pid) && isAlive(m.pid) && startMatches(m);
+/** The seat's lease: seen_at (join, then identity.heartbeat) younger than SEAT_LEASE_MS. */
+const leaseFresh = (m, now = Date.now()) => { const t = Date.parse(m && m.seen_at); return Number.isFinite(t) && now - t < SEAT_LEASE_MS; };
+/**
+ * Not left, and: its pid is alive with a matching start time (this machine: the primary check), or, for a seat
+ * with no pid to check (a store off this machine), its lease is fresh.
+ */
+function seatAlive(m) { // unary: callers pass it to filter/some
+  if (!m || !m.name || m.left_at) return false;
+  if (validPid(m.pid)) return isAlive(m.pid) && startMatches(m);
+  return leaseFresh(m);
+}
+
+/**
+ * Renew me's lease (members seen_at), at most every SEAT_BEAT_MS: the tail's health tick and the hold server
+ * call it. Only for the seat as me holds it (same pid when me has one; not left). Returns true when written.
+ */
+function heartbeat(me, now = Date.now()) {
+  if (!me || !me.code || !me.name || !roomExists(me.code)) return false;
+  const stale = m => !!m && !m.left_at && (!validPid(me.pid) || m.pid === me.pid) && !(Date.parse(m.seen_at) > now - SEAT_BEAT_MS);
+  if (!stale(readMembers(me.code)[me.name])) return false; // the cheap check, before the lock
+  let wrote = false;
+  membersOf(me.code).update(ms => {
+    const m = ms[me.name];
+    if (!stale(m)) return null;
+    m.seen_at = new Date(now).toISOString();
+    wrote = true;
+    return ms;
+  });
+  return wrote;
+}
 
 function join({ code, name, role, pid, session_id, cwd } = {}) {
   if (!roomExists(code)) return fail(`no room "${code}"`);
@@ -140,12 +167,13 @@ function join({ code, name, role, pid, session_id, cwd } = {}) {
   if (session_id != null && (typeof session_id !== 'string' || !SID_RE.test(session_id))) return fail('invalid session_id');
 
   let result;
-  withLock(membersFile(code) + '.lock', () => {
-    const members = readMembers(code);
+  // Under the members CAS: the session indexes are written inside it (idempotent), so a concurrent leave
+  // cannot drop the pid index of a seat this join just took.
+  membersOf(code).update(members => {
     const cur = members[name];
     let rejoin = false;
     if (cur) {
-      if (cur.pid !== pid && seatAlive(cur)) { result = fail(`name taken: "${name}" is already in ${code}`); return; }
+      if (cur.pid !== pid && seatAlive(cur)) { result = fail(`name taken: "${name}" is already in ${code}`); return null; }
       rejoin = true;
     }
     // One seat per claude process: retire its previous registration.
@@ -159,41 +187,39 @@ function join({ code, name, role, pid, session_id, cwd } = {}) {
     const keep = {};
     if (role === 'orch' && cur) for (const k of ORCH_FIELDS) if (cur[k] != null) keep[k] = cur[k];
     const start = pidStart(pid);
-    members[name] = { name, role, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null, joined_at: new Date().toISOString(), ...keep };
-    writeJsonAtomic(membersFile(code), members);
+    const now = new Date().toISOString();
+    members[name] = { name, role, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null, joined_at: now, seen_at: now, ...keep };
     const rec = { code, name, role, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, address: address(name, code) };
     writeJsonAtomic(byPidFile(pid), rec);
     if (session_id) writeJsonAtomic(bySidFile(session_id), rec);
     result = rejoin ? { ok: true, rejoin: true } : { ok: true };
+    return members;
   });
   return result;
 }
 
 function markLeft(code, name, pid) {
-  withLock(membersFile(code) + '.lock', () => {
-    const members = readMembers(code);
-    if (members[name] && members[name].pid === pid && !members[name].left_at) {
-      members[name].left_at = new Date().toISOString();
-      writeJsonAtomic(membersFile(code), members);
-    }
+  membersOf(code).update(members => {
+    if (!(members[name] && members[name].pid === pid && !members[name].left_at)) return null;
+    members[name].left_at = new Date().toISOString();
+    return members;
   });
 }
 
 function leave(code, name) {
   if (!roomExists(code)) return false;
   let left = false;
-  withLock(membersFile(code) + '.lock', () => {
-    const members = readMembers(code);
+  membersOf(code).update(members => {
     const m = members[name];
-    if (!m || m.left_at) return;
+    if (!m || m.left_at) return null;
     m.left_at = new Date().toISOString();
-    writeJsonAtomic(membersFile(code), members);
-    // Drop the pid index while still holding the lock, so a concurrent join cannot be undone by it.
+    // Drop the pid index inside the CAS, so a concurrent join cannot be undone by it.
     if (validPid(m.pid)) {
       const p = readJson(byPidFile(m.pid));
       if (p && p.code === code && p.name === name) rm(byPidFile(m.pid));
     }
     left = true;
+    return members;
   });
   return left;
 }
@@ -203,17 +229,16 @@ function rebindSession(pid, sid) {
   const who = resolveByPid(pid);
   if (!who) return false;
   let ok = false;
-  withLock(membersFile(who.code) + '.lock', () => {
-    const members = readMembers(who.code);
+  membersOf(who.code).update(members => {
     const m = members[who.name];
-    if (!m) return;
+    if (!m) return null;
     if (m.session_id && m.session_id !== sid) rm(bySidFile(m.session_id));
     m.session_id = sid;
-    writeJsonAtomic(membersFile(who.code), members);
     const rec = { code: who.code, name: who.name, role: m.role, pid: m.pid, ...(m.pid_start != null ? { pid_start: m.pid_start } : {}), session_id: sid, address: address(who.name, who.code) };
     writeJsonAtomic(byPidFile(m.pid), rec);
     writeJsonAtomic(bySidFile(sid), rec);
     ok = true;
+    return members;
   });
   return ok;
 }
@@ -284,7 +309,7 @@ const isMember = m => !!m && m.role !== 'orch';
 const liveMembers = code => Object.values(readMembers(code)).filter(m => isMember(m) && seatAlive(m)).map(m => m.name);
 const roomClosing = code => { const o = readMembers(code).orch; return !!(o && o.closing); };
 
-const roomCodes = () => { try { return fs.readdirSync(roomsDir()).filter(c => CODE_RE.test(c)); } catch { return []; } };
+const roomCodes = () => store.listRooms();
 
 function openRooms() {
   const open = [];
@@ -321,14 +346,14 @@ function roomOpen(code) {
 function updateOrch(code, fn) {
   if (!roomExists(code)) throw new Error(`no room "${code}"`);
   let rec = null;
-  withLock(membersFile(code) + '.lock', () => {
-    const members = readMembers(code);
+  membersOf(code).update(members => {
+    rec = null;
     const patch = fn(members.orch || null, members);
-    if (!patch) return;
+    if (!patch) return null;
     rec = { name: 'orch', role: 'orch', pid: null, ...(members.orch || {}), ...patch };
     for (const k of Object.keys(rec)) if (rec[k] === undefined) delete rec[k];
     members.orch = rec;
-    writeJsonAtomic(membersFile(code), members);
+    return members;
   });
   return rec;
 }
@@ -340,17 +365,16 @@ function writePresence(code, name, state, detail) {
   if (!NAME_RE.test(String(name)) || !PRESENCE_STATES.includes(state)) return false;
   const v = { state, at: new Date().toISOString() };
   if (detail) v.detail = String(detail).slice(0, PRESENCE_DETAIL_MAX);
-  try { writeJsonAtomic(path.join(presenceDir(code), `${name}.json`), v); return true; } catch { return false; }
+  try { store.open(code).kv.set(`presence/${name}`, v); return true; } catch { return false; }
 }
 
 function readPresence(code) {
   const out = {};
-  let files;
-  try { files = fs.readdirSync(presenceDir(code)); } catch { return out; }
-  for (const f of files) {
-    if (!f.endsWith('.json')) continue;
-    const name = f.slice(0, -5);
-    const v = readJson(path.join(presenceDir(code), f));
+  let kv;
+  try { kv = store.open(code).kv; } catch { return out; }
+  for (const key of kv.list('presence/')) {
+    const name = key.slice('presence/'.length);
+    const v = kv.get(key);
     if (NAME_RE.test(name) && v && PRESENCE_STATES.includes(v.state)) out[name] = v;
   }
   return out;
@@ -359,7 +383,7 @@ function readPresence(code) {
 module.exports = {
   NAME_RE, CODE_RE, RESERVED, ANIMALS, PRESENCE_STATES,
   home, roomDir, newCode, roomExists, openRooms, orphanRooms, roomOpen, roomClosing, address,
-  readMembers, readMembersFile, join, leave, rebindSession, setOrch, updateOrch, liveMembers, seatAlive,
+  readMembers, join, leave, rebindSession, setOrch, updateOrch, liveMembers, seatAlive, heartbeat, leaseFresh,
   isAlive, claudePid,
   resolveByPid, resolveBySession, resolveSelf, lastSeat,
   writePresence, readPresence,

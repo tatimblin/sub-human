@@ -158,9 +158,7 @@ function context({ screens, home, room }) {
   /** The room's hash chain, validated by the plugin's own room lib. */
   function chainOk() {
     process.env.SUB_HUMAN_HOME = home;
-    const lib = paths.pluginLib('room.js');
-    lib.bind(code);
-    const r = lib.validateChain();
+    const r = paths.pluginLib('room.js').open(code).validateChain();
     return { ok: !!r.ok, evidence: r.ok ? `validateChain ok over ${r.count} entries` : `chain breaks at #${r.badAt} (${r.count} entries)` };
   }
   /** Approximate cost: tokens from every transcript (main + subagents) of the seats and the orch, at list prices (baselines.json prices). */

@@ -55,7 +55,7 @@ test('row-map: orch participant rows (name from the prompt even when the descrip
   assert.deepEqual(Object.keys(m).sort(), ['a1', 'a2']);
   assert.deepEqual({ ...m.a1, at: undefined }, { kind: 'participant', name: 'alice', parent: null, at: undefined });
   assert.equal(m.a2.name, 'bob');
-  assert.ok(fs.existsSync(path.join(rows.rowsDir(code), 'sid-orch.json')));
+  assert.ok(Object.keys(rows.sessionRowMap(code, 'sid-orch')).length, 'the orch session has its own map');
 });
 
 test('row-map: a member\'s room row and its nested children (parent = the spawning room agent)', () => {

@@ -11,31 +11,32 @@
  *             written once, when every approver has answered.
  *
  *   create(me, {text|path, approvers?}) -> {hash, approvers, path, entry, again}
- *       Stores <roomDir>/plans/<hash>.md (hash = sha256/12 of the bytes) and appends `proposal`. approvers
+ *       Stores the blob plans/<hash>.md (hash = sha256/12 of the bytes; lib/room/store.js blobs) and appends
+ *       `proposal` with path = that room-relative ref (older entries hold an absolute path). approvers
  *       default to the humans present (not orch, not left). An identical open proposal is not re-appended.
  *       Throws ProposalError (message for the model) on bad input.
  *   Reading the log goes through lib/consent.js fold (retracted entries out, latest proposal per hash, the
  *   latest answer per person, an objection voids a signoff), the same fold stateLine, lane() and the rows read.
  *   proposals(entries) -> [p]      the latest proposal entry per hash, as {id, hash, approvers, path, from}
  *   pendingFor(me, entries?) -> [p] proposals naming me that I have not answered, undecided, not retracted
- *   card(p) -> {questions:[…]}     the AskUserQuestion input (Not yet first, Agree, Object)
- *   cardFor(ps) -> {questions:[…]} one question per proposal (at most 4)
+ *   card(p, code) -> {questions:[…]}     the AskUserQuestion input (Not yet first, Agree, Object)
+ *   cardFor(ps, code) -> {questions:[…]} one question per proposal (at most 4)
  *   question(hash) -> "Agree to proposal <hash>?";  QUESTION_RE parses it back
- *   preview(p) -> string           the full text if <= PREVIEW_MAX chars and <= PREVIEW_LINES lines, else
+ *   preview(p, code) -> string     the full text if <= PREVIEW_MAX chars and <= PREVIEW_LINES lines, else
  *                                  a summary plus the plan file's path
- *   matrix(p, entries?) -> {hash, approvers, answers:{name: {id, kind}|null}, agreed, objected, missing, complete, …}
+ *   matrix(p, entries) -> {hash, approvers, answers:{name: {id, kind}|null}, agreed, objected, missing, complete, …}
  *   record(me, p, {choice:'Agree'|'Object', notes?}) -> {entry, decision}|{stale:true}
  *       under a lock: appends the answer, then the decision when the matrix is complete. Idempotent: a person
  *       who already answered that hash (or a decided / unknown one) is stale; one answer per person.
  *   title(code, hash, entry?) -> string  the stored plan's first line (else the entry's title text, else '')
  *   titleOf(text) -> string
- *   decision(hash, entries?) -> Entry|null
+ *   decision(hash, entries) -> Entry|null
  *   humans(code) -> [name]         members present who can approve
- *   viewable(p, code?) -> bool     the plan dialog can show it: stored, <= VIEW_MAX chars, no control or bidi
+ *   viewable(p, code) -> bool      the plan dialog can show it: stored, <= VIEW_MAX chars, no control or bidi
  *                                  characters (the dialog withholds approval for those); else the card
  *   reminder(p, name) -> string    the re-ask wording (a review closed without an answer is fine to reopen)
- *   planPath(code, hash), read(code, hash) -> string|null
- * The plan-view review state (members/NAME/review.json): readReview, writeReview, clearReview, withReview(me, fn)
+ *   planRef(hash) -> "plans/<hash>.md", planPath(code, hash) -> a local file for it, read(code, hash) -> string|null
+ * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
  */
 
@@ -45,8 +46,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const identity = require('./identity.js');
 const room = require('./room.js');
-const { withLock } = require('./lock.js');
-const { writeFileAtomic, writeJsonAtomic, readJson } = require('./io.js');
+const { writeFileAtomic } = require('./io.js');
 const { clip } = require('./text.js');
 const config = require('./config.js');
 const { fold } = require('./consent.js');
@@ -66,20 +66,23 @@ class ProposalError extends Error {}
 const refuse = m => { throw new ProposalError(m); };
 
 const hash12 = buf => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 12);
-const planPath = (code, hash) => path.join(identity.roomDir(code), 'plans', `${hash}.md`);
+/** A plan's ref in the room's blob store: room-relative, so the room can live anywhere (lib/room/store.js blobs). */
+const planRef = hash => `plans/${hash}.md`;
+const blobs = code => room.open(code).store.blobs;
+/** Where a person can open the stored plan (a local file; the ref when the store has none). */
+const planPath = (code, hash) => blobs(code).localPath(planRef(hash)) || planRef(hash);
 function read(code, hash) {
   if (!HASH_RE.test(String(hash))) return null;
-  try { return fs.readFileSync(planPath(code, hash), 'utf8'); } catch { return null; }
+  try { const b = blobs(code).get(planRef(hash)); return b == null ? null : b.toString('utf8'); } catch { return null; }
 }
 function store(code, buf) {
   const hash = hash12(buf);
-  const file = planPath(code, hash);
-  if (!fs.existsSync(file)) writeFileAtomic(file, buf);
+  const b = blobs(code);
+  if (!b.has(planRef(hash))) b.put(planRef(hash), buf);
   return hash;
 }
 
-const bind = me => { if (me && me.code && !process.env.SUB_HUMAN_TEST_ROOM_DIR) room.bind(me.code); };
-const entriesOf = (me, entries) => { if (entries) return entries; bind(me); return room.readAll(); };
+const entriesOf = (me, entries) => entries || room.open(me.code).readAll();
 
 function humans(code) {
   return Object.values(identity.readMembers(code) || {})
@@ -90,10 +93,10 @@ function humans(code) {
 const shape = p => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
 const proposals = entries => [...fold(entries).proposals.values()].map(shape);
 
-const decision = (hash, entries = room.readAll()) => fold(entries).decisions.get(hash) || null;
+const decision = (hash, entries) => fold(entries).decisions.get(hash) || null;
 
 /** The answer matrix over p.approvers (the latest answer per person wins; an objection voids a signoff). */
-const matrix = (p, entries) => fold(entries || room.readAll()).matrix(p.hash, p.approvers);
+const matrix = (p, entries) => fold(entries).matrix(p.hash, p.approvers);
 
 function pendingFor(me, entries) {
   if (!me || !me.name) return [];
@@ -133,17 +136,20 @@ function summary(text) {
   return out.join('\n') + (rest > 0 ? `\n… (${rest} more lines)` : '');
 }
 
-function preview(p, code = room.code()) {
-  const file = p.path || planPath(code, p.hash);
+/** p.path: the stored ref (room-relative; older entries hold an absolute path, read by its plans/ name). */
+function preview(p, code) {
+  const b = blobs(code);
+  const ref = b.ref(p.path) || planRef(p.hash);
+  const file = b.localPath(ref) || ref;
   let text = null;
-  try { text = fs.readFileSync(file, 'utf8'); } catch { /* missing */ }
+  try { const buf = b.get(ref); text = buf == null ? null : buf.toString('utf8'); } catch { /* missing */ }
   if (text == null) return `(proposal ${p.hash}: the text is missing; expected at ${file})`;
   if (text.length <= PREVIEW_MAX && text.split('\n').length <= PREVIEW_LINES) return text;
   return `${summary(text)}\n\nFull text: ${file}`;
 }
 
-function cardQuestion(p) {
-  const pv = preview(p);
+function cardQuestion(p, code) {
+  const pv = preview(p, code);
   const desc = {
     'Not yet': 'Decide later; nothing is recorded',
     Agree: `Sign off on ${p.hash}${p.from ? ` from ${p.from}` : ''}`,
@@ -152,10 +158,10 @@ function cardQuestion(p) {
   return { question: question(p.hash), header: 'Consent', multiSelect: false,
     options: ['Not yet', 'Agree', 'Object'].map(label => ({ label, description: desc[label], preview: pv })) };
 }
-const cardFor = ps => ({ questions: ps.slice(0, 4).map(cardQuestion) });
-const card = p => cardFor([p]);
+const cardFor = (ps, code) => ({ questions: ps.slice(0, 4).map(p => cardQuestion(p, code)) });
+const card = (p, code) => cardFor([p], code);
 
-function viewable(p, code = room.code()) {
+function viewable(p, code) {
   const t = read(code, p.hash);
   return t != null && t.length <= VIEW_MAX && !UNSAFE_RE.test(t.replace(/\r\n/g, '\n'));
 }
@@ -172,7 +178,7 @@ function expand(p, cwd) {
 
 function create(me, args = {}, { cwd } = {}) {
   if (!me || !me.code || !me.name) refuse('not in a room; run /sub-human');
-  bind(me);
+  const r = room.open(me.code);
   const { text, path: file } = args;
   if ((text == null) === (file == null)) refuse('give exactly one of text or path');
   let buf;
@@ -205,12 +211,13 @@ function create(me, args = {}, { cwd } = {}) {
 
   const hash = store(me.code, buf);
   const stored = planPath(me.code, hash);
-  const entries = room.readAll();
+  const entries = r.readAll();
   const open = proposals(entries).find(p => p.hash === hash);
   if (open && !decision(hash, entries) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
     return { hash, approvers, path: stored, entry: entries.find(e => e.id === open.id), again: true };
   }
-  const entry = room.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers, path: stored },
+  // the entry stores the room-relative ref; `path` returned is where the proposer can open it
+  const entry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers, path: planRef(hash) },
     { via: 'agent', from: me.name });
   return { hash, approvers, path: stored, entry, again: false };
 }
@@ -221,12 +228,11 @@ function choiceOf(c) {
 }
 
 function record(me, p, answer = {}) {
-  bind(me);
+  const r = room.open(me.code);
   const choice = choiceOf(answer.choice);
   if (choice !== 'Agree' && choice !== 'Object') return { stale: true, why: 'no choice' };
-  const lock = path.join(room.dir(), 'proposal.lock');
-  return withLock(lock, () => {
-    const entries = room.readAll();
+  return r.store.lock('proposal', () => {
+    const entries = r.readAll();
     const f = fold(entries);
     const cur = f.proposals.get(p.hash);
     // Idempotent: one answer per person per proposal. A card and a plan view open at once, or a reopened card,
@@ -238,7 +244,7 @@ function record(me, p, answer = {}) {
     const kind = choice === 'Agree' ? 'signoff' : 'objection';
     const e = { kind, proposal_hash: cur.hash };
     if (notes !== undefined) e.text = notes; // byte-exact
-    const entry = room.append(e, { via: 'human', from: me.name });
+    const entry = r.append(e, { via: 'human', from: me.name });
     const m = matrix(cur, [...entries, entry]);
     let dec = null;
     if (m.complete) {
@@ -246,7 +252,7 @@ function record(me, p, answer = {}) {
         ? `objected: ${m.objected.join(', ')}${m.agreed.length ? ` · agreed: ${m.agreed.join(', ')}` : ''} (proposal ${cur.hash})`
         : `agreed: ${m.agreed.join(', ')} (proposal ${cur.hash})`;
       const refs = cur.approvers.map(n => m.answers[n].id);
-      dec = room.append({ kind: 'decision', text, proposal_hash: cur.hash, refs: [cur.id, ...refs] },
+      dec = r.append({ kind: 'decision', text, proposal_hash: cur.hash, refs: [cur.id, ...refs] },
         { via: 'system', from: 'room', system: true });
     }
     return { entry, decision: dec };
@@ -255,16 +261,17 @@ function record(me, p, answer = {}) {
 
 // ---------- the plan-view review state (hooks/consent.js, hooks/session-restore.js) ----------
 /**
- * <room>/members/NAME/review.json: {phase, mode, at, hash?, from?, file?, backup?, restored?, tool_use_id?, …}.
+ * members/NAME/review: {phase, mode, at, hash?, from?, file?, backup?, restored?, tool_use_id?, …}.
  * `backup` is the session plan file's text before the review overwrote it (null: there was none), recorded
  * BEFORE the overwrite, so a crash between the two never loses the person's own plan.
  */
-const reviewPath = me => path.join(identity.roomDir(me.code), 'members', me.name, 'review.json');
-const readReview = me => readJson(reviewPath(me), null);
-const writeReview = (me, st) => writeJsonAtomic(reviewPath(me), st, { compact: true });
-function clearReview(me) { try { fs.unlinkSync(reviewPath(me)); } catch { /* absent */ } }
-/** Every read-modify-write of review.json runs under this lock (hooks of one session can overlap). */
-const withReview = (me, fn) => withLock(reviewPath(me) + '.lock', fn, { timeoutMs: config.REVIEW_LOCK_TIMEOUT_MS });
+const reviewKey = me => `members/${me.name}/review`;
+const kvOf = me => room.open(me.code).store.kv;
+const readReview = me => kvOf(me).get(reviewKey(me), null);
+const writeReview = (me, st) => kvOf(me).set(reviewKey(me), st, { compact: true });
+function clearReview(me) { kvOf(me).delete(reviewKey(me)); }
+/** Every read-modify-write of the review state runs under this lock (hooks of one session can overlap). */
+const withReview = (me, fn) => kvOf(me).lock(reviewKey(me), fn, { timeoutMs: config.REVIEW_LOCK_TIMEOUT_MS });
 
 /** Put the session plan file back as it was before the review (atomically); marks st.restored. */
 function restorePlan(st) {
@@ -300,7 +307,7 @@ function restoreStale(me, { force = false, now = Date.now() } = {}) {
 
 module.exports = {
   QUESTION_RE, ProposalError,
-  reviewPath, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
+  readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
   create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, record, decision, humans, reminder,
-  planPath, read, hash12, title, titleOf,
+  planPath, planRef, read, hash12, title, titleOf,
 };

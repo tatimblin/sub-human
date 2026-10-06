@@ -253,3 +253,29 @@ test('identity: updateOrch merges a patch under the lock, writes nothing for nul
   assert.deepEqual(r, { name: 'orch', role: 'orch', pid: null, job: 'abcd1234' });
   assert.throws(() => identity.updateOrch('nope-0000', () => ({})), /no room/);
 });
+
+test('identity: the seat lease: join stamps seen_at, heartbeat renews it (throttled, own seat only), seatAlive uses it only without a pid', async () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  const config = require(path.join(h.LIB, 'config.js'));
+  const me = identity.resolveByPid(process.pid);
+  const seen = () => identity.readMembers(code).alice.seen_at;
+  const t0 = Date.parse(seen());
+  assert.ok(Number.isFinite(t0), 'join stamps seen_at');
+  assert.equal(identity.heartbeat(me, t0 + 1000), false, 'renewed at most every SEAT_BEAT_MS');
+  assert.equal(identity.heartbeat(me, t0 + config.SEAT_BEAT_MS + 1), true);
+  assert.equal(Date.parse(seen()), t0 + config.SEAT_BEAT_MS + 1);
+  assert.equal(identity.heartbeat({ ...me, pid: 1 }, t0 + 10 * config.SEAT_BEAT_MS), false, 'another pid does not renew this seat');
+  // pid first: a live pid with a stale lease is alive; a dead pid with a fresh lease is not
+  const m = identity.readMembers(code).alice;
+  assert.equal(identity.seatAlive({ ...m, seen_at: new Date(0).toISOString() }), true);
+  assert.equal(identity.seatAlive({ ...m, pid: await h.deadPid(), seen_at: new Date().toISOString() }), false);
+  // no pid info (a seat kept by a store off this machine): the lease decides
+  const remote = { name: 'zed', role: 'member', pid: null };
+  assert.equal(identity.seatAlive({ ...remote, seen_at: new Date().toISOString() }), true);
+  assert.equal(identity.seatAlive({ ...remote, seen_at: new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString() }), false);
+  assert.equal(identity.seatAlive(remote), false, 'no pid and no lease: not alive (an orch record before it binds)');
+  assert.equal(identity.seatAlive({ ...remote, seen_at: new Date().toISOString(), left_at: new Date().toISOString() }), false);
+  identity.leave(code, 'alice');
+  assert.equal(identity.heartbeat(me, Date.now() + 10 * config.SEAT_BEAT_MS), false, 'a left seat is not renewed');
+});

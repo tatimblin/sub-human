@@ -31,7 +31,7 @@
  *                                     rejects with {code:'CANCELLED'}
  *   progress(progressToken, progress, message)   notifications/progress (no-op without a token)
  *   onCancel(requestId, fn)           fn(reason) when the client cancels that tools/call (once)
- *   whoami()                          resolveByPid(process.ppid), binds room.js; me or null
+ *   whoami()                          resolveByPid(process.ppid); me or null (each call opens me.code's Room)
  *   clientCaps()                      the client capabilities from initialize (e.g. .elicitation)
  *   room, identity, proposal          the libs
  *   text(s, isError)                  an MCP text result
@@ -119,9 +119,7 @@ function onCancel(requestId, fn) {
 // ---------- identity ----------
 function whoami() {
   const pid = process.ppid > 1 ? process.ppid : null;
-  const me = pid ? identity.resolveByPid(pid) : null;
-  if (me) room.bind(me.code);
-  return me;
+  return pid ? identity.resolveByPid(pid) : null;
 }
 
 let clientCapabilities = {};
@@ -190,18 +188,19 @@ function post(me, args) {
   const entry = { kind, text: body };
   if (to !== undefined) entry.to = to;
   if (refs !== undefined) entry.refs = refs;
-  return json(room.append(entry, { via: 'agent', from: me.name }));
+  return json(room.open(me.code).append(entry, { via: 'agent', from: me.name }));
 }
 
 function read(me, args) {
   if (args.ids !== undefined) {
     const ids = Array.isArray(args.ids) ? args.ids : [args.ids];
     if (!ids.length || !ids.every(i => Number.isInteger(Number(i)) && Number(i) > 0)) return text('ids must be positive integers', true);
-    return json(room.readById(ids.map(Number)));
+    return json(room.open(me.code).readById(ids.map(Number)));
   }
+  const r = room.open(me.code);
   const cursor = `mcp-${me.name}`;
-  const all = room.readAfter(room.getCursor(cursor));
-  if (all.length) room.setCursor(cursor, all.at(-1).id);
+  const all = r.readAfter(r.getCursor(cursor));
+  if (all.length) r.setCursor(cursor, all.at(-1).id);
   const unseen = all.filter(e => !(e.from === me.name && e.via === 'agent'));
   return json(unseen.length > READ_MAX ? unseen.slice(-READ_MAX) : unseen);
 }

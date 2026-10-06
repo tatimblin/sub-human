@@ -81,6 +81,11 @@ module.exports = {
   ORCH_ORPHAN_MS: 60_000,          // SUB_HUMAN_ORCH_ORPHAN_MS
   // A seat's stored pid start time must match the live pid's within this (ps lstart has 1 s resolution).
   PID_START_SLACK_S: 2,
+  // The seat lease (identity.heartbeat / seatAlive): the tail's health tick and the hold server renew members'
+  // seen_at at most every SEAT_BEAT_MS; a seat with no pid to check (a remote store) is alive while seen_at is
+  // younger than SEAT_LEASE_MS. Locally the pid and its start time stay the primary check.
+  SEAT_BEAT_MS: 30_000,
+  SEAT_LEASE_MS: 120_000,
 
   // ---------- hooks ----------
   FORGERY_WINDOW_MS: 1200,         // SUB_HUMAN_FORGERY_MS: how long at-room's checker polls the transcript

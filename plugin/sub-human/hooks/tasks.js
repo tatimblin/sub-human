@@ -6,7 +6,7 @@
  *
  * PostToolUse TaskCreate|TaskUpdate (mirror): appends a `task` entry via system
  *   {op: add|claim|release|done|update|delete, id, subject, owner, status, blockedBy, req} (the task's whole
- *   state after the call), then rewrites <room>/tasks.json as lib/tasks.js fold() of every `task` entry, so the
+ *   state after the call), then rewrites the room's task mirror (tasks.json) as lib/tasks.js fold() of every `task` entry, so the
  *   file is derivable from the log alone. A refused call (tool_response.success false, or an error) is skipped.
  *   Fields come from tool_input and tool_response; what they leave unknown is read from the orch's native task
  *   file (cc.taskFile; read only, never written). req: tool_input.metadata.req, then the task file's
@@ -28,7 +28,6 @@ const room = require(path.join(LIB, 'room.js'));
 const tasks = require(path.join(LIB, 'tasks.js'));
 const cc = require(path.join(LIB, 'cc.js'));
 const { readJson } = require(path.join(LIB, 'io.js'));
-const { withLock } = require(path.join(LIB, 'lock.js'));
 
 function orchRoom(input) {
   const me = resolveSeat(input);
@@ -69,9 +68,9 @@ function mirror(code, input) {
   if (!/^\d+$/.test(id)) return;
   if (created && internal(inp)) return;
 
-  room.bind(code);
-  withLock(tasks.listPath(code) + '.lock', () => {
-    const log = room.readAll();
+  const r = room.open(code);
+  tasks.withList(code, () => {
+    const log = r.readAll();
     const prev = tasks.fold(log).find(t => t.id === id) || null;
     const native = readNative(code, id);
     if (internal(native)) return;
@@ -97,16 +96,15 @@ function mirror(code, input) {
     const t = { op, id, subject: next.subject, owner: next.owner, status: op === 'delete' ? 'deleted' : next.status,
       blockedBy: next.blockedBy || [], ...(req ? { req } : {}) };
     const text = `#${t.id} "${t.subject}" ${t.op}${t.owner ? ` · ${t.owner}` : ''} · ${t.status}${t.req ? ` (req #${t.req})` : ''}`;
-    room.append({ kind: 'task', text, ...t }, { via: 'system', from: 'orch', system: true });
-    tasks.refold(code, room.readAll());
+    r.append({ kind: 'task', text, ...t }, { via: 'system', from: 'orch', system: true });
+    tasks.refold(code, r.readAll());
   });
 }
 
 function gateHook(code, input) {
   const id = String(input.task_id || '');
   const native = readNative(code, id) || {};
-  room.bind(code);
-  const log = room.readAll();
+  const log = room.open(code).readAll();
   const m = tasks.fold(log).find(t => t.id === id) || {};
   const task = {
     id,

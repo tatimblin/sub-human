@@ -59,7 +59,7 @@ function create(ctx = {}) {
     }
     const task = { op: r.op, owner };
     for (const k of ['id', 'subject', 'detail', 'evidence']) if (r[k] !== undefined) task[k] = r[k];
-    room.append({ kind: 'task_req', text: tasks.requestText(task), ...task }, { via: 'agent', from: me.name });
+    room.open(me.code).append({ kind: 'task_req', text: tasks.requestText(task), ...task }, { via: 'agent', from: me.name });
     return text('queued; the orch applies it');
   }
 

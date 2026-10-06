@@ -53,7 +53,7 @@ test('consent: Pre rewrites only a call that names my pending proposal; model an
 
 test('consent: AFK, followUp, no answers, Not yet and a model-only question record nothing', () => {
   const { w, hash } = world();
-  const card = proposal.card({ hash, approvers: ['alice', 'bob'] });
+  const card = w.lib(() => proposal.card({ hash, approvers: ['alice', 'bob'] }, w.code));
   const cases = [
     { ...card, answers: {}, annotations: {}, afkTimeoutMs: 5000 },
     { ...card, answers: { [Q(hash)]: 'Agree' }, afkTimeoutMs: 5000 },
@@ -77,7 +77,7 @@ test('consent: AFK, followUp, no answers, Not yet and a model-only question reco
 
 test('consent: Agree/Object recorded via=human with byte-exact notes; stale hashes dropped; decision only when complete', () => {
   const { w, hash } = world();
-  const card = proposal.card({ hash, approvers: ['alice', 'bob'] });
+  const card = w.lib(() => proposal.card({ hash, approvers: ['alice', 'bob'] }, w.code));
   const r = w.hook('consent', postAsk({ ...card, answers: { [Q(hash)]: 'Agree' }, annotations: { [Q(hash)]: { preview: 'x' } } }), { as: 'alice' });
   assert.ok(ctx(r).startsWith('Recorded. The room shows it (and any note) already: post nothing about it. Agreeing is not a go-ahead to build'), ctx(r));
   let a = answers(w);
@@ -115,7 +115,7 @@ test('consent: all agree gives an "agreed" decision; matrix and pendingFor follo
   assert.deepEqual(w.lib(() => proposal.pendingFor({ code: w.code, name: 'alice' })), []);
   w.hook('consent', postAsk({ answers: { [Q(hash)]: 'Agree' } }), { as: 'bob' });
   assert.match(decisions(w)[0].text, /^agreed: bob/);
-  const m = w.lib(() => proposal.matrix({ hash, approvers: ['bob'] }));
+  const m = w.lib(() => proposal.matrix({ hash, approvers: ['bob'] }, w.entries()));
   assert.equal(m.complete, true);
   assert.deepEqual(m.agreed, ['bob']);
   assert.deepEqual(w.lib(() => proposal.pendingFor(me)), []);
@@ -124,7 +124,7 @@ test('consent: all agree gives an "agreed" decision; matrix and pendingFor follo
 test('consent: preview is the full text up to 2000 chars and 20 lines, else a summary plus the path', () => {
   const w = new World({ alice: 'act', bob: 'sleep' });
   const me = { code: w.code, name: 'alice' };
-  const pv = text => w.lib(() => { const r = proposal.create(me, { text }); return { p: proposal.preview({ hash: r.hash, path: r.path }), path: r.path }; });
+  const pv = text => w.lib(() => { const r = proposal.create(me, { text }); return { p: proposal.preview({ hash: r.hash, path: r.entry.path }, me.code), path: r.path }; });
   const exact = 'a'.repeat(2000);
   assert.equal(pv(exact).p, exact);
   const over = pv('b'.repeat(2001));

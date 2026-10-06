@@ -5,11 +5,12 @@
 // hook payload's session_id first, then from CLAUDE_PID (Claude Code sets it for every hook it runs)
 // by a direct lookup of the registered pid: /clear changes the session_id but not the claude process.
 //
-//   readInput({strict = true}?) -> object   the hook's stdin JSON ({} when empty). strict: a parse error
-//       throws (run() reports it); otherwise it gives {}.
+//   readInput({strict = true}?) -> object   the hook's stdin JSON (lib/io.js readInput; {} when empty). strict:
+//       a parse error throws (run() reports it); otherwise it gives {}.
 //   resolveSeat(input, {ancestry}?) -> {code, name, role, session_id, pid, address} | null   (see below)
-//   whoami(input)      resolveSeat, then binds room.js to the seat's room
+//   whoami(input)      resolveSeat (hooks open the room explicitly: room.open(me.code))
 //   run(body, onError?), logError(err, where?), out, pre, deny, context   output helpers
+//   capture(fn) -> {outputs, error}   out() collects instead of writing while fn runs (hooks/prompt.js)
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -19,8 +20,8 @@ const LIB = path.join(PLUGIN_ROOT, 'lib');
 const identity = require(path.join(LIB, 'identity.js'));
 const room = require(path.join(LIB, 'room.js'));
 const rows = require(path.join(LIB, 'rows.js'));
-const { readJson, writeJsonAtomic } = require(path.join(LIB, 'io.js'));
 const text = require(path.join(LIB, 'text.js'));
+const { readInput } = require(path.join(LIB, 'io.js'));
 const config = require(path.join(LIB, 'config.js'));
 // Every hook process may write via=human (a person's own typed words or card answers): install the seat-key
 // signer (hooks/seat-key.js). The MCP server and the CLI never load this file, so they cannot.
@@ -28,17 +29,16 @@ require('./seat-key.js').arm();
 
 const CAP = config.CONTEXT_CAP;
 
-function readInput({ strict = true } = {}) {
-  let raw = '';
-  try { raw = fs.readFileSync(0, 'utf8'); } catch { /* no stdin */ }
-  if (!raw.trim()) return {};
-  try { return JSON.parse(raw) || {}; } catch (e) {
-    if (strict) throw e;
-    return {};
-  }
-}
 
-const out = obj => { if (obj) process.stdout.write(JSON.stringify(obj) + '\n'); };
+let sink = null; // capture(): outputs collected instead of written (hooks/prompt.js merges two handlers)
+const out = obj => { if (!obj) return; if (sink) sink.push(obj); else process.stdout.write(JSON.stringify(obj) + '\n'); };
+/** Run fn with out() collecting into an array instead of stdout; returns that array (also when fn throws: err). */
+function capture(fn) {
+  const prev = sink;
+  const got = [];
+  sink = got;
+  try { fn(); return { outputs: got, error: null }; } catch (error) { return { outputs: got, error }; } finally { sink = prev; }
+}
 
 /** PreToolUse decisions; the reason reaches the model. */
 const pre = (decision, reason, extra = {}) => out({
@@ -92,25 +92,19 @@ function resolveSeat(input = {}, { ancestry = false } = {}) {
   return me && me.code && me.name ? me : null;
 }
 
-/** resolveSeat, and bind room.js to the seat's room. */
-function whoami(input = {}) {
-  const me = resolveSeat(input);
-  if (me) room.bind(me.code);
-  return me;
-}
+/** resolveSeat (a hook then opens its room explicitly: room.open(me.code)). */
+const whoami = (input = {}) => resolveSeat(input);
 
 /** Best-effort presence write for the resolved member. */
 function presence(me, state, detail) {
   try { if (me) identity.writePresence(me.code, me.name, state, detail); } catch { /* best-effort */ }
 }
 
-// ---------- per-member state under rooms/<code>/members/<name>/ ----------
-const memberDir = me => path.join(identity.roomDir(me.code), 'members', me.name);
-const statePath = (me, key) => path.join(memberDir(me), key + '.json');
-
-const readState = (me, key) => readJson(statePath(me, key), null);
-const writeState = (me, key, value) => writeJsonAtomic(statePath(me, key), value, { compact: true });
-function clearState(me, key) { try { fs.unlinkSync(statePath(me, key)); } catch { /* absent */ } }
+// ---------- per-member state: the room documents members/<name>/<key> (lib/room/store.js kv) ----------
+const stateKv = me => room.open(me.code).store.kv;
+const readState = (me, key) => stateKv(me).get(`members/${me.name}/${key}`, null);
+const writeState = (me, key, value) => stateKv(me).set(`members/${me.name}/${key}`, value, { compact: true });
+function clearState(me, key) { try { stateKv(me).delete(`members/${me.name}/${key}`); } catch { /* absent */ } }
 
 // ---------- the mechanics block the join / restore hooks inject (<= BLOCK_MAX chars with 5 members) ----------
 const BLOCK_MAX = config.BLOCK_MAX;
@@ -216,7 +210,7 @@ function isUnder(p, dir, base = process.cwd()) {
 
 module.exports = {
   identity, room, rows, BLOCK_MAX,
-  readInput, out, pre, deny, context, run, logError,
+  readInput, out, capture, pre, deny, context, run, logError,
   resolveSeat, whoami, presence,
   readState, writeState, clearState,
   clip, contextBlock, seatTitle, isUnder,

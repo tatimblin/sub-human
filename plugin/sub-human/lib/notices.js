@@ -22,12 +22,10 @@
  *       last ROW_MS (2 min)
  *   shown(code, name) -> Set(ids), markShown(code, name, ids, via)   what was already shown to this member, and
  *       how: via is required, "monitor" (bin/sub-human tail) or "prompt" (at-room.js).
- *       <room>/rows/notices-<name>.json {shown, log: [{id, via, at}]}
+ *       the room document rows/notices-<name> {shown, log: [{id, via, at}]} (lib/room/store.js kv)
  */
-const path = require('node:path');
-const identity = require('./identity.js');
-const { readJson, writeJsonAtomic } = require('./io.js');
 const config = require('./config.js');
+const room = require('./room.js');
 
 const LEAVE_SETTLE_MS = config.LEAVE_SETTLE_MS;
 const ROW_MS = config.ROW_NOTICE_MS;
@@ -63,21 +61,22 @@ function rowSegment(es, viewer, { now = Date.now() } = {}) {
 }
 
 // ---------- what was already shown to a member ----------
-const shownFile = (code, name) => path.join(identity.roomDir(code), 'rows', `notices-${name}.json`);
+const kvOf = code => room.open(code).store.kv;
+const shownKey = name => `rows/notices-${name}`;
 function shown(code, name) {
-  const v = readJson(shownFile(code, name), null);
+  const v = kvOf(code).get(shownKey(name), null);
   return new Set(v && Array.isArray(v.shown) ? v.shown : []);
 }
 /** Record ids as shown to name, and how (`via`: "monitor" from bin/sub-human tail, "prompt" from at-room). */
 function markShown(code, name, ids, via) {
   if (!VIAS.includes(via)) throw new Error(`markShown: via must be one of ${VIAS.join(', ')}`);
   if (!ids.length) return;
-  const f = shownFile(code, name);
-  const cur = readJson(f, {}) || {};
+  const kv = kvOf(code);
+  const cur = kv.get(shownKey(name), {}) || {};
   const s = [...new Set([...(Array.isArray(cur.shown) ? cur.shown : []), ...ids])].sort((a, b) => a - b).slice(-config.SHOWN_MAX);
   const at = new Date().toISOString();
   const log = [...(Array.isArray(cur.log) ? cur.log : []), ...ids.map(id => ({ id, via, at }))].slice(-config.SHOWN_MAX);
-  writeJsonAtomic(f, { shown: s, log }, { compact: true });
+  kv.set(shownKey(name), { shown: s, log }, { compact: true });
 }
 
 module.exports = { joinLeave, text, rowSegment, shown, markShown };

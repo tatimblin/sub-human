@@ -255,8 +255,7 @@ async function reap(code, {
     o = c.rec;
   }
   try {
-    room.bind(code);
-    room.append({ kind: 'status', text: CLOSE_TEXT, to: 'orch' }, { via: 'system', from: 'room', system: true });
+    room.open(code).append({ kind: 'status', text: CLOSE_TEXT, to: 'orch' }, { via: 'system', from: 'room', system: true });
   } catch { /* the stop below still ends it */ }
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline && !roomTaskDone(code)) await clock.sleep(Math.min(pollMs, Math.max(0, deadline - Date.now())));

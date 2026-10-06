@@ -68,10 +68,10 @@ function pre(input, me) {
   let hit = named(pending, input.tool_input);
   if (!hit.length) hit = onlyPending(pending, input.tool_input);
   if (!hit.length) return;
-  if (reviewable(input) && hit.every(p => proposal.viewable(p))) {
+  if (reviewable(input) && hit.every(p => proposal.viewable(p, me.code))) {
     return c.deny(`Open it in the plan view instead: call EnterPlanMode, then ExitPlanMode with plan "proposal ${hit[0].hash}". The hooks show ${me.name} the full proposal and restore the mode after.`);
   }
-  c.pre('ask', `room proposal ${hit.map(p => p.hash).join(', ')}`, { updatedInput: proposal.cardFor(hit) });
+  c.pre('ask', `room proposal ${hit.map(p => p.hash).join(', ')}`, { updatedInput: proposal.cardFor(hit, me.code) });
 }
 
 // ---------- the review in the native plan dialog ----------
@@ -119,7 +119,7 @@ const EXIT_HOW = 'call ExitPlanMode now (no plan needed, nothing else first): a 
 function preEnter(input, me) {
   const st = readReview(me);
   if (st && st.phase === 'restore') return c.pre('allow', 'sub-human: restoring the mode after a room review');
-  const pending = proposal.pendingFor(me).filter(p => proposal.viewable(p));
+  const pending = proposal.pendingFor(me).filter(p => proposal.viewable(p, me.code));
   if (!pending.length || !reviewable(input)) return;
   writeReview(me, { phase: 'entering', mode: input.permission_mode, at: Date.now() });
   c.pre('allow', `sub-human: opening room proposal ${pending[0].hash} for ${me.name}`);
@@ -140,7 +140,7 @@ function preExit(input, me) {
   if (st.phase !== 'entering') { st.phase = 'exiting'; return writeReview(me, st); }
   // Only a call that names the proposal (a plan the person asked for must never be swapped for one): the model's own input, from the transcript when the plan file
   // replaced it. A plan the model wrote for its person (plan mode entered for real work) passes through untouched.
-  const pending = proposal.pendingFor(me).filter(p => proposal.viewable(p));
+  const pending = proposal.pendingFor(me).filter(p => proposal.viewable(p, me.code));
   const own = modelInput(input);
   const p = named(pending, [input.tool_input, own])[0] || (JSON.stringify(own || '').length < 300 ? onlyPending(pending, own)[0] : null);
   if (!p) return clearReview(me);
@@ -300,12 +300,13 @@ function postPlan(input, me) {
   const r = input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {};
   if (r.isAgent || typeof r.plan !== 'string' || !r.plan.trim()) return;
   const hash = proposal.hash12(Buffer.from(r.plan, 'utf8'));
-  if (proposal.proposals(c.room.readAll()).some(p => p.hash === hash)) return; // already proposed
+  if (proposal.proposals(c.room.open(me.code).readAll()).some(p => p.hash === hash)) return; // already proposed
   const where = r.filePath ? `{path: ${JSON.stringify(r.filePath)}}` : '{text: <the plan>}';
   c.context('PostToolUse', `sub-human: if ${me.name} wants the room to agree to this plan, call the room propose tool with ${where}. Only on ${me.name}'s word; planning is optional.`);
 }
 
-c.run(input => {
+/** Every event consent handles, for one hook input. */
+function dispatch(input) {
   const me = c.whoami(input);
   if (!me) return;
   const ev = input.hook_event_name, tool = input.tool_name;
@@ -320,4 +321,11 @@ c.run(input => {
   if (/^mcp__plugin_sub-human_room__/.test(tool || '') && ev === 'PreToolUse') return locked(preRoomTool);
   if (ev === 'Stop') return locked(stop);
   if (ev === 'UserPromptSubmit') return locked(prompt);
-}, () => {}); // run() logs the error; never block a question or a plan
+}
+
+/** The UserPromptSubmit handler (hooks/prompt.js runs it after at-room.js's, in one process). */
+const onPrompt = input => dispatch({ ...input, hook_event_name: 'UserPromptSubmit' });
+
+module.exports = { dispatch, onPrompt };
+
+if (require.main === module) c.run(dispatch, () => {}); // run() logs the error; never block a question or a plan

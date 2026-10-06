@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // PostToolUse(Agent|Task): record which panel row a spawned row agent is, for the subagentStatusLine.
-//   <room>/rows/<session_id>.json  {byAgent: {<child agentId>: {kind: participant|room, name, parent, at}}}
+//   the room document rows/<session_id>  {byAgent: {<child agentId>: {kind: participant|room, name, parent, at}}}
 // The child id is tool_response.agentId. When a room agent spawns a participant, the hook input's
 // agent_id / agent_type are the spawning room, so parent = that id (nested row). The model may drop `name`:
 // the participant comes from the prompt ("member: NAME"), else the description. Silent; never blocks.

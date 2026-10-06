@@ -1,6 +1,7 @@
 'use strict';
 /**
- * plugin/sub-human/mcp/hold.js: the `hold` tool, a room-server plug-in (create(ctx) -> {tools, call}).
+ * plugin/sub-human/mcp/hold.js: the `hold` tool, a room-server plug-in (create(ctx) -> {tools, call}): a
+ * HoldServer (one per room server, i.e. per claude session) behind the plug-in contract.
  * It keeps participant rows open in the agent panel at zero tokens (nested under the room row).
  *
  *   hold({member: NAME})   called once by a sub-human:participant row agent. Blocks for as long as this seat is in
@@ -24,7 +25,11 @@
  * settled 8 s; a quick leave + rejoin shows nothing; lib/notices.js), and entries as room.chatLines (no ids).
  * Every progress line ends with HINT ("read-only · talk in main (@room)"): text typed into a row view is not
  * posted (Claude Code queues it for the row agent), so the line says where to talk instead.
- * Liveness goes to <room>/rows/holds-<me>.json (lib/rows.js) for row-guard, join notes and rewake. A room hold
+ * Entries come from the seat's Room (lib/room.js open(code): the store's cached read, re-parsing only appended
+ * bytes). A typed @room post still inside its origin check (room.isYoungProvisional) is held back from the
+ * progress lines and judged again on a later tick (shown once it is old enough, dropped if it was retracted).
+ * Liveness goes to the room document rows/holds-<me> (lib/rows.js) for row-guard, join notes and rewake, and
+ * every BEAT_MS / 2 the seat's lease is renewed (identity.heartbeat). A room hold
  * that returned JOINED/RESPAWN still counts as running for ROOM_GAP_MS (roomUntil) while its agent re-calls,
  * so a join notice read in that gap never invites a second room row (row-guard would deny it in red).
  *
@@ -33,7 +38,6 @@
  *   SUB_HUMAN_HOLD_ROOM_GAP_MS 30000.
  */
 
-const fs = require('node:fs');
 const path = require('node:path');
 const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
 const notices = require(path.join(__dirname, '..', 'lib', 'notices.js'));
@@ -73,193 +77,221 @@ const TOOL = {
   annotations: { readOnlyHint: true, openWorldHint: false },
 };
 
-function create(ctx) {
-  const BEAT_MS = envMs('SUB_HUMAN_HOLD_BEAT_MS', config.HOLD_BEAT_MS);
-  const POLL_MS = envMs('SUB_HUMAN_HOLD_POLL_MS', config.HOLD_POLL_MS);
-  const GRACE_MS = envMs('SUB_HUMAN_HOLD_GRACE_MS', config.HOLD_GRACE_MS);
-  const RESPAWN_MS = envMs('SUB_HUMAN_HOLD_RESPAWN_MS', config.HOLD_RESPAWN_MS);
-  const WHO_MS = envMs('SUB_HUMAN_HOLD_WHO_MS', config.HOLD_WHO_MS);
-  const ROOM_GAP_MS = envMs('SUB_HUMAN_HOLD_ROOM_GAP_MS', config.HOLD_ROOM_GAP_MS);
-  const log = (...a) => { try { ctx.log && ctx.log('hold', ...a); } catch { /* debug only */ } };
-  const text = s => (ctx.text ? ctx.text(s) : { content: [{ type: 'text', text: s }] });
+class HoldServer {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.BEAT_MS = envMs('SUB_HUMAN_HOLD_BEAT_MS', config.HOLD_BEAT_MS);
+    this.POLL_MS = envMs('SUB_HUMAN_HOLD_POLL_MS', config.HOLD_POLL_MS);
+    this.GRACE_MS = envMs('SUB_HUMAN_HOLD_GRACE_MS', config.HOLD_GRACE_MS);
+    this.RESPAWN_MS = envMs('SUB_HUMAN_HOLD_RESPAWN_MS', config.HOLD_RESPAWN_MS);
+    this.WHO_MS = envMs('SUB_HUMAN_HOLD_WHO_MS', config.HOLD_WHO_MS);
+    this.ROOM_GAP_MS = envMs('SUB_HUMAN_HOLD_ROOM_GAP_MS', config.HOLD_ROOM_GAP_MS);
+    this.holds = new Map();     // request id -> hold
+    this.expect = new Map();    // `${code}/${name}` -> {at, n}: announced or expected, no hold seen yet
+    this.respawn = new Map();   // code -> Set(names) waiting for the next room hold
+    this.roomGone = new Map();  // code -> time the room hold was cancelled
+    this.roomEnded = new Map(); // code -> time a room hold last returned (it is re-calling)
+    this.logState = new Map();  // code -> {lastId, count, entries, held: Map(id -> young provisional entry)}
+    this.me = null; this.meAt = 0; this.timer = null; this.seat = null;
+  }
 
-  const holds = new Map();     // request id -> hold
-  const expect = new Map();    // `${code}/${name}` -> {at, n}: announced or expected, no hold seen yet
-  const respawn = new Map();   // code -> Set(names) waiting for the next room hold
-  const roomGone = new Map();  // code -> time the room hold was cancelled
-  const roomEnded = new Map(); // code -> time a room hold last returned (it is re-calling)
-  const logState = new Map();  // code -> {size, lastId, entries}
-  let me = null, meAt = 0, timer = null, seat = null;
+  log(...a) { try { this.ctx.log && this.ctx.log('hold', ...a); } catch { /* debug only */ } }
+  text(s) { return this.ctx.text ? this.ctx.text(s) : { content: [{ type: 'text', text: s }] }; }
+  memberHolds(code) { return [...this.holds.values()].filter(h => h.kind === 'member' && h.code === code); }
+  roomHolds(code) { return [...this.holds.values()].filter(h => h.kind === 'room' && h.code === code); }
+  members(code) { try { return this.ctx.identity.readMembers(code) || {}; } catch { return {}; } }
+  present(ms, name) { return !!(ms[name] && !ms[name].left_at); }
 
-  const memberHolds = code => [...holds.values()].filter(h => h.kind === 'member' && h.code === code);
-  const roomHolds = code => [...holds.values()].filter(h => h.kind === 'room' && h.code === code);
-
-  function readEntries(code) {
-    const file = path.join(ctx.identity.roomDir(code), 'log.jsonl');
-    let size = 0;
-    try { size = fs.statSync(file).size; } catch { /* no log yet */ }
-    const st = logState.get(code);
-    if (st && st.size === size) return { entries: st.entries, fresh: [] };
-    const entries = rows.readLog(code);
-    const prev = st ? st.lastId : (entries.length ? entries.at(-1).id : 0);
-    const fresh = st ? entries.filter(e => e.id > prev) : [];
-    logState.set(code, { size, lastId: entries.length ? entries.at(-1).id : 0, entries });
+  /**
+   * The room's entries, and `fresh`: the ones that arrived since the last call, plus held young provisional posts
+   * that are now old enough (a retracted one is dropped). The first call for a room has no fresh entries.
+   */
+  readEntries(code) {
+    let entries = [];
+    try { entries = room.open(code).readAll().filter(e => e && Number.isInteger(e.id)); } catch { /* no log yet */ }
+    const last = entries.length ? entries.at(-1).id : 0;
+    const st = this.logState.get(code);
+    if (st && st.lastId === last && st.count === entries.length && !st.held.size) return { entries: st.entries, fresh: [] };
+    const held = new Map(), fresh = [];
+    if (st) {
+      const now = Date.now();
+      const gone = st.held.size ? room.open(code).retractedIds(entries) : null;
+      const cand = [...st.held.values(), ...entries.filter(e => e.id > st.lastId)];
+      for (const e of cand) {
+        if (room.isYoungProvisional(e, now)) held.set(e.id, e);
+        else if (!(gone && gone.has(e.id))) fresh.push(e);
+      }
+    }
+    this.logState.set(code, { lastId: last, count: entries.length, entries, held });
     return { entries, fresh };
   }
-  function members(code) {
-    try { return ctx.identity.readMembers(code) || {}; } catch { return {}; }
-  }
-  const present = (ms, name) => !!(ms[name] && !ms[name].left_at);
 
-  function progress(h, msg) {
+  progress(h, msg) {
     if (msg) h.msg = msg;
     h.sentAt = Date.now();
     if (h.token == null) return;
     h.n++;
-    try { ctx.progress(h.token, h.n, h.msg + HINT); } catch { /* client gone */ }
+    try { this.ctx.progress(h.token, h.n, h.msg + HINT); } catch { /* client gone */ }
   }
 
-  function finish(h, s) {
-    if (!holds.has(h.id)) return;
-    holds.delete(h.id);
+  finish(h, s) {
+    if (!this.holds.has(h.id)) return;
+    this.holds.delete(h.id);
     // A room hold returning JOINED/RESPAWN is re-called by its row agent at once: the row is still running.
-    if (h.kind === 'room' && !/^STOP\b/.test(s)) roomEnded.set(h.code, Date.now());
-    else if (h.kind === 'room') roomEnded.delete(h.code);
-    log('RETURN', h.id, s);
-    h.resolve(text(s));
-    saveSeat();
-    if (!holds.size) stopTimer();
+    if (h.kind === 'room' && !/^STOP\b/.test(s)) this.roomEnded.set(h.code, Date.now());
+    else if (h.kind === 'room') this.roomEnded.delete(h.code);
+    this.log('RETURN', h.id, s);
+    h.resolve(this.text(s));
+    this.saveSeat();
+    if (!this.holds.size) this.stopTimer();
   }
 
-  function saveSeat() {
+  saveSeat() {
+    const seat = this.seat;
     if (!seat) return;
-    const ended = roomEnded.get(seat.code);
+    const ended = this.roomEnded.get(seat.code);
     rows.writeHolds(seat.code, seat.name, {
-      members: memberHolds(seat.code).map(h => h.name),
-      room: roomHolds(seat.code).length > 0,
-      roomUntil: ended ? ended + ROOM_GAP_MS : 0,
+      members: this.memberHolds(seat.code).map(h => h.name),
+      room: this.roomHolds(seat.code).length > 0,
+      roomUntil: ended ? ended + this.ROOM_GAP_MS : 0,
     });
   }
 
-  function others(code, ms) {
+  others(code, ms) {
+    const me = this.me;
     return Object.values(ms).filter(m => m && m.name && !m.left_at && m.role !== 'orch' && m.name !== 'orch' && (!me || m.name !== me.name)).map(m => m.name);
   }
 
   /** Names the room should spawn now (JOINED). Marks them announced. */
-  function missing(code, ms, now) {
-    const live = new Set(memberHolds(code).map(h => h.name));
+  missing(code, ms, now) {
+    const live = new Set(this.memberHolds(code).map(h => h.name));
     const out = [];
-    for (const n of others(code, ms)) {
+    for (const n of this.others(code, ms)) {
       const k = `${code}/${n}`;
-      if (live.has(n)) { expect.delete(k); continue; }
-      const x = expect.get(k);
-      if (x && (now - x.at < GRACE_MS || x.n >= ANNOUNCE_MAX)) continue;
-      expect.set(k, { at: now, n: (x ? x.n : 0) + 1 });
+      if (live.has(n)) { this.expect.delete(k); continue; }
+      const x = this.expect.get(k);
+      if (x && (now - x.at < this.GRACE_MS || x.n >= ANNOUNCE_MAX)) continue;
+      this.expect.set(k, { at: now, n: (x ? x.n : 0) + 1 });
       out.push(n);
     }
     return out;
   }
 
-  function roomReply(code, joined) {
+  roomReply(code, joined) {
     const lines = [];
-    const rs = respawn.get(code);
-    if (rs && rs.size) { lines.push(`RESPAWN ${[...rs].join(' ')}`); respawn.delete(code); }
+    const rs = this.respawn.get(code);
+    if (rs && rs.size) { lines.push(`RESPAWN ${[...rs].join(' ')}`); this.respawn.delete(code); }
     if (joined.length) lines.push(`JOINED ${joined.join(' ')}`);
     return lines.join('\n');
   }
 
-  function tick() {
+  tick() {
     const now = Date.now();
-    if (now - meAt >= WHO_MS) {
-      meAt = now;
+    if (now - this.meAt >= this.WHO_MS) {
+      this.meAt = now;
       let cur = null;
-      try { cur = ctx.whoami(); } catch { cur = null; }
+      try { cur = this.ctx.whoami(); } catch { cur = null; }
+      const me = this.me;
       if (me && (!cur || cur.code !== me.code || cur.name !== me.name)) {
-        for (const h of [...holds.values()]) finish(h, `STOP: ${me.name} is no longer in room ${h.code}. ${END}`);
-        me = cur;
+        for (const h of [...this.holds.values()]) this.finish(h, `STOP: ${me.name} is no longer in room ${h.code}. ${END}`);
+        this.me = cur;
         return;
       }
-      if (cur) me = cur;
+      if (cur) this.me = cur;
     }
-    const codes = new Set([...holds.values()].map(h => h.code));
+    const codes = new Set([...this.holds.values()].map(h => h.code));
     for (const code of codes) {
-      const ms = members(code);
-      const { fresh } = readEntries(code);
-      for (const h of [...holds.values()].filter(x => x.code === code)) {
+      const ms = this.members(code);
+      const { fresh } = this.readEntries(code);
+      for (const h of [...this.holds.values()].filter(x => x.code === code)) {
         if (h.kind === 'member') {
           // NAME leaving keeps the row (it reads "left"); only this seat leaving ends it (above).
           const mine = fresh.filter(e => e.from === h.name || e.to === h.name);
-          if (mine.length) progress(h, entryLine(mine.at(-1)));
+          if (mine.length) this.progress(h, entryLine(mine.at(-1)));
         } else {
-          const reply = roomReply(code, missing(code, ms, now));
-          if (reply) { finish(h, reply); continue; }
+          const reply = this.roomReply(code, this.missing(code, ms, now));
+          if (reply) { this.finish(h, reply); continue; }
           const plain = fresh.filter(e => e.kind !== 'member_joined' && e.kind !== 'member_left');
-          if (plain.length) progress(h, entryLine(plain.at(-1)));
-          const move = newMove(h, code, ms, now);
-          if (move) progress(h, move);
+          if (plain.length) this.progress(h, entryLine(plain.at(-1)));
+          const move = this.newMove(h, code, now);
+          if (move) this.progress(h, move);
         }
-        if (holds.has(h.id) && now - h.sentAt >= BEAT_MS) progress(h);
+        if (this.holds.has(h.id) && now - h.sentAt >= this.BEAT_MS) this.progress(h);
       }
     }
-    if (seat && now - (seat.savedAt || 0) >= BEAT_MS / 2) { seat.savedAt = now; saveSeat(); }
+    const seat = this.seat;
+    if (seat && now - (seat.savedAt || 0) >= this.BEAT_MS / 2) {
+      seat.savedAt = now;
+      this.saveSeat();
+      try { this.ctx.identity.heartbeat && this.ctx.identity.heartbeat(this.me || seat, now); } catch (e) { this.log('heartbeat', e.message); }
+    }
   }
 
   /** The newest join / settled leave this room hold has not shown yet, as a notice line (marks them shown). */
-  function newMove(h, code, ms, now) {
-    const { entries } = readEntries(code);
+  newMove(h, code, now) {
+    const { entries } = this.readEntries(code);
+    const me = this.me;
     const fresh = notices.joinLeave(entries, me && me.name, { now }).filter(n => n.settled && !h.moves.has(n.id));
     for (const n of fresh) h.moves.add(n.id);
     const n = fresh.filter(x => now - Date.parse(x.at) < config.NOTICE_FRESH_MS).at(-1);
     return n ? clip(notices.text(n)) : '';
   }
 
-  function startTimer() {
-    if (timer) return;
-    timer = setInterval(() => { try { tick(); } catch (e) { log('tick error', e.message); } }, POLL_MS);
-    if (timer.unref) timer.unref();
+  startTimer() {
+    if (this.timer) return;
+    this.timer = setInterval(() => { try { this.tick(); } catch (e) { this.log('tick error', e.message); } }, this.POLL_MS);
+    if (this.timer.unref) this.timer.unref();
   }
-  function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
+  stopTimer() { if (this.timer) { clearInterval(this.timer); this.timer = null; } }
 
-  function onCancelled(h) {
-    if (!holds.has(h.id)) return;
-    holds.delete(h.id);
-    log('CANCELLED', h.id, h.kind, h.name || h.code);
-    h.resolve(text(`(cancelled)`));
-    if (h.kind === 'room') roomEnded.delete(h.code);
-    saveSeat();
-    if (h.kind === 'room') { roomGone.set(h.code, Date.now()); respawn.delete(h.code); }
+  onCancelled(h) {
+    if (!this.holds.has(h.id)) return;
+    this.holds.delete(h.id);
+    this.log('CANCELLED', h.id, h.kind, h.name || h.code);
+    h.resolve(this.text(`(cancelled)`));
+    if (h.kind === 'room') this.roomEnded.delete(h.code);
+    this.saveSeat();
+    if (h.kind === 'room') { this.roomGone.set(h.code, Date.now()); this.respawn.delete(h.code); }
     else {
       // Hold off JOINED for this name until the respawn check below has decided.
-      expect.set(`${h.code}/${h.name}`, { at: Date.now(), n: 0 });
+      this.expect.set(`${h.code}/${h.name}`, { at: Date.now(), n: 0 });
       // Wait a moment: if the room hold is cancelled too (Esc on the room cascades), this is no respawn.
-      setTimeout(() => {
-        const code = h.code;
-        const gone = roomGone.get(code);
-        if (gone && Date.now() - gone < RESPAWN_MS * 4) return;
-        if (!present(members(code), h.name)) return;
-        if (me && (me.code !== code)) return;
-        if (memberHolds(code).some(x => x.name === h.name)) return;
-        const live = roomHolds(code);
-        const ended = roomEnded.get(code);
-        if (!live.length && !(ended && Date.now() - ended < config.HOLD_RESPAWN_AFTER_RETURN_MS)) return; // orch side: nobody respawns
-        if (!respawn.has(code)) respawn.set(code, new Set());
-        respawn.get(code).add(h.name);
-        expect.set(`${code}/${h.name}`, { at: Date.now(), n: 0 });
-        for (const r of live) finish(r, roomReply(code, []));
-        if (!holds.size) stopTimer();
-      }, RESPAWN_MS).unref?.();
+      setTimeout(() => this.respawnCheck(h), this.RESPAWN_MS).unref?.();
     }
-    if (!holds.size) stopTimer();
+    if (!this.holds.size) this.stopTimer();
   }
 
-  function call(name, who0, args = {}, meta = {}) {
+  respawnCheck(h) {
+    const code = h.code;
+    const gone = this.roomGone.get(code);
+    if (gone && Date.now() - gone < this.RESPAWN_MS * 4) return;
+    if (!this.present(this.members(code), h.name)) return;
+    if (this.me && (this.me.code !== code)) return;
+    if (this.memberHolds(code).some(x => x.name === h.name)) return;
+    const live = this.roomHolds(code);
+    const ended = this.roomEnded.get(code);
+    if (!live.length && !(ended && Date.now() - ended < config.HOLD_RESPAWN_AFTER_RETURN_MS)) return; // orch side: nobody respawns
+    if (!this.respawn.has(code)) this.respawn.set(code, new Set());
+    this.respawn.get(code).add(h.name);
+    this.expect.set(`${code}/${h.name}`, { at: Date.now(), n: 0 });
+    for (const r of live) this.finish(r, this.roomReply(code, []));
+    if (!this.holds.size) this.stopTimer();
+  }
+
+  /** The latest shown entry for a new hold's first line: not a post still inside its origin check. */
+  lastShown(code, pick) {
+    const now = Date.now();
+    return this.readEntries(code).entries.filter(e => pick(e) && !room.isYoungProvisional(e, now)).at(-1);
+  }
+
+  call(name, who0, args = {}, meta = {}) {
     if (name !== 'hold') return null;
     let cur = who0;
-    if (!cur) { try { cur = ctx.whoami(); } catch { cur = null; } }
-    const early = s => { log('RETURN now', meta.id, args.member || args.room || '', s); return text(s); };
+    if (!cur) { try { cur = this.ctx.whoami(); } catch { cur = null; } }
+    const early = s => { this.log('RETURN now', meta.id, args.member || args.room || '', s); return this.text(s); };
     if (!cur) return early(`STOP: not in a room. ${END}`);
-    me = cur; meAt = Date.now();
-    seat = seat && seat.code === cur.code && seat.name === cur.name ? seat : { code: cur.code, name: cur.name };
+    this.me = cur; this.meAt = Date.now();
+    this.seat = this.seat && this.seat.code === cur.code && this.seat.name === cur.name ? this.seat : { code: cur.code, name: cur.name, pid: cur.pid };
     const code = cur.code;
     const member = typeof args.member === 'string' ? args.member.trim().replace(/^@/, '') : '';
     const roomCode = typeof args.room === 'string' ? args.room.trim() : '';
@@ -268,48 +300,51 @@ function create(ctx) {
     if (member) {
       if (!NAME_RE.test(member)) return early(`STOP: "${member}" is not a member name. ${END}`);
       if (member === cur.name) return early(`STOP: that is you; rows are for the others. ${END}`);
-      const ms = members(code);
+      const ms = this.members(code);
       // A member who left is still a row (it reads "left"); only a name never in the room is refused.
       if (!ms[member]) return early(`STOP: ${member} is not in room ${code}. ${END}`);
-      if (memberHolds(code).some(x => x.name === member)) return early(`STOP: duplicate row: ${member}'s row is already open. ${END}`);
+      if (this.memberHolds(code).some(x => x.name === member)) return early(`STOP: duplicate row: ${member}'s row is already open. ${END}`);
       Object.assign(h, { kind: 'member', name: member });
-      expect.delete(`${code}/${member}`);
-      const last = readEntries(code).entries.filter(e => e.from === member || e.to === member).at(-1);
+      this.expect.delete(`${code}/${member}`);
+      const last = this.lastShown(code, e => e.from === member || e.to === member);
       h.msg = last ? entryLine(last) : `${member} · in room ${code}`;
     } else if (roomCode) {
       if (roomCode !== code) return early(`STOP: you are in room ${code}, not ${roomCode}. ${END}`);
-      if (roomHolds(code).length) return early(`STOP: duplicate row: room ${code} already has its row. ${END}`);
+      if (this.roomHolds(code).length) return early(`STOP: duplicate row: room ${code} already has its row. ${END}`);
       const now = Date.now();
-      const ms = members(code);
+      const ms = this.members(code);
       // Children spawned in the same message as this call are on their way: expect them before announcing.
-      const live = new Set(memberHolds(code).map(x => x.name));
-      for (const n of others(code, ms)) if (!live.has(n) && !expect.has(`${code}/${n}`)) expect.set(`${code}/${n}`, { at: now, n: 0 });
-      roomGone.delete(code);
-      const reply = roomReply(code, missing(code, ms, now));
-      if (reply) { log('RETURN now', meta.id, reply); roomEnded.set(code, now); saveSeat(); return text(reply); }
+      const live = new Set(this.memberHolds(code).map(x => x.name));
+      for (const n of this.others(code, ms)) if (!live.has(n) && !this.expect.has(`${code}/${n}`)) this.expect.set(`${code}/${n}`, { at: now, n: 0 });
+      this.roomGone.delete(code);
+      const reply = this.roomReply(code, this.missing(code, ms, now));
+      if (reply) { this.log('RETURN now', meta.id, reply); this.roomEnded.set(code, now); this.saveSeat(); return this.text(reply); }
       Object.assign(h, { kind: 'room', name: code, moves: new Set() });
-      const es = readEntries(code).entries;
-      const last = es.filter(e => e.kind !== 'member_joined' && e.kind !== 'member_left').at(-1);
+      const last = this.lastShown(code, e => e.kind !== 'member_joined' && e.kind !== 'member_left');
       // a re-called room hold (after JOINED) still shows the join that brought it back, if it is recent
-      const move = newMove(h, code, ms, now);
+      const move = this.newMove(h, code, now);
       h.msg = move || (last ? entryLine(last) : `room ${code}`);
     } else {
-      return text('hold needs {member: NAME} (participant row) or {room: CODE} (room row).', true);
+      return this.text('hold needs {member: NAME} (participant row) or {room: CODE} (room row).', true);
     }
 
     return new Promise(resolve => {
       h.resolve = resolve;
-      holds.set(h.id, h);
-      log('HOLD', h.id, h.kind, h.name);
-      if (ctx.onCancel && h.id != null) ctx.onCancel(h.id, () => onCancelled(h));
-      progress(h);
-      saveSeat();
-      startTimer();
+      this.holds.set(h.id, h);
+      this.log('HOLD', h.id, h.kind, h.name);
+      if (this.ctx.onCancel && h.id != null) this.ctx.onCancel(h.id, () => this.onCancelled(h));
+      this.progress(h);
+      this.saveSeat();
+      this.startTimer();
     });
   }
-
-  // anonymous: room-server calls hold with me = null instead of erroring, so a row outside a room gets STOP.
-  return { tools: [TOOL], call, anonymous: ['hold'], _state: { holds, expect, respawn } };
 }
 
-module.exports = { create, TOOL, entryLine, HINT };
+/** The room-server plug-in: one HoldServer behind {tools, call}. */
+function create(ctx) {
+  const s = new HoldServer(ctx);
+  // anonymous: room-server calls hold with me = null instead of erroring, so a row outside a room gets STOP.
+  return { tools: [TOOL], call: (...a) => s.call(...a), anonymous: ['hold'], server: s, _state: { holds: s.holds, expect: s.expect, respawn: s.respawn } };
+}
+
+module.exports = { create, HoldServer, TOOL, entryLine, HINT };

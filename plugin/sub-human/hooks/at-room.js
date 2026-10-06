@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 // UserPromptSubmit: "@room TEXT" or "room:TEXT" posts the human's exact words (via human) and ends the
-// prompt, so no model turn runs and nothing is paraphrased.
+// prompt, so no model turn runs and nothing is paraphrased. hooks/prompt.js runs handle(input) (with consent.js's
+// prompt handler, in one process); `node at-room.js` alone still works, and `--forgery-check JOB` is the
+// detached origin checker below.
 //
 // Who wrote the prompt: `source` (docs/internals/cc-2.1.281.md §8) is "user" for the interactive composer and
 // "sdk" for -p; "system" (peer / channel messages, task notifications), the wakeups and "poll_event" are
@@ -43,7 +45,7 @@
 //
 // Rows: a seat whose rows are not running (no live hold; e.g. its Claude skipped the restore prompt after
 // --resume) gets the exact missing Agent calls again with every ordinary prompt or notice, until they run.
-// A row spawned in the last minute (rows/<session>.json) may not hold yet, so it is never re-listed.
+// A row spawned in the last minute (lib/rows.js sessionRowMap) may not hold yet, so it is never re-listed.
 //
 // The orch takes no typed input (nobody sits at its terminal; people reach it through @room): in the orch's
 // session every prompt is refused with a hint, typed text and typed slash commands alike, except a peer
@@ -58,7 +60,6 @@
 // Also: marks presence "working" and sets sessionTitle to the seat's address ("NAME.CODE", the name
 // SendMessage / ListAgents use) on the first prompt of each session id; session-restore.js sets it on restore.
 // Not for the orch, whose title is its launch name (-n orch.CODE).
-const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { room, identity, out, run, logError, whoami, readState, writeState, clip, presence } = require('./common.js');
@@ -139,12 +140,12 @@ function spawnForgeryCheck(me, input, id) {
 
 /** The checker: poll the transcript until this prompt's entry shows up, then retract #id if a peer wrote it. */
 function forgeryCheck(job) {
-  room.bind(job.code);
+  const r = room.open(job.code);
   const deadline = Date.now() + CHECK_WINDOW_MS();
   const tick = () => {
     const origin = promptOrigin(transcriptTail(job.transcript), job.prompt_id);
     if (origin === 'peer') {
-      room.append({ kind: 'retract', text: `peer-forged: #${job.id} came from another Claude session, not from ${job.name}`, refs: [job.id] },
+      r.append({ kind: 'retract', text: `peer-forged: #${job.id} came from another Claude session, not from ${job.name}`, refs: [job.id] },
         { via: 'system', from: job.name, system: true });
       return;
     }
@@ -157,15 +158,16 @@ function forgeryCheck(job) {
 function noticeLines(me) {
   if (me.role === 'orch') return null;
   const key = `notice-${me.name}`;
-  let after = room.getCursor(key);
+  const r = room.open(me.code);
+  let after = r.getCursor(key);
   // joins and leaves are non-chat entries, so the view (no chat before the cursor) holds every one of them
-  const all = room.readView({ after: after || Infinity });
+  const all = r.readView({ after: after || Infinity });
   if (!after) { const j = all.filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1); after = j ? j.id : 0; }
   const ns = notices.joinLeave(all, me.name).filter(n => n.id > after);
   const waiting = ns.filter(n => !n.settled); // a leave inside its settle window: decide on a later prompt
-  const last = room.lastId();
+  const last = r.lastId();
   const upTo = waiting.length ? Math.min(...waiting.map(n => n.id)) - 1 : last;
-  if (upTo > after) room.setCursor(key, upTo);
+  if (upTo > after) r.setCursor(key, upTo);
   const seen = notices.shown(me.code, me.name);
   const show = ns.filter(n => n.settled && !seen.has(n.id));
   if (!show.length) return null;
@@ -179,16 +181,17 @@ const PULL_HEAD = 'Room since your last turn (context for you, not for the user:
 /** "Room since your last turn": pull-lane entries after cursor ctx-NAME, newest kept under PULL_CAP; advances it. */
 function pullDigest(me) {
   const key = `ctx-${me.name}`;
-  let after = room.getCursor(key);
-  const all = after ? room.readView({ after }) : room.readAll(); // the whole log only on a seat's first prompt
+  const r = room.open(me.code);
+  let after = r.getCursor(key);
+  const all = after ? r.readView({ after }) : r.readAll(); // the whole log only on a seat's first prompt
   if (!after) {
     // First prompt of this seat: start at its join (the join block already carried the history).
-    const joined = Date.parse(((identity.readMembers(me.code) || {})[me.name] || {}).joined_at || '');
+    const joined = Date.parse(((r.members() || {})[me.name] || {}).joined_at || '');
     const before = Number.isFinite(joined) ? all.filter(e => Date.parse(e.at) < joined).at(-1) : null;
     after = before ? before.id : 0;
   }
   const last = all.length ? all[all.length - 1].id : 0;
-  if (last > after) room.setCursor(key, last);
+  if (last > after) r.setCursor(key, last);
   // A provisional post still inside its origin check is never shown. (A person's post is push or none for every
   // viewer, so it reaches others through the tail, which settles longer; this keeps the digest safe regardless.)
   const now = Date.now();
@@ -226,7 +229,7 @@ function titleFor(me, input) {
 function proposalReminders(me, notification) {
   if (me.role === 'orch' || notification) return null;
   try {
-    const ps = proposal.pendingFor(me, room.readView({ after: Infinity })) || [];
+    const ps = proposal.pendingFor(me, room.open(me.code).readView({ after: Infinity })) || [];
     return ps.length ? ps.map(p => proposal.reminder(p, me.name)).join('\n') : null;
   } catch (e) { logError(e, 'at-room reminders'); return null; }
 }
@@ -259,7 +262,7 @@ function missingRowsText(me, input) {
     let need = me.role === 'orch' ? rows.missingRows(me.code, me, { members })
       : rows.rowsNeeded(me.code, me, { members, held: rows.readHolds(me.code, me.name) });
     let map = {};
-    try { map = (JSON.parse(fs.readFileSync(rows.mapFile(me.code, input.session_id), 'utf8')) || {}).byAgent || {}; } catch { /* none */ }
+    try { map = rows.sessionRowMap(me.code, input.session_id); } catch { /* none */ }
     const fresh = new Set(Object.values(map).filter(r => r && Date.now() - Date.parse(r.at) < SPAWN_GRACE_MS).map(r => r.name));
     need = need.filter(n => !fresh.has(n));
     if (!need.length) return null;
@@ -269,9 +272,8 @@ function missingRowsText(me, input) {
   } catch { return null; }
 }
 
-if (process.argv[2] === '--forgery-check') {
-  forgeryCheck(JSON.parse(process.argv[3]));
-} else run(input => {
+/** The UserPromptSubmit handler: writes its one output (if any) through common.js out(). hooks/prompt.js calls it. */
+function handle(input) {
   const prompt = typeof input.prompt === 'string' ? input.prompt : '';
   const notification = cc.isTaskNotification(prompt);
   const slash = prompt.startsWith('/');
@@ -313,11 +315,18 @@ if (process.argv[2] === '--forgery-check') {
   if (draftedByAgent(text, lastAssistantText(transcriptTail(input.transcript_path), input.prompt_id))) entry.drafted = 'agent';
   // A typed source is known now; without one the post is provisional until the transcript check has run.
   const check = !hasSource(input);
-  const e = room.append(entry, { via: 'human', from: me.name, provisional: check });
+  const e = room.open(me.code).append(entry, { via: 'human', from: me.name, provisional: check });
   if (check) spawnForgeryCheck(me, input, e.id);
   out({
     continue: false,
     stopReason: `✓ sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`,
     hookSpecificOutput: { hookEventName: 'UserPromptSubmit', ...top },
   });
-});
+}
+
+module.exports = { handle, parse };
+
+if (require.main === module) {
+  if (process.argv[2] === '--forgery-check') forgeryCheck(JSON.parse(process.argv[3]));
+  else run(handle);
+}

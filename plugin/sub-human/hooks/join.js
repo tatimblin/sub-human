@@ -79,7 +79,6 @@ function bindOrch(input, base, cur, args) {
   if (identity.roomClosing(c)) return block(`room ${c} is closing.`);
   const r = identity.join({ code: c, name: 'orch', role: 'orch', ...base });
   if (!r || !r.ok) return block(`could not bind the orch of ${c}: ${(r && r.error) || 'unknown error'}`);
-  room.bind(c);
   const me = { code: c, name: 'orch', role: 'orch', pid: base.pid, session_id: base.session_id || null, address: identity.address('orch', c) };
   return success(me, fresh ? 'room created' : 'orch started', fresh ? `room ${c} open · others join with: /sub-human NAME ${c}` : `orch of room ${c}`, input);
 }
@@ -134,16 +133,14 @@ run(input => {
   if (cur) {
     // Switching rooms: leave the old one exactly as exiting the session would.
     identity.leave(cur.code, cur.name);
-    room.bind(cur.code);
-    room.append({ kind: 'member_left', text: `${cur.name} left (switched rooms)` }, { via: 'system', from: cur.name, system: true });
+    room.open(cur.code).append({ kind: 'member_left', text: `${cur.name} left (switched rooms)` }, { via: 'system', from: cur.name, system: true });
   }
   const r = identity.join({ code, name, role: 'member', ...base });
   if (!r || !r.ok) return block(`could not join ${code} as ${name}: ${(r && r.error) || 'unknown error'}`);
-  room.bind(code);
   // The seat's key (hooks/seat-key.js): via=human posts and answers are signed with it. A failure here is not
   // fatal: the first post creates it.
   try { seatKey.ensure(code, name); } catch (e) { process.stderr.write(`sub-human: seat key: ${e.message}\n`); }
-  room.append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}` }, { via: 'system', from: name, system: true });
+  room.open(code).append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}` }, { via: 'system', from: name, system: true });
   const note = ensureOrch(code, cwd, name);
   const me = { code, name, role: 'member', pid, session_id: input.session_id || null, address: identity.address(name, code) };
   const here = others(code, name);

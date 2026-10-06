@@ -16,11 +16,12 @@
  *       for the next batch. If onFlush throws, the batch goes back to pending and is retried after retryMs.
  *   formatOrchBatch(ready, ctx) -> lines     the orch's block: stateLine, then one full line per shown entry
  *   formatMemberBatch(ready, ctx) -> {lines, moved}   a member's group-chat lines, then "(for Claude)" lines
- *   startOffset(fs, file) -> byte offset of the last line boundary at or before the end of the file
+ *   deps (tests): openRoom(code) -> Room (lib/room.js open), heartbeat(me) (identity.heartbeat), rows, notices, orch
  *
- * Reading: a session starts at the cursor tail-NAME without re-reading the log from byte 0. The backlog
- * (ids after the cursor) comes from room.readView({after}) (the log.idx checkpoint plus a search for the
- * cursor's line); live entries come from polling the bytes appended after the start offset. A batch is
+ * Reading: a session holds its Room (lib/room.js open(code)) and starts at the cursor tail-NAME without
+ * re-reading the log from byte 0. The backlog (ids after the cursor) comes from room.readView({after}) (the
+ * checkpoint plus a search for the cursor's line); live entries come from room.tailer() (what is appended after
+ * the session started). The health tick also renews the seat's lease (identity.heartbeat). A batch is
  * judged against room.readView({after: first id - 1}), which gives lane() the same answer as readAll().
  */
 
@@ -96,66 +97,45 @@ class Batcher {
 
 // ---------- formatters ----------
 /** ctx: {me, room, entries, show, joinNote, leaveMs} */
-function formatOrchBatch(ready, { me, room, entries, show, joinNote, leaveMs }) {
+function formatOrchBatch(ready, { me, room: rm, entries, show, joinNote, leaveMs }) {
   const out = [];
   for (const { e, away } of ready) {
     const note = joinNote(e);
-    if (show(e, entries, note)) out.push(room.line(e, { full: true }) + (away ? ` · away ${Math.round(leaveMs / 1000)}s+` : '') + (note ? ` · ${note}` : ''));
+    if (show(e, entries, note)) out.push(rm.line(e, { full: true }) + (away ? ` · away ${Math.round(leaveMs / 1000)}s+` : '') + (note ? ` · ${note}` : ''));
   }
-  return out.length ? [room.stateLine(me, entries), ...out] : [];
+  return out.length ? [rm.stateLine(me, entries), ...out] : [];
 }
 
 /** ctx: {me, room, entries, show, joinNote, seen}. moved: the join / leave ids shown (for notices.markShown). */
-function formatMemberBatch(ready, { me, room, entries, show, joinNote, seen }) {
+function formatMemberBatch(ready, { me, room: rm, entries, show, joinNote, seen }) {
   const out = [], moved = [], forClaude = [];
   let state = false;
   for (const { e } of ready) {
-    if (isMove(e) && seen.has(e.id)) continue; // at-room.js already showed it on a prompt
+    if (isMove(e) && seen.has(e.id)) continue; // at-rm.js already showed it on a prompt
     if (!show(e, entries)) continue;
-    out.push(...room.chatLines(e, { viewer: me.name }));
+    out.push(...rm.chatLines(e, { viewer: me.name }));
     if (isMove(e)) moved.push(e.id);
     if (STATE_KINDS.has(e.kind)) state = true;
     const note = e.kind === 'member_joined' ? joinNote(e) : '';
-    if (SPAWN_NOTE.test(note)) forClaude.push(`${room.FOR_CLAUDE} ${note}`);
+    if (SPAWN_NOTE.test(note)) forClaude.push(`${rm.FOR_CLAUDE} ${note}`);
   }
-  if (state) forClaude.unshift(`${room.FOR_CLAUDE} ${room.stateLine(me, entries)}`);
+  if (state) forClaude.unshift(`${rm.FOR_CLAUDE} ${rm.stateLine(me, entries)}`);
   return { lines: out.length ? [...out, ...forClaude] : [], moved: out.length ? moved : [] };
 }
 
 /**
- * The push lane (room.lane). A member also gets every other member's join and leave (a group chat line). The
+ * The push lane (rm.lane). A member also gets every other member's join and leave (a group chat line). The
  * orch gets another member's member_joined when lib/rows.js joinNote() says that row is not running (the note
  * carries the Agent call) or when the note is unavailable; a join whose row already runs is not pushed to it,
  * so a notice never invites a call that row-guard would deny.
  */
-function visibleTo(me, room) {
-  if (me.role !== 'orch') return (e, entries) => room.lane(me, e, entries) === 'push' || (isMove(e) && e.via === 'system' && e.from !== me.name && e.from !== 'orch');
-  return (e, entries, note = '') => room.lane(me, e, entries) === 'push'
+function visibleTo(me, rm) {
+  if (me.role !== 'orch') return (e, entries) => rm.lane(me, e, entries) === 'push' || (isMove(e) && e.via === 'system' && e.from !== me.name && e.from !== 'orch');
+  return (e, entries, note = '') => rm.lane(me, e, entries) === 'push'
     || (e.kind === 'member_joined' && e.from !== me.name && (SPAWN_NOTE.test(note) || !note));
 }
 
 // ---------- reading ----------
-/** The last line boundary at or before the end of the file (0 when there is no file). */
-function startOffset(fs, file) {
-  let fd;
-  try { fd = fs.openSync(file, 'r'); } catch (e) { if (e.code === 'ENOENT') return 0; throw e; }
-  try {
-    const size = fs.fstatSync(fd).size;
-    let end = size;
-    while (end > 0) {
-      const n = Math.min(4096, end);
-      const b = Buffer.allocUnsafe(n);
-      fs.readSync(fd, b, 0, n, end - n);
-      const i = b.lastIndexOf(10);
-      if (i >= 0) return end - n + i + 1;
-      end -= n;
-    }
-    return 0;
-  } finally { fs.closeSync(fd); }
-}
-
-const parseLine = buf => { try { return JSON.parse(buf.toString('utf8')); } catch { return null; } };
-
 /** A rate-limited stderr logger: one line per `where` per everyMs, with the count it held back. */
 function errorLog(err, clock, everyMs) {
   const last = new Map(); // where -> {at, held}
@@ -171,21 +151,20 @@ function errorLog(err, clock, everyMs) {
 // ---------- one seat's session ----------
 function startSession(me, ctx) {
   const { clock, fs, write, log, t, deps } = ctx;
-  const { room, rows, notices } = deps;
-  room.bind(me.code);
-  const file = room.logPath();
+  const { rows, notices } = deps;
+  const rm = deps.openRoom(me.code); // this session's room, held for its whole life (no re-binding)
   const reader = `tail-${me.name}`;
   // Where polling starts: taken before the backlog read, so nothing appended in between is missed (the
   // overlap is dropped by id).
-  let offset = startOffset(fs, file);
-  const last = room.lastId();
-  let after = room.getCursor(reader);
+  const tailer = rm.tailer({ fs });
+  const last = rm.lastId();
+  let after = rm.getCursor(reader);
   if (!(after > 0 && after <= last)) {
     // First watch for this name: start at its join so nothing between join and resolve is lost.
-    const joined = room.readView({ after: Infinity }).filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1);
+    const joined = rm.readView({ after: Infinity }).filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1);
     after = joined ? joined.id : last;
   }
-  room.setCursor(reader, after);
+  rm.setCursor(reader, after);
   const s = { key: `${me.code}/${me.name}/${me.role}`, code: me.code, dead: false, lastTick: clock.now() };
   const settleMs = me.role === 'orch' ? t.orchSettleMs : t.settleMs;
   const settleMaxMs = me.role === 'orch' ? t.orchSettleMaxMs : t.settleMaxMs;
@@ -198,9 +177,9 @@ function startSession(me, ctx) {
     const h = inflight.size ? Math.min(...inflight) - 1 : processed;
     if (h <= saved) return;
     // a failed write is retried by the next save; the notices are out, so a restart would repeat them at most
-    try { room.bind(s.code); room.setCursor(reader, h); saved = h; } catch (e) { log('cursor save', e); }
+    try { rm.setCursor(reader, h); saved = h; } catch (e) { log('cursor save', e); }
   };
-  const show = visibleTo(me, room);
+  const show = visibleTo(me, rm);
   // member_joined: say whether that member's row already runs here, so only a missing one is spawned
   const joinNote = e => {
     if (e.kind !== 'member_joined') return '';
@@ -211,9 +190,8 @@ function startSession(me, ctx) {
   // at flush time (lane with entries: retracted, signed, decided, superseded), and every pushed entry is at
   // least settleMs old, so a forged @room line is retracted (at-room's checker) before it could be pushed.
   function onFlush(ready) {
-    room.bind(s.code);
-    const entries = room.readView({ after: ready[0].e.id - 1 });
-    const fctx = { me, room, entries, show, joinNote, leaveMs: t.leaveMs };
+    const entries = rm.readView({ after: ready[0].e.id - 1 });
+    const fctx = { me, room: rm, entries, show, joinNote, leaveMs: t.leaveMs };
     let lines, moved = [];
     if (me.role === 'orch') lines = formatOrchBatch(ready, fctx);
     else ({ lines, moved } = formatMemberBatch(ready, { ...fctx, seen: notices.shown(s.code, me.name) }));
@@ -227,7 +205,7 @@ function startSession(me, ctx) {
   const held = new Map(); // name -> {e, timer}: member_left waiting leaveMs for a rejoin
   const hold = e => ({ e, timer: clock.setTimeout(guard('leave hold', () => { held.delete(e.from); batch.enqueue({ e, away: true }); }), t.leaveMs) });
   function onEntry(e) {
-    if (e.id <= processed) { saved = 0; room.bind(s.code); room.setCursor(reader, 0); } // the log was reset under us
+    if (e.id <= processed) { saved = 0; rm.setCursor(reader, 0); } // the log was reset under us
     processed = e.id;
     if (e.kind === 'member_joined' && held.has(e.from)) {
       // left and back within leaveMs: neither notice is sent
@@ -247,8 +225,8 @@ function startSession(me, ctx) {
     }
     // A typed @room post is provisional until the forgery check has had its window; hold it that long
     // (judged at flush against the then-current view, so a retract that lands meanwhile wins).
-    if (room.isYoungProvisional(e)) {
-      const wait = Math.max(0, room.PROVISIONAL_MS() - (Date.now() - Date.parse(e.at)));
+    if (rm.isYoungProvisional(e)) {
+      const wait = Math.max(0, rm.PROVISIONAL_MS() - (Date.now() - Date.parse(e.at)));
       clock.setTimeout(guard('provisional hold', () => batch.enqueue({ e, away: false })), wait);
       return;
     }
@@ -259,34 +237,20 @@ function startSession(me, ctx) {
   // The backlog: ids after the cursor, from the checkpointed view (no read from byte 0).
   let backlog = after < last;
   function poll() {
-    room.bind(s.code);
     if (backlog) {
-      for (const e of room.readView({ after })) if (e.id > after) deliver(e);
+      for (const e of rm.readView({ after })) if (e.id > after) deliver(e);
       backlog = false;
     }
-    let st;
-    try { st = fs.statSync(file); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
-    if (st.size < offset) { offset = 0; seen = 0; } // truncated: read it again from the start
-    if (st.size === offset) return;
-    const fd = fs.openSync(file, 'r');
-    let buf;
-    try {
-      buf = Buffer.allocUnsafe(st.size - offset);
-      fs.readSync(fd, buf, 0, buf.length, offset);
-    } finally { fs.closeSync(fd); }
-    let pos = 0;
-    for (let nl; (nl = buf.indexOf(10, pos)) >= 0; pos = nl + 1) {
-      const e = nl > pos ? parseLine(buf.subarray(pos, nl)) : null;
-      if (e) deliver(e);
-      offset += nl + 1 - pos;
-    }
+    const { entries, reset } = tailer.poll();
+    if (reset) seen = 0; // truncated: read again from the start
+    for (const e of entries) deliver(e);
   }
 
   // Health: the hash chain from the log.idx checkpoint (one line per break), and the orch's watchdog.
   let breakKey = null;
   function health() {
-    room.bind(s.code);
-    const r = room.verifyChain();
+    try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
+    const r = rm.verifyChain();
     if (r.ok) breakKey = null;
     else {
       const key = `${r.offset}|${r.badAt}|${r.line}`;
@@ -294,7 +258,7 @@ function startSession(me, ctx) {
         breakKey = key;
         const where = r.badAt != null ? `#${r.badAt}` : `line ${r.line} (not valid JSON)`;
         const msg = `room log check: the hash chain breaks at ${where}; that entry and the ones after it may have been changed outside the plugin`;
-        write((me.role === 'orch' ? msg : `${room.FOR_CLAUDE} ${msg}`) + '\n', () => {});
+        write((me.role === 'orch' ? msg : `${rm.FOR_CLAUDE} ${msg}`) + '\n', () => {});
       }
     }
     if (me.role === 'orch') deps.orch().watchdog(s.code);
@@ -341,7 +305,8 @@ function runTail({
 } = {}) {
   const LIB = __dirname;
   const d = {
-    room: deps.room || require(path.join(LIB, 'room.js')),
+    openRoom: deps.openRoom || (() => { const r = require(path.join(LIB, 'room.js')); return code => r.open(code); })(),
+    heartbeat: deps.heartbeat || (me => require(path.join(LIB, 'identity.js')).heartbeat(me)),
     rows: deps.rows || require(path.join(LIB, 'rows.js')),
     notices: deps.notices || require(path.join(LIB, 'notices.js')),
     orch: deps.orch ? () => deps.orch : (() => { let o; return () => o || (o = require(path.join(LIB, 'orch.js'))); })(),
@@ -379,4 +344,4 @@ function runTail({
   return { stop, session: () => sess };
 }
 
-module.exports = { runTail, timings, Batcher, formatOrchBatch, formatMemberBatch, visibleTo, startOffset, SPAWN_NOTE, STATE_KINDS };
+module.exports = { runTail, timings, Batcher, formatOrchBatch, formatMemberBatch, visibleTo, SPAWN_NOTE, STATE_KINDS };

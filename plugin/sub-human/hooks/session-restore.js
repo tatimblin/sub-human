@@ -47,15 +47,13 @@ function reseat(input) {
   if (identity.roomClosing(last.code) || (last.role !== 'orch' && !identity.roomOpen(last.code))) return null;
   const r = identity.join({ code: last.code, name: last.name, role: last.role, pid, session_id: input.session_id, cwd: input.cwd });
   if (!r || !r.ok) return null;
-  room.bind(last.code);
-  room.append({ kind: 'member_joined', text: `${last.name} rejoined (resumed)` }, { via: 'system', from: last.name, system: true });
+  room.open(last.code).append({ kind: 'member_joined', text: `${last.name} rejoined (resumed)` }, { via: 'system', from: last.name, system: true });
   return { ...last, pid, session_id: input.session_id };
 }
 
 run(input => {
   const me = reseat(input);
   if (!me) return;
-  room.bind(me.code);
   try { proposal.restoreStale(me, { force: input.source === 'clear' || input.source === 'resume' }); } catch (err) { logError(err, 'session-restore: review'); }
   presence(me, 'working');
   const text = contextBlock(me, `restored after ${input.source || 'start'}`, { rowsLead: rowsLead(me) });

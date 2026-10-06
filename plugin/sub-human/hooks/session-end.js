@@ -22,5 +22,5 @@ run(input => {
   if (me.role === 'orch') { try { identity.leave(me.code, me.name); } catch { /* gone */ } return; }
   try { identity.leave(me.code, me.name); } catch { /* the log entry still records it */ }
   try { if (!identity.liveMembers(me.code).length) orch.reapDetached(me.code); } catch { /* the orch's watchdog closes it */ }
-  room.append({ kind: 'member_left', text: `${me.name} left (${input.reason || 'session ended'})` }, { via: 'system', from: me.name, system: true });
+  room.open(me.code).append({ kind: 'member_left', text: `${me.name} left (${input.reason || 'session ended'})` }, { via: 'system', from: me.name, system: true });
 });

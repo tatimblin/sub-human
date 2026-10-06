@@ -2,7 +2,7 @@
 'use strict';
 // PreToolUse(Agent|Task): refuse spawning a row this session already has. A spawned duplicate would end at
 // once (mcp/hold.js "STOP: duplicate row") but still leave a finished copy in the agent panel, so the spawn
-// itself is denied when that row's hold is live: <room>/rows/holds-<me>.json (written by the session's hold
+// itself is denied when that row's hold is live: rows/holds-<me> (lib/rows.js readHolds; written by the session's hold
 // server; a dead server pid or a stale file means nothing is held, e.g. after --resume). Covers main
 // re-spawning after /clear and the orch re-spawning a member's row on "NAME rejoined" (the row survived the
 // leave). A member seat also never spawns a participant row from its main session, nor one for itself: its

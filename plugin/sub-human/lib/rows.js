@@ -1,7 +1,8 @@
 'use strict';
 /**
  * plugin/sub-human/lib/rows.js: participant rows in the agent panel.
- * CommonJS, zero dependencies. Reads the room log, members.json and presence files; writes only <room>/rows/.
+ * CommonJS, zero dependencies. Reads the room log, members and presence; writes only the rows/* documents
+ * (lib/room/store.js kv).
  *
  * Spawning (text for the model; join.js, session-restore.js and the role text append it, never hand-copy):
  *   rowCalls(me, members, {only}?) -> string
@@ -23,7 +24,7 @@
  *   (PreToolUse Agent) denies the spawn itself when the row's hold is already live, so no dead copy appears.
  *   participantCall(name), roomCall(code, names)   the single Agent call lines
  *
- * Row text (deterministic from the log + members.json + <room>/presence/<name>.json {state, at}):
+ * Row text (deterministic from the log + members + the presence/<name> documents {state, at}):
  *   rowText(code, name, viewer, {color, entries, members, now}?) -> string (<= ROW_MAX chars, no label)
  *       No entry ids (people never see them); task ids ("#2") are the room task list's numbers.
  *       Proposals: lib/consent.js fold (the same state stateLine and the consent gate read). A proposal is named
@@ -39,26 +40,24 @@
  *         open task on the room list ("◼ #2 parser tests"), presence, mail; "left".
  *   rowLine(label, text) -> "label  text"   what a row shows (the row content replaces the whole label)
  *
- * Agent -> row map (<room>/rows/<session_id>.json = {byAgent: {agentId: {kind, name, parent, at}}}):
+ * Agent -> row map (the room documents rows/<session_id> = {byAgent: {agentId: {kind, name, parent, at}}}):
  *   parseSpawn(toolInput, members, code) -> {kind: 'participant'|'room', name}|null
  *   recordRow(code, sessionId, agentId, rec), forgetRow(code, agentId), readRowMap(code) -> {agentId: rec}
- *       readRowMap merges every session file in the room: /clear changes session_id, agent ids don't.
+ *       readRowMap merges every session's map in the room: /clear changes session_id, agent ids don't.
+ *       sessionRowMap(code, sid) -> one session's; blockCount(code, id) / setBlockCount(code, id, n): row-hold.js
  *   Hold liveness (written by mcp/hold.js): writeHolds(code, name, {members, room, roomUntil}), readHolds(code, name)
- *       <room>/rows/holds-<name>.json = {pid, at, members: [names], room: bool, roomUntil?}; readHolds folds
+ *       rows/holds-<name> = {pid, at, members: [names], room: bool, roomUntil?}; readHolds folds
  *       roomUntil into room (a room hold between its JOINED return and the re-call is still running).
  *   missingRows(code, me, {now}) -> [names]   active members whose row has no live hold (after a grace period)
  *
  * Constants: PARTICIPANT ('sub-human:participant'), ROOM_AGENT ('sub-human:room'), ROW_MAX.
  */
 
-const fs = require('node:fs');
-const path = require('node:path');
 const identity = require('./identity.js');
 const room = require('./room.js');
 const tasks = require('./tasks.js');
 const notices = require('./notices.js');
-const { readJson, writeJsonAtomic, isAlive } = require('./io.js');
-const { withLock } = require('./lock.js');
+const { isAlive } = require('./io.js');
 const text = require('./text.js');
 const { fold } = require('./consent.js');
 const proposal = require('./proposal.js');
@@ -78,16 +77,11 @@ function ago(iso, now = Date.now()) {
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`;
 }
 
-function roomDir(code) { return identity.roomDir(code); }
+/** The room's small documents (lib/room/store.js kv). */
+const kvOf = code => room.open(code).store.kv;
+/** The room log (lib/room/store.js readAll: cached, parses only appended bytes), entries with an id. */
 function readLog(code) {
-  let text = '';
-  try { text = fs.readFileSync(path.join(roomDir(code), 'log.jsonl'), 'utf8'); } catch { return []; }
-  const out = [];
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    try { const e = JSON.parse(line); if (e && Number.isInteger(e.id)) out.push(e); } catch { /* torn line */ }
-  }
-  return out;
+  try { return room.open(code).readAll().filter(e => e && Number.isInteger(e.id)); } catch { return []; }
 }
 function memberList(members) {
   if (!members) return [];
@@ -193,52 +187,62 @@ function parseSpawn(input, members, code) {
 }
 
 // ---------- the agent -> row map ----------
-const rowsDir = code => path.join(roomDir(code), 'rows');
-const mapFile = (code, sid) => path.join(rowsDir(code), `${SID_SAFE.test(String(sid)) ? sid : 'unknown'}.json`);
+const mapKey = sid => `rows/${SID_SAFE.test(String(sid)) ? sid : 'unknown'}`;
+const NOT_A_MAP = /^rows\/(holds|notices|blocks)-/;
 
 /** The row map's lock: wait up to ROWS_LOCK_TIMEOUT_MS, then throw (the hook logs it); never write unlocked. */
-const lockFile = (file, fn) => withLock(file + '.lock', fn, { timeoutMs: ROWS_LOCK_TIMEOUT_MS, staleMs: ROWS_LOCK_STALE_MS });
+const LOCK = { compact: true, timeoutMs: ROWS_LOCK_TIMEOUT_MS, staleMs: ROWS_LOCK_STALE_MS };
 
 function recordRow(code, sessionId, agentId, rec) {
   if (!code || !agentId) return false;
-  const file = mapFile(code, sessionId);
-  lockFile(file, () => {
-    const cur = readJson(file, {}) || {};
-    const byAgent = cur.byAgent && typeof cur.byAgent === 'object' ? cur.byAgent : {};
+  kvOf(code).update(mapKey(sessionId), cur => {
+    const byAgent = cur && cur.byAgent && typeof cur.byAgent === 'object' ? cur.byAgent : {};
     byAgent[agentId] = { ...rec, at: new Date().toISOString() };
-    writeJsonAtomic(file, { byAgent }, { compact: true });
-  });
+    return { byAgent };
+  }, LOCK);
   return true;
 }
 
-function sessionFiles(code) {
-  try { return fs.readdirSync(rowsDir(code)).filter(f => f.endsWith('.json') && !f.startsWith('holds-')).map(f => path.join(rowsDir(code), f)); } catch { return []; }
-}
+const sessionKeys = code => { try { return kvOf(code).list('rows/').filter(k => !NOT_A_MAP.test(k)); } catch { return []; } };
 
 function readRowMap(code) {
   const out = {};
-  for (const f of sessionFiles(code)) {
-    const m = readJson(f, null);
+  const kv = kvOf(code);
+  for (const k of sessionKeys(code)) {
+    const m = kv.get(k, null);
     if (m && m.byAgent && typeof m.byAgent === 'object') Object.assign(out, m.byAgent);
   }
   return out;
 }
 
+/** The agent -> row records this session id spawned ({} when none). */
+function sessionRowMap(code, sid) {
+  const m = kvOf(code).get(mapKey(sid), null);
+  return (m && m.byAgent && typeof m.byAgent === 'object') ? m.byAgent : {};
+}
+
 function forgetRow(code, agentId) {
-  for (const f of sessionFiles(code)) {
-    lockFile(f, () => {
-      const m = readJson(f, null);
-      if (m && m.byAgent && m.byAgent[agentId]) { delete m.byAgent[agentId]; writeJsonAtomic(f, m, { compact: true }); }
-    });
+  const kv = kvOf(code);
+  for (const k of sessionKeys(code)) {
+    kv.update(k, m => {
+      if (!(m && m.byAgent && m.byAgent[agentId])) return undefined;
+      delete m.byAgent[agentId];
+      return m;
+    }, LOCK);
   }
 }
 
+/** How often hooks/row-hold.js blocked agentId's stop (rows/blocks-ID); setBlockCount(code, id, n). */
+const blocksKey = id => `rows/blocks-${String(id).replace(/[^A-Za-z0-9_-]/g, '') || 'x'}`;
+const blockCount = (code, id) => Number(kvOf(code).get(blocksKey(id), 0)) || 0;
+const setBlockCount = (code, id, n) => kvOf(code).set(blocksKey(id), Number(n) || 0, { compact: true });
+
 // ---------- hold liveness (mcp/hold.js writes, the status line reads) ----------
-const holdsFile = (code, name) => path.join(rowsDir(code), `holds-${name}.json`);
+const holdsKey = name => `rows/holds-${name}`;
 function writeHolds(code, name, { members = [], room = false, roomUntil = 0 } = {}) {
   const rec = { pid: process.pid, at: new Date().toISOString(), members: [...new Set(members)].sort(), room: !!room };
   if (!room && roomUntil) rec.roomUntil = new Date(roomUntil).toISOString();
-  try { writeJsonAtomic(holdsFile(code, name), rec, { compact: true }); } catch { /* best effort */ }
+  try { kvOf(code).set(holdsKey(name), rec, { compact: true }); } catch { /* best effort */ }
 }
 /**
  * The live holds of NAME's hold server, or null. `room` stays true until `roomUntil`: a room hold that just
@@ -246,7 +250,8 @@ function writeHolds(code, name, { members = [], room = false, roomUntil = 0 } = 
  * notice read in that gap would invite a second room-row spawn, which row-guard then denies in red).
  */
 function readHolds(code, name, now = Date.now()) {
-  const h = readJson(holdsFile(code, name), null);
+  let h = null;
+  try { h = kvOf(code).get(holdsKey(name), null); } catch { h = null; }
   if (!h || !isAlive(h.pid) || now - Date.parse(h.at) > HOLDS_STALE_MS) return null;
   const members = Array.isArray(h.members) ? h.members : [];
   return { ...h, members, room: !!h.room || (!!h.roomUntil && now < Date.parse(h.roomUntil)) };
@@ -321,7 +326,8 @@ function openTask(list, name) {
 }
 
 function presenceOf(code, name, es, now) {
-  const p = readJson(path.join(roomDir(code), 'presence', `${name}.json`), null);
+  let p = null;
+  try { p = kvOf(code).get(`presence/${name}`, null); } catch { p = null; }
   if (!p || typeof p.state !== 'string') return null;
   const at = Date.parse(p.at);
   if (Number.isFinite(at)) {
@@ -426,6 +432,6 @@ module.exports = {
   PARTICIPANT, ROOM_AGENT, ROW_MAX,
   rowCalls, rowsNeeded, joinNote, participantCall, roomCall, parseSpawn,
   rowText, rowLine, readLog, fit,
-  recordRow, forgetRow, readRowMap, rowsDir, mapFile,
-  writeHolds, readHolds, holdsFile, missingRows,
+  recordRow, forgetRow, readRowMap, sessionRowMap, blockCount, setBlockCount,
+  writeHolds, readHolds, missingRows,
 };

@@ -181,11 +181,11 @@ test('rowText (room row): lib/tasks.js summary(code, viewer) is used when presen
   const file = path.join(PLUGIN, 'lib', 'tasks.js');
   const real = fs.existsSync(file);
   if (real) {
-    fs.writeFileSync(path.join(rows.rowsDir(code), '..', 'tasks.json'), JSON.stringify([
+    require(path.join(PLUGIN, 'lib', 'room.js')).open(code).store.kv.set('tasks', [
       { id: '2', subject: 'parser tests', status: 'in_progress', owner: 'alice' },
       { id: '4', subject: 'docs', status: 'pending', owner: 'bob' },
       { id: '5', subject: 'old', status: 'completed', owner: 'bob' },
-    ]));
+    ]);
     assert.equal(rows.rowText(code, code, 'alice', { entries: [] }), '1 here · tasks 2 open · #2 you · #4 bob');
     assert.equal(rows.rowText(code, 'alice', 'bob', { entries: [] }), '◼ #2 parser tests', 'participant row: tasks.mine()');
     return;
@@ -207,7 +207,7 @@ test('missingRows: orch lists members without a live hold after the grace period
   assert.deepEqual(rows.missingRows(code, { code, name: 'alice', role: 'member' }), [code]);
   rows.writeHolds(code, 'alice', { members: [], room: true });
   assert.deepEqual(rows.missingRows(code, { code, name: 'alice', role: 'member' }), []);
-  fs.writeFileSync(rows.holdsFile(code, 'alice'), JSON.stringify({ pid: 999999, at: new Date().toISOString(), members: [], room: true }));
+  require(path.join(PLUGIN, 'lib', 'room.js')).open(code).store.kv.set('rows/holds-alice', { pid: 999999, at: new Date().toISOString(), members: [], room: true });
   assert.deepEqual(rows.missingRows(code, { code, name: 'alice', role: 'member' }), [code], 'dead server pid: not live');
 });
 
@@ -218,7 +218,7 @@ test('joinNote: a member_joined notice says whether the row already runs here (l
   rows.writeHolds(code, 'orch', { members: ['bob'] });
   assert.match(rows.joinNote(orch, 'bob'), /bob's row is already running .*make NO Agent call/);
   assert.match(rows.joinNote(orch, 'alice'), /alice has no row running/);
-  fs.writeFileSync(rows.holdsFile(code, 'orch'), JSON.stringify({ pid: 999999, at: new Date().toISOString(), members: ['bob'], room: false }));
+  require(path.join(PLUGIN, 'lib', 'room.js')).open(code).store.kv.set('rows/holds-orch', { pid: 999999, at: new Date().toISOString(), members: ['bob'], room: false });
   assert.match(rows.joinNote(orch, 'bob'), /no row running/, 'dead hold server: not running');
   const alice = { code, name: 'alice', role: 'member' };
   assert.equal(rows.joinNote(alice, 'bob'), `row: your room row is not running; spawn it now: ${rows.roomCall(code, ['bob'])}`);

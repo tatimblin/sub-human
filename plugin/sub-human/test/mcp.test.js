@@ -154,8 +154,10 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   assert.equal(e.from, 'alice');
   assert.match(e.hash, /^[0-9a-f]{12}$/);
   assert.deepEqual(e.approvers, ['alice', 'bob'], 'orch and the departed carol are not approvers');
-  assert.equal(e.path, path.join(identity.roomDir(code), 'plans', `${e.hash}.md`));
-  assert.equal(fs.readFileSync(e.path, 'utf8'), text);
+  assert.equal(e.path, `plans/${e.hash}.md`, 'the entry holds a room-relative ref');
+  const file = path.join(identity.roomDir(code), e.path);
+  assert.equal(fs.readFileSync(file, 'utf8'), text);
+  assert.ok(msg.includes(file), 'the reply names a file the proposer can open');
   assert.match(msg, new RegExp(`alice is an approver: call EnterPlanMode, then ExitPlanMode with plan "proposal ${e.hash}" now`));
   assert.doesNotMatch(msg, /#\d/, 'no entry ids for a Claude to repeat');
   // The same proposal again is not re-appended.

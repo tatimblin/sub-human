@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // Notification(idle_prompt|permission_prompt) and StopFailure: write this member's presence to
-// <room>/presence/<name>.json = {state, at, detail?} (identity.writePresence). Row text (lib/rows.js)
+// presence/<name> = {state, at, detail?} (identity.writePresence, a room document). Row text (lib/rows.js)
 // reads it; nothing goes to the room log, so presence never wakes anyone.
 //   idle_prompt        -> idle         the human is idle at their prompt
 //   permission_prompt  -> permission   their Claude is waiting on them

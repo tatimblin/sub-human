@@ -38,7 +38,7 @@ test('restore: /clear with a live room hold lists no row calls; without one it d
 
   // --resume: a new claude process, so a new hold server; the old server pid is dead -> nothing is held.
   const fs = require('node:fs');
-  fs.writeFileSync(rows.holdsFile(code, 'alice'), JSON.stringify({ pid: 999999, at: new Date().toISOString(), members: [], room: true }));
+  require(path.join(LIB, 'room.js')).open(code).store.kv.set('rows/holds-alice', { pid: 999999, at: new Date().toISOString(), members: [], room: true });
   ctx = restore(alice, 'resume', 'sess-alice-new2');
   assert.match(ctx, /Agent\(\{subagent_type: "sub-human:room"/);
 });

@@ -255,9 +255,9 @@ test('tail: an error inside the loop is logged once, backed off and recovered; d
   sys(code, 'member_joined', 'alice');                         // #1
   let statFails = 0, viewFails = 0, lookupFails = 0;
   const flakyFs = { ...fs, statSync: (...x) => { if (statFails > 0) { statFails--; throw Object.assign(new Error('EIO: injected read error'), { code: 'EIO' }); } return fs.statSync(...x); } };
-  const flakyRoom = { ...room, readView: (...x) => { if (viewFails > 0) { viewFails--; throw new Error('injected view error'); } return room.readView(...x); } };
+  const flakyRoom = c => { const r = room.open(c); return { ...r, readView: (...x) => { if (viewFails > 0) { viewFails--; throw new Error('injected view error'); } return r.readView(...x); } }; };
   const t = startTail({
-    fs: flakyFs, deps: { room: flakyRoom },
+    fs: flakyFs, deps: { openRoom: flakyRoom },
     lookup: () => { if (lookupFails > 0) { lookupFails--; throw new Error('injected lookup error'); } return identity.resolveByPid(process.pid); },
   });
   t.advance(300);
@@ -367,4 +367,14 @@ test('Batcher: settles on quiet, cuts at the max window, keeps young items, retr
   b.enqueue({ e: { id: 8 } });
   clock.advance(1000);
   assert.equal(clock.pending(), 0);
+});
+
+test('tail: the health tick renews the seat lease (identity.heartbeat)', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');
+  const beats = [];
+  const t = startTail({ deps: { heartbeat: me => beats.push(`${me.code}/${me.name}`) } });
+  t.advance(FAST.healthMs * 2 + 100);
+  assert.ok(beats.length >= 2 && beats.every(b => b === `${code}/alice`), beats.join(','));
 });

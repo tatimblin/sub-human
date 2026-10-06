@@ -7,8 +7,6 @@
 // A participant row is wanted while this seat is in the room, even after its member left (it reads "left").
 // An Esc-kill does NOT fire SubagentStop; hold.js's RESPAWN covers that. A row that stops for good
 // (STOP: this seat left, or a duplicate) is dropped from the row map.
-const path = require('node:path');
-const fs = require('node:fs');
 const { identity, rows, run, out, resolveSeat } = require('./common.js');
 
 const MAX_BLOCKS = 5;
@@ -26,11 +24,10 @@ run(input => {
   const wanted = rec.kind === 'room'
     ? !!(ms[me.name] && !ms[me.name].left_at)
     : !!(ms[rec.name] && ms[me.name] && !ms[me.name].left_at); // a member who left keeps the row ("left")
-  const countFile = path.join(rows.rowsDir(me.code), `blocks-${id.replace(/[^A-Za-z0-9_-]/g, '')}`);
   let n = 0;
-  try { n = Number(fs.readFileSync(countFile, 'utf8')) || 0; } catch { /* first */ }
+  try { n = rows.blockCount(me.code, id); } catch { /* first */ }
   if (wanted && n < MAX_BLOCKS) {
-    try { fs.mkdirSync(path.dirname(countFile), { recursive: true }); fs.writeFileSync(countFile, String(n + 1)); } catch { /* best effort */ }
+    try { rows.setBlockCount(me.code, id, n + 1); } catch { /* best effort */ }
     const args = rec.kind === 'room' ? `{"room": "${rec.name}"}` : `{"member": "${rec.name}"}`;
     out({
       decision: 'block',
