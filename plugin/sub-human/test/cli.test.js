@@ -286,37 +286,3 @@ test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the fa
   assert.equal(cli(['watch']).status, 2);
 });
 
-// ---------- tail alerts (alert content: statusline.test.js) ----------
-const fs = require('node:fs');
-const os = require('node:os');
-
-const H = 'b7ca39aa0011';
-
-test('cli tail: alerts the member through SUB_HUMAN_ALERT_FILE, debounced', async () => {
-  h.freshHome();
-  const { code } = h.register('alice');
-  room.bind(code);
-  sys('member_joined', 'alice');
-  const sink = path.join(os.tmpdir(), `sub-human-tail-alerts-${process.pid}-${Date.now()}.jsonl`);
-  const t = startTail({ SUB_HUMAN_ALERT_FILE: sink });
-  await h.sleep(300);
-  sys('plan_rev', 'orch', { plan_hash: H, approvers: ['alice', 'bob'] });
-  sys('plan_rev', 'orch', { plan_hash: H, approvers: ['alice', 'bob'] });
-  say('bob', 'alice, one', { to: 'alice' });
-  say('bob', 'alice, two', { to: 'alice' });
-  say('bob', 'done');
-  await t.until('"done"');
-  await h.sleep(200);
-  const got = fs.readFileSync(sink, 'utf8').trim().split('\n').map(l => JSON.parse(l));
-  assert.deepEqual(got.map(x => x.kind), ['signoff', 'message']);
-  assert.equal(got[1].text, 'alice, one');
-  fs.rmSync(sink, { force: true });
-  // Opted out: nothing.
-  const sink2 = sink + '.2';
-  const t2 = startTail({ SUB_HUMAN_ALERT_FILE: sink2, SUB_HUMAN_NOTIFY: '0' });
-  await h.sleep(300);
-  sys('plan_rev', 'orch', { plan_hash: 'abcabcabcabc', approvers: ['alice'] });
-  say('bob', 'end2');
-  await t2.until('"end2"');
-  assert.equal(fs.existsSync(sink2), false);
-});

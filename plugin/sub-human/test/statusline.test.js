@@ -15,7 +15,6 @@ const identity = require(path.join(PLUGIN, 'lib', 'identity.js'));
 const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
 const segments = require(path.join(PLUGIN, 'statusline', 'segments.js'));
 const { statusline, agentStatusline } = require(path.join(PLUGIN, 'statusline', 'index.js'));
-const { createAlerter } = require(path.join(PLUGIN, 'statusline', 'alert.js'));
 
 const H = 'b7ca39aa0011';
 const sleepers = [];
@@ -140,46 +139,3 @@ test('segments: state() is fast enough for a status bar', () => {
   assert.ok(Number(process.hrtime.bigint() - t) / 1e6 < 50, 'state() under 50 ms');
 });
 
-test('alerts: sign-off once per plan hash, messages at most once per gap, history and orch never; opt-out', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-alert-'));
-  const code = 'otter-1234';
-  const sink = path.join(dir, 'alerts.jsonl');
-  const read = () => { try { return fs.readFileSync(sink, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { return []; } };
-  let clock = Date.parse('2026-10-04T12:00:00Z');
-  const at = () => new Date(clock).toISOString();
-  const me = { code, name: 'alice', role: 'member' };
-  let signed = false;
-  const mk = (e = {}) => createAlerter({ me, dir, env: { SUB_HUMAN_ALERT_FILE: sink, ...e }, now: () => clock,
-    lookup: () => ({ signedByMe: signed, decided: false }) });
-  const a = mk();
-  const rev = (hash, approvers = ['alice', 'bob']) => ({ id: 1, at: at(), from: 'orch', via: 'system', kind: 'plan_rev', plan_hash: hash, approvers, text: 'x' });
-  const msg = (to, from = 'bob') => ({ id: 2, at: at(), from, via: 'human', kind: 'say', to, text: 'hey  alice\nlook' });
-  assert.equal(a.onEntry(rev(H)), true);
-  assert.equal(a.onEntry(rev(H)), false, 'same hash: no second alert');
-  assert.equal(mk().onEntry(rev(H)), false, 'a restarted tail remembers the hash');
-  assert.equal(a.onEntry(rev('cccccccccccc', ['bob'])), false, 'not an approver');
-  signed = true;
-  assert.equal(a.onEntry(rev('dddddddddddd')), false, 'already signed');
-  signed = false;
-  assert.equal(a.onEntry(msg('alice')), true);
-  clock += 10_000;
-  assert.equal(a.onEntry(msg('alice')), false, 'within 30 s');
-  assert.equal(a.onEntry(msg('room')), false, 'not addressed to me');
-  assert.equal(a.onEntry(msg('alice', 'alice')), false, 'my own');
-  clock += 21_000;
-  assert.equal(a.onEntry(msg('alice')), true, 'after 30 s');
-  const old = { ...msg('alice'), at: new Date(clock - 11 * 60_000).toISOString() };
-  clock += 31_000;
-  assert.equal(a.onEntry(old), false, 'history never alerts');
-  assert.equal(a.onEntry(rev('eeeeeeeeeeee')), true, 'a new plan hash alerts again');
-  const got = read();
-  assert.deepEqual(got.map(x => x.kind), ['signoff', 'message', 'message', 'signoff']);
-  assert.equal(got[0].title, `${code}: your sign-off is needed`);
-  assert.match(got[0].text, /sign-off form is in your Claude Code session/);
-  assert.equal(got[1].text, 'hey alice look');
-  assert.equal(got[1].title, `${code}: bob → you`);
-  clock += 60_000;
-  assert.equal(mk({ SUB_HUMAN_NOTIFY: '0' }).onEntry(rev('ffffffffffff')), false);
-  assert.equal(createAlerter({ me: { ...me, role: 'orch' }, dir, env: { SUB_HUMAN_ALERT_FILE: sink } }).onEntry(msg('alice')), false);
-  assert.equal(read().length, 4);
-});

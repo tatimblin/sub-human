@@ -3,6 +3,6 @@
     "name": "room",
     "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/sub-human\" tail",
     "description": "sub-human room notices",
-    "when": "on-skill-invoke:sub-human:sub-human"
+    "when": "always"
   }
 ]
