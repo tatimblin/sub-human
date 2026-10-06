@@ -54,9 +54,9 @@ test('walkthrough: behavioural warnings render as WARN and count apart from fail
   const r = build({ screens: dir, checksFile: checks, out });
   assert.deepEqual([r.pass, r.fail, r.warn], [1, 0, 1]);
   const html = fs.readFileSync(out, 'utf8');
-  assert.match(html, /<span class="badge">WARN<\/span>/);
+  assert.match(html, /<li class=warn><b>WARN<\/b> wakes ≤ 18/);
   assert.match(html, /behavioural · 24 vs ≤ 18/);
-  assert.match(html, /1\/2 checks pass \(1 behavioural warning\)/);
+  assert.match(html, /checks 1 pass \/ 1 warn \/ 0 fail/);
 });
 
 test('S9b: the pane check passes on nested lines and fails on a bare forged line; consent entries fail it', () => {

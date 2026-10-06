@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { render, parse, charWidth, color256, THEME } = require('../ansi-svg.js');
+const { render, renderHtml, rowsHtml, palette, parse, charWidth, color256, THEME } = require('../ansi-svg.js');
 
 const E = '\x1b[';
 
@@ -97,6 +97,29 @@ test('render: trim drops trailing blank rows; control chars are not emitted', ()
   const h = s => +s.match(/viewBox="0 0 \d+ (\d+)"/)[1];
   assert.ok(h(a) < h(b));
   assert.doesNotMatch(render('a\x01b\x08c\n'), /[\x01\x08]/);
+});
+
+test('renderHtml: escapes & < >, shares classes across calls, bare default text, right-trimmed', () => {
+  const pal = palette();
+  const a = renderHtml(`${E}31mred <b> & "q"${E}0m plain   \n${E}1;31mbold red${E}0m\n\n`, { title: 'bob <x>', palette: pal });
+  const b = renderHtml(`${E}31magain${E}0m ${E}7minv${E}0m\n`, { palette: pal });
+  assert.equal(a, '<figure class="term"><figcaption>bob &lt;x&gt;</figcaption><pre><i class=a>red &lt;b&gt; &amp; "q" </i>plain\n<i class=b>bold red</i></pre></figure>');
+  assert.match(b, /<i class=a>again <\/i><i class=c>inv<\/i>/, 'same style, same class across excerpts');
+  assert.equal(pal.size(), 3);
+  const css = pal.css('.term');
+  assert.match(css, /\.term i\.a\{color:#e06c75\}/);
+  assert.match(css, /\.term i\.b\{color:#e06c75;font-weight:700\}/);
+  assert.match(css, new RegExp(`\\.term i\\.c\\{color:${THEME.bg};background:${THEME.fg}\\}`));
+  assert.doesNotMatch(pal.css('.term', new Set(['a'])), /i\.b/, 'css limited to used classes');
+  assert.doesNotMatch(a + b, /<svg|\x1b/);
+});
+
+test('rowsHtml: raw line, plain text and html per row; spaces join a run', () => {
+  const rows = rowsHtml(`${E}32mok go${E}0m  \n${E}38;5;196mstop${E}0m\n`);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map(r => r.text), ['ok go', 'stop']);
+  assert.equal(rows[0].html, '<i class=a>ok go</i>');
+  assert.equal(rows[1].raw, `${E}38;5;196mstop${E}0m`);
 });
 
 test('CLI: stdin to stdout', () => {

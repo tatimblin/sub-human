@@ -10,6 +10,8 @@
  * many can be inlined into one HTML page.
  *
  *   const { render } = require('./ansi-svg.js'); render(text, { title: 'orch' }) -> '<svg …>'
+ *   renderHtml(text, { title, palette }) -> '<figure class="term"><pre>…</pre></figure>' (colours as
+ *   shared palette classes; rowsHtml gives the per-row {raw, text, html} for excerpting)
  *   tmux capture-pane -ep -t S | node scripts/ansi-svg.js --title "orch" [--cols 120] [--rows 40] > out.svg
  */
 
@@ -261,7 +263,91 @@ function render(text, opts = {}) {
   return out.join('\n') + '\n';
 }
 
-module.exports = { render, parse, charWidth, applySgr, color256, THEME };
+/**
+ * A shared style palette for HTML output: each distinct cell style (colours + bold/dim/italic/underline/
+ * strike) gets one short class, so many excerpts on one page share one <style> block and each coloured
+ * run costs `<i class=k>…</i>`.
+ *   const pal = palette(); rowsHtml(text, { palette: pal }); pal.css('.term') -> '.term i.a{color:#…}…'
+ * A page that shows only some rows passes the class names it emits: pal.css('.term', used).
+ */
+function palette(theme = THEME) {
+  const ids = new Map(); // style key -> {id, decl}
+  return {
+    /** Class for a cell style, or '' for the default look. */
+    cls(st) {
+      const { fg, bg } = resolved(st, theme);
+      const d = [];
+      if (fg && fg !== theme.fg) d.push('color:' + fg);
+      if (bg) d.push('background:' + bg);
+      if (st.bold) d.push('font-weight:700');
+      if (st.dim) d.push('opacity:.6');
+      if (st.italic) d.push('font-style:italic');
+      const deco = [st.underline && 'underline', st.strike && 'line-through'].filter(Boolean).join(' ');
+      if (deco) d.push('text-decoration:' + deco);
+      if (!d.length) return '';
+      const key = d.join(';');
+      if (!ids.has(key)) ids.set(key, nameOf(ids.size));
+      return ids.get(key);
+    },
+    size: () => ids.size,
+    /** The rules, scoped; `used` (a Set of class names) limits them to the classes a page emits. */
+    css(scope = '', used = null) {
+      const pre = scope ? scope + ' ' : '';
+      return `${pre}i{font-style:normal}` + [...ids].filter(([, k]) => !used || used.has(k)).map(([decl, k]) => `${pre}i.${k}{${decl}}`).join('');
+    },
+  };
+}
+/** 0 -> a, 25 -> z, 26 -> aa …: short class names that are valid unquoted attribute values. */
+function nameOf(n) { let s = ''; n++; while (n > 0) { n--; s = String.fromCharCode(97 + (n % 26)) + s; n = Math.floor(n / 26); } return s; }
+
+const escHtml = t => t.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+  .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+
+/**
+ * ANSI text -> one entry per terminal row: { raw (the ANSI source line), text (plain, right-trimmed),
+ * html (styled runs as <i class=k> using palette classes, right-trimmed) }. Default-styled text is bare.
+ */
+function rowsHtml(text, opts = {}) {
+  const theme = opts.theme || THEME;
+  const pal = opts.palette || palette(theme);
+  const str = String(text).replace(/\r\n/g, '\n');
+  const raws = str.split('\n');
+  const rows = parse(str, theme);
+  if (rows.length && rows[rows.length - 1].length === 0 && str.endsWith('\n')) rows.pop();
+  return rows.map((r, y) => {
+    let end = r.length;
+    while (end > 0 && r[end - 1].ch.trim() === '' && !resolved(r[end - 1].style, theme).bg) end--;
+    let html = '', plain = '', run = null;
+    const flush = () => {
+      if (!run) return;
+      const t = escHtml(run.text);
+      html += run.cls ? `<i class=${run.cls}>${t}</i>` : t;
+      run = null;
+    };
+    for (let i = 0; i < end; i++) {
+      const c = r[i], st = c.style;
+      const cls = pal.cls(st);
+      // a plain space looks the same in any foreground: let it join the current run
+      const blank = c.ch === ' ' && !resolved(st, theme).bg && !st.underline && !st.strike;
+      if (run && run.cls !== cls && !blank) flush();
+      if (!run) run = { cls, text: '' };
+      run.text += c.ch;
+      plain += c.ch;
+    }
+    flush();
+    return { raw: raws[y] || '', text: plain, html };
+  });
+}
+
+/** ANSI text -> <figure class="term"><figcaption>title</figcaption><pre>…</pre></figure>. */
+function renderHtml(text, opts = {}) {
+  const rows = rowsHtml(text, opts);
+  if (opts.trim !== false) while (rows.length && rows[rows.length - 1].text === '') rows.pop();
+  const cap = opts.title == null ? '' : `<figcaption>${escHtml(String(opts.title))}</figcaption>`;
+  return `<figure class="term">${cap}<pre>${rows.map(r => r.html).join('\n')}</pre></figure>`;
+}
+
+module.exports = { render, renderHtml, rowsHtml, palette, escHtml, parse, charWidth, applySgr, color256, THEME };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
