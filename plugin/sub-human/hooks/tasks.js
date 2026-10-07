@@ -15,11 +15,14 @@
  * TaskCompleted (gate): exit 2 with the reason (shown to the orch) unless lib/tasks.js gate() passes. The
  *   input has no metadata, so owner and metadata come from the task file (which still has the old status).
  *   A refusal drops every field of that TaskUpdate, so the reason tells the orch to send status alone.
+ * Every orch run then reconciles: a native task the log has no `task` entry for gets an `add` snapshot, so a
+ *   lost mirror run is repaired by the next one.
  *
  * The orch: the session resolves (common.js resolveSeat) to the room's orch seat, or (before binding)
  * SUB_HUMAN_ROOM is set and agent_type is sub-human:orchestrator.
  */
 
+const fs = require('node:fs');
 const path = require('node:path');
 const LIB = path.join(__dirname, '..', 'lib');
 const { readInput, resolveSeat } = require('./common.js');
@@ -93,11 +96,49 @@ function mirror(code, input) {
     if (!created && same(prev, next)) return; // description- or metadata-only change: no log entry
     const req = tasks.metaReq(inp.metadata) || tasks.metaReq(native && native.metadata)
       || reqNumber(inp.description || (native && native.description));
-    const t = { op, id, subject: next.subject, owner: next.owner, status: op === 'delete' ? 'deleted' : next.status,
-      blockedBy: next.blockedBy || [], ...(req ? { req } : {}) };
-    const text = `#${t.id} "${t.subject}" ${t.op}${t.owner ? ` · ${t.owner}` : ''} · ${t.status}${t.req ? ` (req #${t.req})` : ''}`;
-    r.append({ kind: 'task', text, ...t }, { via: 'system', from: 'orch', system: true });
+    record(r, { op, id, subject: next.subject, owner: next.owner, status: op === 'delete' ? 'deleted' : next.status,
+      blockedBy: next.blockedBy || [], ...(req ? { req } : {}) });
     tasks.refold(code, r.readAll());
+  });
+}
+
+function record(r, t) {
+  const text = `#${t.id} "${t.subject}" ${t.op}${t.owner ? ` · ${t.owner}` : ''} · ${t.status}${t.req ? ` (req #${t.req})` : ''}`;
+  r.append({ kind: 'task', text, ...t }, { via: 'system', from: 'orch', system: true });
+}
+
+/** The orch's native task files, by id (read only). */
+function nativeTasks(code) {
+  let names = [];
+  try { names = fs.readdirSync(cc.tasksDir(listId(code))); } catch { return []; }
+  return names.map(n => /^(\d+)\.json$/.exec(n)).filter(Boolean).map(m => readNative(code, m[1])).filter(Boolean)
+    .sort((a, b) => Number(a.id) - Number(b.id));
+}
+
+/**
+ * Appends an `add` snapshot for each native task the log has never recorded. A mirror run can be lost (the
+ * shim's timeout, a failed node start, a hook skipped), and nothing else would ever write that task's entry.
+ * Only ids with no `task` entry at all are restored: the native list can be wiped once every task is done and a
+ * deleted task's file can linger, so a gap in the other direction or a differing status proves nothing.
+ * The snapshot is the file's whole state and its metadata.req, the same fields a TaskCreate entry carries.
+ */
+function reconcile(code) {
+  const natives = nativeTasks(code);
+  if (!natives.length) return;
+  const r = room.open(code);
+  tasks.withList(code, () => {
+    const seen = new Set(r.readAll().filter(e => e.kind === 'task' && e.via === 'system' && e.task_id != null).map(e => String(e.task_id)));
+    let added = 0;
+    for (const n of natives) {
+      const id = String(n.id);
+      if (seen.has(id) || internal(n) || tasks.isRoomTask(n, code) || n.status === 'deleted') continue;
+      const req = tasks.metaReq(n.metadata) || reqNumber(n.description);
+      record(r, { op: 'add', id, subject: String(n.subject || ''), owner: n.owner ? String(n.owner) : null,
+        status: n.status || 'pending', blockedBy: Array.isArray(n.blockedBy) ? n.blockedBy.map(String) : [],
+        ...(req ? { req } : {}) });
+      added++;
+    }
+    if (added) tasks.refold(code, r.readAll());
   });
 }
 
@@ -138,4 +179,6 @@ if (code) {
       process.exitCode = 1;
     }
   }
+  // after the call's own entry, so that entry keeps its precise op; a failure here never changes the gate's verdict
+  try { reconcile(code); } catch (err) { process.stderr.write(`sub-human tasks reconcile: ${err && err.stack || err}\n`); }
 }
