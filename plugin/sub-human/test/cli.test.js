@@ -71,6 +71,29 @@ test('cli tail (smoke): silent before join, then one settled block; resumes from
   assert.equal(await new Promise(r => c.on('exit', r)), 0);
 });
 
+test('cli tail --ndjson (smoke): by session id, one JSON event per line; SIGTERM gives the delivery lease back', async () => {
+  h.freshHome();
+  const code = h.newRoom();
+  room.bind(code);
+  h.register('alice', 'member', process.pid, code); // session id sess-alice-<pid>
+  sys('member_joined', 'alice');                         // #1
+  const child = spawn(h.BIN, ['tail', '--ndjson'], { env: h.childEnv({ ...FAST, CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: `sess-alice-${process.pid}` }) });
+  children.add(child);
+  let out = '';
+  child.stdout.on('data', d => { out += d; });
+  const exited = new Promise(r => child.on('exit', (code_, sig) => r(code_ ?? sig)));
+  await h.until(() => out.includes('"type":"seat"'), 5000);
+  say('bob', 'hi alice');                                // #2
+  await h.until(() => out.includes('"type":"chat"'), 5000);
+  const events = out.split('\n').filter(Boolean).map(l => JSON.parse(l));
+  assert.deepEqual(events.find(x => x.type === 'chat').lines, ['bob: hi alice'], out);
+  assert.equal(events.find(x => x.type === 'seat').seat.addr, `alice.${code}`);
+  assert.equal(room.open(code).store.kv.get('delivery-alice').pid, child.pid);
+  child.kill('SIGTERM');
+  assert.equal(await exited, 0);
+  assert.equal(room.open(code).store.kv.get('delivery-alice', null), null, 'the lease was given back');
+});
+
 test('cli tail: while unseated it never runs ps and looks the seat up only every SUB_HUMAN_UNSEATED_MS', async () => {
   h.freshHome();
   const code = h.newRoom();

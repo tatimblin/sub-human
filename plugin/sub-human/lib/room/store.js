@@ -39,7 +39,8 @@
  *       absolute path older proposal entries stored. localPath: a file a person can open (null off-machine).
  *   kv.get(key, fallback?), kv.set(key, value, {compact}?), kv.update(key, fn, {compact, timeoutMs, staleMs}?),
  *   kv.delete(key), kv.list(prefix) -> [key], kv.lock(key, fn, opts?)
- *       small derived documents: tasks, presence/NAME, rows/*, members/NAME/review, members/NAME/<state>.
+ *       small derived documents: tasks, presence/NAME, rows/*, members/NAME/review, members/NAME/<state>,
+ *       delivery-NAME (the hooks module's delivery lease {via, sid, pid, at, until}: lib/tail.js leaseLive).
  *       update: fn(current|null) -> next (undefined: no write, null: delete), atomic like members.update.
  *   lock(name, fn, opts?)                   a room-wide mutex (the proposal answer lock)
  *   exists() -> bool

@@ -51,6 +51,10 @@ module.exports = {
   TAIL_ERROR_LOG_MS: 60_000,       // SUB_HUMAN_TAIL_ERROR_LOG_MS: one stderr line per error site per this long
   // Seated, the poll loop must have ticked within this long, or the next seat check restarts the session.
   TAIL_STALL_MS: 60_000,           // SUB_HUMAN_TAIL_STALL_MS
+  // The hooks module's delivery lease (room document delivery-NAME, renewed every TAIL_HEALTH_MS by
+  // `sub-human tail --ndjson`): while it is live the Monitor's tail writes nothing for that seat. After a crash
+  // the Monitor resumes at most this long later.
+  DELIVERY_LEASE_MS: 15_000,       // SUB_HUMAN_DELIVERY_LEASE_MS
 
   // ---------- locks (lib/lock.js) ----------
   // Locks are held for milliseconds. A waiter gives up (throws LOCK) after the timeout.

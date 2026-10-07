@@ -37,6 +37,12 @@
  *       (ids kept: its tools take them), a leave marked "· away 8s+". Its member_joined is pushed when
  *       lib/rows.js joinNote() says that member's row is not running (the line ends with the note and the
  *       Agent call), or when the note is unavailable; a join whose row runs is never pushed.
+ *   sub-human tail --ndjson [--max-seconds S]
+ *       The hooks module's child (mod/deliver.mjs starts it with $.process.spawn, CLAUDE_CODE_SESSION_ID set to the
+ *       session's id): the same loop, written as one JSON event per line for the mod to route (seat, chat, pull,
+ *       wake, rows, health; lib/tail.js documents them). It holds the seat's delivery lease (room document
+ *       delivery-NAME) while it runs, so the Monitor's tail above stays silent for that seat, and gives it back on
+ *       SIGTERM / SIGINT / SIGHUP. It exits when its parent goes (the ppid changes) or stdout closes.
  *   sub-human read [N[,M] | --id N[,M]] [--json] [--room CODE]
  *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
@@ -104,13 +110,14 @@ function openRoom(explicit) {
 
 // ---------- tail: lib/tail.js runTail ----------
 function tail(args) {
-  const { flags } = parseFlags(args, { 'max-seconds': 1 });
+  const { flags } = parseFlags(args, { 'max-seconds': 1, ndjson: 0 });
   let maxSeconds = null;
   if (flags['max-seconds'] != null) {
     maxSeconds = Number(flags['max-seconds']);
     if (!(maxSeconds > 0)) die(`bad --max-seconds "${flags['max-seconds']}"`);
   }
-  process.stdout.on('error', () => process.exit(0)); // the reader is gone: nobody to notify
+  let handle = null;
+  process.stdout.on('error', () => { try { if (handle) handle.stop(); } catch { /* exiting */ } process.exit(0); }); // the reader is gone: nobody to notify
   // The monitor is never re-armed once it exits, so a stray error is logged and the loop carries on.
   const lastResort = e => { try { process.stderr.write(`sub-human tail: unexpected error: ${e && e.stack || e}\n`); } catch { /* closed */ } };
   process.on('uncaughtException', lastResort);
@@ -122,7 +129,14 @@ function tail(args) {
   const lookup = sid || pid
     ? () => (sid && identity.resolveBySession(sid)) || (pid && identity.resolveByPid(pid)) || null
     : () => identity.resolveSelf();
-  tailLib.runTail({ write: (text, done) => process.stdout.write(text, done), lookup, maxSeconds });
+  const mode = flags.ndjson ? 'ndjson' : 'text';
+  handle = tailLib.runTail({ write: (text, done) => process.stdout.write(text, done), lookup, maxSeconds, mode, sid });
+  if (mode !== 'ndjson') return;
+  // The mod's child: give the lease back on the way out, and never outlive the session that started it.
+  const quit = () => { try { handle.stop(); } catch { /* exiting */ } process.exit(0); };
+  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, quit);
+  const ppid = process.ppid;
+  setInterval(() => { if (process.ppid !== ppid) quit(); }, config.TAIL_HEALTH_MS).unref();
 }
 
 // ---------- agent-statusline: dispatch to statusline/* ----------

@@ -60,8 +60,10 @@ test('notices shown / markShown: ids merge and sort; via is required', () => {
   assert.deepEqual([...notices.shown(code, 'alice')], []);
   notices.markShown(code, 'alice', [3], 'monitor');
   notices.markShown(code, 'alice', [5, 3], 'prompt');
-  assert.deepEqual([...notices.shown(code, 'alice')], [3, 5]);
+  notices.markShown(code, 'alice', [7], 'mod'); // tail --ndjson (the hooks module's chat events)
+  assert.deepEqual([...notices.shown(code, 'alice')], [3, 5, 7]);
   assert.throws(() => notices.markShown(code, 'alice', [6]), /via/);
+  assert.throws(() => notices.markShown(code, 'alice', [6], 'model'), /via/);
 });
 
 // ---------- the room hold's progress line ----------

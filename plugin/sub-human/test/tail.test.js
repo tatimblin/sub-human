@@ -31,7 +31,7 @@ function startTail({ timings = {}, lookup = () => identity.resolveByPid(process.
   const clock = opts.clock || createFake({ now: Date.now() });
   const t = { clock, out: '', writes: 0, errs: [] };
   t.handle = tailLib.runTail({
-    clock, lookup, timings: { ...FAST, ...timings }, fs: opts.fs, deps: opts.deps,
+    clock, lookup, timings: { ...FAST, ...timings }, fs: opts.fs, deps: opts.deps, mode: opts.mode, sid: opts.sid,
     write: (s, done) => { t.out += s; t.writes++; done(); },
     err: s => t.errs.push(s),
   });
@@ -377,4 +377,152 @@ test('tail: the health tick renews the seat lease (identity.heartbeat)', () => {
   const t = startTail({ deps: { heartbeat: me => beats.push(`${me.code}/${me.name}`) } });
   t.advance(FAST.healthMs * 2 + 100);
   assert.ok(beats.length >= 2 && beats.every(b => b === `${code}/alice`), beats.join(','));
+});
+
+// ---------- --ndjson: the hooks module's child (docs/next/MODS-PLAN.md W3 M6) ----------
+/** An in-process --ndjson tail: startTail's helpers plus events() (parsed lines) and of(type). */
+function startNd(opts = {}) {
+  const t = startTail({ ...opts, mode: 'ndjson' });
+  t.events = () => t.lines().map(l => JSON.parse(l));
+  t.of = type => t.events().filter(x => x.type === type);
+  return t;
+}
+const kvOf = code => room.open(code).store.kv;
+
+test('tail --ndjson: a member batch is chat + pull, a line to me is a wake; it says its seat and holds the lease', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  rows.writeHolds(code, 'alice', { room: true });
+  sys(code, 'member_joined', 'alice');                                                  // #1
+  const t = startNd({ sid: 'sid-a' });
+  t.advance(300);
+  assert.deepEqual(t.of('seat'), [{ type: 'seat', seat: { name: 'alice', code, role: 'member', addr: `alice.${code}` } }]);
+  const lease = kvOf(code).get('delivery-alice');
+  assert.equal(lease.via, 'mod');
+  assert.equal(lease.sid, 'sid-a');
+  assert.equal(lease.pid, process.pid);
+  assert.ok(lease.until > Date.now(), 'live');
+  sys(code, 'member_joined', 'bob');                                                    // #2 chat
+  say(code, 'bob', 'bob says hi');                                                      // #3 chat
+  inRoom(code, () => room.append({ kind: 'status', text: 'bob claude chatter' }, { via: 'agent', from: 'bob' })); // #4 pull
+  say(code, 'bob', '@alice can you look?');                                             // #5 @me: wake
+  inRoom(code, () => room.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' })); // #6 wake
+  prop(code, 'orch', H2, ['alice']);                                                    // #7 a proposal for me: wake + state
+  t.advance(2000);
+  assert.equal(t.writes, 3, 'seat, rows, then ONE batch write');
+  const batch = t.events().filter(x => ['chat', 'pull', 'wake'].includes(x.type));
+  assert.deepEqual(batch.map(x => x.type), ['chat', 'pull', 'wake'], 'chat first, then pull, then wake');
+  assert.deepEqual(t.of('chat')[0].lines, ['bob joined', 'bob: bob says hi']);
+  const pull = t.of('pull')[0].text.split('\n');
+  assert.equal(pull[0], tailLib.PULL_HEAD);
+  assert.deepEqual(pull.slice(1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
+  const wake = t.of('wake')[0].text.split('\n');
+  assert.deepEqual(wake.slice(0, 3), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", 'orch proposed: orch proposes']);
+  assert.ok(wake[3].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
+  assert.equal(inRoom(code, () => room.getCursor('deliver-alice')), 7);
+  assert.equal(inRoom(code, () => room.getCursor('ctx-alice')), 7, 'at-room\'s digest will not repeat the pull');
+  const notices = require(path.join(h.LIB, 'notices.js'));
+  assert.ok(notices.shown(code, 'alice').has(2), 'the join is recorded as shown');
+  t.stop();
+  assert.equal(kvOf(code).get('delivery-alice', null), null, 'the lease is given back on stop');
+  assert.deepEqual(t.errs, []);
+});
+
+test('tail: with a live delivery lease the Monitor tail prints nothing (and moves on); once it lapses it delivers again', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');                                                  // #1
+  const clock = createFake({ now: Date.now() });
+  const t = startTail({ clock });
+  t.advance(300);
+  kvOf(code).set('delivery-alice', { via: 'mod', sid: 's', pid: 1, at: '', until: clock.now() + 5000 });
+  say(code, 'bob', 'delivered by the mod');                                             // #2
+  inRoom(code, () => room.append({ kind: 'question', text: 'q', to: 'alice' }, { via: 'agent', from: 'bob' })); // #3
+  t.advance(2000);
+  assert.equal(t.out, '', 'silent while the lease is live');
+  assert.equal(cursor(code, 'alice'), 3, 'the cursor moves on: the mod delivered these');
+  t.advance(4000);
+  say(code, 'bob', 'after the lease');                                                  // #4
+  t.advance(2000);
+  assert.deepEqual(t.lines(), ['bob: after the lease'], t.out);
+});
+
+test('tail --ndjson: the Monitor and the mod side by side: the person gets each line once', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');                                                  // #1
+  const clock = createFake({ now: Date.now() });
+  const mon = startTail({ clock });
+  const nd = startNd({ clock, sid: 'sid-a' });
+  clock.advance(300);
+  say(code, 'bob', 'hello');                                                            // #2
+  clock.advance(2000);
+  assert.equal(mon.out, '');
+  assert.deepEqual(nd.of('chat').map(x => x.lines), [['bob: hello']]);
+  nd.stop();
+  say(code, 'bob', 'mod gone');                                                         // #3: the lease was given back
+  clock.advance(2000);
+  assert.deepEqual(mon.lines(), ['bob: mod gone']);
+});
+
+test('tail --ndjson: the first run starts where the Monitor got to (tail-NAME), not at the join', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');                                                  // #1
+  say(code, 'bob', 'old news');                                                         // #2
+  inRoom(code, () => room.setCursor('tail-alice', 2));
+  const t = startNd({ sid: 's' });
+  t.advance(2000);
+  assert.deepEqual(t.of('chat'), []);
+  say(code, 'bob', 'new');                                                              // #3
+  t.advance(2000);
+  assert.deepEqual(t.of('chat').map(x => x.lines), [['bob: new']]);
+});
+
+test('tail --ndjson: rows says the missing room row and the pending reminders at start and when they change; null clears', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');                                                  // #1
+  const t = startNd({ sid: 's' });
+  t.advance(300);
+  let r = t.of('rows');
+  assert.equal(r.length, 1);
+  assert.match(r[0].text, /^SUB-HUMAN ROWS: your room row is not running/);
+  t.advance(FAST.healthMs + 100);
+  assert.equal(t.of('rows').length, 1, 'unchanged: not sent again');
+  rows.writeHolds(code, 'alice', { room: true });
+  t.advance(FAST.healthMs);
+  r = t.of('rows');
+  assert.equal(r.at(-1).text, null, 'the row runs: cleared');
+  prop(code, 'orch', H2, ['alice']);
+  t.advance(FAST.healthMs);
+  assert.match(t.of('rows').at(-1).text, new RegExp(H2.slice(0, 6)), 'a proposal awaiting me is reminded');
+});
+
+test('tail --ndjson: the orch gets its push block as one wake, the pull lane as pull; no chat', () => {
+  h.freshHome();
+  const { code } = h.register('orch', 'orch');
+  rows.writeHolds(code, 'orch', { members: ['bob'] });
+  const t = startNd({ sid: 'so', deps: { orch: { watchdog: () => 'live' } } });
+  t.advance(300);
+  inRoom(code, () => room.append({ kind: 'task_req', text: 'please add tests', op: 'add', subject: 'tests' }, { via: 'agent', from: 'bob' })); // #1 push
+  say(code, 'bob', 'bob to the room');                                                  // #2 pull for the orch
+  t.advance(2000);
+  assert.deepEqual(t.of('chat'), []);
+  const wake = t.of('wake');
+  assert.equal(wake.length, 1);
+  assert.match(wake[0].text, /^room now: /);
+  assert.match(wake[0].text, /#1 /);
+  assert.match(t.of('pull')[0].text, /bob: bob to the room/);
+});
+
+test('tail --ndjson: a chain break is a health event', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');
+  const t = startNd({ sid: 's' });
+  t.advance(300);
+  fs.appendFileSync(inRoom(code, () => room.logPath()), JSON.stringify({ id: 2, at: new Date().toISOString(), from: 'alice', via: 'agent', kind: 'status', to: 'room', text: 'spliced', prev: '000000000000' }) + '\n');
+  t.advance(FAST.healthMs * 2);
+  assert.deepEqual(t.of('health').map(x => x.text.slice(0, 40)), ['room log check: the hash chain breaks at']);
 });
