@@ -7,6 +7,7 @@
  *                                 CLAUDE_PID (a $.process.run child inherits whatever claude itself inherited:
  *                                 cc CONTRACT process-run-stdin)
  *   shimArgv(root, script) -> argv          ['node', '<root>/hooks/<script>']
+ *   SHIM_MODE                                {SUB_HUMAN_SHIM: '1'}: added to the env of a hook that reports to the mod
  *   SHIM_TIMEOUT_MS                          the hooks.json timeout the command hooks had (10 s)
  *   toClassic(event, run) -> {result, systemMessage?}
  *       run is $.process.run's {exitCode, stdout, stderr}. The command hook's output, translated:
@@ -18,11 +19,14 @@
  *         plain stdout (not JSON) on an event that reads context    -> additionalContext: [stdout]
  *         systemMessage                              -> systemMessage beside the result (ClassicResult has no
  *                                                       such field; the caller shows it with $.ui.log)
+ *         subHuman (a hook run with SUB_HUMAN_SHIM=1)  -> subHuman beside the result: what the hook tells the
+ *                                                       mod, e.g. consent's {reviewOpen}
  *       Only the fields the event reads (CLASSIC_FIELDS, from the d.ts ClassicResultFields) are kept, since a
  *       field the event does not read fails the hook. Any other exit status is a non-blocking error: no result.
  */
 
 export const SHIM_TIMEOUT_MS = 10_000;
+export const SHIM_MODE = Object.freeze({ SUB_HUMAN_SHIM: '1' });
 
 /** ClassicResultFields of the 2.1.292 d.ts, for the events a shim can carry. block / preventContinuation /
  * stopReason are every event's. */
@@ -78,5 +82,6 @@ export function toClassic(event, run = {}) {
   if (hso.suppressOriginalPrompt === true) r.suppressOriginalPrompt = true;
   const out = { result: keep(r) };
   if (typeof o.systemMessage === 'string' && o.systemMessage) out.systemMessage = o.systemMessage;
+  if (o.subHuman && typeof o.subHuman === 'object' && !Array.isArray(o.subHuman)) out.subHuman = o.subHuman;
   return out;
 }

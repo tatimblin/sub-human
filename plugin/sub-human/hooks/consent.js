@@ -28,6 +28,10 @@
  * Post(AskUserQuestion): drop afkTimeoutMs, followUp, no answers, stale hashes and "Not yet". Otherwise append
  *   signoff|objection via=human (notes byte-exact), then the decision when complete (lib/proposal.record).
  * Post(ExitPlanMode) for the person's own plan: offer, once per plan, to propose it to the room. Never denies.
+ *
+ * With the hooks module (docs/next/MODS-PLAN.md W2), Stop runs through mod/consent.mjs (classic.Stop, only while
+ * its reviewMaybeOpen flag is set) with SUB_HUMAN_SHIM=1: the output then also carries subHuman {reviewOpen}.
+ * The room-tool PreToolUse entry stays a command hook, skipped by the mod while no review is open.
  */
 
 const fs = require('node:fs');
@@ -330,6 +334,28 @@ function dispatch(input) {
 /** The UserPromptSubmit handler (hooks/prompt.js runs it after at-room.js's, in one process). */
 const onPrompt = input => dispatch({ ...input, hook_event_name: 'UserPromptSubmit' });
 
-module.exports = { dispatch, onPrompt };
+/** True when this session's seat has a room review on record (review.json); false with no seat. */
+function reviewOpen(input) {
+  const me = c.whoami(input);
+  return !!(me && readReview(me));
+}
 
-if (require.main === module) c.run(dispatch, () => {}); // run() logs the error; never block a question or a plan
+/**
+ * Shim mode (SUB_HUMAN_SHIM=1: the hooks module ran this hook, mod/consent.mjs): the one output also carries
+ * subHuman {reviewOpen}, so the mod knows whether the next turn end needs consent at all. Printed even when the
+ * handler had nothing to say; an error leaves it out (the mod then stays unsure).
+ */
+function shimDispatch(input) {
+  const r = c.capture(() => dispatch(input));
+  if (r.error) throw r.error;
+  const outputs = r.outputs.filter(Boolean);
+  const last = outputs.pop() || {};
+  for (const o of outputs) process.stdout.write(JSON.stringify(o) + '\n');
+  c.out({ ...last, subHuman: { reviewOpen: reviewOpen(input) } });
+}
+
+const SHIM = () => process.env.SUB_HUMAN_SHIM === '1';
+
+module.exports = { dispatch, onPrompt, reviewOpen, SHIM };
+
+if (require.main === module) c.run(SHIM() ? shimDispatch : dispatch, () => {}); // run() logs the error; never block a question or a plan

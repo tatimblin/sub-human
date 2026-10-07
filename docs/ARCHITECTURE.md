@@ -36,7 +36,7 @@ The one security goal: **a model can never speak or consent as a person.** The r
 
 Per session, Claude Code starts:
 
-- **Hooks** (`hooks/*.js`): short synchronous `node` processes, one per matching hook entry. They are the only code that resolves identity from the payload and the only code that holds the seat signing key. `prompt.js` runs both UserPromptSubmit handlers (at-room, consent) in one process.
+- **Hooks** (`hooks/*.js`): short synchronous `node` processes, one per matching hook entry. They are the only code that resolves identity from the payload and the only code that holds the seat signing key. `prompt.js` runs both UserPromptSubmit handlers (at-room, consent) in one process. The hooks module (`hooks/register.mjs` → `mod/`) runs in-process: the store guard, the prompt gate, and shims that start `prompt.js`, `consent.js` (Stop) and `tasks.js` with `$.process.run` only when they can act (table below).
 - **The monitor** (`monitors/monitors.json`, `when: "always"`): `bin/sub-human tail` → `lib/tail.js`. It runs in every session with the plugin loaded, stays silent until the session has a seat, then prints the push lane. It never exits, because Claude Code does not re-arm a monitor that exited.
 - **The MCP server** (`.mcp.json` → `mcp/room-server.js`): stdio JSON-RPC, one per session. Its plug-ins `mcp/hold.js` and `mcp/task.js` add tools. It resolves the caller from `process.ppid` on every call. It cannot sign `via=human`.
 - **Rows**: background subagents that make one blocking MCP call (`hold`) and stream progress, so they cost no tokens while they hold. Their panel text comes from the plugin's `subagentStatusLine` (`settings.json` → `<home>/bin/row-status`, written by `hooks/row-launcher.js`, which runs `statusline/`).
@@ -49,7 +49,7 @@ Who spawns whom:
 | a member's main thread | one `sub-human:room` row | the `Agent` call the join/restore context lists under ROWS |
 | a room row | one `sub-human:participant` row per other member | on start, and when `hold({room})` returns `JOINED`/`RESPAWN` |
 | the orch's main thread | one participant row per human | on a pushed `member_joined` that carries the Agent call |
-| `hooks/at-room.js` | a detached forgery checker | `node at-room.js --forgery-check JOB` |
+| `hooks/at-room.js` | a detached forgery checker, only for an `@room` with no attested origin (no hooks module) | `node at-room.js --forgery-check JOB` |
 | `hooks/session-end.js`, `orch.watchdog` | the reaper | detached `node lib/orch.js reap CODE` |
 
 `hooks/row-guard.js` denies a duplicate row spawn; `row-map.js` records which panel row is which agent; `row-hold.js` (SubagentStop) tells a row that gave up to hold again; `row-rewake.js` (SessionStart resume, `asyncRewake`) re-spawns rows after `--resume`.
@@ -60,14 +60,11 @@ Who spawns whom:
 | Event | Matcher | Script | Timeout | Async |
 |---|---|---|---|---|
 | UserPromptExpansion | `^(sub-human:)?sub-human$` | `hooks/join.js` | 10 s | — |
-| UserPromptSubmit | (all) | `hooks/prompt.js` | 10 s | — |
 | PreToolUse | `Agent\|Task` | `hooks/row-guard.js` | 10 s | — |
 | PreToolUse | `^(AskUserQuestion\|EnterPlanMode\|ExitPlanMode)$\|^mcp__plugin_sub-human_room__` | `hooks/consent.js` | 10 s | — |
 | PostToolUse | `Agent\|Task` | `hooks/row-map.js` | 10 s | — |
 | PostToolUse | `AskUserQuestion\|EnterPlanMode\|ExitPlanMode` | `hooks/consent.js` | 10 s | — |
-| PostToolUse | `TaskCreate\|TaskUpdate` | `hooks/tasks.js` | 10 s | — |
 | PermissionRequest | `ExitPlanMode` | `hooks/consent.js` | 10 s | — |
-| Stop | (all) | `hooks/consent.js` | 10 s | — |
 | SubagentStop | (all) | `hooks/row-hold.js` | 10 s | — |
 | SessionStart | `startup\|resume\|clear\|fork` | `hooks/row-launcher.js` | 10 s | async |
 | SessionStart | `compact\|clear\|resume` | `hooks/session-restore.js` | 10 s | — |
@@ -75,7 +72,6 @@ Who spawns whom:
 | SessionEnd | (all) | `hooks/session-end.js` | 5 s | — |
 | Notification | `idle_prompt\|permission_prompt` | `hooks/presence.js` | 10 s | async |
 | StopFailure | (all) | `hooks/presence.js` | 10 s | async |
-| TaskCompleted | (all) | `hooks/tasks.js` | 10 s | — |
 <!-- /gen:hooks -->
 
 ### Function hooks (generated)
@@ -89,11 +85,18 @@ From `hooks/register.mjs` (hooks.json `modules`), in registration order.
 |---|---|---|---|
 | `session.start` | (all) | `mod/register.mjs` | runs hooks/mod-hello.js (the lease; home, plugin root, seat into $.state) |
 | `classic.UserPromptExpansion` | `command_name ^(sub-human:)?sub-human$` | `mod/register.mjs` | after the join (hooks/join.js beneath), runs mod-hello again for the new seat |
-| `classic.SessionStart` | `source clear\|compact\|resume` | `mod/register.mjs` | after session-restore beneath (a /clear rebinds the seat to a new session id), runs mod-hello again |
+| `classic.SessionStart` | `source clear\|compact\|resume` | `mod/register.mjs` | after session-restore beneath (a /clear rebinds the seat to a new session id), runs mod-hello again; reviewMaybeOpen unsure |
 | `tool.call` | `Bash` | `mod/guard.mjs` | denies a command that names the store or runs the plugin's code (mod/core/guard.mjs bashVerdict); .catch fails closed on "sub-human" |
 | `tool.call` | `Write\|Edit\|MultiEdit\|NotebookEdit` | `mod/guard.mjs` | denies a write into the store, lexically or after $.fs.stat realPath; .catch fails closed on "sub-human" |
 | `tool.call` | `mcp__plugin_sub-human_room__hold` | `mod/guard.mjs` | denies hold outside a row subagent (no agentId) |
 | `tool.check` | `/^mcp__plugin_sub-human_room__/` | `mod/guard.mjs` | allows the room tools for a seated session (no permission prompt); hold only with agentId |
+| `prompt.submit` | (all) | `mod/prompt.mjs` | drops an @room / room: whose origin is not composer, sdk or bridge (a peer, a notification, a plugin); hands the origin to the shim below; .catch drops only an @room |
+| `classic.UserPromptSubmit` | (all) | `mod/prompt.mjs` | no node when surely unseated and not an @room; else node hooks/prompt.js with sub_human_origin (systemMessage via $.ui.log) |
+| `tool.call` | `EnterPlanMode\|ExitPlanMode` | `mod/consent.mjs` | sets reviewMaybeOpen (a room review starts only through these) |
+| `classic.Stop` | (all) | `mod/consent.mjs` | node hooks/consent.js (the open-review nudge) only while a review may be open or the seat is unknown |
+| `classic.PreToolUse` | `/^mcp__plugin_sub-human_room__/` | `mod/consent.mjs` | no review open: answers with no decision, so consent's command hook beneath does not run |
+| `classic.PostToolUse` | `tool_name TaskCreate\|TaskUpdate` | `mod/tasks.mjs` | node hooks/tasks.js (the room task mirror) only for the orch or an unknown seat |
+| `classic.TaskCompleted` | (all) | `mod/tasks.mjs` | node hooks/tasks.js (the gate; exit 2 -> block) only for the orch or an unknown seat; .catch blocks in the orch |
 | `ui.render` | `UserMessage, origin peer\|peer-send-message\|plugin` | `mod/render.mjs` | draws another member's Claude as "bob's Claude: …" and a sub-human prompt as its chat lines, without "(for Claude)" lines |
 <!-- /gen:mod-hooks -->
 
@@ -236,7 +239,7 @@ crashed members (no SessionEnd) ─► orch tail health tick: watchdog() sees no
 
 ## Security model
 
-One machine, one OS user, trusted collaborators. The threat is a member's Claude (possibly steered by text posted in the room) speaking or consenting as a person. Defences: `via=human` only from hooks, signed with a key only hook processes load; the store guard (the hooks module's `mod/guard.mjs`, in-process) denies file-tool writes into the store and Bash commands that name it, set `SUB_HUMAN_HOME` or run the plugin's modules; `source` and the forgery check refuse peer-injected `@room` prompts; consent only from the native dialog. Not covered: the `Read` tool, other MCP servers, a hostile local user. Full list: [README → Threat model](../plugin/sub-human/README.md#threat-model).
+One machine, one OS user, trusted collaborators. The threat is a member's Claude (possibly steered by text posted in the room) speaking or consenting as a person. Defences: `via=human` only from hooks, signed with a key only hook processes load; the store guard (the hooks module's `mod/guard.mjs`, in-process) denies file-tool writes into the store and Bash commands that name it, set `SUB_HUMAN_HOME` or run the plugin's modules; the module's `prompt.submit` gate drops an `@room` whose engine-set origin is not the person's (composer, sdk, bridge), and at-room trusts that origin (without the module: `source` and the forgery check); consent only from the native dialog. Not covered: the `Read` tool, other MCP servers, a hostile local user. Full list: [README → Threat model](../plugin/sub-human/README.md#threat-model).
 
 ## Claude Code contract (generated)
 
@@ -312,8 +315,8 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `hooks-json-modules` | §10 | API | One hooks.json carries the command hooks and one module path under `modules` (relative to hooks.json); a second module is refused (S1). |
 | `module-dollar-local` | §10 | incidental | A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.mjs stays $-free (S1). |
 | `modules-headless` | §10 | env | Modules are off only diskless or in a tool server's daemon (then by policy, safe mode, --bare): they load in -p and in a --bg worker such as the orch. A --bg dispatch prompt reaches prompt.submit as origin composer (S2). |
-| `classic-chain-order` | §10 | incidental | A module's classic.<Event> hook runs above the plugin's own command hooks for that event; one that answers without next() means the command hooks beneath do not run (S1, S5). |
-| `prompt-submit-ups-order` | §10 | incidental | prompt.submit's core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). |
+| `classic-chain-order` | §10 | incidental | A module's classic.<Event> hook runs above the plugin's own command hooks for that event; one that answers without next() means the command hooks beneath do not run (S1, S5). mod/consent.mjs relies on it: classic.PreToolUse on a room tool answers {} (no decision: the normal permission flow) to skip consent's command hook while no review is open. |
+| `prompt-submit-ups-order` | §10 | incidental | prompt.submit's core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). mod/prompt.mjs relies on it: classic.UserPromptSubmit runs inside prompt.submit's next(e), so prompt.submit hands it e.origin (the classic payload has none) in a module variable. |
 | `usermessage-draw-only` | §10 | incidental | A ui.render rewrite of UserMessage text changes only the drawing; origin, isExpanded, task and from are pinned. |
 | `usermessage-notification-summary` | §10 | incidental | A task-notification UserMessage row's props.text is the notification's <summary> (a monitor's: 'Monitor event: "sub-human room"'), not the event's lines, which the engine draws as the row's headline and drops once a hook rewrites the text. So mod/render.mjs leaves room notifications to the engine. |
 | `plugin-types-state` | §10 | incidental | validate refuses a $.state value the plugin's own types contract (plugin.json "types": types/index.d.ts) does not declare in PluginState; sub-human declares sub-human.hello. |
@@ -361,9 +364,12 @@ Everything is a `node` start, so the number of processes per event is the main c
 
 | Event | Node starts |
 |---|---|
-| a prompt | 1 (`prompt.js`) + 1 at turn end (`consent.js` Stop) |
+| a prompt, session with no seat | 0 (an `@room` there: 1, its refusal) |
+| a prompt, seated | 1 (`prompt.js`, through the module) |
+| turn end (Stop) | 0 while no review may be open; else 1 (`consent.js`) |
 | `Bash`, `Write`/`Edit` | 0 (the module's in-process guard) |
-| a room MCP tool | 1 (`consent.js`; the guard is in-process) |
+| a room MCP tool | 0 while no review may be open; else 1 (`consent.js`) |
+| a member's own `TaskCreate`/`TaskUpdate`/completion | 0 (the orch: 1, `tasks.js`) |
 | session start, a join, `/clear` | +1 (`mod-hello.js`) |
 | `Agent`/`Task` | 2 (`row-guard.js`, `row-map.js`) |
 | `ExitPlanMode` during a review | up to 3 (Pre, PermissionRequest, Post) |

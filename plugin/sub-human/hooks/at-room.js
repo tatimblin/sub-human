@@ -35,6 +35,11 @@
 //     never shows the prompt inside the window, the post stands (fail-open, by design: a slow disk must not
 //     eat a person's words).
 //
+// With the hooks module (docs/next/MODS-PLAN.md W2), mod/prompt.mjs drops a non-typed @room in prompt.submit and
+// runs this hook with `sub_human_origin`, the engine's origin kind for the prompt: composer / sdk / bridge post
+// at once (no provisional mark, no checker); anything else is refused. The source and transcript checks above
+// run only when that field is absent (a session without the module, or an origin hand-off lost to a reload).
+//
 // Drafted by Claude (docs/archive/fixes/B-model-behavior.md #11): when the posted text appears verbatim in the
 // last assistant message (an accepted prompt suggestion, a copied draft), the entry carries drafted:"agent".
 // It is still posted.
@@ -89,6 +94,8 @@ const contentText = cc.contentText;
 
 /** Sources a person types from (the composer, -p). Absent: an older payload, checked after the fact. */
 const TYPED_SOURCES = new Set(['user', 'sdk']);
+/** prompt.submit origins a person types from (mod/core/prompt.mjs TYPED_ORIGINS; D4 adds Remote Control's bridge). */
+const TYPED_ORIGINS = new Set(['composer', 'sdk', 'bridge']);
 const hasSource = input => input.source !== undefined && input.source !== null;
 
 /**
@@ -300,11 +307,18 @@ function handle(input) {
     return;
   }
 
+  // The mod's attested origin (prompt.submit e.origin.kind, through the classic.UserPromptSubmit shim): a typed
+  // one posts at once, with no provisional mark and no checker; any other is refused (the mod's prompt.submit
+  // gate drops those first). Absent (no module, or its hand-off lost): today's source and transcript checks.
+  const origin = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
+  if (origin !== null && !TYPED_ORIGINS.has(origin)) {
+    return block(`✗ not posted: this prompt was not typed by you (origin "${origin.slice(0, 40)}"). Only your own typed @room posts as your words.`, top);
+  }
   // With no source field, cc.isPeerPrompt falls back to the text check (envelope or prefix).
-  if (cc.isPeerPrompt(input)) {
+  if (origin === null && cc.isPeerPrompt(input)) {
     return block('✗ not posted: this prompt came from another Claude session, not from you. Only your own typed @room posts as your words.', top);
   }
-  if (hasSource(input) && !TYPED_SOURCES.has(input.source)) {
+  if (origin === null && hasSource(input) && !TYPED_SOURCES.has(input.source)) {
     return block(`✗ not posted: this prompt was not typed by you (source "${String(input.source).slice(0, 40)}"). Only your own typed @room posts as your words.`, top);
   }
   if (!me) return block('✗ not posted: this session is not in a room. Join one first with /sub-human NAME [CODE].');
@@ -313,8 +327,8 @@ function handle(input) {
   const entry = { kind: 'say', text };
   if (normalized) entry.normalized = true;
   if (draftedByAgent(text, lastAssistantText(transcriptTail(input.transcript_path), input.prompt_id))) entry.drafted = 'agent';
-  // A typed source is known now; without one the post is provisional until the transcript check has run.
-  const check = !hasSource(input);
+  // A typed origin or source is known now; without either the post is provisional until the transcript check has run.
+  const check = origin === null && !hasSource(input);
   const e = room.open(me.code).append(entry, { via: 'human', from: me.name, provisional: check });
   if (check) spawnForgeryCheck(me, input, e.id);
   out({
@@ -324,7 +338,7 @@ function handle(input) {
   });
 }
 
-module.exports = { handle, parse };
+module.exports = { handle, parse, TYPED_ORIGINS };
 
 if (require.main === module) {
   if (process.argv[2] === '--forgery-check') forgeryCheck(JSON.parse(process.argv[3]));

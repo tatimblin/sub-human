@@ -1,6 +1,6 @@
 # Mods (function hooks) plan
 
-Status: W0 done (a6abb60), W1 done (see W1 results), W2 next, 2026-10-07. Decided: D1 yes, D2 yes (W4), D3 notices via `$.ui.log`, D4 add `bridge`; generated `tsconfig.json` and `.claude-plugin/types/` are gitignored. D5–D8 open.
+Status: W0 done (a6abb60), W1 done (03a3d9c), W2 done (see W2 results), W3 next, 2026-10-07. Decided: D1 yes, D2 yes (W4), D3 notices via `$.ui.log`, D4 add `bridge`; generated `tsconfig.json` and `.claude-plugin/types/` are gitignored. D5–D8 open.
 - the plugin-authoring skill shipped with Claude Code 2.1.292 (`reference.md`, `types/claude-code.d.ts`, `examples/`);
 - the 2.1.292 binary as text (`/tmp/cc292/bin.txt`), for everything the skill does not settle;
 - [`docs/internals/cc-2.1.292.md`](../internals/cc-2.1.292.md) (`hooks-modules (b)`) and the code at `0a310fd`.
@@ -265,7 +265,7 @@ Open, for W2+:
 - Until W4's join refusal, a seat in a session with modules off has no store guard (the D1 trade-off, now live).
 - `HOOKS` is hand-kept, but the test fails when it drifts from what validate reads.
 
-### W2: per-turn costs (2 agents in parallel)
+### W2: per-turn costs (2 agents in parallel) — **done**
 
 **M4 prompt gate** (owns `hooks/prompt.js`, `hooks/at-room.js`, `mod/prompt.mjs`, `mod/core/prompt.mjs`, `test/hooks/{at-room,prompt,security}.test.js`, `mod/test/prompt.test.ts`):
 - The `prompt.submit` origin gate.
@@ -281,6 +281,33 @@ Open, for W2+:
 - **Accept:** `consent-table.test.js` passes unchanged; a bench shows 0 node starts for a turn end with no review and for a room `post`; the TaskCompleted gate blocks in a wiring test.
 
 Commit.
+
+#### W2 results
+
+Done 2026-10-07 by one agent (M4 then M5). `npm test` (plugin 337, scripts, `test:mods` 35), `npm run probe` (80/80), `npm run validate` and `bash -n scripts/demo.sh` are green; every gating hook has a `.catch` (13 of 13). Live check with `-p`, `--plugin-dir`, a throwaway home and a `node` on PATH that logs each start ($0.37): a seated `@room` posted signed with no `provisional` and no checker, and no model call ($0); a seated plain prompt ran `prompt.js` once and no `consent.js` at the turn end; an unseated prompt ran neither.
+
+- **M4.** `mod/prompt.mjs` + `mod/core/prompt.mjs`: the `prompt.submit` gate (drops an `@room` whose origin is not composer, sdk or bridge) and the `classic.UserPromptSubmit` shim (no node when the hello says this session has no seat and the prompt is not an `@room`). The origin reaches the shim through a module queue, since the classic payload has none and `classic.UserPromptSubmit` runs inside `prompt.submit`'s `next(e)`. A lost hand-off means no `sub_human_origin`, and at-room keeps today's checks. at-room trusts `sub_human_origin`: composer/sdk/bridge post at once, anything else is refused.
+- **M5.** `mod/consent.mjs`: the `reviewMaybeOpen` flag (`types/index.d.ts`), the `classic.Stop` shim, and a `classic.PreToolUse` room-tool prefilter. `consent.js` and `prompt.js` print `subHuman {reviewOpen}` under `SUB_HUMAN_SHIM=1`. `mod/tasks.mjs` runs `tasks.js` only for the orch, an unknown seat, or no seat with `SUB_HUMAN_ROOM` set. Its `.catch` blocks only in the orch's session.
+- **Removed from hooks.json** (17 → 13 entries): UserPromptSubmit `prompt.js`, Stop `consent.js`, PostToolUse `TaskCreate|TaskUpdate` `tasks.js`, TaskCompleted `tasks.js`.
+
+| Event | Before W2 | After W2 |
+|---|---|---|
+| a prompt, no seat | 1 | **0** |
+| a prompt, seated | 1 | 1 |
+| an `@room` post | 1 (+ the detached checker without `source`) | 1, never a checker |
+| turn end (Stop) | 1 | **0** while no review may be open |
+| a room MCP tool | 1 | **0** while no review may be open |
+| a member's own `TaskCreate`/`TaskUpdate`/completion | 1 | **0** |
+
+Deviations:
+- **Consent's room-tool matcher stays in hooks.json.** `tool.call` and `classic.PreToolUse` get only the tool envelope, with no `permission_mode` or `transcript_path`, and `preRoomTool` needs both. So the mod does not shim it. While no review may be open, `classic.PreToolUse` on room tools answers `{}` without `next`. That means no decision: the normal permission flow runs, and the command hook beneath is skipped (CONTRACT `classic-chain-order` note). The cost is the same, but the user's own settings PreToolUse hooks are also skipped for sub-human's room tools.
+- **The shims call `next(e)` and merge.** Ours comes first: our block or stop wins and the contexts join. The settings hooks beneath still run, as they did in parallel before. A TaskCompleted block returns without `next`.
+- **A failed hello refresh** (join, `/clear`) keeps the last hello but sets its `sid` to null, so every prefilter runs node until a refresh works. Without this, a stale "no seat" would look certain.
+- **The flag also clears on a seated prompt** (`prompt.js` reports it), so the first turn end after a start costs nothing either.
+- `hooks/prompt.js` stays in W2 (deleted in W3, as planned). Files outside the listed ownership: `mod/register.mjs`, `mod/core/{shim,prefilter}.mjs`, `types/index.d.ts`, `test/mod-core.test.js`, `test/hooks/consent.test.js`, the README threat model, and `docs/ARCHITECTURE.md` (the hand-written performance and security lines).
+
+Open, for W3+:
+- `@room` origin attestation needs the module. A session with modules off still uses `source` and the checker until W4 deletes them (D1).
 
 ### W3: delivery (1 agent, then 1)
 

@@ -114,6 +114,88 @@ test('shim: a real hook\'s output translates (at-room posting through prompt.js)
   assert.match(result.stopReason, /^✓ sent/);
 });
 
+test('shim: subHuman (a hook run with SUB_HUMAN_SHIM=1) comes out beside the result', async () => {
+  const { toClassic, SHIM_MODE } = await load('mod/core/shim.mjs');
+  const ok = o => ({ exitCode: 0, stdout: JSON.stringify(o) + '\n', stderr: '' });
+  assert.deepEqual(SHIM_MODE, { SUB_HUMAN_SHIM: '1' });
+  assert.deepEqual(toClassic('Stop', ok({ subHuman: { reviewOpen: false } })), { result: {}, subHuman: { reviewOpen: false } });
+  assert.deepEqual(toClassic('Stop', ok({ hookSpecificOutput: { hookEventName: 'Stop', additionalContext: 'exit' }, subHuman: { reviewOpen: true } })),
+    { result: { additionalContext: ['exit'] }, subHuman: { reviewOpen: true } });
+  assert.deepEqual(toClassic('Stop', ok({ subHuman: [true] })), { result: {} });
+});
+
+// ---------- prompt ----------
+test('prompt: parse is at-room\'s parse; the gate drops only an @room that no person typed', async () => {
+  const p = await load('mod/core/prompt.mjs');
+  const atRoom = require('../hooks/at-room.js');
+  for (const s of ['@room hi', '@room', '@room  two', 'room:x', 'room: x', 'room:  x', '@roomx', ' @room x', 'hello', '', '/sub-human alice', 'Room: x', '@room\nmore'])
+    assert.equal(p.parse(s), atRoom.parse(s), JSON.stringify(s));
+  assert.deepEqual([...p.TYPED_ORIGINS], [...atRoom.TYPED_ORIGINS]);
+  assert.equal(p.gateVerdict({ text: '@room x', origin: { kind: 'composer' } }), null);
+  assert.equal(p.gateVerdict({ text: 'plain', origin: { kind: 'peer' } }), null);
+  assert.match(p.gateVerdict({ text: '@room x', origin: { kind: 'peer' } }), /another Claude session/);
+  assert.match(p.gateVerdict({ text: 'room:x', origin: { kind: 'plugin', name: 'other' } }), /"plugin"/);
+  assert.equal(p.isAtRoom('@room'), true);
+  assert.equal(p.isAtRoom('room'), false);
+});
+
+test('prompt: needsNode skips node only for a surely unseated session and a prompt that is not an @room', async () => {
+  const { needsNode } = await load('mod/core/prompt.mjs');
+  const seat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
+  const e = (prompt, sid = 's1') => ({ session_id: sid, prompt });
+  assert.equal(needsNode(e('hi'), { sid: 's1', seat: null }), false);
+  assert.equal(needsNode(e('/sub-human alice'), { sid: 's1', seat: null }), false);
+  assert.equal(needsNode(e('@room hi'), { sid: 's1', seat: null }), true, 'node refuses it: not in a room');
+  assert.equal(needsNode(e('hi'), { sid: 's1', seat }), true);
+  assert.equal(needsNode(e('hi'), { sid: 's0', seat: null }), true, 'another session\'s hello (a /clear not refreshed yet)');
+  assert.equal(needsNode(e('hi'), { sid: null, seat: null }), true, 'a failed refresh');
+  assert.equal(needsNode(e('hi'), null), true, 'no hello yet');
+});
+
+test('prompt: the origin queue hands prompt.submit\'s origin to the classic hook; mergeClassic keeps ours on top', async () => {
+  const { originQueue, mergeClassic } = await load('mod/core/prompt.mjs');
+  const q = originQueue();
+  assert.equal(q.take('@room x'), null, 'nothing waiting: at-room keeps its own checks');
+  const a = q.push('@room x', 'composer');
+  assert.equal(q.take('@room x'), 'composer');
+  assert.equal(q.take('@room x (the classic payload spelled it differently)'), 'composer', 'the only one waiting');
+  const b = q.push('later', 'peer');
+  assert.equal(q.take('later'), 'peer');
+  assert.equal(q.take('neither'), null, 'two waiting and no text match: unsure');
+  q.drop(a); q.drop(b); q.drop(b);
+  assert.equal(q.size, 0);
+  assert.deepEqual(mergeClassic({ preventContinuation: true, stopReason: '✓ sent', sessionTitle: 'a.b' }, { additionalContext: ['theirs'], sessionTitle: 'x' }),
+    { preventContinuation: true, stopReason: '✓ sent', sessionTitle: 'a.b', additionalContext: ['theirs'] });
+  assert.deepEqual(mergeClassic({ additionalContext: ['ours'] }, { additionalContext: ['theirs'], block: 'no' }), { additionalContext: ['ours', 'theirs'], block: 'no' });
+  assert.deepEqual(mergeClassic({ block: 'mine', suppressOriginalPrompt: true }, {}), { block: 'mine', suppressOriginalPrompt: true });
+  assert.deepEqual(mergeClassic({}, undefined), {});
+});
+
+// ---------- prefilter ----------
+test('prefilter: consent and the task hooks are skipped only when sure', async () => {
+  const f = await load('mod/core/prefilter.mjs');
+  const member = { sid: 's1', seat: { name: 'alice', code: 'otter-4821', role: 'member' } };
+  const orch = { sid: 's1', seat: { name: 'orch', code: 'otter-4821', role: 'orch' } };
+  const none = { sid: 's1', seat: null };
+  assert.equal(f.consentNeeded(none, 's1', undefined), false, 'no seat: no review');
+  assert.equal(f.consentNeeded(member, 's1', undefined), true, 'flag unset: unsure');
+  assert.equal(f.consentNeeded(member, 's1', true), true);
+  assert.equal(f.consentNeeded(member, 's1', false), false);
+  assert.equal(f.consentNeeded(none, 's2', false), false, 'the flag alone is enough');
+  assert.equal(f.consentNeeded(none, 's2', undefined), true, 'another session\'s hello');
+  assert.equal(f.consentNeeded(null, 's1', undefined), true);
+  assert.equal(f.tasksNeeded(member, 's1'), false);
+  assert.equal(f.tasksNeeded(orch, 's1'), true);
+  assert.equal(f.tasksNeeded(none, 's1', undefined), false);
+  assert.equal(f.tasksNeeded(none, 's1', 'otter-4821'), true, 'an orch before its join');
+  assert.equal(f.tasksNeeded(member, 's2'), true);
+  assert.equal(f.tasksNeeded({ ...member, sid: null }, null), true);
+  assert.equal(f.tasksNeeded(null, 's1'), true);
+  assert.equal(f.reviewOpenOf({ reviewOpen: false }), false);
+  assert.equal(f.reviewOpenOf({ reviewOpen: 'no' }), undefined);
+  assert.equal(f.reviewOpenOf(undefined), undefined);
+});
+
 // ---------- chat ----------
 test('chat: a peer message is "NAME\'s Claude: …" with nested continuation lines; room lines drop (for Claude)', async () => {
   const { peerLines, roomLines, NEST } = await load('mod/core/chat.mjs');

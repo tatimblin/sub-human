@@ -12,17 +12,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prompt.js\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Agent|Task",
@@ -65,32 +54,11 @@
             "timeout": 10
           }
         ]
-      },
-      {
-        "matcher": "TaskCreate|TaskUpdate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tasks.js\"",
-            "timeout": 10
-          }
-        ]
       }
     ],
     "PermissionRequest": [
       {
         "matcher": "ExitPlanMode",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.js\"",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
         "hooks": [
           {
             "type": "command",
@@ -177,17 +145,6 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/presence.js\"",
             "async": true,
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "TaskCompleted": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/tasks.js\"",
             "timeout": 10
           }
         ]

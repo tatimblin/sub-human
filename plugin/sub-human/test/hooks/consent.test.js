@@ -371,3 +371,34 @@ test('review: the note comes from the structured userFeedback field; the backup 
   assert.equal(fs.readFileSync(file, 'utf8'), 'bob\'s own plan\n', 'restored');
   assert.ok(!fs.existsSync(path.join(w.memberDir('bob'), 'review.json.lock')), 'the lock is released');
 });
+
+test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.mjs): Stop always reports subHuman {reviewOpen} beside its usual output', () => {
+  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  const shim = { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } };
+  const stop = extra => w.hook('consent', ev('Stop', null, { stop_hook_active: false, ...extra }), shim);
+  // no review: nothing to say but the report
+  let r = stop({ permission_mode: 'default' });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json, { subHuman: { reviewOpen: false } });
+  // a review still in restore: the nudge, and the report says it is open
+  w.lib(() => require(path.join(PLUGIN, 'lib', 'room.js')).open(w.code).store.kv.set('members/bob/review', { phase: 'restore', mode: 'default', at: Date.now() }));
+  r = stop({ permission_mode: 'auto' });
+  assert.match(ctx(r), /restore bob's default mode/);
+  assert.deepEqual(r.json.subHuman, { reviewOpen: true });
+  // the restore done (mode back): consent clears the review, and says so
+  r = stop({ permission_mode: 'default' });
+  assert.deepEqual(r.json, { subHuman: { reviewOpen: false } });
+  // unseated session: no review possible
+  const u = new World({}, { room: false });
+  const n = u.hook('consent', ev('Stop', null, { permission_mode: 'default' }), { env: { CLAUDE_PID: undefined, SUB_HUMAN_SHIM: '1' }, session: false });
+  assert.deepEqual(n.json, { subHuman: { reviewOpen: false } });
+  // without shim mode: unchanged (no output)
+  assert.equal(w.hook('consent', ev('Stop', null, { permission_mode: 'default' }), { as: 'bob' }).stdout, '');
+});
+
+test('hooks.json: Stop is the module\'s (mod/consent.mjs); the room-tool PreToolUse entry stays, skipped by the module while no review is open', async () => {
+  const hooks = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
+  assert.equal(hooks.Stop, undefined);
+  const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.mjs'));
+  for (const ev of ['classic.Stop', 'classic.PreToolUse', 'tool.call']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/consent.mjs'), ev);
+});

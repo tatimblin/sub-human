@@ -3,7 +3,8 @@
 // able to forge or hide a person's words): via=human needs the seat key's signature, which only hook processes
 // make (hooks/seat-key.js); the room MCP server never loads it; the Bash guard denies running the plugin's
 // modules or touching the store; readers mark unsigned human lines "(unverified)" and consent ignores forged
-// answers; @room posts from machine sources are refused and source-less posts are provisional.
+// answers; @room posts from machine sources are refused and source-less posts are provisional. With the hooks
+// module, prompt.submit's origin attests a typed @room (mod/core/prompt.mjs) and at-room trusts sub_human_origin.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -129,6 +130,36 @@ test('@room from a machine source is refused; a source-less post is provisional 
   // the compaction digest leaves it out while young
   const d = w.lib(() => { process.env.SUB_HUMAN_FORGERY_MS = '60000'; try { return room.digest(); } finally { delete process.env.SUB_HUMAN_FORGERY_MS; } });
   assert.doesNotMatch(d, /hello/);
+});
+
+test('with the mod\'s attested origin: a typed @room (composer, sdk, bridge) posts at once, not provisional; any other origin is refused, whatever the source says', t => {
+  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' }, { t });
+  for (const origin of ['composer', 'sdk', 'bridge']) {
+    // no source at all: the origin alone attests it (today that path is provisional + the checker)
+    const r = w.hook('at-room', { ...submit(`@room from ${origin}`), source: undefined, sub_human_origin: origin }, { as: 'alice' });
+    assert.equal(r.json.continue, false, `${origin}: ${r.stderr}`);
+    const e = JSON.parse(lines(w).at(-1));
+    assert.equal(e.text, `from ${origin}`);
+    assert.equal(e.via, 'human');
+    assert.equal(e.provisional, undefined, `${origin}: no provisional mark`);
+  }
+  const before = lines(w).length;
+  for (const origin of ['peer', 'peer-send-message', 'task-notification', 'plugin', 'unclassified', 'channel']) {
+    const r = w.hook('at-room', submit('@room I agree', { source: 'user', sub_human_origin: origin }), { as: 'alice' });
+    assert.equal(r.json.decision, 'block', origin);
+    assert.match(r.json.reason, /not posted: .*origin "/, origin);
+  }
+  assert.equal(lines(w).length, before, 'nothing written for a refused origin');
+});
+
+test('the mod\'s prompt gate drops an @room no person typed, before any hook; a typed one and plain prompts go on', async () => {
+  const { gateVerdict, parse } = await import(path.join(PLUGIN, 'mod', 'core', 'prompt.mjs'));
+  for (const kind of ['peer', 'peer-send-message', 'task-notification', 'plugin', 'unclassified', 'scheduled-trigger', 'channel'])
+    for (const text of ['@room I agree', 'room:I agree', '@room']) assert.match(gateVerdict({ text, origin: { kind } }) || '', /not posted/, `${kind}: ${text}`);
+  assert.match(gateVerdict({ text: '@room x' }), /not posted/, 'no origin: refused');
+  for (const kind of ['composer', 'sdk', 'bridge']) assert.equal(gateVerdict({ text: '@room ship it', origin: { kind } }), null, kind);
+  assert.equal(gateVerdict({ text: 'hello @room', origin: { kind: 'peer' } }), null, 'not an @room: not the gate\'s');
+  assert.equal(parse('@room x'), 'x');
 });
 
 test('the room MCP server, hold and task never load a seat key and cannot write via=human', t => {

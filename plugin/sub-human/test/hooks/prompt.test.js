@@ -25,10 +25,32 @@ test('prompt: merge keeps a stopping output alone and otherwise joins the contex
   assert.deepEqual(merge([null, ctxOut('only consent')]), ctxOut('only consent'));
 });
 
-test('prompt: hooks.json runs one process per prompt: prompt.js', () => {
-  const ups = JSON.parse(fs.readFileSync(path.join(HOOKS, 'hooks.json'), 'utf8')).hooks.UserPromptSubmit;
-  const cmds = ups.flatMap(g => g.hooks.map(x => x.command));
-  assert.deepEqual(cmds, ['node "${CLAUDE_PLUGIN_ROOT}/hooks/prompt.js"']);
+test('prompt: no hooks.json UserPromptSubmit entry; the module runs prompt.js (mod/prompt.mjs, MODS-PLAN W2)', async () => {
+  assert.equal(JSON.parse(fs.readFileSync(path.join(HOOKS, 'hooks.json'), 'utf8')).hooks.UserPromptSubmit, undefined);
+  const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.mjs'));
+  assert.ok(MOD.some(h => h.event === 'classic.UserPromptSubmit' && h.file === 'mod/prompt.mjs'));
+  assert.match(fs.readFileSync(path.join(PLUGIN, 'mod', 'prompt.mjs'), 'utf8'), /shimArgv\(root, 'prompt\.js'\)/);
+});
+
+test('prompt: shim mode (SUB_HUMAN_SHIM=1) adds consent\'s subHuman {reviewOpen} to the one output', () => {
+  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  const shim = { env: { SUB_HUMAN_SHIM: '1' }, as: 'bob' };
+  const r = w.hook('prompt', ev({ prompt: 'hi', permission_mode: 'default' }), shim);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.json.subHuman, { reviewOpen: false });
+  w.lib(() => room.open(w.code).store.kv.set('members/bob/review', { phase: 'shown', mode: 'auto', at: Date.now(), hash: 'abcdef012345' }));
+  const p = w.hook('prompt', ev({ prompt: 'still here', permission_mode: 'plan' }), shim);
+  assert.deepEqual(p.json.subHuman, { reviewOpen: true });
+  assert.match(ctx(p), /ExitPlanMode/);
+  const s = w.hook('prompt', ev({ prompt: '@room posted', permission_mode: 'plan' }), shim);
+  assert.equal(s.json.continue, false);
+  assert.deepEqual(s.json.subHuman, { reviewOpen: true });
+  // outside shim mode the output is as before
+  assert.equal(w.hook('prompt', ev({ prompt: 'plain', permission_mode: 'plan' }), { as: 'bob' }).json.subHuman, undefined);
+  // unseated: only the report
+  const u = new World({}, { room: false });
+  const n = u.hook('prompt', ev({ prompt: 'hello' }), { env: { CLAUDE_PID: undefined, SUB_HUMAN_SHIM: '1' }, session: false });
+  assert.deepEqual(n.json, { subHuman: { reviewOpen: false } });
 });
 
 test('prompt: an open review in plan mode adds consent\'s exit line to at-room\'s context; an @room post stops alone, the review still resolved', () => {

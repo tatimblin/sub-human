@@ -24,6 +24,9 @@ declare module 'claude-code' {
   interface PluginState {
     'sub-human': {
       hello: SubHumanHello;
+      /** False only when hooks/consent.js said no room review is open and no EnterPlanMode / ExitPlanMode ran
+       * since (mod/consent.mjs); unset or true: consent runs. */
+      reviewMaybeOpen: boolean;
     };
   }
 }
