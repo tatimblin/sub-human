@@ -55,10 +55,16 @@
  *   lastSeat(sid) -> {code, name, role}|null   the seat a session id last held, left or not (for --resume)
  *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set; lib/cc.js)
  *
- * The hooks module's lease (hooks/mod-hello.js; docs/next/MODS-PLAN.md W1):
- *   writeModLease(sid, rec) -> bool      <home>/sessions/mods/<sid>.json = {session_id, at, ...rec} (atomic, 0600):
- *                                        this session's function hooks are loaded and have said hello
- *   readModLease(sid) -> rec|null
+ * The hooks module's lease, <home>/sessions/mods/<sid>.json (atomic, 0600): this session's function hooks are
+ * loaded and have said hello (hooks/mod-hello.js writes it, join requires it, session-end deletes it). Fields:
+ *   {session_id, pid, pid_start?, at, seat}   pid: the claude process the module runs in; pid_start: its start
+ *                                        time (epoch s); at: ISO time written; seat: NAME.CODE or null, for a
+ *                                        person reading the store. Keep it one small flat object.
+ *   writeModLease(sid, {pid, seat}) -> bool
+ *   readModLease(sid) -> rec|null;  deleteModLease(sid) -> bool
+ *   modLeaseOk(sid, pid, now?) -> bool   the lease is this claude process's (pid alive, start time matching), or
+ *                                        was written within MOD_LEASE_FRESH_MS
+ *   pruneModLeases(now?) -> n            delete leases whose process is gone (no pid: once past the fresh window)
  *
  * Presence (the room documents presence/<name> = {state, at, detail?}, lib/room/store.js kv):
  *   writePresence(code, name, state, detail?)   state: working (prompt submitted / joined) | idle (idle_prompt)
@@ -81,6 +87,10 @@ const { pidStart } = require('./lock.js');
 const { NAME_RE, CODE_RE, SID_SAFE: SID_RE } = require('./text.js');
 const { PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS } = require('./config.js');
 const cc = require('./cc.js');
+// How long a hooks-module lease counts without matching the joining claude process. The pid match is the real
+// check; this window only covers a module whose $.process parent is not claude itself. A resumed session id
+// whose lease is older than this, from a process that is gone, cannot join. (Belongs in lib/config.js.)
+const MOD_LEASE_FRESH_MS = 120_000;
 const RESERVED = ['orch', 'room', 'all', 'system'];
 const ROLES = ['orch', 'member'];
 const PRESENCE_STATES = ['working', 'idle', 'permission', 'error'];
@@ -271,15 +281,62 @@ function resolveBySession(sid) {
   return seat(rec.code, m);
 }
 
-function writeModLease(sid, rec = {}) {
+function writeModLease(sid, { pid, seat } = {}) {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return false;
-  writeJsonAtomic(modLeaseFile(sid), { ...rec, session_id: sid, at: new Date().toISOString() });
+  pid = Number(pid);
+  const rec = { session_id: sid, pid: validPid(pid) ? pid : null };
+  const start = rec.pid ? pidStart(pid) : null;
+  if (start != null) rec.pid_start = start;
+  rec.at = new Date().toISOString();
+  rec.seat = typeof seat === 'string' ? seat : null;
+  writeJsonAtomic(modLeaseFile(sid), rec);
   return true;
 }
 
 function readModLease(sid) {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
   return readJson(modLeaseFile(sid));
+}
+
+const leaseYoung = (lease, now) => { const t = Date.parse(lease && lease.at); return Number.isFinite(t) && now - t < MOD_LEASE_FRESH_MS; };
+/** The lease's own process is still the one that wrote it (startMatches tolerates an unreadable start). */
+const leaseLive = lease => !!lease && validPid(lease.pid) && isAlive(lease.pid) && startMatches(lease);
+
+/**
+ * The session's lease lets a join through: written by the module running in this claude process (pid, with
+ * its start time, so a reused pid does not count), or recently. Any other lease is a leftover: a session id
+ * resumed in a process whose module never said hello (--bare, hooks off) must not inherit the old one.
+ */
+function modLeaseOk(sid, pid, now = Date.now()) {
+  const lease = readModLease(sid);
+  if (!lease || lease.session_id !== sid) return false;
+  if (validPid(Number(pid)) && lease.pid === Number(pid) && leaseLive(lease)) return true;
+  return leaseYoung(lease, now);
+}
+
+function deleteModLease(sid) {
+  if (typeof sid !== 'string' || !SID_RE.test(sid)) return false;
+  rm(modLeaseFile(sid));
+  return true;
+}
+
+/** Delete leases whose process is gone; a lease with no pid (or unreadable) once it is past the fresh window. */
+function pruneModLeases(now = Date.now()) {
+  const dir = path.join(home(), 'sessions', 'mods');
+  let names;
+  try { names = fs.readdirSync(dir); } catch { return 0; }
+  let n = 0;
+  for (const f of names) {
+    if (!f.endsWith('.json')) continue;
+    const file = path.join(dir, f);
+    const lease = readJson(file);
+    let gone;
+    if (lease && validPid(lease.pid)) gone = !leaseLive(lease);
+    else if (lease) gone = !leaseYoung(lease, now);
+    else { try { gone = now - fs.statSync(file).mtimeMs >= MOD_LEASE_FRESH_MS; } catch { gone = false; } }
+    if (gone) { rm(file); n++; }
+  }
+  return n;
 }
 
 function lastSeat(sid) {
@@ -402,6 +459,7 @@ module.exports = {
   home, roomDir, newCode, roomExists, openRooms, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, setOrch, updateOrch, liveMembers, seatAlive, heartbeat, leaseFresh,
   isAlive, claudePid,
-  resolveByPid, resolveBySession, resolveSelf, lastSeat, writeModLease, readModLease,
+  resolveByPid, resolveBySession, resolveSelf, lastSeat,
+  MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases,
   writePresence, readPresence,
 };

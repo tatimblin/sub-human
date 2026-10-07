@@ -279,3 +279,65 @@ test('identity: the seat lease: join stamps seen_at, heartbeat renews it (thrott
   identity.leave(code, 'alice');
   assert.equal(identity.heartbeat(me, Date.now() + 10 * config.SEAT_BEAT_MS), false, 'a left seat is not renewed');
 });
+
+test('identity: the hooks-module lease records the claude pid and its start time; join accepts it from that process or while recent', async () => {
+  h.freshHome();
+  const { pidStart } = require(path.join(h.LIB, 'lock.js'));
+  const FRESH = identity.MOD_LEASE_FRESH_MS;
+  assert.ok(FRESH > 0 && FRESH < 86_400_000, 'the hook tests treat a day-old lease as stale');
+  const sid = n => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const file = s => path.join(identity.home(), 'sessions', 'mods', `${s}.json`);
+  const now = Date.now();
+
+  assert.equal(identity.writeModLease(sid(1), { pid: process.pid, seat: 'alice.otter-0001' }), true);
+  const rec = identity.readModLease(sid(1));
+  assert.deepEqual(Object.keys(rec).sort(), ['at', 'pid', 'pid_start', 'seat', 'session_id']);
+  assert.equal(rec.pid, process.pid);
+  assert.equal(rec.pid_start, pidStart(process.pid));
+  assert.equal(rec.seat, 'alice.otter-0001');
+  assert.ok(Math.abs(Date.parse(rec.at) - now) < 5000);
+
+  assert.equal(identity.modLeaseOk(sid(1), process.pid, now + 10 * FRESH), true, 'this process: however old');
+  const other = h.spawnSleeper().pid;
+  assert.equal(identity.modLeaseOk(sid(1), other, now), true, 'another process: only while recent');
+  assert.equal(identity.modLeaseOk(sid(1), other, now + FRESH + 1000), false);
+  assert.equal(identity.modLeaseOk(sid(9), process.pid, now), false, 'no lease');
+
+  // a resumed session id: the old process is gone and the lease is old
+  const dead = await h.deadPid();
+  identity.writeModLease(sid(2), { pid: dead });
+  assert.equal(identity.modLeaseOk(sid(2), dead, now + FRESH + 1000), false);
+  assert.equal(identity.modLeaseOk(sid(2), other, now + FRESH + 1000), false);
+  // a reused pid: same number, another start time
+  fs.writeFileSync(file(sid(3)), JSON.stringify({ ...rec, session_id: sid(3), pid_start: rec.pid_start - 3600 }));
+  assert.equal(identity.modLeaseOk(sid(3), process.pid, now + FRESH + 1000), false);
+  // another session's lease copied into this session's file does not count
+  fs.writeFileSync(file(sid(4)), JSON.stringify({ ...rec, session_id: sid(1) }));
+  assert.equal(identity.modLeaseOk(sid(4), process.pid, now), false);
+
+  identity.writeModLease(sid(5), {});
+  assert.equal(identity.readModLease(sid(5)).pid, null);
+  assert.equal(identity.modLeaseOk(sid(5), process.pid, now), true, 'no pid: while recent');
+  assert.equal(identity.modLeaseOk(sid(5), process.pid, now + FRESH + 1000), false);
+
+  assert.equal(identity.deleteModLease(sid(4)), true);
+  assert.equal(identity.readModLease(sid(4)), null);
+  assert.equal(identity.deleteModLease('../x'), false);
+});
+
+test('identity: pruneModLeases deletes leases whose process is gone (or reused), and pid-less ones past the fresh window', async () => {
+  h.freshHome();
+  const FRESH = identity.MOD_LEASE_FRESH_MS;
+  const sid = n => `bbbbbbbb-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const dir = path.join(identity.home(), 'sessions', 'mods');
+  identity.writeModLease(sid(1), { pid: process.pid });
+  identity.writeModLease(sid(2), { pid: await h.deadPid() });
+  fs.writeFileSync(path.join(dir, `${sid(3)}.json`), JSON.stringify({ ...identity.readModLease(sid(1)), session_id: sid(3), pid_start: 1 }));
+  identity.writeModLease(sid(4), {});
+  assert.equal(identity.pruneModLeases(Date.now()), 2);
+  assert.deepEqual(fs.readdirSync(dir).sort(), [`${sid(1)}.json`, `${sid(4)}.json`]);
+  assert.equal(identity.pruneModLeases(Date.now() + FRESH + 1000), 1, 'the pid-less lease once old');
+  assert.deepEqual(fs.readdirSync(dir), [`${sid(1)}.json`], 'a live process keeps its lease however old');
+  fs.rmSync(dir, { recursive: true });
+  assert.equal(identity.pruneModLeases(), 0, 'no leases dir');
+});

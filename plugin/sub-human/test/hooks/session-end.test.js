@@ -28,6 +28,22 @@ test('session-end: logs member_left and marks the member left; reasons clear and
   assert.equal(w.lib(() => identity.roomClosing(w.code)), false, 'bob is still here: no reap');
 });
 
+test('session-end: deletes the session\'s hello lease on every reason, seated or not', () => {
+  const w = new World({ orch: 'sleep', alice: 'act' });
+  const lease = s => path.join(w.home, 'sessions', 'mods', `${s}.json`);
+  for (const reason of ['clear', 'prompt_input_exit']) {
+    w.modLease(w.sid.alice);
+    assert.ok(fs.existsSync(lease(w.sid.alice)));
+    const r = w.hook('session-end', { ...fixture('session-end'), reason }, { as: 'alice' });
+    assert.equal(r.code, 0, r.stderr);
+    assert.ok(!fs.existsSync(lease(w.sid.alice)), reason);
+  }
+  const unseated = 'aaaaaaaa-0000-4000-8000-000000000061';
+  w.modLease(unseated);
+  assert.equal(w.hook('session-end', { ...fixture('session-end'), session_id: unseated }).code, 0);
+  assert.ok(!fs.existsSync(lease(unseated)));
+});
+
 test('session-end: the orch\'s own end only marks its seat left (no member_left, no reap)', () => {
   const w = new World({ orch: 'act', alice: 'sleep' });
   const r = w.hook('session-end', { ...fixture('session-end'), reason: 'other' }, { as: 'orch' });

@@ -16,6 +16,9 @@ const orch = require(path.join(__dirname, '..', 'lib', 'orch.js'));
 const KEEP = new Set(['clear', 'resume']);
 
 run(input => {
+  // This session id is over in this process (a /clear or /resume continues under another id, and mod-hello writes
+  // that id's lease): a later --resume of it must say hello again before it can join.
+  try { identity.deleteModLease(input.session_id); } catch { /* the join sweep prunes it */ }
   if (KEEP.has(input.reason)) return;
   const me = whoami(input);
   if (!me) return;

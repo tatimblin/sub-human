@@ -227,6 +227,45 @@ test('without the hooks module\'s hello lease for the session the join is refuse
   assert.match(w.hook('join', expand(`alice ${w.code}`), { as: 'alice' }).json.systemMessage, /joined/);
 });
 
+/** Write sid's hello lease as mod-hello would have, at time `at`, for the claude process pid. */
+function leaseAt(w, sid, pid, at) {
+  const { pidStart } = require(path.join(PLUGIN, 'lib', 'lock.js'));
+  const dir = path.join(w.home, 'sessions', 'mods');
+  fs.mkdirSync(dir, { recursive: true });
+  const start = pidStart(pid);
+  const rec = { session_id: sid, pid, ...(start != null ? { pid_start: start } : {}), at: new Date(at).toISOString(), seat: null };
+  fs.writeFileSync(path.join(dir, `${sid}.json`), JSON.stringify(rec));
+  return path.join(dir, `${sid}.json`);
+}
+
+test('a resumed old session id with a stale lease cannot join; a lease from this claude process can, however old', async () => {
+  const w = new World({ orch: 'sleep' });
+  const old = Date.now() - 86_400_000; // a day: far past MOD_LEASE_FRESH_MS
+  // the session's first process wrote the lease and is gone; `claude --resume SID` with the module off
+  w.sid.alice = 'aaaaaaaa-0000-4000-8000-000000000041';
+  leaseAt(w, w.sid.alice, await require('../helpers.js').deadPid(), old);
+  w.pid.alice = sleeper();
+  const r = w.hook('join', expand(`alice ${w.code}`), { as: 'alice', modLease: false });
+  assert.equal(r.json.decision, 'block');
+  assert.equal(r.json.reason, 'sub-human needs Claude Code 2.1.292+ with function hooks on; not in --bare or safe mode');
+  assert.equal(w.members().alice, undefined);
+  assert.equal(w.entries().length, 0);
+  // the lease mod-hello wrote at this process's start, an hour ago
+  leaseAt(w, w.sid.alice, w.pid.alice, old);
+  assert.match(w.hook('join', expand(`alice ${w.code}`), { as: 'alice', modLease: false }).json.systemMessage, /joined/);
+});
+
+test('join\'s sweep prunes hello leases whose process is gone', async () => {
+  const w = new World({ orch: 'sleep', bob: 'sleep' });
+  const live = leaseAt(w, 'aaaaaaaa-0000-4000-8000-000000000051', w.pid.bob, Date.now() - 3_600_000);
+  const gone = leaseAt(w, 'aaaaaaaa-0000-4000-8000-000000000052', await require('../helpers.js').deadPid(), Date.now());
+  w.pid.alice = process.pid; w.sid.alice = 'aaaaaaaa-0000-4000-8000-000000000053';
+  assert.match(w.hook('join', expand('alice'), { as: 'alice' }).json.systemMessage, /joined/);
+  assert.ok(fs.existsSync(live), 'a live process keeps its lease');
+  assert.ok(!fs.existsSync(gone), 'a gone process\'s lease is pruned');
+  assert.ok(fs.existsSync(path.join(w.home, 'sessions', 'mods', `${w.sid.alice}.json`)), 'the joiner keeps its own');
+});
+
 test('failures block with a reason and log nothing', () => {
   const w = new World({ orch: 'sleep', alice: 'sleep' });
   w.pid.me = process.pid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000010';
