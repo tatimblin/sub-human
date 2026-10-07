@@ -281,6 +281,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `peer-held-prefix` | §8 | incidental | Held/mid-turn peer deliveries start with this prefix (cc.isPeerText). |
 | `peer-origin` | §8 | incidental | Transcript user entries from peers carry origin.kind "peer" (cc.entryIsPeer). |
 | `ups-source` | §8 | API | UserPromptSubmit source "system" for peers, channels, task notifications (cc.isPeerPrompt). |
+| `prompt-origin-composer` | §8 | incidental | prompt.submit origin "composer" is only the person's own Enter (and a --bg dispatch prompt); -p is "sdk", peers "peer" (also from $.session.send), notifications "task-notification". No hook sets it (MODS-PLAN W0 S2, S6). |
 | `cross-session-inbound` | §8 | API | crossSessionInbound accept\|hold\|refuse; the orch sets accept. |
 | `harbor-kite-gate` | §8 | env | Cross-session messaging gate (default on). |
 | `task-notification-prompt` | §8 | incidental | Monitor/background notices arrive as prompts starting <task-notification> (cc.isTaskNotification). |
@@ -290,7 +291,20 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `plugin-setting-override-log` | §9 | incidental | Last plugin loaded wins a shared setting. |
 | `subagent-statusline-raw` | §9 | incidental | subagentStatusLine command gets no ${CLAUDE_PLUGIN_ROOT} substitution nor PLUGIN_ROOT/DATA env. |
 | `hook-events` | §10 | API | The hook event list; no plan-approved/rejected event. |
-| `hooks-modules` | §10 | env | Function hooks load from a plugin's hooks/register.ts, for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on); sub-human ships none. |
+| `hooks-modules` | §10 | env | Function hooks load for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on). An installed plugin names its module in hooks.json `modules`; "hooks/register.ts" is only the built-in plugins' fixed path. sub-human ships none yet (docs/next/MODS-PLAN.md W1 adds one). |
+| `hooks-json-modules` | §10 | API | One hooks.json carries the command hooks and one module path under `modules` (relative to hooks.json); a second module is refused (S1). |
+| `module-dollar-local` | §10 | incidental | A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.mjs stays $-free (S1). |
+| `modules-headless` | §10 | env | Modules are off only diskless or in a tool server's daemon (then by policy, safe mode, --bare): they load in -p and in a --bg worker such as the orch. A --bg dispatch prompt reaches prompt.submit as origin composer (S2). |
+| `classic-chain-order` | §10 | incidental | A module's classic.<Event> hook runs above the plugin's own command hooks for that event; one that answers without next() means the command hooks beneath do not run (S1, S5). |
+| `prompt-submit-ups-order` | §10 | incidental | prompt.submit's core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). |
+| `usermessage-draw-only` | §10 | incidental | A ui.render rewrite of UserMessage text changes only the drawing; origin, isExpanded, task and from are pinned. |
+| `session-append-note` | §10 | incidental | $.session.append writes a user row as isMeta (the model reads it from the loop's next top; an idle session is not woken) and a system row as a notice the model never reads (S4). |
+| `session-append-notice-hidden` | §10 | incidental | A $.session.append system row is stored at level "info": drawn only in the ctrl+o transcript view (also after --resume), never in the default view. Chat lines go through $.ui.log instead (S4). |
+| `ui-log-notice` | §10 | incidental | $.ui.log lines are stored as system notices at level "notice": drawn dim as "<plugin>: <text>" in the default view, kept across --resume, never read by the model, no wake (S4). |
+| `fs-write-plain` | §10 | incidental | $.fs.write is mkdir -p plus writeFile: not atomic, no mode, no lock. The mod never writes room state. |
+| `process-run-stdin` | §10 | API | $.process.run takes argv, stdin, env over the host env and a timeout. The child's parent is the claude process, but it gets no CLAUDE_PID or CLAUDE_CODE_SESSION_ID of this session (only whatever claude itself inherited), so shims pass the payload session_id (S3). |
+| `plugin-test-discovery` | §10 | incidental | `claude plugin test` collects every *.test.ts(x) under the plugin; node tests stay *.test.js (S8). |
+| `plugin-test-off` | §10 | env | With modules off, `claude plugin test` exits 1 printing "claude plugin test: hooks modules are turned off ..."; npm test reads that as a skip (S8). |
 <!-- /gen:cc-contract -->
 
 ## Modules (generated)

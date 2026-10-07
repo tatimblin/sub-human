@@ -248,7 +248,8 @@ test('CONTRACT entries are well formed and unique', () => {
     assert.ok(sh.every(x => typeof x === 'string' && x.replace(/~/g, '').length >= 16), e.id);
     assert.ok(e.note, e.id);
   }
-  for (const id of ['task-completed-block-drops-fields', 'monitor-not-rearmed', 'subagent-statusline-precedence', 'daemon-env-allowlist', 'matcher-rule'])
+  for (const id of ['task-completed-block-drops-fields', 'monitor-not-rearmed', 'subagent-statusline-precedence', 'daemon-env-allowlist', 'matcher-rule',
+    'hooks-json-modules', 'classic-chain-order', 'prompt-submit-ups-order', 'session-append-notice-hidden', 'ui-log-notice', 'process-run-stdin', 'plugin-test-off'])
     assert.ok(ids.has(id), id);
 });
 
@@ -271,11 +272,18 @@ test('shapeRe: ~ is one minified identifier, the rest is literal', () => {
   assert.ok(!cc.shapeRe('a.b(~)').test('aXb(c)'));
 });
 
-test('the plugin ships no hooks module (hooks/register.ts loads by default since 2.1.292)', () => {
-  // cc CONTRACT hooks-modules: an installed plugin's hooks/register.ts is loaded as a function-hooks module
-  // unless the tengu_plugin_hooks_modules rollout flag is off. sub-human uses command hooks only.
+test('the plugin ships at most one hooks module, at the path hooks.json names', () => {
+  // cc CONTRACT hooks-json-modules / hooks-modules: an installed plugin's function hooks are the one module that
+  // hooks/hooks.json names under `modules` (relative to hooks.json), loaded by default since 2.1.292.
+  // "hooks/register.ts" is the built-in plugins' fixed path, not ours. No module ships before MODS-PLAN W1.
   const hooks = path.join(__dirname, '..', 'hooks');
-  assert.deepEqual(fs.readdirSync(hooks).filter(f => /^register\.[cm]?[jt]sx?$/.test(f)), []);
+  const json = JSON.parse(fs.readFileSync(path.join(hooks, 'hooks.json'), 'utf8'));
+  const modules = json.modules || [];
+  assert.ok(Array.isArray(modules) && modules.length <= 1, 'hooks.json names one hooks module per plugin');
+  const named = modules.map(m => path.resolve(hooks, m));
+  for (const m of named) assert.ok(fs.statSync(m).isFile(), `${m} exists`);
+  const entries = fs.readdirSync(hooks).filter(f => /^register\.[cm]?[jt]sx?$/.test(f)).map(f => path.join(hooks, f));
+  assert.deepEqual(entries, named.filter(m => path.dirname(m) === hooks && /^register\./.test(path.basename(m))));
 });
 
 // ---------- probe ----------
@@ -308,6 +316,20 @@ test('probe: a mutated shape fails', { skip: !haveBinary && 'no Claude Code bina
   const out = JSON.parse(r.stdout);
   assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['shape-ok', true], ['shape-mutated', false]]);
   assert.match(out.results[1].missing[0], /^shape: /);
+});
+
+test('probe: a mutated function-hooks entry fails (search and shape)', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
+  const by = id => cc.CONTRACT.find(e => e.id === id);
+  const extra = J([
+    { id: 'modules-search-mutated', search: by('hooks-json-modules').search[2] + '!!x' },
+    { id: 'chain-shape-mutated', search: by('classic-chain-order').search, shape: by('classic-chain-order').shape.replace('function-hook chain', 'function-hooks chain') },
+    { id: 'notice-level-mutated', search: by('session-append-notice-hidden').search[0], shape: by('session-append-notice-hidden').shape.replace('"info"', '"notice"') },
+  ]);
+  const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'hooks-json-modules,classic-chain-order,session-append-notice-hidden'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
+  assert.equal(r.status, 1);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['hooks-json-modules', true], ['classic-chain-order', true], ['session-append-notice-hidden', true],
+    ['modules-search-mutated', false], ['chain-shape-mutated', false], ['notice-level-mutated', false]]);
 });
 
 test('probe: a bogus binary fails every entry', () => {

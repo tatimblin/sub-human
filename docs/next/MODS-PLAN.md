@@ -1,6 +1,6 @@
 # Mods (function hooks) plan
 
-Status: W0 in progress, 2026-10-07. D3 decided (notices); other decisions open. Sources:
+Status: **W0 done** 2026-10-07 ([results](#w0-results)); W1 next. D3 decided (notices, drawn through `$.ui.log` per S4); other decisions open. Sources:
 - the plugin-authoring skill shipped with Claude Code 2.1.292 (`reference.md`, `types/claude-code.d.ts`, `examples/`);
 - the 2.1.292 binary as text (`/tmp/cc292/bin.txt`), for everything the skill does not settle;
 - [`docs/internals/cc-2.1.292.md`](../internals/cc-2.1.292.md) (`hooks-modules (b)`) and the code at `0a310fd`.
@@ -55,7 +55,7 @@ The module is an ES module whatever its suffix: "no DOM, no Node … there is no
 **The shim** (`mod/core/shim.mjs`, W1) is how a classic event moves without rewriting its handler:
 1. A `classic.<Event>` hook gets the command hook's exact stdin (`e`).
 2. A cheap in-process predicate decides whether node is needed at all.
-3. If it is, the shim calls `$.process.run(['node', root + '/hooks/X.js'], {stdin: JSON.stringify(e), env: {CLAUDE_PLUGIN_ROOT: root}, timeoutMs: 10000})`.
+3. If it is, the shim calls `$.process.run(['node', root + '/hooks/X.js'], {stdin: JSON.stringify(e), env: {CLAUDE_PLUGIN_ROOT: root, CLAUDE_CODE_SESSION_ID: e.session_id, CLAUDE_PID: ''}, timeoutMs: 10000})` (W0 S3: the child gets no session env of its own). The call sits in the registering file, since `$` cannot be passed to an imported helper (W0 S1).
 4. It translates the stdout JSON into `ClassicResult`:
    - `decision:"block"` / exit 2 → `block`;
    - `continue:false` → `preventContinuation` + `stopReason`;
@@ -112,7 +112,7 @@ Every search below was checked against `/tmp/cc292/bin.txt` (match counts in bra
 | `process-run-stdin` | API | `hasInput:n?.stdin!==void 0` (move to a shape in W0) | `$.process.run` takes argv, stdin, env over the host env and a timeout. Children get no `CLAUDE_PID` (W0 S3 confirms). |
 | `plugin-test-discovery` | incidental | `.isFile()&&/\.test\.tsx?$/.test(` [1]; `Runs every *.test.ts and *.test.tsx under dir` [2] | `claude plugin test` collects every `*.test.ts(x)` under the plugin. Node tests stay `*.test.js`. |
 
-W0 adds one more entry for each of S2, S4 and S6 below, once the spike has found its anchor string.
+W0 added these, plus the spike anchors: `modules-headless` (S2), `session-append-notice-hidden` and `ui-log-notice` (S4), `prompt-submit-ups-order` (S6), `plugin-test-off` (S8) and `module-dollar-local` (S1). `process-run-stdin` searches `toolCgroupClass:"plugin"` plus two shapes. All pass the probe (78/78).
 
 ## Part 1: plain hooks
 
@@ -162,7 +162,7 @@ Node starts per event, after W3 with D1 and D3:
 
 | Event | Route | Replaces |
 |---|---|---|
-| `chat` (people's words, join/leave) | `$.session.append({message:{type:'system', content:[{type:'text', text}]}})`: stored, drawn, never read by the model, no wake. The model gets the same lines through the `pull` route | the wake whose only job was "output their chat lines exactly as given" (member.md), and `notices` "via prompt" `systemMessage` |
+| `chat` (people's words, join/leave) | `$.ui.log(text)` (S4): stored as a `notice`-level row, drawn dim as `sub-human: <text>`, kept on `--resume`, never read by the model, no wake. (`$.session.append` system rows are `info`-level and show only under ctrl+o.) The model gets the same lines through the `pull` route | the wake whose only job was "output their chat lines exactly as given" (member.md), and `notices` "via prompt" `systemMessage` |
 | `pull` (for Claude, no wake) | `$.session.append({message:{type:'user', content}})` (isMeta): in the model's next request from the loop's top | at-room's per-prompt "Room since your last turn" digest and cursor `ctx-NAME` (the tail advances it once the line is written) |
 | `wake` (to me, `@me`, proposals, the orch's task requests) | idle → `$.prompt.submit({text})` (origin `plugin`, starts a turn once idle); mid-turn (a `turn.start` has no `turn.complete` yet) → the user `$.session.append`, as a monitor event folds into a running turn now | the Monitor's task-notification wake |
 | `rows` (a missing row's Agent calls) | held in `$.state` and attached as `context` to the next composer `prompt.submit` | at-room's per-prompt `rowsNeeded`/`missingRows` listing. **The one forced row-adjacent change:** that call site moves from `hooks/at-room.js` to `lib/tail.js`; `lib/rows.js` is unchanged |
@@ -172,11 +172,11 @@ Node starts per event, after W3 with D1 and D3:
 **2d. Not needed.**
 - `session.receive`: the `prompt.submit` origin already covers peers.
 - `session.send`: logging Claude↔Claude messages into the room is a feature, not a migration (D6).
-- `$.ui.log`: not stored; it is only the S4 fallback.
+- `$.session.append` system notices: stored but drawn only under ctrl+o (S4), so `chat` uses `$.ui.log`.
 
 ## Waves
 
-### W0: spikes and contract (lead + 1 agent; no module ships)
+### W0: spikes and contract (lead + 1 agent; no module ships) — **done**
 
 The spikes run in a throwaway plugin dir under `$TMPDIR/sh-mods-spike/` with its own `SUB_HUMAN_HOME`, loaded with `--plugin-dir`: an interactive tmux session named `sh-spike-*` and `-p` runs. They never touch `~/.claude/dev-mods`, `~/.sub-human`, the `sh-*` demo sessions or `scripts/demo.sh`.
 - **S1** `hooks.json` with `hooks` + `modules: ["./register.mjs"]`, the entry importing `../mod/x.mjs`, passes `claude plugin validate --strict`, and both kinds fire.
@@ -195,6 +195,31 @@ Then:
 - A short `docs/internals/cc-2.1.292.md` section, "Function hooks".
 
 **Accept:** each S has an answer with evidence, the probe passes with the new entries, and a mutated new string fails. **Go/no-go:** a failed S1 or S5 stops the plan. S2, S4 or S7 change scope as noted.
+
+#### W0 results
+
+Measured 2026-10-07 on 2.1.292; full evidence in [`cc-2.1.292.md` → Function hooks](../internals/cc-2.1.292.md#function-hooks). Go: S1 and S5 pass.
+
+| S | Result | Evidence (one line) |
+|---|---|---|
+| S1 | **pass** | `validate --strict` passes; `cmd.SessionStart` + `mod.session.start` and `mod.classic.UPS` + `cmd.UserPromptSubmit` both logged; `../mod/x.mjs` import loads. |
+| S2 | **pass** | A `--bg` job and `-p` both ran `session.start`, `prompt.submit`, `classic.*`. The `--bg` dispatch prompt's origin is `composer`, `-p`'s is `sdk`. |
+| S3 | ppid = claude; **no own `CLAUDE_PID`/session id** | Clean env: `CLAUDE_PID=unset SID=unset ROOT=unset`, `PPID`=claude. Nested in another Claude, the child inherited the *outer* `CLAUDE_PID` and session id. |
+| S4 | **partial (scope change)** | `$.session.append` system row: stored, kept on resume, but level `info` = ctrl+o only. User row: isMeta, no wake. `$.ui.log`: drawn dim (`<plugin>: text`), stored at level `notice`, redrawn after `--resume`. |
+| S5 | **pass** | `classic.Stop` `{additionalContext}` → `-p` result `CONTINUED` (Stop ran twice). `{preventContinuation, stopReason:'✓ sent'}` → `⏺ Operation stopped by hook: ✓ sent`, no model call. |
+| S6 | **pass** | Order `prompt.submit` → `classic.UserPromptSubmit` (module) → command hook. A peer during a 20 s Bash: `prompt.submit` origin `peer` with `turnId`, same chain. |
+| S7 | **pass** | `tool.call` `{tool:'Bash', agentId:'a3449b83…'}` inside a general-purpose subagent. |
+| S8 | **pass** | `claude plugin test` under Node v24.15.0: pass/fail and exit 0/1. Modules off → `claude plugin test: hooks modules are turned off here (…)`, exit 1 (the skip signal). |
+| S9 | `$.process.run` faster | Median over 20: `$.process.run` node child 26 ms (p90 34) vs the same command hook 35 ms (p90 41). |
+
+Consequences for later waves:
+- **Chat route (S4, D3).** `chat` lines go out with `$.ui.log`, not a `$.session.append` notice (Part 2b updated). `pull` stays the isMeta user append.
+- **Shim env (S3).** The shim passes `CLAUDE_CODE_SESSION_ID: e.session_id` and `CLAUDE_PID: ''` (so `cc.claudePid` reads null instead of an inherited pid) besides `CLAUDE_PLUGIN_ROOT`. Hooks that need the pid (join, session-restore) stay command hooks, as planned.
+- **`$` stays in the registering file (S1).** A module that passes `$` to an imported function does not load at all. `mod/core/shim.mjs` therefore holds only the pure stdout → `ClassicResult` translation; each `mod/*.mjs` that registers hooks makes its own `$.process.run` call (a local helper in that file is fine). Passing `on` to an imported `registerX(on)` is fine.
+- **Generated files (S8).** Loading a module plugin with `--plugin-dir` writes `.claude-plugin/types/` (self-ignored) and a root `tsconfig.json`. W1 decides: commit `plugin/sub-human/tsconfig.json` or add it to `.gitignore`.
+- **npm test gate (S8).** `test:mods` skips when the binary is older than 2.1.292 or `claude plugin test` prints `hooks modules are turned off`. A test answers `$` calls beneath the plugin with `{ value }` and needs an `on('classic.<Event>')` beneath a classic event.
+- **Orch (S2).** No scope change: the orch can use the module. Its `--bg` prompt counts as `composer`, which matters only if the orch ever posts `@room` (it does not).
+- **S7.** No scope change: the guard's `hold`-needs-`agentId` rule works.
 
 ### W1: skeleton, guard, drawing (3 agents in parallel)
 
@@ -302,13 +327,13 @@ hooks.json goes from 21 command entries to 12.
    - A `prompt.submit` wake is framed "The sub-human plugin sent a message", which differs from a task notification; member.md and orchestrator.md wording is checked in the demo.
 8. **The orch is headless.** If S2 fails, the orch stays on the Monitor and command hooks, which leaves two paths for the life of the plan.
 9. **Testing cost.** `claude plugin test` spawns binary children, so the suite gets slower. Keep the wiring tests few and the logic in `mod/core` (node).
-10. **Display.** System notices are dim engine rows that the mod cannot style (`InfoNotice` is the logo line, not these). If S4 shows them too faint, use D3's alternative.
+10. **Display.** `$.ui.log` rows are dim engine rows with a forced `sub-human: ` prefix that the mod cannot style, and consecutive identical lines may fold. If that reads too faint in the demo, use D3's alternative.
 
 ## Decisions for the user
 
 1. **D1: require function hooks for a seat?** Recommended: yes. Join refuses without the module, and the moved entries leave hooks.json, which is where the savings come from. Alternative: a permanent dual path, where moved entries stay and exit early when the hello lease is live. That is correct, but it saves no node starts and doubles the test surface. The trade-off: a non-member session with modules off loses the store guard. The threat model covers members' Claudes, so this is within it.
 2. **D2: drop the Monitor after W3?** Recommended: yes, in W4, unless S2 shows the orch needs it. Keeping it costs one idle node per session and buys delivery while the module is off (and with D1, such a session has no seat anyway).
-3. **D3: chat lines as stored system notices plus an isMeta copy for the model?** **Decided 2026-10-07: yes (notices).** This means no wake and no echo for people's words. Recommended: yes. It cuts a model turn per chat burst and removes member.md's "print as given". Alternative: keep the wakes and only restyle the rows with `ui.render` (W1 alone).
+3. **D3: chat lines as stored notices (`$.ui.log`, per W0 S4) plus an isMeta copy for the model?** **Decided 2026-10-07: yes (notices).** This means no wake and no echo for people's words. Recommended: yes. It cuts a model turn per chat burst and removes member.md's "print as given". Alternative: keep the wakes and only restyle the rows with `ui.render` (W1 alone).
 4. **D4: which origins may `@room`?** Today: `user`, `sdk` → `composer`, `sdk`. Add `bridge` (the person through Remote Control on their phone)?
 5. **D5: move the member/orch role text into a `prompt.compose` session section?** It survives compaction, so session-restore no longer re-injects on `compact`, at the cost of one prompt-cache miss at join. Optional, after W4.
 6. **D6: out of scope, for later.**
