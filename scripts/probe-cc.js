@@ -7,8 +7,9 @@
  *
  * Finds the binary (--bin, else $CLAUDE_BIN, else `claude` on PATH with symlinks resolved, else the newest
  * /opt/homebrew/Caskroom/claude-code*\/<version>/claude), reads it once and searches it for every literal
- * `search` string. Prints the version and PASS/FAIL per entry; exits 1 on any FAIL, 2 when no binary is found.
- * Extra entries ({id, search, stability?, note?}[]) come from --extra FILE or $CC_PROBE_EXTRA (JSON text);
+ * `search` string and every `shape` (cc.shapeRe: literal code where `~` stands for one minified identifier).
+ * Prints the version and PASS/FAIL per entry; exits 1 on any FAIL, 2 when no binary is found.
+ * Extra entries ({id, search, shape?, stability?, note?}[]) come from --extra FILE or $CC_PROBE_EXTRA (JSON text);
  * the tests use that to feed a mutated string and expect a failure. --only limits the run to those CONTRACT ids
  * (extras always run; the derived `daemon-env-names` check runs only when named).
  */
@@ -97,9 +98,14 @@ function main() {
   const only = arg('--only') !== undefined ? new Set(arg('--only').split(',').filter(Boolean)) : null;
   const pick = id => !only || only.has(id);
   const entries = [...cc.CONTRACT.filter(e => pick(e.id)), ...extras()];
+  let text = null; // latin1 view of the binary, built on the first shape (byte for byte, so ASCII patterns line up)
+  const list = x => (x === undefined ? [] : Array.isArray(x) ? x : [x]);
   const results = entries.map(e => {
-    const searches = Array.isArray(e.search) ? e.search : [e.search];
-    const missing = searches.filter(s => buf.indexOf(s, 0, 'utf8') < 0);
+    const missing = list(e.search).filter(s => buf.indexOf(s, 0, 'utf8') < 0);
+    for (const sh of list(e.shape)) {
+      if (text === null) text = buf.toString('latin1');
+      if (!cc.shapeRe(sh).test(text)) missing.push(`shape: ${sh}`);
+    }
     return { id: e.id, stability: e.stability, ok: missing.length === 0, missing, note: e.note };
   });
   // Derived check: every DAEMON_ENV_ALLOW name exists as a quoted literal in the binary.

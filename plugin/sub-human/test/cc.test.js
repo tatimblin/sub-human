@@ -1,6 +1,7 @@
 'use strict';
 // Tests for lib/cc.js (the Claude Code contract) and scripts/probe-cc.js. Fixture transcript lines follow
-// the shapes in docs/internals/cc-2.1.281.md (checked against real 2.1.281 transcripts).
+// the shapes in docs/internals/cc-2.1.281.md (checked against real 2.1.281 transcripts; unchanged in 2.1.292,
+// see docs/internals/cc-2.1.292.md).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -188,7 +189,9 @@ test('jobs() runs agents --json through an injected runner', () => {
 });
 
 test('DAEMON_ENV_ALLOW and daemonEnv', () => {
-  for (const k of ['PATH', 'CLAUDE_CONFIG_DIR', 'ANTHROPIC_MODEL', 'CLAUDE_CODE_USE_BEDROCK', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_PLUGIN_DIRS'])
+  for (const k of ['PATH', 'CLAUDE_CONFIG_DIR', 'ANTHROPIC_MODEL', 'CLAUDE_CODE_USE_BEDROCK', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_PLUGIN_DIRS',
+    // added to the daemon's allowlist in 2.1.292
+    'CLAUDE_CODE_CLIENT_DATA_URL', 'CLAUDE_CODE_3P_SEEDED_OPUS_DEFAULT', 'CLAUDE_CODE_DISABLE_PROACTIVITY', 'CLAUDE_CODE_AUTO_MODE_TIER', 'CLAUDE_BG_AUTO_MEMORY_OFF'])
     assert.ok(cc.DAEMON_ENV_ALLOW.includes(k), k);
   for (const k of ['HOME', 'CLAUDE_CODE_TASK_LIST_ID', 'CLAUDE_CODE_ENABLE_TODO_TOOLS', 'SUB_HUMAN_HOME', 'ANTHROPIC_API_KEY'])
     assert.ok(!cc.DAEMON_ENV_ALLOW.includes(k), k);
@@ -240,6 +243,9 @@ test('CONTRACT entries are well formed and unique', () => {
     assert.ok(['API', 'env', 'incidental'].includes(e.stability), e.id);
     const s = Array.isArray(e.search) ? e.search : [e.search];
     assert.ok(s.length && s.every(x => typeof x === 'string' && x.length >= 8), e.id);
+    const sh = e.shape === undefined ? [] : Array.isArray(e.shape) ? e.shape : [e.shape];
+    // a shape keeps enough literal text to stay specific
+    assert.ok(sh.every(x => typeof x === 'string' && x.replace(/~/g, '').length >= 16), e.id);
     assert.ok(e.note, e.id);
   }
   for (const id of ['task-completed-block-drops-fields', 'monitor-not-rearmed', 'subagent-statusline-precedence', 'daemon-env-allowlist', 'matcher-rule'])
@@ -253,6 +259,23 @@ test('every @cc tag in lib/cc.js names a string some CONTRACT entry searches for
   assert.ok(tags.length > 20);
   // doc comments write \n literally where the binary has a newline in a template or \n in a regex
   for (const t of tags) assert.ok(all.has(t) || all.has(t + ' ') || all.has(t.replace(/\\n/g, '\n')), t);
+});
+
+test('shapeRe: ~ is one minified identifier, the rest is literal', () => {
+  const r = cc.shapeRe('if(~.status===2&&!~.blockingError)');
+  assert.ok(r.test('x;if(Vo.status===2&&!$z.blockingError)y'));
+  assert.ok(!r.test('if(Vo.status===2&&!.blockingError)'));
+  assert.ok(!r.test('if(Vo.status==2&&!zs.blockingError)'));
+  assert.ok(!r.test('if(a.b.status===2&&!zs.blockingError)'));
+  assert.ok(cc.shapeRe('var ~=1500,').test('var Nqo=1500,'));
+  assert.ok(!cc.shapeRe('a.b(~)').test('aXb(c)'));
+});
+
+test('the plugin ships no hooks module (hooks/register.ts loads by default since 2.1.292)', () => {
+  // cc CONTRACT hooks-modules: an installed plugin's hooks/register.ts is loaded as a function-hooks module
+  // unless the tengu_plugin_hooks_modules rollout flag is off. sub-human uses command hooks only.
+  const hooks = path.join(__dirname, '..', 'hooks');
+  assert.deepEqual(fs.readdirSync(hooks).filter(f => /^register\.[cm]?[jt]sx?$/.test(f)), []);
 });
 
 // ---------- probe ----------
@@ -275,6 +298,16 @@ test('probe: a mutated search string fails', { skip: !haveBinary && 'no Claude C
   const out = JSON.parse(r.stdout);
   assert.equal(out.ok, false);
   assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['monitor-schema', true], ['mutated', false]]);
+});
+
+test('probe: a mutated shape fails', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
+  const extra = J([{ id: 'shape-ok', search: 'Valid types are: approve, block', shape: 'case"block":~.permissionBehavior="deny"' },
+    { id: 'shape-mutated', search: 'Valid types are: approve, block', shape: 'case"block":~.permissionBehavior="allow"' }]);
+  const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'none'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
+  assert.equal(r.status, 1);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['shape-ok', true], ['shape-mutated', false]]);
+  assert.match(out.results[1].missing[0], /^shape: /);
 });
 
 test('probe: a bogus binary fails every entry', () => {

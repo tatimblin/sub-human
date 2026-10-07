@@ -189,12 +189,13 @@ test('orch: the spawn env is the login basics plus the daemon allowlist (cc.DAEM
   const parent = {
     HOME: '/Users/a', USER: 'a', PATH: '/bin', TERM: 'xterm', SHELL: '/bin/zsh', TMPDIR: '/t', LANG: 'C',
     CLAUDE_CONFIG_DIR: '/cfg', ANTHROPIC_BASE_URL: 'https://gw', CLAUDE_CODE_USE_BEDROCK: '1', AWS_PROFILE: 'p', ANTHROPIC_MODEL: 'm',
+    CLAUDE_CODE_DISABLE_PROACTIVITY: '1', // in the daemon allowlist since 2.1.292
     CLAUDE_PID: '1', CLAUDE_CODE_SESSION_ID: 's', CLAUDECODE: '1', CLAUDE_CODE_TASK_LIST_ID: 'x', SUB_HUMAN_HOME: '/h', SECRET: 'x',
   };
   const env = orch.spawnPlan({ code, env: parent }).env;
   const login = ['HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'TERM', 'LANG', 'TMPDIR'];
   for (const k of Object.keys(env)) assert.ok(login.includes(k) || cc.DAEMON_ENV_ALLOW.includes(k), `${k} is neither login nor allowlisted`);
-  for (const k of ['CLAUDE_CONFIG_DIR', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'AWS_PROFILE', 'ANTHROPIC_MODEL']) assert.equal(env[k], parent[k], k);
+  for (const k of ['CLAUDE_CONFIG_DIR', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'AWS_PROFILE', 'ANTHROPIC_MODEL', 'CLAUDE_CODE_DISABLE_PROACTIVITY']) assert.equal(env[k], parent[k], k);
   for (const k of ['CLAUDE_PID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDECODE', 'CLAUDE_CODE_TASK_LIST_ID', 'SUB_HUMAN_HOME', 'SECRET']) assert.equal(env[k], undefined, k);
 });
 

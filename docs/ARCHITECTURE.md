@@ -1,6 +1,6 @@
 # Architecture
 
-How sub-human works today, for a new contributor or a fresh Claude session. User-facing behaviour is in [`plugin/sub-human/README.md`](../plugin/sub-human/README.md); the Claude Code internals behind it are in [`docs/internals/cc-2.1.281.md`](internals/cc-2.1.281.md). Sections marked *generated* are rewritten by `npm run docs` (`scripts/arch-doc.js`) from the code; edit the code, not the table. `npm test` fails when they are stale.
+How sub-human works today, for a new contributor or a fresh Claude session. User-facing behaviour is in [`plugin/sub-human/README.md`](../plugin/sub-human/README.md); the Claude Code internals behind it are in [`docs/internals/cc-2.1.281.md`](internals/cc-2.1.281.md), with the 2.1.292 changes in [`docs/internals/cc-2.1.292.md`](internals/cc-2.1.292.md). Sections marked *generated* are rewritten by `npm run docs` (`scripts/arch-doc.js`) from the code; edit the code, not the table. `npm test` fails when they are stale.
 
 ## Purpose and design rules
 
@@ -223,7 +223,7 @@ One machine, one OS user, trusted collaborators. The threat is a member's Claude
 
 ## Claude Code contract (generated)
 
-Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points into [`docs/internals/cc-2.1.281.md`](internals/cc-2.1.281.md); each entry also carries the literal binary search string that `npm run probe` greps for.
+Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points into [`docs/internals/cc-2.1.281.md`](internals/cc-2.1.281.md) (changes since: [`cc-2.1.292.md`](internals/cc-2.1.292.md)); each entry also carries the literal binary search strings, and optional code shapes (`~` for a minified identifier), that `npm run probe` checks.
 
 <!-- gen:cc-contract -->
 | Id | § | Stability | Note |
@@ -264,12 +264,12 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `bg-stop` | §5 | API | `claude stop <id>` (cc.stopCmd). |
 | `bg-logs` | §5 | API | `claude logs <id>` (cc.logsCmd). |
 | `daemon-env-filter` | §5 | env | The daemon keeps only allowlisted caller env keys (cc.DAEMON_ENV_ALLOW). |
-| `daemon-env-allowlist` | §5 | env | The literal pieces of eYn = p0e + Ghn + extras that DAEMON_ENV_ALLOW copies. |
+| `daemon-env-allowlist` | §5 | env | The pieces of the daemon allowlist (zWe + dWn + extras in 2.1.292) that DAEMON_ENV_ALLOW copies. |
 | `bg-worker-env` | §5 | incidental | Workers run with the daemon's own process.env plus the filtered dispatch env. |
 | `bg-provider-env` | §5 | incidental | Persisted providerEnv is filtered through p0e too. |
 | `monitor-schema` | §6 | API | Monitor `when`: "always" or "on-skill-invoke:<skill>"; name is the dedupe key. |
 | `monitor-location` | §6 | incidental | manifest.experimental.monitors or manifest.monitors, else monitors/monitors.json. |
-| `monitor-arm-gates` | §6 | incidental | Arming is skipped by policy, the tengu_amber_sentinel gate, -p, or untrusted workspace. |
+| `monitor-arm-gates` | §6 | incidental | Arming is skipped by policy, the tengu_amber_sentinel gate, -p, managed disableAllHooks, or untrusted workspace. |
 | `monitor-not-rearmed` | §6 | incidental | A monitor that exits is not re-armed until the claude process restarts (in-process /resume and /clear do not re-arm). |
 | `matcher-rule` | §7 | API | Exact-name list vs unanchored regex (cc.matcherIsExact, cc.matcherMatches). |
 | `hook-if` | §7 | API | `if` uses permission-rule syntax; Task tools can only be filtered by bare name. |
@@ -290,7 +290,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `plugin-setting-override-log` | §9 | incidental | Last plugin loaded wins a shared setting. |
 | `subagent-statusline-raw` | §9 | incidental | subagentStatusLine command gets no ${CLAUDE_PLUGIN_ROOT} substitution nor PLUGIN_ROOT/DATA env. |
 | `hook-events` | §10 | API | The hook event list; no plan-approved/rejected event. |
-| `hooks-modules` | §10 | env | Early-access function hooks; not used yet. |
+| `hooks-modules` | §10 | env | Function hooks load from a plugin's hooks/register.ts, for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on); sub-human ships none. |
 <!-- /gen:cc-contract -->
 
 ## Modules (generated)
@@ -341,7 +341,7 @@ Long-lived per session: the monitor and the MCP server (one idle `node` each). M
 
 - `npm test`: `node --test` over `plugin/sub-human/test` (each file in its own process, in parallel; `test/helpers.js` strips `CLAUDE*` env and removes temp dirs) and `scripts/test`. Hooks are driven as child processes with JSON payloads (`test/hooks/`). The tail runs on a fake clock (`lib/clock.js`).
 - **Store contract**: `test/store-contract.test.js` runs one suite against `FsRoomStore` and `MemoryRoomStore`; `store-bypass.test.js` checks nothing else touches room files; `security.test.js` checks who can load the signer.
-- **Probe**: `npm run probe` (`scripts/probe-cc.js`) greps the installed Claude Code binary for every `CONTRACT` search string; `test/cc.test.js` runs it when a binary is present. A miss on a build-specific string means "re-read this spot".
+- **Probe**: `npm run probe` (`scripts/probe-cc.js`) greps the installed Claude Code binary for every `CONTRACT` search string and shape; `test/cc.test.js` runs it when a binary is present. No search names a minified identifier (shapes use `~` instead), so a miss means the code itself changed: re-read that spot and record what changed in a new `docs/internals/cc-<version>.md`.
 - **Docs**: `npm run docs` regenerates this file's tables; `scripts/test/arch-doc.test.js` fails when they are stale.
 - **Demo**: `scripts/demo.sh` drives scenes S1–S10 with real sessions in tmux (real cost; run only when asked). `scripts/checks.js` then labels each check **deterministic** (log, chain, files, panes: a failure exits 1) or **behavioural** (model-call counts, wakes, noise: compared against `scripts/baselines.json` thresholds, warn only). `scripts/walkthrough.js` builds `docs/rebuild/walkthrough.html`.
 - `npm run validate`: `claude plugin validate plugin/sub-human --strict`.

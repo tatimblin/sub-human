@@ -2,13 +2,16 @@
 /**
  * plugin/sub-human/lib/cc.js: the single home for every Claude Code internal the plugin relies on.
  *
- * Source of truth: docs/internals/cc-2.1.281.md (a read of the 2.1.281 binary). Every export names the
- * literal string to search the binary for (`@cc`) and how stable the assumption is (`@stability`):
+ * Source of truth: docs/internals/cc-2.1.281.md (a full read of the 2.1.281 binary; the § numbers point there)
+ * and docs/internals/cc-2.1.292.md (what changed in 2.1.292, checked against that binary). Every export names
+ * the literal string to search the binary for (`@cc`) and how stable the assumption is (`@stability`):
  *   API         documented hook/settings schema, a `.describe()` string, or an exported name
  *   env         a named env var or flag
  *   incidental  follows from how the code is written; not named anywhere (transcript shapes, display text)
  * CONTRACT lists every assumption, including ones that only shape docs or design; scripts/probe-cc.js
- * greps the installed binary for each `search` and fails when one is gone.
+ * greps the installed binary for each `search` (literal text: strings, .describe() text, env and property
+ * names) and each `shape` (code with `~` for every minified identifier, see shapeRe) and fails when one is gone.
+ * Minified names change every build, so no search or shape names one.
  *
  * Pure functions take `env` (default process.env) so tests need no global state. Zero dependencies.
  *
@@ -27,7 +30,8 @@
  *   DAEMON_ENV_ALLOW, daemonEnv(env)
  *   matcherIsExact(m, {toolEvent}), matcherMatches(m, name, {toolEvent})
  *   HOOK_TIMEOUT_DEFAULT_MS, SESSION_END_DEFAULT_MS, SESSION_END_MAX_MS, sessionEndBudgetMs(timeoutsSec, env)
- *   CONTRACT                             [{id, search, stability, note}]
+ *   shapeRe(shape)                       a shape as a RegExp: `~` = one minified identifier, the rest literal
+ *   CONTRACT                             [{id, search, shape?, stability, note}]
  */
 
 const fs = require('node:fs');
@@ -78,7 +82,7 @@ function claudePid(env = process.env) {
 
 /**
  * CLAUDE_CODE_TASK_LIST_ID when set, else null (the caller supplies its own fallback).
- * @cc function Mk(){if(a.CLAUDE_CODE_TASK_LIST_ID)return a.CLAUDE_CODE_TASK_LIST_ID
+ * @cc CLAUDE_CODE_TASK_LIST_ID)return 
  * @stability env
  */
 function taskListId(env = process.env) {
@@ -100,7 +104,7 @@ function configDir(env = process.env) {
 
 /**
  * The task store's file-name sanitiser: every char outside [A-Za-z0-9_-] becomes '-'.
- * @cc function aP(e){return e.replace(/[^a-zA-Z0-9_-]/g,"-")}
+ * @cc return e.replace(/[^a-zA-Z0-9_-]/g,"-")}
  * @stability incidental
  */
 const sanitizeId = s => String(s).replace(/[^a-zA-Z0-9_-]/g, '-');
@@ -108,14 +112,14 @@ const sanitizeId = s => String(s).replace(/[^a-zA-Z0-9_-]/g, '-');
 /**
  * <configDir>/tasks/<sanitized listId>: the native task list directory (file backend; the experimental v5
  * key-value backend is off by default).
- * @cc function aP(e){return e.replace(/[^a-zA-Z0-9_-]/g,"-")}
+ * @cc return e.replace(/[^a-zA-Z0-9_-]/g,"-")}
  * @stability incidental
  */
 const tasksDir = (listId, env = process.env) => path.join(configDir(env), 'tasks', sanitizeId(listId));
 
 /**
  * <tasksDir>/<sanitized id>.json: one native task.
- * @cc function aP(e){return e.replace(/[^a-zA-Z0-9_-]/g,"-")}
+ * @cc return e.replace(/[^a-zA-Z0-9_-]/g,"-")}
  * @stability incidental
  */
 const taskFile = (listId, id, env = process.env) => path.join(tasksDir(listId, env), `${sanitizeId(id)}.json`);
@@ -152,7 +156,7 @@ function clearContextOnPlanAccept(cwd, env = process.env) {
 /**
  * A JSONL transcript's raw lines (oldest first; [] when unreadable). With tailBytes, only the last tailBytes
  * are read and a line cut by that boundary is dropped.
- * @cc toolDenialKind:_e,toolDenialEndsTurn:ve,userFeedback:Ee
+ * @cc ?.feedbackIsFromUser&&
  * @stability incidental
  */
 function readLines(file, { tailBytes } = {}) {
@@ -191,7 +195,7 @@ function parseLines(lines) {
 
 /**
  * readLines, parsed. Same as at-room's transcriptTail with tailBytes 512 KiB.
- * @cc toolDenialKind:_e,toolDenialEndsTurn:ve,userFeedback:Ee
+ * @cc ?.feedbackIsFromUser&&
  * @stability incidental
  */
 const readEntries = (file, opts) => parseLines(readLines(file, opts));
@@ -203,7 +207,7 @@ const asEntry = l => { if (l && typeof l === 'object') return l; try { return JS
 /**
  * The session's plan file: toolInput.planFilePath (PreToolUse/PermissionRequest on ExitPlanMode see it,
  * injected by normalizeToolInput), else the latest `plan_mode` attachment's planFilePath, else null.
- * @cc type:"plan_mode",reminderType:ge,isSubAgent:!!r.agentId,planFilePath:h,planExists
+ * @cc type:"plan_mode",reminderType:
  * @stability incidental
  */
 function planFile(lines, toolInput) {
@@ -231,7 +235,7 @@ const NOTE = '\n\nNote: The user\'s next message';
  * (no rejection on disk yet, not an error result, or rejected with no note, e.g. Esc). Prefers the
  * structured top-level `userFeedback` field on the tool_result entry; falls back to the text after
  * "the user said:\n" (cut at the "Note: The user's next message" suffix).
- * @cc toolDenialKind:_e,toolDenialEndsTurn:ve,userFeedback:Ee
+ * @cc ?.feedbackIsFromUser&&
  * @stability incidental
  */
 function planFeedback(lines, toolUseId) {
@@ -257,7 +261,7 @@ function planFeedback(lines, toolUseId) {
 /**
  * The input the model itself sent for tool use toolUseId (from the assistant tool_use block), or null.
  * ExitPlanMode's hook input has plan/planFilePath injected from disk; the transcript copy has them stripped.
- * @cc Iit=new Map([[Ou,new Set(["plan","planFilePath"])]])
+ * @cc ,new Set(["plan","planFilePath"])]])
  * @stability incidental
  */
 function toolUseInput(lines, toolUseId) {
@@ -303,7 +307,7 @@ function isPeerPrompt(input = {}) {
 
 /**
  * A transcript user entry from a peer: origin.kind "peer", or the envelope/prefix in its text.
- * @cc kind:R("peer"),from:o(),fromMode:z(["bypass","prompting"])
+ * @cc The SENDING session's permission class as declared by the host
  * @stability incidental
  */
 const entryIsPeer = e => !!e && ((e.origin && e.origin.kind === 'peer') || isPeerText(contentText(e.message && e.message.content)));
@@ -429,50 +433,60 @@ function jobs({ all = false, bin = process.env.SUB_HUMAN_CLAUDE || 'claude', env
 
 // ---------- daemon env allowlist ----------
 
-// p0e = CLAUDE_CONFIG_DIR, CLAUDE_INTERNAL_FC_OVERRIDES, ...Fpr (Qqe, Qin, SUBAGENT_MODEL_FORCE), ...a4, cloud keys
-const MODEL_KEYS = [ // Qqe
+// The daemon's dispatch allowlist as 2.1.292 builds it (minified names of that build in brackets):
+// [qRr] = [zWe] + [dWn] + EXTRA_KEYS, where
+// [zWe] = CLAUDE_CONFIG_DIR, CLAUDE_INTERNAL_FC_OVERRIDES, MODEL_KEYS, CUSTOM_MODEL_KEYS, CLAUDE_CODE_SUBAGENT_MODEL_FORCE,
+//         CLAUDE_CODE_CLIENT_DATA_URL, PROVIDER_KEYS, CLOUD_KEYS
+// [dWn] = PATH, CLAUDE_CODE_EXTRA_BODY, CLAUDE_CODE_HOST_CREDS_FILE, ENDPOINT_KEYS
+// The arrays below keep the binary's order: CONTRACT `daemon-env-allowlist` searches for them as JSON text.
+const MODEL_KEYS = [ // [oit]
   'ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_MODEL',
   ...['FABLE', 'HAIKU', 'OPUS', 'SONNET'].flatMap(f => [`ANTHROPIC_DEFAULT_${f}_MODEL`, `ANTHROPIC_DEFAULT_${f}_MODEL_DESCRIPTION`,
     `ANTHROPIC_DEFAULT_${f}_MODEL_NAME`, `ANTHROPIC_DEFAULT_${f}_MODEL_SUPPORTED_CAPABILITIES`]),
   'ANTHROPIC_SMALL_FAST_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION', 'CLAUDE_CODE_SUBAGENT_MODEL',
-  'CLAUDE_CODE_3P_PROBE_WROTE_SONNET_DEFAULT', 'CLAUDE_CODE_3P_PROBE_WROTE_OPUS_DEFAULT',
+  'CLAUDE_CODE_3P_PROBE_WROTE_SONNET_DEFAULT', 'CLAUDE_CODE_3P_PROBE_WROTE_OPUS_DEFAULT', 'CLAUDE_CODE_3P_PROBE_WROTE_HAIKU_DEFAULT',
+  'CLAUDE_CODE_3P_SEEDED_SONNET_DEFAULT', 'CLAUDE_CODE_3P_SEEDED_OPUS_DEFAULT',
 ];
-const CUSTOM_MODEL_KEYS = ['ANTHROPIC_CUSTOM_MODEL_OPTION', 'ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION', // Qin
+const CUSTOM_MODEL_KEYS = ['ANTHROPIC_CUSTOM_MODEL_OPTION', 'ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION', // [vLn]
   'ANTHROPIC_CUSTOM_MODEL_OPTION_NAME', 'ANTHROPIC_CUSTOM_MODEL_OPTION_SUPPORTED_CAPABILITIES'];
-const PROVIDER_KEYS = ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', // a4
+const PROVIDER_KEYS = ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', // [O6]
   'CLAUDE_CODE_USE_ANTHROPIC_AWS', 'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD', 'CLAUDE_CODE_USE_MANTLE', 'CLAUDE_CODE_USE_GATEWAY',
   'ANTHROPIC_FOUNDRY_RESOURCE', 'ANTHROPIC_VERTEX_PROJECT_ID', 'ANTHROPIC_AWS_WORKSPACE_ID', 'ANTHROPIC_GOOGLE_CLOUD_PROJECT',
   'ANTHROPIC_GOOGLE_CLOUD_LOCATION', 'ANTHROPIC_GOOGLE_CLOUD_WORKSPACE_ID', 'CLOUD_ML_REGION'];
 const CLOUD_KEYS = ['AWS_REGION', 'AWS_DEFAULT_REGION', 'ANTHROPIC_BEDROCK_REGION_PREFIX', 'AWS_PROFILE', 'AWS_CONFIG_FILE',
   'AWS_SHARED_CREDENTIALS_FILE', 'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT',
   'CLAUDE_SECURESTORAGE_CONFIG_DIR', 'CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST', 'CLAUDE_CODE_HOST_GATEWAY_LINEAGE'];
-// Ghn = PATH, EXTRA_BODY, HOST_CREDS_FILE, ...QCe (lMe endpoints + companions)
+// [ILe]: every endpoint of [Mqe] and its companions
 const ENDPOINT_KEYS = ['ANTHROPIC_BASE_URL', '_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS',
   'ANTHROPIC_BEDROCK_BASE_URL', 'CLAUDE_CODE_SKIP_BEDROCK_AUTH', 'ANTHROPIC_VERTEX_BASE_URL', 'CLAUDE_CODE_SKIP_VERTEX_AUTH',
   'ANTHROPIC_FOUNDRY_BASE_URL', 'CLAUDE_CODE_SKIP_FOUNDRY_AUTH', 'ANTHROPIC_AWS_BASE_URL', 'CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH',
   'ANTHROPIC_GOOGLE_CLOUD_BASE_URL', 'CLAUDE_CODE_SKIP_ANTHROPIC_GOOGLE_CLOUD_AUTH', 'ANTHROPIC_BEDROCK_MANTLE_BASE_URL',
   'CLAUDE_CODE_SKIP_MANTLE_AUTH'];
+const EXTRA_KEYS = ['CLAUDE_CODE_DISABLE_PROACTIVITY', 'CLAUDE_CODE_AUTO_MODE_SERVER', 'CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS',
+  'CLAUDE_CODE_DISABLE_STRUCTURED_OUTPUTS', 'CLAUDE_CODE_AUTO_MODE_TIER', 'CLAUDE_BG_ISOLATION', 'CLAUDE_BG_SESSION_PERMISSION_RULES',
+  'CLAUDE_BG_MEMORY_TOGGLED_OFF', 'CLAUDE_BG_AUTO_MEMORY_OFF', 'CLAUDE_CODE_RESUME_SOURCE_ALIVE', 'CLAUDE_CODE_PLUGIN_DIRS'];
 
 /**
- * The env keys the bg daemon keeps from a `claude --bg` dispatch (eYn = p0e + Ghn + extras), exactly as
- * 2.1.281 builds it. Every other caller env key (CLAUDE_CODE_TASK_LIST_ID, SUB_HUMAN_*, HOME, ...) is dropped;
+ * The env keys the bg daemon keeps from a `claude --bg` dispatch (zWe + dWn + EXTRA_KEYS above), exactly as
+ * 2.1.292 builds it (2.1.292 added CLAUDE_CODE_CLIENT_DATA_URL, three CLAUDE_CODE_3P_* model keys,
+ * CLAUDE_CODE_DISABLE_PROACTIVITY, CLAUDE_CODE_DISABLE_STRUCTURED_OUTPUTS, CLAUDE_CODE_AUTO_MODE_TIER and
+ * CLAUDE_BG_AUTO_MEMORY_OFF). Every other caller env key (CLAUDE_CODE_TASK_LIST_ID, SUB_HUMAN_*, HOME, ...) is dropped;
  * the worker runs with the daemon's own process.env plus these. Auth secrets (ANTHROPIC_API_KEY, ...) are
  * not in it. Pass state to a bg job through argv (`--settings '{"env":{...}}'`) instead.
- * @cc let{env:a,reattachEnv:h}=n.data;return{ok:!0,dispatch:{...n.data,env:sRe(a,eYn)
+ * @cc daemon_bg_dispatch_ingest
  * @stability env
  */
 const DAEMON_ENV_ALLOW = Object.freeze([...new Set([
   'CLAUDE_CONFIG_DIR', 'CLAUDE_INTERNAL_FC_OVERRIDES', ...MODEL_KEYS, ...CUSTOM_MODEL_KEYS, 'CLAUDE_CODE_SUBAGENT_MODEL_FORCE',
-  ...PROVIDER_KEYS, ...CLOUD_KEYS,
+  'CLAUDE_CODE_CLIENT_DATA_URL', ...PROVIDER_KEYS, ...CLOUD_KEYS,
   'PATH', 'CLAUDE_CODE_EXTRA_BODY', 'CLAUDE_CODE_HOST_CREDS_FILE', ...ENDPOINT_KEYS,
-  'CLAUDE_CODE_AUTO_MODE_SERVER', 'CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS', 'CLAUDE_BG_ISOLATION',
-  'CLAUDE_BG_SESSION_PERMISSION_RULES', 'CLAUDE_BG_MEMORY_TOGGLED_OFF', 'CLAUDE_CODE_RESUME_SOURCE_ALIVE', 'CLAUDE_CODE_PLUGIN_DIRS',
+  ...EXTRA_KEYS,
 ])]);
 const DAEMON_ENV_SET = new Set(DAEMON_ENV_ALLOW);
 
 /**
- * env reduced to what the daemon would keep from it (sRe(env, eYn)).
- * @cc let{env:a,reattachEnv:h}=n.data;return{ok:!0,dispatch:{...n.data,env:sRe(a,eYn)
+ * env reduced to what the daemon would keep from it (exact, case-sensitive key match, as the daemon does).
+ * @cc daemon_bg_dispatch_ingest
  * @stability env
  */
 function daemonEnv(env = process.env) {
@@ -512,19 +526,19 @@ function matcherMatches(m, name, { toolEvent = true } = {}) {
 
 /**
  * Default per-hook timeout (ms) when a hook sets none.
- * @cc var Ua=600000,Ghe=30000
+ * @cc asyncTimeout:e.timeout?e.timeout*1000:
  * @stability API
  */
 const HOOK_TIMEOUT_DEFAULT_MS = 600_000;
 /**
  * SessionEnd hooks' floor budget (ms): the whole SessionEnd run is cut at this unless a hook asks for more.
- * @cc function Zde(){let e=a.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS
+ * @cc .CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS;if(e!==void 0)return e;
  * @stability API
  */
 const SESSION_END_DEFAULT_MS = 1500;
 /**
  * SessionEnd budget ceiling (ms).
- * @cc function Zde(){let e=a.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS
+ * @cc .CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS;if(e!==void 0)return e;
  * @stability API
  */
 const SESSION_END_MAX_MS = 60_000;
@@ -532,7 +546,7 @@ const SESSION_END_MAX_MS = 60_000;
 /**
  * The SessionEnd budget: CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS when set, else the largest SessionEnd hook
  * `timeout` (seconds) in ms, clamped to [1500, 60000].
- * @cc function Zde(){let e=a.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS
+ * @cc .CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS;if(e!==void 0)return e;
  * @stability env
  */
 function sessionEndBudgetMs(timeoutsSec = [], env = process.env) {
@@ -546,20 +560,31 @@ function sessionEndBudgetMs(timeoutsSec = [], env = process.env) {
 // ---------- the contract ----------
 
 /**
- * Every Claude Code assumption the plugin makes. `search` is a literal string (or array: all must match)
- * found in the 2.1.281 binary; scripts/probe-cc.js checks them. `section` points into the internals doc.
+ * A CONTRACT shape as a RegExp: `~` stands for one minified identifier ([\w$]+), everything else is literal.
+ * Shapes pin code whose meaning is in its structure (a fallback order, a numeric default) without naming the
+ * build's minified identifiers, so a rebuild that only renames them still passes.
+ */
+const shapeRe = shape => new RegExp(String(shape).split('~').map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\w$]+'));
+
+/**
+ * Every Claude Code assumption the plugin makes. `search` is a literal string (or array: all must match) and
+ * `shape` an optional code shape (or array; see shapeRe), both found in the 2.1.292 binary; scripts/probe-cc.js
+ * checks them. `section` points into docs/internals/cc-2.1.281.md (changes in cc-2.1.292.md).
  */
 const CONTRACT = Object.freeze([
   // §1 tasks
   { id: 'task-completed-block-drops-fields', section: 1, stability: 'incidental', search: 'TaskCompleted hooks cancelled (control stream closed)',
     note: 'A TaskCompleted block makes TaskUpdate return success:false, updatedFields:[] before the write: every field in that call (subject, metadata, owner) is discarded.' },
-  { id: 'hook-exit2-blocks', section: 1, stability: 'API', search: 'if(cr.status===2&&!di.blockingError)di.blockingError',
+  { id: 'hook-exit2-blocks', section: 1, stability: 'API', search: '"No stderr output"',
+    shape: 'if(~.status===2&&!~.blockingError)~.blockingError={blockingError:`[${',
     note: 'Exit 2 makes stderr the blockingError.' },
-  { id: 'hook-json-block', section: 1, stability: 'API', search: 'case"block":U.permissionBehavior="deny",U.blockingError={blockingError:e.reason||"Blocked by hook"',
+  { id: 'hook-json-block', section: 1, stability: 'API', search: 'Valid types are: approve, block',
+    shape: 'case"block":~.permissionBehavior="deny",~.blockingError={blockingError:~.reason||"Blocked by hook"',
     note: '{"decision":"block","reason"} is a blockingError.' },
   { id: 'hook-missing-script', section: 1, stability: 'incidental', search: 'Hook script appears to be missing',
     note: 'Stop/SubagentStop/TaskCompleted/TeammateIdle (and plugin UserPromptSubmit): exit 2 with empty stdout and "no such file|can\'t open" stderr is non-blocking.' },
-  { id: 'task-completed-input', section: 1, stability: 'API', search: 'hook_event_name:R("TaskCompleted"),task_id:o(),task_subject:o(),task_description:o().optional(),teammate_name',
+  { id: 'task-completed-input', section: 1, stability: 'API', search: '("TaskCompleted"),task_id:',
+    shape: 'hook_event_name:~("TaskCompleted"),task_id:~(),task_subject:~(),task_description:~().optional(),teammate_name:',
     note: 'TaskCompleted input has no metadata/owner/status; read the task file (which still has the old status).' },
   { id: 'task-events-no-matcher', section: 1, stability: 'API', search: 'case"TeammateIdle":case"TaskCreated":case"TaskCompleted":return;',
     note: 'TaskCreated/TaskCompleted/TeammateIdle have no matcher query: every hook fires.' },
@@ -574,30 +599,36 @@ const CONTRACT = Object.freeze([
   // §2 env
   { id: 'env-child-session', section: 2, stability: 'env', search: ['CLAUDE_CODE_CHILD_SESSION:"1",CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_PID:String(process.pid)'],
     note: 'Hooks, Bash, statusLine, subagentStatusLine and monitors get CLAUDE_PID and CLAUDE_CODE_SESSION_ID (cc.ENV, sessionId, claudePid).' },
-  { id: 'env-mcp-session', section: 2, stability: 'env', search: 'CLAUDE_CODE_SESSION_ID:K(),CLAUDECODE:"1",',
+  { id: 'env-mcp-session', section: 2, stability: 'env', search: 'CLAUDE_CODE_CHROME_MCP_ORG_DENIED:"1"',
+    shape: 'CLAUDE_PROJECT_DIR:~??~(),CLAUDE_CODE_SESSION_ID:~(),CLAUDECODE:"1",...~.env,',
     note: 'MCP stdio servers get CLAUDE_CODE_SESSION_ID (fixed at spawn) but not CLAUDE_PID.' },
-  { id: 'env-plugin-mcp', section: 2, stability: 'env', search: 'CLAUDE_PLUGIN_ROOT:n.path,CLAUDE_PLUGIN_DATA:GEe(n.source),',
+  { id: 'env-plugin-mcp', section: 2, stability: 'env', search: '.path,CLAUDE_PLUGIN_DATA:',
+    shape: '{CLAUDE_PLUGIN_ROOT:~.path,CLAUDE_PLUGIN_DATA:~(~.source),...~.env||{}}',
     note: 'Plugin MCP servers get CLAUDE_PLUGIN_ROOT/DATA in env.' },
   { id: 'env-clear-session-id', section: 2, stability: 'incidental', search: 'conversation_reset",newConversationId',
     note: '/clear updates process.env.CLAUDE_CODE_SESSION_ID; running monitors/MCP servers keep the old id.' },
-  { id: 'env-nested-strip', section: 2, stability: 'incidental', search: 'delete e.CLAUDECODE,delete e.CLAUDE_CODE_SESSION_ID',
+  { id: 'env-nested-strip', section: 2, stability: 'incidental', search: 'CLAUDECODE,delete ',
+    shape: 'delete ~.CLAUDECODE,delete ~.CLAUDE_CODE_SESSION_ID,delete ~.CLAUDE_CODE_CHILD_SESSION',
     note: 'A nested claude drops CLAUDE_CODE_SESSION_ID from its env.' },
   { id: 'hook-input-common', section: 2, stability: 'API', search: 'Subagent identifier. Present only when the hook fires from within a subagent',
     note: 'Common hook input: session_id, transcript_path, cwd, prompt_id?, permission_mode?, agent_id?; no pid.' },
   { id: 'pkill-guard', section: 2, stability: 'incidental', search: 'pkill: refusing to run',
     note: 'Bash pkill wrapper refuses patterns matching CLAUDE_PID.' },
   // §3 plan mode
-  { id: 'plan-mode-attachment', section: 3, stability: 'incidental', search: 'type:"plan_mode",reminderType:ge,isSubAgent:!!r.agentId,planFilePath:h,planExists',
+  { id: 'plan-mode-attachment', section: 3, stability: 'incidental', search: 'type:"plan_mode",reminderType:',
+    shape: 'type:"plan_mode",reminderType:~,isSubAgent:!!~.agentId,planFilePath:~,planExists:',
     note: 'Transcript attachment {type:"plan_mode", planFilePath} (cc.planFile).' },
   { id: 'exitplan-normalize', section: 3, stability: 'API', search: 'The plan content (injected by normalizeToolInput from disk)',
     note: 'Pre/PermissionRequest hooks on ExitPlanMode see tool_input.plan and planFilePath.' },
-  { id: 'exitplan-strip', section: 3, stability: 'incidental', search: 'Iit=new Map([[Ou,new Set(["plan","planFilePath"])]])',
+  { id: 'exitplan-strip', section: 3, stability: 'incidental', search: ',new Set(["plan","planFilePath"])]])',
     note: 'plan/planFilePath are stripped before the transcript copy (cc.toolUseInput reads the model\'s own input).' },
   { id: 'exitplan-output', section: 3, stability: 'API', search: 'The file path where the plan was saved',
     note: 'PostToolUse(ExitPlanMode) fires only on approval.' },
-  { id: 'plan-reject-dialog', section: 3, stability: 'incidental', search: 'if(h==="no"){if(!be&&!we)return null;return{behavior:"deny",feedback:',
+  { id: 'plan-reject-dialog', section: 3, stability: 'incidental', search: '"(See attached image)"',
+    shape: 'if(~==="no"){if(!~&&!~)return null;return{behavior:"deny",feedback:',
     note: '"No, keep planning" returns deny with the typed feedback.' },
-  { id: 'plan-reject-user-feedback', section: 3, stability: 'incidental', search: 'toolDenialKind:_e,toolDenialEndsTurn:ve,userFeedback:Ee',
+  { id: 'plan-reject-user-feedback', section: 3, stability: 'incidental', search: '?.feedbackIsFromUser&&',
+    shape: ['userFeedback:~.behavior==="ask"?~.userFeedback:void 0,toolResultRemedy:', 'userFeedback:~,toolResultRemedy:~,mcpMeta:'],
     note: 'The rejected tool_result transcript entry carries top-level userFeedback (cc.planFeedback).' },
   { id: 'plan-reject-text', section: 3, stability: 'incidental', search: ['To tell you how to proceed, the user said:\n', 'Note: The user\'s next message may contain a correction'],
     note: 'Fallback: the note sits between "the user said:\\n" and "\\n\\nNote: The user\'s next message".' },
@@ -606,15 +637,17 @@ const CONTRACT = Object.freeze([
   { id: 'clear-context-setting', section: 3, stability: 'API', search: 'When true, the plan-approval dialog offers a "clear context" option. Defaults to false.',
     note: 'showClearContextOnPlanAccept: the clear-context approve fires no PostToolUse (cc.clearContextOnPlanAccept).' },
   // §4 task store
-  { id: 'task-list-id', section: 4, stability: 'env', search: 'function Mk(){if(a.CLAUDE_CODE_TASK_LIST_ID)return a.CLAUDE_CODE_TASK_LIST_ID',
+  { id: 'task-list-id', section: 4, stability: 'env', search: 'CLAUDE_CODE_TASK_LIST_ID)return ',
+    shape: 'if(~.CLAUDE_CODE_TASK_LIST_ID)return ~.CLAUDE_CODE_TASK_LIST_ID;let ~=~();if(~)return ~.teamName;return ~()||~().taskList.leaderTeamName||~()}',
     note: 'List id: env, team, teammate team, leader team, else session id (changes on /clear).' },
-  { id: 'task-path', section: 4, stability: 'incidental', search: 'function aP(e){return e.replace(/[^a-zA-Z0-9_-]/g,"-")}',
+  { id: 'task-path', section: 4, stability: 'incidental', search: 'return e.replace(/[^a-zA-Z0-9_-]/g,"-")}',
+    shape: '(~){return ~.replace(/[^a-zA-Z0-9_-]/g,"-")}function ~(~){return ~(~(),"tasks",~(~))}function ~(~,~){return ~(~(~),`${~(~)}.json`)}',
     note: '<configDir>/tasks/<sanitized list>/<sanitized id>.json (cc.tasksDir, cc.taskFile).' },
   { id: 'config-dir', section: 4, stability: 'env', search: 'new Set(["CLAUDE_CONFIG_DIR","CLAUDE_INTERNAL_FC_OVERRIDES",',
     note: 'CLAUDE_CONFIG_DIR replaces ~/.claude (cc.configDir).' },
   { id: 'task-store-v5-off', section: 4, stability: 'env', search: 'where the v5 storage backend was built at start-up',
     note: 'The experimental key-value task backend is off by default; files are the store.' },
-  { id: 'todo-tools-gate', section: 4, stability: 'env', search: 'a.CLAUDE_CODE_ENABLE_TODO_TOOLS===!0',
+  { id: 'todo-tools-gate', section: 4, stability: 'env', search: '.CLAUDE_CODE_ENABLE_TODO_TOOLS===!0',
     note: 'Newer models need CLAUDE_CODE_ENABLE_TODO_TOOLS for Task tools; bg sessions get them anyway.' },
   // §5 bg jobs
   { id: 'bg-dispatch-line', section: 5, stability: 'incidental', search: 'backgrounded \\xB7 ',
@@ -625,15 +658,18 @@ const CONTRACT = Object.freeze([
     note: '`claude stop <id>` (cc.stopCmd).' },
   { id: 'bg-logs', section: 5, stability: 'API', search: 'Print the background session\'s recent terminal output.',
     note: '`claude logs <id>` (cc.logsCmd).' },
-  { id: 'daemon-env-filter', section: 5, stability: 'env', search: 'let{env:a,reattachEnv:h}=n.data;return{ok:!0,dispatch:{...n.data,env:sRe(a,eYn)',
+  { id: 'daemon-env-filter', section: 5, stability: 'env', search: 'daemon_bg_dispatch_ingest',
+    shape: 'let{env:~,reattachEnv:~}=~.data;return{ok:!0,dispatch:{...~.data,env:~(~,~)',
     note: 'The daemon keeps only allowlisted caller env keys (cc.DAEMON_ENV_ALLOW).' },
   { id: 'daemon-env-allowlist', section: 5, stability: 'env',
-    search: [
-      '"CLAUDE_CODE_AUTO_MODE_SERVER","CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS","CLAUDE_BG_ISOLATION","CLAUDE_BG_SESSION_PERMISSION_RULES","CLAUDE_BG_MEMORY_TOGGLED_OFF","CLAUDE_CODE_RESUME_SOURCE_ALIVE","CLAUDE_CODE_PLUGIN_DIRS"]',
+    search: [ // the binary's own arrays, as JSON text: any key added, dropped or moved fails here
+      JSON.stringify(MODEL_KEYS), JSON.stringify(CUSTOM_MODEL_KEYS), JSON.stringify(PROVIDER_KEYS),
+      JSON.stringify(CLOUD_KEYS).slice(1), JSON.stringify(EXTRA_KEYS).slice(1),
       '["PATH","CLAUDE_CODE_EXTRA_BODY","CLAUDE_CODE_HOST_CREDS_FILE",',
-      '"AWS_REGION","AWS_DEFAULT_REGION","ANTHROPIC_BEDROCK_REGION_PREFIX","AWS_PROFILE","AWS_CONFIG_FILE","AWS_SHARED_CREDENTIALS_FILE","GOOGLE_APPLICATION_CREDENTIALS","GOOGLE_CLOUD_PROJECT","GCLOUD_PROJECT","CLAUDE_SECURESTORAGE_CONFIG_DIR","CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST","CLAUDE_CODE_HOST_GATEWAY_LINEAGE"]',
     ],
-    note: 'The literal pieces of eYn = p0e + Ghn + extras that DAEMON_ENV_ALLOW copies.' },
+    shape: ['new Set(["CLAUDE_CONFIG_DIR","CLAUDE_INTERNAL_FC_OVERRIDES",...~,"CLAUDE_CODE_CLIENT_DATA_URL",...~,"AWS_REGION",',
+      `=new Set([...~,...~,${JSON.stringify(EXTRA_KEYS).slice(1)})`],
+    note: 'The pieces of the daemon allowlist (zWe + dWn + extras in 2.1.292) that DAEMON_ENV_ALLOW copies.' },
   { id: 'bg-worker-env', section: 5, stability: 'incidental', search: 'CLAUDE_CODE_SESSION_KIND:"bg",CLAUDE_BG_BACKEND:"daemon",FORCE_COLOR',
     note: 'Workers run with the daemon\'s own process.env plus the filtered dispatch env.' },
   { id: 'bg-provider-env', section: 5, stability: 'incidental', search: 'stripped disallowed providerEnv key(s)',
@@ -641,10 +677,12 @@ const CONTRACT = Object.freeze([
   // §6 monitors
   { id: 'monitor-schema', section: 6, stability: 'API', search: 'Arm trigger. "always" arms at session start and on plugin reload.',
     note: 'Monitor `when`: "always" or "on-skill-invoke:<skill>"; name is the dedupe key.' },
-  { id: 'monitor-location', section: 6, stability: 'incidental', search: 'n.experimental?.monitors??n.monitors',
+  { id: 'monitor-location', section: 6, stability: 'incidental', search: '.experimental?.monitors??',
+    shape: '~.experimental?.monitors??~.monitors',
     note: 'manifest.experimental.monitors or manifest.monitors, else monitors/monitors.json.' },
-  { id: 'monitor-arm-gates', section: 6, stability: 'incidental', search: 'plugin monitor ${Pe}: failed to arm',
-    note: 'Arming is skipped by policy, the tengu_amber_sentinel gate, -p, or untrusted workspace.' },
+  { id: 'monitor-arm-gates', section: 6, stability: 'incidental', search: [': failed to arm: ', '"tengu_amber_sentinel",!1)}', 'Skipping plugin monitor '],
+    shape: '{if(~("pluginMonitors"))return;if(!~())return;if(~())return;',
+    note: 'Arming is skipped by policy, the tengu_amber_sentinel gate, -p, managed disableAllHooks, or untrusted workspace.' },
   { id: 'monitor-not-rearmed', section: 6, stability: 'incidental', search: 'armedMonitorKeys',
     note: 'A monitor that exits is not re-armed until the claude process restarts (in-process /resume and /clear do not re-arm).' },
   // §7 hooks
@@ -654,43 +692,50 @@ const CONTRACT = Object.freeze([
     note: '`if` uses permission-rule syntax; Task tools can only be filtered by bare name.' },
   { id: 'hook-async', section: 7, stability: 'API', search: 'If true, hook runs in background and wakes the model on exit code 2',
     note: 'Per-hook async/asyncRewake fields.' },
-  { id: 'hook-timeout-default', section: 7, stability: 'API', search: 'var Ua=600000,Ghe=30000',
+  { id: 'hook-timeout-default', section: 7, stability: 'API', search: 'asyncTimeout:e.timeout?e.timeout*1000:',
+    shape: 'var ~=600000,~=30000,',
     note: 'Default hook timeout 600000 ms (cc.HOOK_TIMEOUT_DEFAULT_MS).' },
-  { id: 'stop-additional-context', section: 7, stability: 'incidental', search: ['case"Stop":case"SubagentStop":U.additionalContext=e.hookSpecificOutput.additionalContext', 'let ye=d.agentId?"SubagentStop":"Stop",Ie=on({type:"hook_additional_context"'],
+  { id: 'stop-additional-context', section: 7, stability: 'incidental', search: '{type:"hook_additional_context",content:',
+    shape: ['case"Stop":case"SubagentStop":~.additionalContext=~.hookSpecificOutput.additionalContext', '.agentId?"SubagentStop":"Stop",~=~({type:"hook_additional_context",'],
     note: 'Stop hookSpecificOutput.additionalContext continues the turn with that text, like a block but without the red "Stop hook error" line or notification (only real blockingErrors get those).' },
-  { id: 'session-end-budget', section: 7, stability: 'env', search: ['function Zde(){let e=a.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS', 'jeo=1500,Hho=60000'],
+  { id: 'session-end-budget', section: 7, stability: 'env', search: '.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS;if(e!==void 0)return e;',
+    shape: ['if(~.timeout&&~.timeout*1000>~)~=~.timeout*1000;return Math.max(~,Math.min(~,~))}', 'var ~=1500,~=60000,'],
     note: 'SessionEnd budget: env override, else max hook timeout clamped to [1500, 60000] ms (cc.sessionEndBudgetMs).' },
   // §8 cross-session
   { id: 'peer-envelope', section: 8, stability: 'incidental', search: ['from-session="', 'hop-chain="', '(?: from-name="([^"<>\\n\\r]+)")?(?: from-mode="('],
     note: '<cross-session-message from from-session hop-chain from-name from-mode from-plugin> in that order (cc.parseEnvelope).' },
   { id: 'peer-held-prefix', section: 8, stability: 'incidental', search: 'Another Claude session sent a message',
     note: 'Held/mid-turn peer deliveries start with this prefix (cc.isPeerText).' },
-  { id: 'peer-origin', section: 8, stability: 'incidental', search: 'kind:R("peer"),from:o(),fromMode:z(["bypass","prompting"])',
+  { id: 'peer-origin', section: 8, stability: 'incidental', search: "The SENDING session's permission class as declared by the host",
+    shape: 'kind:~("peer"),from:~(),fromMode:~(["bypass","prompting"])',
     note: 'Transcript user entries from peers carry origin.kind "peer" (cc.entryIsPeer).' },
   { id: 'ups-source', section: 8, stability: 'API', search: '`system` = other machine-injected turns (peer/channel messages',
     note: 'UserPromptSubmit source "system" for peers, channels, task notifications (cc.isPeerPrompt).' },
   { id: 'cross-session-inbound', section: 8, stability: 'API', search: 'Inbound cross-session peer messages (SendMessage from your other sessions)',
     note: 'crossSessionInbound accept|hold|refuse; the orch sets accept.' },
-  { id: 'harbor-kite-gate', section: 8, stability: 'env', search: 'function Os(){let e=a.CLAUDE_CODE_HARBOR_KITE',
+  { id: 'harbor-kite-gate', section: 8, stability: 'env', search: '"tengu_harbor_kite",!0)',
+    shape: '{let ~=~.CLAUDE_CODE_HARBOR_KITE;if(~!==void 0)return ~(~);',
     note: 'Cross-session messaging gate (default on).' },
   { id: 'task-notification-prompt', section: 8, stability: 'incidental', search: '<task-notification>',
     note: 'Monitor/background notices arrive as prompts starting <task-notification> (cc.isTaskNotification).' },
   { id: 'pasted-content', section: 8, stability: 'incidental', search: ['<pasted_content id="', '</pasted_content id="'],
     note: 'Long pastes are wrapped in <pasted_content id="N"> (cc.PASTED_RE).' },
   // §9 plugin settings
-  { id: 'plugin-settings-allowlist', section: 9, stability: 'API', search: 'var Wpe=["agent","subagentStatusLine"]',
+  { id: 'plugin-settings-allowlist', section: 9, stability: 'API', search: ['=["agent","subagentStatusLine"];', 'Loaded settings from settings.json for plugin ', 'Loaded settings from manifest for plugin '],
     note: 'Plugin settings.json keeps only agent and subagentStatusLine.' },
-  { id: 'subagent-statusline-precedence', section: 9, stability: 'incidental', search: 'let s=e.store.pluginBase,r={};if(s)r=eF(r,s,sz);',
+  { id: 'subagent-statusline-precedence', section: 9, stability: 'incidental', search: 'settings_load_started',
+    shape: 'let ~=~.store.pluginBase,~={};if(~)~=~(~,~,~);',
     note: 'Any user/project/local/flag subagentStatusLine overrides the plugin\'s.' },
-  { id: 'plugin-setting-override-log', section: 9, stability: 'incidental', search: 'overrides setting "${s}" (previously set by another plugin)',
+  { id: 'plugin-setting-override-log', section: 9, stability: 'incidental', search: ['overrides setting "${', '" (previously set by another plugin)'],
     note: 'Last plugin loaded wins a shared setting.' },
   { id: 'subagent-statusline-raw', section: 9, stability: 'incidental', search: 'Skipping subagentStatusLine execution - workspace trust not accepted',
     note: 'subagentStatusLine command gets no ${CLAUDE_PLUGIN_ROOT} substitution nor PLUGIN_ROOT/DATA env.' },
   // §10 events
-  { id: 'hook-events', section: 10, stability: 'API', search: '"TaskCreated","TaskCompleted","Elicitation"',
+  { id: 'hook-events', section: 10, stability: 'API', search: '"Setup","TeammateIdle","TaskCreated","TaskCompleted","Elicitation"',
     note: 'The hook event list; no plan-approved/rejected event.' },
-  { id: 'hooks-modules', section: 10, stability: 'env', search: ['hooks modules are not turned on for installed plugins', '"ui.focus","agent.offer","agent.spawn"'],
-    note: 'Early-access function hooks; not used yet.' },
+  { id: 'hooks-modules', section: 10, stability: 'env',
+    search: ['"tengu_plugin_hooks_modules"', 'installed plugins\' hooks modules not loaded: rollout flag (', '"hooks/register.ts"', '"ui.focus","agent.offer","agent.spawn"'],
+    note: 'Function hooks load from a plugin\'s hooks/register.ts, for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on); sub-human ships none.' },
 ]);
 
 module.exports = {
@@ -704,5 +749,5 @@ module.exports = {
   DAEMON_ENV_ALLOW, daemonEnv,
   matcherIsExact, matcherMatches,
   HOOK_TIMEOUT_DEFAULT_MS, SESSION_END_DEFAULT_MS, SESSION_END_MAX_MS, sessionEndBudgetMs,
-  CONTRACT,
+  shapeRe, CONTRACT,
 };
