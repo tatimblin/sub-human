@@ -354,13 +354,26 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/notices.js`: join / leave lines for every human in the room, as a group chat shows them: "bob joined", "bob rejoined", "bob left" (no room code, no ids).
 - `lib/orch.js`: the room's headless orchestrator, a `claude --bg` session the join hook starts.
 - `lib/proposal.js`: proposals and the consent card. Every write goes through room.append().
+- `lib/remote/auth.js`: invites and link tokens, on the host. An invite is single-use and turns into a link token at the first hello; the token is the link's credential from then on.
+- `lib/remote/bridge.js`: a synchronous call from a hook's thread to asynchronous work on a worker thread, with a deadline.
+- `lib/remote/client.js`: the asynchronous side of the protocol, one connection to a room's server over a transport.
+- `lib/remote/link.js`: the link daemon, one per machine and room (`bin/sub-human link CODE`, started detached by the join hook, like the orch starter).
+- `lib/remote/protocol.js`: the wire protocol between a link (lib/remote/client.js, on the machine of a remote member) and a room's server (lib/remote/server.js, on the host): the ops, the frame shapes, the error codes and the line codec.
+- `lib/remote/server.js`: one connection to a hosted room. `bin/sub-human serve --stdio CODE` runs one per connection on the host (spawned by the client's pipe transport now, by an SSH forced command later); the store contract test runs one on a worker thread over the memory transport.
+- `lib/remote/transports/index.js`: the transport contract and the lookup by kind. A transport carries protocol frames (lib/remote/protocol.js) between a client and a server and knows nothing about them.
+- `lib/remote/transports/memory.js`: the in-process transport, a connected pair over a MessageChannel, so the two ends may live on different threads (the store contract's remote backend runs the server on a worker: a thread that makes synchronous bridge calls must never host the server).
+- `lib/remote/transports/pipe.js`: frames over a pair of pipes: a child process's stdio on the client side, this process's stdin/stdout on the server side (`bin/sub-human serve --stdio CODE`).
 - `lib/room.js`: the room log (envelope v3). A facade over lib/room/*, so callers keep one require.
 - `lib/room/consent.js`: the one fold of the room log into proposal / consent state.
+- `lib/room/envelope.js`: the signed envelope (sig v2) and the keys pinned in the log.
 - `lib/room/lanes.js`: who a log entry concerns, and the proposal queries that decide it.
+- `lib/room/links.js`: the link registry on this machine: which rooms are mirrors of a room hosted elsewhere, and how to reach them.
 - `lib/room/render.js`: log entries as text, for Claude (ids kept) and for people (no ids).
+- `lib/room/store-mirror.js`: MirrorRoomStore, the RoomStore of a room hosted on another machine: an FsRoomStore directory kept byte-identical to the host's log by the link daemon (lib/remote/link.js), so every reader (readView, log.idx, tailer, verifyChain, rows, digests) works unchanged.
 - `lib/room/store.js`: the RoomStore seam, and FsRoomStore, its implementation over the room directory on this machine.
 - `lib/room/validate.js`: the room log's envelope rules (envelope v3): which kinds each `via` may write, the fields a caller may set, and the task fields of task_req / task entries. append() (store.js) runs validate() before it takes the log lock.
 - `lib/rows.js`: participant rows in the agent panel. Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.js kv).
+- `lib/seats.js`: entering and leaving a room, the one sequence the join hook, the session-end hook and the remote server (lib/remote/server.js, for a seat on another machine) all run.
 - `lib/tail.js`: the room tail behind `sub-human tail` (bin/sub-human), the hooks module's child (mod/deliver.mjs).
 - `lib/tasks.js`: the room's shared task list. The headless orch's own native task list (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list.
 - `lib/text.js`: the string helpers and name patterns every module shares.
