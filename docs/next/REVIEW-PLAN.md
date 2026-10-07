@@ -1,6 +1,6 @@
 # Review follow-up plan
 
-Status: proposed, 2026-10-07. Nothing is implemented yet. Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave.
+Status: approved, 2026-10-07; R0 next. Decided: Q1 yes, Q2 yes, Q3 yes (R2), Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Q4 waits on R0. Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave.
 
 ## Principles
 
@@ -19,7 +19,7 @@ Status: proposed, 2026-10-07. Nothing is implemented yet. Source: the three-way 
 | Q3 | Add a per-session nonce so at-room can check the origin the mod passes (review M7)? | Yes, in R2. It raises the bar for a forged `@room` from "run node" to "read the lease". |
 | Q4 | If the R0 spike shows the room-tool skip also skips other plugins' PreToolUse hooks: keep the skip, or always run consent's command hook on room tools? | Decide after R0. Keep the skip if only the user's own hooks are affected (already accepted). |
 | Q5 | Drop the five unread runs from `scripts/baselines.json` (about 180 lines)? | Yes; they stay in git history. |
-| Q6 | Run a full live demo at the end (R5)? | Yes: R1 changes delivery and the prompt path. |
+| Q6 | Run a full live demo at the end (R5)? | Decided: the short scene set. |
 
 ## Waves
 
@@ -166,7 +166,7 @@ Commit per agent: "Review R1: …".
 
 - **Long functions** (clean-code 15): `lib/tail.js` `startSession` splits its flush and cursor logic into named functions. `lib/room/store.js` is left whole unless the split is mechanical (it is the store; size alone isn't a defect).
 - **Lines over 140 characters:** the 182 non-test lines over 140 characters are wrapped where it helps reading. Tables and regexes stay.
-- **Full suite and live demo:** run the full suite, then (Q6) a full live demo S1–S10, comparing against heron-1142.
+- **Full suite and live demo:** run the full suite, then (Q6) the short live demo `--only S1,S2,S4,S5,S9,S9b,S10`, comparing against eagle-8857.
 
 **Accept:**
 - all deterministic checks pass;
