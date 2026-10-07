@@ -12,18 +12,16 @@
  * members.json orch.session_id (wherever it is), and that file is left out of the folder's member seat.
  *
  * - wakes: room-caused model turns: a user entry that is a sub-human plugin prompt (the hooks module's wake:
- *   origin {kind: plugin, name: sub-human}, not isMeta), a sub-human Monitor event (runs before W4: origin.kind
- *   task-notification, "Monitor event: …sub-human…"), a peer delivery (origin.kind peer), or the row-rewake wake
- *   (its text "sub-human: this session was resumed…"), followed in file order by an assistant message before the
- *   next user prompt. Adjacent triggers that start one turn count once. `notices` counts the Monitor-event entries
- *   themselves, `plugin` the plugin prompts.
- * - chat (W4, D3): `notices` = the hooks module's $.ui.log rows (system, level notice, "sub-human: …": what the
+ *   origin {kind: plugin, name: sub-human}, not isMeta), a peer delivery (origin.kind peer), or the row-rewake
+ *   wake (its text "sub-human: this session was resumed…"), followed in file order by an assistant message before
+ *   the next user prompt. Adjacent triggers that start one turn count once. `plugin` counts the plugin prompts.
+ * - chat: `notices` = the hooks module's $.ui.log rows (system, level notice, "sub-human: …": what the
  *   person sees), `pulls` = its isMeta copies for the model (origin plugin sub-human), and `turns` / `calls` = model
  *   turns (and distinct assistant messages) that started with nothing but such rows since the previous turn ended:
  *   a chat burst should cost 0. `callsPerBurst` = calls / notices.
  * - injected: chars of hook additionalContext the seat's model received: `join` (UserPromptExpansion, the
  *   /sub-human join block), `total` (every hook_additional_context attachment, incl. restores and digests).
- * - noise: UI lines per capture of the seat's pane: "Monitor event", the plugin prompt's framing ("The sub-human
+ * - noise: UI lines per capture of the seat's pane: the plugin prompt's framing ("The sub-human
  *   plugin sent a message", one per row), "Waiting for N background agents",
  *   "hook error", "blocked by hook", "Invalid tool parameters"; `perCapture` = all of them / captures,
  *   `perCaptureExWaiting` without "Waiting for". "Operation stopped by hook" (the @room receipt) is counted
@@ -40,8 +38,7 @@ const paths = require('./lib/paths.js');
 
 const SEATS = ['orch', 'alice', 'bob'];
 const NOISE = {
-  monitor: /Monitor event/,
-  plugin: /The sub-human plugin sent a message/, // one per plugin prompt row (its framing line), as "Monitor event" was one per notification
+  plugin: /The sub-human plugin sent a message/, // one per plugin prompt row (its framing line)
   waiting: /Waiting for \d+ background agents?/,
   hookError: /hook error/i,
   blocked: /blocked by hook/i,
@@ -53,7 +50,7 @@ const REWAKE = 'sub-human: this session was resumed';
 const BASELINES = require('./baselines.json');
 const BASELINE = BASELINES.runs[BASELINES.compare.baseline];
 const PHASE0 = BASELINES.runs[BASELINES.compare.phase0];
-const STOAT = BASELINES.runs[BASELINES.compare.prev];
+const PREV = BASELINES.runs[BASELINES.compare.prev];
 
 const jsonl = f => { try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } };
 const textOf = c => (typeof c === 'string' ? c : Array.isArray(c) ? c.map(x => (x && (x.text || (typeof x.content === 'string' ? x.content : ''))) || '').join('\n') : '');
@@ -96,7 +93,6 @@ function trigger(e) {
   const t = textOf(e.message && e.message.content);
   if (k === 'peer') return 'peer';
   if (t.includes(REWAKE)) return 'rewake';
-  if (k === 'task-notification' && /Monitor event:[^\n]*sub-human/.test(t)) return 'monitor';
   if (k === 'plugin' && e.origin.name === 'sub-human' && !e.isMeta) return 'plugin';
   return null;
 }
@@ -138,7 +134,7 @@ function cardTurns(es) {
 }
 
 function seatTranscriptMetrics(ts) {
-  const w = { turns: 0, notices: 0, plugin: 0, peer: 0, rewake: 0, rowNotifications: 0, humanPrompts: 0 };
+  const w = { turns: 0, plugin: 0, peer: 0, rewake: 0, rowNotifications: 0, humanPrompts: 0 };
   const chat = { notices: 0, pulls: 0, turns: 0, calls: 0 };
   const inj = { join: 0, total: 0, count: 0, byEvent: {} };
   const cards = [];
@@ -172,7 +168,7 @@ function seatTranscriptMetrics(ts) {
       if (e.type !== 'user' || (e.isMeta && !(e.origin && e.origin.kind === 'peer')) || isToolResult(e)) continue;
       const k = trigger(e);
       if (k) {
-        if (k === 'monitor') w.notices++; else w[k]++;
+        w[k]++;
         pending = pending || k;
         continue;
       }
@@ -253,7 +249,6 @@ function measure({ screens, projects, home, code } = {}) {
     total: {
       wakes,
       roomWakesMembers: seats.alice.wakes.turns + seats.bob.wakes.turns,
-      notices: SEATS.reduce((a, s) => a + seats[s].wakes.notices, 0),
       pluginWakes: SEATS.reduce((a, s) => a + seats[s].wakes.plugin, 0),
       chat: (() => {
         const c = { notices: 0, pulls: 0, turns: 0, calls: 0 };
@@ -283,4 +278,4 @@ if (require.main === module) {
   process.stdout.write(JSON.stringify(measure({ screens, home: o.home || paths.demoHome() }), null, 1) + '\n');
 }
 
-module.exports = { measure, BASELINES, BASELINE, PHASE0, STOAT, NOISE, trigger, isChatNotice, isPull, seatTranscriptMetrics, cardTurns, isRed };
+module.exports = { measure, BASELINES, BASELINE, PHASE0, PREV, NOISE, trigger, isChatNotice, isPull, seatTranscriptMetrics, cardTurns, isRed };

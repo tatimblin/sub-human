@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { World, fixture, hso, ctx, PLUGIN, identity } = require('./helpers.js');
+const { World, fixture, hso, ctx, PLUGIN, identity, room } = require('./helpers.js');
 const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
 /** The seat's rows are running: its hold server (this live test process) holds them. */
 const rowsRunning = (w, name, held) => w.lib(() => rows.writeHolds(w.code, name, held));
@@ -221,9 +221,9 @@ test('a plain prompt outputs nothing (the title, digest and rows are the mod\'s)
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, '');
   // with an origin the mod is the one writer of "working" (mod/prompt.mjs)
-  assert.equal((w.lib(() => identity.readPresence(w.code)).alice || {}).state, undefined);
+  assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice', null)), null);
   assert.equal(atRoom(w, submit('hello again', null), { as: 'alice' }).stdout, '');
-  assert.equal(w.lib(() => identity.readPresence(w.code)).alice.state, 'working');
+  assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice')).state, 'working');
   // non-members get nothing
   const w3 = new World({ orch: 'sleep' });
   assert.equal(atRoom(w3, submit('hi')).stdout, '');

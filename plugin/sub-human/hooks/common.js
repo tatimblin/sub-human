@@ -100,12 +100,6 @@ function presence(me, state, detail) {
   try { if (me) identity.writePresence(me.code, me.name, state, detail); } catch { /* best-effort */ }
 }
 
-// ---------- per-member state: the room documents members/<name>/<key> (lib/room/store.js kv) ----------
-const stateKv = me => room.open(me.code).store.kv;
-const readState = (me, key) => stateKv(me).get(`members/${me.name}/${key}`, null);
-const writeState = (me, key, value) => stateKv(me).set(`members/${me.name}/${key}`, value, { compact: true });
-function clearState(me, key) { try { stateKv(me).delete(`members/${me.name}/${key}`); } catch { /* absent */ } }
-
 // ---------- the mechanics block the join / restore hooks inject (<= BLOCK_MAX chars with 5 members) ----------
 const BLOCK_MAX = config.BLOCK_MAX;
 const TEMPLATE_FILES = { member: 'member.md', orch: 'orchestrator.md' };
@@ -194,24 +188,9 @@ function contextBlock(me, lead, { rowsLead = '', rowsText = null } = {}) {
   return clip(`${text}${rows ? `\n\nROWS\n${rows}` : ''}${tail}`);
 }
 
-// ---------- paths ----------
-function realish(p) { try { return fs.realpathSync(p); } catch { return path.resolve(p); } }
-
-/** Resolve p (relative to base) and report whether it is inside dir (lexically or after realpath). */
-function isUnder(p, dir, base = process.cwd()) {
-  const abs = path.resolve(base, p);
-  const cands = new Set([abs, realish(abs)]);
-  // a not-yet-existing file: realpath its parent
-  cands.add(path.join(realish(path.dirname(abs)), path.basename(abs)));
-  const roots = new Set([path.resolve(dir), realish(dir)]);
-  for (const x of cands) for (const r of roots) if (x === r || x.startsWith(r + path.sep)) return true;
-  return false;
-}
-
 module.exports = {
   identity, room, rows, BLOCK_MAX,
   readInput, out, capture, pre, deny, context, run, logError,
   resolveSeat, whoami, presence,
-  readState, writeState, clearState,
-  clip, contextBlock, seatTitle, isUnder,
+  contextBlock, seatTitle,
 };

@@ -26,9 +26,8 @@
  *   route(ev, {turnRunning, role, rows}) -> [action]
  *       action: {do:'log', text} | {do:'append', text} | {do:'submit', text} | {do:'hold-rows', text|null} |
  *               {do:'seat', seat} | {do:'mid-turn-wake', text}
- *   WAKE_HEAD, wakeText(text, rows) -> text  a wake's prompt: a "(for Claude)" head (so it never parses as a
- *                                 "room:" post; mod/core/prompt.mjs gateVerdict), its lines, then held rows calls
- *   visibleLines(text) -> [line]  the lines a person sees (no "(for Claude)" ones)
+ *   WAKE_HEAD                     a wake's prompt: this "(for Claude)" head (so it never parses as a "room:"
+ *                                 post; mod/core/prompt.mjs gateVerdict), its lines, then held rows calls
  *   unread(wakes, lastToolDone) -> [text]   the mid-turn wakes ({text, at}) appended after the main loop's last
  *                                 finished tool call: no request followed them, so they are submitted after all
  *   turnLedger() -> {running, start, appended, toolDone, complete, hold}   the main-loop turn as delivery sees it
@@ -92,11 +91,11 @@ export function parseEvent(line) {
   }
 }
 
-export function visibleLines(text) {
+function visibleLines(text) {
   return String(text ?? '').split('\n').filter(l => l.trim() && !l.startsWith(FOR_CLAUDE));
 }
 
-export function wakeText(text, rows) {
+function wakeText(text, rows) {
   return [WAKE_HEAD, text, rows || ''].filter(Boolean).join('\n');
 }
 

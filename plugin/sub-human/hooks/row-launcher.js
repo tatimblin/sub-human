@@ -82,7 +82,7 @@ function writeLauncher(root = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirn
   return f;
 }
 
-module.exports = { writeLauncher, launcherPath, launcherBody, isTempRoot, orderRoots, LAUNCHER };
+module.exports = { launcherBody, isTempRoot };
 
 if (require.main === module) {
   try { fs.readFileSync(0, 'utf8'); } catch { /* stdin unused */ }

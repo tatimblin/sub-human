@@ -30,7 +30,7 @@ export const SHIM_MODE = Object.freeze({ SUB_HUMAN_SHIM: '1' });
 
 /** ClassicResultFields of the 2.1.292 d.ts, for the events a shim can carry. block / preventContinuation /
  * stopReason are every event's. */
-export const CLASSIC_FIELDS = {
+const CLASSIC_FIELDS = {
   UserPromptSubmit: ['additionalContext', 'sessionTitle', 'suppressOriginalPrompt'],
   UserPromptExpansion: ['additionalContext', 'suppressOriginalPrompt'],
   SessionStart: ['additionalContext', 'sessionTitle'],

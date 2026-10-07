@@ -29,13 +29,12 @@
  *       under a lock: appends the answer, then the decision when the matrix is complete. Idempotent: a person
  *       who already answered that hash (or a decided / unknown one) is stale; one answer per person.
  *   title(code, hash, entry?) -> string  the stored plan's first line (else the entry's title text, else '')
- *   titleOf(text) -> string
  *   decision(hash, entries) -> Entry|null
  *   humans(code) -> [name]         members present who can approve
  *   viewable(p, code) -> bool      the plan dialog can show it: stored, <= VIEW_MAX chars, no control or bidi
  *                                  characters (the dialog withholds approval for those); else the card
  *   reminder(p, name) -> string    the re-ask wording (a review closed without an answer is fine to reopen)
- *   planRef(hash) -> "plans/<hash>.md", planPath(code, hash) -> a local file for it, read(code, hash) -> string|null
+ *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
  * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
  */
@@ -308,5 +307,5 @@ module.exports = {
   QUESTION_RE, ProposalError,
   readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
   create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, record, decision, humans, reminder,
-  planPath, planRef, read, hash12, title, titleOf,
+  read, hash12, title,
 };

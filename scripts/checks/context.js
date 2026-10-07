@@ -6,7 +6,7 @@
  *
  * ctx.code, roomDir, log, members, orchSid, job, index (screens/index.json), props (proposals with a hash),
  * and helpers over the captures (cap, caps, capName, span), the per-step state (st, stText, nativeTasks),
- * the seats' transcripts (entries, inSpan, toolUses, assistantIds, peerIn, wakeIn (monitorIn), chatIn, pullIn,
+ * the seats' transcripts (entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn, pullIn,
  * chatTurn, orchTurns, replyAfter, noModelTurn, rowUserText, rowReply), the room log (byKind, fmt, logIn, shownVia), chainOk() and cost().
  */
 const fs = require('node:fs');
@@ -77,9 +77,8 @@ function context({ screens, home, room }) {
   const toolUses = (es, name) => es.filter(e => e.type === 'assistant' && !e.isSidechain).flatMap(e => (e.message.content || []).filter(c => c && c.type === 'tool_use' && (!name || c.name === name || new RegExp(name).test(c.name))).map(c => ({ ...c, at: e.timestamp })));
   const assistantIds = es => new Set(es.filter(e => e.type === 'assistant' && !e.isSidechain).map(e => e.message.id || e.uuid));
   const peerIn = (es, from) => es.filter(e => e.type === 'user' && e.origin && e.origin.kind === 'peer' && (!from || String(e.origin.name || '').startsWith(from + '.')));
-  // room wakes: the hooks module's plugin prompt (W4), or a Monitor event (runs before W4)
-  const wakeIn = es => es.filter(e => ['plugin', 'monitor'].includes(metrics.trigger(e)));
-  const monitorIn = wakeIn;
+  // room wakes: the hooks module's plugin prompt
+  const wakeIn = es => es.filter(e => metrics.trigger(e) === 'plugin');
   // the hooks module's chat rows ($.ui.log, "sub-human: …") and their isMeta copies for the model (D3)
   const chatIn = es => es.filter(metrics.isChatNotice);
   const pullIn = es => es.filter(metrics.isPull);
@@ -134,7 +133,7 @@ function context({ screens, home, room }) {
     }
     return { text: text.join('\n'), tools };
   }
-  /** How log entry id was shown to name as a join/leave line ("mod"; before W4 "monitor" | "prompt"), from rows/notices-NAME.json. */
+  /** How log entry id was shown to name as a join/leave line ("mod"), from rows/notices-NAME.json. */
   function shownVia(name, id) {
     const rec = readJson(path.join(roomDir, 'rows', `notices-${name}.json`), {});
     const x = (Array.isArray(rec.log) ? rec.log : []).find(y => y.id === id);
@@ -228,7 +227,7 @@ function context({ screens, home, room }) {
   return {
     DEMO, screens, home, code, roomDir, log, members, orchSid, job, index, props, runStart,
     caps, cap, capName, span, stateDir, st, stText, nativeTasks, stateFile,
-    seatFiles, entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, monitorIn, chatIn, pullIn, chatTurn, orchTurns, textOf,
+    seatFiles, entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn, pullIn, chatTurn, orchTurns, textOf,
     byKind, fmt, logIn, replyAfter, shownVia, noModelTurn, rowUserText, rowReply, chainOk, cost,
   };
 }

@@ -7,6 +7,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
 const identity = require(path.join(h.LIB, 'identity.js'));
+const store = require(path.join(h.LIB, 'room', 'store.js'));
 
 test('identity: home, room codes are word-NNNN from the animal list and unique', () => {
   const home = h.freshHome();
@@ -183,19 +184,18 @@ test('identity: members.json orch {job, pid}: setOrch before the bind, kept acro
   assert.throws(() => identity.setOrch('nope-0000', {}), /no room/);
 });
 
-test('identity: presence is a per-member file; readPresence returns valid states only', () => {
+test('identity: presence is a per-member file; writePresence stores valid states and names only', () => {
   h.freshHome();
   const code = h.newRoom();
-  assert.deepEqual(identity.readPresence(code), {});
+  const kv = store.open(code).kv;
   assert.equal(identity.writePresence(code, 'alice', 'idle'), true);
   assert.equal(identity.writePresence(code, 'bob', 'error', 'rate_limit'), true);
   assert.equal(identity.writePresence(code, 'bob', 'bogus'), false);
   assert.equal(identity.writePresence(code, '../x', 'idle'), false);
-  const p = identity.readPresence(code);
-  assert.deepEqual(Object.keys(p).sort(), ['alice', 'bob']);
-  assert.equal(p.alice.state, 'idle');
-  assert.deepEqual([p.bob.state, p.bob.detail], ['error', 'rate_limit']);
-  assert.ok(Date.parse(p.alice.at));
+  assert.deepEqual(kv.list('presence/').sort(), ['presence/alice', 'presence/bob']);
+  assert.equal(kv.get('presence/alice').state, 'idle');
+  assert.deepEqual([kv.get('presence/bob').state, kv.get('presence/bob').detail], ['error', 'rate_limit']);
+  assert.ok(Date.parse(kv.get('presence/alice').at));
   assert.ok(fs.existsSync(path.join(identity.roomDir(code), 'presence', 'alice.json')));
   for (const st of identity.PRESENCE_STATES) assert.equal(identity.writePresence(code, 'carol', st), true, st);
 });

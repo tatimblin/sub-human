@@ -64,4 +64,4 @@ function ensure(code, name) {
 
 function arm() { globalThis[store.SIGNER] = ensure; }
 
-module.exports = { ensure, arm, keyPath };
+module.exports = { ensure, arm };

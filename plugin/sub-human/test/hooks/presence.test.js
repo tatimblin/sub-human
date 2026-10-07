@@ -1,13 +1,13 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { World, identity } = require('./helpers.js');
+const { World, room } = require('./helpers.js');
 
 const note = type => ({ hook_event_name: 'Notification', notification_type: type, message: 'Claude needs your attention' });
 
 test('presence: Notification idle_prompt / permission_prompt and StopFailure write the member presence file', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
-  const read = () => w.lib(() => identity.readPresence(w.code)).alice;
+  const read = () => w.lib(() => room.open(w.code).store.kv.get('presence/alice', null));
   let r = w.hook('presence', note('idle_prompt'), { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, '');
@@ -29,5 +29,5 @@ test('presence: not joined -> nothing written', () => {
   const w = new World({ orch: 'sleep' });
   const r = w.hook('presence', note('idle_prompt'));
   assert.equal(r.code, 0, r.stderr);
-  assert.deepEqual(w.lib(() => identity.readPresence(w.code)), {});
+  assert.deepEqual(w.lib(() => room.open(w.code).store.kv.list('presence/')), []);
 });

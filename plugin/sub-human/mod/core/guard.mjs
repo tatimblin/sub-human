@@ -25,7 +25,7 @@
 export const MCP_PREFIX = 'mcp__plugin_sub-human_room__';
 export const HOLD = MCP_PREFIX + 'hold';
 export const WRITE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
-export const MSG = 'ROOM-GUARD: the room store is written only by sub-human itself. Post with the room MCP tools; read with `sub-human read` or the room read tool.';
+const MSG = 'ROOM-GUARD: the room store is written only by sub-human itself. Post with the room MCP tools; read with `sub-human read` or the room read tool.';
 export const HOLD_DENY = 'sub-human: hold is for row agents only (sub-human:participant / sub-human:room); never call it yourself. Spawn the row agents listed under ROWS instead.';
 export const ROOM_ALLOW = 'sub-human: room tool for a joined session.';
 export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
@@ -59,7 +59,7 @@ export const isUnder = (x, root) => typeof x === 'string' && typeof root === 'st
   && (x === root || x.startsWith(root.endsWith('/') ? root : root + '/'));
 
 /** The literal spellings of the store home a command could use. */
-export function homeSpellings({ home, realHome, userHome } = {}) {
+function homeSpellings({ home, realHome, userHome } = {}) {
   const out = new Set();
   for (const raw of [home, realHome]) {
     if (typeof raw !== 'string' || !raw.startsWith('/')) continue;

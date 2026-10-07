@@ -5,7 +5,7 @@
  *   home()            the sub-human home: plugin lib/identity.js home() ($SUB_HUMAN_HOME or ~/.sub-human)
  *   demoHome()        the demo's home when $SUB_HUMAN_HOME is unset: /tmp/sh-demo/home (scripts/demo.sh)
  *   taskListId(code)  "sh-CODE", tasksDir(code): the orch's native task list (plugin lib/orch.js)
- *   claudeDir()       $CLAUDE_CONFIG_DIR or ~/.claude; projectsDir(): its projects/
+ *   projectsDir()     the projects/ folder of $CLAUDE_CONFIG_DIR or ~/.claude
  *   seatProjectDir(seat)  a demo seat's transcript folder (seats work in /tmp/sh-demo/SEAT = /private/tmp/…)
  *   pluginLib(name)   require plugin/sub-human/lib/<name> (e.g. 'room.js' for validateChain)
  *
@@ -27,7 +27,7 @@ const projectsDir = () => path.join(claudeDir(), 'projects');
 const seatProjectDir = seat => path.join(projectsDir(), `-private-tmp-sh-demo-${seat}`);
 
 module.exports = {
-  REPO, PLUGIN, DEMO_BASE, pluginLib,
-  home, demoHome, claudeDir, projectsDir, seatProjectDir,
+  REPO, PLUGIN, pluginLib,
+  home, demoHome, projectsDir, seatProjectDir,
   taskListId: code => pluginLib('orch.js').taskListId(code), tasksDir: code => pluginLib('orch.js').tasksDir(code),
 };
