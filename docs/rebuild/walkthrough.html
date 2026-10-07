@@ -45,323 +45,322 @@ h2{font-size:18px;margin:0;display:flex;align-items:baseline;gap:10px;flex-wrap:
 .better{color:var(--pass);font-weight:600}.worse{color:var(--fail);font-weight:600}.note{color:var(--muted);font-size:13px;margin:8px 0 0}
 footer{color:var(--muted);font-size:13px}
 @media (max-width:600px){section{padding:12px 10px}}
-.term i{font-style:normal}.term i.a{color:#d77757}.term i.c{font-weight:700}.term i.d{color:#999999}.term i.f{color:#505050;background:#373737}.term i.g{background:#373737}.term i.h{color:#ffffff;background:#373737}.term i.i{color:#4eba65}.term i.j{color:#000000;background:#0891b2;font-weight:700}.term i.k{color:#ffffff}.term i.l{color:#999999;font-weight:700}.term i.q{color:#e5c07b}.term i.r{color:#d78787}.term i.t{color:#949494}.term i.u{color:#ffd700}.term i.v{color:#4e4e4e;background:#3a3a3a}.term i.w{background:#3a3a3a}.term i.x{color:#ffffff;background:#3a3a3a}.term i.y{color:#87d787}.term i.z{color:#000000;background:#00afaf;font-weight:700}.term i.aa{color:#949494;font-weight:700}.term i.ae{color:#949494;opacity:.6}.term i.af{opacity:.6}.term i.ag{color:#999999;opacity:.6}.term i.ah{color:#949494;font-style:italic}.term i.ai{color:#afd7ff}.term i.aj{color:#b1b9f9}.term i.ak{color:#5fafaf}.term i.am{color:#4e4e4e}.term i.an{font-weight:700;font-style:italic;text-decoration:underline}.term i.aq{color:#98c379}.term i.ar{color:#999999;text-decoration:line-through}.term i.av{color:#98c379;font-weight:700}.term i.aw{color:#949494;text-decoration:line-through}
+.term i{font-style:normal}.term i.a{color:#d77757}.term i.c{font-weight:700}.term i.d{color:#999999}.term i.e{color:#505050;background:#373737}.term i.f{background:#373737}.term i.g{color:#ffffff;background:#373737}.term i.h{color:#4eba65}.term i.i{color:#000000;background:#0891b2;font-weight:700}.term i.j{color:#ffffff}.term i.q{color:#e5c07b}.term i.r{color:#d78787}.term i.t{color:#949494}.term i.u{color:#ffd700}.term i.v{color:#4e4e4e;background:#3a3a3a}.term i.w{background:#3a3a3a}.term i.x{color:#ffffff;background:#3a3a3a}.term i.y{color:#87d787}.term i.z{color:#000000;background:#00afaf;font-weight:700}.term i.aa{color:#949494;font-weight:700}.term i.ae{color:#949494;opacity:.6}.term i.af{color:#999999;font-weight:700}.term i.ag{opacity:.6}.term i.ah{color:#999999;opacity:.6}.term i.ai{color:#949494;font-style:italic}.term i.aj{color:#afd7ff}.term i.ak{color:#b1b9f9}.term i.al{color:#5fafaf}.term i.am{color:#afd7ff;font-weight:700}.term i.ao{font-weight:700;font-style:italic;text-decoration:underline}.term i.aq{color:#98c379}.term i.as{color:#999999;text-decoration:line-through}.term i.aw{color:#98c379;font-weight:700}.term i.ax{color:#56b6c2}.term i.ay{color:#949494;text-decoration:line-through}
 </style>
 </head>
 <body>
 <div class="wrap">
 <h1>sub-human walkthrough · slim build</h1>
-<p class="sub">room penguin-3531, 29 log entries, 60 captures, orch job 7019082d · 12 scenes · 60 captures · checks 76 pass / 2 warn / 1 fail · run cost ≈ $2.72 (opus-5-5 $2.72; list-price estimate from transcript token usage within the run) · captured 2026-10-06. Each step shows what changed in the orch (its background job, via <code>claude logs</code>), alice and bob terminals since their previous capture, then the checks (deterministic unless marked behavioural) and the room log. run penguin-3531: S9b adds a three-line @room post nested under the sender</p>
+<p class="sub">room badger-2971, 29 log entries, 59 captures, orch job 1a9be946 · 12 scenes · 59 captures · checks 77 pass / 2 warn / 0 fail · run cost ≈ $2.88 (opus-5-5 $2.88; list-price estimate from transcript token usage within the run) · captured 2026-10-07. Each step shows what changed in the orch (its background job, via <code>claude logs</code>), alice and bob terminals since their previous capture, then the checks (deterministic unless marked behavioural) and the room log.</p>
 <section id="metrics-table">
 <h2><span class="sid">M</span>Slim build vs baselines</h2>
-<p class="must">Room penguin-3531 (59 captures) against vole-8126, Phase 0 otter-0813 and narwhal-2294; measured by scripts/metrics.js from transcripts and captures.</p>
+<p class="must">Room badger-2971 (58 captures) against vole-8126, Phase 0 otter-0813 and narwhal-2294; measured by scripts/metrics.js from transcripts and captures.</p>
 <div class="metrics"><table><thead><tr><th>Metric</th><th>vole-8126</th><th>Phase 0</th><th>narwhal-2294</th><th>this run</th><th>vs vole</th><th>vs P0</th><th>vs narwhal-2294</th></tr></thead><tbody>
 <tr><td>Room-caused model wakes · orch</td><td>12</td><td>8</td><td>8</td><td>8</td><td class="better">-4 (-33%)</td><td>0 (0%)</td><td>0 (0%)</td></tr>
 <tr><td>Room-caused model wakes · alice</td><td>17</td><td>8</td><td>7</td><td>7</td><td class="better">-10 (-59%)</td><td class="better">-1 (-12%)</td><td>0 (0%)</td></tr>
 <tr><td>Room-caused model wakes · bob</td><td>10</td><td>7</td><td>8</td><td>9</td><td class="better">-1 (-10%)</td><td class="worse">+2 (+29%)</td><td class="worse">+1 (+13%)</td></tr>
 <tr><td>Room-caused model wakes · total (target ≤ 18)</td><td>39</td><td>23</td><td>23</td><td>24</td><td class="better">-15 (-38%)</td><td class="worse">+1 (+4%)</td><td class="worse">+1 (+4%)</td></tr>
-<tr><td>Join block chars · orch</td><td>7662</td><td>7620</td><td>709</td><td>709</td><td class="better">-6953 (-91%)</td><td class="better">-6911 (-91%)</td><td>0 (0%)</td></tr>
-<tr><td>Join block chars · alice</td><td>5732</td><td>4968</td><td>1104</td><td>1104</td><td class="better">-4628 (-81%)</td><td class="better">-3864 (-78%)</td><td>0 (0%)</td></tr>
-<tr><td>Join block chars · bob</td><td>5768</td><td>4994</td><td>1098</td><td>1098</td><td class="better">-4670 (-81%)</td><td class="better">-3896 (-78%)</td><td>0 (0%)</td></tr>
-<tr><td>Hook-injected chars over the run · orch</td><td>7782</td><td>7740</td><td>1953</td><td>2059</td><td class="better">-5723 (-74%)</td><td class="better">-5681 (-73%)</td><td class="worse">+106 (+5%)</td></tr>
-<tr><td>Hook-injected chars over the run · alice</td><td>12987</td><td>12082</td><td>4206</td><td>4228</td><td class="better">-8759 (-67%)</td><td class="better">-7854 (-65%)</td><td class="worse">+22 (+1%)</td></tr>
-<tr><td>Hook-injected chars over the run · bob</td><td>13542</td><td>13268</td><td>5035</td><td>5035</td><td class="better">-8507 (-63%)</td><td class="better">-8233 (-62%)</td><td>0 (0%)</td></tr>
-<tr><td>UI noise lines per capture · all seats (target ≤ 1.4)</td><td>4.64</td><td>3.61</td><td>2.98</td><td>3.1</td><td class="better">-1.54 (-33%)</td><td class="better">-0.51 (-14%)</td><td class="worse">+0.12 (+4%)</td></tr>
-<tr><td>… excluding "Waiting for N background agents"</td><td>2.33</td><td>1.9</td><td>1.11</td><td>1.19</td><td class="better">-1.14 (-49%)</td><td class="better">-0.71 (-37%)</td><td class="worse">+0.08 (+7%)</td></tr>
-<tr><td>"Monitor event" lines (all captures)</td><td>145</td><td>124</td><td>60</td><td>66</td><td class="better">-79 (-54%)</td><td class="better">-58 (-47%)</td><td class="worse">+6 (+10%)</td></tr>
-<tr><td>"Waiting for N background agents" lines (all captures)</td><td>159</td><td>118</td><td>105</td><td>113</td><td class="better">-46 (-29%)</td><td class="better">-5 (-4%)</td><td class="worse">+8 (+8%)</td></tr>
-<tr><td>"hook error" lines (all captures)</td><td>5</td><td>7</td><td>0</td><td>1</td><td class="better">-4 (-80%)</td><td class="better">-6 (-86%)</td><td class="worse">+1</td></tr>
+<tr><td>Join block chars · orch</td><td>7662</td><td>7620</td><td>709</td><td>706</td><td class="better">-6956 (-91%)</td><td class="better">-6914 (-91%)</td><td class="better">-3 (0%)</td></tr>
+<tr><td>Join block chars · alice</td><td>5732</td><td>4968</td><td>1104</td><td>1100</td><td class="better">-4632 (-81%)</td><td class="better">-3868 (-78%)</td><td class="better">-4 (0%)</td></tr>
+<tr><td>Join block chars · bob</td><td>5768</td><td>4994</td><td>1098</td><td>1094</td><td class="better">-4674 (-81%)</td><td class="better">-3900 (-78%)</td><td class="better">-4 (0%)</td></tr>
+<tr><td>Hook-injected chars over the run · orch</td><td>7782</td><td>7740</td><td>1953</td><td>2056</td><td class="better">-5726 (-74%)</td><td class="better">-5684 (-73%)</td><td class="worse">+103 (+5%)</td></tr>
+<tr><td>Hook-injected chars over the run · alice</td><td>12987</td><td>12082</td><td>4206</td><td>4236</td><td class="better">-8751 (-67%)</td><td class="better">-7846 (-65%)</td><td class="worse">+30 (+1%)</td></tr>
+<tr><td>Hook-injected chars over the run · bob</td><td>13542</td><td>13268</td><td>5035</td><td>5024</td><td class="better">-8518 (-63%)</td><td class="better">-8244 (-62%)</td><td class="better">-11 (0%)</td></tr>
+<tr><td>UI noise lines per capture · all seats (target ≤ 1.4)</td><td>4.64</td><td>3.61</td><td>2.98</td><td>3.16</td><td class="better">-1.48 (-32%)</td><td class="better">-0.45 (-12%)</td><td class="worse">+0.18 (+6%)</td></tr>
+<tr><td>… excluding "Waiting for N background agents"</td><td>2.33</td><td>1.9</td><td>1.11</td><td>1.17</td><td class="better">-1.16 (-50%)</td><td class="better">-0.73 (-38%)</td><td class="worse">+0.06 (+5%)</td></tr>
+<tr><td>"Monitor event" lines (all captures)</td><td>145</td><td>124</td><td>60</td><td>65</td><td class="better">-80 (-55%)</td><td class="better">-59 (-48%)</td><td class="worse">+5 (+8%)</td></tr>
+<tr><td>"Waiting for N background agents" lines (all captures)</td><td>159</td><td>118</td><td>105</td><td>115</td><td class="better">-44 (-28%)</td><td class="better">-3 (-3%)</td><td class="worse">+10 (+10%)</td></tr>
+<tr><td>"hook error" lines (all captures)</td><td>5</td><td>7</td><td>0</td><td>0</td><td class="better">-5 (-100%)</td><td class="better">-7 (-100%)</td><td>0</td></tr>
 <tr><td>"blocked by hook" lines (all captures)</td><td>6</td><td>0</td><td>2</td><td>3</td><td class="better">-3 (-50%)</td><td class="worse">+3</td><td class="worse">+1 (+50%)</td></tr>
 <tr><td>"Invalid tool parameters" lines (all captures)</td><td>5</td><td>0</td><td>0</td><td>0</td><td class="better">-5 (-100%)</td><td>0</td><td>0</td></tr>
-<tr><td>Red or "hook error" lines (all captures)</td><td>–</td><td>–</td><td>0</td><td>1</td><td></td><td></td><td class="worse">+1</td></tr>
-<tr><td>Model calls per proposal review (open + after the answer)</td><td>–</td><td>–</td><td>3.75</td><td>4</td><td></td><td></td><td class="worse">+0.25 (+7%)</td></tr>
+<tr><td>Red or "hook error" lines (all captures)</td><td>–</td><td>–</td><td>0</td><td>0</td><td></td><td></td><td>0</td></tr>
+<tr><td>Model calls per proposal review (open + after the answer)</td><td>–</td><td>–</td><td>3.75</td><td>4.25</td><td></td><td></td><td class="worse">+0.5 (+13%)</td></tr>
 </tbody></table></div>
-<p class="note">Wake: a Monitor event, peer delivery or row-rewake that starts a turn (21 notices). Noise: the five line kinds above; ✓ sent receipts excluded (7). Reviews: 4 proposals, 2.5 call(s) to open + 1.5 after.</p>
+<p class="note">Wake: a Monitor event, peer delivery or row-rewake that starts a turn (21 notices). Noise: the five line kinds above; ✓ sent receipts excluded (7). Reviews: 4 proposals, 2.5 call(s) to open + 1.75 after.</p>
 </section>
-<nav><a class="fail" href="#Metrics">Metrics</a><a class="pass" href="#S1">S1</a><a class="pass" href="#S2">S2</a><a class="pass" href="#S3">S3</a><a class="pass" href="#S4">S4</a><a class="pass" href="#S5">S5</a><a class="pass" href="#S6">S6</a><a class="pass" href="#S7">S7</a><a class="pass" href="#S8">S8</a><a class="pass" href="#S9">S9</a><a class="pass" href="#S9b">S9b</a><a class="pass" href="#S10">S10</a></nav>
+<nav><a class="warn" href="#Metrics">Metrics</a><a class="pass" href="#S1">S1</a><a class="pass" href="#S2">S2</a><a class="pass" href="#S3">S3</a><a class="pass" href="#S4">S4</a><a class="pass" href="#S5">S5</a><a class="pass" href="#S6">S6</a><a class="pass" href="#S7">S7</a><a class="pass" href="#S8">S8</a><a class="pass" href="#S9">S9</a><a class="pass" href="#S9b">S9b</a><a class="pass" href="#S10">S10</a></nav>
 <section id="Metrics">
 <h2><span class="sid">Metrics</span>Slim build vs the baselines</h2><p class="must">Must show: Room-caused wakes ≤ 12 (vole-8126: 39, Phase 0 otter-0813: 23, previous slim run stoat-3644: 28); small join text; noise ≈ 1.4 per capture; no red lines; model calls per card</p>
 <p class="nochecks">No screens captured for this scene.</p>
-<ul class="checks"><li class=warn><b>WARN</b> Room-caused model wakes ≤ 18 (vole-8126 39; Phase 0 23; narwhal-2294 23) <i>behavioural · 24 vs ≤ 18</i><small>24 wakes (orch 8, alice 7, bob 9); Monitor events, peer deliveries and row-rewake that started a turn</small></li><li class=pass><b>PASS</b> Member join text small (report)<small>alice 1104, bob 1098 chars (vole-8126 5732/5768; Phase 0 4968/4994; narwhal-2294 1104/1098)</small></li><li class=warn><b>WARN</b> UI noise lines per capture ≤ 1.4 (vole-8126 4.64; Phase 0 3.61; narwhal-2294 2.98) <i>behavioural · 3.1 vs ≤ 1.4</i><small>183 lines / 59 captures = 3.1 (excl. "Waiting for": 1.19)</small></li><li class=fail><b>FAIL</b> No red or "hook error" lines in any capture<small>red lines 1, "hook error" lines 1</small></li><li class=pass><b>PASS</b> Model calls per review ≤ 5 on the approver's model (report) <i>behavioural · 4 vs ≤ 5</i><small>4 reviews: 2.5 call(s) to open, 1.5 after the answer (avg 4)</small></li></ul>
+<ul class="checks"><li class=warn><b>WARN</b> Room-caused model wakes ≤ 18 (vole-8126 39; Phase 0 23; narwhal-2294 23) <i>behavioural · 24 vs ≤ 18</i><small>24 wakes (orch 8, alice 7, bob 9); Monitor events, peer deliveries and row-rewake that started a turn</small></li><li class=pass><b>PASS</b> Member join text small (report)<small>alice 1100, bob 1094 chars (vole-8126 5732/5768; Phase 0 4968/4994; narwhal-2294 1104/1098)</small></li><li class=warn><b>WARN</b> UI noise lines per capture ≤ 1.4 (vole-8126 4.64; Phase 0 3.61; narwhal-2294 2.98) <i>behavioural · 3.16 vs ≤ 1.4</i><small>183 lines / 58 captures = 3.16 (excl. "Waiting for": 1.17)</small></li><li class=pass><b>PASS</b> No red or "hook error" lines in any capture<small>red lines 0, "hook error" lines 0</small></li><li class=pass><b>PASS</b> Model calls per review ≤ 5 on the approver's model (report) <i>behavioural · 4.25 vs ≤ 5</i><small>4 reviews: 2.5 call(s) to open, 1.75 after the answer (avg 4.25)</small></li></ul>
 </section>
 <section id="S1">
 <h2><span class="sid">S1</span>alice joins with no room open</h2><p class="must">Must show: Room created; the orch started as a background job (no window); one room row for alice; the orch lists alice; room task #1</p>
-<div class="step"><p class="caption">alice runs /sub-human alice: room penguin-3531 opened, the orch started in the background; one penguin-3531 row for her, an alice row in the orch's panel</p>
-<div class="chips"><span class="chip">bob: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=f>❯</i><i class=g> </i><i class=h>/sub-human:sub-human</i>
-<i class=d>  ⎿  UserPromptExpansion says: sub-human: orch of room penguin-3531</i>
-<i class=i>⏺ </i><i class=j>sub-human:participant</i>(alice)
-<i class=k>⏺ </i>Joined room penguin-3531 as its helper and I'm waiting for requests.
-  <i class=l>1 </i><i class=d>tasks (</i><i class=l>0 </i><i class=d>done, </i><i class=l>1 </i><i class=d>in progress, </i><i class=l>0 </i><i class=d>open)</i>
-  <i class=a>◼ </i><i class=c>room penguin-3531 open</i>
+<div class="step"><p class="caption">alice runs /sub-human alice: room badger-2971 opened, the orch started in the background; one badger-2971 row for her, an alice row in the orch's panel</p>
+<div class="chips"><span class="chip">bob: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=e>❯</i><i class=f> </i><i class=g>/sub-human:sub-human</i>
+<i class=d>  ⎿  UserPromptExpansion says: sub-human: orch of room badger-2971</i>
+<i class=h>⏺ </i><i class=i>sub-human:participant</i>(alice)
+<i class=j>⏺ </i>I've joined room badger-2971 and opened alice's row, and I'm standing by.
+<i class=d>  ⎿  </i><i class=a>◼ </i><i class=c>room badger-2971 open</i>
 <i class=c>  ⏺ main</i>
 <i class=d>  ◯ alice  </i><i class=q>working</i></pre></figure>
 <figure class="term"><figcaption>alice</figcaption><pre><i class=v>❯</i><i class=w> </i><i class=x>/sub-human:sub-human alice</i>
-<i class=t>  ⎿  UserPromptExpansion says: sub-human: opened room penguin-3531 as alice · others: /sub-human NAME · starting the</i>
+<i class=t>  ⎿  UserPromptExpansion says: sub-human: opened room badger-2971 as alice · others: /sub-human NAME · starting the</i>
      <i class=t>orch…</i>
-<i class=y>⏺ </i><i class=z>sub-human:room</i>(penguin-3531)
-<i class=k>⏺ </i>Room penguin-3531 is open, and nobody else has joined yet.
+<i class=y>⏺ </i><i class=z>sub-human:room</i>(badger-2971)
+<i class=j>⏺ </i>You're in room badger-2971. Share the code so others can join.
 <i class=c>  ⏺ main</i>
-<i class=t>  ◯ penguin-3531  </i><i class=ae>1 here</i></pre></figure></div></div>
-<ul class="checks"><li class=pass><b>PASS</b> Room created: log, members.json with alice (member) and the orch (job id)<small>/tmp/sh-demo/home/rooms/penguin-3531: alice member, orch job 7019082d</small></li><li class=pass><b>PASS</b> The orch is a background job titled orch.penguin-3531 (claude agents --json), not a tmux seat<small>id 7019082d kind background name orch.penguin-3531 state working cwd /private/tmp/sh-demo/alice</small></li><li class=pass><b>PASS</b> The orch bound itself as orch of the room (agent sub-human:orchestrator, pid, session id)<small>members.json orch role=orch pid=39833; "UserPromptExpansion says: sub-human: orch of room penguin-3531" in S1-sh-orch.txt (claude logs 7019082d)</small></li><li class=pass><b>PASS</b> alice's join line: "opened room CODE as alice · others: /sub-human NAME"<small>sub-human: opened room penguin-3531 as alice · others: /sub-human NAME</small></li><li class=pass><b>PASS</b> alice's panel: one penguin-3531 row<small>◯ penguin-3531 1 here</small></li><li class=pass><b>PASS</b> The orch's panel lists alice<small>orch rows: ◯ alice working; rows/holds-orch.json members ["alice"]</small></li><li class=pass><b>PASS</b> Room task #1 "room penguin-3531 open" on the orch's native list (in_progress, owner room)<small>~/.claude/tasks/sh-penguin-3531/1.json: "room penguin-3531 open" in_progress owner room</small></li><li class=pass><b>PASS</b> Member join block small: text ≤ 900 chars, with ROWS ≤ 1,200<small>alice's join additionalContext 1104 chars (mechanics text 872, ROWS 232)</small></li></ul><pre class="log">#1 alice/system member_joined alice joined</pre><p class="waits">8/8 driver waits met</p>
+<i class=t>  ◯ badger-2971  </i><i class=ae>1 here</i></pre></figure></div></div>
+<ul class="checks"><li class=pass><b>PASS</b> Room created: log, members.json with alice (member) and the orch (job id)<small>/tmp/sh-demo/home/rooms/badger-2971: alice member, orch job 1a9be946</small></li><li class=pass><b>PASS</b> The orch is a background job titled orch.badger-2971 (claude agents --json), not a tmux seat<small>id 1a9be946 kind background name orch.badger-2971 state working cwd /private/tmp/sh-demo/alice</small></li><li class=pass><b>PASS</b> The orch bound itself as orch of the room (agent sub-human:orchestrator, pid, session id)<small>members.json orch role=orch pid=65020; "UserPromptExpansion says: sub-human: orch of room badger-2971" in S1-sh-orch.txt (claude logs 1a9be946)</small></li><li class=pass><b>PASS</b> alice's join line: "opened room CODE as alice · others: /sub-human NAME"<small>sub-human: opened room badger-2971 as alice · others: /sub-human NAME</small></li><li class=pass><b>PASS</b> alice's panel: one badger-2971 row<small>◯ badger-2971 1 here</small></li><li class=pass><b>PASS</b> The orch's panel lists alice<small>orch rows: ◯ alice working; rows/holds-orch.json members ["alice"]</small></li><li class=pass><b>PASS</b> Room task #1 "room badger-2971 open" on the orch's native list (in_progress, owner room)<small>~/.claude/tasks/sh-badger-2971/1.json: "room badger-2971 open" in_progress owner room</small></li><li class=pass><b>PASS</b> Member join block small: text ≤ 900 chars, with ROWS ≤ 1,200<small>alice's join additionalContext 1104 chars (mechanics text 872, ROWS 232)</small></li></ul><pre class="log">#1 alice/system member_joined alice joined</pre><p class="waits">8/8 driver waits met</p>
 </section>
 <section id="S2">
 <h2><span class="sid">S2</span>bob joins</h2><p class="must">Must show: bob nested in alice's room row, alice in bob's; the orch lists both; no stray rows; alice sees the chat line "bob joined" and "+bob joined" on her room row</p>
 <div class="step"><p class="caption">bob joins: bob nested in alice's room row, alice in bob's; the orch lists both</p>
-<div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=i>⏺ </i><i class=j>sub-human:participant</i>(bob)
-<i class=k>⏺ </i>Bob joined the room and now has his own participant row running in the background.
+<div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=h>⏺ </i><i class=i>sub-human:participant</i>(bob)
+<i class=j>⏺ </i>I started bob's row.
+  <i class=af>1 </i><i class=d>tasks (</i><i class=af>0 </i><i class=d>done, </i><i class=af>1 </i><i class=d>in progress, </i><i class=af>0 </i><i class=d>open)</i>
+  <i class=a>◼ </i><i class=c>room badger-2971 open</i>
 <i class=d>  ◯ bob  </i><i class=q>working</i></pre></figure>
-<figure class="term"><figcaption>alice</figcaption><pre><i class=k>⏺ </i>bob joined
-❯ <i class=af>@room hey bob</i>
-<i class=t>  ◯ penguin-3531  </i><i class=ae>+bob joined </i><i class=t>· </i><i class=ae>2 here</i></pre></figure>
+<figure class="term"><figcaption>alice</figcaption><pre><i class=j>⏺ </i>bob joined
+❯ <i class=ag>hi bob</i>
+<i class=t>  ◯ badger-2971  </i><i class=ae>+bob joined </i><i class=t>· </i><i class=ae>2 here</i></pre></figure>
 <figure class="term"><figcaption>bob</figcaption><pre><i class=v>❯</i><i class=w> </i><i class=x>/sub-human:sub-human bob</i>
-<i class=t>  ⎿  UserPromptExpansion says: sub-human: joined penguin-3531 as bob (alice, orch here)</i>
-<i class=y>⏺ </i><i class=z>sub-human:room</i>(penguin-3531)
-<i class=k>⏺ </i>You've joined room penguin-3531 with alice.
+<i class=t>  ⎿  UserPromptExpansion says: sub-human: joined badger-2971 as bob (alice, orch here)</i>
+<i class=y>⏺ </i><i class=z>sub-human:room</i>(badger-2971)
+<i class=j>⏺ </i>You've joined room badger-2971 with alice.
 <i class=c>  ⏺ main</i>
-<i class=t>  ◯ penguin-3531  </i><i class=ae>+alice joined </i><i class=t>· </i><i class=ae>2 here</i></pre></figure></div></div>
-<ul class="checks"><li class=pass><b>PASS</b> member_joined bob (via system)<small>#2 bob system member_joined: bob joined</small></li><li class=pass><b>PASS</b> bob's join line: "joined CODE as bob (alice, orch here)"<small>sub-human: joined penguin-3531 as bob (alice, orch here)</small></li><li class=pass><b>PASS</b> Rows: bob nested in alice's room row, alice in bob's, both in the orch's<small>holds-alice {"room":true,"members":["bob"]}; holds-bob {"room":true,"members":["alice"]}; holds-orch ["alice","bob"]</small></li><li class=pass><b>PASS</b> bob's panel: only the penguin-3531 row at the top level (no stray participant row)<small>◯ penguin-3531 +alice joined · 2 here</small></li><li class=pass><b>PASS</b> The orch's panel lists alice and bob<small>◯ alice working | ◯ bob working</small></li><li class=pass><b>PASS</b> The orch spent at most 2 model calls on the join (its row spawn) <i>behavioural · 2 vs ≤ 2</i><small>2 orch assistant messages in S2</small></li><li class=pass><b>PASS</b> alice sees the chat line "bob joined" (a lasting line, no room code, no ids)<small>"⏺ bob joined" in alice's pane (state/S2/notice-alice.txt); rows/notices-alice.json: #2 shown via monitor</small></li><li class=pass><b>PASS</b> alice's room row reads "+bob joined"<small>◯ penguin-3531 +bob joined · 2 here</small></li><li class=pass><b>PASS</b> The join woke alice's Claude once, and it printed only the chat line<small>1 room wake(s) carrying the join; her Claude wrote "bob joined"</small></li></ul><pre class="log">#2 bob/system member_joined bob joined</pre><p class="waits">8/8 driver waits met</p>
+<i class=t>  ◯ badger-2971  </i><i class=ae>+alice joined </i><i class=t>· </i><i class=ae>2 here</i></pre></figure></div></div>
+<ul class="checks"><li class=pass><b>PASS</b> member_joined bob (via system)<small>#2 bob system member_joined: bob joined</small></li><li class=pass><b>PASS</b> bob's join line: "joined CODE as bob (alice, orch here)"<small>sub-human: joined badger-2971 as bob (alice, orch here)</small></li><li class=pass><b>PASS</b> Rows: bob nested in alice's room row, alice in bob's, both in the orch's<small>holds-alice {"room":true,"members":["bob"]}; holds-bob {"room":true,"members":["alice"]}; holds-orch ["alice","bob"]</small></li><li class=pass><b>PASS</b> bob's panel: only the badger-2971 row at the top level (no stray participant row)<small>◯ badger-2971 +alice joined · 2 here</small></li><li class=pass><b>PASS</b> The orch's panel lists alice and bob<small>◯ alice working | ◯ bob working</small></li><li class=pass><b>PASS</b> The orch spent at most 2 model calls on the join (its row spawn) <i>behavioural · 2 vs ≤ 2</i><small>2 orch assistant messages in S2</small></li><li class=pass><b>PASS</b> alice sees the chat line "bob joined" (a lasting line, no room code, no ids)<small>"⏺ bob joined" in alice's pane (state/S2/notice-alice.txt); rows/notices-alice.json: #2 shown via monitor</small></li><li class=pass><b>PASS</b> alice's room row reads "+bob joined"<small>◯ badger-2971 +bob joined · 2 here</small></li><li class=pass><b>PASS</b> The join woke alice's Claude once, and it printed only the chat line<small>1 room wake(s) carrying the join; her Claude wrote "bob joined"</small></li></ul><pre class="log">#2 bob/system member_joined bob joined</pre><p class="waits">8/8 driver waits met</p>
 </section>
 <section id="S3">
 <h2><span class="sid">S3</span>Pairing with no plan</h2><p class="must">Must show: @room both ways (receipt line, one wake, exact words); bob's Claude asks alice's Claude by SendMessage and gets an answer; no card; the orch is not woken</p>
 <div class="step"><p class="caption"><span class="stepno">1/2</span>alice posts with @room: one receipt line for her (✓ sent), bob's pane shows "alice: …" with her exact words</p>
-<div class="chips"><span class="chip rows"><b>orch</b> rows: ◯ alice  say 13s</span></div><div class="panes"><figure class="term"><figcaption>alice</figcaption><pre><i class=v>❯ </i><i class=x>@room bob, can you take the parser tests? handler's in src/server.js</i>
+<div class="chips"><span class="chip rows"><b>orch</b> rows: ◯ alice  say 14s</span></div><div class="panes"><figure class="term"><figcaption>alice</figcaption><pre><i class=v>❯ </i><i class=x>@room bob, can you take the parser tests? handler's in src/server.js</i>
 <i class=u>⏺ Operation stopped by hook: ✓ sent</i></pre></figure>
-<figure class="term"><figcaption>bob</figcaption><pre><i class=k>⏺ </i>alice: bob, can you take the parser tests? handler's in src/server.js</pre></figure></div></div>
-<div class="step"><p class="caption"><span class="stepno">2/2</span>bob's Claude asks alice's Claude natively (SendMessage to alice.penguin-3531); alice's Claude answers. No card, no orch turn</p>
-<div class="chips"><span class="chip rows"><b>orch</b> rows: ◯ alice  working · say 1m · ◯ bob  working · say 49s</span></div><div class="panes"><figure class="term"><figcaption>alice</figcaption><pre><i class=k>⏺ </i>bob: sure, once we've agreed how paging works
-<i class=t>› Message from @bob.penguin-3531</i><i class=ah>: Question from bob's Claude: how does createTask in src/store.js pick ids? Just looking</i>
-<i class=ah>for an explanation — please don'… </i><i class=t>(ctrl+o to expand)</i>
+<figure class="term"><figcaption>bob</figcaption><pre><i class=j>⏺ </i>alice: bob, can you take the parser tests? handler's in src/server.js</pre></figure></div></div>
+<div class="step"><p class="caption"><span class="stepno">2/2</span>bob's Claude asks alice's Claude natively (SendMessage to alice.badger-2971); alice's Claude answers. No card, no orch turn</p>
+<div class="chips"><span class="chip rows"><b>orch</b> rows: ◯ alice  working · say 1m · ◯ bob  working · say 44s</span></div><div class="panes"><figure class="term"><figcaption>alice</figcaption><pre><i class=j>⏺ </i>bob: sure, once we've agreed how paging works
+<i class=t>› Message from @bob.badger-2971</i><i class=ai>: Question from bob's Claude: how does createTask in src/store.js pick ids? Just looking</i>
+<i class=ai>for an explanation, please don't… </i><i class=t>(ctrl+o to expand)</i>
   <i class=t>Read </i><i class=aa>1 </i><i class=t>file</i>
-<i class=t>  ⎿  “Explain createTask id assignment to bob's Claude” → uds:/tmp/cc-socks/56478.sock</i>
-<i class=k>⏺ </i>Bob's Claude asked how <i class=ai>createTask </i>in <i class=ai>src/store.js </i>picks ids, and I sent them an explanation without changing anything.
-  Ids come from a counter that starts at 1 and goes up by one with each new task. <i class=ai>createdAt </i>isn't unique, because
-  seeded tasks share timestamps in groups of three. That matters for the paging decision: paging by <i class=ai>createdAt </i>would need
-  <i class=ai>id </i>as a tiebreaker.
-❯ <i class=af>@room let's page by id cursor, bob</i></pre></figure>
+<i class=t>  ⎿  “Explain createTask id assignment to bob's Claude” → uds:/tmp/cc-socks/82869.sock</i>
+<i class=j>⏺ </i>bob's Claude asked how <i class=aj>createTask </i>in <i class=aj>src/store.js </i>picks ids, so I sent an explanation and left the file untouched.
+  Each new task takes the next number from a counter that starts at 1 and lives in memory, so it goes back to 1 when the
+  process restarts. I also told them that <i class=aj>createdAt </i>alone isn't unique (the sample data gives every three tasks the
+  same timestamp), so paging should sort on <i class=aj>createdAt </i>plus <i class=aj>id</i>, or on <i class=aj>id </i>alone.
+❯ <i class=ag>@room let's page with a (createdAt, id) cursor</i></pre></figure>
 <figure class="term"><figcaption>bob</figcaption><pre><i class=v>❯ </i><i class=x>@room sure, once we've agreed how paging works</i>
 <i class=u>⏺ Operation stopped by hook: ✓ sent</i>
 <i class=v>❯ </i><i class=x>ask alice's Claude how createTask in src/store.js picks ids. just ask, change nothing</i>
-<span class="el">… 10 lines …</span>
-    page by <i class=ai>createdAt</i>, you'd also need <i class=ai>id </i>to break ties. Or you could page by <i class=ai>id </i>alone, since it's unique and always
-    goes up.
-  - <i class=c>Caveat: </i>a comment in the file says this stands in for a Postgres table. If more than one process wrote to it, an
-    in-memory counter like this wouldn't be safe. A real database sequence would still give increasing ids, but some
-    numbers could be skipped.
-❯ <i class=af>@room let's page by id, cursor-based</i></pre></figure></div></div>
-<ul class="checks"><li class=pass><b>PASS</b> alice's @room text byte-exact, via=human<small>#3 === typed (62 bytes)</small></li><li class=pass><b>PASS</b> One receipt line "Operation stopped by hook: ✓ sent" (no room code, no id); no "blocked by hook"<small>receipt for #3 in S3-sh-alice.txt</small></li><li class=pass><b>PASS</b> alice's @room ran no model turn<small>efea6193…: hook receipt for #3, no assistant message before the next prompt or notice</small></li><li class=pass><b>PASS</b> bob's Claude is woken once with alice's exact words<small>1 Monitor event(s) in bob's transcript carrying #3 verbatim</small></li><li class=pass><b>PASS</b> bob's Claude printed exactly "alice: &lt;her words&gt;", with no preface, ids or reply<small>bob's Claude wrote "alice: bob, can you take the parser tests? handler's in src/server.js"</small></li><li class=pass><b>PASS</b> bob's Claude calls SendMessage to alice.penguin-3531<small>SendMessage {to: "alice.penguin-3531", message: "Question from bob's Claude: how does createTask in src/store.js pick ids? Just …"}</small></li><li class=pass><b>PASS</b> alice's Claude receives it as a peer message from bob (origin.kind peer)<small>origin {kind: peer, name: bob.penguin-3531, verifiedPeerPid: 56478}: "Question from bob's Claude: how does createTask in src/store.js pick ids? Just …"</small></li><li class=pass><b>PASS</b> alice's Claude answers natively (SendMessage back; bob receives it)<small>alice SendMessage back (bob.penguin-3531 or the uds: reply address): 1 (to uds:/tmp/cc-socks/56478.sock); peer entries from alice in bob's transcript: 1 ("crea…</small></li><li class=pass><b>PASS</b> No card and no proposal<small>0 AskUserQuestion calls; proposals in S3: 0</small></li><li class=pass><b>PASS</b> The orch was not woken<small>0 orch assistant messages in S3 (20:19:47–20:21:02)</small></li></ul><pre class="log">#3 alice/human say bob, can you take the parser tests? handler's in src/server.js
+<span class="el">… 7 lines …</span>
+  - <i class=c>When it restarts: </i><i class=aj>reset() </i>(lines 18–21) clears the tasks and sets the counter back to 1. The counter is only held in
+    memory, so it also restarts at 1 whenever the process restarts. The file header says it stands in for a Postgres
+    sequence or identity column.
+  - <i class=c>What it means for paging: </i><i class=aj>createdAt </i>isn't unique, because <i class=aj>seed() </i>gives every 3 consecutive tasks the same timestamp
+    (line 27). Paging on <i class=aj>id </i>alone, or on <i class=aj>(createdAt, id)</i>, won't skip or repeat tasks that share a timestamp.
+❯ <i class=ag>@room let's cursor on (createdAt, id)</i></pre></figure></div></div>
+<ul class="checks"><li class=pass><b>PASS</b> alice's @room text byte-exact, via=human<small>#3 === typed (62 bytes)</small></li><li class=pass><b>PASS</b> One receipt line "Operation stopped by hook: ✓ sent" (no room code, no id); no "blocked by hook"<small>receipt for #3 in S3-sh-alice.txt</small></li><li class=pass><b>PASS</b> alice's @room ran no model turn<small>c21a317e…: hook receipt for #3, no assistant message before the next prompt or notice</small></li><li class=pass><b>PASS</b> bob's Claude is woken once with alice's exact words<small>1 Monitor event(s) in bob's transcript carrying #3 verbatim</small></li><li class=pass><b>PASS</b> bob's Claude printed exactly "alice: &lt;her words&gt;", with no preface, ids or reply<small>bob's Claude wrote "alice: bob, can you take the parser tests? handler's in src/server.js"</small></li><li class=pass><b>PASS</b> bob's Claude calls SendMessage to alice.badger-2971<small>SendMessage {to: "alice.badger-2971", message: "Question from bob's Claude: how does createTask in src/store.js pick ids? Just …"}</small></li><li class=pass><b>PASS</b> alice's Claude receives it as a peer message from bob (origin.kind peer)<small>origin {kind: peer, name: bob.badger-2971, verifiedPeerPid: 82869}: "Question from bob's Claude: how does createTask in src/store.js pick ids? Just …"</small></li><li class=pass><b>PASS</b> alice's Claude answers natively (SendMessage back; bob receives it)<small>alice SendMessage back (bob.badger-2971 or the uds: reply address): 1 (to uds:/tmp/cc-socks/82869.sock); peer entries from alice in bob's transcript: 1 ("creat…</small></li><li class=pass><b>PASS</b> No card and no proposal<small>0 AskUserQuestion calls; proposals in S3: 0</small></li><li class=pass><b>PASS</b> The orch was not woken<small>0 orch assistant messages in S3 (03:48:35–03:49:46)</small></li></ul><pre class="log">#3 alice/human say bob, can you take the parser tests? handler's in src/server.js
 #4 bob/human say sure, once we've agreed how paging works</pre><p class="waits">16/16 driver waits met</p>
 </section>
 <section id="S4">
 <h2><span class="sid">S4</span>"Let's plan"</h2><p class="must">Must show: bob @room @orch let's plan …; the orch writes a plan and proposes it; it opens in the native plan view in both terminals</p>
 <div class="step"><p class="caption"><span class="stepno">1/2</span>The orch proposes its plan: it opens in alice's and bob's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)</p>
-<div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=i>⏺ </i><i class=c>Updated plan</i>
-<i class=k>⏺ </i>I sent bob and alice a plan for cursor paging on GET /tasks; nobody has agreed to it yet.
-  - <i class=c>Order: </i>newest first, with the task id breaking ties when two tasks were created at the same moment. Many seeded tasks share a timestamp, so sorting by time alone would skip or repeat tasks across
-<span class="el">… 7 lines …</span>
-  4. Is a plain encoded cursor enough, or should it be signed?
-  The plan is in <i class=aj>/Users/tristantimblin/.claude/plans/agile-hugging-pebble.md</i>.
-  <i class=l>1 </i><i class=d>tasks (</i><i class=l>0 </i><i class=d>done, </i><i class=l>1 </i><i class=d>in progress, </i><i class=l>0 </i><i class=d>open)</i>
-<i class=c>  ⏺ main</i><i class=d>e  </i><i class=q>⚠ reviewing Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i>
-<i class=d>  ◯ alice  </i><i class=q>⚠ reviewing Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i>
-    <i class=d>bob  </i><i class=q>⚠ reviewing Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i></pre></figure>
-<figure class="term"><figcaption>alice = bob</figcaption><pre>   <i class=an>Plan: cursor paging for GET /tasks</i></pre></figure></div></div>
-<div class="step"><p class="caption"><span class="stepno">2/2</span>alice reads the whole proposal in the plan view: PgDn, page 5<span class="pages">(final page; +3 more pages)</span></p>
-<div class="panes"><figure class="term"><figcaption>alice</figcaption><pre>   <i class=af>│ </i>Hook <i class=c>PreToolUse:ExitPlanMode </i>requires confirmation for this tool:
-   <i class=af>│ </i>room proposal d265355ca35b from orch, for alice (PgUp/PgDn scroll). Agree: "Yes, and use auto mode" keeps your
-   <i class=af>│ </i>mode. Object: "Tell Claude what to change" + why. Esc: decide later.
-   <i class=t>settings.json to update hooks</i></pre></figure></div></div>
-<ul class="checks"><li class=pass><b>PASS</b> bob's "@room @orch let's plan …" byte-exact, via=human<small>#5</small></li><li class=pass><b>PASS</b> The orch proposes: proposal from orch naming alice and bob, plan stored by hash<small>#6 orch agent proposal d26535: proposal d265355ca35b: Plan: cursor paging for GET /tasks approvers bob,alice; plans/d265355ca35b.md present</small></li><li class=pass><b>PASS</b> The orch is woken by bob's @orch line<small>monitor at 20:21:12</small></li><li class=pass><b>PASS</b> alice reads the proposal in the native plan view (Yes / Tell Claude what to change), or on the fallback card<small>plan view showing "Plan: cursor paging for GET /tasks" (S4-sh-alice.txt)</small></li><li class=pass><b>PASS</b> bob reads the proposal in the native plan view (Yes / Tell Claude what to change), or on the fallback card<small>plan view showing "Plan: cursor paging for GET /tasks" (S4-sh-bob.txt)</small></li><li class=pass><b>PASS</b> alice reads the whole proposal: PgDn pages through the plan view to its end (the "room proposal HASH" line)<small>4 PgDn page capture(s) (S4-2-sh-alice.txt, S4-3-sh-alice.txt, S4-4-sh-alice.txt, S4-5-sh-alice.txt); last shows "room proposal d265355ca35b"</small></li></ul><pre class="log">#5 bob/human say @orch let's plan cursor paging for GET /tasks: ?limit&amp;after, opaque cursor, newest first
-#6 orch/agent proposal proposal d265355ca35b: Plan: cursor paging for GET /tasks</pre><p class="waits">6/6 driver waits met</p>
+<div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=h>⏺ </i><i class=c>Updated plan</i>
+<i class=j>⏺ </i>bob asked for a plan for cursor paging on <i class=ak>GET /tasks</i>, so I wrote one and sent it to bob and alice for approval. They haven't answered yet.
+  The plan pages newest first, sorted by <i class=ak>createdAt </i>and then by <i class=ak>id</i>. The cursor is a base64url-encoded <i class=ak>{createdAt, id}</i>. Using <i class=ak>id </i>as a tiebreaker matters because <i class=ak>src/store.js </i>gives several tasks the same
+<span class="el">… 4 lines …</span>
+  - the name of theiresponse field
+  - who implements it
+  <i class=af>1 </i><i class=d>tasks (</i><i class=af>0 </i><i class=d>done, </i><i class=af>1 </i><i class=d>in progress, </i><i class=af>0 </i><i class=d>open)</i>
+           <i class=q>⚠  eviewing Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i>
+         <i class=q>⚠ ⚠ veviewing Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i>
+         <i class=q>⚠ reviewing Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i></pre></figure>
+<figure class="term"><figcaption>alice = bob</figcaption><pre>   <i class=ao>Plan: cursor paging for GET /tasks</i></pre></figure></div></div>
+<div class="step"><p class="caption"><span class="stepno">2/2</span>alice reads the whole proposal in the plan view: PgDn, page 4<span class="pages">(final page; +2 more pages)</span></p>
+<div class="panes"><figure class="term"><figcaption>alice</figcaption><pre>   <i class=ag>│ </i>Hook <i class=c>PreToolUse:ExitPlanMode </i>requires confirmation for this tool:
+   <i class=ag>│ </i>room proposal f37e2c91083f from orch, for alice (PgUp/PgDn scroll). Agree: "Yes, and use auto mode" keeps your</pre></figure></div></div>
+<ul class="checks"><li class=pass><b>PASS</b> bob's "@room @orch let's plan …" byte-exact, via=human<small>#5</small></li><li class=pass><b>PASS</b> The orch proposes: proposal from orch naming alice and bob, plan stored by hash<small>#6 orch agent proposal f37e2c: proposal f37e2c91083f: Plan: cursor paging for GET /tasks approvers bob,alice; plans/f37e2c91083f.md present</small></li><li class=pass><b>PASS</b> The orch is woken by bob's @orch line<small>monitor at 03:49:55</small></li><li class=pass><b>PASS</b> alice reads the proposal in the native plan view (Yes / Tell Claude what to change), or on the fallback card<small>plan view showing "Plan: cursor paging for GET /tasks" (S4-sh-alice.txt)</small></li><li class=pass><b>PASS</b> bob reads the proposal in the native plan view (Yes / Tell Claude what to change), or on the fallback card<small>plan view showing "Plan: cursor paging for GET /tasks" (S4-sh-bob.txt)</small></li><li class=pass><b>PASS</b> alice reads the whole proposal: PgDn pages through the plan view to its end (the "room proposal HASH" line)<small>3 PgDn page capture(s) (S4-2-sh-alice.txt, S4-3-sh-alice.txt, S4-4-sh-alice.txt); last shows "room proposal f37e2c91083f"</small></li></ul><pre class="log">#5 bob/human say @orch let's plan cursor paging for GET /tasks: ?limit&amp;after, opaque cursor, newest first
+#6 orch/agent proposal proposal f37e2c91083f: Plan: cursor paging for GET /tasks</pre><p class="waits">6/6 driver waits met</p>
 </section>
 <section id="S5">
 <h2><span class="sid">S5</span>Object, revise, agree</h2><p class="must">Must show: bob objects with a note (byte-exact); the orch revises; both agree; a decision citing both</p>
 <div class="step"><p class="caption"><span class="stepno">1/3</span>alice agrees; bob objects with a note (via=human, byte-exact)</p>
-<div class="panes"><figure class="term"><figcaption>orch</figcaption><pre>    pages.
-  - <i class=c>Cursor: </i>an opaque value built from the time and id of the last task on a page. Each page starts strictly after that task, rather than counting from the start of the list.
-  2. Should a limit over 100 return an error or quietly drop to 100?
-  3. Should the response include a total count? I proposed no, since counting 4M rows is costly.
-<i class=i>⏺ </i><i class=c>Updated plan</i>
-<i class=d>  ⎿  </i><i class=a>◼ </i><i class=c>room penguin-3531 open</i>
+<div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=h>⏺ </i><i class=i>sub-human:participant</i>(bob)room"
+  - the name of the response field
+<i class=d>  ⎿  </i><i class=a>◼ </i><i class=c>room badger-2971 open</i>
            <i class=q>✖ blocked Plan: cursor paging for…</i>
          <i class=q>✖ ✖ blocked Plan: cursor paging for…</i>
          <i class=q>✖ blocked Plan: cursor paging for…</i></pre></figure>
-<figure class="term"><figcaption>alice</figcaption><pre>     - Handler + <i class=ai>src/paging.js</i>: owner open (alice mentioned the handler).
-     - Parser tests in <i class=ai>test/paging.test.js</i>: bob, per his message, once this is agreed.
-     <i class=c>Open questions</i>
-<span class="el">… 10 lines …</span>
-       data (237 tasks, shared timestamps) walk every page and check that each id appears exactly once, in <i class=ai>createdAt</i>
-       <i class=ai>DESC, id DESC </i>order, and that <i class=ai>next </i>is null at the end.
-<i class=k>⏺ </i>You agreed to orch's cursor-paging plan for <i class=ai>GET /tasks</i>, and your card records it. It's still waiting on bob's card, so
-  I'm not building anything yet.
+<figure class="term"><figcaption>alice</figcaption><pre>     - <i class=c>Cursor on </i><i class=am>createdAt </i><i class=c>alone: </i>it would skip or repeat tasks that share a timestamp.
+     - <i class=c>Cursor on </i><i class=am>id </i><i class=c>alone: </i>this only works if id order always matches createdAt order. Imports that carry their own
+       <i class=aj>createdAt </i>break that.
+<span class="el">… 15 lines …</span>
+     - <i class=c>bob</i>: asked for the plan, and is writing the parser tests against it.
+     - <i class=c>alice</i>: owns the handler work and gave out the tests.
+<i class=j>⏺ </i>Your approval of the paging proposal is recorded. bob still has to answer. Nothing gets built until the room decides.
+❯ <i class=ag>@room cursor should encode (createdAt, id), timestamps collide</i>
 <i class=c>  ⏺ main</i>
-<i class=t>  ◯ penguin-3531  </i><i class=q>⚠ your answer needed Plan: cursor paging for…</i></pre></figure>
-<figure class="term"><figcaption>bob</figcaption><pre><i class=u>⏺ Operation stopped by hook: ✓ sent</i>
-<i class=t>  ⎿  </i><i class=am>User rejected Claude's plan:</i>
-     <i class=ak>│ </i>proposal d265355ca35b    <i class=ak>│</i>
-<span class="el">… 2 lines …</span>
-<span class="red">  <i class=t>⎿  </i>Stop hook error: sub-human: bob's room review is still open: call ExitPlanMode now (no plan needed, nothing</span>
-  else first): a hook closes the room review without a dialog and restores the mode.
-<i class=k>⏺ </i>Your objection to proposal d26535 is on record, and the room can already see your note asking for the <i class=ai>after=zzz </i>→ 400
-  test, so nothing else needs posting. Alice agreed to it.
+<i class=t>  ◯ badger-2971  </i><i class=q>✖ blocked Plan: cursor paging for…</i></pre></figure>
+<figure class="term"><figcaption>bob</figcaption><pre>  - <i class=c>How ids are picked: </i><i class=aj>src/store.js </i>keeps a counter, <i class=aj>let nextId = 1 </i>(line 5). <i class=aj>createTask </i>assigns <i class=aj>id: nextId++ </i>(line 8),
+    so ids come out 1, 2, 3… in the order tasks are created, and none are reused.
+  - <i class=c>When it restarts: </i><i class=aj>reset() </i>(lines 18–21) clears the tasks and sets the counter back to 1. The counter is only held in
+<span class="el">… 7 lines …</span>
+     <i class=al>│ </i>proposal f37e2c91083f    <i class=al>│</i>
+<i class=j>⏺ </i>The room has your objection to the paging plan, with your note: <i class=aj>after=zzz </i>must return 400, not 500. Alice agreed to
+  the plan, so it now needs revising before anything gets built.
+❯ <i class=ag>@room @orch revise the plan with the after=zzz 400 test</i>
 <i class=c>  ⏺ main</i>
-<i class=t>  ◯ penguin-3531  </i><i class=q>✖ blocked Plan: cursor paging for…</i></pre></figure></div></div>
+<i class=t>  ◯ badger-2971  </i><i class=q>✖ blocked Plan: cursor paging for…</i></pre></figure></div></div>
 <div class="step"><p class="caption"><span class="stepno">2/3</span>The orch revises: a new proposal, opened again for each</p>
-<div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=k>⏺ </i>Bob objected to the first plan, so I changed it and sent it to bob and alice again. Alice had agreed to the first version, but that no longer counts now that the plan has changed.
-  Bob's note: "add a test for a cursor past the end — <i class=aj>after=zzz </i>must 400, not 500". The revised plan now covers it:
-  - <i class=c>The test he asked for: </i>a request with <i class=aj>after=zzz </i>must return a 400 "invalid cursor" error.
-  - <i class=c>What makes it pass: </i>the cursor decoder catches every decode failure and turns it into a 400 instead of letting it crash into a 500.
-  - <i class=c>One extra test I added: </i>a valid cursor that points past the oldest task returns an empty page with no next cursor.
-  <i class=l>1 </i><i class=d>tasks (</i><i class=l>0 </i><i class=d>done, </i><i class=l>1 </i><i class=d>in progress, </i><i class=l>0 </i><i class=d>open)</i>
-  <i class=a>◼ </i><i class=c>room penguin-3531 open</i>
+<div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=h>⏺ </i><i class=c>Updated plan</i>
+<i class=j>⏺ </i>The paging plan isn't agreed yet. alice agreed to the first version, but bob objected: "add a test for a cursor past the end — <i class=ak>after=zzz </i>must 400, not 500". I've revised the plan and sent it to both
+  again. Because it's a new proposal, alice needs to answer again too.
+<span class="el">… 3 lines …</span>
+  The room status line called the first proposal "decided", but the room's tally showed it not agreed, with bob objecting. I went with the tally.
+  <i class=af>1 </i><i class=d>tasks (</i><i class=af>0 </i><i class=d>done, </i><i class=af>1 </i><i class=d>in progress, </i><i class=af>0 </i><i class=d>open)</i>
+  <i class=a>◼ </i><i class=c>room badger-2971 open</i>
            <i class=q>⚠ reviewing Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i>
-         <i class=q>⚠ ⚠ reviewing Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i>
+         <i class=q>⚠ ⚠ reviewing Plan: cursor paging for… </i><i class=d>· </i><i class=q>? prompt</i>
          <i class=q>⚠ reviewing Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i></pre></figure>
-<figure class="term"><figcaption>alice = bob</figcaption><pre>   <i class=an>Plan: cursor paging for GET /tasks</i></pre></figure></div></div>
+<figure class="term"><figcaption>alice = bob</figcaption><pre>   <i class=ao>Plan: cursor paging for GET /tasks</i></pre></figure></div></div>
 <div class="step"><p class="caption"><span class="stepno">3/3</span>Both agree to the revision: a decision is logged; both Claudes are told once</p>
 <div class="panes"><figure class="term"><figcaption>orch</figcaption><pre>           <i class=aq>✔ decided Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i>
          <i class=aq>✔ ✔ decided Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i>
          <i class=aq>✔ decided Plan: cursor paging for…</i></pre></figure>
-<figure class="term"><figcaption>alice</figcaption><pre>     1. Should the default limit be 20 and the max 100?
-     2. Should an over-max <i class=ai>limit </i>return a 400 (proposed) or be clamped silently to 100?
-     3. Should the response include a total count? Proposed no: <i class=ai>COUNT(*) </i>on 4M rows is costly.
-<span class="el">… 14 lines …</span>
-<i class=k>⏺ </i>You agreed to the revised paging plan, which now includes the test where <i class=ai>after=zzz </i>must return a 400. It's still
-  waiting on bob's card, so I'm holding off on building.
-<i class=k>⏺ </i>room: decided (agreed: bob, alice)
-❯ <i class=af>implement the paging handler and src/paging.js</i>
+<figure class="term"><figcaption>alice</figcaption><pre>     3. Should there be a <i class=aj>before</i>/prev cursor now, or only <i class=aj>after</i>?
+     4. Response field name: <i class=aj>nextCursor</i>, or something else?
+     5. Who implements the handler and the paging helper?
+<span class="el">… 13 lines …</span>
+<i class=j>⏺ </i>Your approval of the revised paging proposal is recorded. It adds bob's requested test that <i class=aj>after=zzz </i>gets a 400
+  instead of a 500. Nothing gets built until the room decides.
+<i class=j>⏺ </i>room: decided (agreed: bob, alice)
+❯ <i class=ag>implement the GET /tasks handler in src/server.js</i>
 <i class=c>  ⏺ main</i>
-<i class=t>  ◯ penguin-3531  </i><i class=aq>✔ decided Plan: cursor paging for…</i></pre></figure>
-<figure class="term"><figcaption>bob</figcaption><pre>     - Handler + <i class=ai>src/paging.js</i>: owner open (alice mentioned the handler).
-     - Parser tests in <i class=ai>test/paging.test.js</i>: bob, per his message, once this is agreed.
+<i class=t>  ◯ badger-2971  </i><i class=aq>✔ decided Plan: cursor paging for…</i></pre></figure>
+<figure class="term"><figcaption>bob</figcaption><pre>     - The handler is in <i class=aj>src/server.js </i>(alice pointed to it). Who implements it is still open.
      <i class=c>Open questions</i>
+     1. Default and maximum <i class=aj>limit</i>: 20 and 100 OK?
 <span class="el">… 16 lines …</span>
-       appears exactly once, in <i class=ai>createdAt DESC, id DESC </i>order, and that <i class=ai>next </i>is null at the end.
-<i class=k>⏺ </i>You and alice both agreed to the revised paging plan (proposal 0b9343), and it now includes your <i class=ai>after=zzz </i>→ 400 test.
-  I haven't started any code and will wait for you to say go.
-❯ <i class=af>go ahead and write the parser tests</i>
+     - <i class=c>alice</i>: owns the handler work and gave out the tests.
+<i class=j>⏺ </i>You and alice have both agreed to the revised paging plan, which now includes the <i class=aj>after=zzz </i>→ 400 test. I haven't
+  started building; that's for you and alice to decide.
+❯ <i class=ag>write the parser tests</i>
 <i class=c>  ⏺ main</i>
-<i class=t>  ◯ penguin-3531  </i><i class=aq>✔ decided Plan: cursor paging for…</i></pre></figure></div></div>
-<ul class="checks"><li class=pass><b>PASS</b> bob's objection via=human; the note byte-exact<small>#8 bob human objection d26535: add a test for a cursor past the end — `after=zzz` must 400, not 500 (=== typed)</small></li><li class=pass><b>PASS</b> alice's agreement on the first proposal via=human<small>#7 alice human signoff d26535:</small></li><li class=pass><b>PASS</b> The orch revised: a second proposal with a new hash<small>d26535 → 0b9343 (#10)</small></li><li class=pass><b>PASS</b> Both agree on the revision; the decision cites both answers<small>#13 room system decision 0b9343: agreed: bob, alice (proposal 0b9343a07030) refs [10,12,11]</small></li><li class=pass><b>PASS</b> No answer recorded on the old hash after the revision<small>none after #10</small></li><li class=pass><b>PASS</b> Every answer came from a card (via=human); no Claude answered<small>non-human answers: alice 0, bob 0</small></li><li class=pass><b>PASS</b> Hash chain valid<small>validateChain ok over 29 entries</small></li><li class=pass><b>PASS</b> alice: after each review, back in the original permission mode and the session plan file restored<small>2 reviews (2 plan_mode, 2 plan_mode_exit); mode auto → last auto; footer ⏵⏵ auto mode on in S5-3-sh-alice.txt; plan file nifty-wobbling-waterfall.md: removed (…</small></li><li class=pass><b>PASS</b> bob: after each review, back in the original permission mode and the session plan file restored<small>2 reviews (2 plan_mode, 2 plan_mode_exit); mode auto → last auto; footer ⏵⏵ auto mode on in S5-3-sh-bob.txt; plan file curried-bubbling-hammock.md: removed (di…</small></li></ul><pre class="log">#7 alice/human signoff
+<i class=t>  ◯ badger-2971  </i><i class=aq>✔ decided Plan: cursor paging for…</i></pre></figure></div></div>
+<ul class="checks"><li class=pass><b>PASS</b> bob's objection via=human; the note byte-exact<small>#8 bob human objection f37e2c: add a test for a cursor past the end — `after=zzz` must 400, not 500 (=== typed)</small></li><li class=pass><b>PASS</b> alice's agreement on the first proposal via=human<small>#7 alice human signoff f37e2c:</small></li><li class=pass><b>PASS</b> The orch revised: a second proposal with a new hash<small>f37e2c → d282d6 (#10)</small></li><li class=pass><b>PASS</b> Both agree on the revision; the decision cites both answers<small>#13 room system decision d282d6: agreed: bob, alice (proposal d282d66414db) refs [10,12,11]</small></li><li class=pass><b>PASS</b> No answer recorded on the old hash after the revision<small>none after #10</small></li><li class=pass><b>PASS</b> Every answer came from a card (via=human); no Claude answered<small>non-human answers: alice 0, bob 0</small></li><li class=pass><b>PASS</b> Hash chain valid<small>validateChain ok over 29 entries</small></li><li class=pass><b>PASS</b> alice: after each review, back in the original permission mode and the session plan file restored<small>2 reviews (2 plan_mode, 2 plan_mode_exit); mode auto → last auto; footer ⏵⏵ auto mode on in S5-3-sh-alice.txt; plan file melodic-dancing-scroll.md: removed (di…</small></li><li class=pass><b>PASS</b> bob: after each review, back in the original permission mode and the session plan file restored<small>2 reviews (2 plan_mode, 2 plan_mode_exit); mode auto → last auto; footer ⏵⏵ auto mode on in S5-3-sh-bob.txt; plan file abstract-coalescing-star.md: removed (di…</small></li></ul><pre class="log">#7 alice/human signoff
 #8 bob/human objection add a test for a cursor past the end — `after=zzz` must 400, not 500
-#9 room/system decision refs 6,8,7 objected: bob · agreed: alice (proposal d265355ca35b)
-#10 orch/agent proposal proposal 0b9343a07030: Plan: cursor paging for GET /tasks
+#9 room/system decision refs 6,8,7 objected: bob · agreed: alice (proposal f37e2c91083f)
+#10 orch/agent proposal proposal d282d66414db: Plan: cursor paging for GET /tasks
 #11 alice/human signoff
 #12 bob/human signoff
-#13 room/system decision refs 10,12,11 agreed: bob, alice (proposal 0b9343a07030)</pre><p class="waits">19/19 driver waits met</p>
+#13 room/system decision refs 10,12,11 agreed: bob, alice (proposal d282d66414db)</pre><p class="waits">19/19 driver waits met</p>
 </section>
 <section id="S6">
 <h2><span class="sid">S6</span>Shared tasks</h2><p class="must">Must show: alice's Claude adds and claims a task; the orch applies it natively; rows and sub-human tasks show it; a non-owner done reaches the task tool and is refused (the gate check is marked SYNTHETIC when the orch declined before reaching it); the owner's done with evidence completes it</p>
 <div class="step"><p class="caption"><span class="stepno">1/3</span>alice's Claude calls task(add), then task(claim #2): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it</p>
-<div class="chips"><span class="chip rows"><b>bob</b> rows: ◯ penguin-3531  ✔ decided Plan: cursor paging for… · tasks 1 open · #2 alice</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=k>⏺ </i>Bob and alice both agreed to the revised paging plan, so the design is decided. I added the task "cursor paging handler" for alice, as she asked; it's task #2 and still pending.
-<i class=k>⏺ </i>Alice claimed task #2, "cursor paging handler", so it's now in progress under her name.
-  <i class=l>2 </i><i class=d>tasks (</i><i class=l>0 </i><i class=d>done, </i><i class=l>2 </i><i class=d>in progress, </i><i class=l>0 </i><i class=d>open)</i>
+<div class="chips"><span class="chip rows"><b>bob</b> rows: ◯ badger-2971  ✔ decided Plan: cursor paging for… · tasks 1 open · #2 alice</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=j>⏺ </i>The paging plan is decided: bob and alice both agreed to the revised version. I added task 2, "cursor paging handler", owned by alice, as her request asked. It's still pending.
+<i class=j>⏺ </i>alice claimed task 2, "cursor paging handler", so it's now in progress under her name.
+  <i class=af>2 </i><i class=d>tasks (</i><i class=af>0 </i><i class=d>done, </i><i class=af>2 </i><i class=d>in progress, </i><i class=af>0 </i><i class=d>open)</i>
   <i class=a>◼ </i><i class=c>cursor paging handler</i>
            <i class=aq>✔ decided Plan: cursor paging for…</i>
          <i class=aq>✔ ✔ decided Plan: cursor paging for…</i></pre></figure>
 <figure class="term"><figcaption>alice</figcaption><pre><i class=v>❯ </i><i class=x>put "cursor paging handler" on the room task list: call the mcp__plugin_sub-human_room__task tool with op "add", </i>
 <i class=w>  </i><i class=x>subject "cursor paging handler". Only that tool call: do not use post, do not edit any file</i>
-<i class=k>⏺ </i>I asked orch to add "cursor paging handler" to the room task list, and it's queued for orch to apply. I didn't fill in
-  the "for" field, so it will be listed as your task.
+<i class=j>⏺ </i>I've asked orch to add "cursor paging handler" to the room task list; it hasn't appeared yet. I didn't post anything
+  or touch any files.
 <i class=v>❯ </i><i class=x>claim it for me: call the mcp__plugin_sub-human_room__task tool with op "claim", id "2". Only that tool call: do not </i>
 <i class=w>  </i><i class=x>start the work, do not edit any file</i>
-<i class=k>⏺ </i>I sent the claim on task 2 for you, and it's queued for orch to apply. I haven't started the work.
-❯ <i class=af>build the cursor paging handler per the agreed plan</i>
-<i class=t>  ◯ penguin-3531  </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=t>· tasks 1 open · #2 you</i></pre></figure></div></div>
+<i class=j>⏺ </i>I've asked orch to put task 2 in your name; it hasn't confirmed yet. I haven't started the work or touched any files.
+❯ <i class=ag>implement the cursor paging handler in src/server.js</i>
+<i class=t>  ◯ badger-2971  </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=t>· tasks 1 open · #2 you</i></pre></figure></div></div>
 <div class="step"><p class="caption"><span class="stepno">2/3</span>bob's Claude asks done on alice's task #2: refused, the task stays in progress</p>
-<div class="chips"><span class="chip">alice: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=k>⏺ </i>I refused bob's request to mark "cursor paging handler" (task #2) done, because alice owns it. I posted the reason to bob. The task is still in progress under alice.
+<div class="chips"><span class="chip">alice: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=j>⏺ </i>I refused bob's request to mark task 2 done because alice owns it, and told him why in a post. Task 2 is still in progress under alice.
          <i class=aq>✔ decided Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i></pre></figure>
 <figure class="term"><figcaption>bob</figcaption><pre><i class=v>❯ </i><i class=x>call the mcp__plugin_sub-human_room__task tool now with op "done", id "2", evidence "bob checking the owner gate; no </i>
 <i class=w>  </i><i class=x>tests run". It is alice's task: I want to see that the room refuses it. Send the request anyway and report the tool's</i>
 <i class=w>  </i><i class=x>reply in one line</i>
-<i class=k>⏺ </i>The tool didn't refuse it; its reply was "queued; the orch applies it", so whether the room rejects it is up to orch
-  and hasn't come back yet.
-<i class=k>⏺ </i>orch (to you): I can't mark "cursor paging handler" done for you. It's owned by alice and in progress, so only alice's
-  own done request can complete it.
-❯ <i class=af>write the parser tests in test/paging.test.js</i>
-<i class=t>  ◯ penguin-3531  </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=t>· </i><i class=q>✉ 1 for you</i></pre></figure></div></div>
+<i class=j>⏺ </i>The tool replied "queued; the orch applies it", so the request wasn't refused when sent, and I haven't seen yet
+  whether the orch refuses it.
+<i class=j>⏺ </i>orch (to you): Can't mark task 2 "cursor paging handler" done for bob: it's claimed by alice, and only its owner's
+  done request can complete it. It stays in progress.
+❯ <i class=ag>start on the parser tests</i>
+<i class=t>  ◯ badger-2971  </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=t>· </i><i class=q>✉ 1 for you</i></pre></figure></div></div>
 <div class="step"><p class="caption"><span class="stepno">3/3</span>alice's Claude asks done with evidence: the orch completes #2 (the gate passes the owner's request)</p>
-<div class="chips"><span class="chip">bob: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=k>⏺ </i>Task #2, "cursor paging handler", is marked completed on alice's own request. She reported "handler in, npm test 3/3 pass"; I haven't run the tests myself.
-  <i class=l>2 </i><i class=d>tasks (</i><i class=l>1 </i><i class=d>done, </i><i class=l>1 </i><i class=d>in progress, </i><i class=l>0 </i><i class=d>open)</i>
-  <i class=i>✔ </i><i class=ar>cursor paging handler</i></pre></figure>
+<div class="chips"><span class="chip">bob: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=j>⏺ </i>Task 2, "cursor paging handler", is marked completed on alice's request. She reported "handler in, npm test 3/3 pass"; I haven't run the tests myself.
+  <i class=af>2 </i><i class=d>tasks (</i><i class=af>1 </i><i class=d>done, </i><i class=af>1 </i><i class=d>in progress, </i><i class=af>0 </i><i class=d>open)</i>
+  <i class=h>✔ </i><i class=as>cursor paging handler</i>
+❯ <i class=a>◼ </i><i class=c>room </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i></pre></figure>
 <figure class="term"><figcaption>alice</figcaption><pre><i class=v>❯ </i><i class=x>the handler is in and npm test passes 3/3. call the mcp__plugin_sub-human_room__task tool with op "done", id "2", </i>
 <i class=w>  </i><i class=x>evidence "handler in, npm test 3/3 pass". Only that tool call: do not edit or check any file</i>
-<i class=k>⏺ </i>I asked orch to mark task 2 done, with the evidence "handler in, npm test 3/3 pass". It's queued for orch to apply,
-  and I didn't check any files.
-❯ <i class=af>@room handler's done, bob — tests are yours</i>
-<i class=t>  ◯ penguin-3531  </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=t>· tasks: all 1 done</i></pre></figure></div></div>
-<ul class="checks"><li class=pass><b>PASS</b> alice's Claude calls task (add/claim): a task_req via=agent<small>#14 alice agent task_req: task add for alice: cursor paging handler</small></li><li class=pass><b>PASS</b> The orch applies it natively: tasks.json has it, owner alice, in_progress<small>#2 "cursor paging handler" in_progress alice (state/S6/1/tasks.json)</small></li><li class=pass><b>PASS</b> The orch used native TaskCreate/TaskUpdate<small>TaskCreate({"subject":"cursor paging handler","description":"cursor paging handl…); TaskUpdate({"taskId":"2","owner":"alice","metadata":{"req":14,"by":"alice",…</small></li><li class=pass><b>PASS</b> alice's room row shows the task summary<small>◯ penguin-3531 ✔ decided Plan: cursor paging for… · tasks 1 open · #2 you</small></li><li class=pass><b>PASS</b> `sub-human tasks` lists it<small>#2 in_progress alice cursor paging handler</small></li><li class=pass><b>PASS</b> A non-owner done (bob on alice's task) is refused: the gate says only alice may complete it; the task stays in progress [gate: SYNTHETIC — run by demo-lib over the real log; the orch itself declined before reaching it]<small>#19 bob agent task_req: task done #2 for bob: bob checking the owner gate; no tests run; after it: #2 in_progress (state/S6/2); gate over the real log: exit 2 …</small></li><li class=pass><b>PASS</b> The owner's done with evidence completes it; the task entry cites her request<small>#21 alice agent task_req: task done #2 for alice: handler in, npm test 3/3 pass evidence "handler in, npm test 3/3 pass"; #22 orch system task: #2 "cursor pagi…</small></li><li class=pass><b>PASS</b> The orch's task work stayed small (≤ 14 model calls for the four requests) <i>behavioural · 10 vs ≤ 14</i><small>10 orch assistant messages in S6</small></li></ul><pre class="log">#14 alice/agent task_req task add for alice: cursor paging handler
+<i class=j>⏺ </i>I've asked orch to mark task 2 done, with your evidence "handler in, npm test 3/3 pass". It's queued until orch
+  applies it. I didn't edit or check any files.
+❯ <i class=ag>@room handler's in, tests pass</i>
+<i class=t>  ◯ badger-2971  </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=t>· tasks: all 1 done</i></pre></figure></div></div>
+<ul class="checks"><li class=pass><b>PASS</b> alice's Claude calls task (add/claim): a task_req via=agent<small>#14 alice agent task_req: task add for alice: cursor paging handler</small></li><li class=pass><b>PASS</b> The orch applies it natively: tasks.json has it, owner alice, in_progress<small>#2 "cursor paging handler" in_progress alice (state/S6/1/tasks.json)</small></li><li class=pass><b>PASS</b> The orch used native TaskCreate/TaskUpdate<small>TaskCreate({"subject":"cursor paging handler","description":"task add for alice:…); TaskUpdate({"taskId":"2","owner":"alice","metadata":{"req":14,"by":"alice"}…</small></li><li class=pass><b>PASS</b> alice's room row shows the task summary<small>◯ badger-2971 ✔ decided Plan: cursor paging for… · tasks 1 open · #2 you</small></li><li class=pass><b>PASS</b> `sub-human tasks` lists it<small>#2 in_progress alice cursor paging handler</small></li><li class=pass><b>PASS</b> A non-owner done (bob on alice's task) is refused: the gate says only alice may complete it; the task stays in progress [gate: SYNTHETIC — run by demo-lib over the real log; the orch itself declined before reaching it]<small>#19 bob agent task_req: task done #2 for bob: bob checking the owner gate; no tests run; after it: #2 in_progress (state/S6/2); gate over the real log: exit 2 …</small></li><li class=pass><b>PASS</b> The owner's done with evidence completes it; the task entry cites her request<small>#21 alice agent task_req: task done #2 for alice: handler in, npm test 3/3 pass evidence "handler in, npm test 3/3 pass"; #22 orch system task: #2 "cursor pagi…</small></li><li class=pass><b>PASS</b> The orch's task work stayed small (≤ 14 model calls for the four requests) <i>behavioural · 9 vs ≤ 14</i><small>9 orch assistant messages in S6</small></li></ul><pre class="log">#14 alice/agent task_req task add for alice: cursor paging handler
 #15 orch/system task #2 "cursor paging handler" add · pending (req #14)
 #16 orch/system task #2 "cursor paging handler" claim · alice · pending (req #14)
 #17 alice/agent task_req task claim #2 for alice
 #18 orch/system task #2 "cursor paging handler" update · alice · in_progress (req #17)
 #19 bob/agent task_req task done #2 for bob: bob checking the owner gate; no tests run
-#20 orch/agent say I can't mark "cursor paging handler" done for you. It's owned by alice and in progress, so only alice's own done request can complete it.
+#20 orch/agent say refs 19 Can't mark task 2 "cursor paging handler" done for bob: it's claimed by alice, and only its owner's done request can complete it. It stays in progress.
 #21 alice/agent task_req task done #2 for alice: handler in, npm test 3/3 pass
 #22 orch/system task #2 "cursor paging handler" done · alice · completed (req #21)</pre><p class="waits">16/16 driver waits met</p>
 </section>
 <section id="S7">
 <h2><span class="sid">S7</span>Stray typing in a row view</h2><p class="must">Must show: The row view shows the read-only hint; nothing is posted; the typed text reaches the row only when its hold next returns (then the one-line read-only reply), or not at all</p>
 <div class="step"><p class="caption">alice types x into her room row view: the progress line reads read-only · talk in main (@room); nothing is posted</p>
-<div class="chips"><span class="chip">bob: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre>         <i class=aq>✔ decided Plan: cursor paging for… </i><i class=d>· </i><i class=ag>idle</i></pre></figure>
-<figure class="term"><figcaption>alice</figcaption><pre><i class=v>❯ </i><i class=x>room: penguin-3531</i>
+<div class="chips"><span class="chip">bob: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre>                                            <i class=d>· </i><i class=ah>idle</i></pre></figure>
+<figure class="term"><figcaption>alice</figcaption><pre><i class=v>❯ </i><i class=x>room: badger-2971</i>
 <i class=w>  </i><i class=x>members: (none)</i>
 <i class=y>⏺ </i><i class=z>sub-human:participant</i>(bob)
 <i class=t>  ⎿  room: task "cursor paging handler" completed, owner alice · read-only · talk in main (@room)</i>
-❯ <i class=af>Message @sub-human:room…</i>
+❯ <i class=ag>Message @sub-human:room…</i>
 <i class=t>  ◯ main</i>
-<i class=c>  ⏺ penguin-3531  </i><i class=av>✔ decided Plan: cursor paging for… </i><i class=c>· tasks: all 1 done</i>
+<i class=c>  ⏺ badger-2971  </i><i class=aw>✔ decided Plan: cursor paging for… </i><i class=c>· tasks: all 1 done</i>
 <i class=t>  └ ◯ bob  </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=t>· </i><i class=ae>idle</i></pre></figure></div></div>
-<ul class="checks"><li class=pass><b>PASS</b> alice's room row view shows the read-only hint where she typed<small>viewing penguin-3531; hint shown; typed x shown (S7-sh-alice.txt)</small></li><li class=pass><b>PASS</b> Nothing is posted<small>no alice entries in S7</small></li><li class=pass><b>PASS</b> The stray text gets the one-line read-only reply when the row's hold next returns, or no answer at all (it never reached the row)<small>the "x" never reached alice's row model by the end of the run (its hold did not return); no reply, nothing posted</small></li></ul><p class="waits">7/7 driver waits met</p>
+<ul class="checks"><li class=pass><b>PASS</b> alice's room row view shows the read-only hint where she typed<small>viewing badger-2971; hint shown; typed x shown (S7-sh-alice.txt)</small></li><li class=pass><b>PASS</b> Nothing is posted<small>no alice entries in S7</small></li><li class=pass><b>PASS</b> The stray text gets the one-line read-only reply when the row's hold next returns, or no answer at all (it never reached the row)<small>the "x" never reached alice's row model by the end of the run (its hold did not return); no reply, nothing posted</small></li></ul><p class="waits">7/7 driver waits met</p>
 </section>
 <section id="S8">
 <h2><span class="sid">S8</span>Resilience</h2><p class="must">Must show: /clear keeps alice's rows; bob --continue: rows return with no prompt (row-rewake) and the monitor still wakes him</p>
 <div class="step"><p class="caption"><span class="stepno">1/3</span>Rows survive /clear in alice's session (still one room row)</p>
-<div class="chips"><span class="chip">bob: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre>           <i class=aq>✔ decided Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i>
-         <i class=aq>✔ ✔ decided Plan: cursor paging for… </i><i class=d>· </i><i class=q>working</i></pre></figure>
+<div class="chips"><span class="chip">bob: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre>                                              <i class=d>· </i><i class=q>working</i>
+                                            <i class=d>· · </i><i class=q>working</i></pre></figure>
 <figure class="term"><figcaption>alice</figcaption><pre><i class=v>❯</i><i class=w> </i><i class=x>/clear</i>
 <i class=c>  ⏺ main</i>
-<i class=t>  ◯ penguin-3531  </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=t>· tasks: all 1 done</i></pre></figure></div></div>
+<i class=t>  ◯ badger-2971  </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=t>· tasks: all 1 done</i></pre></figure></div></div>
 <div class="step"><p class="caption"><span class="stepno">2/3</span>bob is back with --continue: row-rewake brings his room row back with no typing</p>
-<div class="chips"><span class="chip">alice: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre>                                              <i class=d>· </i><i class=q>working</i>
-                                            <i class=d>· · </i><i class=q>working</i>
-                                            <i class=d>· </i><i class=q>working</i></pre></figure>
-<figure class="term"><figcaption>bob</figcaption><pre><i class=t>✻ Sautéed for 6s · done 1:22 PM · 1 monitor still running</i>
-<i class=k>⏺ </i>Background agent "penguin-3531" didn't finish before the previous session ended
-<i class=k>⏺ </i>sub-human: restoring rows
-<i class=y>⏺ </i><i class=z>sub-human:room</i>(penguin-3531)
-<i class=k>⏺ </i>The session reconnected to room penguin-3531, so you'll keep getting room updates as before.</pre></figure></div></div>
+<div class="chips"><span class="chip">alice: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre>                                            <i class=d>· </i><i class=q>working</i></pre></figure>
+<figure class="term"><figcaption>bob</figcaption><pre><i class=t>✻ Sautéed for 7s · done 8:52 PM · 1 monitor still running</i>
+<i class=j>⏺ </i>Background agent "badger-2971" didn't finish before the previous session ended
+<i class=j>⏺ </i>sub-human: restoring rows
+<i class=y>⏺ </i><i class=z>sub-human:room</i>(badger-2971)
+<i class=j>⏺ </i>After the session resumed, I put the room's background row back in place, so you're still connected to badger-2971.
+❯ <i class=ag>write the parser tests for the paging cursor</i></pre></figure></div></div>
 <div class="step"><p class="caption"><span class="stepno">3/3</span>After the resume the room monitor still wakes bob with alice's words</p>
-<div class="chips"><span class="chip">orch: unchanged</span></div><div class="panes"><figure class="term"><figcaption>alice</figcaption><pre><i class=v>❯ </i><i class=x>@room bob, are you back? the parser tests are done</i>
-<i class=u>⏺ Operation stopped by hook: ✓ sent</i></pre></figure>
-<figure class="term"><figcaption>bob</figcaption><pre><i class=k>⏺ </i>alice: bob, are you back? the parser tests are done
-❯ <i class=af>@room yep, back — taking a look now</i></pre></figure></div></div>
-<ul class="checks"><li class=pass><b>PASS</b> /clear in alice: new session id, same seat, still one penguin-3531 row, no member_left<small>session efea6193 → 72db0185; rows ◯ penguin-3531 ✔ decided Plan: cursor paging for… · tasks: all 1 done; member_left 0</small></li><li class=pass><b>PASS</b> bob /exit + --continue: member_left then "rejoined (resumed)"<small>#23 bob system member_left: bob left (prompt_input_exit) → #24 bob system member_joined: bob rejoined (resumed)</small></li><li class=pass><b>PASS</b> bob's room row is back with no prompt (row-rewake), no duplicate rows<small>row-rewake wake 20:26:02; Agent call 20:26:05; 0 prompt(s) from bob; rows ◯ penguin-3531 ✔ decided Plan: cursor paging for… · ✉ 1 for you</small></li><li class=pass><b>PASS</b> The monitor still wakes bob after the resume<small>#25 alice human say: bob, are you back? the parser tests are done → 1 Monitor event(s) in bob's transcript with it</small></li></ul><pre class="log">#23 bob/system member_left bob left (prompt_input_exit)
+<div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=j>⏺ </i>Task 2, "cursor paging handler", is marked completed on alice's request. She reported "handler in, npm test 3/3 pass"; I haven't run the tests myself.
+  <i class=af>2 </i><i class=d>tasks (</i><i class=af>1 </i><i class=d>done, </i><i class=af>1 </i><i class=d>in progress, </i><i class=af>0 </i><i class=d>open)</i></pre></figure>
+<figure class="term"><figcaption>alice</figcaption><pre><i class=v>❯ </i><i class=x>@room bob, are you back? the parser tests are done</i>
+<i class=u>⏺ Operation stopped by hook: ✓ sent</i>
+<i class=ax>● </i><i class=c>How is Claude doing this session? (optional)</i>
+  <i class=ax>1</i>: Bad    <i class=ax>2</i>: Fine   <i class=ax>3</i>: Good   <i class=ax>0</i>: Dismiss</pre></figure>
+<figure class="term"><figcaption>bob</figcaption><pre><i class=j>⏺ </i>alice: bob, are you back? the parser tests are done</pre></figure></div></div>
+<ul class="checks"><li class=pass><b>PASS</b> /clear in alice: new session id, same seat, still one badger-2971 row, no member_left<small>session c21a317e → b8267976; rows ◯ badger-2971 ✔ decided Plan: cursor paging for… · tasks: all 1 done; member_left 0</small></li><li class=pass><b>PASS</b> bob /exit + --continue: member_left then "rejoined (resumed)"<small>#23 bob system member_left: bob left (prompt_input_exit) → #24 bob system member_joined: bob rejoined (resumed)</small></li><li class=pass><b>PASS</b> bob's room row is back with no prompt (row-rewake), no duplicate rows<small>row-rewake wake 03:54:43; Agent call 03:54:46; 0 prompt(s) from bob; rows ◯ badger-2971 ✔ decided Plan: cursor paging for… · ✉ 1 for you</small></li><li class=pass><b>PASS</b> The monitor still wakes bob after the resume<small>#25 alice human say: bob, are you back? the parser tests are done → 1 Monitor event(s) in bob's transcript with it</small></li></ul><pre class="log">#23 bob/system member_left bob left (prompt_input_exit)
 #24 bob/system member_joined bob rejoined (resumed)
 #25 alice/human say bob, are you back? the parser tests are done</pre><p class="waits">16/16 driver waits met</p>
 </section>
 <section id="S9">
 <h2><span class="sid">S9</span>The orch takes no typed input</h2><p class="must">Must show: A viewer attaches (claude attach) and types: refused with the hint; no orch turn</p>
 <div class="step"><p class="caption">A viewer attaches to the orch and types: the prompt is refused with the hint; no orch turn</p>
-<div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=k>⏺ </i>I refused bob's request to mark "cursor paging handler" (task #2) done, because alice owns it. I posted the reason to
-  bob. The task is still in progress under alice.
-<i class=k>⏺ </i>Task #2, "cursor paging handler", is marked completed on alice's own request. She reported "handler in, npm test 3/3
-  pass"; I haven't run the tests myself.
+<div class="panes"><figure class="term"><figcaption>orch</figcaption><pre><i class=j>⏺ </i>I refused bob's request to mark task 2 done because alice owns it, and told him why in a post. Task 2 is still in
+  progress under alice.
+<i class=j>⏺ </i>Task 2, "cursor paging handler", is marked completed on alice's request. She reported "handler in, npm test 3/3 pass";
+  I haven't run the tests myself.
 <i class=u>⏺ UserPromptSubmit operation blocked by hook:</i>
-  <i class=u>the orch takes no typed input; use @room or ask your Claude to message orch.penguin-3531</i>
+  <i class=u>the orch takes no typed input; use @room or ask your Claude to message orch.badger-2971</i>
 <i class=c>  ⏺ main</i>
 <i class=t>  ◯ alice  </i><i class=aq>✔ decided Plan: cursor paging for…</i>
 <i class=t>  ◯ bob  </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=t>· </i><i class=q>working</i></pre></figure>
-<figure class="term"><figcaption>viewer</figcaption><pre><i class=k>⏺ </i>Alice claimed task #2, "cursor paging handler", so it's now in progress under her name.
-<i class=k>⏺ </i>I refused bob's request to mark "cursor paging handler" (task #2) done, because alice owns it. I posted the reason to
-  bob. The task is still in progress under alice.
+<figure class="term"><figcaption>viewer</figcaption><pre><i class=j>⏺ </i>alice claimed task 2, "cursor paging handler", so it's now in progress under her name.
+<i class=j>⏺ </i>I refused bob's request to mark task 2 done because alice owns it, and told him why in a post. Task 2 is still in
+  progress under alice.
 <span class="el">… 4 lines …</span>
   <i class=aa>2 </i><i class=t>tasks (</i><i class=aa>1 </i><i class=t>done, </i><i class=aa>1 </i><i class=t>in progress, </i><i class=aa>0 </i><i class=t>open)</i>
-  <i class=r>◼ </i><i class=c>room penguin-3531 open</i>
-  <i class=y>✔ </i><i class=aw>cursor paging handler</i>
+  <i class=r>◼ </i><i class=c>room badger-2971 open</i>
+  <i class=y>✔ </i><i class=ay>cursor paging handler</i>
 <i class=c>  ⏺ main</i>
 <i class=t>  ◯ alice  </i><i class=aq>✔ decided Plan: cursor paging for…</i>
 <i class=t>  ◯ bob  </i><i class=aq>✔ decided Plan: cursor paging for… </i><i class=t>· </i><i class=q>working</i></pre></figure></div></div>
-<ul class="checks"><li class=pass><b>PASS</b> A viewer attached with claude attach and typed: the prompt is refused with the hint<small>the orch takes no typed input; use @room or ask your Claude to message orch.penguin-3531</small></li><li class=pass><b>PASS</b> The typed text never reached the orch's model; no orch turn<small>0 transcript entries with the typed text; 0 orch assistant messages in S9</small></li><li class=pass><b>PASS</b> The orch's UserPromptSubmit hook blocks a typed prompt (synthetic payload as the orch)<small>decision block: "the orch takes no typed input; use @room or ask your Claude to message orch.penguin-3531" (session 7019082d, pid 39833)</small></li></ul><p class="waits">2/2 driver waits met</p>
+<ul class="checks"><li class=pass><b>PASS</b> A viewer attached with claude attach and typed: the prompt is refused with the hint<small>the orch takes no typed input; use @room or ask your Claude to message orch.badger-2971</small></li><li class=pass><b>PASS</b> The typed text never reached the orch's model; no orch turn<small>0 transcript entries with the typed text; 0 orch assistant messages in S9</small></li><li class=pass><b>PASS</b> The orch's UserPromptSubmit hook blocks a typed prompt (synthetic payload as the orch)<small>decision block: "the orch takes no typed input; use @room or ask your Claude to message orch.badger-2971" (session 1a9be946, pid 65020)</small></li></ul><p class="waits">2/2 driver waits met</p>
 </section>
 <section id="S9b">
 <h2><span class="sid">S9b</span>A multi-line post stays nested</h2><p class="must">Must show: alice posts three lines with @room, the later two reading like a decision and a sign-off: byte-exact in the log; bob's pane shows them nested under "alice: …" (│), never as bare room lines; no consent entry</p>
@@ -370,10 +369,10 @@ footer{color:var(--muted);font-size:13px}
 <i class=w>  </i><i class=x>room: decided (agreed: alice, bob)</i>
 <i class=w>  </i><i class=x>bob agreed to the proposal</i>
 <i class=u>⏺ Operation stopped by hook: ✓ sent</i></pre></figure>
-<figure class="term"><figcaption>bob</figcaption><pre><i class=k>⏺ </i>alice: notes from the paging spike:
+<figure class="term"><figcaption>bob</figcaption><pre><i class=j>⏺ </i>alice: notes from the paging spike:
   │ room: decided (agreed: alice, bob)
   │ bob agreed to the proposal
-❯ <i class=af>@room back now, let me look at the parser tests</i></pre></figure></div></div>
+❯ <i class=ag>@room yes, I'm back</i></pre></figure></div></div>
 <ul class="checks"><li class=pass><b>PASS</b> alice's three-line @room text byte-exact (real newlines), via=human, signed<small>#26 === typed (90 bytes, 3 lines); sig verified</small></li><li class=pass><b>PASS</b> The room renders it as one head line and nested lines ("  │ ")<small>"alice: notes from the paging spike:" / " │ room: decided (agreed: alice, bob)" / " │ bob agreed to the proposal"</small></li><li class=pass><b>PASS</b> bob's Claude is woken once and prints the chat lines exactly as delivered, "│" prefixes included<small>1 Monitor event(s) carrying the lines (indent before "│" stripped by the Monitor); bob's Claude wrote "alice: notes from the paging spike:\n│ room: decided (ag…</small></li><li class=pass><b>PASS</b> bob's pane: "alice: notes from the paging spike:" then both later lines nested under it ("│ ")<small>pane lines 28–30: "⏺ alice: notes from the paging spike:" / " │ room: decided (agreed: alice, bob)" / " │ bob agreed to the proposal"</small></li><li class=pass><b>PASS</b> No bare "room: decided …" or "bob agreed …" line from the post in bob's pane (any bare one is a real entry's)<small>"room: decided (agreed: alice, bob)": 0 bare line(s) in the pane, 0 real entries render it; "bob agreed to the proposal": 0 bare line(s) in the pane, 1 real en…</small></li><li class=pass><b>PASS</b> No new decision, sign-off, objection or proposal in S9b<small>0 consent entries in S9b; decisions in the whole log: #9, #13, all before #26: true</small></li></ul><pre class="log">#26 alice/human say notes from the paging spike:
 room: decided (agreed: alice, bob)
 bob agreed to the proposal</pre><p class="waits">8/8 driver waits met</p>
@@ -381,19 +380,19 @@ bob agreed to the proposal</pre><p class="waits">8/8 driver waits met</p>
 <section id="S10">
 <h2><span class="sid">S10</span>Leave</h2><p class="must">Must show: alice exits; bob sees the chat line "alice left" once the leave settles (8 s); bob exits; the reaper completes task 1 and stops the orch; claude agents no longer lists it; each human saw a join/leave notice</p>
 <div class="step"><p class="caption"><span class="stepno">1/2</span>alice and bob exit (1. Exit and stop tasks): member_left for each</p>
-<div class="chips"><span class="chip rows"><b>orch</b> rows: ◯ alice  left · ◯ bob  left</span></div><div class="panes"><figure class="term"><figcaption>alice</figcaption><pre><i class=af>Resume this session with:</i>
-<i class=af>claude --resume "alice.penguin-3531"</i>
-Pane is dead (status 0, Tue Oct  6 13:27:36 2026)</pre></figure>
-<figure class="term"><figcaption>bob</figcaption><pre><i class=af>Resume this session with:</i>
-<i class=af>claude --resume "bob.penguin-3531"</i>
-Pane is dead (status 0, Tue Oct  6 13:27:57 2026)</pre></figure></div></div>
+<div class="chips"><span class="chip rows"><b>orch</b> rows: ◯ alice  left · ◯ bob  left</span></div><div class="panes"><figure class="term"><figcaption>alice</figcaption><pre><i class=ag>Resume this session with:</i>
+<i class=ag>claude --resume "alice.badger-2971"</i>
+Pane is dead (status 0, Tue Oct  6 20:56:18 2026)</pre></figure>
+<figure class="term"><figcaption>bob</figcaption><pre><i class=ag>Resume this session with:</i>
+<i class=ag>claude --resume "bob.badger-2971"</i>
+Pane is dead (status 0, Tue Oct  6 20:56:39 2026)</pre></figure></div></div>
 <div class="step"><p class="caption"><span class="stepno">2/2</span>The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)</p>
-<div class="chips"><span class="chip">alice: unchanged</span><span class="chip">bob: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre>Couldn't read logs for 7019082d — job not found — it may have already exited</pre></figure></div></div>
-<ul class="checks"><li class=pass><b>PASS</b> Both leave: member_left alice and bob<small>#27 alice system member_left: alice left (prompt_input_exit); #28 bob system member_left: bob left (prompt_input_exit)</small></li><li class=pass><b>PASS</b> The reaper marks the room closing and tells the orch "room closed: complete task 1"<small>#29 room system status: room closed: complete task 1; members.json orch.closing 2026-10-06T20:28:07.119Z</small></li><li class=pass><b>PASS</b> The orch completes task 1 (the gate allows it while closing)<small>task 1: completed (S10 copy) / completed (live)</small></li><li class=pass><b>PASS</b> The orch is stopped: claude agents no longer lists it<small>members.json orch.stopped_at 2026-10-06T20:28:13.642Z; claude agents --json at the last S10 snap has no 7019082d</small></li><li class=pass><b>PASS</b> &lt;room&gt;/tasks.json stays<small>1 task(s) kept</small></li><li class=pass><b>PASS</b> bob sees the chat line "alice left" once the leave settled (8 s)<small>" ⏺ alice left " in bob's pane (state/S10/notice-bob.txt); rows/notices-bob.json: #27 shown via monitor; bob left 20.8 s after alice</small></li><li class=pass><b>PASS</b> Each human saw a join/leave notice (rows/notices-NAME.json: what was shown, and how)<small>alice: #2 bob joined via monitor; bob: #27 alice left via monitor; 6 joins/leaves of members in the log</small></li><li class=pass><b>PASS</b> No room entry ids (#N) in the members' panes (task numbers aside)<small>none in 40 captures</small></li></ul><pre class="log">#27 alice/system member_left alice left (prompt_input_exit)
+<div class="chips"><span class="chip">alice: unchanged</span><span class="chip">bob: unchanged</span></div><div class="panes"><figure class="term"><figcaption>orch</figcaption><pre>Couldn't read logs for 1a9be946 — job not found — it may have already exited</pre></figure></div></div>
+<ul class="checks"><li class=pass><b>PASS</b> Both leave: member_left alice and bob<small>#27 alice system member_left: alice left (prompt_input_exit); #28 bob system member_left: bob left (prompt_input_exit)</small></li><li class=pass><b>PASS</b> The reaper marks the room closing and tells the orch "room closed: complete task 1"<small>#29 room system status: room closed: complete task 1; members.json orch.closing 2026-10-07T03:56:49.113Z</small></li><li class=pass><b>PASS</b> The orch completes task 1 (the gate allows it while closing)<small>task 1: completed (S10 copy) / completed (live)</small></li><li class=pass><b>PASS</b> The orch is stopped: claude agents no longer lists it<small>members.json orch.stopped_at 2026-10-07T03:56:56.611Z; claude agents --json at the last S10 snap has no 1a9be946</small></li><li class=pass><b>PASS</b> &lt;room&gt;/tasks.json stays<small>1 task(s) kept</small></li><li class=pass><b>PASS</b> bob sees the chat line "alice left" once the leave settled (8 s)<small>" ⏺ alice left " in bob's pane (state/S10/notice-bob.txt); rows/notices-bob.json: #27 shown via monitor; bob left 20.9 s after alice</small></li><li class=pass><b>PASS</b> Each human saw a join/leave notice (rows/notices-NAME.json: what was shown, and how)<small>alice: #2 bob joined via monitor; bob: #27 alice left via monitor; 6 joins/leaves of members in the log</small></li><li class=pass><b>PASS</b> No room entry ids (#N) in the members' panes (task numbers aside)<small>none in 39 captures</small></li></ul><pre class="log">#27 alice/system member_left alice left (prompt_input_exit)
 #28 bob/system member_left bob left (prompt_input_exit)
 #29 room/system status room closed: complete task 1</pre><p class="waits">9/9 driver waits met</p>
 </section>
-<footer>Built 2026-10-06 21:00 UTC by scripts/walkthrough.js from docs/rebuild/screens/index.json and docs/rebuild/checks.json. Panes are excerpts; the full captures (.ansi, .txt, .svg) are in docs/rebuild/screens locally.</footer>
+<footer>Built 2026-10-07 03:58 UTC by scripts/walkthrough.js from docs/rebuild/screens/index.json and docs/rebuild/checks.json. Panes are excerpts; the full captures (.ansi, .txt, .svg) are in docs/rebuild/screens locally.</footer>
 </div>
 </body>
 </html>
