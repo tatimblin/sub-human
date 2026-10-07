@@ -13,7 +13,7 @@
  *
  *   HOOKS     every hook the module registers: {event, matcher, file, does}; scripts/arch-doc.js renders it into
  *             docs/ARCHITECTURE.md ("Function hooks") and test/mod-core.test.js checks it against validate.
- *   register(on, options)
+ *   register(on)
  */
 import { registerGuard } from './guard.mjs';
 import { registerRender } from './render.mjs';
@@ -23,7 +23,7 @@ import { registerTasks } from './tasks.mjs';
 import { registerDeliver } from './deliver.mjs';
 
 export const HOOKS = [
-  { event: 'session.start', matcher: '', file: 'mod/deliver.mjs', does: 'runs hooks/mod-hello.js (the lease; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node bin/sub-human tail --ndjson, restarted with backoff; the seat\'s only delivery) and routes its events: chat -> $.ui.log, pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state' },
+  { event: 'session.start', matcher: '', file: 'mod/deliver.mjs', does: 'runs hooks/mod-hello.js with the session\'s nonce (minted once per session id into $.state; the lease keeps it; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node bin/sub-human tail --ndjson, restarted with backoff; the seat\'s only delivery) and routes its events: chat -> $.ui.log, pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state' },
   { event: 'classic.UserPromptExpansion', matcher: 'command_name ^(sub-human:)?sub-human$', file: 'mod/deliver.mjs', does: 'after the join (hooks/join.js beneath), runs mod-hello again for the new seat and starts the tail child' },
   { event: 'classic.SessionStart', matcher: 'source clear|compact|resume', file: 'mod/deliver.mjs', does: 'after session-restore beneath (a /clear rebinds the seat to a new session id), runs mod-hello again and starts the tail child for that id; reviewMaybeOpen unsure' },
   { event: 'session.end', matcher: '', file: 'mod/deliver.mjs', does: 'stops that session id\'s tail child' },
@@ -38,10 +38,9 @@ export const HOOKS = [
   { event: 'prompt.submit', matcher: '', file: 'mod/prompt.mjs', does: 'drops an @room / room: whose origin is not composer, sdk or bridge (a peer, a notification, a plugin); hands the origin to the shim below; a typed prompt the tail child delivers for carries the held rows text as context and writes "working" presence (node hooks/presence.js, not awaited) unless already working; .catch drops only an @room' },
   { event: 'classic.Notification', matcher: 'notification_type idle_prompt|permission_prompt', file: 'mod/prompt.mjs', does: 'notes the presence presence.js beneath writes, so the next prompt writes "working" again' },
   { event: 'classic.StopFailure', matcher: '', file: 'mod/prompt.mjs', does: 'notes the error presence presence.js beneath writes' },
-  { event: 'classic.UserPromptSubmit', matcher: '', file: 'mod/prompt.mjs', does: 'sessionTitle NAME.CODE once per session id (members); no node when not an @room and surely unseated, or a member\'s seat the tail child delivers for with no review open; else node hooks/prompt.js with sub_human_origin (systemMessage via $.ui.log)' },
+  { event: 'classic.UserPromptSubmit', matcher: '', file: 'mod/prompt.mjs', does: 'sessionTitle NAME.CODE once per session id (members); no node when not an @room and surely unseated, or a member\'s seat the tail child delivers for with no review open; else node hooks/prompt.js with sub_human_origin and the session\'s nonce, which at-room checks against the lease (systemMessage via $.ui.log)' },
   { event: 'tool.call', matcher: 'EnterPlanMode|ExitPlanMode', file: 'mod/consent.mjs', does: 'sets reviewMaybeOpen (a room review starts only through these)' },
   { event: 'classic.Stop', matcher: '', file: 'mod/consent.mjs', does: 'node hooks/consent.js (the open-review nudge) only while a review may be open or the seat is unknown' },
-  { event: 'classic.PreToolUse', matcher: '/^mcp__plugin_sub-human_room__/', file: 'mod/consent.mjs', does: 'no review open: answers with no decision, so consent\'s command hook beneath does not run' },
   { event: 'classic.PostToolUse', matcher: 'tool_name TaskCreate|TaskUpdate', file: 'mod/tasks.mjs', does: 'node hooks/tasks.js (the room task mirror) only for the orch or an unknown seat' },
   { event: 'classic.TaskCompleted', matcher: '', file: 'mod/tasks.mjs', does: 'node hooks/tasks.js (the gate; exit 2 -> block) only for the orch or an unknown seat; .catch blocks in the orch' },
   { event: 'ui.render', matcher: 'UserMessage, origin peer|peer-send-message|plugin', file: 'mod/render.mjs', does: 'draws another member\'s Claude as "bob\'s Claude: …" and a sub-human prompt as its chat lines, without "(for Claude)" lines' },

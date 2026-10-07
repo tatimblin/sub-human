@@ -25,7 +25,8 @@
  * once per MOD_DELIVERY_ERROR_LOG_MS: the person learns the room may hold something they did not get.
  *
  * The session's lifecycle is here too (one file per event: validate refuses a second unmatched session.start):
- * on session.start the mod runs node hooks/mod-hello.js with {session_id}; mod-hello writes the module's lease and
+ * on session.start the mod runs node hooks/mod-hello.js with {session_id, nonce} (the session's nonce, minted once
+ * per session id and kept in $.state; at-room checks it); mod-hello writes the module's lease and
  * prints {home, realHome, userHome, pluginRoot, seat}, kept in $.state hello, and runs it again after the join and
  * after classic.SessionStart. A refresh that fails keeps the last hello but marks it as no session's (sid null), so
  * every prefilter runs node until a refresh succeeds: a join whose hello failed must not leave "no seat" looking
@@ -40,17 +41,37 @@ import {
 } from './core/deliver.mjs';
 import { parseHello } from './core/seat.mjs';
 import { shimArgv, shimEnv, SHIM_TIMEOUT_MS } from './core/shim.mjs';
+import { asHello, asNonce, mintNonce } from './core/state.mjs';
 
 const ROWS = { plugin: 'sub-human', key: 'rows' };
 const HELLO = { plugin: 'sub-human', key: 'hello' };
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' };
 const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' };
+const NONCE = { plugin: 'sub-human', key: 'nonce' };
+
+/** Nonce reads and mints in order: two refreshes at once for one session id must hand mod-hello the same one. */
+let minting = Promise.resolve(null);
+
+/** sid's nonce: the one kept in $.state, or a new one kept there first (mod-hello then writes it to the lease). */
+function nonceFor($, sid) {
+  const mint = async () => {
+    const { value } = await $.state.get(NONCE);
+    const kept = asNonce(value, sid);
+    if (kept) return kept;
+    const nonce = mintNonce();
+    await $.state.set(NONCE, { sid, value: nonce });
+    return nonce;
+  };
+  minting = minting.then(mint, mint);
+  return minting;
+}
 
 /** Run hooks/mod-hello.js for sid and keep its answer in $.state (only a good answer replaces the last one). */
 async function sayHello($, sid) {
   const root = $.plugin.root;
+  const nonce = typeof sid === 'string' && sid ? await nonceFor($, sid) : null;
   const run = await $.process.run(shimArgv(root, 'mod-hello.js'), {
-    stdin: JSON.stringify({ session_id: sid }),
+    stdin: JSON.stringify(nonce ? { session_id: sid, nonce } : { session_id: sid }),
     env: shimEnv({ session_id: sid }, root),
     timeoutMs: SHIM_TIMEOUT_MS,
   });
@@ -61,8 +82,8 @@ async function sayHello($, sid) {
 
 /** After a refresh failed: keep the last hello for the guard's home, but as no session's (prefilters run node). */
 async function forgetSession($) {
-  const { value } = await $.state.get(HELLO);
-  if (value && typeof value === 'object' && value.sid !== null) await $.state.set(HELLO, { ...value, sid: null });
+  const value = asHello((await $.state.get(HELLO)).value);
+  if (value && value.sid !== null) await $.state.set(HELLO, { ...value, sid: null });
 }
 
 /** mod-hello for sid; when it fails, forgetSession. */
@@ -233,7 +254,7 @@ export function registerDeliver(on) {
       await $.state.set(REVIEW, true);
       await refresh($, sid);
       const { value: hello } = await $.state.get(HELLO);
-      if (spawnWanted(hello && typeof hello === 'object' ? hello : null)) ensureChild($, sid);
+      if (spawnWanted(asHello(hello))) ensureChild($, sid);
     } catch { /* unknown: the guard keeps its string rules; the join or a SessionStart starts the child */ }
     return next(e);
   });
@@ -252,7 +273,7 @@ export function registerDeliver(on) {
     try { await $.state.set(REVIEW, true); await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
     try {
       const { value: hello } = await $.state.get(HELLO);
-      if (spawnWanted(hello && typeof hello === 'object' ? hello : null)) ensureChild($, e.session_id);
+      if (spawnWanted(asHello(hello))) ensureChild($, e.session_id);
     } catch { /* the next session.start or join starts it */ }
     return r;
   }).catch(($, e, next) => next(e));

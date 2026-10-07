@@ -289,12 +289,13 @@ test('identity: the hooks-module lease records the claude pid and its start time
   const file = s => path.join(identity.home(), 'sessions', 'mods', `${s}.json`);
   const now = Date.now();
 
-  assert.equal(identity.writeModLease(sid(1), { pid: process.pid, seat: 'alice.otter-0001' }), true);
+  const nonce = 'ab'.repeat(16);
+  assert.equal(identity.writeModLease(sid(1), { pid: process.pid, nonce }), true);
   const rec = identity.readModLease(sid(1));
-  assert.deepEqual(Object.keys(rec).sort(), ['at', 'pid', 'pid_start', 'seat', 'session_id']);
+  assert.deepEqual(Object.keys(rec).sort(), ['at', 'nonce', 'pid', 'pid_start', 'session_id']);
   assert.equal(rec.pid, process.pid);
   assert.equal(rec.pid_start, pidStart(process.pid));
-  assert.equal(rec.seat, 'alice.otter-0001');
+  assert.equal(rec.nonce, nonce);
   assert.ok(Math.abs(Date.parse(rec.at) - now) < 5000);
 
   assert.equal(identity.modLeaseOk(sid(1), process.pid, now + 10 * FRESH), true, 'this process: however old');

@@ -11,13 +11,14 @@
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.mjs';
 import { tasksNeeded } from './core/prefilter.mjs';
 import { mergeClassic } from './core/prompt.mjs';
+import { asHello } from './core/state.mjs';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' };
 const TASK_GATE_FAILED = 'sub-human task gate failed closed: the check did not run. Send status alone in a TaskUpdate of its own to retry.';
 
 async function helloOf($) {
   const { value } = await $.state.get(HELLO);
-  return value && typeof value === 'object' ? value : null;
+  return asHello(value);
 }
 
 async function roomEnvOf($) {

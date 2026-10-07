@@ -32,10 +32,24 @@
  *   signoff|objection via=human (notes byte-exact), then the decision when complete (lib/proposal.record).
  * Post(ExitPlanMode) for the person's own plan: offer, once per plan, to propose it to the room. Never denies.
  *
- * With the hooks module (docs/next/MODS-PLAN.md W2), Stop runs through mod/consent.mjs (classic.Stop, only while
- * its reviewMaybeOpen flag is set) with SUB_HUMAN_SHIM=1: the output then also carries subHuman {reviewOpen}.
- * The room-tool PreToolUse entry stays a command hook, skipped by the mod while no review is open.
+ * With the hooks module, Stop runs through mod/consent.mjs (classic.Stop, only while its reviewMaybeOpen flag is
+ * set) with SUB_HUMAN_SHIM=1: the output then also carries subHuman {reviewOpen}. The room-tool PreToolUse entry
+ * runs on every room tool call (no module hook skips it: that would skip other plugins' hooks too), so outside
+ * plan mode, where it has nothing to do, it exits before loading anything else.
  */
+
+const { readInput } = require('../lib/io.js');
+
+/** A room tool call outside plan mode: preRoomTool acts only in plan mode, so nothing else needs loading. */
+const quiet = input => !!input && input.hook_event_name === 'PreToolUse' && input.permission_mode !== 'plan'
+  && /^mcp__plugin_sub-human_room__/.test(String(input.tool_name || ''));
+
+/** Run as a hook: the stdin payload (or the error reading it), read before the rest of the file loads. */
+let entry = null;
+if (require.main === module) {
+  try { entry = { input: readInput() }; } catch (err) { entry = { error: err }; }
+  if (quiet(entry.input)) process.exit(0);
+}
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -375,6 +389,12 @@ function shimDispatch(input) {
 
 const SHIM = () => process.env.SUB_HUMAN_SHIM === '1';
 
-module.exports = { dispatch, onPrompt, reviewOpen, SHIM };
+module.exports = { dispatch, onPrompt, reviewOpen, SHIM, quiet };
 
-if (require.main === module) c.run(SHIM() ? shimDispatch : dispatch, () => {}); // run() logs the error; never block a question or a plan
+// the error is logged; never block a question or a plan
+if (entry) {
+  try {
+    if (entry.error) throw entry.error;
+    (SHIM() ? shimDispatch : dispatch)(entry.input);
+  } catch (err) { c.logError(err); }
+}

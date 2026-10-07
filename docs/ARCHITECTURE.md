@@ -83,7 +83,7 @@ From `hooks/register.mjs` (hooks.json `modules`), in registration order.
 
 | Event | Matcher | File | Does |
 |---|---|---|---|
-| `session.start` | (all) | `mod/deliver.mjs` | runs hooks/mod-hello.js (the lease; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node bin/sub-human tail --ndjson, restarted with backoff; the seat's only delivery) and routes its events: chat -> $.ui.log, pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state |
+| `session.start` | (all) | `mod/deliver.mjs` | runs hooks/mod-hello.js with the session's nonce (minted once per session id into $.state; the lease keeps it; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node bin/sub-human tail --ndjson, restarted with backoff; the seat's only delivery) and routes its events: chat -> $.ui.log, pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state |
 | `classic.UserPromptExpansion` | `command_name ^(sub-human:)?sub-human$` | `mod/deliver.mjs` | after the join (hooks/join.js beneath), runs mod-hello again for the new seat and starts the tail child |
 | `classic.SessionStart` | `source clear\|compact\|resume` | `mod/deliver.mjs` | after session-restore beneath (a /clear rebinds the seat to a new session id), runs mod-hello again and starts the tail child for that id; reviewMaybeOpen unsure |
 | `session.end` | (all) | `mod/deliver.mjs` | stops that session id's tail child |
@@ -98,10 +98,9 @@ From `hooks/register.mjs` (hooks.json `modules`), in registration order.
 | `prompt.submit` | (all) | `mod/prompt.mjs` | drops an @room / room: whose origin is not composer, sdk or bridge (a peer, a notification, a plugin); hands the origin to the shim below; a typed prompt the tail child delivers for carries the held rows text as context and writes "working" presence (node hooks/presence.js, not awaited) unless already working; .catch drops only an @room |
 | `classic.Notification` | `notification_type idle_prompt\|permission_prompt` | `mod/prompt.mjs` | notes the presence presence.js beneath writes, so the next prompt writes "working" again |
 | `classic.StopFailure` | (all) | `mod/prompt.mjs` | notes the error presence presence.js beneath writes |
-| `classic.UserPromptSubmit` | (all) | `mod/prompt.mjs` | sessionTitle NAME.CODE once per session id (members); no node when not an @room and surely unseated, or a member's seat the tail child delivers for with no review open; else node hooks/prompt.js with sub_human_origin (systemMessage via $.ui.log) |
+| `classic.UserPromptSubmit` | (all) | `mod/prompt.mjs` | sessionTitle NAME.CODE once per session id (members); no node when not an @room and surely unseated, or a member's seat the tail child delivers for with no review open; else node hooks/prompt.js with sub_human_origin and the session's nonce, which at-room checks against the lease (systemMessage via $.ui.log) |
 | `tool.call` | `EnterPlanMode\|ExitPlanMode` | `mod/consent.mjs` | sets reviewMaybeOpen (a room review starts only through these) |
 | `classic.Stop` | (all) | `mod/consent.mjs` | node hooks/consent.js (the open-review nudge) only while a review may be open or the seat is unknown |
-| `classic.PreToolUse` | `/^mcp__plugin_sub-human_room__/` | `mod/consent.mjs` | no review open: answers with no decision, so consent's command hook beneath does not run |
 | `classic.PostToolUse` | `tool_name TaskCreate\|TaskUpdate` | `mod/tasks.mjs` | node hooks/tasks.js (the room task mirror) only for the orch or an unknown seat |
 | `classic.TaskCompleted` | (all) | `mod/tasks.mjs` | node hooks/tasks.js (the gate; exit 2 -> block) only for the orch or an unknown seat; .catch blocks in the orch |
 | `ui.render` | `UserMessage, origin peer\|peer-send-message\|plugin` | `mod/render.mjs` | draws another member's Claude as "bob's Claude: …" and a sub-human prompt as its chat lines, without "(for Claude)" lines |

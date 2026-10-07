@@ -3,6 +3,6 @@
 import { register as registerMod } from '../mod/register.mjs';
 
 /** @type {import('claude-code').Register} */
-export function register(on, options) {
-  registerMod(on, options);
+export function register(on) {
+  registerMod(on);
 }

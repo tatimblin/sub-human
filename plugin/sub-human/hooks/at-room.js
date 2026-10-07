@@ -9,7 +9,10 @@
 // e.origin; cc CONTRACT prompt-origin-composer): only composer (the person's own Enter), sdk (-p) and bridge
 // (Remote Control) may post. The mod's prompt.submit gate drops any other @room before this hook runs; this hook
 // refuses it again, and refuses an @room with no origin at all (the hand-off lost to a reload): the person types
-// it again. Notes from the probes:
+// it again. An origin counts only beside `sub_human_nonce` equal to the nonce in this session's module lease
+// (hooks/mod-hello.js writes it): anything that can run node can hand prompt.js an origin, but only something that
+// read the lease can hand it the nonce. An @room whose nonce does not match is refused as one with no origin. The
+// orch's refusal of typed input reads the origin unchecked: a forged one there only refuses more. Notes from the probes:
 //   - the TUI trims trailing whitespace before the hook sees the prompt (documented, accepted);
 //   - a long paste arrives wrapped as \n\n<pasted_content id="N">\n…\n</pasted_content id="N">\n;
 //     we unwrap it (cc.unwrapPasted) and record normalized:true (pasted tabs already became 4 spaces upstream);
@@ -108,25 +111,35 @@ function orchRefusal(me, input, prompt, origin) {
 /** The same words as the mod's GATE_FAILED (test/mod-core-prompt.test.js): either way the person types it again. */
 const NO_ORIGIN = '✗ not posted: sub-human could not check who wrote this @room. Type it again.';
 
+/** True when the input carries this session's module nonce (its lease's): the origin beside it is the module's. */
+function attested(input) {
+  const sid = input.session_id;
+  if (typeof sid !== 'string' || typeof input.sub_human_nonce !== 'string') return false;
+  const lease = identity.readModLease(sid);
+  return !!lease && lease.session_id === sid && typeof lease.nonce === 'string' && lease.nonce === input.sub_human_nonce;
+}
+
 /** The UserPromptSubmit handler: writes its one output (if any) through common.js out(). hooks/prompt.js calls it. */
 function handle(input) {
   const prompt = typeof input.prompt === 'string' ? input.prompt : '';
-  // The mod's attested origin (prompt.submit e.origin.kind, through the classic.UserPromptSubmit shim), or null.
-  const origin = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
+  // The origin the shim says the prompt came from (prompt.submit e.origin.kind), or null; it posts only attested.
+  const claimed = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
   const raw = prompt.startsWith('/') ? null : parse(prompt);
   const me = whoami(input);
   if (me && me.role === 'orch') {
-    const refusal = orchRefusal(me, input, prompt, origin);
+    const refusal = orchRefusal(me, input, prompt, claimed);
     if (refusal) return block(refusal);
   }
-  if (me && origin === null) presence(me, 'working');
+  if (me && claimed === null) presence(me, 'working');
   if (raw === null) return;
 
+  // not in a room first: typing it again would not help there
+  if (!me) return block('✗ not posted: this session is not in a room. Join one first with /sub-human NAME [CODE].');
+  const origin = claimed !== null && attested(input) ? claimed : null;
   if (origin === null) return block(NO_ORIGIN);
   if (!TYPED_ORIGINS.has(origin)) {
     return block(`✗ not posted: this prompt was not typed by you (origin "${origin.slice(0, 40)}"). Only your own typed @room posts as your words.`);
   }
-  if (!me) return block('✗ not posted: this session is not in a room. Join one first with /sub-human NAME [CODE].');
   const { text, normalized } = cc.unwrapPasted(raw);
   if (!text.trim()) return block('✗ not posted: there is nothing after @room.');
   const entry = { kind: 'say', text };

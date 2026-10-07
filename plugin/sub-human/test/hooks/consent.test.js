@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { World, PLUGIN, hso, decision, reason, ctx } = require('./helpers.js');
 
@@ -410,9 +411,32 @@ test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.mjs): Stop always reports subHuma
   assert.equal(w.hook('consent', ev('Stop', null, { permission_mode: 'default' }), { as: 'bob' }).stdout, '');
 });
 
-test('hooks.json: Stop is the module\'s (mod/consent.mjs); the room-tool PreToolUse entry stays, skipped by the module while no review is open', async () => {
+test('hooks.json: Stop is the module\'s (mod/consent.mjs); the room tools\' PreToolUse is the command hook alone, so every other PreToolUse hook sees them', async () => {
   const hooks = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
   assert.equal(hooks.Stop, undefined);
+  assert.ok(hooks.PreToolUse.some(g => /hooks\/consent\.js/.test(g.hooks[0].command) && /\^mcp__plugin_sub-human_room__/.test(g.matcher)));
   const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.mjs'));
-  for (const ev of ['classic.Stop', 'classic.PreToolUse', 'tool.call']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/consent.mjs'), ev);
+  for (const ev of ['classic.Stop', 'tool.call']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/consent.mjs'), ev);
+  // a module hook answering classic.PreToolUse without next(e) would skip every non-managed settings hook there
+  assert.ok(!MOD.some(h => h.event === 'classic.PreToolUse'), 'no module hook on classic.PreToolUse');
+});
+
+test('consent: a room tool call outside plan mode exits at once, loading nothing but lib/io.js; in plan mode it loads the rest', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-consent-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const preload = path.join(dir, 'loaded.js');
+  fs.writeFileSync(preload, "process.on('exit', () => process.stderr.write('LOADED ' + JSON.stringify(Object.keys(require.cache)) + '\\n'));\n");
+  const w = new World({ orch: 'sleep', alice: 'act' }, { t });
+  const run = mode => {
+    const r = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: mode, tool_input: { text: 'hi' } }), { as: 'alice', env: { NODE_OPTIONS: `--require ${preload}` } });
+    assert.equal(r.code, 0, r.stderr);
+    const line = r.stderr.split('\n').find(l => l.startsWith('LOADED '));
+    return { stdout: r.stdout, loaded: JSON.parse(line.slice(7)).map(f => path.relative(PLUGIN, f)).filter(f => !f.startsWith('..')) };
+  };
+  for (const mode of ['default', 'acceptEdits', 'auto', 'bypassPermissions', undefined]) {
+    const q = run(mode);
+    assert.equal(q.stdout, '', String(mode));
+    assert.deepEqual(q.loaded.sort(), ['hooks/consent.js', 'lib/io.js'], String(mode));
+  }
+  assert.ok(run('plan').loaded.includes('hooks/common.js'), 'plan mode: the review check runs');
 });
