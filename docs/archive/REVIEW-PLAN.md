@@ -1,6 +1,6 @@
 # Review follow-up plan
 
-Status: R0–R4 (E1, E2) done, 2026-10-07; E3 and R5 next. Decided: Q1 yes, Q2 yes, Q3 yes, Q4 drop the room-tool skip, Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](../archive/MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave.
+Status: done, 2026-10-07 (R0–R5; results notes under each wave). Decided: Q1 yes, Q2 yes, Q3 yes, Q4 drop the room-tool skip, Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](../archive/MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave.
 
 ## Principles
 
@@ -178,6 +178,8 @@ Commit per agent: "Review R1: …".
 - no mod header is over about 10 lines;
 - `bash -n scripts/demo.sh` passes and `scripts/test` is green.
 
+**R4 results (2026-10-07).** E1: plan tags out of every plugin comment, wrong file names fixed, the long mod and hook headers cut to their contract (`HOOKS[].does` is the one per-hook description); the narrative they carried moved to ARCHITECTURE.md in R5. E2: ARCHITECTURE matches the build (module language split, security test path, shim list, origin nonce, copied constants), AUDIT-PLAN and MODS-PLAN archived. E3: demo-lib's `main` is a command table, `checks/context.js` split into log, captures, transcripts and cost, shared JSON helpers in `scripts/lib/io.js`, and 11 fixed sleeps in `demo.sh` became waits (`wait-paint`, `wait-exited`, `wait-job-gone`).
+
 ### R5: hotspots and verify (lead + 1 agent)
 
 - **R1 live-check findings** (a) and (b) above.
@@ -190,6 +192,13 @@ Commit per agent: "Review R1: …".
 - all deterministic checks pass;
 - wakes ≤ 18, noise ≤ 1.4 and 0 model calls per chat burst;
 - the plan is marked done and moved to `docs/archive/`.
+
+**R5 results (2026-10-07).**
+- (a) A wake whose submit a hook drops now shows its room lines as notices, one per line and without the `(for Claude)` lines, before the append fallback; before, the person saw only "Prompt dropped by a hook" (wiring test).
+- (b) Forwarded, not documented away: the orch's tail child (watchdog, settle) and its reaper read the same `SUB_HUMAN_*_MS` overrides as the seats, and the bg daemon filtered them out. `config.timingEnv` passes the spawner's numeric `SUB_HUMAN_*_MS` keys through `--settings` env, like the task-list id; a test checks every `envMs` name matches the pattern.
+- ARCHITECTURE took the narrative R4 E1 cut from the headers (mid-turn wakes, the tail child's life, the hello refresh, NO_MODULE causes, `@room` rendering and `drafted`, join rules, manual orch debugging, consent review modes, the guard's limits, the leave settle); no "retract" wording was left.
+- `lib/tail.js` `startSession` lost its cursor, flush and timer-loop logic to `startCursor`, `cursorKeeper`, `flushBatch` and `timerLoop` (about 150 → 111 lines); `lib/room/store.js` stays whole. Plugin source lines over 140 chars: 193 → 143 (the rest are long strings, the CONTRACT and HOOKS tables, regexes).
+- Live short run swan-9602 (about $1.50): deterministic 50/50, behavioural 4/4; 9 room-caused wakes (eagle-8857: 9), noise 0.69 per capture (0.75), 0 model calls per chat burst. All 65 waits passed, including the new `wait-*` ones; no resume. Not added to `baselines.json`.
 
 ## Finding index
 

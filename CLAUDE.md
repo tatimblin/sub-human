@@ -10,7 +10,7 @@ How it works (processes, store layout, lanes, consent, tasks, the cc contract): 
 - `scripts/`: demo and evidence tools. `demo.sh` drives the walkthrough in tmux, `demo-lib.js` holds its tmux and log helpers, `snap.js` captures panes, `checks.js` + `checks/*.js` hold the per-scene checks, `metrics.js` the run metrics, and `walkthrough.js` builds the HTML. `baselines.json` holds earlier runs, thresholds and prices. `lib/` has shared helpers: `paths.js` is the only place scripts import plugin paths. `probe-cc.js` checks the internals list. The tests are in `scripts/test/`.
 - `demo/app.pristine/`: the small app each demo seat gets a copy of.
 - `docs/rebuild/`: the latest walkthrough (`walkthrough.html`, `checks.json`). `screens/` is generated and gitignored.
-- `docs/internals/`: Claude Code internals we rely on, per version. `docs/next/REVIEW-PLAN.md`: the current work plan. `docs/archive/`: history, including the audit and mods plans (index in its README).
+- `docs/internals/`: Claude Code internals we rely on, per version. `docs/archive/`: history, including the audit, mods and review plans (index in its README). There is no open work plan.
 
 ## Commands
 

@@ -133,7 +133,7 @@ W1 findings (2026-10-07, while building the module; [mods plan](../archive/MODS-
 
 ## Review spikes R0
 
-What the [review plan](../next/REVIEW-PLAN.md) R0 spikes found on 2.1.292 (2026-10-07). S-skip is a live run; S-title and S-mcp are binary reading (`/tmp/cc292/bin.txt`, `VERSION:"2.1.292"`). Hit counts are for a latin1 view of the binary; a shape uses `~` as in `cc.shapeRe`. R2 C1 turned the strings below into CONTRACT entries (`classic-chain-order` rewritten; `mcp-stdio-ppid`, `mcp-progress-resets-idle-timeout`, `mcp-server-shared-by-subagents` and `session-title-address` added, the last with the name-uniqueness strings folded in), each with a mutated-string test in `test/cc.test.js`.
+What the [review plan](../archive/REVIEW-PLAN.md) R0 spikes found on 2.1.292 (2026-10-07). S-skip is a live run; S-title and S-mcp are binary reading (`/tmp/cc292/bin.txt`, `VERSION:"2.1.292"`). Hit counts are for a latin1 view of the binary; a shape uses `~` as in `cc.shapeRe`. R2 C1 turned the strings below into CONTRACT entries (`classic-chain-order` rewritten; `mcp-stdio-ppid`, `mcp-progress-resets-idle-timeout`, `mcp-server-shared-by-subagents` and `session-title-address` added, the last with the name-uniqueness strings folded in), each with a mutated-string test in `test/cc.test.js`.
 
 ### S-skip: what a module's `classic.PreToolUse` answer without `next` skips (review M5)
 
