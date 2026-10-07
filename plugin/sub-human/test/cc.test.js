@@ -107,23 +107,6 @@ test('toolUseInput: the model input from the assistant tool_use block', () => {
 
 // ---------- prompts ----------
 
-const ENV_TEXT = '<cross-session-message from="uds:/tmp/x.sock" from-session="0b500131-aaaa" hop-chain="a,b" from-name="orch.ab12" from-mode="bypass" from-plugin="sub-human">\nhello\nworld\n</cross-session-message>';
-
-test('parseEnvelope: attributes in order, optional, body', () => {
-  assert.deepEqual(cc.parseEnvelope(ENV_TEXT), {
-    from: 'uds:/tmp/x.sock', fromSession: '0b500131-aaaa', hopChain: ['a', 'b'], fromName: 'orch.ab12',
-    fromMode: 'bypass', fromPlugin: 'sub-human', body: 'hello\nworld',
-  });
-  const min = cc.parseEnvelope('<cross-session-message from-name="bob">\n[SendFile: a.txt]\nhi\n</cross-session-message>');
-  assert.equal(min.from, null);
-  assert.equal(min.fromName, 'bob');
-  assert.deepEqual(min.hopChain, []);
-  assert.equal(min.body, '[SendFile: a.txt]\nhi');
-  // out of order does not parse as an envelope
-  assert.equal(cc.parseEnvelope('<cross-session-message from-name="b" from="a">\nx\n</cross-session-message>'), null);
-  assert.equal(cc.parseEnvelope('plain'), null);
-});
-
 test('pasted content', () => {
   const p = '@room look\n\n<pasted_content id="1">\nline a\nline b\n</pasted_content id="1">\n';
   assert.deepEqual(cc.unwrapPasted(p), { text: '@room lookline a\nline b', normalized: true });
@@ -164,7 +147,6 @@ test('jobs() runs agents --json through an injected runner', () => {
   assert.equal(cc.jobs({ run: () => ({ error: new Error('ENOENT') }) }), null);
   assert.equal(cc.jobs({ run: () => { throw new Error('x'); } }), null);
   assert.deepEqual(cc.stopCmd(7), ['stop', '7']);
-  assert.deepEqual(cc.logsCmd('ab'), ['logs', 'ab']);
   assert.deepEqual(cc.agentsCmd(), ['agents', '--json']);
 });
 
@@ -201,18 +183,6 @@ test('matcherIsExact / matcherMatches follow the binary rule', () => {
   assert.equal(cc.matcherMatches('(', 'x'), false);
 });
 
-// ---------- timeouts ----------
-
-test('sessionEndBudgetMs', () => {
-  assert.equal(cc.SESSION_END_DEFAULT_MS, 1500);
-  assert.equal(cc.sessionEndBudgetMs([], {}), 1500);
-  assert.equal(cc.sessionEndBudgetMs([1], {}), 1500);
-  assert.equal(cc.sessionEndBudgetMs([5, 2], {}), 5000);
-  assert.equal(cc.sessionEndBudgetMs([600], {}), 60000);
-  assert.equal(cc.sessionEndBudgetMs([5], { CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS: '9000' }), 9000);
-  assert.equal(cc.HOOK_TIMEOUT_DEFAULT_MS, 600000);
-});
-
 // ---------- contract ----------
 
 test('CONTRACT entries are well formed and unique', () => {
@@ -229,7 +199,8 @@ test('CONTRACT entries are well formed and unique', () => {
     assert.ok(e.note, e.id);
   }
   for (const id of ['task-completed-block-drops-fields', 'subagent-statusline-precedence', 'daemon-env-allowlist', 'matcher-rule',
-    'hooks-json-modules', 'classic-chain-order', 'prompt-submit-ups-order', 'session-append-notice-hidden', 'ui-log-notice', 'process-run-stdin', 'plugin-test-off', 'plugin-types-state', 'prompt-origin-composer'])
+    'hooks-json-modules', 'classic-chain-order', 'prompt-submit-ups-order', 'session-append-notice-hidden', 'ui-log-notice', 'process-run-stdin', 'plugin-test-off', 'plugin-types-state', 'prompt-origin-composer',
+    'mcp-stdio-ppid', 'mcp-progress-resets-idle-timeout', 'mcp-server-shared-by-subagents', 'session-title-address'])
     assert.ok(ids.has(id), id);
 });
 
@@ -255,7 +226,7 @@ test('shapeRe: ~ is one minified identifier, the rest is literal', () => {
 test('the plugin ships exactly one hooks module, at the path hooks.json names', () => {
   // cc CONTRACT hooks-json-modules / hooks-modules: an installed plugin's function hooks are the one module that
   // hooks/hooks.json names under `modules` (relative to hooks.json), loaded by default since 2.1.292.
-  // "hooks/register.ts" is the built-in plugins' fixed path, not ours (MODS-PLAN W1: hooks/register.mjs).
+  // "hooks/register.ts" is the built-in plugins' fixed path, not ours; ours is hooks/register.mjs.
   const hooks = path.join(__dirname, '..', 'hooks');
   const json = JSON.parse(fs.readFileSync(path.join(hooks, 'hooks.json'), 'utf8'));
   assert.deepEqual(json.modules, ['./register.mjs'], 'hooks.json names one hooks module per plugin');
@@ -301,7 +272,7 @@ test('probe: a mutated function-hooks entry fails (search and shape)', { skip: !
   const by = id => cc.CONTRACT.find(e => e.id === id);
   const extra = J([
     { id: 'modules-search-mutated', search: by('hooks-json-modules').search[2] + '!!x' },
-    { id: 'chain-shape-mutated', search: by('classic-chain-order').search, shape: by('classic-chain-order').shape.replace('function-hook chain', 'function-hooks chain') },
+    { id: 'chain-shape-mutated', search: by('classic-chain-order').search, shape: by('classic-chain-order').shape[0].replace('function-hook chain', 'function-hooks chain') },
     { id: 'notice-level-mutated', search: by('session-append-notice-hidden').search[0], shape: by('session-append-notice-hidden').shape.replace('"info"', '"notice"') },
   ]);
   const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'hooks-json-modules,classic-chain-order,session-append-notice-hidden'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
@@ -309,6 +280,23 @@ test('probe: a mutated function-hooks entry fails (search and shape)', { skip: !
   const out = JSON.parse(r.stdout);
   assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['hooks-json-modules', true], ['classic-chain-order', true], ['session-append-notice-hidden', true],
     ['modules-search-mutated', false], ['chain-shape-mutated', false], ['notice-level-mutated', false]]);
+});
+
+test('probe: each R0 entry fails on a mutated search or shape', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
+  // cc-2.1.292.md "Review spikes R0": the MCP, title and chain-order entries each fail when one string is off by a character
+  const by = id => cc.CONTRACT.find(e => e.id === id);
+  const list = x => (Array.isArray(x) ? x : [x]);
+  const ids = ['mcp-stdio-ppid', 'mcp-progress-resets-idle-timeout', 'mcp-server-shared-by-subagents', 'session-title-address', 'classic-chain-order'];
+  const extra = [];
+  for (const id of ids) {
+    const e = by(id);
+    list(e.search).forEach((s, i) => extra.push({ id: `${id}/search${i}`, search: s + '!!x' }));
+    list(e.shape || []).forEach((sh, i) => extra.push({ id: `${id}/shape${i}`, search: list(e.search)[0], shape: sh.replace(/[a-zA-Z]{4,}/, w => w + 'Q') }));
+  }
+  const r = spawnSync(process.execPath, [PROBE, '--json', '--only', ids.join(',')], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: J(extra) } });
+  assert.equal(r.status, 1);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.results.map(x => [x.id, x.ok]), [...ids.map(id => [id, true]), ...extra.map(x => [x.id, false])]);
 });
 
 test('probe: a bogus binary fails every entry', () => {

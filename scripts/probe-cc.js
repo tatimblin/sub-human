@@ -16,7 +16,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const cc = require(path.join(__dirname, '..', 'plugin', 'sub-human', 'lib', 'cc.js'));
+const cc = require('./lib/paths.js').pluginLib('cc.js');
 
 function arg(name) {
   const i = process.argv.indexOf(name);
