@@ -333,4 +333,4 @@ function create(ctx) {
   return { tools: [TOOL], call: (...a) => s.call(...a), anonymous: ['hold'], server: s, _state: { holds: s.holds, expect: s.expect, respawn: s.respawn } };
 }
 
-module.exports = { create, HoldServer, TOOL, entryLine, HINT };
+module.exports = { create, TOOL, HINT };

@@ -104,4 +104,4 @@ function compute(list) {
   return { proposals, answers, decisions, answerOf, matrix, pending, status };
 }
 
-module.exports = { fold, isHash, HASH_RE };
+module.exports = { fold, HASH_RE };

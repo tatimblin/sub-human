@@ -306,6 +306,6 @@ function digest(entries = [], ctx = {}) {
 }
 
 module.exports = {
-  FOR_CLAUDE, UNVERIFIED,
+  FOR_CLAUDE,
   line, tailLine, chatLines, fmt, who, stateLine, digest,
 };

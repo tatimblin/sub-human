@@ -33,7 +33,7 @@ export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
 // ---------- Bash ----------
 /** The read-only CLI, with plain arguments only (no pipes, redirects, substitutions or chained commands). */
 const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|digest|who|tasks|watch)(?:\s+[\w.,:=@-]+)*\s*$/;
-const ENV_NAMES = /\bSUB_HUMAN_(?:HOME|TEST_ROOM_DIR)\b/;
+const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
 /** A dot-dir named .sub-human anywhere (~/.sub-human, $HOME/.sub-human, /Users/x/.sub-human). */
 const DOT_HOME = /(?:^|[^\w.-])\.sub-human(?![\w-])/;
 /** Something that runs JavaScript. */
@@ -85,7 +85,7 @@ export function bashVerdict(command, ctx = {}) {
   const cmd = typeof command === 'string' ? command : '';
   if (!cmd.trim()) return null;
   if (READ_CLI.test(cmd)) return null;
-  if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME / SUB_HUMAN_TEST_ROOM_DIR)';
+  if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME)';
   if (DOT_HOME.test(cmd)) return 'it touches the room store (~/.sub-human)';
   for (const h of homeSpellings(ctx)) {
     for (let i = cmd.indexOf(h); i >= 0; i = cmd.indexOf(h, i + 1)) {

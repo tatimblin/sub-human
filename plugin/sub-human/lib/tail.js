@@ -459,6 +459,5 @@ function runTail({
 }
 
 module.exports = {
-  runTail, timings, Batcher, formatOrchBatch, formatNdBatch, visibleTo, isChat, pullText, PULL_HEAD,
-  missingRowsText, remindersText, SPAWN_NOTE, STATE_KINDS,
+  runTail, timings, Batcher, formatNdBatch, PULL_HEAD,
 };

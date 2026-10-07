@@ -200,7 +200,7 @@ test('Bash guard: allowed and denied commands', () => {
     'cd ~/.claude/plugins/cache/m/sub-human/1.0 && node hooks/consent.js', 'node /x/sub-human/mcp/room-server.js',
     'cat ~/.sub-human/rooms/x/log.jsonl', 'ls $HOME/.sub-human', 'ls ${HOME}/.sub-human/keys',
     `echo x >> ${home}/rooms/a/log.jsonl`, `cat "${home}/keys/a/bob.key"`, 'SUB_HUMAN_HOME=/tmp/x sub-human read',
-    'export SUB_HUMAN_HOME=/tmp/x', 'SUB_HUMAN_TEST_ROOM_DIR=/tmp/r node x.js',
+    'export SUB_HUMAN_HOME=/tmp/x',
   ];
   for (const c of allow) assert.equal(bashVerdict(c, ctx), null, `should allow: ${c}`);
   for (const c of deny) assert.ok(bashVerdict(c, ctx), `should deny: ${c}`);

@@ -2,7 +2,7 @@
  * plugin/sub-human/mod/guard.mjs: the store guard, in-process (it replaced hooks/guard.js and its two PreToolUse
  * entries). A plugin can't ship permissions, so these hooks stand in for them:
  *   - tool.call Bash: deny a command that names the store (its path, ~/.sub-human, the seat keys under it), names
- *     or sets SUB_HUMAN_HOME / SUB_HUMAN_TEST_ROOM_DIR, or runs the plugin's own code; the read-only CLI stays
+ *     or sets SUB_HUMAN_HOME, or runs the plugin's own code; the read-only CLI stays
  *     allowed, and so does reading the plugin's source (mod/core/guard.mjs bashVerdict);
  *   - tool.call Write / Edit / MultiEdit / NotebookEdit: deny a write into the store, lexically or where it
  *     resolves ($.fs.stat realPath of the nearest existing ancestor);

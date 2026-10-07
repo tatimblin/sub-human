@@ -16,7 +16,7 @@
  *   gate(code, task, log, {closing}?) -> {ok:true, req?} | {ok:false, reason}   TaskCompleted rule (task.req: a hint)
  *   reqOf(e) -> {op, id, subject, detail, evidence, owner, by}   a task_req entry's fields
  *   requestText(req) -> one-line text for a task_req entry
- *   isRoomTask(t, code?), isClosing(code), writeList(code, tasks), withList(code, fn) (the mirror's lock), nativeDir(listId)
+ *   isRoomTask(t, code?), isClosing(code), writeList(code, tasks), withList(code, fn) (the mirror's lock)
  *
  * Log entries (room.js stores the caller's task `id` as `task_id`, since `id` is the entry's own id):
  *   task_req (via agent): {kind:'task_req', from = by = requester, text, op, task_id, subject, detail, evidence, owner}
@@ -49,7 +49,6 @@ const kvOf = code => room.open(code).store.kv;
 /** Run fn under the mirror's lock (hooks/tasks.js: read the log, append, refold, as one step). */
 const withList = (code, fn) => kvOf(code).lock('tasks', fn);
 /** Claude Code's task store for a list id (read only; the plugin never writes there). */
-const nativeDir = listId => cc.tasksDir(listId);
 
 const idNum = id => Number(id);
 const byId = (a, b) => idNum(a.id) - idNum(b.id) || String(a.id).localeCompare(String(b.id));
@@ -207,5 +206,5 @@ function gate(code, task, log = [], { closing } = {}) {
 module.exports = {
   OPS,
   list, fold, refold, metaReq, summary, mine, validate, gate, reqOf, requestText,
-  isRoomTask, isClosing, writeList, withList, nativeDir,
+  isRoomTask, isClosing, writeList, withList,
 };

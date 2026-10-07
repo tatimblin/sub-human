@@ -83,6 +83,6 @@ function open(code, { store: s, dir } = {}) {
 
 module.exports = {
   ...pure,
-  open, openRoom: open, roomOver,
+  open,
   roomExists: store.roomExists,
 };

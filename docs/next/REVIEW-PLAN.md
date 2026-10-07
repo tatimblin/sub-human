@@ -1,6 +1,6 @@
 # Review follow-up plan
 
-Status: R0–R2 done; R3 next. Approved, 2026-10-07; R0 done (Q4 is with the user), R1 next. Decided: Q1 yes, Q2 yes, Q3 yes (R2), Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Q4 waits on R0. Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave Q4 decided 2026-10-07: drop the room-tool skip (R2 C2).
+Status: R0–R3 done; R4 next. Approved, 2026-10-07; R0 done (Q4 is with the user), R1 next. Decided: Q1 yes, Q2 yes, Q3 yes (R2), Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Q4 waits on R0. Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave Q4 decided 2026-10-07: drop the room-tool skip (R2 C2).
 
 ## Principles
 
@@ -118,6 +118,8 @@ Commit per agent: "Review R1: …".
 - **Old baselines** (Q5): drop the unread runs from `baselines.json` and the `checks.test.js:43` assert that names them.
 
 **Accept for R3:** test count drops only by the deleted tests; `git grep` finds no `provisional`, `retract`, `parseEnvelope`, `bind(` or `monitorIn` outside `docs/archive` and the CHANGELOG-like plan notes; about 600 lines gone.
+
+**R3 results (2026-10-07).** D1: provisional, retract and the bound-room API gone (prod −137 net); old logs still load, an old `retract` line is an ordinary system line (tests). D2: unused helpers, fixtures, exports and Monitor-era metrics gone; baselines pruned to the three runs `compare` reads. Lead: the remaining export-only names in D1's files unexported, `nativeDir` and `SUB_HUMAN_TEST_ROOM_DIR` gone. Tests 368 → 366 (two tests for the bound room, one store-bypass guard).
 
 ### R4: comments, docs, scripts (3 agents in parallel)
 
