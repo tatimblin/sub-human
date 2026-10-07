@@ -1,16 +1,19 @@
 'use strict';
 // Join / leave lines (lib/notices.js) and where they surface: the tail child's chat events (bin/sub-human
-// tail), the room row text (lib/rows.js) and the room hold's progress line (mcp/hold.js).
+// tail), the room row text (lib/rows.js) and the room hold's progress line (mcp/hold.js). Nothing here sleeps:
+// the tail runs on a fake clock and the hold on node:test's mock timers.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
 const h = require('./helpers.js');
 const notices = require(path.join(h.LIB, 'notices.js'));
 const rows = require(path.join(h.LIB, 'rows.js'));
 const room = require(path.join(h.LIB, 'room.js'));
+const identity = require(path.join(h.LIB, 'identity.js'));
+const tailLib = require(path.join(h.LIB, 'tail.js'));
+const { createFake } = require(path.join(h.LIB, 'clock.js'));
 
 const CODE = 'stoat-3644';
 const T0 = Date.parse('2026-10-05T10:00:00.000Z');
@@ -61,19 +64,24 @@ test('notices shown / markShown: ids merge and sort; via is required', () => {
   notices.markShown(code, 'alice', [5, 3], 'mod'); // the tail child's chat events
   notices.markShown(code, 'alice', [7, 3], 'mod');
   assert.deepEqual([...notices.shown(code, 'alice')], [3, 5, 7]);
+  notices.markShown(code, 'alice', [9], 'mod', { now: T0 });
+  assert.equal(room.open(code).store.kv.get('rows/notices-alice').log.at(-1).at, at(0), 'markShown stamps the given time');
   assert.throws(() => notices.markShown(code, 'alice', [6]), /via/);
   assert.throws(() => notices.markShown(code, 'alice', [6], 'model'), /via/);
   assert.throws(() => notices.markShown(code, 'alice', [6], 'monitor'), /via/, 'the Monitor is gone (D2)');
 });
 
 // ---------- the room hold's progress line ----------
-test('hold {room}: joins and settled leaves show as notices on the progress line; a quick round trip shows nothing', async () => {
+// mcp/hold.js polls on the global timers and Date, so node:test's mock timers drive it: no real waiting.
+test('hold {room}: joins and settled leaves show as notices on the progress line; a quick round trip shows nothing', async t => {
   const ENV = { SUB_HUMAN_HOLD_POLL_MS: '20', SUB_HUMAN_HOLD_GRACE_MS: '100000', SUB_HUMAN_HOLD_WHO_MS: '20', SUB_HUMAN_LEAVE_MS: '300' };
   const old = Object.fromEntries(Object.keys(ENV).map(k => [k, process.env[k]]));
   Object.assign(process.env, ENV);
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
+  const tick = ms => t.mock.timers.tick(ms);
+  const until = (cond, ms) => { for (let i = 0; i < ms && !cond(); i += 20) tick(20); return cond(); };
   try {
   const hold = require(path.join(h.PLUGIN, 'mcp', 'hold.js'));
-  const identity = require(path.join(h.LIB, 'identity.js'));
   process.env.SUB_HUMAN_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-notice-hold-'));
   const dir = path.join(process.env.SUB_HUMAN_HOME, 'rooms', CODE);
   fs.mkdirSync(dir, { recursive: true });
@@ -86,47 +94,60 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   const progress = []; // the room hold's line only (bob's row streams his own thread)
   const me = { code: CODE, name: 'alice', role: 'member' };
   let who = me;
-  const plug = hold.create({ identity, whoami: () => who, progress: (t, n, m) => { if (t === 'r') progress.push(m); }, onCancel: () => {}, log: () => {}, text: s => ({ content: [{ type: 'text', text: s }] }) });
+  const plug = hold.create({ identity, whoami: () => who, progress: (k, n, m) => { if (k === 'r') progress.push(m); }, onCancel: () => {}, log: () => {}, text: s => ({ content: [{ type: 'text', text: s }] }) });
   // bob's row is already held, so the room hold does not return JOINED for him
+  const ended = [];
   const b = plug.call('hold', me, { member: 'bob' }, { id: 1, progressToken: 'b' });
   const r = plug.call('hold', me, { room: CODE }, { id: 2, progressToken: 'r' });
-  await h.sleep(60);
+  for (const p of [b, r]) p.then(x => ended.push(x));
+  tick(60);
   add('bob', 'member_joined', 'bob joined');
-  await h.until(() => progress.some(m => m.startsWith('bob joined')), 2000);
+  assert.ok(until(() => progress.some(m => m.startsWith('bob joined')), 2000), progress.join('\n'));
   assert.ok(progress.some(m => m === `bob joined${hold.HINT}`), progress.join('\n'));
   assert.ok(!progress.some(m => /member_joined/.test(m)), 'no raw member_joined line');
   const n = progress.length;
   add('bob', 'member_left', 'bob left'); ms.bob.left_at = new Date().toISOString(); save();
-  await h.sleep(100);
+  tick(100);
   add('bob', 'member_joined', 'bob rejoined'); delete ms.bob.left_at; save();
-  await h.sleep(500);
+  until(() => false, 500);
   assert.ok(!progress.slice(n).some(m => /bob left|bob rejoined|member_left/.test(m)), progress.slice(n).join('\n'));
   add('bob', 'member_left', 'bob left'); ms.bob.left_at = new Date().toISOString(); save();
-  await h.sleep(100);
+  tick(100);
   assert.ok(!progress.some(m => m.startsWith('bob left')), 'not before it settles');
-  await h.until(() => progress.some(m => m.startsWith('bob left')), 2000);
+  assert.ok(until(() => progress.some(m => m.startsWith('bob left')), 2000), progress.join('\n'));
   assert.ok(progress.some(m => m === `bob left${hold.HINT}`));
   who = null; // this seat leaves: both holds end
-  const ends = await Promise.race([Promise.all([b, r]), h.sleep(1000).then(() => null)]);
-  assert.ok(ends && ends.every(x => /^STOP/.test(x.content[0].text)), 'both holds return STOP');
+  until(() => false, 100);
+  await Promise.resolve();
+  assert.equal(ended.length, 2, 'both holds return');
+  assert.ok(ended.every(x => /^STOP/.test(x.content[0].text)), 'both holds return STOP');
   } finally {
     for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   }
 });
 
 // ---------- the tail child sends joins and leaves as chat events ----------
-const FAST = { CLAUDE_PID: String(process.pid), SUB_HUMAN_RESOLVE_MS: '100', SUB_HUMAN_UNSEATED_MS: '100', SUB_HUMAN_POLL_MS: '50', SUB_HUMAN_SETTLE_MS: '300', SUB_HUMAN_SETTLE_MAX_MS: '1000', SUB_HUMAN_LEAVE_MS: '600' };
+// lib/tail.js in-process on a fake clock (test/tail.test.js covers the loop itself; test/cli.test.js the real child).
+const FAST = {
+  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, orchSettleMs: 300, orchSettleMaxMs: 1000,
+  leaveMs: 600, healthMs: 5000, backoffMs: 200, backoffMaxMs: 1000, errorLogMs: 60_000, stallMs: 5000,
+};
 function startTail() {
-  const child = spawn(h.BIN, ['tail'], { env: h.childEnv(FAST) });
-  const t = { child, raw: '' };
-  child.stdout.on('data', d => { t.raw += d; });
+  const clock = createFake({ now: Date.now() });
+  const t = { clock, raw: '' };
+  t.handle = tailLib.runTail({
+    clock, lookup: () => identity.resolveByPid(process.pid), timings: FAST,
+    write: (s, done) => { t.raw += s; done(); }, err: () => {},
+  });
   // the chat lines it sent, one per line
   Object.defineProperty(t, 'out', { get: () => t.raw.split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(x => x.type === 'chat').flatMap(x => x.lines).map(l => l + '\n').join('') });
+  t.advance = ms => clock.advance(ms);
+  t.until = (cond, ms) => { for (let i = 0; i < ms && !cond(); i += 50) clock.advance(50); return cond(); };
   return t;
 }
 const sys = (kind, from, text) => room.append({ kind, text: text || `${from} ${kind}` }, { via: 'system', from, system: true });
 
-test('cli tail (member): a join and a settled leave are chat events; a quick round trip sends nothing', async () => {
+test('tail (member): a join and a settled leave are chat events; a quick round trip sends nothing', () => {
   h.freshHome();
   const code = h.newRoom();
   room.bind(code);
@@ -135,20 +156,20 @@ test('cli tail (member): a join and a settled leave are chat events; a quick rou
   rows.writeHolds(code, 'alice', { room: true, members: ['bob'] }); // her rows run: no row note is pushed
   const t = startTail();
   try {
-    await h.sleep(400);
+    t.advance(400);
+    room.bind(code); // the tail binds room.js to its own room as it runs
     sys('member_joined', 'bob', 'bob joined');                 // #2
-    await h.until(() => t.out === 'bob joined\n', 3000);
-    assert.equal(t.out, 'bob joined\n');
+    assert.ok(t.until(() => t.out === 'bob joined\n', 3000), t.out);
     assert.deepEqual([...notices.shown(code, 'alice')], [2], 'recorded as shown (via mod)');
     sys('member_left', 'bob', 'bob left');                     // #3
-    await h.sleep(200);
+    t.advance(200);
     sys('member_joined', 'bob', 'bob rejoined');               // #4, 200 ms later: neither is a line
-    await h.sleep(1200);
+    t.advance(1200);
     assert.equal(t.out, 'bob joined\n');
     sys('member_left', 'bob', 'bob left');                     // #5
-    await h.sleep(300);
+    t.advance(300);
     assert.equal(t.out, 'bob joined\n', 'still settling');
-    await h.until(() => t.out.includes('bob left'), 3000);
+    assert.ok(t.until(() => t.out.includes('bob left'), 3000), t.out);
     assert.equal(t.out, 'bob joined\nbob left\n');
-  } finally { t.child.kill(); }
+  } finally { t.handle.stop(); }
 });

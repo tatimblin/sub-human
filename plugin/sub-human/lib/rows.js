@@ -27,7 +27,7 @@
  * Row text (deterministic from the log + members + the presence/<name> documents {state, at}):
  *   rowText(code, name, viewer, {color, entries, members, now}?) -> string (<= ROW_MAX chars, no label)
  *       No entry ids (people never see them); task ids ("#2") are the room task list's numbers.
- *       Proposals: lib/consent.js fold (the same state stateLine and the consent gate read). A proposal is named
+ *       Proposals: lib/room/consent.js fold (the same state stateLine and the consent gate read). A proposal is named
  *       by its title (the stored plan's first line, clipped to ROW_TITLE_MAX; the 6-char hash when there is
  *       none): rows are for people, and no tool call is made from them. Segments that do not fit are dropped.
  *       name === code (or null): the member's room row, from viewer's seat: first a join / settled leave of the
@@ -59,7 +59,6 @@ const tasks = require('./tasks.js');
 const notices = require('./notices.js');
 const { isAlive } = require('./io.js');
 const text = require('./text.js');
-const { fold } = require('./consent.js');
 const proposal = require('./proposal.js');
 const { ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS } = require('./config.js');
 
@@ -290,11 +289,11 @@ function fit(parts) {
 }
 
 /**
- * Proposals in log order (of their latest entry), from lib/consent.js fold: {id, hash, approvers, verdict: {name:
+ * Proposals in log order (of their latest entry), from lib/room/consent.js fold: {id, hash, approvers, verdict: {name:
  * {kind, id}} (approvers' current answers), decided (decision id or 0), agreed (count), objectors, name (title)}.
  */
 function proposals(es, code) {
-  const f = fold(es);
+  const f = room.fold(es);
   return [...f.proposals.values()].map(fp => {
     const m = f.matrix(fp.hash);
     const verdict = {};

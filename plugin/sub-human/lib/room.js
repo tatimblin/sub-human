@@ -14,7 +14,7 @@
  *     entries?), decided(hash, entries?), retractedIds(entries?)   lanes.js over this room's log
  *     lane(me, e, entries?)                    lanes.js (entries: judged; without, the entry-only answer)
  *     and the stateless helpers below}
- *   Stateless: line, tailLine, chatLines, fmt, who, FOR_CLAUDE, normalize, hash12, verifyHuman, unverifiedHuman,
+ *   Stateless: fold (room/consent.js), line, tailLine, chatLines, fmt, who, FOR_CLAUDE, normalize, hash12, verifyHuman, unverifiedHuman,
  *     humanTrust, isYoungProvisional, PROVISIONAL_MS, RoomError and the size caps (DIGEST_CAP, TAIL_MAX, CHAT_MAX,
  *     CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST).
  *
@@ -22,6 +22,7 @@
  *   room/validate.js  the envelope rules append() enforces; RoomError (INVALID | RATE | LOCK | NO_ROOM)
  *   room/lanes.js     proposal queries and lane(me, e, entries?) -> push | pull | none
  *   room/render.js    line, tailLine, fmt, who, chatLines, FOR_CLAUDE, stateLine, digest
+ *   room/consent.js   fold(entries): the one proposal / consent state every view reads
  *
  * Deprecated, for tests only (test/store-bypass.test.js checks that no plugin module uses them): bind(code) and the
  * functions that act on the bound room (code, dir, logPath, readAll, append, readView, digest, stateLine, ...).
@@ -31,10 +32,11 @@ const store = require('./room/store.js');
 const { RoomError } = require('./room/validate.js');
 const lanes = require('./room/lanes.js');
 const render = require('./room/render.js');
+const { fold } = require('./room/consent.js');
 const { DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST } = require('./config.js');
 
 const pure = {
-  RoomError, DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST,
+  RoomError, fold, DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST,
   hash12: store.hash12, normalize: store.normalize,
   verifyHuman: store.verifyHuman, unverifiedHuman: store.unverifiedHuman, humanTrust: store.humanTrust,
   isYoungProvisional: store.isYoungProvisional, PROVISIONAL_MS: store.PROVISIONAL_MS,

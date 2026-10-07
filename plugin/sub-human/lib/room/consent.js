@@ -1,8 +1,8 @@
 'use strict';
 /**
- * plugin/sub-human/lib/consent.js: the one fold of the room log into proposal / consent state. Pure apart from
- * room/store.js humanTrust (reads the seats' public keys), CommonJS, zero dependencies beyond room/store.js.
- * stateLine and lane() (lib/room/*), the rows (lib/rows.js) and the consent gate (lib/proposal.js, hooks/consent.js) all read this, so they cannot disagree.
+ * plugin/sub-human/lib/room/consent.js: the one fold of the room log into proposal / consent state. Pure apart from
+ * store.js humanTrust (reads the seats' public keys), CommonJS, zero dependencies beyond store.js.
+ * stateLine and lane() (lanes.js, render.js), the rows (lib/rows.js) and the consent gate (lib/proposal.js, hooks/consent.js) all read this, so they cannot disagree.
  *
  *   fold(entries) -> F   memoized per entries array (same array, same length and last id -> same F)
  *     F.proposals  Map hash -> {id, hash, from, approvers, path, entry}   the LATEST proposal entry per hash,
@@ -32,7 +32,7 @@
  * "latest" and the decision's refs agree for everything the hooks write.
  */
 
-const { normalize, humanTrust } = require('./room/store.js');
+const { normalize, humanTrust } = require('./store.js');
 
 const HASH_RE = /^[0-9a-f]{12}$/;
 const isHash = h => typeof h === 'string' && HASH_RE.test(h);

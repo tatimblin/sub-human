@@ -1,5 +1,5 @@
 'use strict';
-// One log, every consent view: lib/consent.js fold feeds stateLine, lane(), the rows, proposal.matrix /
+// One log, every consent view: lib/room/consent.js fold feeds stateLine, lane(), the rows, proposal.matrix /
 // pendingFor and the consent gate (hooks/consent.js Pre(AskUserQuestion)); they must give the same answers.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -8,7 +8,7 @@ const { World, PLUGIN, decision, room } = require('./helpers.js');
 
 const proposal = require(path.join(PLUGIN, 'lib', 'proposal.js'));
 const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
-const consent = require(path.join(PLUGIN, 'lib', 'consent.js'));
+const consent = require(path.join(PLUGIN, 'lib', 'room', 'consent.js'));
 
 test('consent table: proposal, re-proposal, revise, signoffs, objection after signoff, retract, decision: all views agree', () => {
   const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep', carol: 'sleep', dave: 'sleep' });

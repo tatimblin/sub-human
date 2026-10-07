@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const store = require(path.join(__dirname, '..', 'lib', 'room', 'store.js'));
+const { writeFileAtomic } = require(path.join(__dirname, '..', 'lib', 'io.js'));
 
 const keyPath = (code, name) => store.pubPath(name, code).replace(/\.pub$/, '.key');
 
@@ -56,11 +57,7 @@ function ensure(code, name) {
   const pubFile = store.pubPath(name, code);
   let cur = null;
   try { cur = fs.readFileSync(pubFile, 'utf8'); } catch { /* none yet */ }
-  if (cur !== pub) {
-    const tmp = `${pubFile}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, pub, { mode: 0o600 });
-    fs.renameSync(tmp, pubFile);
-  }
+  if (cur !== pub) writeFileAtomic(pubFile, pub, { mode: 0o600 });
   cache.set(file, key);
   return key;
 }

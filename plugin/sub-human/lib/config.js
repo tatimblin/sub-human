@@ -159,7 +159,7 @@ module.exports = {
   TASK_REQ_DETAIL_SHOWN: 200,      // a task_req entry's text shows this much of the detail
   TASK_REQ_EVIDENCE_SHOWN: 400,
 
-  // ---------- consent (lib/consent.js, lib/proposal.js, lib/rows.js, hooks/consent.js, hooks/session-restore.js) ----------
+  // ---------- consent (lib/room/consent.js, lib/proposal.js, lib/rows.js, hooks/consent.js, hooks/session-restore.js) ----------
   ROW_TITLE_MAX: 24,               // a proposal's title in a panel row ("✔ decided Cursor paging")
   REVIEW_LOCK_TIMEOUT_MS: 3000,    // members/NAME/review.json read-modify-write lock (hooks time out at 5-10 s)
   // Pre(ExitPlanMode) needs the model's own input from the transcript, which 2.1.292 may not have written yet
