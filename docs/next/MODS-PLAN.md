@@ -1,6 +1,6 @@
 # Mods (function hooks) plan
 
-Status: **W0 done** 2026-10-07 ([results](#w0-results)); W1 next. D3 decided (notices, drawn through `$.ui.log` per S4); other decisions open. Sources:
+Status: W0 done (a6abb60), W1 next, 2026-10-07. Decided: D1 yes, D2 yes (W4), D3 notices via `$.ui.log`, D4 add `bridge`; generated `tsconfig.json` and `.claude-plugin/types/` are gitignored. D5–D8 open.
 - the plugin-authoring skill shipped with Claude Code 2.1.292 (`reference.md`, `types/claude-code.d.ts`, `examples/`);
 - the 2.1.292 binary as text (`/tmp/cc292/bin.txt`), for everything the skill does not settle;
 - [`docs/internals/cc-2.1.292.md`](../internals/cc-2.1.292.md) (`hooks-modules (b)`) and the code at `0a310fd`.
@@ -331,10 +331,10 @@ hooks.json goes from 21 command entries to 12.
 
 ## Decisions for the user
 
-1. **D1: require function hooks for a seat?** Recommended: yes. Join refuses without the module, and the moved entries leave hooks.json, which is where the savings come from. Alternative: a permanent dual path, where moved entries stay and exit early when the hello lease is live. That is correct, but it saves no node starts and doubles the test surface. The trade-off: a non-member session with modules off loses the store guard. The threat model covers members' Claudes, so this is within it.
-2. **D2: drop the Monitor after W3?** Recommended: yes, in W4, unless S2 shows the orch needs it. Keeping it costs one idle node per session and buys delivery while the module is off (and with D1, such a session has no seat anyway).
+1. **D1: require function hooks for a seat?** **Decided 2026-10-07: yes.** Recommended: yes. Join refuses without the module, and the moved entries leave hooks.json, which is where the savings come from. Alternative: a permanent dual path, where moved entries stay and exit early when the hello lease is live. That is correct, but it saves no node starts and doubles the test surface. The trade-off: a non-member session with modules off loses the store guard. The threat model covers members' Claudes, so this is within it.
+2. **D2: drop the Monitor after W3?** **Decided 2026-10-07: yes, in W4.** Recommended: yes, in W4, unless S2 shows the orch needs it. Keeping it costs one idle node per session and buys delivery while the module is off (and with D1, such a session has no seat anyway).
 3. **D3: chat lines as stored notices (`$.ui.log`, per W0 S4) plus an isMeta copy for the model?** **Decided 2026-10-07: yes (notices).** This means no wake and no echo for people's words. Recommended: yes. It cuts a model turn per chat burst and removes member.md's "print as given". Alternative: keep the wakes and only restyle the rows with `ui.render` (W1 alone).
-4. **D4: which origins may `@room`?** Today: `user`, `sdk` → `composer`, `sdk`. Add `bridge` (the person through Remote Control on their phone)?
+4. **D4: which origins may `@room`?** **Decided 2026-10-07: add `bridge` (Remote Control).** Today: `user`, `sdk` → `composer`, `sdk`. Add `bridge` (the person through Remote Control on their phone)?
 5. **D5: move the member/orch role text into a `prompt.compose` session section?** It survives compaction, so session-restore no longer re-injects on `compact`, at the cost of one prompt-cache miss at join. Optional, after W4.
 6. **D6: out of scope, for later.**
    - `$.agent.spawn` rows: it would change the rows, so it is excluded now.
