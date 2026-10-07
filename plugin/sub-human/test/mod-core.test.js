@@ -40,6 +40,47 @@ test('mod/ is pure: no node: or CommonJS imports, no dynamic import(), no seat k
   for (const f of files.filter(x => x.includes(`${path.sep}core${path.sep}`))) assert.doesNotMatch(code(f), /\$\./, `${f} uses $`);
 });
 
+// ---------- state ----------
+test('state: every $.state reference in mod/ names a key in KEYS, and KEYS is what types/index.d.ts declares', async () => {
+  const { KEYS } = await load('mod/core/state.mjs');
+  const used = new Set();
+  for (const f of fs.readdirSync(path.join(PLUGIN, 'mod')).filter(x => x.endsWith('.mjs'))) {
+    const src = fs.readFileSync(path.join(PLUGIN, 'mod', f), 'utf8');
+    for (const m of src.matchAll(/\{ plugin: '([^']+)', key: '([^']+)' \}/g)) {
+      assert.equal(m[1], 'sub-human', f);
+      assert.ok(KEYS.includes(m[2]), `${f}: ${m[2]} is not in KEYS`);
+      used.add(m[2]);
+    }
+  }
+  assert.deepEqual([...used].sort(), [...KEYS].sort(), 'every key in KEYS is used');
+  const types = fs.readFileSync(path.join(PLUGIN, 'types', 'index.d.ts'), 'utf8');
+  const block = types.slice(types.indexOf("'sub-human': {"));
+  const declared = [...block.matchAll(/^ {6}(\w+): /gm)].map(m => m[1]);
+  assert.deepEqual(declared.sort(), [...KEYS].sort());
+});
+
+test('state: asHello is null when absent; asNonce only for its own session id; mintNonce is 32 fresh hex characters', async () => {
+  const { asHello, asNonce, mintNonce, NONCE_RE } = await load('mod/core/state.mjs');
+  for (const v of [undefined, null, 'x', 3, false]) assert.equal(asHello(v), null, String(v));
+  const h = { sid: 's1', home: '/h', seat: null };
+  assert.equal(asHello(h), h);
+  const n = mintNonce();
+  assert.match(n, NONCE_RE);
+  assert.notEqual(mintNonce(), n);
+  assert.equal(asNonce({ sid: 's1', value: n }, 's1'), n);
+  assert.equal(asNonce({ sid: 's1', value: n }, 's2'), null, 'another session id (a /clear)');
+  for (const v of [undefined, null, { sid: 's1' }, { sid: 's1', value: 'short' }, { sid: 's1', value: n.toUpperCase() }]) assert.equal(asNonce(v, 's1'), null);
+  assert.equal(asNonce({ sid: 's1', value: n }, undefined), null);
+});
+
+test('guard: the write tools hooked in mod/guard.mjs are mod/core/guard.mjs WRITE_TOOLS, and HOOKS says the same', async () => {
+  const { WRITE_TOOLS } = await load('mod/core/guard.mjs');
+  const { HOOKS } = await load('mod/register.mjs');
+  const src = fs.readFileSync(path.join(PLUGIN, 'mod', 'guard.mjs'), 'utf8');
+  assert.ok(src.includes(`on('tool.call', { tool: [${WRITE_TOOLS.map(t => `'${t}'`).join(', ')}] }`), 'the matcher literal');
+  assert.ok(HOOKS.some(h => h.file === 'mod/guard.mjs' && h.matcher === WRITE_TOOLS.join('|')));
+});
+
 // ---------- seat ----------
 test('seat: parseHello keeps a good answer, refuses anything else; parseAddr reads NAME.CODE', async () => {
   const { parseHello, parseAddr, seated } = await load('mod/core/seat.mjs');
@@ -107,7 +148,9 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
 test('shim: a real hook\'s output translates (at-room posting through prompt.js)', async t => {
   const { toClassic } = await load('mod/core/shim.mjs');
   const w = new World({ orch: 'sleep', alice: 'act' }, { t });
-  const r = w.hook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: '@room hello', sub_human_origin: 'composer', transcript_path: '' }, { as: 'alice' });
+  const nonce = 'f00d'.repeat(8);
+  w.lib(() => require('../lib/identity.js').writeModLease(w.sid.alice, { nonce }));
+  const r = w.hook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: '@room hello', sub_human_origin: 'composer', sub_human_nonce: nonce, transcript_path: '' }, { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
   const { result } = toClassic('UserPromptSubmit', { exitCode: r.code, stdout: r.stdout, stderr: r.stderr });
   assert.equal(result.preventContinuation, true);
@@ -345,7 +388,7 @@ test('mod-hello: prints the home and this session\'s seat, and writes the lease 
   assert.equal(fs.statSync(lease).mode & 0o777, 0o600);
   const rec = JSON.parse(fs.readFileSync(lease, 'utf8'));
   assert.equal(rec.session_id, w.sid.alice);
-  assert.equal(rec.seat, `alice.${w.code}`);
+  assert.equal(rec.seat, undefined, 'the seat is in the hello, not the lease');
   assert.deepEqual(w.lib(() => require('../lib/identity.js').readModLease(w.sid.alice)), rec);
 });
 

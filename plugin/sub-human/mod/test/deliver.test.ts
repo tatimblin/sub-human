@@ -9,10 +9,8 @@
 // as a delivery error, and a mid-turn wake falls back to a prompt. The test's $ has no state noun either, so
 // deliveryErrors shows here only through its notice. A live check saw both appends land.
 import { test, expect, mock } from 'claude-code/testing'
+import { SEAT, OUT, ran, scriptOf, session, start } from './support.mjs'
 
-const SEAT = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' }
-const OUT = { home: '/u/.sub-human', realHome: '/u/.sub-human', userHome: '/u', pluginRoot: '/p/sub-human', seat: SEAT }
-const ran = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 const SID = 'sid-d'
 const line = (x: any) => JSON.stringify(x) + '\n'
 
@@ -49,10 +47,9 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
   let poke = () => {}
   const held = new Promise<void>(r => { seen.release = () => { released = true; poke(); r() } })
   seen.feed = text => { fed.push(text); poke() }
-  on('session.id', () => ({ value: SID }))
-  on('session.start', ($: any, e: any) => ({ cwd: e.cwd }))
+  session(on, SID)
   on('process.run', ($: any, e: any) => {
-    const script = String(e.argv[1]).replace(/^.*\/hooks\//, '')
+    const script = scriptOf(e)
     seen.scripts.push(script)
     if (script === 'prompt.js') return ran(JSON.stringify({ subHuman: { reviewOpen: false } }))
     return ran(script === 'mod-hello.js' ? JSON.stringify(hello) : '')
@@ -90,7 +87,6 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
   on('session.messages', () => ({ value: [] }))
   return seen
 }
-const start = ($: any) => $.session.start({ cwd: '/w', surface: null, isInteractive: true })
 
 test('a seated session starts the tail child: node bin/sub-human tail --ndjson, by its session id', async ($, on) => {
   const seen = world($, on)

@@ -7,6 +7,8 @@
  *   - classic.UserPromptSubmit: sets the session title (the seat's NAME.CODE) once per session id and address,
  *     then runs node hooks/prompt.js with sub_human_origin unless mod/core/prompt.mjs needsNode says it has
  *     nothing to do. An @room the shim could not handle is refused (failClosed), never let through as typed.
+ *     The origin goes with the session's nonce (sub_human_nonce, $.state nonce, minted in mod/deliver.mjs): at-room
+ *     believes an origin only when the nonce is the one in this session's lease.
  * The origin hand-off is a module variable: classic.UserPromptSubmit runs inside prompt.submit's next(e) (cc
  * CONTRACT prompt-submit-ups-order). A reload in between loses it, and at-room then refuses the @room.
  */
@@ -17,11 +19,13 @@ import {
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.mjs';
 import { reviewOpenOf } from './core/prefilter.mjs';
 import { delivering } from './deliver.mjs';
+import { asHello, asNonce } from './core/state.mjs';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' };
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' };
 const TITLED = { plugin: 'sub-human', key: 'titled' };
 const ROWS = { plugin: 'sub-human', key: 'rows' };
+const NONCE = { plugin: 'sub-human', key: 'nonce' };
 const origins = originQueue();
 /** The last presence this module wrote or saw: 'working' skips the node start. Lost on reload: then written once. */
 let presence = null;
@@ -29,15 +33,18 @@ let presence = null;
 /** The hello, or null before mod-hello answered. */
 async function helloOf($) {
   const { value } = await $.state.get(HELLO);
-  return value && typeof value === 'object' ? value : null;
+  return asHello(value);
 }
 
 /** node hooks/prompt.js with the classic payload (plus the origin), translated; its notices and report applied.
  * An @room it did not handle (exit other than 0 or 2) is refused. */
 async function runPrompt($, e, origin) {
   const root = $.plugin.root;
+  const { value: kept } = await $.state.get(NONCE);
+  const nonce = asNonce(kept, e.session_id);
+  const attested = origin ? { sub_human_origin: origin, ...(nonce ? { sub_human_nonce: nonce } : {}) } : {};
   const run = await $.process.run(shimArgv(root, 'prompt.js'), {
-    stdin: JSON.stringify(origin ? { ...e, sub_human_origin: origin } : e),
+    stdin: JSON.stringify({ ...e, ...attested }),
     env: shimEnv(e, root),
     timeoutMs: SHIM_TIMEOUT_MS,
   });

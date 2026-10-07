@@ -3,11 +3,10 @@
 // checks the hooks: a peer @room is dropped before anything beneath runs, an unseated prompt starts no node, a
 // seated one runs hooks/prompt.js with the origin in its stdin, and the shim's answer and notices reach the session.
 import { test, expect } from 'claude-code/testing'
+import { SEAT, OUT, ran, scriptOf, session, start } from './support.mjs'
 
-const SEAT = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' }
-const OUT = { home: '/u/.sub-human', realHome: '/u/.sub-human', userHome: '/u', pluginRoot: '/p/sub-human', seat: SEAT }
-const ran = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 const SID = 'sid-p'
+const NONCE = /^[0-9a-f]{32}$/
 
 /**
  * The engine beneath the plugin: a session, mod-hello answering `hello`, hooks/prompt.js answering `prompt`, and a
@@ -17,16 +16,15 @@ const SID = 'sid-p'
 function world(engine: any, on: any, { hello = OUT as any, prompt = '', exitCode = 0 } = {}) {
   const seen = {
     scripts: [] as string[], stdin: [] as any[], env: [] as any[], presence: [] as any[], classic: [] as any[],
-    logs: [] as string[], entered: [] as string[], hello: hello as any,
+    logs: [] as string[], entered: [] as string[], hello: hello as any, hellos: [] as any[],
   }
-  on('session.id', () => ({ value: SID }))
-  on('session.start', ($: any, e: any) => ({ cwd: e.cwd }))
+  session(on, SID)
   on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
   on('process.run', ($: any, e: any) => {
-    const script = String(e.argv[1]).replace(/^.*\/hooks\//, '')
+    const script = scriptOf(e)
     if (script === 'presence.js') { seen.presence.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env }); return ran('') }
     seen.scripts.push(script)
-    if (script === 'mod-hello.js') return ran(seen.hello ? JSON.stringify(seen.hello) : '', seen.hello ? 0 : 1)
+    if (script === 'mod-hello.js') { seen.hellos.push(JSON.parse(e.init.stdin)); return ran(seen.hello ? JSON.stringify(seen.hello) : '', seen.hello ? 0 : 1) }
     seen.stdin.push(JSON.parse(e.init.stdin))
     seen.env.push(e.init.env)
     return ran(prompt, exitCode)
@@ -41,7 +39,6 @@ function world(engine: any, on: any, { hello = OUT as any, prompt = '', exitCode
   })
   return seen
 }
-const start = ($: any) => $.session.start({ cwd: '/w', surface: null, isInteractive: true })
 const submit = ($: any, text: string, kind = 'composer') => $.prompt.submit({ text, origin: { kind }, wait: false } as any)
 
 test('a peer @room is dropped before any hook beneath runs; the reason is the drop', async ($, on) => {
@@ -97,11 +94,34 @@ test('a typed @room posts through node: ✓ sent stops the prompt; sdk and bridg
   expect(seen.classic[0].stopReason).toBe('✓ sent')
 })
 
-test('a classic UserPromptSubmit with no prompt.submit above it (a lost hand-off) runs node without an origin', async ($, on) => {
+test('a classic UserPromptSubmit with no prompt.submit above it (a lost hand-off) runs node without an origin or nonce', async ($, on) => {
   const seen = world($, on)
   await start($)
   await $.classic.UserPromptSubmit({ prompt: '@room hi', session_id: SID } as any)
   expect(seen.stdin[0].sub_human_origin).toBe(undefined)
+  expect(seen.stdin[0].sub_human_nonce).toBe(undefined)
+})
+
+test('the origin goes with the session\'s nonce, the one mod-hello put in the lease; a new session id gets another', async ($, on) => {
+  const seen = world($, on)
+  on('classic.SessionStart', () => ({}))
+  await start($)
+  expect(seen.hellos[0].session_id).toBe(SID)
+  expect(seen.hellos[0].nonce).toMatch(NONCE)
+  await submit($, '@room ship it')
+  expect(seen.stdin[0].sub_human_origin).toBe('composer')
+  expect(seen.stdin[0].sub_human_nonce).toBe(seen.hellos[0].nonce)
+  // the join says hello again: the same session, the same nonce
+  await $.classic.UserPromptExpansion({ command_name: 'sub-human', command_args: 'alice', session_id: SID } as any)
+  expect(seen.hellos[1]).toEqual(seen.hellos[0])
+  // a /clear: another session id, another nonce; a prompt still carrying the old id gets none
+  await $.classic.SessionStart({ source: 'clear', session_id: 'sid-2' } as any)
+  expect(seen.hellos[2].session_id).toBe('sid-2')
+  expect(seen.hellos[2].nonce).toMatch(NONCE)
+  expect(seen.hellos[2].nonce).not.toBe(seen.hellos[0].nonce)
+  await submit($, '@room again')
+  expect(seen.stdin[1].sub_human_origin).toBe('composer')
+  expect(seen.stdin[1].sub_human_nonce).toBe(undefined)
 })
 
 test('a shim that fails lets the prompt through', async ($, on) => {

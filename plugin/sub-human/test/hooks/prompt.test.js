@@ -5,10 +5,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { World, PLUGIN, HOOKS, room, hso, ctx } = require('./helpers.js');
+const { World, PLUGIN, HOOKS, room, hso, ctx, identity } = require('./helpers.js');
 
 const { merge } = require(path.join(PLUGIN, 'hooks', 'prompt.js'));
-const ev = (extra = {}) => ({ hook_event_name: 'UserPromptSubmit', sub_human_origin: 'composer', prompt_id: 'p1', ...extra });
+const NONCE = 'abcdef01'.repeat(4);
+const ev = (extra = {}) => ({ hook_event_name: 'UserPromptSubmit', sub_human_origin: 'composer', sub_human_nonce: NONCE, prompt_id: 'p1', ...extra });
+/** The module's lease for `as`'s session, holding the nonce ev() carries (hooks/mod-hello.js writes the real one). */
+const lease = (w, as) => w.lib(() => identity.writeModLease(w.sid[as], { nonce: NONCE }));
 const ctxOut = text => ({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } });
 
 test('prompt: merge keeps a stopping output alone and otherwise joins the contexts, the first output\'s fields winning', () => {
@@ -35,6 +38,7 @@ test('prompt: no hooks.json UserPromptSubmit entry; the module runs prompt.js (m
 test('prompt: consent\'s subHuman {reviewOpen} rides on the one output (only the mod runs prompt.js)', () => {
   const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
   const shim = { as: 'bob' };
+  lease(w, 'bob');
   const r = w.hook('prompt', ev({ prompt: 'hi', permission_mode: 'default' }), shim);
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.json.subHuman, { reviewOpen: false });
@@ -55,6 +59,7 @@ test('prompt: an open review in plan mode adds consent\'s exit line to at-room\'
   const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
   const setReview = st => w.lib(() => room.open(w.code).store.kv.set('members/bob/review', st));
   const getReview = () => w.lib(() => room.open(w.code).store.kv.get('members/bob/review'));
+  lease(w, 'bob');
   setReview({ phase: 'shown', mode: 'auto', at: Date.now(), hash: 'abcdef012345' });
   const r = w.hook('prompt', ev({ prompt: 'hi', permission_mode: 'plan' }), { as: 'bob' });
   assert.equal(r.code, 0, r.stderr);

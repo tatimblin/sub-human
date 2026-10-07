@@ -2,33 +2,30 @@
 // hooks/tasks.js runs only for the orch (or an unknown seat); its exit 2 blocks the completion; a member's own
 // native tasks start no node. A failed gate blocks wherever tasksNeeded holds.
 import { test, expect } from 'claude-code/testing'
+import { seatOf, helloOf, ran, scriptOf, session, start as startOf } from './support.mjs'
 
-const MEMBER = { name: 'bob', code: 'otter-4821', role: 'member', addr: 'bob.otter-4821' }
-const ORCH = { name: 'orch', code: 'otter-4821', role: 'orch', addr: 'orch.otter-4821' }
-const hello = (seat: any) => ({ home: '/u/.sub-human', realHome: '/u/.sub-human', userHome: '/u', pluginRoot: '/p/sub-human', seat })
-const ran = (exitCode: number, stderr = '') => ({ value: { exitCode, stdout: '', stderr, isStdoutTruncated: false, isStderrTruncated: false } })
+const MEMBER = seatOf('bob')
+const ORCH = seatOf('orch', 'orch')
 const SID = 'sid-t'
 
 function world(on: any, { seat = ORCH as any, exitCode = 0, stderr = '', room = undefined as string | undefined, fail = false, envFail = false } = {}) {
   const seen = { tasks: [] as any[], beneath: [] as string[] }
-  on('session.id', () => ({ value: SID }))
-  on('session.start', ($: any, e: any) => ({ cwd: e.cwd }))
+  session(on, SID)
   on('env.get', ($: any, e: any) => {
     if (envFail) throw new Error('env unavailable')
     return { value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }
   })
   on('process.run', ($: any, e: any) => {
-    const script = String(e.argv[1]).replace(/^.*\/hooks\//, '')
-    if (script === 'mod-hello.js') return { value: { exitCode: 0, stdout: JSON.stringify(hello(seat)), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    if (scriptOf(e) === 'mod-hello.js') return ran(JSON.stringify(helloOf(seat)))
     if (fail) return { deny: 'no processes here' }
     seen.tasks.push(JSON.parse(e.init.stdin))
-    return ran(exitCode, stderr)
+    return ran('', exitCode, stderr)
   })
   on('classic.PostToolUse', ($: any, e: any) => { seen.beneath.push(`post ${e.tool_name}`); return {} })
   on('classic.TaskCompleted', () => { seen.beneath.push('completed'); return {} })
   return seen
 }
-const start = ($: any) => $.session.start({ cwd: '/w', surface: null, isInteractive: false })
+const start = ($: any) => startOf($, false)
 const created = ($: any) => $.classic.PostToolUse({ session_id: SID, tool_name: 'TaskCreate', tool_input: { subject: 'x' }, tool_response: { task: { id: '2', subject: 'x' } }, tool_use_id: 't1' } as any)
 const completed = ($: any) => $.classic.TaskCompleted({ session_id: SID, task_id: '2', task_subject: 'x' } as any)
 

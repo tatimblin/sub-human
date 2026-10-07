@@ -30,11 +30,14 @@ declare module 'claude-code' {
       /** What the person's next prompt carries for Claude (pending-proposal reminders, missing row calls): the
        * tail child's last rows event (mod/deliver.mjs); null: nothing. */
       rows: string | null;
-      /** The session id whose title mod/prompt.mjs last set (the seat's address), once per session id. */
-      titled: string;
+      /** The session id and address mod/prompt.mjs last set as the title: titled again after a /clear or a switch. */
+      titled: { sid: string; addr: string };
       /** How many times the room's delivery failed this session (mod/deliver.mjs): an event not applied, a tail
        * child that exited or did not start, a wake nothing took. Unset: none. */
       deliveryErrors: number;
+      /** This session's nonce (mod/deliver.mjs, minted once per session id): mod-hello writes it to the lease and
+       * mod/prompt.mjs passes it with sub_human_origin, so at-room believes only an origin the module handed over. */
+      nonce: { sid: string; value: string };
     };
   }
 }

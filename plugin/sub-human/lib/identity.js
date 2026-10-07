@@ -57,10 +57,11 @@
  *
  * The hooks module's lease, <home>/sessions/mods/<sid>.json (atomic, 0600): this session's function hooks are
  * loaded and have said hello (hooks/mod-hello.js writes it, join requires it, session-end deletes it). Fields:
- *   {session_id, pid, pid_start?, at, seat}   pid: the claude process the module runs in; pid_start: its start
- *                                        time (epoch s); at: ISO time written; seat: NAME.CODE or null, for a
- *                                        person reading the store. Keep it one small flat object.
- *   writeModLease(sid, {pid, seat}) -> bool
+ *   {session_id, pid, pid_start?, at, nonce?}   pid: the claude process the module runs in; pid_start: its
+ *                                        start time (epoch s); at: ISO time written; nonce: the module's secret for
+ *                                        the session (32 hex), which hooks/at-room.js requires beside an origin.
+ *                                        Keep it one small flat object.
+ *   writeModLease(sid, {pid, nonce}) -> bool
  *   readModLease(sid) -> rec|null;  deleteModLease(sid) -> bool
  *   modLeaseOk(sid, pid, now?) -> bool   the lease is this claude process's (pid alive, start time matching), or
  *                                        was written within MOD_LEASE_FRESH_MS
@@ -279,14 +280,16 @@ function resolveBySession(sid) {
   return seat(rec.code, m);
 }
 
-function writeModLease(sid, { pid, seat } = {}) {
+const NONCE_RE = /^[0-9a-f]{32}$/;
+
+function writeModLease(sid, { pid, nonce } = {}) {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return false;
   pid = Number(pid);
   const rec = { session_id: sid, pid: validPid(pid) ? pid : null };
   const start = rec.pid ? pidStart(pid) : null;
   if (start != null) rec.pid_start = start;
   rec.at = new Date().toISOString();
-  rec.seat = typeof seat === 'string' ? seat : null;
+  if (typeof nonce === 'string' && NONCE_RE.test(nonce)) rec.nonce = nonce;
   writeJsonAtomic(modLeaseFile(sid), rec);
   return true;
 }

@@ -18,13 +18,14 @@ import {
   roomToolVerdict, failClosed, HOLD_DENY, FAILED,
 } from './core/guard.mjs';
 import { seated } from './core/seat.mjs';
+import { asHello } from './core/state.mjs';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' };
 
 /** The hello, or {} before mod-hello answered. */
 async function helloOf($) {
   const { value } = await $.state.get(HELLO);
-  return value && typeof value === 'object' ? value : {};
+  return asHello(value) ?? {};
 }
 
 /** Where p lands (every link resolved), or undefined when it cannot be stat'ed. */
@@ -63,6 +64,8 @@ export function registerGuard(on) {
     return failClosed(e) ? { deny: FAILED } : next(e);
   });
 
+  // the list is mod/core/guard.mjs WRITE_TOOLS, written out: validate reads a matcher only as a literal
+  // (test/mod-core.test.js checks the two agree)
   on('tool.call', { tool: ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'] }, async ($, e, next) => {
     const p = writeTarget(e);
     if (!p) return next(e);

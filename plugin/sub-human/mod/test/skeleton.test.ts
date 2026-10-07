@@ -2,18 +2,16 @@
 // The test's $ has no state noun, so what the module kept in $.state sub-human/hello is read through the guard:
 // a room tool is allowed (tool.check) only once the hello names a seat.
 import { test, expect } from 'claude-code/testing'
+import { OUT as HELLO, ran, session } from './support.mjs'
 
 const POST = 'mcp__plugin_sub-human_room__post'
-const SEAT = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' }
-const OUT = { home: '/u/.sub-human', realHome: '/private/u/.sub-human', userHome: '/u', pluginRoot: '/p/sub-human', seat: SEAT }
+const OUT = { ...HELLO, realHome: '/private/u/.sub-human' }
 /** The engine beneath: a session id, and the verdict a room tool gets without the module (ask). */
 function world(on: any, sid = 'sid-test') {
-  on('session.id', () => ({ value: sid }))
-  on('session.start', ($: any, e: any) => ({ cwd: e.cwd }))
+  session(on, sid)
   on('tool.check', () => ({ decision: 'ask' }))
 }
 const verdict = async ($: any) => (await $.tool.check({ tool: POST, input: { text: 'hi' } })).decision
-const ran = (stdout: string, exitCode = 0) => ({ value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
 
 test('session.start runs hooks/mod-hello.js with the payload session id and keeps the hello in $.state', async ($, on) => {
   const runs: any[] = []
@@ -25,7 +23,9 @@ test('session.start runs hooks/mod-hello.js with the payload session id and keep
   const sid = 'sid-test'
   expect(runs[0].argv[0]).toBe('node')
   expect(runs[0].argv[1]).toMatch(/\/hooks\/mod-hello\.js$/)
-  expect(JSON.parse(runs[0].init.stdin)).toEqual({ session_id: sid })
+  const stdin = JSON.parse(runs[0].init.stdin)
+  expect(stdin.session_id).toBe(sid)
+  expect(stdin.nonce).toMatch(/^[0-9a-f]{32}$/) // the lease keeps it; at-room checks an origin against it
   expect(runs[0].init.env.CLAUDE_CODE_SESSION_ID).toBe(sid)
   expect(runs[0].init.env.CLAUDE_PID).toBe('')
   expect(runs[0].init.env.CLAUDE_PLUGIN_ROOT).toBe(runs[0].argv[1].replace(/\/hooks\/mod-hello\.js$/, ''))

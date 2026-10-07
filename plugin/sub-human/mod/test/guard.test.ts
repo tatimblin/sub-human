@@ -2,11 +2,9 @@
 // The verdict tables are tested in node (test/hooks/guard.test.js, security.test.js); this checks the hooks: what
 // each denies through $.tool.call, the realPath walk through $.fs.stat, the tool.check allow, and the .catch.
 import { test, expect } from 'claude-code/testing'
+import { OUT, ran, session, start } from './support.mjs'
 
-const HOME = '/u/.sub-human'
-const SEAT = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' }
-const OUT = { home: HOME, realHome: HOME, userHome: '/u', pluginRoot: '/p/sub-human', seat: SEAT }
-const ran = (stdout: string) => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+const HOME = OUT.home
 /** Links on this fake disk: a path under a key resolves under its value. */
 const LINKS: Record<string, string> = { '/tmp/link': HOME, '/w': '/w' }
 const EXISTS = new Set(['/', '/u', HOME, `${HOME}/rooms`, '/tmp', '/tmp/link', '/tmp/link/rooms', '/w'])
@@ -14,10 +12,9 @@ const EXISTS = new Set(['/', '/u', HOME, `${HOME}/rooms`, '/tmp', '/tmp/link', '
 /** The engine beneath the plugin: a session, a disk with one link into the store, and a tool that runs. */
 function world(on: any, { cwd = true } = {}) {
   const ran_: string[] = []
-  on('session.id', () => ({ value: 'sid-g' }))
+  session(on, 'sid-g')
   on('session.cwd', () => (cwd ? { value: '/w' } : { deny: 'no cwd here' }))
   on('tool.check', () => ({ decision: 'ask' }))
-  on('session.start', ($: any, e: any) => ({ cwd: e.cwd }))
   on('process.run', () => ran(JSON.stringify(OUT)))
   on('fs.stat', ($: any, e: any) => {
     if (!EXISTS.has(e.path)) return { deny: 'ENOENT' }
@@ -29,7 +26,7 @@ function world(on: any, { cwd = true } = {}) {
   return ran_
 }
 /** session.start: the module runs mod-hello and keeps the home and seat. */
-const hello = ($: any) => $.session.start({ cwd: '/w', surface: null, isInteractive: false })
+const hello = ($: any) => start($, false)
 const call = ($: any, input: any) => $.tool.call(input)
 /** A guard's deny: the call resolves { deny } (or, as a session sees it, errored with the reason as text). */
 const denied = (r: any) => /ROOM-GUARD|sub-human: hold/.test(String(r.deny ?? (r.isError ? r.text : '')))

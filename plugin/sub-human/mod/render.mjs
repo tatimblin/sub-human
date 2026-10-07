@@ -18,5 +18,5 @@ export function registerRender(on) {
     if (!lines) return next(e);
     const { Box, Text } = $.ui.resolve(e);
     return h(Box, { flexDirection: 'column' }, ...lines.map((l, i) => h(Text, { key: `l${i}`, dimColor: !isOurs }, l)));
-  });
+  }); // no .catch: a throw skips this hook for that one row (the engine draws its own) and the next row runs it again
 }
