@@ -1,6 +1,6 @@
 # Review follow-up plan
 
-Status: approved, 2026-10-07; R0 done (Q4 is with the user), R1 next. Decided: Q1 yes, Q2 yes, Q3 yes (R2), Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Q4 waits on R0. Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave.
+Status: approved, 2026-10-07; R0 done (Q4 is with the user), R1 next. Decided: Q1 yes, Q2 yes, Q3 yes (R2), Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Q4 waits on R0. Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave Q4 decided 2026-10-07: drop the room-tool skip (R2 C2).
 
 ## Principles
 
@@ -86,6 +86,7 @@ Commit per agent: "Review R1: …".
 - **Shared state** (clean-code 4): `mod/core/state.mjs` exports `KEYS` and `asHello(value)` with one contract (`null` when absent). Every mod file imports it; only the `$.state.get` call stays local (module-dollar-local).
 - **Shared test setup** (clean-code 13): `mod/test/support.mjs` holds `SEAT`, `OUT`, `ran`, `world` and `start`. First check that `claude plugin test` imports a non-`.test` file; if it can't, record that and leave the setup duplicated.
 - **The extra `register.mjs`** (L3): if `hooks.json` `modules` can name `../mod/register.mjs`, drop `hooks/register.mjs`; otherwise say why in one line. Drop the unused `options`.
+- **Drop the room-tool skip** (Q4, decided after R0): `mod/consent.mjs` stops answering `classic.PreToolUse` on room tools without `next`, so every other PreToolUse hook sees them. `hooks/consent.js` (C2 owns it in R2) exits early and cheaply while no review may be open. Test: a second command hook on a room tool runs.
 - **The render hook throwing** (clean-code 20): check what the engine does when a `ui.render` hook throws, and add a `.catch` → `next(e)` if one throw would skip every `UserMessage` draw.
 - **Stale guard pattern:** `PLUGIN_CODE` in `mod/core/guard.mjs:42` drops `guard`, and `WRITE_TOOLS` is used by `mod/guard.mjs` instead of a hard-coded string (dead-code C).
 - **Origin nonce** (Q3, review M7). The mod mints a nonce per session, keeps it in `$.state`, writes it to the lease (B4's format) and passes it with `sub_human_origin`. at-room refuses an origin whose nonce doesn't match the lease. This needs a two-line change in `mod/prompt.mjs` and `hooks/at-room.js`; C2 owns those lines in R2.
