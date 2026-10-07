@@ -177,12 +177,15 @@ test('drafted:"agent" when the posted text is verbatim in Claude\'s last message
   assert.deepEqual(w.entries().map(e => e.drafted), ['agent', undefined, 'agent', undefined, undefined]);
 });
 
-test('prompts mark presence working; a plain prompt outputs nothing (the title, digest and rows are the mod\'s)', () => {
+test('a plain prompt outputs nothing (the title, digest and rows are the mod\'s); presence only without an origin', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
   rowsRunning(w, 'alice', { room: true });
   const r = w.hook('at-room', submit('hello'), { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, '');
+  // with an origin the mod is the one writer of "working" (mod/prompt.mjs)
+  assert.equal((w.lib(() => identity.readPresence(w.code)).alice || {}).state, undefined);
+  assert.equal(w.hook('at-room', submit('hello again', null), { as: 'alice' }).stdout, '');
   assert.equal(w.lib(() => identity.readPresence(w.code)).alice.state, 'working');
   // non-members get nothing
   const w3 = new World({ orch: 'sleep' });

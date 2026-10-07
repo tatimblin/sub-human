@@ -14,20 +14,25 @@ const SID = 'sid-p'
  * core that, like the engine's, runs the UserPromptSubmit hooks inside prompt.submit (cc CONTRACT
  * prompt-submit-ups-order). Returns what ran: the scripts and their stdin, the classic results, the logged lines.
  */
-function world(engine: any, on: any, { hello = OUT as any, prompt = '' } = {}) {
-  const seen = { scripts: [] as string[], stdin: [] as any[], env: [] as any[], classic: [] as any[], logs: [] as string[], entered: [] as string[] }
+function world(engine: any, on: any, { hello = OUT as any, prompt = '', exitCode = 0 } = {}) {
+  const seen = {
+    scripts: [] as string[], stdin: [] as any[], env: [] as any[], presence: [] as any[], classic: [] as any[],
+    logs: [] as string[], entered: [] as string[], hello: hello as any,
+  }
   on('session.id', () => ({ value: SID }))
   on('session.start', ($: any, e: any) => ({ cwd: e.cwd }))
   on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
   on('process.run', ($: any, e: any) => {
     const script = String(e.argv[1]).replace(/^.*\/hooks\//, '')
+    if (script === 'presence.js') { seen.presence.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env }); return ran('') }
     seen.scripts.push(script)
-    if (script === 'mod-hello.js') return ran(hello ? JSON.stringify(hello) : '', hello ? 0 : 1)
+    if (script === 'mod-hello.js') return ran(seen.hello ? JSON.stringify(seen.hello) : '', seen.hello ? 0 : 1)
     seen.stdin.push(JSON.parse(e.init.stdin))
     seen.env.push(e.init.env)
-    return ran(prompt)
+    return ran(prompt, exitCode)
   })
   on('classic.UserPromptSubmit', () => ({}))
+  on('classic.UserPromptExpansion', () => ({}))
   on('prompt.submit', async ($: any, e: any) => {
     const r = await engine.classic.UserPromptSubmit({ prompt: e.text, session_id: SID, permission_mode: 'default' })
     seen.classic.push(r)
@@ -78,7 +83,6 @@ test('a seated prompt runs hooks/prompt.js with the origin, the session env and 
   expect(seen.stdin[0].sub_human_origin).toBe('composer')
   expect(seen.env[0].CLAUDE_CODE_SESSION_ID).toBe(SID)
   expect(seen.env[0].CLAUDE_PID).toBe('')
-  expect(seen.env[0].SUB_HUMAN_SHIM).toBe('1')
   expect(seen.classic[0].additionalContext).toEqual(['Room since your last turn: …'])
   expect(seen.classic[0].sessionTitle).toBe('alice.otter-4821')
   expect(seen.logs).toEqual(['bob joined'])
@@ -106,4 +110,58 @@ test('a shim that fails lets the prompt through', async ($, on) => {
   on('classic.UserPromptSubmit', () => ({ additionalContext: ['beneath'] }))
   const r: any = await $.classic.UserPromptSubmit({ prompt: 'hi', session_id: SID } as any)
   expect(r.additionalContext).toEqual(['beneath'])
+})
+
+test('a room switch retitles the session with the new address; the same seat is titled once', async ($, on) => {
+  const seen = world($, on)
+  await start($)
+  await submit($, 'hi')
+  await submit($, 'again')
+  expect(seen.classic.map((r: any) => r.sessionTitle)).toEqual(['alice.otter-4821', undefined])
+  seen.hello = { ...OUT, seat: { ...SEAT, code: 'badger-2971', addr: 'alice.badger-2971' } }
+  await $.classic.UserPromptExpansion({ command_name: 'sub-human', command_args: 'alice badger-2971', session_id: SID } as any)
+  await submit($, 'in the new room')
+  await submit($, 'still there')
+  expect(seen.classic.map((r: any) => r.sessionTitle)).toEqual(['alice.otter-4821', undefined, 'alice.badger-2971', undefined])
+})
+
+test('an @room fails closed: a shim that cannot run or exits other than 0 or 2 refuses it; a plain prompt goes on', async ($, on) => {
+  const seen = world($, on, { exitCode: 1 })
+  await start($)
+  await submit($, '@room ship it')
+  expect(seen.classic[0].block).toMatch(/could not check who wrote this @room/)
+  expect(seen.classic[0].suppressOriginalPrompt).toBe(true)
+  await submit($, 'ship it')
+  expect(seen.classic[1].block).toBe(undefined)
+})
+
+test('an @room whose shim is denied is refused, not let through', async ($, on) => {
+  on('session.id', () => ({ value: SID }))
+  on('process.run', () => ({ deny: 'no processes here' }))
+  on('classic.UserPromptSubmit', () => ({ additionalContext: ['beneath'] }))
+  const r: any = await $.classic.UserPromptSubmit({ prompt: '@room hi', session_id: SID } as any)
+  expect(r.block).toMatch(/could not check who wrote this @room/)
+  expect(r.suppressOriginalPrompt).toBe(true)
+})
+
+test('a member\'s typed prompt writes "working" once from the mod, delivering or not; a peer or an unseated one none', async ($, on) => {
+  const seen = world($, on)
+  await start($)
+  await submit($, 'hi')
+  await submit($, 'again')
+  await submit($, 'a peer asks', 'peer')
+  await new Promise(r => setTimeout(r, 20))
+  expect(seen.presence.length).toBe(1)
+  expect(seen.presence[0].stdin).toEqual({ hook_event_name: 'Working', session_id: SID })
+  expect(seen.presence[0].env.CLAUDE_CODE_SESSION_ID).toBe(SID)
+  expect(seen.presence[0].env.CLAUDE_PID).toBe('')
+  expect(seen.stdin[0].sub_human_origin).toBe('composer') // at-room, given the origin, leaves presence to the mod
+})
+
+test('an unseated session writes no presence', async ($, on) => {
+  const seen = world($, on, { hello: { ...OUT, seat: null } })
+  await start($)
+  await submit($, 'hi')
+  await new Promise(r => setTimeout(r, 20))
+  expect(seen.presence.length).toBe(0)
 })

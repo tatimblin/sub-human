@@ -32,9 +32,9 @@ test('prompt: no hooks.json UserPromptSubmit entry; the module runs prompt.js (m
   assert.match(fs.readFileSync(path.join(PLUGIN, 'mod', 'prompt.mjs'), 'utf8'), /shimArgv\(root, 'prompt\.js'\)/);
 });
 
-test('prompt: shim mode (SUB_HUMAN_SHIM=1) adds consent\'s subHuman {reviewOpen} to the one output', () => {
+test('prompt: consent\'s subHuman {reviewOpen} rides on the one output (only the mod runs prompt.js)', () => {
   const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
-  const shim = { env: { SUB_HUMAN_SHIM: '1' }, as: 'bob' };
+  const shim = { as: 'bob' };
   const r = w.hook('prompt', ev({ prompt: 'hi', permission_mode: 'default' }), shim);
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.json.subHuman, { reviewOpen: false });
@@ -45,11 +45,9 @@ test('prompt: shim mode (SUB_HUMAN_SHIM=1) adds consent\'s subHuman {reviewOpen}
   const s = w.hook('prompt', ev({ prompt: '@room posted', permission_mode: 'plan' }), shim);
   assert.equal(s.json.continue, false);
   assert.deepEqual(s.json.subHuman, { reviewOpen: true });
-  // outside shim mode the output is as before
-  assert.equal(w.hook('prompt', ev({ prompt: 'plain', permission_mode: 'plan' }), { as: 'bob' }).json.subHuman, undefined);
   // unseated: only the report
   const u = new World({}, { room: false });
-  const n = u.hook('prompt', ev({ prompt: 'hello' }), { env: { CLAUDE_PID: undefined, SUB_HUMAN_SHIM: '1' }, session: false });
+  const n = u.hook('prompt', ev({ prompt: 'hello' }), { env: { CLAUDE_PID: undefined }, session: false });
   assert.deepEqual(n.json, { subHuman: { reviewOpen: false } });
 });
 
@@ -78,10 +76,11 @@ test('prompt: an open review in plan mode adds consent\'s exit line to at-room\'
   assert.doesNotMatch(ctx(q) || '', /ExitPlanMode/);
 });
 
-test('prompt: outside a room nothing is written; an @room there is refused (at-room\'s block)', () => {
+test('prompt: outside a room only the report is written; an @room there is refused (at-room\'s block)', () => {
   const w = new World({}, { room: false });
   const r = w.hook('prompt', ev({ prompt: 'hello' }), { env: { CLAUDE_PID: undefined }, session: false });
-  assert.equal(r.stdout, '');
+  assert.deepEqual(r.json, { subHuman: { reviewOpen: false } });
+  assert.equal(w.entries().length, 0);
   assert.equal(r.code, 0);
   const b = w.hook('prompt', ev({ prompt: '@room hi' }), { env: { CLAUDE_PID: undefined }, session: false });
   assert.equal(b.json.decision, 'block');

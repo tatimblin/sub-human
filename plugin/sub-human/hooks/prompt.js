@@ -12,7 +12,7 @@
 // output: at-room's fields, with both additionalContext texts joined (at-room's first). No output at all when
 // neither had any. Exit 1 (Claude Code shows stderr to the person) only when a handler threw and nothing is output.
 // It runs only through mod/prompt.mjs (the classic.UserPromptSubmit shim; no hooks.json entry), which adds
-// sub_human_origin to its stdin; under SUB_HUMAN_SHIM=1 its output also carries consent's subHuman {reviewOpen}.
+// sub_human_origin to its stdin. Its output also carries consent's subHuman {reviewOpen} for the mod.
 const c = require('./common.js');
 const atRoom = require('./at-room.js');
 const consent = require('./consent.js');
@@ -51,8 +51,8 @@ function main() {
     outputs.push(...r.outputs);
   }
   let o = merge(outputs);
-  // Shim mode (mod/prompt.mjs): tell the mod whether a room review is still on record (mod/consent.mjs flag).
-  if (consent.SHIM() && !failed) {
+  // Tell the mod whether a room review is still on record (mod/consent.mjs flag); after a failure it stays unsure.
+  if (!failed) {
     let open;
     try { open = consent.reviewOpen(input); } catch (err) { c.logError(err, 'consent'); }
     if (open !== undefined) o = { ...(o || {}), subHuman: { reviewOpen: open } };
