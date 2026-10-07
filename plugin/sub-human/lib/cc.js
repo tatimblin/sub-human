@@ -656,6 +656,8 @@ const CONTRACT = Object.freeze([
     note: 'Per-hook async/asyncRewake fields.' },
   { id: 'hook-timeout-default', section: 7, stability: 'API', search: 'var Ua=600000,Ghe=30000',
     note: 'Default hook timeout 600000 ms (cc.HOOK_TIMEOUT_DEFAULT_MS).' },
+  { id: 'stop-additional-context', section: 7, stability: 'incidental', search: ['case"Stop":case"SubagentStop":U.additionalContext=e.hookSpecificOutput.additionalContext', 'let ye=d.agentId?"SubagentStop":"Stop",Ie=on({type:"hook_additional_context"'],
+    note: 'Stop hookSpecificOutput.additionalContext continues the turn with that text, like a block but without the red "Stop hook error" line or notification (only real blockingErrors get those).' },
   { id: 'session-end-budget', section: 7, stability: 'env', search: ['function Zde(){let e=a.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS', 'jeo=1500,Hho=60000'],
     note: 'SessionEnd budget: env override, else max hook timeout clamped to [1500, 60000] ms (cc.sessionEndBudgetMs).' },
   // §8 cross-session

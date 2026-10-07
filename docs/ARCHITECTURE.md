@@ -275,6 +275,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `hook-if` | §7 | API | `if` uses permission-rule syntax; Task tools can only be filtered by bare name. |
 | `hook-async` | §7 | API | Per-hook async/asyncRewake fields. |
 | `hook-timeout-default` | §7 | API | Default hook timeout 600000 ms (cc.HOOK_TIMEOUT_DEFAULT_MS). |
+| `stop-additional-context` | §7 | incidental | Stop hookSpecificOutput.additionalContext continues the turn with that text, like a block but without the red "Stop hook error" line or notification (only real blockingErrors get those). |
 | `session-end-budget` | §7 | env | SessionEnd budget: env override, else max hook timeout clamped to [1500, 60000] ms (cc.sessionEndBudgetMs). |
 | `peer-envelope` | §8 | incidental | <cross-session-message from from-session hop-chain from-name from-mode from-plugin> in that order (cc.parseEnvelope). |
 | `peer-held-prefix` | §8 | incidental | Held/mid-turn peer deliveries start with this prefix (cc.isPeerText). |

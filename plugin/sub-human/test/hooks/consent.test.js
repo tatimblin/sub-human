@@ -232,10 +232,11 @@ test('review: a "Yes" that changed the mode is set back silently; an edited plan
   assert.deepEqual(answers(w), []);
   assert.equal(fs.existsSync(file), false, 'the file did not exist before: removed');
   assert.equal(review(w).phase, 'restore');
-  // Stop before the restore: blocked once with the how.
+  // Stop before the restore: the turn goes on once with the how (context, not a block: no red "Stop hook error").
   const stop = w.hook('consent', ev('Stop', null, { permission_mode: 'auto', stop_hook_active: false }), { as: 'bob' });
-  assert.equal(stop.json.decision, 'block');
-  assert.match(stop.json.reason, /restore bob's default mode/);
+  assert.equal(stop.json.decision, undefined);
+  assert.equal(stop.json.hookSpecificOutput.hookEventName, 'Stop');
+  assert.match(ctx(stop), /restore bob's default mode/);
   assert.equal(w.hook('consent', ev('Stop', null, { permission_mode: 'auto', stop_hook_active: true }), { as: 'bob' }).stdout, '');
   assert.equal(decision(w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' })), 'allow');
   assert.equal(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu2', transcript_path: tp }), { as: 'bob' }).stdout, '', 'no dialog');
@@ -262,8 +263,8 @@ test('review: "Tell Claude what to change" records an objection with the note by
     let r;
     if (viaStop) {
       r = w.hook('consent', ev('Stop', null, { permission_mode: 'plan', stop_hook_active: false, transcript_path: tp }), { as: 'bob' });
-      assert.equal(r.json.decision, 'block');
-      assert.match(r.json.reason, /call ExitPlanMode now/);
+      assert.equal(r.json.decision, undefined);
+      assert.match(ctx(r), /call ExitPlanMode now/);
     } else {
       r = w.hook('consent', ev('UserPromptSubmit', null, { permission_mode: 'plan', prompt: 'hi', transcript_path: tp }), { as: 'bob' });
       assert.match(ctx(r), /Before anything else, call ExitPlanMode now/);
@@ -364,7 +365,7 @@ test('review: the note comes from the structured userFeedback field; the backup 
     { type: 'user', userFeedback: note, toolDenialKind: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', is_error: true, content: 'rejected' }] } },
   ].map(l => JSON.stringify(l)).join('\n') + '\n');
   const r = w.hook('consent', ev('Stop', null, { permission_mode: 'plan', stop_hook_active: false, transcript_path: tp }), { as: 'bob' });
-  assert.equal(r.json.decision, 'block');
+  assert.match(ctx(r), /review is still open/);
   assert.deepEqual(answers(w).map(x => [x.kind, x.from, x.text]), [['objection', 'bob', note]]);
   w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'bob' });
   assert.equal(fs.readFileSync(file, 'utf8'), 'bob\'s own plan\n', 'restored');

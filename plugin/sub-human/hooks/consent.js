@@ -218,7 +218,11 @@ function postExit(input, me) {
   say(`${line} This was a room review, not a plan to carry out; return to what you were doing.`);
 }
 
-/** Stop: never end a turn with a review still open in plan mode (feedback given, or the restore not done). */
+/**
+ * Stop: never end a turn with a review still open in plan mode (feedback given, or the restore not done). The
+ * turn goes on through Stop additionalContext, not a block: a block renders as a red "Stop hook error" line
+ * (cc CONTRACT stop-additional-context). stop_hook_active bounds it to once.
+ */
 function stop(input, me) {
   const st = readReview(me);
   if (!st || input.stop_hook_active) return;
@@ -235,7 +239,7 @@ function stop(input, me) {
     writeReview(me, st);
     what = EXIT_HOW;
   }
-  c.out({ decision: 'block', reason: `sub-human: ${me.name}'s room review is still open: ${what}.` });
+  c.context('Stop', `sub-human: ${me.name}'s room review is still open: ${what}.`);
 }
 
 /**
