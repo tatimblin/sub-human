@@ -11,7 +11,8 @@
  *       CLAUDE_CONFIG_DIR, provider, model, endpoint and credential-file keys). Nothing else from the parent
  *       (no CLAUDE_PID / session id, no SUB_HUMAN_*): the daemon would drop it anyway. The orch's own env
  *       comes from the --settings launch flag: SUB_HUMAN_HOME, SUB_HUMAN_ROOM, CLAUDE_CODE_TASK_LIST_ID=sh-CODE,
- *       CLAUDE_CODE_ENABLE_TODO_TOOLS=1, plus crossSessionInbound "accept". No --model: the orch runs on the
+ *       CLAUDE_CODE_ENABLE_TODO_TOOLS=1, the spawner's SUB_HUMAN_*_MS timing overrides (config.timingEnv), plus
+ *       crossSessionInbound "accept". No --model: the orch runs on the
  *       user's default model. cwd is the joiner's: --bg refuses an untrusted cwd (a fresh temp dir is never
  *       trusted). No file is written into ~/.claude: the orch creates the "room CODE open" task.
  *
@@ -105,6 +106,8 @@ function spawnPlan({ code, cwd, home = identity.home(), pluginDir = pluginDirFor
   identity.roomDir(code); // validates the code
   const settings = {
     env: {
+      // the room creator's timing overrides reach the orch's tail child (its watchdog and settle) and its reaper
+      ...config.timingEnv(env),
       SUB_HUMAN_HOME: home,
       SUB_HUMAN_ROOM: code,
       CLAUDE_CODE_TASK_LIST_ID: taskListId(code),

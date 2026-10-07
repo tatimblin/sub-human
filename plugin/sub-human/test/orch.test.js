@@ -61,6 +61,39 @@ test('orch: spawnPlan argv, --settings env, clean env (no CLAUDE_* from the pare
   assert.throws(() => orch.spawnPlan({ code: '../x' }), /invalid room code/);
 });
 
+test('orch: the spawner\'s SUB_HUMAN_*_MS overrides go through --settings env, so the orch\'s watchdog honours them', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const parent = { HOME: '/Users/a', USER: 'a', PATH: '/bin', SUB_HUMAN_ORCH_ORPHAN_MS: '5000', SUB_HUMAN_REAP_GRACE_MS: '0',
+    SUB_HUMAN_SETTLE_MS: 'soon', SUB_HUMAN_LEAVE_MS: '', SUB_HUMAN_PLUGIN_DIR: '/x', SUB_HUMAN_CLAUDE: '/bin/claude' };
+  const p = withEnv({ SUB_HUMAN_PLUGIN_DIR: '' }, () => orch.spawnPlan({ code, env: parent }));
+  const env = JSON.parse(p.args[p.args.indexOf('--settings') + 1]).env;
+  // numeric timing keys only: not a malformed or empty one, not the binary or plugin-dir knobs
+  assert.deepEqual(Object.keys(env).filter(k => k.endsWith('_MS')).sort(), ['SUB_HUMAN_ORCH_ORPHAN_MS', 'SUB_HUMAN_REAP_GRACE_MS']);
+  assert.equal(env.SUB_HUMAN_ORCH_ORPHAN_MS, '5000');
+  assert.equal(env.SUB_HUMAN_REAP_GRACE_MS, '0');
+  assert.equal(env.SUB_HUMAN_HOME, identity.home(), 'an override never replaces the room\'s own keys');
+  assert.ok(!('SUB_HUMAN_CLAUDE' in env) && !('SUB_HUMAN_PLUGIN_DIR' in env));
+  assert.ok(Object.keys(p.env).every(k => !k.startsWith('SUB_HUMAN')), 'the client env stays clean');
+});
+
+test('config: every override read through envMs matches the pattern the orch forwards', () => {
+  const config = require(path.join(h.LIB, 'config.js'));
+  const root = path.join(h.LIB, '..');
+  const names = new Set();
+  const walk = d => {
+    for (const f of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, f.name);
+      if (f.isDirectory()) { if (!['test', 'node_modules'].includes(f.name)) walk(p); continue; }
+      if (!/\.(c?js|mjs)$/.test(f.name) && f.name !== 'sub-human') continue;
+      for (const m of fs.readFileSync(p, 'utf8').matchAll(/envMs\(\s*['"]([A-Z0-9_]+)['"]/g)) names.add(m[1]);
+    }
+  };
+  walk(root);
+  assert.ok(names.size >= 20, `found ${names.size}`);
+  for (const n of names) assert.match(n, config.TIMING_ENV_RE, n);
+});
+
 test('orch: an installed plugin gets no --plugin-dir; a directory plugin does', () => {
   withEnv({ SUB_HUMAN_PLUGIN_DIR: undefined }, () => {
     assert.equal(orch.pluginDirFor(path.join(os.homedir(), '.claude', 'plugins', 'cache', 'm', 'sub-human', '1.0.0')), null);

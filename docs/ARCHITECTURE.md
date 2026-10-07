@@ -192,7 +192,7 @@ An entry is `{id, at, from, via, kind, text?, prev, …kind fields}`. `id` is mo
 - **pull**: no wake. The tail sends it as "Room since your last turn", which the model reads with its next request.
 - **none**: my own posts.
 
-The tail batches push entries in a `Batcher` (`lib/tail.js`): flush after `SETTLE_MS` 1500 of quiet or `SETTLE_MAX_MS` 5000 after the first (orch: 3000 / 10000), so a burst costs at most one turn. Each entry is judged again at flush time against `readView`, so an entry answered or decided in the meantime is dropped. A `member_left` is held `LEAVE_SETTLE_MS` 8000 so a quick leave and rejoin shows nothing. A member's batch is group-chat lines without ids, plus `(for Claude)` lines in a wake; the orch's batch starts with `stateLine()` and keeps ids. All timings live in `lib/config.js` with `SUB_HUMAN_*` overrides.
+The tail batches push entries in a `Batcher` (`lib/tail.js`): flush after `SETTLE_MS` 1500 of quiet or `SETTLE_MAX_MS` 5000 after the first (orch: 3000 / 10000), so a burst costs at most one turn. Each entry is judged again at flush time against `readView`, so an entry answered or decided in the meantime is dropped. A `member_left` is held `LEAVE_SETTLE_MS` 8000 so a quick leave and rejoin shows nothing. A member's batch is group-chat lines without ids, plus `(for Claude)` lines in a wake; the orch's batch starts with `stateLine()` and keeps ids. All timings live in `lib/config.js` with `SUB_HUMAN_*_MS` overrides. The orch gets the overrides of the session that started it through its `--settings` env (the bg daemon filters the caller's env), so a room started with a short `SUB_HUMAN_ORCH_ORPHAN_MS` has a watchdog that honours it.
 
 ## Consent
 

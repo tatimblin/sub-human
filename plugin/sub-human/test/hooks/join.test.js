@@ -40,7 +40,11 @@ test('/sub-human NAME with no open room: opens a room, joins as a member, spawns
   assert.equal(call.cwd, fs.realpathSync(w.cwd));
   assert.deepEqual(call.argv.slice(0, 5), ['--bg', '-n', `orch.${w.code}`, '--plugin-dir', PLUGIN]);
   const settings = JSON.parse(call.argv[call.argv.indexOf('--settings') + 1]);
-  assert.deepEqual(settings.env, { SUB_HUMAN_HOME: w.home, SUB_HUMAN_ROOM: w.code, CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}`, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' });
+  // the joiner's timing overrides (the test env sets the reaper's to 0) ride along for the orch's own reaper
+  assert.deepEqual(settings.env, {
+    SUB_HUMAN_HOME: w.home, SUB_HUMAN_ROOM: w.code, CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}`, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+    SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0',
+  });
   assert.equal(settings.crossSessionInbound, 'accept');
   assert.equal(Object.keys(call.env).filter(k => k.startsWith('CLAUDE')).length, 0, 'no CLAUDE_* reaches the orch');
   assert.equal(call.env.SUB_HUMAN_HOME, undefined, 'the orch env comes only from --settings');

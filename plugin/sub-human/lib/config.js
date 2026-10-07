@@ -4,6 +4,8 @@
  * Callers import the value they use; an env override is read by the caller through envMs() at the moment it
  * needs the value (tests set the env per child process, some per call).
  *
+ * timingEnv(src) -> {name: value}   the SUB_HUMAN_*_MS overrides in src with a numeric value (lib/orch.js passes
+ *   them to the orch, whose env the bg daemon would otherwise filter out)
  * envMs(name, fallback, {allowZero}?) -> number
  *   process.env[name] as a number of milliseconds, else fallback. Unset, empty, non-numeric, negative or
  *   infinite values give the fallback. 0 also gives the fallback, unless allowZero is set: only the waits
@@ -21,8 +23,23 @@ function envMs(name, fallback, { allowZero = false } = {}) {
   return n;
 }
 
+/** Every override envMs reads is named SUB_HUMAN_<WHAT>_MS (test/orch.test.js checks the callers). */
+const TIMING_ENV_RE = /^SUB_HUMAN_[A-Z0-9_]+_MS$/;
+
+function timingEnv(src = process.env) {
+  const out = {};
+  for (const [k, v] of Object.entries(src || {})) {
+    if (!TIMING_ENV_RE.test(k) || v == null || String(v).trim() === '') continue;
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= 0) out[k] = String(v);
+  }
+  return out;
+}
+
 module.exports = {
   envMs,
+  timingEnv,
+  TIMING_ENV_RE,
 
   // ---------- the room tail (bin/sub-human tail, the hooks module's child) ----------
   // Entries are batched into one set of events (at most one wake): flushed after SETTLE_MS of quiet, or
