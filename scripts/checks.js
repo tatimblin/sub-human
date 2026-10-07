@@ -18,8 +18,11 @@
  *   behavioural    model-call counts, wakes, noise: a value against a threshold (scripts/baselines.json); over it
  *                  is a warning, reported and summarised apart, never a failure
  *
+ * A partial run (screens/run.json, written by demo.sh: {scenes, partial}) skips the checks of the scenes it did not
+ * plan: they are listed in _meta.skipped and counted nowhere. A planned scene with no evidence still fails.
+ *
  * Output: {SCENE: [{check, kind, pass, status: pass|fail|warn, evidence, value?, threshold?}],
- *          _meta: {cost, run, note, summary}, _metrics: {run, baseline, phase0, prev, target}}.
+ *          _meta: {cost, run, note, summary, skipped?}, _metrics: {run, baseline, phase0, prev, target}}.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -39,9 +42,10 @@ function args(argv) {
 }
 
 /** Run every scene module over ctx: {SCENE: [check…]} (a module that throws records one failed check). */
-function runChecks(ctx, { scenes = SCENES, thresholds = BASELINES.thresholds } = {}) {
+function runChecks(ctx, { scenes = SCENES, thresholds = BASELINES.thresholds, planned = null } = {}) {
   const C = {};
   for (const mod of scenes) {
+    if (planned && mod.scene !== 'Metrics' && !planned.includes(mod.scene)) continue; // not in this (partial) run
     const list = (C[mod.scene] = C[mod.scene] || []);
     const det = (check, pass, evidence) => list.push({ check, kind: 'deterministic', pass: !!pass, status: pass ? 'pass' : 'fail', evidence: clip(evidence, 420) });
     const beh = (check, value, threshold, evidence) => {
@@ -53,6 +57,11 @@ function runChecks(ctx, { scenes = SCENES, thresholds = BASELINES.thresholds } =
   const res = {};
   for (const k of [...ORDER, ...Object.keys(C).filter(k => !ORDER.includes(k))]) if (C[k] && C[k].length) res[k] = C[k];
   return res;
+}
+
+/** The scenes a run planned (screens/run.json from demo.sh), or null: no plan saved, every scene is checked. */
+function plannedScenes(screens) {
+  try { const r = JSON.parse(fs.readFileSync(path.join(screens, 'run.json'), 'utf8')); return Array.isArray(r.scenes) ? r.scenes : null; } catch { return null; }
 }
 
 /** Counts by kind: {deterministic: {pass, fail}, behavioural: {pass, warn}}. */
@@ -68,9 +77,12 @@ function main() {
   const out = path.resolve(o.out || path.join(paths.REPO, 'docs/rebuild/checks.json'));
   const home = path.resolve(o.home || paths.demoHome());
   const ctx = context({ screens, home, room: o.room });
-  const res = runChecks(ctx);
+  const planned = plannedScenes(screens);
+  const res = runChecks(ctx, { planned });
   const summary = summarise(res);
-  res._meta = { cost: ctx.cost(), run: `room ${ctx.code}, ${ctx.log.length} log entries, ${ctx.index.length} captures, orch job ${ctx.job}`, note: o.note || '', summary };
+  const skipped = planned ? ORDER.filter(k => k !== 'Metrics' && !planned.includes(k)) : [];
+  res._meta = { cost: ctx.cost(), run: `room ${ctx.code}, ${ctx.log.length} log entries, ${ctx.index.length} captures, orch job ${ctx.job}${skipped.length ? `; partial run: ${planned.join(', ')}` : ''}`, note: o.note || '', summary };
+  if (skipped.length) res._meta.skipped = skipped;
   const M = ctx.metrics;
   if (M && !M.error) {
     const run = name => { const { note, ...r } = BASELINES.runs[BASELINES.compare[name]]; void note; return r; };
@@ -85,6 +97,7 @@ function main() {
   }
   process.stdout.write(lines.join('\n') + '\n');
   if (warns.length) process.stdout.write(`\nbehavioural (warnings, not failures):\n${warns.join('\n')}\n`);
+  if (skipped.length) process.stdout.write(`\nskipped (not in this partial run): ${skipped.join(', ')}\n`);
   const d = summary.deterministic, b = summary.behavioural;
   process.stdout.write(`\nchecks: deterministic ${d.pass} pass / ${d.fail} fail; behavioural ${b.pass} within threshold / ${b.warn} warn -> ${path.relative(process.cwd(), out)} (${res._meta.cost})\n`);
   return d.fail ? 1 : 0;
@@ -93,4 +106,4 @@ function main() {
 if (require.main === module) process.exitCode = main();
 
 const { panelRows, statusLine } = require('./lib/panes.js'); // kept for callers of the old exports
-module.exports = { runChecks, summarise, SCENES, ORDER, panelRows, statusLine };
+module.exports = { runChecks, summarise, plannedScenes, SCENES, ORDER, panelRows, statusLine };

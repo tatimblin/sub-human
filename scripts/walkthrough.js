@@ -360,6 +360,7 @@ ${checkHtml}${logHtml}${waitHtml}
     `${sceneIds.length} scene${sceneIds.length === 1 ? '' : 's'}`,
     `${index.length} capture${index.length === 1 ? '' : 's'}`,
     pass + fail + warn ? `checks ${pass} pass / ${warn} warn / ${fail} fail` : 'no checks yet',
+    Array.isArray(meta.skipped) && meta.skipped.length ? `not run (partial run): ${meta.skipped.join(', ')}` : '',
     meta.cost ? `run cost ${meta.cost}` : '',
     index.length ? `captured ${String(index[0].time).slice(0, 10)}` : '',
   ].filter(Boolean).join(' · ');

@@ -5,16 +5,16 @@
    "kind": "behavioural",
    "pass": true,
    "status": "pass",
-   "value": 17,
+   "value": 9,
    "threshold": 18,
-   "evidence": "17 wakes (orch 8, alice 4, bob 5); plugin prompts (14), Monitor events (0), peer deliveries and row-rewake that started a turn"
+   "evidence": "9 wakes (orch 4, alice 3, bob 2); plugin prompts (9), Monitor events (0), peer deliveries and row-rewake that started a turn"
   },
   {
    "check": "Chat bursts cost 0 model calls (D3)",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "7 chat rows, 37 isMeta copies; 0 turn(s) / 0 model call(s) started by chat alone (0 per burst)"
+   "evidence": "6 chat rows, 17 isMeta copies; 0 turn(s) / 0 model call(s) started by chat alone (0 per burst)"
   },
   {
    "check": "Member join text small (report)",
@@ -28,9 +28,9 @@
    "kind": "behavioural",
    "pass": true,
    "status": "pass",
-   "value": 1.31,
+   "value": 0.75,
    "threshold": 1.4,
-   "evidence": "76 lines / 58 captures = 1.31 (excl. \"Waiting for\": 0.78)"
+   "evidence": "24 lines / 32 captures = 0.75 (excl. \"Waiting for\": 0.47)"
   },
   {
    "check": "No red or \"hook error\" lines in any capture",
@@ -55,35 +55,35 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "/tmp/sh-demo/home/rooms/heron-1142: alice member, orch job 0deac60c"
+   "evidence": "/tmp/sh-demo/home/rooms/eagle-8857: alice member, orch job 384db6b1"
   },
   {
-   "check": "The orch is a background job titled orch.heron-1142 (claude agents --json), not a tmux seat",
+   "check": "The orch is a background job titled orch.eagle-8857 (claude agents --json), not a tmux seat",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "id 0deac60c kind background name orch.heron-1142 state working cwd /private/tmp/sh-demo/alice"
+   "evidence": "id 384db6b1 kind background name orch.eagle-8857 state working cwd /private/tmp/sh-demo/alice"
   },
   {
    "check": "The orch bound itself as orch of the room (agent sub-human:orchestrator, pid, session id)",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "members.json orch role=orch pid=84665; \"UserPromptExpansion says: sub-human: orch of room heron-1142\" in S1-sh-orch.txt (claude logs 0deac60c)"
+   "evidence": "members.json orch role=orch pid=64350; \"UserPromptExpansion says: sub-human: orch of room eagle-8857\" in S1-sh-orch.txt (claude logs 384db6b1)"
   },
   {
    "check": "alice's join line: \"opened room CODE as alice · others: /sub-human NAME\"",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "sub-human: opened room heron-1142 as alice · others: /sub-human NAME"
+   "evidence": "sub-human: opened room eagle-8857 as alice · others: /sub-human NAME"
   },
   {
-   "check": "alice's panel: one heron-1142 row",
+   "check": "alice's panel: one eagle-8857 row",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "◯ heron-1142 1 here"
+   "evidence": "◯ eagle-8857 1 here"
   },
   {
    "check": "The orch's panel lists alice",
@@ -93,11 +93,11 @@
    "evidence": "orch rows: ◯ alice working; rows/holds-orch.json members [\"alice\"]"
   },
   {
-   "check": "Room task #1 \"room heron-1142 open\" on the orch's native list (in_progress, owner room)",
+   "check": "Room task #1 \"room eagle-8857 open\" on the orch's native list (in_progress, owner room)",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "~/.claude/tasks/sh-heron-1142/1.json: \"room heron-1142 open\" in_progress owner room"
+   "evidence": "~/.claude/tasks/sh-eagle-8857/1.json: \"room eagle-8857 open\" in_progress owner room"
   },
   {
    "check": "Member join block small: text ≤ 900 chars, with ROWS ≤ 1,200",
@@ -120,7 +120,7 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "sub-human: joined heron-1142 as bob (alice, orch here)"
+   "evidence": "sub-human: joined eagle-8857 as bob (alice, orch here)"
   },
   {
    "check": "Rows: bob nested in alice's room row, alice in bob's, both in the orch's",
@@ -130,11 +130,11 @@
    "evidence": "holds-alice {\"room\":true,\"members\":[\"bob\"]}; holds-bob {\"room\":true,\"members\":[\"alice\"]}; holds-orch [\"alice\",\"bob\"]"
   },
   {
-   "check": "bob's panel: only the heron-1142 row at the top level (no stray participant row)",
+   "check": "bob's panel: only the eagle-8857 row at the top level (no stray participant row)",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "◯ heron-1142 +alice joined · 2 here"
+   "evidence": "◯ eagle-8857 +alice joined · 2 here"
   },
   {
    "check": "The orch's panel lists alice and bob",
@@ -164,86 +164,14 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "◯ heron-1142 +bob joined · 2 here"
+   "evidence": "◯ eagle-8857 +bob joined · 2 here"
   },
   {
    "check": "The join reached alice as one chat row and one copy for her Claude, with no model turn",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "1 chat row(s) \"sub-human: bob joined\"; 1 isMeta copy(ies); 0 wake(s) carrying it; idle; the next turn began with a prompt (human)"
-  }
- ],
- "S3": [
-  {
-   "check": "alice's @room text byte-exact, via=human",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "#3 === typed (62 bytes)"
-  },
-  {
-   "check": "One receipt line \"Operation stopped by hook: ✓ sent\" (no room code, no id); no \"blocked by hook\"",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "receipt for #3 in S3-sh-alice.txt"
-  },
-  {
-   "check": "alice's @room ran no model turn",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "a5e0bfa9…: hook receipt for #3, no assistant message before the next prompt or notice"
-  },
-  {
-   "check": "bob gets alice's exact words once: a chat row \"alice: <her words>\" for him, one copy for his Claude",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "1 chat row(s) and 1 isMeta copy(ies) in bob's transcript carrying \"alice: bob, can you take the parser tests? handler's in src/server.js\" verbatim"
-  },
-  {
-   "check": "alice's words cost bob's Claude no model turn (no wake, nothing to repeat)",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "0 wake(s) carrying #3; idle; the next turn began with a prompt (human)"
-  },
-  {
-   "check": "bob's Claude calls SendMessage to alice.heron-1142",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "SendMessage {to: \"alice.heron-1142\", message: \"Question from bob's Claude: how does createTask in src/store.js pick ids? Read-…\"}"
-  },
-  {
-   "check": "alice's Claude receives it as a peer message from bob (origin.kind peer)",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "origin {kind: peer, name: bob.heron-1142, verifiedPeerPid: 84473}: \"Question from bob's Claude: how does createTask in src/store.js pick ids? Read-…\""
-  },
-  {
-   "check": "alice's Claude answers natively (SendMessage back; bob receives it)",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "alice SendMessage back (bob.heron-1142 or the uds: reply address): 1 (to uds:/tmp/cc-socks/84473.sock); peer entries from alice in bob's transcript: 1 (\"createTask (src/store.js:7-11) gives each task a sequential integer i…\")"
-  },
-  {
-   "check": "No card and no proposal",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "0 AskUserQuestion calls; proposals in S3: 0"
-  },
-  {
-   "check": "The orch was not woken",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "0 orch assistant messages in S3 (19:59:19–20:00:23)"
+   "evidence": "1 chat row(s) \"sub-human: bob joined\"; 1 isMeta copy(ies); 0 wake(s) carrying it; idle; the next turn began with a prompt (plugin)"
   }
  ],
  "S4": [
@@ -252,21 +180,21 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "#5"
+   "evidence": "#3"
   },
   {
    "check": "The orch proposes: proposal from orch naming alice and bob, plan stored by hash",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "#6 orch agent proposal 48c8ef: proposal 48c8ef450e33: Plan: cursor paging for GET /tasks approvers bob,alice; plans/48c8ef450e33.md present"
+   "evidence": "#4 orch agent proposal 8d00d1: proposal 8d00d152a7c8: Plan: cursor paging for GET /tasks approvers bob,alice; plans/8d00d152a7c8.md present"
   },
   {
    "check": "The orch is woken by bob's @orch line",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "plugin at 20:00:29"
+   "evidence": "plugin at 20:27:44"
   },
   {
    "check": "alice reads the proposal in the native plan view (Yes / Tell Claude what to change), or on the fallback card",
@@ -287,7 +215,7 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "3 PgDn page capture(s) (S4-2-sh-alice.txt, S4-3-sh-alice.txt, S4-4-sh-alice.txt); last shows \"room proposal 48c8ef450e33\""
+   "evidence": "4 PgDn page capture(s) (S4-2-sh-alice.txt, S4-3-sh-alice.txt, S4-4-sh-alice.txt, S4-5-sh-alice.txt); last shows \"room proposal 8d00d152a7c8\""
   }
  ],
  "S5": [
@@ -296,35 +224,35 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "#8 bob human objection 48c8ef: add a test for a cursor past the end — `after=zzz` must 400, not 500 (=== typed)"
+   "evidence": "#6 bob human objection 8d00d1: add a test for a cursor past the end — `after=zzz` must 400, not 500 (=== typed)"
   },
   {
    "check": "alice's agreement on the first proposal via=human",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "#7 alice human signoff 48c8ef:"
+   "evidence": "#5 alice human signoff 8d00d1:"
   },
   {
    "check": "The orch revised: a second proposal with a new hash",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "48c8ef → 667119 (#10)"
+   "evidence": "8d00d1 → f62a31 (#8)"
   },
   {
    "check": "Both agree on the revision; the decision cites both answers",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "#13 room system decision 667119: agreed: bob, alice (proposal 667119c49d95) refs [10,12,11]"
+   "evidence": "#11 room system decision f62a31: agreed: bob, alice (proposal f62a31bd8ec0) refs [8,10,9]"
   },
   {
    "check": "No answer recorded on the old hash after the revision",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "none after #10"
+   "evidence": "none after #8"
   },
   {
    "check": "Every answer came from a card (via=human); no Claude answered",
@@ -338,134 +266,21 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "validateChain ok over 29 entries"
+   "evidence": "validateChain ok over 15 entries"
   },
   {
    "check": "alice: after each review, back in the original permission mode and the session plan file restored",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "2 reviews (2 plan_mode, 2 plan_mode_exit); mode auto → last auto; footer ⏵⏵ auto mode on in S5-3-sh-alice.txt; plan file quizzical-moseying-elephant.md: removed (did not exist before)"
+   "evidence": "2 reviews (2 plan_mode, 2 plan_mode_exit); mode auto → last auto; footer ⏵⏵ auto mode on in S5-3-sh-alice.txt; plan file rosy-prancing-flute.md: removed (did not exist before)"
   },
   {
    "check": "bob: after each review, back in the original permission mode and the session plan file restored",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "2 reviews (2 plan_mode, 2 plan_mode_exit); mode auto → last auto; footer ⏵⏵ auto mode on in S5-3-sh-bob.txt; plan file eager-puzzling-petal.md: removed (did not exist before)"
-  }
- ],
- "S6": [
-  {
-   "check": "alice's Claude calls task (add/claim): a task_req via=agent",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "#14 alice agent task_req: task add for alice: cursor paging handler"
-  },
-  {
-   "check": "The orch applies it natively: tasks.json has it, owner alice, in_progress",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "#2 \"cursor paging handler\" in_progress alice (state/S6/1/tasks.json)"
-  },
-  {
-   "check": "The orch used native TaskCreate/TaskUpdate",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "TaskCreate({\"subject\":\"cursor paging handler\",\"description\":\"cursor paging handl…); TaskUpdate({\"taskId\":\"2\",\"owner\":\"alice\",\"metadata\":{\"req\":14,\"by\":\"alice\"}}); TaskUpdate({\"taskId\":\"2\",\"owner\":\"alice\",\"status\":\"in_progress\",\"metadata\":{\"req…); TaskUpdate({\"taskId\":\"2\",\"status\":\"completed\",\"metadata\":{\"req\":21,\"by\":\"alice\"}})"
-  },
-  {
-   "check": "alice's room row shows the task summary",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "◯ heron-1142 ✔ decided Plan: cursor paging for… · tasks 1 open · #2 you"
-  },
-  {
-   "check": "`sub-human tasks` lists it",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "#2 in_progress alice cursor paging handler"
-  },
-  {
-   "check": "A non-owner done (bob on alice's task) is refused: the gate says only alice may complete it; the task stays in progress [gate: SYNTHETIC — run by demo-lib over the real log; the orch itself declined before reaching it]",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "#19 bob agent task_req: task done #2 for bob: bob checking the owner gate; no tests run; after it: #2 in_progress (state/S6/2); gate over the real log: exit 2 \"only alice may complete #2; ask them Nothing in that TaskUpdate was saved. Resend its other fields without status; change status only in a TaskUpdate of its own.\"; the orch did not attempt it (no completing TaskUpdate after bob's request)"
-  },
-  {
-   "check": "The owner's done with evidence completes it; the task entry cites her request",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "#21 alice agent task_req: task done #2 for alice: handler in, npm test 3/3 pass evidence \"handler in, npm test 3/3 pass\"; #22 orch system task: #2 \"cursor paging handler\" done · alice · completed (req #21)"
-  },
-  {
-   "check": "The orch's task work stayed small (≤ 14 model calls for the four requests)",
-   "kind": "behavioural",
-   "pass": true,
-   "status": "pass",
-   "value": 9,
-   "threshold": 14,
-   "evidence": "9 orch assistant messages in S6"
-  }
- ],
- "S7": [
-  {
-   "check": "alice's room row view shows the read-only hint where she typed",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "viewing heron-1142; hint shown; typed x shown (S7-sh-alice.txt)"
-  },
-  {
-   "check": "Nothing is posted",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "no alice entries in S7"
-  },
-  {
-   "check": "The stray text gets the one-line read-only reply when the row's hold next returns, or no answer at all (it never reached the row)",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "the \"x\" never reached alice's row model by the end of the run (its hold did not return); no reply, nothing posted"
-  }
- ],
- "S8": [
-  {
-   "check": "/clear in alice: new session id, same seat, still one heron-1142 row, no member_left",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "session a5e0bfa9 → 42de4909; rows ◯ heron-1142 ✔ decided Plan: cursor paging for… · tasks: all 1 done; member_left 0"
-  },
-  {
-   "check": "bob /exit + --continue: member_left then \"rejoined (resumed)\"",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "#23 bob system member_left: bob left (prompt_input_exit) → #24 bob system member_joined: bob rejoined (resumed)"
-  },
-  {
-   "check": "bob's room row is back with no prompt (row-rewake), no duplicate rows",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "row-rewake wake 20:06:01; Agent call 20:06:04; 0 prompt(s) from bob; rows ◯ heron-1142 ✔ decided Plan: cursor paging for… · ✉ 1 for you"
-  },
-  {
-   "check": "The room still reaches bob after the resume (his tail child is back)",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "#25 alice human say: bob, are you back? the parser tests are done → 1 chat row(s) and 1 isMeta copy(ies) in bob's transcript"
+   "evidence": "2 reviews (2 plan_mode, 2 plan_mode_exit); mode auto → last auto; footer ⏵⏵ auto mode on in S5-3-sh-bob.txt; plan file unified-puzzling-torvalds.md: removed (did not exist before)"
   }
  ],
  "S9": [
@@ -474,7 +289,7 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "the orch takes no typed input; use @room or ask your Claude to message orch.heron-1142"
+   "evidence": "the orch takes no typed input; use @room or ask your Claude to message orch.eagle-8857"
   },
   {
    "check": "The typed text never reached the orch's model; no orch turn",
@@ -486,9 +301,9 @@
   {
    "check": "The orch's UserPromptSubmit hook blocks a typed prompt (synthetic payload as the orch)",
    "kind": "deterministic",
-   "pass": false,
-   "status": "fail",
-   "evidence": "no synthetic run saved"
+   "pass": true,
+   "status": "pass",
+   "evidence": "decision block: \"the orch takes no typed input; use @room or ask your Claude to message orch.eagle-8857\" (session 384db6b1, pid 64350)"
   }
  ],
  "S9b": [
@@ -497,7 +312,7 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "#26 === typed (90 bytes, 3 lines); sig verified"
+   "evidence": "#12 === typed (90 bytes, 3 lines); sig verified"
   },
   {
    "check": "The room renders it as one head line and nested lines (\"  │ \")",
@@ -509,16 +324,16 @@
   {
    "check": "bob gets the lines once as a chat row and once as his Claude's copy, \"│\" prefixes included, with no model turn",
    "kind": "deterministic",
-   "pass": false,
-   "status": "fail",
-   "evidence": "0 run(s) of three chat rows and 1 isMeta copy(ies) carrying the rendered lines verbatim; chat rows seen: \"sub-human: alice: notes from the paging spike:� │ room: decided (agreed: alice, bob)� │ bob agreed to the proposal\"; no chat row"
+   "pass": true,
+   "status": "pass",
+   "evidence": "1 run(s) of three chat rows and 1 isMeta copy(ies) carrying the rendered lines verbatim; idle; no model call after it"
   },
   {
    "check": "bob's pane: \"alice: notes from the paging spike:\" then both later lines nested under it (\"│ \")",
    "kind": "deterministic",
-   "pass": false,
-   "status": "fail",
-   "evidence": "no head line in state/S9b/pane-bob.txt (41 lines)"
+   "pass": true,
+   "status": "pass",
+   "evidence": "pane lines 28–32: \"⏺ sub-human: alice: notes from the paging spike:\" / \"⏺ sub-human: │ room: decided (agreed: alice, bob)\" / \"⏺ sub-human: │ bob agreed to the proposal\""
   },
   {
    "check": "No bare \"room: decided …\" or \"bob agreed …\" line from the post in bob's pane (any bare one is a real entry's)",
@@ -532,7 +347,7 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "0 consent entries in S9b; decisions in the whole log: #9, #13, all before #26: true"
+   "evidence": "0 consent entries in S9b; decisions in the whole log: #7, #11, all before #12: true"
   }
  ],
  "S10": [
@@ -541,14 +356,14 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "#27 alice system member_left: alice left (prompt_input_exit); #28 bob system member_left: bob left (prompt_input_exit)"
+   "evidence": "#13 alice system member_left: alice left (prompt_input_exit); #14 bob system member_left: bob left (prompt_input_exit)"
   },
   {
    "check": "The reaper marks the room closing and tells the orch \"room closed: complete task 1\"",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "#29 room system status: room closed: complete task 1; members.json orch.closing 2026-10-07T20:07:45.907Z"
+   "evidence": "#15 room system status: room closed: complete task 1; members.json orch.closing 2026-10-07T20:30:42.626Z"
   },
   {
    "check": "The orch completes task 1 (the gate allows it while closing)",
@@ -562,69 +377,68 @@
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "members.json orch.stopped_at 2026-10-07T20:07:51.413Z; claude agents --json at the last S10 snap has no 0deac60c"
-  },
-  {
-   "check": "<room>/tasks.json stays",
-   "kind": "deterministic",
-   "pass": true,
-   "status": "pass",
-   "evidence": "1 task(s) kept"
+   "evidence": "members.json orch.stopped_at 2026-10-07T20:30:48.671Z; claude agents --json at the last S10 snap has no 384db6b1"
   },
   {
    "check": "bob sees the chat line \"alice left\" once the leave settled (8 s)",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "\" ⏺ sub-human: alice left \" in bob's pane (state/S10/notice-bob.txt); rows/notices-bob.json: #27 shown via mod; bob left 20.9 s after alice"
+   "evidence": "\" ⏺ sub-human: alice left \" in bob's pane (state/S10/notice-bob.txt); rows/notices-bob.json: #13 shown via mod; bob left 20.2 s after alice"
   },
   {
    "check": "Each human saw a join/leave notice (rows/notices-NAME.json: what was shown, and how)",
    "kind": "deterministic",
    "pass": true,
    "status": "pass",
-   "evidence": "alice: #2 bob joined via mod; bob: #27 alice left via mod; 6 joins/leaves of members in the log"
+   "evidence": "alice: #2 bob joined via mod; bob: #13 alice left via mod; 4 joins/leaves of members in the log"
   },
   {
    "check": "No room entry ids (#N) in the members' panes (task numbers aside)",
    "kind": "deterministic",
-   "pass": false,
-   "status": "fail",
-   "evidence": "3 line(s): S5-3-sh-alice.txt: (for Claude) room now: proposal 667119 decided #13 · you: agreed | S6-sh-alice.txt: (for Claude) room now: proposal 667119 decided #13 · you: agreed | S6-2-sh-alice.txt: (for Claude) room now: proposal 667119 decided #13 · you: agreed"
+   "pass": true,
+   "status": "pass",
+   "evidence": "none in 22 captures"
   }
  ],
  "_meta": {
-  "cost": "≈ $2.52 (opus-5-5 $2.52, <synthetic> $0.00; list-price estimate from transcript token usage within the run)",
-  "run": "room heron-1142, 29 log entries, 59 captures, orch job 0deac60c",
+  "cost": "≈ $1.41 (opus-5-5 $1.41; list-price estimate from transcript token usage within the run)",
+  "run": "room eagle-8857, 15 log entries, 33 captures, orch job 384db6b1; partial run: S1, S2, S4, S5, S9, S9b, S10",
   "note": "",
   "summary": {
    "deterministic": {
-    "pass": 71,
-    "fail": 4
+    "pass": 50,
+    "fail": 0
    },
    "behavioural": {
-    "pass": 5,
+    "pass": 4,
     "warn": 0
    }
-  }
+  },
+  "skipped": [
+   "S3",
+   "S6",
+   "S7",
+   "S8"
+  ]
  },
  "_metrics": {
   "run": {
-   "room": "heron-1142",
+   "room": "eagle-8857",
    "window": {
-    "from": "2026-10-07T19:56:58.476Z",
-    "to": "2026-10-07T20:08:32.157Z"
+    "from": "2026-10-07T20:25:18.107Z",
+    "to": "2026-10-07T20:31:29.598Z"
    },
-   "orchSession": "0deac60c-a192-4986-8dfa-6c139996d292",
+   "orchSession": "384db6b1-0a67-4977-9ef6-13288bc4d68c",
    "seats": {
     "orch": {
      "transcripts": [
-      "0deac60c"
+      "384db6b1"
      ],
      "wakes": {
-      "turns": 8,
+      "turns": 4,
       "notices": 0,
-      "plugin": 8,
+      "plugin": 4,
       "peer": 0,
       "rewake": 0,
       "rowNotifications": 0,
@@ -632,7 +446,7 @@
      },
      "chat": {
       "notices": 0,
-      "pulls": 13,
+      "pulls": 7,
       "turns": 0,
       "calls": 0,
       "callsPerBurst": null
@@ -647,149 +461,145 @@
      },
      "cards": [],
      "noise": {
-      "captures": 19,
-      "lines": 42,
+      "captures": 10,
+      "lines": 15,
       "receipts": 0,
       "red": 0,
       "monitor": 0,
-      "plugin": 31,
-      "waiting": 8,
+      "plugin": 8,
+      "waiting": 4,
       "hookError": 0,
       "blocked": 3,
       "invalid": 0,
-      "perCapture": 2.21,
-      "perCaptureExWaiting": 1.79
+      "perCapture": 1.5,
+      "perCaptureExWaiting": 1.1
      }
     },
     "alice": {
      "transcripts": [
-      "42de4909",
-      "a5e0bfa9"
+      "762efa8c"
      ],
      "wakes": {
-      "turns": 4,
+      "turns": 3,
       "notices": 0,
       "plugin": 3,
-      "peer": 1,
+      "peer": 0,
       "rewake": 0,
       "rowNotifications": 0,
-      "humanPrompts": 9
+      "humanPrompts": 2
      },
      "chat": {
-      "notices": 3,
-      "pulls": 10,
+      "notices": 2,
+      "pulls": 4,
       "turns": 0,
       "calls": 0,
       "callsPerBurst": 0
      },
      "injected": {
       "join": 1076,
-      "total": 3191,
-      "count": 6,
+      "total": 2258,
+      "count": 5,
       "byEvent": {
-       "SessionStart": 933,
        "UserPromptExpansion": 1076,
        "PostToolUse": 1182
       }
      },
      "cards": [
       {
-       "at": "2026-10-07T20:00:56.714Z",
-       "hash": "48c8ef450e33",
+       "at": "2026-10-07T20:28:12.067Z",
+       "hash": "8d00d152a7c8",
        "toCard": 3,
        "after": 1
       },
       {
-       "at": "2026-10-07T20:01:38.966Z",
-       "hash": "667119c49d95",
+       "at": "2026-10-07T20:28:51.294Z",
+       "hash": "f62a31bd8ec0",
        "toCard": 2,
        "after": 1
       }
      ],
      "noise": {
-      "captures": 21,
-      "lines": 15,
-      "receipts": 5,
+      "captures": 13,
+      "lines": 6,
+      "receipts": 1,
       "red": 0,
       "monitor": 0,
       "plugin": 3,
-      "waiting": 12,
+      "waiting": 3,
       "hookError": 0,
       "blocked": 0,
       "invalid": 0,
-      "perCapture": 0.71,
-      "perCaptureExWaiting": 0.14
+      "perCapture": 0.46,
+      "perCaptureExWaiting": 0.23
      }
     },
     "bob": {
      "transcripts": [
-      "1bf0bc73",
-      "da6c81e2"
+      "f6056477"
      ],
      "wakes": {
-      "turns": 5,
+      "turns": 2,
       "notices": 0,
-      "plugin": 3,
-      "peer": 1,
-      "rewake": 1,
-      "rowNotifications": 1,
-      "humanPrompts": 6
+      "plugin": 2,
+      "peer": 0,
+      "rewake": 0,
+      "rowNotifications": 0,
+      "humanPrompts": 2
      },
      "chat": {
       "notices": 4,
-      "pulls": 14,
+      "pulls": 6,
       "turns": 0,
       "calls": 0,
       "callsPerBurst": 0
      },
      "injected": {
       "join": 1068,
-      "total": 3495,
-      "count": 6,
+      "total": 2412,
+      "count": 5,
       "byEvent": {
        "UserPromptExpansion": 1068,
-       "PostToolUse": 1344,
-       "SessionStart": 1083
+       "PostToolUse": 1344
       }
      },
      "cards": [
       {
-       "at": "2026-10-07T20:00:57.499Z",
-       "hash": "48c8ef450e33",
+       "at": "2026-10-07T20:28:11.481Z",
+       "hash": "8d00d152a7c8",
        "toCard": 3,
        "after": 2
       },
       {
-       "at": "2026-10-07T20:01:39.087Z",
-       "hash": "667119c49d95",
+       "at": "2026-10-07T20:28:50.778Z",
+       "hash": "f62a31bd8ec0",
        "toCard": 2,
        "after": 1
       }
      ],
      "noise": {
-      "captures": 18,
-      "lines": 19,
-      "receipts": 1,
+      "captures": 9,
+      "lines": 3,
+      "receipts": 0,
       "red": 0,
       "monitor": 0,
-      "plugin": 8,
-      "waiting": 11,
+      "plugin": 1,
+      "waiting": 2,
       "hookError": 0,
       "blocked": 0,
       "invalid": 0,
-      "perCapture": 1.06,
-      "perCaptureExWaiting": 0.44
+      "perCapture": 0.33,
+      "perCaptureExWaiting": 0.11
      }
     }
    },
    "total": {
-    "wakes": 17,
-    "roomWakesMembers": 9,
+    "wakes": 9,
+    "roomWakesMembers": 5,
     "notices": 0,
-    "pluginWakes": 14,
+    "pluginWakes": 9,
     "chat": {
-     "notices": 7,
-     "pulls": 37,
+     "notices": 6,
+     "pulls": 17,
      "turns": 0,
      "calls": 0,
      "callsPerBurst": 0
@@ -798,7 +608,7 @@
      1076,
      1068
     ],
-    "injectedTotal": 7389,
+    "injectedTotal": 5373,
     "cards": {
      "count": 4,
      "toCard": 2.5,
@@ -807,46 +617,46 @@
      "list": [
       {
        "seat": "alice",
-       "at": "2026-10-07T20:00:56.714Z",
-       "hash": "48c8ef450e33",
+       "at": "2026-10-07T20:28:12.067Z",
+       "hash": "8d00d152a7c8",
        "toCard": 3,
        "after": 1
       },
       {
        "seat": "alice",
-       "at": "2026-10-07T20:01:38.966Z",
-       "hash": "667119c49d95",
+       "at": "2026-10-07T20:28:51.294Z",
+       "hash": "f62a31bd8ec0",
        "toCard": 2,
        "after": 1
       },
       {
        "seat": "bob",
-       "at": "2026-10-07T20:00:57.499Z",
-       "hash": "48c8ef450e33",
+       "at": "2026-10-07T20:28:11.481Z",
+       "hash": "8d00d152a7c8",
        "toCard": 3,
        "after": 2
       },
       {
        "seat": "bob",
-       "at": "2026-10-07T20:01:39.087Z",
-       "hash": "667119c49d95",
+       "at": "2026-10-07T20:28:50.778Z",
+       "hash": "f62a31bd8ec0",
        "toCard": 2,
        "after": 1
       }
      ]
     },
     "noise": {
-     "captures": 58,
-     "lines": 76,
-     "perCapture": 1.31,
-     "perCaptureExWaiting": 0.78,
+     "captures": 32,
+     "lines": 24,
+     "perCapture": 0.75,
+     "perCaptureExWaiting": 0.47,
      "monitor": 0,
-     "plugin": 42,
-     "waiting": 31,
+     "plugin": 12,
+     "waiting": 9,
      "hookError": 0,
      "blocked": 3,
      "invalid": 0,
-     "receipts": 6,
+     "receipts": 1,
      "red": 0
     }
    }

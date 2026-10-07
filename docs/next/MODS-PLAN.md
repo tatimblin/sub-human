@@ -400,7 +400,13 @@ Fixed during the run (in the "Live run" commit):
 
 **The wake row.** A plugin prompt draws expanded: "› Prompt from the sub-human plugin", "❯ The sub-human plugin sent a message:", the `(for Claude)` head and state lines, the room lines, then the engine's two framing lines ("This is how Claude Code surfaces a prompt a plugin submits…", "Address the message above."): about seven lines per wake where the Monitor showed one headline. `mod/render.mjs` must leave an expanded row to the engine, so it cannot trim it. Readable and honest, but heavy; follow-up candidates: a shorter wake text (no head line for members) or finding out whether these rows can be drawn collapsed.
 
-Open after W4: the S9b and S10 fixes need a live run; the wake row's size; D5/D6 as recorded.
+**Partial live run eagle-8857** (S1, S2, S4, S5, S9, S9b, S10; ≈ $1.41 list price; not a baseline). The smallest set that tests the three fixes honestly: S9 needs the orch job (S1), S9b two seats (S2), S10's id check a decided proposal followed by a member wake (S4, S5); S3, S6, S7, S8 add nothing they read. Deterministic **50/50** for the scenes run (S3, S6–S8 skipped), behavioural 4/4.
+- **S9b**: bob's pane shows three `$.ui.log` rows, `⏺ sub-human: alice: notes from the paging spike:` then `⏺ sub-human:   │ room: decided (agreed: alice, bob)` and `⏺ sub-human:   │ bob agreed to the proposal`, with a blank line between rows (the engine's spacing; the pane check now skips blank lines only). One run of three chat rows, one isMeta copy, no model turn.
+- **S10**: alice's wake after the decision reads `(for Claude) room now: proposal f62a31 decided · you: agreed` (heron-1142: `decided #13`); no `#N` in any member capture.
+- **S9**: the synthetic orch payload (with the shim's origin) is blocked, "takes no typed input".
+- Harness: a `--only` set that includes S1 starts fresh; `screens/run.json` records the planned scenes and `checks.js` skips the rest (`_meta.skipped`; a planned scene with no evidence still fails). S10's `tasks.json stays` applies only when the log has task entries (the mirror is written by the first one, S6).
+
+Open after W4: the wake row's size; D5/D6 as recorded.
 
 ## What gets deleted (after W4, with D1 + D2 + D3)
 

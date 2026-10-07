@@ -22,8 +22,10 @@ module.exports = {
     const running = ag && ag.find(y => y.id === job || y.sessionId === orchSid);
     det('The orch is stopped: claude agents no longer lists it', members.orch && members.orch.stopped_at && ag && !running,
       `members.json orch.stopped_at ${members.orch && members.orch.stopped_at}; claude agents --json at the last S10 snap ${ag ? (running ? `still lists ${running.id} (${running.state})` : `has no ${job}`) : 'not saved'}`);
+    // the mirror is written by the first task entry (S6): a run without one has no tasks.json to keep, so no check
+    const taskEntries = log.filter(e => e.kind === 'task').length;
     const tj = readJson(path.join(roomDir, 'tasks.json'), null);
-    det('<room>/tasks.json stays', Array.isArray(tj), tj ? `${tj.length} task(s) kept` : 'missing');
+    if (taskEntries) det('<room>/tasks.json stays', Array.isArray(tj), tj ? `${tj.length} task(s) kept (${taskEntries} task entries in the log)` : `missing (${taskEntries} task entries in the log)`);
     const ln = /^\s*(⏺ )?(sub-human: )?alice left\s*$/m.exec(readText(x.stateFile('S10', 'notice-bob.txt')) || '');
     const via = la && x.shownVia('bob', la.id);
     const early = la && lb && Date.parse(lb.at) - Date.parse(la.at) < 8000;

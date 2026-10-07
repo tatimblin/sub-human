@@ -38,17 +38,20 @@ module.exports = {
     const pane = readText(x.stateFile('S9b', 'pane-bob.txt')) || '';
     const lines = pane.split('\n');
     const hi = lines.findIndex(l => /^\s*(⏺ )?(sub-human: )?alice: notes from the paging spike:\s*$/.test(l));
-    const next = hi >= 0 ? lines.slice(hi + 1, hi + 3) : [];
+    // the two lines after the head, past the blank spacer the engine draws between rows (nothing else in between)
+    const after = hi >= 0 ? lines.slice(hi + 1).map((l, k) => ({ l, k: hi + 1 + k })).filter(y => y.l.trim()).slice(0, 2) : [];
+    const next = after.map(y => y.l);
+    const span2 = after.length ? after.at(-1).k : hi;
     const rest = e ? e.text.split('\n').slice(1) : [];
     // each later line its own chat row, still under the "│" ("⏺ sub-human:   │ …"), or a plain continuation line
     const nested = next.length === 2 && next.every((l, i) => new RegExp(`^(\\s*(⏺ )?sub-human: +| {2,})│ ${esc(rest[i])}\\s*$`).test(l));
     det('bob\'s pane: "alice: notes from the paging spike:" then both later lines nested under it ("│ ")', nested,
-      hi >= 0 ? `pane lines ${hi + 1}–${hi + 3}: ${[lines[hi], ...next].map(l => JSON.stringify(l.trimEnd())).join(' / ')}` : `no head line in state/S9b/pane-bob.txt (${pane ? `${lines.length} lines` : 'missing'})`);
+      hi >= 0 ? `pane lines ${hi + 1}–${span2 + 1}: ${[lines[hi], ...next].map(l => JSON.stringify(l.trimEnd())).join(' / ')}` : `no head line in state/S9b/pane-bob.txt (${pane ? `${lines.length} lines` : 'missing'})`);
 
     // no bare (column-0 or "⏺ ") line with the post's later text, beyond what real entries render as
     const bare = t => new RegExp(`^(⏺ )?${esc(t)}\\s*$`);
     const real = t => log.filter(y => (y.kind === 'decision' || y.kind === 'signoff') && room.chatLines(y, { viewer: 'bob' }).some(l => l === t)).length;
-    const forged = rest.map(t => ({ t, n: lines.filter(l => bare(t).test(l)).length, real: real(t), inPost: hi >= 0 && lines.slice(hi + 1, hi + 3).some(l => bare(t).test(l)) }));
+    const forged = rest.map(t => ({ t, n: lines.filter(l => bare(t).test(l)).length, real: real(t), inPost: hi >= 0 && lines.slice(hi + 1, span2 + 1).some(l => bare(t).test(l)) }));
     det('No bare "room: decided …" or "bob agreed …" line from the post in bob\'s pane (any bare one is a real entry\'s)', pane && forged.every(f => !f.inPost && f.n <= f.real),
       forged.map(f => `"${f.t}": ${f.n} bare line(s) in the pane, ${f.real} real entr${f.real === 1 ? 'y renders' : 'ies render'} it${f.inPost ? ', one right under the post' : ''}`).join('; ') || 'no entry');
 

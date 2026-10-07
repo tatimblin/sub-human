@@ -29,6 +29,7 @@ scripts/demo.sh stop                  # kill the sh-* tmux sessions
 node scripts/checks.js && node scripts/walkthrough.js
 ```
 
+- A short run: `--only S1,S2,S4,S5,S9,S9b,S10` (a set with S1 starts fresh). `checks.js` skips the scenes not run (`screens/run.json`).
 - A timed-out `need` wait aborts the scene. The run stops and says how to resume with `--from SCENE`.
 - `checks.js` exits 1 only when a **deterministic** check fails (log, chain, files, panes).
 - **Behavioural** checks (model-call counts, wakes, noise) are compared against `baselines.json` thresholds and only warn.

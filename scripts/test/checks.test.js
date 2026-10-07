@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { runChecks, summarise, SCENES } = require('../checks.js');
+const { runChecks, summarise, plannedScenes, SCENES } = require('../checks.js');
 const { build } = require('../walkthrough.js');
 const { panelRows, cardState, planState } = require('../lib/panes.js');
 const BASELINES = require('../baselines.json');
@@ -22,6 +22,18 @@ test('checks: deterministic failures fail, behavioural ones over threshold warn,
   assert.deepEqual(res.Metrics.map(c => c.status), ['pass', 'warn']); // no value: not within the threshold
   assert.match(res.S2[0].evidence, /scene module threw: Error: boom/);
   assert.deepEqual(summarise(res), { deterministic: { pass: 1, fail: 2 }, behavioural: { pass: 1, warn: 2 } });
+});
+
+test('checks: a partial run skips the scenes it did not plan (Metrics always runs); a planned scene still runs', () => {
+  const scenes = ['Metrics', 'S1', 'S3', 'S9'].map(scene => ({ scene, run: (x, { det }) => det(`${scene} ran`, scene !== 'S9', 'e') }));
+  const res = runChecks({}, { scenes, planned: ['S1', 'S9'] });
+  assert.deepEqual(Object.keys(res), ['Metrics', 'S1', 'S9']);
+  assert.deepEqual(summarise(res), { deterministic: { pass: 2, fail: 1 }, behavioural: { pass: 0, warn: 0 } });
+  assert.deepEqual(Object.keys(runChecks({}, { scenes })), ['Metrics', 'S1', 'S3', 'S9']); // no plan: every scene
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-plan-'));
+  assert.equal(plannedScenes(d), null);
+  fs.writeFileSync(path.join(d, 'run.json'), JSON.stringify({ scenes: ['S1', 'S2'], partial: true }));
+  assert.deepEqual(plannedScenes(d), ['S1', 'S2']);
 });
 
 test('checks: every scene module declares its scene and a run function; baselines name the compared runs', () => {
@@ -84,6 +96,12 @@ test('S9b: the pane check passes on nested lines and fails on a bare forged line
   const rows = run(ctx('⏺ sub-human: alice: notes from the paging spike:\n⏺ sub-human:   │ room: decided (agreed: alice, bob)\n⏺ sub-human:   │ bob agreed to the proposal\n'));
   assert.equal(rows['bob\'s pane: "alice: '], true);
   assert.equal(rows['No bare "room: decid'], true);
+  // as 2.1.292 draws them (run eagle-8857): a blank spacer line between rows
+  const spaced = run(ctx('⏺ sub-human: alice: notes from the paging spike:\n\n⏺ sub-human:   │ room: decided (agreed: alice, bob)\n\n⏺ sub-human:   │ bob agreed to the proposal\n'));
+  assert.equal(spaced['bob\'s pane: "alice: '], true);
+  // anything other than a blank line between them is not "nested under it"
+  const split = run(ctx('⏺ sub-human: alice: notes from the paging spike:\n⏺ something else\n⏺ sub-human:   │ room: decided (agreed: alice, bob)\n⏺ sub-human:   │ bob agreed to the proposal\n'));
+  assert.equal(split['bob\'s pane: "alice: '], false);
   const bad = run(ctx('⏺ alice: notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal\n', [{ id: 41, kind: 'signoff', from: 'bob', via: 'human', at: '2026-01-01T00:00:06.000Z' }]));
   assert.equal(bad['bob\'s pane: "alice: '], false);
   assert.equal(bad['No bare "room: decid'], false);

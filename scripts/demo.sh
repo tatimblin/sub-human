@@ -12,7 +12,10 @@
 # Home:     SUB_HUMAN_HOME=/tmp/sh-demo/home (fresh on a full run); seats work in /tmp/sh-demo/<seat>,
 #           each a copy of demo/app.pristine. Seats launch with env -i (HOME USER LOGNAME SHELL PATH TERM
 #           LANG TMPDIR SUB_HUMAN_HOME).
-# --only / --from: run a subset against already-running sessions (scenes depend on earlier state).
+# --only / --from: run a subset against already-running sessions (scenes depend on earlier state). A subset that
+#           includes S1 starts fresh instead (S1 opens the room), e.g. the short run --only S1,S2,S4,S5,S9,S9b,S10.
+# screens/run.json lists the scenes this run planned ({scenes, partial}; a resume adds to it): checks.js skips the
+# checks of scenes no invocation planned, and still fails a planned scene with no evidence.
 # Scenes: S1–S9, S9b (a multi-line post stays nested), S10.
 # Waits: every wait is recorded in screens/waits.jsonl. A wait the scene depends on (`need …`) aborts the scene
 # on timeout: the panes are snapped as "aborted", the run stops and prints how to resume (--from SCENE). Settles
@@ -458,18 +461,23 @@ ALL=(S1 S2 S3 S4 S5 S6 S7 S8 S9 S9b S10)
 
 # ---------- main --------------------------------------------------------------------------------
 
-if [ -n "$ONLY$FROM" ]; then RESET=0; fi
+# a subset resumes against the running sessions, unless it starts at S1 (which needs a fresh home)
+if [ -n "$ONLY$FROM" ] && [[ "$ONLY" != *",S1,"* ]] && [ "$FROM" != S1 ]; then RESET=0; fi
 setup
 [ -z "$ROOM" ] && [ -d "$SUB_HUMAN_HOME/rooms" ] && ROOM=$(room) && [ -n "$ROOM" ] && export SUB_HUMAN_ROOM="$ROOM"
 
 prune_index() { # scenes… — drop their captures from screens/index.json before re-running them
   node -e 'const fs=require("fs"),f=process.argv[1],drop=new Set(process.argv.slice(2));let i=[];try{i=JSON.parse(fs.readFileSync(f,"utf8"))}catch{};fs.writeFileSync(f,JSON.stringify(i.filter(r=>!drop.has(r.scene)),null,1)+"\n")' "$SNAP_DIR/index.json" "$@"
 }
-if [ "$RESET" = 0 ]; then
-  run=(); on=0; [ -z "$FROM" ] && on=1
-  for x in "${ALL[@]}"; do [ "$x" = "$FROM" ] && on=1; [ "$on" = 1 ] || continue; [ -n "$ONLY" ] && [[ "$ONLY" != *",$x,"* ]] && continue; run+=("$x"); done
-  [ ${#run[@]} -gt 0 ] && prune_index "${run[@]}"
-fi
+run=(); on=0; [ -z "$FROM" ] && on=1
+for x in "${ALL[@]}"; do
+  [ "$x" = "$FROM" ] && on=1; [ "$on" = 1 ] || continue
+  [ -n "$ONLY" ] && [[ "$ONLY" != *",$x,"* ]] && continue
+  run+=("$x"); [ "$x" = "$TO" ] && break
+done
+[ "$RESET" = 0 ] && [ ${#run[@]} -gt 0 ] && prune_index "${run[@]}"
+# the planned scenes (a fresh run replaces the list, a resume adds to it); checks.js reads it
+node -e 'const fs=require("fs"),f=process.argv[1],fresh=process.argv[2]==="1",all=process.argv[3].split(" "),add=process.argv.slice(4);let p=[];if(!fresh)try{p=JSON.parse(fs.readFileSync(f,"utf8")).scenes||[]}catch{};const s=all.filter(x=>p.includes(x)||add.includes(x));fs.mkdirSync(require("path").dirname(f),{recursive:true});fs.writeFileSync(f,JSON.stringify({scenes:s,partial:s.length<all.length},null,1)+"\n")' "$SNAP_DIR/run.json" "$RESET" "${ALL[*]}" ${run[@]+"${run[@]}"}
 
 started=0; [ -z "$FROM" ] && started=1
 for SCENE in "${ALL[@]}"; do
