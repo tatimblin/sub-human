@@ -24,8 +24,7 @@
  *   clearContextOnPlanAccept(cwd, env)   true when any of them sets it
  *   readLines(file, {tailBytes}), readEntries(file, {tailBytes}), parseLines(lines)
  *   planFile(lines, toolInput?), planFeedback(lines, toolUseId), toolUseInput(lines, toolUseId)
- *   contentText(content), entryIsPeer(entry), isPeerText(prompt), isPeerPrompt(input), parseEnvelope(text)
- *   isTaskNotification(prompt), PASTED_RE, unwrapPasted(text)
+ *   contentText(content), parseEnvelope(text), PASTED_RE, unwrapPasted(text)
  *   JOB_RE, parseDispatch(text), parseAgentsJson(text), jobs(opts), agentsCmd(all), stopCmd(id), logsCmd(id)
  *   DAEMON_ENV_ALLOW, daemonEnv(env)
  *   matcherIsExact(m, {toolEvent}), matcherMatches(m, name, {toolEvent})
@@ -42,8 +41,9 @@ const { spawnSync } = require('node:child_process');
 // ---------- env ----------
 
 /**
- * Env var names. CLAUDE_PID and CLAUDE_CODE_SESSION_ID are set (by M0e) for hooks, Bash, statusLine,
- * subagentStatusLine and monitors; MCP stdio servers get the session id but not CLAUDE_PID.
+ * Env var names. CLAUDE_PID and CLAUDE_CODE_SESSION_ID are set (by M0e) for hooks, Bash, statusLine
+ * and subagentStatusLine; MCP stdio servers get the session id but not CLAUDE_PID, and a hooks
+ * module's $.process children get neither of their own (CONTRACT process-run-stdin).
  * @cc CLAUDE_CODE_CHILD_SESSION:"1",CLAUDE_CODE_SESSION_ATTENDED
  * @stability env
  */
@@ -61,7 +61,7 @@ const ENV = Object.freeze({
 
 /**
  * The session id Claude Code exported to this child, or null. Fixed at spawn: after /clear only children
- * spawned later see the new id (running monitors and MCP servers keep the old one).
+ * spawned later see the new id (running MCP servers keep the old one).
  * @cc conversation_reset",newConversationId
  * @stability env
  */
@@ -276,41 +276,7 @@ function toolUseInput(lines, toolUseId) {
   return null;
 }
 
-// ---------- prompts: peers, notifications, pastes ----------
-
-/** The receiver-side envelope's open tag. */
-const PEER_ENVELOPE = /<cross-session-message\b/;
-/** The held-message / mid-turn delivery prefix. */
-const PEER_PREFIX = /^\s*Another Claude session sent a message/;
-
-/**
- * Text that carries a peer delivery: the "Another Claude session sent a message" prefix, or the
- * <cross-session-message envelope within the first 2000 chars. Same as at-room's isPeer.
- * @cc from-session="
- * @stability incidental
- */
-const isPeerText = prompt => typeof prompt === 'string' && (PEER_PREFIX.test(prompt) || PEER_ENVELOPE.test(prompt.slice(0, 2000)));
-
-/**
- * A UserPromptSubmit input that is a peer delivery. `source` is "system" for peer/channel messages, task
- * notifications and auto-continuation; a composer prompt is "user". With source present, a peer is
- * source "system" plus the envelope/prefix (so a person who pastes an envelope is not a peer); with source
- * absent (the field is still rolling out) the text check alone decides, as at-room does today.
- * @cc `system` = other machine-injected turns (peer/channel messages
- * @stability API
- */
-function isPeerPrompt(input = {}) {
-  const prompt = typeof input.prompt === 'string' ? input.prompt : '';
-  if (input.source === undefined || input.source === null) return isPeerText(prompt);
-  return input.source === 'system' && isPeerText(prompt);
-}
-
-/**
- * A transcript user entry from a peer: origin.kind "peer", or the envelope/prefix in its text.
- * @cc The SENDING session's permission class as declared by the host
- * @stability incidental
- */
-const entryIsPeer = e => !!e && ((e.origin && e.origin.kind === 'peer') || isPeerText(contentText(e.message && e.message.content)));
+// ---------- prompts: peer envelopes, pastes ----------
 
 const ATTR = '[^"<>\\n\\r]*';
 /** The envelope with its optional attributes in the binary's fixed order; group 7 is the body. */
@@ -335,13 +301,6 @@ function parseEnvelope(text) {
     fromName: v(4), fromMode: v(5), fromPlugin: v(6), body: m[7],
   };
 }
-
-/**
- * A monitor / background-task notice injected as a prompt.
- * @cc <task-notification>
- * @stability incidental
- */
-const isTaskNotification = prompt => typeof prompt === 'string' && prompt.startsWith('<task-notification>');
 
 /**
  * A long paste as the prompt carries it: \n\n<pasted_content id="N">\n…\n</pasted_content id="N">\n.
@@ -598,7 +557,7 @@ const CONTRACT = Object.freeze([
     note: 'TaskCreate accepts metadata.' },
   // §2 env
   { id: 'env-child-session', section: 2, stability: 'env', search: ['CLAUDE_CODE_CHILD_SESSION:"1",CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_PID:String(process.pid)'],
-    note: 'Hooks, Bash, statusLine, subagentStatusLine and monitors get CLAUDE_PID and CLAUDE_CODE_SESSION_ID (cc.ENV, sessionId, claudePid).' },
+    note: 'Hooks, Bash, statusLine and subagentStatusLine get CLAUDE_PID and CLAUDE_CODE_SESSION_ID (cc.ENV, sessionId, claudePid).' },
   { id: 'env-mcp-session', section: 2, stability: 'env', search: 'CLAUDE_CODE_CHROME_MCP_ORG_DENIED:"1"',
     shape: 'CLAUDE_PROJECT_DIR:~??~(),CLAUDE_CODE_SESSION_ID:~(),CLAUDECODE:"1",...~.env,',
     note: 'MCP stdio servers get CLAUDE_CODE_SESSION_ID (fixed at spawn) but not CLAUDE_PID.' },
@@ -606,7 +565,7 @@ const CONTRACT = Object.freeze([
     shape: '{CLAUDE_PLUGIN_ROOT:~.path,CLAUDE_PLUGIN_DATA:~(~.source),...~.env||{}}',
     note: 'Plugin MCP servers get CLAUDE_PLUGIN_ROOT/DATA in env.' },
   { id: 'env-clear-session-id', section: 2, stability: 'incidental', search: 'conversation_reset",newConversationId',
-    note: '/clear updates process.env.CLAUDE_CODE_SESSION_ID; running monitors/MCP servers keep the old id.' },
+    note: '/clear updates process.env.CLAUDE_CODE_SESSION_ID; running MCP servers keep the old id.' },
   { id: 'env-nested-strip', section: 2, stability: 'incidental', search: 'CLAUDECODE,delete ',
     shape: 'delete ~.CLAUDECODE,delete ~.CLAUDE_CODE_SESSION_ID,delete ~.CLAUDE_CODE_CHILD_SESSION',
     note: 'A nested claude drops CLAUDE_CODE_SESSION_ID from its env.' },
@@ -674,17 +633,6 @@ const CONTRACT = Object.freeze([
     note: 'Workers run with the daemon\'s own process.env plus the filtered dispatch env.' },
   { id: 'bg-provider-env', section: 5, stability: 'incidental', search: 'stripped disallowed providerEnv key(s)',
     note: 'Persisted providerEnv is filtered through p0e too.' },
-  // §6 monitors
-  { id: 'monitor-schema', section: 6, stability: 'API', search: 'Arm trigger. "always" arms at session start and on plugin reload.',
-    note: 'Monitor `when`: "always" or "on-skill-invoke:<skill>"; name is the dedupe key.' },
-  { id: 'monitor-location', section: 6, stability: 'incidental', search: '.experimental?.monitors??',
-    shape: '~.experimental?.monitors??~.monitors',
-    note: 'manifest.experimental.monitors or manifest.monitors, else monitors/monitors.json.' },
-  { id: 'monitor-arm-gates', section: 6, stability: 'incidental', search: [': failed to arm: ', '"tengu_amber_sentinel",!1)}', 'Skipping plugin monitor '],
-    shape: '{if(~("pluginMonitors"))return;if(!~())return;if(~())return;',
-    note: 'Arming is skipped by policy, the tengu_amber_sentinel gate, -p, managed disableAllHooks, or untrusted workspace.' },
-  { id: 'monitor-not-rearmed', section: 6, stability: 'incidental', search: 'armedMonitorKeys',
-    note: 'A monitor that exits is not re-armed until the claude process restarts (in-process /resume and /clear do not re-arm).' },
   // §7 hooks
   { id: 'matcher-rule', section: 7, stability: 'API', search: ['Invalid regex pattern in hook matcher', '/^[a-zA-Z0-9_|, -]+$/:/^[a-zA-Z0-9_|]+$/'],
     note: 'Exact-name list vs unanchored regex (cc.matcherIsExact, cc.matcherMatches).' },
@@ -704,13 +652,6 @@ const CONTRACT = Object.freeze([
   // §8 cross-session
   { id: 'peer-envelope', section: 8, stability: 'incidental', search: ['from-session="', 'hop-chain="', '(?: from-name="([^"<>\\n\\r]+)")?(?: from-mode="('],
     note: '<cross-session-message from from-session hop-chain from-name from-mode from-plugin> in that order (cc.parseEnvelope).' },
-  { id: 'peer-held-prefix', section: 8, stability: 'incidental', search: 'Another Claude session sent a message',
-    note: 'Held/mid-turn peer deliveries start with this prefix (cc.isPeerText).' },
-  { id: 'peer-origin', section: 8, stability: 'incidental', search: "The SENDING session's permission class as declared by the host",
-    shape: 'kind:~("peer"),from:~(),fromMode:~(["bypass","prompting"])',
-    note: 'Transcript user entries from peers carry origin.kind "peer" (cc.entryIsPeer).' },
-  { id: 'ups-source', section: 8, stability: 'API', search: '`system` = other machine-injected turns (peer/channel messages',
-    note: 'UserPromptSubmit source "system" for peers, channels, task notifications (cc.isPeerPrompt).' },
   { id: 'prompt-origin-composer', section: 8, stability: 'incidental', search: '{kind:"bridge"}:{kind:"composer"}',
     shape: 'case"human":return ~===!0?{kind:"bridge"}:{kind:"composer"};case"plugin":return ~.asUser===!0?',
     note: 'prompt.submit origin "composer" is only the person\'s own Enter (and a --bg dispatch prompt); -p is "sdk", peers "peer" (also from $.session.send), notifications "task-notification". No hook sets it (MODS-PLAN W0 S2, S6).' },
@@ -719,8 +660,6 @@ const CONTRACT = Object.freeze([
   { id: 'harbor-kite-gate', section: 8, stability: 'env', search: '"tengu_harbor_kite",!0)',
     shape: '{let ~=~.CLAUDE_CODE_HARBOR_KITE;if(~!==void 0)return ~(~);',
     note: 'Cross-session messaging gate (default on).' },
-  { id: 'task-notification-prompt', section: 8, stability: 'incidental', search: '<task-notification>',
-    note: 'Monitor/background notices arrive as prompts starting <task-notification> (cc.isTaskNotification).' },
   { id: 'pasted-content', section: 8, stability: 'incidental', search: ['<pasted_content id="', '</pasted_content id="'],
     note: 'Long pastes are wrapped in <pasted_content id="N"> (cc.PASTED_RE).' },
   // §9 plugin settings
@@ -761,9 +700,6 @@ const CONTRACT = Object.freeze([
   { id: 'usermessage-draw-only', section: 10, stability: 'incidental', search: '["origin","isExpanded","task","from"]',
     shape: 'props:{text:~,origin:~(~),isExpanded:~,',
     note: 'A ui.render rewrite of UserMessage text changes only the drawing; origin, isExpanded, task and from are pinned.' },
-  { id: 'usermessage-notification-summary', section: 10, stability: 'incidental', search: 'Monitor event:',
-    shape: 'monitorEvent:~===~?~:null',
-    note: 'A task-notification UserMessage row\'s props.text is the notification\'s <summary> (a monitor\'s: \'Monitor event: "sub-human room"\'), not the event\'s lines, which the engine draws as the row\'s headline and drops once a hook rewrites the text. So mod/render.mjs leaves room notifications to the engine.' },
   { id: 'plugin-types-state', section: 10, stability: 'incidental', search: ['must name it in interface PluginState {', 'the manifest\'s types contract'],
     note: 'validate refuses a $.state value the plugin\'s own types contract (plugin.json "types": types/index.d.ts) does not declare in PluginState; sub-human declares sub-human.hello.' },
   { id: 'session-append-note', section: 10, stability: 'incidental', search: ['door:"note",origin:{kind:"plugin",name:', 'role:"user",isMeta:!0},content:'],
@@ -793,8 +729,7 @@ module.exports = {
   configDir, sanitizeId, tasksDir, taskFile,
   userSettingsFiles, clearContextOnPlanAccept,
   readLines, readEntries, parseLines, planFile, planFeedback, toolUseInput, contentText, SAID, NOTE,
-  PEER_ENVELOPE, PEER_PREFIX, isPeerText, isPeerPrompt, entryIsPeer, ENVELOPE_RE, parseEnvelope,
-  isTaskNotification, PASTED_RE, unwrapPasted,
+  ENVELOPE_RE, parseEnvelope, PASTED_RE, unwrapPasted,
   JOB_RE, parseDispatch, agentsCmd, stopCmd, logsCmd, parseAgentsJson, jobs,
   DAEMON_ENV_ALLOW, daemonEnv,
   matcherIsExact, matcherMatches,

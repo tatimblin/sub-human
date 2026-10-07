@@ -25,8 +25,8 @@ The one security goal: **a model can never speak or consent as a person.** The r
  │ main thread (the person's Claude)        │ SendMessage│ main thread: agent sub-human:orchestrator
  │   spawns ─► room row  (agent room, bg)   │◄──────────►│   spawns ─► participant row per human  │
  │               spawns ─► participant rows │            │   native task list = the room's list   │
- │ hooks: one node process per event        │            │ hooks: same hooks.json                 │
- │ monitor: bin/sub-human tail (long-lived) │            │ monitor: tail (orch formatter+watchdog)│
+ │ hooks: command hooks + one hooks module  │            │ hooks: the same, module included       │
+ │ tail child: bin/sub-human tail (module)  │            │ tail child (orch formatter+watchdog)   │
  │ MCP: mcp/room-server.js (+hold, +task)   │            │ MCP: its own room-server.js            │
  │ subagentStatusLine: <home>/bin/row-status│            └───────────────────────────────────────┘
  └──────────────┬───────────────────────────┘                             │
@@ -37,7 +37,7 @@ The one security goal: **a model can never speak or consent as a person.** The r
 Per session, Claude Code starts:
 
 - **Hooks** (`hooks/*.js`): short synchronous `node` processes, one per matching hook entry. They are the only code that resolves identity from the payload and the only code that holds the seat signing key. `prompt.js` runs both UserPromptSubmit handlers (at-room, consent) in one process. The hooks module (`hooks/register.mjs` → `mod/`) runs in-process: the store guard, the prompt gate, and shims that start `prompt.js`, `consent.js` (Stop) and `tasks.js` with `$.process.run` only when they can act (table below).
-- **The monitor** (`monitors/monitors.json`, `when: "always"`): `bin/sub-human tail` → `lib/tail.js`. It runs in every session with the plugin loaded, stays silent until the session has a seat, then prints the push lane. It never exits, because Claude Code does not re-arm a monitor that exited.
+- **The tail child** (`mod/deliver.mjs` starts `bin/sub-human tail --ndjson` → `lib/tail.js` with `$.process.spawn`): one per seated session, for the session's life, restarted with backoff if it exits. It follows the seat's room and writes one JSON event per line, which the module routes: `chat` → `$.ui.log` (a dim notice the person sees; no model turn), `pull` → an isMeta user row the model reads with its next request, `wake` → `$.prompt.submit` (origin `plugin`; folded into a running turn instead when busy), `rows` → held for the person's next prompt. It is the seat's only delivery (no Monitor), which is why a seat needs the module: `join.js` refuses without its hello lease.
 - **The MCP server** (`.mcp.json` → `mcp/room-server.js`): stdio JSON-RPC, one per session. Its plug-ins `mcp/hold.js` and `mcp/task.js` add tools. It resolves the caller from `process.ppid` on every call. It cannot sign `via=human`.
 - **Rows**: background subagents that make one blocking MCP call (`hold`) and stream progress, so they cost no tokens while they hold. Their panel text comes from the plugin's `subagentStatusLine` (`settings.json` → `<home>/bin/row-status`, written by `hooks/row-launcher.js`, which runs `statusline/`).
 
@@ -49,7 +49,7 @@ Who spawns whom:
 | a member's main thread | one `sub-human:room` row | the `Agent` call the join/restore context lists under ROWS |
 | a room row | one `sub-human:participant` row per other member | on start, and when `hold({room})` returns `JOINED`/`RESPAWN` |
 | the orch's main thread | one participant row per human | on a pushed `member_joined` that carries the Agent call |
-| `hooks/at-room.js` | a detached forgery checker, only for an `@room` with no attested origin (no hooks module) | `node at-room.js --forgery-check JOB` |
+| the hooks module (`mod/deliver.mjs`) | the tail child, per seated session | `$.process.spawn node bin/sub-human tail --ndjson` |
 | `hooks/session-end.js`, `orch.watchdog` | the reaper | detached `node lib/orch.js reap CODE` |
 
 `hooks/row-guard.js` denies a duplicate row spawn; `row-map.js` records which panel row is which agent; `row-hold.js` (SubagentStop) tells a row that gave up to hold again; `row-rewake.js` (SessionStart resume, `asyncRewake`) re-spawns rows after `--resume`.
@@ -83,10 +83,10 @@ From `hooks/register.mjs` (hooks.json `modules`), in registration order.
 
 | Event | Matcher | File | Does |
 |---|---|---|---|
-| `session.start` | (all) | `mod/deliver.mjs` | runs hooks/mod-hello.js (the lease; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node bin/sub-human tail --ndjson, restarted with backoff) and routes its events: chat -> $.ui.log, pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state |
+| `session.start` | (all) | `mod/deliver.mjs` | runs hooks/mod-hello.js (the lease; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node bin/sub-human tail --ndjson, restarted with backoff; the seat's only delivery) and routes its events: chat -> $.ui.log, pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state |
 | `classic.UserPromptExpansion` | `command_name ^(sub-human:)?sub-human$` | `mod/deliver.mjs` | after the join (hooks/join.js beneath), runs mod-hello again for the new seat and starts the tail child |
 | `classic.SessionStart` | `source clear\|compact\|resume` | `mod/deliver.mjs` | after session-restore beneath (a /clear rebinds the seat to a new session id), runs mod-hello again and starts the tail child for that id; reviewMaybeOpen unsure |
-| `session.end` | (all) | `mod/deliver.mjs` | stops that session id's tail child (its lease is given back) |
+| `session.end` | (all) | `mod/deliver.mjs` | stops that session id's tail child |
 | `turn.start` | (all) | `mod/deliver.mjs` | marks a main-loop turn running (a wake then appends instead of submitting) |
 | `turn.complete` | (all) | `mod/deliver.mjs` | marks idle; submits a mid-turn wake no request carried (none followed a tool call that finished after it) |
 | `classic.PostToolUse` | (all) | `mod/deliver.mjs` | observes when a main-loop tool call finished (a model request follows it, carrying a mid-turn wake) |
@@ -129,7 +129,7 @@ Everything persistent goes through the **RoomStore** interface in `lib/room/stor
 
 ```
 RoomStore
-  append(entry, {via, from, system, provisional}) -> Entry     validate, then id/at/prev/sig under the log lock
+  append(entry, {via, from, system}) -> Entry                  validate, then id/at/prev/sig under the log lock
   readAll() readById(ids) readAfter(id) since(id) lastId() readView({after}) watch(fn) tailer()
   validateChain()  verifyChain({fromOffset})                    the prev hash chain (incremental via log.idx)
   getCursor(reader) setCursor(reader, id)                       per-reader positions
@@ -148,17 +148,17 @@ RoomStore
 | `members.json` | `identity.join/leave/heartbeat`, `orch.*` via `members.update` | seats (`pid`, `pid_start`, `session_id`, `seen_at`, `left_at`) and the orch record (`job`, `claim`, `closing`) |
 | `plans/<hash>.md` | `lib/proposal.create` | proposal text, addressed by sha256/12 of its bytes |
 | `tasks.json` (kv `tasks`) | `hooks/tasks.js` (orch only) | the task mirror: `tasks.fold()` of the log's `task` entries |
-| `presence/<name>.json` | `hooks/presence.js`, at-room, join, restore | working / idle / permission / error, for row text |
+| `presence/<name>.json` | `hooks/presence.js` (also run by the module on a typed prompt), at-room, join, restore | working / idle / permission / error, for row text |
 | `rows/<session_id>.json` | `hooks/row-map.js` | agent id → row (kind, name, parent) for the status line |
 | `rows/holds-<name>.json` | `mcp/hold.js` | which rows this seat's hold server is holding (row-guard, rewake) |
 | `rows/blocks-<agent>.json` | `hooks/row-hold.js` | SubagentStop block counter |
 | `rows/notices-<name>.json` | `lib/notices.js` | join/leave lines already shown |
 | `members/<name>/review.json` | `hooks/consent.js` (under its lock) | plan-view review phase, mode and plan-file backup |
-| `members/<name>/title.json` | `hooks/at-room.js` | session title already set |
-| `<reader>.cursor` | each reader | `tail-NAME` (monitor), `ctx-NAME` (pull digest), `notice-NAME`, `read-NAME` (CLI), `mcp-NAME` (`read` tool) |
+| `<reader>.cursor` | each reader | `deliver-NAME` (the tail child), `read-NAME` (CLI), `mcp-NAME` (`read` tool) |
 | `*.lock` | `lib/lock.js` | O_EXCL lockfiles, body `PID HOST START`; stale ones broken atomically |
 | `<home>/keys/<CODE>/<name>.key`, `.pub` | `hooks/seat-key.js` | Ed25519 seat key pair (dir 0700) |
 | `<home>/sessions/by-pid/`, `by-sid/` | `lib/identity.js` | which seat a local claude pid / session id holds (machine-local, not room state) |
+| `<home>/sessions/mods/<sid>.json` | `hooks/mod-hello.js` | the hooks module's hello lease: this session's function hooks are loaded (join requires it) |
 | `<home>/bin/row-status`, `roots.json` | `hooks/row-launcher.js` | the status-line launcher and the plugin roots it may run |
 
 **MemoryRoomStore** (`test/support/memory-store.js`) is a second implementation that keeps a room in memory and implements `members.update` as a compare-and-set retry loop, as a remote store would. It shares `store.prepare` / `store.buildEntry`, so ids, chain and signatures are byte-identical. `test/store-contract.test.js` runs one suite against both. That is the **remote seam**: a store that keeps rooms off-machine implements the same interface (`store.setBackend(factory)` swaps it in). The seat private keys stay local whatever the store; liveness falls back to the `seen_at` lease when there is no local pid to check.
@@ -173,21 +173,21 @@ An entry is `{id, at, from, via, kind, text?, prev, …kind fields}`. `id` is mo
 | `agent` | `say`, `question`, `status`, `proposal`, `task_req` | the MCP server (`post`, `propose`, `task`) on behalf of a member's Claude |
 | `system` | `decision`, `member_joined`, `member_left`, `retract`, `task`, `status` | hooks and the reaper, with `{system: true}` |
 
-**Signing.** Every hook process runs `seat-key.arm()`, which installs a signer. `append` with `via=human` requires it: the entry gets `room` and `sig` (Ed25519 over the line without `sig`). The MCP server, CLI and monitor never load `seat-key.js` (`test/security.test.js`), so they cannot write `via=human`; the store refuses. Readers call `store.humanTrust(e)`: `verified`, `legacy` (unsigned, from a seat that has no key), or `unverified` (shown as `bob (unverified): …`, never counted for consent or tasks).
+**Signing.** Every hook process runs `seat-key.arm()`, which installs a signer. `append` with `via=human` requires it: the entry gets `room` and `sig` (Ed25519 over the line without `sig`). The MCP server, CLI and tail never load `seat-key.js` (`test/security.test.js`), so they cannot write `via=human`; the store refuses. Readers call `store.humanTrust(e)`: `verified`, `legacy` (unsigned, from a seat that has no key), or `unverified` (shown as `bob (unverified): …`, never counted for consent or tasks).
 
-**Hash chain and `log.idx`.** `verifyChain` checks the chain incrementally from the `log.idx` checkpoint, which is trusted only while the line before its offset still hashes to the stored hash; otherwise it rebuilds from byte 0. The checkpoint also records the offset of every non-chat line, so `readView({after})` returns everything that decides lanes (proposals, answers, joins, tasks, retracts) plus the entries after `after`, without parsing the whole log. The monitor runs `verifyChain` on its health tick and prints one `room log check: …` line per break. The chain makes edits around the store visible; it does not prevent them.
+**Hash chain and `log.idx`.** `verifyChain` checks the chain incrementally from the `log.idx` checkpoint, which is trusted only while the line before its offset still hashes to the stored hash; otherwise it rebuilds from byte 0. The checkpoint also records the offset of every non-chat line, so `readView({after})` returns everything that decides lanes (proposals, answers, joins, tasks, retracts) plus the entries after `after`, without parsing the whole log. The tail runs `verifyChain` on its health tick and sends one `room log check: …` line per break (a `health` event). The chain makes edits around the store visible; it does not prevent them.
 
-**Provisional posts.** When a UserPromptSubmit payload carries no `source`, an `@room` post is appended `provisional` and a detached checker reads the transcript; if a peer session sent it, the checker appends a `retract`. Digests skip provisional entries younger than the check window, and the monitor's settle (1.5 s) is longer than the window (1.2 s).
+**Who typed an `@room`.** The module's `prompt.submit` gate reads the origin Claude Code stamps on the prompt (`composer`, `sdk` or `bridge` count as typed; cc CONTRACT `prompt-origin-composer`) and drops any other `@room` before a hook runs; the shim hands that origin to at-room as `sub_human_origin`, and at-room posts only with a typed one. Older logs may hold `provisional` posts from the retired after-the-fact checker; readers still skip young ones, nothing writes them.
 
 ## Lanes and settle batching
 
 `lane(me, e, entries)` (`lib/room/lanes.js`) says whom an entry concerns:
 
-- **push**: wake now. The monitor prints it (one Claude Code monitor event, one short model turn). Examples: a person's own words (group chat), anything `to` me or mentioning `@me`, a proposal naming me that I have not answered, an objection to my proposal, a task request (orch only).
-- **pull**: no wake. `hooks/at-room.js` adds it to "Room since your last turn" on the next prompt (cursor `ctx-NAME`).
+- **push**: the tail sends it now. A person's own words, joins and leaves (group chat) are `chat`: shown to the person, copied to the model, no wake. Anything `to` me or mentioning `@me`, a proposal naming me that I have not answered, an objection to my proposal, a task request (orch only) is a `wake`: one plugin prompt, one model turn.
+- **pull**: no wake. The tail sends it as "Room since your last turn", which the model reads with its next request.
 - **none**: my own posts, retracted entries.
 
-The tail batches push entries in a `Batcher` (`lib/tail.js`): flush after `SETTLE_MS` 1500 of quiet or `SETTLE_MAX_MS` 5000 after the first (orch: 3000 / 10000), so a burst costs one turn. Each entry is judged again at flush time against `readView`, so an entry answered, decided or retracted in the meantime is dropped. A `member_left` is held `LEAVE_SETTLE_MS` 8000 so a quick leave and rejoin shows nothing. A member's batch is group-chat lines without ids, plus `(for Claude)` lines; the orch's batch starts with `stateLine()` and keeps ids. All timings live in `lib/config.js` with `SUB_HUMAN_*` overrides.
+The tail batches push entries in a `Batcher` (`lib/tail.js`): flush after `SETTLE_MS` 1500 of quiet or `SETTLE_MAX_MS` 5000 after the first (orch: 3000 / 10000), so a burst costs at most one turn. Each entry is judged again at flush time against `readView`, so an entry answered, decided or retracted in the meantime is dropped. A `member_left` is held `LEAVE_SETTLE_MS` 8000 so a quick leave and rejoin shows nothing. A member's batch is group-chat lines without ids, plus `(for Claude)` lines in a wake; the orch's batch starts with `stateLine()` and keeps ids. All timings live in `lib/config.js` with `SUB_HUMAN_*` overrides.
 
 ## Consent
 
@@ -225,7 +225,7 @@ hooks/tasks.js TaskCompleted ─► tasks.gate(): exit 2 unless the owner asked 
 ## Identity and liveness
 
 - **Binding.** `/sub-human NAME [CODE]` triggers `hooks/join.js` (UserPromptExpansion) before the model runs. It writes the seat into `members.json` and the indexes `<home>/sessions/by-pid/<CLAUDE_PID>.json` and `by-sid/<session_id>.json`. The model never names itself.
-- **Resolution.** Hooks: payload `session_id`, then `CLAUDE_PID`. MCP server: `process.ppid` (MCP servers get no `CLAUDE_PID`). CLI and monitor: `CLAUDE_CODE_SESSION_ID`, then `CLAUDE_PID`, then the nearest registered ancestor. `/clear` changes the session id but not the process: `session-restore.js` rebinds the new id to the seat found by pid. `--resume` is a new process with the old id: it rebinds the pid or rejoins the seat.
+- **Resolution.** Hooks: payload `session_id`, then `CLAUDE_PID`. MCP server: `process.ppid` (MCP servers get no `CLAUDE_PID`). CLI and tail child: `CLAUDE_CODE_SESSION_ID` (the module sets it for the child), then `CLAUDE_PID`, then the nearest registered ancestor. `/clear` changes the session id but not the process: `session-restore.js` rebinds the new id to the seat found by pid. `--resume` is a new process with the old id: it rebinds the pid or rejoins the seat.
 - **Liveness.** `seatAlive(m)`: not left, and the pid is alive with a start time equal to the stored `pid_start` (so a reused pid never keeps or adopts a seat). A seat with no pid is alive while its `seen_at` lease is fresh (`SEAT_LEASE_MS` 120 s); the tail's health tick and the hold server renew it at most every `SEAT_BEAT_MS` 30 s.
 - **Address.** `NAME.CODE` is set as the session title, which is what `SendMessage` and `ListAgents` use.
 
@@ -239,14 +239,14 @@ orch session ─► /sub-human ─► join.js binds the "orch" seat (agent_type 
              ─► TaskCreate "room CODE open"
 last member SessionEnd ─► reap (detached): grace 10 s (a rejoin cancels) ─► set closing ─► status to orch
                           "room closed: complete task 1" ─► wait ≤ 20 s ─► claude stop <job> ─► orch seat left
-crashed members (no SessionEnd) ─► orch tail health tick: watchdog() sees no live member for 60 s ─► closing + reap
+crashed members (no SessionEnd) ─► orch tail child's health tick: watchdog() sees no live member for 60 s ─► closing + reap
 ```
 
 `needsSpawn` also respawns an orch whose pid is dead, whose claim is older than `ORCH_CLAIM_MS`, or which never bound within `ORCH_BIND_MS`. `openRooms()` ignores rooms where only the orch is left, and join sweeps those through the watchdog.
 
 ## Security model
 
-One machine, one OS user, trusted collaborators. The threat is a member's Claude (possibly steered by text posted in the room) speaking or consenting as a person. Defences: `via=human` only from hooks, signed with a key only hook processes load; the store guard (the hooks module's `mod/guard.mjs`, in-process) denies file-tool writes into the store and Bash commands that name it, set `SUB_HUMAN_HOME` or run the plugin's modules; the module's `prompt.submit` gate drops an `@room` whose engine-set origin is not the person's (composer, sdk, bridge), and at-room trusts that origin (without the module: `source` and the forgery check); consent only from the native dialog. Not covered: the `Read` tool, other MCP servers, a hostile local user. Full list: [README → Threat model](../plugin/sub-human/README.md#threat-model).
+One machine, one OS user, trusted collaborators. The threat is a member's Claude (possibly steered by text posted in the room) speaking or consenting as a person. Defences: `via=human` only from hooks, signed with a key only hook processes load; the store guard (the hooks module's `mod/guard.mjs`, in-process) denies file-tool writes into the store and Bash commands that name it, set `SUB_HUMAN_HOME` or run the plugin's modules; the module's `prompt.submit` gate drops an `@room` whose engine-set origin is not the person's (composer, sdk, bridge), and at-room posts only with that origin (a seat requires the module); consent only from the native dialog. Not covered: the `Read` tool, other MCP servers, a hostile local user. Full list: [README → Threat model](../plugin/sub-human/README.md#threat-model).
 
 ## Claude Code contract (generated)
 
@@ -265,10 +265,10 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `task-created-block-deletes` | §1 | API | A TaskCreated block deletes the task and throws. |
 | `task-update-schema` | §1 | API | TaskUpdate metadata merges; null deletes a key. |
 | `task-create-metadata` | §1 | API | TaskCreate accepts metadata. |
-| `env-child-session` | §2 | env | Hooks, Bash, statusLine, subagentStatusLine and monitors get CLAUDE_PID and CLAUDE_CODE_SESSION_ID (cc.ENV, sessionId, claudePid). |
+| `env-child-session` | §2 | env | Hooks, Bash, statusLine and subagentStatusLine get CLAUDE_PID and CLAUDE_CODE_SESSION_ID (cc.ENV, sessionId, claudePid). |
 | `env-mcp-session` | §2 | env | MCP stdio servers get CLAUDE_CODE_SESSION_ID (fixed at spawn) but not CLAUDE_PID. |
 | `env-plugin-mcp` | §2 | env | Plugin MCP servers get CLAUDE_PLUGIN_ROOT/DATA in env. |
-| `env-clear-session-id` | §2 | incidental | /clear updates process.env.CLAUDE_CODE_SESSION_ID; running monitors/MCP servers keep the old id. |
+| `env-clear-session-id` | §2 | incidental | /clear updates process.env.CLAUDE_CODE_SESSION_ID; running MCP servers keep the old id. |
 | `env-nested-strip` | §2 | incidental | A nested claude drops CLAUDE_CODE_SESSION_ID from its env. |
 | `hook-input-common` | §2 | API | Common hook input: session_id, transcript_path, cwd, prompt_id?, permission_mode?, agent_id?; no pid. |
 | `pkill-guard` | §2 | incidental | Bash pkill wrapper refuses patterns matching CLAUDE_PID. |
@@ -294,10 +294,6 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `daemon-env-allowlist` | §5 | env | The pieces of the daemon allowlist (zWe + dWn + extras in 2.1.292) that DAEMON_ENV_ALLOW copies. |
 | `bg-worker-env` | §5 | incidental | Workers run with the daemon's own process.env plus the filtered dispatch env. |
 | `bg-provider-env` | §5 | incidental | Persisted providerEnv is filtered through p0e too. |
-| `monitor-schema` | §6 | API | Monitor `when`: "always" or "on-skill-invoke:<skill>"; name is the dedupe key. |
-| `monitor-location` | §6 | incidental | manifest.experimental.monitors or manifest.monitors, else monitors/monitors.json. |
-| `monitor-arm-gates` | §6 | incidental | Arming is skipped by policy, the tengu_amber_sentinel gate, -p, managed disableAllHooks, or untrusted workspace. |
-| `monitor-not-rearmed` | §6 | incidental | A monitor that exits is not re-armed until the claude process restarts (in-process /resume and /clear do not re-arm). |
 | `matcher-rule` | §7 | API | Exact-name list vs unanchored regex (cc.matcherIsExact, cc.matcherMatches). |
 | `hook-if` | §7 | API | `if` uses permission-rule syntax; Task tools can only be filtered by bare name. |
 | `hook-async` | §7 | API | Per-hook async/asyncRewake fields. |
@@ -305,13 +301,9 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `stop-additional-context` | §7 | incidental | Stop hookSpecificOutput.additionalContext continues the turn with that text, like a block but without the red "Stop hook error" line or notification (only real blockingErrors get those). |
 | `session-end-budget` | §7 | env | SessionEnd budget: env override, else max hook timeout clamped to [1500, 60000] ms (cc.sessionEndBudgetMs). |
 | `peer-envelope` | §8 | incidental | <cross-session-message from from-session hop-chain from-name from-mode from-plugin> in that order (cc.parseEnvelope). |
-| `peer-held-prefix` | §8 | incidental | Held/mid-turn peer deliveries start with this prefix (cc.isPeerText). |
-| `peer-origin` | §8 | incidental | Transcript user entries from peers carry origin.kind "peer" (cc.entryIsPeer). |
-| `ups-source` | §8 | API | UserPromptSubmit source "system" for peers, channels, task notifications (cc.isPeerPrompt). |
 | `prompt-origin-composer` | §8 | incidental | prompt.submit origin "composer" is only the person's own Enter (and a --bg dispatch prompt); -p is "sdk", peers "peer" (also from $.session.send), notifications "task-notification". No hook sets it (MODS-PLAN W0 S2, S6). |
 | `cross-session-inbound` | §8 | API | crossSessionInbound accept\|hold\|refuse; the orch sets accept. |
 | `harbor-kite-gate` | §8 | env | Cross-session messaging gate (default on). |
-| `task-notification-prompt` | §8 | incidental | Monitor/background notices arrive as prompts starting <task-notification> (cc.isTaskNotification). |
 | `pasted-content` | §8 | incidental | Long pastes are wrapped in <pasted_content id="N"> (cc.PASTED_RE). |
 | `plugin-settings-allowlist` | §9 | API | Plugin settings.json keeps only agent and subagentStatusLine. |
 | `subagent-statusline-precedence` | §9 | incidental | Any user/project/local/flag subagentStatusLine overrides the plugin's. |
@@ -326,7 +318,6 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `classic-chain-order` | §10 | incidental | A module's classic.<Event> hook runs above the plugin's own command hooks for that event; one that answers without next() means the command hooks beneath do not run (S1, S5). mod/consent.mjs relies on it: classic.PreToolUse on a room tool answers {} (no decision: the normal permission flow) to skip consent's command hook while no review is open. |
 | `prompt-submit-ups-order` | §10 | incidental | prompt.submit's core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). mod/prompt.mjs relies on it: classic.UserPromptSubmit runs inside prompt.submit's next(e), so prompt.submit hands it e.origin (the classic payload has none) in a module variable. |
 | `usermessage-draw-only` | §10 | incidental | A ui.render rewrite of UserMessage text changes only the drawing; origin, isExpanded, task and from are pinned. |
-| `usermessage-notification-summary` | §10 | incidental | A task-notification UserMessage row's props.text is the notification's <summary> (a monitor's: 'Monitor event: "sub-human room"'), not the event's lines, which the engine draws as the row's headline and drops once a hook rewrites the text. So mod/render.mjs leaves room notifications to the engine. |
 | `plugin-types-state` | §10 | incidental | validate refuses a $.state value the plugin's own types contract (plugin.json "types": types/index.d.ts) does not declare in PluginState; sub-human declares sub-human.hello. |
 | `session-append-note` | §10 | incidental | $.session.append writes a user row as isMeta (the model reads it from the loop's next top; an idle session is not woken) and a system row as a notice the model never reads (S4). |
 | `session-append-notice-hidden` | §10 | incidental | A $.session.append system row is stored at level "info": drawn only in the ctrl+o transcript view (also after --resume), never in the default view. Chat lines go through $.ui.log instead (S4). |
@@ -359,12 +350,12 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/room/store.js`: the RoomStore seam, and FsRoomStore, its implementation over the room directory on this machine.
 - `lib/room/validate.js`: the room log's envelope rules (envelope v3): which kinds each `via` may write, the fields a caller may set, and the task fields of task_req / task entries. append() (store.js) runs validate() before it takes the log lock.
 - `lib/rows.js`: participant rows in the agent panel. Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.js kv).
-- `lib/tail.js`: the room monitor behind `sub-human tail` (bin/sub-human documents what it prints).
+- `lib/tail.js`: the room tail behind `sub-human tail` (bin/sub-human), the hooks module's child (mod/deliver.mjs, docs/next/MODS-PLAN.md Part 2b).
 - `lib/tasks.js`: the room's shared task list. The headless orch's own native task list (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list.
 - `lib/text.js`: the string helpers and name patterns every module shares.
 <!-- /gen:lib-modules -->
 
-Elsewhere: `hooks/common.js` (shared hook plumbing: `readInput`, `resolveSeat`, output helpers), `hooks/seat-key.js` (the signer), `bin/sub-human` (the read-only CLI and the monitor entry), `statusline/` (row text), `agents/` (`orchestrator`, `room`, `participant`), `skills/sub-human/` (the join skill and the role texts the hooks inject).
+Elsewhere: `hooks/common.js` (shared hook plumbing: `readInput`, `resolveSeat`, output helpers), `hooks/seat-key.js` (the signer), `bin/sub-human` (the read-only CLI and the tail entry), `statusline/` (row text), `agents/` (`orchestrator`, `room`, `participant`), `skills/sub-human/` (the join skill and the role texts the hooks inject).
 
 ## Performance
 
@@ -373,7 +364,9 @@ Everything is a `node` start, so the number of processes per event is the main c
 | Event | Node starts |
 |---|---|
 | a prompt, session with no seat | 0 (an `@room` there: 1, its refusal) |
-| a prompt, seated | 1 (`prompt.js`, through the module) |
+| a plain prompt, seated member | 0 while the tail child delivers and no review may be open (the session's first prompt: 1); +1 `presence.js`, not awaited, when the last presence was not "working" |
+| an `@room` post | 1 (`prompt.js`, through the module: signing) |
+| a prompt in the orch's session | 1 (`prompt.js`: its refusal of typed input) |
 | turn end (Stop) | 0 while no review may be open; else 1 (`consent.js`) |
 | `Bash`, `Write`/`Edit` | 0 (the module's in-process guard) |
 | a room MCP tool | 0 while no review may be open; else 1 (`consent.js`) |
@@ -383,7 +376,7 @@ Everything is a `node` start, so the number of processes per event is the main c
 | `ExitPlanMode` during a review | up to 3 (Pre, PermissionRequest, Post) |
 | other tools (`Read`, `Grep`, …) | 0 |
 
-Long-lived per session: the monitor and the MCP server (one idle `node` each). Measured in the audit waves: the at-room hook at **36 ms with a 100k-entry log** (was 243 ms before `log.idx` and tail-only reads), `append` **1.8 ms**. `append` reads only the log's tail for `id` and `prev`; readers keep a per-file cache and parse only appended bytes.
+Long-lived per seated session: the tail child and the MCP server (one idle `node` each); a session with no seat runs only the MCP server. Measured in the audit waves: the at-room hook at **36 ms with a 100k-entry log** (was 243 ms before `log.idx` and tail-only reads), `append` **1.8 ms**. `append` reads only the log's tail for `id` and `prev`; readers keep a per-file cache and parse only appended bytes.
 
 ## Testing
 

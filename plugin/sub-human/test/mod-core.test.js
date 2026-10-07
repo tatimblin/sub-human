@@ -107,7 +107,7 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
 test('shim: a real hook\'s output translates (at-room posting through prompt.js)', async t => {
   const { toClassic } = await load('mod/core/shim.mjs');
   const w = new World({ orch: 'sleep', alice: 'act' }, { t });
-  const r = w.hook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: '@room hello', source: 'user', transcript_path: '' }, { as: 'alice' });
+  const r = w.hook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: '@room hello', sub_human_origin: 'composer', transcript_path: '' }, { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
   const { result } = toClassic('UserPromptSubmit', { exitCode: r.code, stdout: r.stdout, stderr: r.stderr });
   assert.equal(result.preventContinuation, true);
@@ -158,7 +158,7 @@ test('prompt: a seated member skips node only while the tail child delivers and 
   const hello = { sid: 's1', seat };
   const e = prompt => ({ session_id: 's1', prompt });
   assert.equal(needsNode(e('hi'), hello, { delivering: true, reviewFlag: false }), false);
-  assert.equal(needsNode(e('hi'), hello, { delivering: false, reviewFlag: false }), true, 'the Monitor delivers: at-room\'s digest');
+  assert.equal(needsNode(e('hi'), hello, { delivering: false, reviewFlag: false }), true, 'no tail child yet: unsure, node runs');
   assert.equal(needsNode(e('hi'), hello, { delivering: true, reviewFlag: true }), true, 'a review may be open');
   assert.equal(needsNode(e('hi'), hello, { delivering: true }), true, 'flag unset: unsure');
   assert.equal(needsNode(e('@room hi'), hello, { delivering: true, reviewFlag: false }), true, 'the post is signed in node');
@@ -187,7 +187,10 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
   assert.equal(d.parseEvent('not json'), null);
   // the tail's own event writer and this parser agree
   const tail = require('../lib/tail.js');
-  assert.equal(tail.LEASE_VIA, 'mod');
+  const { events } = tail.formatNdBatch([], { me: { name: 'alice', role: 'member' }, room: {}, entries: [], show: () => false, joinNote: () => '', seen: new Set() });
+  assert.deepEqual(events, []);
+  for (const ev of [{ type: 'chat', lines: ['bob: hi'] }, { type: 'pull', text: tail.PULL_HEAD + '\nbob: hi' }, { type: 'wake', text: 'x' }, { type: 'health', text: 'room log check: x' }])
+    assert.deepEqual(d.parseEvent(JSON.stringify(ev)), ev);
 });
 
 test('deliver: the routing table (Part 2b): chat is a notice, pull an append, wake a prompt when idle and an append mid-turn', async () => {

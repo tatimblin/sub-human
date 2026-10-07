@@ -120,7 +120,7 @@ test('identity: rebindSession after /clear; resolveSelf by CLAUDE_CODE_SESSION_I
   assert.equal(identity.resolveBySession(`sess-alice-${process.pid}`), null);
   assert.equal(identity.readMembers(code).alice.session_id, 'new-sid');
   assert.equal(identity.rebindSession(process.pid, '../x'), false);
-  // 1. the session id Claude Code sets for Bash and monitors.
+  // 1. the session id Claude Code sets for Bash (and the mod for its tail child).
   assert.equal(inChild('() => i.resolveSelf().name', { CLAUDE_CODE_SESSION_ID: 'sbob' }), 'bob');
   // 2. CLAUDE_PID (a stale session id after /clear falls through to it).
   assert.equal(inChild('() => i.resolveSelf().name', { CLAUDE_CODE_SESSION_ID: 'stale', CLAUDE_PID: String(bob.pid) }), 'bob');

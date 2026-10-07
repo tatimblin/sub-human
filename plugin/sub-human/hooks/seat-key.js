@@ -11,7 +11,7 @@
 //                                     a hook creates it lazily for a seat that joined before keys existed)
 //   arm()                             install ensure() as this process's signer (hooks/common.js, every hook)
 //
-// The room MCP server, the CLI and the monitor never require this file (test/security.test.js checks it), so
+// The room MCP server, the CLI and the tail never require this file (test/security.test.js checks it), so
 // they cannot sign. The Bash guard (mod/guard.mjs, the hooks module) denies commands that name the keys or run these hooks.
 // Threat model: one machine, one OS user. This stops a model from forging a person; it is no defence against a
 // local user, who can read their own files.

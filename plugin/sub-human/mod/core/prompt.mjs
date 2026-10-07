@@ -14,15 +14,15 @@
  *                                     would do nothing it needs: the hello is this session's, the prompt is not an
  *                                     @room (node signs the post, or writes the refusal), and either the session
  *                                     has no seat, or its seat is a member's (never the orch's: its refusal of
- *                                     typed input is node's), the mod's tail child delivers for it (W3: at-room's
- *                                     digest, notices and row calls are the child's now) and consent said no
+ *                                     typed input is node's), the mod's tail child delivers for it (W3: the
+ *                                     digest, notices and row calls are the child's) and consent said no
  *                                     review is open (reviewFlag false)
  *   originKind(origin) -> kind        what the shim hands at-room as sub_human_origin: origin.kind, and for a
  *                                     plugin "plugin:<name>" (the mod's own wakes are "plugin:sub-human")
  *   originQueue()                     the prompt.submit -> classic.UserPromptSubmit hand-off of e.origin.kind
  *                                     (the classic payload has none): push(text, kind) -> item, drop(item),
  *                                     take(prompt) -> kind | null (the item whose text is the prompt, else the
- *                                     only one waiting, else null: then at-room keeps today's checks)
+ *                                     only one waiting, else null: then at-room refuses an @room)
  *   mergeClassic(ours, theirs) -> ClassicResult    ours (the shim's) above theirs (the hooks beneath): a
  *                                     block or stop of ours wins, contexts join (ours first), ours' title wins
  */

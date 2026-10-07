@@ -1,6 +1,6 @@
 # Mods (function hooks) plan
 
-Status: W0 done (a6abb60), W1 done (03a3d9c), W2 done (2b08d7f), W3 done (see W3 results), W4 next, 2026-10-07. Decided: D1 yes, D2 yes (W4), D3 notices via `$.ui.log`, D4 add `bridge`, W2's room-tool skip kept; generated `tsconfig.json` and `.claude-plugin/types/` are gitignored. D5–D7 open; D8 implemented as at most once (open to revisit).
+Status: W0 done (a6abb60), W1 done (03a3d9c), W2 done (2b08d7f), W3 done (b18943c), W4 cut-over done (see W4 results; live demo pending in this commit), 2026-10-07. Decided: D1 yes (join refuses without the hello lease), D2 yes (Monitor dropped in W4), D3 notices via `$.ui.log` + isMeta copy, D4 composer/sdk/bridge, W2's room-tool skip kept, D8 at most once; generated `tsconfig.json` and `.claude-plugin/types/` are gitignored. D5 and D6 open (later); D7 is `.mjs` in practice.
 - the plugin-authoring skill shipped with Claude Code 2.1.292 (`reference.md`, `types/claude-code.d.ts`, `examples/`);
 - the 2.1.292 binary as text (`/tmp/cc292/bin.txt`), for everything the skill does not settle;
 - [`docs/internals/cc-2.1.292.md`](../internals/cc-2.1.292.md) (`hooks-modules (b)`) and the code at `0a310fd`.
@@ -367,6 +367,19 @@ Open, for W4+:
 - Live demo S1–S10 (only when the user asks). Deterministic checks must pass. Behavioural: wakes (baseline 18) and noise should drop; model calls per chat burst should drop to 0 under D3.
 - Walkthrough; commit.
 
+#### W4 results
+
+**Cut-over** (2026-10-07, one agent). `npm test` (plugin 339, scripts 31, `test:mods` 41), `npm run probe` (72/72: nine entries removed), `npm run validate` and `bash -n scripts/demo.sh` are green. Production code +176 / −545 lines, tests +171 / −400.
+
+- **D1.** `hooks/join.js` refuses without `<home>/sessions/mods/<sid>.json` (`identity.readModLease`): "sub-human needs Claude Code 2.1.292+ with function hooks on; not in --bare or safe mode" (a block, nothing written). The hook tests write the lease the way `mod-hello` does (`World.modLease`).
+- **D2.** `monitors/monitors.json` is gone, and with it `lib/tail.js`'s text writer (`formatMemberBatch`, the lease-yield branch), the delivery lease `delivery-NAME` (its only readers were the Monitor's tail and at-room; `DELIVERY_LEASE_MS`, `leaseKey`, `leaseLive`, `LEASE_VIA`), the first-run fallback to the Monitor's cursor `tail-NAME`, the `ctx-NAME` cursor (only at-room's digest read it) and the tail's provisional hold. `sub-human tail` writes events only (`--ndjson` still accepted, the mod's argv) and always quits with its parent.
+- **at-room** (−229 lines): the forgery checker (`spawnForgeryCheck`, `forgeryCheck`, `--forgery-check`), `promptOrigin`, the `source` branch (`TYPED_SOURCES`, `hasSource`), the provisional write, `pullDigest`, `noticeLines`, `proposalReminders`, the per-prompt rows listing, `modDelivers` and its session title (the mod sets it). An `@room` with no `sub_human_origin` (a hand-off lost to a reload) is refused ("type it again"); in the orch's session no origin runs, so a wake is never lost. It still writes "working" presence and the orch refusal.
+- **lib/cc.js**: `isPeerPrompt`, `entryIsPeer`, `isPeerText`, `PEER_PREFIX`, `PEER_ENVELOPE`, `isTaskNotification`; CONTRACT `ups-source`, `peer-origin`, `peer-held-prefix`, `task-notification-prompt`, `usermessage-notification-summary` and the four §6 monitor entries (`monitor-schema`, `-location`, `-arm-gates`, `-not-rearmed`). `parseEnvelope` and `peer-envelope` stay (not part of the deleted paths).
+- **store**: `append` no longer takes `provisional`; `isYoungProvisional` stays for old logs and `mcp/hold.js` (`PROVISIONAL_MS` is now a fixed `config.PROVISIONAL_MS`, `FORGERY_*` gone). **notices**: via `mod` only.
+- **Kept, deliberately**: `hooks/prompt.js` (one node start for at-room + consent, as W3 decided); `needsNode`'s "no tail child yet → run node" (that is "unsure", not a fallback path); the subagent rows, unchanged.
+- hooks.json: 13 command entries, none removed in W4 (the plan's 12 plus consent's room-tool matcher, kept in W2). Long-lived per seated session: the tail child and the MCP server (2; was Monitor + tail child + MCP after W3, Monitor + MCP before). A session with no seat: the MCP server only.
+- Docs: README (requirement line, the chat rows, "The room tail", the threat model's forgery check, a troubleshooting row; the Monitor footer and push-notification notes removed), ARCHITECTURE (process model, store layout, lanes, performance; `npm run docs`), CLAUDE.md layout. The member/orch skill texts already had no Monitor wording.
+
 ## What gets deleted (after W4, with D1 + D2 + D3)
 
 - `hooks/guard.js` (132 lines; about 90 move to `mod/core/guard.mjs`) and its 2 hooks.json entries.
@@ -423,5 +436,5 @@ hooks.json goes from 21 command entries to 12.
    - `$.agent.spawn` rows: it would change the rows, so it is excluded now.
    - `session.send` logging of Claude↔Claude messages in the room.
    - An `AbovePrompt` room band.
-7. **D7: module language.** Recommended: `.mjs` + JSDoc, with no build and `mod/core` importable by node 20. Alternative: `.ts` modules, which needs Node 22.6+ type stripping for the node tests (an `engines` bump).
-8. **D8: pull delivery at most once (simple) or acked?** An acked pull means the mod confirms by `$.process.run` before the tail advances `ctx-NAME`, which costs one node start per pull batch.
+7. **D7: module language.** In practice `.mjs` + JSDoc since W1 (no further work). Recommended: `.mjs` + JSDoc, with no build and `mod/core` importable by node 20. Alternative: `.ts` modules, which needs Node 22.6+ type stripping for the node tests (an `engines` bump).
+8. **D8: pull delivery at most once (simple) or acked?** **Decided 2026-10-07 (user): at most once.** An acked pull means the mod confirms by `$.process.run` before the tail advances `ctx-NAME`, which costs one node start per pull batch.

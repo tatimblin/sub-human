@@ -18,7 +18,7 @@ claude plugin marketplace add /path/to/sub-human
 claude plugin install sub-human@sub-human
 ```
 
-**Requirements.** Node 20 or newer on `PATH`: every hook, the room MCP server, the monitor and the row status line run `node`. macOS or Linux only (the row launcher is a POSIX shell script and the store relies on POSIX rename and file modes); Windows is not supported. `claude plugin validate plugin/sub-human` checks the plugin. Accept workspace trust for your folder: the orch starts in your working directory, and Claude Code refuses to start a background session in an untrusted folder.
+**Requirements.** Claude Code 2.1.292 or newer with function hooks on (not `--bare`, not safe mode, and no policy that turns hooks off): the plugin's hooks module guards the store, checks who typed an `@room` and delivers the room, so `/sub-human` refuses to join without it. Node 20 or newer on `PATH`: every hook, the room MCP server, the room tail and the row status line run `node`. macOS or Linux only (the row launcher is a POSIX shell script and the store relies on POSIX rename and file modes); Windows is not supported. `claude plugin validate plugin/sub-human` checks the plugin. Accept workspace trust for your folder: the orch starts in your working directory, and Claude Code refuses to start a background session in an untrusted folder.
 
 ## Join: one command
 
@@ -88,13 +88,12 @@ Anything else you type goes to your own Claude. Its posts are labelled as your C
 **The room reads like a group chat.** When someone else posts, everyone else's session shows their exact words, with no ids and nothing added:
 
 ```
-⏺ Monitor event: "sub-human room"
-⏺ bob: sure, once we've agreed how paging works
+  sub-human: bob: sure, once we've agreed how paging works
 ```
 
-A Claude's post shows as `bob's Claude: …`, a join as `bob joined`, a leave as `bob left`. The plugin's `room` monitor prints these lines and your Claude repeats them as they are; it adds no preface, summary or reply, and it doesn't answer for you. Claude Code has no way to put a lasting line in your session without a model turn, so each burst of room messages costs one short turn. A leave shows only after 8 s away, so a quick leave and rejoin shows nothing.
+A Claude's post shows as `bob's Claude: …`, a join as `bob joined`, a leave as `bob left`. The plugin writes these lines into your session itself, as dim notices that stay there (also after `--resume`). They cost no model turn: your Claude doesn't repeat them, and it gets a copy to read with its next request. A leave shows only after 8 s away, so a quick leave and rejoin shows nothing.
 
-Every person's own words reach everyone. A Claude's post reaches you when it is addressed to you or mentions `@you`. A proposal naming you opens for you to read and answer. Everything else reaches your Claude as a short "Room since your last turn" note on your next prompt. Your room row also reads `+bob joined` or `−bob left` for two minutes. If the monitor wasn't running when someone joined or left, that line shows on your next prompt instead.
+Every person's own words reach everyone. A Claude's post reaches you when it is addressed to you or mentions `@you`, and a proposal naming you opens for you to read and answer: those wake your Claude with a prompt from the plugin ("Prompt from the sub-human plugin"), or join its current turn if it is busy. Everything else reaches your Claude as a short "Room since your last turn" note it reads with its next request. Your room row also reads `+bob joined` or `−bob left` for two minutes.
 
 **Claude to Claude.** Ask your Claude to "ask alice's Claude what the cursor format is". It calls `SendMessage` to `alice.vole-8126`, and alice's pane shows `› Message from @bob.vole-8126: …`. Those messages come from Claudes, not people.
 
@@ -154,15 +153,14 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 | `watch NAME` | NAME's thread: their own words, their Claude's posts (labelled), and their answers to proposals. |
 | `tasks [--json]` | The room's shared task list. |
 
-`tail` (the room monitor) and `agent-statusline` (the rows) are internal.
+`tail` (the room tail) and `agent-statusline` (the rows) are internal.
 
-## The monitor footer
+## The room tail
 
-The plugin's `room` monitor is armed in **every** session where the plugin is loaded (`when: "always"`), so it also survives `--resume` and `--continue`; an on-skill-invoke monitor would not come back after a resume, and a monitor that exits is never re-armed in that process, so it never exits. The cost is one idle `node` process per Claude Code session while the plugin is enabled. Claude Code may count it in its footer (for example "1 monitor still running" or in the `/exit` dialog). Its line in your session reads `Monitor event: "sub-human room"`. Outside a room it does nothing: it polls at most every 10 s, doesn't call `ps`, and prints nothing.
+In a session that has joined a room, the plugin's hooks module runs one `node` child, `sub-human tail`, for the session's life: it follows the room's log and hands each new line to the module, which shows it, gives your Claude its copy, or wakes it. The child restarts by itself if it exits, and stops when the session ends or leaves. A session that never joins a room starts no child.
 
 ## Settings worth knowing
 
-- **Push notifications.** When `agentPushNotifEnabled` is on in your settings, Claude Code's monitor wakes may send a push notification for room notices. To turn them off, set `"agentPushNotifEnabled": false`, or launch with `--settings '{"agentPushNotifEnabled":false}'`.
 - **Your own `subagentStatusLine` hides the row text.** The rows' text (who said what, tasks, presence) comes from the plugin's `subagentStatusLine`. Claude Code lets any `subagentStatusLine` in your user, project or local settings, or one passed with `--settings`, override a plugin's, so with one set the rows show your status line instead. Remove it (or run it only outside rooms) to get the room text back.
 - **Bypass mode.** In `--dangerously-skip-permissions` (bypass) mode, Claude Code holds incoming `SendMessage`s from other sessions behind a dialog until you answer it. The join message warns you. Use a normal permission mode in a room if you want other Claudes' messages to reach yours without a dialog.
 
@@ -176,9 +174,9 @@ The security model is one machine, one OS user. Everyone in a room is a trusted 
 
 - Agreement and objection come only from the plan view or the card, which the human answers. A plan text edited before "Yes", answers that come with the model's call, an AFK timeout or a stale hash are dropped. The only dialog-free exit the hooks allow records nothing.
 - Your words reach the room only through `@room`, posted by a hook. Your Claude's posts are always labelled `via=agent`. `SendMessage` between sessions is Claude to Claude.
-- **Seat keys.** Each seat gets an Ed25519 key pair when it joins, stored in `<home>/keys/<CODE>/` (directory 0700; `NAME.key` and `NAME.pub` 0600). Every `via=human` entry is signed with the seat's private key. Only hook processes load that key, and Claude Code runs hooks itself; a model never does. The room MCP server, the CLI and the monitor never load it, so they can't write `via=human` at all; the store refuses the append. Readers check the signature against the public key. A `via=human` line without a valid signature shows as `bob (unverified): …`, and consent never counts it. Logs from before seat keys still read, marked unverified. Their answers still count until that seat gets a key.
-- **Forgery check.** With function hooks on, the plugin's hooks module reads the origin Claude Code itself stamps on each prompt and drops an `@room` that the person didn't type (from another session, a notification, another plugin) before any hook runs. Without the module, Claude Code tells the hook who wrote the prompt (`source`). An `@room` from another session, a task notification, a wakeup or any other machine source is refused on the spot. When a payload has no `source` (older builds), the post is written as provisional. A detached check then reads the transcript and retracts the post if a peer sent it. A provisional post stays out of digests for about 1.7 s. The monitor waits 1.5 s before it sends a line, which is longer than the check takes (1.2 s). If the transcript never shows the prompt within the window, the post stands: the check fails open, so a slow disk can't lose a person's words.
-- **Store guard.** The plugin's function hooks module (`mod/guard.mjs`, Claude Code 2.1.292+) denies `Write`, `Edit`, `MultiEdit` and `NotebookEdit` into the store (`~/.sub-human` or `$SUB_HUMAN_HOME`, checked lexically and after resolving symlinks), so a Claude can't edit the log with its file tools. It runs in-process on every such call, so it costs no process start, and it learns where the store is from the plugin itself when the session starts. It also lets joined sessions use the room tools without a prompt, and refuses `hold` to anything but a row agent. Where function hooks are off (`--bare`, safe mode, a policy that turns hooks off) there is no store guard.
+- **Seat keys.** Each seat gets an Ed25519 key pair when it joins, stored in `<home>/keys/<CODE>/` (directory 0700; `NAME.key` and `NAME.pub` 0600). Every `via=human` entry is signed with the seat's private key. Only hook processes load that key, and Claude Code runs hooks itself; a model never does. The room MCP server, the CLI and the room tail never load it, so they can't write `via=human` at all; the store refuses the append. Readers check the signature against the public key. A `via=human` line without a valid signature shows as `bob (unverified): …`, and consent never counts it. Logs from before seat keys still read, marked unverified. Their answers still count until that seat gets a key.
+- **Forgery check.** The plugin's hooks module reads the origin Claude Code itself stamps on each prompt (only your own Enter, `-p` or Remote Control count as typed) and drops an `@room` that you didn't type (from another session, a notification, another plugin) before any hook runs. The hook that signs the post checks that origin again; a post whose origin it can't see is refused, and you type it again.
+- **Store guard.** The plugin's function hooks module (`mod/guard.mjs`, Claude Code 2.1.292+) denies `Write`, `Edit`, `MultiEdit` and `NotebookEdit` into the store (`~/.sub-human` or `$SUB_HUMAN_HOME`, checked lexically and after resolving symlinks), so a Claude can't edit the log with its file tools. It runs in-process on every such call, so it costs no process start, and it learns where the store is from the plugin itself when the session starts. It also lets joined sessions use the room tools without a prompt, and refuses `hold` to anything but a row agent. Where function hooks are off (`--bare`, safe mode, a policy that turns hooks off) a session can't join a room.
 - **Bash guard.** The same module checks every `Bash` command and denies one that:
   - names the store (its path, `~/.sub-human`, `$HOME/.sub-human`, the keys under it);
   - names or sets `SUB_HUMAN_HOME`;
@@ -201,7 +199,7 @@ The plugin doesn't stop a hostile local user, who can read the keys and write th
 | "no orch" on join, or `Workspace not trusted` | Run `claude` in that folder once and accept trust, then join again. Without an orch the room still works, but it has no shared task list. |
 | No rows in the panel | Accept workspace trust for this folder. After a resume they come back by themselves. |
 | A proposal didn't open | Ask your Claude to "show me the proposal". `sub-human read` shows who a proposal names. |
-| A push notification arrives on room notices | See **Push notifications** above. |
+| `/sub-human` says it needs Claude Code 2.1.292+ with function hooks on | Update Claude Code, and start it without `--bare` or safe mode; a managed policy that turns hooks off also prevents it. |
 
 ## Limits
 

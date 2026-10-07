@@ -97,8 +97,14 @@ class World {
   members() { return this.lib(() => identity.readMembers(this.code)); }
   memberDir(name) { return path.join(this.home, 'rooms', this.code, 'members', name); }
 
-  /** Run hook `name` with stdin `input`, as identity `as` (sets CLAUDE_PID and session_id). */
-  hook(name, input, { as, env = {}, session = true } = {}) {
+  /** The hooks module's hello lease for session id sid (hooks/mod-hello.js writes it on session.start; join needs it). */
+  modLease(sid) { if (sid) this.lib(() => identity.writeModLease(sid, { plugin_root: PLUGIN })); }
+
+  /**
+   * Run hook `name` with stdin `input`, as identity `as` (sets CLAUDE_PID and session_id). For join, the session's
+   * hello lease is written first, as the hooks module does on session.start (modLease: false leaves it out).
+   */
+  hook(name, input, { as, env = {}, session = true, modLease = true } = {}) {
     const inp = { ...input, cwd: this.cwd };
     // Never launch a real orch: `claude` is /usr/bin/false unless a test passes a stub (SUB_HUMAN_CLAUDE).
     const e = baseEnv({ SUB_HUMAN_HOME: this.home, HOME: this.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0', ...env });
@@ -107,6 +113,7 @@ class World {
       if (session) inp.session_id = this.sid[as];
     }
     for (const k of Object.keys(env)) if (env[k] === undefined) delete e[k];
+    if (name === 'join' && modLease) this.modLease(inp.session_id);
     const r = spawnSync(process.execPath, [path.join(HOOKS, name + '.js')], {
       input: JSON.stringify(inp), env: e, encoding: 'utf8', cwd: this.cwd, timeout: 30_000,
     });

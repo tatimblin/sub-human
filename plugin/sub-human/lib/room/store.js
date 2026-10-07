@@ -9,10 +9,9 @@
  *
  * RoomStore (one room; get one with open(code)):
  *   code                                    the room code
- *   append(entry, {via, from, system, provisional}) -> Entry
+ *   append(entry, {via, from, system}) -> Entry
  *       validate() (validate.js) first; then, atomically: id (monotonic), at, from, via, prev (hash12 of the
- *       previous line); task_req gets `by` = from. provisional: true marks a post whose origin check is still
- *       running (hooks/at-room.js); see isYoungProvisional. via "human" needs the seat's key: the process must
+ *       previous line); task_req gets `by` = from. via "human" needs the seat's key: the process must
  *       have installed a signer (globalThis[SIGNER], set by hooks/seat-key.js arm(), which every hook process
  *       runs; never the MCP server or the CLI). The entry then carries room (the code) and ends with sig =
  *       Ed25519 over the line without sig. No signer, or no key for (room, from) -> RoomError INVALID. A line
@@ -39,8 +38,7 @@
  *       absolute path older proposal entries stored. localPath: a file a person can open (null off-machine).
  *   kv.get(key, fallback?), kv.set(key, value, {compact}?), kv.update(key, fn, {compact, timeoutMs, staleMs}?),
  *   kv.delete(key), kv.list(prefix) -> [key], kv.lock(key, fn, opts?)
- *       small derived documents: tasks, presence/NAME, rows/*, members/NAME/review, members/NAME/<state>,
- *       delivery-NAME (the hooks module's delivery lease {via, sid, pid, at, until}: lib/tail.js leaseLive).
+ *       small derived documents: tasks, presence/NAME, rows/*, members/NAME/review, members/NAME/<state>.
  *       update: fn(current|null) -> next (undefined: no write, null: delete), atomic like members.update.
  *   lock(name, fn, opts?)                   a room-wide mutex (the proposal answer lock)
  *   exists() -> bool
@@ -57,7 +55,9 @@
  *   The room an entry belongs to is its `room` field (signed entries), else the store that read it (a WeakMap,
  *   so entries are not changed), else the legacy bound room.
  *   keyDir(code?), pubPath(name, code?), canonical(e), SIGNER
- *   isYoungProvisional(e, now?)  a provisional post younger than PROVISIONAL_MS (the at-room check window)
+ *   isYoungProvisional(e, now?)  a provisional post younger than PROVISIONAL_MS. Nothing writes `provisional` any
+ *                                more (the attested prompt origin replaced at-room's after-the-fact checker);
+ *                                old logs may still hold such lines, so readers keep the check
  *   normalize(e)                 legacy display mapping (concern -> objection, agree -> signoff, plan_rev ->
  *                                proposal {hash}, plan_hash -> proposal_hash)
  *   hash12(data)
@@ -215,8 +215,8 @@ function humanTrust(e) {
   return fs.existsSync(file) ? 'unverified' : 'legacy';
 }
 
-/** How long a provisional post stays out of digests: the at-room check window plus its last poll and append. */
-const PROVISIONAL_MS = () => config.envMs('SUB_HUMAN_FORGERY_MS', config.FORGERY_WINDOW_MS) + 2 * config.FORGERY_POLL_MS + 250;
+/** How long a provisional post (old logs only) stays out of digests: the old checker's window, poll and append. */
+const PROVISIONAL_MS = () => config.PROVISIONAL_MS;
 const isYoungProvisional = (e, now = Date.now()) => !!e && e.provisional === true && now - Date.parse(e.at) < PROVISIONAL_MS();
 
 /**
@@ -241,7 +241,6 @@ function buildEntry(v, opts, { c, key, last, prevLine, recent, now }) {
   if (v.normalized !== undefined) e.normalized = v.normalized;
   if (v.edit_path) e.edit_path = v.edit_path;
   if (v.drafted) e.drafted = v.drafted;
-  if (opts.provisional === true) e.provisional = true;
   if (v.text !== undefined) e.text = v.text;
   if (key) e.room = c; // the key's room, so a reader that is not bound to it can still verify
   e.prev = hash12(prevLine || '');

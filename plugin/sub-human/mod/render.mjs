@@ -5,9 +5,6 @@
  *     "bob's Claude: <first line>", further lines under "  │ " (mod/core/chat.mjs peerLines);
  *   - origin plugin sub-human (the room's own prompts, W3): its chat lines, the "(for Claude)" lines left out;
  *   - anything else, a sender that is not a seat address, and every row while expanded (ctrl+o): the engine's.
- * A room monitor notification (origin task-notification) is left to the engine: its row's text is the
- * notification's summary ('Monitor event: "sub-human room"'), not the event's lines, which the engine already
- * draws as the row's headline (cc CONTRACT usermessage-notification-summary).
  */
 import { peerLines, roomLines } from './core/chat.mjs';
 

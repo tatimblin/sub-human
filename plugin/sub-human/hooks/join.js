@@ -20,7 +20,12 @@
 // Failure blocks the prompt with a reason (no model turn). Success injects the mechanics block (common.js
 // contextBlock: the role template filled + ROWS) and a one-line systemMessage; bypass-permissions mode gets a warning.
 // The member's seat key (<home>/keys/<code>/<name>.key, hooks/seat-key.js) is created here.
-// UserPromptExpansion output has no sessionTitle; at-room.js (UserPromptSubmit) sets it (NAME.CODE) on the next prompt.
+// UserPromptExpansion output has no sessionTitle; mod/prompt.mjs (classic.UserPromptSubmit) sets it (NAME.CODE) on
+// the next prompt.
+// A seat needs the hooks module (docs/next/MODS-PLAN.md D1): its guard, prompt gate and delivery are function hooks.
+// Without the module's hello lease for this session id (<home>/sessions/mods/<sid>.json, written by
+// hooks/mod-hello.js on session.start) the join is refused with NO_MODULE: Claude Code older than 2.1.292, --bare,
+// safe mode, or hooks turned off by policy.
 const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
 const orch = require('../lib/orch.js');
 const seatKey = require('./seat-key.js');
@@ -30,6 +35,7 @@ const ORCH_AGENT = 'sub-human:orchestrator';
 const USAGE = 'usage: /sub-human NAME [CODE]. It joins the open room as NAME, or opens one and starts its orch for you (the orch is never launched by hand).';
 const BYPASS = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
 const block = reason => out({ decision: 'block', reason: `sub-human: ${reason}` });
+const NO_MODULE = 'sub-human needs Claude Code 2.1.292+ with function hooks on; not in --bare or safe mode';
 
 function success(me, lead, msg, input) {
   presence(me, 'working');
@@ -94,6 +100,7 @@ function pickRoom() {
 
 run(input => {
   if (!COMMANDS.has(input.command_name)) return;
+  if (!identity.readModLease(input.session_id)) return out({ decision: 'block', reason: NO_MODULE });
   const args = String(input.command_args || '').trim().split(/\s+/).filter(Boolean);
   const pid = identity.claudePid();
   if (!pid) return block('could not identify this Claude Code process (CLAUDE_PID is not set).');

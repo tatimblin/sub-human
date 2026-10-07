@@ -181,7 +181,7 @@ const seatTitle = me => identity.address(me.name, me.code);
 /**
  * The context the join / restore hooks inject: the role template filled for this seat, then ROWS (rowCalls, cut
  * to the bare calls when the whole block would pass BLOCK_MAX). lead (e.g. "restored after clear") is a
- * short last line. No roster or digest: others' words arrive by the monitor and the per-prompt digest.
+ * short last line. No roster or digest: others' words arrive through the hooks module's tail child (chat, pull, wake).
  */
 function contextBlock(me, lead, { rowsLead = '', rowsText = null } = {}) {
   const text = roleText(me.role, me);

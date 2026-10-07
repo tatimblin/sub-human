@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 // UserPromptSubmit: one process for both prompt handlers (one node start per prompt instead of two):
-//   1. hooks/at-room.js handle(): an @room post (continue:false + "✓ sent"), a refusal (decision:block), or the
-//      pull digest / reminders / row calls (additionalContext), join/leave lines (systemMessage), sessionTitle;
+//   1. hooks/at-room.js handle(): an @room post (continue:false + "✓ sent"), a refusal (decision:block), and
+//      "working" presence;
 //   2. hooks/consent.js onPrompt(): a plan-view review left open by Esc is resolved (the person's note recorded)
 //      and, still in plan mode, the model is told to exit it first (additionalContext).
 // Both run on the same input, in that order, each guarded: a throw in one is logged and the other still runs.
@@ -11,8 +11,8 @@
 // context (consent's side effects are already done, and it says the same on the next prompt). Otherwise one
 // output: at-room's fields, with both additionalContext texts joined (at-room's first). No output at all when
 // neither had any. Exit 1 (Claude Code shows stderr to the person) only when a handler threw and nothing is output.
-// With the hooks module this runs through mod/prompt.mjs (classic.UserPromptSubmit) and no longer from hooks.json;
-// under SUB_HUMAN_SHIM=1 its output also carries consent's subHuman {reviewOpen} for the mod.
+// It runs only through mod/prompt.mjs (the classic.UserPromptSubmit shim; no hooks.json entry), which adds
+// sub_human_origin to its stdin; under SUB_HUMAN_SHIM=1 its output also carries consent's subHuman {reviewOpen}.
 const c = require('./common.js');
 const atRoom = require('./at-room.js');
 const consent = require('./consent.js');

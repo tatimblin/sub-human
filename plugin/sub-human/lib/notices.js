@@ -4,32 +4,29 @@
  * "bob joined", "bob rejoined", "bob left" (no room code, no ids).
  *
  * Where a human sees them:
- *   1. at the moment, as a persistent line in their session: with the hooks module, its tail child
- *      (bin/sub-human tail --ndjson) sends them as `chat` events and mod/deliver.mjs draws them with $.ui.log, no
- *      model turn (markShown via "mod"); without it, the seat's room monitor (bin/sub-human tail) prints them with
- *      the room's other chat lines in a wake (markShown via "monitor").
+ *   1. at the moment, as a persistent line in their session: the hooks module's tail child (bin/sub-human tail)
+ *      sends them as `chat` events and mod/deliver.mjs draws them with $.ui.log, no model turn (markShown).
  *   2. for a while after: the room row's text ("+bob joined", "−bob left"; lib/rows.js rowText) and the room
  *      row view's progress line (mcp/hold.js).
- *   3. if (1) never printed it (no monitor running): the next typed prompt's `systemMessage` (at-room.js,
- *      via "prompt").
  *
  *   joinLeave(entries, viewer, {now, settle}) -> [{id, kind, name, at, settled, rejoin}]
  *       others' member_joined / member_left (never the orch's or viewer's own), in log order. A leave settles
- *       settleMs() (SUB_HUMAN_LEAVE_MS, LEAVE_SETTLE_MS = 8 s, the same as the monitor's) after it; a leave
+ *       settleMs() (SUB_HUMAN_LEAVE_MS, LEAVE_SETTLE_MS = 8 s, the same as the tail's) after it; a leave
  *       followed by a rejoin within it is no notice, and neither is that rejoin.
  *   text(n) -> "bob joined" | "bob rejoined" | "bob left"
  *   rowSegment(entries, viewer, {now}) -> "+bob joined" | "−bob left" | ''   the newest settled notice of the
  *       last ROW_MS (2 min)
- *   shown(code, name) -> Set(ids), markShown(code, name, ids, via)   what was already shown to this member, and
- *       how: via is required, "monitor" (bin/sub-human tail), "mod" (tail --ndjson) or "prompt" (at-room.js).
- *       the room document rows/notices-<name> {shown, log: [{id, via, at}]} (lib/room/store.js kv)
+ *   shown(code, name) -> Set(ids), markShown(code, name, ids, via)   what was already shown to this member (a
+ *       restarted tail child does not send it again), and how: via is required and is "mod" (the tail child;
+ *       older logs also hold "monitor" and "prompt"). The room document rows/notices-<name>
+ *       {shown, log: [{id, via, at}]} (lib/room/store.js kv)
  */
 const config = require('./config.js');
 const room = require('./room.js');
 
 const LEAVE_SETTLE_MS = config.LEAVE_SETTLE_MS;
 const ROW_MS = config.ROW_NOTICE_MS;
-const VIAS = ['monitor', 'prompt', 'mod'];
+const VIAS = ['mod'];
 
 const settleMs = () => config.envMs('SUB_HUMAN_LEAVE_MS', LEAVE_SETTLE_MS);
 const isMove = e => e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
@@ -67,7 +64,7 @@ function shown(code, name) {
   const v = kvOf(code).get(shownKey(name), null);
   return new Set(v && Array.isArray(v.shown) ? v.shown : []);
 }
-/** Record ids as shown to name, and how (`via`: "monitor" from bin/sub-human tail, "mod" from tail --ndjson, "prompt" from at-room). */
+/** Record ids as shown to name, and how (`via`: "mod", the tail child). */
 function markShown(code, name, ids, via) {
   if (!VIAS.includes(via)) throw new Error(`markShown: via must be one of ${VIAS.join(', ')}`);
   if (!ids.length) return;

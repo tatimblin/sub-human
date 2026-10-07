@@ -66,8 +66,8 @@ function retractLane(me, n, entries) {
 const inProposal = (p, name) => !!p && (approversOf(p).includes(name) || p.from === name);
 
 /**
- * Which lane entry e takes for session me ({name, role}): 'push' (the monitor wakes me), 'pull' (the
- * "Room since your last turn" digest at my next prompt) or 'none' (never shown). Pass `entries` (the log as
+ * Which lane entry e takes for session me ({name, role}): 'push' (the tail sends it now: chat, or a wake), 'pull'
+ * (the tail's "Room since your last turn", read with my next request) or 'none' (never shown). Pass `entries` (the log as
  * of now) to judge against current state: retractions, a proposal I already answered or that was decided, the
  * proposal a decision or an answer belongs to, the request a task entry applied. Without `entries` the answer
  * is the entry-only one (push is then a superset of the judged push).

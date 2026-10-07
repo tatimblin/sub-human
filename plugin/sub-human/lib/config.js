@@ -24,37 +24,32 @@ function envMs(name, fallback, { allowZero = false } = {}) {
 module.exports = {
   envMs,
 
-  // ---------- the room monitor (bin/sub-human tail) ----------
-  // Entries are batched into one block (one notification, one model turn): flushed after SETTLE_MS of quiet,
-  // or SETTLE_MAX_MS after the batch's first entry. Every pushed entry is at least SETTLE_MS old, which is
-  // longer than FORGERY_WINDOW_MS, so a peer-forged @room line is retracted before it can be pushed.
+  // ---------- the room tail (bin/sub-human tail, the hooks module's child) ----------
+  // Entries are batched into one set of events (at most one wake): flushed after SETTLE_MS of quiet, or
+  // SETTLE_MAX_MS after the batch's first entry.
   SETTLE_MS: 1500,                 // SUB_HUMAN_SETTLE_MS
   SETTLE_MAX_MS: 5000,             // SUB_HUMAN_SETTLE_MAX_MS
   // The headless orch waits longer (nobody watches its latency), so a burst lands as one turn.
   ORCH_SETTLE_MS: 3000,            // SUB_HUMAN_ORCH_SETTLE_MS
   ORCH_SETTLE_MAX_MS: 10_000,      // SUB_HUMAN_ORCH_SETTLE_MAX_MS
   // A member_left waits this long for a rejoin; a leave + rejoin inside it is no notice at all.
-  LEAVE_SETTLE_MS: 8000,           // SUB_HUMAN_LEAVE_MS (monitor, notices, rows, hold)
+  LEAVE_SETTLE_MS: 8000,           // SUB_HUMAN_LEAVE_MS (tail, notices, rows, hold)
   UNSEATED_MS: 10_000,             // SUB_HUMAN_UNSEATED_MS: no seat yet, look it up this rarely
   RESOLVE_MS: 2000,                // SUB_HUMAN_RESOLVE_MS: seated, re-resolve the seat this often
-  TAIL_POLL_MS: 250,               // SUB_HUMAN_POLL_MS: the monitor's log poll
+  TAIL_POLL_MS: 250,               // SUB_HUMAN_POLL_MS: the tail's log poll
   FOLLOW_POLL_MS: 250,             // room.follow default poll
   WATCH_POLL_MS: 500,              // `sub-human watch --follow` poll
 
-  // ---------- the monitor loop's health (lib/tail.js; wave 2 agent F) ----------
-  // A monitor whose process exits is never re-armed in that Claude process, so the tail never exits on an
-  // error: it logs (rate-limited), backs off and carries on. Every TAIL_HEALTH_MS it checks the log's hash
-  // chain from the log.idx checkpoint and, while it is the orch, runs orch.watchdog(code).
+  // ---------- the tail loop's health (lib/tail.js) ----------
+  // The tail never exits on an error (each restart by the mod costs a backoff): it logs (rate-limited), backs
+  // off and carries on. Every TAIL_HEALTH_MS it checks the log's hash chain from the log.idx checkpoint and,
+  // while it is the orch, runs orch.watchdog(code).
   TAIL_HEALTH_MS: 5000,            // SUB_HUMAN_TAIL_HEALTH_MS
   TAIL_BACKOFF_MS: 1000,           // SUB_HUMAN_TAIL_BACKOFF_MS: first retry delay after an error, doubled per failure
   TAIL_BACKOFF_MAX_MS: 30_000,     // SUB_HUMAN_TAIL_BACKOFF_MAX_MS
   TAIL_ERROR_LOG_MS: 60_000,       // SUB_HUMAN_TAIL_ERROR_LOG_MS: one stderr line per error site per this long
   // Seated, the poll loop must have ticked within this long, or the next seat check restarts the session.
   TAIL_STALL_MS: 60_000,           // SUB_HUMAN_TAIL_STALL_MS
-  // The hooks module's delivery lease (room document delivery-NAME, renewed every TAIL_HEALTH_MS by
-  // `sub-human tail --ndjson`): while it is live the Monitor's tail writes nothing for that seat. After a crash
-  // the Monitor resumes at most this long later.
-  DELIVERY_LEASE_MS: 15_000,       // SUB_HUMAN_DELIVERY_LEASE_MS
 
   // ---------- locks (lib/lock.js) ----------
   // Locks are held for milliseconds. A waiter gives up (throws LOCK) after the timeout.
@@ -92,8 +87,9 @@ module.exports = {
   SEAT_LEASE_MS: 120_000,
 
   // ---------- hooks ----------
-  FORGERY_WINDOW_MS: 1200,         // SUB_HUMAN_FORGERY_MS: how long at-room's checker polls the transcript
-  FORGERY_POLL_MS: 150,
+  // A provisional post (written by at-room's after-the-fact origin checker before 2.1.292's attested origin;
+  // only old logs have them) stays out of digests and the room row view for this long after it was written.
+  PROVISIONAL_MS: 1750,
   REWAKE_WAIT_MS: 3000,            // SUB_HUMAN_REWAKE_WAIT_MS (allowZero): row-rewake waits for the seat
   REWAKE_POLL_MS: 100,
   ROW_SPAWN_GRACE_MS: 60_000,      // a row spawned this recently may not hold yet: never re-listed
@@ -132,9 +128,9 @@ module.exports = {
   DIGEST_CAP: 9500,                // room.digest()
   TAIL_MAX: 240,                   // room.line() compact form
   TEXT_MAX: 2000,                  // room.line({full}) text
-  CHAT_WRAP: 400,                  // chat output line: Claude Code cuts a monitor line at 500 chars
+  CHAT_WRAP: 400,                  // one chat output line
   CHAT_MAX: 1500,                  // one chat message shown; the rest stays in the log
-  PULL_CAP: 1500,                  // at-room's "Room since your last turn"
+  PULL_CAP: 1500,                  // the tail's "Room since your last turn" (pull event)
   BLOCK_MAX: 900,                  // the join / restore mechanics block, with 5 members
   ROW_MAX: 60,                     // a panel row's text
   HOLD_MSG_MAX: 140,               // a hold progress line (+ its hint fits two row-view lines at 120 columns)

@@ -155,6 +155,7 @@ test('two concurrent joins start one orch: the second sees the pending claim', a
   const { spawn: sp } = require('node:child_process');
   const { baseEnv, HOOKS } = require('./helpers.js');
   const run = who => new Promise(res => {
+    w.modLease(w.sid[who]);
     const env = baseEnv({ SUB_HUMAN_HOME: w.home, HOME: w.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_CLAUDE: bin, SUB_HUMAN_PLUGIN_DIR: '', CLAUDE_PID: String(w.pid[who]) });
     const p = sp(process.execPath, [path.join(HOOKS, 'join.js')], { env, cwd: w.cwd });
     let out = '';
@@ -208,6 +209,22 @@ test('the bare command name "sub-human" is accepted too; other commands are igno
   assert.match(r.json.systemMessage, /joined/);
   const r2 = w.hook('join', { ...expand(`bob ${w.code}`), command_name: 'other:thing' }, { as: 'alice' });
   assert.equal(r2.stdout, '');
+});
+
+test('without the hooks module\'s hello lease for the session the join is refused, and nothing is written (D1)', () => {
+  const w = new World({ orch: 'sleep' });
+  w.pid.alice = process.pid; w.sid.alice = 'aaaaaaaa-0000-4000-8000-000000000031';
+  const r = w.hook('join', expand(`alice ${w.code}`), { as: 'alice', modLease: false });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.decision, 'block');
+  assert.equal(r.json.reason, 'sub-human needs Claude Code 2.1.292+ with function hooks on; not in --bare or safe mode');
+  assert.equal(w.members().alice, undefined);
+  assert.equal(w.entries().length, 0);
+  // another session's lease does not count
+  w.modLease('aaaaaaaa-0000-4000-8000-000000000032');
+  assert.equal(w.hook('join', expand(`alice ${w.code}`), { as: 'alice', modLease: false }).json.decision, 'block');
+  // with its own lease it joins
+  assert.match(w.hook('join', expand(`alice ${w.code}`), { as: 'alice' }).json.systemMessage, /joined/);
 });
 
 test('failures block with a reason and log nothing', () => {

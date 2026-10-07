@@ -128,8 +128,7 @@ test('words: facilitate.md is optional, on-demand and small', () => {
 test('words: README covers the plan topics', () => {
   const t = read(README);
   for (const s of ['/sub-human alice', 'Waiting for N background agents', 'claude logs', 'Space', '@room', 'Not yet',
-    'Agree', 'Object', 'sub-human tasks', 'Threat model', 'agentPushNotifEnabled', 'Bypass mode', 'monitor',
-    'every** session', 'SendMessage', 'orch.vole-8126', 'takes no typed input']) {
+    'Agree', 'Object', 'sub-human tasks', 'Threat model', 'Bypass mode', 'function hooks', 'The room tail', 'SendMessage', 'orch.vole-8126', 'takes no typed input']) {
     assert.ok(t.includes(s), `README lacks "${s}"`);
   }
 });

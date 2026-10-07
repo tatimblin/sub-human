@@ -11,8 +11,8 @@
  *             then in flight was its last and never carried the row
  *   rows   -> $.state rows, attached as context to the person's next prompt (prompt.submit, typed origins)
  *   health -> $.ui.log plus the append
- * While the child follows this session's seat (its `seat` event), the tail holds the seat's delivery lease
- * (delivery-NAME), so the Monitor's tail stays silent and at-room skips its digest, notices and row calls.
+ * The child is the seat's only delivery (D2: no Monitor): nothing else tells the person or the model what
+ * happened in the room.
  *
  * The child starts on session.start (a reload or a lost worker runs it again), after the join
  * (classic.UserPromptExpansion /sub-human) and after classic.SessionStart (a /clear runs on under a new session
@@ -175,7 +175,7 @@ export function registerDeliver(on) {
       await refresh($, sid);
       const { value: hello } = await $.state.get(HELLO);
       if (spawnWanted(hello && typeof hello === 'object' ? hello : null)) ensureChild($, sid);
-    } catch { /* unknown: the guard keeps its string rules; the Monitor delivers meanwhile */ }
+    } catch { /* unknown: the guard keeps its string rules; the join or a SessionStart starts the child */ }
     return next(e);
   });
 
@@ -194,7 +194,7 @@ export function registerDeliver(on) {
     try {
       const { value: hello } = await $.state.get(HELLO);
       if (spawnWanted(hello && typeof hello === 'object' ? hello : null)) ensureChild($, e.session_id);
-    } catch { /* the Monitor delivers meanwhile */ }
+    } catch { /* the next session.start or join starts it */ }
     return r;
   }).catch(($, e, next) => next(e));
 

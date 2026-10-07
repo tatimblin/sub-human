@@ -5,46 +5,28 @@
  * from the plugin's hooks and the MCP server. Without --room / CODE, the room is this session's
  * (identity.resolveSelf(): the session id env, then the nearest registered ancestor claude pid).
  *
- *   sub-human tail [ignored args...] [--max-seconds S]
- *       The plugin monitor's command (monitors.json `when: always`, so it runs in every session). Silent until
- *       this session has a seat. While it has none it stays cheap: it looks the seat up only by
- *       CLAUDE_CODE_SESSION_ID / CLAUDE_PID (both set for monitors; no `ps` ancestor walk, which is used only
- *       when neither is set), every SUB_HUMAN_UNSEATED_MS (default 10000). Once seated it re-resolves every
- *       SUB_HUMAN_RESOLVE_MS (2000), follows that room and prints the push lane (room.lane(me, e) === 'push';
- *       the pull lane is at-room.js's per-prompt digest), switching (or going silent) if the seat changes.
- *       Resumes from the cursor tail-<name> (without re-reading the log from byte 0) and advances it only past
- *       entries that were flushed or dropped, so a restart loses nothing.
- *       It never exits on an error (Claude Code never re-arms a monitor that exited): it logs to stderr
- *       (rate-limited), backs off and carries on; only --max-seconds or a signal ends it. Every
- *       SUB_HUMAN_TAIL_HEALTH_MS (5000) it checks the log's hash chain from the log.idx checkpoint (one
- *       "room log check: …" line per break) and, as the orch, runs orch.watchdog(code). The loop is lib/tail.js.
- *       Settle: entries are batched and written as ONE block (one notification, one turn) after
+ *   sub-human tail [--ndjson] [--max-seconds S]
+ *       The hooks module's child (mod/deliver.mjs starts it with $.process.spawn, CLAUDE_CODE_SESSION_ID set to the
+ *       session's id; --ndjson is accepted for that argv and is the only output). Silent until this session has a
+ *       seat: while it has none it looks the seat up by CLAUDE_CODE_SESSION_ID / CLAUDE_PID every
+ *       SUB_HUMAN_UNSEATED_MS (10000; a `ps` ancestor walk only when neither is set). Once seated it re-resolves
+ *       every SUB_HUMAN_RESOLVE_MS (2000), follows that room from the cursor deliver-<name> (without re-reading
+ *       the log from byte 0) and writes one JSON event per line for the mod to route (seat, chat, pull, wake,
+ *       rows, health; lib/tail.js documents them), switching (or going silent) if the seat changes.
+ *       Settle: entries are batched and written as ONE set of events (at most one wake) after
  *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most (the orch: 3000 / 10000,
  *       SUB_HUMAN_ORCH_SETTLE_MS / SUB_HUMAN_ORCH_SETTLE_MAX_MS). Each entry is judged again against the log at
  *       send time (retracted / answered / decided entries are dropped). A member_left X is held
  *       SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time both notices are dropped.
- *       A member's block is a group chat (room.chatLines, no ids): "bob: <exact words>", "bob's Claude: …",
- *       "bob joined", "bob left". (Before W3 the member's Claude printed them as given; member.md now says the
- *       person already sees them, which holds with the hooks module's --ndjson delivery below.)
- *       Lines meant only for Claude start with "(for Claude)": the room state when the batch has a proposal,
- *       answer or decision (room.stateLine, with the card call), a cut message's read call, a missing room
- *       row's Agent call. A monitor event always wakes the model; the hooks module's $.ui.log (--ndjson) is the
- *       surface that shows a line without a turn.
- *       While the hooks module's child holds the seat's delivery lease (delivery-NAME), this tail writes nothing:
- *       its batches and chain-check lines are dropped and the cursor moves on.
- *       Members get every other member's join and settled leave (not the orch's), recorded as shown in
- *       the room document rows/notices-NAME (lib/notices.js; at-room.js shows on the next prompt any the monitor
- *       never sent).
- *       The orch's block opens with room.stateLine() ("room now: …"), then one room.line(e, {full}) per entry
- *       (ids kept: its tools take them), a leave marked "· away 8s+". Its member_joined is pushed when
- *       lib/rows.js joinNote() says that member's row is not running (the line ends with the note and the
- *       Agent call), or when the note is unavailable; a join whose row runs is never pushed.
- *   sub-human tail --ndjson [--max-seconds S]
- *       The hooks module's child (mod/deliver.mjs starts it with $.process.spawn, CLAUDE_CODE_SESSION_ID set to the
- *       session's id): the same loop, written as one JSON event per line for the mod to route (seat, chat, pull,
- *       wake, rows, health; lib/tail.js documents them). It holds the seat's delivery lease (room document
- *       delivery-NAME) while it runs, so the Monitor's tail above stays silent for that seat, and gives it back on
- *       SIGTERM / SIGINT / SIGHUP. It exits when its parent goes (the ppid changes) or stdout closes.
+ *       A member's chat is a group chat (room.chatLines, no ids): "bob: <exact words>", "bob's Claude: …",
+ *       "bob joined", "bob left". Lines meant only for Claude start with "(for Claude)". The orch's wake opens
+ *       with room.stateLine() ("room now: …"), then one room.line(e, {full}) per entry (ids kept: its tools take
+ *       them), a leave marked "· away 8s+"; its member_joined is pushed when lib/rows.js joinNote() says that
+ *       member's row is not running (the line ends with the note and the Agent call).
+ *       It never exits on an error: it logs to stderr (rate-limited), backs off and carries on. Every
+ *       SUB_HUMAN_TAIL_HEALTH_MS (5000) it checks the log's hash chain and, as the orch, runs orch.watchdog(code).
+ *       It exits on --max-seconds, SIGTERM / SIGINT / SIGHUP, when its parent goes (the ppid changes) or when
+ *       stdout closes.
  *   sub-human read [N[,M] | --id N[,M]] [--json] [--room CODE]
  *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
@@ -112,7 +94,7 @@ function openRoom(explicit) {
 
 // ---------- tail: lib/tail.js runTail ----------
 function tail(args) {
-  const { flags } = parseFlags(args, { 'max-seconds': 1, ndjson: 0 });
+  const { flags } = parseFlags(args, { 'max-seconds': 1, ndjson: 0 }); // --ndjson: the only output, accepted
   let maxSeconds = null;
   if (flags['max-seconds'] != null) {
     maxSeconds = Number(flags['max-seconds']);
@@ -120,21 +102,18 @@ function tail(args) {
   }
   let handle = null;
   process.stdout.on('error', () => { try { if (handle) handle.stop(); } catch { /* exiting */ } process.exit(0); }); // the reader is gone: nobody to notify
-  // The monitor is never re-armed once it exits, so a stray error is logged and the loop carries on.
+  // A stray error is logged and the loop carries on (each restart by the mod costs a backoff).
   const lastResort = e => { try { process.stderr.write(`sub-human tail: unexpected error: ${e && e.stack || e}\n`); } catch { /* closed */ } };
   process.on('uncaughtException', lastResort);
   process.on('unhandledRejection', lastResort);
-  // Without a seat, look it up cheaply: the env Claude Code sets for monitors, no `ps` walk (that runs only
-  // when neither variable is set, e.g. a hand-run tail). The env is fixed at spawn: after /clear the session
-  // id is stale, and CLAUDE_PID still finds the seat.
+  // Without a seat, look it up cheaply: the session id the mod sets, no `ps` walk (that runs only when neither
+  // variable is set, e.g. a hand-run tail). After /clear the mod starts a new child under the new id.
   const sid = cc.sessionId(), pid = cc.claudePid();
   const lookup = sid || pid
     ? () => (sid && identity.resolveBySession(sid)) || (pid && identity.resolveByPid(pid)) || null
     : () => identity.resolveSelf();
-  const mode = flags.ndjson ? 'ndjson' : 'text';
-  handle = tailLib.runTail({ write: (text, done) => process.stdout.write(text, done), lookup, maxSeconds, mode, sid });
-  if (mode !== 'ndjson') return;
-  // The mod's child: give the lease back on the way out, and never outlive the session that started it.
+  handle = tailLib.runTail({ write: (text, done) => process.stdout.write(text, done), lookup, maxSeconds, sid });
+  // The mod's child: stop cleanly on the way out, and never outlive the session that started it.
   const quit = () => { try { handle.stop(); } catch { /* exiting */ } process.exit(0); };
   for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, quit);
   const ppid = process.ppid;
@@ -143,7 +122,7 @@ function tail(args) {
 
 // ---------- agent-statusline: dispatch to statusline/* ----------
 // lib/io.js readInput, never hooks/common.js: requiring that arms the seat-key signer (via=human writes), which
-// the CLI and the monitor must never load.
+// the CLI and the tail must never load.
 const { readInput } = require(path.join(LIB, 'io.js'));
 
 /** statusline agentStatusline(input) -> text ({"id","content"} lines); whatever goes wrong, print nothing and exit 0. */

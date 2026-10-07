@@ -23,10 +23,10 @@ import { registerTasks } from './tasks.mjs';
 import { registerDeliver } from './deliver.mjs';
 
 export const HOOKS = [
-  { event: 'session.start', matcher: '', file: 'mod/deliver.mjs', does: 'runs hooks/mod-hello.js (the lease; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node bin/sub-human tail --ndjson, restarted with backoff) and routes its events: chat -> $.ui.log, pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state' },
+  { event: 'session.start', matcher: '', file: 'mod/deliver.mjs', does: 'runs hooks/mod-hello.js (the lease; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node bin/sub-human tail --ndjson, restarted with backoff; the seat\'s only delivery) and routes its events: chat -> $.ui.log, pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state' },
   { event: 'classic.UserPromptExpansion', matcher: 'command_name ^(sub-human:)?sub-human$', file: 'mod/deliver.mjs', does: 'after the join (hooks/join.js beneath), runs mod-hello again for the new seat and starts the tail child' },
   { event: 'classic.SessionStart', matcher: 'source clear|compact|resume', file: 'mod/deliver.mjs', does: 'after session-restore beneath (a /clear rebinds the seat to a new session id), runs mod-hello again and starts the tail child for that id; reviewMaybeOpen unsure' },
-  { event: 'session.end', matcher: '', file: 'mod/deliver.mjs', does: 'stops that session id\'s tail child (its lease is given back)' },
+  { event: 'session.end', matcher: '', file: 'mod/deliver.mjs', does: 'stops that session id\'s tail child' },
   { event: 'turn.start', matcher: '', file: 'mod/deliver.mjs', does: 'marks a main-loop turn running (a wake then appends instead of submitting)' },
   { event: 'turn.complete', matcher: '', file: 'mod/deliver.mjs', does: 'marks idle; submits a mid-turn wake no request carried (none followed a tool call that finished after it)' },
   { event: 'classic.PostToolUse', matcher: '', file: 'mod/deliver.mjs', does: 'observes when a main-loop tool call finished (a model request follows it, carrying a mid-turn wake)' },

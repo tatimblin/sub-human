@@ -49,8 +49,8 @@
  *   resolveBySession(sid)                hooks: the payload's session_id
  *   resolveByPid(pid)                    the MCP server: process.ppid, a direct lookup of a registered pid
  *                                        (null when that pid now belongs to a process with another start time)
- *   resolveSelf()                        the CLI and monitor: CLAUDE_CODE_SESSION_ID (set by Claude Code for
- *                                        Bash, monitors, hooks and the status line), then CLAUDE_PID (same
+ *   resolveSelf()                        the CLI and the tail: CLAUDE_CODE_SESSION_ID (set by Claude Code for
+ *                                        Bash, hooks and the status line; the mod sets it for its tail child), then CLAUDE_PID (same
  *                                        children), then the nearest ancestor pid with a registration
  *   lastSeat(sid) -> {code, name, role}|null   the seat a session id last held, left or not (for --resume)
  *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set; lib/cc.js)

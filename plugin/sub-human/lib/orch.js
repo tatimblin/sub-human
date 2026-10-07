@@ -32,7 +32,7 @@
  * Stopping:
  *   reap(code, {graceMs, waitMs, claimed}) -> 'cancelled' | 'stopped' | 'no-orch'   after the last member leaves:
  *       wait graceMs (a quick rejoin cancels); claim members.json orch.closing under the lock (only one reaper
- *       wins); append a to=orch status "room closed: complete task 1" (the orch's monitor wakes it); wait up to
+ *       wins); append a to=orch status "room closed: complete task 1" (the orch's tail child wakes it); wait up to
  *       waitMs for task 1 to complete (or the list to be cleaned up); `claude stop <job>`; mark the orch left.
  *       claimed: the caller already set closing (watchdog): no grace, no claim. We never delete under ~/.claude.
  *   reapDetached(code, {claimed}?)   `node lib/orch.js reap CODE [--claimed]`, detached, output ignored

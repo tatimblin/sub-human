@@ -124,27 +124,7 @@ test('parseEnvelope: attributes in order, optional, body', () => {
   assert.equal(cc.parseEnvelope('plain'), null);
 });
 
-test('isPeerText / isPeerPrompt / entryIsPeer', () => {
-  assert.equal(cc.isPeerText(ENV_TEXT), true);
-  assert.equal(cc.isPeerText('Another Claude session sent a message: from x'), true);
-  assert.equal(cc.isPeerText('x'.repeat(2100) + ENV_TEXT), false); // beyond the 2000-char window
-  assert.equal(cc.isPeerText('@room hi'), false);
-  // source absent: text decides (current at-room behaviour)
-  assert.equal(cc.isPeerPrompt({ prompt: ENV_TEXT }), true);
-  assert.equal(cc.isPeerPrompt({ prompt: ENV_TEXT, source: 'system' }), true);
-  // a person pasting an envelope into the composer is not a peer
-  assert.equal(cc.isPeerPrompt({ prompt: ENV_TEXT, source: 'user' }), false);
-  assert.equal(cc.isPeerPrompt({ prompt: '<task-notification>x', source: 'system' }), false);
-  assert.equal(cc.isPeerPrompt({}), false);
-  assert.equal(cc.entryIsPeer({ type: 'user', origin: { kind: 'peer', from: 'x' }, message: { content: 'hi' } }), true);
-  assert.equal(cc.entryIsPeer({ type: 'user', message: { content: [{ type: 'text', text: ENV_TEXT }] } }), true);
-  assert.equal(cc.entryIsPeer({ type: 'user', message: { content: 'typed' } }), false);
-  assert.equal(cc.entryIsPeer(null), false);
-});
-
-test('task notifications and pasted content', () => {
-  assert.equal(cc.isTaskNotification('<task-notification>\n<task-id>x'), true);
-  assert.equal(cc.isTaskNotification(' <task-notification>'), false);
+test('pasted content', () => {
   const p = '@room look\n\n<pasted_content id="1">\nline a\nline b\n</pasted_content id="1">\n';
   assert.deepEqual(cc.unwrapPasted(p), { text: '@room lookline a\nline b', normalized: true });
   assert.deepEqual(cc.unwrapPasted('plain'), { text: 'plain', normalized: false });
@@ -248,8 +228,8 @@ test('CONTRACT entries are well formed and unique', () => {
     assert.ok(sh.every(x => typeof x === 'string' && x.replace(/~/g, '').length >= 16), e.id);
     assert.ok(e.note, e.id);
   }
-  for (const id of ['task-completed-block-drops-fields', 'monitor-not-rearmed', 'subagent-statusline-precedence', 'daemon-env-allowlist', 'matcher-rule',
-    'hooks-json-modules', 'classic-chain-order', 'prompt-submit-ups-order', 'session-append-notice-hidden', 'ui-log-notice', 'process-run-stdin', 'plugin-test-off', 'usermessage-notification-summary', 'plugin-types-state'])
+  for (const id of ['task-completed-block-drops-fields', 'subagent-statusline-precedence', 'daemon-env-allowlist', 'matcher-rule',
+    'hooks-json-modules', 'classic-chain-order', 'prompt-submit-ups-order', 'session-append-notice-hidden', 'ui-log-notice', 'process-run-stdin', 'plugin-test-off', 'plugin-types-state', 'prompt-origin-composer'])
     assert.ok(ids.has(id), id);
 });
 
@@ -299,12 +279,12 @@ test('probe: the installed binary satisfies the contract', { skip: !haveBinary &
 });
 
 test('probe: a mutated search string fails', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
-  const extra = J([{ id: 'mutated', search: 'Arm trigger. "always" arms at session start and on plugin reload!!x' }]);
-  const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'monitor-schema'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
+  const extra = J([{ id: 'mutated', search: 'Inbound cross-session peer messages (SendMessage from your other sessions)!!x' }]);
+  const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'cross-session-inbound'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
   assert.equal(r.status, 1);
   const out = JSON.parse(r.stdout);
   assert.equal(out.ok, false);
-  assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['monitor-schema', true], ['mutated', false]]);
+  assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['cross-session-inbound', true], ['mutated', false]]);
 });
 
 test('probe: a mutated shape fails', { skip: !haveBinary && 'no Claude Code binary found' }, () => {

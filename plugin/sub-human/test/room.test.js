@@ -307,7 +307,7 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   const long = human('bob', 'say', { text: 'y'.repeat(room.CHAT_MAX + 10) });
   const ls = C(long);
   assert.equal(ls.at(-1), `(for Claude) that message is cut at ${room.CHAT_MAX}/${room.CHAT_MAX + 10} chars; read({ids:[${long.id}]}) has all of it`);
-  assert.ok(ls.slice(0, -1).every(l => Array.from(l).length <= room.CHAT_WRAP), 'every line fits a monitor line');
+  assert.ok(ls.slice(0, -1).every(l => Array.from(l).length <= room.CHAT_WRAP), 'every line fits CHAT_WRAP');
   assert.ok(ls.slice(1, -1).every(l => l.startsWith(room.CHAT_NEST)), 'wrapped pieces are nested too');
   assert.match(ls.at(-2), /\[cut: the rest is in the room log\]$/);
   for (const e of room.readAll()) for (const l of C(e)) if (!l.startsWith('(for Claude)')) assert.doesNotMatch(l, /#\d/, l);

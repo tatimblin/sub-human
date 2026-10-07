@@ -7,15 +7,15 @@
  *     origin of every other prompt is handed to the classic hook below (the classic payload has none).
  *   - classic.UserPromptSubmit: no node when the session surely has no seat and the prompt is not an @room
  *     (mod/core/prompt.mjs needsNode); otherwise node hooks/prompt.js as before, with sub_human_origin (the
- *     origin's kind) in its stdin, so at-room posts an attested @room without the provisional mark and the
- *     after-the-fact checker. Its systemMessage (join / leave lines) goes out with $.ui.log, and consent's
- *     reviewOpen report sets the reviewMaybeOpen flag (mod/consent.mjs).
+ *     origin's kind) in its stdin: at-room posts an @room only with a typed origin. A systemMessage goes out with
+ *     $.ui.log, and consent's reviewOpen report sets the reviewMaybeOpen flag (mod/consent.mjs).
  * The origin hand-off is a module variable: classic.UserPromptSubmit runs inside prompt.submit's next(e) (cc
- * CONTRACT prompt-submit-ups-order). A reload in between loses it, and at-room then keeps today's checks.
+ * CONTRACT prompt-submit-ups-order). A reload in between loses it, and at-room then refuses the @room (type it
+ * again).
  *
  * W3: a seated member's plain prompt starts no node either while the mod's tail child delivers for the session
- * (mod/deliver.mjs delivering) and no review may be open: at-room's digest, notices and row calls are the child's
- * now. The session title (the seat's address NAME.CODE, members only) is set here once per session id ($.state
+ * (mod/deliver.mjs delivering) and no review may be open: the digest, notices and row calls are the child's.
+ * The session title (the seat's address NAME.CODE, members only) is set here once per session id ($.state
  * titled; mod/core/deliver.mjs titleFor), whether node runs or not. While the child delivers, the person's typed
  * prompt also carries the rows text it holds ($.state rows: pending-proposal reminders, missing row calls) as
  * context, and writes "working" presence (node hooks/presence.js, not awaited) unless the last presence this module

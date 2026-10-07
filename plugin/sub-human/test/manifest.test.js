@@ -1,5 +1,5 @@
 'use strict';
-// Lints the plugin surface: hooks.json (paths, matcher anchoring per the binary's rule, timeouts), monitors.json,
+// Lints the plugin surface: hooks.json (paths, matcher anchoring per the binary's rule, timeouts), no monitors,
 // agent frontmatter, SKILL.md, the manifests, and the room MCP server's tool metadata and initialize reply.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -88,13 +88,11 @@ test('hooks.json: async only on hooks whose output nothing reads', () => {
   assert.deepEqual(asyncScripts, ['Notification:hooks/presence.js', 'SessionStart:hooks/row-launcher.js', 'StopFailure:hooks/presence.js']);
 });
 
-test('monitors.json: the room tail is armed always and its command exists', () => {
-  const mons = readJson('monitors/monitors.json');
-  assert.equal(mons.length, 1);
-  assert.equal(mons[0].name, 'room');
-  assert.equal(mons[0].when, 'always', 'resume relies on an always-armed monitor');
-  const rel = scriptOf(mons[0].command);
-  assert.ok(fs.existsSync(path.join(PLUGIN, rel)), rel);
+test('no Monitor (D2): the hooks module\'s tail child is the only delivery', () => {
+  assert.equal(fs.existsSync(path.join(PLUGIN, 'monitors')), false, 'monitors/ is gone');
+  const manifest = readJson('.claude-plugin/plugin.json');
+  assert.equal(manifest.monitors, undefined);
+  assert.equal((manifest.experimental || {}).monitors, undefined);
 });
 
 function frontmatter(file) {

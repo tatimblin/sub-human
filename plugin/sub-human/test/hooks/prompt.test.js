@@ -8,7 +8,7 @@ const path = require('node:path');
 const { World, PLUGIN, HOOKS, room, hso, ctx } = require('./helpers.js');
 
 const { merge } = require(path.join(PLUGIN, 'hooks', 'prompt.js'));
-const ev = (extra = {}) => ({ hook_event_name: 'UserPromptSubmit', source: 'user', prompt_id: 'p1', ...extra });
+const ev = (extra = {}) => ({ hook_event_name: 'UserPromptSubmit', sub_human_origin: 'composer', prompt_id: 'p1', ...extra });
 const ctxOut = text => ({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } });
 
 test('prompt: merge keeps a stopping output alone and otherwise joins the contexts, the first output\'s fields winning', () => {
@@ -61,7 +61,6 @@ test('prompt: an open review in plan mode adds consent\'s exit line to at-room\'
   const r = w.hook('prompt', ev({ prompt: 'hi', permission_mode: 'plan' }), { as: 'bob' });
   assert.equal(r.code, 0, r.stderr);
   assert.match(ctx(r), /Before anything else, call ExitPlanMode now/, 'consent');
-  assert.equal(hso(r).sessionTitle, `bob.${w.code}`, 'at-room (first prompt of the session)');
   assert.equal(getReview().phase, 'exiting');
   // @room while the review is still open: the post's receipt alone; consent's side effect still ran
   setReview({ phase: 'shown', mode: 'auto', at: Date.now(), hash: 'abcdef012345' });

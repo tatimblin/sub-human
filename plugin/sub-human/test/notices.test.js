@@ -1,5 +1,5 @@
 'use strict';
-// Join / leave lines (lib/notices.js) and where they surface: the room monitor's chat lines (bin/sub-human
+// Join / leave lines (lib/notices.js) and where they surface: the tail child's chat events (bin/sub-human
 // tail), the room row text (lib/rows.js) and the room hold's progress line (mcp/hold.js).
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -58,12 +58,12 @@ test('notices shown / markShown: ids merge and sort; via is required', () => {
   h.freshHome();
   const code = h.newRoom();
   assert.deepEqual([...notices.shown(code, 'alice')], []);
-  notices.markShown(code, 'alice', [3], 'monitor');
-  notices.markShown(code, 'alice', [5, 3], 'prompt');
-  notices.markShown(code, 'alice', [7], 'mod'); // tail --ndjson (the hooks module's chat events)
+  notices.markShown(code, 'alice', [5, 3], 'mod'); // the tail child's chat events
+  notices.markShown(code, 'alice', [7, 3], 'mod');
   assert.deepEqual([...notices.shown(code, 'alice')], [3, 5, 7]);
   assert.throws(() => notices.markShown(code, 'alice', [6]), /via/);
   assert.throws(() => notices.markShown(code, 'alice', [6], 'model'), /via/);
+  assert.throws(() => notices.markShown(code, 'alice', [6], 'monitor'), /via/, 'the Monitor is gone (D2)');
 });
 
 // ---------- the room hold's progress line ----------
@@ -114,17 +114,19 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   }
 });
 
-// ---------- the room monitor prints joins and leaves as chat lines ----------
+// ---------- the tail child sends joins and leaves as chat events ----------
 const FAST = { CLAUDE_PID: String(process.pid), SUB_HUMAN_RESOLVE_MS: '100', SUB_HUMAN_UNSEATED_MS: '100', SUB_HUMAN_POLL_MS: '50', SUB_HUMAN_SETTLE_MS: '300', SUB_HUMAN_SETTLE_MAX_MS: '1000', SUB_HUMAN_LEAVE_MS: '600' };
 function startTail() {
   const child = spawn(h.BIN, ['tail'], { env: h.childEnv(FAST) });
-  const t = { child, out: '' };
-  child.stdout.on('data', d => { t.out += d; });
+  const t = { child, raw: '' };
+  child.stdout.on('data', d => { t.raw += d; });
+  // the chat lines it sent, one per line
+  Object.defineProperty(t, 'out', { get: () => t.raw.split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(x => x.type === 'chat').flatMap(x => x.lines).map(l => l + '\n').join('') });
   return t;
 }
 const sys = (kind, from, text) => room.append({ kind, text: text || `${from} ${kind}` }, { via: 'system', from, system: true });
 
-test('cli tail (member): a join and a settled leave are chat lines on stdout; a quick round trip prints nothing', async () => {
+test('cli tail (member): a join and a settled leave are chat events; a quick round trip sends nothing', async () => {
   h.freshHome();
   const code = h.newRoom();
   room.bind(code);
@@ -137,7 +139,7 @@ test('cli tail (member): a join and a settled leave are chat lines on stdout; a 
     sys('member_joined', 'bob', 'bob joined');                 // #2
     await h.until(() => t.out === 'bob joined\n', 3000);
     assert.equal(t.out, 'bob joined\n');
-    assert.deepEqual([...notices.shown(code, 'alice')], [2], 'recorded as shown (via monitor)');
+    assert.deepEqual([...notices.shown(code, 'alice')], [2], 'recorded as shown (via mod)');
     sys('member_left', 'bob', 'bob left');                     // #3
     await h.sleep(200);
     sys('member_joined', 'bob', 'bob rejoined');               // #4, 200 ms later: neither is a line

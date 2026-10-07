@@ -9,7 +9,7 @@ const h = require('./helpers.js');
 const room = require(path.join(h.LIB, 'room.js'));
 const identity = require(path.join(h.LIB, 'identity.js'));
 
-// CLAUDE_PID is set for monitors; tail looks its seat up by it (no ps walk).
+// tail looks its seat up by CLAUDE_PID when it has no session id (no ps walk).
 const FAST = { CLAUDE_PID: String(process.pid), SUB_HUMAN_RESOLVE_MS: '100', SUB_HUMAN_UNSEATED_MS: '100', SUB_HUMAN_POLL_MS: '50', SUB_HUMAN_SETTLE_MS: '300', SUB_HUMAN_SETTLE_MAX_MS: '1000', SUB_HUMAN_LEAVE_MS: '600' };
 const children = new Set();
 test.afterEach(() => { for (const c of children) c.kill(); children.clear(); });
@@ -18,17 +18,20 @@ function startTail(env = {}) {
   const child = spawn(h.BIN, ['tail', '/plugin/root', '/project/dir'], { env: h.childEnv({ ...FAST, ...env }) });
   children.add(child);
   const t = { child, out: '', exited: new Promise(r => child.on('exit', code => r(code))) };
-  t.writes = 0;
-  child.stdout.on('data', d => { t.out += d; t.writes++; });
-  t.lines = () => t.out.split('\n').filter(Boolean);
+  child.stdout.on('data', d => { t.out += d; });
+  // one JSON event per line; lines(): what the batches show (each chat event's lines, then its wake's)
+  t.events = () => t.out.split('\n').filter(Boolean).map(l => JSON.parse(l));
+  t.of = type => t.events().filter(x => x.type === type);
+  t.lines = () => t.events().flatMap(x => (x.type === 'chat' ? x.lines : x.type === 'wake' ? x.text.split('\n') : []));
+  t.text = () => t.lines().map(l => l + '\n').join('');
   t.chat = () => t.lines().filter(l => !l.startsWith('(for Claude)'));
   t.forClaude = () => t.lines().filter(l => l.startsWith('(for Claude)'));
   t.entries = () => t.lines().filter(l => /^#\d+ /.test(l));
   t.ids = () => t.entries().map(l => Number(l.split(' ')[0].slice(1)));
   t.batches = () => t.lines().filter(l => l.startsWith('room now: ')).length;
   t.until = async (needle, ms = 5000) => {
-    await h.until(() => t.out.includes(needle), ms);
-    assert.ok(t.out.includes(needle), `tail never printed ${needle}; got:\n${t.out}`);
+    await h.until(() => t.text().includes(needle), ms);
+    assert.ok(t.text().includes(needle), `tail never printed ${needle}; got:\n${t.out}`);
   };
   t.stop = async () => { child.kill(); await t.exited; children.delete(child); };
   return t;
@@ -49,16 +52,16 @@ test('cli tail (smoke): silent before join, then one settled block; resumes from
   const a = startTail();
   say('bob', 'before alice joined');                     // #1
   await h.sleep(200);
-  assert.equal(a.out, '', 'silent until this session joins');
+  assert.equal(a.text(), '', 'silent until this session joins');
   h.register('alice', 'member', process.pid, code);
   sys('member_joined', 'alice');                         // #2 own: none
   say('bob', 'bob says hi');                             // #3
   room.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' }); // #4
   await a.until("bob's Claude (to you): q for alice\n");
   assert.deepEqual(a.lines(), ['bob: bob says hi', "bob's Claude (to you): q for alice"], a.out);
-  assert.equal(a.writes, 1, 'one burst, one write');
+  assert.deepEqual([a.of('chat').length, a.of('wake').length], [1, 1], 'one burst: one chat, one wake');
   // The cursor is saved once stdout drained; stopping before then replays #4 (at-least-once), so wait for it.
-  assert.equal(await h.until(() => room.getCursor('tail-alice') === 4, 3000), true, 'the cursor reached #4');
+  assert.equal(await h.until(() => room.getCursor('deliver-alice') === 4, 3000), true, 'the cursor reached #4');
   await a.stop();
   say('bob', 'posted in the gap');                       // #5: nobody is watching
   const b = startTail();
@@ -71,7 +74,7 @@ test('cli tail (smoke): silent before join, then one settled block; resumes from
   assert.equal(await new Promise(r => c.on('exit', r)), 0);
 });
 
-test('cli tail --ndjson (smoke): by session id, one JSON event per line; SIGTERM gives the delivery lease back', async () => {
+test('cli tail --ndjson (smoke): by session id, one JSON event per line; SIGTERM exits cleanly', async () => {
   h.freshHome();
   const code = h.newRoom();
   room.bind(code);
@@ -88,10 +91,8 @@ test('cli tail --ndjson (smoke): by session id, one JSON event per line; SIGTERM
   const events = out.split('\n').filter(Boolean).map(l => JSON.parse(l));
   assert.deepEqual(events.find(x => x.type === 'chat').lines, ['bob: hi alice'], out);
   assert.equal(events.find(x => x.type === 'seat').seat.addr, `alice.${code}`);
-  assert.equal(room.open(code).store.kv.get('delivery-alice').pid, child.pid);
   child.kill('SIGTERM');
   assert.equal(await exited, 0);
-  assert.equal(room.open(code).store.kv.get('delivery-alice', null), null, 'the lease was given back');
 });
 
 test('cli tail: while unseated it never runs ps and looks the seat up only every SUB_HUMAN_UNSEATED_MS', async () => {
