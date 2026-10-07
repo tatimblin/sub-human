@@ -16,14 +16,13 @@
  *
  * Lanes:
  *   lane(me, e, entries?) -> 'push' | 'pull' | 'none'   who a notice concerns (rules at lane() below)
- *   retractedIds(entries?) -> Set
  */
 
 const { normalize } = require('./store.js');
 const { fold } = require('./consent.js');
 
 // ---------- proposals / decisions (all read lib/room/consent.js fold: one set of semantics) ----------
-/** The latest (non-retracted) proposal entry, legacy plan_rev included, with that hash. */
+/** The latest proposal entry, legacy plan_rev included, with that hash. */
 function proposal(hash, entries = []) {
   const p = fold(entries).proposals.get(hash);
   return p ? p.entry : null;
@@ -51,28 +50,16 @@ const decided = (hash, entries = []) => fold(entries).decisions.get(hash) || nul
 const esc = s => s.replace(/[.]/g, '\\.');
 /** "@name" anywhere in the text (case-insensitive, not part of a longer name). */
 const mentions = (text, name) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
-/** Ids retracted by a via=system `retract` entry. */
-const retractedIds = (entries = []) => new Set(fold(entries).retracted);
-
-/** The retracted entry's own lane decides a retract's: whoever would have been woken by it hears it was forged. */
-function retractLane(me, n, entries) {
-  if (n.from === (me && me.name)) return 'push'; // its victim (the hook writes it under the victim's name)
-  if (!entries) return 'push';
-  const refs = new Set(n.refs || []);
-  return entries.some(x => refs.has(x.id) && lane(me, x) === 'push') ? 'push' : 'none';
-}
-
 /** Whether name is in proposal p: an approver or its author. */
 const inProposal = (p, name) => !!p && (approversOf(p).includes(name) || p.from === name);
 
 /**
  * Which lane entry e takes for session me ({name, role}): 'push' (the tail sends it now: chat, or a wake), 'pull'
  * (the tail's "Room since your last turn", read with my next request) or 'none' (never shown). Pass `entries` (the log as
- * of now) to judge against current state: retractions, a proposal I already answered or that was decided, the
+ * of now) to judge against current state: a proposal I already answered or that was decided, the
  * proposal a decision or an answer belongs to, the request a task entry applied. Without `entries` the answer
  * is the entry-only one (push is then a superset of the judged push).
- *   none: my own entries (hook-written system decision/task entries are not "mine"), retracted entries.
- *   retract: push to its victim and to whoever the retracted entry would have pushed; none otherwise.
+ *   none: my own entries (hook-written system decision/task entries are not "mine").
  *   member push: others' via=human entries (every person's words, @-addressed to others too: a group chat);
  *     to=me or @me; a proposal naming me that I have not answered (and is not decided); a decision on a
  *     proposal I am in; a `task` assigning me (owner me) that someone else asked for (its req is not mine).
@@ -91,9 +78,7 @@ function lane(me, e, entries) {
   const name = me && me.name;
   const orch = !!me && me.role === 'orch';
   const n = normalize(e);
-  if (n.kind === 'retract') return retractLane(me, n, entries);
   if (n.from === name && !(n.via === 'system' && (n.kind === 'decision' || n.kind === 'task'))) return 'none';
-  if (entries && fold(entries).retracted.has(n.id)) return 'none';
   if (n.to === name || mentions(n.text, name)) return 'push';
   if ((n.kind === 'signoff' || n.kind === 'objection') && n.proposal_hash) {
     if (n.kind === 'signoff') return 'pull';
@@ -138,5 +123,5 @@ function quietDecision(name, d, entries) {
 
 module.exports = {
   proposal, proposals, answers, answered, decided, approversOf,
-  lane, retractedIds,
+  lane,
 };

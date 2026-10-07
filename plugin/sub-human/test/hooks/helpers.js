@@ -30,21 +30,18 @@ const sleeper = () => common.spawnSleeper(600).pid;
 function baseEnv(extra = {}) {
   const e = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (k.startsWith('CLAUDE') || k === 'NODE_TEST_CONTEXT' || k === 'SUB_HUMAN_TEST_ROOM_DIR' || k === 'SUB_HUMAN_HOME') continue;
+    if (k.startsWith('CLAUDE') || k === 'NODE_TEST_CONTEXT' || k === 'SUB_HUMAN_HOME') continue;
     e[k] = v;
   }
   return { ...e, ...extra };
 }
 
-/** Run fn with process.env.SUB_HUMAN_HOME (and the lib's room binding) pointed at this test's home. */
+/** Run fn with process.env.SUB_HUMAN_HOME pointed at this test's home. */
 function withHome(home, fn) {
   const old = process.env.SUB_HUMAN_HOME;
-  const oldRoomDir = process.env.SUB_HUMAN_TEST_ROOM_DIR;
   process.env.SUB_HUMAN_HOME = home;
-  delete process.env.SUB_HUMAN_TEST_ROOM_DIR;
   try { return fn(); } finally {
     if (old === undefined) delete process.env.SUB_HUMAN_HOME; else process.env.SUB_HUMAN_HOME = old;
-    if (oldRoomDir !== undefined) process.env.SUB_HUMAN_TEST_ROOM_DIR = oldRoomDir;
   }
 }
 
@@ -68,7 +65,7 @@ class World {
     for (const [name, who] of Object.entries(spec)) this.join(name, who);
   }
 
-  lib(fn) { return withHome(this.home, () => { if (this.code) room.bind(this.code); return fn(); }); }
+  lib(fn) { return withHome(this.home, fn); }
 
   join(name, who = 'sleep', { announce = false } = {}) {
     const pid = who === 'act' ? process.pid : who === 'act2' ? process.ppid : sleeper();
@@ -77,7 +74,7 @@ class World {
     if (!r.ok) throw new Error(`join ${name}: ${r.error}`);
     this.pid[name] = pid;
     this.sid[name] = s;
-    if (announce) this.lib(() => room.append({ kind: 'member_joined', text: `${name} joined` }, { via: 'system', from: name, system: true }));
+    if (announce) this.lib(() => room.open(this.code).append({ kind: 'member_joined', text: `${name} joined` }, { via: 'system', from: name, system: true }));
     return pid;
   }
 
@@ -86,8 +83,8 @@ class World {
     for (const d of [this.home, this.userHome, this.cwd]) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* gone */ } }
   }
 
-  entries() { return this.lib(() => room.readAll()); }
-  append(entry, opts) { return this.lib(() => room.append(entry, opts)); }
+  entries() { return this.code ? this.lib(() => room.open(this.code).readAll()) : []; }
+  append(entry, opts) { return this.lib(() => room.open(this.code).append(entry, opts)); }
   members() { return this.lib(() => identity.readMembers(this.code)); }
   memberDir(name) { return path.join(this.home, 'rooms', this.code, 'members', name); }
 

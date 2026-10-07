@@ -97,9 +97,7 @@ class MemoryRoomStore {
   readView({ after = 0 } = {}) {
     const all = this.readAll();
     if (!(after > 0)) return all;
-    const keep = new Set(all.filter(e => !CHAT_KINDS.has(e.kind) || e.id > after).map(e => e.id));
-    for (const e of all) if (keep.has(e.id) && e.kind === 'retract') for (const r of e.refs || []) keep.add(r);
-    return all.filter(e => keep.has(e.id));
+    return all.filter(e => !CHAT_KINDS.has(e.kind) || e.id > after);
   }
 
   append(entry, opts = {}) {

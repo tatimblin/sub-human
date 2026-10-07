@@ -8,6 +8,7 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 const h = require('./helpers.js');
 const room = require(path.join(h.LIB, 'room.js'));
+let R = null; // the room under test
 const identity = require(path.join(h.LIB, 'identity.js'));
 
 const servers = new Set();
@@ -110,8 +111,8 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
   const forged = payload(await s.tool('post', { kind: 'say', text: 'x', from: 'bob', via: 'human' }));
   assert.deepEqual([forged.from, forged.via], ['alice', 'agent'], 'extra arguments are ignored');
   assert.match(errText(await s.tool('post', { kind: 'say', text: '   ' })), /empty/);
-  room.bind(code);
-  assert.ok(room.readAll().every(x => x.from === 'alice' && x.via === 'agent'));
+  R = room.open(code);
+  assert.ok(R.readAll().every(x => x.from === 'alice' && x.via === 'agent'));
   // Rate limit surfaces as a tool error.
   for (let i = 0; i < 4; i++) await s.tool('post', { kind: 'status', text: `s${i}` });
   assert.match(errText(await s.tool('post', { kind: 'status', text: 'one too many' })), /rate limit/);
@@ -122,13 +123,13 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
 test('mcp: read returns unseen entries (skipping own posts) then by id', async () => {
   h.freshHome();
   const { code } = h.register('alice');
-  room.bind(code);
+  R = room.open(code);
   const s = await ready();
-  room.append({ kind: 'say', text: 'hi' }, { via: 'human', from: 'bob' });
+  R.append({ kind: 'say', text: 'hi' }, { via: 'human', from: 'bob' });
   await s.tool('post', { kind: 'status', text: 'mine' });
   assert.deepEqual(payload(await s.tool('read')).map(e => e.text), ['hi']);
   assert.deepEqual(payload(await s.tool('read')), []);
-  room.append({ kind: 'say', text: 'bob here' }, { via: 'human', from: 'bob' });
+  R.append({ kind: 'say', text: 'bob here' }, { via: 'human', from: 'bob' });
   assert.deepEqual(payload(await s.tool('read')).map(e => e.text), ['bob here']);
   assert.deepEqual(payload(await s.tool('read', { ids: [3, 1] })).map(e => e.id), [3, 1]);
   assert.match(errText(await s.tool('read', { ids: [0] })), /positive/);
@@ -143,12 +144,12 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   identity.join({ code, name: 'carol', role: 'member', pid: carol.pid, session_id: 'sc' });
   identity.join({ code, name: 'orch', role: 'orch', pid: orch.pid, session_id: 'so' });
   identity.leave(code, 'carol');
-  room.bind(code);
+  R = room.open(code);
   const s = await ready();
   const text = '# Cursor paging\n\n1. add cursor param\n2. tests\n';
   const r = await s.tool('propose', { text });
   const msg = r.result.content[0].text;
-  const e = room.readAll().at(-1);
+  const e = R.readAll().at(-1);
   assert.equal(e.kind, 'proposal');
   assert.equal(e.via, 'agent');
   assert.equal(e.from, 'alice');
@@ -162,12 +163,12 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   assert.doesNotMatch(msg, /#\d/, 'no entry ids for a Claude to repeat');
   // The same proposal again is not re-appended.
   assert.match((await s.tool('propose', { text })).result.content[0].text, /already open/);
-  assert.equal(room.readAll().filter(x => x.kind === 'proposal').length, 1);
+  assert.equal(R.readAll().filter(x => x.kind === 'proposal').length, 1);
   // path: bytes are hashed as-is; a proposer who is not an approver gets no card line.
   const f = path.join(os.tmpdir(), `sh-plan-${process.pid}.md`);
   fs.writeFileSync(f, '# other\nbody\n');
   const r2 = (await s.tool('propose', { path: f, approvers: ['@bob'] })).result.content[0].text;
-  const e2 = room.readAll().at(-1);
+  const e2 = R.readAll().at(-1);
   assert.deepEqual(e2.approvers, ['bob']);
   assert.equal(e2.hash, require('node:crypto').createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0, 12));
   assert.doesNotMatch(r2, /EnterPlanMode|AskUserQuestion/);
@@ -209,7 +210,7 @@ exports.create = ctx => ({
     if (name === 'anon') return ctx.text(me ? 'me ' + me.name : 'anonymous');
     if (name === 'info') {
       const w = ctx.whoami();
-      return ctx.text(JSON.stringify({ who: w && w.name, caps: ctx.clientCaps(), libs: [typeof ctx.room.append, typeof ctx.identity.resolveByPid, typeof ctx.proposal.create], meta }));
+      return ctx.text(JSON.stringify({ who: w && w.name, caps: ctx.clientCaps(), libs: [typeof ctx.room.open, typeof ctx.identity.resolveByPid, typeof ctx.proposal.create], meta }));
     }
   },
 });

@@ -72,19 +72,19 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(s.lastId(), 1 + config.RATE_MAX, 'nothing refused was written');
   });
 
-  test(`store contract (${name}): readView({after}) holds every non-chat entry, every entry after, and retract targets`, t => {
+  test(`store contract (${name}): readView({after}) holds every non-chat entry and every entry after`, t => {
     h.freshHome(t);
     const s = B.make(t);
     sys(s, 'member_joined', 'alice');           // 1
     say(s, 'alice', 'early chat');              // 2
-    say(s, 'bob', 'forged');                    // 3
+    say(s, 'bob', 'mid chat');                  // 3
     s.append({ kind: 'proposal', text: 'p', hash: 'abcdef012345', approvers: ['alice'] }, { via: 'agent', from: 'bob' }); // 4
     say(s, 'alice', 'later chat');              // 5
-    sys(s, 'retract', 'bob', { refs: [3] });    // 6
+    say(s, 'alice', 'more chat');               // 6
     say(s, 'bob', 'latest');                    // 7
     const all = s.readAll();
     for (const after of [0, 2, 4, 6, 7, Infinity]) {
-      const want = all.filter(e => !(after > 0) || !store.CHAT_KINDS.has(e.kind) || e.id > after || e.id === 3).map(e => e.id);
+      const want = all.filter(e => !(after > 0) || !store.CHAT_KINDS.has(e.kind) || e.id > after).map(e => e.id);
       assert.deepEqual(s.readView({ after }).map(e => e.id), want, `after ${after}`);
     }
     assert.deepEqual(s.readView({ after: 4 }).filter(e => e.id > 4), all.filter(e => e.id > 4), 'the same entries as readAll after `after`');

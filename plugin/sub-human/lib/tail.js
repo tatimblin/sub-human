@@ -24,7 +24,7 @@
  * It writes one JSON event per line, which the mod routes. It reads from the cursor deliver-NAME (first run: from
  * the seat's join) and sees the push and pull lanes. Events:
  *   {type:'seat', seat: {name, code, role, addr} | null}   the seat it follows (null: none any more)
- *   {type:'chat', lines}      a member's group chat: people's words, joins and leaves, a retract's notice
+ *   {type:'chat', lines}      a member's group chat: people's words, joins and leaves
  *                             (the person sees them; no wake)
  *   {type:'pull', text}       for Claude, no wake: the pull lane plus a copy of the chat lines, under the
  *                             "Room since your last turn" head (PULL_CAP). At most once (D8): the cursor moves
@@ -131,10 +131,10 @@ const esc = s => s.replace(/[.]/g, '\\.');
 const mentions = (text, name) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
 /**
  * A member's push entry that is group chat, not a request (D3: the person sees it, Claude gets a copy, no wake):
- * a join or leave, a retract's notice, and another person's own words not addressed to me.
+ * a join or leave, and another person's own words not addressed to me.
  */
 function isChat(me, e) {
-  if (isMove(e) || e.kind === 'retract') return true;
+  if (isMove(e)) return true;
   return e.via === 'human' && e.kind === 'say' && e.to !== me.name && !mentions(e.text, me.name);
 }
 
@@ -290,7 +290,7 @@ function startSession(me, ctx) {
   };
 
   // Settle: candidates go out as ONE write (at most one wake). Each is judged again against the log at flush
-  // time (lane with entries: retracted, signed, decided, superseded).
+  // time (lane with entries: signed, decided, superseded).
   function onFlush(ready) {
     const entries = rm.readView({ after: ready[0].e.id - 1 });
     const fctx = { me, room: rm, entries, show: pushed, joinNote, leaveMs: t.leaveMs };

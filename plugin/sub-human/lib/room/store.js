@@ -20,7 +20,7 @@
  *   readAll() -> Entry[]                    every parseable entry, in order (legacy lines included). Fresh array;
  *                                           the entries are shared (do not mutate them)
  *   readById(ids), readAfter(id, filter?), since(id) (= readAfter(id)), lastId()
- *   readView({after}) -> Entry[]            non-chat entries + entries with id > after + retract targets: what a
+ *   readView({after}) -> Entry[]            non-chat entries + entries with id > after: what a
  *                                           hook judges lanes against, the same answer as readAll() for the
  *                                           entries after `after` (after <= 0: readAll(); Infinity: non-chat only)
  *   watch(onEntry, {after, intervalMs}) -> stop()   every entry with id > after, then new ones (polling)
@@ -53,18 +53,12 @@
  *   unverifiedHuman(e) -> bool   via=human without a valid sig (a legacy line, or one written around append)
  *   humanTrust(e) -> 'verified' | 'legacy' | 'unverified' | null   (legacy: unsigned from a seat with no key)
  *   The room an entry belongs to is its `room` field (signed entries), else the store that read it (a WeakMap,
- *   so entries are not changed), else the legacy bound room.
- *   keyDir(code?), pubPath(name, code?), canonical(e), SIGNER
- *   isYoungProvisional(e, now?)  a provisional post younger than PROVISIONAL_MS. Nothing writes `provisional` any
- *                                more (the attested prompt origin replaced at-room's after-the-fact checker);
- *                                old logs may still hold such lines, so readers keep the check
+ *   so entries are not changed).
+ *   keyDir(code), pubPath(name, code), canonical(e), SIGNER
  *   normalize(e)                 legacy display mapping (concern -> objection, agree -> signoff, plan_rev ->
  *                                proposal {hash}, plan_hash -> proposal_hash)
  *   hash12(data)
  *
- * Deprecated (tests only; test/store-bypass.test.js checks no plugin module calls them): bind(code) sets a
- * process-wide room that code(), dir(), logPath() and the bound functions (readAll, append, ...) act on.
- * SUB_HUMAN_TEST_ROOM_DIR overrides that room's directory.
  */
 
 const nodeFs = require('node:fs');
@@ -142,11 +136,11 @@ function normalize(e) {
  */
 const SIGNER = Symbol.for('sub-human.human-signer');
 const KEY_PART_RE = /^[A-Za-z0-9_.-]{1,64}$/;
-function keyDir(c = code()) {
+function keyDir(c) {
   if (typeof c !== 'string' || !KEY_PART_RE.test(c) || c.startsWith('.')) throw new RoomError('INVALID', `invalid room code "${c}"`);
   return path.join(home(), 'keys', c);
 }
-function pubPath(name, c = code()) {
+function pubPath(name, c) {
   if (typeof name !== 'string' || !KEY_PART_RE.test(name) || name.startsWith('.')) throw new RoomError('INVALID', `invalid name "${name}"`);
   return path.join(keyDir(c), `${name}.pub`);
 }
@@ -179,7 +173,7 @@ function publicKey(name, c) {
 const verdicts = new Map(); // code \0 canonical \0 sig -> bool (bounded)
 const VERDICTS_MAX = 4096;
 /** The room a via=human entry was signed in: its `room` field (append stamps it), else the store that read it. */
-const roomOf = e => (typeof e.room === 'string' ? e.room : ROOM_OF.get(e) || code());
+const roomOf = e => (typeof e.room === 'string' ? e.room : ROOM_OF.get(e) || null);
 
 function verifyHuman(e) {
   if (!e || e.via !== 'human' || typeof e.sig !== 'string' || typeof e.from !== 'string') return false;
@@ -214,10 +208,6 @@ function humanTrust(e) {
   try { file = pubPath(e.from, c); } catch { return 'unverified'; }
   return fs.existsSync(file) ? 'unverified' : 'legacy';
 }
-
-/** How long a provisional post (old logs only) stays out of digests: the old checker's window, poll and append. */
-const PROVISIONAL_MS = () => config.PROVISIONAL_MS;
-const isYoungProvisional = (e, now = Date.now()) => !!e && e.provisional === true && now - Date.parse(e.at) < PROVISIONAL_MS();
 
 /**
  * The envelope append() stores: validated fields `v`, with id (last + 1), at, from, via, prev, and for a via=human
@@ -642,8 +632,8 @@ class FsRoomStore {
 
   /**
    * What a hook needs without parsing the whole log: every non-chat entry (proposals, answers, decisions,
-   * retracts, tasks, joins and leaves), every entry with id > after, and the entries a retract names, in log
-   * order. Advances log.idx as verifyChain() does.
+   * tasks, joins and leaves) and every entry with id > after, in log order. Advances log.idx as verifyChain()
+   * does.
    */
   readView({ after = 0 } = {}) {
     if (!(after > 0)) return this.readAll();
@@ -686,16 +676,6 @@ class FsRoomStore {
       if (next.offset > cp.offset) this._saveCheckpoint(next);
       const complete = scanned.complete;
       if (size > complete) { const e = parse(readRange(fd, complete, size - complete)); if (e && (!CHAT_KINDS.has(e.kind) || e.id > after)) got.set(complete, e); } // no newline yet; readAll() parses it too
-      // the targets of retracts that are not loaded yet
-      const have = new Set([...got.values()].map(e => e.id));
-      for (const e of [...got.values()]) {
-        if (e.kind !== 'retract') continue;
-        for (const r of e.refs || []) {
-          if (have.has(r) || !Number.isInteger(r)) continue;
-          const L = lineAt(fd, offsetAfter(fd, size, r - 1), size);
-          if (L && L.id === r) { const t = parse(readRange(fd, L.start, L.end - L.start)); if (t) { got.set(L.start, t); have.add(r); } }
-        }
-      }
       return [...got.entries()].sort((x, y) => x[0] - y[0]).map(x => x[1]);
     } finally { fs.closeSync(fd); }
   }
@@ -780,40 +760,9 @@ function createRoom(c) {
 }
 const listRooms = () => { try { return fs.readdirSync(roomsDir()).filter(c => CODE_RE.test(c)); } catch { return []; } };
 
-// ---------- deprecated: the process-wide bound room (tests only) ----------
-let active = null;
-function bind(c) {
-  roomDir(c); // validates the code
-  active = c;
-  return c;
-}
-const TEST_DIR = 'SUB_HUMAN_TEST_ROOM_DIR';
-function code() { return process.env[TEST_DIR] ? path.basename(process.env[TEST_DIR]) : active; }
-function bound() {
-  if (process.env[TEST_DIR]) return open(path.basename(process.env[TEST_DIR]), { dir: process.env[TEST_DIR] });
-  if (!active) throw new RoomError('NO_ROOM', 'no room bound; run /sub-human');
-  return open(active);
-}
-const dir = () => (process.env[TEST_DIR] ? process.env[TEST_DIR] : bound().dir);
-const logPath = () => path.join(dir(), LOG);
-const readMembersHere = () => { try { return bound().members.read(); } catch { return {}; } };
-
 module.exports = {
   RoomError,
   FsRoomStore, open, setBackend, roomExists, createRoom, listRooms,
   hash12, normalize, tag, roomOf, buildEntry, prepare, blobRef, checkKey, checkCursor, CHAT_KINDS,
-  SIGNER, keyDir, pubPath, canonical, verifyHuman, unverifiedHuman, humanTrust, PROVISIONAL_MS, isYoungProvisional,
-  // deprecated, tests only
-  bind, code, dir, logPath, readMembersHere,
-  readAll: () => bound().readAll(),
-  readById: ids => bound().readById(ids),
-  readAfter: (seq, f) => bound().readAfter(seq, f),
-  lastId: () => bound().lastId(),
-  follow: (after, onEntry, opts = {}) => bound().watch(onEntry, { ...opts, after }),
-  append: (entry, opts) => bound().append(entry, opts),
-  validateChain: () => bound().validateChain(),
-  verifyChain: opts => bound().verifyChain(opts),
-  readView: opts => bound().readView(opts),
-  getCursor: name => bound().getCursor(name),
-  setCursor: (name, n) => bound().setCursor(name, n),
+  SIGNER, keyDir, pubPath, canonical, verifyHuman, unverifiedHuman, humanTrust,
 };

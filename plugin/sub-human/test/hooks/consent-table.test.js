@@ -10,11 +10,10 @@ const proposal = require(path.join(PLUGIN, 'lib', 'proposal.js'));
 const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
 const consent = require(path.join(PLUGIN, 'lib', 'room', 'consent.js'));
 
-test('consent table: proposal, re-proposal, revise, signoffs, objection after signoff, retract, decision: all views agree', () => {
+test('consent table: proposal, re-proposal, revise, signoffs, objection after signoff, decision: all views agree', () => {
   const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep', carol: 'sleep', dave: 'sleep' });
   const me = name => ({ code: w.code, name, role: name === 'orch' ? 'orch' : 'member' });
   const human = (from, kind, hash) => w.append({ kind, proposal_hash: hash }, { via: 'human', from });
-  const retract = id => w.append({ kind: 'retract', text: 'forged', refs: [id] }, { via: 'system', from: 'room', system: true });
   const create = (who, text, approvers) => w.lib(() => proposal.create(me(who), { text, approvers }));
 
   const H1 = create('alice', '# Cursor paging\n\n1. after= cursor\n', ['bob', 'carol']).hash;  // #1
@@ -25,12 +24,9 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
   human('carol', 'objection', H1);                                                           // #5 voids carol's signoff
   const H2 = create('alice', '# Cursor paging v2\n\n1. clamp at 100\n', ['bob', 'carol']).hash; // #6 the revision
   human('bob', 'signoff', H2);                                                               // #7
-  retract(human('carol', 'signoff', H2).id);                                                 // #8, #9 a forged answer, retracted
-  const H3 = create('bob', '# Rename fetchUser\n', ['alice']).hash;                          // #10
-  const rec = w.lib(() => proposal.record(me('alice'), { hash: H3 }, { choice: 'Agree' }));  // #11 + the decision #12
+  const H3 = create('bob', '# Rename fetchUser\n', ['alice']).hash;                          // #8
+  const rec = w.lib(() => proposal.record(me('alice'), { hash: H3 }, { choice: 'Agree' }));  // #9 + the decision #10
   assert.ok(rec.decision, 'alice completed H3');
-  const H4 = create('alice', '# Scrapped idea\n', ['bob']);                                  // #13
-  retract(H4.entry.id);                                                                      // #14 the whole proposal retracted
 
   // The one expected answer. needed = pending for that person; decided = closed (agreed).
   const want = {
@@ -40,12 +36,12 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
   };
   const titles = { [H1]: 'Cursor paging', [H2]: 'Cursor paging v2', [H3]: 'Rename fetchUser' };
   const people = ['alice', 'bob', 'carol', 'dave'];
-  const hashes = [H1, H2, H3, H4.hash];
+  const hashes = [H1, H2, H3];
   const needed = name => hashes.filter(h => want[h] && want[h][name] === 'needed');
 
   const entries = w.entries();
   const f = consent.fold(entries);
-  assert.deepEqual([...f.proposals.keys()], [H1, H2, H3], 'H4 retracted; order of the latest entry');
+  assert.deepEqual([...f.proposals.keys()], [H1, H2, H3], 'order of the latest entry');
   assert.equal(consent.fold(entries), f, 'memoized per array');
 
   for (const name of people) {
@@ -62,7 +58,7 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
       assert.equal(room.lane(me(name), e, entries) === 'push', needed(name).includes(h), `lane ${name} ${h.slice(0, 6)}`);
     }
     // stateLine: the open proposals (H1, H2) and my part in each
-    const line = w.lib(() => room.stateLine(me(name), entries));
+    const line = w.lib(() => room.open(w.code).stateLine(me(name), entries));
     for (const h of [H1, H2]) {
       const seg = line.replace(/^room now: /, '').split(/ · (?=proposal |away:|\+)/).find(s => s.startsWith(`proposal ${h.slice(0, 6)}`));
       assert.ok(seg, `${line} has ${h.slice(0, 6)}`);
@@ -70,7 +66,6 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
       const exp = { agreed: 'agreed', objected: 'objected', needed: 'answer needed' }[(want[h] || {})[name]] || null;
       assert.equal(you, exp, `stateLine ${name} ${h.slice(0, 6)}: ${seg}`);
     }
-    assert.doesNotMatch(line, new RegExp(H4.hash.slice(0, 6)), 'a retracted proposal is not shown');
     // the room row: "your answer needed" names the newest pending proposal by its title
     const roomRow = w.lib(() => rows.rowText(w.code, w.code, name, { entries, taskSummary: '' }));
     const need = needed(name);

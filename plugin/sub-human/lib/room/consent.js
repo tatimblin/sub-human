@@ -9,7 +9,6 @@
  *                  Map order = log order of that latest entry
  *     F.answers    Map hash -> Map name -> {kind: 'signoff'|'objection', id, entry}   per person, the latest answer
  *     F.decisions  Map hash -> entry   the latest via=system decision per hash
- *     F.retracted  Set of ids retracted by a via=system `retract`
  *     F.matrix(hash, approvers?) -> {hash, approvers, answers: {name: {id, kind}|null}, signed: {name: id|null},
  *                  agreed, objected, missing (no answer), unsigned (no signoff), complete (everyone answered)}
  *     F.pending(name) -> [proposal]   undecided proposals naming name that name has not answered (log order)
@@ -17,7 +16,6 @@
  *
  * Semantics (one place):
  *   - Entries are read through normalize() (legacy plan_rev / plan_hash / concern / agree).
- *   - A retracted entry counts for nothing (a proposal, an answer or a decision).
  *   - Only valid 12-hex hashes (sha256/12 of the plan bytes, lib/proposal.js) count.
  *   - The latest proposal entry per hash wins (approvers, path, author). Answers attach to the hash (the text),
  *     wherever they sit in the log.
@@ -52,15 +50,11 @@ function fold(entries) {
 }
 
 function compute(list) {
-  const retracted = new Set();
-  for (const e of list) {
-    if (e && e.kind === 'retract' && e.via === 'system' && Array.isArray(e.refs)) for (const r of e.refs) retracted.add(r);
-  }
   const proposals = new Map();
   const answers = new Map();
   const decisions = new Map();
   for (const raw of list) {
-    if (!raw || retracted.has(raw.id)) continue;
+    if (!raw) continue;
     const e = normalize(raw);
     if (e.kind === 'proposal') {
       if (!isHash(e.hash)) continue;
@@ -107,7 +101,7 @@ function compute(list) {
     return { proposal: p, decision: d, matrix: m, state: !d ? 'open' : m.objected.length ? 'blocked' : 'agreed' };
   }
 
-  return { proposals, answers, decisions, retracted, answerOf, matrix, pending, status };
+  return { proposals, answers, decisions, answerOf, matrix, pending, status };
 }
 
 module.exports = { fold, isHash, HASH_RE };

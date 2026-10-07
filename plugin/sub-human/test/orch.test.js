@@ -125,8 +125,8 @@ test('orch: reap waits the grace, marks closing, tells the orch, waits for task 
     await h.sleep(60);
     assert.equal(identity.roomClosing(code), false, 'not closing during the grace');
     await h.until(() => identity.roomClosing(code), 2000);
-    room.bind(code);
-    const e = room.readAll().at(-1);
+    const R = room.open(code);
+    const e = R.readAll().at(-1);
     assert.deepEqual([e.kind, e.to, e.via, e.text], ['status', 'orch', 'system', orch.CLOSE_TEXT]);
     assert.equal(s.calls().length, 0, 'no stop while task 1 is open');
     await h.sleep(200);
@@ -357,8 +357,8 @@ test('orch: crash-all-members (SIGKILL) -> the watchdog reaps the orch (real det
   const rec = identity.readMembers(code).orch;
   assert.ok(rec.closing && rec.left_at);
   const room = require(path.join(h.LIB, 'room.js'));
-  room.bind(code);
-  assert.ok(room.readAll().some(e => e.kind === 'status' && e.text === orch.CLOSE_TEXT));
+  const R = room.open(code);
+  assert.ok(R.readAll().some(e => e.kind === 'status' && e.text === orch.CLOSE_TEXT));
   assert.deepEqual(identity.orphanRooms(), []);
   o.kill();
 });

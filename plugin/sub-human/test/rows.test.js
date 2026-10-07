@@ -125,14 +125,14 @@ test('rowText (participant): objection (no entry id), decided, status after the 
   assert.equal(rows.rowText(code, 'bob', 'orch', { tasks }), '✖ blocked 593da0', 'no status from bob yet');
 });
 
-test('rowText (participant): a hashless proposal post or a retracted answer counts for nothing; propose() entries count whatever their via', () => {
+test('rowText (participant): a hashless proposal post counts for nothing, an old retract line changes nothing; propose() entries count whatever their via', () => {
   const { code } = makeRoom([{ name: 'orch' }, { name: 'alice' }, { name: 'bob' }], [
     { kind: 'proposal', via: 'agent', from: 'bob', text: 'how about' },
     prop(['bob'], H, { via: 'agent' }),
     answer('bob', 'signoff'),
     { kind: 'retract', via: 'system', from: 'bob', refs: [3] },
   ]);
-  assert.equal(rows.rowText(code, 'bob', 'orch', { tasks: [] }), '⚠ reviewing 593da0');
+  assert.equal(rows.rowText(code, 'bob', 'orch', { tasks: [] }), '✓ agreed 593da0');
 });
 
 test('rowText (room row): answer needed, agreed, objected, decided, mail and the task summary', () => {

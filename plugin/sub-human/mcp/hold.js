@@ -26,8 +26,7 @@
  * Every progress line ends with HINT ("read-only · talk in main (@room)"): text typed into a row view is not
  * posted (Claude Code queues it for the row agent), so the line says where to talk instead.
  * Entries come from the seat's Room (lib/room.js open(code): the store's cached read, re-parsing only appended
- * bytes). A typed @room post still inside its origin check (room.isYoungProvisional) is held back from the
- * progress lines and judged again on a later tick (shown once it is old enough, dropped if it was retracted).
+ * bytes).
  * Liveness goes to the room document rows/holds-<me> (lib/rows.js) for row-guard, join notes and rewake, and
  * every BEAT_MS / 2 the seat's lease is renewed (identity.heartbeat). A room hold
  * that returned JOINED/RESPAWN still counts as running for ROOM_GAP_MS (roomUntil) while its agent re-calls,
@@ -91,7 +90,7 @@ class HoldServer {
     this.respawn = new Map();   // code -> Set(names) waiting for the next room hold
     this.roomGone = new Map();  // code -> time the room hold was cancelled
     this.roomEnded = new Map(); // code -> time a room hold last returned (it is re-calling)
-    this.logState = new Map();  // code -> {lastId, count, entries, held: Map(id -> young provisional entry)}
+    this.logState = new Map();  // code -> {lastId, count, entries}
     this.me = null; this.meAt = 0; this.timer = null; this.seat = null;
   }
 
@@ -102,27 +101,15 @@ class HoldServer {
   members(code) { try { return this.ctx.identity.readMembers(code) || {}; } catch { return {}; } }
   present(ms, name) { return !!(ms[name] && !ms[name].left_at); }
 
-  /**
-   * The room's entries, and `fresh`: the ones that arrived since the last call, plus held young provisional posts
-   * that are now old enough (a retracted one is dropped). The first call for a room has no fresh entries.
-   */
+  /** The room's entries, and `fresh`: the ones that arrived since the last call (none on the first call for a room). */
   readEntries(code) {
     let entries = [];
     try { entries = room.open(code).readAll().filter(e => e && Number.isInteger(e.id)); } catch { /* no log yet */ }
     const last = entries.length ? entries.at(-1).id : 0;
     const st = this.logState.get(code);
-    if (st && st.lastId === last && st.count === entries.length && !st.held.size) return { entries: st.entries, fresh: [] };
-    const held = new Map(), fresh = [];
-    if (st) {
-      const now = Date.now();
-      const gone = st.held.size ? room.open(code).retractedIds(entries) : null;
-      const cand = [...st.held.values(), ...entries.filter(e => e.id > st.lastId)];
-      for (const e of cand) {
-        if (room.isYoungProvisional(e, now)) held.set(e.id, e);
-        else if (!(gone && gone.has(e.id))) fresh.push(e);
-      }
-    }
-    this.logState.set(code, { lastId: last, count: entries.length, entries, held });
+    if (st && st.lastId === last && st.count === entries.length) return { entries: st.entries, fresh: [] };
+    const fresh = st ? entries.filter(e => e.id > st.lastId) : [];
+    this.logState.set(code, { lastId: last, count: entries.length, entries });
     return { entries, fresh };
   }
 
@@ -278,10 +265,9 @@ class HoldServer {
     if (!this.holds.size) this.stopTimer();
   }
 
-  /** The latest shown entry for a new hold's first line: not a post still inside its origin check. */
+  /** The latest entry `pick` accepts, for a new hold's first line. */
   lastShown(code, pick) {
-    const now = Date.now();
-    return this.readEntries(code).entries.filter(e => pick(e) && !room.isYoungProvisional(e, now)).at(-1);
+    return this.readEntries(code).entries.filter(pick).at(-1);
   }
 
   call(name, who0, args = {}, meta = {}) {

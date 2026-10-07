@@ -1,6 +1,6 @@
 'use strict';
 // The RoomStore seam holds: no plugin module outside lib/room/store*.js knows where a room's state lives or what
-// its files are called, and none uses the deprecated process-wide room (room.bind and the bound functions).
+// its files are called.
 // The hooks module (mod/*.mjs) is walked too: it knows no store path (mod-hello tells it the home).
 // Exceptions, by design: lib/home.js (the location: home, rooms/, roomDir) and lib/identity.js, which keeps
 // this machine's session indexes (<home>/sessions/: which seat a local pid or session id holds; not room state)
@@ -45,32 +45,7 @@ test('store seam: no module outside lib/room/store*.js names a room file or buil
       if (FILE_NAMES.test(l)) bad.push(`names a room file: ${at}`);
       if (SEGMENTS.test(l)) bad.push(`builds a room path: ${at}`);
       if (/\broomDir\(/.test(l) && !['lib/home.js', 'lib/identity.js'].includes(rel) && !/^\s*identity\.roomDir\(\w+\);/.test(l)) bad.push(`uses roomDir: ${at}`);
-      if (/SUB_HUMAN_TEST_ROOM_DIR/.test(l) && rel !== 'mod/core/guard.mjs') bad.push(`uses the test room dir: ${at}`);
     });
-  }
-  assert.deepEqual(bad, []);
-});
-
-const BOUND = ['bind', 'code', 'dir', 'logPath', 'readAll', 'readById', 'readAfter', 'lastId', 'follow', 'append',
-  'validateChain', 'verifyChain', 'readView', 'getCursor', 'setCursor', 'readMembersHere', 'proposal', 'proposals',
-  'answers', 'answered', 'decided', 'retractedIds', 'stateLine', 'digest'];
-
-test('store seam: no plugin module uses the deprecated bound room (room.bind and the functions that act on it)', () => {
-  const bad = [];
-  for (const { rel, code } of sources()) {
-    if (STORE.test(rel) || rel === 'lib/room.js') continue;
-    // the names the facade (lib/room.js) or the store module goes by in this file
-    const aliases = new Set();
-    for (const m of code.matchAll(/const (\w+) = require\([^\n]*?\broom(?:\/store)?\.js['"]\)\)?;/g)) aliases.add(m[1]);
-    if (/const \{[^}]*\broom\b[^}]*\} = require\([^\n]*common\.js['"]\)/.test(code)) aliases.add('room');
-    if (/const (\w+) = require\(['"]\.\/common\.js['"]\)/.test(code)) aliases.add(`${/const (\w+) = require\(['"]\.\/common\.js['"]\)/.exec(code)[1]}.room`);
-    for (const m of code.matchAll(/const \{([^}]*)\} = require\([^\n]*?\broom(?:\/store)?\.js['"]\)\)?;/g)) {
-      for (const n of m[1].split(',').map(x => x.trim().split(':')[0].trim())) if (BOUND.includes(n)) bad.push(`${rel}: imports the bound ${n}`);
-    }
-    for (const a of aliases) {
-      const re = new RegExp(`(^|[^\\w.])${a.replace('.', '\\.')}\\.(${BOUND.join('|')})\\(`, 'g');
-      code.split('\n').forEach((l, i) => { if (re.test(l)) bad.push(`${rel}:${i + 1}: ${l.trim()}`); re.lastIndex = 0; });
-    }
   }
   assert.deepEqual(bad, []);
 });

@@ -87,9 +87,6 @@ module.exports = {
   SEAT_LEASE_MS: 120_000,
 
   // ---------- hooks ----------
-  // A provisional post (written by at-room's after-the-fact origin checker before 2.1.292's attested origin;
-  // only old logs have them) stays out of digests and the room row view for this long after it was written.
-  PROVISIONAL_MS: 1750,
   REWAKE_WAIT_MS: 3000,            // SUB_HUMAN_REWAKE_WAIT_MS (allowZero): row-rewake waits for the seat
   REWAKE_POLL_MS: 100,
   ROW_SPAWN_GRACE_MS: 60_000,      // a row spawned this recently may not hold yet: never re-listed

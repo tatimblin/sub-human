@@ -175,11 +175,10 @@ function isClosing(code) {
   return !!(m.closing || (m.orch && m.orch.closing) || (m._room && m._room.closing));
 }
 
-const retracted = log => new Set(log.filter(e => e.kind === 'retract' && e.via === 'system').flatMap(e => e.refs || []));
 const cites = (e, reqId) => (e.refs || []).includes(reqId) || new RegExp(`(^|[^\\d])#${reqId}(?!\\d)`).test(String(e.text || ''));
 
 /**
- * May the orch complete `task` ({id, subject, owner, req?})? Only on an unretracted task_req{op:'done', id} with
+ * May the orch complete `task` ({id, subject, owner, req?})? Only on a task_req{op:'done', id} with
  * evidence, newer than the last claim of that task, made by the owner's Claude or confirmed by the owner's own
  * [human] words citing that request. task.req (the native task's metadata.req) is tried first when it names
  * such a request. The room-open task completes only while the room is closing.
@@ -192,16 +191,14 @@ function gate(code, task, log = [], { closing } = {}) {
   }
   const owner = task && task.owner;
   if (!owner) return { ok: false, reason: `#${id} has no owner; someone must claim it, then ask for done with evidence` };
-  const gone = retracted(log);
-  const live = log.filter(e => !gone.has(e.id));
-  const reqs = live.filter(e => e.kind === 'task_req' && reqOf(e).id === id);
+  const reqs = log.filter(e => e.kind === 'task_req' && reqOf(e).id === id);
   const lastClaim = reqs.filter(e => reqOf(e).op === 'claim').reduce((n, e) => Math.max(n, e.id), 0);
   const dones = reqs.filter(e => reqOf(e).op === 'done' && e.id > lastClaim && String(reqOf(e).evidence || '').trim()).reverse();
   const hint = dones.findIndex(e => e.id === Number(task.req));
   if (hint > 0) dones.unshift(...dones.splice(hint, 1));
   for (const d of dones) {
     if (d.from === owner) return { ok: true, req: d };
-    const confirmed = live.some(e => e.via === 'human' && humanTrust(e) !== 'unverified' && e.from === owner && e.id > lastClaim && cites(e, d.id));
+    const confirmed = log.some(e => e.via === 'human' && humanTrust(e) !== 'unverified' && e.from === owner && e.id > lastClaim && cites(e, d.id));
     if (confirmed) return { ok: true, req: d };
   }
   return { ok: false, reason: `only ${owner} may complete #${id}; ask them` };
