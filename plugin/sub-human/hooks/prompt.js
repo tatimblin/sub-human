@@ -36,7 +36,9 @@ function merge(outputs) {
     if (additionalContext) contexts.push(additionalContext);
     merged.hookSpecificOutput = { ...rest, ...(merged.hookSpecificOutput || {}), hookEventName: EVENT };
   }
-  if (contexts.length) merged.hookSpecificOutput = { ...(merged.hookSpecificOutput || { hookEventName: EVENT }), additionalContext: contexts.join('\n\n') };
+  if (contexts.length) {
+    merged.hookSpecificOutput = { ...(merged.hookSpecificOutput || { hookEventName: EVENT }), additionalContext: contexts.join('\n\n') };
+  }
   return merged;
 }
 

@@ -214,7 +214,8 @@ async function heldRows($) {
 async function apply($, c, ev) {
   if (!ev || c.stopped) return;
   const role = c.seat && c.seat.role === 'orch' ? 'orch' : 'member';
-  const actions = route(ev, { turnRunning: turns.running !== null, role, rows: ev.type === 'wake' && role === 'orch' ? await heldRows($) : null });
+  const rows = ev.type === 'wake' && role === 'orch' ? await heldRows($) : null;
+  const actions = route(ev, { turnRunning: turns.running !== null, role, rows });
   for (const a of actions) {
     switch (a.do) {
       case 'seat': c.seat = a.seat; break;

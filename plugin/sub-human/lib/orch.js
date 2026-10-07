@@ -117,7 +117,10 @@ function spawnPlan({ code, cwd, home = identity.home(), pluginDir = pluginDirFor
   };
   const args = ['--bg', '-n', `orch.${code}`];
   if (pluginDir) args.push('--plugin-dir', pluginDir);
-  try { const x = JSON.parse(process.env.SUB_HUMAN_ORCH_ARGS || '[]'); if (Array.isArray(x)) args.push(...x.map(String)); } catch { /* ignored */ }
+  try {
+    const x = JSON.parse(process.env.SUB_HUMAN_ORCH_ARGS || '[]');
+    if (Array.isArray(x)) args.push(...x.map(String));
+  } catch { /* ignored */ }
   args.push('--agent', AGENT, '--permission-mode', 'plan', '--settings', JSON.stringify(settings), '/sub-human');
   return { bin: claudeBin(), args, env: cleanEnv(env), cwd: cwd || process.cwd() };
 }
@@ -169,7 +172,9 @@ function findJob(code, { parsed = null, env = cleanEnv() } = {}) {
 
 function stopJob(job) {
   if (!job || job === PENDING) return false;
-  const r = spawnSync(claudeBin(), cc.stopCmd(job), { env: cleanEnv(), encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync(claudeBin(), cc.stopCmd(job), {
+    env: cleanEnv(), encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
+  });
   return r.status === 0;
 }
 
@@ -177,15 +182,20 @@ function spawn(opts = {}) {
   const { code, claim = null, prevJob = null } = opts;
   const plan = spawnPlan(opts);
   if (prevJob) stopJob(prevJob); // a respawn never leaves the old job running beside the new one
-  const r = spawnSync(plan.bin, plan.args, { cwd: plan.cwd, env: plan.env, encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'] });
+  const r = spawnSync(plan.bin, plan.args, {
+    cwd: plan.cwd, env: plan.env, encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
+  });
   const text = `${r.stdout || ''}\n${r.stderr || ''}`;
   const parsed = cc.parseDispatch(text);
   const found = r.error || (r.status !== 0 && !parsed) ? null : findJob(code, { parsed, env: plan.env });
   const mine = o => !claim || (o && o.claim === claim);
   if (!found) {
-    const why = r.error ? r.error.message : (text.split('\n').map(s => s.trim()).filter(Boolean).find(s => /trust|error|not /i.test(s)) || text.trim().split('\n')[0] || `exit ${r.status}`);
+    const said = text.split('\n').map(s => s.trim()).filter(Boolean).find(s => /trust|error|not /i.test(s));
+    const why = r.error ? r.error.message : (said || text.trim().split('\n')[0] || `exit ${r.status}`);
     const error = String(why).slice(0, 300);
-    try { identity.updateOrch(code, o => (mine(o) && !(o && o.closing) ? { job: null, claim: undefined, spawn_error: error } : null)); } catch { /* room gone */ }
+    try {
+      identity.updateOrch(code, o => (mine(o) && !(o && o.closing) ? { job: null, claim: undefined, spawn_error: error } : null));
+    } catch { /* room gone */ }
     return { ok: false, error };
   }
   let rec = null;
@@ -193,7 +203,11 @@ function spawn(opts = {}) {
     rec = identity.updateOrch(code, o => {
       if (!mine(o) || (o && o.closing)) return null;
       const patch = { job: found.id, job_session: found.sessionId || undefined, claim: undefined, spawn_error: undefined };
-      if (!claim) Object.assign(patch, { spawned_at: iso(clock.now()), pid: null, pid_start: undefined, left_at: undefined, closing: undefined, stopped_at: undefined });
+      if (!claim) {
+        Object.assign(patch, {
+          spawned_at: iso(clock.now()), pid: null, pid_start: undefined, left_at: undefined, closing: undefined, stopped_at: undefined,
+        });
+      }
       return patch;
     });
   } catch { rec = null; }

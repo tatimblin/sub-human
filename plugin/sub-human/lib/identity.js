@@ -194,16 +194,21 @@ function join({ code, name, role, pid, session_id, cwd } = {}) {
     const prev = readJson(byPidFile(pid));
     if (prev && (prev.code !== code || prev.name !== name)) {
       try {
-        if (prev.code === code) { if (members[prev.name] && members[prev.name].pid === pid && !members[prev.name].left_at) members[prev.name].left_at = new Date().toISOString(); }
-        else markLeft(prev.code, prev.name, pid);
+        if (prev.code === code) {
+          const old = members[prev.name];
+          if (old && old.pid === pid && !old.left_at) old.left_at = new Date().toISOString();
+        } else markLeft(prev.code, prev.name, pid);
       } catch { /* old room gone */ }
     }
     const keep = {};
     if (role === 'orch' && cur) for (const k of ORCH_FIELDS) if (cur[k] != null) keep[k] = cur[k];
     const start = pidStart(pid);
     const now = new Date().toISOString();
-    members[name] = { name, role, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null, joined_at: now, seen_at: now, ...keep };
-    const rec = { code, name, role, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, address: address(name, code) };
+    const started = start != null ? { pid_start: start } : {};
+    members[name] = {
+      name, role, pid, ...started, session_id: session_id || null, cwd: cwd || null, joined_at: now, seen_at: now, ...keep,
+    };
+    const rec = { code, name, role, pid, ...started, session_id: session_id || null, address: address(name, code) };
     writeJsonAtomic(byPidFile(pid), rec);
     if (session_id) writeJsonAtomic(bySidFile(session_id), rec);
     result = rejoin ? { ok: true, rejoin: true } : { ok: true };
@@ -248,7 +253,10 @@ function rebindSession(pid, sid) {
     if (!m) return null;
     if (m.session_id && m.session_id !== sid) rm(bySidFile(m.session_id));
     m.session_id = sid;
-    const rec = { code: who.code, name: who.name, role: m.role, pid: m.pid, ...(m.pid_start != null ? { pid_start: m.pid_start } : {}), session_id: sid, address: address(who.name, who.code) };
+    const rec = {
+      code: who.code, name: who.name, role: m.role, pid: m.pid, ...(m.pid_start != null ? { pid_start: m.pid_start } : {}),
+      session_id: sid, address: address(who.name, who.code),
+    };
     writeJsonAtomic(byPidFile(m.pid), rec);
     writeJsonAtomic(bySidFile(sid), rec);
     ok = true;

@@ -55,7 +55,8 @@ function text(n) {
 }
 
 function rowSegment(es, viewer, { now = clock.now() } = {}) {
-  const n = joinLeave(es, viewer, { now }).filter(x => x.settled && now - Date.parse(x.at) - (x.kind === 'member_left' ? settleMs() : 0) < ROW_MS).at(-1);
+  const fresh = x => now - Date.parse(x.at) - (x.kind === 'member_left' ? settleMs() : 0) < ROW_MS;
+  const n = joinLeave(es, viewer, { now }).filter(x => x.settled && fresh(x)).at(-1);
   if (!n) return '';
   return n.kind === 'member_left' ? `−${n.name} left` : `+${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
 }

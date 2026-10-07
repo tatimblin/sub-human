@@ -32,7 +32,9 @@ function launcherPath() { return path.join(binDir(), LAUNCHER); }
 const rootsPath = () => path.join(binDir(), ROOTS);
 
 const realish = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-const TMP_DIRS = () => [...new Set([os.tmpdir(), '/tmp', '/private/tmp', '/var/tmp', '/private/var/tmp'].flatMap(d => [path.resolve(d), realish(d)]))];
+const TMP_DIRS = () => [
+  ...new Set([os.tmpdir(), '/tmp', '/private/tmp', '/var/tmp', '/private/var/tmp'].flatMap(d => [path.resolve(d), realish(d)])),
+];
 /** root is inside a temp dir (lexically or after realpath). */
 function isTempRoot(root) {
   const cands = [path.resolve(root), realish(root)];

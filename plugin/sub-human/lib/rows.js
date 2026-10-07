@@ -60,7 +60,9 @@ const notices = require('./notices.js');
 const { isAlive } = require('./io.js');
 const text = require('./text.js');
 const proposal = require('./proposal.js');
-const { ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS } = require('./config.js');
+const {
+  ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS,
+} = require('./config.js');
 
 const PARTICIPANT = 'sub-human:participant';
 const ROOM_AGENT = 'sub-human:room';
@@ -157,7 +159,9 @@ function joinNote(me, name, { held } = {}) {
 function rowsNeeded(code, me, { members, held = null } = {}) {
   const ms = memberList(members || readMembers(code));
   const h = held || { members: [], room: false };
-  if (me.role === 'orch') return ms.filter(m => isActive(m) && !isOrch(m) && m.name !== me.name && !h.members.includes(m.name)).map(m => m.name);
+  if (me.role === 'orch') {
+    return ms.filter(m => isActive(m) && !isOrch(m) && m.name !== me.name && !h.members.includes(m.name)).map(m => m.name);
+  }
   return h.room ? [] : [code];
 }
 
@@ -261,7 +265,9 @@ function missingRows(code, me, { now = Date.now(), members } = {}) {
   const ms = memberList(members || readMembers(code));
   const h = readHolds(code, me.name, now) || { members: [], room: false };
   const old = m => !m.joined_at || now - Date.parse(m.joined_at) > MISSING_GRACE_MS;
-  if (me.role === 'orch') return ms.filter(m => isActive(m) && !isOrch(m) && m.name !== me.name && old(m) && !h.members.includes(m.name)).map(m => m.name);
+  if (me.role === 'orch') {
+    return ms.filter(m => isActive(m) && !isOrch(m) && m.name !== me.name && old(m) && !h.members.includes(m.name)).map(m => m.name);
+  }
   const self = ms.find(m => m.name === me.name);
   return self && old(self) && !h.room ? [code] : [];
 }
@@ -320,7 +326,8 @@ const latestFor = (ps, name) => ps.filter(p => p.approvers.includes(name)).at(-1
 const taskSummary = (code, viewer) => oneLine(tasks.summary(code, viewer) || '');
 /** NAME's open task on the room list: in progress first, else the first pending. */
 function openTask(list, name) {
-  const mine = list.filter(t => t && t.owner === name && t.status !== 'completed' && t.status !== 'deleted' && !(t.metadata && t.metadata._internal));
+  const mine = list.filter(t => t && t.owner === name && t.status !== 'completed' && t.status !== 'deleted'
+    && !(t.metadata && t.metadata._internal));
   return mine.find(t => t.status === 'in_progress') || mine[0] || null;
 }
 

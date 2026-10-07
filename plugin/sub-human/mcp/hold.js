@@ -6,8 +6,8 @@
  *
  *   hold({member: NAME})   called once by a sub-human:participant row agent. Blocks for as long as this seat is in
  *       the room, streaming notifications/progress (the latest entry of NAME's thread, re-sent every BEAT_MS so
- *       the MCP idle timeout never fires: cc CONTRACT mcp-progress-resets-idle-timeout). NAME leaving does NOT end it: the row reads "left" (lib/rows.js
- *       rowText) and is live again on rejoin, so leave/rejoin never makes a second row. Returns "STOP: ..." when
+ *       the MCP idle timeout never fires: cc CONTRACT mcp-progress-resets-idle-timeout). NAME leaving does NOT end
+ *       it: the row reads "left" (lib/rows.js rowText) and is live again on rejoin, so leave/rejoin never makes a second row. Returns "STOP: ..." when
  *       this seat leaves, when NAME is this seat or was never in the room, or when another row for NAME is
  *       already held here ("STOP: duplicate row": the newcomer ends, the first row stays).
  *   hold({room: CODE})     called by the member's sub-human:room row agent. Blocks; returns
@@ -50,7 +50,8 @@ const clip = (s, n = MSG_MAX) => strs.clip(s, n);
 
 /** An entry as its group-chat line, no id: "alice: say 1", "orch (to alice): which cursor?", "alice left". */
 function entryLine(e) {
-  return clip(oneLine(room.chatLines(e).filter(l => !l.startsWith(room.FOR_CLAUDE)).map(l => (l.startsWith(room.CHAT_NEST) ? l.slice(room.CHAT_NEST.length) : l)).join(' ')));
+  const lines = room.chatLines(e).filter(l => !l.startsWith(room.FOR_CLAUDE));
+  return clip(oneLine(lines.map(l => (l.startsWith(room.CHAT_NEST) ? l.slice(room.CHAT_NEST.length) : l)).join(' ')));
 }
 
 const TOOL = {
@@ -140,7 +141,9 @@ class HoldServer {
 
   others(code, ms) {
     const me = this.me;
-    return Object.values(ms).filter(m => m && m.name && !m.left_at && m.role !== 'orch' && m.name !== 'orch' && (!me || m.name !== me.name)).map(m => m.name);
+    return Object.values(ms)
+      .filter(m => m && m.name && !m.left_at && m.role !== 'orch' && m.name !== 'orch' && (!me || m.name !== me.name))
+      .map(m => m.name);
   }
 
   /** Names the room should spawn now (JOINED). Marks them announced. */
@@ -325,7 +328,10 @@ class HoldServer {
 function create(ctx) {
   const s = new HoldServer(ctx);
   // anonymous: room-server calls hold with me = null instead of erroring, so a row outside a room gets STOP.
-  return { tools: [TOOL], call: (...a) => s.call(...a), anonymous: ['hold'], server: s, _state: { holds: s.holds, expect: s.expect, respawn: s.respawn } };
+  return {
+    tools: [TOOL], call: (...a) => s.call(...a), anonymous: ['hold'], server: s,
+    _state: { holds: s.holds, expect: s.expect, respawn: s.respawn },
+  };
 }
 
 module.exports = { create, TOOL, HINT };

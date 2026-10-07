@@ -3,8 +3,9 @@
  * plugin/sub-human/lib/tasks.js: the room's shared task list. The headless orch's own native task list
  * (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list. Members ask for changes with the `task` tool
  * (mcp/task.js: a `task_req` log entry); the orch applies them with native TaskCreate/TaskUpdate;
- * hooks/tasks.js logs each applied change as a `task` entry and rewrites the room document `tasks` as fold() of those
- * entries, and gates TaskCompleted. Rows and the CLI read only that document (tasks.json in the room directory), never ~/.claude. Zero dependencies.
+ * hooks/tasks.js logs each applied change as a `task` entry and rewrites the room document `tasks` as fold() of
+ * those entries, and gates TaskCompleted. Rows and the CLI read only that document (tasks.json in the room
+ * directory), never ~/.claude. Zero dependencies.
  *
  *   list(code) -> [{id, subject, status, owner, blockedBy}]   the mirror, in id order ([] when absent)
  *   fold(entries) -> the same shape, from the `task` entries alone (each is a full snapshot; delete removes)

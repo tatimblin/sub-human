@@ -619,13 +619,16 @@ class FsRoomStore {
       let cp;
       if (fromOffset !== undefined) {
         if (!Number.isInteger(fromOffset) || fromOffset < 0 || fromOffset > size || !atBoundary(fd, fromOffset)) {
-          return { ok: false, badAt: null, count: 0, checked: 0, offset: fromOffset, from: fromOffset, error: 'fromOffset is not a line boundary of the log' };
+          const error = 'fromOffset is not a line boundary of the log';
+          return { ok: false, badAt: null, count: 0, checked: 0, offset: fromOffset, from: fromOffset, error };
         }
         cp = { ...ZERO(), offset: fromOffset, hash: typeof prev === 'string' ? prev : hash12(fromOffset ? lineBefore(fd, fromOffset) : '') };
       } else cp = this._checkpoint(fd, size);
       const { next, bad } = this._scan(fd, size, cp);
       if (save && fromOffset === undefined && next.offset > cp.offset) this._saveCheckpoint(next);
-      const r = { ok: !bad, count: next.count, checked: next.count - cp.count, offset: next.offset, id: next.id, hash: next.hash, from: cp.offset };
+      const r = {
+        ok: !bad, count: next.count, checked: next.count - cp.count, offset: next.offset, id: next.id, hash: next.hash, from: cp.offset,
+      };
       return bad ? { ...r, ...bad } : r;
     } finally { fs.closeSync(fd); }
   }
@@ -675,7 +678,10 @@ class FsRoomStore {
       for (const { off, e } of out) if (!CHAT_KINDS.has(e.kind) || e.id > after) got.set(off, e);
       if (next.offset > cp.offset) this._saveCheckpoint(next);
       const complete = scanned.complete;
-      if (size > complete) { const e = parse(readRange(fd, complete, size - complete)); if (e && (!CHAT_KINDS.has(e.kind) || e.id > after)) got.set(complete, e); } // no newline yet; readAll() parses it too
+      if (size > complete) { // no newline yet; readAll() parses it too
+        const e = parse(readRange(fd, complete, size - complete));
+        if (e && (!CHAT_KINDS.has(e.kind) || e.id > after)) got.set(complete, e);
+      }
       return [...got.entries()].sort((x, y) => x[0] - y[0]).map(x => x[1]);
     } finally { fs.closeSync(fd); }
   }

@@ -225,7 +225,10 @@ function remindersText(me, rm, { proposal = require('./proposal.js') } = {}) {
  * so a notice never invites a call that row-guard would deny.
  */
 function visibleTo(me, rm) {
-  if (me.role !== 'orch') return (e, entries) => rm.lane(me, e, entries) === 'push' || (isMove(e) && e.via === 'system' && e.from !== me.name && e.from !== 'orch');
+  if (me.role !== 'orch') {
+    return (e, entries) => rm.lane(me, e, entries) === 'push'
+      || (isMove(e) && e.via === 'system' && e.from !== me.name && e.from !== 'orch');
+  }
   return (e, entries, note = '') => rm.lane(me, e, entries) === 'push'
     || (e.kind === 'member_joined' && e.from !== me.name && (SPAWN_NOTE.test(note) || !note));
 }
@@ -244,6 +247,77 @@ function errorLog(err, clock, everyMs) {
 }
 
 // ---------- one seat's session ----------
+/** Where a seat's delivery starts: its saved cursor, else (its first run) its latest join, so nothing between the
+ * join and the first lookup is lost, else the log's end. */
+function startCursor(rm, reader, me, last) {
+  const c = rm.getCursor(reader);
+  if (c > 0 && c <= last) return c;
+  const joined = rm.readView({ after: Infinity }).filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1);
+  return joined ? joined.id : last;
+}
+
+/**
+ * The saved cursor is the highest id h such that every event for ids <= h has been written to stdout. In flight:
+ * ids buffered for the next batch, held (member_left) or being written.
+ *   saw(id)      an entry was processed (an id not above the last one: the log was reset under us, back to 0)
+ *   hold(id), release(id)   in flight, or out
+ *   save()       move the saved cursor as far as it may go; a failed write is retried by the next save
+ */
+function cursorKeeper(rm, reader, after, { log, dead }) {
+  const inflight = new Set();
+  let processed = after, saved = after;
+  return {
+    saw(id) {
+      if (id <= processed) { saved = 0; rm.setCursor(reader, 0); }
+      processed = id;
+    },
+    hold: id => { inflight.add(id); },
+    release: id => { inflight.delete(id); },
+    save() {
+      if (dead()) return;
+      const h = inflight.size ? Math.min(...inflight) - 1 : processed;
+      if (h <= saved) return;
+      // the events are out, so a restart after a failed write would repeat them at most
+      try { rm.setCursor(reader, h); saved = h; } catch (e) { log('cursor save', e); }
+    },
+  };
+}
+
+/**
+ * One settled batch as ONE write (at most one wake). Each entry is judged again against the log at flush time
+ * (lane with entries: signed, decided, superseded); the cursor moves past the batch once it is written.
+ */
+function flushBatch(ready, { me, rm, pushed, joinNote, leaveMs, notices, emit, cursor }) {
+  const entries = rm.readView({ after: ready[0].e.id - 1 });
+  const done = () => { for (const p of ready) cursor.release(p.e.id); cursor.save(); };
+  const seen = me.role === 'orch' ? new Set() : notices.shown(me.code, me.name);
+  const { events, moved } = formatNdBatch(ready, { me, room: rm, entries, show: pushed, joinNote, leaveMs, seen });
+  if (!events.length) return done();
+  if (moved.length) { try { notices.markShown(me.code, me.name, moved, 'mod'); } catch { /* best effort */ } }
+  return emit(events, done);
+}
+
+/**
+ * A self-rescheduling timer that survives its own errors, backing off while they repeat (s.dead ends it).
+ * The poll loop stamps s.lastTick on every tick, for the stall check.
+ */
+function timerLoop({ clock, t, log, s }, where, fn, everyMs) {
+  let fails = 0, timer = null;
+  const tick = () => {
+    if (s.dead) return;
+    let delay = everyMs;
+    try { fn(); fails = 0; } catch (e) {
+      fails++;
+      delay = Math.max(everyMs, Math.min(t.backoffMs * 2 ** (fails - 1), t.backoffMaxMs));
+      log(where, e);
+    } finally {
+      if (where === 'poll') s.lastTick = clock.now();
+      if (!s.dead) timer = clock.setTimeout(tick, delay);
+    }
+  };
+  return { start: now => { if (now) tick(); else timer = clock.setTimeout(tick, everyMs); }, stop: () => clock.clearTimeout(timer) };
+}
+
 function startSession(me, ctx) {
   const { clock, fs, write, log, t, deps, sid } = ctx;
   const { rows, notices } = deps;
@@ -254,28 +328,14 @@ function startSession(me, ctx) {
   // overlap is dropped by id).
   const tailer = rm.tailer({ fs });
   const last = rm.lastId();
-  const valid = c => c > 0 && c <= last;
-  let after = rm.getCursor(reader);
-  if (!valid(after)) {
-    // First watch for this name: start at its join so nothing between join and resolve is lost.
-    const joined = rm.readView({ after: Infinity }).filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1);
-    after = joined ? joined.id : last;
-  }
+  const after = startCursor(rm, reader, me, last);
   rm.setCursor(reader, after);
   const s = { key: `${me.code}/${me.name}/${me.role}`, code: me.code, dead: false, lastTick: clock.now() };
   const settleMs = me.role === 'orch' ? t.orchSettleMs : t.settleMs;
   const settleMaxMs = me.role === 'orch' ? t.orchSettleMaxMs : t.settleMaxMs;
-  // The cursor is the highest id h such that every notice for ids <= h has been flushed to stdout.
-  // inflight: ids buffered for the next batch, held (member_left), or being written.
-  const inflight = new Set();
-  let processed = after, saved = after, seen = after;
-  s.save = () => {
-    if (s.dead) return;
-    const h = inflight.size ? Math.min(...inflight) - 1 : processed;
-    if (h <= saved) return;
-    // a failed write is retried by the next save; the notices are out, so a restart would repeat them at most
-    try { rm.setCursor(reader, h); saved = h; } catch (e) { log('cursor save', e); }
-  };
+  const cursor = cursorKeeper(rm, reader, after, { log, dead: () => s.dead });
+  let seen = after;
+  s.save = () => cursor.save();
   const pushed = visibleTo(me, rm);
   const show = (e, entries, note) => pushed(e, entries, note) || rm.lane(me, e, entries) === 'pull';
   // member_joined: say whether that member's row already runs here, so only a missing one is spawned
@@ -284,34 +344,25 @@ function startSession(me, ctx) {
     try { return rows.joinNote(me, e.from); } catch { return ''; }
   };
 
-  // Settle: candidates go out as ONE write (at most one wake). Each is judged again against the log at flush
-  // time (lane with entries: signed, decided, superseded).
-  function onFlush(ready) {
-    const entries = rm.readView({ after: ready[0].e.id - 1 });
-    const fctx = { me, room: rm, entries, show: pushed, joinNote, leaveMs: t.leaveMs };
-    const done = () => { for (const p of ready) inflight.delete(p.e.id); s.save(); };
-    const { events, moved } = formatNdBatch(ready, { ...fctx, seen: me.role === 'orch' ? new Set() : notices.shown(s.code, me.name) });
-    if (!events.length) return done();
-    if (moved.length) { try { notices.markShown(s.code, me.name, moved, 'mod'); } catch { /* best effort */ } }
-    return emit(events, done);
-  }
+  const flushCtx = { me, rm, pushed, joinNote, leaveMs: t.leaveMs, notices, emit, cursor };
+  const onFlush = ready => flushBatch(ready, flushCtx);
   const batch = new Batcher({ clock, settleMs, settleMaxMs, retryMs: t.backoffMs, onFlush, onError: e => log('flush', e) });
 
   const held = new Map(); // name -> {e, timer}: member_left waiting leaveMs for a rejoin
-  const hold = e => ({ e, timer: clock.setTimeout(guard('leave hold', () => { held.delete(e.from); batch.enqueue({ e, away: true }); }), t.leaveMs) });
+  const settled = e => guard('leave hold', () => { held.delete(e.from); batch.enqueue({ e, away: true }); });
+  const hold = e => ({ e, timer: clock.setTimeout(settled(e), t.leaveMs) });
   function onEntry(e) {
-    if (e.id <= processed) { saved = 0; rm.setCursor(reader, 0); } // the log was reset under us
-    processed = e.id;
+    cursor.saw(e.id);
     if (e.kind === 'member_joined' && held.has(e.from)) {
       // left and back within leaveMs: neither notice is sent
       const h = held.get(e.from);
       clock.clearTimeout(h.timer);
       held.delete(e.from);
-      inflight.delete(h.e.id);
+      cursor.release(h.e.id);
       return s.save();
     }
     if (!show(e, undefined, e.kind === 'member_joined' ? 'no row running' : '')) return s.save();
-    inflight.add(e.id);
+    cursor.hold(e.id);
     if (e.kind === 'member_left') {
       const prev = held.get(e.from);
       if (prev) { clock.clearTimeout(prev.timer); held.delete(e.from); batch.enqueue({ e: prev.e, away: true }); }
@@ -338,7 +389,10 @@ function startSession(me, ctx) {
   let breakKey = null, rowsSent;
   function sendRows() {
     let text = null;
-    try { text = [remindersText(me, rm, deps), missingRowsText(me, sid, { now: clock.now(), rows, identity: deps.identity })].filter(Boolean).join('\n\n') || null; } catch (e) { log('rows', e); return; }
+    try {
+      const missing = missingRowsText(me, sid, { now: clock.now(), rows, identity: deps.identity });
+      text = [remindersText(me, rm, deps), missing].filter(Boolean).join('\n\n') || null;
+    } catch (e) { log('rows', e); return; }
     if (text === rowsSent) return;
     rowsSent = text;
     emit([{ type: 'rows', text }]);
@@ -360,26 +414,11 @@ function startSession(me, ctx) {
     if (me.role === 'orch') deps.orch().watchdog(s.code);
   }
 
-  // Every loop is a self-rescheduling timer that survives its own errors, backing off while they repeat.
+  // a timer callback that survives its own error
   function guard(where, fn) { return () => { if (s.dead) return; try { fn(); } catch (e) { log(where, e); } }; }
-  function loop(where, fn, everyMs) {
-    let fails = 0, timer = null;
-    const tick = () => {
-      if (s.dead) return;
-      let delay = everyMs;
-      try { fn(); fails = 0; } catch (e) {
-        fails++;
-        delay = Math.max(everyMs, Math.min(t.backoffMs * 2 ** (fails - 1), t.backoffMaxMs));
-        log(where, e);
-      } finally {
-        if (where === 'poll') s.lastTick = clock.now();
-        if (!s.dead) timer = clock.setTimeout(tick, delay);
-      }
-    };
-    return { start: now => { if (now) tick(); else timer = clock.setTimeout(tick, everyMs); }, stop: () => clock.clearTimeout(timer) };
-  }
-  const pollLoop = loop('poll', poll, t.pollMs);
-  const healthLoop = loop('health check', health, t.healthMs);
+  const loops = { clock, t, log, s };
+  const pollLoop = timerLoop(loops, 'poll', poll, t.pollMs);
+  const healthLoop = timerLoop(loops, 'health check', health, t.healthMs);
   pollLoop.start(true);
   healthLoop.start(false);
   sendRows();

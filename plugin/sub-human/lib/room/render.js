@@ -204,11 +204,13 @@ function stateLine(me, entries = [], { members = {}, ids = true } = {}) {
   if (!shown.length) parts.push('no proposals');
   for (const p of shown) {
     const dec = decided(p.hash, entries);
-    let s = `proposal ${p.hash.slice(0, 6)} ${dec ? `decided${ids ? ` #${dec.id}` : ''}` : waiting(fold(entries).matrix(p.hash)) || 'agreed by all'}`;
+    const where = dec ? `decided${ids ? ` #${dec.id}` : ''}` : waiting(fold(entries).matrix(p.hash)) || 'agreed by all';
+    let s = `proposal ${p.hash.slice(0, 6)} ${where}`;
     if (approversOf(p).includes(name)) {
       const a = answered(name, p.hash, entries);
       // the open-the-card call is spelled out right in the notice: a model skipped it when it was only in the join text
-      s += ` · you: ${a ? (a.kind === 'signoff' ? 'agreed' : 'objected') : dec ? 'not answered' : `answer needed (call EnterPlanMode, then ExitPlanMode with plan "proposal ${p.hash}")`}`;
+      const needed = `answer needed (call EnterPlanMode, then ExitPlanMode with plan "proposal ${p.hash}")`;
+      s += ` · you: ${a ? (a.kind === 'signoff' ? 'agreed' : 'objected') : dec ? 'not answered' : needed}`;
     }
     parts.push(s);
   }

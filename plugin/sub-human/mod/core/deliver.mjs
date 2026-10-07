@@ -59,7 +59,10 @@ export function parseEvent(line) {
   try { o = JSON.parse(line); } catch { return null; }
   if (!o || typeof o !== 'object' || !TYPES.has(o.type)) return null;
   switch (o.type) {
-    case 'seat': return { type: 'seat', seat: o.seat && typeof o.seat === 'object' && str(o.seat.name) && str(o.seat.code) ? o.seat : null };
+    case 'seat': {
+      const ok = o.seat && typeof o.seat === 'object' && str(o.seat.name) && str(o.seat.code);
+      return { type: 'seat', seat: ok ? o.seat : null };
+    }
     case 'chat': return Array.isArray(o.lines) && o.lines.length ? { type: 'chat', lines: o.lines.map(String) } : null;
     case 'rows': return { type: 'rows', text: str(o.text) ? o.text : null };
     default: return str(o.text) ? { type: o.type, text: o.text } : null;
@@ -74,7 +77,9 @@ function wakeText(text, rows) {
   return [WAKE_HEAD, text, rows || ''].filter(Boolean).join('\n');
 }
 
-export const logLines = x => (Array.isArray(x) ? x : String(x ?? '').split('\n')).filter(l => String(l).trim()).map(text => ({ do: 'log', text: String(text) }));
+export const logLines = x => (Array.isArray(x) ? x : String(x ?? '').split('\n'))
+  .filter(l => String(l).trim())
+  .map(text => ({ do: 'log', text: String(text) }));
 
 /**
  * [action], each {do:'log'|'append'|'mid-turn-wake', text} | {do:'submit', text, seen} | {do:'hold-rows', text|null}

@@ -55,7 +55,9 @@ function reseat(input) {
 run(input => {
   const me = reseat(input);
   if (!me) return;
-  try { proposal.restoreStale(me, { force: input.source === 'clear' || input.source === 'resume' }); } catch (err) { logError(err, 'session-restore: review'); }
+  try {
+    proposal.restoreStale(me, { force: input.source === 'clear' || input.source === 'resume' });
+  } catch (err) { logError(err, 'session-restore: review'); }
   presence(me, 'working');
   const text = contextBlock(me, `restored after ${input.source || 'start'}`, { rowsLead: rowsLead(me) });
   out({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text, sessionTitle: seatTitle(me) } });

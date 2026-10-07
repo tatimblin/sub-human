@@ -5,8 +5,8 @@
  * Zero dependencies. Each Claude Code session runs its own copy, as a direct child of claude.
  *
  * Identity: the caller is the claude process that spawned us (cc CONTRACT mcp-stdio-ppid), so
- * me = identity.resolveByPid(process.ppid), a direct lookup, re-resolved on every call (the session joins after the server starts). The model never
- * names itself. Not joined -> every core tool returns "not in a room; run /sub-human".
+ * me = identity.resolveByPid(process.ppid), a direct lookup, re-resolved on every call (the session joins after the
+ * server starts). The model never names itself. Not joined -> every core tool returns "not in a room; run /sub-human".
  *
  * Core tools:
  *   post({kind, text, to?, refs?})   kinds: say question status; via "agent", from = the resolved member.
@@ -53,7 +53,9 @@ const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05
 const negotiateProtocol = v => (PROTOCOL_VERSIONS.includes(v) ? v : PROTOCOL_VERSIONS[0]);
 // serverInfo.version follows the plugin manifest, so one bump versions both.
 const VERSION = (() => {
-  try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || '0.0.0'; } catch { return '0.0.0'; }
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || '0.0.0';
+  } catch { return '0.0.0'; }
 })();
 
 // ---------- transport ----------
@@ -344,7 +346,10 @@ process.stdin.on('data', chunk => {
     if (!line) continue;
     let msg;
     try { msg = JSON.parse(line); } catch { send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); continue; }
-    try { handle(msg); } catch (e) { log('handle failed', e && e.stack); if (msg && msg.id != null && msg.method) fail(msg.id, -32603, String(e && e.message)); }
+    try { handle(msg); } catch (e) {
+      log('handle failed', e && e.stack);
+      if (msg && msg.id != null && msg.method) fail(msg.id, -32603, String(e && e.message));
+    }
   }
 });
 process.stdin.on('end', shutdown);

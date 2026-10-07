@@ -50,7 +50,8 @@ function sweep() {
 }
 
 function others(code, name) {
-  const ms = Object.values(identity.readMembers(code)).filter(m => m && m.name && m.name !== name && !m.left_at && (m.role !== 'orch' || m.pid || (m.job && m.job !== orch.PENDING)));
+  const ms = Object.values(identity.readMembers(code)).filter(m => m && m.name && m.name !== name && !m.left_at
+    && (m.role !== 'orch' || m.pid || (m.job && m.job !== orch.PENDING)));
   return ms.map(m => m.name).join(', ');
 }
 

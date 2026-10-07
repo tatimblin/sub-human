@@ -128,7 +128,10 @@ function fillVars(me, ms = members(me.code)) {
   const humans = live.filter(m => m.role !== 'orch').map(m => m.name);
   const others = me.role === 'orch' ? humans : [...humans, 'orch'];
   const ex = humans[0] || (me.role === 'orch' ? 'NAME' : 'orch');
-  return { NAME: me.name, CODE: me.code, OTHERS: others.length ? others.join(', ') : 'nobody yet', ADDR_EXAMPLE: identity.address(ex, me.code), PLUGIN: pluginRoot() };
+  return {
+    NAME: me.name, CODE: me.code, OTHERS: others.length ? others.join(', ') : 'nobody yet',
+    ADDR_EXAMPLE: identity.address(ex, me.code), PLUGIN: pluginRoot(),
+  };
 }
 const fill = (t, vars) => t.replace(/\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/g, (_, k) => vars[k]);
 

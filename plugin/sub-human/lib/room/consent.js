@@ -2,7 +2,8 @@
 /**
  * plugin/sub-human/lib/room/consent.js: the one fold of the room log into proposal / consent state. Pure apart from
  * store.js humanTrust (reads the seats' public keys), CommonJS, zero dependencies beyond store.js.
- * stateLine and lane() (lanes.js, render.js), the rows (lib/rows.js) and the consent gate (lib/proposal.js, hooks/consent.js) all read this, so they cannot disagree.
+ * stateLine and lane() (lanes.js, render.js), the rows (lib/rows.js) and the consent gate (lib/proposal.js,
+ * hooks/consent.js) all read this, so they cannot disagree.
  *
  *   fold(entries) -> F   memoized per entries array (same array, same length and last id -> same F)
  *     F.proposals  Map hash -> {id, hash, from, approvers, path, entry}   the LATEST proposal entry per hash,
@@ -59,7 +60,8 @@ function compute(list) {
     if (e.kind === 'proposal') {
       if (!isHash(e.hash)) continue;
       proposals.delete(e.hash);
-      proposals.set(e.hash, { id: e.id, hash: e.hash, from: e.from, approvers: Array.isArray(e.approvers) ? e.approvers : [], path: e.path || null, entry: e });
+      const approvers = Array.isArray(e.approvers) ? e.approvers : [];
+      proposals.set(e.hash, { id: e.id, hash: e.hash, from: e.from, approvers, path: e.path || null, entry: e });
       continue;
     }
     const h = e.proposal_hash;

@@ -116,7 +116,8 @@ function taskFields(kind, entry) {
   optStr('detail', entry.detail, 4000);
   optStr('evidence', entry.evidence, 4000);
   optStr('status', entry.status, 32);
-  if (entry.owner !== undefined && entry.owner !== null && !(typeof entry.owner === 'string' && NAME_RE.test(entry.owner))) bad(`invalid owner "${entry.owner}"`);
+  const owner = entry.owner;
+  if (owner !== undefined && owner !== null && !(typeof owner === 'string' && NAME_RE.test(owner))) bad(`invalid owner "${owner}"`);
   if (entry.req !== undefined && !(Number.isInteger(entry.req) && entry.req > 0)) bad('req must be a log id');
   if (entry.blockedBy !== undefined && !(Array.isArray(entry.blockedBy) && entry.blockedBy.every(taskIdOk))) bad('blockedBy must be task ids');
   if (entry.blockedBy !== undefined && entry.blockedBy.length > ENTRY_LIST_MAX) bad(`too many blockedBy ids (the limit is ${ENTRY_LIST_MAX})`);

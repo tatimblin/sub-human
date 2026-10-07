@@ -54,8 +54,9 @@ function named(pending, input) {
 
 /**
  * No hash named, but the question is plainly about a proposal ("Do you agree with the paging proposal?") and
- * exactly one is pending for me, and the input names no other hex id: that one (the model may drop the hash, as in run
- * raven-3365). An unrelated question (no "propos…") or an ambiguous one (two pending) stays untouched: a question about something else must not become a consent card.
+ * exactly one is pending for me, and the input names no other hex id: that one (the model may drop the hash, as in
+ * run raven-3365). An unrelated question (no "propos…") or an ambiguous one (two pending) stays untouched: a
+ * question about something else must not become a consent card.
  */
 function onlyPending(pending, input) {
   if (pending.length !== 1) return [];
@@ -151,15 +152,18 @@ function preExit(input, me) {
   if (st.phase === 'shown' && st.tool_use_id && st.tool_use_id === input.tool_use_id) return ask(st, me); // the same call again
   if (st.phase === 'shown') { resolveShown(input, me, st); st.phase = 'exiting'; return writeReview(me, st); }
   if (st.phase !== 'entering') { st.phase = 'exiting'; return writeReview(me, st); }
-  // Only a call that names the proposal (a plan the person asked for must never be swapped for one): the model's own input, from the transcript when the plan file
-  // replaced it. A plan the model wrote for its person (plan mode entered for real work) passes through untouched.
+  // Only a call that names the proposal (a plan the person asked for must never be swapped for one): the model's
+  // own input, from the transcript when the plan file replaced it. A plan the model wrote for its person (plan mode
+  // entered for real work) passes through untouched.
   const pending = proposal.pendingFor(me).filter(p => proposal.viewable(p, me.code));
   const own = modelInputWait(input);
   const plan = input.tool_input && input.tool_input.plan;
   // The call names nothing we can see (no transcript line in time and a blank plan): plan mode was entered for
   // this review (phase entering), so it is the only pending proposal. A plan of the person's own has text.
   const unseen = !own && blank(plan) && pending.length === 1 ? pending : [];
-  const p = named(pending, [input.tool_input, own])[0] || (JSON.stringify(own || '').length < 300 ? onlyPending(pending, own)[0] : null) || unseen[0];
+  const p = named(pending, [input.tool_input, own])[0]
+    || (JSON.stringify(own || '').length < 300 ? onlyPending(pending, own)[0] : null)
+    || unseen[0];
   if (!p) return clearReview(me);
   const file = planFile(input);
   const text = proposal.read(me.code, p.hash);
