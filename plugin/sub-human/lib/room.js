@@ -11,11 +11,11 @@
  *     members() -> {name: record}              store.members.read()
  *     stateLine(me, entries?), digest(entries?)                    render.js over this room's log and members
  *     proposal(hash, entries?), proposals(entries?), answers(hash, approvers?, entries?), answered(name, hash,
- *     entries?), decided(hash, entries?), retractedIds(entries?)   lanes.js over this room's log
+ *     entries?), decided(hash, entries?)       lanes.js over this room's log
  *     lane(me, e, entries?)                    lanes.js (entries: judged; without, the entry-only answer)
  *     and the stateless helpers below}
  *   Stateless: fold (room/consent.js), line, tailLine, chatLines, fmt, who, FOR_CLAUDE, normalize, hash12, verifyHuman, unverifiedHuman,
- *     humanTrust, isYoungProvisional, PROVISIONAL_MS, RoomError and the size caps (DIGEST_CAP, TAIL_MAX, CHAT_MAX,
+ *     humanTrust, RoomError and the size caps (DIGEST_CAP, TAIL_MAX, CHAT_MAX,
  *     CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST).
  *
  *   room/store.js     the RoomStore seam and FsRoomStore (the only module that knows the room's files)
@@ -23,9 +23,6 @@
  *   room/lanes.js     proposal queries and lane(me, e, entries?) -> push | pull | none
  *   room/render.js    line, tailLine, fmt, who, chatLines, FOR_CLAUDE, stateLine, digest
  *   room/consent.js   fold(entries): the one proposal / consent state every view reads
- *
- * Deprecated, for tests only (test/store-bypass.test.js checks that no plugin module uses them): bind(code) and the
- * functions that act on the bound room (code, dir, logPath, readAll, append, readView, digest, stateLine, ...).
  */
 
 const store = require('./room/store.js');
@@ -39,7 +36,6 @@ const pure = {
   RoomError, fold, DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST,
   hash12: store.hash12, normalize: store.normalize,
   verifyHuman: store.verifyHuman, unverifiedHuman: store.unverifiedHuman, humanTrust: store.humanTrust,
-  isYoungProvisional: store.isYoungProvisional, PROVISIONAL_MS: store.PROVISIONAL_MS,
   line: render.line, tailLine: render.tailLine, chatLines: render.chatLines, FOR_CLAUDE: render.FOR_CLAUDE,
   fmt: render.fmt, who: render.who, approversOf: lanes.approversOf, lane: lanes.lane,
 };
@@ -71,7 +67,6 @@ function roomOver(s) {
     answers: (hash, approvers, entries) => lanes.answers(hash, approvers, all(entries)),
     answered: (name, hash, entries) => lanes.answered(name, hash, all(entries)),
     decided: (hash, entries) => lanes.decided(hash, all(entries)),
-    retractedIds: entries => lanes.retractedIds(all(entries)),
   };
 }
 
@@ -90,19 +85,4 @@ module.exports = {
   ...pure,
   open, openRoom: open, roomOver,
   roomExists: store.roomExists,
-
-  // deprecated: the process-wide bound room (tests only)
-  bind: store.bind, code: store.code, dir: store.dir, logPath: store.logPath,
-  readAll: store.readAll, readById: store.readById, readAfter: store.readAfter, lastId: store.lastId,
-  follow: store.follow, append: store.append, validateChain: store.validateChain,
-  verifyChain: store.verifyChain, readView: store.readView,
-  getCursor: store.getCursor, setCursor: store.setCursor,
-  proposal: (hash, es = store.readAll()) => lanes.proposal(hash, es),
-  proposals: (es = store.readAll()) => lanes.proposals(es),
-  answers: (hash, approvers, es = store.readAll()) => lanes.answers(hash, approvers, es),
-  answered: (name, hash, es = store.readAll()) => lanes.answered(name, hash, es),
-  decided: (hash, es = store.readAll()) => lanes.decided(hash, es),
-  retractedIds: (es = store.readAll()) => lanes.retractedIds(es),
-  stateLine: (me, es = store.readAll()) => render.stateLine(me, es, { members: store.readMembersHere() }),
-  digest: (es = store.readAll()) => render.digest(es, { members: store.readMembersHere(), code: store.code() }),
 };

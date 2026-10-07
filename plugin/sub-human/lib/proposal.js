@@ -15,10 +15,10 @@
  *       `proposal` with path = that room-relative ref (older entries hold an absolute path). approvers
  *       default to the humans present (not orch, not left). An identical open proposal is not re-appended.
  *       Throws ProposalError (message for the model) on bad input.
- *   Reading the log goes through lib/room/consent.js fold (retracted entries out, latest proposal per hash, the
+ *   Reading the log goes through lib/room/consent.js fold (latest proposal per hash, the
  *   latest answer per person, an objection voids a signoff), the same fold stateLine, lane() and the rows read.
  *   proposals(entries) -> [p]      the latest proposal entry per hash, as {id, hash, approvers, path, from}
- *   pendingFor(me, entries?) -> [p] proposals naming me that I have not answered, undecided, not retracted
+ *   pendingFor(me, entries?) -> [p] proposals naming me that I have not answered, undecided
  *   card(p, code) -> {questions:[…]}     the AskUserQuestion input (Not yet first, Agree, Object)
  *   cardFor(ps, code) -> {questions:[…]} one question per proposal (at most 4)
  *   question(hash) -> "Agree to proposal <hash>?";  QUESTION_RE parses it back

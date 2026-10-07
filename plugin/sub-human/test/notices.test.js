@@ -11,6 +11,7 @@ const h = require('./helpers.js');
 const notices = require(path.join(h.LIB, 'notices.js'));
 const rows = require(path.join(h.LIB, 'rows.js'));
 const room = require(path.join(h.LIB, 'room.js'));
+let R = null; // the room under test
 const identity = require(path.join(h.LIB, 'identity.js'));
 const tailLib = require(path.join(h.LIB, 'tail.js'));
 const { createFake } = require(path.join(h.LIB, 'clock.js'));
@@ -145,19 +146,18 @@ function startTail() {
   t.until = (cond, ms) => { for (let i = 0; i < ms && !cond(); i += 50) clock.advance(50); return cond(); };
   return t;
 }
-const sys = (kind, from, text) => room.append({ kind, text: text || `${from} ${kind}` }, { via: 'system', from, system: true });
+const sys = (kind, from, text) => R.append({ kind, text: text || `${from} ${kind}` }, { via: 'system', from, system: true });
 
 test('tail (member): a join and a settled leave are chat events; a quick round trip sends nothing', () => {
   h.freshHome();
   const code = h.newRoom();
-  room.bind(code);
+  R = room.open(code);
   h.register('alice', 'member', process.pid, code);
   sys('member_joined', 'alice');
   rows.writeHolds(code, 'alice', { room: true, members: ['bob'] }); // her rows run: no row note is pushed
   const t = startTail();
   try {
     t.advance(400);
-    room.bind(code); // the tail binds room.js to its own room as it runs
     sys('member_joined', 'bob', 'bob joined');                 // #2
     assert.ok(t.until(() => t.out === 'bob joined\n', 3000), t.out);
     assert.deepEqual([...notices.shown(code, 'alice')], [2], 'recorded as shown (via mod)');

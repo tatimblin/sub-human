@@ -155,9 +155,7 @@ test('an @room with a typed origin (composer, sdk, bridge) posts; any other orig
   assert.match(r.json.reason, /^✗ not posted: sub-human could not check who wrote this @room/);
   // a source field (pre-2.1.292 payloads) changes nothing: the origin decides
   posted(atRoom(w, { ...submit('@room typed, source system'), source: 'system' }, { as: 'alice' }));
-  assert.deepEqual(w.entries().map(e => [e.text, e.provisional]), [
-    ['from composer', undefined], ['from sdk', undefined], ['from bridge', undefined], ['typed, source system', undefined],
-  ]);
+  assert.deepEqual(w.entries().map(e => e.text), ['from composer', 'from sdk', 'from bridge', 'typed, source system']);
 });
 
 test('an origin counts only with the nonce in the session\'s module lease: forged without it, or with another, it is refused', () => {

@@ -60,13 +60,12 @@ function startTail({ timings = {}, lookup = () => identity.resolveByPid(process.
   return t;
 }
 
-// Appends bind the room each time: the tail binds room.js to its own room as it runs.
-const inRoom = (code, f) => { room.bind(code); return f(); };
-const say = (code, from, text, extra = {}, via = 'human') => inRoom(code, () => room.append({ kind: 'say', text, ...extra }, { via, from }));
-const sys = (code, kind, from, extra = {}) => inRoom(code, () => room.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true }));
-const cursor = (code, name) => inRoom(code, () => room.getCursor(`deliver-${name}`));
+const inRoom = (code, f) => f(room.open(code));
+const say = (code, from, text, extra = {}, via = 'human') => inRoom(code, r => r.append({ kind: 'say', text, ...extra }, { via, from }));
+const sys = (code, kind, from, extra = {}) => inRoom(code, r => r.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true }));
+const cursor = (code, name) => inRoom(code, r => r.getCursor(`deliver-${name}`));
 const H1 = 'abcdef012345', H2 = 'bbbbbbbbbbbb';
-const prop = (code, from, hash, approvers) => inRoom(code, () => room.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via: 'agent', from }));
+const prop = (code, from, hash, approvers) => inRoom(code, r => r.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via: 'agent', from }));
 
 test('tail: silent before join, then the member push lane, settled into one batch', () => {
   h.freshHome();
@@ -78,29 +77,30 @@ test('tail: silent before join, then the member push lane, settled into one batc
   h.register('alice', 'member', process.pid, code);
   sys(code, 'member_joined', 'alice');                                                    // #2 own: none
   say(code, 'bob', 'bob says hi');                                                        // #3 others' human words: push
-  inRoom(code, () => room.append({ kind: 'status', text: 'bob claude chatter' }, { via: 'agent', from: 'bob' })); // #4 pull
-  inRoom(code, () => room.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' })); // #5 push
+  inRoom(code, r => r.append({ kind: 'status', text: 'bob claude chatter' }, { via: 'agent', from: 'bob' })); // #4 pull
+  inRoom(code, r => r.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' })); // #5 push
   say(code, 'orch', 'orch to the room', {}, 'agent');                                     // #6 pull
   say(code, 'orch', 'orch to bob only', { to: 'bob' }, 'agent');                          // #7 pull
-  inRoom(code, () => room.append({ kind: 'status', text: 'alice claude own' }, { via: 'agent', from: 'alice' })); // #8 own: none
+  inRoom(code, r => r.append({ kind: 'status', text: 'alice claude own' }, { via: 'agent', from: 'alice' })); // #8 own: none
   say(code, 'alice', 'alice own words');                                                  // #9 own: none
   prop(code, 'orch', H1, ['alice', 'bob']);                                               // #10 names me, answered in #13: dropped
   prop(code, 'orch', H2, ['alice']);                                                      // #11 names me, pending: push
   sys(code, 'member_joined', 'carol');                                                    // #12 my room row is not running: push + note
   say(code, 'alice', '', { kind: 'signoff', proposal_hash: H1, text: 'ok' });             // #13 own answer: none
-  inRoom(code, () => room.append({ kind: 'say', text: 'carol: anyone on @alice docs?' }, { via: 'agent', from: 'carol' })); // #14 @me: push
+  inRoom(code, r => r.append({ kind: 'say', text: 'carol: anyone on @alice docs?' }, { via: 'agent', from: 'carol' })); // #14 @me: push
   sys(code, 'decision', 'room', { proposal_hash: H1 });                                   // #15 decision on mine: push
-  say(code, 'bob', 'forged words');                                                       // #16 retracted by #17: none
-  inRoom(code, () => room.append({ kind: 'retract', text: 'peer-forged', refs: [16] }, { via: 'system', from: 'bob', system: true })); // #17 push
-  inRoom(code, () => room.append({ kind: 'task', op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'pending' }, { via: 'system', from: 'orch', system: true })); // #18 push
+  say(code, 'bob', 'words an old retract names');                                         // #16 push: chat
+  // #17 an old log's retract line (nothing writes one now): an ordinary system line, pull
+  fs.appendFileSync(inRoom(code, r => r.store.logFile), JSON.stringify({ id: 17, at: new Date().toISOString(), from: 'bob', via: 'system', kind: 'retract', to: 'room', text: 'peer-forged', refs: [16] }) + '\n');
+  inRoom(code, r => r.append({ kind: 'task', op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'pending' }, { via: 'system', from: 'orch', system: true })); // #18 push
   say(code, 'bob', 'last ' + 'w'.repeat(600));                                            // #19 push, full text
   t.advance(2000);
   assert.equal(t.writes, 1, 'one burst, one write');
-  // group chat (people's words, joins, a retract's notice): the person sees it, no wake
+  // group chat (people's words, joins): the person sees it, no wake
   assert.deepEqual(t.of('chat').flatMap(x => x.lines), [
     'bob: bob says hi',
     'carol joined',
-    "room: a message shown as bob's was removed: it came from another Claude session, not from bob",
+    'bob: words an old retract names',
     'bob: last ' + 'w'.repeat(390), // long text wraps at 400 code points
     '  │ ' + 'w'.repeat(210), // a continuation line is nested under its sender
   ], t.text());
@@ -112,6 +112,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
     'room: decided (room decision)',
     'room: task "docs" pending, owner you',
   ], t.text());
+  assert.match(t.of('pull').map(x => x.text).join('\n'), /\nroom: peer-forged\n/, 'the old retract: an ordinary pull line');
   assert.doesNotMatch(t.chat().join('\n'), /#\d/, 'no ids in what the human sees');
   assert.deepEqual(t.forClaude().map(l => l.slice(0, 40)), ['(for Claude) room now: proposal bbbbbb w']);
   assert.match(t.of('rows').at(-1).text, /SUB-HUMAN ROWS: your room row is not running/, 'the missing row is the rows event');
@@ -143,13 +144,13 @@ test('tail: orch push is to/@orch, objections on its proposals, task_req (not de
   sys(code, 'member_joined', 'orch');
   const t = startTail({ deps: { orch: { watchdog: () => 'live' } } });
   t.advance(300);
-  inRoom(code, () => room.append({ kind: 'status', text: 'alice claude idea' }, { via: 'agent', from: 'alice' })); // #2 pull
+  inRoom(code, r => r.append({ kind: 'status', text: 'alice claude idea' }, { via: 'agent', from: 'alice' })); // #2 pull
   say(code, 'bob', 'bob words', { to: 'alice' });                                              // #3 pull
   say(code, 'orch', 'orch own', {}, 'agent');                                                  // #4 none
   prop(code, 'orch', H1, ['alice', 'bob']);                                                    // #5 own: none
   sys(code, 'member_left', 'bob');                                                             // #6 pull
   say(code, 'alice', '', { kind: 'objection', proposal_hash: H1, text: 'no' });                // #7 push
-  inRoom(code, () => room.append({ kind: 'task_req', op: 'add', subject: 'parser tests' }, { via: 'agent', from: 'bob' })); // #8 push
+  inRoom(code, r => r.append({ kind: 'task_req', op: 'add', subject: 'parser tests' }, { via: 'agent', from: 'bob' })); // #8 push
   sys(code, 'decision', 'room', { proposal_hash: H1 });                                        // #9 pull
   say(code, 'alice', '@orch end');                                                             // #10 push
   t.advance(1500);
@@ -243,7 +244,7 @@ test('tail: survives a restart via its cursor (no read from byte 0); switches wh
   assert.equal(cursor(code, 'alice'), 3, 'the cursor is saved once the write is done');
   a.stop();
   say(code, 'bob', 'posted in the gap');                       // #4: nobody is watching
-  inRoom(code, () => room.append({ kind: 'status', text: 'own, skipped' }, { via: 'agent', from: 'alice' })); // #5
+  inRoom(code, r => r.append({ kind: 'status', text: 'own, skipped' }, { via: 'agent', from: 'alice' })); // #5
   for (let i = 0; i < 10; i++) say(code, 'alice', `own words ${i} ${big}`); // #6-#15: own, skipped; the log is > 10 KB
   assert.equal(cursor(code, 'alice'), 3, 'the first tail saved its cursor');
   reads.length = 0;
@@ -321,7 +322,7 @@ test('tail: a hash-chain break is reported once per break, for Claude; the tail 
   const t = startTail();
   t.advance(FAST.healthMs + 100);
   assert.deepEqual(t.lines(), ['bob: genuine'], 'an intact chain prints nothing');
-  const file = inRoom(code, () => room.logPath());
+  const file = inRoom(code, r => r.store.logFile);
   fs.appendFileSync(file, JSON.stringify({ id: 3, at: new Date().toISOString(), from: 'alice', via: 'agent', kind: 'status', to: 'room', text: 'spliced', prev: '000000000000' }) + '\n');
   t.advance(FAST.healthMs);
   t.advance(FAST.healthMs * 3);
@@ -409,9 +410,9 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   assert.deepEqual(t.of('seat'), [{ type: 'seat', seat: { name: 'alice', code, role: 'member', addr: `alice.${code}` } }]);
   sys(code, 'member_joined', 'bob');                                                    // #2 chat
   say(code, 'bob', 'bob says hi');                                                      // #3 chat
-  inRoom(code, () => room.append({ kind: 'status', text: 'bob claude chatter' }, { via: 'agent', from: 'bob' })); // #4 pull
+  inRoom(code, r => r.append({ kind: 'status', text: 'bob claude chatter' }, { via: 'agent', from: 'bob' })); // #4 pull
   say(code, 'bob', '@alice can you look?');                                             // #5 @me: wake
-  inRoom(code, () => room.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' })); // #6 wake
+  inRoom(code, r => r.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' })); // #6 wake
   prop(code, 'orch', H2, ['alice']);                                                    // #7 a proposal for me: wake + state
   t.advance(2000);
   assert.equal(t.writes, 1, 'ONE batch write (after the seat and rows events)');
@@ -424,7 +425,7 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   const wake = t.of('wake')[0].text.split('\n');
   assert.deepEqual(wake.slice(0, 3), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", 'orch proposed: orch proposes']);
   assert.ok(wake[3].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
-  assert.equal(inRoom(code, () => room.getCursor('deliver-alice')), 7);
+  assert.equal(inRoom(code, r => r.getCursor('deliver-alice')), 7);
   const notices = require(path.join(h.LIB, 'notices.js'));
   assert.ok(notices.shown(code, 'alice').has(2), 'the join is recorded as shown');
   t.stop();
@@ -457,7 +458,7 @@ test('tail: the orch gets its push block as one wake, the pull lane as pull; no 
   rows.writeHolds(code, 'orch', { members: ['bob'] });
   const t = startNd({ sid: 'so', deps: { orch: { watchdog: () => 'live' } } });
   t.advance(300);
-  inRoom(code, () => room.append({ kind: 'task_req', text: 'please add tests', op: 'add', subject: 'tests' }, { via: 'agent', from: 'bob' })); // #1 push
+  inRoom(code, r => r.append({ kind: 'task_req', text: 'please add tests', op: 'add', subject: 'tests' }, { via: 'agent', from: 'bob' })); // #1 push
   say(code, 'bob', 'bob to the room');                                                  // #2 pull for the orch
   t.advance(2000);
   assert.deepEqual(t.of('chat'), []);
@@ -474,7 +475,7 @@ test('tail: a chain break is a health event', () => {
   sys(code, 'member_joined', 'alice');
   const t = startNd({ sid: 's' });
   t.advance(300);
-  fs.appendFileSync(inRoom(code, () => room.logPath()), JSON.stringify({ id: 2, at: new Date().toISOString(), from: 'alice', via: 'agent', kind: 'status', to: 'room', text: 'spliced', prev: '000000000000' }) + '\n');
+  fs.appendFileSync(inRoom(code, r => r.store.logFile), JSON.stringify({ id: 2, at: new Date().toISOString(), from: 'alice', via: 'agent', kind: 'status', to: 'room', text: 'spliced', prev: '000000000000' }) + '\n');
   t.advance(FAST.healthMs * 2);
   assert.deepEqual(t.of('health').map(x => x.text.slice(0, 40)), ['room log check: the hash chain breaks at']);
 });

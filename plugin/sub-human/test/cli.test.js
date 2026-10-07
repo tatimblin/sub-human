@@ -7,6 +7,7 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
 const room = require(path.join(h.LIB, 'room.js'));
+let R = null; // the room under test
 const identity = require(path.join(h.LIB, 'identity.js'));
 
 // tail looks its seat up by CLAUDE_PID when it has no session id (no ps walk).
@@ -37,18 +38,18 @@ function startTail(env = {}) {
   return t;
 }
 const cli = (args, env = {}) => spawnSync(h.BIN, args, { env: h.childEnv(env), encoding: 'utf8' });
-const say = (from, text, extra = {}, via = 'human') => room.append({ kind: 'say', text, ...extra }, { via, from });
-const sys = (kind, from, extra = {}) => room.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true });
+const say = (from, text, extra = {}, via = 'human') => R.append({ kind: 'say', text, ...extra }, { via, from });
+const sys = (kind, from, extra = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true });
 
 const H1 = 'abcdef012345', H2 = 'bbbbbbbbbbbb';
-const prop = (from, hash, approvers) => room.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via: 'agent', from });
+const prop = (from, hash, approvers) => R.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via: 'agent', from });
 
 // The tail's batching, settle, leave hold, cursor restart, room switch and error recovery are tested
 // in-process on a fake clock (test/tail.test.js). These are the real-time smoke tests of the binary.
 test('cli tail (smoke): silent before join, then one settled block; resumes from its cursor after a restart', async () => {
   h.freshHome();
   const code = h.newRoom();
-  room.bind(code);
+  R = room.open(code);
   const a = startTail();
   say('bob', 'before alice joined');                     // #1
   await h.sleep(200);
@@ -56,12 +57,12 @@ test('cli tail (smoke): silent before join, then one settled block; resumes from
   h.register('alice', 'member', process.pid, code);
   sys('member_joined', 'alice');                         // #2 own: none
   say('bob', 'bob says hi');                             // #3
-  room.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' }); // #4
+  R.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' }); // #4
   await a.until("bob's Claude (to you): q for alice\n");
   assert.deepEqual(a.lines(), ['bob: bob says hi', "bob's Claude (to you): q for alice"], a.out);
   assert.deepEqual([a.of('chat').length, a.of('wake').length], [1, 1], 'one burst: one chat, one wake');
   // The cursor is saved once stdout drained; stopping before then replays #4 (at-least-once), so wait for it.
-  assert.equal(await h.until(() => room.getCursor('deliver-alice') === 4, 3000), true, 'the cursor reached #4');
+  assert.equal(await h.until(() => R.getCursor('deliver-alice') === 4, 3000), true, 'the cursor reached #4');
   await a.stop();
   say('bob', 'posted in the gap');                       // #5: nobody is watching
   const b = startTail();
@@ -77,7 +78,7 @@ test('cli tail (smoke): silent before join, then one settled block; resumes from
 test('cli tail --ndjson (smoke): by session id, one JSON event per line; SIGTERM exits cleanly', async () => {
   h.freshHome();
   const code = h.newRoom();
-  room.bind(code);
+  R = room.open(code);
   h.register('alice', 'member', process.pid, code); // session id sess-alice-<pid>
   sys('member_joined', 'alice');                         // #1
   const child = spawn(h.BIN, ['tail', '--ndjson'], { env: h.childEnv({ ...FAST, CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: `sess-alice-${process.pid}` }) });
@@ -98,7 +99,7 @@ test('cli tail --ndjson (smoke): by session id, one JSON event per line; SIGTERM
 test('cli tail: while unseated it never runs ps and looks the seat up only every SUB_HUMAN_UNSEATED_MS', async () => {
   h.freshHome();
   const code = h.newRoom();
-  room.bind(code);
+  R = room.open(code);
   const fs = require('node:fs');
   const os = require('node:os');
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'sub-human-ps-'));
@@ -131,7 +132,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.equal(r.stdout, `alice (member) in ${code}\n`, 'nearest registered ancestor');
   r = cli(['who'], { CLAUDE_CODE_SESSION_ID: 'sbob' });
   assert.equal(r.stdout, `bob (member) in ${code}\n`, 'the session id wins');
-  room.bind(code);
+  R = room.open(code);
   say('bob', 'line one\n  line `two` $(x)');
   say('bob', 'second');
   r = cli(['read', '--id', '2,1']);
@@ -159,7 +160,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
 test('cli tasks: the room list from lib/tasks.js list(code), plain and --json', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  room.bind(code);
+  R = room.open(code);
   let r = cli(['tasks']);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, `(no tasks in room ${code})\n`);
@@ -168,7 +169,7 @@ test('cli tasks: the room list from lib/tasks.js list(code), plain and --json', 
     { id: '3', subject: 'docs', status: 'pending', owner: null, blockedBy: ['2'] },
     { id: '1', subject: `room ${code} open`, status: 'in_progress', owner: 'room', metadata: { _internal: true } },
   ];
-  require('node:fs').writeFileSync(path.join(room.dir(), 'tasks.json'), JSON.stringify(list));
+  require('node:fs').writeFileSync(path.join(R.store.dir, 'tasks.json'), JSON.stringify(list));
   r = cli(['tasks']);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, '#2  in_progress  bob  parser tests\n#3  pending      -    docs  (blocked by #2)\n');
@@ -180,14 +181,14 @@ test('cli tasks: the room list from lib/tasks.js list(code), plain and --json', 
 test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the facilitator; nobody else', () => {
   h.freshHome();
   const { code } = h.register('alice');
-  room.bind(code);
+  R = room.open(code);
   const H = 'abcdef012345';
   sys('member_joined', 'bob');                                                           // #1 shown
   say('bob', 'I want cursor paging');                                                     // #2 shown
-  room.append({ kind: 'status', text: 'bob claude proposes' }, { via: 'agent', from: 'bob' }); // #3 shown
+  R.append({ kind: 'status', text: 'bob claude proposes' }, { via: 'agent', from: 'bob' }); // #3 shown
   say('alice', 'alice talks to the room');                                                // #4 hidden
-  room.append({ kind: 'question', text: 'alice claude asks carol', to: 'carol' }, { via: 'agent', from: 'alice' }); // #5 hidden
-  room.append({ kind: 'question', text: 'bob, cursor or offset?', to: 'bob' }, { via: 'agent', from: 'orch' }); // #6 shown
+  R.append({ kind: 'question', text: 'alice claude asks carol', to: 'carol' }, { via: 'agent', from: 'alice' }); // #5 hidden
+  R.append({ kind: 'question', text: 'bob, cursor or offset?', to: 'bob' }, { via: 'agent', from: 'orch' }); // #6 shown
   say('orch', 'orch to the room', {}, 'agent');                                           // #7 hidden
   prop('alice', H, ['bob']);                                                              // #8 hidden
   say('bob', 'too broad\n  keep it small', { kind: 'objection', proposal_hash: H });      // #9 shown

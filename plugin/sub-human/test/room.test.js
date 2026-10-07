@@ -10,17 +10,17 @@ const h = require('./helpers.js');
 const room = require(path.join(h.LIB, 'room.js'));
 const identity = require(path.join(h.LIB, 'identity.js'));
 
+let R = null; // the current test's room
 function fresh() {
   h.freshHome();
-  const code = h.newRoom();
-  room.bind(code);
-  return code;
+  R = room.open(h.newRoom());
+  return R.code;
 }
-const logLines = () => fs.readFileSync(room.logPath(), 'utf8').split('\n').filter(Boolean);
+const logLines = () => fs.readFileSync(R.store.logFile, 'utf8').split('\n').filter(Boolean);
 const H1 = 'aaaaaaaaaaaa', H2 = 'bbbbbbbbbbbb';
-const sys = (kind, extra = {}, from = 'orch') => room.append({ kind, text: `${kind}`, ...extra }, { via: 'system', from, system: true });
-const human = (from, kind, extra = {}) => room.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'human', from });
-const agent = (from, kind, extra = {}) => room.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'agent', from });
+const sys = (kind, extra = {}, from = 'orch') => R.append({ kind, text: `${kind}`, ...extra }, { via: 'system', from, system: true });
+const human = (from, kind, extra = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'human', from });
+const agent = (from, kind, extra = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'agent', from });
 
 const HOSTILE = [
   `she said "no" and 'maybe'`, 'rm -rf $(whoami) && echo $HOME', 'run `cat /etc/passwd` please',
@@ -31,7 +31,7 @@ const HOSTILE = [
 
 test('room: concurrent appends from 5 processes x 20 give 100 sequential ids and a valid prev chain', async () => {
   const code = fresh();
-  const script = `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.js'))}).arm();const r=require(${JSON.stringify(path.join(h.LIB, 'room.js'))});r.bind(process.env.CODE);` + // a hook-like (armed) writer
+  const script = `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.js'))}).arm();const r=require(${JSON.stringify(path.join(h.LIB, 'room.js'))}).open(process.env.CODE);` + // a hook-like (armed) writer
     `for(let i=0;i<20;i++)r.append({kind:'say',text:process.env.WHO+' '+i},{via:'human',from:process.env.WHO});`;
   await Promise.all(['p1', 'p2', 'p3', 'p4', 'p5'].map(u => new Promise((resolve, reject) => {
     const c = spawn(process.execPath, ['-e', script], { env: h.childEnv({ CODE: code, WHO: u }), stdio: 'inherit' });
@@ -44,8 +44,8 @@ test('room: concurrent appends from 5 processes x 20 give 100 sequential ids and
   assert.equal(es[0].prev, room.hash12(''));
   for (let i = 1; i < es.length; i++) assert.equal(es[i].prev, room.hash12(lines[i - 1]), `chain broken at #${es[i].id}`);
   for (const u of ['p1', 'p2', 'p3', 'p4', 'p5']) assert.equal(es.filter(e => e.from === u).length, 20);
-  assert.ok(!fs.existsSync(room.logPath() + '.lock'));
-  assert.deepEqual(room.validateChain(), { ok: true, count: 100 });
+  assert.ok(!fs.existsSync(R.store.logFile + '.lock'));
+  assert.deepEqual(R.validateChain(), { ok: true, count: 100 });
 });
 
 test('room: validateChain spots an edited line', () => {
@@ -53,34 +53,16 @@ test('room: validateChain spots an edited line', () => {
   human('alice', 'say'); human('bob', 'say'); human('alice', 'say');
   const lines = logLines();
   lines[1] = lines[1].replace('bob say', 'bob SAID');
-  fs.writeFileSync(room.logPath(), lines.join('\n') + '\n');
-  assert.equal(room.validateChain().ok, false);
-  assert.equal(room.validateChain().badAt, 3);
+  fs.writeFileSync(R.store.logFile, lines.join('\n') + '\n');
+  assert.equal(R.validateChain().ok, false);
+  assert.equal(R.validateChain().badAt, 3);
 });
 
 test('room: a stale lock from a dead process is cleaned up', () => {
   fresh();
-  fs.mkdirSync(room.dir(), { recursive: true });
-  fs.writeFileSync(room.logPath() + '.lock', `999999 ${os.hostname()} 0`);
+  fs.mkdirSync(R.store.dir, { recursive: true });
+  fs.writeFileSync(R.store.logFile + '.lock', `999999 ${os.hostname()} 0`);
   assert.equal(human('alice', 'say').id, 1);
-});
-
-test('room: SUB_HUMAN_TEST_ROOM_DIR overrides the binding', () => {
-  fresh();
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'room-dir-'));
-  process.env.SUB_HUMAN_TEST_ROOM_DIR = d;
-  try {
-    human('alice', 'say');
-    assert.ok(fs.existsSync(path.join(d, 'log.jsonl')));
-  } finally { delete process.env.SUB_HUMAN_TEST_ROOM_DIR; }
-  assert.equal(room.readAll().length, 0);
-});
-
-test('room: an unbound room throws NO_ROOM', () => {
-  const { spawnSync } = require('node:child_process');
-  const script = `const r=require(${JSON.stringify(path.join(h.LIB, 'room.js'))});` +
-    `try{r.append({kind:'say',text:'x'},{via:'human',from:'a'});process.exit(1)}catch(e){process.exit(e.code==='NO_ROOM'?0:3)}`;
-  assert.equal(spawnSync(process.execPath, ['-e', script], { env: h.childEnv() }).status, 0);
 });
 
 test('room: kind/via policy; system kinds need {system:true}; callers cannot set envelope fields', () => {
@@ -95,10 +77,10 @@ test('room: kind/via policy; system kinds need {system:true}; callers cannot set
   assert.equal(human('alice', 'objection', { proposal_hash: H1 }).kind, 'objection');
   assert.equal(human('alice', 'proposal', { hash: H2, approvers: ['bob'], path: '/tmp/p.md' }).path, '/tmp/p.md');
   // an answer may carry no text (no notes); it is stored without one and renders as its header
-  const bare = room.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' });
+  const bare = R.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' });
   assert.equal('text' in bare, false);
   assert.equal(room.line(bare, { full: true }), `#${bare.id} bob[human] signoff proposal=${H1}`);
-  assert.throws(() => room.append({ kind: 'say' }, { via: 'human', from: 'bob' }), /text must be a string/);
+  assert.throws(() => R.append({ kind: 'say' }, { via: 'human', from: 'bob' }), /text must be a string/);
   for (const k of ['question', 'status']) assert.throws(() => human('alice', k), /not valid via human/);
   assert.throws(() => human('alice', 'task_req', { op: 'add', subject: 'x' }), /not valid via human/);
   assert.throws(() => human('alice', 'say', { op: 'add' }), /only for task_req and task/);
@@ -108,53 +90,53 @@ test('room: kind/via policy; system kinds need {system:true}; callers cannot set
   assert.throws(() => human('alice', 'say', { hash: H1 }), /only for proposals/);
   // System kinds: only with the flag, only via system.
   for (const k of ['decision', 'member_joined', 'member_left', 'task']) {
-    assert.throws(() => room.append({ kind: k, text: 'x', proposal_hash: H1 }, { via: 'system', from: 'orch' }), /hooks/, k);
-    assert.throws(() => room.append({ kind: k, text: 'x', proposal_hash: H1 }, { via: 'agent', from: 'orch', system: true }), /via "system"/, k);
+    assert.throws(() => R.append({ kind: k, text: 'x', proposal_hash: H1 }, { via: 'system', from: 'orch' }), /hooks/, k);
+    assert.throws(() => R.append({ kind: k, text: 'x', proposal_hash: H1 }, { via: 'agent', from: 'orch', system: true }), /via "system"/, k);
   }
   assert.throws(() => sys('decision'), /proposal_hash/);
   const dec = sys('decision', { proposal_hash: H1, approvers: ['alice', 'bob'] });
   assert.deepEqual([dec.via, dec.from, dec.approvers], ['system', 'orch', ['alice', 'bob']]);
-  assert.equal(room.append({ kind: 'member_joined', text: 'alice joined' }, { from: 'alice', system: true }).via, 'system');
+  assert.equal(R.append({ kind: 'member_joined', text: 'alice joined' }, { from: 'alice', system: true }).via, 'system');
   assert.equal(sys('status').kind, 'status');
   assert.throws(() => sys('say'), /not valid via system/);
-  assert.throws(() => room.append({ kind: 'status', text: 'x' }, { via: 'system', from: 'orch' }), /hooks/);
+  assert.throws(() => R.append({ kind: 'status', text: 'x' }, { via: 'system', from: 'orch' }), /hooks/);
   // Envelope and bad values.
   for (const f of ['from', 'via', 'id', 'prev', 'at', 'evidence', 'by']) {
-    assert.throws(() => room.append({ kind: 'say', text: 'x', [f]: 'bob' }, { via: 'human', from: 'alice' }), /not settable|only for task/);
+    assert.throws(() => R.append({ kind: 'say', text: 'x', [f]: 'bob' }, { via: 'human', from: 'alice' }), /not settable|only for task/);
   }
-  assert.throws(() => room.append({ kind: 'say', text: 'x' }, { via: 'human' }), /invalid from/);
-  assert.throws(() => room.append({ kind: 'say', text: 'x' }, { via: 'human', from: 'a b' }), /invalid from/);
-  assert.throws(() => room.append({ kind: 'say', text: 'x' }, { via: 'robot', from: 'a' }), /via must be/);
-  assert.throws(() => room.append({ kind: 'say', text: ' \t ' }, { via: 'human', from: 'a' }), /empty/);
-  assert.throws(() => room.append({ kind: 'say', text: 'x', refs: ['1'] }, { via: 'human', from: 'a' }), /refs/);
-  assert.throws(() => room.append({ kind: 'say', text: 'x', to: 'a b' }, { via: 'human', from: 'a' }), /invalid to/);
-  assert.throws(() => room.append({ kind: 'signoff', text: 'x', proposal_hash: 'XYZ' }, { via: 'human', from: 'a' }), /proposal_hash/);
+  assert.throws(() => R.append({ kind: 'say', text: 'x' }, { via: 'human' }), /invalid from/);
+  assert.throws(() => R.append({ kind: 'say', text: 'x' }, { via: 'human', from: 'a b' }), /invalid from/);
+  assert.throws(() => R.append({ kind: 'say', text: 'x' }, { via: 'robot', from: 'a' }), /via must be/);
+  assert.throws(() => R.append({ kind: 'say', text: ' \t ' }, { via: 'human', from: 'a' }), /empty/);
+  assert.throws(() => R.append({ kind: 'say', text: 'x', refs: ['1'] }, { via: 'human', from: 'a' }), /refs/);
+  assert.throws(() => R.append({ kind: 'say', text: 'x', to: 'a b' }, { via: 'human', from: 'a' }), /invalid to/);
+  assert.throws(() => R.append({ kind: 'signoff', text: 'x', proposal_hash: 'XYZ' }, { via: 'human', from: 'a' }), /proposal_hash/);
   assert.throws(() => agent('a', 'proposal', { hash: H1, approvers: ['ok', 'not ok'] }), /approvers/);
-  const n = room.append({ kind: 'say', text: 'pasted', normalized: true }, { via: 'human', from: 'a' });
+  const n = R.append({ kind: 'say', text: 'pasted', normalized: true }, { via: 'human', from: 'a' });
   assert.equal(n.normalized, true);
-  const ed = room.append({ kind: 'objection', text: 'edited', proposal_hash: H1, edit_path: 'plans/edits/x.md' }, { via: 'human', from: 'a' });
+  const ed = R.append({ kind: 'objection', text: 'edited', proposal_hash: H1, edit_path: 'plans/edits/x.md' }, { via: 'human', from: 'a' });
   assert.equal(ed.edit_path, 'plans/edits/x.md');
 });
 
 test('room: task_req and task entries: the task id is task_id, by is stamped, text defaults', () => {
   fresh();
-  const r = room.append({ kind: 'task_req', op: 'add', subject: 'parser tests', owner: 'bob' }, { via: 'agent', from: 'bob' });
+  const r = R.append({ kind: 'task_req', op: 'add', subject: 'parser tests', owner: 'bob' }, { via: 'agent', from: 'bob' });
   assert.deepEqual([r.by, r.op, r.subject, r.owner, r.text], ['bob', 'add', 'parser tests', 'bob', 'add parser tests']);
-  const d = room.append({ kind: 'task_req', op: 'done', id: 2, evidence: '12/12 pass' }, { via: 'agent', from: 'bob' });
+  const d = R.append({ kind: 'task_req', op: 'done', id: 2, evidence: '12/12 pass' }, { via: 'agent', from: 'bob' });
   assert.deepEqual([d.task_id, d.id, d.text], ['2', 2, 'done #2; evidence: 12/12 pass']);
-  const by = room.append({ kind: 'task_req', op: 'claim', task_id: '2', by: 'bob', text: 'mine' }, { via: 'agent', from: 'bob' });
+  const by = R.append({ kind: 'task_req', op: 'claim', task_id: '2', by: 'bob', text: 'mine' }, { via: 'agent', from: 'bob' });
   assert.deepEqual([by.task_id, by.by, by.text], ['2', 'bob', 'mine']);
-  assert.throws(() => room.append({ kind: 'task_req', op: 'claim', id: 2, by: 'alice' }, { via: 'agent', from: 'bob' }), /by/);
-  assert.throws(() => room.append({ kind: 'task_req', op: 'add' }, { via: 'agent', from: 'bob' }), /subject/);
-  assert.throws(() => room.append({ kind: 'task_req', op: 'done', id: 2 }, { via: 'agent', from: 'bob' }), /evidence/);
-  assert.throws(() => room.append({ kind: 'task_req', op: 'claim' }, { via: 'agent', from: 'bob' }), /task id/);
-  assert.throws(() => room.append({ kind: 'task_req', op: 'wipe', id: 2 }, { via: 'agent', from: 'bob' }), /op must be/);
-  assert.throws(() => room.append({ kind: 'task_req', op: 'claim', id: 'a b' }, { via: 'agent', from: 'bob' }), /task id/);
-  const t = room.append({ kind: 'task', op: 'update', id: 2, subject: 'parser tests', owner: 'bob', status: 'in_progress', req: 1 }, { via: 'system', from: 'orch', system: true });
+  assert.throws(() => R.append({ kind: 'task_req', op: 'claim', id: 2, by: 'alice' }, { via: 'agent', from: 'bob' }), /by/);
+  assert.throws(() => R.append({ kind: 'task_req', op: 'add' }, { via: 'agent', from: 'bob' }), /subject/);
+  assert.throws(() => R.append({ kind: 'task_req', op: 'done', id: 2 }, { via: 'agent', from: 'bob' }), /evidence/);
+  assert.throws(() => R.append({ kind: 'task_req', op: 'claim' }, { via: 'agent', from: 'bob' }), /task id/);
+  assert.throws(() => R.append({ kind: 'task_req', op: 'wipe', id: 2 }, { via: 'agent', from: 'bob' }), /op must be/);
+  assert.throws(() => R.append({ kind: 'task_req', op: 'claim', id: 'a b' }, { via: 'agent', from: 'bob' }), /task id/);
+  const t = R.append({ kind: 'task', op: 'update', id: 2, subject: 'parser tests', owner: 'bob', status: 'in_progress', req: 1 }, { via: 'system', from: 'orch', system: true });
   assert.deepEqual([t.task_id, t.owner, t.status, t.req, t.by], ['2', 'bob', 'in_progress', 1, undefined]);
   assert.equal(t.text, 'update #2 parser tests: in_progress, owner bob');
   assert.match(room.line(t), /^#4 orch\[system\] task task=#2 owner=bob req=#1 "update #2/);
-  assert.throws(() => room.append({ kind: 'task', op: 'x', req: 'one' }, { via: 'system', from: 'orch', system: true }), /req/);
+  assert.throws(() => R.append({ kind: 'task', op: 'x', req: 'one' }, { via: 'system', from: 'orch', system: true }), /req/);
 });
 
 test('room: rate limit is 6 agent posts per member per minute', () => {
@@ -167,50 +149,50 @@ test('room: rate limit is 6 agent posts per member per minute', () => {
   // Entries older than a minute do not count.
   const lines = logLines().map(l => JSON.parse(l));
   const old = new Date(Date.now() - 61_000).toISOString();
-  fs.writeFileSync(room.logPath(), lines.map(e => JSON.stringify({ ...e, at: old })).join('\n') + '\n');
+  fs.writeFileSync(R.store.logFile, lines.map(e => JSON.stringify({ ...e, at: old })).join('\n') + '\n');
   assert.equal(agent('alice', 'status').from, 'alice');
 });
 
 test('room: proposals, answers matrix, objection voids an agreement, decided; legacy plan_rev reads as a proposal', () => {
   fresh();
-  assert.equal(room.proposal(H1), null);
+  assert.equal(R.proposal(H1), null);
   agent('orch', 'proposal', { hash: H1, approvers: ['alice', 'bob'] });
-  assert.equal(room.proposal(H1).id, 1);
+  assert.equal(R.proposal(H1).id, 1);
   const s1 = human('alice', 'signoff', { proposal_hash: H1 });
-  let m = room.answers(H1);
+  let m = R.answers(H1);
   assert.deepEqual(m.signed, { alice: s1.id, bob: null });
   assert.deepEqual(m.missing, ['bob']);
   assert.equal(m.complete, false);
   human('mallory', 'signoff', { proposal_hash: H1 });
   human('bob', 'signoff', { proposal_hash: H1 });
-  m = room.answers(H1);
+  m = R.answers(H1);
   assert.equal(m.complete, true);
   assert.ok(!('mallory' in m.signed));
   const o = human('alice', 'objection', { proposal_hash: H1 });
-  assert.deepEqual(room.answers(H1).missing, ['alice']);
-  assert.equal(room.answered('alice', H1).id, o.id);
-  assert.equal(room.answered('carol', H1), null);
+  assert.deepEqual(R.answers(H1).missing, ['alice']);
+  assert.equal(R.answered('alice', H1).id, o.id);
+  assert.equal(R.answered('carol', H1), null);
   human('bob', 'objection', { proposal_hash: H2 });
-  assert.deepEqual(room.answers(H1).missing, ['alice']);
-  assert.deepEqual(room.answers(H1, ['alice', 'bob', 'carol']).missing, ['alice', 'carol']);
-  assert.equal(room.answers(H2).complete, false);
+  assert.deepEqual(R.answers(H1).missing, ['alice']);
+  assert.deepEqual(R.answers(H1, ['alice', 'bob', 'carol']).missing, ['alice', 'carol']);
+  assert.equal(R.answers(H2).complete, false);
   agent('bob', 'proposal', { hash: H2, approvers: ['alice'] });
   agent('orch', 'proposal', { hash: H1, approvers: ['alice', 'bob'] });
-  assert.deepEqual(room.proposals().map(p => p.hash), [H2, H1], 'latest per hash, in order');
-  assert.equal(room.decided(H1), null);
+  assert.deepEqual(R.proposals().map(p => p.hash), [H2, H1], 'latest per hash, in order');
+  assert.equal(R.decided(H1), null);
   const d = sys('decision', { proposal_hash: H1 }, 'room');
-  assert.equal(room.decided(H1).id, d.id);
-  assert.equal(room.decided(H2), null);
+  assert.equal(R.decided(H1).id, d.id);
+  assert.equal(R.decided(H2), null);
   // a Phase 0 log: plan_rev / plan_hash read as proposal / proposal_hash
   fresh();
-  fs.mkdirSync(room.dir(), { recursive: true });
-  fs.writeFileSync(room.logPath(),
+  fs.mkdirSync(R.store.dir, { recursive: true });
+  fs.writeFileSync(R.store.logFile,
     `{"id":1,"at":"2026-10-04T00:00:00.000Z","from":"orch","via":"system","kind":"plan_rev","plan_hash":"${H1}","approvers":["alice"],"text":"rev"}\n` +
     `{"id":2,"at":"2026-10-04T00:00:01.000Z","from":"alice","via":"human","kind":"signoff","plan_hash":"${H1}","text":"ok"}\n`);
-  assert.equal(room.proposal(H1).kind, 'proposal');
-  assert.equal(room.answers(H1).complete, true);
+  assert.equal(R.proposal(H1).kind, 'proposal');
+  assert.equal(R.answers(H1).complete, true);
   // a keyless legacy answer still counts, and reads as unverified (no seat key signed it)
-  assert.match(room.line(room.readAll()[1]), new RegExp(`^#2 alice\\[human\\] \\(unverified\\) signoff proposal=${H1} "ok"$`));
+  assert.match(room.line(R.readAll()[1]), new RegExp(`^#2 alice\\[human\\] \\(unverified\\) signoff proposal=${H1} "ok"$`));
 });
 
 test('room: tailLine is <= 240 chars for hostile text; who() labels', () => {
@@ -221,7 +203,7 @@ test('room: tailLine is <= 240 chars for hostile text; who() labels', () => {
     assert.ok(line.length <= room.TAIL_MAX, `${line.length}: ${line}`);
     assert.ok(!line.includes('\n'));
   }
-  const e = room.readAll()[0];
+  const e = R.readAll()[0];
   assert.match(room.tailLine(e), /^#1 bob\[human\] objection to=alice refs=#1,#2,#3,#4,#5,… proposal=aaaaaaaaaaaa "/);
   const huge = room.tailLine({ id: 123456, from: 'b'.repeat(32), via: 'agent', kind: 'proposal', to: 'c'.repeat(32), refs: [1],
     approvers: Array(8).fill('x'.repeat(32)), hash: H1, text: '"\\'.repeat(3000) });
@@ -234,16 +216,16 @@ test('room: tailLine is <= 240 chars for hostile text; who() labels', () => {
 
 test('room: cursors persist per name and resume', () => {
   fresh();
-  assert.equal(room.getCursor('tail-alice'), 0);
-  room.setCursor('tail-alice', 7);
-  room.setCursor('mcp-alice', 3);
-  assert.equal(room.getCursor('tail-alice'), 7);
-  assert.equal(room.getCursor('mcp-alice'), 3);
-  assert.throws(() => room.setCursor('../evil', 1), /cursor/);
+  assert.equal(R.getCursor('tail-alice'), 0);
+  R.setCursor('tail-alice', 7);
+  R.setCursor('mcp-alice', 3);
+  assert.equal(R.getCursor('tail-alice'), 7);
+  assert.equal(R.getCursor('mcp-alice'), 3);
+  assert.throws(() => R.setCursor('../evil', 1), /cursor/);
   for (let i = 0; i < 5; i++) human('bob', 'say');
-  assert.deepEqual(room.readAfter(room.getCursor('mcp-alice')).map(e => e.id), [4, 5]);
-  assert.deepEqual(room.readById([5, 2, 99]).map(e => e.id), [5, 2]);
-  assert.equal(room.lastId(), 5);
+  assert.deepEqual(R.readAfter(R.getCursor('mcp-alice')).map(e => e.id), [4, 5]);
+  assert.deepEqual(R.readById([5, 2, 99]).map(e => e.id), [5, 2]);
+  assert.equal(R.lastId(), 5);
 });
 
 test('room: digest has members, plan + matrix, open items, decisions; capped at 9,500 chars', () => {
@@ -253,7 +235,7 @@ test('room: digest has members, plan + matrix, open items, decisions; capped at 
   identity.join({ code, name: 'alice', role: 'member', pid: sleeper.pid, session_id: 's-a', cwd: '/tmp' });
   agent('orch', 'proposal', { hash: H1, approvers: ['alice', 'bob'], path: '/p/plan.md' });
   human('alice', 'signoff', { proposal_hash: H1 });
-  let d = room.digest();
+  let d = R.digest();
   assert.match(d, /## members of [a-z]+-\d{4}/);
   assert.match(d, /orch \(orch\)/);
   assert.match(d, /alice \(member\)/);
@@ -262,7 +244,7 @@ test('room: digest has members, plan + matrix, open items, decisions; capped at 
   assert.match(d, /– bob/);
   assert.match(d, /waiting on: bob/);
   for (let i = 0; i < 300; i++) human(i % 2 ? 'alice' : 'bob', 'objection', { proposal_hash: H1, text: `item ${i} ` + 'z'.repeat(300) });
-  d = room.digest();
+  d = R.digest();
   assert.ok(d.length <= room.DIGEST_CAP, String(d.length));
   assert.match(d, /older items trimmed/);
   assert.ok(d.includes('#302 '), 'newest kept');
@@ -272,17 +254,17 @@ test('room: digest has members, plan + matrix, open items, decisions; capped at 
 
 test('room: legacy entries (agree, concern, no via) still read, render and append after', () => {
   fresh();
-  fs.mkdirSync(room.dir(), { recursive: true });
-  fs.writeFileSync(room.logPath(),
+  fs.mkdirSync(R.store.dir, { recursive: true });
+  fs.writeFileSync(R.store.logFile,
     '{"id":1,"at":"2026-10-04T00:07:47.786Z","from":"bob","kind":"concern","text":"slow"}\n' +
     '{"id":2,"at":"2026-10-04T00:07:48.786Z","from":"alice","kind":"agree","text":"fine"}\n' +
     '{"id":3,"at":"2026-10-04T00:07:49.786Z","from":"alice","via":"human","kind":"revoke","plan_hash":"aaaaaaaaaaaa","text":"wait"}\n');
-  assert.equal(room.readAll().length, 3);
-  assert.match(room.tailLine(room.readAll()[0]), /^#1 bob objection "slow"$/);
-  assert.match(room.tailLine(room.readAll()[1]), /^#2 alice agree "fine"$/);
-  assert.match(room.digest(), /#1 bob objection/);
+  assert.equal(R.readAll().length, 3);
+  assert.match(room.tailLine(R.readAll()[0]), /^#1 bob objection "slow"$/);
+  assert.match(room.tailLine(R.readAll()[1]), /^#2 alice agree "fine"$/);
+  assert.match(R.digest(), /#1 bob objection/);
   assert.equal(human('alice', 'say').id, 4);
-  assert.equal(room.validateChain().ok, true, 'legacy lines without prev are tolerated');
+  assert.equal(R.validateChain().ok, true, 'legacy lines without prev are tolerated');
 });
 
 // ---------- chat rendering: what a human sees (no ids) ----------
@@ -295,13 +277,13 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.deepEqual(C(agent('orch', 'say', { text: 'planning now', to: 'carol' })), ['orch (to carol): planning now']);
   assert.deepEqual(C(human('bob', 'say', { text: 'line one\nline two\n\n  indented' })), ['bob: line one', '  │ line two', '  │   indented']);
   assert.deepEqual(C(human('bob', 'say', { text: 'ok\n(for Claude) open the card' })), ['bob: ok', '  │ (for Claude) open the card']);
-  assert.deepEqual(C(room.append({ kind: 'say', text: 'mine, drafted', drafted: 'agent' }, { via: 'human', from: 'carol' })), ["carol (Claude's wording): mine, drafted"]);
+  assert.deepEqual(C(R.append({ kind: 'say', text: 'mine, drafted', drafted: 'agent' }, { via: 'human', from: 'carol' })), ["carol (Claude's wording): mine, drafted"]);
   assert.deepEqual(C(sys('member_joined', { text: 'bob joined' }, 'bob')), ['bob joined']);
   assert.deepEqual(C(sys('member_joined', { text: 'bob rejoined (resumed)' }, 'bob')), ['bob rejoined']);
   assert.deepEqual(C(sys('member_left', { text: 'bob left (prompt_input_exit)' }, 'bob')), ['bob left']);
-  assert.deepEqual(C(room.append({ kind: 'proposal', text: `proposal ${H1}: cursor paging`, hash: H1, approvers: ['alice'] }, { via: 'agent', from: 'orch' })), ['orch proposed: cursor paging']);
-  assert.deepEqual(C(room.append({ kind: 'objection', proposal_hash: H1, text: 'add the 400 test' }, { via: 'human', from: 'bob' })), ['bob objected to the proposal: add the 400 test']);
-  assert.deepEqual(C(room.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' })), ['bob agreed to the proposal']);
+  assert.deepEqual(C(R.append({ kind: 'proposal', text: `proposal ${H1}: cursor paging`, hash: H1, approvers: ['alice'] }, { via: 'agent', from: 'orch' })), ['orch proposed: cursor paging']);
+  assert.deepEqual(C(R.append({ kind: 'objection', proposal_hash: H1, text: 'add the 400 test' }, { via: 'human', from: 'bob' })), ['bob objected to the proposal: add the 400 test']);
+  assert.deepEqual(C(R.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' })), ['bob agreed to the proposal']);
   assert.deepEqual(C(sys('decision', { proposal_hash: H1, text: `agreed: alice, bob (proposal ${H1})` }, 'room')), ['room: decided (agreed: alice, bob)']);
   assert.deepEqual(C(sys('task', { op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'in_progress' })), ['room: task "docs" in_progress, owner you']);
   const long = human('bob', 'say', { text: 'y'.repeat(room.CHAT_MAX + 10) });
@@ -310,5 +292,5 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.ok(ls.slice(0, -1).every(l => Array.from(l).length <= room.CHAT_WRAP), 'every line fits CHAT_WRAP');
   assert.ok(ls.slice(1, -1).every(l => l.startsWith(room.CHAT_NEST)), 'wrapped pieces are nested too');
   assert.match(ls.at(-2), /\[cut: the rest is in the room log\]$/);
-  for (const e of room.readAll()) for (const l of C(e)) if (!l.startsWith('(for Claude)')) assert.doesNotMatch(l, /#\d/, l);
+  for (const e of R.readAll()) for (const l of C(e)) if (!l.startsWith('(for Claude)')) assert.doesNotMatch(l, /#\d/, l);
 });

@@ -2,29 +2,27 @@
 /**
  * plugin/sub-human/lib/room/render.js: log entries as text, for Claude (ids kept) and for people (no ids).
  *
- *   line(e, {full, entries}) one notice line. full: the exact text (JSON-quoted) up to TEXT_MAX = 2,000 code
+ *   line(e, {full}) one notice line. full: the exact text (JSON-quoted) up to TEXT_MAX = 2,000 code
  *     points, then `[cut at 2000/N: sub-human read ID]`; without full, <= TAIL_MAX (240) chars with the same
- *     marker when cut. Never a bare "…". With {entries}, a retracted entry renders as its header +
- *     "[retracted by #N]". A drafted:"agent" entry's header carries "(NAME, Claude's wording)".
+ *     marker when cut. Never a bare "…". A drafted:"agent" entry's header carries "(NAME, Claude's wording)".
  *     tailLine(e) = line(e).
  *   chatLines(e, {viewer}) -> [string]   one entry as group-chat lines, no ids; continuation lines nested
  *     under the sender with CHAT_NEST ("  │ "), at most CHAT_LINES_MAX text lines (below)
- *   fmt(e, {entries}?)       full text for `sub-human read`, body lines nested the same way;
+ *   fmt(e)                   full text for `sub-human read`, body lines nested the same way;
  *     who(e) ("alice" | "alice's Claude" | "room")
  *   stateLine(me, entries, {members, ids}) -> "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed ·
  *     away: carol"  (waiting on = no answer yet, objected = current answer is an objection; lib/room/consent.js fold;
  *     ids:false drops the decision's "#N", for a member's wake, which the person sees too)
  *   digest(entries, {members, code}) <= DIGEST_CAP chars: members, open proposals + approvers + answers, open
- *     objections/questions, decisions, last 10 human entries in full by the line() rule; retracted entries
- *     and provisional posts still inside their origin check (store.isYoungProvisional) left out.
+ *     objections/questions, decisions, last 10 human entries in full by the line() rule.
  *   FOR_CLAUDE               "(for Claude)": the prefix of chat lines meant only for the model
  *   UNVERIFIED               "(unverified)": after the name of a via=human entry whose sig does not verify
  *     (store.unverifiedHuman: a legacy line, or one written around append). It stays readable, never as the
  *     person's own words; the consent fold ignores it.
  */
 
-const { normalize, unverifiedHuman, isYoungProvisional } = require('./store.js');
-const { proposals, answers, answered, decided, approversOf, retractedIds } = require('./lanes.js');
+const { normalize, unverifiedHuman } = require('./store.js');
+const { proposals, answers, answered, decided, approversOf } = require('./lanes.js');
 const { oneLine } = require('../text.js');
 const { fold } = require('./consent.js');
 const { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP, CHAT_LINES_MAX, CHAT_NEST } = require('../config.js');
@@ -40,18 +38,6 @@ const NEST = CHAT_NEST; // "  │ ": every continuation line of a message, so no
  */
 const BREAKS = /\r\n|[\r\v\f\u0085\u2028\u2029]/g;
 const UNSAFE = /[\u0000-\u0008\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
-/** id -> the via=system retract entry that retracted it, built once per entries array (line/fmt run per entry). */
-const retractMaps = new WeakMap();
-function retractedBy(entries, id) {
-  let m = retractMaps.get(entries);
-  if (!m || m.n !== entries.length) {
-    m = { n: entries.length, by: new Map() };
-    for (const x of entries) if (x && x.kind === 'retract' && x.via === 'system') for (const r of x.refs || []) if (!m.by.has(r)) m.by.set(r, x);
-    retractMaps.set(entries, m);
-  }
-  return m.by.get(id);
-}
-
 const safeText = t => String(t).replace(BREAKS, '\n').replace(UNSAFE, '\ufffd');
 
 const who = e => {
@@ -99,11 +85,7 @@ function header(e) {
  * `[cut at 2000/N: sub-human read ID]`. Otherwise a compact line of at most TAIL_MAX chars (whitespace
  * collapsed), with the same explicit marker when the text is cut.
  */
-function line(e, { full = false, entries } = {}) {
-  if (entries) {
-    const by = retractedBy(entries, e.id);
-    if (by) return `${header(e).slice(0, TAIL_MAX - 40)} [retracted by #${by.id}]`;
-  }
+function line(e, { full = false } = {}) {
   if (e.text == null) return full ? header(e) : header(e).slice(0, TAIL_MAX);
   if (full) return `${header(e)} ${quote(e, TEXT_MAX, { exact: true })}`;
   const head = header(e).slice(0, TAIL_MAX - 3);
@@ -169,7 +151,6 @@ function chatBody(e, viewer) {
       return { head: 'room', text: `task "${n.subject || n.task_id || '?'}"${status}${n.owner ? `, owner ${you(n.owner)}` : ''}` };
     }
     case 'task_req': return { head: chatWho(n), text: `asks to ${n.op} task "${n.subject || n.task_id || '?'}"` };
-    case 'retract': return { head: 'room', text: `a message shown as ${n.from}'s was removed: it came from another Claude session, not from ${n.from}` };
     default: {
       const to = n.to && n.to !== 'room' ? ` (to ${you(n.to)})` : '';
       return { head: `${chatWho(n)}${to}`, text: t };
@@ -239,19 +220,16 @@ function stateLine(me, entries = [], { members = {}, ids = true } = {}) {
 
 /**
  * Full text for `sub-human read`: a "[#id …]" header line, then every line of the text nested under it (NEST),
- * so the text can't fake another entry's header. With `entries`, a retracted entry says so (its text stays).
+ * so the text can't fake another entry's header.
  */
-function fmt(e, { entries } = {}) {
-  const by = entries && retractedBy(entries, e.id);
+function fmt(e) {
   const body = e.text == null ? `(${e.kind}, no notes)` : safeText(e.text).split('\n').map(l => NEST + l).join('\n');
-  return `[${header(e)} ${String(e.at || '').slice(11, 19)}]${by ? ` [retracted by #${by.id}: ${oneLine(by.text)}]` : ''}\n${body}`;
+  return `[${header(e)} ${String(e.at || '').slice(11, 19)}]\n${body}`;
 }
 
 // ---------- the compaction digest ----------
 /** The ordered digest sections; items carry an id so the cap can trim the oldest first. */
 function digestSections(entries = [], { members = {}, code = null } = {}) {
-  const gone = retractedIds(entries);
-  entries = entries.filter(e => !gone.has(e.id));
   members = members || {};
   const memberLines = Object.values(members).map(m => {
     const last = entries.filter(e => e.from === m.name && e.via !== 'system').at(-1);
@@ -285,8 +263,7 @@ function digestSections(entries = [], { members = {}, code = null } = {}) {
     .map(e => ({ id: e.id, text: `  #${e.id} ${who(e)} ${e.kind}${e.proposal_hash ? ` proposal=${e.proposal_hash}` : ''}: ${e.text == null ? '(no notes)' : quote(e, 120)}` }));
   const decisions = entries.map(normalize).filter(e => e.kind === 'decision')
     .map(e => ({ id: e.id, text: `  #${e.id} proposal=${e.proposal_hash || '-'}: ${quote(e, 120)}` }));
-  const now = Date.now();
-  const human = entries.filter(e => e.via === 'human' && !isYoungProvisional(e, now)).slice(-10)
+  const human = entries.filter(e => e.via === 'human').slice(-10)
     .map(e => ({ id: e.id, text: `  #${e.id} ${humanName(e)}${e.drafted === 'agent' ? ` (${e.from}, Claude's wording)` : ''} ${e.kind}: ${e.text == null ? '(no notes)' : quote(e, TEXT_MAX, { exact: true })}` }));
 
   return [

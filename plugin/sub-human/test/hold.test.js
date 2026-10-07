@@ -247,19 +247,13 @@ test('hold: every progress line ends with the read-only hint and stays within 14
   await r.p;
 });
 
-test('hold: a provisional post still inside its origin check is held back, shown once old enough, dropped if retracted', async () => {
-  const { PROVISIONAL_MS } = require(path.join(PLUGIN, 'lib', 'room', 'store.js'));
+test('hold: a post marked provisional (old logs) shows at once, like any other', async () => {
   const w = setup(['orch', 'alice'], 'orch');
   const a = w.call({ member: 'alice' });
   assert.ok(await pending(a.p));
-  const young = () => new Date(Date.now() - PROVISIONAL_MS() + 300).toISOString(); // old enough in ~300 ms
-  w.add('alice', 'say', { provisional: true, at: young() });                         // #1
+  w.add('alice', 'say', { provisional: true }); // #1
   await sleep(100);
-  assert.ok(!w.progress.some(p => /say 1/.test(p.message)), 'not shown while its check may still retract it');
-  await sleep(450);
-  assert.match(w.progress.at(-1).message, /^alice: say 1/, 're-checked on a later tick and shown');
-  w.add('alice', 'say', { provisional: true, at: young() });                         // #2
-  w.add('alice', 'retract', { via: 'system', refs: [2], text: 'peer-forged: #2' });   // #3
-  await sleep(550);
-  assert.ok(!w.progress.some(p => /say 2/.test(p.message)), 'a retracted provisional post never shows');
+  assert.match(w.progress.at(-1).message, /^alice: say 1/);
+  w.leaveMe();
+  await a.p;
 });

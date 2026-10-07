@@ -33,7 +33,7 @@ test('validate: op shapes; done needs evidence', () => {
 let nextId = 1;
 const req = (from, op, id, extra = {}) => ({ id: nextId++, from, via: 'agent', kind: 'task_req', text: `task ${op} #${id}`, op, task_id: String(id), owner: from, ...extra });
 const human = (from, text, refs) => ({ id: nextId++, from, via: 'human', kind: 'say', text, ...(refs ? { refs } : {}) });
-const retract = ids => ({ id: nextId++, from: 'orch', via: 'system', kind: 'retract', text: 'retracted', refs: ids });
+const oldRetract = ids => ({ id: nextId++, from: 'orch', via: 'system', kind: 'retract', text: 'retracted', refs: ids }); // old logs only
 
 test('gate: the owner\'s done with evidence passes; another member\'s done fails', () => {
   const code = h.newRoom();
@@ -66,11 +66,11 @@ test('gate: the owner\'s [human] words citing another\'s done request pass', () 
   assert.equal(tasks.gate(code, t, [alice, human('bob', `#${alice.id}0 is wrong`)]).ok, false);
 });
 
-test('gate: a retracted request and a stale claim fail', () => {
+test('gate: a stale claim fails; an old retract line changes nothing', () => {
   const code = h.newRoom();
   const t = { id: '2', subject: 'parser tests', owner: 'bob' };
   const done = req('bob', 'done', 2, { evidence: 'tests pass' });
-  assert.equal(tasks.gate(code, t, [done, retract([done.id])]).ok, false);
+  assert.equal(tasks.gate(code, t, [done, oldRetract([done.id])]).ok, true);
   // done, then a newer claim of the task: the done is stale
   const done2 = req('bob', 'done', 2, { evidence: 'tests pass' });
   const reclaim = req('bob', 'claim', 2);
@@ -139,14 +139,14 @@ test('task tool: no orch, refusals, queued request', () => {
   const me = { code, name: 'alice', role: 'member', pid: process.pid };
   identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: 's-a' });
   identity.join({ code, name: 'bob', role: 'member', pid: sleeper.pid + 0, session_id: 's-b' });
-  room.bind(code);
+  const R = room.open(code);
   const api = taskPlugin.create(ctxFor());
   assert.deepEqual(api.tools.map(t => t.name), ['task']);
   const { name, description, inputSchema } = api.tools[0]; // model-facing fields; annotations are client metadata
   assert.ok(JSON.stringify({ name, description, inputSchema }).length <= 900);
 
   assert.equal(out(api.call('task', me, { op: 'add', subject: 'parser tests' })), 'no orch: the room task list is unavailable');
-  assert.equal(room.readAll().length, 0);
+  assert.equal(R.readAll().length, 0);
 
   const orchProc = h.spawnSleeper();
   identity.join({ code, name: 'orch', role: 'orch', pid: orchProc.pid, session_id: 's-o' });
@@ -156,13 +156,13 @@ test('task tool: no orch, refusals, queued request', () => {
   assert.match(out(api.call('task', me, { op: 'add', subject: 'x', for: 'carol' })), /no member named carol/);
 
   r = api.call('task', me, { op: 'add', subject: 'parser tests', detail: 'cover the edge cases', for: 'bob' });
-  const e = room.readAll().at(-1);
+  const e = R.readAll().at(-1);
   assert.equal(out(r), 'queued; the orch applies it');
   assert.deepEqual([e.kind, e.from, e.via], ['task_req', 'alice', 'agent']);
   assert.deepEqual(tasks.reqOf(e), { op: 'add', id: null, subject: 'parser tests', detail: 'cover the edge cases', evidence: null, owner: 'bob', status: null, req: null, by: 'alice' });
 
   api.call('task', me, { op: 'done', id: '2', evidence: 'npm test green' });
-  const d = room.readAll().at(-1);
+  const d = R.readAll().at(-1);
   assert.deepEqual([tasks.reqOf(d).op, tasks.reqOf(d).id, tasks.reqOf(d).owner, tasks.reqOf(d).evidence], ['done', '2', 'alice', 'npm test green']);
   assert.match(d.text, /done #2/);
 

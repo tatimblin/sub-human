@@ -8,7 +8,7 @@
  *       normalized, edit_path, drafted, task}     throws RoomError INVALID with a message for the model
  *   RoomError(code, message)   code: INVALID | RATE | LOCK | NO_ROOM
  * Rules: via "agent" writes say question status proposal task_req; via "human" say signoff objection proposal;
- * via "system" decision member_joined member_left retract task status, and only with {system: true}.
+ * via "system" decision member_joined member_left task status, and only with {system: true}.
  * Size caps (lib/config.js): text <= ENTRY_TEXT_MAX_BYTES UTF-8 bytes, refs <= ENTRY_REFS_MAX, approvers and
  * blockedBy <= ENTRY_LIST_MAX, any other string field <= ENTRY_STR_MAX (JS .length) (narrower caps below win).
  * append() also refuses a serialized line over LOG_LINE_MAX_BYTES.
@@ -19,7 +19,7 @@ const { ENTRY_TEXT_MAX_BYTES, ENTRY_REFS_MAX, ENTRY_STR_MAX, ENTRY_LIST_MAX } = 
 
 const AGENT_KINDS = ['say', 'question', 'status', 'proposal', 'task_req'];
 const HUMAN_KINDS = ['say', 'signoff', 'objection', 'proposal'];
-const SYSTEM_ONLY_KINDS = ['decision', 'member_joined', 'member_left', 'retract', 'task'];
+const SYSTEM_ONLY_KINDS = ['decision', 'member_joined', 'member_left', 'task'];
 const TASK_OPS = ['add', 'claim', 'release', 'done'];
 const SYSTEM_KINDS = [...SYSTEM_ONLY_KINDS, 'status'];
 const KINDS = [...new Set([...AGENT_KINDS, ...HUMAN_KINDS, ...SYSTEM_KINDS])];
@@ -94,7 +94,6 @@ function validate(entry, opts) {
   if (kind === 'signoff' && !proposal_hash) bad('signoff requires proposal_hash');
   if (kind === 'objection' && via === 'human' && !proposal_hash) bad('a human objection requires proposal_hash');
   if (kind === 'decision' && !proposal_hash) bad('decision requires proposal_hash');
-  if (kind === 'retract' && !(refs && refs.length)) bad('retract requires refs (the retracted ids)');
   return { via, kind, text, to, refs, hash, approvers, path: ppath, proposal_hash, normalized, edit_path, drafted, task };
 }
 

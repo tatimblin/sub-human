@@ -16,7 +16,7 @@
  *       Settle: entries are batched and written as ONE set of events (at most one wake) after
  *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most (the orch: 3000 / 10000,
  *       SUB_HUMAN_ORCH_SETTLE_MS / SUB_HUMAN_ORCH_SETTLE_MAX_MS). Each entry is judged again against the log at
- *       send time (retracted / answered / decided entries are dropped). A member_left X is held
+ *       send time (answered / decided entries are dropped). A member_left X is held
  *       SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time both notices are dropped.
  *       A member's chat is a group chat (room.chatLines, no ids): "bob: <exact words>", "bob's Claude: …",
  *       "bob joined", "bob left". Lines meant only for Claude start with "(for Claude)". The orch's wake opens
@@ -138,8 +138,7 @@ function read(args) {
   const { flags, rest } = parseFlags(args, { id: 1, json: 0, room: 1 });
   if (!flags.id && rest.length) flags.id = rest.join(','); // `sub-human read 22`, as the cut marker says
   const { me, r } = openRoom(flags.room);
-  const all = flags.json ? null : r.readAll();
-  const show = es => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : room.fmt(e, { entries: all }) + '\n'));
+  const show = es => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : room.fmt(e) + '\n'));
   if (flags.id) {
     const es = r.readById(intList(flags.id));
     if (!es.length) die('(no such entries)', 1);
