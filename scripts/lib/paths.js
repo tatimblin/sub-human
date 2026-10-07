@@ -18,11 +18,9 @@ const REPO = path.resolve(__dirname, '..', '..');
 const PLUGIN = path.join(REPO, 'plugin', 'sub-human');
 const pluginLib = name => require(path.join(PLUGIN, 'lib', name));
 
-const identity = pluginLib('identity.js');
-const orch = pluginLib('orch.js');
-
 const DEMO_BASE = '/tmp/sh-demo';
-const home = () => identity.home();
+// required on first use, so a script that needs only one lib (probe-cc: cc.js) loads only that one
+const home = () => pluginLib('identity.js').home();
 const demoHome = () => process.env.SUB_HUMAN_HOME || path.join(DEMO_BASE, 'home');
 const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 const projectsDir = () => path.join(claudeDir(), 'projects');
@@ -31,5 +29,5 @@ const seatProjectDir = seat => path.join(projectsDir(), `-private-tmp-sh-demo-${
 module.exports = {
   REPO, PLUGIN, DEMO_BASE, pluginLib,
   home, demoHome, claudeDir, projectsDir, seatProjectDir,
-  taskListId: orch.taskListId, tasksDir: orch.tasksDir,
+  taskListId: code => pluginLib('orch.js').taskListId(code), tasksDir: code => pluginLib('orch.js').tasksDir(code),
 };

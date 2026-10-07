@@ -120,6 +120,7 @@ Other findings:
 - **The engine writes into a `--plugin-dir` plugin.** Loading a plugin with a module lays `.claude-plugin/types/` (with its own `.gitignore`) and a root `tsconfig.json` (`{"extends": "./.claude-plugin/types/tsconfig.json"}`). The demo loads `plugin/sub-human` with `--plugin-dir`, so W1 had to decide whether to commit or ignore `tsconfig.json`: both are gitignored.
 - **Hot reload.** Saving a file in a watched `--plugin-dir` reloads the module (`⏺ <plugin>: reloaded (N hooks: …)`) and re-runs `session.start`.
 - **`$.session.send`** goes through `tool.call` `SendMessage` in the sender and resolves `{isDelivered:true}`.
+- **`$.ui.log` is one line.** A newline in the text is drawn as U+FFFD (seen live while building delivery), so `mod/deliver.mjs` logs a chat batch line by line. CONTRACT `ui-log-notice`.
 - **Test kit.** A test answers a `$` call beneath the plugin with `on('process.run', () => ({ value: … }))` (a bare result is refused: "returned neither { value } nor { deny }"), and a classic event with nothing beneath needs `on('classic.<Event>', …)` ("no implementation for classic.UserPromptSubmit").
 
 W1 findings (2026-10-07, while building the module; [mods plan](../next/MODS-PLAN.md) W1 results):
@@ -132,7 +133,7 @@ W1 findings (2026-10-07, while building the module; [mods plan](../next/MODS-PLA
 
 ## Review spikes R0
 
-What the [review plan](../next/REVIEW-PLAN.md) R0 spikes found on 2.1.292 (2026-10-07). S-skip is a live run; S-title and S-mcp are binary reading (`/tmp/cc292/bin.txt`, `VERSION:"2.1.292"`). Hit counts are for a latin1 view of the binary; a shape uses `~` as in `cc.shapeRe`. No CONTRACT entries were added here (R2 C1 adds them from the strings below).
+What the [review plan](../next/REVIEW-PLAN.md) R0 spikes found on 2.1.292 (2026-10-07). S-skip is a live run; S-title and S-mcp are binary reading (`/tmp/cc292/bin.txt`, `VERSION:"2.1.292"`). Hit counts are for a latin1 view of the binary; a shape uses `~` as in `cc.shapeRe`. R2 C1 turned the strings below into CONTRACT entries (`classic-chain-order` rewritten; `mcp-stdio-ppid`, `mcp-progress-resets-idle-timeout`, `mcp-server-shared-by-subagents` and `session-title-address` added, the last with the name-uniqueness strings folded in), each with a mutated-string test in `test/cc.test.js`.
 
 ### S-skip: what a module's `classic.PreToolUse` answer without `next` skips (review M5)
 
@@ -179,7 +180,7 @@ So the `classic-chain-order` CONTRACT note ("the plugin's own command hooks") un
 
 **(c) One server instance serves the main thread and its subagents: yes.** A subagent whose definition has no `mcpServers` gets the parent's clients as they are: shape `if(!~.mcpServers?.length)return{clients:~,agentClients:[],tools:[],cleanup:async()=>{}}` (1 hit). A subagent whose definition lists `mcpServers` gets the parent's clients plus its own: shape `return{clients:[...~,...~],agentClients:~,tools:~,cleanup:~}` (1 hit). sub-human's agents (`orchestrator`, `room`, `participant`) name the room tools in `tools:` and have no `mcpServers`, so their room calls reach the same server process as the main thread's. In that process, `process.ppid` is the main claude pid.
 
-### Search strings for R2 C1
+### Search strings (now in the CONTRACT)
 
 | CONTRACT id (proposed) | `search` (literal) | `shape` |
 |---|---|---|
@@ -191,3 +192,24 @@ So the `classic-chain-order` CONTRACT note ("the plugin's own command hooks") un
 | `mcp-server-shared-by-subagents` | — (no stable literal) | `if(!~.mcpServers?.length)return{clients:~,agentClients:[],tools:[],cleanup:async()=>{}}`; `return{clients:[...~,...~],agentClients:~,tools:~,cleanup:~}` |
 
 Every shape above keeps 16 or more literal characters. The `mcp-server-shared-by-subagents` entry has no literal in its own code. For a `search` it could use `Skipping frontmatter MCP servers: blocked by ` (2 hits, the same function) if C1 wants one.
+
+## Out of the CONTRACT (review R2)
+
+The CONTRACT now lists only what plugin code relies on. These entries came out on 2026-10-07 (all passed the 2.1.292 probe when removed).
+
+**Informational: still true, but no code cites them.** Kept here with their search strings so they can be re-checked by hand (`grep -c` on a latin1 view of the binary).
+
+| Former id | § (2.1.281 note) | Search | What it says |
+|---|---|---|---|
+| `hook-missing-script` | 1 | `Hook script appears to be missing` | Stop, SubagentStop, TaskCompleted, TeammateIdle (and a plugin UserPromptSubmit): exit 2 with empty stdout and a "no such file" / "can't open" stderr is non-blocking. |
+| `task-completed-teammate-stop` | 1 | `TaskCompleted hook prevented continuation` | Agent teams: a teammate's Stop fires TaskCompleted for each in_progress task it owns. |
+| `task-created-block-deletes` | 1 | `TaskCreated hooks cancelled (control stream closed)` | A TaskCreated block deletes the task and throws. |
+| `pkill-guard` | 2 | `pkill: refusing to run` | The Bash pkill wrapper refuses a pattern that matches CLAUDE_PID. |
+| `plugin-setting-override-log` | 9 | `overrides setting "${`, `" (previously set by another plugin)` | The last plugin loaded wins a setting two plugins set. |
+
+**Removed with their test-only code.**
+
+- `peer-envelope` (`from-session="`, `hop-chain="`, `(?: from-name="([^"<>\n\r]+)")?(?: from-mode="(`): the `<cross-session-message>` attribute order. `cc.parseEnvelope`, `ENVELOPE_RE` and `ATTR` went with it; nothing parsed envelopes.
+- `hook-timeout-default` (`asyncTimeout:e.timeout?e.timeout*1000:`, shape `var ~=600000,~=30000,`): the 600 s default hook timeout. `cc.HOOK_TIMEOUT_DEFAULT_MS` went.
+- `session-end-budget` (`.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS;if(e!==void 0)return e;`, shapes `if(~.timeout&&~.timeout*1000>~)~=~.timeout*1000;return Math.max(~,Math.min(~,~))}` and `var ~=1500,~=60000,`): SessionEnd's budget, the env override else the largest hook timeout clamped to [1500, 60000] ms. `cc.sessionEndBudgetMs` and `SESSION_END_*` went.
+- `cc.logsCmd` (the `bg-logs` entry stays: the demo's orch view runs `claude logs`), and the unused `cc.ENV` keys `ENABLE_TODO_TOOLS`, `SESSION_END_TIMEOUT`, `PLUGIN_ROOT`, `PLUGIN_DATA` and `PROJECT_DIR`.
