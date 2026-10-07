@@ -206,7 +206,7 @@ fallback (already in plan mode, bypass/dontAsk, clear-context-on-accept, >200k c
 every approver answered           ──► lib/proposal.record appends decision via=system
 ```
 
-`lib/consent.js` `fold(entries)` is the one interpretation of the log, used by `stateLine`, `lane`, the rows and the gate, so they cannot disagree: the latest proposal entry per hash wins; per person the latest trusted `via=human` answer wins (an objection voids an earlier signoff); retracted entries count for nothing; a decision closes the hash with state `agreed` or `blocked`. `test/hooks/consent-table.test.js` feeds one table to all views.
+`lib/room/consent.js` `fold(entries)` is the one interpretation of the log, used by `stateLine`, `lane`, the rows and the gate, so they cannot disagree: the latest proposal entry per hash wins; per person the latest trusted `via=human` answer wins (an objection voids an earlier signoff); retracted entries count for nothing; a decision closes the hash with state `agreed` or `blocked`. `test/hooks/consent-table.test.js` feeds one table to all views.
 
 ## Tasks
 
@@ -258,11 +258,8 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `task-completed-block-drops-fields` | §1 | incidental | A TaskCompleted block makes TaskUpdate return success:false, updatedFields:[] before the write: every field in that call (subject, metadata, owner) is discarded. |
 | `hook-exit2-blocks` | §1 | API | Exit 2 makes stderr the blockingError. |
 | `hook-json-block` | §1 | API | {"decision":"block","reason"} is a blockingError. |
-| `hook-missing-script` | §1 | incidental | Stop/SubagentStop/TaskCompleted/TeammateIdle (and plugin UserPromptSubmit): exit 2 with empty stdout and "no such file\|can't open" stderr is non-blocking. |
 | `task-completed-input` | §1 | API | TaskCompleted input has no metadata/owner/status; read the task file (which still has the old status). |
 | `task-events-no-matcher` | §1 | API | TaskCreated/TaskCompleted/TeammateIdle have no matcher query: every hook fires. |
-| `task-completed-teammate-stop` | §1 | incidental | Agent teams: a teammate Stop fires TaskCompleted per owned in_progress task. |
-| `task-created-block-deletes` | §1 | API | A TaskCreated block deletes the task and throws. |
 | `task-update-schema` | §1 | API | TaskUpdate metadata merges; null deletes a key. |
 | `task-create-metadata` | §1 | API | TaskCreate accepts metadata. |
 | `env-child-session` | §2 | env | Hooks, Bash, statusLine and subagentStatusLine get CLAUDE_PID and CLAUDE_CODE_SESSION_ID (cc.ENV, sessionId, claudePid). |
@@ -271,7 +268,9 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `env-clear-session-id` | §2 | incidental | /clear updates process.env.CLAUDE_CODE_SESSION_ID; running MCP servers keep the old id. |
 | `env-nested-strip` | §2 | incidental | A nested claude drops CLAUDE_CODE_SESSION_ID from its env. |
 | `hook-input-common` | §2 | API | Common hook input: session_id, transcript_path, cwd, prompt_id?, permission_mode?, agent_id?; no pid. |
-| `pkill-guard` | §2 | incidental | Bash pkill wrapper refuses patterns matching CLAUDE_PID. |
+| `mcp-stdio-ppid` | §2 | incidental | A stdio MCP server is spawned without a shell (the Linux cgroup wrapper ends in exec), so its process.ppid is the claude pid; the room server resolves its caller that way. Not so when the user sets CLAUDE_CODE_SHELL_PREFIX (cc-2.1.292.md Review spikes R0, S-mcp a). |
+| `mcp-progress-resets-idle-timeout` | §2 | incidental | A tools/call has an idle watchdog (30 min for stdio, CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT) that each notifications/progress resets, and a wall-clock limit (MCP_TOOL_TIMEOUT, about 27.8 h by default) that progress does not extend. mcp/hold.js beats progress to keep a hold under the idle watchdog (cc-2.1.292.md Review spikes R0, S-mcp b). |
+| `mcp-server-shared-by-subagents` | §2 | incidental | A subagent with no mcpServers uses its parent's MCP clients, so the room tools a subagent calls reach the main thread's server process (cc-2.1.292.md Review spikes R0, S-mcp c). |
 | `plan-mode-attachment` | §3 | incidental | Transcript attachment {type:"plan_mode", planFilePath} (cc.planFile). |
 | `exitplan-normalize` | §3 | API | Pre/PermissionRequest hooks on ExitPlanMode see tool_input.plan and planFilePath. |
 | `exitplan-strip` | §3 | incidental | plan/planFilePath are stripped before the transcript copy (cc.toolUseInput reads the model's own input). |
@@ -289,7 +288,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `bg-dispatch-line` | §5 | incidental | `claude --bg` stdout line 1 is "backgrounded · <short> · <name>" (cc.JOB_RE). |
 | `agents-json` | §5 | API | `claude agents --json [--all]` prints [{pid?, id, sessionId, status, state, ...}] (cc.jobs). |
 | `bg-stop` | §5 | API | `claude stop <id>` (cc.stopCmd). |
-| `bg-logs` | §5 | API | `claude logs <id>` (cc.logsCmd). |
+| `bg-logs` | §5 | API | `claude logs <id>` replays a bg session's screen; the demo's orch view runs it. |
 | `daemon-env-filter` | §5 | env | The daemon keeps only allowlisted caller env keys (cc.DAEMON_ENV_ALLOW). |
 | `daemon-env-allowlist` | §5 | env | The pieces of the daemon allowlist (zWe + dWn + extras in 2.1.292) that DAEMON_ENV_ALLOW copies. |
 | `bg-worker-env` | §5 | incidental | Workers run with the daemon's own process.env plus the filtered dispatch env. |
@@ -297,31 +296,28 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `matcher-rule` | §7 | API | Exact-name list vs unanchored regex (cc.matcherIsExact, cc.matcherMatches). |
 | `hook-if` | §7 | API | `if` uses permission-rule syntax; Task tools can only be filtered by bare name. |
 | `hook-async` | §7 | API | Per-hook async/asyncRewake fields. |
-| `hook-timeout-default` | §7 | API | Default hook timeout 600000 ms (cc.HOOK_TIMEOUT_DEFAULT_MS). |
 | `stop-additional-context` | §7 | incidental | Stop hookSpecificOutput.additionalContext continues the turn with that text, like a block but without the red "Stop hook error" line or notification (only real blockingErrors get those). |
-| `session-end-budget` | §7 | env | SessionEnd budget: env override, else max hook timeout clamped to [1500, 60000] ms (cc.sessionEndBudgetMs). |
-| `peer-envelope` | §8 | incidental | <cross-session-message from from-session hop-chain from-name from-mode from-plugin> in that order (cc.parseEnvelope). |
-| `prompt-origin-composer` | §8 | incidental | prompt.submit origin "composer" is only the person's own Enter (and a --bg dispatch prompt); -p is "sdk", peers "peer" (also from $.session.send), notifications "task-notification". No hook sets it (MODS-PLAN W0 S2, S6). |
+| `prompt-origin-composer` | §8 | incidental | prompt.submit origin "composer" is only the person's own Enter (and a --bg dispatch prompt); -p is "sdk", peers "peer" (also from $.session.send), notifications "task-notification". No hook sets it; seen for a --bg dispatch and a mid-turn peer (cc-2.1.292.md Function hooks S2, S6). |
 | `cross-session-inbound` | §8 | API | crossSessionInbound accept\|hold\|refuse; the orch sets accept. |
 | `harbor-kite-gate` | §8 | env | Cross-session messaging gate (default on). |
 | `pasted-content` | §8 | incidental | Long pastes are wrapped in <pasted_content id="N"> (cc.PASTED_RE). |
+| `session-title-address` | §8 | incidental | A hook's sessionTitle renames the session and writes the name to the session registry; ListAgents lists it and SendMessage `to` matches it exactly, so NAME.CODE is the address. Names are unique among live sessions: a second live session given the same name takes a suffixed one and is not reachable at NAME.CODE (cc-2.1.292.md Review spikes R0, S-title). |
 | `plugin-settings-allowlist` | §9 | API | Plugin settings.json keeps only agent and subagentStatusLine. |
 | `subagent-statusline-precedence` | §9 | incidental | Any user/project/local/flag subagentStatusLine overrides the plugin's. |
-| `plugin-setting-override-log` | §9 | incidental | Last plugin loaded wins a shared setting. |
 | `subagent-statusline-raw` | §9 | incidental | subagentStatusLine command gets no ${CLAUDE_PLUGIN_ROOT} substitution nor PLUGIN_ROOT/DATA env. |
 | `hook-events` | §10 | API | The hook event list; no plan-approved/rejected event. |
 | `hooks-modules` | §10 | env | Function hooks load for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on). An installed plugin names its module in hooks.json `modules`; "hooks/register.ts" is only the built-in plugins' fixed path. sub-human ships one, hooks/register.mjs (its hooks in mod/), named in hooks.json. |
 | `hooks-json-modules` | §10 | API | One hooks.json carries the command hooks and one module path under `modules` (relative to hooks.json); a second module is refused (S1). |
 | `module-dollar-local` | §10 | incidental | A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.mjs stays $-free (S1). |
-| `module-event-once` | §10 | incidental | A hooks module registers an event at most once without a matcher (validate and the loader refuse a second): mod/deliver.mjs owns session.start, the join and SessionStart (hello and the tail child), mod/prompt.mjs owns prompt.submit (the gate, rows context, presence) (W3). |
+| `module-event-once` | §10 | incidental | A hooks module registers an event at most once without a matcher (validate and the loader refuse a second): mod/deliver.mjs owns session.start, the join and SessionStart (hello and the tail child), mod/prompt.mjs owns prompt.submit (the gate, rows context, presence). |
 | `modules-headless` | §10 | env | Modules are off only diskless or in a tool server's daemon (then by policy, safe mode, --bare): they load in -p and in a --bg worker such as the orch. A --bg dispatch prompt reaches prompt.submit as origin composer (S2). |
-| `classic-chain-order` | §10 | incidental | A module's classic.<Event> hook runs above the plugin's own command hooks for that event; one that answers without next() means the command hooks beneath do not run (S1, S5). mod/consent.mjs relies on it: classic.PreToolUse on a room tool answers {} (no decision: the normal permission flow) to skip consent's command hook while no review is open. |
+| `classic-chain-order` | §10 | incidental | A classic.<Event> chain is [managed settings hooks, ...modules in load order, core], and core runs every other settings hook. A module that answers without next() therefore skips every non-managed settings hook for that call (its own plugin's, other plugins' and the user's and project's command hooks) and the modules of plugins loaded after it; managed hooks and earlier-loaded modules still run (S1, S5; cc-2.1.292.md Review spikes R0, S-skip). Every sub-human classic.* hook that answers without next() has that reach. |
 | `prompt-submit-ups-order` | §10 | incidental | prompt.submit's core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). mod/prompt.mjs relies on it: classic.UserPromptSubmit runs inside prompt.submit's next(e), so prompt.submit hands it e.origin (the classic payload has none) in a module variable. |
 | `usermessage-draw-only` | §10 | incidental | A ui.render rewrite of UserMessage text changes only the drawing; origin, isExpanded, task and from are pinned. |
 | `plugin-types-state` | §10 | incidental | validate refuses a $.state value the plugin's own types contract (plugin.json "types": types/index.d.ts) does not declare in PluginState; sub-human declares sub-human.hello. |
 | `session-append-note` | §10 | incidental | $.session.append writes a user row as isMeta (the model reads it from the loop's next top; an idle session is not woken) and a system row as a notice the model never reads (S4). |
 | `session-append-notice-hidden` | §10 | incidental | A $.session.append system row is stored at level "info": drawn only in the ctrl+o transcript view (also after --resume), never in the default view. Chat lines go through $.ui.log instead (S4). |
-| `ui-log-notice` | §10 | incidental | $.ui.log lines are stored as system notices at level "notice": drawn dim as "<plugin>: <text>" in the default view, kept across --resume, never read by the model, no wake (S4). One line each: a newline in the text comes out as U+FFFD (seen live in W4), so mod/deliver.mjs logs a chat batch line by line. |
+| `ui-log-notice` | §10 | incidental | $.ui.log lines are stored as system notices at level "notice": drawn dim as "<plugin>: <text>" in the default view, kept across --resume, never read by the model, no wake (S4). One line each: a newline in the text is drawn as U+FFFD (cc-2.1.292.md Function hooks), so mod/deliver.mjs logs a chat batch line by line. |
 | `fs-write-plain` | §10 | incidental | $.fs.write is mkdir -p plus writeFile: not atomic, no mode, no lock. The mod never writes room state. |
 | `process-run-stdin` | §10 | API | $.process.run takes argv, stdin, env over the host env and a timeout. The child's parent is the claude process, but it gets no CLAUDE_PID or CLAUDE_CODE_SESSION_ID of this session (only whatever claude itself inherited), so shims pass the payload session_id (S3). |
 | `plugin-test-discovery` | §10 | incidental | `claude plugin test` collects every *.test.ts(x) under the plugin; node tests stay *.test.js (S8). |
@@ -336,7 +332,6 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/cc.js`: the single home for every Claude Code internal the plugin relies on.
 - `lib/clock.js`: A tiny injectable clock, so code that waits (the `sub-human tail` settle and poll loops) can be tested without real sleeps.
 - `lib/config.js`: every timing and size cap in one place, named. Callers import the value they use; an env override is read by the caller through envMs() at the moment it needs the value (tests set the env per child process, some per call).
-- `lib/consent.js`: the one fold of the room log into proposal / consent state.
 - `lib/home.js`: where the plugin's store lives on this machine. Both lib/identity.js (session indexes) and lib/room/store.js (room state) need it, and identity requires the store, so it lives here rather than in either.
 - `lib/identity.js`: where rooms live, who is in them, and which Claude session is asking.
 - `lib/io.js`: small file and process helpers shared by every module.
@@ -345,6 +340,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/orch.js`: the room's headless orchestrator, a `claude --bg` session the join hook starts.
 - `lib/proposal.js`: proposals and the consent card. Every write goes through room.append().
 - `lib/room.js`: the room log (envelope v3). A facade over lib/room/*, so callers keep one require.
+- `lib/room/consent.js`: the one fold of the room log into proposal / consent state.
 - `lib/room/lanes.js`: who a log entry concerns, and the proposal queries that decide it.
 - `lib/room/render.js`: log entries as text, for Claude (ids kept) and for people (no ids).
 - `lib/room/store.js`: the RoomStore seam, and FsRoomStore, its implementation over the room directory on this machine.

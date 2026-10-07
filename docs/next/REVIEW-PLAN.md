@@ -75,6 +75,8 @@ Status: approved, 2026-10-07; R0 done (Q4 is with the user), R1 next. Decided: Q
 
 Commit per agent: "Review R1: …".
 
+**R1 results (2026-10-07).** Merged B1–B4 plus lead follow-ups (`4fe9278`). Live check (two seats, about $1.43, over the $1 cap): a room switch retitles and SendMessage to the new address arrives; `@room` with the shim failing is refused with no model turn; a wake dropped by another plugin's hook falls back to the isMeta append; a stale lease from a gone process cannot join (shown by running join.js; a live resume writes a fresh lease by design). Two findings go to R5: (a) when a wake's submit is dropped and the fallback append works, the person sees only "Prompt dropped by a hook", not the room line: `$.ui.log` the visible lines on that path too; (b) `SUB_HUMAN_*` timing overrides in a seat's env don't reach the orch's watchdog (`orch.cleanEnv`): decide whether that's intended and document or forward them.
+
 ### R2: robustness and structure (3 agents in parallel)
 
 **C1 contract** (owns `lib/cc.js`, `scripts/probe-cc.js`, `scripts/lib/paths.js`, `test/cc.test.js`, `docs/internals/cc-2.1.292.md`):
@@ -173,6 +175,8 @@ Commit per agent: "Review R1: …".
 - `bash -n scripts/demo.sh` passes and `scripts/test` is green.
 
 ### R5: hotspots and verify (lead + 1 agent)
+
+- **R1 live-check findings** (a) and (b) above.
 
 - **Long functions** (clean-code 15): `lib/tail.js` `startSession` splits its flush and cursor logic into named functions. `lib/room/store.js` is left whole unless the split is mechanical (it is the store; size alone isn't a defect).
 - **Lines over 140 characters:** the 182 non-test lines over 140 characters are wrapped where it helps reading. Tables and regexes stay.
