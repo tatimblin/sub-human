@@ -226,14 +226,13 @@ test('shapeRe: ~ is one minified identifier, the rest is literal', () => {
 test('the plugin ships exactly one hooks module, at the path hooks.json names', () => {
   // cc CONTRACT hooks-json-modules / hooks-modules: an installed plugin's function hooks are the one module that
   // hooks/hooks.json names under `modules` (relative to hooks.json), loaded by default since 2.1.292.
-  // "hooks/register.ts" is the built-in plugins' fixed path, not ours; ours is hooks/register.mjs.
+  // "hooks/register.ts" is the built-in plugins' fixed path, not ours: ours is mod/register.mjs, and no register.*
+  // sits in hooks/ to be mistaken for it.
   const hooks = path.join(__dirname, '..', 'hooks');
   const json = JSON.parse(fs.readFileSync(path.join(hooks, 'hooks.json'), 'utf8'));
-  assert.deepEqual(json.modules, ['./register.mjs'], 'hooks.json names one hooks module per plugin');
-  const named = json.modules.map(m => path.resolve(hooks, m));
-  for (const m of named) assert.ok(fs.statSync(m).isFile(), `${m} exists`);
-  const entries = fs.readdirSync(hooks).filter(f => /^register\.[cm]?[jt]sx?$/.test(f)).map(f => path.join(hooks, f));
-  assert.deepEqual(entries, named);
+  assert.deepEqual(json.modules, ['../mod/register.mjs'], 'hooks.json names one hooks module per plugin');
+  for (const m of json.modules) assert.ok(fs.statSync(path.resolve(hooks, m)).isFile(), `${m} exists`);
+  assert.deepEqual(fs.readdirSync(hooks).filter(f => /^register\.[cm]?[jt]sx?$/.test(f)), []);
 });
 
 // ---------- probe ----------

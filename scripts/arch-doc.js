@@ -59,7 +59,7 @@ function hooksSection() {
 async function modHooksSection() {
   const { HOOKS } = await import(path.join(PLUGIN, 'mod', 'register.mjs'));
   const rows = HOOKS.map(h => [code(h.event), h.matcher ? code(h.matcher) : '(all)', code(h.file), cell(h.does)]);
-  return 'From `hooks/register.mjs` (hooks.json `modules`), in registration order.\n\n' + table(['Event', 'Matcher', 'File', 'Does'], rows);
+  return 'From `mod/register.mjs` (hooks.json `modules`), in registration order.\n\n' + table(['Event', 'Matcher', 'File', 'Does'], rows);
 }
 
 // ---------- MCP tools ----------

@@ -29,7 +29,7 @@ test('mod/core copies of the CommonJS patterns and chat constants are equal to t
 
 test('mod/ is pure: no node: or CommonJS imports, no dynamic import(), no seat key, no store writes', () => {
   const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(x => x.isDirectory() ? walk(path.join(d, x.name)) : [path.join(d, x.name)]);
-  const files = [...walk(path.join(PLUGIN, 'mod')), path.join(PLUGIN, 'hooks', 'register.mjs')].filter(f => /\.(mjs|ts)$/.test(f));
+  const files = walk(path.join(PLUGIN, 'mod')).filter(f => /\.(mjs|ts)$/.test(f));
   assert.ok(files.length >= 8);
   const code = f => fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
   for (const f of files.filter(x => !x.endsWith('.ts'))) {

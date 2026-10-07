@@ -64,9 +64,9 @@ test('hooks.json: every matcher is an exact-name list or an anchored regex (bina
 
 test('hooks.json: tool matchers select exactly the intended tools; the store guard is the module\'s, not a command hook', () => {
   const pre = hooks.PreToolUse.map(g => g.matcher);
-  assert.ok(!hooks.PreToolUse.some(g => /hooks\/guard\.js/.test(g.hooks[0].command)), 'the guard moved to mod/guard.mjs (MODS-PLAN W1, D1)');
+  assert.ok(!hooks.PreToolUse.some(g => /hooks\/guard\.js/.test(g.hooks[0].command)), 'the store guard is mod/guard.mjs');
   assert.ok(!fs.existsSync(path.join(PLUGIN, 'hooks', 'guard.js')));
-  assert.deepEqual(readJson('hooks/hooks.json').modules, ['./register.mjs']);
+  assert.deepEqual(readJson('hooks/hooks.json').modules, ['../mod/register.mjs']);
   const consent = hooks.PreToolUse.find(g => /hooks\/consent\.js/.test(g.hooks[0].command)).matcher;
   const m = (x, name) => cc.matcherMatches(x, name);
   for (const t of ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', ROOM + 'propose']) assert.ok(m(consent, t), `consent misses ${t}`);

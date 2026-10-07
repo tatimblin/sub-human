@@ -603,7 +603,7 @@ const CONTRACT = Object.freeze([
     note: 'The hook event list; no plan-approved/rejected event.' },
   { id: 'hooks-modules', section: 10, stability: 'env',
     search: ['"tengu_plugin_hooks_modules"', 'installed plugins\' hooks modules not loaded: rollout flag (', '"hooks/register.ts"', '"ui.focus","agent.offer","agent.spawn"'],
-    note: 'Function hooks load for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on). An installed plugin names its module in hooks.json `modules`; "hooks/register.ts" is only the built-in plugins\' fixed path. sub-human ships one, hooks/register.mjs (its hooks in mod/), named in hooks.json.' },
+    note: 'Function hooks load for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on). An installed plugin names its module in hooks.json `modules`; "hooks/register.ts" is only the built-in plugins\' fixed path. sub-human ships one, mod/register.mjs, named in hooks.json.' },
   // §10 function hooks: S1-S9 are the spikes in docs/internals/cc-2.1.292.md "Function hooks"
   { id: 'hooks-json-modules', section: 10, stability: 'API',
     search: ['or `modules` (hooks modules), or both', '"$schema","description","hooks","modules","surface"', 'names one hooks module per plugin'],
@@ -620,7 +620,7 @@ const CONTRACT = Object.freeze([
   { id: 'classic-chain-order', section: 10, stability: 'incidental', search: ['function-hook chain`', 'isManaged:!0,budgetMs:0,async run('],
     shape: ['`classic.${~.hook_event_name} function-hook chain`', '[~,...~("classic.PreToolUse",~),~]',
       '{name:"core",isCore:!0,budgetMs:0,async run(~){let ~=~(~),~=await ~(~(~,{managedHooksExcluded:~(~)}),~.tool)'],
-    note: 'A classic.<Event> chain is [managed settings hooks, ...modules in load order, core], and core runs every other settings hook. A module that answers without next() therefore skips every non-managed settings hook for that call (its own plugin\'s, other plugins\' and the user\'s and project\'s command hooks) and the modules of plugins loaded after it; managed hooks and earlier-loaded modules still run (S1, S5; cc-2.1.292.md Review spikes R0, S-skip). Every sub-human classic.* hook that answers without next() has that reach.' },
+    note: 'A classic.<Event> chain is [managed settings hooks, ...modules in load order, core], and core runs every other settings hook. A module that answers without next() therefore skips every non-managed settings hook for that call (its own plugin\'s, other plugins\' and the user\'s and project\'s command hooks) and the modules of plugins loaded after it; managed hooks and earlier-loaded modules still run (S1, S5; cc-2.1.292.md Review spikes R0, S-skip). sub-human answers without next() only where it blocks or stops a prompt (classic.UserPromptSubmit, TaskCompleted); it no longer answers PreToolUse.' },
   { id: 'prompt-submit-ups-order', section: 10, stability: 'incidental', search: 'the prompt was removed from the queue before it ran',
     shape: 'let ~=await ~(~.text,~.text===~?{managedHooksExcluded:!0}:{})',
     note: 'prompt.submit\'s core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). mod/prompt.mjs relies on it: classic.UserPromptSubmit runs inside prompt.submit\'s next(e), so prompt.submit hands it e.origin (the classic payload has none) in a module variable.' },

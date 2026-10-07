@@ -152,6 +152,6 @@
     ]
   },
   "modules": [
-    "./register.mjs"
+    "../mod/register.mjs"
   ]
 }

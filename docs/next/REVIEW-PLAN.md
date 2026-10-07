@@ -1,6 +1,6 @@
 # Review follow-up plan
 
-Status: approved, 2026-10-07; R0 done (Q4 is with the user), R1 next. Decided: Q1 yes, Q2 yes, Q3 yes (R2), Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Q4 waits on R0. Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave Q4 decided 2026-10-07: drop the room-tool skip (R2 C2).
+Status: R0–R2 done; R3 next. Approved, 2026-10-07; R0 done (Q4 is with the user), R1 next. Decided: Q1 yes, Q2 yes, Q3 yes (R2), Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Q4 waits on R0. Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave Q4 decided 2026-10-07: drop the room-tool skip (R2 C2).
 
 ## Principles
 
@@ -99,6 +99,8 @@ Commit per agent: "Review R1: …".
 - **Real sleeps** (clean-code 14): `notices.js` takes the injected clock. Test helpers share one `spawnSleeper`.
 
 **Accept for R2:** the probe passes with the new entries and a mutated new string fails each one; a forged `sub_human_origin` without the nonce is refused (test).
+
+**R2 results (2026-10-07).** C1: 4 CONTRACT entries in from R0 (`mcp-stdio-ppid`, `mcp-progress-resets-idle-timeout`, `mcp-server-shared-by-subagents`, `session-title-address`), 8 out (removed, or moved to the internals note); probe 68/68. C2: shared state helpers (validate needs each `$.state` ref as a same-file literal, so `mod/core/state.mjs` exports the key list and helpers, checked by a test); `mod/test/support.mjs`; render needs no `.catch` (a throw is skipped for that draw only); the room-tool skip is gone (`hooks/consent.js` exits after reading stdin outside plan mode); the origin nonce; the lease's `seat` field dropped. C3: `lib/room/consent.js`, `seat-key` atomic write, notices on the fake clock (4.3 s → 0.08 s), one sleeper. Lead: hooks.json names `../mod/register.mjs` and `hooks/register.mjs` is gone; ARCHITECTURE's security model describes the nonce.
 
 ### R3: dead code (2 agents in parallel)
 

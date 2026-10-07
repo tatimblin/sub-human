@@ -1,6 +1,6 @@
 /**
- * plugin/sub-human/mod/register.mjs: sub-human's function hooks (docs/next/MODS-PLAN.md). hooks/register.mjs, the
- * module hooks.json names under `modules`, calls register(on) here, which calls each part's registerX(on)
+ * plugin/sub-human/mod/register.mjs: sub-human's function hooks, the module hooks.json names under `modules`.
+ * register(on) calls each part's registerX(on)
  * (mod/deliver.mjs: the session's lifecycle, the hello and the room's delivery; guard.mjs, prompt.mjs,
  * consent.mjs, tasks.mjs, render.mjs). An event is hooked once per module without a matcher (validate), so each
  * such event lives in one file.
