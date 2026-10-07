@@ -56,7 +56,7 @@ test('isRed: SGR 31/91, 256-color and truecolor reds; other colors are not', () 
   assert.ok(!isRed('plain'));
 });
 
-// ---------- W4: the hooks module's delivery (plugin prompts, $.ui.log chat rows, isMeta copies) ----------
+// ---------- the hooks module's delivery (plugin prompts, $.ui.log chat rows, isMeta copies) ----------
 const plug = { type: 'user', origin: { kind: 'plugin', name: 'sub-human' }, message: { content: '(for Claude) sub-human room: …\nbob: @alice look' } };
 const pull = { type: 'user', isMeta: true, origin: { kind: 'plugin', name: 'sub-human' }, message: { content: 'Room since your last turn (…):\nbob: hi' } };
 const note = { type: 'system', subtype: 'informational', level: 'notice', content: 'sub-human: bob: hi' };

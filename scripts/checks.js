@@ -27,7 +27,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const paths = require('./lib/paths.js');
-const { clip } = require('./lib/io.js');
+const { clip, readJson } = require('./lib/io.js');
 const { context } = require('./checks/context.js');
 const BASELINES = require('./baselines.json');
 
@@ -61,7 +61,8 @@ function runChecks(ctx, { scenes = SCENES, thresholds = BASELINES.thresholds, pl
 
 /** The scenes a run planned (screens/run.json from demo.sh), or null: no plan saved, every scene is checked. */
 function plannedScenes(screens) {
-  try { const r = JSON.parse(fs.readFileSync(path.join(screens, 'run.json'), 'utf8')); return Array.isArray(r.scenes) ? r.scenes : null; } catch { return null; }
+  const r = readJson(path.join(screens, 'run.json'), null);
+  return r && Array.isArray(r.scenes) ? r.scenes : null;
 }
 
 /** Counts by kind: {deterministic: {pass, fail}, behavioural: {pass, warn}}. */

@@ -145,7 +145,7 @@ orch_job() { $LIB member-field orch job 2>/dev/null | tr -d '\n'; }
 snap() { # caption — capture the panes (the orch via claude logs), and keep this step's state as evidence
   local job; job=$(orch_job)
   # a fresh `claude logs` each time: its first screen is a full repaint (a long-running stream drifts)
-  orch_view && sleep 5
+  orch_view && paint sh-orch 2
   node "$REPO/scripts/snap.js" "$SESSIONS" "$SCENE" "$1"
   local r; r=$(room); [ -n "$r" ] || return 0
   STEP=$((STEP + 1))
@@ -179,13 +179,17 @@ ABORT=""
 need() { "$@" && return 0; ABORT="$SCENE: timed out waiting: $*"; return 1; }
 # settle SEAT… — best-effort: each seat's pane idle and unchanged for 2 s (max 30 s) before a snap
 settle() { local s; for s in "$@"; do $LIB wait-idle "sh-$s" --timeout 30 --quiet 2 --what "$s settled before the snap" >/dev/null 2>&1; done; return 0; }
+# paint SESSION [QUIET] — best-effort: a fresh view's first paint is done (the pane has text, unchanged for QUIET s, 1; max 15 s)
+paint() { $LIB wait-paint "$1" --quiet "${2:-1}" --timeout 15 >/dev/null 2>&1; return 0; }
+# record WHAT [ok|fail] — one line in waits.jsonl for a driver step that is not a wait
+record() { $LIB record --what "$1" --ok "$([ "${2:-ok}" = ok ] && echo true || echo false)"; }
 
 # exit_seat SEAT — /exit, then answer Claude Code's own "Background work is running" dialog (the room row
 # is a background agent) with "1. Exit and stop tasks": that ends the session and logs member_left.
 exit_seat() {
   submit "$1" "/exit"
   wait_pane "$1" "❯ 1\. Exit and stop tasks" 20 || return 0
-  sleep 0.5
+  sleep 0.5   # the dialog takes keys a moment after it draws; nothing on screen marks that
   keys "$1" Enter
 }
 
@@ -199,7 +203,7 @@ CARD_RE='Agree to proposal [0-9a-f]{12}\?|Would you like to proceed\?'   # the f
 wait_card() {
   wait_pane "$1" "$CARD_RE" 120 --what "$2" && return 0
   local h; h=$($LIB last-id --kind proposal --field hash 2>/dev/null)
-  echo "{\"scene\":\"$SCENE\",\"what\":\"nudge: $1 asked for the card\",\"ok\":true,\"ms\":0}" >> "$SNAP_DIR/waits.jsonl"
+  record "nudge: $1 asked for the card"
   submit "$1" "show me proposal ${h:-the open proposal}"
   wait_pane "$1" "$CARD_RE" 120 --what "$2 (after the nudge)"
 }
@@ -283,7 +287,7 @@ S4() { # let's plan: bob @room @orch → orch proposes → each approver reads i
   fi
   need wait_card alice "alice's card is open" || return 1
   need wait_card bob "bob's card is open" || return 1
-  sleep 2   # the plan view's first paint (wait-idle counts an open plan view as busy)
+  paint sh-alice; paint sh-bob   # the plan view's first paint (wait-idle counts an open plan view as busy)
   snap "The orch proposes its plan: it opens in alice's and bob's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)"
   read_plan alice
 }
@@ -293,11 +297,11 @@ S4() { # let's plan: bob @room @orch → orch proposes → each approver reads i
 read_plan() {
   local i=0
   while [ $i -lt 15 ] && ! $LIB pane "sh-$1" | command grep -Eq "room proposal [0-9a-f]{12}"; do
-    keys "$1" PageDown; sleep 1.2; i=$((i + 1))
+    keys "$1" PageDown; paint "sh-$1"; i=$((i + 1))
     node "$REPO/scripts/snap.js" "sh-$1" "$SCENE" "$1 reads the whole proposal in the plan view: PgDn, page $((i + 1))"
   done
-  local ok=false; $LIB pane "sh-$1" | command grep -Eq "room proposal [0-9a-f]{12}" && ok=true
-  echo "{\"scene\":\"$SCENE\",\"what\":\"$1 paged to the end of the proposal (${i}× PgDn)\",\"ok\":$ok,\"ms\":0}" >> "$SNAP_DIR/waits.jsonl"
+  local ok=fail; $LIB pane "sh-$1" | command grep -Eq "room proposal [0-9a-f]{12}" && ok=ok
+  record "$1 paged to the end of the proposal (${i}× PgDn)" "$ok"
 }
 
 NOTE5="add a test for a cursor past the end — \`after=zzz\` must 400, not 500"
@@ -313,7 +317,7 @@ S5() { # bob objects with a note, alice agrees; the orch revises; both agree →
   need wait_log --kind proposal --from orch --after "$p1" --timeout 420 --what "the orch revises and proposes again" || return 1
   need wait_card alice "alice's card for the revision" || return 1
   need wait_card bob "bob's card for the revision" || return 1
-  sleep 2   # the plan view's first paint
+  paint sh-alice; paint sh-bob   # the plan view's first paint
   snap "The orch revises: a new proposal, opened again for each"
   local p2; p2=$($LIB last-id --kind proposal)
   need card_answer alice Agree || return 1
@@ -322,7 +326,7 @@ S5() { # bob objects with a note, alice agrees; the orch revises; both agree →
   need wait_log --kind decision --after "$p2" --timeout 30 || return 1
   need $LIB wait-idle sh-alice --timeout 90 || return 1
   need $LIB wait-idle sh-bob --timeout 90 || return 1
-  sleep 6   # the decision's notice reaches both seats after they go idle; no pane text to wait on
+  sleep 6   # the decision's notice reaches both seats after they go idle; it draws no pane text to wait on
   snap "Both agree to the revision: a decision is logged; both Claudes are told once"
 }
 
@@ -365,7 +369,7 @@ S7() { # stray typing into a row view: the hint is on the row's own progress lin
   need $LIB select-row sh-alice "$(room)" || return 1
   keys alice Enter
   need wait_pane alice "─ $(room) ─" 10 || return 1
-  sleep 2   # the row view's first paint
+  paint sh-alice   # the row view's first paint
   submit alice "x"
   wait_pane alice "read-only · talk in main" 20 --what "the row view shows the read-only hint where the text was typed"
   sleep 15  # deliberate dwell: room for the row to answer (it may not; the S7 check takes either)
@@ -373,15 +377,15 @@ S7() { # stray typing into a row view: the hint is on the row's own progress lin
   need $LIB select-row sh-alice main || return 1
   keys alice Enter
   need wait_pane alice "─ $(room) ─" 10 --absent || return 1
-  keys alice Up Up   # focus back on the prompt
-  sleep 1
+  keys alice Up Up   # focus back on the prompt: the panel cursor (❯ on a row) goes
+  wait_pane alice "^❯\s+(└\s*)?[⏺◯●]\s" 5 --absent --what "alice's focus is back on the prompt"
 }
 
 S8() { # resilience: /clear in alice keeps rows; bob /exit + --continue: rows return with no prompt; the room still reaches him
   local sid; sid=$($LIB member-field alice session_id)
   # S7's Up Up (focus back from the agent panel) can recall the last prompt into the box when focus was already
   # there; "/clear" typed after it is then text, not the command (run heron-1142). Empty the box first.
-  keys alice C-e C-u; sleep 0.5
+  keys alice C-e C-u; sleep 0.5   # an emptied box looks like any empty box: nothing to wait on
   submit alice "/clear"
   need $LIB wait-member alice session_id --not "$sid" --timeout 30 || return 1
   sleep 8   # the old row line can linger right after /clear: give the restore time before looking for the row
@@ -390,7 +394,7 @@ S8() { # resilience: /clear in alice keeps rows; bob /exit + --continue: rows re
   local before; before=$($LIB log-max)
   exit_seat bob
   need wait_log --kind member_left --from bob --after "$before" --timeout 30 || return 1
-  sleep 1
+  $LIB wait-exited sh-bob --timeout 10 --what "bob's claude exited"
   start_seat bob --continue
   need $LIB ready sh-bob --timeout 90 || return 1
   need wait_pane bob "$(panel_row "$(room)")" 60 --what "bob's room row is back with no prompt (row-rewake)" || return 1
@@ -412,14 +416,14 @@ S9() { # the orch refuses typed input: a viewer attaches and types one line
   tmux new-session -d -s sh-viewer -x $COLS -y $ROWS "env -i HOME=\"$HOME\" USER=\"$USER\" LOGNAME=\"${LOGNAME:-$USER}\" PATH=\"$PATH\" TERM=xterm-256color LANG=\"${LANG:-en_US.UTF-8}\" TMPDIR=\"${TMPDIR:-/tmp/}\" claude attach $job"
   tmux set-option -t sh-viewer remain-on-exit on >/dev/null
   need $LIB wait-pane sh-viewer "orch\.$(room)|─{20}" --timeout 30 || return 1
-  sleep 3   # the attached view's first paint
+  paint sh-viewer   # the attached view's first paint
   local before; before=$($LIB log-max)
   $LIB submit sh-viewer "hi orch, what's next?"
   $LIB wait-pane sh-viewer "takes no typed input" --timeout 30 --what "the attached orch refuses the typed prompt"
-  orch_view; sleep 5
+  orch_view && paint sh-orch 2
   node "$REPO/scripts/snap.js" "sh-viewer,sh-orch" "$SCENE" "A viewer attaches to the orch and types: the prompt is refused with the hint; no orch turn"
   mkdir -p "$SNAP_DIR/state/S9"; $LIB synthetic-orch-prompt > "$SNAP_DIR/state/S9/synthetic-prompt.json" 2>&1 || true
-  $LIB keys sh-viewer Left; sleep 1   # ← back to the agent view, then leave the viewer
+  $LIB keys sh-viewer Left; sleep 1   # ← back to the agent view, then leave the viewer (killed next: nothing reads it)
   tmux kill-session -t sh-viewer 2>/dev/null
 }
 
@@ -450,10 +454,11 @@ S10() { # leave: both exit → reap completes task 1 and stops the orch
   need $LIB wait-idle sh-bob --timeout 30 || return 1
   exit_seat bob
   need wait_log --kind member_left --from bob --after "$before" --timeout 30 || return 1
-  sleep 2   # the exited panes' last paint
+  $LIB wait-exited sh-alice --timeout 10; $LIB wait-exited sh-bob --timeout 10   # the exited panes' last paint
   snap "alice and bob exit (1. Exit and stop tasks): member_left for each"
   need $LIB wait-member orch stopped_at --not "" --timeout 90 --what "the reaper stops the orch" || return 1
-  sleep 5   # claude agents --json drops the stopped job a few seconds after stopped_at
+  # claude agents --json drops the stopped job a few seconds after stopped_at
+  $LIB wait-job-gone --timeout 30
   snap "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)"
 }
 
@@ -466,18 +471,17 @@ if [ -n "$ONLY$FROM" ] && [[ "$ONLY" != *",S1,"* ]] && [ "$FROM" != S1 ]; then R
 setup
 [ -z "$ROOM" ] && [ -d "$SUB_HUMAN_HOME/rooms" ] && ROOM=$(room) && [ -n "$ROOM" ] && export SUB_HUMAN_ROOM="$ROOM"
 
-prune_index() { # scenes… — drop their captures from screens/index.json before re-running them
-  node -e 'const fs=require("fs"),f=process.argv[1],drop=new Set(process.argv.slice(2));let i=[];try{i=JSON.parse(fs.readFileSync(f,"utf8"))}catch{};fs.writeFileSync(f,JSON.stringify(i.filter(r=>!drop.has(r.scene)),null,1)+"\n")' "$SNAP_DIR/index.json" "$@"
-}
 run=(); on=0; [ -z "$FROM" ] && on=1
 for x in "${ALL[@]}"; do
   [ "$x" = "$FROM" ] && on=1; [ "$on" = 1 ] || continue
   [ -n "$ONLY" ] && [[ "$ONLY" != *",$x,"* ]] && continue
   run+=("$x"); [ "$x" = "$TO" ] && break
 done
-[ "$RESET" = 0 ] && [ ${#run[@]} -gt 0 ] && prune_index "${run[@]}"
+# a resume drops the captures of the scenes it runs again from screens/index.json
+[ "$RESET" = 0 ] && [ ${#run[@]} -gt 0 ] && $LIB prune-index "$SNAP_DIR/index.json" "${run[@]}"
 # the planned scenes (a fresh run replaces the list, a resume adds to it); checks.js reads it
-node -e 'const fs=require("fs"),f=process.argv[1],fresh=process.argv[2]==="1",all=process.argv[3].split(" "),add=process.argv.slice(4);let p=[];if(!fresh)try{p=JSON.parse(fs.readFileSync(f,"utf8")).scenes||[]}catch{};const s=all.filter(x=>p.includes(x)||add.includes(x));fs.mkdirSync(require("path").dirname(f),{recursive:true});fs.writeFileSync(f,JSON.stringify({scenes:s,partial:s.length<all.length},null,1)+"\n")' "$SNAP_DIR/run.json" "$RESET" "${ALL[*]}" ${run[@]+"${run[@]}"}
+fresh=(); [ "$RESET" = 1 ] && fresh=(--fresh)
+$LIB plan-run "$SNAP_DIR/run.json" --all "${ALL[*]}" ${fresh[@]+"${fresh[@]}"} ${run[@]+"${run[@]}"}
 
 started=0; [ -z "$FROM" ] && started=1
 for SCENE in "${ALL[@]}"; do
@@ -492,7 +496,7 @@ for SCENE in "${ALL[@]}"; do
   "$SCENE"
   if [ -n "$ABORT" ]; then
     printf '\n\033[1;31m✗ %s\033[0m\n' "$ABORT" >&2
-    node -e 'process.stdout.write(JSON.stringify({ scene: process.argv[1], what: "scene aborted: " + process.argv[2], ok: false, ms: 0, time: new Date().toISOString() }) + "\n")' "$SCENE" "$ABORT" >> "$SNAP_DIR/waits.jsonl"
+    record "scene aborted: $ABORT" fail
     snap "$SCENE aborted: ${ABORT#*: }" || true
     echo "the run stopped at $SCENE (later scenes need its state). Fix it, then: scripts/demo.sh --from $SCENE" >&2
     exit 1
