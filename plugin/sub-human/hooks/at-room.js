@@ -36,9 +36,10 @@
 // `/sub-human` as the session's first prompt. Anything else (a peer, the mod's own wake "plugin:sub-human") runs.
 // With no origin (a lost hand-off) the prompt runs: the orch's wakes must not be lost to a reload.
 //
-// Also: marks presence "working".
+// Also: marks presence "working", only for a prompt with no origin (a lost hand-off): with one, the mod has
+// already written it (mod/prompt.mjs), and a second writer here would only race it.
 const path = require('node:path');
-const { room, out, run, whoami, presence } = require('./common.js');
+const { identity, room, out, run, whoami, presence } = require('./common.js');
 const { oneLine } = require(path.join(__dirname, '..', 'lib', 'text.js'));
 const config = require(path.join(__dirname, '..', 'lib', 'config.js'));
 const cc = require(path.join(__dirname, '..', 'lib', 'cc.js'));
@@ -60,7 +61,8 @@ const TAIL_BYTES = config.TRANSCRIPT_TAIL_BYTES;
 const transcriptTail = file => cc.readEntries(file, { tailBytes: TAIL_BYTES });
 const contentText = cc.contentText;
 
-/** prompt.submit origins a person types from (mod/core/prompt.mjs TYPED_ORIGINS; D4 adds Remote Control's bridge). */
+/** prompt.submit origins a person types from (mod/core/prompt.mjs TYPED_ORIGINS; bridge is the person typing
+ * through Remote Control). */
 const TYPED_ORIGINS = new Set(['composer', 'sdk', 'bridge']);
 
 /** The text of the last assistant turn before this prompt (all its text blocks), or ''. */
@@ -87,12 +89,9 @@ function draftedByAgent(text, assistant) {
   return a.includes('@room ' + t) || a.includes('room:' + t) || (t.length >= DRAFT_MIN && a.includes(t));
 }
 
-/** The seat's address, "alice.vole-8126": the session title that SendMessage and ListAgents address. */
-const address = me => me.address || `${me.name}.${me.code}`;
-
 // ---------- the orch takes no typed input ----------
 const LAUNCH = /^\/(?:sub-human:)?sub-human(?:\s|$)/;
-const orchHint = me => `the orch takes no typed input; use @room or ask your Claude to message ${address(me)}`;
+const orchHint = me => `the orch takes no typed input; use @room or ask your Claude to message ${identity.address(me.name, me.code)}`;
 
 /** True when no earlier prompt of this session is in its transcript (a fresh session has none, or no file). */
 function firstPrompt(input) {
@@ -106,6 +105,7 @@ function orchRefusal(me, input, prompt, origin) {
   return LAUNCH.test(prompt) && firstPrompt(input) ? null : orchHint(me);
 }
 
+/** The same words as the mod's GATE_FAILED (test/mod-core-prompt.test.js): either way the person types it again. */
 const NO_ORIGIN = '✗ not posted: sub-human could not check who wrote this @room. Type it again.';
 
 /** The UserPromptSubmit handler: writes its one output (if any) through common.js out(). hooks/prompt.js calls it. */
@@ -119,7 +119,7 @@ function handle(input) {
     const refusal = orchRefusal(me, input, prompt, origin);
     if (refusal) return block(refusal);
   }
-  if (me) presence(me, 'working');
+  if (me && origin === null) presence(me, 'working');
   if (raw === null) return;
 
   if (origin === null) return block(NO_ORIGIN);
@@ -140,6 +140,6 @@ function handle(input) {
   });
 }
 
-module.exports = { handle, parse, TYPED_ORIGINS };
+module.exports = { handle, parse, TYPED_ORIGINS, NO_ORIGIN };
 
 if (require.main === module) run(handle);
