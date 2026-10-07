@@ -15,7 +15,7 @@ module.exports = {
     det('One receipt line "Operation stopped by hook: ✓ sent" (no room code, no id); no "blocked by hook"', rc && !/blocked by hook/.test(t) && !/✓ posted|as #\d/.test(t), rc ? `receipt for #${e.id} in ${x.capName('S3', 'alice')}` : `no receipt in ${x.capName('S3', 'alice')}`);
     const turn = x.noModelTurn('alice', e);
     det('alice\'s @room ran no model turn', turn.pass, turn.evidence);
-    // D3: a person's words to the room are group chat: bob sees them as a row, his Claude gets a copy, no wake
+    // a person's words to the room are group chat: bob sees them as a row, his Claude gets a copy, no wake
     const want = e ? `alice: ${e.text}` : '';
     const bes = x.inSpan(x.entries('bob'), s);
     const notes = x.chatIn(bes).filter(y => e && y.content === `sub-human: ${want}`);

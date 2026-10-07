@@ -2,9 +2,7 @@
 // S9b: a multi-line @room post whose later lines read like a decision and a sign-off: they show nested under
 // the sender (CHAT_NEST "  │ "), never as bare room lines, and the room's consent state is untouched
 const paths = require('../lib/paths.js');
-const { readText } = require('../lib/io.js');
-
-const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const { readText, esc } = require('../lib/io.js');
 
 module.exports = {
   scene: 'S9b',
@@ -20,7 +18,7 @@ module.exports = {
       e ? `#${e.id} === typed (${Buffer.byteLength(e.text)} bytes, ${e.text.split('\n').length} lines); sig ${trust}` : `alice's say in S9b: ${x.fmt(anyA)}`);
 
     // what the room renders for bob, and how it reached him: the hooks module's chat row ($.ui.log) and the isMeta
-    // copy for his Claude, both carrying the lines as rendered, "│" nesting included; no model turn (D3)
+    // copy for his Claude, both carrying the lines as rendered, "│" nesting included; chat starts no model turn
     const want = e ? room.chatLines(e, { viewer: 'bob' }) : [];
     const nest = room.CHAT_NEST;
     det(`The room renders it as one head line and nested lines ("${nest}")`, want.length === 3 && want.slice(1).every(l => l.startsWith(nest)),

@@ -11,9 +11,9 @@ module.exports = {
     const per = s => `${s} ${M.seats[s].wakes.turns}`;
     beh(`Room-caused model wakes ≤ ${T.wakes} (${B.run} ${B.wakes.total}; Phase 0 ${P.wakes.total}; ${S.run} ${S.wakes.total})`, M.total.wakes, T.wakes,
       `${M.total.wakes} wakes (${['orch', 'alice', 'bob'].map(per).join(', ')}); plugin prompts (${M.total.pluginWakes}), peer deliveries and row-rewake that started a turn`);
-    // D3: people's words, joins and leaves are chat rows plus an isMeta copy; none starts a model turn
+    // people's words, joins and leaves are chat rows plus an isMeta copy; none starts a model turn
     const C = M.total.chat;
-    det('Chat bursts cost 0 model calls (D3)', C.notices > 0 && C.calls === 0,
+    det('Chat bursts cost 0 model calls (chat is shown, never a wake)', C.notices > 0 && C.calls === 0,
       `${C.notices} chat rows, ${C.pulls} isMeta copies; ${C.turns} turn(s) / ${C.calls} model call(s) started by chat alone (${C.callsPerBurst} per burst)`);
     det('Member join text small (report)', M.total.joinChars.every(n => n > 0 && n <= T.joinBlock), `alice ${M.seats.alice.injected.join}, bob ${M.seats.bob.injected.join} chars (${B.run} ${B.joinChars.alice}/${B.joinChars.bob}; Phase 0 ${P.joinChars.alice}/${P.joinChars.bob}; ${S.run} ${S.joinChars.alice}/${S.joinChars.bob})`);
     beh(`UI noise lines per capture ≤ ${T.noisePerCapture} (${B.run} ${B.noise.perCapture}; Phase 0 ${P.noise.perCapture}; ${S.run} ${S.noise.perCapture})`, M.total.noise.perCapture, T.noisePerCapture,

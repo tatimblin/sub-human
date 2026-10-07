@@ -17,6 +17,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { rowsHtml, palette } = require('./ansi-svg.js');
 const { isRed } = require('./metrics.js');
+const { readJson, readText, jsonl } = require('./lib/io.js');
 
 const REPO = path.resolve(__dirname, '..');
 
@@ -50,8 +51,6 @@ function args() {
 const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 /** Attribute values. */
 const attr = s => esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-const readJson = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
-const readText = f => { try { return fs.readFileSync(f, 'utf8'); } catch { return null; } };
 const seatOf = s => s.replace(/^shd?-/, '');
 const seatRank = s => { const i = SEAT_ORDER.indexOf(seatOf(s)); return i < 0 ? 99 : i; };
 const sceneRank = s => { const i = ORDER.indexOf(s); return i < 0 ? 1000 : i; };
@@ -251,7 +250,7 @@ function metricsSection(m) {
   // "Monitor event" lines exist only in the stored earlier runs; this run has none to count
   rows.push(['"Monitor event" lines (all captures)', null, B.noise.monitor, g(P, 'noise', 'monitor'), g(S, 'noise', 'monitor')]);
   for (const [k, label] of [['plugin', 'plugin prompt framing lines ("The sub-human plugin sent a message")'], ['waiting', '"Waiting for N background agents" lines'], ['hookError', '"hook error" lines'], ['blocked', '"blocked by hook" lines'], ['invalid', '"Invalid tool parameters" lines']]) rows.push([`${label} (all captures)`, R.total.noise[k], B.noise[k], g(P, 'noise', k), g(S, 'noise', k)]);
-  if (R.total.chat) rows.push(['Model calls per chat burst (people\'s words, joins, leaves; D3)', R.total.chat.callsPerBurst, null, null, g(S, 'chat', 'callsPerBurst')]);
+  if (R.total.chat) rows.push(['Model calls per chat burst (people\'s words, joins, leaves: shown as chat, never a wake)', R.total.chat.callsPerBurst, null, null, g(S, 'chat', 'callsPerBurst')]);
   rows.push(['Red or "hook error" lines (all captures)', R.total.noise.red, null, null, g(S, 'red')]);
   rows.push(['Model calls per proposal review (open + after the answer)', R.total.cards.perCard, null, null, g(S, 'cardsPerCard')]);
   const v = x => esc(x == null ? '–' : x);
@@ -315,8 +314,7 @@ function build({ screens, checksFile, out }) {
   const index = readJson(path.join(screens, 'index.json'), []);
   const checksAll = readJson(checksFile, {});
   const meta = checksAll._meta || {};
-  const waits = [];
-  for (const l of (readText(path.join(screens, 'waits.jsonl')) || '').split('\n')) if (l.trim()) try { waits.push(JSON.parse(l)); } catch { /* skip */ }
+  const waits = jsonl(path.join(screens, 'waits.jsonl'));
 
   const pal = palette();
   const scenes = excerpt(index, screens, pal);

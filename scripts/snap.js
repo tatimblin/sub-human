@@ -22,6 +22,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { render } = require('./ansi-svg.js');
 const { home } = require('./lib/paths.js');
+const { readJson, jsonl } = require('./lib/io.js');
 
 const REPO = path.resolve(__dirname, '..');
 const SNAP_DIR = process.env.SNAP_DIR ? path.resolve(process.env.SNAP_DIR) : path.join(REPO, 'docs/rebuild/screens');
@@ -41,17 +42,8 @@ function roomCode() {
   return best && best.d;
 }
 
-function readLog(code) {
-  if (!code) return [];
-  let raw;
-  try { raw = fs.readFileSync(path.join(home(), 'rooms', code, 'log.jsonl'), 'utf8'); } catch { return []; }
-  const out = [];
-  for (const line of raw.split('\n')) {
-    if (!line.trim()) continue;
-    try { out.push(JSON.parse(line)); } catch { /* torn line */ }
-  }
-  return out;
-}
+/** The room's log entries (a torn last line is skipped). */
+const readLog = code => (code ? jsonl(path.join(home(), 'rooms', code, 'log.jsonl')) : []);
 
 function clip(s, n) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
 
@@ -64,7 +56,8 @@ function excerpt(e) {
 }
 
 function loadIndex(file) {
-  try { const v = JSON.parse(fs.readFileSync(file, 'utf8')); return Array.isArray(v) ? v : []; } catch { return []; }
+  const v = readJson(file, []);
+  return Array.isArray(v) ? v : [];
 }
 
 function capture(session) {

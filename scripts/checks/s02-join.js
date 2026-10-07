@@ -29,7 +29,7 @@ module.exports = {
       `${jl ? `"${jl[0].trim()}" in alice's pane (state/S2/notice-alice.txt)` : 'not seen in alice\'s pane'}; rows/notices-alice.json: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
     const arow = panelRows(x.cap('S2', 'alice')).find(r => r.label === code);
     det('alice\'s room row reads "+bob joined"', !!(arow && /\+bob joined/.test(arow.text)), arow ? arow.line : `no ${code} row in ${x.capName('S2', 'alice')}`);
-    // D3: a join is group chat: the person sees the row, the model gets a copy, nothing wakes it
+    // a join is group chat: the person sees the row, the model gets a copy, nothing wakes it
     const inS2 = es => (j ? es.filter(e => e.timestamp > j.at && e.timestamp <= (x.span('S2') || {}).to) : []);
     const notes = inS2(x.chatIn(x.entries('alice'))).filter(e => e.content === 'sub-human: bob joined');
     const pulls = inS2(x.pullIn(x.entries('alice'))).filter(e => /^bob joined$/m.test(x.textOf(e.message && e.message.content)));

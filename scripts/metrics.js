@@ -35,6 +35,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const paths = require('./lib/paths.js');
+const { readJson, jsonl, textOf } = require('./lib/io.js');
 
 const SEATS = ['orch', 'alice', 'bob'];
 const NOISE = {
@@ -52,8 +53,6 @@ const BASELINE = BASELINES.runs[BASELINES.compare.baseline];
 const PHASE0 = BASELINES.runs[BASELINES.compare.phase0];
 const PREV = BASELINES.runs[BASELINES.compare.prev];
 
-const jsonl = f => { try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } };
-const textOf = c => (typeof c === 'string' ? c : Array.isArray(c) ? c.map(x => (x && (x.text || (typeof x.content === 'string' ? x.content : ''))) || '').join('\n') : '');
 const isToolResult = e => Array.isArray(e.message && e.message.content) && e.message.content.length > 0 && e.message.content.every(c => c && c.type === 'tool_result');
 
 const projectsDir = p => p || paths.projectsDir();
@@ -64,7 +63,7 @@ function orchSession(home, code) {
   try {
     const rooms = path.join(home, 'rooms');
     const c = code || fs.readdirSync(rooms).map(d => ({ d, m: fs.statSync(path.join(rooms, d)).mtimeMs })).sort((a, b) => b.m - a.m)[0].d;
-    const o = JSON.parse(fs.readFileSync(path.join(rooms, c, 'members.json'), 'utf8')).orch;
+    const o = readJson(path.join(rooms, c, 'members.json'), {}).orch;
     return (o && o.session_id) || null;
   } catch { return null; }
 }
@@ -219,7 +218,7 @@ function noiseFor(screens, index, seat) {
 }
 
 function measure({ screens, projects, home, code } = {}) {
-  const index = (() => { try { return JSON.parse(fs.readFileSync(path.join(screens, 'index.json'), 'utf8')); } catch { return []; } })();
+  const index = screens ? readJson(path.join(screens, 'index.json'), []) : [];
   const times = index.map(r => r.time).filter(Boolean).sort();
   if (!times.length) return { error: `no captures in ${screens}` };
   // the run starts a little before the first capture (S1's /sub-human); stop 30 s after the last one
