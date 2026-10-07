@@ -6,9 +6,9 @@
  *   pull   -> $.session.append (user, isMeta): the model reads it with its next request; no wake. At most once (D8)
  *   wake   -> idle: $.prompt.submit (origin plugin sub-human); mid-turn (a turn.start with no turn.complete yet):
  *             the isMeta append plus $.ui.log of its visible lines, and at that turn's end a $.prompt.submit after
- *             all when no main-loop tool call finished after the row (classic.PostToolUse / PostToolUseFailure, observed
- *             here; no agent_id): the model's request
- *             then in flight was its last and never carried the row
+ *             all when no main-loop tool call finished after the row (classic.PostToolUse / PostToolUseFailure, no
+ *             agent_id): the model's request then in flight was its last and never carried the row. A submit that
+ *             is dropped or fails falls back to the append; a wake neither takes waits for the next turn.start
  *   rows   -> $.state rows, attached as context to the person's next prompt (prompt.submit, typed origins)
  *   health -> $.ui.log plus the append
  * The child is the seat's only delivery (D2: no Monitor): nothing else tells the person or the model what
@@ -18,7 +18,11 @@
  * (classic.UserPromptExpansion /sub-human) and after classic.SessionStart (a /clear runs on under a new session
  * id: the old child is stopped at session.end, the new one started here). It is not started when the hello says
  * the session surely has no seat. A child that exits is started again after restartDelay (1 s doubling to 60 s).
- * It dies with the module (a reload, the session's end): $.process.spawn's loop is its life.
+ * It dies with the module (a reload, the session's end): $.process.spawn's loop is its life. All time is $.clock's.
+ *
+ * A failure on the way (an event that could not be applied, a child that exited or did not start, no timer to
+ * restart it, a wake nothing took) adds one to $.state deliveryErrors and shows DELIVERY_ERROR_NOTICE, at most
+ * once per MOD_DELIVERY_ERROR_LOG_MS: the person learns the room may hold something they did not get.
  *
  * The session's lifecycle is here too (one file per event: validate refuses a second unmatched session.start):
  * on session.start the mod runs node hooks/mod-hello.js with {session_id}; mod-hello writes the module's lease and
@@ -30,13 +34,17 @@
  *
  *   delivering(sid) -> bool     the child follows a seat for this session id (mod/prompt.mjs skips node on it)
  */
-import { tailArgv, tailEnv, lineBuffer, parseEvent, route, unread, restartDelay, spawnWanted } from './core/deliver.mjs';
+import {
+  tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted,
+  DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS,
+} from './core/deliver.mjs';
 import { parseHello } from './core/seat.mjs';
 import { shimArgv, shimEnv, SHIM_TIMEOUT_MS } from './core/shim.mjs';
 
 const ROWS = { plugin: 'sub-human', key: 'rows' };
 const HELLO = { plugin: 'sub-human', key: 'hello' };
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' };
+const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' };
 
 /** Run hooks/mod-hello.js for sid and keep its answer in $.state (only a good answer replaces the last one). */
 async function sayHello($, sid) {
@@ -68,17 +76,67 @@ async function refresh($, sid) {
 /** The current child: {sid, seat, stream, stopped}; null before the first start. Module state: a reload loses it
  * together with the child itself. */
 let child = null;
-/** The running main-loop turn's id, or null (idle, or unknown after a reload: then a wake is submitted, which
- * waits for idle anyway). */
-let running = null;
-/** Wakes appended mid-turn in the running turn ({text, at}), checked at its end. */
-let midTurn = [];
-/** When the main loop's last tool call finished (Date.now()): a model request follows each one. */
-let lastToolDone = 0;
+/** The main-loop turn (running is null when idle, or unknown after a reload: then a wake is submitted, which waits
+ * for idle anyway), its mid-turn wakes and the wakes held for the next turn. */
+const turns = turnLedger();
+/** When the delivery-error notice last showed ($.clock); a reload may show it once more. */
+let noticedAt = -Infinity;
+/** Error counts in order: two failures at once must not both read the same count. */
+let counting = Promise.resolve();
 
 export const delivering = sid => !!(child && !child.stopped && child.sid === sid && child.seat);
 
 const userRow = text => ({ message: { type: 'user', content: [{ type: 'text', text }] } });
+
+/** One delivery failure: counted in $.state, and the person told unless they were told recently (or `tell` is
+ * false: nothing was lost yet). Never throws. */
+function noteError($, { tell = true } = {}) {
+  counting = counting.then(async () => {
+    try {
+      const { value } = await $.state.get(ERRORS);
+      await $.state.set(ERRORS, (typeof value === 'number' ? value : 0) + 1);
+    } catch { /* the notice below still goes out */ }
+    if (!tell) return;
+    try {
+      // with no time to go by, only the first is told
+      const at = await $.clock.now().catch(() => null);
+      if (at === null ? noticedAt !== -Infinity : !noticeDue(noticedAt, at)) return;
+      noticedAt = at ?? 0;
+      $.ui.log(DELIVERY_ERROR_NOTICE);
+    } catch { /* nowhere left to say it */ }
+  });
+  return counting;
+}
+
+/** The isMeta append (the model reads it with its next request); true when the row was stored. */
+async function appendRow($, text) {
+  const r = await $.session.append(userRow(text)).catch(() => null);
+  return !!(r && !r.deny);
+}
+
+/**
+ * A wake as a turn of its own. When the submit is dropped (a hook refused it) or fails, the wake still reaches the
+ * model: appended, unless it already was; when the append fails too, held for the next turn.start. Never throws.
+ */
+function submitWake($, text, { appended = false } = {}) {
+  return (async () => {
+    let r = null;
+    try { r = await $.prompt.submit({ text }); } catch { /* below */ }
+    if (r && typeof r.drop !== 'string') return;
+    if (appended || await appendRow($, text)) return;
+    turns.hold(text); // PENDING_MAX keeps the newest held
+    await noteError($);
+  })().catch(() => {});
+}
+
+/** A wake while a turn runs: appended and checked at the turn's end; submitted when it cannot be appended, or when
+ * the turn ended before the row was stored (no turn's end would check it). */
+async function midTurnWake($, text) {
+  if (!(await appendRow($, text))) return submitWake($, text);
+  // a clock that fails dates the row as never read: submitted again rather than lost
+  const at = await $.clock.now().catch(() => Infinity);
+  if (!turns.appended(text, at)) await submitWake($, text, { appended: true });
+}
 
 function stopChild(sid) {
   const c = child;
@@ -114,27 +172,33 @@ async function runChild($, c) {
         if (c.stopped || child !== c) break;
         if (piece.stream !== 'stdout') continue;
         for (const line of lines.push(piece.text)) {
-          try { await apply($, c, parseEvent(line)); } catch { /* one event lost; the next goes on */ }
+          try { await apply($, c, parseEvent(line)); } catch { await noteError($); } // one event lost; the next goes on
         }
       }
-    } catch { /* could not start, or the loop failed: retried below */ }
+    } catch { /* could not start, or the loop failed: counted and retried below */ }
     c.seat = null;
     c.stream = null;
     if (c.stopped || child !== c) return;
-    c.fails = (await now()) - started > 60_000 ? 0 : c.fails + 1;
+    // the child runs for the session's life: until it is back, nothing reaches the session
+    c.fails = nextFails(c.fails, (await now()) - started);
+    await noteError($, { tell: c.fails >= MOD_RESTART_TELL_FAILS });
     try {
       await new Promise((resolve, reject) => { try { $.clock.after(restartDelay(c.fails - 1), resolve); } catch (err) { reject(err); } });
     } catch {
       // no timer here: give up; the next session.start, join or SessionStart starts a child again
+      await noteError($);
       if (child === c) child = null;
       return;
     }
   }
 }
 
-/** classic.PostToolUse / PostToolUseFailure: note when a main-loop tool call finished (no agent_id). */
-function toolDone($, e, next) {
-  if (!e.agent_id) lastToolDone = Date.now();
+/** classic.PostToolUse / PostToolUseFailure: note when a main-loop tool call finished (no agent_id). Without a
+ * time the last one stands: a wake then reads as unread and is submitted again rather than lost. */
+async function toolDone($, e, next) {
+  if (!e.agent_id) {
+    try { turns.toolDone(await $.clock.now()); } catch { /* above */ }
+  }
   return next(e);
 }
 
@@ -147,20 +211,15 @@ async function heldRows($) {
 async function apply($, c, ev) {
   if (!ev || c.stopped) return;
   const role = c.seat && c.seat.role === 'orch' ? 'orch' : 'member';
-  const actions = route(ev, { turnRunning: running !== null, role, rows: ev.type === 'wake' && role === 'orch' ? await heldRows($) : null });
+  const actions = route(ev, { turnRunning: turns.running !== null, role, rows: ev.type === 'wake' && role === 'orch' ? await heldRows($) : null });
   for (const a of actions) {
     switch (a.do) {
       case 'seat': c.seat = a.seat; break;
       case 'log': $.ui.log(a.text); break;
-      case 'append': await $.session.append(userRow(a.text)); break;
+      case 'append': if (!(await appendRow($, a.text))) await noteError($); break; // refused or failed: lost
       case 'hold-rows': await $.state.set(ROWS, a.text); break;
-      case 'submit': void $.prompt.submit({ text: a.text }).catch(() => {}); break;
-      case 'mid-turn-wake': {
-        const r = await $.session.append(userRow(a.text)).catch(() => null);
-        if (r && !r.deny && running !== null) midTurn.push({ text: a.text, at: Date.now() });
-        else void $.prompt.submit({ text: a.text }).catch(() => {});
-        break;
-      }
+      case 'submit': void submitWake($, a.text); break; // not awaited: it resolves only as the turn starts
+      case 'mid-turn-wake': await midTurnWake($, a.text); break;
       default: break;
     }
   }
@@ -204,19 +263,15 @@ export function registerDeliver(on) {
   });
 
   on('turn.start', ($, e, next) => {
-    running = e.turnId;
-    midTurn = [];
+    // a wake nothing took before goes into this turn, as any wake that lands mid-turn
+    for (const text of turns.start(e.turnId)) void midTurnWake($, text).catch(() => {});
     return next(e);
   });
 
-  on('turn.complete', async ($, e, next) => {
-    if (e.agentId === undefined && e.turnId === running) {
-      running = null;
-      const waiting = midTurn;
-      midTurn = [];
-      // a wake appended while the turn's last request was already out was never read: submit it after all
-      for (const text of unread(waiting, lastToolDone)) void $.prompt.submit({ text }).catch(() => {});
-    }
+  on('turn.complete', ($, e, next) => {
+    // a wake appended while the turn's last request was already out was never read: submit it after all (its row
+    // is stored, so a failed submit leaves it for the next request)
+    if (e.agentId === undefined) for (const text of turns.complete(e.turnId)) void submitWake($, text, { appended: true });
     return next(e);
   });
 
