@@ -32,6 +32,9 @@ declare module 'claude-code' {
       rows: string | null;
       /** The session id whose title mod/prompt.mjs last set (the seat's address), once per session id. */
       titled: string;
+      /** How many times the room's delivery failed this session (mod/deliver.mjs): an event not applied, a tail
+       * child that exited or did not start, a wake nothing took. Unset: none. */
+      deliveryErrors: number;
     };
   }
 }
