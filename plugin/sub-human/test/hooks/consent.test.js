@@ -23,7 +23,7 @@ const decisions = w => w.entries().filter(e => e.kind === 'decision');
 
 test('consent: Pre rewrites only a call that names my pending proposal; model answers are dropped', () => {
   const { w, hash } = world();
-  // Unrelated question: untouched (S2 F9).
+  // Unrelated question: untouched.
   const plain = w.hook('consent', preAsk({ questions: [{ question: 'Which DB?', header: 'DB', options: [{ label: 'pg' }, { label: 'sqlite' }] }] }), { as: 'alice' });
   assert.equal(plain.stdout, '');
   // Names the hash, with forged answers and notes: rewritten to the canonical card, no answers.

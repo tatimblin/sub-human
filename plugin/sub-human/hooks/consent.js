@@ -4,38 +4,18 @@
  * plugin/sub-human/hooks/consent.js: consent. A proposal opens in Claude Code's own plan-approval dialog (the
  * native, scrollable plan view: PgUp/PgDn read all of it); the AskUserQuestion card is the fallback.
  *
- * Review. The member's Claude calls EnterPlanMode, then ExitPlanMode "proposal <hash>":
- *   Pre(EnterPlanMode): a proposal is pending for me and my mode allows a review (default, acceptEdits, auto; not
- *     already plan, not bypass/dontAsk, showClearContextOnPlanAccept off): allow (no "Enter plan mode?" dialog);
- *     state review = {phase:'entering', mode}. Otherwise untouched.
- *   Pre(ExitPlanMode), phase entering: which proposal: one the call names (tool_input, else the model's own input
- *     from the transcript, polled up to EXIT_INPUT_WAIT_MS: in 2.1.292 the hook can run before the call's line is
- *     written, and tool_input.plan is the still-empty plan file's text), or, the call naming nothing at all (no
- *     transcript line in time, a blank plan), the only pending one. Then back up the session's plan file (its path from the transcript's plan_mode
- *     attachment), write the canonical text there (the dialog renders the file) and `ask`. phase 'shown'.
- *     The backup is written into review.json (atomically) BEFORE the plan file is overwritten; session-restore
- *     puts a stale one back. Every review.json read-modify-write runs under proposal.withReview (a lock).
- *     A later ExitPlanMode (after "Tell Claude what to change"): read the note (cc.planFeedback: the transcript's
- *     structured userFeedback, else the "the user said:" text), record
- *     an objection with the note byte-exact, phase 'exiting'. No path / unsafe text: phase 'exiting' + card.
- *   PermissionRequest(ExitPlanMode), phase exiting: restore the plan file and allow with setMode <mode>: no dialog,
- *     the member is back in their own mode. Only this hook ever allows without the dialog; it records nothing.
- *   Post(ExitPlanMode), phase shown: a person approved in the dialog -> signoff via=human when the text is the
- *     proposal unedited (Ctrl+G edits record nothing). Restore the plan file; if the chosen "Yes" changed the
- *     mode, phase 'restore' (EnterPlanMode + ExitPlanMode again, both silent, set it back).
- *   Stop / UserPromptSubmit / Pre(room tools): a review left open (feedback, Esc) is resolved and the model is told
- *     to exit it (a room tool call is denied: the person's note is recorded already).
- *   Esc and "No" without text record nothing.
- * Pre(AskUserQuestion): the card, only when the call names a proposal pending for me (or plainly asks
- *   about the only one); when the member could review it in the plan view instead, the call is redirected there.
- * Post(AskUserQuestion): drop afkTimeoutMs, followUp, no answers, stale hashes and "Not yet". Otherwise append
- *   signoff|objection via=human (notes byte-exact), then the decision when complete (lib/proposal.record).
- * Post(ExitPlanMode) for the person's own plan: offer, once per plan, to propose it to the room. Never denies.
- *
- * With the hooks module, Stop runs through mod/consent.mjs (classic.Stop, only while its reviewMaybeOpen flag is
- * set) with SUB_HUMAN_SHIM=1: the output then also carries subHuman {reviewOpen}. The room-tool PreToolUse entry
- * runs on every room tool call (no module hook skips it: that would skip other plugins' hooks too), so outside
- * plan mode, where it has nothing to do, it exits before loading anything else.
+ * The review phases (review.json, every read-modify-write under proposal.withReview):
+ *   Pre(EnterPlanMode): a proposal is pending for me and my mode allows a review: allow silently; 'entering'.
+ *   Pre(ExitPlanMode), entering: the proposal the call names (polled from the transcript up to EXIT_INPUT_WAIT_MS:
+ *     the hook can run before the call's line is written), else the only pending one. Back up the plan file into
+ *     review.json BEFORE writing the canonical text there (a crash loses nothing), then `ask`; 'shown'.
+ *     A later ExitPlanMode with feedback records an objection, note byte-exact; 'exiting'.
+ *   PermissionRequest(ExitPlanMode), exiting: restore the plan file, allow with setMode (no dialog); records nothing.
+ *   Post(ExitPlanMode), shown: signoff via=human only for the proposal unedited; restore the file and the mode.
+ *   Stop / UserPromptSubmit / Pre(room tools): a review left open is resolved and the model told to exit it.
+ * Pre/Post(AskUserQuestion): the card fallback; "Not yet", AFK, stale hashes record nothing. Post(ExitPlanMode)
+ * for the person's own plan offers to propose it. Run with SUB_HUMAN_SHIM=1 (mod/consent.mjs) the output also
+ * carries subHuman {reviewOpen}. Outside plan mode the room-tool entry exits before loading anything else.
  */
 
 const { readInput } = require('../lib/io.js');

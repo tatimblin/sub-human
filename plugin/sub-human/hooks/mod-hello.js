@@ -1,15 +1,11 @@
 #!/usr/bin/env node
 'use strict';
-// The hooks module's hello. Not a hooks.json entry: mod/register.mjs runs it with $.process.run on session.start,
-// and again after the join (classic.UserPromptExpansion) and after classic.SessionStart (a /clear, compact or
-// resume rebinds the seat). stdin: {session_id, nonce?}.
-//   - writes the module's lease for the session (lib/identity.js writeModLease, which documents its fields), with
-//     the module's nonce for the session (at-room believes an origin only with it). The claude pid is our parent:
-//     $.process children are claude's own, and get no CLAUDE_PID of this session;
-//   - prints {home, realHome, userHome, pluginRoot, seat: {name, code, role, addr} | null} on one line: the module
-//     knows no store path of its own (the guard needs the home; the prefilters need the seat).
-// It loads lib/identity.js only (no hooks/common.js, no seat key). An unreadable payload still prints the home,
-// with seat null and no lease.
+// The hooks module's hello: the module knows no store path of its own (the guard needs the home, the prefilters the
+// seat). Not a hooks.json entry: mod/deliver.mjs runs it with $.process.run (HOOKS in mod/register.mjs says when).
+// stdin: {session_id, nonce?}. Writes the module's lease for the session (lib/identity.js writeModLease) with the
+// nonce at-room checks an origin against; the claude pid is our parent, since $.process children get no CLAUDE_PID
+// of this session. Prints {home, realHome, userHome, pluginRoot, seat: {name, code, role, addr} | null} on one line.
+// Loads lib/identity.js only (no seat key). Failure: an unreadable payload still prints the home, seat null, no lease.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');

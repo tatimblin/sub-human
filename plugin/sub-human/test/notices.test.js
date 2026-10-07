@@ -69,7 +69,7 @@ test('notices shown / markShown: ids merge and sort; via is required', () => {
   assert.equal(room.open(code).store.kv.get('rows/notices-alice').log.at(-1).at, at(0), 'markShown stamps the given time');
   assert.throws(() => notices.markShown(code, 'alice', [6]), /via/);
   assert.throws(() => notices.markShown(code, 'alice', [6], 'model'), /via/);
-  assert.throws(() => notices.markShown(code, 'alice', [6], 'monitor'), /via/, 'the Monitor is gone (D2)');
+  assert.throws(() => notices.markShown(code, 'alice', [6], 'monitor'), /via/, 'the Monitor is gone');
 });
 
 // ---------- the room hold's progress line ----------

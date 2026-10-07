@@ -1,7 +1,7 @@
 'use strict';
 /**
  * plugin/sub-human/lib/room.js: the room log (envelope v3). A facade over lib/room/*, so callers keep one
- * require. CommonJS, zero dependencies, Node 24.
+ * require. CommonJS, zero dependencies.
  *
  *   open(code, {store, dir}?) -> Room     (also openRoom) one room, bound by value: no process-wide state. Cached per
  *       code (not with {store} / {dir}). A long-lived process (the tail, the MCP servers) holds one per code.

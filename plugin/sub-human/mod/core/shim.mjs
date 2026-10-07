@@ -1,31 +1,14 @@
 /**
  * plugin/sub-human/mod/core/shim.mjs: how a classic event reaches an unchanged node hook from the module, as pure
  * functions. The `$.process.run` call itself sits in each registering file (a module that passes `$` to an
- * imported function does not load: cc CONTRACT module-dollar-local).
- *
- *   shimEnv(e, root) -> env       the child's env: CLAUDE_PLUGIN_ROOT, the payload's session id, and an empty
- *                                 CLAUDE_PID (a $.process.run child inherits whatever claude itself inherited:
- *                                 cc CONTRACT process-run-stdin)
- *   shimArgv(root, script) -> argv          ['node', '<root>/hooks/<script>']
- *   SHIM_MODE                                {SUB_HUMAN_SHIM: '1'}: added to the env of a hook that reports to the mod
- *   SHIM_TIMEOUT_MS                          the hooks.json timeout the command hooks had (10 s)
- *   toClassic(event, run) -> {result, systemMessage?}
- *       run is $.process.run's {exitCode, stdout, stderr}. The command hook's output, translated:
- *         exit 2                                     -> block: stderr (the classic "blocking error")
- *         decision:"block" (+ reason)                -> block: reason
- *         continue:false (+ stopReason)              -> preventContinuation + stopReason
- *         hookSpecificOutput.additionalContext       -> additionalContext: [text]
- *         hookSpecificOutput.sessionTitle / suppressOriginalPrompt -> the same fields
- *         plain stdout (not JSON) on an event that reads context    -> additionalContext: [stdout]
- *         systemMessage                              -> systemMessage beside the result (ClassicResult has no
- *                                                       such field; the caller shows it with $.ui.log)
- *         subHuman (a hook run with SUB_HUMAN_SHIM=1)  -> subHuman beside the result: what the hook tells the
- *                                                       mod, e.g. consent's {reviewOpen}
- *       Only the fields the event reads (CLASSIC_FIELDS, from the d.ts ClassicResultFields) are kept, since a
- *       field the event does not read fails the hook. Any other exit status is a non-blocking error: no result.
+ * imported function does not load: cc CONTRACT module-dollar-local). In: the classic event's payload and
+ * $.process.run's {exitCode, stdout, stderr}. Out: toClassic's {result, systemMessage?, subHuman?}.
+ * Failure: an exit other than 0 or 2 is a non-blocking error, so no result.
  */
 
+/** The hooks.json timeout the command hooks had. */
 export const SHIM_TIMEOUT_MS = 10_000;
+/** Added to the env of a hook that reports to the mod (its output then carries subHuman). */
 export const SHIM_MODE = Object.freeze({ SUB_HUMAN_SHIM: '1' });
 
 /** ClassicResultFields of the 2.1.292 d.ts, for the events a shim can carry. block / preventContinuation /
@@ -43,6 +26,8 @@ const COMMON = ['block', 'preventContinuation', 'stopReason'];
 
 export const shimArgv = (root, script) => ['node', `${root}/hooks/${script}`];
 
+/** CLAUDE_PLUGIN_ROOT, the payload's session id, and an empty CLAUDE_PID: a $.process.run child inherits whatever
+ * claude itself inherited (cc CONTRACT process-run-stdin). */
 export function shimEnv(e, root) {
   const env = { CLAUDE_PLUGIN_ROOT: String(root || ''), CLAUDE_PID: '' };
   if (e && typeof e.session_id === 'string') env.CLAUDE_CODE_SESSION_ID = e.session_id;
@@ -60,6 +45,14 @@ function parseOut(stdout) {
   return undefined;
 }
 
+/**
+ * The command hook's output, translated:
+ *   exit 2 -> block: stderr (the classic "blocking error"); decision:"block" -> block: reason;
+ *   continue:false -> preventContinuation + stopReason; hookSpecificOutput.additionalContext -> [text];
+ *   sessionTitle / suppressOriginalPrompt -> the same; plain stdout on an event that reads context -> [stdout];
+ *   systemMessage and subHuman -> beside the result (ClassicResult has no such fields; the caller uses them).
+ * Only the fields the event reads (CLASSIC_FIELDS) are kept: a field the event does not read fails the hook.
+ */
 export function toClassic(event, run = {}) {
   const fields = new Set([...COMMON, ...(CLASSIC_FIELDS[event] || [])]);
   const keep = r => Object.fromEntries(Object.entries(r).filter(([k, v]) => fields.has(k) && v !== undefined));

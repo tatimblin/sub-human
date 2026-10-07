@@ -236,7 +236,7 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
     assert.deepEqual(d.parseEvent(JSON.stringify(ev)), ev);
 });
 
-test('deliver: the routing table (Part 2b): chat is a notice, pull an append, wake a prompt when idle and an append mid-turn', async () => {
+test('deliver: the routing table: chat is a notice, pull an append, wake a prompt when idle and an append mid-turn', async () => {
   const d = await load('mod/core/deliver.mjs');
   // one $.ui.log per line: a notice is one line (a newline would be drawn as U+FFFD)
   assert.deepEqual(d.route({ type: 'chat', lines: ['bob: hi', '  │ more', 'carol joined'] }), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: '  │ more' }, { do: 'log', text: 'carol joined' }]);

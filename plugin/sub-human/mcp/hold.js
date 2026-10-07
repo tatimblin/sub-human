@@ -6,7 +6,7 @@
  *
  *   hold({member: NAME})   called once by a sub-human:participant row agent. Blocks for as long as this seat is in
  *       the room, streaming notifications/progress (the latest entry of NAME's thread, re-sent every BEAT_MS so
- *       the MCP idle timeout never fires). NAME leaving does NOT end it: the row reads "left" (lib/rows.js
+ *       the MCP idle timeout never fires: cc CONTRACT mcp-progress-resets-idle-timeout). NAME leaving does NOT end it: the row reads "left" (lib/rows.js
  *       rowText) and is live again on rejoin, so leave/rejoin never makes a second row. Returns "STOP: ..." when
  *       this seat leaves, when NAME is this seat or was never in the room, or when another row for NAME is
  *       already held here ("STOP: duplicate row": the newcomer ends, the first row stays).
@@ -20,17 +20,11 @@
  *                      (killing the room cascades to its children).
  *       Both can come back together, one line each. "STOP: ..." when this seat left the room, or
  *       "STOP: duplicate row" at once when another room row already holds here (e.g. re-spawned after /clear).
- * One server serves the whole claude session (main + every subagent), so it sees every row's hold.
- * The room hold's progress line shows joins and leaves as chat lines ("bob joined", "bob left" once the leave has
- * settled 8 s; a quick leave + rejoin shows nothing; lib/notices.js), and entries as room.chatLines (no ids).
- * Every progress line ends with HINT ("read-only · talk in main (@room)"): text typed into a row view is not
- * posted (Claude Code queues it for the row agent), so the line says where to talk instead.
- * Entries come from the seat's Room (lib/room.js open(code): the store's cached read, re-parsing only appended
- * bytes).
- * Liveness goes to the room document rows/holds-<me> (lib/rows.js) for row-guard, join notes and rewake, and
- * every BEAT_MS / 2 the seat's lease is renewed (identity.heartbeat). A room hold
- * that returned JOINED/RESPAWN still counts as running for ROOM_GAP_MS (roomUntil) while its agent re-calls,
- * so a join notice read in that gap never invites a second room row (row-guard would deny it in red).
+ * One server serves the whole claude session, main thread and every subagent (cc CONTRACT
+ * mcp-server-shared-by-subagents), so it sees every row's hold. Liveness goes to the room document rows/holds-<me>
+ * (lib/rows.js) for row-guard, join notes and rewake; the seat's lease is renewed every BEAT_MS / 2. A room hold
+ * that returned JOINED/RESPAWN still counts as running for ROOM_GAP_MS while its agent re-calls, so a join notice
+ * read in that gap never invites a second room row.
  *
  * Env (ms): SUB_HUMAN_HOLD_BEAT_MS 20000, SUB_HUMAN_HOLD_POLL_MS 1000, SUB_HUMAN_HOLD_GRACE_MS 20000,
  *   SUB_HUMAN_HOLD_RESPAWN_MS 1500, SUB_HUMAN_HOLD_WHO_MS 3000 (how often `me` is re-resolved),
@@ -203,6 +197,7 @@ class HoldServer {
           const move = this.newMove(h, code, now);
           if (move) this.progress(h, move);
         }
+        // The beat keeps the call under the MCP tool idle timeout (cc CONTRACT mcp-progress-resets-idle-timeout).
         if (this.holds.has(h.id) && now - h.sentAt >= this.BEAT_MS) this.progress(h);
       }
     }

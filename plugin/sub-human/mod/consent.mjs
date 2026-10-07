@@ -1,17 +1,11 @@
 /**
  * plugin/sub-human/mod/consent.mjs: consent's per-turn checks without a node start while no review is open. The
  * review itself stays in hooks/consent.js (command hooks on AskUserQuestion, EnterPlanMode, ExitPlanMode and the
- * room tools): its lock, plan-file writes and via=human signing need node.
- *   - $.state reviewMaybeOpen: unset (a new session, a reload) counts as true. tool.call EnterPlanMode /
- *     ExitPlanMode sets it true (a review starts only through them), and so do session.start and a /clear,
- *     compact or resume (mod/deliver.mjs). consent's own report clears it: run under SUB_HUMAN_SHIM=1 it
- *     prints subHuman {reviewOpen}, read here (Stop) and in mod/prompt.mjs (every seated prompt).
- *   - classic.Stop: the open-review nudge. It replaced the hooks.json Stop entry: node hooks/consent.js runs
- *     only when consentNeeded (mod/core/prefilter.mjs); its additionalContext continues the turn as the command
- *     hook's did (cc CONTRACT stop-additional-context, classic-chain-order).
- * The room tools' PreToolUse is left to consent's command hook, which exits at once outside plan mode: a module
- * hook that answered there without next(e) would skip every other plugin's and the user's PreToolUse hooks on
- * those tools too (cc CONTRACT classic-chain-order).
+ * room tools): its lock, plan-file writes and via=human signing need node. $.state reviewMaybeOpen is set true by
+ * anything that may open a review (here, and in mod/deliver.mjs) and cleared only by consent's own subHuman
+ * {reviewOpen} report; unset counts as true. The room tools' PreToolUse stays with the command hook: a module hook
+ * answering there without next(e) would skip every other plugin's and the user's hooks (cc CONTRACT
+ * classic-chain-order). Stop's additionalContext continues the turn (cc CONTRACT stop-additional-context).
  */
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS, SHIM_MODE } from './core/shim.mjs';
 import { consentNeeded, reviewOpenOf } from './core/prefilter.mjs';

@@ -211,7 +211,7 @@ test('the bare command name "sub-human" is accepted too; other commands are igno
   assert.equal(r2.stdout, '');
 });
 
-test('without the hooks module\'s hello lease for the session the join is refused, and nothing is written (D1)', () => {
+test('without the hooks module\'s hello lease for the session the join is refused, and nothing is written', () => {
   const w = new World({ orch: 'sleep' });
   w.pid.alice = process.pid; w.sid.alice = 'aaaaaaaa-0000-4000-8000-000000000031';
   const r = w.hook('join', expand(`alice ${w.code}`), { as: 'alice', modLease: false });

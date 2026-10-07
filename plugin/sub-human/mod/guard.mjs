@@ -1,17 +1,10 @@
 /**
- * plugin/sub-human/mod/guard.mjs: the store guard, in-process (it replaced hooks/guard.js and its two PreToolUse
- * entries). A plugin can't ship permissions, so these hooks stand in for them:
- *   - tool.call Bash: deny a command that names the store (its path, ~/.sub-human, the seat keys under it), names
- *     or sets SUB_HUMAN_HOME, or runs the plugin's own code; the read-only CLI stays
- *     allowed, and so does reading the plugin's source (mod/core/guard.mjs bashVerdict);
- *   - tool.call Write / Edit / MultiEdit / NotebookEdit: deny a write into the store, lexically or where it
- *     resolves ($.fs.stat realPath of the nearest existing ancestor);
- *   - tool.call hold: deny outside a row subagent (no agentId);
- *   - tool.check room MCP tools: allow for a seated session (no permission prompt).
- * The home comes from mod-hello ($.state sub-human/hello). Until it has answered, the string rules alone apply
- * (".sub-human", SUB_HUMAN_*). A guard that fails is skipped by the engine, so each has a .catch: it denies
- * when the call mentions "sub-human" (as hooks/guard.js did) and otherwise lets the call go on, since denying
- * everything on a bug would break every session.
+ * plugin/sub-human/mod/guard.mjs: the store guard, in-process. A plugin can't ship permissions, so these hooks stand
+ * in for them (HOOKS in mod/register.mjs says what each denies or allows; the verdicts are mod/core/guard.mjs).
+ * The home comes from the hello in $.state; until mod-hello has answered, the string rules alone apply
+ * (".sub-human", SUB_HUMAN_*). Failure: the engine skips a guard that throws, so each has a .catch that denies when
+ * the call mentions "sub-human" and otherwise lets it go on, since denying everything on a bug would break every
+ * session.
  */
 import {
   bashVerdict, needsCwd, denyText, writeTarget, absTarget, ancestors, writeVerdict, WRITE_DENY,

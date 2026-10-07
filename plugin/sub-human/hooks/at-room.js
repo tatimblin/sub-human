@@ -1,46 +1,15 @@
 #!/usr/bin/env node
 'use strict';
-// UserPromptSubmit: "@room TEXT" or "room:TEXT" posts the human's exact words (via human) and ends the
-// prompt, so no model turn runs and nothing is paraphrased. hooks/prompt.js runs handle(input) (with consent.js's
-// prompt handler, in one process); mod/prompt.mjs runs that through the classic.UserPromptSubmit shim, which is
-// the only way this hook runs (no hooks.json entry).
-//
-// Who wrote the prompt: the shim adds `sub_human_origin`, the engine's origin kind for the prompt (prompt.submit
-// e.origin; cc CONTRACT prompt-origin-composer): only composer (the person's own Enter), sdk (-p) and bridge
-// (Remote Control) may post. The mod's prompt.submit gate drops any other @room before this hook runs; this hook
-// refuses it again, and refuses an @room with no origin at all (the hand-off lost to a reload): the person types
-// it again. An origin counts only beside `sub_human_nonce` equal to the nonce in this session's module lease
-// (hooks/mod-hello.js writes it): anything that can run node can hand prompt.js an origin, but only something that
-// read the lease can hand it the nonce. An @room whose nonce does not match is refused as one with no origin. The
-// orch's refusal of typed input reads the origin unchecked: a forged one there only refuses more. Notes from the probes:
-//   - the TUI trims trailing whitespace before the hook sees the prompt (documented, accepted);
-//   - a long paste arrives wrapped as \n\n<pasted_content id="N">\n…\n</pasted_content id="N">\n;
-//     we unwrap it (cc.unwrapPasted) and record normalized:true (pasted tabs already became 4 spaces upstream);
-//   - suppressOriginalPrompt only works inside hookSpecificOutput.
-//   - Rendering (docs/archive/fixes/D-hook-rendering.md #9): success is continue:false + stopReason, which keeps
-//     the human's "❯ @room …" row and adds one "Operation stopped by hook: ✓ sent" line (no entry id: people
-//     never see ids). The model sees the prompt and that line on its next turn natively, so no "unseen own
-//     posts" note is needed. Refusals stay decision:block + suppressOriginalPrompt, so refused or forged text
-//     never reaches it.
-//
-// The post is signed with the seat's key (hooks/seat-key.js, armed by common.js): only a hook can write
-// via=human, and readers mark an unsigned via=human line "(unverified)".
-//
-// Drafted by Claude (docs/archive/fixes/B-model-behavior.md #11): when the posted text appears verbatim in the
-// last assistant message (an accepted prompt suggestion, a copied draft), the entry carries drafted:"agent".
-// It is still posted.
-//
-// Everything else a prompt used to carry (the "Room since your last turn" digest, reminders, missing row calls,
-// join / leave lines) is the hooks module's tail child's now (lib/tail.js events pull, rows, chat), and the
-// session title is set by mod/prompt.mjs.
-//
-// The orch takes no typed input (nobody sits at its terminal; people reach it through @room): in the orch's
-// session a typed prompt (origin composer, sdk, bridge) is refused with a hint, unless it is the launch
-// `/sub-human` as the session's first prompt. Anything else (a peer, the mod's own wake "plugin:sub-human") runs.
-// With no origin (a lost hand-off) the prompt runs: the orch's wakes must not be lost to a reload.
-//
-// Also: marks presence "working", only for a prompt with no origin (a lost hand-off): with one, the mod has
-// already written it (mod/prompt.mjs), and a second writer here would only race it.
+// UserPromptSubmit: "@room TEXT" or "room:TEXT" posts the human's exact words (via human, signed with the seat key)
+// and ends the prompt, so no model turn runs and nothing is paraphrased. No hooks.json entry: hooks/prompt.js runs
+// handle(input) under mod/prompt.mjs's shim. In: the payload plus `sub_human_origin` and `sub_human_nonce`. An origin
+// counts only with this session's lease nonce, and only a typed one (composer, sdk, bridge; cc CONTRACT
+// prompt-origin-composer) may post: anything that can run node can claim an origin, only a lease reader the nonce.
+// Out: continue:false + "✓ sent" (the person's row stays, the model sees it next turn), or decision:block +
+// suppressOriginalPrompt (refused text never reaches the model). Failure: no origin, a bad nonce or no seat
+// refuses, and the person types it again. In the orch, a typed prompt is refused (it takes no typed input); with
+// no origin it runs, so a reload never loses the orch's wakes. "working" presence is written here only when no
+// origin came (with one, mod/prompt.mjs has written it).
 const path = require('node:path');
 const { identity, room, out, run, whoami, presence } = require('./common.js');
 const { oneLine } = require(path.join(__dirname, '..', 'lib', 'text.js'));
@@ -126,7 +95,7 @@ function handle(input) {
   const claimed = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
   const raw = prompt.startsWith('/') ? null : parse(prompt);
   const me = whoami(input);
-  if (me && me.role === 'orch') {
+  if (me && me.role === 'orch') { // the origin unchecked: a forged one here only refuses more
     const refusal = orchRefusal(me, input, prompt, claimed);
     if (refusal) return block(refusal);
   }
@@ -140,6 +109,7 @@ function handle(input) {
   if (!TYPED_ORIGINS.has(origin)) {
     return block(`✗ not posted: this prompt was not typed by you (origin "${origin.slice(0, 40)}"). Only your own typed @room posts as your words.`);
   }
+  // A long paste arrives wrapped in <pasted_content>: post the person's text, marked normalized.
   const { text, normalized } = cc.unwrapPasted(raw);
   if (!text.trim()) return block('✗ not posted: there is nothing after @room.');
   const entry = { kind: 'say', text };
@@ -155,4 +125,5 @@ function handle(input) {
 
 module.exports = { handle, parse, TYPED_ORIGINS, NO_ORIGIN };
 
+// hooks/prompt.js calls handle(); the direct run is for the tests and scripts/demo-lib.js synthetic-orch-prompt.
 if (require.main === module) run(handle);

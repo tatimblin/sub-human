@@ -1,19 +1,12 @@
 /**
- * plugin/sub-human/mod/register.mjs: sub-human's function hooks, the module hooks.json names under `modules`.
- * register(on) calls each part's registerX(on)
- * (mod/deliver.mjs: the session's lifecycle, the hello and the room's delivery; guard.mjs, prompt.mjs,
- * consent.mjs, tasks.mjs, render.mjs). An event is hooked once per module without a matcher (validate), so each
- * such event lives in one file.
+ * plugin/sub-human/mod/register.mjs: the module hooks.json names under `modules`; register(on) calls each part's
+ * registerX(on). An event is hooked once per module without a matcher (validate), so each such event lives in one file.
+ * The mod routes, node writes: nothing under mod/ writes room state or holds the seat key, and it knows the store only
+ * from the hello (hooks/mod-hello.js, kept in $.state). Every `$` call sits in the file that registers the hook
+ * (cc CONTRACT module-dollar-local); mod/core/*.mjs is pure and tested in node.
  *
- * The mod routes, node writes: no file under mod/ writes room state or holds the seat key. It knows no store path
- * of its own: hooks/mod-hello.js (run with $.process.run) says the home, the plugin root and this session's seat,
- * kept in $.state sub-human/hello so a hot reload keeps it (mod/deliver.mjs says hello). Every `$` call sits in the
- * file that registers the hook (cc CONTRACT module-dollar-local); mod/core/*.mjs is pure and tested in node
- * (test/mod-core.test.js).
- *
- *   HOOKS     every hook the module registers: {event, matcher, file, does}; scripts/arch-doc.js renders it into
- *             docs/ARCHITECTURE.md ("Function hooks") and test/mod-core.test.js checks it against validate.
- *   register(on)
+ *   HOOKS     every hook the module registers, {event, matcher, file, does}: the one place each hook's behaviour is
+ *             described. scripts/arch-doc.js renders it; test/mod-core.test.js checks it against validate.
  */
 import { registerGuard } from './guard.mjs';
 import { registerRender } from './render.mjs';

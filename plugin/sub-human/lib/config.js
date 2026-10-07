@@ -119,7 +119,7 @@ module.exports = {
   RATE_MAX: 6,                     // agent posts per `from` per RATE_WINDOW_MS
   RATE_WINDOW_MS: 60_000,
 
-  // ---------- room log integrity (lib/room/{store,validate,render}.js; wave 1 agent A) ----------
+  // ---------- room log integrity (lib/room/{store,validate,render}.js) ----------
   ENTRY_TEXT_MAX_BYTES: 16 * 1024, // an entry's text, UTF-8 bytes (validate)
   ENTRY_REFS_MAX: 50,              // refs per entry (validate)
   ENTRY_STR_MAX: 4000,             // any other string field, JS .length (validate)

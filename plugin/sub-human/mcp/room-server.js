@@ -4,8 +4,8 @@
  * plugin/sub-human/mcp/room-server.js: the room's stdio MCP server (JSON-RPC 2.0, one message per line).
  * Zero dependencies. Each Claude Code session runs its own copy, as a direct child of claude.
  *
- * Identity: the caller is the claude process that spawned us, so me = identity.resolveByPid(process.ppid),
- * a direct lookup, re-resolved on every call (the session joins after the server starts). The model never
+ * Identity: the caller is the claude process that spawned us (cc CONTRACT mcp-stdio-ppid), so
+ * me = identity.resolveByPid(process.ppid), a direct lookup, re-resolved on every call (the session joins after the server starts). The model never
  * names itself. Not joined -> every core tool returns "not in a room; run /sub-human".
  *
  * Core tools:
@@ -117,6 +117,7 @@ function onCancel(requestId, fn) {
 }
 
 // ---------- identity ----------
+/** A stdio server is spawned without a shell, so our parent is the claude process (cc CONTRACT mcp-stdio-ppid). */
 function whoami() {
   const pid = process.ppid > 1 ? process.ppid : null;
   return pid ? identity.resolveByPid(pid) : null;
