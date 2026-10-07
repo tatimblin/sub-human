@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * test-mods: the hooks module's wiring tests (plugin/sub-human/mod/test/*.test.ts) under `claude plugin test`
- * (docs/next/MODS-PLAN.md, gate 4). npm run test:mods; npm test runs it last.
+ * test-mods: the hooks module's wiring tests (plugin/sub-human/mod/test/*.test.ts) under `claude plugin test`.
+ * npm run test:mods; npm test runs it last.
  *
  * Skips (exit 0, one line on stdout) when no `claude` binary is found, when it is older than 2.1.292 (no function
  * hooks), or when it says hooks modules are turned off here (cc CONTRACT plugin-test-off). Otherwise exits as

@@ -1,6 +1,6 @@
 # Review follow-up plan
 
-Status: R0–R3 done; R4 next. Approved, 2026-10-07; R0 done (Q4 is with the user), R1 next. Decided: Q1 yes, Q2 yes, Q3 yes (R2), Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Q4 waits on R0. Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave Q4 decided 2026-10-07: drop the room-tool skip (R2 C2).
+Status: R0–R4 (E1, E2) done, 2026-10-07; E3 and R5 next. Decided: Q1 yes, Q2 yes, Q3 yes, Q4 drop the room-tool skip, Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](../archive/MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave.
 
 ## Principles
 
