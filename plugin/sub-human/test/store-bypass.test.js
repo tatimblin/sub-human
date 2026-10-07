@@ -1,6 +1,7 @@
 'use strict';
 // The RoomStore seam holds: no plugin module outside lib/room/store*.js knows where a room's state lives or what
 // its files are called, and none uses the deprecated process-wide room (room.bind and the bound functions).
+// The hooks module (mod/*.mjs) is walked too: it knows no store path (mod-hello tells it the home).
 // Exceptions, by design: lib/home.js (the location: home, rooms/, roomDir) and lib/identity.js, which keeps
 // this machine's session indexes (<home>/sessions/: which seat a local pid or session id holds; not room state)
 // and re-exports roomDir. A bare `identity.roomDir(code);` statement only validates a code and is allowed.
@@ -17,7 +18,7 @@ function sources() {
     for (const x of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, x.name);
       if (x.isDirectory()) { if (x.name !== 'test' && x.name !== 'node_modules') walk(p); }
-      else if (x.name.endsWith('.js')) out.push(p);
+      else if (x.name.endsWith('.js') || x.name.endsWith('.mjs')) out.push(p);
     }
   };
   walk(PLUGIN);
@@ -44,7 +45,7 @@ test('store seam: no module outside lib/room/store*.js names a room file or buil
       if (FILE_NAMES.test(l)) bad.push(`names a room file: ${at}`);
       if (SEGMENTS.test(l)) bad.push(`builds a room path: ${at}`);
       if (/\broomDir\(/.test(l) && !['lib/home.js', 'lib/identity.js'].includes(rel) && !/^\s*identity\.roomDir\(\w+\);/.test(l)) bad.push(`uses roomDir: ${at}`);
-      if (/SUB_HUMAN_TEST_ROOM_DIR/.test(l) && rel !== 'hooks/guard.js') bad.push(`uses the test room dir: ${at}`);
+      if (/SUB_HUMAN_TEST_ROOM_DIR/.test(l) && rel !== 'mod/core/guard.mjs') bad.push(`uses the test room dir: ${at}`);
     });
   }
   assert.deepEqual(bad, []);

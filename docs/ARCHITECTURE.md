@@ -62,8 +62,6 @@ Who spawns whom:
 | UserPromptExpansion | `^(sub-human:)?sub-human$` | `hooks/join.js` | 10 s | — |
 | UserPromptSubmit | (all) | `hooks/prompt.js` | 10 s | — |
 | PreToolUse | `Agent\|Task` | `hooks/row-guard.js` | 10 s | — |
-| PreToolUse | `^(Write\|Edit\|MultiEdit\|NotebookEdit)$\|^mcp__plugin_sub-human_room__` | `hooks/guard.js` | 10 s | — |
-| PreToolUse | `^Bash$` | `hooks/guard.js` | 10 s | — |
 | PreToolUse | `^(AskUserQuestion\|EnterPlanMode\|ExitPlanMode)$\|^mcp__plugin_sub-human_room__` | `hooks/consent.js` | 10 s | — |
 | PostToolUse | `Agent\|Task` | `hooks/row-map.js` | 10 s | — |
 | PostToolUse | `AskUserQuestion\|EnterPlanMode\|ExitPlanMode` | `hooks/consent.js` | 10 s | — |
@@ -80,6 +78,25 @@ Who spawns whom:
 | TaskCompleted | (all) | `hooks/tasks.js` | 10 s | — |
 <!-- /gen:hooks -->
 
+### Function hooks (generated)
+
+The plugin also ships one hooks module (Claude Code 2.1.292+; [mods plan](next/MODS-PLAN.md)). Its hooks run in-process, above the command hooks of the same event. `hooks/mod-hello.js` (run by the module with `$.process.run`, not a hooks.json entry) writes the module's lease `<home>/sessions/mods/<sid>.json` and tells it the home and this session's seat, which it keeps in `$.state`. The module never writes room state. Its pure logic is in `mod/core/*.mjs` (node-tested in `test/mod-core.test.js`), its wiring tests in `mod/test/*.test.ts` (`npm run test:mods`).
+
+<!-- gen:mod-hooks -->
+From `hooks/register.mjs` (hooks.json `modules`), in registration order.
+
+| Event | Matcher | File | Does |
+|---|---|---|---|
+| `session.start` | (all) | `mod/register.mjs` | runs hooks/mod-hello.js (the lease; home, plugin root, seat into $.state) |
+| `classic.UserPromptExpansion` | `command_name ^(sub-human:)?sub-human$` | `mod/register.mjs` | after the join (hooks/join.js beneath), runs mod-hello again for the new seat |
+| `classic.SessionStart` | `source clear\|compact\|resume` | `mod/register.mjs` | after session-restore beneath (a /clear rebinds the seat to a new session id), runs mod-hello again |
+| `tool.call` | `Bash` | `mod/guard.mjs` | denies a command that names the store or runs the plugin's code (mod/core/guard.mjs bashVerdict); .catch fails closed on "sub-human" |
+| `tool.call` | `Write\|Edit\|MultiEdit\|NotebookEdit` | `mod/guard.mjs` | denies a write into the store, lexically or after $.fs.stat realPath; .catch fails closed on "sub-human" |
+| `tool.call` | `mcp__plugin_sub-human_room__hold` | `mod/guard.mjs` | denies hold outside a row subagent (no agentId) |
+| `tool.check` | `/^mcp__plugin_sub-human_room__/` | `mod/guard.mjs` | allows the room tools for a seated session (no permission prompt); hold only with agentId |
+| `ui.render` | `UserMessage, origin peer\|peer-send-message\|plugin` | `mod/render.mjs` | draws another member's Claude as "bob's Claude: …" and a sub-human prompt as its chat lines, without "(for Claude)" lines |
+<!-- /gen:mod-hooks -->
+
 ### MCP tools (generated)
 
 <!-- gen:mcp-tools -->
@@ -94,7 +111,7 @@ Full names are `mcp__plugin_sub-human_room__<tool>`.
 | `task` | room (`mcp/task.js`) | no | Ask the sub-human room's orch to change the shared room task list; it is queued and the orch applies it. add needs subject; claim, release and done need id; done also needs evidence. |
 <!-- /gen:mcp-tools -->
 
-`hold` is allowed only for row subagents (the guard checks `agent_id`); `task` is refused for the orch, which applies requests natively.
+`hold` is allowed only for row subagents (the module's guard, `mod/guard.mjs`, checks `agentId`); `task` is refused for the orch, which applies requests natively.
 
 ## The room store
 
@@ -219,7 +236,7 @@ crashed members (no SessionEnd) ─► orch tail health tick: watchdog() sees no
 
 ## Security model
 
-One machine, one OS user, trusted collaborators. The threat is a member's Claude (possibly steered by text posted in the room) speaking or consenting as a person. Defences: `via=human` only from hooks, signed with a key only hook processes load; the store guard (`hooks/guard.js`) denies file-tool writes into the store and Bash commands that name it, set `SUB_HUMAN_HOME` or run the plugin's modules; `source` and the forgery check refuse peer-injected `@room` prompts; consent only from the native dialog. Not covered: the `Read` tool, other MCP servers, a hostile local user. Full list: [README → Threat model](../plugin/sub-human/README.md#threat-model).
+One machine, one OS user, trusted collaborators. The threat is a member's Claude (possibly steered by text posted in the room) speaking or consenting as a person. Defences: `via=human` only from hooks, signed with a key only hook processes load; the store guard (the hooks module's `mod/guard.mjs`, in-process) denies file-tool writes into the store and Bash commands that name it, set `SUB_HUMAN_HOME` or run the plugin's modules; `source` and the forgery check refuse peer-injected `@room` prompts; consent only from the native dialog. Not covered: the `Read` tool, other MCP servers, a hostile local user. Full list: [README → Threat model](../plugin/sub-human/README.md#threat-model).
 
 ## Claude Code contract (generated)
 
@@ -291,13 +308,15 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `plugin-setting-override-log` | §9 | incidental | Last plugin loaded wins a shared setting. |
 | `subagent-statusline-raw` | §9 | incidental | subagentStatusLine command gets no ${CLAUDE_PLUGIN_ROOT} substitution nor PLUGIN_ROOT/DATA env. |
 | `hook-events` | §10 | API | The hook event list; no plan-approved/rejected event. |
-| `hooks-modules` | §10 | env | Function hooks load for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on). An installed plugin names its module in hooks.json `modules`; "hooks/register.ts" is only the built-in plugins' fixed path. sub-human ships none yet (docs/next/MODS-PLAN.md W1 adds one). |
+| `hooks-modules` | §10 | env | Function hooks load for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on). An installed plugin names its module in hooks.json `modules`; "hooks/register.ts" is only the built-in plugins' fixed path. sub-human ships one, hooks/register.mjs (its hooks in mod/), named in hooks.json. |
 | `hooks-json-modules` | §10 | API | One hooks.json carries the command hooks and one module path under `modules` (relative to hooks.json); a second module is refused (S1). |
 | `module-dollar-local` | §10 | incidental | A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.mjs stays $-free (S1). |
 | `modules-headless` | §10 | env | Modules are off only diskless or in a tool server's daemon (then by policy, safe mode, --bare): they load in -p and in a --bg worker such as the orch. A --bg dispatch prompt reaches prompt.submit as origin composer (S2). |
 | `classic-chain-order` | §10 | incidental | A module's classic.<Event> hook runs above the plugin's own command hooks for that event; one that answers without next() means the command hooks beneath do not run (S1, S5). |
 | `prompt-submit-ups-order` | §10 | incidental | prompt.submit's core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). |
 | `usermessage-draw-only` | §10 | incidental | A ui.render rewrite of UserMessage text changes only the drawing; origin, isExpanded, task and from are pinned. |
+| `usermessage-notification-summary` | §10 | incidental | A task-notification UserMessage row's props.text is the notification's <summary> (a monitor's: 'Monitor event: "sub-human room"'), not the event's lines, which the engine draws as the row's headline and drops once a hook rewrites the text. So mod/render.mjs leaves room notifications to the engine. |
+| `plugin-types-state` | §10 | incidental | validate refuses a $.state value the plugin's own types contract (plugin.json "types": types/index.d.ts) does not declare in PluginState; sub-human declares sub-human.hello. |
 | `session-append-note` | §10 | incidental | $.session.append writes a user row as isMeta (the model reads it from the loop's next top; an idle session is not woken) and a system row as a notice the model never reads (S4). |
 | `session-append-notice-hidden` | §10 | incidental | A $.session.append system row is stored at level "info": drawn only in the ctrl+o transcript view (also after --resume), never in the default view. Chat lines go through $.ui.log instead (S4). |
 | `ui-log-notice` | §10 | incidental | $.ui.log lines are stored as system notices at level "notice": drawn dim as "<plugin>: <text>" in the default view, kept across --resume, never read by the model, no wake (S4). |
@@ -343,8 +362,9 @@ Everything is a `node` start, so the number of processes per event is the main c
 | Event | Node starts |
 |---|---|
 | a prompt | 1 (`prompt.js`) + 1 at turn end (`consent.js` Stop) |
-| `Bash`, `Write`/`Edit` | 1 (`guard.js`; Bash takes a fast path that loads only `lib/identity.js`) |
-| a room MCP tool | 2 (`guard.js`, `consent.js`) |
+| `Bash`, `Write`/`Edit` | 0 (the module's in-process guard) |
+| a room MCP tool | 1 (`consent.js`; the guard is in-process) |
+| session start, a join, `/clear` | +1 (`mod-hello.js`) |
 | `Agent`/`Task` | 2 (`row-guard.js`, `row-map.js`) |
 | `ExitPlanMode` during a review | up to 3 (Pre, PermissionRequest, Post) |
 | other tools (`Read`, `Grep`, …) | 0 |
@@ -358,4 +378,5 @@ Long-lived per session: the monitor and the MCP server (one idle `node` each). M
 - **Probe**: `npm run probe` (`scripts/probe-cc.js`) greps the installed Claude Code binary for every `CONTRACT` search string and shape; `test/cc.test.js` runs it when a binary is present. No search names a minified identifier (shapes use `~` instead), so a miss means the code itself changed: re-read that spot and record what changed in a new `docs/internals/cc-<version>.md`.
 - **Docs**: `npm run docs` regenerates this file's tables; `scripts/test/arch-doc.test.js` fails when they are stale.
 - **Demo**: `scripts/demo.sh` drives scenes S1–S10 with real sessions in tmux (real cost; run only when asked). `scripts/checks.js` then labels each check **deterministic** (log, chain, files, panes: a failure exits 1) or **behavioural** (model-call counts, wakes, noise: compared against `scripts/baselines.json` thresholds, warn only). `scripts/walkthrough.js` builds `docs/rebuild/walkthrough.html`.
+- **Mods**: `npm run test:mods` runs `claude plugin test plugin/sub-human` (the `mod/test/*.test.ts` wiring tests; it skips without a 2.1.292+ binary or with hooks modules off); `npm test` runs it last. `test/mod-core.test.js` tests `mod/core` and `mod-hello.js` in node, and checks `validate`'s report: every gating hook has a `.catch`, and `HOOKS` lists what the module registers.
 - `npm run validate`: `claude plugin validate plugin/sub-human --strict`.

@@ -249,7 +249,7 @@ test('CONTRACT entries are well formed and unique', () => {
     assert.ok(e.note, e.id);
   }
   for (const id of ['task-completed-block-drops-fields', 'monitor-not-rearmed', 'subagent-statusline-precedence', 'daemon-env-allowlist', 'matcher-rule',
-    'hooks-json-modules', 'classic-chain-order', 'prompt-submit-ups-order', 'session-append-notice-hidden', 'ui-log-notice', 'process-run-stdin', 'plugin-test-off'])
+    'hooks-json-modules', 'classic-chain-order', 'prompt-submit-ups-order', 'session-append-notice-hidden', 'ui-log-notice', 'process-run-stdin', 'plugin-test-off', 'usermessage-notification-summary', 'plugin-types-state'])
     assert.ok(ids.has(id), id);
 });
 
@@ -272,18 +272,17 @@ test('shapeRe: ~ is one minified identifier, the rest is literal', () => {
   assert.ok(!cc.shapeRe('a.b(~)').test('aXb(c)'));
 });
 
-test('the plugin ships at most one hooks module, at the path hooks.json names', () => {
+test('the plugin ships exactly one hooks module, at the path hooks.json names', () => {
   // cc CONTRACT hooks-json-modules / hooks-modules: an installed plugin's function hooks are the one module that
   // hooks/hooks.json names under `modules` (relative to hooks.json), loaded by default since 2.1.292.
-  // "hooks/register.ts" is the built-in plugins' fixed path, not ours. No module ships before MODS-PLAN W1.
+  // "hooks/register.ts" is the built-in plugins' fixed path, not ours (MODS-PLAN W1: hooks/register.mjs).
   const hooks = path.join(__dirname, '..', 'hooks');
   const json = JSON.parse(fs.readFileSync(path.join(hooks, 'hooks.json'), 'utf8'));
-  const modules = json.modules || [];
-  assert.ok(Array.isArray(modules) && modules.length <= 1, 'hooks.json names one hooks module per plugin');
-  const named = modules.map(m => path.resolve(hooks, m));
+  assert.deepEqual(json.modules, ['./register.mjs'], 'hooks.json names one hooks module per plugin');
+  const named = json.modules.map(m => path.resolve(hooks, m));
   for (const m of named) assert.ok(fs.statSync(m).isFile(), `${m} exists`);
   const entries = fs.readdirSync(hooks).filter(f => /^register\.[cm]?[jt]sx?$/.test(f)).map(f => path.join(hooks, f));
-  assert.deepEqual(entries, named.filter(m => path.dirname(m) === hooks && /^register\./.test(path.basename(m))));
+  assert.deepEqual(entries, named);
 });
 
 // ---------- probe ----------

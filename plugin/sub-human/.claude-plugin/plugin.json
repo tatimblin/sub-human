@@ -15,5 +15,6 @@
     "tasks",
     "consent",
     "multi-session"
-  ]
+  ],
+  "types": "./types/index.d.ts"
 }

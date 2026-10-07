@@ -9,6 +9,7 @@
  * A section is the text between `<!-- gen:NAME -->` and `<!-- /gen:NAME -->`; everything else is hand-written
  * and left alone. Sections:
  *   hooks        hooks/hooks.json: event, matcher, script, timeout, async
+ *   mod-hooks    the hooks module's function hooks: mod/register.mjs HOOKS (event, matcher, file, what it does)
  *   mcp-tools    the room MCP server's tools/list (spawned for real, so plug-ins are included)
  *   cc-contract  lib/cc.js CONTRACT: id, internals-doc section, stability, note
  *   lib-modules  lib/**.js: each module's header comment, first sentence
@@ -52,6 +53,13 @@ function hooksSection() {
     }
   }
   return table(['Event', 'Matcher', 'Script', 'Timeout', 'Async'], rows);
+}
+
+// ---------- function hooks ----------
+async function modHooksSection() {
+  const { HOOKS } = await import(path.join(PLUGIN, 'mod', 'register.mjs'));
+  const rows = HOOKS.map(h => [code(h.event), h.matcher ? code(h.matcher) : '(all)', code(h.file), cell(h.does)]);
+  return 'From `hooks/register.mjs` (hooks.json `modules`), in registration order.\n\n' + table(['Event', 'Matcher', 'File', 'Does'], rows);
 }
 
 // ---------- MCP tools ----------
@@ -145,6 +153,7 @@ function libSection() {
 async function generate() {
   return {
     hooks: hooksSection(),
+    'mod-hooks': await modHooksSection(),
     'mcp-tools': await mcpSection(),
     'cc-contract': ccSection(),
     'lib-modules': libSection(),

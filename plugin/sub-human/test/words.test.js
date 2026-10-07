@@ -83,7 +83,7 @@ test('words: orchestrator tools are exactly the plan list (no Bash)', () => {
   assert.ok(!tools.includes('Bash'));
 });
 
-test('words: SKILL.md allows only the live room tools (not hold: guard.js denies it to a main thread)', () => {
+test('words: SKILL.md allows only the live room tools (not hold: mod/guard.mjs denies it to a main thread)', () => {
   const t = read(SKILL);
   const allowed = [...t.matchAll(/^\s+- (\S+)$/gm)].map(m => m[1]);
   assert.deepEqual(allowed.sort(), ['post', 'read', 'propose', 'task'].map(x => PREFIX + x).sort());

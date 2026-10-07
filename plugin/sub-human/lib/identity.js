@@ -55,6 +55,11 @@
  *   lastSeat(sid) -> {code, name, role}|null   the seat a session id last held, left or not (for --resume)
  *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set; lib/cc.js)
  *
+ * The hooks module's lease (hooks/mod-hello.js; docs/next/MODS-PLAN.md W1):
+ *   writeModLease(sid, rec) -> bool      <home>/sessions/mods/<sid>.json = {session_id, at, ...rec} (atomic, 0600):
+ *                                        this session's function hooks are loaded and have said hello
+ *   readModLease(sid) -> rec|null
+ *
  * Presence (the room documents presence/<name> = {state, at, detail?}, lib/room/store.js kv):
  *   writePresence(code, name, state, detail?)   state: working (prompt submitted / joined) | idle (idle_prompt)
  *                                               | permission (permission_prompt) | error (StopFailure; detail = code)
@@ -95,6 +100,7 @@ const store = require('./room/store.js');
 const roomExists = code => store.roomExists(code);
 const byPidFile = pid => path.join(home(), 'sessions', 'by-pid', `${Number(pid)}.json`);
 const bySidFile = sid => path.join(home(), 'sessions', 'by-sid', `${sid}.json`);
+const modLeaseFile = sid => path.join(home(), 'sessions', 'mods', `${sid}.json`);
 const address = (name, code) => `${name}.${code}`;
 /** The room's members document (lib/room/store.js members: read(), update(fn) atomic). */
 const membersOf = code => store.open(code).members;
@@ -265,6 +271,17 @@ function resolveBySession(sid) {
   return seat(rec.code, m);
 }
 
+function writeModLease(sid, rec = {}) {
+  if (typeof sid !== 'string' || !SID_RE.test(sid)) return false;
+  writeJsonAtomic(modLeaseFile(sid), { ...rec, session_id: sid, at: new Date().toISOString() });
+  return true;
+}
+
+function readModLease(sid) {
+  if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
+  return readJson(modLeaseFile(sid));
+}
+
 function lastSeat(sid) {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
   const rec = readJson(bySidFile(sid));
@@ -385,6 +402,6 @@ module.exports = {
   home, roomDir, newCode, roomExists, openRooms, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, setOrch, updateOrch, liveMembers, seatAlive, heartbeat, leaseFresh,
   isAlive, claudePid,
-  resolveByPid, resolveBySession, resolveSelf, lastSeat,
+  resolveByPid, resolveBySession, resolveSelf, lastSeat, writeModLease, readModLease,
   writePresence, readPresence,
 };

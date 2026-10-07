@@ -8,7 +8,7 @@ const { DOC, generate, render, firstSentence } = require('../arch-doc.js');
 test('docs/ARCHITECTURE.md generated sections are current (run npm run docs)', async () => {
   const doc = fs.readFileSync(DOC, 'utf8');
   const sections = await generate();
-  for (const name of ['hooks', 'mcp-tools', 'cc-contract', 'lib-modules']) assert.ok(sections[name], name);
+  for (const name of ['hooks', 'mod-hooks', 'mcp-tools', 'cc-contract', 'lib-modules']) assert.ok(sections[name], name);
   assert.equal(render(doc, sections), doc, 'docs/ARCHITECTURE.md is stale: run npm run docs');
 });
 

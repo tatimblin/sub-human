@@ -10,13 +10,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
-const { World, fixture, hso, decision, PLUGIN, room } = require('./helpers.js');
-const { bashVerdict } = require(path.join(PLUGIN, 'hooks', 'guard.js'));
+const { World, fixture, PLUGIN, room } = require('./helpers.js');
+// the store guard's verdicts (mod/core/guard.mjs, applied in-process by mod/guard.mjs)
+let bashVerdict, denyText;
+test.before(async () => ({ bashVerdict, denyText } = await import(path.join(PLUGIN, 'mod', 'core', 'guard.mjs'))));
 
 const ROOM_JS = path.join(PLUGIN, 'lib', 'room.js');
 const H1 = 'aaaaaaaaaaaa';
 const submit = (prompt, extra = {}) => ({ ...fixture('user-prompt-submit'), prompt, ...extra });
-const pre = (tool_name, tool_input) => ({ ...fixture('pre-mcp'), tool_name, tool_input, mcp_server: undefined });
 const logFile = w => path.join(w.home, 'rooms', w.code, 'log.jsonl');
 const lines = w => { try { return fs.readFileSync(logFile(w), 'utf8').split('\n').filter(Boolean); } catch { return []; } };
 const mode = p => fs.statSync(p).mode & 0o777;
@@ -35,10 +36,9 @@ test('a Bash-forged human signoff (node -e require(lib/room.js).append({via:"hum
     + `r.append({kind:'signoff',proposal_hash:'${H1}'},{via:'human',from:'bob'})`;
   const cmd = `node -e "${script.replace(/"/g, '\\"')}"`;
   // 1. the guard denies the command
-  const g = w.hook('guard', pre('Bash', { command: cmd }), { as: 'alice' });
-  assert.equal(g.code, 0, g.stderr);
-  assert.equal(decision(g), 'deny');
-  assert.match(hso(g).permissionDecisionReason, /sub-human's own modules/);
+  const why = bashVerdict(cmd, { home: w.home, cwd: w.cwd });
+  assert.ok(why);
+  assert.match(denyText(why), /sub-human's own modules/);
   // 2. run anyway (the guard is a string check): the store refuses, nothing is written
   const before = lines(w).length;
   const r = spawnSync(process.execPath, ['-e', script], { env: { PATH: process.env.PATH, HOME: w.userHome, SUB_HUMAN_HOME: w.home }, encoding: 'utf8' });
@@ -176,6 +176,8 @@ test('Bash guard: allowed and denied commands', () => {
   for (const c of deny) assert.ok(bashVerdict(c, ctx), `should deny: ${c}`);
   // a custom home is protected by its literal path, under ~ and $HOME too
   const custom = { home: '/tmp/sh-demo/home', cwd: '/repo' };
+  assert.ok(bashVerdict('cat ~/store/keys/a/bob.key', { home: '/Users/u/store', userHome: '/Users/u' }));
+  assert.ok(bashVerdict('ls ${HOME}/store', { home: '/Users/u/store', userHome: '/Users/u' }));
   assert.ok(bashVerdict('ls /tmp/sh-demo/home/rooms', custom));
   assert.equal(bashVerdict('ls /tmp/sh-demo', custom), null);
   assert.equal(bashVerdict('ls /tmp/sh-demo/home2', custom), null);

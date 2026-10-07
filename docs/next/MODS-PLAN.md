@@ -1,6 +1,6 @@
 # Mods (function hooks) plan
 
-Status: W0 done (a6abb60), W1 next, 2026-10-07. Decided: D1 yes, D2 yes (W4), D3 notices via `$.ui.log`, D4 add `bridge`; generated `tsconfig.json` and `.claude-plugin/types/` are gitignored. D5–D8 open.
+Status: W0 done (a6abb60), W1 done (see W1 results), W2 next, 2026-10-07. Decided: D1 yes, D2 yes (W4), D3 notices via `$.ui.log`, D4 add `bridge`; generated `tsconfig.json` and `.claude-plugin/types/` are gitignored. D5–D8 open.
 - the plugin-authoring skill shipped with Claude Code 2.1.292 (`reference.md`, `types/claude-code.d.ts`, `examples/`);
 - the 2.1.292 binary as text (`/tmp/cc292/bin.txt`), for everything the skill does not settle;
 - [`docs/internals/cc-2.1.292.md`](../internals/cc-2.1.292.md) (`hooks-modules (b)`) and the code at `0a310fd`.
@@ -139,8 +139,8 @@ Node starts per event, after W3 with D1 and D3:
 | a plain prompt, seated | 1 | **0** (1 on a session id's first prompt) |
 | an `@room` post | 1 | 1 (signing) |
 | turn end (Stop) | 1 | **0** (1 while a review is open) |
-| `Bash`, `Write`/`Edit` | 1 | **0** |
-| a room MCP tool | 2 | **0** (1 while a review is open) |
+| `Bash`, `Write`/`Edit` | 1 | **0** (since W1) |
+| a room MCP tool | 2 | **0** (1 while a review is open; 1 after W1: consent only) |
 | `Agent`/`Task` | 2 | 2 (rows, unchanged) |
 | a member's own `TaskCreate`/`TaskUpdate` | 1 | **0** |
 | session start | 1–3 | +1 (`mod-hello.js`) |
@@ -221,7 +221,7 @@ Consequences for later waves:
 - **Orch (S2).** No scope change: the orch can use the module. Its `--bg` prompt counts as `composer`, which matters only if the orch ever posts `@room` (it does not).
 - **S7.** No scope change: the guard's `hold`-needs-`agentId` rule works.
 
-### W1: skeleton, guard, drawing (3 agents in parallel)
+### W1: skeleton, guard, drawing (3 agents in parallel) — **done**
 
 **M1 skeleton and shim** (owns `hooks/register.mjs`, `mod/register.mjs`, `mod/core/{shim,seat}.mjs`, `hooks/mod-hello.js`, `mod/test/skeleton.test.ts`, `test/mod-core.test.js`):
 - On `session.start` the mod runs `node hooks/mod-hello.js` with `{session_id}`.
@@ -241,6 +241,29 @@ Consequences for later waves:
 - **Accept:** the mounted row shows `bob's Claude: …` for a peer and the chat lines for a room notification; `isExpanded` returns the engine's row.
 
 Commit: "Mods W1: module skeleton + shim, in-process store guard, group-chat drawing".
+
+#### W1 results
+
+Done 2026-10-07 by one agent, in order M1 → M2 → M3. `npm test` (plugin, scripts and `test:mods`), `npm run probe` (80/80) and `npm run validate` are green. Every gating hook has a `.catch` (6 of 6, checked from validate's JSON). Live check: one `-p` run with `--plugin-dir` and a throwaway home. The module loaded, the lease was written (0600), and `tool.call` denied `cat ~/.sub-human/…` ($0.18).
+
+- **M1.** `hooks/register.mjs` → `mod/register.mjs` (`HOOKS` plus the skeleton hooks), `mod/core/{shim,seat}.mjs`, `hooks/mod-hello.js` (lease through the new `identity.writeModLease`/`readModLease`) and `types/index.d.ts`. hooks.json gets `modules`, package.json gets `test:mods` (`scripts/test-mods.js`, also run by `npm test`), and arch-doc gets the "Function hooks (generated)" table. The shim returns `systemMessage` beside the `ClassicResult`, which has no such field, so W2/W3 callers show it with `$.ui.log`.
+- **M2.** The guard lives in `mod/guard.mjs` + `mod/core/guard.mjs`. `tool.call` denies Bash, the write family and `hold` without `agentId`, and `tool.check` allows room tools for a seated session. Write paths are checked lexically and through the `$.fs.stat` realPath of the nearest existing ancestor. **Removed from hooks.json:** both `hooks/guard.js` PreToolUse entries (`^(Write|Edit|MultiEdit|NotebookEdit)$|^mcp__plugin_sub-human_room__` and `^Bash$`). `hooks/guard.js` is deleted (D1: no fallback).
+- **M3.** `mod/render.mjs` + `mod/core/chat.mjs` draw a peer row as `bob's Claude: …` (dim, `│` continuations, at most 20 lines) and a `plugin sub-human` row as its chat lines without the `(for Claude)` lines. Anything else, and every expanded row, goes to `next(e)`.
+
+Deviations:
+- **Room monitor notifications are not redrawn.** In 2.1.292 a task-notification row's `props.text` is only the `<summary>` (`Monitor event: "sub-human room"`). The event lines are not in the props, and the engine already draws the first one as the headline; a rewrite would lose that headline. So `render.mjs` leaves these rows to the engine (CONTRACT `usermessage-notification-summary`), and the "chat lines for a room notification" accept item is covered by the `plugin` origin W3 will use. Under D2 the Monitor goes in W4 anyway.
+- **Files outside the listed ownership.**
+  - `lib/identity.js`: the lease helpers.
+  - `.claude-plugin/plugin.json`: `"types"`. Validate refuses an undeclared `$.state` value (CONTRACT `plugin-types-state`).
+  - `test/hooks/security.test.js` (M4's in W2): it imports `bashVerdict` from the core now.
+  - `test/{manifest,store-bypass,words,cc}.test.js` and `hooks/seat-key.js` comments.
+  - `store-bypass` now walks `mod/*.mjs`.
+- **Where checks live.** `hold` is denied in `tool.call`, not in `tool.check`: the test kit's `$.tool.call` raises `tool.call`, and `tool.check` carries no `agentId` on a query. `HOOKS` is checked against validate in node (`test/mod-core.test.js`), because plugin tests have no process. The test kit's `$` has no `state` noun, so the skeleton tests read the hello through the `tool.check` allow.
+- **Before mod-hello answers.** Write paths through any `.sub-human` directory are denied, which is the plan's string rule applied to file tools.
+
+Open, for W2+:
+- Until W4's join refusal, a seat in a session with modules off has no store guard (the D1 trade-off, now live).
+- `HOOKS` is hand-kept, but the test fails when it drifts from what validate reads.
 
 ### W2: per-turn costs (2 agents in parallel)
 
