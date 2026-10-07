@@ -1,6 +1,6 @@
 // Wiring: the room task mirror and gate (mod/tasks.mjs). Run with `npm run test:mods`.
 // hooks/tasks.js runs only for the orch (or an unknown seat); its exit 2 blocks the completion; a member's own
-// native tasks start no node.
+// native tasks start no node. A failed gate blocks wherever tasksNeeded holds.
 import { test, expect } from 'claude-code/testing'
 
 const MEMBER = { name: 'bob', code: 'otter-4821', role: 'member', addr: 'bob.otter-4821' }
@@ -9,11 +9,14 @@ const hello = (seat: any) => ({ home: '/u/.sub-human', realHome: '/u/.sub-human'
 const ran = (exitCode: number, stderr = '') => ({ value: { exitCode, stdout: '', stderr, isStdoutTruncated: false, isStderrTruncated: false } })
 const SID = 'sid-t'
 
-function world(on: any, { seat = ORCH as any, exitCode = 0, stderr = '', room = undefined as string | undefined, fail = false } = {}) {
+function world(on: any, { seat = ORCH as any, exitCode = 0, stderr = '', room = undefined as string | undefined, fail = false, envFail = false } = {}) {
   const seen = { tasks: [] as any[], beneath: [] as string[] }
   on('session.id', () => ({ value: SID }))
   on('session.start', ($: any, e: any) => ({ cwd: e.cwd }))
-  on('env.get', ($: any, e: any) => ({ value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }))
+  on('env.get', ($: any, e: any) => {
+    if (envFail) throw new Error('env unavailable')
+    return { value: e.name === 'SUB_HUMAN_ROOM' ? room : undefined }
+  })
   on('process.run', ($: any, e: any) => {
     const script = String(e.argv[1]).replace(/^.*\/hooks\//, '')
     if (script === 'mod-hello.js') return { value: { exitCode: 0, stdout: JSON.stringify(hello(seat)), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
@@ -70,15 +73,23 @@ test('no seat but SUB_HUMAN_ROOM set (an orch before its join): tasks.js runs', 
   expect(seen.tasks.length).toBe(1)
 })
 
-test('the gate fails closed in the orch\'s session only', async ($, on) => {
+test('the gate fails closed in the orch\'s session', async ($, on) => {
   world(on, { fail: true })
   await start($)
   const r: any = await completed($)
   expect(r.block).toMatch(/failed closed/)
 })
 
-test('a failed gate in a member\'s session lets the completion go on', async ($, on) => {
+test('no seat but SUB_HUMAN_ROOM set: a failed gate fails closed (tasks.js would have run)', async ($, on) => {
   const seen = world(on, { seat: null, room: 'otter-4821', fail: true })
+  await start($)
+  const r: any = await completed($)
+  expect(r.block).toMatch(/task gate failed closed/)
+  expect(seen.beneath).toEqual([])
+})
+
+test('a failure in a session surely not the orch lets the completion go on', async ($, on) => {
+  const seen = world(on, { seat: MEMBER, envFail: true })
   await start($)
   const r: any = await completed($)
   expect(r.block).toBe(undefined)
