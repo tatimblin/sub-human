@@ -22,10 +22,10 @@
 // The member's seat key (<home>/keys/<code>/<name>.key, hooks/seat-key.js) is created here.
 // UserPromptExpansion output has no sessionTitle; mod/prompt.mjs (classic.UserPromptSubmit) sets it (NAME.CODE) on
 // the next prompt.
-// A seat needs the hooks module (docs/next/MODS-PLAN.md D1): its guard, prompt gate and delivery are function hooks.
-// Without the module's hello lease for this session id (<home>/sessions/mods/<sid>.json, written by
-// hooks/mod-hello.js on session.start) the join is refused with NO_MODULE: Claude Code older than 2.1.292, --bare,
-// safe mode, or hooks turned off by policy.
+// A seat needs the hooks module: its guard, prompt gate and delivery are function hooks. Without a hello lease for
+// this session id from this claude process, or a recent one (identity.modLeaseOk; hooks/mod-hello.js writes it on
+// session.start), the join is refused with NO_MODULE: Claude Code older than 2.1.292, --bare, safe mode, hooks
+// turned off by policy, or an old session id resumed where the module is off.
 const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
 const orch = require('../lib/orch.js');
 const seatKey = require('./seat-key.js');
@@ -63,6 +63,7 @@ function ensureOrch(code, cwd, by) {
 
 /** Close rooms where only the orch is left once they have been orphaned long enough (best effort). */
 function sweep() {
+  try { identity.pruneModLeases(); } catch { /* the next join retries */ }
   for (const c of identity.orphanRooms()) { try { orch.watchdog(c); } catch { /* next join retries */ } }
 }
 
@@ -100,7 +101,7 @@ function pickRoom() {
 
 run(input => {
   if (!COMMANDS.has(input.command_name)) return;
-  if (!identity.readModLease(input.session_id)) return out({ decision: 'block', reason: NO_MODULE });
+  if (!identity.modLeaseOk(input.session_id, identity.claudePid())) return out({ decision: 'block', reason: NO_MODULE });
   const args = String(input.command_args || '').trim().split(/\s+/).filter(Boolean);
   const pid = identity.claudePid();
   if (!pid) return block('could not identify this Claude Code process (CLAUDE_PID is not set).');
