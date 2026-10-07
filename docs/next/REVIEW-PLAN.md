@@ -1,6 +1,6 @@
 # Review follow-up plan
 
-Status: approved, 2026-10-07; R0 next. Decided: Q1 yes, Q2 yes, Q3 yes (R2), Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Q4 waits on R0. Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave.
+Status: approved, 2026-10-07; R0 done (Q4 is with the user), R1 next. Decided: Q1 yes, Q2 yes, Q3 yes (R2), Q5 yes, Q6 short demo (`--only S1,S2,S4,S5,S9,S9b,S10`). Q4 waits on R0. Source: the three-way read-only review of `25696ac` (architecture, clean code, dead code), after the mods migration ([MODS-PLAN.md](MODS-PLAN.md), done). Every finding from that review has a home below; the index at the end maps each one to its wave.
 
 ## Principles
 
@@ -30,6 +30,15 @@ Status: approved, 2026-10-07; R0 next. Decided: Q1 yes, Q2 yes, Q3 yes (R2), Q5 
 - **S-mcp** (review M3): confirm, in the binary, that a stdio MCP server is a direct child of the claude process, that `notifications/progress` resets the tool idle timeout, and that one server instance serves the main thread and its subagents. Record the search strings.
 
 **Accept:** each spike has an answer with evidence in `docs/internals/cc-2.1.292.md`. Q4 is put to the user.
+
+**R0 results** (2026-10-07, done; evidence and search strings in [cc-2.1.292.md § Review spikes R0](../internals/cc-2.1.292.md#review-spikes-r0); five `-p` calls, $0.53):
+
+- **S-skip: broader than assumed.** A module's `classic.PreToolUse` answered without `next` skips every non-managed settings hook for that call: its own command hooks, every other plugin's command hooks and the user's and project's settings hooks. Load order makes no difference for these. Other plugins' modules depend on load order: one loaded before sub-human's still runs, and one loaded after is skipped. Managed hooks always run. The condition for Q4's recommendation ("only the user's own hooks") does **not** hold, so Q4 goes to the user. C1 rewrites the `classic-chain-order` note either way.
+- **S-title.** A hook's `sessionTitle` renames the session (source `"hook"`) and writes the name to the session registry. `ListAgents` lists that name, and `SendMessage` `to` matches it exactly. Names are unique among live sessions: a second live session with the same `NAME.CODE` gets a suffixed name, so it is not reachable at `NAME.CODE`.
+- **S-mcp.**
+  - (a) Direct child: yes (`shell:false`), unless the user sets `CLAUDE_CODE_SHELL_PREFIX`.
+  - (b) Progress resets the **idle** watchdog: 30 min for stdio, `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`. It does not reset the wall-clock limit, `MCP_TOOL_TIMEOUT`, about 27.8 h by default. C1's entry becomes `mcp-progress-resets-idle-timeout`.
+  - (c) Shared: yes. A subagent with no `mcpServers` uses the parent's clients.
 
 ### R1: bugs (4 agents in parallel)
 

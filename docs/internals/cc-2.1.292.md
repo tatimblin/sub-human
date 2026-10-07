@@ -129,3 +129,65 @@ W1 findings (2026-10-07, while building the module; [mods plan](../next/MODS-PLA
 - **Validate lists gates.** Its `--json` report has `gatingHooks: [{module, pattern, hook, hasCatch}]`; `classic.*` hooks count as gates too. The `hooks:` note lists each registered hook with its matcher, which `test/mod-core.test.js` compares with `mod/register.mjs` `HOOKS`.
 - **Test kit.** The test's `$` has no `state` noun (read a value through the behaviour that depends on it). Every `on(...)` beneath must be registered before the test's first `$` call. A deny from a plugin's `tool.call` reaches the test's `$.tool.call` as `{ deny }`. `$.fs.stat`, `$.session.id`, `$.session.cwd` and `ui.render` need an answer beneath (`{ value }` or `{ deny }`), or they fail with "no implementation".
 - **Live (`-p`, `--plugin-dir`, throwaway home).** The module loaded, `session.start` ran `mod-hello.js` (lease written, 0600), and `tool.call` denied `cat ~/.sub-human/…` before the permission check (`--allowedTools Bash`): the model read the ROOM-GUARD reason as the tool's error.
+
+## Review spikes R0
+
+What the [review plan](../next/REVIEW-PLAN.md) R0 spikes found on 2.1.292 (2026-10-07). S-skip is a live run; S-title and S-mcp are binary reading (`/tmp/cc292/bin.txt`, `VERSION:"2.1.292"`). Hit counts are for a latin1 view of the binary; a shape uses `~` as in `cc.shapeRe`. No CONTRACT entries were added here (R2 C1 adds them from the strings below).
+
+### S-skip: what a module's `classic.PreToolUse` answer without `next` skips (review M5)
+
+Method: four throwaway plugins under `$TMPDIR/sh-review-spike/`, each with a `PreToolUse` command hook on `Bash` that appends a line to `spike.log`. `spike-skip` adds a module whose `classic.PreToolUse` `{tool:'Bash'}` hook logs and answers `{}` without `next` (as `mod/consent.mjs` does on the room tools). `spike-pass` and `spike-otherpass` have the same hook calling `next(e)`. `spike-other` has the command hook only. A user-level `PreToolUse` `Bash` command hook sat in a throwaway `CLAUDE_CONFIG_DIR` (`$TMPDIR/sh-review-spike/cfg/settings.json`). Auth came from the real keychain entry without touching `~/.claude`: `CLAUDE_SECURESTORAGE_CONFIG_DIR=""` makes the secure-storage lookup use `~/.claude` while everything else uses `CLAUDE_CONFIG_DIR` (`function rw(){let e=process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR;if(e!==void 0)return(e||u(o(),".claude"))…`). Each run was `claude -p "Run … echo spike-<run> … reply DONE" --allowedTools Bash --plugin-dir …` from a clean env (`env -i`), cwd `/private/tmp/sh-review-spike-cwd`. Every run's transcript has the Bash result, so the tool ran each time.
+
+| Run | `--plugin-dir` order | Hooks that ran on the Bash call |
+|---|---|---|
+| control | `spike-pass`, `spike-other` | `spike-pass` module (before), `spike-other` cmd, `spike-pass` cmd, user cmd, `spike-pass` module (after) |
+| skipAB | `spike-skip`, `spike-other` | `spike-skip` module **only** |
+| skipBA | `spike-other`, `spike-skip` | `spike-skip` module **only** |
+| modAB | `spike-skip`, `spike-otherpass` | `spike-skip` module **only** (`spike-otherpass`'s module never ran) |
+| modBA | `spike-otherpass`, `spike-skip` | `spike-otherpass` module (before), `spike-skip` module, `spike-otherpass` module (after); no command hook |
+
+**Answer.** A module that answers `classic.PreToolUse` without `next` skips **every non-managed settings hook** for that call: its own plugin's command hooks, **every other plugin's command hooks**, and **the user's (and project's) settings hooks**. Command-hook skipping does not depend on load order. Other plugins' **modules** do: a module loaded before sub-human's sits above it and still runs; one loaded after sits beneath and is skipped. With `--plugin-dir`, the first directory given is the outermost. Managed (policy) hooks are not skipped: they run above every module.
+
+Why, in the binary: the PreToolUse chain is `[managed, ...modules in load order, core]`, and `core` is one handler that runs all the other settings hooks.
+
+- Chain: shape `{managed:~,pass:~,covers:~}=~(~,~),{core:~,runs:~}=~(~,~),~=await ~(~(~.tool_name,~.tool_use_id,~),[~,...~("classic.PreToolUse",~),~]` (1 hit; `…[b,...cO("classic.PreToolUse",g),G]`). The shorter shape `[~,...~("classic.PreToolUse",~),~]` also has 1 hit.
+- Core handler: shape `{name:"core",isCore:!0,budgetMs:0,async run(~){let ~=~(~),~=await ~(~(~,{managedHooksExcluded:~(~)}),~.tool)` (1 hit). This means every settings hook except the managed ones.
+- Managed handler: literal `isManaged:!0,budgetMs:0,async run(` (4 hits). It runs `{managedHooksOnly:!0}` first and calls the chain beneath it.
+- Module order: `cO` → `BZe`, which walks `lt().loadedModules` in order (shape `(~??~().loadedModules).flatMap((~)=>{if(!~.hooks(~)||~.name!==(~??~.name))return[]`, 1 hit).
+- The d.ts says the same: "The chain is [managed settings hooks, ...hooks modules, the other settings hooks as core], so a managed block ends it above every module" (`ClassicEventOf`).
+
+So the `classic-chain-order` CONTRACT note ("the plugin's own command hooks") understates it. Today `mod/consent.mjs` skips other plugins' and the user's `PreToolUse` hooks on `mcp__plugin_sub-human_room__*` while no review is open. Only hooks whose matcher covers those tools are affected, such as `.*`, `mcp__.*` or `*` (plan Q4).
+
+### S-title: how `SendMessage` and `ListAgents` reach a session by its title (review M4)
+
+**Answer.** A hook's `sessionTitle` renames the session itself, and that name is the address.
+
+1. A `UserPromptSubmit` (or `SessionStart`) hook's `hookSpecificOutput.sessionTitle` is applied by `Jyt`. It returns early in a teammate (`gc()`) and when the title already equals the current one. It then logs `Hook sessionTitle applied (N chars)` and calls the rename with source `"hook"`. Search: literal `Hook sessionTitle applied (` (2 hits); shape ``Hook sessionTitle applied (${[...~].length} chars)`),await ~(~,"hook",~,!1,!1,~)`` (1 hit).
+2. The rename (`X2t` → `iEe`) writes the transcript title and then the **session registry record** (`Qj`: `hn({name,nameSource,formerNames,nameSince,…})`, the pid file other sessions read). Its failure path logs literal `applied locally but the session registry record was not updated` (1 hit). The `"hook"` source is kept as `"hook"` (`peer` and `collision` also map to it). Shape: `return ~==="collision"||~==="peer"?"hook":~}` (1 hit).
+3. `ListAgents` lists other local sessions from that registry (`listAllPeers`: `transport:"uds"`) by their `name`. Its description: literal `Names are the address: send with` (1 hit). `SendMessage` resolves `to` by exact name match against live agents and sessions. Its description: literal `the name IS the address; there is no separate address syntax` (1 hit). An in-process agent with the same name wins over a session.
+4. **Names are unique among live sessions** (GrowthBook `tengu_session_name_uniqueness`, default on: literal `"tengu_session_name_uniqueness",!0)`, 1 hit). If another live session already holds the name, this session takes a suffixed one (`NAME-word-word`) and logs `[session-name] "<name>" is held by live pid <pid>; this session takes "<new>"` (literal `" is held by live pid `, 2 hits). Two seats with the same `NAME.CODE` would therefore not share an address. The second one gets a name that `SendMessage` "NAME.CODE" does not reach.
+
+### S-mcp: the room MCP server's process, timeout and sharing (review M3)
+
+**(a) A stdio server is a direct child of the claude process: yes, unless the user sets `CLAUDE_CODE_SHELL_PREFIX`.** The MCP SDK's stdio transport spawns the command with `shell:!1` (literal `stdio:["pipe","pipe",this._serverParams.stderr??"inherit"],shell:!1`, 2 hits, one per bundled SDK copy). Claude Code's connect passes `command` and `args` as configured: shape `let ~=~.CLAUDE_CODE_SHELL_PREFIX||~.command,` (2 hits). With `CLAUDE_CODE_SHELL_PREFIX` set, the prefix is spawned with the quoted command line, so `process.ppid` is the prefix process, not claude. The Linux tool-cgroup wrapper keeps the pid, because it ends in `exec`: literal `{ echo 0 > "$0"/cgroup.procs; } 2>/dev/null; exec "$@"` (2 hits). The server's env also carries `CLAUDE_CODE_SESSION_ID` as it was at spawn: shape `CLAUDE_CODE_SESSION_ID:~(),CLAUDECODE:"1",...~.env` (2 hits). It goes stale after `/clear`, so the ppid lookup stays the right identity.
+
+**(b) `notifications/progress` resets the tool *idle* timeout: yes; it does not extend the wall-clock limit.** A `tools/call` has two timers:
+- An **idle watchdog**, checked every 30 s, that aborts after no response or progress. Its default is 30 min for stdio and 5 min for other transports, and IDE/SDK servers are exempt. `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` overrides it (0 turns it off), and a larger per-server `timeout` raises it. Each progress notification sets its clock to now: shape `onprogress:(~)=>{if(~.armedAt=0,~=Date.now(),` (2 hits). Defaults: shape `var ~=300000,~=1800000,~=new Set(["sse-ide","ws-ide","sdk"])` (2 hits) and shape `~.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT??(~==="stdio"?~:~)` (2 hits). Error texts: literals `aborting: no response or progress notification for ` (3 hits) and `sent no response or progress for ` (3 hits).
+- A **wall-clock limit**: `MCP_TOOL_TIMEOUT`, or else `1e8` ms (about 27.8 h), or the per-server `timeout`. Progress does not extend it, and Claude Code does not pass the SDK's `resetTimeoutOnProgress`. Shape `.MCP_TOOL_TIMEOUT??~;return Math.min(Math.max(~,1000),~)}` (2 hits; `~` = `Pr`, `var … Pr=1e8` in the same chunk). Literal `Hard wall-clock limit per call; progress notifications do not extend it.` (2 hits).
+
+`mcp/hold.js`'s 20 s progress beat (`HOLD_BEAT_MS`) therefore keeps the idle watchdog from firing. A hold still ends at the wall-clock limit (about 27.8 h by default, sooner if the user sets `MCP_TOOL_TIMEOUT`).
+
+**(c) One server instance serves the main thread and its subagents: yes.** A subagent whose definition has no `mcpServers` gets the parent's clients as they are: shape `if(!~.mcpServers?.length)return{clients:~,agentClients:[],tools:[],cleanup:async()=>{}}` (1 hit). A subagent whose definition lists `mcpServers` gets the parent's clients plus its own: shape `return{clients:[...~,...~],agentClients:~,tools:~,cleanup:~}` (1 hit). sub-human's agents (`orchestrator`, `room`, `participant`) name the room tools in `tools:` and have no `mcpServers`, so their room calls reach the same server process as the main thread's. In that process, `process.ppid` is the main claude pid.
+
+### Search strings for R2 C1
+
+| CONTRACT id (proposed) | `search` (literal) | `shape` |
+|---|---|---|
+| `classic-chain-order` (rewrite the note) | `function-hook chain\`` (kept), `isManaged:!0,budgetMs:0,async run(` | `[~,...~("classic.PreToolUse",~),~]`; `{name:"core",isCore:!0,budgetMs:0,async run(~){let ~=~(~),~=await ~(~(~,{managedHooksExcluded:~(~)}),~.tool)` |
+| `session-title-address` | `Hook sessionTitle applied (`, `Names are the address: send with`, `the name IS the address; there is no separate address syntax`, `applied locally but the session registry record was not updated` | ``Hook sessionTitle applied (${[...~].length} chars)`),await ~(~,"hook",~,!1,!1,~)`` |
+| `session-name-unique` (informational, or a note on the entry above) | `"tengu_session_name_uniqueness",!0)`, `" is held by live pid ` | — |
+| `mcp-stdio-ppid` | `stdio:["pipe","pipe",this._serverParams.stderr??"inherit"],shell:!1`, `{ echo 0 > "$0"/cgroup.procs; } 2>/dev/null; exec "$@"` | `let ~=~.CLAUDE_CODE_SHELL_PREFIX||~.command,` |
+| `mcp-progress-resets-idle-timeout` (renamed from `mcp-progress-resets-timeout`: only the idle timer resets) | `aborting: no response or progress notification for `, `Hard wall-clock limit per call; progress notifications do not extend it.` | `onprogress:(~)=>{if(~.armedAt=0,~=Date.now(),`; `~.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT??(~==="stdio"?~:~)` |
+| `mcp-server-shared-by-subagents` | — (no stable literal) | `if(!~.mcpServers?.length)return{clients:~,agentClients:[],tools:[],cleanup:async()=>{}}`; `return{clients:[...~,...~],agentClients:~,tools:~,cleanup:~}` |
+
+Every shape above keeps 16 or more literal characters. The `mcp-server-shared-by-subagents` entry has no literal in its own code. For a `search` it could use `Skipping frontmatter MCP servers: blocked by ` (2 hits, the same function) if C1 wants one.
