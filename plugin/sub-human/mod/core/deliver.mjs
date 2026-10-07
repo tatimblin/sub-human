@@ -77,8 +77,9 @@ function wakeText(text, rows) {
 export const logLines = x => (Array.isArray(x) ? x : String(x ?? '').split('\n')).filter(l => String(l).trim()).map(text => ({ do: 'log', text: String(text) }));
 
 /**
- * [action], each {do:'log'|'append'|'submit'|'mid-turn-wake', text} | {do:'hold-rows', text|null} | {do:'seat', seat}.
- * A mid-turn wake is appended now and handed to turnLedger, since the request in flight may not carry it.
+ * [action], each {do:'log'|'append'|'mid-turn-wake', text} | {do:'submit', text, seen} | {do:'hold-rows', text|null}
+ * | {do:'seat', seat}. A mid-turn wake is appended now and handed to turnLedger, since the request in flight may not
+ * carry it. A submit's `seen` are the lines the person would see, logged when the submit does not take the wake.
  */
 export function route(ev, { turnRunning = false, role = 'member', rows = null } = {}) {
   if (!ev) return [];
@@ -91,8 +92,8 @@ export function route(ev, { turnRunning = false, role = 'member', rows = null } 
     case 'wake': {
       // The orch has no person to type: its rows calls ride on its wakes. A member's go with the person's prompt.
       const text = wakeText(ev.text, role === 'orch' ? rows : null);
-      if (!turnRunning) return [{ do: 'submit', text }];
       const seen = visibleLines(ev.text);
+      if (!turnRunning) return [{ do: 'submit', text, seen }];
       return [...logLines(seen), { do: 'mid-turn-wake', text }];
     }
     default: return [];

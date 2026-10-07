@@ -10,7 +10,7 @@
  *   delivering(sid) -> bool     the child follows a seat for this session id (mod/prompt.mjs skips node on it)
  */
 import {
-  tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted,
+  tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
   DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS,
 } from './core/deliver.mjs';
 import { parseHello } from './core/seat.mjs';
@@ -109,15 +109,23 @@ async function appendRow($, text) {
   return !!(r && !r.deny);
 }
 
+/** Each line on its own notice, as a chat event's (a newline in one would be drawn as U+FFFD). */
+function logEach($, lines) {
+  for (const a of logLines(lines)) $.ui.log(a.text);
+}
+
 /**
  * A wake as a turn of its own. When the submit is dropped (a hook refused it) or fails, the wake still reaches the
- * model: appended, unless it already was; when the append fails too, held for the next turn.start. Never throws.
+ * model: appended, unless it already was; when the append fails too, held for the next turn.start. The person then
+ * sees the room lines `seen` as notices, since no prompt row shows them (only "Prompt dropped by a hook"); lines
+ * already shown are passed as none. Never throws.
  */
-function submitWake($, text, { appended = false } = {}) {
+function submitWake($, text, { appended = false, seen = [] } = {}) {
   return (async () => {
     let r = null;
     try { r = await $.prompt.submit({ text }); } catch { /* below */ }
     if (r && typeof r.drop !== 'string') return;
+    try { logEach($, seen); } catch { /* the model still gets it below */ }
     if (appended || await appendRow($, text)) return;
     turns.hold(text); // PENDING_MAX keeps the newest held
     await noteError($);
@@ -213,7 +221,7 @@ async function apply($, c, ev) {
       case 'log': $.ui.log(a.text); break;
       case 'append': if (!(await appendRow($, a.text))) await noteError($); break; // refused or failed: lost
       case 'hold-rows': await $.state.set(ROWS, a.text); break;
-      case 'submit': void submitWake($, a.text); break; // not awaited: it resolves only as the turn starts
+      case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
       default: break;
     }

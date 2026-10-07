@@ -2,8 +2,9 @@
 // The routing table and the turn ledger are tested in node (test/mod-core.test.js, test/mod-core-deliver.test.js);
 // the tail's events in test/tail.test.js. This checks the hooks: session.start spawns `node bin/sub-human tail
 // --ndjson` for a seated session, restarted with backoff and stopped at the session's end, and its events reach
-// the session: a chat event is a $.ui.log notice and starts no turn, a wake while idle submits one prompt, a wake
-// mid-turn goes to an append (and logs its visible lines) instead, and a failure leaves a notice.
+// the session: a chat event is a $.ui.log notice and starts no turn, a wake while idle submits one prompt (and logs
+// its visible lines when a hook drops it), a wake mid-turn goes to an append (and logs them) instead, and a failure
+// leaves a notice.
 // The test kit has no bottom for a plugin's own $.session.append in 2.1.292 (a test's on('session.append') is not
 // reached by it: "no implementation for session.append"), so every append here fails: a pull is lost and counted
 // as a delivery error, and a mid-turn wake falls back to a prompt. The test's $ has no state noun either, so
@@ -174,15 +175,19 @@ test('while the child delivers, a member\'s plain prompt starts no node once con
 const WAKE = (text: string) => line({ type: 'wake', text })
 const typed = ($: any, text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false } as any)
 
-test('a wake whose prompt a hook drops is not lost: nothing takes it now, so it is delivered at the next turn.start', async ($, on) => {
-  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + WAKE("bob's Claude (to you): q?")], submit: (_, n) => (n === 0 ? 'drop' : 'ok') })
+test('a wake whose prompt a hook drops shows its room lines, and is delivered at the next turn.start', async ($, on) => {
+  const wake = WAKE("bob's Claude (to you): q?\n  │ which file?\n(for Claude) room now: …")
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + wake], submit: (_, n) => (n === 0 ? 'drop' : 'ok') })
   await start($)
-  await until(() => seen.submits.length === 1 && seen.logs.length === 1)
+  await until(() => seen.submits.length === 1 && seen.logs.length === 3)
   expect(seen.prompts).toEqual([])
-  expect(seen.logs).toEqual([NOTICE]) // dropped, and the kit cannot append it: the person is told
+  // no prompt row shows a dropped wake: its visible lines are notices, one per line, without "(for Claude)" lines;
+  // then the kit cannot append it, so the person is told it is not delivered yet
+  expect(seen.logs).toEqual(["bob's Claude (to you): q?", '  │ which file?', NOTICE])
   await $.turn.start({ text: 'next', turnId: 't1' } as any)
   await until(() => seen.prompts.length === 1)
-  expect(seen.prompts[0]).toMatch(/^\(for Claude\) sub-human room[^\n]*\nbob's Claude \(to you\): q\?$/)
+  expect(seen.prompts[0]).toMatch(/^\(for Claude\) sub-human room[^\n]*\nbob's Claude \(to you\): q\?\n/)
+  expect(seen.logs.length).toBe(3) // delivered later without showing the lines again
   seen.release()
 })
 
