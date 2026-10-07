@@ -14,7 +14,7 @@ const common = require('../helpers.js');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { spawn, spawnSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 
 const PLUGIN = path.join(__dirname, '..', '..');
 const HOOKS = path.join(PLUGIN, 'hooks');
@@ -24,14 +24,8 @@ const room = require(path.join(PLUGIN, 'lib', 'room.js'));
 
 const fixture = name => JSON.parse(fs.readFileSync(path.join(FIXTURES, name + '.json'), 'utf8'));
 
-const sleepers = [];
-process.on('exit', () => { for (const p of sleepers) { try { p.kill('SIGKILL'); } catch { /* gone */ } } });
-function sleeper() {
-  const p = spawn('sleep', ['600'], { stdio: 'ignore' });
-  p.unref();
-  sleepers.push(p);
-  return p.pid;
-}
+// A live pid that is not an ancestor; ../helpers.js kills it on exit.
+const sleeper = () => common.spawnSleeper(600).pid;
 
 function baseEnv(extra = {}) {
   const e = {};

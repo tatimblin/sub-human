@@ -12,7 +12,7 @@
  *   fmt(e, {entries}?)       full text for `sub-human read`, body lines nested the same way;
  *     who(e) ("alice" | "alice's Claude" | "room")
  *   stateLine(me, entries, {members, ids}) -> "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed ·
- *     away: carol"  (waiting on = no answer yet, objected = current answer is an objection; lib/consent.js fold;
+ *     away: carol"  (waiting on = no answer yet, objected = current answer is an objection; lib/room/consent.js fold;
  *     ids:false drops the decision's "#N", for a member's wake, which the person sees too)
  *   digest(entries, {members, code}) <= DIGEST_CAP chars: members, open proposals + approvers + answers, open
  *     objections/questions, decisions, last 10 human entries in full by the line() rule; retracted entries
@@ -26,7 +26,7 @@
 const { normalize, unverifiedHuman, isYoungProvisional } = require('./store.js');
 const { proposals, answers, answered, decided, approversOf, retractedIds } = require('./lanes.js');
 const { oneLine } = require('../text.js');
-const { fold } = require('../consent.js');
+const { fold } = require('./consent.js');
 const { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP, CHAT_LINES_MAX, CHAT_NEST } = require('../config.js');
 
 const FOR_CLAUDE = '(for Claude)';
@@ -206,7 +206,7 @@ function chatLines(e, { viewer } = {}) {
   return out;
 }
 
-/** "waiting on dave · objected: carol" for an undecided proposal's consent matrix (lib/consent.js), or '' when all agreed. */
+/** "waiting on dave · objected: carol" for an undecided proposal's consent matrix (lib/room/consent.js), or '' when all agreed. */
 function waiting(m) {
   return [m.missing.length && `waiting on ${m.missing.join(', ')}`, m.objected.length && `objected: ${m.objected.join(', ')}`]
     .filter(Boolean).join(' · ');

@@ -15,7 +15,7 @@
  *       `proposal` with path = that room-relative ref (older entries hold an absolute path). approvers
  *       default to the humans present (not orch, not left). An identical open proposal is not re-appended.
  *       Throws ProposalError (message for the model) on bad input.
- *   Reading the log goes through lib/consent.js fold (retracted entries out, latest proposal per hash, the
+ *   Reading the log goes through lib/room/consent.js fold (retracted entries out, latest proposal per hash, the
  *   latest answer per person, an objection voids a signoff), the same fold stateLine, lane() and the rows read.
  *   proposals(entries) -> [p]      the latest proposal entry per hash, as {id, hash, approvers, path, from}
  *   pendingFor(me, entries?) -> [p] proposals naming me that I have not answered, undecided, not retracted
@@ -49,7 +49,6 @@ const room = require('./room.js');
 const { writeFileAtomic } = require('./io.js');
 const { clip } = require('./text.js');
 const config = require('./config.js');
-const { fold } = require('./consent.js');
 
 const HASH_RE = /^[0-9a-f]{12}$/;
 const QUESTION_RE = /^Agree to proposal ([0-9a-f]{12})\?$/;
@@ -89,18 +88,18 @@ function humans(code) {
     .filter(m => m && m.name && m.role !== 'orch' && !m.left_at).map(m => m.name);
 }
 
-// ---------- reading the log (lib/consent.js fold: the same semantics as stateLine, lane and the rows) ----------
+// ---------- reading the log (lib/room/consent.js fold: the same semantics as stateLine, lane and the rows) ----------
 const shape = p => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
-const proposals = entries => [...fold(entries).proposals.values()].map(shape);
+const proposals = entries => [...room.fold(entries).proposals.values()].map(shape);
 
-const decision = (hash, entries) => fold(entries).decisions.get(hash) || null;
+const decision = (hash, entries) => room.fold(entries).decisions.get(hash) || null;
 
 /** The answer matrix over p.approvers (the latest answer per person wins; an objection voids a signoff). */
-const matrix = (p, entries) => fold(entries).matrix(p.hash, p.approvers);
+const matrix = (p, entries) => room.fold(entries).matrix(p.hash, p.approvers);
 
 function pendingFor(me, entries) {
   if (!me || !me.name) return [];
-  return fold(entriesOf(me, entries)).pending(me.name).map(shape);
+  return room.fold(entriesOf(me, entries)).pending(me.name).map(shape);
 }
 
 /** A proposal's title: the first non-empty line of its text, heading / list / quote markers dropped. */
@@ -233,7 +232,7 @@ function record(me, p, answer = {}) {
   if (choice !== 'Agree' && choice !== 'Object') return { stale: true, why: 'no choice' };
   return r.store.lock('proposal', () => {
     const entries = r.readAll();
-    const f = fold(entries);
+    const f = room.fold(entries);
     const cur = f.proposals.get(p.hash);
     // Idempotent: one answer per person per proposal. A card and a plan view open at once, or a reopened card,
     // never record twice, and the decision's refs are exactly the answers the fold reads as current.

@@ -3,7 +3,7 @@
  * plugin/sub-human/lib/room/lanes.js: who a log entry concerns, and the proposal queries that decide it.
  *
  * Proposals and decisions (a proposal is {hash, approvers[], path?}; answers carry proposal_hash). Every query
- * reads lib/consent.js fold(entries) (memoized per array), so stateLine, lane, the rows and the gate agree:
+ * reads lib/room/consent.js fold(entries) (memoized per array), so stateLine, lane, the rows and the gate agree:
  *   (entries: the log to judge against; lib/room.js Room passes its own)
  *   proposal(hash, entries) -> Entry|null            the latest proposal with that hash
  *   proposals(entries?) -> Entry[]                   the latest entry per distinct hash, in log order
@@ -20,9 +20,9 @@
  */
 
 const { normalize } = require('./store.js');
-const { fold } = require('../consent.js');
+const { fold } = require('./consent.js');
 
-// ---------- proposals / decisions (all read lib/consent.js fold: one set of semantics) ----------
+// ---------- proposals / decisions (all read lib/room/consent.js fold: one set of semantics) ----------
 /** The latest (non-retracted) proposal entry, legacy plan_rev included, with that hash. */
 function proposal(hash, entries = []) {
   const p = fold(entries).proposals.get(hash);

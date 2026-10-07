@@ -16,7 +16,6 @@
  *   sleep(ms), until(fn, ms)
  *   tmpDir(prefix, t?) -> dir            a tracked temp dir; with a node:test context t, removed in t.after
  *   freshHome(t?)                        as above; pass t to remove the home when that test ends
- *   cleanupTmp()                         remove every tracked dir now (also runs on exit)
  *   PLUGIN, LIB, BIN, MCP                paths
  *
  * Temp dirs: requiring this file wraps fs.mkdtempSync / fs.mkdtemp / fs.promises.mkdtemp so every dir
@@ -84,7 +83,7 @@ function installTmpTracking() {
   for (const [sig, n] of [['SIGINT', 2], ['SIGTERM', 15], ['SIGHUP', 1]]) {
     process.once(sig, () => { process.exit(128 + n); }); // exit handlers (cleanup, sleeper kills) still run
   }
-  return { dirs, cleanup, remove };
+  return { remove };
 }
 
 /** A tracked temp dir. With a node:test context `t`, it is removed when that test ends. */
@@ -163,4 +162,4 @@ async function until(fn, ms = 5000, step = 50) {
 }
 
 module.exports = { PLUGIN, LIB, BIN, MCP, freshHome, newRoom, register, childEnv, spawnSleeper, deadPid, sleep, until,
-  tmpDir, cleanupTmp: () => tmp.cleanup(), currentRoom: () => current };
+  tmpDir };
