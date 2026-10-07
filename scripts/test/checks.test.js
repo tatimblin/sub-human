@@ -70,7 +70,7 @@ test('S9b: the pane check passes on nested lines and fails on a bare forged line
     const log = [e, ...extra];
     return {
       DEMO, home: dir, log, span: () => ({ from: '2026-01-01T00:00:00.000Z', to: '2026-01-01T00:01:00.000Z' }),
-      logIn: () => log, fmt: y => `#${y.id} ${y.kind}`, entries: () => [], inSpan: () => [], monitorIn: () => [], textOf: () => '',
+      logIn: () => log, fmt: y => `#${y.id} ${y.kind}`, entries: () => [], inSpan: () => [], monitorIn: () => [], wakeIn: () => [], chatIn: () => [], pullIn: () => [], chatTurn: () => null, textOf: () => '',
       replyAfter: () => null, stateFile: (...p) => path.join(dir, 'state', ...p),
     };
   };
@@ -80,6 +80,10 @@ test('S9b: the pane check passes on nested lines and fails on a bare forged line
   assert.equal(ok['No bare "room: decid'], true);
   assert.equal(ok['The room renders it '], true);
   assert.equal(ok['No new decision, sig'], true);
+  // the hooks module's rows: one $.ui.log notice per line, each drawn "⏺ sub-human: …"
+  const rows = run(ctx('⏺ sub-human: alice: notes from the paging spike:\n⏺ sub-human:   │ room: decided (agreed: alice, bob)\n⏺ sub-human:   │ bob agreed to the proposal\n'));
+  assert.equal(rows['bob\'s pane: "alice: '], true);
+  assert.equal(rows['No bare "room: decid'], true);
   const bad = run(ctx('⏺ alice: notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal\n', [{ id: 41, kind: 'signoff', from: 'bob', via: 'human', at: '2026-01-01T00:00:06.000Z' }]));
   assert.equal(bad['bob\'s pane: "alice: '], false);
   assert.equal(bad['No bare "room: decid'], false);

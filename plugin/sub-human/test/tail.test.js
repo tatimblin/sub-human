@@ -478,3 +478,20 @@ test('tail: a chain break is a health event', () => {
   t.advance(FAST.healthMs * 2);
   assert.deepEqual(t.of('health').map(x => x.text.slice(0, 40)), ['room log check: the hash chain breaks at']);
 });
+
+test('tail: a member\'s wake carries the room state without entry ids (the person sees the plugin prompt\'s row); the orch\'s keeps them', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  rows.writeHolds(code, 'alice', { room: true });
+  sys(code, 'member_joined', 'alice');                                                  // #1
+  const t = startNd({ sid: 's' });
+  t.advance(300);
+  prop(code, 'orch', H1, ['alice']);                                                    // #2
+  say(code, 'alice', '', { kind: 'signoff', proposal_hash: H1, text: 'ok' });           // #3 own
+  sys(code, 'decision', 'room', { proposal_hash: H1 });                                 // #4 a decision on mine: wake
+  t.advance(2000);
+  const state = t.of('wake').flatMap(x => x.text.split('\n')).filter(l => l.startsWith('(for Claude) room now:'));
+  assert.ok(state.length >= 1, t.out);
+  for (const l of state) assert.doesNotMatch(l, /#\d/, l);
+  assert.match(room.open(code).stateLine({ name: 'orch', role: 'orch' }, room.open(code).readAll()), /decided #4/);
+});

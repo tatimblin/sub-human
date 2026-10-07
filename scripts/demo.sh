@@ -225,9 +225,10 @@ S1() { # alice joins with no room open: the room is created and the headless orc
 S2() { # bob joins
   submit bob "/sub-human bob"
   need wait_log --kind member_joined --from bob --timeout 60 || return 1
-  # the join as a group-chat line in alice's pane ("bob joined": the monitor's line, printed by her Claude); kept as evidence
+  # the join as a group-chat line in alice's pane ("sub-human: bob joined": the hooks module's $.ui.log notice, no
+  # model turn); kept as evidence
   mkdir -p "$SNAP_DIR/state/S2"
-  wait_pane alice "^\s*(⏺ )?bob joined\s*$" 60 --what "alice sees the chat line \"bob joined\"" && $LIB pane sh-alice > "$SNAP_DIR/state/S2/notice-alice.txt"
+  wait_pane alice "^\s*(⏺ |⎿ )?(sub-human: )?bob joined\s*$" 60 --what "alice sees the chat line \"bob joined\"" && $LIB pane sh-alice > "$SNAP_DIR/state/S2/notice-alice.txt"
   need wait_pane bob "$(panel_row "$(room)")" 90 || return 1
   need $LIB wait-holds orch bob --timeout 120 || return 1
   need $LIB wait-holds alice bob --timeout 90 || return 1
@@ -248,9 +249,10 @@ S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   need wait_log --kind say --from bob --via human --after "$before" --timeout 30 || return 1
   need $LIB wait-idle sh-alice --timeout 90 || return 1
   submit bob "ask alice's Claude how createTask in src/store.js picks ids. just ask, change nothing"
-  need wait_pane alice "Message from @?bob\." 120 --what "alice's pane shows a message from bob's Claude" || return 1
+  # the engine's "Message from @bob.CODE", or the hooks module's drawing of that peer row (mod/render.mjs: "bob's Claude: …")
+  need wait_pane alice "Message from @?bob\.|^\s*bob's Claude: " 120 --what "alice's pane shows a message from bob's Claude" || return 1
   need $LIB wait-idle sh-alice --timeout 120 || return 1
-  need wait_pane bob "Message from @?alice\." 120 --what "bob's pane shows alice's Claude's answer" || return 1
+  need wait_pane bob "Message from @?alice\.|^\s*alice's Claude: " 120 --what "bob's pane shows alice's Claude's answer" || return 1
   need $LIB wait-idle sh-bob --timeout 120 || return 1
   settle alice bob
   snap "bob's Claude asks alice's Claude natively (SendMessage to alice.$(room)); alice's Claude answers. No card, no orch turn"
@@ -372,8 +374,11 @@ S7() { # stray typing into a row view: the hint is on the row's own progress lin
   sleep 1
 }
 
-S8() { # resilience: /clear in alice keeps rows; bob /exit + --continue: rows return with no prompt; monitor wakes him
+S8() { # resilience: /clear in alice keeps rows; bob /exit + --continue: rows return with no prompt; the room still reaches him
   local sid; sid=$($LIB member-field alice session_id)
+  # S7's Up Up (focus back from the agent panel) can recall the last prompt into the box when focus was already
+  # there; "/clear" typed after it is then text, not the command (run heron-1142). Empty the box first.
+  keys alice C-e C-u; sleep 0.5
   submit alice "/clear"
   need $LIB wait-member alice session_id --not "$sid" --timeout 30 || return 1
   sleep 8   # the old row line can linger right after /clear: give the restore time before looking for the row
@@ -392,10 +397,10 @@ S8() { # resilience: /clear in alice keeps rows; bob /exit + --continue: rows re
   local b2; b2=$($LIB log-max)
   submit alice "@room bob, are you back? the parser tests are done"
   need wait_log --kind say --from alice --via human --after "$b2" --timeout 30 || return 1
-  need wait_pane bob "are you back" 60 --what "the monitor still wakes bob after the resume" || return 1
+  need wait_pane bob "alice: bob, are you back" 60 --what "alice's words still reach bob's pane after the resume (the tail child came back)" || return 1
   need $LIB wait-idle sh-bob --timeout 90 || return 1
   settle alice
-  snap "After the resume the room monitor still wakes bob with alice's words"
+  snap "After the resume the room still reaches bob: alice's words as a chat line"
 }
 
 S9() { # the orch refuses typed input: a viewer attaches and types one line
@@ -438,7 +443,7 @@ S10() { # leave: both exit → reap completes task 1 and stops the orch
   need wait_log --kind member_left --from alice --after "$before" --timeout 30 || return 1
   # the leave reaches bob as a chat line once it has settled (8 s with no rejoin)
   mkdir -p "$SNAP_DIR/state/S10"
-  wait_pane bob "^\s*(⏺ )?alice left\s*$" 45 --what "bob sees the chat line \"alice left\" after the 8 s settle" && $LIB pane sh-bob > "$SNAP_DIR/state/S10/notice-bob.txt"
+  wait_pane bob "^\s*(⏺ |⎿ )?(sub-human: )?alice left\s*$" 45 --what "bob sees the chat line \"alice left\" after the 8 s settle" && $LIB pane sh-bob > "$SNAP_DIR/state/S10/notice-bob.txt"
   need $LIB wait-idle sh-bob --timeout 30 || return 1
   exit_seat bob
   need wait_log --kind member_left --from bob --after "$before" --timeout 30 || return 1

@@ -195,7 +195,8 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
 
 test('deliver: the routing table (Part 2b): chat is a notice, pull an append, wake a prompt when idle and an append mid-turn', async () => {
   const d = await load('mod/core/deliver.mjs');
-  assert.deepEqual(d.route({ type: 'chat', lines: ['bob: hi', 'carol joined'] }), [{ do: 'log', text: 'bob: hi\ncarol joined' }]);
+  // one $.ui.log per line: a notice is one line (a newline would be drawn as U+FFFD)
+  assert.deepEqual(d.route({ type: 'chat', lines: ['bob: hi', '  │ more', 'carol joined'] }), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: '  │ more' }, { do: 'log', text: 'carol joined' }]);
   assert.deepEqual(d.route({ type: 'pull', text: 'Room since…' }), [{ do: 'append', text: 'Room since…' }]);
   assert.deepEqual(d.route({ type: 'rows', text: null }), [{ do: 'hold-rows', text: null }]);
   assert.deepEqual(d.route({ type: 'seat', seat: null }), [{ do: 'seat', seat: null }]);

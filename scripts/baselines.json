@@ -252,6 +252,48 @@
    "red": 1,
    "cardsPerCard": 4,
    "cost": "≈ $2.72 (opus-5-5)"
+  },
+  "heron-1142": {
+   "run": "heron-1142",
+   "note": "Mods W4 cut-over (9a5e642 + the live-run fixes): no Monitor; chat as $.ui.log rows + isMeta copies (D3), wakes as sub-human plugin prompts. 71/75 deterministic: S9b (a multi-line $.ui.log notice draws newlines as U+FFFD) and S10 (a member wake's state line showed \"decided #13\") fixed after the run; S9's synthetic payload lacked the shim's origin (harness, fixed). Two attempts: a fresh run after the consent fix, resumed once at S8. Seats and orch on the user's default model",
+   "wakes": {
+    "orch": 8,
+    "alice": 4,
+    "bob": 5,
+    "total": 17
+   },
+   "noise": {
+    "captures": 58,
+    "lines": 76,
+    "perCapture": 1.31,
+    "perCaptureExWaiting": 0.78,
+    "monitor": 0,
+    "plugin": 42,
+    "waiting": 31,
+    "hookError": 0,
+    "blocked": 3,
+    "invalid": 0
+   },
+   "joinChars": {
+    "orch": 703,
+    "alice": 1076,
+    "bob": 1068
+   },
+   "injected": {
+    "orch": 703,
+    "alice": 3191,
+    "bob": 3495,
+    "total": 7389
+   },
+   "chat": {
+    "notices": 7,
+    "pulls": 37,
+    "calls": 0,
+    "callsPerBurst": 0
+   },
+   "red": 0,
+   "cardsPerCard": 3.75,
+   "cost": "≈ $2.52 (opus-5-5)"
   }
  },
  "prices": {

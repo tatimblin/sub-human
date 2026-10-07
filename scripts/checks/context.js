@@ -6,8 +6,8 @@
  *
  * ctx.code, roomDir, log, members, orchSid, job, index (screens/index.json), props (proposals with a hash),
  * and helpers over the captures (cap, caps, capName, span), the per-step state (st, stText, nativeTasks),
- * the seats' transcripts (entries, inSpan, toolUses, assistantIds, peerIn, monitorIn, orchTurns, replyAfter,
- * noModelTurn, rowUserText, rowReply), the room log (byKind, fmt, logIn, shownVia), chainOk() and cost().
+ * the seats' transcripts (entries, inSpan, toolUses, assistantIds, peerIn, wakeIn (monitorIn), chatIn, pullIn,
+ * chatTurn, orchTurns, replyAfter, noModelTurn, rowUserText, rowReply), the room log (byKind, fmt, logIn, shownVia), chainOk() and cost().
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -77,7 +77,37 @@ function context({ screens, home, room }) {
   const toolUses = (es, name) => es.filter(e => e.type === 'assistant' && !e.isSidechain).flatMap(e => (e.message.content || []).filter(c => c && c.type === 'tool_use' && (!name || c.name === name || new RegExp(name).test(c.name))).map(c => ({ ...c, at: e.timestamp })));
   const assistantIds = es => new Set(es.filter(e => e.type === 'assistant' && !e.isSidechain).map(e => e.message.id || e.uuid));
   const peerIn = (es, from) => es.filter(e => e.type === 'user' && e.origin && e.origin.kind === 'peer' && (!from || String(e.origin.name || '').startsWith(from + '.')));
-  const monitorIn = es => es.filter(e => metrics.trigger(e) === 'monitor');
+  // room wakes: the hooks module's plugin prompt (W4), or a Monitor event (runs before W4)
+  const wakeIn = es => es.filter(e => ['plugin', 'monitor'].includes(metrics.trigger(e)));
+  const monitorIn = wakeIn;
+  // the hooks module's chat rows ($.ui.log, "sub-human: …") and their isMeta copies for the model (D3)
+  const chatIn = es => es.filter(metrics.isChatNotice);
+  const pullIn = es => es.filter(metrics.isPull);
+  /**
+   * Whether chat row `note` (an entry of seat's transcripts) started a model turn: idle when it arrived (the last
+   * turn had ended: a turn_duration, or nothing, since the last prompt) and an assistant message follows before
+   * any other prompt. {woke, idle, evidence}.
+   */
+  function chatTurn(seat, note) {
+    const f = note && seatFiles(seat).find(x => path.basename(x) === note._file);
+    if (!f) return { woke: false, idle: null, evidence: 'no chat row' };
+    const es = jsonl(f).filter(e => !e.isSidechain);
+    const i = es.findIndex(e => e.uuid === note.uuid);
+    if (i < 0) return { woke: false, idle: null, evidence: 'chat row not found' };
+    const isPrompt = e => e.type === 'user' && !metrics.isPull(e) && !(Array.isArray(e.message && e.message.content) && e.message.content.every(c => c && c.type === 'tool_result')) && (!e.isMeta || (e.origin && e.origin.kind === 'peer'));
+    let idle = true;
+    for (let j = i - 1; j >= 0; j--) {
+      const e = es[j];
+      if (e.type === 'system' && e.subtype === 'turn_duration') break;
+      if (isPrompt(e) || e.type === 'assistant') { idle = false; break; }
+    }
+    if (!idle) return { woke: false, idle, evidence: 'arrived during a running turn (folded in, no turn of its own)' };
+    for (const e of es.slice(i + 1)) {
+      if (isPrompt(e)) return { woke: false, idle, evidence: `idle; the next turn began with a prompt (${(e.origin && e.origin.kind) || e.type})` };
+      if (e.type === 'assistant') return { woke: true, idle, evidence: `idle, then an assistant message at ${String(e.timestamp).slice(11, 19)} with no prompt` };
+    }
+    return { woke: false, idle, evidence: 'idle; no model call after it' };
+  }
   const orchTurns = s => assistantIds(inSpan(entries('orch'), s)).size;
 
   // ---- the room log
@@ -104,7 +134,7 @@ function context({ screens, home, room }) {
     }
     return { text: text.join('\n'), tools };
   }
-  /** How log entry id was shown to name as a join/leave line ("monitor" | "prompt" | "notification"), from rows/notices-NAME.json. */
+  /** How log entry id was shown to name as a join/leave line ("mod"; before W4 "monitor" | "prompt"), from rows/notices-NAME.json. */
   function shownVia(name, id) {
     const rec = readJson(path.join(roomDir, 'rows', `notices-${name}.json`), {});
     const x = (Array.isArray(rec.log) ? rec.log : []).find(y => y.id === id);
@@ -121,7 +151,8 @@ function context({ screens, home, room }) {
       if (i < 0) continue;
       for (let j = i + 1; j < es.length; j++) {
         const x = es[j];
-        if (x.type === 'user' && !x.isMeta) return { pass: true, evidence: `${path.basename(f).slice(0, 8)}…: hook receipt for #${e.id}, no assistant message before the next prompt or notice` };
+        // the next prompt: a typed one, a wake, or a peer message (written isMeta, origin peer)
+        if ((x.type === 'user' && (!x.isMeta || (x.origin && x.origin.kind === 'peer'))) || (x.type === 'queue-operation' && x.operation === 'enqueue')) return { pass: true, evidence: `${path.basename(f).slice(0, 8)}…: hook receipt for #${e.id}, no assistant message before the next prompt or notice` };
         if (x.type === 'assistant') return { pass: false, evidence: `assistant message right after the receipt for #${e.id}` };
       }
       return { pass: true, evidence: `${path.basename(f).slice(0, 8)}…: hook receipt for #${e.id} is the last turn activity` };
@@ -197,7 +228,7 @@ function context({ screens, home, room }) {
   return {
     DEMO, screens, home, code, roomDir, log, members, orchSid, job, index, props, runStart,
     caps, cap, capName, span, stateDir, st, stText, nativeTasks, stateFile,
-    seatFiles, entries, inSpan, toolUses, assistantIds, peerIn, monitorIn, orchTurns, textOf,
+    seatFiles, entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, monitorIn, chatIn, pullIn, chatTurn, orchTurns, textOf,
     byKind, fmt, logIn, replyAfter, shownVia, noModelTurn, rowUserText, rowReply, chainOk, cost,
   };
 }

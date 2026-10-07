@@ -24,10 +24,10 @@ module.exports = {
       `members.json orch.stopped_at ${members.orch && members.orch.stopped_at}; claude agents --json at the last S10 snap ${ag ? (running ? `still lists ${running.id} (${running.state})` : `has no ${job}`) : 'not saved'}`);
     const tj = readJson(path.join(roomDir, 'tasks.json'), null);
     det('<room>/tasks.json stays', Array.isArray(tj), tj ? `${tj.length} task(s) kept` : 'missing');
-    const ln = /^\s*(⏺ )?alice left\s*$/m.exec(readText(x.stateFile('S10', 'notice-bob.txt')) || '');
+    const ln = /^\s*(⏺ )?(sub-human: )?alice left\s*$/m.exec(readText(x.stateFile('S10', 'notice-bob.txt')) || '');
     const via = la && x.shownVia('bob', la.id);
     const early = la && lb && Date.parse(lb.at) - Date.parse(la.at) < 8000;
-    det('bob sees the chat line "alice left" once the leave settled (8 s)', ln && via === 'monitor' && !early,
+    det('bob sees the chat line "alice left" once the leave settled (8 s)', ln && via === 'mod' && !early,
       `${ln ? `"${ln[0]}" in bob's pane (state/S10/notice-bob.txt)` : 'not seen in bob\'s pane'}; rows/notices-bob.json: #${la ? la.id : '?'} shown via ${via || 'nothing'}; bob left ${la && lb ? ((Date.parse(lb.at) - Date.parse(la.at)) / 1000).toFixed(1) : '?'} s after alice`);
 
     // every human saw a join/leave notice

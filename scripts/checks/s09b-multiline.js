@@ -19,27 +19,29 @@ module.exports = {
     det('alice\'s three-line @room text byte-exact (real newlines), via=human, signed', !!e && trust === 'verified',
       e ? `#${e.id} === typed (${Buffer.byteLength(e.text)} bytes, ${e.text.split('\n').length} lines); sig ${trust}` : `alice's say in S9b: ${x.fmt(anyA)}`);
 
-    // what the room renders for bob, and what bob's Claude printed after the one wake that carried it
+    // what the room renders for bob, and how it reached him: the hooks module's chat row ($.ui.log) and the isMeta
+    // copy for his Claude, both carrying the lines as rendered, "│" nesting included; no model turn (D3)
     const want = e ? room.chatLines(e, { viewer: 'bob' }) : [];
     const nest = room.CHAT_NEST;
     det(`The room renders it as one head line and nested lines ("${nest}")`, want.length === 3 && want.slice(1).every(l => l.startsWith(nest)),
       want.length ? want.map(l => JSON.stringify(l)).join(' / ') : 'no entry');
-    // Claude Code's Monitor strips each event line's leading whitespace (2.1.281: "  │ x" arrives as "│ x"), so the
-    // "│" is what carries the nesting to the model: compare against the lines as delivered
-    const sent = want.map(l => l.replace(/^\s+/, ''));
-    const mw = x.monitorIn(x.inSpan(x.entries('bob'), s)).filter(y => e && x.textOf(y.message.content).includes(sent.join('\n')));
-    const ev = mw[0] ? x.textOf(mw[0].message.content) : '';
-    const br = mw[0] && x.replyAfter('bob', mw[0]);
-    det('bob\'s Claude is woken once and prints the chat lines exactly as delivered, "│" prefixes included', mw.length === 1 && br && br.text.trim() === sent.join('\n') && !br.tools.length,
-      `${mw.length} Monitor event(s) carrying the lines${mw[0] ? ` (indent before "│" ${ev.includes(want.join('\n')) ? 'kept' : 'stripped by the Monitor'})` : ''}; ${br ? `bob's Claude wrote ${JSON.stringify(br.text)}${br.tools.length ? ` and called ${br.tools.join(', ')}` : ''}` : 'no reply after the wake'}`);
+    const bes = x.inSpan(x.entries('bob'), s);
+    // one $.ui.log row per line (a notice is one line: a newline in one would be drawn as U+FFFD)
+    const all = x.chatIn(bes);
+    const notes = e ? all.filter((y, i) => want.every((l, k) => all[i + k] && all[i + k].content === `sub-human: ${l}`)) : [];
+    const copies = x.pullIn(bes).filter(y => e && x.textOf(y.message.content).includes(want.join('\n')));
+    const ct = notes[0] ? x.chatTurn('bob', notes[0]) : null;
+    det('bob gets the lines once as a chat row and once as his Claude\'s copy, "│" prefixes included, with no model turn', notes.length === 1 && copies.length === 1 && ct && !ct.woke,
+      `${notes.length} run(s) of three chat rows and ${copies.length} isMeta copy(ies) carrying the rendered lines verbatim${notes.length ? '' : `; chat rows seen: ${all.filter(y => /notes from the paging spike/.test(y.content)).map(y => JSON.stringify(y.content)).join(' / ') || 'none'}`}; ${ct ? ct.evidence : 'no chat row'}`);
 
     // bob's pane (state/S9b/pane-bob.txt): the head line, then the two lines nested under it
     const pane = readText(x.stateFile('S9b', 'pane-bob.txt')) || '';
     const lines = pane.split('\n');
-    const hi = lines.findIndex(l => /^\s*(⏺ )?alice: notes from the paging spike:\s*$/.test(l));
+    const hi = lines.findIndex(l => /^\s*(⏺ )?(sub-human: )?alice: notes from the paging spike:\s*$/.test(l));
     const next = hi >= 0 ? lines.slice(hi + 1, hi + 3) : [];
     const rest = e ? e.text.split('\n').slice(1) : [];
-    const nested = next.length === 2 && next.every((l, i) => new RegExp(`^ {2,}│ ${esc(rest[i])}\\s*$`).test(l));
+    // each later line its own chat row, still under the "│" ("⏺ sub-human:   │ …"), or a plain continuation line
+    const nested = next.length === 2 && next.every((l, i) => new RegExp(`^(\\s*(⏺ )?sub-human: +| {2,})│ ${esc(rest[i])}\\s*$`).test(l));
     det('bob\'s pane: "alice: notes from the paging spike:" then both later lines nested under it ("│ ")', nested,
       hi >= 0 ? `pane lines ${hi + 1}–${hi + 3}: ${[lines[hi], ...next].map(l => JSON.stringify(l.trimEnd())).join(' / ')}` : `no head line in state/S9b/pane-bob.txt (${pane ? `${lines.length} lines` : 'missing'})`);
 

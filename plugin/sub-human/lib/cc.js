@@ -710,7 +710,7 @@ const CONTRACT = Object.freeze([
     note: 'A $.session.append system row is stored at level "info": drawn only in the ctrl+o transcript view (also after --resume), never in the default view. Chat lines go through $.ui.log instead (S4).' },
   { id: 'ui-log-notice', section: 10, stability: 'incidental', search: '$.ui.log (to debug): ',
     shape: '=(~)=>~(~(~.plugin,~.text),"notice");',
-    note: '$.ui.log lines are stored as system notices at level "notice": drawn dim as "<plugin>: <text>" in the default view, kept across --resume, never read by the model, no wake (S4).' },
+    note: '$.ui.log lines are stored as system notices at level "notice": drawn dim as "<plugin>: <text>" in the default view, kept across --resume, never read by the model, no wake (S4). One line each: a newline in the text comes out as U+FFFD (seen live in W4), so mod/deliver.mjs logs a chat batch line by line.' },
   { id: 'fs-write-plain', section: 10, stability: 'incidental', search: '$.fs.write (',
     shape: 'await ~(~(~),{recursive:!0}),await ~(~,~.text,"utf8"),~(`$.fs.write (',
     note: '$.fs.write is mkdir -p plus writeFile: not atomic, no mode, no lock. The mod never writes room state.' },

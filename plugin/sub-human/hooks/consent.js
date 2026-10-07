@@ -8,7 +8,10 @@
  *   Pre(EnterPlanMode): a proposal is pending for me and my mode allows a review (default, acceptEdits, auto; not
  *     already plan, not bypass/dontAsk, showClearContextOnPlanAccept off): allow (no "Enter plan mode?" dialog);
  *     state review = {phase:'entering', mode}. Otherwise untouched.
- *   Pre(ExitPlanMode), phase entering: back up the session's plan file (its path from the transcript's plan_mode
+ *   Pre(ExitPlanMode), phase entering: which proposal: one the call names (tool_input, else the model's own input
+ *     from the transcript, polled up to EXIT_INPUT_WAIT_MS: in 2.1.292 the hook can run before the call's line is
+ *     written, and tool_input.plan is the still-empty plan file's text), or, the call naming nothing at all (no
+ *     transcript line in time, a blank plan), the only pending one. Then back up the session's plan file (its path from the transcript's plan_mode
  *     attachment), write the canonical text there (the dialog renders the file) and `ask`. phase 'shown'.
  *     The backup is written into review.json (atomically) BEFORE the plan file is overwritten; session-restore
  *     puts a stale one back. Every review.json read-modify-write runs under proposal.withReview (a lock).
@@ -40,7 +43,8 @@ const c = require('./common.js');
 const proposal = require(path.join(__dirname, '..', 'lib', 'proposal.js'));
 const cc = require(path.join(__dirname, '..', 'lib', 'cc.js'));
 const { writeFileAtomic } = require(path.join(__dirname, '..', 'lib', 'io.js'));
-const { TRANSCRIPT_TAIL_BYTES } = require(path.join(__dirname, '..', 'lib', 'config.js'));
+const config = require(path.join(__dirname, '..', 'lib', 'config.js'));
+const { TRANSCRIPT_TAIL_BYTES } = config;
 
 const RECORDED = 'Recorded. The room shows it (and any note) already: post nothing about it. Agreeing is not a go-ahead to build; wait for the decision and your people.';
 /** What was recorded, for the model; no entry ids (people never see them; a Claude repeated "#8"). */
@@ -99,6 +103,17 @@ function lines(input) {
 const planFile = input => cc.planFile(lines(input), input.tool_input);
 /** The input the model itself gave this call (Claude Code swaps ExitPlanMode's plan for the plan file's text). */
 const modelInput = input => cc.toolUseInput(lines(input), input.tool_use_id);
+/** modelInput, polling the transcript until the call's line is there (or EXIT_INPUT_WAIT_MS passed); null then. */
+function modelInputWait(input) {
+  const until = Date.now() + config.envMs('SUB_HUMAN_EXIT_INPUT_WAIT_MS', config.EXIT_INPUT_WAIT_MS);
+  for (;;) {
+    const own = modelInput(input);
+    if (own || !input.tool_use_id || Date.now() >= until) return own;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, config.EXIT_INPUT_POLL_MS);
+    input._lines = null; // read the tail again
+  }
+}
+const blank = v => v == null || (typeof v === 'string' && !v.trim());
 /** The person's "Tell Claude what to change" note for that dialog (structured userFeedback first); null when none (Esc). */
 const feedback = (input, toolUseId) => cc.planFeedback(lines(input), toolUseId);
 
@@ -145,8 +160,12 @@ function preExit(input, me) {
   // Only a call that names the proposal (a plan the person asked for must never be swapped for one): the model's own input, from the transcript when the plan file
   // replaced it. A plan the model wrote for its person (plan mode entered for real work) passes through untouched.
   const pending = proposal.pendingFor(me).filter(p => proposal.viewable(p, me.code));
-  const own = modelInput(input);
-  const p = named(pending, [input.tool_input, own])[0] || (JSON.stringify(own || '').length < 300 ? onlyPending(pending, own)[0] : null);
+  const own = modelInputWait(input);
+  const plan = input.tool_input && input.tool_input.plan;
+  // The call names nothing we can see (no transcript line in time and a blank plan): plan mode was entered for
+  // this review (phase entering), so it is the only pending proposal. A plan of the person's own has text.
+  const unseen = !own && blank(plan) && pending.length === 1 ? pending : [];
+  const p = named(pending, [input.tool_input, own])[0] || (JSON.stringify(own || '').length < 300 ? onlyPending(pending, own)[0] : null) || unseen[0];
   if (!p) return clearReview(me);
   const file = planFile(input);
   const text = proposal.read(me.code, p.hash);

@@ -183,7 +183,8 @@ function formatNdBatch(ready, ctx) {
     if (rm.lane(me, e, entries) === 'pull') pull.push(...rm.chatLines(e, { viewer: me.name }));
   }
   if (me.role === 'orch') wake.push(...formatOrchBatch(pushed, ctx));
-  else if (state && wake.length) wake.push(`${FOR_CLAUDE} ${rm.stateLine(me, entries)}`);
+  // no ids for a member: the plugin prompt's row is drawn expanded, (for Claude) lines included (people never see ids)
+  else if (state && wake.length) wake.push(`${FOR_CLAUDE} ${rm.stateLine(me, entries, { ids: false })}`);
   const events = [];
   if (chat.length) events.push({ type: 'chat', lines: chat });
   const pt = pullText(pull);

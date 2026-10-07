@@ -62,7 +62,7 @@ function roomOver(s) {
     getCursor: name => s.getCursor(name),
     setCursor: (name, id) => s.setCursor(name, id),
     members: () => s.members.read(),
-    stateLine: (me, entries) => render.stateLine(me, all(entries), { members: s.members.read() }),
+    stateLine: (me, entries, opts = {}) => render.stateLine(me, all(entries), { ...opts, members: s.members.read() }),
     digest: entries => render.digest(all(entries), { members: s.members.read(), code: s.code }),
     proposal: (hash, entries) => lanes.proposal(hash, all(entries)),
     proposals: entries => lanes.proposals(all(entries)),

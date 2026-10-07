@@ -43,7 +43,7 @@
  *   demo-lib.js orch-transcript                   print the orch session's transcript path
  *   demo-lib.js synthetic-gate <id>               run hooks/tasks.js as the orch's TaskCompleted for task <id> over the
  *                                                  real log; print {status, stderr} (exit 2 = refused)
- *   demo-lib.js synthetic-orch-prompt             run hooks/at-room.js as the orch's UserPromptSubmit for a
+ *   demo-lib.js synthetic-orch-prompt             run hooks/at-room.js as the orch's UserPromptSubmit (shim stdin) for a
  *                                                  typed "hi" (CLAUDE_PID = the orch's pid); print its output
  *
  * Every wait appends {scene, what, ok, ms, time} to $SNAP_DIR/waits.jsonl (scene from $DEMO_SCENE)
@@ -430,7 +430,7 @@ async function main() {
     case 'synthetic-orch-prompt': {
       const o2 = readJ(roomFile('members.json'), {}).orch || {};
       const plugin = paths.PLUGIN;
-      const input = { hook_event_name: 'UserPromptSubmit', session_id: o2.session_id, transcript_path: orchTranscript() || '', cwd: process.cwd(), prompt: 'hi', prompt_id: 'synthetic-1', permission_mode: 'plan' };
+      const input = { hook_event_name: 'UserPromptSubmit', session_id: o2.session_id, transcript_path: orchTranscript() || '', cwd: process.cwd(), prompt: 'hi', prompt_id: 'synthetic-1', permission_mode: 'plan', sub_human_origin: 'composer' }; // as the mod's shim hands a typed prompt over
       const r = require('node:child_process').spawnSync(process.execPath, [path.join(plugin, 'hooks', 'at-room.js')], {
         input: JSON.stringify(input), encoding: 'utf8',
         env: { PATH: process.env.PATH, HOME: process.env.HOME, SUB_HUMAN_HOME: HOME_DIR(), CLAUDE_PID: String(o2.pid || ''), CLAUDE_PLUGIN_ROOT: plugin },

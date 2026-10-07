@@ -90,7 +90,7 @@ test('chat is a notice and starts no turn; a pull starts none either; a wake whi
   const seen = world($, on, { pieces })
   await start($)
   await until(() => seen.prompts.length === 1).catch(() => { throw new Error(JSON.stringify(seen)) })
-  expect(seen.logs).toEqual(['bob: hi\ncarol joined'])
+  expect(seen.logs).toEqual(['bob: hi', 'carol joined']) // one notice per line (a newline would show as U+FFFD)
   expect(seen.prompts.length).toBe(1)
   expect(seen.prompts[0]).toMatch(/^\(for Claude\) sub-human room/)
   expect(seen.prompts[0]).toMatch(/bob's Claude \(to you\): q\?$/)

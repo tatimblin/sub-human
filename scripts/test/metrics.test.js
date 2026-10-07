@@ -54,3 +54,32 @@ test('isRed: SGR 31/91, 256-color and truecolor reds; other colors are not', () 
   assert.ok(!isRed('\x1b[38;2;215;119;87mClaude Code'));
   assert.ok(!isRed('plain'));
 });
+
+// ---------- W4: the hooks module's delivery (plugin prompts, $.ui.log chat rows, isMeta copies) ----------
+const plug = { type: 'user', origin: { kind: 'plugin', name: 'sub-human' }, message: { content: '(for Claude) sub-human room: …\nbob: @alice look' } };
+const pull = { type: 'user', isMeta: true, origin: { kind: 'plugin', name: 'sub-human' }, message: { content: 'Room since your last turn (…):\nbob: hi' } };
+const note = { type: 'system', subtype: 'informational', level: 'notice', content: 'sub-human: bob: hi' };
+const end = { type: 'system', subtype: 'turn_duration' };
+const a = id => ({ type: 'assistant', message: { id, content: [{ type: 'text', text: 'ok' }] } });
+
+test('trigger: a sub-human plugin prompt is a wake; its isMeta copy and another plugin are not', () => {
+  assert.equal(trigger(plug), 'plugin');
+  assert.equal(trigger(pull), null);
+  assert.equal(trigger({ ...plug, origin: { kind: 'plugin', name: 'other' } }), null);
+});
+
+test('chat: notices and pulls are counted; a turn that only chat rows started is a chat call, others are not', () => {
+  const quiet = seatTranscriptMetrics([{ es: [human, a('m1'), end, note, pull, note, pull, human, a('m2'), end, plug, a('m3'), end] }]);
+  assert.deepEqual(quiet.chat, { notices: 2, pulls: 2, turns: 0, calls: 0, callsPerBurst: 0 });
+  assert.equal(quiet.wakes.plugin, 1);
+  assert.equal(quiet.wakes.turns, 1);
+  const noisy = seatTranscriptMetrics([{ es: [human, a('m1'), end, note, pull, a('m2'), a('m2'), a('m3'), end] }]);
+  assert.deepEqual(noisy.chat, { notices: 1, pulls: 1, turns: 1, calls: 2, callsPerBurst: 2 });
+});
+
+test('chat: Claude Code\'s synthetic "No response requested." and a queued prompt are not chat calls', () => {
+  const synth = { type: 'assistant', message: { id: 's1', model: '<synthetic>', content: [{ type: 'text', text: 'No response requested.' }] } };
+  const queued = { type: 'queue-operation', operation: 'enqueue', content: '<task-notification>…' };
+  const m = seatTranscriptMetrics([{ es: [human, a('m1'), end, note, pull, synth, queued, a('m2'), end] }]);
+  assert.deepEqual([m.chat.turns, m.chat.calls], [0, 0]);
+});

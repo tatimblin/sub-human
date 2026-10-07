@@ -1,5 +1,5 @@
 'use strict';
-// S8: resilience: /clear keeps rows; /exit + --continue brings the row back with no prompt; the monitor still wakes
+// S8: resilience: /clear keeps rows; /exit + --continue brings the row back with no prompt; the room still reaches bob
 const metrics = require('../metrics.js');
 const { panelRows } = require('../lib/panes.js');
 const { esc } = require('../lib/io.js');
@@ -30,7 +30,11 @@ module.exports = {
     }
     det('bob\'s room row is back with no prompt (row-rewake), no duplicate rows', ok, ev);
     const say = log.find(e => e.kind === 'say' && e.from === 'alice' && e.via === 'human' && back && e.id > back.id);
-    const mw = say && x.entries('bob').filter(e => e.timestamp > say.at && metrics.trigger(e) === 'monitor' && x.textOf(e.message.content).includes(say.text));
-    det('The monitor still wakes bob after the resume', mw && mw.length >= 1, say ? `${x.fmt(say)} → ${mw.length} Monitor event(s) in bob's transcript with it` : 'no alice @room after the resume');
+    // the tail child came back with the resumed session: alice's words reach bob (a chat row and his Claude's copy)
+    const after = say ? x.entries('bob').filter(e => e.timestamp > say.at) : [];
+    const rows = after.filter(e => metrics.isChatNotice(e) && e.content === `sub-human: alice: ${say.text}`);
+    const copies = after.filter(e => metrics.isPull(e) && x.textOf(e.message.content).includes(say.text));
+    det('The room still reaches bob after the resume (his tail child is back)', rows.length >= 1 && copies.length >= 1,
+      say ? `${x.fmt(say)} → ${rows.length} chat row(s) and ${copies.length} isMeta copy(ies) in bob's transcript` : 'no alice @room after the resume');
   },
 };

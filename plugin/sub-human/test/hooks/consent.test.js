@@ -314,6 +314,20 @@ test('review: a room tool call after "Tell Claude what to change" records the ob
   assert.equal(review(w), null);
 });
 
+test('review: 2.1.292 runs Pre(ExitPlanMode) before the call\'s transcript line is written, with a blank plan: the only pending proposal is shown; the line is waited for', () => {
+  const { w, hash } = world();
+  const file = path.join(w.userHome, '.claude', 'plans', 'late-line.md');
+  const tp = transcript(w, file); // the plan_mode attachment only: the ExitPlanMode line is not there yet
+  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' });
+  const t0 = Date.now();
+  const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: '' }, tool_use_id: 'tu5', transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_EXIT_INPUT_WAIT_MS: '200' } });
+  assert.equal(decision(pre), 'ask', pre.stderr);
+  assert.match(reason(pre), new RegExp(`^room proposal ${hash} `));
+  assert.ok(Date.now() - t0 >= 200, 'it polled the transcript first');
+  assert.equal(review(w).phase, 'shown');
+  assert.ok(fs.readFileSync(file, 'utf8').length > 0, 'the proposal is in the plan file the dialog renders');
+});
+
 test('review: no plan path closes the review silently and falls back to the card; the person\'s own plan is untouched', () => {
   const { w, hash } = world();
   const empty = path.join(w.cwd, 'empty.jsonl');

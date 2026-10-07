@@ -11,8 +11,9 @@
  *     under the sender with CHAT_NEST ("  │ "), at most CHAT_LINES_MAX text lines (below)
  *   fmt(e, {entries}?)       full text for `sub-human read`, body lines nested the same way;
  *     who(e) ("alice" | "alice's Claude" | "room")
- *   stateLine(me, entries, {members}) -> "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed ·
- *     away: carol"  (waiting on = no answer yet, objected = current answer is an objection; lib/consent.js fold)
+ *   stateLine(me, entries, {members, ids}) -> "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed ·
+ *     away: carol"  (waiting on = no answer yet, objected = current answer is an objection; lib/consent.js fold;
+ *     ids:false drops the decision's "#N", for a member's wake, which the person sees too)
  *   digest(entries, {members, code}) <= DIGEST_CAP chars: members, open proposals + approvers + answers, open
  *     objections/questions, decisions, last 10 human entries in full by the line() rule; retracted entries
  *     and provisional posts still inside their origin check (store.isYoungProvisional) left out.
@@ -212,7 +213,7 @@ function waiting(m) {
 }
 
 /** "room now: proposal 3fa2c1 waiting on bob · you: answer needed · away: bob", from the log as it is now. */
-function stateLine(me, entries = [], { members = {} } = {}) {
+function stateLine(me, entries = [], { members = {}, ids = true } = {}) {
   const parts = [];
   const name = me && me.name;
   const all = proposals(entries);
@@ -222,7 +223,7 @@ function stateLine(me, entries = [], { members = {} } = {}) {
   if (!shown.length) parts.push('no proposals');
   for (const p of shown) {
     const dec = decided(p.hash, entries);
-    let s = `proposal ${p.hash.slice(0, 6)} ${dec ? `decided #${dec.id}` : waiting(fold(entries).matrix(p.hash)) || 'agreed by all'}`;
+    let s = `proposal ${p.hash.slice(0, 6)} ${dec ? `decided${ids ? ` #${dec.id}` : ''}` : waiting(fold(entries).matrix(p.hash)) || 'agreed by all'}`;
     if (approversOf(p).includes(name)) {
       const a = answered(name, p.hash, entries);
       // the open-the-card call is spelled out right in the notice: a model skipped it when it was only in the join text

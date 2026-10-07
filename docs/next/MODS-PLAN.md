@@ -1,6 +1,6 @@
 # Mods (function hooks) plan
 
-Status: W0 done (a6abb60), W1 done (03a3d9c), W2 done (2b08d7f), W3 done (b18943c), W4 cut-over done (see W4 results; live demo pending in this commit), 2026-10-07. Decided: D1 yes (join refuses without the hello lease), D2 yes (Monitor dropped in W4), D3 notices via `$.ui.log` + isMeta copy, D4 composer/sdk/bridge, W2's room-tool skip kept, D8 at most once; generated `tsconfig.json` and `.claude-plugin/types/` are gitignored. D5 and D6 open (later); D7 is `.mjs` in practice.
+Status: W0 done (a6abb60), W1 done (03a3d9c), W2 done (2b08d7f), W3 done (b18943c), W4 done (9a5e642 cut-over, then the live run heron-1142; see W4 results). **The plan is done**, 2026-10-07. Decided: D1 yes (join refuses without the hello lease), D2 yes (Monitor dropped in W4), D3 notices via `$.ui.log` + isMeta copy, D4 composer/sdk/bridge, W2's room-tool skip kept, D8 at most once; generated `tsconfig.json` and `.claude-plugin/types/` are gitignored. D5 and D6 open (later); D7 is `.mjs` in practice.
 - the plugin-authoring skill shipped with Claude Code 2.1.292 (`reference.md`, `types/claude-code.d.ts`, `examples/`);
 - the 2.1.292 binary as text (`/tmp/cc292/bin.txt`), for everything the skill does not settle;
 - [`docs/internals/cc-2.1.292.md`](../internals/cc-2.1.292.md) (`hooks-modules (b)`) and the code at `0a310fd`.
@@ -358,7 +358,7 @@ Open, for W4+:
 - The lease gap after a crash: up to `DELIVERY_LEASE_MS` before the Monitor speaks again (batches flushed in that window are dropped).
 - A seat whose session has modules off still gets the Monitor's wakes, and member.md now says the person already sees chat lines, which is only true with the module (D1/D2 close this in W4).
 
-### W4: cut-over and verify (lead + 1 demo agent)
+### W4: cut-over and verify (lead + 1 demo agent) — **done**
 
 - Per D1/D2, delete the fallbacks (next section).
 - Join refuses without the hello lease: "sub-human needs Claude Code 2.1.292+ with function hooks on; not in --bare or safe mode".
@@ -379,6 +379,28 @@ Open, for W4+:
 - **Kept, deliberately**: `hooks/prompt.js` (one node start for at-room + consent, as W3 decided); `needsNode`'s "no tail child yet → run node" (that is "unsure", not a fallback path); the subagent rows, unchanged.
 - hooks.json: 13 command entries, none removed in W4 (the plan's 12 plus consent's room-tool matcher, kept in W2). Long-lived per seated session: the tail child and the MCP server (2; was Monitor + tail child + MCP after W3, Monitor + MCP before). A session with no seat: the MCP server only.
 - Docs: README (requirement line, the chat rows, "The room tail", the threat model's forgery check, a troubleshooting row; the Monitor footer and push-notification notes removed), ARCHITECTURE (process model, store layout, lanes, performance; `npm run docs`), CLAUDE.md layout. The member/orch skill texts already had no Monitor wording.
+
+**Live run heron-1142** (S1–S10, seats and orch on the user's default model, ≈ $2.52 list price for the run that counts). Deterministic **71/75**, behavioural 5/5 within thresholds.
+
+| Metric | heron-1142 | badger-2971 | narwhal-2294 | baseline / target |
+|---|---|---|---|---|
+| room-caused wakes (orch / alice / bob) | **17** (8 / 4 / 5); 14 plugin prompts, 2 peer, 1 row-rewake | 24 (8 / 7 / 9) | 23 (8 / 7 / 8) | ≤ 18 |
+| model calls per chat burst (D3) | **0** (7 chat rows, 37 isMeta copies) | 1 per burst (a Monitor wake each) | 1 | 0 |
+| UI noise lines per capture | **1.31** (0.78 without "Waiting for"); 42 plugin-prompt framing lines, 0 "Monitor event" | 3.16 (1.17); 65 "Monitor event" | 2.98 | ≤ 1.4 |
+| hook-injected chars (alice / bob) | 3191 / 3495 | 4236 / 5024 | — | — |
+| model calls per review | 3.75 | 4.25 | — | ≤ 5 |
+
+Attempts: the first run stopped at S3 (the harness waited for the engine's "Message from @bob.CODE"; W1's `mod/render.mjs` draws that peer row as "bob's Claude: …") and, resumed, at S4 (below). After the consent fix a fresh full run stopped at S8 (S7's `Up Up` had recalled the last prompt into alice's box, so "/clear" was typed as text) and was resumed once from S8 to the end.
+
+Fixed during the run (in the "Live run" commit):
+- **consent, Claude Code 2.1.292** (not W4's): Pre(ExitPlanMode) can run before the call's transcript line is written, and `tool_input.plan` is the still-empty plan file's text, so the review named no proposal, was cleared, and the generic "Exit plan mode?" dialog opened instead of the proposal. `preExit` now polls the transcript (`EXIT_INPUT_WAIT_MS` 1.5 s) and, when the call still names nothing and its plan is blank, takes the only pending proposal (a plan of the person's own has text and is left alone). Replayed against the run's transcript; test added.
+- **`$.ui.log` is one line**: a newline in a notice is drawn and stored as U+FFFD, so a multi-line post reached bob as one flattened row. `mod/core/deliver.mjs` now logs a chat batch (and the mid-turn and health lines) one row per line (CONTRACT `ui-log-notice` note). S9b's two pane/row checks fail on this run's evidence; the fix is not live-verified.
+- **No ids in a member's wake**: the plugin prompt's row is drawn expanded, `(for Claude)` lines included, so "room now: proposal 667119 decided #13" reached alice's pane (the S10 id check). A member's state line now omits the id (`stateLine(…, {ids:false})`); the orch's keeps it. Not live-verified.
+- Harness: chat waits and checks read `$.ui.log` rows ("sub-human: …", via `mod`), transcripts' isMeta copies and plugin-prompt wakes (`metrics.js` trigger `plugin`, `chat` counts, the chat-burst check, plugin framing as noise); S2/S3/S9b check "no model turn" where they checked the Monitor wake's echo; S8 checks the room still reaches bob; S3 accepts the module's peer-row drawing; S8 empties the prompt box before `/clear`; S9's synthetic orch payload carries the shim's origin (this run's evidence lacks it: the fourth failure).
+
+**The wake row.** A plugin prompt draws expanded: "› Prompt from the sub-human plugin", "❯ The sub-human plugin sent a message:", the `(for Claude)` head and state lines, the room lines, then the engine's two framing lines ("This is how Claude Code surfaces a prompt a plugin submits…", "Address the message above."): about seven lines per wake where the Monitor showed one headline. `mod/render.mjs` must leave an expanded row to the engine, so it cannot trim it. Readable and honest, but heavy; follow-up candidates: a shorter wake text (no head line for members) or finding out whether these rows can be drawn collapsed.
+
+Open after W4: the S9b and S10 fixes need a live run; the wake row's size; D5/D6 as recorded.
 
 ## What gets deleted (after W4, with D1 + D2 + D3)
 

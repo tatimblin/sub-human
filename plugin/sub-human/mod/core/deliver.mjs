@@ -5,7 +5,8 @@
  * The mod runs `node bin/sub-human tail --ndjson` for the session's life (lib/tail.js writes the events) and
  * routes each event:
  *   seat   -> kept: the child follows that seat (delivering(sid) is true while it does)
- *   chat   -> $.ui.log (a dim notice row the person sees; the model never reads it; no wake). D3.
+ *   chat   -> $.ui.log, one call per line (a dim notice row the person sees; the model never reads it; no wake;
+ *             a notice is one line: Claude Code draws a newline in it as U+FFFD, cc CONTRACT ui-log-notice). D3.
  *   pull   -> $.session.append, a user isMeta row: the model reads it at its next request; no wake
  *   wake   -> idle: $.prompt.submit (a turn of its own); mid-turn: $.session.append plus $.ui.log of its visible
  *             lines, and at that turn's end a $.prompt.submit after all when no tool call of the main loop finished
@@ -21,6 +22,7 @@
  *                                 mod inherits whatever claude inherited: cc CONTRACT process-run-stdin)
  *   lineBuffer() -> {push(text) -> [line]}   whole lines out of the pieces $.process.spawn streams
  *   parseEvent(line) -> event | null         a well-formed event of a known type, else null
+ *   logLines(text | lines) -> [{do:'log', text}]   one log action per non-empty line
  *   route(ev, {turnRunning, role, rows}) -> [action]
  *       action: {do:'log', text} | {do:'append', text} | {do:'submit', text} | {do:'hold-rows', text|null} |
  *               {do:'seat', seat} | {do:'mid-turn-wake', text}
@@ -82,20 +84,22 @@ export function wakeText(text, rows) {
   return [WAKE_HEAD, text, rows || ''].filter(Boolean).join('\n');
 }
 
+export const logLines = x => (Array.isArray(x) ? x : String(x ?? '').split('\n')).filter(l => String(l).trim()).map(text => ({ do: 'log', text: String(text) }));
+
 export function route(ev, { turnRunning = false, role = 'member', rows = null } = {}) {
   if (!ev) return [];
   switch (ev.type) {
     case 'seat': return [{ do: 'seat', seat: ev.seat }];
-    case 'chat': return [{ do: 'log', text: ev.lines.join('\n') }];
+    case 'chat': return logLines(ev.lines);
     case 'pull': return [{ do: 'append', text: ev.text }];
     case 'rows': return [{ do: 'hold-rows', text: ev.text }];
-    case 'health': return [{ do: 'log', text: ev.text }, { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
+    case 'health': return [...logLines(ev.text), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
     case 'wake': {
       // The orch has no person to type: its rows calls ride on its wakes. A member's go with the person's prompt.
       const text = wakeText(ev.text, role === 'orch' ? rows : null);
       if (!turnRunning) return [{ do: 'submit', text }];
       const seen = visibleLines(ev.text);
-      return [...(seen.length ? [{ do: 'log', text: seen.join('\n') }] : []), { do: 'mid-turn-wake', text }];
+      return [...logLines(seen), { do: 'mid-turn-wake', text }];
     }
     default: return [];
   }

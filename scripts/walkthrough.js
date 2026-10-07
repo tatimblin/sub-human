@@ -248,7 +248,8 @@ function metricsSection(m) {
   for (const s of seats) rows.push([`Hook-injected chars over the run · ${s}`, R.seats[s].injected.total, g(B, 'injected', s), g(P, 'injected', s), g(S, 'injected', s)]);
   rows.push([`UI noise lines per capture · all seats (target ≤ ${(m.target && m.target.noisePerCapture) ?? '?'})`, R.total.noise.perCapture, B.noise.perCapture, g(P, 'noise', 'perCapture'), g(S, 'noise', 'perCapture')]);
   rows.push(['… excluding "Waiting for N background agents"', R.total.noise.perCaptureExWaiting, B.noise.perCaptureExWaiting, g(P, 'noise', 'perCaptureExWaiting'), g(S, 'noise', 'perCaptureExWaiting')]);
-  for (const [k, label] of [['monitor', '"Monitor event" lines'], ['waiting', '"Waiting for N background agents" lines'], ['hookError', '"hook error" lines'], ['blocked', '"blocked by hook" lines'], ['invalid', '"Invalid tool parameters" lines']]) rows.push([`${label} (all captures)`, R.total.noise[k], B.noise[k], g(P, 'noise', k), g(S, 'noise', k)]);
+  for (const [k, label] of [['monitor', '"Monitor event" lines'], ['plugin', 'plugin prompt framing lines ("The sub-human plugin sent a message")'], ['waiting', '"Waiting for N background agents" lines'], ['hookError', '"hook error" lines'], ['blocked', '"blocked by hook" lines'], ['invalid', '"Invalid tool parameters" lines']]) rows.push([`${label} (all captures)`, R.total.noise[k], B.noise[k], g(P, 'noise', k), g(S, 'noise', k)]);
+  if (R.total.chat) rows.push(['Model calls per chat burst (people\'s words, joins, leaves; D3)', R.total.chat.callsPerBurst, null, null, g(S, 'chat', 'callsPerBurst')]);
   rows.push(['Red or "hook error" lines (all captures)', R.total.noise.red, null, null, g(S, 'red')]);
   rows.push(['Model calls per proposal review (open + after the answer)', R.total.cards.perCard, null, null, g(S, 'cardsPerCard')]);
   const v = x => esc(x == null ? '–' : x);
@@ -258,7 +259,7 @@ function metricsSection(m) {
 <div class="metrics"><table><thead><tr><th>Metric</th><th>vole-8126</th><th>Phase 0</th>${S ? `<th>${esc(S.run)}</th>` : ''}<th>this run</th><th>vs vole</th><th>vs P0</th>${S ? `<th>vs ${esc(S.run)}</th>` : ''}</tr></thead><tbody>
 ${rows.map(([l, now, base, p0, prev]) => `<tr><td>${esc(l)}</td><td>${v(base)}</td><td>${v(p0)}</td>${S ? `<td>${v(prev)}</td>` : ''}<td>${v(now)}</td>${delta(now, base)}${delta(now, p0)}${S ? delta(now, prev) : ''}</tr>`).join('\n')}
 </tbody></table></div>
-<p class="note">Wake: a Monitor event, peer delivery or row-rewake that starts a turn (${esc(R.total.notices)} notices). Noise: the five line kinds above; ✓ sent receipts excluded (${esc(R.total.noise.receipts)}). Reviews: ${esc(R.total.cards.count)} proposals, ${esc(R.total.cards.toCard)} call(s) to open + ${esc(R.total.cards.after)} after.</p>
+<p class="note">Wake: a sub-human plugin prompt (${esc(R.total.pluginWakes ?? 0)}), a Monitor event (runs before W4; ${esc(R.total.notices)}), a peer delivery or row-rewake that starts a turn.${R.total.chat ? ` Chat: ${esc(R.total.chat.notices)} rows shown with $.ui.log, ${esc(R.total.chat.pulls)} copies for the models, ${esc(R.total.chat.calls)} model calls they started.` : ''} Noise: the six line kinds above; ✓ sent receipts excluded (${esc(R.total.noise.receipts)}). Reviews: ${esc(R.total.cards.count)} proposals, ${esc(R.total.cards.toCard)} call(s) to open + ${esc(R.total.cards.after)} after.</p>
 </section>`;
 }
 
