@@ -94,6 +94,14 @@ module.exports = {
   REWAKE_POLL_MS: 100,
   ROW_SPAWN_GRACE_MS: 60_000,      // a row spawned this recently may not hold yet: never re-listed
 
+  // ---------- hooks module (mod/, hooks/mod-hello.js) ----------
+  // A lease not from the joining claude process counts this long after it was written (the pid match is the real check).
+  MOD_LEASE_FRESH_MS: 120_000,
+  MOD_RESTART_MS: 1000,            // the tail child restarts after this, doubling per failure
+  MOD_RESTART_MAX_MS: 60_000,
+  MOD_RESTART_STEADY_MS: 60_000,   // a child that ran this long starts the backoff over
+  MOD_DELIVERY_ERROR_LOG_MS: 300_000, // the delivery-error notice shows at most once per this
+
   // ---------- rows (lib/rows.js) ----------
   PRESENCE_STALE_MS: 6 * 60 * 60 * 1000,
   HOLDS_STALE_MS: 90_000,          // a holds file not refreshed in this long is dead

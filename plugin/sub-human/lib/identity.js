@@ -85,12 +85,10 @@ const { readJson, writeJsonAtomic, isAlive } = require('./io.js');
 const { home, roomDir } = require('./home.js');
 const { pidStart } = require('./lock.js');
 const { NAME_RE, CODE_RE, SID_SAFE: SID_RE } = require('./text.js');
-const { PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS } = require('./config.js');
+const { PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS, MOD_LEASE_FRESH_MS } = require('./config.js');
 const cc = require('./cc.js');
-// How long a hooks-module lease counts without matching the joining claude process. The pid match is the real
-// check; this window only covers a module whose $.process parent is not claude itself. A resumed session id
-// whose lease is older than this, from a process that is gone, cannot join. (Belongs in lib/config.js.)
-const MOD_LEASE_FRESH_MS = 120_000;
+// MOD_LEASE_FRESH_MS only covers a module whose $.process parent is not claude itself: a resumed session id whose
+// lease is older than this, from a process that is gone, cannot join.
 const RESERVED = ['orch', 'room', 'all', 'system'];
 const ROLES = ['orch', 'member'];
 const PRESENCE_STATES = ['working', 'idle', 'permission', 'error'];

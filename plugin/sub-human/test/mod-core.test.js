@@ -213,7 +213,7 @@ test('deliver: the routing table (Part 2b): chat is a notice, pull an append, wa
   assert.deepEqual(d.route(null), []);
 });
 
-test('deliver: unread, restartDelay, spawnWanted, titleFor', async () => {
+test('deliver: unread, restartDelay, spawnWanted', async () => {
   const d = await load('mod/core/deliver.mjs');
   const wakes = [{ text: 'during a tool', at: 100 }, { text: 'during the last request', at: 300 }];
   assert.deepEqual(d.unread(wakes, 200), ['during the last request'], 'a tool call finished after the first: a request carried it');
@@ -225,11 +225,6 @@ test('deliver: unread, restartDelay, spawnWanted, titleFor', async () => {
   assert.equal(d.spawnWanted({ seat: null }), false);
   assert.equal(d.spawnWanted({ seat: { name: 'a' } }), true);
   const seat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
-  assert.equal(d.titleFor({ sid: 's1', seat }, 's1', undefined), 'alice.otter-4821');
-  assert.equal(d.titleFor({ sid: 's1', seat }, 's1', 's1'), null, 'once per session id');
-  assert.equal(d.titleFor({ sid: 's1', seat }, 's2', 's1'), null, 'not this session\'s hello');
-  assert.equal(d.titleFor({ sid: 's1', seat: { ...seat, role: 'orch' } }, 's1'), null, 'the orch keeps its launch name');
-  assert.equal(d.titleFor({ sid: 's1', seat: null }, 's1'), null);
 });
 
 test('prompt: the origin queue hands prompt.submit\'s origin to the classic hook; mergeClassic keeps ours on top', async () => {
@@ -238,7 +233,7 @@ test('prompt: the origin queue hands prompt.submit\'s origin to the classic hook
   assert.equal(q.take('@room x'), null, 'nothing waiting: at-room keeps its own checks');
   const a = q.push('@room x', 'composer');
   assert.equal(q.take('@room x'), 'composer');
-  assert.equal(q.take('@room x (the classic payload spelled it differently)'), 'composer', 'the only one waiting');
+  assert.equal(q.take('@room x (the classic payload spelled it differently)'), null, 'no text match: unsure, never the only one waiting');
   const b = q.push('later', 'peer');
   assert.equal(q.take('later'), 'peer');
   assert.equal(q.take('neither'), null, 'two waiting and no text match: unsure');

@@ -36,8 +36,6 @@
  *   restartDelay(fails) -> ms     MOD_RESTART_MS doubling to MOD_RESTART_MAX_MS; nextFails(fails, ranMs) -> fails
  *   noticeDue(lastAt, now) -> bool   the delivery-error notice is at most once per MOD_DELIVERY_ERROR_LOG_MS
  *   spawnWanted(hello) -> bool    unsure, or seated
- *   titleFor(hello, sid, titled) -> addr | null    the session title once per session id (members; the orch's is
- *                                 its launch name)
  */
 import { FOR_CLAUDE } from './chat.mjs';
 import { shimEnv } from './shim.mjs';
@@ -178,8 +176,3 @@ export function turnLedger() {
 }
 
 export const spawnWanted = hello => !hello || !!hello.seat;
-
-export function titleFor(hello, sid, titled) {
-  if (!hello || !hello.seat || hello.seat.role === 'orch' || typeof sid !== 'string' || hello.sid !== sid) return null;
-  return titled === sid ? null : hello.seat.addr;
-}
