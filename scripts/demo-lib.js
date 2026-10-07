@@ -450,4 +450,4 @@ async function main() {
 
 if (require.main === module) main().then(c => process.exit(c), e => { process.stderr.write(`demo-lib: ${e.message}\n`); process.exit(2); });
 
-module.exports = { KEY_BYTES, filterLog, opts };
+module.exports = { KEY_BYTES, opts };

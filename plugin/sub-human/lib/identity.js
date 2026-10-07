@@ -32,7 +32,7 @@
  *                                        with no pid_start, or a pid whose start ps cannot read, counts as
  *                                        matching); a seat with no pid: its lease (seen_at) is fresh
  *   heartbeat(me, now?) -> bool          renew me's lease, seen_at (at most every SEAT_BEAT_MS; the tail's health
- *                                        tick and the hold server); leaseFresh(m, now?)
+ *                                        tick and the hold server)
  *   liveMembers(code) -> [name]          non-orch seats that are seatAlive
  *   join({code, name, role, pid, session_id, cwd}) -> {ok, error?, rejoin?}
  *       role is "orch" or "member". NAME_RE; reserved names orch, room, all, system (only role orch may use
@@ -70,7 +70,6 @@
  * Presence (the room documents presence/<name> = {state, at, detail?}, lib/room/store.js kv):
  *   writePresence(code, name, state, detail?)   state: working (prompt submitted / joined) | idle (idle_prompt)
  *                                               | permission (permission_prompt) | error (StopFailure; detail = code)
- *   readPresence(code) -> {name: {state, at, detail?}}
  *
  * Also: isAlive (lib/io.js), NAME_RE, CODE_RE, RESERVED, ANIMALS, PRESENCE_STATES.
  * Room state (members, presence, the room list) goes through lib/room/store.js; members are changed only with
@@ -443,24 +442,12 @@ function writePresence(code, name, state, detail) {
   try { store.open(code).kv.set(`presence/${name}`, v); return true; } catch { return false; }
 }
 
-function readPresence(code) {
-  const out = {};
-  let kv;
-  try { kv = store.open(code).kv; } catch { return out; }
-  for (const key of kv.list('presence/')) {
-    const name = key.slice('presence/'.length);
-    const v = kv.get(key);
-    if (NAME_RE.test(name) && v && PRESENCE_STATES.includes(v.state)) out[name] = v;
-  }
-  return out;
-}
-
 module.exports = {
   NAME_RE, CODE_RE, RESERVED, ANIMALS, PRESENCE_STATES,
   home, roomDir, newCode, roomExists, openRooms, orphanRooms, roomOpen, roomClosing, address,
-  readMembers, join, leave, rebindSession, setOrch, updateOrch, liveMembers, seatAlive, heartbeat, leaseFresh,
+  readMembers, join, leave, rebindSession, setOrch, updateOrch, liveMembers, seatAlive, heartbeat,
   isAlive, claudePid,
   resolveByPid, resolveBySession, resolveSelf, lastSeat,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases,
-  writePresence, readPresence,
+  writePresence,
 };

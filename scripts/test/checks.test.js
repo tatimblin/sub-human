@@ -40,7 +40,6 @@ test('checks: every scene module declares its scene and a run function; baseline
   for (const m of SCENES) { assert.match(m.scene, /^(S\d+b?|Metrics)$/); assert.equal(typeof m.run, 'function'); }
   for (const r of Object.values(BASELINES.compare)) assert.ok(BASELINES.runs[r], r);
   for (const k of ['wakes', 'noisePerCapture', 'callsPerReview', 'orchJoinCalls', 'orchTaskCalls']) assert.equal(typeof BASELINES.thresholds[k], 'number');
-  assert.ok(BASELINES.runs['swan-6397'] && BASELINES.runs['gecko-5061']);
   assert.equal(BASELINES.prices.default.length, 4);
 });
 
@@ -82,7 +81,7 @@ test('S9b: the pane check passes on nested lines and fails on a bare forged line
     const log = [e, ...extra];
     return {
       DEMO, home: dir, log, span: () => ({ from: '2026-01-01T00:00:00.000Z', to: '2026-01-01T00:01:00.000Z' }),
-      logIn: () => log, fmt: y => `#${y.id} ${y.kind}`, entries: () => [], inSpan: () => [], monitorIn: () => [], wakeIn: () => [], chatIn: () => [], pullIn: () => [], chatTurn: () => null, textOf: () => '',
+      logIn: () => log, fmt: y => `#${y.id} ${y.kind}`, entries: () => [], inSpan: () => [], wakeIn: () => [], chatIn: () => [], pullIn: () => [], chatTurn: () => null, textOf: () => '',
       replyAfter: () => null, stateFile: (...p) => path.join(dir, 'state', ...p),
     };
   };

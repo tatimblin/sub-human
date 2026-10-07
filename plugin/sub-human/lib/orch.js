@@ -296,8 +296,8 @@ function watchdog(code, { now = clock.now(), orphanMs = orphanMsDefault(), alive
 
 module.exports = {
   CLOSE_TEXT, PENDING,
-  cleanEnv, pluginDirFor, spawnPlan, command,
-  needsSpawn, claimSpawn, spawn, startDetached, findJob, stopJob,
+  pluginDirFor, spawnPlan, command,
+  needsSpawn, claimSpawn, spawn, startDetached,
   reap, reapDetached, watchdog,
   taskListId, tasksDir,
 };

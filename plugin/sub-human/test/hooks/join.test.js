@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { World, fixture, hso, identity, sleeper, withHome, PLUGIN } = require('./helpers.js');
+const { World, fixture, hso, identity, room, sleeper, withHome, PLUGIN } = require('./helpers.js');
 
 const until = async (fn, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await new Promise(r => setTimeout(r, 30)); } return null; };
 const bgCalls = s => s.calls().filter(c => c.argv.includes('--bg'));
@@ -342,7 +342,7 @@ test('join marks presence "working"', () => {
   const w = new World({ orch: 'sleep' });
   w.pid.alice = process.pid; w.sid.alice = 'aaaaaaaa-0000-4000-8000-000000000014';
   w.hook('join', expand(`alice ${w.code}`), { as: 'alice' });
-  assert.equal(w.lib(() => identity.readPresence(w.code)).alice.state, 'working');
+  assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice')).state, 'working');
 });
 
 // ---------- the mechanics block (common.js contextBlock) ----------

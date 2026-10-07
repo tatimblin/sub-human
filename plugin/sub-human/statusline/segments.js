@@ -10,7 +10,7 @@
  *       A killed row reads "bob  (reconnecting)" inside a room, "bob  ⚠ row stopped" at top level ("bob  left"
  *       once bob has left). Other tasks keep their default. '' when not in a room; never throws.
  *   The seat comes from input.session_id (identity.resolveBySession), else identity.resolveSelf().
- *   useColor(env) -> bool   false when NO_COLOR is set or SUB_HUMAN_COLOR=0
+ *   Colour is off when NO_COLOR is set or SUB_HUMAN_COLOR=0.
  */
 const path = require('node:path');
 const LIB = path.join(__dirname, '..', 'lib');
@@ -60,4 +60,4 @@ function agentStatusline(input = {}, { env = process.env } = {}) {
   } catch { return ''; }
 }
 
-module.exports = { agentStatusline, useColor, seatOf };
+module.exports = { agentStatusline, seatOf };

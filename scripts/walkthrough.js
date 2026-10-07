@@ -21,7 +21,7 @@ const { isRed } = require('./metrics.js');
 const REPO = path.resolve(__dirname, '..');
 
 const SCENES = {
-  Metrics: ['Slim build vs the baselines', 'Room-caused wakes ≤ 12 (vole-8126: 39, Phase 0 otter-0813: 23, previous slim run stoat-3644: 28); small join text; noise ≈ 1.4 per capture; no red lines; model calls per card'],
+  Metrics: ['Slim build vs the baselines', 'Room-caused wakes, join text, UI noise per capture and model calls per review against vole-8126, Phase 0 otter-0813 and the previous run (thresholds in scripts/baselines.json); no red lines'],
   S1: ['alice joins with no room open', 'Room created; the orch started as a background job (no window); one room row for alice; the orch lists alice; room task #1'],
   S2: ['bob joins', 'bob nested in alice\'s room row, alice in bob\'s; the orch lists both; no stray rows; alice sees the chat line "bob joined" and "+bob joined" on her room row'],
   S3: ['Pairing with no plan', '@room both ways (receipt line, one wake, exact words); bob\'s Claude asks alice\'s Claude by SendMessage and gets an answer; no card; the orch is not woken'],
@@ -29,7 +29,7 @@ const SCENES = {
   S5: ['Object, revise, agree', 'bob objects with a note (byte-exact); the orch revises; both agree; a decision citing both'],
   S6: ['Shared tasks', 'alice\'s Claude adds and claims a task; the orch applies it natively; rows and sub-human tasks show it; a non-owner done reaches the task tool and is refused (the gate check is marked SYNTHETIC when the orch declined before reaching it); the owner\'s done with evidence completes it'],
   S7: ['Stray typing in a row view', 'The row view shows the read-only hint; nothing is posted; the typed text reaches the row only when its hold next returns (then the one-line read-only reply), or not at all'],
-  S8: ['Resilience', '/clear keeps alice\'s rows; bob --continue: rows return with no prompt (row-rewake) and the monitor still wakes him'],
+  S8: ['Resilience', '/clear keeps alice\'s rows; bob --continue: rows return with no prompt (row-rewake) and the room still reaches him'],
   S9: ['The orch takes no typed input', 'A viewer attaches (claude attach) and types: refused with the hint; no orch turn'],
   S9b: ['A multi-line post stays nested', 'alice posts three lines with @room, the later two reading like a decision and a sign-off: byte-exact in the log; bob\'s pane shows them nested under "alice: …" (│), never as bare room lines; no consent entry'],
   S10: ['Leave', 'alice exits; bob sees the chat line "alice left" once the leave settles (8 s); bob exits; the reaper completes task 1 and stops the orch; claude agents no longer lists it; each human saw a join/leave notice'],
@@ -62,7 +62,7 @@ const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 /** Lines that carry no evidence: chrome, banners, status bars, spinners, plan-dialog furniture. */
 const NOISE = [
   /Claude Code v\d/, /^\s*[▐▝▘▗▖][▛▜▝▘█▀]/, /^\s*(Opus|Sonnet|Haiku|Fable) \d[\d.]* /, /^\s+(@\S+ · )?\/(private|Users|tmp|home)\//,
-  /MCP servers? needs? auth/, /Update available/, /Waiting for \d+ background agent/, /Monitor event:/, /Backgrounded agent/,
+  /MCP servers? needs? auth/, /Update available/, /Waiting for \d+ background agent/, /Backgrounded agent/,
   /^[\s─━▔▁╌═]*$/, /^[\s─]+[\w.@-]+ ─\s*$/, // rules and the input-box rule "──── alice.room ─"
   /^\s*(⏵⏵|⏸) /, /^\s*❯\s*$/, /Allowed by /,
   /^\s*[⏺⎿]?\s*(Searched for|Called plugin|Calling plugin|Ran \d+ stop hook)/,
@@ -248,7 +248,9 @@ function metricsSection(m) {
   for (const s of seats) rows.push([`Hook-injected chars over the run · ${s}`, R.seats[s].injected.total, g(B, 'injected', s), g(P, 'injected', s), g(S, 'injected', s)]);
   rows.push([`UI noise lines per capture · all seats (target ≤ ${(m.target && m.target.noisePerCapture) ?? '?'})`, R.total.noise.perCapture, B.noise.perCapture, g(P, 'noise', 'perCapture'), g(S, 'noise', 'perCapture')]);
   rows.push(['… excluding "Waiting for N background agents"', R.total.noise.perCaptureExWaiting, B.noise.perCaptureExWaiting, g(P, 'noise', 'perCaptureExWaiting'), g(S, 'noise', 'perCaptureExWaiting')]);
-  for (const [k, label] of [['monitor', '"Monitor event" lines'], ['plugin', 'plugin prompt framing lines ("The sub-human plugin sent a message")'], ['waiting', '"Waiting for N background agents" lines'], ['hookError', '"hook error" lines'], ['blocked', '"blocked by hook" lines'], ['invalid', '"Invalid tool parameters" lines']]) rows.push([`${label} (all captures)`, R.total.noise[k], B.noise[k], g(P, 'noise', k), g(S, 'noise', k)]);
+  // "Monitor event" lines exist only in the stored earlier runs; this run has none to count
+  rows.push(['"Monitor event" lines (all captures)', null, B.noise.monitor, g(P, 'noise', 'monitor'), g(S, 'noise', 'monitor')]);
+  for (const [k, label] of [['plugin', 'plugin prompt framing lines ("The sub-human plugin sent a message")'], ['waiting', '"Waiting for N background agents" lines'], ['hookError', '"hook error" lines'], ['blocked', '"blocked by hook" lines'], ['invalid', '"Invalid tool parameters" lines']]) rows.push([`${label} (all captures)`, R.total.noise[k], B.noise[k], g(P, 'noise', k), g(S, 'noise', k)]);
   if (R.total.chat) rows.push(['Model calls per chat burst (people\'s words, joins, leaves; D3)', R.total.chat.callsPerBurst, null, null, g(S, 'chat', 'callsPerBurst')]);
   rows.push(['Red or "hook error" lines (all captures)', R.total.noise.red, null, null, g(S, 'red')]);
   rows.push(['Model calls per proposal review (open + after the answer)', R.total.cards.perCard, null, null, g(S, 'cardsPerCard')]);
@@ -259,7 +261,7 @@ function metricsSection(m) {
 <div class="metrics"><table><thead><tr><th>Metric</th><th>vole-8126</th><th>Phase 0</th>${S ? `<th>${esc(S.run)}</th>` : ''}<th>this run</th><th>vs vole</th><th>vs P0</th>${S ? `<th>vs ${esc(S.run)}</th>` : ''}</tr></thead><tbody>
 ${rows.map(([l, now, base, p0, prev]) => `<tr><td>${esc(l)}</td><td>${v(base)}</td><td>${v(p0)}</td>${S ? `<td>${v(prev)}</td>` : ''}<td>${v(now)}</td>${delta(now, base)}${delta(now, p0)}${S ? delta(now, prev) : ''}</tr>`).join('\n')}
 </tbody></table></div>
-<p class="note">Wake: a sub-human plugin prompt (${esc(R.total.pluginWakes ?? 0)}), a Monitor event (runs before W4; ${esc(R.total.notices)}), a peer delivery or row-rewake that starts a turn.${R.total.chat ? ` Chat: ${esc(R.total.chat.notices)} rows shown with $.ui.log, ${esc(R.total.chat.pulls)} copies for the models, ${esc(R.total.chat.calls)} model calls they started.` : ''} Noise: the six line kinds above; ✓ sent receipts excluded (${esc(R.total.noise.receipts)}). Reviews: ${esc(R.total.cards.count)} proposals, ${esc(R.total.cards.toCard)} call(s) to open + ${esc(R.total.cards.after)} after.</p>
+<p class="note">Wake: a sub-human plugin prompt (${esc(R.total.pluginWakes ?? 0)}), a peer delivery or row-rewake that starts a turn.${R.total.chat ? ` Chat: ${esc(R.total.chat.notices)} rows shown with $.ui.log, ${esc(R.total.chat.pulls)} copies for the models, ${esc(R.total.chat.calls)} model calls they started.` : ''} Noise: the line kinds above; ✓ sent receipts excluded (${esc(R.total.noise.receipts)}). Reviews: ${esc(R.total.cards.count)} proposals, ${esc(R.total.cards.toCard)} call(s) to open + ${esc(R.total.cards.after)} after.</p>
 </section>`;
 }
 

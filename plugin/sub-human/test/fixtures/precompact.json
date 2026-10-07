@@ -1,9 +1,0 @@
-{
- "session_id": "e2fc1ca3-eebb-4bbd-a8f1-beb254598180",
- "transcript_path": "/Users/x/.claude/projects/-private-tmp-sh-probe-work-p3/e2fc1ca3-eebb-4bbd-a8f1-beb254598180.jsonl",
- "cwd": "/private/tmp/sh-probe/work/p3",
- "scratchpad_dir": "/private/tmp/claude-501/-private-tmp-sh-probe-work-p3/e2fc1ca3-eebb-4bbd-a8f1-beb254598180/scratchpad",
- "hook_event_name": "PreCompact",
- "trigger": "manual",
- "custom_instructions": ""
-}
