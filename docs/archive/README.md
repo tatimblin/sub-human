@@ -1,6 +1,6 @@
 # Archive
 
-Design history: research, spikes, plans and briefs from earlier phases. Kept for the reasoning; none of it describes the current build. For the current state see `docs/rebuild/` (the walkthrough and its checks), `docs/internals/` and `docs/next/AUDIT-PLAN.md`. Paths inside these files are as written then: `docs/X` there is now `docs/archive/X`.
+Design history: research, spikes, plans and briefs from earlier phases. Kept for the reasoning; none of it describes the current build. For the current state see `docs/rebuild/` (the walkthrough and its checks), `docs/internals/`, `docs/ARCHITECTURE.md` and the current plan in `docs/next/`. Paths inside these files are as written then: `docs/X` there is now `docs/archive/X`, and `docs/next/AUDIT-PLAN.md` and `docs/next/MODS-PLAN.md` are now `docs/archive/AUDIT-PLAN.md` and `docs/archive/MODS-PLAN.md`.
 
 Roughly in the order it was written:
 
@@ -21,3 +21,5 @@ Roughly in the order it was written:
 - [next/S2-consent-card.md](next/S2-consent-card.md): spike S2, the consent card (hook-rewritten AskUserQuestion).
 - [next/S3-monitor-resume.md](next/S3-monitor-resume.md): spike S3, the room monitor after `/clear`, `--continue` and `--resume`.
 - [next/P3-wakes.md](next/P3-wakes.md): Phase 3, cutting room-caused wakes.
+- [AUDIT-PLAN.md](AUDIT-PLAN.md): the five-way audit's implementation plan (waves 0–4, done 2026-10-06).
+- [MODS-PLAN.md](MODS-PLAN.md): the move to a function-hooks module (W0–W4: guard, prompt gate, delivery through the tail child, no Monitor; done 2026-10-07).

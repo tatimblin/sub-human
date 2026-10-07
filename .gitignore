@@ -8,6 +8,6 @@ coverage/
 docs/rebuild/screens/
 
 # written by Claude Code when it loads the hooks module from a folder (--plugin-dir, claude plugin test/validate);
-# docs/next/MODS-PLAN.md W1 keeps them out of git
+# docs/archive/MODS-PLAN.md W1 keeps them out of git
 plugin/sub-human/tsconfig.json
 plugin/sub-human/.claude-plugin/types/

@@ -10,11 +10,12 @@ How it works (processes, store layout, lanes, consent, tasks, the cc contract): 
 - `scripts/`: demo and evidence tools. `demo.sh` drives the walkthrough in tmux, `demo-lib.js` holds its tmux and log helpers, `snap.js` captures panes, `checks.js` + `checks/*.js` hold the per-scene checks, `metrics.js` the run metrics, and `walkthrough.js` builds the HTML. `baselines.json` holds earlier runs, thresholds and prices. `lib/` has shared helpers: `paths.js` is the only place scripts import plugin paths. `probe-cc.js` checks the internals list. The tests are in `scripts/test/`.
 - `demo/app.pristine/`: the small app each demo seat gets a copy of.
 - `docs/rebuild/`: the latest walkthrough (`walkthrough.html`, `checks.json`). `screens/` is generated and gitignored.
-- `docs/internals/`: Claude Code internals we rely on, per version. `docs/next/AUDIT-PLAN.md`: the current work plan. `docs/archive/`: history (index in its README).
+- `docs/internals/`: Claude Code internals we rely on, per version. `docs/next/REVIEW-PLAN.md`: the current work plan. `docs/archive/`: history, including the audit and mods plans (index in its README).
 
 ## Commands
 
-- `npm test`: plugin tests and script tests (`node --test`, no dependencies).
+- `npm test`: plugin tests and script tests (`node --test`, no dependencies), then `npm run test:mods`.
+- `npm run test:mods`: the hooks module's wiring tests (`mod/test/*.test.ts`) through `claude plugin test`; skipped without Claude Code 2.1.292+ or with hooks modules off.
 - `npm run validate`: `claude plugin validate plugin/sub-human --strict`.
 - `npm run probe`: check every Claude Code internal listed in `lib/cc.js` against the installed binary.
 - `node --test scripts/test` runs only the script tests. `bash -n scripts/demo.sh` checks the demo's syntax.
