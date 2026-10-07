@@ -1,25 +1,10 @@
 /**
  * plugin/sub-human/mod/core/guard.mjs: the store guard's verdicts as pure functions (no `$`, no node imports),
  * shared by the hooks module (mod/guard.mjs) and the node tests (test/hooks/guard.test.js, security.test.js).
- *
- * Threat model: one machine, one OS user. The goal is that a model (any member's Claude, possibly steered by
- * room text) cannot forge or hide a person's words through its ordinary tools. It is a string check: a
- * determined command (a script file written first, an obfuscated path, a variable built at run time) evades
- * it. What it cannot evade: via=human needs the seat key's signature (lib/room/store.js), readers mark unsigned
- * lines "(unverified)", and the prev-hash chain shows an edited log.
- *
- * ctx (every field optional; an unknown home means only the string rules apply, as before mod-hello answered):
- *   {home, realHome, userHome, pluginRoot, realPluginRoot, cwd, realCwd}
- *
- *   bashVerdict(command, ctx) -> reason | null     a Bash command that names the store or runs the plugin's code
- *   needsCwd(command) -> bool                      bashVerdict reads ctx.cwd / realCwd for this command
- *   writeTarget(input) -> string | null            the path a Write / Edit / MultiEdit / NotebookEdit names
- *   absTarget(p, {cwd, userHome}) -> string | null the path made absolute (~ expanded), or null when it cannot be
- *   ancestors(abs) -> [path]                       abs, then each parent up to "/" (the walk for a realPath)
- *   writeVerdict(candidates, ctx) -> reason | null the candidates (lexical path, resolved paths) under the store
- *   roomToolVerdict({tool, agentId}, seated) -> {decision, reason} | null    the room MCP tools' verdict
- *   failClosed(e) -> bool                          a guard that failed denies only a call that mentions sub-human
- *   denyText(why), WRITE_DENY(tool, p), FAILED     the reasons the model reads
+ * In: the tool input and ctx {home, realHome, userHome, pluginRoot, realPluginRoot, cwd, realCwd}, every field
+ * optional (an unknown home leaves only the string rules). Out: a deny reason the model reads, or null.
+ * It is a string check, so a determined command evades it; the seat key's signature on via=human and the log's
+ * hash chain are what it cannot evade (lib/room/store.js).
  */
 
 export const MCP_PREFIX = 'mcp__plugin_sub-human_room__';
@@ -75,6 +60,7 @@ function homeSpellings({ home, realHome, userHome } = {}) {
   return [...out];
 }
 
+/** bashVerdict reads ctx.cwd / realCwd for this command. */
 export const needsCwd = command => {
   const cmd = typeof command === 'string' ? command : '';
   return RUNS_JS.test(cmd) && PLUGIN_CODE.test(cmd) && !NAMES_PLUGIN(cmd);
@@ -104,11 +90,13 @@ export function bashVerdict(command, ctx = {}) {
 export const denyText = why => `${MSG} (Denied: ${why}.) Use \`sub-human read\`, \`sub-human digest\`, \`sub-human who\` or the room MCP tools.`;
 
 // ---------- Write / Edit / MultiEdit / NotebookEdit ----------
+/** The path the tool input names, or null. */
 export function writeTarget(input = {}) {
   const p = input && (input.file_path || input.notebook_path);
   return typeof p === 'string' && p ? p : null;
 }
 
+/** The path made absolute (~ expanded), or null when it cannot be. */
 export function absTarget(p, { cwd, userHome } = {}) {
   if (typeof p !== 'string' || !p) return null;
   let x = p;
@@ -123,6 +111,7 @@ export function absTarget(p, { cwd, userHome } = {}) {
   return normalize(x);
 }
 
+/** abs, then each parent up to "/": the walk to the nearest existing ancestor for a realPath. */
 export function ancestors(abs) {
   const out = [];
   for (let x = normalize(abs); ; x = x.slice(0, x.lastIndexOf('/')) || '/') {
@@ -156,7 +145,7 @@ export function roomToolVerdict({ tool, agentId } = {}, seated = false) {
   return seated ? { decision: 'allow', reason: ROOM_ALLOW } : null;
 }
 
-/** A guard that failed denies only a call that plausibly touches the store (as hooks/guard.js did). */
+/** A guard that failed denies only a call that plausibly touches the store: denying everything would break sessions. */
 export function failClosed(e) {
   try { return JSON.stringify(e).includes('sub-human'); } catch { return true; }
 }

@@ -88,7 +88,7 @@ test('hooks.json: async only on hooks whose output nothing reads', () => {
   assert.deepEqual(asyncScripts, ['Notification:hooks/presence.js', 'SessionStart:hooks/row-launcher.js', 'StopFailure:hooks/presence.js']);
 });
 
-test('no Monitor (D2): the hooks module\'s tail child is the only delivery', () => {
+test('no Monitor: the hooks module\'s tail child is the only delivery', () => {
   assert.equal(fs.existsSync(path.join(PLUGIN, 'monitors')), false, 'monitors/ is gone');
   const manifest = readJson('.claude-plugin/plugin.json');
   assert.equal(manifest.monitors, undefined);

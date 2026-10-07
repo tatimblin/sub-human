@@ -10,7 +10,8 @@
 // Context = the same mechanics block as join (common.js contextBlock: the role template filled + ROWS, i.e.
 // lib/rows.js rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
 // a re-spawn would duplicate the room row). On --resume the hold server is new, so every row is
-// listed. sessionTitle = the native address NAME.CODE (SendMessage / ListAgents reach the session by it).
+// listed. sessionTitle = the native address NAME.CODE (SendMessage / ListAgents reach the session by it:
+// cc CONTRACT session-title-address).
 // A plan-view review left behind (hooks/consent.js; members/NAME/review.json) is closed here: after clear or
 // resume always, after compact only when it is older than REVIEW_STALE_MS. The session plan file gets the
 // person's own text back (lib/proposal.js restoreStale) and the review state is cleared.

@@ -1,37 +1,11 @@
 /**
- * plugin/sub-human/mod/deliver.mjs: the room's delivery through the hooks module (docs/next/MODS-PLAN.md Part 2b,
- * W3 M7). A child `node bin/sub-human tail --ndjson` (lib/tail.js) follows the seat's room for the session's life
- * and writes events; this file routes them (mod/core/deliver.mjs route):
- *   chat   -> $.ui.log: the person sees people's words, joins and leaves as dim rows; no model turn (D3)
- *   pull   -> $.session.append (user, isMeta): the model reads it with its next request; no wake. At most once (D8)
- *   wake   -> idle: $.prompt.submit (origin plugin sub-human); mid-turn (a turn.start with no turn.complete yet):
- *             the isMeta append plus $.ui.log of its visible lines, and at that turn's end a $.prompt.submit after
- *             all when no main-loop tool call finished after the row (classic.PostToolUse / PostToolUseFailure, no
- *             agent_id): the model's request then in flight was its last and never carried the row. A submit that
- *             is dropped or fails falls back to the append; a wake neither takes waits for the next turn.start
- *   rows   -> $.state rows, attached as context to the person's next prompt (prompt.submit, typed origins)
- *   health -> $.ui.log plus the append
- * The child is the seat's only delivery (D2: no Monitor): nothing else tells the person or the model what
- * happened in the room.
- *
- * The child starts on session.start (a reload or a lost worker runs it again), after the join
- * (classic.UserPromptExpansion /sub-human) and after classic.SessionStart (a /clear runs on under a new session
- * id: the old child is stopped at session.end, the new one started here). It is not started when the hello says
- * the session surely has no seat. A child that exits is started again after restartDelay (1 s doubling to 60 s).
- * It dies with the module (a reload, the session's end): $.process.spawn's loop is its life. All time is $.clock's.
- *
- * A failure on the way (an event that could not be applied, a child that exited or did not start, no timer to
- * restart it, a wake nothing took) adds one to $.state deliveryErrors and shows DELIVERY_ERROR_NOTICE, at most
- * once per MOD_DELIVERY_ERROR_LOG_MS: the person learns the room may hold something they did not get.
- *
- * The session's lifecycle is here too (one file per event: validate refuses a second unmatched session.start):
- * on session.start the mod runs node hooks/mod-hello.js with {session_id, nonce} (the session's nonce, minted once
- * per session id and kept in $.state; at-room checks it); mod-hello writes the module's lease and
- * prints {home, realHome, userHome, pluginRoot, seat}, kept in $.state hello, and runs it again after the join and
- * after classic.SessionStart. A refresh that fails keeps the last hello but marks it as no session's (sid null), so
- * every prefilter runs node until a refresh succeeds: a join whose hello failed must not leave "no seat" looking
- * certain. session.start and a classic SessionStart also set reviewMaybeOpen (mod/consent.mjs): unsure until
- * consent says.
+ * plugin/sub-human/mod/deliver.mjs: the session's lifecycle (the hello) and the room's delivery; HOOKS in
+ * mod/register.mjs says what each hook does. A child `node bin/sub-human tail --ndjson` (lib/tail.js) follows the
+ * seat's room and writes events; mod/core/deliver.mjs route() maps each to a $ call. The child is the seat's only
+ * delivery: nothing else tells the person or the model what happened in the room. It restarts with backoff and dies
+ * with the module. A failed hello refresh keeps the last hello but as no session's, so the prefilters run node.
+ * Failure: every lost event, child exit or wake nothing took counts in $.state deliveryErrors and shows
+ * DELIVERY_ERROR_NOTICE (rate-limited), so the person learns the room may hold something they did not get.
  *
  *   delivering(sid) -> bool     the child follows a seat for this session id (mod/prompt.mjs skips node on it)
  */

@@ -1,7 +1,7 @@
 'use strict';
 /**
  * plugin/sub-human/lib/identity.js: where rooms live, who is in them, and which Claude session is asking.
- * CommonJS, zero dependencies, Node 24. Identity is bound at join by a hook and never chosen by the model.
+ * CommonJS, zero dependencies. Identity is bound at join by a hook and never chosen by the model.
  * Participants are collaborators: there is no process-ancestry proof. A seat is found by a direct lookup of
  * the session id (hooks) or of a registered claude pid (MCP server, CLI). Every seat stores its process start
  * time (pid_start, epoch s, lib/lock.js pidStart), so a reused pid never keeps a dead seat alive or adopts it.

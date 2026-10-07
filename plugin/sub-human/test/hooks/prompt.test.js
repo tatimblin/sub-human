@@ -28,7 +28,7 @@ test('prompt: merge keeps a stopping output alone and otherwise joins the contex
   assert.deepEqual(merge([null, ctxOut('only consent')]), ctxOut('only consent'));
 });
 
-test('prompt: no hooks.json UserPromptSubmit entry; the module runs prompt.js (mod/prompt.mjs, MODS-PLAN W2)', async () => {
+test('prompt: no hooks.json UserPromptSubmit entry; the module runs prompt.js (mod/prompt.mjs)', async () => {
   assert.equal(JSON.parse(fs.readFileSync(path.join(HOOKS, 'hooks.json'), 'utf8')).hooks.UserPromptSubmit, undefined);
   const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.mjs'));
   assert.ok(MOD.some(h => h.event === 'classic.UserPromptSubmit' && h.file === 'mod/prompt.mjs'));

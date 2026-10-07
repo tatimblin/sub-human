@@ -1,19 +1,11 @@
 /**
  * plugin/sub-human/mod/core/chat.mjs: the group-chat drawing of a UserMessage row, as pure functions (mod/render.mjs
- * draws them; test/mod-core.test.js checks them in node).
- *
- *   peerLines(fromName, text) -> [line] | null
- *       A message another member's Claude sent (origin peer / peer-send-message): "bob's Claude: <first line>",
- *       every further line under NEST ("  │ "), as lib/room/render.js chatLines lays out a message; at most
- *       CHAT_LINES_MAX lines, then "  │ [+N more lines: ctrl+o]". null when fromName is not a seat address
- *       ("NAME.CODE"), so the engine draws the row.
- *   roomLines(text) -> [line] | null
- *       A sub-human prompt (origin plugin sub-human: the room's own lines): the lines without the "(for Claude)"
- *       ones (the model still reads them; the drawing leaves them out). null when no line is left.
- *   NEST, FOR_CLAUDE, CHAT_LINES_MAX     copies of lib/config.js / lib/room/render.js (asserted equal in node)
+ * draws them; test/mod-core.test.js checks them in node). In: the row's text (and sender). Out: the lines to draw,
+ * or null so the engine draws the row itself.
  */
 import { parseAddr } from './seat.mjs';
 
+// Copies of lib/config.js / lib/room/render.js (asserted equal in node): mod/ imports no CommonJS.
 export const NEST = '  │ ';
 export const FOR_CLAUDE = '(for Claude)';
 export const CHAT_LINES_MAX = 20;
@@ -22,6 +14,11 @@ export const CHAT_LINES_MAX = 20;
 const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
 const clean = s => String(s).replace(/\r\n?/g, '\n').replace(UNSAFE, '');
 
+/**
+ * A message another member's Claude sent: "bob's Claude: <first line>", further lines under NEST as
+ * lib/room/render.js chatLines lays out a message, at most CHAT_LINES_MAX then "[+N more lines: ctrl+o]".
+ * null when fromName is not a seat address ("NAME.CODE").
+ */
 export function peerLines(fromName, text) {
   const who = parseAddr(fromName);
   if (!who) return null;
@@ -34,6 +31,7 @@ export function peerLines(fromName, text) {
   return out;
 }
 
+/** A sub-human prompt without its "(for Claude)" lines (the model still reads them); null when none is left. */
 export function roomLines(text) {
   const lines = clean(text).split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim() && !l.startsWith(FOR_CLAUDE));
   return lines.length ? lines : null;

@@ -1,31 +1,13 @@
 #!/usr/bin/env node
 'use strict';
-// UserPromptExpansion(sub-human:sub-human): bind this session's identity. The model never chooses it.
-//   /sub-human NAME [CODE]  -> join CODE as NAME and log member_joined (via system). Without CODE: the one open
-//                              room; with no open room, create one and start its headless orch (lib/orch.js);
-//                              several open rooms is an error that lists the codes. A room is open while it
-//                              has a live member seat and is not closing; rooms where only the orch is left
-//                              are swept first (orch.watchdog closes them once orphaned long enough).
-//                              Already in another room -> member_left "switched rooms". Joining a room with
-//                              no live orch (re)starts it: a {job:"pending"} claim under the members lock (a
-//                              concurrent join sees it and starts nothing), then a detached starter runs
-//                              `claude --bg`, so this hook never waits for the spawn.
-//   /sub-human              -> the orch's launch prompt: in a session whose agent_type is sub-human:orchestrator
-//                              and whose env has SUB_HUMAN_ROOM (both set by the spawn), bind it as "orch" of
-//                              that room. In a plain session it explains usage: the orch is started for you.
-//   Manual orch (debugging only): `node lib/orch.js cmd CODE` prints the exact spawn command; or run
-//   `claude --agent sub-human:orchestrator --permission-mode plan` and type `/sub-human CODE` (an existing room)
-//   or `/sub-human` (a new room, no SUB_HUMAN_ROOM).
-// The claude pid comes from CLAUDE_PID, which Claude Code sets for every hook it runs.
-// Failure blocks the prompt with a reason (no model turn). Success injects the mechanics block (common.js
-// contextBlock: the role template filled + ROWS) and a one-line systemMessage; bypass-permissions mode gets a warning.
-// The member's seat key (<home>/keys/<code>/<name>.key, hooks/seat-key.js) is created here.
-// UserPromptExpansion output has no sessionTitle; mod/prompt.mjs (classic.UserPromptSubmit) sets it (NAME.CODE) on
-// the next prompt.
-// A seat needs the hooks module: its guard, prompt gate and delivery are function hooks. Without a hello lease for
-// this session id from this claude process, or a recent one (identity.modLeaseOk; hooks/mod-hello.js writes it on
-// session.start), the join is refused with NO_MODULE: Claude Code older than 2.1.292, --bare, safe mode, hooks
-// turned off by policy, or an old session id resumed where the module is off.
+// UserPromptExpansion(sub-human:sub-human): bind this session's identity before the model runs; the model never
+// chooses it. `/sub-human NAME [CODE]` joins CODE (else the one open room, else a new one) as NAME, leaving any other
+// room, and (re)starts a room's orch without waiting for it (lib/orch.js claimSpawn). Bare `/sub-human` binds the
+// orch's own session (agent_type sub-human:orchestrator + SUB_HUMAN_ROOM), else explains usage. Creates the seat
+// key (hooks/seat-key.js). Out: the mechanics block (common.js contextBlock) and a one-line systemMessage; the title
+// comes on the next prompt (mod/prompt.mjs), since UserPromptExpansion has no sessionTitle. Failure blocks the
+// prompt with a reason, no model turn. A seat needs the hooks module (its guard, prompt gate and delivery), so
+// without a fresh hello lease for this session (identity.modLeaseOk) the join is refused with NO_MODULE.
 const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
 const orch = require('../lib/orch.js');
 const seatKey = require('./seat-key.js');

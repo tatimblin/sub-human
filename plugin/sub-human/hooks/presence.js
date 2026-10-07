@@ -6,10 +6,11 @@
 //   idle_prompt        -> idle         the human is idle at their prompt
 //   permission_prompt  -> permission   their Claude is waiting on them
 //   StopFailure        -> error        their Claude stalled; detail = the error code (rate_limit, …)
-//   Working            -> working      not a hook event: the hooks module runs this with {hook_event_name:
-//                                     "Working"} on the person's prompt (mod/deliver.mjs), since at-room.js no
-//                                     longer runs for every prompt
-// at-room.js, join.js and session-restore.js write "working" too. Output: none (StopFailure ignores it).
+//   Working            -> working      not a hook event: mod/prompt.mjs runs this with {hook_event_name:
+//                                     "Working"} on the person's typed prompt, since the shim does not start
+//                                     node for every prompt
+// join.js and session-restore.js write "working" too, and at-room.js when no origin came.
+// Output: none (StopFailure ignores it).
 const { run, whoami, presence } = require('./common.js');
 
 const BY_TYPE = { idle_prompt: 'idle', permission_prompt: 'permission' };

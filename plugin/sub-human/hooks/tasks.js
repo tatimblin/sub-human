@@ -6,12 +6,10 @@
  *
  * PostToolUse TaskCreate|TaskUpdate (mirror): appends a `task` entry via system
  *   {op: add|claim|release|done|update|delete, id, subject, owner, status, blockedBy, req} (the task's whole
- *   state after the call), then rewrites the room's task mirror (tasks.json) as lib/tasks.js fold() of every `task` entry, so the
- *   file is derivable from the log alone. A refused call (tool_response.success false, or an error) is skipped.
- *   Fields come from tool_input and tool_response; what they leave unknown is read from the orch's native task
- *   file (cc.taskFile; read only, never written). req: tool_input.metadata.req, then the task file's
- *   metadata.req, then (tasks written before metadata) the description's "(req #14 by bob)" tag.
- *   The room-open task ("room CODE open", owner room) and _internal tasks are left out of both.
+ *   state after the call), then rewrites tasks.json as lib/tasks.js fold() of every `task` entry, so the file is
+ *   derivable from the log alone. A refused call is skipped. What the tool input and response leave unknown is
+ *   read from the orch's native task file (cc.taskFile; never written). The room-open task and _internal tasks
+ *   are left out.
  * TaskCompleted (gate): exit 2 with the reason (shown to the orch) unless lib/tasks.js gate() passes. The
  *   input has no metadata, so owner and metadata come from the task file (which still has the old status).
  *   A refusal drops every field of that TaskUpdate, so the reason tells the orch to send status alone.

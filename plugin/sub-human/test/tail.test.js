@@ -397,7 +397,7 @@ test('tail: the health tick renews the seat lease (identity.heartbeat)', () => {
   assert.ok(beats.length >= 2 && beats.every(b => b === `${code}/alice`), beats.join(','));
 });
 
-// ---------- the events as the mod routes them (docs/next/MODS-PLAN.md W3 M6) ----------
+// ---------- the events as the mod routes them ----------
 const startNd = startTail;
 
 test('tail: a member batch is chat + pull, a line to me is a wake; it says its seat', () => {

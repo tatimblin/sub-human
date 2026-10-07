@@ -1,7 +1,7 @@
 'use strict';
 /**
  * plugin/sub-human/lib/proposal.js: proposals and the consent card.
- * CommonJS, zero dependencies, Node 24. Every write goes through room.append().
+ * CommonJS, zero dependencies. Every write goes through room.append().
  *
  * Log entries:
  *   proposal  via=agent, from = the proposer, {hash, approvers[], path, text}   (propose tool)

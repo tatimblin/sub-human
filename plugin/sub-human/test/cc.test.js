@@ -281,8 +281,8 @@ test('probe: a mutated function-hooks entry fails (search and shape)', { skip: !
     ['modules-search-mutated', false], ['chain-shape-mutated', false], ['notice-level-mutated', false]]);
 });
 
-test('probe: each R0 entry fails on a mutated search or shape', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
-  // cc-2.1.292.md "Review spikes R0": the MCP, title and chain-order entries each fail when one string is off by a character
+test('probe: each review-spike entry fails on a mutated search or shape', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
+  // cc-2.1.292.md "Review spikes": the MCP, title and chain-order entries each fail when one string is off by a character
   const by = id => cc.CONTRACT.find(e => e.id === id);
   const list = x => (Array.isArray(x) ? x : [x]);
   const ids = ['mcp-stdio-ppid', 'mcp-progress-resets-idle-timeout', 'mcp-server-shared-by-subagents', 'session-title-address', 'classic-chain-order'];

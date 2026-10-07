@@ -1,8 +1,8 @@
 'use strict';
 /**
  * plugin/sub-human/lib/tail.js: the room tail behind `sub-human tail` (bin/sub-human), the hooks module's child
- * (mod/deliver.mjs, docs/next/MODS-PLAN.md Part 2b). Everything that waits goes through an injected clock
- * (lib/clock.js), so tests drive it with clock.createFake() in-process.
+ * (mod/deliver.mjs). Everything that waits goes through an injected clock (lib/clock.js), so tests drive it with
+ * clock.createFake() in-process.
  *
  *   runTail({clock, write, err, lookup, timings, fs, deps, maxSeconds, sid}) -> {stop(), session()}
  *       The loop: look the seat up (every unseatedMs, then resolveMs once seated), follow that room's log
@@ -27,8 +27,8 @@
  *   {type:'chat', lines}      a member's group chat: people's words, joins and leaves
  *                             (the person sees them; no wake)
  *   {type:'pull', text}       for Claude, no wake: the pull lane plus a copy of the chat lines, under the
- *                             "Room since your last turn" head (PULL_CAP). At most once (D8): the cursor moves
- *                             once the line is written, whether or not the mod then appended it
+ *                             "Room since your last turn" head (PULL_CAP). At most once: the cursor moves when
+ *                             the line is written, whether or not the mod then appended it
  *   {type:'wake', text}       what needs Claude now: to me / @me, a proposal for me, a decision on mine, a task
  *                             assigned to me, an objection to my proposal (members, with the room state line when
  *                             the batch moved a proposal); the orch's whole push block
@@ -36,12 +36,8 @@
  *                             (members) and the missing rows' Agent calls; sent at start and when it changes
  *                             (health tick); null clears it
  *   {type:'health', text}     the hash-chain check's line (one per break)
- *
- * Reading: a session holds its Room (lib/room.js open(code)) and starts at its cursor without re-reading the log
- * from byte 0. The backlog (ids after the cursor) comes from room.readView({after}) (the checkpoint plus a search
- * for the cursor's line); live entries come from room.tailer() (what is appended after the session started). The
- * health tick also renews the seat's lease (identity.heartbeat). A batch is judged against
- * room.readView({after: first id - 1}), which gives lane() the same answer as readAll().
+ * A session never re-reads the log from byte 0: backlog from room.readView({after: cursor}), live entries from
+ * room.tailer(). The health tick also renews the seat's lease (identity.heartbeat).
  */
 
 const nodeFs = require('node:fs');
@@ -130,7 +126,7 @@ const esc = s => s.replace(/[.]/g, '\\.');
 /** "@name" in text, as lib/room/lanes.js reads a mention. */
 const mentions = (text, name) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
 /**
- * A member's push entry that is group chat, not a request (D3: the person sees it, Claude gets a copy, no wake):
+ * A member's push entry that is group chat, not a request (the person sees it, Claude gets a copy, no wake):
  * a join or leave, and another person's own words not addressed to me.
  */
 function isChat(me, e) {
@@ -195,9 +191,8 @@ function formatNdBatch(ready, ctx) {
 
 const SPAWN_GRACE_MS = config.ROW_SPAWN_GRACE_MS;
 /**
- * The Agent calls for this seat's rows with no live hold, or null when they all run (or were just spawned). Moved
- * from hooks/at-room.js (the one row-adjacent change, docs/next/MODS-PLAN.md Part 2b): the tail sends it as a
- * `rows` event.
+ * The Agent calls for this seat's rows with no live hold, or null when they all run (or were just spawned). The
+ * tail sends it as a `rows` event, so the person's next prompt carries it.
  */
 function missingRowsText(me, sid, { now = Date.now(), rows = require('./rows.js'), identity = require('./identity.js') } = {}) {
   try {

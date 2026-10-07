@@ -1,40 +1,11 @@
 /**
- * plugin/sub-human/mod/core/deliver.mjs: the room's delivery through the hooks module, as pure functions
- * (docs/next/MODS-PLAN.md Part 2b; mod/deliver.mjs makes the $ calls; test/mod-core.test.js checks these in node).
- *
- * The mod runs `node bin/sub-human tail --ndjson` for the session's life (lib/tail.js writes the events) and
- * routes each event:
- *   seat   -> kept: the child follows that seat (delivering(sid) is true while it does)
- *   chat   -> $.ui.log, one call per line (a dim notice row the person sees; the model never reads it; no wake;
- *             a notice is one line: Claude Code draws a newline in it as U+FFFD, cc CONTRACT ui-log-notice). D3.
- *   pull   -> $.session.append, a user isMeta row: the model reads it at its next request; no wake
- *   wake   -> idle: $.prompt.submit (a turn of its own); mid-turn: $.session.append plus $.ui.log of its visible
- *             lines, and at that turn's end a $.prompt.submit after all when no tool call of the main loop finished
- *             after the row (then no model request was made after it: the request in flight did not carry it)
- *   rows   -> held ($.state rows) and attached as context to the person's next prompt (and to the orch's wakes)
- *   health -> $.ui.log plus the pull append
- * Pull is at most once (D8, the plan's simple option): the tail's cursor moved once the line was written; a mod
- * lost between that write and the append drops it (PULL_DELIVERY).
- *
- *   PULL_DELIVERY                 'at-most-once'
- *   tailArgv(root) -> argv        ['node', '<root>/bin/sub-human', 'tail', '--ndjson']
- *   tailEnv(sid, root) -> env     the session id the child looks its seat up by, an empty CLAUDE_PID (a child of the
- *                                 mod inherits whatever claude inherited: cc CONTRACT process-run-stdin)
- *   lineBuffer() -> {push(text) -> [line]}   whole lines out of the pieces $.process.spawn streams
- *   parseEvent(line) -> event | null         a well-formed event of a known type, else null
- *   logLines(text | lines) -> [{do:'log', text}]   one log action per non-empty line
- *   route(ev, {turnRunning, role, rows}) -> [action]
- *       action: {do:'log', text} | {do:'append', text} | {do:'submit', text} | {do:'hold-rows', text|null} |
- *               {do:'seat', seat} | {do:'mid-turn-wake', text}
- *   WAKE_HEAD                     a wake's prompt: this "(for Claude)" head (so it never parses as a "room:"
- *                                 post; mod/core/prompt.mjs gateVerdict), its lines, then held rows calls
- *   unread(wakes, lastToolDone) -> [text]   the mid-turn wakes ({text, at}) appended after the main loop's last
- *                                 finished tool call: no request followed them, so they are submitted after all
- *   turnLedger() -> {running, start, appended, toolDone, complete, hold}   the main-loop turn as delivery sees it
- *                                 (below): mid-turn wakes to check at the turn's end, wakes held for the next start
- *   restartDelay(fails) -> ms     MOD_RESTART_MS doubling to MOD_RESTART_MAX_MS; nextFails(fails, ranMs) -> fails
- *   noticeDue(lastAt, now) -> bool   the delivery-error notice is at most once per MOD_DELIVERY_ERROR_LOG_MS
- *   spawnWanted(hello) -> bool    unsure, or seated
+ * plugin/sub-human/mod/core/deliver.mjs: the room's delivery as pure functions; mod/deliver.mjs makes the $ calls.
+ * In: the tail child's ndjson events (lib/tail.js). Out: route(ev) -> actions, one $ call each:
+ *   seat -> follow it; chat -> $.ui.log per line (a notice is one line, cc CONTRACT ui-log-notice); pull -> isMeta
+ *   append; wake -> $.prompt.submit when idle, else append plus log, re-checked at the turn's end (turnLedger);
+ *   rows -> held for the next prompt (the orch's ride on its wakes); health -> log plus append.
+ * Failure: pull is at most once (PULL_DELIVERY): the tail's cursor moves when the line is written, so a mod lost
+ * between that write and the append drops it; a malformed event parses to null and is ignored.
  */
 import { FOR_CLAUDE } from './chat.mjs';
 import { shimEnv } from './shim.mjs';
@@ -56,14 +27,17 @@ export const PENDING_MAX = 20;
 export const DELIVERY_ERROR_NOTICE = 'sub-human: a room message could not be delivered; `sub-human read` shows the room';
 
 export const PULL_DELIVERY = 'at-most-once';
+/** A wake's prompt starts with this "(for Claude)" head, so it never parses as a "room:" post (prompt.mjs gateVerdict). */
 export const WAKE_HEAD = `${FOR_CLAUDE} sub-human room: act on what concerns you; the person sees these lines.`;
 const TYPES = new Set(['seat', 'chat', 'pull', 'wake', 'rows', 'health']);
 
 export const tailArgv = root => ['node', `${root}/bin/sub-human`, 'tail', '--ndjson'];
 
-// The same env a shimmed hook gets; a child with no session id looks its seat up by nothing rather than by ''.
+// The same env a shimmed hook gets (an empty CLAUDE_PID: a child of the mod inherits whatever claude inherited,
+// cc CONTRACT process-run-stdin); a child with no session id looks its seat up by nothing rather than by ''.
 export const tailEnv = (sid, root) => shimEnv(typeof sid === 'string' && sid ? { session_id: sid } : {}, root);
 
+/** {push(text) -> [line]}: whole lines out of the pieces $.process.spawn streams. */
 export function lineBuffer() {
   let rest = '';
   return {
@@ -79,6 +53,7 @@ export function lineBuffer() {
 
 const str = v => typeof v === 'string' && v !== '';
 
+/** A well-formed event of a known type, else null. */
 export function parseEvent(line) {
   let o;
   try { o = JSON.parse(line); } catch { return null; }
@@ -101,6 +76,10 @@ function wakeText(text, rows) {
 
 export const logLines = x => (Array.isArray(x) ? x : String(x ?? '').split('\n')).filter(l => String(l).trim()).map(text => ({ do: 'log', text: String(text) }));
 
+/**
+ * [action], each {do:'log'|'append'|'submit'|'mid-turn-wake', text} | {do:'hold-rows', text|null} | {do:'seat', seat}.
+ * A mid-turn wake is appended now and handed to turnLedger, since the request in flight may not carry it.
+ */
 export function route(ev, { turnRunning = false, role = 'member', rows = null } = {}) {
   if (!ev) return [];
   switch (ev.type) {
@@ -120,10 +99,12 @@ export function route(ev, { turnRunning = false, role = 'member', rows = null } 
   }
 }
 
+/** The mid-turn wakes ({text, at}) after the main loop's last finished tool call: no request followed them. */
 export function unread(wakes, lastToolDone) {
   return (Array.isArray(wakes) ? wakes : []).filter(w => !(Number(lastToolDone) > Number(w.at))).map(w => w.text);
 }
 
+/** MOD_RESTART_MS doubling to MOD_RESTART_MAX_MS; nextFails starts over after a steady run. */
 export const restartDelay = fails => Math.min(MOD_RESTART_MAX_MS, MOD_RESTART_MS * 2 ** Math.max(0, fails));
 
 export const nextFails = (fails, ranMs) => (Number(ranMs) > MOD_RESTART_STEADY_MS ? 0 : (Number(fails) || 0) + 1);
@@ -174,4 +155,5 @@ export function turnLedger() {
   };
 }
 
+/** Start the tail child unless the hello is sure the session has no seat. */
 export const spawnWanted = hello => !hello || !!hello.seat;

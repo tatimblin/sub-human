@@ -1,16 +1,10 @@
 /**
- * plugin/sub-human/mod/prompt.mjs: the prompt gate and the UserPromptSubmit shim.
- *   - prompt.submit: an @room / room: prompt that no person typed is dropped before any hook runs, its reason shown
- *     to the person (mod/core/prompt.mjs gateVerdict; cc CONTRACT prompt-origin-composer). A member's typed prompt
- *     writes "working" presence (node hooks/presence.js, not awaited; the one writer, at-room leaves it alone when
- *     it gets an origin), and while the tail child delivers it carries the rows text the child holds as context.
- *   - classic.UserPromptSubmit: sets the session title (the seat's NAME.CODE) once per session id and address,
- *     then runs node hooks/prompt.js with sub_human_origin unless mod/core/prompt.mjs needsNode says it has
- *     nothing to do. An @room the shim could not handle is refused (failClosed), never let through as typed.
- *     The origin goes with the session's nonce (sub_human_nonce, $.state nonce, minted in mod/deliver.mjs): at-room
- *     believes an origin only when the nonce is the one in this session's lease.
- * The origin hand-off is a module variable: classic.UserPromptSubmit runs inside prompt.submit's next(e) (cc
- * CONTRACT prompt-submit-ups-order). A reload in between loses it, and at-room then refuses the @room.
+ * plugin/sub-human/mod/prompt.mjs: the prompt gate, "working" presence and the UserPromptSubmit shim (HOOKS in
+ * mod/register.mjs says what each hook does). An @room no person typed is dropped (cc CONTRACT
+ * prompt-origin-composer); one the shim could not handle is refused, never let through as typed. The origin goes
+ * to at-room with the session's nonce, which at-room checks against this session's lease. The origin hand-off is
+ * a module variable: classic.UserPromptSubmit runs inside prompt.submit's next(e) (cc CONTRACT
+ * prompt-submit-ups-order); a reload in between loses it, and at-room then refuses the @room.
  */
 import {
   gateVerdict, GATE_FAILED, isAtRoom, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
@@ -94,6 +88,7 @@ export function registerPrompt(on) {
   on('classic.UserPromptSubmit', async ($, e, next) => {
     const hello = await helloOf($);
     const { value: titled } = await $.state.get(TITLED);
+    // NAME.CODE as the session title is the seat's SendMessage address (cc CONTRACT session-title-address).
     const title = titleFor(hello, e.session_id, titled);
     if (title) await $.state.set(TITLED, { sid: e.session_id, addr: title });
     const top = title ? { sessionTitle: title } : {};

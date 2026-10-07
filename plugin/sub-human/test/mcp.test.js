@@ -70,7 +70,7 @@ test('mcp: tools/list has post, read, propose plus plug-in tools, no plan/watch/
   assert.equal(new Set(names).size, names.length, 'no duplicate tool names');
   assert.deepEqual(r.result.tools.find(t => t.name === 'post').inputSchema.properties.kind.enum, ['say', 'question', 'status']);
   // Schema budget, model-facing fields only (name, description, inputSchema; annotations and title are client
-  // metadata). Descriptions are written for tool search (wave 1 D), so the budget is the core three <= 1,800 and
+  // metadata). Descriptions are written for tool search, so the budget is the core three <= 1,800 and
   // all five <= 3,600 chars.
   const facing = ts => JSON.stringify(ts.map(({ name, description, inputSchema }) => ({ name, description, inputSchema }))).length;
   const core = facing(r.result.tools.slice(0, 3));
