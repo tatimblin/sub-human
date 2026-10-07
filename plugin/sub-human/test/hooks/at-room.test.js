@@ -339,3 +339,36 @@ test('a member gets lib/proposal.js reminder() for a proposal awaiting their ans
   c = ctx(w.hook('at-room', submit('and now?'), { as: 'alice' })) || '';
   assert.doesNotMatch(c, /still awaits/);
 });
+
+// ---------- W3: the hooks module's delivery (docs/next/MODS-PLAN.md Part 2b) ----------
+test('while the mod\'s tail child holds the delivery lease, a prompt gets no digest, reminders, row calls or notices', () => {
+  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  const H = 'abcdef012345';
+  w.append({ kind: 'proposal', text: 'plan', hash: H, approvers: ['alice'] }, { via: 'agent', from: 'orch' });
+  w.append({ kind: 'status', text: 'bob claude chatter' }, { via: 'agent', from: 'bob' });
+  const kv = () => w.lib(() => require(path.join(PLUGIN, 'lib', 'room.js')).open(w.code).store.kv);
+  w.lib(() => kv().set('delivery-alice', { via: 'mod', sid: w.sid.alice, pid: process.pid, at: '', until: Date.now() + 60_000 }));
+  const r = w.hook('at-room', submit('what did I miss?'), { as: 'alice' });
+  assert.equal(ctx(r), undefined, r.stdout);
+  assert.equal((r.json || {}).systemMessage, undefined);
+  // the lease lapsed (the child is gone): at-room delivers again
+  w.lib(() => kv().set('delivery-alice', { via: 'mod', sid: w.sid.alice, pid: process.pid, at: '', until: Date.now() - 1 }));
+  const c = ctx(w.hook('at-room', submit('and now?'), { as: 'alice' }));
+  assert.match(c, /Room since your last turn/);
+  assert.match(c, /still awaits alice's answer/);
+  assert.match(c, /SUB-HUMAN ROWS/);
+});
+
+test('the orch with an attested origin: a typed prompt is refused (but its launch), a peer, a notification or the mod\'s wake runs', () => {
+  const w = new World({ orch: 'act', alice: 'sleep' });
+  rowsRunning(w, 'orch', { members: ['alice'] });
+  const transcript = path.join(w.cwd, 'orch.jsonl');
+  jsonl(transcript, [{ type: 'user', promptId: 'p-launch', message: { role: 'user', content: '/sub-human' } }]);
+  const at = (p, origin, extra = {}) => w.hook('at-room', { ...submit(p), transcript_path: transcript, prompt_id: 'p-now', sub_human_origin: origin, ...extra }, { as: 'orch' });
+  for (const o of ['composer', 'sdk', 'bridge']) blocked(at('hi from a viewer', o));
+  for (const o of ['peer', 'peer-send-message', 'task-notification', 'plugin:sub-human']) {
+    assert.notEqual((at('(for Claude) sub-human room: act on what concerns you\n#3 bob[agent] task_req', o).json || {}).decision, 'block', o);
+  }
+  assert.notEqual((at('/sub-human', 'composer', { prompt_id: 'p-launch' }).json || {}).decision, 'block', 'the launch, attested');
+  assert.equal(w.entries().length, 0);
+});

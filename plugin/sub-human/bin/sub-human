@@ -24,12 +24,14 @@
  *       send time (retracted / answered / decided entries are dropped). A member_left X is held
  *       SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time both notices are dropped.
  *       A member's block is a group chat (room.chatLines, no ids): "bob: <exact words>", "bob's Claude: …",
- *       "bob joined", "bob left", which the member's Claude prints as they are and nothing else (member.md).
+ *       "bob joined", "bob left". (Before W3 the member's Claude printed them as given; member.md now says the
+ *       person already sees them, which holds with the hooks module's --ndjson delivery below.)
  *       Lines meant only for Claude start with "(for Claude)": the room state when the batch has a proposal,
  *       answer or decision (room.stateLine, with the card call), a cut message's read call, a missing room
- *       row's Agent call. Claude Code has no surface that puts a persistent line in the transcript without a
- *       model turn (a FileChanged systemMessage is a 5 s footer notification, a monitor event always wakes the
- *       model), so this one wake prints the lines.
+ *       row's Agent call. A monitor event always wakes the model; the hooks module's $.ui.log (--ndjson) is the
+ *       surface that shows a line without a turn.
+ *       While the hooks module's child holds the seat's delivery lease (delivery-NAME), this tail writes nothing:
+ *       its batches and chain-check lines are dropped and the cursor moves on.
  *       Members get every other member's join and settled leave (not the orch's), recorded as shown in
  *       the room document rows/notices-NAME (lib/notices.js; at-room.js shows on the next prompt any the monitor
  *       never sent).

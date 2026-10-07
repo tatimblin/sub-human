@@ -19,6 +19,9 @@ test('presence: Notification idle_prompt / permission_prompt and StopFailure wri
   // other notification types change nothing
   w.hook('presence', note('elicitation_dialog'), { as: 'alice' });
   assert.equal(read().state, 'error');
+  // the hooks module's "Working" (mod/prompt.mjs on the person's prompt, since at-room no longer runs for each)
+  w.hook('presence', { hook_event_name: 'Working' }, { as: 'alice' });
+  assert.equal(read().state, 'working');
   assert.equal(w.entries().length, 0, 'presence never touches the log');
 });
 

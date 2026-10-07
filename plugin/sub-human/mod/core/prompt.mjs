@@ -9,9 +9,16 @@
  *   gateVerdict(e) -> reason | null   prompt.submit: the drop reason for an @room that no person typed (a peer,
  *                                     a notification, a plugin, an unclassified socket write); null lets it on
  *   GATE_FAILED                       the drop reason when the gate itself failed on an @room (its .catch)
- *   needsNode(e, hello) -> bool       classic.UserPromptSubmit: false only when the mod is sure hooks/prompt.js
- *                                     would do nothing: the hello is this session's, it has no seat, and the
- *                                     prompt is not an @room (whose refusal "not in a room" node writes)
+ *   needsNode(e, hello, {delivering, reviewFlag}?) -> bool
+ *                                     classic.UserPromptSubmit: false only when the mod is sure hooks/prompt.js
+ *                                     would do nothing it needs: the hello is this session's, the prompt is not an
+ *                                     @room (node signs the post, or writes the refusal), and either the session
+ *                                     has no seat, or its seat is a member's (never the orch's: its refusal of
+ *                                     typed input is node's), the mod's tail child delivers for it (W3: at-room's
+ *                                     digest, notices and row calls are the child's now) and consent said no
+ *                                     review is open (reviewFlag false)
+ *   originKind(origin) -> kind        what the shim hands at-room as sub_human_origin: origin.kind, and for a
+ *                                     plugin "plugin:<name>" (the mod's own wakes are "plugin:sub-human")
  *   originQueue()                     the prompt.submit -> classic.UserPromptSubmit hand-off of e.origin.kind
  *                                     (the classic payload has none): push(text, kind) -> item, drop(item),
  *                                     take(prompt) -> kind | null (the item whose text is the prompt, else the
@@ -44,10 +51,16 @@ export function gateVerdict(e) {
 
 export const GATE_FAILED = '✗ not posted: sub-human could not check who wrote this @room. Type it again.';
 
-export function needsNode(e, hello) {
+export function needsNode(e, hello, { delivering = false, reviewFlag } = {}) {
   if (!hello || !e || hello.sid !== e.session_id) return true; // not this session's hello: unsure
-  if (hello.seat) return true;
-  return isAtRoom(e.prompt);
+  if (isAtRoom(e.prompt)) return true;
+  if (!hello.seat) return false;
+  return hello.seat.role === 'orch' || !delivering || reviewFlag !== false;
+}
+
+export function originKind(origin) {
+  if (!origin || typeof origin.kind !== 'string') return undefined;
+  return origin.kind === 'plugin' && typeof origin.name === 'string' && origin.name ? `plugin:${origin.name}` : origin.kind;
 }
 
 export function originQueue() {

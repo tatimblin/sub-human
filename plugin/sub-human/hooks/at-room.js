@@ -44,6 +44,11 @@
 // last assistant message (an accepted prompt suggestion, a copied draft), the entry carries drafted:"agent".
 // It is still posted.
 //
+// With the hooks module's delivery (docs/next/MODS-PLAN.md W3: its tail child holds the seat's lease
+// delivery-NAME, lib/tail.js leaseLive), the digest, the reminders, the row calls and the join / leave lines
+// below are the child's (pull, rows and chat events), so this hook skips them while that lease is live. Without
+// it (no module, or its child gone for a lease TTL) they run here as before:
+//
 // For any other prompt from a joined member (including a task notification that wakes the session), the
 // pull lane since the last turn is added as context: "Room since your last turn", group-chat lines with no
 // ids (room.chatLines; cursor ctx-NAME, ≤1.5k). It reads room.readView({after: cursor}), never the whole log.
@@ -51,11 +56,15 @@
 // Rows: a seat whose rows are not running (no live hold; e.g. its Claude skipped the restore prompt after
 // --resume) gets the exact missing Agent calls again with every ordinary prompt or notice, until they run.
 // A row spawned in the last minute (lib/rows.js sessionRowMap) may not hold yet, so it is never re-listed.
+// (lib/tail.js missingRowsText: the --ndjson tail sends the same text as its rows event.)
 //
 // The orch takes no typed input (nobody sits at its terminal; people reach it through @room): in the orch's
 // session every prompt is refused with a hint, typed text and typed slash commands alike, except a peer
 // delivery (the <cross-session-message envelope), a monitor notice (<task-notification>) and the launch
 // `/sub-human` when it is the session's first prompt. Those still get the pull digest and the row calls below.
+// With an attested origin (sub_human_origin) the test is the origin: a typed one (composer, sdk, bridge) is
+// refused unless it is that launch; anything else (a peer, a notification, the mod's own wake "plugin:sub-human")
+// runs.
 //
 // Join / leave lines (lib/notices.js): another member's join, or settled leave, that the room monitor did not
 // print for this member yet ("bob joined", "bob left"; e.g. the monitor was not running) goes out on a typed
@@ -74,6 +83,7 @@ const proposal = require(path.join(__dirname, '..', 'lib', 'proposal.js'));
 const { oneLine } = require(path.join(__dirname, '..', 'lib', 'text.js'));
 const config = require(path.join(__dirname, '..', 'lib', 'config.js'));
 const cc = require(path.join(__dirname, '..', 'lib', 'cc.js'));
+const tailLib = require(path.join(__dirname, '..', 'lib', 'tail.js'));
 
 function parse(prompt) {
   if (prompt.startsWith('@room ')) return prompt.slice('@room '.length);
@@ -252,42 +262,33 @@ function firstPrompt(input) {
 }
 
 /** For an orch session: null when the prompt may run (peer delivery, monitor notice, launch command), else the refusal. */
-function orchRefusal(me, input, prompt) {
+function orchRefusal(me, input, prompt, origin) {
+  if (origin !== null) return TYPED_ORIGINS.has(origin) && !(LAUNCH.test(prompt) && firstPrompt(input)) ? orchHint(me) : null;
   if (/^\s*<cross-session-message\b/.test(prompt) || cc.PEER_PREFIX.test(prompt)) return null;
   if (cc.isTaskNotification(prompt)) return null;
   if (LAUNCH.test(prompt) && firstPrompt(input)) return null;
   return orchHint(me);
 }
 
-const SPAWN_GRACE_MS = config.ROW_SPAWN_GRACE_MS;
+/** The Agent calls for this seat's rows with no live hold, or null (lib/tail.js missingRowsText). */
+const missingRowsText = (me, input) => tailLib.missingRowsText(me, input.session_id, { rows, identity });
 
-/** The Agent calls for this seat's rows with no live hold, or null when they all run (or were just spawned). */
-function missingRowsText(me, input) {
-  try {
-    const members = identity.readMembers(me.code);
-    // orch: missingRows skips members who joined under 45 s ago (their member_joined notice covers them)
-    let need = me.role === 'orch' ? rows.missingRows(me.code, me, { members })
-      : rows.rowsNeeded(me.code, me, { members, held: rows.readHolds(me.code, me.name) });
-    let map = {};
-    try { map = rows.sessionRowMap(me.code, input.session_id); } catch { /* none */ }
-    const fresh = new Set(Object.values(map).filter(r => r && Date.now() - Date.parse(r.at) < SPAWN_GRACE_MS).map(r => r.name));
-    need = need.filter(n => !fresh.has(n));
-    if (!need.length) return null;
-    return `SUB-HUMAN ROWS: your ${me.role === 'orch' ? `rows for ${need.join(', ')} are` : 'room row is'} not running in this session. `
-      + 'Make the call below first, in the same message as anything else you do, exactly as written.\n'
-      + rows.rowCalls(me, members, { only: need });
-  } catch { return null; }
+/** True while the hooks module's tail child delivers for this seat (its lease delivery-NAME is live). */
+function modDelivers(me) {
+  try { return !!tailLib.leaseLive(room.open(me.code).store.kv, me.name); } catch { return false; }
 }
 
 /** The UserPromptSubmit handler: writes its one output (if any) through common.js out(). hooks/prompt.js calls it. */
 function handle(input) {
   const prompt = typeof input.prompt === 'string' ? input.prompt : '';
-  const notification = cc.isTaskNotification(prompt);
+  // The mod's attested origin (prompt.submit e.origin.kind, through the classic.UserPromptSubmit shim), or null.
+  const origin = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
+  const notification = cc.isTaskNotification(prompt) || origin === 'plugin:sub-human';
   const slash = prompt.startsWith('/');
   const raw = notification || slash ? null : parse(prompt);
   const me = whoami(input);
   if (me && me.role === 'orch') {
-    const refusal = orchRefusal(me, input, prompt);
+    const refusal = orchRefusal(me, input, prompt, origin);
     if (refusal) return block(refusal);
   }
   if (me) presence(me, 'working');
@@ -295,7 +296,7 @@ function handle(input) {
   const top = title ? { sessionTitle: title } : {};
 
   if (raw === null) {
-    if (!me || slash) { if (title) out({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', ...top } }); return; }
+    if (!me || slash || modDelivers(me)) { if (title) out({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', ...top } }); return; }
     let pull = null;
     try { pull = pullDigest(me); } catch { /* best-effort */ }
     let notice = null;
@@ -307,10 +308,9 @@ function handle(input) {
     return;
   }
 
-  // The mod's attested origin (prompt.submit e.origin.kind, through the classic.UserPromptSubmit shim): a typed
-  // one posts at once, with no provisional mark and no checker; any other is refused (the mod's prompt.submit
-  // gate drops those first). Absent (no module, or its hand-off lost): today's source and transcript checks.
-  const origin = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
+  // The attested origin: a typed one posts at once, with no provisional mark and no checker; any other is refused
+  // (the mod's prompt.submit gate drops those first). Absent (no module, or its hand-off lost): today's source and
+  // transcript checks.
   if (origin !== null && !TYPED_ORIGINS.has(origin)) {
     return block(`✗ not posted: this prompt was not typed by you (origin "${origin.slice(0, 40)}"). Only your own typed @room posts as your words.`, top);
   }

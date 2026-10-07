@@ -152,6 +152,82 @@ test('prompt: needsNode skips node only for a surely unseated session and a prom
   assert.equal(needsNode(e('hi'), null), true, 'no hello yet');
 });
 
+test('prompt: a seated member skips node only while the tail child delivers and no review may be open; never the orch', async () => {
+  const { needsNode, originKind } = await load('mod/core/prompt.mjs');
+  const seat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
+  const hello = { sid: 's1', seat };
+  const e = prompt => ({ session_id: 's1', prompt });
+  assert.equal(needsNode(e('hi'), hello, { delivering: true, reviewFlag: false }), false);
+  assert.equal(needsNode(e('hi'), hello, { delivering: false, reviewFlag: false }), true, 'the Monitor delivers: at-room\'s digest');
+  assert.equal(needsNode(e('hi'), hello, { delivering: true, reviewFlag: true }), true, 'a review may be open');
+  assert.equal(needsNode(e('hi'), hello, { delivering: true }), true, 'flag unset: unsure');
+  assert.equal(needsNode(e('@room hi'), hello, { delivering: true, reviewFlag: false }), true, 'the post is signed in node');
+  assert.equal(needsNode(e('hi'), { sid: 's1', seat: { ...seat, role: 'orch' } }, { delivering: true, reviewFlag: false }), true, 'the orch: its refusal is node\'s');
+  assert.equal(originKind({ kind: 'composer' }), 'composer');
+  assert.equal(originKind({ kind: 'plugin', name: 'sub-human' }), 'plugin:sub-human');
+  assert.equal(originKind({ kind: 'plugin' }), 'plugin');
+  assert.equal(originKind(undefined), undefined);
+});
+
+// ---------- delivery (mod/core/deliver.mjs) ----------
+test('deliver: the child\'s argv and env; lines out of pieces; only well-formed events', async () => {
+  const d = await load('mod/core/deliver.mjs');
+  assert.deepEqual(d.tailArgv('/p'), ['node', '/p/bin/sub-human', 'tail', '--ndjson']);
+  assert.deepEqual(d.tailEnv('sid-1', '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: 'sid-1' });
+  assert.equal(d.PULL_DELIVERY, 'at-most-once');
+  const b = d.lineBuffer();
+  assert.deepEqual(b.push('{"type":"chat","li'), []);
+  assert.deepEqual(b.push('nes":["bob: hi"]}\n{"type":"rows","text":null}\n{"ty'), ['{"type":"chat","lines":["bob: hi"]}', '{"type":"rows","text":null}']);
+  assert.equal(b.pending, '{"ty');
+  assert.deepEqual(d.parseEvent('{"type":"chat","lines":["bob: hi"]}'), { type: 'chat', lines: ['bob: hi'] });
+  assert.deepEqual(d.parseEvent('{"type":"rows","text":""}'), { type: 'rows', text: null });
+  assert.deepEqual(d.parseEvent('{"type":"seat","seat":null}'), { type: 'seat', seat: null });
+  assert.equal(d.parseEvent('{"type":"wake"}'), null);
+  assert.equal(d.parseEvent('{"type":"exec","text":"rm"}'), null);
+  assert.equal(d.parseEvent('not json'), null);
+  // the tail's own event writer and this parser agree
+  const tail = require('../lib/tail.js');
+  assert.equal(tail.LEASE_VIA, 'mod');
+});
+
+test('deliver: the routing table (Part 2b): chat is a notice, pull an append, wake a prompt when idle and an append mid-turn', async () => {
+  const d = await load('mod/core/deliver.mjs');
+  assert.deepEqual(d.route({ type: 'chat', lines: ['bob: hi', 'carol joined'] }), [{ do: 'log', text: 'bob: hi\ncarol joined' }]);
+  assert.deepEqual(d.route({ type: 'pull', text: 'Room since…' }), [{ do: 'append', text: 'Room since…' }]);
+  assert.deepEqual(d.route({ type: 'rows', text: null }), [{ do: 'hold-rows', text: null }]);
+  assert.deepEqual(d.route({ type: 'seat', seat: null }), [{ do: 'seat', seat: null }]);
+  const idle = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' });
+  assert.deepEqual(idle, [{ do: 'submit', text: `${d.WAKE_HEAD}\nroom: decided\n(for Claude) room now: …` }]);
+  const { gateVerdict } = await load('mod/core/prompt.mjs');
+  assert.equal(gateVerdict({ text: idle[0].text, origin: { kind: 'plugin', name: 'sub-human' } }), null, 'a wake never reads as a "room:" post');
+  const mid = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' }, { turnRunning: true });
+  assert.deepEqual(mid, [{ do: 'log', text: 'room: decided' }, { do: 'mid-turn-wake', text: idle[0].text }]);
+  const orch = d.route({ type: 'wake', text: 'room now: …' }, { role: 'orch', rows: 'SUB-HUMAN ROWS: …' });
+  assert.equal(orch[0].text, `${d.WAKE_HEAD}\nroom now: …\nSUB-HUMAN ROWS: …`, 'the orch\'s rows ride on its wakes');
+  assert.equal(d.route({ type: 'wake', text: 'x' }, { role: 'member', rows: 'R' })[0].text.includes('R'), false, 'a member\'s go with the person\'s prompt');
+  assert.deepEqual(d.route({ type: 'health', text: 'room log check: …' }).map(a => a.do), ['log', 'append']);
+  assert.deepEqual(d.route(null), []);
+});
+
+test('deliver: unread, restartDelay, spawnWanted, titleFor', async () => {
+  const d = await load('mod/core/deliver.mjs');
+  const wakes = [{ text: 'during a tool', at: 100 }, { text: 'during the last request', at: 300 }];
+  assert.deepEqual(d.unread(wakes, 200), ['during the last request'], 'a tool call finished after the first: a request carried it');
+  assert.deepEqual(d.unread(wakes, 0), ['during a tool', 'during the last request'], 'no tool call this turn: none was carried');
+  assert.deepEqual(d.unread(wakes, 400), []);
+  assert.deepEqual(d.unread(null, 0), []);
+  assert.deepEqual([0, 1, 2, 6, 7, 20].map(d.restartDelay), [1000, 2000, 4000, 60_000, 60_000, 60_000]);
+  assert.equal(d.spawnWanted(null), true, 'unsure: start it');
+  assert.equal(d.spawnWanted({ seat: null }), false);
+  assert.equal(d.spawnWanted({ seat: { name: 'a' } }), true);
+  const seat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
+  assert.equal(d.titleFor({ sid: 's1', seat }, 's1', undefined), 'alice.otter-4821');
+  assert.equal(d.titleFor({ sid: 's1', seat }, 's1', 's1'), null, 'once per session id');
+  assert.equal(d.titleFor({ sid: 's1', seat }, 's2', 's1'), null, 'not this session\'s hello');
+  assert.equal(d.titleFor({ sid: 's1', seat: { ...seat, role: 'orch' } }, 's1'), null, 'the orch keeps its launch name');
+  assert.equal(d.titleFor({ sid: 's1', seat: null }, 's1'), null);
+});
+
 test('prompt: the origin queue hands prompt.submit\'s origin to the classic hook; mergeClassic keeps ours on top', async () => {
   const { originQueue, mergeClassic } = await load('mod/core/prompt.mjs');
   const q = originQueue();

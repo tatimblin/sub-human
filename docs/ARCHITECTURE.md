@@ -83,15 +83,22 @@ From `hooks/register.mjs` (hooks.json `modules`), in registration order.
 
 | Event | Matcher | File | Does |
 |---|---|---|---|
-| `session.start` | (all) | `mod/register.mjs` | runs hooks/mod-hello.js (the lease; home, plugin root, seat into $.state) |
-| `classic.UserPromptExpansion` | `command_name ^(sub-human:)?sub-human$` | `mod/register.mjs` | after the join (hooks/join.js beneath), runs mod-hello again for the new seat |
-| `classic.SessionStart` | `source clear\|compact\|resume` | `mod/register.mjs` | after session-restore beneath (a /clear rebinds the seat to a new session id), runs mod-hello again; reviewMaybeOpen unsure |
+| `session.start` | (all) | `mod/deliver.mjs` | runs hooks/mod-hello.js (the lease; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node bin/sub-human tail --ndjson, restarted with backoff) and routes its events: chat -> $.ui.log, pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state |
+| `classic.UserPromptExpansion` | `command_name ^(sub-human:)?sub-human$` | `mod/deliver.mjs` | after the join (hooks/join.js beneath), runs mod-hello again for the new seat and starts the tail child |
+| `classic.SessionStart` | `source clear\|compact\|resume` | `mod/deliver.mjs` | after session-restore beneath (a /clear rebinds the seat to a new session id), runs mod-hello again and starts the tail child for that id; reviewMaybeOpen unsure |
+| `session.end` | (all) | `mod/deliver.mjs` | stops that session id's tail child (its lease is given back) |
+| `turn.start` | (all) | `mod/deliver.mjs` | marks a main-loop turn running (a wake then appends instead of submitting) |
+| `turn.complete` | (all) | `mod/deliver.mjs` | marks idle; submits a mid-turn wake no request carried (none followed a tool call that finished after it) |
+| `classic.PostToolUse` | (all) | `mod/deliver.mjs` | observes when a main-loop tool call finished (a model request follows it, carrying a mid-turn wake) |
+| `classic.PostToolUseFailure` | (all) | `mod/deliver.mjs` | the same, for a tool call that failed |
 | `tool.call` | `Bash` | `mod/guard.mjs` | denies a command that names the store or runs the plugin's code (mod/core/guard.mjs bashVerdict); .catch fails closed on "sub-human" |
 | `tool.call` | `Write\|Edit\|MultiEdit\|NotebookEdit` | `mod/guard.mjs` | denies a write into the store, lexically or after $.fs.stat realPath; .catch fails closed on "sub-human" |
 | `tool.call` | `mcp__plugin_sub-human_room__hold` | `mod/guard.mjs` | denies hold outside a row subagent (no agentId) |
 | `tool.check` | `/^mcp__plugin_sub-human_room__/` | `mod/guard.mjs` | allows the room tools for a seated session (no permission prompt); hold only with agentId |
-| `prompt.submit` | (all) | `mod/prompt.mjs` | drops an @room / room: whose origin is not composer, sdk or bridge (a peer, a notification, a plugin); hands the origin to the shim below; .catch drops only an @room |
-| `classic.UserPromptSubmit` | (all) | `mod/prompt.mjs` | no node when surely unseated and not an @room; else node hooks/prompt.js with sub_human_origin (systemMessage via $.ui.log) |
+| `prompt.submit` | (all) | `mod/prompt.mjs` | drops an @room / room: whose origin is not composer, sdk or bridge (a peer, a notification, a plugin); hands the origin to the shim below; a typed prompt the tail child delivers for carries the held rows text as context and writes "working" presence (node hooks/presence.js, not awaited) unless already working; .catch drops only an @room |
+| `classic.Notification` | `notification_type idle_prompt\|permission_prompt` | `mod/prompt.mjs` | notes the presence presence.js beneath writes, so the next prompt writes "working" again |
+| `classic.StopFailure` | (all) | `mod/prompt.mjs` | notes the error presence presence.js beneath writes |
+| `classic.UserPromptSubmit` | (all) | `mod/prompt.mjs` | sessionTitle NAME.CODE once per session id (members); no node when not an @room and surely unseated, or a member's seat the tail child delivers for with no review open; else node hooks/prompt.js with sub_human_origin (systemMessage via $.ui.log) |
 | `tool.call` | `EnterPlanMode\|ExitPlanMode` | `mod/consent.mjs` | sets reviewMaybeOpen (a room review starts only through these) |
 | `classic.Stop` | (all) | `mod/consent.mjs` | node hooks/consent.js (the open-review nudge) only while a review may be open or the seat is unknown |
 | `classic.PreToolUse` | `/^mcp__plugin_sub-human_room__/` | `mod/consent.mjs` | no review open: answers with no decision, so consent's command hook beneath does not run |
@@ -314,6 +321,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `hooks-modules` | §10 | env | Function hooks load for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on). An installed plugin names its module in hooks.json `modules`; "hooks/register.ts" is only the built-in plugins' fixed path. sub-human ships one, hooks/register.mjs (its hooks in mod/), named in hooks.json. |
 | `hooks-json-modules` | §10 | API | One hooks.json carries the command hooks and one module path under `modules` (relative to hooks.json); a second module is refused (S1). |
 | `module-dollar-local` | §10 | incidental | A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.mjs stays $-free (S1). |
+| `module-event-once` | §10 | incidental | A hooks module registers an event at most once without a matcher (validate and the loader refuse a second): mod/deliver.mjs owns session.start, the join and SessionStart (hello and the tail child), mod/prompt.mjs owns prompt.submit (the gate, rows context, presence) (W3). |
 | `modules-headless` | §10 | env | Modules are off only diskless or in a tool server's daemon (then by policy, safe mode, --bare): they load in -p and in a --bg worker such as the orch. A --bg dispatch prompt reaches prompt.submit as origin composer (S2). |
 | `classic-chain-order` | §10 | incidental | A module's classic.<Event> hook runs above the plugin's own command hooks for that event; one that answers without next() means the command hooks beneath do not run (S1, S5). mod/consent.mjs relies on it: classic.PreToolUse on a room tool answers {} (no decision: the normal permission flow) to skip consent's command hook while no review is open. |
 | `prompt-submit-ups-order` | §10 | incidental | prompt.submit's core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). mod/prompt.mjs relies on it: classic.UserPromptSubmit runs inside prompt.submit's next(e), so prompt.submit hands it e.origin (the classic payload has none) in a module variable. |

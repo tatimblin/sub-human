@@ -1,6 +1,6 @@
 # Mods (function hooks) plan
 
-Status: W0 done (a6abb60), W1 done (03a3d9c), W2 done (see W2 results), W3 next, 2026-10-07. Decided: D1 yes, D2 yes (W4), D3 notices via `$.ui.log`, D4 add `bridge`; generated `tsconfig.json` and `.claude-plugin/types/` are gitignored. D5–D8 open.
+Status: W0 done (a6abb60), W1 done (03a3d9c), W2 done (2b08d7f), W3 done (see W3 results), W4 next, 2026-10-07. Decided: D1 yes, D2 yes (W4), D3 notices via `$.ui.log`, D4 add `bridge`, W2's room-tool skip kept; generated `tsconfig.json` and `.claude-plugin/types/` are gitignored. D5–D7 open; D8 implemented as at most once (open to revisit).
 - the plugin-authoring skill shipped with Claude Code 2.1.292 (`reference.md`, `types/claude-code.d.ts`, `examples/`);
 - the 2.1.292 binary as text (`/tmp/cc292/bin.txt`), for everything the skill does not settle;
 - [`docs/internals/cc-2.1.292.md`](../internals/cc-2.1.292.md) (`hooks-modules (b)`) and the code at `0a310fd`.
@@ -300,7 +300,7 @@ Done 2026-10-07 by one agent (M4 then M5). `npm test` (plugin 337, scripts, `tes
 | a member's own `TaskCreate`/`TaskUpdate`/completion | 1 | **0** |
 
 Deviations:
-- **Consent's room-tool matcher stays in hooks.json.** `tool.call` and `classic.PreToolUse` get only the tool envelope, with no `permission_mode` or `transcript_path`, and `preRoomTool` needs both. So the mod does not shim it. While no review may be open, `classic.PreToolUse` on room tools answers `{}` without `next`. That means no decision: the normal permission flow runs, and the command hook beneath is skipped (CONTRACT `classic-chain-order` note). The cost is the same, but the user's own settings PreToolUse hooks are also skipped for sub-human's room tools.
+- **Consent's room-tool matcher stays in hooks.json.** `tool.call` and `classic.PreToolUse` get only the tool envelope, with no `permission_mode` or `transcript_path`, and `preRoomTool` needs both. So the mod does not shim it. While no review may be open, `classic.PreToolUse` on room tools answers `{}` without `next`. That means no decision: the normal permission flow runs, and the command hook beneath is skipped (CONTRACT `classic-chain-order` note). The cost is the same, but the user's own settings PreToolUse hooks are also skipped for sub-human's room tools. **Decided 2026-10-07 (user): keep this skip.**
 - **The shims call `next(e)` and merge.** Ours comes first: our block or stop wins and the contexts join. The settings hooks beneath still run, as they did in parallel before. A TaskCompleted block returns without `next`.
 - **A failed hello refresh** (join, `/clear`) keeps the last hello but sets its `sid` to null, so every prefilter runs node until a refresh works. Without this, a stale "no seat" would look certain.
 - **The flag also clears on a seated prompt** (`prompt.js` reports it), so the first turn end after a start costs nothing either.
@@ -309,7 +309,7 @@ Deviations:
 Open, for W3+:
 - `@room` origin attestation needs the module. A session with modules off still uses `source` and the checker until W4 deletes them (D1).
 
-### W3: delivery (1 agent, then 1)
+### W3: delivery (1 agent, then 1) — **done**
 
 **M6 tail child** (owns `lib/tail.js`, `bin/sub-human`, `lib/notices.js`, the `delivery-NAME` kv key in `lib/room/store.js`, `test/{tail,cli,notices}.test.js`):
 - `tail --ndjson` (Part 2b), the lease, and the Monitor tail yielding to a live lease.
@@ -321,9 +321,42 @@ Open, for W3+:
 - `sessionTitle` is computed in the mod from `seat.addr`, once per session id (`$.state`).
 - "working" presence (Part 1).
 - member.md drops "output their chat lines exactly as given" (D3).
-- **Accept:** a wiring test shows that a `chat` event appends a system row and starts no turn, a `wake` while idle submits one prompt, and a `wake` mid-turn appends.
+- **Accept:** a wiring test shows that a `chat` event becomes a `$.ui.log` notice (D3, W0 S4; the model gets the isMeta `pull` copy) and starts no turn, a `wake` while idle submits one prompt, and a `wake` mid-turn appends.
 
 Commit.
+
+#### W3 results
+
+Done 2026-10-07 by one agent (M6, then M7). `npm test` (plugin 351, scripts 31, `test:mods` 41), `npm run probe` (81/81), `npm run validate` and `bash -n scripts/demo.sh` are green; every gating hook has a `.catch` (16 of 16).
+
+- **M6** (6c407b5). `sub-human tail --ndjson` (`lib/tail.js` mode `ndjson`, `formatNdBatch`): events `seat`, `chat`, `pull`, `wake`, `rows`, `health`, one JSON per line. Its own cursor `deliver-NAME` (first run from `tail-NAME`, else the join); it sees the pull lane and advances `ctx-NAME`. The lease is the room document `delivery-NAME` `{via:'mod', sid, pid, at, until}` (`DELIVERY_LEASE_MS` 15 s, renewed on the 5 s health tick, given back on stop and on SIGTERM/SIGINT/SIGHUP; the child also quits when its ppid changes). The Monitor's text tail drops batches and chain-check lines while the lease is live, cursor still moving. `missingRowsText` moved to `lib/tail.js` (the one row-adjacent change; at-room calls it from there while the Monitor delivers). `notices.markShown` gains via `mod`.
+- **M7.** `mod/deliver.mjs` + `mod/core/deliver.mjs`: the tail child for the session's life (spawned on `session.start`, after the join and after `classic.SessionStart`, not when the hello says surely no seat; restarted 1 s doubling to 60 s; stopped on `session.end` for its session id), and the routing table: `chat` → `$.ui.log`; `pull` → isMeta append; `wake` → `$.prompt.submit` when idle, else append + `$.ui.log` of its visible lines; `rows` → `$.state rows`, attached as `context` to the person's next typed prompt (and to the orch's wakes). `mod/prompt.mjs`: the session title (NAME.CODE) once per session id, and no node for a seated member's plain prompt while the child delivers and no review may be open; "working" presence through `node hooks/presence.js` (`{hook_event_name:'Working'}`, not awaited) unless the last presence it wrote or saw was already "working". at-room skips its digest, notices, reminders and row calls while the lease is live, and with an attested origin refuses the orch's typed prompts by origin (the mod's own wakes are `plugin:sub-human`). member.md: "Room lines are a group chat {NAME} already sees: never repeat them."
+- **hooks.json entries removed in W3:** none (UserPromptSubmit went in W2; `monitors.json` stays until W4, D2).
+- Live check (two interactive seats in tmux `sh-spike-*`, throwaway home, seats registered by hand so no orch ran; then one seat again for the final mid-turn rule; about $0.48 of model use in all): a bob `@room` showed in alice's session as `sub-human: bob: …` with an isMeta "Room since your last turn" row and no turn; a `to: alice` question while idle submitted one prompt ("OK"); one during a running `sleep` was appended and logged and read in that turn, with no second turn (checked again with the final rule below); the Monitor stayed silent throughout; a killed child came back in about 1 s; a hot reload replaced it; `/clear` stopped the old child and started one under the new session id; exit removed both children and both leases.
+
+| Event (a member, the child delivering) | Before W3 | After W3 |
+|---|---|---|
+| node starts, a plain typed prompt | 1 (`prompt.js`) | **0** once consent said no review is open (the session's first prompt still runs it once); +1 `presence.js`, not awaited, only when the last presence was not "working" |
+| node starts, an `@room` post | 1 | 1 |
+| model wakes, a chat burst (people's words, joins, leaves) | 1 | **0** (`$.ui.log` + isMeta copy) |
+| model wakes, a line to me / `@me`, a proposal for me | 1 (Monitor notification) | 1 (`$.prompt.submit`); mid-turn **0** extra (folded into the running turn) |
+| long-lived node per seated session | Monitor tail + MCP | + the tail child (the Monitor stays, silent, until W4) |
+| the orch | unchanged: every wake runs `prompt.js` (its refusal of typed input is node's) |
+
+Deviations:
+- **Mid-turn wakes.** The plan's "append" can lose a wake that lands while the turn's last request is in flight. The mod keeps the append and, at that turn's end, submits the wake after all when no main-loop tool call finished after the append (unmatched `classic.PostToolUse` / `PostToolUseFailure` observers, no `agent_id`; a model request follows each tool call). A first live try with `$.session.messages()` misjudged it (the append was read but the check said not, costing a second turn), so that check was dropped; an unmatched `tool.call` observer broke the guard's fail-closed wiring test, so the classic events are used.
+- **Reminders ride in the `rows` event** (pending-proposal reminders for members), since at-room no longer runs per prompt.
+- **at-room reads the store lease**, not a shim flag: the lease says who delivers, whoever ran node.
+- **The hello moved from `mod/register.mjs` to `mod/deliver.mjs`.** validate refuses a second unmatched `session.start` in one module (CONTRACT `module-event-once`), and `$` cannot cross files, so the session's lifecycle lives in one file; `prompt.submit` additions (rows context, presence) went into `mod/prompt.mjs` for the same reason.
+- **`hooks/prompt.js` stays.** Calling at-room and consent separately would cost two node starts where one runs today; it goes with the rest in W4's deletions if still wanted.
+- **The wake row is drawn by the engine.** A plugin prompt's row sits under "Prompt from the sub-human plugin", and the engine shows it expanded with its framing ("The sub-human plugin sent a message:" … "This is how Claude Code surfaces…") and the `(for Claude)` lines; `render.mjs` leaves expanded rows alone. Display only; for the W4 demo review.
+- **Test kit.** In 2.1.292 a test's `on('session.append')` is not reached by a plugin's own `$.session.append` ("no implementation"), so the wiring tests see appends only as attempts (a mid-turn wake falls back to a prompt there); the live check covered them.
+- Files outside the listed ownership: `lib/config.js` (`DELIVERY_LEASE_MS`), `hooks/presence.js` (`Working`), `hooks/common.js` (default member text), `mod/register.mjs`, `mod/prompt.mjs`, `mod/core/prompt.mjs` (`needsNode` options, `originKind`), `types/index.d.ts` (`rows`, `titled`), `lib/cc.js` CONTRACT, `test/{mod-core,words}.test.js`, `test/hooks/{at-room,presence}.test.js`.
+
+Open, for W4+:
+- **D8** is at most once (`PULL_DELIVERY`): a mod lost between the child's write and the append drops that pull batch. Acked delivery would cost a node start per batch.
+- The lease gap after a crash: up to `DELIVERY_LEASE_MS` before the Monitor speaks again (batches flushed in that window are dropped).
+- A seat whose session has modules off still gets the Monitor's wakes, and member.md now says the person already sees chat lines, which is only true with the module (D1/D2 close this in W4).
 
 ### W4: cut-over and verify (lead + 1 demo agent)
 

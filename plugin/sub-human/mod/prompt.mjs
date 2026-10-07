@@ -12,14 +12,28 @@
  *     reviewOpen report sets the reviewMaybeOpen flag (mod/consent.mjs).
  * The origin hand-off is a module variable: classic.UserPromptSubmit runs inside prompt.submit's next(e) (cc
  * CONTRACT prompt-submit-ups-order). A reload in between loses it, and at-room then keeps today's checks.
+ *
+ * W3: a seated member's plain prompt starts no node either while the mod's tail child delivers for the session
+ * (mod/deliver.mjs delivering) and no review may be open: at-room's digest, notices and row calls are the child's
+ * now. The session title (the seat's address NAME.CODE, members only) is set here once per session id ($.state
+ * titled; mod/core/deliver.mjs titleFor), whether node runs or not. While the child delivers, the person's typed
+ * prompt also carries the rows text it holds ($.state rows: pending-proposal reminders, missing row calls) as
+ * context, and writes "working" presence (node hooks/presence.js, not awaited) unless the last presence this module
+ * wrote or saw was already "working" (classic.Notification and classic.StopFailure note idle, permission, error).
  */
-import { gateVerdict, GATE_FAILED, isAtRoom, needsNode, originQueue, mergeClassic } from './core/prompt.mjs';
+import { gateVerdict, GATE_FAILED, isAtRoom, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS } from './core/prompt.mjs';
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS, SHIM_MODE } from './core/shim.mjs';
 import { reviewOpenOf } from './core/prefilter.mjs';
+import { titleFor } from './core/deliver.mjs';
+import { delivering } from './deliver.mjs';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' };
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' };
+const TITLED = { plugin: 'sub-human', key: 'titled' };
+const ROWS = { plugin: 'sub-human', key: 'rows' };
 const origins = originQueue();
+/** The last presence this module wrote or saw: 'working' skips the node start. Lost on reload: then written once. */
+let presence = null;
 
 /** The hello, or null before mod-hello answered. */
 async function helloOf($) {
@@ -47,13 +61,45 @@ export function registerPrompt(on) {
   on('prompt.submit', async ($, e, next) => {
     const why = gateVerdict(e);
     if (why) return { drop: why };
-    const item = origins.push(e.text, e.origin && e.origin.kind);
-    try { return await next(e); } finally { origins.drop(item); }
+    let down = e;
+    if (e.origin && TYPED_ORIGINS.includes(e.origin.kind)) {
+      const sid = await $.session.id();
+      if (delivering(sid)) {
+        if (presence !== 'working') {
+          presence = 'working';
+          const root = $.plugin.root;
+          void $.process.run(shimArgv(root, 'presence.js'), {
+            stdin: JSON.stringify({ hook_event_name: 'Working', session_id: sid }),
+            env: shimEnv({ session_id: sid }, root),
+            timeoutMs: SHIM_TIMEOUT_MS,
+          }).catch(() => { presence = null; });
+        }
+        const { value: rows } = await $.state.get(ROWS);
+        if (typeof rows === 'string' && rows) down = { ...e, context: [...(e.context ?? []), rows] };
+      }
+    }
+    const item = origins.push(e.text, originKind(e.origin));
+    try { return await next(down); } finally { origins.drop(item); }
   }).catch(($, e, next) => (next.called || !isAtRoom(e.text) ? next(e) : { drop: GATE_FAILED }));
 
+  on('classic.Notification', { notification_type: ['idle_prompt', 'permission_prompt'] }, ($, e, next) => {
+    presence = e.notification_type;
+    return next(e);
+  }).catch(($, e, next) => next(e)); // presence.js beneath runs regardless
+  on('classic.StopFailure', ($, e, next) => {
+    presence = 'error';
+    return next(e);
+  }).catch(($, e, next) => next(e));
+
   on('classic.UserPromptSubmit', async ($, e, next) => {
-    if (!needsNode(e, await helloOf($))) return next(e);
+    const hello = await helloOf($);
+    const { value: titled } = await $.state.get(TITLED);
+    const title = titleFor(hello, e.session_id, titled);
+    if (title) await $.state.set(TITLED, e.session_id);
+    const top = title ? { sessionTitle: title } : {};
+    const { value: reviewFlag } = await $.state.get(REVIEW);
+    if (!needsNode(e, hello, { delivering: delivering(e.session_id), reviewFlag })) return mergeClassic(top, await next(e));
     const ours = await runPrompt($, e, origins.take(e.prompt));
-    return mergeClassic(ours, await next(e));
+    return mergeClassic({ ...ours, ...top }, await next(e));
   }).catch(($, e, next) => next(e)); // the shim failed: the prompt goes on, as when a command hook fails
 }

@@ -6,7 +6,10 @@
 //   idle_prompt        -> idle         the human is idle at their prompt
 //   permission_prompt  -> permission   their Claude is waiting on them
 //   StopFailure        -> error        their Claude stalled; detail = the error code (rate_limit, …)
-// at-room.js, join.js and session-restore.js write "working". Output: none (StopFailure ignores it).
+//   Working            -> working      not a hook event: the hooks module runs this with {hook_event_name:
+//                                     "Working"} on the person's prompt (mod/deliver.mjs), since at-room.js no
+//                                     longer runs for every prompt
+// at-room.js, join.js and session-restore.js write "working" too. Output: none (StopFailure ignores it).
 const { run, whoami, presence } = require('./common.js');
 
 const BY_TYPE = { idle_prompt: 'idle', permission_prompt: 'permission' };
@@ -14,6 +17,7 @@ const BY_TYPE = { idle_prompt: 'idle', permission_prompt: 'permission' };
 run(input => {
   const me = whoami(input);
   if (!me) return;
+  if (input.hook_event_name === 'Working') return presence(me, 'working');
   if (input.hook_event_name === 'StopFailure') {
     const err = input.error && typeof input.error === 'object' ? input.error.type || input.error.code : input.error;
     return presence(me, 'error', err ? String(err) : 'stop failure');

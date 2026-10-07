@@ -27,6 +27,11 @@ declare module 'claude-code' {
       /** False only when hooks/consent.js said no room review is open and no EnterPlanMode / ExitPlanMode ran
        * since (mod/consent.mjs); unset or true: consent runs. */
       reviewMaybeOpen: boolean;
+      /** What the person's next prompt carries for Claude (pending-proposal reminders, missing row calls): the
+       * tail child's last rows event (mod/deliver.mjs); null: nothing. */
+      rows: string | null;
+      /** The session id whose title mod/prompt.mjs last set (the seat's address), once per session id. */
+      titled: string;
     };
   }
 }
