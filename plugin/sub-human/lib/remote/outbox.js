@@ -9,11 +9,13 @@
  *
  *   <mirror dir>/outbox.json (0600)   [{payload, queued_at}] in the order typed
  *   queueable(payload) -> bool        a via=human `say` to the room, signed (sig v2: nonce and ts)
- *   open(dir, {max?, ageMs?}) -> Outbox
+ *   open(dir, {max?, ageMs?}) -> Outbox   (ageMs on it: how long a post may wait)
  *     items() -> [{payload, queued_at}]
  *     size() -> n
- *     add(payload, now?) -> n          appended; RoomError OFFLINE when max posts are queued already
+ *     add(payload, now?, {force?}?) -> n   appended; RoomError OFFLINE when max posts are queued already (force: a
+ *                                      post sent already whose answer is late, lib/remote/link.js, is always kept)
  *     first() -> item | undefined;  drop() removes the first
+ *     remove(nonce) -> bool            removes the post signed with that nonce (it landed, or was refused)
  *     expire(now?) -> [item]           removes and returns the posts queued more than ageMs ago
  */
 
@@ -45,16 +47,24 @@ function open(dir, { max = config.LINK_OUTBOX_MAX, ageMs = config.envMs('SUB_HUM
   };
   return {
     file,
+    ageMs,
     items: () => list.slice(),
     size: () => list.length,
-    add(payload, now = Date.now()) {
-      if (list.length >= max) throw new RoomError('OFFLINE', `the room is offline and ${max} @room posts are queued already; nothing more is queued`);
+    add(payload, now = Date.now(), { force = false } = {}) {
+      if (!force && list.length >= max) throw new RoomError('OFFLINE', `the room is offline and ${max} @room posts are queued already; nothing more is queued`);
       list.push({ payload, queued_at: new Date(now).toISOString() });
       save();
       return list.length;
     },
     first: () => list[0],
     drop() { list.shift(); save(); },
+    remove(nonce) {
+      const i = list.findIndex(x => x.payload.nonce === nonce);
+      if (i < 0) return false;
+      list.splice(i, 1);
+      save();
+      return true;
+    },
     expire(now = Date.now()) {
       const old = list.filter(x => now - Date.parse(x.queued_at) > ageMs);
       if (old.length) { list = list.filter(x => !old.includes(x)); save(); }

@@ -70,20 +70,24 @@ let unsent = [];
 
 /**
  * The person's answer, then the decision when it completes the proposal (host only: lib/proposal.js decide).
- * A RoomError (the link to the host is down: OFFLINE) is {failed}, and the person is told: nothing is queued.
+ * A RoomError (the link to the host is down: OFFLINE) is {failed}, and the person is told: nothing is queued. One
+ * whose outcome is unknown (sent over a slow link, no answer in time) is {failed, unknown}: it may still land.
  */
 function record(me, p, a) {
   let res;
   try { res = proposal.answer(me, p, a); } catch (err) {
     if (!(err instanceof c.room.RoomError)) throw err;
-    unsent.push(`✗ your ${a.choice === 'Agree' ? 'agreement to' : 'objection to'} proposal ${p.hash} was not recorded: ${err.message}. Answer again once the room is reachable.`);
-    return { failed: err.message };
+    const what = `your ${a.choice === 'Agree' ? 'agreement to' : 'objection to'} proposal ${p.hash}`;
+    unsent.push(err.unknown // it went out and may still land: answering again is safe (one answer per person per proposal)
+      ? `⧗ ${what} is not confirmed: ${err.message}. If the proposal still shows you unanswered, answer again: that is safe.`
+      : `✗ ${what} was not recorded: ${err.message}. Answer again once the room is reachable.`);
+    return { failed: err.message, ...(err.unknown ? { unknown: true } : {}) };
   }
   return res.stale ? res : { ...res, decision: proposal.decide(me.code, p.hash) };
 }
 
 /** For the model: the answer did not reach the room, and the person was told. */
-const failed = (me, hash, res) => `proposal ${hash}: NOT recorded (${res.failed}); ${me.name} has been told. Post nothing for them; open it again when ${me.name} asks.`;
+const failed = (me, hash, res) => `proposal ${hash}: NOT ${res.unknown ? 'confirmed, it may still be recorded' : 'recorded'} (${res.failed}); ${me.name} has been told. Post nothing for them; open it again when ${me.name} asks.`;
 
 /** What was recorded, for the model; no entry ids (people never see them; a Claude repeated "#8"). */
 const done = (me, label, hash, res) => `${me.name} ${label === 'Agree' ? 'agreed to' : 'objected to'} proposal ${hash}${res.decision ? `; the room decided: ${res.decision.text}` : ''}.`;

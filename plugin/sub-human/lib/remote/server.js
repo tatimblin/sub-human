@@ -7,7 +7,7 @@
  * It never loads the signer (test/hooks/security.test.js): a via=human payload arrives signed by the remote
  * hook and is verified against the key pinned in the log (lib/room/envelope.js), then placed (store.place).
  *
- *   serve(transport, {store, log?, linkId?, silentMs?, proto?, version?}) -> {close()}   proto / version: this end's
+ *   serve(transport, {store, log?, linkId?, silentMs?, proto?, version?}) -> {close(), revoked()}   proto / version: this end's
  *       protocol range and plugin version (default protocol.PROTO, PLUGIN_VERSION; tests fake older and newer peers)
  *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
  *       (lib/remote/auth.js); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
@@ -31,7 +31,8 @@
  *                    FORK; then event 'entry' per line in id order (store.tailer({after}), verbatim), event
  *                    'doc' for members (lib/room/members.js publicView), presence/NAME and tasks when they
  *                    change (all three at the start), 'end' {reason: 'closed'} when the room's orch is stopped
- *                    or {reason: 'FORK'} when the host log is reset. Polls every FOLLOW_POLL_MS until the
+ *                    or {reason: 'FORK'} when the host log is reset, or {reason: 'AUTH', message} when the
+ *                    host revoked the link (revoked(), on the serve's SIGTERM). Polls every FOLLOW_POLL_MS until the
  *                    transport closes
  *         blob.get   store.blobs.get(ref), base64;  blob.put  {name, bytes}: name must be plans/<hash12>.md of
  *                    the bytes (content-addressed, at most PROPOSAL_FILE_MAX), written once
@@ -122,7 +123,7 @@ function stream(s, id, after) {
   const priv = { lastId: after }; // the private events sent (lib/handoff.js streamEvent)
   let wasStopped = stopped(s.store.members.read());
   const send = (ev, data) => s.transport.send(protocol.event(id, ev, data));
-  const end = reason => { send('end', { reason }); stop(); };
+  const end = (reason, message) => { send('end', { reason, ...(message ? { message } : {}) }); stop(); };
 
   function sendDocs(docs) {
     for (const key of new Set([...sent.keys(), ...docs.keys()])) {
@@ -147,7 +148,7 @@ function stream(s, id, after) {
   const safeTick = () => { try { tick(); } catch (e) { s.log(`sub-human serve: subscribe: ${e && e.stack || e}`); } };
   const first = setImmediate(safeTick); // after the subscribe reply
   const timer = setInterval(safeTick, FOLLOW_POLL_MS);
-  const self = { tick: safeTick, stop };
+  const self = { tick: safeTick, stop, end };
   function stop() { clearImmediate(first); clearInterval(timer); s.streams.delete(self); }
   return self;
 }
@@ -312,6 +313,15 @@ class Session {
     return protocol.error(f.id, 'INVALID', (e && e.message) || String(e));
   }
 
+  /** True when the host revoked this session's link (its record is gone): every stream then ends {reason: 'AUTH'},
+   * so the daemon stops with the reason instead of redialing a key that no longer gets in (`sub-human revoke`
+   * stops this serve with SIGTERM: scripts/sub-human serve calls this first). */
+  revoked() {
+    if (!this.link || (this.store.kv.get(auth.LINKS_KEY, null) || {})[this.link.id]) return false;
+    for (const st of [...this.streams]) st.end('AUTH', `the host revoked this link (${this.link.id}); ask them for a new invite`);
+    return true;
+  }
+
   stop() {
     clearInterval(this.silence);
     this.silence = null;
@@ -326,7 +336,7 @@ class Session {
  */
 function serve(transport, { store, log = () => {}, linkId, silentMs = envMs('SUB_HUMAN_LINK_SILENT_MS', LINK_SILENT_MS), proto, version }) {
   const session = new Session(transport, store, log, linkId, silentMs, { proto, version });
-  return { close() { session.stop(); transport.close(); } };
+  return { close() { session.stop(); transport.close(); }, revoked: () => session.revoked() };
 }
 
 module.exports = { serve };

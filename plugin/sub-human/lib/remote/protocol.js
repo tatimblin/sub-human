@@ -45,6 +45,9 @@
  *   CODES                            RoomError codes on both ends and on the wire, unchanged:
  *                                    INVALID RATE LOCK NO_ROOM (today's) + OFFLINE HOST_ONLY AUTH FORK PROTOCOL
  *                                    STALE (a write or hello from another host epoch than the server's)
+ *   UNKNOWN_OUTCOME, unknownOutcome(err) -> bool   an OFFLINE whose request went out but got no answer in time (a slow
+ *                                    link, a deadline): it may still land, so it is never "nothing was sent". The
+ *                                    phrase rides in the message, so it survives the bridge and the daemon's socket
  *   request(id, op, params), reply(id, result), error(id, code, message), event(id, ev, data) -> frame
  *   encode(frame) -> string          one line, newline-terminated
  *   decoder() -> {push(chunk) -> frame[]}   buffers partial lines; a malformed line, or one longer than
@@ -89,6 +92,10 @@ const CODES = Object.freeze({
   OFFLINE: 'OFFLINE', HOST_ONLY: 'HOST_ONLY', AUTH: 'AUTH', FORK: 'FORK', PROTOCOL: 'PROTOCOL', STALE: 'STALE',
 });
 
+const UNKNOWN_OUTCOME = 'the outcome is unknown: it went out and may still land';
+/** @returns {boolean} */
+const unknownOutcome = e => !!e && e.code === CODES.OFFLINE && (e.unknown === true || String(e.message).includes(UNKNOWN_OUTCOME));
+
 /** @returns {{id: number|string, op: string, params: object}} */
 const request = (id, op, params = {}) => ({ id, op, params });
 /** @returns {{id: number|string, result: *}} */
@@ -131,4 +138,4 @@ const isRequest = f => !!f && typeof f.op === 'string';
 const isReply = f => !!f && f.op === undefined && f.ev === undefined && ('result' in f || 'error' in f);
 const isEvent = f => !!f && typeof f.ev === 'string';
 
-module.exports = { PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, CAPS, CODES, request, reply, error, event, encode, decoder, isRequest, isReply, isEvent };
+module.exports = { PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, CAPS, CODES, UNKNOWN_OUTCOME, unknownOutcome, request, reply, error, event, encode, decoder, isRequest, isReply, isEvent };

@@ -12,7 +12,9 @@
 // origin came (with one, mod/prompt.mjs has written it).
 // A post the store refuses (RATE, AUTH, or OFFLINE in a room hosted elsewhere whose link daemon is gone) blocks the
 // prompt with the reason. In a room hosted elsewhere whose link is down, the daemon queues the signed post instead
-// (lib/remote/outbox.js) and "⧗ queued" ends the prompt; it is sent, in order, when the link is back. Typed through Remote Control (origin bridge), a refusal is also the
+// (lib/remote/outbox.js) and "⧗ queued" ends the prompt; it is sent, in order, when the link is back. A post sent
+// over a slow link that the host has not answered in time is "⧗ sending (slow link)" (kept under its nonce: the late
+// copy is the post), and a deadline whose outcome is unknown is "⧗ not confirmed", never "not posted". Typed through Remote Control (origin bridge), a refusal is also the
 // systemMessage, which the module relays to the phone (a block line does not show there); "✓ sent" is not (the phone
 // shows the person's own row, and a relay costs a model turn).
 const path = require('node:path');
@@ -129,7 +131,13 @@ function handle(input) {
   let placed;
   try { placed = room.open(me.code).append(entry, { via: 'human', from: me.name, queue: true }); } catch (err) {
     if (!(err instanceof room.RoomError)) throw err;
+    // it went out but no answer came in time: it may still land, so never "not posted" (typing it again would post twice)
+    if (err.unknown) return block(`⧗ not confirmed: ${err.message}. Watch the room for it before you type it again.`);
     return block(`✗ not posted: ${err.message}`); // OFFLINE (the outbox full, the daemon gone), RATE, AUTH
+  }
+  if (placed && placed.slow) { // sent, the host slow to answer: the daemon holds it under its nonce until it does
+    const q = `⧗ sending (slow link): room ${me.code} has not confirmed this post yet; it shows in the room once the host has it. No need to type it again`;
+    return out({ continue: false, stopReason: q, ...phoneNote(q), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
   }
   if (placed && placed.queued) { // a room hosted elsewhere, its link down: the daemon holds it (lib/remote/outbox.js)
     const q = `⧗ queued: room ${me.code} is offline; this post is sent when the link is back (${placed.queued} waiting)`;

@@ -120,6 +120,10 @@ module.exports = {
   // A hook's synchronous call over the link gives up (OFFLINE) after this, well inside the hook timeout.
   LINK_CALL_MS: 3000,              // hooks with a 10 s timeout
   LINK_CALL_END_MS: 1000,          // SessionEnd (5 s timeout)
+  // The link daemon answers a hook's relayed op by this, inside LINK_CALL_MS, even when the host has not: a signed
+  // @room post sent already then stays in the outbox under its nonce ("⧗ sending (slow link)"), and any other op
+  // says its outcome is unknown, never "nothing was sent" (a slow link delivers the frame late; lib/remote/link.js).
+  LINK_RELAY_MS: 2000,             // SUB_HUMAN_LINK_RELAY_MS
   // One protocol frame (lib/remote/protocol.js), bytes: a plan blob (PROPOSAL_FILE_MAX) in base64 fits.
   LINK_FRAME_MAX_BYTES: 1024 * 1024,
   // The link daemon (lib/remote/link.js): the join hook waits this long for it to listen; a lost connection is

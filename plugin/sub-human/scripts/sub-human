@@ -311,7 +311,9 @@ function serve(args) {
     if (!handoff.movedAway(s)) die(`room "${code}" is not hosted on this machine (it holds a copy)`, 1);
     s = require(path.join(LIB, 'room', 'store.js')).open(code, { dir: s.dir }); // the old log, read-only: it moved
   }
-  server.serve(pipe.stdio(), { store: s, linkId: flags.link, log: msg => process.stderr.write(msg + '\n') });
+  const srv = server.serve(pipe.stdio(), { store: s, linkId: flags.link, log: msg => process.stderr.write(msg + '\n') });
+  // `sub-human revoke` stops this with SIGTERM: tell the link it was revoked first, so its daemon stops, not redials
+  process.once('SIGTERM', () => { const told = srv.revoked(); setTimeout(() => process.exit(0), told ? 200 : 0); });
 }
 
 // ---------- link CODE [--reset], invite: lib/remote/link.js, lib/remote/auth.js ----------

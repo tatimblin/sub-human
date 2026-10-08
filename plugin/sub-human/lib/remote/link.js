@@ -45,7 +45,12 @@
  *       A hook's op while not online is refused OFFLINE at once (before the first connection it waits for it),
  *       except an append marked {queue: true} (lib/room/store-mirror.js, for an @room post) whose payload is
  *       outbox.queueable (lib/remote/outbox.js): it is kept in the outbox and answered {queued: n}. Answers,
- *       consent, proposals and agents' posts are never queued. The outbox is sent in order on the new
+ *       consent, proposals and agents' posts are never queued. Online, every op is answered within relayMs
+ *       (LINK_RELAY_MS, inside the hook's LINK_CALL_MS): a slow link's late answer must not turn into "nothing was
+ *       sent", since the frame went out. Such a queueable post goes into the outbox under its nonce and is answered
+ *       {queued: n, slow: true}; the host's late answer takes it out (placed, or "placed already"), or drops and
+ *       reports it (a refusal); a connection lost first leaves it for the next one. Any other op is OFFLINE with
+ *       protocol.UNKNOWN_OUTCOME: retrying it is safe (an answer is one per person per proposal, a join is a rejoin). The outbox is sent in order on the new
  *       connection; a post the host already holds is answered "placed already" (its nonce) and counts as sent;
  *       one that waited longer than LINK_OUTBOX_AGE_MS or that the host refuses is dropped and reported in the
  *       document `link` (flush). FORK (the host's line `after` is not the mirror's, a line that does not chain,
@@ -63,7 +68,7 @@
  *       the mirror holds at that moment, so a copy that already took a host_changed is never sent back to the old
  *       host's epoch.
  *       Link = {state() -> string, stop(reason), wake(why?) -> Promise (redial now), done: Promise<reason>}
- *   linkTimings(over?) -> {retryMs, retryMaxMs, pingMs, pongMs, deadMs, wakeTickMs, wakeGapMs, netPollMs}
+ *   linkTimings(over?) -> {retryMs, retryMaxMs, pingMs, pongMs, deadMs, wakeTickMs, wakeGapMs, netPollMs, relayMs}
  *   nextDelay(prev, base, cap, random?) -> ms;  wakeWatch({onWake, tickMs, gapMs, clock?, mono?}) -> unwatch;
  *   netWatch({onChange, pollMs, clock?, signature?}) -> unwatch;  netSignature(ifaces?) -> string
  *   socketPath(dir) -> string      <os.tmpdir()>/sh-<hash8(mirror dir)>/link.sock: one per room and home, short
@@ -88,6 +93,9 @@
  *                                  `ssh … -- user@host sub-human serve --stdio CODE` and the host's authorized_keys
  *                                  forced command decides what runs there (lib/remote/transports/ssh.js)
  *   sshCommand(spec, code, opts?) -> [cmd, ...args]   that ssh command line (lib/remote/transports/ssh.js command)
+ *   keyRefused(linkFile, transport, err) -> Promise<err'>   connectLink's: a dial of an ssh link with its own key
+ *                                  and a token that ssh refused ("Permission denied (publickey)": the host revoked the
+ *                                  key) is AUTH, so the daemon stops; anything else is err as it was
  */
 
 const fs = require('node:fs');
@@ -253,6 +261,7 @@ const linkTimings = (over = {}) => ({
   wakeTickMs: config.envMs('SUB_HUMAN_LINK_WAKE_TICK_MS', config.LINK_WAKE_TICK_MS),
   wakeGapMs: config.envMs('SUB_HUMAN_LINK_WAKE_GAP_MS', config.LINK_WAKE_GAP_MS),
   netPollMs: config.envMs('SUB_HUMAN_LINK_NET_POLL_MS', config.LINK_NET_POLL_MS),
+  relayMs: config.envMs('SUB_HUMAN_LINK_RELAY_MS', config.LINK_RELAY_MS),
   ...Object.fromEntries(Object.entries(over).filter(([, v]) => v !== undefined)),
 });
 
@@ -358,20 +367,67 @@ async function serveMirror({
 
   async function relay(op, params) {
     if (state === 'connecting') await first;
-    let p = params;
-    if (op === 'append' && p && p.queue) {
-      const { queue, ...rest } = p;
-      p = rest;
-      if (state !== 'online' && !STOPPED.has(state) && require('./outbox.js').queueable(p.payload)) {
+    let p = params, queue = false;
+    if (op === 'append' && p && p.queue) ({ queue, ...p } = p);
+    const queueable = queue && require('./outbox.js').queueable(p.payload);
+    if (state !== 'online') {
+      if (queueable && !STOPPED.has(state)) {
         const n = box.add(p.payload, clock.now());
         log(`offline: an @room post is queued (${n} waiting)`);
         publish();
         return { queued: n };
       }
+      throw new RoomError(state === 'fork' ? 'FORK' : 'OFFLINE', `the link is ${state}${reason ? `: ${reason}` : ''}`);
     }
-    if (state !== 'online') throw new RoomError(state === 'fork' ? 'FORK' : 'OFFLINE', `the link is ${state}${reason ? `: ${reason}` : ''}`);
     const epoch = op === 'append' && typeof mirror.hostState === 'function' ? mirror.hostState().epoch : undefined;
-    return client.request(op, epoch === undefined ? p : { ...p, epoch });
+    const sent = epoch === undefined ? p : { ...p, epoch };
+    return queueable ? sendPost(client, sent) : answerBy(client.request(op, sent), op);
+  }
+
+  /** The hook gives up at LINK_CALL_MS, so the daemon answers first (relayMs): an op the host has not answered by
+   * then went out and may still land (a slow link), so it is OFFLINE with an unknown outcome, never "not sent". */
+  function answerBy(req, op) {
+    return new Promise((resolve, reject) => {
+      const t = clock.setTimeout(() => reject(new RoomError('OFFLINE',
+        `${op}: no answer from the host within ${T.relayMs} ms (a slow link); ${protocol.UNKNOWN_OUTCOME}`)), T.relayMs);
+      req.then(r => { clock.clearTimeout(t); resolve(r); }, e => { clock.clearTimeout(t); reject(e); });
+    });
+  }
+
+  /**
+   * A person's signed @room post, online. Answered by relayMs, it is the host's answer. Not answered by then, it
+   * is in flight: it goes into the outbox under its nonce and the hook hears {queued, slow: true} ("⧗ sending"),
+   * never "not sent". The host's late answer settles it: placed (or "placed already") leaves the outbox, and the
+   * late copy IS the post; a refusal is dropped and reported (document `link` flush). A connection that closes
+   * first leaves it queued: the next connection sends it again, and the host's nonce check makes that a no-op
+   * when the first copy landed.
+   */
+  function sendPost(c, sent) {
+    const { payload } = sent;
+    const req = c.request('append', sent, { ms: box.ageMs || config.LINK_OUTBOX_AGE_MS });
+    return new Promise((resolve, reject) => {
+      let slow = false;
+      const t = clock.setTimeout(() => {
+        slow = true;
+        const n = box.add(payload, clock.now(), { force: true });
+        log(`slow link: an @room post has no answer within ${T.relayMs} ms; it stays in the outbox under its nonce until the host answers`);
+        publish();
+        resolve({ queued: n, slow: true });
+      }, T.relayMs);
+      req.then(r => {
+        if (!slow) { clock.clearTimeout(t); resolve(r); return; }
+        if (box.remove(payload.nonce)) { log('slow link: the @room post that was in flight landed'); publish(); }
+      }, e => {
+        if (!slow) { clock.clearTimeout(t); reject(e); return; }
+        if (PLACED_ALREADY.test(e.message)) { if (box.remove(payload.nonce)) publish(); return; }
+        if (e.code === 'OFFLINE' && (c.closed || c !== client)) return; // kept: the next connection sends it again
+        if (!box.remove(payload.nonce)) return;
+        const why = e.code === 'OFFLINE' ? 'the host never answered' : e.message;
+        flushed = { at: new Date(clock.now()).toISOString(), sent: 0, unsent: [{ text: clip(String(payload.text || '')), why }] };
+        log(`a slow @room post was not placed: ${why}`);
+        publish();
+      });
+    });
   }
 
   function stop(st, why, code = null) {
@@ -474,7 +530,7 @@ async function serveMirror({
           setState('offline', 'the room moved; reconnecting to its new host');
           redial('the room moved');
         }
-        else fail(new RoomError(data.reason, data.reason === 'FORK' ? 'the host log was reset' : 'the connection to the host closed'));
+        else fail(new RoomError(data.reason, data.message ? String(data.message).slice(0, 200) : data.reason === 'FORK' ? 'the host log was reset' : 'the connection to the host closed'));
       }
     } catch (e) {
       stop(e.code === 'FORK' ? 'fork' : 'stopped', e.message, e.code === 'FORK' ? 'FORK' : null);
@@ -529,7 +585,7 @@ async function serveMirror({
         if (PLACED_ALREADY.test(e.message)) sent++;
         else drop(x, e.message);
       }
-      box.drop();
+      box.remove(x.payload.nonce); // by nonce: a slow post's late answer may have taken it out meanwhile
     }
     note();
     if (sent || unsent.length) log(`outbox: ${sent} queued @room post(s) sent${unsent.length ? `, ${unsent.length} not sent` : ''}`);
@@ -611,12 +667,30 @@ async function connectLink(code) {
   const cred = l.token ? { token: l.token } : { invite: l.invite, ...(typeof l.pin === 'string' ? { pin: l.pin } : {}) };
   const epoch = require('../room/store.js').open(code).hostState().epoch;
   const opts = { machine: require('../home.js').machineId(), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...cred };
-  const c = await require('./client.js').connect(transports().open(l.transport, { code }), opts);
+  const t = transports().open(l.transport, { code });
+  let c;
+  try { c = await require('./client.js').connect(t, opts); } catch (e) { throw await keyRefused(l, t, e); }
   if (!l.token) {
     const { invite, pin, ...rest } = l; // an sh2 invite's PIN is spent with it
     links.set(code, { ...rest, token: c.token, ...(rest.moved ? { moved: { ...rest.moved, reached_at: new Date().toISOString() } } : {}) });
   }
   return c;
+}
+
+/**
+ * An ssh link with its own key (an sh2 join) that held a token, so its key got in before: ssh refusing that key
+ * now means the host took it out of authorized_keys (`sub-human revoke`, or by hand). That is AUTH, which stops
+ * the daemon with the reason, not OFFLINE, which would redial a door that stays shut. Before the token (waiting
+ * for the host's admit) a refusal is expected and stays OFFLINE.
+ */
+async function keyRefused(l, t, e) {
+  if (!e || e.code !== 'OFFLINE' || !l.token || !l.transport || l.transport.kind !== 'ssh' || !l.transport.key) return e;
+  const tr = await Promise.resolve(t).catch(() => null);
+  if (!tr || typeof tr.stderr !== 'function') return e;
+  await new Promise(r => setTimeout(r, 100)); // ssh's last words may come just after its exit
+  return /Permission denied \(publickey/.test(tr.stderr())
+    ? new RoomError('AUTH', 'the host no longer accepts this link\'s ssh key (it was revoked); ask the host for a new invite')
+    : e;
 }
 
 function idleWatch(link, mirror, idleMs) {
@@ -662,5 +736,5 @@ async function run({ code, log = msg => process.stderr.write(`${new Date().toISO
 
 module.exports = {
   run, serveMirror, idleWatch, socketPath, handle, status, stopReason, start, pipeLocator, sshLocator, transportOf, sshCommand,
-  linkTimings, nextDelay, wakeWatch, netWatch, netSignature,
+  linkTimings, nextDelay, wakeWatch, netWatch, netSignature, keyRefused,
 };

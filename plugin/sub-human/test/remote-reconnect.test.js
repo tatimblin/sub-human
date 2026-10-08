@@ -122,7 +122,8 @@ test('outbox: only a signed @room post by a person is queueable; at most max, 06
 
 // ---------- serveMirror against a real server ----------
 /** A host room with bob joined over one link; connect() makes a new memory pair each dial. cut(i) makes connection i
- * half-open (nothing crosses either way, nothing closes); refuse makes new dials fail. */
+ * half-open (nothing crosses either way, nothing closes); refuse makes new dials fail; slowMs delays every frame to
+ * the host (a slow upstream, not a dead one). */
 async function rig(t, { serverCaps } = {}) {
   h.freshHome(t);
   const code = h.newRoom();
@@ -131,14 +132,17 @@ async function rig(t, { serverCaps } = {}) {
   const { token } = auth.redeemInvite(host, secret, { machine: REMOTE });
   const sessions = [], conns = [];
   const pings = { n: 0 };
-  const r = { code, host, conns, pings, refuse: false };
+  const r = { code, host, conns, pings, sessions, refuse: false };
   r.connect = async () => {
     if (r.refuse) throw new RoomError('OFFLINE', 'no route to host');
     const [a, b] = memory.pair();
     let cut = false;
     const half = {
       send: f => { if (!cut) b.send(f); },
-      onFrame: fn => b.onFrame(f => { if (cut) return; if (f.op === 'ping') pings.n++; fn(f); }),
+      onFrame: fn => {
+        const deliver = f => { if (cut) return; if (f.op === 'ping') pings.n++; fn(f); };
+        b.onFrame(f => (r.slowMs ? setTimeout(() => deliver(f), r.slowMs) : deliver(f))); // r.slowMs: upstream latency
+      },
       onClose: fn => b.onClose(fn),
       close: () => b.close(),
     };
@@ -373,4 +377,156 @@ test('server: a session that said hello with caps.ping and then goes silent is c
   assert.equal(pinging.closed, true);
   assert.equal(quiet.closed, false);
   assert.equal(code, host.code);
+});
+
+// ---------- a slow link: a timed-out frame went out, so it is never "nothing was sent" (the lab's slow-link ghost) ----------
+const SLOW = { pingMs: 0, relayMs: 80 };
+const posts = host => host.readAll().filter(e => e.kind === 'say').map(e => e.text);
+const box = r => outbox.open(r.mirror.dir);
+
+test('link: a slow link\'s @room post is "sending", kept under its nonce; the late copy is the post, a resend is a replay', async t => {
+  const r = await rig(t);
+  const l = await r.start({ timings: SLOW });
+  t.after(() => l.stop('done'));
+  await h.until(() => l.state() === 'online', 3000, 5);
+  r.slowMs = 400; // longer than relayMs: the host answers after the daemon has answered the hook
+  const p = say(r.code, 'slow one');
+  const t0 = Date.now();
+  assert.deepEqual(await r.hook('append', { payload: p, queue: true }), { queued: 1, slow: true });
+  assert.ok(Date.now() - t0 < 300, 'answered by relayMs, before the hook\'s deadline');
+  assert.deepEqual(box(r).items().map(x => x.payload.nonce), [p.nonce], 'in flight, under its nonce');
+  assert.deepEqual(posts(r.host), [], 'not placed yet');
+  await h.until(() => posts(r.host).length === 1 && box(r).size() === 0, 3000, 5);
+  assert.deepEqual(posts(r.host), ['slow one'], 'the late copy is the post, once');
+  r.slowMs = 0;
+  await assert.rejects(r.hook('append', { payload: p, queue: true }), e => e.code === 'AUTH' && /placed already/.test(e.message), 'a resend is a replay');
+  await h.until(r.same, 3000, 5);
+  assert.deepEqual(posts(r.host), ['slow one']);
+  assert.match(r.logged.join('\n'), /slow link: an @room post has no answer within 80 ms/);
+  assert.match(r.logged.join('\n'), /the @room post that was in flight landed/);
+  assert.equal(r.mirror.kv.get('link').flush, undefined, 'nothing reported unsent');
+});
+
+test('link: an op that is never queued times out with an unknown outcome; retrying the same signed payload is idempotent', async t => {
+  const r = await rig(t);
+  const l = await r.start({ timings: SLOW });
+  t.after(() => l.stop('done'));
+  await h.until(() => l.state() === 'online', 3000, 5);
+  r.slowMs = 400;
+  const agent = store.toPayload(r.code, { kind: 'say', text: 'an agent post' }, { via: 'agent', from: 'bob' });
+  await assert.rejects(r.hook('append', { payload: agent, queue: true }), e => e.code === 'OFFLINE' && protocol.unknownOutcome(e) && !/nothing was sent/.test(e.message));
+  const once = signed(r.code, 'bob', { kind: 'say', text: 'signed once' }); // not marked queue: as an answer is sent
+  await assert.rejects(r.hook('append', { payload: once }), e => protocol.unknownOutcome(e));
+  assert.equal(box(r).size(), 0, 'never queued');
+  await h.until(() => posts(r.host).length === 2, 3000, 5);
+  r.slowMs = 0;
+  // a retry of the same signed payload (its nonce) is refused as placed already: it can never land twice
+  await assert.rejects(r.hook('append', { payload: once }), e => e.code === 'AUTH' && /placed already/.test(e.message));
+  assert.deepEqual(posts(r.host), ['an agent post', 'signed once']);
+});
+
+test('link: a slow post whose connection dies before the answer stays queued and lands exactly once after the reconnect', async t => {
+  const r = await rig(t);
+  const l = await r.start({ timings: SLOW });
+  t.after(() => l.stop('done'));
+  await h.until(() => l.state() === 'online', 3000, 5);
+  r.slowMs = 300;
+  assert.deepEqual(await r.hook('append', { payload: say(r.code, 'in flight'), queue: true }), { queued: 1, slow: true });
+  r.refuse = true;
+  r.conns[0].c.close(); // the connection drops while the frame is still on its way
+  await h.until(() => l.state() === 'offline', 3000, 5);
+  assert.equal(box(r).size(), 1, 'kept for the next connection');
+  r.slowMs = 0;
+  await h.sleep(400);
+  r.refuse = false;
+  await l.wake('test');
+  await h.until(() => l.state() === 'online' && box(r).size() === 0, 3000, 5);
+  await h.until(r.same, 3000, 5);
+  assert.deepEqual(posts(r.host), ['in flight'], 'once, whichever copy landed');
+});
+
+test('link: a slow post answered "placed already" counts as sent; one the host refuses late is dropped and reported', async t => {
+  const r = await rig(t);
+  const l = await r.start({ timings: SLOW });
+  t.after(() => l.stop('done'));
+  await h.until(() => l.state() === 'online', 3000, 5);
+  const p = say(r.code, 'placed by another way');
+  r.host.place(p);
+  r.slowMs = 300;
+  assert.deepEqual(await r.hook('append', { payload: p, queue: true }), { queued: 1, slow: true });
+  await h.until(() => box(r).size() === 0, 3000, 5);
+  assert.equal(r.mirror.kv.get('link').flush, undefined, '"placed already" counts as sent');
+  const bad = { ...say(r.code, 'a bad signature'), sig: 'AAAA' };
+  assert.deepEqual(await r.hook('append', { payload: bad, queue: true }), { queued: 1, slow: true });
+  await h.until(() => box(r).size() === 0, 3000, 5);
+  const f = r.mirror.kv.get('link').flush;
+  assert.deepEqual([f.sent, f.unsent.map(u => u.text)], [0, ['a bad signature']]);
+  assert.deepEqual(posts(r.host), ['placed by another way']);
+});
+
+test('mirror store: a deadline that passed after the op went out is "unknown", never "nothing was sent"', async t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const dir = h.tmpDir('sh-mirror-u-', t);
+  const sock = link.socketPath(dir);
+  fs.mkdirSync(path.dirname(sock), { recursive: true, mode: 0o700 });
+  t.after(() => fs.rmSync(path.dirname(sock), { recursive: true, force: true }));
+  const reply = { mode: null };
+  const srv = require('node:net').createServer(c => c.on('data', d => {
+    const f = JSON.parse(String(d).split('\n')[0]);
+    if (reply.mode === 'unknown') c.end(protocol.encode(protocol.error(f.id, 'OFFLINE', `append: no answer from the host within 2000 ms (a slow link); ${protocol.UNKNOWN_OUTCOME}`)));
+    else if (reply.mode === 'offline') c.end(protocol.encode(protocol.error(f.id, 'OFFLINE', 'the link is offline')));
+    // 'silent': no answer, so the bridge's own deadline passes
+  }));
+  await new Promise(res => srv.listen(sock, res));
+  t.after(() => srv.close());
+  const payload = JSON.stringify(signed(code, 'bob', { kind: 'say', text: 'x' }));
+  // the bridge blocks its calling thread, so the store runs in a child process and this one serves the socket
+  const probe = mode => {
+    reply.mode = mode;
+    return new Promise(resolve => {
+      const child = require('node:child_process').fork(path.join(__dirname, 'support', 'mirror-probe.js'), [code, dir, payload], { stdio: ['ignore', 'pipe', 'inherit', 'ipc'] });
+      let out = '';
+      child.stdout.on('data', d => { out += d; });
+      child.on('exit', () => resolve(JSON.parse(out)));
+    });
+  };
+  const u = await probe('unknown');
+  assert.deepEqual([u.code, u.unknown], ['OFFLINE', true]);
+  assert.match(u.message, /outcome is unknown/);
+  assert.doesNotMatch(u.message, /nothing was sent/);
+  const o = await probe('offline');
+  assert.deepEqual([o.code, o.unknown], ['OFFLINE', undefined]);
+  assert.match(o.message, /nothing was sent/);
+  const s = await probe('silent');
+  assert.deepEqual([s.code, s.unknown], ['OFFLINE', true], 'past the bridge deadline it may have gone out');
+  assert.doesNotMatch(s.message, /nothing was sent/);
+});
+
+// ---------- revoke: the link stops (AUTH), it does not redial a key that no longer gets in ----------
+test('link: the host revokes the link: its serve ends the stream AUTH, the daemon stops and queues nothing', async t => {
+  const r = await rig(t);
+  const l = await r.start();
+  await h.until(() => l.state() === 'online', 3000, 5);
+  const [id] = Object.keys(r.host.kv.get(auth.LINKS_KEY));
+  assert.equal(r.sessions.at(-1).revoked(), false, 'not revoked yet: nothing sent');
+  auth.revokeLink(r.host, id);
+  for (const s of r.sessions) s.revoked(); // sub-human revoke SIGTERMs the link's serve processes
+  assert.match(await l.done, /the host revoked this link/);
+  assert.equal(l.state(), 'stopped');
+  assert.equal(r.mirror.kv.get('link').code, 'AUTH');
+  await assert.rejects(r.hook('append', { payload: say(r.code, 'after revoke'), queue: true }), e => e.code === 'OFFLINE');
+  assert.equal(box(r).size(), 0, 'not queued: the link is gone for good');
+});
+
+test('link: an ssh link with its own key and a token that ssh now refuses is AUTH (revoked); waiting for an admit stays OFFLINE', async () => {
+  const off = new RoomError('OFFLINE', 'the link closed');
+  const denied = { stderr: () => 'host@devbox: Permission denied (publickey).\r\n' };
+  const own = { token: 'tok', transport: { kind: 'ssh', user: 'host', host: 'devbox', key: '/k/id_ed25519' } };
+  const e1 = await link.keyRefused(own, denied, off);
+  assert.deepEqual([e1.code, /revoked/.test(e1.message)], ['AUTH', true]);
+  assert.equal(await link.keyRefused({ ...own, token: undefined, invite: 'sh2.x' }, denied, off), off, 'not admitted yet: keep trying');
+  assert.equal(await link.keyRefused({ ...own, transport: { ...own.transport, key: undefined } }, denied, off), off, 'the user\'s own keys: maybe an agent not loaded');
+  assert.equal(await link.keyRefused(own, { stderr: () => 'ssh: connect to host devbox port 22: Connection refused' }, off), off);
+  assert.equal(await link.keyRefused(own, Promise.resolve(denied), off).then(e => e.code), 'AUTH', 'an async transport');
 });

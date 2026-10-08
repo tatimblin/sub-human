@@ -17,7 +17,8 @@
  *       A refused hello closes the transport and rejects.
  *   Client
  *     token, link, room, serverCaps, v (the version in use), serverVersion (the host's plugin version, null before 0.4)
- *     request(op, params) -> Promise<result>   one op as the wire has it (the link daemon relays its hooks' ops so)
+ *     request(op, params, {ms}?) -> Promise<result>   one op as the wire has it (the link daemon relays its hooks' ops
+ *         so); ms: its own deadline instead of deadlineMs (the daemon waits longer for an @room post sent already)
  *     join({name, role?, pubkey, proof}) -> Promise<{ok, rejoin?}>
  *     leave(name, reason) -> Promise<{ok}>
  *     beat(name, {presence?}) -> Promise<{ok}>
@@ -35,7 +36,8 @@
  *         link daemon closes a replaced connection only then, so a hook's op in flight on it is answered
  *     close()
  *   A reply with error rejects with RoomError(code, message), the code as the server sent it. A call with no
- *   reply within deadlineMs (default LINK_CALL_MS) rejects OFFLINE and its late reply is dropped; a transport
+ *   reply within deadlineMs (default LINK_CALL_MS) rejects OFFLINE (its message says the outcome is unknown: the frame
+ *   went out and may still land) and its late reply is dropped; a transport
  *   that closed rejects every pending call with OFFLINE. Nothing is retried.
  */
 
@@ -87,13 +89,13 @@ class Client {
   _request(op, params, id = ++this.seq, ms = this.deadlineMs) {
     if (this.closed) return Promise.reject(offline('the link is closed'));
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(offline(`${op}: no answer within ${ms} ms`)); }, ms);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(offline(`${op}: no answer within ${ms} ms; ${protocol.UNKNOWN_OUTCOME}`)); }, ms);
       this.pending.set(id, { resolve, reject, timer });
       this.transport.send(protocol.request(id, op, params));
     });
   }
 
-  request(op, params) { return this._request(op, params); }
+  request(op, params, { ms } = {}) { return this._request(op, params, undefined, ms); }
   join({ name, role = 'member', pubkey, proof }) { return this._request('join', { name, role, pubkey, proof }); }
   leave(name, reason) { return this._request('leave', { name, reason }); }
   beat(name, { presence } = {}) { return this._request('beat', { name, presence }); }

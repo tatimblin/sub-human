@@ -6,8 +6,9 @@
  * `ssh -T -o BatchMode=yes … -- USER@HOST` as the command (./ssh.js).
  *
  *   spawn(cmd, args, {env?, cwd?}) -> Transport   the client end; the child's exit closes it (./index.js
- *                                                 documents Transport). stderr passes through to ours. close()
- *                                                 ends the child's stdin and stops it
+ *                                                 documents Transport). stderr passes through to ours, and its
+ *                                                 last 2 KiB stay readable as transport.stderr() (the link daemon
+ *                                                 reads why ssh gave up). close() ends the child's stdin and stops it
  *   stdio() -> Transport                           the server end over process.stdin / process.stdout; nothing
  *                                                 else may write to stdout while it is open. stdin's end closes it
  *   kind = {parse, open, describe}                 the `pipe` kind (./index.js register):
@@ -31,11 +32,15 @@ const BIN = path.join(__dirname, '..', '..', '..', 'scripts', 'sub-human');
  * @returns {object}
  */
 function spawn(cmd, args, opts = {}) {
-  const child = spawnChild(cmd, args, { env: opts.env || process.env, cwd: opts.cwd, stdio: ['pipe', 'pipe', 'inherit'] });
+  const child = spawnChild(cmd, args, { env: opts.env || process.env, cwd: opts.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
   const { transport, receive, end } = lineTransport({
     write: line => child.stdin.write(line),
     shut: () => { child.stdin.end(); child.kill(); },
   });
+  let tail = '';
+  child.stderr.on('data', d => { process.stderr.write(d); tail = (tail + d).slice(-2048); });
+  child.stderr.on('error', () => { /* the child is gone */ });
+  transport.stderr = () => tail;
   child.stdin.on('error', end); // the child is gone: its exit closes us too
   child.stdout.on('data', receive);
   child.on('exit', end);
