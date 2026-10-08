@@ -1,7 +1,7 @@
 'use strict';
 // The link registry (lib/room/links.js), the link daemon's pieces (lib/remote/link.js: socket path, locator,
-// handle, serveMirror's FORK and re-mirror) and the mirror's own writes (lib/room/store-mirror.js applyLine,
-// applyDoc), and the tail's one line for a link that is down (lib/tail.js linkLine). docs/next/REMOTE-PLAN.md PR5;
+// handle, serveMirror's FORK and re-mirror, idleWatch) and the mirror's own writes (lib/room/store-mirror.js
+// applyLine, applyDoc), and the tail's one line for a link that is down (lib/tail.js linkLine). docs/next/REMOTE-PLAN.md PR5;
 // the mirror through the bridge is in test/store-contract.test.js (remote), two homes in test/remote-e2e.test.js.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -18,6 +18,9 @@ const client = require(path.join(h.LIB, 'remote', 'client.js'));
 const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.js'));
 const { MirrorRoomStore } = require(path.join(h.LIB, 'room', 'store-mirror.js'));
 const { linkLine } = require(path.join(h.LIB, 'tail.js'));
+const identity = require(path.join(h.LIB, 'identity.js'));
+const { writeJsonAtomic } = require(path.join(h.LIB, 'io.js'));
+const { pidStart } = require(path.join(h.LIB, 'lock.js'));
 
 const mode = p => fs.statSync(p).mode & 0o777;
 
@@ -121,6 +124,50 @@ test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops 
   again.stop('done');
   assert.equal(await again.done, 'done');
   assert.equal(fs.existsSync(link.socketPath(mirror.dir)), false, 'the socket is gone with it');
+});
+
+test('link: the daemon stops with no seat of this machine left, offline too (by the live session indexes); never while connecting', async t => {
+  const home = h.freshHome(t);
+  const code = 'vole-1234';
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  store.createRoom(code);
+  const mirror = store.open(code);
+  const seat = (extra = {}) => ({ bob: { name: 'bob', role: 'member', machine: identity.machineId(), joined_at: new Date().toISOString(), seen_at: new Date().toISOString(), ...extra } });
+  const sleeper = h.spawnSleeper(60);
+  writeJsonAtomic(path.join(home, 'sessions', 'by-pid', `${sleeper.pid}.json`), { code, name: 'bob', role: 'member', pid: sleeper.pid, pid_start: pidStart(sleeper.pid), session_id: null, address: `bob.${code}` });
+  let state = 'offline', stopped = null;
+  const watch = () => link.idleWatch({ state: () => state, stop: why => { stopped = why; } }, mirror, 150);
+
+  // offline: the host's document is stale (an old lease), but bob's claude process lives: the daemon keeps retrying
+  mirror.applyDoc('members', seat({ seen_at: new Date(0).toISOString() }));
+  assert.deepEqual(identity.localSeats(code), ['bob']);
+  let unwatch = watch();
+  await h.sleep(600);
+  assert.equal(stopped, null);
+  // bob's session crashed (no SessionEnd, so no leave reached the host): the daemon stops
+  process.kill(sleeper.pid, 'SIGKILL');
+  await h.until(() => stopped, 3000, 20);
+  unwatch();
+  assert.equal(stopped, 'no seat of this machine is left in the room');
+  assert.deepEqual(identity.localSeats(code), []);
+
+  // connecting (the first connection, before a join's seat exists): never
+  stopped = null; state = 'connecting';
+  unwatch = watch();
+  await h.sleep(600);
+  assert.equal(stopped, null);
+  unwatch();
+
+  // online: the host's document decides, as before: a fresh lease keeps it, a left seat stops it
+  state = 'online';
+  mirror.applyDoc('members', seat());
+  unwatch = watch();
+  await h.sleep(600);
+  assert.equal(stopped, null);
+  mirror.applyDoc('members', seat({ left_at: new Date().toISOString() }));
+  await h.until(() => stopped, 3000, 20);
+  unwatch();
+  assert.equal(stopped, 'no seat of this machine is left in the room');
 });
 
 test('tail: one line for a link that is down, keyed fork or offline; none while it is up', () => {

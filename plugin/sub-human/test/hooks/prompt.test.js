@@ -26,6 +26,10 @@ test('prompt: merge keeps a stopping output alone and otherwise joins the contex
     hookSpecificOutput: { hookEventName: 'UserPromptSubmit', sessionTitle: 'bob.x', additionalContext: 'Room since…\n\nBefore anything else…' },
   });
   assert.deepEqual(merge([null, ctxOut('only consent')]), ctxOut('only consent'));
+  // consent's systemMessage (an answer not recorded) reaches the person beside at-room's, also on a stopped prompt
+  const unsent = { ...ctxOut('NOT recorded'), systemMessage: 'sub-human: ✗ not recorded' };
+  assert.equal(merge([a, unsent]).systemMessage, 'carol joined\nsub-human: ✗ not recorded');
+  assert.deepEqual(merge([sent, unsent]), { ...sent, systemMessage: 'sub-human: ✗ not recorded' });
 });
 
 test('prompt: no hooks.json UserPromptSubmit entry; the module runs prompt.js (mod/prompt.mjs)', async () => {

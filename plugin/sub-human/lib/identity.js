@@ -66,6 +66,8 @@
  *                                        Bash, hooks and the status line; the mod sets it for its tail child), then CLAUDE_PID (same
  *                                        children), then the nearest ancestor pid with a registration
  *   lastSeat(sid) -> {code, name, role}|null   the seat a session id last held, left or not (for --resume)
+ *   localSeats(code) -> [name]           this machine's seats in code that a live claude process holds, by the
+ *                                        session indexes (resolveByPid): what a mirror knows while its link is down
  *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set; lib/cc.js)
  *
  * The hooks module's lease, <home>/sessions/mods/<sid>.json (atomic, 0600): this session's function hooks are
@@ -120,7 +122,8 @@ const ANIMALS = [
 // ---------- location ----------
 const store = require('./room/store.js');
 const roomExists = code => store.roomExists(code);
-const byPidFile = pid => path.join(home(), 'sessions', 'by-pid', `${Number(pid)}.json`);
+const byPidDir = () => path.join(home(), 'sessions', 'by-pid');
+const byPidFile = pid => path.join(byPidDir(), `${Number(pid)}.json`);
 const bySidFile = sid => path.join(home(), 'sessions', 'by-sid', `${sid}.json`);
 const modLeaseFile = sid => path.join(home(), 'sessions', 'mods', `${sid}.json`);
 const address = (name, code) => `${name}.${code}`;
@@ -326,6 +329,19 @@ function pruneModLeases(now = Date.now()) {
   return n;
 }
 
+function localSeats(code) {
+  let files;
+  try { files = fs.readdirSync(byPidDir()); } catch { return []; }
+  const names = new Set();
+  for (const f of files) {
+    const rec = readJson(path.join(byPidDir(), f));
+    if (!rec || rec.code !== code || !isAlive(rec.pid)) continue;
+    const who = resolveByPid(rec.pid);
+    if (who && who.code === code) names.add(who.name);
+  }
+  return [...names];
+}
+
 function lastSeat(sid) {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
   const rec = readJson(bySidFile(sid));
@@ -432,7 +448,7 @@ module.exports = {
   home, roomDir, machineId, newCode, roomExists, isHost, openRooms, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, setOrch, updateOrch, liveMembers, seatAlive, heartbeat, leaseFresh,
   isAlive, claudePid,
-  resolveByPid, resolveBySession, resolveSelf, lastSeat,
+  resolveByPid, resolveBySession, resolveSelf, lastSeat, localSeats,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases,
   writePresence,
 };

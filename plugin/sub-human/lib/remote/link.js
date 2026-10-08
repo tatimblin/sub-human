@@ -12,8 +12,13 @@
  *   run({code, log?}) -> Promise<reason>
  *       serveMirror over the link file's transport (connectLink: hello with the token, or the invite once, whose
  *       token then replaces it in the link file), until it stops; also stops LINK_IDLE_MS
- *       (SUB_HUMAN_LINK_IDLE_MS) after this machine has no seat left in the room while it is online, and on
- *       SIGTERM, SIGINT or SIGHUP.
+ *       (SUB_HUMAN_LINK_IDLE_MS) after this machine has no seat left in the room (idleWatch), and on SIGTERM,
+ *       SIGINT or SIGHUP.
+ *   idleWatch(link, mirror, idleMs) -> unwatch   stop the link once idleMs have passed with no seat of this
+ *       machine in the room. Online, a seat is one the mirror's members document holds with a fresh lease;
+ *       offline, the host's document is stale, so a seat is one a live claude process of this machine holds
+ *       (identity.localSeats): a crashed or abandoned join never leaves a daemon retrying for ever. While the
+ *       first connection is made it never stops.
  *   serveMirror({mirror, connect, log?, retryMs?}) -> Promise<Link>   listen on socketPath(mirror.dir) (one daemon
  *       per socket: LOCK when another one answers there), then connect() -> Promise<Client> (hello done) and
  *       subscribe {after: the mirror's last id, hash: that line's hash12}. The stream goes into the mirror; a
@@ -270,14 +275,18 @@ async function connectLink(code) {
   return c;
 }
 
-/** Stop the link once it has been online with no seat of this machine in the room for idleMs. */
 function idleWatch(link, mirror, idleMs) {
   const { machineId } = require('../home.js');
   const { leaseFresh } = require('../room/members.js');
-  const seated = () => Object.values(mirror.members.read()).some(m => m && m.machine === machineId() && !m.left_at && leaseFresh(m));
+  const identity = require('../identity.js');
+  const leased = () => Object.values(mirror.members.read()).some(m => m && m.machine === machineId() && !m.left_at && leaseFresh(m));
+  const seated = () => {
+    const s = link.state();
+    return s === 'connecting' || (s === 'online' ? leased() : identity.localSeats(mirror.code).length > 0);
+  };
   let since = Date.now();
   const t = setInterval(() => {
-    if (link.state() !== 'online' || seated()) since = Date.now();
+    if (seated()) since = Date.now();
     else if (Date.now() - since >= idleMs) link.stop('no seat of this machine is left in the room');
   }, Math.min(1000, idleMs));
   return () => clearInterval(t);
@@ -301,4 +310,4 @@ async function run({ code, log = msg => process.stderr.write(`${new Date().toISO
   return why;
 }
 
-module.exports = { run, serveMirror, socketPath, handle, status, start, pipeLocator, transportOf };
+module.exports = { run, serveMirror, idleWatch, socketPath, handle, status, start, pipeLocator, transportOf };

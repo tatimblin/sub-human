@@ -17,6 +17,8 @@
  * lib/proposal.js answer, then decide (a no-op on a machine that does not hold the room; its host decides). Post(ExitPlanMode)
  * for the person's own plan offers to propose it. Run with SUB_HUMAN_SHIM=1 (mod/consent.mjs) the output also
  * carries subHuman {reviewOpen}. Outside plan mode the room-tool entry exits before loading anything else.
+ * An answer the room refuses (a RoomError: OFFLINE when the link to the host is down, AUTH) is never lost silently:
+ * the person is told in a systemMessage on this hook's output, the model that nothing was recorded.
  */
 
 const { readInput } = require('../lib/io.js');
@@ -42,11 +44,25 @@ const config = require(path.join(__dirname, '..', 'lib', 'config.js'));
 const { TRANSCRIPT_TAIL_BYTES } = config;
 
 const RECORDED = 'Recorded. The room shows it (and any note) already: post nothing about it. Agreeing is not a go-ahead to build; wait for the decision and your people.';
-/** The person's answer, then the decision when it completes the proposal (host only: lib/proposal.js decide). */
+/** Answers this run could not record, for the person (dispatch puts them in the output's systemMessage). */
+let unsent = [];
+
+/**
+ * The person's answer, then the decision when it completes the proposal (host only: lib/proposal.js decide).
+ * A RoomError (the link to the host is down: OFFLINE) is {failed}, and the person is told: nothing is queued.
+ */
 function record(me, p, a) {
-  const res = proposal.answer(me, p, a);
+  let res;
+  try { res = proposal.answer(me, p, a); } catch (err) {
+    if (!(err instanceof c.room.RoomError)) throw err;
+    unsent.push(`✗ your ${a.choice === 'Agree' ? 'agreement to' : 'objection to'} proposal ${p.hash} was not recorded: ${err.message}. Answer again once the room is reachable.`);
+    return { failed: err.message };
+  }
   return res.stale ? res : { ...res, decision: proposal.decide(me.code, p.hash) };
 }
+
+/** For the model: the answer did not reach the room, and the person was told. */
+const failed = (me, hash, res) => `proposal ${hash}: NOT recorded (${res.failed}); ${me.name} has been told. Post nothing for them; open it again when ${me.name} asks.`;
 
 /** What was recorded, for the model; no entry ids (people never see them; a Claude repeated "#8"). */
 const done = (me, label, hash, res) => `${me.name} ${label === 'Agree' ? 'agreed to' : 'objected to'} proposal ${hash}${res.decision ? `; the room decided: ${res.decision.text}` : ''}.`;
@@ -129,7 +145,7 @@ function resolveShown(input, me, st) {
   else if (!p) st.said = `proposal ${st.hash}: nothing recorded (already answered, decided or unknown).`;
   else {
     const res = record(me, p, { choice: 'Object', notes: note });
-    st.said = res.stale ? `proposal ${st.hash}: nothing recorded (already answered or decided).`
+    st.said = res.failed ? failed(me, st.hash, res) : res.stale ? `proposal ${st.hash}: nothing recorded (already answered or decided).`
       : `${RECORDED} ${done(me, 'Object', st.hash, res)}`;
   }
   return st.said;
@@ -233,7 +249,7 @@ function postExit(input, me) {
   } else if (!p) line = `proposal ${st.hash}: nothing recorded (already answered, decided or unknown).`;
   else {
     const res = record(me, p, { choice: 'Agree' });
-    line = res.stale ? `proposal ${st.hash}: nothing recorded (already answered or decided).`
+    line = res.failed ? failed(me, st.hash, res) : res.stale ? `proposal ${st.hash}: nothing recorded (already answered or decided).`
       : `${RECORDED} ${done(me, 'Agree', st.hash, res)}`;
   }
   restorePlan(st);
@@ -321,6 +337,7 @@ function postAsk(input, me) {
     if (label !== 'Agree' && label !== 'Object') { out.push(`proposal ${hash}: no Agree/Object answer; nothing was recorded.`); continue; }
     const notes = r.annotations && r.annotations[k] ? r.annotations[k].notes : undefined;
     const res = record(me, p, { choice: label, notes });
+    if (res.failed) { out.push(failed(me, hash, res)); continue; }
     if (res.stale) { out.push(`proposal ${hash}: nothing recorded (already answered or decided).`); continue; }
     recorded = true;
     out.push(done(me, label, hash, res));
@@ -337,8 +354,17 @@ function postPlan(input, me) {
   c.context('PostToolUse', `sub-human: if ${me.name} wants the room to agree to this plan, call the room propose tool with ${where}. Only on ${me.name}'s word; planning is optional.`);
 }
 
-/** Every event consent handles, for one hook input. */
+/** Every event consent handles, for one hook input; an answer not recorded is told to the person (systemMessage). */
 function dispatch(input) {
+  unsent = [];
+  const r = c.capture(() => route(input));
+  const note = unsent.length ? { systemMessage: `sub-human: ${unsent.join(' ')}` } : null;
+  r.outputs.forEach((o, i) => c.out(note && i === 0 ? { ...o, ...note } : o));
+  if (note && !r.outputs.length) c.out(note);
+  if (r.error) throw r.error;
+}
+
+function route(input) {
   const me = c.whoami(input);
   if (!me) return;
   const ev = input.hook_event_name, tool = input.tool_name;

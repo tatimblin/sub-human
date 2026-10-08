@@ -6,7 +6,7 @@
 // host's and both chain; bob's @room verifies on the host; his signoff leads to the host's decision (the plan was
 // prefetched for his card); a post addressed to bob reaches his tail and not carol's; his presence shows in the
 // host's rows; nothing session-local of his reaches the host; with the host's server killed his @room is refused
-// OFFLINE with nothing written anywhere and his tail says so once; the link resumes with no gap; after his session
+// OFFLINE with nothing written anywhere, his card answer is not recorded and he is told, and his tail says so once; the link resumes with no gap; after his session
 // ends the daemon exits on its own.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -91,6 +91,10 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.equal(host.lib(() => store.open(code).kv.get('presence/bob')).state, 'idle');
   assert.match(host.lib(() => rows.rowText(code, 'bob', 'alice')), /idle/);
 
+  // a second proposal for bob, prefetched before the link goes down
+  const p2 = host.lib(() => proposal.create({ code, name: 'alice', role: 'member' }, { text: '# Ship the lexer\n', approvers: ['bob'] }));
+  await h.until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${p2.hash}.md`)), 5000, 50);
+
   // the host's server dies: bob's @room is refused OFFLINE, nothing written anywhere; his tail says so once
   const server = childOf(daemon.pid);
   kill(server);
@@ -100,6 +104,13 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   const refused = remote.say(bob, 'is anyone there');
   assert.equal(refused.json.decision, 'block');
   assert.match(refused.json.reason, new RegExp(`not posted: room ${code} is offline .*nothing was sent`));
+  // his card answer cannot reach the host either: he is told (systemMessage), the model hears nothing was recorded
+  const q2 = `Agree to proposal ${p2.hash}?`;
+  const card2 = remote.lib(() => proposal.card({ hash: p2.hash, approvers: ['bob'] }, code));
+  const unsent = remote.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: {}, tool_response: { ...card2, answers: { [q2]: 'Agree' } } }, bob);
+  assert.match(unsent.json.systemMessage, new RegExp(`✗ your agreement to proposal ${p2.hash} was not recorded: .*offline`), unsent.stderr);
+  assert.match(unsent.json.hookSpecificOutput.additionalContext, new RegExp(`proposal ${p2.hash}: NOT recorded`));
+  assert.doesNotMatch(unsent.json.hookSpecificOutput.additionalContext, /Recorded\./);
   assert.equal(remote.log(code), before.mirror);
   assert.doesNotMatch(host.log(code), /is anyone there/);
   const notice = await remote.tail(bob, 1);

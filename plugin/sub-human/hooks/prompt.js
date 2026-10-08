@@ -8,8 +8,9 @@
 // Both run on the same input, in that order, each guarded: a throw in one is logged and the other still runs.
 // Merging (what Claude Code did with the two hooks' outputs): when at-room stops the prompt (decision "block":
 // the prompt is erased; continue:false: no model turn runs) its output goes out alone, since no turn reads any
-// context (consent's side effects are already done, and it says the same on the next prompt). Otherwise one
-// output: at-room's fields, with both additionalContext texts joined (at-room's first). No output at all when
+// context (consent's side effects are already done, and it says the same on the next prompt), but with every
+// systemMessage (consent's tells the person an answer was not recorded). Otherwise one output: at-room's fields,
+// with both additionalContext texts and both systemMessages joined (at-room's first). No output at all when
 // neither had any. Exit 1 (Claude Code shows stderr to the person) only when a handler threw and nothing is output.
 // It runs only through mod/prompt.mjs (the classic.UserPromptSubmit shim; no hooks.json entry), which adds
 // sub_human_origin to its stdin. Its output also carries consent's subHuman {reviewOpen} for the mod.
@@ -23,10 +24,12 @@ const stops = o => !!o && (o.decision === 'block' || o.continue === false);
 /** Merge the handlers' outputs (in order) into the one this hook writes, or null. */
 function merge(outputs) {
   const list = outputs.filter(Boolean);
+  const said = list.map(o => o.systemMessage).filter(Boolean);
+  const notes = said.length ? { systemMessage: said.join('\n') } : {};
   const stop = list.find(stops);
-  if (stop) return stop;
+  if (stop) return { ...stop, ...notes };
   if (!list.length) return null;
-  const merged = {};
+  const merged = { ...notes };
   const contexts = [];
   for (const o of list) {
     const { hookSpecificOutput: hso, ...top } = o;
