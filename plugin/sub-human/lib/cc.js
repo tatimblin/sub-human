@@ -30,6 +30,16 @@
  *   matcherIsExact(m, {toolEvent}), matcherMatches(m, name, {toolEvent})
  *   shapeRe(shape)                       a shape as a RegExp: `~` = one minified identifier, the rest literal
  *   CONTRACT                             [{id, search, shape?, stability, note}]
+ *   PROBED_VERSION                       the Claude Code version CONTRACT was last checked against ('2.1.292')
+ *   MIN_VERSION                          the oldest that can run the plugin (function hooks: '2.1.292')
+ *   compareVersions(a, b) -> -1|0|1      numeric per dot-separated part; null for an unreadable one
+ *   locateBinary({bin?, env?}) -> path|null   the binary to probe: bin, $CLAUDE_BIN, `claude` on PATH (symlinks
+ *                                        resolved), else the newest /opt/homebrew/Caskroom/claude-code*\/<v>/claude
+ *   binaryVersion(buf) -> string|null    the VERSION:"…" literal in the binary
+ *   probe(buf, {entries?, envNames?}) -> [{id, stability, ok, missing, note}]   every entry's search strings and
+ *       shapes checked against the binary (scripts/probe-cc.js, `sub-human doctor`); envNames adds the derived
+ *       daemon-env-names check (every DAEMON_ENV_ALLOW key is a quoted literal). One latin1 view, String#indexOf,
+ *       and each shape tested only around its longest literal piece: ~3 s for a 235 MB binary
  */
 
 const fs = require('node:fs');
@@ -696,6 +706,98 @@ const CONTRACT = Object.freeze([
     note: 'With modules off, `claude plugin test` exits 1 printing "claude plugin test: hooks modules are turned off ..."; npm test reads that as a skip (S8).' },
 ]);
 
+// ---------- the binary, for the probe and doctor ----------
+const PROBED_VERSION = '2.1.292';
+const MIN_VERSION = '2.1.292';
+
+function compareVersions(a, b) {
+  const parse = v => { const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || '')); return m ? m.slice(1).map(Number) : null; };
+  const x = parse(a), y = parse(b);
+  if (!x || !y) return null;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+  return 0;
+}
+
+const isFile = p => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+function onPath(cmd, env) {
+  for (const dir of (env.PATH || '').split(path.delimiter)) {
+    if (dir && isFile(path.join(dir, cmd))) return path.join(dir, cmd);
+  }
+  return null;
+}
+function caskroom(root = '/opt/homebrew/Caskroom') {
+  let best = null;
+  let casks = [];
+  try { casks = fs.readdirSync(root).filter(d => d.startsWith('claude-code')); } catch { return null; }
+  for (const c of casks) {
+    let vs = [];
+    try { vs = fs.readdirSync(path.join(root, c)); } catch { continue; }
+    for (const v of vs) {
+      const p = path.join(root, c, v, 'claude');
+      if (!isFile(p)) continue;
+      const mt = fs.statSync(p).mtimeMs;
+      if (!best || mt > best.mt) best = { p, mt };
+    }
+  }
+  return best && best.p;
+}
+/** A JS shim (npm install) is followed to its real file only via realpath. */
+function locateBinary({ bin, env = process.env } = {}) {
+  for (const c of [bin, env.CLAUDE_BIN, onPath('claude', env), caskroom()].filter(Boolean)) {
+    let p;
+    try { p = fs.realpathSync(c); } catch { continue; }
+    if (isFile(p)) return p;
+  }
+  return null;
+}
+
+function binaryVersion(buf) {
+  const i = buf.indexOf('VERSION:"');
+  if (i < 0) return null;
+  const v = /^(\d+\.\d+\.\d+[^"]*)"/.exec(buf.toString('latin1', i + 9, i + 40));
+  return v ? v[1] : null;
+}
+
+// Buffer#indexOf over the whole binary cost ~50 ms a call and a shape regex over all of it seconds: the probe test
+// timed out with the suite running beside it. IDENT_MAX bounds one minified identifier (they are a few chars).
+const IDENT_MAX = 64;
+const latin1 = s => Buffer.from(String(s), 'utf8').toString('latin1');
+function shapeIn(text, shape) {
+  const parts = String(shape).split('~');
+  let k = 0;
+  for (let i = 1; i < parts.length; i++) if (parts[i].length > parts[k].length) k = i;
+  const anchor = parts[k];
+  const re = shapeRe(shape);
+  if (!anchor) return re.test(text);
+  const before = parts.slice(0, k).join('').length + k * IDENT_MAX;
+  const after = parts.slice(k + 1).join('').length + (parts.length - 1 - k) * IDENT_MAX;
+  for (let at = text.indexOf(anchor); at >= 0; at = text.indexOf(anchor, at + 1)) {
+    if (re.test(text.slice(Math.max(0, at - before), at + anchor.length + after))) return true;
+  }
+  return false;
+}
+function quotedNames(text) {
+  const set = new Set();
+  for (const m of text.matchAll(/"([A-Za-z_][A-Za-z0-9_]*)(?=")/g)) set.add(m[1]);
+  return set;
+}
+
+function probe(buf, { entries = CONTRACT, envNames = true } = {}) {
+  const text = buf.toString('latin1');
+  const list = x => (x === undefined ? [] : Array.isArray(x) ? x : [x]);
+  const results = entries.map(e => {
+    const missing = list(e.search).filter(s => text.indexOf(latin1(s)) < 0);
+    for (const sh of list(e.shape)) if (!shapeIn(text, sh)) missing.push(`shape: ${sh}`);
+    return { id: e.id, stability: e.stability, ok: missing.length === 0, missing, note: e.note };
+  });
+  if (envNames) {
+    const names = quotedNames(text);
+    const absent = DAEMON_ENV_ALLOW.filter(k => !names.has(k));
+    results.push({ id: 'daemon-env-names', stability: 'env', ok: absent.length === 0, missing: absent, note: 'every cc.DAEMON_ENV_ALLOW key is a string in the binary' });
+  }
+  return results;
+}
+
 module.exports = {
   ENV, sessionId, claudePid, taskListId,
   configDir, sanitizeId, tasksDir, taskFile,
@@ -706,4 +808,5 @@ module.exports = {
   DAEMON_ENV_ALLOW, daemonEnv,
   matcherIsExact, matcherMatches,
   shapeRe, CONTRACT,
+  PROBED_VERSION, MIN_VERSION, compareVersions, locateBinary, binaryVersion, probe,
 };

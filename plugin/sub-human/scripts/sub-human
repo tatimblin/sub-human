@@ -65,6 +65,11 @@
  *       Prints the line; --file appends it to that file (0600) instead, unless the file holds it already, and
  *       refuses when the key is there with another line. --file also rewrites the lines an older authorize wrote
  *       for this home (node and the versioned plugin path baked in) to name the shim. PUBKEY - reads stdin.
+ *   sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS]
+ *       What is wrong on this machine and the fix for each (lib/cli/doctor.js): node, the home's modes, the serve
+ *       shim, authorized_keys lines that bypass it, ssh, each link (state, last error, a hello to its host with
+ *       both protocol versions, clock skew), Claude Code against the internals, hooks, Remote Control. --bundle
+ *       writes the same, redacted, for a bug report. Exit 1 when a check fails.
  *   Run invite, authorize, link and serve in your own shell: the Bash guard refuses them to a model.
  */
 
@@ -363,12 +368,13 @@ function authorize(args) {
 const [cmd, ...args] = process.argv.slice(2);
 // Keep the SSH serve shim's pointer on this install and node (lib/remote/shim.js); not on the status line's hot path,
 // and never creating a home.
-if (cmd !== 'agent-statusline') {
+if (cmd !== 'agent-statusline' && cmd !== 'doctor') { // doctor reports the shim as it is (--fix refreshes it)
   try { if (require('node:fs').existsSync(identity.home())) require(path.join(LIB, 'remote', 'shim.js')).refresh(); } catch { /* best effort */ }
 }
-const cmds = { tail, read, digest, who, tasks: tasksCmd, watch, serve, link: linkCmd, invite, authorize, 'agent-statusline': agentStatusline };
+const doctor = args => require(path.join(LIB, 'cli', 'doctor.js')).main(args).then(c => process.exit(c), e => die(e.message, 2));
+const cmds = { doctor, tail, read, digest, who, tasks: tasksCmd, watch, serve, link: linkCmd, invite, authorize, 'agent-statusline': agentStatusline };
 try {
-  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] | authorize INVITE|LINK_ID PUBKEY [--file F] | agent-statusline')))(args);
+  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] | authorize INVITE|LINK_ID PUBKEY [--file F] | doctor [--bundle [FILE]] | agent-statusline')))(args);
 } catch (e) {
   die(e.message, 2);
 }

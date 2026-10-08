@@ -20,6 +20,8 @@ claude plugin install sub-human@sub-human
 
 **Requirements.** Claude Code 2.1.292 or newer with function hooks on (not `--bare`, not safe mode, and no policy that turns hooks off): the plugin's hooks module guards the store, checks who typed an `@room` and delivers the room, so `/sub-human` refuses to join without it. Node 24 or newer on `PATH`: every hook, the room MCP server, the room tail and the row status line run `node`. macOS or Linux only (the row launcher is a POSIX shell script and the store relies on POSIX rename and file modes); Windows is not supported. `claude plugin validate plugin/sub-human` checks the plugin. Accept workspace trust for your folder: the orch starts in your working directory, and Claude Code refuses to start a background session in an untrusted folder.
 
+**Updates.** Marketplace plugins don't update by themselves by default: enable auto-update for the sub-human marketplace in `/plugin` (Marketplaces), or run `/plugin update sub-human` now and then. Everyone in a room should run the same version; `sub-human doctor` shows yours and, for a room hosted elsewhere, the host's protocol version.
+
 ## Join: one command
 
 In your normal Claude Code session:
@@ -195,8 +197,37 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 | `invite [--ssh USER@HOST[:PORT]]` | A one-time invite to a room hosted here (without `--ssh`, what `/sub-human host` gives). |
 | `authorize INVITE\|LINK_ID PUBKEY [--file F]` | The `authorized_keys` forced-command line for an SSH joiner's key and that one link; `--file` appends it. |
 | `link CODE [--reset]` | Run the link to room CODE hosted elsewhere (in the foreground; joins start it in the background). `--reset` copies the room again after a FORK. |
+| `doctor [--quick] [--fix] [--bundle [FILE]]` | What is wrong on this machine, with a fix for each (see **Doctor**). |
 
 `tail` (the room tail), `agent-statusline` (the rows) and `serve --stdio CODE` (the host's end of a link) are internal. Run `invite`, `authorize`, `link` and `serve` in your own shell: the plugin refuses them to a Claude.
+
+## Doctor
+
+When something is off, run `node <plugin root>/scripts/sub-human doctor` in your shell, on either machine. Each line is ✓ (fine), ! (a warning), ✗ (broken) or · (for your information), and a broken or doubtful one has a `fix:` line under it:
+
+```
+✓ node             v24.15.0
+✗ home             ~/.sub-human is 755
+                   fix: sub-human doctor --fix (or chmod 700 ~/.sub-human)
+! link vole-8126   ssh me@devbox:22 · daemon running (pid 4242) · ✕ offline 2m · 2 queued · last error: Permission denied (publickey)
+                   fix: the host refused this key in BatchMode: is the key in ssh-agent …?
+```
+
+It checks:
+
+- the plugin's version, and Node 24 or newer;
+- that the home and its directories are private (0700);
+- that the SSH serve shim (`<home>/bin/serve`) and its pointer name a plugin install and a node that still exist;
+- `authorized_keys` lines from an older `authorize` that bypass the shim (they break on the next plugin or node update), with the `sub-human authorize … --file` line that rewrites them;
+- `ssh` and its version;
+- every link to a room hosted elsewhere: its transport, whether its daemon runs, its state and last error, and a quick hello to the host (with a timeout) that shows whether the host is reachable, whether ssh works without prompting (BatchMode), both sides' protocol versions and, when the host sends its time, how far your clocks differ;
+- your Claude Code version against the one sub-human's internals were checked on (and, when it differs, the internals themselves);
+- settings that turn hooks off;
+- whether Remote Control (the phone) is likely to work. It needs a claude.ai subscription login and isn't available with Bedrock (`CLAUDE_CODE_USE_BEDROCK`), Vertex or an API key; that is only a note, the room works the same.
+
+`--quick` skips the hello and the internals check. `--fix` rewrites the shim and its pointer and closes the home's modes. `--bundle [FILE]` writes the same report as JSON for a bug report, redacted: it holds versions, settings, check results, link states and recent link errors, never a message; paths under your home become `~`, room codes, host names, user names and IP addresses are hashed, and SSH keys, tokens and invites are removed (a key is cut to a fingerprint prefix). Read it before you attach it.
+
+The room row shows the link too, in a room hosted elsewhere: `✕ offline 2m · 2 queued` or `… reconnecting (3)` first while it is down, and `⇄ linked` at the end while it is up.
 
 ## The room tail
 
@@ -244,6 +275,8 @@ Remote rooms add:
 The plugin doesn't stop a hostile local user, who can read the keys and write the files directly. The hash chain makes such edits visible. It doesn't prevent them.
 
 ## Troubleshooting
+
+Start with `sub-human doctor` (see **Doctor**): it names most of these and the fix.
 
 | Symptom | Fix |
 |---|---|
