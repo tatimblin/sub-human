@@ -7,13 +7,17 @@
  * Machine-local, like the session indexes: it never syncs. Zero dependencies beyond lib/home.js, lib/io.js and
  * lib/text.js.
  *
- * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, pin?, created_at}
+ * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, pin?, refused?, request?, rebind?, moved?, created_at}
  *   transport  how the daemon reaches the host's server (lib/remote/link.js transportOf: an invite's locator), plus
  *              what this machine adds for ssh (lib/remote/transports/ssh.js: key, knownHosts, alias, mux), files in
  *              dirOf(code)
  *   invite     the invite the daemon redeems at its first hello, until it holds the token
  *   pin        an sh2 invite's PIN, sent with it at that hello and dropped with it (the host checks it)
  *   token      the link's credential (the server keeps its sha256): kept in clear here, like the seat key
+ *   refused    {at, reason}: the host refused the invite before any token (a wrong PIN, burnt, used, expired); the
+ *              daemon then dropped invite, pin and rebind (lib/remote/link.js), so no spent secret stays here
+ *   request    an ssh link's admit request for the host (lib/remote/hosting.js linkTransport; no secret in it)
+ *   moved      {epoch, host, locator, at?, reached_at?, demoted?}: a handoff or promote re-pointed this link
  * The resume point is the mirror itself (its last line and that line's hash), not a field here.
  *
  *   get(code) -> Link | null          null for a code that is not CODE_RE
@@ -37,7 +41,8 @@
  *                before 0.4.1 say 'up' / 'down'; link-state.js reads those too
  *     since      ISO time this state began
  *     attempt    dials since the link was last online (0 while online)
- *     lastError  the last failure's message, or null (kept while online: why it last went offline)
+ *     lastError  the current failure's message, or null (null while online)
+ *     prevError  once online again: why it last went offline (absent before any failure)
  *     rttMs      the last ping's round trip, or null (no pong yet, or a server without ping)
  *     queued     @room posts waiting in the outbox (lib/remote/outbox.js)
  *     pid        the daemon's pid
@@ -75,7 +80,8 @@ const get = code => (typeof code === 'string' && CODE_RE.test(code) ? readJson(f
  */
 const has = code => typeof code === 'string' && CODE_RE.test(code) && fs.existsSync(fileOf(code));
 
-const credential = l => typeof l.token === 'string' || typeof l.invite === 'string';
+// a link the host refused before it held a token keeps no credential, only {refused: {at, reason}}
+const credential = l => typeof l.token === 'string' || typeof l.invite === 'string' || (!!l.refused && typeof l.refused === 'object');
 
 /**
  * @param {string} code

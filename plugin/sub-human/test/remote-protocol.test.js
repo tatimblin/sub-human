@@ -207,12 +207,12 @@ test('auth: an sh2 invite carries the room, locator, a 128-bit secret and the ho
   const bad = String((Number(b.pin) + 7) % 1e6).padStart(6, '0');
   for (let i = 4; i >= 1; i--) assert.throws(() => auth.redeemInvite(s, b.secret, { machine: 'm', pin: bad, now: t0 }), e => e.message.includes(`(${i} ${i === 1 ? 'try' : 'tries'} left)`));
   assert.throws(() => auth.redeemInvite(s, b.secret, { machine: 'm', pin: bad, now: t0 }), e => /last try: the invite is burnt/.test(e.message) && /burnt/.test(e.note));
-  assert.throws(() => auth.redeemInvite(s, b.secret, { machine: 'm', pin: b.pin, now: t0 }), e => /unknown or was used/.test(e.message));
+  assert.throws(() => auth.redeemInvite(s, b.secret, { machine: 'm', pin: b.pin, now: t0 }), e => /this invite is burnt/.test(e.message), 'burnt, said so');
 
   // 15 minutes: an expired invite burns, PIN or not
   const c = mint();
   assert.throws(() => auth.redeemInvite(s, c.secret, { machine: 'm', pin: c.pin, now: t0 + 15 * 60_000 + 1 }), e => /expired/.test(e.message));
-  assert.throws(() => auth.redeemInvite(s, c.secret, { machine: 'm', pin: c.pin, now: t0 }), e => /unknown or was used/.test(e.message));
+  assert.throws(() => auth.redeemInvite(s, c.secret, { machine: 'm', pin: c.pin, now: t0 }), e => /this invite is burnt/.test(e.message));
 
   // admit names an invite by its ref (never the secret); a used or expired one is refused; revoke burns what was reserved
   const d = mint();

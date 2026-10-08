@@ -216,6 +216,9 @@ test('link: no pong within deadMs and no new connection: the link is dead (OFFLI
   r.refuse = false;
   await h.until(() => l.state() === 'online', 3000, 5);
   assert.equal(r.states.at(-1).attempt, 0);
+  // online again: no current error; why it went offline is kept apart as prevError
+  assert.equal(r.states.at(-1).lastError, null);
+  assert.match(r.states.at(-1).prevError, /no pong within 250 ms|no route to host/);
 });
 
 test('link: wake() while online makes before it breaks: hooks\' appends during repeated swaps land once each, in order', async t => {

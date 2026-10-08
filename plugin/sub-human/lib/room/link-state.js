@@ -24,7 +24,7 @@
  * daemon is not running" and dead: true; fork and stopped stay what they are.
  *
  *   read(code) -> State | null       null when this machine has no link to CODE (a room hosted here, or none)
- *       State = {state: STATES, since?, attempt?, lastError?, rttMs?, queued?, pid?, detail?, dead?,
+ *       State = {state: STATES, since?, attempt?, lastError?, prevError?, rttMs?, queued?, pid?, detail?, dead?,
  *                source: 'state-file'|'link-doc'}
  *   normalize(state, detail?) -> STATES member   an old or new word to the vocabulary (unknown: 'offline')
  *   indicator(st, {now}?) -> string  the compact segment: "⇄ online", "… connecting", "… connecting (3)",
@@ -70,7 +70,7 @@ function read(code) {
     const pid = num(f.pid);
     const dead = pid ? !isAlive(pid) : !!(doc && doc.pid && !doc.running);
     const st = clean({
-      state: normalize(f.state, f.detail), since: str(f.since), attempt: num(f.attempt), lastError: str(f.lastError),
+      state: normalize(f.state, f.detail), since: str(f.since), attempt: num(f.attempt), lastError: str(f.lastError), prevError: str(f.prevError),
       rttMs: num(f.rttMs), queued: num(f.queued), pid, detail: str(f.detail), source: 'state-file',
     });
     if (dead && !FOR_GOOD.has(st.state)) return { ...st, state: 'offline', lastError: st.lastError || NOT_RUNNING, dead: true };

@@ -344,7 +344,7 @@ async function serveMirror({
   const localSeats = seats || (() => require('../identity.js').localSeats(mirror.code));
   const saveState = writeState || (rec => require('../room/links.js').writeState(mirror.code, rec));
   let state = 'connecting', reason = null, client = null, retry = null, hb = null, delay = T.retryMs, finish;
-  let dialing = null, attempts = 0, lastError = null, rttMs = null, doc = {}, pub = null, pubSince = null, flushed = null;
+  let dialing = null, attempts = 0, lastError = null, prevError = null, rttMs = null, doc = {}, pub = null, pubSince = null, flushed = null;
   const unwatch = [];
   const done = new Promise(resolve => { finish = resolve; });
 
@@ -354,7 +354,7 @@ async function serveMirror({
     try { mirror.kv.set('link', d); } catch (e) { log(`status: ${e.message}`); }
     const p = state === 'offline' && dialing ? 'connecting' : state; // a redial under way reads connecting
     if (p !== pub) { pub = p; pubSince = new Date(clock.now()).toISOString(); }
-    const rec = { state: p, since: pubSince, attempt: attempts, lastError, rttMs, queued: box.size(), pid: process.pid, detail: state, at: new Date(clock.now()).toISOString() };
+    const rec = { state: p, since: pubSince, attempt: attempts, lastError, ...(prevError ? { prevError } : {}), rttMs, queued: box.size(), pid: process.pid, detail: state, at: new Date(clock.now()).toISOString() };
     try { saveState(rec); } catch (e) { log(`state: ${e.message}`); }
   }
 
@@ -617,6 +617,7 @@ async function serveMirror({
         attempts = 0;
         delay = T.retryMs;
         dialing = null;
+        if (lastError) { prevError = lastError; lastError = null; } // online: why it last went offline is history
         setState('online');
         log(`online: subscribed after line ${after}${old ? '; swapped in, the old connection is closed' : ''}`);
         heartbeat(c);
@@ -657,11 +658,24 @@ async function serveMirror({
   return { state: () => state, stop: why => stop('stopped', why), wake: (why = 'asked') => redial(why), done };
 }
 
+/** A link the host refused before it held a token: drop the invite, its PIN and the pending rebind; say why. */
+function scrubRefused(links, code, reason) {
+  try {
+    const cur = links.get(code);
+    if (!cur || cur.token) return;
+    const { invite, pin, rebind, ...rest } = cur;
+    links.set(code, { ...rest, refused: { at: new Date().toISOString(), reason: String(reason).slice(0, 300) } });
+  } catch { /* the stop reason still says it */ }
+}
+
 /** The link file's connection: hello with the token, or with the invite once (its token then replaces it). */
 async function connectLink(code) {
   const links = require('../room/links.js');
   const l = links.get(code);
   if (!l) throw new RoomError('AUTH', `this machine has no link to room ${code} any more`);
+  if (!l.token && typeof l.invite !== 'string') {
+    throw new RoomError('AUTH', `the host refused this link's invite${l.refused && l.refused.reason ? ` (${l.refused.reason})` : ''}; ask the host for a new one`);
+  }
   const kind = l.transport && l.transport.kind;
   if (!transports().get(kind)) throw new RoomError('PROTOCOL', `unknown transport "${kind}" (${transports().kinds().join(', ')})`);
   const cred = l.token ? { token: l.token } : { invite: l.invite, ...(typeof l.pin === 'string' ? { pin: l.pin } : {}) };
@@ -669,7 +683,12 @@ async function connectLink(code) {
   const opts = { machine: require('../home.js').machineId(), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...cred };
   const t = transports().open(l.transport, { code });
   let c;
-  try { c = await require('./client.js').connect(t, opts); } catch (e) { throw await keyRefused(l, t, e); }
+  try { c = await require('./client.js').connect(t, opts); } catch (e) {
+    // the host refused the invite (a wrong PIN, burnt, used, expired): it and its PIN are spent here too, so the link
+    // file keeps no secret in clear (a new `/sub-human join NAME INVITE PIN` writes a fresh one)
+    if (!l.token && e && e.code === 'AUTH') scrubRefused(links, code, e.message);
+    throw await keyRefused(l, t, e);
+  }
   if (!l.token) {
     const { invite, pin, ...rest } = l; // an sh2 invite's PIN is spent with it
     links.set(code, { ...rest, token: c.token, ...(rest.moved ? { moved: { ...rest.moved, reached_at: new Date().toISOString() } } : {}) });

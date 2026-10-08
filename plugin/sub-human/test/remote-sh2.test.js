@@ -96,6 +96,13 @@ test('sh2: a wrong PIN costs a try (the room hears it) and is never re-sent by a
   assert.ok(hiddenBlock(r1));
   assert.match(r1.json.reason, /could not link to room .*wrong PIN \(4 tries left\)/);
   assert.ok(!r1.json.reason.includes(wrong), 'the typed PIN is not echoed');
+  // the refused invite and its PIN are not kept in clear in the link file (nor a rebind for a link that never connected)
+  const lf1 = remote.lib(() => require(path.join(h.LIB, 'room', 'links.js')).get(code));
+  assert.equal(lf1.invite, undefined);
+  assert.equal(lf1.pin, undefined);
+  assert.equal(lf1.rebind, undefined);
+  assert.match(lf1.refused.reason, /wrong PIN \(4 tries left\)/);
+  assert.ok(!fs.readFileSync(remote.lib(() => require(path.join(h.LIB, 'room', 'links.js')).linksDir()) + `/${code}.json`, 'utf8').includes(wrong));
   // a rejoin does not start the link again with the refused PIN
   const r2 = remote.join(bob, `bob ${code}`);
   assert.equal(r2.json.decision, 'block');
