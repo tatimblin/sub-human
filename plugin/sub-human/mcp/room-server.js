@@ -169,7 +169,7 @@ const CORE = [
     name: 'propose',
     title: 'Propose for agreement',
     description: 'Ask people in the sub-human room to agree to a plan or decision (exactly one of text or path). '
-      + 'Each approver answers a card in their own terminal; never report agreement until the room records it. Same content reopens the open proposal.',
+      + 'Each approver answers it in the plan view in their own session; never report agreement until the room records it. Same content reopens the open proposal.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -215,7 +215,7 @@ function propose(me, args) {
     throw e;
   }
   const lines = [`proposal ${r.hash} ${r.again ? 'is already open' : 'proposed'} to ${r.approvers.join(', ')}. Text: ${r.path}`];
-  lines.push('Each approver reads and answers it in their own terminal. Never say anyone agreed until the room records it.');
+  lines.push('Each approver reads and answers it in the plan view in their own session. Never say anyone agreed until the room records it.');
   if (r.approvers.includes(me.name)) lines.push(`${me.name} is an approver: ${proposal.openCall(r.hash)} now so ${me.name} can read and answer it.`);
   return text(lines.join('\n'));
 }

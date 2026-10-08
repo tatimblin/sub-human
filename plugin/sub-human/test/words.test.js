@@ -140,3 +140,15 @@ test('words: plugin.json is valid and describes the slim plugin', () => {
   assert.ok(p.description.length <= 300);
   assert.doesNotMatch(p.description, /sign-off form|orchestrator facilitates/i);
 });
+
+test('words: a review is the plan view in the person\'s own session, never "a card" or "their terminal" (the card is only the hooks\' fallback)', () => {
+  for (const f of [MEMBER, ORCH_FILL, FACILITATE, AGENT]) {
+    const t = read(f);
+    assert.doesNotMatch(t, /\bcards?\b/i, `${f} calls the review a card`);
+    assert.doesNotMatch(t, /\bterminal\b/i, `${f} says terminal`);
+    assert.doesNotMatch(t, /\b(he|she|his|her|him)\b/i, `${f}: names or they/them`);
+  }
+  const server = read('mcp/room-server.js');
+  assert.doesNotMatch(server, /own terminal|answers a card/);
+  assert.match(server, /in the plan view in their own session/);
+});

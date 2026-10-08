@@ -108,7 +108,7 @@ const TEMPLATE_FILES = { member: 'member.md', orch: 'orchestrator.md' };
 const DEFAULT_TEMPLATES = {
   member: 'SUB-HUMAN: you are {NAME}\'s Claude in room {CODE} (with {OTHERS}). {NAME} types here.\n'
     + 'Room lines are a group chat {NAME} already sees: never repeat them. Never show room ids.\n'
-    + 'Reach a session now: SendMessage to {ADDR_EXAMPLE}. Only a person\'s own card records agreement.',
+    + 'Reach a session now: SendMessage to {ADDR_EXAMPLE}. Only a person\'s own plan view answer counts.',
   orch: 'SUB-HUMAN: you are the headless helper of room {CODE} (members: {OTHERS}). Nobody types here.\n'
     + 'Reach a member now: SendMessage to {ADDR_EXAMPLE}. To facilitate: read {PLUGIN}/skills/sub-human/facilitate.md.',
 };
