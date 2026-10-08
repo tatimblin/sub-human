@@ -2,7 +2,8 @@
 'use strict';
 /**
  * plugin/sub-human/scripts/sub-human: the read-only CLI over the room. There is no post command: writes come only
- * from the plugin's hooks and the MCP server. Without --room / CODE, the room is this session's
+ * from the plugin's hooks and the MCP server (the host's admit and revoke add a line from the room itself, via
+ * system). Without --room / CODE, the room is this session's
  * (identity.resolveSelf(): the session id env, then the nearest registered ancestor claude pid).
  *
  *   sub-human tail [--ndjson] [--max-seconds S]
