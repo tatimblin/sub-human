@@ -116,6 +116,7 @@ class MemoryRoomStore {
   }
 
   pins() { return envelope.pinnedKeys(this.readAll()); }
+  hostState() { return store.hostState(this.readAll()); }
 
   watch(onEntry, { after = 0, intervalMs = config.FOLLOW_POLL_MS } = {}) {
     let seen = after, len = 0;

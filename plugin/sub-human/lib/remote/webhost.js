@@ -17,6 +17,9 @@
  *       there is no admit step: the invite's secret, its PIN and the pinned key are the admission, and the room line
  *       the host writes when the PIN holds (lib/remote/server.js) records it
  *   ensure(code) -> bool   start the listener again for a room it serves (after a reboot): the join hook, on a host seat
+ *   webLocator(url, code) -> 'wss://FRONT/prefix/sub-human/CODE'   a handoff's or promote's --url
+ *   serveAt(code, locator) -> {port, hostKey}   this machine is about to host CODE at a web locator (lib/handoff.js accept,
+ *       promote): the listener up, the room served; its invites pin hostKey. A Tailscale path is set up by host --tailscale
  *   unhost(code) -> {removed, text}   the room leaves the served set and its own Tailscale path (only that one) is
  *       turned off; the listener stops once it serves no room. Links already made keep their token but cannot
  *       reach the room over the web until it is hosted again
@@ -117,4 +120,24 @@ function ensure(code) {
   try { L.start(rec.port ? { port: rec.port } : {}); return true; } catch { return false; }
 }
 
-module.exports = { hostWeb, unhost, ensure, frontBase };
+/** The wss locator of room CODE behind a front at URL (https://FRONT[/prefix]): wss://FRONT/prefix/sub-human/CODE. */
+function webLocator(url, code) {
+  const b = frontBase(url);
+  const loc = wsT().locator({ host: b.host, port: b.port, path: `${b.prefix}/sub-human/${code}` }, b.secure);
+  if (!loc) throw new RoomError('INVALID', `"${url}" gives no plain URL for room ${code}`);
+  return loc;
+}
+
+/** Serve room CODE at a web locator this machine will host it at (a handoff or promote to here): the listener up and
+ * the room in its served set. A Tailscale path is not set up here: run /sub-human host --tailscale after the move. */
+function serveAt(code, locator) {
+  const i = locator.indexOf(':');
+  const spec = wsT().parse(locator.slice(i + 1));
+  if (!spec) throw new RoomError('INVALID', `"${locator}" is not a web locator`);
+  const L = listener();
+  const { port } = L.start();
+  L.addRoom(code, { path: spec.path, url: wsT().urlOf({ ...spec, kind: locator.slice(0, i) }), mode: 'handoff', port });
+  return { port, hostKey: L.hostKey() };
+}
+
+module.exports = { hostWeb, unhost, ensure, frontBase, webLocator, serveAt };

@@ -257,13 +257,18 @@ test('link: a lost connection is retried with decorrelated jitter: each delay in
   const at = [];
   const { RoomError } = require(path.join(h.LIB, 'room', 'validate.js'));
   const connect = () => { at.push(Date.now()); return Promise.reject(new RoomError('OFFLINE', 'no route')); };
-  // random() = 1: the top of each range, so the delays grow 3x per failure up to the cap
-  const l = await link.serveMirror({ mirror, connect, retryMs: 40, retryMaxMs: 400, random: () => 1, watch: false, seats: () => [] });
-  await h.until(() => at.length >= 5, 5000, 5);
+  // random() = 1: the top of each range, so the delays grow 3x per failure up to the cap. The delays are read from
+  // what the daemon asks its clock for: the gaps between attempts also measured how late a loaded machine fires
+  // timers, and an upper bound on them failed under load. Never online here, so every timer it sets is a retry.
+  const realClock = require(path.join(h.LIB, 'clock.js'));
+  const asked = [];
+  const clock = { ...realClock, setTimeout: (fn, ms) => { asked.push(ms); return realClock.setTimeout(fn, ms); } };
+  const l = await link.serveMirror({ mirror, connect, retryMs: 40, retryMaxMs: 400, random: () => 1, watch: false, seats: () => [], clock });
+  await h.until(() => at.length >= 5, 30_000, 5);
   l.stop('done');
+  assert.deepEqual(asked.slice(0, 4), [120, 360, 400, 400]);
   const gaps = at.slice(1, 5).map((x, i) => x - at[i]);
-  const want = [120, 360, 400, 400];
-  gaps.forEach((g, i) => assert.ok(g >= want[i] - 5 && g < want[i] + 80, `gap ${i}: ${g} ms, want ~${want[i]}: ${gaps}`));
+  gaps.forEach((g, i) => assert.ok(g >= asked[i] - 5, `gap ${i}: ${g} ms, under the ${asked[i]} ms asked: ${gaps}`));
   const config = require(path.join(h.LIB, 'config.js'));
   assert.deepEqual([config.LINK_RETRY_MS, config.LINK_RETRY_MAX_MS], [1000, 10_000]);
 });

@@ -40,6 +40,9 @@
  *       waitMs for task 1 to complete (or the list to be cleaned up); `claude stop <job>`; mark the orch left.
  *       claimed: the caller already set closing (watchdog): no grace, no claim. We never delete under ~/.claude.
  *   reapDetached(code, {claimed}?)   `node lib/orch.js reap CODE [--claimed]`, detached, output ignored
+ *   releaseDetached(code, job)   `node lib/orch.js release CODE JOB`, detached: `claude stop JOB` and nothing else (a
+ *       planned handoff, lib/handoff.js: the room goes on, its orch restarts on the new host; the caller already
+ *       marked the orch record left, so no reaper, no "room closed")
  *   watchdog(code, {now, orphanMs, alive, reaper}) -> 'live'|'waiting'|'reaping'|'closing'|'no-orch'|'no-room'|'not-host'
  *       For the orch's tail loop (and join's sweep): when the room has had no live member (identity.seatAlive:
  *       pid alive and start time matching) for orphanMs (ORCH_ORPHAN_MS), claim closing and start the reaper.
@@ -52,7 +55,7 @@
  *   SUB_HUMAN_ORCH_ARGS (a JSON array of extra flags, for probes, e.g. ["--setting-sources","project,local"]),
  *   SUB_HUMAN_REAP_GRACE_MS (default 10 s), SUB_HUMAN_REAP_WAIT_MS (default 20 s), SUB_HUMAN_ORCH_CLAIM_MS,
  *   SUB_HUMAN_ORCH_ORPHAN_MS.
- * CLI: node lib/orch.js cmd|spawn|reap [--claimed]|watchdog|start CODE [JSON]
+ * CLI: node lib/orch.js cmd|spawn|reap [--claimed]|watchdog|release|start CODE [JSON|JOB]
  */
 const fs = require('node:fs');
 const os = require('node:os');
@@ -295,6 +298,13 @@ function reapDetached(code, { claimed = false } = {}) {
   return detached(claimed ? ['reap', code, '--claimed'] : ['reap', code]);
 }
 
+const JOB_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+function releaseDetached(code, job) {
+  identity.roomDir(code);
+  if (!JOB_RE.test(String(job))) return null;
+  return detached(['release', code, String(job)]);
+}
+
 function watchdog(code, { now = clock.now(), orphanMs = orphanMsDefault(), alive = identity.seatAlive, reaper = reapDetached } = {}) {
   if (!identity.roomExists(code)) return 'no-room';
   if (!identity.isHost(code)) return 'not-host';
@@ -321,14 +331,14 @@ module.exports = {
   CLOSE_TEXT, PENDING,
   pluginDirFor, spawnPlan, command,
   needsSpawn, claimSpawn, spawn, startDetached,
-  reap, reapDetached, watchdog,
+  reap, reapDetached, releaseDetached, watchdog,
   taskListId, tasksDir,
 };
 
 if (require.main === module) {
   const [cmd, code, extra] = process.argv.slice(2);
   const die = msg => { process.stderr.write(`orch.js: ${msg}\n`); process.exit(2); };
-  if (!cmd || !identity.CODE_RE.test(String(code))) die('usage: node lib/orch.js cmd|spawn|reap [--claimed]|watchdog|start CODE [JSON]');
+  if (!cmd || !identity.CODE_RE.test(String(code))) die('usage: node lib/orch.js cmd|spawn|reap [--claimed]|watchdog|release|start CODE [JSON|JOB]');
   if (cmd === 'cmd') process.stdout.write(command(spawnPlan({ code })) + '\n');
   else if (cmd === 'spawn') { const r = spawn({ code }); process.stdout.write(JSON.stringify(r) + '\n'); process.exitCode = r.ok ? 0 : 1; }
   else if (cmd === 'start') {
@@ -339,5 +349,6 @@ if (require.main === module) {
     process.exitCode = r.ok ? 0 : 1;
   } else if (cmd === 'reap') reap(code, { claimed: extra === '--claimed' }).then(r => process.stdout.write(r + '\n'), e => die(e.message));
   else if (cmd === 'watchdog') process.stdout.write(watchdog(code) + '\n');
+  else if (cmd === 'release') process.stdout.write((JOB_RE.test(String(extra)) && stopJob(extra) ? 'stopped' : 'not-stopped') + '\n');
   else die(`unknown command ${cmd}`);
 }

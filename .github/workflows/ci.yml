@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (node ${{ matrix.node }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        node: ['24', '26']
+        include:
+          - os: macos-latest
+            node: '24'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # check-version compares against the last version bump (or the newest tag): it needs the history
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: git identity (the tests make throwaway repos)
+        run: |
+          git config --global user.name "sub-human CI"
+          git config --global user.email "ci@sub-human.invalid"
+      - name: npm test (the mods tests skip without Claude Code)
+        run: npm test
+      - name: hook tests over the thread store
+        run: npm run test:thread-store
+      - name: version bumped with the plugin change
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: node scripts/check-version.js "origin/$BASE_REF"
+
+  remote-docker:
+    name: remote rooms over real SSH (docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: npm run test:remote-docker
+        run: npm run test:remote-docker

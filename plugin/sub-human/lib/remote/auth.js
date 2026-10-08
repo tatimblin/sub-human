@@ -9,6 +9,16 @@
  *
  *   mintInvite(store, {locator, now?}) -> {invite, secret}   an sh1 invite: formatInvite({code, locator, secret});
  *                                                  records sha256(secret) with created_at. Host only (HOST_ONLY)
+ *   mintFor(store, {locator, machine, seats, pin?, hostKey?, now?}) -> {invite, secret, pin?}   a handoff's sh2 invite (lib/handoff.js) for
+ *                                                  one machine (hostKey: a ws/wss next host's listener key, pinned),
+ *                                                  minted by the room's next host before it is the host
+ *                                                  (so no HOST_ONLY check) and carried to that machine over its
+ *                                                  existing authenticated link, so it needs no PIN: the record is
+ *                                                  {v: 2, handoff: true, machine, seats, expires_at (HANDOFF_INVITE_MS)};
+ *                                                  only that machine may redeem it, and its link starts with those
+ *                                                  seats bound (they joined the room already; their keys are pinned).
+ *                                                  pin: true (a promote's invites, handed out by hand): an ordinary sh2
+ *                                                  PIN record (INVITE_TTL_MS, INVITE_PIN_TRIES) with the same binding
  *   mintInvite(store, {locator, pin: true, hostKey?, now?}) -> {invite, secret, pin, expires_at}   an sh2 invite and
  *                                                  its PIN (6 digits, never in the invite): the record adds v: 2,
  *                                                  pin_sha256 = sha256(secret:pin) (the host keeps neither in clear),
@@ -17,12 +27,13 @@
  *                                                  key for an ssh locator, the listener's X25519 key for ws/wss (1.1)
  *   redeemInvite(store, secret, {machine, pin?, linkId?, now?}) -> {token, link}   marks the invite used (an unknown,
  *                                                  used or burnt one is AUTH), records {id, token_sha256, machine,
- *                                                  seats: [], created_at}; id is the one reserveLink gave the invite, if
+ *                                                  seats, created_at}; id is the one reserveLink gave the invite, if
  *                                                  any. linkId (an SSH forced command's --link): AUTH, and the invite
  *                                                  stays unused, unless the invite was reserved for that link. An sh2
  *                                                  invite also needs its PIN, checked here (online, by the host only):
  *                                                  past expires_at it burns; a wrong PIN costs a try, the last one burns
- *                                                  it. Each is AUTH saying what is left; error.note is the room line
+ *                                                  it. Each is AUTH saying what is left; error.note is the room line.
+ *                                                  A handoff invite needs no PIN: only its machine, before expires_at
  *   reserveLink(store, secret) -> id               the link id an invite will redeem to, fixed now (kept on the
  *                                                  invite record): `sub-human authorize` names it in the forced
  *                                                  command before the invite is used. AUTH for an unknown invite
@@ -52,7 +63,7 @@ const crypto = require('node:crypto');
 const { RoomError } = require('../room/validate.js');
 const envelope = require('../room/envelope.js');
 const { CODE_RE } = require('../text.js');
-const { INVITE_TTL_MS, INVITE_PIN_TRIES } = require('../config.js');
+const { INVITE_TTL_MS, INVITE_PIN_TRIES, HANDOFF_INVITE_MS } = require('../config.js');
 
 const INVITE_PREFIX = 'sh1';
 const INVITE2_PREFIX = 'sh2';
@@ -113,6 +124,26 @@ function checkPin(inv, secret, pin, now) {
 }
 
 /**
+ * @param {import('../room/store.js').FsRoomStore} store   the room's next host's store (a mirror until it is the host)
+ * @param {{locator: string, machine: string, seats: string[], now?: number}} opts
+ * @returns {{invite: string, secret: string}}
+ */
+function mintFor(store, { locator, machine, seats, pin: withPin = false, hostKey = null, now = Date.now() }) {
+  if (hostKey !== null && !HOST_KEY_RE.test(String(hostKey))) throw new RoomError('INVALID', 'hostKey must be a 32-byte public key, base64url');
+  const secret = crypto.randomBytes(16).toString('base64url'); // 128 bits, as any sh2 secret
+  const bound = { created_at: iso(now), machine, seats: [...seats] };
+  if (!withPin) {
+    const rec = { v: 2, handoff: true, ...bound, expires_at: iso(now + HANDOFF_INVITE_MS) };
+    store.kv.update(INVITES_KEY, cur => ({ ...cur, [sha256(secret)]: rec }));
+    return { invite: formatInvite({ v: 2, code: store.code, locator, secret, hostKey }), secret };
+  }
+  const pin = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  const rec = { v: 2, ...bound, expires_at: iso(now + INVITE_TTL_MS), tries: INVITE_PIN_TRIES, pin_sha256: pinDigest(secret, pin) };
+  store.kv.update(INVITES_KEY, cur => ({ ...cur, [sha256(secret)]: rec }));
+  return { invite: formatInvite({ v: 2, code: store.code, locator, secret, hostKey }), secret, pin, expires_at: rec.expires_at };
+}
+
+/**
  * @param {import('../room/store.js').FsRoomStore} store
  * @param {string} secret
  * @param {{machine: string, now?: number}} opts
@@ -127,11 +158,15 @@ function redeemInvite(store, secret, { machine, linkId, pin, now = Date.now() })
     const inv = cur && cur[key];
     if (!inv || inv.used_at || inv.burnt_at) throw new RoomError('AUTH', 'this invite is unknown or was used already; ask the host for a new one');
     if (linkId !== undefined && inv.link !== linkId) throw new RoomError('AUTH', `this invite is not for link ${linkId}`);
-    if (inv.v === 2) {
+    if (inv.machine && inv.machine !== machine) throw new RoomError('AUTH', 'this invite is for another machine');
+    if (inv.v === 2 && inv.handoff) {
+      if (now > Date.parse(inv.expires_at)) throw new RoomError('AUTH', 'this handoff invite expired; ask the new host for a new one');
+    } else if (inv.v === 2) {
       const r = checkPin(inv, secret, pin, now);
       if (r.err) { err = r.err; return { ...cur, [key]: r.next }; }
     }
     link.id = inv.link || newLinkId();
+    if (Array.isArray(inv.seats)) link.seats = [...inv.seats];
     return { ...cur, [key]: { ...inv, used_at: iso(now), link: link.id } };
   });
   if (err) throw err;
@@ -300,6 +335,6 @@ function revokeLink(store, id, { now = Date.now() } = {}) {
 const links = store => store.kv.get(LINKS_KEY, null) || {};
 
 module.exports = {
-  INVITE_PREFIX, INVITE2_PREFIX, PIN_RE, inviteRef, reserveRef, revokeLink, links, INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, redeemInvite, reserveLink, linkKnown, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
+  INVITE_PREFIX, INVITE2_PREFIX, PIN_RE, inviteRef, reserveRef, revokeLink, links, INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, mintFor, redeemInvite, reserveLink, linkKnown, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
   formatInvite, parseInvite,
 };

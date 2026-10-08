@@ -28,6 +28,8 @@
  *                            `blob.get`; has, localPath: the mirror's file (the daemon prefetches every proposal's plan)
  *   kv.*                     local (rows/*, members/NAME/*, cursors, notices, link: session-local documents);
  *                            set/update/delete of a streamed document (members, presence/*, tasks) is HOST_ONLY
+ *   request(op, params, {deadlineMs}?)   any other op the daemon relays (lib/remote/link.js RELAY): the planned
+ *                            handoff's handoff.accept and handoff.refuse (lib/handoff.js)
  *   isHost = false
  * The daemon's writes (lib/remote/link.js only; it is the mirror's one writer):
  *   applyLine(line)          append one host line verbatim; its prev must hash-chain to the mirror's last line
@@ -82,6 +84,9 @@ class MirrorRoomStore extends FsRoomStore {
     const r = this._call('append', queue ? { payload, queue: true } : { payload });
     return r.queued ? { ...payload, queued: r.queued } : tag(r.entry, this);
   }
+
+  /** An op the daemon relays to the host as it is (lib/handoff.js: handoff.accept, handoff.refuse). */
+  request(op, params, opts) { return this._call(op, params, opts); }
 
   /** One op over the bridge to this room's link daemon. */
   _call(op, params, { deadlineMs } = {}) {

@@ -10,11 +10,21 @@
  *   event    {id, ev, data}          a subscribe stream (id: the subscribe request's): ev 'entry' (data: the host
  *                                    line, verbatim), 'doc' (data: {key, value}: members, presence/NAME, tasks;
  *                                    value null for a document that is gone), 'end' (data: {reason}: 'closed',
- *                                    the room's orch was stopped; 'FORK', the host log was reset under the stream)
+ *                                    the room's orch was stopped; 'FORK', the host log was reset under the stream;
+ *                                    'moved', the room moved to another host: a 'moved' event came first),
+ *                                    'handoff' (data: the host's ask that one of this link's seats host the room:
+ *                                    {id, from, to, epoch, locator?, expires_at}; private to that link, never in the
+ *                                    log), 'moved' (data: {epoch, host, machine, locator, invite | null}: the room
+ *                                    moved, after its host_changed line; invite is this link's machine's single-use
+ *                                    sh2 invite to the new host, private to that link: lib/handoff.js)
+ *   epoch                            hello and append may carry the mirror's host epoch (lib/handoff.js); the hello
+ *                                    reply carries the server's. A hello from a later epoch, or an append from another,
+ *                                    is STALE (a host the room moved away from, or a copy not caught up)
  *   PROTO = {min: 1, max: 2}         the protocol versions this end speaks. hello carries {v, proto, client, caps}:
  *                                    v the version the client needs at least (1, or 2 for an sh2 invite: a host
  *                                    before 0.4 checks v === 1 and has no proto), proto its range, client its plugin
- *                                    version. The server answers {v, proto, server, caps}: v = negotiate() of the two
+ *                                    version. The server answers {v, proto, server, caps, time}: time its clock (ms; additive,
+ *                                    for the skew sub-human doctor reports), v = negotiate() of the two
  *                                    ranges (a hello without proto is the range [v, v]); no overlap is PROTOCOL with
  *                                    skewMessage(), which names the side that must update. v2: the sh2 invite and its PIN
  *   VERSION = PROTO.max              (kept for callers that name one version)
@@ -25,7 +35,8 @@
  *                                    0.3.0 (protocol 2). Update your plugin: /plugin update sub-human" (or "The host
  *                                    must update …" when the joiner is the newer side)
  *   CAPS                             what this end serves: {ops: OPS}
- *   OPS                              hello join leave beat append subscribe blob.get blob.put ping
+ *   OPS                              hello join leave beat append subscribe blob.get blob.put ping handoff.accept
+ *                                    handoff.refuse (caps-gated: a target sends them only to a server that lists them)
  *   ping                             the app-level heartbeat: request {op: 'ping'} -> reply {pong: <host ms>} (the
  *                                    pong). Gated by caps, not by v: a client pings only a server whose caps.ops
  *                                    lists 'ping', and says hello with caps {ping: true} when it pings, so the
@@ -33,6 +44,7 @@
  *                                    peer on either side never sees one
  *   CODES                            RoomError codes on both ends and on the wire, unchanged:
  *                                    INVALID RATE LOCK NO_ROOM (today's) + OFFLINE HOST_ONLY AUTH FORK PROTOCOL
+ *                                    STALE (a write or hello from another host epoch than the server's)
  *   request(id, op, params), reply(id, result), error(id, code, message), event(id, ev, data) -> frame
  *   encode(frame) -> string          one line, newline-terminated
  *   decoder() -> {push(chunk) -> frame[]}   buffers partial lines; a malformed line, or one longer than
@@ -69,12 +81,12 @@ function skewMessage({ host, joiner }) {
     : 'The host must update: ask them to run /plugin update sub-human';
   return `${runs('host runs', host)}; ${runs('you run', joiner).replace(/^you run sub-human /, 'you run ')}. ${fix}`;
 }
-const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping'];
-const EVENTS = ['entry', 'doc', 'end'];
+const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping', 'handoff.accept', 'handoff.refuse'];
+const EVENTS = ['entry', 'doc', 'end', 'handoff', 'moved'];
 const CAPS = Object.freeze({ ops: OPS });
 const CODES = Object.freeze({
   INVALID: 'INVALID', RATE: 'RATE', LOCK: 'LOCK', NO_ROOM: 'NO_ROOM',
-  OFFLINE: 'OFFLINE', HOST_ONLY: 'HOST_ONLY', AUTH: 'AUTH', FORK: 'FORK', PROTOCOL: 'PROTOCOL',
+  OFFLINE: 'OFFLINE', HOST_ONLY: 'HOST_ONLY', AUTH: 'AUTH', FORK: 'FORK', PROTOCOL: 'PROTOCOL', STALE: 'STALE',
 });
 
 /** @returns {{id: number|string, op: string, params: object}} */
