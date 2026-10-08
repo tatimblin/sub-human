@@ -18,6 +18,12 @@
  *       (transcript.log, REPORT.md, report.html, transcript.svg, report.png when Chrome is installed, compose
  *       ps/logs, toxiproxy state) goes to DIR, default /tmp/sub-human-remote-proof-<timestamp>. Invite secrets
  *       and link tokens are redacted in every file. Exit 0 only when every assertion passed.
+ *   node scripts/remote-docker/harness.js scenarios [--only ID[,ID]] [--out DIR] [--keep]
+ *       The multi-machine lab (lab/compose.yml, project sub-human-lab; lab.js): devbox, devbox-old (0.2.0), bastion,
+ *       joiner-a, joiner-b, toxiproxy, corp-proxy, tls-front. Runs scenarios/NN-*.js in order (README.md lists
+ *       them), each from a clean reset, and writes per-scenario evidence (transcript, logs and their hashes,
+ *       timings, summary.json) to DIR, default /tmp/sub-human-lab-<time>/. A scenario whose feature is not in the
+ *       plugin yet is PENDING. Exit 0 unless one FAILED. --keep leaves the stack up afterwards.
  *   node scripts/remote-docker/harness.js up [--host-seat NAME] [--joiners A,B] | status | say [--to NAME] TEXT |
  *       cut | heal | latency MS | down
  *       The manual mode, for real Claudes on this Mac: up starts devbox + toxiproxy with the room and the host's
@@ -573,6 +579,15 @@ async function main() {
     console.log(`\n${ok ? 'ALL PASS' : 'FAILED'}: evidence in ${out}`);
     process.exit(ok ? 0 : 1);
   }
+  if (cmd === 'scenarios') {
+    const out = opt(args, '--out', null) ? path.resolve(opt(args, '--out')) : path.join('/tmp', `sub-human-lab-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+    const { runScenarios } = require('./lab.js');
+    const { ok, results } = await runScenarios({ out, only: opt(args, '--only', null), keep: args.includes('--keep') });
+    console.log('');
+    for (const r of results) console.log(`${r.status.toUpperCase().padEnd(8)} ${r.id.padEnd(16)} ${Math.round(r.ms / 1000)} s  ${r.reason || r.checks.filter(c => c.status !== 'pass').map(c => `${c.status}: ${c.name}`).join('; ')}`);
+    console.log(`\n${ok ? 'SCENARIOS OK' : 'SCENARIOS FAILED'}: evidence in ${out}`);
+    process.exit(ok ? 0 : 1);
+  }
   if (cmd === 'up') return up(args);
   if (cmd === 'down') return down();
   const st = manualState();
@@ -593,7 +608,7 @@ async function main() {
     }
     return console.log(`latency ${ms} ms each way`);
   }
-  console.error('usage: harness.js run [--out DIR] | up [--host-seat NAME] [--joiners A,B] | status | say [--to NAME] TEXT | cut | heal | latency MS | down');
+  console.error('usage: harness.js run [--out DIR] | scenarios [--only ID] [--out DIR] [--keep] | up [--host-seat NAME] [--joiners A,B] | status | say [--to NAME] TEXT | cut | heal | latency MS | down');
   process.exit(2);
 }
 

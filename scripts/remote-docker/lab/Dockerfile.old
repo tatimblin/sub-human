@@ -1,0 +1,6 @@
+# devbox-old: the previous release (plugin 0.2.0, git ref cb4d344, before the transport registry and the serve shim)
+# for the version-skew scenarios. The build context is `git archive cb4d344 plugin/sub-human` extracted to a temp dir
+# (scripts/remote-docker/lab.js buildOld); the plugin is baked in, read-only, at /plugin.
+FROM sub-human-lab:node24
+COPY plugin/sub-human /plugin
+RUN chmod -R a-w /plugin

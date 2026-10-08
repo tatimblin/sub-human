@@ -1,19 +1,27 @@
 'use strict';
-// Opt-in (npm run test:remote-docker; not part of npm test): remote rooms over real SSH against a devbox container
-// behind toxiproxy, the joiner on this machine (scripts/remote-docker/harness.js run). Skipped when Docker is not
-// running. The evidence bundle goes to SUB_HUMAN_PROOF_DIR, else /tmp/sub-human-remote-proof-<timestamp>.
+// Opt-in (npm run test:remote-docker; not part of npm test): the sub-human lab's scenario suite (harness.js scenarios:
+// devbox, devbox-old 0.2.0, bastion, joiner-a, joiner-b, toxiproxy, corp-proxy, tls-front; README.md). Skipped
+// when Docker is not running. Passes unless a scenario FAILED (PENDING: a feature not built yet; BUG: a known plugin
+// bug, fatal with LAB_STRICT=1). Evidence in LAB_OUT, else /tmp/sub-human-lab-<time>/. LAB_ONLY=id[,id] narrows it.
+// The older single-devbox run with this Mac as the joiner is npm run test:remote-docker:mac.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
 const docker = spawnSync('docker', ['info', '--format', '{{.ServerVersion}}'], { encoding: 'utf8' });
 const skip = docker.status !== 0 ? 'Docker is not running' : false;
+const mac = process.env.LAB_MAC === '1'; // test:remote-docker:mac
 
-test('remote rooms over ssh: devbox + toxiproxy, the 11 anti-fallback assertions', { skip, timeout: 900_000 }, () => {
-  const args = [path.join(__dirname, 'harness.js'), 'run', ...(process.env.SUB_HUMAN_PROOF_DIR ? ['--out', process.env.SUB_HUMAN_PROOF_DIR] : [])];
-  const r = spawnSync(process.execPath, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], timeout: 880_000 });
-  const tail = r.stdout.split('\n').slice(-40).join('\n');
-  assert.equal(r.status, 0, tail);
-  assert.match(r.stdout, /ALL PASS: evidence in /);
+test(mac ? 'remote rooms over ssh: devbox + toxiproxy, this Mac as the joiner (11 assertions)' : 'sub-human lab: the remote rooms 1.0/1.1 scenarios', { skip, timeout: 900_000 }, async () => {
+  const args = mac
+    ? [path.join(__dirname, 'harness.js'), 'run', ...(process.env.SUB_HUMAN_PROOF_DIR ? ['--out', process.env.SUB_HUMAN_PROOF_DIR] : [])]
+    : [path.join(__dirname, 'harness.js'), 'scenarios', ...(process.env.LAB_OUT ? ['--out', process.env.LAB_OUT] : []), ...(process.env.LAB_ONLY ? ['--only', process.env.LAB_ONLY] : [])];
+  const c = spawn(process.execPath, args, { stdio: ['ignore', 'pipe', 'inherit'] });
+  let out = '';
+  c.stdout.on('data', d => { out += d; process.stdout.write(d); });
+  const code = await new Promise(r => c.on('exit', r));
+  const tail = out.split('\n').slice(-40).join('\n');
+  assert.equal(code, 0, tail);
+  assert.match(out, mac ? /ALL PASS: evidence in / : /SCENARIOS OK: evidence in /);
 });
