@@ -99,6 +99,17 @@ test('planFeedback: structured userFeedback, text fallback, Esc and approval', (
   assert.equal(cc.planFeedback(lines, null), null);
 });
 
+test('planFeedback: the Remote Control deny shapes observed on 2.1.292 (with a note, and bare)', () => {
+  const head = 'The user doesn\'t want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). ';
+  const tail = '\n\nNote: The user\'s next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they\'d prefer you to work, consider saving that to memory for future sessions.';
+  const line = (id, content, extra) => J({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content, is_error: true, tool_use_id: id }] }, toolDenialKind: 'user-rejected', ...extra });
+  const noted = `${head}To tell you how to proceed, the user said:\nDiscard this plan${tail}`;
+  assert.equal(cc.planFeedback([line('p1', noted, { toolUseResult: `Error: ${noted}`, userFeedback: 'Discard this plan' })], 'p1'), 'Discard this plan');
+  assert.equal(cc.planFeedback([line('p1', noted, { toolUseResult: `Error: ${noted}` })], 'p1'), 'Discard this plan', 'the text alone');
+  const bare = `${head}STOP what you are doing and wait for the user to tell you how to proceed.${tail}`;
+  assert.equal(cc.planFeedback([line('p2', bare, { toolUseResult: 'User rejected tool use' })], 'p2'), null);
+});
+
 test('toolUseInput: the model input from the assistant tool_use block', () => {
   const lines = [toolUse('t1', { plan: 'proposal ab12' }), rejected('t1', 'x')];
   assert.deepEqual(cc.toolUseInput(lines, 't1'), { plan: 'proposal ab12' });

@@ -38,6 +38,9 @@
  *   viewable(p, code) -> bool      the plan dialog can show it: stored, <= VIEW_MAX chars, no control or bidi
  *                                  characters (the dialog withholds approval for those); else the card
  *   reminder(p, name) -> string    the re-ask wording (a review closed without an answer is fine to reopen)
+ *   namedIn(ps, prompt, code) -> p|null   the pending proposal a person's words name (hash, else distinctive title / text words)
+ *   choose(me, ps, prompt) -> p    store that pick (members/NAME/pick) and return it, else the oldest (hooks/consent.js)
+ *   picked(me, ps) -> p            Pre(EnterPlanMode): the stored pick when still among ps, else the oldest
  *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
  * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
@@ -85,6 +88,7 @@ function store(code, buf) {
 }
 
 const entriesOf = (me, entries) => entries || room.open(me.code).readAll();
+const kvOf = me => room.open(me.code).store.kv;
 
 function humans(code) {
   return Object.values(identity.readMembers(code) || {})
@@ -166,6 +170,52 @@ const card = (p, code) => cardFor([p], code);
 function viewable(p, code) {
   const t = read(code, p.hash);
   return t != null && t.length <= VIEW_MAX && !UNSAFE_RE.test(t.replace(/\r\n/g, '\n'));
+}
+
+// ---------- which proposal a review opens (the hook picks; the model never does) ----------
+const STOP_WORDS = new Set(('a an and answer approve agree are be can do for from i in is it let me my now object of on one open '
+  + 'or please plan proposal proposals read review see show that the this to view want with you your').split(' '));
+const wordsOf = s => (String(s || '').toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
+
+/**
+ * The pending proposal the person's words name, or null: a hash (a 6–12 hex prefix of exactly one; several
+ * named: the oldest of them), else the proposal with the most words of the prompt that occur in its title and
+ * in no other pending proposal's title (a unique best; "Open v3" -> "Ship v3 Monday"), else the same over the
+ * full texts. Common words ("open", "the", "proposal") never count.
+ */
+function namedIn(ps, prompt, code) {
+  const s = String(prompt || '').toLowerCase();
+  const hex = s.match(/\b[0-9a-f]{6,12}\b/g) || [];
+  const byHash = ps.filter(p => hex.some(t => p.hash.startsWith(t) && ps.filter(q => q.hash.startsWith(t)).length === 1));
+  if (byHash.length) return byHash[0];
+  const words = [...new Set(wordsOf(s))].filter(w => !STOP_WORDS.has(w));
+  if (!words.length || !ps.length) return null;
+  for (const field of [p => title(code, p.hash, p.entry), p => read(code, p.hash) || '']) {
+    const sets = ps.map(p => new Set(wordsOf(field(p))));
+    const scores = sets.map((set, i) => words.filter(w => set.has(w) && sets.every((o, j) => j === i || !o.has(w))).length);
+    const max = Math.max(...scores);
+    if (max > 0 && scores.filter(x => x === max).length === 1) return ps[scores.indexOf(max)];
+  }
+  return null;
+}
+
+/**
+ * members/NAME/pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/consent.js reads it from
+ * the transcript at Pre(EnterPlanMode), or a card call named). A review opens that one while pending, else the oldest.
+ */
+const pickKey = me => `members/${me.name}/pick`;
+const readPick = me => { try { return kvOf(me).get(pickKey(me), null); } catch { return null; } };
+/** Record what prompt names among ps (null when nothing) and return the proposal a review opens next; prompt null (not the person's words): the earlier pick stands. */
+function choose(me, ps, prompt) {
+  if (prompt == null) return picked(me, ps);
+  const hit = namedIn(ps, prompt, me.code);
+  kvOf(me).set(pickKey(me), { hash: hit ? hit.hash : null, at: Date.now() }, { compact: true });
+  return hit || ps[0] || null;
+}
+/** The proposal a review opens among ps (pending, oldest first): the person's pick when it is one of them, else the oldest. */
+function picked(me, ps) {
+  const pk = readPick(me);
+  return (pk && pk.hash && ps.find(p => p.hash === pk.hash)) || ps[0] || null;
 }
 
 /** How the model opens proposal hash for its person: the plan view (the hooks fall back to the card). */
@@ -275,7 +325,6 @@ function decide(code, hash) {
  * BEFORE the overwrite, so a crash between the two never loses the person's own plan.
  */
 const reviewKey = me => `members/${me.name}/review`;
-const kvOf = me => room.open(me.code).store.kv;
 const readReview = me => kvOf(me).get(reviewKey(me), null);
 const writeReview = (me, st) => kvOf(me).set(reviewKey(me), st, { compact: true });
 function clearReview(me) { kvOf(me).delete(reviewKey(me)); }
@@ -317,6 +366,7 @@ function restoreStale(me, { force = false, now = Date.now() } = {}) {
 module.exports = {
   QUESTION_RE, ProposalError,
   readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
+  namedIn, choose, picked, readPick,
   create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, answer, decide, decision, humans, reminder,
   read, hash12, title,
 };

@@ -164,6 +164,7 @@ RoomStore
 | `rows/blocks-<agent>.json` | `hooks/row-hold.js` | SubagentStop block counter |
 | `rows/notices-<name>.json` | `lib/notices.js` | join/leave lines already shown |
 | `members/<name>/review.json` | `hooks/consent.js` (under its lock) | plan-view review phase, mode and plan-file backup |
+| `members/<name>/pick.json` | `hooks/consent.js` (Pre(EnterPlanMode), from the person's latest prompt; a card call naming one) | the pending proposal the person last named; the next review opens it |
 | `<reader>.cursor` | each reader | `deliver-NAME` (the tail child), `read-NAME` (CLI), `mcp-NAME` (`read` tool) |
 | `*.lock` | `lib/lock.js` | O_EXCL lockfiles, body `PID HOST START`; stale ones broken atomically |
 | `<home>/keys/<CODE>/<name>.key`, `.pub` | `hooks/seat-key.js` | Ed25519 seat key pair (dir 0700) |
@@ -212,13 +213,23 @@ The tail batches push entries in a `Batcher` (`lib/tail.js`): flush after `SETTL
 ```
 propose tool (via=agent)          ──► proposal {hash, approvers, path=plans/<hash>.md}
                                         │ push lane to each approver
-approver's Claude: EnterPlanMode ──► consent.js Pre: allow silently, review.json {phase: entering, mode}
-                   ExitPlanMode  ──► consent.js Pre: back up plan file, write proposal text there, ask
+                                        │ the tail's reminder names only the one a review opens next (+ a count)
+approver's Claude: EnterPlanMode ──► consent.js Pre: allow silently, review.json {phase: entering, mode, hash}
+                                      hash = what the person's latest prompt names (cc.lastHumanPrompt: their own words
+                                      only; proposal.choose → members/<name>/pick: a hash, or words only its title / text
+                                      has, "Open v3"), else the earlier pick, else the oldest (never the model's choice)
+                                      plan file path already known → back it up, write the proposal text now (Post: again)
+                   ExitPlanMode  ──► consent.js Pre: always ask with updatedInput.plan = that proposal's text, whatever
+                                      the call carries (stale plan, hand-written copy, other hash, nothing; a blank plan
+                                      waits up to EXIT_INPUT_WAIT_MS for the call's transcript line); the text in the plan
+                                      file, its old content in the backup; a plan of the model's: told, not shown
                                         │ native plan view (scrollable), the person answers
    "Yes …"                        ──► Post(ExitPlanMode): signoff via=human (only if text unedited); restore plan file + mode
-   "Tell Claude what to change"   ──► next ExitPlanMode: cc.planFeedback(transcript) → objection via=human, note byte-exact;
-                                      PermissionRequest: allow with setMode (no dialog), records nothing
-   Esc                            ──► nothing; Stop / next prompt / restore close the review
+   "Tell Claude what to change",  ──► Stop / next ExitPlanMode / prompt: cc.planFeedback(transcript) → objection via=human,
+   phone "Suggest edits"/deny+note    note byte-exact; PermissionRequest: allow with setMode (no dialog), records nothing
+   Esc, phone deny without a note ──► nothing ("closed without answering"); Stop / next prompt / restore close the review
+   no review shown (no hook review) ─► Post(ExitPlanMode): nothing recorded, even for the proposal's exact text (the model
+                                      wrote it into the plan file); the model is told the person has not answered
 fallback (already in plan mode, bypass/dontAsk, clear-context-on-accept, >200k chars):
    AskUserQuestion card           ──► Post(AskUserQuestion): signoff | objection via=human (Not yet, AFK, stale hash: nothing)
 every answer                      ──► lib/proposal.answer (signed, any machine), then decide: on the host only,
@@ -360,6 +371,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `plan-reject-dialog` | §3 | incidental | "No, keep planning" returns deny with the typed feedback. |
 | `plan-reject-user-feedback` | §3 | incidental | The rejected tool_result transcript entry carries top-level userFeedback (cc.planFeedback). |
 | `plan-reject-text` | §3 | incidental | Fallback: the note sits between "the user said:\n" and "\n\nNote: The user's next message". |
+| `plan-reject-remote` | §3 | incidental | Remote Control deny (observed 2.1.292): with a note ("Suggest edits") the terminal's shapes (userFeedback, "the user said:"), an objection; a bare deny says "STOP what you are doing…" with no userFeedback: cc.planFeedback null, nothing recorded. |
 | `permission-denied-auto-only` | §3 | incidental | PermissionDenied fires only for auto-mode classifier denials; no hook carries a user rejection note. |
 | `clear-context-setting` | §3 | API | showClearContextOnPlanAccept: the clear-context approve fires no PostToolUse (cc.clearContextOnPlanAccept). |
 | `task-list-id` | §4 | env | List id: env, team, teammate team, leader team, else session id (changes on /clear). |
@@ -380,6 +392,8 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `hook-async` | §7 | API | Per-hook async/asyncRewake fields. |
 | `stop-additional-context` | §7 | incidental | Stop hookSpecificOutput.additionalContext continues the turn with that text, like a block but without the red "Stop hook error" line or notification (only real blockingErrors get those). |
 | `prompt-origin-composer` | §8 | incidental | prompt.submit origin "composer" is only the person's own Enter (and a --bg dispatch prompt); -p is "sdk", peers "peer" (also from $.session.send), notifications "task-notification". No hook sets it; seen for a --bg dispatch and a mid-turn peer (cc-2.1.292.md Function hooks S2, S6). |
+| `transcript-prompt-origin` | §8 | incidental | A typed prompt's transcript user entry has no origin or {kind:"human"} (also typed through Remote Control: prompt.submit reports that one as "bridge"); peers, notifications, channels and plugins carry their own kind. cc.lastHumanPrompt takes only the person's; hooks/consent.js picks the proposal a review opens from it (cc-2.1.292.md Remote Control). |
+| `bridge-forwarded-rows` | §8 | incidental | Remote Control forwards user and assistant rows, a command hook's systemMessage (hook_system_message, shown as an assistant line) and a few system kinds, never a $.ui.log notice (system informational); an isMeta user row goes as isSynthetic (not shown there, as far as seen). A function hook's result has no systemMessage, so the module reaches the phone only through a turn: mod/deliver.mjs relays room lines and @room results there as a wake while the person types from Remote Control (cc-2.1.292.md Remote Control). |
 | `cross-session-inbound` | §8 | API | crossSessionInbound accept\|hold\|refuse; the orch sets accept. |
 | `harbor-kite-gate` | §8 | env | Cross-session messaging gate (default on). |
 | `pasted-content` | §8 | incidental | Long pastes are wrapped in <pasted_content id="N"> (cc.PASTED_RE). |

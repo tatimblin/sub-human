@@ -229,6 +229,12 @@ const NOTE = '\n\nNote: The user\'s next message';
  * (no rejection on disk yet, not an error result, or rejected with no note, e.g. Esc). Prefers the
  * structured top-level `userFeedback` field on the tool_result entry; falls back to the text after
  * "the user said:\n" (cut at the "Note: The user's next message" suffix).
+ * Remote Control (the phone; observed on 2.1.292) answers the same dialog with the same shapes, so its note is
+ * read the same way: "Suggest edits" / deny with a note is an is_error tool_result, toolDenialKind
+ * "user-rejected", userFeedback "<note>", content "The user doesn't want to proceed with this tool use. The tool
+ * use was rejected (…). To tell you how to proceed, the user said:\n<note>\n\nNote: The user's next message may
+ * contain a correction or preference. …"; a bare deny has no userFeedback and reads "… STOP what you are doing
+ * and wait for the user to tell you how to proceed.\n\nNote: …" (null here: closed without answering).
  * @cc ?.feedbackIsFromUser&&
  * @stability incidental
  */
@@ -266,6 +272,32 @@ function toolUseInput(lines, toolUseId) {
     const c = e && e.message && e.message.content;
     const b = (Array.isArray(c) ? c : []).find(x => x && x.type === 'tool_use' && x.id === toolUseId);
     if (b) return b.input;
+  }
+  return null;
+}
+
+/**
+ * The person's latest prompt in the transcript lines, or null: the newest user entry that is a prompt (not a
+ * tool_result, not isMeta, not a sidechain or a compact summary), taken only when it is the person's own: its
+ * `origin` is absent or kind "human" (a typed prompt, also one typed through Remote Control). Any other kind (a
+ * peer, a task notification, a channel, a plugin's wake, anything unclassified) is not the person's words: null.
+ * Returns {text, at} (at: the entry's timestamp, ms; 0 when it has none).
+ * @cc {kind:"human"}
+ * @stability incidental
+ */
+function lastHumanPrompt(lines) {
+  for (let k = lines.length - 1; k >= 0; k--) {
+    if (!lineHas(lines[k], '"user"')) continue;
+    const e = asEntry(lines[k]);
+    if (!e || e.type !== 'user' || e.isMeta || e.isSidechain || e.isCompactSummary || !e.message) continue;
+    const c = e.message.content;
+    if (Array.isArray(c) && c.some(b => b && b.type === 'tool_result')) continue;
+    const text = contentText(c);
+    if (!text.trim()) continue;
+    const kind = e.origin && typeof e.origin === 'object' ? e.origin.kind : undefined;
+    if (e.origin !== undefined && kind !== 'human') return null;
+    const at = Date.parse(e.timestamp);
+    return { text, at: Number.isFinite(at) ? at : 0 };
   }
   return null;
 }
@@ -522,6 +554,8 @@ const CONTRACT = Object.freeze([
     note: 'The rejected tool_result transcript entry carries top-level userFeedback (cc.planFeedback).' },
   { id: 'plan-reject-text', section: 3, stability: 'incidental', search: ['To tell you how to proceed, the user said:\n', 'Note: The user\'s next message may contain a correction'],
     note: 'Fallback: the note sits between "the user said:\\n" and "\\n\\nNote: The user\'s next message".' },
+  { id: 'plan-reject-remote', section: 3, stability: 'incidental', search: ['STOP what you are doing and wait for the user to tell you how to proceed', '"user-rejected"'],
+    note: 'Remote Control deny (observed 2.1.292): with a note ("Suggest edits") the terminal\'s shapes (userFeedback, "the user said:"), an objection; a bare deny says "STOP what you are doing…" with no userFeedback: cc.planFeedback null, nothing recorded.' },
   { id: 'permission-denied-auto-only', section: 3, stability: 'incidental', search: 'decisionReason.classifier==="auto-mode"',
     note: 'PermissionDenied fires only for auto-mode classifier denials; no hook carries a user rejection note.' },
   { id: 'clear-context-setting', section: 3, stability: 'API', search: 'When true, the plan-approval dialog offers a "clear context" option. Defaults to false.',
@@ -578,6 +612,11 @@ const CONTRACT = Object.freeze([
   { id: 'prompt-origin-composer', section: 8, stability: 'incidental', search: '{kind:"bridge"}:{kind:"composer"}',
     shape: 'case"human":return ~===!0?{kind:"bridge"}:{kind:"composer"};case"plugin":return ~.asUser===!0?',
     note: 'prompt.submit origin "composer" is only the person\'s own Enter (and a --bg dispatch prompt); -p is "sdk", peers "peer" (also from $.session.send), notifications "task-notification". No hook sets it; seen for a --bg dispatch and a mid-turn peer (cc-2.1.292.md Function hooks S2, S6).' },
+  { id: 'transcript-prompt-origin', section: 8, stability: 'incidental', search: ['{kind:"human"}', 'case"human":return'],
+    note: 'A typed prompt\'s transcript user entry has no origin or {kind:"human"} (also typed through Remote Control: prompt.submit reports that one as "bridge"); peers, notifications, channels and plugins carry their own kind. cc.lastHumanPrompt takes only the person\'s; hooks/consent.js picks the proposal a review opens from it (cc-2.1.292.md Remote Control).' },
+  { id: 'bridge-forwarded-rows', section: 8, stability: 'incidental', search: ['[remote-bridge] Sending ', 'attachment.type==="hook_system_message")return!0;if('],
+    shape: 'if((~.type==="user"||~.type==="assistant")&&~.isVirtual)return!1;if(~.type==="attachment"){if(~.attachment.type==="hook_system_message")return!0;',
+    note: 'Remote Control forwards user and assistant rows, a command hook\'s systemMessage (hook_system_message, shown as an assistant line) and a few system kinds, never a $.ui.log notice (system informational); an isMeta user row goes as isSynthetic (not shown there, as far as seen). A function hook\'s result has no systemMessage, so the module reaches the phone only through a turn: mod/deliver.mjs relays room lines and @room results there as a wake while the person types from Remote Control (cc-2.1.292.md Remote Control).' },
   { id: 'cross-session-inbound', section: 8, stability: 'API', search: 'Inbound cross-session peer messages (SendMessage from your other sessions)',
     note: 'crossSessionInbound accept|hold|refuse; the orch sets accept.' },
   { id: 'harbor-kite-gate', section: 8, stability: 'env', search: '"tengu_harbor_kite",!0)',
@@ -655,7 +694,7 @@ module.exports = {
   ENV, sessionId, claudePid, taskListId,
   configDir, sanitizeId, tasksDir, taskFile,
   userSettingsFiles, clearContextOnPlanAccept,
-  readLines, readEntries, parseLines, planFile, planFeedback, toolUseInput, contentText, SAID, NOTE,
+  readLines, readEntries, parseLines, planFile, planFeedback, toolUseInput, lastHumanPrompt, contentText, SAID, NOTE,
   PASTED_RE, unwrapPasted,
   JOB_RE, parseDispatch, agentsCmd, stopCmd, parseAgentsJson, jobs,
   DAEMON_ENV_ALLOW, daemonEnv,

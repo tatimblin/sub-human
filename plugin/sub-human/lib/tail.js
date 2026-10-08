@@ -18,7 +18,8 @@
  *   formatNdBatch(ready, ctx) -> {events, moved}   the hooks module's events for one batch (below)
  *   pullText(lines) -> text | null           "Room since your last turn" over lines, the newest kept under PULL_CAP
  *   missingRowsText(me, sid, {now}?) -> text | null   the Agent calls for this seat's rows that run nowhere
- *   remindersText(me, rm) -> text | null     lib/proposal.js reminder() for each proposal awaiting me (members)
+ *   remindersText(me, rm) -> text | null     lib/proposal.js reminder() for the proposal a review opens next (the
+ *                                            person's pick, else the oldest), the others awaiting me counted (members)
  *   linkLine(status, code) -> {key, text} | null   the one line for a room link that is down (lib/remote/link.js
  *       status): key 'fork' (the mirror no longer matches the host's log) or 'offline' (the host or the daemon is
  *       unreachable); null while it is up
@@ -220,7 +221,12 @@ function missingRowsText(me, sid, { now = Date.now(), rows = require('./rows.js'
 function remindersText(me, rm, { proposal = require('./proposal.js') } = {}) {
   if (me.role === 'orch') return null;
   const ps = proposal.pendingFor(me, rm.readView({ after: Infinity })) || [];
-  return ps.length ? ps.map(p => proposal.reminder(p, me.name)).join('\n') : null;
+  if (!ps.length) return null;
+  // Only the one a review opens next (the person's pick, else the oldest; hooks/consent.js), the others counted, so
+  // the model is never told to open a proposal the hooks will not show.
+  const p = proposal.picked(me, ps);
+  const more = ps.length - 1;
+  return proposal.reminder(p, me.name) + (more ? ` (${more} more await ${me.name}'s answer; the hooks open whichever ${me.name} names next, else the oldest.)` : '');
 }
 
 /**
@@ -517,5 +523,5 @@ function runTail({
 }
 
 module.exports = {
-  runTail, timings, Batcher, formatNdBatch, linkLine, PULL_HEAD,
+  runTail, timings, Batcher, formatNdBatch, linkLine, remindersText, PULL_HEAD,
 };

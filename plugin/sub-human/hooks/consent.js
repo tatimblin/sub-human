@@ -4,21 +4,29 @@
  * plugin/sub-human/hooks/consent.js: consent. A proposal opens in Claude Code's own plan-approval dialog (the
  * native, scrollable plan view: PgUp/PgDn read all of it); the AskUserQuestion card is the fallback.
  *
- * The review phases (review.json, every read-modify-write under proposal.withReview):
- *   Pre(EnterPlanMode): a proposal is pending for me and my mode allows a review: allow silently; 'entering'.
- *   Pre(ExitPlanMode), entering: the proposal the call names (polled from the transcript up to EXIT_INPUT_WAIT_MS:
- *     the hook can run before the call's line is written), else the only pending one. Back up the plan file into
- *     review.json BEFORE writing the canonical text there (a crash loses nothing), then `ask`; 'shown'.
- *     A later ExitPlanMode with feedback records an objection, note byte-exact; 'exiting'.
+ * The review phases (review.json, every read-modify-write under proposal.withReview). The hooks pick the proposal
+ * and own the dialog's text; the model only calls EnterPlanMode, then ExitPlanMode (whatever plan it passes):
+ *   Pre(EnterPlanMode): a proposal is pending for me and my mode allows a review: allow silently; 'entering' with
+ *     hash = the person's pick (lib/proposal.js choose: what their latest prompt in the transcript names, a hash or
+ *     words only its title / text has, "Open v3"; cc.lastHumanPrompt, the person's own words only), else the
+ *     oldest. When the plan file is known already, back it up and write the proposal text there (showEarly; again
+ *     at Post(EnterPlanMode)).
+ *   Pre(ExitPlanMode), entering: always `ask` with updatedInput.plan = that proposal's text, whatever the call
+ *     carries, the text in the plan file (backup into review.json BEFORE the overwrite); 'shown'. A plan of the
+ *     model's own is never shown in a room review: it comes back on close and the model is told. A blank plan:
+ *     the call's transcript line is waited for (EXIT_INPUT_WAIT_MS) to tell the two apart.
+ *     A later ExitPlanMode with feedback ("Tell Claude what to change", or a Remote Control deny with a note)
+ *     records an objection, note byte-exact; 'exiting'. A deny with no note records nothing.
  *   PermissionRequest(ExitPlanMode), exiting: restore the plan file, allow with setMode (no dialog); records nothing.
- *   Post(ExitPlanMode), shown: signoff via=human only for the proposal unedited; restore the file and the mode.
+ *   Post(ExitPlanMode), shown: signoff via=human only for the proposal unedited; restore the file and the mode. A
+ *     dialog no hook opened (the model wrote the text itself) records nothing, and the model is told.
  *   Stop / UserPromptSubmit / Pre(room tools): a review left open is resolved and the model told to exit it.
  * Pre/Post(AskUserQuestion): the card fallback; "Not yet", AFK, stale hashes record nothing. An answer is
- * lib/proposal.js answer, then decide (a no-op on a machine that does not hold the room; its host decides). Post(ExitPlanMode)
- * for the person's own plan offers to propose it. Run with SUB_HUMAN_SHIM=1 (mod/consent.mjs) the output also
- * carries subHuman {reviewOpen}. Outside plan mode the room-tool entry exits before loading anything else.
- * An answer the room refuses (a RoomError: OFFLINE when the link to the host is down, AUTH) is never lost silently:
- * the person is told in a systemMessage on this hook's output, the model that nothing was recorded.
+ * lib/proposal.js answer, then decide (a no-op on a machine that does not hold the room; its host decides). An
+ * answer the room refuses (OFFLINE, AUTH) is never lost silently: a systemMessage tells the person, the context
+ * the model. Post(ExitPlanMode) for the person's own plan offers to propose it. Run with SUB_HUMAN_SHIM=1
+ * (mod/consent.mjs) the output also carries subHuman {reviewOpen}. Outside plan mode the room-tool entry exits
+ * before loading anything else.
  */
 
 const { readInput } = require('../lib/io.js');
@@ -95,6 +103,7 @@ function pre(input, me) {
   if (!hit.length) hit = onlyPending(pending, input.tool_input);
   if (!hit.length) return;
   if (reviewable(input) && hit.every(p => proposal.viewable(p, me.code))) {
+    proposal.choose(me, hit, hit[0].hash); // the review opens the one this call named
     return c.deny(`Open it in the plan view instead: call EnterPlanMode, then ExitPlanMode with plan "proposal ${hit[0].hash}". The hooks show ${me.name} the full proposal and restore the mode after.`);
   }
   c.pre('ask', `room proposal ${hit.map(p => p.hash).join(', ')}`, { updatedInput: proposal.cardFor(hit, me.code) });
@@ -154,20 +163,55 @@ function resolveShown(input, me, st) {
 const EXIT_HOW = 'call ExitPlanMode now (no plan needed, nothing else first): a hook closes the room review without a dialog and restores the mode';
 
 function preEnter(input, me) {
-  const st = readReview(me);
-  if (st && st.phase === 'restore') return c.pre('allow', 'sub-human: restoring the mode after a room review');
+  const old = readReview(me);
+  if (old && old.phase === 'restore') return c.pre('allow', 'sub-human: restoring the mode after a room review');
   const pending = proposal.pendingFor(me).filter(p => proposal.viewable(p, me.code));
   if (!pending.length || !reviewable(input)) return;
-  writeReview(me, { phase: 'entering', mode: input.permission_mode, at: Date.now() });
-  c.pre('allow', `sub-human: opening room proposal ${pending[0].hash} for ${me.name}`);
+  restorePlan(old); // a review left behind: its backup goes back before a new one is taken
+  // The person's pick, else the oldest: never the model's choice. The pick is what the person's latest prompt names
+  // (cc.lastHumanPrompt: only their own words; a peer's or a plugin's prompt keeps the earlier pick), unless a pick
+  // made after that prompt (a card call naming one) stands.
+  const said = cc.lastHumanPrompt(lines(input));
+  const kept = proposal.readPick(me);
+  const p = said && !(kept && kept.at > said.at) ? proposal.choose(me, pending, said.text) : proposal.picked(me, pending);
+  const st = { phase: 'entering', mode: input.permission_mode, at: Date.now(), hash: p.hash, from: p.from || null };
+  writeReview(me, st);
+  showEarly(input, me, st);
+  c.pre('allow', `sub-human: opening room proposal ${p.hash} for ${me.name}`);
+}
+
+/**
+ * Back up the session plan file and write the proposal text there (backup in review.json first, as in preExit),
+ * as early as the path is known: Pre(EnterPlanMode), else Post(EnterPlanMode). Whatever the file held (the
+ * person's plan, a stale plan of the model's) is the backup, restored when the review closes.
+ * Best-effort: no known path, no text, or a failed write leaves preExit to do it.
+ */
+function showEarly(input, me, st) {
+  const file = planFile(input);
+  const text = st.hash ? proposal.read(me.code, st.hash) : null;
+  if (!file || text == null || st.file) return;
+  let backup = null;
+  try { backup = fs.readFileSync(file, 'utf8'); } catch { /* none yet */ }
+  if (backup === text) backup = null;
+  Object.assign(st, { file, backup, restored: false });
+  writeReview(me, st);
+  try { writeFileAtomic(file, text); } catch (err) {
+    c.logError(err, 'consent: plan file (enter)');
+    delete st.file; delete st.backup; delete st.restored;
+    writeReview(me, st);
+  }
 }
 
 function postEnter(input, me) {
   const st = readReview(me);
   if (!st || st.phase === 'restore') return st && c.context('PostToolUse', `sub-human: ${EXIT_HOW}.`);
   if (st.phase !== 'entering') return;
-  c.context('PostToolUse', `sub-human: this plan mode is only to show ${me.name} a room proposal. Call ExitPlanMode now with plan "proposal <hash>"; don't explore, plan or write. If ${me.name} answers "Tell Claude what to change", ${EXIT_HOW}.`);
+  showEarly(input, me, st);
+  c.context('PostToolUse', `sub-human: this plan mode is only to show ${me.name} room proposal ${st.hash}. Call ExitPlanMode now with plan "proposal ${st.hash}"; the hooks put the proposal's text in the dialog whatever plan you pass, so don't explore, plan or write any file. If ${me.name} answers "Tell Claude what to change", ${EXIT_HOW}.`);
 }
+
+/** A "proposal <hash>" stub (or nothing): what the model is told to pass, not a plan of its own. */
+const stub = t => !t.trim() || /^\s*(?:the room )?proposal\s+[0-9a-f]{6,12}\s*\.?\s*$/i.test(t);
 
 function preExit(input, me) {
   const st = readReview(me);
@@ -175,28 +219,36 @@ function preExit(input, me) {
   if (st.phase === 'shown' && st.tool_use_id && st.tool_use_id === input.tool_use_id) return ask(st, me); // the same call again
   if (st.phase === 'shown') { resolveShown(input, me, st); st.phase = 'exiting'; return writeReview(me, st); }
   if (st.phase !== 'entering') { st.phase = 'exiting'; return writeReview(me, st); }
-  // Only a call that names the proposal (a plan the person asked for must never be swapped for one): the model's
-  // own input, from the transcript when the plan file replaced it. A plan the model wrote for its person (plan mode
-  // entered for real work) passes through untouched.
-  const pending = proposal.pendingFor(me).filter(p => proposal.viewable(p, me.code));
-  const own = modelInputWait(input);
-  const plan = input.tool_input && input.tool_input.plan;
-  // The call names nothing we can see (no transcript line in time and a blank plan): plan mode was entered for
-  // this review (phase entering), so it is the only pending proposal. A plan of the person's own has text.
-  const unseen = !own && blank(plan) && pending.length === 1 ? pending : [];
-  const p = named(pending, [input.tool_input, own])[0]
-    || (JSON.stringify(own || '').length < 300 ? onlyPending(pending, own)[0] : null)
-    || unseen[0];
-  if (!p) return clearReview(me);
+  // The hook's review: the proposal Pre(EnterPlanMode) picked, whatever this call carries. The model's input
+  // (a stale plan in the plan file, a hand-written copy, another hash, nothing) never decides what is shown.
+  const p = proposal.pendingFor(me).filter(x => proposal.viewable(x, me.code)).find(x => x.hash === st.hash);
   const file = planFile(input);
-  const text = proposal.read(me.code, p.hash);
+  const text = p ? proposal.read(me.code, p.hash) : null;
+  if (st.file && st.file !== file) { restorePlan(st); delete st.file; delete st.backup; }
+  let backup = null;
+  if (st.file === file && !st.restored) backup = st.backup; // showEarly already backed it up and wrote the text
+  else if (file) {
+    try { backup = fs.readFileSync(file, 'utf8'); } catch { /* none yet */ }
+    if (backup === text) backup = null; // left over from an earlier review: nothing of the person's to keep
+  }
+  // A plan of the model's own (not the proposal, not a stub) is never shown here: the model's input as sent, or
+  // the plan Claude Code read from the file unless that is just what the file held before the review.
+  const ti = input.tool_input || {};
+  // A blank plan: the call's transcript line may not be written yet (2.1.292 runs this hook first), so wait for it.
+  const own = blank(ti.plan) ? modelInputWait(input) : modelInput(input);
+  const mine = t => typeof t === 'string' && !stub(t) && t !== text && proposal.hash12(Buffer.from(t, 'utf8')) !== st.hash;
+  const foreign = mine(own && own.plan) || (mine(ti.plan) && ti.plan !== backup);
+  if (foreign) st.foreign = true;
+  if (!p) {
+    restorePlan(st);
+    Object.assign(st, { phase: 'exiting', said: `${st.hash ? `proposal ${st.hash}` : 'the room proposal'}: nothing to show (already answered, decided or unknown); nothing was recorded.` });
+    return writeReview(me, st);
+  }
   if (!file || text == null) {
+    restorePlan(st);
     Object.assign(st, { phase: 'exiting', card: p.hash });
     return writeReview(me, st);
   }
-  let backup = null;
-  try { backup = fs.readFileSync(file, 'utf8'); } catch { /* none yet */ }
-  if (backup === text) backup = null; // left over from an earlier review: nothing of the person's to keep
   // The backup is on disk (atomically) BEFORE the plan file is overwritten: a crash in between loses nothing,
   // and session-restore puts a stale one back.
   Object.assign(st, { hash: p.hash, from: p.from || null, file, backup, restored: false, tool_use_id: input.tool_use_id || null });
@@ -230,11 +282,45 @@ function permExit(input, me) {
     updatedPermissions: [{ type: 'setMode', mode: st.mode, destination: 'session' }] } } });
 }
 
+/**
+ * ExitPlanMode closed with no review shown although its dialog was a pending proposal's (Pre lost it): nothing
+ * was recorded, and the model must not say otherwise. Returns false when the call was not about a proposal.
+ */
+function unshown(input, me, hashes) {
+  const pending = proposal.pendingFor(me);
+  if (!pending.length) return false;
+  const r = input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {};
+  const ti = input.tool_input || {};
+  if (r.isAgent) return false;
+  const plan = typeof r.plan === 'string' ? r.plan : typeof ti.plan === 'string' ? ti.plan : '';
+  let hit = pending.filter(p => (hashes || []).includes(p.hash));
+  // Its text: but not a plan of my own that I proposed (that is my plan, already in the room).
+  if (!hit.length && plan.trim()) hit = pending.filter(p => p.from !== me.name && p.hash === proposal.hash12(Buffer.from(plan, 'utf8')));
+  if (!hit.length && plan.length < 300) hit = named(pending, [ti, modelInput(input)]);
+  if (!hit.length && !plan.trim()) hit = pending;
+  if (!hit.length) return false;
+  const h = hit.map(p => p.hash).join(', ');
+  proposal.choose(me, hit, hit[0].hash); // the next review opens this one
+  const again = reviewable(input) && hit.every(p => proposal.viewable(p, me.code))
+    ? `call EnterPlanMode, then ExitPlanMode with plan "proposal ${hit[0].hash}"` : `call AskUserQuestion with "proposal ${hit[0].hash}"`;
+  c.context('PostToolUse', `sub-human: nothing was recorded for proposal ${h}: the room review did not open, so that dialog was not ${me.name}'s answer. Don't tell ${me.name} they answered. Ask ${me.name} to answer it again (${again}); do not carry out the proposal.`);
+  return true;
+}
+
+/** For the model, when it passed a plan of its own into a room review: that plan was not shown. */
+const foreignLine = (st, me) => st.foreign ? ` The plan you passed was not shown: this plan mode showed ${me.name} room proposal ${st.hash}, and the plan file is back as it was. If ${me.name} asked you for a plan, present it again afterwards.` : '';
+
 function postExit(input, me) {
   const st = readReview(me);
-  if (!st) return postPlan(input, me);
-  const say = t => c.context('PostToolUse', t);
+  if (!st) return unshown(input, me) || postPlan(input, me);
+  const say = t => c.context('PostToolUse', t + foreignLine(st, me));
+  if (st.phase === 'entering') { // Pre(ExitPlanMode) never opened the review
+    restorePlan(st);
+    clearReview(me);
+    return unshown(input, me, st.hash ? [st.hash] : []) || postPlan(input, me);
+  }
   if (st.phase === 'exiting') {
+    restorePlan(st);
     clearReview(me);
     const card = st.card ? ` The plan view could not show proposal ${st.card}: call AskUserQuestion with "proposal ${st.card}" so ${me.name} answers on the card.` : '';
     return say(`${st.said ? st.said + ' ' : ''}The room review is closed and the mode is restored; this was not a plan to carry out.${card} Return to what you were doing.`);
@@ -372,7 +458,7 @@ function route(input) {
   if (tool === 'AskUserQuestion' && ev === 'PostToolUse') return postAsk(input, me);
   const locked = fn => proposal.withReview(me, () => fn(input, me));
   if (tool === 'EnterPlanMode' && ev === 'PreToolUse') return locked(preEnter);
-  if (tool === 'EnterPlanMode' && ev === 'PostToolUse') return postEnter(input, me); // reads only
+  if (tool === 'EnterPlanMode' && ev === 'PostToolUse') return locked(postEnter);
   if (tool === 'ExitPlanMode' && ev === 'PreToolUse') return locked(preExit);
   if (tool === 'ExitPlanMode' && ev === 'PermissionRequest') return locked(permExit);
   if (tool === 'ExitPlanMode' && ev === 'PostToolUse') return locked(postExit);
