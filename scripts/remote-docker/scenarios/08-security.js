@@ -74,7 +74,7 @@ module.exports = {
     // PIN burn (1.0: sh2 + PIN)
     if (t.features.sh2Pin) {
       const minted = t.features.hostSsh ? host.expand('alice', 'host --ssh host@devbox') : null;
-      const text = minted ? JSON.stringify(minted.json || {}) : host.cli(['invite', '--room', code, '--ssh', 'host@devbox', '--pin']).stdout;
+      const text = minted ? ((minted.json && minted.json.reason) || JSON.stringify(minted.json || {})) : host.cli(['invite', '--room', code, '--ssh', 'host@devbox', '--pin']).stdout;
       const inv = (SH2_RE.exec(text) || [])[0], pin = ((PIN_RE.exec(text) || [])[1] || '').replace(/\D/g, '');
       t.ev.secret(inv && inv.split('.').pop());
       t.ev.secret(pin);
@@ -96,7 +96,7 @@ module.exports = {
       t.ev.write('revoke.txt', r.stdout + r.stderr);
       const keys = lab.exec('devbox', ['cat', '/home/host/.ssh/authorized_keys'], { allowFail: true }).stdout;
       t.check('revoke removes the link\'s authorized_keys line', r.status === 0 && !keys.includes(a.linkId), (r.stdout + r.stderr).trim().slice(0, 120));
-      const serve = lab.exec('devbox', ['sh', '-c', `pgrep -af 'serve --stdio ${code} --link ${a.linkId}' || true`]).stdout.trim();
+      const serve = lab.exec('devbox', ['sh', '-c', `pgrep -af '[s]erve --stdio ${code} --link ${a.linkId}' | grep -v pgrep || true`]).stdout.trim();
       t.check("revoke stops that link's serve", !serve, serve.slice(0, 120) || 'none running');
       const st = await waitState(a.seat, code, ['stopped', 'offline'], 20_000);
       const post = a.seat.say('bob', 'after revoke');

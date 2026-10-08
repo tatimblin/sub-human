@@ -25,7 +25,7 @@
  *       `sub-human listen --port PORT` is spawned detached (log: <home>/listen/listen.log) and awaited for up to
  *       LISTEN_START_MS. RoomError LOCK when it does not come up (the port is taken, say)
  *   stop() -> bool                 SIGTERM the live listener and wait for it to go; false when none ran
- *   run({port?, log?, closedCheckMs?}) -> Promise<reason>   the daemon itself: pid in the state file (LOCK when a live
+ *   run({port?, log?, closedCheckMs?, idleMs?}) -> Promise<{why, port}>   the daemon itself: pid in the state file (LOCK when a live
  *       one holds it), then serve until SIGTERM / SIGINT / SIGHUP. Limits before a handshake completes: at most
  *       PREAUTH_MAX connections in handshake, LISTEN_MAX in all, HANDSHAKE_MS to finish it, Noise-sized frames. Every
  *       closedCheckMs it drops rooms that closed (or are gone) and turns their Tailscale path off (only that path);
