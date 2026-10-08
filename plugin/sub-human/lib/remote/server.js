@@ -35,6 +35,16 @@
  *                    transport closes
  *         blob.get   store.blobs.get(ref), base64;  blob.put  {name, bytes}: name must be plans/<hash12>.md of
  *                    the bytes (content-addressed, at most PROPOSAL_FILE_MAX), written once
+ *         handoff.accept  {id, accept, locator, invites}: lib/handoff.js serverAccept (the ask's target seat of this
+ *                    link, its signed acceptance; host_changed appended); after the reply, afterMoved (the orch job
+ *                    stopped, this machine a mirror of the new host)
+ *         handoff.refuse  {id}: lib/handoff.js serverRefuse
+ *       Host epochs (lib/handoff.js): hello {epoch} from a mirror at a later epoch than this log's is STALE (this
+ *       machine is a host the room moved away from), and the reply carries this log's epoch; append {epoch} from
+ *       another epoch is STALE. Once the log says the room moved to another machine, every op but hello, subscribe
+ *       and blob.get is STALE; a subscribe stream then ends after the lines with the private 'moved' event (this
+ *       link's machine's invite to the new host) and end {reason: 'moved'}. A pending ask for one of the link's
+ *       seats is sent as the private 'handoff' event.
  *         ping       {pong: the host's ms}: the link daemon's heartbeat (lib/remote/link.js). A session whose hello
  *                    carried caps {ping: true} and that then sends no frame for silentMs (LINK_SILENT_MS,
  *                    SUB_HUMAN_LINK_SILENT_MS) is closed: the peer is gone (a half-open link after a sleep)
@@ -49,6 +59,7 @@ const protocol = require('./protocol.js');
 const auth = require('./auth.js');
 const seats = require('../seats.js');
 const proposal = require('../proposal.js');
+const handoff = require('../handoff.js');
 const members = require('../room/members.js');
 const envelope = require('../room/envelope.js');
 const { RoomError, hash12 } = require('../room/store.js');
@@ -56,7 +67,10 @@ const { FOLLOW_POLL_MS, PROPOSAL_FILE_MAX, LINK_SILENT_MS, envMs } = require('..
 
 const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const ANSWERS = new Set(['signoff', 'objection']);
-const WRITES = new Set(['join', 'leave', 'beat', 'append']);
+const WRITES = new Set(['join', 'leave', 'beat', 'append', 'handoff.accept', 'handoff.refuse']);
+const WHILE_MOVED = new Set(['hello', 'subscribe', 'blob.get', 'ping']); // what a host the room moved away from still serves
+const epochOf = store => (typeof store.hostState === 'function' ? store.hostState().epoch : 0);
+const stale = msg => new RoomError('STALE', msg);
 const WIRE_CODES = new Set(Object.values(protocol.CODES));
 const authError = msg => new RoomError('AUTH', msg);
 const invalid = msg => new RoomError('INVALID', msg);
@@ -105,6 +119,7 @@ const stopped = ms => !!(ms.orch && ms.orch.stopped_at);
 function stream(s, id, after) {
   const tailer = s.store.tailer({ after });
   const sent = new Map(); // doc key -> the JSON last sent
+  const priv = { lastId: after }; // the private events sent (lib/handoff.js streamEvent)
   let wasStopped = stopped(s.store.members.read());
   const send = (ev, data) => s.transport.send(protocol.event(id, ev, data));
   const end = reason => { send('end', { reason }); stop(); };
@@ -117,11 +132,14 @@ function stream(s, id, after) {
     }
   }
   function tick() {
-    const { lines, reset } = tailer.poll();
+    const { lines, entries, reset } = tailer.poll();
     if (reset) return end('FORK');
     for (const line of lines) send('entry', line);
+    for (const e of entries) if (e.id > priv.lastId) priv.lastId = e.id;
     const docs = docsOf(s.store);
     sendDocs(docs);
+    const p = handoff.streamEvent(s.store, s.link, priv);
+    if (p) { send(p.ev, p.data); if (p.end) return end('moved'); }
     const now = stopped(docs.get('members'));
     if (now && !wasStopped) return end('closed');
     wasStopped = now;
@@ -137,7 +155,7 @@ function stream(s, id, after) {
 // ---------- ops ----------
 const OPS = {
   hello(s, params) {
-    const { machine, token, invite, pin, caps } = params;
+    const { machine, token, invite, pin, caps, epoch } = params;
     const theirs = protocol.rangeOf(params);
     if (!theirs) throw new RoomError('PROTOCOL', 'hello names no protocol version');
     const v = protocol.negotiate(s.proto, theirs);
@@ -146,13 +164,17 @@ const OPS = {
       throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: { version: client, proto: theirs } }));
     }
     if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) throw invalid('hello needs this machine\'s id');
+    const mine = epochOf(s.store);
+    if (Number.isInteger(epoch) && epoch > mine) {
+      throw stale(`this machine's copy of room ${s.store.code} is at host epoch ${mine} and yours at ${epoch}: the room moved away from this host`);
+    }
     s.link = null;
     s.v = v;
     const r = invite !== undefined ? redeem(s, invite, machine, pin) : token !== undefined ? known(s.store, token, s.linkId) : { link: null };
     s.link = r.link;
     if (caps && caps.ping === true) s.expireSilent();
     // time: the host's clock (ms), so a joiner (sub-human doctor) can measure the skew that SIG_SKEW_MS bounds; additive
-    const out = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null, time: Date.now() };
+    const out = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null, epoch: mine, time: Date.now() };
     if (r.token) out.token = r.token;
     return out;
   },
@@ -178,8 +200,13 @@ const OPS = {
     return { ok: s.store.members.beat(name, { presence }) };
   },
 
-  append(s, { payload }) {
+  append(s, { payload, epoch }) {
     if (!payload || typeof payload !== 'object') throw invalid('append needs {payload}');
+    const mine = epochOf(s.store);
+    if (Number.isInteger(epoch) && epoch !== mine) {
+      throw stale(epoch < mine ? `room ${s.store.code} changed hosts (epoch ${mine}); this copy is at ${epoch}: try again once it has caught up`
+        : `this host is at epoch ${mine} and the room at ${epoch}: the room moved away from this host`);
+    }
     own(s, payload.from);
     if (payload.via === 'system') throw authError('a link never writes via "system"; the host writes the room\'s own entries');
     const entry = s.store.place(payload);
@@ -202,6 +229,14 @@ const OPS = {
     const b = s.store.blobs.get(ref);
     return { bytes: b ? b.toString('base64') : null };
   },
+
+  'handoff.accept'(s, params) {
+    const r = handoff.serverAccept(s.store, s.link, params);
+    s.later = () => handoff.afterMoved(s.store, { job: r.job });
+    return { ok: true, epoch: r.epoch, entry: r.entry };
+  },
+
+  'handoff.refuse'(s, params) { return handoff.serverRefuse(s.store, s.link, params); },
 
   'blob.put'(s, { name, bytes }) {
     if (typeof bytes !== 'string') throw invalid('blob.put needs {name, bytes: base64}');
@@ -226,6 +261,7 @@ class Session {
     this.version = version;
     this.v = null; // the version hello chose
     this.link = null;
+    this.later = null; // work an op leaves for after its reply (handoff.accept)
     this.streams = new Set(); // {tick, stop}
     this.silentMs = silentMs;
     this.heard = Date.now();
@@ -255,11 +291,18 @@ class Session {
     try { out = protocol.reply(f.id, this.run(f)); } catch (e) { out = this.failure(f, e); }
     if (WRITES.has(f.op)) for (const st of [...this.streams]) st.tick(); // the write's lines before its reply
     this.transport.send(out);
+    const later = this.later;
+    this.later = null;
+    if (later) setImmediate(() => { try { later(); } catch (e) { this.log(`sub-human serve: after ${f.op}: ${e && e.stack || e}`); } });
   }
 
   run({ id, op, params }) {
     if (!Object.hasOwn(OPS, op)) throw new RoomError('PROTOCOL', `unknown op "${op}"`);
     if (op !== 'hello' && !this.link) throw authError('say hello with this link\'s token first');
+    if (!WHILE_MOVED.has(op) && handoff.movedAway(this.store)) {
+      const h = this.store.hostState();
+      throw stale(`room ${this.store.code} moved to ${h.host}'s machine (host epoch ${h.epoch}); this host takes no more writes`);
+    }
     return OPS[op](this, params && typeof params === 'object' ? params : {}, id);
   }
 

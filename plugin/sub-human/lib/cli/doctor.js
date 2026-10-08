@@ -36,7 +36,7 @@
  *   diagnose(opts) -> Promise<Report>   Report = {generated_at, versions, checks, links, authorizedKeys}
  *   format(report, {color}?) -> string
  *   bundle(report, {salt?, env?}?) -> object   allowlisted fields only, every free text through redactor()
- *   redactor({home?, hosts?, users?, rooms?, salt?}) -> (text) -> text   ~ for paths under $HOME; hashed room codes, hostnames, users
+ *   redactor({home?, hosts?, users?, rooms?, members?, salt?}) -> (text) -> text   ~ for paths under $HOME; hashed room codes, member names, hostnames, users
  *                and IPs; invites, tokens, long hex and secrets cut; SSH public keys as a SHA256 fingerprint prefix
  *   helloProbe(spec, code, {timeoutMs, env}?) -> Promise<{ok, ms, reply?, error?, stderr?}>
  *   main(args) -> Promise<exitCode>
@@ -260,7 +260,9 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
   if (st.pid) daemon = { running: lib('io.js').isAlive(st.pid), pid: st.pid }; // the state record's own pid wins
   const recent = lastLogError(code);
   const out = { code, transport: { kind: spec.kind, describe, user: spec.user, host: spec.host, port: spec.port, home: spec.home },
-    credential: l.token ? 'token' : l.invite ? 'invite (not redeemed yet)' : 'none', daemon, state: st, recent };
+    credential: l.token ? 'token' : l.invite ? 'invite (not redeemed yet)' : 'none', daemon, state: st, recent,
+    // the room's host moved (lib/handoff.js): the link file was re-pointed at the new host; reached once a token came
+    moved: l.moved ? { epoch: l.moved.epoch, host: l.moved.host, locator: l.moved.locator, demoted: !!l.moved.demoted, reached: !!l.moved.reached_at } : null };
   if (!quick) {
     const r = await helloProbe(spec, code, { timeoutMs, env });
     const reply = r.reply || {};
@@ -283,9 +285,15 @@ function linkChecks(d) {
   if (d.state.rttMs !== undefined) bits.push(`rtt ${d.state.rttMs} ms`);
   const lastError = d.state.lastError || (d.recent.length ? d.recent.at(-1).replace(/^\S+ sub-human link \S+: /, '') : null);
   if (lastError && d.state.state !== 'up') bits.push(`last error: ${lastError}`);
+  if (d.moved) {
+    const where = `${d.moved.host || 'another'}'s machine${d.moved.locator ? ` (${d.moved.locator})` : ''}${d.moved.epoch !== undefined ? `, host epoch ${d.moved.epoch}` : ''}`;
+    bits.push(d.moved.reached ? `the room moved to ${where}; this link follows it` : `the room moved to ${where}; not reached from here yet`);
+  }
   let status = d.state.state === 'up' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
   let fix;
   if (d.state.state === 'fork') fix = `sub-human link --reset ${d.code}`;
+  else if (d.moved && !d.moved.reached && d.state.state !== 'up') fix = `if this machine cannot reach the new host, ask ${d.moved.host || 'its host'} for an invite it can use (/sub-human host there), then /sub-human join NAME INVITE PIN`;
+  else if (/STALE/.test(lastError || '')) fix = 'this copy speaks to a host the room moved away from: sub-human handoff --status shows where it is';
   else if (!d.daemon.running && d.state.state !== 'up') fix = `the join hook starts the daemon: /sub-human join again, or run sub-human link ${d.code} in a shell`;
   if (d.reach) {
     const r = d.reach;
@@ -424,7 +432,7 @@ function fingerprint(b64) {
   try { return 'SHA256:' + crypto.createHash('sha256').update(Buffer.from(b64, 'base64')).digest('base64').replace(/=+$/, '').slice(0, 12); } catch { return 'SHA256:?'; }
 }
 
-function redactor({ home = os.homedir(), hosts = [], users = [], rooms = [], salt = crypto.randomBytes(8).toString('hex') } = {}) {
+function redactor({ home = os.homedir(), hosts = [], users = [], rooms = [], members = [], salt = crypto.randomBytes(8).toString('hex') } = {}) {
   const homes = [...new Set([home, (() => { try { return fs.realpathSync(home); } catch { return home; } })()].filter(h => h && h !== '/'))].sort((a, b) => b.length - a.length);
   const names = [...new Set([...hosts, os.hostname(), os.hostname().split('.')[0]].filter(h => h && h.length > 2 && h !== 'localhost'))].sort((a, b) => b.length - a.length);
   const people = [...new Set([...users, (() => { try { return os.userInfo().username; } catch { return ''; } })()].filter(u => u && u.length > 2))];
@@ -438,6 +446,7 @@ function redactor({ home = os.homedir(), hosts = [], users = [], rooms = [], sal
     for (const n of names) s = s.replace(new RegExp(`(?<![\\w.-])${esc(n)}(?![\\w-])`, 'g'), `host-${hash8(n, salt)}`);
     for (const u of people) s = s.replace(new RegExp(`(?<![\\w.-])${esc(u)}(?=@)`, 'g'), `user-${hash8(u, salt)}`);
     for (const r of rooms) s = s.replace(new RegExp(`(?<![\\w-])${esc(r)}(?![\\w-])`, 'g'), `room-${hash8(r, salt)}`);
+    for (const m of members) s = s.replace(new RegExp(`(?<![\\w.-])${esc(m)}(?![\\w-])`, 'g'), `member-${hash8(m, salt)}`);
     // any other user@host (an email, an ssh destination this machine has no link to)
     s = s.replace(/(?<![\w.-])([A-Za-z0-9_.+-]+)@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/g, (m, u, h) => `user-${hash8(u, salt)}@host-${hash8(h, salt)}`);
     s = s.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, m => `ip-${hash8(m, salt)}`);
@@ -457,6 +466,7 @@ function bundle(report, { salt, env = process.env } = {}) {
     hosts: links.map(d => d.transport.host).filter(Boolean),
     users: links.map(d => d.transport.user).filter(Boolean),
     rooms: links.map(d => d.code),
+    members: links.map(d => d.moved && d.moved.host).filter(m => m && m.length > 1),
   });
   const config = lib('config.js');
   const timings = Object.fromEntries(Object.entries(config).filter(([k, v]) => /^[A-Z][A-Z0-9_]+$/.test(k) && (typeof v === 'number' || typeof v === 'boolean')));
@@ -472,6 +482,7 @@ function bundle(report, { salt, env = process.env } = {}) {
       room: `room-${hash8(d.code, s)}`,
       transport: { kind: d.transport.kind, host: d.transport.host ? `host-${hash8(d.transport.host, s)}` : undefined, user: d.transport.user ? `user-${hash8(d.transport.user, s)}` : undefined, port: opt(d.transport.port) },
       credential: d.credential,
+      moved: d.moved ? { epoch: d.moved.epoch, demoted: d.moved.demoted, reached: d.moved.reached } : undefined,
       daemon: { running: d.daemon.running },
       state: { state: d.state.state, since: opt(d.state.since), attempt: opt(d.state.attempt), rttMs: opt(d.state.rttMs), queued: opt(d.state.queued), lastError: d.state.lastError ? red(d.state.lastError) : undefined, source: d.state.source },
       reach: d.reach ? { ok: d.reach.ok, ms: d.reach.ms, skipped: d.reach.skipped, error: d.reach.error ? red(d.reach.error) : undefined, protocol: d.reach.protocol, skewMs: d.reach.skewMs, ssh_error: d.reach.stderr ? red(d.reach.stderr).split('\n').slice(-3) : undefined } : undefined,

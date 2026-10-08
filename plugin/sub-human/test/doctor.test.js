@@ -64,7 +64,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   // this machine: another home, linked to that room over the pipe transport, with no daemon running
   const home = h.freshHome(t);
   const user = h.tmpDir('sh-user-', t);
-  links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: 'tok-' + crypto.randomBytes(16).toString('hex'), created_at: new Date().toISOString() });
+  links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: 'tok-' + crypto.randomBytes(16).toString('hex'), created_at: new Date().toISOString(), moved: { epoch: 2, host: 'carolyn', locator: 'pipe:' + hostHome } });
   fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'down', since: new Date(Date.now() - 120_000).toISOString(), attempt: 4, lastError: 'no route to host', queued: 2 }));
   fs.writeFileSync(links.logFile(code), `2026-10-08T10:00:00.000Z sub-human link ${code}: offline: ssh exited 255\n`);
   fs.chmodSync(home, 0o755);
@@ -84,8 +84,9 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.equal(akc.fix, `echo '${KEY}' | sub-human authorize ${LINK_ID} - --room ${code} --file ~/.ssh/authorized_keys`, 'the child\'s HOME is the user dir');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
-  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · host reachable in \\d+ ms; protocol here 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+\\), host 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+\\), speaking v2`));
-  assert.match(lc.fix, /sub-human link /);
+  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+\\), host 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+\\), speaking v2`));
+  assert.match(lc.fix, /ask carolyn for an invite/, 'the room moved and this link never reached the new host');
+  assert.match(lc.detail, /the room moved to carolyn's machine \(pipe:.*, host epoch 2; not reached from here yet/);
   const clock = byId(rep, `clock:${code}`);
   assert.equal(clock.status, 'pass', 'the host\'s hello carries its time: one machine, no skew');
   assert.match(clock.detail, /^this machine is \d+ s (behind|ahead of) the host$/);
@@ -123,7 +124,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   const text = fs.readFileSync(out, 'utf8');
   const b = JSON.parse(text);
   assert.equal(b.kind, 'sub-human-doctor-bundle');
-  for (const secret of [home, hostHome, user, code, KEY_B64, links.get(code).token]) assert.ok(!text.includes(secret), `the bundle holds ${secret}`);
+  for (const secret of [home, hostHome, user, code, KEY_B64, links.get(code).token, 'carolyn']) assert.ok(!text.includes(secret), `the bundle holds ${secret}`);
   assert.equal(b.links[0].state.queued, 2);
   assert.equal(b.links[0].reach.ok, true);
   assert.match(b.authorized_keys.lines[0].key, /^ssh-ed25519 SHA256:[A-Za-z0-9+/]{12}$/);

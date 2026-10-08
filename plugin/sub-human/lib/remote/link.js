@@ -55,6 +55,13 @@
  *       flush?: {at, sent, unsent: [{text, why}]}} (state connecting | online | offline | fork | stopped) and to
  *       links/<code>.state.json (lib/room/links.js LinkState, for doctor and the statusline: up | connecting |
  *       down, attempt, lastError, rttMs, queued); each dial and each time it is online is a line in the log.
+ *       A planned handoff (lib/handoff.js): the private 'handoff' event is kept for this machine's seat (onAsk);
+ *       'moved' re-points the link file at the new host (onMoved) and, with the stream's end {reason: 'moved'},
+ *       redials there at once, or stops with the reason when no invite came; this machine named as the new host:
+ *       the accepting hook stops it (or it stops itself HANDOFF_SELF_STOP_MS later). The hello and every append
+ *       carry the mirror's host epoch (STALE on a mismatch); a make-before-break redial says hello with the epoch
+ *       the mirror holds at that moment, so a copy that already took a host_changed is never sent back to the old
+ *       host's epoch.
  *       Link = {state() -> string, stop(reason), wake(why?) -> Promise (redial now), done: Promise<reason>}
  *   linkTimings(over?) -> {retryMs, retryMaxMs, pingMs, pongMs, deadMs, wakeTickMs, wakeGapMs, netPollMs}
  *   nextDelay(prev, base, cap, random?) -> ms;  wakeWatch({onWake, tickMs, gapMs, clock?, mono?}) -> unwatch;
@@ -96,7 +103,9 @@ const config = require('../config.js');
 const realClock = require('../clock.js');
 
 const BIN = path.join(__dirname, '..', '..', 'scripts', 'sub-human');
-const RELAY = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put']);
+const RELAY = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put', 'handoff.accept', 'handoff.refuse']);
+const HANDOFF_SELF_STOP_MS = 10_000;
+const handoff = () => require('../handoff.js');
 const STOPPED = new Set(['fork', 'stopped']);
 const hash12 = data => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12); // lib/room/store.js's, without loading a store
 
@@ -361,7 +370,8 @@ async function serveMirror({
       }
     }
     if (state !== 'online') throw new RoomError(state === 'fork' ? 'FORK' : 'OFFLINE', `the link is ${state}${reason ? `: ${reason}` : ''}`);
-    return client.request(op, p);
+    const epoch = op === 'append' && typeof mirror.hostState === 'function' ? mirror.hostState().epoch : undefined;
+    return client.request(op, epoch === undefined ? p : { ...p, epoch });
   }
 
   function stop(st, why, code = null) {
@@ -392,7 +402,7 @@ async function serveMirror({
     if (c) c.close();
     lastError = e.message;
     log(`offline: ${e.message}`);
-    setState('offline', e.message);
+    setState('offline', handoff().whyOffline(mirror.code, e.message));
     if (dialing || retry) return; // that dial's outcome, or the retry already set, decides
     delay = nextDelay(delay, T.retryMs, T.retryMaxMs, random);
     retry = clock.setTimeout(() => { retry = null; dial('retry'); }, delay);
@@ -452,13 +462,33 @@ async function serveMirror({
     try {
       if (ev === 'entry') { if (!held(mirror, data)) prefetch(c, mirror.applyLine(data)); }
       else if (ev === 'doc') applyDoc(data);
+      else if (ev === 'handoff') handoff().onAsk(mirror, data);
+      else if (ev === 'moved') moved(data);
       else if (ev === 'end' && c === client) {
         if (data.reason === 'closed') stop('stopped', 'the room was closed');
+        else if (data.reason === 'moved') {
+          if (movedHere) return; // this machine is the new host: the accepting hook's reply is still to come on c
+          client = null;
+          clock.clearTimeout(hb);
+          c.close();
+          setState('offline', 'the room moved; reconnecting to its new host');
+          redial('the room moved');
+        }
         else fail(new RoomError(data.reason, data.reason === 'FORK' ? 'the host log was reset' : 'the connection to the host closed'));
       }
     } catch (e) {
       stop(e.code === 'FORK' ? 'fork' : 'stopped', e.message, e.code === 'FORK' ? 'FORK' : null);
     }
+  }
+
+  let movedHere = false;
+  function moved(data) {
+    const r = handoff().onMoved(mirror, data);
+    log(`moved: ${r.reason}`);
+    if (r.self) {
+      movedHere = true; // the accepting hook takes the room over, then stops this daemon; its reply is still to come
+      setTimeout(() => stop('stopped', r.reason), HANDOFF_SELF_STOP_MS).unref();
+    } else if (r.stop) stop('stopped', r.reason);
   }
 
   /** This machine's live seats renew their lease on the host, so one that lapsed while the link was down is back,
@@ -579,11 +609,12 @@ async function connectLink(code) {
   const kind = l.transport && l.transport.kind;
   if (!transports().get(kind)) throw new RoomError('PROTOCOL', `unknown transport "${kind}" (${transports().kinds().join(', ')})`);
   const cred = l.token ? { token: l.token } : { invite: l.invite, ...(typeof l.pin === 'string' ? { pin: l.pin } : {}) };
-  const opts = { machine: require('../home.js').machineId(), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, ...cred };
+  const epoch = require('../room/store.js').open(code).hostState().epoch;
+  const opts = { machine: require('../home.js').machineId(), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...cred };
   const c = await require('./client.js').connect(transports().open(l.transport, { code }), opts);
   if (!l.token) {
     const { invite, pin, ...rest } = l; // an sh2 invite's PIN is spent with it
-    links.set(code, { ...rest, token: c.token });
+    links.set(code, { ...rest, token: c.token, ...(rest.moved ? { moved: { ...rest.moved, reached_at: new Date().toISOString() } } : {}) });
   }
   return c;
 }

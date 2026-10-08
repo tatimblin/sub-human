@@ -10,6 +10,8 @@
  *       hello carries {v, proto, client} (lib/remote/protocol.js): the server picks the version; a version outside
  *       this end's range, or a refusal from a host too old or too new, is PROTOCOL with skewMessage (who must update).
  *       pin: an sh2 invite's PIN (checked by the host, never here). proto / version: fakes for the skew tests.
+ *       epoch: the mirror's host epoch (lib/handoff.js), sent in the hello; the server's is client.epoch (0 from a
+ *       server that sends none).
  *       transport may also be a Promise of one (lib/remote/transports/index.js open()). Says hello; resolves once the server answered (the token from a redeemed invite is on client.token).
  *       helloMs (default deadlineMs) bounds the hello alone: a transport such as ssh connects before it answers.
  *       A refused hello closes the transport and rejects.
@@ -51,7 +53,7 @@ class Client {
     this.closed = false;
     this.pending = new Map(); // id -> {resolve, reject, timer}
     this.streams = new Map(); // subscribe id -> onEvent
-    this.token = this.link = this.room = this.serverCaps = null;
+    this.token = this.link = this.room = this.serverCaps = this.epoch = null;
     transport.onFrame(f => this._receive(f));
     transport.onClose(() => this._closed());
   }
@@ -134,7 +136,7 @@ class Client {
  * @returns {Promise<Client>}
  */
 async function connect(transport, opts) {
-  const { machine, token, invite, pin, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
+  const { machine, token, invite, pin, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
   const proto = opts.proto || protocol.PROTO, version = opts.version || protocol.PLUGIN_VERSION;
   const c = new Client(await transport, { deadlineMs });
   const cred = invite !== undefined ? { invite, ...(pin !== undefined ? { pin } : {}) } : token !== undefined ? { token } : {};
@@ -145,7 +147,7 @@ async function connect(transport, opts) {
   try {
     let r;
     try {
-      r = await c._request('hello', { v: need, proto, client: version, caps, machine, ...cred }, ++c.seq, helloMs);
+      r = await c._request('hello', { v: need, proto, client: version, caps, machine, ...cred, ...(Number.isInteger(epoch) ? { epoch } : {}) }, ++c.seq, helloMs);
     } catch (e) {
       throw olderHost(e, me) || e;
     }
@@ -153,7 +155,7 @@ async function connect(transport, opts) {
     if (!theirs || r.v < proto.min || r.v > proto.max || r.v < need) {
       throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: r.server, proto: theirs || { min: r.v, max: r.v } }, joiner: me }));
     }
-    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null });
+    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null, epoch: Number.isInteger(r.epoch) ? r.epoch : 0 });
   } catch (e) {
     c.close();
     throw e;
