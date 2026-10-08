@@ -57,9 +57,10 @@
  *       or the host log reset) stops it, keeps the outbox, and logs loudly: `sub-human link --reset CODE`
  *       re-mirrors. AUTH or PROTOCOL at hello, or the room closed, stop it too.
  *       Every change is written to the mirror's document `link` {pid, state, since, reason?, code?, queued?,
- *       flush?: {at, sent, unsent: [{text, why}]}} (state connecting | online | offline | fork | stopped) and to
- *       links/<code>.state.json (lib/room/links.js LinkState, for doctor and the statusline: up | connecting |
- *       down, attempt, lastError, rttMs, queued); each dial and each time it is online is a line in the log.
+ *       flush?: {at, sent, unsent: [{text, why}]}} and to links/<code>.state.json (lib/room/links.js LinkState, for
+ *       doctor, the room row and the statusline: attempt, lastError, rttMs, queued), both in the one vocabulary
+ *       online | connecting | offline | fork | stopped (the state file says connecting while a redial of an offline
+ *       link is under way); each dial and each time it is online is a line in the log.
  *       A planned handoff (lib/handoff.js): the private 'handoff' event is kept for this machine's seat (onAsk);
  *       'moved' re-points the link file at the new host (onMoved) and, with the stream's end {reason: 'moved'},
  *       redials there at once, or stops with the reason when no invite came; this machine named as the new host:
@@ -326,7 +327,6 @@ function held(mirror, line) {
 }
 const PLACED_ALREADY = /placed already/; // lib/room/store.js: its nonce is in the log, so an earlier try landed
 const clip = (s, n = 200) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-const PUBLIC = { online: 'up', connecting: 'connecting' };
 const FATAL = new Set(['FORK', 'AUTH', 'PROTOCOL']);
 
 /**
@@ -352,7 +352,7 @@ async function serveMirror({
   function publish() {
     const d = { ...doc, ...(box.size() ? { queued: box.size() } : {}), ...(flushed ? { flush: flushed } : {}) };
     try { mirror.kv.set('link', d); } catch (e) { log(`status: ${e.message}`); }
-    const p = PUBLIC[state] || (dialing ? 'connecting' : 'down');
+    const p = state === 'offline' && dialing ? 'connecting' : state; // a redial under way reads connecting
     if (p !== pub) { pub = p; pubSince = new Date(clock.now()).toISOString(); }
     const rec = { state: p, since: pubSince, attempt: attempts, lastError, rttMs, queued: box.size(), pid: process.pid, detail: state, at: new Date(clock.now()).toISOString() };
     try { saveState(rec); } catch (e) { log(`state: ${e.message}`); }

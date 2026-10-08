@@ -317,7 +317,7 @@ test('link: the daemon stops with no seat of this machine left, offline too (by 
   assert.equal(stopped, 'no seat of this machine is left in the room');
 });
 
-test('tail: one line for a link that is down, keyed fork or offline; none while it is up', () => {
+test('tail: one line for a link that is not online, keyed fork, stopped or offline; none while it is online or connecting', () => {
   assert.equal(linkLine({ running: true, state: 'online' }, 'vole-1234'), null);
   assert.equal(linkLine({ running: true, state: 'connecting' }, 'vole-1234'), null);
   assert.deepEqual(linkLine({ running: false, state: 'fork' }, 'vole-1234'), {
@@ -326,5 +326,6 @@ test('tail: one line for a link that is down, keyed fork or offline; none while 
   assert.deepEqual(linkLine({ running: true, state: 'offline', reason: 'the link closed' }, 'vole-1234'), {
     key: 'offline', text: 'room link: OFFLINE (the link closed); @room posts are queued and sent when it is back, answers are refused' });
   assert.match(linkLine({ running: false }, 'vole-1234').text, /the link daemon is not running/);
-  assert.match(linkLine({ running: false, state: 'stopped', reason: 'the room was closed' }, 'vole-1234').text, /the link stopped: the room was closed/);
+  assert.deepEqual(linkLine({ running: false, state: 'stopped', reason: 'the room was closed' }, 'vole-1234'), {
+    key: 'stopped', text: 'room link: STOPPED (the room was closed); @room posts are refused' });
 });

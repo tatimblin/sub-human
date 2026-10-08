@@ -20,9 +20,10 @@
  *   missingRowsText(me, sid, {now}?) -> text | null   the Agent calls for this seat's rows that run nowhere
  *   remindersText(me, rm) -> text | null     lib/proposal.js reminder() for the proposal a review opens next (the
  *                                            person's pick, else the oldest), the others awaiting me counted (members)
- *   linkLine(status, code) -> {key, text} | null   the one line for a room link that is down (lib/remote/link.js
- *       status): key 'fork' (the mirror no longer matches the host's log; queued @room posts are kept, not sent) or
- *       'offline' (the host or the daemon is unreachable); null while it is up
+ *   linkLine(status, code) -> {key, text} | null   the one line for a room link that is not online (lib/remote/link.js
+ *       status; the words are lib/room/link-state.js STATES): key 'fork' (the mirror no longer matches the host's
+ *       log; queued @room posts are kept, not sent), 'stopped' (for good: refused, revoked, the room closed) or
+ *       'offline' (the host or the daemon is unreachable); null while it is online or connecting
  *   flushLine(flush) -> text | null   what became of the @room posts queued while the link was down (the daemon's
  *       document `link` flush {sent, unsent: [{text, why}]}): appended to LINK_BACK, or alone when some were not sent
  *   deps (tests): openRoom(code) -> Room (lib/room.js open), heartbeat(me) (identity.heartbeat), rows, notices, orch,
@@ -43,7 +44,7 @@
  *                             (members) and the missing rows' Agent calls; sent at start and when it changes
  *                             (health tick); null clears it
  *   {type:'health', text}     the hash-chain check's line (one per break), and in a room hosted elsewhere the
- *                             link's linkLine each time it goes down (FORK or OFFLINE; nothing while it stays so)
+ *                             link's linkLine each time it goes off (FORK, STOPPED or OFFLINE; nothing while it stays so)
  *                             and LINK_BACK ("room link: back online; …", with flushLine) once it is online
  *                             again: one quiet line, no "left"/"joined" (the daemon renews the seat's lapsed lease)
  *   A planned handoff (lib/handoff.js): the ask waiting for this seat (its machine's mirror) is a chat line for the
@@ -262,8 +263,8 @@ function linkLine(st, code) {
   }
   if (st.running && st.state !== 'offline') return null;
   if (st.running) return { key: 'offline', text: `room link: OFFLINE (${st.reason}); @room posts are queued and sent when it is back, answers are refused` };
-  const why = st.reason ? `the link stopped: ${st.reason}` : 'the link daemon is not running';
-  return { key: 'offline', text: `room link: OFFLINE (${why}); @room posts are refused${kept}` };
+  if (st.state === 'stopped') return { key: 'stopped', text: `room link: STOPPED (${st.reason || 'for good'}); @room posts are refused${kept}` };
+  return { key: 'offline', text: `room link: OFFLINE (the link daemon is not running); @room posts are refused${kept}` };
 }
 function flushLine(f) {
   if (!f || (!f.sent && !(f.unsent || []).length)) return null;

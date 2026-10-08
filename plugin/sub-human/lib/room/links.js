@@ -30,16 +30,18 @@
  * written by the link daemon (lib/remote/link.js) on every change of state and every pong, never by anyone else.
  * Read it; a file whose pid is not alive is a daemon that is gone (state then means nothing).
  *   LinkState = {state, since, attempt, lastError, rttMs, queued, pid, detail, at}
- *     state      'up' (online: hooks' writes cross now) | 'connecting' (dialling: the first connection, or a
- *                redial after a failure, a wake or a network change) | 'down' (waiting to retry, or stopped)
+ *     state      the one link vocabulary (lib/room/link-state.js STATES), as the mirror's document `link` has it:
+ *                'online' (hooks' writes cross now) | 'connecting' (dialling: the first connection, or a redial after
+ *                a failure, a wake or a network change) | 'offline' (waiting to retry) | 'fork' | 'stopped' (both
+ *                for good: `sub-human link --reset CODE` after a fork; a new join after stopped). Files written
+ *                before 0.4.1 say 'up' / 'down'; link-state.js reads those too
  *     since      ISO time this state began
- *     attempt    dials since the link was last up (0 while up)
- *     lastError  the last failure's message, or null (kept while up: why it last went down)
+ *     attempt    dials since the link was last online (0 while online)
+ *     lastError  the last failure's message, or null (kept while online: why it last went offline)
  *     rttMs      the last ping's round trip, or null (no pong yet, or a server without ping)
  *     queued     @room posts waiting in the outbox (lib/remote/outbox.js)
  *     pid        the daemon's pid
- *     detail     the daemon's own state: online | connecting | offline | fork | stopped (fork and stopped are for good:
- *                `sub-human link --reset CODE` after a fork; a new join after stopped)
+ *     detail     the daemon's own state, the same words (it says offline where state says connecting during a redial)
  *     at         ISO time the record was written
  *   stateFile(code) -> string         <home>/links/<code>.state.json
  *   readState(code) -> LinkState | null

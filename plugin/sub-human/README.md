@@ -325,7 +325,7 @@ It checks:
 
 `--quick` skips the hello and the internals check. `--fix` rewrites the shim and its pointer and closes the home's modes. `--bundle [FILE]` writes the same report as JSON for a bug report, redacted: it holds versions, settings, check results, link states and recent link errors, never a message; paths under your home become `~`, room codes, host names, user names and IP addresses are hashed, and SSH keys, tokens and invites are removed (a key is cut to a fingerprint prefix). Read it before you attach it.
 
-The room row shows the link too, in a room hosted elsewhere: `✕ offline 2m · 2 queued` or `… reconnecting (3)` first while it is down, and `⇄ linked` at the end while it is up.
+The room row shows the link too, in a room hosted elsewhere, in the same words as `doctor`, the tail and `~/.sub-human/links/CODE.state.json` (online, connecting, offline, stopped, fork): `✕ offline 2m · 2 queued`, `… connecting (3)`, `✕ stopped` or `✕ FORK: sub-human link --reset` first while it is not online, and `⇄ online` at the end while it is.
 
 ## The room tail
 
@@ -394,6 +394,7 @@ Start with `sub-human doctor` (see **Doctor**): it names most of these and the f
 | No rows in the panel | Accept workspace trust for this folder. After a resume they come back by themselves. |
 | A proposal didn't open | Ask your Claude to "show me the proposal". `sub-human read` shows who a proposal names. |
 | `/sub-human` says it needs Claude Code 2.1.292+ with function hooks on | Update Claude Code, and start it without `--bare` or safe mode; a managed policy that turns hooks off also prevents it. |
+| `room link: STOPPED (…)` | The link stopped for good: the host refused or revoked it, or the room closed. The reason says what to do (usually a new invite: `/sub-human join NAME INVITE PIN`). |
 | `room link: OFFLINE` | The link can't reach the host. It retries by itself (from 1 s, with jitter, up to 10 s; at once after a wake or a network change); `@room` posts are queued, answers are refused, until it is back, and `room link: back online` says when (and how many queued posts went out). `~/.sub-human/links/CODE.log` says why; `~/.sub-human/links/CODE.state.json` holds the link's state. |
 | `room link: OFFLINE (room CODE moved to NAME's machine …, which this machine cannot reach yet …)` | A handoff moved the room and this machine can't reach the new host. Ask its person for an invite your machine can use (`/sub-human host` there), then `/sub-human join NAME INVITE PIN`; over SSH they also admit your key with the line your join shows. |
 | `STALE` | A write or a link reached a host the room has moved away from, or a copy that has not caught up with the move. A copy catches up by itself. An old host that was promoted away runs `sub-human demote CODE INVITE PIN`. |

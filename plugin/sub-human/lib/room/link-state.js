@@ -1,31 +1,44 @@
 'use strict';
 /**
  * plugin/sub-human/lib/room/link-state.js: how this machine's link to a room hosted elsewhere is doing, for the
- * room row (lib/rows.js), the agent statusline (statusline/segments.js) and `sub-human doctor` (lib/cli/doctor.js).
- * Read only, never throws. Zero dependencies beyond lib/io.js, lib/room/links.js and (lazily) lib/remote/link.js.
+ * room row (lib/rows.js), the agent statusline (statusline/segments.js), `sub-human doctor` (lib/cli/doctor.js) and
+ * the tail's link line (lib/tail.js linkLine). Read only, never throws. Zero dependencies beyond lib/io.js,
+ * lib/room/links.js and (lazily) lib/remote/link.js.
+ *
+ * One vocabulary, STATES, everywhere a link's state is written or shown (the daemon's state record and its document
+ * `link`, the row, doctor, the tail):
+ *   online      connected; hooks' writes cross now
+ *   connecting  dialling: the first connection, or a redial (after a failure, a wake, a network change)
+ *   offline     not connected, retrying on its own (or its daemon is not running: the join hook restarts it)
+ *   fork        for good: this copy no longer matches the host's log (`sub-human link --reset CODE`)
+ *   stopped     for good: refused (AUTH, PROTOCOL), revoked, the room closed or moved with no way to follow
+ * Older records said up / down (state file, before 0.4.1): LEGACY maps them (down with detail fork or stopped reads
+ * as that).
  *
  * Sources, best first:
- *   links.readState(code)            the link daemon's record <home>/links/<code>.state.json {state: 'up'|'connecting'|
- *                                    'down', since, attempt, lastError, rttMs, queued, pid, detail, at} (lib/room/
- *                                    links.js). Read defensively: any field may be absent. detail 'fork' reads 'fork'.
- *   the mirror's document `link`     {pid, state: connecting|online|offline|fork|stopped, since, reason?, code?}
- *                                    (lib/remote/link.js status), what older daemons write.
- * A record whose daemon is gone (its pid, else the document's, is not alive) reads 'down': the daemon is not
- * running. A fork stays a fork.
+ *   links.readState(code)            the link daemon's record <home>/links/<code>.state.json {state, since, attempt,
+ *                                    lastError, rttMs, queued, pid, detail, at} (lib/room/links.js). Read defensively:
+ *                                    any field may be absent
+ *   the mirror's document `link`     {pid, state, since, reason?, code?} (lib/remote/link.js status)
+ * A record whose daemon is gone (its pid, else the document's, is not alive) reads 'offline' with lastError "the link
+ * daemon is not running" and dead: true; fork and stopped stay what they are.
  *
  *   read(code) -> State | null       null when this machine has no link to CODE (a room hosted here, or none)
- *       State = {state: 'up'|'connecting'|'down'|'fork', since?, attempt?, lastError?, rttMs?, queued?, pid?,
- *                detail?, dead?, source: 'state-file'|'link-doc'}
- *   indicator(st, {now}?) -> string  the compact segment: "⇄ linked", "… connecting", "… reconnecting (3)",
- *       "✕ offline 2m · 2 queued", "✕ FORK: sub-human link --reset"; '' for null
- *   isDown(st) -> bool               connecting after a first failure, down or fork: worth leading a row with
+ *       State = {state: STATES, since?, attempt?, lastError?, rttMs?, queued?, pid?, detail?, dead?,
+ *                source: 'state-file'|'link-doc'}
+ *   normalize(state, detail?) -> STATES member   an old or new word to the vocabulary (unknown: 'offline')
+ *   indicator(st, {now}?) -> string  the compact segment: "⇄ online", "… connecting", "… connecting (3)",
+ *       "✕ offline 2m · 2 queued", "✕ stopped", "✕ FORK: sub-human link --reset"; '' for null
+ *   isDown(st) -> bool               connecting after a first failure, offline, fork or stopped: worth leading a row with
  *   stateFile(code) -> string        <home>/links/<code>.state.json
+ *   STATES                           Set of the five words
  */
 const { isAlive } = require('../io.js');
 const links = require('./links.js');
 
-const STATES = new Set(['up', 'connecting', 'down', 'fork']);
-const DOC_STATE = { online: 'up', connecting: 'connecting', offline: 'down', stopped: 'down', fork: 'fork' };
+const STATES = new Set(['online', 'connecting', 'offline', 'fork', 'stopped']);
+const LEGACY = { up: 'online', down: 'offline' };
+const FOR_GOOD = new Set(['fork', 'stopped']);
 
 const stateFile = code => links.stateFile(code);
 
@@ -33,10 +46,18 @@ const num = x => (Number.isFinite(Number(x)) && x !== null && x !== '' ? Number(
 const str = x => (typeof x === 'string' && x ? x : undefined);
 const clean = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 
+function normalize(state, detail) {
+  if (FOR_GOOD.has(detail)) return detail;
+  const s = LEGACY[state] || state;
+  return STATES.has(s) ? s : 'offline';
+}
+
 /** The mirror's `link` document (lib/remote/link.js status), or null when it cannot be read. */
 function linkDoc(code) {
   try { return require('../remote/link.js').status(code); } catch { return null; }
 }
+
+const NOT_RUNNING = 'the link daemon is not running';
 
 function read(code) {
   try {
@@ -45,23 +66,21 @@ function read(code) {
   const doc = linkDoc(code);
   let f = null;
   try { f = links.readState(code); } catch { f = null; }
-  if (f && typeof f === 'object' && STATES.has(f.state)) {
+  if (f && typeof f === 'object' && (STATES.has(f.state) || f.state in LEGACY)) {
     const pid = num(f.pid);
     const dead = pid ? !isAlive(pid) : !!(doc && doc.pid && !doc.running);
     const st = clean({
-      state: f.detail === 'fork' ? 'fork' : f.state, since: str(f.since), attempt: num(f.attempt), lastError: str(f.lastError),
+      state: normalize(f.state, f.detail), since: str(f.since), attempt: num(f.attempt), lastError: str(f.lastError),
       rttMs: num(f.rttMs), queued: num(f.queued), pid, detail: str(f.detail), source: 'state-file',
     });
-    if (dead && st.state !== 'fork') return { ...st, state: 'down', lastError: st.lastError || 'the link daemon is not running', dead: true };
+    if (dead && !FOR_GOOD.has(st.state)) return { ...st, state: 'offline', lastError: st.lastError || NOT_RUNNING, dead: true };
     return st;
   }
-  const dead = !!(doc && doc.pid && !doc.running);
-  if (!doc || !doc.state) {
-    return { state: 'down', lastError: 'the link daemon is not running', source: 'link-doc' };
-  }
-  const state = DOC_STATE[doc.state] || 'down';
-  const lastError = str(doc.reason) || (dead ? 'the link daemon is not running' : undefined);
-  return clean({ state: dead && state !== 'fork' ? 'down' : state, since: str(doc.since), lastError, source: 'link-doc' });
+  if (!doc || !doc.state) return { state: 'offline', lastError: NOT_RUNNING, dead: true, source: 'link-doc' };
+  const dead = !!(doc.pid && !doc.running);
+  const state = normalize(doc.state);
+  const lastError = str(doc.reason) || (dead ? NOT_RUNNING : undefined);
+  return clean({ state: dead && !FOR_GOOD.has(state) ? 'offline' : state, since: str(doc.since), lastError, ...(dead ? { dead: true } : {}), source: 'link-doc' });
 }
 
 function ago(iso, now) {
@@ -72,14 +91,20 @@ function ago(iso, now) {
 
 function indicator(st, { now = Date.now() } = {}) {
   if (!st) return '';
+  const state = normalize(st.state, st.detail);
   const queued = st.queued > 0 ? ` · ${st.queued} queued` : '';
-  if (st.state === 'up') return '⇄ linked';
-  if (st.state === 'fork') return '✕ FORK: sub-human link --reset';
-  if (st.state === 'connecting') return st.attempt > 1 ? `… reconnecting (${st.attempt})${queued}` : `… connecting${queued}`;
+  if (state === 'online') return '⇄ online';
+  if (state === 'fork') return '✕ FORK: sub-human link --reset';
+  if (state === 'stopped') return `✕ stopped${queued}`;
+  if (state === 'connecting') return st.attempt > 1 ? `… connecting (${st.attempt})${queued}` : `… connecting${queued}`;
   const t = st.since ? ago(st.since, now) : '';
   return `✕ offline${t ? ` ${t}` : ''}${queued}`;
 }
 
-const isDown = st => !!st && (st.state === 'down' || st.state === 'fork' || (st.state === 'connecting' && st.attempt > 1));
+function isDown(st) {
+  if (!st) return false;
+  const state = normalize(st.state, st.detail);
+  return state === 'offline' || FOR_GOOD.has(state) || (state === 'connecting' && st.attempt > 1);
+}
 
-module.exports = { read, indicator, isDown, stateFile, STATES };
+module.exports = { read, normalize, indicator, isDown, stateFile, STATES };

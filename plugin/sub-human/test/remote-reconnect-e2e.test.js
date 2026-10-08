@@ -59,7 +59,7 @@ function room(t, env) {
 test('remote e2e: a server that stops answering (half-open) is caught by a missed pong and replaced before it is dropped', async t => {
   const r = room(t);
   await h.until(() => r.st().rttMs != null, 5000, 50);
-  assert.equal(r.st().state, 'up');
+  assert.equal(r.st().state, 'online');
   const [old] = children(r.daemon);
   signal(old, 'SIGSTOP'); // the pipe stays open; nothing answers
   r.post('while the old server is frozen');
@@ -72,13 +72,13 @@ test('remote e2e: a server that stops answering (half-open) is caught by a misse
   assert.ok(r.same());
   assert.equal(new Set(ids(r.remote.log(r.code))).size, ids(r.remote.log(r.code)).length, 'no duplicate line');
   assert.equal(r.remote.lib(() => store.open(r.code).verifyChain()).ok, true);
-  assert.equal(r.st().state, 'up');
+  assert.equal(r.st().state, 'online');
   signal(old, 'SIGKILL');
 });
 
 test('remote e2e: a daemon frozen past the wake gap (as after a sleep) redials at once on waking, with no duplicate line', async t => {
   const r = room(t, { SUB_HUMAN_LINK_PING_MS: '60000' }); // no ping in flight: the wake alone redials
-  await h.until(() => r.st().state === 'up', 5000, 50);
+  await h.until(() => r.st().state === 'online', 5000, 50);
   const [old] = children(r.daemon);
   signal(r.daemon, 'SIGSTOP');
   r.post('while the daemon slept');
@@ -97,15 +97,15 @@ test('remote e2e: a daemon frozen past the wake gap (as after a sleep) redials a
 
 test('remote e2e: a seat whose lease lapsed on the host during an outage is renewed on reconnect, with no left/joined line', async t => {
   const r = room(t, { SUB_HUMAN_LINK_RETRY_MS: '2000', SUB_HUMAN_LINK_RETRY_MAX_MS: '2000' });
-  await h.until(() => r.st().state === 'up', 5000, 50);
+  await h.until(() => r.st().state === 'online', 5000, 50);
   const [old] = children(r.daemon);
   signal(old, 'SIGKILL');
-  await h.until(() => r.st().state === 'down', 5000, 20);
+  await h.until(() => r.st().state === 'offline', 5000, 20);
   assert.match(r.st().lastError, /closed/);
   r.host.lib(() => store.open(r.code).members.update(ms => { ms.bob.seen_at = new Date(0).toISOString(); return ms; }));
   assert.equal(r.host.lib(() => leaseFresh(store.open(r.code).members.read().bob)), false, 'the host counts bob gone');
   const before = r.host.log(r.code);
-  await h.until(() => r.st().state === 'up', 8000, 50);
+  await h.until(() => r.st().state === 'online', 8000, 50);
   await h.until(() => r.host.lib(() => leaseFresh(store.open(r.code).members.read().bob)), 3000, 50);
   assert.equal(r.host.lib(() => leaseFresh(store.open(r.code).members.read().bob)), true, 'bob is back');
   assert.equal(r.host.log(r.code), before, 'no left or joined line');

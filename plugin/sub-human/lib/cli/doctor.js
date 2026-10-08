@@ -342,7 +342,7 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
   try { describe = lib('remote/transports/index.js').describe(spec); } catch { /* kind unknown */ }
   let daemon = { running: false };
   try { const s = lib('remote/link.js').status(code); daemon = { running: !!s.running, pid: s.pid || null }; } catch { /* no mirror */ }
-  const st = lib('room/link-state.js').read(code) || { state: 'down' };
+  const st = lib('room/link-state.js').read(code) || { state: 'offline' };
   if (st.pid) daemon = { running: lib('io.js').isAlive(st.pid), pid: st.pid }; // the state record's own pid wins
   const recent = lastLogError(code);
   const out = { code, transport: { kind: spec.kind, describe, user: spec.user, host: spec.host, port: spec.port, home: spec.home },
@@ -372,21 +372,21 @@ function linkChecks(d) {
   const bits = [`${d.transport.describe}`, `daemon ${d.daemon.running ? `running (pid ${d.daemon.pid})` : 'not running'}`, ls.indicator(d.state) || d.state.state];
   if (d.state.rttMs !== undefined) bits.push(`rtt ${d.state.rttMs} ms`);
   const lastError = d.state.lastError || (d.recent.length ? d.recent.at(-1).replace(/^\S+ sub-human link \S+: /, '') : null);
-  if (lastError && d.state.state !== 'up') bits.push(`last error: ${lastError}`);
+  if (lastError && d.state.state !== 'online') bits.push(`last error: ${lastError}`);
   if (d.moved) {
     const where = `${d.moved.host || 'another'}'s machine${d.moved.locator ? ` (${d.moved.locator})` : ''}${d.moved.epoch !== undefined ? `, host epoch ${d.moved.epoch}` : ''}`;
     bits.push(d.moved.reached ? `the room moved to ${where}; this link follows it` : `the room moved to ${where}; not reached from here yet`);
   }
-  let status = d.state.state === 'up' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
+  let status = d.state.state === 'online' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
   let fix;
   if (d.state.state === 'fork') fix = `sub-human link --reset ${d.code}`;
-  else if (d.moved && !d.moved.reached && d.state.state !== 'up') {
+  else if (d.moved && !d.moved.reached && d.state.state !== 'online') {
     const who = d.moved.host || 'its host';
     fix = `${d.request ? `over ssh ${who} lets this machine's key in first: send them /sub-human admit ${d.request}\n` : ''}`
       + `if this machine cannot reach the new host, ask ${who} for an invite it can use (/sub-human host there), then /sub-human join NAME INVITE PIN`;
-  } else if (d.request && d.state.state !== 'up') fix = `the host has not let this link's key in yet: send them /sub-human admit ${d.request}`;
+  } else if (d.request && d.state.state !== 'online') fix = `the host has not let this link's key in yet: send them /sub-human admit ${d.request}`;
   else if (/STALE/.test(lastError || '')) fix = 'this copy speaks to a host the room moved away from: sub-human handoff --status shows where it is';
-  else if (!d.daemon.running && d.state.state !== 'up') fix = `the join hook starts the daemon: /sub-human join again, or run sub-human link ${d.code} in a shell`;
+  else if (!d.daemon.running && d.state.state !== 'online') fix = `the join hook starts the daemon: /sub-human join again, or run sub-human link ${d.code} in a shell`;
   if (d.reach) {
     const r = d.reach;
     const span = x => (x && x.min !== undefined ? (x.min === x.max ? `${x.min}` : `${x.min}-${x.max}`) : '?');

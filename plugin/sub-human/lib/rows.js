@@ -35,8 +35,9 @@
  *         "✓ agreed Cursor paging 1/2", "✖ objected", "✔ decided Cursor paging" ("✖ blocked …" when someone objected),
  *         "proposal Cursor paging 0/2", else "N here";
  *         then "✉ N for you", then lib/tasks.js summary(code, viewer) ("tasks 3 open · #2 you · #4 bob").
- *         A room hosted elsewhere adds its link (lib/room/link-state.js indicator): first while it is down or
- *         reconnecting ("✕ offline 2m · 2 queued", "… reconnecting (3)"), last while it is up ("⇄ linked").
+ *         A room hosted elsewhere adds its link (lib/room/link-state.js indicator, in its one vocabulary STATES):
+ *         first while it is offline, stopped, a fork or connecting again ("✕ offline 2m · 2 queued", "… connecting
+ *         (3)"), last while it is online ("⇄ online").
  *       otherwise: NAME's state as viewer sees it: "✓ agreed Cursor paging", "✖ objected", "⚠ reviewing …",
  *         "✔ decided …" (after it, their latest status: "Claude status: handler done"), then their
  *         open task on the room list ("◼ #2 parser tests"), presence, mail; "left".
@@ -391,9 +392,9 @@ function participantText(code, name, viewer, es, ms, now, c, taskList) {
 function roomText(code, viewer, es, ms, now, c, summary, link) {
   const parts = [];
   // a room hosted elsewhere: the link leads the row while it is down or reconnecting, and closes it while up
-  // (lib/room/link-state.js indicator: "✕ offline 2m · 2 queued", "… reconnecting (3)", "⇄ linked")
+  // (lib/room/link-state.js indicator: "✕ offline 2m · 2 queued", "… connecting (3)", "⇄ online")
   const linkSeg = linkState.indicator(link, { now });
-  if (linkSeg && link.state !== 'up') parts.push(linkState.isDown(link) ? c.warn(linkSeg) : c.dim(linkSeg));
+  if (linkSeg && link.state !== 'online') parts.push(linkState.isDown(link) ? c.warn(linkSeg) : c.dim(linkSeg));
   // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left" (lib/notices.js)
   const move = notices.rowSegment(es, viewer, { now });
   if (move) parts.push(c.dim(move));
@@ -420,7 +421,7 @@ function roomText(code, viewer, es, ms, now, c, summary, link) {
     if (mail) parts.push(c.warn(`✉ ${mail} for you`));
   }
   if (summary) parts.push(summary);
-  if (linkSeg && link.state === 'up') parts.push(c.dim(linkSeg));
+  if (linkSeg && link.state === 'online') parts.push(c.dim(linkSeg));
   return fit(parts);
 }
 

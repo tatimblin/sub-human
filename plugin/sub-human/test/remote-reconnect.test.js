@@ -179,7 +179,7 @@ test('link: a half-open connection is caught by a missed pong; the new one is ma
   const l = await r.start();
   t.after(() => l.stop('done'));
   await h.until(() => l.state() === 'online' && r.states.some(s => s.rttMs != null), 3000, 5);
-  const up = r.states.findLast(s => s.state === 'up');
+  const up = r.states.findLast(s => s.state === 'online');
   assert.deepEqual([up.attempt, up.queued, up.pid, up.detail, typeof up.rttMs], [0, 0, process.pid, 'online', 'number']);
   r.host.append({ kind: 'status', text: 'before' }, { via: 'system', from: 'room', system: true });
   await h.until(r.same, 3000, 5);
@@ -191,7 +191,7 @@ test('link: a half-open connection is caught by a missed pong; the new one is ma
   assert.ok(r.conns[0].c.closed, 'the old connection is closed once the new one is live');
   assert.match(r.logged.join('\n'), /no pong within 60 ms: redialing now/);
   assert.match(r.logged.join('\n'), /swapped in, the old connection is closed/);
-  assert.deepEqual(r.states.slice(seen).map(s => s.state).filter(s => s !== 'up'), [], 'up throughout: a swap is no outage');
+  assert.deepEqual(r.states.slice(seen).map(s => s.state).filter(s => s !== 'online'), [], 'online throughout: a swap is no outage');
   r.host.append({ kind: 'status', text: 'after' }, { via: 'system', from: 'room', system: true });
   await h.until(r.same, 3000, 5);
   assert.ok(r.same());
@@ -208,11 +208,11 @@ test('link: no pong within deadMs and no new connection: the link is dead (OFFLI
   r.refuse = true;
   r.conns[0].cut();
   await h.until(() => l.state() === 'offline', 3000, 5);
-  const down = r.states.findLast(s => s.state !== 'up');
+  const down = r.states.findLast(s => s.state !== 'online');
   assert.match(down.lastError, /no pong within 250 ms|no route to host/);
   assert.ok(r.conns[0].c.closed);
   await assert.rejects(r.hook('append', { payload: say(r.code, 'x') }), e => e.code === 'OFFLINE');
-  await h.until(() => r.states.at(-1).state === 'down' && r.states.at(-1).attempt >= 2, 3000, 5);
+  await h.until(() => r.states.at(-1).state === 'offline' && r.states.at(-1).attempt >= 2, 3000, 5);
   r.refuse = false;
   await h.until(() => l.state() === 'online', 3000, 5);
   assert.equal(r.states.at(-1).attempt, 0);
@@ -320,7 +320,7 @@ test('link: a FORK at reconnect keeps the queued posts and says so', async t => 
   assert.deepEqual(outbox.open(r.mirror.dir).items().map(x => x.payload.text), ['kept']);
   assert.equal(r.mirror.kv.get('link').queued, 1);
   assert.match(r.logged.join('\n'), /FORK in room .*1 queued @room post\(s\) are kept, not sent/);
-  assert.deepEqual([r.states.at(-1).state, r.states.at(-1).detail], ['down', 'fork']);
+  assert.deepEqual([r.states.at(-1).state, r.states.at(-1).detail], ['fork', 'fork']);
 });
 
 test('link: a seat whose lease lapsed on the host during the outage is renewed on reconnect, with no log line', async t => {
@@ -352,7 +352,7 @@ test('link: an old server (no ping in its caps) is never pinged; the state file 
   await h.sleep(FAST.pingMs * 4);
   assert.equal(r.pings.n, 0);
   const st = links.readState(r.code);
-  assert.deepEqual([st.state, st.attempt, st.lastError, st.rttMs, st.queued, st.pid, st.detail], ['up', 0, null, null, 0, process.pid, 'online']);
+  assert.deepEqual([st.state, st.attempt, st.lastError, st.rttMs, st.queued, st.pid, st.detail], ['online', 0, null, null, 0, process.pid, 'online']);
   assert.ok(Date.parse(st.since) <= Date.parse(st.at));
   assert.equal(fs.statSync(links.stateFile(r.code)).mode & 0o777, 0o600);
   assert.deepEqual(links.list(), [], 'a state file is not a link');
