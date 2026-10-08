@@ -9,7 +9,7 @@
  *   Transport = {send(frame), onFrame(fn), onClose(fn), close()}
  *       send after close is a no-op; onClose fires once, also when the peer ends
  *   Spec = {kind, ...}   what a kind needs to connect. An invite's locator `KIND:REST` parses to one, and a link
- *       file (lib/room/links.js `transport`) keeps it: {kind: 'pipe', home} | {kind: 'ssh', user, host, port?}.
+ *       file (lib/room/links.js `transport`) keeps it: {kind: 'pipe', home} | {kind: 'ssh', user, host, port?, via?}.
  *       memory ({kind: 'memory', port}) and a plain pipe ({kind: 'pipe', cmd: [bin, ...args], env?, cwd?}) are
  *       for tests and have no locator.
  *

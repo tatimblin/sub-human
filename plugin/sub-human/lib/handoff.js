@@ -400,6 +400,8 @@ function demote(code, invite, pin) {
   if (!inv || inv.code !== code) throw err('INVALID', `that is not an invite to room ${code}`);
   const transport = transportOf(inv.locator);
   if (!transport) throw err('INVALID', `this machine cannot use "${inv.locator}"`);
+  // without it the link's hello would spend one of the invite's tries on a missing PIN
+  if (inv.v === 2 && !auth.PIN_RE.test(String(pin || ''))) throw err('INVALID', 'this invite needs the 6-digit PIN that came with it: sub-human demote CODE INVITE PIN');
   const o = s.members.read().orch;
   if (o && o.job && o.job !== 'pending') { try { require('./orch.js').releaseDetached(code, o.job); } catch { /* ends with its session */ } }
   const orphan = s.setAside();

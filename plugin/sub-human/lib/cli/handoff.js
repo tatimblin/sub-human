@@ -98,7 +98,7 @@ const FORK_RISK = (code, last) => [
   `PROMOTE makes this machine's copy of room ${code} the room. Only do this when its host is gone for good.`,
   'If the old host is only slow, asleep or cut off, the room FORKS: lines it writes from now on reach nobody here,',
   `and lines it wrote after #${last} (the last one this machine has) are lost to the room. Members still linked to it`,
-  'keep talking to it until they get a new invite. When it comes back, its owner runs: sub-human demote CODE INVITE',
+  'keep talking to it until they get a new invite. When it comes back, its owner runs: sub-human demote CODE INVITE PIN',
   '(its own lines are kept in orphaned-<time>.jsonl, never merged).',
 ];
 

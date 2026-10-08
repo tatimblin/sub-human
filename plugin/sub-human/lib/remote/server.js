@@ -1,8 +1,7 @@
 'use strict';
 /**
  * plugin/sub-human/lib/remote/server.js: one connection to a hosted room. `scripts/sub-human serve --stdio CODE`
- * runs one per connection on the host (spawned by the client's pipe transport now, by an SSH forced command
- * later); the store contract test runs one on a worker thread over the memory transport. It serves the host's
+ * runs one per connection on the host (spawned by the client's pipe transport, or by an SSH forced command); the store contract test runs one on a worker thread over the memory transport. It serves the host's
  * FsRoomStore (isHost) and shares the room's file locks with the host's own hooks, which never go through it.
  * It never loads the signer (test/hooks/security.test.js): a via=human payload arrives signed by the remote
  * hook and is verified against the key pinned in the log (lib/room/envelope.js), then placed (store.place).
@@ -42,8 +41,8 @@
  *         handoff.refuse  {id}: lib/handoff.js serverRefuse
  *       Host epochs (lib/handoff.js): hello {epoch} from a mirror at a later epoch than this log's is STALE (this
  *       machine is a host the room moved away from), and the reply carries this log's epoch; append {epoch} from
- *       another epoch is STALE. Once the log says the room moved to another machine, every op but hello, subscribe
- *       and blob.get is STALE; a subscribe stream then ends after the lines with the private 'moved' event (this
+ *       another epoch is STALE. Once the log says the room moved to another machine, every op but hello, subscribe,
+ *       blob.get and ping is STALE; a subscribe stream then ends after the lines with the private 'moved' event (this
  *       link's machine's invite to the new host) and end {reason: 'moved'}. A pending ask for one of the link's
  *       seats is sent as the private 'handoff' event.
  *         ping       {pong: the host's ms}: the link daemon's heartbeat (lib/remote/link.js). A session whose hello

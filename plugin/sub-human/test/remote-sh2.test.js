@@ -215,6 +215,18 @@ test('sh2 over ssh, without sshd: the joiner pins the host key and makes its own
   assert.equal(cli(['revoke']).status, 2);
 });
 
+test('join: a linked machine given another invite to the same host through the same bastion is linked already, not a move', t => {
+  const { remote, bob, code } = room(t);
+  const links = require(path.join(h.LIB, 'room', 'links.js'));
+  const transport = { kind: 'ssh', user: 'host', host: 'devbox', via: 'jump@bastion' };
+  remote.lib(() => links.set(code, { code, transport, token: 'tok', created_at: new Date().toISOString() }));
+  const invite = auth.formatInvite({ v: 2, code, locator: 'ssh:host@devbox?via=jump@bastion', secret: 'A'.repeat(22) });
+  const r = remote.join(bob, `join bob ${invite} 123456`);
+  assert.match(r.json.reason, /linked to room .* already/, r.json.reason);
+  const kept = remote.lib(() => links.get(code));
+  assert.deepEqual([kept.token, kept.rebind], ['tok', undefined], 'the working link is kept, its token not replaced');
+});
+
 test('sshkeys.linkKey: the link\'s own key pair is private, the .pub too (nothing in the store is group/world-readable)', t => {
   const dir = path.join(h.tmpDir('sh-lk-', t), 'links', 'vole-1234');
   const k = sshkeys.linkKey(dir, 'sub-human:vole-1234:bob');

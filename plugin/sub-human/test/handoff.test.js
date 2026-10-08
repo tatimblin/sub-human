@@ -161,3 +161,15 @@ test('handoff: refused on the card, expired, or replaced: nothing moves', async 
   assert.equal(host.hostState().epoch, 0);
   assert.ok(!host.readAll().some(e => e.kind === 'host_changed'));
 });
+
+test('demote: an sh2 invite without its PIN is refused before anything changes (the hello would spend one of its tries)', t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  h.register('alice');
+  const before = store.open(code).readAll().length;
+  const invite = auth.formatInvite({ v: 2, code, locator: 'pipe:/elsewhere', secret: 'B'.repeat(22) });
+  assert.throws(() => handoff.demote(code, invite), e => e.code === 'INVALID' && /6-digit PIN/.test(e.message));
+  assert.throws(() => handoff.demote(code, invite, '12'), e => e.code === 'INVALID');
+  assert.equal(store.open(code).isHost, true, 'still the host: nothing set aside');
+  assert.equal(store.open(code).readAll().length, before);
+});

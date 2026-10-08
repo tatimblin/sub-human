@@ -88,7 +88,7 @@
  *                                  a plain user@host[:port])
  *   transportOf(locator) -> Spec | null   the link file's transport for an invite's locator: the transport
  *                                  registry's parse (lib/remote/transports/index.js), {kind: 'pipe', home} or
- *                                  {kind: 'ssh', user, host, port?} today. connectLink opens it with {code}: pipe runs
+ *                                  {kind: 'ssh', user, host, port?, via?} today. connectLink opens it with {code}: pipe runs
  *                                  this plugin's own `sub-human serve --stdio CODE` with that home; ssh runs
  *                                  `ssh … -- user@host sub-human serve --stdio CODE` and the host's authorized_keys
  *                                  forced command decides what runs there (lib/remote/transports/ssh.js)

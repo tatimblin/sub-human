@@ -165,7 +165,7 @@ If someone's machine can't reach bob's (a laptop behind NAT, an SSH key bob's ma
 sub-human promote CODE --confirm CODE [--ssh ME@MY-BOX]
 ```
 
-It refuses while the link to the host is still online, and until the host has been unreachable for 10 minutes (`--force` skips the wait). It prints what it risks first. **Promote can fork the room**: if the old host was only asleep, whatever it writes from then on reaches nobody, and lines it wrote that this copy never got are lost to the room. It prints one invite per other machine. Hand them out yourself; each one works only on its own machine. When the old host comes back, its owner runs `sub-human demote CODE INVITE`. That keeps its own log aside in `orphaned-<time>.jsonl` (never merged) and makes it a member of the new host. A copy that reaches the old host after the move is refused there (`STALE`), so the two never quietly merge.
+It refuses while the link to the host is still online, and until the host has been unreachable for 10 minutes (`--force` skips the wait). It prints what it risks first. **Promote can fork the room**: if the old host was only asleep, whatever it writes from then on reaches nobody, and lines it wrote that this copy never got are lost to the room. It prints one invite per other machine. Hand them out yourself; each one works only on its own machine. When the old host comes back, its owner runs `sub-human demote CODE INVITE PIN`. That keeps its own log aside in `orphaned-<time>.jsonl` (never merged) and makes it a member of the new host. A copy that reaches the old host after the move is refused there (`STALE`), so the two never quietly merge.
 
 ## Rows
 
@@ -293,7 +293,7 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 | `link CODE [--reset]` | Run the link to room CODE hosted elsewhere (in the foreground; joins start it in the background). `--reset` copies the room again after a FORK. |
 | `handoff NAME [--ssh USER@HOST[:PORT] \| --url https://FRONT]`, `handoff --status` | Ask NAME to host the room (their card decides); who hosts it at which epoch, and who hasn't reconnected. |
 | `promote CODE --confirm CODE [--force]` | This machine's copy becomes the room, when its host is gone for good. Can fork the room. |
-| `demote CODE INVITE` | On an old host the room was promoted away from: set its log aside and follow the new host. |
+| `demote CODE INVITE [PIN]` | On an old host the room was promoted away from: set its log aside and follow the new host. |
 | `doctor [--quick] [--fix] [--bundle [FILE]]` | What is wrong on this machine, with a fix for each (see **Doctor**). |
 
 `tail` (the room tail), `agent-statusline` (the rows) and `serve --stdio CODE` (the host's end of a link) are internal. Run `host`, `unhost`, `admit`, `revoke`, `prime`, `listen`, `invite`, `authorize`, `link`, `serve`, `handoff`, `promote` and `demote` in your own shell: the plugin refuses them to a Claude.
@@ -395,8 +395,8 @@ Start with `sub-human doctor` (see **Doctor**): it names most of these and the f
 | A proposal didn't open | Ask your Claude to "show me the proposal". `sub-human read` shows who a proposal names. |
 | `/sub-human` says it needs Claude Code 2.1.292+ with function hooks on | Update Claude Code, and start it without `--bare` or safe mode; a managed policy that turns hooks off also prevents it. |
 | `room link: OFFLINE` | The link can't reach the host. It retries by itself (from 1 s, with jitter, up to 10 s; at once after a wake or a network change); `@room` posts are queued, answers are refused, until it is back, and `room link: back online` says when (and how many queued posts went out). `~/.sub-human/links/CODE.log` says why; `~/.sub-human/links/CODE.state.json` holds the link's state. |
-| `room link: OFFLINE (room CODE moved to NAME's machine …, which this machine cannot reach yet …)` | A handoff moved the room and this machine can't reach the new host. Ask its person for an invite your machine can use, then `/sub-human join NAME INVITE`. |
-| `STALE` | A write or a link reached a host the room has moved away from, or a copy that has not caught up with the move. A copy catches up by itself. An old host that was promoted away runs `sub-human demote CODE INVITE`. |
+| `room link: OFFLINE (room CODE moved to NAME's machine …, which this machine cannot reach yet …)` | A handoff moved the room and this machine can't reach the new host. Ask its person for an invite your machine can use (`/sub-human host` there), then `/sub-human join NAME INVITE PIN`; over SSH they also admit your key with the line your join shows. |
+| `STALE` | A write or a link reached a host the room has moved away from, or a copy that has not caught up with the move. A copy catches up by itself. An old host that was promoted away runs `sub-human demote CODE INVITE PIN`. |
 | `room link: FORK` | This machine's copy no longer matches the host's log. Nothing more syncs. Run `sub-human link --reset CODE` in your shell: the link copies the room again from the host. |
 | SSH join: `room … is offline` and the link log says `Permission denied (publickey)` | The key ssh used is not the one the host authorized, or the host's `authorized_keys` line is missing. The link uses `BatchMode=yes`, so it never asks for a password or a passphrase: load the key into your agent, or name it in `~/.ssh/config` (or `SUB_HUMAN_SSH_OPTS="-i KEY"`). |
 | SSH join: `Host key verification failed` in the link log | ssh has not seen the host yet and BatchMode can't ask. Run `ssh me@host true` once in your shell to accept its key. |

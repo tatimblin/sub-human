@@ -98,7 +98,7 @@
  *       writes the same, redacted, for a bug report. Exit 1 when a check fails.
  *   sub-human handoff NAME [--room CODE] [--as SEAT] [--ssh USER@HOST[:PORT]] | handoff --status [--room CODE]
  *   sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT]] [--force] --confirm CODE
- *   sub-human demote CODE INVITE
+ *   sub-human demote CODE INVITE [PIN]   (an sh2 invite needs its PIN)
  *       Moving the room's host (lib/handoff.js; the bodies are lib/cli/handoff.js): a planned handoff to a member on
  *       another machine (their card decides), the manual promote of this machine's copy when the host is gone for
  *       good (it can fork the room), and the old host's way back as a mirror.
@@ -424,7 +424,7 @@ Object.assign(cmds, { listen: a => { const c = require(path.join(LIB, 'cli', 'li
 const handoffCli = name => args => require(path.join(LIB, 'cli', 'handoff.js'))[name](args, { die, out: l => console.log(l), err: l => console.error(l) });
 Object.assign(cmds, { handoff: handoffCli('handoff'), promote: handoffCli('promote'), demote: handoffCli('demote') });
 try {
-  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] [--via JUMP] | authorize INVITE|LINK_ID PUBKEY [--file F] | host [--ssh [USER@HOST]] [--via JUMP] | admit REQUEST | revoke LINK_ID|NAME | prime CODE | host --tailscale [--funnel] | host --url URL | listen [--port P] [--start|--stop|--status] | unhost [--room CODE] | handoff NAME | promote CODE | demote CODE INVITE | doctor [--bundle [FILE]] | agent-statusline')))(args);
+  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] [--via JUMP] | authorize INVITE|LINK_ID PUBKEY [--file F] | host [--ssh [USER@HOST]] [--via JUMP] | admit REQUEST | revoke LINK_ID|NAME | prime CODE | host --tailscale [--funnel] | host --url URL | listen [--port P] [--start|--stop|--status] | unhost [--room CODE] | handoff NAME | promote CODE | demote CODE INVITE [PIN] | doctor [--bundle [FILE]] | agent-statusline')))(args);
 } catch (e) {
   die(e.message, 2);
 }

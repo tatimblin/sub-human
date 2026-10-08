@@ -69,7 +69,6 @@ const NO_REMOTE_CONTROL = {
 
 const check = (id, status, title, detail, fix) => ({ id, status, title, detail, ...(fix ? { fix } : {}) });
 const tilde = (p, h = os.homedir()) => (p && h && (p === h || p.startsWith(h + path.sep)) ? '~' + p.slice(h.length) : p);
-const modeOf = p => { try { return fs.statSync(p).mode & 0o777; } catch { return null; } };
 const isExec = p => { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } };
 const readText = p => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } };
 const truthy = v => v !== undefined && v !== '' && v !== '0' && String(v).toLowerCase() !== 'false';

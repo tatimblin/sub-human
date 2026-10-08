@@ -54,7 +54,7 @@ const { orchPresence } = require('../lib/room/members.js');
 const COMMANDS = new Set(['sub-human:sub-human', 'sub-human']);
 const ORCH_AGENT = 'sub-human:orchestrator';
 const USAGE = 'usage: /sub-human NAME [CODE]. It joins the open room as NAME, or opens one and starts its orch for you (the orch is never launched by hand). '
-  + '/sub-human host [--ssh [USER@HOST]] gives an invite and its PIN for your room; /sub-human join NAME INVITE PIN joins a room on another machine; /sub-human handoff NAME asks NAME to host your room.';
+  + '/sub-human host [--ssh [USER@HOST]] [--via JUMP] gives an invite and its PIN for your room; /sub-human admit shk1.… lets a joiner\'s key in, /sub-human revoke NAME ends its link; /sub-human join NAME INVITE PIN joins a room on another machine; /sub-human handoff NAME asks NAME to host your room.';
 const BYPASS = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
 // A refusal is also the systemMessage: Remote Control shows a hook's systemMessage, not a block reason.
 const block = reason => out({ decision: 'block', reason: `sub-human: ${reason}`, systemMessage: `sub-human: ${reason}` });
@@ -207,7 +207,8 @@ function restartLink(code) {
   for (const until = Date.now() + 2000; Date.now() < until && identity.isAlive(st.pid);) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
 }
 
-const locatorOf = t => (t && t.kind === 'ssh' ? link.sshLocator(`${t.user}@${t.host}${t.port ? `:${t.port}` : ''}`) : t && t.kind === 'pipe' ? link.pipeLocator(t.home)
+// the invite locator a link's transport came from (with its jump hosts: else every re-join over a bastion reads as a move)
+const locatorOf = t => (t && t.kind === 'ssh' ? link.sshLocator(`${t.user}@${t.host}${t.port ? `:${t.port}` : ''}`, t.via ? { via: t.via } : {}) : t && t.kind === 'pipe' ? link.pipeLocator(t.home)
   : t && (t.kind === 'wss' || t.kind === 'ws') ? wsT().urlOf(t) : null);
 
 /** The link file for an invite's room (kept once it holds a token, unless the invite is to another host); its code, or null after a block(). */
@@ -219,7 +220,7 @@ function linkRoom(invite) {
   if (!transport) return block(`this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine does not support yet.`);
   if (transport.kind === 'wss' || transport.kind === 'ws') return block('a web invite comes with its PIN and a pinned key (sh2); ask the host for one: /sub-human host --tailscale.');
   if (identity.roomExists(inv.code) && identity.isHost(inv.code)) {
-    return block(`room ${inv.code} is hosted on this machine; join it with /sub-human NAME ${inv.code}. If it was promoted on another machine while this one was away, run in your own shell: sub-human demote ${inv.code} INVITE (this machine's own lines are kept aside, never merged).`);
+    return block(`room ${inv.code} is hosted on this machine; join it with /sub-human NAME ${inv.code}. If it was promoted on another machine while this one was away, run in your own shell: sub-human demote ${inv.code} INVITE PIN (this machine's own lines are kept aside, never merged).`);
   }
   const cur = links.get(inv.code);
   const moved = !!cur && !!cur.token && locatorOf(cur.transport) !== inv.locator;
