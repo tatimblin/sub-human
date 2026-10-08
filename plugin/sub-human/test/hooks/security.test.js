@@ -5,14 +5,15 @@
 // modules or touching the store; readers mark unsigned human lines "(unverified)" and consent ignores forged
 // answers. prompt.submit's origin attests a typed @room (mod/core/prompt.mjs): the gate drops any other before a
 // hook runs, and at-room posts only with a typed sub_human_origin (none at all is refused too) beside the nonce in
-// the session's module lease, so a process that only runs node cannot hand prompt.js an origin.
+// the session's module lease, so a process that only runs node cannot hand prompt.js an origin. The join hook pins the seat key in the log, and
+// a join with another key is refused.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
-const { World, fixture, PLUGIN, HOOKS, room, identity } = require('./helpers.js');
+const { World, fixture, PLUGIN, HOOKS, room, identity, sleeper, sid } = require('./helpers.js');
 // the store guard's verdicts (mod/core/guard.mjs, applied in-process by mod/guard.mjs)
 let bashVerdict, denyText;
 test.before(async () => ({ bashVerdict, denyText } = await import(path.join(PLUGIN, 'mod', 'core', 'guard.mjs'))));
@@ -98,6 +99,35 @@ test('a hook-signed post verifies; editing any signed field breaks it; a keyless
     const legacy = { id: 9, at: e.at, from: 'carol', via: 'human', kind: 'say', to: 'room', text: 'old words' };
     assert.equal(room.chatLines(legacy, { viewer: 'alice' })[0], 'carol (unverified): old words');
   });
+});
+
+test('join pins the seat key in member_joined: the keyed room never counts an unsigned answer, and a join with another key is refused', t => {
+  const w = new World({ orch: 'sleep' }, { t });
+  const expand = args => ({ ...fixture('user-prompt-expansion'), command_args: args, prompt: `/sub-human:sub-human ${args}` });
+  const joinAs = name => { w.pid[name] = sleeper(); w.sid[name] = sid(); return w.hook('join', expand(`${name} ${w.code}`), { as: name }); };
+  const r = joinAs('bob');
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.json.systemMessage, /joined/);
+  const kdir = path.join(w.home, 'keys', w.code);
+  const joined = w.entries().filter(e => e.kind === 'member_joined');
+  assert.deepEqual(joined.map(e => [e.from, e.pubkey]), [['bob', fs.readFileSync(path.join(kdir, 'bob.pub'), 'utf8')]]);
+  // an unsigned signoff written around the store: unverified (not legacy) in a keyed room, and never counted
+  w.append({ kind: 'proposal', text: `proposal ${H1}: x`, hash: H1, approvers: ['bob'] }, { via: 'agent', from: 'orch' });
+  fs.appendFileSync(logFile(w), JSON.stringify({ id: lines(w).length + 1, at: new Date().toISOString(), from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H1 }) + '\n');
+  w.lib(() => {
+    const R = room.open(w.code);
+    assert.equal(room.humanTrust(R.readAll().at(-1)), 'unverified');
+    assert.deepEqual(R.answers(H1).missing, ['bob']);
+  });
+  // bob's key is lost; a new session joining as bob makes a new one: refused, and the seat is given back
+  w.lib(() => identity.leave(w.code, 'bob'));
+  for (const f of ['bob.key', 'bob.pub']) fs.unlinkSync(path.join(kdir, f));
+  const before = lines(w).length;
+  const again = joinAs('bob');
+  assert.equal(again.json.decision, 'block', again.stderr);
+  assert.match(again.json.reason, /bob is pinned to another key in room .*a lost key means a new name/);
+  assert.equal(lines(w).length, before, 'no member_joined with the new key');
+  assert.ok(w.members().bob.left_at, 'the seat is not held');
 });
 
 test('a forged chat continuation is never attributed: every further line is nested, and an unsigned "bob" line is marked', t => {

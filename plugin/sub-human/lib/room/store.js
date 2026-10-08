@@ -10,19 +10,28 @@
  * RoomStore (one room; get one with open(code)):
  *   code                                    the room code
  *   append(entry, {via, from, system}) -> Entry
- *       validate() (validate.js) first; then, atomically: id (monotonic), at, from, via, prev (hash12 of the
- *       previous line); task_req gets `by` = from. via "human" needs the seat's key: the process must
- *       have installed a signer (globalThis[SIGNER], set by hooks/seat-key.js arm(), which every hook process
- *       runs; never the MCP server or the CLI). The entry then carries room (the code) and ends with sig =
- *       Ed25519 over the line without sig. No signer, or no key for (room, from) -> RoomError INVALID. A line
- *       over LOG_LINE_MAX_BYTES is refused (INVALID). Agent posts are rate limited: RATE_MAX per `from` per
- *       RATE_WINDOW_MS (RATE). Throws RoomError INVALID | RATE | LOCK | NO_ROOM.
+ *       = place(toPayload(code, entry, opts), opts): validate() (validate.js), then sign a via=human entry here,
+ *       then place it. via "human" needs the
+ *       seat's key: the process must have installed a signer (globalThis[SIGNER], set by hooks/seat-key.js
+ *       arm(), which every hook process runs; never the MCP server or the CLI). The payload then carries room,
+ *       nonce, ts, sigv and sig (sig v2, lib/room/envelope.js). No signer, or no key for (room, from) -> RoomError
+ *       INVALID. Throws RoomError INVALID | RATE | AUTH | LOCK | NO_ROOM.
+ *   place(payload, {system}) -> Entry
+ *       the server half: admit() (validate() again, the stored form rebuilt), then, atomically: rate (RATE_MAX
+ *       agent posts per `from` per RATE_WINDOW_MS: RATE), replay (a nonce already placed: AUTH), trust (a
+ *       via=human payload must be v2, for this room, ts within SIG_SKEW_MS, and verify against publicKey(from):
+ *       AUTH; a member_joined pubkey that differs from the key pinned for that name: AUTH), then id (monotonic),
+ *       at, prev (hash12 of the previous line). A line over LOG_LINE_MAX_BYTES is refused (INVALID). The sig
+ *       covers the payload, not its place, so a payload signed on one machine may be placed on another.
+ *   pins() -> Map name -> KeyObject         the keys pinned in this room's log (envelope.pinnedKeys), cached
+ *                                           until the log changes
  *   readAll() -> Entry[]                    every parseable entry, in order (legacy lines included). Fresh array;
  *                                           the entries are shared (do not mutate them)
  *   readById(ids), readAfter(id, filter?), since(id) (= readAfter(id)), lastId()
- *   readView({after}) -> Entry[]            non-chat entries + entries with id > after: what a
+ *   readView({after, save}) -> Entry[]      non-chat entries + entries with id > after: what a
  *                                           hook judges lanes against, the same answer as readAll() for the
- *                                           entries after `after` (after <= 0: readAll(); Infinity: non-chat only)
+ *                                           entries after `after` (after <= 0: readAll(); Infinity: non-chat only).
+ *                                           save: false leaves the checkpoint alone (pins() reads that way)
  *   watch(onEntry, {after, intervalMs}) -> stop()   every entry with id > after, then new ones (polling)
  *   tailer({fs}?) -> {poll() -> {entries, reset}}   entries appended after the moment it was made (fs: test hook)
  *   validateChain() -> {ok, count, badAt?, line?}   the whole prev chain
@@ -49,12 +58,17 @@
  *
  * The human capability (keys under <home>/keys/<code>/, dir 0700; hooks/seat-key.js creates them; the private
  * keys never leave this machine, whatever the store):
- *   verifyHuman(e) -> bool       e is via=human and its sig verifies against <code>/<from>.pub (public key only)
+ *   publicKey(name, store) -> KeyObject|null   the key pinned in the log (member_joined pubkey, first sight);
+ *                                the local <code>/<name>.pub only in a room whose log pins no key (a legacy room)
+ *   verifyHuman(e) -> bool       e is via=human and its sig (v2, or v1 from before PR1) verifies against publicKey
  *   unverifiedHuman(e) -> bool   via=human without a valid sig (a legacy line, or one written around append)
- *   humanTrust(e) -> 'verified' | 'legacy' | 'unverified' | null   (legacy: unsigned from a seat with no key)
+ *   humanTrust(e) -> 'verified' | 'legacy' | 'unverified' | null   (legacy: unsigned, in a room that pins no key,
+ *                                from a seat with no local key; a keyed room never returns it)
  *   The room an entry belongs to is its `room` field (signed entries), else the store that read it (a WeakMap,
  *   so entries are not changed).
- *   keyDir(code), pubPath(name, code), canonical(e), SIGNER
+ *   keyDir(code), pubPath(name, code), SIGNER
+ *   toPayload(code, entry, opts), admit(code, payload, opts), placeAfter(store, p, {newest, prevLine, now})
+ *                                the halves of append and place every RoomStore shares (see place)
  *   normalize(e)                 legacy display mapping (concern -> objection, agree -> signoff, plan_rev ->
  *                                proposal {hash}, plan_hash -> proposal_hash)
  *   hash12(data)
@@ -71,6 +85,7 @@ const { writeFileAtomic, writeJsonAtomic, readJson } = require('../io.js');
 const { CODE_RE } = require('../text.js');
 const config = require('../config.js');
 const { RoomError, validate } = require('./validate.js');
+const envelope = require('./envelope.js');
 
 const LOG = 'log.jsonl';
 const IDX_FILE = 'log.idx';
@@ -79,15 +94,15 @@ const CHAT_KINDS = new Set(['say', 'status']);
 
 const hash12 = data => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12);
 
-// ---------- which room an entry was read from ----------
-const ROOM_OF = new WeakMap();
-const tag = (e, c) => { if (e && typeof e === 'object' && c) ROOM_OF.set(e, c); return e; };
+// ---------- which store an entry was read from ----------
+const STORE_OF = new WeakMap(); // entry -> the RoomStore that read it
+const tag = (e, s) => { if (e && typeof e === 'object' && s) STORE_OF.set(e, s); return e; };
 
-function parseLines(text, c) {
+function parseLines(text, s) {
   const out = [];
   for (const line of text.split('\n')) {
     if (!line) continue;
-    try { out.push(tag(JSON.parse(line), c)); } catch { /* torn or corrupt line: skip */ }
+    try { out.push(tag(JSON.parse(line), s)); } catch { /* torn or corrupt line: skip */ }
   }
   return out;
 }
@@ -123,7 +138,7 @@ function normalize(e) {
   else if (n.plan_hash && !n.proposal_hash) n.proposal_hash = n.plan_hash;
   delete n.plan_hash;
   if (n.to == null) n.to = 'room';
-  return tag(n, ROOM_OF.get(e));
+  return tag(n, STORE_OF.get(e));
 }
 
 // ---------- the human capability ----------
@@ -131,8 +146,9 @@ function normalize(e) {
  * via=human means "a person typed or answered this in their own terminal". Only hook processes (run by Claude
  * Code itself, never by a model) can write it: append() signs with the seat's private key, which it gets from
  * the signer a hook process installs (hooks/seat-key.js arm()). The MCP server and the CLI never install one, so
- * they cannot write via=human at all. Readers verify with the public key. Single machine, single OS user: this
- * stops a model (its tools, the room MCP server) from forging a person, not a hostile local user.
+ * they cannot write via=human at all. Readers verify with the key the room's log pins for that name (the join
+ * hook puts it in member_joined). A threat model of one OS user per machine: this stops a model (its tools, the
+ * room MCP server) from forging a person, not a hostile local user.
  */
 const SIGNER = Symbol.for('sub-human.human-signer');
 const KEY_PART_RE = /^[A-Za-z0-9_.-]{1,64}$/;
@@ -144,8 +160,6 @@ function pubPath(name, c) {
   if (typeof name !== 'string' || !KEY_PART_RE.test(name) || name.startsWith('.')) throw new RoomError('INVALID', `invalid name "${name}"`);
   return path.join(keyDir(c), `${name}.pub`);
 }
-/** The bytes a sig covers: the stored entry without sig, in its stored key order. */
-const canonical = e => { const { sig, ...rest } = e; return JSON.stringify(rest); };
 
 function humanKey(c, from) {
   const signer = globalThis[SIGNER];
@@ -156,7 +170,8 @@ function humanKey(c, from) {
 }
 
 const pubCache = new Map(); // file -> {mtimeMs, size, key}
-function publicKey(name, c) {
+/** The seat's key from <home>/keys/<code>/<name>.pub: what a legacy room (no key pinned) verifies against. */
+function localKey(name, c) {
   let file;
   try { file = pubPath(name, c); } catch { return null; }
   let st;
@@ -164,39 +179,45 @@ function publicKey(name, c) {
   const hit = pubCache.get(file);
   if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.key;
   let key = null;
-  try { key = crypto.createPublicKey(fs.readFileSync(file, 'utf8')); } catch { key = null; }
-  if (key && key.asymmetricKeyType !== 'ed25519') key = null;
+  try { key = envelope.parseKey(fs.readFileSync(file, 'utf8')); } catch { key = null; }
   pubCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, key });
   return key;
 }
 
-const verdicts = new Map(); // code \0 canonical \0 sig -> bool (bounded)
+/** The key name's entries in store s verify against: the one pinned in the log; the local .pub only when it pins none. */
+function publicKey(name, s) {
+  const pins = s.pins();
+  return pins.size ? pins.get(name) || null : localKey(name, s.code);
+}
+
+const verdicts = new Map(); // code \0 signed bytes \0 sig -> bool (bounded)
 const VERDICTS_MAX = 4096;
 /** The room a via=human entry was signed in: its `room` field (append stamps it), else the store that read it. */
-const roomOf = e => (typeof e.room === 'string' ? e.room : ROOM_OF.get(e) || null);
+const roomOf = e => (typeof e.room === 'string' ? e.room : (STORE_OF.get(e) || {}).code || null);
+/** The store that read e when it holds e's room, else that room's store. */
+function storeOf(e, c) { const s = STORE_OF.get(e); return s && s.code === c ? s : open(c); }
 
 function verifyHuman(e) {
   if (!e || e.via !== 'human' || typeof e.sig !== 'string' || typeof e.from !== 'string') return false;
   const c = roomOf(e);
   if (!c) return false;
-  const data = canonical(e);
-  const k = `${c}\0${data}\0${e.sig}`;
+  const k = `${c}\0${envelope.signedBytes(e)}\0${e.sig}`;
   const hit = verdicts.get(k);
   if (hit !== undefined) return hit;
-  const pub = publicKey(e.from, c);
-  if (!pub) return false; // no verdict cached: the key may appear later
-  let ok = false;
-  try { ok = crypto.verify(null, Buffer.from(data, 'utf8'), pub, Buffer.from(e.sig, 'base64')); } catch { ok = false; }
+  let pub = null;
+  try { pub = publicKey(e.from, storeOf(e, c)); } catch { pub = null; }
+  if (!pub) return false; // no verdict cached: the key may be pinned later
+  const ok = envelope.verify(e, pub);
   if (verdicts.size >= VERDICTS_MAX) verdicts.clear();
   verdicts.set(k, ok);
   return ok;
 }
 const unverifiedHuman = e => !!e && e.via === 'human' && !verifyHuman(e);
 /**
- * How far a via=human entry is the person's: 'verified' (its sig verifies), 'legacy' (no sig, and the seat has
- * no key: a room from before seat keys, or a reader that cannot tell which room; shown "(unverified)" but still
- * counted as an answer), 'unverified' (anything else: a bad sig, or no sig from a seat that has a key; never
- * counted). null when not via=human.
+ * How far a via=human entry is the person's: 'verified' (its sig verifies), 'legacy' (no sig, in a room whose
+ * log pins no key, from a seat with no local key: a room from before seat keys, or a reader that cannot tell
+ * which room; shown "(unverified)" but still counted as an answer), 'unverified' (anything else: a bad sig, or
+ * no sig in a keyed room or from a seat that has a key; never counted). null when not via=human.
  */
 function humanTrust(e) {
   if (!e || e.via !== 'human') return null;
@@ -204,51 +225,122 @@ function humanTrust(e) {
   if (e.sig !== undefined || typeof e.from !== 'string') return 'unverified';
   const c = roomOf(e);
   if (!c) return 'legacy';
-  let file;
-  try { file = pubPath(e.from, c); } catch { return 'unverified'; }
-  return fs.existsSync(file) ? 'unverified' : 'legacy';
+  let keyed, file;
+  try { keyed = storeOf(e, c).pins().size > 0; file = pubPath(e.from, c); } catch { return 'unverified'; }
+  return keyed || fs.existsSync(file) ? 'unverified' : 'legacy';
+}
+
+// ---------- append = sign + place ----------
+const auth = msg => new RoomError('AUTH', msg);
+/** The envelope fields sign() adds (lib/room/envelope.js); only a via=human payload carries them. */
+const SIGNED_FIELDS = ['room', 'nonce', 'ts', 'sigv', 'sig'];
+
+/** The fields an entry is stored with before it is placed: validated fields v with from, via and by. */
+function fieldsOf(v, from) {
+  const p = { from, via: v.via, kind: v.kind, to: v.to };
+  if (v.refs && v.refs.length) p.refs = v.refs;
+  if (v.hash) p.hash = v.hash;
+  if (v.approvers) p.approvers = v.approvers;
+  if (v.path) p.path = v.path;
+  if (v.proposal_hash) p.proposal_hash = v.proposal_hash;
+  if (v.task) {
+    if (v.kind === 'task_req') p.by = from;
+    Object.assign(p, v.task);
+  }
+  if (v.normalized !== undefined) p.normalized = v.normalized;
+  if (v.edit_path) p.edit_path = v.edit_path;
+  if (v.drafted) p.drafted = v.drafted;
+  if (v.pubkey) p.pubkey = v.pubkey;
+  if (v.machine) p.machine = v.machine;
+  if (v.text !== undefined) p.text = v.text;
+  return p;
+}
+
+/** The client half of append: validate, and sign a via=human payload with the seat's key (the hook's signer). */
+function toPayload(c, entry, opts) {
+  const v = validate(entry, opts);
+  if (!c) throw new RoomError('NO_ROOM', 'no room bound; run /sub-human');
+  const p = fieldsOf(v, opts.from);
+  return v.via === 'human' ? envelope.sign(p, humanKey(c, opts.from), { room: c, from: opts.from }) : p;
 }
 
 /**
- * The envelope append() stores: validated fields `v`, with id (last + 1), at, from, via, prev, and for a via=human
- * entry room + sig. Shared by every RoomStore, so the chain and the signature are the same whatever the backend.
- * Throws RATE when `recent` (agent posts by from inside RATE_WINDOW_MS) is at RATE_MAX, INVALID when too large.
+ * The server half's first step: validate() a payload again (signed here or on another machine) and rebuild its
+ * stored form, so a field validate() would drop or reshape breaks the signature instead of landing unsigned.
+ * system: the caller may write via=system (trusted callers only, as for append).
  */
-function buildEntry(v, opts, { c, key, last, prevLine, recent, now }) {
-  if (v.via === 'agent' && recent >= config.RATE_MAX) {
-    throw new RoomError('RATE', `rate limit: ${opts.from}'s Claude posted ${config.RATE_MAX} times in the last minute; wait before posting again`);
+function admit(c, payload, { system } = {}) {
+  if (!c) throw new RoomError('NO_ROOM', 'no room bound; run /sub-human');
+  if (!payload || typeof payload !== 'object') throw new RoomError('INVALID', 'payload must be an object');
+  const { from, via, room, nonce, ts, sigv, sig, ...fields } = payload;
+  const v = validate(fields, { via, from, system });
+  const p = fieldsOf(v, from);
+  const signed = SIGNED_FIELDS.filter(k => payload[k] !== undefined);
+  if (v.via !== 'human' && signed.length) throw new RoomError('INVALID', `${signed.join(', ')}: only a person's entry is signed`);
+  for (const k of signed) p[k] = payload[k];
+  return p;
+}
+
+/**
+ * The newest entries (newest first) as a placement needs them: the last id, the agent posts p.from made inside
+ * RATE_WINDOW_MS, and whether p's nonce was placed already. A nonce is looked for back to 2 * SIG_SKEW_MS by
+ * `at` (the host's clock): a payload with a fresh ts may have been placed up to SIG_SKEW_MS after it was signed.
+ * The log is in time order, so the scan stops at the window.
+ */
+function scanTail(newest, p, now) {
+  const span = p.via === 'agent' ? config.RATE_WINDOW_MS : p.nonce ? 2 * envelope.SIG_SKEW_MS : 0;
+  let last = null, recent = 0, replayed = false;
+  for (const e of newest) {
+    if (last === null) last = e.id || 0;
+    if (!span || now - Date.parse(e.at) >= span) break;
+    if (p.via === 'agent' && e.from === p.from && e.via === 'agent' && ++recent >= config.RATE_MAX) break;
+    if (p.nonce && e.nonce === p.nonce) { replayed = true; break; }
   }
-  const e = { id: (last || 0) + 1, at: new Date(now).toISOString(), from: opts.from, via: v.via, kind: v.kind, to: v.to };
-  if (v.refs && v.refs.length) e.refs = v.refs;
-  if (v.hash) e.hash = v.hash;
-  if (v.approvers) e.approvers = v.approvers;
-  if (v.path) e.path = v.path;
-  if (v.proposal_hash) e.proposal_hash = v.proposal_hash;
-  if (v.task) {
-    if (v.kind === 'task_req') e.by = opts.from;
-    Object.assign(e, v.task);
+  return { last, recent, replayed };
+}
+
+/** A via=human payload is the person's: v2, signed for this room, fresh, and verified against their pinned key. */
+function checkSigned(s, p, now) {
+  if (!envelope.isV2(p) || typeof p.sig !== 'string') throw auth('a person\'s entry must be signed with their seat key (sig v2)');
+  if (p.room !== s.code) throw auth(`signed for room ${p.room}, not ${s.code}`);
+  if (!envelope.freshTs(p, now)) throw auth(`the signature's ts is more than ${envelope.SIG_SKEW_MS / 60_000} minutes from the host's clock`);
+  const pub = publicKey(p.from, s);
+  if (!pub) throw auth(`no key is pinned for ${p.from} in room ${s.code}; join again with /sub-human ${p.from} ${s.code}`);
+  if (!envelope.verify(p, pub)) throw auth(`the signature does not verify against ${p.from}'s key`);
+}
+
+/** A member_joined pubkey pins its name at first sight; another key for a pinned name is refused. */
+function checkPin(s, p) {
+  if (p.kind !== 'member_joined' || p.pubkey === undefined) return;
+  const key = envelope.parseKey(p.pubkey);
+  if (!key) throw new RoomError('INVALID', 'pubkey is not an Ed25519 public key');
+  const pinned = s.pins().get(p.from);
+  if (pinned && !pinned.equals(key)) throw auth(`${p.from} is pinned to another key in room ${s.code}; a lost key means a new name`);
+}
+
+/**
+ * Place an admitted payload p in store s after its newest entries (newest first; prevLine: the last line as
+ * stored): rate, replay, trust, then id, at and prev. Shared by every RoomStore, so the chain and the checks are
+ * the same whatever the backend. Returns {e, line}; throws RATE, AUTH, or INVALID for a line over
+ * LOG_LINE_MAX_BYTES.
+ */
+function placeAfter(s, p, { newest, prevLine, now }) {
+  const t = scanTail(newest, p, now);
+  if (t.recent >= config.RATE_MAX) {
+    throw new RoomError('RATE', `rate limit: ${p.from}'s Claude posted ${config.RATE_MAX} times in the last minute; wait before posting again`);
   }
-  if (v.normalized !== undefined) e.normalized = v.normalized;
-  if (v.edit_path) e.edit_path = v.edit_path;
-  if (v.drafted) e.drafted = v.drafted;
-  if (v.text !== undefined) e.text = v.text;
-  if (key) e.room = c; // the key's room, so a reader that is not bound to it can still verify
-  e.prev = hash12(prevLine || '');
-  if (key) e.sig = crypto.sign(null, Buffer.from(JSON.stringify(e), 'utf8'), key).toString('base64');
+  if (t.replayed) throw auth('this signed entry was placed already (its nonce is in the log)');
+  if (p.via === 'human') checkSigned(s, p, now);
+  checkPin(s, p);
+  const { sig, ...rest } = p;
+  const e = { id: (t.last || 0) + 1, at: new Date(now).toISOString(), ...rest, prev: hash12(prevLine || '') };
+  if (sig !== undefined) e.sig = sig;
   const line = JSON.stringify(e);
   const bytes = Buffer.byteLength(line, 'utf8');
   if (bytes > config.LOG_LINE_MAX_BYTES) {
     throw new RoomError('INVALID', `entry is too large (${bytes} bytes as stored; the limit is ${config.LOG_LINE_MAX_BYTES}). Shorten the text`);
   }
-  return { e: tag(e, c), line };
-}
-
-/** Validate an entry for append (the rules every backend shares); also returns the via=human signing key. */
-function prepare(c, entry, opts) {
-  const v = validate(entry, opts);
-  if (!c) throw new RoomError('NO_ROOM', 'no room bound; run /sub-human');
-  const key = v.via === 'human' ? humanKey(c, opts.from) : null;
-  return { v, key };
+  return { e: tag(e, s), line };
 }
 
 // ---------- keys of the small documents ----------
@@ -295,6 +387,19 @@ function atBoundary(fd, off) {
   return b[0] === 10;
 }
 const lineBefore = (fd, off) => { for (const l of linesBackward(fd, off)) return l; return ''; };
+/** One backward read from byte `end`: the last line (the next entry's prev) and the parseable entries, newest first. */
+function tailFrom(fd, end) {
+  const lines = linesBackward(fd, end);
+  const first = lines.next();
+  function* newest() {
+    for (let n = first; !n.done; n = lines.next()) {
+      let e = null;
+      try { e = JSON.parse(n.value); } catch { /* corrupt line: skip */ }
+      if (e && typeof e === 'object') yield e;
+    }
+  }
+  return { prevLine: first.done ? '' : first.value, newest: newest() };
+}
 const readRange = (fd, off, len) => { const b = Buffer.allocUnsafe(len); fs.readSync(fd, b, 0, len, off); return b; };
 
 /** The first line starting at or after byte pos (< end): {start, end, id} (id null for a line without one), or null. */
@@ -415,10 +520,10 @@ class FsRoomStore {
       const skip = c ? c.tail.length : 0;
       const cut = buf.lastIndexOf(10);
       const entries = c ? c.entries : [];
-      if (cut >= skip) for (const e of parseLines(buf.toString('utf8', skip, cut + 1), this.code)) entries.push(e);
+      if (cut >= skip) for (const e of parseLines(buf.toString('utf8', skip, cut + 1), this)) entries.push(e);
       const offset = cut >= skip ? start + cut + 1 : (c ? c.offset : 0);
       // A last line with no newline yet (torn, or written by a non-appender): parsed, never cached.
-      const partial = parseLines(buf.toString('utf8', Math.max(skip, cut + 1)), this.code);
+      const partial = parseLines(buf.toString('utf8', Math.max(skip, cut + 1)), this);
       const tailStart = Math.max(0, offset - start - TAIL_CHECK);
       const tail = Buffer.from(buf.subarray(tailStart, offset - start));
       readCache.set(file, { dev: st.dev, ino: st.ino, size: st.size, mtimeMs: st.mtimeMs, offset, tail, entries, partial });
@@ -448,7 +553,7 @@ class FsRoomStore {
 
   /** Poll the log for entries with id > after. Handles torn reads and a reset (truncated) log. */
   watch(onEntry, { after = 0, intervalMs = config.FOLLOW_POLL_MS } = {}) {
-    const file = this.logFile, c = this.code;
+    const file = this.logFile, self = this;
     let offset = 0, seen = after, buf = '';
     const tick = () => {
       let fd;
@@ -465,7 +570,7 @@ class FsRoomStore {
         if (cut < 0) return;
         const complete = buf.slice(0, cut);
         buf = buf.slice(cut + 1);
-        for (const e of parseLines(complete, c)) {
+        for (const e of parseLines(complete, self)) {
           if (e.id > seen) { seen = e.id; onEntry(e); }
         }
       } finally { fs.closeSync(fd); }
@@ -481,7 +586,7 @@ class FsRoomStore {
    * from its start. The caller drops ids it has seen. xfs: the fs module to read with (tests inject faults).
    */
   tailer({ fs: xfs = nodeFs } = {}) {
-    const file = this.logFile, c = this.code;
+    const file = this.logFile, self = this;
     let offset = endOffset(xfs, file);
     return {
       get offset() { return offset; },
@@ -500,7 +605,7 @@ class FsRoomStore {
         const entries = [];
         let pos = 0;
         for (let nl; (nl = buf.indexOf(10, pos)) >= 0; pos = nl + 1) {
-          if (nl > pos) { try { entries.push(tag(JSON.parse(buf.toString('utf8', pos, nl)), c)); } catch { /* corrupt */ } }
+          if (nl > pos) { try { entries.push(tag(JSON.parse(buf.toString('utf8', pos, nl)), self)); } catch { /* corrupt */ } }
           offset += nl + 1 - pos;
         }
         return { entries, reset };
@@ -509,13 +614,12 @@ class FsRoomStore {
   }
 
   // ----- writing -----
-  /**
-   * Under the log lock, read only the log's tail: the last line (its hash12 is the new prev), the last parseable
-   * id, and for via=agent the posts inside RATE_WINDOW_MS (the log is in time order, so the scan stops there).
-   */
-  append(entry, opts = {}) {
+  append(entry, opts = {}) { return this.place(toPayload(this.code, entry, opts), opts); }
+
+  /** Under the log lock, read only the log's tail (placeAfter stops at its window), then write one line. */
+  place(payload, opts = {}) {
     const d = this.dir; // NO_ROOM / invalid code before anything else
-    const { v, key } = prepare(this.code, entry, opts);
+    const p = admit(this.code, payload, opts);
     fs.mkdirSync(d, { recursive: true, mode: 0o700 });
     const file = this.logFile;
     return withLock(file + '.lock', () => {
@@ -524,22 +628,20 @@ class FsRoomStore {
         const size = fs.fstatSync(fd).size;
         let endsNl = true;
         if (size) { const b = Buffer.alloc(1); fs.readSync(fd, b, 0, 1, size - 1); endsNl = b[0] === 10; }
-        const now = Date.now();
-        let prevLine = null, last = null, recent = 0;
-        for (const l of linesBackward(fd, size)) {
-          if (prevLine === null) prevLine = l;
-          let e;
-          try { e = JSON.parse(l); } catch { continue; /* corrupt line: skip */ }
-          if (last === null) last = (e && e.id) || 0;
-          if (v.via !== 'agent') break;
-          if (now - Date.parse(e.at) >= config.RATE_WINDOW_MS) break;
-          if (e.from === opts.from && e.via === 'agent' && ++recent >= config.RATE_MAX) break;
-        }
-        const { e, line } = buildEntry(v, opts, { c: this.code, key, last, prevLine, recent, now });
+        const { e, line } = placeAfter(this, p, { ...tailFrom(fd, size), now: Date.now() });
         fs.writeSync(fd, (endsNl ? '' : '\n') + line + '\n');
         return e;
       } finally { fs.closeSync(fd); }
     }, { ErrorClass: RoomError });
+  }
+
+  /** The keys pinned in the log: envelope.pinnedKeys over the non-chat entries, cached until the file changes. */
+  pins() {
+    let st;
+    try { st = fs.statSync(this.logFile); } catch { return new Map(); }
+    const k = `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}`;
+    if (!this._pins || this._pins.k !== k) this._pins = { k, map: envelope.pinnedKeys(this.readView({ after: Infinity, save: false })) };
+    return this._pins.map;
   }
 
   /** Check the whole prev chain. Returns {ok:true, count} or {ok:false, badAt: id, count} ({line} for a corrupt line). */
@@ -586,7 +688,7 @@ class FsRoomStore {
       if (nl > pos) {
         const l = buf.toString('utf8', pos, nl);
         let e = null;
-        try { e = tag(JSON.parse(l), this.code); } catch { if (!bad) bad = { badAt: null, line: next.count + 1 }; }
+        try { e = tag(JSON.parse(l), this); } catch { if (!bad) bad = { badAt: null, line: next.count + 1 }; }
         if (e) {
           out.push({ off: start + pos, e });
           if (!bad && e.prev !== undefined && e.prev !== next.hash) bad = { badAt: e.id };
@@ -635,19 +737,18 @@ class FsRoomStore {
 
   /**
    * What a hook needs without parsing the whole log: every non-chat entry (proposals, answers, decisions,
-   * tasks, joins and leaves) and every entry with id > after, in log order. Advances log.idx as verifyChain()
-   * does.
+   * tasks, joins and leaves) and every entry with id > after, in log order. Advances
+   * log.idx as verifyChain() does, unless save is false.
    */
-  readView({ after = 0 } = {}) {
+  readView({ after = 0, save = true } = {}) {
     if (!(after > 0)) return this.readAll();
     let fd;
     try { fd = fs.openSync(this.logFile, 'r'); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
-    const c = this.code;
     try {
       const size = fs.fstatSync(fd).size;
       const cp = this._checkpoint(fd, size);
       const got = new Map(); // offset -> entry
-      const parse = buf => { try { return tag(JSON.parse(buf.toString('utf8')), c); } catch { return null; } };
+      const parse = buf => { try { return tag(JSON.parse(buf.toString('utf8')), this); } catch { return null; } };
       if (cp.marks.length) {
         // the marked lines, read in runs of nearby lines
         let i = 0;
@@ -676,7 +777,7 @@ class FsRoomStore {
       const scanned = this._scan(fd, size, cp);
       const { out, next } = scanned;
       for (const { off, e } of out) if (!CHAT_KINDS.has(e.kind) || e.id > after) got.set(off, e);
-      if (next.offset > cp.offset) this._saveCheckpoint(next);
+      if (save && next.offset > cp.offset) this._saveCheckpoint(next);
       const complete = scanned.complete;
       if (size > complete) { // no newline yet; readAll() parses it too
         const e = parse(readRange(fd, complete, size - complete));
@@ -769,6 +870,6 @@ const listRooms = () => { try { return fs.readdirSync(roomsDir()).filter(c => CO
 module.exports = {
   RoomError,
   FsRoomStore, open, setBackend, roomExists, createRoom, listRooms,
-  hash12, normalize, tag, roomOf, buildEntry, prepare, blobRef, checkKey, checkCursor, CHAT_KINDS,
-  SIGNER, pubPath, canonical, verifyHuman, unverifiedHuman, humanTrust,
+  hash12, normalize, tag, roomOf, toPayload, admit, placeAfter, blobRef, checkKey, checkCursor, CHAT_KINDS,
+  SIGNER, keyDir, pubPath, publicKey, verifyHuman, unverifiedHuman, humanTrust,
 };

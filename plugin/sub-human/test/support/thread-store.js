@@ -5,7 +5,8 @@
  * gate of PR3 in docs/next/REMOTE-PLAN.md (a hook can block on another thread's store and still pass).
  *
  *   new ThreadRoomStore(code)      every process shares one bridge, started on the first call. Each call
- *       carries the room's directory as this thread resolves it (SUB_HUMAN_HOME may change between calls).
+ *       carries the room's directory and the home as this thread resolves them (SUB_HUMAN_HOME may change
+ *       between calls; the worker reads the seat keys of a legacy room under that home).
  *   handle(method, params)         the bridge handler (this file, loaded on the worker)
  *   Preload: with SUB_HUMAN_TEST_THREAD_STORE=1 and NODE_OPTIONS="--require <this file>", every node process
  *       (the test process and the hooks it spawns) gets store.setBackend(ThreadRoomStore), so every
@@ -16,9 +17,8 @@
  * off this machine. lock and kv.lock take the same lock files on this thread: a mutex held across a callback
  * cannot cross. readAfter filters here, watch() polls readAfter() (a reset log is not noticed), and tailer()
  * keeps its reader on the worker (its {fs} test hook is not forwarded).
- * via=human append: store.prepare() takes the seat's key here and the worker signs that one entry with it,
- * because a v1 signature covers id and prev, which only the placing side knows. PR1's envelope.sign + place
- * end this: the calling thread signs and the worker only places.
+ * append signs here (store.toPayload, with this thread's signer) and the worker only places the payload
+ * (store.place), as a remote member's hook and the host do. pins() reads the pinned keys here, from readView.
  */
 const path = require('node:path');
 const { isMainThread } = require('node:worker_threads');
@@ -26,6 +26,9 @@ const { isDeepStrictEqual } = require('node:util');
 const store = require(path.join(__dirname, '..', '..', 'lib', 'room', 'store.js'));
 const config = require(path.join(__dirname, '..', '..', 'lib', 'config.js'));
 const { createBridge } = require(path.join(__dirname, '..', '..', 'lib', 'remote', 'bridge.js'));
+
+const envelope = require(path.join(__dirname, '..', '..', 'lib', 'room', 'envelope.js'));
+const { home } = require(path.join(__dirname, '..', '..', 'lib', 'home.js'));
 
 const { FsRoomStore, tag, blobRef } = store;
 
@@ -58,18 +61,17 @@ class ThreadRoomStore {
     for (const m of ['exists', 'lastId', 'validateChain', 'verifyChain', 'getCursor', 'setCursor']) this[m] = fwd(m);
   }
   get dir() { return this._local.dir; }
-  _call(method, args, key = null) { return send(method, { code: this.code, dir: this._local.dir, args, key }); }
-  _tag(entries) { for (const e of entries) tag(e, this.code); return entries; }
+  _call(method, args) { return send(method, { code: this.code, dir: this._local.dir, home: home(), args }); }
+  _tag(entries) { for (const e of entries) tag(e, this); return entries; }
 
   readAll() { return this._tag(this._call('readAll', [])); }
   readById(ids) { return this._tag(this._call('readById', [ids])); }
   readAfter(seq, filterFn = () => true) { return this.readAll().filter(e => e.id > seq && filterFn(e)); }
   since(id) { return this.readAfter(id); }
   readView(opts) { return this._tag(this._call('readView', [opts])); }
-  append(entry, opts = {}) {
-    const { key } = store.prepare(this.code, entry, opts); // this thread's errors, and its signer's key
-    return tag(this._call('append', [entry, opts], key), this.code);
-  }
+  append(entry, opts = {}) { return this.place(store.toPayload(this.code, entry, opts), opts); }
+  place(payload, opts = {}) { return tag(this._call('place', [payload, { system: opts.system }]), this); }
+  pins() { return envelope.pinnedKeys(this.readView({ after: Infinity, save: false })); }
   lock(name, fn, opts) { return this._local.lock(name, fn, opts); }
 
   watch(onEntry, { after = 0, intervalMs = config.FOLLOW_POLL_MS } = {}) {
@@ -116,13 +118,8 @@ function install() {
 // ---------- the worker ----------
 const stores = new Map(); // dir -> FsRoomStore
 const tailers = new Map(); // id -> FsRoomStore tailer
-let callKey = null;
 
 const OPS = {
-  append(s, [entry, opts], key) {
-    callKey = key;
-    try { return s.append(entry, opts); } finally { callKey = null; }
-  },
   'members.cas'(s, [expect, next]) {
     let ok = false;
     s.members.update(cur => ((ok = isDeepStrictEqual(cur, expect)) ? next : null));
@@ -137,15 +134,15 @@ const OPS = {
   'tailer.poll'(s, [id]) { return tailers.get(id).poll(); },
 };
 
-function handle(method, { code, dir, args, key }) {
+function handle(method, { code, dir, home: h, args }) {
+  process.env.SUB_HUMAN_HOME = h;
   let s = stores.get(dir);
   if (!s) { s = new FsRoomStore(code, { dir }); stores.set(dir, s); }
-  if (OPS[method]) return OPS[method](s, args, key);
+  if (OPS[method]) return OPS[method](s, args);
   const [a, b] = method.split('.');
   return b ? s[a][b](...args) : s[a](...args);
 }
 
-if (!isMainThread) globalThis[store.SIGNER] = () => callKey;
-else if (process.env.SUB_HUMAN_TEST_THREAD_STORE === '1') install();
+if (isMainThread && process.env.SUB_HUMAN_TEST_THREAD_STORE === '1') install();
 
 module.exports = { ThreadRoomStore, handle };

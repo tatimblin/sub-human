@@ -99,14 +99,15 @@ test('append: id and prev from the tail, past a corrupt or unterminated last lin
   const lines = fs.readFileSync(R.store.logFile, 'utf8').split('\n');
   assert.equal(lines[1], '{"torn": ');
   assert.equal(R.lastId(), 2);
-  // a log much bigger than one tail chunk: append reads only its end
+  // a log much bigger than one tail chunk: a system append reads only its end (a person's append also reads back
+  // 2 * SIG_SKEW_MS for its nonce and the pinned keys)
   fresh();
   const big = 'b'.repeat(8000);
   for (let i = 0; i < 40; i++) say('alice', big + i);
   const reads = [];
   const orig = fs.readSync;
   fs.readSync = function (fd, buf, off, len, pos) { reads.push(len); return orig.apply(this, arguments); };
-  try { say('bob', 'after'); } finally { fs.readSync = orig; }
+  try { R.append({ kind: 'status', text: 'after' }, { via: 'system', from: 'room', system: true }); } finally { fs.readSync = orig; }
   assert.ok(reads.reduce((a, b) => a + b, 0) < 70 * 1024, `append read ${reads.reduce((a, b) => a + b, 0)} bytes of a ${fs.statSync(R.store.logFile).size} byte log`);
   assert.deepEqual(R.validateChain(), { ok: true, count: 41 });
 });

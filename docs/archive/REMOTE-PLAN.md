@@ -70,6 +70,15 @@ Fills `lib/room/envelope.js`. Changes `lib/room/store.js`, `lib/room/validate.js
 - `publicKey(name, code)`: the pinned key first; the local `.pub` only when `keyed(entries)` is false. `humanTrust` returns `legacy` only in an unkeyed room.
 - Key pinning is strict: a `join` with a different key for a pinned name is refused (`AUTH`). A lost key means a new name.
 - **Accept:** the contract suite passes on Fs and Memory with v2 entries; a v1 log from the demo still reads `verified`; an unsigned `signoff` in a keyed room is `unverified` and `consent.fold` ignores it; a replayed payload (same nonce) is refused; `verifyChain` over a mixed v1/v2 log is `ok`.
+- **As built** (deviations from the bullets above):
+  - `place(payload, {system})`: `provisional` rides in the payload, under the signature (the hook decides it before signing); `{system}` is the trusted-caller flag, as for `append`. The protocol's `append` takes `{payload}`.
+  - The seam gains `place` and `pins()` (Fs: cached on the log's stat, read through `readView({after: Infinity, save: false})`; Memory: recomputed). `toPayload` (validate + sign), `admit` (validate again, rebuild the stored form) and `placeAfter` (rate, replay, trust, stamp) replace `prepare` / `buildEntry`; `canonical` moved into the envelope (`signedBytes`, v1 or v2). `envelope.parseKey` added.
+  - Replay: the nonce is looked for in the log, back `2 × SIG_SKEW_MS` by `at` (a payload with a fresh `ts` may be placed up to the skew late), so it holds across processes. A human append therefore reads more than the tail; a system or agent append does not.
+  - `AUTH` lands here: an unsigned or bad v2 signature, a replayed nonce, a stale `ts`, another room's payload, a key mismatch, no pinned key in a keyed room.
+  - Only the `RATE_MAX` bucket; `RATE_ADDRESSED_MAX` comes with its config in PR2. `validate` accepts `machine` on `member_joined`; `join.js` passes it once PR2 has `identity.machineId()`.
+  - `join.js` makes the key before the seat and blocks when it cannot; on `AUTH` it gives the seat back. `session-restore.js`'s `member_joined` (resume) carries the pubkey too.
+  - Entries are tagged with the store that read them (not just the code), so `humanTrust` judges against that store's pins.
+  - Consequence: in a keyed room a seat that joined before PR1 (no pin) cannot post `via=human` until it rejoins; the `AUTH` message says so.
 
 ### PR2 Machine independence: machine id, seats, host gates, decide
 
@@ -159,7 +168,7 @@ Request `{id, op, params}`, reply `{id, result}` or `{id, error: {code, message}
 | `join` | `{name, role: 'member', pubkey, session?}` | `{ok, rejoin?}` | a link | `seats.enter` with `machine` = the link's; pins the key or refuses `AUTH`; binds `name` to the link |
 | `leave` | `{name, reason}` | `{ok}` | a link, its own seat | `seats.exit` (reap gate on the host) |
 | `beat` | `{name, presence?: {state, detail?}}` | `{ok}` | a link, its own seat | `members.beat` |
-| `append` | `{payload, provisional?}` | `{entry}` | a link, `payload.from` its own seat | `validate`, `verify`, rate, replay, `place`; then `decide` for an answer. System kinds allowed from a link: `retract` of its own entries only |
+| `append` | `{payload}` | `{entry}` | a link, `payload.from` its own seat | `validate`, `verify`, rate, replay, `place`; then `decide` for an answer. System kinds allowed from a link: `retract` of its own entries only |
 | `subscribe` | `{after, hash}` | stream | a link | `hash12(line after)` must equal `hash`, else `FORK`; then `entry` events in id order and `doc` events for `members`, `presence/*`, `tasks`; `end` when the room closes |
 | `blob.get` | `{ref}` | `{bytes}` (base64) | a link | `blobs.get` |
 | `blob.put` | `{name, bytes}` | `{ref}` | a link | `blobs.put` (content-addressed, idempotent) |
@@ -174,7 +183,7 @@ Rate limits (`RATE_MAX`, `RATE_ADDRESSED_MAX`) and size caps (`ENTRY_*`, `LOG_LI
 |---|---|---|
 | `OFFLINE` | the link is down, or the deadline passed | a human post is refused with the reason, nothing queued; an agent tool returns the error; a read uses the mirror |
 | `HOST_ONLY` | an op the mirror never performs (`members.update`, writing a streamed doc, `decide`, orch control) | a bug if seen outside tests: the gates must have kept it out |
-| `AUTH` | no or bad token, a used invite, `from` not this link's seat, a pinned key mismatch | the join hook blocks the prompt with the reason; the tail prints one line |
+| `AUTH` | no or bad token, a used invite, `from` not this link's seat, a pinned key mismatch; a missing or bad signature, a replayed nonce, a stale `ts`, no pinned key in a keyed room (PR1, `store.place`) | the join hook blocks the prompt with the reason; the tail prints one line |
 | `FORK` | the mirror's last line is not the host's | the daemon stops; `sub-human link --reset CODE` |
 | `PROTOCOL` | unknown version or a malformed frame | the daemon stops; the tail says which version |
 

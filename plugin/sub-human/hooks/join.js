@@ -8,6 +8,9 @@
 // comes on the next prompt (mod/prompt.mjs), since UserPromptExpansion has no sessionTitle. Failure blocks the
 // prompt with a reason, no model turn. A seat needs the hooks module (its guard, prompt gate and delivery), so
 // without a fresh hello lease for this session (identity.modLeaseOk) the join is refused with NO_MODULE.
+// The seat key is made before the seat; its public key rides on member_joined, which pins it for the room's life
+// (lib/room/envelope.js): a join whose key differs from the one pinned for that name is refused (RoomError AUTH)
+// and the seat is given back.
 const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
 const orch = require('../lib/orch.js');
 const seatKey = require('./seat-key.js');
@@ -126,12 +129,18 @@ run(input => {
     identity.leave(cur.code, cur.name);
     room.open(cur.code).append({ kind: 'member_left', text: `${cur.name} left (switched rooms)` }, { via: 'system', from: cur.name, system: true });
   }
+  // The seat's key (hooks/seat-key.js): via=human posts and answers are signed with it, and the log pins it.
+  let pubkey;
+  try { pubkey = seatKey.publicPem(code, name); } catch (e) { return block(`could not create the seat key for ${name}: ${e.message}`); }
   const r = identity.join({ code, name, role: 'member', ...base });
   if (!r || !r.ok) return block(`could not join ${code} as ${name}: ${(r && r.error) || 'unknown error'}`);
-  // The seat's key (hooks/seat-key.js): via=human posts and answers are signed with it. A failure here is not
-  // fatal: the first post creates it.
-  try { seatKey.ensure(code, name); } catch (e) { process.stderr.write(`sub-human: seat key: ${e.message}\n`); }
-  room.open(code).append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}` }, { via: 'system', from: name, system: true });
+  try {
+    room.open(code).append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}`, pubkey }, { via: 'system', from: name, system: true });
+  } catch (e) {
+    if (e.code !== 'AUTH') throw e;
+    identity.leave(code, name);
+    return block(`could not join ${code} as ${name}: ${e.message}`);
+  }
   const note = ensureOrch(code, cwd, name);
   const me = { code, name, role: 'member', pid, session_id: input.session_id || null, address: identity.address(name, code) };
   const here = others(code, name);

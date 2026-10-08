@@ -2,15 +2,17 @@
 /**
  * plugin/sub-human/lib/room/validate.js: the room log's envelope rules (envelope v3): which kinds each `via`
  * may write, the fields a caller may set, and the task fields of task_req / task entries. append() (store.js)
- * runs validate() before it takes the log lock. Zero dependencies beyond lib/text.js.
+ * runs validate() before it signs, and place() runs it again on the payload before it takes the log lock.
+ * Zero dependencies beyond lib/text.js.
  *
  *   validate(entry, {via, from, system}) -> {via, kind, text, to, refs, hash, approvers, path, proposal_hash,
- *       normalized, edit_path, drafted, task}     throws RoomError INVALID with a message for the model
- *   RoomError(code, message)   code: INVALID | RATE | LOCK | NO_ROOM
+ *       normalized, edit_path, drafted, task, pubkey, machine}   throws RoomError INVALID with a message for the model
+ *   RoomError(code, message)   code: INVALID | RATE | LOCK | NO_ROOM | AUTH (a signature, a replay or a pinned key refused)
  * Rules: via "agent" writes say question status proposal task_req; via "human" say signoff objection proposal;
  * via "system" decision member_joined member_left task status, and only with {system: true}.
  * Size caps (lib/config.js): text <= ENTRY_TEXT_MAX_BYTES UTF-8 bytes, refs <= ENTRY_REFS_MAX, approvers and
  * blockedBy <= ENTRY_LIST_MAX, any other string field <= ENTRY_STR_MAX (JS .length) (narrower caps below win).
+ * member_joined may carry pubkey (the seat's Ed25519 SPKI PEM, which pins it: lib/room/envelope.js) and machine.
  * append() also refuses a serialized line over LOG_LINE_MAX_BYTES.
  */
 
@@ -28,8 +30,10 @@ const VIAS = ['human', 'agent', 'system'];
 const HASH_RE = /^[0-9a-f]{6,64}$/;
 const TASK_FIELDS = ['op', 'task_id', 'subject', 'detail', 'evidence', 'owner', 'status', 'req', 'blockedBy'];
 const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'hash', 'approvers', 'path', 'proposal_hash', 'normalized',
-  'edit_path', 'drafted', 'id', 'by', ...TASK_FIELDS]);
+  'edit_path', 'drafted', 'id', 'by', 'pubkey', 'machine', ...TASK_FIELDS]);
 const TASK_KINDS = ['task_req', 'task'];
+const PEM_RE = /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]{1,512}-----END PUBLIC KEY-----\n$/;
+const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 class RoomError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -43,7 +47,7 @@ function validate(entry, opts) {
     if (!ENTRY_FIELDS.has(k)) bad(`field "${k}" is not settable by callers`);
   }
   const via = opts.via || (opts.system === true ? 'system' : undefined);
-  const { kind, to = 'room', refs, hash, approvers, path: ppath, proposal_hash, normalized, edit_path, drafted } = entry;
+  const { kind, to = 'room', refs, hash, approvers, path: ppath, proposal_hash, normalized, edit_path, drafted, pubkey, machine } = entry;
   const isTask = TASK_KINDS.includes(kind);
   if (entry.id !== undefined && !isTask) bad('field "id" is not settable by callers');
   if (entry.by !== undefined && !(kind === 'task_req' && entry.by === opts.from)) bad('field "by" is not settable by callers (task_req stamps it)');
@@ -94,7 +98,10 @@ function validate(entry, opts) {
   if (kind === 'signoff' && !proposal_hash) bad('signoff requires proposal_hash');
   if (kind === 'objection' && via === 'human' && !proposal_hash) bad('a human objection requires proposal_hash');
   if (kind === 'decision' && !proposal_hash) bad('decision requires proposal_hash');
-  return { via, kind, text, to, refs, hash, approvers, path: ppath, proposal_hash, normalized, edit_path, drafted, task };
+  if (kind !== 'member_joined' && (pubkey !== undefined || machine !== undefined)) bad('pubkey and machine are only for member_joined');
+  if (pubkey !== undefined && (typeof pubkey !== 'string' || !PEM_RE.test(pubkey))) bad('pubkey must be a PEM public key');
+  if (machine !== undefined && (typeof machine !== 'string' || !MACHINE_RE.test(machine))) bad('invalid machine id');
+  return { via, kind, text, to, refs, hash, approvers, path: ppath, proposal_hash, normalized, edit_path, drafted, task, pubkey, machine };
 }
 
 const taskIdOk = v => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(v)) || (Number.isInteger(v) && v > 0);

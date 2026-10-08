@@ -1,14 +1,17 @@
 'use strict';
 // The per-seat human capability. A via=human entry ("a person typed or answered this") is signed with the
 // seat's Ed25519 private key, which only hook processes load: hooks are run by Claude Code itself, never by a
-// model. lib/room/store.js append() asks the signer installed here; readers verify with the public key.
+// model. lib/room/store.js append() asks the signer installed here; readers verify with the public key the
+// room's log pins (join.js puts it in member_joined: lib/room/envelope.js).
 //
 //   <home>/keys/<code>/          dir 0700
 //     <name>.key                 PKCS#8 PEM private key, 0600 (only this file reads it)
-//     <name>.pub                 SPKI PEM public key, 0600 (store.verifyHuman reads it)
+//     <name>.pub                 SPKI PEM public key, 0600 (store.verifyHuman reads it only in a room whose log
+//                                pins no key: a room from before keys were pinned)
 //
 //   ensure(code, name) -> KeyObject   the seat's private key, created on first use (join.js creates it at join;
 //                                     a hook creates it lazily for a seat that joined before keys existed)
+//   publicPem(code, name) -> string   the seat's public key as SPKI PEM, for member_joined (creates it like ensure)
 //   arm()                             install ensure() as this process's signer (hooks/common.js, every hook)
 //
 // The room MCP server, the CLI and the tail never require this file (test/security.test.js checks it), so
@@ -62,6 +65,8 @@ function ensure(code, name) {
   return key;
 }
 
+const publicPem = (code, name) => crypto.createPublicKey(ensure(code, name)).export({ type: 'spki', format: 'pem' });
+
 function arm() { globalThis[store.SIGNER] = ensure; }
 
-module.exports = { ensure, arm };
+module.exports = { ensure, publicPem, arm, keyPath };

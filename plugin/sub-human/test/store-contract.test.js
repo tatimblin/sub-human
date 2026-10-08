@@ -1,17 +1,22 @@
 'use strict';
 // The RoomStore contract (lib/room/store.js), run against FsRoomStore (the room directory) and MemoryRoomStore
-// (test/support/memory-store.js): append, ids and the prev chain, signed human entries, readView parity, watch and
-// tailer, chain checks, cursors, members compare-and-set (across processes for the file store), blobs and the
-// small documents. Both passing is what lets a room move off this machine behind the same interface.
+// (test/support/memory-store.js): append, ids and the prev chain, signed human entries (sig v2 placed anywhere,
+// v1 still read), keys pinned in the log, place's replay and trust checks, readView parity, watch and tailer,
+// chain checks, cursors, members compare-and-set (across processes for the file store), blobs and the small
+// documents. Both passing is what lets a room move off this machine behind the same interface.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const h = require('./helpers.js');
 const store = require(path.join(h.LIB, 'room', 'store.js'));
 const room = require(path.join(h.LIB, 'room.js'));
 const config = require(path.join(h.LIB, 'config.js'));
+const envelope = require(path.join(h.LIB, 'room', 'envelope.js'));
+const consent = require(path.join(h.LIB, 'room', 'consent.js'));
+const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
 const { MemoryRoomStore } = require('./support/memory-store.js');
 
 const CODE = 'otter-1234';
@@ -24,15 +29,25 @@ const BACKENDS = {
       lines[i] = fn(lines[i]);
       fs.writeFileSync(path.join(s.dir, 'log.jsonl'), lines.join('\n') + '\n');
     },
+    // a line written around the store
+    raw: (s, e) => fs.appendFileSync(path.join(s.dir, 'log.jsonl'), JSON.stringify(e) + '\n'),
   },
   memory: {
     make: () => new MemoryRoomStore(CODE),
     tamper: (s, i, fn) => { s._lines[i] = fn(s._lines[i]); },
+    raw: (s, e) => { s._lines.push(JSON.stringify(e)); },
   },
 };
 
 const say = (s, from, text, via = 'human') => s.append({ kind: 'say', text }, { via, from });
 const sys = (s, kind, from, extra = {}) => s.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true });
+const H = 'abcdef012345';
+/** The next raw line of s: id and prev chained, as a writer around the store would make it. */
+const rawLine = (s, fields) => {
+  const last = s.readAll().at(-1);
+  return { id: (last ? last.id : 0) + 1, at: new Date().toISOString(), ...fields, prev: store.hash12(last ? JSON.stringify(last) : '') };
+};
+const placed = ({ id, at, prev, ...payload }) => payload;
 
 for (const [name, B] of Object.entries(BACKENDS)) {
   test(`store contract (${name}): append assigns rising ids and chains prev; reads agree`, t => {
@@ -70,6 +85,74 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.throws(() => say(s, 'bob', 'one too many', 'agent'), e2 => e2.code === 'RATE');
     assert.throws(() => s.append({ kind: 'say', text: 'x'.repeat(config.LOG_LINE_MAX_BYTES) }, { via: 'system', from: 'room', system: true }), e2 => e2.code === 'INVALID');
     assert.equal(s.lastId(), 1 + config.RATE_MAX, 'nothing refused was written');
+  });
+
+  test(`store contract (${name}): sig v2 covers the payload, not its place: placed at another id it still verifies; v1 lines still do`, t => {
+    h.freshHome(t);
+    const s = B.make(t);
+    const e = say(s, 'alice', 'mine');
+    assert.deepEqual([e.sigv, typeof e.nonce, typeof e.ts], [2, 'string', 'number']);
+    // the same payload placed in another copy of the room, after other entries: a new id and prev, the same sig
+    const other = B.make(t);
+    sys(other, 'status', 'room'); sys(other, 'status', 'room');
+    const moved = other.place(placed(s.readAll()[0]));
+    assert.deepEqual([moved.id, moved.sig], [3, e.sig]);
+    assert.notEqual(moved.prev, e.prev);
+    assert.equal(store.humanTrust(other.readAll()[2]), 'verified');
+    // a v1 line (signed over the stored line minus sig, as before PR1) still reads as the person's
+    const v1 = rawLine(other, { from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'old', room: CODE });
+    v1.sig = crypto.sign(null, Buffer.from(JSON.stringify(v1)), seatKey.ensure(CODE, 'alice')).toString('base64');
+    B.raw(other, v1);
+    say(other, 'alice', 'v2 after v1');
+    assert.deepEqual(other.readAll().slice(-2).map(store.humanTrust), ['verified', 'verified']);
+    assert.deepEqual(other.validateChain(), { ok: true, count: 5 });
+    assert.equal(other.verifyChain().ok, true, 'a mixed v1/v2 log chains');
+  });
+
+  test(`store contract (${name}): member_joined pins a key; a keyed room never counts an unsigned answer and refuses another key`, t => {
+    h.freshHome(t);
+    const s = B.make(t);
+    s.append({ kind: 'proposal', text: 'p', hash: H, approvers: ['alice', 'bob'] }, { via: 'agent', from: 'orch' });
+    // no key pinned yet: a legacy room, where an unsigned answer from a seat with no key still counts
+    B.raw(s, rawLine(s, { from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H }));
+    const forged = s.readAll().at(-1);
+    assert.equal(s.pins().size, 0);
+    assert.equal(store.humanTrust(forged), 'legacy');
+    // alice joins with her key: the room is keyed from here on
+    const alice = seatKey.publicPem(CODE, 'alice');
+    sys(s, 'member_joined', 'alice', { pubkey: alice });
+    assert.deepEqual([...s.pins().keys()], ['alice']);
+    assert.ok(s.pins().get('alice').equals(crypto.createPublicKey(alice)));
+    assert.equal(store.humanTrust(forged), 'unverified', 'a keyed room never returns legacy');
+    // the same key again (a rejoin) is fine; another key for a pinned name is refused
+    sys(s, 'member_joined', 'alice', { pubkey: alice });
+    const stranger = crypto.generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' });
+    assert.throws(() => sys(s, 'member_joined', 'alice', { pubkey: stranger }), e => e.code === 'AUTH' && /a lost key means a new name/.test(e.message));
+    // alice's signed answer counts; bob, with a local key but none pinned, is refused, signed or not
+    s.append({ kind: 'signoff', proposal_hash: H }, { via: 'human', from: 'alice' });
+    assert.throws(() => s.append({ kind: 'signoff', proposal_hash: H }, { via: 'human', from: 'bob' }), e => e.code === 'AUTH' && /no key is pinned for bob/.test(e.message));
+    assert.throws(() => s.place({ from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H }), e => e.code === 'AUTH');
+    const m = consent.fold(s.readAll()).matrix(H);
+    assert.deepEqual([m.agreed, m.missing], [['alice'], ['bob']]);
+  });
+
+  test(`store contract (${name}): place refuses a replayed nonce, a stale ts, another room's payload and a changed field`, t => {
+    h.freshHome(t);
+    const s = B.make(t);
+    const p = store.toPayload(CODE, { kind: 'say', text: 'once' }, { via: 'human', from: 'alice' });
+    s.place(p);
+    assert.throws(() => s.place(p), e => e.code === 'AUTH' && /nonce/.test(e.message), 'a replay');
+    const key = seatKey.ensure(CODE, 'alice');
+    const fields = { from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'x' };
+    const refused = [
+      envelope.sign(fields, key, { room: CODE, from: 'alice', now: Date.now() - envelope.SIG_SKEW_MS - 1000 }),
+      envelope.sign(fields, key, { room: 'vole-0000', from: 'alice' }),
+      { ...envelope.sign(fields, key, { room: CODE, from: 'alice' }), text: 'changed' },
+    ];
+    for (const r of refused) assert.throws(() => s.place(r), e => e.code === 'AUTH', JSON.stringify(r).slice(0, 80));
+    assert.throws(() => s.place({ ...fields, via: 'agent', nonce: 'n', sig: 's' }), e => e.code === 'INVALID', 'only a person\'s entry is signed');
+    assert.throws(() => s.place({ ...fields, via: 'system', kind: 'status' }), e => e.code === 'INVALID', 'system needs {system: true}');
+    assert.equal(s.lastId(), 1, 'nothing refused was written');
   });
 
   test(`store contract (${name}): readView({after}) holds every non-chat entry and every entry after`, t => {

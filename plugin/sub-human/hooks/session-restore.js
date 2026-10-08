@@ -5,7 +5,7 @@
 //   clear    new session id, same claude process (CLAUDE_PID): rebind the new id to the seat found by pid.
 //   resume   a new claude process with the old session id. If the seat is still live, rebind the new pid;
 //            if session-end marked it left, rejoin the same name (when the room still exists) and log
-//            member_joined "rejoined (resumed)".
+//            member_joined "rejoined (resumed)" with the seat's pubkey (hooks/join.js).
 //            A room that is closing (the reaper is stopping its orch) is not rejoined.
 // Context = the same mechanics block as join (common.js contextBlock: the role template filled + ROWS, i.e.
 // lib/rows.js rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
@@ -19,6 +19,7 @@ const path = require('node:path');
 const { identity, room, run, out, whoami, presence, contextBlock, seatTitle, logError } = require('./common.js');
 const rows = require(path.join(__dirname, '..', 'lib', 'rows.js'));
 const proposal = require(path.join(__dirname, '..', 'lib', 'proposal.js'));
+const seatKey = require('./seat-key.js');
 
 const RECREATE = 'Your rows are not running (they do not survive --resume). Create them now, exactly as written:\n';
 const PARTIAL = 'Your other rows are still running; only the rows below are missing. Make only these calls, exactly as written:\n';
@@ -48,7 +49,8 @@ function reseat(input) {
   if (identity.roomClosing(last.code) || (last.role !== 'orch' && !identity.roomOpen(last.code))) return null;
   const r = identity.join({ code: last.code, name: last.name, role: last.role, pid, session_id: input.session_id, cwd: input.cwd });
   if (!r || !r.ok) return null;
-  room.open(last.code).append({ kind: 'member_joined', text: `${last.name} rejoined (resumed)` }, { via: 'system', from: last.name, system: true });
+  const pubkey = last.role === 'orch' ? undefined : seatKey.publicPem(last.code, last.name);
+  room.open(last.code).append({ kind: 'member_joined', text: `${last.name} rejoined (resumed)`, pubkey }, { via: 'system', from: last.name, system: true });
   return { ...last, pid, session_id: input.session_id };
 }
 

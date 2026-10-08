@@ -1,9 +1,9 @@
 'use strict';
 /**
  * test/support/memory-store.js: MemoryRoomStore, a second RoomStore (lib/room/store.js documents the interface)
- * that keeps a room in this process's memory. Test only. It shares the envelope with FsRoomStore (store.prepare
- * validates and finds the signing key, store.buildEntry stamps id, at, prev, room and sig), so ids, the prev
- * chain and signatures are byte-for-byte what the file store writes. test/store-contract.test.js runs the same
+ * that keeps a room in this process's memory. Test only. It shares the envelope with FsRoomStore (store.toPayload
+ * validates and signs, store.admit and store.placeAfter check and stamp id, at and prev), so ids, the prev chain,
+ * signatures and the trust checks are byte-for-byte what the file store does. test/store-contract.test.js runs the same
  * suite against both: that is the seam a store off this machine would implement.
  *
  *   new MemoryRoomStore(code)   _lines (the serialized log, one string per entry) is open for tamper tests
@@ -11,10 +11,11 @@
 const path = require('node:path');
 const store = require(path.join(__dirname, '..', '..', 'lib', 'room', 'store.js'));
 const config = require(path.join(__dirname, '..', '..', 'lib', 'config.js'));
+const envelope = require(path.join(__dirname, '..', '..', 'lib', 'room', 'envelope.js'));
 
 const { RoomError, hash12, tag, blobRef, checkKey, checkCursor, CHAT_KINDS } = store;
 const clone = v => (v === undefined ? undefined : structuredClone(v));
-const parse = (l, c) => { try { return tag(JSON.parse(l), c); } catch { return null; } };
+const parse = (l, s) => { try { return tag(JSON.parse(l), s); } catch { return null; } };
 
 class MemoryRoomStore {
   constructor(code) {
@@ -80,7 +81,7 @@ class MemoryRoomStore {
     const out = [];
     this._lines.forEach((l, i) => {
       let p = this._parsed[i];
-      if (!p || p.line !== l) p = this._parsed[i] = { line: l, e: parse(l, this.code) };
+      if (!p || p.line !== l) p = this._parsed[i] = { line: l, e: parse(l, this) };
       if (p.e) out.push(p.e);
     });
     this._parsed.length = this._lines.length;
@@ -100,23 +101,16 @@ class MemoryRoomStore {
     return all.filter(e => !CHAT_KINDS.has(e.kind) || e.id > after);
   }
 
-  append(entry, opts = {}) {
-    const { v, key } = store.prepare(this.code, entry, opts);
-    const now = Date.now();
-    const all = this.readAll();
-    let recent = 0;
-    if (v.via === 'agent') {
-      for (let i = all.length - 1; i >= 0; i--) {
-        const e = all[i];
-        if (now - Date.parse(e.at) >= config.RATE_WINDOW_MS) break;
-        if (e.from === opts.from && e.via === 'agent' && ++recent >= config.RATE_MAX) break;
-      }
-    }
-    const last = all.length ? all.at(-1).id || 0 : 0;
-    const { e, line } = store.buildEntry(v, opts, { c: this.code, key, last, prevLine: this._lines.at(-1) || null, recent, now });
+  append(entry, opts = {}) { return this.place(store.toPayload(this.code, entry, opts), opts); }
+
+  place(payload, opts = {}) {
+    const p = store.admit(this.code, payload, opts);
+    const { e, line } = store.placeAfter(this, p, { newest: this.readAll().toReversed(), prevLine: this._lines.at(-1), now: Date.now() });
     this._lines.push(line);
     return e;
   }
+
+  pins() { return envelope.pinnedKeys(this.readAll()); }
 
   watch(onEntry, { after = 0, intervalMs = config.FOLLOW_POLL_MS } = {}) {
     let seen = after, len = 0;
@@ -124,7 +118,7 @@ class MemoryRoomStore {
       if (this._lines.length < len) { len = 0; seen = 0; }
       const fresh = this._lines.slice(len);
       len = this._lines.length;
-      for (const l of fresh) { const e = parse(l, this.code); if (e && e.id > seen) { seen = e.id; onEntry(e); } }
+      for (const l of fresh) { const e = parse(l, this); if (e && e.id > seen) { seen = e.id; onEntry(e); } }
     };
     tick();
     const t = setInterval(tick, intervalMs);
@@ -138,7 +132,7 @@ class MemoryRoomStore {
       poll() {
         let reset = false;
         if (self._lines.length < at) { at = 0; reset = true; }
-        const entries = self._lines.slice(at).map(l => parse(l, self.code)).filter(Boolean);
+        const entries = self._lines.slice(at).map(l => parse(l, self)).filter(Boolean);
         at = self._lines.length;
         return { entries, reset };
       },

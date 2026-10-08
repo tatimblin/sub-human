@@ -12,7 +12,7 @@
  *     join({name, role, pubkey}) -> Promise<{ok, rejoin?}>
  *     leave(name, reason) -> Promise<{ok}>
  *     beat(name, {presence?}) -> Promise<{ok}>
- *     append(payload, {provisional?}) -> Promise<entry>
+ *     append(payload) -> Promise<entry>      (provisional rides in the payload, under the signature)
  *     subscribe(after, hash, onEvent) -> {stop()}     onEvent({ev, data}); a FORK or PROTOCOL error ends it
  *     blobGet(ref) -> Promise<Buffer | null>, blobPut(name, bytes) -> Promise<ref>
  *     close()

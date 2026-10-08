@@ -169,7 +169,7 @@ RoomStore
 | `<home>/sessions/mods/<sid>.json` | `hooks/mod-hello.js` | the hooks module's hello lease: this session's function hooks are loaded (join requires it) |
 | `<home>/bin/row-status`, `roots.json` | `hooks/row-launcher.js` | the status-line launcher and the plugin roots it may run |
 
-**MemoryRoomStore** (`test/support/memory-store.js`) is a second implementation that keeps a room in memory and implements `members.update` as a compare-and-set retry loop, as a remote store would. It shares `store.prepare` / `store.buildEntry`, so ids, chain and signatures are byte-identical. `test/store-contract.test.js` runs one suite against both. That is the **remote seam**: a store that keeps rooms off-machine implements the same interface (`store.setBackend(factory)` swaps it in). The seat private keys stay local whatever the store; liveness falls back to the `seen_at` lease when there is no local pid to check.
+**MemoryRoomStore** (`test/support/memory-store.js`) is a second implementation that keeps a room in memory and implements `members.update` as a compare-and-set retry loop, as a remote store would. It shares `store.toPayload` / `store.admit` / `store.placeAfter`, so ids, chain, signatures and the trust checks are byte-identical. `test/store-contract.test.js` runs one suite against both. That is the **remote seam**: a store that keeps rooms off-machine implements the same interface (`store.setBackend(factory)` swaps it in). The seat private keys stay local whatever the store; liveness falls back to the `seen_at` lease when there is no local pid to check.
 
 ## Entries and `via`
 
@@ -181,7 +181,7 @@ An entry is `{id, at, from, via, kind, text?, prev, …kind fields}`. `id` is mo
 | `agent` | `say`, `question`, `status`, `proposal`, `task_req` | the MCP server (`post`, `propose`, `task`) on behalf of a member's Claude |
 | `system` | `decision`, `member_joined`, `member_left`, `task`, `status` | hooks and the reaper, with `{system: true}` |
 
-**Signing.** Every hook process runs `seat-key.arm()`, which installs a signer. `append` with `via=human` requires it: the entry gets `room` and `sig` (Ed25519 over the line without `sig`). The MCP server, CLI, tail and module never load `seat-key.js` (`test/hooks/security.test.js`), so they cannot write `via=human`; the store refuses. Readers call `store.humanTrust(e)`: `verified`, `legacy` (unsigned, from a seat that has no key), or `unverified` (shown as `bob (unverified): …`, never counted for consent or tasks).
+**Signing.** Every hook process runs `seat-key.arm()`, which installs a signer. `append` is `place(toPayload(…))`: `toPayload` validates and, for `via=human`, signs (sig v2, `lib/room/envelope.js`: Ed25519 over the payload with sorted keys plus `room`, `from`, `nonce`, `ts`, without `id`/`at`/`prev`, so a payload signed on one machine can be placed on another). `place` validates again, refuses a replayed nonce or a `ts` outside `SIG_SKEW_MS`, verifies the signature, then stamps `id`, `at`, `prev` under the log lock. The MCP server, CLI, tail and module never load `seat-key.js` (`test/hooks/security.test.js`), so they cannot write `via=human`; the store refuses. Keys are pinned in the log: the join hook puts the seat's public key in `member_joined`, the first key seen per name is that name's key for the room's life, and a join with another key is refused (`AUTH`). Readers call `store.humanTrust(e)`: `verified` (v2, or v1 from before the pin, against the pinned key; the local `.pub` only in a room that pins none), `legacy` (unsigned, in a room that pins no key, from a seat with no local key), or `unverified` (shown as `bob (unverified): …`, never counted for consent or tasks).
 
 **Hash chain and `log.idx`.** `verifyChain` checks the chain incrementally from the `log.idx` checkpoint, which is trusted only while the line before its offset still hashes to the stored hash; otherwise it rebuilds from byte 0. The checkpoint also records the offset of every non-chat line, so `readView({after})` returns everything that decides lanes (proposals, answers, joins, tasks) plus the entries after `after`, without parsing the whole log. The tail runs `verifyChain` on its health tick and sends one `room log check: …` line per break (a `health` event). The chain makes edits around the store visible; it does not prevent them.
 
@@ -371,7 +371,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/room/render.js`: log entries as text, for Claude (ids kept) and for people (no ids).
 - `lib/room/store-mirror.js`: MirrorRoomStore, the RoomStore of a room hosted on another machine: an FsRoomStore directory kept byte-identical to the host's log by the link daemon (lib/remote/link.js), so every reader (readView, log.idx, tailer, verifyChain, rows, digests) works unchanged.
 - `lib/room/store.js`: the RoomStore seam, and FsRoomStore, its implementation over the room directory on this machine.
-- `lib/room/validate.js`: the room log's envelope rules (envelope v3): which kinds each `via` may write, the fields a caller may set, and the task fields of task_req / task entries. append() (store.js) runs validate() before it takes the log lock.
+- `lib/room/validate.js`: the room log's envelope rules (envelope v3): which kinds each `via` may write, the fields a caller may set, and the task fields of task_req / task entries. append() (store.js) runs validate() before it signs, and place() runs it again on the payload before it takes the log lock.
 - `lib/rows.js`: participant rows in the agent panel. Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.js kv).
 - `lib/seats.js`: entering and leaving a room, the one sequence the join hook, the session-end hook and the remote server (lib/remote/server.js, for a seat on another machine) all run.
 - `lib/tail.js`: the room tail behind `sub-human tail` (bin/sub-human), the hooks module's child (mod/deliver.mjs).
@@ -400,7 +400,7 @@ Everything is a `node` start, so the number of processes per event is the main c
 | `ExitPlanMode` during a review | up to 3 (Pre, PermissionRequest, Post) |
 | other tools (`Read`, `Grep`, …) | 0 |
 
-Long-lived per seated session: the tail child and the MCP server (one idle `node` each); a session with no seat runs only the MCP server. Measured in the audit waves: the at-room hook at **36 ms with a 100k-entry log** (was 243 ms before `log.idx` and tail-only reads), `append` **1.8 ms**. `append` reads only the log's tail for `id` and `prev`; readers keep a per-file cache and parse only appended bytes.
+Long-lived per seated session: the tail child and the MCP server (one idle `node` each); a session with no seat runs only the MCP server. Measured in the audit waves: the at-room hook at **36 ms with a 100k-entry log** (was 243 ms before `log.idx` and tail-only reads), `append` **1.8 ms**. `append` reads only the log's tail for `id` and `prev` (a person's entry also reads back `2 × SIG_SKEW_MS` for its nonce, and the pinned keys from the non-chat lines `log.idx` marks); readers keep a per-file cache and parse only appended bytes.
 
 ## Testing
 
