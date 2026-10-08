@@ -273,10 +273,12 @@ function wakeWatch({ onWake, tickMs, gapMs, clock = realClock, mono = () => perf
   return () => clock.clearInterval(t);
 }
 
-/** This machine's external addresses, as one comparable string. */
+/** This machine's external addresses (not loopback, not IPv6 link-local), as one comparable string. */
 function netSignature(ifaces = os.networkInterfaces()) {
   const out = [];
-  for (const [name, list] of Object.entries(ifaces || {})) for (const a of list || []) if (a && !a.internal) out.push(`${name}/${a.address}`);
+  for (const [name, list] of Object.entries(ifaces || {})) {
+    for (const a of list || []) if (a && !a.internal && !/^fe80:/i.test(a.address)) out.push(`${name}/${a.address}`);
+  }
   return out.sort().join(',');
 }
 

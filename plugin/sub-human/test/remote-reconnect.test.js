@@ -91,7 +91,8 @@ test('reconnect: netWatch calls onChange once per changed address set; netSignat
   const a = { lo0: [{ address: '127.0.0.1', internal: true }], en0: [{ address: '10.0.0.2', internal: false }, { address: 'fe80::1', internal: false }] };
   const b = { en0: [{ address: 'fe80::1', internal: false }, { address: '10.0.0.2', internal: false }] };
   assert.equal(link.netSignature(a), link.netSignature(b));
-  assert.equal(link.netSignature(a), 'en0/10.0.0.2,en0/fe80::1');
+  assert.equal(link.netSignature(a), 'en0/10.0.0.2', 'link-local IPv6 is not a network change');
+  assert.equal(link.netSignature({ en0: [{ address: '2001:db8::5', internal: false }] }), 'en0/2001:db8::5');
   assert.equal(typeof link.netSignature(), 'string');
 });
 

@@ -123,7 +123,7 @@ module.exports = {
   // One protocol frame (lib/remote/protocol.js), bytes: a plan blob (PROPOSAL_FILE_MAX) in base64 fits.
   LINK_FRAME_MAX_BYTES: 1024 * 1024,
   // The link daemon (lib/remote/link.js): the join hook waits this long for it to listen; a lost connection is
-  // tried again after LINK_RETRY_MS, doubled per failure up to LINK_RETRY_MAX_MS; it exits LINK_IDLE_MS after
+  // tried again after a jittered delay from LINK_RETRY_MS up to LINK_RETRY_MAX_MS; it exits LINK_IDLE_MS after
   // this machine has no seat left in the room.
   LINK_START_MS: 3000,
   LINK_HELLO_MS: 15_000,           // the daemon's hello: an ssh transport connects (and authenticates) first
