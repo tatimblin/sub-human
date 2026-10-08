@@ -116,7 +116,8 @@ const cmds = {
   join(name, invite, ...sshOpts) {
     const seat = newSeat(name, sshOpts.join(' '));
     const r = expand(seat, `join ${name} ${invite}`);
-    const parsed = lib('remote/auth.js').parseInvite(invite);
+    let parsed = lib('remote/auth.js').parseInvite(invite);
+    if (!parsed) try { parsed = lib('remote/transports/ws.js').parseJoinUrl(invite); } catch { /* an older plugin */ }
     return { ok: joinedOk(r.json), out: reason(r.json), ms: r.ms, code: parsed && parsed.code, stderr: r.stderr };
   },
 

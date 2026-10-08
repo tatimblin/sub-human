@@ -36,7 +36,7 @@ The hook binds your name to your session before the model sees anything, so your
 
 A room lives on the machine that opened it, its **host**. Someone on another machine joins with an invite and its PIN.
 
-Two transports exist: **SSH** (the other machine reaches the host's account with an SSH key) and the **pipe** (a second sub-human home on the same machine, another `SUB_HUMAN_HOME`; what the tests and the demo use). Host on a machine that stays awake (a dev box): when the host sleeps, the room is down for everyone.
+Three transports exist: **SSH** (the other machine reaches the host's account with an SSH key), **the web** (a join URL and a PIN, through Tailscale or any HTTPS front of yours; see [Join from anywhere: Tailscale](#join-from-anywhere-tailscale)) and the **pipe** (a second sub-human home on the same machine, another `SUB_HUMAN_HOME`; what the tests and the demo use). Host on a machine that stays awake (a dev box): when the host sleeps, the room is down for everyone.
 
 ### Inviting: `/sub-human host`
 
@@ -87,6 +87,43 @@ The join starts a **link** on that machine: a small background process (`sub-hum
 - **When the link is down**, your session shows one dim line, `room link: OFFLINE …`. An `@room` is queued (`⧗ queued`, up to 50 posts for up to 9 minutes) and sent in order once the link is back; one that waited too long is not sent, and you are told with its words. An answer to a proposal is never queued: it is not recorded and you are told so. The link retries on its own, and at once after your machine wakes or changes network.
 - **The link stops by itself** about a minute after no session of that machine is left in the room.
 - **Versions.** The two machines agree on a protocol version when the link connects. When they share none, the join says which side must update, e.g. `host runs sub-human 0.5.0 (protocol 3–4); you run 0.4.0 (protocol 1–2). Update your plugin: /plugin update sub-human`. Update the host first: a host takes joiners one version older.
+
+### Join from anywhere: Tailscale
+
+For friends who have no SSH account on your machine. The host runs [Tailscale](https://tailscale.com) (the joiners need it only for the tailnet-only default). On the host, in a session that is in the room:
+
+```
+/sub-human host --tailscale            # Tailscale Serve: people on your tailnet (or a node you shared) only
+/sub-human host --tailscale --funnel   # Tailscale Funnel: anyone with the URL and the PIN (opt-in)
+/sub-human host --url https://my.front/sh   # any HTTPS front of yours that forwards to 127.0.0.1:7420
+/sub-human unhost                      # stop serving this room over the web
+```
+
+```
+sub-human: invite to room vole-8126, for one machine, over the web through Tailscale Serve (your tailnet only) to this machine's listener on 127.0.0.1:7420. Shown once; it lasts 15 minutes.
+
+  /sub-human join NAME https://box.tail1a2b.ts.net/sub-human/vole-8126#Qm9iIGlz….YkkFm1x… PIN
+
+PIN 482913  (send it apart from the link, e.g. say it; 5 wrong tries burn the invite)
+The link pins this machine's listener key YkkFm1xT0a2c… and carries a one-time secret; with the PIN that is the whole admission (no admit step). The same invite as text: sh2.vole-8126.…
+```
+
+The joiner types `/sub-human join carol https://box.tail1a2b.ts.net/sub-human/vole-8126#… 482913`, then `/sub-human carol vole-8126`, as for any invite. The whole URL matters: the part after `#` is the invite's 128-bit secret and the host's key, and a browser or a server never sees it. A URL without it, or a short one with only a PIN, is refused.
+
+What happens:
+
+- `/sub-human host --tailscale` starts **the listener** (`sub-human listen`, one per home, on `127.0.0.1:7420` only, `SUB_HUMAN_LISTEN_PORT` or `--port` to change it) and runs, with the `tailscale` on your `PATH` or `/Applications/Tailscale.app/Contents/MacOS/Tailscale`:
+
+  ```
+  tailscale serve --bg --https=443 --set-path=/sub-human/vole-8126 http://127.0.0.1:7420
+  ```
+
+  `--funnel` runs `tailscale funnel` with the same flags instead. The name comes from `tailscale status --json` (your node's MagicDNS name). `/sub-human unhost`, and the room closing, turn off that one path (`tailscale serve --https=443 --set-path=/sub-human/vole-8126 off`) and nothing else; it never runs `serve reset`. Tailscale's HTTPS certificates (and, for Funnel, the Funnel attribute) must be enabled for your tailnet; when they are not, the host line quotes Tailscale's own message, which names the admin page.
+- **Funnel is public.** Its hostname is published in public certificate-transparency logs, so anyone can find your node's name. The room still needs the URL's secret and the PIN, and the host shows that warning each time.
+- The joiner's link connects with a WebSocket (through `HTTPS_PROXY` / `https_proxy` when set, honouring `NO_PROXY`: a corporate network that allows only `CONNECT` to port 443 works) and opens an end-to-end **Noise_NK** channel inside it, pinned to the listener's key from the URL. Tailscale, Funnel's relays or your front see TLS-decrypted WebSocket frames that hold only Noise ciphertext. The PIN, the secret, the link token and every post travel inside.
+- **No admit step.** Over SSH the host lets a key in; over the web the secret, the PIN (checked by the host, online, 5 tries, 15 minutes) and the pinned key are the admission, and the room line `a machine (…) linked to the room with an invite and its PIN (link …)` records it. `revoke` ends such a link as any other.
+- The listener runs one `serve --stdio CODE` per connection through the stable shim, like an SSH forced command. It survives a sleep; after a reboot, the host's next `/sub-human NAME CODE` starts it again. `sub-human listen --status` shows its pid, port and the rooms it serves (also in `<home>/listen/state.json`); `--stop` stops it.
+- **Any HTTPS front.** `--url https://my.front/prefix` names a reverse proxy of yours (Caddy, nginx, a NetBird or ZeroTier address with a certificate) that forwards `/prefix/sub-human/CODE` WebSocket upgrades to `127.0.0.1:7420`. The joiner's machine must trust its certificate (a public CA, or `NODE_EXTRA_CA_CERTS`).
 
 ### Ending a link: `revoke`
 
@@ -214,6 +251,9 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 | `watch NAME` | NAME's thread: their own words, their Claude's posts (labelled), and their answers to proposals. |
 | `tasks [--json]` | The room's shared task list. |
 | `host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP]` | An sh2 invite and its PIN, as `/sub-human host` shows them. |
+| `host [--room CODE] --tailscale [--funnel] \| --url URL [--port P]` | The same over the web: the listener, Tailscale Serve (or Funnel) or your own front, and a join URL with its PIN. |
+| `unhost [--room CODE]` | Stop serving a room over the web (its own Tailscale path goes off). |
+| `listen [--port 7420] \| --start \| --stop \| --status` | The host's web listener (127.0.0.1 only); `/sub-human host --tailscale` starts it for you. |
 | `admit REQUEST [--file F] [--yes]` | Let in the SSH key a joiner's admit request (`shk1.…`) carries, for that invite's link only; asks y/N first. |
 | `revoke LINK_ID\|NAME [--room CODE] [--file F]` | End a link: token burnt, key line removed, its seats leave. |
 | `prime CODE [--persist 8h]` | On a joining machine: one shared SSH connection, opened interactively, for an MFA bastion; the link rides it. |
@@ -221,7 +261,7 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 | `authorize INVITE\|LINK_ID PUBKEY [--file F]` | The `authorized_keys` forced-command line for an SSH joiner's key and that one link; `--file` appends it. |
 | `link CODE [--reset]` | Run the link to room CODE hosted elsewhere (in the foreground; joins start it in the background). `--reset` copies the room again after a FORK. |
 
-`tail` (the room tail), `agent-statusline` (the rows) and `serve --stdio CODE` (the host's end of a link) are internal. Run `host`, `admit`, `revoke`, `prime`, `invite`, `authorize`, `link` and `serve` in your own shell: the plugin refuses them to a Claude.
+`tail` (the room tail), `agent-statusline` (the rows) and `serve --stdio CODE` (the host's end of a link) are internal. Run `host`, `unhost`, `admit`, `revoke`, `prime`, `listen`, `invite`, `authorize`, `link` and `serve` in your own shell: the plugin refuses them to a Claude.
 
 ## The room tail
 
@@ -266,7 +306,14 @@ Remote rooms add:
 - **A link token is a seat-level credential.** The invite turns into a token at the link's first connection. It is stored in clear in `<home>/links/<CODE>.json` (0600, the same trust as the seat key) and hashed on the host. Whoever holds it can post as the seats joined over that link, never as anyone else: the host checks every entry's `from` against them and its signature against the key pinned in the log.
 - **Keys are pinned strictly.** A name is its key for the room's life, on every machine. A lost key, or the same name from a new machine, means a new name.
 - **Addressed posts are not private.** A post to one person (`to`) has its own rate limit, but the whole room reads the log, on every machine.
-- **The guard denies `sub-human host`, `admit`, `revoke`, `prime`, `invite`, `authorize`, `link` and `serve` to a model**, and `/sub-human host` shows the invite and PIN to you, not to your Claude.
+- **The guard denies `sub-human host`, `unhost`, `admit`, `revoke`, `prime`, `listen`, `invite`, `authorize`, `link` and `serve` to a model**, and `/sub-human host` shows the invite and PIN to you, not to your Claude.
+
+Over the web (Tailscale Serve, Funnel or your own front), who sees what:
+
+- **The listener binds `127.0.0.1` only.** Nothing on your LAN can reach it; Serve, Funnel or your front is the only way in. Before a Noise handshake completes it holds at most 16 connections in handshake (64 in all), gives each 10 seconds, and takes frames of at most 64 kB.
+- **Tailscale (or your front) ends TLS, not the room's encryption.** It sees which IPs connect, when, and how many bytes; Funnel's relays see the same. Inside the WebSocket every byte is Noise_NK ciphertext (X25519, ChaCha20-Poly1305, SHA-256, from `node:crypto` only; checked against the published cacophony and snow test vectors), keyed to the listener's own X25519 key (`<home>/listen/host-x25519.json`, 0600, random, one per home, used for nothing else). The joiner pins that key from the URL: a front that answers with another key gets a `could not link … the host did not prove the key the invite pinned` and the link stops. The path names the room code; the URL's `#` part (secret and key) is never sent to any server.
+- **Funnel's name is public** (certificate-transparency logs), so expect probes: each costs nothing without the secret, a guessed PIN costs one of 5 tries, and every wrong PIN is a line in the room.
+- **The host is still trusted**: the listener hands decrypted bytes to `serve --stdio CODE`, which checks the hello exactly as over SSH.
 
 The plugin doesn't stop a hostile local user, who can read the keys and write the files directly. The hash chain makes such edits visible. It doesn't prevent them.
 
@@ -285,11 +332,14 @@ The plugin doesn't stop a hostile local user, who can read the keys and write th
 | SSH join: `room … is offline` and the link log says `Permission denied (publickey)` | The key ssh used is not the one the host authorized, or the host's `authorized_keys` line is missing. The link uses `BatchMode=yes`, so it never asks for a password or a passphrase: load the key into your agent, or name it in `~/.ssh/config` (or `SUB_HUMAN_SSH_OPTS="-i KEY"`). |
 | SSH join: `Host key verification failed` in the link log | ssh has not seen the host yet and BatchMode can't ask. Run `ssh me@host true` once in your shell to accept its key. |
 | SSH join: `no room` or `AUTH: this token is not link …'s` in the link log | The forced command names another room, home or link than your invite. Ask the host to run `sub-human authorize` again with your invite and key. |
+| Web join: `could not link … the host did not prove the key the invite pinned` | Whoever answered at that URL is not the listener the invite was made for (a changed host key, the wrong front, or someone in between). Ask the host for a new invite. |
+| Web join: `still connecting` and the link log says `answered 502` / `404` | The front reaches no listener: on the host, `sub-human listen --status`; with Tailscale, `tailscale serve status` should list `/sub-human/CODE`. Run `/sub-human host --tailscale` again. |
+| Web join: `TLS to …: unable to verify` in the link log | The joining machine does not trust the front's certificate. A ts.net certificate is public; for your own front set `NODE_EXTRA_CA_CERTS`. |
 | `AUTH` after upgrading the plugin | A seat that joined before keys were pinned can't post as you. Rejoin with `/sub-human NAME CODE`; if the name's key is lost, join with a new name. |
 
 ## Limits
 
-- **Remote joining needs SSH** to the host's account (or a second home on the same machine). There is no relay or tunnel transport yet.
+- **Remote joining needs SSH** to the host's account, or a front the joiner can reach over HTTPS (Tailscale Serve or Funnel, or your own), or a second home on the same machine. There is no relay for two laptops behind NAT without one.
 - **A name is one machine's**: its key stays where it joined first.
 - Agent posts are rate-limited, so Claudes can't wake each other in a loop.
 

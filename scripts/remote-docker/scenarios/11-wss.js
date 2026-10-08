@@ -1,7 +1,9 @@
 'use strict';
 // 1.1 wss: the host listens on 127.0.0.1:$LAB_WS_PORT (7420) in the devbox; tls-front plays Tailscale Serve/Funnel.
-// bob (joiner-a) joins with `/sub-human join bob https://tls-front/CODE PIN`; ben (joiner-b) does the same with
-// HTTPS_PROXY=http://corp-proxy:3128 as his only way out. Posts flow, mirrors converge, a wrong PIN is refused.
+// bob (joiner-a) joins with `/sub-human join bob https://tls-front/sub-human/CODE#SECRET.HOSTKEY PIN`; ben (joiner-b)
+// does the same with HTTPS_PROXY=http://corp-proxy:3128 as his only way out. The join links (the host checks the PIN
+// inside the Noise channel; no admit step), then `/sub-human NAME CODE` seats. Posts flow, mirrors converge, a wrong
+// PIN is refused, and Caddy (the stand-in for Tailscale) sees only ciphertext: no PIN, secret or post in its log.
 // Interface assumed from docs/next/PROD-PLAN.md 1.1 and plan 04; override without editing this file:
 //   LAB_WS_LISTEN_CMD   the host's listener (default "listen --port {port}"), run detached as host on devbox
 //   LAB_WS_INVITE       how the host mints URL + PIN: "expand" (default: `/sub-human host --url {url}` through the
@@ -10,16 +12,17 @@
 const { delivered, converge } = require('./_lib.js');
 
 const WS_PORT = Number(process.env.LAB_WS_PORT || 7420);
-const URL_RE = /https:\/\/tls-front\/[A-Za-z0-9/_-]+/;
+const URL_RE = /https:\/\/tls-front\/[A-Za-z0-9/_-]+#[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/;
 const PIN_RE = /\bPIN\D{0,3}(\d{3}[- ]?\d{3})\b/i;
 
 function mint(t, host, code) {
   const url = 'https://tls-front';
   const out = process.env.LAB_WS_INVITE === 'cli'
     ? (r => r.stdout + r.stderr)(host.cli(['invite', '--room', code, '--url', url, '--pin']))
-    : JSON.stringify(host.expand('alice', `host --url ${url}`).json || {});
+    : (j => (j && j.reason) || JSON.stringify(j || {}))(host.expand('alice', `host --url ${url}`).json); // the block reason: the person's text
   const u = (URL_RE.exec(out) || [])[0], pin = ((PIN_RE.exec(out) || [])[1] || '').replace(/\D/g, '');
   t.ev.secret(pin);
+  if (u) t.ev.secret(u.split('#')[1].split('.')[0]); // the invite secret
   return { url: u, pin, out };
 }
 
@@ -46,8 +49,10 @@ module.exports = {
       const seat = lab.seat(svc, { env: { ...env, ...extra } });
       const bad = seat.join(name, `${inv.url} ${String((Number(inv.pin) + 1) % 1e6).padStart(6, '0')}`);
       t.check(`${name}: a wrong PIN is refused`, !bad.ok, (bad.out || '').slice(0, 120));
-      const j = seat.join(name, `${inv.url} ${inv.pin}`);
-      t.check(`${name} joins over wss${extra.HTTPS_PROXY ? ' through corp-proxy' : ''}`, j.ok, j.out || `${j.ms} ms`);
+      const l = seat.join(name, `${inv.url} ${inv.pin}`);
+      t.check(`${name} links over wss${extra.HTTPS_PROXY ? ' through corp-proxy' : ''} (the PIN held; no admit step)`, /linked to room/.test(l.out || ''), (l.out || '').slice(0, 160));
+      const j = seat.rejoin(name, code);
+      t.check(`${name} takes the seat over the link`, j.ok, j.out || `${j.ms} ms`);
       if (j.ok) joins.push({ seat, name });
     }
     for (const { seat, name } of joins) {
@@ -61,6 +66,9 @@ module.exports = {
       const c = await converge(t, host, code, joins.map(j => j.seat));
       t.check('mirrors byte-identical, chains verify', c.ok, c.detail);
     }
+    const caddy = lab.composeLogs('tls-front');
+    t.ev.write('tls-front.txt', caddy);
+    t.check('the TLS front logged no post text (it carries Noise ciphertext only)', !/wss (from|to) b/.test(caddy));
     const prox = lab.composeLogs('corp-proxy');
     if (joins.some(j => j.name === 'ben')) t.check('corp-proxy carried ben\'s CONNECT to tls-front:443', /tls-front:443/.test(prox));
   },

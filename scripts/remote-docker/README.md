@@ -52,7 +52,7 @@ Docker on this Mac. Nothing touches this Mac's sshd, `~/.ssh` or `~/.sub-human`.
   The ssh path through it is `ProxyCommand nc -X connect -x corp-proxy:3128 %h %p`; the wss path is `HTTPS_PROXY`.
 - **tls-front**: Caddy with `tls internal` for `https://tls-front/` (`lab/Caddyfile`). It forwards everything,
   WebSocket upgrades included, to `devbox:$LAB_WS_FWD_PORT` (7421), where `lab/fwd.js` hands the connection to the
-  host's `127.0.0.1:$LAB_WS_PORT` (7420). This is the shape of Tailscale Serve/Funnel: a third party terminates
+  host's `127.0.0.1:$LAB_WS_PORT` (7420), the plugin's `sub-human listen`. This is the shape of Tailscale Serve/Funnel: a third party terminates
   HTTPS and forwards to a loopback listener. The joiners trust Caddy's root through `NODE_EXTRA_CA_CERTS=/etc/lab-ca.crt`.
 
 ## Scenarios (`scenarios/NN-*.js`, run in order, each from a clean reset)
@@ -69,8 +69,9 @@ Docker on this Mac. Nothing touches this Mac's sshd, `~/.ssh` or `~/.sub-human`.
 | `security` | all | `ssh devbox ls` runs the forced command, not a shell; no pty; no `-W`; the bastion has no shell; homes 0700 with nothing group/world readable; no invite secret or token in any log, room file, process list or other file. With sh2+PIN: 5 wrong PINs burn the invite. With `revoke`: key removed, serve stopped, link cut | pass (PIN, revoke pending) |
 | `handoff` | P3 | devbox hands the room to bob (joiner-a); bea follows; all copies converge with the old lines kept | pending (`handoff`) |
 | `tls-front` | 1.1 | `https://tls-front/` verifies against the lab CA and answers 502 with no listener; with a stand-in listener on the devbox loopback (`lab/ws-probe.js`) the upgrade is 101 and echoes, from joiner-a and from joiner-b only through corp-proxy | pass |
-| `wss` | 1.1 | the host listens on 127.0.0.1:7420; bob and (through corp-proxy) ben join with `https://tls-front/… PIN`; a wrong PIN is refused; posts flow; mirrors converge | pending (`ws`, `urlPin`) |
-| `tailscale` | 1.1 | opt-in (`TS_SERVE=1` and Tailscale.app): real `tailscale serve --bg --set-path=/sub-human-lab-<rand>` in front of a local listener, a wss upgrade through the node's MagicDNS name, then that one path turned off (never Funnel, never `serve reset`) | skip |
+| `wss` | 1.1 | the host's `sub-human listen` on 127.0.0.1:7420; `/sub-human host --url https://tls-front` mints a join URL (`https://tls-front/sub-human/CODE#SECRET.KEY`) + PIN; bob and (through corp-proxy) ben link with it (no admit step) and take their seats; a wrong PIN is refused; posts flow both ways; mirrors converge; Caddy's log holds no post text | pass |
+| `tailscale` | 1.1 | opt-in (`TS_SERVE=1` and a tailscale CLI): the plugin's real `sub-human listen` and exactly the commands `host --tailscale` / `unhost` run (`tailscale serve --bg --https=443 --set-path=/sub-human-lab-<rand> http://127.0.0.1:<port>`, then `… --set-path=… off`), with a wss + Noise_NK handshake through the node's MagicDNS name pinned to the listener's key (never Funnel, never `serve reset`) | skip |
+| `wss-resilience` | P3/P2 (1.1) | bob (direct) and ben (corp-proxy) over wss: `docker pause devbox` `LAB_WSS_SLEEP_S` (45) s, both offline, a post queued, back within 30 s, the queued post once; iptables DROP to tls-front / corp-proxy, both dead within `LAB_PING_DEADLINE_MS` and back after the heal; the listener killed and restarted, both redial; converged throughout | pass |
 
 Statuses: **pass**; **fail** (a check failed: exit 1); **pending** (the feature is not in the plugin yet, so the
 scenario or check is not run); **bug** (a known plugin bug; exit 0 unless `LAB_STRICT=1`); **skip** (opt-in).
@@ -97,7 +98,7 @@ probe finds it and the scenario runs. You can also force things:
 | `outbox` | `lib/remote/outbox.js` (or `outbox` in `link.js`) | p3-sleep |
 | `autoRejoin` | `rejoin` in `link.js` | p3-sleep |
 | `versionRange` | `min_v`/`vmin`/`MIN_VERSION` in protocol or server | skew |
-| `ws`, `urlPin` | transport kind `ws`/`wss` or `ws.js`/`listener.js`; the join hook takes a URL + PIN | wss |
+| `ws`, `urlPin` | transport kind `ws`/`wss` or `ws.js`/`listener.js`; the join hook takes a URL + PIN | wss, wss-resilience |
 
 ## Evidence
 
@@ -118,7 +119,7 @@ redacted from every file.
   `docker compose -p sub-human-lab -f scripts/remote-docker/lab/compose.yml exec -u joiner joiner-a bash` to look
   around. `docker compose -p sub-human-lab -f scripts/remote-docker/lab/compose.yml down -v` when done.
 - Knobs: `LAB_SLEEP_S`, `LAB_JOINER_SLEEP_S`, `LAB_FLAP_CUTS`, `LAB_FLAP_PERIOD_MS`, `LAB_HEARTBEAT_DEADLINE_MS`,
-  `LAB_PING_DEADLINE_MS`, `LAB_WS_PORT` (7420), `LAB_WS_FWD_PORT` (7421), `LAB_OLD_REF` (cb4d344), `LAB_STRICT`.
+  `LAB_PING_DEADLINE_MS`, `LAB_WSS_SLEEP_S` (45), `LAB_WS_PORT` (7420), `LAB_WS_FWD_PORT` (7421), `LAB_OLD_REF` (cb4d344), `LAB_STRICT`.
 
 ## Files
 

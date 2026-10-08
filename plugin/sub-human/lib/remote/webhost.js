@@ -16,6 +16,7 @@
  *       URL/sub-human/CODE. joinUrl is the paste-able form: https://HOST/…/sub-human/CODE#SECRET.HOSTKEY. Unlike ssh
  *       there is no admit step: the invite's secret, its PIN and the pinned key are the admission, and the room line
  *       the host writes when the PIN holds (lib/remote/server.js) records it
+ *   ensure(code) -> bool   start the listener again for a room it serves (after a reboot): the join hook, on a host seat
  *   unhost(code) -> {removed, text}   the room leaves the served set and its own Tailscale path (only that one) is
  *       turned off; the listener stops once it serves no room. Links already made keep their token but cannot
  *       reach the room over the web until it is hosted again
@@ -105,4 +106,15 @@ function unhost(code) {
   return { removed: !!rec, text };
 }
 
-module.exports = { hostWeb, unhost, frontBase };
+/** The listener back for a room this home serves over the web, if it is not running (a reboot, a crash): the join
+ * hook calls it when a seat of the host joins. Best effort; true when it runs. */
+function ensure(code) {
+  const L = listener();
+  const st = L.status();
+  const rec = st.rooms[code];
+  if (!rec) return false;
+  if (st.running) return true;
+  try { L.start(rec.port ? { port: rec.port } : {}); return true; } catch { return false; }
+}
+
+module.exports = { hostWeb, unhost, ensure, frontBase };

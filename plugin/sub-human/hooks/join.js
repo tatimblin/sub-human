@@ -268,6 +268,7 @@ run(input => {
   try { pubkey = seatKey.publicPem(code, name); } catch (e) { return block(`could not create the seat key for ${name}: ${e.message}`); }
   const r = seats.enter({ code, name, ...base, pubkey });
   if (!r.ok) return block(`could not join ${code} as ${name}: ${r.error || 'unknown error'}`);
+  if (identity.isHost(code)) { try { require('../lib/remote/webhost.js').ensure(code); } catch { /* best effort */ } } // the listener after a reboot
   const me = { code, name, role: 'member', pid, session_id: input.session_id || null, address: identity.address(name, code) };
   const here = others(code, name);
   const msg = created
