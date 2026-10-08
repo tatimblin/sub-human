@@ -15,7 +15,7 @@ The one security goal: **a model can never speak or consent as a person.** The r
 - Consent is native: plan view first, question card as fallback; only `via=human` answers count.
 - Unprescriptive: no required workflow; injected text covers mechanics only.
 - Every undocumented Claude Code behaviour relied on is listed in `lib/cc.js` and checked by `npm run probe`.
-- Zero dependencies, Node 22+, macOS/Linux. `lib/`, `hooks/`, `mcp/` and `scripts/` are CommonJS; the hooks module `mod/` is ESM (`.mjs` with JSDoc, no build); the module's wiring tests are TypeScript (`mod/test/*.test.ts`), run by `claude plugin test`.
+- Zero dependencies, Node 24+, macOS/Linux. `lib/`, `hooks/`, `mcp/` and `scripts/` are CommonJS; the hooks module `mod/` is ESM (`.mjs` with JSDoc, no build); the module's wiring tests are TypeScript (`mod/test/*.test.ts`), run by `claude plugin test`.
 
 ## Process model
 
