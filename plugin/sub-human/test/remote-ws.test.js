@@ -233,3 +233,17 @@ test('proxyFor: HTTPS_PROXY for wss, HTTP_PROXY for ws, NO_PROXY and loopback by
   assert.equal(ws.proxyFor('wss://x/y', { https_proxy: 'http://p:1', no_proxy: '*' }), null);
   assert.equal(ws.proxyFor('wss://x/y', {}), null);
 });
+
+test('listener: it exits on its own once its home is gone (no listener left serving a deleted home)', async t => {
+  const { spawn } = require('node:child_process');
+  const { isAlive } = require(path.join(h.LIB, 'io.js'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-listen-gone-'));
+  const env = h.childEnv({ SUB_HUMAN_HOME: home, SUB_HUMAN_ALLOW_TMP_ROOT: '1' });
+  const child = spawn(process.execPath, [h.BIN, 'listen', '--port', '0'], { env, stdio: 'ignore' });
+  t.after(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } fs.rmSync(home, { recursive: true, force: true }); });
+  const stateFile = path.join(home, 'listen', 'state.json');
+  const pid = await h.until(() => { try { return JSON.parse(fs.readFileSync(stateFile, 'utf8')).pid; } catch { return null; } }, 5000, 25);
+  assert.equal(pid, child.pid);
+  fs.rmSync(home, { recursive: true, force: true });
+  assert.ok(await h.until(() => !isAlive(child.pid) || child.exitCode !== null, 6000, 50), 'gone within the home check');
+});

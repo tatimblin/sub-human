@@ -27,6 +27,9 @@ const PROBE = path.join(__dirname, 'worker-probe.js');
 
 class Machine {
   constructor(t, name, env = {}) {
+    // first, so it runs before the home is removed (after hooks run in order): a web listener this home started
+    // (host --tailscale / --url, a handoff to a web locator) is killed, not left serving a deleted home
+    if (t && typeof t.after === 'function') t.after(() => this.killListener());
     this.home = h.tmpDir(`sh-${name}-`, t);
     this.user = h.tmpDir('sh-user-', t);
     this.cwd = h.tmpDir('sh-cwd-', t);
@@ -81,6 +84,13 @@ class Machine {
       c.stdout.on('data', d => { out += d; });
       c.on('exit', () => resolve(out));
     });
+  }
+
+  /** Kill the listener whose pid this home's listen/state.json holds (no-op without one). */
+  killListener() {
+    let pid = null;
+    try { pid = JSON.parse(fs.readFileSync(path.join(this.home, 'listen', 'state.json'), 'utf8')).pid; } catch { return; }
+    if (Number.isInteger(pid) && pid > 0) try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
   }
 
   lib(fn) {

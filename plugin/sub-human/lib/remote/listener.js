@@ -29,7 +29,8 @@
  *       one holds it), then serve until SIGTERM / SIGINT / SIGHUP. Limits before a handshake completes: at most
  *       PREAUTH_MAX connections in handshake, LISTEN_MAX in all, HANDSHAKE_MS to finish it, Noise-sized frames. Every
  *       closedCheckMs it drops rooms that closed (or are gone) and turns their Tailscale path off (only that path);
- *       with no room left for LISTEN_IDLE_MS and no connection it exits. It survives a sleep: a socket bound to
+ *       with no room left for LISTEN_IDLE_MS and no connection it exits; it exits at once (checked every
+ *       HOME_CHECK_MS, 2 s) when its home directory is gone, or the state file names another live listener. It survives a sleep: a socket bound to
  *       loopback outlives one, a dead peer is found by the WebSocket ping (15 s) and the child's own LINK_SILENT_MS
  *   DEFAULT_PORT                   7420 (SUB_HUMAN_LISTEN_PORT)
  */
@@ -47,6 +48,7 @@ const HANDSHAKE_MS = 10_000;
 const WS_PING_MS = 15_000;
 const LISTEN_START_MS = 4000;
 const LISTEN_IDLE_MS = 10 * 60_000;
+const HOME_CHECK_MS = 2000;
 const CLOSED_CHECK_MS = 30_000;
 const BIN = path.join(__dirname, '..', '..', 'scripts', 'sub-human');
 
@@ -247,9 +249,18 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
     else if (Date.now() - idleSince >= idleMs) end('no room is served over the web any more');
   }, Math.min(closedCheckMs, idleMs));
   sweep.unref();
+  // its home removed (a test's temp home, a deleted SUB_HUMAN_HOME), or another listener took the state file: go
+  const homeDir = home();
+  const orphan = setInterval(() => {
+    if (!fs.existsSync(homeDir)) return end('its home is gone');
+    const pid = read().pid;
+    if (pid && pid !== process.pid && isAlive(pid)) end(`another listener (pid ${pid}) took over`);
+  }, HOME_CHECK_MS);
+  orphan.unref();
 
   function end(why) {
     clearInterval(sweep);
+    clearInterval(orphan);
     srv.close();
     for (const c of children) try { c.kill(); } catch { /* gone */ }
     if (mine) try { update(cur => (cur.pid === process.pid ? { ...cur, pid: null, conns: 0 } : cur)); } catch { /* best effort */ }
