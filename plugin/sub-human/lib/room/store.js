@@ -93,7 +93,7 @@ const nodeFs = require('node:fs');
 const fs = nodeFs;
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { home, roomsDir, roomDir } = require('../home.js');
+const { home, roomsDir, roomDir, repairModes } = require('../home.js');
 const { withLock } = require('../lock.js');
 const { writeFileAtomic, writeJsonAtomic, readJson } = require('../io.js');
 const { CODE_RE } = require('../text.js');
@@ -911,6 +911,7 @@ function open(c, { dir } = {}) {
   const k = `${home()}\0${c}`;
   let s = stores.get(k);
   if (!s) {
+    repairModes(); // a home an older version made 0755 (once per home and process)
     s = linked(c) ? new (require('./store-mirror.js').MirrorRoomStore)(c) : new FsRoomStore(c);
     stores.set(k, s);
   }
@@ -921,6 +922,7 @@ const roomExists = c => typeof c === 'string' && CODE_RE.test(c) && (fs.existsSy
 /** Create room `code` (private, exclusive): false when it already exists. */
 function createRoom(c) {
   fs.mkdirSync(roomsDir(), { recursive: true, mode: 0o700 }); // the home and rooms/ too when new: private
+  repairModes();
   try { fs.mkdirSync(roomDir(c), { mode: 0o700 }); return true; } catch (e) { if (e.code === 'EEXIST') return false; throw e; }
 }
 const listRooms = () => { try { return fs.readdirSync(roomsDir()).filter(c => CODE_RE.test(c)); } catch { return []; } };

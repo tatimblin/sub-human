@@ -1,6 +1,6 @@
 # Remote rooms plan
 
-Status: done, 2026-10-07 (PR1–PR6; "As built" notes under each PR). Remote joining works over the pipe transport (a second home on one machine); SSH is next (below). The user-facing docs: `plugin/sub-human/README.md` (Join from another machine), `docs/ARCHITECTURE.md` (Remote rooms). Sources:
+Status: done, 2026-10-07 (PR1–PR6; "As built" notes under each PR). Remote joining works over SSH and over the pipe transport (a second home on one machine); SSH was added after PR6 (below). The user-facing docs: `plugin/sub-human/README.md` (Join from another machine), `docs/ARCHITECTURE.md` (Remote rooms). Sources:
 - five competing plans, condensed into one and then reviewed line by line against the code (the corrections are below);
 - the code as of `a884db5` (`docs/ARCHITECTURE.md` describes it).
 
@@ -206,6 +206,8 @@ Changes `docs/ARCHITECTURE.md` (a Remote section: the diagram above, the op tabl
 ### Next, not now
 
 SSH = the pipe transport with `ssh -T -o BatchMode=yes HOST` in front, a forced command `sub-human serve --stdio CODE --link ID` in `authorized_keys`, and `sub-human authorize INVITE` to write that line. No protocol change.
+
+- **As built** (SSH, after PR6): `sub-human invite --ssh user@host[:port]` (locator `ssh:…`; `link.transportOf` takes only a plain user and host, so an invite names no ssh option or command); the daemon runs `ssh -T -o BatchMode=yes -o ServerAlive… [SUB_HUMAN_SSH_OPTS] [-p port] -- user@host "sub-human serve --stdio CODE"` with a 15 s hello (`LINK_HELLO_MS`). `sub-human authorize INVITE|LINK_ID PUBKEY [--file F]` prints (or appends) `command="SUB_HUMAN_HOME=… <node> <bin> serve --stdio CODE --link ID",restrict <key>`; the link id is reserved on the invite at authorize time (`auth.reserveLink`), and `serve --link ID` accepts only that link's token or the invite reserved for it. No protocol change. Also fixed: a new home and its directories were created 0755 (`io.writeFileAtomic`, `lock.js` mkdir without a mode); every store directory is 0700 now and `store.open` closes an old home (`home.repairModes`). Checked end to end by `scripts/remote-docker/` (a devbox container with sshd behind toxiproxy, the joiner on the Mac; `npm run test:remote-docker`).
 
 ## Protocol
 

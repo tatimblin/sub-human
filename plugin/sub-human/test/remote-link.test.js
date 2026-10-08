@@ -43,6 +43,28 @@ test('links: one private file per room; get, set, remove, list; a bad code or sh
   assert.equal(links.logFile('otter-0001'), path.join(home, 'links', 'otter-0001.log'));
 });
 
+test('store modes: a new home and every store directory are 0700; a home an older version made 0755 is repaired on open', t => {
+  const home = h.freshHome(t);
+  fs.rmSync(home, { recursive: true });
+  const code = h.newRoom();
+  h.register('alice', 'member', process.pid, code);
+  store.open(code).append({ kind: 'status', text: 'x' }, { via: 'system', from: 'room', system: true });
+  writeJsonAtomic(path.join(home, 'rooms', code, 'presence', 'alice.json'), { state: 'idle' });
+  links.set('vole-1234', { code: 'vole-1234', transport: { kind: 'pipe', home: '/x' }, invite: 'i', created_at: 'now' });
+  const dirs = [home, ...fs.readdirSync(home, { recursive: true }).map(f => path.join(home, f)).filter(f => fs.statSync(f).isDirectory())];
+  assert.ok(dirs.length >= 6, dirs.join(' '));
+  for (const d of dirs) assert.equal(mode(d), 0o700, d);
+  // an old home: 0755 everywhere
+  const old = h.freshHome(t);
+  for (const d of [old, path.join(old, 'rooms'), path.join(old, 'sessions'), path.join(old, 'rooms', 'vole-1234')]) {
+    fs.mkdirSync(d, { recursive: true });
+    fs.chmodSync(d, 0o755);
+  }
+  store.open('vole-1234');
+  for (const d of [old, path.join(old, 'rooms'), path.join(old, 'sessions')]) assert.equal(mode(d), 0o700, d);
+  assert.equal(mode(path.join(old, 'rooms', 'vole-1234')), 0o755, 'below the home only new directories: the home closes them');
+});
+
 test('store.open: a linked code is a mirror (isHost false) and exists before its directory does', t => {
   h.freshHome(t);
   assert.equal(store.roomExists('vole-1234'), false);
@@ -62,9 +84,39 @@ test('link: the socket path is short whatever the home; locators name a home, ne
   assert.notEqual(link.socketPath(deep + 'x'), p);
   assert.equal(link.pipeLocator('/a/home'), 'pipe:/a/home');
   assert.deepEqual(link.transportOf('pipe:/a/home'), { kind: 'pipe', home: '/a/home' });
-  for (const bad of ['pipe:relative', 'ssh:me@host', 'pipe:', '']) assert.equal(link.transportOf(bad), null, bad);
+  for (const bad of ['pipe:relative', 'pipe:', '', 'tcp:host:22']) assert.equal(link.transportOf(bad), null, bad);
   await assert.rejects(link.handle('append', { socket: path.join(h.tmpDir('sh-sock-', t), 'none.sock'), params: {} }), e => e.code === 'OFFLINE');
   await assert.rejects(link.handle('subscribe', { socket: '/x', params: {} }), e => e.code === 'PROTOCOL', 'only the hooks\' ops are relayed');
+});
+
+test('link: an ssh locator is a plain user@host[:port]; an invite can name neither an ssh option nor a command', () => {
+  assert.deepEqual(link.transportOf('ssh:me@host'), { kind: 'ssh', user: 'me', host: 'host' });
+  assert.deepEqual(link.transportOf('ssh:host@127.0.0.1:2222'), { kind: 'ssh', user: 'host', host: '127.0.0.1', port: 2222 });
+  assert.deepEqual(link.transportOf('ssh:a_b.c-d@dev.example.com:22'), { kind: 'ssh', user: 'a_b.c-d', host: 'dev.example.com', port: 22 });
+  assert.equal(link.sshLocator('me@far:2222'), 'ssh:me@far:2222');
+  const bad = [
+    '-oProxyCommand=sh@host', 'me@-oProxyCommand=sh', 'me@host -oProxyCommand=sh', 'me@host;id', 'me@host:22 id', 'me@host:0',
+    'me@host:65536', 'me@host:-1', 'me@', '@host', 'host', 'me@ho st', 'me@host\n-oX', "me@ho'st", 'me@ho"st', 'me@%h', 'me@a@b',
+    'me@[::1]', 'me@host:22:22', 'm e@host', '-l@host', 'me@host:2a',
+  ];
+  for (const d of bad) {
+    assert.equal(link.transportOf(`ssh:${d}`), null, d);
+    assert.equal(link.sshLocator(d), null, d);
+  }
+});
+
+test('link: the ssh command: BatchMode, this machine\'s own options, the port, "--" before the destination, a fixed remote command', () => {
+  const cmd = link.sshCommand({ kind: 'ssh', user: 'me', host: 'far', port: 2222 }, 'vole-1234', ['-i', '/k/id', '-o', 'UserKnownHostsFile=/k/kh']);
+  assert.deepEqual(cmd, ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2',
+    '-i', '/k/id', '-o', 'UserKnownHostsFile=/k/kh', '-p', '2222', '--', 'me@far', 'sub-human serve --stdio vole-1234']);
+  const old = process.env.SUB_HUMAN_SSH_OPTS;
+  process.env.SUB_HUMAN_SSH_OPTS = ' -F /dev/null  -i /k/id ';
+  try { assert.deepEqual(link.sshCommand({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234').slice(8, -3), ['-F', '/dev/null', '-i', '/k/id']); } finally {
+    if (old === undefined) delete process.env.SUB_HUMAN_SSH_OPTS; else process.env.SUB_HUMAN_SSH_OPTS = old;
+  }
+  // a link file edited by hand is checked again
+  assert.throws(() => link.sshCommand({ kind: 'ssh', user: '-oProxyCommand=sh', host: 'far' }, 'vole-1234', []), e => e.code === 'INVALID');
+  assert.throws(() => link.sshCommand({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234; id', []), e => e.code === 'INVALID');
 });
 
 test('mirror: applyLine appends a host line only when it chains; applyDoc writes only the room documents', t => {

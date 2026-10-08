@@ -14,10 +14,11 @@
 // system, host and join are reserved names.
 // `/sub-human host`: an invite to the room this session is in (host only; lib/remote/auth.js mintInvite), one
 // string sh1.<code>.<locator>.<secret> for one machine, shown to the person once (a block reason never reaches the
-// model). `/sub-human join NAME INVITE`: a room hosted on another machine: the link file (lib/room/links.js) from
-// the invite, the link daemon started (lib/remote/link.js start; it redeems the invite), then the join as above
-// over the link (the host logs it and runs the orch). A room this machine links to is joined the same way with
-// `/sub-human NAME CODE`. OFFLINE, AUTH and the like block the prompt with the reason.
+// model). `/sub-human join NAME INVITE`: a room hosted on another machine (an invite over ssh:, or pipe: for a
+// second home here): the link file (lib/room/links.js) from the invite, the link daemon started (lib/remote/link.js
+// start; it redeems the invite), then the join as above over the link (the host logs it and runs the orch). A room
+// this machine links to is joined the same way with `/sub-human NAME CODE`. OFFLINE, AUTH and the like block the
+// prompt with the reason.
 const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
 const orch = require('../lib/orch.js');
 const seats = require('../lib/seats.js');
@@ -86,6 +87,7 @@ function linkRoom(invite) {
   const inv = auth.parseInvite(invite);
   if (!inv) return block('that is not an invite (sh1.CODE.LOCATOR.SECRET); ask the host for one: /sub-human host.');
   const transport = link.transportOf(inv.locator);
+  if (!transport && inv.locator.startsWith('ssh:')) return block('this invite names an ssh destination that is not a plain user@host[:port]; ask the host for a new one.');
   if (!transport) return block(`this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine does not support yet.`);
   if (identity.roomExists(inv.code) && identity.isHost(inv.code)) return block(`room ${inv.code} is hosted on this machine; join it with /sub-human NAME ${inv.code}.`);
   const cur = links.get(inv.code);

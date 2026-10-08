@@ -8,7 +8,8 @@
  *                                           fsync: true   flush the temp file before the rename (durable)
  *                                           mode          the file mode. Default: an existing file keeps its
  *                                                         mode; a new file is 0o600 (the store is private)
- *                                         The parent directory is created (recursive, default mode).
+ *                                         The parent directory is created (recursive, 0o700: the store is
+ *                                         private, and this may be the first write into a new home).
  *   writeJsonAtomic(file, value, opts)    the same for JSON. opts.compact: one line, no trailing newline;
  *                                         otherwise pretty-printed (2 spaces) with a trailing newline.
  *   isAlive(pid) -> bool                  the pid exists (EPERM counts as alive: it exists, owned by another user)
@@ -27,7 +28,7 @@ function readJson(file, fallback = null) {
 }
 
 function writeFileAtomic(file, data, { fsync = false, mode } = {}) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   if (mode === undefined) {
     try { mode = fs.statSync(file).mode & 0o777; } catch { mode = 0o600; }
   }

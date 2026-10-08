@@ -41,17 +41,28 @@
  *   sub-human agent-statusline
  *       Claude Code's subagentStatusLine command (statusline/*). Never fails: on any error it prints
  *       nothing and exits 0.
- *   sub-human serve --stdio CODE
+ *   sub-human serve --stdio CODE [--link ID]
  *       One remote connection to room CODE hosted here (lib/remote/server.js): protocol frames on stdin and
  *       stdout (lib/remote/transports/pipe.js), errors on stderr; exits when stdin ends. A remote machine's
- *       link spawns it (through ssh later). Without a link token or an invite it answers hello and nothing else.
+ *       link spawns it (a pipe), or sshd runs it as the forced command `authorize` wrote. Without a link token
+ *       or an invite it answers hello and nothing else. --link ID: only that link's token (or the invite
+ *       reserved for it) is accepted; any other is AUTH.
  *   sub-human link CODE [--reset]
  *       The link daemon of room CODE, hosted on another machine (lib/remote/link.js run): the join hook starts it
  *       detached; it exits on its own once this machine has no seat left in the room. --reset (with no daemon
  *       running, e.g. after a FORK): forget this machine's copy of the room and start the daemon to copy it again.
- *   sub-human invite [--room CODE]
+ *   sub-human invite [--room CODE] [--ssh USER@HOST[:PORT]]
  *       An invite to a room hosted here (lib/remote/auth.js mintInvite), for one machine: what /sub-human host gives.
- *       Run it in your own shell: the Bash guard refuses it (and link, serve) to a model.
+ *       --ssh: the other machine reaches this one as USER@HOST[:PORT] over SSH (lib/remote/link.js sshLocator);
+ *       without it the invite is for a second home on this machine (pipe). Then run authorize with their key.
+ *   sub-human authorize INVITE|LINK_ID PUBKEY_FILE|- [--room CODE] [--file AUTHORIZED_KEYS]
+ *       The authorized_keys line that lets the holder of that SSH public key reach room CODE (the invite's, or
+ *       --room with a link id) as that one link and nothing else:
+ *         command="SUB_HUMAN_HOME=<home> <node> <this bin> serve --stdio CODE --link ID",restrict <key> sub-human:CODE:ID
+ *       (absolute paths: sshd's PATH has no Homebrew). The link id is reserved on the invite now
+ *       (lib/remote/auth.js reserveLink). Prints the line; --file appends it to that file (0600) instead, unless
+ *       the file holds it already, and refuses when the key is there with another line. PUBKEY - reads stdin.
+ *   Run invite, authorize, link and serve in your own shell: the Bash guard refuses them to a model.
  */
 
 const path = require('node:path');
@@ -254,13 +265,15 @@ function watch(args) {
 
 // ---------- serve --stdio CODE: lib/remote/server.js ----------
 function serve(args) {
-  const { flags, rest } = parseFlags(args, { stdio: 0 });
+  const { flags, rest } = parseFlags(args, { stdio: 0, link: 1 });
   const code = rest[0];
-  if (!flags.stdio || !code) die('usage: sub-human serve --stdio CODE');
+  if (!flags.stdio || !code || rest.length > 1) die('usage: sub-human serve --stdio CODE [--link ID]');
+  const { LINK_ID_RE } = require(path.join(LIB, 'remote', 'auth.js'));
+  if (flags.link !== undefined && !LINK_ID_RE.test(flags.link)) die(`bad link id "${flags.link}"`);
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
   const server = require(path.join(LIB, 'remote', 'server.js'));
   const pipe = require(path.join(LIB, 'remote', 'transports', 'pipe.js'));
-  server.serve(pipe.stdio(), { store: room.open(code).store, log: msg => process.stderr.write(msg + '\n') });
+  server.serve(pipe.stdio(), { store: room.open(code).store, linkId: flags.link, log: msg => process.stderr.write(msg + '\n') });
 }
 
 // ---------- link CODE [--reset], invite: lib/remote/link.js, lib/remote/auth.js ----------
@@ -280,18 +293,66 @@ function linkCmd(args) {
 }
 
 function invite(args) {
-  const { flags } = parseFlags(args, { room: 1 });
+  const { flags } = parseFlags(args, { room: 1, ssh: 1 });
   const { code, r } = openRoom(flags.room);
   if (!r.store.isHost) die(`room ${code} is hosted on another machine; its host gives the invites`, 1);
   const { mintInvite } = require(path.join(LIB, 'remote', 'auth.js'));
-  const { pipeLocator } = require(path.join(LIB, 'remote', 'link.js'));
-  console.log(mintInvite(r.store, { locator: pipeLocator() }).invite);
+  const { pipeLocator, sshLocator } = require(path.join(LIB, 'remote', 'link.js'));
+  const locator = flags.ssh === undefined ? pipeLocator() : sshLocator(flags.ssh);
+  if (!locator) die(`--ssh needs a plain USER@HOST[:PORT], not "${flags.ssh}"`);
+  console.log(mintInvite(r.store, { locator }).invite);
+}
+
+// ---------- authorize INVITE|LINK_ID PUBKEY: the SSH forced command for one link ----------
+const SSH_KEY_RE = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) ([A-Za-z0-9+/]+={0,3})(?: .*)?$/;
+const PLAIN_PATH_RE = /^\/[A-Za-z0-9_\/.@+,:-]+$/; // nothing a shell or sshd's command="" would read specially
+
+/** The one public key in text (an authorized_keys or .pub line, options not allowed): "type base64". */
+function sshPublicKey(text) {
+  const lines = String(text).split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  const m = lines.length === 1 && SSH_KEY_RE.exec(lines[0]);
+  if (!m) die('PUBKEY must hold exactly one SSH public key line ("ssh-ed25519 AAAA… comment"), with no options');
+  return `${m[1]} ${m[2]}`;
+}
+
+function authorize(args) {
+  const { flags, rest } = parseFlags(args, { room: 1, file: 1 });
+  if (rest.length !== 2) die('usage: sub-human authorize INVITE|LINK_ID PUBKEY_FILE|- [--room CODE] [--file AUTHORIZED_KEYS]');
+  const fs = require('node:fs');
+  const auth = require(path.join(LIB, 'remote', 'auth.js'));
+  const { home } = require(path.join(LIB, 'home.js'));
+  const inv = auth.parseInvite(rest[0]);
+  const code = inv ? inv.code : flags.room;
+  if (!code) die('a link id needs --room CODE');
+  if (inv && flags.room && flags.room !== inv.code) die(`that invite is to room ${inv.code}, not ${flags.room}`);
+  if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
+  const s = room.open(code).store;
+  if (!s.isHost) die(`room ${code} is hosted on another machine; its host authorizes the links`, 1);
+  let id;
+  if (inv) id = auth.reserveLink(s, inv.secret);
+  else if (auth.linkKnown(s, rest[0])) id = rest[0];
+  else die(`"${rest[0]}" is neither an invite nor a link of room ${code}`, 1);
+  const key = sshPublicKey(rest[1] === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(rest[1], 'utf8'));
+  const paths = { home: path.resolve(home()), node: process.execPath, bin: fs.realpathSync(__filename) };
+  for (const [what, p] of Object.entries(paths)) if (!PLAIN_PATH_RE.test(p)) die(`the ${what} path "${p}" has characters a forced command cannot carry plainly; move it`);
+  const line = `command="SUB_HUMAN_HOME=${paths.home} ${paths.node} ${paths.bin} serve --stdio ${code} --link ${id}",restrict ${key} sub-human:${code}:${id}`;
+  if (flags.file === undefined) return console.log(line);
+  const file = path.resolve(flags.file);
+  let cur = '';
+  try { cur = fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  const lines = cur.split('\n');
+  if (lines.includes(line)) return console.error(`already in ${file}`);
+  const blob = key.split(' ')[1];
+  if (lines.some(l => l.split(/\s+/).includes(blob))) die(`that key is in ${file} already, with another line; remove it first`, 1);
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  fs.appendFileSync(file, (cur && !cur.endsWith('\n') ? '\n' : '') + line + '\n', { mode: 0o600 });
+  console.error(`appended to ${file}: link ${id} of room ${code}`);
 }
 
 const [cmd, ...args] = process.argv.slice(2);
-const cmds = { tail, read, digest, who, tasks: tasksCmd, watch, serve, link: linkCmd, invite, 'agent-statusline': agentStatusline };
+const cmds = { tail, read, digest, who, tasks: tasksCmd, watch, serve, link: linkCmd, invite, authorize, 'agent-statusline': agentStatusline };
 try {
-  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE | link CODE [--reset] | invite | agent-statusline')))(args);
+  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] | authorize INVITE|LINK_ID PUBKEY [--file F] | agent-statusline')))(args);
 } catch (e) {
   die(e.message, 2);
 }

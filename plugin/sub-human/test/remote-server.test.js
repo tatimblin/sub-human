@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
 const store = require(path.join(h.LIB, 'room', 'store.js'));
 const identity = require(path.join(h.LIB, 'identity.js'));
@@ -269,4 +270,72 @@ test('remote (pipe): `sub-human serve --stdio CODE` as a child serves the host h
   c.close();
   await h.until(() => closed, 5000, 20);
   assert.equal(closed, true);
+});
+
+test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) takes only that link\'s token or the invite reserved for it', async t => {
+  const { code, host } = hostRoom(t);
+  const serveAs = id => pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code, ...(id ? ['--link', id] : [])], { env: h.childEnv() });
+  const a = auth.mintInvite(host, { locator: 'ssh:me@far' });
+  const b = auth.mintInvite(host, { locator: 'ssh:me@far' });
+  const idA = auth.reserveLink(host, a.secret);
+  assert.equal(auth.reserveLink(host, a.secret), idA, 'reserved once');
+  const idB = auth.reserveLink(host, b.secret);
+  assert.notEqual(idA, idB);
+  assert.equal(auth.linkKnown(host, idA), true);
+  assert.equal(auth.linkKnown(host, 'ffffffffffff'), false);
+  // invite b over link A's forced command: AUTH, and b stays unused
+  await rejects(client.connect(serveAs(idA), { machine: REMOTE, invite: b.invite }), 'AUTH');
+  const ca = await client.connect(serveAs(idA), { machine: REMOTE, invite: a.invite });
+  assert.equal(ca.link, idA, 'the invite redeems to the link it was reserved for');
+  ca.close();
+  const cb = await client.connect(serveAs(idB), { machine: REMOTE, invite: b.invite });
+  assert.equal(cb.link, idB);
+  cb.close();
+  // a token presented over another link's forced command: AUTH; over its own: in
+  await rejects(client.connect(serveAs(idB), { machine: REMOTE, token: ca.token }), 'AUTH');
+  const again = await client.connect(serveAs(idA), { machine: REMOTE, token: ca.token });
+  assert.equal(again.link, idA);
+  again.close();
+  // an invite never reserved, over a forced command: AUTH
+  const c = auth.mintInvite(host, { locator: 'ssh:me@far' });
+  await rejects(client.connect(serveAs(idA), { machine: REMOTE, invite: c.invite }), 'AUTH');
+  assert.equal(auth.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
+});
+
+test('cli: invite --ssh USER@HOST[:PORT]; authorize prints the forced-command line (absolute paths, restrict), --file appends it once', t => {
+  const { code } = hostRoom(t);
+  const run = (args, input) => spawnSync(process.execPath, [h.BIN, ...args], { env: h.childEnv(), encoding: 'utf8', input });
+  const inv = run(['invite', '--room', code, '--ssh', 'host@127.0.0.1:2222']);
+  assert.equal(inv.status, 0, inv.stderr);
+  const invite = inv.stdout.trim();
+  assert.deepEqual(auth.parseInvite(invite).locator, 'ssh:host@127.0.0.1:2222');
+  for (const bad of ['-oProxyCommand=x@h', 'me@h;id', 'me@h:99999']) assert.notEqual(run(['invite', '--room', code, '--ssh', bad]).status, 0, bad);
+  const dir = h.tmpDir('sh-ak-', t);
+  const pub = path.join(dir, 'id.pub');
+  const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1bJ1l3xq3fQnHk';
+  fs.writeFileSync(pub, `${KEY} me@laptop "quoted" $(id)\n`);
+  const r = run(['authorize', invite, pub]);
+  assert.equal(r.status, 0, r.stderr);
+  const id = auth.reserveLink(store.open(code), auth.parseInvite(invite).secret);
+  const bin = fs.realpathSync(h.BIN);
+  assert.equal(r.stdout.trim(),
+    `command="SUB_HUMAN_HOME=${path.resolve(process.env.SUB_HUMAN_HOME)} ${process.execPath} ${bin} serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`);
+  assert.doesNotMatch(r.stdout, /laptop|quoted|\$\(/, 'the key\'s own comment is dropped');
+  // by link id, from stdin, into a file: appended once (0600), the same key with another line refused
+  const ak = path.join(dir, 'ssh', 'authorized_keys');
+  assert.equal(run(['authorize', id, '-', '--room', code, '--file', ak], KEY).status, 0);
+  assert.equal(run(['authorize', id, '-', '--room', code, '--file', ak], KEY).status, 0);
+  assert.equal(fs.readFileSync(ak, 'utf8'), r.stdout);
+  assert.equal(fs.statSync(ak).mode & 0o777, 0o600);
+  const other = auth.mintInvite(store.open(code), { locator: 'ssh:me@far' }).invite;
+  assert.notEqual(run(['authorize', other, '-', '--file', ak], KEY).status, 0, 'one key, one link');
+  // refusals: options before the key, two keys, a link id without --room or unknown, a foreign room
+  for (const [args, input] of [
+    [['authorize', invite, '-'], `command="sh" ${KEY}`],
+    [['authorize', invite, '-'], `${KEY}\n${KEY}`],
+    [['authorize', invite, '-'], 'not a key'],
+    [['authorize', id, '-'], KEY],
+    [['authorize', 'ffffffffffff', '-', '--room', code], KEY],
+    [['authorize', invite, '-', '--room', 'vole-0000'], KEY],
+  ]) assert.notEqual(run(args, input).status, 0, `${args.join(' ')} <<< ${input}`);
 });

@@ -126,6 +126,7 @@ module.exports = {
   // tried again after LINK_RETRY_MS, doubled per failure up to LINK_RETRY_MAX_MS; it exits LINK_IDLE_MS after
   // this machine has no seat left in the room.
   LINK_START_MS: 3000,
+  LINK_HELLO_MS: 15_000,           // the daemon's hello: an ssh transport connects (and authenticates) first
   LINK_RETRY_MS: 1000,             // SUB_HUMAN_LINK_RETRY_MS
   LINK_RETRY_MAX_MS: 30_000,
   LINK_IDLE_MS: 60_000,            // SUB_HUMAN_LINK_IDLE_MS

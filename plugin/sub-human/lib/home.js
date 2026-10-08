@@ -9,6 +9,11 @@
  *   roomDir(code) -> string     <home>/rooms/<code>; throws on a code that is not CODE_RE
  *   machineId() -> string       this machine's id, <home>/machine.json {id}: 16 random hex digits made once
  *                               (never the hostname), cached per home. A seat record's `machine`.
+ *   repairModes() -> string[]   once per home and process: the home and its top-level store directories
+ *                               (rooms, sessions, links, keys, bin) that exist, are this user's and are open to
+ *                               group or others are made 0700 (a home made by an older version was 0755). Creates
+ *                               nothing. Returns the directories it changed. lib/room/store.js open() runs it.
+ *   Every store directory is created 0700 (here, lib/io.js, lib/lock.js, lib/room/*).
  */
 const fs = require('node:fs');
 const os = require('node:os');
@@ -41,4 +46,22 @@ function machineId() {
   return machines.get(h);
 }
 
-module.exports = { home, roomsDir, roomDir, machineId };
+const repaired = new Set(); // homes checked in this process
+function repairModes() {
+  const h = home();
+  if (repaired.has(h)) return [];
+  repaired.add(h);
+  const changed = [];
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+  for (const d of [h, ...['rooms', 'sessions', 'links', 'keys', 'bin'].map(n => path.join(h, n))]) {
+    try {
+      const st = fs.lstatSync(d);
+      if (!st.isDirectory() || (uid !== null && st.uid !== uid) || !(st.mode & 0o077)) continue;
+      fs.chmodSync(d, 0o700);
+      changed.push(d);
+    } catch { /* absent, or not ours to change */ }
+  }
+  return changed;
+}
+
+module.exports = { home, roomsDir, roomDir, machineId, repairModes };

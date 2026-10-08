@@ -2,8 +2,8 @@
 /**
  * plugin/sub-human/lib/remote/transports/pipe.js: frames over a pair of pipes: a child process's stdio on the
  * client side, this process's stdin/stdout on the server side (`bin/sub-human serve --stdio CODE`). The
- * two-home test spawns the server with the host's SUB_HUMAN_HOME; SSH later is the same with
- * `ssh -T -o BatchMode=yes HOST` in front of the command. PR4 of docs/archive/REMOTE-PLAN.md.
+ * two-home test spawns the server with the host's SUB_HUMAN_HOME; SSH is the same with
+ * `ssh -T -o BatchMode=yes … -- USER@HOST` as the command (lib/remote/link.js sshCommand). PR4 of docs/archive/REMOTE-PLAN.md.
  *
  *   spawn(cmd, args, {env?, cwd?}) -> Transport   the client end; the child's exit closes it (./index.js
  *                                                 documents Transport). stderr passes through to ours. close()

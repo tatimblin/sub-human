@@ -7,9 +7,11 @@
  * It never loads the signer (test/hooks/security.test.js): a via=human payload arrives signed by the remote
  * hook and is verified against the key pinned in the log (lib/room/envelope.js), then placed (store.place).
  *
- *   serve(transport, {store, log?}) -> {close()}
+ *   serve(transport, {store, log?, linkId?}) -> {close()}
  *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
- *       (lib/remote/auth.js); every other op before that is AUTH. store is the room's store as store.open(code)
+ *       (lib/remote/auth.js); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
+ *       SSH forced command `sub-human authorize` writes): only that link's token, or the invite reserved for it,
+ *       is accepted; any other is AUTH (and such an invite stays unused). store is the room's store as store.open(code)
  *       gives it in this process: seats and decide reach the room through that too. Ops:
  *         hello      version check (protocol.VERSION, else PROTOCOL); verifyToken or redeemInvite (the token is
  *                    returned once); neither: answered, but the session stays unauthenticated
@@ -56,15 +58,16 @@ function own(s, name) {
   if (!auth.mayWriteAs(s.link, name)) throw authError(`${name} has not joined over this link`);
 }
 
-function redeem(store, invite, machine) {
+function redeem(store, invite, machine, linkId) {
   const inv = auth.parseInvite(invite);
   if (!inv || inv.code !== store.code) throw authError(`not an invite to room ${store.code}`);
-  return auth.redeemInvite(store, inv.secret, { machine });
+  return auth.redeemInvite(store, inv.secret, { machine, ...(linkId ? { linkId } : {}) });
 }
 
-function known(store, token) {
+function known(store, token, linkId) {
   const link = auth.verifyToken(store, token);
   if (!link) throw authError('unknown link token; ask the host for a new invite');
+  if (linkId && link.id !== linkId) throw authError(`this token is not link ${linkId}'s`);
   return { link };
 }
 
@@ -116,7 +119,7 @@ const OPS = {
     if (v !== protocol.VERSION) throw new RoomError('PROTOCOL', `protocol v${v} is not served here (v${protocol.VERSION})`);
     if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) throw invalid('hello needs this machine\'s id');
     s.link = null;
-    const r = invite !== undefined ? redeem(s.store, invite, machine) : token !== undefined ? known(s.store, token) : { link: null };
+    const r = invite !== undefined ? redeem(s.store, invite, machine, s.linkId) : token !== undefined ? known(s.store, token, s.linkId) : { link: null };
     s.link = r.link;
     const out = { v: protocol.VERSION, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null };
     if (r.token) out.token = r.token;
@@ -181,10 +184,11 @@ const OPS = {
 
 // ---------- the session ----------
 class Session {
-  constructor(transport, store, log) {
+  constructor(transport, store, log, linkId) {
     this.transport = transport;
     this.store = store;
     this.log = log;
+    this.linkId = linkId || null;
     this.link = null;
     this.streams = new Set(); // {tick, stop}
     transport.onFrame(f => this.receive(f));
@@ -218,11 +222,11 @@ class Session {
 
 /**
  * @param {{send(frame: object): void, onFrame(fn: (frame: object) => void): void, onClose(fn: () => void): void, close(): void}} transport
- * @param {{store: import('../room/store.js').FsRoomStore, log?: (...a: any[]) => void}} ctx
+ * @param {{store: import('../room/store.js').FsRoomStore, log?: (...a: any[]) => void, linkId?: string}} ctx
  * @returns {{close(): void}}
  */
-function serve(transport, { store, log = () => {} }) {
-  const session = new Session(transport, store, log);
+function serve(transport, { store, log = () => {}, linkId }) {
+  const session = new Session(transport, store, log, linkId);
   return { close() { session.stop(); transport.close(); } };
 }
 

@@ -10,9 +10,15 @@
  *
  *   mintInvite(store, {locator, now?}) -> {invite, secret}   invite = formatInvite({code, locator, secret});
  *                                                  records sha256(secret) with created_at. Host only (HOST_ONLY)
- *   redeemInvite(store, secret, {machine, now?}) -> {token, link}   marks the invite used (an unknown or used
- *                                                  one is AUTH), records {id, token_sha256, machine, seats: [],
- *                                                  created_at}
+ *   redeemInvite(store, secret, {machine, linkId?, now?}) -> {token, link}   marks the invite used (an unknown or
+ *                                                  used one is AUTH), records {id, token_sha256, machine, seats: [],
+ *                                                  created_at}; id is the one reserveLink gave the invite, if any.
+ *                                                  linkId (an SSH forced command's --link): AUTH, and the invite
+ *                                                  stays unused, unless the invite was reserved for that link
+ *   reserveLink(store, secret) -> id               the link id an invite will redeem to, fixed now (kept on the
+ *                                                  invite record): `sub-human authorize` names it in the forced
+ *                                                  command before the invite is used. AUTH for an unknown invite
+ *   linkKnown(store, id) -> bool                   a link, or an invite's reserved link, with that id
  *   verifyToken(store, token) -> link | null       the link record for a presented token
  *   bindSeat(store, linkId, name) -> link          name joined over this link (AUTH for an unknown link)
  *   mayWriteAs(link, name) -> bool                 name is one of link.seats
@@ -34,6 +40,8 @@ const INVITE_PREFIX = 'sh1';
 const INVITES_KEY = 'remote/invites';
 const LINKS_KEY = 'remote/links';
 const SECRET_RE = /^[A-Za-z0-9_-]{16,128}$/;
+const LINK_ID_RE = /^[0-9a-f]{12}$/;
+const newLinkId = () => crypto.randomBytes(6).toString('hex');
 
 const sha256 = s => crypto.createHash('sha256').update(String(s)).digest('hex');
 const random = () => crypto.randomBytes(24).toString('base64url');
@@ -57,18 +65,49 @@ function mintInvite(store, { locator, now = Date.now() }) {
  * @param {{machine: string, now?: number}} opts
  * @returns {{token: string, link: object}}
  */
-function redeemInvite(store, secret, { machine, now = Date.now() }) {
+function redeemInvite(store, secret, { machine, linkId, now = Date.now() }) {
   const key = sha256(secret);
-  const link = { id: crypto.randomBytes(6).toString('hex'), token_sha256: null, machine, seats: [], created_at: iso(now) };
+  const link = { id: null, token_sha256: null, machine, seats: [], created_at: iso(now) };
   store.kv.update(INVITES_KEY, cur => {
     const inv = cur && cur[key];
     if (!inv || inv.used_at) throw new RoomError('AUTH', 'this invite is unknown or was used already; ask the host for a new one');
+    if (linkId !== undefined && inv.link !== linkId) throw new RoomError('AUTH', `this invite is not for link ${linkId}`);
+    link.id = inv.link || newLinkId();
     return { ...cur, [key]: { ...inv, used_at: iso(now), link: link.id } };
   });
   const token = random();
   link.token_sha256 = sha256(token);
   store.kv.update(LINKS_KEY, cur => ({ ...cur, [link.id]: link }));
   return { token, link };
+}
+
+/**
+ * @param {import('../room/store.js').FsRoomStore} store   the host's store (isHost)
+ * @param {string} secret
+ * @returns {string}
+ */
+function reserveLink(store, secret) {
+  if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room authorizes its links');
+  const key = sha256(secret);
+  let id = null;
+  store.kv.update(INVITES_KEY, cur => {
+    const inv = cur && cur[key];
+    if (!inv) throw new RoomError('AUTH', 'this invite is unknown; mint one with sub-human invite');
+    id = inv.link || newLinkId();
+    return inv.link ? undefined : { ...cur, [key]: { ...inv, link: id } };
+  });
+  return id;
+}
+
+/**
+ * @param {import('../room/store.js').FsRoomStore} store
+ * @param {string} id
+ * @returns {boolean}
+ */
+function linkKnown(store, id) {
+  if (typeof id !== 'string' || !LINK_ID_RE.test(id)) return false;
+  if ((store.kv.get(LINKS_KEY, null) || {})[id]) return true;
+  return Object.values(store.kv.get(INVITES_KEY, null) || {}).some(inv => inv.link === id);
 }
 
 /**
@@ -141,6 +180,6 @@ function parseInvite(text) {
 }
 
 module.exports = {
-  INVITE_PREFIX, INVITES_KEY, LINKS_KEY, mintInvite, redeemInvite, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
+  INVITE_PREFIX, INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, redeemInvite, reserveLink, linkKnown, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
   formatInvite, parseInvite,
 };

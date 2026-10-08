@@ -74,7 +74,7 @@ function log(...a) {
   if (process.env.SUB_HUMAN_DEBUG !== '1') return;
   try {
     const line = a.map(x => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
-    fs.mkdirSync(identity.home(), { recursive: true });
+    fs.mkdirSync(identity.home(), { recursive: true, mode: 0o700 });
     fs.appendFileSync(path.join(identity.home(), 'mcp-debug.log'), `${new Date().toISOString()} ${process.pid} ${line}\n`);
   } catch { /* debug only */ }
 }

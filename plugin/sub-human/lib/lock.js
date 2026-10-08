@@ -137,7 +137,7 @@ function lockError(ErrorClass, lock) {
 
 /** Run fn while holding an exclusive lockfile (see the header). */
 function withLock(lock, fn, { timeoutMs = config.LOCK_TIMEOUT_MS, staleMs = config.LOCK_STALE_MS, ErrorClass = Error } = {}) {
-  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  fs.mkdirSync(path.dirname(lock), { recursive: true, mode: 0o700 }); // in the store: private
   const deadline = Date.now() + timeoutMs;
   let fd;
   for (;;) {

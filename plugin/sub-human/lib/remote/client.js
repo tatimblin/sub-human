@@ -6,8 +6,9 @@
  * signer: a via=human payload, and a join's seat proof (lib/remote/auth.js proveSeat), reach it already
  * signed. PR4 of docs/archive/REMOTE-PLAN.md.
  *
- *   connect(transport, {machine, token?, invite?, caps?, deadlineMs?}) -> Promise<Client>
+ *   connect(transport, {machine, token?, invite?, caps?, deadlineMs?, helloMs?}) -> Promise<Client>
  *       says hello; resolves once the server answered (the token from a redeemed invite is on client.token).
+ *       helloMs (default deadlineMs) bounds the hello alone: a transport such as ssh connects before it answers.
  *       A refused hello closes the transport and rejects.
  *   Client
  *     token, link, room, serverCaps
@@ -72,10 +73,10 @@ class Client {
     for (const fn of fns) fn({ ev: 'end', data: { reason: 'OFFLINE' } });
   }
 
-  _request(op, params, id = ++this.seq) {
+  _request(op, params, id = ++this.seq, ms = this.deadlineMs) {
     if (this.closed) return Promise.reject(offline('the link is closed'));
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(offline(`${op}: no answer within ${this.deadlineMs} ms`)); }, this.deadlineMs);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(offline(`${op}: no answer within ${ms} ms`)); }, ms);
       this.pending.set(id, { resolve, reject, timer });
       this.transport.send(protocol.request(id, op, params));
     });
@@ -105,14 +106,14 @@ class Client {
 
 /**
  * @param {{send(frame: object): void, onFrame(fn: (frame: object) => void): void, onClose(fn: () => void): void, close(): void}} transport
- * @param {{machine: string, token?: string, invite?: string, caps?: object, deadlineMs?: number}} opts
+ * @param {{machine: string, token?: string, invite?: string, caps?: object, deadlineMs?: number, helloMs?: number}} opts
  * @returns {Promise<Client>}
  */
-async function connect(transport, { machine, token, invite, caps = {}, deadlineMs = LINK_CALL_MS }) {
+async function connect(transport, { machine, token, invite, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs }) {
   const c = new Client(transport, { deadlineMs });
   const cred = invite !== undefined ? { invite } : token !== undefined ? { token } : {};
   try {
-    const r = await c._request('hello', { v: protocol.VERSION, caps, machine, ...cred });
+    const r = await c._request('hello', { v: protocol.VERSION, caps, machine, ...cred }, ++c.seq, helloMs);
     if (r.v !== protocol.VERSION) throw new RoomError('PROTOCOL', `the server speaks protocol v${r.v}, not v${protocol.VERSION}`);
     Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps });
   } catch (e) {

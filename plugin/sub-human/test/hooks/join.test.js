@@ -305,12 +305,14 @@ test('/sub-human host: an invite to my room, shown to me only (a block), once pe
   assert.equal(auth.parseInvite(invite).locator, `pipe:${w.home}`, 'this machine, this home');
   assert.match(shown.reason, new RegExp(`/sub-human join NAME ${invite.replace(/[.]/g, '\\.')}`));
   assert.notEqual(/sh1\.\S+/.exec(w.hook('join', expand('host'), { as: 'alice' }).json.reason)[0], invite, 'a new one each time');
-  const ssh = auth.formatInvite({ code: 'vole-1234', locator: 'ssh:me@far', secret: 'x'.repeat(32) });
+  const inv = locator => auth.formatInvite({ code: 'vole-1234', locator, secret: 'x'.repeat(32) });
   const cases = [
     ['join bob', /usage/],
     ['join bob nonsense', /not an invite/],
     [`join bob ${invite}`, /hosted on this machine/],
-    [`join bob ${ssh}`, /through "ssh", which this machine does not support yet/],
+    [`join bob ${inv('tcp:far:22')}`, /through "tcp", which this machine does not support yet/],
+    [`join bob ${inv('ssh:-oProxyCommand=sh@far')}`, /not a plain user@host\[:port\]/],
+    [`join bob ${inv('ssh:me@far -oProxyCommand=sh')}`, /not a plain user@host\[:port\]/],
   ];
   for (const [args, re] of cases) assert.match(w.hook('join', expand(args), { as: 'me' }).json.reason, re, args);
   assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
