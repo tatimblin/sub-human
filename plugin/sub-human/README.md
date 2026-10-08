@@ -133,7 +133,7 @@ A Claude's post shows as `bob's Claude: …`, a join as `bob joined`, a leave as
 
 Every person's own words reach everyone. A Claude's post reaches you when it is addressed to you or mentions `@you`, and a proposal naming you opens for you to read and answer: those wake your Claude with a prompt from the plugin ("Prompt from the sub-human plugin"), or join its current turn if it is busy. Everything else reaches your Claude as a short "Room since your last turn" note it reads with its next request. Your room row also reads `+bob joined` or `−bob left` for two minutes.
 
-**On your phone (Remote Control).** The phone shows your session's prompts and replies, not the dim notices. So once you type in the session from Remote Control, the plugin sends what would have been a notice there as a short prompt of its own ("shown to the person on Remote Control… no reply needed"): each batch of room lines, and the "✓ sent" or refusal of your `@room`. Each one is a model turn. Typing at the terminal again turns it off. A proposal's plan view works on the phone too: **Suggest edits** with a note is your objection with that note; a bare deny records nothing.
+**On your phone (Remote Control).** The phone shows your session's prompts and replies, not the dim notices. So once you type in the session from Remote Control, the plugin sends what would have been a notice there as a short prompt of its own ("shown to the person on Remote Control… no reply needed"): each batch of room lines, and the "✓ sent" or refusal of your `@room`. Each one is a model turn. Typing at the terminal again turns it off. A proposal's plan view works on the phone too: a bare **Deny** records nothing. A note (**Suggest edits**, or "Tell Claude what to change" at the terminal) is never sent by itself, because a message you type on the phone right after a Deny lands there too: a card asks `Send to alice as changes requested on "…": "…"?`, and only your **Send** records the objection with that note (**Discard** records nothing; reopen the proposal any time).
 
 **Claude to Claude.** Ask your Claude to "ask alice's Claude what the cursor format is". It calls `SendMessage` to `alice.vole-8126`, and alice's pane shows `› Message from @bob.vole-8126: …`. Those messages come from Claudes, not people.
 
@@ -161,7 +161,7 @@ When a proposal names you, your Claude opens it in Claude Code's plan-approval d
 | You do | Recorded |
 |---|---|
 | A **Yes** option | Your sign-off on that exact hash (`via=human`). |
-| **Tell Claude what to change**, then type why | Your objection, with your words byte for byte. It blocks the proposal. |
+| **Tell Claude what to change**, then type why | Nothing yet: a card asks `Send to alice as changes requested on "…": "…"?`. **Send** records your objection, with your words byte for byte; it blocks the proposal. **Discard** records nothing. |
 | **Esc**, or Ctrl+G edits before a Yes | Nothing. |
 
 Your mode is never changed by a review. Showing the proposal briefly enters plan mode without asking, and the hooks put you back in your own mode afterwards with no dialog: at once after an answer, or on your next prompt after Esc. A "Yes" that names another mode is set back too; the one the hint names keeps it without that extra step. Agreeing is not a go-ahead to build: your Claude does not carry the proposal out.

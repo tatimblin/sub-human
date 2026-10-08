@@ -16,13 +16,17 @@
  *     carries, the text in the plan file (backup into review.json BEFORE the overwrite); 'shown'. A plan of the
  *     model's own is never shown in a room review: it comes back on close and the model is told. A blank plan:
  *     the call's transcript line is waited for (EXIT_INPUT_WAIT_MS) to tell the two apart.
- *     A later ExitPlanMode with feedback ("Tell Claude what to change", or a Remote Control deny with a note)
- *     records an objection, note byte-exact; 'exiting'. A deny with no note records nothing.
+ *     A later ExitPlanMode with feedback ("Tell Claude what to change", or a Remote Control deny with a note, or a
+ *     phone message typed after a bare deny: Claude Code attaches it to the deny) records nothing by itself: the note
+ *     waits (members/NAME/confirm) for the confirm card, "Send to <proposer> as changes requested on <title>: <note>?"
+ *     (Send / Discard), which the model opens with AskUserQuestion; 'exiting'. A deny with no note records nothing.
  *   PermissionRequest(ExitPlanMode), exiting: restore the plan file, allow with setMode (no dialog); records nothing.
  *   Post(ExitPlanMode), shown: signoff via=human only for the proposal unedited; restore the file and the mode. A
  *     dialog no hook opened (the model wrote the text itself) records nothing, and the model is told.
  *   Stop / UserPromptSubmit / Pre(room tools): a review left open is resolved and the model told to exit it.
- * Pre/Post(AskUserQuestion): the card fallback; "Not yet", AFK, stale hashes record nothing. An answer is
+ * Pre/Post(AskUserQuestion): the confirm card for a waiting note (only the person's Send on the card as built records
+ * the objection with the note, byte-exact; Discard drops it; AFK or no answer keeps it), else the card fallback;
+ * "Not yet", AFK, stale hashes record nothing. Stop nudges once when a waiting note's card was never shown. An answer is
  * lib/proposal.js answer, then decide (a no-op on a machine that does not hold the room; its host decides). An
  * answer the room refuses (OFFLINE, AUTH) is never lost silently: a systemMessage tells the person, the context
  * the model. Post(ExitPlanMode) for the person's own plan offers to propose it. Run with SUB_HUMAN_SHIM=1
@@ -98,7 +102,29 @@ function onlyPending(pending, input) {
   return other ? [] : pending;
 }
 
+/**
+ * A note waiting for the person's Send, when this card call is about it: it names the note's proposal (a hash or a
+ * unique prefix), or carries the confirm question. Null otherwise; a note whose proposal is no longer pending is
+ * dropped.
+ */
+function waitingNote(me, input) {
+  const cf = proposal.readConfirm(me);
+  if (!cf) return null;
+  const p = proposal.pendingFor(me).find(x => x.hash === cf.hash);
+  if (!p) { proposal.clearConfirm(me); return null; }
+  const s = JSON.stringify(input || {});
+  const tokens = s.match(/[0-9a-f]{6,12}/g) || [];
+  const q = proposal.confirmQuestion(cf);
+  const asks = Array.isArray(input && input.questions) && input.questions.some(x => x && x.question === q);
+  return asks || tokens.some(t => cf.hash.startsWith(t)) ? { cf, p } : null;
+}
+
 function pre(input, me) {
+  const waiting = waitingNote(me, input.tool_input);
+  if (waiting) {
+    proposal.writeConfirm(me, { ...waiting.cf, asked: Date.now() });
+    return c.pre('ask', `room proposal ${waiting.cf.hash}: ${me.name}'s note, to send or discard`, { updatedInput: proposal.confirmCard(waiting.cf) });
+  }
   const pending = proposal.pendingFor(me);
   let hit = named(pending, input.tool_input);
   if (!hit.length) hit = onlyPending(pending, input.tool_input);
@@ -145,7 +171,14 @@ const blank = v => v == null || (typeof v === 'string' && !v.trim());
 /** The person's "Tell Claude what to change" note for that dialog (structured userFeedback first); null when none (Esc). */
 const feedback = (input, toolUseId) => cc.planFeedback(lines(input), toolUseId);
 
-/** Record an objection from the dialog's feedback, if any; returns the line for the model. */
+/** How the model shows the person the confirm card for a waiting note. */
+const confirmCall = hash => `call AskUserQuestion with the question "objection ${hash}"`;
+
+/**
+ * The dialog closed: a note never counts on its own. "Tell Claude what to change", a phone deny with a note and a
+ * phone message typed after a bare deny all reach the transcript alike, so the note waits (proposal confirm) for the
+ * person's Send on the confirm card; returns the line for the model.
+ */
 function resolveShown(input, me, st) {
   if (st.phase !== 'shown' || st.resolved) return st.said || '';
   st.resolved = true;
@@ -154,9 +187,8 @@ function resolveShown(input, me, st) {
   if (note == null || !note.trim()) st.said = `${me.name} closed the review of proposal ${st.hash} without answering; nothing was recorded.`;
   else if (!p) st.said = `proposal ${st.hash}: nothing recorded (already answered, decided or unknown).`;
   else {
-    const res = record(me, p, { choice: 'Object', notes: note });
-    st.said = res.failed ? failed(me, st.hash, res) : res.stale ? `proposal ${st.hash}: nothing recorded (already answered or decided).`
-      : `${RECORDED} ${done(me, 'Object', st.hash, res)}`;
+    proposal.writeConfirm(me, { hash: p.hash, note, from: p.from || null, title: proposal.title(me.code, p.hash) || null, at: Date.now() });
+    st.said = `${me.name} closed the review of proposal ${st.hash} with a note; nothing is recorded yet. Once the review is closed, ${confirmCall(p.hash)}: the hooks show ${me.name} a card to send the note as their objection or discard it. Don't post the note or answer for ${me.name}.`;
   }
   return st.said;
 }
@@ -183,6 +215,8 @@ function preEnter(input, me) {
   const p = said && !(kept && kept.at > said.at) ? proposal.choose(me, pending, said.text) : proposal.picked(me, pending);
   const st = { phase: 'entering', mode: input.permission_mode, at: Date.now(), hash: p.hash, from: p.from || null };
   writeReview(me, st);
+  const cf = proposal.readConfirm(me);
+  if (cf && cf.hash === p.hash) proposal.clearConfirm(me); // reviewed again: a note waiting for it is superseded
   showEarly(input, me, st);
   c.pre('allow', `sub-human: opening room proposal ${p.hash} for ${me.name}`);
 }
@@ -362,7 +396,8 @@ function postExit(input, me) {
  */
 function stop(input, me) {
   const st = readReview(me);
-  if (!st || input.stop_hook_active) return;
+  if (input.stop_hook_active) return;
+  if (!st) return unasked(me);
   const mode = input.permission_mode;
   let what;
   if (st.phase === 'restore') {
@@ -377,6 +412,16 @@ function stop(input, me) {
     what = EXIT_HOW;
   }
   c.context('Stop', `sub-human: ${me.name}'s room review is still open: ${what}.`);
+}
+
+/** Stop with no review open: a note waiting for the person's Send whose card was never shown (the model ignored
+ * the line after the review closed). Once only: a card shown and left unanswered is the person's to reopen. */
+function unasked(me) {
+  const cf = proposal.readConfirm(me);
+  if (!cf || cf.asked) return;
+  if (!proposal.pendingFor(me).some(p => p.hash === cf.hash)) return proposal.clearConfirm(me);
+  proposal.writeConfirm(me, { ...cf, asked: Date.now() });
+  c.context('Stop', `sub-human: ${me.name}'s note on proposal ${cf.hash} is not recorded yet: ${confirmCall(cf.hash)} so ${me.name} can send or discard it. Don't post the note or answer for ${me.name}.`);
 }
 
 /**
@@ -407,9 +452,44 @@ function prompt(input, me) {
   clearReview(me);
 }
 
+/**
+ * Post(AskUserQuestion) for the confirm card: only the person's Send on the card as the hooks built it (question,
+ * labels and descriptions as shown) records the objection with the waiting note; Discard drops the note; anything
+ * else (AFK, followUp, no answer, another label) records nothing and keeps the note. Returns false when the call was
+ * not the confirm card.
+ */
+function postConfirm(input, me, r, answers) {
+  const cf = proposal.readConfirm(me);
+  if (!cf) return false;
+  const card = proposal.confirmCard(cf).questions[0];
+  const shown = Array.isArray(r.questions) ? r.questions : [];
+  const asked = [...shown, ...((input.tool_input && input.tool_input.questions) || [])].some(q => q && q.question === card.question);
+  if (!asked) return false;
+  const say = t => c.context('PostToolUse', t);
+  const same = q => q && q.question === card.question && Array.isArray(q.options) && q.options.length === card.options.length
+    && q.options.every((o, i) => o && o.label === card.options[i].label && o.description === card.options[i].description);
+  const label = answers && Object.hasOwn(answers, card.question) ? String(answers[card.question]) : null;
+  if (r.afkTimeoutMs || r.followUp || label == null || !shown.some(same)) {
+    return say(`Nothing was recorded: the card closed without ${me.name}'s answer, and the note waits. If ${me.name} asks, ${confirmCall(cf.hash)} again; return to what you were doing.`), true;
+  }
+  if (label === 'Discard') {
+    proposal.clearConfirm(me);
+    return say(`${me.name} discarded the note; nothing was recorded and proposal ${cf.hash} still awaits ${me.name}'s answer (reopening it later is fine). Return to what you were doing.`), true;
+  }
+  if (label !== 'Send') return say(`proposal ${cf.hash}: no Send/Discard answer; nothing was recorded and the note waits. Return to what you were doing.`), true;
+  const p = proposal.pendingFor(me).find(x => x.hash === cf.hash);
+  if (!p) { proposal.clearConfirm(me); return say(`proposal ${cf.hash}: nothing recorded (already answered, decided or unknown).`), true; }
+  const res = record(me, p, { choice: 'Object', notes: cf.note });
+  if (!res.failed) proposal.clearConfirm(me); // not sent (the room unreachable): the note waits for another Send
+  say(res.failed ? failed(me, cf.hash, res) : res.stale ? `proposal ${cf.hash}: nothing recorded (already answered or decided).`
+    : `${RECORDED} ${done(me, 'Object', cf.hash, res)} Return to what you were doing.`);
+  return true;
+}
+
 function postAsk(input, me) {
   const r = input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {};
   const answers = r.answers && typeof r.answers === 'object' ? r.answers : null;
+  if (postConfirm(input, me, r, answers)) return;
   const asked = [...(Array.isArray(r.questions) ? r.questions : []), ...((input.tool_input && input.tool_input.questions) || [])]
     .map(q => q && q.question).filter(q => proposal.QUESTION_RE.test(String(q)));
   const keys = answers ? Object.keys(answers).filter(k => proposal.QUESTION_RE.test(k)) : [];
@@ -477,10 +557,14 @@ function route(input) {
 /** The UserPromptSubmit handler (hooks/prompt.js runs it after at-room.js's, in one process). */
 const onPrompt = input => dispatch({ ...input, hook_event_name: 'UserPromptSubmit' });
 
-/** True when this session's seat has a room review on record (review.json); false with no seat. */
+/** True when this session's seat has a room review on record (review.json), or a note whose confirm card was never
+ * shown (Stop nudges once); false with no seat. */
 function reviewOpen(input) {
   const me = c.whoami(input);
-  return !!(me && readReview(me));
+  if (!me) return false;
+  if (readReview(me)) return true;
+  const cf = proposal.readConfirm(me);
+  return !!(cf && !cf.asked);
 }
 
 /**

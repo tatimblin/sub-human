@@ -95,3 +95,33 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
     assert.doesNotMatch(t, /[0-9a-f]{6}/, `no bare hash in ${t}`);
   }
 });
+
+test('consent table: a note waiting for the person\'s Send is no answer in any view; Send makes it an objection everywhere', () => {
+  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  const me = name => ({ code: w.code, name, role: name === 'orch' ? 'orch' : 'member' });
+  const H = w.lib(() => proposal.create(me('alice'), { text: '# Rate limiting\n\n1. 100 rps\n', approvers: ['bob'] })).hash;
+  w.lib(() => proposal.writeConfirm(me('bob'), { hash: H, note: 'open rate limiting', from: 'alice', title: 'Rate limiting', at: Date.now() }));
+  const views = () => {
+    const entries = w.entries();
+    const e = entries.filter(x => x.kind === 'proposal' && x.hash === H).at(-1);
+    return {
+      pending: w.lib(() => proposal.pendingFor(me('bob'), entries)).some(p => p.hash === H),
+      lane: room.lane(me('bob'), e, entries),
+      you: (/ · you: (agreed|objected|answer needed)/.exec(w.lib(() => room.open(w.code).stateLine(me('bob'), entries))) || [])[1],
+      missing: w.lib(() => proposal.matrix(consent.fold(entries).proposals.get(H), entries)).missing,
+      row: w.lib(() => rows.rowText(w.code, w.code, 'bob', { entries, taskSummary: '' })),
+    };
+  };
+  const before = views();
+  assert.deepEqual([before.pending, before.lane, before.you, before.missing], [true, 'push', 'answer needed', ['bob']]);
+  assert.ok(before.row.startsWith('⚠ your answer needed Rate limiting'), before.row);
+  // bob's Send on the confirm card (the hooks' card, his answer)
+  const pre = w.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `objection ${H}` }] } }, { as: 'bob' });
+  assert.equal(decision(pre), 'ask');
+  const card = JSON.parse(pre.stdout).hookSpecificOutput.updatedInput;
+  w.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { ...card, answers: { [card.questions[0].question]: 'Send' } } }, { as: 'bob' });
+  const after = views();
+  assert.deepEqual([after.pending, after.missing], [false, []]);
+  assert.equal(consent.fold(w.entries()).status(H).state, 'blocked');
+  assert.doesNotMatch(after.row, /answer needed/);
+});

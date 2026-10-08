@@ -166,6 +166,7 @@ RoomStore
 | `rows/notices-<name>.json` | `lib/notices.js` | join/leave lines already shown |
 | `members/<name>/review.json` | `hooks/consent.js` (under its lock) | plan-view review phase, mode and plan-file backup |
 | `members/<name>/pick.json` | `hooks/consent.js` (Pre(EnterPlanMode), from the person's latest prompt; a card call naming one) | the pending proposal the person last named; the next review opens it |
+| `members/<name>/confirm.json` | `hooks/consent.js` (a review closed with a note; cleared by Send, Discard or a new review of it) | the note waiting for the person's Send on the confirm card: {hash, note, from, title, asked?} |
 | `<reader>.cursor` | each reader | `deliver-NAME` (the tail child), `read-NAME` (CLI), `mcp-NAME` (`read` tool) |
 | `*.lock` | `lib/lock.js` | O_EXCL lockfiles, body `PID HOST START`; stale ones broken atomically |
 | `<home>/keys/<CODE>/<name>.key`, `.pub` | `hooks/seat-key.js` | Ed25519 seat key pair (dir 0700) |
@@ -226,8 +227,12 @@ approver's Claude: EnterPlanMode ──► consent.js Pre: allow silently, revie
                                       file, its old content in the backup; a plan of the model's: told, not shown
                                         │ native plan view (scrollable), the person answers
    "Yes …"                        ──► Post(ExitPlanMode): signoff via=human (only if text unedited); restore plan file + mode
-   "Tell Claude what to change",  ──► Stop / next ExitPlanMode / prompt: cc.planFeedback(transcript) → objection via=human,
-   phone "Suggest edits"/deny+note    note byte-exact; PermissionRequest: allow with setMode (no dialog), records nothing
+   "Tell Claude what to change",  ──► Stop / next ExitPlanMode / prompt: cc.planFeedback(transcript) → nothing recorded:
+   phone "Suggest edits"/deny+note,   the note waits in members/<name>/confirm; PermissionRequest: allow with setMode
+   phone message after a bare deny    (no dialog), records nothing; the model is told to open the confirm card
+   confirm card (AskUserQuestion) ──► Pre: the hooks' card "Send to <proposer> as changes requested on "<title>": "<note>"?"
+                                      (Send / Discard); Post: only the person's Send on that card → objection via=human,
+                                      note byte-exact; Discard drops the note; AFK / no answer keeps it (Stop nudges once)
    Esc, phone deny without a note ──► nothing ("closed without answering"); Stop / next prompt / restore close the review
    no review shown (no hook review) ─► Post(ExitPlanMode): nothing recorded, even for the proposal's exact text (the model
                                       wrote it into the plan file); the model is told the person has not answered
@@ -237,7 +242,7 @@ every answer                      ──► lib/proposal.answer (signed, any mac
                                       once every approver answered, the decision via=system (idempotent)
 ```
 
-The plan-view review runs only in the modes `default`, `acceptEdits` and `auto` (not plan already, not `bypassPermissions` or `dontAsk`) and only while clear-context-on-accept is off; otherwise the card is used. A plan edited in the dialog (Ctrl+G) records nothing: a signoff needs the proposal text unedited. "Tell Claude what to change" reaches the next `ExitPlanMode`, which reads the note with `cc.planFeedback` (the transcript's `userFeedback`, else the "the user said:" text). When the "Yes" the person chose changed the permission mode, consent puts it back with a silent EnterPlanMode / ExitPlanMode pair (phase `restore`).
+The plan-view review runs only in the modes `default`, `acceptEdits` and `auto` (not plan already, not `bypassPermissions` or `dontAsk`) and only while clear-context-on-accept is off; otherwise the card is used. A plan edited in the dialog (Ctrl+G) records nothing: a signoff needs the proposal text unedited. "Tell Claude what to change" reaches the next `ExitPlanMode`, which reads the note with `cc.planFeedback` (the transcript's `userFeedback`, else the "the user said:" text). A note never counts on its own: Claude Code writes the terminal's note, the phone's "Suggest edits" and an ordinary message typed on the phone after a bare Deny (Remote Control attaches it to the deny) alike, so the note waits for the person's Send on the confirm card, an AskUserQuestion card like the fallback (the model calls it; the hooks own its text and only the person's answer counts). Remote Control forwards the card to the phone (cc CONTRACT `auq-bridge-racer`). When the "Yes" the person chose changed the permission mode, consent puts it back with a silent EnterPlanMode / ExitPlanMode pair (phase `restore`).
 
 `lib/room/consent.js` `fold(entries)` is the one interpretation of the log, used by `stateLine`, `lane`, the rows and the gate, so they cannot disagree: the latest proposal entry per hash wins; per person the latest trusted `via=human` answer wins (an objection voids an earlier signoff); a decision closes the hash with state `agreed` or `blocked`. `test/hooks/consent-table.test.js` feeds one table to all views.
 
@@ -372,7 +377,8 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `plan-reject-dialog` | §3 | incidental | "No, keep planning" returns deny with the typed feedback. |
 | `plan-reject-user-feedback` | §3 | incidental | The rejected tool_result transcript entry carries top-level userFeedback (cc.planFeedback). |
 | `plan-reject-text` | §3 | incidental | Fallback: the note sits between "the user said:\n" and "\n\nNote: The user's next message". |
-| `plan-reject-remote` | §3 | incidental | Remote Control deny (observed 2.1.292): with a note ("Suggest edits") the terminal's shapes (userFeedback, "the user said:"), an objection; a bare deny says "STOP what you are doing…" with no userFeedback: cc.planFeedback null, nothing recorded. |
+| `plan-reject-remote` | §3 | incidental | Remote Control deny (observed 2.1.292): with a note ("Suggest edits") the terminal's shapes (userFeedback, "the user said:"); a bare deny says "STOP what you are doing…" with no userFeedback: cc.planFeedback null, nothing recorded. An ordinary message typed on the phone right after a bare Deny is attached to the deny as that note (observed live), so a note is never an objection by itself: it waits for the person's Send on the confirm card (hooks/consent.js). |
+| `auq-bridge-racer` | §3 | incidental | A tool with its own permission dialog (AskUserQuestion, the plan view) is raced by Remote Control when the session has bridge callbacks: the phone gets the card and its answer resolves the dialog, as the terminal's would; the tool_response is Claude Code's, never the model's. The confirm card for a review's note relies on it (hooks/consent.js). A card can still auto-resolve after the askUserQuestionTimeout idle (afkTimeoutMs): then nothing is recorded and the note waits. |
 | `permission-denied-auto-only` | §3 | incidental | PermissionDenied fires only for auto-mode classifier denials; no hook carries a user rejection note. |
 | `clear-context-setting` | §3 | API | showClearContextOnPlanAccept: the clear-context approve fires no PostToolUse (cc.clearContextOnPlanAccept). |
 | `task-list-id` | §4 | env | List id: env, team, teammate team, leader team, else session id (changes on /clear). |

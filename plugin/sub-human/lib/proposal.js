@@ -46,6 +46,8 @@
  *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
  * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
+ * A review's note waiting for the person's Send (the room document members/NAME/confirm): readConfirm, writeConfirm,
+ *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question.
  */
 
 const fs = require('node:fs');
@@ -374,9 +376,36 @@ function restoreStale(me, { force = false, now = Date.now() } = {}) {
   });
 }
 
+// ---------- a review's note, waiting for the person's Send (hooks/consent.js) ----------
+/**
+ * members/NAME/confirm: {hash, note, from, title, at, asked?}. A plan review rejected with a note ("Tell Claude what
+ * to change", a phone deny with a note or "Suggest edits": Claude Code writes them alike, and a phone message typed
+ * after a bare deny lands there too) records nothing by itself: the note waits here until the person answers the
+ * confirm card. One per person: a newer note replaces it.
+ */
+const confirmKey = me => `members/${me.name}/confirm`;
+const readConfirm = me => { try { return kvOf(me).get(confirmKey(me), null); } catch { return null; } };
+const writeConfirm = (me, c) => kvOf(me).set(confirmKey(me), c, { compact: true });
+function clearConfirm(me) { try { kvOf(me).delete(confirmKey(me)); } catch { /* none */ } }
+
+const CONFIRM_NOTE_MAX = 300;
+const CONFIRM_TITLE_MAX = 80;
+/** The confirm card's question: what Send does, in the person's words; the note clipped (the preview has it all). */
+const confirmQuestion = c => `Send ${c.from ? `to ${c.from} ` : ''}as changes requested on "${clip(c.title || `proposal ${c.hash}`, CONFIRM_TITLE_MAX)}": "${clip(String(c.note).replace(/\s+/g, ' ').trim(), CONFIRM_NOTE_MAX)}"?`;
+/** The AskUserQuestion input for a waiting note: Send records the objection with it, Discard records nothing. */
+function confirmCard(c) {
+  const desc = {
+    Send: `Record your objection${c.from ? ` to ${c.from}'s proposal` : ''}, with this note`,
+    Discard: 'Record nothing; the proposal stays unanswered (reopen it any time)',
+  };
+  return { questions: [{ question: confirmQuestion(c), header: 'Consent', multiSelect: false,
+    options: ['Send', 'Discard'].map(label => ({ label, description: desc[label], preview: String(c.note) })) }] };
+}
+
 module.exports = {
   QUESTION_RE, ProposalError,
   readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
+  readConfirm, writeConfirm, clearConfirm, confirmCard, confirmQuestion,
   namedIn, choose, picked, readPick,
   proposeIntent, create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, answer, decide, decision, humans, reminder,
   read, hash12, title,
