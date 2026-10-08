@@ -17,6 +17,7 @@ How it works (processes, store layout, lanes, consent, tasks, the cc contract): 
 - `npm test`: plugin tests and script tests (`node --test`, no dependencies), then `npm run test:mods`.
 - `npm run test:mods`: the hooks module's wiring tests (`mod/test/*.test.ts`) through `claude plugin test`; skipped without Claude Code 2.1.292+ or with hooks modules off.
 - `npm run validate`: `claude plugin validate plugin/sub-human --strict`.
+- `npm run test:remote-docker`: opt-in (needs Docker), remote rooms over real SSH: `scripts/remote-docker/` (devbox container with sshd + toxiproxy; the joiner is this machine). Evidence in `/tmp/sub-human-remote-proof-<time>/`. `node scripts/remote-docker/harness.js up` / `down` for a manual join (`/tmp/sub-human-remote-manual/manual.env`).
 - `npm run test:thread-store`: the hook tests with every store call crossing `lib/remote/bridge.js` to a worker thread.
 - `npm run probe`: check every Claude Code internal listed in `lib/cc.js` against the installed binary.
 - `node --test scripts/test` runs only the script tests. `bash -n scripts/demo.sh` checks the demo's syntax.
