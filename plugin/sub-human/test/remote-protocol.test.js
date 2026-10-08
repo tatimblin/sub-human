@@ -60,16 +60,16 @@ test('transports: a memory pair carries frames both ways as lines; close fires o
   assert.deepEqual([ga.closed, gb.closed, gb.frames.length], [1, 1, 1]);
 });
 
-test('transports: open() by kind: memory over a port, pipe over a child\'s stdio; an unknown kind is INVALID', async () => {
+test('transports: open() by kind (a Promise): memory over a port, pipe over a child\'s stdio; an unknown kind is INVALID', async () => {
   const { port1, port2 } = new MessageChannel();
-  const a = transports.open({ kind: 'memory', port: port1 }), b = memory.over(port2);
+  const a = await transports.open({ kind: 'memory', port: port1 }), b = memory.over(port2);
   const gb = recorder(b);
   a.send(protocol.request(1, 'beat'));
   await h.until(() => gb.frames.length, 2000, 5);
   a.close();
   // an echo child: every line back as a reply
   const echo = 'process.stdin.on("data", d => { for (const l of String(d).split("\\n").filter(Boolean)) process.stdout.write(JSON.stringify({id: JSON.parse(l).id, result: "echo"}) + "\\n"); })';
-  const p = transports.open({ kind: 'pipe', cmd: [process.execPath, '-e', echo] });
+  const p = await transports.open({ kind: 'pipe', cmd: [process.execPath, '-e', echo] });
   const gp = recorder(p);
   p.send(protocol.request(7, 'hello'));
   await h.until(() => gp.frames.length, 5000, 10);
@@ -77,11 +77,58 @@ test('transports: open() by kind: memory over a port, pipe over a child\'s stdio
   p.close();
   await h.until(() => gp.closed, 5000, 10);
   assert.equal(gp.closed, 1);
-  assert.throws(() => transports.open({ kind: 'carrier-pigeon' }), e => e.code === 'INVALID');
+  await assert.rejects(transports.open({ kind: 'carrier-pigeon' }), e => e.code === 'INVALID');
+  await assert.rejects(transports.open({ kind: 'ssh', user: 'me', host: 'far' }), e => e.code === 'INVALID', 'ssh connects to a room');
   // the child's own exit closes the client end
   const gone = recorder(pipe.spawn(process.execPath, ['-e', '']));
   await h.until(() => gone.closed, 5000, 10);
   assert.equal(gone.closed, 1);
+});
+
+test('transports: the registry: built-in kinds, locators parse by kind, a kind registers once; describe', () => {
+  assert.deepEqual(transports.kinds(), ['memory', 'pipe', 'ssh']);
+  assert.deepEqual(transports.KINDS, transports.kinds());
+  assert.deepEqual(transports.parse('pipe:/a/home'), { kind: 'pipe', home: '/a/home' });
+  assert.deepEqual(transports.parse('ssh:me@far:2222'), { kind: 'ssh', user: 'me', host: 'far', port: 2222 });
+  for (const bad of ['memory:x', 'pipe:rel', 'ssh:-oX@h', 'nope:x', 'pipe', '']) assert.equal(transports.parse(bad), null, bad);
+  assert.equal(transports.describe({ kind: 'ssh', user: 'me', host: 'far', port: 2222 }), 'ssh me@far:2222');
+  assert.equal(transports.describe({ kind: 'pipe', home: '/h' }), 'pipe /h');
+  assert.throws(() => transports.register('pipe', { open() {} }), /registered already/);
+  assert.throws(() => transports.register('Bad Kind', { open() {} }), /short lower-case/);
+  assert.throws(() => transports.register('noopen', {}), /needs open/);
+});
+
+test('transports: a registered socket kind in a few lines: async open, fromDuplex over a unix socket, locator, close both ways', async t => {
+  const net = require('node:net');
+  const fs = require('node:fs');
+  const sock = path.join(h.tmpDir('sh-tr-', t), 's.sock');
+  const served = [];
+  const srv = net.createServer(s => served.push(transports.fromDuplex(s)));
+  await new Promise(r => srv.listen(sock, r));
+  t.after(() => srv.close());
+  transports.register('unixtest', {
+    parse: rest => (rest.startsWith('/') ? { path: rest } : null),
+    open: spec => new Promise((ok, no) => { const s = net.connect(spec.path, () => ok(transports.fromDuplex(s))); s.once('error', no); }),
+    describe: spec => `unix ${spec.path}`,
+  });
+  assert.ok(transports.KINDS.includes('unixtest'));
+  const spec = transports.parse(`unixtest:${sock}`);
+  assert.deepEqual(spec, { kind: 'unixtest', path: sock });
+  const ta = await transports.open(spec);
+  const a = recorder(ta);
+  await h.until(() => served.length, 2000, 5);
+  const b = recorder(served[0]);
+  ta.send(protocol.request(1, 'beat', {}));
+  served[0].send(protocol.reply(1, { ok: true }));
+  await h.until(() => a.frames.length && b.frames.length, 2000, 5);
+  assert.deepEqual(b.frames, [protocol.request(1, 'beat', {})]);
+  assert.deepEqual(a.frames, [protocol.reply(1, { ok: true })]);
+  ta.close();
+  await h.until(() => b.closed, 2000, 5);
+  assert.deepEqual([a.closed, b.closed], [1, 1], 'close fires once on both ends');
+  ta.send(protocol.request(2, 'beat', {})); // a no-op
+  await assert.rejects(transports.open({ kind: 'unixtest', path: sock + '.none' }), e => e.code === 'ENOENT');
+  assert.ok(!fs.existsSync(sock + '.none'));
 });
 
 test('flaky: seeded drops and duplicates replay the same; cutAfter closes both ends after that many frames', async () => {

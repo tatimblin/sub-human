@@ -7,7 +7,7 @@
  * signed.
  *
  *   connect(transport, {machine, token?, invite?, caps?, deadlineMs?, helloMs?}) -> Promise<Client>
- *       says hello; resolves once the server answered (the token from a redeemed invite is on client.token).
+ *       transport may also be a Promise of one (lib/remote/transports/index.js open()). Says hello; resolves once the server answered (the token from a redeemed invite is on client.token).
  *       helloMs (default deadlineMs) bounds the hello alone: a transport such as ssh connects before it answers.
  *       A refused hello closes the transport and rejects.
  *   Client
@@ -105,12 +105,12 @@ class Client {
 }
 
 /**
- * @param {{send(frame: object): void, onFrame(fn: (frame: object) => void): void, onClose(fn: () => void): void, close(): void}} transport
+ * @param {object | Promise<object>} transport   {send(frame), onFrame(fn), onClose(fn), close()}, or a Promise of one
  * @param {{machine: string, token?: string, invite?: string, caps?: object, deadlineMs?: number, helloMs?: number}} opts
  * @returns {Promise<Client>}
  */
 async function connect(transport, { machine, token, invite, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs }) {
-  const c = new Client(transport, { deadlineMs });
+  const c = new Client(await transport, { deadlineMs });
   const cred = invite !== undefined ? { invite } : token !== undefined ? { token } : {};
   try {
     const r = await c._request('hello', { v: protocol.VERSION, caps, machine, ...cred }, ++c.seq, helloMs);

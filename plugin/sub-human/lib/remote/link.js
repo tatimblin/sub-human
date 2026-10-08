@@ -45,17 +45,13 @@
  *   pipeLocator(home?) -> 'pipe:<home>'   an invite's locator for a room hosted under that home on this machine
  *   sshLocator(dest) -> 'ssh:user@host[:port]' | null   an invite's locator for a room reached over SSH (null: not
  *                                  a plain user@host[:port])
- *   transportOf(locator) -> {kind: 'pipe', home} | {kind: 'ssh', user, host, port?} | null   the link file's
- *                                  transport for an invite's locator. pipe: the daemon runs this plugin's own
- *                                  `sub-human serve --stdio CODE` with that home. ssh: it runs
- *                                  `ssh -T -o BatchMode=yes [opts] [-p port] -- user@host sub-human serve --stdio CODE`
- *                                  and the host's authorized_keys forced command (`sub-human authorize`) decides
- *                                  what runs there. user and host are plain names (never starting with "-", no
- *                                  spaces, quotes or "%"), so an invite can name neither an ssh option nor a command
- *   sshCommand(transport, code, opts?) -> [cmd, ...args]   that ssh command line; opts (default: the
- *                                  SUB_HUMAN_SSH_OPTS environment variable, split on spaces) are extra ssh options
- *                                  from this machine's own environment, never from an invite: for tests and
- *                                  setups that need -i KEY, -F FILE or a known_hosts file
+ *   transportOf(locator) -> Spec | null   the link file's transport for an invite's locator: the transport
+ *                                  registry's parse (lib/remote/transports/index.js), {kind: 'pipe', home} or
+ *                                  {kind: 'ssh', user, host, port?} today. connectLink opens it with {code}: pipe runs
+ *                                  this plugin's own `sub-human serve --stdio CODE` with that home; ssh runs
+ *                                  `ssh … -- user@host sub-human serve --stdio CODE` and the host's authorized_keys
+ *                                  forced command decides what runs there (lib/remote/transports/ssh.js)
+ *   sshCommand(spec, code, opts?) -> [cmd, ...args]   that ssh command line (lib/remote/transports/ssh.js command)
  */
 
 const fs = require('node:fs');
@@ -144,54 +140,22 @@ function start(code) {
  */
 const pipeLocator = (h = require('../home.js').home()) => `pipe:${h}`;
 
-// An ssh destination an invite may name: a POSIX-ish user name and a host name or IPv4 address, an optional port.
-// Neither part may start with "-" (an option) or hold spaces, quotes, "%" (ssh token expansion) or "@".
-const SSH_USER = '[A-Za-z_][A-Za-z0-9_.-]{0,31}';
-const SSH_HOST = '[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})';
-const SSH_RE = new RegExp(`^(${SSH_USER})@(${SSH_HOST})(?::([0-9]{1,5}))?$`);
-
-function sshDest(dest) {
-  const m = SSH_RE.exec(String(dest));
-  if (!m) return null;
-  const port = m[3] === undefined ? undefined : Number(m[3]);
-  if (port !== undefined && !(port >= 1 && port <= 65535)) return null;
-  return { kind: 'ssh', user: m[1], host: m[2], ...(port ? { port } : {}) };
-}
-
-/**
- * @param {string} dest   user@host[:port]
- * @returns {string | null}
- */
-function sshLocator(dest) {
-  const t = sshDest(dest);
-  return t ? `ssh:${t.user}@${t.host}${t.port ? `:${t.port}` : ''}` : null;
-}
+const transports = () => require('./transports/index.js');
+const sshLocator = dest => require('./transports/ssh.js').locator(dest);
 
 /**
  * @param {string} locator
- * @returns {{kind: 'pipe', home: string} | {kind: 'ssh', user: string, host: string, port?: number} | null}
+ * @returns {{kind: string} | null}
  */
-function transportOf(locator) {
-  const s = String(locator);
-  const m = /^pipe:(\/.*)$/.exec(s);
-  if (m) return { kind: 'pipe', home: m[1] };
-  return s.startsWith('ssh:') ? sshDest(s.slice(4)) : null;
-}
+const transportOf = locator => transports().parse(locator);
 
 /**
- * @param {{kind: 'ssh', user: string, host: string, port?: number}} t
+ * @param {{user: string, host: string, port?: number}} t
  * @param {string} code
  * @param {string[]} [opts]
  * @returns {string[]}
  */
-function sshCommand(t, code, opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean)) {
-  const dest = sshDest(`${t.user}@${t.host}${t.port ? `:${t.port}` : ''}`); // the link file is checked again
-  if (!dest) throw new RoomError('INVALID', 'the link\'s ssh destination is not a plain user@host[:port]');
-  const { CODE_RE } = require('../text.js');
-  if (!CODE_RE.test(code)) throw new RoomError('INVALID', `invalid room code "${code}"`);
-  return ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', ...opts,
-    ...(dest.port ? ['-p', String(dest.port)] : []), '--', `${dest.user}@${dest.host}`, `sub-human serve --stdio ${code}`];
-}
+const sshCommand = (t, code, opts) => require('./transports/ssh.js').command(t, code, opts);
 
 // ---------- the daemon ----------
 const listening = (srv, file) => new Promise((resolve, reject) => {
@@ -332,14 +296,11 @@ async function connectLink(code) {
   const links = require('../room/links.js');
   const l = links.get(code);
   if (!l) throw new RoomError('AUTH', `this machine has no link to room ${code} any more`);
-  const kind = l.transport.kind;
-  let spec;
-  if (kind === 'pipe') spec = { kind: 'pipe', cmd: [process.execPath, BIN, 'serve', '--stdio', code], env: { ...process.env, SUB_HUMAN_HOME: l.transport.home } };
-  else if (kind === 'ssh') spec = { kind: 'pipe', cmd: sshCommand(l.transport, code) };
-  else throw new RoomError('PROTOCOL', `unknown transport "${kind}"`);
+  const kind = l.transport && l.transport.kind;
+  if (!transports().get(kind)) throw new RoomError('PROTOCOL', `unknown transport "${kind}" (${transports().kinds().join(', ')})`);
   const cred = l.token ? { token: l.token } : { invite: l.invite };
   const opts = { machine: require('../home.js').machineId(), helloMs: config.LINK_HELLO_MS, ...cred };
-  const c = await require('./client.js').connect(require('./transports/index.js').open(spec), opts);
+  const c = await require('./client.js').connect(transports().open(l.transport, { code }), opts);
   if (!l.token) {
     const { invite, ...rest } = l;
     links.set(code, { ...rest, token: c.token });
