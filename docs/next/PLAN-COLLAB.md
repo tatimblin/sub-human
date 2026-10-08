@@ -232,7 +232,7 @@ alice: "spawn two subagents to plan the parser and the paging API"
 | Revising too often | Over `REVISE_MAX` per person per thread per window: refused with the wait. `@orch revise` counts against the asker, not the orch. |
 | A non-approver revises | Allowed (D2); they become an approver of that version. |
 | Revision that drops an approver | Refused in `create`; a hand-built one is a standalone v1 in the fold. |
-| An approver left the room | They stay named; the version waits; they answer on rejoin. (Open question 3.) |
+| An approver left the room | They stay named and the version waits, unless the proposer sends a new version that drops them (decided 3): the change summary names them and the remaining approvers agree to it. |
 | Proposer left | Others can still revise; the proposer stays an approver. Nobody else can withdraw. |
 | Withdraw with an agreed version in force | Closes the open head only; the agreed version stays the decision. |
 | The orch proposed version 1 | The orch is the proposer for routing ("changes requested" wakes it, as today's objection does) but never an approver. Every person named still approves. |
@@ -258,7 +258,7 @@ What must never count as agreement, each with the test that pins it (`test/hooks
 10. **Tasks and chat.** A claimed `plan:` task, a `done`, "ok" in chat, an addressed post or a Claude's message is never agreement and never closes a version.
 11. **The pick.** The hook picks which version a review opens; a model's choice, a stale plan file or a hash in the model's call never changes what is shown.
 
-Withdraw is via=agent: a Claude steered by room text could withdraw its own person's plan. It cannot withdraw anyone else's, it ends no decision, and re-proposing restores it (open question 2).
+Withdraw is via=agent: a Claude steered by room text could withdraw its own person's plan. It cannot withdraw anyone else's, it ends no decision, and re-proposing restores it (decided 2).
 
 ## Implementation
 
@@ -303,12 +303,14 @@ Files: `agents/orchestrator.md`, `lib/room/lanes.js` (orch push for `plan:` task
 
 Files: `plugin/sub-human/README.md` (Agreeing to a proposal: versions, Suggest edits, withdraw; Shared tasks: `plan:`; Threat model: invariants 2–5), `docs/ARCHITECTURE.md` (Consent diagram, fold, Tasks), this note to `docs/archive/` when done. Fix the current README and `facilitate.md` claim "a newer proposal replaces an older one": on `master` two hashes are independent in the fold, so it is untrue until P1.
 
-## Open questions
+## Decided (2026-10-08)
 
-1. **A hard no.** Every objection now reads "changes requested". Is a distinct "reject outright" needed, or is the note ("drop this") plus the proposer's withdraw enough? Proposed: enough.
-2. **Who may withdraw.** via=agent from the proposer's Claude (proposed), or only the proposer's typed words (an `@room withdraw …` hook path, via=human)?
-3. **Approvers who left.** Keep them named and wait (proposed), or let the proposer drop a departed approver with a visible line, which breaks "a revision never drops anyone"?
-4. **The orch's unasked flag.** D7 lets the orch speak once per overlapping pair without being addressed. Keep that exception, or only mark the overlap in rows (`⚠ overlaps #4`) and speak when asked?
-5. **Plan tasks required?** Soft convention (proposed), or should `propose` create the `plan:` task itself when the proposer has none, so the list is always complete?
-6. **Change summary base.** Against what each person last answered (proposed) or always against the superseded head (simpler, same for everyone)?
-7. **Amendments.** Should revising an agreed plan need anything more than a new version (e.g. naming the in-force version in the header so the phone shows "amends the agreed v2")? Proposed: the header says it; nothing else.
+The user accepted these answers to the note's open questions.
+
+1. **No separate hard no.** "Changes requested" with a note, plus the proposer's withdraw, is enough.
+2. **The proposer's Claude may withdraw** (via=agent). Withdraw only closes; it never counts as agreement.
+3. **A departed approver can be dropped, only by a new version.** The proposer sends a revision without the person who left; the change summary names the dropped approver, and every remaining approver must agree to that version. This is the one exception to "a revision never drops anyone": the dropped person must have left the room (seat `left_at` set).
+4. **The orch flags an overlap unasked, once per pair.**
+5. **`propose` creates the `plan:` task itself** when the proposer holds none, so the list is always complete.
+6. **The change summary is against what each person last answered** (the superseded head for someone who never answered).
+7. **Amending an agreed plan:** the header names the in-force version ("amends the agreed v2"); nothing else.
