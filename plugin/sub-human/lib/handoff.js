@@ -54,7 +54,7 @@
  *   refuse(me) -> {ok, error?}
  *   takeOver(code, {by, cwd, entry?}) -> string                this machine becomes the room's host (see 4);
  *       entry: append it once the store is this machine's (promote)
- *   promote(code, {name, locator?, force?, now?}) -> {epoch, entry, invites: [{machine, seats, invite}], note}
+ *   promote(code, {name, locator?, force?, cwd?, now?}) -> {epoch, entry, invites: [{machine, seats, invite, pin}], note, last}
  *       a member's machine with a full mirror declares itself host at epoch + 1 (the person's own shell,
  *       lib/cli/handoff.js, after a confirmation): refused while the link is online, or down for less than
  *       PROMOTE_OFFLINE_MS without force. The other machines get sh2 invites with a PIN each, to hand out by hand.

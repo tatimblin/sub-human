@@ -46,7 +46,9 @@
  *   redactor({home?, hosts?, users?, rooms?, members?, salt?}) -> (text) -> text   ~ for paths under $HOME; hashed room codes, member names, hostnames, users
  *                and IPs; invites, tokens, long hex and secrets cut; SSH public keys as a SHA256 fingerprint prefix
  *   helloProbe(spec, code, {timeoutMs, env}?) -> Promise<{ok, ms, reply?, error?, stderr?}>
- *   main(args) -> Promise<exitCode>
+ *   main(args) -> Promise<exitCode>;  parseArgs(args) -> options (lib/cli/args.js; Error with the usage)
+ *   for tests: checkNode(version?), checkRemoteControl(env, settings), checkListener({quick?}), checkOrchs({now?}),
+ *       scanAuthorizedKeys(file), linkChecks(linkReport) -> [check], sshHint(stderr, {code?, request?, transport?})
  */
 const fs = require('node:fs');
 const os = require('node:os');

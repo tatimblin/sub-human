@@ -24,6 +24,7 @@
  *   unhost(code) -> {removed, text}   the room leaves the served set and its own Tailscale path (only that one) is
  *       turned off; the listener stops once it serves no room. Links already made keep their token but cannot
  *       reach the room over the web until it is hosted again
+ *   frontBase(url) -> {secure, host, port?, prefix}   a front's base URL, checked: http(s)://host[:port][/prefix] only
  */
 
 const { RoomError } = require('../room/validate.js');

@@ -53,6 +53,7 @@
  *   decoder() -> {push(chunk) -> frame[]}   buffers partial lines; a malformed line, or one longer than
  *                                    LINK_FRAME_MAX_BYTES, is a PROTOCOL error frame (id null) in its place
  *   isRequest(f), isReply(f), isEvent(f)
+ *   EVENTS                           the event names a stream carries: entry doc end handoff moved
  */
 
 const { StringDecoder } = require('node:string_decoder');

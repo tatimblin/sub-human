@@ -57,6 +57,9 @@
  *                                                  "sh2.<code>.<locator-base64url>.<secret>.<hostKey | 0>"
  *   parseInvite(text) -> {v, code, locator, secret, hostKey} | null   either; hostKey null for none (sh1, or "0")
  *   PIN_RE                                         /^[0-9]{6}$/
+ *   INVITE_PREFIX, INVITE2_PREFIX                  'sh1', 'sh2'
+ *   INVITES_KEY, LINKS_KEY                         the host documents remote/invites, remote/links (by sha256)
+ *   LINK_ID_RE                                     /^[0-9a-f]{12}$/, a link id
  */
 
 const crypto = require('node:crypto');

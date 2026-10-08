@@ -25,6 +25,12 @@
  *       key pinned in a known_hosts of the link's own; over ws/wss, the listener's X25519 key the invite carries,
  *       pinned in the link file's transport (hostKey; no admit step); request: the admit request for the host. RoomError INVALID
  *       for a locator this machine cannot use
+ *   linkTransport({inv, name, cur?}) -> {transport, request} | null   joinInvite's link transport, also the one a handoff's
+ *       follower (lib/handoff.js onMoved, afterMoved, demote) builds: over ssh the link's own key (made once, kept),
+ *       the invite's host key pinned (else the old pin for the same destination), mux from cur kept, and the admit
+ *       request; over ws/wss the pinned listener key. null for a locator this machine cannot use
+ *   shimReady() -> {shim, h}   the stable serve shim written and the plain home path it carries (admit, authorize);
+ *       RoomError INVALID under a temp plugin root or a home path a forced command cannot carry
  *   outcome(code, {waitMs?}) -> {state: 'linked' | 'refused' | 'waiting', reason?}   the link daemon's first hello,
  *       watched for up to waitMs (LINK_JOIN_WAIT_MS): linked (the PIN held), refused (its reason: a wrong PIN, an
  *       expired invite, a protocol skew), or waiting (ssh not admitted yet, or slow)

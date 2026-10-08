@@ -6,7 +6,7 @@
  * signer: a via=human payload, and a join's seat proof (lib/remote/auth.js proveSeat), reach it already
  * signed.
  *
- *   connect(transport, {machine, token?, invite?, pin?, caps?, deadlineMs?, helloMs?, proto?, version?}) -> Promise<Client>
+ *   connect(transport, {machine, token?, invite?, pin?, epoch?, caps?, deadlineMs?, helloMs?, proto?, version?}) -> Promise<Client>
  *       hello carries {v, proto, client} (lib/remote/protocol.js): the server picks the version; a version outside
  *       this end's range, or a refusal from a host too old or too new, is PROTOCOL with skewMessage (who must update).
  *       pin: an sh2 invite's PIN (checked by the host, never here). proto / version: fakes for the skew tests.

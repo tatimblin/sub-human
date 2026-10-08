@@ -20,6 +20,7 @@
  *       On an old host the room was promoted away from: set its own log aside (kept in orphaned-<time>.jsonl,
  *       never merged), stop its orch, and mirror the new host with INVITE.
  * ctx = {die(msg, code?), out(line), err(line)}.
+ * FORK_RISK(code, last) -> [line]   what promote prints before its --confirm
  */
 
 const identity = require('../identity.js');

@@ -35,6 +35,7 @@
  *       HTTP_PROXY or http_proxy. None for a host NO_PROXY / no_proxy names ("*", a host, ".suffix" or "suffix" for
  *       the domain and its subdomains, host:port) or a loopback host (localhost, 127.x, ::1)
  *   acceptKey(key) -> string    base64(sha1(key + GUID))
+ *   MAX_PAYLOAD                 1 MiB, the default maxPayload of a message
  */
 
 const net = require('node:net');

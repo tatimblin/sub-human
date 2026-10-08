@@ -32,7 +32,11 @@
  *       with no room left for LISTEN_IDLE_MS and no connection it exits; it exits at once (checked every
  *       HOME_CHECK_MS, 2 s) when its home directory is gone, or the state file names another live listener. It survives a sleep: a socket bound to
  *       loopback outlives one, a dead peer is found by the WebSocket ping (15 s) and the child's own LINK_SILENT_MS
- *   DEFAULT_PORT                   7420 (SUB_HUMAN_LISTEN_PORT)
+ *   DEFAULT_PORT                   7420; defaultPort() -> SUB_HUMAN_LISTEN_PORT, else DEFAULT_PORT
+ *   logFile() -> <home>/listen/listen.log   the daemon's stdout and stderr
+ *   roomLive(code) -> bool         the room is still open here (not stopped, closing or gone): the sweep's test
+ *   untailscale(rec, log?) -> {ok, error?} | null   turn a served room's own Tailscale path off (tailscale.off), if it
+ *                                  has one; never another path, never `serve reset`
  */
 
 const fs = require('node:fs');

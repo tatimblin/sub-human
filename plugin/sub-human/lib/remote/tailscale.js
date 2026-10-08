@@ -34,6 +34,8 @@
  *       as does timeoutMs with no exit; ok only for exit 0
  *   watchSync(opts) -> the same, for the sync callers (the join hook, the CLI): watch() in a child node
  *       (`node tailscale.js --watch JSON`), whose one line of JSON is the result
+ *   MAC_APP                          /Applications/Tailscale.app/Contents/MacOS/Tailscale
+ *   SERVE_MS                         10 s, on()'s default deadline
  *   CT_WARNING                       the one line `--funnel` prints: the name goes into public CT logs
  * The path is mounted as given; the listener reads the room from the Noise handshake, not the path, so it works
  * whether or not Tailscale strips the mount point before proxying.

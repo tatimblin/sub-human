@@ -18,6 +18,11 @@
  *                the joiner's side, for an MFA bastion or host: open an ssh master for room CODE's link once,
  *                interactively (ssh -M -N -f, ControlPersist), and mark the link to ride it (its transport's mux), so
  *                the link daemon's BatchMode ssh reuses it without a prompt (lib/remote/transports/ssh.js)
+ *   hostedRoom(explicit?) -> code   --room, else the one open room hosted here (Error NO_ROOM otherwise)
+ *   inClaudeCode(env?) -> bool      run inside Claude Code (CLAUDECODE=1 or CLAUDE_CODE_SESSION_ID): its ! shell, whose
+ *                output becomes part of the conversation
+ *   maskPins(text, pins, env?) -> text   inside Claude Code every PIN masked and PIN_HIDDEN appended; else text
+ *                (host here, promote in lib/cli/handoff.js; `sub-human invite` refuses there instead)
  */
 
 const fs = require('node:fs');
