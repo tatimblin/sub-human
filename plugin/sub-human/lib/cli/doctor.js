@@ -521,7 +521,7 @@ function applyFix(write) {
     const changed = h.repairModes();
     if (changed.length) done.push(`made ${changed.map(d => tilde(d)).join(', ')} 0700`);
     const shim = lib('remote/shim.js');
-    const r = shim.refresh();
+    const r = shim.refresh({ force: true });
     done.push(r ? `the serve shim and pointer name ${tilde(shim.pluginRoot())} and ${tilde(process.execPath)}` : `the plugin root ${tilde(shim.pluginRoot())} is under a temp dir: the shim was not written`);
   }
   for (const d of done) write(`fixed: ${d}\n`);

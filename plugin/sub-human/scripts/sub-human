@@ -372,7 +372,7 @@ function authorize(args) {
   else die(`"${rest[0]}" is neither an invite nor a link of room ${code}`, 1);
   const key = sshPublicKey(rest[1] === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(rest[1], 'utf8'));
   const shim = require(path.join(LIB, 'remote', 'shim.js'));
-  if (!shim.refresh()) die(`the plugin root ${shim.pluginRoot()} is under a temp dir; sshd would run whatever sits there (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)`, 1);
+  if (!shim.refresh({ force: true })) die(`the plugin root ${shim.pluginRoot()} is under a temp dir; sshd would run whatever sits there (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)`, 1);
   const h = path.resolve(home());
   if (!shim.PLAIN_PATH_RE.test(h)) die(`the home path "${h}" has characters a forced command cannot carry plainly; move it`);
   const line = shim.authorizedLine(code, id, key, h);
@@ -398,7 +398,7 @@ function authorize(args) {
 
 const [cmd, ...args] = process.argv.slice(2);
 // Keep the SSH serve shim's pointer on this install and node (lib/remote/shim.js); not on the status line's hot path,
-// and never creating a home.
+// and never creating a home. Passive: a dev checkout's run never takes the pointer from another live install.
 if (cmd !== 'agent-statusline' && cmd !== 'doctor') { // doctor reports the shim as it is (--fix refreshes it)
   try { if (require('node:fs').existsSync(identity.home())) require(path.join(LIB, 'remote', 'shim.js')).refresh(); } catch { /* best effort */ }
 }

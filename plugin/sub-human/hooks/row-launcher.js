@@ -19,7 +19,8 @@
 // Rewritten only when the content changes.
 //
 // It also refreshes the stable SSH serve shim, <home>/bin/serve and its pointer <home>/bin/current
-// (lib/remote/shim.js), so an authorized_keys forced command follows plugin updates and node upgrades.
+// (lib/remote/shim.js), so an authorized_keys forced command follows plugin updates and node upgrades; passively,
+// so a dev checkout (--plugin-dir) never takes the pointer from the installed plugin while that one exists.
 const fs = require('node:fs');
 const path = require('node:path');
 const identity = require(path.join(__dirname, '..', 'lib', 'identity.js'));

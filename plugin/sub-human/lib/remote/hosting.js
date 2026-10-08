@@ -61,7 +61,7 @@ function roomLine(code, text) {
 /** The stable serve shim (an ssh forced command names it); the home path it carries. */
 function shimReady() {
   const shim = require('./shim.js');
-  if (!shim.refresh()) throw new RoomError('INVALID', `the plugin root ${shim.pluginRoot()} is under a temp dir; sshd would run whatever sits there (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)`);
+  if (!shim.refresh({ force: true })) throw new RoomError('INVALID', `the plugin root ${shim.pluginRoot()} is under a temp dir; sshd would run whatever sits there (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)`);
   const h = path.resolve(require('../home.js').home());
   if (!shim.PLAIN_PATH_RE.test(h)) throw new RoomError('INVALID', `the home path "${h}" has characters a forced command cannot carry plainly; move it`);
   return { shim, h };

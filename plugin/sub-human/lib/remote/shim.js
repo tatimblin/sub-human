@@ -8,9 +8,12 @@
  * server after a plugin update and breaks after a node upgrade. So the line names only the shim, and the shim
  * finds the plugin and node at run time:
  *   - <home>/bin/current holds three lines: the plugin root, the node that last ran it, and the plugin cache dir
- *     the root's version sits in (empty outside the cache). refresh() rewrites it (only on a change) from every
- *     SessionStart (hooks/row-launcher.js) and every CLI run (scripts/sub-human), so it follows plugin updates and
- *     node upgrades;
+ *     the root's version sits in (empty outside the cache). refresh() rewrites it (only on a change), so it follows
+ *     plugin updates and node upgrades. Forced (force: true) by the commands that make a forced command: `host
+ *     --ssh`, `admit`, `authorize` and `doctor --fix`. Passive (every SessionStart, hooks/row-launcher.js, and
+ *     every CLI run, scripts/sub-human): only from an installed plugin (a root under the Claude Code plugin cache),
+ *     or when the recorded root is gone or none is recorded, or for the recorded root itself (a new node). So a dev
+ *     checkout or a worktree run without SUB_HUMAN_HOME never takes over the pointer of the real home;
  *   - the shim runs the recorded root's CLI (scripts/sub-human, else bin/sub-human); when that is gone it takes
  *     the newest version under the recorded cache dir that has one;
  *   - node: the recorded one if it is still executable, else `node` on PATH, else the usual install places
@@ -24,9 +27,13 @@
  *   pluginRoot() -> string           the root of the plugin this module belongs to
  *   cacheDirOf(root) -> string       the versions dir when root is <...>/plugins/cache/<mkt>/<plugin>/<version>, else ''
  *   shimBody() -> string             the shim script (POSIX sh)
- *   refresh({root?, node?, env?}) -> string|null
+ *   refresh({root?, node?, env?, force?}) -> string|null
  *                                    write the pointer and the shim when they differ; the shim path, or null when
- *                                    root was refused (a temp root) and nothing was written
+ *                                    root was refused (a temp root) and nothing was written. Without force, a root
+ *                                    outside the plugin cache leaves an existing pointer to another live install
+ *                                    alone (passive(): whether it would write)
+ *   passive(root) -> bool            a passive refresh from root may write: root is in the plugin cache, or the
+ *                                    pointer is missing, names root, or names a root with no CLI any more
  *   forcedCommand(code, linkId, homeDir?) -> string
  *                                    `SUB_HUMAN_HOME=<home> <home>/bin/serve --stdio CODE --link ID`
  *   authorizedLine(code, linkId, key, homeDir?) -> string
@@ -84,10 +91,21 @@ function writeIfChanged(file, body, mode) {
   return true;
 }
 
-function refresh({ root = pluginRoot(), node = process.execPath, env = process.env } = {}) {
+const hasCli = root => ['scripts/sub-human', 'bin/sub-human'].some(c => fs.existsSync(path.join(root, c)));
+
+function passive(root) {
+  root = path.resolve(root);
+  if (cacheDirOf(root)) return true;
+  let cur;
+  try { cur = fs.readFileSync(pointerPath(), 'utf8').split('\n')[0]; } catch { return true; }
+  return !cur || path.resolve(cur) === root || !hasCli(cur);
+}
+
+function refresh({ root = pluginRoot(), node = process.execPath, env = process.env, force = false } = {}) {
   root = path.resolve(root);
   if (isTempPath(root) && !allowTmpRoot(env)) return null;
   if (/\n/.test(root + node)) return null;
+  if (!force && !passive(root)) return shimPath(); // another live install is recorded: a dev run leaves it alone
   fs.mkdirSync(binDir(), { recursive: true, mode: 0o700 });
   writeIfChanged(pointerPath(), `${root}\n${node}\n${cacheDirOf(root)}\n`, 0o600);
   writeIfChanged(shimPath(), shimBody(), 0o700);
@@ -115,5 +133,5 @@ function migrateLines(text, h = home()) {
 }
 
 module.exports = {
-  shimPath, pointerPath, pluginRoot, cacheDirOf, shimBody, refresh, forcedCommand, authorizedLine, migrateLines, PLAIN_PATH_RE,
+  shimPath, pointerPath, pluginRoot, cacheDirOf, shimBody, refresh, passive, forcedCommand, authorizedLine, migrateLines, PLAIN_PATH_RE,
 };
