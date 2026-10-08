@@ -41,7 +41,7 @@ Non-goals:
 
 1. **A plan is a thread of versions.** Version 1 is an ordinary proposal. Each later version names the one it supersedes. At most one version per thread is open at a time: the head.
 2. **Agreement is per version.** A signoff counts only for the hash it names. The fold never moves an answer from one hash to another.
-3. **Every version asks everyone.** Approvers of a version ⊇ the approvers of the version it supersedes ∪ the thread's proposer ∪ the version's author (when a person). A revision can add people, never drop them.
+3. **Every version asks everyone.** Approvers of a version ⊇ the approvers of the version it supersedes ∪ the thread's proposer ∪ the version's author (when a person). A revision can add people, never drop them, except an approver who has left the room (decided 3).
 4. **Superseding closes, never decides for anyone.** An open version that a newer one supersedes closes `changes_requested`. Its answers stay in the log and count for nothing.
 5. **Agreed plans stay in force until replaced by agreement.** A revision of an agreed version (an amendment) opens a new version; the agreed one stays the decision until the new one is itself agreed. A withdrawn or changes-requested amendment leaves it in force.
 6. **An objection asks for changes.** "Tell Claude what to change", phone "Suggest edits" and the card's Object + note all record today's `objection` (via=human, note byte-exact). It blocks that version and reaches the proposer as "changes requested". A version whose answers are complete with any objection closes `changes_requested`.
@@ -112,7 +112,7 @@ Config (`lib/config.js`): `REVISE_MAX: 3`, `REVISE_WINDOW_MS: 600_000`, `CHANGES
 
 ### Plan tasks (`lib/tasks.js`, `mcp/task.js`)
 
-- Convention: subject `plan: <topic>`, owner = the person whose Claude plans, claimed at add (`in_progress`). Detail: who it concerns.
+- Subject `plan: <topic>` (`propose` adds and claims one when the proposer holds none, decided 5), owner = the person whose Claude plans, claimed at add (`in_progress`). Detail: who it concerns.
 - `task({op:'add', subject:'plan: …'})` replies with the other open `plan:` tasks, so the check happens in the call that claims: `queued; the orch applies it. Open plans: #4 plan: paging API (bob)`. Same in `sub-human tasks --json` (`plan: true`).
 - `propose({…, plan_task})` links the plan. When the thread closes (agreed, withdrawn), the owner's Claude asks `done` with the decision as evidence; the gate accepts a `plan:` task's done whose evidence names its thread's closing entry.
 - A subagent's `task` call resolves to its session's person (`process.ppid`), so two subagents make two tasks owned by one person.
