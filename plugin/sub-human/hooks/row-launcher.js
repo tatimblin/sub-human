@@ -17,8 +17,10 @@
 //     temp dirs first, most recently started first; allowed temp roots last. A stable install therefore wins
 //     over a demo copy, the newest checkout wins among stable roots, and a deleted root is skipped.
 // Rewritten only when the content changes.
+//
+// It also refreshes the stable SSH serve shim, <home>/bin/serve and its pointer <home>/bin/current
+// (lib/remote/shim.js), so an authorized_keys forced command follows plugin updates and node upgrades.
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const identity = require(path.join(__dirname, '..', 'lib', 'identity.js'));
 const { writeFileAtomic, writeJsonAtomic, readJson } = require(path.join(__dirname, '..', 'lib', 'io.js'));
@@ -31,16 +33,8 @@ const binDir = () => path.join(identity.home(), 'bin');
 function launcherPath() { return path.join(binDir(), LAUNCHER); }
 const rootsPath = () => path.join(binDir(), ROOTS);
 
-const realish = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-const TMP_DIRS = () => [
-  ...new Set([os.tmpdir(), '/tmp', '/private/tmp', '/var/tmp', '/private/var/tmp'].flatMap(d => [path.resolve(d), realish(d)])),
-];
-/** root is inside a temp dir (lexically or after realpath). */
-function isTempRoot(root) {
-  const cands = [path.resolve(root), realish(root)];
-  return TMP_DIRS().some(t => cands.some(c => c === t || c.startsWith(t + path.sep)));
-}
-const allowTmp = (env = process.env) => env.SUB_HUMAN_ALLOW_TMP_ROOT === '1';
+const { isTempPath: isTempRoot, allowTmpRoot: allowTmp } = require(path.join(__dirname, '..', 'lib', 'home.js'));
+const shim = require(path.join(__dirname, '..', 'lib', 'remote', 'shim.js'));
 
 const q = s => `'${String(s).replace(/'/g, `'\\''`)}'`;
 const cliOf = root => path.join(root, 'bin', 'sub-human');
@@ -91,4 +85,5 @@ if (require.main === module) {
   try {
     if (!writeLauncher()) process.stderr.write('sub-human row-launcher: plugin root is under a temp dir; not used for the row status line (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)\n');
   } catch (e) { process.stderr.write(`sub-human row-launcher error: ${e && e.stack || e}\n`); /* rows fall back to their default text */ }
+  try { shim.refresh(); } catch (e) { process.stderr.write(`sub-human serve shim error: ${e && e.message || e}\n`); }
 }

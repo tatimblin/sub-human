@@ -58,10 +58,13 @@
  *   sub-human authorize INVITE|LINK_ID PUBKEY_FILE|- [--room CODE] [--file AUTHORIZED_KEYS]
  *       The authorized_keys line that lets the holder of that SSH public key reach room CODE (the invite's, or
  *       --room with a link id) as that one link and nothing else:
- *         command="SUB_HUMAN_HOME=<home> <node> <this bin> serve --stdio CODE --link ID",restrict <key> sub-human:CODE:ID
- *       (absolute paths: sshd's PATH has no Homebrew). The link id is reserved on the invite now
- *       (lib/remote/auth.js reserveLink). Prints the line; --file appends it to that file (0600) instead, unless
- *       the file holds it already, and refuses when the key is there with another line. PUBKEY - reads stdin.
+ *         command="SUB_HUMAN_HOME=<home> <home>/bin/serve --stdio CODE --link ID",restrict <key> sub-human:CODE:ID
+ *       <home>/bin/serve is the stable shim (lib/remote/shim.js): it finds the current plugin install and a
+ *       working node at run time, so the line survives plugin updates and node upgrades (absolute paths: sshd's
+ *       PATH has no Homebrew). The link id is reserved on the invite now (lib/remote/auth.js reserveLink).
+ *       Prints the line; --file appends it to that file (0600) instead, unless the file holds it already, and
+ *       refuses when the key is there with another line. --file also rewrites the lines an older authorize wrote
+ *       for this home (node and the versioned plugin path baked in) to name the shim. PUBKEY - reads stdin.
  *   Run invite, authorize, link and serve in your own shell: the Bash guard refuses them to a model.
  */
 
@@ -305,7 +308,6 @@ function invite(args) {
 
 // ---------- authorize INVITE|LINK_ID PUBKEY: the SSH forced command for one link ----------
 const SSH_KEY_RE = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) ([A-Za-z0-9+/]+={0,3})(?: .*)?$/;
-const PLAIN_PATH_RE = /^\/[A-Za-z0-9_\/.@+,:-]+$/; // nothing a shell or sshd's command="" would read specially
 
 /** The one public key in text (an authorized_keys or .pub line, options not allowed): "type base64". */
 function sshPublicKey(text) {
@@ -333,13 +335,22 @@ function authorize(args) {
   else if (auth.linkKnown(s, rest[0])) id = rest[0];
   else die(`"${rest[0]}" is neither an invite nor a link of room ${code}`, 1);
   const key = sshPublicKey(rest[1] === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(rest[1], 'utf8'));
-  const paths = { home: path.resolve(home()), node: process.execPath, bin: fs.realpathSync(__filename) };
-  for (const [what, p] of Object.entries(paths)) if (!PLAIN_PATH_RE.test(p)) die(`the ${what} path "${p}" has characters a forced command cannot carry plainly; move it`);
-  const line = `command="SUB_HUMAN_HOME=${paths.home} ${paths.node} ${paths.bin} serve --stdio ${code} --link ${id}",restrict ${key} sub-human:${code}:${id}`;
+  const shim = require(path.join(LIB, 'remote', 'shim.js'));
+  if (!shim.refresh()) die(`the plugin root ${shim.pluginRoot()} is under a temp dir; sshd would run whatever sits there (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)`, 1);
+  const h = path.resolve(home());
+  if (!shim.PLAIN_PATH_RE.test(h)) die(`the home path "${h}" has characters a forced command cannot carry plainly; move it`);
+  const line = shim.authorizedLine(code, id, key, h);
   if (flags.file === undefined) return console.log(line);
   const file = path.resolve(flags.file);
   let cur = '';
   try { cur = fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  const mig = shim.migrateLines(cur, h);
+  if (mig.migrated) {
+    const { writeFileAtomic } = require(path.join(LIB, 'io.js'));
+    writeFileAtomic(fs.realpathSync(file), mig.text);
+    console.error(`rewrote ${mig.migrated} older sub-human line(s) in ${file} to run ${shim.shimPath(h)}`);
+    cur = mig.text;
+  }
   const lines = cur.split('\n');
   if (lines.includes(line)) return console.error(`already in ${file}`);
   const blob = key.split(' ')[1];
@@ -350,6 +361,11 @@ function authorize(args) {
 }
 
 const [cmd, ...args] = process.argv.slice(2);
+// Keep the SSH serve shim's pointer on this install and node (lib/remote/shim.js); not on the status line's hot path,
+// and never creating a home.
+if (cmd !== 'agent-statusline') {
+  try { if (require('node:fs').existsSync(identity.home())) require(path.join(LIB, 'remote', 'shim.js')).refresh(); } catch { /* best effort */ }
+}
 const cmds = { tail, read, digest, who, tasks: tasksCmd, watch, serve, link: linkCmd, invite, authorize, 'agent-statusline': agentStatusline };
 try {
   (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] | authorize INVITE|LINK_ID PUBKEY [--file F] | agent-statusline')))(args);

@@ -302,7 +302,7 @@ test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) tak
   assert.equal(auth.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
 });
 
-test('cli: invite --ssh USER@HOST[:PORT]; authorize prints the forced-command line (absolute paths, restrict), --file appends it once', t => {
+test('cli: invite --ssh USER@HOST[:PORT]; authorize prints the forced-command line (the stable shim, restrict), --file appends it once', t => {
   const { code } = hostRoom(t);
   const run = (args, input) => spawnSync(process.execPath, [h.BIN, ...args], { env: h.childEnv(), encoding: 'utf8', input });
   const inv = run(['invite', '--room', code, '--ssh', 'host@127.0.0.1:2222']);
@@ -317,9 +317,11 @@ test('cli: invite --ssh USER@HOST[:PORT]; authorize prints the forced-command li
   const r = run(['authorize', invite, pub]);
   assert.equal(r.status, 0, r.stderr);
   const id = auth.reserveLink(store.open(code), auth.parseInvite(invite).secret);
-  const bin = fs.realpathSync(h.BIN);
+  const home = path.resolve(process.env.SUB_HUMAN_HOME);
   assert.equal(r.stdout.trim(),
-    `command="SUB_HUMAN_HOME=${path.resolve(process.env.SUB_HUMAN_HOME)} ${process.execPath} ${bin} serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`);
+    `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`);
+  assert.ok(!r.stdout.includes(process.execPath) && !r.stdout.includes(fs.realpathSync(h.BIN)), 'no versioned node or plugin path is baked in');
+  assert.equal(fs.statSync(path.join(home, 'bin', 'serve')).mode & 0o777, 0o700, 'authorize installed the shim');
   assert.doesNotMatch(r.stdout, /laptop|quoted|\$\(/, 'the key\'s own comment is dropped');
   // by link id, from stdin, into a file: appended once (0600), the same key with another line refused
   const ak = path.join(dir, 'ssh', 'authorized_keys');

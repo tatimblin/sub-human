@@ -117,6 +117,9 @@ test('row-launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that 
   const mtime = fs.statSync(f).mtimeMs;
   hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'clear' });
   assert.equal(fs.statSync(f).mtimeMs, mtime, 'unchanged content is not rewritten');
+  // and the SSH serve shim with its pointer at this plugin (lib/remote/shim.js)
+  assert.equal(fs.statSync(path.join(home, 'bin', 'serve')).mode & 0o777, 0o700);
+  assert.ok(fs.readFileSync(path.join(home, 'bin', 'current'), 'utf8').startsWith(path.resolve(PLUGIN) + '\n'));
   // The plugin settings point at the same place, through the shell's env default.
   const settings = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'settings.json'), 'utf8'));
   assert.equal(settings.subagentStatusLine.type, 'command');
