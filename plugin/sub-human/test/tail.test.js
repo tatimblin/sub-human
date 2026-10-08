@@ -109,7 +109,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
     "bob's Claude (to you): q for alice",
     'orch proposed: orch proposes',
     "carol's Claude: carol: anyone on @alice docs?",
-    'room: decided (room decision)',
+    'room: "orch proposes" decided (room decision)', // the decision names its proposal
     'room: task "docs" pending, owner you',
   ], t.text());
   assert.match(t.of('pull').map(x => x.text).join('\n'), /\nroom: peer-forged\n/, 'the old retract: an ordinary pull line');

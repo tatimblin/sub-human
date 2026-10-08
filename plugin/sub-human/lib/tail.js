@@ -170,7 +170,7 @@ function formatNdBatch(ready, ctx) {
     if (me.role !== 'orch') {
       if (isMove(e) && seen.has(e.id)) continue; // an earlier child already sent it
       if (show(e, entries)) {
-        const lines = rm.chatLines(e, { viewer: me.name });
+        const lines = rm.chatLines(e, { viewer: me.name, entries });
         if (isChat(me, e)) {
           chat.push(...lines.filter(l => !l.startsWith(FOR_CLAUDE)));
           pull.push(...lines);
@@ -182,7 +182,7 @@ function formatNdBatch(ready, ctx) {
         continue;
       }
     } else if (show(e, entries, joinNote(e))) { pushed.push(p); continue; }
-    if (rm.lane(me, e, entries) === 'pull') pull.push(...rm.chatLines(e, { viewer: me.name }));
+    if (rm.lane(me, e, entries) === 'pull') pull.push(...rm.chatLines(e, { viewer: me.name, entries }));
   }
   if (me.role === 'orch') wake.push(...formatOrchBatch(pushed, ctx));
   // no ids for a member: the plugin prompt's row is drawn expanded, (for Claude) lines included (people never see ids)

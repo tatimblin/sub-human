@@ -6,8 +6,10 @@
  *     points, then `[cut at 2000/N: sub-human read ID]`; without full, <= TAIL_MAX (240) chars with the same
  *     marker when cut. Never a bare "…". A drafted:"agent" entry's header carries "(NAME, Claude's wording)".
  *     tailLine(e) = line(e).
- *   chatLines(e, {viewer}) -> [string]   one entry as group-chat lines, no ids; continuation lines nested
- *     under the sender with CHAT_NEST ("  │ "), at most CHAT_LINES_MAX text lines (below)
+ *   chatLines(e, {viewer, entries?}) -> [string]   one entry as group-chat lines, no ids; continuation lines nested
+ *     under the sender with CHAT_NEST ("  │ "), at most CHAT_LINES_MAX text lines (below). With entries (the log
+ *     so far) an answer or decision names its proposal by title: 'bob agreed to "Ship v3 Monday"', 'room: "Ship v3
+ *     Monday" agreed (bob)', 'room: "Ship v3 Monday" not agreed: changes requested by bob: keep status'
  *   fmt(e)                   full text for `sub-human read`, body lines nested the same way;
  *     who(e) ("alice" | "alice's Claude" | "room")
  *   stateLine(me, entries, {members, ids}) -> "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed ·
@@ -128,24 +130,60 @@ function wrap(lineText, n = CHAT_WRAP, rest = n) {
   return out;
 }
 
-/** The human-facing sentence for an entry (may span lines). */
-function chatBody(e, viewer) {
+const TITLE_LABEL_MAX = 60;
+/**
+ * The proposal hash names, as people see it: its title in quotes, from the proposal entry in entries ("proposal
+ * HASH: TITLE"), one safe line of at most TITLE_LABEL_MAX code points; null without entries or that entry.
+ */
+function proposalLabel(hash, entries) {
+  if (!hash || !Array.isArray(entries)) return null;
+  const p = entries.find(x => x && x.kind === 'proposal' && x.hash === hash);
+  const t = p && oneLine(safeText(String(p.text ?? '').replace(/^proposal [0-9a-f]{6,64}:\s*/, ''))).replace(/\n/g, ' ').trim();
+  if (!t) return null;
+  const cps = Array.from(t);
+  return `"${cps.length > TITLE_LABEL_MAX ? `${cps.slice(0, TITLE_LABEL_MAX - 1).join('').trimEnd()}…` : t}"`;
+}
+
+/** An objection's note, or '' for none (a bare "Object" answer). */
+const noteOf = o => (o.text == null || /^Object$/.test(String(o.text)) ? '' : String(o.text));
+
+/**
+ * A decision as people read it: '"Ship v3 Monday" agreed (bob)', or '"Ship v3 Monday" not agreed: changes
+ * requested by bob: keep status · agreed: alice' (each objector's note from the answers the decision refs). Without
+ * the proposal in entries: 'decided (agreed: bob)' / 'not agreed (objected: bob)'.
+ */
+function decisionText(n, entries) {
+  const label = proposalLabel(n.proposal_hash, entries);
+  const s = String(n.text ?? '').replace(/\s*\(proposal [0-9a-f]+\)\s*$/, '');
+  const m = /^objected: ([^·]*?)(?: · agreed: (.*))?$/.exec(s);
+  if (!label) return m ? `not agreed (${s})` : `decided (${s})`; // no title to name it by
+  if (!m) return /^agreed: /.test(s) ? `${label} agreed (${s.slice(8)})` : `${label} decided (${s})`;
+  const refs = new Set(n.refs || []);
+  const objs = entries.filter(x => x && refs.has(x.id) && x.kind === 'objection');
+  const by = m[1].split(/,\s*/).filter(Boolean).map(name => {
+    const o = objs.find(x => x.from === name);
+    const note = o ? oneLine(safeText(noteOf(o))) : '';
+    return note ? `${name}: ${note}` : name;
+  });
+  return `${label} not agreed: changes requested by ${by.join(' · ')}${m[2] ? ` · agreed: ${m[2]}` : ''}`;
+}
+
+/** The human-facing sentence for an entry (may span lines). entries: the log so far, to name a proposal by title. */
+function chatBody(e, viewer, entries) {
   const n = normalize(e);
   const t = String(n.text ?? '');
   const you = x => (x && x === viewer ? 'you' : x);
+  const about = () => proposalLabel(n.proposal_hash, entries) || 'the proposal';
   switch (n.kind) {
     case 'member_joined': return { head: `${n.from} ${/\brejoined\b/.test(t) ? 'rejoined' : 'joined'}`, text: '' };
     case 'member_left': return { head: `${n.from} left`, text: '' };
     case 'proposal': return { head: `${chatWho(n)} proposed`, text: t.replace(/^proposal [0-9a-f]{6,64}:\s*/, '') };
-    case 'signoff': return { head: `${humanName(e)} agreed to the proposal`, text: '' };
+    case 'signoff': return { head: `${humanName(e)} agreed to ${about()}`, text: '' };
     case 'objection':
       return n.via === 'human' && n.proposal_hash
-        ? { head: `${humanName(e)} objected to the proposal`, text: n.text == null || /^Object$/.test(t) ? '' : t }
+        ? { head: `${humanName(e)} objected to ${about()}`, text: noteOf(n) }
         : { head: chatWho(n), text: t };
-    case 'decision': {
-      const s = t.replace(/\s*\(proposal [0-9a-f]+\)\s*$/, '');
-      return { head: 'room', text: /^objected:/.test(s) ? `not agreed (${s})` : `decided (${s})` };
-    }
+    case 'decision': return { head: 'room', text: decisionText(n, entries) };
     case 'task': {
       const status = n.status ? ` ${n.status}` : '';
       return { head: 'room', text: `task "${n.subject || n.task_id || '?'}"${status}${n.owner ? `, owner ${you(n.owner)}` : ''}` };
@@ -166,10 +204,10 @@ function chatBody(e, viewer) {
  * code points (NEST included). At most CHAT_LINES_MAX text lines show, then "  │ [+N more lines: read({ids:[ID]})]".
  * A text longer than CHAT_MAX is cut with a visible "[cut: …]" and a "(for Claude) …" line naming the read
  * call for the rest. \r, other controls and bidi overrides never reach the output (safeText).
- * viewer: the reader's name ("to you", "owner you").
+ * viewer: the reader's name ("to you", "owner you"); entries: the log so far (a proposal's title).
  */
-function chatLines(e, { viewer } = {}) {
-  const { head, text } = chatBody(e, viewer);
+function chatLines(e, { viewer, entries } = {}) {
+  const { head, text } = chatBody(e, viewer, entries);
   if (!text) return [head];
   const cps = Array.from(text);
   const cut = cps.length > CHAT_MAX;
