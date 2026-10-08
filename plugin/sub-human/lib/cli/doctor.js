@@ -32,6 +32,12 @@
  *   hooks        settings that turn hooks off (disableAllHooks): the plugin then cannot seat anyone
  *   remote_control   whether Remote Control (the phone) is likely available: it needs a claude.ai login and is
  *                unavailable with Bedrock, Vertex, Foundry or an API key (informational)
+ *   listener     the host's web listener (lib/remote/listener.js status, <home>/listen/state.json): running, its pid
+ *                and port, the rooms it serves; a room served with no listener running is a failure
+ *   web:CODE     per room served over the web: a room that closed (warn); with Tailscale, unless --quick, that
+ *                `tailscale serve status --json` still lists its path (fail when gone), and with Funnel the
+ *                certificate-transparency warning (warn: the name is public)
+ * A wss/ws link's hello goes over the real transport (the WebSocket and the pinned Noise handshake).
  *
  *   diagnose(opts) -> Promise<Report>   Report = {generated_at, versions, checks, links, authorizedKeys}
  *   format(report, {color}?) -> string
@@ -207,6 +213,7 @@ function helloProbe(spec, code, { timeoutMs = DOCTOR_HELLO_MS, env = process.env
       cmd = { argv: [process.execPath, BIN, 'serve', '--stdio', code], env: { ...env, SUB_HUMAN_HOME: spec.home } };
     }
   } catch (e) { return Promise.resolve({ ok: false, ms: 0, error: e.message }); }
+  if (!cmd && (spec.kind === 'wss' || spec.kind === 'ws')) return webHelloProbe(spec, code, { timeoutMs });
   if (!cmd) return Promise.resolve({ ok: false, ms: 0, skipped: true, error: `no reachability check for the ${spec.kind} transport` });
   // v 1: the least this probe needs, so a host before 0.4 (which checks v === 1 and knows no proto) answers too
   const params = { v: 1, proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.js').machineId() };
@@ -236,6 +243,64 @@ function helloProbe(spec, code, { timeoutMs = DOCTOR_HELLO_MS, env = process.env
     child.on('exit', (c, sig) => finish({ ok: false, error: `the ${spec.kind} command exited (${sig || c}) before answering` }));
     child.stdin.write(protocol.encode(protocol.request(1, 'hello', params)));
   });
+}
+
+/** A wss/ws link's hello without a credential: the WebSocket, the Noise handshake pinned to the link's key, then hello. */
+async function webHelloProbe(spec, code, { timeoutMs = DOCTOR_HELLO_MS } = {}) {
+  const t0 = Date.now();
+  const protocol = lib('remote/protocol.js');
+  let t = null;
+  const deadline = new Promise((_, no) => setTimeout(() => no(new Error(`no answer within ${timeoutMs} ms`)), timeoutMs).unref());
+  try {
+    t = await Promise.race([lib('remote/transports/index.js').open(spec, { code }), deadline]);
+    const reply = await Promise.race([new Promise((ok, no) => {
+      t.onFrame(f => { if (f.id === 1) (f.error ? no(Object.assign(new Error(`${f.error.code}: ${f.error.message}`), { code: f.error.code })) : ok(f.result)); });
+      t.onClose(() => no(new Error('the listener closed before answering')));
+      t.send(protocol.request(1, 'hello', { v: 1, proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.js').machineId() }));
+    }), deadline]);
+    return { ok: true, ms: Date.now() - t0, t0, t1: Date.now(), reply };
+  } catch (e) {
+    return { ok: false, ms: Date.now() - t0, error: e.message, ...(e.code ? { code: e.code } : {}) };
+  } finally { if (t) t.close(); }
+}
+
+/** The host's web listener and the rooms it serves (lib/remote/listener.js), with their Tailscale paths. */
+function checkListener({ quick = false } = {}) {
+  let st;
+  try { st = lib('remote/listener.js').status(); } catch (e) { return [check('listener', 'warn', 'listener', `could not read its state: ${e.message}`)]; }
+  const codes = Object.keys(st.rooms || {});
+  if (!codes.length && !st.running) return [check('listener', 'info', 'listener', 'no room is served over the web here (/sub-human host --tailscale or --url starts it)')];
+  const out = [st.running
+    ? check('listener', 'pass', 'listener', `running (pid ${st.pid}) on 127.0.0.1:${st.port} · ${codes.length ? `serves ${codes.join(', ')}` : 'serves no room'}${st.conns ? ` · ${st.conns} connection(s)` : ''}`)
+    : check('listener', 'fail', 'listener', `not running, but ${codes.join(', ')} ${codes.length === 1 ? 'is' : 'are'} served over the web: joiners cannot reach ${codes.length === 1 ? 'it' : 'them'}`,
+      `sub-human listen --start (or /sub-human host --tailscale again); its log: ${tilde(lib('remote/listener.js').logFile())}`)];
+  const ts = lib('remote/tailscale.js');
+  const serveStatus = {}; // bin -> stdout
+  for (const code of codes) {
+    const rec = st.rooms[code] || {};
+    const id = `web:${code}`;
+    if (!lib('remote/listener.js').roomLive(code)) { out.push(check(id, 'warn', `web ${code}`, 'served over the web, but the room is closed or gone here', `sub-human unhost --room ${code}`)); continue; }
+    const where = rec.url || rec.path || '?';
+    if (!rec.tailscale) { out.push(check(id, 'info', `web ${code}`, `${rec.mode === 'handoff' ? 'moved here by a handoff' : 'through your own front'} at ${where}`)); continue; }
+    const kind = rec.tailscale.funnel ? 'funnel' : 'serve';
+    if (!quick) {
+      const bin = rec.tailscale.bin || ts.bin();
+      if (!(bin in serveStatus)) {
+        const r = bin ? spawnSync(bin, ['serve', 'status', '--json'], { encoding: 'utf8', timeout: 10_000 }) : { status: 1, stdout: '' };
+        serveStatus[bin] = r.status === 0 ? String(r.stdout || '') : null;
+      }
+      const text = serveStatus[bin];
+      if (text === null) out.push(check(id, 'warn', `web ${code}`, `tailscale ${kind} ${rec.tailscale.path}: could not read tailscale serve status`, 'is Tailscale running? tailscale status'));
+      else if (!text.includes(rec.tailscale.path)) {
+        out.push(check(id, 'fail', `web ${code}`, `tailscale ${kind} has no ${rec.tailscale.path} any more (a reset, or another serve replaced it)`, `/sub-human host --tailscale${rec.tailscale.funnel ? ' --funnel' : ''} in the room (it puts the path back)`));
+        continue;
+      }
+    }
+    out.push(rec.tailscale.funnel
+      ? check(id, 'warn', `web ${code}`, `Tailscale Funnel ${where}${quick ? '' : ' (path present)'}. ${ts.CT_WARNING}`, `/sub-human unhost when nobody needs to join from outside the tailnet`)
+      : check(id, 'pass', `web ${code}`, `Tailscale Serve (tailnet only) ${where}${quick ? '' : ' (path present)'}`));
+  }
+  return out;
 }
 
 /** The host's clock from a hello reply, when it carries one (ms). */
@@ -401,6 +466,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
   checks.push(cl.check);
   const settings = settingsFiles(env);
   checks.push(checkHooks(settings), checkRemoteControl(env, settings));
+  checks.push(...checkListener({ quick }));
   return {
     generated_at: new Date().toISOString(),
     versions: { plugin: pluginVersion(), node: process.versions.node, claude: cv, protocol: lib('remote/protocol.js').PROTO, ssh: sshV, platform: process.platform, arch: process.arch, os: os.release() },
@@ -463,9 +529,9 @@ function bundle(report, { salt, env = process.env } = {}) {
   const s = salt || crypto.randomBytes(8).toString('hex'); // per bundle: names hash the same within it, never across
   const red = redactor({
     salt: s,
-    hosts: links.map(d => d.transport.host).filter(Boolean),
+    hosts: [...links.map(d => d.transport.host), ...webHosts()].filter(Boolean),
     users: links.map(d => d.transport.user).filter(Boolean),
-    rooms: links.map(d => d.code),
+    rooms: [...links.map(d => d.code), ...webRooms()],
     members: links.map(d => d.moved && d.moved.host).filter(m => m && m.length > 1),
   });
   const config = lib('config.js');
@@ -494,6 +560,14 @@ function bundle(report, { salt, env = process.env } = {}) {
     },
     probe: report.probe,
   };
+}
+
+const webRooms = () => { try { return Object.keys(lib('remote/listener.js').status().rooms || {}); } catch { return []; } };
+/** The hostnames of the rooms this machine serves over the web (a ts.net name is redacted like a link's host). */
+function webHosts() {
+  try {
+    return Object.values(lib('remote/listener.js').status().rooms || {}).map(r => { try { return new URL(r.url).hostname; } catch { return null; } });
+  } catch { return []; }
 }
 
 // ---------- CLI ----------
@@ -543,4 +617,4 @@ async function main(args, { write = s => process.stdout.write(s), env = process.
   return report.checks.some(x => x.status === 'fail') ? 1 : 0;
 }
 
-module.exports = { diagnose, format, bundle, redactor, helloProbe, scanAuthorizedKeys, checkNode, checkRemoteControl, sshHint, main, parseArgs, DOCTOR_HELLO_MS };
+module.exports = { diagnose, format, bundle, redactor, helloProbe, checkListener, scanAuthorizedKeys, checkNode, checkRemoteControl, sshHint, main, parseArgs, DOCTOR_HELLO_MS };

@@ -12,6 +12,10 @@
  *                                     the host's, both chains verify, ids 1..n with no gap, no line twice; logs the
  *                                     sha256 of each and writes the logs to the evidence dir
  *   entries(log) -> [entry]           parse a log.jsonl
+ *   wssHost(t, lab, code, host) -> port   (1.1) the host's listener on devbox 127.0.0.1:LAB_WS_PORT (LAB_WS_LISTEN_CMD)
+ *   wssJoin(t, lab, host, code, svc, name, {proxy?}) -> {seat, name, ok, out}   (1.1) alice mints a join URL + PIN for
+ *                                     https://tls-front (`/sub-human host --url`), NAME links with it (joiner-b through
+ *                                     corp-proxy: proxy) and takes the seat
  */
 const WAN = { devbox: { HostName: 'toxiproxy', Port: 22001 }, 'devbox-old': { HostName: 'toxiproxy', Port: 22003 } };
 const JUMP = { bastion: { User: 'jump' }, devbox: { ProxyJump: 'jump@bastion' }, 'devbox-old': { ProxyJump: 'jump@bastion' }, 'joiner-a': { ProxyJump: 'jump@bastion' } };
@@ -71,4 +75,30 @@ async function converge(t, host, code, mirrors, ms = 20_000) {
   return { ok: same && chains && noGap && !dupLines && !dupNonces, host: h, mirrors: ms_, detail: `byte-identical ${same}, chains ${chains}, no gap ${noGap}, dup lines ${dupLines}, dup nonces ${dupNonces}, ${ids.length} lines` };
 }
 
-module.exports = { WAN, JUMP, PROXY, CORE, sleep, entries, delivered, linkState, waitState, converge };
+const WS_PORT = Number(process.env.LAB_WS_PORT || 7420);
+const JOIN_URL_RE = /https:\/\/tls-front\/[A-Za-z0-9/_-]+#[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/;
+const LAB_CA_ENV = { NODE_EXTRA_CA_CERTS: '/etc/lab-ca.crt' };
+const CORP_PROXY = 'http://corp-proxy:3128';
+
+async function wssHost(t, lab) {
+  const listen = (process.env.LAB_WS_LISTEN_CMD || 'listen --port {port}').replace('{port}', String(WS_PORT)).split(' ');
+  lab.dc(['exec', '-d', '-u', 'host', '-e', 'SUB_HUMAN_HOME=/home/host/.sub-human', 'devbox', 'node', '/plugin/scripts/sub-human', ...listen], { allowFail: true });
+  await sleep(1500);
+  return WS_PORT;
+}
+
+function wssJoin(t, lab, host, code, svc, name, { proxy = false } = {}) {
+  const r = host.expand('alice', 'host --url https://tls-front');
+  const text = (r.json && r.json.reason) || '';
+  const url = (JOIN_URL_RE.exec(text) || [])[0];
+  const pin = (/\bPIN (\d{6})\b/.exec(text) || [])[1];
+  if (!url || !pin) return { ok: false, out: text.slice(0, 200) };
+  t.ev.secret(url.split('#')[1].split('.')[0]);
+  const seat = lab.seat(svc, { env: { ...LAB_CA_ENV, ...(proxy ? { HTTPS_PROXY: CORP_PROXY, https_proxy: CORP_PROXY } : {}) } });
+  const l = seat.join(name, `${url} ${pin}`);
+  if (!/linked to room/.test(l.out || '')) return { seat, name, ok: false, out: l.out };
+  const j = seat.rejoin(name, code);
+  return { seat, name, ok: j.ok, out: j.out };
+}
+
+module.exports = { WAN, JUMP, PROXY, CORE, sleep, entries, delivered, linkState, waitState, converge, wssHost, wssJoin, WS_PORT };

@@ -109,7 +109,7 @@ const { seatAlive, leaseFresh, startMatches, PRESENCE_STATES } = require('./room
 const cc = require('./cc.js');
 // MOD_LEASE_FRESH_MS only covers a module whose $.process parent is not claude itself: a resumed session id whose
 // lease is older than this, from a process that is gone, cannot join.
-const RESERVED = ['orch', 'room', 'all', 'system', 'host', 'join', 'admit', 'revoke', 'handoff'];
+const RESERVED = ['orch', 'room', 'all', 'system', 'host', 'join', 'admit', 'revoke', 'handoff', 'unhost'];
 const ROLES = ['orch', 'member'];
 const ANIMALS = [
   'otter', 'badger', 'beaver', 'bison', 'camel', 'cheetah', 'condor', 'coyote',

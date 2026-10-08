@@ -3,7 +3,8 @@
  * plugin/sub-human/lib/remote/transports/index.js: the transport contract and the registry of kinds. A transport
  * carries protocol frames (lib/remote/protocol.js) between a client and a server and knows nothing about
  * them. Built in: memory (./memory.js, a pair in one process or across worker threads), pipe (./pipe.js, a
- * child's stdio or this process's) and ssh (./ssh.js, the pipe kind with an `ssh` command in front).
+ * child's stdio or this process's), ssh (./ssh.js, the pipe kind with an `ssh` command in front), and wss / ws
+ * (./ws.js, a Noise_NK channel to the host's listener inside a WebSocket, through a TLS front such as Tailscale Serve).
  *
  *   Transport = {send(frame), onFrame(fn), onClose(fn), close()}
  *       send after close is a no-op; onClose fires once, also when the peer ends
@@ -124,3 +125,5 @@ const lazy = file => ({
 register('memory', { open: spec => require('./memory.js').over(spec.port), describe: () => 'memory' });
 register('pipe', lazy('./pipe.js'));
 register('ssh', lazy('./ssh.js'));
+register('wss', lazy('./ws.js')); // ./ws.js: a Noise channel in a WebSocket, through a TLS front
+register('ws', lazy('./ws.js'));

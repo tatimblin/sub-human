@@ -3,14 +3,14 @@
  * plugin/sub-human/lib/cli/handoff.js: the CLI bodies of moving a room's host (lib/handoff.js), for
  * scripts/sub-human. A person runs them in their own shell; the Bash guard refuses them to a model.
  *
- *   handoff(args, ctx)   sub-human handoff NAME [--room CODE] [--as SEAT] [--ssh USER@HOST[:PORT]]
+ *   handoff(args, ctx)   sub-human handoff NAME [--room CODE] [--as SEAT] [--ssh USER@HOST[:PORT] | --url https://FRONT]
  *                        sub-human handoff --status [--room CODE]
  *       Ask NAME (a member on another machine, linked) to host the room. Their Claude shows them a card; the move
  *       happens only on their own answer there. --ssh: how the others will reach NAME's machine (default: a second
  *       home on this machine, pipe:, the tests and the demo). --as: which seat of this machine asks (default this
  *       session's, else the first). --status: who hosts the room at which epoch, the last ask, and on a new host
  *       which machines have not reconnected yet, with what to tell them.
- *   promote(args, ctx)   sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT]] [--force] [--confirm CODE]
+ *   promote(args, ctx)   sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT] | --url https://FRONT] [--force] [--confirm CODE]
  *       When the host is gone for good: this machine's full copy becomes the room at the next epoch. Prints what
  *       it risks and needs --confirm CODE (the room code typed back). Prints one invite per other machine to hand
  *       out by hand.
@@ -58,7 +58,11 @@ function seatOf(code, as, die) {
   return local[0];
 }
 
-function locatorOf(flags, die) {
+function locatorOf(flags, die, code) {
+  if (flags.url !== undefined) {
+    if (flags.ssh !== undefined) die('--ssh and --url are two ways in; pick one');
+    try { return require('../remote/webhost.js').webLocator(flags.url, code); } catch (e) { die(e.message); }
+  }
   if (flags.ssh === undefined) return undefined;
   const l = link.sshLocator(flags.ssh);
   if (!l) die(`--ssh needs a plain USER@HOST[:PORT], not "${flags.ssh}"`);
@@ -78,14 +82,14 @@ function showStatus(code, { out }) {
 
 function handoffCmd(args, ctx) {
   const { die, out } = ctx;
-  const { flags, rest } = flagsOf(args, { room: 1, as: 1, ssh: 1, status: 0 }, die);
+  const { flags, rest } = flagsOf(args, { room: 1, as: 1, ssh: 1, url: 1, status: 0 }, die);
   const code = roomOf(flags, die);
   if (flags.status) return showStatus(code, ctx);
-  if (rest.length !== 1) die('usage: sub-human handoff NAME [--room CODE] [--as SEAT] [--ssh USER@HOST[:PORT]] | handoff --status [--room CODE]');
+  if (rest.length !== 1) die('usage: sub-human handoff NAME [--room CODE] [--as SEAT] [--ssh USER@HOST[:PORT] | --url https://FRONT] | handoff --status [--room CODE]');
   const to = rest[0];
   const from = seatOf(code, flags.as, die);
   let d;
-  try { d = handoff.ask(code, { from, to, locator: locatorOf(flags, die) }); } catch (e) { die(`could not hand room ${code} off: ${e.message}`, 1); }
+  try { d = handoff.ask(code, { from, to, locator: locatorOf(flags, die, code) }); } catch (e) { die(`could not hand room ${code} off: ${e.message}`, 1); }
   out(`asked ${to} to host room ${code} (host epoch ${d.epoch}); their Claude shows them a card until ${d.expires_at}.`);
   out(`If ${to} agrees, the log, the links and the orch move to their machine (the orch then runs on ${to}'s model account), and this machine follows as a member. sub-human handoff --status --room ${code} shows how it went.`);
 }
@@ -100,9 +104,9 @@ const FORK_RISK = (code, last) => [
 
 function promoteCmd(args, ctx) {
   const { die, out } = ctx;
-  const { flags, rest } = flagsOf(args, { as: 1, ssh: 1, force: 0, confirm: 1 }, die);
+  const { flags, rest } = flagsOf(args, { as: 1, ssh: 1, url: 1, force: 0, confirm: 1 }, die);
   const code = rest[0];
-  if (rest.length !== 1 || !identity.CODE_RE.test(String(code))) die('usage: sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT]] [--force] --confirm CODE');
+  if (rest.length !== 1 || !identity.CODE_RE.test(String(code))) die('usage: sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT] | --url https://FRONT] [--force] --confirm CODE');
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
   const s = store.open(code);
   if (s.isHost) die(`this machine hosts room ${code} already`, 1);
@@ -112,7 +116,7 @@ function promoteCmd(args, ctx) {
   }
   const name = seatOf(code, flags.as, die);
   let r;
-  try { r = handoff.promote(code, { name, locator: locatorOf(flags, die), force: !!flags.force, cwd: process.cwd() }); } catch (e) { die(`could not promote: ${e.message}`, 1); }
+  try { r = handoff.promote(code, { name, locator: locatorOf(flags, die, code), force: !!flags.force, cwd: process.cwd() }); } catch (e) { die(`could not promote: ${e.message}`, 1); }
   out(`this machine hosts room ${code} now (host epoch ${r.epoch})${r.note}`);
   if (!r.invites.length) return out('no other machine had a seat in the room.');
   out('Give each machine its invite, and its PIN some other way (each is single-use, lasts 15 minutes and only works on that machine):');

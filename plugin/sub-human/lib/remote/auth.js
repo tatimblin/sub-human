@@ -9,8 +9,9 @@
  *
  *   mintInvite(store, {locator, now?}) -> {invite, secret}   an sh1 invite: formatInvite({code, locator, secret});
  *                                                  records sha256(secret) with created_at. Host only (HOST_ONLY)
- *   mintFor(store, {locator, machine, seats, pin?, now?}) -> {invite, secret, pin?}   a handoff's sh2 invite (lib/handoff.js) for
- *                                                  one machine, minted by the room's next host before it is the host
+ *   mintFor(store, {locator, machine, seats, pin?, hostKey?, now?}) -> {invite, secret, pin?}   a handoff's sh2 invite (lib/handoff.js) for
+ *                                                  one machine (hostKey: a ws/wss next host's listener key, pinned),
+ *                                                  minted by the room's next host before it is the host
  *                                                  (so no HOST_ONLY check) and carried to that machine over its
  *                                                  existing authenticated link, so it needs no PIN: the record is
  *                                                  {v: 2, handoff: true, machine, seats, expires_at (HANDOFF_INVITE_MS)};
@@ -22,7 +23,8 @@
  *                                                  its PIN (6 digits, never in the invite): the record adds v: 2,
  *                                                  pin_sha256 = sha256(secret:pin) (the host keeps neither in clear),
  *                                                  tries: INVITE_PIN_TRIES and expires_at (INVITE_TTL_MS). hostKey: the
- *                                                  host's Ed25519 public key (32 bytes, base64url) the joiner pins
+ *                                                  host's public key (32 bytes, base64url) the joiner pins: sshd's Ed25519
+ *                                                  key for an ssh locator, the listener's X25519 key for ws/wss (1.1)
  *   redeemInvite(store, secret, {machine, pin?, linkId?, now?}) -> {token, link}   marks the invite used (an unknown,
  *                                                  used or burnt one is AUTH), records {id, token_sha256, machine,
  *                                                  seats, created_at}; id is the one reserveLink gave the invite, if
@@ -126,18 +128,19 @@ function checkPin(inv, secret, pin, now) {
  * @param {{locator: string, machine: string, seats: string[], now?: number}} opts
  * @returns {{invite: string, secret: string}}
  */
-function mintFor(store, { locator, machine, seats, pin: withPin = false, now = Date.now() }) {
+function mintFor(store, { locator, machine, seats, pin: withPin = false, hostKey = null, now = Date.now() }) {
+  if (hostKey !== null && !HOST_KEY_RE.test(String(hostKey))) throw new RoomError('INVALID', 'hostKey must be a 32-byte public key, base64url');
   const secret = crypto.randomBytes(16).toString('base64url'); // 128 bits, as any sh2 secret
   const bound = { created_at: iso(now), machine, seats: [...seats] };
   if (!withPin) {
     const rec = { v: 2, handoff: true, ...bound, expires_at: iso(now + HANDOFF_INVITE_MS) };
     store.kv.update(INVITES_KEY, cur => ({ ...cur, [sha256(secret)]: rec }));
-    return { invite: formatInvite({ v: 2, code: store.code, locator, secret }), secret };
+    return { invite: formatInvite({ v: 2, code: store.code, locator, secret, hostKey }), secret };
   }
   const pin = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
   const rec = { v: 2, ...bound, expires_at: iso(now + INVITE_TTL_MS), tries: INVITE_PIN_TRIES, pin_sha256: pinDigest(secret, pin) };
   store.kv.update(INVITES_KEY, cur => ({ ...cur, [sha256(secret)]: rec }));
-  return { invite: formatInvite({ v: 2, code: store.code, locator, secret }), secret, pin, expires_at: rec.expires_at };
+  return { invite: formatInvite({ v: 2, code: store.code, locator, secret, hostKey }), secret, pin, expires_at: rec.expires_at };
 }
 
 /**

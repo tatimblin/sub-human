@@ -176,7 +176,7 @@ class Lab {
     for (const svc of MACHINES) this.dc(['unpause', svc], { allowFail: true });
     const wipe = [
       // bracketed first letters: the pattern does not match this shell's own command line
-      `P='[s]eat-proc|[s]ub-human (link|serve|tail)|[w]s-probe|[b]in/serve'; pkill -f "$P"; sleep 0.3; pkill -9 -f "$P"`,
+      `P='[s]eat-proc|[s]ub-human (link|serve|tail|listen)|[w]s-probe|[b]in/serve'; pkill -f "$P"; sleep 0.3; pkill -9 -f "$P"`,
       'iptables -F 2>/dev/null',
       'for u in host jump joiner; do d=/home/$u; rm -rf $d/.sub-human* $d/work $d/lab-* $d/.ssh/*; done',
       'rm -rf /tmp/sh-* 2>/dev/null; true',

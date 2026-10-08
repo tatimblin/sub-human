@@ -125,7 +125,8 @@ const cmds = {
     if (!seat || !alive(seat.pid)) seat = newSeat(name, rest.join(' '));
     else if (rest.length) { seat.sshOpts = rest.join(' '); const st = load(); st.seats[name] = seat; save(st); }
     const r = expand(seat, `join ${name} ${invite}${pin ? ` ${pin}` : ''}`);
-    const parsed = lib('remote/auth.js').parseInvite(invite);
+    let parsed = lib('remote/auth.js').parseInvite(invite);
+    if (!parsed) try { parsed = lib('remote/transports/ws.js').parseJoinUrl(invite); } catch { /* an older plugin */ }
     const out = reason(r.json) || '';
     const linked = /^linked to room/.test(out);
     const admit = (/\/sub-human admit (shk1\.\S+)/.exec(out) || [])[1] || null;
