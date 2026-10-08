@@ -1,0 +1,146 @@
+'use strict';
+// The remote protocol's parts (docs/next/REMOTE-PLAN.md PR4): the line codec (lib/remote/protocol.js), the
+// memory and pipe transports and their lookup (lib/remote/transports/*), the seeded flaky transport
+// (test/support/flaky.js), and invites, link tokens and seat proofs (lib/remote/auth.js).
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { MessageChannel } = require('node:worker_threads');
+const h = require('./helpers.js');
+const protocol = require(path.join(h.LIB, 'remote', 'protocol.js'));
+const transports = require(path.join(h.LIB, 'remote', 'transports', 'index.js'));
+const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.js'));
+const pipe = require(path.join(h.LIB, 'remote', 'transports', 'pipe.js'));
+const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
+const config = require(path.join(h.LIB, 'config.js'));
+const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
+const { MemoryRoomStore } = require('./support/memory-store.js');
+const { flaky } = require('./support/flaky.js');
+
+const CODE = 'otter-1234';
+/** Every frame the transport delivers, and whether it closed. */
+function recorder(tr) {
+  const got = { frames: [], closed: 0 };
+  tr.onFrame(f => got.frames.push(f));
+  tr.onClose(() => got.closed++);
+  return got;
+}
+
+test('protocol: frames encode to one line; the decoder keeps partial lines and a split character, and flags bad ones', () => {
+  assert.deepEqual(protocol.request(1, 'hello', { v: 1 }), { id: 1, op: 'hello', params: { v: 1 } });
+  assert.deepEqual(protocol.error(2, 'AUTH', 'no'), { id: 2, error: { code: 'AUTH', message: 'no' } });
+  const line = protocol.encode(protocol.event(3, 'entry', '{"id":1}\n'));
+  assert.equal(line.split('\n').length, 2, 'a newline inside a value stays escaped');
+  assert.ok(protocol.isEvent(JSON.parse(line)) && protocol.isReply(protocol.reply(1, null)) && protocol.isRequest(protocol.request(1, 'beat')));
+  const d = protocol.decoder();
+  const bytes = Buffer.from(protocol.encode(protocol.reply(1, 'é')) + protocol.encode(protocol.reply(2, 'x')));
+  const cut = bytes.indexOf(Buffer.from('é')) + 1; // inside the two bytes of é
+  assert.deepEqual(d.push(bytes.subarray(0, cut)), []);
+  assert.deepEqual(d.push(bytes.subarray(cut)), [{ id: 1, result: 'é' }, { id: 2, result: 'x' }]);
+  const bad = d.push('not json\n[1]\n');
+  assert.deepEqual(bad.map(f => [f.id, f.error.code]), [[null, 'PROTOCOL'], [null, 'PROTOCOL']]);
+  const big = d.push('"' + 'x'.repeat(config.LINK_FRAME_MAX_BYTES + 1));
+  assert.equal(big[0].error.code, 'PROTOCOL', 'an endless line is cut off, not buffered');
+  assert.deepEqual(Object.keys(protocol.CODES).slice(4), ['OFFLINE', 'HOST_ONLY', 'AUTH', 'FORK', 'PROTOCOL']);
+});
+
+test('transports: a memory pair carries frames both ways as lines; close fires once on both ends; send after close is a no-op', async () => {
+  const [a, b] = memory.pair();
+  const ga = recorder(a), gb = recorder(b);
+  a.send(protocol.request(1, 'hello', { v: 1 }));
+  b.send(protocol.reply(1, { buf: Buffer.from('x') }));
+  await h.until(() => ga.frames.length && gb.frames.length, 2000, 5);
+  assert.deepEqual(gb.frames, [{ id: 1, op: 'hello', params: { v: 1 } }]);
+  assert.deepEqual(ga.frames, [{ id: 1, result: { buf: { type: 'Buffer', data: [120] } } }], 'JSON on the wire, as on a pipe');
+  a.close();
+  await h.until(() => ga.closed && gb.closed, 2000, 5);
+  a.close(); a.send(protocol.reply(9, 1));
+  await h.sleep(20);
+  assert.deepEqual([ga.closed, gb.closed, gb.frames.length], [1, 1, 1]);
+});
+
+test('transports: open() by kind: memory over a port, pipe over a child\'s stdio; an unknown kind is INVALID', async () => {
+  const { port1, port2 } = new MessageChannel();
+  const a = transports.open({ kind: 'memory', port: port1 }), b = memory.over(port2);
+  const gb = recorder(b);
+  a.send(protocol.request(1, 'beat'));
+  await h.until(() => gb.frames.length, 2000, 5);
+  a.close();
+  // an echo child: every line back as a reply
+  const echo = 'process.stdin.on("data", d => { for (const l of String(d).split("\\n").filter(Boolean)) process.stdout.write(JSON.stringify({id: JSON.parse(l).id, result: "echo"}) + "\\n"); })';
+  const p = transports.open({ kind: 'pipe', cmd: [process.execPath, '-e', echo] });
+  const gp = recorder(p);
+  p.send(protocol.request(7, 'hello'));
+  await h.until(() => gp.frames.length, 5000, 10);
+  assert.deepEqual(gp.frames, [{ id: 7, result: 'echo' }]);
+  p.close();
+  await h.until(() => gp.closed, 5000, 10);
+  assert.equal(gp.closed, 1);
+  assert.throws(() => transports.open({ kind: 'carrier-pigeon' }), e => e.code === 'INVALID');
+  // the child's own exit closes the client end
+  const gone = recorder(pipe.spawn(process.execPath, ['-e', '']));
+  await h.until(() => gone.closed, 5000, 10);
+  assert.equal(gone.closed, 1);
+});
+
+test('flaky: seeded drops and duplicates replay the same; cutAfter closes both ends after that many frames', async () => {
+  const run = async seed => {
+    const [a, b] = memory.pair();
+    const f = flaky(a, { seed, drop: 0.3, dup: 0.2 });
+    const gb = recorder(b);
+    for (let i = 1; i <= 40; i++) f.send(protocol.request(i, 'beat'));
+    await h.until(() => gb.frames.length >= 40 - f.stats.dropped + f.stats.duplicated, 2000, 5);
+    a.close();
+    return { ids: gb.frames.map(x => x.id), stats: f.stats };
+  };
+  const one = await run(7), two = await run(7);
+  assert.deepEqual(one, two);
+  assert.ok(one.stats.dropped > 0 && one.stats.duplicated > 0, JSON.stringify(one.stats));
+  assert.deepEqual([...new Set(one.ids)], [...new Set(one.ids)].sort((x, y) => x - y), 'order kept');
+  const [a, b] = memory.pair();
+  const f = flaky(a, { seed: 1, cutAfter: 3 });
+  const ga = recorder(f), gb = recorder(b);
+  for (let i = 1; i <= 5; i++) f.send(protocol.request(i, 'beat'));
+  await h.until(() => ga.closed && gb.closed, 2000, 5);
+  assert.deepEqual(gb.frames.map(x => x.id), [1, 2, 3]);
+});
+
+test('auth: an invite is one string, redeemed once for a token; the host keeps only digests; a link writes only as its seats', t => {
+  h.freshHome(t);
+  const s = new MemoryRoomStore(CODE);
+  const { invite, secret } = auth.mintInvite(s, { locator: 'pipe:node serve' });
+  assert.match(invite, /^sh1\.otter-1234\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  assert.deepEqual(auth.parseInvite(invite), { code: CODE, locator: 'pipe:node serve', secret });
+  for (const bad of ['', 'sh2.otter-1234.cGlwZQ.' + secret, `sh1.Otter.cGlwZQ.${secret}`, 'sh1.otter-1234..' + secret, 'sh1.otter-1234.cGlwZQ.short', null]) {
+    assert.equal(auth.parseInvite(bad), null, String(bad));
+  }
+  const { token, link } = auth.redeemInvite(s, secret, { machine: 'm-remote' });
+  assert.throws(() => auth.redeemInvite(s, secret, { machine: 'm-remote' }), e => e.code === 'AUTH', 'single use');
+  assert.throws(() => auth.redeemInvite(s, 'never-minted-secret-0', { machine: 'm' }), e => e.code === 'AUTH');
+  const stored = JSON.stringify([s.kv.get(auth.INVITES_KEY), s.kv.get(auth.LINKS_KEY)]);
+  assert.ok(!stored.includes(secret) && !stored.includes(token), 'only sha256 digests on the host');
+  assert.deepEqual(auth.verifyToken(s, token), link);
+  assert.equal(auth.verifyToken(s, 'nope'), null);
+  assert.equal(auth.mayWriteAs(link, 'alice'), false);
+  const bound = auth.bindSeat(s, link.id, 'alice');
+  assert.deepEqual(auth.bindSeat(s, link.id, 'alice'), bound, 'binding twice is one binding');
+  assert.deepEqual([auth.mayWriteAs(bound, 'alice'), auth.mayWriteAs(bound, 'bob'), auth.mayWriteAs(null, 'alice')], [true, false, false]);
+  assert.throws(() => auth.bindSeat(s, 'nolink', 'alice'), e => e.code === 'AUTH');
+  assert.throws(() => auth.mintInvite(new MemoryRoomStore(CODE, { isHost: false }), { locator: 'x' }), e => e.code === 'HOST_ONLY');
+});
+
+test('auth: a seat proof is signed by the seat key for this room, name and key, and fresh', t => {
+  h.freshHome(t);
+  const pubkey = seatKey.publicPem(CODE, 'alice');
+  const seat = { room: CODE, name: 'alice', pubkey };
+  const proof = auth.proveSeat(seatKey.ensure(CODE, 'alice'), seat);
+  auth.checkSeatProof(proof, seat);
+  const other = crypto.generateKeyPairSync('ed25519');
+  const refused = [
+    [proof, { ...seat, room: 'vole-1234' }], [proof, { ...seat, name: 'bob' }],
+    [auth.proveSeat(other.privateKey, seat), seat], // signed by a key that is not pubkey
+    [{ ...proof, ts: proof.ts - 2 * 60 * 60 * 1000 }, seat], [undefined, seat],
+  ];
+  for (const [p, s] of refused) assert.throws(() => auth.checkSeatProof(p, s), e => e.code === 'AUTH');
+});

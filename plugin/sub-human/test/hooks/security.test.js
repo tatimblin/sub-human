@@ -213,6 +213,23 @@ test('the room MCP server, hold and task never load a seat key and cannot write 
   }
 });
 
+test('`sub-human serve` (the remote server) never loads a seat key or installs a signer', t => {
+  const w = new World({ orch: 'sleep', alice: 'act' }, { t });
+  const bin = path.join(PLUGIN, 'bin', 'sub-human');
+  const probe = `
+    process.argv = [process.argv[0], ${JSON.stringify(bin)}, 'serve', '--stdio', ${JSON.stringify(w.code)}];
+    process.on('exit', () => process.stderr.write('PROBE' + JSON.stringify({
+      loaded: Object.keys(require.cache).filter(f => /seat-key|hooks[\\/\\\\]/.test(f)),
+      server: Object.keys(require.cache).some(f => /remote[\\/\\\\]server\\.js$/.test(f)),
+      signer: typeof globalThis[Symbol.for('sub-human.human-signer')] })));
+    require(${JSON.stringify(bin)});`;
+  const hello = JSON.stringify({ id: 1, op: 'hello', params: { v: 1, caps: {}, machine: 'm1' } }) + '\n';
+  const r = spawnSync(process.execPath, ['-e', probe], { env: { PATH: process.env.PATH, HOME: w.userHome, SUB_HUMAN_HOME: w.home }, input: hello, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).result.room, w.code, 'it served the hello');
+  assert.deepEqual(JSON.parse(r.stderr.split('PROBE')[1]), { loaded: [], server: true, signer: 'undefined' });
+});
+
 test('Bash guard: allowed and denied commands', () => {
   const home = '/Users/u/.sub-human';
   const ctx = { home, pluginRoot: '/repo/plugin/sub-human', cwd: '/repo' };

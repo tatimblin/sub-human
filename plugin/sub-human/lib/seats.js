@@ -8,7 +8,8 @@
  *   enter({code, name, role?, machine?, pid?, session_id?, cwd?, pubkey}) -> {ok, rejoin?, error?, note?}
  *       identity.join (members.join, a named op of lib/room/store.js; then this machine's session indexes) →
  *       member_joined via system with pubkey and machine (the key is pinned at first sight, lib/room/envelope.js;
- *       a key other than the pinned one is refused and the seat given back: {ok: false, error}) → ensureOrch.
+ *       a key other than the pinned one is refused and the seat given back: {ok: false, error, code: 'AUTH'}) →
+ *       ensureOrch.
  *       role: member (default). machine: this one (default); pid, session_id and cwd belong to a seat of this
  *       machine and stay out of what the host streams (lib/room/members.js publicView).
  *   ensureOrch(code, cwd, by) -> string   start the room's orch (detached) when it has none running: lib/orch.js
@@ -48,7 +49,7 @@ function enter({ code, name, role = 'member', machine = identity.machineId(), pi
   } catch (e) {
     if (e.code !== 'AUTH') throw e;
     identity.leave(code, name);
-    return { ok: false, error: e.message };
+    return { ok: false, error: e.message, code: 'AUTH' };
   }
   return { ...r, note: ensureOrch(code, cwd, name) };
 }

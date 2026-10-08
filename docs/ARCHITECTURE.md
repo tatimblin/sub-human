@@ -138,7 +138,7 @@ Everything persistent goes through the **RoomStore** interface in `lib/room/stor
 ```
 RoomStore
   append(entry, {via, from, system}) -> Entry                  validate, then id/at/prev/sig under the log lock
-  readAll() readById(ids) readAfter(id) since(id) lastId() readView({after}) watch(fn) tailer()
+  readAll() readById(ids) readAfter(id) since(id) lastId() readView({after}) watch(fn) tailer({after}) lineHash(id)
   validateChain()  verifyChain({fromOffset})                    the prev hash chain (incremental via log.idx)
   getCursor(reader) setCursor(reader, id)                       per-reader positions
   isHost                                                        this machine holds the room (FsRoomStore: true)

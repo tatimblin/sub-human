@@ -16,7 +16,7 @@
  * writes only if the document is still that copy, else fn runs again), as the store contract allows a store
  * off this machine. lock and kv.lock take the same lock files on this thread: a mutex held across a callback
  * cannot cross. readAfter filters here, watch() polls readAfter() (a reset log is not noticed), and tailer()
- * keeps its reader on the worker (its {fs} test hook is not forwarded).
+ * keeps its reader on the worker (its {after} is forwarded, its {fs} test hook is not).
  * append signs here (store.toPayload, with this thread's signer) and the worker only places the payload
  * (store.place), as a remote member's hook and the host do. pins() reads the pinned keys here, from readView.
  */
@@ -65,7 +65,7 @@ class ThreadRoomStore {
       list: fwd('kv.list'),
       lock: (key, fn, opts) => this._local.kv.lock(key, fn, opts),
     };
-    for (const m of ['exists', 'lastId', 'validateChain', 'verifyChain', 'getCursor', 'setCursor']) this[m] = fwd(m);
+    for (const m of ['exists', 'lastId', 'lineHash', 'validateChain', 'verifyChain', 'getCursor', 'setCursor']) this[m] = fwd(m);
   }
   get dir() { return this._local.dir; }
   _call(method, args) { return send(method, { code: this.code, dir: this._local.dir, home: home(), args }); }
@@ -88,8 +88,8 @@ class ThreadRoomStore {
     const t = setInterval(tick, intervalMs);
     return () => clearInterval(t);
   }
-  tailer() {
-    const id = this._call('tailer', []);
+  tailer({ after } = {}) {
+    const id = this._call('tailer', [{ after }]);
     return { poll: () => { const r = this._call('tailer.poll', [id]); this._tag(r.entries); return r; } };
   }
 
@@ -137,7 +137,7 @@ const OPS = {
     s.kv.update(key, cur => ((ok = isDeepStrictEqual(cur, expect)) ? next : undefined), opts);
     return ok;
   },
-  tailer(s) { const id = tailers.size + 1; tailers.set(id, s.tailer()); return id; },
+  tailer(s, [opts]) { const id = tailers.size + 1; tailers.set(id, s.tailer(opts)); return id; },
   'tailer.poll'(s, [id]) { return tailers.get(id).poll(); },
 };
 

@@ -241,6 +241,25 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.deepEqual(tl.poll().entries, []);
   });
 
+  test(`store contract (${name}): a tailer from \`after\` gives the stored lines verbatim; lineHash is each line's hash12`, t => {
+    h.freshHome(t);
+    const s = B.make(t);
+    assert.equal(s.lineHash(0), store.hash12(''));
+    assert.deepEqual(s.tailer({ after: 0 }).poll().lines, []);
+    say(s, 'alice', 'a'); say(s, 'alice', 'b'); say(s, 'alice', 'c');
+    const all = s.readAll();
+    const tl = s.tailer({ after: 1 });
+    const p = tl.poll();
+    assert.deepEqual(p.entries.map(e => e.id), [2, 3]);
+    assert.deepEqual(p.lines.map(l => JSON.parse(l)), all.slice(1), 'lines are the stored entries');
+    assert.equal(all[2].prev, store.hash12(p.lines[0]), 'byte-identical: the next prev hashes it');
+    say(s, 'alice', 'd');
+    assert.deepEqual(tl.poll().entries.map(e => e.id), [4]);
+    assert.deepEqual(s.tailer({ after: 4 }).poll().lines, []);
+    assert.equal(s.lineHash(3), s.readAll()[3].prev);
+    assert.equal(s.lineHash(9), null);
+  });
+
   test(`store contract (${name}): validateChain and verifyChain find a changed line; verifyChain is incremental`, t => {
     h.freshHome(t);
     const s = B.make(t);

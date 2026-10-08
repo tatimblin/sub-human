@@ -130,18 +130,26 @@ class MemoryRoomStore {
     return () => clearInterval(t);
   }
 
-  tailer() {
-    let at = this._lines.length;
+  tailer({ after } = {}) {
+    const idOf = l => (parse(l, null) || {}).id;
+    let at = after === undefined ? this._lines.length : this._lines.findIndex(l => idOf(l) > after);
+    if (at < 0) at = this._lines.length;
     const self = this;
     return {
       poll() {
         let reset = false;
         if (self._lines.length < at) { at = 0; reset = true; }
-        const entries = self._lines.slice(at).map(l => parse(l, self)).filter(Boolean);
+        const lines = self._lines.slice(at);
         at = self._lines.length;
-        return { entries, reset };
+        return { entries: lines.map(l => parse(l, self)).filter(Boolean), lines, reset };
       },
     };
+  }
+
+  lineHash(id) {
+    if (id === 0) return hash12('');
+    const line = this._lines.find(l => (parse(l, null) || {}).id === id);
+    return line === undefined ? null : hash12(line);
   }
 
   validateChain() {

@@ -34,7 +34,11 @@
  *                                           entries after `after` (after <= 0: readAll(); Infinity: non-chat only).
  *                                           save: false leaves the checkpoint alone (pins() reads that way)
  *   watch(onEntry, {after, intervalMs}) -> stop()   every entry with id > after, then new ones (polling)
- *   tailer({fs}?) -> {poll() -> {entries, reset}}   entries appended after the moment it was made (fs: test hook)
+ *   tailer({fs, after}?) -> {poll() -> {entries, lines, reset}}   entries appended after the moment it was made
+ *                                           (after: an id, from the first line after it instead); lines: the same
+ *                                           lines as stored, verbatim (what the remote server streams). fs: test hook
+ *   lineHash(id) -> string | null           hash12 of the stored line with that id (the next line's prev; id 0:
+ *                                           hash12(''), the empty log), null when the log has no such line
  *   validateChain() -> {ok, count, badAt?, line?}   the whole prev chain
  *   verifyChain({fromOffset, prev, save}?) -> {ok, count, checked, offset, id, hash, from, badAt?, line?}
  *       incremental, from the checkpoint (FsRoomStore: <room>/log.idx), which it advances
@@ -595,35 +599,62 @@ class FsRoomStore {
 
   /**
    * A reader of what is appended from now on: poll() returns the complete lines written since the last poll
-   * (the first poll: since tailer() was called). reset: the log shrank (it was reset), and reading began again
-   * from its start. The caller drops ids it has seen. xfs: the fs module to read with (tests inject faults).
+   * (the first poll: since tailer() was called, or after the line with id `after`), parsed and verbatim.
+   * reset: the log shrank (it was reset), and reading began again from its start. The caller drops ids it has
+   * seen. xfs: the fs module to read with (tests inject faults).
    */
-  tailer({ fs: xfs = nodeFs } = {}) {
+  tailer({ fs: xfs = nodeFs, after } = {}) {
     const file = this.logFile, self = this;
-    let offset = endOffset(xfs, file);
+    let offset = after === undefined ? endOffset(xfs, file) : this._offsetAfter(after);
     return {
       get offset() { return offset; },
       poll() {
         let st;
-        try { st = xfs.statSync(file); } catch (e) { if (e.code === 'ENOENT') return { entries: [], reset: false }; throw e; }
+        try { st = xfs.statSync(file); } catch (e) { if (e.code === 'ENOENT') return { entries: [], lines: [], reset: false }; throw e; }
         let reset = false;
         if (st.size < offset) { offset = 0; reset = true; }
-        if (st.size === offset) return { entries: [], reset };
+        if (st.size === offset) return { entries: [], lines: [], reset };
         const fd = xfs.openSync(file, 'r');
         let buf;
         try {
           buf = Buffer.allocUnsafe(st.size - offset);
           xfs.readSync(fd, buf, 0, buf.length, offset);
         } finally { xfs.closeSync(fd); }
-        const entries = [];
+        const entries = [], lines = [];
         let pos = 0;
         for (let nl; (nl = buf.indexOf(10, pos)) >= 0; pos = nl + 1) {
-          if (nl > pos) { try { entries.push(tag(JSON.parse(buf.toString('utf8', pos, nl)), self)); } catch { /* corrupt */ } }
+          if (nl > pos) {
+            const line = buf.toString('utf8', pos, nl);
+            lines.push(line);
+            try { entries.push(tag(JSON.parse(line), self)); } catch { /* corrupt */ }
+          }
           offset += nl + 1 - pos;
         }
-        return { entries, reset };
+        return { entries, lines, reset };
       },
     };
+  }
+
+  /** The byte offset of the first complete line whose id is > after (the end of the complete lines when none is). */
+  _offsetAfter(after) {
+    const end = endOffset(fs, this.logFile);
+    if (!end) return 0;
+    const fd = fs.openSync(this.logFile, 'r');
+    try { return offsetAfter(fd, end, after); } finally { fs.closeSync(fd); }
+  }
+
+  lineHash(id) {
+    if (id === 0) return hash12('');
+    if (!Number.isInteger(id) || id < 0) return null;
+    let fd;
+    try { fd = fs.openSync(this.logFile, 'r'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+    try {
+      const end = fs.fstatSync(fd).size;
+      const L = lineAt(fd, offsetAfter(fd, end, id - 1), end);
+      if (!L || L.id !== id) return null;
+      const b = readRange(fd, L.start, L.end - L.start);
+      return hash12(b[b.length - 1] === 10 ? b.subarray(0, -1) : b);
+    } finally { fs.closeSync(fd); }
   }
 
   // ----- writing -----

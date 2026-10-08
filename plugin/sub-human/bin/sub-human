@@ -41,6 +41,10 @@
  *   sub-human agent-statusline
  *       Claude Code's subagentStatusLine command (statusline/*). Never fails: on any error it prints
  *       nothing and exits 0.
+ *   sub-human serve --stdio CODE
+ *       One remote connection to room CODE hosted here (lib/remote/server.js): protocol frames on stdin and
+ *       stdout (lib/remote/transports/pipe.js), errors on stderr; exits when stdin ends. A remote machine's
+ *       link spawns it (through ssh later). Without a link token or an invite it answers hello and nothing else.
  */
 
 const path = require('node:path');
@@ -241,10 +245,21 @@ function watch(args) {
   r.watch(print, { after: 0, intervalMs: config.WATCH_POLL_MS });
 }
 
+// ---------- serve --stdio CODE: lib/remote/server.js ----------
+function serve(args) {
+  const { flags, rest } = parseFlags(args, { stdio: 0 });
+  const code = rest[0];
+  if (!flags.stdio || !code) die('usage: sub-human serve --stdio CODE');
+  if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
+  const server = require(path.join(LIB, 'remote', 'server.js'));
+  const pipe = require(path.join(LIB, 'remote', 'transports', 'pipe.js'));
+  server.serve(pipe.stdio(), { store: room.open(code).store, log: msg => process.stderr.write(msg + '\n') });
+}
+
 const [cmd, ...args] = process.argv.slice(2);
-const cmds = { tail, read, digest, who, tasks: tasksCmd, watch, 'agent-statusline': agentStatusline };
+const cmds = { tail, read, digest, who, tasks: tasksCmd, watch, serve, 'agent-statusline': agentStatusline };
 try {
-  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | agent-statusline')))(args);
+  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE | agent-statusline')))(args);
 } catch (e) {
   die(e.message, 2);
 }

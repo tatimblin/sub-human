@@ -120,6 +120,8 @@ module.exports = {
   // A hook's synchronous call over the link gives up (OFFLINE) after this, well inside the hook timeout.
   LINK_CALL_MS: 3000,              // hooks with a 10 s timeout
   LINK_CALL_END_MS: 1000,          // SessionEnd (5 s timeout)
+  // One protocol frame (lib/remote/protocol.js), bytes: a plan blob (PROPOSAL_FILE_MAX) in base64 fits.
+  LINK_FRAME_MAX_BYTES: 1024 * 1024,
 
   // ---------- rows (lib/rows.js) ----------
   PRESENCE_STALE_MS: 6 * 60 * 60 * 1000,
