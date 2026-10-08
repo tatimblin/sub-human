@@ -42,10 +42,13 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   host.join(carol, `carol ${code}`);
   const shown = host.join(alice, 'host').json;
   assert.equal(shown.decision, 'block', 'shown to the person, never to the model');
-  const invite = /sh1\.\S+/.exec(shown.reason)[0];
+  const invite = /sh2\.\S+/.exec(shown.reason)[0], pin = /PIN (\d{6})/.exec(shown.reason)[1];
 
-  // bob joins from the other home: the join hook starts his link daemon, which redeems the invite
-  const joined = remote.join(bob, `join bob ${invite}`);
+  // bob links from the other home with the invite and its PIN (a hidden step: the join hook starts his link daemon,
+  // which redeems the invite, the host checking the PIN), then takes his seat
+  const linked = remote.join(bob, `join bob ${invite} ${pin}`);
+  assert.match(linked.json.reason, /linked to room/, linked.stderr);
+  const joined = remote.join(bob, `bob ${code}`);
   assert.equal(joined.json.systemMessage, undefined, joined.stderr);
   assert.match(joined.json.hookSpecificOutput.additionalContext, /SUB-HUMAN: you are bob's Claude/);
   const daemon = remote.lib(() => link.status(code));
@@ -146,7 +149,7 @@ test('remote e2e: an invite used already is refused at join with that reason, no
   const alice = host.seat('alice'), bob = first.seat('bob'), carol = third.seat('carol');
   host.join(alice, 'alice');
   const code = host.lib(() => store.listRooms()[0]);
-  const invite = /sh1\.\S+/.exec(host.join(alice, 'host').json.reason)[0];
+  const invite = host.invite1(code);
   const cleanup = m => () => {
     const st = m.lib(() => link.status(code));
     if (st.pid) { kill(childOf(st.pid)); kill(st.pid); }

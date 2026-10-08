@@ -41,7 +41,7 @@
  *                                        tail's health tick and the hold server); leaseFresh(m, now?)
  *   liveMembers(code) -> [name]          non-orch seats that are seatAlive
  *   join({code, name, role, machine?, pid, session_id, cwd}) -> {ok, error?, rejoin?}
- *       role is "orch" or "member". NAME_RE; reserved names orch, room, all, system, host, join (only role orch
+ *       role is "orch" or "member". NAME_RE; reserved names orch, room, all, system, host, join, admit, revoke (only role orch
  *       may use "orch", and role orch must use it). members.join: a name held by a live seat of another holder
  *       (another pid, or another machine) is "name taken"; otherwise the name is (re)bound. The orch record
  *       keeps its job / spawned_at across a (re)bind. machine defaults to this one; a seat of this machine needs
@@ -106,7 +106,7 @@ const { seatAlive, leaseFresh, startMatches, PRESENCE_STATES } = require('./room
 const cc = require('./cc.js');
 // MOD_LEASE_FRESH_MS only covers a module whose $.process parent is not claude itself: a resumed session id whose
 // lease is older than this, from a process that is gone, cannot join.
-const RESERVED = ['orch', 'room', 'all', 'system', 'host', 'join'];
+const RESERVED = ['orch', 'room', 'all', 'system', 'host', 'join', 'admit', 'revoke'];
 const ROLES = ['orch', 'member'];
 const ANIMALS = [
   'otter', 'badger', 'beaver', 'bison', 'camel', 'cheetah', 'condor', 'coyote',

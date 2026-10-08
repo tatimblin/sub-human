@@ -30,7 +30,7 @@ const host = new Machine(undefined, 'host'), remote = new Machine(undefined, 're
 const alice = host.seat('alice'), bob = remote.seat('bob');
 host.join(alice, 'alice');
 const code = host.lib(() => store.listRooms()[0]);
-const invite = /sh1\.\S+/.exec(host.join(alice, 'host').json.reason)[0];
+const invite = host.invite1(code);
 const joined = remote.join(bob, `join bob ${invite}`);
 if (!joined.json.hookSpecificOutput) throw new Error(`join: ${JSON.stringify(joined.json)} ${joined.stderr}`);
 const daemon = remote.lib(() => link.status(code)).pid;

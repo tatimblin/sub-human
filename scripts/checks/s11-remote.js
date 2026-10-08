@@ -31,7 +31,7 @@ module.exports = {
 
     const shown = (x.cap('S11', 'alice') || '').includes(`invite to room ${code}`);
     det('alice\'s /sub-human host shows her the invite in her pane', shown, shown ? `"invite to room ${code}" in ${x.capName('S11', 'alice')}` : `not in ${x.capName('S11', 'alice')}`);
-    const quoted = x.inSpan(x.entries('alice'), x.span('S11')).filter(e => e.type === 'assistant' && /sh1\.[a-z]+-\d{4}\./.test(x.textOf(e.message && e.message.content)));
+    const quoted = x.inSpan(x.entries('alice'), x.span('S11')).filter(e => e.type === 'assistant' && /sh[12]\.[a-z]+-\d{4}\./.test(x.textOf(e.message && e.message.content)));
     det('alice\'s Claude never sees it: no assistant text in S11 quotes an invite', quoted.length === 0, quoted.length ? `${quoted.length} assistant message(s) quote one` : 'none');
 
     const warned = /sub-human: (?:opened room|joined |in room )[^\n]*/.exec(x.cap('S11', 'carol') || '');

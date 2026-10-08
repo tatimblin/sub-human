@@ -478,16 +478,21 @@ S11() { # remote: carol joins from a second home (another machine, on this one) 
   need wait_pane alice "invite to room $(room)" 30 --what "alice's pane shows the invite (to her, never to her Claude)" || return 1
   local invite; invite=$($LIB invite sh-alice)
   [ -n "$invite" ] || { ABORT="S11: no invite readable in alice's pane"; return 1; }
+  local pin; pin=$($LIB pin sh-alice)
+  [ -n "$pin" ] || { ABORT="S11: no PIN readable in alice's pane"; return 1; }
   [ -d "$BASE/carol" ] || cp -R "$REPO/demo/app.pristine" "$BASE/carol"
   mkdir -p "$HOME2"
   start_seat carol
   need $LIB ready sh-carol --timeout 90 || return 1
   local SESSIONS="$SESSIONS,sh-carol"   # snap carol's pane too, in this scene
-  submit carol "/sub-human join carol $invite"
+  # two steps: the invite and its PIN link her home (a hidden step: neither reaches her Claude), then she takes a seat
+  submit carol "/sub-human join carol $invite $pin"
+  need wait_pane carol "linked to room $(room)" 60 --what "carol's link redeemed the invite (the host checked the PIN)" || return 1
+  submit carol "/sub-human carol $(room)"
   need wait_log --kind member_joined --from carol --after "$before" --timeout 60 --what "the host logs carol's join (her link redeemed the invite)" || return 1
   need wait_pane carol "$(panel_row "$(room)")" 90 --what "carol's room row" || return 1
   settle alice carol
-  snap "alice runs /sub-human host: a one-time invite, shown to her only. carol, in another home, joins with it: her link daemon mirrors the room"
+  snap "alice runs /sub-human host: a one-time invite and its PIN, shown to her only. carol, in another home, links with both (her Claude sees neither), then joins: her link daemon mirrors the room"
   local b1; b1=$($LIB log-max)
   submit carol "@room $SAY11"
   need wait_log --kind say --from carol --via human --after "$b1" --timeout 30 || return 1

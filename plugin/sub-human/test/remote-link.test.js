@@ -119,6 +119,32 @@ test('link: the ssh command: BatchMode, this machine\'s own options, the port, "
   assert.throws(() => link.sshCommand({ kind: 'ssh', user: 'me', host: 'far' }, 'vole-1234; id', []), e => e.code === 'INVALID');
 });
 
+test('ssh: a ProxyJump rides the locator (?via=), as plain as the destination; the link\'s own options pin the host key and the key; prime opens a ControlMaster the daemon rides under BatchMode', t => {
+  const ssh = require(path.join(h.LIB, 'remote', 'transports', 'ssh.js'));
+  assert.deepEqual(link.transportOf('ssh:me@far:2222?via=bastion'), { kind: 'ssh', user: 'me', host: 'far', port: 2222, via: 'bastion' });
+  assert.deepEqual(link.transportOf('ssh:me@far?via=ops@jump.example:2200,jump2'), { kind: 'ssh', user: 'me', host: 'far', via: 'ops@jump.example:2200,jump2' });
+  assert.equal(link.sshLocator('me@far', { via: 'bastion' }), 'ssh:me@far?via=bastion');
+  for (const bad of ['ssh:me@far?via=-oProxyCommand=sh', 'ssh:me@far?via=a b', 'ssh:me@far?via=', 'ssh:me@far?jump=x', 'ssh:me@far?via=x?via=y',
+    'ssh:me@far?via=%h', 'ssh:me@far?via=j:0', 'ssh:me@far?via=a,b,c,d,e']) assert.equal(link.transportOf(bad), null, bad);
+  assert.equal(link.sshLocator('me@far', { via: '-J' }), null);
+
+  const home = h.freshHome(t);
+  const spec = { kind: 'ssh', user: 'me', host: 'far', via: 'bastion', key: '/k/id_ed25519', knownHosts: '/k/known_hosts', alias: 'sub-human-vole-1234' };
+  const local = ['-i', '/k/id_ed25519', '-o', 'IdentitiesOnly=yes', '-o', 'UserKnownHostsFile=/k/known_hosts', '-o', 'StrictHostKeyChecking=yes', '-o', 'HostKeyAlias=sub-human-vole-1234'];
+  assert.deepEqual(ssh.command(spec, 'vole-1234', []).slice(8), [...local, '-J', 'bastion', '--', 'me@far', 'sub-human serve --stdio vole-1234']);
+  const cp = path.join(home, 'ssh', 'cm-%C');
+  assert.deepEqual(ssh.command({ ...spec, mux: true }, 'vole-1234', []).slice(2, 10), ['-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', '-o', 'ControlMaster=no']);
+  assert.ok(ssh.command({ ...spec, mux: true }, 'vole-1234', []).includes(`ControlPath=${cp}`), 'rides the primed master; never becomes one');
+  const prime = ssh.primeCommand(spec, 'vole-1234', { opts: [] });
+  assert.deepEqual(prime.slice(0, 6), ['ssh', '-M', '-N', '-f', '-o', 'ControlPersist=8h']);
+  assert.ok(!prime.includes('BatchMode=yes'), 'the person answers the MFA prompt once');
+  assert.ok(prime.includes(`ControlPath=${cp}`) && prime.includes('HostKeyAlias=sub-human-vole-1234'));
+  assert.throws(() => ssh.primeCommand(spec, 'vole-1234', { persist: '8h; id' }), e => e.code === 'INVALID');
+  for (const bad of [{ key: '-oProxyCommand=x' }, { knownHosts: 'relative' }, { knownHosts: '/k/kh', alias: 'a b' }, { via: '-x' }]) {
+    assert.throws(() => ssh.command({ ...spec, ...bad }, 'vole-1234', []), e => e.code === 'INVALID', JSON.stringify(bad));
+  }
+});
+
 test('mirror: applyLine appends a host line only when it chains; applyDoc writes only the room documents', t => {
   h.freshHome(t);
   const code = h.newRoom();

@@ -10,15 +10,16 @@
  * modules are required inside run).
  *
  *   run({code, log?}) -> Promise<reason>
- *       serveMirror over the link file's transport (connectLink: hello with the token, or the invite once, whose
- *       token then replaces it in the link file), until it stops; also stops LINK_IDLE_MS
+ *       serveMirror over the link file's transport (connectLink: hello with the token, or the invite once, with its
+ *       PIN for an sh2 one, whose token then replaces both in the link file), until it stops; also stops LINK_IDLE_MS
  *       (SUB_HUMAN_LINK_IDLE_MS) after this machine has no seat left in the room (idleWatch), and on SIGTERM,
  *       SIGINT or SIGHUP.
  *   idleWatch(link, mirror, idleMs) -> unwatch   stop the link once idleMs have passed with no seat of this
  *       machine in the room. Online, a seat is one the mirror's members document holds with a fresh lease;
  *       offline, the host's document is stale, so a seat is one a live claude process of this machine holds
  *       (identity.localSeats): a crashed or abandoned join never leaves a daemon retrying for ever. While the
- *       first connection is made it never stops.
+ *       first connection is made it never stops, nor while the link file holds an invite younger than
+ *       INVITE_TTL_MS (an sh2 join over ssh retries until the host admits its key; the hello then sends the PIN).
  *   serveMirror({mirror, connect, log?, retryMs?, retryMaxMs?}) -> Promise<Link>   listen on socketPath(mirror.dir) (one daemon
  *       per socket: LOCK when another one answers there), then connect() -> Promise<Client> (hello done) and
  *       subscribe {after: the mirror's last id, hash: that line's hash12}. The stream goes into the mirror; a
@@ -43,7 +44,7 @@
  *   start(code) -> bool            start the daemon detached (stdout and stderr to lib/room/links.js logFile) unless
  *                                  it runs; wait up to LINK_START_MS for it to listen
  *   pipeLocator(home?) -> 'pipe:<home>'   an invite's locator for a room hosted under that home on this machine
- *   sshLocator(dest) -> 'ssh:user@host[:port]' | null   an invite's locator for a room reached over SSH (null: not
+ *   sshLocator(dest, {via}?) -> 'ssh:user@host[:port][?via=JUMP]' | null   an invite's locator for a room reached over SSH (null: not
  *                                  a plain user@host[:port])
  *   transportOf(locator) -> Spec | null   the link file's transport for an invite's locator: the transport
  *                                  registry's parse (lib/remote/transports/index.js), {kind: 'pipe', home} or
@@ -141,7 +142,7 @@ function start(code) {
 const pipeLocator = (h = require('../home.js').home()) => `pipe:${h}`;
 
 const transports = () => require('./transports/index.js');
-const sshLocator = dest => require('./transports/ssh.js').locator(dest);
+const sshLocator = (dest, opts) => require('./transports/ssh.js').locator(dest, opts);
 
 /**
  * @param {string} locator
@@ -307,11 +308,11 @@ async function connectLink(code) {
   if (!l) throw new RoomError('AUTH', `this machine has no link to room ${code} any more`);
   const kind = l.transport && l.transport.kind;
   if (!transports().get(kind)) throw new RoomError('PROTOCOL', `unknown transport "${kind}" (${transports().kinds().join(', ')})`);
-  const cred = l.token ? { token: l.token } : { invite: l.invite };
+  const cred = l.token ? { token: l.token } : { invite: l.invite, ...(typeof l.pin === 'string' ? { pin: l.pin } : {}) };
   const opts = { machine: require('../home.js').machineId(), helloMs: config.LINK_HELLO_MS, ...cred };
   const c = await require('./client.js').connect(transports().open(l.transport, { code }), opts);
   if (!l.token) {
-    const { invite, ...rest } = l;
+    const { invite, pin, ...rest } = l; // an sh2 invite's PIN is spent with it
     links.set(code, { ...rest, token: c.token });
   }
   return c;
@@ -322,9 +323,14 @@ function idleWatch(link, mirror, idleMs) {
   const { leaseFresh } = require('../room/members.js');
   const identity = require('../identity.js');
   const leased = () => Object.values(mirror.members.read()).some(m => m && m.machine === machineId() && !m.left_at && leaseFresh(m));
+  // an invite not redeemed yet (an ssh join waits for the host to admit its key): kept trying for the invite's life
+  const redeeming = () => {
+    const l = require('../room/links.js').get(mirror.code);
+    return !!l && !l.token && typeof l.invite === 'string' && Date.now() - Date.parse(l.created_at) < config.INVITE_TTL_MS;
+  };
   const seated = () => {
     const s = link.state();
-    return s === 'connecting' || (s === 'online' ? leased() : identity.localSeats(mirror.code).length > 0);
+    return s === 'connecting' || redeeming() || (s === 'online' ? leased() : identity.localSeats(mirror.code).length > 0);
   };
   let since = Date.now();
   const t = setInterval(() => {

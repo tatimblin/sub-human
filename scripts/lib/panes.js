@@ -49,14 +49,22 @@ function planState(p) {
 }
 
 /**
- * The invite /sub-human host showed in a capture (sh1.CODE.LOCATOR.SECRET; the secret is 32 base64url characters,
- * plugin lib/remote/auth.js), or null. The pane may wrap it: a line break (and the next line's indent) between two
- * of its characters is dropped first. The last one shown wins.
+ * The invite /sub-human host showed in a capture, or null: sh2.CODE.LOCATOR.SECRET.HOSTKEY (a 22-character secret
+ * and a 43-character key or "0") or the older sh1.CODE.LOCATOR.SECRET (a 32-character secret); plugin
+ * lib/remote/auth.js. The pane may wrap it: a line break (and the next line's indent) between two of its
+ * characters is dropped first. The last one shown wins.
  */
 function inviteIn(txt) {
   const joined = (txt || '').replace(/([A-Za-z0-9_.-])\n[\s│⎿]*(?=[A-Za-z0-9_.-])/g, '$1');
-  const all = [...joined.matchAll(/sh1\.[a-z]+-\d{4}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{32}/g)].map(m => m[0]);
+  const re = /sh2\.[a-z]+-\d{4}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{22}\.(?:[A-Za-z0-9_-]{43}|0)(?![A-Za-z0-9_-])|sh1\.[a-z]+-\d{4}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{32}/g;
+  const all = [...joined.matchAll(re)].map(m => m[0]);
   return all.at(-1) || null;
 }
 
-module.exports = { MAIN_ROW, panelRows, statusLine, cardState, planState, inviteIn };
+/** The PIN /sub-human host showed with its invite ("PIN 482913"), or null; the last one wins. */
+function pinIn(txt) {
+  const all = [...String(txt || '').matchAll(/\bPIN (\d{6})\b/g)].map(m => m[1]);
+  return all.at(-1) || null;
+}
+
+module.exports = { MAIN_ROW, panelRows, statusLine, cardState, planState, inviteIn, pinIn };

@@ -130,6 +130,12 @@ module.exports = {
   LINK_RETRY_MS: 1000,             // SUB_HUMAN_LINK_RETRY_MS
   LINK_RETRY_MAX_MS: 10_000,       // a healed link is back within ~10 s (was 30 s: 26 s after a heal, live run)
   LINK_IDLE_MS: 60_000,            // SUB_HUMAN_LINK_IDLE_MS
+  // An sh2 invite (lib/remote/auth.js): the host checks its PIN online only, INVITE_PIN_TRIES times, and the invite
+  // burns at the last wrong one or INVITE_TTL_MS after it was minted (whichever is first), or on success.
+  INVITE_TTL_MS: 15 * 60_000,
+  INVITE_PIN_TRIES: 5,
+  // The join hook waits this long for a fresh link's first hello (redeem or refusal) before it answers.
+  LINK_JOIN_WAIT_MS: 6000,
 
   // ---------- rows (lib/rows.js) ----------
   PRESENCE_STALE_MS: 6 * 60 * 60 * 1000,

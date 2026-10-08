@@ -7,9 +7,12 @@
  * Machine-local, like the session indexes: it never syncs. Zero dependencies beyond lib/home.js, lib/io.js and
  * lib/text.js.
  *
- * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, created_at}
- *   transport  how the daemon reaches the host's server (lib/remote/link.js transportOf: an invite's locator)
+ * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, pin?, created_at}
+ *   transport  how the daemon reaches the host's server (lib/remote/link.js transportOf: an invite's locator), plus
+ *              what this machine adds for ssh (lib/remote/transports/ssh.js: key, knownHosts, alias, mux), files in
+ *              dirOf(code)
  *   invite     the invite the daemon redeems at its first hello, until it holds the token
+ *   pin        an sh2 invite's PIN, sent with it at that hello and dropped with it (the host checks it)
  *   token      the link's credential (the server keeps its sha256): kept in clear here, like the seat key
  * The resume point is the mirror itself (its last line and that line's hash), not a field here.
  *
@@ -19,6 +22,8 @@
  *   list() -> [code]
  *   linksDir() -> string              <home>/links
  *   logFile(code) -> string           <home>/links/<code>.log: the daemon's stderr
+ *   dirOf(code) -> string             <home>/links/<code>/: the link's own ssh key and pinned known_hosts (0700);
+ *                                     remove() deletes it too
  */
 
 const fs = require('node:fs');
@@ -64,8 +69,15 @@ function set(code, link) {
  * @returns {boolean}
  */
 function remove(code) {
+  try { fs.rmSync(dirOf(code), { recursive: true, force: true }); } catch { /* none */ }
   try { fs.unlinkSync(fileOf(code)); return true; } catch { return false; }
 }
+
+/**
+ * @param {string} code
+ * @returns {string}
+ */
+const dirOf = code => fileOf(code).slice(0, -'.json'.length);
 
 /** @returns {string[]} */
 function list() {
@@ -80,4 +92,4 @@ function list() {
  */
 const logFile = code => fileOf(code, 'log');
 
-module.exports = { linksDir, get, set, remove, list, logFile };
+module.exports = { linksDir, get, set, remove, list, logFile, dirOf };
