@@ -293,6 +293,30 @@ test('failures block with a reason and log nothing', () => {
   assert.match(r.json.reason, /is closing/);
 });
 
+test('/sub-human host: an invite to my room, shown to me only (a block), once per call; join NAME INVITE refuses what it cannot link', () => {
+  const w = new World({ orch: 'sleep', alice: 'sleep' });
+  w.pid.me = process.pid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000011';
+  assert.match(w.hook('join', expand('host'), { as: 'me' }).json.reason, /join a room first/);
+  const shown = w.hook('join', expand('host'), { as: 'alice' }).json;
+  assert.equal(shown.decision, 'block');
+  const invite = /sh1\.\S+/.exec(shown.reason)[0];
+  const auth = require(path.join(PLUGIN, 'lib', 'remote', 'auth.js'));
+  assert.deepEqual(auth.parseInvite(invite).code, w.code);
+  assert.equal(auth.parseInvite(invite).locator, `pipe:${w.home}`, 'this machine, this home');
+  assert.match(shown.reason, new RegExp(`/sub-human join NAME ${invite.replace(/[.]/g, '\\.')}`));
+  assert.notEqual(/sh1\.\S+/.exec(w.hook('join', expand('host'), { as: 'alice' }).json.reason)[0], invite, 'a new one each time');
+  const ssh = auth.formatInvite({ code: 'vole-1234', locator: 'ssh:me@far', secret: 'x'.repeat(32) });
+  const cases = [
+    ['join bob', /usage/],
+    ['join bob nonsense', /not an invite/],
+    [`join bob ${invite}`, /hosted on this machine/],
+    [`join bob ${ssh}`, /through "ssh", which this machine does not support yet/],
+  ];
+  for (const [args, re] of cases) assert.match(w.hook('join', expand(args), { as: 'me' }).json.reason, re, args);
+  assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
+  assert.equal(w.entries().length, 0);
+});
+
 test('a bad name with no open room creates nothing', () => {
   const w = new World({}, { room: false });
   w.pid.me = process.pid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000011';

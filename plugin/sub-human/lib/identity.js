@@ -48,13 +48,17 @@
  *       its pid, and after the op: one seat per claude pid (joining elsewhere retires its previous seat), then
  *       the indexes <home>/sessions/by-pid/<pid>.json and <home>/sessions/by-sid/<sid>.json. A seat of another
  *       machine (the remote server) has no pid here and no index.
- *   leave(code, name) -> bool            members.leave (sets left_at), then drops the by-pid index when it still
- *                                        names this seat. The by-sid index stays so lastSeat() can find the seat
- *                                        on --resume.
- *   rebindSession(pid, sid) -> bool      after /clear: point a new session id at the seat registered for pid
+ *   leave(code, name, {reason, deadlineMs}?) -> bool   members.leave (sets left_at; on a mirror the host's leave
+ *                                        op, which logs member_left with the reason), then drops the by-pid index
+ *                                        when it still names this seat. The by-sid index stays so lastSeat() can
+ *                                        find the seat on --resume.
+ *   rebindSession(pid, sid) -> bool      after /clear: point a new session id at the seat registered for pid (on a
+ *                                        mirror only the indexes: the host never holds a seat's session)
  *
  * Resolution (each returns the identity record {code, name, role, session_id, pid, address} or null;
- * address = "NAME.CODE", the session title other Claudes reach it by with SendMessage):
+ * address = "NAME.CODE", the session title other Claudes reach it by with SendMessage). In a room this machine
+ * mirrors (lib/room/store-mirror.js), whose members document holds no pid, start time or session, a seat of this
+ * machine is judged by its index record's:
  *   resolveBySession(sid)                hooks: the payload's session_id
  *   resolveByPid(pid)                    the MCP server: process.ppid, a direct lookup of a registered pid
  *                                        (null when that pid now belongs to a process with another start time)
@@ -149,8 +153,8 @@ const validPid = pid => Number.isInteger(pid) && pid > 0;
  */
 function heartbeat(me, now = Date.now()) {
   if (!me || !me.code || !me.name || !roomExists(me.code)) return false;
-  const m = readMembers(me.code)[me.name]; // the cheap check, before the op
-  const stale = !!m && !m.left_at && (!validPid(me.pid) || m.pid === me.pid) && !(Date.parse(m.seen_at) > now - SEAT_BEAT_MS);
+  const m = readMembers(me.code)[me.name]; // the cheap check, before the op (a mirror's document holds no pid)
+  const stale = !!m && !m.left_at && (!validPid(me.pid) || m.pid == null || m.pid === me.pid) && !(Date.parse(m.seen_at) > now - SEAT_BEAT_MS);
   return stale && membersOf(me.code).beat(me.name, { now });
 }
 
@@ -167,8 +171,8 @@ function retirePrevious(code, name, pid) {
   const prev = readJson(byPidFile(pid));
   if (!prev || (prev.code === code && prev.name === name)) return;
   try {
-    const m = readMembers(prev.code)[prev.name];
-    if (m && m.pid === pid && !m.left_at) membersOf(prev.code).leave(prev.name);
+    const m = indexedSeat(prev);
+    if (m && m.pid === pid && !m.left_at) membersOf(prev.code).leave(prev.name, { reason: 'joined another room' });
   } catch { /* old room gone */ }
 }
 
@@ -198,9 +202,9 @@ function join({ code, name, role, machine = machineId(), pid, session_id, cwd } 
   return r;
 }
 
-function leave(code, name) {
+function leave(code, name, opts) {
   if (!roomExists(code)) return false;
-  if (!membersOf(code).leave(name)) return false;
+  if (!membersOf(code).leave(name, opts)) return false;
   const m = readMembers(code)[name];
   if (m && m.left_at && validPid(m.pid)) {
     const p = readJson(byPidFile(m.pid));
@@ -213,13 +217,17 @@ function rebindSession(pid, sid) {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return false;
   const who = resolveByPid(pid);
   if (!who) return false;
+  const swap = m => {
+    if (m.session_id && m.session_id !== sid) rm(bySidFile(m.session_id));
+    m.session_id = sid;
+    writeIndexes(who.code, m);
+  };
+  if (!isHost(who.code)) { swap(indexedSeat(readJson(byPidFile(pid)))); return true; }
   let ok = false;
   membersOf(who.code).update(members => {
     const m = members[who.name];
     if (!m) return null;
-    if (m.session_id && m.session_id !== sid) rm(bySidFile(m.session_id));
-    m.session_id = sid;
-    writeIndexes(who.code, m);
+    swap(m);
     ok = true;
     return members;
   });
@@ -229,12 +237,22 @@ function rebindSession(pid, sid) {
 // ---------- resolution ----------
 const seat = (code, m) => ({ code, name: m.name, role: m.role, session_id: m.session_id || null, pid: m.pid, address: address(m.name, code) });
 
+/**
+ * The members record of the seat index record idx names. On a mirror, whose document holds no pid, start time or
+ * session, a seat of this machine gets them from idx.
+ */
+function indexedSeat(idx) {
+  const m = readMembers(idx.code)[idx.name];
+  if (!m || isHost(idx.code) || (m.machine || machineId()) !== machineId()) return m;
+  return { ...m, pid: idx.pid, pid_start: idx.pid_start, session_id: idx.session_id };
+}
+
 function resolveByPid(pid) {
   pid = Number(pid);
   if (!validPid(pid)) return null;
   const rec = readJson(byPidFile(pid));
   if (!rec || !roomExists(rec.code)) return null;
-  const m = readMembers(rec.code)[rec.name];
+  const m = indexedSeat(rec);
   if (!m || m.left_at || m.pid !== pid || !startMatches(m)) return null;
   return seat(rec.code, m);
 }
@@ -243,7 +261,7 @@ function resolveBySession(sid) {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
   const rec = readJson(bySidFile(sid));
   if (!rec || !roomExists(rec.code)) return null;
-  const m = readMembers(rec.code)[rec.name];
+  const m = indexedSeat(rec);
   if (!m || m.left_at || m.session_id !== sid) return null;
   return seat(rec.code, m);
 }

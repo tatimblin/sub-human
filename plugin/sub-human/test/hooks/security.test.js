@@ -239,6 +239,7 @@ test('Bash guard: allowed and denied commands', () => {
     'node --test plugin/sub-human/test/hooks/at-room.test.js', 'git diff plugin/sub-human/lib/room/store.js',
     'cat plugin/sub-human/lib/room/store.js', 'grep -n "require(" plugin/sub-human/lib/room.js', 'sed -n 1,40p plugin/sub-human/hooks/at-room.js',
     'node src/hooks/useFoo.js', 'node lib/io.js', 'ls ~/.sub-humanoid', 'ls /Users/u', 'python3 build.py', 'echo SUB_HUMANS',
+    'git log --grep "sub-human linked"',
   ];
   const deny = [
     `node -e "require('./plugin/sub-human/lib/room.js').append({kind:'signoff'},{via:'human',from:'bob'})"`,
@@ -249,6 +250,8 @@ test('Bash guard: allowed and denied commands', () => {
     `echo x >> ${home}/rooms/a/log.jsonl`, `cat "${home}/keys/a/bob.key"`, 'SUB_HUMAN_HOME=/tmp/x sub-human read',
     'export SUB_HUMAN_HOME=/tmp/x',
     `node -e "require('/x/sub-human/lib/seats.js').exit('vole-1234','bob','gone')"`, 'node /x/sub-human/lib/remote/link.js vole-1234',
+    'sub-human invite', '/repo/plugin/sub-human/bin/sub-human invite --room vole-1234', 'sub-human link vole-1234 --reset',
+    'sub-human serve --stdio vole-1234', 'echo x; sub-human invite',
   ];
   for (const c of allow) assert.equal(bashVerdict(c, ctx), null, `should allow: ${c}`);
   for (const c of deny) assert.ok(bashVerdict(c, ctx), `should deny: ${c}`);

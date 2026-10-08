@@ -49,8 +49,11 @@
  *       fn(current) returns the next object to store, or null/undefined to store nothing. Atomic: under a lock
  *       here, a compare-and-set retry loop for a remote store, so fn may run more than once (side effects in it
  *       must be idempotent). The orch's bookkeeping (lib/orch.js); a seat changes through the named ops:
- *   members.join(rec) -> {ok, rejoin?, error?}, members.leave(name) -> bool, members.beat(name, {presence?}) -> bool
- *       lib/room/members.js ops (the same rules for every store; beat also writes presence/<name>).
+ *   members.join(rec) -> {ok, rejoin?, error?}, members.leave(name, {reason, deadlineMs}?) -> bool,
+ *   members.beat(name, {presence?}) -> bool
+ *       lib/room/members.js ops (the same rules for every store; beat also writes presence/<name>). On a mirror
+ *       (lib/room/store-mirror.js) they are the host's join, leave and beat ops: the host logs the join (with the
+ *       seat's key and a proof the hook's signer makes) and the leave (with its reason).
  *   blobs.put(name, bytes) -> ref, get(ref) -> Buffer|null, has(ref), ref(pathOrRef) -> ref|null,
  *   blobs.localPath(ref) -> string|null    name/ref: "plans/<hash>.md" (room-relative). get/has/ref also take the
  *       absolute path older proposal entries stored. localPath: a file a person can open (null off-machine).
@@ -61,9 +64,10 @@
  *   lock(name, fn, opts?)                   a room-wide mutex (the proposal answer lock)
  *   exists() -> bool
  *
- * Rooms (module level): open(code, {dir, fs}?) -> RoomStore (cached per code), roomExists(code),
- *   createRoom(code) -> bool (false: taken), listRooms() -> [code], setBackend(factory|null) (tests: every open()
- *   then returns factory(code)).
+ * Rooms (module level): open(code, {dir, fs}?) -> RoomStore (cached per home and code; a room this machine links
+ *   to, lib/room/links.js, is a MirrorRoomStore, lib/room/store-mirror.js), roomExists(code) (a room directory
+ *   or a link), createRoom(code) -> bool (false: taken), listRooms() -> [code] (mirrors are directories too),
+ *   setBackend(factory|null) (tests: every open() then returns factory(code)).
  *
  * The human capability (keys under <home>/keys/<code>/, dir 0700; hooks/seat-key.js creates them; the private
  * keys never leave this machine, whatever the store):
@@ -75,7 +79,8 @@
  *                                from a seat with no local key; a keyed room never returns it)
  *   The room an entry belongs to is its `room` field (signed entries), else the store that read it (a WeakMap,
  *   so entries are not changed).
- *   keyDir(code), pubPath(name, code), SIGNER
+ *   keyDir(code), pubPath(name, code), SIGNER, humanKey(code, name) -> KeyObject (the installed signer's key for
+ *                                that seat; RoomError INVALID without a signer: only hook processes have one)
  *   toPayload(code, entry, opts), admit(code, payload, opts), placeAfter(store, p, {newest, prevLine, now})
  *                                the halves of append and place every RoomStore shares (see place)
  *   normalize(e)                 legacy display mapping (concern -> objection, agree -> signoff, plan_rev ->
@@ -893,17 +898,26 @@ class FsRoomStore {
 
 // ---------- rooms ----------
 let backend = null; // tests: code -> RoomStore
-const stores = new Map(); // code -> FsRoomStore
-/** The store of room `code`. {dir} (and only then) gives an uncached store over that directory. */
+const stores = new Map(); // home \0 code -> FsRoomStore | MirrorRoomStore
+/** A room hosted elsewhere: the link registry knows it (required here, not at load: store-mirror.js extends this file). */
+const linked = c => require('./links.js').get(c) !== null;
+/**
+ * The store of room `code`: a MirrorRoomStore when this machine links to the room (lib/room/links.js), else an
+ * FsRoomStore; decided once per home and code. {dir} (and only then) gives an uncached FsRoomStore over that directory.
+ */
 function open(c, { dir } = {}) {
   if (backend) return backend(c);
   if (dir) return new FsRoomStore(c, { dir });
-  let s = stores.get(c);
-  if (!s) { s = new FsRoomStore(c); stores.set(c, s); }
+  const k = `${home()}\0${c}`;
+  let s = stores.get(k);
+  if (!s) {
+    s = linked(c) ? new (require('./store-mirror.js').MirrorRoomStore)(c) : new FsRoomStore(c);
+    stores.set(k, s);
+  }
   return s;
 }
 const setBackend = fn => { backend = typeof fn === 'function' ? fn : null; };
-const roomExists = c => typeof c === 'string' && CODE_RE.test(c) && fs.existsSync(roomDir(c));
+const roomExists = c => typeof c === 'string' && CODE_RE.test(c) && (fs.existsSync(roomDir(c)) || linked(c));
 /** Create room `code` (private, exclusive): false when it already exists. */
 function createRoom(c) {
   fs.mkdirSync(roomsDir(), { recursive: true, mode: 0o700 }); // the home and rooms/ too when new: private
@@ -915,5 +929,5 @@ module.exports = {
   RoomError,
   FsRoomStore, open, setBackend, roomExists, createRoom, listRooms,
   hash12, normalize, tag, roomOf, toPayload, admit, placeAfter, blobRef, checkKey, checkCursor, CHAT_KINDS,
-  SIGNER, keyDir, pubPath, publicKey, verifyHuman, unverifiedHuman, humanTrust,
+  SIGNER, humanKey, keyDir, pubPath, publicKey, verifyHuman, unverifiedHuman, humanTrust,
 };

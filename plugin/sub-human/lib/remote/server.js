@@ -29,6 +29,8 @@
  *                    transport closes
  *         blob.get   store.blobs.get(ref), base64;  blob.put  {name, bytes}: name must be plans/<hash12>.md of
  *                    the bytes (content-addressed, at most PROPOSAL_FILE_MAX), written once
+ *       After a write (join, leave, beat, append) every stream of the session is polled before the reply goes out,
+ *       so a link that subscribed holds the write's lines and documents when its reply arrives (read-your-writes).
  *       An op that throws a RoomError (a protocol CODES code) answers {error: {code, message}} with the same
  *       code; any other error is INVALID with the message and is logged. A frame that is not a request is
  *       answered PROTOCOL. close() ends the streams and the transport.
@@ -45,6 +47,7 @@ const { FOLLOW_POLL_MS, PROPOSAL_FILE_MAX } = require('../config.js');
 
 const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const ANSWERS = new Set(['signoff', 'objection']);
+const WRITES = new Set(['join', 'leave', 'beat', 'append']);
 const WIRE_CODES = new Set(Object.values(protocol.CODES));
 const authError = msg => new RoomError('AUTH', msg);
 const invalid = msg => new RoomError('INVALID', msg);
@@ -74,7 +77,7 @@ function docsOf(store) {
 }
 const stopped = ms => !!(ms.orch && ms.orch.stopped_at);
 
-/** Stream subscribe request `id`'s events from the line after `after`. Returns stop(). */
+/** Stream subscribe request `id`'s events from the line after `after`. Returns {tick() (poll now), stop()}. */
 function stream(s, id, after) {
   const tailer = s.store.tailer({ after });
   const sent = new Map(); // doc key -> the JSON last sent
@@ -102,8 +105,9 @@ function stream(s, id, after) {
   const safeTick = () => { try { tick(); } catch (e) { s.log(`sub-human serve: subscribe: ${e && e.stack || e}`); } };
   const first = setImmediate(safeTick); // after the subscribe reply
   const timer = setInterval(safeTick, FOLLOW_POLL_MS);
-  function stop() { clearImmediate(first); clearInterval(timer); s.streams.delete(stop); }
-  return stop;
+  const self = { tick: safeTick, stop };
+  function stop() { clearImmediate(first); clearInterval(timer); s.streams.delete(self); }
+  return self;
 }
 
 // ---------- ops ----------
@@ -182,7 +186,7 @@ class Session {
     this.store = store;
     this.log = log;
     this.link = null;
-    this.streams = new Set(); // stop functions
+    this.streams = new Set(); // {tick, stop}
     transport.onFrame(f => this.receive(f));
     transport.onClose(() => this.stop());
   }
@@ -193,6 +197,7 @@ class Session {
     }
     let out;
     try { out = protocol.reply(f.id, this.run(f)); } catch (e) { out = this.failure(f, e); }
+    if (WRITES.has(f.op)) for (const st of [...this.streams]) st.tick(); // the write's lines before its reply
     this.transport.send(out);
   }
 
@@ -208,7 +213,7 @@ class Session {
     return protocol.error(f.id, 'INVALID', (e && e.message) || String(e));
   }
 
-  stop() { for (const stop of [...this.streams]) stop(); }
+  stop() { for (const st of [...this.streams]) st.stop(); }
 }
 
 /**

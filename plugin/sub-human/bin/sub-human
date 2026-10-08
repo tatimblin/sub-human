@@ -45,6 +45,13 @@
  *       One remote connection to room CODE hosted here (lib/remote/server.js): protocol frames on stdin and
  *       stdout (lib/remote/transports/pipe.js), errors on stderr; exits when stdin ends. A remote machine's
  *       link spawns it (through ssh later). Without a link token or an invite it answers hello and nothing else.
+ *   sub-human link CODE [--reset]
+ *       The link daemon of room CODE, hosted on another machine (lib/remote/link.js run): the join hook starts it
+ *       detached; it exits on its own once this machine has no seat left in the room. --reset (with no daemon
+ *       running, e.g. after a FORK): forget this machine's copy of the room and start the daemon to copy it again.
+ *   sub-human invite [--room CODE]
+ *       An invite to a room hosted here (lib/remote/auth.js mintInvite), for one machine: what /sub-human host gives.
+ *       Run it in your own shell: the Bash guard refuses it (and link, serve) to a model.
  */
 
 const path = require('node:path');
@@ -256,10 +263,35 @@ function serve(args) {
   server.serve(pipe.stdio(), { store: room.open(code).store, log: msg => process.stderr.write(msg + '\n') });
 }
 
+// ---------- link CODE [--reset], invite: lib/remote/link.js, lib/remote/auth.js ----------
+function linkCmd(args) {
+  const { flags, rest } = parseFlags(args, { reset: 0 });
+  const code = rest[0];
+  if (!code) die('usage: sub-human link CODE [--reset]');
+  const s = room.open(code).store;
+  if (s.isHost) die(`this machine has no link to room "${code}"; join it with /sub-human join NAME INVITE`, 1);
+  const link = require(path.join(LIB, 'remote', 'link.js'));
+  if (!flags.reset) return link.run({ code }).then(() => process.exit(0), e => die(e.message, 1));
+  const st = link.status(code);
+  if (st.running) die(`the link daemon of room ${code} is running (pid ${st.pid}); it re-mirrors only once stopped`, 1);
+  s.reset();
+  if (!link.start(code)) die(`the link daemon of room ${code} did not start`, 1);
+  console.log(`room ${code}: copying it again from the host`);
+}
+
+function invite(args) {
+  const { flags } = parseFlags(args, { room: 1 });
+  const { code, r } = openRoom(flags.room);
+  if (!r.store.isHost) die(`room ${code} is hosted on another machine; its host gives the invites`, 1);
+  const { mintInvite } = require(path.join(LIB, 'remote', 'auth.js'));
+  const { pipeLocator } = require(path.join(LIB, 'remote', 'link.js'));
+  console.log(mintInvite(r.store, { locator: pipeLocator() }).invite);
+}
+
 const [cmd, ...args] = process.argv.slice(2);
-const cmds = { tail, read, digest, who, tasks: tasksCmd, watch, serve, 'agent-statusline': agentStatusline };
+const cmds = { tail, read, digest, who, tasks: tasksCmd, watch, serve, link: linkCmd, invite, 'agent-statusline': agentStatusline };
 try {
-  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE | agent-statusline')))(args);
+  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE | link CODE [--reset] | invite | agent-statusline')))(args);
 } catch (e) {
   die(e.message, 2);
 }

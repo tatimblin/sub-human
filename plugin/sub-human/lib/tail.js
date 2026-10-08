@@ -19,7 +19,11 @@
  *   pullText(lines) -> text | null           "Room since your last turn" over lines, the newest kept under PULL_CAP
  *   missingRowsText(me, sid, {now}?) -> text | null   the Agent calls for this seat's rows that run nowhere
  *   remindersText(me, rm) -> text | null     lib/proposal.js reminder() for each proposal awaiting me (members)
- *   deps (tests): openRoom(code) -> Room (lib/room.js open), heartbeat(me) (identity.heartbeat), rows, notices, orch
+ *   linkLine(status, code) -> {key, text} | null   the one line for a room link that is down (lib/remote/link.js
+ *       status): key 'fork' (the mirror no longer matches the host's log) or 'offline' (the host or the daemon is
+ *       unreachable); null while it is up
+ *   deps (tests): openRoom(code) -> Room (lib/room.js open), heartbeat(me) (identity.heartbeat), rows, notices, orch,
+ *       linkStatus(code) (lib/remote/link.js status)
  *
  * It writes one JSON event per line, which the mod routes. It reads from the cursor deliver-NAME (first run: from
  * the seat's join) and sees the push and pull lanes. Events:
@@ -35,7 +39,8 @@
  *   {type:'rows', text|null}  what the person's next prompt carries for Claude: pending-proposal reminders
  *                             (members) and the missing rows' Agent calls; sent at start and when it changes
  *                             (health tick); null clears it
- *   {type:'health', text}     the hash-chain check's line (one per break)
+ *   {type:'health', text}     the hash-chain check's line (one per break), and in a room hosted elsewhere the
+ *                             link's linkLine each time it goes down (FORK or OFFLINE; nothing while it stays so)
  * A session never re-reads the log from byte 0: backlog from room.readView({after: cursor}), live entries from
  * room.tailer(). The health tick also renews the seat's lease (identity.heartbeat).
  */
@@ -233,6 +238,16 @@ function visibleTo(me, rm) {
     || (e.kind === 'member_joined' && e.from !== me.name && (SPAWN_NOTE.test(note) || !note));
 }
 
+// ---------- the link of a room hosted elsewhere ----------
+function linkLine(st, code) {
+  if (st.state === 'fork') {
+    return { key: 'fork', text: `room link: FORK: this machine's copy of room ${code} no longer matches the host's; run sub-human link --reset ${code}` };
+  }
+  if (st.running && st.state !== 'offline') return null;
+  const why = st.running ? st.reason : st.reason ? `the link stopped: ${st.reason}` : 'the link daemon is not running';
+  return { key: 'offline', text: `room link: OFFLINE (${why}); @room posts are refused until it is back` };
+}
+
 // ---------- reading ----------
 /** A rate-limited stderr logger: one line per `where` per everyMs, with the count it held back. */
 function errorLog(err, clock, everyMs) {
@@ -385,8 +400,9 @@ function startSession(me, ctx) {
     for (const e of entries) deliver(e);
   }
 
-  // Health: the hash chain from the log.idx checkpoint (one line per break), and the orch's watchdog.
-  let breakKey = null, rowsSent;
+  // Health: the hash chain from the log.idx checkpoint (one line per break), the link of a room hosted elsewhere
+  // (one line each time it goes down), and the orch's watchdog.
+  let breakKey = null, linkKey = null, rowsSent;
   function sendRows() {
     let text = null;
     try {
@@ -397,9 +413,16 @@ function startSession(me, ctx) {
     rowsSent = text;
     emit([{ type: 'rows', text }]);
   }
+  function linkHealth() {
+    const l = linkLine(deps.linkStatus(s.code), s.code);
+    if ((l && l.key) === linkKey) return;
+    linkKey = l && l.key;
+    if (l) emit([{ type: 'health', text: l.text }]);
+  }
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
     sendRows();
+    if (rm.store && !rm.store.isHost) linkHealth();
     const r = rm.verifyChain();
     if (r.ok) breakKey = null;
     else {
@@ -448,6 +471,7 @@ function runTail({
     orch: deps.orch ? () => deps.orch : (() => { let o; return () => o || (o = require(path.join(LIB, 'orch.js'))); })(),
     identity: deps.identity || require(path.join(LIB, 'identity.js')),
     proposal: deps.proposal || require(path.join(LIB, 'proposal.js')),
+    linkStatus: deps.linkStatus || (code => require(path.join(LIB, 'remote', 'link.js')).status(code)),
   };
   const log = errorLog(err, clock, tm.errorLogMs);
   const ctx = { clock, fs, write, log, t: tm, deps: d, sid };
@@ -493,5 +517,5 @@ function runTail({
 }
 
 module.exports = {
-  runTail, timings, Batcher, formatNdBatch, PULL_HEAD,
+  runTail, timings, Batcher, formatNdBatch, linkLine, PULL_HEAD,
 };

@@ -8,10 +8,12 @@
 // 20 s and runs `claude stop <job>`. The orch's own SessionEnd (it is stopped, or exits) only marks its seat left.
 // Budget: SessionEnd gets a few seconds (hooks.json timeout; 1.5 s by default), so nothing here waits on a
 // child: the seat is marked left and the reaper started (detached) before the log append, which is the
-// only step that can wait on a lock.
+// only step that can wait on a lock. In a room hosted elsewhere the leave is one op over the link, within
+// LINK_CALL_END_MS; the host logs member_left and runs the reaper.
 const path = require('node:path');
 const { identity, run, whoami } = require('./common.js');
 const seats = require(path.join(__dirname, '..', 'lib', 'seats.js'));
+const { LINK_CALL_END_MS } = require(path.join(__dirname, '..', 'lib', 'config.js'));
 
 const KEEP = new Set(['clear', 'resume']);
 
@@ -23,5 +25,5 @@ run(input => {
   const me = whoami(input);
   if (!me) return;
   if (me.role === 'orch') { try { identity.leave(me.code, me.name); } catch { /* gone */ } return; }
-  seats.exit(me.code, me.name, input.reason || 'session ended');
+  seats.exit(me.code, me.name, input.reason || 'session ended', { deadlineMs: LINK_CALL_END_MS });
 });

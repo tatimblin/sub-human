@@ -1,7 +1,7 @@
 ---
 name: sub-human
-description: "Join or open a shared room with people in other Claude Code sessions on this machine: /sub-human NAME [CODE]. Add CODE only when more than one room is open."
-argument-hint: "[NAME [CODE]]"
+description: "Join or open a shared room with people in other Claude Code sessions: /sub-human NAME [CODE] (CODE only when more than one room is open). /sub-human host gives an invite to your room; /sub-human join NAME INVITE joins a room on another machine."
+argument-hint: "[NAME [CODE] | host | join NAME INVITE]"
 arguments: [name, code]
 disable-model-invocation: true
 allowed-tools:

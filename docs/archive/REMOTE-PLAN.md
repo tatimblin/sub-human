@@ -167,6 +167,32 @@ Fills `lib/room/store-mirror.js`, `lib/room/links.js`, `lib/remote/link.js`. Cha
 - `store.open(code)`: link → mirror, else Fs. The store contract runs on `fs`, `memory`, `remote` (server on a worker thread over the memory transport, the mirror on the test thread through the bridge).
 - Two-home e2e: two temp `SUB_HUMAN_HOME`s; the client's link spawns `serve --stdio` with the host home through the pipe transport; the real hooks (`join`, `at-room`, `consent`, `session-end`) run on both sides as child processes; assert the mirror's `log.jsonl` is byte-identical to the host's, `verifyChain` is `ok` on both, a remote `@room` shows `verified` on the host, a remote signoff completes a decision written by the host, the remote's rows/cursors never appear on the host, and killing the server mid-session makes the next remote `@room` fail `OFFLINE` with nothing written anywhere.
 - **Accept:** all of the above; `store-bypass` still green (the mirror is `store*.js`); the security walk finds no signer load under `lib/remote/`.
+- **As built** (deviations from the bullets above):
+  - Read-your-writes needs no waiting: after a write op (join, leave, beat, append) the server polls the session's streams before it replies, so the write's lines and documents reach the daemon ahead of the reply. The daemon relays a hook's op as the wire has it (`client.request`); `applyBlob` joins `applyLine`/`applyDoc` as its writes (the plan prefetch).
+  - The bridge is one per process, started by its first op; its handler (`link.js` `handle`) loads protocol, validate, config and io only. A mirror's `beat` is skipped while the lease is fresh and the presence unchanged, so a prompt that only reads starts no worker (the e2e counts workers with `test/support/worker-probe.js`).
+  - `socketPath(dir)` hashes the mirror's directory, not the home: one daemon per room and home, and the contract runs several mirrors in one home. The socket's directory is 0700 and must be the user's; the daemon removes it when it stops (also on SIGTERM, SIGINT, SIGHUP).
+  - The link file has no `last` and no `machine`: the resume point is the mirror itself (`lastId()`, `lineHash()`), so the two cannot disagree. It holds `invite` until the daemon's first hello swaps it for `token`; a link with no token yet is replaced by the next `join NAME INVITE`. The daemon's log is `<home>/links/<code>.log`.
+  - Locators: `pipe:<host home>` only. The daemon always runs this plugin's own `sub-human serve --stdio CODE` with that home, never a command an invite names (an invite is untrusted input). `ssh:` is refused at join for now.
+  - The seat proof is made inside `MirrorRoomStore.members.join` with the hook's installed signer (`store.humanKey`), so `identity.join` stays one call for join.js and session-restore alike; no lib module loads the seat key. Any RoomError there (OFFLINE, AUTH, name taken) comes back `{ok: false, error}` and the hook blocks with it. Off the host `seats.enter`/`exit` stop after the seat op: the host's server logs member_joined/member_left and runs the orch and the reaper. `members.leave(name, {reason, deadlineMs})` carries the reason for the host's member_left; SessionEnd passes `LINK_CALL_END_MS`.
+  - Identity on a mirror (the PR2/PR4 notes): `indexedSeat` gives a seat of this machine the pid, start time and session of its index record, for `resolveByPid`/`resolveBySession` and `retirePrevious`; `rebindSession` rewrites only the indexes there; `heartbeat` accepts a record with no pid.
+  - The orch's cwd (a PR4 bug): `seats.enter` keeps the first local seat's cwd as the room's working directory (kv `workdir`, host only) and `ensureOrch` falls back to it, so a remote join, whose `serve --stdio` runs wherever its transport started it, starts the orch in the project (seats.test).
+  - The daemon's state is the mirror's kv `link` {pid, state, since, reason}; `status(code)` adds `running`. States: connecting, online, offline (retried after `LINK_RETRY_MS` 1 s, doubling to 30 s), fork, stopped (AUTH or PROTOCOL at hello, the room closed, idle, a signal). Ops during the first connection wait for it; an op while offline is refused at once. It exits `LINK_IDLE_MS` (60 s) after no fresh seat of this machine is left while online; offline, it keeps retrying.
+  - The tail's line is keyed fork or offline (one line per transition into it); a daemon that is not running counts as offline. `at-room` now blocks the prompt on any RoomError from append (OFFLINE, RATE, AUTH); before, a throw let the prompt through to the model.
+  - `sub-human link --reset CODE` refuses while the daemon runs, then `MirrorRoomStore.reset()` and a detached start. `/sub-human host` and `sub-human invite` refuse a room hosted elsewhere; the hook shows the invite as a block reason (to the person, never to the model). The Bash guard denies `sub-human invite|link|serve`.
+  - Contract `remote` (`test/support/remote-store.js`): 7 of the 16 shared cases run on the mirror and 9 are skipped as host-only (they write as the system or the host's documents directly); 4 remote cases cover join/beat/leave over the link, HOST_ONLY, content-addressed blobs and OFFLINE. The link is bound to the contract's names on the host, a stand-in for joins. `test/remote-link.test.js` covers the registry, FORK and re-mirror, the socket path and the tail line.
+
+#### Results (PR5, Apple M2, node 24.15.0; `node plugin/sub-human/test/support/link-bench.js`)
+
+Two homes on one machine, the link over the pipe transport; round trip n=200, per hook n=40. Times in ms, p50 / p99.
+
+| | host | remote | overhead |
+|---|---|---|---|
+| one signed append, bridge up (the link's round trip) | 0.70 / 1.1 | 1.0 / 1.6 | 0.34 / 0.52 |
+| `prompt.js`, a plain prompt (no worker) | 38.2 / 43.2 | 38.3 / 41.7 | 0.1 / -1.5 |
+| `prompt.js`, an `@room` post | 41.3 / 43.8 | 60.0 / 63.1 | 18.8 / 19.4 |
+| `presence.js`, a changed state | 34.7 / 38.3 | 55.8 / 60.3 | 21.1 / 22.0 |
+
+Verdict: the PR3 target holds. A hook that only reads starts no worker and costs nothing; a hook that writes pays 19-22 ms p99, the worker's boot plus a round trip of about 1.5 ms, under the 25 ms budget.
 
 ### PR6 Docs and demo
 

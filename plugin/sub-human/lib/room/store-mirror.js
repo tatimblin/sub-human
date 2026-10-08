@@ -3,61 +3,157 @@
  * plugin/sub-human/lib/room/store-mirror.js: MirrorRoomStore, the RoomStore of a room hosted on another machine:
  * an FsRoomStore directory kept byte-identical to the host's log by the link daemon (lib/remote/link.js), so
  * every reader (readView, log.idx, tailer, verifyChain, rows, digests) works unchanged. Only writes cross the
- * wire, as named ops through lib/remote/bridge.js (a sync call from the hook's thread, with a deadline).
- * store.open(code) returns one for a code that lib/room/links.js knows. Stub: filled in by PR5 of
- * docs/next/REMOTE-PLAN.md.
+ * wire, as named ops through lib/remote/bridge.js (a sync call from the hook's thread, with a deadline) to the
+ * daemon's socket. The bridge (a worker thread) starts at the process's first op, so a hook that only reads
+ * starts none. store.open(code) returns one for a code that lib/room/links.js knows.
  *
  * Reads: the parent's, over the mirror directory.
- * Writes (RoomError codes in lib/remote/protocol.js CODES):
- *   append(entry, opts)      sign here (the hook's signer, via=human) → op `append` → the placed entry, returned
- *                            once applyLine has written it to the mirror (read-your-writes). OFFLINE past the
- *                            deadline: nothing is queued.
- *   members.join(rec), members.leave(name), members.beat(name, {presence?})   ops
+ * Writes (RoomError codes in lib/remote/protocol.js CODES; OFFLINE: the daemon or the host is unreachable, or the
+ * deadline passed, and nothing is queued):
+ *   append(entry, opts) = place(toPayload(...))   signed here (the hook's signer, via=human), placed by the host:
+ *                            op `append`. The placed entry is returned once the mirror holds it (the host streams
+ *                            a write's lines before its reply: read-your-writes). A via=system payload is refused
+ *                            by the host (AUTH): the host writes the room's own entries.
+ *   members.join(rec)        op `join` with the seat's public key and a proof (lib/remote/auth.js proveSeat), both
+ *                            from the hook's signer; the host logs member_joined. Any RoomError comes back as
+ *                            {ok: false, error, code}
+ *   members.leave(name, {reason, deadlineMs}?)   op `leave`; the host logs "NAME left (reason)"
+ *   members.beat(name, {presence?})   op `beat`, skipped (true) while the lease is younger than SEAT_BEAT_MS and
+ *                            presence is unchanged
  *   members.update(fn)       HOST_ONLY (orch bookkeeping never runs here)
- *   blobs.put(name, bytes)   op `blob.put`; blobs.get(ref): the mirror's file, else op `blob.get`;
- *   blobs.localPath(ref)     the mirror's file (the daemon prefetches every proposal's plan)
- *   kv.*                     local (rows/*, members/NAME/*, cursors, notices: session-local documents); set/update/
- *                            delete of a streamed document (members, presence/*, tasks) is HOST_ONLY
+ *   blobs.put(name, bytes)   op `blob.put`, then the mirror's copy; blobs.get(ref): the mirror's file, else op
+ *                            `blob.get`; has, localPath: the mirror's file (the daemon prefetches every proposal's plan)
+ *   kv.*                     local (rows/*, members/NAME/*, cursors, notices, link: session-local documents);
+ *                            set/update/delete of a streamed document (members, presence/*, tasks) is HOST_ONLY
  *   isHost = false
- * The daemon's writes (lib/remote/link.js only):
- *   applyLine(line)          append one host line verbatim; its prev must hash-chain to the mirror's last line,
- *                            else RoomError FORK and nothing is written
+ * The daemon's writes (lib/remote/link.js only; it is the mirror's one writer):
+ *   applyLine(line)          append one host line verbatim; its prev must hash-chain to the mirror's last line
+ *                            and its id follow it, else RoomError FORK and nothing is written
  *   applyDoc(key, value)     write a streamed document (members, presence/NAME, tasks) as the host sent it
+ *                            (value null: the document is gone)
+ *   applyBlob(ref, bytes)    the mirror's copy of a plan
+ *   reset()                  forget everything synced (the log, its checkpoint, the streamed documents), for
+ *                            `sub-human link --reset CODE`; session-local documents and plans stay
  */
 
-const { FsRoomStore } = require('./store.js');
+const fs = require('node:fs');
+const crypto = require('node:crypto');
+const path = require('node:path');
+const { FsRoomStore, RoomError, tag, blobRef, humanKey } = require('./store.js');
+const { createBridge } = require('../remote/bridge.js');
+const { proveSeat } = require('../remote/auth.js');
+const { socketPath } = require('../remote/link.js');
+const { SEAT_BEAT_MS } = require('../config.js');
 
-const todo = what => { throw new Error(`sub-human: ${what} is not implemented yet (docs/next/REMOTE-PLAN.md, PR5)`); };
+const HANDLER = path.join(__dirname, '..', 'remote', 'link.js');
+const streamed = key => key === 'members' || key === 'tasks' || /^presence\/[^/]+$/.test(key);
+const hostOnly = what => new RoomError('HOST_ONLY', `${what} runs only on the room's host`);
+
+let bridge = null; // one per process, started by its first op
 
 class MirrorRoomStore extends FsRoomStore {
-  /**
-   * @param {string} code
-   * @param {{dir?: string, link: object, bridge: {call(op: string, params: object, opts?: object): any}}} opts
-   *   link: lib/room/links.js record; bridge: lib/remote/bridge.js createBridge()
-   */
-  constructor(code, { dir, link, bridge } = {}) {
+  /** code: the room code; dir: the mirror's directory (default <home>/rooms/<code>). */
+  constructor(code, { dir } = {}) {
     super(code, { dir });
-    this.link = link || null;
-    this.bridge = bridge || null;
     this.isHost = false;
+    const { members, blobs, kv } = this;
+    this.members = {
+      read: members.read,
+      update: () => { throw hostOnly('members.update'); },
+      join: rec => this._join(rec),
+      leave: (name, { reason = 'left', deadlineMs } = {}) => this._call('leave', { name, reason }, { deadlineMs }).ok,
+      beat: (name, { presence } = {}) => this._beat(name, presence),
+    };
+    this.blobs = {
+      ...blobs,
+      put: (name, bytes) => this._blobPut(this._call('blob.put', { name, bytes: Buffer.from(bytes).toString('base64') }).ref, bytes),
+      get: ref => blobs.get(ref) || this._fetch(ref),
+    };
+    const local = (what, fn) => (key, ...a) => { if (streamed(key)) throw hostOnly(`${what}("${key}")`); return fn(key, ...a); };
+    this.kv = { ...kv, set: local('kv.set', kv.set), update: local('kv.update', kv.update), delete: local('kv.delete', kv.delete) };
   }
 
-  /** @override sign locally, place on the host, return the placed entry once the mirror holds it. */
-  append(entry, opts = {}) { return todo(`MirrorRoomStore.append(${entry && entry.kind}, via ${opts.via})`); }
+  /** @override the host places it: op `append`. */
+  place(payload) { return tag(this._call('append', { payload }).entry, this); }
+
+  /** One op over the bridge to this room's link daemon. */
+  _call(op, params, { deadlineMs } = {}) {
+    bridge = bridge || createBridge({ handler: HANDLER });
+    try {
+      return bridge.call(op, { socket: socketPath(this.dir), params }, { deadlineMs });
+    } catch (e) {
+      if (e.code !== 'OFFLINE') throw e;
+      throw new RoomError('OFFLINE', `room ${this.code} is offline (${e.message}); nothing was sent`);
+    }
+  }
+
+  _join({ name, role }) {
+    const key = humanKey(this.code, name);
+    const pubkey = crypto.createPublicKey(key).export({ type: 'spki', format: 'pem' });
+    try {
+      return this._call('join', { name, role, pubkey, proof: proveSeat(key, { room: this.code, name, pubkey }) });
+    } catch (e) {
+      if (!(e instanceof RoomError)) throw e;
+      return { ok: false, error: e.message, code: e.code };
+    }
+  }
+
+  _beat(name, presence) {
+    const m = this.members.read()[name];
+    if (!m || m.left_at) return false;
+    const fresh = Date.parse(m.seen_at) > Date.now() - SEAT_BEAT_MS;
+    const cur = presence && this.kv.get(`presence/${name}`);
+    if (fresh && (!presence || (cur && cur.state === presence.state && (cur.detail || null) === (presence.detail || null)))) return true;
+    return this._call('beat', { name, presence }).ok;
+  }
+
+  _fetch(ref) {
+    const r = blobRef(ref);
+    if (!r) return null;
+    const { bytes } = this._call('blob.get', { ref: r });
+    return bytes == null ? null : Buffer.from(bytes, 'base64');
+  }
 
   /**
    * One verbatim host line into the mirror log (the daemon's subscribe stream).
    * @param {string} line
    * @returns {object} the parsed entry
    */
-  applyLine(line) { return todo(`MirrorRoomStore.applyLine(${typeof line})`); }
+  applyLine(line) {
+    let e;
+    try { e = JSON.parse(line); } catch { throw new RoomError('PROTOCOL', 'the host sent a log line that is not JSON'); }
+    const last = this.lastId();
+    if (!(e.id > last) || (e.prev !== undefined && e.prev !== this.lineHash(last))) {
+      throw new RoomError('FORK', `the host's line ${e.id} does not follow this mirror's line ${last}; re-mirror with sub-human link --reset ${this.code}`);
+    }
+    fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    fs.appendFileSync(this.logFile, line + '\n', { mode: 0o600 });
+    return tag(e, this);
+  }
 
   /**
-   * One streamed document into the mirror's kv (members, presence/NAME, tasks).
+   * One streamed document into the mirror (members, presence/NAME, tasks).
    * @param {string} key
    * @param {*} value
    */
-  applyDoc(key, value) { return todo(`MirrorRoomStore.applyDoc(${key}, ${typeof value})`); }
+  applyDoc(key, value) {
+    if (!streamed(key)) throw new RoomError('PROTOCOL', `the host streamed "${key}", which is not a room document`);
+    if (key === 'members') return this._updateMembers(() => value || {});
+    if (value === null) return fs.rmSync(this._kvFile(key), { force: true });
+    return this._kvSet(key, value);
+  }
+
+  /**
+   * The mirror's copy of a plan (the daemon's prefetch).
+   * @param {string} ref
+   * @param {Buffer} bytes
+   */
+  applyBlob(ref, bytes) { return this._blobPut(ref, bytes); }
+
+  reset() {
+    for (const f of [this.logFile, this._idxPath, this._membersFile]) fs.rmSync(f, { force: true });
+    for (const key of ['tasks', ...this.kv.list('presence/')]) fs.rmSync(this._kvFile(key), { force: true });
+  }
 }
 
 module.exports = { MirrorRoomStore };

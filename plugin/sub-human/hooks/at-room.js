@@ -10,6 +10,8 @@
 // refuses, and the person types it again. In the orch, a typed prompt is refused (it takes no typed input); with
 // no origin it runs, so a reload never loses the orch's wakes. "working" presence is written here only when no
 // origin came (with one, mod/prompt.mjs has written it).
+// A post the store refuses (RATE, AUTH, or OFFLINE in a room hosted elsewhere whose link is down) blocks the prompt
+// with the reason; nothing is queued.
 const path = require('node:path');
 const { identity, room, out, run, whoami, presence } = require('./common.js');
 const { oneLine } = require(path.join(__dirname, '..', 'lib', 'text.js'));
@@ -115,7 +117,10 @@ function handle(input) {
   const entry = { kind: 'say', text };
   if (normalized) entry.normalized = true;
   if (draftedByAgent(text, lastAssistantText(transcriptTail(input.transcript_path), input.prompt_id))) entry.drafted = 'agent';
-  room.open(me.code).append(entry, { via: 'human', from: me.name });
+  try { room.open(me.code).append(entry, { via: 'human', from: me.name }); } catch (err) {
+    if (!(err instanceof room.RoomError)) throw err;
+    return block(`✗ not posted: ${err.message}`); // OFFLINE, RATE, AUTH: never queued
+  }
   out({
     continue: false,
     stopReason: `✓ sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`,

@@ -1,11 +1,14 @@
 'use strict';
 // The RoomStore contract (lib/room/store.js), run against FsRoomStore (the room directory), MemoryRoomStore
-// (test/support/memory-store.js) and ThreadRoomStore (test/support/thread-store.js: every call crosses
-// lib/remote/bridge.js to an FsRoomStore on a worker): append, ids and the prev chain, signed human entries (sig
-// v2 placed anywhere, v1 still read), keys pinned in the log, place's replay and trust checks, the rate buckets,
-// readView parity, watch and tailer, chain checks, cursors, members compare-and-set (across processes for the
-// file store) and the named seat ops, blobs and the small documents. All passing is what lets a room move off
-// this machine behind the same interface.
+// (test/support/memory-store.js), ThreadRoomStore (test/support/thread-store.js: every call crosses
+// lib/remote/bridge.js to an FsRoomStore on a worker) and MirrorRoomStore (test/support/remote-store.js: the
+// mirror of a room whose server and link run on a worker, over the memory transport): append, ids and the prev
+// chain, signed human entries (sig v2 placed anywhere, v1 still read), keys pinned in the log, place's replay and
+// trust checks, the rate buckets, readView parity, watch and tailer, chain checks, cursors, members
+// compare-and-set (across processes for the file store) and the named seat ops, blobs and the small documents.
+// All passing is what lets a room move off this machine behind the same interface. The cases that write as the
+// system or write the host's documents directly are host-only (a mirror refuses them: HOST_ONLY, AUTH); the
+// remote cases at the end cover what a mirror does instead.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -21,6 +24,7 @@ const consent = require(path.join(h.LIB, 'room', 'consent.js'));
 const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
 const { MemoryRoomStore } = require('./support/memory-store.js');
 const { ThreadRoomStore } = require('./support/thread-store.js');
+const { remoteStore, MACHINE } = require('./support/remote-store.js');
 const { machineId } = require(path.join(h.LIB, 'home.js'));
 
 const CODE = 'otter-1234';
@@ -34,9 +38,19 @@ const FILES = {
   // a line written around the store
   raw: (s, e) => fs.appendFileSync(path.join(s.dir, 'log.jsonl'), JSON.stringify(e) + '\n'),
 };
+// A remote join on the host starts the orch, as a local one does: never a real one.
+Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false' });
+/** A mirror of a room hosted on a worker (test/support/remote-store.js), stopped when the test ends. */
+function mirrorOf(t) {
+  const r = remoteStore(CODE, { dir: h.tmpDir('sh-mirror-', t) });
+  t.after(() => r.stop());
+  return r.mirror;
+}
+const HOST_ONLY = 'host only: it writes as the system or the host\'s documents directly';
 const BACKENDS = {
   fs: { make: t => store.open(CODE, { dir: h.tmpDir('sh-store-', t) }), ...FILES },
   thread: { make: t => new ThreadRoomStore(CODE, { dir: h.tmpDir('sh-store-', t) }), ...FILES },
+  remote: { make: mirrorOf, hostOnly: HOST_ONLY, ...FILES },
   memory: {
     make: () => new MemoryRoomStore(CODE),
     tamper: (s, i, fn) => { s._lines[i] = fn(s._lines[i]); },
@@ -104,7 +118,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(s.append({ kind: 'say', text: 'mine', to: 'alice' }, { via: 'agent', from: 'dave' }).from, 'dave', 'per sender');
   });
 
-  test(`store contract (${name}): members.join/leave/beat: one seat per name across machines, judged by lease off this machine`, t => {
+  test(`store contract (${name}): members.join/leave/beat: one seat per name across machines, judged by lease off this machine`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
     const here = machineId();
@@ -138,7 +152,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(s.kv.get('presence/alice').state, 'idle');
   });
 
-  test(`store contract (${name}): sig v2 covers the payload, not its place: placed at another id it still verifies; v1 lines still do`, t => {
+  test(`store contract (${name}): sig v2 covers the payload, not its place: placed at another id it still verifies; v1 lines still do`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
     const e = say(s, 'alice', 'mine');
@@ -160,7 +174,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(other.verifyChain().ok, true, 'a mixed v1/v2 log chains');
   });
 
-  test(`store contract (${name}): member_joined pins a key; a keyed room never counts an unsigned answer and refuses another key`, t => {
+  test(`store contract (${name}): member_joined pins a key; a keyed room never counts an unsigned answer and refuses another key`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
     s.append({ kind: 'proposal', text: 'p', hash: H, approvers: ['alice', 'bob'] }, { via: 'agent', from: 'orch' });
@@ -187,7 +201,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.deepEqual([m.agreed, m.missing], [['alice'], ['bob']]);
   });
 
-  test(`store contract (${name}): place refuses a replayed nonce, a stale ts, another room's payload and a changed field`, t => {
+  test(`store contract (${name}): place refuses a replayed nonce, a stale ts, another room's payload and a changed field`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
     const p = store.toPayload(CODE, { kind: 'say', text: 'once' }, { via: 'human', from: 'alice' });
@@ -206,7 +220,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(s.lastId(), 1, 'nothing refused was written');
   });
 
-  test(`store contract (${name}): readView({after}) holds every non-chat entry and every entry after`, t => {
+  test(`store contract (${name}): readView({after}) holds every non-chat entry and every entry after`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
     sys(s, 'member_joined', 'alice');           // 1
@@ -293,7 +307,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.throws(() => s.setCursor('../x', 1), e => e.code === 'INVALID');
   });
 
-  test(`store contract (${name}): members read/update: atomic, null writes nothing, reads are copies`, t => {
+  test(`store contract (${name}): members read/update: atomic, null writes nothing, reads are copies`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
     assert.deepEqual(s.members.read(), {});
@@ -306,7 +320,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.deepEqual(Object.keys(s.members.read()).sort(), ['alice', 'bob']);
   });
 
-  test(`store contract (${name}): blobs: room-relative refs, bytes back exactly, legacy absolute paths read by name`, t => {
+  test(`store contract (${name}): blobs: room-relative refs, bytes back exactly, legacy absolute paths read by name`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
     const bytes = Buffer.from('# plan\né\n', 'utf8');
@@ -321,7 +335,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.throws(() => s.blobs.put('../x', bytes), e => e.code === 'INVALID');
   });
 
-  test(`store contract (${name}): kv: get/set/update/delete/list, update undefined keeps and null deletes`, t => {
+  test(`store contract (${name}): kv: get/set/update/delete/list, update undefined keeps and null deletes`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
     assert.equal(s.kv.get('tasks'), null);
@@ -345,7 +359,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.throws(() => s.kv.list('presence'), e => e.code === 'INVALID');
   });
 
-  test(`store contract (${name}): a Room over the store renders and queries this room only`, t => {
+  test(`store contract (${name}): a Room over the store renders and queries this room only`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
     s.members.update(() => ({ alice: { name: 'alice', role: 'member' }, bob: { name: 'bob', role: 'member', left_at: new Date().toISOString() } }));
@@ -401,4 +415,70 @@ test('store: setBackend routes every open() (identity included) to another store
     assert.equal(mem.kv.get('presence/alice').state, 'idle');
     assert.equal(room.open(CODE).store, mem);
   } finally { store.setBackend(null); }
+});
+
+test('store contract (remote): a write goes through the host and reads back at once; join, beat and leave are the host\'s ops', t => {
+  h.freshHome(t);
+  const s = mirrorOf(t);
+  assert.equal(s.isHost, false);
+  const e = say(s, 'alice', 'hi');
+  assert.deepEqual([s.lastId(), s.readAll().at(-1)], [e.id, e], 'read-your-writes');
+  assert.equal(store.humanTrust(s.readAll().at(-1)), 'verified');
+  // the join: the seat's key and a proof from this thread's signer; the host logs member_joined with them
+  assert.deepEqual(s.members.join({ name: 'erin', role: 'member', machine: MACHINE }), { ok: true });
+  const joined = s.readAll().at(-1);
+  assert.deepEqual([joined.kind, joined.from, joined.machine, joined.pubkey], ['member_joined', 'erin', MACHINE, seatKey.publicPem(CODE, 'erin')]);
+  assert.deepEqual([s.members.read().erin.machine, 'pid' in s.members.read().erin], [MACHINE, false], 'a seat on another machine lives by its lease');
+  assert.equal(s.members.beat('erin', { presence: { state: 'idle' } }), true);
+  assert.equal(s.kv.get('presence/erin').state, 'idle', 'presence written on the host, streamed back');
+  assert.equal(s.members.leave('erin', { reason: 'done' }), true);
+  assert.equal(s.readAll().at(-1).text, 'erin left (done)');
+  assert.ok(s.members.read().erin.left_at);
+  assert.equal(s.members.beat('erin'), false, 'a left seat');
+  assert.deepEqual(store.open(CODE).readAll().map(x => x.id), s.readAll().map(x => x.id), 'the host log');
+});
+
+test('store contract (remote): the host\'s documents and system writes are refused; session-local documents stay on this machine', t => {
+  h.freshHome(t);
+  const s = mirrorOf(t);
+  assert.throws(() => s.members.update(() => ({})), e => e.code === 'HOST_ONLY');
+  for (const key of ['members', 'tasks', 'presence/alice']) {
+    assert.throws(() => s.kv.set(key, {}), e => e.code === 'HOST_ONLY', key);
+    assert.throws(() => s.kv.delete(key), e => e.code === 'HOST_ONLY', key);
+  }
+  assert.throws(() => s.kv.update('tasks', () => []), e => e.code === 'HOST_ONLY');
+  assert.throws(() => sys(s, 'status', 'alice'), e => e.code === 'AUTH' && /never writes via "system"/.test(e.message));
+  s.kv.set('rows/notices-alice', { ids: [1] });
+  s.setCursor('tail-alice', 3);
+  assert.deepEqual([s.kv.get('rows/notices-alice'), s.getCursor('tail-alice')], [{ ids: [1] }, 3]);
+  assert.equal(store.open(CODE).kv.get('rows/notices-alice'), null, 'not on the host');
+  assert.deepEqual(store.open(CODE).readAll(), []);
+});
+
+test('store contract (remote): blobs are put on the host by their content and fetched from it when this machine has none', t => {
+  h.freshHome(t);
+  const s = mirrorOf(t);
+  const plan = Buffer.from('# plan\né\n');
+  const ref = `plans/${store.hash12(plan)}.md`;
+  assert.equal(s.blobs.put(ref, plan), ref);
+  assert.ok(s.blobs.has(ref) && store.open(CODE).blobs.get(ref).equals(plan));
+  assert.throws(() => s.blobs.put('plans/abcdef012345.md', plan), e => e.code === 'INVALID' && /content/.test(e.message));
+  const other = Buffer.from('# only on the host\n');
+  const ref2 = store.open(CODE).blobs.put(`plans/${store.hash12(other)}.md`, other);
+  assert.equal(s.blobs.has(ref2), false);
+  assert.ok(s.blobs.get(ref2).equals(other), 'fetched over the link');
+  assert.equal(s.blobs.get('plans/missing.md'), null);
+});
+
+test('store contract (remote): with the link down a write is OFFLINE at once and nothing is written anywhere; reads use the mirror', t => {
+  h.freshHome(t);
+  const r = remoteStore(CODE, { dir: h.tmpDir('sh-mirror-', t) });
+  t.after(() => r.stop());
+  say(r.mirror, 'alice', 'before');
+  r.stop();
+  const t0 = Date.now();
+  assert.throws(() => say(r.mirror, 'alice', 'after'), e => e.code === 'OFFLINE' && /nothing was sent/.test(e.message));
+  assert.ok(Date.now() - t0 < config.LINK_CALL_MS, 'not at the deadline: the daemon is gone');
+  assert.deepEqual(r.mirror.readAll().map(e => e.text), ['before']);
+  assert.deepEqual(store.open(CODE).readAll().map(e => e.text), ['before']);
 });

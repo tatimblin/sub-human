@@ -11,6 +11,7 @@
  *       A refused hello closes the transport and rejects.
  *   Client
  *     token, link, room, serverCaps
+ *     request(op, params) -> Promise<result>   one op as the wire has it (the link daemon relays its hooks' ops so)
  *     join({name, role?, pubkey, proof}) -> Promise<{ok, rejoin?}>
  *     leave(name, reason) -> Promise<{ok}>
  *     beat(name, {presence?}) -> Promise<{ok}>
@@ -80,6 +81,7 @@ class Client {
     });
   }
 
+  request(op, params) { return this._request(op, params); }
   join({ name, role = 'member', pubkey, proof }) { return this._request('join', { name, role, pubkey, proof }); }
   leave(name, reason) { return this._request('leave', { name, reason }); }
   beat(name, { presence } = {}) { return this._request('beat', { name, presence }); }
