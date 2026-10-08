@@ -6,12 +6,15 @@
  * signer: a via=human payload, and a join's seat proof (lib/remote/auth.js proveSeat), reach it already
  * signed.
  *
- *   connect(transport, {machine, token?, invite?, caps?, deadlineMs?, helloMs?}) -> Promise<Client>
+ *   connect(transport, {machine, token?, invite?, pin?, caps?, deadlineMs?, helloMs?, proto?, version?}) -> Promise<Client>
+ *       hello carries {v, proto, client} (lib/remote/protocol.js): the server picks the version; a version outside
+ *       this end's range, or a refusal from a host too old or too new, is PROTOCOL with skewMessage (who must update).
+ *       pin: an sh2 invite's PIN (checked by the host, never here). proto / version: fakes for the skew tests.
  *       transport may also be a Promise of one (lib/remote/transports/index.js open()). Says hello; resolves once the server answered (the token from a redeemed invite is on client.token).
  *       helloMs (default deadlineMs) bounds the hello alone: a transport such as ssh connects before it answers.
  *       A refused hello closes the transport and rejects.
  *   Client
- *     token, link, room, serverCaps
+ *     token, link, room, serverCaps, v (the version in use), serverVersion (the host's plugin version, null before 0.4)
  *     request(op, params) -> Promise<result>   one op as the wire has it (the link daemon relays its hooks' ops so)
  *     join({name, role?, pubkey, proof}) -> Promise<{ok, rejoin?}>
  *     leave(name, reason) -> Promise<{ok}>
@@ -106,21 +109,43 @@ class Client {
 
 /**
  * @param {object | Promise<object>} transport   {send(frame), onFrame(fn), onClose(fn), close()}, or a Promise of one
- * @param {{machine: string, token?: string, invite?: string, caps?: object, deadlineMs?: number, helloMs?: number}} opts
+ * @param {{machine: string, token?: string, invite?: string, pin?: string, caps?: object, deadlineMs?: number, helloMs?: number, proto?: {min: number, max: number}, version?: string}} opts
  * @returns {Promise<Client>}
  */
-async function connect(transport, { machine, token, invite, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs }) {
+async function connect(transport, opts) {
+  const { machine, token, invite, pin, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
+  const proto = opts.proto || protocol.PROTO, version = opts.version || protocol.PLUGIN_VERSION;
   const c = new Client(await transport, { deadlineMs });
-  const cred = invite !== undefined ? { invite } : token !== undefined ? { token } : {};
+  const cred = invite !== undefined ? { invite, ...(pin !== undefined ? { pin } : {}) } : token !== undefined ? { token } : {};
+  // v: what this hello needs at least. An sh2 invite (its PIN) needs 2; anything else asks for the oldest version this
+  // end speaks, so a host from before 0.4 (it checks v === 1 and knows no proto) still answers.
+  const need = Math.max(proto.min, pin !== undefined ? 2 : 1);
+  const me = { version, proto };
   try {
-    const r = await c._request('hello', { v: protocol.VERSION, caps, machine, ...cred }, ++c.seq, helloMs);
-    if (r.v !== protocol.VERSION) throw new RoomError('PROTOCOL', `the server speaks protocol v${r.v}, not v${protocol.VERSION}`);
-    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps });
+    let r;
+    try {
+      r = await c._request('hello', { v: need, proto, client: version, caps, machine, ...cred }, ++c.seq, helloMs);
+    } catch (e) {
+      throw olderHost(e, me) || e;
+    }
+    const theirs = protocol.rangeOf({ v: r.v, proto: r.proto });
+    if (!theirs || r.v < proto.min || r.v > proto.max || r.v < need) {
+      throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: r.server, proto: theirs || { min: r.v, max: r.v } }, joiner: me }));
+    }
+    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null });
   } catch (e) {
     c.close();
     throw e;
   }
   return c;
+}
+
+/** A host from before 0.4 refuses another v with "protocol vN is not served here (vM)": say who must update. */
+function olderHost(e, me) {
+  const m = e && e.code === 'PROTOCOL' && /protocol v(\d+) is not served here \(v(\d+)\)/.exec(e.message);
+  if (!m) return null;
+  const v = Number(m[2]);
+  return new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: null, proto: { min: v, max: v } }, joiner: me }));
 }
 
 module.exports = { connect };

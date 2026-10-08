@@ -178,6 +178,51 @@ test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops 
   assert.equal(fs.existsSync(link.socketPath(mirror.dir)), false, 'the socket is gone with it');
 });
 
+test('skew: a newer host\'s unknown entry kind, via and fields, an unknown document and an unknown event keep the link online; readers show them, never as a person\'s words', async t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const room = require(path.join(h.LIB, 'room.js'));
+  const protocol = require(path.join(h.LIB, 'remote', 'protocol.js'));
+  const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
+  t.after(() => fs.rmSync(path.dirname(link.socketPath(mirror.dir)), { recursive: true, force: true }));
+  const at = new Date().toISOString();
+  const lines = [];
+  const add = e => { lines.push(JSON.stringify({ id: lines.length + 1, at, to: 'room', ...e, prev: store.hash12(lines.at(-1) || '') })); };
+  add({ from: 'room', via: 'system', kind: 'link_admitted', text: 'a future room line', future: { nested: true } });
+  add({ from: 'bob', via: 'relay', kind: 'say', text: 'not bob\'s own words' });
+  add({ from: 'bob', via: 'agent', kind: 'say', text: 'plain', reactions: ['+1'] });
+  // a host of protocol N+1 (plugin 9.0.0): it streams what this version has never seen
+  const connect = () => {
+    const [a, b] = memory.pair();
+    b.onFrame(f => {
+      if (f.op === 'hello') return b.send(protocol.reply(f.id, { v: protocol.PROTO.max, proto: { min: 1, max: protocol.PROTO.max + 1 }, server: '9.0.0', caps: {}, room: code, link: 'abcdef012345', newField: 1 }));
+      if (f.op !== 'subscribe') return undefined;
+      b.send(protocol.reply(f.id, { ok: true }));
+      b.send(protocol.event(f.id, 'ping', { t: 1 }));
+      b.send(protocol.event(f.id, 'doc', { key: 'links', value: { x: 1 } }));
+      b.send(protocol.event(f.id, 'doc', null));
+      for (const l of lines) b.send(protocol.event(f.id, 'entry', l));
+      return b.send(protocol.event(f.id, 'doc', { key: 'presence/bob', value: { state: 'idle', mood: 'new field' } }));
+    });
+    return client.connect(a, { machine: 'm1', token: 'tok' });
+  };
+  const logged = [];
+  const l = await link.serveMirror({ mirror, connect, log: m => logged.push(m) });
+  t.after(() => l.stop('done'));
+  await h.until(() => mirror.kv.get('presence/bob'), 3000, 10);
+  assert.equal(l.state(), 'online', logged.join('\n'));
+  assert.equal(fs.readFileSync(mirror.logFile, 'utf8'), lines.join('\n') + '\n', 'every line kept verbatim');
+  assert.match(logged.join('\n'), /skipped: the host streamed "links"/);
+  const es = mirror.readAll();
+  const chat = es.map(e => room.chatLines(e, { viewer: 'alice', entries: es }).join(' / '));
+  assert.deepEqual(chat, ['room: a future room line', 'bob (via relay): not bob\'s own words', 'bob\'s Claude: plain']);
+  assert.ok(es.every(e => typeof room.line(e, { full: true }) === 'string'));
+  const render = require(path.join(h.LIB, 'room', 'render.js'));
+  assert.equal(typeof render.digest(es, { members: {}, code }), 'string');
+  const { lane } = require(path.join(h.LIB, 'room', 'lanes.js'));
+  assert.deepEqual(es.map(e => lane({ name: 'alice', role: 'member' }, e, es)), ['pull', 'pull', 'pull'], 'nothing unknown wakes anyone');
+});
+
 test('link: a lost connection is retried after retryMs, doubled per failure up to retryMaxMs (1 s, capped at 10 s by default)', async t => {
   h.freshHome(t);
   const code = h.newRoom();

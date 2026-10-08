@@ -7,14 +7,18 @@
  * It never loads the signer (test/hooks/security.test.js): a via=human payload arrives signed by the remote
  * hook and is verified against the key pinned in the log (lib/room/envelope.js), then placed (store.place).
  *
- *   serve(transport, {store, log?, linkId?}) -> {close()}
+ *   serve(transport, {store, log?, linkId?, proto?, version?}) -> {close()}   proto / version: this end's protocol range
+ *       and plugin version (default protocol.PROTO, PLUGIN_VERSION; tests fake older and newer peers)
  *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
  *       (lib/remote/auth.js); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
  *       SSH forced command `sub-human authorize` writes): only that link's token, or the invite reserved for it,
  *       is accepted; any other is AUTH (and such an invite stays unused). store is the room's store as store.open(code)
  *       gives it in this process: seats and decide reach the room through that too. Ops:
- *         hello      version check (protocol.VERSION, else PROTOCOL); verifyToken or redeemInvite (the token is
- *                    returned once); neither: answered, but the session stays unauthenticated
+ *         hello      version: the highest common one of the two ranges (protocol.negotiate), else PROTOCOL with
+ *                    protocol.skewMessage (which side must update); verifyToken, or redeemInvite with the hello's
+ *                    pin for an sh2 invite (the token is returned once; a wrong PIN, the last try and the link are
+ *                    each a room line from the room, so the host sees them); neither: answered, but the session
+ *                    stays unauthenticated
  *         join       {name, role: 'member', pubkey, proof}: auth.checkSeatProof, then lib/seats.js enter() with
  *                    machine = the link's (no pid: the seat lives by its lease); a key other than the pinned one
  *                    is AUTH; bindSeat
@@ -58,10 +62,24 @@ function own(s, name) {
   if (!auth.mayWriteAs(s.link, name)) throw authError(`${name} has not joined over this link`);
 }
 
-function redeem(store, invite, machine, linkId) {
+function redeem(s, invite, machine, pin) {
+  const { store, linkId } = s;
   const inv = auth.parseInvite(invite);
   if (!inv || inv.code !== store.code) throw authError(`not an invite to room ${store.code}`);
-  return auth.redeemInvite(store, inv.secret, { machine, ...(linkId ? { linkId } : {}) });
+  let r;
+  try {
+    r = auth.redeemInvite(store, inv.secret, { machine, pin, ...(linkId ? { linkId } : {}) });
+  } catch (e) {
+    if (e.note) roomLine(s, e.note);
+    throw e;
+  }
+  if (inv.v === 2) roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id}); revoke it with: sub-human revoke ${r.link.id}`);
+  return r;
+}
+
+/** A line in the room from the room itself (via system), best effort: what the host should know about its links. */
+function roomLine(s, text) {
+  try { s.store.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }); } catch (e) { s.log(`sub-human serve: room line: ${e && e.message}`); }
 }
 
 function known(store, token, linkId) {
@@ -115,13 +133,21 @@ function stream(s, id, after) {
 
 // ---------- ops ----------
 const OPS = {
-  hello(s, { v, machine, token, invite }) {
-    if (v !== protocol.VERSION) throw new RoomError('PROTOCOL', `protocol v${v} is not served here (v${protocol.VERSION})`);
+  hello(s, params) {
+    const { machine, token, invite, pin } = params;
+    const theirs = protocol.rangeOf(params);
+    if (!theirs) throw new RoomError('PROTOCOL', 'hello names no protocol version');
+    const v = protocol.negotiate(s.proto, theirs);
+    const client = typeof params.client === 'string' ? params.client.slice(0, 32) : null;
+    if (v === null || v < (Number.isInteger(params.v) ? params.v : 1)) {
+      throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: { version: client, proto: theirs } }));
+    }
     if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) throw invalid('hello needs this machine\'s id');
     s.link = null;
-    const r = invite !== undefined ? redeem(s.store, invite, machine, s.linkId) : token !== undefined ? known(s.store, token, s.linkId) : { link: null };
+    s.v = v;
+    const r = invite !== undefined ? redeem(s, invite, machine, pin) : token !== undefined ? known(s.store, token, s.linkId) : { link: null };
     s.link = r.link;
-    const out = { v: protocol.VERSION, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null };
+    const out = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null };
     if (r.token) out.token = r.token;
     return out;
   },
@@ -184,11 +210,14 @@ const OPS = {
 
 // ---------- the session ----------
 class Session {
-  constructor(transport, store, log, linkId) {
+  constructor(transport, store, log, linkId, { proto = protocol.PROTO, version = protocol.PLUGIN_VERSION } = {}) {
     this.transport = transport;
     this.store = store;
     this.log = log;
     this.linkId = linkId || null;
+    this.proto = proto;
+    this.version = version;
+    this.v = null; // the version hello chose
     this.link = null;
     this.streams = new Set(); // {tick, stop}
     transport.onFrame(f => this.receive(f));
@@ -222,11 +251,11 @@ class Session {
 
 /**
  * @param {{send(frame: object): void, onFrame(fn: (frame: object) => void): void, onClose(fn: () => void): void, close(): void}} transport
- * @param {{store: import('../room/store.js').FsRoomStore, log?: (...a: any[]) => void, linkId?: string}} ctx
+ * @param {{store: import('../room/store.js').FsRoomStore, log?: (...a: any[]) => void, linkId?: string, proto?: {min: number, max: number}, version?: string}} ctx
  * @returns {{close(): void}}
  */
-function serve(transport, { store, log = () => {}, linkId }) {
-  const session = new Session(transport, store, log, linkId);
+function serve(transport, { store, log = () => {}, linkId, proto, version }) {
+  const session = new Session(transport, store, log, linkId, { proto, version });
   return { close() { session.stop(); transport.close(); } };
 }
 

@@ -253,10 +253,19 @@ async function serveMirror({ mirror, connect, log = () => {}, retryMs = config.L
     c.blobGet(ref).then(b => b && mirror.applyBlob(ref, b), err => log(`plan ${ref}: ${err.message}`));
   }
 
+  // A document this version does not stream (a newer host's) is skipped, not fatal: the mirror never takes it.
+  function applyDoc(data) {
+    if (!data || typeof data.key !== 'string') return log('skipped: a document with no key');
+    try { mirror.applyDoc(data.key, data.value); } catch (e) {
+      if (e.code !== 'PROTOCOL') throw e;
+      log(`skipped: ${e.message}`);
+    }
+  }
+
   function onEvent(c, { ev, data }) {
     try {
       if (ev === 'entry') prefetch(c, mirror.applyLine(data));
-      else if (ev === 'doc') mirror.applyDoc(data.key, data.value);
+      else if (ev === 'doc') applyDoc(data);
       else if (ev === 'end' && c === client) {
         if (data.reason === 'closed') stop('stopped', 'the room was closed');
         else fail(new RoomError(data.reason, data.reason === 'FORK' ? 'the host log was reset' : 'the connection to the host closed'));

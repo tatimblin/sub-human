@@ -11,7 +11,19 @@
  *                                    line, verbatim), 'doc' (data: {key, value}: members, presence/NAME, tasks;
  *                                    value null for a document that is gone), 'end' (data: {reason}: 'closed',
  *                                    the room's orch was stopped; 'FORK', the host log was reset under the stream)
- *   VERSION = 1                      hello carries {v, caps} both ways; an unknown v is PROTOCOL
+ *   PROTO = {min: 1, max: 2}         the protocol versions this end speaks. hello carries {v, proto, client, caps}:
+ *                                    v the version the client needs at least (1, or 2 for an sh2 invite: a host
+ *                                    before 0.4 checks v === 1 and has no proto), proto its range, client its plugin
+ *                                    version. The server answers {v, proto, server, caps}: v = negotiate() of the two
+ *                                    ranges (a hello without proto is the range [v, v]); no overlap is PROTOCOL with
+ *                                    skewMessage(), which names the side that must update. v2: the sh2 invite and its PIN
+ *   VERSION = PROTO.max              (kept for callers that name one version)
+ *   PLUGIN_VERSION                   this plugin's version (.claude-plugin/plugin.json), '?' when unreadable
+ *   negotiate(a, b) -> v | null      the highest version in both ranges {min, max}, null when they do not overlap
+ *   rangeOf(params) -> {min, max} | null   a hello's range: its proto when well formed, else [v, v]
+ *   skewMessage({host, joiner}) -> string   {version, proto} each: "host runs sub-human 0.4.0 (protocol 3–4); you run
+ *                                    0.3.0 (protocol 2). Update your plugin: /plugin update sub-human" (or "The host
+ *                                    must update …" when the joiner is the newer side)
  *   CAPS                             what this end serves: {ops: OPS}
  *   OPS                              hello join leave beat append subscribe blob.get blob.put
  *   CODES                            RoomError codes on both ends and on the wire, unchanged:
@@ -26,7 +38,32 @@
 const { StringDecoder } = require('node:string_decoder');
 const { LINK_FRAME_MAX_BYTES } = require('../config.js');
 
-const VERSION = 1;
+const PROTO = Object.freeze({ min: 1, max: 2 });
+const VERSION = PROTO.max;
+const PLUGIN_VERSION = (() => {
+  try { return String(require('../../.claude-plugin/plugin.json').version || '?'); } catch { return '?'; }
+})();
+
+const isVersion = n => Number.isInteger(n) && n >= 1 && n <= 1000;
+/** @returns {{min: number, max: number} | null} */
+function rangeOf({ v, proto } = {}) {
+  if (proto && isVersion(proto.min) && isVersion(proto.max) && proto.min <= proto.max) return { min: proto.min, max: proto.max };
+  return isVersion(v) ? { min: v, max: v } : null;
+}
+/** @returns {number | null} */
+function negotiate(a, b) {
+  const v = Math.min(a.max, b.max);
+  return v >= Math.max(a.min, b.min) ? v : null;
+}
+const span = r => (r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`);
+const runs = (who, x) => `${who} ${x.version && x.version !== '?' ? `sub-human ${x.version}` : 'an unknown sub-human version'} (protocol ${span(x.proto)})`;
+/** @returns {string} */
+function skewMessage({ host, joiner }) {
+  const fix = joiner.proto.max < host.proto.min
+    ? 'Update your plugin: /plugin update sub-human'
+    : 'The host must update: ask them to run /plugin update sub-human';
+  return `${runs('host runs', host)}; ${runs('you run', joiner).replace(/^you run sub-human /, 'you run ')}. ${fix}`;
+}
 const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put'];
 const EVENTS = ['entry', 'doc', 'end'];
 const CAPS = Object.freeze({ ops: OPS });
@@ -77,4 +114,4 @@ const isRequest = f => !!f && typeof f.op === 'string';
 const isReply = f => !!f && f.op === undefined && f.ev === undefined && ('result' in f || 'error' in f);
 const isEvent = f => !!f && typeof f.ev === 'string';
 
-module.exports = { VERSION, OPS, EVENTS, CAPS, CODES, request, reply, error, event, encode, decoder, isRequest, isReply, isEvent };
+module.exports = { PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, CAPS, CODES, request, reply, error, event, encode, decoder, isRequest, isReply, isEvent };
