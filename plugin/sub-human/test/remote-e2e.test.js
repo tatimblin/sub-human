@@ -138,3 +138,27 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   await h.until(() => !current || !isAlive(current), 3000, 50);
   assert.ok(!current || !isAlive(current), 'its server exits with it');
 });
+
+test('remote e2e: an invite used already is refused at join with that reason, not "offline"', async t => {
+  const host = new Machine(t, 'host'), first = new Machine(t, 'first', LINK_ENV), third = new Machine(t, 'third', LINK_ENV);
+  const alice = host.seat('alice'), bob = first.seat('bob'), carol = third.seat('carol');
+  host.join(alice, 'alice');
+  const code = host.lib(() => store.listRooms()[0]);
+  const invite = /sh1\.\S+/.exec(host.join(alice, 'host').json.reason)[0];
+  const cleanup = m => () => {
+    const st = m.lib(() => link.status(code));
+    if (st.pid) { kill(childOf(st.pid)); kill(st.pid); }
+    fs.rmSync(path.dirname(link.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
+  };
+  t.after(cleanup(first));
+  t.after(cleanup(third));
+  assert.equal(first.join(bob, `join bob ${invite}`).json.systemMessage, undefined, 'the first machine redeems it');
+
+  const refused = third.join(carol, `join carol ${invite}`);
+  assert.equal(refused.json.decision, 'block', refused.stderr);
+  assert.match(refused.json.reason, /this invite is unknown or was used already/);
+  assert.doesNotMatch(refused.json.reason, /offline|hung up/);
+  assert.equal(refused.json.systemMessage, refused.json.reason, 'Remote Control shows the refusal too');
+  assert.equal(third.lib(() => link.status(code)).code, 'AUTH');
+  assert.doesNotMatch(host.log(code), /carol/);
+});

@@ -36,7 +36,10 @@
  *   handle(method, params) -> Promise<result>   the bridge handler, params {socket, params}: one op (RELAY) over the
  *                                  socket, the result as the wire has it; OFFLINE when the daemon is not listening
  *                                  (nothing is started from a hook's call)
- *   status(code) -> {running, pid?, state?, since?, reason?}   the daemon's document `link`; running: its pid lives
+ *   status(code) -> {running, pid?, state?, since?, reason?, code?}   the daemon's document `link`; running: its
+ *                                  pid lives; code: the RoomError that stopped it (AUTH, PROTOCOL, FORK)
+ *   stopReason(doc) -> {code, reason} | null   why a stopped link stopped (a hook whose op met a daemon that hung
+ *                                  up or is gone reports this, e.g. AUTH "this invite is unknown or was used already")
  *   start(code) -> bool            start the daemon detached (stdout and stderr to lib/room/links.js logFile) unless
  *                                  it runs; wait up to LINK_START_MS for it to listen
  *   pipeLocator(home?) -> 'pipe:<home>'   an invite's locator for a room hosted under that home on this machine
@@ -110,6 +113,17 @@ function handle(method, { socket, params }) {
 function status(code) {
   const st = require('../room/store.js').open(code).kv.get('link') || {};
   return { ...st, running: isAlive(st.pid) };
+}
+
+/**
+ * Why the link stopped for good (FORK, AUTH, PROTOCOL, the room closed, no seat left), from its document `link`
+ * ({state, reason, code?}): the hook that met a socket that hung up or is gone reports this instead.
+ * @param {{state?: string, reason?: string, code?: string} | null} st
+ * @returns {{code: string, reason: string} | null}
+ */
+function stopReason(st) {
+  if (!st || !STOPPED.has(st.state) || !st.reason) return null;
+  return { code: st.code || (st.state === 'fork' ? 'FORK' : 'OFFLINE'), reason: st.reason };
 }
 
 /**
@@ -232,10 +246,11 @@ async function serveMirror({ mirror, connect, log = () => {}, retryMs = config.L
   let state = 'connecting', reason = null, client = null, retry = null, delay = retryMs, finish;
   const done = new Promise(resolve => { finish = resolve; });
 
-  function setState(s, why = null) {
+  function setState(s, why = null, code = null) {
     state = s;
     reason = why;
-    try { mirror.kv.set('link', { pid: process.pid, state, since: new Date().toISOString(), ...(why ? { reason: why } : {}) }); } catch (e) { log(`status: ${e.message}`); }
+    const doc = { pid: process.pid, state, since: new Date().toISOString(), ...(why ? { reason: why } : {}), ...(code ? { code } : {}) };
+    try { mirror.kv.set('link', doc); } catch (e) { log(`status: ${e.message}`); }
   }
 
   async function relay(op, params) {
@@ -244,12 +259,12 @@ async function serveMirror({ mirror, connect, log = () => {}, retryMs = config.L
     return client.request(op, params);
   }
 
-  function stop(st, why) {
+  function stop(st, why, code = null) {
     if (STOPPED.has(state)) return;
     clearTimeout(retry);
     const c = client;
     client = null;
-    setState(st, why);
+    setState(st, why, code);
     if (st === 'fork') log(`FORK in room ${mirror.code}: ${why}. Nothing more is synced; sub-human link --reset ${mirror.code} re-mirrors`);
     srv.close();
     fs.rmSync(path.dirname(socketPath(mirror.dir)), { recursive: true, force: true });
@@ -258,8 +273,8 @@ async function serveMirror({ mirror, connect, log = () => {}, retryMs = config.L
   }
 
   function fail(e) {
-    if (e.code === 'FORK') return stop('fork', e.message);
-    if (e.code === 'AUTH' || e.code === 'PROTOCOL') return stop('stopped', e.message);
+    if (e.code === 'FORK') return stop('fork', e.message, 'FORK');
+    if (e.code === 'AUTH' || e.code === 'PROTOCOL') return stop('stopped', e.message, e.code);
     log(`offline: ${e.message}`);
     client = null;
     setState('offline', e.message);
@@ -283,7 +298,7 @@ async function serveMirror({ mirror, connect, log = () => {}, retryMs = config.L
         else fail(new RoomError(data.reason, data.reason === 'FORK' ? 'the host log was reset' : 'the connection to the host closed'));
       }
     } catch (e) {
-      stop(e.code === 'FORK' ? 'fork' : 'stopped', e.message);
+      stop(e.code === 'FORK' ? 'fork' : 'stopped', e.message, e.code === 'FORK' ? 'FORK' : null);
     }
   }
 
@@ -367,4 +382,4 @@ async function run({ code, log = msg => process.stderr.write(`${new Date().toISO
   return why;
 }
 
-module.exports = { run, serveMirror, idleWatch, socketPath, handle, status, start, pipeLocator, sshLocator, transportOf, sshCommand };
+module.exports = { run, serveMirror, idleWatch, socketPath, handle, status, stopReason, start, pipeLocator, sshLocator, transportOf, sshCommand };

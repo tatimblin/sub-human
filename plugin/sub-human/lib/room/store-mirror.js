@@ -9,7 +9,8 @@
  *
  * Reads: the parent's, over the mirror directory.
  * Writes (RoomError codes in lib/remote/protocol.js CODES; OFFLINE: the daemon or the host is unreachable, or the
- * deadline passed, and nothing is queued):
+ * deadline passed, and nothing is queued; a daemon that stopped for good gives its own reason and code, from its
+ * document `link`, e.g. AUTH for a refused invite):
  *   append(entry, opts) = place(toPayload(...))   signed here (the hook's signer, via=human), placed by the host:
  *                            op `append`. The placed entry is returned once the mirror holds it (the host streams
  *                            a write's lines before its reply: read-your-writes). A via=system payload is refused
@@ -42,7 +43,7 @@ const path = require('node:path');
 const { FsRoomStore, RoomError, tag, blobRef, humanKey } = require('./store.js');
 const { createBridge } = require('../remote/bridge.js');
 const { proveSeat } = require('../remote/auth.js');
-const { socketPath } = require('../remote/link.js');
+const { socketPath, stopReason } = require('../remote/link.js');
 const { SEAT_BEAT_MS } = require('../config.js');
 
 const HANDLER = path.join(__dirname, '..', 'remote', 'link.js');
@@ -83,6 +84,8 @@ class MirrorRoomStore extends FsRoomStore {
       return bridge.call(op, { socket: socketPath(this.dir), params }, { deadlineMs });
     } catch (e) {
       if (e.code !== 'OFFLINE') throw e;
+      const why = stopReason(this.kv.get('link')); // the daemon stopped for good (an invite refused, a fork): say why
+      if (why) throw new RoomError(why.code, `the link to room ${this.code} stopped: ${why.reason}; nothing was sent`);
       throw new RoomError('OFFLINE', `room ${this.code} is offline (${e.message}); nothing was sent`);
     }
   }

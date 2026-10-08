@@ -154,7 +154,10 @@ run(input => {
   } else {
     if (!identity.roomExists(code)) return block(`no room ${code}. Check the code, or run /sub-human ${name} to open a new room.`);
     if (identity.roomClosing(code)) return block(`room ${code} is closing; run /sub-human ${name} to open a new room.`);
-    if (!identity.isHost(code) && !link.start(code)) return block(`the link to room ${code} did not start; its log is ${links.logFile(code)}.`);
+    if (!identity.isHost(code) && !link.start(code)) {
+      const why = link.stopReason(link.status(code));
+      return block(why ? `could not join ${code}: the link to it stopped: ${why.reason}.` : `the link to room ${code} did not start; its log is ${links.logFile(code)}.`);
+    }
   }
   if (cur && cur.code === code && cur.name === name) {
     return success(cur, 'already joined', `in room ${cur.code} as ${name}${seats.ensureOrch(code, cwd, name)}`, input);
