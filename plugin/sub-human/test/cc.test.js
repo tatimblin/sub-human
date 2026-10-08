@@ -99,6 +99,19 @@ test('planFeedback: structured userFeedback, text fallback, Esc and approval', (
   assert.equal(cc.planFeedback(lines, null), null);
 });
 
+test('lastHumanPrompt: the newest prompt only when it is the person\'s (no origin, or kind human); tool results and meta rows skipped', () => {
+  const user = (content, extra = {}) => J({ type: 'user', message: { role: 'user', content }, timestamp: '2026-10-08T10:00:00.000Z', ...extra });
+  assert.deepEqual(cc.lastHumanPrompt([user('open v2'), user('Open v3')]), { text: 'Open v3', at: Date.parse('2026-10-08T10:00:00.000Z') });
+  assert.equal(cc.lastHumanPrompt([user('Open v3', { origin: { kind: 'human' } })]).text, 'Open v3');
+  assert.equal(cc.lastHumanPrompt([user([{ type: 'text', text: 'Open v3' }])]).text, 'Open v3');
+  const skipped = [user([{ type: 'tool_result', tool_use_id: 't', content: 'x' }]), user('caveat', { isMeta: true }), user('side', { isSidechain: true }), J({ type: 'assistant', message: { content: 'hi' } })];
+  assert.equal(cc.lastHumanPrompt([user('Open v3'), ...skipped]).text, 'Open v3');
+  for (const kind of ['peer', 'task-notification', 'channel', 'plugin', 'unclassified', undefined]) {
+    assert.equal(cc.lastHumanPrompt([user('Open v3'), user('open v2', { origin: kind === undefined ? {} : { kind } })]), null, String(kind));
+  }
+  assert.equal(cc.lastHumanPrompt([]), null);
+});
+
 test('planFeedback: the Remote Control deny shapes observed on 2.1.292 (with a note, and bare)', () => {
   const head = 'The user doesn\'t want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). ';
   const tail = '\n\nNote: The user\'s next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they\'d prefer you to work, consider saving that to memory for future sessions.';

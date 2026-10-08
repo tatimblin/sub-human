@@ -11,7 +11,8 @@
 // no origin it runs, so a reload never loses the orch's wakes. "working" presence is written here only when no
 // origin came (with one, mod/prompt.mjs has written it).
 // A post the store refuses (RATE, AUTH, or OFFLINE in a room hosted elsewhere whose link is down) blocks the prompt
-// with the reason; nothing is queued.
+// with the reason; nothing is queued. Typed through Remote Control (origin bridge), the refusal or "✓ sent" is also
+// the systemMessage, which the module relays to the phone (a block or stop line does not show there).
 const path = require('node:path');
 const { identity, room, out, run, whoami, presence } = require('./common.js');
 const { oneLine } = require(path.join(__dirname, '..', 'lib', 'text.js'));
@@ -25,8 +26,13 @@ function parse(prompt) {
   return null;
 }
 
+/** A person typing through Remote Control sees no block or stop line there: their refusal and "✓ sent" also go out
+ * as systemMessage, which mod/prompt.mjs relays to the phone (mod/deliver.mjs relay). */
+let toPhone = false;
+const phoneNote = text => (toPhone ? { systemMessage: `sub-human: ${text}` } : {});
+
 const block = (reason, extra = {}) => out({
-  decision: 'block', reason,
+  decision: 'block', reason, ...phoneNote(reason),
   hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true, ...extra },
 });
 
@@ -95,6 +101,7 @@ function handle(input) {
   const prompt = typeof input.prompt === 'string' ? input.prompt : '';
   // The origin the shim says the prompt came from (prompt.submit e.origin.kind), or null; it posts only attested.
   const claimed = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
+  toPhone = claimed === 'bridge';
   const raw = prompt.startsWith('/') ? null : parse(prompt);
   const me = whoami(input);
   if (me && me.role === 'orch') { // the origin unchecked: a forged one here only refuses more
@@ -121,11 +128,8 @@ function handle(input) {
     if (!(err instanceof room.RoomError)) throw err;
     return block(`✗ not posted: ${err.message}`); // OFFLINE, RATE, AUTH: never queued
   }
-  out({
-    continue: false,
-    stopReason: `✓ sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`,
-    hookSpecificOutput: { hookEventName: 'UserPromptSubmit' },
-  });
+  const sent = `✓ sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`;
+  out({ continue: false, stopReason: sent, ...phoneNote(sent), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 }
 
 module.exports = { handle, parse, TYPED_ORIGINS, NO_ORIGIN };

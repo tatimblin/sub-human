@@ -4,7 +4,8 @@
 // chooses it. `/sub-human NAME [CODE]` joins CODE (else the one open room, else a new one) as NAME, leaving any other
 // room, and (re)starts a room's orch without waiting for it (lib/orch.js claimSpawn). Bare `/sub-human` binds the
 // orch's own session (agent_type sub-human:orchestrator + SUB_HUMAN_ROOM), else explains usage. Creates the seat
-// key (hooks/seat-key.js). Out: the mechanics block (common.js contextBlock) and a one-line systemMessage; the title
+// key (hooks/seat-key.js). Out: the mechanics block (common.js contextBlock; a systemMessage only for a refusal or the
+// bypass-permissions warning: Claude Code draws one as a warning, and Remote Control shows it); the title
 // comes on the next prompt (mod/prompt.mjs), since UserPromptExpansion has no sessionTitle. Failure blocks the
 // prompt with a reason, no model turn. A seat needs the hooks module (its guard, prompt gate and delivery), so
 // without a fresh hello lease for this session (identity.modLeaseOk) the join is refused with NO_MODULE.
@@ -32,14 +33,24 @@ const ORCH_AGENT = 'sub-human:orchestrator';
 const USAGE = 'usage: /sub-human NAME [CODE]. It joins the open room as NAME, or opens one and starts its orch for you (the orch is never launched by hand). '
   + '/sub-human host gives an invite to your room; /sub-human join NAME INVITE joins a room on another machine.';
 const BYPASS = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
-const block = reason => out({ decision: 'block', reason: `sub-human: ${reason}` });
+// A refusal is also the systemMessage: Remote Control shows a hook's systemMessage, not a block reason.
+const block = reason => out({ decision: 'block', reason: `sub-human: ${reason}`, systemMessage: `sub-human: ${reason}` });
 const NO_MODULE = 'sub-human needs Claude Code 2.1.292+ with function hooks on; not in --bare or safe mode';
 
+/** A note in a join's message that the person must hear: the orch could not start, or its last start failed. */
+const TROUBLE = /· no orch \(|the last start failed: /;
+
+/**
+ * A join that worked: the mechanics block for the model. No systemMessage, which Claude Code draws as a warning (the
+ * session title and the room row say it worked), unless something in it is one: the orch
+ * did not start, or the bypass-permissions warning.
+ */
 function success(me, lead, msg, input) {
   presence(me, 'working');
-  const warn = input.permission_mode === 'bypassPermissions' && me.role !== 'orch' ? BYPASS : '';
+  const bypass = input.permission_mode === 'bypassPermissions' && me.role !== 'orch' ? BYPASS : '';
+  const warn = bypass || TROUBLE.test(msg) ? `sub-human: ${msg}${bypass}` : null;
   out({
-    systemMessage: `sub-human: ${msg}${warn}`,
+    ...(warn ? { systemMessage: warn } : {}),
     hookSpecificOutput: { hookEventName: 'UserPromptExpansion', additionalContext: contextBlock(me, lead) },
   });
 }
@@ -79,7 +90,8 @@ function host(cur) {
   if (!cur) return block('join a room first (/sub-human NAME); /sub-human host then gives an invite to it.');
   if (!identity.isHost(cur.code)) return block(`room ${cur.code} is hosted on another machine; its host gives the invites.`);
   const { invite } = auth.mintInvite(room.open(cur.code).store, { locator: link.pipeLocator() });
-  return block(`invite to room ${cur.code}, for one machine (shown once; keep it to yourself): ${invite}\nThere, type: /sub-human join NAME ${invite}`);
+  // the block reason only (this terminal, never the model): not a systemMessage, which Remote Control would carry off
+  return out({ decision: 'block', reason: `sub-human: invite to room ${cur.code}, for one machine (shown once; keep it to yourself): ${invite}\nThere, type: /sub-human join NAME ${invite}` });
 }
 
 /** The link file for an invite's room (kept once it holds a token); its code, or null after a block(). */

@@ -485,7 +485,6 @@ S11() { # remote: carol joins from a second home (another machine, on this one) 
   local SESSIONS="$SESSIONS,sh-carol"   # snap carol's pane too, in this scene
   submit carol "/sub-human join carol $invite"
   need wait_log --kind member_joined --from carol --after "$before" --timeout 60 --what "the host logs carol's join (her link redeemed the invite)" || return 1
-  need wait_pane carol "joined $(room) as carol" 60 || return 1
   need wait_pane carol "$(panel_row "$(room)")" 90 --what "carol's room row" || return 1
   settle alice carol
   snap "alice runs /sub-human host: a one-time invite, shown to her only. carol, in another home, joins with it: her link daemon mirrors the room"

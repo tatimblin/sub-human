@@ -84,3 +84,20 @@ test('deliver: a wake nothing took is held for the next turn.start, newest PENDI
   assert.equal(held.length, d.PENDING_MAX);
   assert.equal(held[0], 'w3');
 });
+
+test('deliver: typed through Remote Control (remote), chat is relayed as a prompt; mid-turn, a notice now and a relay at the turn\'s end', async () => {
+  const d = await load('mod/core/deliver.mjs');
+  const chat = { type: 'chat', lines: ['bob: hi', 'carol joined'] };
+  assert.deepEqual(d.route(chat), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: 'carol joined' }]);
+  const relay = `${d.RELAY_HEAD}\nbob: hi\ncarol joined`;
+  assert.deepEqual(d.route(chat, { remote: true }), [{ do: 'submit', text: relay, seen: ['bob: hi', 'carol joined'] }]);
+  assert.deepEqual(d.route(chat, { remote: true, turnRunning: true }), [
+    { do: 'log', text: 'bob: hi' }, { do: 'log', text: 'carol joined' }, { do: 'relay-later', text: relay },
+  ]);
+  assert.equal(d.relayText('sub-human: ✓ sent'), `${d.RELAY_HEAD}\nsub-human: ✓ sent`);
+  assert.equal(d.relayText(''), d.RELAY_HEAD, 'nothing to show: the head alone');
+  const { gateVerdict, onRemote } = await load('mod/core/prompt.mjs');
+  assert.equal(gateVerdict({ text: relay, origin: { kind: 'plugin', name: 'sub-human' } }), null, 'a relay never reads as a post');
+  assert.deepEqual(['bridge', 'composer', 'sdk', 'peer', 'plugin'].map(kind => onRemote({ kind })), [true, false, false, undefined, undefined]);
+  assert.equal(onRemote(undefined), undefined);
+});

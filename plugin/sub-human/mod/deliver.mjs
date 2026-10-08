@@ -8,10 +8,14 @@
  * DELIVERY_ERROR_NOTICE (rate-limited), so the person learns the room may hold something they did not get.
  *
  *   delivering(sid) -> bool     the child follows a seat for this session id (mod/prompt.mjs skips node on it)
+ *   setRemote(on)               mod/prompt.mjs: the person's last typed prompt came through Remote Control (true) or
+ *                               this terminal (false); undefined changes nothing. Module state: a reload forgets it
+ *   holdRelay(text) -> bool     mod/prompt.mjs: a relay for the person on Remote Control, held for the running turn's
+ *                               end (true), or the caller submits it now (false: idle)
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS,
+  relayText, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS,
 } from './core/deliver.mjs';
 import { parseHello } from './core/seat.mjs';
 import { shimArgv, shimEnv, SHIM_TIMEOUT_MS } from './core/shim.mjs';
@@ -74,12 +78,18 @@ let child = null;
 /** The main-loop turn (running is null when idle, or unknown after a reload: then a wake is submitted, which waits
  * for idle anyway), its mid-turn wakes and the wakes held for the next turn. */
 const turns = turnLedger();
+/** The person types from Remote Control (mod/prompt.mjs setRemote): chat is relayed as prompts there. */
+let remote = false;
+/** Relays that came while a main-loop turn ran: submitted, as one, at its end. */
+let relays = [];
 /** When the delivery-error notice last showed ($.clock); a reload may show it once more. */
 let noticedAt = -Infinity;
 /** Error counts in order: two failures at once must not both read the same count. */
 let counting = Promise.resolve();
 
 export const delivering = sid => !!(child && !child.stopped && child.sid === sid && child.seat);
+
+export function setRemote(on) { if (typeof on === 'boolean') remote = on; }
 
 const userRow = text => ({ message: { type: 'user', content: [{ type: 'text', text }] } });
 
@@ -139,6 +149,22 @@ async function midTurnWake($, text) {
   // a clock that fails dates the row as never read: submitted again rather than lost
   const at = await $.clock.now().catch(() => Infinity);
   if (!turns.appended(text, at)) await submitWake($, text, { appended: true });
+}
+
+/** The relays held while a turn ran, as one prompt (their heads merged). */
+function flushRelays($) {
+  if (!relays.length) return;
+  const lines = relays.flatMap(t => t.split('\n').slice(1));
+  relays = [];
+  void submitWake($, relayText(lines), { seen: lines });
+}
+
+/** mod/prompt.mjs: a relay (relayText) for the person on Remote Control while a main-loop turn runs is held for its
+ * end (true); when idle the caller submits it itself (false). */
+export function holdRelay(text) {
+  if (turns.running === null) return false;
+  relays.push(text);
+  return true;
 }
 
 function stopChild(sid) {
@@ -215,7 +241,7 @@ async function apply($, c, ev) {
   if (!ev || c.stopped) return;
   const role = c.seat && c.seat.role === 'orch' ? 'orch' : 'member';
   const rows = ev.type === 'wake' && role === 'orch' ? await heldRows($) : null;
-  const actions = route(ev, { turnRunning: turns.running !== null, role, rows });
+  const actions = route(ev, { turnRunning: turns.running !== null, role, rows, remote: remote && role === 'member' });
   for (const a of actions) {
     switch (a.do) {
       case 'seat': c.seat = a.seat; break;
@@ -224,6 +250,7 @@ async function apply($, c, ev) {
       case 'hold-rows': await $.state.set(ROWS, a.text); break;
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
+      case 'relay-later': if (turns.running !== null) relays.push(a.text); else void submitWake($, a.text); break;
       default: break;
     }
   }
@@ -275,7 +302,10 @@ export function registerDeliver(on) {
   on('turn.complete', ($, e, next) => {
     // a wake appended while the turn's last request was already out was never read: submit it after all (its row
     // is stored, so a failed submit leaves it for the next request)
-    if (e.agentId === undefined) for (const text of turns.complete(e.turnId)) void submitWake($, text, { appended: true });
+    if (e.agentId === undefined) {
+      for (const text of turns.complete(e.turnId)) void submitWake($, text, { appended: true });
+      if (turns.running === null) flushRelays($);
+    }
     return next(e);
   });
 

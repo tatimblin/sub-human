@@ -107,7 +107,7 @@ test('join pins the seat key in member_joined: the keyed room never counts an un
   const joinAs = name => { w.pid[name] = sleeper(); w.sid[name] = sid(); return w.hook('join', expand(`${name} ${w.code}`), { as: name }); };
   const r = joinAs('bob');
   assert.equal(r.code, 0, r.stderr);
-  assert.match(r.json.systemMessage, /joined/);
+  assert.equal(r.json.systemMessage, undefined, 'a join that worked shows no systemMessage');
   const kdir = path.join(w.home, 'keys', w.code);
   const joined = w.entries().filter(e => e.kind === 'member_joined');
   assert.deepEqual(joined.map(e => [e.from, e.pubkey]), [['bob', fs.readFileSync(path.join(kdir, 'bob.pub'), 'utf8')]]);

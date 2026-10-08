@@ -9,8 +9,8 @@ module.exports = {
     const { code } = x;
     const j = x.byKind('member_joined', { from: 'bob' })[0];
     det('member_joined bob (via system)', j && j.via === 'system', x.fmt(j));
-    const rc = /sub-human: joined ([a-z]+-\d{4}) as bob \(([^)]*)\)/.exec(x.cap('S2', 'bob') || '');
-    det('bob\'s join line: "joined CODE as bob (alice, orch here)"', rc && rc[1] === code && /alice/.test(rc[2]) && /orch/.test(rc[2]), rc ? rc[0] : `not in ${x.capName('S2', 'bob')}`);
+    const warned = /sub-human: (?:opened room|joined |in room )[^\n]*/.exec(x.cap('S2', 'bob') || '');
+    det('bob\'s join prints no line (a join that works shows no warning-styled systemMessage)', !warned, warned ? `"${warned[0]}" in ${x.capName('S2', 'bob')}` : `none in ${x.capName('S2', 'bob')}`);
     const ha = x.st('S2', 1, 'holds-alice.json', {}), hb = x.st('S2', 1, 'holds-bob.json', {}), ho = x.st('S2', 1, 'holds-orch.json', {});
     det('Rows: bob nested in alice\'s room row, alice in bob\'s, both in the orch\'s', ha.room && (ha.members || []).includes('bob') && hb.room && (hb.members || []).includes('alice') && ['alice', 'bob'].every(n => (ho.members || []).includes(n)),
       `holds-alice ${JSON.stringify({ room: ha.room, members: ha.members })}; holds-bob ${JSON.stringify({ room: hb.room, members: hb.members })}; holds-orch ${JSON.stringify(ho.members)}`);

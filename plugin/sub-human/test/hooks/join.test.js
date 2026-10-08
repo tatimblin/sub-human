@@ -27,8 +27,9 @@ test('/sub-human NAME with no open room: opens a room, joins as a member, spawns
   const s = stub();
   const r = w.hook('join', expand('alice'), { as: 'alice', env: { SUB_HUMAN_CLAUDE: s.bin, SUB_HUMAN_PLUGIN_DIR: PLUGIN } });
   assert.equal(r.code, 0, r.stderr);
-  const m = /^sub-human: opened room ([a-z]+-\d{4}) as alice · others: \/sub-human NAME · starting the orch…$/.exec(r.json.systemMessage);
-  assert.ok(m, r.json.systemMessage);
+  assert.equal(r.json.systemMessage, undefined, 'a join that worked shows no (warning-styled) systemMessage');
+  const m = /in room ([a-z]+-\d{4})/.exec(hso(r).additionalContext);
+  assert.ok(m, hso(r).additionalContext);
   w.code = m[1];
   assert.ok(['pending', '0b500131'].includes(w.members().orch.job), 'claimed before the hook returned');
   assert.ok(await until(() => w.members().orch.job === '0b500131'), 'the detached starter records members.json orch {job}');
@@ -58,7 +59,8 @@ test('/sub-human NAME with no open room: opens a room, joins as a member, spawns
   assert.deepEqual([es[0].kind, es[0].from, es[0].via], ['member_joined', 'alice', 'system']);
   // already seated: idempotent, no second room or orch
   const r2 = w.hook('join', expand('alice'), { as: 'alice', env: { SUB_HUMAN_CLAUDE: s.bin } });
-  assert.match(r2.json.systemMessage, new RegExp(`in room ${w.code} as alice`));
+  assert.equal(r2.json.systemMessage, undefined);
+  assert.match(hso(r2).additionalContext, /\(already joined\)$/);
   assert.equal(fs.readdirSync(path.join(w.home, 'rooms')).length, 1);
   assert.equal(bgCalls(s).length, 1);
 });
@@ -71,7 +73,7 @@ test('the orch\'s launch /sub-human binds it (agent_type orchestrator + SUB_HUMA
   const r = w.hook('join', input, { as: 'orch', env: { SUB_HUMAN_ROOM: w.code } });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.json.decision, undefined, r.json.reason);
-  assert.equal(r.json.systemMessage, `sub-human: orch of room ${w.code}`);
+  assert.equal(r.json.systemMessage, undefined);
   const o = w.members().orch;
   assert.deepEqual([o.role, o.pid, o.job, o.session_id], ['orch', process.pid, '0b500131', w.sid.orch]);
   const c = hso(r).additionalContext;
@@ -79,7 +81,8 @@ test('the orch\'s launch /sub-human binds it (agent_type orchestrator + SUB_HUMA
   assert.match(c, /subagent_type: "sub-human:participant", description: "alice"/);
   assert.equal(w.entries().length, 0, 'the orch logs no member_joined');
   const again = w.hook('join', input, { as: 'orch', env: { SUB_HUMAN_ROOM: w.code } });
-  assert.equal(again.json.systemMessage, `sub-human: orch of room ${w.code}`);
+  assert.equal(again.json.systemMessage, undefined);
+  assert.match(hso(again).additionalContext, /\(room already open\)$/);
   const named = w.hook('join', { ...expand('bob'), agent_type: 'sub-human:orchestrator' }, { as: 'orch', env: { SUB_HUMAN_ROOM: w.code } });
   assert.equal(named.json.decision, 'block');
   assert.match(named.json.reason, /orchestrator agent/);
@@ -90,14 +93,15 @@ test('debug launch: an orchestrator-agent session without SUB_HUMAN_ROOM opens a
   w.pid.me = process.pid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000003';
   const input = { ...expand(''), agent_type: 'sub-human:orchestrator' };
   const r = w.hook('join', input, { as: 'me', env: { SUB_HUMAN_ROOM: undefined } });
-  const m = /^sub-human: room ([a-z]+-\d{4}) open · others join with: \/sub-human NAME \1$/.exec(r.json.systemMessage);
-  assert.ok(m, r.json.systemMessage);
+  const m = /headless helper of room ([a-z]+-\d{4})/.exec(hso(r).additionalContext);
+  assert.ok(m && r.json.systemMessage === undefined, JSON.stringify(r.json));
   w.code = m[1];
   assert.equal(w.members().orch.pid, process.pid);
   const w2 = new World({ bob: 'sleep' });
   w2.pid.me = process.pid; w2.sid.me = 'aaaaaaaa-0000-4000-8000-000000000004';
   const r2 = w2.hook('join', { ...expand(w2.code), agent_type: 'sub-human:orchestrator' }, { as: 'me', env: { SUB_HUMAN_ROOM: undefined } });
-  assert.equal(r2.json.systemMessage, `sub-human: orch of room ${w2.code}`);
+  assert.equal(r2.json.systemMessage, undefined);
+  assert.equal(w2.members().orch.pid, process.pid);
 });
 
 test('/sub-human with no name in a plain session explains usage; a seated member is told their seat', () => {
@@ -114,13 +118,13 @@ test('/sub-human with no name in a plain session explains usage; a seated member
   assert.match(r.json.reason, new RegExp(`you are alice in room ${w.code} \\(address alice\\.${w.code}\\)`));
 });
 
-test('NAME CODE joins a room whose orch runs: no spawn; the message lists who is here', () => {
+test('NAME CODE joins a room whose orch runs: no spawn, no systemMessage; the block lists who is here', () => {
   const w = new World({ orch: 'sleep', alice: 'sleep' });
   w.pid.bob = process.pid; w.sid.bob = 'aaaaaaaa-0000-4000-8000-000000000006';
   const s = stub(w.code);
   const r = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
   assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.json.systemMessage, `sub-human: joined ${w.code} as bob (orch, alice here)`);
+  assert.equal(r.json.systemMessage, undefined);
   assert.equal(s.calls().length, 0);
   const c = hso(r).additionalContext;
   assert.match(c, new RegExp(`room ${w.code} \\(with alice, orch\\)`));
@@ -128,21 +132,21 @@ test('NAME CODE joins a room whose orch runs: no spawn; the message lists who is
   assert.equal(w.members().bob.session_id, w.sid.bob);
 });
 
-test('joining a room with no live orch restarts it; a failed start is retried by the next join, which says why', async () => {
+test('joining a room with no live orch restarts it; a failed start is retried by the next join, which says why (a systemMessage)', async () => {
   const w = new World({ alice: 'sleep' });
   w.pid.bob = process.pid; w.sid.bob = 'aaaaaaaa-0000-4000-8000-000000000007';
   const r = w.hook('join', expand(`bob ${w.code}`), { as: 'bob' }); // SUB_HUMAN_CLAUDE=/usr/bin/false
   assert.equal(r.json.decision, undefined);
-  assert.equal(r.json.systemMessage, `sub-human: joined ${w.code} as bob (alice here) · starting the orch…`);
+  assert.equal(r.json.systemMessage, undefined, 'starting the orch is no trouble');
   assert.ok(await until(() => w.members().orch.spawn_error), 'the starter records the failure');
   assert.equal(w.members().orch.job, null);
   const s = stub(w.code);
   const r2 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
-  assert.match(r2.json.systemMessage, /· starting the orch… \(the last start failed: .+\)$/);
+  assert.match(r2.json.systemMessage, new RegExp(`^sub-human: in room ${w.code} as bob · starting the orch… \\(the last start failed: .+\\)$`));
   assert.ok(await until(() => w.members().orch.job === '0b500131'));
   assert.equal(bgCalls(s).length, 1);
   const r3 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
-  assert.doesNotMatch(r3.json.systemMessage, /starting/, 'a job that has not bound yet is not restarted');
+  assert.equal(r3.json.systemMessage, undefined, 'a job that has not bound yet is not restarted');
 });
 
 test('two concurrent joins start one orch: the second sees the pending claim', async () => {
@@ -170,8 +174,7 @@ test('two concurrent joins start one orch: the second sees the pending claim', a
   const t0 = Date.now();
   const [a, b] = await Promise.all([run('bob'), run('carol')]);
   assert.ok(Date.now() - t0 < 5000, 'the hooks did not wait for the spawn');
-  const msgs = [a.systemMessage, b.systemMessage];
-  assert.equal(msgs.filter(m => /starting the orch/.test(m)).length, 1, msgs.join(' | '));
+  assert.deepEqual([a.systemMessage, b.systemMessage], [undefined, undefined]);
   assert.ok(await until(() => w.members().orch.job === '0b500131'));
   await new Promise(r => setTimeout(r, 300));
   const calls = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(JSON.parse);
@@ -194,8 +197,8 @@ test('NAME without CODE ignores a room where only the orch is left, opens a new 
   w.pid.erin = process.pid; w.sid.erin = 'aaaaaaaa-0000-4000-8000-000000000017';
   const r = w.hook('join', expand('erin'), { as: 'erin' });
   assert.equal(r.json.decision, undefined, r.json.reason);
-  const m = /^sub-human: opened room ([a-z]+-\d{4}) as erin/.exec(r.json.systemMessage);
-  assert.ok(m && m[1] !== orphan, r.json.systemMessage);
+  const m = /in room ([a-z]+-\d{4})/.exec(hso(r).additionalContext);
+  assert.ok(m && m[1] !== orphan, hso(r).additionalContext);
   assert.ok(w.members().orch.closing, 'the orphan room was marked closing by the sweep');
 });
 
@@ -210,7 +213,7 @@ test('the bare command name "sub-human" is accepted too; other commands are igno
   const w = new World({ orch: 'sleep' });
   w.pid.alice = process.pid; w.sid.alice = 'aaaaaaaa-0000-4000-8000-000000000009';
   const r = w.hook('join', { ...expand(`alice ${w.code}`), command_name: 'sub-human' }, { as: 'alice' });
-  assert.match(r.json.systemMessage, /joined/);
+  assert.match(r.json.hookSpecificOutput.additionalContext, /^SUB-HUMAN: you are alice's Claude in room /);
   const r2 = w.hook('join', { ...expand(`bob ${w.code}`), command_name: 'other:thing' }, { as: 'alice' });
   assert.equal(r2.stdout, '');
 });
@@ -228,7 +231,7 @@ test('without the hooks module\'s hello lease for the session the join is refuse
   w.modLease('aaaaaaaa-0000-4000-8000-000000000032');
   assert.equal(w.hook('join', expand(`alice ${w.code}`), { as: 'alice', modLease: false }).json.decision, 'block');
   // with its own lease it joins
-  assert.match(w.hook('join', expand(`alice ${w.code}`), { as: 'alice' }).json.systemMessage, /joined/);
+  assert.match(w.hook('join', expand(`alice ${w.code}`), { as: 'alice' }).json.hookSpecificOutput.additionalContext, /^SUB-HUMAN: you are alice's Claude in room /);
 });
 
 /** Write sid's hello lease as mod-hello would have, at time `at`, for the claude process pid. */
@@ -256,7 +259,7 @@ test('a resumed old session id with a stale lease cannot join; a lease from this
   assert.equal(w.entries().length, 0);
   // the lease mod-hello wrote at this process's start, an hour ago
   leaseAt(w, w.sid.alice, w.pid.alice, old);
-  assert.match(w.hook('join', expand(`alice ${w.code}`), { as: 'alice', modLease: false }).json.systemMessage, /joined/);
+  assert.match(w.hook('join', expand(`alice ${w.code}`), { as: 'alice', modLease: false }).json.hookSpecificOutput.additionalContext, /^SUB-HUMAN: you are alice's Claude in room /);
 });
 
 test('join\'s sweep prunes hello leases whose process is gone', async () => {
@@ -264,7 +267,7 @@ test('join\'s sweep prunes hello leases whose process is gone', async () => {
   const live = leaseAt(w, 'aaaaaaaa-0000-4000-8000-000000000051', w.pid.bob, Date.now() - 3_600_000);
   const gone = leaseAt(w, 'aaaaaaaa-0000-4000-8000-000000000052', await require('../helpers.js').deadPid(), Date.now());
   w.pid.alice = process.pid; w.sid.alice = 'aaaaaaaa-0000-4000-8000-000000000053';
-  assert.match(w.hook('join', expand('alice'), { as: 'alice' }).json.systemMessage, /joined/);
+  assert.match(w.hook('join', expand('alice'), { as: 'alice' }).json.hookSpecificOutput.additionalContext, /^SUB-HUMAN: you are alice's Claude in room /);
   assert.ok(fs.existsSync(live), 'a live process keeps its lease');
   assert.ok(!fs.existsSync(gone), 'a gone process\'s lease is pruned');
   assert.ok(fs.existsSync(path.join(w.home, 'sessions', 'mods', `${w.sid.alice}.json`)), 'the joiner keeps its own');
@@ -335,7 +338,7 @@ test('joining another room switches to it; the orch cannot switch rooms', () => 
   const newCode = w.lib(() => identity.newCode());
   let r = w.hook('join', expand(`alice ${newCode}`), { as: 'alice' });
   assert.equal(r.json.decision, undefined, r.json.reason);
-  assert.match(r.json.systemMessage, new RegExp(`joined ${newCode} as alice`));
+  assert.match(hso(r).additionalContext, new RegExp(`in room ${newCode}`));
   const left = w.entries().at(-1);
   assert.deepEqual([left.kind, left.from, left.via], ['member_left', 'alice', 'system'], 'old room logs the departure');
   assert.ok(w.members().alice.left_at, 'old seat marked left');
@@ -357,7 +360,7 @@ test('NAME without CODE joins the only open room (one live seat is enough); seve
   w.pid.alice = process.pid; w.sid.alice = 'aaaaaaaa-0000-4000-8000-000000000012';
   let r = w.hook('join', expand('alice'), { as: 'alice' });
   assert.equal(r.json.decision, undefined, r.json.reason);
-  assert.match(r.json.systemMessage, new RegExp(`joined ${w.code} as alice \\(carol here\\)`));
+  assert.match(hso(r).additionalContext, new RegExp(`room ${w.code} \\(with carol`));
   const first = w.code;
   w.code = w.lib(() => identity.newCode());
   w.join('dave', 'sleep');
@@ -449,4 +452,16 @@ test('block: no template file (or one without placeholders) falls back to the bu
 test('seatTitle is the native address NAME.CODE', () => {
   const common = require('../../hooks/common.js');
   assert.equal(common.seatTitle({ code: 'vole-8126', name: 'alice' }), 'alice.vole-8126');
+});
+
+test('a refused join is also the systemMessage (Remote Control shows that, not a block reason); an invite is the block reason only', () => {
+  const w = new World({ orch: 'sleep', alice: 'act' });
+  const r = w.hook('join', expand('a b c'), { as: 'alice' });
+  assert.equal(r.json.decision, 'block');
+  assert.equal(r.json.systemMessage, r.json.reason);
+  assert.match(r.json.reason, /usage: \/sub-human NAME/);
+  const inv = w.hook('join', expand('host'), { as: 'alice' });
+  assert.equal(inv.json.decision, 'block');
+  assert.match(inv.json.reason, /invite to room /);
+  assert.equal(inv.json.systemMessage, undefined, 'the invite stays off Remote Control');
 });

@@ -37,7 +37,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   const alice = host.seat('alice'), carol = host.seat('carol'), bob = remote.seat('bob');
 
   // the host's room, and an invite to it
-  assert.match(host.join(alice, 'alice').json.systemMessage, /opened room/);
+  assert.equal(host.join(alice, 'alice').json.decision, undefined);
   const code = host.lib(() => store.listRooms()[0]);
   host.join(carol, `carol ${code}`);
   const shown = host.join(alice, 'host').json;
@@ -46,7 +46,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
 
   // bob joins from the other home: the join hook starts his link daemon, which redeems the invite
   const joined = remote.join(bob, `join bob ${invite}`);
-  assert.match(joined.json.systemMessage, new RegExp(`joined ${code} as bob \\(alice, carol here\\)`), joined.stderr);
+  assert.equal(joined.json.systemMessage, undefined, joined.stderr);
   assert.match(joined.json.hookSpecificOutput.additionalContext, /SUB-HUMAN: you are bob's Claude/);
   const daemon = remote.lib(() => link.status(code));
   t.after(() => { kill(childOf(daemon.pid)); kill(daemon.pid); fs.rmSync(path.dirname(link.socketPath(path.join(remote.home, 'rooms', code))), { recursive: true, force: true }); });

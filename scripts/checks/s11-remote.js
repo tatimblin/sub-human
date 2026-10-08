@@ -34,8 +34,8 @@ module.exports = {
     const quoted = x.inSpan(x.entries('alice'), x.span('S11')).filter(e => e.type === 'assistant' && /sh1\.[a-z]+-\d{4}\./.test(x.textOf(e.message && e.message.content)));
     det('alice\'s Claude never sees it: no assistant text in S11 quotes an invite', quoted.length === 0, quoted.length ? `${quoted.length} assistant message(s) quote one` : 'none');
 
-    const jl = new RegExp(`joined ${code} as carol \\(([^)]*)\\)`).exec(x.cap('S11', 'carol') || '');
-    det('carol\'s join line: "joined CODE as carol (… here)" with alice and bob', jl && /alice/.test(jl[1]) && /bob/.test(jl[1]), jl ? jl[0] : `not in ${x.capName('S11', 'carol')}`);
+    const warned = /sub-human: (?:opened room|joined |in room )[^\n]*/.exec(x.cap('S11', 'carol') || '');
+    det('carol\'s join prints no line (a join that works shows no warning-styled systemMessage)', !warned, warned ? `"${warned[0]}" in ${x.capName('S11', 'carol')}` : `none in ${x.capName('S11', 'carol')}`);
 
     const say = log.find(e => e.kind === 'say' && e.from === 'carol' && e.via === 'human' && e.text === DEMO.carol11);
     det('carol\'s @room is her exact words (via=human), signed in her home and verified on the host', say && trust(say) === 'verified',

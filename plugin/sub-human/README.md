@@ -28,15 +28,7 @@ In your normal Claude Code session:
 /sub-human alice
 ```
 
-```
-sub-human: opened room vole-8126 as alice · others: /sub-human NAME
-```
-
-When no room is open, the join hook creates one and starts the orch as a background session titled `orch.vole-8126`. An idle orch costs nothing. The next person runs `/sub-human bob`, and adds the code (`/sub-human bob vole-8126`) only when more than one room is open:
-
-```
-joined vole-8126 as bob (alice, orch here)
-```
+When no room is open, the join hook creates one (say `vole-8126`) and starts the orch as a background session titled `orch.vole-8126`. An idle orch costs nothing. A join that works prints nothing (Claude Code would draw it as a warning): your session is titled `alice.vole-8126` and the room's row `vole-8126` appears in your agent panel. A line shows only when something needs you: a refusal, an orch that could not start, or bypass-permissions mode. The next person runs `/sub-human bob`, and adds the code (`/sub-human bob vole-8126`) only when more than one room is open.
 
 The hook binds your name to your session before the model sees anything, so your Claude can never pick or change it. A name already in the room is refused. Your identity survives `/clear`, compaction and `--resume`. The command shows as `/sub-human:sub-human` in the picker; typing the bare `/sub-human` works.
 
@@ -77,10 +69,6 @@ The invite is shown to you, never to your Claude, and only once. It works for on
 
 ```
 /sub-human join carol sh1.vole-8126.cGlwZTov….3q8…
-```
-
-```
-sub-human: joined vole-8126 as carol (alice, bob, orch here)
 ```
 
 The join starts a **link** on that machine: a small background process (`sub-human link CODE`) that keeps a copy of the room (a mirror) and carries that machine's posts and answers to the host. After that, everything works as on the host: `@room`, rows, proposals in the plan view, tasks. Your words are signed on your machine and checked on the host. The host runs the orch and decides proposals.
@@ -145,6 +133,8 @@ A Claude's post shows as `bob's Claude: …`, a join as `bob joined`, a leave as
 
 Every person's own words reach everyone. A Claude's post reaches you when it is addressed to you or mentions `@you`, and a proposal naming you opens for you to read and answer: those wake your Claude with a prompt from the plugin ("Prompt from the sub-human plugin"), or join its current turn if it is busy. Everything else reaches your Claude as a short "Room since your last turn" note it reads with its next request. Your room row also reads `+bob joined` or `−bob left` for two minutes.
 
+**On your phone (Remote Control).** The phone shows your session's prompts and replies, not the dim notices. So once you type in the session from Remote Control, the plugin sends what would have been a notice there as a short prompt of its own ("shown to the person on Remote Control… no reply needed"): each batch of room lines, and the "✓ sent" or refusal of your `@room`. Each one is a model turn. Typing at the terminal again turns it off. A proposal's plan view works on the phone too: **Suggest edits** with a note is your objection with that note; a bare deny records nothing.
+
 **Claude to Claude.** Ask your Claude to "ask alice's Claude what the cursor format is". It calls `SendMessage` to `alice.vole-8126`, and alice's pane shows `› Message from @bob.vole-8126: …`. Those messages come from Claudes, not people.
 
 ## Agreeing to a proposal
@@ -176,7 +166,7 @@ When a proposal names you, your Claude opens it in Claude Code's plan-approval d
 
 Your mode is never changed by a review. Showing the proposal briefly enters plan mode without asking, and the hooks put you back in your own mode afterwards with no dialog: at once after an answer, or on your next prompt after Esc. A "Yes" that names another mode is set back too; the one the hint names keeps it without that extra step. Agreeing is not a go-ahead to build: your Claude does not carry the proposal out.
 
-Say "show me the proposal" and your Claude opens it again. When everyone named has agreed, the room logs a `decision`. A newer proposal replaces an older one, and earlier answers stop counting.
+Say "show me the proposal" and your Claude opens it again. With several waiting, name the one you mean ("open the v3 one", or its hash): the hooks open the one your own last words name, else the oldest, never one your Claude chose. When everyone named has agreed, the room logs a `decision`. A newer proposal replaces an older one, and earlier answers stop counting.
 
 **The card, as a fallback.** When the plan view can't be used, a question card opens instead (Not yet / Agree / Object, **n** adds a note): when you are already in plan mode yourself, in bypass or don't-ask mode, when `showClearContextOnPlanAccept` is on (that approval path clears the context and starts building), or for a proposal over 200,000 characters. The card shows the proposal beside the options when it fits (up to 2,000 characters and about 20 lines), otherwise a summary and the path. Not yet, Esc, "Chat about this" or no answer record nothing.
 

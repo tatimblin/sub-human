@@ -2,7 +2,7 @@
 // The gate's table and the prefilter are tested in node (test/mod-core.test.js, test/hooks/security.test.js); this
 // checks the hooks: a peer @room is dropped before anything beneath runs, an unseated prompt starts no node, a
 // seated one runs hooks/prompt.js with the origin in its stdin, and the shim's answer and notices reach the session.
-import { test, expect } from 'claude-code/testing'
+import { test, expect, mock } from 'claude-code/testing'
 import { SEAT, OUT, ran, scriptOf, session, start } from './support.mjs'
 
 const SID = 'sid-p'
@@ -184,4 +184,25 @@ test('an unseated session writes no presence', async ($, on) => {
   await submit($, 'hi')
   await new Promise(r => setTimeout(r, 20))
   expect(seen.presence.length).toBe(0)
+})
+
+test('an @room typed through Remote Control: its result is relayed as a prompt of its own (no notice shows there)', async ($, on) => {
+  const out = { continue: false, stopReason: '✓ sent', systemMessage: 'sub-human: ✓ sent', subHuman: { reviewOpen: false }, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } }
+  const seen = world($, on, { prompt: JSON.stringify(out) })
+  const clock = mock.clock(on, { now: 0 })
+  await start($)
+  await submit($, '@room ship it', 'bridge')
+  expect(seen.stdin[0].sub_human_origin).toBe('bridge')
+  expect(seen.classic[0].preventContinuation).toBe(true)
+  const relayed = () => seen.entered.filter(t => t.startsWith('(for Claude) sub-human: shown to the person on Remote Control'))
+  expect(relayed()).toEqual([]) // not from inside the hook that holds the prompt
+  expect(seen.logs).toEqual([]) // and no notice: the phone would not show it
+  await clock.advance(250)
+  const t0 = Date.now()
+  while (!relayed().length && Date.now() - t0 < 3000) await new Promise(r => setTimeout(r, 20))
+  expect(relayed()[0].split('\n').slice(1)).toEqual(['sub-human: ✓ sent'])
+  // typed here, the same answer is a notice (this world's prompt.js answers every prompt alike, the relay's too)
+  const n = seen.logs.length
+  await submit($, '@room again')
+  expect(seen.logs.slice(n)).toEqual(['sub-human: ✓ sent'])
 })

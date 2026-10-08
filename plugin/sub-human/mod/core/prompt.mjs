@@ -34,6 +34,14 @@ export function gateVerdict(e) {
   return `✗ not posted: this @room came from ${who}, not from you. Only your own typed @room posts as your words.`;
 }
 
+/** Where the person types from, by a typed prompt's origin: bridge (Remote Control, e.g. a phone) true; composer or
+ * sdk (this terminal, -p) false; any other origin says nothing (undefined). */
+export function onRemote(origin) {
+  const kind = origin && origin.kind;
+  if (kind === 'bridge') return true;
+  return kind === 'composer' || kind === 'sdk' ? false : undefined;
+}
+
 /** The refusal when nobody could check who wrote an @room: at-room's NO_ORIGIN words, since the person does the same
  * thing either way (types it again). */
 export const GATE_FAILED = '✗ not posted: sub-human could not check who wrote this @room. Type it again.';

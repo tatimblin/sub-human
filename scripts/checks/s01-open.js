@@ -18,8 +18,8 @@ module.exports = {
     const oc = x.cap('S1', 'orch') || '';
     det('The orch bound itself as orch of the room (agent sub-human:orchestrator, pid, session id)', ms.orch && ms.orch.role === 'orch' && ms.orch.pid && ms.orch.session_id && /@sub-human:orchestrator/.test(oc),
       `members.json orch role=${ms.orch && ms.orch.role} pid=${ms.orch && ms.orch.pid}; "${(/UserPromptExpansion says: [^\n]*/.exec(oc) || ['no join line'])[0]}" in ${x.capName('S1', 'orch')} (claude logs ${job})`);
-    const rcpt = /sub-human: opened room ([a-z]+-\d{4}) as alice · others: \/sub-human NAME/.exec(x.cap('S1', 'alice') || '');
-    det('alice\'s join line: "opened room CODE as alice · others: /sub-human NAME"', rcpt && rcpt[1] === code, rcpt ? rcpt[0] : `not in ${x.capName('S1', 'alice')}`);
+    const warned = /sub-human: (?:opened room|joined |in room )[^\n]*/.exec(x.cap('S1', 'alice') || '');
+    det('alice\'s join prints no line (a join that works shows no warning-styled systemMessage)', !warned, warned ? `"${warned[0]}" in ${x.capName('S1', 'alice')}` : `none in ${x.capName('S1', 'alice')}`);
     const ar = panelRows(x.cap('S1', 'alice'));
     det(`alice's panel: one ${code} row`, ar.filter(r => !r.nested).length === 1 && ar[0].label === code, ar.map(r => r.line).join(' | ') || 'no rows');
     const orr = panelRows(oc);

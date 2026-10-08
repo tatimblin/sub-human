@@ -4,15 +4,18 @@
  * prompt-origin-composer); one the shim could not handle is refused, never let through as typed. The origin goes
  * to at-room with the session's nonce, which at-room checks against this session's lease. The origin hand-off is
  * a module variable: classic.UserPromptSubmit runs inside prompt.submit's next(e) (cc CONTRACT
- * prompt-submit-ups-order); a reload in between loses it, and at-room then refuses the @room.
+ * prompt-submit-ups-order); a reload in between loses it, and at-room then refuses the @room. A typed prompt's origin
+ * also says where the person is (onRemote): through Remote Control, room lines and @room results are relayed as
+ * prompts (mod/deliver.mjs), since the phone shows no $.ui.log notice.
  */
 import {
   gateVerdict, GATE_FAILED, isAtRoom, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
-  writesWorking,
+  writesWorking, onRemote,
 } from './core/prompt.mjs';
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.mjs';
 import { reviewOpenOf } from './core/prefilter.mjs';
-import { delivering } from './deliver.mjs';
+import { delivering, setRemote, holdRelay } from './deliver.mjs';
+import { relayText, logLines, RELAY_AFTER_MS } from './core/deliver.mjs';
 import { asHello, asNonce } from './core/state.mjs';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' };
@@ -30,8 +33,25 @@ async function helloOf($) {
   return asHello(value);
 }
 
-/** node hooks/prompt.js with the classic payload (plus the origin), translated; its notices and report applied.
- * An @room it did not handle (exit other than 0 or 2) is refused. */
+/** Show text (an @room's result) to the person on Remote Control, where no notice shows (cc CONTRACT
+ * bridge-forwarded-rows): a prompt of its own (relayText) once this hook has returned, or held for the running turn's
+ * end (mod/deliver.mjs). A prompt nothing took leaves the lines as notices here. */
+function relay($, text) {
+  const t = relayText(text);
+  const lines = t.split('\n').slice(1);
+  if (!lines.length) return;
+  const asNotices = () => { for (const a of logLines(lines)) $.ui.log(a.text); };
+  try {
+    $.clock.after(RELAY_AFTER_MS, () => {
+      if (holdRelay(t)) return;
+      $.prompt.submit({ text: t }).then(r => { if (r && typeof r.drop === 'string') asNotices(); }, asNotices);
+    });
+  } catch { asNotices(); }
+}
+
+/** node hooks/prompt.js with the classic payload (plus the origin), translated; its notices and report applied: a
+ * notice is a $.ui.log line, or for a prompt typed through Remote Control a relay (mod/deliver.mjs; the phone shows no
+ * notice). An @room it did not handle (exit other than 0 or 2) is refused, and a person on Remote Control told. */
 async function runPrompt($, e, origin) {
   const root = $.plugin.root;
   const { value: kept } = await $.state.get(NONCE);
@@ -42,9 +62,12 @@ async function runPrompt($, e, origin) {
     env: shimEnv(e, root),
     timeoutMs: SHIM_TIMEOUT_MS,
   });
-  if (shimFailed(run) && isAtRoom(e.prompt)) return failClosed(e.prompt);
+  if (shimFailed(run) && isAtRoom(e.prompt)) {
+    if (origin === 'bridge') relay($, GATE_FAILED);
+    return failClosed(e.prompt);
+  }
   const { result, systemMessage, subHuman } = toClassic('UserPromptSubmit', run);
-  if (systemMessage) $.ui.log(systemMessage);
+  if (systemMessage) { if (origin === 'bridge') relay($, systemMessage); else $.ui.log(systemMessage); }
   const open = reviewOpenOf(subHuman);
   if (open !== undefined) await $.state.set(REVIEW, open);
   return result;
@@ -57,6 +80,7 @@ export function registerPrompt(on) {
     if (why) return { drop: why };
     let down = e;
     if (e.origin && TYPED_ORIGINS.includes(e.origin.kind)) {
+      setRemote(onRemote(e.origin)); // the phone (bridge) or this terminal: where room lines must go
       const sid = await $.session.id();
       if (writesWorking(e.origin, await helloOf($), presence)) {
         presence = 'working';

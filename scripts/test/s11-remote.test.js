@@ -39,7 +39,8 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   const code = host.lib(() => store.listRooms()[0]);
   host.join(bob, `bob ${code}`);
   const shown = host.join(alice, 'host').json.reason;
-  const joined = remote.join(carol, `join carol ${inviteIn(shown)}`).json.systemMessage;
+  const joined = remote.join(carol, `join carol ${inviteIn(shown)}`).json;
+  assert.equal(joined.systemMessage, undefined, 'a join that works prints no line');
   const daemon = remote.lib(() => link.status(code));
   t.after(() => {
     kill(childOf(daemon.pid)); kill(daemon.pid);
@@ -66,7 +67,7 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   const shape = l => ({ mode: (fs.statSync(linkFile).mode & 0o777).toString(8), token: typeof l.token === 'string', invite: 'invite' in l, transport: l.transport });
   fs.writeFileSync(path.join(st, 'link-file.json'), JSON.stringify(shape(JSON.parse(fs.readFileSync(linkFile, 'utf8')))));
   const at = new Date().toISOString();
-  const caps = [['alice', 1, shown], ['alice', 2, `⏺ carol: ${DEMO.carol11}`], ['carol', 1, joined]];
+  const caps = [['alice', 1, shown], ['alice', 2, `⏺ carol: ${DEMO.carol11}`], ['carol', 1, `❯ /sub-human join carol ${inviteIn(shown)}`]];
   fs.writeFileSync(path.join(screens, 'index.json'), JSON.stringify(caps.map(([seat, step]) => ({ scene: 'S11', session: `sh-${seat}`, step, time: at, txt: `S11-${step}-${seat}.txt`, room: code }))));
   for (const [seat, step, text] of caps) fs.writeFileSync(path.join(screens, `S11-${step}-${seat}.txt`), text);
 

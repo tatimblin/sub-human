@@ -137,6 +137,20 @@ test('receipt is "✓ sent" plus the unwrap note, and nothing else (no room code
   assert.equal(r.json.systemMessage, undefined, 'systemMessage is not rendered with continue:false');
 });
 
+test('typed through Remote Control (origin bridge), "✓ sent" and a refusal are also the systemMessage (relayed to the phone); typed here, not', () => {
+  const w = new World({ orch: 'sleep', alice: 'act' });
+  const sent = atRoom(w, submit('@room from the phone', 'bridge'), { as: 'alice' });
+  posted(sent);
+  assert.equal(sent.json.systemMessage, 'sub-human: ✓ sent');
+  const empty = atRoom(w, submit('@room', 'bridge'), { as: 'alice' });
+  blocked(empty);
+  assert.equal(empty.json.systemMessage, `sub-human: ${empty.json.reason}`);
+  const here = atRoom(w, submit('@room from the terminal'), { as: 'alice' });
+  posted(here);
+  assert.equal(here.json.systemMessage, undefined);
+  assert.equal(atRoom(w, submit('@room'), { as: 'alice' }).json.systemMessage, undefined);
+});
+
 // ---------- who wrote it: only a typed origin posts (the mod's prompt.submit origin, through the shim) ----------
 const fs = require('node:fs');
 
