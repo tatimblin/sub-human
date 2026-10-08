@@ -20,6 +20,7 @@ How it works (processes, store layout, lanes, consent, tasks, the cc contract): 
 - `npm run test:remote-docker`: opt-in (needs Docker), remote rooms over real SSH: `scripts/remote-docker/` (devbox container with sshd + toxiproxy; the joiner is this machine). Evidence in `/tmp/sub-human-remote-proof-<time>/`. `node scripts/remote-docker/harness.js up [--host-seat NAME] [--joiners alice,bob]` / `down` for real Claudes joining by hand (one `/tmp/sub-human-remote-manual/NAME.env` per joiner).
 - `npm run test:thread-store`: the hook tests with every store call crossing `lib/remote/bridge.js` to a worker thread.
 - `npm run probe`: check every Claude Code internal listed in `lib/cc.js` against the installed binary.
+- `node scripts/check-version.js [BASE]`: fails when plugin files changed since the last version bump (or the newest tag, or BASE) without a newer `version` in plugin.json. Marketplace users get updates only when `version` changes, so bump it with every plugin change you release.
 - `node --test scripts/test` runs only the script tests. `bash -n scripts/demo.sh` checks the demo's syntax.
 
 ## Demo
