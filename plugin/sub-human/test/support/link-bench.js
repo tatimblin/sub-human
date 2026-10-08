@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * test/support/link-bench.js: the numbers behind PR5's latency check (docs/archive/REMOTE-PLAN.md PR3 condition 3, PR5
- * As built). Test only; prints a markdown table of p50 / p99 in ms.
+ * test/support/link-bench.js: the numbers behind the remote latency check (a hook that only reads starts no worker;
+ * one that writes pays the worker's boot plus a round trip). Test only; prints a markdown table of p50 / p99 in ms.
  *
  *   node plugin/sub-human/test/support/link-bench.js [--calls N] [--hooks N]
  *       round trip: one op from a mirror in this process (its bridge up) through the link daemon's socket and the

@@ -8,7 +8,7 @@
  * sig v2 covers the payload, not its place in the log: the entry without id, at, prev and sig, plus room,
  * from, nonce and ts, as JSON with sorted keys. The server stamps id, at and prev afterwards, so a signature
  * made on one machine stays valid wherever the line lands. v1 (the stored line in its key order, minus sig,
- * made after id/prev were stamped; logs from before PR1) still verifies.
+ * made after id/prev were stamped; logs from before sig v2) still verifies.
  *
  *   SIG_VERSION = 2
  *   signable(e) -> string            the bytes a v2 sig covers (sorted keys; id, at, prev, sig left out)

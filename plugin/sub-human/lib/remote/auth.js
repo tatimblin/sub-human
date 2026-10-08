@@ -5,8 +5,7 @@
  * only sha256 digests (kv documents remote/invites and remote/links of the room's store; host-only, never
  * streamed). The client keeps the token in clear in its link file (lib/room/links.js), the same trust as its
  * seat key. "Write as yourself": a link may write only as the seats that joined over it, and joins a seat only
- * with a proof signed by that seat's key. Zero dependencies beyond node:crypto and the envelope. PR4 of
- * docs/archive/REMOTE-PLAN.md.
+ * with a proof signed by that seat's key. Zero dependencies beyond node:crypto and the envelope.
  *
  *   mintInvite(store, {locator, now?}) -> {invite, secret}   invite = formatInvite({code, locator, secret});
  *                                                  records sha256(secret) with created_at. Host only (HOST_ONLY)

@@ -1,5 +1,5 @@
 'use strict';
-// lib/remote/bridge.js (a synchronous call to a worker thread, with a deadline) and PR3's proof gate: a RoomStore
+// lib/remote/bridge.js (a synchronous call to a worker thread, with a deadline) and its proof gate: a RoomStore
 // whose every call crosses the bridge (test/support/thread-store.js) behaves as the FsRoomStore it forwards to, and
 // the hook suites pass over it (`npm run test:thread-store` runs all of test/hooks; consent.test.js runs here).
 const test = require('node:test');

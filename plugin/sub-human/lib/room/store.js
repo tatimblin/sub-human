@@ -73,7 +73,7 @@
  * keys never leave this machine, whatever the store):
  *   publicKey(name, store) -> KeyObject|null   the key pinned in the log (member_joined pubkey, first sight);
  *                                the local <code>/<name>.pub only in a room whose log pins no key (a legacy room)
- *   verifyHuman(e) -> bool       e is via=human and its sig (v2, or v1 from before PR1) verifies against publicKey
+ *   verifyHuman(e) -> bool       e is via=human and its sig (v2, or v1 from before sig v2) verifies against publicKey
  *   unverifiedHuman(e) -> bool   via=human without a valid sig (a legacy line, or one written around append)
  *   humanTrust(e) -> 'verified' | 'legacy' | 'unverified' | null   (legacy: unsigned, in a room that pins no key,
  *                                from a seat with no local key; a keyed room never returns it)

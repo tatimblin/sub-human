@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * test/support/bridge-bench.js: the numbers behind PR3's proof gate (docs/archive/REMOTE-PLAN.md, Results). Test
+ * test/support/bridge-bench.js: the numbers behind the bridge's proof gate (a hook pays the worker's boot, not the calls). Test
  * only; prints a markdown table of p50 / p99 in ms.
  *
  *   node plugin/sub-human/test/support/bridge-bench.js [--calls N] [--hooks N]

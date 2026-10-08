@@ -164,7 +164,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.deepEqual([moved.id, moved.sig], [3, e.sig]);
     assert.notEqual(moved.prev, e.prev);
     assert.equal(store.humanTrust(other.readAll()[2]), 'verified');
-    // a v1 line (signed over the stored line minus sig, as before PR1) still reads as the person's
+    // a v1 line (signed over the stored line minus sig, as before sig v2) still reads as the person's
     const v1 = rawLine(other, { from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'old', room: CODE });
     v1.sig = crypto.sign(null, Buffer.from(JSON.stringify(v1)), seatKey.ensure(CODE, 'alice')).toString('base64');
     B.raw(other, v1);

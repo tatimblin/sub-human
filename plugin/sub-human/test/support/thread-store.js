@@ -1,8 +1,8 @@
 'use strict';
 /**
  * test/support/thread-store.js: ThreadRoomStore, a RoomStore (lib/room/store.js documents the interface) that
- * forwards its calls through lib/remote/bridge.js to an FsRoomStore on a worker thread. Test only: the proof
- * gate of PR3 in docs/archive/REMOTE-PLAN.md (a hook can block on another thread's store and still pass).
+ * forwards its calls through lib/remote/bridge.js to an FsRoomStore on a worker thread. Test only: the bridge's
+ * proof gate (a hook can block on another thread's store and still pass).
  *
  *   new ThreadRoomStore(code, {dir}?)   every process shares one bridge, started on the first call. Each call
  *       carries the room's directory and the home as this thread resolves them (SUB_HUMAN_HOME may change

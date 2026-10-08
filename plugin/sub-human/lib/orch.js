@@ -16,7 +16,7 @@
  *       user's default model. cwd is the joiner's: --bg refuses an untrusted cwd (a fresh temp dir is never
  *       trusted). No file is written into ~/.claude: the orch creates the "room CODE open" task.
  *
- * Host only (docs/archive/REMOTE-PLAN.md rule 2): claimSpawn, reapDetached and watchdog do nothing on a machine that
+ * Host only (the host decides): claimSpawn, reapDetached and watchdog do nothing on a machine that
  * does not hold the room (identity.isHost false: null, null, 'not-host'), so the orch runs only where it was spawned.
  *
  * Starting (one orch per room, even with concurrent joins):

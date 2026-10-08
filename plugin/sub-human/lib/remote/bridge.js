@@ -4,7 +4,7 @@
  * worker thread, with a deadline. Hooks are short synchronous processes (lib/lock.js) and the store API is
  * synchronous, so a mirror's write (lib/room/store-mirror.js) blocks here while the worker talks to the link
  * daemon's socket (lib/remote/link.js handle). The worker never loads the signer: a via=human payload is
- * signed on the calling thread first. PR3 of docs/archive/REMOTE-PLAN.md; its proof gate runs the hook suites
+ * signed on the calling thread first. Its proof gate runs the hook suites
  * over a FsRoomStore proxied through this bridge (test/support/thread-store.js).
  *
  *   createBridge({handler, deadlineMs?}) -> {call(method, params, {deadlineMs}?) -> result, close()}

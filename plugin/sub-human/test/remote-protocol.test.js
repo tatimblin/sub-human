@@ -1,5 +1,5 @@
 'use strict';
-// The remote protocol's parts (docs/archive/REMOTE-PLAN.md PR4): the line codec (lib/remote/protocol.js), the
+// The remote protocol's parts: the line codec (lib/remote/protocol.js), the
 // memory and pipe transports and their lookup (lib/remote/transports/*), the seeded flaky transport
 // (test/support/flaky.js), and invites, link tokens and seat proofs (lib/remote/auth.js).
 const test = require('node:test');

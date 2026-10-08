@@ -39,7 +39,7 @@ test('envelope: sign adds room, from, nonce, ts and sigv 2; the sig verifies whe
   assert.equal(envelope.verify({ ...p, sig: undefined }, publicKey), false);
 });
 
-test('envelope: a v1 entry (signed over the stored line minus sig, before PR1) still verifies; its id is under the sig', () => {
+test('envelope: a v1 entry (signed over the stored line minus sig, before sig v2) still verifies; its id is under the sig', () => {
   const { privateKey, publicKey } = pair();
   const e = { id: 3, at: new Date().toISOString(), from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'old', room: CODE, prev: 'aaaaaaaaaaaa' };
   e.sig = crypto.sign(null, Buffer.from(JSON.stringify(e)), privateKey).toString('base64');

@@ -1,5 +1,5 @@
 'use strict';
-// A room's server and the client (lib/remote/server.js, lib/remote/client.js; docs/archive/REMOTE-PLAN.md PR4) over
+// A room's server and the client (lib/remote/server.js, lib/remote/client.js) over
 // the memory transport and over `sub-human serve --stdio` as a child: hello with an invite or a token, the
 // named ops, "only as yourself" (AUTH), subscribe with {after, hash} (resume, FORK, the documents a mirror
 // holds), decide after a remote answer, and a flaky link (OFFLINE at the deadline, never a half-applied write).

@@ -1,7 +1,7 @@
 'use strict';
 // The link registry (lib/room/links.js), the link daemon's pieces (lib/remote/link.js: socket path, locator,
 // handle, serveMirror's FORK and re-mirror, idleWatch) and the mirror's own writes (lib/room/store-mirror.js
-// applyLine, applyDoc), and the tail's one line for a link that is down (lib/tail.js linkLine). docs/archive/REMOTE-PLAN.md PR5;
+// applyLine, applyDoc), and the tail's one line for a link that is down (lib/tail.js linkLine);
 // the mirror through the bridge is in test/store-contract.test.js (remote), two homes in test/remote-e2e.test.js.
 const test = require('node:test');
 const assert = require('node:assert/strict');

@@ -3,7 +3,7 @@
  * plugin/sub-human/lib/remote/protocol.js: the wire protocol between a link (lib/remote/client.js, on the
  * machine of a remote member) and a room's server (lib/remote/server.js, on the host): the ops, the frame
  * shapes, the error codes and the line codec. Transport-agnostic (lib/remote/transports/*). Zero
- * dependencies beyond node:string_decoder and lib/config.js. PR4 of docs/archive/REMOTE-PLAN.md (the op table is there).
+ * dependencies beyond node:string_decoder and lib/config.js.
  *
  * Frames, one JSON object per line (as mcp/room-server.js speaks):
  *   request  {id, op, params}        reply {id, result} | {id, error: {code, message}}

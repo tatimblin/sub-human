@@ -1,8 +1,7 @@
 'use strict';
 /**
  * test/support/flaky.js: a transport that misbehaves on purpose, around any real one (lib/remote/transports/*),
- * for the resume, FORK and OFFLINE tests: seeded, so a failing run replays. Test only. PR4 of
- * docs/archive/REMOTE-PLAN.md.
+ * for the resume, FORK and OFFLINE tests: seeded, so a failing run replays. Test only.
  *
  *   flaky(transport, {seed, drop?, delayMs?, dup?, cutAfter?}) -> Transport
  *       drop     probability a frame is lost (either direction)
