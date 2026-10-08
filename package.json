@@ -3,7 +3,7 @@
   "private": true,
   "description": "Dev scripts for the sub-human Claude Code plugin (no dependencies).",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "test": "npm run --silent test:plugin && npm run --silent test:scripts && npm run --silent test:mods",
