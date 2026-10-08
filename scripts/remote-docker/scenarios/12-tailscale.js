@@ -8,6 +8,9 @@
 // no such room, which only the holder of the pinned key can say. Then exactly what unhost runs (offArgs):
 //   tailscale serve --https=443 --set-path=/sub-human-lab-<rand> off
 // (only that path; never `serve reset`, never Funnel). The path must be gone from `tailscale serve status` after.
+// A tailnet without Serve/HTTPS: the CLI prints an enable URL and waits; tailscale.on() stops it within 10 s and the
+// check fails with its message (the admin page to visit), and nothing is turned off. The listener is stopped and
+// awaited before its throwaway home is removed (it writes there until it exits).
 const fs = require('node:fs');
 const os = require('node:os');
 const net = require('node:net');
@@ -36,6 +39,7 @@ module.exports = {
     const p = `/sub-human-lab-${crypto.randomBytes(3).toString('hex')}`;
     const env = { ...process.env, SUB_HUMAN_HOME: home };
     const srv = spawn(process.execPath, [path.join(PLUGIN, 'scripts', 'sub-human'), 'listen', '--port', String(port)], { env, stdio: 'ignore' });
+    let on = null;
     try {
       await t.sleep(800);
       const old = process.env.SUB_HUMAN_HOME;
@@ -44,9 +48,11 @@ module.exports = {
       process.env.SUB_HUMAN_HOME = old;
       const argv = ts.serveArgs({ path: p, port });
       t.log(`${bin} ${argv.join(' ')}`);
-      let on = null;
-      try { on = ts.on({ bin, path: p, port }); } catch (e) { t.ev.write('serve-on.txt', e.message); }
-      t.check(`tailscale ${argv.join(' ')}`, !!on, on ? 'ok' : 'refused (see serve-on.txt)');
+      let refused = null;
+      try { on = ts.on({ bin, path: p, port }); } catch (e) { refused = e; t.ev.write('serve-on.txt', `${e.code || ''} ${e.message}`); }
+      // Serve/HTTPS not enabled on the tailnet (the CLI prints an enable URL and waits): on() stops it and says so
+      t.check(`tailscale ${argv.join(' ')}`, !!on, on ? 'ok' : refused.message);
+      if (!on) return;
       const ws = lib('remote/ws.js');
       const wsT = lib('remote/transports/ws.js');
       let res;
@@ -58,13 +64,16 @@ module.exports = {
       t.check(`a wss + Noise_NK handshake through https://${me.dnsName}${p}, pinned to the listener's key (it answers that it serves no such room)`,
         /^OFFLINE: .*not open for joins over the web/.test(res), res);
     } finally {
-      const off = ts.off({ bin, path: p });
-      t.log(`${bin} ${ts.offArgs({ path: p }).join(' ')}: ${off.ok ? 'ok' : off.error}`);
-      const status = spawnSync(bin, ['serve', 'status'], { encoding: 'utf8', timeout: 20_000 }).stdout || '';
-      t.ev.write('serve-status-after.txt', status);
-      t.check(`${p} turned off again; other serves untouched`, off.ok && !status.includes(p), off.error || '');
-      srv.kill();
-      fs.rmSync(home, { recursive: true, force: true });
+      if (on) { // nothing to turn off when serve never took the path (Serve not enabled on the tailnet)
+        const off = ts.off({ bin, path: p });
+        t.log(`${bin} ${ts.offArgs({ path: p }).join(' ')}: ${off.ok ? 'ok' : off.error}`);
+        const status = spawnSync(bin, ['serve', 'status'], { encoding: 'utf8', timeout: 20_000 }).stdout || '';
+        t.ev.write('serve-status-after.txt', status);
+        t.check(`${p} turned off again; other serves untouched`, off.ok && !status.includes(p), off.error || '');
+      }
+      // the listener writes its state and log into the home until it exits: wait for it, then remove the home
+      await new Promise(r => { if (srv.exitCode !== null || srv.signalCode !== null) r(); else { srv.once('exit', r); srv.kill(); } });
+      fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   },
 };
