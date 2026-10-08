@@ -34,7 +34,7 @@
 // `/sub-human NAME CODE`. OFFLINE, AUTH and the like block the prompt with the reason. An invite whose locator is not
 // the link's (the room moved to another host, lib/handoff.js) replaces the link's credentials, and the seat joins again
 // over it; an invite to a room this machine hosts says how to demote it (an old host the room was promoted away from).
-// `/sub-human handoff NAME [USER@HOST[:PORT] | https://FRONT]`: the host asks NAME (a member on another machine) to host the room
+// `/sub-human handoff NAME [USER@HOST[:PORT] [--via JUMP] | https://FRONT]`: the host asks NAME (a member on another machine) to host the room
 // (lib/handoff.js ask, signed with this seat's key); NAME's Claude shows them a card, and only their answer there
 // moves the room. The reply is a block reason, to the person only.
 const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
@@ -180,15 +180,26 @@ function linkInvite2(inv, invite, pin, name) {
   return hidden(hosting.joinText(inv.code, name, hosting.outcome(inv.code), j.request), { shareable: true });
 }
 
-/** `/sub-human handoff NAME [USER@HOST[:PORT]]`: ask NAME to host the room cur is in. */
-function askHandoff(cur, args) {
+/** `/sub-human handoff NAME [USER@HOST[:PORT] [--via JUMP] | https://FRONT]`: ask NAME to host the room cur is in. */
+function askHandoff(cur, argv) {
   if (!cur) return block('join a room first; /sub-human handoff NAME then asks NAME to host it.');
-  const [to, dest] = args;
+  const p = require('../lib/cli/args.js').parse(argv, { via: 1 });
+  if (p.error || p.rest.length < 1 || p.rest.length > 2) return block('usage: /sub-human handoff NAME [USER@HOST[:PORT] [--via JUMP] | https://FRONT]');
+  const [to, dest] = p.rest;
+  const via = p.flags.via;
   let locator;
   if (/^https?:\/\//.test(dest || '')) { // a front to the new host's web listener (lib/remote/webhost.js)
+    if (via !== undefined) return block('--via is for an ssh address (USER@HOST[:PORT] --via JUMP), not a web front.');
     try { locator = require('../lib/remote/webhost.js').webLocator(dest, cur.code); } catch (e) { return block(e.message); }
-  } else locator = dest === undefined ? undefined : link.sshLocator(dest);
-  if (dest !== undefined && !locator) return block(`"${dest}" is not a plain USER@HOST[:PORT] (or https://FRONT) the others can reach ${to}'s machine at.`);
+  } else {
+    if (via !== undefined && dest === undefined) return block('--via goes with the ssh address the others reach the new host at: /sub-human handoff NAME USER@HOST --via JUMP');
+    locator = dest === undefined ? undefined : link.sshLocator(dest, via !== undefined ? { via } : {});
+  }
+  if (dest !== undefined && !locator) {
+    return block(via !== undefined && link.sshLocator(dest)
+      ? `--via "${via}" is not a plain [USER@]HOST[:PORT] (comma-separated hops).`
+      : `"${dest}" is not a plain USER@HOST[:PORT] (or https://FRONT) the others can reach ${to}'s machine at.`);
+  }
   let d;
   try {
     d = handoff.ask(cur.code, { from: cur.name, to, locator, sign: p => envelope.sign(p, store.humanKey(cur.code, cur.name), { room: cur.code, from: cur.name }) });
@@ -256,7 +267,7 @@ run(input => {
     return block(USAGE);
   }
   if (cur && cur.role === 'orch') return block(`this session is the orch of room ${cur.code}; join from another session.`);
-  if (args[0] === 'handoff' && (args.length === 2 || args.length === 3)) return askHandoff(cur, args.slice(1));
+  if (args[0] === 'handoff' && args.length >= 2) return askHandoff(cur, args.slice(1));
   if (args[0] === 'host') return host(cur, args.slice(1));
   if (args[0] === 'admit' || args[0] === 'revoke') return hostAction(cur, args);
   if (args[0] === 'unhost') {

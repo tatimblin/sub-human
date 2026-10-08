@@ -92,13 +92,22 @@ const identity = () => require('./identity.js');
 const transportOf = locator => (typeof locator === 'string' ? linkLib().transportOf(locator) : null);
 // A next host reached over the web (wss/ws, lib/remote/transports/ws.js): its invites pin its listener's X25519 key,
 // and the link file that follows one carries that key.
+// Over ssh its invites pin its sshd Ed25519 host key (lib/remote/sshkeys.js hostKey; none when unreadable).
 const isWeb = locator => /^wss?:/.test(String(locator));
-const webKeyFor = locator => (isWeb(locator) ? require('./remote/listener.js').hostKey() : null);
-function transportWith(locator, invite) {
-  const t = transportOf(locator);
-  if (!t || !isWeb(locator)) return t;
+const hostKeyFor = locator => (isWeb(locator) ? require('./remote/listener.js').hostKey()
+  : /^ssh:/.test(String(locator)) ? require('./remote/sshkeys.js').hostKey() : null);
+/** This machine's seat name in CODE, for its link key's comment and its admit request. */
+const seatName = code => { try { return identity().localSeats(code).find(n => n !== 'orch') || 'member'; } catch { return 'member'; } };
+/**
+ * The link file that follows the room to locator with invite (lib/remote/hosting.js linkTransport): over ssh this
+ * machine's own link key (made if it had none) and its mux kept, the new host's key pinned, and the admit request
+ * the new host needs; over the web the listener key the invite pins. {transport: null} for a locator this machine
+ * cannot use.
+ */
+function followLink(code, locator, invite) {
   const inv = typeof invite === 'string' ? auth.parseInvite(invite) : null;
-  return inv && inv.hostKey ? { ...t, hostKey: inv.hostKey } : t;
+  if (!inv || inv.code !== code || inv.locator !== locator || !transportOf(locator)) return { transport: transportOf(locator), request: null };
+  return require('./remote/hosting.js').linkTransport({ inv, name: seatName(code), cur: links.get(code) });
 }
 /** This machine, about to host CODE at a web locator: its listener up, the room in its served set. */
 function serveWeb(code, locator) {
@@ -210,7 +219,9 @@ function afterMoved(s, { job } = {}) {
   const d = hostDoc(s);
   const invite = d && d.invites && d.invites[machineId()];
   if (!invite) return false;
-  links.set(s.code, { code: s.code, transport: transportWith(d.locator, invite), invite, created_at: iso(Date.now()), moved: { epoch: d.epoch, host: d.to, locator: d.locator } });
+  const f = followLink(s.code, d.locator, invite);
+  if (!f.transport) return false;
+  links.set(s.code, { code: s.code, transport: f.transport, invite, ...(f.request ? { request: f.request } : {}), created_at: iso(Date.now()), moved: { epoch: d.epoch, host: d.to, locator: d.locator } });
   store.forget(s.code);
   try { return linkLib().start(s.code); } catch { return false; }
 }
@@ -230,11 +241,12 @@ function onMoved(mirror, data) {
   if (data.machine === machineId()) return { self: true, stop: true, reason: `this machine hosts room ${code} now (host epoch ${h.epoch})` };
   const how = `ask ${data.host} for an invite (/sub-human host, there), then here: /sub-human join NAME INVITE PIN`;
   if (!data.invite) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and no invite came for this machine; ${how}` };
-  const transport = transportWith(data.locator, data.invite);
-  if (!transport) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine at "${data.locator}", which this machine cannot use; ${how}` };
   const cur = links.get(code) || {};
+  let f;
+  try { f = followLink(code, data.locator, data.invite); } catch (e) { return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and this machine could not follow it: ${e.message}; ${how}` }; }
+  if (!f.transport) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine at "${data.locator}", which this machine cannot use; ${how}` };
   links.set(code, {
-    code, transport, invite: data.invite, created_at: cur.created_at || iso(Date.now()),
+    code, transport: f.transport, invite: data.invite, ...(f.request ? { request: f.request } : {}), created_at: cur.created_at || iso(Date.now()),
     moved: { epoch: data.epoch, host: data.host, locator: data.locator, at: iso(Date.now()) },
   });
   if (cur.token === undefined && cur.invite === undefined) return { reason: 'repointed' };
@@ -244,7 +256,8 @@ function onMoved(mirror, data) {
 function whyOffline(code, message) {
   const l = links.get(code);
   if (!l || !l.moved || l.token) return message;
-  return `room ${code} moved to ${l.moved.host}'s machine (${l.moved.locator}), which this machine cannot reach yet (${message}). `
+  const admit = l.request ? `Over ssh ${l.moved.host} has to let this machine's key in first: send them this line (it holds no secret): /sub-human admit ${l.request} . ` : '';
+  return `room ${code} moved to ${l.moved.host}'s machine (${l.moved.locator}), which this machine cannot reach yet (${message}). ${admit}`
     + `If it never can, ask ${l.moved.host} for an invite this machine can use (/sub-human host there), then: /sub-human join NAME INVITE PIN`;
 }
 
@@ -291,7 +304,7 @@ function machinesOf(s) {
 function mintAll(s, locator, { pin = false, machines = machinesOf(s) } = {}) {
   const out = [];
   for (const [machine, seats] of machines) {
-    const m = auth.mintFor(s, { locator, machine, seats, pin, hostKey: webKeyFor(locator) });
+    const m = auth.mintFor(s, { locator, machine, seats, pin, hostKey: hostKeyFor(locator) });
     out.push({ machine, seats, invite: m.invite, ...(m.pin ? { pin: m.pin } : {}) });
   }
   return out;

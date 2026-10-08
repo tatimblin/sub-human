@@ -145,29 +145,44 @@ function revoke(code, target, { file = sshkeys.authorizedKeysFile() } = {}) {
 }
 
 // ---------- the joiner ----------
-function joinInvite({ inv, invite, pin, name }) {
+/**
+ * The link file's transport for an sh2 invite, with what this machine adds to it. Over ssh: the link's own key
+ * (sshkeys.linkKey in links.dirOf(code): made once, kept across a re-point), the host key the invite pins (a
+ * known_hosts of the link's own; without one, the old pin is kept only for the same user@host[:port]), and mux (a
+ * `sub-human prime` master) carried over from cur; request: the admit request for the invite's host. Over ws/wss: the
+ * listener's X25519 key the invite carries. null for a locator this machine cannot use.
+ */
+function linkTransport({ inv, name, cur = null }) {
   let transport = linkLib().transportOf(inv.locator);
-  if (!transport) throw new RoomError('INVALID', `this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine cannot use`);
+  if (!transport) return null;
+  const prev = (cur && cur.transport) || {};
   let request = null;
   if (transport.kind === 'ssh') {
     const dir = links().dirOf(inv.code);
     const key = sshkeys.linkKey(dir, `sub-human:${inv.code}:${name}`);
     transport = { ...transport, key: key.file };
+    const sameDest = prev.kind === 'ssh' && prev.user === transport.user && prev.host === transport.host && prev.port === transport.port;
     if (inv.hostKey) {
       const alias = `sub-human-${inv.code}`;
       const knownHosts = path.join(dir, 'known_hosts');
       fs.writeFileSync(knownHosts, sshkeys.knownHostsLine(alias, inv.hostKey) + '\n', { mode: 0o600 });
       transport = { ...transport, knownHosts, alias };
-    }
+    } else if (sameDest && prev.knownHosts && prev.alias) transport = { ...transport, knownHosts: prev.knownHosts, alias: prev.alias };
+    if (prev.mux === true) transport = { ...transport, mux: true };
     request = sshkeys.formatRequest({ code: inv.code, ref: auth.inviteRef(inv.secret), key: key.raw, name });
   }
   if (transport.kind === 'wss' || transport.kind === 'ws') { // the listener's X25519 key, pinned (transports/ws.js)
     if (!inv.hostKey) throw new RoomError('INVALID', 'this web invite pins no host key; ask the host for a new one');
     transport = { ...transport, hostKey: inv.hostKey };
   }
-  const cur = links().get(inv.code);
-  const mux = cur && cur.transport && cur.transport.mux === true ? { mux: true } : {};
-  links().set(inv.code, { code: inv.code, transport: { ...transport, ...mux }, invite, pin, ...(request ? { request } : {}), created_at: new Date().toISOString() });
+  return { transport, request };
+}
+
+function joinInvite({ inv, invite, pin, name }) {
+  const lt = linkTransport({ inv, name, cur: links().get(inv.code) });
+  if (!lt) throw new RoomError('INVALID', `this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine cannot use`);
+  const { transport, request } = lt;
+  links().set(inv.code, { code: inv.code, transport, invite, pin, ...(request ? { request } : {}), created_at: new Date().toISOString() });
   return { code: inv.code, request };
 }
 
@@ -196,4 +211,4 @@ function joinText(code, name, o, request) {
   return `the link to room ${code} is still connecting${o.reason ? ` (${o.reason})` : ''}; type /sub-human ${name} ${code} in a moment`;
 }
 
-module.exports = { hostInvite, admit, revoke, joinInvite, outcome, joinText };
+module.exports = { hostInvite, admit, revoke, linkTransport, joinInvite, outcome, joinText, shimReady };

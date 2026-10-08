@@ -3,14 +3,16 @@
  * plugin/sub-human/lib/cli/handoff.js: the CLI bodies of moving a room's host (lib/handoff.js), for
  * scripts/sub-human. A person runs them in their own shell; the Bash guard refuses them to a model.
  *
- *   handoff(args, ctx)   sub-human handoff NAME [--room CODE] [--as SEAT] [--ssh USER@HOST[:PORT] | --url https://FRONT]
+ *   handoff(args, ctx)   sub-human handoff NAME [USER@HOST[:PORT] | --ssh USER@HOST[:PORT]] [--via JUMP] [--room CODE] [--as SEAT]
+ *                        sub-human handoff NAME --url https://FRONT   (or NAME https://FRONT)
  *                        sub-human handoff --status [--room CODE]
  *       Ask NAME (a member on another machine, linked) to host the room. Their Claude shows them a card; the move
- *       happens only on their own answer there. --ssh: how the others will reach NAME's machine (default: a second
- *       home on this machine, pipe:, the tests and the demo). --as: which seat of this machine asks (default this
- *       session's, else the first). --status: who hosts the room at which epoch, the last ask, and on a new host
- *       which machines have not reconnected yet, with what to tell them.
- *   promote(args, ctx)   sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT] | --url https://FRONT] [--force] [--confirm CODE]
+ *       happens only on their own answer there. USER@HOST / --ssh: how the others will reach NAME's machine (default:
+ *       a second home on this machine, pipe:, the tests and the demo); --via: through that ProxyJump, as
+ *       `host --ssh --via`. --as: which seat of this machine asks (default this session's, else the first). --status:
+ *       who hosts the room at which epoch, the last ask, and on a new host which machines have not reconnected yet,
+ *       with what to tell them.
+ *   promote(args, ctx)   sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT] [--via JUMP] | --url https://FRONT] [--force] [--confirm CODE]
  *       When the host is gone for good: this machine's full copy becomes the room at the next epoch. Prints what
  *       it risks and needs --confirm CODE (the room code typed back). Prints one invite per other machine to hand
  *       out by hand.
@@ -24,17 +26,13 @@ const identity = require('../identity.js');
 const store = require('../room/store.js');
 const handoff = require('../handoff.js');
 const link = require('../remote/link.js');
+const { parse } = require('./args.js');
 
+/** args.parse, dying on its error (usage, exit 2). */
 function flagsOf(args, spec, die) {
-  const flags = {}, rest = [];
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a.startsWith('--') && a.slice(2) in spec) {
-      flags[a.slice(2)] = spec[a.slice(2)] ? args[++i] : true;
-      if (flags[a.slice(2)] === undefined) die(`${a} needs a value`);
-    } else rest.push(a);
-  }
-  return { flags, rest };
+  const p = parse(args, spec);
+  if (p.error) die(p.error);
+  return p;
 }
 
 /** The room: --room, else this session's. */
@@ -58,16 +56,23 @@ function seatOf(code, as, die) {
   return local[0];
 }
 
+/** Where the others will reach the next host: --url, or --ssh USER@HOST[:PORT] (a plain one) with --via JUMP. */
 function locatorOf(flags, die, code) {
   if (flags.url !== undefined) {
-    if (flags.ssh !== undefined) die('--ssh and --url are two ways in; pick one');
+    if (flags.ssh !== undefined || flags.via !== undefined) die('--ssh/--via and --url are two ways in; pick one');
     try { return require('../remote/webhost.js').webLocator(flags.url, code); } catch (e) { die(e.message); }
   }
-  if (flags.ssh === undefined) return undefined;
-  const l = link.sshLocator(flags.ssh);
-  if (!l) die(`--ssh needs a plain USER@HOST[:PORT], not "${flags.ssh}"`);
+  if (flags.ssh === undefined) {
+    if (flags.via !== undefined) die('--via is for an ssh address (USER@HOST[:PORT] --via JUMP)');
+    return undefined;
+  }
+  const l = link.sshLocator(flags.ssh, flags.via !== undefined ? { via: flags.via } : {});
+  if (!l) die(link.sshLocator(flags.ssh) ? `--via needs a plain [USER@]HOST[:PORT] (comma-separated hops), not "${flags.via}"` : `--ssh needs a plain USER@HOST[:PORT], not "${flags.ssh}"`);
   return l;
 }
+
+const HANDOFF_USAGE = 'sub-human handoff NAME [USER@HOST[:PORT] | --ssh USER@HOST[:PORT]] [--via JUMP] [--room CODE] [--as SEAT] | handoff NAME --url https://FRONT';
+const PROMOTE_USAGE = 'sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT] [--via JUMP] | --url https://FRONT] [--force] --confirm CODE';
 
 function showStatus(code, { out }) {
   const st = handoff.status(code);
@@ -82,10 +87,14 @@ function showStatus(code, { out }) {
 
 function handoffCmd(args, ctx) {
   const { die, out } = ctx;
-  const { flags, rest } = flagsOf(args, { room: 1, as: 1, ssh: 1, url: 1, status: 0 }, die);
+  const { flags, rest } = flagsOf(args, { room: 1, as: 1, ssh: 1, via: 1, url: 1, status: 0 }, die);
   const code = roomOf(flags, die);
   if (flags.status) return showStatus(code, ctx);
-  if (rest.length !== 1) die('usage: sub-human handoff NAME [--room CODE] [--as SEAT] [--ssh USER@HOST[:PORT] | --url https://FRONT] | handoff --status [--room CODE]');
+  if (rest.length === 2 && flags.ssh === undefined && flags.url === undefined) { // handoff NAME USER@HOST | https://FRONT
+    if (/^https?:\/\//.test(rest[1])) flags.url = rest[1]; else flags.ssh = rest[1];
+    rest.pop();
+  }
+  if (rest.length !== 1) die(`usage: ${HANDOFF_USAGE} | handoff --status [--room CODE]`);
   const to = rest[0];
   const from = seatOf(code, flags.as, die);
   let d;
@@ -104,9 +113,9 @@ const FORK_RISK = (code, last) => [
 
 function promoteCmd(args, ctx) {
   const { die, out } = ctx;
-  const { flags, rest } = flagsOf(args, { as: 1, ssh: 1, url: 1, force: 0, confirm: 1 }, die);
+  const { flags, rest } = flagsOf(args, { as: 1, ssh: 1, via: 1, url: 1, force: 0, confirm: 1 }, die);
   const code = rest[0];
-  if (rest.length !== 1 || !identity.CODE_RE.test(String(code))) die('usage: sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT] | --url https://FRONT] [--force] --confirm CODE');
+  if (rest.length !== 1 || !identity.CODE_RE.test(String(code))) die(`usage: ${PROMOTE_USAGE}`);
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
   const s = store.open(code);
   if (s.isHost) die(`this machine hosts room ${code} already`, 1);

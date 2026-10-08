@@ -276,3 +276,69 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
   assert.equal(isAlive(process.pid), true);
   void bob;
 });
+
+test('handoff e2e: over ssh (--via), each follower keeps its own link key and mux, pins the new host\'s key, and gets the admit line that lets it in', async t => {
+  const { A, B, C, alice, bob, code } = await room(t);
+  const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.js'));
+  // bob's machine: its sshd host key (the invites it mints pin it) and the authorized_keys his admit writes
+  const hk = path.join(B.user, 'ssh_host_ed25519_key');
+  spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', hk]);
+  const ak = path.join(B.user, '.ssh', 'authorized_keys');
+  Object.assign(B.extra, { SUB_HUMAN_SSH_HOST_KEY: `${hk}.pub`, SUB_HUMAN_AUTHORIZED_KEYS: ak });
+  const hostRaw = sshkeys.ed25519Raw(fs.readFileSync(`${hk}.pub`, 'utf8'));
+  // carol's link as an ssh join and `sub-human prime` leave it: the link's own key in its directory, and mux
+  const dirC = C.lib(() => links.dirOf(code));
+  const keyC = C.lib(() => sshkeys.linkKey(dirC, `sub-human:${code}:carol`));
+  C.lib(() => links.set(code, { ...links.get(code), transport: { ...links.get(code).transport, mux: true } }));
+
+  // alice: the others reach bob's machine as me@127.0.0.1:1 (nothing listens: they stay offline) through a jump host
+  const asked = A.join(alice, 'handoff bob me@127.0.0.1:1 --via jump.example').json;
+  assert.match(asked.reason, /asked bob to host room/, JSON.stringify(asked));
+  assert.equal(A.lib(() => handoff.hostDoc(store.open(code))).locator, 'ssh:me@127.0.0.1:1?via=jump.example');
+  await until(() => ask(B, code), 5000, 50);
+  assert.match(answerCard(B, bob, ask(B, code).id, 'Host it here').post.json.systemMessage, /hosted here now/);
+
+  const sshSpec = { kind: 'ssh', user: 'me', host: '127.0.0.1', port: 1, via: 'jump.example' };
+  // carol follows: the same key file (not a new key), mux kept, bob's host key pinned in her link's known_hosts
+  await until(() => C.lib(() => (links.get(code) || {}).moved), 10_000, 50);
+  const lc = C.lib(() => links.get(code));
+  assert.deepEqual(lc.transport, { ...sshSpec, key: keyC.file, knownHosts: path.join(dirC, 'known_hosts'), alias: `sub-human-${code}`, mux: true });
+  assert.equal(sshkeys.ed25519Raw(fs.readFileSync(`${keyC.file}.pub`, 'utf8')), keyC.raw, 'her own key, unchanged');
+  assert.equal(fs.readFileSync(path.join(dirC, 'known_hosts'), 'utf8'), `sub-human-${code} ${sshkeys.openssh(hostRaw)}\n`);
+  const reqC = sshkeys.parseRequest(lc.request);
+  assert.deepEqual([reqC.code, reqC.key, reqC.name], [code, keyC.raw, 'carol']);
+  const cmd = C.lib(() => link.sshCommand(lc.transport, code, []));
+  for (const o of ['-i', keyC.file, 'ControlMaster=no', 'StrictHostKeyChecking=yes', `HostKeyAlias=sub-human-${code}`, '-J', 'jump.example']) assert.ok(cmd.includes(o), `${o} in ${cmd.join(' ')}`);
+  // offline until bob lets her key in; the reason carries the admit line
+  await until(() => /\/sub-human admit shk1\./.test(C.status(code).reason || ''), 15_000, 50);
+  assert.ok(C.status(code).reason.includes(`/sub-human admit ${lc.request}`));
+
+  // the old host follows too: a key of its own made for the link (it had none), the same pin, its own admit request
+  await until(() => A.lib(() => (links.get(code) || {}).request), 10_000, 50);
+  const la = A.lib(() => links.get(code));
+  const dirA = A.lib(() => links.dirOf(code));
+  assert.deepEqual(la.transport, { ...sshSpec, key: path.join(dirA, 'id_ed25519'), knownHosts: path.join(dirA, 'known_hosts'), alias: `sub-human-${code}` });
+  assert.equal(sshkeys.parseRequest(la.request).key, sshkeys.ed25519Raw(fs.readFileSync(path.join(dirA, 'id_ed25519.pub'), 'utf8')));
+
+  // bob admits carol's line on the new host: her own key, for the link of the invite that moved her, and nothing else
+  const ad = B.join(bob, `admit ${lc.request}`);
+  assert.match(ad.json.reason, new RegExp(`admitted: carol's key .* may reach room ${code} as link [0-9a-f]{12}`), ad.stderr);
+  assert.match(fs.readFileSync(ak, 'utf8'), new RegExp(`--stdio ${code} --link [0-9a-f]{12}",restrict ${sshkeys.openssh(keyC.raw).replace(/[+/]/g, '\\$&')} sub-human:${code}:`));
+});
+
+test('handoff and promote CLI: --via carries a ProxyJump into the new locator, as host --ssh --via does', async t => {
+  const { A, B, code } = await room(t, { carol: false });
+  const r = A.cli(['handoff', 'bob', '--ssh', 'me@box.example:2222', '--via', 'jump@bastion', '--as', 'alice', '--room', code]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(A.lib(() => handoff.hostDoc(store.open(code))).locator, 'ssh:me@box.example:2222?via=jump@bastion');
+  const pos = A.cli(['handoff', 'bob', 'me@box.example', '--via', 'j1,j2', '--as', 'alice', '--room', code]);
+  assert.equal(pos.status, 0, pos.stderr);
+  assert.equal(A.lib(() => handoff.hostDoc(store.open(code))).locator, 'ssh:me@box.example?via=j1,j2');
+  assert.match(A.cli(['handoff', 'bob', '--via', 'j', '--as', 'alice', '--room', code]).stderr, /--via is for an ssh address/);
+  assert.match(A.cli(['handoff', 'bob', '--ssh', 'me@box', '--via', '-oProxyCommand=x', '--as', 'alice', '--room', code]).stderr, /--via needs a plain/);
+  assert.match(A.cli(['handoff', 'bob', '--ssh']).stderr, /--ssh needs a value/);
+  // promote takes it the same way (refused here only because the host is reachable: the locator was accepted)
+  const p = B.cli(['promote', code, '--as', 'bob', '--ssh', 'me@box.example', '--via', 'jump@bastion', '--confirm', code, '--force']);
+  assert.match(p.stderr, /reachable \(the link is online\)/);
+  assert.match(B.cli(['promote', code, '--as', 'bob', '--ssh', 'me@box', '--via', 'bad host', '--confirm', code, '--force']).stderr, /--via needs a plain/);
+});
