@@ -178,6 +178,24 @@ test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops 
   assert.equal(fs.existsSync(link.socketPath(mirror.dir)), false, 'the socket is gone with it');
 });
 
+test('link: a lost connection is retried after retryMs, doubled per failure up to retryMaxMs (1 s, capped at 10 s by default)', async t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
+  t.after(() => fs.rmSync(path.dirname(link.socketPath(mirror.dir)), { recursive: true, force: true }));
+  const at = [];
+  const { RoomError } = require(path.join(h.LIB, 'room', 'validate.js'));
+  const connect = () => { at.push(Date.now()); return Promise.reject(new RoomError('OFFLINE', 'no route')); };
+  const l = await link.serveMirror({ mirror, connect, retryMs: 40, retryMaxMs: 120 });
+  await h.until(() => at.length >= 6, 3000, 5);
+  l.stop('done');
+  const gaps = at.slice(1, 6).map((x, i) => x - at[i]);
+  const want = [40, 80, 120, 120, 120];
+  gaps.forEach((g, i) => assert.ok(g >= want[i] - 5 && g < want[i] + 60, `gap ${i}: ${g} ms, want ~${want[i]}: ${gaps}`));
+  const config = require(path.join(h.LIB, 'config.js'));
+  assert.deepEqual([config.LINK_RETRY_MS, config.LINK_RETRY_MAX_MS], [1000, 10_000]);
+});
+
 test('link: the daemon stops with no seat of this machine left, offline too (by the live session indexes); never while connecting', async t => {
   const home = h.freshHome(t);
   const code = 'vole-1234';

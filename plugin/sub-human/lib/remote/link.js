@@ -19,11 +19,11 @@
  *       offline, the host's document is stale, so a seat is one a live claude process of this machine holds
  *       (identity.localSeats): a crashed or abandoned join never leaves a daemon retrying for ever. While the
  *       first connection is made it never stops.
- *   serveMirror({mirror, connect, log?, retryMs?}) -> Promise<Link>   listen on socketPath(mirror.dir) (one daemon
+ *   serveMirror({mirror, connect, log?, retryMs?, retryMaxMs?}) -> Promise<Link>   listen on socketPath(mirror.dir) (one daemon
  *       per socket: LOCK when another one answers there), then connect() -> Promise<Client> (hello done) and
  *       subscribe {after: the mirror's last id, hash: that line's hash12}. The stream goes into the mirror; a
  *       proposal's plan is fetched once. A lost connection is OFFLINE: tried again after retryMs, doubled per
- *       failure up to LINK_RETRY_MAX_MS; a hook's op meanwhile is refused OFFLINE (never queued; before the first
+ *       failure up to retryMaxMs (LINK_RETRY_MAX_MS, 10 s); a hook's op meanwhile is refused OFFLINE (never queued; before the first
  *       connection it waits for it). FORK (the host's line `after` is not the mirror's, a line that does not
  *       chain, or the host log reset) stops it and logs loudly: `sub-human link --reset CODE` re-mirrors. AUTH or
  *       PROTOCOL at hello, or the room closed, stop it too. Every change of state is written to the mirror's
@@ -239,10 +239,10 @@ function serveHook(sock, relay) {
 }
 
 /**
- * @param {{mirror: object, connect: () => Promise<object>, log?: (msg: string) => void, retryMs?: number}} opts
+ * @param {{mirror: object, connect: () => Promise<object>, log?: (msg: string) => void, retryMs?: number, retryMaxMs?: number}} opts
  * @returns {Promise<{state(): string, stop(reason: string): void, done: Promise<string>}>}
  */
-async function serveMirror({ mirror, connect, log = () => {}, retryMs = config.LINK_RETRY_MS }) {
+async function serveMirror({ mirror, connect, log = () => {}, retryMs = config.LINK_RETRY_MS, retryMaxMs = config.LINK_RETRY_MAX_MS }) {
   let state = 'connecting', reason = null, client = null, retry = null, delay = retryMs, finish;
   const done = new Promise(resolve => { finish = resolve; });
 
@@ -279,7 +279,7 @@ async function serveMirror({ mirror, connect, log = () => {}, retryMs = config.L
     client = null;
     setState('offline', e.message);
     retry = setTimeout(() => { retry = null; attempt(); }, delay);
-    delay = Math.min(delay * 2, config.LINK_RETRY_MAX_MS);
+    delay = Math.min(delay * 2, retryMaxMs);
   }
 
   function prefetch(c, e) {

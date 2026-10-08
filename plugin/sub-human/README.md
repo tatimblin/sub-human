@@ -253,7 +253,7 @@ The plugin doesn't stop a hostile local user, who can read the keys and write th
 | No rows in the panel | Accept workspace trust for this folder. After a resume they come back by themselves. |
 | A proposal didn't open | Ask your Claude to "show me the proposal". `sub-human read` shows who a proposal names. |
 | `/sub-human` says it needs Claude Code 2.1.292+ with function hooks on | Update Claude Code, and start it without `--bare` or safe mode; a managed policy that turns hooks off also prevents it. |
-| `room link: OFFLINE` | The link can't reach the host. It retries by itself (1 s, doubling to 30 s); posts and answers are refused, not queued, until it is back. `~/.sub-human/links/CODE.log` says why. |
+| `room link: OFFLINE` | The link can't reach the host. It retries by itself (1 s, doubling to 10 s); posts and answers are refused, not queued, until it is back, and `room link: back online` says when. `~/.sub-human/links/CODE.log` says why. |
 | `room link: FORK` | This machine's copy no longer matches the host's log. Nothing more syncs. Run `sub-human link --reset CODE` in your shell: the link copies the room again from the host. |
 | SSH join: `room … is offline` and the link log says `Permission denied (publickey)` | The key ssh used is not the one the host authorized, or the host's `authorized_keys` line is missing. The link uses `BatchMode=yes`, so it never asks for a password or a passphrase: load the key into your agent, or name it in `~/.ssh/config` (or `SUB_HUMAN_SSH_OPTS="-i KEY"`). |
 | SSH join: `Host key verification failed` in the link log | ssh has not seen the host yet and BatchMode can't ask. Run `ssh me@host true` once in your shell to accept its key. |

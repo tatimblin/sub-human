@@ -496,3 +496,25 @@ test('tail: a member\'s wake carries the room state without entry ids (the perso
   for (const l of state) assert.doesNotMatch(l, /#\d/, l);
   assert.match(room.open(code).stateLine({ name: 'orch', role: 'orch' }, room.open(code).readAll()), /decided #4/);
 });
+
+test('tail: a room hosted elsewhere: one OFFLINE line when the link goes down, one "back online" line once it is online again', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');
+  let st = { running: true, state: 'online' };
+  const remote = c => { const r = room.open(c); return { ...r, store: { ...r.store, isHost: false } }; };
+  const t = startTail({ deps: { openRoom: remote, linkStatus: () => st } });
+  const health = () => t.of('health').map(x => x.text);
+  t.advance(FAST.healthMs + 100);
+  assert.deepEqual(health(), [], 'nothing while it is up');
+  st = { running: true, state: 'offline', reason: 'the connection to the host closed' };
+  t.advance(FAST.healthMs * 2 + 100);
+  assert.deepEqual(health(), ['room link: OFFLINE (the connection to the host closed); @room posts are refused until it is back']);
+  st = { running: true, state: 'connecting' };
+  t.advance(FAST.healthMs + 100);
+  assert.equal(health().length, 1, 'connecting is not back yet');
+  st = { running: true, state: 'online' };
+  t.advance(FAST.healthMs * 2 + 100);
+  assert.deepEqual(health().slice(1), [tailLib.LINK_BACK], 'once');
+  assert.equal(tailLib.LINK_BACK, 'room link: back online; @room posts go through again');
+});

@@ -128,7 +128,7 @@ module.exports = {
   LINK_START_MS: 3000,
   LINK_HELLO_MS: 15_000,           // the daemon's hello: an ssh transport connects (and authenticates) first
   LINK_RETRY_MS: 1000,             // SUB_HUMAN_LINK_RETRY_MS
-  LINK_RETRY_MAX_MS: 30_000,
+  LINK_RETRY_MAX_MS: 10_000,       // a healed link is back within ~10 s (was 30 s: 26 s after a heal, live run)
   LINK_IDLE_MS: 60_000,            // SUB_HUMAN_LINK_IDLE_MS
 
   // ---------- rows (lib/rows.js) ----------

@@ -42,6 +42,7 @@
  *                             (health tick); null clears it
  *   {type:'health', text}     the hash-chain check's line (one per break), and in a room hosted elsewhere the
  *                             link's linkLine each time it goes down (FORK or OFFLINE; nothing while it stays so)
+ *                             and LINK_BACK ("room link: back online; …") once it is online again
  * A session never re-reads the log from byte 0: backlog from room.readView({after: cursor}), live entries from
  * room.tailer(). The health tick also renews the seat's lease (identity.heartbeat).
  */
@@ -245,6 +246,7 @@ function visibleTo(me, rm) {
 }
 
 // ---------- the link of a room hosted elsewhere ----------
+const LINK_BACK = 'room link: back online; @room posts go through again';
 function linkLine(st, code) {
   if (st.state === 'fork') {
     return { key: 'fork', text: `room link: FORK: this machine's copy of room ${code} no longer matches the host's; run sub-human link --reset ${code}` };
@@ -420,10 +422,14 @@ function startSession(me, ctx) {
     emit([{ type: 'rows', text }]);
   }
   function linkHealth() {
-    const l = linkLine(deps.linkStatus(s.code), s.code);
+    const st = deps.linkStatus(s.code);
+    const l = linkLine(st, s.code);
     if ((l && l.key) === linkKey) return;
+    if (!l && st.state !== 'online') return; // coming back (connecting): the down line stands until it is online
+    const was = linkKey;
     linkKey = l && l.key;
     if (l) emit([{ type: 'health', text: l.text }]);
+    else if (was) emit([{ type: 'health', text: LINK_BACK }]);
   }
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
@@ -523,5 +529,5 @@ function runTail({
 }
 
 module.exports = {
-  runTail, timings, Batcher, formatNdBatch, linkLine, remindersText, PULL_HEAD,
+  runTail, timings, Batcher, formatNdBatch, linkLine, LINK_BACK, remindersText, PULL_HEAD,
 };
