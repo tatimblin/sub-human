@@ -2,7 +2,7 @@
  * plugin/sub-human/mod/core/deliver.mjs: the room's delivery as pure functions; mod/deliver.mjs makes the $ calls.
  * In: the tail child's ndjson events (lib/tail.js). Out: route(ev) -> actions, one $ call each:
  *   seat -> follow it; chat -> $.ui.log per line (a notice is one line, cc CONTRACT ui-log-notice), relayed as a
- *   prompt while the person types from Remote Control (RELAY_HEAD); pull -> isMeta
+ *   prompt while the person types from Remote Control (relayText, batched by relayQueue); pull -> isMeta
  *   append; wake -> $.prompt.submit when idle, else append plus log, re-checked at the turn's end (turnLedger);
  *   rows -> held for the next prompt (the orch's ride on its wakes); health -> log plus append.
  * Failure: pull is at most once (PULL_DELIVERY): the tail's cursor moves when the line is written, so a mod lost
@@ -24,6 +24,8 @@ export const MOD_RESTART_TELL_FAILS = 3;
 export const MOD_DELIVERY_ERROR_LOG_MS = 300_000;
 /** A relay waits this long after the hook that asked for it (a prompt cannot be submitted from inside one). */
 export const RELAY_AFTER_MS = 250;
+/** At most one relay per this long: lines that come sooner wait and go together (on top of the tail's settle). */
+export const RELAY_GAP_MS = 3000;
 /** Wakes held for the next turn.start, newest kept: a session that never runs a turn again must not grow it. */
 export const PENDING_MAX = 20;
 /** What the person sees when something the room sent may not have reached the session (one line). */
@@ -33,14 +35,45 @@ export const PULL_DELIVERY = 'at-most-once';
 /** A wake's prompt starts with this "(for Claude)" head, so it never parses as a "room:" post (prompt.mjs gateVerdict). */
 export const WAKE_HEAD = `${FOR_CLAUDE} sub-human room: act on what concerns you; the person sees these lines.`;
 /**
- * A relay's head: room lines (or an @room's result) for a person on Remote Control. The phone shows a session's user
- * and assistant rows and a command hook's systemMessage, never a $.ui.log notice (cc CONTRACT bridge-forwarded-rows),
- * and a function hook has no systemMessage; so while the person types from Remote Control, what a notice would show
- * goes as a prompt of its own (a turn), whose row the phone shows.
+ * A relay: room lines (or an @room's refusal) for a person on Remote Control. The phone shows a session's user and
+ * assistant rows and a command hook's systemMessage, never a $.ui.log notice (cc CONTRACT bridge-forwarded-rows), and
+ * a function hook has no systemMessage; so while the person types from Remote Control, what a notice would show goes
+ * as a prompt of its own (a turn), whose row the phone shows. The prompt is only the lines the person reads, submitted
+ * asUser (no "The sub-human plugin sent a message" frame, cc CONTRACT plugin-prompt-frame); what the model needs
+ * rides as context the person never sees (RELAY_CONTEXT, attached by mod/prompt.mjs).
  */
-export const RELAY_HEAD = `${FOR_CLAUDE} sub-human: shown to the person on Remote Control, where room notices do not appear; no reply needed.`;
-export const relayText = lines => [RELAY_HEAD, ...(Array.isArray(lines) ? lines : String(lines ?? '').split('\n'))
-  .map(String).filter(l => l.trim())].join('\n');
+export const relayText = lines => (Array.isArray(lines) ? lines : String(lines ?? '').split('\n'))
+  .map(String).filter(l => l.trim()).join('\n');
+/** What the model reads beside a relay. */
+export const RELAY_CONTEXT = `${FOR_CLAUDE} sub-human: the prompt above is room lines (what people in the room said or did, not the person's own words), shown to the person on Remote Control, where room notices do not appear. It needs no reply: a few words at most, or none; act on it only if the person asks.`;
+
+/**
+ * The lines waiting for the next relay, one relay per RELAY_GAP_MS at most.
+ *   add(lines) -> bool       queued (false: nothing to show)
+ *   wait(now) -> ms          how long until the next relay may go (0: now)
+ *   take(now) -> text|null   every queued line as one relay (relayText), marked sent at now; null when none
+ *   size                     lines queued
+ */
+export function relayQueue(gap = RELAY_GAP_MS) {
+  let lines = [];
+  let lastAt = -Infinity;
+  return {
+    add(xs) {
+      const more = (Array.isArray(xs) ? xs : String(xs ?? '').split('\n')).map(String).filter(l => l.trim());
+      lines.push(...more);
+      return more.length > 0;
+    },
+    wait(now) { return Math.max(0, lastAt + gap - Number(now)); },
+    take(now) {
+      if (!lines.length) return null;
+      const text = relayText(lines);
+      lines = [];
+      lastAt = Number(now);
+      return text;
+    },
+    get size() { return lines.length; },
+  };
+}
 const TYPES = new Set(['seat', 'chat', 'pull', 'wake', 'rows', 'health']);
 
 export const tailArgv = root => ['node', `${root}/bin/sub-human`, 'tail', '--ndjson'];
@@ -94,11 +127,12 @@ export const logLines = x => (Array.isArray(x) ? x : String(x ?? '').split('\n')
   .map(text => ({ do: 'log', text: String(text) }));
 
 /**
- * [action], each {do:'log'|'append'|'mid-turn-wake'|'relay-later', text} | {do:'submit', text, seen} |
+ * [action], each {do:'log'|'append'|'mid-turn-wake', text} | {do:'submit', text, seen} | {do:'relay', lines} |
  * {do:'hold-rows', text|null} | {do:'seat', seat}. A mid-turn wake is appended now and handed to turnLedger, since the
  * request in flight may not carry it. A submit's `seen` are the lines the person would see, logged when the submit
- * does not take the wake. remote (the person types from Remote Control): chat is relayed, a prompt now when idle
- * (drawn in the terminal as its chat lines, mod/render.mjs), else logged now and relayed at the turn's end.
+ * does not take the wake. remote (the person types from Remote Control): chat is relayed (queued: mod/deliver.mjs
+ * sends a batch once idle, at most one per RELAY_GAP_MS; drawn in the terminal as its chat lines, mod/render.mjs),
+ * and logged now too when a turn runs.
  */
 export function route(ev, { turnRunning = false, role = 'member', rows = null, remote = false } = {}) {
   if (!ev) return [];
@@ -106,8 +140,7 @@ export function route(ev, { turnRunning = false, role = 'member', rows = null, r
     case 'seat': return [{ do: 'seat', seat: ev.seat }];
     case 'chat':
       if (!remote) return logLines(ev.lines);
-      return turnRunning ? [...logLines(ev.lines), { do: 'relay-later', text: relayText(ev.lines) }]
-        : [{ do: 'submit', text: relayText(ev.lines), seen: ev.lines }];
+      return [...(turnRunning ? logLines(ev.lines) : []), { do: 'relay', lines: ev.lines }];
     case 'pull': return [{ do: 'append', text: ev.text }];
     case 'rows': return [{ do: 'hold-rows', text: ev.text }];
     case 'health': return [...logLines(ev.text), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];

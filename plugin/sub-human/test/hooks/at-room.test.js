@@ -137,11 +137,11 @@ test('receipt is "✓ sent" plus the unwrap note, and nothing else (no room code
   assert.equal(r.json.systemMessage, undefined, 'systemMessage is not rendered with continue:false');
 });
 
-test('typed through Remote Control (origin bridge), "✓ sent" and a refusal are also the systemMessage (relayed to the phone); typed here, not', () => {
+test('typed through Remote Control (origin bridge), a refusal is also the systemMessage (relayed to the phone), "✓ sent" is not; typed here, neither', () => {
   const w = new World({ orch: 'sleep', alice: 'act' });
   const sent = atRoom(w, submit('@room from the phone', 'bridge'), { as: 'alice' });
   posted(sent);
-  assert.equal(sent.json.systemMessage, 'sub-human: ✓ sent');
+  assert.equal(sent.json.systemMessage, undefined, 'no relay (a model turn) for a post that went through');
   const empty = atRoom(w, submit('@room', 'bridge'), { as: 'alice' });
   blocked(empty);
   assert.equal(empty.json.systemMessage, `sub-human: ${empty.json.reason}`);

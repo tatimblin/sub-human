@@ -10,12 +10,14 @@
  *   delivering(sid) -> bool     the child follows a seat for this session id (mod/prompt.mjs skips node on it)
  *   setRemote(on)               mod/prompt.mjs: the person's last typed prompt came through Remote Control (true) or
  *                               this terminal (false); undefined changes nothing. Module state: a reload forgets it
- *   holdRelay(text) -> bool     mod/prompt.mjs: a relay for the person on Remote Control, held for the running turn's
- *                               end (true), or the caller submits it now (false: idle)
+ *   queueRelay(io, lines)       lines for the person on Remote Control (room chat; mod/prompt.mjs: an @room's refusal):
+ *                               one relay prompt once idle, at most one per RELAY_GAP_MS, submitted asUser; io is a
+ *                               hook's {now, after, submit, log} (no $ crosses an import)
+ *   isRelay(text) -> bool       mod/prompt.mjs: text is a relay this module is submitting (its context, no node)
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  relayText, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS,
+  relayQueue, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS,
 } from './core/deliver.mjs';
 import { parseHello } from './core/seat.mjs';
 import { shimArgv, shimEnv, SHIM_TIMEOUT_MS } from './core/shim.mjs';
@@ -80,8 +82,12 @@ let child = null;
 const turns = turnLedger();
 /** The person types from Remote Control (mod/prompt.mjs setRemote): chat is relayed as prompts there. */
 let remote = false;
-/** Relays that came while a main-loop turn ran: submitted, as one, at its end. */
-let relays = [];
+/** Lines waiting for the next relay (one per RELAY_GAP_MS; held while a main-loop turn runs). */
+const relayQ = relayQueue();
+/** A relay flush is scheduled. */
+let relayTimer = false;
+/** Relay texts being submitted: mod/prompt.mjs attaches RELAY_CONTEXT to them and runs no node for them. */
+const relaying = new Set();
 /** When the delivery-error notice last showed ($.clock); a reload may show it once more. */
 let noticedAt = -Infinity;
 /** Error counts in order: two failures at once must not both read the same count. */
@@ -151,20 +157,47 @@ async function midTurnWake($, text) {
   if (!turns.appended(text, at)) await submitWake($, text, { appended: true });
 }
 
-/** The relays held while a turn ran, as one prompt (their heads merged). */
-function flushRelays($) {
-  if (!relays.length) return;
-  const lines = relays.flatMap(t => t.split('\n').slice(1));
-  relays = [];
-  void submitWake($, relayText(lines), { seen: lines });
+export const isRelay = text => relaying.has(text);
+
+/**
+ * What a relay needs of a hook's $, as plain functions (a hooks module passes no $ across an import): {now, after,
+ * submit, log}. relayIo($) builds it here; mod/prompt.mjs builds its own.
+ */
+const relayIo = $ => ({
+  now: () => $.clock.now(),
+  after: (ms, fn) => $.clock.after(ms, fn),
+  submit: text => $.prompt.submit({ text, asUser: true }),
+  log: text => $.ui.log(text),
+});
+
+/** Lines for the person on Remote Control (io: relayIo's shape): queued for the next relay. Never throws. */
+export function queueRelay(io, lines) {
+  if (relayQ.add(lines)) scheduleRelay(io);
 }
 
-/** mod/prompt.mjs: a relay (relayText) for the person on Remote Control while a main-loop turn runs is held for its
- * end (true); when idle the caller submits it itself (false). */
-export function holdRelay(text) {
-  if (turns.running === null) return false;
-  relays.push(text);
-  return true;
+/** Flush the queue after RELAY_AFTER_MS (a prompt cannot be submitted from inside a hook) or the rest of the gap. */
+function scheduleRelay(io) {
+  if (relayTimer || !relayQ.size || turns.running !== null) return; // a running turn's end schedules it
+  relayTimer = true;
+  void (async () => {
+    const now = await Promise.resolve().then(io.now).catch(() => 0);
+    io.after(Math.max(RELAY_AFTER_MS, relayQ.wait(now)), () => { relayTimer = false; void flushRelay(io); });
+  })().catch(() => { relayTimer = false; void flushRelay(io); });
+}
+
+/** Every queued line as one relay prompt, once idle: only the lines, submitted asUser (mod/prompt.mjs adds the
+ * context). The person back at the terminal, or a prompt nothing took: the lines as notices here. Never throws. */
+async function flushRelay(io) {
+  if (turns.running !== null) return;
+  const text = relayQ.take(await Promise.resolve().then(io.now).catch(() => 0));
+  if (!text) return;
+  const asNotices = () => { for (const a of logLines(text)) { try { io.log(a.text); } catch { /* nowhere left */ } } };
+  if (!remote) return asNotices();
+  relaying.add(text);
+  try {
+    const r = await io.submit(text);
+    if (r && typeof r.drop === 'string') asNotices();
+  } catch { asNotices(); } finally { relaying.delete(text); }
 }
 
 function stopChild(sid) {
@@ -250,7 +283,7 @@ async function apply($, c, ev) {
       case 'hold-rows': await $.state.set(ROWS, a.text); break;
       case 'submit': void submitWake($, a.text, { seen: a.seen }); break; // not awaited: it resolves as the turn starts
       case 'mid-turn-wake': await midTurnWake($, a.text); break;
-      case 'relay-later': if (turns.running !== null) relays.push(a.text); else void submitWake($, a.text); break;
+      case 'relay': queueRelay(relayIo($), a.lines); break;
       default: break;
     }
   }
@@ -304,7 +337,7 @@ export function registerDeliver(on) {
     // is stored, so a failed submit leaves it for the next request)
     if (e.agentId === undefined) {
       for (const text of turns.complete(e.turnId)) void submitWake($, text, { appended: true });
-      if (turns.running === null) flushRelays($);
+      if (turns.running === null) scheduleRelay(relayIo($));
     }
     return next(e);
   });

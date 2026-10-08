@@ -325,21 +325,56 @@ test('a permission prompt, an idle prompt or a failed turn resets presence: the 
   seen.release()
 })
 
-test('typed through Remote Control, chat is relayed as a prompt (the phone shows no notice); typed here again, a notice', async ($, on) => {
+test('typed through Remote Control, chat is relayed as a prompt of only its lines (the model\'s part is context); typed here again, a notice', async ($, on) => {
   const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })] })
+  const clock = mock.clock(on, { now: 0 })
   await start($)
   await until(() => seen.spawns.length === 1)
   await new Promise(r => setTimeout(r, 50))
-  const relays = () => seen.prompts.filter(p => p.startsWith('(for Claude) sub-human: shown to the person on Remote Control'))
   await $.prompt.submit({ text: 'from the phone', origin: { kind: 'bridge' }, wait: false } as any)
-  seen.feed(line({ type: 'chat', lines: ['bob: hi', 'carol joined'] }))
-  await until(() => relays().length === 1)
-  expect(relays()[0].split('\n').slice(1)).toEqual(['bob: hi', 'carol joined'])
+  const before = seen.prompts.length
+  const nodes = seen.scripts.filter(x => x === 'prompt.js').length
+  seen.feed(line({ type: 'chat', lines: ['bob: hi', 'room: "Rate limiting" agreed (bob)'] }))
+  await new Promise(r => setTimeout(r, 50))
+  expect(seen.prompts.length).toBe(before) // not from inside the event's handling
+  await clock.advance(250)
+  await until(() => seen.prompts.length === before + 1)
+  const i = seen.prompts.length - 1
+  expect(seen.prompts[i]).toBe('bob: hi\nroom: "Rate limiting" agreed (bob)') // a "room:" line is no post
+  expect(seen.prompts[i]).not.toContain('for Claude')
+  const said = [...(seen.contexts[i] ?? []), ...(seen.classic[i].additionalContext ?? [])]
+  expect(said).toEqual([expect.stringMatching(/^\(for Claude\) sub-human: the prompt above is room lines.*It needs no reply/)]) // once
+  expect(seen.scripts.filter(x => x === 'prompt.js').length).toBe(nodes) // no node: a relay is not the person's prompt
   expect(seen.logs).toEqual([])
   await typed($, 'back at the terminal')
   seen.feed(line({ type: 'chat', lines: ['bob: bye'] }))
   await until(() => seen.logs.length === 1)
   expect(seen.logs).toEqual(['bob: bye'])
-  expect(relays().length).toBe(1)
+  expect(seen.prompts.filter(p => p.startsWith('bob:')).length).toBe(1)
+  seen.release()
+})
+
+test('relays are batched: chat that comes within RELAY_GAP_MS of a relay goes as one more, not one each', async ($, on) => {
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })] })
+  const clock = mock.clock(on, { now: 0 })
+  await start($)
+  await until(() => seen.spawns.length === 1)
+  await new Promise(r => setTimeout(r, 50))
+  await $.prompt.submit({ text: 'from the phone', origin: { kind: 'bridge' }, wait: false } as any)
+  const relays = () => seen.prompts.filter(p => /^(alice|bob|carol|dave):/.test(p))
+  const fed = async (who: string) => { seen.feed(line({ type: 'chat', lines: [who] })); await new Promise(r => setTimeout(r, 30)) }
+  await fed('alice: one')
+  await clock.advance(250)
+  await until(() => relays().length === 1)
+  await fed('bob: two')
+  await fed('carol: three')
+  await clock.advance(1000)
+  await fed('dave: four')
+  await clock.advance(1000)
+  await new Promise(r => setTimeout(r, 50))
+  expect(relays().length).toBe(1) // still inside the gap
+  await clock.advance(1000)
+  await until(() => relays().length === 2)
+  expect(relays()).toEqual(['alice: one', 'bob: two\ncarol: three\ndave: four'])
   seen.release()
 })

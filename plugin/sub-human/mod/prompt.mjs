@@ -5,8 +5,10 @@
  * to at-room with the session's nonce, which at-room checks against this session's lease. The origin hand-off is
  * a module variable: classic.UserPromptSubmit runs inside prompt.submit's next(e) (cc CONTRACT
  * prompt-submit-ups-order); a reload in between loses it, and at-room then refuses the @room. A typed prompt's origin
- * also says where the person is (onRemote): through Remote Control, room lines and @room results are relayed as
- * prompts (mod/deliver.mjs), since the phone shows no $.ui.log notice.
+ * also says where the person is (onRemote): through Remote Control, room lines and an @room's refusal are relayed
+ * as prompts (mod/deliver.mjs), since the phone shows no $.ui.log notice. A relay is only the lines the person reads;
+ * what the model needs (RELAY_CONTEXT) goes as context (prompt.submit, else classic.UserPromptSubmit
+ * additionalContext), and no node runs for it.
  */
 import {
   gateVerdict, GATE_FAILED, isAtRoom, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
@@ -14,8 +16,8 @@ import {
 } from './core/prompt.mjs';
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.mjs';
 import { reviewOpenOf } from './core/prefilter.mjs';
-import { delivering, setRemote, holdRelay } from './deliver.mjs';
-import { relayText, logLines, RELAY_AFTER_MS } from './core/deliver.mjs';
+import { delivering, setRemote, queueRelay, isRelay } from './deliver.mjs';
+import { RELAY_CONTEXT } from './core/deliver.mjs';
 import { asHello, asNonce } from './core/state.mjs';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' };
@@ -33,21 +35,32 @@ async function helloOf($) {
   return asHello(value);
 }
 
-/** Show text (an @room's result) to the person on Remote Control, where no notice shows (cc CONTRACT
- * bridge-forwarded-rows): a prompt of its own (relayText) once this hook has returned, or held for the running turn's
- * end (mod/deliver.mjs). A prompt nothing took leaves the lines as notices here. */
-function relay($, text) {
-  const t = relayText(text);
-  const lines = t.split('\n').slice(1);
-  if (!lines.length) return;
-  const asNotices = () => { for (const a of logLines(lines)) $.ui.log(a.text); };
-  try {
-    $.clock.after(RELAY_AFTER_MS, () => {
-      if (holdRelay(t)) return;
-      $.prompt.submit({ text: t }).then(r => { if (r && typeof r.drop === 'string') asNotices(); }, asNotices);
-    });
-  } catch { asNotices(); }
+/** Refusals for the person on Remote Control, held by the UserPromptSubmit shim until its prompt.submit returns. */
+let refusals = [];
+
+/** Show text (an @room's refusal) to the person on Remote Control, where no notice shows (cc CONTRACT
+ * bridge-forwarded-rows): held, then queued for the next relay (mod/deliver.mjs) by the prompt.submit hook around
+ * it, so the relay's submitter is that hook and this module's classic.UserPromptSubmit sees the relay (a plugin's
+ * prompt skips the hook that submits it). */
+function relay(text) {
+  refusals.push(...String(text ?? '').split('\n'));
 }
+
+/** Queue the held refusals with this hook's $ (no $ crosses an import: mod/deliver.mjs takes plain functions). */
+function sendRefusals($) {
+  if (!refusals.length) return;
+  const lines = refusals;
+  refusals = [];
+  queueRelay({
+    now: () => $.clock.now(),
+    after: (ms, fn) => $.clock.after(ms, fn),
+    submit: t => $.prompt.submit({ text: t, asUser: true }),
+    log: t => $.ui.log(t),
+  }, lines);
+}
+
+/** Relays the model has already been given RELAY_CONTEXT for (by prompt.submit), so the classic hook adds none. */
+const contexted = new Set();
 
 /** node hooks/prompt.js with the classic payload (plus the origin), translated; its notices and report applied: a
  * notice is a $.ui.log line, or for a prompt typed through Remote Control a relay (mod/deliver.mjs; the phone shows no
@@ -63,11 +76,11 @@ async function runPrompt($, e, origin) {
     timeoutMs: SHIM_TIMEOUT_MS,
   });
   if (shimFailed(run) && isAtRoom(e.prompt)) {
-    if (origin === 'bridge') relay($, GATE_FAILED);
+    if (origin === 'bridge') relay(GATE_FAILED);
     return failClosed(e.prompt);
   }
   const { result, systemMessage, subHuman } = toClassic('UserPromptSubmit', run);
-  if (systemMessage) { if (origin === 'bridge') relay($, systemMessage); else $.ui.log(systemMessage); }
+  if (systemMessage) { if (origin === 'bridge') relay(systemMessage); else $.ui.log(systemMessage); }
   const open = reviewOpenOf(subHuman);
   if (open !== undefined) await $.state.set(REVIEW, open);
   return result;
@@ -76,6 +89,12 @@ async function runPrompt($, e, origin) {
 /** @param {import('claude-code').On} on */
 export function registerPrompt(on) {
   on('prompt.submit', async ($, e, next) => {
+    // A relay this module submits: room lines for the person, never a post (its first line may read "room: …"). The
+    // model gets what it needs as context, which the phone does not show.
+    if (e.origin && e.origin.kind === 'plugin' && e.origin.name === $.plugin.name && isRelay(e.text)) {
+      contexted.add(e.text);
+      try { return await next({ ...e, context: [...(e.context ?? []), RELAY_CONTEXT] }); } finally { contexted.delete(e.text); }
+    }
     const why = gateVerdict(e);
     if (why) return { drop: why };
     let down = e;
@@ -97,7 +116,7 @@ export function registerPrompt(on) {
       }
     }
     const item = origins.push(e.text, originKind(e.origin));
-    try { return await next(down); } finally { origins.drop(item); }
+    try { return await next(down); } finally { origins.drop(item); sendRefusals($); }
   }).catch(($, e, next) => (next.called || !isAtRoom(e.text) ? next(e) : { drop: GATE_FAILED }));
 
   on('classic.Notification', { notification_type: ['idle_prompt', 'permission_prompt'] }, ($, e, next) => {
@@ -117,6 +136,10 @@ export function registerPrompt(on) {
     if (title) await $.state.set(TITLED, { sid: e.session_id, addr: title });
     const top = title ? { sessionTitle: title } : {};
     const { value: reviewFlag } = await $.state.get(REVIEW);
+    if (isRelay(e.prompt)) { // room lines for the person: no node, and the model's part as context it alone reads
+      const ctx = contexted.has(e.prompt) ? {} : { additionalContext: [RELAY_CONTEXT] };
+      return mergeClassic({ ...ctx, ...top }, await next(e));
+    }
     if (!needsNode(e, hello, { delivering: delivering(e.session_id), reviewFlag })) return mergeClassic(top, await next(e));
     const ours = await runPrompt($, e, origins.take(e.prompt));
     return mergeClassic({ ...ours, ...top }, await next(e));

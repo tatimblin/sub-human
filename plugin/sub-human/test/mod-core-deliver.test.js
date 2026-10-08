@@ -85,19 +85,42 @@ test('deliver: a wake nothing took is held for the next turn.start, newest PENDI
   assert.equal(held[0], 'w3');
 });
 
-test('deliver: typed through Remote Control (remote), chat is relayed as a prompt; mid-turn, a notice now and a relay at the turn\'s end', async () => {
+test('deliver: typed through Remote Control (remote), chat is relayed (queued); mid-turn, a notice now too. A relay is only the room lines', async () => {
   const d = await load('mod/core/deliver.mjs');
   const chat = { type: 'chat', lines: ['bob: hi', 'carol joined'] };
   assert.deepEqual(d.route(chat), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: 'carol joined' }]);
-  const relay = `${d.RELAY_HEAD}\nbob: hi\ncarol joined`;
-  assert.deepEqual(d.route(chat, { remote: true }), [{ do: 'submit', text: relay, seen: ['bob: hi', 'carol joined'] }]);
+  assert.deepEqual(d.route(chat, { remote: true }), [{ do: 'relay', lines: ['bob: hi', 'carol joined'] }]);
   assert.deepEqual(d.route(chat, { remote: true, turnRunning: true }), [
-    { do: 'log', text: 'bob: hi' }, { do: 'log', text: 'carol joined' }, { do: 'relay-later', text: relay },
+    { do: 'log', text: 'bob: hi' }, { do: 'log', text: 'carol joined' }, { do: 'relay', lines: ['bob: hi', 'carol joined'] },
   ]);
-  assert.equal(d.relayText('sub-human: ✓ sent'), `${d.RELAY_HEAD}\nsub-human: ✓ sent`);
-  assert.equal(d.relayText(''), d.RELAY_HEAD, 'nothing to show: the head alone');
+  // what the person reads, and nothing else: no "(for Claude)" line in the prompt; the model's part is context
+  const relay = d.relayText(['alice: hi', 'room: "Rate limiting" agreed (bob)', '', 'answer needed: "Rate limiting"']);
+  assert.equal(relay, 'alice: hi\nroom: "Rate limiting" agreed (bob)\nanswer needed: "Rate limiting"');
+  assert.doesNotMatch(relay, /for Claude/);
+  assert.equal(d.relayText(''), '');
+  assert.match(d.RELAY_CONTEXT, /^\(for Claude\) sub-human: .*Remote Control.*It needs no reply: a few words at most, or none/);
   const { gateVerdict, onRemote } = await load('mod/core/prompt.mjs');
-  assert.equal(gateVerdict({ text: relay, origin: { kind: 'plugin', name: 'sub-human' } }), null, 'a relay never reads as a post');
+  // a relay may start "room:": the gate alone would read it as a post (mod/prompt.mjs lets its own relays by first)
+  assert.match(gateVerdict({ text: relay.split('\n').slice(1).join('\n'), origin: { kind: 'plugin', name: 'sub-human' } }), /not posted/);
   assert.deepEqual(['bridge', 'composer', 'sdk', 'peer', 'plugin'].map(kind => onRemote({ kind })), [true, false, false, undefined, undefined]);
   assert.equal(onRemote(undefined), undefined);
+});
+
+test('deliver: relayQueue sends every queued line as one relay, at most one per RELAY_GAP_MS', async () => {
+  const d = await load('mod/core/deliver.mjs');
+  const q = d.relayQueue();
+  assert.equal(q.take(0), null, 'nothing queued');
+  assert.equal(q.add(['', '  ']), false);
+  assert.equal(q.wait(0), 0, 'the first may go now');
+  assert.ok(q.add(['alice: hi']));
+  assert.ok(q.add('sub-human: ✗ not posted: the room is offline'));
+  assert.equal(q.size, 2);
+  assert.equal(q.take(1000), 'alice: hi\nsub-human: ✗ not posted: the room is offline');
+  assert.equal(q.size, 0);
+  q.add(['bob: there']);
+  q.add(['room: "Rate limiting" agreed (bob)']);
+  assert.equal(q.wait(1500), d.RELAY_GAP_MS - 500, 'the next waits out the gap');
+  assert.equal(q.wait(1000 + d.RELAY_GAP_MS), 0);
+  assert.equal(q.take(1000 + d.RELAY_GAP_MS), 'bob: there\nroom: "Rate limiting" agreed (bob)', 'coalesced');
+  assert.ok(d.RELAY_GAP_MS >= 2000 && d.RELAY_GAP_MS <= 10_000, 'a few seconds');
 });

@@ -11,8 +11,9 @@
 // no origin it runs, so a reload never loses the orch's wakes. "working" presence is written here only when no
 // origin came (with one, mod/prompt.mjs has written it).
 // A post the store refuses (RATE, AUTH, or OFFLINE in a room hosted elsewhere whose link is down) blocks the prompt
-// with the reason; nothing is queued. Typed through Remote Control (origin bridge), the refusal or "✓ sent" is also
-// the systemMessage, which the module relays to the phone (a block or stop line does not show there).
+// with the reason; nothing is queued. Typed through Remote Control (origin bridge), a refusal is also the
+// systemMessage, which the module relays to the phone (a block line does not show there); "✓ sent" is not (the phone
+// shows the person's own row, and a relay costs a model turn).
 const path = require('node:path');
 const { identity, room, out, run, whoami, presence } = require('./common.js');
 const { oneLine } = require(path.join(__dirname, '..', 'lib', 'text.js'));
@@ -26,8 +27,8 @@ function parse(prompt) {
   return null;
 }
 
-/** A person typing through Remote Control sees no block or stop line there: their refusal and "✓ sent" also go out
- * as systemMessage, which mod/prompt.mjs relays to the phone (mod/deliver.mjs relay). */
+/** A person typing through Remote Control sees no block line there: a refusal also goes out as systemMessage, which
+ * mod/prompt.mjs relays to the phone (mod/deliver.mjs relay). "✓ sent" stays a stop line only. */
 let toPhone = false;
 const phoneNote = text => (toPhone ? { systemMessage: `sub-human: ${text}` } : {});
 
@@ -129,7 +130,7 @@ function handle(input) {
     return block(`✗ not posted: ${err.message}`); // OFFLINE, RATE, AUTH: never queued
   }
   const sent = `✓ sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`;
-  out({ continue: false, stopReason: sent, ...phoneNote(sent), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
+  out({ continue: false, stopReason: sent, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 }
 
 module.exports = { handle, parse, TYPED_ORIGINS, NO_ORIGIN };
