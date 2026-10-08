@@ -7,6 +7,8 @@
  *       through the row map (lib/rows.js readRowMap), else by description (a member name or the room code).
  *       participant rows -> "alice  ✓ agreed 3fa2c1 · ◼ #2 parser tests"; the room row -> "vole-8126  ⚠ your
  *       answer needed 3fa2c1 · tasks 3 open · #2 you"; nested participant rows likewise (lib/rows.js rowText).
+ *       In a room hosted elsewhere the room row also shows the link (lib/room/link-state.js): "vole-8126  ✕ offline
+ *       2m · 2 queued · 2 here", "… reconnecting (3) · …", or "… · ⇄ linked" at the end while it is up.
  *       A killed row reads "bob  (reconnecting)" inside a room, "bob  ⚠ row stopped" at top level ("bob  left"
  *       once bob has left). Other tasks keep their default. '' when not in a room; never throws.
  *   The seat comes from input.session_id (identity.resolveBySession), else identity.resolveSelf().
