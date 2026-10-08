@@ -30,6 +30,8 @@
  *       Claude. status shows every joiner's link. cut/heal disable/enable the proxy; latency adds (MS > 0) or removes
  *       (0) a latency toxic. down stops it all and removes the manual state, every joiner's home, project, env and
  *       link daemon.
+ * SUB_HUMAN_COMPOSE_PROJECT (default: compose.yml's sub-human-remote) and SUB_HUMAN_MANUAL_DIR (default
+ * /tmp/sub-human-remote-manual) let a second stack run beside the default one; set both the same for every command.
  * npm run test:remote-docker runs `run` as an opt-in test (skipped without Docker).
  */
 const fs = require('node:fs');
@@ -42,7 +44,9 @@ const { PLUGIN, pluginTest, pluginLib } = require('../lib/paths.js');
 const DIR = __dirname;
 const COMPOSE = path.join(DIR, 'compose.yml');
 const HOST_HOME = '/home/host/.sub-human';
-const MANUAL = '/tmp/sub-human-remote-manual';
+const MANUAL = process.env.SUB_HUMAN_MANUAL_DIR || '/tmp/sub-human-remote-manual';
+// SUB_HUMAN_COMPOSE_PROJECT runs a second stack beside the default one (compose.yml names it sub-human-remote).
+const PROJECT = process.env.SUB_HUMAN_COMPOSE_PROJECT ? ['-p', process.env.SUB_HUMAN_COMPOSE_PROJECT] : [];
 const PROXY = 'ssh';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -52,7 +56,7 @@ function sh(cmd, args, { input, allowFail = false, timeout = 600_000 } = {}) {
   if (r.status !== 0 && !allowFail) throw new Error(`${cmd} ${args.join(' ')} failed (${r.status}): ${r.stderr || r.error}`);
   return r;
 }
-const dc = (args, o) => sh('docker', ['compose', '-f', COMPOSE, ...args], o);
+const dc = (args, o) => sh('docker', ['compose', '-f', COMPOSE, ...PROJECT, ...args], o);
 const dexec = (args, { user = 'host', ...o } = {}) => dc(['exec', '-T', '-u', user, '-e', `SUB_HUMAN_HOME=${HOST_HOME}`, 'devbox', ...args], o);
 const hostCli = (...args) => JSON.parse(dexec(['node', '/harness/host-cli.js', ...args]).stdout);
 const subHuman = (args, o) => dexec(['node', '/plugin/bin/sub-human', ...args], o);
@@ -222,7 +226,7 @@ async function run({ out }) {
 
     // A5 first post (also used by A2/A7)
     ev.step('bob posts @room (traffic captured in devbox)');
-    const cap = spawn('docker', ['compose', '-f', COMPOSE, 'exec', '-T', '-u', 'root', 'devbox', 'timeout', '5', 'tcpdump', '-i', 'eth0', '-nn', '-q', '-l', 'tcp port 22'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const cap = spawn('docker', ['compose', '-f', COMPOSE, ...PROJECT, 'exec', '-T', '-u', 'root', 'devbox', 'timeout', '5', 'tcpdump', '-i', 'eth0', '-nn', '-q', '-l', 'tcp port 22'], { stdio: ['ignore', 'pipe', 'pipe'] });
     let dump = '';
     cap.stdout.on('data', c => { dump += c; });
     const capDone = new Promise(r => cap.on('exit', r));
