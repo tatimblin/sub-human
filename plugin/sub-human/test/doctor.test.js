@@ -34,9 +34,17 @@ test('doctor: node floor, Remote Control, ssh hints and argument errors', () => 
   }
   assert.equal(doctor.checkRemoteControl({ CLAUDE_CODE_USE_BEDROCK: '0' }, []).status, 'info', '0 is off');
   assert.equal(doctor.checkRemoteControl({}, [{ env: { CLAUDE_CODE_USE_BEDROCK: '1' } }]).status, 'warn', 'from a settings file too');
-  assert.match(doctor.sshHint('alice@box: Permission denied (publickey).'), /BatchMode/);
+  // the sh2 flow: the host admits the link's own key (/sub-human admit shk1…), prime for MFA, --via for a bastion
+  const denied = doctor.sshHint('alice@box: Permission denied (publickey).', { code: 'vole-1234' });
+  assert.match(denied, /\/sub-human admit shk1… line your join showed, or ask the host for a new invite \(\/sub-human host --ssh\), then \/sub-human join NAME INVITE PIN/);
+  assert.match(denied, /sub-human prime vole-1234/);
+  assert.doesNotMatch(denied, /authorize|ssh-agent|SUB_HUMAN_SSH_OPTS/, 'no sh1-era advice');
+  assert.match(doctor.sshHint('Permission denied (publickey).', { code: 'vole-1234', request: 'shk1.vole-1234.abc.KEY.bob' }), /send them this line .*: \/sub-human admit shk1\.vole-1234\.abc\.KEY\.bob/);
+  assert.match(doctor.sshHint('Permission denied (publickey,keyboard-interactive).', { code: 'vole-1234' }), /interactive login \(MFA\): run sub-human prime vole-1234/);
+  assert.match(doctor.sshHint('Host key verification failed.', { transport: { knownHosts: '/x/known_hosts', via: 'jump' } }), /not the one its invite pinned.*\/sub-human host --ssh --via jump/);
   assert.match(doctor.sshHint('Host key verification failed.'), /host key/);
-  assert.match(doctor.sshHint('ssh: Could not resolve hostname box: nodename nor servname provided'), /does not resolve/);
+  assert.match(doctor.sshHint('ssh: Could not resolve hostname box: nodename nor servname provided'), /does not resolve.*--via JUMP/);
+  assert.match(doctor.sshHint('ssh: connect to host box port 22: Operation timed out'), /does not answer.*\/sub-human host --ssh --via JUMP/);
   assert.equal(doctor.sshHint('something else'), null);
   assert.throws(() => doctor.parseArgs(['--nope']), /usage: sub-human doctor/);
   assert.throws(() => doctor.parseArgs(['--timeout', 'x']), /--timeout/);

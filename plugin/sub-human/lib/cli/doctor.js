@@ -188,14 +188,36 @@ const lastLogError = code => {
   return text.split('\n').filter(l => /: (offline|stopped|FORK|status|error|plan )/i.test(l) || /\berror\b/i.test(l)).slice(-10);
 };
 
-/** ssh's own complaint, as a hint. */
-function sshHint(stderr) {
+/**
+ * ssh's own complaint, as a hint in the sh2 flow (the link's own key, the host's `/sub-human admit shk1…`, `sub-human
+ * prime` for an MFA bastion, `--via` for a jump host). link: the link file's {code, request?, transport} when known.
+ */
+function sshHint(stderr, link = {}) {
   const s = String(stderr || '');
-  if (/Permission denied/i.test(s)) return 'the host refused this key in BatchMode: is the key in ssh-agent (or named with SUB_HUMAN_SSH_OPTS="-i KEY"), and did the host run `sub-human authorize` for it?';
-  if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(s)) return 'the host key is unknown or changed: run `ssh USER@HOST` once by hand to check and accept it';
-  if (/Could not resolve hostname|Name or service not known|nodename nor servname/i.test(s)) return 'the host name does not resolve from here (VPN or tailnet down?)';
+  const code = link.code || 'CODE';
+  const t = link.transport || {};
+  const newInvite = `ask the host for a new invite (/sub-human host --ssh${t.via ? ` --via ${t.via}` : ''}), then /sub-human join NAME INVITE PIN`;
+  if (/keyboard-interactive|Verification code|one-time password|Duo two-factor/i.test(s) && !/publickey\)\.?\s*$/i.test(s.trim())) {
+    return `the host or a jump host wants an interactive login (MFA): run sub-human prime ${code} once in your shell; the link then rides that connection for hours`;
+  }
+  if (/Permission denied/i.test(s)) {
+    const admit = link.request
+      ? `the host has not let this link's key in yet: send them this line (it holds no secret) to paste in their session: /sub-human admit ${link.request}`
+      : 'the host refused this link\'s key: it was never admitted, or the host revoked it. Send the host the /sub-human admit shk1… line your join showed, or ' + newInvite;
+    return `${admit}. Behind a bastion with MFA, run sub-human prime ${code} first`;
+  }
+  if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(s)) {
+    return t.knownHosts
+      ? `the host's ssh key is not the one its invite pinned (a reinstalled or different machine): check with the host, then ${newInvite}`
+      : 'the host key is unknown or changed: run `ssh USER@HOST` once by hand to check and accept it, or ' + newInvite + ' (an sh2 invite pins the key)';
+  }
+  if (/Could not resolve hostname|Name or service not known|nodename nor servname/i.test(s)) {
+    return `the host name does not resolve from here (VPN or tailnet down?)${t.via ? '' : '; if it is only reachable through a jump host, ask the host for an invite with --via JUMP (/sub-human host --ssh --via JUMP)'}`;
+  }
   if (/Connection refused/i.test(s)) return 'nothing listens for ssh on that port';
-  if (/timed out|Operation timed out/i.test(s)) return 'the host does not answer (asleep, offline or firewalled)';
+  if (/timed out|Operation timed out/i.test(s)) {
+    return `the host does not answer (asleep, offline or firewalled)${t.via ? '' : '; behind a bastion, the invite needs --via JUMP (/sub-human host --ssh --via JUMP)'}`;
+  }
   if (/sub-human: no (plugin install|node)/.test(s)) return 'the host\'s shim found no plugin or node: on the host, start Claude Code once or run `sub-human doctor --fix`';
   return null;
 }
@@ -325,6 +347,8 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
   const recent = lastLogError(code);
   const out = { code, transport: { kind: spec.kind, describe, user: spec.user, host: spec.host, port: spec.port, home: spec.home },
     credential: l.token ? 'token' : l.invite ? 'invite (not redeemed yet)' : 'none', daemon, state: st, recent,
+    // an ssh link not admitted yet: the line its host pastes (/sub-human admit shk1…; no secret in it)
+    ...(!l.token && typeof l.request === 'string' ? { request: l.request } : {}),
     // the room's host moved (lib/handoff.js): the link file was re-pointed at the new host; reached once a token came
     moved: l.moved ? { epoch: l.moved.epoch, host: l.moved.host, locator: l.moved.locator, demoted: !!l.moved.demoted, reached: !!l.moved.reached_at } : null };
   if (!quick) {
@@ -332,7 +356,7 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
     const reply = r.reply || {};
     const hostTime = replyTime(reply);
     out.reach = {
-      ok: r.ok, ms: r.ms, error: r.error, skipped: !!r.skipped, hint: r.ok ? null : (spec.kind === 'ssh' ? sshHint(r.stderr) : null),
+      ok: r.ok, ms: r.ms, error: r.error, skipped: !!r.skipped, hint: r.ok ? null : (spec.kind === 'ssh' ? sshHint(r.stderr, { code, request: l.request, transport: spec }) : null),
       stderr: r.stderr || '',
       protocol: r.ok ? { v: reply.v, proto: reply.proto || null, server: typeof reply.server === 'string' ? reply.server : null } : null,
       skewMs: r.ok && hostTime !== null ? Math.round(hostTime - (r.t0 + r.t1) / 2) : null,
@@ -356,7 +380,11 @@ function linkChecks(d) {
   let status = d.state.state === 'up' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
   let fix;
   if (d.state.state === 'fork') fix = `sub-human link --reset ${d.code}`;
-  else if (d.moved && !d.moved.reached && d.state.state !== 'up') fix = `if this machine cannot reach the new host, ask ${d.moved.host || 'its host'} for an invite it can use (/sub-human host there), then /sub-human join NAME INVITE PIN`;
+  else if (d.moved && !d.moved.reached && d.state.state !== 'up') {
+    const who = d.moved.host || 'its host';
+    fix = `${d.request ? `over ssh ${who} lets this machine's key in first: send them /sub-human admit ${d.request}\n` : ''}`
+      + `if this machine cannot reach the new host, ask ${who} for an invite it can use (/sub-human host there), then /sub-human join NAME INVITE PIN`;
+  } else if (d.request && d.state.state !== 'up') fix = `the host has not let this link's key in yet: send them /sub-human admit ${d.request}`;
   else if (/STALE/.test(lastError || '')) fix = 'this copy speaks to a host the room moved away from: sub-human handoff --status shows where it is';
   else if (!d.daemon.running && d.state.state !== 'up') fix = `the join hook starts the daemon: /sub-human join again, or run sub-human link ${d.code} in a shell`;
   if (d.reach) {
