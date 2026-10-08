@@ -206,6 +206,7 @@ The CONTRACT now lists only what plugin code relies on. These entries came out o
 | `task-created-block-deletes` | 1 | `TaskCreated hooks cancelled (control stream closed)` | A TaskCreated block deletes the task and throws. |
 | `pkill-guard` | 2 | `pkill: refusing to run` | The Bash pkill wrapper refuses a pattern that matches CLAUDE_PID. |
 | `plugin-setting-override-log` | 9 | `overrides setting "${`, `" (previously set by another plugin)` | The last plugin loaded wins a setting two plugins set. |
+| (none: native text) | 3 | `to update hooks`, `if(t?.startsWith("plugin"))return"plugin hooks.json"` | A hook `ask` dialog (our plan-view review: Pre(ExitPlanMode) `ask`) prints the hook's reason, then a dim config hint `${source} to update hooks`. The source is the hook's `hookSource`: "plugin…" gives "plugin hooks.json", none gives "settings.json". Our command hook's ask comes with no hookSource, so the plan view shows a stray `settings.json to update hooks` line under our hint (live runs 2026-10-08). It is Claude Code's text; the plugin cannot change it. |
 
 **Removed with their test-only code.**
 
