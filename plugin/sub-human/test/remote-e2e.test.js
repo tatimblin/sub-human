@@ -172,7 +172,7 @@ test('remote e2e: an invite used already is refused at join with that reason, no
 
   const refused = third.join(carol, `join carol ${invite}`);
   assert.equal(refused.json.decision, 'block', refused.stderr);
-  assert.match(refused.json.reason, /this invite is unknown or was used already/);
+  assert.match(refused.json.reason, /this invite was used already/);
   assert.doesNotMatch(refused.json.reason, /offline|hung up/);
   assert.equal(refused.json.systemMessage, refused.json.reason, 'Remote Control shows the refusal too');
   assert.equal(third.lib(() => link.status(code)).code, 'AUTH');

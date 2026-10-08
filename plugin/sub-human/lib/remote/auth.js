@@ -25,8 +25,8 @@
  *                                                  tries: INVITE_PIN_TRIES and expires_at (INVITE_TTL_MS). hostKey: the
  *                                                  host's public key (32 bytes, base64url) the joiner pins: sshd's Ed25519
  *                                                  key for an ssh locator, the listener's X25519 key for ws/wss (1.1)
- *   redeemInvite(store, secret, {machine, pin?, linkId?, now?}) -> {token, link}   marks the invite used (an unknown,
- *                                                  used or burnt one is AUTH), records {id, token_sha256, machine,
+ *   redeemInvite(store, secret, {machine, pin?, linkId?, now?}) -> {token, link, handoff}   marks the invite used (an unknown,
+ *                                                  used or burnt one is AUTH, saying which), records {id, token_sha256, machine,
  *                                                  seats, created_at}; id is the one reserveLink gave the invite, if
  *                                                  any. linkId (an SSH forced command's --link): AUTH, and the invite
  *                                                  stays unused, unless the invite was reserved for that link. An sh2
@@ -147,16 +147,19 @@ function mintFor(store, { locator, machine, seats, pin: withPin = false, hostKey
  * @param {import('../room/store.js').FsRoomStore} store
  * @param {string} secret
  * @param {{machine: string, now?: number}} opts
- * @returns {{token: string, link: object}}
+ * @returns {{token: string, link: object, handoff: boolean}}
  */
 function redeemInvite(store, secret, { machine, linkId, pin, now = Date.now() }) {
   const key = sha256(secret);
   const link = { id: null, token_sha256: null, machine, seats: [], created_at: iso(now) };
-  let err = null;
+  let err = null, handoff = false;
   store.kv.update(INVITES_KEY, cur => {
     err = null;
     const inv = cur && cur[key];
-    if (!inv || inv.used_at || inv.burnt_at) throw new RoomError('AUTH', 'this invite is unknown or was used already; ask the host for a new one');
+    handoff = !!(inv && inv.handoff);
+    if (inv && inv.burnt_at) throw new RoomError('AUTH', 'this invite is burnt (too many wrong PINs, expired, or revoked); ask the host for a new one');
+    if (inv && inv.used_at) throw new RoomError('AUTH', 'this invite was used already (each invite works once); ask the host for a new one');
+    if (!inv) throw new RoomError('AUTH', 'this invite is unknown or was used already; ask the host for a new one');
     if (linkId !== undefined && inv.link !== linkId) throw new RoomError('AUTH', `this invite is not for link ${linkId}`);
     if (inv.machine && inv.machine !== machine) throw new RoomError('AUTH', 'this invite is for another machine');
     if (inv.v === 2 && inv.handoff) {
@@ -173,7 +176,7 @@ function redeemInvite(store, secret, { machine, linkId, pin, now = Date.now() })
   const token = random();
   link.token_sha256 = sha256(token);
   store.kv.update(LINKS_KEY, cur => ({ ...cur, [link.id]: link }));
-  return { token, link };
+  return { token, link, handoff };
 }
 
 /**

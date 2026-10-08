@@ -74,7 +74,7 @@ test('sh2 over pipe: host shows invite + PIN to the person only; join NAME INVIT
   const again = third.join(carol, `join carol ${invite} ${pin}`);
   stopDaemon(t, third, code);
   assert.ok(hiddenBlock(again));
-  assert.match(again.json.reason, /could not link .*unknown or was used already/);
+  assert.match(again.json.reason, /could not link .*this invite was used already \(each invite works once\)/);
 
   // revoke by name, from the host's session: the token is burnt, bob leaves, the room hears it
   const linkId = lf.transport && host.lib(() => Object.keys(auth.links(store.open(code))))[0];
@@ -117,7 +117,7 @@ test('sh2: a wrong PIN costs a try (the room hears it) and is never re-sent by a
   for (let i = 0; i < 5; i++) last = other.join(dan, `join dan ${inv2.invite} ${bad}`);
   stopDaemon(t, other, code);
   assert.match(last.json.reason, /last try: the invite is burnt/);
-  assert.match(other.join(dan, `join dan ${inv2.invite} ${inv2.pin}`).json.reason, /unknown or was used already/);
+  assert.match(other.join(dan, `join dan ${inv2.invite} ${inv2.pin}`).json.reason, /this invite is burnt \(too many wrong PINs, expired, or revoked\); ask the host for a new one/, 'the right PIN after a burn says burnt');
   assert.match(host.lib(() => store.open(code).readAll()).map(e => e.text).join('\n'), /an invite was burnt after its last wrong PIN/);
 });
 

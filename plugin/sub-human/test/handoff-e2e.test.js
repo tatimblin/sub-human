@@ -171,6 +171,10 @@ test('handoff e2e: planned, A to B with C following; the orch moves; the old hos
   assert.match(st.stdout, /hosted on this machine; host epoch 1 \(bob's machine/);
   assert.match(st.stdout, /alice: reconnected here/);
   assert.match(st.stdout, /carol: reconnected here/);
+  // the room says how they came: a handoff's invite, which has no PIN
+  const after = texts(B.log(code)).slice(texts(B.log(code)).findIndex(x => /moved to bob's machine/.test(x || '')));
+  assert.equal(after.filter(x => /followed the room here with the invite its handoff gave it/.test(x || '')).length, 2, after.join('\n'));
+  assert.ok(!after.some(x => /with an invite and its PIN/.test(x || '')));
 });
 
 test('handoff e2e: "Not now" on the card moves nothing; alice\'s tail says bob declined', async t => {

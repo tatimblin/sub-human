@@ -386,7 +386,10 @@ function linkChecks(d) {
     fix = `${d.request ? `over ssh ${who} lets this machine's key in first: send them /sub-human admit ${d.request}\n` : ''}`
       + `if this machine cannot reach the new host, ask ${who} for an invite it can use (/sub-human host there), then /sub-human join NAME INVITE PIN`;
   } else if (d.request && d.state.state !== 'online') fix = `the host has not let this link's key in yet: send them /sub-human admit ${d.request}`;
-  else if (/STALE/.test(lastError || '')) fix = 'this copy speaks to a host the room moved away from: sub-human handoff --status shows where it is';
+  else if (/invite (is burnt|was used already|is unknown|expired)|handoff invite expired|last try|no longer accepts this link|revoked/i.test(lastError || '')) {
+    // the link's invite (or key) is spent: joining again or restarting the daemon would only reuse it
+    fix = 'this link\'s invite is spent (burnt, used or expired) or its access was revoked: ask the host for a new invite (/sub-human host there), then /sub-human join NAME INVITE PIN';
+  } else if (/STALE/.test(lastError || '')) fix = 'this copy speaks to a host the room moved away from: sub-human handoff --status shows where it is';
   else if (!d.daemon.running && d.state.state !== 'online') fix = `the join hook starts the daemon: /sub-human join again, or run sub-human link ${d.code} in a shell`;
   if (d.reach) {
     const r = d.reach;
@@ -668,4 +671,4 @@ async function main(args, { write = s => process.stdout.write(s), env = process.
   return report.checks.some(x => x.status === 'fail') ? 1 : 0;
 }
 
-module.exports = { diagnose, format, bundle, redactor, helloProbe, checkListener, checkOrchs, scanAuthorizedKeys, checkNode, checkRemoteControl, sshHint, main, parseArgs, DOCTOR_HELLO_MS };
+module.exports = { diagnose, format, bundle, redactor, helloProbe, checkListener, checkOrchs, linkChecks, scanAuthorizedKeys, checkNode, checkRemoteControl, sshHint, main, parseArgs, DOCTOR_HELLO_MS };

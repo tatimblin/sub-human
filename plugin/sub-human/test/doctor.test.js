@@ -213,3 +213,13 @@ test('doctor: a room whose orch job started but never took its seat (e.g. refuse
   identity.updateOrch(code, () => ({ spawned_at: old, pid: process.pid, machine: identity.machineId() }));
   assert.deepEqual(doctor.checkOrchs(), [], 'bound here');
 });
+
+test('doctor: a link stopped on a spent invite says to ask the host for a new one (joining again would reuse it)', () => {
+  const d = state => ({ code: 'vole-1234', transport: { kind: 'pipe', describe: 'pipe /x' }, daemon: { running: false }, recent: [], moved: null, state });
+  for (const why of ['this invite is burnt (too many wrong PINs, expired, or revoked); ask the host for a new one', 'this invite was used already (each invite works once); ask the host for a new one']) {
+    const [c] = doctor.linkChecks(d({ state: 'stopped', lastError: why }));
+    assert.match(c.fix, /ask the host for a new invite \(\/sub-human host there\), then \/sub-human join NAME INVITE PIN/);
+    assert.doesNotMatch(c.fix, /join again|sub-human link vole-1234/);
+  }
+  assert.match(doctor.linkChecks(d({ state: 'offline', lastError: 'no route' }))[0].fix, /sub-human link vole-1234/, 'a daemon that is only gone is restarted');
+});

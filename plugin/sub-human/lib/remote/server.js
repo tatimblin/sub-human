@@ -90,7 +90,8 @@ function redeem(s, invite, machine, pin) {
     if (e.note) roomLine(s, e.note);
     throw e;
   }
-  if (inv.v === 2) roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id}); revoke it with: sub-human revoke ${r.link.id}`);
+  if (r.handoff) roomLine(s, `a machine (${machine}) followed the room here with the invite its handoff gave it (link ${r.link.id}); revoke it with: sub-human revoke ${r.link.id}`);
+  else if (inv.v === 2) roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id}); revoke it with: sub-human revoke ${r.link.id}`);
   return r;
 }
 
