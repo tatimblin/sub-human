@@ -3,12 +3,14 @@
 /**
  * scripts/remote-docker/host-cli.js: the host side of the remote-rooms harness, run INSIDE the devbox container as
  * user `host` (`docker compose exec -u host devbox node /harness/host-cli.js CMD`). It drives the plugin mounted at
- * /plugin the way Claude Code would: the real hooks as child processes, a live sleeper standing in for alice's
- * claude process. State (alice's pid and session) is in /home/host/harness.json. Prints one JSON object.
+ * /plugin the way Claude Code and its hooks module would: the real hooks as child processes (the module's lease and
+ * the typed origin with its nonce written as the module does), a live sleeper standing in for the host seat's claude
+ * process. State (the seat's name, pid and session) is in /home/host/harness.json. Prints one JSON object.
  *
- *   setup                 a sleeper for alice, then `/sub-human alice` (opens the room; the orch's `claude` is a stub)
- *   say TEXT              alice's `@room TEXT` through hooks/prompt.js (signed with her seat key)
- *   to NAME TEXT          a post alice's Claude addresses to NAME (via=agent, store.append)
+ *   setup [SEAT]          a sleeper for SEAT (default alice), then `/sub-human SEAT` (opens the room; the orch's
+ *                         `claude` is a stub)
+ *   say TEXT              the seat's `@room TEXT` through hooks/prompt.js (signed with its seat key)
+ *   to NAME TEXT          a post the seat's Claude addresses to NAME (via=agent, store.append)
  *   dump                  {code, machine, home, log, members (raw members.json), entries: [{id, from, kind, v2, trust}],
  *                         files: [path relative to the room dir]}
  */
@@ -39,30 +41,34 @@ function hook(script, input, seat) {
 }
 
 const cmds = {
-  setup() {
+  setup(name = 'alice') {
     fs.mkdirSync(CWD, { recursive: true });
     let s = null;
     try { s = state(); } catch { /* first run */ }
-    if (s && alive(s.alice.pid)) return { already: true, ...s };
+    if (s && alive(s.seat.pid)) return { already: true, ...s };
     const sleeper = spawn('sleep', ['86400'], { detached: true, stdio: 'ignore' });
     sleeper.unref();
-    const alice = { name: 'alice', pid: sleeper.pid, sid: crypto.randomUUID() };
-    const r = hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: 'alice' }, alice);
+    const seat = { name, pid: sleeper.pid, sid: crypto.randomUUID(), nonce: crypto.randomBytes(16).toString('hex') };
+    // the hooks module's hello lease (hooks/mod-hello.js writes it on session.start; join requires it)
+    lib('identity.js').writeModLease(seat.sid, { pid: seat.pid, nonce: seat.nonce });
+    const r = hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: name }, seat);
     const code = lib('room/store.js').listRooms()[0];
-    s = { code, alice, machine: lib('home.js').machineId(), home: HOME, join: r.json };
+    s = { code, seat, machine: lib('home.js').machineId(), home: HOME, join: r.json };
     fs.writeFileSync(STATE, JSON.stringify(s) + '\n', { mode: 0o600 });
     return s;
   },
 
   say(text) {
-    const { alice } = state();
-    const r = hook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: `@room ${text}`, source: 'user', prompt_id: crypto.randomUUID() }, alice);
+    const { seat } = state();
+    // typed: the origin and the session's nonce, as the hooks module hands them to hooks/prompt.js
+    const r = hook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: `@room ${text}`, prompt_id: crypto.randomUUID(),
+      sub_human_origin: 'composer', sub_human_nonce: seat.nonce }, seat);
     return { ok: !!(r.json && r.json.continue === false), out: r.json, stderr: r.stderr };
   },
 
   to(name, text) {
-    const { code } = state();
-    const e = lib('room/store.js').open(code).append({ kind: 'say', text, to: name }, { via: 'agent', from: 'alice' });
+    const { code, seat } = state();
+    const e = lib('room/store.js').open(code).append({ kind: 'say', text, to: name }, { via: 'agent', from: seat.name });
     return { ok: true, id: e.id };
   },
 
@@ -80,5 +86,5 @@ const cmds = {
 };
 
 const [cmd, ...args] = process.argv.slice(2);
-if (!cmds[cmd]) { console.error('usage: host-cli.js setup | say TEXT | to NAME TEXT | dump'); process.exit(2); }
+if (!cmds[cmd]) { console.error('usage: host-cli.js setup [SEAT] | say TEXT | to NAME TEXT | dump'); process.exit(2); }
 try { process.stdout.write(JSON.stringify(cmds[cmd](...args)) + '\n'); } catch (e) { console.error(e && e.stack || e); process.exit(1); }

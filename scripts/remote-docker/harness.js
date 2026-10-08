@@ -3,7 +3,7 @@
 /**
  * scripts/remote-docker/harness.js: remote rooms over real SSH, against a second machine faked with Docker.
  *
- *   devbox (container)   sshd + the host room in /home/host/.sub-human: alice (a sleeper seat), the orch's
+ *   devbox (container)   sshd + the host room in /home/host/.sub-human: alice (a sleeper seat; up names it), the orch's
  *                        `claude` a stub. scripts/remote-docker/host-cli.js drives its hooks.
  *   toxiproxy            in front of devbox:22, published on 127.0.0.1 (a port Docker picks): cut the link, add
  *                        latency.
@@ -11,20 +11,25 @@
  *                        (plugin test/support/two-homes.js); his link daemon runs `ssh` with a throwaway key
  *                        (SUB_HUMAN_SSH_OPTS: -F /dev/null, -i, a temp known_hosts) through toxiproxy into devbox,
  *                        where the authorized_keys forced command (`sub-human authorize`) runs `serve --link`.
- * Nothing touches this Mac's sshd, ~/.ssh or ~/.sub-human. No real Claude runs.
+ * Nothing touches this Mac's sshd, ~/.ssh or ~/.sub-human. No real Claude runs in `run`.
  *
  *   node scripts/remote-docker/harness.js run [--out DIR]
  *       Build, start, join, check the anti-fallback assertions, tear everything down. The evidence bundle
  *       (transcript.log, REPORT.md, report.html, transcript.svg, report.png when Chrome is installed, compose
  *       ps/logs, toxiproxy state) goes to DIR, default /tmp/sub-human-remote-proof-<timestamp>. Invite secrets
  *       and link tokens are redacted in every file. Exit 0 only when every assertion passed.
- *   node scripts/remote-docker/harness.js up | status | say [--to NAME] TEXT | cut | heal | latency MS | down
- *       The manual mode: up starts devbox + toxiproxy with the room and alice, mints an ssh invite, makes a
- *       throwaway key for the joiner, authorizes it in devbox and writes /tmp/sub-human-remote-manual/manual.env
- *       (0600): source it, then start a real Claude with the plugin and type /sub-human join bob $SUB_HUMAN_INVITE.
- *       say posts as alice (signed, the host's hook path); --to NAME addresses a post from alice's Claude. cut/heal
- *       disable/enable the proxy; latency adds (MS > 0) or removes (0) a latency toxic. down stops it all and
- *       removes the manual state, the joiner's home and its link daemon.
+ *   node scripts/remote-docker/harness.js up [--host-seat NAME] [--joiners A,B] | status | say [--to NAME] TEXT |
+ *       cut | heal | latency MS | down
+ *       The manual mode, for real Claudes on this Mac: up starts devbox + toxiproxy with the room and the host's
+ *       scripted seat (--host-seat, default alice). For each joiner (--joiners, default bob) it makes a throwaway
+ *       key, mints that joiner's own ssh invite and authorizes the key for it in devbox, and creates under
+ *       /tmp/sub-human-remote-manual a home NAME-home (0700), a git project NAME-proj and NAME.env (0600:
+ *       SUB_HUMAN_HOME, SUB_HUMAN_SSH_OPTS, SUB_HUMAN_INVITE). Source it, cd to the project, start
+ *       `claude --plugin-dir plugin/sub-human --remote-control` and type /sub-human join NAME $SUB_HUMAN_INVITE.
+ *       say posts as the host seat (signed, the host's hook path); --to NAME addresses a post from the seat's
+ *       Claude. status shows every joiner's link. cut/heal disable/enable the proxy; latency adds (MS > 0) or removes
+ *       (0) a latency toxic. down stops it all and removes the manual state, every joiner's home, project, env and
+ *       link daemon.
  * npm run test:remote-docker runs `run` as an opt-in test (skipped without Docker).
  */
 const fs = require('node:fs');
@@ -175,7 +180,7 @@ async function run({ out }) {
     ev.step('host room in devbox (alice, a sleeper seat)');
     const setup = hostCli('setup');
     const code = setup.code;
-    ev.log(`room ${code}; devbox machine id ${setup.machine}; alice pid ${setup.alice.pid} (in devbox)`);
+    ev.log(`room ${code}; devbox machine id ${setup.machine}; alice pid ${setup.seat.pid} (in devbox)`);
     ev.log(`alice's join: ${setup.join && setup.join.systemMessage}`);
 
     ev.step('joiner keys, invite, authorize');
@@ -498,49 +503,57 @@ pre{white-space:pre-wrap}</style><h1>sub-human remote rooms over SSH</h1><p>${al
 
 // ---------- the manual mode ----------
 const manualState = () => JSON.parse(fs.readFileSync(path.join(MANUAL, 'state.json'), 'utf8'));
+const opt = (args, flag, dflt) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : dflt; };
+/** Run fn with SUB_HUMAN_HOME set to a joiner's home (the plugin libs read it on every call). */
+const asJoiner = (j, fn) => { process.env.SUB_HUMAN_HOME = j.home; try { return fn(); } catch { return null; } };
+const linkOf = (st, j) => asJoiner(j, () => pluginLib('remote/link.js').status(st.code));
 
-async function up() {
+async function up(args) {
   if (fs.existsSync(path.join(MANUAL, 'state.json'))) throw new Error(`already up (${MANUAL}); run down first`);
+  const hostSeat = opt(args, '--host-seat', 'alice');
+  const names = opt(args, '--joiners', 'bob').split(',').filter(Boolean);
+  if (names.includes(hostSeat) || new Set(names).size !== names.length) throw new Error('joiner names must be distinct and differ from --host-seat');
   fs.mkdirSync(MANUAL, { recursive: true, mode: 0o700 });
   const { api, sshPort } = await bringUp(m => console.log(m));
-  const setup = hostCli('setup');
+  const setup = hostCli('setup', hostSeat);
   const keys = path.join(MANUAL, 'ssh');
   fs.mkdirSync(keys, { mode: 0o700 });
-  const key = keygen(keys, 'id');
-  const A = inviteAndAuthorize(setup.code, sshPort, key + '.pub');
-  const joinerHome = path.join(MANUAL, 'joiner-home');
-  fs.mkdirSync(joinerHome, { mode: 0o700 });
-  const opts = sshOpts(key, path.join(keys, 'known_hosts'));
-  fs.writeFileSync(path.join(MANUAL, 'state.json'), JSON.stringify({ api, sshPort, code: setup.code, linkId: A.linkId, joinerHome }, null, 2) + '\n', { mode: 0o600 });
-  const env = [
-    '# sub-human remote-docker manual mode: source this in the shell you start the joiner Claude from.',
-    `# room ${setup.code} in devbox (alice is there); link ${A.linkId}; ssh via toxiproxy 127.0.0.1:${sshPort}`,
-    `export SUB_HUMAN_HOME='${joinerHome}'`,
-    `export SUB_HUMAN_SSH_OPTS='${opts}'`,
-    `export SUB_HUMAN_INVITE='${A.invite}'`,
-    `# then: claude --plugin-dir '${PLUGIN}' --remote-control`,
-    '# and type: /sub-human join bob <the invite: echo $SUB_HUMAN_INVITE>',
-    '',
-  ].join('\n');
-  fs.writeFileSync(path.join(MANUAL, 'manual.env'), env, { mode: 0o600 });
-  fs.chmodSync(path.join(MANUAL, 'manual.env'), 0o600);
-  console.log(`up: room ${setup.code}, alice seated in devbox, ssh 127.0.0.1:${sshPort}, toxiproxy api 127.0.0.1:${api}`);
-  console.log(`joiner env (0600): ${path.join(MANUAL, 'manual.env')}`);
+  const joiners = names.map(name => {
+    const key = keygen(keys, name);
+    const A = inviteAndAuthorize(setup.code, sshPort, key + '.pub');
+    const j = { name, linkId: A.linkId, home: path.join(MANUAL, `${name}-home`), proj: path.join(MANUAL, `${name}-proj`), env: path.join(MANUAL, `${name}.env`) };
+    fs.mkdirSync(j.home, { mode: 0o700 });
+    fs.mkdirSync(j.proj, { mode: 0o700 });
+    sh('git', ['init', '-q', j.proj]);
+    const env = [
+      `# sub-human remote-docker manual mode, joiner ${name}: source this in the shell you start ${name}'s Claude from.`,
+      `# room ${setup.code} in devbox (${hostSeat} is there); link ${A.linkId}; ssh via toxiproxy 127.0.0.1:${sshPort}`,
+      `export SUB_HUMAN_HOME='${j.home}'`,
+      `export SUB_HUMAN_SSH_OPTS='${sshOpts(key, path.join(keys, `${name}.known_hosts`))}'`,
+      `export SUB_HUMAN_INVITE='${A.invite}'`,
+      `# then: cd '${j.proj}' && claude --plugin-dir '${PLUGIN}' --remote-control`,
+      `# and type: /sub-human join ${name} <the invite: echo $SUB_HUMAN_INVITE>`,
+      '',
+    ].join('\n');
+    fs.writeFileSync(j.env, env, { mode: 0o600 });
+    fs.chmodSync(j.env, 0o600);
+    return j;
+  });
+  fs.writeFileSync(path.join(MANUAL, 'state.json'), JSON.stringify({ api, sshPort, code: setup.code, hostSeat, joiners }, null, 2) + '\n', { mode: 0o600 });
+  console.log(`up: room ${setup.code}, ${hostSeat} seated in devbox, ssh 127.0.0.1:${sshPort}, toxiproxy api 127.0.0.1:${api}`);
+  for (const j of joiners) console.log(`joiner ${j.name}: env (0600) ${j.env}, project ${j.proj}`);
 }
 
 async function down() {
   let st = null;
   try { st = manualState(); } catch { /* not up, or half up */ }
-  if (st) {
-    process.env.SUB_HUMAN_HOME = st.joinerHome;
-    try {
-      const s = pluginLib('remote/link.js').status(st.code);
-      if (s.running) process.kill(s.pid, 'SIGTERM');
-    } catch { /* no link */ }
+  if (st) for (const j of st.joiners || []) {
+    const s = linkOf(st, j);
+    if (s && s.running) try { process.kill(s.pid, 'SIGTERM'); } catch { /* gone */ }
   }
   const r = dc(['down', '-v', '--remove-orphans'], { allowFail: true });
   fs.rmSync(MANUAL, { recursive: true, force: true });
-  console.log(`down: compose exit ${r.status}; removed ${MANUAL}`);
+  console.log(`down: compose exit ${r.status}; removed ${MANUAL} (state, keys, every joiner's home, project and env)`);
 }
 
 async function main() {
@@ -552,14 +565,12 @@ async function main() {
     console.log(`\n${ok ? 'ALL PASS' : 'FAILED'}: evidence in ${out}`);
     process.exit(ok ? 0 : 1);
   }
-  if (cmd === 'up') return up();
+  if (cmd === 'up') return up(args);
   if (cmd === 'down') return down();
   const st = manualState();
   if (cmd === 'status') {
-    process.env.SUB_HUMAN_HOME = st.joinerHome;
-    let link = null;
-    try { link = pluginLib('remote/link.js').status(st.code); } catch { /* not joined */ }
-    return console.log(JSON.stringify({ ...st, proxy: await toxi(st.api, 'GET', `/proxies/${PROXY}`), joinerLink: link }, null, 2));
+    const joiners = st.joiners.map(j => ({ ...j, link: linkOf(st, j) }));
+    return console.log(JSON.stringify({ ...st, joiners, proxy: await toxi(st.api, 'GET', `/proxies/${PROXY}`) }, null, 2));
   }
   if (cmd === 'say') {
     if (args[0] === '--to') return console.log(JSON.stringify(hostCli('to', args[1], args.slice(2).join(' '))));
@@ -574,7 +585,7 @@ async function main() {
     }
     return console.log(`latency ${ms} ms each way`);
   }
-  console.error('usage: harness.js run [--out DIR] | up | status | say [--to NAME] TEXT | cut | heal | latency MS | down');
+  console.error('usage: harness.js run [--out DIR] | up [--host-seat NAME] [--joiners A,B] | status | say [--to NAME] TEXT | cut | heal | latency MS | down');
   process.exit(2);
 }
 
