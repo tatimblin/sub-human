@@ -375,6 +375,13 @@ test('guard: the plugin-code rule reads the cwd only when the command does not n
   assert.ok(g.bashVerdict('node hooks/consent.js', { ...inPlugin, cwd: '/elsewhere', realCwd: '/repo/plugin/sub-human' }));
 });
 
+test('guard: the person-only CLI is sent to a terminal outside Claude Code, never to its ! mode (the PIN would land in the conversation)', async () => {
+  const g = await load('mod/core/guard.mjs');
+  const why = g.bashVerdict('sub-human host --ssh');
+  assert.match(why, /in a terminal outside Claude Code: not with !/);
+  assert.doesNotMatch(why, /in your own shell/);
+});
+
 // ---------- mod-hello ----------
 test('mod-hello: prints the home and this session\'s seat, and writes the lease (0600)', t => {
   const w = new World({ orch: 'sleep', alice: 'act' }, { t });

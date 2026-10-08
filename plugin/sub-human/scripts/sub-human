@@ -343,6 +343,9 @@ function invite(args) {
   if (flags.via !== undefined && flags.ssh === undefined) die('--via is for an ssh invite (--ssh USER@HOST)');
   const locator = flags.ssh === undefined ? pipeLocator() : sshLocator(flags.ssh, flags.via !== undefined ? { via: flags.via } : {});
   if (!locator) die(`--ssh needs a plain USER@HOST[:PORT], not "${flags.ssh}"${flags.via !== undefined ? `, and --via a plain [USER@]HOST[:PORT], not "${flags.via}"` : ''}`);
+  // an sh1 invite is the credential itself: inside Claude Code (its ! shell) it would land in the conversation
+  const { inClaudeCode } = require(path.join(LIB, 'cli', 'host.js'));
+  if (inClaudeCode()) die('invite hidden: this ran inside Claude Code, where the output becomes part of the conversation. Run it in a terminal outside Claude Code, or use /sub-human host in the room (its reply is shown to you only).', 1);
   console.log(mintInvite(r.store, { locator }).invite);
 }
 

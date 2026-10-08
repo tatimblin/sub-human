@@ -210,6 +210,15 @@ test('sh2 over ssh, without sshd: the joiner pins the host key and makes its own
   const inv3 = /sh2\.\S+/.exec(out.stdout)[0];
   assert.equal(auth.parseInvite(inv3).locator, 'ssh:dev@box.example:2222');
   assert.match(out.stdout, /\nPIN \d{6} /);
+  // inside Claude Code (its ! shell: CLAUDECODE=1) the output is model input: the PIN is masked, an sh1 invite refused
+  const inCc = cli(['host', '--ssh', '--room', code], { SUB_HUMAN_SSH_ADDR: 'dev@box.example:2222', CLAUDECODE: '1' });
+  assert.equal(inCc.status, 0, inCc.stderr);
+  assert.doesNotMatch(inCc.stdout, /PIN \d{6}/);
+  assert.match(inCc.stdout, /\nPIN ###### .*\nPIN hidden: this ran inside Claude Code.*terminal outside Claude Code, or use \/sub-human host/s);
+  const sh1 = cli(['invite', '--room', code], { CLAUDECODE: '1' });
+  assert.equal(sh1.status, 1);
+  assert.doesNotMatch(sh1.stdout, /sh1\./);
+  assert.match(sh1.stderr, /invite hidden: this ran inside Claude Code/);
   assert.equal(cli(['host', '--ssh', 'bad host', '--room', code]).status, 1);
   assert.equal(cli(['admit', 'shk1.nope', '--yes']).status, 1);
   assert.equal(cli(['revoke']).status, 2);

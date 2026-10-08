@@ -227,7 +227,7 @@ function linkRoom(invite) {
   if (!transport) return block(`this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine does not support yet.`);
   if (transport.kind === 'wss' || transport.kind === 'ws') return block('a web invite comes with its PIN and a pinned key (sh2); ask the host for one: /sub-human host --tailscale.');
   if (identity.roomExists(inv.code) && identity.isHost(inv.code)) {
-    return block(`room ${inv.code} is hosted on this machine; join it with /sub-human NAME ${inv.code}. If it was promoted on another machine while this one was away, run in your own shell: sub-human demote ${inv.code} INVITE PIN (this machine's own lines are kept aside, never merged).`);
+    return block(`room ${inv.code} is hosted on this machine; join it with /sub-human NAME ${inv.code}. If it was promoted on another machine while this one was away, run in a terminal outside Claude Code (not with !): sub-human demote ${inv.code} INVITE PIN (this machine's own lines are kept aside, never merged).`);
   }
   const cur = links.get(inv.code);
   const moved = !!cur && !!cur.token && locatorOf(cur.transport) !== inv.locator;

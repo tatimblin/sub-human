@@ -73,7 +73,7 @@ export function bashVerdict(command, ctx = {}) {
   const cmd = typeof command === 'string' ? command : '';
   if (!cmd.trim()) return null;
   if (READ_CLI.test(cmd)) return null;
-  if (PERSON_CLI.test(cmd)) return 'it mints an invite, admits or revokes a link, or speaks for the room\'s link (run sub-human invite, authorize, host, unhost, admit, revoke, prime, listen, link, serve, handoff, promote and demote in your own shell)';
+  if (PERSON_CLI.test(cmd)) return 'it mints an invite, admits or revokes a link, or speaks for the room\'s link (run sub-human invite, authorize, host, unhost, admit, revoke, prime, listen, link, serve, handoff, promote and demote yourself, in a terminal outside Claude Code: not with !, which puts the output, an invite and its PIN, into this conversation)';
   if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME)';
   if (DOT_HOME.test(cmd)) return 'it touches the room store (~/.sub-human)';
   for (const h of homeSpellings(ctx)) {

@@ -129,7 +129,9 @@ function promoteCmd(args, ctx) {
   out(`this machine hosts room ${code} now (host epoch ${r.epoch})${r.note}`);
   if (!r.invites.length) return out('no other machine had a seat in the room.');
   out('Give each machine its invite, and its PIN some other way (each is single-use, lasts 15 minutes and only works on that machine):');
-  for (const x of r.invites) out(`  ${x.seats.join(', ')}: /sub-human join ${x.seats[0]} ${x.invite} ${x.pin}   (then /sub-human ${x.seats[0]} ${code})`);
+  // inside Claude Code (its ! shell) the PINs are masked: that output would land in the conversation
+  const lines = r.invites.map(x => `  ${x.seats.join(', ')}: /sub-human join ${x.seats[0]} ${x.invite} ${x.pin}   (then /sub-human ${x.seats[0]} ${code})`);
+  out(require('./host.js').maskPins(lines.join('\n'), r.invites.map(x => x.pin)));
   out(`The old host, when it is back: sub-human demote ${code} <its invite above> <its PIN>`);
 }
 

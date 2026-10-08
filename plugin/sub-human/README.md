@@ -61,7 +61,7 @@ The invite pins this machine's ssh host key SHA256:dl2/IPcY….
 Their join then shows them a line to send back to you: paste it here, /sub-human admit shk1.…, to let their key in.
 ```
 
-This is shown to you, never to your Claude. The invite is for one machine and one use. It carries the room, how to reach the host, a single-use secret and the host's SSH host key; the **PIN is not in it**. Send the invite in chat and say the PIN some other way. Only the host checks the PIN, when the joiner's link first connects: 5 wrong tries or 15 minutes and the invite is burnt, and the room shows each wrong PIN. `sub-human host [--room CODE] [--ssh [USER@HOST]] [--via JUMP]` prints the same in your own shell.
+This is shown to you, never to your Claude. The invite is for one machine and one use. It carries the room, how to reach the host, a single-use secret and the host's SSH host key; the **PIN is not in it**. Send the invite in chat and say the PIN some other way. Only the host checks the PIN, when the joiner's link first connects: 5 wrong tries or 15 minutes and the invite is burnt, and the room shows each wrong PIN. `sub-human host [--room CODE] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code. Inside Claude Code (its `!` mode) it masks the PIN, because that output becomes part of the conversation, and `sub-human invite` refuses.
 
 ### Joining: `/sub-human join NAME INVITE PIN`
 
@@ -296,7 +296,7 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 | `demote CODE INVITE [PIN]` | On an old host the room was promoted away from: set its log aside and follow the new host. |
 | `doctor [--quick] [--fix] [--bundle [FILE]]` | What is wrong on this machine, with a fix for each (see **Doctor**). |
 
-`tail` (the room tail), `agent-statusline` (the rows) and `serve --stdio CODE` (the host's end of a link) are internal. Run `host`, `unhost`, `admit`, `revoke`, `prime`, `listen`, `invite`, `authorize`, `link`, `serve`, `handoff`, `promote` and `demote` in your own shell: the plugin refuses them to a Claude.
+`tail` (the room tail), `agent-statusline` (the rows) and `serve --stdio CODE` (the host's end of a link) are internal. Run `host`, `unhost`, `admit`, `revoke`, `prime`, `listen`, `invite`, `authorize`, `link`, `serve`, `handoff`, `promote` and `demote` in a terminal outside Claude Code: the plugin refuses them to a Claude, and Claude Code's `!` mode would put their output (an invite, a PIN) into the conversation, so there `host` and `promote` mask the PIN and `invite` refuses.
 
 ## Doctor
 

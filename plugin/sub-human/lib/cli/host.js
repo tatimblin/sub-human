@@ -27,6 +27,18 @@ const { parse } = require('./args.js');
 const say = s => process.stdout.write(s.endsWith('\n') ? s : s + '\n');
 const fail = (s, code = 1) => { process.stderr.write(s.endsWith('\n') ? s : s + '\n'); return code; };
 
+/** Run inside Claude Code (its `!` shell, a Bash tool): whatever is printed lands in the conversation, model input. */
+const inClaudeCode = (env = process.env) => env.CLAUDECODE === '1' || !!env.CLAUDE_CODE_SESSION_ID;
+const PIN_HIDDEN = 'PIN hidden: this ran inside Claude Code, where the output becomes part of the conversation. Run it in a terminal outside Claude Code, or use /sub-human host in the room (its reply is shown to you only).';
+
+/** text with every PIN in it masked, and why, when run inside Claude Code; else text as it is. */
+function maskPins(text, pins, env = process.env) {
+  if (!inClaudeCode(env)) return text;
+  let out = text;
+  for (const p of pins.filter(Boolean)) out = out.split(p).join('######');
+  return `${out}\n${PIN_HIDDEN}`;
+}
+
 /** The room: --room, else the one open room hosted here. */
 function hostedRoom(explicit) {
   const identity = require('../identity.js');
@@ -47,7 +59,7 @@ function host(args) {
     const r = web
       ? require('../remote/webhost.js').hostWeb(hostedRoom(p.flags.room), { tailscale: !!p.flags.tailscale, funnel: !!p.flags.funnel, url: p.flags.url, ...(p.flags.port ? { port: Number(p.flags.port) } : {}) })
       : require('../remote/hosting.js').hostInvite(hostedRoom(p.flags.room), { ssh, via: p.flags.via });
-    say(r.text);
+    say(maskPins(r.text, [r.pin]));
     return 0;
   } catch (e) { return fail(e.message); }
 }
@@ -98,4 +110,4 @@ function prime(args) {
   } catch (e) { return fail(e.message); }
 }
 
-module.exports = { host, admit, prime, hostedRoom };
+module.exports = { host, admit, prime, hostedRoom, inClaudeCode, maskPins, PIN_HIDDEN };
