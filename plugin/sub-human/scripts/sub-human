@@ -2,7 +2,8 @@
 'use strict';
 /**
  * plugin/sub-human/scripts/sub-human: the read-only CLI over the room. There is no post command: writes come only
- * from the plugin's hooks and the MCP server. Without --room / CODE, the room is this session's
+ * from the plugin's hooks and the MCP server (the host's admit and revoke add a line from the room itself, via
+ * system). Without --room / CODE, the room is this session's
  * (identity.resolveSelf(): the session id env, then the nearest registered ancestor claude pid).
  *
  *   sub-human tail [--ndjson] [--max-seconds S]
@@ -51,10 +52,24 @@
  *       The link daemon of room CODE, hosted on another machine (lib/remote/link.js run): the join hook starts it
  *       detached; it exits on its own once this machine has no seat left in the room. --reset (with no daemon
  *       running, e.g. after a FORK): forget this machine's copy of the room and start the daemon to copy it again.
- *   sub-human invite [--room CODE] [--ssh USER@HOST[:PORT]]
- *       An invite to a room hosted here (lib/remote/auth.js mintInvite), for one machine: what /sub-human host gives.
- *       --ssh: the other machine reaches this one as USER@HOST[:PORT] over SSH (lib/remote/link.js sshLocator);
- *       without it the invite is for a second home on this machine (pipe). Then run authorize with their key.
+ *   sub-human invite [--room CODE] [--ssh USER@HOST[:PORT]] [--via JUMP]
+ *       An sh1 invite (no PIN) to a room hosted here (lib/remote/auth.js mintInvite), for one machine.
+ *       --ssh: the other machine reaches this one as USER@HOST[:PORT] over SSH (lib/remote/link.js sshLocator), --via
+ *       through that ProxyJump; without it the invite is for a second home on this machine (pipe). Then run
+ *       authorize with their key. `host` below is the one-step sh2 way.
+ *   sub-human host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP]     (lib/cli/host.js)
+ *       An sh2 invite and its PIN, as /sub-human host shows them (lib/remote/hosting.js hostInvite). --ssh alone:
+ *       this machine's own address (SUB_HUMAN_SSH_ADDR, else user@hostname); the invite pins this machine's sshd
+ *       Ed25519 host key. The joiner's join then shows them an admit request to send back.
+ *   sub-human admit REQUEST [--file AUTHORIZED_KEYS] [--yes]                 (lib/cli/host.js)
+ *       Let in the key an admit request (shk1.…) carries, for the invite it names: one forced-command line in
+ *       authorized_keys (default SUB_HUMAN_AUTHORIZED_KEYS, else ~/.ssh/authorized_keys), for that room's link only.
+ *       Asks y/N on a terminal; /sub-human admit REQUEST in the host's session does the same.
+ *   sub-human revoke LINK_ID|NAME [--room CODE] [--file AUTHORIZED_KEYS]      (lib/cli/revoke.js)
+ *       End a link: token burnt, its authorized_keys lines removed, its seats leave, a room line says so.
+ *   sub-human prime CODE [--persist 8h]                                      (lib/cli/host.js)
+ *       On the joining machine: open a shared ssh connection (ControlMaster) for room CODE's link, interactively,
+ *       so an MFA bastion or host asks once; the link daemon then rides it.
  *   sub-human authorize INVITE|LINK_ID PUBKEY_FILE|- [--room CODE] [--file AUTHORIZED_KEYS]
  *       The authorized_keys line that lets the holder of that SSH public key reach room CODE (the invite's, or
  *       --room with a link id) as that one link and nothing else:
@@ -70,7 +85,8 @@
  *       shim, authorized_keys lines that bypass it, ssh, each link (state, last error, a hello to its host with
  *       both protocol versions, clock skew), Claude Code against the internals, hooks, Remote Control. --bundle
  *       writes the same, redacted, for a bug report. Exit 1 when a check fails.
- *   Run invite, authorize, link and serve in your own shell: the Bash guard refuses them to a model.
+ *   Run invite, authorize, host, admit, revoke, prime, link and serve in your own shell: the Bash guard refuses them
+ *   to a model.
  */
 
 const path = require('node:path');
@@ -301,13 +317,14 @@ function linkCmd(args) {
 }
 
 function invite(args) {
-  const { flags } = parseFlags(args, { room: 1, ssh: 1 });
+  const { flags } = parseFlags(args, { room: 1, ssh: 1, via: 1 });
   const { code, r } = openRoom(flags.room);
   if (!r.store.isHost) die(`room ${code} is hosted on another machine; its host gives the invites`, 1);
   const { mintInvite } = require(path.join(LIB, 'remote', 'auth.js'));
   const { pipeLocator, sshLocator } = require(path.join(LIB, 'remote', 'link.js'));
-  const locator = flags.ssh === undefined ? pipeLocator() : sshLocator(flags.ssh);
-  if (!locator) die(`--ssh needs a plain USER@HOST[:PORT], not "${flags.ssh}"`);
+  if (flags.via !== undefined && flags.ssh === undefined) die('--via is for an ssh invite (--ssh USER@HOST)');
+  const locator = flags.ssh === undefined ? pipeLocator() : sshLocator(flags.ssh, flags.via !== undefined ? { via: flags.via } : {});
+  if (!locator) die(`--ssh needs a plain USER@HOST[:PORT], not "${flags.ssh}"${flags.via !== undefined ? `, and --via a plain [USER@]HOST[:PORT], not "${flags.via}"` : ''}`);
   console.log(mintInvite(r.store, { locator }).invite);
 }
 
@@ -373,8 +390,11 @@ if (cmd !== 'agent-statusline' && cmd !== 'doctor') { // doctor reports the shim
 }
 const doctor = args => require(path.join(LIB, 'cli', 'doctor.js')).main(args).then(c => process.exit(c), e => die(e.message, 2));
 const cmds = { doctor, tail, read, digest, who, tasks: tasksCmd, watch, serve, link: linkCmd, invite, authorize, 'agent-statusline': agentStatusline };
+// lib/cli/*: each returns the exit code
+const viaCli = (file, fn) => a => process.exit(require(path.join(LIB, 'cli', file))[fn](a));
+Object.assign(cmds, { host: viaCli('host.js', 'host'), admit: viaCli('host.js', 'admit'), prime: viaCli('host.js', 'prime'), revoke: viaCli('revoke.js', 'revoke') });
 try {
-  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] | authorize INVITE|LINK_ID PUBKEY [--file F] | doctor [--bundle [FILE]] | agent-statusline')))(args);
+  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] [--via JUMP] | authorize INVITE|LINK_ID PUBKEY [--file F] | host [--ssh [USER@HOST]] [--via JUMP] | admit REQUEST | revoke LINK_ID|NAME | prime CODE | doctor [--bundle [FILE]] | agent-statusline')))(args);
 } catch (e) {
   die(e.message, 2);
 }

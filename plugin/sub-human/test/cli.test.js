@@ -158,7 +158,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.ok(r.stdout.length <= room.DIGEST_CAP + 1);
   assert.equal(cli(['digest', '--room', 'nope-0000']).status, 1);
   assert.equal(cli(['post', 'hello']).status, 2, 'there is no post command');
-  assert.match(cli(['nope']).stderr, /usage: sub-human tail \| read .*tasks \[--json\] \| watch NAME \| serve --stdio CODE \[--link ID\] \| link CODE \[--reset\] \| invite \[--ssh USER@HOST\[:PORT\]\] \| authorize INVITE\|LINK_ID PUBKEY \[--file F\] \| doctor \[--bundle \[FILE\]\] \| agent-statusline$/m);
+  assert.match(cli(['nope']).stderr, /usage: sub-human tail \| read .*tasks \[--json\] \| watch NAME \| serve --stdio CODE \[--link ID\] \| link CODE \[--reset\] \| invite \[--ssh USER@HOST\[:PORT\]\] \[--via JUMP\] \| authorize INVITE\|LINK_ID PUBKEY \[--file F\] \| .*host \[--ssh \[USER@HOST\]\] \[--via JUMP\] \| admit REQUEST \| revoke LINK_ID\|NAME \| prime CODE .*\| agent-statusline$/m);
   for (const gone of ['plan', 'statusline']) assert.equal(cli([gone]).status, 2, `${gone} is dropped`);
   bob.kill();
 });

@@ -1,0 +1,92 @@
+# The sub-human lab (scripts/remote-docker/README.md has the diagram): a multi-machine topology for the remote rooms
+# 1.0/1.1 scenarios (scripts/remote-docker/scenarios/, `harness.js scenarios`). Project name sub-human-lab, so it
+# never touches the older single-devbox stack (compose.yml, sub-human-remote).
+#
+# Networks
+#   core  internal: the devboxes, the bastion's inside leg, toxiproxy's upstream leg, tls-front's upstream leg
+#   edge  the "internet": joiner-a, toxiproxy, bastion, tls-front, corp-proxy's outside leg. The only network that
+#         publishes ports to this Mac (toxiproxy's api and its devbox ssh port, on 127.0.0.1, for the manual mode)
+#   corp  internal: joiner-b, the bastion, corp-proxy. No route out, no UDP; only bastion:22 and corp-proxy:3128
+# The devbox is on core only: a joiner reaches it through toxiproxy (the chaos-able WAN path), the bastion
+# (ProxyJump) or tls-front (1.1).
+name: sub-human-lab
+
+x-machine: &machine
+  build: .
+  image: sub-human-lab:node24
+  init: true
+  volumes:
+    - ../../../plugin/sub-human:/plugin:ro
+    - .:/lab:ro
+
+services:
+  devbox:
+    <<: *machine
+    command: [devbox]
+    hostname: devbox
+    environment:
+      LAB_WS_PORT: ${LAB_WS_PORT:-7420}
+      LAB_WS_FWD_PORT: ${LAB_WS_FWD_PORT:-7421}
+    networks: [core]
+
+  devbox-old:
+    # plugin 0.2.0 (git ref cb4d344, pre-registry), baked into the image by harness.js (lab.js buildOld); no mount
+    image: sub-human-lab-old:cb4d344
+    init: true
+    command: [devbox]
+    hostname: devbox-old
+    volumes:
+      - .:/lab:ro
+    networks: [core]
+
+  bastion:
+    <<: *machine
+    command: [bastion]
+    hostname: bastion
+    environment:
+      LAB_PERMIT_OPEN: devbox:22 devbox-old:22 joiner-a:22
+    networks: [core, edge, corp]
+
+  joiner-a:
+    <<: *machine
+    command: [joiner]
+    hostname: joiner-a
+    cap_add: [NET_ADMIN]
+    networks: [edge]
+
+  joiner-b:
+    <<: *machine
+    command: [joiner]
+    hostname: joiner-b
+    cap_add: [NET_ADMIN]
+    networks: [corp]
+
+  corp-proxy:
+    <<: *machine
+    command: [proxy]
+    hostname: corp-proxy
+    networks: [corp, edge]
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    hostname: toxiproxy
+    networks: [edge, core]
+    ports:
+      - "127.0.0.1::8474"
+      - "127.0.0.1::22001"
+
+  tls-front:
+    image: caddy:2.10-alpine
+    hostname: tls-front
+    environment:
+      LAB_WS_FWD_PORT: ${LAB_WS_FWD_PORT:-7421}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks: [edge, core]
+
+networks:
+  core:
+    internal: true
+  edge: {}
+  corp:
+    internal: true

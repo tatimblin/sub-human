@@ -208,10 +208,8 @@ function helloProbe(spec, code, { timeoutMs = DOCTOR_HELLO_MS, env = process.env
     }
   } catch (e) { return Promise.resolve({ ok: false, ms: 0, error: e.message }); }
   if (!cmd) return Promise.resolve({ ok: false, ms: 0, skipped: true, error: `no reachability check for the ${spec.kind} transport` });
-  const params = {
-    v: protocol.VERSION, caps: {}, machine: lib('home.js').machineId(), client: 'sub-human', version: pluginVersion(),
-    ...(protocol.VMIN !== undefined ? { vmin: protocol.VMIN } : {}), ...(protocol.VMAX !== undefined ? { vmax: protocol.VMAX } : {}),
-  };
+  // v 1: the least this probe needs, so a host before 0.4 (which checks v === 1 and knows no proto) answers too
+  const params = { v: 1, proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.js').machineId() };
   return new Promise(resolve => {
     const t0 = Date.now();
     let stderr = '', done = false;
@@ -259,6 +257,7 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
   let daemon = { running: false };
   try { const s = lib('remote/link.js').status(code); daemon = { running: !!s.running, pid: s.pid || null }; } catch { /* no mirror */ }
   const st = lib('room/link-state.js').read(code) || { state: 'down' };
+  if (st.pid) daemon = { running: lib('io.js').isAlive(st.pid), pid: st.pid }; // the state record's own pid wins
   const recent = lastLogError(code);
   const out = { code, transport: { kind: spec.kind, describe, user: spec.user, host: spec.host, port: spec.port, home: spec.home },
     credential: l.token ? 'token' : l.invite ? 'invite (not redeemed yet)' : 'none', daemon, state: st, recent };
@@ -269,7 +268,7 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
     out.reach = {
       ok: r.ok, ms: r.ms, error: r.error, skipped: !!r.skipped, hint: r.ok ? null : (spec.kind === 'ssh' ? sshHint(r.stderr) : null),
       stderr: r.stderr || '',
-      protocol: r.ok ? { v: reply.v, vmin: reply.vmin, vmax: reply.vmax, version: reply.version || null } : null,
+      protocol: r.ok ? { v: reply.v, proto: reply.proto || null, server: typeof reply.server === 'string' ? reply.server : null } : null,
       skewMs: r.ok && hostTime !== null ? Math.round(hostTime - (r.t0 + r.t1) / 2) : null,
     };
   }
@@ -290,12 +289,13 @@ function linkChecks(d) {
   else if (!d.daemon.running && d.state.state !== 'up') fix = `the join hook starts the daemon: /sub-human join again, or run sub-human link ${d.code} in a shell`;
   if (d.reach) {
     const r = d.reach;
-    const local = `v${protocol.VERSION}${protocol.VMIN !== undefined ? ` (${protocol.VMIN}-${protocol.VMAX})` : ''}`;
+    const span = x => (x && x.min !== undefined ? (x.min === x.max ? `${x.min}` : `${x.min}-${x.max}`) : '?');
+    const local = `${span(protocol.PROTO)} (sub-human ${protocol.PLUGIN_VERSION})`;
     if (r.skipped) bits.push(r.error);
     else if (r.ok) {
       const p = r.protocol || {};
-      const host = `v${p.v}${p.vmin !== undefined ? ` (${p.vmin}-${p.vmax})` : ''}${p.version ? `, sub-human ${p.version}` : ''}`;
-      bits.push(`host reachable in ${r.ms} ms; protocol here ${local}, host ${host}`);
+      const host = `${p.proto ? span(p.proto) : p.v} (sub-human ${p.server || 'before 0.4'})`;
+      bits.push(`host reachable in ${r.ms} ms; protocol here ${local}, host ${host}, speaking v${p.v}`);
     } else {
       bits.push(`host unreachable: ${r.error}`);
       status = 'fail';
@@ -395,7 +395,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
   checks.push(checkHooks(settings), checkRemoteControl(env, settings));
   return {
     generated_at: new Date().toISOString(),
-    versions: { plugin: pluginVersion(), node: process.versions.node, claude: cv, protocol: lib('remote/protocol.js').VERSION, ssh: sshV, platform: process.platform, arch: process.arch, os: os.release() },
+    versions: { plugin: pluginVersion(), node: process.versions.node, claude: cv, protocol: lib('remote/protocol.js').PROTO, ssh: sshV, platform: process.platform, arch: process.arch, os: os.release() },
     checks, links, authorizedKeys: scan, probe: cl.probe || null,
   };
 }

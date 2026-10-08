@@ -1,0 +1,194 @@
+'use strict';
+/**
+ * plugin/sub-human/lib/remote/hosting.js: the host's side of an sh2 link, one step each, shared by the join hook
+ * (`/sub-human host`, `/sub-human admit`, `/sub-human revoke`: their output is a block reason, shown to the person
+ * and never to the model) and the CLI (lib/cli/host.js). The joiner's side is joinInvite() below; the
+ * key material is lib/remote/sshkeys.js.
+ *
+ *   hostInvite(code, {ssh?, via?, now?}) -> {invite, pin, expires_at, locator, hostKey, text}
+ *       an sh2 invite to room CODE (hosted here) and its PIN (lib/remote/auth.js mintInvite). ssh: undefined for a
+ *       pipe invite (a second home on this machine); true for this machine's own address (SUB_HUMAN_SSH_ADDR, else
+ *       <user>@<hostname>); or "user@host[:port]". via: a ProxyJump for the joiner ("bastion", "me@jump:2222"). Over
+ *       ssh the invite pins this machine's sshd Ed25519 host key (sshkeys.hostKey), and the stable serve shim must
+ *       be writable (lib/remote/shim.js refresh). text: the copyable block for the person
+ *   admit(request, {file?, now?}) -> {code, id, name, fingerprint, result, text}
+ *       the person's consent to an admit request (sshkeys.parseRequest): the invite it names is reserved for a link
+ *       (auth.reserveRef) and the joiner's key gets the forced-command line for that link and room only
+ *       (shim.authorizedLine, sshkeys.appendAuthorized into file, default sshkeys.authorizedKeysFile()). A room line
+ *       says so. The PIN is still checked at the link's first hello
+ *   revoke(code, target, {file?}) -> {id, seats, keys, text}
+ *       target: a link id, or the name of a seat that joined over a link. The link's token stops working
+ *       (auth.revokeLink, which also burns an invite reserved for it), its authorized_keys lines go, its seats leave
+ *       ("revoked by the host"), its running `serve` processes are stopped, and a room line says so
+ *   joinInvite({inv, invite, pin, name, now?}) -> {code, request?}   the joiner's link file for an sh2 invite: over
+ *       ssh, the link's own key (sshkeys.linkKey in links.dirOf(code)) and, when the invite carries one, the host
+ *       key pinned in a known_hosts of the link's own; request: the admit request for the host. RoomError INVALID
+ *       for a locator this machine cannot use
+ *   outcome(code, {waitMs?}) -> {state: 'linked' | 'refused' | 'waiting', reason?}   the link daemon's first hello,
+ *       watched for up to waitMs (LINK_JOIN_WAIT_MS): linked (the PIN held), refused (its reason: a wrong PIN, an
+ *       expired invite, a protocol skew), or waiting (ssh not admitted yet, or slow)
+ *   joinText(code, name, outcome, request?) -> string   what the joiner's person reads next
+ */
+
+const os = require('node:os');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const auth = require('./auth.js');
+const sshkeys = require('./sshkeys.js');
+const { RoomError } = require('../room/validate.js');
+const { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } = require('../config.js');
+
+const sshT = () => require('./transports/ssh.js');
+const linkLib = () => require('./link.js');
+const links = () => require('../room/links.js');
+const roomOf = code => require('../room.js').open(code);
+const minutes = ms => Math.round(ms / 60_000);
+
+function hostStore(code) {
+  const identity = require('../identity.js');
+  if (!identity.roomExists(code)) throw new RoomError('NO_ROOM', `no room "${code}"`);
+  const s = roomOf(code).store;
+  if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; its host does this`);
+  return s;
+}
+
+/** A line in the room from the room itself, best effort. */
+function roomLine(code, text) {
+  try { roomOf(code).append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }); } catch { /* the action stands */ }
+}
+
+/** The stable serve shim (an ssh forced command names it); the home path it carries. */
+function shimReady() {
+  const shim = require('./shim.js');
+  if (!shim.refresh()) throw new RoomError('INVALID', `the plugin root ${shim.pluginRoot()} is under a temp dir; sshd would run whatever sits there (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)`);
+  const h = path.resolve(require('../home.js').home());
+  if (!shim.PLAIN_PATH_RE.test(h)) throw new RoomError('INVALID', `the home path "${h}" has characters a forced command cannot carry plainly; move it`);
+  return { shim, h };
+}
+
+const selfAddress = () => process.env.SUB_HUMAN_SSH_ADDR || `${os.userInfo().username}@${os.hostname()}`;
+
+function hostInvite(code, { ssh, via, now = Date.now() } = {}) {
+  const store = hostStore(code);
+  let locator, hostKey = null, dest = null;
+  if (ssh === undefined || ssh === false) {
+    if (via !== undefined) throw new RoomError('INVALID', '--via is for an ssh invite (--ssh)');
+    locator = linkLib().pipeLocator();
+  } else {
+    dest = ssh === true ? selfAddress() : String(ssh);
+    locator = sshT().locator(dest, via !== undefined ? { via } : {});
+    if (!locator) {
+      throw new RoomError('INVALID', sshT().dest(dest) ? `--via "${via}" is not a plain [user@]host[:port]` : `"${dest}" is not a plain user@host[:port]${ssh === true ? ' (set SUB_HUMAN_SSH_ADDR, or give --ssh USER@HOST)' : ''}`);
+    }
+    shimReady();
+    hostKey = sshkeys.hostKey();
+  }
+  const r = auth.mintInvite(store, { locator, pin: true, hostKey, now });
+  const lines = [
+    `invite to room ${code}, for one machine${dest ? `, over ssh ${dest}${via ? ` via ${via}` : ''}` : ' (a second home on this machine)'}. Shown once; it lasts ${minutes(INVITE_TTL_MS)} minutes.`,
+    '',
+    `  /sub-human join NAME ${r.invite} PIN`,
+    '',
+    `PIN ${r.pin}  (send it apart from the invite, e.g. say it; 5 wrong tries burn the invite)`,
+  ];
+  if (dest) {
+    lines.push(hostKey
+      ? `The invite pins this machine's ssh host key ${sshkeys.fingerprint(hostKey)}.`
+      : 'No ssh host key was readable here (/etc/ssh/ssh_host_ed25519_key.pub), so the joiner\'s own known_hosts decides.');
+    lines.push('Their join then shows them a line to send back to you: paste it here, /sub-human admit shk1.…, to let their key in.');
+  }
+  return { ...r, locator, hostKey, text: lines.join('\n') };
+}
+
+function admit(request, { file = sshkeys.authorizedKeysFile(), now = Date.now() } = {}) {
+  const req = sshkeys.parseRequest(request);
+  if (!req) throw new RoomError('INVALID', 'that is not an admit request (shk1.CODE.REF.KEY.NAME, from the joiner\'s /sub-human join)');
+  const store = hostStore(req.code);
+  const inv = Object.entries(store.kv.get(auth.INVITES_KEY, null) || {}).find(([k]) => k.startsWith(req.ref));
+  const { id } = auth.reserveRef(store, req.ref, { now });
+  const { shim, h } = shimReady();
+  const key = sshkeys.openssh(req.key);
+  const line = shim.authorizedLine(req.code, id, key, h);
+  const result = sshkeys.appendAuthorized(path.resolve(file), line, key);
+  const fp = sshkeys.fingerprint(req.key);
+  const left = inv && inv[1].expires_at ? Math.max(0, Date.parse(inv[1].expires_at) - now) : null;
+  if (result === 'added') roomLine(req.code, `the host admitted a key for ${req.name} (${fp}) to link ${id}; its first hello still needs the invite's PIN`);
+  const text = `${result === 'added' ? 'admitted' : 'already admitted'}: ${req.name}'s key ${fp} may reach room ${req.code} as link ${id}, `
+    + `and nothing else (a forced command in ${file}). The invite's PIN is still checked when they connect${left !== null ? ` (${minutes(left)} min left)` : ''}. `
+    + `Undo: sub-human revoke ${id}`;
+  return { code: req.code, id, name: req.name, fingerprint: fp, result, text };
+}
+
+function linkIdOf(store, target) {
+  const all = auth.links(store);
+  if (auth.LINK_ID_RE.test(target) && auth.linkKnown(store, target)) return target;
+  const hits = Object.values(all).filter(l => Array.isArray(l.seats) && l.seats.includes(target));
+  if (hits.length === 1) return hits[0].id;
+  if (hits.length > 1) throw new RoomError('INVALID', `${target} joined over ${hits.length} links (${hits.map(l => l.id).join(', ')}); name one`);
+  throw new RoomError('INVALID', `"${target}" is neither a link of room ${store.code} nor a seat that joined over one`);
+}
+
+function revoke(code, target, { file = sshkeys.authorizedKeysFile() } = {}) {
+  const store = hostStore(code);
+  const id = linkIdOf(store, String(target));
+  const r = auth.revokeLink(store, id) || { link: null, invites: 0 };
+  const keys = sshkeys.removeAuthorized(path.resolve(file), code, id);
+  spawnSync('pkill', ['-f', '--', `--stdio ${code} --link ${id}`], { stdio: 'ignore' });
+  const seats = r.link ? r.link.seats || [] : [];
+  const seatsLib = require('../seats.js');
+  for (const name of seats) { try { seatsLib.exit(code, name, 'revoked by the host'); } catch { /* gone already */ } }
+  roomLine(code, `the host revoked link ${id}${seats.length ? ` (${seats.join(', ')})` : ''}: its token and key no longer reach the room`);
+  const text = `revoked link ${id} of room ${code}: token burnt${r.invites ? `, ${r.invites} invite(s) burnt` : ''}, ${keys} authorized_keys line(s) removed from ${file}${seats.length ? `, ${seats.join(', ')} left` : ''}`;
+  return { id, seats, keys, text };
+}
+
+// ---------- the joiner ----------
+function joinInvite({ inv, invite, pin, name }) {
+  let transport = linkLib().transportOf(inv.locator);
+  if (!transport) throw new RoomError('INVALID', `this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine cannot use`);
+  let request = null;
+  if (transport.kind === 'ssh') {
+    const dir = links().dirOf(inv.code);
+    const key = sshkeys.linkKey(dir, `sub-human:${inv.code}:${name}`);
+    transport = { ...transport, key: key.file };
+    if (inv.hostKey) {
+      const alias = `sub-human-${inv.code}`;
+      const knownHosts = path.join(dir, 'known_hosts');
+      fs.writeFileSync(knownHosts, sshkeys.knownHostsLine(alias, inv.hostKey) + '\n', { mode: 0o600 });
+      transport = { ...transport, knownHosts, alias };
+    }
+    request = sshkeys.formatRequest({ code: inv.code, ref: auth.inviteRef(inv.secret), key: key.raw, name });
+  }
+  const cur = links().get(inv.code);
+  const mux = cur && cur.transport && cur.transport.mux === true ? { mux: true } : {};
+  links().set(inv.code, { code: inv.code, transport: { ...transport, ...mux }, invite, pin, ...(request ? { request } : {}), created_at: new Date().toISOString() });
+  return { code: inv.code, request };
+}
+
+function outcome(code, { waitMs = LINK_JOIN_WAIT_MS } = {}) {
+  const { sleepSync } = require('../io.js');
+  const l = linkLib();
+  for (const until = Date.now() + waitMs; ; sleepSync(50)) {
+    const st = l.status(code);
+    const stopped = l.stopReason(st);
+    if (stopped) return { state: 'refused', reason: stopped.reason };
+    const lf = links().get(code);
+    if (st.state === 'online' && lf && lf.token) return { state: 'linked' };
+    if (st.state === 'offline' && lf && lf.request) return { state: 'waiting', reason: st.reason };
+    if (Date.now() >= until) return { state: 'waiting', reason: st.reason };
+  }
+}
+
+function joinText(code, name, o, request) {
+  if (o.state === 'linked') return `linked to room ${code}: the host checked your PIN. Now type: /sub-human ${name} ${code}`;
+  if (o.state === 'refused') return `could not link to room ${code}: ${o.reason}`;
+  if (request) {
+    return `this machine made a key of its own for room ${code}; the host has to let it in first. Send them this line (it holds no secret):\n\n`
+      + `  /sub-human admit ${request}\n\n`
+      + `Once they have, type: /sub-human ${name} ${code}  (the link keeps trying for ${minutes(INVITE_TTL_MS)} minutes; your PIN is checked when it gets through)`;
+  }
+  return `the link to room ${code} is still connecting${o.reason ? ` (${o.reason})` : ''}; type /sub-human ${name} ${code} in a moment`;
+}
+
+module.exports = { hostInvite, admit, revoke, joinInvite, outcome, joinText };

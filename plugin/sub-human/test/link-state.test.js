@@ -58,6 +58,20 @@ test('link-state: a daemon that died reads down, whatever its last record said (
   assert.equal(ls.read(CODE).state, 'fork');
 });
 
+test('link-state: the daemon\'s record as lib/remote/link.js writes it (links.writeState): its own pid and detail decide', async t => {
+  linked(t);
+  const at = new Date().toISOString();
+  links.writeState(CODE, { state: 'up', since: at, attempt: 0, lastError: null, rttMs: 12, queued: 0, pid: process.pid, detail: 'online', at });
+  assert.deepEqual(ls.read(CODE), { state: 'up', since: at, attempt: 0, rttMs: 12, queued: 0, pid: process.pid, detail: 'online', source: 'state-file' });
+  const dead = await h.deadPid();
+  links.writeState(CODE, { state: 'up', since: at, attempt: 0, lastError: null, rttMs: 12, queued: 1, pid: dead, detail: 'online', at });
+  assert.deepEqual([ls.read(CODE).state, ls.read(CODE).lastError, ls.read(CODE).dead], ['down', 'the link daemon is not running', true]);
+  links.writeState(CODE, { state: 'down', since: at, attempt: 0, lastError: 'the host log was reset', pid: dead, detail: 'fork', at });
+  assert.equal(ls.read(CODE).state, 'fork', 'detail fork is a fork, daemon or not');
+  links.writeState(CODE, { state: 'down', since: at, attempt: 0, lastError: 'AUTH: unknown token', pid: process.pid, detail: 'stopped', at });
+  assert.deepEqual([ls.read(CODE).state, ls.read(CODE).lastError], ['down', 'AUTH: unknown token']);
+});
+
 test('link-state: indicator wording', () => {
   const now = Date.parse('2026-01-01T00:10:00.000Z');
   const since = '2026-01-01T00:08:00.000Z';

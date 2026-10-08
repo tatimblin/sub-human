@@ -21,8 +21,10 @@
  *   remindersText(me, rm) -> text | null     lib/proposal.js reminder() for the proposal a review opens next (the
  *                                            person's pick, else the oldest), the others awaiting me counted (members)
  *   linkLine(status, code) -> {key, text} | null   the one line for a room link that is down (lib/remote/link.js
- *       status): key 'fork' (the mirror no longer matches the host's log) or 'offline' (the host or the daemon is
- *       unreachable); null while it is up
+ *       status): key 'fork' (the mirror no longer matches the host's log; queued @room posts are kept, not sent) or
+ *       'offline' (the host or the daemon is unreachable); null while it is up
+ *   flushLine(flush) -> text | null   what became of the @room posts queued while the link was down (the daemon's
+ *       document `link` flush {sent, unsent: [{text, why}]}): appended to LINK_BACK, or alone when some were not sent
  *   deps (tests): openRoom(code) -> Room (lib/room.js open), heartbeat(me) (identity.heartbeat), rows, notices, orch,
  *       linkStatus(code) (lib/remote/link.js status)
  *
@@ -42,7 +44,8 @@
  *                             (health tick); null clears it
  *   {type:'health', text}     the hash-chain check's line (one per break), and in a room hosted elsewhere the
  *                             link's linkLine each time it goes down (FORK or OFFLINE; nothing while it stays so)
- *                             and LINK_BACK ("room link: back online; …") once it is online again
+ *                             and LINK_BACK ("room link: back online; …", with flushLine) once it is online
+                             again: one quiet line, no "left"/"joined" (the daemon renews the seat's lapsed lease)
  * A session never re-reads the log from byte 0: backlog from room.readView({after: cursor}), live entries from
  * room.tailer(). The health tick also renews the seat's lease (identity.heartbeat).
  */
@@ -248,12 +251,21 @@ function visibleTo(me, rm) {
 // ---------- the link of a room hosted elsewhere ----------
 const LINK_BACK = 'room link: back online; @room posts go through again';
 function linkLine(st, code) {
+  const kept = st.queued ? `; ${st.queued} queued @room post(s) are kept, not sent` : '';
   if (st.state === 'fork') {
-    return { key: 'fork', text: `room link: FORK: this machine's copy of room ${code} no longer matches the host's; run sub-human link --reset ${code}` };
+    return { key: 'fork', text: `room link: FORK: this machine's copy of room ${code} no longer matches the host's${kept}; run sub-human link --reset ${code}` };
   }
   if (st.running && st.state !== 'offline') return null;
-  const why = st.running ? st.reason : st.reason ? `the link stopped: ${st.reason}` : 'the link daemon is not running';
-  return { key: 'offline', text: `room link: OFFLINE (${why}); @room posts are refused until it is back` };
+  if (st.running) return { key: 'offline', text: `room link: OFFLINE (${st.reason}); @room posts are queued and sent when it is back, answers are refused` };
+  const why = st.reason ? `the link stopped: ${st.reason}` : 'the link daemon is not running';
+  return { key: 'offline', text: `room link: OFFLINE (${why}); @room posts are refused${kept}` };
+}
+function flushLine(f) {
+  if (!f || (!f.sent && !(f.unsent || []).length)) return null;
+  const parts = [];
+  if (f.sent) parts.push(`${f.sent} queued @room post(s) sent`);
+  for (const u of f.unsent || []) parts.push(`NOT sent (${u.why}): "${u.text}"`);
+  return parts.join('; ');
 }
 
 // ---------- reading ----------
@@ -410,7 +422,7 @@ function startSession(me, ctx) {
 
   // Health: the hash chain from the log.idx checkpoint (one line per break), the link of a room hosted elsewhere
   // (one line each time it goes down), and the orch's watchdog.
-  let breakKey = null, linkKey = null, rowsSent;
+  let breakKey = null, linkKey = null, flushKey, rowsSent;
   function sendRows() {
     let text = null;
     try {
@@ -424,12 +436,17 @@ function startSession(me, ctx) {
   function linkHealth() {
     const st = deps.linkStatus(s.code);
     const l = linkLine(st, s.code);
-    if ((l && l.key) === linkKey) return;
-    if (!l && st.state !== 'online') return; // coming back (connecting): the down line stands until it is online
+    const f = st.flush || null, fresh = flushKey !== undefined && f && f.at !== flushKey;
+    if (flushKey === undefined || fresh) flushKey = f ? f.at : null; // a flush before this tail started is old news
+    const flushed = fresh ? flushLine(f) : null;
+    if ((l && l.key) === linkKey || (!l && st.state !== 'online')) { // no change (or coming back: the down line stands)
+      if (flushed && f.unsent && f.unsent.length) emit([{ type: 'health', text: `room link: ${flushed}` }]);
+      return;
+    }
     const was = linkKey;
     linkKey = l && l.key;
     if (l) emit([{ type: 'health', text: l.text }]);
-    else if (was) emit([{ type: 'health', text: LINK_BACK }]);
+    else if (was) emit([{ type: 'health', text: flushed ? `${LINK_BACK}; ${flushed}` : LINK_BACK }]);
   }
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
@@ -529,5 +546,5 @@ function runTail({
 }
 
 module.exports = {
-  runTail, timings, Batcher, formatNdBatch, linkLine, LINK_BACK, remindersText, PULL_HEAD,
+  runTail, timings, Batcher, formatNdBatch, linkLine, flushLine, LINK_BACK, remindersText, PULL_HEAD,
 };

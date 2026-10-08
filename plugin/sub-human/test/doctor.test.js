@@ -84,14 +84,19 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.equal(akc.fix, `echo '${KEY}' | sub-human authorize ${LINK_ID} - --room ${code} --file ~/.ssh/authorized_keys`, 'the child\'s HOME is the user dir');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
-  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · host reachable in \\d+ ms; protocol here v1, host v1`));
+  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · host reachable in \\d+ ms; protocol here 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+\\), host 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+\\), speaking v2`));
   assert.match(lc.fix, /sub-human link /);
-  assert.ok(byId(rep, `clock:${code}`), 'the clock check is there (informational until the host sends its time)');
+  const clock = byId(rep, `clock:${code}`);
+  assert.equal(clock.status, 'pass', 'the host\'s hello carries its time: one machine, no skew');
+  assert.match(clock.detail, /^this machine is \d+ s (behind|ahead of) the host$/);
   assert.ok(byId(rep, 'shim'), 'shim checked');
   assert.ok(byId(rep, 'remote_control'));
   const [l] = rep.links;
   assert.equal(l.reach.ok, true);
-  assert.equal(l.reach.protocol.v, 1);
+  assert.equal(l.reach.protocol.v, 2);
+  assert.deepEqual(l.reach.protocol.proto, { min: 1, max: 2 });
+  // the midpoint of a slow spawn can sit seconds from the moment the host answered: bound it loosely
+  assert.ok(Math.abs(l.reach.skewMs) < 60_000, `skew ${l.reach.skewMs}`);
   assert.deepEqual(l.recent, [`2026-10-08T10:00:00.000Z sub-human link ${code}: offline: ssh exited 255`]);
 
   // the human-readable form (reading the link opened the store, which repairs the modes: open them again)

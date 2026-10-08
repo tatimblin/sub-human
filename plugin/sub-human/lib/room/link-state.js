@@ -5,28 +5,29 @@
  * Read only, never throws. Zero dependencies beyond lib/io.js, lib/room/links.js and (lazily) lib/remote/link.js.
  *
  * Sources, best first:
- *   <home>/links/<code>.state.json   the link daemon's state record {state: 'up'|'connecting'|'down', since,
- *                                    attempt, lastError, rttMs, queued}. Read defensively: any field may be absent.
+ *   links.readState(code)            the link daemon's record <home>/links/<code>.state.json {state: 'up'|'connecting'|
+ *                                    'down', since, attempt, lastError, rttMs, queued, pid, detail, at} (lib/room/
+ *                                    links.js). Read defensively: any field may be absent. detail 'fork' reads 'fork'.
  *   the mirror's document `link`     {pid, state: connecting|online|offline|fork|stopped, since, reason?, code?}
  *                                    (lib/remote/link.js status), what older daemons write.
- * A record whose daemon is known dead (the document's pid is gone) reads 'down': the daemon is not running.
+ * A record whose daemon is gone (its pid, else the document's, is not alive) reads 'down': the daemon is not
+ * running. A fork stays a fork.
  *
  *   read(code) -> State | null       null when this machine has no link to CODE (a room hosted here, or none)
- *       State = {state: 'up'|'connecting'|'down'|'fork', since?, attempt?, lastError?, rttMs?, queued?,
- *                source: 'state-file'|'link-doc'}
+ *       State = {state: 'up'|'connecting'|'down'|'fork', since?, attempt?, lastError?, rttMs?, queued?, pid?,
+ *                detail?, dead?, source: 'state-file'|'link-doc'}
  *   indicator(st, {now}?) -> string  the compact segment: "⇄ linked", "… connecting", "… reconnecting (3)",
  *       "✕ offline 2m · 2 queued", "✕ FORK: sub-human link --reset"; '' for null
  *   isDown(st) -> bool               connecting after a first failure, down or fork: worth leading a row with
  *   stateFile(code) -> string        <home>/links/<code>.state.json
  */
-const path = require('node:path');
-const { readJson } = require('../io.js');
+const { isAlive } = require('../io.js');
 const links = require('./links.js');
 
 const STATES = new Set(['up', 'connecting', 'down', 'fork']);
 const DOC_STATE = { online: 'up', connecting: 'connecting', offline: 'down', stopped: 'down', fork: 'fork' };
 
-const stateFile = code => path.join(links.linksDir(), `${code}.state.json`);
+const stateFile = code => links.stateFile(code);
 
 const num = x => (Number.isFinite(Number(x)) && x !== null && x !== '' ? Number(x) : undefined);
 const str = x => (typeof x === 'string' && x ? x : undefined);
@@ -42,16 +43,19 @@ function read(code) {
     if (!links.get(code)) return null;
   } catch { return null; }
   const doc = linkDoc(code);
-  const dead = !!(doc && doc.pid && !doc.running);
-  const f = readJson(stateFile(code));
+  let f = null;
+  try { f = links.readState(code); } catch { f = null; }
   if (f && typeof f === 'object' && STATES.has(f.state)) {
+    const pid = num(f.pid);
+    const dead = pid ? !isAlive(pid) : !!(doc && doc.pid && !doc.running);
     const st = clean({
-      state: f.state, since: str(f.since), attempt: num(f.attempt), lastError: str(f.lastError),
-      rttMs: num(f.rttMs), queued: num(f.queued), source: 'state-file',
+      state: f.detail === 'fork' ? 'fork' : f.state, since: str(f.since), attempt: num(f.attempt), lastError: str(f.lastError),
+      rttMs: num(f.rttMs), queued: num(f.queued), pid, detail: str(f.detail), source: 'state-file',
     });
-    if (dead && st.state !== 'fork') return { ...st, state: 'down', lastError: st.lastError || 'the link daemon is not running' };
+    if (dead && st.state !== 'fork') return { ...st, state: 'down', lastError: st.lastError || 'the link daemon is not running', dead: true };
     return st;
   }
+  const dead = !!(doc && doc.pid && !doc.running);
   if (!doc || !doc.state) {
     return { state: 'down', lastError: 'the link daemon is not running', source: 'link-doc' };
   }
