@@ -10,6 +10,8 @@
  *   seatAlive(m) -> bool          not left, and: a seat of this machine with a pid: that pid is alive with its start
  *                                 time matching pid_start (a seat with no pid_start, or a pid whose start ps cannot
  *                                 read, counts as matching); any other seat (another machine's, or no pid): its lease
+ *   orchPresence(o, now?) -> 'live' | 'starting' | null   the orch record as people are told about it: never listed
+ *                                 as present when it never ran or its start failed
  *   leaseFresh(m, now?) -> bool   seen_at younger than SEAT_LEASE_MS
  *   startMatches(m) -> bool       m.pid_start still describes the process now holding m.pid (on this machine)
  *   ops(store) -> {join, leave, beat}   the store's named ops over its members.update (atomic) and kv:
@@ -28,7 +30,7 @@
 const { isAlive } = require('../io.js');
 const { pidStart } = require('../lock.js');
 const { machineId } = require('../home.js');
-const { PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS } = require('../config.js');
+const { PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS, ORCH_BIND_MS, ORCH_CLAIM_MS, envMs } = require('../config.js');
 const { RoomError } = require('./validate.js');
 
 const PRESENCE_STATES = ['working', 'idle', 'permission', 'error'];
@@ -111,4 +113,19 @@ function publicView(members) {
   return out;
 }
 
-module.exports = { PRESENCE_STATES, LOCAL_FIELDS, seatAlive, leaseFresh, startMatches, ops, publicView };
+/**
+ * The orch as members see it: 'live' (bound: its pid on this machine alive, else it joined and its lease is fresh),
+ * 'starting' (a spawn claim younger than ORCH_CLAIM_MS, or a job not bound within ORCH_BIND_MS), else null (never
+ * ran, its start failed, stopped, left or closing). Same rules as lib/orch.js needsSpawn, from any machine.
+ */
+function orchPresence(o, now = Date.now()) {
+  if (!o || o.left_at || o.stopped_at || o.closing) return null;
+  if (validPid(o.pid) && machineOf(o) === machineId()) return seatAlive(o) ? 'live' : null;
+  if (o.joined_at && o.job !== 'pending' && !o.spawn_error && leaseFresh(o, now)) return 'live';
+  const since = now - Date.parse(o.spawned_at || 0);
+  if (o.job === 'pending') return since <= envMs('SUB_HUMAN_ORCH_CLAIM_MS', ORCH_CLAIM_MS) ? 'starting' : null;
+  if (o.job) return since <= ORCH_BIND_MS ? 'starting' : null;
+  return null;
+}
+
+module.exports = { PRESENCE_STATES, LOCAL_FIELDS, seatAlive, orchPresence, leaseFresh, startMatches, ops, publicView };

@@ -23,6 +23,7 @@ const rows = require(path.join(LIB, 'rows.js'));
 const text = require(path.join(LIB, 'text.js'));
 const { readInput } = require(path.join(LIB, 'io.js'));
 const config = require(path.join(LIB, 'config.js'));
+const { orchPresence } = require(path.join(LIB, 'room', 'members.js'));
 // Every hook process may write via=human (a person's own typed words or card answers): install the seat-key
 // signer (hooks/seat-key.js). The MCP server and the CLI never load this file, so they cannot.
 require('./seat-key.js').arm();
@@ -126,7 +127,9 @@ function template(role) {
 function fillVars(me, ms = members(me.code)) {
   const live = ms.filter(m => !hasLeft(m) && m.name !== me.name);
   const humans = live.filter(m => m.role !== 'orch').map(m => m.name);
-  const others = me.role === 'orch' ? humans : [...humans, 'orch'];
+  // the orch only when it runs (or is starting): a stub or a failed start is not someone in the room
+  const o = me.role === 'orch' ? null : orchPresence(ms.find(m => m.role === 'orch'));
+  const others = o ? [...humans, o === 'live' ? 'orch' : 'orch (starting)'] : humans;
   const ex = humans[0] || (me.role === 'orch' ? 'NAME' : 'orch');
   return {
     NAME: me.name, CODE: me.code, OTHERS: others.length ? others.join(', ') : 'nobody yet',

@@ -465,3 +465,22 @@ test('a refused join is also the systemMessage (Remote Control shows that, not a
   assert.match(inv.json.reason, /invite to room /);
   assert.equal(inv.json.systemMessage, undefined, 'the invite stays off Remote Control');
 });
+
+test('the block lists the orch only while it runs or is starting: never one that never ran or whose start failed', () => {
+  const w = new World({ alice: 'sleep', bob: 'sleep' });
+  const now = Date.now(), iso = ms => new Date(ms).toISOString();
+  const others = rec => withHome(w.home, () => require('../../lib/room/members.js').orchPresence({ name: 'orch', role: 'orch', ...rec }, now));
+  // the rule (lib/room/members.js orchPresence), from any machine
+  assert.equal(others({ job: null, spawn_error: 'exit 1' }), null, 'a failed start (the harness stub)');
+  assert.equal(others({}), null, 'never spawned');
+  assert.equal(others({ job: 'pending', spawned_at: iso(now - 1000) }), 'starting');
+  assert.equal(others({ job: 'pending', spawned_at: iso(now - 10 * 60_000) }), null, 'a stale claim');
+  assert.equal(others({ job: 'j1', spawned_at: iso(now - 1000) }), 'starting', 'spawned, not bound yet');
+  assert.equal(others({ job: 'j1', spawned_at: iso(now - 10 * 60_000), joined_at: iso(now - 9 * 60_000), seen_at: iso(now - 1000), machine: 'm-host' }), 'live', 'another machine\'s orch: its lease');
+  assert.equal(others({ job: 'j1', spawned_at: iso(now - 10 * 60_000), joined_at: iso(now - 9 * 60_000), seen_at: iso(now - 5 * 60_000), machine: 'm-host' }), null, 'its lease ran out');
+  assert.equal(others({ job: 'j1', closing: true, seen_at: iso(now), joined_at: iso(now) }), null);
+  // the block itself: a room whose orch failed to start does not say "with … orch"
+  withHome(w.home, () => identity.updateOrch(w.code, () => ({ name: 'orch', role: 'orch', job: null, spawn_error: 'exit 1', pid: null })));
+  const text = withHome(w.home, () => require('../../hooks/common.js').contextBlock({ code: w.code, name: 'alice', role: 'member' }, 'rejoined'));
+  assert.match(text, new RegExp(`room ${w.code} \\(with bob\\)`), text.slice(0, 120));
+});

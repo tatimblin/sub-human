@@ -27,6 +27,7 @@ const auth = require('../lib/remote/auth.js');
 const link = require('../lib/remote/link.js');
 const links = require('../lib/room/links.js');
 const seatKey = require('./seat-key.js');
+const { orchPresence } = require('../lib/room/members.js');
 
 const COMMANDS = new Set(['sub-human:sub-human', 'sub-human']);
 const ORCH_AGENT = 'sub-human:orchestrator';
@@ -63,7 +64,7 @@ function sweep() {
 
 function others(code, name) {
   const ms = Object.values(identity.readMembers(code)).filter(m => m && m.name && m.name !== name && !m.left_at
-    && (m.role !== 'orch' || m.pid || (m.job && m.job !== orch.PENDING)));
+    && (m.role !== 'orch' || orchPresence(m) === 'live'));
   return ms.map(m => m.name).join(', ');
 }
 
