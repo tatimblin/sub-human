@@ -13,7 +13,8 @@
  *                                                  its PIN (6 digits, never in the invite): the record adds v: 2,
  *                                                  pin_sha256 = sha256(secret:pin) (the host keeps neither in clear),
  *                                                  tries: INVITE_PIN_TRIES and expires_at (INVITE_TTL_MS). hostKey: the
- *                                                  host's Ed25519 public key (32 bytes, base64url) the joiner pins
+ *                                                  host's public key (32 bytes, base64url) the joiner pins: sshd's Ed25519
+ *                                                  key for an ssh locator, the listener's X25519 key for ws/wss (1.1)
  *   redeemInvite(store, secret, {machine, pin?, linkId?, now?}) -> {token, link}   marks the invite used (an unknown,
  *                                                  used or burnt one is AUTH), records {id, token_sha256, machine,
  *                                                  seats: [], created_at}; id is the one reserveLink gave the invite, if

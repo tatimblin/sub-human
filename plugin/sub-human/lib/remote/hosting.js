@@ -22,7 +22,8 @@
  *       ("revoked by the host"), its running `serve` processes are stopped, and a room line says so
  *   joinInvite({inv, invite, pin, name, now?}) -> {code, request?}   the joiner's link file for an sh2 invite: over
  *       ssh, the link's own key (sshkeys.linkKey in links.dirOf(code)) and, when the invite carries one, the host
- *       key pinned in a known_hosts of the link's own; request: the admit request for the host. RoomError INVALID
+ *       key pinned in a known_hosts of the link's own; over ws/wss, the listener's X25519 key the invite carries,
+ *       pinned in the link file's transport (hostKey; no admit step); request: the admit request for the host. RoomError INVALID
  *       for a locator this machine cannot use
  *   outcome(code, {waitMs?}) -> {state: 'linked' | 'refused' | 'waiting', reason?}   the link daemon's first hello,
  *       watched for up to waitMs (LINK_JOIN_WAIT_MS): linked (the PIN held), refused (its reason: a wrong PIN, an
@@ -159,6 +160,10 @@ function joinInvite({ inv, invite, pin, name }) {
       transport = { ...transport, knownHosts, alias };
     }
     request = sshkeys.formatRequest({ code: inv.code, ref: auth.inviteRef(inv.secret), key: key.raw, name });
+  }
+  if (transport.kind === 'wss' || transport.kind === 'ws') { // the listener's X25519 key, pinned (transports/ws.js)
+    if (!inv.hostKey) throw new RoomError('INVALID', 'this web invite pins no host key; ask the host for a new one');
+    transport = { ...transport, hostKey: inv.hostKey };
   }
   const cur = links().get(inv.code);
   const mux = cur && cur.transport && cur.transport.mux === true ? { mux: true } : {};

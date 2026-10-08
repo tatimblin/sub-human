@@ -8,6 +8,9 @@
  *   host(args)   sub-human host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP]
  *                an sh2 invite and its PIN, the block /sub-human host shows (hosting.hostInvite). Without --room, the
  *                one room hosted here with a live seat (else name it)
+ *                sub-human host [--room CODE] --tailscale [--funnel] | --url URL [--port P]
+ *                the same over the web: the listener, Tailscale Serve/Funnel or a front of your own, and a join URL
+ *                with its PIN (lib/remote/webhost.js hostWeb)
  *   admit(args)  sub-human admit REQUEST [--file AUTHORIZED_KEYS] [--yes]
  *                let a joiner's key in for the invite its request names (hosting.admit). On a terminal it shows who
  *                asks, the room, the key's fingerprint and the invite's age, and asks y/N first (--yes skips it)
@@ -56,10 +59,14 @@ function host(args) {
     ssh = a[i + 1] && !a[i + 1].startsWith('--') ? a[i + 1] : true;
     a.splice(i, ssh === true ? 1 : 2);
   }
-  const p = flags(a, ['room', 'via']);
-  if (p.error || p.rest.length) return fail(p.error || 'usage: sub-human host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP]', 2);
+  const p = flags(a, ['room', 'via', 'url', 'port'], ['tailscale', 'funnel']);
+  if (p.error || p.rest.length) return fail(p.error || 'usage: sub-human host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP] | [--tailscale [--funnel] | --url URL] [--port P]', 2);
+  const web = p.f.tailscale || p.f.funnel || p.f.url !== undefined;
+  if (web && (ssh !== undefined || p.f.via !== undefined)) return fail('--ssh and --tailscale / --url are different ways in; pick one', 2);
   try {
-    const r = require('../remote/hosting.js').hostInvite(hostedRoom(p.f.room), { ssh, via: p.f.via });
+    const r = web
+      ? require('../remote/webhost.js').hostWeb(hostedRoom(p.f.room), { tailscale: !!p.f.tailscale, funnel: !!p.f.funnel, url: p.f.url, ...(p.f.port ? { port: Number(p.f.port) } : {}) })
+      : require('../remote/hosting.js').hostInvite(hostedRoom(p.f.room), { ssh, via: p.f.via });
     say(r.text);
     return 0;
   } catch (e) { return fail(e.message); }

@@ -86,7 +86,7 @@ test('transports: open() by kind (a Promise): memory over a port, pipe over a ch
 });
 
 test('transports: the registry: built-in kinds, locators parse by kind, a kind registers once; describe', () => {
-  assert.deepEqual(transports.kinds(), ['memory', 'pipe', 'ssh']);
+  assert.deepEqual(transports.kinds(), ['memory', 'pipe', 'ssh', 'wss', 'ws']);
   assert.deepEqual(transports.KINDS, transports.kinds());
   assert.deepEqual(transports.parse('pipe:/a/home'), { kind: 'pipe', home: '/a/home' });
   assert.deepEqual(transports.parse('ssh:me@far:2222'), { kind: 'ssh', user: 'me', host: 'far', port: 2222 });

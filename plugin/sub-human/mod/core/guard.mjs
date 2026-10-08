@@ -20,7 +20,7 @@ export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
 const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|digest|who|tasks|watch)(?:\s+[\w.,:=@-]+)*\s*$/;
 const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
 /** The CLI commands a person runs in their own shell: an invite, an SSH key's link, the link daemon, the room server. */
-const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|authorize|host|admit|revoke|prime|link|serve)(?![\w-])/;
+const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|authorize|host|unhost|admit|revoke|prime|listen|link|serve)(?![\w-])/;
 /** A dot-dir named .sub-human anywhere (~/.sub-human, $HOME/.sub-human, /Users/x/.sub-human). */
 const DOT_HOME = /(?:^|[^\w.-])\.sub-human(?![\w-])/;
 /** Something that runs JavaScript. */
@@ -73,7 +73,7 @@ export function bashVerdict(command, ctx = {}) {
   const cmd = typeof command === 'string' ? command : '';
   if (!cmd.trim()) return null;
   if (READ_CLI.test(cmd)) return null;
-  if (PERSON_CLI.test(cmd)) return 'it mints an invite, admits or revokes a link, or speaks for the room\'s link (run sub-human invite, authorize, host, admit, revoke, prime, link and serve in your own shell)';
+  if (PERSON_CLI.test(cmd)) return 'it mints an invite, admits or revokes a link, or speaks for the room\'s link (run sub-human invite, authorize, host, unhost, admit, revoke, prime, listen, link and serve in your own shell)';
   if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME)';
   if (DOT_HOME.test(cmd)) return 'it touches the room store (~/.sub-human)';
   for (const h of homeSpellings(ctx)) {
