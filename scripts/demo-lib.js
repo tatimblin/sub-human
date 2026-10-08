@@ -84,7 +84,7 @@ const tgt = s => (s.includes(':') ? s : `${s}:`);
 const KEY_BYTES = {
   Enter: '\r', Esc: '\x1b', Escape: '\x1b', Tab: '\t', BTab: '\x1b[Z', Space: ' ', BSpace: '\x7f',
   Up: '\x1b[A', Down: '\x1b[B', Right: '\x1b[C', Left: '\x1b[D', 'C-c': '\x03', 'C-d': '\x04', 'C-j': '\n',
-  'C-u': '\x15', 'C-l': '\x0c', PageDown: '\x1b[6~', PageUp: '\x1b[5~',
+  'C-a': '\x01', 'C-e': '\x05', 'C-u': '\x15', 'C-l': '\x0c', PageDown: '\x1b[6~', PageUp: '\x1b[5~',
 };
 const SEND_KEYS = { Esc: 'Escape', Space: 'Space', BSpace: 'BSpace', BTab: 'BTab' };
 

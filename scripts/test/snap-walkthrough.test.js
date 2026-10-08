@@ -149,3 +149,17 @@ test('demo-lib: option parsing and raw key bytes', () => {
   assert.equal(KEY_BYTES.Down, '\x1b[B');
   assert.equal(KEY_BYTES.Enter, '\r');
 });
+
+test('demo-lib: every key demo.sh sends is a known key (S8 died on "unknown key C-e", run moose-8575)', () => {
+  const sh = fs.readFileSync(path.join(__dirname, '..', 'demo.sh'), 'utf8');
+  const sent = [];
+  for (const line of sh.split('\n')) {
+    for (const m of line.replace(/#.*$/, '').matchAll(/\bkeys\s+("?\$?[\w-]+"?)((?:\s+[A-Za-z][\w-]*)+)/g)) {
+      if (m[1] === 'sh-keys') continue;
+      sent.push(...m[2].trim().split(/\s+/));
+    }
+  }
+  assert.ok(sent.includes('C-e') && sent.includes('PageDown'), `parsed keys: ${sent.join(' ')}`);
+  const unknown = sent.filter(k => !(k in KEY_BYTES) && k.length !== 1);
+  assert.deepEqual(unknown, []);
+});
