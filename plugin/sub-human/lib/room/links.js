@@ -14,6 +14,7 @@
  * The resume point is the mirror itself (its last line and that line's hash), not a field here.
  *
  *   get(code) -> Link | null          null for a code that is not CODE_RE
+ *   has(code) -> bool                 a link file exists (one stat: lib/room/store.js open() asks on every call)
  *   set(code, link) -> Link           atomic write; RoomError INVALID for a bad code or shape
  *   remove(code) -> bool
  *   list() -> [code]
@@ -41,6 +42,12 @@ function fileOf(code, ext = 'json') {
  * @returns {object | null}
  */
 const get = code => (typeof code === 'string' && CODE_RE.test(code) ? readJson(fileOf(code)) : null);
+
+/**
+ * @param {string} code
+ * @returns {boolean}
+ */
+const has = code => typeof code === 'string' && CODE_RE.test(code) && fs.existsSync(fileOf(code));
 
 const credential = l => typeof l.token === 'string' || typeof l.invite === 'string';
 
@@ -80,4 +87,4 @@ function list() {
  */
 const logFile = code => fileOf(code, 'log');
 
-module.exports = { linksDir, get, set, remove, list, logFile };
+module.exports = { linksDir, get, has, set, remove, list, logFile };

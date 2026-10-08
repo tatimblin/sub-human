@@ -6,7 +6,8 @@
  * signer: a via=human payload, and a join's seat proof (lib/remote/auth.js proveSeat), reach it already
  * signed.
  *
- *   connect(transport, {machine, token?, invite?, caps?, deadlineMs?, helloMs?}) -> Promise<Client>
+ *   connect(transport, {machine, token?, invite?, epoch?, caps?, deadlineMs?, helloMs?}) -> Promise<Client>
+ *       epoch: the mirror's host epoch (lib/handoff.js), sent in the hello; the server's is client.epoch.
  *       transport may also be a Promise of one (lib/remote/transports/index.js open()). Says hello; resolves once the server answered (the token from a redeemed invite is on client.token).
  *       helloMs (default deadlineMs) bounds the hello alone: a transport such as ssh connects before it answers.
  *       A refused hello closes the transport and rejects.
@@ -42,7 +43,7 @@ class Client {
     this.closed = false;
     this.pending = new Map(); // id -> {resolve, reject, timer}
     this.streams = new Map(); // subscribe id -> onEvent
-    this.token = this.link = this.room = this.serverCaps = null;
+    this.token = this.link = this.room = this.serverCaps = this.epoch = null;
     transport.onFrame(f => this._receive(f));
     transport.onClose(() => this._closed());
   }
@@ -109,13 +110,13 @@ class Client {
  * @param {{machine: string, token?: string, invite?: string, caps?: object, deadlineMs?: number, helloMs?: number}} opts
  * @returns {Promise<Client>}
  */
-async function connect(transport, { machine, token, invite, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs }) {
+async function connect(transport, { machine, token, invite, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs }) {
   const c = new Client(await transport, { deadlineMs });
   const cred = invite !== undefined ? { invite } : token !== undefined ? { token } : {};
   try {
-    const r = await c._request('hello', { v: protocol.VERSION, caps, machine, ...cred }, ++c.seq, helloMs);
+    const r = await c._request('hello', { v: protocol.VERSION, caps, machine, ...cred, ...(Number.isInteger(epoch) ? { epoch } : {}) }, ++c.seq, helloMs);
     if (r.v !== protocol.VERSION) throw new RoomError('PROTOCOL', `the server speaks protocol v${r.v}, not v${protocol.VERSION}`);
-    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps });
+    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, epoch: Number.isInteger(r.epoch) ? r.epoch : 0 });
   } catch (e) {
     c.close();
     throw e;

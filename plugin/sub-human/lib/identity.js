@@ -41,7 +41,7 @@
  *                                        tail's health tick and the hold server); leaseFresh(m, now?)
  *   liveMembers(code) -> [name]          non-orch seats that are seatAlive
  *   join({code, name, role, machine?, pid, session_id, cwd}) -> {ok, error?, rejoin?}
- *       role is "orch" or "member". NAME_RE; reserved names orch, room, all, system, host, join (only role orch
+ *       role is "orch" or "member". NAME_RE; reserved names orch, room, all, system, host, join, handoff (only role orch
  *       may use "orch", and role orch must use it). members.join: a name held by a live seat of another holder
  *       (another pid, or another machine) is "name taken"; otherwise the name is (re)bound. The orch record
  *       keeps its job / spawned_at across a (re)bind. machine defaults to this one; a seat of this machine needs
@@ -69,6 +69,9 @@
  *   localSeats(code) -> [name]           this machine's seats in code that a live claude process holds, by the
  *                                        session indexes (resolveByPid): what a mirror knows while its link is down
  *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set; lib/cc.js)
+ *   adoptLocalSeats(code) -> [name]      after this machine became the room's host (lib/handoff.js): its seats' records
+ *                                        get back pid, pid_start and session_id from the session indexes (a mirror's
+ *                                        members document never held them), so they resolve here as host seats
  *
  * The hooks module's lease, <home>/sessions/mods/<sid>.json (atomic, 0600): this session's function hooks are
  * loaded and have said hello (hooks/mod-hello.js writes it, join requires it, session-end deletes it). Fields:
@@ -106,7 +109,7 @@ const { seatAlive, leaseFresh, startMatches, PRESENCE_STATES } = require('./room
 const cc = require('./cc.js');
 // MOD_LEASE_FRESH_MS only covers a module whose $.process parent is not claude itself: a resumed session id whose
 // lease is older than this, from a process that is gone, cannot join.
-const RESERVED = ['orch', 'room', 'all', 'system', 'host', 'join'];
+const RESERVED = ['orch', 'room', 'all', 'system', 'host', 'join', 'handoff'];
 const ROLES = ['orch', 'member'];
 const ANIMALS = [
   'otter', 'badger', 'beaver', 'bison', 'camel', 'cheetah', 'condor', 'coyote',
@@ -342,6 +345,25 @@ function localSeats(code) {
   return [...names];
 }
 
+function adoptLocalSeats(code) {
+  let files;
+  try { files = fs.readdirSync(byPidDir()); } catch { return []; }
+  const recs = files.map(f => readJson(path.join(byPidDir(), f))).filter(r => r && r.code === code && validPid(r.pid) && isAlive(r.pid));
+  if (!recs.length) return [];
+  const names = [];
+  membersOf(code).update(ms => {
+    names.length = 0;
+    for (const r of recs) {
+      const m = ms[r.name];
+      if (!m || m.left_at || (m.machine && m.machine !== machineId())) continue;
+      ms[r.name] = { ...m, machine: machineId(), pid: r.pid, ...(r.pid_start != null ? { pid_start: r.pid_start } : {}), session_id: r.session_id || null };
+      names.push(r.name);
+    }
+    return names.length ? ms : null;
+  });
+  return names;
+}
+
 function lastSeat(sid) {
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
   const rec = readJson(bySidFile(sid));
@@ -448,7 +470,7 @@ module.exports = {
   home, roomDir, machineId, newCode, roomExists, isHost, openRooms, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, setOrch, updateOrch, liveMembers, seatAlive, heartbeat, leaseFresh,
   isAlive, claudePid,
-  resolveByPid, resolveBySession, resolveSelf, lastSeat, localSeats,
+  resolveByPid, resolveBySession, resolveSelf, lastSeat, localSeats, adoptLocalSeats,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases,
   writePresence,
 };

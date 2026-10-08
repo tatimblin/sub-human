@@ -130,6 +130,13 @@ module.exports = {
   LINK_RETRY_MS: 1000,             // SUB_HUMAN_LINK_RETRY_MS
   LINK_RETRY_MAX_MS: 10_000,       // a healed link is back within ~10 s (was 30 s: 26 s after a heal, live run)
   LINK_IDLE_MS: 60_000,            // SUB_HUMAN_LINK_IDLE_MS
+  // A planned handoff (lib/handoff.js): the ask waits this long for the target's card answer; the new host's
+  // invites the old host hands out (also to a member that reconnects late) are kept this long; a manual promote
+  // needs the link down at least PROMOTE_OFFLINE_MS (else --force).
+  HANDOFF_ASK_MS: 10 * 60_000,     // SUB_HUMAN_HANDOFF_ASK_MS
+  HANDOFF_INVITE_MS: 24 * 60 * 60_000,
+  HANDOFF_CALL_MS: 6000,           // the target's accept op (the old host appends, releases its orch): in a 10 s hook
+  PROMOTE_OFFLINE_MS: 10 * 60_000, // SUB_HUMAN_PROMOTE_OFFLINE_MS
 
   // ---------- rows (lib/rows.js) ----------
   PRESENCE_STALE_MS: 6 * 60 * 60 * 1000,

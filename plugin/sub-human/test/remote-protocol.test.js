@@ -42,7 +42,7 @@ test('protocol: frames encode to one line; the decoder keeps partial lines and a
   assert.deepEqual(bad.map(f => [f.id, f.error.code]), [[null, 'PROTOCOL'], [null, 'PROTOCOL']]);
   const big = d.push('"' + 'x'.repeat(config.LINK_FRAME_MAX_BYTES + 1));
   assert.equal(big[0].error.code, 'PROTOCOL', 'an endless line is cut off, not buffered');
-  assert.deepEqual(Object.keys(protocol.CODES).slice(4), ['OFFLINE', 'HOST_ONLY', 'AUTH', 'FORK', 'PROTOCOL']);
+  assert.deepEqual(Object.keys(protocol.CODES).slice(4), ['OFFLINE', 'HOST_ONLY', 'AUTH', 'FORK', 'PROTOCOL', 'STALE']);
 });
 
 test('transports: a memory pair carries frames both ways as lines; close fires once on both ends; send after close is a no-op', async () => {

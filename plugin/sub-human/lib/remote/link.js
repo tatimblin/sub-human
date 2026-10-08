@@ -28,7 +28,11 @@
  *       chain, or the host log reset) stops it and logs loudly: `sub-human link --reset CODE` re-mirrors. AUTH or
  *       PROTOCOL at hello, or the room closed, stop it too. Every change of state is written to the mirror's
  *       document `link` {pid, state, since, reason?}: connecting | online | offline | fork | stopped, and each
- *       attempt and each time it is online is a line in the log.
+ *       attempt and each time it is online is a line in the log. A planned handoff (lib/handoff.js): the private
+ *       'handoff' event is kept for this machine's seat (onAsk); 'moved' re-points the link file at the new host
+ *       (onMoved) and, with the stream's end {reason: 'moved'}, reconnects there at once, or stops with the reason
+ *       when no invite came; this machine named as the new host: the accepting hook stops it (or it stops itself
+ *       HANDOFF_SELF_STOP_MS later). The hello and every append carry the mirror's host epoch (STALE on a mismatch).
  *       Link = {state() -> string, stop(reason), done: Promise<reason>}
  *   socketPath(dir) -> string      <os.tmpdir()>/sh-<hash8(mirror dir)>/link.sock: one per room and home, short
  *                                  whatever the home (a macOS socket path is at most 104 bytes). Its directory is
@@ -66,7 +70,9 @@ const { isAlive, sleepSync } = require('../io.js');
 const config = require('../config.js');
 
 const BIN = path.join(__dirname, '..', '..', 'scripts', 'sub-human');
-const RELAY = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put']);
+const RELAY = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put', 'handoff.accept', 'handoff.refuse']);
+const HANDOFF_SELF_STOP_MS = 10_000;
+const handoff = () => require('../handoff.js');
 const STOPPED = new Set(['fork', 'stopped']);
 
 // ---------- the hook's side ----------
@@ -220,7 +226,8 @@ async function serveMirror({ mirror, connect, log = () => {}, retryMs = config.L
   async function relay(op, params) {
     if (state === 'connecting') await first;
     if (state !== 'online') throw new RoomError(state === 'fork' ? 'FORK' : 'OFFLINE', `the link is ${state}${reason ? `: ${reason}` : ''}`);
-    return client.request(op, params);
+    const epoch = op === 'append' && typeof mirror.hostState === 'function' ? mirror.hostState().epoch : undefined;
+    return client.request(op, epoch === undefined ? params : { ...params, epoch });
   }
 
   function stop(st, why, code = null) {
@@ -241,7 +248,7 @@ async function serveMirror({ mirror, connect, log = () => {}, retryMs = config.L
     if (e.code === 'AUTH' || e.code === 'PROTOCOL') return stop('stopped', e.message, e.code);
     log(`offline: ${e.message}`);
     client = null;
-    setState('offline', e.message);
+    setState('offline', handoff().whyOffline(mirror.code, e.message));
     retry = setTimeout(() => { retry = null; attempt(); }, delay);
     delay = Math.min(delay * 2, retryMaxMs);
   }
@@ -257,13 +264,26 @@ async function serveMirror({ mirror, connect, log = () => {}, retryMs = config.L
     try {
       if (ev === 'entry') prefetch(c, mirror.applyLine(data));
       else if (ev === 'doc') mirror.applyDoc(data.key, data.value);
+      else if (ev === 'handoff') handoff().onAsk(mirror, data);
+      else if (ev === 'moved') moved(data);
       else if (ev === 'end' && c === client) {
         if (data.reason === 'closed') stop('stopped', 'the room was closed');
+        else if (data.reason === 'moved') { if (!movedHere) { client = null; c.close(); delay = retryMs; fail(new RoomError('OFFLINE', 'the room moved; reconnecting to its new host')); } }
         else fail(new RoomError(data.reason, data.reason === 'FORK' ? 'the host log was reset' : 'the connection to the host closed'));
       }
     } catch (e) {
       stop(e.code === 'FORK' ? 'fork' : 'stopped', e.message, e.code === 'FORK' ? 'FORK' : null);
     }
+  }
+
+  let movedHere = false;
+  function moved(data) {
+    const r = handoff().onMoved(mirror, data);
+    log(`moved: ${r.reason}`);
+    if (r.self) {
+      movedHere = true; // the accepting hook takes the room over, then stops this daemon; its reply is still to come
+      setTimeout(() => stop('stopped', r.reason), HANDOFF_SELF_STOP_MS).unref();
+    } else if (r.stop) stop('stopped', r.reason);
   }
 
   async function attempt() {
@@ -299,11 +319,12 @@ async function connectLink(code) {
   const kind = l.transport && l.transport.kind;
   if (!transports().get(kind)) throw new RoomError('PROTOCOL', `unknown transport "${kind}" (${transports().kinds().join(', ')})`);
   const cred = l.token ? { token: l.token } : { invite: l.invite };
-  const opts = { machine: require('../home.js').machineId(), helloMs: config.LINK_HELLO_MS, ...cred };
+  const epoch = require('../room/store.js').open(code).hostState().epoch;
+  const opts = { machine: require('../home.js').machineId(), helloMs: config.LINK_HELLO_MS, epoch, ...cred };
   const c = await require('./client.js').connect(transports().open(l.transport, { code }), opts);
   if (!l.token) {
     const { invite, ...rest } = l;
-    links.set(code, { ...rest, token: c.token });
+    links.set(code, { ...rest, token: c.token, ...(rest.moved ? { moved: { ...rest.moved, reached_at: new Date().toISOString() } } : {}) });
   }
   return c;
 }

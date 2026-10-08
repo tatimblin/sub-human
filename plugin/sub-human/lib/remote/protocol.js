@@ -10,12 +10,22 @@
  *   event    {id, ev, data}          a subscribe stream (id: the subscribe request's): ev 'entry' (data: the host
  *                                    line, verbatim), 'doc' (data: {key, value}: members, presence/NAME, tasks;
  *                                    value null for a document that is gone), 'end' (data: {reason}: 'closed',
- *                                    the room's orch was stopped; 'FORK', the host log was reset under the stream)
- *   VERSION = 1                      hello carries {v, caps} both ways; an unknown v is PROTOCOL
+ *                                    the room's orch was stopped; 'FORK', the host log was reset under the stream;
+ *                                    'moved', the room moved to another host: a 'moved' event came first),
+ *                                    'handoff' (data: the host's ask that one of this link's seats host the room:
+ *                                    {id, from, to, epoch, locator?, expires_at}; private to that link, never in the
+ *                                    log), 'moved' (data: {epoch, host, machine, locator, invite | null}: the room
+ *                                    moved, after its host_changed line; invite is this link's machine's single-use
+ *                                    invite to the new host, private to that link: lib/handoff.js)
+ *   VERSION = 1                      hello carries {v, caps, epoch?} both ways; an unknown v is PROTOCOL; epoch is
+ *                                    the host epoch of the log (lib/handoff.js): a server behind the client's is
+ *                                    STALE (a host the room moved away from)
  *   CAPS                             what this end serves: {ops: OPS}
- *   OPS                              hello join leave beat append subscribe blob.get blob.put
+ *   OPS                              hello join leave beat append subscribe blob.get blob.put handoff.accept
+ *                                    handoff.refuse
  *   CODES                            RoomError codes on both ends and on the wire, unchanged:
  *                                    INVALID RATE LOCK NO_ROOM (today's) + OFFLINE HOST_ONLY AUTH FORK PROTOCOL
+ *                                    STALE (a write or hello from another host epoch than the server's)
  *   request(id, op, params), reply(id, result), error(id, code, message), event(id, ev, data) -> frame
  *   encode(frame) -> string          one line, newline-terminated
  *   decoder() -> {push(chunk) -> frame[]}   buffers partial lines; a malformed line, or one longer than
@@ -27,12 +37,12 @@ const { StringDecoder } = require('node:string_decoder');
 const { LINK_FRAME_MAX_BYTES } = require('../config.js');
 
 const VERSION = 1;
-const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put'];
-const EVENTS = ['entry', 'doc', 'end'];
+const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'handoff.accept', 'handoff.refuse'];
+const EVENTS = ['entry', 'doc', 'end', 'handoff', 'moved'];
 const CAPS = Object.freeze({ ops: OPS });
 const CODES = Object.freeze({
   INVALID: 'INVALID', RATE: 'RATE', LOCK: 'LOCK', NO_ROOM: 'NO_ROOM',
-  OFFLINE: 'OFFLINE', HOST_ONLY: 'HOST_ONLY', AUTH: 'AUTH', FORK: 'FORK', PROTOCOL: 'PROTOCOL',
+  OFFLINE: 'OFFLINE', HOST_ONLY: 'HOST_ONLY', AUTH: 'AUTH', FORK: 'FORK', PROTOCOL: 'PROTOCOL', STALE: 'STALE',
 });
 
 /** @returns {{id: number|string, op: string, params: object}} */

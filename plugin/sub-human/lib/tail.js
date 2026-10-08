@@ -43,6 +43,10 @@
  *   {type:'health', text}     the hash-chain check's line (one per break), and in a room hosted elsewhere the
  *                             link's linkLine each time it goes down (FORK or OFFLINE; nothing while it stays so)
  *                             and LINK_BACK ("room link: back online; …") once it is online again
+ *   A planned handoff (lib/handoff.js): the ask waiting for this seat (its machine's mirror) is a chat line for the
+ *   person and a wake that tells Claude to open the card, once; the asker gets a health line when the ask is
+ *   declined or expires; host_changed is a chat line for every member. A session whose room changed kind (a
+ *   mirror that became the host, or the reverse) is started again over the new store.
  * A session never re-reads the log from byte 0: backlog from room.readView({after: cursor}), live entries from
  * room.tailer(). The health tick also renews the seat's lease (identity.heartbeat).
  */
@@ -57,6 +61,7 @@ const FOR_CLAUDE = '(for Claude)';
 const SPAWN_NOTE = /no row running|is not running/;
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
 const isMove = e => e.kind === 'member_joined' || e.kind === 'member_left';
+const isHostMove = e => e.kind === 'host_changed' && e.via === 'system';
 
 function timings() {
   const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS', config.RESOLVE_MS);
@@ -137,7 +142,7 @@ const mentions = (text, name) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?!
  * a join or leave, and another person's own words not addressed to me.
  */
 function isChat(me, e) {
-  if (isMove(e)) return true;
+  if (isMove(e) || isHostMove(e)) return true;
   return e.via === 'human' && e.kind === 'say' && e.to !== me.name && !mentions(e.text, me.name);
 }
 
@@ -238,7 +243,7 @@ function remindersText(me, rm, { proposal = require('./proposal.js') } = {}) {
  */
 function visibleTo(me, rm) {
   if (me.role !== 'orch') {
-    return (e, entries) => rm.lane(me, e, entries) === 'push'
+    return (e, entries) => rm.lane(me, e, entries) === 'push' || isHostMove(e)
       || (isMove(e) && e.via === 'system' && e.from !== me.name && e.from !== 'orch');
   }
   return (e, entries, note = '') => rm.lane(me, e, entries) === 'push'
@@ -431,9 +436,33 @@ function startSession(me, ctx) {
     if (l) emit([{ type: 'health', text: l.text }]);
     else if (was) emit([{ type: 'health', text: LINK_BACK }]);
   }
+  // A planned handoff: the ask waiting for this seat (a wake, once), or the asker told it was declined or expired.
+  let askKey = null;
+  function handoffHealth() {
+    const ho = deps.handoff();
+    if (!rm.store.isHost) {
+      const a = ho.pendingAsk(s.code, me.name, clock.now());
+      if (!a || a.told_at) return;
+      ho.markTold(s.code, a.id);
+      emit([
+        { type: 'chat', lines: [`room: ${a.from} asks you to host room ${s.code} on this machine; your Claude shows you a card`] },
+        { type: 'wake', text: `${FOR_CLAUDE} ${a.from} asks ${me.name} to host room ${s.code} on this machine (the room's orch would then run on ${me.name}'s model account, and this machine must stay reachable). Only ${me.name} can answer: call AskUserQuestion with the question "handoff ${a.id}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+      ]);
+      return;
+    }
+    const d = ho.hostDoc(rm.store);
+    if (!d || d.from !== me.name) return;
+    const state = d.state === 'asked' && !(Date.parse(d.expires_at) > clock.now()) ? 'expired' : d.state;
+    const key = `${d.id}/${state}`;
+    if (key === askKey || (state !== 'refused' && state !== 'expired')) return;
+    askKey = key;
+    emit([{ type: 'health', text: `room handoff: ${d.to} ${state === 'refused' ? 'declined to host' : 'did not answer the ask to host'} room ${s.code}; this machine stays the host` }]);
+  }
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
     sendRows();
+    if (s.moved()) return; // the room changed kind under this session: the next check starts it again
+    if (rm.store && me.role !== 'orch') { try { handoffHealth(); } catch (e) { log('handoff', e); } }
     if (rm.store && !rm.store.isHost) linkHealth();
     const r = rm.verifyChain();
     if (r.ok) breakKey = null;
@@ -459,6 +488,7 @@ function startSession(me, ctx) {
   sendRows();
 
   s.stalled = () => clock.now() - s.lastTick > t.stallMs;
+  s.moved = () => { try { return !!rm.store && deps.openRoom(me.code).store.isHost !== rm.store.isHost; } catch { return false; } };
   s.killPoll = () => pollLoop.stop(); // tests: simulate a poll loop that died
   s.stop = () => {
     pollLoop.stop();
@@ -484,6 +514,7 @@ function runTail({
     identity: deps.identity || require(path.join(LIB, 'identity.js')),
     proposal: deps.proposal || require(path.join(LIB, 'proposal.js')),
     linkStatus: deps.linkStatus || (code => require(path.join(LIB, 'remote', 'link.js')).status(code)),
+    handoff: deps.handoff ? () => deps.handoff : (() => { let m; return () => m || (m = require(path.join(LIB, 'handoff.js'))); })(),
   };
   const log = errorLog(err, clock, tm.errorLogMs);
   const ctx = { clock, fs, write, log, t: tm, deps: d, sid };
@@ -513,6 +544,7 @@ function runTail({
     if (!failed) {
       const key = me ? `${me.code}/${me.name}/${me.role}` : null;
       if (sess && sess.key === key && sess.stalled()) { log('poll loop', new Error('stalled')); stopSess(); }
+      else if (sess && sess.key === key && sess.moved()) stopSess(); // a handoff: the room is hosted here now, or elsewhere
       if (!(sess && sess.key === key)) {
         stopSess();
         if (me) { try { sess = startSession(me, ctx); } catch (e) { log('session start', e); } }

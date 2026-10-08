@@ -26,6 +26,16 @@
  *       covers the payload, not its place, so a payload signed on one machine may be placed on another.
  *   pins() -> Map name -> KeyObject         the keys pinned in this room's log (envelope.pinnedKeys), cached
  *                                           until the log changes
+ *   hostState() -> {epoch, host?, machine?, locator?, id?}   who holds the room by its log: the last host_changed
+ *                                           entry (lib/handoff.js), epoch 0 and nothing else before any. Cached
+ *                                           like pins. FsRoomStore.place refuses (STALE) once the log says the room
+ *                                           moved to another machine: the old host's log takes no more lines, only
+ *                                           a host_changed that names this machine (a promote). It reads that only
+ *                                           where a move is on record (a handoff document, or a host_changed placed
+ *                                           by this store), so an append still reads only the log's tail
+ *   setAside() -> string | null             move this room's log aside to orphaned-<time>.jsonl in its directory
+ *                                           (and drop its checkpoint and members document): a demoted old host's
+ *                                           lines, kept and never merged. The file's path, null with no log
  *   readAll() -> Entry[]                    every parseable entry, in order (legacy lines included). Fresh array;
  *                                           the entries are shared (do not mutate them)
  *   readById(ids), readAfter(id, filter?), since(id) (= readAfter(id)), lastId()
@@ -65,7 +75,9 @@
  *   exists() -> bool
  *
  * Rooms (module level): open(code, {dir, fs}?) -> RoomStore (cached per home and code; a room this machine links
- *   to, lib/room/links.js, is a MirrorRoomStore, lib/room/store-mirror.js), roomExists(code) (a room directory
+ *   to, lib/room/links.js, is a MirrorRoomStore, lib/room/store-mirror.js; a link written or removed since, a
+ *   handoff, gives the other kind at the next open), forget(code) (drop the cached one), hostState(entries),
+ *   roomExists(code) (a room directory
  *   or a link), createRoom(code) -> bool (false: taken), listRooms() -> [code] (mirrors are directories too),
  *   setBackend(factory|null) (tests: every open() then returns factory(code)).
  *
@@ -93,7 +105,7 @@ const nodeFs = require('node:fs');
 const fs = nodeFs;
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { home, roomsDir, roomDir, repairModes } = require('../home.js');
+const { home, roomsDir, roomDir, repairModes, machineId } = require('../home.js');
 const { withLock } = require('../lock.js');
 const { writeFileAtomic, writeJsonAtomic, readJson } = require('../io.js');
 const { CODE_RE } = require('../text.js');
@@ -267,6 +279,7 @@ function fieldsOf(v, from) {
   if (v.drafted) p.drafted = v.drafted;
   if (v.pubkey) p.pubkey = v.pubkey;
   if (v.machine) p.machine = v.machine;
+  if (v.host) Object.assign(p, v.host);
   if (v.text !== undefined) p.text = v.text;
   return p;
 }
@@ -361,6 +374,29 @@ function placeAfter(s, p, { newest, prevLine, now }) {
     throw new RoomError('INVALID', `entry is too large (${bytes} bytes as stored; the limit is ${config.LOG_LINE_MAX_BYTES}). Shorten the text`);
   }
   return { e: tag(e, s), line };
+}
+
+/**
+ * Who holds the room by its log: the last host_changed entry's {epoch, host, machine, locator, id}, else epoch 0.
+ * @param {object[]} entries
+ * @returns {{epoch: number, host?: string, machine?: string, locator?: string, id?: number}}
+ */
+function hostState(entries) {
+  let h = { epoch: 0 };
+  for (const e of entries || []) {
+    if (e && e.kind === 'host_changed' && e.via === 'system' && Number.isInteger(e.epoch) && e.epoch > h.epoch) {
+      h = { epoch: e.epoch, host: e.host, machine: e.machine, locator: e.locator, id: e.id };
+    }
+  }
+  return h;
+}
+
+/** The log says the room moved to another machine; p may still be the host_changed that brings it here. */
+function checkHere(s, p) {
+  const h = s.hostState();
+  if (!h.machine || h.machine === machineId()) return;
+  if (p.kind === 'host_changed' && p.machine === machineId() && p.epoch > h.epoch) return;
+  throw new RoomError('STALE', `room ${s.code} moved to ${h.host}'s machine (epoch ${h.epoch}); this machine's copy takes no more lines`);
 }
 
 // ---------- keys of the small documents ----------
@@ -674,11 +710,13 @@ class FsRoomStore {
     return withLock(file + '.lock', () => {
       const fd = fs.openSync(file, 'a+', 0o600);
       try {
+        if (this._mayHaveMoved()) checkHere(this, p);
         const size = fs.fstatSync(fd).size;
         let endsNl = true;
         if (size) { const b = Buffer.alloc(1); fs.readSync(fd, b, 0, 1, size - 1); endsNl = b[0] === 10; }
         const { e, line } = placeAfter(this, p, { ...tailFrom(fd, size), now: Date.now() });
         fs.writeSync(fd, (endsNl ? '' : '\n') + line + '\n');
+        if (e.kind === 'host_changed') this._moves = true;
         return e;
       } finally { fs.closeSync(fd); }
     }, { ErrorClass: RoomError });
@@ -691,6 +729,31 @@ class FsRoomStore {
     const k = `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}`;
     if (!this._pins || this._pins.k !== k) this._pins = { k, map: envelope.pinnedKeys(this.readView({ after: Infinity, save: false })) };
     return this._pins.map;
+  }
+
+  /**
+   * Whether the log may say the room moved, so place() must read hostState: a host_changed placed through this
+   * store, or a handoff on record here (lib/handoff.js keeps its host document from the ask on). Otherwise an append
+   * reads only the log's tail.
+   */
+  _mayHaveMoved() { return !!this._moves || fs.existsSync(this._kvFile('remote/handoff')); }
+
+  /** The last host_changed entry's {epoch, host, machine, locator, id}, else {epoch: 0}; cached until the log changes. */
+  hostState() {
+    let st;
+    try { st = fs.statSync(this.logFile); } catch { return { epoch: 0 }; }
+    const k = `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}`;
+    if (!this._host || this._host.k !== k) this._host = { k, h: hostState(this.readView({ after: Infinity, save: false })) };
+    return this._host.h;
+  }
+
+  setAside() {
+    if (!fs.existsSync(this.logFile)) return null;
+    const file = path.join(this.dir, `orphaned-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`);
+    fs.renameSync(this.logFile, file);
+    for (const f of [this._idxPath, this._membersFile]) fs.rmSync(f, { force: true });
+    readCache.delete(this.logFile);
+    return file;
   }
 
   /** Check the whole prev chain. Returns {ok:true, count} or {ok:false, badAt: id, count} ({line} for a corrupt line). */
@@ -900,7 +963,7 @@ class FsRoomStore {
 let backend = null; // tests: code -> RoomStore
 const stores = new Map(); // home \0 code -> FsRoomStore | MirrorRoomStore
 /** A room hosted elsewhere: the link registry knows it (required here, not at load: store-mirror.js extends this file). */
-const linked = c => require('./links.js').get(c) !== null;
+const linked = c => require('./links.js').has(c);
 /**
  * The store of room `code`: a MirrorRoomStore when this machine links to the room (lib/room/links.js), else an
  * FsRoomStore; decided once per home and code. {dir} (and only then) gives an uncached FsRoomStore over that directory.
@@ -910,13 +973,15 @@ function open(c, { dir } = {}) {
   if (dir) return new FsRoomStore(c, { dir });
   const k = `${home()}\0${c}`;
   let s = stores.get(k);
-  if (!s) {
+  if (!s || s.isHost === linked(c)) { // none yet, or a handoff wrote or removed the link since
     repairModes(); // a home an older version made 0755 (once per home and process)
     s = linked(c) ? new (require('./store-mirror.js').MirrorRoomStore)(c) : new FsRoomStore(c);
     stores.set(k, s);
   }
   return s;
 }
+/** Drop the cached store of room c (this home): the next open() decides its kind again. */
+const forget = c => { stores.delete(`${home()}\0${c}`); };
 const setBackend = fn => { backend = typeof fn === 'function' ? fn : null; };
 const roomExists = c => typeof c === 'string' && CODE_RE.test(c) && (fs.existsSync(roomDir(c)) || linked(c));
 /** Create room `code` (private, exclusive): false when it already exists. */
@@ -929,7 +994,7 @@ const listRooms = () => { try { return fs.readdirSync(roomsDir()).filter(c => CO
 
 module.exports = {
   RoomError,
-  FsRoomStore, open, setBackend, roomExists, createRoom, listRooms,
+  FsRoomStore, open, forget, setBackend, roomExists, createRoom, listRooms, hostState,
   hash12, normalize, tag, roomOf, toPayload, admit, placeAfter, blobRef, checkKey, checkCursor, CHAT_KINDS,
   SIGNER, humanKey, keyDir, pubPath, publicKey, verifyHuman, unverifiedHuman, humanTrust,
 };

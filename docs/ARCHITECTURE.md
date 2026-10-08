@@ -437,8 +437,10 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 
 <!-- gen:lib-modules -->
 - `lib/cc.js`: the single home for every Claude Code internal the plugin relies on.
+- `lib/cli/handoff.js`: the CLI bodies of moving a room's host (lib/handoff.js), for scripts/sub-human.
 - `lib/clock.js`: A tiny injectable clock, so code that waits (the `sub-human tail` settle and poll loops) can be tested without real sleeps.
 - `lib/config.js`: every timing and size cap in one place, named. Callers import the value they use; an env override is read by the caller through envMs() at the moment it needs the value (tests set the env per child process, some per call).
+- `lib/handoff.js`: moving a room's host to another member's machine. The host's machine holds the room's log, serves its links and runs its orch (billed to the host person's model account); a planned handoff moves all three before the host closes their laptop.
 - `lib/home.js`: where the plugin's store lives on this machine, and which machine this is.
 - `lib/identity.js`: where rooms live, who is in them, and which Claude session is asking.
 - `lib/io.js`: small file and process helpers shared by every module.

@@ -19,7 +19,12 @@
 // second home here): the link file (lib/room/links.js) from the invite, the link daemon started (lib/remote/link.js
 // start; it redeems the invite), then the join as above over the link (the host logs it and runs the orch). A room
 // this machine links to is joined the same way with `/sub-human NAME CODE`. OFFLINE, AUTH and the like block the
-// prompt with the reason.
+// prompt with the reason. An invite whose locator is not the link's (the room moved to another host, lib/handoff.js)
+// replaces the link's credentials; an invite to a room this machine hosts says how to demote it (an old host the room
+// was promoted away from).
+// `/sub-human handoff NAME [USER@HOST[:PORT]]`: the host asks NAME (a member on another machine) to host the room
+// (lib/handoff.js ask, signed with this seat's key); NAME's Claude shows them a card, and only their answer there
+// moves the room. The reply is a block reason, to the person only.
 const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
 const orch = require('../lib/orch.js');
 const seats = require('../lib/seats.js');
@@ -27,12 +32,15 @@ const auth = require('../lib/remote/auth.js');
 const link = require('../lib/remote/link.js');
 const links = require('../lib/room/links.js');
 const seatKey = require('./seat-key.js');
+const handoff = require('../lib/handoff.js');
+const envelope = require('../lib/room/envelope.js');
+const store = require('../lib/room/store.js');
 const { orchPresence } = require('../lib/room/members.js');
 
 const COMMANDS = new Set(['sub-human:sub-human', 'sub-human']);
 const ORCH_AGENT = 'sub-human:orchestrator';
 const USAGE = 'usage: /sub-human NAME [CODE]. It joins the open room as NAME, or opens one and starts its orch for you (the orch is never launched by hand). '
-  + '/sub-human host gives an invite to your room; /sub-human join NAME INVITE joins a room on another machine.';
+  + '/sub-human host gives an invite to your room; /sub-human join NAME INVITE joins a room on another machine; /sub-human handoff NAME asks NAME to host your room.';
 const BYPASS = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
 // A refusal is also the systemMessage: Remote Control shows a hook's systemMessage, not a block reason.
 const block = reason => out({ decision: 'block', reason: `sub-human: ${reason}`, systemMessage: `sub-human: ${reason}` });
@@ -95,16 +103,50 @@ function host(cur) {
   return out({ decision: 'block', reason: `sub-human: invite to room ${cur.code}, for one machine (shown once; keep it to yourself): ${invite}\nThere, type: /sub-human join NAME ${invite}` });
 }
 
-/** The link file for an invite's room (kept once it holds a token); its code, or null after a block(). */
+/** `/sub-human handoff NAME [USER@HOST[:PORT]]`: ask NAME to host the room cur is in. */
+function askHandoff(cur, args) {
+  if (!cur) return block('join a room first; /sub-human handoff NAME then asks NAME to host it.');
+  const [to, dest] = args;
+  const locator = dest === undefined ? undefined : link.sshLocator(dest);
+  if (dest !== undefined && !locator) return block(`"${dest}" is not a plain USER@HOST[:PORT] the others can reach ${to}'s machine at.`);
+  let d;
+  try {
+    d = handoff.ask(cur.code, { from: cur.name, to, locator, sign: p => envelope.sign(p, store.humanKey(cur.code, cur.name), { room: cur.code, from: cur.name }) });
+  } catch (e) {
+    if (!(e instanceof room.RoomError)) throw e;
+    return block(`could not hand room ${cur.code} off: ${e.message}.`);
+  }
+  return out({ decision: 'block', reason: `sub-human: asked ${to} to host room ${cur.code}. Their Claude shows them a card; nothing moves unless they agree there (until ${d.expires_at.slice(11, 16)} UTC). If they do, the room's log, links and orch move to their machine, the orch then runs on ${to}'s model account, and this machine follows as a member.` });
+}
+
+/** A daemon still dialing the old host: stop it, so the start that follows dials the link file's new one. */
+function restartLink(code) {
+  const st = link.status(code);
+  if (!st.running) return;
+  try { process.kill(st.pid, 'SIGTERM'); } catch { return; }
+  for (const until = Date.now() + 2000; Date.now() < until && identity.isAlive(st.pid);) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+}
+
+const locatorOf = t => (t && t.kind === 'ssh' ? link.sshLocator(`${t.user}@${t.host}${t.port ? `:${t.port}` : ''}`) : t && t.kind === 'pipe' ? link.pipeLocator(t.home) : null);
+
+let repointed = false; // this join replaced a link's credentials: its seat joins again over the new link
+
+/** The link file for an invite's room (kept once it holds a token, unless the invite is to another host); its code, or null after a block(). */
 function linkRoom(invite) {
   const inv = auth.parseInvite(invite);
   if (!inv) return block('that is not an invite (sh1.CODE.LOCATOR.SECRET); ask the host for one: /sub-human host.');
   const transport = link.transportOf(inv.locator);
   if (!transport && inv.locator.startsWith('ssh:')) return block('this invite names an ssh destination that is not a plain user@host[:port]; ask the host for a new one.');
   if (!transport) return block(`this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine does not support yet.`);
-  if (identity.roomExists(inv.code) && identity.isHost(inv.code)) return block(`room ${inv.code} is hosted on this machine; join it with /sub-human NAME ${inv.code}.`);
+  if (identity.roomExists(inv.code) && identity.isHost(inv.code)) {
+    return block(`room ${inv.code} is hosted on this machine; join it with /sub-human NAME ${inv.code}. If it was promoted on another machine while this one was away, run in your own shell: sub-human demote ${inv.code} INVITE (this machine's own lines are kept aside, never merged).`);
+  }
   const cur = links.get(inv.code);
-  if (!cur || !cur.token) links.set(inv.code, { code: inv.code, transport, invite, created_at: new Date().toISOString() });
+  const moved = !!cur && !!cur.token && locatorOf(cur.transport) !== inv.locator;
+  if (!cur || !cur.token || moved) {
+    links.set(inv.code, { code: inv.code, transport, invite, created_at: new Date().toISOString() });
+    if (cur) { restartLink(inv.code); repointed = true; }
+  }
   return inv.code;
 }
 
@@ -134,6 +176,7 @@ run(input => {
   }
   if (cur && cur.role === 'orch') return block(`this session is the orch of room ${cur.code}; join from another session.`);
   if (args[0] === 'host' && args.length === 1) return host(cur);
+  if (args[0] === 'handoff' && (args.length === 2 || args.length === 3)) return askHandoff(cur, args.slice(1));
   const remote = args[0] === 'join';
   if (remote ? args.length !== 3 : args.length > 2) return block(USAGE);
   const name = remote ? args[1] : args[0];
@@ -160,10 +203,11 @@ run(input => {
       return block(why ? `could not join ${code}: the link to it stopped: ${why.reason}.` : `the link to room ${code} did not start; its log is ${links.logFile(code)}.`);
     }
   }
-  if (cur && cur.code === code && cur.name === name) {
+  const same = cur && cur.code === code && cur.name === name;
+  if (same && !repointed) {
     return success(cur, 'already joined', `in room ${cur.code} as ${name}${seats.ensureOrch(code, cwd, name)}`, input);
   }
-  if (cur) seats.exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
+  if (cur && !same) seats.exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
   // The seat's key (hooks/seat-key.js): via=human posts and answers are signed with it, and the log pins it.
   let pubkey;
   try { pubkey = seatKey.publicPem(code, name); } catch (e) { return block(`could not create the seat key for ${name}: ${e.message}`); }

@@ -9,6 +9,11 @@
  *
  *   mintInvite(store, {locator, now?}) -> {invite, secret}   invite = formatInvite({code, locator, secret});
  *                                                  records sha256(secret) with created_at. Host only (HOST_ONLY)
+ *   mintFor(store, {locator, machine, seats, now?}) -> {invite, secret}   a handoff's invite (lib/handoff.js) for one
+ *                                                  machine, minted by the room's next host before it is the host
+ *                                                  (so no HOST_ONLY check): only that machine may redeem it, and
+ *                                                  its link starts with those seats bound (they joined the room
+ *                                                  already; their keys are pinned in the log)
  *   redeemInvite(store, secret, {machine, linkId?, now?}) -> {token, link}   marks the invite used (an unknown or
  *                                                  used one is AUTH), records {id, token_sha256, machine, seats: [],
  *                                                  created_at}; id is the one reserveLink gave the invite, if any.
@@ -59,6 +64,18 @@ function mintInvite(store, { locator, now = Date.now() }) {
 }
 
 /**
+ * @param {import('../room/store.js').FsRoomStore} store   the room's next host's store (a mirror until it is the host)
+ * @param {{locator: string, machine: string, seats: string[], now?: number}} opts
+ * @returns {{invite: string, secret: string}}
+ */
+function mintFor(store, { locator, machine, seats, now = Date.now() }) {
+  const secret = random();
+  const rec = { created_at: iso(now), machine, seats: [...seats], handoff: true };
+  store.kv.update(INVITES_KEY, cur => ({ ...cur, [sha256(secret)]: rec }));
+  return { invite: formatInvite({ code: store.code, locator, secret }), secret };
+}
+
+/**
  * @param {import('../room/store.js').FsRoomStore} store
  * @param {string} secret
  * @param {{machine: string, now?: number}} opts
@@ -71,7 +88,9 @@ function redeemInvite(store, secret, { machine, linkId, now = Date.now() }) {
     const inv = cur && cur[key];
     if (!inv || inv.used_at) throw new RoomError('AUTH', 'this invite is unknown or was used already; ask the host for a new one');
     if (linkId !== undefined && inv.link !== linkId) throw new RoomError('AUTH', `this invite is not for link ${linkId}`);
+    if (inv.machine && inv.machine !== machine) throw new RoomError('AUTH', 'this invite is for another machine');
     link.id = inv.link || newLinkId();
+    if (Array.isArray(inv.seats)) link.seats = [...inv.seats];
     return { ...cur, [key]: { ...inv, used_at: iso(now), link: link.id } };
   });
   const token = random();
@@ -179,6 +198,6 @@ function parseInvite(text) {
 }
 
 module.exports = {
-  INVITE_PREFIX, INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, redeemInvite, reserveLink, linkKnown, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
+  INVITE_PREFIX, INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, mintFor, redeemInvite, reserveLink, linkKnown, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
   formatInvite, parseInvite,
 };
