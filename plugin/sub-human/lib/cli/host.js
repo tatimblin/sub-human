@@ -22,24 +22,10 @@
 
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
+const { parse } = require('./args.js');
 
 const say = s => process.stdout.write(s.endsWith('\n') ? s : s + '\n');
 const fail = (s, code = 1) => { process.stderr.write(s.endsWith('\n') ? s : s + '\n'); return code; };
-
-/** --name VALUE flags (and bare --name switches) out of args. */
-function flags(args, valued, switches = []) {
-  const f = {}, rest = [];
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    const k = a.startsWith('--') ? a.slice(2) : null;
-    if (k && valued.includes(k)) {
-      if (args[i + 1] === undefined) return { error: `${a} needs a value` };
-      f[k] = args[++i];
-    } else if (k && switches.includes(k)) f[k] = true;
-    else rest.push(a);
-  }
-  return { f, rest };
-}
 
 /** The room: --room, else the one open room hosted here. */
 function hostedRoom(explicit) {
@@ -52,21 +38,15 @@ function hostedRoom(explicit) {
 
 function host(args) {
   // --ssh takes a value only when one follows that is not another flag
-  const a = [...args];
-  let ssh;
-  const i = a.indexOf('--ssh');
-  if (i >= 0) {
-    ssh = a[i + 1] && !a[i + 1].startsWith('--') ? a[i + 1] : true;
-    a.splice(i, ssh === true ? 1 : 2);
-  }
-  const p = flags(a, ['room', 'via', 'url', 'port'], ['tailscale', 'funnel']);
+  const p = parse(args, { ssh: '?', room: 1, via: 1, url: 1, port: 1, tailscale: 0, funnel: 0 });
+  const ssh = p.flags.ssh;
   if (p.error || p.rest.length) return fail(p.error || 'usage: sub-human host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP] | [--tailscale [--funnel] | --url URL] [--port P]', 2);
-  const web = p.f.tailscale || p.f.funnel || p.f.url !== undefined;
-  if (web && (ssh !== undefined || p.f.via !== undefined)) return fail('--ssh and --tailscale / --url are different ways in; pick one', 2);
+  const web = p.flags.tailscale || p.flags.funnel || p.flags.url !== undefined;
+  if (web && (ssh !== undefined || p.flags.via !== undefined)) return fail('--ssh and --tailscale / --url are different ways in; pick one', 2);
   try {
     const r = web
-      ? require('../remote/webhost.js').hostWeb(hostedRoom(p.f.room), { tailscale: !!p.f.tailscale, funnel: !!p.f.funnel, url: p.f.url, ...(p.f.port ? { port: Number(p.f.port) } : {}) })
-      : require('../remote/hosting.js').hostInvite(hostedRoom(p.f.room), { ssh, via: p.f.via });
+      ? require('../remote/webhost.js').hostWeb(hostedRoom(p.flags.room), { tailscale: !!p.flags.tailscale, funnel: !!p.flags.funnel, url: p.flags.url, ...(p.flags.port ? { port: Number(p.flags.port) } : {}) })
+      : require('../remote/hosting.js').hostInvite(hostedRoom(p.flags.room), { ssh, via: p.flags.via });
     say(r.text);
     return 0;
   } catch (e) { return fail(e.message); }
@@ -81,25 +61,25 @@ function ask(question) {
 }
 
 function admit(args) {
-  const p = flags(args, ['file'], ['yes']);
+  const p = parse(args, { file: 1, yes: 0 });
   if (p.error || p.rest.length !== 1) return fail(p.error || 'usage: sub-human admit shk1.CODE.REF.KEY.NAME [--file AUTHORIZED_KEYS] [--yes]', 2);
   const hosting = require('../remote/hosting.js');
   const sshkeys = require('../remote/sshkeys.js');
   const req = sshkeys.parseRequest(p.rest[0]);
   if (!req) return fail('that is not an admit request (shk1.CODE.REF.KEY.NAME, from the joiner\'s /sub-human join)');
-  if (!p.f.yes && process.stdin.isTTY) {
+  if (!p.flags.yes && process.stdin.isTTY) {
     const yes = ask(`${req.name} asks to join room ${req.code} from another machine with ssh key ${sshkeys.fingerprint(req.key)}.\n`
       + 'Admit it? That key will reach only this room\'s server, as one link, and still needs the invite\'s PIN. [y/N] ');
     if (!/^y(es)?$/i.test(yes)) return fail('not admitted');
   }
   try {
-    say(hosting.admit(p.rest[0], p.f.file ? { file: p.f.file } : {}).text);
+    say(hosting.admit(p.rest[0], p.flags.file ? { file: p.flags.file } : {}).text);
     return 0;
   } catch (e) { return fail(e.message); }
 }
 
 function prime(args) {
-  const p = flags(args, ['persist']);
+  const p = parse(args, { persist: 1 });
   if (p.error || p.rest.length !== 1) return fail(p.error || 'usage: sub-human prime CODE [--persist 8h]', 2);
   const code = p.rest[0];
   const links = require('../room/links.js');
@@ -108,12 +88,12 @@ function prime(args) {
   try {
     const ssh = require('../remote/transports/ssh.js');
     fs.mkdirSync(require('node:path').dirname(ssh.controlPath()), { recursive: true, mode: 0o700 });
-    const [cmd, ...rest] = ssh.primeCommand(l.transport, code, p.f.persist ? { persist: p.f.persist } : {});
+    const [cmd, ...rest] = ssh.primeCommand(l.transport, code, p.flags.persist ? { persist: p.flags.persist } : {});
     links.set(code, { ...l, transport: { ...l.transport, mux: true } });
     process.stderr.write(`opening a shared ssh connection for room ${code} (answer any prompt once)…\n`);
     const r = spawnSync(cmd, rest, { stdio: 'inherit' });
     if (r.status !== 0) return fail(`ssh exited ${r.status}; the link still connects on its own, without the shared connection`);
-    say(`room ${code}: the link now rides this connection for ${p.f.persist || '8h'} (it reconnects on its own after that; prime again for another MFA prompt)`);
+    say(`room ${code}: the link now rides this connection for ${p.flags.persist || '8h'} (it reconnects on its own after that; prime again for another MFA prompt)`);
     return 0;
   } catch (e) { return fail(e.message); }
 }

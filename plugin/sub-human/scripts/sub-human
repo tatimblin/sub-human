@@ -123,18 +123,11 @@ function die(msg, code = 2) {
   process.exit(code);
 }
 
+/** lib/cli/args.js parse, dying on its error (exit 2). */
 function parseFlags(args, spec) {
-  const flags = {}, rest = [];
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '--') { rest.push(...args.slice(i + 1)); break; }
-    if (a.startsWith('--') && a.slice(2) in spec) {
-      if (spec[a.slice(2)]) flags[a.slice(2)] = args[++i];
-      else flags[a.slice(2)] = true;
-      if (flags[a.slice(2)] === undefined) die(`${a} needs a value`);
-    } else rest.push(a);
-  }
-  return { flags, rest };
+  const p = require(path.join(LIB, 'cli', 'args.js')).parse(args, spec);
+  if (p.error) die(p.error);
+  return p;
 }
 
 const intList = s => String(s).split(',').filter(Boolean).map(x => {
@@ -354,22 +347,11 @@ function invite(args) {
 }
 
 // ---------- authorize INVITE|LINK_ID PUBKEY: the SSH forced command for one link ----------
-const SSH_KEY_RE = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) ([A-Za-z0-9+/]+={0,3})(?: .*)?$/;
-
-/** The one public key in text (an authorized_keys or .pub line, options not allowed): "type base64". */
-function sshPublicKey(text) {
-  const lines = String(text).split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-  const m = lines.length === 1 && SSH_KEY_RE.exec(lines[0]);
-  if (!m) die('PUBKEY must hold exactly one SSH public key line ("ssh-ed25519 AAAA… comment"), with no options');
-  return `${m[1]} ${m[2]}`;
-}
-
 function authorize(args) {
   const { flags, rest } = parseFlags(args, { room: 1, file: 1 });
   if (rest.length !== 2) die('usage: sub-human authorize INVITE|LINK_ID PUBKEY_FILE|- [--room CODE] [--file AUTHORIZED_KEYS]');
   const fs = require('node:fs');
   const auth = require(path.join(LIB, 'remote', 'auth.js'));
-  const { home } = require(path.join(LIB, 'home.js'));
   const inv = auth.parseInvite(rest[0]);
   const code = inv ? inv.code : flags.room;
   if (!code) die('a link id needs --room CODE');
@@ -381,11 +363,11 @@ function authorize(args) {
   if (inv) id = auth.reserveLink(s, inv.secret);
   else if (auth.linkKnown(s, rest[0])) id = rest[0];
   else die(`"${rest[0]}" is neither an invite nor a link of room ${code}`, 1);
-  const key = sshPublicKey(rest[1] === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(rest[1], 'utf8'));
-  const shim = require(path.join(LIB, 'remote', 'shim.js'));
-  if (!shim.refresh({ force: true })) die(`the plugin root ${shim.pluginRoot()} is under a temp dir; sshd would run whatever sits there (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)`, 1);
-  const h = path.resolve(home());
-  if (!shim.PLAIN_PATH_RE.test(h)) die(`the home path "${h}" has characters a forced command cannot carry plainly; move it`);
+  const sshkeys = require(path.join(LIB, 'remote', 'sshkeys.js'));
+  const key = sshkeys.publicKey(rest[1] === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(rest[1], 'utf8'));
+  if (!key) die('PUBKEY must hold exactly one SSH public key line ("ssh-ed25519 AAAA… comment"), with no options');
+  let shim, h; // the stable serve shim, written now, and the home path the forced command carries (as admit)
+  try { ({ shim, h } = require(path.join(LIB, 'remote', 'hosting.js')).shimReady()); } catch (e) { die(e.message, /temp dir/.test(e.message) ? 1 : 2); }
   const line = shim.authorizedLine(code, id, key, h);
   if (flags.file === undefined) return console.log(line);
   const file = path.resolve(flags.file);
@@ -396,15 +378,10 @@ function authorize(args) {
     const { writeFileAtomic } = require(path.join(LIB, 'io.js'));
     writeFileAtomic(fs.realpathSync(file), mig.text);
     console.error(`rewrote ${mig.migrated} older sub-human line(s) in ${file} to run ${shim.shimPath(h)}`);
-    cur = mig.text;
   }
-  const lines = cur.split('\n');
-  if (lines.includes(line)) return console.error(`already in ${file}`);
-  const blob = key.split(' ')[1];
-  if (lines.some(l => l.split(/\s+/).includes(blob))) die(`that key is in ${file} already, with another line; remove it first`, 1);
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  fs.appendFileSync(file, (cur && !cur.endsWith('\n') ? '\n' : '') + line + '\n', { mode: 0o600 });
-  console.error(`appended to ${file}: link ${id} of room ${code}`);
+  let r;
+  try { r = sshkeys.appendAuthorized(file, line, key); } catch (e) { die(e.message, 1); }
+  console.error(r === 'present' ? `already in ${file}` : `appended to ${file}: link ${id} of room ${code}`);
 }
 
 const [cmd, ...args] = process.argv.slice(2);

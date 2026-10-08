@@ -599,19 +599,15 @@ function webHosts() {
 
 // ---------- CLI ----------
 function parseArgs(args) {
-  const o = { quick: false, fix: false, json: false, bundle: null, authorizedKeys: undefined, timeoutMs: DOCTOR_HELLO_MS };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '--quick') o.quick = true;
-    else if (a === '--fix') o.fix = true;
-    else if (a === '--json') o.json = true;
-    else if (a === '--bundle') o.bundle = args[i + 1] && !args[i + 1].startsWith('--') ? args[++i] : '';
-    else if (a === '--authorized-keys') o.authorizedKeys = args[++i];
-    else if (a === '--timeout') o.timeoutMs = Number(args[++i]);
-    else throw new Error(`usage: sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS] (not ${a})`);
-  }
+  const { flags: f, rest, error } = require('./args.js').parse(args, { quick: 0, fix: 0, json: 0, bundle: '?', 'authorized-keys': 1, timeout: 1 });
+  if (rest.length) throw new Error(`usage: sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS] (not ${rest[0]})`);
+  if (error && /^--timeout/.test(error)) throw new Error('--timeout needs a number of milliseconds');
+  if (error || f['authorized-keys'] === '') throw new Error('--authorized-keys needs a file');
+  const o = {
+    quick: !!f.quick, fix: !!f.fix, json: !!f.json, bundle: f.bundle === undefined ? null : f.bundle === true ? '' : f.bundle,
+    authorizedKeys: f['authorized-keys'], timeoutMs: f.timeout === undefined ? DOCTOR_HELLO_MS : Number(f.timeout),
+  };
   if (!(o.timeoutMs > 0)) throw new Error('--timeout needs a number of milliseconds');
-  if (o.authorizedKeys === '' || (o.authorizedKeys === undefined && args.includes('--authorized-keys'))) throw new Error('--authorized-keys needs a file');
   return o;
 }
 

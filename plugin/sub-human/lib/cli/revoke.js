@@ -10,12 +10,8 @@
 const { hostedRoom } = require('./host.js');
 
 function revoke(args) {
-  const f = {}, rest = [];
-  for (let i = 0; i < args.length; i++) {
-    if ((args[i] === '--room' || args[i] === '--file') && args[i + 1] !== undefined) f[args[i].slice(2)] = args[++i];
-    else rest.push(args[i]);
-  }
-  if (rest.length !== 1) {
+  const { flags: f, rest, error } = require('./args.js').parse(args, { room: 1, file: 1 });
+  if (error || rest.length !== 1) {
     process.stderr.write('usage: sub-human revoke LINK_ID|NAME [--room CODE] [--file AUTHORIZED_KEYS]\n');
     return 2;
   }

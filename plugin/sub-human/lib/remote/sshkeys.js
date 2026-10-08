@@ -18,6 +18,8 @@
  *                                              file), else /etc/ssh/ssh_host_ed25519_key.pub; null when unreadable
  *   knownHostsLine(alias, raw) -> string      "<alias> ssh-ed25519 AAAA…" (the link's HostKeyAlias)
  *   linkKey(dir, comment) -> {file, pub, raw} the link's own key in dir (id_ed25519, 0600), made once by ssh-keygen
+ *   publicKey(text) -> "type base64" | null   the one public key line in text (ed25519, rsa, ecdsa, sk-*; no options),
+ *                                              for `sub-human authorize PUBKEY`
  *   formatRequest({code, ref, key, name}) -> "shk1.CODE.REF.KEY.NAME";  parseRequest(text) -> {…} | null
  *   authorizedKeysFile() -> string            SUB_HUMAN_AUTHORIZED_KEYS, else ~/.ssh/authorized_keys
  *   appendAuthorized(file, line, key) -> 'added' | 'present'   append line (0600, dir 0700) unless it is there;
@@ -91,6 +93,20 @@ function linkKey(dir, comment) {
   return { file, pub, raw };
 }
 
+const SSH_KEY_RE = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) ([A-Za-z0-9+/]+={0,3})(?: .*)?$/;
+
+/**
+ * The one public key in text (a .pub or authorized_keys line of any common type, no options, comments and blank
+ * lines skipped): "type base64", or null when there is not exactly one.
+ * @param {string} text
+ * @returns {string | null}
+ */
+function publicKey(text) {
+  const lines = String(text).split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  const m = lines.length === 1 && SSH_KEY_RE.exec(lines[0]);
+  return m ? `${m[1]} ${m[2]}` : null;
+}
+
 /** @returns {string} */
 const formatRequest = ({ code, ref, key, name }) => [REQ_PREFIX, code, ref, key, name].join('.');
 
@@ -150,6 +166,6 @@ function removeAuthorized(file, code, id) {
 }
 
 module.exports = {
-  ed25519Raw, openssh, fingerprint, hostKey, knownHostsLine, linkKey, formatRequest, parseRequest,
+  ed25519Raw, openssh, fingerprint, hostKey, knownHostsLine, linkKey, publicKey, formatRequest, parseRequest,
   authorizedKeysFile, appendAuthorized, removeAuthorized,
 };

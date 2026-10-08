@@ -11,17 +11,18 @@
  *   unhost(args)   sub-human unhost [--room CODE]          stop serving a room over the web (webhost.unhost)
  */
 
+const { parse } = require('./args.js');
+
 const say = s => process.stdout.write(s.endsWith('\n') ? s : s + '\n');
 const fail = (s, code = 1) => { process.stderr.write(s.endsWith('\n') ? s : s + '\n'); return code; };
 
 function listen(args) {
-  const a = [...args];
-  const take = f => { const i = a.indexOf(f); if (i < 0) return false; a.splice(i, 1); return true; };
+  const p = parse(args, { port: 1, start: 0, stop: 0, status: 0 });
   let port;
-  const i = a.indexOf('--port');
-  if (i >= 0) { port = Number(a[i + 1]); a.splice(i, 2); if (!(port >= 0 && port <= 65535) || !Number.isInteger(port)) return fail('--port takes a port number', 2); }
-  const doStart = take('--start'), doStop = take('--stop'), doStatus = take('--status');
-  if (a.length || doStart + doStop + doStatus > 1) return fail('usage: sub-human listen [--port 7420] | --start [--port P] | --stop | --status', 2);
+  if (p.flags.port !== undefined) { port = Number(p.flags.port); if (!(port >= 0 && port <= 65535) || !Number.isInteger(port)) return fail('--port takes a port number', 2); }
+  if (p.error === '--port needs a value') return fail('--port takes a port number', 2);
+  const doStart = !!p.flags.start, doStop = !!p.flags.stop, doStatus = !!p.flags.status;
+  if (p.error || p.rest.length || doStart + doStop + doStatus > 1) return fail('usage: sub-human listen [--port 7420] | --start [--port P] | --stop | --status', 2);
   const L = require('../remote/listener.js');
   try {
     if (doStatus) { say(JSON.stringify(L.status(), null, 2)); return 0; }
@@ -37,11 +38,9 @@ function listen(args) {
 }
 
 function unhost(args) {
-  const a = [...args];
-  let room;
-  const i = a.indexOf('--room');
-  if (i >= 0) { room = a[i + 1]; a.splice(i, 2); }
-  if (a.length || (i >= 0 && !room)) return fail('usage: sub-human unhost [--room CODE]', 2);
+  const p = parse(args, { room: 1 });
+  if (p.error || p.rest.length) return fail('usage: sub-human unhost [--room CODE]', 2);
+  const room = p.flags.room;
   try {
     const { hostedRoom } = require('./host.js');
     say(require('../remote/webhost.js').unhost(hostedRoom(room)).text);

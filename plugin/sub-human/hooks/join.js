@@ -118,15 +118,11 @@ function bindOrch(input, base, cur, args) {
 /** `--ssh [DEST] --via JUMP` (or `--tailscale [--funnel]`, `--url URL`, `--port P`) of /sub-human host: the flags,
  * or null after a block(). */
 function hostFlags(rest) {
-  const f = {};
-  for (let i = 0; i < rest.length; i++) {
-    if (rest[i] === '--ssh') f.ssh = rest[i + 1] && !rest[i + 1].startsWith('--') ? rest[++i] : true;
-    else if (rest[i] === '--via' && rest[i + 1]) f.via = rest[++i];
-    else if (rest[i] === '--tailscale' || rest[i] === '--funnel') f[rest[i].slice(2)] = true;
-    else if (rest[i] === '--url' && rest[i + 1]) f.url = rest[++i];
-    else if (rest[i] === '--port' && /^[0-9]{1,5}$/.test(rest[i + 1] || '')) f.port = Number(rest[++i]);
-    else { block(`usage: /sub-human host [--ssh [USER@HOST[:PORT]]] [--via JUMP] | --tailscale [--funnel] | --url https://FRONT ("${rest[i]}"?)`); return null; }
-  }
+  const p = require('../lib/cli/args.js').parse(rest, { ssh: '?', via: 1, tailscale: 0, funnel: 0, url: 1, port: 1 });
+  const f = p.flags;
+  const bad = p.error ? p.error.split(' ')[0] : p.rest.length ? p.rest[0] : f.port !== undefined && !/^[0-9]{1,5}$/.test(f.port) ? '--port' : null;
+  if (bad !== null) { block(`usage: /sub-human host [--ssh [USER@HOST[:PORT]]] [--via JUMP] | --tailscale [--funnel] | --url https://FRONT ("${bad}"?)`); return null; }
+  if (f.port !== undefined) f.port = Number(f.port);
   const web = f.tailscale || f.funnel || f.url !== undefined;
   if (web && (f.ssh !== undefined || f.via !== undefined)) { block('--ssh and --tailscale / --url are different ways in; pick one'); return null; }
   return { ...f, web };
