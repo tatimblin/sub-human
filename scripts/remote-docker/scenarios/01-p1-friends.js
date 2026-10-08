@@ -28,8 +28,8 @@ module.exports = {
     const { lab } = t;
     const { code, host } = lab.hostRoom();
     t.log(`room ${code} on devbox`);
-    const j = lab.joinOver({ svc: 'joiner-a', name: 'bob', code, hosts: WAN });
-    t.ev.secret(j.invite.split('.').pop());
+    const j = await lab.join({ svc: 'joiner-a', name: 'bob', code, hosts: WAN });
+    t.ev.invite(j.invite, j.pin);
     t.log(`bob's join (${j.join.ms} ms): ok ${j.join.ok} ${j.join.out || ''}`);
     if (!t.check('bob joins over ssh through toxiproxy', j.join.ok, j.join.out || `${j.join.ms} ms`)) return;
     const d0 = j.seat.dump(code);
@@ -58,15 +58,28 @@ module.exports = {
     t.check('mirror byte-identical to the host log, chains verify', c.ok, c.detail);
 
     if (t.features.doctor) {
-      const doc = j.seat.cli(['doctor']);
+      // the joiner's ssh routing is its own config (-F, as the link daemon got it through SUB_HUMAN_SSH_OPTS); a
+      // person's would be ~/.ssh/config, which doctor's hello reads the same way
+      const env = { SUB_HUMAN_SSH_OPTS: `-F ${j.conf}` };
+      const doc = j.seat.cli(['doctor'], { env });
       t.ev.write('doctor.txt', doc.stdout + doc.stderr);
-      t.check('sub-human doctor on the joiner exits 0', doc.status === 0, (doc.stdout + doc.stderr).split('\n').slice(-3).join(' / '));
+      t.check('sub-human doctor on the joiner exits 0 (warnings allowed: no claude binary in the lab)', doc.status === 0, (doc.stdout + doc.stderr).split('\n').slice(-3).join(' / '));
+      const json = j.seat.cli(['doctor', '--json'], { env });
+      let report = null;
+      try { report = JSON.parse(json.stdout); } catch { /* not JSON */ }
+      t.ev.write('doctor.json', json.stdout + json.stderr);
+      const by = id => report && report.checks.find(c => c.id === id);
+      const lk = by(`link:${code}`), clk = by(`clock:${code}`);
+      t.check('doctor --json: the link check passes (daemon, state up, a hello to the host)', !!lk && lk.status === 'pass', lk ? `${lk.status}: ${lk.detail}`.slice(0, 160) : (json.stderr || json.stdout).slice(0, 160));
+      t.check('doctor --json: the clock against the host (its hello carries the time) passes', !!clk && clk.status === 'pass', clk ? `${clk.status}: ${clk.detail}` : 'no clock check');
       const token = JSON.parse(lab.exec('joiner-a', ['cat', `${j.seat.home}/links/${code}.json`], { user: 'joiner' }).stdout).token;
-      const bundle = j.seat.cli(['doctor', '--bundle']);
-      const text = bundle.stdout + bundle.stderr;
-      const file = (/(\/\S+\.(?:tar\.gz|tgz|json|txt))/.exec(text) || [])[1];
-      const body = file ? lab.exec('joiner-a', ['sh', '-c', `tar -xOzf ${file} 2>/dev/null || cat ${file}`], { allowFail: true }).stdout : text;
-      t.check('doctor --bundle holds no link token and no invite secret', bundle.status === 0 && !body.includes(token) && !body.includes(j.invite.split('.').pop()), file || 'stdout');
+      const file = '/home/joiner/doctor-bundle.json';
+      const bundle = j.seat.cli(['doctor', '--bundle', file], { env });
+      const body = lab.exec('joiner-a', ['cat', file], { allowFail: true }).stdout;
+      const secret = String(j.invite).split('.')[3];
+      t.check('doctor --bundle writes a bundle that holds no link token, invite secret, PIN or room code',
+        bundle.status === 0 && body.length > 100 && !body.includes(token) && !body.includes(secret) && !(j.pin && body.includes(j.pin)) && !body.includes(code),
+        `${file}, ${body.length} B, exit ${bundle.status}`);
     } else t.pending('sub-human doctor reports the link (and --bundle is redacted)', 'needs doctor');
   },
 };

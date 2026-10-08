@@ -5,7 +5,7 @@
 // heartbeat deadline (LAB_HEARTBEAT_DEADLINE_MS, 50 s: ssh's ServerAliveInterval 15 x CountMax 2 is today's heartbeat;
 // the 1.0 app-level ping (15 s, 2 misses) is held to LAB_PING_DEADLINE_MS, 35 s). A post meanwhile fails fast instead of
 // hanging the prompt. Healed, both come back and converge.
-const { WAN, JUMP, waitState, converge, linkState } = require('./_lib.js');
+const { WAN, JUMP, waitState, converge, linkState, entries } = require('./_lib.js');
 
 const DEADLINE_MS = Number(process.env.LAB_HEARTBEAT_DEADLINE_MS || 50_000);
 const PING_DEADLINE_MS = Number(process.env.LAB_PING_DEADLINE_MS || 35_000);
@@ -18,9 +18,9 @@ module.exports = {
   async run(t) {
     const { lab } = t;
     const { code, host } = lab.hostRoom();
-    const a = lab.joinOver({ svc: 'joiner-a', name: 'bob', code, hosts: WAN });
-    const b = lab.joinOver({ svc: 'joiner-b', name: 'bea', code, hosts: JUMP, via: 'bastion' });
-    for (const j of [a, b]) t.ev.secret(j.invite.split('.').pop());
+    const a = await lab.join({ svc: 'joiner-a', name: 'bob', code, hosts: WAN });
+    const b = await lab.join({ svc: 'joiner-b', name: 'bea', code, hosts: JUMP, via: 'bastion' });
+    for (const j of [a, b]) t.ev.invite(j.invite, j.pin);
     if (!t.check('bob and bea join', a.join.ok && b.join.ok)) return;
     host.say('alice', 'half-open before');
     await converge(t, host, code, [a.seat, b.seat]);
@@ -58,7 +58,11 @@ module.exports = {
     t.log('healed');
     const [ba, bb] = await Promise.all([waitState(a.seat, code, 'online', 45_000), waitState(b.seat, code, 'online', 45_000)]);
     t.check('both links back online after the heal', ba !== null && bb !== null, `bob ${ba} ms, bea ${bb} ms`);
+    await t.sleep(3000); // a post that was in flight is sent again on the new connection, after the catch-up
     const c = await converge(t, host, code, [a.seat, b.seat]);
     t.check('converged: byte-identical, chains verify, no gap, nothing twice', c.ok, c.detail);
+    const n = entries(c.host.log).filter(e => e.text === 'half-open during').length;
+    if (p.ok) t.check('the post sent into the black hole ("sending": kept under its nonce) lands exactly once after the heal', n === 1, `${n}×; the hook said: ${(p.out || 'posted').slice(0, 100)}`);
+    else t.check('the post refused in the black hole never lands later', n === 0, `${n}×; the hook said: ${(p.out || '').slice(0, 100)}`);
   },
 };

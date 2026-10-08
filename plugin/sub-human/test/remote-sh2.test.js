@@ -214,3 +214,11 @@ test('sh2 over ssh, without sshd: the joiner pins the host key and makes its own
   assert.equal(cli(['admit', 'shk1.nope', '--yes']).status, 1);
   assert.equal(cli(['revoke']).status, 2);
 });
+
+test('sshkeys.linkKey: the link\'s own key pair is private, the .pub too (nothing in the store is group/world-readable)', t => {
+  const dir = path.join(h.tmpDir('sh-lk-', t), 'links', 'vole-1234');
+  const k = sshkeys.linkKey(dir, 'sub-human:vole-1234:bob');
+  assert.equal(fs.statSync(k.file).mode & 0o777, 0o600);
+  assert.equal(fs.statSync(`${k.file}.pub`).mode & 0o777, 0o600);
+  assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
+});

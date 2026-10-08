@@ -59,15 +59,15 @@ Docker on this Mac. Nothing touches this Mac's sshd, `~/.ssh` or `~/.sub-human`.
 
 | id | persona | what it proves | today |
 |---|---|---|---|
-| `p1-friends` | P1 | joiner-a joins by ssh; posts reach the other side's tail in under 2 s, also with a 300 ms latency toxic each way; machine ids distinct; mirror byte-identical. With `doctor`: doctor ok, `--bundle` holds no secret | pass (doctor pending) |
-| `p2-corporate` | P2 | joiner-b's isolation (no route, no DNS, only bastion and proxy); join and posts via ProxyJump through the bastion; a second home joins via the CONNECT proxy; bastion and proxy logs show the hops. With `host --ssh`: `--via` | pass (`host --ssh --via` pending) |
-| `p3-sleep` | P3 | `docker pause devbox` 90 s (`LAB_SLEEP_S`): both links go offline, then come back within 30 s of the wake; a post while offline is refused clearly; no line lost or duplicated. `docker pause joiner-a` 45 s (`LAB_JOINER_SLEEP_S`): it catches up on the 6 posts it slept through. With the outbox, the post made during the sleep is flushed exactly once | pass (outbox pending) |
-| `half-open` | P3/P2 | a toxiproxy `timeout` toxic (bob) and iptables DROP (bea) black-hole the links; a post fails within 10 s; both links are declared dead within 50 s (`LAB_HEARTBEAT_DEADLINE_MS`: ssh ServerAlive 15 s × 2). With the app ping, within 35 s | pass (ping deadline pending) |
+| `p1-friends` | P1 | joiner-a joins by ssh with the real 1.0 flow (`/sub-human host --ssh`, `/sub-human join NAME INVITE PIN`, the host's `/sub-human admit shk1…`, `/sub-human NAME CODE`); posts reach the other side's tail in under 2 s, also with a 300 ms latency toxic each way; machine ids distinct; mirror byte-identical; `doctor` exits 0, `doctor --json` passes the link and the clock, `--bundle FILE` holds no token, secret, PIN or room code | pass |
+| `p2-corporate` | P2 | joiner-b's isolation (no route, no DNS, only bastion and proxy); bea joins with an invite from `host --ssh … --via jump@bastion` (her link runs `ssh -J` with its own key and the pinned host key); a second home joins via the CONNECT proxy; bastion and proxy logs show the hops | pass |
+| `p3-sleep` | P3 | `docker pause devbox` 90 s (`LAB_SLEEP_S`): both links go offline, then come back within 30 s of the wake; a post while offline is queued (`⧗ queued`) and flushed exactly once; seats renewed with no left/joined line; no line lost or duplicated. `docker pause joiner-a` 45 s (`LAB_JOINER_SLEEP_S`): it catches up on the 6 posts it slept through. Default link timings | pass |
+| `half-open` | P3/P2 | a toxiproxy `timeout` toxic (bob) and iptables DROP (bea) black-hole the links; a post returns within 10 s (`⧗ sending`, kept under its nonce) and lands exactly once after the heal; both links are declared dead within 35 s by the app ping (`LAB_PING_DEADLINE_MS`) | pass |
 | `flap` | P1/P3 | 10 cuts in 60 s (alternating disable and `reset_peer`) while everyone posts; ends byte-identical; every accepted post once; no ghost; bea via the bastion is the control | pass |
-| `slow-link` | P1 | 5 s of upstream latency: the post times out ("nothing was sent"); it must not land later | **BUG** (it lands: a ghost post) |
-| `skew` | mixed | 0.2.0 host ← 0.3.0 joiner, 0.3.0 host ← 0.2.0 joiner: compatible or a clear version message, never divergence; a v99 hello is refused `PROTOCOL` (with the version range: "which side to update") | pass (update message pending) |
-| `security` | all | `ssh devbox ls` runs the forced command, not a shell; no pty; no `-W`; the bastion has no shell; homes 0700 with nothing group/world readable; no invite secret or token in any log, room file, process list or other file. With sh2+PIN: 5 wrong PINs burn the invite. With `revoke`: key removed, serve stopped, link cut | pass (PIN, revoke pending) |
-| `handoff` | P3 | devbox hands the room to bob (joiner-a); bea follows; all copies converge with the old lines kept | pending (`handoff`) |
+| `slow-link` | P1 | 5 s of upstream latency, past the hook's 3 s deadline: the hook says `⧗ sending (slow link)` within 3 s, never "nothing was sent"; the post lands exactly once (no ghost, no double) and the outbox empties | pass |
+| `skew` | mixed | 0.2.0 host ← current joiner, current host ← 0.2.0 joiner (sh1 both ways): compatible or a clear version message, never divergence; a hello as a 9.9.9 joiner (protocol 99) is refused `PROTOCOL` naming both versions and "The host must update" | pass |
+| `security` | all | `ssh devbox ls` with the link's own admitted key runs the forced command, not a shell; no pty; no `-W`; the bastion has no shell; homes 0700 with nothing group/world readable; no invite secret or token in any log, room file, process list or other file; 5 wrong PINs (after the admit) burn the invite and the right one is then refused; `/sub-human revoke bob`: key removed, serve stopped, bob's link stops (AUTH) and his post is refused, bea untouched | pass |
+| `handoff` | P3 | alice (devbox) runs `/sub-human handoff bob joiner@joiner-a`; bob answers the card; joiner-a hosts at epoch 1 (both signatures in `host_changed`), devbox mirrors it; bea's re-pointed link is offline with a reason naming bob until bob lets her in (`doctor --json` shows the link moved, not reached); bob gives bea and devbox (`--via jump@bastion`) an invite each, admits their keys, both seats join again; posts flow, `handoff --status` shows nobody left behind, every copy converges with the old lines kept | pass |
 | `tls-front` | 1.1 | `https://tls-front/` verifies against the lab CA and answers 502 with no listener; with a stand-in listener on the devbox loopback (`lab/ws-probe.js`) the upgrade is 101 and echoes, from joiner-a and from joiner-b only through corp-proxy | pass |
 | `wss` | 1.1 | the host listens on 127.0.0.1:7420; bob and (through corp-proxy) ben join with `https://tls-front/… PIN`; a wrong PIN is refused; posts flow; mirrors converge | pending (`ws`, `urlPin`) |
 | `tailscale` | 1.1 | opt-in (`TS_SERVE=1` and Tailscale.app): real `tailscale serve --bg --set-path=/sub-human-lab-<rand>` in front of a local listener, a wss upgrade through the node's MagicDNS name, then that one path turned off (never Funnel, never `serve reset`) | skip |
@@ -85,7 +85,7 @@ probe finds it and the scenario runs. You can also force things:
 - `LAB_FORCE=handoff,wss` runs those scenarios whatever the probe says.
 - `LAB_FEATURES=outbox=1,ws=0` overrides single features.
 - The interfaces are assumed from `docs/next/PROD-PLAN.md`. Adapt them without editing the scenarios:
-  `LAB_HANDOFF_CMD` (default `handoff --to {name} --yes`), `LAB_WS_LISTEN_CMD` (default `listen --port {port}`),
+  `LAB_HANDOFF_CMD` (default `handoff {name} joiner@joiner-a`, the `/sub-human` form), `LAB_WS_LISTEN_CMD` (default `listen --port {port}`),
   `LAB_WS_INVITE=cli|expand`.
 
 | feature | detected by | used in |
@@ -95,8 +95,8 @@ probe finds it and the scenario runs. You can also force things:
 | `revoke`, `handoff`, `doctor` | the CLI's usage lists the command | security, handoff, p1-friends |
 | `heartbeat` | protocol op `ping` (or `ping` in `link.js`) | half-open |
 | `outbox` | `lib/remote/outbox.js` (or `outbox` in `link.js`) | p3-sleep |
-| `autoRejoin` | `rejoin` in `link.js` | p3-sleep |
-| `versionRange` | `min_v`/`vmin`/`MIN_VERSION` in protocol or server | skew |
+| `autoRejoin` | the daemon renews this machine's seats on reconnect (`keepSeats` in `link.js`) | p3-sleep |
+| `versionRange` | `protocol.skewMessage` (the hello's `proto` range) | skew |
 | `ws`, `urlPin` | transport kind `ws`/`wss` or `ws.js`/`listener.js`; the join hook takes a URL + PIN | wss |
 
 ## Evidence
@@ -117,6 +117,8 @@ redacted from every file.
 - One stack: `node scripts/remote-docker/harness.js scenarios --only p1 --keep`, then
   `docker compose -p sub-human-lab -f scripts/remote-docker/lab/compose.yml exec -u joiner joiner-a bash` to look
   around. `docker compose -p sub-human-lab -f scripts/remote-docker/lab/compose.yml down -v` when done.
+- Link timings: `SUB_HUMAN_LINK_*_MS` in the harness's environment reach every machine's hooks, CLI and link daemons
+  (a scenario may add its own `linkEnv`); the default run uses the plugin's own timings.
 - Knobs: `LAB_SLEEP_S`, `LAB_JOINER_SLEEP_S`, `LAB_FLAP_CUTS`, `LAB_FLAP_PERIOD_MS`, `LAB_HEARTBEAT_DEADLINE_MS`,
   `LAB_PING_DEADLINE_MS`, `LAB_WS_PORT` (7420), `LAB_WS_FWD_PORT` (7421), `LAB_OLD_REF` (cb4d344), `LAB_STRICT`.
 

@@ -87,12 +87,13 @@ The join starts a **link** on that machine: a small background process (`sub-hum
 
 - **Rejoin** (a new session on the same machine) with `/sub-human carol vole-8126`. The link is kept, and started again if it had stopped; you need no new invite.
 - **When the link is down**, your session shows one dim line, `room link: OFFLINE …`. An `@room` is queued (`⧗ queued`, up to 50 posts for up to 9 minutes) and sent in order once the link is back; one that waited too long is not sent, and you are told with its words. An answer to a proposal is never queued: it is not recorded and you are told so. The link retries on its own, and at once after your machine wakes or changes network.
+- **When the link is slow** (the host has not answered within 2 s), an `@room` says `⧗ sending (slow link)`: it is on its way and shows in the room when the host has it, so don't type it again. An answer that gets no reply in time says it is not confirmed: if the proposal still shows you unanswered later, answering again is safe.
 - **The link stops by itself** about a minute after no session of that machine is left in the room.
 - **Versions.** The two machines agree on a protocol version when the link connects. When they share none, the join says which side must update, e.g. `host runs sub-human 0.5.0 (protocol 3–4); you run 0.4.0 (protocol 1–2). Update your plugin: /plugin update sub-human`. Update the host first: a host takes joiners one version older.
 
 ### Ending a link: `revoke`
 
-On the host, `/sub-human revoke carol` (in a session in the room) or `sub-human revoke LINK_ID|NAME [--room CODE]` in a shell ends a link: its token stops working, its `authorized_keys` line is removed, its seats leave the room, its running server stops, and the room shows a line. The room line for each new link names its id.
+On the host, `/sub-human revoke carol` (in a session in the room) or `sub-human revoke LINK_ID|NAME [--room CODE]` in a shell ends a link: its token stops working, its `authorized_keys` line is removed, its seats leave the room, its running server stops, and the room shows a line. On the other machine the link stops for good (`the host revoked this link`): it does not keep retrying, and `@room` posts there are refused, not queued. The room line for each new link names its id.
 
 ### SSH details
 

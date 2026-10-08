@@ -10,13 +10,18 @@
  * State: $HOME/lab-seats<basename of SUB_HUMAN_HOME>.json, so one machine can hold two homes (two links to a room).
  *
  *   host NAME                     open a room here as NAME (`/sub-human NAME`): {code, machine, seat, out}
- *   join NAME INVITE [SSH_OPT…]   `/sub-human join NAME INVITE`; SSH_OPT… become SUB_HUMAN_SSH_OPTS for this seat's
- *                                 hooks and so for the link daemon the join starts: {ok, out, ms, code}
+ *   join NAME INVITE [PIN] [SSH_OPT…]   `/sub-human join NAME INVITE [PIN]` (an sh2 invite takes its 6-digit PIN);
+ *                                 SSH_OPT… become SUB_HUMAN_SSH_OPTS for this seat's hooks and so for the link daemon
+ *                                 the join starts: {ok, out, ms, code, linked, admit}. ok: the seat joined (sh1), or
+ *                                 the link redeemed the invite (sh2: "linked"); admit: the shk1 request an ssh join
+ *                                 shows for the host's /sub-human admit
  *   rejoin NAME CODE              `/sub-human NAME CODE` (a room hosted here, or one this machine links to)
  *   say NAME TEXT                 NAME's `@room TEXT` through hooks/prompt.js: {ok, ms, t0, out}
  *   prompt NAME TEXT              any typed prompt through hooks/prompt.js (e.g. a slash-free command)
  *   expand NAME ARGS              any `/sub-human ARGS` through hooks/join.js (host --ssh, revoke, handoff, …)
  *   leave NAME                    SessionEnd for NAME, then its seat process stops
+ *   card NAME LABEL               NAME answers the handoff card the hooks build (consent.js Pre, then Post with
+ *                                 LABEL, e.g. "Host it here"), as the person would on the AskUserQuestion card
  *   events NAME                   what NAME's tail delivered: [{t, ev}]
  *   dump CODE                     {code, machine, isHost, dir, log, entries, chain, members, link, home}
  *   link CODE                     the link daemon's status (lib/remote/link.js status)
@@ -113,11 +118,32 @@ const cmds = {
     return { ok: joinedOk(r.json), code, machine: lib('home.js').machineId(), seat: { name, pid: seat.pid }, out: reason(r.json), ms: r.ms };
   },
 
-  join(name, invite, ...sshOpts) {
-    const seat = newSeat(name, sshOpts.join(' '));
-    const r = expand(seat, `join ${name} ${invite}`);
+  join(name, invite, ...rest) {
+    const pin = /^\d{6}$/.test(rest[0] || '') ? rest.shift() : null;
+    let seat;
+    try { seat = seatOf(name); } catch { seat = null; }
+    if (!seat || !alive(seat.pid)) seat = newSeat(name, rest.join(' '));
+    else if (rest.length) { seat.sshOpts = rest.join(' '); const st = load(); st.seats[name] = seat; save(st); }
+    const r = expand(seat, `join ${name} ${invite}${pin ? ` ${pin}` : ''}`);
     const parsed = lib('remote/auth.js').parseInvite(invite);
-    return { ok: joinedOk(r.json), out: reason(r.json), ms: r.ms, code: parsed && parsed.code, stderr: r.stderr };
+    const out = reason(r.json) || '';
+    const linked = /^linked to room/.test(out);
+    const admit = (/\/sub-human admit (shk1\.\S+)/.exec(out) || [])[1] || null;
+    return { ok: joinedOk(r.json) || linked, linked, admit, out, ms: r.ms, code: parsed && parsed.code, stderr: r.stderr };
+  },
+
+  card(name, label) {
+    const seat = seatOf(name);
+    const code = load().code || lib('room/store.js').listRooms()[0];
+    const ask = lib('room/store.js').open(code).kv.get(lib('handoff.js').ASK_DOC);
+    if (!ask) return { ok: false, out: 'no handoff ask on this machine' };
+    lease(seat);
+    const pre = hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `handoff ${ask.id}`, options: [] }] } }, seat);
+    const card = pre.json && pre.json.hookSpecificOutput && pre.json.hookSpecificOutput.updatedInput;
+    if (!card) return { ok: false, out: 'the hooks built no card', pre: pre.json, stderr: pre.stderr };
+    const q = card.questions[0].question;
+    const post = hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: { [q]: label } } }, seat);
+    return { ok: !!(post.json && post.json.systemMessage), out: post.json && (post.json.systemMessage || post.json.reason), json: post.json, ms: pre.ms + post.ms, stderr: post.stderr };
   },
 
   rejoin(name, code) {
@@ -135,7 +161,8 @@ const cmds = {
 
   say(name, ...words) {
     const r = typed(seatOf(name), `@room ${words.join(' ')}`);
-    return { ok: !!(r.json && r.json.continue === false), out: reason(r.json), json: r.json, ms: r.ms, t0: r.t0, stderr: r.stderr };
+    // out: a refusal's reason, else the line the person reads ("✓ sent", "⧗ queued …", "⧗ sending (slow link) …")
+    return { ok: !!(r.json && r.json.continue === false), out: reason(r.json) || (r.json && r.json.stopReason) || null, json: r.json, ms: r.ms, t0: r.t0, stderr: r.stderr };
   },
 
   prompt(name, ...words) {
@@ -195,8 +222,10 @@ const cmds = {
       src: {
         auth: { sh2: /\bsh2\b/.test(src('lib/remote/auth.js')), pin: /\bpin\b/i.test(src('lib/remote/auth.js')) },
         join: { hostSsh: /host\s+--ssh|--ssh\b/.test(src('hooks/join.js')), urlPin: /https?:\/\//.test(src('hooks/join.js')) && /\bpin\b/i.test(src('hooks/join.js')) },
-        link: { rejoin: /rejoin/i.test(src('lib/remote/link.js')), outbox: /outbox/i.test(src('lib/remote/link.js')), ping: /\bping\b/.test(src('lib/remote/link.js')), wake: /\bwake\b/i.test(src('lib/remote/link.js')) },
-        hello: { range: /min_v|vmin|minVersion|MIN_VERSION/.test(src('lib/remote/protocol.js') + src('lib/remote/server.js')) },
+        // a seat kept across an outage: the daemon renews this machine's seats on every reconnect (keepSeats/beat)
+        link: { rejoin: /rejoin|keepSeats|localSeats/i.test(src('lib/remote/link.js')), outbox: /outbox/i.test(src('lib/remote/link.js')), ping: /\bping\b/.test(src('lib/remote/link.js')), wake: /\bwake\b/i.test(src('lib/remote/link.js')) },
+        // the hello's version range: protocol.PROTO {min, max} and skewMessage (which side updates)
+        hello: { range: typeof protocol.skewMessage === 'function' || /min_v|vmin|minVersion|MIN_VERSION/.test(src('lib/remote/protocol.js') + src('lib/remote/server.js')) },
       },
     };
   },

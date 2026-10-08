@@ -13,8 +13,9 @@ const VERSION_MSG = /version|update|upgrade|protocol/i;
 async function direction(t, label, { hostSvc, joinerSvc, joinerUser, hosts, dest }) {
   const { lab } = t;
   const { code, host } = lab.hostRoom(hostSvc);
-  const j = lab.joinOver({ svc: joinerSvc, user: joinerUser, name: 'bob', code, hosts, hostSvc, dest, key: `id_skew_${hostSvc}` });
-  t.ev.secret(j.invite.split('.').pop());
+  // sh1 both ways: a 0.2.0 end knows no sh2 invite (and a 0.2.0 host mints none)
+  const j = await lab.join({ svc: joinerSvc, user: joinerUser, name: 'bob', code, hosts, hostSvc, dest, key: `id_skew_${hostSvc}`, sh1: true });
+  t.ev.invite(j.invite, j.pin);
   t.log(`${label}: join ok ${j.join.ok} (${j.join.ms} ms) ${j.join.out || ''}`);
   if (!j.join.ok) {
     t.check(`${label}: the refused join names the version / which side to update`, VERSION_MSG.test(j.join.out || ''), (j.join.out || '').slice(0, 200));
@@ -52,13 +53,15 @@ module.exports = {
     const inv = lab.invite(code);
     t.ev.secret(inv.split('.').pop());
     lab.authorize(inv, pub);
-    const frame = JSON.stringify({ id: 1, op: 'hello', params: { v: 99, vmin: 99, vmax: 99, client: 'sub-human', version: '9.9.9', caps: {}, machine: 'future-machine' } });
+    // the hello as a 9.9.9 joiner would say it (lib/remote/protocol.js): v, its range proto {min, max}, its version
+    const frame = JSON.stringify({ id: 1, op: 'hello', params: { v: 99, proto: { min: 99, max: 99 }, client: '9.9.9', caps: {}, machine: 'future-machine' } });
     const r = lab.exec('joiner-a', ['sh', '-c', `printf '%s\\n' '${frame}' | timeout 20 ssh -F ${conf} -T host@devbox hello`], { user: 'joiner', allowFail: true, timeout: 30_000 });
     const reply = (r.stdout.split('\n').find(l => l.includes('"id":1')) || '').trim();
     t.ev.write('future-hello.txt', `> ${frame}\n< ${reply}\nstderr: ${r.stderr}`);
     let err = null;
     try { err = JSON.parse(reply).error; } catch { /* no reply */ }
-    t.check('a v99 hello is refused PROTOCOL by the 0.3.0 server', err && err.code === 'PROTOCOL', reply.slice(0, 200) || r.stderr.slice(0, 200));
-    t.expect('the refusal says which side to update', !!err && /update|upgrade|newer|older/i.test(err.message), err ? err.message : 'no reply', 'versionRange');
+    t.check(`a v99 hello is refused PROTOCOL by the ${lab.probe.version} server`, err && err.code === 'PROTOCOL', reply.slice(0, 200) || r.stderr.slice(0, 200));
+    t.expect('the refusal names both versions and says the host must update (the joiner is newer)',
+      !!err && /9\.9\.9/.test(err.message) && new RegExp(lab.probe.version.replace(/\./g, '\\.')).test(err.message) && /host must update/i.test(err.message), err ? err.message : 'no reply', 'versionRange');
   },
 };

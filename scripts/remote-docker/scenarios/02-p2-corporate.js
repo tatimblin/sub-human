@@ -3,7 +3,8 @@
 // HTTP CONNECT. First the isolation itself is proved (no route, no DNS for the devbox or toxiproxy, no direct TLS).
 // Variant 1: ssh to the devbox with ProxyJump through the bastion (the joiner's own ssh config, -F). Variant 2, a
 // second home on joiner-b: ssh with ProxyCommand `nc -X connect` through corp-proxy to the WAN path. Both seats
-// post and receive; the bastion's and the proxy's logs show the hop. `--via` (host --ssh) is used when the plugin has it.
+// post and receive; the bastion's and the proxy's logs show the hop. bea's invite comes from `/sub-human host --ssh
+// host@devbox --via jump@bastion`: the jump is in the invite's locator, so her link runs ssh -J itself.
 const { JUMP, PROXY, delivered, converge } = require('./_lib.js');
 
 module.exports = {
@@ -28,8 +29,8 @@ module.exports = {
     t.log(`room ${code} on devbox`);
 
     // variant 1: ProxyJump through the bastion
-    const v1 = lab.joinOver({ svc: 'joiner-b', name: 'bea', code, hosts: JUMP, via: 'bastion' });
-    t.ev.secret(v1.invite.split('.').pop());
+    const v1 = await lab.join({ svc: 'joiner-b', name: 'bea', code, hosts: JUMP, via: 'bastion', viaFlag: 'jump@bastion' });
+    t.ev.invite(v1.invite, v1.pin);
     t.check('bea joins through the bastion (ProxyJump)', v1.join.ok, v1.join.out || `${v1.join.ms} ms`);
     if (v1.join.ok) {
       const s = v1.seat.say('bea', 'p2 via bastion');
@@ -47,8 +48,8 @@ module.exports = {
     t.check("the bastion accepted jump's key and devbox's sshd saw bea come from the bastion's address", jumped && fromBastion, `bastion ${jumped}, devbox from ${bastionIps.join('/')}: ${fromBastion}`);
 
     // variant 2: only the CONNECT proxy, from a second home on joiner-b
-    const v2 = lab.joinOver({ svc: 'joiner-b', name: 'ben', code, hosts: PROXY, home: '.sub-human-proxy' });
-    t.ev.secret(v2.invite.split('.').pop());
+    const v2 = await lab.join({ svc: 'joiner-b', name: 'ben', code, hosts: PROXY, home: '.sub-human-proxy' });
+    t.ev.invite(v2.invite, v2.pin);
     t.check('ben joins through corp-proxy (ssh ProxyCommand nc -X connect)', v2.join.ok, v2.join.out || `${v2.join.ms} ms`);
     if (v2.join.ok) {
       const s = v2.seat.say('ben', 'p2 via proxy');
@@ -66,9 +67,10 @@ module.exports = {
     t.check('both mirrors byte-identical to the host log, chains verify', c.ok, c.detail);
 
     if (t.features.hostSsh) {
-      const r = host.expand('alice', 'host --ssh host@devbox --via jump@bastion');
-      t.ev.write('host-ssh-via.json', r);
-      t.check('/sub-human host --ssh --via names the bastion in what it prints', /bastion/.test(JSON.stringify(r.json || {})), (r.out || '').slice(0, 160));
+      const lf = JSON.parse(lab.exec('joiner-b', ['cat', `${v1.seat.home}/links/${code}.json`], { user: 'joiner' }).stdout);
+      t.ev.write('bea-link-transport.json', lf.transport);
+      t.check('host --ssh --via: bea\'s invite carried the jump, her link dials ssh -J jump@bastion with its own key and the pinned host key',
+        v1.join.ok && lf.transport.via === 'jump@bastion' && !!lf.transport.key && !!lf.transport.alias, JSON.stringify({ via: lf.transport.via, key: !!lf.transport.key, alias: lf.transport.alias }));
     } else t.pending('/sub-human host --ssh --via jump@bastion (one-step invite + authorize)', 'needs hostSsh');
   },
 };

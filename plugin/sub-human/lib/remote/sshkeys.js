@@ -84,6 +84,7 @@ function linkKey(dir, comment) {
     const r = spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', comment, '-f', file], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     if (r.error || r.status !== 0) throw new RoomError('INVALID', `ssh-keygen could not make the link's key: ${(r.error && r.error.message) || r.stderr.trim()}`);
   }
+  fs.chmodSync(`${file}.pub`, 0o600); // ssh-keygen leaves it 0644; nothing in the store is group/world-readable
   const pub = fs.readFileSync(`${file}.pub`, 'utf8').trim();
   const raw = ed25519Raw(pub);
   if (!raw) throw new RoomError('INVALID', `${file}.pub is not an Ed25519 key`);

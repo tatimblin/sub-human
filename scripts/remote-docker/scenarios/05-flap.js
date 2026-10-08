@@ -17,9 +17,9 @@ module.exports = {
   async run(t) {
     const { lab, sleep } = t;
     const { code, host } = lab.hostRoom();
-    const a = lab.joinOver({ svc: 'joiner-a', name: 'bob', code, hosts: WAN });
-    const b = lab.joinOver({ svc: 'joiner-b', name: 'bea', code, hosts: JUMP, via: 'bastion' });
-    for (const j of [a, b]) t.ev.secret(j.invite.split('.').pop());
+    const a = await lab.join({ svc: 'joiner-a', name: 'bob', code, hosts: WAN });
+    const b = await lab.join({ svc: 'joiner-b', name: 'bea', code, hosts: JUMP, via: 'bastion' });
+    for (const j of [a, b]) t.ev.invite(j.invite, j.pin);
     if (!t.check('bob and bea join', a.join.ok && b.join.ok)) return;
     const posts = { host: [], bobOk: [], bobRefused: [], bea: [] };
     const say = (seat, name, text, bucket, refused) => {

@@ -14,12 +14,20 @@
  *     toxi(method, path, body)   the toxiproxy API
  *     keypair(svc, name) -> pubkey      ~/.ssh/NAME (ed25519) for the joiner user
  *     sshConfig(svc, name, hosts)       ~/.ssh/NAME.conf: one Host block per entry, then the shared defaults
- *     invite(code, {svc, dest}) / authorize(invite, pub, {svc}) on a devbox; trustOnBastion(pub)
+ *     invite(code, {svc, dest}) / authorize(invite, pub, {svc}) on a devbox; trustOnBastion(pub)   (the sh1 path)
+ *     hostInvite(hostSeat, name, {dest, via}) -> {invite, pin}   `/sub-human host --ssh DEST [--via JUMP]` (sh2 + PIN)
+ *     join(opts) -> Promise<{seat, name, invite, linkId, conf, join, pub}>   a joiner over one ssh path. With sh2 (the
+ *                       plugin has it, and opts.sh1 is not set): host --ssh on the host's seat, `/sub-human join NAME
+ *                       INVITE PIN` (the link's own key; an admit line), the host's `/sub-human admit shk1…`, the link
+ *                       online (the PIN checked at its first hello), then the seat `/sub-human NAME CODE`. sh1 (an
+ *                       0.2.0 end): joinOver, `sub-human invite` + `authorize` + `/sub-human join NAME INVITE`
  *     features             {sh2Pin, hostSsh, revoke, heartbeat, outbox, autoRejoin, handoff, doctor, ws, urlPin,
  *                          versionRange}: what the plugin in /plugin can do (seat-cli.js probe), overridable with
  *                          LAB_FEATURES=outbox=1,ws=0
  *   runScenarios({out, only, log}) -> {ok, results}   each scenarios/*.js in order; evidence under out/<id>/
- * Scenario module: {id, title, persona, requires?: [feature], budgetMs?, run(t)}. t = {lab, ev, features, check(name,
+ * Scenario module: {id, title, persona, requires?: [feature], budgetMs?, linkEnv?: {SUB_HUMAN_LINK_*_MS}, run(t)}.
+ * Link timings: SUB_HUMAN_LINK_*_MS in the harness's environment reach every machine's seats (hooks, CLI, daemons);
+ * a scenario's linkEnv adds its own on top (short timings where it needs them). t = {lab, ev, features, check(name,
  * pass, detail), expect(name, pass, detail, feature) (a miss is pending while the feature is missing, else a
  * failure), bug(name, pass, detail) (a miss is a known plugin bug: status 'bug', fatal only with LAB_STRICT=1),
  * pending(name, reason), sleep, until, metric(k, v)}. A scenario whose requires is not met is pending (not
@@ -47,6 +55,8 @@ const PROXIES = [
 const CA = '/etc/lab-ca.crt'; // outside every home: reset() wipes those
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const until = async (fn, ms, step = 100) => { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return true; await sleep(step); } return !!(await fn()); };
+/** SUB_HUMAN_LINK_*_MS from the harness's own environment, for the machines. */
+const linkEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => /^SUB_HUMAN_LINK_[A-Z_]+_MS$/.test(k)));
 const sha = s => crypto.createHash('sha256').update(String(s)).digest('hex').slice(0, 16);
 
 function sh(cmd, args, { input, allowFail = false, timeout = 600_000, cwd } = {}) {
@@ -66,6 +76,7 @@ class Lab {
     this.features = {};
     this.probe = null;
     this.api = null;
+    this.linkEnv = {}; // the running scenario's linkEnv (runOne)
   }
 
   dc(args, o) { return sh('docker', ['compose', '-f', COMPOSE, '-p', PROJECT, ...args], o); }
@@ -76,15 +87,18 @@ class Lab {
   }
 
   /** The seat driver on one machine: lab/seat-cli.js as that machine's user, with one SUB_HUMAN_HOME. */
-  seat(svc, { home = '.sub-human', env = {}, user = USERS[svc] } = {}) {
+  seat(svc, { home = '.sub-human', env: own = {}, user = USERS[svc] } = {}) {
     const subHome = `/home/${user}/${home}`;
+    // the link timings of this run (SUB_HUMAN_LINK_*_MS in the harness's env, then the scenario's linkEnv) reach every
+    // hook, CLI and link daemon the seat starts
+    const env = { ...linkEnv(), ...this.linkEnv, ...own };
     const run = (...args) => {
       const r = this.exec(svc, ['node', '/lab/seat-cli.js', ...args], { user, env: { SUB_HUMAN_HOME: subHome, ...env }, allowFail: true, timeout: 60_000 });
       if (r.status !== 0) throw new Error(`seat-cli ${svc} ${args[0]} failed (${r.status}): ${(r.stderr || '').slice(-1500)}`);
       return JSON.parse(r.stdout.trim().split('\n').pop());
     };
     const cli = (args, o = {}) => this.exec(svc, ['sh', '-c', 'node "$(ls /plugin/scripts/sub-human /plugin/bin/sub-human 2>/dev/null | head -1)" "$@"', 'sub-human', ...args],
-      { user, env: { SUB_HUMAN_HOME: subHome, ...env }, allowFail: true, ...o });
+      { user, allowFail: true, ...o, env: { SUB_HUMAN_HOME: subHome, ...env, ...(o.env || {}) } });
     return {
       svc, user, home: subHome, cli,
       host: name => run('host', name),
@@ -94,6 +108,7 @@ class Lab {
       prompt: (name, text) => run('prompt', name, text),
       expand: (name, args) => run('expand', name, ...args.split(' ')),
       leave: name => run('leave', name),
+      card: (name, label) => run('card', name, label),
       events: name => run('events', name),
       dump: code => run('dump', code),
       link: code => run('link', code),
@@ -233,6 +248,36 @@ class Lab {
     return { seat, name, invite, linkId, conf, join: j, pub };
   }
 
+  /** `/sub-human host --ssh DEST [--via JUMP]` in NAME's session on hostSeat: the sh2 invite and its PIN, as shown. */
+  hostInvite(hostSeat, name, { dest = 'host@devbox', via } = {}) {
+    const r = hostSeat.expand(name, `host --ssh ${dest}${via ? ` --via ${via}` : ''}`);
+    const text = r.out || '';
+    const invite = (/\/sub-human join NAME (sh2\.\S+) PIN/.exec(text) || [])[1];
+    const pin = (/\bPIN (\d{6})\b/.exec(text) || [])[1];
+    if (!invite || !pin) throw new Error(`host --ssh on ${hostSeat.svc}: no invite and PIN in: ${text.slice(0, 300)}`);
+    return { invite, pin, text };
+  }
+
+  async join(opts) {
+    const { svc, name, code, hosts, via, viaFlag, home, host, hostName = 'alice', user = USERS[svc], hostSvc = 'devbox', dest = 'host@devbox', key = `id_${name}` } = opts;
+    if (opts.sh1 || !(this.features.sh2Pin && this.features.hostSsh) || hostSvc !== 'devbox') return this.joinOver(opts);
+    const t0 = Date.now();
+    const pub = this.keypair(svc, key, user);
+    const conf = this.sshConfig(svc, name, key, hosts, user);
+    if (via === 'bastion') this.trustOnBastion(pub);
+    const hostSeat = host || this.seat(hostSvc);
+    const { invite, pin } = this.hostInvite(hostSeat, hostName, { dest, via: viaFlag });
+    const seat = this.seat(svc, { user, ...(home ? { home } : {}) });
+    const linked = seat.join(name, invite, pin, '-F', conf);
+    const admitted = linked.admit ? hostSeat.expand(hostName, `admit ${linked.admit}`) : null;
+    const linkId = admitted && (/as link ([0-9a-f]{12})/.exec(admitted.out || '') || [])[1];
+    // the daemon redials (jittered backoff) until the host's admit lets its key in; its hello then spends the PIN
+    const online = linked.ok || (admitted && await until(() => { try { return seat.link(code).state === 'online'; } catch { return false; } }, 30_000, 250));
+    const seated = online ? seat.rejoin(name, code)
+      : { ok: false, out: `not linked: ${linked.out || ''} ${admitted ? `admit: ${admitted.out}` : ''} link ${JSON.stringify(seat.link(code))}` };
+    return { seat, name, invite, pin, linkId, conf, pub, linked, admitted, join: { ...seated, ms: Date.now() - t0 } };
+  }
+
   /** Logs since the current scenario started (runOne sets this.since), so one scenario never sees another's. */
   composeLogs(svc, since = this.since) {
     return this.dc(['logs', '--no-color', '--timestamps', ...(since ? ['--since', since] : []), ...(svc ? [svc] : [])], { allowFail: true }).stdout;
@@ -275,10 +320,16 @@ class Evidence {
     this.checks = [];
     this.metrics = {};
   }
-  secret(s) { if (s && String(s).length >= 8) this.secrets.add(String(s)); }
+  secret(s, min = 8) { if (s && String(s).length >= min) this.secrets.add(String(s)); }
+  /** An sh2 invite's secret and its PIN (6 digits, so only as the PIN it is: never a bare 6-digit number). */
+  invite(inv, pin) {
+    if (inv) this.secret(String(inv).split('.')[3]);
+    if (pin) this.pins = [...(this.pins || []), String(pin)];
+  }
   redact(text) {
     let t = String(text);
     for (const s of this.secrets) t = t.split(s).join('<redacted>');
+    for (const p of this.pins || []) t = t.replace(new RegExp(`(PIN\\D{0,3}|sh2\\.\\S+\\s+)${p}\\b`, 'g'), '$1<pin>');
     return t.replace(/\b(sh[12])\.([a-z]+-\d{4}|[A-Z0-9]{4,8})\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]{16,}/g, '$1.$2.$3.<redacted>');
   }
   log(msg) {
@@ -350,6 +401,9 @@ async function runOne(lab, sc, out, echo) {
   try {
     await lab.reset();
     lab.since = new Date().toISOString();
+    lab.linkEnv = sc.linkEnv || {};
+    const timings = { ...linkEnv(), ...lab.linkEnv };
+    if (Object.keys(timings).length) ev.log(`link timings: ${Object.entries(timings).map(([k, v]) => `${k.replace(/^SUB_HUMAN_LINK_|_MS$/g, '')}=${v}`).join(' ')}`);
     await Promise.race([
       sc.run(t),
       sleep(sc.budgetMs || 180_000).then(() => { throw new Error(`over its budget of ${sc.budgetMs || 180_000} ms`); }),
