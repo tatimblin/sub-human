@@ -149,7 +149,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.ok(s.members.read().alice.left_at);
     assert.equal(s.members.leave('alice'), false);
     assert.equal(s.members.beat('alice', { presence: { state: 'working' } }), false, 'a left seat writes nothing');
-    assert.equal(s.kv.get('presence/alice').state, 'idle');
+    assert.equal(s.kv.get('presence/alice', null), null, 'leaving drops the seat\'s presence');
   });
 
   test(`store contract (${name}): sig v2 covers the payload, not its place: placed at another id it still verifies; v1 lines still do`, { skip: B.hostOnly }, t => {

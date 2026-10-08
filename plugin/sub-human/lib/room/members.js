@@ -18,7 +18,8 @@
  *     join(rec) -> {ok, rejoin?, error?}   rec = {name, role, machine, ...LOCAL_FIELDS}. A name held by a live seat
  *                                 of another holder (another machine, or another pid) is "name taken"; otherwise
  *                                 the seat is (re)bound: rec, joined_at = seen_at = now, the orch's bookkeeping kept.
- *     leave(name) -> bool         sets left_at; false when there is no such seat or it left already
+ *     leave(name) -> bool         sets left_at and deletes presence/<name> (a mirror gets the deletion); false when
+ *                                 there is no such seat or it left already
  *     beat(name, {presence?, now?}) -> bool   renews seen_at (at most every SEAT_BEAT_MS) and, with presence
  *                                 {state, detail?}, writes the document presence/<name> = {state, at, detail?}
  *                                 (RoomError INVALID for another state). false, writing nothing, for a seat that is
@@ -83,11 +84,14 @@ function ops(s) {
       return result;
     },
     leave(name) {
-      return s.members.update(ms => {
+      const left = s.members.update(ms => {
         if (!seated(ms, name)) return null;
         ms[name].left_at = new Date().toISOString();
         return ms;
       }) != null;
+      // their last presence ("permission", "working") is not theirs any more: rows and mirrors drop it
+      if (left) { try { s.kv.delete(`presence/${name}`); } catch { /* best effort: rows ignore a left seat's */ } }
+      return left;
     },
     beat(name, { presence, now = Date.now() } = {}) {
       const doc = presence === undefined ? null : presenceDoc(presence, now);

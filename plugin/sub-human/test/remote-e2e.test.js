@@ -132,6 +132,8 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   // bob's session ends: the host logs it; his daemon (and the server it spawned) exit on their own
   remote.hook('session-end', { hook_event_name: 'SessionEnd', reason: 'logout' }, bob);
   assert.equal(texts(host.log(code)).at(-1), 'bob left (logout)');
+  assert.equal(host.lib(() => store.open(code).kv.get('presence/bob', null)), null, 'his presence is gone with him');
+  assert.doesNotMatch(host.lib(() => rows.rowText(code, 'bob', 'alice')), /idle|prompt|working/);
   const current = childOf(daemon.pid);
   await h.until(() => !isAlive(daemon.pid), 8000, 50);
   assert.equal(isAlive(daemon.pid), false, 'the daemon exits once no seat of its machine is left');
