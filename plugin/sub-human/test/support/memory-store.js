@@ -6,20 +6,24 @@
  * signatures and the trust checks are byte-for-byte what the file store does. test/store-contract.test.js runs the same
  * suite against both: that is the seam a store off this machine would implement.
  *
- *   new MemoryRoomStore(code)   _lines (the serialized log, one string per entry) is open for tamper tests
+ *   new MemoryRoomStore(code, {isHost}?)   _lines (the serialized log, one string per entry) is open for tamper
+ *       tests. isHost: false makes it mirror-shaped (the host gates: lib/orch.js, lib/proposal.js decide).
+ *   members.join/leave/beat are lib/room/members.js ops over this store's compare-and-set update, as FsRoomStore's.
  */
 const path = require('node:path');
 const store = require(path.join(__dirname, '..', '..', 'lib', 'room', 'store.js'));
 const config = require(path.join(__dirname, '..', '..', 'lib', 'config.js'));
 const envelope = require(path.join(__dirname, '..', '..', 'lib', 'room', 'envelope.js'));
+const members = require(path.join(__dirname, '..', '..', 'lib', 'room', 'members.js'));
 
 const { RoomError, hash12, tag, blobRef, checkKey, checkCursor, CHAT_KINDS } = store;
 const clone = v => (v === undefined ? undefined : structuredClone(v));
 const parse = (l, s) => { try { return tag(JSON.parse(l), s); } catch { return null; } };
 
 class MemoryRoomStore {
-  constructor(code) {
+  constructor(code, { isHost = true } = {}) {
     this.code = code;
+    this.isHost = isHost;
     this._lines = [];
     this._parsed = []; // [{line, e}] cache, re-parsed when a line changed (tamper tests)
     this._cursors = new Map();
@@ -41,6 +45,7 @@ class MemoryRoomStore {
           return next;
         }
       },
+      ...members.ops(this),
     };
     this.blobs = {
       put(name, bytes) {

@@ -113,8 +113,8 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
   assert.match(errText(await s.tool('post', { kind: 'say', text: '   ' })), /empty/);
   R = room.open(code);
   assert.ok(R.readAll().every(x => x.from === 'alice' && x.via === 'agent'));
-  // Rate limit surfaces as a tool error.
-  for (let i = 0; i < 4; i++) await s.tool('post', { kind: 'status', text: `s${i}` });
+  // Rate limit surfaces as a tool error (the question to bob is in its own bucket: one room post so far).
+  for (let i = 0; i < 5; i++) await s.tool('post', { kind: 'status', text: `s${i}` });
   assert.match(errText(await s.tool('post', { kind: 'status', text: 'one too many' })), /rate limit/);
   await s.close();
   bob.kill();

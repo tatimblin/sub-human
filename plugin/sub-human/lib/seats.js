@@ -3,40 +3,61 @@
  * plugin/sub-human/lib/seats.js: entering and leaving a room, the one sequence the join hook, the session-end
  * hook and the remote server (lib/remote/server.js, for a seat on another machine) all run. The hooks keep
  * only argument parsing and output; the server keeps only the protocol. The host-only steps (orch spawn, the
- * reaper) run when the room's store isHost (docs/next/REMOTE-PLAN.md rule 2). Stub: filled in by PR2.
+ * reaper) do nothing where the room's store is not the host's (lib/orch.js; docs/next/REMOTE-PLAN.md rule 2).
  *
- *   enter({code, name, role, machine, pid?, session_id?, cwd?, pubkey}) -> {ok, rejoin?, error?, note?}
- *       members.join (lib/room/store.js, a named op) → member_joined via system with pubkey and machine (the
- *       key is pinned at first sight, lib/room/envelope.js) → on the host, ensure the orch (lib/orch.js
- *       claimSpawn + startDetached; note = the short systemMessage suffix join.js shows today). pid and
- *       session_id are this machine's and stay in its session indexes (lib/identity.js), never in what the
- *       host streams.
+ *   enter({code, name, role?, machine?, pid?, session_id?, cwd?, pubkey}) -> {ok, rejoin?, error?, note?}
+ *       identity.join (members.join, a named op of lib/room/store.js; then this machine's session indexes) →
+ *       member_joined via system with pubkey and machine (the key is pinned at first sight, lib/room/envelope.js;
+ *       a key other than the pinned one is refused and the seat given back: {ok: false, error}) → ensureOrch.
+ *       role: member (default). machine: this one (default); pid, session_id and cwd belong to a seat of this
+ *       machine and stay out of what the host streams (lib/room/members.js publicView).
+ *   ensureOrch(code, cwd, by) -> string   start the room's orch (detached) when it has none running: lib/orch.js
+ *       claimSpawn (host only) + startDetached. '' or the short systemMessage suffix the join hook shows.
  *   exit(code, name, reason) -> bool
- *       members.leave → member_left via system → on the host, reap when no live member is left (lib/orch.js
- *       reapDetached). Idempotent: a seat already left returns false and writes nothing.
- *   switchRooms(me, code) -> void        exit(me.code, me.name, 'switched rooms') when me is elsewhere
+ *       identity.leave (members.leave) → when no live member is left, the reaper (lib/orch.js reapDetached, host
+ *       only) → member_left via system "NAME left (reason)". The seat is left and the reaper started before the
+ *       append, the only step that can wait on a lock (SessionEnd has seconds). Idempotent: a seat absent or
+ *       already left returns false and writes nothing.
  */
 
-const todo = what => { throw new Error(`sub-human: ${what} is not implemented yet (docs/next/REMOTE-PLAN.md, PR2)`); };
+const identity = require('./identity.js');
+const room = require('./room.js');
+const orch = require('./orch.js');
 
-/**
- * @param {{code: string, name: string, role: 'member'|'orch', machine: string, pid?: number, session_id?: string, cwd?: string, pubkey?: string}} seat
- * @returns {{ok: boolean, rejoin?: boolean, error?: string, note?: string}}
- */
-function enter(seat) { return todo(`seats.enter(${seat && seat.name}@${seat && seat.code})`); }
+const asSystem = name => ({ via: 'system', from: name, system: true });
 
-/**
- * @param {string} code
- * @param {string} name
- * @param {string} reason   "session ended", "switched rooms", a SessionEnd reason, …
- * @returns {boolean}
- */
-function exit(code, name, reason) { return todo(`seats.exit(${name}@${code}, ${reason})`); }
+function ensureOrch(code, cwd, by) {
+  let last = null;
+  try {
+    last = identity.readMembers(code).orch || null;
+    const c = orch.claimSpawn(code, { by });
+    if (!c) return '';
+    orch.startDetached({ code, cwd, ...c });
+  } catch (e) {
+    return ` · no orch (${String(e.message || e).slice(0, 200)}); /sub-human still works, but there is no room task list`;
+  }
+  const failed = last && last.spawn_error ? ` (the last start failed: ${last.spawn_error})` : '';
+  return ` · starting the orch…${failed}`;
+}
 
-/**
- * @param {{code: string, name: string}} me
- * @param {string} code   the room me is moving to
- */
-function switchRooms(me, code) { return todo(`seats.switchRooms(${me && me.name}, ${code})`); }
+function enter({ code, name, role = 'member', machine = identity.machineId(), pid, session_id, cwd, pubkey }) {
+  const r = identity.join({ code, name, role, machine, pid, session_id, cwd });
+  if (!r.ok) return r;
+  try {
+    room.open(code).append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}`, pubkey, machine }, asSystem(name));
+  } catch (e) {
+    if (e.code !== 'AUTH') throw e;
+    identity.leave(code, name);
+    return { ok: false, error: e.message };
+  }
+  return { ...r, note: ensureOrch(code, cwd, name) };
+}
 
-module.exports = { enter, exit, switchRooms };
+function exit(code, name, reason) {
+  if (!identity.leave(code, name)) return false;
+  try { if (!identity.liveMembers(code).length) orch.reapDetached(code); } catch { /* the orch's watchdog closes it */ }
+  room.open(code).append({ kind: 'member_left', text: `${name} left (${reason})` }, asSystem(name));
+  return true;
+}
+
+module.exports = { enter, exit, ensureOrch };

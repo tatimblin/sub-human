@@ -92,6 +92,15 @@ Fills `lib/seats.js`. Changes `lib/identity.js`, `lib/room/store.js`, `lib/propo
 - `RATE_ADDRESSED_MAX` (config) for posts with `to !== 'room'`.
 - `RESERVED` gains `host`, `join`. `hooks/guard.js` `PLUGIN_CODE` gains `lib/seats` and `lib/remote`.
 - **Accept:** a members doc with a seat from another machine and a fresh lease is alive, with a stale lease is not, whatever its pid; `decide` run twice appends one decision; a mirror-shaped store (`isHost: false`, test double) makes `enter` spawn no orch and `exit` start no reaper.
+- **As built** (deviations from the bullets above):
+  - The seat rules live in `lib/room/members.js` (`seatAlive`, `leaseFresh`, the `join`/`leave`/`beat` ops, `publicView`), shared by every store as `placeAfter` is, so the store judges liveness without requiring `identity` (a cycle). `machineId()` lives in `lib/home.js`; `identity` re-exports both. A record with no `machine` is this machine's.
+  - `members.join`: "name taken" when a live seat has another holder (another machine, or another pid). `identity.join` takes `machine` (default this one): a seat of this machine needs its pid and gets the indexes after the op (the previous seat of that pid is left after it, too); a seat of another machine (the server's) has no pid and no index.
+  - `members.beat(name, {presence?, now?})` renews `seen_at` at most every `SEAT_BEAT_MS` (`now` is for tests; the server never passes it). Presence needs a seat: `writePresence` for a name with no seat, or a left one, writes nothing.
+  - The host gates sit in `lib/orch.js` (`claimSpawn` null, `reapDetached` null, `watchdog` `'not-host'`) and `proposal.decide` (null), behind `identity.isHost(code)`, so every caller (join, sweep, session-end, the tail, consent, the server) is covered at one place.
+  - `seats.switchRooms` was cut: `join.js` calls `exit(…, 'switched rooms')`, which now also starts the reaper when the old room is left empty (as a session end does). `seats.ensureOrch` is exported for the join hook's "already joined" path.
+  - `publicView` is the projection the server streams (PR4). `RATE_ADDRESSED_MAX` is 10 (agent posts, per (from, to)); an addressed post no longer counts in the room bucket.
+  - The resume `member_joined` (session-restore) carries `machine` too. The store contract also runs on `test/support/thread-store.js`.
+  - Left for PR5: `rebindSession` still writes `session_id` with `members.update` (HOST_ONLY on a mirror), and `resolveBySession`/`resolveByPid` compare the members record's `session_id`/`pid`, which a mirror's streamed doc lacks; there a seat of this machine must be judged by its session index.
 
 ### PR3 Bridge and the proof gate
 

@@ -18,7 +18,8 @@
  *       INVALID. Throws RoomError INVALID | RATE | AUTH | LOCK | NO_ROOM.
  *   place(payload, {system}) -> Entry
  *       the server half: admit() (validate() again, the stored form rebuilt), then, atomically: rate (RATE_MAX
- *       agent posts per `from` per RATE_WINDOW_MS: RATE), replay (a nonce already placed: AUTH), trust (a
+ *       agent posts to the room per `from` per RATE_WINDOW_MS, RATE_ADDRESSED_MAX per (from, to) for posts
+ *       addressed to one member: RATE), replay (a nonce already placed: AUTH), trust (a
  *       via=human payload must be v2, for this room, ts within SIG_SKEW_MS, and verify against publicKey(from):
  *       AUTH; a member_joined pubkey that differs from the key pinned for that name: AUTH), then id (monotonic),
  *       at, prev (hash12 of the previous line). A line over LOG_LINE_MAX_BYTES is refused (INVALID). The sig
@@ -38,10 +39,14 @@
  *   verifyChain({fromOffset, prev, save}?) -> {ok, count, checked, offset, id, hash, from, badAt?, line?}
  *       incremental, from the checkpoint (FsRoomStore: <room>/log.idx), which it advances
  *   getCursor(reader) -> id, setCursor(reader, id)           per-reader positions
+ *   isHost -> bool                          this machine holds the room (FsRoomStore: true). Only there do the
+ *                                           orch's spawn, reap and watchdog and proposal decisions run.
  *   members.read() -> {name: record}; members.update(fn) -> written | null
  *       fn(current) returns the next object to store, or null/undefined to store nothing. Atomic: under a lock
  *       here, a compare-and-set retry loop for a remote store, so fn may run more than once (side effects in it
- *       must be idempotent).
+ *       must be idempotent). The orch's bookkeeping (lib/orch.js); a seat changes through the named ops:
+ *   members.join(rec) -> {ok, rejoin?, error?}, members.leave(name) -> bool, members.beat(name, {presence?}) -> bool
+ *       lib/room/members.js ops (the same rules for every store; beat also writes presence/<name>).
  *   blobs.put(name, bytes) -> ref, get(ref) -> Buffer|null, has(ref), ref(pathOrRef) -> ref|null,
  *   blobs.localPath(ref) -> string|null    name/ref: "plans/<hash>.md" (room-relative). get/has/ref also take the
  *       absolute path older proposal entries stored. localPath: a file a person can open (null off-machine).
@@ -86,6 +91,7 @@ const { CODE_RE } = require('../text.js');
 const config = require('../config.js');
 const { RoomError, validate } = require('./validate.js');
 const envelope = require('./envelope.js');
+const members = require('./members.js');
 
 const LOG = 'log.jsonl';
 const IDX_FILE = 'log.idx';
@@ -281,9 +287,13 @@ function admit(c, payload, { system } = {}) {
   return p;
 }
 
+/** An agent post's rate bucket: the room, or the one member it is addressed to (legacy lines have no `to`). */
+const bucket = e => (e.to && e.to !== 'room' ? e.to : 'room');
+const rateMax = p => (bucket(p) === 'room' ? config.RATE_MAX : config.RATE_ADDRESSED_MAX);
+
 /**
- * The newest entries (newest first) as a placement needs them: the last id, the agent posts p.from made inside
- * RATE_WINDOW_MS, and whether p's nonce was placed already. A nonce is looked for back to 2 * SIG_SKEW_MS by
+ * The newest entries (newest first) as a placement needs them: the last id, the agent posts p.from made to p's
+ * bucket inside RATE_WINDOW_MS, and whether p's nonce was placed already. A nonce is looked for back to 2 * SIG_SKEW_MS by
  * `at` (the host's clock): a payload with a fresh ts may have been placed up to SIG_SKEW_MS after it was signed.
  * The log is in time order, so the scan stops at the window.
  */
@@ -293,7 +303,7 @@ function scanTail(newest, p, now) {
   for (const e of newest) {
     if (last === null) last = e.id || 0;
     if (!span || now - Date.parse(e.at) >= span) break;
-    if (p.via === 'agent' && e.from === p.from && e.via === 'agent' && ++recent >= config.RATE_MAX) break;
+    if (p.via === 'agent' && e.from === p.from && e.via === 'agent' && bucket(e) === bucket(p) && ++recent >= rateMax(p)) break;
     if (p.nonce && e.nonce === p.nonce) { replayed = true; break; }
   }
   return { last, recent, replayed };
@@ -326,8 +336,9 @@ function checkPin(s, p) {
  */
 function placeAfter(s, p, { newest, prevLine, now }) {
   const t = scanTail(newest, p, now);
-  if (t.recent >= config.RATE_MAX) {
-    throw new RoomError('RATE', `rate limit: ${p.from}'s Claude posted ${config.RATE_MAX} times in the last minute; wait before posting again`);
+  if (t.recent >= rateMax(p)) {
+    const to = bucket(p) === 'room' ? '' : ` to ${p.to}`;
+    throw new RoomError('RATE', `rate limit: ${p.from}'s Claude posted ${rateMax(p)} times${to} in the last minute; wait before posting again`);
   }
   if (t.replayed) throw auth('this signed entry was placed already (its nonce is in the log)');
   if (p.via === 'human') checkSigned(s, p, now);
@@ -471,10 +482,12 @@ class FsRoomStore {
     if (!dir) roomDir(code); // validates the code
     this.code = code;
     this._dir = dir || null;
+    this.isHost = true;
     const self = this;
     this.members = {
       read: () => self._readMembers(),
       update: fn => self._updateMembers(fn),
+      ...members.ops(this),
     };
     this.blobs = {
       put: (name, bytes) => self._blobPut(name, bytes),

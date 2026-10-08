@@ -138,7 +138,10 @@ module.exports = {
   HOLD_RESPAWN_AFTER_RETURN_MS: 30_000, // a room hold that returned this recently still respawns a cancelled row
 
   // ---------- room log (lib/room/*) ----------
-  RATE_MAX: 6,                     // agent posts per `from` per RATE_WINDOW_MS
+  RATE_MAX: 6,                     // agent posts to the room per `from` per RATE_WINDOW_MS
+  // Posts addressed to one member (to !== 'room') have their own bucket per (from, to): Claudes on two machines
+  // talk this way (native SendMessage does not cross machines), so a reply never eats the room budget.
+  RATE_ADDRESSED_MAX: 10,
   RATE_WINDOW_MS: 60_000,
 
   // ---------- room log integrity (lib/room/{store,validate,render}.js) ----------

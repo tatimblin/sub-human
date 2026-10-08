@@ -1,9 +1,11 @@
 'use strict';
-// The RoomStore contract (lib/room/store.js), run against FsRoomStore (the room directory) and MemoryRoomStore
-// (test/support/memory-store.js): append, ids and the prev chain, signed human entries (sig v2 placed anywhere,
-// v1 still read), keys pinned in the log, place's replay and trust checks, readView parity, watch and tailer,
-// chain checks, cursors, members compare-and-set (across processes for the file store), blobs and the small
-// documents. Both passing is what lets a room move off this machine behind the same interface.
+// The RoomStore contract (lib/room/store.js), run against FsRoomStore (the room directory), MemoryRoomStore
+// (test/support/memory-store.js) and ThreadRoomStore (test/support/thread-store.js: every call crosses
+// lib/remote/bridge.js to an FsRoomStore on a worker): append, ids and the prev chain, signed human entries (sig
+// v2 placed anywhere, v1 still read), keys pinned in the log, place's replay and trust checks, the rate buckets,
+// readView parity, watch and tailer, chain checks, cursors, members compare-and-set (across processes for the
+// file store) and the named seat ops, blobs and the small documents. All passing is what lets a room move off
+// this machine behind the same interface.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -18,20 +20,23 @@ const envelope = require(path.join(h.LIB, 'room', 'envelope.js'));
 const consent = require(path.join(h.LIB, 'room', 'consent.js'));
 const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
 const { MemoryRoomStore } = require('./support/memory-store.js');
+const { ThreadRoomStore } = require('./support/thread-store.js');
+const { machineId } = require(path.join(h.LIB, 'home.js'));
 
 const CODE = 'otter-1234';
-const BACKENDS = {
-  fs: {
-    make: t => store.open(CODE, { dir: h.tmpDir('sh-store-', t) }),
-    // replace line i (0-based) of the log
-    tamper: (s, i, fn) => {
-      const lines = fs.readFileSync(path.join(s.dir, 'log.jsonl'), 'utf8').split('\n').filter(Boolean);
-      lines[i] = fn(lines[i]);
-      fs.writeFileSync(path.join(s.dir, 'log.jsonl'), lines.join('\n') + '\n');
-    },
-    // a line written around the store
-    raw: (s, e) => fs.appendFileSync(path.join(s.dir, 'log.jsonl'), JSON.stringify(e) + '\n'),
+const FILES = {
+  // replace line i (0-based) of the log
+  tamper: (s, i, fn) => {
+    const lines = fs.readFileSync(path.join(s.dir, 'log.jsonl'), 'utf8').split('\n').filter(Boolean);
+    lines[i] = fn(lines[i]);
+    fs.writeFileSync(path.join(s.dir, 'log.jsonl'), lines.join('\n') + '\n');
   },
+  // a line written around the store
+  raw: (s, e) => fs.appendFileSync(path.join(s.dir, 'log.jsonl'), JSON.stringify(e) + '\n'),
+};
+const BACKENDS = {
+  fs: { make: t => store.open(CODE, { dir: h.tmpDir('sh-store-', t) }), ...FILES },
+  thread: { make: t => new ThreadRoomStore(CODE, { dir: h.tmpDir('sh-store-', t) }), ...FILES },
   memory: {
     make: () => new MemoryRoomStore(CODE),
     tamper: (s, i, fn) => { s._lines[i] = fn(s._lines[i]); },
@@ -85,6 +90,52 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.throws(() => say(s, 'bob', 'one too many', 'agent'), e2 => e2.code === 'RATE');
     assert.throws(() => s.append({ kind: 'say', text: 'x'.repeat(config.LOG_LINE_MAX_BYTES) }, { via: 'system', from: 'room', system: true }), e2 => e2.code === 'INVALID');
     assert.equal(s.lastId(), 1 + config.RATE_MAX, 'nothing refused was written');
+  });
+
+  test(`store contract (${name}): a post addressed to one member has its own rate bucket per (from, to)`, t => {
+    h.freshHome(t);
+    const s = B.make(t);
+    const to = (who, text) => s.append({ kind: 'say', text, to: who }, { via: 'agent', from: 'bob' });
+    for (let i = 0; i < config.RATE_MAX; i++) say(s, 'bob', `p${i}`, 'agent');
+    assert.throws(() => say(s, 'bob', 'room is full', 'agent'), e => e.code === 'RATE');
+    for (let i = 0; i < config.RATE_ADDRESSED_MAX; i++) to('alice', `a${i}`);
+    assert.throws(() => to('alice', 'one too many'), e => e.code === 'RATE' && /to alice/.test(e.message));
+    assert.equal(to('carol', 'another bucket').to, 'carol');
+    assert.equal(s.append({ kind: 'say', text: 'mine', to: 'alice' }, { via: 'agent', from: 'dave' }).from, 'dave', 'per sender');
+  });
+
+  test(`store contract (${name}): members.join/leave/beat: one seat per name across machines, judged by lease off this machine`, t => {
+    h.freshHome(t);
+    const s = B.make(t);
+    const here = machineId();
+    assert.equal(s.isHost, true);
+    assert.deepEqual(s.members.join({ name: 'alice', role: 'member', machine: 'far-away' }), { ok: true });
+    const a = s.members.read().alice;
+    assert.deepEqual([a.machine, typeof a.joined_at, a.seen_at === a.joined_at], ['far-away', 'string', true]);
+    // alice's seat on another machine has a fresh lease: taken from here, whatever pid asks; her own machine rejoins
+    const taken = s.members.join({ name: 'alice', role: 'member', machine: here, pid: process.pid });
+    assert.equal(taken.ok, false);
+    assert.match(taken.error, /name taken: "alice" is already in otter-1234/);
+    assert.deepEqual(s.members.join({ name: 'alice', role: 'member', machine: 'far-away' }), { ok: true, rejoin: true });
+    // a stale lease frees the name
+    s.members.update(ms => { ms.alice.seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString(); return ms; });
+    assert.deepEqual(s.members.join({ name: 'alice', role: 'member', machine: here, pid: process.pid }), { ok: true, rejoin: true });
+    assert.deepEqual([s.members.read().alice.machine, s.members.read().alice.pid], [here, process.pid]);
+    // beat: the lease (at most every SEAT_BEAT_MS) and presence; a bad state writes nothing
+    const later = Date.parse(s.members.read().alice.seen_at) + config.SEAT_BEAT_MS + 1;
+    assert.equal(s.members.beat('alice', { now: later, presence: { state: 'idle', detail: 'x' } }), true);
+    assert.equal(s.members.read().alice.seen_at, new Date(later).toISOString());
+    assert.deepEqual(s.kv.get('presence/alice'), { state: 'idle', at: new Date(later).toISOString(), detail: 'x' });
+    assert.equal(s.members.beat('alice', { now: later + 1000 }), true);
+    assert.equal(s.members.read().alice.seen_at, new Date(later).toISOString(), 'renewed at most every SEAT_BEAT_MS');
+    assert.throws(() => s.members.beat('alice', { presence: { state: 'away' } }), e => e.code === 'INVALID');
+    assert.equal(s.members.beat('zed'), false, 'no seat');
+    // leave: once
+    assert.equal(s.members.leave('alice'), true);
+    assert.ok(s.members.read().alice.left_at);
+    assert.equal(s.members.leave('alice'), false);
+    assert.equal(s.members.beat('alice', { presence: { state: 'working' } }), false, 'a left seat writes nothing');
+    assert.equal(s.kv.get('presence/alice').state, 'idle');
   });
 
   test(`store contract (${name}): sig v2 covers the payload, not its place: placed at another id it still verifies; v1 lines still do`, t => {

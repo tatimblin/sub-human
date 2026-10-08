@@ -141,7 +141,9 @@ RoomStore
   readAll() readById(ids) readAfter(id) since(id) lastId() readView({after}) watch(fn) tailer()
   validateChain()  verifyChain({fromOffset})                    the prev hash chain (incremental via log.idx)
   getCursor(reader) setCursor(reader, id)                       per-reader positions
-  members.read() members.update(fn)                             atomic: lock locally, CAS remotely
+  isHost                                                        this machine holds the room (FsRoomStore: true)
+  members.read() members.update(fn)                             atomic: lock locally, CAS remotely (orch bookkeeping)
+  members.join(rec) members.leave(name) members.beat(name, {presence?})   the seat ops (lib/room/members.js)
   blobs.put/get/has/ref/localPath                               plans/<hash>.md, room-relative refs
   kv.get/set/update/delete/list/lock                            small derived documents
   lock(name, fn)                                                room-wide mutex (proposal answers)
@@ -153,10 +155,10 @@ RoomStore
 |---|---|---|
 | `log.jsonl` | `store.append` (hooks, MCP server; never the CLI) | append-only room log, one JSON entry per line, hash-chained |
 | `log.idx` | `verifyChain` / `readView` | checkpoint: offset, last id, hash, and offsets of every non-chat line |
-| `members.json` | `identity.join/leave/heartbeat`, `orch.*` via `members.update` | seats (`pid`, `pid_start`, `session_id`, `seen_at`, `left_at`) and the orch record (`job`, `claim`, `closing`) |
+| `members.json` | `identity.join/leave/heartbeat` via `members.join/leave/beat`, `orch.*` via `members.update` | seats (`machine`, `seen_at`, `left_at`; for this machine's seats `pid`, `pid_start`, `session_id`, `cwd`) and the orch record (`job`, `claim`, `closing`) |
 | `plans/<hash>.md` | `lib/proposal.create` | proposal text, addressed by sha256/12 of its bytes |
 | `tasks.json` (kv `tasks`) | `hooks/tasks.js` (orch only) | the task mirror: `tasks.fold()` of the log's `task` entries |
-| `presence/<name>.json` | `hooks/presence.js` (also run by the module on a typed prompt), at-room, join, restore | working / idle / permission / error, for row text |
+| `presence/<name>.json` | `members.beat` (`hooks/presence.js`, also run by the module on a typed prompt; at-room, join, restore) | working / idle / permission / error, for row text |
 | `rows/<session_id>.json` | `hooks/row-map.js` | agent id → row (kind, name, parent) for the status line |
 | `rows/holds-<name>.json` | `mcp/hold.js` | which rows this seat's hold server is holding (row-guard, rewake) |
 | `rows/blocks-<agent>.json` | `hooks/row-hold.js` | SubagentStop block counter |
@@ -167,9 +169,10 @@ RoomStore
 | `<home>/keys/<CODE>/<name>.key`, `.pub` | `hooks/seat-key.js` | Ed25519 seat key pair (dir 0700) |
 | `<home>/sessions/by-pid/`, `by-sid/` | `lib/identity.js` | which seat a local claude pid / session id holds (machine-local, not room state) |
 | `<home>/sessions/mods/<sid>.json` | `hooks/mod-hello.js` | the hooks module's hello lease: this session's function hooks are loaded (join requires it) |
+| `<home>/machine.json` | `lib/home.js` `machineId()` | this machine's random id, stored as each seat's `machine` |
 | `<home>/bin/row-status`, `roots.json` | `hooks/row-launcher.js` | the status-line launcher and the plugin roots it may run |
 
-**MemoryRoomStore** (`test/support/memory-store.js`) is a second implementation that keeps a room in memory and implements `members.update` as a compare-and-set retry loop, as a remote store would. It shares `store.toPayload` / `store.admit` / `store.placeAfter`, so ids, chain, signatures and the trust checks are byte-identical. `test/store-contract.test.js` runs one suite against both. That is the **remote seam**: a store that keeps rooms off-machine implements the same interface (`store.setBackend(factory)` swaps it in). The seat private keys stay local whatever the store; liveness falls back to the `seen_at` lease when there is no local pid to check.
+**MemoryRoomStore** (`test/support/memory-store.js`) is a second implementation that keeps a room in memory and implements `members.update` as a compare-and-set retry loop, as a remote store would. It shares `store.toPayload` / `store.admit` / `store.placeAfter` and the seat ops of `lib/room/members.js`, so ids, chain, signatures, the trust checks and seat rules are byte-identical. `test/store-contract.test.js` runs one suite against both, and against `test/support/thread-store.js` (every call over `lib/remote/bridge.js` to an FsRoomStore on a worker). That is the **remote seam**: a store that keeps rooms off-machine implements the same interface (`store.setBackend(factory)` swaps it in). The seat private keys stay local whatever the store; liveness falls back to the `seen_at` lease for a seat of another machine or with no pid. What other machines may see of `members.json` is `members.publicView` (no `pid`, `pid_start`, `session_id`, `cwd`).
 
 ## Entries and `via`
 
@@ -213,7 +216,8 @@ approver's Claude: EnterPlanMode ──► consent.js Pre: allow silently, revie
    Esc                            ──► nothing; Stop / next prompt / restore close the review
 fallback (already in plan mode, bypass/dontAsk, clear-context-on-accept, >200k chars):
    AskUserQuestion card           ──► Post(AskUserQuestion): signoff | objection via=human (Not yet, AFK, stale hash: nothing)
-every approver answered           ──► lib/proposal.record appends decision via=system
+every answer                      ──► lib/proposal.answer (signed, any machine), then decide: on the host only,
+                                      once every approver answered, the decision via=system (idempotent)
 ```
 
 The plan-view review runs only in the modes `default`, `acceptEdits` and `auto` (not plan already, not `bypassPermissions` or `dontAsk`) and only while clear-context-on-accept is off; otherwise the card is used. A plan edited in the dialog (Ctrl+G) records nothing: a signoff needs the proposal text unedited. "Tell Claude what to change" reaches the next `ExitPlanMode`, which reads the note with `cc.planFeedback` (the transcript's `userFeedback`, else the "the user said:" text). When the "Yes" the person chose changed the permission mode, consent puts it back with a silent EnterPlanMode / ExitPlanMode pair (phase `restore`).
@@ -239,7 +243,9 @@ hooks/tasks.js TaskCompleted ─► tasks.gate(): exit 2 unless the owner asked 
 
 - **Binding.** `/sub-human NAME [CODE]` triggers `hooks/join.js` (UserPromptExpansion) before the model runs. It writes the seat into `members.json` and the indexes `<home>/sessions/by-pid/<CLAUDE_PID>.json` and `by-sid/<session_id>.json`. The model never names itself. Without a CODE it joins the one open room (a live member seat, not closing), or opens a new one; several open rooms is an error that lists their codes. Rooms where only the orch is left are swept first. A member already in another room switches: the old room logs `member_left` "switched rooms".
 - **Resolution.** Hooks: payload `session_id`, then `CLAUDE_PID`. MCP server: `process.ppid` (MCP servers get no `CLAUDE_PID`). CLI and tail child: `CLAUDE_CODE_SESSION_ID` (the module sets it for the child), then `CLAUDE_PID`, then the nearest registered ancestor. `/clear` changes the session id but not the process: `session-restore.js` rebinds the new id to the seat found by pid. `--resume` is a new process with the old id: it rebinds the pid or rejoins the seat.
-- **Liveness.** `seatAlive(m)`: not left, and the pid is alive with a start time equal to the stored `pid_start` (so a reused pid never keeps or adopts a seat). A seat with no pid is alive while its `seen_at` lease is fresh (`SEAT_LEASE_MS` 120 s); the tail's health tick and the hold server renew it at most every `SEAT_BEAT_MS` 30 s.
+- **Liveness.** `seatAlive(m)` (`lib/room/members.js`): not left, and, for a seat of this machine (`m.machine === machineId()`), the pid is alive with a start time equal to the stored `pid_start` (so a reused pid never keeps or adopts a seat). Any other seat (another machine's, or no pid) is alive while its `seen_at` lease is fresh (`SEAT_LEASE_MS` 120 s); the tail's health tick and the hold server renew it with `members.beat` at most every `SEAT_BEAT_MS` 30 s, and a presence write rides on the same op.
+- **Entering and leaving.** `lib/seats.js` `enter` (members.join, the session indexes, `member_joined` with `pubkey` and `machine`, the orch) and `exit` (members.leave, the reaper when nobody is left, `member_left`) are the one sequence the join and session-end hooks run. A name is one seat across machines: a live seat of another holder makes it "name taken". `host` and `join` are reserved names.
+- **Host gates.** Orch spawn, reap and watchdog (`lib/orch.js`) and proposal decisions run only where the room's store `isHost`; on any other machine they do nothing.
 - **Address.** `NAME.CODE` is set as the session title (the module's `classic.UserPromptSubmit`, once per session id and address), which is what `SendMessage` and `ListAgents` use (cc CONTRACT `session-title-address`).
 
 ## Orch lifecycle
@@ -347,7 +353,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/cc.js`: the single home for every Claude Code internal the plugin relies on.
 - `lib/clock.js`: A tiny injectable clock, so code that waits (the `sub-human tail` settle and poll loops) can be tested without real sleeps.
 - `lib/config.js`: every timing and size cap in one place, named. Callers import the value they use; an env override is read by the caller through envMs() at the moment it needs the value (tests set the env per child process, some per call).
-- `lib/home.js`: where the plugin's store lives on this machine. Both lib/identity.js (session indexes) and lib/room/store.js (room state) need it, and identity requires the store, so it lives here rather than in either.
+- `lib/home.js`: where the plugin's store lives on this machine, and which machine this is.
 - `lib/identity.js`: where rooms live, who is in them, and which Claude session is asking.
 - `lib/io.js`: small file and process helpers shared by every module.
 - `lib/lock.js`: the one lockfile helper (room log, members.json, proposals, the task mirror, the row map).
@@ -368,6 +374,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/room/envelope.js`: the signed envelope (sig v2) and the keys pinned in the log.
 - `lib/room/lanes.js`: who a log entry concerns, and the proposal queries that decide it.
 - `lib/room/links.js`: the link registry on this machine: which rooms are mirrors of a room hosted elsewhere, and how to reach them.
+- `lib/room/members.js`: the members document's rules, shared by every RoomStore (as placeAfter is for the log), so a seat is judged the same whichever machine holds the room.
 - `lib/room/render.js`: log entries as text, for Claude (ids kept) and for people (no ids).
 - `lib/room/store-mirror.js`: MirrorRoomStore, the RoomStore of a room hosted on another machine: an FsRoomStore directory kept byte-identical to the host's log by the link daemon (lib/remote/link.js), so every reader (readView, log.idx, tailer, verifyChain, rows, digests) works unchanged.
 - `lib/room/store.js`: the RoomStore seam, and FsRoomStore, its implementation over the room directory on this machine.
@@ -405,7 +412,7 @@ Long-lived per seated session: the tail child and the MCP server (one idle `node
 ## Testing
 
 - `npm test`: `node --test` over `plugin/sub-human/test` (each file in its own process, in parallel; `test/helpers.js` strips `CLAUDE*` env and removes temp dirs) and `scripts/test`. Hooks are driven as child processes with JSON payloads (`test/hooks/`). The tail runs on a fake clock (`lib/clock.js`).
-- **Store contract**: `test/store-contract.test.js` runs one suite against `FsRoomStore` and `MemoryRoomStore`; `store-bypass.test.js` checks nothing else touches room files; `test/hooks/security.test.js` checks who can load the signer.
+- **Store contract**: `test/store-contract.test.js` runs one suite against `FsRoomStore`, `MemoryRoomStore` and the thread store; `store-bypass.test.js` checks nothing else touches room files; `test/hooks/security.test.js` checks who can load the signer.
 - **Probe**: `npm run probe` (`scripts/probe-cc.js`) greps the installed Claude Code binary for every `CONTRACT` search string and shape; `test/cc.test.js` runs it when a binary is present. No search names a minified identifier (shapes use `~` instead), so a miss means the code itself changed: re-read that spot and record what changed in a new `docs/internals/cc-<version>.md`.
 - **Docs**: `npm run docs` regenerates this file's tables; `scripts/test/arch-doc.test.js` fails when they are stale.
 - **Demo**: `scripts/demo.sh` drives scenes S1–S10 with real sessions in tmux (real cost; run only when asked). `scripts/checks.js` then labels each check **deterministic** (log, chain, files, panes: a failure exits 1) or **behavioural** (model-call counts, wakes, noise: compared against `scripts/baselines.json` thresholds, warn only). `scripts/walkthrough.js` builds `docs/rebuild/walkthrough.html`.

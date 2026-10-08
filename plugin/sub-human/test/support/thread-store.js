@@ -4,7 +4,7 @@
  * forwards its calls through lib/remote/bridge.js to an FsRoomStore on a worker thread. Test only: the proof
  * gate of PR3 in docs/next/REMOTE-PLAN.md (a hook can block on another thread's store and still pass).
  *
- *   new ThreadRoomStore(code)      every process shares one bridge, started on the first call. Each call
+ *   new ThreadRoomStore(code, {dir}?)   every process shares one bridge, started on the first call. Each call
  *       carries the room's directory and the home as this thread resolves them (SUB_HUMAN_HOME may change
  *       between calls; the worker reads the seat keys of a legacy room under that home).
  *   handle(method, params)         the bridge handler (this file, loaded on the worker)
@@ -38,11 +38,18 @@ const send = (method, params) => (bridge || (bridge = createBridge({ handler: __
 const toBuffer = b => (b ? Buffer.from(b.buffer, b.byteOffset, b.byteLength) : null);
 
 class ThreadRoomStore {
-  constructor(code) {
+  constructor(code, { dir } = {}) {
     this.code = code;
-    this._local = new FsRoomStore(code); // this thread's view: the room's directory and its lock files
+    this.isHost = true;
+    this._local = new FsRoomStore(code, { dir }); // this thread's view: the room's directory and its lock files
     const fwd = method => (...args) => this._call(method, args);
-    this.members = { read: fwd('members.read'), update: fn => this._updateMembers(fn) };
+    this.members = {
+      read: fwd('members.read'),
+      update: fn => this._updateMembers(fn),
+      join: fwd('members.join'),
+      leave: fwd('members.leave'),
+      beat: fwd('members.beat'),
+    };
     this.blobs = {
       put: fwd('blobs.put'),
       get: ref => toBuffer(this._call('blobs.get', [ref])),

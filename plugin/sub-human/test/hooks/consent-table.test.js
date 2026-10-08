@@ -25,8 +25,9 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
   const H2 = create('alice', '# Cursor paging v2\n\n1. clamp at 100\n', ['bob', 'carol']).hash; // #6 the revision
   human('bob', 'signoff', H2);                                                               // #7
   const H3 = create('bob', '# Rename fetchUser\n', ['alice']).hash;                          // #8
-  const rec = w.lib(() => proposal.record(me('alice'), { hash: H3 }, { choice: 'Agree' }));  // #9 + the decision #10
-  assert.ok(rec.decision, 'alice completed H3');
+  assert.ok(w.lib(() => proposal.answer(me('alice'), { hash: H3 }, { choice: 'Agree' })).entry); // #9
+  assert.ok(w.lib(() => proposal.decide(w.code, H3)), 'alice completed H3');                 // #10 the decision
+  assert.equal(w.lib(() => proposal.decide(w.code, H3)), null, 'decided once');
 
   // The one expected answer. needed = pending for that person; decided = closed (agreed).
   const want = {

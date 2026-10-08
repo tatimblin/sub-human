@@ -1,15 +1,19 @@
 'use strict';
 /**
- * plugin/sub-human/lib/home.js: where the plugin's store lives on this machine. Zero dependencies beyond text.js.
- * Both lib/identity.js (session indexes) and lib/room/store.js (room state) need it, and identity requires the
- * store, so it lives here rather than in either.
+ * plugin/sub-human/lib/home.js: where the plugin's store lives on this machine, and which machine this is. Zero
+ * dependencies beyond text.js. Both lib/identity.js (session indexes) and lib/room/store.js (room state) need
+ * it, and identity requires the store, so it lives here rather than in either.
  *
  *   home() -> string            SUB_HUMAN_HOME, else ~/.sub-human (read on every call)
  *   roomsDir() -> string        <home>/rooms
  *   roomDir(code) -> string     <home>/rooms/<code>; throws on a code that is not CODE_RE
+ *   machineId() -> string       this machine's id, <home>/machine.json {id}: 16 random hex digits made once
+ *                               (never the hostname), cached per home. A seat record's `machine`.
  */
+const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { CODE_RE } = require('./text.js');
 
 const home = () => process.env.SUB_HUMAN_HOME || path.join(os.homedir(), '.sub-human');
@@ -19,4 +23,22 @@ function roomDir(code) {
   return path.join(roomsDir(), code);
 }
 
-module.exports = { home, roomsDir, roomDir };
+const readId = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8')).id || null; } catch { return null; } };
+/** The id in file, else a new one linked into place (the first of two racing processes wins; both read it). */
+function readOrMakeId(file) {
+  const cur = readId(file);
+  if (cur) return cur;
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ id: crypto.randomBytes(8).toString('hex') }) + '\n', { mode: 0o600 });
+  try { fs.linkSync(tmp, file); } catch (e) { if (e.code !== 'EEXIST') throw e; } finally { fs.rmSync(tmp, { force: true }); }
+  return readId(file);
+}
+const machines = new Map(); // home -> id
+function machineId() {
+  const h = home();
+  if (!machines.has(h)) machines.set(h, readOrMakeId(path.join(h, 'machine.json')));
+  return machines.get(h);
+}
+
+module.exports = { home, roomsDir, roomDir, machineId };

@@ -33,7 +33,7 @@ test('identity: join validates names, reserved names and roles', () => {
   const code = h.newRoom();
   const j = (name, role = 'member', extra = {}) => identity.join({ code, name, role, pid: process.pid, session_id: 's1', cwd: '/x', ...extra });
   for (const bad of ['', 'a b', 'x'.repeat(33), 'semi;colon', null]) assert.equal(j(bad).ok, false, String(bad));
-  for (const r of ['orch', 'room', 'all', 'system', 'ROOM']) assert.match(j(r).error, /reserved/, r);
+  for (const r of ['orch', 'room', 'all', 'system', 'host', 'join', 'ROOM']) assert.match(j(r).error, /reserved/, r);
   assert.match(j('alice', 'orch').error, /joins as "orch"/);
   assert.match(j('alice', 'admin').error, /invalid role/);
   assert.match(j('alice', 'observer').error, /invalid role/, 'roles are orch and member only');
@@ -184,10 +184,13 @@ test('identity: members.json orch {job, pid}: setOrch before the bind, kept acro
   assert.throws(() => identity.setOrch('nope-0000', {}), /no room/);
 });
 
-test('identity: presence is a per-member file; writePresence stores valid states and names only', () => {
+test('identity: presence is a per-member file written with the lease (members.beat); writePresence stores valid states and names only', () => {
   h.freshHome();
   const code = h.newRoom();
   const kv = store.open(code).kv;
+  assert.equal(identity.writePresence(code, 'alice', 'idle'), false, 'no seat, no presence');
+  const sleepers = ['bob', 'carol'].map(name => { const s = h.spawnSleeper(); identity.join({ code, name, role: 'member', pid: s.pid }); return s; });
+  identity.join({ code, name: 'alice', role: 'member', pid: process.pid });
   assert.equal(identity.writePresence(code, 'alice', 'idle'), true);
   assert.equal(identity.writePresence(code, 'bob', 'error', 'rate_limit'), true);
   assert.equal(identity.writePresence(code, 'bob', 'bogus'), false);
@@ -198,6 +201,7 @@ test('identity: presence is a per-member file; writePresence stores valid states
   assert.ok(Date.parse(kv.get('presence/alice').at));
   assert.ok(fs.existsSync(path.join(identity.roomDir(code), 'presence', 'alice.json')));
   for (const st of identity.PRESENCE_STATES) assert.equal(identity.writePresence(code, 'carol', st), true, st);
+  for (const sl of sleepers) sl.kill();
 });
 
 test('identity: pid reuse: a live pid with a different start time is not the seat (not live, not taken, not resolved)', () => {
@@ -341,4 +345,35 @@ test('identity: pruneModLeases deletes leases whose process is gone (or reused),
   assert.deepEqual(fs.readdirSync(dir), [`${sid(1)}.json`], 'a live process keeps its lease however old');
   fs.rmSync(dir, { recursive: true });
   assert.equal(identity.pruneModLeases(), 0, 'no leases dir');
+});
+
+test('identity: machineId is made once per home, random, and every seat records it', () => {
+  const home = h.freshHome();
+  const id = identity.machineId();
+  assert.match(id, /^[0-9a-f]{16}$/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'machine.json'), 'utf8')).id, id);
+  assert.equal(identity.machineId(), id);
+  h.freshHome();
+  assert.notEqual(identity.machineId(), id, 'another home, another machine');
+  const { code } = h.register('alice');
+  assert.equal(identity.readMembers(code).alice.machine, identity.machineId());
+});
+
+test('identity: a seat of another machine is judged by its lease, whatever its pid; it has no pid and no index here', async () => {
+  h.freshHome();
+  const config = require(path.join(h.LIB, 'config.js'));
+  const code = h.newRoom();
+  const fresh = new Date().toISOString(), stale = new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString();
+  const far = { name: 'zed', role: 'member', machine: 'far-away', pid: process.pid };
+  assert.equal(identity.seatAlive({ ...far, seen_at: fresh }), true);
+  assert.equal(identity.seatAlive({ ...far, seen_at: stale }), false, 'a live pid here says nothing about another machine');
+  assert.equal(identity.seatAlive({ ...far, pid: await h.deadPid(), seen_at: fresh }), true);
+  // the remote server's join: no pid, no session index on this machine
+  assert.deepEqual(identity.join({ code, name: 'zed', role: 'member', machine: 'far-away' }), { ok: true });
+  const z = identity.readMembers(code).zed;
+  assert.deepEqual([z.machine, z.pid, z.session_id], ['far-away', undefined, undefined]);
+  assert.deepEqual(identity.liveMembers(code), ['zed']);
+  assert.match(identity.join({ code, name: 'zed', role: 'member', pid: process.pid }).error, /name taken/, 'held on another machine');
+  assert.equal(identity.resolveByPid(process.pid), null);
+  assert.match(identity.join({ code, name: 'amy', role: 'member' }).error, /invalid pid/, 'a seat of this machine needs its pid');
 });

@@ -10,9 +10,11 @@
 // without a fresh hello lease for this session (identity.modLeaseOk) the join is refused with NO_MODULE.
 // The seat key is made before the seat; its public key rides on member_joined, which pins it for the room's life
 // (lib/room/envelope.js): a join whose key differs from the one pinned for that name is refused (RoomError AUTH)
-// and the seat is given back.
-const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
+// and the seat is given back. Entering and leaving are lib/seats.js (enter, exit, ensureOrch); orch, room, all,
+// system, host and join are reserved names.
+const { identity, out, run, whoami, presence, contextBlock } = require('./common.js');
 const orch = require('../lib/orch.js');
+const seats = require('../lib/seats.js');
 const seatKey = require('./seat-key.js');
 
 const COMMANDS = new Set(['sub-human:sub-human', 'sub-human']);
@@ -31,22 +33,7 @@ function success(me, lead, msg, input) {
   });
 }
 
-/** Start the room's orch (detached) when it has none running; '' or a short note for the systemMessage. */
-function ensureOrch(code, cwd, by) {
-  let last = null;
-  try {
-    last = identity.readMembers(code).orch || null;
-    const c = orch.claimSpawn(code, { by });
-    if (!c) return '';
-    orch.startDetached({ code, cwd, ...c });
-  } catch (e) {
-    return ` · no orch (${String(e.message || e).slice(0, 200)}); /sub-human still works, but there is no room task list`;
-  }
-  const failed = last && last.spawn_error ? ` (the last start failed: ${last.spawn_error})` : '';
-  return ` · starting the orch…${failed}`;
-}
-
-/** Close rooms where only the orch is left once they have been orphaned long enough (best effort). */
+/** Close rooms where only the orch is left once they have been orphaned long enough (best effort; host only). */
 function sweep() {
   try { identity.pruneModLeases(); } catch { /* the next join retries */ }
   for (const c of identity.orphanRooms()) { try { orch.watchdog(c); } catch { /* next join retries */ } }
@@ -122,30 +109,18 @@ run(input => {
     if (identity.roomClosing(code)) return block(`room ${code} is closing; run /sub-human ${name} to open a new room.`);
   }
   if (cur && cur.code === code && cur.name === name) {
-    return success(cur, 'already joined', `in room ${cur.code} as ${name}${ensureOrch(code, cwd, name)}`, input);
+    return success(cur, 'already joined', `in room ${cur.code} as ${name}${seats.ensureOrch(code, cwd, name)}`, input);
   }
-  if (cur) {
-    // Switching rooms: leave the old one exactly as exiting the session would.
-    identity.leave(cur.code, cur.name);
-    room.open(cur.code).append({ kind: 'member_left', text: `${cur.name} left (switched rooms)` }, { via: 'system', from: cur.name, system: true });
-  }
+  if (cur) seats.exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
   // The seat's key (hooks/seat-key.js): via=human posts and answers are signed with it, and the log pins it.
   let pubkey;
   try { pubkey = seatKey.publicPem(code, name); } catch (e) { return block(`could not create the seat key for ${name}: ${e.message}`); }
-  const r = identity.join({ code, name, role: 'member', ...base });
-  if (!r || !r.ok) return block(`could not join ${code} as ${name}: ${(r && r.error) || 'unknown error'}`);
-  try {
-    room.open(code).append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}`, pubkey }, { via: 'system', from: name, system: true });
-  } catch (e) {
-    if (e.code !== 'AUTH') throw e;
-    identity.leave(code, name);
-    return block(`could not join ${code} as ${name}: ${e.message}`);
-  }
-  const note = ensureOrch(code, cwd, name);
+  const r = seats.enter({ code, name, ...base, pubkey });
+  if (!r.ok) return block(`could not join ${code} as ${name}: ${r.error || 'unknown error'}`);
   const me = { code, name, role: 'member', pid, session_id: input.session_id || null, address: identity.address(name, code) };
   const here = others(code, name);
   const msg = created
     ? `opened room ${code} as ${name} · others: /sub-human NAME`
     : `${r.rejoin ? 'rejoined' : 'joined'} ${code} as ${name}${here ? ` (${here} here)` : ''}`;
-  success(me, created ? 'room opened' : r.rejoin ? 'rejoined' : 'joined', `${msg}${note}`, input);
+  success(me, created ? 'room opened' : r.rejoin ? 'rejoined' : 'joined', `${msg}${r.note}`, input);
 });

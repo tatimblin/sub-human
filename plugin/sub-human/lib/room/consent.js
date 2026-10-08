@@ -27,8 +27,8 @@
  *     signoff (and a later signoff replaces an objection). A legacy via=human `revoke` clears the answer.
  *   - A decision is as recorded: the latest via=system decision with that proposal_hash closes it.
  *     state: 'blocked' when an approver's current answer is an objection, else 'agreed'.
- * Recording (lib/proposal.record) is idempotent on top of this: one answer per person per hash, so the fold's
- * "latest" and the decision's refs agree for everything the hooks write.
+ * Recording (lib/proposal.js answer, then decide) is idempotent on top of this: one answer per person per hash,
+ * so the fold's "latest" and the decision's refs agree for everything the hooks write.
  */
 
 const { normalize, humanTrust } = require('./store.js');

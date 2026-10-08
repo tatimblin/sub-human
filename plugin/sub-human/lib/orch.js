@@ -16,6 +16,9 @@
  *       user's default model. cwd is the joiner's: --bg refuses an untrusted cwd (a fresh temp dir is never
  *       trusted). No file is written into ~/.claude: the orch creates the "room CODE open" task.
  *
+ * Host only (docs/next/REMOTE-PLAN.md rule 2): claimSpawn, reapDetached and watchdog do nothing on a machine that
+ * does not hold the room (identity.isHost false: null, null, 'not-host'), so the orch runs only where it was spawned.
+ *
  * Starting (one orch per room, even with concurrent joins):
  *   needsSpawn(code, now?) -> bool   no orch record, it left or was stopped, its bound pid is dead (pid + start
  *       time), a {job:"pending"} claim older than ORCH_CLAIM_MS, no job, or a job that never bound in ORCH_BIND_MS
@@ -37,7 +40,7 @@
  *       waitMs for task 1 to complete (or the list to be cleaned up); `claude stop <job>`; mark the orch left.
  *       claimed: the caller already set closing (watchdog): no grace, no claim. We never delete under ~/.claude.
  *   reapDetached(code, {claimed}?)   `node lib/orch.js reap CODE [--claimed]`, detached, output ignored
- *   watchdog(code, {now, orphanMs, alive, reaper}) -> 'live'|'waiting'|'reaping'|'closing'|'no-orch'|'no-room'
+ *   watchdog(code, {now, orphanMs, alive, reaper}) -> 'live'|'waiting'|'reaping'|'closing'|'no-orch'|'no-room'|'not-host'
  *       For the orch's tail loop (and join's sweep): when the room has had no live member (identity.seatAlive:
  *       pid alive and start time matching) for orphanMs (ORCH_ORPHAN_MS), claim closing and start the reaper.
  *       Members that crashed leave no SessionEnd, so this is what closes their room. The orphan start is the
@@ -144,6 +147,7 @@ function needsSpawnRec(o, now = clock.now()) {
 const needsSpawn = (code, now = clock.now()) => needsSpawnRec(identity.readMembers(code).orch, now);
 
 function claimSpawn(code, { now = clock.now(), by = null } = {}) {
+  if (!identity.isHost(code)) return null;
   let out = null;
   identity.updateOrch(code, o => {
     if (o && o.closing) return null;
@@ -287,11 +291,13 @@ async function reap(code, {
 
 function reapDetached(code, { claimed = false } = {}) {
   identity.roomDir(code);
+  if (!identity.isHost(code)) return null;
   return detached(claimed ? ['reap', code, '--claimed'] : ['reap', code]);
 }
 
 function watchdog(code, { now = clock.now(), orphanMs = orphanMsDefault(), alive = identity.seatAlive, reaper = reapDetached } = {}) {
   if (!identity.roomExists(code)) return 'no-room';
+  if (!identity.isHost(code)) return 'not-host';
   let state = 'no-orch';
   identity.updateOrch(code, (o, members) => {
     if (!o || o.stopped_at || (o.left_at && !o.job)) return null;

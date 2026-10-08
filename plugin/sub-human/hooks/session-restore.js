@@ -5,7 +5,7 @@
 //   clear    new session id, same claude process (CLAUDE_PID): rebind the new id to the seat found by pid.
 //   resume   a new claude process with the old session id. If the seat is still live, rebind the new pid;
 //            if session-end marked it left, rejoin the same name (when the room still exists) and log
-//            member_joined "rejoined (resumed)" with the seat's pubkey (hooks/join.js).
+//            member_joined "rejoined (resumed)" with the seat's pubkey and machine (lib/seats.js).
 //            A room that is closing (the reaper is stopping its orch) is not rejoined.
 // Context = the same mechanics block as join (common.js contextBlock: the role template filled + ROWS, i.e.
 // lib/rows.js rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
@@ -50,7 +50,7 @@ function reseat(input) {
   const r = identity.join({ code: last.code, name: last.name, role: last.role, pid, session_id: input.session_id, cwd: input.cwd });
   if (!r || !r.ok) return null;
   const pubkey = last.role === 'orch' ? undefined : seatKey.publicPem(last.code, last.name);
-  room.open(last.code).append({ kind: 'member_joined', text: `${last.name} rejoined (resumed)`, pubkey }, { via: 'system', from: last.name, system: true });
+  room.open(last.code).append({ kind: 'member_joined', text: `${last.name} rejoined (resumed)`, pubkey, machine: identity.machineId() }, { via: 'system', from: last.name, system: true });
   return { ...last, pid, session_id: input.session_id };
 }
 

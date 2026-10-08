@@ -25,9 +25,13 @@
  *   preview(p, code) -> string     the full text if <= PREVIEW_MAX chars and <= PREVIEW_LINES lines, else
  *                                  a summary plus the plan file's path
  *   matrix(p, entries) -> {hash, approvers, answers:{name: {id, kind}|null}, agreed, objected, missing, complete, …}
- *   record(me, p, {choice:'Agree'|'Object', notes?}) -> {entry, decision}|{stale:true}
- *       under a lock: appends the answer, then the decision when the matrix is complete. Idempotent: a person
- *       who already answered that hash (or a decided / unknown one) is stale; one answer per person.
+ *   answer(me, p, {choice:'Agree'|'Object', notes?}) -> {entry}|{stale:true, why}
+ *       under the proposal lock: appends the person's answer (signed, so any machine may write it). Idempotent:
+ *       a person who already answered that hash (or a decided / unknown one) is stale; one answer per person.
+ *   decide(code, hash) -> Entry|null
+ *       host only (identity.isHost; null elsewhere): under the proposal lock, appends the decision once every
+ *       approver has answered. Idempotent: a decided, unknown or incomplete proposal appends nothing (null). The
+ *       consent hook calls it after each answer; the remote server will after placing one.
  *   title(code, hash, entry?) -> string  the stored plan's first line (else the entry's title text, else '')
  *   decision(hash, entries) -> Entry|null
  *   humans(code) -> [name]         members present who can approve
@@ -225,9 +229,9 @@ function choiceOf(c) {
   return k === 'agree' ? 'Agree' : k === 'object' ? 'Object' : k === 'not yet' ? 'Not yet' : null;
 }
 
-function record(me, p, answer = {}) {
+function answer(me, p, a = {}) {
   const r = room.open(me.code);
-  const choice = choiceOf(answer.choice);
+  const choice = choiceOf(a.choice);
   if (choice !== 'Agree' && choice !== 'Object') return { stale: true, why: 'no choice' };
   return r.store.lock('proposal', () => {
     const entries = r.readAll();
@@ -238,22 +242,29 @@ function record(me, p, answer = {}) {
     if (!cur || !cur.approvers.includes(me.name) || f.decisions.has(cur.hash) || f.answerOf(cur.hash, me.name)) {
       return { stale: true, why: 'answered, decided or unknown' };
     }
-    const notes = typeof answer.notes === 'string' && answer.notes.trim() ? answer.notes : undefined;
+    const notes = typeof a.notes === 'string' && a.notes.trim() ? a.notes : undefined;
     const kind = choice === 'Agree' ? 'signoff' : 'objection';
     const e = { kind, proposal_hash: cur.hash };
     if (notes !== undefined) e.text = notes; // byte-exact
-    const entry = r.append(e, { via: 'human', from: me.name });
-    const m = matrix(cur, [...entries, entry]);
-    let dec = null;
-    if (m.complete) {
-      const text = m.objected.length
-        ? `objected: ${m.objected.join(', ')}${m.agreed.length ? ` · agreed: ${m.agreed.join(', ')}` : ''} (proposal ${cur.hash})`
-        : `agreed: ${m.agreed.join(', ')} (proposal ${cur.hash})`;
-      const refs = cur.approvers.map(n => m.answers[n].id);
-      dec = r.append({ kind: 'decision', text, proposal_hash: cur.hash, refs: [cur.id, ...refs] },
-        { via: 'system', from: 'room', system: true });
-    }
-    return { entry, decision: dec };
+    return { entry: r.append(e, { via: 'human', from: me.name }) };
+  });
+}
+
+function decide(code, hash) {
+  if (!identity.isHost(code)) return null;
+  const r = room.open(code);
+  return r.store.lock('proposal', () => {
+    const entries = r.readAll();
+    const f = room.fold(entries);
+    const cur = f.proposals.get(hash);
+    if (!cur || f.decisions.has(hash)) return null;
+    const m = matrix(cur, entries);
+    if (!m.complete) return null;
+    const text = m.objected.length
+      ? `objected: ${m.objected.join(', ')}${m.agreed.length ? ` · agreed: ${m.agreed.join(', ')}` : ''} (proposal ${hash})`
+      : `agreed: ${m.agreed.join(', ')} (proposal ${hash})`;
+    const refs = cur.approvers.map(n => m.answers[n].id);
+    return r.append({ kind: 'decision', text, proposal_hash: hash, refs: [cur.id, ...refs] }, { via: 'system', from: 'room', system: true });
   });
 }
 
@@ -306,6 +317,6 @@ function restoreStale(me, { force = false, now = Date.now() } = {}) {
 module.exports = {
   QUESTION_RE, ProposalError,
   readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
-  create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, record, decision, humans, reminder,
+  create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, answer, decide, decision, humans, reminder,
   read, hash12, title,
 };

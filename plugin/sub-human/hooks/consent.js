@@ -13,7 +13,8 @@
  *   PermissionRequest(ExitPlanMode), exiting: restore the plan file, allow with setMode (no dialog); records nothing.
  *   Post(ExitPlanMode), shown: signoff via=human only for the proposal unedited; restore the file and the mode.
  *   Stop / UserPromptSubmit / Pre(room tools): a review left open is resolved and the model told to exit it.
- * Pre/Post(AskUserQuestion): the card fallback; "Not yet", AFK, stale hashes record nothing. Post(ExitPlanMode)
+ * Pre/Post(AskUserQuestion): the card fallback; "Not yet", AFK, stale hashes record nothing. An answer is
+ * lib/proposal.js answer, then decide (a no-op on a machine that does not hold the room; its host decides). Post(ExitPlanMode)
  * for the person's own plan offers to propose it. Run with SUB_HUMAN_SHIM=1 (mod/consent.mjs) the output also
  * carries subHuman {reviewOpen}. Outside plan mode the room-tool entry exits before loading anything else.
  */
@@ -41,6 +42,12 @@ const config = require(path.join(__dirname, '..', 'lib', 'config.js'));
 const { TRANSCRIPT_TAIL_BYTES } = config;
 
 const RECORDED = 'Recorded. The room shows it (and any note) already: post nothing about it. Agreeing is not a go-ahead to build; wait for the decision and your people.';
+/** The person's answer, then the decision when it completes the proposal (host only: lib/proposal.js decide). */
+function record(me, p, a) {
+  const res = proposal.answer(me, p, a);
+  return res.stale ? res : { ...res, decision: proposal.decide(me.code, p.hash) };
+}
+
 /** What was recorded, for the model; no entry ids (people never see them; a Claude repeated "#8"). */
 const done = (me, label, hash, res) => `${me.name} ${label === 'Agree' ? 'agreed to' : 'objected to'} proposal ${hash}${res.decision ? `; the room decided: ${res.decision.text}` : ''}.`;
 
@@ -121,7 +128,7 @@ function resolveShown(input, me, st) {
   if (note == null || !note.trim()) st.said = `${me.name} closed the review of proposal ${st.hash} without answering; nothing was recorded.`;
   else if (!p) st.said = `proposal ${st.hash}: nothing recorded (already answered, decided or unknown).`;
   else {
-    const res = proposal.record(me, p, { choice: 'Object', notes: note });
+    const res = record(me, p, { choice: 'Object', notes: note });
     st.said = res.stale ? `proposal ${st.hash}: nothing recorded (already answered or decided).`
       : `${RECORDED} ${done(me, 'Object', st.hash, res)}`;
   }
@@ -225,7 +232,7 @@ function postExit(input, me) {
     line = `${me.name} edited proposal ${st.hash} in the review; nothing was recorded. If they want the edited text agreed, propose it.`;
   } else if (!p) line = `proposal ${st.hash}: nothing recorded (already answered, decided or unknown).`;
   else {
-    const res = proposal.record(me, p, { choice: 'Agree' });
+    const res = record(me, p, { choice: 'Agree' });
     line = res.stale ? `proposal ${st.hash}: nothing recorded (already answered or decided).`
       : `${RECORDED} ${done(me, 'Agree', st.hash, res)}`;
   }
@@ -313,7 +320,7 @@ function postAsk(input, me) {
     if (label === 'Not yet') { out.push(`proposal ${hash}: ${me.name} has not decided; nothing was recorded. Do not ask again unless ${me.name} asks.`); continue; }
     if (label !== 'Agree' && label !== 'Object') { out.push(`proposal ${hash}: no Agree/Object answer; nothing was recorded.`); continue; }
     const notes = r.annotations && r.annotations[k] ? r.annotations[k].notes : undefined;
-    const res = proposal.record(me, p, { choice: label, notes });
+    const res = record(me, p, { choice: label, notes });
     if (res.stale) { out.push(`proposal ${hash}: nothing recorded (already answered or decided).`); continue; }
     recorded = true;
     out.push(done(me, label, hash, res));
