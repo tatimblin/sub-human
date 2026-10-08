@@ -127,9 +127,31 @@ module.exports = {
   // this machine has no seat left in the room.
   LINK_START_MS: 3000,
   LINK_HELLO_MS: 15_000,           // the daemon's hello: an ssh transport connects (and authenticates) first
+  // Retries use decorrelated jitter: each delay is random in [LINK_RETRY_MS, 3 x the last one], capped at
+  // LINK_RETRY_MAX_MS, so links that dropped together do not redial together.
   LINK_RETRY_MS: 1000,             // SUB_HUMAN_LINK_RETRY_MS
-  LINK_RETRY_MAX_MS: 10_000,       // a healed link is back within ~10 s (was 30 s: 26 s after a heal, live run)
+  LINK_RETRY_MAX_MS: 10_000,       // SUB_HUMAN_LINK_RETRY_MAX_MS: a healed link is back within ~10 s (was 30 s: 26 s after a heal, live run)
   LINK_IDLE_MS: 60_000,            // SUB_HUMAN_LINK_IDLE_MS
+  // The app-level heartbeat (op ping, to a server whose caps list it): a ping every LINK_PING_MS; no pong within
+  // LINK_PONG_MS makes the link suspect (a new connection is made before the old one is dropped); none within
+  // LINK_DEAD_MS declares it dead (a half-open TCP or ssh link after a sleep). The server closes a session that
+  // said hello with caps.ping and then sent nothing for LINK_SILENT_MS.
+  LINK_PING_MS: 15_000,            // SUB_HUMAN_LINK_PING_MS
+  LINK_PONG_MS: 5000,              // SUB_HUMAN_LINK_PONG_MS
+  LINK_DEAD_MS: 10_000,            // SUB_HUMAN_LINK_DEAD_MS
+  LINK_SILENT_MS: 45_000,          // SUB_HUMAN_LINK_SILENT_MS (server side: 3 pings missed)
+  // Wake from sleep: a timer that ticks every LINK_WAKE_TICK_MS and finds the wall clock moved more than
+  // LINK_WAKE_GAP_MS past the tick (or away from the monotonic clock) means the machine slept: redial at once.
+  LINK_WAKE_TICK_MS: 2000,         // SUB_HUMAN_LINK_WAKE_TICK_MS
+  LINK_WAKE_GAP_MS: 5000,          // SUB_HUMAN_LINK_WAKE_GAP_MS
+  // A changed set of network addresses (os.networkInterfaces, polled this often) redials at once too.
+  LINK_NET_POLL_MS: 5000,          // SUB_HUMAN_LINK_NET_POLL_MS
+  // The @room outbox (lib/remote/outbox.js): while the link is down a person's @room post is queued, at most
+  // LINK_OUTBOX_MAX posts, each for at most LINK_OUTBOX_AGE_MS. The host refuses a signature whose ts is more
+  // than SIG_SKEW_MS (10 min, lib/room/envelope.js) from its clock, and the daemon never re-signs, so a post
+  // queued longer could never be placed: the age stays inside that window, with a minute for clock skew.
+  LINK_OUTBOX_MAX: 50,
+  LINK_OUTBOX_AGE_MS: 9 * 60_000,  // SUB_HUMAN_LINK_OUTBOX_AGE_MS
 
   // ---------- rows (lib/rows.js) ----------
   PRESENCE_STALE_MS: 6 * 60 * 60 * 1000,

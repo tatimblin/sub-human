@@ -19,6 +19,25 @@
  *   list() -> [code]
  *   linksDir() -> string              <home>/links
  *   logFile(code) -> string           <home>/links/<code>.log: the daemon's stderr
+ *
+ * The link's state, for observers (doctor, the statusline, the room row): <home>/links/<code>.state.json (0600),
+ * written by the link daemon (lib/remote/link.js) on every change of state and every pong, never by anyone else.
+ * Read it; a file whose pid is not alive is a daemon that is gone (state then means nothing).
+ *   LinkState = {state, since, attempt, lastError, rttMs, queued, pid, detail, at}
+ *     state      'up' (online: hooks' writes cross now) | 'connecting' (dialling: the first connection, or a
+ *                redial after a failure, a wake or a network change) | 'down' (waiting to retry, or stopped)
+ *     since      ISO time this state began
+ *     attempt    dials since the link was last up (0 while up)
+ *     lastError  the last failure's message, or null (kept while up: why it last went down)
+ *     rttMs      the last ping's round trip, or null (no pong yet, or a server without ping)
+ *     queued     @room posts waiting in the outbox (lib/remote/outbox.js)
+ *     pid        the daemon's pid
+ *     detail     the daemon's own state: online | connecting | offline | fork | stopped (fork and stopped are for good:
+ *                `sub-human link --reset CODE` after a fork; a new join after stopped)
+ *     at         ISO time the record was written
+ *   stateFile(code) -> string         <home>/links/<code>.state.json
+ *   readState(code) -> LinkState | null
+ *   writeState(code, rec)             atomic (the daemon)
  */
 
 const fs = require('node:fs');
@@ -80,4 +99,26 @@ function list() {
  */
 const logFile = code => fileOf(code, 'log');
 
-module.exports = { linksDir, get, set, remove, list, logFile };
+/**
+ * @param {string} code
+ * @returns {string}
+ */
+const stateFile = code => fileOf(code, 'state.json');
+
+/**
+ * @param {string} code
+ * @returns {object | null}
+ */
+const readState = code => (typeof code === 'string' && CODE_RE.test(code) ? readJson(stateFile(code)) : null);
+
+/**
+ * @param {string} code
+ * @param {object} rec
+ */
+function writeState(code, rec) {
+  const file = stateFile(code);
+  fs.mkdirSync(linksDir(), { recursive: true, mode: 0o700 });
+  writeJsonAtomic(file, rec, { mode: 0o600 });
+}
+
+module.exports = { linksDir, get, set, remove, list, logFile, stateFile, readState, writeState };

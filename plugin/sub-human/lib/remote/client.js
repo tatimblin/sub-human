@@ -22,6 +22,12 @@
  *         dropped. A transport that closes ends it with {ev: 'end', data: {reason: 'OFFLINE'}}. stop() stops
  *         delivering (the server's stream ends with the transport)
  *     blobGet(ref) -> Promise<Buffer | null>, blobPut(name, bytes) -> Promise<ref>
+ *     supports(op) -> bool         the server's hello caps list op (an old server's do not list 'ping')
+ *     ping(ms?) -> Promise<{pong, rttMs}>   one heartbeat (protocol.js ping); OFFLINE when no pong within ms
+ *         (default deadlineMs). The link daemon pings only when supports('ping') and says hello with caps {ping: true}
+ *     closed                        true once the transport closed
+ *     drain(ms?) -> Promise          resolves once no call waits for a reply (or after ms, default deadlineMs): the
+ *         link daemon closes a replaced connection only then, so a hook's op in flight on it is answered
  *     close()
  *   A reply with error rejects with RoomError(code, message), the code as the server sent it. A call with no
  *   reply within deadlineMs (default LINK_CALL_MS) rejects OFFLINE and its late reply is dropped; a transport
@@ -100,6 +106,21 @@ class Client {
     return bytes == null ? null : Buffer.from(bytes, 'base64');
   }
   async blobPut(name, bytes) { return (await this._request('blob.put', { name, bytes: Buffer.from(bytes).toString('base64') })).ref; }
+
+  drain(ms = this.deadlineMs) {
+    const until = Date.now() + ms;
+    return new Promise(resolve => {
+      const check = () => (this.closed || !this.pending.size || Date.now() >= until ? resolve() : setTimeout(check, 10));
+      check();
+    });
+  }
+
+  supports(op) { return !!this.serverCaps && Array.isArray(this.serverCaps.ops) && this.serverCaps.ops.includes(op); }
+  async ping(ms = this.deadlineMs) {
+    const t0 = Date.now();
+    const r = await this._request('ping', {}, undefined, ms);
+    return { pong: r && r.pong, rttMs: Date.now() - t0 };
+  }
 
   close() { this.transport.close(); }
 }

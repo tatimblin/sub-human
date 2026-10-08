@@ -13,7 +13,12 @@
  *                                    the room's orch was stopped; 'FORK', the host log was reset under the stream)
  *   VERSION = 1                      hello carries {v, caps} both ways; an unknown v is PROTOCOL
  *   CAPS                             what this end serves: {ops: OPS}
- *   OPS                              hello join leave beat append subscribe blob.get blob.put
+ *   OPS                              hello join leave beat append subscribe blob.get blob.put ping
+ *   ping                             the app-level heartbeat: request {op: 'ping'} -> reply {pong: <host ms>} (the
+ *                                    pong). Gated by caps, not by v: a client pings only a server whose caps.ops
+ *                                    lists 'ping', and says hello with caps {ping: true} when it pings, so the
+ *                                    server may close a session that then goes silent (LINK_SILENT_MS). An old
+ *                                    peer on either side never sees one
  *   CODES                            RoomError codes on both ends and on the wire, unchanged:
  *                                    INVALID RATE LOCK NO_ROOM (today's) + OFFLINE HOST_ONLY AUTH FORK PROTOCOL
  *   request(id, op, params), reply(id, result), error(id, code, message), event(id, ev, data) -> frame
@@ -27,7 +32,7 @@ const { StringDecoder } = require('node:string_decoder');
 const { LINK_FRAME_MAX_BYTES } = require('../config.js');
 
 const VERSION = 1;
-const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put'];
+const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping'];
 const EVENTS = ['entry', 'doc', 'end'];
 const CAPS = Object.freeze({ ops: OPS });
 const CODES = Object.freeze({
