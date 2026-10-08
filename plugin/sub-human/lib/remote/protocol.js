@@ -16,13 +16,31 @@
  *                                    {id, from, to, epoch, locator?, expires_at}; private to that link, never in the
  *                                    log), 'moved' (data: {epoch, host, machine, locator, invite | null}: the room
  *                                    moved, after its host_changed line; invite is this link's machine's single-use
- *                                    invite to the new host, private to that link: lib/handoff.js)
- *   VERSION = 1                      hello carries {v, caps, epoch?} both ways; an unknown v is PROTOCOL; epoch is
- *                                    the host epoch of the log (lib/handoff.js): a server behind the client's is
- *                                    STALE (a host the room moved away from)
+ *                                    sh2 invite to the new host, private to that link: lib/handoff.js)
+ *   epoch                            hello and append may carry the mirror's host epoch (lib/handoff.js); the hello
+ *                                    reply carries the server's. A hello from a later epoch, or an append from another,
+ *                                    is STALE (a host the room moved away from, or a copy not caught up)
+ *   PROTO = {min: 1, max: 2}         the protocol versions this end speaks. hello carries {v, proto, client, caps}:
+ *                                    v the version the client needs at least (1, or 2 for an sh2 invite: a host
+ *                                    before 0.4 checks v === 1 and has no proto), proto its range, client its plugin
+ *                                    version. The server answers {v, proto, server, caps}: v = negotiate() of the two
+ *                                    ranges (a hello without proto is the range [v, v]); no overlap is PROTOCOL with
+ *                                    skewMessage(), which names the side that must update. v2: the sh2 invite and its PIN
+ *   VERSION = PROTO.max              (kept for callers that name one version)
+ *   PLUGIN_VERSION                   this plugin's version (.claude-plugin/plugin.json), '?' when unreadable
+ *   negotiate(a, b) -> v | null      the highest version in both ranges {min, max}, null when they do not overlap
+ *   rangeOf(params) -> {min, max} | null   a hello's range: its proto when well formed, else [v, v]
+ *   skewMessage({host, joiner}) -> string   {version, proto} each: "host runs sub-human 0.4.0 (protocol 3–4); you run
+ *                                    0.3.0 (protocol 2). Update your plugin: /plugin update sub-human" (or "The host
+ *                                    must update …" when the joiner is the newer side)
  *   CAPS                             what this end serves: {ops: OPS}
- *   OPS                              hello join leave beat append subscribe blob.get blob.put handoff.accept
- *                                    handoff.refuse
+ *   OPS                              hello join leave beat append subscribe blob.get blob.put ping handoff.accept
+ *                                    handoff.refuse (caps-gated: a target sends them only to a server that lists them)
+ *   ping                             the app-level heartbeat: request {op: 'ping'} -> reply {pong: <host ms>} (the
+ *                                    pong). Gated by caps, not by v: a client pings only a server whose caps.ops
+ *                                    lists 'ping', and says hello with caps {ping: true} when it pings, so the
+ *                                    server may close a session that then goes silent (LINK_SILENT_MS). An old
+ *                                    peer on either side never sees one
  *   CODES                            RoomError codes on both ends and on the wire, unchanged:
  *                                    INVALID RATE LOCK NO_ROOM (today's) + OFFLINE HOST_ONLY AUTH FORK PROTOCOL
  *                                    STALE (a write or hello from another host epoch than the server's)
@@ -36,8 +54,33 @@
 const { StringDecoder } = require('node:string_decoder');
 const { LINK_FRAME_MAX_BYTES } = require('../config.js');
 
-const VERSION = 1;
-const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'handoff.accept', 'handoff.refuse'];
+const PROTO = Object.freeze({ min: 1, max: 2 });
+const VERSION = PROTO.max;
+const PLUGIN_VERSION = (() => {
+  try { return String(require('../../.claude-plugin/plugin.json').version || '?'); } catch { return '?'; }
+})();
+
+const isVersion = n => Number.isInteger(n) && n >= 1 && n <= 1000;
+/** @returns {{min: number, max: number} | null} */
+function rangeOf({ v, proto } = {}) {
+  if (proto && isVersion(proto.min) && isVersion(proto.max) && proto.min <= proto.max) return { min: proto.min, max: proto.max };
+  return isVersion(v) ? { min: v, max: v } : null;
+}
+/** @returns {number | null} */
+function negotiate(a, b) {
+  const v = Math.min(a.max, b.max);
+  return v >= Math.max(a.min, b.min) ? v : null;
+}
+const span = r => (r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`);
+const runs = (who, x) => `${who} ${x.version && x.version !== '?' ? `sub-human ${x.version}` : 'an unknown sub-human version'} (protocol ${span(x.proto)})`;
+/** @returns {string} */
+function skewMessage({ host, joiner }) {
+  const fix = joiner.proto.max < host.proto.min
+    ? 'Update your plugin: /plugin update sub-human'
+    : 'The host must update: ask them to run /plugin update sub-human';
+  return `${runs('host runs', host)}; ${runs('you run', joiner).replace(/^you run sub-human /, 'you run ')}. ${fix}`;
+}
+const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping', 'handoff.accept', 'handoff.refuse'];
 const EVENTS = ['entry', 'doc', 'end', 'handoff', 'moved'];
 const CAPS = Object.freeze({ ops: OPS });
 const CODES = Object.freeze({
@@ -87,4 +130,4 @@ const isRequest = f => !!f && typeof f.op === 'string';
 const isReply = f => !!f && f.op === undefined && f.ev === undefined && ('result' in f || 'error' in f);
 const isEvent = f => !!f && typeof f.ev === 'string';
 
-module.exports = { VERSION, OPS, EVENTS, CAPS, CODES, request, reply, error, event, encode, decoder, isRequest, isReply, isEvent };
+module.exports = { PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, CAPS, CODES, request, reply, error, event, encode, decoder, isRequest, isReply, isEvent };

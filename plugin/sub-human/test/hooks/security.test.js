@@ -256,6 +256,8 @@ test('Bash guard: allowed and denied commands', () => {
     'sub-human serve --stdio vole-1234', 'echo x; sub-human invite', 'sub-human invite --ssh me@far',
     'sub-human authorize sh1.vole-1234.x.y ~/.ssh/id.pub', 'sub-human authorize abcdef012345 - --room vole-1234 --file f',
     'sub-human serve --stdio vole-1234 --link abcdef012345',
+    'sub-human host --ssh', 'node scripts/sub-human host --ssh me@far --via bastion', 'sub-human admit shk1.vole-1234.abcdef012345.k.bob --yes',
+    'sub-human revoke bob', 'sub-human prime vole-1234',
   ];
   for (const c of allow) assert.equal(bashVerdict(c, ctx), null, `should allow: ${c}`);
   for (const c of deny) assert.ok(bashVerdict(c, ctx), `should deny: ${c}`);

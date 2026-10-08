@@ -57,8 +57,8 @@
  *   promote(code, {name, locator?, force?, now?}) -> {epoch, entry, invites: [{machine, seats, invite}], note}
  *       a member's machine with a full mirror declares itself host at epoch + 1 (the person's own shell,
  *       lib/cli/handoff.js, after a confirmation): refused while the link is online, or down for less than
- *       PROMOTE_OFFLINE_MS without force. The other machines get invites to hand out by hand.
- *   demote(code, invite) -> {orphan}                           an old host that was promoted away: its log is set
+ *       PROMOTE_OFFLINE_MS without force. The other machines get sh2 invites with a PIN each, to hand out by hand.
+ *   demote(code, invite, pin?) -> {orphan, request?}            an old host that was promoted away: its log is set
  *       aside (orphaned-<time>.jsonl, kept, never merged), its orch stopped, and it mirrors the new host
  *   status(code) -> {host: hostState, doc, machines?}          for `sub-human handoff --status`
  *   HOST_DOC, ASK_DOC
@@ -212,7 +212,7 @@ function onMoved(mirror, data) {
     return { reason: `the host said room ${code} moved (epoch ${data && data.epoch}), but this copy does not hold that line yet` };
   }
   if (data.machine === machineId()) return { self: true, stop: true, reason: `this machine hosts room ${code} now (host epoch ${h.epoch})` };
-  const how = `ask ${data.host} for an invite (/sub-human host, there), then here: /sub-human join NAME INVITE`;
+  const how = `ask ${data.host} for an invite (/sub-human host, there), then here: /sub-human join NAME INVITE PIN`;
   if (!data.invite) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and no invite came for this machine; ${how}` };
   const transport = transportOf(data.locator);
   if (!transport) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine at "${data.locator}", which this machine cannot use; ${how}` };
@@ -229,7 +229,7 @@ function whyOffline(code, message) {
   const l = links.get(code);
   if (!l || !l.moved || l.token) return message;
   return `room ${code} moved to ${l.moved.host}'s machine (${l.moved.locator}), which this machine cannot reach yet (${message}). `
-    + `If it never can, ask ${l.moved.host} for an invite this machine can use (/sub-human host there), then: /sub-human join NAME INVITE`;
+    + `If it never can, ask ${l.moved.host} for an invite this machine can use (/sub-human host there), then: /sub-human join NAME INVITE PIN`;
 }
 
 // ---------- the target ----------
@@ -271,9 +271,13 @@ function machinesOf(s) {
   return by;
 }
 
-function mintAll(s, locator) {
+/** One sh2 invite per other machine (auth.mintFor): PIN-less over a link (a handoff), with a PIN by hand (promote). */
+function mintAll(s, locator, { pin = false, machines = machinesOf(s) } = {}) {
   const out = [];
-  for (const [machine, seats] of machinesOf(s)) out.push({ machine, seats, invite: auth.mintFor(s, { locator, machine, seats }).invite });
+  for (const [machine, seats] of machines) {
+    const m = auth.mintFor(s, { locator, machine, seats, pin });
+    out.push({ machine, seats, invite: m.invite, ...(m.pin ? { pin: m.pin } : {}) });
+  }
   return out;
 }
 
@@ -360,17 +364,18 @@ function promote(code, { name, locator, force = false, cwd, now = Date.now() } =
   const h = s.hostState();
   const epoch = h.epoch + 1;
   const last = s.lastId();
-  const invites = mintAll(s, locator);
+  const machines = machinesOf(s);
   const entry = {
     kind: 'host_changed', epoch, host: name, machine: machineId(), locator, promoted: true,
     text: `${name} promoted this machine to host room ${code} (host epoch ${epoch}): the old host was unreachable; lines it wrote after #${last} are not in the room`,
   };
   const note = takeOver(code, { by: name, cwd, entry });
+  const invites = mintAll(store.open(code), locator, { pin: true, machines }); // handed out by hand: each with its PIN
   const placed = store.open(code).readAll().at(-1);
   return { epoch, entry: placed, invites, note, last };
 }
 
-function demote(code, invite) {
+function demote(code, invite, pin) {
   const s = store.open(code);
   if (!s.isHost) throw err('INVALID', `room ${code} is not hosted on this machine`);
   const inv = auth.parseInvite(invite);
@@ -382,10 +387,17 @@ function demote(code, invite) {
   const orphan = s.setAside();
   for (const k of [auth.LINKS_KEY, auth.INVITES_KEY, HOST_DOC, WORKDIR, 'tasks']) s.kv.delete(k);
   for (const k of s.kv.list('presence/')) s.kv.delete(k);
-  links.set(code, { code, transport, invite, created_at: iso(Date.now()), moved: { demoted: true, locator: inv.locator, host: 'the new host' } });
+  const moved = { demoted: true, locator: inv.locator, host: 'the new host' };
+  let request = null;
+  if (inv.v === 2) {
+    // the joiner's side of an sh2 invite (its PIN; over ssh the link's own key and the pinned host key)
+    const name = identity().localSeats(code).find(n => n !== 'orch') || 'host';
+    request = require('./remote/hosting.js').joinInvite({ inv, invite, pin, name }).request || null;
+    links.set(code, { ...links.get(code), moved });
+  } else links.set(code, { code, transport, invite, created_at: iso(Date.now()), moved });
   store.forget(code);
   linkLib().start(code);
-  return { orphan };
+  return { orphan, request };
 }
 
 function status(code) {

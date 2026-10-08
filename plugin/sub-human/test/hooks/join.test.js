@@ -302,17 +302,20 @@ test('/sub-human host: an invite to my room, shown to me only (a block), once pe
   assert.match(w.hook('join', expand('host'), { as: 'me' }).json.reason, /join a room first/);
   const shown = w.hook('join', expand('host'), { as: 'alice' }).json;
   assert.equal(shown.decision, 'block');
-  const invite = /sh1\.\S+/.exec(shown.reason)[0];
+  assert.deepEqual([shown.systemMessage, shown.hookSpecificOutput], [undefined, { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true }]);
+  const invite = /sh2\.\S+/.exec(shown.reason)[0];
+  assert.match(shown.reason, /\nPIN \d{6} /);
   const auth = require(path.join(PLUGIN, 'lib', 'remote', 'auth.js'));
   assert.deepEqual(auth.parseInvite(invite).code, w.code);
   assert.equal(auth.parseInvite(invite).locator, `pipe:${w.home}`, 'this machine, this home');
-  assert.match(shown.reason, new RegExp(`/sub-human join NAME ${invite.replace(/[.]/g, '\\.')}`));
-  assert.notEqual(/sh1\.\S+/.exec(w.hook('join', expand('host'), { as: 'alice' }).json.reason)[0], invite, 'a new one each time');
+  assert.match(shown.reason, new RegExp(`/sub-human join NAME ${invite.replace(/[.]/g, '\\.')} PIN`));
+  assert.notEqual(/sh2\.\S+/.exec(w.hook('join', expand('host'), { as: 'alice' }).json.reason)[0], invite, 'a new one each time');
+  assert.match(w.hook('join', expand('host --frobnicate'), { as: 'alice' }).json.reason, /usage: \/sub-human host/);
   const inv = locator => auth.formatInvite({ code: 'vole-1234', locator, secret: 'x'.repeat(32) });
   const cases = [
     ['join bob', /usage/],
     ['join bob nonsense', /not an invite/],
-    [`join bob ${invite}`, /hosted on this machine/],
+    [`join bob ${invite} 123456`, /hosted on this machine/],
     [`join bob ${inv('tcp:far:22')}`, /through "tcp", which this machine does not support yet/],
     [`join bob ${inv('ssh:-oProxyCommand=sh@far')}`, /not a plain user@host\[:port\]/],
     [`join bob ${inv('ssh:me@far -oProxyCommand=sh')}`, /not a plain user@host\[:port\]/],

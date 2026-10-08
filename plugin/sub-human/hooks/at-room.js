@@ -10,8 +10,9 @@
 // refuses, and the person types it again. In the orch, a typed prompt is refused (it takes no typed input); with
 // no origin it runs, so a reload never loses the orch's wakes. "working" presence is written here only when no
 // origin came (with one, mod/prompt.mjs has written it).
-// A post the store refuses (RATE, AUTH, or OFFLINE in a room hosted elsewhere whose link is down) blocks the prompt
-// with the reason; nothing is queued. Typed through Remote Control (origin bridge), a refusal is also the
+// A post the store refuses (RATE, AUTH, or OFFLINE in a room hosted elsewhere whose link daemon is gone) blocks the
+// prompt with the reason. In a room hosted elsewhere whose link is down, the daemon queues the signed post instead
+// (lib/remote/outbox.js) and "⧗ queued" ends the prompt; it is sent, in order, when the link is back. Typed through Remote Control (origin bridge), a refusal is also the
 // systemMessage, which the module relays to the phone (a block line does not show there); "✓ sent" is not (the phone
 // shows the person's own row, and a relay costs a model turn).
 const path = require('node:path');
@@ -125,9 +126,14 @@ function handle(input) {
   const entry = { kind: 'say', text };
   if (normalized) entry.normalized = true;
   if (draftedByAgent(text, lastAssistantText(transcriptTail(input.transcript_path), input.prompt_id))) entry.drafted = 'agent';
-  try { room.open(me.code).append(entry, { via: 'human', from: me.name }); } catch (err) {
+  let placed;
+  try { placed = room.open(me.code).append(entry, { via: 'human', from: me.name, queue: true }); } catch (err) {
     if (!(err instanceof room.RoomError)) throw err;
-    return block(`✗ not posted: ${err.message}`); // OFFLINE, RATE, AUTH: never queued
+    return block(`✗ not posted: ${err.message}`); // OFFLINE (the outbox full, the daemon gone), RATE, AUTH
+  }
+  if (placed && placed.queued) { // a room hosted elsewhere, its link down: the daemon holds it (lib/remote/outbox.js)
+    const q = `⧗ queued: room ${me.code} is offline; this post is sent when the link is back (${placed.queued} waiting)`;
+    return out({ continue: false, stopReason: q, ...phoneNote(q), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
   }
   const sent = `✓ sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`;
   out({ continue: false, stopReason: sent, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });

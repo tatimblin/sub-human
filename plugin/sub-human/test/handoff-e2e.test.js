@@ -52,7 +52,14 @@ function stubClaude(t, job) {
 
 const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
 const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
-const inviteOf = text => /sh1\.\S+/.exec(text)[0];
+/** The sh2 invite and its PIN in a text (/sub-human host's block, promote's lines). */
+const inviteOf = text => ({ invite: /sh2\.\S+/.exec(text)[0], pin: /\b(\d{6})\b/.exec(text.slice(text.indexOf('sh2.')))[1] });
+/** /sub-human join NAME INVITE PIN (the hidden step: the link redeems it), then /sub-human NAME CODE (the seat). */
+function link2(m, seat, { invite, pin }, code) {
+  const l = m.join(seat, `join ${seat.name} ${invite} ${pin}`);
+  assert.match(l.json.reason, /linked to room/, l.stderr);
+  return m.join(seat, `${seat.name} ${code}`);
+}
 const kinds = log => log.split('\n').filter(Boolean).map(l => JSON.parse(l).kind);
 const texts = log => log.split('\n').filter(Boolean).map(l => JSON.parse(l).text);
 
@@ -82,8 +89,8 @@ async function room(t, { carol: withCarol = true } = {}) {
   assert.equal(A.join(alice, 'alice').json.decision, undefined);
   const code = A.lib(() => store.listRooms()[0]);
   await until(() => A.lib(() => identity.readMembers(code).orch || {}).job === 'aaaa1111', 8000, 50);
-  assert.equal(B.join(bob, `join bob ${inviteOf(A.join(alice, 'host').json.reason)}`).json.systemMessage, undefined);
-  if (C) assert.equal(C.join(carol, `join carol ${inviteOf(A.join(alice, 'host').json.reason)}`).json.systemMessage, undefined);
+  assert.equal(link2(B, bob, inviteOf(A.join(alice, 'host').json.reason), code).json.systemMessage, undefined);
+  if (C) assert.equal(link2(C, carol, inviteOf(A.join(alice, 'host').json.reason), code).json.systemMessage, undefined);
   return { A, B, C, alice, bob, carol, code };
 }
 
@@ -197,14 +204,13 @@ test('handoff e2e: a new host the others cannot reach: offline with what to do, 
   await until(() => /cannot reach yet/.test(C.status(code).reason || ''), 8000, 50);
   assert.match(C.status(code).reason, /moved to bob's machine \(pipe:.*sh-nowhere.*\), which this machine cannot reach yet .*\/sub-human join NAME INVITE/);
   const t0 = Date.now();
-  const refused = C.say(carol, 'anyone?');
-  assert.equal(refused.json.decision, 'block');
-  assert.ok(Date.now() - t0 < 8000, 'refused at once, never hung');
+  const queued = C.say(carol, 'anyone?'); // an @room post waits in the outbox (lib/remote/outbox.js); nothing hangs
+  assert.match(JSON.stringify(queued.json), /queued: room .* is offline/, queued.stderr);
+  assert.ok(Date.now() - t0 < 8000, 'answered at once, never hung');
   assert.match(await C.tail(carol, 1), /room link: OFFLINE \(room .* moved to bob's machine/);
 
   // bob, now the host, gives carol an invite she can use: her link re-points and she posts through it
-  const fresh = inviteOf(B.join(bob, 'host').json.reason);
-  const rejoined = C.join(carol, `join carol ${fresh}`);
+  const rejoined = link2(C, carol, inviteOf(B.join(bob, 'host').json.reason), code);
   assert.equal(rejoined.json.systemMessage, undefined, rejoined.stderr);
   assert.equal(C.lib(() => links.get(code)).transport.home, B.home);
   const back = C.say(carol, 'back via a fresh invite');
@@ -242,12 +248,13 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
   assert.match(r.stdout, /this machine hosts room .* now \(host epoch 1\)/);
   assert.match(r.stdout, /carol: .*\n.*alice: |alice: .*\n.*carol: /, r.stdout);
   const carolInvite = inviteOf(/carol: .*/.exec(r.stdout)[0]), aliceInvite = inviteOf(/alice: .*/.exec(r.stdout)[0]);
+  assert.match(B.lib(() => JSON.stringify(store.open(code).kv.get('remote/invites'))), /"machine":/, 'each bound to its machine');
   const e = B.read(code).at(-1);
   assert.deepEqual([e.kind, e.epoch, e.host, e.promoted, e.from], ['host_changed', 1, 'bob', true, 'bob']);
   await until(() => B.stub.calls().some(a => a.includes('--bg')), 8000, 50);
 
   // carol re-joins by her invite and follows bob
-  assert.equal(C.join(carol, `join carol ${carolInvite}`).json.systemMessage, undefined);
+  assert.equal(link2(C, carol, carolInvite, code).json.systemMessage, undefined);
   await until(() => C.status(code).state === 'online' && C.log(code) === B.log(code), 8000, 50);
   assert.equal(C.say(carol, 'on the promoted host').json.continue, false);
 
@@ -259,7 +266,7 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
     err => err.code === 'STALE' && /moved away from this host/.test(err.message));
 
   // demote: its own log is set aside, its orch stopped, and it mirrors bob
-  const d = A.cli(['demote', code, aliceInvite]);
+  const d = A.cli(['demote', code, aliceInvite.invite, aliceInvite.pin]);
   assert.equal(d.status, 0, d.stderr);
   assert.match(d.stdout, /mirrors its new host now; its own log is kept in .*orphaned-/);
   assert.ok(fs.readdirSync(hostDir).some(f => /^orphaned-.*\.jsonl$/.test(f)));

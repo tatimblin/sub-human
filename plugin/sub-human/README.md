@@ -18,7 +18,7 @@ claude plugin marketplace add /path/to/sub-human
 claude plugin install sub-human@sub-human
 ```
 
-**Requirements.** Claude Code 2.1.292 or newer with function hooks on (not `--bare`, not safe mode, and no policy that turns hooks off): the plugin's hooks module guards the store, checks who typed an `@room` and delivers the room, so `/sub-human` refuses to join without it. Node 22 or newer on `PATH`: every hook, the room MCP server, the room tail and the row status line run `node`. macOS or Linux only (the row launcher is a POSIX shell script and the store relies on POSIX rename and file modes); Windows is not supported. `claude plugin validate plugin/sub-human` checks the plugin. Accept workspace trust for your folder: the orch starts in your working directory, and Claude Code refuses to start a background session in an untrusted folder.
+**Requirements.** Claude Code 2.1.292 or newer with function hooks on (not `--bare`, not safe mode, and no policy that turns hooks off): the plugin's hooks module guards the store, checks who typed an `@room` and delivers the room, so `/sub-human` refuses to join without it. Node 24 or newer on `PATH`: every hook, the room MCP server, the room tail and the row status line run `node`. macOS or Linux only (the row launcher is a POSIX shell script and the store relies on POSIX rename and file modes); Windows is not supported. `claude plugin validate plugin/sub-human` checks the plugin. Accept workspace trust for your folder: the orch starts in your working directory, and Claude Code refuses to start a background session in an untrusted folder.
 
 ## Join: one command
 
@@ -34,49 +34,70 @@ The hook binds your name to your session before the model sees anything, so your
 
 ## Join from another machine
 
-A room lives on the machine that opened it, its **host**. Someone on another machine joins with an invite.
+A room lives on the machine that opened it, its **host**. Someone on another machine joins with an invite and its PIN.
 
-Two transports exist: **SSH** (the other machine reaches the host's account with an SSH key) and the **pipe** (a second sub-human home on the same machine, another `SUB_HUMAN_HOME`; what the tests and the demo use).
+Two transports exist: **SSH** (the other machine reaches the host's account with an SSH key) and the **pipe** (a second sub-human home on the same machine, another `SUB_HUMAN_HOME`; what the tests and the demo use). Host on a machine that stays awake (a dev box): when the host sleeps, the room is down for everyone.
 
-### Over SSH
+### Inviting: `/sub-human host`
 
-On the host, in your own shell (the guard refuses these to a model), make an invite that names how the other machine reaches you, then authorize the joiner's SSH public key for it:
-
-```
-sub-human invite --room vole-8126 --ssh me@devbox.local        # or me@host:2222
-sub-human authorize sh1.vole-8126.c3No….3q8… carol.pub          # prints one authorized_keys line
-sub-human authorize sh1.vole-8126.c3No….3q8… carol.pub --file ~/.ssh/authorized_keys   # appends it (0600)
-```
-
-The line is a **forced command**: `command="SUB_HUMAN_HOME=… …/.sub-human/bin/serve --stdio vole-8126 --link 1a2b3c4d5e6f",restrict ssh-ed25519 AAAA… sub-human:vole-8126:1a2b3c4d5e6f`. Whatever the other side asks to run, that key runs only this room's server, for that one link (`restrict`: no shell, pty or forwarding), and the server accepts only that link's token, or the invite reserved for it. `<home>/bin/serve` is a stable shim that finds the current plugin install and node when it runs, so the line keeps working after a plugin update or a node upgrade. Lines written by sub-human 0.2 named a versioned node and plugin path and kept running the old server after an update: run `authorize … --file` again for any link (it rewrites every such line of this home), or delete them and authorize again. Paths are absolute because sshd's `PATH` has no Homebrew. `authorize` prints by default and writes a file only with `--file`; it refuses a key that is already in the file with another line. A link id in place of the invite (with `--room CODE`) authorizes another key for a link that exists.
-
-The joiner then types `/sub-human join carol INVITE` as below. Their link runs `ssh -T -o BatchMode=yes … -- me@devbox.local` with their own SSH setup (keys, agent, `~/.ssh/config`, known_hosts). An invite names only a plain `user@host[:port]`: it can't carry an ssh option or a command. `SUB_HUMAN_SSH_OPTS` (space-separated, set in the joiner's own environment) adds ssh options, e.g. `-i KEY -o UserKnownHostsFile=FILE`; it is meant for tests and unusual setups.
-
-### Joining
-
-`/sub-human host` gives a pipe invite (for a second home on the host); an SSH invite comes from `sub-human invite --ssh` above. On the host, in a session that is in the room:
+On the host, in a session that is in the room:
 
 ```
-/sub-human host
+/sub-human host --ssh                       # this machine's address: SUB_HUMAN_SSH_ADDR, else you@hostname
+/sub-human host --ssh me@devbox.local:2222  # or name it
+/sub-human host --ssh me@devbox --via bastion   # the joiner reaches it through a jump host (ProxyJump)
+/sub-human host                             # a pipe invite, for a second home on this machine
 ```
 
 ```
-invite to room vole-8126, for one machine (shown once; keep it to yourself): sh1.vole-8126.cGlwZTov….3q8…
-There, type: /sub-human join NAME sh1.vole-8126.cGlwZTov….3q8…
+sub-human: invite to room vole-8126, for one machine, over ssh me@devbox.local. Shown once; it lasts 15 minutes.
+
+  /sub-human join NAME sh2.vole-8126.c3NoOm1l….Qm9i….YkkF… PIN
+
+PIN 482913  (send it apart from the invite, e.g. say it; 5 wrong tries burn the invite)
+The invite pins this machine's ssh host key SHA256:dl2/IPcY….
+Their join then shows them a line to send back to you: paste it here, /sub-human admit shk1.…, to let their key in.
 ```
 
-The invite is shown to you, never to your Claude, and only once. It works for one machine. Send it to the person joining. On their machine:
+This is shown to you, never to your Claude. The invite is for one machine and one use. It carries the room, how to reach the host, a single-use secret and the host's SSH host key; the **PIN is not in it**. Send the invite in chat and say the PIN some other way. Only the host checks the PIN, when the joiner's link first connects: 5 wrong tries or 15 minutes and the invite is burnt, and the room shows each wrong PIN. `sub-human host [--room CODE] [--ssh [USER@HOST]] [--via JUMP]` prints the same in your own shell.
+
+### Joining: `/sub-human join NAME INVITE PIN`
+
+On the other machine:
 
 ```
-/sub-human join carol sh1.vole-8126.cGlwZTov….3q8…
+/sub-human join carol sh2.vole-8126.c3NoOm1l….Qm9i….YkkF… 482913
 ```
+
+This step only links the machine to the room, and the hook stops the prompt there, so neither the invite nor the PIN reaches your Claude. It says what to do next:
+
+- **Pipe, or an SSH key the host already let in:** `linked to room vole-8126: the host checked your PIN. Now type: /sub-human carol vole-8126`. That second command takes your seat, as any rejoin does.
+- **SSH, the first time:** the join made an SSH key of its own for this link (`<home>/links/vole-8126/id_ed25519`; no key ever travels) and pinned the host's key from the invite (no "unknown host" prompt, and no other host key is accepted). Send the host the line it shows you; it holds no secret:
+
+  ```
+  /sub-human admit shk1.vole-8126.4f1c2a9b03de.Qm9i….carol
+  ```
+
+  The host pastes it into their session (or runs `sub-human admit shk1.…` in a shell, which asks y/N first). That is their consent: it names who asks and the key's fingerprint, and adds one `authorized_keys` line that lets that key reach only this room's server, as this one link. Your link keeps trying for 15 minutes; once the key is in, it connects and the host checks your PIN. Then type `/sub-human carol vole-8126`. Typing it earlier shows the admit line again.
+- **A wrong PIN:** `could not link to room vole-8126: wrong PIN (4 tries left)`. Type the join again with the right PIN. A rejoin never re-sends a refused PIN.
 
 The join starts a **link** on that machine: a small background process (`sub-human link CODE`) that keeps a copy of the room (a mirror) and carries that machine's posts and answers to the host. After that, everything works as on the host: `@room`, rows, proposals in the plan view, tasks. Your words are signed on your machine and checked on the host. The host runs the orch and decides proposals.
 
 - **Rejoin** (a new session on the same machine) with `/sub-human carol vole-8126`. The link is kept, and started again if it had stopped; you need no new invite.
-- **When the link is down**, your session shows one dim line, `room link: OFFLINE …`. An `@room` is refused with the reason, and an answer to a proposal is not recorded and you are told so. Nothing is queued: say it again once the link is back. The link retries on its own.
+- **When the link is down**, your session shows one dim line, `room link: OFFLINE …`. An `@room` is queued (`⧗ queued`, up to 50 posts for up to 9 minutes) and sent in order once the link is back; one that waited too long is not sent, and you are told with its words. An answer to a proposal is never queued: it is not recorded and you are told so. The link retries on its own, and at once after your machine wakes or changes network.
 - **The link stops by itself** about a minute after no session of that machine is left in the room.
-- `sub-human invite [--ssh USER@HOST[:PORT]]`, on the host, prints a new invite in your own shell; `/sub-human host` gives a pipe invite (a second home on this machine).
+- **Versions.** The two machines agree on a protocol version when the link connects. When they share none, the join says which side must update, e.g. `host runs sub-human 0.5.0 (protocol 3–4); you run 0.4.0 (protocol 1–2). Update your plugin: /plugin update sub-human`. Update the host first: a host takes joiners one version older.
+
+### Ending a link: `revoke`
+
+On the host, `/sub-human revoke carol` (in a session in the room) or `sub-human revoke LINK_ID|NAME [--room CODE]` in a shell ends a link: its token stops working, its `authorized_keys` line is removed, its seats leave the room, its running server stops, and the room shows a line. The room line for each new link names its id.
+
+### SSH details
+
+- **Forced command.** The line `admit` (or `authorize`) writes is `command="SUB_HUMAN_HOME=… …/.sub-human/bin/serve --stdio vole-8126 --link 1a2b3c4d5e6f",restrict ssh-ed25519 AAAA… sub-human:vole-8126:1a2b3c4d5e6f`. Whatever the other side asks to run, that key runs only this room's server, for that one link (`restrict`: no shell, pty or forwarding), and the server accepts only that link's token, or the invite reserved for it. `<home>/bin/serve` is a stable shim that finds the current plugin install and node when it runs, so the line keeps working after a plugin update or a node upgrade. Paths are absolute because sshd's `PATH` has no Homebrew. The file is `~/.ssh/authorized_keys`, or `SUB_HUMAN_AUTHORIZED_KEYS`, or `--file F`.
+- **The joiner's ssh.** The link runs `ssh -T -o BatchMode=yes … -i <link key> -o IdentitiesOnly=yes -o UserKnownHostsFile=<link known_hosts> -o StrictHostKeyChecking=yes -o HostKeyAlias=sub-human-CODE [-J JUMP] -- me@devbox.local`. A jump host is reached with your own `~/.ssh/config` and agent (a host alias works as `--via`). An invite names only a plain `user@host[:port]` and jump hosts: it can't carry an ssh option or a command. `SUB_HUMAN_SSH_OPTS` (space-separated, in the joiner's own environment) adds ssh options; it is meant for tests and unusual setups.
+- **MFA bastions.** `sub-human prime CODE [--persist 8h]`, on the joining machine, opens one shared connection interactively (answer the MFA prompt once), and the link rides it (`ControlPath <home>/ssh/cm-%C`). The link itself never prompts (BatchMode) and never opens a shared connection of its own; with none open it connects as usual.
+- **By hand (sh1).** `sub-human invite --room CODE --ssh me@devbox [--via JUMP]` prints an older `sh1.…` invite with no PIN, and `sub-human authorize INVITE carol.pub [--file ~/.ssh/authorized_keys]` writes the line for a public key the joiner sent you. The joiner then types `/sub-human join carol sh1.…` (one step). `authorize --file` also rewrites lines sub-human 0.2 wrote (a versioned node and plugin path) to name the shim; it refuses a key that is already in the file with another line. A link id in place of the invite (with `--room CODE`) authorizes another key for a link that exists.
 
 ### Moving the host before you close your laptop
 
@@ -94,9 +115,9 @@ When he agrees:
 1. The log records `host_changed` at the next **host epoch**, with his signed acceptance and your signed ask. Everyone sees "room CODE moved to bob's machine".
 2. Your orch stops and a new one starts on his machine. It rebuilds from the room's tasks and log; nothing of the old session moves.
 3. Your machine becomes a member: it mirrors his and your session goes on as before.
-4. Every other member's link gets, over its existing connection, a single-use invite to bob's machine meant only for that machine, and reconnects there. These invites never appear in the log, and no PIN is needed because the old link is already authenticated.
+4. Every other member's link gets, over its existing connection, a single-use `sh2` invite to bob's machine meant only for that machine, with its seats already bound, and reconnects there. These invites never appear in the log, and no PIN is needed because the old link is already authenticated.
 
-If someone's machine can't reach bob's (a laptop behind NAT, an SSH key bob's machine doesn't know), their link goes offline with a message that says so and what to do. Nothing hangs: posts are refused at once, as with any offline link. Bob runs `sub-human handoff --status` to see who hasn't reconnected. He gives that person a fresh invite (`/sub-human host`, or `sub-human invite --ssh` plus `sub-human authorize` for their key), and they run `/sub-human join NAME INVITE`. Over SSH every member needs bob's `authorized_keys` to allow their key, so it is easiest when bob's machine is a dev box everyone can already reach.
+If someone's machine can't reach bob's (a laptop behind NAT, an SSH key bob's machine doesn't know), their link goes offline with a message that says so and what to do. Nothing hangs: posts are refused at once, as with any offline link. Bob runs `sub-human handoff --status` to see who hasn't reconnected. He gives that person a fresh invite and PIN (`/sub-human host [--ssh]`; over SSH their link makes its own key and they send him the `/sub-human admit` line). They run `/sub-human join NAME INVITE PIN`, then `/sub-human NAME CODE`: the join replaces the old link and their seat joins again over the new one. Over SSH every member needs bob's `authorized_keys` to allow their key, so it is easiest when bob's machine is a dev box everyone can already reach.
 
 **There is no automatic failover**: two machines each deciding they host the room would split it. If the host is gone for good (the laptop died, not just asleep), a member whose machine has a full copy can take over by hand, in their own shell:
 
@@ -211,7 +232,7 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 
 ## The `sub-human` CLI
 
-`plugin/sub-human/scripts/sub-human` reads the room. Inside a room session it finds your room by itself. It never writes the log. It lives in the plugin's `scripts/`, not `bin/`: claude.ai rejects a plugin with a top-level `bin/` when an organization distributes it, so the CLI is not on the Bash tool's `PATH`. Claude reads the room with the room MCP tools; in your own shell, run it by its path (`node <plugin root>/scripts/sub-human …`) or alias it.
+`plugin/sub-human/scripts/sub-human` reads the room. Inside a room session it finds your room by itself. It never posts as anyone; only the host's link commands (`admit`, `revoke`) add a line from the room itself. It lives in the plugin's `scripts/`, not `bin/`: claude.ai rejects a plugin with a top-level `bin/` when an organization distributes it, so the CLI is not on the Bash tool's `PATH`. Claude reads the room with the room MCP tools; in your own shell, run it by its path (`node <plugin root>/scripts/sub-human …`) or alias it.
 
 | Command | Prints |
 |---|---|
@@ -220,14 +241,18 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 | `who` | People, the orch and their presence. |
 | `watch NAME` | NAME's thread: their own words, their Claude's posts (labelled), and their answers to proposals. |
 | `tasks [--json]` | The room's shared task list. |
-| `invite [--ssh USER@HOST[:PORT]]` | A one-time invite to a room hosted here (without `--ssh`, what `/sub-human host` gives). |
+| `host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP]` | An sh2 invite and its PIN, as `/sub-human host` shows them. |
+| `admit REQUEST [--file F] [--yes]` | Let in the SSH key a joiner's admit request (`shk1.…`) carries, for that invite's link only; asks y/N first. |
+| `revoke LINK_ID\|NAME [--room CODE] [--file F]` | End a link: token burnt, key line removed, its seats leave. |
+| `prime CODE [--persist 8h]` | On a joining machine: one shared SSH connection, opened interactively, for an MFA bastion; the link rides it. |
+| `invite [--ssh USER@HOST[:PORT]] [--via JUMP]` | An older one-step `sh1` invite (no PIN) to a room hosted here. |
 | `authorize INVITE\|LINK_ID PUBKEY [--file F]` | The `authorized_keys` forced-command line for an SSH joiner's key and that one link; `--file` appends it. |
 | `link CODE [--reset]` | Run the link to room CODE hosted elsewhere (in the foreground; joins start it in the background). `--reset` copies the room again after a FORK. |
 | `handoff NAME [--ssh USER@HOST[:PORT]]`, `handoff --status` | Ask NAME to host the room (their card decides); who hosts it at which epoch, and who hasn't reconnected. |
 | `promote CODE --confirm CODE [--force]` | This machine's copy becomes the room, when its host is gone for good. Can fork the room. |
 | `demote CODE INVITE` | On an old host the room was promoted away from: set its log aside and follow the new host. |
 
-`tail` (the room tail), `agent-statusline` (the rows) and `serve --stdio CODE` (the host's end of a link) are internal. Run `invite`, `authorize`, `link`, `serve`, `handoff`, `promote` and `demote` in your own shell: the plugin refuses them to a Claude.
+`tail` (the room tail), `agent-statusline` (the rows) and `serve --stdio CODE` (the host's end of a link) are internal. Run `host`, `admit`, `revoke`, `prime`, `invite`, `authorize`, `link`, `serve`, `handoff`, `promote` and `demote` in your own shell: the plugin refuses them to a Claude.
 
 ## The room tail
 
@@ -265,12 +290,14 @@ The security model is one machine, one OS user, per room: everyone on the host i
 
 Remote rooms add:
 
-- **An invite is shown once** and works for one machine; the host keeps only its hash. An invite is untrusted input: its locator is a home path (pipe) or a plain `user@host[:port]` (ssh), and the link always runs this plugin's own server, or `ssh` with fixed options, never a command or an ssh option the invite names.
-- **Over SSH, the host's `authorized_keys` decides what runs**: `sub-human authorize` writes a `command="… serve --stdio CODE --link ID",restrict` line, so the key reaches that room's server for that link and nothing else, and the server refuses another link's token there.
+- **An invite is shown once** and works for one machine; the host keeps only its hash. An invite is untrusted input: its locator is a home path (pipe) or a plain `user@host[:port]` with plain jump hosts (ssh), and the link always runs this plugin's own server, or `ssh` with fixed options, never a command or an ssh option the invite names.
+- **The PIN is a second factor checked online only.** It is never in the invite and never seals or derives anything: the host keeps `sha256(secret:PIN)`, checks it at the link's first connection, and burns the invite after 5 wrong tries, 15 minutes, or its one use. The join that carries it is hidden from your Claude (the prompt is blocked and suppressed), and the joining machine drops it with the invite once the host answered. A leaked invite alone gets nowhere; a leaked invite plus a key the host admitted gets 5 guesses.
+- **Over SSH, keys are made where they are used.** The joiner's link key is made on the joiner's machine; the host admits only its public key, by pasting the request, and the invite pins the host's SSH host key on the joiner's side.
+- **Over SSH, the host's `authorized_keys` decides what runs**: `admit` (or `sub-human authorize`) writes a `command="… serve --stdio CODE --link ID",restrict` line, so the key reaches that room's server for that link and nothing else, and the server refuses another link's token there.
 - **A link token is a seat-level credential.** The invite turns into a token at the link's first connection. It is stored in clear in `<home>/links/<CODE>.json` (0600, the same trust as the seat key) and hashed on the host. Whoever holds it can post as the seats joined over that link, never as anyone else: the host checks every entry's `from` against them and its signature against the key pinned in the log.
 - **Keys are pinned strictly.** A name is its key for the room's life, on every machine. A lost key, or the same name from a new machine, means a new name.
 - **Addressed posts are not private.** A post to one person (`to`) has its own rate limit, but the whole room reads the log, on every machine.
-- **The guard denies `sub-human invite`, `authorize`, `link`, `serve`, `handoff`, `promote` and `demote` to a model**, and `/sub-human host` shows the invite to you, not to your Claude.
+- **The guard denies `sub-human host`, `admit`, `revoke`, `prime`, `invite`, `authorize`, `link`, `serve`, `handoff`, `promote` and `demote` to a model**, and `/sub-human host` shows the invite and PIN to you, not to your Claude.
 - **Moving the host needs the new host's person.** Only their own answer on the handoff card moves the room, signed with their seat key. The `host_changed` entry carries that signature and the old host's signed ask. A handoff's invites travel only over each machine's existing authenticated link. Each one works for one machine and is bound to that machine's seats. The old host keeps them for a day so a member that reconnects late still gets one, then they lapse. A `promote` is a person's own command in their own shell, recorded in the log with their name.
 
 The plugin doesn't stop a hostile local user, who can read the keys and write the files directly. The hash chain makes such edits visible. It doesn't prevent them.
@@ -285,7 +312,7 @@ The plugin doesn't stop a hostile local user, who can read the keys and write th
 | No rows in the panel | Accept workspace trust for this folder. After a resume they come back by themselves. |
 | A proposal didn't open | Ask your Claude to "show me the proposal". `sub-human read` shows who a proposal names. |
 | `/sub-human` says it needs Claude Code 2.1.292+ with function hooks on | Update Claude Code, and start it without `--bare` or safe mode; a managed policy that turns hooks off also prevents it. |
-| `room link: OFFLINE` | The link can't reach the host. It retries by itself (1 s, doubling to 10 s); posts and answers are refused, not queued, until it is back, and `room link: back online` says when. `~/.sub-human/links/CODE.log` says why. |
+| `room link: OFFLINE` | The link can't reach the host. It retries by itself (from 1 s, with jitter, up to 10 s; at once after a wake or a network change); `@room` posts are queued, answers are refused, until it is back, and `room link: back online` says when (and how many queued posts went out). `~/.sub-human/links/CODE.log` says why; `~/.sub-human/links/CODE.state.json` holds the link's state. |
 | `room link: OFFLINE (room CODE moved to NAME's machine …, which this machine cannot reach yet …)` | A handoff moved the room and this machine can't reach the new host. Ask its person for an invite your machine can use, then `/sub-human join NAME INVITE`. |
 | `STALE` | A write or a link reached a host the room has moved away from, or a copy that has not caught up with the move. A copy catches up by itself. An old host that was promoted away runs `sub-human demote CODE INVITE`. |
 | `room link: FORK` | This machine's copy no longer matches the host's log. Nothing more syncs. Run `sub-human link --reset CODE` in your shell: the link copies the room again from the host. |

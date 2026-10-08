@@ -9,12 +9,14 @@
  *
  * Reads: the parent's, over the mirror directory.
  * Writes (RoomError codes in lib/remote/protocol.js CODES; OFFLINE: the daemon or the host is unreachable, or the
- * deadline passed, and nothing is queued; a daemon that stopped for good gives its own reason and code, from its
+ * deadline passed, and nothing is queued but an @room post (append, opts.queue); a daemon that stopped for good gives its own reason and code, from its
  * document `link`, e.g. AUTH for a refused invite):
  *   append(entry, opts) = place(toPayload(...))   signed here (the hook's signer, via=human), placed by the host:
  *                            op `append`. The placed entry is returned once the mirror holds it (the host streams
  *                            a write's lines before its reply: read-your-writes). A via=system payload is refused
- *                            by the host (AUTH): the host writes the room's own entries.
+ *                            by the host (AUTH): the host writes the room's own entries. opts.queue (hooks/at-room.js
+ *                            only): with the link down the daemon queues an @room post instead of refusing it
+ *                            (lib/remote/outbox.js); the signed payload is returned with queued: n and no id.
  *   members.join(rec)        op `join` with the seat's public key and a proof (lib/remote/auth.js proveSeat), both
  *                            from the hook's signer; the host logs member_joined. Any RoomError comes back as
  *                            {ok: false, error, code}
@@ -76,8 +78,12 @@ class MirrorRoomStore extends FsRoomStore {
     this.kv = { ...kv, set: local('kv.set', kv.set), update: local('kv.update', kv.update), delete: local('kv.delete', kv.delete) };
   }
 
-  /** @override the host places it: op `append`. */
-  place(payload) { return tag(this._call('append', { payload }).entry, this); }
+  /** @override the host places it: op `append`. opts.queue (an @room post): while the link is down the daemon may
+   * queue it (lib/remote/outbox.js); the payload comes back with `queued: n` (the posts waiting) and no id. */
+  place(payload, { queue } = {}) {
+    const r = this._call('append', queue ? { payload, queue: true } : { payload });
+    return r.queued ? { ...payload, queued: r.queued } : tag(r.entry, this);
+  }
 
   /** An op the daemon relays to the host as it is (lib/handoff.js: handoff.accept, handoff.refuse). */
   request(op, params, opts) { return this._call(op, params, opts); }

@@ -40,6 +40,7 @@
  *   demo-lib.js latest-plan                       print the latest plan_rev hash
  *   demo-lib.js readonly <session>                exit 0 if a read-only client is attached
  *   demo-lib.js invite <session>                  print the invite /sub-human host showed in that pane (exit 1: none)
+ *   demo-lib.js pin <session>                     print the PIN /sub-human host showed with it (exit 1: none)
  *   demo-lib.js wait-idle <session> [--timeout S] [--quiet S]   wait until the main prompt is idle (no
  *                                                  "esc to interrupt" and the pane unchanged for --quiet S, 3)
  *   demo-lib.js card <session> <Not yet|Agree|Object> [note]   answer the open proposal: in the plan view (Agree =
@@ -76,7 +77,7 @@ const { execFileSync, spawn, spawnSync } = require('node:child_process');
 const { roomCode, readLog, strip } = require('./snap.js');
 const paths = require('./lib/paths.js');
 const { readJson, jsonl, esc } = require('./lib/io.js');
-const { panelRows, cardState, planState, inviteIn } = require('./lib/panes.js');
+const { panelRows, cardState, planState, inviteIn, pinIn } = require('./lib/panes.js');
 
 const REPO = paths.REPO;
 const SNAP_DIR = () => (process.env.SNAP_DIR ? path.resolve(process.env.SNAP_DIR) : path.join(REPO, 'docs/rebuild/screens'));
@@ -575,6 +576,7 @@ const COMMANDS = {
   readonly: async o => exit(readonlyAttached(o._[0])),
   pane: async o => { process.stdout.write(pane(o._[0])); return 0; },
   invite: async o => { const inv = inviteIn(pane(o._[0])); if (inv) process.stdout.write(inv + '\n'); return exit(!!inv); },
+  pin: async o => { const p = pinIn(pane(o._[0])); if (p) process.stdout.write(p + '\n'); return exit(!!p); },
   'wait-pane': waitPane,
   'wait-paint': waitPaint,
   'wait-exited': waitExited,

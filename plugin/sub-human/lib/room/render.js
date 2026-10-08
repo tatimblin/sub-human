@@ -42,8 +42,17 @@ const BREAKS = /\r\n|[\r\v\f\u0085\u2028\u2029]/g;
 const UNSAFE = /[\u0000-\u0008\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
 const safeText = t => String(t).replace(BREAKS, '\n').replace(UNSAFE, '\ufffd');
 
+/**
+ * A via this version does not know (a newer host wrote it) is never shown as the person's own words, nor as their
+ * Claude's: "bob (via relay)".
+ */
+const KNOWN_VIAS = new Set(['human', 'agent', 'system']);
+const otherVia = e => (e.via !== undefined && !KNOWN_VIAS.has(e.via)
+  ? `${e.from} (via ${/^[a-z_-]{1,16}$/.test(String(e.via)) ? e.via : '?'})` : null);
+
 const who = e => {
   if (e.via === 'system') return 'room';
+  if (otherVia(e)) return otherVia(e);
   return e.via === 'agent' && e.from !== 'orch' ? `${e.from}'s Claude` : e.from;
 };
 
@@ -105,6 +114,7 @@ const tailLine = e => line(e);
 /** Who an entry is from, as a group chat names them: "bob", "bob's Claude", "orch", "room". */
 function chatWho(e) {
   if (e.via === 'system') return 'room';
+  if (otherVia(e)) return otherVia(e);
   if (e.from === 'orch') return 'orch';
   if (e.via === 'agent') return `${e.from}'s Claude`;
   if (unverifiedHuman(e)) return `${e.from} ${UNVERIFIED}`;

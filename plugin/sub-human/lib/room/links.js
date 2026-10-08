@@ -7,9 +7,12 @@
  * Machine-local, like the session indexes: it never syncs. Zero dependencies beyond lib/home.js, lib/io.js and
  * lib/text.js.
  *
- * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, created_at}
- *   transport  how the daemon reaches the host's server (lib/remote/link.js transportOf: an invite's locator)
+ * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, pin?, created_at}
+ *   transport  how the daemon reaches the host's server (lib/remote/link.js transportOf: an invite's locator), plus
+ *              what this machine adds for ssh (lib/remote/transports/ssh.js: key, knownHosts, alias, mux), files in
+ *              dirOf(code)
  *   invite     the invite the daemon redeems at its first hello, until it holds the token
+ *   pin        an sh2 invite's PIN, sent with it at that hello and dropped with it (the host checks it)
  *   token      the link's credential (the server keeps its sha256): kept in clear here, like the seat key
  * The resume point is the mirror itself (its last line and that line's hash), not a field here.
  *
@@ -20,6 +23,27 @@
  *   list() -> [code]
  *   linksDir() -> string              <home>/links
  *   logFile(code) -> string           <home>/links/<code>.log: the daemon's stderr
+ *   dirOf(code) -> string             <home>/links/<code>/: the link's own ssh key and pinned known_hosts (0700);
+ *                                     remove() deletes it too
+ *
+ * The link's state, for observers (doctor, the statusline, the room row): <home>/links/<code>.state.json (0600),
+ * written by the link daemon (lib/remote/link.js) on every change of state and every pong, never by anyone else.
+ * Read it; a file whose pid is not alive is a daemon that is gone (state then means nothing).
+ *   LinkState = {state, since, attempt, lastError, rttMs, queued, pid, detail, at}
+ *     state      'up' (online: hooks' writes cross now) | 'connecting' (dialling: the first connection, or a
+ *                redial after a failure, a wake or a network change) | 'down' (waiting to retry, or stopped)
+ *     since      ISO time this state began
+ *     attempt    dials since the link was last up (0 while up)
+ *     lastError  the last failure's message, or null (kept while up: why it last went down)
+ *     rttMs      the last ping's round trip, or null (no pong yet, or a server without ping)
+ *     queued     @room posts waiting in the outbox (lib/remote/outbox.js)
+ *     pid        the daemon's pid
+ *     detail     the daemon's own state: online | connecting | offline | fork | stopped (fork and stopped are for good:
+ *                `sub-human link --reset CODE` after a fork; a new join after stopped)
+ *     at         ISO time the record was written
+ *   stateFile(code) -> string         <home>/links/<code>.state.json
+ *   readState(code) -> LinkState | null
+ *   writeState(code, rec)             atomic (the daemon)
  */
 
 const fs = require('node:fs');
@@ -71,8 +95,15 @@ function set(code, link) {
  * @returns {boolean}
  */
 function remove(code) {
+  try { fs.rmSync(dirOf(code), { recursive: true, force: true }); } catch { /* none */ }
   try { fs.unlinkSync(fileOf(code)); return true; } catch { return false; }
 }
+
+/**
+ * @param {string} code
+ * @returns {string}
+ */
+const dirOf = code => fileOf(code).slice(0, -'.json'.length);
 
 /** @returns {string[]} */
 function list() {
@@ -87,4 +118,26 @@ function list() {
  */
 const logFile = code => fileOf(code, 'log');
 
-module.exports = { linksDir, get, has, set, remove, list, logFile };
+/**
+ * @param {string} code
+ * @returns {string}
+ */
+const stateFile = code => fileOf(code, 'state.json');
+
+/**
+ * @param {string} code
+ * @returns {object | null}
+ */
+const readState = code => (typeof code === 'string' && CODE_RE.test(code) ? readJson(stateFile(code)) : null);
+
+/**
+ * @param {string} code
+ * @param {object} rec
+ */
+function writeState(code, rec) {
+  const file = stateFile(code);
+  fs.mkdirSync(linksDir(), { recursive: true, mode: 0o700 });
+  writeJsonAtomic(file, rec, { mode: 0o600 });
+}
+
+module.exports = { linksDir, get, has, set, remove, list, logFile, dirOf, stateFile, readState, writeState };

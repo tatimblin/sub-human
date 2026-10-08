@@ -11,6 +11,7 @@
  *     lease(seat)                     the hooks module's hello lease for the seat's session (with its nonce), as
  *                                     hooks/mod-hello.js writes it; join and every prompt write it first
  *     join(seat, args), say(seat, text), plain(seat, text)          the join expansion; an @room post; a prompt
+ *     invite1(code) -> string         an sh1 invite (`sub-human invite`, one step, no PIN) to a room hosted here
  *     workers(script, input, seat) -> n     worker threads that hook started (test/support/worker-probe.js)
  *     tail(seat, seconds) -> Promise<stdout>   seat's tail (scripts/sub-human tail, its NDJSON events) for that long
  *     lib(fn)                         fn with this machine's home, in this process
@@ -54,6 +55,12 @@ class Machine {
   }
 
   join(seat, args) { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat); }
+  /** An sh1 invite (one step, no PIN) to room code hosted here: `sub-human invite`. */
+  invite1(code) {
+    const r = spawnSync(process.execPath, [h.BIN, 'invite', '--room', code], { env: this.env(null), encoding: 'utf8', cwd: this.cwd });
+    if (r.status !== 0) throw new Error(`sub-human invite: ${r.stderr}`);
+    return r.stdout.trim();
+  }
   plain(seat, text) {
     this.lease(seat);
     const input = { hook_event_name: 'UserPromptSubmit', prompt: text, prompt_id: crypto.randomUUID(), sub_human_origin: 'composer', sub_human_nonce: seat.nonce };
