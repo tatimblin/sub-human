@@ -1,6 +1,6 @@
 # sub-human
 
-A Claude Code plugin for working together from separate sessions on one machine. You join a room with one command and keep working however you like. Your Claude learns who is in the room and how to reach them, and nothing else is prescribed: no workflow, no required plan.
+A Claude Code plugin for working together from separate sessions, on one machine or, with a link, from others. You join a room with one command and keep working however you like. Your Claude learns who is in the room and how to reach them, and nothing else is prescribed: no workflow, no required plan.
 
 - **`@room`** posts your exact words to the room. A hook posts them, so no model paraphrases them.
 - **Claudes talk to each other natively,** with Claude Code's own `SendMessage` and `ListAgents`, addressed `NAME.CODE`.
@@ -39,6 +39,40 @@ joined vole-8126 as bob (alice, orch here)
 ```
 
 The hook binds your name to your session before the model sees anything, so your Claude can never pick or change it. A name already in the room is refused. Your identity survives `/clear`, compaction and `--resume`. The command shows as `/sub-human:sub-human` in the picker; typing the bare `/sub-human` works.
+
+## Join from another machine
+
+A room lives on the machine that opened it, its **host**. Someone on another machine joins with an invite.
+
+**Today only the pipe transport exists**: the "other machine" is a second sub-human home on the same machine (another `SUB_HUMAN_HOME`). SSH is next; it needs no change to the protocol or to these commands.
+
+On the host, in a session that is in the room:
+
+```
+/sub-human host
+```
+
+```
+invite to room vole-8126, for one machine (shown once; keep it to yourself): sh1.vole-8126.cGlwZTov….3q8…
+There, type: /sub-human join NAME sh1.vole-8126.cGlwZTov….3q8…
+```
+
+The invite is shown to you, never to your Claude, and only once. It works for one machine. Send it to the person joining. On their machine:
+
+```
+/sub-human join carol sh1.vole-8126.cGlwZTov….3q8…
+```
+
+```
+sub-human: joined vole-8126 as carol (alice, bob, orch here)
+```
+
+The join starts a **link** on that machine: a small background process (`sub-human link CODE`) that keeps a copy of the room (a mirror) and carries that machine's posts and answers to the host. After that, everything works as on the host: `@room`, rows, proposals in the plan view, tasks. Your words are signed on your machine and checked on the host. The host runs the orch and decides proposals.
+
+- **Rejoin** (a new session on the same machine) with `/sub-human carol vole-8126`. The link is kept, and started again if it had stopped; you need no new invite.
+- **When the link is down**, your session shows one dim line, `room link: OFFLINE …`. An `@room` is refused with the reason, and an answer to a proposal is not recorded and you are told so. Nothing is queued: say it again once the link is back. The link retries on its own.
+- **The link stops by itself** about a minute after no session of that machine is left in the room.
+- `sub-human invite`, on the host, prints a new invite in your own shell.
 
 ## Rows
 
@@ -152,8 +186,10 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 | `who` | People, the orch and their presence. |
 | `watch NAME` | NAME's thread: their own words, their Claude's posts (labelled), and their answers to proposals. |
 | `tasks [--json]` | The room's shared task list. |
+| `invite` | A one-time invite to a room hosted here (what `/sub-human host` gives). |
+| `link CODE [--reset]` | Run the link to room CODE hosted elsewhere (in the foreground; joins start it in the background). `--reset` copies the room again after a FORK. |
 
-`tail` (the room tail) and `agent-statusline` (the rows) are internal.
+`tail` (the room tail), `agent-statusline` (the rows) and `serve --stdio CODE` (the host's end of a link) are internal. Run `invite`, `link` and `serve` in your own shell: the plugin refuses them to a Claude.
 
 ## The room tail
 
@@ -166,11 +202,11 @@ In a session that has joined a room, the plugin's hooks module runs one `node` c
 
 ## Room storage
 
-Everything the plugin keeps lives in `~/.sub-human/` (rooms, seats, seat keys in `keys/`, the row launcher in `bin/row-status`), or in `$SUB_HUMAN_HOME` when that is set. Set it the same way for every session that should share rooms: sessions with different homes never see each other. Rooms live in `<home>/rooms/<CODE>/`. Each has an append-only JSON-lines log. Every entry carries `from`, `via` (`human`, `agent` or `system`), `kind` and a `prev` hash of the previous line, so edits are visible. Proposals are stored by hash in `plans/`, the task mirror in `tasks.json`, and row state in `rows/`.
+Everything the plugin keeps lives in `~/.sub-human/` (rooms, seats, seat keys in `keys/`, the row launcher in `bin/row-status`), or in `$SUB_HUMAN_HOME` when that is set. Set it the same way for every session that should share rooms: sessions with different homes never see each other, except through a link (see **Join from another machine**). Rooms live in `<home>/rooms/<CODE>/`. Each has an append-only JSON-lines log. Every entry carries `from`, `via` (`human`, `agent` or `system`), `kind` and a `prev` hash of the previous line, so edits are visible. Proposals are stored by hash in `plans/`, the task mirror in `tasks.json`, and row state in `rows/`. On a machine that joined a room hosted elsewhere, `<home>/links/<CODE>.json` is the link (with its token; file 0600) and `<home>/links/<CODE>.log` its log; `rooms/<CODE>/` there is the mirror, written only by the link.
 
 ## Threat model
 
-The security model is one machine, one OS user. Everyone in a room is a trusted collaborator running as that same user, so names aren't defended against forgery between people. The goal is narrower: **a model can never speak or consent as a person**. That covers any member's Claude, including one steered by text someone posted in the room. It can't forge an entry with `via=human`, and it can't hide one.
+The security model is one machine, one OS user, per room: everyone on the host is a trusted collaborator running as that same user, so names aren't defended against forgery between people. **The host is trusted** by everyone who joins it: it holds the room, places every entry and decides proposals. The goal is narrower: **a model can never speak or consent as a person**. That covers any member's Claude, including one steered by text someone posted in the room. It can't forge an entry with `via=human`, and it can't hide one.
 
 - Agreement and objection come only from the plan view or the card, which the human answers. A plan text edited before "Yes", answers that come with the model's call, an AFK timeout or a stale hash are dropped. The only dialog-free exit the hooks allow records nothing.
 - Your words reach the room only through `@room`, posted by a hook. Your Claude's posts are always labelled `via=agent`. `SendMessage` between sessions is Claude to Claude.
@@ -189,6 +225,14 @@ The security model is one machine, one OS user. Everyone in a room is a trusted 
 - **Row launcher.** The status-line launcher in `<home>/bin/row-status` runs only plugin roots outside temp directories (`/tmp`, `os.tmpdir()`), unless `SUB_HUMAN_ALLOW_TMP_ROOT=1` is set.
 - Only a task's owner, through their own Claude's `done` request, can complete it.
 
+Remote rooms add:
+
+- **An invite is shown once** and works for one machine; the host keeps only its hash. An invite is untrusted input: its locator is only a home path, and the link always runs this plugin's own server with it, never a command the invite names.
+- **A link token is a seat-level credential.** The invite turns into a token at the link's first connection. It is stored in clear in `<home>/links/<CODE>.json` (0600, the same trust as the seat key) and hashed on the host. Whoever holds it can post as the seats joined over that link, never as anyone else: the host checks every entry's `from` against them and its signature against the key pinned in the log.
+- **Keys are pinned strictly.** A name is its key for the room's life, on every machine. A lost key, or the same name from a new machine, means a new name.
+- **Addressed posts are not private.** A post to one person (`to`) has its own rate limit, but the whole room reads the log, on every machine.
+- **The guard denies `sub-human invite`, `link` and `serve` to a model**, and `/sub-human host` shows the invite to you, not to your Claude.
+
 The plugin doesn't stop a hostile local user, who can read the keys and write the files directly. The hash chain makes such edits visible. It doesn't prevent them.
 
 ## Troubleshooting
@@ -201,10 +245,14 @@ The plugin doesn't stop a hostile local user, who can read the keys and write th
 | No rows in the panel | Accept workspace trust for this folder. After a resume they come back by themselves. |
 | A proposal didn't open | Ask your Claude to "show me the proposal". `sub-human read` shows who a proposal names. |
 | `/sub-human` says it needs Claude Code 2.1.292+ with function hooks on | Update Claude Code, and start it without `--bare` or safe mode; a managed policy that turns hooks off also prevents it. |
+| `room link: OFFLINE` | The link can't reach the host. It retries by itself (1 s, doubling to 30 s); posts and answers are refused, not queued, until it is back. `~/.sub-human/links/CODE.log` says why. |
+| `room link: FORK` | This machine's copy no longer matches the host's log. Nothing more syncs. Run `sub-human link --reset CODE` in your shell: the link copies the room again from the host. |
+| `AUTH` after upgrading the plugin | A seat that joined before keys were pinned can't post as you. Rejoin with `/sub-human NAME CODE`; if the name's key is lost, join with a new name. |
 
 ## Limits
 
-- **Same machine only.** All sessions share the room directory.
+- **Remote joining needs a transport.** Only the pipe exists today (a second home on the same machine); SSH is next.
+- **A name is one machine's**: its key stays where it joined first.
 - Agent posts are rate-limited, so Claudes can't wake each other in a loop.
 
 ## Leaving

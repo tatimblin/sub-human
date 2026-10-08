@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# demo.sh — drive the slim-build walkthrough scenes S1–S10 with two member seats in detached tmux
-# sessions (sh-alice, sh-bob) and snap every pane after every step (scripts/snap.js → docs/rebuild/screens/).
+# demo.sh — drive the slim-build walkthrough scenes S1–S11 with two member seats in detached tmux
+# sessions (sh-alice, sh-bob), and in S11 a third (sh-carol) from a second home, and snap every pane after every
+# step (scripts/snap.js → docs/rebuild/screens/).
 #
 #   scripts/demo.sh [--windows] [--pause] [--only S6[,S7]] [--from S6] [--to S3] [--member-model MODEL] [--no-reset]
 #                   (--to: stop after that scene; a fresh run unless --from/--only is given too)
@@ -14,9 +15,11 @@
 #           LANG TMPDIR SUB_HUMAN_HOME).
 # --only / --from: run a subset against already-running sessions (scenes depend on earlier state). A subset that
 #           includes S1 starts fresh instead (S1 opens the room), e.g. the short run --only S1,S2,S4,S5,S9,S9b,S10.
+#           S11's carol has her own home, SUB_HUMAN_HOME=/tmp/sh-demo/home2: another machine, on this one.
 # screens/run.json lists the scenes this run planned ({scenes, partial}; a resume adds to it): checks.js skips the
 # checks of scenes no invocation planned, and still fails a planned scene with no evidence.
-# Scenes: S1–S9, S9b (a multi-line post stays nested), S10.
+# Scenes: S1–S9, S9b (a multi-line post stays nested), S11 (a seat from a second home over the pipe link), S10
+# (S11 runs before S10, which closes the room).
 # Waits: every wait is recorded in screens/waits.jsonl. A wait the scene depends on (`need …`) aborts the scene
 # on timeout: the panes are snapped as "aborted", the run stops and prints how to resume (--from SCENE). Settles
 # before a snap (`settle`) and evidence captures are best-effort. After the run: node scripts/checks.js && node scripts/walkthrough.js
@@ -26,6 +29,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLUGIN="$REPO/plugin/sub-human"
 BASE=/tmp/sh-demo
 export SUB_HUMAN_HOME="$BASE/home"
+HOME2="$BASE/home2"   # S11: carol's home, standing in for another machine
 export SNAP_DIR="${SNAP_DIR:-$REPO/docs/rebuild/screens}"
 LIB="node $REPO/scripts/demo-lib.js"
 SEATS=(alice bob)
@@ -51,7 +55,7 @@ while [ $# -gt 0 ]; do
     --to) TO="$2"; shift ;;
     --member-model) MEMBER_MODEL="$2"; shift ;;
     --no-reset) RESET=0 ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
@@ -65,14 +69,15 @@ write_launcher() {
   mkdir -p "$BASE"
   cat > "$BASE/launch.sh" <<EOF
 #!/usr/bin/env bash
-# launch.sh SEAT [claude args…] — a clean env: env -i, then only what a login shell would give. The tmux
+# launch.sh SEAT [claude args…] — a clean env: env -i, then only what a login shell would give (SH_SEAT_HOME, when
+# set, is that seat's SUB_HUMAN_HOME: S11's second home). The tmux
 # server's global env may carry CLAUDE_CODE_* vars from whichever Claude Code session started it: a seat
 # (and the orch it spawns) must inherit none of them.
 seat=\$1; shift
 cd "$BASE/\$seat" || exit 1
 exec env -i HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-${USER:-}}" SHELL="${SHELL:-/bin/zsh}" \\
   PATH="$PATH" TERM="\${TERM:-xterm-256color}" LANG="${LANG:-en_US.UTF-8}" TMPDIR="${TMPDIR:-/tmp/}" \\
-  SUB_HUMAN_HOME="$SUB_HUMAN_HOME" \\
+  SUB_HUMAN_HOME="\${SH_SEAT_HOME:-$SUB_HUMAN_HOME}" \\
   claude "\$@"
 EOF
   chmod +x "$BASE/launch.sh"
@@ -89,6 +94,7 @@ start_seat() { # seat [extra claude args…]
   local seat=$1; shift
   local s="sh-$seat"
   local cmd="$BASE/launch.sh $seat $(claude_args "$seat" "$@")"
+  [ "$seat" = carol ] && cmd="SH_SEAT_HOME=$HOME2 $cmd"   # S11: another machine's home
   if tmux has-session -t "$s" 2>/dev/null; then
     tmux respawn-pane -k -t "$s:" "$cmd"
   else
@@ -101,7 +107,7 @@ start_seat() { # seat [extra claude args…]
 
 setup() {
   if [ "$RESET" = 1 ]; then
-    for s in sh-orch sh-alice sh-bob sh-viewer; do tmux kill-session -t "$s" 2>/dev/null; done
+    for s in sh-orch sh-alice sh-bob sh-carol sh-viewer; do tmux kill-session -t "$s" 2>/dev/null; done
     rm -rf "$BASE"
     mkdir -p "$SUB_HUMAN_HOME"
     for seat in "${SEATS[@]}"; do cp -R "$REPO/demo/app.pristine" "$BASE/$seat"; done
@@ -462,7 +468,64 @@ S10() { # leave: both exit → reap completes task 1 and stops the orch
   snap "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)"
 }
 
-ALL=(S1 S2 S3 S4 S5 S6 S7 S8 S9 S9b S10)
+# S11: what carol says, and the proposal alice's Claude puts to her alone
+SAY11="hello from the second home"
+PLAN11=$'# Carol reviews the parser tests\n\n1. carol reads the parser tests\n2. she adds one case for an empty body\n'
+
+S11() { # remote: carol joins from a second home (another machine, on this one) over the pipe link; @room; a signoff
+  local before; before=$($LIB log-max)
+  submit alice "/sub-human host"
+  need wait_pane alice "invite to room $(room)" 30 --what "alice's pane shows the invite (to her, never to her Claude)" || return 1
+  local invite; invite=$($LIB invite sh-alice)
+  [ -n "$invite" ] || { ABORT="S11: no invite readable in alice's pane"; return 1; }
+  [ -d "$BASE/carol" ] || cp -R "$REPO/demo/app.pristine" "$BASE/carol"
+  mkdir -p "$HOME2"
+  start_seat carol
+  need $LIB ready sh-carol --timeout 90 || return 1
+  local SESSIONS="$SESSIONS,sh-carol"   # snap carol's pane too, in this scene
+  submit carol "/sub-human join carol $invite"
+  need wait_log --kind member_joined --from carol --after "$before" --timeout 60 --what "the host logs carol's join (her link redeemed the invite)" || return 1
+  need wait_pane carol "joined $(room) as carol" 60 || return 1
+  need wait_pane carol "$(panel_row "$(room)")" 90 --what "carol's room row" || return 1
+  settle alice carol
+  snap "alice runs /sub-human host: a one-time invite, shown to her only. carol, in another home, joins with it: her link daemon mirrors the room"
+  local b1; b1=$($LIB log-max)
+  submit carol "@room $SAY11"
+  need wait_log --kind say --from carol --via human --after "$b1" --timeout 30 || return 1
+  need wait_pane alice "carol: $SAY11" 60 --what "alice's pane shows carol's exact words" || return 1
+  need $LIB wait-idle sh-alice --timeout 90 || return 1
+  settle carol
+  snap "carol posts with @room from the second home: signed there, placed and verified on the host, back in her mirror"
+  local b2; b2=$($LIB log-max)
+  local plan; plan=$($LIB json-string "$PLAN11")
+  submit alice "call the mcp__plugin_sub-human_room__propose tool with text $plan and approvers [\"carol\"]. Only that tool call: do not edit any file"
+  need wait_log --kind proposal --from alice --after "$b2" --timeout 120 || return 1
+  need wait_card carol "carol's proposal is open (its plan was prefetched into her mirror)" || return 1
+  sleep 2   # the plan view's first paint
+  snap "alice's Claude proposes to carol: it opens in carol's plan view on the other home"
+  local p; p=$($LIB last-id --kind proposal)
+  need card_answer carol Agree || return 1
+  need wait_log --kind signoff --from carol --via human --after "$p" --timeout 30 || return 1
+  need wait_log --kind decision --after "$p" --timeout 30 --what "the host decides (carol was the only approver)" || return 1
+  need $LIB wait-idle sh-carol --timeout 90 || return 1
+  mkdir -p "$SNAP_DIR/state/S11"
+  local r; r=$(room)
+  cp "$HOME2/rooms/$r/log.jsonl" "$SNAP_DIR/state/S11/mirror-log.jsonl" 2>/dev/null
+  cp "$HOME2/rooms/$r/link.json" "$SNAP_DIR/state/S11/link-status.json" 2>/dev/null
+  cp "$HOME2/machine.json" "$SNAP_DIR/state/S11/machine-carol.json" 2>/dev/null
+  cp "$SUB_HUMAN_HOME/machine.json" "$SNAP_DIR/state/S11/machine-host.json" 2>/dev/null
+  # the link file holds the token: keep only its shape
+  $LIB link-shape "$HOME2/links/$r.json" > "$SNAP_DIR/state/S11/link-file.json" 2>/dev/null
+  settle alice carol
+  snap "carol agrees in the plan view: her signoff is signed on her machine, and the host logs the decision"
+  local b3; b3=$($LIB log-max)
+  exit_seat carol
+  need wait_log --kind member_left --from carol --after "$b3" --timeout 30 || return 1
+  sleep 2   # the exited pane's last paint
+  snap "carol exits: the host logs her leave; her link daemon stops on its own once no seat of her home is left"
+}
+
+ALL=(S1 S2 S3 S4 S5 S6 S7 S8 S9 S9b S11 S10)
 
 # ---------- main --------------------------------------------------------------------------------
 
@@ -505,4 +568,4 @@ for SCENE in "${ALL[@]}"; do
 done
 
 say "done. screens in ${SNAP_DIR#$REPO/}; then: node scripts/checks.js && node scripts/walkthrough.js"
-echo "sessions: tmux attach -r -t sh-alice | sh-bob   (scripts/demo.sh stop); orch job: $(orch_job) (claude logs / stop / rm)"
+echo "sessions: tmux attach -r -t sh-alice | sh-bob | sh-carol   (scripts/demo.sh stop); orch job: $(orch_job) (claude logs / stop / rm)"

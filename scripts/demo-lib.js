@@ -34,8 +34,12 @@
  *   demo-lib.js last-id --kind K [same filters] [--field F]   print the id (or field F) of the last matching
  *                                                  entry (0 if none)
  *   demo-lib.js log-max                           print the highest log id
+ *   demo-lib.js json-string <text>                print text as a JSON string literal (for a tool argument in a prompt)
+ *   demo-lib.js link-shape <file>                 print a link file's shape (mode, token: bool, invite: bool,
+ *                                                  transport), never its token (S11)
  *   demo-lib.js latest-plan                       print the latest plan_rev hash
  *   demo-lib.js readonly <session>                exit 0 if a read-only client is attached
+ *   demo-lib.js invite <session>                  print the invite /sub-human host showed in that pane (exit 1: none)
  *   demo-lib.js wait-idle <session> [--timeout S] [--quiet S]   wait until the main prompt is idle (no
  *                                                  "esc to interrupt" and the pane unchanged for --quiet S, 3)
  *   demo-lib.js card <session> <Not yet|Agree|Object> [note]   answer the open proposal: in the plan view (Agree =
@@ -72,7 +76,7 @@ const { execFileSync, spawn, spawnSync } = require('node:child_process');
 const { roomCode, readLog, strip } = require('./snap.js');
 const paths = require('./lib/paths.js');
 const { readJson, jsonl, esc } = require('./lib/io.js');
-const { panelRows, cardState, planState } = require('./lib/panes.js');
+const { panelRows, cardState, planState, inviteIn } = require('./lib/panes.js');
 
 const REPO = paths.REPO;
 const SNAP_DIR = () => (process.env.SNAP_DIR ? path.resolve(process.env.SNAP_DIR) : path.join(REPO, 'docs/rebuild/screens'));
@@ -521,6 +525,16 @@ async function logMax() {
   return 0;
 }
 
+/** S11: a link file's shape, never its token: {mode, token: bool, invite: bool, transport}. */
+async function linkShape(o) {
+  const f = o._[0];
+  let st;
+  try { st = fs.statSync(f); } catch { return 1; }
+  const l = readJson(f, {}) || {};
+  print(JSON.stringify({ mode: (st.mode & 0o777).toString(8), token: typeof l.token === 'string', invite: 'invite' in l, transport: l.transport }));
+  return 0;
+}
+
 async function latestPlan() {
   const lp = readLog(roomCode()).filter(e => e.kind === 'plan_rev').at(-1);
   print(lp ? lp.plan_hash : '');
@@ -560,6 +574,7 @@ const COMMANDS = {
   ready: async (o, T) => exit(await ready(o._[0], T)),
   readonly: async o => exit(readonlyAttached(o._[0])),
   pane: async o => { process.stdout.write(pane(o._[0])); return 0; },
+  invite: async o => { const inv = inviteIn(pane(o._[0])); if (inv) process.stdout.write(inv + '\n'); return exit(!!inv); },
   'wait-pane': waitPane,
   'wait-paint': waitPaint,
   'wait-exited': waitExited,
@@ -582,6 +597,8 @@ const COMMANDS = {
   count: async o => { print(filterLog(o).length); return 0; },
   'last-id': lastId,
   'log-max': logMax,
+  'json-string': async o => { process.stdout.write(JSON.stringify(o._.join(' '))); return 0; },
+  'link-shape': linkShape,
   'latest-plan': latestPlan,
   'prune-index': pruneIndex,
   'plan-run': planRun,

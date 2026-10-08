@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * test/support/link-bench.js: the numbers behind PR5's latency check (docs/next/REMOTE-PLAN.md PR3 condition 3, PR5
+ * test/support/link-bench.js: the numbers behind PR5's latency check (docs/archive/REMOTE-PLAN.md PR3 condition 3, PR5
  * As built). Test only; prints a markdown table of p50 / p99 in ms.
  *
  *   node plugin/sub-human/test/support/link-bench.js [--calls N] [--hooks N]

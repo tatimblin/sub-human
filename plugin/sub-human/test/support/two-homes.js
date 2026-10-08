@@ -1,6 +1,6 @@
 'use strict';
 /**
- * test/support/two-homes.js: one machine of a two-machine test on one machine its
+ * test/support/two-homes.js: one machine of a two-machine test on one machine: its
  * own SUB_HUMAN_HOME, user home and working directory. The real hooks and the CLI run as child processes with that
  * home; seats are live sleepers standing in for claude processes. test/remote-e2e.test.js and
  * test/support/link-bench.js use it.

@@ -3,7 +3,7 @@
  * plugin/sub-human/lib/seats.js: entering and leaving a room, the one sequence the join hook, the session-end
  * hook and the remote server (lib/remote/server.js, for a seat on another machine) all run. The hooks keep
  * only argument parsing and output; the server keeps only the protocol. The host-only steps (orch spawn, the
- * reaper) do nothing where the room's store is not the host's (lib/orch.js; docs/next/REMOTE-PLAN.md rule 2). In a
+ * reaper) do nothing where the room's store is not the host's (lib/orch.js; docs/archive/REMOTE-PLAN.md rule 2). In a
  * room hosted elsewhere (a mirror, lib/room/store-mirror.js) the seat op is all there is: the host's server runs
  * the rest of the sequence for it.
  *

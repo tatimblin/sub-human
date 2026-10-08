@@ -48,4 +48,15 @@ function planState(p) {
   return opts.length ? { opts } : null;
 }
 
-module.exports = { MAIN_ROW, panelRows, statusLine, cardState, planState };
+/**
+ * The invite /sub-human host showed in a capture (sh1.CODE.LOCATOR.SECRET; the secret is 32 base64url characters,
+ * plugin lib/remote/auth.js), or null. The pane may wrap it: a line break (and the next line's indent) between two
+ * of its characters is dropped first. The last one shown wins.
+ */
+function inviteIn(txt) {
+  const joined = (txt || '').replace(/([A-Za-z0-9_.-])\n[\s│⎿]*(?=[A-Za-z0-9_.-])/g, '$1');
+  const all = [...joined.matchAll(/sh1\.[a-z]+-\d{4}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{32}/g)].map(m => m[0]);
+  return all.at(-1) || null;
+}
+
+module.exports = { MAIN_ROW, panelRows, statusLine, cardState, planState, inviteIn };

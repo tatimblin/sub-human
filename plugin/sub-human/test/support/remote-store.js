@@ -1,6 +1,6 @@
 'use strict';
 /**
- * test/support/remote-store.js: the store contract's remote backend (docs/next/REMOTE-PLAN.md PR5). A
+ * test/support/remote-store.js: the store contract's remote backend (docs/archive/REMOTE-PLAN.md PR5). A
  * MirrorRoomStore on the calling thread; on a worker thread, the room's server (lib/remote/server.js over the
  * host's FsRoomStore, <home>/rooms/<code>) and the link that keeps the mirror (lib/remote/link.js serveMirror),
  * joined by the memory transport. The mirror's writes cross lib/remote/bridge.js and the link's socket as in

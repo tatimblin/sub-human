@@ -4,7 +4,7 @@ How sub-human works today, for a new contributor or a fresh Claude session. User
 
 ## Purpose and design rules
 
-Several people, each in their own Claude Code session on one machine and one OS user, share a **room**. A person's exact words reach the room only through a hook (`@room …`). Claudes talk to each other with native `SendMessage`, addressed `NAME.CODE`. A headless **orch** keeps the shared task list and plans only when asked. Consent to a proposal is recorded only from the person's own answer in a native dialog.
+Several people, each in their own Claude Code session, share a **room**. The room lives on one machine (its host); people on other machines join it over a link (see [Remote rooms](#remote-rooms)). A person's exact words reach the room only through a hook (`@room …`). Claudes talk to each other with native `SendMessage`, addressed `NAME.CODE`. A headless **orch** keeps the shared task list and plans only when asked. Consent to a proposal is recorded only from the person's own answer in a native dialog.
 
 The one security goal: **a model can never speak or consent as a person.** The rules that follow from it, and from keeping the plugin unobtrusive (also in `CLAUDE.md`):
 
@@ -149,7 +149,7 @@ RoomStore
   lock(name, fn)                                                room-wide mutex (proposal answers)
 ```
 
-**FsRoomStore** layout. The home is `$SUB_HUMAN_HOME` or `~/.sub-human`; room directories are 0700 and files 0600.
+**FsRoomStore** layout. The home is `$SUB_HUMAN_HOME` or `~/.sub-human`; room directories are 0700 and files 0600. A mirror (a room hosted elsewhere, `MirrorRoomStore`) has the same layout; its log, `log.idx`, `members.json`, `presence/*`, `tasks.json` and `plans/` are the host's, written only by the link daemon.
 
 | Path (under `<home>/rooms/<CODE>/` unless absolute) | Owner (writer) | Purpose |
 |---|---|---|
@@ -169,7 +169,12 @@ RoomStore
 | `<home>/keys/<CODE>/<name>.key`, `.pub` | `hooks/seat-key.js` | Ed25519 seat key pair (dir 0700) |
 | `<home>/sessions/by-pid/`, `by-sid/` | `lib/identity.js` | which seat a local claude pid / session id holds (machine-local, not room state) |
 | `<home>/sessions/mods/<sid>.json` | `hooks/mod-hello.js` | the hooks module's hello lease: this session's function hooks are loaded (join requires it) |
-| `<home>/machine.json` | `lib/home.js` `machineId()` | this machine's random id, stored as each seat's `machine` |
+| `<home>/machine.json` | `lib/home.js` `machineId()` | this machine's random id (16 hex digits, never the hostname), stored as each seat's `machine` |
+| `workdir.json` (kv `workdir`, host only) | `lib/seats.js` `enter` | the room's working directory (the first local seat's cwd): where the orch starts, also after a remote join |
+| `remote/invites.json`, `remote/links.json` (host only, never streamed) | `lib/remote/auth.js` | sha256 of each unused invite; each link's token sha256 with its machine and the seats joined over it |
+| `link.json` (kv `link`; a mirror only) | `lib/remote/link.js` (the daemon) | the link's state `{pid, state, since, reason?}`: connecting, online, offline, fork, stopped |
+| `<home>/links/<CODE>.json` | `/sub-human join` (`lib/room/links.js`), the daemon | a mirrored room's link: transport, then the invite until the first hello swaps it for the token (file 0600, dir 0700) |
+| `<home>/links/<CODE>.log` | the link daemon | its stdout and stderr (state changes, FORK) |
 | `<home>/bin/row-status`, `roots.json` | `hooks/row-launcher.js` | the status-line launcher and the plugin roots it may run |
 
 **MemoryRoomStore** (`test/support/memory-store.js`) is a second implementation that keeps a room in memory and implements `members.update` as a compare-and-set retry loop, as a remote store would. It shares `store.toPayload` / `store.admit` / `store.placeAfter` and the seat ops of `lib/room/members.js`, so ids, chain, signatures, the trust checks and seat rules are byte-identical. `test/store-contract.test.js` runs one suite against both, and against `test/support/thread-store.js` (every call over `lib/remote/bridge.js` to an FsRoomStore on a worker). That is the **remote seam**: a store that keeps rooms off-machine implements the same interface (`store.setBackend(factory)` swaps it in). The seat private keys stay local whatever the store; liveness falls back to the `seen_at` lease for a seat of another machine or with no pid. What other machines may see of `members.json` is `members.publicView` (no `pid`, `pid_start`, `session_id`, `cwd`).
@@ -265,9 +270,63 @@ Debugging an orch by hand: `node lib/orch.js cmd CODE` prints the exact spawn co
 
 `needsSpawn` also respawns an orch whose pid is dead, whose claim is older than `ORCH_CLAIM_MS`, or which never bound within `ORCH_BIND_MS`. `openRooms()` ignores rooms where only the orch is left, and join sweeps those through the watchdog.
 
+## Remote rooms
+
+A room can have members on other machines. The machine that created it is the **host**: its room directory is the room, and its hooks, tail and MCP server keep using that directory as before. Another machine joins with an invite and keeps a **mirror**: a room directory with the FsRoomStore layout, kept byte-identical to the host's log by a **link daemon**. Every reader (`readView`, `log.idx`, the tailer, `verifyChain`, rows, digests) works on the mirror unchanged; only writes cross the wire, as named ops. The one transport today is a pipe to a second home on the same machine (`pipe:<home>`); SSH is the pipe with `ssh` in front and needs no protocol change. The plan, with its as-built notes and decisions: [`docs/archive/REMOTE-PLAN.md`](archive/REMOTE-PLAN.md).
+
+```
+ HOST machine                                            REMOTE machine
+ hooks / tail / MCP ──► FsRoomStore ◄── serve --stdio ◄══ transport ══► link daemon ──► MirrorRoomStore (FsRoomStore layout)
+   (sign + place,        <home>/rooms/CODE   per connection    (pipe now;   (one per room   ▲ reads: hooks, tail, MCP, rows
+    decide, orch)                             (bin/sub-human)   ssh later)   and home)       │ writes: bridge (worker thread,
+                                                                                             │          Atomics.wait, deadline)
+                                                                                    hooks ───┘ sign with the local seat key
+```
+
+**Joining.** On the host, a person in the room runs `/sub-human host`: `lib/remote/auth.js` mints a single-use invite `sh1.<CODE>.<locator>.<secret>` (only its sha256 is kept), and the join hook shows it as a block reason, to the person and never to the model. On the other machine, `/sub-human join NAME INVITE` writes the link file (`lib/room/links.js`), starts the daemon detached, and joins over it: the daemon's first `hello` redeems the invite for a link token, which replaces the invite in the link file. From then on `store.open(CODE)` there returns the mirror. A rejoin is `/sub-human NAME CODE`, as on the host.
+
+**Host and mirror.** `store.isHost` decides who does what. Only the host spawns, reaps and watches the orch, decides proposals, pins keys, mints invites and writes `members.update` and the streamed documents; on a mirror these throw `HOST_ONLY` or are gated off (`lib/orch.js`, `proposal.decide`). The host streams its log lines verbatim and three documents: `members` (`members.publicView`: no `pid`, `pid_start`, `session_id`, `cwd`), `presence/*` and `tasks`. Session-local state (`rows/*`, `members/NAME/review|title`, cursors, notices, the session indexes, keys) never leaves its machine. On a mirror a seat of this machine is judged by its session index (pid, start time, session); a seat of another machine lives by its lease (`seen_at`, `SEAT_LEASE_MS` 120 s, renewed by `beat`). A remote seat's join and leave reach the host's `lib/seats.js` through its server, which logs `member_joined`/`member_left` and runs the orch and the reaper there.
+
+**Writes.** A hook's write (`@room`, an answer, join, leave, a beat) is signed on its own thread, then crosses `lib/remote/bridge.js`: the hook's thread posts one op to a worker and blocks in `Atomics.wait` until the reply or the deadline (`LINK_CALL_MS` 3 s, SessionEnd `LINK_CALL_END_MS` 1 s). The worker relays the op over the daemon's unix socket (`link.handle`; it loads no store and never the signer). Past the deadline, or with the link down, the call is `OFFLINE`: an `@room` or a card answer is refused and the person is told, never queued. After a write the server polls the session's streams before it replies, so the mirror holds the write's lines when the hook's call returns (read-your-writes). The worker starts at a process's first write: a hook that only reads starts none.
+
+**The link daemon** (`bin/sub-human link CODE`, `lib/remote/link.js`), one per room and home: it holds the one connection (`hello` with the token), `subscribe`s from the mirror's last line with `{after, hash}`, applies each line (`applyLine` refuses one that does not chain: `FORK`) and document, prefetches every proposal's plan, and serves the hooks on `<tmpdir>/sh-<hash8(mirror dir)>/link.sock` (directory 0700, this user's). Its state is the mirror's `link.json`: connecting, online, offline (retried after `LINK_RETRY_MS` 1 s, doubling to 30 s), fork, stopped (AUTH or PROTOCOL at hello, the room closed, idle, a signal). `FORK` is never repaired silently: the daemon stops, the tail sends one `room link: FORK …` line (a `health` event: the module logs it as a notice and gives Claude a copy), and `sub-human link --reset CODE` re-mirrors. The tail also sends one line when the link goes offline. The daemon exits `LINK_IDLE_MS` (60 s) after no seat of this machine is left in the room: online by the host's members document, offline by this machine's live session indexes, so a crashed or abandoned join never leaves it retrying. The server (`bin/sub-human serve --stdio CODE`, `lib/remote/server.js`) is one process per connection on the host, spawned by the client's transport; there is no host daemon, and the file locks coordinate it with the host's own hooks.
+
+**Protocol** (`lib/remote/protocol.js`). Newline-delimited JSON: request `{id, op, params}`, reply `{id, result}` or `{id, error: {code, message}}`, stream event `{id, ev, data}`. A frame is at most `LINK_FRAME_MAX_BYTES` (1 MiB).
+
+| Op | Params | Result | Who may | Server does |
+|---|---|---|---|---|
+| `hello` | `{v, caps, machine, token}` or `{…, invite}` | `{v, caps, room, link, token?}` | anyone | version check; `verifyToken`, or `redeemInvite` (the token is returned once); neither: answered, still unauthenticated |
+| `join` | `{name, role: 'member', pubkey, proof}` | `{ok, rejoin?}` | a link | `checkSeatProof` (the key's holder signed this join), then `seats.enter` with the link's `machine`; another key for a pinned name is `AUTH`; binds the name to the link |
+| `leave` | `{name, reason}` | `{ok}` | a link, its own seat | `seats.exit` (member_left; the reaper when nobody is left) |
+| `beat` | `{name, presence?}` | `{ok}` | a link, its own seat | `members.beat` (lease, presence) |
+| `append` | `{payload}` | `{entry}` | a link, `payload.from` its own seat | `store.place`: validate, rate, replay, verify against the pinned key; then `decide` after an answer. A system kind is `AUTH` (only the host writes those) |
+| `subscribe` | `{after, hash}` | stream | a link | `hash12` of the host's line `after` must equal `hash`, else `FORK`; then `entry` per line, `doc` for `members`, `presence/*`, `tasks`; `end` `{reason: 'closed' \| 'FORK'}` |
+| `blob.get` | `{ref}` | `{bytes}` (base64) | a link | `blobs.get` |
+| `blob.put` | `{name, bytes}` | `{ref}` | a link | only `plans/<hash12 of the bytes>.md`, at most `PROPOSAL_FILE_MAX`, written once |
+
+Error codes, the same on both ends and on the wire: today's `INVALID`, `RATE`, `LOCK`, `NO_ROOM`, plus `OFFLINE` (the link is down or the deadline passed), `HOST_ONLY` (an op a mirror never performs), `AUTH` (no or bad token, a used invite, a `from` not this link's seat, a key mismatch, a bad signature, a replayed nonce, a stale `ts`), `FORK` (the mirror's last line is not the host's) and `PROTOCOL` (unknown version, malformed frame).
+
+**What changed for trust.**
+- **Sig v2.** A signature covers the payload, not its place in the log (without `id`, `at`, `prev`; with `room`, `from`, `nonce`, `ts`), so the remote hook signs and the host places. v1 lines still verify. The host refuses a replayed nonce and a `ts` outside `SIG_SKEW_MS` (10 min); `at` is the host's clock.
+- **Keys are pinned in the log** and strictly: `member_joined` carries the seat's public key, the first key per name is that name's for the room's life, and a lost key means a new name.
+- **A link writes only as its own seats.** The server checks every `from` against the seats joined over that link (`mayWriteAs`), validates again and verifies against the pinned key. A `join` needs a proof signed by the seat's key, since the public key alone is in the log.
+- **Credentials.** An invite is single-use and shown once; the host keeps its sha256. The link token is a seat-level credential: kept in clear in the joining machine's link file (0600, the same trust as the seat key), hashed on the host. An invite is untrusted input: its locator is only a home path, and the daemon always runs this plugin's own `serve` with it, never a command the invite names. The Bash guard denies `sub-human invite`, `link` and `serve` to a model.
+- **Addressed is not private.** A post with `to` has its own rate bucket (`RATE_ADDRESSED_MAX`), but the whole room reads the log, on every machine.
+
+**Latency** (Apple M2, node 24; two homes on one machine over the pipe; `test/support/link-bench.js`, `test/support/bridge-bench.js`). Times in ms, p50 / p99.
+
+| | host | remote | overhead |
+|---|---|---|---|
+| one signed append, bridge up (the link's round trip) | 0.70 / 1.1 | 1.0 / 1.6 | 0.34 / 0.52 |
+| `prompt.js`, a plain prompt (no worker) | 38.2 / 43.2 | 38.3 / 41.7 | 0.1 / −1.5 |
+| `prompt.js`, an `@room` post | 41.3 / 43.8 | 60.0 / 63.1 | 18.8 / 19.4 |
+| `presence.js`, a changed state | 34.7 / 38.3 | 55.8 / 60.3 | 21.1 / 22.0 |
+
+A hook that only reads costs nothing extra; one that writes pays about 20 ms, nearly all of it the worker's boot (about 16 ms), plus a round trip of about 1.5 ms.
+
 ## Security model
 
-One machine, one OS user, trusted collaborators. The threat is a member's Claude (possibly steered by text posted in the room) speaking or consenting as a person. Defences: `via=human` only from hooks, signed with a key only hook processes load; the store guard (the hooks module's `mod/guard.mjs`, in-process) denies file-tool writes into the store and Bash commands that name it, set `SUB_HUMAN_HOME` or run the plugin's modules; the module's `prompt.submit` gate drops an `@room` whose engine-set origin is not the person's (composer, sdk, bridge), and at-room posts only with that origin and the session's module nonce (a seat requires the module). The module mints the nonce per session id, keeps it in `$.state`, and `mod-hello` writes it to the 0600 lease `<home>/sessions/mods/<sid>.json`: forging an `@room` takes reading that lease, which the guards deny by path but a determined local process can still do. The store guard is a string check: a script file written first, an obfuscated path or a variable built at run time evades it. What it cannot evade: `via=human` needs the seat key's signature, readers mark an unsigned human line "(unverified)", and the hash chain shows an edited log. The orch's typed-input refusal reads the origin unchecked, since forging it only refuses more. An `@room` is refused, never passed to the model, whenever the prompt shim fails; consent only from the native dialog. Not covered: the `Read` tool, other MCP servers, a hostile local user. Full list: [README → Threat model](../plugin/sub-human/README.md#threat-model).
+One machine per room (its host), trusted collaborators: everyone on the host runs as its one OS user, and the host itself is trusted by everyone who joins it. The threat is a member's Claude (possibly steered by text posted in the room) speaking or consenting as a person. Defences: `via=human` only from hooks, signed with a key only hook processes load (on whichever machine the person sits; the host verifies against the key pinned in the log); the store guard (the hooks module's `mod/guard.mjs`, in-process) denies file-tool writes into the store and Bash commands that name it, set `SUB_HUMAN_HOME` or run the plugin's modules; the module's `prompt.submit` gate drops an `@room` whose engine-set origin is not the person's (composer, sdk, bridge), and at-room posts only with that origin and the session's module nonce (a seat requires the module). The module mints the nonce per session id, keeps it in `$.state`, and `mod-hello` writes it to the 0600 lease `<home>/sessions/mods/<sid>.json`: forging an `@room` takes reading that lease, which the guards deny by path but a determined local process can still do. The store guard is a string check: a script file written first, an obfuscated path or a variable built at run time evades it. What it cannot evade: `via=human` needs the seat key's signature, readers mark an unsigned human line "(unverified)", and the hash chain shows an edited log. The orch's typed-input refusal reads the origin unchecked, since forging it only refuses more. An `@room` is refused, never passed to the model, whenever the prompt shim fails; consent only from the native dialog; a link writes only as the seats joined over it, and the guard denies `sub-human invite|link|serve` to a model. Not covered: the `Read` tool, other MCP servers, a hostile local user. Full list: [README → Threat model](../plugin/sub-human/README.md#threat-model).
 
 ## Claude Code contract (generated)
 
@@ -412,9 +471,10 @@ Long-lived per seated session: the tail child and the MCP server (one idle `node
 ## Testing
 
 - `npm test`: `node --test` over `plugin/sub-human/test` (each file in its own process, in parallel; `test/helpers.js` strips `CLAUDE*` env and removes temp dirs) and `scripts/test`. Hooks are driven as child processes with JSON payloads (`test/hooks/`). The tail runs on a fake clock (`lib/clock.js`).
-- **Store contract**: `test/store-contract.test.js` runs one suite against `FsRoomStore`, `MemoryRoomStore` and the thread store; `store-bypass.test.js` checks nothing else touches room files; `test/hooks/security.test.js` checks who can load the signer.
+- **Store contract**: `test/store-contract.test.js` runs one suite against `FsRoomStore`, `MemoryRoomStore`, the thread store and `remote` (a mirror through the bridge to a server on a worker thread); `store-bypass.test.js` checks nothing else touches room files; `security.test.js` checks who can load the signer.
 - **Probe**: `npm run probe` (`scripts/probe-cc.js`) greps the installed Claude Code binary for every `CONTRACT` search string and shape; `test/cc.test.js` runs it when a binary is present. No search names a minified identifier (shapes use `~` instead), so a miss means the code itself changed: re-read that spot and record what changed in a new `docs/internals/cc-<version>.md`.
 - **Docs**: `npm run docs` regenerates this file's tables; `scripts/test/arch-doc.test.js` fails when they are stale.
-- **Demo**: `scripts/demo.sh` drives scenes S1–S10 with real sessions in tmux (real cost; run only when asked). `scripts/checks.js` then labels each check **deterministic** (log, chain, files, panes: a failure exits 1) or **behavioural** (model-call counts, wakes, noise: compared against `scripts/baselines.json` thresholds, warn only). `scripts/walkthrough.js` builds `docs/rebuild/walkthrough.html`.
+- **Remote**: `remote-protocol`, `remote-server` and `remote-link` tests cover the wire, auth and the daemon; `remote-e2e.test.js` runs two homes on one machine with the real hooks as child processes and the daemon over the pipe transport. `npm run test:thread-store` runs the hook tests with every store call over the bridge.
+- **Demo**: `scripts/demo.sh` drives scenes S1–S11 with real sessions in tmux (S11: a third seat from a second home over the pipe link) (real cost; run only when asked). `scripts/checks.js` then labels each check **deterministic** (log, chain, files, panes: a failure exits 1) or **behavioural** (model-call counts, wakes, noise: compared against `scripts/baselines.json` thresholds, warn only). `scripts/walkthrough.js` builds `docs/rebuild/walkthrough.html`.
 - **Mods**: `npm run test:mods` runs `claude plugin test plugin/sub-human` (the `mod/test/*.test.ts` wiring tests; it skips without a 2.1.292+ binary or with hooks modules off); `npm test` runs it last. `test/mod-core*.test.js` test `mod/core` (and the copied constants against `lib/`) and `mod-hello.js` in node, and check `validate`'s report: every gating hook has a `.catch`, and `HOOKS` lists what the module registers.
 - `npm run validate`: `claude plugin validate plugin/sub-human --strict`.

@@ -8,6 +8,7 @@
  *   projectsDir()     the projects/ folder of $CLAUDE_CONFIG_DIR or ~/.claude
  *   seatProjectDir(seat)  a demo seat's transcript folder (seats work in /tmp/sh-demo/SEAT = /private/tmp/…)
  *   pluginLib(name)   require plugin/sub-human/lib/<name> (e.g. 'room.js' for validateChain)
+ *   pluginTest(name)  require plugin/sub-human/test/<name> (scripts tests only: 'support/two-homes.js' for S11)
  *
  * If the plugin moves one of these, fix it here.
  */
@@ -17,6 +18,7 @@ const path = require('node:path');
 const REPO = path.resolve(__dirname, '..', '..');
 const PLUGIN = path.join(REPO, 'plugin', 'sub-human');
 const pluginLib = name => require(path.join(PLUGIN, 'lib', name));
+const pluginTest = name => require(path.join(PLUGIN, 'test', name));
 
 const DEMO_BASE = '/tmp/sh-demo';
 // required on first use, so a script that needs only one lib (probe-cc: cc.js) loads only that one
@@ -27,7 +29,7 @@ const projectsDir = () => path.join(claudeDir(), 'projects');
 const seatProjectDir = seat => path.join(projectsDir(), `-private-tmp-sh-demo-${seat}`);
 
 module.exports = {
-  REPO, PLUGIN, pluginLib,
+  REPO, PLUGIN, pluginLib, pluginTest,
   home, demoHome, projectsDir, seatProjectDir,
   taskListId: code => pluginLib('orch.js').taskListId(code), tasksDir: code => pluginLib('orch.js').tasksDir(code),
 };

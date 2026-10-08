@@ -3,11 +3,13 @@
 /**
  * checks: compute docs/rebuild/checks.json from the evidence a scripts/demo.sh run (slim build) left behind.
  *
- *   node scripts/checks.js [--screens DIR] [--out FILE] [--home DIR] [--room CODE] [--note TEXT]
+ *   node scripts/checks.js [--screens DIR] [--out FILE] [--home DIR] [--home2 DIR] [--room CODE] [--note TEXT]
  *
  * Evidence only, nothing assumed: the room log ($SUB_HUMAN_HOME/rooms/CODE/log.jsonl), members.json, tasks.json,
  * plans/, the per-step state demo.sh saved (screens/state/SCENE/N: members.json, rows/, tasks.json,
- * `claude agents --json`, `sub-human tasks`, the orch's native task files; S6/gate-bob.json, S9/synthetic-prompt.json),
+ * `claude agents --json`, `sub-human tasks`, the orch's native task files; S6/gate-bob.json, S9/synthetic-prompt.json,
+ * S11/: carol's mirror log, link status and file shape, both machine ids), S11's second home (--home2, default the
+ * home's sibling home2),
  * the pane captures (screens/index.json + *.txt; the orch's pane is `claude logs <job>`) and the seats' Claude Code
  * transcripts (read-only; the orch's is the file named after its session id). A check whose evidence is missing
  * fails and says so.
@@ -31,9 +33,9 @@ const { clip, readJson } = require('./lib/io.js');
 const { context } = require('./checks/context.js');
 const BASELINES = require('./baselines.json');
 
-const SCENES = ['s01-open', 's02-join', 's03-pairing', 's04-plan', 's05-consent', 's06-tasks', 's07-row-view', 's08-resilience', 's09-orch-typing', 's09b-multiline', 's10-leave', 'run-metrics']
+const SCENES = ['s01-open', 's02-join', 's03-pairing', 's04-plan', 's05-consent', 's06-tasks', 's07-row-view', 's08-resilience', 's09-orch-typing', 's09b-multiline', 's11-remote', 's10-leave', 'run-metrics']
   .map(m => require(`./checks/${m}.js`));
-const ORDER = ['Metrics', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S9b', 'S10'];
+const ORDER = ['Metrics', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S9b', 'S11', 'S10'];
 
 function args(argv) {
   const o = {};
@@ -77,7 +79,7 @@ function main() {
   const screens = path.resolve(o.screens || path.join(paths.REPO, 'docs/rebuild/screens'));
   const out = path.resolve(o.out || path.join(paths.REPO, 'docs/rebuild/checks.json'));
   const home = path.resolve(o.home || paths.demoHome());
-  const ctx = context({ screens, home, room: o.room });
+  const ctx = context({ screens, home, room: o.room, ...(o.home2 ? { home2: path.resolve(o.home2) } : {}) });
   const planned = plannedScenes(screens);
   const res = runChecks(ctx, { planned });
   const summary = summarise(res);

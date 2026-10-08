@@ -1,5 +1,5 @@
 'use strict';
-// Two machines on one : two SUB_HUMAN_HOMEs, the host's (alice, carol) and a remote
+// Two machines on one: two SUB_HUMAN_HOMEs, the host's (alice, carol) and a remote
 // member's (bob). The real hooks run as child processes on both sides; bob joins with the invite /sub-human host
 // gave, and his link daemon (bin/sub-human link, started by the join hook) spawns the host's server
 // (bin/sub-human serve --stdio) through the pipe transport. Checked: the mirror's log is byte-identical to the

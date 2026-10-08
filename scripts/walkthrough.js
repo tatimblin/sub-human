@@ -33,10 +33,11 @@ const SCENES = {
   S8: ['Resilience', '/clear keeps alice\'s rows; bob --continue: rows return with no prompt (row-rewake) and the room still reaches him'],
   S9: ['The orch takes no typed input', 'A viewer attaches (claude attach) and types: refused with the hint; no orch turn'],
   S9b: ['A multi-line post stays nested', 'alice posts three lines with @room, the later two reading like a decision and a sign-off: byte-exact in the log; bob\'s pane shows them nested under "alice: …" (│), never as bare room lines; no consent entry'],
+  S11: ['Join from another machine', 'alice\'s /sub-human host shows her a one-time invite; carol, in a second home (another machine, on this one), joins with it over the pipe link; her @room and her signoff are signed in her home and verified on the host, which decides; her mirror is the host\'s log byte for byte; nothing of her session reaches the host; her link daemon stops after she leaves'],
   S10: ['Leave', 'alice exits; bob sees the chat line "alice left" once the leave settles (8 s); bob exits; the reaper completes task 1 and stops the orch; claude agents no longer lists it; each human saw a join/leave notice'],
 };
 const ORDER = Object.keys(SCENES);
-const SEAT_ORDER = ['orch', 'viewer', 'alice', 'bob'];
+const SEAT_ORDER = ['orch', 'viewer', 'alice', 'bob', 'carol'];
 
 // excerpt limits
 const MAX_LINES = 10, HEAD = 3, TAIL = 6, MAX_ROWS = 3, EVIDENCE = 160, MERGE = 0.8, RULE_MAX = 16;

@@ -4,7 +4,8 @@
  *
  *   const ctx = context({ screens, home, room })
  *
- * ctx.code, roomDir, log, members, orchSid, job, index (screens/index.json), and the helpers of four modules:
+ * ctx.code, roomDir, log, members, orchSid, job, index (screens/index.json), home2 (S11's second home, carol's: by
+ * default home's sibling), and the helpers of four modules:
  *   checks/captures.js     the captures (cap, caps, capName, span, runStart) and the per-step state (st, stText, nativeTasks)
  *   checks/transcripts.js  the seats' transcripts (entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn,
  *                          pullIn, chatTurn, orchTurns, replyAfter, noModelTurn, rowUserText, rowReply)
@@ -27,9 +28,10 @@ const DEMO = {
   note5: 'add a test for a cursor past the end — `after=zzz` must 400, not 500',
   viewer9: "hi orch, what's next?",
   multi9b: 'notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal',
+  carol11: 'hello from the second home',
 };
 
-function context({ screens, home, room }) {
+function context({ screens, home, room, home2 = path.join(path.dirname(home), 'home2') }) {
   const index = readJson(path.join(screens, 'index.json'), []);
   let code = room || (index.find(r => r.room) || {}).room;
   if (!code) { try { code = fs.readdirSync(path.join(home, 'rooms')).sort().at(-1); } catch { /* none */ } }
@@ -42,7 +44,7 @@ function context({ screens, home, room }) {
 
   const caps = captures({ screens, index });
   return {
-    DEMO, screens, home, code, roomDir, log, members, orchSid, job, index,
+    DEMO, screens, home, home2, code, roomDir, log, members, orchSid, job, index,
     ...caps,
     ...transcripts({ orchSid, projects: paths.projectsDir() }), textOf,
     ...roomLog({ home, code, roomDir, log }),

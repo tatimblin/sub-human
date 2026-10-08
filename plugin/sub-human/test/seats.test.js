@@ -1,5 +1,5 @@
 'use strict';
-// Tests for lib/seats.js and the host gates (docs/next/REMOTE-PLAN.md PR2): enter and exit as one sequence, the
+// Tests for lib/seats.js and the host gates (docs/archive/REMOTE-PLAN.md PR2): enter and exit as one sequence, the
 // orch started in the room's working directory, and a mirror-shaped store (MemoryRoomStore with isHost false) where
 // the seat op is all that runs (the host logs the join and leave), the orch is never spawned, reaped or watched and
 // no decision is written. lib/room/members.js publicView: what other machines see of the members document.

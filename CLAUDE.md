@@ -1,29 +1,29 @@
 # sub-human
 
-A Claude Code plugin for working together from separate sessions on one machine. People join a room with `/sub-human NAME`. `@room` posts their exact words. Claudes talk natively (`SendMessage`, addressed `NAME.CODE`). A headless orch (a `claude --bg` job) keeps the shared task list and helps plan only when asked. User-facing docs: `plugin/sub-human/README.md`.
+A Claude Code plugin for working together from separate sessions, on one machine or, over a link, from others. People join a room with `/sub-human NAME`. `@room` posts their exact words. Claudes talk natively (`SendMessage`, addressed `NAME.CODE`). A headless orch (a `claude --bg` job) keeps the shared task list and helps plan only when asked. User-facing docs: `plugin/sub-human/README.md`.
 
 How it works (processes, store layout, lanes, consent, tasks, the cc contract): `docs/ARCHITECTURE.md`. Its tables are generated: run `npm run docs` after changing hooks.json, MCP tools, `lib/cc.js` CONTRACT or a lib header.
 
 ## Layout
 
-- `plugin/sub-human/`: the plugin. `hooks/` (hooks.json + one script per hook; `prompt.js` runs every UserPromptSubmit handler in one process, through the module), `lib/` (`room/` log store, validation, lanes, rendering and `consent.js` (the one proposal fold) behind `room.js`; `tail.js` the room tail the hooks module runs; `home.js` store location; identity, `lock.js`, `io.js`, `config.js` timings, orch spawn/reap/watchdog, rows, tasks, proposals, `cc.js` internals), `mcp/` (room server, hold, task tool), `agents/` (orchestrator, room row, participant), `mod/` (the hooks module, entry `mod/register.mjs`: guard, prompt gate, shims, delivery; `mod/core` pure, `mod/test` wiring tests), `bin/sub-human` (CLI and the tail), `skills/`, `statusline/`, `test/` (`test/support/memory-store.js` + `store-contract.test.js` keep the RoomStore seam honest).
-- `scripts/`: demo and evidence tools. `demo.sh` drives the walkthrough in tmux, `demo-lib.js` holds its tmux and log helpers, `snap.js` captures panes, `checks.js` + `checks/*.js` hold the per-scene checks, `metrics.js` the run metrics, and `walkthrough.js` builds the HTML. `baselines.json` holds earlier runs, thresholds and prices. `lib/` has shared helpers: `paths.js` is the only place scripts import plugin paths. `probe-cc.js` checks the internals list. The tests are in `scripts/test/`.
+- `plugin/sub-human/`: the plugin. `hooks/` (hooks.json + one script per hook; `prompt.js` runs every UserPromptSubmit handler in one process, through the module), `lib/` (`room/` log store, validation, lanes, rendering and `consent.js` (the one proposal fold) behind `room.js`, plus the mirror of a room hosted elsewhere (`store-mirror.js`) and the link registry (`links.js`); `remote/` the wire: protocol, server, client, auth, the bridge, the link daemon (`link.js`) and transports; `seats.js` entering and leaving; `tail.js` the room tail the hooks module runs; `home.js` store location; identity, `lock.js`, `io.js`, `config.js` timings, orch spawn/reap/watchdog, rows, tasks, proposals, `cc.js` internals), `mcp/` (room server, hold, task tool), `agents/` (orchestrator, room row, participant), `mod/` (the hooks module, entry `mod/register.mjs`: guard, prompt gate, shims, delivery; `mod/core` pure, `mod/test` wiring tests), `bin/sub-human` (CLI and the tail), `skills/`, `statusline/`, `test/` (`test/support/memory-store.js` + `store-contract.test.js` keep the RoomStore seam honest; `test/support/two-homes.js` runs two homes on one machine for the remote tests).
+- `scripts/`: demo and evidence tools. `demo.sh` drives the walkthrough in tmux, `demo-lib.js` holds its tmux and log helpers, `snap.js` captures panes, `checks.js` + `checks/*.js` hold the per-scene checks, `metrics.js` the run metrics, and `walkthrough.js` builds the HTML. `baselines.json` holds earlier runs, thresholds and prices. `lib/` has shared helpers: `paths.js` is the only place scripts import plugin paths (`pluginTest` for the scripts tests' use of plugin test support). `probe-cc.js` checks the internals list. The tests are in `scripts/test/`.
 - `demo/app.pristine/`: the small app each demo seat gets a copy of.
 - `docs/rebuild/`: the latest walkthrough (`walkthrough.html`, `checks.json`). `screens/` is generated and gitignored.
-- `docs/internals/`: Claude Code internals we rely on, per version. `docs/archive/`: history, including the audit, mods and review plans (index in its README). There is no open work plan.
+- `docs/internals/`: Claude Code internals we rely on, per version. `docs/archive/`: history, including the audit, mods, review and remote rooms plans (index in its README). There is no open work plan.
 
 ## Commands
 
 - `npm test`: plugin tests and script tests (`node --test`, no dependencies), then `npm run test:mods`.
 - `npm run test:mods`: the hooks module's wiring tests (`mod/test/*.test.ts`) through `claude plugin test`; skipped without Claude Code 2.1.292+ or with hooks modules off.
 - `npm run validate`: `claude plugin validate plugin/sub-human --strict`.
-- `npm run test:thread-store`: the hook tests with every store call crossing `lib/remote/bridge.js` to a worker thread (the remote plan's PR3 gate).
+- `npm run test:thread-store`: the hook tests with every store call crossing `lib/remote/bridge.js` to a worker thread.
 - `npm run probe`: check every Claude Code internal listed in `lib/cc.js` against the installed binary.
 - `node --test scripts/test` runs only the script tests. `bash -n scripts/demo.sh` checks the demo's syntax.
 
 ## Demo
 
-`scripts/demo.sh` runs scenes S1–S10 live, with real Claude sessions and real cost. It uses detached tmux sessions `sh-alice`, `sh-bob` and `sh-orch` (`claude logs` of the orch job). The home is `SUB_HUMAN_HOME=/tmp/sh-demo/home`, and the seats run in `/tmp/sh-demo/SEAT`.
+`scripts/demo.sh` runs scenes S1–S11 live, with real Claude sessions and real cost. It uses detached tmux sessions `sh-alice`, `sh-bob` and `sh-orch` (`claude logs` of the orch job), and `sh-carol` in S11. The home is `SUB_HUMAN_HOME=/tmp/sh-demo/home`, and the seats run in `/tmp/sh-demo/SEAT`. S11's carol joins from a second home, `/tmp/sh-demo/home2`, over the pipe link; it runs before S10, which closes the room.
 
 ```
 scripts/demo.sh [--windows] [--pause] [--only S6[,S7]] [--from S6] [--to S3] [--member-model MODEL] [--no-reset]

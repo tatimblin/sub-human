@@ -4,7 +4,7 @@
  * carries protocol frames (lib/remote/protocol.js) between a client and a server and knows nothing about
  * them. Kinds here: memory (./memory.js, a pair in one process or across worker threads) and pipe (./pipe.js,
  * a child's stdio or this process's). SSH is the pipe kind with an `ssh` command in front, later. PR4 of
- * docs/next/REMOTE-PLAN.md.
+ * docs/archive/REMOTE-PLAN.md.
  *
  *   Transport = {send(frame), onFrame(fn), onClose(fn), close()}
  *       send after close is a no-op; onClose fires once, also when the peer ends

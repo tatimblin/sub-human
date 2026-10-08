@@ -38,7 +38,7 @@ function runCost({ index, runStart }) {
         }
       }
     };
-    for (const seat of ['alice', 'bob']) walk(paths.seatProjectDir(seat)); // the orch's transcript is in alice's folder
+    for (const seat of ['alice', 'bob', 'carol']) walk(paths.seatProjectDir(seat)); // the orch's transcript is in alice's folder
     return `≈ $${usd.toFixed(2)} (${Object.entries(byModel).map(([m, c]) => `${m.replace(/^claude-/, '')} $${c.toFixed(2)}`).join(', ')}; list-price estimate from transcript token usage within the run)`;
   };
 }

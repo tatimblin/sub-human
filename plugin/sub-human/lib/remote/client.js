@@ -4,7 +4,7 @@
  * server over a transport. The link daemon (lib/remote/link.js) holds one per room; the protocol tests drive
  * one directly. Hooks never use it: they call the daemon through lib/remote/bridge.js. It never loads the
  * signer: a via=human payload, and a join's seat proof (lib/remote/auth.js proveSeat), reach it already
- * signed. PR4 of docs/next/REMOTE-PLAN.md.
+ * signed. PR4 of docs/archive/REMOTE-PLAN.md.
  *
  *   connect(transport, {machine, token?, invite?, caps?, deadlineMs?}) -> Promise<Client>
  *       says hello; resolves once the server answered (the token from a redeemed invite is on client.token).
