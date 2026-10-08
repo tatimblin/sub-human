@@ -1,6 +1,6 @@
 'use strict';
 /**
- * plugin/sub-human/lib/tail.js: the room tail behind `sub-human tail` (bin/sub-human), the hooks module's child
+ * plugin/sub-human/lib/tail.js: the room tail behind `sub-human tail` (scripts/sub-human), the hooks module's child
  * (mod/deliver.mjs). Everything that waits goes through an injected clock (lib/clock.js), so tests drive it with
  * clock.createFake() in-process.
  *
@@ -153,7 +153,7 @@ function pullText(lines) {
     size += lines[i].length + 1;
   }
   const dropped = lines.length - kept.length;
-  const more = dropped ? [`(${dropped} earlier ${dropped === 1 ? 'line' : 'lines'} not shown: \`sub-human read\` or the room read tool)`] : [];
+  const more = dropped ? [`(${dropped} earlier ${dropped === 1 ? 'line' : 'lines'} not shown: the room read tool has them)`] : [];
   return [PULL_HEAD, ...more, ...kept].join('\n');
 }
 

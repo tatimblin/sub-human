@@ -10,7 +10,7 @@
 export const MCP_PREFIX = 'mcp__plugin_sub-human_room__';
 export const HOLD = MCP_PREFIX + 'hold';
 export const WRITE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
-const MSG = 'ROOM-GUARD: the room store is written only by sub-human itself. Post with the room MCP tools; read with `sub-human read` or the room read tool.';
+const MSG = 'ROOM-GUARD: the room store is written only by sub-human itself. Post with the room MCP tools; read with the room MCP read tool.';
 export const HOLD_DENY = 'sub-human: hold is for row agents only (sub-human:participant / sub-human:room); never call it yourself. Spawn the row agents listed under ROWS instead.';
 export const ROOM_ALLOW = 'sub-human: room tool for a joined session.';
 export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
@@ -90,7 +90,10 @@ export function bashVerdict(command, ctx = {}) {
   return null;
 }
 
-export const denyText = why => `${MSG} (Denied: ${why}.) Use \`sub-human read\`, \`sub-human digest\`, \`sub-human who\` or the room MCP tools.`;
+/** The deny text. root (the plugin root, when known): name the read-only CLI by its path; it lives in scripts/, which is
+ *  not on the Bash tool's PATH (a top-level bin/ would be, but claude.ai org sync rejects a plugin that has one). */
+export const denyText = (why, root) => `${MSG} (Denied: ${why}.) Use the room MCP tools${
+  typeof root === 'string' && root.startsWith('/') ? `, or \`${root}/scripts/sub-human read|digest|who|tasks\`` : ''}.`;
 
 // ---------- Write / Edit / MultiEdit / NotebookEdit ----------
 /** The path the tool input names, or null. */

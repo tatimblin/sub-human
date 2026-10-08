@@ -1,6 +1,6 @@
 'use strict';
 /**
- * plugin/sub-human/lib/remote/server.js: one connection to a hosted room. `bin/sub-human serve --stdio CODE`
+ * plugin/sub-human/lib/remote/server.js: one connection to a hosted room. `scripts/sub-human serve --stdio CODE`
  * runs one per connection on the host (spawned by the client's pipe transport now, by an SSH forced command
  * later); the store contract test runs one on a worker thread over the memory transport. It serves the host's
  * FsRoomStore (isHost) and shares the room's file locks with the host's own hooks, which never go through it.

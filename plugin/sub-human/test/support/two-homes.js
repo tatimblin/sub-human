@@ -12,7 +12,7 @@
  *                                     hooks/mod-hello.js writes it; join and every prompt write it first
  *     join(seat, args), say(seat, text), plain(seat, text)          the join expansion; an @room post; a prompt
  *     workers(script, input, seat) -> n     worker threads that hook started (test/support/worker-probe.js)
- *     tail(seat, seconds) -> Promise<stdout>   seat's tail (bin/sub-human tail, its NDJSON events) for that long
+ *     tail(seat, seconds) -> Promise<stdout>   seat's tail (scripts/sub-human tail, its NDJSON events) for that long
  *     lib(fn)                         fn with this machine's home, in this process
  *     log(code) -> string             the room's log.jsonl as stored here ('' when none)
  */

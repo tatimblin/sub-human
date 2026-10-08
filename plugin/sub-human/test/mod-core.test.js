@@ -215,7 +215,7 @@ test('prompt: a seated member skips node only while the tail child delivers and 
 // ---------- delivery (mod/core/deliver.mjs) ----------
 test('deliver: the child\'s argv and env; lines out of pieces; only well-formed events', async () => {
   const d = await load('mod/core/deliver.mjs');
-  assert.deepEqual(d.tailArgv('/p'), ['node', '/p/bin/sub-human', 'tail', '--ndjson']);
+  assert.deepEqual(d.tailArgv('/p'), ['node', '/p/scripts/sub-human', 'tail', '--ndjson']);
   assert.deepEqual(d.tailEnv('sid-1', '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: 'sid-1' });
   assert.equal(d.PULL_DELIVERY, 'at-most-once');
   const b = d.lineBuffer();

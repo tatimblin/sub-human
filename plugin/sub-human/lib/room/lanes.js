@@ -67,7 +67,7 @@ const inProposal = (p, name) => !!p && (approversOf(p).includes(name) || p.from 
  *   orch push: to=orch or @orch; task_req; an objection on its own proposal (below). Everything else is pull,
  *     decisions included: an objected one follows the objection that already woke it, and an agreed one needs
  *     nothing from it (the members are told; it helps further only when asked). member_joined reaches it
- *     through bin/sub-human tail's row note.
+ *     through scripts/sub-human tail's row note.
  *   card answers (both roles): a signoff is pull (the decision carries it); an objection is push to the
  *     proposal's author only (to revise), pull for everyone else.
  *   decisions (judged): pull for the member whose answer completed it (the card's own reply, consent.js,

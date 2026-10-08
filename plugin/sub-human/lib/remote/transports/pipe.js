@@ -1,7 +1,7 @@
 'use strict';
 /**
  * plugin/sub-human/lib/remote/transports/pipe.js: frames over a pair of pipes: a child process's stdio on the
- * client side, this process's stdin/stdout on the server side (`bin/sub-human serve --stdio CODE`). The
+ * client side, this process's stdin/stdout on the server side (`scripts/sub-human serve --stdio CODE`). The
  * two-home test spawns the server with the host's SUB_HUMAN_HOME; SSH is the same with
  * `ssh -T -o BatchMode=yes … -- USER@HOST` as the command (lib/remote/link.js sshCommand).
  *

@@ -13,7 +13,7 @@
  *               (the other active members except the orch and me). The room agent spawns those children.
  *       only = rowsNeeded(...) limits the calls to the rows that are missing; only = [] says the rows are intact
  *       and lists no calls (a second spawn would duplicate a row).
- *   joinNote(me, name, {held}?) -> "row: …" suffix for a member_joined notice (bin/sub-human tail): running (no
+ *   joinNote(me, name, {held}?) -> "row: …" suffix for a member_joined notice (scripts/sub-human tail): running (no
  *       call) or the call to make. For a member it is about the ROOM row (which adds NAME by itself), so a join
  *       never invites a room-row call while that row is live; row-guard.js stays the backstop.
  *   rowsNeeded(code, me, {members, held}) -> names (orch) or [code] (member): rows with no live hold in `held`
@@ -137,7 +137,7 @@ function rowCalls(me, members, { only = null } = {}) {
 }
 
 /**
- * What a member_joined notice (bin/sub-human tail) tells this seat about NAME's row, from the live holds file:
+ * What a member_joined notice (scripts/sub-human tail) tells this seat about NAME's row, from the live holds file:
  * spawn only when the row is not running. A spawn of a running row is denied by hooks/row-guard.js, which
  * Claude Code renders as a red error, so the notice prevents the attempt. '' for my own join.
  */

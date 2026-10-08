@@ -22,7 +22,7 @@ function sources() {
     }
   };
   walk(PLUGIN);
-  out.push(path.join(PLUGIN, 'bin', 'sub-human'));
+  out.push(path.join(PLUGIN, 'scripts', 'sub-human'));
   return out.map(f => ({ rel: path.relative(PLUGIN, f), code: stripComments(fs.readFileSync(f, 'utf8')) }));
 }
 

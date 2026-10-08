@@ -37,7 +37,7 @@ const { isTempPath: isTempRoot, allowTmpRoot: allowTmp } = require(path.join(__d
 const shim = require(path.join(__dirname, '..', 'lib', 'remote', 'shim.js'));
 
 const q = s => `'${String(s).replace(/'/g, `'\\''`)}'`;
-const cliOf = root => path.join(root, 'bin', 'sub-human');
+const cliOf = root => path.join(root, 'scripts', 'sub-human');
 
 /** The launcher script for an ordered list of roots: exec the first whose CLI exists, else print nothing. */
 function launcherBody(roots) {

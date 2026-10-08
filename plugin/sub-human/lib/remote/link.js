@@ -1,6 +1,6 @@
 'use strict';
 /**
- * plugin/sub-human/lib/remote/link.js: the link daemon, one per machine and room (`bin/sub-human link CODE`,
+ * plugin/sub-human/lib/remote/link.js: the link daemon, one per machine and room (`scripts/sub-human link CODE`,
  * started detached by the join hook, like the orch starter). It holds the one connection to the host
  * (lib/remote/client.js over the transport in the link file, lib/room/links.js), keeps the mirror
  * (lib/room/store-mirror.js applyLine / applyDoc / applyBlob) byte-identical to the host's log, prefetches every
@@ -69,7 +69,7 @@ const { RoomError } = require('../room/validate.js');
 const { isAlive, sleepSync } = require('../io.js');
 const config = require('../config.js');
 
-const BIN = path.join(__dirname, '..', '..', 'bin', 'sub-human');
+const BIN = path.join(__dirname, '..', '..', 'scripts', 'sub-human');
 const RELAY = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put']);
 const STOPPED = new Set(['fork', 'stopped']);
 

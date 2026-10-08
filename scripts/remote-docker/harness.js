@@ -59,7 +59,7 @@ function sh(cmd, args, { input, allowFail = false, timeout = 600_000 } = {}) {
 const dc = (args, o) => sh('docker', ['compose', '-f', COMPOSE, ...PROJECT, ...args], o);
 const dexec = (args, { user = 'host', ...o } = {}) => dc(['exec', '-T', '-u', user, '-e', `SUB_HUMAN_HOME=${HOST_HOME}`, 'devbox', ...args], o);
 const hostCli = (...args) => JSON.parse(dexec(['node', '/harness/host-cli.js', ...args]).stdout);
-const subHuman = (args, o) => dexec(['node', '/plugin/bin/sub-human', ...args], o);
+const subHuman = (args, o) => dexec(['node', '/plugin/scripts/sub-human', ...args], o);
 const port = (svc, p) => Number(dc(['port', svc, String(p)]).stdout.trim().split(':').pop());
 
 async function toxi(api, method, p, body) {

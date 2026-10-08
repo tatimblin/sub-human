@@ -42,11 +42,11 @@ test('line: full is the exact text with an explicit cut marker; compact never en
   assert.equal(JSON.parse(full.slice(full.indexOf(' "') + 1)), E22.text, 'exact text, JSON-quoted');
   const old = room.line(E22);
   assert.ok(old.length <= room.TAIL_MAX);
-  assert.match(old, /" \[cut at \d+\/\d+: sub-human read 22\]$/);
+  assert.match(old, /" \[cut at \d+\/\d+: read\(\{ids:\[22\]\}\)\]$/);
   assert.ok(!/…"$/.test(old));
   const long = { ...E22, text: 'a\nb ' + 'x'.repeat(2400) };
   const cut = room.line(long, { full: true });
-  assert.match(cut, /" \[cut at 2000\/2404: sub-human read 22\]$/);
+  assert.match(cut, /" \[cut at 2000\/2404: read\(\{ids:\[22\]\}\)\]$/);
   assert.ok(cut.includes('"a\\nb x'), 'whitespace kept, escaped');
   assert.equal(room.tailLine(E22), old);
 });
@@ -86,7 +86,7 @@ test('digest: human entries carry full text up to 2,000 chars, then the cut mark
   human('bob', 'say', { text: 'z'.repeat(2100) });
   const d = R.digest();
   assert.ok(d.includes('y'.repeat(300)), 'not clipped at 160');
-  assert.match(d, /" \[cut at 2000\/2100: sub-human read 2\]/);
+  assert.match(d, /" \[cut at 2000\/2100: read\(\{ids:\[2\]\}\)\]/);
   assert.ok(!/…"/.test(d));
 });
 

@@ -1,5 +1,5 @@
 'use strict';
-// Tests for bin/sub-human. The CLI runs as a child of this test process, so it resolves to whatever is
+// Tests for scripts/sub-human. The CLI runs as a child of this test process, so it resolves to whatever is
 // registered for process.pid (process ancestry), exactly as it resolves to claude in a real session.
 const test = require('node:test');
 const assert = require('node:assert/strict');

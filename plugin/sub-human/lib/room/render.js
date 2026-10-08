@@ -3,7 +3,7 @@
  * plugin/sub-human/lib/room/render.js: log entries as text, for Claude (ids kept) and for people (no ids).
  *
  *   line(e, {full}) one notice line. full: the exact text (JSON-quoted) up to TEXT_MAX = 2,000 code
- *     points, then `[cut at 2000/N: sub-human read ID]`; without full, <= TAIL_MAX (240) chars with the same
+ *     points, then `[cut at 2000/N: read({ids:[ID]})]`; without full, <= TAIL_MAX (240) chars with the same
  *     marker when cut. Never a bare "…". A drafted:"agent" entry's header carries "(NAME, Claude's wording)".
  *     tailLine(e) = line(e).
  *   chatLines(e, {viewer, entries?}) -> [string]   one entry as group-chat lines, no ids; continuation lines nested
@@ -57,7 +57,7 @@ function quote(e, n, { exact = false } = {}) {
   const cps = Array.from(t);
   const js = x => JSON.stringify(x).replace(/[\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, c => `\\u${c.charCodeAt(0).toString(16)}`);
   if (cps.length <= n) return js(t);
-  return `${js(cps.slice(0, n).join(''))} [cut at ${n}/${cps.length}: sub-human read ${e.id}]`;
+  return `${js(cps.slice(0, n).join(''))} [cut at ${n}/${cps.length}: read({ids:[${e.id}]})]`;
 }
 
 function header(e) {
@@ -84,7 +84,7 @@ function header(e) {
 
 /**
  * One notice line. full: the header plus the exact text up to TEXT_MAX code points, then
- * `[cut at 2000/N: sub-human read ID]`. Otherwise a compact line of at most TAIL_MAX chars (whitespace
+ * `[cut at 2000/N: read({ids:[ID]})]`. Otherwise a compact line of at most TAIL_MAX chars (whitespace
  * collapsed), with the same explicit marker when the text is cut.
  */
 function line(e, { full = false } = {}) {
@@ -312,7 +312,7 @@ function digestSections(entries = [], { members = {}, code = null } = {}) {
     { title: 'open objections and questions', lines: open },
     { title: 'decisions', lines: decisions },
     { title: 'last 10 human entries', lines: human },
-    { title: null, lines: [{ text: 'full text: the room MCP tool read({ids}), or `sub-human read --id N`' }] },
+    { title: null, lines: [{ text: 'full text: the room MCP tool read({ids})' }] },
   ];
 }
 

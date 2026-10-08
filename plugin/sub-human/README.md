@@ -183,7 +183,7 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 
 ## The `sub-human` CLI
 
-`plugin/sub-human/bin/sub-human` reads the room. Inside a room session it finds your room by itself. It never writes the log.
+`plugin/sub-human/scripts/sub-human` reads the room. Inside a room session it finds your room by itself. It never writes the log. It lives in the plugin's `scripts/`, not `bin/`: claude.ai rejects a plugin with a top-level `bin/` when an organization distributes it, so the CLI is not on the Bash tool's `PATH`. Claude reads the room with the room MCP tools; in your own shell, run it by its path (`node <plugin root>/scripts/sub-human …`) or alias it.
 
 | Command | Prints |
 |---|---|

@@ -41,7 +41,7 @@ module.exports = {
   timingEnv,
   TIMING_ENV_RE,
 
-  // ---------- the room tail (bin/sub-human tail, the hooks module's child) ----------
+  // ---------- the room tail (scripts/sub-human tail, the hooks module's child) ----------
   // Entries are batched into one set of events (at most one wake): flushed after SETTLE_MS of quiet, or
   // SETTLE_MAX_MS after the batch's first entry.
   SETTLE_MS: 1500,                 // SUB_HUMAN_SETTLE_MS

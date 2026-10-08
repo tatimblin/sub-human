@@ -1,8 +1,8 @@
 'use strict';
 // Two machines on one: two SUB_HUMAN_HOMEs, the host's (alice, carol) and a remote
 // member's (bob). The real hooks run as child processes on both sides; bob joins with the invite /sub-human host
-// gave, and his link daemon (bin/sub-human link, started by the join hook) spawns the host's server
-// (bin/sub-human serve --stdio) through the pipe transport. Checked: the mirror's log is byte-identical to the
+// gave, and his link daemon (scripts/sub-human link, started by the join hook) spawns the host's server
+// (scripts/sub-human serve --stdio) through the pipe transport. Checked: the mirror's log is byte-identical to the
 // host's and both chain; bob's @room verifies on the host; his signoff leads to the host's decision (the plan was
 // prefetched for his card); a post addressed to bob reaches his tail and not carol's; his presence shows in the
 // host's rows; nothing session-local of his reaches the host; with the host's server killed his @room is refused

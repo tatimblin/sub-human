@@ -401,7 +401,7 @@ const STUB = {
     + '{NAME}\'s prompts that start `@room` are posted as their words by a hook; nothing else can post as {NAME}.\n'
     + 'To reach a session now: SendMessage to {ADDR_EXAMPLE}; those come from Claudes.\n'
     + 'propose(text|path): asks named people to agree on a card. Never say {NAME} agrees.\n'
-    + 'task(op): the room\'s task list (`{PLUGIN}/bin/sub-human tasks`).',
+    + 'task(op): the room\'s task list (`{PLUGIN}/scripts/sub-human tasks`).',
   'orchestrator.md': 'SUB-HUMAN: you are the headless helper of room {CODE} (members: {OTHERS}). Nobody types here.\n'
     + 'Reach a member now: SendMessage to {ADDR_EXAMPLE}; post is a note read on their next turn.\n'
     + 'Facilitate only when asked: read {PLUGIN}/skills/sub-human/facilitate.md.',

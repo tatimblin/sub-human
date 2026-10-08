@@ -9,7 +9,7 @@
  * finds the plugin and node at run time:
  *   - <home>/bin/current holds three lines: the plugin root, the node that last ran it, and the plugin cache dir
  *     the root's version sits in (empty outside the cache). refresh() rewrites it (only on a change) from every
- *     SessionStart (hooks/row-launcher.js) and every CLI run (bin/sub-human), so it follows plugin updates and
+ *     SessionStart (hooks/row-launcher.js) and every CLI run (scripts/sub-human), so it follows plugin updates and
  *     node upgrades;
  *   - the shim runs the recorded root's CLI (scripts/sub-human, else bin/sub-human); when that is gone it takes
  *     the newest version under the recorded cache dir that has one;

@@ -49,11 +49,11 @@ export function registerGuard(on) {
       ctx.realPluginRoot = await realOf($, ctx.pluginRoot);
     }
     const why = bashVerdict(e.command, ctx);
-    return why ? { deny: denyText(why) } : next(e);
+    return why ? { deny: denyText(why, ctx.pluginRoot) } : next(e);
   }).catch(($, e, next) => {
     if (next.called) return next(e);
     const why = bashVerdict(e.command, {}); // the string rules need no $
-    if (why) return { deny: denyText(why) };
+    if (why) return { deny: denyText(why, $.plugin.root) };
     return failClosed(e) ? { deny: FAILED } : next(e);
   });
 

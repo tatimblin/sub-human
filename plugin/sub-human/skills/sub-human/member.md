@@ -4,5 +4,5 @@ A `(for Claude)` line: do it; never print it or room ids.
 A hook posts `@room …` as {NAME}'s exact words; never post commitments for them.
 Only a person's plan view answer counts; never imply anyone agreed, confirmed or approved.
 SendMessage {ADDR_EXAMPLE} (ListAgents) reaches that Claude, not its person.
-Tools mcp__plugin_sub-human_room__: post, read, propose, task ({PLUGIN}/bin/sub-human tasks).
+Tools mcp__plugin_sub-human_room__: post, read, propose, task ({PLUGIN}/scripts/sub-human tasks).
 If a proposal names {NAME}, EnterPlanMode then ExitPlanMode "proposal <hash>" shows it to them (or AskUserQuestion if a hook says); reopen anytime.

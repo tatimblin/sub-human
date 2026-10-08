@@ -112,7 +112,7 @@ test('row-launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that 
   const f = path.join(home, 'bin', 'row-status');
   const body = fs.readFileSync(f, 'utf8');
   assert.match(body, /^#!\/bin\/sh\n/);
-  assert.ok(body.includes(`exec node '${path.join(PLUGIN, 'bin', 'sub-human')}' agent-statusline`));
+  assert.ok(body.includes(`exec node '${path.join(PLUGIN, 'scripts', 'sub-human')}' agent-statusline`));
   assert.ok(fs.statSync(f).mode & 0o100, 'executable');
   const mtime = fs.statSync(f).mtimeMs;
   hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'clear' });
@@ -128,7 +128,7 @@ test('row-launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that 
   assert.equal(resolved, f);
   const dflt = spawnSync('/bin/sh', ['-c', `printf %s ${cmd}`], { env: { HOME: '/Users/x', PATH: process.env.PATH }, encoding: 'utf8' }).stdout;
   assert.equal(dflt, '/Users/x/.sub-human/bin/row-status');
-  // End to end through the shell command, as Claude Code runs it (needs bin/sub-human's dispatch, owner C).
+  // End to end through the shell command, as Claude Code runs it (needs scripts/sub-human's dispatch, owner C).
   rows.recordRow(code, 'sid-orch', 'a1', { kind: 'participant', name: 'alice', parent: null });
   const out = spawnSync('/bin/sh', ['-c', cmd], {
     env: env({ SUB_HUMAN_HOME: home, NO_COLOR: '1' }), encoding: 'utf8',
@@ -141,7 +141,7 @@ test('row-launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that 
 test('row-launcher: a temp-dir plugin root is refused unless allowed; stable roots run first, newest first, a deleted root is skipped', () => {
   const { home } = world(['orch']);
   const f = path.join(home, 'bin', 'row-status');
-  const mkRoot = base => { fs.mkdirSync(path.join(base, 'bin'), { recursive: true }); fs.writeFileSync(path.join(base, 'bin', 'sub-human'), ''); return base; };
+  const mkRoot = base => { fs.mkdirSync(path.join(base, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(base, 'scripts', 'sub-human'), ''); return base; };
   const tmpRoot = mkRoot(fs.mkdtempSync(path.join(os.tmpdir(), 'sh-root-')));
   // refused: nothing is written
   let r = hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' }, { CLAUDE_PLUGIN_ROOT: tmpRoot, SUB_HUMAN_ALLOW_TMP_ROOT: undefined });
@@ -156,7 +156,7 @@ test('row-launcher: a temp-dir plugin root is refused unless allowed; stable roo
   assert.equal(r.code, 0, r.stderr);
   hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' }, { CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_ALLOW_TMP_ROOT: '1' });
   const body = fs.readFileSync(f, 'utf8');
-  const at = s => body.indexOf(`exec node '${path.join(s, 'bin', 'sub-human')}'`);
+  const at = s => body.indexOf(`exec node '${path.join(s, 'scripts', 'sub-human')}'`);
   assert.ok(at(PLUGIN) >= 0 && at(tmpRoot) > at(PLUGIN), body);
   // a session that does not allow temp roots drops them
   hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'startup' }, { CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_ALLOW_TMP_ROOT: undefined });
