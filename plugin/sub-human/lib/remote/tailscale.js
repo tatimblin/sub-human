@@ -23,6 +23,9 @@
  *                                    tailscaled not running or logged out: RoomError OFFLINE with what to do. Any other
  *                                    refusal: INVALID with Tailscale's own words
  *   off({bin, path, funnel?}) -> {ok, error?}
+ *   warm(url, {timeoutMs?, env?}) -> pid | null   one HTTPS request to the served URL in a detached child, not waited
+ *                                    for (WARM_MS, 60 s): Tailscale fetches the name's certificate on the first request
+ *                                    (~20 s cold), so the first joiner does not wait on it. SUB_HUMAN_TAILSCALE_WARM=0: off
  *   classify(text) -> {kind: 'enable', feature, url} | {kind: 'not-running'} | {kind: 'logged-out'} | {kind: 'stopped'}
  *                                    | null   what the CLI's output says (enable URLs: login.tailscale.com/f/…)
  *   notEnabled({feature, url, funnel?, waited?}) -> string   the person's message for a tailnet without Serve/Funnel
@@ -44,6 +47,7 @@ const { RoomError } = require('../room/validate.js');
 const MAC_APP = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
 const CALL_MS = 20_000;
 const SERVE_MS = 10_000;
+const WARM_MS = 60_000;
 const ADMIN_DNS = 'https://login.tailscale.com/admin/dns';
 const CT_WARNING = 'Funnel makes this URL public: its hostname is published in public certificate-transparency logs, so anyone can find the name (the room still needs the URL\'s secret and the PIN).';
 const PATH_RE = /^\/[A-Za-z0-9._~/-]{1,200}$/;
@@ -187,12 +191,29 @@ function on({ bin: b, path: p, port, funnel = false, timeoutMs = serveMs() }) {
   throw new RoomError('INVALID', `tailscale ${funnel ? 'funnel' : 'serve'} refused: ${words}`);
 }
 
+/**
+ * One HTTPS request to url, in a detached child, not waited for: the first request to a ts.net name makes Tailscale
+ * fetch its certificate (~20 s the first time), so the host warms it before the first joiner dials. Its answer does
+ * not matter (the listener refuses a plain GET). Off with SUB_HUMAN_TAILSCALE_WARM=0. Returns the child's pid, or null.
+ */
+function warm(url, { timeoutMs = WARM_MS, env = process.env } = {}) {
+  if (env.SUB_HUMAN_TAILSCALE_WARM === '0' || !/^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/[A-Za-z0-9._~/-]*$/.test(String(url))) return null;
+  const code = `const r=require('https').get(${JSON.stringify(url)},{timeout:${Number(timeoutMs)}},s=>{s.resume();s.on('end',()=>process.exit(0))});`
+    + 'r.on(\'timeout\',()=>r.destroy());r.on(\'error\',()=>process.exit(0));';
+  try {
+    const c = spawn(process.execPath, ['-e', code], { detached: true, stdio: 'ignore' });
+    c.on('error', () => {});
+    c.unref();
+    return c.pid || null;
+  } catch { return null; }
+}
+
 function off({ bin: b, path: p, funnel = false }) {
   const r = call(b, offArgs({ path: p, funnel }));
   return r.ok ? { ok: true } : { ok: false, error: r.error };
 }
 
-module.exports = { MAC_APP, SERVE_MS, CT_WARNING, bin, self, serveArgs, offArgs, on, off, classify, notEnabled, watch, watchSync };
+module.exports = { MAC_APP, SERVE_MS, CT_WARNING, bin, self, serveArgs, offArgs, on, off, warm, classify, notEnabled, watch, watchSync };
 
 if (require.main === module && process.argv[2] === '--watch') {
   watch(JSON.parse(process.argv[3])).then(r => { process.stdout.write(JSON.stringify(r) + '\n'); process.exit(0); });

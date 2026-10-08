@@ -30,8 +30,9 @@
  *   The Duplex: plaintext bytes; each write is cut into Noise messages of at most noise.MAX_PLAINTEXT bytes, each one
  *   binary WebSocket message. A message that does not decrypt, or a text message, closes the conn (1002 / 1003).
  *   kind = {parse, open, describe}      open(spec, {code}) connects (lib/remote/ws.js connect, so HTTPS_PROXY / NO_PROXY
- *       apply), runs clientChannel and returns the transport (./index.js fromDuplex). A failed connect is OFFLINE (the
- *       link daemon retries); INVALID without a code or a pinned key
+ *       apply; within WS_CONNECT_MS, 45 s: a ts.net name's first TLS handshake waits on its certificate), runs
+ *       clientChannel and returns the transport (./index.js fromDuplex). A failed connect is OFFLINE (the link daemon
+ *       retries); INVALID without a code or a pinned key
  */
 
 const { Duplex } = require('node:stream');
@@ -171,7 +172,8 @@ const kind = {
     const url = urlOf({ ...s, kind: spec.kind });
     let conn;
     try {
-      conn = await ws().connect(url, { maxPayload: noise().MAX_MESSAGE + 64 });
+      const config = require('../../config.js');
+      conn = await ws().connect(url, { maxPayload: noise().MAX_MESSAGE + 64, timeoutMs: config.envMs('SUB_HUMAN_WS_CONNECT_MS', config.WS_CONNECT_MS) });
     } catch (e) { throw new RoomError('OFFLINE', e.message); }
     try {
       const duplex = await clientChannel(conn, { rs: Buffer.from(spec.hostKey, 'base64url'), code: ctx.code });

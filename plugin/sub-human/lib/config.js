@@ -131,6 +131,9 @@ module.exports = {
   // this machine has no seat left in the room.
   LINK_START_MS: 3000,
   LINK_HELLO_MS: 15_000,           // the daemon's hello: an ssh transport connects (and authenticates) first
+  // A wss/ws link's WebSocket (TCP, TLS, upgrade), before the Noise handshake: a ts.net name's first TLS handshake
+  // waits while Tailscale fetches its certificate (~20 s seen cold), so this is generous.
+  WS_CONNECT_MS: 45_000,           // SUB_HUMAN_WS_CONNECT_MS
   // Retries use decorrelated jitter: each delay is random in [LINK_RETRY_MS, 3 x the last one], capped at
   // LINK_RETRY_MAX_MS, so links that dropped together do not redial together.
   LINK_RETRY_MS: 1000,             // SUB_HUMAN_LINK_RETRY_MS

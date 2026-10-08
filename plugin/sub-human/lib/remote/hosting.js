@@ -208,7 +208,10 @@ function joinText(code, name, o, request) {
       + `  /sub-human admit ${request}\n\n`
       + `Once they have, type: /sub-human ${name} ${code}  (the link keeps trying for ${minutes(INVITE_TTL_MS)} minutes; your PIN is checked when it gets through)`;
   }
-  return `the link to room ${code} is still connecting${o.reason ? ` (${o.reason})` : ''}; type /sub-human ${name} ${code} in a moment`;
+  const t = (links().get(code) || {}).transport || {};
+  const cert = t.kind === 'wss' && /\.ts\.net$/i.test(String(t.host || '')) && !o.reason
+    ? ' (Tailscale may be issuing a certificate: the first connection to a ts.net name can take ~20 s; the link keeps trying)' : '';
+  return `the link to room ${code} is still connecting${o.reason ? ` (${o.reason})` : cert}; type /sub-human ${name} ${code} in a moment`;
 }
 
 module.exports = { hostInvite, admit, revoke, linkTransport, joinInvite, outcome, joinText, shimReady };

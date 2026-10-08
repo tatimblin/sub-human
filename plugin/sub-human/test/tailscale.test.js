@@ -86,3 +86,28 @@ test('tailscale classify: the CLI\'s words', () => {
   assert.equal(ts.classify('Available within your tailnet:\nServe started and running in the background.'), null);
   assert.deepEqual(ts.classify('Tailscale is stopped.'), { kind: 'stopped' });
 });
+
+test('tailscale warm: one background HTTPS request to the served URL (the certificate is fetched before the first joiner); never waited for', async t => {
+  const net = require('node:net');
+  let hit = null;
+  const srv = net.createServer(s => { s.once('data', d => { hit = d; s.destroy(); }); });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const t0 = Date.now();
+  const pid = ts.warm(`https://127.0.0.1:${srv.address().port}/sub-human/vole-1234`, { timeoutMs: 3000 });
+  assert.ok(Number.isInteger(pid) && Date.now() - t0 < 1000, 'returns at once');
+  assert.ok(await h.until(() => hit, 5000, 20), 'the request arrived');
+  assert.equal(hit[0], 0x16, 'a TLS ClientHello');
+  assert.equal(ts.warm('https://box.ts.net/x', { env: { SUB_HUMAN_TAILSCALE_WARM: '0' } }), null);
+  assert.equal(ts.warm('https://box.ts.net/x"; rm -rf /'), null, 'a plain URL only');
+});
+
+test('join text: a wss link to a ts.net name still connecting says Tailscale may be issuing a certificate', t => {
+  h.freshHome(t);
+  const links = require(path.join(h.LIB, 'room', 'links.js'));
+  const hosting = require(path.join(h.LIB, 'remote', 'hosting.js'));
+  const code = 'vole-4321';
+  links.set(code, { code, transport: { kind: 'wss', host: 'box.tail1a2b.ts.net', path: `/sub-human/${code}`, hostKey: 'A'.repeat(43) }, invite: 'x', created_at: 'now' });
+  assert.match(hosting.joinText(code, 'bob', { state: 'waiting' }), /still connecting \(Tailscale may be issuing a certificate: .*keeps trying\); type \/sub-human bob vole-4321/);
+  assert.doesNotMatch(hosting.joinText(code, 'bob', { state: 'waiting', reason: 'no route' }), /certificate/);
+});

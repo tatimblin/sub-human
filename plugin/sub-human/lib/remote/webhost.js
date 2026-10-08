@@ -11,7 +11,8 @@
  *       sh2 invite whose locator is wss://HOST/…/sub-human/CODE and whose host-key field is the listener's X25519
  *       key (lib/remote/listener.js hostKey), with its PIN (lib/remote/auth.js: online only, 5 tries, 15 minutes).
  *       tailscale: Tailscale Serve for /sub-human/CODE -> http://127.0.0.1:PORT on this node's MagicDNS name (tailnet
- *       only); funnel: the same through Funnel (public; the text carries tailscale.CT_WARNING). url: any HTTPS front
+ *       only), then one background request to it to warm its certificate (tailscale.warm); funnel: the same through
+ *       Funnel (public; the text carries tailscale.CT_WARNING). url: any HTTPS front
  *       that forwards to the listener (the lab's tls-front, a reverse proxy of the person's own): the join URL is
  *       URL/sub-human/CODE. joinUrl is the paste-able form: https://HOST/…/sub-human/CODE#SECRET.HOSTKEY. Unlike ssh
  *       there is no admit step: the invite's secret, its PIN and the pinned key are the admission, and the room line
@@ -68,6 +69,8 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, now = Dat
     const same = served && served.tailscale && served.tailscale.path === roomPath && !!served.tailscale.funnel === !!funnel && served.tailscale.port === lport;
     if (served && served.tailscale && !same) L.untailscale(served);
     tsRec = same ? served.tailscale : ts().on({ bin, path: roomPath, port: lport, funnel });
+    // the name's certificate: Tailscale fetches it on the first HTTPS request (~20 s cold); start that now, not waited for
+    if (!same) ts().warm(`https://${me.dnsName}${roomPath}`);
     base = { secure: true, host: me.dnsName, port: undefined, prefix: '' };
     mode = funnel ? 'funnel' : 'tailscale';
   } else {
@@ -92,6 +95,7 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, now = Dat
     `PIN ${r.pin}  (send it apart from the link, e.g. say it; 5 wrong tries burn the invite)`,
     `The link pins this machine's listener key ${hostKey.slice(0, 12)}… and carries a one-time secret; with the PIN that is the whole admission (no admit step). The same invite as text: ${r.invite}`,
   ];
+  if (tsRec) lines.push('The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and a joiner\'s link keeps trying.');
   if (mode === 'funnel') lines.push(ts().CT_WARNING);
   lines.push(`Stop serving it with /sub-human unhost (closing the room does too).`);
   return { ...r, joinUrl, locator, hostKey, base: joinBase, mode, port: lport, text: lines.join('\n') };

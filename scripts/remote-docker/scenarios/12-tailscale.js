@@ -53,11 +53,12 @@ module.exports = {
       // Serve/HTTPS not enabled on the tailnet (the CLI prints an enable URL and waits): on() stops it and says so
       t.check(`tailscale ${argv.join(' ')}`, !!on, on ? 'ok' : refused.message);
       if (!on) return;
+      ts.warm(`https://${me.dnsName}${p}`); // as /sub-human host --tailscale does: the certificate is fetched now
       const ws = lib('remote/ws.js');
       const wsT = lib('remote/transports/ws.js');
       let res;
       try {
-        const conn = await ws.connect(`wss://${me.dnsName}${p}`, { timeoutMs: 20_000 });
+        const conn = await ws.connect(`wss://${me.dnsName}${p}`, { timeoutMs: 45_000 }); // a cold ts.net certificate takes ~20 s
         try { await wsT.clientChannel(conn, { rs: Buffer.from(hostKey, 'base64url'), code: 'vole-0001' }); res = 'joined?!'; } catch (e) { res = `${e.code}: ${e.message}`; }
       } catch (e) { res = `connect: ${e.message}`; }
       t.ev.write('handshake.txt', res);

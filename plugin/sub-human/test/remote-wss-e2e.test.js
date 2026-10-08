@@ -204,6 +204,7 @@ esac
   const { url } = shown(out.json.reason);
   assert.match(url, new RegExp(`^https://box\\.tail1a2b\\.ts\\.net/sub-human/${code}#`));
   assert.match(out.json.reason, /Tailscale Serve \(your tailnet only\)/);
+  assert.match(out.json.reason, /can take ~20 s while Tailscale issues its certificate; it is being fetched now/);
   assert.doesNotMatch(out.json.reason, /certificate-transparency/);
   const p = `/sub-human/${code}`;
   const lines = () => fs.readFileSync(calls, 'utf8').trim().split('\n');
