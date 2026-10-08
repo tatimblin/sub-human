@@ -25,7 +25,12 @@
  *                                    0.3.0 (protocol 2). Update your plugin: /plugin update sub-human" (or "The host
  *                                    must update …" when the joiner is the newer side)
  *   CAPS                             what this end serves: {ops: OPS}
- *   OPS                              hello join leave beat append subscribe blob.get blob.put
+ *   OPS                              hello join leave beat append subscribe blob.get blob.put ping
+ *   ping                             the app-level heartbeat: request {op: 'ping'} -> reply {pong: <host ms>} (the
+ *                                    pong). Gated by caps, not by v: a client pings only a server whose caps.ops
+ *                                    lists 'ping', and says hello with caps {ping: true} when it pings, so the
+ *                                    server may close a session that then goes silent (LINK_SILENT_MS). An old
+ *                                    peer on either side never sees one
  *   CODES                            RoomError codes on both ends and on the wire, unchanged:
  *                                    INVALID RATE LOCK NO_ROOM (today's) + OFFLINE HOST_ONLY AUTH FORK PROTOCOL
  *   request(id, op, params), reply(id, result), error(id, code, message), event(id, ev, data) -> frame
@@ -64,7 +69,7 @@ function skewMessage({ host, joiner }) {
     : 'The host must update: ask them to run /plugin update sub-human';
   return `${runs('host runs', host)}; ${runs('you run', joiner).replace(/^you run sub-human /, 'you run ')}. ${fix}`;
 }
-const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put'];
+const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping'];
 const EVENTS = ['entry', 'doc', 'end'];
 const CAPS = Object.freeze({ ops: OPS });
 const CODES = Object.freeze({

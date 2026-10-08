@@ -249,7 +249,7 @@ test('skew: a newer host\'s unknown entry kind, via and fields, an unknown docum
   assert.deepEqual(es.map(e => lane({ name: 'alice', role: 'member' }, e, es)), ['pull', 'pull', 'pull'], 'nothing unknown wakes anyone');
 });
 
-test('link: a lost connection is retried after retryMs, doubled per failure up to retryMaxMs (1 s, capped at 10 s by default)', async t => {
+test('link: a lost connection is retried with decorrelated jitter: each delay in [retryMs, 3 x the last], at most retryMaxMs', async t => {
   h.freshHome(t);
   const code = h.newRoom();
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
@@ -257,12 +257,13 @@ test('link: a lost connection is retried after retryMs, doubled per failure up t
   const at = [];
   const { RoomError } = require(path.join(h.LIB, 'room', 'validate.js'));
   const connect = () => { at.push(Date.now()); return Promise.reject(new RoomError('OFFLINE', 'no route')); };
-  const l = await link.serveMirror({ mirror, connect, retryMs: 40, retryMaxMs: 120 });
-  await h.until(() => at.length >= 6, 3000, 5);
+  // random() = 1: the top of each range, so the delays grow 3x per failure up to the cap
+  const l = await link.serveMirror({ mirror, connect, retryMs: 40, retryMaxMs: 400, random: () => 1, watch: false, seats: () => [] });
+  await h.until(() => at.length >= 5, 5000, 5);
   l.stop('done');
-  const gaps = at.slice(1, 6).map((x, i) => x - at[i]);
-  const want = [40, 80, 120, 120, 120];
-  gaps.forEach((g, i) => assert.ok(g >= want[i] - 5 && g < want[i] + 60, `gap ${i}: ${g} ms, want ~${want[i]}: ${gaps}`));
+  const gaps = at.slice(1, 5).map((x, i) => x - at[i]);
+  const want = [120, 360, 400, 400];
+  gaps.forEach((g, i) => assert.ok(g >= want[i] - 5 && g < want[i] + 80, `gap ${i}: ${g} ms, want ~${want[i]}: ${gaps}`));
   const config = require(path.join(h.LIB, 'config.js'));
   assert.deepEqual([config.LINK_RETRY_MS, config.LINK_RETRY_MAX_MS], [1000, 10_000]);
 });
@@ -316,8 +317,9 @@ test('tail: one line for a link that is down, keyed fork or offline; none while 
   assert.equal(linkLine({ running: true, state: 'connecting' }, 'vole-1234'), null);
   assert.deepEqual(linkLine({ running: false, state: 'fork' }, 'vole-1234'), {
     key: 'fork', text: 'room link: FORK: this machine\'s copy of room vole-1234 no longer matches the host\'s; run sub-human link --reset vole-1234' });
+  assert.match(linkLine({ running: false, state: 'fork', queued: 3 }, 'vole-1234').text, /host's; 3 queued @room post\(s\) are kept, not sent; run sub-human link --reset/);
   assert.deepEqual(linkLine({ running: true, state: 'offline', reason: 'the link closed' }, 'vole-1234'), {
-    key: 'offline', text: 'room link: OFFLINE (the link closed); @room posts are refused until it is back' });
+    key: 'offline', text: 'room link: OFFLINE (the link closed); @room posts are queued and sent when it is back, answers are refused' });
   assert.match(linkLine({ running: false }, 'vole-1234').text, /the link daemon is not running/);
   assert.match(linkLine({ running: false, state: 'stopped', reason: 'the room was closed' }, 'vole-1234').text, /the link stopped: the room was closed/);
 });
