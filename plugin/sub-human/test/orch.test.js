@@ -381,10 +381,16 @@ test('orch: crash-all-members (SIGKILL) -> the watchdog reaps the orch (real det
   assert.deepEqual(identity.openRooms(), [], 'orch-only room is not open');
   assert.deepEqual(identity.orphanRooms(), [code]);
   const t0 = Date.now();
+  // The real detached reaper (reapDetached), whose pid is kept so the test waits for it to exit: a fixed 5 s
+  // deadline on its result failed when two node starts (reaper, stub claude) took longer under load.
+  let reaperPid = null;
+  const reaper = (c, o) => { reaperPid = orch.reapDetached(c, o); };
   await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg, SUB_HUMAN_REAP_WAIT_MS: '0' }, async () => {
-    assert.equal(orch.watchdog(code, { now: t0 }), 'waiting', 'no SessionEnd ran: the first observation starts the clock');
-    assert.equal(orch.watchdog(code, { now: t0 + 60_000 }), 'reaping');
-    assert.ok(await h.until(() => identity.readMembers(code).orch.stopped_at, 5000), 'reaper finished');
+    assert.equal(orch.watchdog(code, { now: t0, reaper }), 'waiting', 'no SessionEnd ran: the first observation starts the clock');
+    assert.equal(orch.watchdog(code, { now: t0 + 60_000, reaper }), 'reaping');
+    assert.ok(reaperPid, 'the reaper was started');
+    assert.ok(await h.until(() => !identity.isAlive(reaperPid), 120_000), 'the reaper exited');
+    assert.ok(identity.readMembers(code).orch.stopped_at, 'reaper finished');
   });
   assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'dead00ff']]);
   const rec = identity.readMembers(code).orch;

@@ -186,12 +186,23 @@ test('link: a lost connection is retried after retryMs, doubled per failure up t
   const at = [];
   const { RoomError } = require(path.join(h.LIB, 'room', 'validate.js'));
   const connect = () => { at.push(Date.now()); return Promise.reject(new RoomError('OFFLINE', 'no route')); };
-  const l = await link.serveMirror({ mirror, connect, retryMs: 40, retryMaxMs: 120 });
-  await h.until(() => at.length >= 6, 3000, 5);
+  // The retry delays the daemon asks for, read from its setTimeout calls: the gaps between attempts also measured
+  // how late a loaded machine fires timers, and an upper bound on them failed under load.
+  const asked = [];
+  const realSetTimeout = global.setTimeout;
+  global.setTimeout = (fn, ms, ...rest) => {
+    if (/lib[\\/]remote[\\/]link\.js/.test(new Error().stack)) asked.push(ms);
+    return realSetTimeout(fn, ms, ...rest);
+  };
+  let l;
+  try {
+    l = await link.serveMirror({ mirror, connect, retryMs: 40, retryMaxMs: 120 });
+    await h.until(() => at.length >= 6, 30_000, 5);
+  } finally { global.setTimeout = realSetTimeout; }
   l.stop('done');
+  assert.deepEqual(asked.slice(0, 5), [40, 80, 120, 120, 120]);
   const gaps = at.slice(1, 6).map((x, i) => x - at[i]);
-  const want = [40, 80, 120, 120, 120];
-  gaps.forEach((g, i) => assert.ok(g >= want[i] - 5 && g < want[i] + 60, `gap ${i}: ${g} ms, want ~${want[i]}: ${gaps}`));
+  gaps.forEach((g, i) => assert.ok(g >= asked[i] - 5, `gap ${i}: ${g} ms, under the ${asked[i]} ms asked: ${gaps}`));
   const config = require(path.join(h.LIB, 'config.js'));
   assert.deepEqual([config.LINK_RETRY_MS, config.LINK_RETRY_MAX_MS], [1000, 10_000]);
 });
