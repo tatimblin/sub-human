@@ -7,7 +7,7 @@
  * It never loads the signer (test/hooks/security.test.js): a via=human payload arrives signed by the remote
  * hook and is verified against the key pinned in the log (lib/room/envelope.js), then placed (store.place).
  *
- *   serve(transport, {store, log?, linkId?}) -> {close()}
+ *   serve(transport, {store, log?, linkId?, silentMs?}) -> {close()}
  *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
  *       (lib/remote/auth.js); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
  *       SSH forced command `sub-human authorize` writes): only that link's token, or the invite reserved for it,
@@ -31,6 +31,9 @@
  *                    transport closes
  *         blob.get   store.blobs.get(ref), base64;  blob.put  {name, bytes}: name must be plans/<hash12>.md of
  *                    the bytes (content-addressed, at most PROPOSAL_FILE_MAX), written once
+ *         ping       {pong: the host's ms}: the link daemon's heartbeat (lib/remote/link.js). A session whose hello
+ *                    carried caps {ping: true} and that then sends no frame for silentMs (LINK_SILENT_MS,
+ *                    SUB_HUMAN_LINK_SILENT_MS) is closed: the peer is gone (a half-open link after a sleep)
  *       After a write (join, leave, beat, append) every stream of the session is polled before the reply goes out,
  *       so a link that subscribed holds the write's lines and documents when its reply arrives (read-your-writes).
  *       An op that throws a RoomError (a protocol CODES code) answers {error: {code, message}} with the same
@@ -45,7 +48,7 @@ const proposal = require('../proposal.js');
 const members = require('../room/members.js');
 const envelope = require('../room/envelope.js');
 const { RoomError, hash12 } = require('../room/store.js');
-const { FOLLOW_POLL_MS, PROPOSAL_FILE_MAX } = require('../config.js');
+const { FOLLOW_POLL_MS, PROPOSAL_FILE_MAX, LINK_SILENT_MS, envMs } = require('../config.js');
 
 const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const ANSWERS = new Set(['signoff', 'objection']);
@@ -115,12 +118,13 @@ function stream(s, id, after) {
 
 // ---------- ops ----------
 const OPS = {
-  hello(s, { v, machine, token, invite }) {
+  hello(s, { v, machine, token, invite, caps }) {
     if (v !== protocol.VERSION) throw new RoomError('PROTOCOL', `protocol v${v} is not served here (v${protocol.VERSION})`);
     if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) throw invalid('hello needs this machine\'s id');
     s.link = null;
     const r = invite !== undefined ? redeem(s.store, invite, machine, s.linkId) : token !== undefined ? known(s.store, token, s.linkId) : { link: null };
     s.link = r.link;
+    if (caps && caps.ping === true) s.expireSilent();
     const out = { v: protocol.VERSION, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null };
     if (r.token) out.token = r.token;
     return out;
@@ -180,22 +184,40 @@ const OPS = {
     if (!s.store.blobs.has(name)) s.store.blobs.put(name, buf);
     return { ref: name };
   },
+
+  ping() { return { pong: Date.now() }; },
 };
 
 // ---------- the session ----------
 class Session {
-  constructor(transport, store, log, linkId) {
+  constructor(transport, store, log, linkId, silentMs) {
     this.transport = transport;
     this.store = store;
     this.log = log;
     this.linkId = linkId || null;
     this.link = null;
     this.streams = new Set(); // {tick, stop}
+    this.silentMs = silentMs;
+    this.heard = Date.now();
+    this.silence = null;
     transport.onFrame(f => this.receive(f));
     transport.onClose(() => this.stop());
   }
 
+  /** The peer pings: a session silent for silentMs is closed (its streams end with the transport). */
+  expireSilent() {
+    if (this.silence || !(this.silentMs > 0)) return;
+    this.silence = setInterval(() => {
+      if (Date.now() - this.heard <= this.silentMs) return;
+      this.log(`sub-human serve: no frame for ${this.silentMs} ms; closing the link`);
+      this.stop();
+      this.transport.close();
+    }, Math.max(10, Math.floor(this.silentMs / 3)));
+    this.silence.unref();
+  }
+
   receive(f) {
+    this.heard = Date.now();
     if (!protocol.isRequest(f)) {
       return this.transport.send(protocol.error(f.id ?? null, 'PROTOCOL', f.error ? f.error.message : 'expected a request {id, op, params}'));
     }
@@ -217,16 +239,20 @@ class Session {
     return protocol.error(f.id, 'INVALID', (e && e.message) || String(e));
   }
 
-  stop() { for (const st of [...this.streams]) st.stop(); }
+  stop() {
+    clearInterval(this.silence);
+    this.silence = null;
+    for (const st of [...this.streams]) st.stop();
+  }
 }
 
 /**
  * @param {{send(frame: object): void, onFrame(fn: (frame: object) => void): void, onClose(fn: () => void): void, close(): void}} transport
- * @param {{store: import('../room/store.js').FsRoomStore, log?: (...a: any[]) => void, linkId?: string}} ctx
+ * @param {{store: import('../room/store.js').FsRoomStore, log?: (...a: any[]) => void, linkId?: string, silentMs?: number}} ctx
  * @returns {{close(): void}}
  */
-function serve(transport, { store, log = () => {}, linkId }) {
-  const session = new Session(transport, store, log, linkId);
+function serve(transport, { store, log = () => {}, linkId, silentMs = envMs('SUB_HUMAN_LINK_SILENT_MS', LINK_SILENT_MS) }) {
+  const session = new Session(transport, store, log, linkId, silentMs);
   return { close() { session.stop(); transport.close(); } };
 }
 

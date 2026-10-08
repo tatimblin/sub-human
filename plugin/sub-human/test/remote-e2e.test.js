@@ -5,9 +5,9 @@
 // (scripts/sub-human serve --stdio) through the pipe transport. Checked: the mirror's log is byte-identical to the
 // host's and both chain; bob's @room verifies on the host; his signoff leads to the host's decision (the plan was
 // prefetched for his card); a post addressed to bob reaches his tail and not carol's; his presence shows in the
-// host's rows; nothing session-local of his reaches the host; with the host's server killed his @room is refused
-// OFFLINE with nothing written anywhere, his card answer is not recorded and he is told, and his tail says so once; the link resumes with no gap; after his session
-// ends the daemon exits on its own.
+// host's rows; nothing session-local of his reaches the host; with the host's server killed his @room posts are
+// queued (nothing written anywhere yet), his card answer is not recorded and he is told, and his tail says so once;
+// the link resumes with no gap and sends the queued posts in order; after his session ends the daemon exits on its own.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -23,7 +23,7 @@ const { isAlive } = require(path.join(h.LIB, 'io.js'));
 const { Machine } = require('./support/two-homes.js');
 
 const RETRY_MS = 4000; // the daemon's first retry after the server is killed: the window the OFFLINE checks run in
-const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: String(RETRY_MS), SUB_HUMAN_LINK_IDLE_MS: '1500' };
+const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: String(RETRY_MS), SUB_HUMAN_LINK_RETRY_MAX_MS: String(RETRY_MS), SUB_HUMAN_LINK_IDLE_MS: '1500' };
 
 const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
 const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
@@ -95,15 +95,19 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   const p2 = host.lib(() => proposal.create({ code, name: 'alice', role: 'member' }, { text: '# Ship the lexer\n', approvers: ['bob'] }));
   await h.until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${p2.hash}.md`)), 5000, 50);
 
-  // the host's server dies: bob's @room is refused OFFLINE, nothing written anywhere; his tail says so once
+  // the host's server dies: bob's @room posts are queued, nothing written anywhere yet; his tail says so once
   const server = childOf(daemon.pid);
   kill(server);
   await h.until(() => remote.lib(() => link.status(code)).state === 'offline', 5000, 20);
   const before = { host: host.log(code), mirror: remote.log(code) };
   assert.equal(host.say(alice, 'while you were away').json.continue, false);
-  const refused = remote.say(bob, 'is anyone there');
-  assert.equal(refused.json.decision, 'block');
-  assert.match(refused.json.reason, new RegExp(`not posted: room ${code} is offline .*nothing was sent`));
+  for (const [i, text] of ['is anyone there', 'second', 'third'].entries()) {
+    const queued = remote.say(bob, text);
+    assert.equal(queued.json.continue, false, queued.stderr);
+    assert.equal(queued.json.stopReason, `⧗ queued: room ${code} is offline; this post is sent when the link is back (${i + 1} waiting)`);
+  }
+  assert.equal(JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.state.json`), 'utf8')).queued, 3);
+  assert.equal(fs.statSync(path.join(remote.home, 'rooms', code, 'outbox.json')).mode & 0o777, 0o600);
   // his card answer cannot reach the host either: he is told (systemMessage), the model hears nothing was recorded
   const q2 = `Agree to proposal ${p2.hash}?`;
   const card2 = remote.lib(() => proposal.card({ hash: p2.hash, approvers: ['bob'] }, code));
@@ -113,13 +117,20 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.doesNotMatch(unsent.json.hookSpecificOutput.additionalContext, /Recorded\./);
   assert.equal(remote.log(code), before.mirror);
   assert.doesNotMatch(host.log(code), /is anyone there/);
-  const notice = await remote.tail(bob, 1);
-  assert.equal(events(notice, ['health']).match(/room link: OFFLINE/g).length, 1, notice);
+  const across = remote.tail(bob, RETRY_MS / 1000 + 3); // bob's tail, from offline to back online
 
-  // the daemon reconnects with {after, hash}: no gap, no duplicate, and bob posts again
+  // the daemon reconnects with {after, hash}: no gap, no duplicate, the queued posts in order, and bob posts again
   await h.until(() => remote.lib(() => link.status(code)).state === 'online', RETRY_MS + 5000, 50);
   await h.until(() => remote.log(code) === host.log(code), 3000, 20);
-  assert.ok(texts(remote.log(code)).includes('while you were away'));
+  assert.deepEqual(texts(host.log(code)).slice(-4), ['while you were away', 'is anyone there', 'second', 'third']);
+  assert.deepEqual(host.lib(() => store.open(code).readAll().slice(-3).map(e => store.humanTrust(e))), ['verified', 'verified', 'verified']);
+  assert.equal(fs.existsSync(path.join(remote.home, 'rooms', code, 'outbox.json')), false, 'the outbox is empty');
+  const notice = events(await across, ['health']);
+  assert.equal(notice.match(/room link: OFFLINE/g).length, 1, notice);
+  assert.match(notice, /room link: OFFLINE \(.*\); @room posts are queued and sent when it is back, answers are refused/);
+  assert.equal(notice.match(/back online/g).length, 1, notice);
+  assert.match(notice, /back online; @room posts go through again; 3 queued @room post\(s\) sent/, 'one quiet line');
+  assert.doesNotMatch(texts(host.log(code)).join('\n'), /bob (left|rejoined)/, 'no left/joined noise');
   assert.equal(remote.say(bob, 'back again').json.continue, false);
   assert.equal(remote.log(code), host.log(code));
   for (const m of [host, remote]) assert.equal(m.lib(() => store.open(code).verifyChain()).ok, true);
