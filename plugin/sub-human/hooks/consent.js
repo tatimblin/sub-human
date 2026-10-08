@@ -10,7 +10,8 @@
  *     hash = the person's pick (lib/proposal.js choose: what their latest prompt in the transcript names, a hash or
  *     words only its title / text has, "Open v3"; cc.lastHumanPrompt, the person's own words only), else the
  *     oldest. When the plan file is known already, back it up and write the proposal text there (showEarly; again
- *     at Post(EnterPlanMode)).
+ *     at Post(EnterPlanMode)). A latest prompt that asks to propose something (proposal.proposeIntent, "propose to
+ *     alice: …") and names no pending proposal's hash opens no review: plan mode is left alone and the model told so.
  *   Pre(ExitPlanMode), entering: always `ask` with updatedInput.plan = that proposal's text, whatever the call
  *     carries, the text in the plan file (backup into review.json BEFORE the overwrite); 'shown'. A plan of the
  *     model's own is never shown in a room review: it comes back on close and the model is told. A blank plan:
@@ -172,6 +173,12 @@ function preEnter(input, me) {
   // (cc.lastHumanPrompt: only their own words; a peer's or a plugin's prompt keeps the earlier pick), unless a pick
   // made after that prompt (a card call naming one) stands.
   const said = cc.lastHumanPrompt(lines(input));
+  // The person asked their Claude to propose something: that is not a review. Plan mode is left alone (a plan of
+  // the model's own may become the proposal); the pending one waits for a prompt that asks for it, or a plain one.
+  // Its words may share a pending title's ("propose to alice: ship v3 Tuesday"): only a hash named still opens one.
+  if (said && proposal.proposeIntent(said.text) && !pending.some(p => said.text.includes(p.hash.slice(0, 6)))) {
+    return c.context('PreToolUse', `sub-human: no room review now: ${me.name} asked you to propose something, so do that (the room's propose tool). The proposal awaiting ${me.name} stays pending; open it when ${me.name} asks.`);
+  }
   const kept = proposal.readPick(me);
   const p = said && !(kept && kept.at > said.at) ? proposal.choose(me, pending, said.text) : proposal.picked(me, pending);
   const st = { phase: 'entering', mode: input.permission_mode, at: Date.now(), hash: p.hash, from: p.from || null };

@@ -39,6 +39,8 @@
  *                                  characters (the dialog withholds approval for those); else the card
  *   reminder(p, name) -> string    the re-ask wording (a review closed without an answer is fine to reopen)
  *   namedIn(ps, prompt, code) -> p|null   the pending proposal a person's words name (hash, else distinctive title / text words)
+ *   proposeIntent(prompt) -> bool  the person's words ask their Claude to propose something ("propose to alice: …"):
+ *                                  no review opens on such a prompt (hooks/consent.js Pre(EnterPlanMode))
  *   choose(me, ps, prompt) -> p    store that pick (members/NAME/pick) and return it, else the oldest (hooks/consent.js)
  *   picked(me, ps) -> p            Pre(EnterPlanMode): the stored pick when still among ps, else the oldest
  *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
@@ -200,6 +202,15 @@ function namedIn(ps, prompt, code) {
 }
 
 /**
+ * The person's own words ask their Claude to propose something (not to open or answer a proposal): "propose to
+ * alice: …", "please make a proposal …", "can you draft a proposal …". Such a prompt never opens a review: the
+ * pending one waits for a prompt that asks for it, or a plain one.
+ */
+const PROPOSE_RE = new RegExp('^\\s*(?:@\\S+\\s+)?(?:(?:ok(?:ay)?|now|so|please|pls|hey|then|and|let\'?s|can you|could you|would you|go ahead and)[\\s,]+)*'
+  + '(?:propose|(?:make|draft|write|send|put up|put forward|post|create)\\s+(?:a|another|my|our|the|this|new)?\\s*(?:new\\s+)?proposal(?!s? (?:from|by|of)\\b))\\b', 'i');
+const proposeIntent = prompt => PROPOSE_RE.test(String(prompt || ''));
+
+/**
  * members/NAME/pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/consent.js reads it from
  * the transcript at Pre(EnterPlanMode), or a card call named). A review opens that one while pending, else the oldest.
  */
@@ -220,7 +231,7 @@ function picked(me, ps) {
 
 /** How the model opens proposal hash for its person: the plan view (the hooks fall back to the card). */
 const openCall = hash => `call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`;
-const reminder = (p, name) => `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}.`;
+const reminder = (p, name) => `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}, unless ${name} asked you to propose something: then do that, and this waits.`;
 
 // ---------- writing ----------
 function expand(p, cwd) {
@@ -367,6 +378,6 @@ module.exports = {
   QUESTION_RE, ProposalError,
   readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
   namedIn, choose, picked, readPick,
-  create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, answer, decide, decision, humans, reminder,
+  proposeIntent, create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, answer, decide, decision, humans, reminder,
   read, hash12, title,
 };

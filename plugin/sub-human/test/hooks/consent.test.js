@@ -620,6 +620,42 @@ test('pick: two pending and bob says "Open v3": the review opens v3 whatever the
   assert.match(reminders(w), new RegExp(`proposal ${v2} still awaits`));
 });
 
+test('pick: "propose to alice: …" with a proposal pending for bob opens no review; a plain prompt after it does', () => {
+  const { w, v2, file, tp } = two();
+  const enter = () => w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
+  for (const t of ['propose to alice: move the cron to 6am', 'please make a proposal to alice about the cron', 'can you draft a proposal for the API']) {
+    say(w, t, tp);
+    const r = enter();
+    assert.equal(decision(r), undefined, `${t}: plan mode left alone`);
+    assert.match(ctx(r), /no room review now: bob asked you to propose something/);
+    assert.equal(review(w), null, 'no review state');
+    assert.equal(fs.readFileSync(file, 'utf8'), HELLO, 'the plan file untouched');
+  }
+  assert.deepEqual(answers(w), []);
+  // the reminder tells the model the same; asking for it (or a plain prompt) opens the review as before
+  assert.match(reminders(w), /unless bob asked you to propose something: then do that, and this waits/);
+  for (const t of ['open the proposal', 'what now?']) {
+    say(w, t, tp);
+    assert.equal(decision(enter()), 'allow', t);
+    assert.equal(review(w).hash, v2);
+    w.lib(() => proposal.clearReview({ code: w.code, name: 'bob' }));
+    fs.writeFileSync(file, HELLO);
+  }
+  // words of a pending title are not a pick when the person asks to propose; a hash named still is
+  say(w, 'propose to alice: ship v3 Tuesday instead', tp);
+  assert.equal(decision(enter()), undefined);
+  say(w, `propose to alice after we answer ${v2.slice(0, 8)}`, tp);
+  assert.equal(decision(enter()), 'allow');
+  assert.equal(review(w).hash, v2);
+});
+
+test('proposeIntent: asks to propose, not to open or answer one', () => {
+  const yes = ['propose to alice: ship v3 Monday', 'Please propose X', 'ok, draft a proposal for the API', 'can you make a proposal to alice', 'post a proposal to alice'];
+  const no = ['open the proposal', 'open the v3 proposal', "open alice's proposal", 'answer the proposal', 'Open v3', 'what now?', 'review the proposal', 'show me proposals', 'open the proposal from alice'];
+  for (const t of yes) assert.equal(proposal.proposeIntent(t), true, t);
+  for (const t of no) assert.equal(proposal.proposeIntent(t), false, t);
+});
+
 test('pick: a stale plan in the plan file, or the model\'s own copy of it, is never the dialog; the backup comes back', () => {
   const { w, v2, file, tp } = two();
   say(w, 'carry on', tp);
