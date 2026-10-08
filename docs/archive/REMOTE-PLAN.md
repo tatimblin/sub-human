@@ -86,12 +86,37 @@ Fills `lib/seats.js`. Changes `lib/identity.js`, `lib/room/store.js`, `lib/propo
 
 ### PR3 Bridge and the proof gate
 
-Fills `lib/remote/bridge.js`. Adds `test/support/thread-store.js` (a RoomStore proxy that forwards every method over the bridge to an `FsRoomStore` on the worker), `test/bridge.test.js`.
+Fills `lib/remote/bridge.js`. Adds `test/support/thread-store.js` (a RoomStore proxy that forwards over the bridge to an `FsRoomStore` on the worker), `test/support/bridge-bench.js` (the numbers below), `test/bridge.test.js`, `npm run test:thread-store`. Done (branch `remote-pr3-bridge`).
 
-- `createBridge({handler, workerData, deadlineMs})`: main thread posts `{id, method, params}` and waits (`Atomics.wait` on a `SharedArrayBuffer`, then `receiveMessageOnPort`); the worker loads `handler` (a module exporting `handle(method, params) -> Promise`). Past the deadline: `RoomError OFFLINE`. The same file is the worker entry (`isMainThread` false).
-- Deadline budget: `LINK_CALL_MS` 3000 for 10 s hooks, `LINK_CALL_END_MS` 1000 for SessionEnd (5 s), both in `lib/config.js`.
-- The gate: `test/hooks/*.test.js` run with `SUB_HUMAN_TEST_THREAD_STORE=1`, which makes `store.open` return the thread proxy, and pass unchanged. Record p50/p99 of a hook with the proxy versus plain in `docs/next/REMOTE-PLAN.md` (this file, a Results section).
-- **Accept:** the hook suites pass over the proxy; p99 overhead per hook under 15 ms; a handler that never answers gives `OFFLINE` at the deadline, and the hook process exits (the worker is unref'd).
+- `createBridge({handler, deadlineMs})`: the calling thread posts `{id, method, params}`, then `Atomics.wait`s on a `SharedArrayBuffer` counter the worker bumps after each reply and takes it with `receiveMessageOnPort`. The worker loads `handler` (a module exporting `handle(method, params) -> result | Promise`) at its first call. A throw comes back as `RoomError` with the handler's code (else `INVALID`). Past the deadline: `RoomError OFFLINE`, the call is abandoned and its late reply dropped. The same file is the worker entry. As built, `workerData` was cut (per-call params carry everything), and the handler loads at the first call, not at boot, because a `--require` preload that itself requires the bridge (the thread store does) would otherwise see a half-loaded module: workers inherit `NODE_OPTIONS` preloads.
+- Deadline budget: `LINK_CALL_MS` 3000 for 10 s hooks, `LINK_CALL_END_MS` 1000 for SessionEnd (5 s), both in `lib/config.js`; a test checks three calls fit every hook's timeout.
+- Deadlock rule: while a call waits, the calling thread runs nothing, so a handler that needs it cannot finish. The deadline bounds it (`OFFLINE`, never a hang; tested). Whatever the handler talks to lives on the worker, another thread or another process.
+- The gate as built: `store.open` is unchanged (a test path in production code was the alternative). `SUB_HUMAN_TEST_THREAD_STORE=1` plus `NODE_OPTIONS=--require test/support/thread-store.js` makes every node process the tests start (the hooks included) call `store.setBackend(ThreadRoomStore)`. `npm run test:thread-store` runs all of `test/hooks` that way; `test/bridge.test.js` runs `consent.test.js` that way inside `npm test`.
+- What the proxy does not forward as one call: `members.update` and `kv.update` are compare-and-set loops (as the contract allows a store off this machine); `lock` and `kv.lock` take the same lock files on the calling thread (a mutex held across a callback cannot cross); a via=human `append` takes the key on the calling thread (`store.prepare`) and the worker signs with it, because a v1 signature covers `id` and `prev`. That last one is a test-only stopgap: once PR1's `envelope.sign` + `place` land, the proxy signs on the calling thread and the worker only places.
+- **Accept:** the hook suites pass over the proxy (yes: 96/97, the one failure is the pre-existing `BLOCK_MAX` template test, which fails the same way without the proxy); p99 overhead per hook under 15 ms (**no**: 19-22 ms, see Results); a handler that never answers gives `OFFLINE` at the deadline, and the hook process exits (yes).
+
+#### Results (PR3, Apple M2, node 24.15.0; `node plugin/sub-human/test/support/bridge-bench.js`)
+
+Per call n=500, per hook n=40 (p99 is close to the max at that n). Times in ms, p50 / p99.
+
+| | plain | over the bridge | overhead |
+|---|---|---|---|
+| `lastId()` | 0.027 / 0.044 | 0.040 / 0.097 | 0.013 / 0.053 |
+| `kv.get()` | 0.013 / 0.031 | 0.025 / 0.053 | 0.012 / 0.022 |
+| `members.read()` | 0.022 / 0.041 | 0.033 / 0.052 | 0.011 / 0.011 |
+| `readView({after})` | 0.081 / 0.182 | 0.109 / 0.197 | 0.028 / 0.015 |
+| `readAll()` (40 entries) | 0.016 / 0.027 | 0.069 / 0.218 | 0.054 / 0.191 |
+| `kv.update()` (compare-and-set) | 0.317 / 0.609 | 0.362 / 0.664 | 0.045 / 0.055 |
+| first call of a new bridge (worker boot + loading the store) | | 15.7 / 17.3 | |
+| a process: one call to an empty handler vs none | 26.4 / 28.8 | 42.4 / 44.6 | 16.0 / 15.7 |
+| `prompt.js`, a plain prompt | 38.7 / 40.9 | 58.4 / 60.5 | 19.6 / 19.6 |
+| `prompt.js`, an `@room` post (signed append) | 40.6 / 42.4 | 62.4 / 64.2 | 21.8 / 21.8 |
+| `presence.js`, idle_prompt | 34.0 / 38.4 | 54.3 / 56.9 | 20.3 / 18.6 |
+
+Verdict: the mechanism passes and the per-hook target as written does not. A call costs tens of microseconds; a hook makes 10-60 of them, so per-call cost is under 1 ms per hook. The whole per-hook overhead is the fixed cost of booting a worker: about 16 ms for an empty handler, about 20 ms when the worker also loads `lib/room/store.js`. No tuning of the bridge removes that. It is invisible to a person (a hook runs in 35-45 ms and has 10 s), so the remote design holds, on three conditions for PR5:
+1. The mirror creates its bridge at a hook's first wire op, never at `open`. Reads use the mirror's files, so a hook that only reads (most prompts) pays 0 ms; only hooks that write (`@room`, an answer, join, leave, a beat) pay the boot.
+2. The production handler (`link.js` `handle`) loads nothing but the socket client: not `lib/room/store.js`. That keeps the boot near the 16 ms floor.
+3. The target becomes "a hook that only reads: no worker; a hook that writes: under 25 ms p99 overhead plus the link's round trip", measured again in PR5 over the real socket.
 
 ### PR4 Protocol, server, client, auth, transports
 
@@ -164,6 +189,7 @@ Rate limits (`RATE_MAX`, `RATE_ADDRESSED_MAX`) and size caps (`ENTRY_*`, `LOG_LI
 - **Read-your-writes through the daemon.** A hook's `append` returns after the mirror holds the placed entry (the daemon applies the subscribe stream up to and including it), so the hook's next read sees it, as today.
 - **`store.open` picks the store.** Nothing else learns about links; the resolver is a lazy require inside `store.js` so `store-mirror.js` can extend `FsRoomStore` without a cycle.
 - **Bridge handler is a module path.** The worker side of `bridge.js` loads the handler (`link.js` `handle` in production, `thread-store` in PR3), so one bridge serves the gate and the real link.
+- **A worker boots only when a hook writes over the link** (PR3's results). Booting costs about 16 ms per hook process; each call after that costs microseconds.
 - **The invite is one string.** `sh1.<code>.<locator-base64url>.<secret>`; the locator is the transport spec (`pipe:…` for the test, `ssh:user@host` later). The token it redeems to is the link's credential, kept in the link file on the client (0600) and hashed on the host.
 - **The orch stays where it was spawned.** Only the host spawns it (rule 2); its native task list stays on the host; remote members' `task` requests travel as `task_req` entries as today.
 

@@ -116,6 +116,11 @@ module.exports = {
   MOD_RESTART_STEADY_MS: 60_000,   // a child that ran this long starts the backoff over
   MOD_DELIVERY_ERROR_LOG_MS: 300_000, // the delivery-error notice shows at most once per this
 
+  // ---------- remote rooms (lib/remote/bridge.js) ----------
+  // A hook's synchronous call over the link gives up (OFFLINE) after this, well inside the hook timeout.
+  LINK_CALL_MS: 3000,              // hooks with a 10 s timeout
+  LINK_CALL_END_MS: 1000,          // SessionEnd (5 s timeout)
+
   // ---------- rows (lib/rows.js) ----------
   PRESENCE_STALE_MS: 6 * 60 * 60 * 1000,
   HOLDS_STALE_MS: 90_000,          // a holds file not refreshed in this long is dead

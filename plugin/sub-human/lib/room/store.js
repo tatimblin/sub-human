@@ -769,6 +769,6 @@ const listRooms = () => { try { return fs.readdirSync(roomsDir()).filter(c => CO
 module.exports = {
   RoomError,
   FsRoomStore, open, setBackend, roomExists, createRoom, listRooms,
-  hash12, normalize, tag, buildEntry, prepare, blobRef, checkKey, checkCursor, CHAT_KINDS,
+  hash12, normalize, tag, roomOf, buildEntry, prepare, blobRef, checkKey, checkCursor, CHAT_KINDS,
   SIGNER, pubPath, canonical, verifyHuman, unverifiedHuman, humanTrust,
 };
