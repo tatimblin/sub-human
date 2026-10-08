@@ -181,7 +181,7 @@ async function run({ out }) {
     const setup = hostCli('setup');
     const code = setup.code;
     ev.log(`room ${code}; devbox machine id ${setup.machine}; alice pid ${setup.seat.pid} (in devbox)`);
-    ev.log(`alice's join: ${setup.join && setup.join.systemMessage}`);
+    ev.log(`alice's join: ${setup.join && (setup.join.reason || setup.join.systemMessage || '(no line: it worked)')}`);
 
     ev.step('joiner keys, invite, authorize');
     const key = keygen(keys, 'id'), key2 = keygen(keys, 'id2');
@@ -199,8 +199,9 @@ async function run({ out }) {
     bob = remote.seat('bob');
     ev.log(`joiner SUB_HUMAN_HOME ${remote.home}`);
     const [joined, joinMs] = timed(() => remote.join(bob, `join bob ${A.invite}`));
-    ev.log(`join took ${fmt(joinMs)}: ${JSON.stringify(joined.json && (joined.json.systemMessage || joined.json.reason))}`);
-    if (!joined.json || !joined.json.systemMessage) throw new Error(`join failed: ${JSON.stringify(joined.json)} ${joined.stderr}`);
+    ev.log(`join took ${fmt(joinMs)}: ${JSON.stringify(joined.json && (joined.json.reason || joined.json.systemMessage || '(no line: it worked)'))}`);
+    // a join that works prints nothing; a refusal is a block
+    if (!joined.json || joined.json.decision === 'block' || !(joined.json.hookSpecificOutput || {}).additionalContext) throw new Error(`join failed: ${JSON.stringify(joined.json)} ${joined.stderr}`);
     const st = remote.lib(() => link.status(code));
     daemonPid = st.pid;
     ev.log(`link daemon pid ${st.pid}, state ${st.state}`);
@@ -430,7 +431,10 @@ async function run({ out }) {
     for (const m of [remote, remote2]) if (m) for (const d of [m.home, m.user, m.cwd]) fs.rmSync(d, { recursive: true, force: true });
     fs.rmSync(keys, { recursive: true, force: true });
     const left = dc(['ps', '-a', '-q'], { allowFail: true }).stdout.trim();
-    const after = running();
+    // what this run left: link/serve processes that were not running before it (another checkout's are not ours)
+    const pidsOf = t => new Set(t.split('\n').map(l => l.trim().split(/\s+/)[0]).filter(Boolean));
+    const had = pidsOf(before);
+    const after = running().split('\n').filter(l => l.trim() && !had.has(l.trim().split(/\s+/)[0])).join('\n');
     const mtimeAfter = realHomeMtime();
     const tmpLeft = [remote, remote2].filter(Boolean).some(m => fs.existsSync(m.home)) || fs.existsSync(keys);
     ev.log(`containers left: ${left || '(none)'}; link/serve processes: ${after || '(none)'}; temp dirs left: ${tmpLeft}`);
