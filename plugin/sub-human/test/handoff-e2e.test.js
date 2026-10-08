@@ -342,3 +342,30 @@ test('handoff and promote CLI: --via carries a ProxyJump into the new locator, a
   assert.match(p.stderr, /reachable \(the link is online\)/);
   assert.match(B.cli(['promote', code, '--as', 'bob', '--ssh', 'me@box', '--via', 'bad host', '--confirm', code, '--force']).stderr, /--via needs a plain/);
 });
+
+/** The orch job's own `/sub-human` (agent sub-human:orchestrator, SUB_HUMAN_ROOM): it binds the seat "orch". */
+function bindOrch(m, code) {
+  const s = m.seat('orch');
+  m.lease(s);
+  return m.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: '', agent_type: 'sub-human:orchestrator' }, s, { env: { SUB_HUMAN_ROOM: code } });
+}
+
+test('handoff e2e: the new host\'s orch binds (the old host\'s live orch record, its machine and fresh lease, never holds the name)', async t => {
+  const { A, B, alice, bob, code } = await room(t, { carol: false });
+  const onA = bindOrch(A, code);
+  assert.doesNotMatch(JSON.stringify(onA.json || {}), /could not bind/, onA.stderr);
+  const machineA = A.lib(() => identity.machineId());
+  await until(() => B.lib(() => (identity.readMembers(code).orch || {}).machine) === machineA, 5000, 50); // B's copy knows it, leased
+
+  A.join(alice, 'handoff bob');
+  await until(() => ask(B, code), 5000, 50);
+  assert.match(answerCard(B, bob, ask(B, code).id, 'Host it here').post.json.systemMessage, /hosted here now/);
+  await until(() => B.lib(() => identity.readMembers(code).orch || {}).job === 'bbbb2222', 8000, 50);
+
+  // the job B started runs /sub-human: its seat binds on B
+  const onB = bindOrch(B, code);
+  assert.doesNotMatch(JSON.stringify(onB.json || {}), /could not bind|name taken/, onB.stderr);
+  const o = B.lib(() => identity.readMembers(code).orch);
+  assert.equal(o.machine, B.lib(() => identity.machineId()));
+  assert.equal(o.left_at, undefined);
+});

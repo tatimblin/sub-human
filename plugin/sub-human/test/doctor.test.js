@@ -196,3 +196,20 @@ test('doctor redactor: each rule alone', () => {
   assert.equal(red('sh1.vole-1234.c3NoOm1l.ZmFrZXNlY3JldGZha2VzZWNyZXQ'), 'sh1.<invite>');
   assert.equal(red('\x1b[31mred\x1b[0m'), 'red');
 });
+
+test('doctor: a room whose orch job started but never took its seat (e.g. refused "name taken") fails, with the job\'s log', t => {
+  h.freshHome(t);
+  const identity = require(path.join(h.LIB, 'identity.js'));
+  const { code } = h.register('alice', 'member', process.pid);
+  const old = new Date(Date.now() - 5 * 60_000).toISOString();
+  identity.updateOrch(code, () => ({ job: 'job12345', spawned_at: old, pid: 4242, machine: 'another-machine', left_at: undefined }));
+  const [c] = doctor.checkOrchs();
+  assert.equal(c.id, `orch:${code}`);
+  assert.equal(c.status, 'fail');
+  assert.match(c.detail, /job job12345 was started \d+ s ago but never took its seat/);
+  assert.match(c.fix, /claude logs job12345/);
+  identity.updateOrch(code, () => ({ spawned_at: new Date().toISOString() }));
+  assert.deepEqual(doctor.checkOrchs(), [], 'within the grace');
+  identity.updateOrch(code, () => ({ spawned_at: old, pid: process.pid, machine: identity.machineId() }));
+  assert.deepEqual(doctor.checkOrchs(), [], 'bound here');
+});

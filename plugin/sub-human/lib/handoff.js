@@ -372,7 +372,7 @@ function takeOver(code, { by, cwd, epoch, entry } = {}) {
   s.kv.delete(HOST_DOC);
   if (cwd && !s.kv.get(WORKDIR)) s.kv.set(WORKDIR, { cwd });
   const now = iso(Date.now());
-  identity().updateOrch(code, () => ({ job: null, pid: null, pid_start: undefined, claim: undefined, closing: undefined, left_at: now, stopped_at: now }));
+  identity().updateOrch(code, () => ({ job: null, pid: null, pid_start: undefined, machine: undefined, seen_at: undefined, claim: undefined, closing: undefined, left_at: now, stopped_at: now }));
   return require('./seats.js').ensureOrch(code, cwd, by);
 }
 

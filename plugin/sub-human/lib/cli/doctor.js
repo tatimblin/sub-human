@@ -27,6 +27,7 @@
  *                credential (the server answers it and nothing else) with a timeout: reachable, round trip, both
  *                sides' protocol versions, and over ssh whether BatchMode works (ssh's own error, classified)
  *   clock:CODE   skew against the host, when its hello reply carries a time (warn 2 min, fail SIG_SKEW_MS)
+ *   orch:CODE    per open room hosted here: its orch job started over 90 s ago but never bound its seat (fail)
  *   claude       Claude Code's version against cc.MIN_VERSION and cc.PROBED_VERSION; when it differs from the
  *                probed one, unless --quick, the internals probe (cc.probe, ~3 s)
  *   hooks        settings that turn hooks off (disableAllHooks): the plugin then cannot seat anyone
@@ -475,6 +476,32 @@ function checkRemoteControl(env, settings) {
 }
 
 // ---------- the report ----------
+const ORCH_BIND_GRACE_MS = 90_000;
+
+/**
+ * Each open room hosted here whose orch job was started (more than ORCH_BIND_GRACE_MS ago) but never bound its
+ * seat: the job runs, its /sub-human was refused (e.g. "name taken"), so the room has no orch. A fail, with the job's
+ * log and the restart.
+ */
+function checkOrchs({ now = Date.now() } = {}) {
+  const identity = lib('identity.js');
+  const out = [];
+  let codes = [];
+  try { codes = identity.openRooms().filter(c => identity.isHost(c)); } catch { return out; }
+  for (const code of codes) {
+    let o;
+    try { o = identity.readMembers(code).orch; } catch { continue; }
+    if (!o || !o.job || o.job === 'pending' || o.stopped_at || o.closing) continue;
+    const since = Date.parse(o.spawned_at || '') || now;
+    const bound = !!o.pid && !o.left_at && (o.machine || identity.machineId()) === identity.machineId();
+    if (bound || now - since < ORCH_BIND_GRACE_MS) continue;
+    out.push(check(`orch:${code}`, 'fail', `orch ${code}`,
+      `its job ${o.job} was started ${Math.round((now - since) / 1000)} s ago but never took its seat: the room has no orch`,
+      `claude logs ${o.job} shows why its /sub-human was refused; then /sub-human NAME ${code} (in the room) starts it again`));
+  }
+  return out;
+}
+
 async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorizedKeys, env = process.env } = {}) {
   const checks = [checkPlugin(), checkNode(), checkHome()];
   const akFile = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
@@ -488,6 +515,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
   const links = await Promise.all(codes.map(code => diagnoseLink(code, { quick, timeoutMs, env })));
   if (!codes.length) checks.push(check('links', 'info', 'links', 'no links: every room this machine is in is hosted here'));
   for (const d of links) checks.push(...linkChecks(d));
+  checks.push(...checkOrchs());
   const cv = claudeVersion(env);
   const cl = checkClaude({ version: cv, quick, env });
   checks.push(cl.check);
@@ -640,4 +668,4 @@ async function main(args, { write = s => process.stdout.write(s), env = process.
   return report.checks.some(x => x.status === 'fail') ? 1 : 0;
 }
 
-module.exports = { diagnose, format, bundle, redactor, helloProbe, checkListener, scanAuthorizedKeys, checkNode, checkRemoteControl, sshHint, main, parseArgs, DOCTOR_HELLO_MS };
+module.exports = { diagnose, format, bundle, redactor, helloProbe, checkListener, checkOrchs, scanAuthorizedKeys, checkNode, checkRemoteControl, sshHint, main, parseArgs, DOCTOR_HELLO_MS };
