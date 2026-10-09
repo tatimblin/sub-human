@@ -3,7 +3,7 @@
   "private": true,
   "description": "Dev scripts for the sub-human Claude Code plugin (no dependencies).",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "test": "npm run --silent test:plugin && npm run --silent test:scripts && npm run --silent test:mods",
@@ -14,6 +14,7 @@
     "validate": "claude plugin validate plugin/sub-human --strict",
     "probe": "node scripts/probe-cc.js",
     "docs": "node scripts/arch-doc.js",
-    "test:remote-docker": "node --test scripts/remote-docker/remote-docker.test.js"
+    "test:remote-docker": "node --test scripts/remote-docker/remote-docker.test.js",
+    "test:remote-docker:mac": "LAB_MAC=1 node --test scripts/remote-docker/remote-docker.test.js"
   }
 }

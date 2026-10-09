@@ -1,6 +1,6 @@
 'use strict';
 /**
- * plugin/sub-human/lib/tail.js: the room tail behind `sub-human tail` (bin/sub-human), the hooks module's child
+ * plugin/sub-human/lib/tail.js: the room tail behind `sub-human tail` (scripts/sub-human), the hooks module's child
  * (mod/deliver.mjs). Everything that waits goes through an injected clock (lib/clock.js), so tests drive it with
  * clock.createFake() in-process.
  *
@@ -20,9 +20,12 @@
  *   missingRowsText(me, sid, {now}?) -> text | null   the Agent calls for this seat's rows that run nowhere
  *   remindersText(me, rm) -> text | null     lib/proposal.js reminder() for the proposal a review opens next (the
  *                                            person's pick, else the oldest), the others awaiting me counted (members)
- *   linkLine(status, code) -> {key, text} | null   the one line for a room link that is down (lib/remote/link.js
- *       status): key 'fork' (the mirror no longer matches the host's log) or 'offline' (the host or the daemon is
- *       unreachable); null while it is up
+ *   linkLine(status, code) -> {key, text} | null   the one line for a room link that is not online (lib/remote/link.js
+ *       status; the words are lib/room/link-state.js STATES): key 'fork' (the mirror no longer matches the host's
+ *       log; queued @room posts are kept, not sent), 'stopped' (for good: refused, revoked, the room closed) or
+ *       'offline' (the host or the daemon is unreachable); null while it is online or connecting
+ *   flushLine(flush) -> text | null   what became of the @room posts queued while the link was down (the daemon's
+ *       document `link` flush {sent, unsent: [{text, why}]}): appended to LINK_BACK, or alone when some were not sent
  *   deps (tests): openRoom(code) -> Room (lib/room.js open), heartbeat(me) (identity.heartbeat), rows, notices, orch,
  *       linkStatus(code) (lib/remote/link.js status)
  *
@@ -41,8 +44,13 @@
  *                             (members) and the missing rows' Agent calls; sent at start and when it changes
  *                             (health tick); null clears it
  *   {type:'health', text}     the hash-chain check's line (one per break), and in a room hosted elsewhere the
- *                             link's linkLine each time it goes down (FORK or OFFLINE; nothing while it stays so)
- *                             and LINK_BACK ("room link: back online; …") once it is online again
+ *                             link's linkLine each time it goes off (FORK, STOPPED or OFFLINE; nothing while it stays so)
+ *                             and LINK_BACK ("room link: back online; …", with flushLine) once it is online
+ *                             again: one quiet line, no "left"/"joined" (the daemon renews the seat's lapsed lease)
+ *   A planned handoff (lib/handoff.js): the ask waiting for this seat (its machine's mirror) is a chat line for the
+ *   person and a wake that tells Claude to open the card, once; the asker gets a health line when the ask is
+ *   declined or expires; host_changed is a chat line for every member. A session whose room changed kind (a
+ *   mirror that became the host, or the reverse) is started again over the new store.
  * A session never re-reads the log from byte 0: backlog from room.readView({after: cursor}), live entries from
  * room.tailer(). The health tick also renews the seat's lease (identity.heartbeat).
  */
@@ -57,6 +65,7 @@ const FOR_CLAUDE = '(for Claude)';
 const SPAWN_NOTE = /no row running|is not running/;
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
 const isMove = e => e.kind === 'member_joined' || e.kind === 'member_left';
+const isHostMove = e => e.kind === 'host_changed' && e.via === 'system';
 
 function timings() {
   const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS', config.RESOLVE_MS);
@@ -137,7 +146,7 @@ const mentions = (text, name) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?!
  * a join or leave, and another person's own words not addressed to me.
  */
 function isChat(me, e) {
-  if (isMove(e)) return true;
+  if (isMove(e) || isHostMove(e)) return true;
   return e.via === 'human' && e.kind === 'say' && e.to !== me.name && !mentions(e.text, me.name);
 }
 
@@ -153,7 +162,7 @@ function pullText(lines) {
     size += lines[i].length + 1;
   }
   const dropped = lines.length - kept.length;
-  const more = dropped ? [`(${dropped} earlier ${dropped === 1 ? 'line' : 'lines'} not shown: \`sub-human read\` or the room read tool)`] : [];
+  const more = dropped ? [`(${dropped} earlier ${dropped === 1 ? 'line' : 'lines'} not shown: the room read tool has them)`] : [];
   return [PULL_HEAD, ...more, ...kept].join('\n');
 }
 
@@ -238,7 +247,7 @@ function remindersText(me, rm, { proposal = require('./proposal.js') } = {}) {
  */
 function visibleTo(me, rm) {
   if (me.role !== 'orch') {
-    return (e, entries) => rm.lane(me, e, entries) === 'push'
+    return (e, entries) => rm.lane(me, e, entries) === 'push' || isHostMove(e)
       || (isMove(e) && e.via === 'system' && e.from !== me.name && e.from !== 'orch');
   }
   return (e, entries, note = '') => rm.lane(me, e, entries) === 'push'
@@ -248,12 +257,21 @@ function visibleTo(me, rm) {
 // ---------- the link of a room hosted elsewhere ----------
 const LINK_BACK = 'room link: back online; @room posts go through again';
 function linkLine(st, code) {
+  const kept = st.queued ? `; ${st.queued} queued @room post(s) are kept, not sent` : '';
   if (st.state === 'fork') {
-    return { key: 'fork', text: `room link: FORK: this machine's copy of room ${code} no longer matches the host's; run sub-human link --reset ${code}` };
+    return { key: 'fork', text: `room link: FORK: this machine's copy of room ${code} no longer matches the host's${kept}; run sub-human link --reset ${code}` };
   }
   if (st.running && st.state !== 'offline') return null;
-  const why = st.running ? st.reason : st.reason ? `the link stopped: ${st.reason}` : 'the link daemon is not running';
-  return { key: 'offline', text: `room link: OFFLINE (${why}); @room posts are refused until it is back` };
+  if (st.running) return { key: 'offline', text: `room link: OFFLINE (${st.reason}); @room posts are queued and sent when it is back, answers are refused` };
+  if (st.state === 'stopped') return { key: 'stopped', text: `room link: STOPPED (${st.reason || 'for good'}); @room posts are refused${kept}` };
+  return { key: 'offline', text: `room link: OFFLINE (the link daemon is not running); @room posts are refused${kept}` };
+}
+function flushLine(f) {
+  if (!f || (!f.sent && !(f.unsent || []).length)) return null;
+  const parts = [];
+  if (f.sent) parts.push(`${f.sent} queued @room post(s) sent`);
+  for (const u of f.unsent || []) parts.push(`NOT sent (${u.why}): "${u.text}"`);
+  return parts.join('; ');
 }
 
 // ---------- reading ----------
@@ -410,7 +428,7 @@ function startSession(me, ctx) {
 
   // Health: the hash chain from the log.idx checkpoint (one line per break), the link of a room hosted elsewhere
   // (one line each time it goes down), and the orch's watchdog.
-  let breakKey = null, linkKey = null, rowsSent;
+  let breakKey = null, linkKey = null, flushKey, rowsSent;
   function sendRows() {
     let text = null;
     try {
@@ -424,16 +442,45 @@ function startSession(me, ctx) {
   function linkHealth() {
     const st = deps.linkStatus(s.code);
     const l = linkLine(st, s.code);
-    if ((l && l.key) === linkKey) return;
-    if (!l && st.state !== 'online') return; // coming back (connecting): the down line stands until it is online
+    const f = st.flush || null, fresh = flushKey !== undefined && f && f.at !== flushKey;
+    if (flushKey === undefined || fresh) flushKey = f ? f.at : null; // a flush before this tail started is old news
+    const flushed = fresh ? flushLine(f) : null;
+    if ((l && l.key) === linkKey || (!l && st.state !== 'online')) { // no change (or coming back: the down line stands)
+      if (flushed && f.unsent && f.unsent.length) emit([{ type: 'health', text: `room link: ${flushed}` }]);
+      return;
+    }
     const was = linkKey;
     linkKey = l && l.key;
     if (l) emit([{ type: 'health', text: l.text }]);
-    else if (was) emit([{ type: 'health', text: LINK_BACK }]);
+    else if (was) emit([{ type: 'health', text: flushed ? `${LINK_BACK}; ${flushed}` : LINK_BACK }]);
+  }
+  // A planned handoff: the ask waiting for this seat (a wake, once), or the asker told it was declined or expired.
+  let askKey = null;
+  function handoffHealth() {
+    const ho = deps.handoff();
+    if (!rm.store.isHost) {
+      const a = ho.pendingAsk(s.code, me.name, clock.now());
+      if (!a || a.told_at) return;
+      ho.markTold(s.code, a.id);
+      emit([
+        { type: 'chat', lines: [`room: ${a.from} asks you to host room ${s.code} on this machine; your Claude shows you a card`] },
+        { type: 'wake', text: `${FOR_CLAUDE} ${a.from} asks ${me.name} to host room ${s.code} on this machine (the room's orch would then run on ${me.name}'s model account, and this machine must stay reachable). Only ${me.name} can answer: call AskUserQuestion with the question "handoff ${a.id}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+      ]);
+      return;
+    }
+    const d = ho.hostDoc(rm.store);
+    if (!d || d.from !== me.name) return;
+    const state = d.state === 'asked' && !(Date.parse(d.expires_at) > clock.now()) ? 'expired' : d.state;
+    const key = `${d.id}/${state}`;
+    if (key === askKey || (state !== 'refused' && state !== 'expired')) return;
+    askKey = key;
+    emit([{ type: 'health', text: `room handoff: ${d.to} ${state === 'refused' ? 'declined to host' : 'did not answer the ask to host'} room ${s.code}; this machine stays the host` }]);
   }
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
     sendRows();
+    if (s.moved()) return; // the room changed kind under this session: the next check starts it again
+    if (rm.store && me.role !== 'orch') { try { handoffHealth(); } catch (e) { log('handoff', e); } }
     if (rm.store && !rm.store.isHost) linkHealth();
     const r = rm.verifyChain();
     if (r.ok) breakKey = null;
@@ -459,6 +506,7 @@ function startSession(me, ctx) {
   sendRows();
 
   s.stalled = () => clock.now() - s.lastTick > t.stallMs;
+  s.moved = () => { try { return !!rm.store && deps.openRoom(me.code).store.isHost !== rm.store.isHost; } catch { return false; } };
   s.killPoll = () => pollLoop.stop(); // tests: simulate a poll loop that died
   s.stop = () => {
     pollLoop.stop();
@@ -484,6 +532,7 @@ function runTail({
     identity: deps.identity || require(path.join(LIB, 'identity.js')),
     proposal: deps.proposal || require(path.join(LIB, 'proposal.js')),
     linkStatus: deps.linkStatus || (code => require(path.join(LIB, 'remote', 'link.js')).status(code)),
+    handoff: deps.handoff ? () => deps.handoff : (() => { let m; return () => m || (m = require(path.join(LIB, 'handoff.js'))); })(),
   };
   const log = errorLog(err, clock, tm.errorLogMs);
   const ctx = { clock, fs, write, log, t: tm, deps: d, sid };
@@ -513,6 +562,7 @@ function runTail({
     if (!failed) {
       const key = me ? `${me.code}/${me.name}/${me.role}` : null;
       if (sess && sess.key === key && sess.stalled()) { log('poll loop', new Error('stalled')); stopSess(); }
+      else if (sess && sess.key === key && sess.moved()) stopSess(); // a handoff: the room is hosted here now, or elsewhere
       if (!(sess && sess.key === key)) {
         stopSess();
         if (me) { try { sess = startSession(me, ctx); } catch (e) { log('session start', e); } }
@@ -529,5 +579,5 @@ function runTail({
 }
 
 module.exports = {
-  runTail, timings, Batcher, formatNdBatch, linkLine, LINK_BACK, remindersText, PULL_HEAD,
+  runTail, timings, Batcher, formatNdBatch, linkLine, flushLine, LINK_BACK, remindersText, PULL_HEAD,
 };

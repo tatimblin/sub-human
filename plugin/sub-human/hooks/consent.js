@@ -24,6 +24,11 @@
  *   Post(ExitPlanMode), shown: signoff via=human only for the proposal unedited; restore the file and the mode. A
  *     dialog no hook opened (the model wrote the text itself) records nothing, and the model is told.
  *   Stop / UserPromptSubmit / Pre(room tools): a review left open is resolved and the model told to exit it.
+ * Pre/Post(AskUserQuestion), the handoff card (lib/handoff.js): while the room's host asks this seat to host the room,
+ * a card call that names the handoff shows the hooks' card ("Host room CODE on this machine?": the orch then runs on
+ * this person's model account, this machine must stay reachable); only the person's "Host it here" on the card as
+ * built moves the room (handoff.accept, signed with the seat key), "Not now" refuses it, anything else records
+ * nothing.
  * Pre/Post(AskUserQuestion): the confirm card for a waiting note (only the person's Send on the card as built records
  * the objection with the note, byte-exact; Discard drops it; AFK or no answer keeps it), else the card fallback;
  * "Not yet", AFK, stale hashes record nothing. Stop nudges once when a waiting note's card was never shown. An answer is
@@ -55,6 +60,9 @@ const cc = require(path.join(__dirname, '..', 'lib', 'cc.js'));
 const { writeFileAtomic } = require(path.join(__dirname, '..', 'lib', 'io.js'));
 const config = require(path.join(__dirname, '..', 'lib', 'config.js'));
 const { TRANSCRIPT_TAIL_BYTES } = config;
+const handoff = require(path.join(__dirname, '..', 'lib', 'handoff.js'));
+const envelope = require(path.join(__dirname, '..', 'lib', 'room', 'envelope.js'));
+const roomStore = require(path.join(__dirname, '..', 'lib', 'room', 'store.js'));
 
 const RECORDED = 'Recorded. The room shows it (and any note) already: post nothing about it. Agreeing is not a go-ahead to build; wait for the decision and your people.';
 /** Answers this run could not record, for the person (dispatch puts them in the output's systemMessage). */
@@ -62,20 +70,24 @@ let unsent = [];
 
 /**
  * The person's answer, then the decision when it completes the proposal (host only: lib/proposal.js decide).
- * A RoomError (the link to the host is down: OFFLINE) is {failed}, and the person is told: nothing is queued.
+ * A RoomError (the link to the host is down: OFFLINE) is {failed}, and the person is told: nothing is queued. One
+ * whose outcome is unknown (sent over a slow link, no answer in time) is {failed, unknown}: it may still land.
  */
 function record(me, p, a) {
   let res;
   try { res = proposal.answer(me, p, a); } catch (err) {
     if (!(err instanceof c.room.RoomError)) throw err;
-    unsent.push(`✗ your ${a.choice === 'Agree' ? 'agreement to' : 'objection to'} proposal ${p.hash} was not recorded: ${err.message}. Answer again once the room is reachable.`);
-    return { failed: err.message };
+    const what = `your ${a.choice === 'Agree' ? 'agreement to' : 'objection to'} proposal ${p.hash}`;
+    unsent.push(err.unknown // it went out and may still land: answering again is safe (one answer per person per proposal)
+      ? `⧗ ${what} is not confirmed: ${err.message}. If the proposal still shows you unanswered, answer again: that is safe.`
+      : `✗ ${what} was not recorded: ${err.message}. Answer again once the room is reachable.`);
+    return { failed: err.message, ...(err.unknown ? { unknown: true } : {}) };
   }
   return res.stale ? res : { ...res, decision: proposal.decide(me.code, p.hash) };
 }
 
 /** For the model: the answer did not reach the room, and the person was told. */
-const failed = (me, hash, res) => `proposal ${hash}: NOT recorded (${res.failed}); ${me.name} has been told. Post nothing for them; open it again when ${me.name} asks.`;
+const failed = (me, hash, res) => `proposal ${hash}: NOT ${res.unknown ? 'confirmed, it may still be recorded' : 'recorded'} (${res.failed}); ${me.name} has been told. Post nothing for them; open it again when ${me.name} asks.`;
 
 /** What was recorded, for the model; no entry ids (people never see them; a Claude repeated "#8"). */
 const done = (me, label, hash, res) => `${me.name} ${label === 'Agree' ? 'agreed to' : 'objected to'} proposal ${hash}${res.decision ? `; the room decided: ${res.decision.text}` : ''}.`;
@@ -119,7 +131,17 @@ function waitingNote(me, input) {
   return asks || tokens.some(t => cf.hash.startsWith(t)) ? { cf, p } : null;
 }
 
+/** The handoff waiting for me, when this card call is about it (it says "handoff", or carries the card's question). */
+function handoffAsked(me, input) {
+  const a = handoff.pendingAsk(me.code, me.name);
+  if (!a) return null;
+  const s = JSON.stringify(input || {});
+  return /handoff/i.test(s) || s.includes(handoff.question(a, me.code)) ? a : null;
+}
+
 function pre(input, me) {
+  const ho = handoffAsked(me, input.tool_input);
+  if (ho) return c.pre('ask', `room ${me.code}: ${ho.from} asks ${me.name} to host it`, { updatedInput: handoff.card(ho, me.code) });
   const waiting = waitingNote(me, input.tool_input);
   if (waiting) {
     proposal.writeConfirm(me, { ...waiting.cf, asked: Date.now() });
@@ -486,9 +508,42 @@ function postConfirm(input, me, r, answers) {
   return true;
 }
 
+/**
+ * Post(AskUserQuestion) for the handoff card: only the person's own answer on the card as the hooks built it counts.
+ * "Host it here" moves the room here (lib/handoff.js accept), "Not now" refuses; AFK or another answer records nothing.
+ * Returns false when the call was not the handoff card.
+ */
+function postHandoff(input, me, r, answers) {
+  const a = handoff.pendingAsk(me.code, me.name);
+  if (!a) return false;
+  const card = handoff.card(a, me.code).questions[0];
+  const shown = Array.isArray(r.questions) ? r.questions : [];
+  if (![...shown, ...((input.tool_input && input.tool_input.questions) || [])].some(q => q && q.question === card.question)) return false;
+  const say = (t, top) => c.context('PostToolUse', t, top);
+  const same = q => q && q.question === card.question && Array.isArray(q.options) && q.options.length === card.options.length
+    && q.options.every((o, i) => o && o.label === card.options[i].label && o.description === card.options[i].description);
+  const label = answers && Object.hasOwn(answers, card.question) ? String(answers[card.question]) : null;
+  if (r.afkTimeoutMs || r.followUp || label == null || !shown.some(same) || ![handoff.YES, handoff.NO].includes(label)) {
+    return say(`Nothing was decided: the handoff card closed without ${me.name}'s answer. If ${me.name} asks, call AskUserQuestion with "handoff" again; return to what you were doing.`), true;
+  }
+  if (label === handoff.NO) {
+    const res = handoff.refuse(me);
+    return say(res.ok ? `${me.name} declined to host room ${me.code}; ${a.from} stays the host. Return to what you were doing.`
+      : `${me.name} declined, but the host was not told (${res.error}); nothing moved. Return to what you were doing.`), true;
+  }
+  const res = handoff.accept(me, { cwd: input.cwd, sign: p => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name }) });
+  if (!res.ok) {
+    return say(`The room did NOT move: ${res.error}. ${me.name} has been told; return to what you were doing.`, { systemMessage: `sub-human: room ${me.code} did not move here: ${res.error}` }), true;
+  }
+  say(`Room ${me.code} is hosted on this machine now (host epoch ${res.epoch}): ${me.name} agreed on the card. Its orch starts here, on ${me.name}'s model account. Post nothing about it (the room shows it); return to what you were doing.`,
+    { systemMessage: `sub-human: room ${me.code} is hosted here now (epoch ${res.epoch}); its orch runs on your model account. Keep this machine reachable for the others${res.note}` });
+  return true;
+}
+
 function postAsk(input, me) {
   const r = input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {};
   const answers = r.answers && typeof r.answers === 'object' ? r.answers : null;
+  if (postHandoff(input, me, r, answers)) return;
   if (postConfirm(input, me, r, answers)) return;
   const asked = [...(Array.isArray(r.questions) ? r.questions : []), ...((input.tool_input && input.tool_input.questions) || [])]
     .map(q => q && q.question).filter(q => proposal.QUESTION_RE.test(String(q)));

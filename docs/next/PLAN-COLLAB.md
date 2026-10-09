@@ -276,7 +276,7 @@ Files: `lib/room/validate.js`, `lib/room/consent.js`, `lib/proposal.js`, `lib/co
 
 ### P2 The plan view shows versions
 
-Files: `hooks/consent.js`, `lib/proposal.js` (`changes`, compose, pick → head), `bin/sub-human` (`show HASH [--changes]`), `lib/cc.js` (nothing new expected; re-run `npm run probe`), `test/hooks/consent.test.js`, `test/cli.test.js`.
+Files: `hooks/consent.js`, `lib/proposal.js` (`changes`, compose, pick → head), `scripts/sub-human` (`show HASH [--changes]`), `lib/cc.js` (nothing new expected; re-run `npm run probe`), `test/hooks/consent.test.js`, `test/cli.test.js`.
 
 - Compose the header and diff for version > 1; the signoff check compares against it.
 - `choose` / `picked` map any version's words or hash to the head; the model is told when it named a closed one.

@@ -1,6 +1,6 @@
 // Wiring: the room's delivery through the hooks module (mod/deliver.mjs). Run with `npm run test:mods`.
 // The routing table and the turn ledger are tested in node (test/mod-core.test.js, test/mod-core-deliver.test.js);
-// the tail's events in test/tail.test.js. This checks the hooks: session.start spawns `node bin/sub-human tail
+// the tail's events in test/tail.test.js. This checks the hooks: session.start spawns `node scripts/sub-human tail
 // --ndjson` for a seated session, restarted with backoff and stopped at the session's end, and its events reach
 // the session: a chat event is a $.ui.log notice and starts no turn, a wake while idle submits one prompt (and logs
 // its visible lines when a hook drops it), a wake mid-turn goes to an append (and logs them) instead, and a failure
@@ -89,13 +89,13 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
   return seen
 }
 
-test('a seated session starts the tail child: node bin/sub-human tail --ndjson, by its session id', async ($, on) => {
+test('a seated session starts the tail child: node scripts/sub-human tail --ndjson, by its session id', async ($, on) => {
   const seen = world($, on)
   await start($)
   await until(() => seen.spawns.length === 1)
   const e = seen.spawns[0]
   expect(e.argv[0]).toBe('node')
-  expect(e.argv[1]).toMatch(/\/bin\/sub-human$/)
+  expect(e.argv[1]).toMatch(/\/scripts\/sub-human$/)
   expect(e.argv.slice(2)).toEqual(['tail', '--ndjson'])
   expect(e.env.CLAUDE_CODE_SESSION_ID).toBe(SID)
   expect(e.env.CLAUDE_PID).toBe('')

@@ -48,6 +48,8 @@ test('a Bash-forged human signoff (node -e require(lib/room.js).append({via:"hum
   const why = bashVerdict(cmd, { home: w.home, cwd: w.cwd });
   assert.ok(why);
   assert.match(denyText(why), /sub-human's own modules/);
+  assert.ok(denyText(why, '/p').includes('`/p/scripts/sub-human read|digest|who|tasks`'), 'the CLI by its path: scripts/ is not on PATH');
+  assert.ok(!denyText(why).includes('scripts/'), 'no root, no path');
   // 2. run anyway (the guard is a string check): the store refuses, nothing is written
   const before = lines(w).length;
   const r = spawnSync(process.execPath, ['-e', script], { env: { PATH: process.env.PATH, HOME: w.userHome, SUB_HUMAN_HOME: w.home }, encoding: 'utf8' });
@@ -208,14 +210,14 @@ test('the room MCP server, hold and task never load a seat key and cannot write 
   assert.deepEqual(JSON.parse(r.stdout), { loaded: [], signer: 'undefined', err: 'INVALID' });
   // and no file outside hooks/ requires the key module
   const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(x => x.isDirectory() ? walk(path.join(d, x.name)) : [path.join(d, x.name)]);
-  for (const f of [...walk(path.join(PLUGIN, 'mcp')), ...walk(path.join(PLUGIN, 'lib')), path.join(PLUGIN, 'bin', 'sub-human')]) {
+  for (const f of [...walk(path.join(PLUGIN, 'mcp')), ...walk(path.join(PLUGIN, 'lib')), path.join(PLUGIN, 'scripts', 'sub-human')]) {
     assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /require\([^)]*seat-key|\.key['"`]/, f);
   }
 });
 
 test('`sub-human serve` (the remote server) never loads a seat key or installs a signer', t => {
   const w = new World({ orch: 'sleep', alice: 'act' }, { t });
-  const bin = path.join(PLUGIN, 'bin', 'sub-human');
+  const bin = path.join(PLUGIN, 'scripts', 'sub-human');
   const probe = `
     process.argv = [process.argv[0], ${JSON.stringify(bin)}, 'serve', '--stdio', ${JSON.stringify(w.code)}];
     process.on('exit', () => process.stderr.write('PROBE' + JSON.stringify({
@@ -235,7 +237,7 @@ test('Bash guard: allowed and denied commands', () => {
   const ctx = { home, pluginRoot: '/repo/plugin/sub-human', cwd: '/repo' };
   const allow = [
     'sub-human read', 'sub-human read --id 3,4', 'sub-human digest --room vole-1234', 'sub-human who', 'sub-human tasks --json',
-    '/repo/plugin/sub-human/bin/sub-human read 5', 'npm test', 'node --test plugin/sub-human/test',
+    '/repo/plugin/sub-human/scripts/sub-human read 5', 'npm test', 'node --test plugin/sub-human/test',
     'node --test plugin/sub-human/test/hooks/at-room.test.js', 'git diff plugin/sub-human/lib/room/store.js',
     'cat plugin/sub-human/lib/room/store.js', 'grep -n "require(" plugin/sub-human/lib/room.js', 'sed -n 1,40p plugin/sub-human/hooks/at-room.js',
     'node src/hooks/useFoo.js', 'node lib/io.js', 'ls ~/.sub-humanoid', 'ls /Users/u', 'python3 build.py', 'echo SUB_HUMANS',
@@ -250,10 +252,12 @@ test('Bash guard: allowed and denied commands', () => {
     `echo x >> ${home}/rooms/a/log.jsonl`, `cat "${home}/keys/a/bob.key"`, 'SUB_HUMAN_HOME=/tmp/x sub-human read',
     'export SUB_HUMAN_HOME=/tmp/x',
     `node -e "require('/x/sub-human/lib/seats.js').exit('vole-1234','bob','gone')"`, 'node /x/sub-human/lib/remote/link.js vole-1234',
-    'sub-human invite', '/repo/plugin/sub-human/bin/sub-human invite --room vole-1234', 'sub-human link vole-1234 --reset',
+    'sub-human invite', '/repo/plugin/sub-human/scripts/sub-human invite --room vole-1234', 'sub-human link vole-1234 --reset',
     'sub-human serve --stdio vole-1234', 'echo x; sub-human invite', 'sub-human invite --ssh me@far',
     'sub-human authorize sh1.vole-1234.x.y ~/.ssh/id.pub', 'sub-human authorize abcdef012345 - --room vole-1234 --file f',
     'sub-human serve --stdio vole-1234 --link abcdef012345',
+    'sub-human host --ssh', 'node scripts/sub-human host --ssh me@far --via bastion', 'sub-human admit shk1.vole-1234.abcdef012345.k.bob --yes',
+    'sub-human revoke bob', 'sub-human prime vole-1234',
   ];
   for (const c of allow) assert.equal(bashVerdict(c, ctx), null, `should allow: ${c}`);
   for (const c of deny) assert.ok(bashVerdict(c, ctx), `should deny: ${c}`);

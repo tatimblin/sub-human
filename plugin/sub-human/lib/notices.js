@@ -4,7 +4,7 @@
  * "bob joined", "bob rejoined", "bob left" (no room code, no ids).
  *
  * Where a human sees them:
- *   1. at the moment, as a persistent line in their session: the hooks module's tail child (bin/sub-human tail)
+ *   1. at the moment, as a persistent line in their session: the hooks module's tail child (scripts/sub-human tail)
  *      sends them as `chat` events and mod/deliver.mjs draws them with $.ui.log, no model turn (markShown).
  *   2. for a while after: the room row's text ("+bob joined", "−bob left"; lib/rows.js rowText) and the room
  *      row view's progress line (mcp/hold.js).

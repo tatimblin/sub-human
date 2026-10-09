@@ -153,14 +153,19 @@ test('two concurrent joins start one orch: the second sees the pending claim', a
   const w = new World({ alice: 'sleep' });
   w.pid.bob = sleeper(); w.sid.bob = 'aaaaaaaa-0000-4000-8000-000000000015';
   w.pid.carol = sleeper(); w.sid.carol = 'aaaaaaaa-0000-4000-8000-000000000016';
-  // the stub takes a while to dispatch, so both joins overlap the spawn
+  // The stub's dispatch waits for a gate file the test opens only after both hooks returned, so both joins
+  // overlap the spawn whatever the load (a fixed 400 ms wait did not guarantee it, and timing bounds failed
+  // under load), and every orch starter either join made is still running when they are counted.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-stub-'));
   const log = path.join(dir, 'calls.jsonl');
+  const gate = path.join(dir, 'gate');
   const bin = path.join(dir, 'claude');
-  fs.writeFileSync(bin, `#!${process.execPath}\nrequire('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n` +
-    `if (process.argv.includes('--bg')) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400); console.log('backgrounded · 0b500131 · orch.x'); }\n`);
+  fs.writeFileSync(bin, `#!${process.execPath}\nconst fs = require('fs');\nfs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n` +
+    `if (process.argv.includes('--bg')) { const z = new Int32Array(new SharedArrayBuffer(4)); for (let i = 0; i < 1200 && !fs.existsSync(${JSON.stringify(gate)}); i++) Atomics.wait(z, 0, 0, 25); console.log('backgrounded · 0b500131 · orch.x'); }\n`);
   fs.chmodSync(bin, 0o755);
-  const { spawn: sp } = require('node:child_process');
+  const starters = () => spawnSync('ps', ['-Ao', 'args'], { encoding: 'utf8' }).stdout.split('\n')
+    .filter(l => l.includes(path.join('lib', 'orch.js')) && l.includes(` start ${w.code} `)).length;
+  const { spawn: sp, spawnSync } = require('node:child_process');
   const { baseEnv, HOOKS } = require('./helpers.js');
   const run = who => new Promise(res => {
     w.modLease(w.sid[who]);
@@ -171,12 +176,14 @@ test('two concurrent joins start one orch: the second sees the pending claim', a
     p.on('close', () => res(JSON.parse(out)));
     p.stdin.end(JSON.stringify({ ...expand(`${who} ${w.code}`), cwd: w.cwd, session_id: w.sid[who] }));
   });
-  const t0 = Date.now();
+  // Both hooks return while the dispatch is held: they did not wait for the spawn.
   const [a, b] = await Promise.all([run('bob'), run('carol')]);
-  assert.ok(Date.now() - t0 < 5000, 'the hooks did not wait for the spawn');
   assert.deepEqual([a.systemMessage, b.systemMessage], [undefined, undefined]);
-  assert.ok(await until(() => w.members().orch.job === '0b500131'));
-  await new Promise(r => setTimeout(r, 300));
+  assert.equal(w.members().orch.job, 'pending', 'claimed, not yet recorded');
+  // A join starts its starter (detached) before it returns, and the held dispatch keeps every starter running.
+  assert.equal(starters(), 1, 'one starter: the second join saw the pending claim');
+  fs.writeFileSync(gate, '');
+  assert.ok(await until(() => w.members().orch.job === '0b500131', 30_000));
   const calls = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(JSON.parse);
   assert.equal(calls.filter(c => c.includes('--bg')).length, 1, 'one spawn');
 });
@@ -302,17 +309,20 @@ test('/sub-human host: an invite to my room, shown to me only (a block), once pe
   assert.match(w.hook('join', expand('host'), { as: 'me' }).json.reason, /join a room first/);
   const shown = w.hook('join', expand('host'), { as: 'alice' }).json;
   assert.equal(shown.decision, 'block');
-  const invite = /sh1\.\S+/.exec(shown.reason)[0];
+  assert.deepEqual([shown.systemMessage, shown.hookSpecificOutput], [undefined, { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true }]);
+  const invite = /sh2\.\S+/.exec(shown.reason)[0];
+  assert.match(shown.reason, /\nPIN \d{6} /);
   const auth = require(path.join(PLUGIN, 'lib', 'remote', 'auth.js'));
   assert.deepEqual(auth.parseInvite(invite).code, w.code);
   assert.equal(auth.parseInvite(invite).locator, `pipe:${w.home}`, 'this machine, this home');
-  assert.match(shown.reason, new RegExp(`/sub-human join NAME ${invite.replace(/[.]/g, '\\.')}`));
-  assert.notEqual(/sh1\.\S+/.exec(w.hook('join', expand('host'), { as: 'alice' }).json.reason)[0], invite, 'a new one each time');
+  assert.match(shown.reason, new RegExp(`/sub-human join NAME ${invite.replace(/[.]/g, '\\.')} PIN`));
+  assert.notEqual(/sh2\.\S+/.exec(w.hook('join', expand('host'), { as: 'alice' }).json.reason)[0], invite, 'a new one each time');
+  assert.match(w.hook('join', expand('host --frobnicate'), { as: 'alice' }).json.reason, /usage: \/sub-human host/);
   const inv = locator => auth.formatInvite({ code: 'vole-1234', locator, secret: 'x'.repeat(32) });
   const cases = [
     ['join bob', /usage/],
     ['join bob nonsense', /not an invite/],
-    [`join bob ${invite}`, /hosted on this machine/],
+    [`join bob ${invite} 123456`, /hosted on this machine/],
     [`join bob ${inv('tcp:far:22')}`, /through "tcp", which this machine does not support yet/],
     [`join bob ${inv('ssh:-oProxyCommand=sh@far')}`, /not a plain user@host\[:port\]/],
     [`join bob ${inv('ssh:me@far -oProxyCommand=sh')}`, /not a plain user@host\[:port\]/],
@@ -339,7 +349,10 @@ test('joining another room switches to it; the orch cannot switch rooms', () => 
   let r = w.hook('join', expand(`alice ${newCode}`), { as: 'alice' });
   assert.equal(r.json.decision, undefined, r.json.reason);
   assert.match(hso(r).additionalContext, new RegExp(`in room ${newCode}`));
-  const left = w.entries().at(-1);
+  // alice was the old room's last member: its detached reaper (grace 0 in tests) may already have appended its
+  // "room closed" status after her departure, so the departure is the last entry that is not the reaper's.
+  const orch = require(path.join(PLUGIN, 'lib', 'orch.js'));
+  const left = w.entries().filter(e => !(e.kind === 'status' && e.text === orch.CLOSE_TEXT)).at(-1);
   assert.deepEqual([left.kind, left.from, left.via], ['member_left', 'alice', 'system'], 'old room logs the departure');
   assert.ok(w.members().alice.left_at, 'old seat marked left');
   w.code = newCode;
@@ -401,7 +414,7 @@ const STUB = {
     + '{NAME}\'s prompts that start `@room` are posted as their words by a hook; nothing else can post as {NAME}.\n'
     + 'To reach a session now: SendMessage to {ADDR_EXAMPLE}; those come from Claudes.\n'
     + 'propose(text|path): asks named people to agree on a card. Never say {NAME} agrees.\n'
-    + 'task(op): the room\'s task list (`{PLUGIN}/bin/sub-human tasks`).',
+    + 'task(op): the room\'s task list (`{PLUGIN}/scripts/sub-human tasks`).',
   'orchestrator.md': 'SUB-HUMAN: you are the headless helper of room {CODE} (members: {OTHERS}). Nobody types here.\n'
     + 'Reach a member now: SendMessage to {ADDR_EXAMPLE}; post is a note read on their next turn.\n'
     + 'Facilitate only when asked: read {PLUGIN}/skills/sub-human/facilitate.md.',
@@ -434,13 +447,24 @@ test('block: <= 900 chars with 5 members (stub templates), placeholders filled, 
   }
 });
 
+/**
+ * The budget is about the template, not this checkout: the fill carries {PLUGIN} (this checkout's path, ~50 chars
+ * on master, ~95 in a worktree) and {CODE} (a random animal of 4-7 letters). Measured raw, the same template passed
+ * or failed with the path and the dice. So measure the worst case a user meets: the longest code and a marketplace
+ * install path.
+ */
+const REF_PLUGIN = '/Users/someone/.claude/plugins/cache/sub-human/sub-human/1.0.0';
+const LONGEST_CODE = `${identity.ANIMALS.reduce((a, b) => (b.length > a.length ? b : a))}-0000`;
+const atReference = (text, code) => text.split(PLUGIN).join(REF_PLUGIN).split(code).join(LONGEST_CODE);
+
 test('block: no template file (or one without placeholders) falls back to the built-in text; the shipped templates fill cleanly', () => {
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-plugin-'));
   for (const role of ['member', 'orch']) {
     const { text, common } = blockFor(role, empty);
     assert.ok(text.startsWith('SUB-HUMAN: you are'), text.slice(0, 60));
     assert.ok(text.length <= common.BLOCK_MAX, `${role} default block is ${text.length}`);
-    const shipped = blockFor(role, PLUGIN).text;
+    const got = blockFor(role, PLUGIN);
+    const shipped = atReference(got.text, got.code);
     assert.doesNotMatch(shipped, /\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/);
     assert.match(shipped, /\nROWS\n/);
     // D's budget: the template fill <= 900 with 5 members, the whole block (with ROWS) <= 1,200

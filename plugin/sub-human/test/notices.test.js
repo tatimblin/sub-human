@@ -1,5 +1,5 @@
 'use strict';
-// Join / leave lines (lib/notices.js) and where they surface: the tail child's chat events (bin/sub-human
+// Join / leave lines (lib/notices.js) and where they surface: the tail child's chat events (scripts/sub-human
 // tail), the room row text (lib/rows.js) and the room hold's progress line (mcp/hold.js). Nothing here sleeps:
 // the tail runs on a fake clock and the hold on node:test's mock timers.
 const test = require('node:test');

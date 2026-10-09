@@ -41,7 +41,7 @@ module.exports = {
   timingEnv,
   TIMING_ENV_RE,
 
-  // ---------- the room tail (bin/sub-human tail, the hooks module's child) ----------
+  // ---------- the room tail (scripts/sub-human tail, the hooks module's child) ----------
   // Entries are batched into one set of events (at most one wake): flushed after SETTLE_MS of quiet, or
   // SETTLE_MAX_MS after the batch's first entry.
   SETTLE_MS: 1500,                 // SUB_HUMAN_SETTLE_MS
@@ -120,16 +120,58 @@ module.exports = {
   // A hook's synchronous call over the link gives up (OFFLINE) after this, well inside the hook timeout.
   LINK_CALL_MS: 3000,              // hooks with a 10 s timeout
   LINK_CALL_END_MS: 1000,          // SessionEnd (5 s timeout)
+  // The link daemon answers a hook's relayed op by this, inside LINK_CALL_MS, even when the host has not: a signed
+  // @room post sent already then stays in the outbox under its nonce ("⧗ sending (slow link)"), and any other op
+  // says its outcome is unknown, never "nothing was sent" (a slow link delivers the frame late; lib/remote/link.js).
+  LINK_RELAY_MS: 2000,             // SUB_HUMAN_LINK_RELAY_MS
   // One protocol frame (lib/remote/protocol.js), bytes: a plan blob (PROPOSAL_FILE_MAX) in base64 fits.
   LINK_FRAME_MAX_BYTES: 1024 * 1024,
   // The link daemon (lib/remote/link.js): the join hook waits this long for it to listen; a lost connection is
-  // tried again after LINK_RETRY_MS, doubled per failure up to LINK_RETRY_MAX_MS; it exits LINK_IDLE_MS after
+  // tried again after a jittered delay from LINK_RETRY_MS up to LINK_RETRY_MAX_MS; it exits LINK_IDLE_MS after
   // this machine has no seat left in the room.
   LINK_START_MS: 3000,
   LINK_HELLO_MS: 15_000,           // the daemon's hello: an ssh transport connects (and authenticates) first
+  // A wss/ws link's WebSocket (TCP, TLS, upgrade), before the Noise handshake: a ts.net name's first TLS handshake
+  // waits while Tailscale fetches its certificate (~20 s seen cold), so this is generous.
+  WS_CONNECT_MS: 45_000,           // SUB_HUMAN_WS_CONNECT_MS
+  // Retries use decorrelated jitter: each delay is random in [LINK_RETRY_MS, 3 x the last one], capped at
+  // LINK_RETRY_MAX_MS, so links that dropped together do not redial together.
   LINK_RETRY_MS: 1000,             // SUB_HUMAN_LINK_RETRY_MS
-  LINK_RETRY_MAX_MS: 10_000,       // a healed link is back within ~10 s (was 30 s: 26 s after a heal, live run)
+  LINK_RETRY_MAX_MS: 10_000,       // SUB_HUMAN_LINK_RETRY_MAX_MS: a healed link is back within ~10 s (was 30 s: 26 s after a heal, live run)
   LINK_IDLE_MS: 60_000,            // SUB_HUMAN_LINK_IDLE_MS
+  // A planned handoff (lib/handoff.js): the ask waits this long for the target's card answer; the new host's
+  // invites the old host hands out (also to a member that reconnects late) are kept this long; a manual promote
+  // needs the link down at least PROMOTE_OFFLINE_MS (else --force).
+  HANDOFF_ASK_MS: 10 * 60_000,     // SUB_HUMAN_HANDOFF_ASK_MS
+  HANDOFF_INVITE_MS: 24 * 60 * 60_000,
+  HANDOFF_CALL_MS: 6000,           // the target's accept op (the old host appends, releases its orch): in a 10 s hook
+  PROMOTE_OFFLINE_MS: 10 * 60_000, // SUB_HUMAN_PROMOTE_OFFLINE_MS
+  // An sh2 invite (lib/remote/auth.js): the host checks its PIN online only, INVITE_PIN_TRIES times, and the invite
+  // burns at the last wrong one or INVITE_TTL_MS after it was minted (whichever is first), or on success.
+  INVITE_TTL_MS: 15 * 60_000,
+  INVITE_PIN_TRIES: 5,
+  // The join hook waits this long for a fresh link's first hello (redeem or refusal) before it answers.
+  LINK_JOIN_WAIT_MS: 6000,
+  // The app-level heartbeat (op ping, to a server whose caps list it): a ping every LINK_PING_MS; no pong within
+  // LINK_PONG_MS makes the link suspect (a new connection is made before the old one is dropped); none within
+  // LINK_DEAD_MS declares it dead (a half-open TCP or ssh link after a sleep). The server closes a session that
+  // said hello with caps.ping and then sent nothing for LINK_SILENT_MS.
+  LINK_PING_MS: 15_000,            // SUB_HUMAN_LINK_PING_MS
+  LINK_PONG_MS: 5000,              // SUB_HUMAN_LINK_PONG_MS
+  LINK_DEAD_MS: 10_000,            // SUB_HUMAN_LINK_DEAD_MS
+  LINK_SILENT_MS: 45_000,          // SUB_HUMAN_LINK_SILENT_MS (server side: 3 pings missed)
+  // Wake from sleep: a timer that ticks every LINK_WAKE_TICK_MS and finds the wall clock moved more than
+  // LINK_WAKE_GAP_MS past the tick (or away from the monotonic clock) means the machine slept: redial at once.
+  LINK_WAKE_TICK_MS: 2000,         // SUB_HUMAN_LINK_WAKE_TICK_MS
+  LINK_WAKE_GAP_MS: 5000,          // SUB_HUMAN_LINK_WAKE_GAP_MS
+  // A changed set of network addresses (os.networkInterfaces, polled this often) redials at once too.
+  LINK_NET_POLL_MS: 5000,          // SUB_HUMAN_LINK_NET_POLL_MS
+  // The @room outbox (lib/remote/outbox.js): while the link is down a person's @room post is queued, at most
+  // LINK_OUTBOX_MAX posts, each for at most LINK_OUTBOX_AGE_MS. The host refuses a signature whose ts is more
+  // than SIG_SKEW_MS (10 min, lib/room/envelope.js) from its clock, and the daemon never re-signs, so a post
+  // queued longer could never be placed: the age stays inside that window, with a minute for clock skew.
+  LINK_OUTBOX_MAX: 50,
+  LINK_OUTBOX_AGE_MS: 9 * 60_000,  // SUB_HUMAN_LINK_OUTBOX_AGE_MS
 
   // ---------- rows (lib/rows.js) ----------
   PRESENCE_STALE_MS: 6 * 60 * 60 * 1000,

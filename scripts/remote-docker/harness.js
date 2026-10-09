@@ -18,6 +18,12 @@
  *       (transcript.log, REPORT.md, report.html, transcript.svg, report.png when Chrome is installed, compose
  *       ps/logs, toxiproxy state) goes to DIR, default /tmp/sub-human-remote-proof-<timestamp>. Invite secrets
  *       and link tokens are redacted in every file. Exit 0 only when every assertion passed.
+ *   node scripts/remote-docker/harness.js scenarios [--only ID[,ID]] [--out DIR] [--keep]
+ *       The multi-machine lab (lab/compose.yml, project sub-human-lab; lab.js): devbox, devbox-old (0.2.0), bastion,
+ *       joiner-a, joiner-b, toxiproxy, corp-proxy, tls-front. Runs scenarios/NN-*.js in order (README.md lists
+ *       them), each from a clean reset, and writes per-scenario evidence (transcript, logs and their hashes,
+ *       timings, summary.json) to DIR, default /tmp/sub-human-lab-<time>/. A scenario whose feature is not in the
+ *       plugin yet is PENDING. Exit 0 unless one FAILED. --keep leaves the stack up afterwards.
  *   node scripts/remote-docker/harness.js up [--host-seat NAME] [--joiners A,B] | status | say [--to NAME] TEXT |
  *       cut | heal | latency MS | down
  *       The manual mode, for real Claudes on this Mac: up starts devbox + toxiproxy with the room and the host's
@@ -29,7 +35,8 @@
  *       say posts as the host seat (signed, the host's hook path); --to NAME addresses a post from the seat's
  *       Claude. status shows every joiner's link. cut/heal disable/enable the proxy; latency adds (MS > 0) or removes
  *       (0) a latency toxic. down stops it all and removes the manual state, every joiner's home, project, env and
- *       link daemon.
+ *       link daemon. With LAB_PROJECT set, down takes down only that scenarios stack (lab.js) and leaves the manual
+ *       stack and its directory alone.
  * SUB_HUMAN_COMPOSE_PROJECT (default: compose.yml's sub-human-remote) and SUB_HUMAN_MANUAL_DIR (default
  * /tmp/sub-human-remote-manual) let a second stack run beside the default one; set both the same for every command.
  * npm run test:remote-docker runs `run` as an opt-in test (skipped without Docker).
@@ -59,7 +66,7 @@ function sh(cmd, args, { input, allowFail = false, timeout = 600_000 } = {}) {
 const dc = (args, o) => sh('docker', ['compose', '-f', COMPOSE, ...PROJECT, ...args], o);
 const dexec = (args, { user = 'host', ...o } = {}) => dc(['exec', '-T', '-u', user, '-e', `SUB_HUMAN_HOME=${HOST_HOME}`, 'devbox', ...args], o);
 const hostCli = (...args) => JSON.parse(dexec(['node', '/harness/host-cli.js', ...args]).stdout);
-const subHuman = (args, o) => dexec(['node', '/plugin/bin/sub-human', ...args], o);
+const subHuman = (args, o) => dexec(['node', '/plugin/scripts/sub-human', ...args], o);
 const port = (svc, p) => Number(dc(['port', svc, String(p)]).stdout.trim().split(':').pop());
 
 async function toxi(api, method, p, body) {
@@ -553,6 +560,14 @@ async function up(args) {
 }
 
 async function down() {
+  // LAB_PROJECT names a scenarios stack (lab.js): take down that one only. Never the manual stack or its directory,
+  // which someone may be using by hand (this used to remove both whatever LAB_PROJECT said)
+  if (process.env.LAB_PROJECT) {
+    const lab = require('./lab.js');
+    const r = sh('docker', ['compose', '-f', lab.COMPOSE, '-p', lab.PROJECT, 'down', '-v', '--remove-orphans', '-t', '2'], { allowFail: true });
+    console.log(`down: lab project ${lab.PROJECT}: compose exit ${r.status} (the manual stack and ${MANUAL} are left alone)`);
+    return;
+  }
   let st = null;
   try { st = manualState(); } catch { /* not up, or half up */ }
   if (st) for (const j of st.joiners || []) {
@@ -571,6 +586,15 @@ async function main() {
     const out = i >= 0 ? path.resolve(args[i + 1]) : path.join('/tmp', `sub-human-remote-proof-${new Date().toISOString().replace(/[:.]/g, '-')}`);
     const ok = await run({ out });
     console.log(`\n${ok ? 'ALL PASS' : 'FAILED'}: evidence in ${out}`);
+    process.exit(ok ? 0 : 1);
+  }
+  if (cmd === 'scenarios') {
+    const out = opt(args, '--out', null) ? path.resolve(opt(args, '--out')) : path.join('/tmp', `sub-human-lab-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+    const { runScenarios } = require('./lab.js');
+    const { ok, results } = await runScenarios({ out, only: opt(args, '--only', null), keep: args.includes('--keep') });
+    console.log('');
+    for (const r of results) console.log(`${r.status.toUpperCase().padEnd(8)} ${r.id.padEnd(16)} ${Math.round(r.ms / 1000)} s  ${r.reason || r.checks.filter(c => c.status !== 'pass').map(c => `${c.status}: ${c.name}`).join('; ')}`);
+    console.log(`\n${ok ? 'SCENARIOS OK' : 'SCENARIOS FAILED'}: evidence in ${out}`);
     process.exit(ok ? 0 : 1);
   }
   if (cmd === 'up') return up(args);
@@ -593,7 +617,7 @@ async function main() {
     }
     return console.log(`latency ${ms} ms each way`);
   }
-  console.error('usage: harness.js run [--out DIR] | up [--host-seat NAME] [--joiners A,B] | status | say [--to NAME] TEXT | cut | heal | latency MS | down');
+  console.error('usage: harness.js run [--out DIR] | scenarios [--only ID] [--out DIR] [--keep] | up [--host-seat NAME] [--joiners A,B] | status | say [--to NAME] TEXT | cut | heal | latency MS | down');
   process.exit(2);
 }
 

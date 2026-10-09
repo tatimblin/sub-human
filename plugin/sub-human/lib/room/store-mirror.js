@@ -8,13 +8,18 @@
  * starts none. store.open(code) returns one for a code that lib/room/links.js knows.
  *
  * Reads: the parent's, over the mirror directory.
- * Writes (RoomError codes in lib/remote/protocol.js CODES; OFFLINE: the daemon or the host is unreachable, or the
- * deadline passed, and nothing is queued; a daemon that stopped for good gives its own reason and code, from its
- * document `link`, e.g. AUTH for a refused invite):
+ * Writes (RoomError codes in lib/remote/protocol.js CODES; OFFLINE: the daemon or the host is unreachable, and
+ * nothing was sent or queued but an @room post (append, opts.queue); a daemon that stopped for good gives its own
+ * reason and code, from its document `link`, e.g. AUTH for a refused invite; a deadline that passed after the op
+ * went out is OFFLINE with unknown: true (protocol.unknownOutcome): it may still land, and retrying is safe):
  *   append(entry, opts) = place(toPayload(...))   signed here (the hook's signer, via=human), placed by the host:
  *                            op `append`. The placed entry is returned once the mirror holds it (the host streams
  *                            a write's lines before its reply: read-your-writes). A via=system payload is refused
- *                            by the host (AUTH): the host writes the room's own entries.
+ *                            by the host (AUTH): the host writes the room's own entries. opts.queue (hooks/at-room.js
+ *                            only): with the link down the daemon queues an @room post instead of refusing it
+ *                            (lib/remote/outbox.js); the signed payload is returned with queued: n and no id. Online, a post the host
+ *                            has not answered in time comes back queued: n, slow: true (in flight, kept under
+ *                            its nonce: the late copy is the post).
  *   members.join(rec)        op `join` with the seat's public key and a proof (lib/remote/auth.js proveSeat), both
  *                            from the hook's signer; the host logs member_joined. Any RoomError comes back as
  *                            {ok: false, error, code}
@@ -26,6 +31,8 @@
  *                            `blob.get`; has, localPath: the mirror's file (the daemon prefetches every proposal's plan)
  *   kv.*                     local (rows/*, members/NAME/*, cursors, notices, link: session-local documents);
  *                            set/update/delete of a streamed document (members, presence/*, tasks) is HOST_ONLY
+ *   request(op, params, {deadlineMs}?)   any other op the daemon relays (lib/remote/link.js RELAY): the planned
+ *                            handoff's handoff.accept and handoff.refuse (lib/handoff.js)
  *   isHost = false
  * The daemon's writes (lib/remote/link.js only; it is the mirror's one writer):
  *   applyLine(line)          append one host line verbatim; its prev must hash-chain to the mirror's last line
@@ -43,7 +50,8 @@ const path = require('node:path');
 const { FsRoomStore, RoomError, tag, blobRef, humanKey } = require('./store.js');
 const { createBridge } = require('../remote/bridge.js');
 const { proveSeat } = require('../remote/auth.js');
-const { socketPath, stopReason } = require('../remote/link.js');
+const { socketPaths, stopReason } = require('../remote/link.js');
+const { unknownOutcome, UNKNOWN_OUTCOME } = require('../remote/protocol.js');
 const { SEAT_BEAT_MS } = require('../config.js');
 
 const HANDLER = path.join(__dirname, '..', 'remote', 'link.js');
@@ -74,16 +82,29 @@ class MirrorRoomStore extends FsRoomStore {
     this.kv = { ...kv, set: local('kv.set', kv.set), update: local('kv.update', kv.update), delete: local('kv.delete', kv.delete) };
   }
 
-  /** @override the host places it: op `append`. */
-  place(payload) { return tag(this._call('append', { payload }).entry, this); }
+  /** @override the host places it: op `append`. opts.queue (an @room post): while the link is down the daemon may
+   * queue it (lib/remote/outbox.js); the payload comes back with `queued: n` (the posts waiting) and no id. */
+  place(payload, { queue } = {}) {
+    const r = this._call('append', queue ? { payload, queue: true } : { payload });
+    return r.queued ? { ...payload, queued: r.queued, ...(r.slow ? { slow: true } : {}) } : tag(r.entry, this);
+  }
 
-  /** One op over the bridge to this room's link daemon. */
+  /** An op the daemon relays to the host as it is (lib/handoff.js: handoff.accept, handoff.refuse). */
+  request(op, params, opts) { return this._call(op, params, opts); }
+
+  /** The daemon's document `link` (its socket path first: lib/remote/link.js socketPaths), null when unreadable. */
+  _linkDoc() { try { return this.kv.get('link'); } catch { return null; } }
+
+  /** One op over the bridge to this room's link daemon (the socket it recorded, then the computed paths). */
   _call(op, params, { deadlineMs } = {}) {
     bridge = bridge || createBridge({ handler: HANDLER });
     try {
-      return bridge.call(op, { socket: socketPath(this.dir), params }, { deadlineMs });
+      return bridge.call(op, { socket: socketPaths(this.dir, this._linkDoc()), params }, { deadlineMs });
     } catch (e) {
       if (e.code !== 'OFFLINE') throw e;
+      if (unknownOutcome(e)) { // it went out: never "nothing was sent" (a slow link lands it later)
+        throw Object.assign(new RoomError('OFFLINE', `room ${this.code}: no answer from the host in time (a slow link); ${UNKNOWN_OUTCOME}`), { unknown: true });
+      }
       const why = stopReason(this.kv.get('link')); // the daemon stopped for good (an invite refused, a fork): say why
       if (why) throw new RoomError(why.code, `the link to room ${this.code} stopped: ${why.reason}; nothing was sent`);
       throw new RoomError('OFFLINE', `room ${this.code} is offline (${e.message}); nothing was sent`);

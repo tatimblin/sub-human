@@ -37,7 +37,7 @@ const { spawn } = require('node:child_process');
 
 const PLUGIN = path.join(__dirname, '..');
 const LIB = path.join(PLUGIN, 'lib');
-const BIN = path.join(PLUGIN, 'bin', 'sub-human');
+const BIN = path.join(PLUGIN, 'scripts', 'sub-human');
 const MCP = path.join(PLUGIN, 'mcp', 'room-server.js');
 
 // ---- temp-dir tracking ---------------------------------------------------------------------------

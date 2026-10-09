@@ -13,7 +13,8 @@
  *       Atomics.wait()s on a SharedArrayBuffer counter the worker bumps after each reply, and takes the reply
  *       with receiveMessageOnPort(). Params and results are structured clones. A handler that throws or rejects
  *       rethrows here as RoomError (its string code, else INVALID). Past deadlineMs (default LINK_CALL_MS;
- *       SessionEnd passes LINK_CALL_END_MS): RoomError OFFLINE; the call is abandoned (its late reply is
+ *       SessionEnd passes LINK_CALL_END_MS): RoomError OFFLINE with unknown: true (the handler may have sent it on, so
+ *       its outcome is unknown); the call is abandoned (its late reply is
  *       dropped) and nothing is retried. The worker and its port are unref'd, so a hook exits when its body
  *       returns; close() ends the worker now.
  *   Deadlock rule: the thread that calls never serves the handler's work. While call() waits, the calling
@@ -50,7 +51,7 @@ function createBridge({ handler, deadlineMs = config.LINK_CALL_MS }) {
       const got = receiveMessageOnPort(port);
       if (got) { if (got.message.id === id) return settle(got.message); continue; } // an abandoned call's reply
       const left = until - Date.now();
-      if (left <= 0) throw new RoomError('OFFLINE', `${method}: no answer within ${ms} ms`);
+      if (left <= 0) throw Object.assign(new RoomError('OFFLINE', `${method}: no answer within ${ms} ms`), { unknown: true }); // sent, or not
       Atomics.wait(replies, 0, seen, left);
     }
   }

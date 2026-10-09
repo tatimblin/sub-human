@@ -1,5 +1,5 @@
 'use strict';
-// Tests for bin/sub-human. The CLI runs as a child of this test process, so it resolves to whatever is
+// Tests for scripts/sub-human. The CLI runs as a child of this test process, so it resolves to whatever is
 // registered for process.pid (process ancestry), exactly as it resolves to claude in a real session.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -106,14 +106,21 @@ test('cli tail: while unseated it never runs ps and looks the seat up only every
   const marker = path.join(bin, 'ps-ran');
   // Only the ancestry walk (`ps -A`) counts: once seated, the seat's start-time check may run `ps -p PID` once.
   fs.writeFileSync(path.join(bin, 'ps'), `#!/bin/sh\ncase " $* " in *" -A "*) echo x >> "${marker}";; esac\nexec /bin/ps "$@"\n`, { mode: 0o755 });
-  const t0 = Date.now();
-  const t = startTail({ PATH: `${bin}:${process.env.PATH}`, SUB_HUMAN_UNSEATED_MS: '1500' });
-  await h.sleep(200);
+  // Register only after the tail's first (unseated) lookup: a fixed sleep let a slow child start look up after
+  // the register and seat at once. support/started.js stamps the end of the CLI's synchronous start, which
+  // runs that first lookup.
+  const started = path.join(bin, 'started');
+  const t = startTail({
+    PATH: `${bin}:${process.env.PATH}`, SUB_HUMAN_UNSEATED_MS: '1500', SUB_HUMAN_TEST_STARTED: started,
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require ${path.join(__dirname, 'support', 'started.js')}`.trim(),
+  });
+  assert.ok(await h.until(() => fs.existsSync(started) && fs.readFileSync(started, 'utf8'), 10_000), 'the tail started');
+  const t0 = Number(fs.readFileSync(started, 'utf8'));
   h.register('alice', 'member', process.pid, code);
   sys('member_joined', 'alice');
   say('bob', 'hello');
-  await t.until('bob: hello', 5000);
-  assert.ok(Date.now() - t0 >= 1500, `seated after ${Date.now() - t0} ms, before the unseated interval`);
+  await t.until('bob: hello', 8000);
+  assert.ok(Date.now() - t0 >= 1500, `seated ${Date.now() - t0} ms after the first lookup, before the unseated interval`);
   assert.ok(!fs.existsSync(marker), 'no ps walk with CLAUDE_PID set');
 });
 
@@ -151,7 +158,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.ok(r.stdout.length <= room.DIGEST_CAP + 1);
   assert.equal(cli(['digest', '--room', 'nope-0000']).status, 1);
   assert.equal(cli(['post', 'hello']).status, 2, 'there is no post command');
-  assert.match(cli(['nope']).stderr, /usage: sub-human tail \| read .*tasks \[--json\] \| watch NAME \| serve --stdio CODE \[--link ID\] \| link CODE \[--reset\] \| invite \[--ssh USER@HOST\[:PORT\]\] \| authorize INVITE\|LINK_ID PUBKEY \[--file F\] \| agent-statusline$/m);
+  assert.match(cli(['nope']).stderr, /usage: sub-human tail \| read .*tasks \[--json\] \| watch NAME \| serve --stdio CODE \[--link ID\] \| link CODE \[--reset\] \| invite \[--ssh USER@HOST\[:PORT\]\] \[--via JUMP\] \| authorize INVITE\|LINK_ID PUBKEY \[--file F\] \| .*host \[--ssh \[USER@HOST\]\] \[--via JUMP\] \| admit REQUEST \| revoke LINK_ID\|NAME\|INVITE_REF \| prime CODE .*\| agent-statusline$/m);
   for (const gone of ['plan', 'statusline']) assert.equal(cli([gone]).status, 2, `${gone} is dropped`);
   bob.kill();
 });

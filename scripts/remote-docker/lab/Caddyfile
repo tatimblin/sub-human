@@ -1,0 +1,13 @@
+# tls-front: the stand-in for Tailscale Serve/Funnel (1.1). A third party terminates TLS for https://tls-front/ with
+# a certificate from Caddy's internal CA (the joiners trust its root through NODE_EXTRA_CA_CERTS, as a ts.net
+# certificate is publicly trusted) and forwards everything, WebSocket upgrades included, to the devbox, where
+# /lab/fwd.js hands it to the host's 127.0.0.1:$LAB_WS_PORT listener.
+{
+	auto_https disable_redirects
+	skip_install_trust
+}
+tls-front {
+	tls internal
+	log
+	reverse_proxy devbox:{$LAB_WS_FWD_PORT}
+}

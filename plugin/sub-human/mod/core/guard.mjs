@@ -10,7 +10,7 @@
 export const MCP_PREFIX = 'mcp__plugin_sub-human_room__';
 export const HOLD = MCP_PREFIX + 'hold';
 export const WRITE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
-const MSG = 'ROOM-GUARD: the room store is written only by sub-human itself. Post with the room MCP tools; read with `sub-human read` or the room read tool.';
+const MSG = 'ROOM-GUARD: the room store is written only by sub-human itself. Post with the room MCP tools; read with the room MCP read tool.';
 export const HOLD_DENY = 'sub-human: hold is for row agents only (sub-human:participant / sub-human:room); never call it yourself. Spawn the row agents listed under ROWS instead.';
 export const ROOM_ALLOW = 'sub-human: room tool for a joined session.';
 export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
@@ -19,14 +19,14 @@ export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
 /** The read-only CLI, with plain arguments only (no pipes, redirects, substitutions or chained commands). */
 const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|digest|who|tasks|watch)(?:\s+[\w.,:=@-]+)*\s*$/;
 const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
-/** The CLI commands a person runs in their own shell: an invite, an SSH key's link, the link daemon, the room server. */
-const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|authorize|link|serve)(?![\w-])/;
+/** The CLI commands a person runs in their own shell: an invite, an SSH key's link, the link daemon, the room server, moving the room's host, the web listener. */
+const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|authorize|host|unhost|admit|revoke|prime|listen|link|serve|handoff|promote|demote)(?![\w-])/;
 /** A dot-dir named .sub-human anywhere (~/.sub-human, $HOME/.sub-human, /Users/x/.sub-human). */
 const DOT_HOME = /(?:^|[^\w.-])\.sub-human(?![\w-])/;
 /** Something that runs JavaScript. */
 const RUNS_JS = /(?:^|[\s;&|(`'"/])(?:node|nodejs|bun|deno|npx|tsx|ts-node)(?=[\s;&|)`'"]|$)/;
 /** The plugin's modules that write the store or hold the seat key (test/ files are not matched). */
-const PLUGIN_CODE = /(?<!test\/)(?<![\w-])(?:lib\/(?:room|identity|proposal|consent|tasks|rows|notices|orch|io|lock|seats|remote)(?![\w-])|hooks\/[\w-]+\.js\b|hooks\/(?:at-room|prompt|consent|join|seat-key|common|tasks|presence|session-end|session-restore|mod-hello|row-[\w-]+)(?![\w.-])|mcp\/[\w-]+(?:\.js)?(?![\w-]))/;
+const PLUGIN_CODE = /(?<!test\/)(?<![\w-])(?:lib\/(?:room|identity|proposal|consent|tasks|rows|notices|orch|io|lock|seats|remote|handoff|cli)(?![\w-])|hooks\/[\w-]+\.js\b|hooks\/(?:at-room|prompt|consent|join|seat-key|common|tasks|presence|session-end|session-restore|mod-hello|row-[\w-]+)(?![\w.-])|mcp\/[\w-]+(?:\.js)?(?![\w-]))/;
 /** Names the plugin outright, so the cwd need not be read. */
 const NAMES_PLUGIN = cmd => /sub-human/.test(cmd) || /lib\/room(?![\w-])/.test(cmd);
 
@@ -73,7 +73,7 @@ export function bashVerdict(command, ctx = {}) {
   const cmd = typeof command === 'string' ? command : '';
   if (!cmd.trim()) return null;
   if (READ_CLI.test(cmd)) return null;
-  if (PERSON_CLI.test(cmd)) return 'it mints an invite or speaks for the room\'s link (run sub-human invite, authorize, link and serve in your own shell)';
+  if (PERSON_CLI.test(cmd)) return 'it mints an invite, admits or revokes a link, or speaks for the room\'s link (run sub-human invite, authorize, host, unhost, admit, revoke, prime, listen, link, serve, handoff, promote and demote yourself, in a terminal outside Claude Code: not with !, which puts the output, an invite and its PIN, into this conversation)';
   if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME)';
   if (DOT_HOME.test(cmd)) return 'it touches the room store (~/.sub-human)';
   for (const h of homeSpellings(ctx)) {
@@ -90,7 +90,10 @@ export function bashVerdict(command, ctx = {}) {
   return null;
 }
 
-export const denyText = why => `${MSG} (Denied: ${why}.) Use \`sub-human read\`, \`sub-human digest\`, \`sub-human who\` or the room MCP tools.`;
+/** The deny text. root (the plugin root, when known): name the read-only CLI by its path; it lives in scripts/, which is
+ *  not on the Bash tool's PATH (a top-level bin/ would be, but claude.ai org sync rejects a plugin that has one). */
+export const denyText = (why, root) => `${MSG} (Denied: ${why}.) Use the room MCP tools${
+  typeof root === 'string' && root.startsWith('/') ? `, or \`${root}/scripts/sub-human read|digest|who|tasks\`` : ''}.`;
 
 // ---------- Write / Edit / MultiEdit / NotebookEdit ----------
 /** The path the tool input names, or null. */

@@ -76,7 +76,7 @@ export function relayQueue(gap = RELAY_GAP_MS) {
 }
 const TYPES = new Set(['seat', 'chat', 'pull', 'wake', 'rows', 'health']);
 
-export const tailArgv = root => ['node', `${root}/bin/sub-human`, 'tail', '--ndjson'];
+export const tailArgv = root => ['node', `${root}/scripts/sub-human`, 'tail', '--ndjson'];
 
 // The same env a shimmed hook gets (an empty CLAUDE_PID: a child of the mod inherits whatever claude inherited,
 // cc CONTRACT process-run-stdin); a child with no session id looks its seat up by nothing rather than by ''.

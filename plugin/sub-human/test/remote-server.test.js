@@ -146,6 +146,86 @@ test('remote (memory): no token gets AUTH on every op but hello; a bad token, a 
   assert.deepEqual(replies.map(f => [f.id, f.error.code]), [[1, 'PROTOCOL'], [2, 'PROTOCOL'], [null, 'PROTOCOL']]);
 });
 
+// ---------- protocol skew: fake versions on both ends (N-1, N, N+1) ----------
+/** A host from before 0.4 (protocol 1): it checks v === 1, knows no proto, and answers no server version. */
+function oldHost(t) {
+  const [a, b] = memory.pair();
+  b.onFrame(f => {
+    if (f.op !== 'hello') return b.send(protocol.error(f.id, 'AUTH', 'say hello first'));
+    const p = f.params || {};
+    if (p.v !== 1) return b.send(protocol.error(f.id, 'PROTOCOL', `protocol v${p.v} is not served here (v1)`));
+    b.send(protocol.reply(f.id, { v: 1, caps: { ops: ['hello'] }, room: 'vole-1234', link: null, extra: { some: 'future field' } }));
+  });
+  t.after(() => a.close());
+  return a;
+}
+/** Raw hello frames against a host serving `proto`, as `version`. */
+async function rawHello(t, host, params, opts = {}) {
+  const [a, b] = memory.pair();
+  const srv = server.serve(b, { store: host, ...opts });
+  t.after(() => srv.close());
+  const got = [];
+  a.onFrame(f => got.push(f));
+  a.send(protocol.request(1, 'hello', { caps: {}, machine: REMOTE, ...params }));
+  await h.until(() => got.length === 1, 2000, 5);
+  a.close();
+  return got[0];
+}
+
+test('protocol skew: the host picks the highest common version; N-1 and N+1 peers work, unknown hello fields are ignored both ways', async t => {
+  const { host } = hostRoom(t);
+  const N = protocol.PROTO;
+  const at = (opts, srv = {}) => {
+    const [a, b] = memory.pair();
+    const s = server.serve(b, { store: host, ...srv });
+    t.after(() => s.close());
+    return client.connect(a, { machine: REMOTE, ...opts });
+  };
+  const same = await at({});
+  assert.deepEqual([same.v, same.serverVersion], [N.max, protocol.PLUGIN_VERSION]);
+  same.close();
+  // N+1 joiner: speaks N.max..N.max+1; the host settles on N.max
+  const newer = await at({ proto: { min: N.max, max: N.max + 1 }, version: '9.0.0', hostField: 'ignored' });
+  assert.equal(newer.v, N.max);
+  newer.close();
+  // N+1 host: speaks N.max..N.max+1; this joiner gets N.max
+  const newHost = await at({}, { proto: { min: N.max, max: N.max + 1 }, version: '9.0.0' });
+  assert.deepEqual([newHost.v, newHost.serverVersion], [N.max, '9.0.0']);
+  newHost.close();
+  // N-1 joiner (0.3.0): hello {v: 1} with no proto or client, and it checks the reply's v === 1
+  const old = await rawHello(t, host, { v: 1, someFutureField: true });
+  assert.equal(old.result.v, 1, 'a 0.3.0 link still links');
+  // N-1 host (0.3.0): this joiner asks for v 1 and accepts its bare reply (no proto, no server, an unknown field)
+  const c = await client.connect(oldHost(t), { machine: REMOTE });
+  assert.deepEqual([c.v, c.serverVersion], [1, null]);
+  c.close();
+});
+
+test('protocol skew: no common version is PROTOCOL naming the side that must update', async t => {
+  const { host } = hostRoom(t);
+  const at = (opts, srv) => {
+    const [a, b] = memory.pair();
+    const s = server.serve(b, { store: host, ...srv });
+    t.after(() => s.close());
+    return client.connect(a, { machine: REMOTE, ...opts });
+  };
+  const fails = (p, re) => assert.rejects(p, e => e.code === 'PROTOCOL' && re.test(e.message), String(re));
+  // the joiner is behind
+  await fails(at({ proto: { min: 2, max: 2 }, version: '0.3.0' }, { proto: { min: 3, max: 4 }, version: '0.4.0' }),
+    /^host runs sub-human 0\.4\.0 \(protocol 3–4\); you run 0\.3\.0 \(protocol 2\)\. Update your plugin: \/plugin update sub-human$/);
+  // the host is behind
+  await fails(at({ proto: { min: 5, max: 6 }, version: '0.9.0' }, { proto: { min: 3, max: 4 }, version: '0.4.0' }),
+    /host runs sub-human 0\.4\.0 \(protocol 3–4\); you run 0\.9\.0 \(protocol 5–6\)\. The host must update/);
+  // a 0.3.0 joiner meets a host that dropped protocol 1: the message reaches it as the error it shows
+  const r = await rawHello(t, host, { v: 1 }, { proto: { min: 2, max: 3 }, version: '0.5.0' });
+  assert.deepEqual([r.error.code, /you run an unknown sub-human version \(protocol 1\)\. Update your plugin/.test(r.error.message)], ['PROTOCOL', true]);
+  // a host from before 0.4 and an sh2 invite (its PIN needs protocol 2): the host must update
+  await fails(client.connect(oldHost(t), { machine: REMOTE, invite: 'sh2.x', pin: '123456' }),
+    /^host runs an unknown sub-human version \(protocol 1\); you run .* \(protocol 1–2\)\. The host must update/);
+  // a reply outside this end's range is refused here too
+  await fails(at({ proto: { min: 1, max: 1 } }, { proto: { min: 1, max: 1 } }).then(() => at({ proto: { min: 3, max: 3 } }, {})), /must update|Update your plugin/);
+});
+
 test('remote (memory): a link writes only as the seats it joined: another `from`, a stolen key or a system kind is AUTH', async t => {
   const { code, host } = hostRoom(t);
   const a = await linked(t, host), b = await linked(t, host);
@@ -302,7 +382,7 @@ test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) tak
   assert.equal(auth.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
 });
 
-test('cli: invite --ssh USER@HOST[:PORT]; authorize prints the forced-command line (absolute paths, restrict), --file appends it once', t => {
+test('cli: invite --ssh USER@HOST[:PORT]; authorize prints the forced-command line (the stable shim, restrict), --file appends it once', t => {
   const { code } = hostRoom(t);
   const run = (args, input) => spawnSync(process.execPath, [h.BIN, ...args], { env: h.childEnv(), encoding: 'utf8', input });
   const inv = run(['invite', '--room', code, '--ssh', 'host@127.0.0.1:2222']);
@@ -317,9 +397,11 @@ test('cli: invite --ssh USER@HOST[:PORT]; authorize prints the forced-command li
   const r = run(['authorize', invite, pub]);
   assert.equal(r.status, 0, r.stderr);
   const id = auth.reserveLink(store.open(code), auth.parseInvite(invite).secret);
-  const bin = fs.realpathSync(h.BIN);
+  const home = path.resolve(process.env.SUB_HUMAN_HOME);
   assert.equal(r.stdout.trim(),
-    `command="SUB_HUMAN_HOME=${path.resolve(process.env.SUB_HUMAN_HOME)} ${process.execPath} ${bin} serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`);
+    `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`);
+  assert.ok(!r.stdout.includes(process.execPath) && !r.stdout.includes(fs.realpathSync(h.BIN)), 'no versioned node or plugin path is baked in');
+  assert.equal(fs.statSync(path.join(home, 'bin', 'serve')).mode & 0o777, 0o700, 'authorize installed the shim');
   assert.doesNotMatch(r.stdout, /laptop|quoted|\$\(/, 'the key\'s own comment is dropped');
   // by link id, from stdin, into a file: appended once (0600), the same key with another line refused
   const ak = path.join(dir, 'ssh', 'authorized_keys');

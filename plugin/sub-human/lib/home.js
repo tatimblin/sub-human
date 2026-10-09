@@ -13,6 +13,11 @@
  *                               (rooms, sessions, links, keys, bin) that exist, are this user's and are open to
  *                               group or others are made 0700 (a home made by an older version was 0755). Creates
  *                               nothing. Returns the directories it changed. lib/room/store.js open() runs it.
+ *   isTempPath(p) -> bool       p is inside a temp dir (os.tmpdir(), /tmp, /private/tmp, /var/tmp), lexically or
+ *                               after realpath. A plugin root there is not recorded for the launchers in
+ *                               <home>/bin (hooks/row-launcher.js, lib/remote/shim.js): anything on the machine
+ *                               can delete and re-create a temp path, and the launcher would run what sits there.
+ *   allowTmpRoot(env?) -> bool  SUB_HUMAN_ALLOW_TMP_ROOT=1 (tests, the demo): record a temp root anyway.
  *   Every store directory is created 0700 (here, lib/io.js, lib/lock.js, lib/room/*).
  */
 const fs = require('node:fs');
@@ -64,4 +69,14 @@ function repairModes() {
   return changed;
 }
 
-module.exports = { home, roomsDir, roomDir, machineId, repairModes };
+const realish = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+const TMP_DIRS = () => [
+  ...new Set([os.tmpdir(), '/tmp', '/private/tmp', '/var/tmp', '/private/var/tmp'].flatMap(d => [path.resolve(d), realish(d)])),
+];
+function isTempPath(p) {
+  const cands = [path.resolve(p), realish(p)];
+  return TMP_DIRS().some(t => cands.some(c => c === t || c.startsWith(t + path.sep)));
+}
+const allowTmpRoot = (env = process.env) => env.SUB_HUMAN_ALLOW_TMP_ROOT === '1';
+
+module.exports = { home, roomsDir, roomDir, machineId, repairModes, isTempPath, allowTmpRoot };

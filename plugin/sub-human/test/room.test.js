@@ -248,7 +248,7 @@ test('room: digest has members, plan + matrix, open items, decisions; capped at 
   assert.ok(d.length <= room.DIGEST_CAP, String(d.length));
   assert.match(d, /older items trimmed/);
   assert.ok(d.includes('#302 '), 'newest kept');
-  assert.match(d, /sub-human read --id N/);
+  assert.match(d, /the room MCP tool read\(\{ids\}\)/);
   sleeper.kill();
 });
 

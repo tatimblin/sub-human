@@ -215,7 +215,7 @@ test('prompt: a seated member skips node only while the tail child delivers and 
 // ---------- delivery (mod/core/deliver.mjs) ----------
 test('deliver: the child\'s argv and env; lines out of pieces; only well-formed events', async () => {
   const d = await load('mod/core/deliver.mjs');
-  assert.deepEqual(d.tailArgv('/p'), ['node', '/p/bin/sub-human', 'tail', '--ndjson']);
+  assert.deepEqual(d.tailArgv('/p'), ['node', '/p/scripts/sub-human', 'tail', '--ndjson']);
   assert.deepEqual(d.tailEnv('sid-1', '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: 'sid-1' });
   assert.equal(d.PULL_DELIVERY, 'at-most-once');
   const b = d.lineBuffer();
@@ -373,6 +373,13 @@ test('guard: the plugin-code rule reads the cwd only when the command does not n
   assert.ok(g.bashVerdict('node consent.js && node hooks/consent.js', inPlugin));
   assert.equal(g.bashVerdict('node hooks/consent.js', { ...inPlugin, cwd: '/elsewhere' }), null);
   assert.ok(g.bashVerdict('node hooks/consent.js', { ...inPlugin, cwd: '/elsewhere', realCwd: '/repo/plugin/sub-human' }));
+});
+
+test('guard: the person-only CLI is sent to a terminal outside Claude Code, never to its ! mode (the PIN would land in the conversation)', async () => {
+  const g = await load('mod/core/guard.mjs');
+  const why = g.bashVerdict('sub-human host --ssh');
+  assert.match(why, /in a terminal outside Claude Code: not with !/);
+  assert.doesNotMatch(why, /in your own shell/);
 });
 
 // ---------- mod-hello ----------

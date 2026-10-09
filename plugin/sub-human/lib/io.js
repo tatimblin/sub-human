@@ -16,7 +16,7 @@
  *   sleepSync(ms)                         block this thread (for the sync lock and poll loops in hooks)
  *   readInput({strict = true}?) -> object the process's stdin JSON ({} when empty, or when stdin is a terminal).
  *                                         strict: a parse error throws; otherwise it gives {}. Hooks (through
- *                                         hooks/common.js) and bin/sub-human share it; the CLI must never load
+ *                                         hooks/common.js) and scripts/sub-human share it; the CLI must never load
  *                                         hooks/common.js, which arms the human signer.
  */
 

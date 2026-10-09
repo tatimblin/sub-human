@@ -13,7 +13,7 @@
  *               (the other active members except the orch and me). The room agent spawns those children.
  *       only = rowsNeeded(...) limits the calls to the rows that are missing; only = [] says the rows are intact
  *       and lists no calls (a second spawn would duplicate a row).
- *   joinNote(me, name, {held}?) -> "row: …" suffix for a member_joined notice (bin/sub-human tail): running (no
+ *   joinNote(me, name, {held}?) -> "row: …" suffix for a member_joined notice (scripts/sub-human tail): running (no
  *       call) or the call to make. For a member it is about the ROOM row (which adds NAME by itself), so a join
  *       never invites a room-row call while that row is live; row-guard.js stays the backstop.
  *   rowsNeeded(code, me, {members, held}) -> names (orch) or [code] (member): rows with no live hold in `held`
@@ -35,6 +35,9 @@
  *         "✓ agreed Cursor paging 1/2", "✖ objected", "✔ decided Cursor paging" ("✖ blocked …" when someone objected),
  *         "proposal Cursor paging 0/2", else "N here";
  *         then "✉ N for you", then lib/tasks.js summary(code, viewer) ("tasks 3 open · #2 you · #4 bob").
+ *         A room hosted elsewhere adds its link (lib/room/link-state.js indicator, in its one vocabulary STATES):
+ *         first while it is offline, stopped, a fork or connecting again ("✕ offline 2m · 2 queued", "… connecting
+ *         (3)"), last while it is online ("⇄ online").
  *       otherwise: NAME's state as viewer sees it: "✓ agreed Cursor paging", "✖ objected", "⚠ reviewing …",
  *         "✔ decided …" (after it, their latest status: "Claude status: handler done"), then their
  *         open task on the room list ("◼ #2 parser tests"), presence, mail; "left".
@@ -60,6 +63,7 @@ const notices = require('./notices.js');
 const { isAlive } = require('./io.js');
 const text = require('./text.js');
 const proposal = require('./proposal.js');
+const linkState = require('./room/link-state.js');
 const {
   ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS,
 } = require('./config.js');
@@ -137,7 +141,7 @@ function rowCalls(me, members, { only = null } = {}) {
 }
 
 /**
- * What a member_joined notice (bin/sub-human tail) tells this seat about NAME's row, from the live holds file:
+ * What a member_joined notice (scripts/sub-human tail) tells this seat about NAME's row, from the live holds file:
  * spawn only when the row is not running. A spawn of a running row is denied by hooks/row-guard.js, which
  * Claude Code renders as a red error, so the notice prevents the attempt. '' for my own join.
  */
@@ -385,8 +389,12 @@ function participantText(code, name, viewer, es, ms, now, c, taskList) {
   return fit(parts);
 }
 
-function roomText(code, viewer, es, ms, now, c, summary) {
+function roomText(code, viewer, es, ms, now, c, summary, link) {
   const parts = [];
+  // a room hosted elsewhere: the link leads the row while it is down or reconnecting, and closes it while up
+  // (lib/room/link-state.js indicator: "✕ offline 2m · 2 queued", "… connecting (3)", "⇄ online")
+  const linkSeg = linkState.indicator(link, { now });
+  if (linkSeg && link.state !== 'online') parts.push(linkState.isDown(link) ? c.warn(linkSeg) : c.dim(linkSeg));
   // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left" (lib/notices.js)
   const move = notices.rowSegment(es, viewer, { now });
   if (move) parts.push(c.dim(move));
@@ -413,12 +421,14 @@ function roomText(code, viewer, es, ms, now, c, summary) {
     if (mail) parts.push(c.warn(`✉ ${mail} for you`));
   }
   if (summary) parts.push(summary);
+  if (linkSeg && link.state === 'online') parts.push(c.dim(linkSeg));
   return fit(parts);
 }
 
 /**
  * opts: {color, entries, members, now, tasks (list; default lib/tasks.js mine(code, name)),
- *        taskSummary (string, default tasks.summary(code, viewer))}.
+ *        taskSummary (string, default tasks.summary(code, viewer)),
+ *        link (the room row: lib/room/link-state.js State or null, default read(code))}.
  */
 function rowText(code, name, viewer, opts = {}) {
   const now = opts.now || Date.now();
@@ -427,7 +437,8 @@ function rowText(code, name, viewer, opts = {}) {
   const c = paint(!!opts.color);
   if (name == null || name === code) {
     const summary = opts.taskSummary != null ? oneLine(opts.taskSummary) : taskSummary(code, viewer);
-    return roomText(code, viewer, es, ms, now, c, summary);
+    const link = opts.link !== undefined ? opts.link : (code ? linkState.read(code) : null);
+    return roomText(code, viewer, es, ms, now, c, summary, link);
   }
   return participantText(code, name, viewer, es, ms, now, c, Array.isArray(opts.tasks) ? opts.tasks : tasks.mine(code, name));
 }

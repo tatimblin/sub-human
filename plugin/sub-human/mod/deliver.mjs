@@ -1,6 +1,6 @@
 /**
  * plugin/sub-human/mod/deliver.mjs: the session's lifecycle (the hello) and the room's delivery; HOOKS in
- * mod/register.mjs says what each hook does. A child `node bin/sub-human tail --ndjson` (lib/tail.js) follows the
+ * mod/register.mjs says what each hook does. A child `node scripts/sub-human tail --ndjson` (lib/tail.js) follows the
  * seat's room and writes events; mod/core/deliver.mjs route() maps each to a $ call. The child is the seat's only
  * delivery: nothing else tells the person or the model what happened in the room. It restarts with backoff and dies
  * with the module. A failed hello refresh keeps the last hello but as no session's, so the prefilters run node.

@@ -3,7 +3,7 @@
  * plugin/sub-human/lib/room/render.js: log entries as text, for Claude (ids kept) and for people (no ids).
  *
  *   line(e, {full}) one notice line. full: the exact text (JSON-quoted) up to TEXT_MAX = 2,000 code
- *     points, then `[cut at 2000/N: sub-human read ID]`; without full, <= TAIL_MAX (240) chars with the same
+ *     points, then `[cut at 2000/N: read({ids:[ID]})]`; without full, <= TAIL_MAX (240) chars with the same
  *     marker when cut. Never a bare "…". A drafted:"agent" entry's header carries "(NAME, Claude's wording)".
  *     tailLine(e) = line(e).
  *   chatLines(e, {viewer, entries?}) -> [string]   one entry as group-chat lines, no ids; continuation lines nested
@@ -42,8 +42,17 @@ const BREAKS = /\r\n|[\r\v\f\u0085\u2028\u2029]/g;
 const UNSAFE = /[\u0000-\u0008\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
 const safeText = t => String(t).replace(BREAKS, '\n').replace(UNSAFE, '\ufffd');
 
+/**
+ * A via this version does not know (a newer host wrote it) is never shown as the person's own words, nor as their
+ * Claude's: "bob (via relay)".
+ */
+const KNOWN_VIAS = new Set(['human', 'agent', 'system']);
+const otherVia = e => (e.via !== undefined && !KNOWN_VIAS.has(e.via)
+  ? `${e.from} (via ${/^[a-z_-]{1,16}$/.test(String(e.via)) ? e.via : '?'})` : null);
+
 const who = e => {
   if (e.via === 'system') return 'room';
+  if (otherVia(e)) return otherVia(e);
   return e.via === 'agent' && e.from !== 'orch' ? `${e.from}'s Claude` : e.from;
 };
 
@@ -57,7 +66,7 @@ function quote(e, n, { exact = false } = {}) {
   const cps = Array.from(t);
   const js = x => JSON.stringify(x).replace(/[\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, c => `\\u${c.charCodeAt(0).toString(16)}`);
   if (cps.length <= n) return js(t);
-  return `${js(cps.slice(0, n).join(''))} [cut at ${n}/${cps.length}: sub-human read ${e.id}]`;
+  return `${js(cps.slice(0, n).join(''))} [cut at ${n}/${cps.length}: read({ids:[${e.id}]})]`;
 }
 
 function header(e) {
@@ -84,7 +93,7 @@ function header(e) {
 
 /**
  * One notice line. full: the header plus the exact text up to TEXT_MAX code points, then
- * `[cut at 2000/N: sub-human read ID]`. Otherwise a compact line of at most TAIL_MAX chars (whitespace
+ * `[cut at 2000/N: read({ids:[ID]})]`. Otherwise a compact line of at most TAIL_MAX chars (whitespace
  * collapsed), with the same explicit marker when the text is cut.
  */
 function line(e, { full = false } = {}) {
@@ -105,6 +114,7 @@ const tailLine = e => line(e);
 /** Who an entry is from, as a group chat names them: "bob", "bob's Claude", "orch", "room". */
 function chatWho(e) {
   if (e.via === 'system') return 'room';
+  if (otherVia(e)) return otherVia(e);
   if (e.from === 'orch') return 'orch';
   if (e.via === 'agent') return `${e.from}'s Claude`;
   if (unverifiedHuman(e)) return `${e.from} ${UNVERIFIED}`;
@@ -312,7 +322,7 @@ function digestSections(entries = [], { members = {}, code = null } = {}) {
     { title: 'open objections and questions', lines: open },
     { title: 'decisions', lines: decisions },
     { title: 'last 10 human entries', lines: human },
-    { title: null, lines: [{ text: 'full text: the room MCP tool read({ids}), or `sub-human read --id N`' }] },
+    { title: null, lines: [{ text: 'full text: the room MCP tool read({ids})' }] },
   ];
 }
 

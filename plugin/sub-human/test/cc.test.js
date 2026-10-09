@@ -269,7 +269,8 @@ test('probe: the installed binary satisfies the contract', { skip: !haveBinary &
   const failed = out.results.filter(r => !r.ok).map(r => `${r.id}: ${r.missing.join(' | ')}`);
   assert.deepEqual(failed, [], `claude ${out.version}`);
   assert.equal(probeRun.status, 0);
-  assert.ok(out.ms < 15_000);
+  // CPU time, not wall time: beside a loaded suite the wall clock measured the machine, not the probe.
+  assert.ok(out.cpuMs < 15_000, `probe CPU ${out.cpuMs} ms`);
 });
 
 test('probe: a mutated search string fails', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
