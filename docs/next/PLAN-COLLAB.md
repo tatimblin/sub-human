@@ -135,8 +135,8 @@ Room lines (people see; no ids):
 |---|---|
 | version 1 | `alice proposed Ship v3 Monday` |
 | revision | `alice's Claude sent Ship v3 Monday v2 (changes requested by bob)` |
-| `@claude revise` | `room Claude sent Ship v3 Monday v3 (asked by bob)` |
-| merge | `room Claude sent Cursor paging v1, merging Paging API (bob) and Cursor paging (alice) (asked by alice)` |
+| `@claude revise` | `claude sent Ship v3 Monday v3 (asked by bob)` |
+| merge | `claude sent Cursor paging v1, merging Paging API (bob) and Cursor paging (alice) (asked by alice)` |
 | objection (to proposer) | `bob requested changes to Ship v3 Monday: "move it to Tuesday"` |
 | objection (others) | `bob requested changes to Ship v3 Monday` |
 | agreed | `Ship v3 Monday: agreed (alice, bob)` |
@@ -196,7 +196,7 @@ alice: @claude merge
 room Claude ─► propose({path, merges: [cursor-head, paging-head], asked_by: alice})
   ─► Cursor paging v2 {supersedes: cursor-head, replaces: [paging-head]}, approvers = both threads' ∪ alice, bob
   both heads close changes_requested (by the merge) ─► everyone named on either reviews it
-  room Claude: plan task #4 is bob's to release or close; it says so to bob once
+  claude: plan task #4 is bob's to release or close; it says so to bob once
 ```
 
 **(e) Two planners collide via the task list**
