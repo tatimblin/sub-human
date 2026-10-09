@@ -33,6 +33,8 @@ test('remote: a daemon started with one TMPDIR serves hooks running with another
   assert.equal(daemon.running, true);
   assert.equal(daemon.socket, link.socketPath(mirrorDir), 'the daemon records the socket it bound');
   assert.ok(!daemon.socket.startsWith(daemonTmp), daemon.socket);
+  assert.equal(fs.statSync(daemon.socket).mode & 0o777, 0o600, 'the socket is 0600 (in a 0700 directory)');
+  assert.equal(fs.statSync(path.dirname(daemon.socket)).mode & 0o777, 0o700);
 
   // every later hook runs with hookTmp (the session's own TMPDIR)
   remote.extra.TMPDIR = hookTmp;

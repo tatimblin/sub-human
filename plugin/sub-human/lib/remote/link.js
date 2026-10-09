@@ -293,6 +293,7 @@ async function listen(file, onConn) {
     fs.rmSync(file, { force: true });
     await listening(srv, file);
   }
+  fs.chmodSync(file, 0o600); // its directory already shuts others out; the file says so too (the umask gave it 0755)
   return srv;
 }
 
