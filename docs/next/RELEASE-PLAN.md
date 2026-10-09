@@ -1,6 +1,8 @@
-# sub-human public release plan
+# sub-human release plan: a private beta, then a one-day public launch
 
-Goal: a stranger goes from install to a working room in under 5 minutes. A friend joins in one step, the project looks trustworthy enough to install a plugin that touches SSH keys, and the plugin gets listed where Claude Code users look.
+Goal: a stranger goes from install to a working room in under 5 minutes, and a friend joins in one step. The repo stays private until the onboarding is proven and some testers vouch for it. Then everything goes public on the same day, so the first place people find the idea is this project, already polished, listed and in use.
+
+Why this order: the realistic risk is a fast copy of the idea that is better distributed, not theft of the code. A private beta keeps the idea among invited people while onboarding gets fixed. The launch then claims every channel at once.
 
 Sources: three research passes, run on 2026-10-08:
 - a repo audit;
@@ -18,105 +20,149 @@ Sources: three research passes, run on 2026-10-08:
 - no telemetry;
 - an SSH lab and a Tailscale lab.
 
-**Blocking a public release:**
-1. **The repo is private** and has no LICENSE. Without a license nobody may legally use it, and the directory refuses it.
-2. **Install needs a local clone.** The README uses `claude plugin marketplace add /path/to/sub-human`. It should use the GitHub form.
-3. **No root README.** GitHub's landing page shows nothing useful. The README that does exist (`plugin/sub-human/README.md`, about 430 lines) puts about 140 lines of SSH, handoff and promote before basic use.
-4. **The first run gives no feedback.** A successful join prints nothing, and a room with one person in it shows nothing.
+**Weak:**
+- Install needs a local clone.
+- There is no root README, and the plugin README (about 430 lines) puts about 140 lines of SSH, handoff and promote before basic use.
+- A successful join prints nothing, and a room with one person in it shows nothing.
+- doctor is hard to run from inside Claude Code.
+- A single join refusal covers five different causes.
+- CI never installs Claude Code, so a Claude Code update that breaks an internal reaches users unnoticed. The plugin depends on 72 internals.
 
-**Not true any more** (the docs say mods are on by default from 2.1.287):
-- "Function hooks" are now called **mods**, and users don't have to turn anything on.
-- Our README wording "with function hooks on" makes it sound like a flag.
-- `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` is ignored, so tell users to remove it.
-- What actually turns mods off: `disableAllHooks`, safe mode, `--bare`, `allowManagedHooksOnly` and `allowManagedModsOnly`, and an untrusted folder.
+**Not true any more:**
+- "Function hooks" are now **mods**, on by default from 2.1.287; users don't have to turn anything on.
+- `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` is ignored.
+- What turns mods off: `disableAllHooks`, safe mode, `--bare`, `allowManagedHooksOnly` and `allowManagedModsOnly`, and an untrusted folder.
 
-## R0: Make it installable (blockers; about 1 day)
-- [ ] Add a LICENSE (MIT recommended), and add `license`, `homepage` and `repository` to plugin.json.
-- [ ] Add a root `README.md`. Fix the marketplace.json description, which still says "on one machine".
-- [ ] Change the install instructions to:
-  - `/plugin marketplace add tatimblin/sub-human`, then `/plugin install sub-human@sub-human`;
-  - or, in one step, `claude plugin install sub-human --marketplace tatimblin/sub-human` (needs 2.1.292, our floor anyway).
-- [ ] Release discipline:
-  - Make `CHANGELOG.md` the single record of what changed.
-  - Tag with `claude plugin tag --push`, which gives `sub-human--v0.5.0`.
-  - Put the version policy in CONTRIBUTING: every plugin change bumps `version` (check-version.js already enforces this), and each release states the Claude Code range it was tested on.
-- [ ] Remove `.DS_Store` files. Check the directory limits (under 512 files, no non-image file over 256 KiB) so the submission doesn't get held for human review.
-- [ ] Make the repo public. **Your decision.**
+---
 
-## R1: The first five minutes (about 1 week)
+# Phase B: private beta (about 4 to 6 weeks)
+
+## B0: A private install that works (about 1 day)
+- [ ] **Install from the private repo**: `/plugin marketplace add tatimblin/sub-human`, then `/plugin install sub-human@sub-human`. Claude Code reads a private repo with the tester's own git credentials (`gh auth`, an SSH key or a credential helper). Background auto-update needs `GITHUB_TOKEN` in the tester's environment; without it they run `/plugin marketplace update sub-human`.
+- [ ] **Check that a non-owner can install it**:
+  - Use a second GitHub account with read access, on a clean machine or in a `CLAUDE_CONFIG_DIR` sandbox.
+  - Install, join, update to a bumped version.
+  - Note every prompt it raised.
+- [ ] **Keep the marketplace's own name.** sub-human stays in its own `sub-human` marketplace and is not listed in `tatimblin-skills`; one install path only, so nobody ends up with the hooks running twice.
+- [ ] **Root `README.md`, beta edition**:
+  - what it is;
+  - the private install above;
+  - requirements;
+  - how to report a problem;
+  - a "beta, please don't share" note.
+- [ ] **Fix the marketplace.json description**, which still says "on one machine".
+- [ ] **Add `repository` and `homepage` to plugin.json.**
+- [ ] **No LICENSE yet.** No license means all rights reserved: testers may use it but not redistribute it. The license is chosen at launch.
+- [ ] **Release discipline**:
+  - `CHANGELOG.md`;
+  - tag each beta with `claude plugin tag --push` (`sub-human--v0.5.0-beta.N`);
+  - bump `version` with every change (check-version.js already enforces this), or testers never get the change.
+- [ ] **Push the CI fix (`1773b97`)** so CI is green before testers arrive.
+
+## B1: Testers (recruit during B0)
+- **Who:** 5 to 10 people, a mix of:
+  - 2–3 coworkers on SSH dev boxes and Bedrock, which tests corporate networks and the no-phone limit;
+  - 2–3 friends on Tailscale or Funnel;
+  - 1–2 people new to Claude Code plugins, to test onboarding cold.
+- **How:**
+  - Add them as **read** collaborators on GitHub.
+  - Send a short invite note: what it is, the install line, one task ("start a room with me and plan a small change together"), and that it's under wraps.
+- **Feedback:**
+  - private GitHub issues, using templates (bug: attach `doctor --bundle`; friction: "where did you get stuck?");
+  - a short call with each tester after their first session, if possible;
+  - watching a newcomer's first install live (screen share) is worth more than any survey.
+- **What to measure, by hand, per tester:**
+  - time from install to the first `@room` that someone else sees;
+  - whether a friend joined without help;
+  - the number of messages asking for help;
+  - any problem where a cause wasn't shown on screen.
+
+## B2: The first five minutes (about 1–2 weeks, start before testers and keep going)
 - [ ] **README order**:
-  1. one sentence on what it is;
-  2. a GIF of two terminals side by side, one person typing `@room` and the other seeing it, then a proposal opening as a plan card;
+  1. one sentence;
+  2. a GIF of two terminals, one typing `@room` and the other seeing it, then a proposal card;
   3. a 3-line quick start;
   4. "you'll know it worked when…";
   5. links out.
-  - Move remote hosting and handoff to `docs/REMOTE.md`, the threat model to `SECURITY.md`, and the troubleshooting table to `docs/TROUBLESHOOTING.md`.
-- [ ] **Confirm a join on screen**: a one-line systemMessage such as `sub-human: alice joined vole-1234 · 1 here · @room to talk`.
-- [ ] **`/sub-human doctor` inside Claude Code**, through the same hidden-block expansion as join, read only; `--fix` stays outside Claude Code. Today users must find the plugin root by hand to run doctor.
-- [ ] **Split the join refusal by cause.** The single message at `hooks/join.js:68` should become five:
+
+  Move remote hosting and handoff to `docs/REMOTE.md`, the threat model to `SECURITY.md`, and the troubleshooting table to `docs/TROUBLESHOOTING.md`.
+- [ ] **Confirm a join on screen**: `sub-human: alice joined vole-1234 · 1 here · @room to talk`.
+- [ ] **`/sub-human doctor`** inside Claude Code (read only, through the hidden-block expansion; `--fix` stays outside Claude Code).
+- [ ] **Split the join refusal** at `hooks/join.js:68` by cause:
   - Claude Code too old;
-  - mods not loaded (safe mode, `--bare`, `disableAllHooks`);
-  - a managed policy (`allowManagedHooksOnly` or `allowManagedModsOnly`);
+  - mods not loaded;
+  - a managed policy;
   - `node` missing or below 24;
   - folder not trusted.
 
-  Each one names the fix and ends with "run /sub-human doctor".
-- [ ] **New doctor checks:**
+  Each says its fix and ends with "run /sub-human doctor".
+- [ ] **New doctor checks**:
   - workspace trust;
   - `allowManagedHooksOnly` and `allowManagedModsOnly`;
   - a user `subagentStatusLine` that hides ours;
   - a leftover `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`.
-- [ ] **A solo demo.** `/sub-human try` opens a room with a scripted second member (a local bot seat), so one person sees posts, rows and a proposal card without a second terminal. This is the "it works" moment that Superpowers gets from one prompt.
-- [ ] **Glossary, and fewer user-facing terms.**
-  - Readers meet `orch`, seat, row, lane, link, `sh2` and `shk1` early.
-  - Keep "room", "member" and "invite".
-  - Say "coordinator" for the orch in user-facing text.
-  - Never show `sh2`/`shk1` without explaining them.
-- [ ] **Cost note.** The orch is a background Claude on the host's account. Say what it does and when it is idle.
-- [ ] **Hide the `/exit` background-work prompt.** Every `/exit` asks a 3-choice question about background work; either suppress it or document it in one line.
+- [ ] **`/sub-human try`**: a solo room with a scripted bot member, so one person sees posts, rows and a proposal card. About 2–3 days.
+- [ ] **Plain words**: "coordinator" for the orch in user-facing text, a short glossary, and never `sh2`/`shk1` without a word of explanation.
+- [ ] **A cost note**: the orch is a background Claude on the host's account. Say when it runs and when it is idle.
+- [ ] **The `/exit` background-work prompt**: suppress it, or document it in one line.
+- [ ] **Re-prioritise** after each tester's first session. Their findings beat this list.
 
-## R2: Trust bundle (about 3 days, can run alongside R1)
-- [ ] **`SECURITY.md`**: a disclosure address and the threat model, moved out of the README. Cover what a leaked invite gets you, what a host can and can't do, what Tailscale or Funnel can see, and why the developer can never read messages.
-- [ ] **Hooks list**: name every hook and mod entry, what it touches and why. Security reviewers now read hooks first; see the PromptArmor and SentinelOne marketplace-hijack write-ups.
-- [ ] **No-telemetry statement**: the only network code is the transports the user starts.
-- [ ] **Badges**: CI and license. Add release attestations, either GitHub artifact attestation or a checksum on each tag, and tell users to pin a tag (`owner/repo#sub-human--v0.5.0`) if they want no silent changes.
-- [ ] **Safer defaults to look at**:
-  - an upterm-style `--authorized-user github:alice` that admits a joiner whose key matches their GitHub keys, with no `admit` round trip;
-  - a read-only seat.
+## B3: Trust (about 3 days)
+- [ ] **`SECURITY.md`**: a disclosure contact and the threat model. Cover:
+  - what a leaked invite gets you;
+  - what a host can and can't do;
+  - what Tailscale or Funnel can see;
+  - why the developer can never read messages.
+- [ ] **Hooks list**: every hook and mod entry, what it touches and why.
+- [ ] **A no-telemetry statement.**
+- [ ] **CI badge.**
 
-  These are candidate features, not blockers.
+## B4: Survive Claude Code updates (about 1 week)
+- [ ] **Nightly CI job**: install the latest Claude Code, then run `npm run probe` and `test:mods`.
+- [ ] **Warn once on join** when Claude Code is newer than the last version we tested and the cheap probe fails. The warning names the feature at risk and points to doctor.
+- [ ] **Publish the tested Claude Code range** in the README and CHANGELOG.
 
-## R3: Survive Claude Code updates (about 1 week)
-`lib/cc.js` lists 72 Claude Code behaviours we depend on, 38 of them incidental. Today a Claude Code update that changes one of them shows up as silent misbehaviour.
-- [ ] **CI job against the latest Claude Code**: install the latest release and run `npm run probe` plus `test:mods`. Run it nightly on a schedule, so we break before users do. Today CI never installs Claude Code, so the mods tests skip.
-- [ ] **On join, warn once** when the Claude Code version is newer than the last version we tested and the cheap probe fails. The warning says which feature may not work and points to doctor.
-- [ ] **Tested range**: publish it in README and CHANGELOG.
+## Exit criteria (all must hold before launch)
+- [ ] At least 3 testers who are new to sub-human got a room going without help. The median time from install to the first `@room` seen by another person is under 5 minutes.
+- [ ] At least 2 friends joined across machines (SSH or Tailscale) without help.
+- [ ] No open bug at the "lost a message" or "a model spoke for a person" level.
+- [ ] Two weeks with no breakage from a Claude Code update, or any breakage caught by the nightly job first.
+- [ ] At least 3 testers willing to say something publicly on launch day.
+- [ ] The GIF and a 30–60 second side-by-side clip are recorded.
 
-## R4: Get it listed and launch
-In this order:
-1. **Our own marketplace.** Works the day R0 lands.
-2. **Anthropic's directory.** Submit at claude.ai/directory/manage (plugin bundle; needs a paid plan and a public repo). An approved plugin installs as `@synced` and also appears in the `claude-community` marketplace.
-   - The default marketplace is the biggest lever: listed plugins see 250k+ installs whatever their star count.
-   - Review takes an unknown time, so submit as soon as R0 and R2 are done.
-3. **awesome-claude-code.** Submit through its web issue form; a human must file it. The repo must be 14+ days old with ongoing commits, or have 100+ stars.
-4. **Show HN.** "Show HN: sub-human, a shared room for several people's Claude Code sessions", with the GIF and the "the model can never speak or consent for you" claim up front. sshx is the template.
-5. **r/ClaudeAI and X**: a 30–60 second side-by-side clip.
+---
 
-Aggregators (claudemarketplaces.com, claude-plugins.dev) seem to crawl GitHub; that is not confirmed.
+# Phase L: public launch (one day, prepared ahead)
 
-## Release cut: v0.5.0 "public preview"
-- **Included:** R0, R1, R2, and the R3 CI job.
-- **Tested on:** macOS and Linux, Claude Code 2.1.292 up to the latest, Node 24 and 26.
-- **Call it a preview, with known limits**:
-  - no phone client under Bedrock or Vertex;
-  - an SSH handoff needs per-member invites;
-  - typed join commands are kept in `~/.claude/history.jsonl` (rotate PINs, which are single use);
-  - no Windows;
-  - no relay (1.2).
-- **1.0** once the directory listing is live and two weeks pass with no internals breakage.
+**Prepare during the beta:**
+- [ ] **Name**: check that no plugin called `sub-human` is listed in the directory or the aggregators. Take a domain and social handles if wanted.
+- [ ] **License**: MIT recommended. FSL is the option if deterring commercial clones matters more than adoption. Add `LICENSE` and the `license` field.
+- [ ] **Anthropic directory**: find out whether a submission can be filed while the repo is private (the docs only say it must be public before the listing goes live). If so, submit at the end of the beta so the review lag overlaps the beta. The portal is claude.ai/directory/manage, choose "plugin bundle"; it needs a paid plan.
+- [ ] **Directory checks**:
+  - a README of at least 40 words;
+  - no `.DS_Store`;
+  - under 512 files, and no non-image file over 256 KiB, or the submission is held for review;
+  - `privacyPolicyUrl` and `supportUrl` filled in.
+- [ ] **Drafts**: the Show HN post ("Show HN: sub-human, a shared room for several people's Claude Code sessions"; lead with "the model can never speak or consent for you" and the GIF), plus r/ClaudeAI and X posts.
+
+**Launch day:**
+1. Make the repo public. Add the LICENSE and tag `sub-human--v0.5.0`.
+2. Install it from a clean account to check it still works now that the repo is public.
+3. Submit to the directory (if not already submitted), then post the Show HN, then r/ClaudeAI and X. Ask testers to try and comment.
+4. Spend the day answering. Fix any onboarding failure the same day and release a new version.
+
+**After launch:**
+- Submit to awesome-claude-code through its web issue form once the repo has been public for 14 days or has 100+ stars.
+- **1.0** once the directory listing is live and two weeks pass with no breakage from a Claude Code update.
+
+## Known limits to state in the beta and at launch
+- No phone client under Bedrock or Vertex.
+- An SSH handoff needs per-member invites.
+- Typed join commands are kept in `~/.claude/history.jsonl` (PINs are single use).
+- No Windows.
+- No relay (1.2).
 
 ## Decisions for you
-1. Make the repo public, under MIT? (recommended)
-2. Submit to Anthropic's directory? It needs your paid plan, and it publishes the plugin under your name.
-3. Build `/sub-human try` (the solo demo with a bot seat)? It is the biggest onboarding win and about 2–3 days of work.
-4. Rename "orch" to "coordinator" in user-facing text?
+1. Build `/sub-human try` (the solo demo with a bot seat) during the beta? Recommended: it is the biggest onboarding win.
+2. Use "coordinator" instead of "orch" in user-facing text?
+3. License at launch: MIT (recommended) or FSL?
