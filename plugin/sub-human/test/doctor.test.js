@@ -211,7 +211,12 @@ test('doctor: a room whose orch job started but never took its seat (e.g. refuse
   identity.updateOrch(code, () => ({ spawned_at: new Date().toISOString() }));
   assert.deepEqual(doctor.checkOrchs(), [], 'within the grace');
   identity.updateOrch(code, () => ({ spawned_at: old, pid: process.pid, machine: identity.machineId() }));
-  assert.deepEqual(doctor.checkOrchs(), [], 'bound here');
+  const [ok] = doctor.checkOrchs();
+  assert.deepEqual([ok.id, ok.status], [`orch:${code}`, 'pass'], 'bound here and live: a ✓ line');
+  assert.match(ok.detail, new RegExp(`bound and live: job job12345, pid ${process.pid}`));
+  assert.match(doctor.format({ versions: { plugin: 'x', node: 'x', platform: 'x', arch: 'x' }, checks: [ok] }), /✓ orch /);
+  identity.updateOrch(code, () => ({ pid: 999999 }));
+  assert.deepEqual(doctor.checkOrchs(), [], 'bound but its process gone: the watchdog acts, doctor stays quiet');
 });
 
 test('doctor: a link stopped on a spent invite says to ask the host for a new one (joining again would reuse it)', () => {
