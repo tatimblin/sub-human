@@ -194,7 +194,10 @@ test('doctor redactor: each rule alone', () => {
   assert.equal(red(`id ${'ab'.repeat(8)}`), 'id <hex>');
   assert.equal(red('link aaaaaaaaaaaa'), 'link aaaaaaaaaaaa', 'a 12-hex link id stays');
   assert.equal(red('sh1.vole-1234.c3NoOm1l.ZmFrZXNlY3JldGZha2VzZWNyZXQ'), 'sh1.<invite>');
-  assert.equal(red('\x1b[31mred\x1b[0m'), 'red');
+  assert.equal(red('\x1b[31mred\x1b[0m'), 'red');  const tmp = doctor.redactor({ home: '/home/zed', shHome: '/tmp/sh-x', salt: 's' });
+  assert.equal(tmp('state in /tmp/sh-x/links/a.json'), 'state in <sub-human-home>/links/a.json', 'a SUB_HUMAN_HOME outside $HOME');
+  assert.equal(tmp('/tmp/sh-xy'), '/tmp/sh-xy', 'whole path segments only');
+  assert.equal(doctor.redactor({ home: '/home/zed', shHome: '/home/zed/.sub-human' })('/home/zed/.sub-human/x'), '~/.sub-human/x');
 });
 
 test('doctor: a room whose orch job started but never took its seat (e.g. refused "name taken") fails, with the job\'s log', t => {

@@ -44,7 +44,7 @@
  *   diagnose(opts) -> Promise<Report>   Report = {generated_at, versions, checks, links, authorizedKeys}
  *   format(report, {color}?) -> string
  *   bundle(report, {salt?, env?}?) -> object   allowlisted fields only, every free text through redactor()
- *   redactor({home?, hosts?, users?, rooms?, members?, salt?}) -> (text) -> text   ~ for paths under $HOME; hashed room codes, member names, hostnames, users
+ *   redactor({home?, shHome?, hosts?, users?, rooms?, members?, salt?}) -> (text) -> text   ~ for paths under $HOME, <sub-human-home> for SUB_HUMAN_HOME elsewhere; hashed room codes, member names, hostnames, users
  *                and IPs; invites, tokens, long hex and secrets cut; SSH public keys as a SHA256 fingerprint prefix
  *   helloProbe(spec, code, {timeoutMs, env}?) -> Promise<{ok, ms, reply?, error?, stderr?}>
  *   main(args) -> Promise<exitCode>;  parseArgs(args) -> options (lib/cli/args.js; Error with the usage)
@@ -563,8 +563,12 @@ function fingerprint(b64) {
   try { return 'SHA256:' + crypto.createHash('sha256').update(Buffer.from(b64, 'base64')).digest('base64').replace(/=+$/, '').slice(0, 12); } catch { return 'SHA256:?'; }
 }
 
-function redactor({ home = os.homedir(), hosts = [], users = [], rooms = [], members = [], salt = crypto.randomBytes(8).toString('hex') } = {}) {
-  const homes = [...new Set([home, (() => { try { return fs.realpathSync(home); } catch { return home; } })()].filter(h => h && h !== '/'))].sort((a, b) => b.length - a.length);
+function redactor({ home = os.homedir(), shHome = lib('home.js').home(), hosts = [], users = [], rooms = [], members = [], salt = crypto.randomBytes(8).toString('hex') } = {}) {
+  const real = p => { try { return fs.realpathSync(p); } catch { return p; } };
+  const homes = [...new Set([home, real(home)].filter(h => h && h !== '/'))].sort((a, b) => b.length - a.length);
+  // a SUB_HUMAN_HOME outside $HOME (a temp dir, another disk) names nothing under ~: it is <sub-human-home>
+  const under = p => homes.some(h => p === h || p.startsWith(h + '/'));
+  const shHomes = [...new Set([shHome, real(shHome)].filter(h => h && h !== '/' && !under(h)))].sort((a, b) => b.length - a.length);
   const names = [...new Set([...hosts, os.hostname(), os.hostname().split('.')[0]].filter(h => h && h.length > 2 && h !== 'localhost'))].sort((a, b) => b.length - a.length);
   const people = [...new Set([...users, (() => { try { return os.userInfo().username; } catch { return ''; } })()].filter(u => u && u.length > 2))];
   const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -572,6 +576,7 @@ function redactor({ home = os.homedir(), hosts = [], users = [], rooms = [], mem
     let s = String(text == null ? '' : text).replace(/\x1b\[[0-9;]*m/g, '');
     s = s.replace(KEY_RE, (_, type, b64) => `${type} ${fingerprint(b64)}`);
     s = s.replace(/\bsh\d\.[A-Za-z0-9._~:-]+/g, 'sh1.<invite>');
+    for (const h of shHomes) s = s.replace(new RegExp(`${esc(h)}(?![^/\\s"':,)])`, 'g'), '<sub-human-home>');
     for (const h of homes) s = s.replace(new RegExp(`${esc(h)}(?![^/\\s"':,)])`, 'g'), '~');
     s = s.replace(/\/(Users|home)\/[^/\s"']+/g, '/$1/<user>');
     for (const n of names) s = s.replace(new RegExp(`(?<![\\w.-])${esc(n)}(?![\\w-])`, 'g'), `host-${hash8(n, salt)}`);
