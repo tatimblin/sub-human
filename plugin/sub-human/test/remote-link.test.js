@@ -80,13 +80,41 @@ test('link: the socket path is short whatever the home; locators name a home, ne
   const deep = path.join('/', 'x'.repeat(200), 'rooms', 'vole-1234');
   const p = link.socketPath(deep);
   assert.ok(Buffer.byteLength(p) < 104, p);
-  assert.ok(p.startsWith(os.tmpdir()));
+  assert.ok(p.startsWith(`/tmp/sub-human-${process.getuid()}/`), p);
   assert.notEqual(link.socketPath(deep + 'x'), p);
+  assert.equal(link.socketPath('/h/rooms/vole-1234'), '/h/rooms/vole-1234/.link/link.sock', 'a short home: in the mirror');
+  // never TMPDIR: a daemon and a hook with different ones agree
+  const old = process.env.TMPDIR;
+  process.env.TMPDIR = h.tmpDir('sh-tmpdir-', t);
+  try { assert.equal(link.socketPath(deep), p); } finally { if (old === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = old; }
+  // a hook tries the recorded path, the computed one, then 0.4.1's
+  const legacy = link.socketPaths('/h/rooms/vole-1234').at(-1);
+  assert.ok(legacy.startsWith(os.tmpdir()) && legacy.endsWith('/link.sock'), legacy);
+  assert.deepEqual(link.socketPaths('/h/rooms/vole-1234', { socket: '/r/link.sock' }), ['/r/link.sock', '/h/rooms/vole-1234/.link/link.sock', legacy]);
+  assert.equal(link.socketPaths('/h/rooms/vole-1234', { socket: 'rel.sock' }).length, 2, 'a relative recorded path is ignored');
   assert.equal(link.pipeLocator('/a/home'), 'pipe:/a/home');
   assert.deepEqual(link.transportOf('pipe:/a/home'), { kind: 'pipe', home: '/a/home' });
   for (const bad of ['pipe:relative', 'pipe:', '', 'tcp:host:22']) assert.equal(link.transportOf(bad), null, bad);
   await assert.rejects(link.handle('append', { socket: path.join(h.tmpDir('sh-sock-', t), 'none.sock'), params: {} }), e => e.code === 'OFFLINE');
   await assert.rejects(link.handle('subscribe', { socket: '/x', params: {} }), e => e.code === 'PROTOCOL', 'only the hooks\' ops are relayed');
+});
+
+test('link: handle tries each socket in order; a missing one, or one in a directory open to others, is skipped', async t => {
+  const net = require('node:net');
+  const protocol = require(path.join(h.LIB, 'remote', 'protocol.js'));
+  const serve = (file, result) => new Promise(resolve => {
+    const srv = net.createServer(s => { const dec = protocol.decoder(); s.on('data', c => { for (const f of dec.push(c)) s.end(protocol.encode(protocol.reply(f.id, result))); }); });
+    t.after(() => srv.close());
+    srv.listen(file, resolve);
+  });
+  const mine = h.tmpDir('sh-sock-', t), open = h.tmpDir('sh-open-', t);
+  fs.chmodSync(mine, 0o700);
+  fs.chmodSync(open, 0o755);
+  await serve(path.join(open, 'l.sock'), { ok: false, who: 'not ours' });
+  await serve(path.join(mine, 'l.sock'), { ok: true, who: 'the daemon' });
+  const r = await link.handle('beat', { socket: [path.join(open, 'l.sock'), path.join(mine, 'none.sock'), path.join(mine, 'l.sock')], params: {} });
+  assert.deepEqual(r, { ok: true, who: 'the daemon' });
+  await assert.rejects(link.handle('beat', { socket: [path.join(open, 'l.sock')], params: {} }), e => e.code === 'OFFLINE', 'never one in an open directory');
 });
 
 test('link: an ssh locator is a plain user@host[:port]; an invite can name neither an ssh option nor a command', () => {

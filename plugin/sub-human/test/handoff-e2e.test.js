@@ -66,7 +66,8 @@ const texts = log => log.split('\n').filter(Boolean).map(l => JSON.parse(l).text
 /** A machine, its stub claude, and its link daemon stopped when the test ends. */
 function machine(t, name, job) {
   const stub = stubClaude(t, job);
-  const m = new Machine(t, name, { ...LINK_ENV, SUB_HUMAN_CLAUDE: stub.bin });
+  // its own TMPDIR: a daemon a pipe's server starts (the old host's follow link) has the dialer's, not this machine's hooks'
+  const m = new Machine(t, name, { ...LINK_ENV, SUB_HUMAN_CLAUDE: stub.bin, TMPDIR: h.tmpDir(`sh-tmp-${name}-`, t) });
   m.stub = stub;
   m.cli = (args, extra = {}) => spawnSync(process.execPath, [h.BIN, ...args], { env: m.env(null, extra), cwd: m.cwd, encoding: 'utf8', timeout: 30_000 });
   m.status = code => m.lib(() => link.status(code));

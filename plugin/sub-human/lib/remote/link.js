@@ -72,12 +72,19 @@
  *   linkTimings(over?) -> {retryMs, retryMaxMs, pingMs, pongMs, deadMs, wakeTickMs, wakeGapMs, netPollMs, relayMs}
  *   nextDelay(prev, base, cap, random?) -> ms;  wakeWatch({onWake, tickMs, gapMs, clock?, mono?}) -> unwatch;
  *   netWatch({onChange, pollMs, clock?, signature?}) -> unwatch;  netSignature(ifaces?) -> string
- *   socketPath(dir) -> string      <os.tmpdir()>/sh-<hash8(mirror dir)>/link.sock: one per room and home, short
- *                                  whatever the home (a macOS socket path is at most 104 bytes). Its directory is
- *                                  0700, and the daemon refuses one it does not own
+ *   socketPath(dir) -> string      one per room and home, from the mirror's directory alone (never TMPDIR: a daemon
+ *                                  a listener, sshd or a handoff started and the session's hooks need not share it):
+ *                                  <dir>/.link/link.sock, or, when that is longer than a socket path may be (103
+ *                                  bytes, macOS), /tmp/sub-human-<uid>/<hash12(dir)>/link.sock. Each directory is
+ *                                  0700, a real directory and ours: the daemon refuses any other, a hook skips it.
+ *                                  The daemon records the path it bound in its document `link` (socket)
+ *   socketPaths(dir, doc?) -> string[]   where a hook looks, in order: doc.socket, socketPath(dir), and 0.4.1's
+ *                                  <os.tmpdir()>/sh-<hash8(dir)>/link.sock (a daemon that version started; a new
+ *                                  daemon finding one answering there stops with LOCK)
  *   handle(method, params) -> Promise<result>   the bridge handler, params {socket, params}: one op (RELAY) over the
- *                                  socket, the result as the wire has it; OFFLINE when the daemon is not listening
- *                                  (nothing is started from a hook's call)
+ *                                  first socket (one path or socketPaths' list) that accepts the connection, the
+ *                                  result as the wire has it; OFFLINE when no daemon is listening (nothing is started
+ *                                  from a hook's call)
  *   status(code) -> {running, pid?, state?, since?, reason?, code?}   the daemon's document `link`; running: its
  *                                  pid lives; code: the RoomError that stopped it (AUTH, PROTOCOL, FORK)
  *   stopReason(doc) -> {code, reason} | null   why a stopped link stopped (a hook whose op met a daemon that hung
@@ -114,6 +121,7 @@ const realClock = require('../clock.js');
 const BIN = path.join(__dirname, '..', '..', 'scripts', 'sub-human');
 const RELAY = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put', 'handoff.accept', 'handoff.refuse']);
 const HANDOFF_SELF_STOP_MS = 10_000;
+const SUN_PATH_MAX = 103; // a unix socket's path: 104 bytes on macOS with its NUL (108 on Linux)
 const handoff = () => require('../handoff.js');
 const STOPPED = new Set(['fork', 'stopped']);
 const hash12 = data => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12); // lib/room/store.js's, without loading a store
@@ -124,21 +132,79 @@ const hash12 = data => crypto.createHash('sha256').update(data).digest('hex').sl
  * @returns {string}
  */
 function socketPath(dir) {
+  const own = path.join(path.resolve(dir), '.link', 'link.sock');
+  if (Buffer.byteLength(own) <= SUN_PATH_MAX) return own;
+  const h = crypto.createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 12);
+  return path.join(shortBase(), h, 'link.sock');
+}
+
+/** The fixed per-user directory a socket goes in when the mirror's own path is too long: /tmp/sub-human-<uid>.
+ * Never TMPDIR, which a daemon started by a listener, sshd or launchd and the session's hooks need not share. */
+const shortBase = () => `/tmp/sub-human-${typeof process.getuid === 'function' ? process.getuid() : 'u'}`;
+
+/** 0.4.1's path, <os.tmpdir()>/sh-<hash8>/link.sock: a daemon that version started still answers there. */
+function legacySocketPath(dir) {
   const h = crypto.createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 8);
   return path.join(os.tmpdir(), `sh-${h}`, 'link.sock');
 }
 
 /**
+ * Where a hook looks for the daemon, in order: the path the running daemon recorded in its document `link`
+ * (`socket`), socketPath(dir), then 0.4.1's TMPDIR-dependent path. No duplicates.
+ * @param {string} dir   the mirror's directory
+ * @param {{socket?: string} | null} [doc]   the mirror's document `link`
+ * @returns {string[]}
+ */
+function socketPaths(dir, doc) {
+  const rec = doc && typeof doc.socket === 'string' && path.isAbsolute(doc.socket) ? [doc.socket] : [];
+  return [...new Set([...rec, socketPath(dir), legacySocketPath(dir)])];
+}
+
+/** A directory only this user can enter: a real directory (not a symlink), ours, no group or other bits. */
+function isPrivateDir(dir) {
+  let st;
+  try { st = fs.lstatSync(dir); } catch { return false; }
+  return st.isDirectory() && (typeof process.getuid !== 'function' || st.uid === process.getuid()) && !(st.mode & 0o077);
+}
+
+/** Make the socket's directory 0700 (and the shared /tmp base when it is under it) and check both: AUTH when one is
+ * a symlink, someone else's or open to others. */
+function ensurePrivateDir(dir) {
+  const base = shortBase();
+  if (path.dirname(dir) === base) {
+    try { fs.mkdirSync(base, { mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    if (!isPrivateDir(base)) throw new RoomError('AUTH', `${base} is not private to this user (a symlink, someone else's, or open to others)`);
+  }
+  try { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  if (!isPrivateDir(dir)) throw new RoomError('AUTH', `${dir} is not private to this user`);
+}
+
+/**
  * @param {string} method
- * @param {{socket: string, params: object}} params
+ * @param {{socket: string | string[], params: object}} params   socket: one path, or socketPaths' list, tried in order
  * @returns {Promise<*>}
  */
-function handle(method, { socket, params }) {
-  if (!RELAY.has(method)) return Promise.reject(new RoomError('PROTOCOL', `${method} is not relayed to the host`));
+async function handle(method, { socket, params }) {
+  if (!RELAY.has(method)) throw new RoomError('PROTOCOL', `${method} is not relayed to the host`);
+  let last = null;
+  for (const file of Array.isArray(socket) ? socket : [socket]) {
+    // a socket in a directory someone else could have made is never handed a seat's op
+    if (!isPrivateDir(path.dirname(file))) continue;
+    try { return await relayOnce(file, method, params); } catch (e) {
+      if (!e.notListening) throw e;
+      last = e;
+    }
+  }
+  throw last || new RoomError('OFFLINE', 'the link daemon is not running (ENOENT)');
+}
+
+/** One op over one socket; an error before the connection is made is marked notListening (try the next path). */
+function relayOnce(socket, method, params) {
   return new Promise((resolve, reject) => {
     const conn = net.createConnection(socket);
     const dec = protocol.decoder();
-    conn.on('connect', () => conn.write(protocol.encode(protocol.request(1, method, params))));
+    let connected = false;
+    conn.on('connect', () => { connected = true; conn.write(protocol.encode(protocol.request(1, method, params))); });
     conn.on('data', chunk => {
       const [f] = dec.push(chunk);
       if (!f) return;
@@ -146,7 +212,7 @@ function handle(method, { socket, params }) {
       if (f.error) reject(new RoomError(f.error.code, f.error.message));
       else resolve(f.result);
     });
-    conn.on('error', e => reject(new RoomError('OFFLINE', `the link daemon is not running (${e.code || e.message})`)));
+    conn.on('error', e => reject(Object.assign(new RoomError('OFFLINE', `the link daemon is not running (${e.code || e.message})`), connected ? {} : { notListening: true })));
     conn.on('close', () => reject(new RoomError('OFFLINE', 'the link daemon hung up')));
   });
 }
@@ -219,10 +285,7 @@ const answers = file => new Promise(resolve => {
 
 /** A server on the socket file, in a directory only this user can enter; a stale socket file is replaced. */
 async function listen(file, onConn) {
-  const dir = path.dirname(file);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const st = fs.statSync(dir);
-  if (st.uid !== process.getuid() || (st.mode & 0o077)) throw new RoomError('AUTH', `${dir} is not private to this user`);
+  ensurePrivateDir(path.dirname(file));
   const srv = net.createServer(onConn);
   try { await listening(srv, file); } catch (e) {
     if (e.code !== 'EADDRINUSE') throw e;
@@ -340,6 +403,7 @@ async function serveMirror({
   mono, netSignature: netSig, watch = true, seats, writeState, outbox,
 }) {
   const T = linkTimings({ ...timings, retryMs, retryMaxMs });
+  const sockFile = socketPath(mirror.dir);
   const box = outbox || require('./outbox.js').open(mirror.dir);
   const localSeats = seats || (() => require('../identity.js').localSeats(mirror.code));
   const saveState = writeState || (rec => require('../room/links.js').writeState(mirror.code, rec));
@@ -361,7 +425,7 @@ async function serveMirror({
   function setState(s, why = null, code = null) {
     state = s;
     reason = why;
-    doc = { pid: process.pid, state, since: new Date(clock.now()).toISOString(), ...(why ? { reason: why } : {}), ...(code ? { code } : {}) };
+    doc = { pid: process.pid, state, since: new Date(clock.now()).toISOString(), socket: sockFile, ...(why ? { reason: why } : {}), ...(code ? { code } : {}) };
     publish();
   }
 
@@ -444,7 +508,7 @@ async function serveMirror({
       log(`FORK in room ${mirror.code}: ${why}. Nothing more is synced${kept}; sub-human link --reset ${mirror.code} re-mirrors`);
     }
     srv.close();
-    fs.rmSync(path.dirname(socketPath(mirror.dir)), { recursive: true, force: true });
+    fs.rmSync(path.dirname(sockFile), { recursive: true, force: true });
     if (c) c.close();
     finish(why);
   }
@@ -648,7 +712,9 @@ async function serveMirror({
     return dial(why);
   }
 
-  const srv = await listen(socketPath(mirror.dir), sock => serveHook(sock, relay));
+  const legacy = legacySocketPath(mirror.dir); // a 0.4.1 daemon still running for this room keeps it
+  if (legacy !== sockFile && await answers(legacy)) throw new RoomError('LOCK', `a link daemon already listens on ${legacy}`);
+  const srv = await listen(sockFile, sock => serveHook(sock, relay));
   setState('connecting');
   const first = dial();
   if (watch) {
@@ -754,6 +820,6 @@ async function run({ code, log = msg => process.stderr.write(`${new Date().toISO
 }
 
 module.exports = {
-  run, serveMirror, idleWatch, socketPath, handle, status, stopReason, start, pipeLocator, sshLocator, transportOf, sshCommand,
+  run, serveMirror, idleWatch, socketPath, socketPaths, handle, status, stopReason, start, pipeLocator, sshLocator, transportOf, sshCommand,
   linkTimings, nextDelay, wakeWatch, netWatch, netSignature, keyRefused,
 };

@@ -50,7 +50,7 @@ const path = require('node:path');
 const { FsRoomStore, RoomError, tag, blobRef, humanKey } = require('./store.js');
 const { createBridge } = require('../remote/bridge.js');
 const { proveSeat } = require('../remote/auth.js');
-const { socketPath, stopReason } = require('../remote/link.js');
+const { socketPaths, stopReason } = require('../remote/link.js');
 const { unknownOutcome, UNKNOWN_OUTCOME } = require('../remote/protocol.js');
 const { SEAT_BEAT_MS } = require('../config.js');
 
@@ -92,11 +92,14 @@ class MirrorRoomStore extends FsRoomStore {
   /** An op the daemon relays to the host as it is (lib/handoff.js: handoff.accept, handoff.refuse). */
   request(op, params, opts) { return this._call(op, params, opts); }
 
-  /** One op over the bridge to this room's link daemon. */
+  /** The daemon's document `link` (its socket path first: lib/remote/link.js socketPaths), null when unreadable. */
+  _linkDoc() { try { return this.kv.get('link'); } catch { return null; } }
+
+  /** One op over the bridge to this room's link daemon (the socket it recorded, then the computed paths). */
   _call(op, params, { deadlineMs } = {}) {
     bridge = bridge || createBridge({ handler: HANDLER });
     try {
-      return bridge.call(op, { socket: socketPath(this.dir), params }, { deadlineMs });
+      return bridge.call(op, { socket: socketPaths(this.dir, this._linkDoc()), params }, { deadlineMs });
     } catch (e) {
       if (e.code !== 'OFFLINE') throw e;
       if (unknownOutcome(e)) { // it went out: never "nothing was sent" (a slow link lands it later)
