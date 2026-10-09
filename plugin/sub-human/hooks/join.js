@@ -16,7 +16,7 @@
 // `/sub-human host [--ssh [USER@HOST[:PORT]]] [--via JUMP]`: an sh2 invite to the room this session is in and its
 // PIN (host only; lib/remote/hosting.js hostInvite), for one machine, shown to the person once: a block reason
 // (with suppressOriginalPrompt) never reaches the model. `/sub-human admit REQUEST` (host): let a joiner's ssh key
-// in for the invite it names (hosting.admit); `/sub-human revoke LINK|NAME` (host): end a link (hosting.revoke).
+// in for the invite it names (hosting.admit); `/sub-human revoke LINK|NAME|INVITE_REF|INVITE` (host): end a link, or burn one unused invite (hosting.revoke).
 // `/sub-human host --tailscale [--funnel]` / `--url URL`: the same over the web (lib/remote/webhost.js hostWeb): the
 // listener, Tailscale Serve (or opt-in Funnel) or a front of the person's own, and a join URL
 // https://HOST/…/sub-human/CODE#SECRET.HOSTKEY with its PIN, hidden from the model the same way; `/sub-human unhost`
@@ -54,7 +54,7 @@ const { orchPresence } = require('../lib/room/members.js');
 const COMMANDS = new Set(['sub-human:sub-human', 'sub-human']);
 const ORCH_AGENT = 'sub-human:orchestrator';
 const USAGE = 'usage: /sub-human NAME [CODE]. It joins the open room as NAME, or opens one and starts its orch for you (the orch is never launched by hand). '
-  + '/sub-human host [--ssh [USER@HOST]] [--via JUMP] gives an invite and its PIN for your room; /sub-human admit shk1.… lets a joiner\'s key in, /sub-human revoke NAME ends its link; /sub-human join NAME INVITE PIN joins a room on another machine; /sub-human handoff NAME asks NAME to host your room.';
+  + '/sub-human host [--ssh [USER@HOST]] [--via JUMP] gives an invite and its PIN for your room; /sub-human admit shk1.… lets a joiner\'s key in, /sub-human revoke NAME ends its link (or revoke REF, one leaked invite); /sub-human join NAME INVITE PIN joins a room on another machine; /sub-human handoff NAME asks NAME to host your room.';
 const BYPASS = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
 // A refusal is also the systemMessage: Remote Control shows a hook's systemMessage, not a block reason.
 const block = reason => out({ decision: 'block', reason: `sub-human: ${reason}`, systemMessage: `sub-human: ${reason}` });
@@ -144,14 +144,14 @@ function host(cur, rest) {
   return hidden(r.text);
 }
 
-/** `/sub-human admit REQUEST`, `/sub-human revoke LINK|NAME`: the host's consent, and its undo. */
+/** `/sub-human admit REQUEST`, `/sub-human revoke LINK|NAME|INVITE_REF|INVITE`: the host's consent, and its undo. */
 function hostAction(cur, args) {
   try {
     if (args[0] === 'admit') {
       if (args.length !== 2) return block('usage: /sub-human admit shk1.CODE.REF.KEY.NAME (the line a joiner\'s /sub-human join showed them)');
       return hidden(hosting.admit(args[1]).text, { shareable: true });
     }
-    if (args.length !== 2) return block('usage: /sub-human revoke LINK_ID|NAME (in the room hosted here)');
+    if (args.length !== 2) return block('usage: /sub-human revoke LINK_ID|NAME|INVITE_REF|INVITE (in the room hosted here)');
     if (!cur) return block('revoke from a session in the room: /sub-human NAME first.');
     return hidden(hosting.revoke(cur.code, args[1]).text, { shareable: true });
   } catch (e) { return block(e.message); }

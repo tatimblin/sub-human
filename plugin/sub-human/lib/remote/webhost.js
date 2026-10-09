@@ -94,6 +94,7 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, now = Dat
     `  /sub-human join NAME ${joinUrl} PIN`,
     '',
     `PIN ${r.pin}  (send it apart from the link, e.g. say it; 5 wrong tries burn the invite)`,
+    `Leaked? /sub-human revoke ${require('./auth.js').inviteRef(r.secret)} burns just this invite (its ref; /sub-human unhost stops serving the whole room).`,
     `The link pins this machine's listener key ${hostKey.slice(0, 12)}… and carries a one-time secret; with the PIN that is the whole admission (no admit step). The same invite as text: ${r.invite}`,
   ];
   if (tsRec) lines.push('The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and a joiner\'s link keeps trying.');

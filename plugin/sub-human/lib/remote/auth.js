@@ -41,6 +41,10 @@
  *                                                  start of its record's key (an admit request carries it, not the secret)
  *   reserveRef(store, ref, {now?}) -> {id, invite}   reserveLink by ref, for `admit`: AUTH for an unknown, used,
  *                                                  burnt or expired invite
+ *   findInvite(store, ref) -> {key, invite} | null   the one invite whose ref is ref
+ *   burnInvite(store, ref, {now?}) -> {state, invite}   burn one unused invite by its ref (a leaked one); state
+ *                                                  'burnt', 'burnt already' or 'used' (then nothing changes). AUTH
+ *                                                  for no invite with that ref
  *   revokeLink(store, id, {now?}) -> {link, invites} | null   forget link id (its token stops working) and burn
  *                                                  every invite reserved for it; null when nothing had that id
  *   links(store) -> {id: link}                     the links of the room
@@ -337,10 +341,45 @@ function revokeLink(store, id, { now = Date.now() } = {}) {
   return link || invites ? { link, invites } : null;
 }
 
+/**
+ * The invite of this room whose ref (inviteRef, 12 hex) is ref, or null: none, or more than one.
+ * @param {import('../room/store.js').FsRoomStore} store
+ * @param {string} ref
+ * @returns {{key: string, invite: object} | null}
+ */
+function findInvite(store, ref) {
+  if (!REF_RE.test(String(ref))) return null;
+  const hit = Object.entries(store.kv.get(INVITES_KEY, null) || {}).filter(([k]) => k.startsWith(ref));
+  return hit.length === 1 ? { key: hit[0][0], invite: hit[0][1] } : null;
+}
+
+/**
+ * Burn one invite by its ref, so it never redeems (a leaked one). {state}: 'burnt' (now), 'burnt already', or
+ * 'used' (it became a link: revokeLink ends that). AUTH for no invite with that ref.
+ * @param {import('../room/store.js').FsRoomStore} store   the host's store (isHost)
+ * @param {string} ref
+ * @param {{now?: number}} [opts]
+ * @returns {{state: string, invite: object}}
+ */
+function burnInvite(store, ref, { now = Date.now() } = {}) {
+  if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room revokes its invites');
+  let out = null;
+  store.kv.update(INVITES_KEY, cur => {
+    const hit = Object.keys(cur || {}).filter(k => REF_RE.test(String(ref)) && k.startsWith(ref));
+    if (hit.length !== 1) throw new RoomError('AUTH', `no invite of room ${store.code} has the ref ${ref}`);
+    const inv = cur[hit[0]];
+    if (inv.used_at) { out = { state: 'used', invite: inv }; return undefined; }
+    if (inv.burnt_at) { out = { state: 'burnt already', invite: inv }; return undefined; }
+    out = { state: 'burnt', invite: { ...inv, burnt_at: iso(now) } };
+    return { ...cur, [hit[0]]: out.invite };
+  });
+  return out;
+}
+
 /** @returns {Object<string, object>} */
 const links = store => store.kv.get(LINKS_KEY, null) || {};
 
 module.exports = {
-  INVITE_PREFIX, INVITE2_PREFIX, PIN_RE, inviteRef, reserveRef, revokeLink, links, INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, mintFor, redeemInvite, reserveLink, linkKnown, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
+  INVITE_PREFIX, INVITE2_PREFIX, PIN_RE, inviteRef, findInvite, burnInvite, reserveRef, revokeLink, links, INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, mintFor, redeemInvite, reserveLink, linkKnown, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
   formatInvite, parseInvite,
 };

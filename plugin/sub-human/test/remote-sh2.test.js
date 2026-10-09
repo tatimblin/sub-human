@@ -87,6 +87,43 @@ test('sh2 over pipe: host shows invite + PIN to the person only; join NAME INVIT
   assert.deepEqual(host.lib(() => auth.links(store.open(code))), {});
 });
 
+test('sh2: revoke burns one leaked, unused invite by the ref host showed or by the invite itself; others and links stay', async t => {
+  const { host, remote, alice, bob, code } = room(t);
+  const first = host.join(alice, 'host').json.reason;
+  const ref = /Leaked\? \/sub-human revoke ([0-9a-f]{12}) burns just this invite/.exec(first)[1];
+  const leaked = shownInvite(first);
+  assert.equal(ref, auth.inviteRef(auth.parseInvite(leaked.invite).secret));
+  const kept = shownInvite(host.join(alice, 'host').json.reason);
+  const other = shownInvite(host.join(alice, 'host').json.reason);
+
+  // by ref, from the host's session: just that invite, a room line
+  const rv = host.join(alice, `revoke ${ref}`);
+  assert.ok(hiddenBlock(rv));
+  assert.match(rv.json.reason, new RegExp(`revoked invite ${ref} of room ${code}: it is burnt and lets no one in`));
+  const lines = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text).join('\n');
+  assert.match(lines, new RegExp(`the host revoked an unused invite \\(ref ${ref}\\)`));
+  assert.match(host.join(alice, `revoke ${ref}`).json.reason, /was burnt already/);
+  // by the invite itself, in a shell
+  const cli = spawnSync(process.execPath, [h.BIN, 'revoke', other.invite, '--room', code], { env: host.env(null), encoding: 'utf8' });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stdout, /revoked invite [0-9a-f]{12} of room/);
+
+  // the burnt one lets no one in; the one kept still links
+  const third = new Machine(t, 'third', LINK_ENV);
+  const carol = third.seat('carol');
+  const refused = third.join(carol, `join carol ${leaked.invite} ${leaked.pin}`);
+  stopDaemon(t, third, code);
+  assert.match(refused.json.reason, /could not link .*this invite is burnt/);
+  const linked = remote.join(bob, `join bob ${kept.invite} ${kept.pin}`);
+  stopDaemon(t, remote, code);
+  assert.match(linked.json.reason, /linked to room/, linked.stderr);
+  assert.equal(Object.keys(host.lib(() => auth.links(store.open(code)))).length, 1);
+  // a used invite named by its ref ends the link it became
+  const used = host.join(alice, `revoke ${auth.inviteRef(auth.parseInvite(kept.invite).secret)}`);
+  assert.match(used.json.reason, /was used already, by link [0-9a-f]{12}; revoked link/);
+  assert.deepEqual(host.lib(() => auth.links(store.open(code))), {});
+});
+
 test('sh2: a wrong PIN costs a try (the room hears it) and is never re-sent by a rejoin; the right PIN then links; five wrong ones burn the invite', async t => {
   const { host, remote, alice, bob, code } = room(t);
   const { invite, pin } = shownInvite(host.join(alice, 'host').json.reason);

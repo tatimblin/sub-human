@@ -67,7 +67,7 @@
  *       Let in the key an admit request (shk1.…) carries, for the invite it names: one forced-command line in
  *       authorized_keys (default SUB_HUMAN_AUTHORIZED_KEYS, else ~/.ssh/authorized_keys), for that room's link only.
  *       Asks y/N on a terminal; /sub-human admit REQUEST in the host's session does the same.
- *   sub-human revoke LINK_ID|NAME [--room CODE] [--file AUTHORIZED_KEYS]      (lib/cli/revoke.js)
+ *   sub-human revoke LINK_ID|NAME|INVITE_REF|INVITE [--room CODE] [--file AUTHORIZED_KEYS]      (lib/cli/revoke.js)
  *       End a link: token burnt, its authorized_keys lines removed, its seats leave, a room line says so.
  *   sub-human prime CODE [--persist 8h]                                      (lib/cli/host.js)
  *       On the joining machine: open a shared ssh connection (ControlMaster) for room CODE's link, interactively,
@@ -404,7 +404,7 @@ Object.assign(cmds, { listen: a => { const c = require(path.join(LIB, 'cli', 'li
 const handoffCli = name => args => require(path.join(LIB, 'cli', 'handoff.js'))[name](args, { die, out: l => console.log(l), err: l => console.error(l) });
 Object.assign(cmds, { handoff: handoffCli('handoff'), promote: handoffCli('promote'), demote: handoffCli('demote') });
 try {
-  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] [--via JUMP] | authorize INVITE|LINK_ID PUBKEY [--file F] | host [--ssh [USER@HOST]] [--via JUMP] | admit REQUEST | revoke LINK_ID|NAME | prime CODE | host --tailscale [--funnel] | host --url URL | listen [--port P] [--start|--stop|--status] | unhost [--room CODE] | handoff NAME | promote CODE | demote CODE INVITE [PIN] | doctor [--bundle [FILE]] | agent-statusline')))(args);
+  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] [--via JUMP] | authorize INVITE|LINK_ID PUBKEY [--file F] | host [--ssh [USER@HOST]] [--via JUMP] | admit REQUEST | revoke LINK_ID|NAME|INVITE_REF | prime CODE | host --tailscale [--funnel] | host --url URL | listen [--port P] [--start|--stop|--status] | unhost [--room CODE] | handoff NAME | promote CODE | demote CODE INVITE [PIN] | doctor [--bundle [FILE]] | agent-statusline')))(args);
 } catch (e) {
   die(e.message, 2);
 }

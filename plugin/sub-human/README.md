@@ -132,6 +132,8 @@ What happens:
 
 On the host, `/sub-human revoke carol` (in a session in the room) or `sub-human revoke LINK_ID|NAME [--room CODE]` in a shell ends a link: its token stops working, its `authorized_keys` line is removed, its seats leave the room, its running server stops, and the room shows a line. On the other machine the link stops for good (`the host revoked this link`): it does not keep retrying, and `@room` posts there are refused, not queued. The room line for each new link names its id.
 
+**One leaked invite.** An invite nobody has used yet is not a link, so it has no link id. `/sub-human host` (and `host --tailscale` / `--url`) prints a line under the PIN: `Leaked? /sub-human revoke <ref> burns just this invite`. That ref (12 hex characters, not a secret) or the invite itself (`sh2.…` or the join URL) given to `revoke` burns that one invite, with a room line; every other invite and link stays, and the room stays served (`/sub-human unhost` would stop serving the whole room over the web). An invite already used (or reserved by `admit`) revokes the link it became.
+
 ### SSH details
 
 - **Forced command.** The line `admit` (or `authorize`) writes is `command="SUB_HUMAN_HOME=… …/.sub-human/bin/serve --stdio vole-8126 --link 1a2b3c4d5e6f",restrict ssh-ed25519 AAAA… sub-human:vole-8126:1a2b3c4d5e6f`. Whatever the other side asks to run, that key runs only this room's server, for that one link (`restrict`: no shell, pty or forwarding), and the server accepts only that link's token, or the invite reserved for it. `<home>/bin/serve` is a stable shim that finds the current plugin install and node when it runs, so the line keeps working after a plugin update or a node upgrade. Paths are absolute because sshd's `PATH` has no Homebrew. The file is `~/.ssh/authorized_keys`, or `SUB_HUMAN_AUTHORIZED_KEYS`, or `--file F`.
@@ -287,7 +289,7 @@ The room has one shared task list: the orch's own native Claude Code task list. 
 | `unhost [--room CODE]` | Stop serving a room over the web (its own Tailscale path goes off). |
 | `listen [--port 7420] \| --start \| --stop \| --status` | The host's web listener (127.0.0.1 only); `/sub-human host --tailscale` starts it for you. |
 | `admit REQUEST [--file F] [--yes]` | Let in the SSH key a joiner's admit request (`shk1.…`) carries, for that invite's link only; asks y/N first. |
-| `revoke LINK_ID\|NAME [--room CODE] [--file F]` | End a link: token burnt, key line removed, its seats leave. |
+| `revoke LINK_ID\|NAME\|INVITE_REF\|INVITE [--room CODE] [--file F]` | End a link: token burnt, key line removed, its seats leave. Or burn one unused invite (a leaked one) by its ref or the invite itself. |
 | `prime CODE [--persist 8h]` | On a joining machine: one shared SSH connection, opened interactively, for an MFA bastion; the link rides it. |
 | `invite [--ssh USER@HOST[:PORT]] [--via JUMP]` | An older one-step `sh1` invite (no PIN) to a room hosted here. |
 | `authorize INVITE\|LINK_ID PUBKEY [--file F]` | The `authorized_keys` forced-command line for an SSH joiner's key and that one link; `--file` appends it. |

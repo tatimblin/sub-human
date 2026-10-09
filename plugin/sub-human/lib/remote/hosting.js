@@ -16,10 +16,12 @@
  *       (auth.reserveRef) and the joiner's key gets the forced-command line for that link and room only
  *       (shim.authorizedLine, sshkeys.appendAuthorized into file, default sshkeys.authorizedKeysFile()). A room line
  *       says so. The PIN is still checked at the link's first hello
- *   revoke(code, target, {file?}) -> {id, seats, keys, text}
- *       target: a link id, or the name of a seat that joined over a link. The link's token stops working
- *       (auth.revokeLink, which also burns an invite reserved for it), its authorized_keys lines go, its seats leave
- *       ("revoked by the host"), its running `serve` processes are stopped, and a room line says so
+ *   revoke(code, target, {file?}) -> {id, ref?, seats, keys, text}
+ *       target: a link id, the name of a seat that joined over a link, or one invite: its ref (the 12 hex shown with
+ *       it) or the invite itself (sh1/sh2 or a join URL). A link: its token stops working (auth.revokeLink, which also
+ *       burns an invite reserved for it), its authorized_keys lines go, its seats leave ("revoked by the host"), its
+ *       running `serve` processes are stopped, and a room line says so. An invite no link holds: just it is burnt
+ *       (auth.burnInvite), with a room line; one reserved for or used by a link revokes that link
  *   joinInvite({inv, invite, pin, name, now?}) -> {code, request?}   the joiner's link file for an sh2 invite: over
  *       ssh, the link's own key (sshkeys.linkKey in links.dirOf(code)) and, when the invite carries one, the host
  *       key pinned in a known_hosts of the link's own; over ws/wss, the listener's X25519 key the invite carries,
@@ -98,6 +100,7 @@ function hostInvite(code, { ssh, via, now = Date.now() } = {}) {
     `  /sub-human join NAME ${r.invite} PIN`,
     '',
     `PIN ${r.pin}  (send it apart from the invite, e.g. say it; 5 wrong tries burn the invite)`,
+    `Leaked? /sub-human revoke ${auth.inviteRef(r.secret)} burns just this invite (its ref; the room and its links stay).`,
   ];
   if (dest) {
     lines.push(hostKey
@@ -133,11 +136,42 @@ function linkIdOf(store, target) {
   const hits = Object.values(all).filter(l => Array.isArray(l.seats) && l.seats.includes(target));
   if (hits.length === 1) return hits[0].id;
   if (hits.length > 1) throw new RoomError('INVALID', `${target} joined over ${hits.length} links (${hits.map(l => l.id).join(', ')}); name one`);
-  throw new RoomError('INVALID', `"${target}" is neither a link of room ${store.code} nor a seat that joined over one`);
+  throw new RoomError('INVALID', `"${target}" is neither a link or an invite of room ${store.code} nor a seat that joined over a link`);
+}
+
+/** The ref of the invite target names: the invite itself (sh1/sh2 or a join URL), or its ref when no link has that
+ * id. null: target names no invite (a link id or a seat name, then). */
+function inviteRefOf(store, target) {
+  const parsed = auth.parseInvite(target) || (/^https?:\/\//.test(target) ? require('./transports/ws.js').parseJoinUrl(target) : null);
+  if (parsed) {
+    if (parsed.code !== store.code) throw new RoomError('INVALID', `that invite is for room ${parsed.code}, not ${store.code}`);
+    const ref = auth.inviteRef(parsed.secret);
+    if (!auth.findInvite(store, ref)) throw new RoomError('INVALID', `that invite is not one room ${store.code} minted`);
+    return ref;
+  }
+  if (auth.LINK_ID_RE.test(target) && (auth.links(store)[target])) return null;
+  return auth.findInvite(store, target) ? target : null;
+}
+
+/** Burn one invite (a leaked one) by its ref; one reserved for or used by a link ends that link (revoke). */
+function revokeInvite(code, store, ref, opts) {
+  const { invite } = auth.findInvite(store, ref);
+  if (invite.link) {
+    const r = revoke(code, invite.link, opts);
+    return { ...r, ref, text: `invite ${ref} ${invite.used_at ? 'was used already, by' : 'was reserved for'} link ${invite.link}; ${r.text}` };
+  }
+  const { state } = auth.burnInvite(store, ref);
+  if (state === 'burnt') roomLine(code, `the host revoked an unused invite (ref ${ref}): it no longer lets anyone in`);
+  const text = state === 'burnt'
+    ? `revoked invite ${ref} of room ${code}: it is burnt and lets no one in; every other invite and link stays`
+    : `invite ${ref} of room ${code} was burnt already (a wrong PIN, expired, or revoked); nothing changed`;
+  return { id: null, ref, seats: [], keys: 0, text };
 }
 
 function revoke(code, target, { file = sshkeys.authorizedKeysFile() } = {}) {
   const store = hostStore(code);
+  const ref = inviteRefOf(store, String(target).trim());
+  if (ref) return revokeInvite(code, store, ref, { file });
   const id = linkIdOf(store, String(target));
   const r = auth.revokeLink(store, id) || { link: null, invites: 0 };
   const keys = sshkeys.removeAuthorized(path.resolve(file), code, id);
