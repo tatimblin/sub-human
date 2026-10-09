@@ -198,6 +198,7 @@ test('doctor redactor: each rule alone', () => {
   assert.equal(tmp('state in /tmp/sh-x/links/a.json'), 'state in <sub-human-home>/links/a.json', 'a SUB_HUMAN_HOME outside $HOME');
   assert.equal(tmp('/tmp/sh-xy'), '/tmp/sh-xy', 'whole path segments only');
   assert.match(tmp('moved (pipe:/var/tmp/other-home), epoch 2'), /^moved \(pipe:<home-[0-9a-f]{8}>\), epoch 2$/, 'a pipe locator names another home');
+  assert.match(tmp('pipe /var/tmp/other-home · daemon not running'), /^pipe <home-[0-9a-f]{8}> · daemon not running$/, 'and its describe() form');
   assert.equal(doctor.redactor({ home: '/home/zed', shHome: '/home/zed/.sub-human' })('/home/zed/.sub-human/x'), '~/.sub-human/x');
 });
 

@@ -579,7 +579,7 @@ function redactor({ home = os.homedir(), shHome = lib('home.js').home(), hosts =
     for (const h of shHomes) s = s.replace(new RegExp(`${esc(h)}(?![^/\\s"':,)])`, 'g'), '<sub-human-home>');
     for (const h of homes) s = s.replace(new RegExp(`${esc(h)}(?![^/\\s"':,)])`, 'g'), '~');
     // a pipe link names another home on this machine: never its path
-    s = s.replace(/\bpipe:([^\s"'),]+)/g, (_, p) => `pipe:<home-${hash8(p, salt)}>`);
+    s = s.replace(/\bpipe([: ])(\/[^\s"'),]+)/g, (_, sep, p) => `pipe${sep}<home-${hash8(p, salt)}>`);
     s = s.replace(/\/(Users|home)\/[^/\s"']+/g, '/$1/<user>');
     for (const n of names) s = s.replace(new RegExp(`(?<![\\w.-])${esc(n)}(?![\\w-])`, 'g'), `host-${hash8(n, salt)}`);
     for (const u of people) s = s.replace(new RegExp(`(?<![\\w.-])${esc(u)}(?=@)`, 'g'), `user-${hash8(u, salt)}`);
