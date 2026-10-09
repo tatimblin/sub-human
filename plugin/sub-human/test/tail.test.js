@@ -229,6 +229,15 @@ test('tail: a steady trickle is cut into batches at the settle max; held ids kee
   assert.equal(cursor(code, 'alice'), 11);
 });
 
+test('tail: startCursor: the saved cursor, else (the room\'s Claude after a 0.4.x upgrade) deliver-orch, else the latest join', () => {
+  const rm = cursors => ({ getCursor: k => cursors[k] || 0, readView: () => [{ id: 7, kind: 'member_joined', from: 'claude' }] });
+  const claude = { name: 'claude', role: 'claude' };
+  assert.equal(tailLib.startCursor(rm({ 'deliver-claude': 5, 'deliver-orch': 3 }), 'deliver-claude', claude, 9), 5);
+  assert.equal(tailLib.startCursor(rm({ 'deliver-orch': 3 }), 'deliver-claude', claude, 9), 3, 'resumes where the orch stopped');
+  assert.equal(tailLib.startCursor(rm({}), 'deliver-claude', claude, 9), 7, 'no cursor: its latest join');
+  assert.equal(tailLib.startCursor(rm({ 'deliver-orch': 3 }), 'deliver-bob', { name: 'bob', role: 'member' }, 9), 9, 'a member never reads it');
+});
+
 test('tail: survives a restart via its cursor (no read from byte 0); switches when the session changes rooms', () => {
   h.freshHome();
   const { code } = h.register('alice');

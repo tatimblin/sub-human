@@ -161,7 +161,8 @@ function claimSpawn(code, { now = clock.now(), by = null } = {}) {
     out = { claim, prevJob: o && o.job && o.job !== PENDING && !o.stopped_at ? o.job : null };
     return {
       job: PENDING, claim, by: by || undefined, spawned_at: iso(now),
-      pid: null, pid_start: undefined, left_at: undefined, closing: undefined, stopped_at: undefined,
+      // seen_at goes too: an old job's fresh lease would otherwise hold the seat against the new one ("name taken")
+      pid: null, pid_start: undefined, seen_at: undefined, left_at: undefined, closing: undefined, stopped_at: undefined,
       spawn_error: undefined, job_session: undefined, orphan_since: undefined,
     };
   });

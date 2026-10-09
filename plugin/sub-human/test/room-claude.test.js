@@ -304,6 +304,18 @@ test('room-claude: a superseded claim stops the job it made; a failed start reco
   assert.equal(roomClaude.needsSpawn(code), true, 'the next join retries');
 });
 
+test('room-claude: a claim after a just-stopped job (dead pid, fresh lease) lets the new job take the seat', async () => {
+  h.freshHome();
+  const code = h.newRoom();
+  // the previous job stopped seconds ago: its pid is dead, its seen_at still inside the seat lease
+  identity.setRoomClaude(code, { job: 'old', pid: await h.deadPid(), seen_at: new Date().toISOString() });
+  assert.equal(roomClaude.needsSpawn(code), true);
+  assert.ok(roomClaude.claimSpawn(code, {}));
+  const r = identity.join({ code, name: 'claude', role: 'claude', pid: process.pid, session_id: 'new' });
+  assert.ok(r && r.ok !== false, `the new job binds (${r && r.error})`);
+  assert.equal(identity.readMembers(code).claude.pid, process.pid);
+});
+
 test('room-claude: the room\'s Claude binding before its starter records the job keeps the claim; the record then lands', () => {
   h.freshHome();
   const code = h.newRoom();

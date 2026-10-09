@@ -294,6 +294,9 @@ function errorLog(err, clock, everyMs) {
 function startCursor(rm, reader, me, last) {
   const c = rm.getCursor(reader);
   if (c > 0 && c <= last) return c;
+  // 0.4.x kept the room's Claude's cursor as deliver-orch: an upgraded room resumes there, so no @claude is skipped
+  const old = me.role === 'claude' ? rm.getCursor('deliver-orch') : 0;
+  if (old > 0 && old <= last) return old;
   const joined = rm.readView({ after: Infinity }).filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1);
   return joined ? joined.id : last;
 }
@@ -580,5 +583,5 @@ function runTail({
 }
 
 module.exports = {
-  runTail, timings, Batcher, formatNdBatch, linkLine, flushLine, LINK_BACK, remindersText, PULL_HEAD,
+  runTail, timings, Batcher, formatNdBatch, linkLine, flushLine, LINK_BACK, remindersText, PULL_HEAD, startCursor,
 };

@@ -159,6 +159,29 @@ test('@claude: only a leading tag posts the words to=claude (the wake); "@room @
   assert.deepEqual(w.entries().map(e => w.lib(() => room.lane({ name: 'bob', role: 'member' }, e))), ['push', 'push', 'push', 'push'], 'everyone sees all four');
 });
 
+test('@claude on the host with no room\'s Claude running starts it (a stopped one too); @room never does', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-stub-'));
+  const bin = path.join(dir, 'claude');
+  fs.writeFileSync(bin, `#!${process.execPath}\nrequire('fs').appendFileSync(${JSON.stringify(path.join(dir, 'calls'))}, process.argv.slice(2).join(' ') + '\\n');\nif (process.argv.includes('--bg')) console.log('backgrounded · 0b500131 · claude.x');\n`, { mode: 0o755 });
+  const bg = () => { try { return fs.readFileSync(path.join(dir, 'calls'), 'utf8').split('\n').filter(l => l.includes('--bg')).length; } catch { return 0; } };
+  const w = new World({ alice: 'act' });
+  const env = { SUB_HUMAN_CLAUDE: bin, SUB_HUMAN_PLUGIN_DIR: PLUGIN };
+  posted(atRoom(w, submit('@room just talking'), { as: 'alice', env }));
+  assert.equal(w.members().claude, undefined, '@room starts nothing');
+  const r = atRoom(w, submit('@claude add a task: test'), { as: 'alice', env });
+  posted(r);
+  assert.match(r.json.stopReason, /^✓ sent · starting the room's Claude…$/);
+  assert.ok(['pending', '0b500131'].includes(w.members().claude.job), 'claimed');
+  const end = Date.now() + 8000;
+  while (!bg() && Date.now() < end) await new Promise(res => setTimeout(res, 30));
+  assert.equal(bg(), 1, 'one --bg start');
+  // once it is starting, another @claude claims nothing more
+  posted(atRoom(w, submit('@claude and another'), { as: 'alice', env }));
+  assert.equal(bg(), 1);
+});
+
 test('@claude: refused like @room when empty, forged or unattested; the room\'s Claude cannot type it; outside a room it passes through untouched', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   let r = atRoom(w, submit('@claude'), { as: 'alice' });

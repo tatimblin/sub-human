@@ -24,6 +24,7 @@ const { identity, room, out, run, whoami, presence } = require('./common.js');
 const { oneLine } = require(path.join(__dirname, '..', 'lib', 'text.js'));
 const config = require(path.join(__dirname, '..', 'lib', 'config.js'));
 const cc = require(path.join(__dirname, '..', 'lib', 'cc.js'));
+const seats = require(path.join(__dirname, '..', 'lib', 'seats.js'));
 
 function parse(prompt) {
   if (prompt.startsWith('@room ')) return prompt.slice('@room '.length);
@@ -157,7 +158,9 @@ function handle(input) {
     const q = `⧗ queued: room ${me.code} is offline; this post is sent when the link is back (${placed.queued} waiting)`;
     return out({ continue: false, stopReason: q, ...phoneNote(q), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
   }
-  const sent = `✓ sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}`;
+  // @claude on the host with no room's Claude running (it stopped, or never bound): start it, as a rejoin would
+  const start = wake !== null ? seats.ensureRoomClaude(me.code, input.cwd, me.name) : '';
+  const sent = `✓ sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}${start}`;
   out({ continue: false, stopReason: sent, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 }
 
