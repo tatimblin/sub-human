@@ -103,7 +103,7 @@ Sources: three research passes, run on 2026-10-08:
   - a leftover `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`.
 - [ ] **`/sub-human try`**: a solo room with a scripted bot member, so one person sees posts, rows and a proposal card. About 2–3 days.
 - [ ] **Remove "orch" everywhere** (see Decisions). Then: a short glossary, and never `sh2`/`shk1` without a word of explanation.
-- [ ] **A cost note**: the orch is a background Claude on the host's account. Say when it runs and when it is idle.
+- [ ] **A cost note**: the room runs a background Claude on the host's account. Say when it runs and when it is idle.
 - [ ] **The `/exit` background-work prompt**: suppress it, or document it in one line.
 - [ ] **Re-prioritise** after each tester's first session. Their findings beat this list.
 
