@@ -102,7 +102,7 @@ Sources: three research passes, run on 2026-10-08:
   - a user `subagentStatusLine` that hides ours;
   - a leftover `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`.
 - [ ] **`/sub-human try`**: a solo room with a scripted bot member, so one person sees posts, rows and a proposal card. About 2–3 days.
-- [ ] **Plain words**: "coordinator" for the orch in user-facing text, a short glossary, and never `sh2`/`shk1` without a word of explanation.
+- [ ] **Plain words**: "the room" for the orch in user-facing text (see Decisions), a short glossary, and never `sh2`/`shk1` without a word of explanation.
 - [ ] **A cost note**: the orch is a background Claude on the host's account. Say when it runs and when it is idle.
 - [ ] **The `/exit` background-work prompt**: suppress it, or document it in one line.
 - [ ] **Re-prioritise** after each tester's first session. Their findings beat this list.
@@ -136,7 +136,7 @@ Sources: three research passes, run on 2026-10-08:
 
 **Prepare during the beta:**
 - [ ] **Name**: check that no plugin called `sub-human` is listed in the directory or the aggregators. Take a domain and social handles if wanted.
-- [ ] **License**: MIT recommended. FSL is the option if deterring commercial clones matters more than adoption. Add `LICENSE` and the `license` field.
+- [ ] **License**: MIT (decided). Prepare `LICENSE` and the `license` field, and add them on launch day.
 - [ ] **Anthropic directory**: find out whether a submission can be filed while the repo is private (the docs only say it must be public before the listing goes live). If so, submit at the end of the beta so the review lag overlaps the beta. The portal is claude.ai/directory/manage, choose "plugin bundle"; it needs a paid plan.
 - [ ] **Directory checks**:
   - a README of at least 40 words;
@@ -162,7 +162,9 @@ Sources: three research passes, run on 2026-10-08:
 - No Windows.
 - No relay (1.2).
 
-## Decisions for you
-1. Build `/sub-human try` (the solo demo with a bot seat) during the beta? Recommended: it is the biggest onboarding win.
-2. Use "coordinator" instead of "orch" in user-facing text?
-3. License at launch: MIT (recommended) or FSL?
+## Decisions (2026-10-09)
+1. **Build `/sub-human try` during the beta**, as part of B2.
+2. **The orch is called "the room" in user-facing text.** It is the room acting: "the room is working on a plan", "the room's tasks". Internal names in code and logs don't change.
+   - In B2, go through the rows, systemMessages, the README and the skill text.
+   - Keep `@orch` working as an alias for addressing it, so existing habits don't break. Decide in B2 whether user-facing text should spell it `@room …` alone.
+3. **License: MIT**, added on launch day.
