@@ -20,7 +20,10 @@ function fake(t, { statusOut = UP, statusCode = 0, serveBody }) {
   const pidFile = path.join(dir, 'serve.pid');
   const bin = path.join(dir, 'tailscale');
   fs.writeFileSync(bin, `#!/bin/sh\nif [ "$1" = status ]; then printf '%s\\n' '${statusOut}'; exit ${statusCode}; fi\necho $$ > "${pidFile}"\n${serveBody}\n`, { mode: 0o755 });
-  const alive = () => { try { process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 0); return true; } catch { return false; } };
+  const live = () => { try { process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 0); return true; } catch { return false; } };
+  // killed is not yet reaped: the watcher exits with it, and the orphan is reaped by init a moment later (on Linux a
+  // zombie still answers kill 0), so give it a second to go
+  const alive = () => { const end = Date.now() + 1000; while (live() && Date.now() < end) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20); return live(); };
   return { bin, alive };
 }
 

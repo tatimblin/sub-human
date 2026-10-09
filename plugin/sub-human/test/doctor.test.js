@@ -132,7 +132,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   const text = fs.readFileSync(out, 'utf8');
   const b = JSON.parse(text);
   assert.equal(b.kind, 'sub-human-doctor-bundle');
-  for (const secret of [home, hostHome, user, code, KEY_B64, links.get(code).token, 'carolyn']) assert.ok(!text.includes(secret), `the bundle holds ${secret}`);
+  for (const secret of [home, hostHome, user, code, KEY_B64, links.get(code).token, 'carolyn']) assert.ok(!text.includes(secret), `the bundle holds ${secret}:\n${text}`);
   assert.equal(b.links[0].state.queued, 2);
   assert.equal(b.links[0].reach.ok, true);
   assert.match(b.authorized_keys.lines[0].key, /^ssh-ed25519 SHA256:[A-Za-z0-9+/]{12}$/);
@@ -197,6 +197,7 @@ test('doctor redactor: each rule alone', () => {
   assert.equal(red('\x1b[31mred\x1b[0m'), 'red');  const tmp = doctor.redactor({ home: '/home/zed', shHome: '/tmp/sh-x', salt: 's' });
   assert.equal(tmp('state in /tmp/sh-x/links/a.json'), 'state in <sub-human-home>/links/a.json', 'a SUB_HUMAN_HOME outside $HOME');
   assert.equal(tmp('/tmp/sh-xy'), '/tmp/sh-xy', 'whole path segments only');
+  assert.match(tmp('moved (pipe:/var/tmp/other-home), epoch 2'), /^moved \(pipe:<home-[0-9a-f]{8}>\), epoch 2$/, 'a pipe locator names another home');
   assert.equal(doctor.redactor({ home: '/home/zed', shHome: '/home/zed/.sub-human' })('/home/zed/.sub-human/x'), '~/.sub-human/x');
 });
 
