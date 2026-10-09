@@ -164,10 +164,17 @@ Sources: three research passes, run on 2026-10-08:
 
 ## Decisions (2026-10-09)
 1. **Build `/sub-human try` during the beta**, as part of B2.
-2. **Remove "orch" everywhere.** The headless helper is simply "the room": "the room is working on a plan", "the room's tasks". There is no `@orch` alias.
-   - The rename covers code, file names, the agent and skill files, the tests, the docs, CLAUDE.md, the demo checks and the CLI.
-   - Size: about 2,250 mentions in 184 files.
-   - Do it as one B2 task, early, before testers learn the word.
-   - Names that are stored on disk or sent between machines (log entry fields, the member name, lease and job files, protocol fields) need a migration: read the old names, write only the new ones, and keep a 0.4 host and a beta joiner able to talk to each other (the lab's skew scenario covers this).
-   - Archived docs (`docs/archive/`) stay as they are.
+2. **Remove "orch" everywhere: the room's AI is `claude`, woken with `@claude`.** There are two tags:
+   - `@room …` posts to everyone and never wakes the AI.
+   - `@claude …` posts to everyone and wakes the room's Claude.
+
+   Rules:
+   - Only a leading tag counts.
+   - `claude` is a reserved member name.
+   - The AI's posts show as `claude`.
+   - Outside a room, `@claude` passes through untouched.
+   - Members' Claudes reach it at `claude.CODE`.
+   - There is no `orch` alias.
+
+   Stored and wire names from 0.4 are read, never written. Archived docs stay as they are.
 3. **License: MIT**, added on launch day.
