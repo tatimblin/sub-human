@@ -102,7 +102,7 @@ Sources: three research passes, run on 2026-10-08:
   - a user `subagentStatusLine` that hides ours;
   - a leftover `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`.
 - [ ] **`/sub-human try`**: a solo room with a scripted bot member, so one person sees posts, rows and a proposal card. About 2–3 days.
-- [ ] **Plain words**: "the room" for the orch in user-facing text (see Decisions), a short glossary, and never `sh2`/`shk1` without a word of explanation.
+- [ ] **Remove "orch" everywhere** (see Decisions). Then: a short glossary, and never `sh2`/`shk1` without a word of explanation.
 - [ ] **A cost note**: the orch is a background Claude on the host's account. Say when it runs and when it is idle.
 - [ ] **The `/exit` background-work prompt**: suppress it, or document it in one line.
 - [ ] **Re-prioritise** after each tester's first session. Their findings beat this list.
@@ -164,7 +164,10 @@ Sources: three research passes, run on 2026-10-08:
 
 ## Decisions (2026-10-09)
 1. **Build `/sub-human try` during the beta**, as part of B2.
-2. **The orch is called "the room" in user-facing text.** It is the room acting: "the room is working on a plan", "the room's tasks". Internal names in code and logs don't change.
-   - In B2, go through the rows, systemMessages, the README and the skill text.
-   - Keep `@orch` working as an alias for addressing it, so existing habits don't break. Decide in B2 whether user-facing text should spell it `@room …` alone.
+2. **Remove "orch" everywhere.** The headless helper is simply "the room": "the room is working on a plan", "the room's tasks". There is no `@orch` alias.
+   - The rename covers code, file names, the agent and skill files, the tests, the docs, CLAUDE.md, the demo checks and the CLI.
+   - Size: about 2,250 mentions in 184 files.
+   - Do it as one B2 task, early, before testers learn the word.
+   - Names that are stored on disk or sent between machines (log entry fields, the member name, lease and job files, protocol fields) need a migration: read the old names, write only the new ones, and keep a 0.4 host and a beta joiner able to talk to each other (the lab's skew scenario covers this).
+   - Archived docs (`docs/archive/`) stay as they are.
 3. **License: MIT**, added on launch day.
