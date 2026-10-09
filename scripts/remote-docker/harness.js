@@ -35,7 +35,8 @@
  *       say posts as the host seat (signed, the host's hook path); --to NAME addresses a post from the seat's
  *       Claude. status shows every joiner's link. cut/heal disable/enable the proxy; latency adds (MS > 0) or removes
  *       (0) a latency toxic. down stops it all and removes the manual state, every joiner's home, project, env and
- *       link daemon.
+ *       link daemon. With LAB_PROJECT set, down takes down only that scenarios stack (lab.js) and leaves the manual
+ *       stack and its directory alone.
  * SUB_HUMAN_COMPOSE_PROJECT (default: compose.yml's sub-human-remote) and SUB_HUMAN_MANUAL_DIR (default
  * /tmp/sub-human-remote-manual) let a second stack run beside the default one; set both the same for every command.
  * npm run test:remote-docker runs `run` as an opt-in test (skipped without Docker).
@@ -559,6 +560,14 @@ async function up(args) {
 }
 
 async function down() {
+  // LAB_PROJECT names a scenarios stack (lab.js): take down that one only. Never the manual stack or its directory,
+  // which someone may be using by hand (this used to remove both whatever LAB_PROJECT said)
+  if (process.env.LAB_PROJECT) {
+    const lab = require('./lab.js');
+    const r = sh('docker', ['compose', '-f', lab.COMPOSE, '-p', lab.PROJECT, 'down', '-v', '--remove-orphans', '-t', '2'], { allowFail: true });
+    console.log(`down: lab project ${lab.PROJECT}: compose exit ${r.status} (the manual stack and ${MANUAL} are left alone)`);
+    return;
+  }
   let st = null;
   try { st = manualState(); } catch { /* not up, or half up */ }
   if (st) for (const j of st.joiners || []) {
