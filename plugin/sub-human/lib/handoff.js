@@ -372,6 +372,8 @@ function takeOver(code, { by, cwd, epoch, entry } = {}) {
   s.kv.delete(HOST_DOC);
   if (cwd && !s.kv.get(WORKDIR)) s.kv.set(WORKDIR, { cwd });
   const now = iso(Date.now());
+  // the old host's orch goes with its holder: its machine and lease too. Else claimSpawn clears left_at and the new
+  // job's bind meets a record on another machine with a fresh lease, still holding the name ("name taken")
   identity().updateOrch(code, () => ({ job: null, pid: null, pid_start: undefined, machine: undefined, seen_at: undefined, claim: undefined, closing: undefined, left_at: now, stopped_at: now }));
   return require('./seats.js').ensureOrch(code, cwd, by);
 }

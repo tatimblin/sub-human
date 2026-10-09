@@ -146,9 +146,10 @@ The host's machine holds the room's log, serves the links and runs the orch, so 
 ```
 /sub-human handoff bob                       # bob's machine reachable as a second home here (pipe)
 /sub-human handoff bob bob@bobs-box.local    # the others reach bob's machine over SSH
+/sub-human handoff bob bob@bobs-box --via bastion   # through a jump host (ProxyJump), as host --ssh --via
 ```
 
-(`sub-human handoff bob [--ssh USER@HOST[:PORT] | --url https://FRONT]` in your own shell does the same. With `/sub-human handoff bob https://bob-box.tail1a2b.ts.net`, or `--url`, the others follow bob over the web: his machine serves the room on its listener and every invite it sends them pins its listener key; bob then runs `/sub-human host --tailscale` once to put the Tailscale path in front of it.) Bob's Claude shows him a card: **Host room CODE on this machine?** It says plainly that the room's orch will then run on **his** model account (his Claude or Bedrock billing and rate limits) and that his machine must stay on and reachable. Nothing moves unless he chooses **Host it here** himself; **Not now** leaves everything as it was, and you see `room handoff: bob declined`. The ask lapses after 10 minutes.
+(`sub-human handoff bob [USER@HOST[:PORT] | --ssh USER@HOST[:PORT]] [--via JUMP] | --url https://FRONT` in a terminal does the same. Over SSH each member's link follows with its own key and its `prime` setting, pins bob's host key, and until bob lets that key in it is offline with a line to send him: `/sub-human admit shk1…`; he pastes it, and the link connects with no new invite. With `/sub-human handoff bob https://bob-box.tail1a2b.ts.net`, or `--url`, the others follow bob over the web: his machine serves the room on its listener and every invite it sends them pins its listener key; bob then runs `/sub-human host --tailscale` once to put the Tailscale path in front of it.) Bob's Claude shows him a card: **Host room CODE on this machine?** It says plainly that the room's orch will then run on **his** model account (his Claude or Bedrock billing and rate limits) and that his machine must stay on and reachable. Nothing moves unless he chooses **Host it here** himself; **Not now** leaves everything as it was, and you see `room handoff: bob declined`. The ask lapses after 10 minutes.
 
 When he agrees:
 

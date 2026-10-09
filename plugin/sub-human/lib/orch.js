@@ -157,11 +157,9 @@ function claimSpawn(code, { now = clock.now(), by = null } = {}) {
     if (!needsSpawnRec(o, now)) return null;
     const claim = crypto.randomBytes(6).toString('hex');
     out = { claim, prevJob: o && o.job && o.job !== PENDING && !o.stopped_at ? o.job : null };
-    // the old holder goes with it: its machine and lease too (a handoff's new host would otherwise see the old
-    // host's orch, on another machine with a fresh lease, still holding the name, and refuse the new job's bind)
     return {
       job: PENDING, claim, by: by || undefined, spawned_at: iso(now),
-      pid: null, pid_start: undefined, machine: undefined, seen_at: undefined, left_at: undefined, closing: undefined, stopped_at: undefined,
+      pid: null, pid_start: undefined, left_at: undefined, closing: undefined, stopped_at: undefined,
       spawn_error: undefined, job_session: undefined, orphan_since: undefined,
     };
   });
