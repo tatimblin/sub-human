@@ -272,8 +272,8 @@ async function heldRows($) {
 /** One event's actions (mod/core/deliver.mjs route). */
 async function apply($, c, ev) {
   if (!ev || c.stopped) return;
-  const role = c.seat && c.seat.role === 'orch' ? 'orch' : 'member';
-  const rows = ev.type === 'wake' && role === 'orch' ? await heldRows($) : null;
+  const role = c.seat && c.seat.role === 'claude' ? 'claude' : 'member';
+  const rows = ev.type === 'wake' && role === 'claude' ? await heldRows($) : null;
   const actions = route(ev, { turnRunning: turns.running !== null, role, rows, remote: remote && role === 'member' });
   for (const a of actions) {
     switch (a.do) {

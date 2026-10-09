@@ -29,14 +29,14 @@
  *         subscribe  {after, hash}: hash12 of the host's line `after` must equal hash (store.lineHash), else
  *                    FORK; then event 'entry' per line in id order (store.tailer({after}), verbatim), event
  *                    'doc' for members (lib/room/members.js publicView), presence/NAME and tasks when they
- *                    change (all three at the start), 'end' {reason: 'closed'} when the room's orch is stopped
+ *                    change (all three at the start), 'end' {reason: 'closed'} when the room's Claude is stopped
  *                    or {reason: 'FORK'} when the host log is reset, or {reason: 'AUTH', message} when the
  *                    host revoked the link (revoked(), on the serve's SIGTERM). Polls every FOLLOW_POLL_MS until the
  *                    transport closes
  *         blob.get   store.blobs.get(ref), base64;  blob.put  {name, bytes}: name must be plans/<hash12>.md of
  *                    the bytes (content-addressed, at most PROPOSAL_FILE_MAX), written once
  *         handoff.accept  {id, accept, locator, invites}: lib/handoff.js serverAccept (the ask's target seat of this
- *                    link, its signed acceptance; host_changed appended); after the reply, afterMoved (the orch job
+ *                    link, its signed acceptance; host_changed appended); after the reply, afterMoved (the room's Claude job
  *                    stopped, this machine a mirror of the new host)
  *         handoff.refuse  {id}: lib/handoff.js serverRefuse
  *       Host epochs (lib/handoff.js): hello {epoch} from a mirror at a later epoch than this log's is STALE (this
@@ -114,7 +114,7 @@ function docsOf(store) {
   for (const k of store.kv.list('presence/')) docs.set(k, store.kv.get(k));
   return docs;
 }
-const stopped = ms => !!(ms.orch && ms.orch.stopped_at);
+const stopped = ms => !!(ms.claude && ms.claude.stopped_at);
 
 /** Stream subscribe request `id`'s events from the line after `after`. Returns {tick() (poll now), stop()}. */
 function stream(s, id, after) {

@@ -7,16 +7,16 @@
  * Spawning (text for the model; join.js, session-restore.js and the role text append it, never hand-copy):
  *   rowCalls(me, members, {only}?) -> string
  *       me = {code, name, role}; members = readMembers(code) (object by name) or an array of {name, role, left_at?}.
- *       orch:   one background sub-human:participant per active member, labelled by the member's name,
+ *       claude:   one background sub-human:participant per active member, labelled by the member's name,
  *               prompt "member: NAME".
  *       member: one background sub-human:room, labelled by the room code, prompt "room: CODE\nmembers: a, b"
- *               (the other active members except the orch and me). The room agent spawns those children.
+ *               (the other active members except the room's Claude and me). The room agent spawns those children.
  *       only = rowsNeeded(...) limits the calls to the rows that are missing; only = [] says the rows are intact
  *       and lists no calls (a second spawn would duplicate a row).
  *   joinNote(me, name, {held}?) -> "row: …" suffix for a member_joined notice (scripts/sub-human tail): running (no
  *       call) or the call to make. For a member it is about the ROOM row (which adds NAME by itself), so a join
  *       never invites a room-row call while that row is live; row-guard.js stays the backstop.
- *   rowsNeeded(code, me, {members, held}) -> names (orch) or [code] (member): rows with no live hold in `held`
+ *   rowsNeeded(code, me, {members, held}) -> names (claude) or [code] (member): rows with no live hold in `held`
  *       (= readHolds(code, me.name), null = nothing held). No grace period: used by join / restore.
  * Lifecycle: a row lives as long as its viewer is in the room. A participant row does NOT end when its member
  *   leaves; it reads "left" and comes back to life on rejoin (mcp/hold.js keeps holding). One live hold per
@@ -94,7 +94,7 @@ function memberList(members) {
   return list.filter(m => m && typeof m.name === 'string' && NAME_RE.test(m.name));
 }
 const isActive = m => !!m && !m.left_at;
-const isOrch = m => m.role === 'orch' || m.name === 'orch';
+const isRoomClaude = m => m.role === 'claude' || m.name === 'claude';
 function readMembers(code) { try { return identity.readMembers(code) || {}; } catch { return {}; } }
 
 const normKind = e => room.normalize(e).kind;
@@ -109,8 +109,8 @@ function rowCalls(me, members, { only = null } = {}) {
   if (!me || !me.code) return '';
   const others = memberList(members).filter(m => isActive(m) && m.name !== me.name);
   const want = Array.isArray(only) ? new Set(only) : null;
-  if (me.role === 'orch') {
-    const all = others.filter(m => !isOrch(m)).map(m => m.name);
+  if (me.role === 'claude') {
+    const all = others.filter(m => !isRoomClaude(m)).map(m => m.name);
     const names = want ? all.filter(n => want.has(n)) : all;
     const lines = ['PARTICIPANT ROWS (do this now; it costs nothing while they wait):'];
     if (names.length) {
@@ -125,7 +125,7 @@ function rowCalls(me, members, { only = null } = {}) {
     lines.push('A row stays when its member leaves (it reads "left") and comes back to life when they rejoin; it ends when you leave. Never spawn a row for yourself, and never call the hold tool yourself.');
     return lines.join('\n');
   }
-  const names = others.filter(m => !isOrch(m)).map(m => m.name);
+  const names = others.filter(m => !isRoomClaude(m)).map(m => m.name);
   if (want && !want.has(me.code)) {
     return [
       'ROOM ROW: already running (its hold is live). Make no Agent call for it now; a second copy would duplicate the room row in the panel.',
@@ -146,25 +146,25 @@ function rowCalls(me, members, { only = null } = {}) {
  * Claude Code renders as a red error, so the notice prevents the attempt. '' for my own join.
  */
 function joinNote(me, name, { held } = {}) {
-  if (!me || !me.code || !name || name === me.name || name === 'orch') return '';
+  if (!me || !me.code || !name || name === me.name || name === 'claude') return '';
   const h = held === undefined ? readHolds(me.code, me.name) : held;
-  if (me.role === 'orch') {
+  if (me.role === 'claude') {
     return h && h.members.includes(name)
       ? `row: ${name}'s row is already running (it shows the rejoin by itself); make NO Agent call`
       : `row: ${name} has no row running; spawn it now: Agent sub-human:participant, description "${name}", prompt "member: ${name}", run_in_background`;
   }
   if (h && h.room) return `row: your room row adds ${name} by itself; make NO Agent call`;
-  const names = memberList(readMembers(me.code)).filter(m => isActive(m) && !isOrch(m) && m.name !== me.name).map(m => m.name);
+  const names = memberList(readMembers(me.code)).filter(m => isActive(m) && !isRoomClaude(m) && m.name !== me.name).map(m => m.name);
   if (!names.includes(name)) names.push(name);
   return `row: your room row is not running; spawn it now: ${roomCall(me.code, names)}`;
 }
 
-/** Rows this seat should have but `held` (readHolds) shows no live hold for. Orch: names; member: [code]. */
+/** Rows this seat should have but `held` (readHolds) shows no live hold for. Room Claude: names; member: [code]. */
 function rowsNeeded(code, me, { members, held = null } = {}) {
   const ms = memberList(members || readMembers(code));
   const h = held || { members: [], room: false };
-  if (me.role === 'orch') {
-    return ms.filter(m => isActive(m) && !isOrch(m) && m.name !== me.name && !h.members.includes(m.name)).map(m => m.name);
+  if (me.role === 'claude') {
+    return ms.filter(m => isActive(m) && !isRoomClaude(m) && m.name !== me.name && !h.members.includes(m.name)).map(m => m.name);
   }
   return h.room ? [] : [code];
 }
@@ -264,13 +264,13 @@ function readHolds(code, name, now = Date.now()) {
   return { ...h, members, room: !!h.room || (!!h.roomUntil && now < Date.parse(h.roomUntil)) };
 }
 
-/** Rows this seat should have but holds nothing for. Orch: members. Member: the room row ([code]). */
+/** Rows this seat should have but holds nothing for. Room Claude: members. Member: the room row ([code]). */
 function missingRows(code, me, { now = Date.now(), members } = {}) {
   const ms = memberList(members || readMembers(code));
   const h = readHolds(code, me.name, now) || { members: [], room: false };
   const old = m => !m.joined_at || now - Date.parse(m.joined_at) > MISSING_GRACE_MS;
-  if (me.role === 'orch') {
-    return ms.filter(m => isActive(m) && !isOrch(m) && m.name !== me.name && old(m) && !h.members.includes(m.name)).map(m => m.name);
+  if (me.role === 'claude') {
+    return ms.filter(m => isActive(m) && !isRoomClaude(m) && m.name !== me.name && old(m) && !h.members.includes(m.name)).map(m => m.name);
   }
   const self = ms.find(m => m.name === me.name);
   return self && old(self) && !h.room ? [code] : [];
@@ -326,7 +326,7 @@ const awaiting = (ps, name) => ps.filter(p => !p.decided && p.approvers.includes
 /** The proposal a row reports for `name`: the newest that names them, else the newest. */
 const latestFor = (ps, name) => ps.filter(p => p.approvers.includes(name)).at(-1) || ps.at(-1) || null;
 
-// ---------- tasks (lib/tasks.js: the mirror of the orch's native list) ----------
+// ---------- tasks (lib/tasks.js: the mirror of the room Claude's native list) ----------
 const taskSummary = (code, viewer) => oneLine(tasks.summary(code, viewer) || '');
 /** NAME's open task on the room list: in progress first, else the first pending. */
 function openTask(list, name) {
@@ -412,7 +412,7 @@ function roomText(code, viewer, es, ms, now, c, summary, link) {
     else parts.push(`proposal ${p.name} ${n}`);
     if (!p.decided && p.objectors.some(x => x !== viewer)) parts.push(c.warn(`✖ ${plural(p.objectors.filter(x => x !== viewer).length, 'objection')}`));
   } else {
-    parts.push(c.dim(`${ms.filter(m => isActive(m) && !isOrch(m)).length} here`));
+    parts.push(c.dim(`${ms.filter(m => isActive(m) && !isRoomClaude(m)).length} here`));
   }
   if (viewer) {
     let lastOwn = 0;

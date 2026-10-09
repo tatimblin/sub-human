@@ -4,8 +4,8 @@
  * Callers import the value they use; an env override is read by the caller through envMs() at the moment it
  * needs the value (tests set the env per child process, some per call).
  *
- * timingEnv(src) -> {name: value}   the SUB_HUMAN_*_MS overrides in src with a numeric value (lib/orch.js passes
- *   them to the orch, whose env the bg daemon would otherwise filter out)
+ * timingEnv(src) -> {name: value}   the SUB_HUMAN_*_MS overrides in src with a numeric value (lib/room-claude.js passes
+ *   them to the room's Claude, whose env the bg daemon would otherwise filter out)
  * envMs(name, fallback, {allowZero}?) -> number
  *   process.env[name] as a number of milliseconds, else fallback. Unset, empty, non-numeric, negative or
  *   infinite values give the fallback. 0 also gives the fallback, unless allowZero is set: only the waits
@@ -23,7 +23,7 @@ function envMs(name, fallback, { allowZero = false } = {}) {
   return n;
 }
 
-/** Every override envMs reads is named SUB_HUMAN_<WHAT>_MS (test/orch.test.js checks the callers). */
+/** Every override envMs reads is named SUB_HUMAN_<WHAT>_MS (test/room-claude.test.js checks the callers). */
 const TIMING_ENV_RE = /^SUB_HUMAN_[A-Z0-9_]+_MS$/;
 
 function timingEnv(src = process.env) {
@@ -46,9 +46,9 @@ module.exports = {
   // SETTLE_MAX_MS after the batch's first entry.
   SETTLE_MS: 1500,                 // SUB_HUMAN_SETTLE_MS
   SETTLE_MAX_MS: 5000,             // SUB_HUMAN_SETTLE_MAX_MS
-  // The headless orch waits longer (nobody watches its latency), so a burst lands as one turn.
-  ORCH_SETTLE_MS: 3000,            // SUB_HUMAN_ORCH_SETTLE_MS
-  ORCH_SETTLE_MAX_MS: 10_000,      // SUB_HUMAN_ORCH_SETTLE_MAX_MS
+  // The headless room Claude waits longer (nobody watches its latency), so a burst lands as one turn.
+  ROOM_CLAUDE_SETTLE_MS: 3000,            // SUB_HUMAN_ROOM_CLAUDE_SETTLE_MS
+  ROOM_CLAUDE_SETTLE_MAX_MS: 10_000,      // SUB_HUMAN_ROOM_CLAUDE_SETTLE_MAX_MS
   // A member_left waits this long for a rejoin; a leave + rejoin inside it is no notice at all.
   LEAVE_SETTLE_MS: 8000,           // SUB_HUMAN_LEAVE_MS (tail, notices, rows, hold)
   UNSEATED_MS: 10_000,             // SUB_HUMAN_UNSEATED_MS: no seat yet, look it up this rarely
@@ -60,7 +60,7 @@ module.exports = {
   // ---------- the tail loop's health (lib/tail.js) ----------
   // The tail never exits on an error (each restart by the mod costs a backoff): it logs (rate-limited), backs
   // off and carries on. Every TAIL_HEALTH_MS it checks the log's hash chain from the log.idx checkpoint and,
-  // while it is the orch, runs orch.watchdog(code).
+  // while it is the room's Claude, runs roomClaude.watchdog(code).
   TAIL_HEALTH_MS: 5000,            // SUB_HUMAN_TAIL_HEALTH_MS
   TAIL_BACKOFF_MS: 1000,           // SUB_HUMAN_TAIL_BACKOFF_MS: first retry delay after an error, doubled per failure
   TAIL_BACKOFF_MAX_MS: 30_000,     // SUB_HUMAN_TAIL_BACKOFF_MAX_MS
@@ -81,20 +81,20 @@ module.exports = {
   LOCK_START_SLACK_S: 2,           // pid start-time tolerance when checking a lock owner for pid reuse
   LOCK_REUSE_CHECK_MS: 1000,       // a live owner's lock younger than this is never checked for pid reuse
 
-  // ---------- the orch (lib/orch.js) ----------
+  // ---------- the room's Claude (lib/room-claude.js) ----------
   SPAWN_TIMEOUT_MS: 30_000,        // `claude --bg` and `claude stop`
   REAP_GRACE_MS: 10_000,           // SUB_HUMAN_REAP_GRACE_MS (allowZero): a quick rejoin cancels the reap
   REAP_WAIT_MS: 20_000,            // SUB_HUMAN_REAP_WAIT_MS (allowZero): wait for task 1 before `claude stop`
   REAP_POLL_MS: 500,
-  ORCH_BIND_MS: 120_000,           // a spawned orch that never bound in this long is spawned again
+  ROOM_CLAUDE_BIND_MS: 120_000,           // a spawned room Claude that never bound in this long is spawned again
 
-  // ---------- orch lifecycle: spawn claim, watchdog, seat liveness (lib/orch.js, lib/identity.js) ----------
+  // ---------- room Claude lifecycle: spawn claim, watchdog, seat liveness (lib/room-claude.js, lib/identity.js) ----------
   // A {job:'pending'} spawn claim older than this is stale (its detached starter died or hung): the next
   // join claims again. Longer than a stop + a spawn (2 x SPAWN_TIMEOUT_MS) plus the job lookup.
-  ORCH_CLAIM_MS: 90_000,           // SUB_HUMAN_ORCH_CLAIM_MS
-  // orch.watchdog reaps a room that has had no live member for this long (members that crashed leave no
+  ROOM_CLAUDE_CLAIM_MS: 90_000,           // SUB_HUMAN_ROOM_CLAUDE_CLAIM_MS
+  // roomClaude.watchdog reaps a room that has had no live member for this long (members that crashed leave no
   // SessionEnd, so no reaper was started for them).
-  ORCH_ORPHAN_MS: 60_000,          // SUB_HUMAN_ORCH_ORPHAN_MS
+  ROOM_CLAUDE_ORPHAN_MS: 60_000,          // SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS
   // A seat's stored pid start time must match the live pid's within this (ps lstart has 1 s resolution).
   PID_START_SLACK_S: 2,
   // The seat lease (identity.heartbeat / seatAlive): the tail's health tick and the hold server renew members'
@@ -144,7 +144,7 @@ module.exports = {
   // needs the link down at least PROMOTE_OFFLINE_MS (else --force).
   HANDOFF_ASK_MS: 10 * 60_000,     // SUB_HUMAN_HANDOFF_ASK_MS
   HANDOFF_INVITE_MS: 24 * 60 * 60_000,
-  HANDOFF_CALL_MS: 6000,           // the target's accept op (the old host appends, releases its orch): in a 10 s hook
+  HANDOFF_CALL_MS: 6000,           // the target's accept op (the old host appends, releases its room Claude): in a 10 s hook
   PROMOTE_OFFLINE_MS: 10 * 60_000, // SUB_HUMAN_PROMOTE_OFFLINE_MS
   // An sh2 invite (lib/remote/auth.js): the host checks its PIN online only, INVITE_PIN_TRIES times, and the invite
   // burns at the last wrong one or INVITE_TTL_MS after it was minted (whichever is first), or on success.

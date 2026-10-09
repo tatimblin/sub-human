@@ -5,7 +5,7 @@
 export type SubHumanSeat = {
   name: string;
   code: string;
-  role: 'member' | 'orch';
+  role: 'member' | 'claude';
   /** NAME.CODE: the session title other Claudes reach it by. */
   addr: string;
 };

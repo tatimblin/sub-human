@@ -64,7 +64,8 @@ const inProposal = (p, name) => !!p && (approversOf(p).includes(name) || p.from 
  *     to=me or @me; a proposal naming me that I have not answered (and is not decided); a decision on a
  *     proposal I am in; a `task` assigning me (owner me) that someone else asked for (its req is not mine).
  *     Everything else is pull.
- *   orch push: to=orch or @orch; task_req; an objection on its own proposal (below). Everything else is pull,
+ *   the room's Claude (role claude) push: to=claude only (a person's leading @claude tag; an "@claude" inside the text
+ *     is just words); task_req; an objection on its own proposal (below). Everything else is pull,
  *     decisions included: an objected one follows the objection that already woke it, and an agreed one needs
  *     nothing from it (the members are told; it helps further only when asked). member_joined reaches it
  *     through scripts/sub-human tail's row note.
@@ -76,10 +77,10 @@ const inProposal = (p, name) => !!p && (approversOf(p).includes(name) || p.from 
  */
 function lane(me, e, entries) {
   const name = me && me.name;
-  const orch = !!me && me.role === 'orch';
+  const roomClaude = !!me && me.role === 'claude';
   const n = normalize(e);
   if (n.from === name && !(n.via === 'system' && (n.kind === 'decision' || n.kind === 'task'))) return 'none';
-  if (n.to === name || mentions(n.text, name)) return 'push';
+  if (n.to === name || (!roomClaude && mentions(n.text, name))) return 'push';
   if ((n.kind === 'signoff' || n.kind === 'objection') && n.proposal_hash) {
     if (n.kind === 'signoff') return 'pull';
     if (!entries) return 'push';
@@ -87,7 +88,7 @@ function lane(me, e, entries) {
     return p && p.from === name ? 'push' : 'pull';
   }
   if (n.kind === 'decision' && entries && quietDecision(name, n, entries)) return 'pull';
-  if (orch) return n.kind === 'task_req' ? 'push' : 'pull';
+  if (roomClaude) return n.kind === 'task_req' ? 'push' : 'pull';
   if (n.kind === 'proposal' && approversOf(n).includes(name)) {
     if (!entries || !n.hash) return 'push';
     return answered(name, n.hash, entries) || decided(n.hash, entries) ? 'pull' : 'push';

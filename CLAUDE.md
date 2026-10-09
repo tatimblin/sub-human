@@ -1,12 +1,12 @@
 # sub-human
 
-A Claude Code plugin for working together from separate sessions, on one machine or, over a link, from others. People join a room with `/sub-human NAME`. `@room` posts their exact words. Claudes talk natively (`SendMessage`, addressed `NAME.CODE`). A headless orch (a `claude --bg` job) keeps the shared task list and helps plan only when asked. User-facing docs: `plugin/sub-human/README.md`.
+A Claude Code plugin for working together from separate sessions, on one machine or, over a link, from others. People join a room with `/sub-human NAME`. `@room` posts their exact words; `@claude` posts them and wakes the room's Claude. Claudes talk natively (`SendMessage`, addressed `NAME.CODE`; the room's Claude is `claude.CODE`). The room's Claude (member `claude`, a headless `claude --bg` job) keeps the shared task list and helps plan only when asked. User-facing docs: `plugin/sub-human/README.md`.
 
 How it works (processes, store layout, lanes, consent, tasks, the cc contract): `docs/ARCHITECTURE.md`. Its tables are generated: run `npm run docs` after changing hooks.json, MCP tools, `lib/cc.js` CONTRACT or a lib header.
 
 ## Layout
 
-- `plugin/sub-human/`: the plugin. `hooks/` (hooks.json + one script per hook; `prompt.js` runs every UserPromptSubmit handler in one process, through the module), `lib/` (`room/` log store, validation, lanes, rendering and `consent.js` (the one proposal fold) behind `room.js`, plus the mirror of a room hosted elsewhere (`store-mirror.js`) and the link registry (`links.js`); `remote/` the wire: protocol, server, client, auth, the bridge, the link daemon (`link.js`) and transports; `seats.js` entering and leaving; `tail.js` the room tail the hooks module runs; `home.js` store location; identity, `lock.js`, `io.js`, `config.js` timings, orch spawn/reap/watchdog, rows, tasks, proposals, `cc.js` internals), `mcp/` (room server, hold, task tool), `agents/` (orchestrator, room row, participant), `mod/` (the hooks module, entry `mod/register.mjs`: guard, prompt gate, shims, delivery; `mod/core` pure, `mod/test` wiring tests), `scripts/sub-human` (CLI and the tail), `skills/`, `statusline/`, `test/` (`test/support/memory-store.js` + `store-contract.test.js` keep the RoomStore seam honest; `test/support/two-homes.js` runs two homes on one machine for the remote tests).
+- `plugin/sub-human/`: the plugin. `hooks/` (hooks.json + one script per hook; `prompt.js` runs every UserPromptSubmit handler in one process, through the module), `lib/` (`room/` log store, validation, lanes, rendering and `consent.js` (the one proposal fold) behind `room.js`, plus the mirror of a room hosted elsewhere (`store-mirror.js`) and the link registry (`links.js`); `remote/` the wire: protocol, server, client, auth, the bridge, the link daemon (`link.js`) and transports; `seats.js` entering and leaving; `tail.js` the room tail the hooks module runs; `home.js` store location; identity, `lock.js`, `io.js`, `config.js` timings, `room-claude.js` (the room's Claude: spawn/reap/watchdog), rows, tasks, proposals, `cc.js` internals), `mcp/` (room server, hold, task tool), `agents/` (room-claude, room row, participant), `mod/` (the hooks module, entry `mod/register.mjs`: guard, prompt gate, shims, delivery; `mod/core` pure, `mod/test` wiring tests), `scripts/sub-human` (CLI and the tail), `skills/`, `statusline/`, `test/` (`test/support/memory-store.js` + `store-contract.test.js` keep the RoomStore seam honest; `test/support/two-homes.js` runs two homes on one machine for the remote tests).
 - `scripts/`: demo and evidence tools. `demo.sh` drives the walkthrough in tmux, `demo-lib.js` holds its tmux and log helpers, `snap.js` captures panes, `checks.js` + `checks/*.js` hold the per-scene checks, `metrics.js` the run metrics, and `walkthrough.js` builds the HTML. `baselines.json` holds earlier runs, thresholds and prices. `lib/` has shared helpers: `paths.js` is the only place scripts import plugin paths (`pluginTest` for the scripts tests' use of plugin test support). `probe-cc.js` checks the internals list. The tests are in `scripts/test/`.
 - `demo/app.pristine/`: the small app each demo seat gets a copy of.
 - `docs/rebuild/`: the latest walkthrough (`walkthrough.html`, `checks.json`). `screens/` is generated and gitignored.
@@ -25,7 +25,7 @@ How it works (processes, store layout, lanes, consent, tasks, the cc contract): 
 
 ## Demo
 
-`scripts/demo.sh` runs scenes S1–S11 live, with real Claude sessions and real cost. It uses detached tmux sessions `sh-alice`, `sh-bob` and `sh-orch` (`claude logs` of the orch job), and `sh-carol` in S11. The home is `SUB_HUMAN_HOME=/tmp/sh-demo/home`, and the seats run in `/tmp/sh-demo/SEAT`. S11's carol joins from a second home, `/tmp/sh-demo/home2`, over the pipe link; it runs before S10, which closes the room.
+`scripts/demo.sh` runs scenes S1–S11 live, with real Claude sessions and real cost. It uses detached tmux sessions `sh-alice`, `sh-bob` and `sh-claude` (`claude logs` of the room's Claude job), and `sh-carol` in S11. The home is `SUB_HUMAN_HOME=/tmp/sh-demo/home`, and the seats run in `/tmp/sh-demo/SEAT`. S11's carol joins from a second home, `/tmp/sh-demo/home2`, over the pipe link; it runs before S10, which closes the room.
 
 ```
 scripts/demo.sh [--windows] [--pause] [--only S6[,S7]] [--from S6] [--to S3] [--member-model MODEL] [--no-reset]
@@ -41,10 +41,10 @@ node scripts/checks.js && node scripts/walkthrough.js
 
 ## Design rules
 
-- **Never pin a model.** Not in agents, the orch spawn, the demo or tests. The user's default applies, and `--member-model` is opt-in.
+- **Never pin a model.** Not in agents, the room's Claude spawn, the demo or tests. The user's default applies, and `--member-model` is opt-in.
 - **No writes to user settings files** (`settings.json`, `settings.local.json`) and no symlinks into `~/.claude`. The plugin uses its own home and the native task list.
-- **The orch takes no typed input.** A typed prompt is refused with a hint. People reach it with `@room @orch …` or through their Claude.
-- **Keep the agent-panel rows.** A member's panel shows the room row with the members inside it. The orch's panel lists every human.
+- **The room's Claude takes no typed input.** A typed prompt is refused with a hint. People reach it with `@claude …` or through their Claude.
+- **Keep the agent-panel rows.** A member's panel shows the room row with the members inside it. The room's Claude's panel lists every human.
 - **Consent is native.** A proposal opens in the plan view, with the question card as fallback. Only the human's answer there (`via=human`) records agreement.
 - **Unprescriptive.** Planning is optional, there is no required workflow, and the injected text covers mechanics only and stays small.
 - **Internals are allowed if listed.** Each undocumented Claude Code behaviour goes in `lib/cc.js` with the binary search string that proves it, and `npm run probe` verifies them. Notes go in `docs/internals/`.

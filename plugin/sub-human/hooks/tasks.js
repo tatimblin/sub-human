@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * plugin/sub-human/hooks/tasks.js: the room task list's mirror and gate. Orch only: in any other session it
+ * plugin/sub-human/hooks/tasks.js: the room task list's mirror and gate. Room Claude only: in any other session it
  * exits 0 at once, so members' private task lists are never touched.
  *
  * PostToolUse TaskCreate|TaskUpdate (mirror): appends a `task` entry via system
  *   {op: add|claim|release|done|update|delete, id, subject, owner, status, blockedBy, req} (the task's whole
  *   state after the call), then rewrites tasks.json as lib/tasks.js fold() of every `task` entry, so the file is
  *   derivable from the log alone. A refused call is skipped. What the tool input and response leave unknown is
- *   read from the orch's native task file (cc.taskFile; never written). The room-open task and _internal tasks
+ *   read from the room Claude's native task file (cc.taskFile; never written). The room-open task and _internal tasks
  *   are left out.
- * TaskCompleted (gate): exit 2 with the reason (shown to the orch) unless lib/tasks.js gate() passes. The
+ * TaskCompleted (gate): exit 2 with the reason (shown to the room's Claude) unless lib/tasks.js gate() passes. The
  *   input has no metadata, so owner and metadata come from the task file (which still has the old status).
- *   A refusal drops every field of that TaskUpdate, so the reason tells the orch to send status alone.
- * Every orch run then reconciles: a native task the log has no `task` entry for gets an `add` snapshot, so a
+ *   A refusal drops every field of that TaskUpdate, so the reason tells the room's Claude to send status alone.
+ * Every room Claude run then reconciles: a native task the log has no `task` entry for gets an `add` snapshot, so a
  *   lost mirror run is repaired by the next one.
  *
- * The orch: the session resolves (common.js resolveSeat) to the room's orch seat, or (before binding)
- * SUB_HUMAN_ROOM is set and agent_type is sub-human:orchestrator.
+ * The room's Claude: the session resolves (common.js resolveSeat) to the room's Claude seat, or (before binding)
+ * SUB_HUMAN_ROOM is set and agent_type is sub-human:room-claude.
  */
 
 const fs = require('node:fs');
@@ -30,11 +30,11 @@ const tasks = require(path.join(LIB, 'tasks.js'));
 const cc = require(path.join(LIB, 'cc.js'));
 const { readJson } = require(path.join(LIB, 'io.js'));
 
-function orchRoom(input) {
+function roomClaudeRoom(input) {
   const me = resolveSeat(input);
-  if (me) return me.role === 'orch' ? me.code : null;
+  if (me) return me.role === 'claude' ? me.code : null;
   const code = process.env.SUB_HUMAN_ROOM;
-  if (code && identity.CODE_RE.test(code) && input.agent_type === 'sub-human:orchestrator' && identity.roomExists(code)) return code;
+  if (code && identity.CODE_RE.test(code) && input.agent_type === 'sub-human:room-claude' && identity.roomExists(code)) return code;
   return null;
 }
 
@@ -102,10 +102,10 @@ function mirror(code, input) {
 
 function record(r, t) {
   const text = `#${t.id} "${t.subject}" ${t.op}${t.owner ? ` · ${t.owner}` : ''} · ${t.status}${t.req ? ` (req #${t.req})` : ''}`;
-  r.append({ kind: 'task', text, ...t }, { via: 'system', from: 'orch', system: true });
+  r.append({ kind: 'task', text, ...t }, { via: 'system', from: 'claude', system: true });
 }
 
-/** The orch's native task files, by id (read only). */
+/** The room Claude's native task files, by id (read only). */
 function nativeTasks(code) {
   let names = [];
   try { names = fs.readdirSync(cc.tasksDir(listId(code))); } catch { return []; }
@@ -162,7 +162,7 @@ let input = {};
 let code = null;
 try {
   input = readInput();
-  code = orchRoom(input);
+  code = roomClaudeRoom(input);
 } catch { code = null; }
 if (code) {
   try {

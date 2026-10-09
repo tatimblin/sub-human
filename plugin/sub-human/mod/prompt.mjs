@@ -11,7 +11,7 @@
  * additionalContext), and no node runs for it.
  */
 import {
-  gateVerdict, GATE_FAILED, isAtRoom, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
+  gateVerdict, GATE_FAILED, isAtRoom, isAtClaude, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
   writesWorking, onRemote,
 } from './core/prompt.mjs';
 import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.mjs';
@@ -65,7 +65,7 @@ const contexted = new Set();
 /** node hooks/prompt.js with the classic payload (plus the origin), translated; its notices and report applied: a
  * notice is a $.ui.log line, or for a prompt typed through Remote Control a relay (mod/deliver.mjs; the phone shows no
  * notice). An @room it did not handle (exit other than 0 or 2) is refused, and a person on Remote Control told. */
-async function runPrompt($, e, origin) {
+async function runPrompt($, e, origin, hello) {
   const root = $.plugin.root;
   const { value: kept } = await $.state.get(NONCE);
   const nonce = asNonce(kept, e.session_id);
@@ -75,9 +75,10 @@ async function runPrompt($, e, origin) {
     env: shimEnv(e, root),
     timeoutMs: SHIM_TIMEOUT_MS,
   });
-  if (shimFailed(run) && isAtRoom(e.prompt)) {
-    if (origin === 'bridge') relay(GATE_FAILED);
-    return failClosed(e.prompt);
+  const failed = shimFailed(run) ? failClosed(e.prompt, hello) : null;
+  if (failed) {
+    if (origin === 'bridge') relay(failed.block);
+    return failed;
   }
   const { result, systemMessage, subHuman } = toClassic('UserPromptSubmit', run);
   if (systemMessage) { if (origin === 'bridge') relay(systemMessage); else $.ui.log(systemMessage); }
@@ -95,7 +96,7 @@ export function registerPrompt(on) {
       contexted.add(e.text);
       try { return await next({ ...e, context: [...(e.context ?? []), RELAY_CONTEXT] }); } finally { contexted.delete(e.text); }
     }
-    const why = gateVerdict(e);
+    const why = gateVerdict(e, isAtClaude(e.text) ? await helloOf($) : null);
     if (why) return { drop: why };
     let down = e;
     if (e.origin && TYPED_ORIGINS.includes(e.origin.kind)) {
@@ -141,7 +142,7 @@ export function registerPrompt(on) {
       return mergeClassic({ ...ctx, ...top }, await next(e));
     }
     if (!needsNode(e, hello, { delivering: delivering(e.session_id), reviewFlag })) return mergeClassic(top, await next(e));
-    const ours = await runPrompt($, e, origins.take(e.prompt));
+    const ours = await runPrompt($, e, origins.take(e.prompt), hello);
     return mergeClassic({ ...ours, ...top }, await next(e));
   }).catch(($, e, next) => failClosed(e.prompt) ?? next(e)); // a plain prompt goes on, as when a command hook fails
 }

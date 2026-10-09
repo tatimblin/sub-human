@@ -128,7 +128,7 @@ test('SKILL.md: user-invoked only, and hold is not pre-allowed', () => {
 test('manifests: plugin.json carries the version; the marketplace entry does not repeat it', () => {
   const p = readJson('.claude-plugin/plugin.json');
   assert.equal(p.$schema, 'https://anthropic.com/claude-code/plugin.schema.json');
-  assert.match(p.version, /^\d+\.\d+\.\d+$/);
+  assert.match(p.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?$/, 'X.Y.Z, or a pre-release such as 0.5.0-beta.1');
   assert.ok(Array.isArray(p.keywords) && p.keywords.length);
   assert.notEqual(p.license, 'UNLICENSED', 'not an SPDX id');
   const mk = JSON.parse(fs.readFileSync(path.join(PLUGIN, '..', '..', '.claude-plugin', 'marketplace.json'), 'utf8'));

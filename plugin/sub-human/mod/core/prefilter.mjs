@@ -15,12 +15,12 @@ export function consentNeeded(hello, sid, reviewFlag) {
   return reviewFlag !== false;
 }
 
-/** classic.PostToolUse TaskCreate|TaskUpdate and classic.TaskCompleted: hooks/tasks.js acts only for the orch, so
- * false when the seat is surely a member, or surely none and SUB_HUMAN_ROOM is unset (an orch launched before its
- * join has it: tasks.js orchRoom). */
+/** classic.PostToolUse TaskCreate|TaskUpdate and classic.TaskCompleted: hooks/tasks.js acts only for the room's Claude, so
+ * false when the seat is surely a member, or surely none and SUB_HUMAN_ROOM is unset (a room Claude launched before its
+ * join has it: tasks.js roomClaudeRoom). */
 export function tasksNeeded(hello, sid, roomEnv) {
   if (!sure(hello, sid)) return true;
-  if (hello.seat) return hello.seat.role === 'orch';
+  if (hello.seat) return hello.seat.role === 'claude';
   return typeof roomEnv === 'string' && roomEnv !== '';
 }
 

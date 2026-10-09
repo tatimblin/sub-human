@@ -23,7 +23,7 @@ const calls = ctx => (ctx.match(/Agent\(\{subagent_type: "sub-human:(?:participa
 
 test('restore: /clear with a live room hold lists no row calls; without one it does', () => {
   const code = newRoom();
-  register('orch', 'orch', spawnSleeper().pid, code);
+  register('claude', 'claude', spawnSleeper().pid, code);
   const alice = spawnSleeper().pid;
   register('alice', 'member', alice, code);
 
@@ -43,18 +43,18 @@ test('restore: /clear with a live room hold lists no row calls; without one it d
   assert.match(ctx, /Agent\(\{subagent_type: "sub-human:room"/);
 });
 
-test('restore: lists only the missing rows (orch after compact / clear)', () => {
+test('restore: lists only the missing rows (claude after compact / clear)', () => {
   const code = newRoom();
-  const orch = spawnSleeper().pid;
-  register('orch', 'orch', orch, code);
+  const roomClaude = spawnSleeper().pid;
+  register('claude', 'claude', roomClaude, code);
   register('alice', 'member', spawnSleeper().pid, code);
   register('bob', 'member', spawnSleeper().pid, code);
-  rows.writeHolds(code, 'orch', { members: ['alice'] });
-  let ctx = restore(orch, 'compact', `sess-orch-${orch}`);
+  rows.writeHolds(code, 'claude', { members: ['alice'] });
+  let ctx = restore(roomClaude, 'compact', `sess-claude-${roomClaude}`);
   assert.deepEqual(calls(ctx), ['Agent({subagent_type: "sub-human:participant", description: "bob", prompt: "member: bob", run_in_background: true})'],
     'bob only: alice is still held, re-listing her would duplicate her row');
-  rows.writeHolds(code, 'orch', { members: ['alice', 'bob'] });
-  ctx = restore(orch, 'clear', `sess-orch-${orch}-2`);
+  rows.writeHolds(code, 'claude', { members: ['alice', 'bob'] });
+  ctx = restore(roomClaude, 'clear', `sess-claude-${roomClaude}-2`);
   assert.deepEqual(calls(ctx), []);
   assert.match(ctx, /already running|rows are running/);
   assert.match(ctx, /member_joined/, 'future joins still get rows');

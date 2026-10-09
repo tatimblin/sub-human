@@ -1,5 +1,5 @@
 'use strict';
-// S4: let's plan: bob @room @orch, the orch proposes, each approver reads it in the plan view
+// S4: let's plan: bob @claude, the room's Claude proposes, each approver reads it in the plan view
 const fs = require('node:fs');
 const path = require('node:path');
 const metrics = require('../metrics.js');
@@ -9,17 +9,17 @@ module.exports = {
   scene: 'S4',
   run(x, { det }) {
     const { log, roomDir, props, DEMO } = x;
-    const ask = log.find(e => e.kind === 'say' && e.from === 'bob' && e.via === 'human' && e.text === DEMO.bob4);
-    det('bob\'s "@room @orch let\'s plan …" byte-exact, via=human', !!ask, ask ? `#${ask.id}` : 'not logged verbatim');
+    const ask = log.find(e => e.kind === 'say' && e.from === 'bob' && e.via === 'human' && e.to === 'claude' && e.text === DEMO.bob4);
+    det('bob\'s "@claude let\'s plan …" byte-exact, via=human, to=claude', !!ask, ask ? `#${ask.id}` : 'not logged verbatim');
     const p1 = props[0];
-    det('The orch proposes: proposal from orch naming alice and bob, plan stored by hash', p1 && p1.from === 'orch' && ['alice', 'bob'].every(n => (p1.approvers || []).includes(n)) && fs.existsSync(path.join(roomDir, 'plans', `${p1.hash}.md`)),
+    det('The room\'s Claude proposes: proposal from claude naming alice and bob, plan stored by hash', p1 && p1.from === 'claude' && ['alice', 'bob'].every(n => (p1.approvers || []).includes(n)) && fs.existsSync(path.join(roomDir, 'plans', `${p1.hash}.md`)),
       p1 ? `${x.fmt(p1)} approvers ${p1.approvers.join(',')}; plans/${p1.hash}.md ${fs.existsSync(path.join(roomDir, 'plans', `${p1.hash}.md`)) ? 'present' : 'missing'}` : 'no proposal');
-    const ow = ask && x.entries('orch').find(e => e.timestamp > ask.at && metrics.trigger(e));
-    det('The orch is woken by bob\'s @orch line', !!ow, ow ? `${metrics.trigger(ow)} at ${ow.timestamp.slice(11, 19)}` : 'no orch wake after it');
+    const ow = ask && x.entries('claude').find(e => e.timestamp > ask.at && metrics.trigger(e));
+    det('The room\'s Claude is woken by bob\'s @claude line', !!ow, ow ? `${metrics.trigger(ow)} at ${ow.timestamp.slice(11, 19)}` : 'no claude wake after it');
     // the proposal opens in the native plan dialog (scrollable, hooks/consent.js); the card is the fallback
     let title = '';
     try { title = (fs.readFileSync(path.join(roomDir, 'plans', `${p1.hash}.md`), 'utf8').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').replace(/[*_`]/g, '').trim()).find(Boolean) || '').slice(0, 40); } catch { /* none */ }
-    const firstPage = seat => x.caps('S4', seat).find(r => r.caption.startsWith('The orch proposes'))?.step ?? 'last';
+    const firstPage = seat => x.caps('S4', seat).find(r => r.caption.startsWith('The room\'s Claude proposes'))?.step ?? 'last';
     for (const seat of ['alice', 'bob']) {
       // the plan view's first page (S4 step 1: the title); later S4 steps are alice paging down
       const st4 = firstPage(seat);

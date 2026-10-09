@@ -30,6 +30,12 @@ test('newer: numeric per part, a release beats its pre-release', () => {
   assert.equal(newer('0.2.9', '0.3.0'), false);
   assert.equal(newer('1.0.0', '1.0.0-rc.1'), true);
   assert.equal(newer('1.0.0-rc.2', '1.0.0-rc.1'), true);
+  assert.equal(newer('0.5.0-beta.10', '0.5.0-beta.2'), true, 'numeric pre-release parts compare as numbers');
+  assert.equal(newer('0.5.0-beta.2', '0.5.0-beta.10'), false);
+  assert.equal(newer('0.5.0-beta.1', '0.4.5'), true);
+  assert.equal(newer('0.5.0', '0.5.0-beta.3'), true);
+  assert.equal(newer('0.5.0-beta', '0.5.0-alpha.9'), true);
+  assert.equal(newer('0.5.0-beta.1', '0.5.0-beta'), true, 'more parts is newer');
 });
 
 test('check: plugin changes need a bump since the last bump; tests and files outside the plugin do not', t => {

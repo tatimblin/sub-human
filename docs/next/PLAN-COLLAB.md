@@ -2,7 +2,7 @@
 
 Status: design, 2026-10-08. Not built. Sources:
 - the decisions the user reached in conversation (recorded under Decisions, verbatim in substance);
-- the code on `master` as of `2d425b6` (`lib/proposal.js`, `lib/room/consent.js`, `lib/room/lanes.js`, `lib/room/render.js`, `lib/rows.js`, `lib/tasks.js`, `mcp/room-server.js` `propose`, `mcp/task.js`, `hooks/consent.js`, `agents/orchestrator.md`, `skills/sub-human/{member,facilitate}.md`);
+- the code on `master` as of `2d425b6` (`lib/proposal.js`, `lib/room/consent.js`, `lib/room/lanes.js`, `lib/room/render.js`, `lib/rows.js`, `lib/tasks.js`, `mcp/room-server.js` `propose`, `mcp/task.js`, `hooks/consent.js`, `agents/room-claude.md`, `skills/sub-human/{member,facilitate}.md`);
 - `feature/remote-rooms` `7065803` and `ea26ae6`: the hook picks the proposal from the person's words (`proposal.choose` / `picked`, `members/NAME/pick`) and always shows that proposal's text in the native plan view; Remote Control "Suggest edits" (deny with a note) records an objection with the note, a bare deny records nothing; only a hook-opened review records. `answer` (any machine) and `decide` (host only) replace `record` there. This note targets the code after that branch merges.
 
 Goal: people shape one plan together, from any session, terminal or phone, without anyone writing a second plan for the same thing, and with agreement still meaning exactly one thing: every named person approved that exact text in their own dialog.
@@ -11,17 +11,17 @@ Goal: people shape one plan together, from any session, terminal or phone, witho
 
 Goals:
 - **Revise, don't restart.** A plan has versions. A revision supersedes the version before it, goes to everyone again and shows what changed.
-- **Three ways in, one way out.** An approver's "Suggest edits", an approver's own Claude, or `@orch revise: …` all end as a new version sent to everyone.
+- **Three ways in, one way out.** An approver's "Suggest edits", an approver's own Claude, or `@claude revise: …` all end as a new version sent to everyone.
 - **One plan per topic.** Planning is visible and claimable before anyone writes, through the room's task list. Overlap is caught before it costs two plans, and merged when it was not.
 - **Phone first-class.** Everything a person does on a plan (read it all, see what changed, Approve, Suggest edits) works in the native plan view over Remote Control.
 - **Room lines that read.** Every outcome names the plan: `Ship v3 Monday: agreed (alice, bob)`.
 
 Non-goals:
 - Live co-editing of one text. Versions are whole texts; a Claude drafts each one.
-- Gating who may draft. Any Claude, subagent or the orch may write a version. Safety comes from consent alone.
+- Gating who may draft. Any Claude, subagent or the room's Claude may write a version. Safety comes from consent alone.
 - One open proposal per room. Unrelated plans run in parallel.
-- Detecting overlap by text similarity in code. Overlap is a judgment a Claude or the orch makes, with the data put in front of it at the right moment.
-- Honouring two agreed plans that conflict. Neither the plugin nor the orch picks a winner; the orch flags it and people decide.
+- Detecting overlap by text similarity in code. Overlap is a judgment a Claude or the room's Claude makes, with the data put in front of it at the right moment.
+- Honouring two agreed plans that conflict. Neither the plugin nor the room's Claude picks a winner; the room's Claude flags it and people decide.
 
 ## Decisions
 
@@ -31,10 +31,10 @@ Non-goals:
 | D2 | Who edits doesn't matter. A plan proceeds only when every named person approved that exact text in their own dialog. | Restricting revisions to the proposer. |
 | D3 | A revision is a new version that supersedes the old one. The old one closes as **changes requested**, not objected. | Reusing "objected" for "please change it". |
 | D4 | Every version goes to the earlier approvers **plus the proposer**. Nobody's earlier agreement carries over, the proposer's included. The revision's author approves it in their own dialog too (a Claude drafts; a Claude never consents). | Carrying the proposer's or author's agreement forward. |
-| D5 | Three starts: (a) an approver's "Suggest edits" note reaches the proposer as "changes requested: …", the proposer's Claude drafts, the proposer decides whether to send; (b) an approver's own Claude edits and resends; (c) `@orch revise: …`, the orch drafts. All end as a new version to everyone, showing what changed. | |
+| D5 | Three starts: (a) an approver's "Suggest edits" note reaches the proposer as "changes requested: …", the proposer's Claude drafts, the proposer decides whether to send; (b) an approver's own Claude edits and resends; (c) `@claude revise: …`, the room's Claude drafts. All end as a new version to everyone, showing what changed. | |
 | D6 | Concurrent revisions: the newest supersedes; answers to an older version are recorded but don't count. Revisions are rate-limited per person. The proposer can withdraw, which closes every open version. | Refusing a stale revision. |
-| D7 | Planning starts as a claimed task `plan: <topic>`. Every Claude checks open `plan:` tasks before planning; on overlap it offers its person "bob is already planning this — send your input to them instead?" (an addressed post). The orch sees all tasks and proposals, flags overlaps that remain and merges on `@orch merge`. If two overlapping plans both get agreed, the orch flags it. | One open proposal per room; relying on a Claude to notice overlap at proposal time and then honouring two agreed conflicting plans. |
-| D8 | Subagents: "spawn two subagents to plan A and B" makes two plan tasks; if they turn out to be the same, the spawning session merges before proposing. Across people, the task check and the orch catch it. | |
+| D7 | Planning starts as a claimed task `plan: <topic>`. Every Claude checks open `plan:` tasks before planning; on overlap it offers its person "bob is already planning this — send your input to them instead?" (an addressed post). The room's Claude sees all tasks and proposals, flags overlaps that remain and merges on `@claude merge`. If two overlapping plans both get agreed, the room's Claude flags it. | One open proposal per room; relying on a Claude to notice overlap at proposal time and then honouring two agreed conflicting plans. |
+| D8 | Subagents: "spawn two subagents to plan A and B" makes two plan tasks; if they turn out to be the same, the spawning session merges before proposing. Across people, the task check and the room's Claude catch it. | |
 | D9 | Outcome lines name the proposal. Role texts say "in their session", not "terminal", and use names or they/them. | |
 
 ## The rules
@@ -47,7 +47,7 @@ Non-goals:
 6. **An objection asks for changes.** "Tell Claude what to change", phone "Suggest edits" and the card's Object + note all record today's `objection` (via=human, note byte-exact). It blocks that version and reaches the proposer as "changes requested". A version whose answers are complete with any objection closes `changes_requested`.
 7. **Withdraw closes, never agrees.** Only the thread's proposer (their Claude) withdraws. It closes the open head; an agreed version in force is not undone.
 8. **Plan tasks coordinate; they never decide.** Holding `plan: X` gives no say over X's outcome and blocks nobody from proposing.
-9. **Overlap is offered, not enforced.** A Claude that finds an overlapping plan task asks its person; the person chooses. The orch flags and merges only when asked (`@orch merge`), apart from the single overlap flag of D7.
+9. **Overlap is offered, not enforced.** A Claude that finds an overlapping plan task asks its person; the person chooses. The room's Claude flags and merges only when asked (`@claude merge`), apart from the single overlap flag of D7.
 
 ## Log and entry model
 
@@ -60,9 +60,9 @@ All new fields are optional; a proposal without them is version 1 of its own thr
 | `proposal` | `thread` | hash of version 1 (absent on version 1 itself) | `proposal.create` |
 | `proposal` | `version` | 1, 2, … within the thread, assigned under the proposal lock | `proposal.create` |
 | `proposal` | `supersedes` | the head this version replaced (same thread) | `proposal.create` |
-| `proposal` | `replaces` | heads of *other* threads a merge closes (`@orch merge`) | `proposal.create` |
+| `proposal` | `replaces` | heads of *other* threads a merge closes (`@claude merge`) | `proposal.create` |
 | `proposal` | `base` | the version the author drafted from, when it is not `supersedes` (a concurrent revision) | `proposal.create` |
-| `proposal` | `asked_by` | the person whose request made the orch draft (`@orch revise`, `@orch merge`) | orch's `propose` call, checked against the log |
+| `proposal` | `asked_by` | the person whose request made the room's Claude draft (`@claude revise`, `@claude merge`) | room Claude's `propose` call, checked against the log |
 | `proposal` | `plan_task` | the `plan:` task id this plan came from | `propose` |
 | `withdraw` (new kind) | `proposal_hash`, `text?` | the proposer withdraws the thread whose head this is | `withdraw` tool, via=agent |
 | `decision` | `outcome` | `agreed` \| `changes_requested` (legacy `objected:` text reads as `changes_requested`) | `proposal.decide` |
@@ -87,7 +87,7 @@ Link rules, checked in the fold (not only in `create`), so a hand-built entry ca
 - `replaces: [h…]` counts per hash on the same approver rule, applied to each replaced head.
 - Several versions superseding the same head: the latest in log order is the head; the earlier ones close `changes_requested` with `by` = the head.
 - An answer on a hash that is not the head is kept in `F.answers` and never feeds a matrix that decides anything.
-- `withdraw` counts only from the thread's proposer, or from the orch when the orch is the proposer.
+- `withdraw` counts only from the thread's proposer, or from the room's Claude when the room's Claude is the proposer.
 - `inForce`: the latest agreed version. When a later version is agreed, the earlier agreed one reads `superseded_agreed`.
 
 `test/hooks/consent-table.test.js` gains rows for every line above; the table still feeds every view.
@@ -113,7 +113,7 @@ Config (`lib/config.js`): `REVISE_MAX: 3`, `REVISE_WINDOW_MS: 600_000`, `CHANGES
 ### Plan tasks (`lib/tasks.js`, `mcp/task.js`)
 
 - Subject `plan: <topic>` (`propose` adds and claims one when the proposer holds none, decided 5), owner = the person whose Claude plans, claimed at add (`in_progress`). Detail: who it concerns.
-- `task({op:'add', subject:'plan: …'})` replies with the other open `plan:` tasks, so the check happens in the call that claims: `queued; the orch applies it. Open plans: #4 plan: paging API (bob)`. Same in `sub-human tasks --json` (`plan: true`).
+- `task({op:'add', subject:'plan: …'})` replies with the other open `plan:` tasks, so the check happens in the call that claims: `queued; the room's Claude applies it. Open plans: #4 plan: paging API (bob)`. Same in `sub-human tasks --json` (`plan: true`).
 - `propose({…, plan_task})` links the plan. When the thread closes (agreed, withdrawn), the owner's Claude asks `done` with the decision as evidence; the gate accepts a `plan:` task's done whose evidence names its thread's closing entry.
 - A subagent's `task` call resolves to its session's person (`process.ppid`), so two subagents make two tasks owned by one person.
 
@@ -121,12 +121,12 @@ Config (`lib/config.js`): `REVISE_MAX: 3`, `REVISE_WINDOW_MS: 600_000`, `CHANGES
 
 | Area | Change |
 |---|---|
-| **Lanes** (`lanes.js`) | An objection pushes to the thread's proposer and to the version's author (orch included), not only `p.from`. A version pushes to every approver who has not answered it (today's rule, now heads only). A superseded head's pending review drops at flush time (judged against `readView`). The orch gets push for a `plan:` task_req (it applies it anyway) and for an `agreed` decision when another thread is open or in force (to flag D7 conflicts). |
+| **Lanes** (`lanes.js`) | An objection pushes to the thread's proposer and to the version's author (room Claude included), not only `p.from`. A version pushes to every approver who has not answered it (today's rule, now heads only). A superseded head's pending review drops at flush time (judged against `readView`). The room's Claude gets push for a `plan:` task_req (it applies it anyway) and for an `agreed` decision when another thread is open or in force (to flag D7 conflicts). |
 | **Room lines** (`render.js`) | Every outcome names the plan and version when > 1. See the table below. |
 | **Rows** (`rows.js`) | One line per thread, not per hash: `◐ Ship v3 Monday v3 1/3 · you: answer`; `✎ changes requested by bob` on the proposer's row; `plan: paging API` tasks show on their owner's row as today. |
 | **stateLine** | Threads, heads only: `room now: Ship v3 Monday v3 waiting on carol · you: answer needed (…)`. |
 | **Plan view** (`hooks/consent.js`) | The hook-opened review of a version > 1 shows a hook-composed header, then the plan (below). The pick (`proposal.choose`) maps words naming any version of a thread to its head; a pick of a closed version opens the head and the model is told "v2 was replaced by v3; showing v3". |
-| **Orch** (`agents/orchestrator.md`) | Revise on `@orch revise: …`, merge on `@orch merge`, flag overlaps once (D7). |
+| **Room Claude** (`agents/room-claude.md`) | Revise on `@claude revise: …`, merge on `@claude merge`, flag overlaps once (D7). |
 | **Role texts** | "in their own terminal" → "in their session" (propose tool description, `facilitate.md`); names or they/them; one line each on revising, `plan:` tasks and withdraw. |
 
 Room lines (people see; no ids):
@@ -135,8 +135,8 @@ Room lines (people see; no ids):
 |---|---|
 | version 1 | `alice proposed Ship v3 Monday` |
 | revision | `alice's Claude sent Ship v3 Monday v2 (changes requested by bob)` |
-| `@orch revise` | `orch sent Ship v3 Monday v3 (asked by bob)` |
-| merge | `orch sent Cursor paging v1, merging Paging API (bob) and Cursor paging (alice) (asked by alice)` |
+| `@claude revise` | `room Claude sent Ship v3 Monday v3 (asked by bob)` |
+| merge | `room Claude sent Cursor paging v1, merging Paging API (bob) and Cursor paging (alice) (asked by alice)` |
 | objection (to proposer) | `bob requested changes to Ship v3 Monday: "move it to Tuesday"` |
 | objection (others) | `bob requested changes to Ship v3 Monday` |
 | agreed | `Ship v3 Monday: agreed (alice, bob)` |
@@ -182,21 +182,21 @@ carol's Claude ─► propose({path, revises: v2}) ─► v3 {from carol, supers
   v2 closes changes_requested ─► alice (proposer), bob, carol review v3; nobody's v2 answer counts
 ```
 
-**(c) `@orch revise`**
+**(c) `@claude revise`**
 ```
-bob: @room @orch revise: split the migration into its own step
-orch ─► read head v3 + bob's words ─► propose({path, revises: v3, asked_by: bob}) ─► v4 {from orch, asked_by bob}
-  approvers: v3's ∪ alice (proposer) ∪ bob; never the orch ─► everyone reviews v4
+bob: @claude revise: split the migration into its own step
+room Claude ─► read head v3 + bob's words ─► propose({path, revises: v3, asked_by: bob}) ─► v4 {from room Claude, asked_by bob}
+  approvers: v3's ∪ alice (proposer) ∪ bob; never the room's Claude ─► everyone reviews v4
 ```
 
-**(d) `@orch merge`**
+**(d) `@claude merge`**
 ```
-orch flagged: "Paging API" (bob, #4) and "Cursor paging" (alice, #6) look like one plan
-alice: @room @orch merge
-orch ─► propose({path, merges: [cursor-head, paging-head], asked_by: alice})
+room Claude flagged: "Paging API" (bob, #4) and "Cursor paging" (alice, #6) look like one plan
+alice: @claude merge
+room Claude ─► propose({path, merges: [cursor-head, paging-head], asked_by: alice})
   ─► Cursor paging v2 {supersedes: cursor-head, replaces: [paging-head]}, approvers = both threads' ∪ alice, bob
   both heads close changes_requested (by the merge) ─► everyone named on either reviews it
-  orch: plan task #4 is bob's to release or close; it says so to bob once
+  room Claude: plan task #4 is bob's to release or close; it says so to bob once
 ```
 
 **(e) Two planners collide via the task list**
@@ -206,9 +206,9 @@ alice: "let's plan cursor paging for GET /tasks"
 alice's Claude: task({add, subject: "plan: cursor paging", claim})  ─► reply: "Open plans: #4 plan: paging API (bob)"
   judges overlap ─► asks alice: "bob is already planning paging (#4) — send your input to them instead?"
   yes ─► post({to: bob, text: alice's points, quoted}) (or alice types @room @bob …) ; release her task
-  no  ─► both plan; the orch, applying the add, sees #4 and #6 and flags once to alice and bob
-         ("… look like one plan; @orch merge to combine") ─► merge on ask, or both proceed
-  both agreed anyway ─► orch (push on agreed with another thread in force) flags the conflict to everyone named;
+  no  ─► both plan; the room's Claude, applying the add, sees #4 and #6 and flags once to alice and bob
+         ("… look like one plan; @claude merge to combine") ─► merge on ask, or both proceed
+  both agreed anyway ─► room Claude (push on agreed with another thread in force) flags the conflict to everyone named;
                         nothing closes; people withdraw, amend or merge
 ```
 
@@ -229,17 +229,17 @@ alice: "spawn two subagents to plan the parser and the paging API"
 | Someone answers v2 after v3 arrived (dialog already open, phone offline) | Recorded (their real answer), counts for nothing; their Claude is told and v3 opens on the next review. |
 | Revision of an agreed version | v(n+1) opens; vn stays in force (`inForce`) until v(n+1) is agreed, then reads `superseded_agreed`. |
 | Revision identical to the head | Refused: "no change from v3". |
-| Revising too often | Over `REVISE_MAX` per person per thread per window: refused with the wait. `@orch revise` counts against the asker, not the orch. |
+| Revising too often | Over `REVISE_MAX` per person per thread per window: refused with the wait. `@claude revise` counts against the asker, not the room's Claude. |
 | A non-approver revises | Allowed (D2); they become an approver of that version. |
 | Revision that drops an approver | Refused in `create`; a hand-built one is a standalone v1 in the fold. |
 | An approver left the room | They stay named and the version waits, unless the proposer sends a new version that drops them (decided 3): the change summary names them and the remaining approvers agree to it. |
 | Proposer left | Others can still revise; the proposer stays an approver. Nobody else can withdraw. |
 | Withdraw with an agreed version in force | Closes the open head only; the agreed version stays the decision. |
-| The orch proposed version 1 | The orch is the proposer for routing ("changes requested" wakes it, as today's objection does) but never an approver. Every person named still approves. |
+| The room's Claude proposed version 1 | The room's Claude is the proposer for routing ("changes requested" wakes it, as today's objection does) but never an approver. Every person named still approves. |
 | Merge of a closed or withdrawn thread, or a thread with itself | Refused. |
 | Merge where one side is agreed | That side stays in force until the merge is agreed (rule 5). |
 | Change summary too long, or the plan over the dialog limit | Summary capped with the `sub-human show` pointer; over 200,000 chars the card fallback as today. |
-| A `plan:` task whose owner never proposes | It is just an open task; the owner releases it, or the orch mentions it only when someone asks. |
+| A `plan:` task whose owner never proposes | It is just an open task; the owner releases it, or the room's Claude mentions it only when someone asks. |
 | Legacy logs | Proposals without thread fields are v1 of their own thread; `objected:` decisions read `changes_requested`; old answers stay attached to their hashes. |
 
 ## Security and consent invariants
@@ -251,7 +251,7 @@ What must never count as agreement, each with the test that pins it (`test/hooks
 3. **Drafting.** Calling `propose` with `revises` or `merges` records no answer for anyone, the drafter's person included. The author approves in their own dialog like everyone else.
 4. **A shrunk approver set.** A version that names fewer people than its predecessor ∪ proposer supersedes nothing (fold rule, not only `create`).
 5. **Superseding an agreed plan.** Only a newer *agreed* version replaces one in force; a revision, merge or withdraw alone never ends a decision.
-6. **The orch.** It never approves, its overlap flag is not an answer, and its merge counts for nobody, including the person who asked for it.
+6. **The room's Claude.** It never approves, its overlap flag is not an answer, and its merge counts for nobody, including the person who asked for it.
 7. **Model-written "what changed".** Only the hook's change header (from stored blobs) is shown as the change; a Claude's own "Changes" section is just plan text, which everyone approves as such.
 8. **Edited or hand-copied text.** A dialog whose plan differs from the composed text, or a review the hook did not open, records nothing (as on `feature/remote-rooms`).
 9. **Phone denials without a note, Esc, AFK, "Not yet".** Nothing.
@@ -291,13 +291,13 @@ Files: `mcp/room-server.js` (`propose` gains `revises`, `merges`, `asked_by`, `p
 - "in their own terminal" → "in their session"; names or they/them.
 - **Accept:** `task add "plan: x"` replies with the other open plan tasks; `propose({revises})` by a non-approver adds them as approver; `withdraw` from a non-proposer is refused; the generated MCP table lists `withdraw`; no injected text says "terminal".
 
-### P4 The orch
+### P4 The room's Claude
 
-Files: `agents/orchestrator.md`, `lib/room/lanes.js` (orch push for `plan:` task_req, agreed-with-other-thread), `skills/sub-human/orchestrator.md`, `test/lane.test.js`, `test/orch.test.js`.
+Files: `agents/room-claude.md`, `lib/room/lanes.js` (room Claude push for `plan:` task_req, agreed-with-other-thread), `skills/sub-human/room-claude.md`, `test/lane.test.js`, `test/room-claude.test.js`.
 
-- `@orch revise: …` → read the head and the words, `propose({revises, asked_by})`. `@orch merge` → the named or flagged pair, `propose({merges, asked_by})`.
+- `@claude revise: …` → read the head and the words, `propose({revises, asked_by})`. `@claude merge` → the named or flagged pair, `propose({merges, asked_by})`.
 - When applying a `plan:` add, compare against open plans and threads; on overlap, one message to the two owners, once per pair. On an agreed decision with another thread in force, compare; on conflict, one message to everyone named on both. Otherwise silent.
-- **Accept (live, demo scene S11):** alice and bob each start a plan on the same topic; bob's Claude offers to send input to alice; declined, the orch flags once; `@orch merge` produces one version naming both; both approve on phone-sized panes; the room shows `Cursor paging: agreed (alice, bob)` and no second plan is agreed. Behavioural checks (orch turns, flags sent) go in `baselines.json` as warnings.
+- **Accept (live, demo scene S11):** alice and bob each start a plan on the same topic; bob's Claude offers to send input to alice; declined, the room's Claude flags once; `@claude merge` produces one version naming both; both approve on phone-sized panes; the room shows `Cursor paging: agreed (alice, bob)` and no second plan is agreed. Behavioural checks (room Claude turns, flags sent) go in `baselines.json` as warnings.
 
 ### P5 Docs
 
@@ -310,7 +310,7 @@ The user accepted these answers to the note's open questions.
 1. **No separate hard no.** "Changes requested" with a note, plus the proposer's withdraw, is enough.
 2. **The proposer's Claude may withdraw** (via=agent). Withdraw only closes; it never counts as agreement.
 3. **A departed approver can be dropped, only by a new version.** The proposer sends a revision without the person who left; the change summary names the dropped approver, and every remaining approver must agree to that version. This is the one exception to "a revision never drops anyone": the dropped person must have left the room (seat `left_at` set).
-4. **The orch flags an overlap unasked, once per pair.**
+4. **The room's Claude flags an overlap unasked, once per pair.**
 5. **`propose` creates the `plan:` task itself** when the proposer holds none, so the list is always complete.
 6. **The change summary is against what each person last answered** (the superseded head for someone who never answered).
 7. **Amending an agreed plan:** the header names the in-force version ("amends the agreed v2"); nothing else.

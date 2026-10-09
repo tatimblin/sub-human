@@ -24,7 +24,7 @@ export function parseAddr(addr) {
 function parseSeat(s) {
   if (!s || typeof s !== 'object') return null;
   if (!NAME_RE.test(String(s.name)) || !CODE_RE.test(String(s.code))) return null;
-  return { name: s.name, code: s.code, role: s.role === 'orch' ? 'orch' : 'member', addr: `${s.name}.${s.code}` };
+  return { name: s.name, code: s.code, role: s.role === 'claude' ? 'claude' : 'member', addr: `${s.name}.${s.code}` };
 }
 
 export function parseHello(stdout, sid) {

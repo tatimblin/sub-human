@@ -23,7 +23,7 @@ const rows = require(path.join(LIB, 'rows.js'));
 const text = require(path.join(LIB, 'text.js'));
 const { readInput } = require(path.join(LIB, 'io.js'));
 const config = require(path.join(LIB, 'config.js'));
-const { orchPresence } = require(path.join(LIB, 'room', 'members.js'));
+const { roomClaudePresence } = require(path.join(LIB, 'room', 'members.js'));
 // Every hook process may write via=human (a person's own typed words or card answers): install the seat-key
 // signer (hooks/seat-key.js). The MCP server and the CLI never load this file, so they cannot.
 require('./seat-key.js').arm();
@@ -103,21 +103,21 @@ function presence(me, state, detail) {
 
 // ---------- the mechanics block the join / restore hooks inject (<= BLOCK_MAX chars with 5 members) ----------
 const BLOCK_MAX = config.BLOCK_MAX;
-const TEMPLATE_FILES = { member: 'member.md', orch: 'orchestrator.md' };
+const TEMPLATE_FILES = { member: 'member.md', claude: 'room-claude.md' };
 /** Used only when a role file is missing or has no {CODE} placeholder. */
 const DEFAULT_TEMPLATES = {
   member: 'SUB-HUMAN: you are {NAME}\'s Claude in room {CODE} (with {OTHERS}). {NAME} types here.\n'
     + 'Room lines are a group chat {NAME} already sees: never repeat them. Never show room ids.\n'
     + 'Reach a session now: SendMessage to {ADDR_EXAMPLE}. Only a person\'s own plan view answer counts.',
-  orch: 'SUB-HUMAN: you are the headless helper of room {CODE} (members: {OTHERS}). Nobody types here.\n'
+  claude: 'SUB-HUMAN: you are claude, the room\'s Claude of room {CODE} (members: {OTHERS}). Nobody types here.\n'
     + 'Reach a member now: SendMessage to {ADDR_EXAMPLE}. To facilitate: read {PLUGIN}/skills/sub-human/facilitate.md.',
 };
 
 const pluginRoot = () => process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT;
 
-/** The role's template (skills/sub-human/member.md | orchestrator.md), with placeholders unfilled. */
+/** The role's template (skills/sub-human/member.md | room-claude.md), with placeholders unfilled. */
 function template(role) {
-  const r = role === 'orch' ? 'orch' : 'member';
+  const r = role === 'claude' ? 'claude' : 'member';
   let t = '';
   try { t = fs.readFileSync(path.join(pluginRoot(), 'skills', 'sub-human', TEMPLATE_FILES[r]), 'utf8').trim(); } catch { /* default */ }
   return t.includes('{CODE}') ? t : DEFAULT_TEMPLATES[r];
@@ -126,11 +126,11 @@ function template(role) {
 /** The placeholder values: {NAME} {CODE} {OTHERS} {ADDR_EXAMPLE} {PLUGIN}. */
 function fillVars(me, ms = members(me.code)) {
   const live = ms.filter(m => !hasLeft(m) && m.name !== me.name);
-  const humans = live.filter(m => m.role !== 'orch').map(m => m.name);
-  // the orch only when it runs (or is starting): a stub or a failed start is not someone in the room
-  const o = me.role === 'orch' ? null : orchPresence(ms.find(m => m.role === 'orch'));
-  const others = o ? [...humans, o === 'live' ? 'orch' : 'orch (starting)'] : humans;
-  const ex = humans[0] || (me.role === 'orch' ? 'NAME' : 'orch');
+  const humans = live.filter(m => m.role !== 'claude').map(m => m.name);
+  // the room's Claude only when it runs (or is starting): a stub or a failed start is not someone in the room
+  const o = me.role === 'claude' ? null : roomClaudePresence(ms.find(m => m.role === 'claude'));
+  const others = o ? [...humans, o === 'live' ? 'claude' : 'claude (starting)'] : humans;
+  const ex = humans[0] || (me.role === 'claude' ? 'NAME' : 'claude');
   return {
     NAME: me.name, CODE: me.code, OTHERS: others.length ? others.join(', ') : 'nobody yet',
     ADDR_EXAMPLE: identity.address(ex, me.code), PLUGIN: pluginRoot(),
@@ -161,11 +161,11 @@ function rowCalls(me) {
 
 /**
  * rowCalls() cut to its Agent(...) lines when the full text would overflow the block. Several participant
- * calls (the orch) become one call pattern plus the names, so the block stays inside the budget with 5 members.
+ * calls (the room's Claude) become one call pattern plus the names, so the block stays inside the budget with 5 members.
  */
 function compactRows(text, me) {
   const calls = text.split('\n').map(l => l.trim()).filter(l => /^Agent\(\{.*\}\)$/.test(l));
-  const tail = me.role === 'orch' ? '\nOn member_joined, follow its "row:" note.' : '';
+  const tail = me.role === 'claude' ? '\nOn member_joined, follow its "row:" note.' : '';
   if (!calls.length) return `Your rows are running; make no Agent call for them.${tail}`;
   const who = calls.map(c => /subagent_type: "sub-human:participant", description: "([^"]+)"/.exec(c)).filter(Boolean).map(m => m[1]);
   if (who.length > 1 && who.length === calls.length) {

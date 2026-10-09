@@ -49,7 +49,7 @@ const sid = () => crypto.randomUUID();
 
 /**
  * A temp world. spec maps names to who holds them: 'act' (this process), 'act2' (our parent) or
- * 'sleep'. "orch" is created first and owns the room code. Pass {room:false} for no room.
+ * 'sleep'. "claude" is created first and owns the room code. Pass {room:false} for no room.
  */
 class World {
   constructor(spec = {}, { room: makeRoom = true, t } = {}) {
@@ -70,7 +70,7 @@ class World {
   join(name, who = 'sleep', { announce = false } = {}) {
     const pid = who === 'act' ? process.pid : who === 'act2' ? process.ppid : sleeper();
     const s = sid();
-    const r = this.lib(() => identity.join({ code: this.code, name, role: name === 'orch' ? 'orch' : 'member', pid, session_id: s, cwd: this.cwd }));
+    const r = this.lib(() => identity.join({ code: this.code, name, role: name === 'claude' ? 'claude' : 'member', pid, session_id: s, cwd: this.cwd }));
     if (!r.ok) throw new Error(`join ${name}: ${r.error}`);
     this.pid[name] = pid;
     this.sid[name] = s;
@@ -97,7 +97,7 @@ class World {
    */
   hook(name, input, { as, env = {}, session = true, modLease = true } = {}) {
     const inp = { ...input, cwd: this.cwd };
-    // Never launch a real orch: `claude` is /usr/bin/false unless a test passes a stub (SUB_HUMAN_CLAUDE).
+    // Never launch a real room Claude: `claude` is /usr/bin/false unless a test passes a stub (SUB_HUMAN_CLAUDE).
     const e = baseEnv({ SUB_HUMAN_HOME: this.home, HOME: this.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0', ...env });
     if (as) {
       e.CLAUDE_PID = String(this.pid[as]);

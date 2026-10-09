@@ -8,9 +8,9 @@ const { context } = require('../checks/context.js');
 
 // the API the scene modules read (checks/context.js composes it from captures, transcripts, log and cost)
 const API = [
-  'DEMO', 'screens', 'home', 'home2', 'code', 'roomDir', 'log', 'members', 'orchSid', 'job', 'index', 'props', 'runStart',
+  'DEMO', 'screens', 'home', 'home2', 'code', 'roomDir', 'log', 'members', 'roomClaudeSid', 'job', 'index', 'props', 'runStart',
   'caps', 'cap', 'capName', 'span', 'stateDir', 'st', 'stText', 'nativeTasks', 'stateFile',
-  'seatFiles', 'entries', 'inSpan', 'toolUses', 'assistantIds', 'peerIn', 'wakeIn', 'chatIn', 'pullIn', 'chatTurn', 'orchTurns', 'textOf',
+  'seatFiles', 'entries', 'inSpan', 'toolUses', 'assistantIds', 'peerIn', 'wakeIn', 'chatIn', 'pullIn', 'chatTurn', 'roomClaudeTurns', 'textOf',
   'byKind', 'fmt', 'logIn', 'replyAfter', 'shownVia', 'noModelTurn', 'rowUserText', 'rowReply', 'chainOk', 'cost',
 ];
 
@@ -27,10 +27,10 @@ function fixture() {
   fs.writeFileSync(path.join(screens, 'S1-sh-alice.txt'), 'alice pane\n');
   fs.writeFileSync(path.join(screens, 'state', 'S1', '2', 'members.json'), '{"alice":{"pid":1}}');
   fs.writeFileSync(path.join(screens, 'state', 'S1', '2', 'native-tasks', '1.json'), '{"id":"1"}');
-  fs.writeFileSync(path.join(room, 'members.json'), JSON.stringify({ orch: { session_id: 'sid', job: 'job-1' } }));
+  fs.writeFileSync(path.join(room, 'members.json'), JSON.stringify({ claude: { session_id: 'sid', job: 'job-1' } }));
   fs.writeFileSync(path.join(room, 'log.jsonl'), [
     { id: 1, at: t(5), from: 'alice', via: 'human', kind: 'member_joined', text: 'joined' },
-    { id: 2, at: t(30), from: 'orch', via: 'system', kind: 'proposal', hash: 'abcdef123456', text: 'plan' },
+    { id: 2, at: t(30), from: 'claude', via: 'system', kind: 'proposal', hash: 'abcdef123456', text: 'plan' },
   ].map(e => JSON.stringify(e)).join('\n') + '\n');
   fs.writeFileSync(path.join(room, 'rows', 'notices-bob.json'), JSON.stringify({ log: [{ id: 1, via: 'mod' }] }));
   return { screens, home, t };
@@ -54,7 +54,7 @@ test('context: captures, state, log and transcripts helpers over a small run', (
   assert.deepEqual(x.nativeTasks('S1', 'last'), [{ id: '1' }]);
   assert.deepEqual(x.logIn(x.span('S2')).map(e => e.id), [2]);
   assert.deepEqual(x.props.map(e => e.id), [2]);
-  assert.equal(x.fmt(x.byKind('proposal')[0]), '#2 orch system proposal abcdef: plan');
+  assert.equal(x.fmt(x.byKind('proposal')[0]), '#2 claude system proposal abcdef: plan');
   assert.equal(x.shownVia('bob', 1), 'mod');
   assert.equal(x.shownVia('alice', 1), null);
   assert.deepEqual(x.inSpan([{ timestamp: t(20) }, { timestamp: t(50) }], x.span('S2')), [{ timestamp: t(20) }]);

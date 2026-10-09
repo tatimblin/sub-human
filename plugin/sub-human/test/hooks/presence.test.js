@@ -6,7 +6,7 @@ const { World, room } = require('./helpers.js');
 const note = type => ({ hook_event_name: 'Notification', notification_type: type, message: 'Claude needs your attention' });
 
 test('presence: Notification idle_prompt / permission_prompt and StopFailure write the member presence file', () => {
-  const w = new World({ orch: 'sleep', alice: 'act' });
+  const w = new World({ claude: 'sleep', alice: 'act' });
   const read = () => w.lib(() => room.open(w.code).store.kv.get('presence/alice', null));
   let r = w.hook('presence', note('idle_prompt'), { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
@@ -26,7 +26,7 @@ test('presence: Notification idle_prompt / permission_prompt and StopFailure wri
 });
 
 test('presence: not joined -> nothing written', () => {
-  const w = new World({ orch: 'sleep' });
+  const w = new World({ claude: 'sleep' });
   const r = w.hook('presence', note('idle_prompt'));
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(w.lib(() => room.open(w.code).store.kv.list('presence/')), []);

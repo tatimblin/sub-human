@@ -4,14 +4,14 @@ How sub-human works today, for a new contributor or a fresh Claude session. User
 
 ## Purpose and design rules
 
-Several people, each in their own Claude Code session, share a **room**. The room lives on one machine (its host); people on other machines join it over a link (see [Remote rooms](#remote-rooms)). A person's exact words reach the room only through a hook (`@room …`). Claudes talk to each other with native `SendMessage`, addressed `NAME.CODE`. A headless **orch** keeps the shared task list and plans only when asked. Consent to a proposal is recorded only from the person's own answer in a native dialog.
+Several people, each in their own Claude Code session, share a **room**. The room lives on one machine (its host); people on other machines join it over a link (see [Remote rooms](#remote-rooms)). A person's exact words reach the room only through a hook (`@room …`, or `@claude …`, which also wakes the room's Claude: a post `to=claude`). Claudes talk to each other with native `SendMessage`, addressed `NAME.CODE`. A headless **room Claude** keeps the shared task list and plans only when asked. Consent to a proposal is recorded only from the person's own answer in a native dialog.
 
 The one security goal: **a model can never speak or consent as a person.** The rules that follow from it, and from keeping the plugin unobtrusive (also in `CLAUDE.md`):
 
-- Never pin a model (agents, the orch spawn, the demo, tests).
+- Never pin a model (agents, the room's Claude spawn, the demo, tests).
 - No writes to user settings files and no symlinks into `~/.claude`. The plugin keeps its own home and uses the native task list.
-- The orch takes no typed input. People reach it with `@room @orch …` or through their Claude.
-- Keep the agent-panel rows (the room row with members nested in it; the orch's panel lists every human).
+- The room's Claude takes no typed input. People reach it with `@claude …` or through their Claude.
+- Keep the agent-panel rows (the room row with members nested in it; the room Claude's panel lists every human).
 - Consent is native: plan view first, question card as fallback; only `via=human` answers count.
 - Unprescriptive: no required workflow; injected text covers mechanics only.
 - Every undocumented Claude Code behaviour relied on is listed in `lib/cc.js` and checked by `npm run probe`.
@@ -20,13 +20,13 @@ The one security goal: **a model can never speak or consent as a person.** The r
 ## Process model
 
 ```
- member session (claude, interactive)                    orch (claude --bg, headless, one per room)
+ member session (claude, interactive)                    the room's Claude (claude --bg, one per room)
  ┌──────────────────────────────────────────┐            ┌───────────────────────────────────────┐
- │ main thread (the person's Claude)        │ SendMessage│ main thread: agent sub-human:orchestrator
+ │ main thread (the person's Claude)        │ SendMessage│ main thread: agent sub-human:room-claude
  │   spawns ─► room row  (agent room, bg)   │◄──────────►│   spawns ─► participant row per human  │
  │               spawns ─► participant rows │            │   native task list = the room's list   │
  │ hooks: command hooks + one hooks module  │            │ hooks: the same, module included       │
- │ tail child: scripts/sub-human tail (module)  │            │ tail child (orch formatter+watchdog)   │
+ │ tail child: scripts/sub-human tail (module)  │            │ tail child (formatter + watchdog)      │
  │ MCP: mcp/room-server.js (+hold, +task)   │            │ MCP: its own room-server.js            │
  │ subagentStatusLine: <home>/bin/row-status│            └───────────────────────────────────────┘
  └──────────────┬───────────────────────────┘                             │
@@ -46,12 +46,12 @@ Who spawns whom:
 
 | Spawner | Spawns | How |
 |---|---|---|
-| `hooks/join.js` (first member, or a room with no live orch) | the orch | claim under the members lock, then detached `node lib/orch.js start` → `claude --bg -n orch.CODE --agent sub-human:orchestrator --permission-mode plan --settings {…} /sub-human` |
+| `hooks/join.js` (first member, or a room with no live room Claude) | the room's Claude | claim under the members lock, then detached `node lib/room-claude.js start` → `claude --bg -n claude.CODE --agent sub-human:room-claude --permission-mode plan --settings {…} /sub-human` |
 | a member's main thread | one `sub-human:room` row | the `Agent` call the join/restore context lists under ROWS |
 | a room row | one `sub-human:participant` row per other member | on start, and when `hold({room})` returns `JOINED`/`RESPAWN` |
-| the orch's main thread | one participant row per human | on a pushed `member_joined` that carries the Agent call |
+| the room Claude's main thread | one participant row per human | on a pushed `member_joined` that carries the Agent call |
 | the hooks module (`mod/deliver.mjs`) | the tail child, per seated session | `$.process.spawn node scripts/sub-human tail --ndjson` |
-| `hooks/session-end.js`, `orch.watchdog` | the reaper | detached `node lib/orch.js reap CODE` |
+| `hooks/session-end.js`, `lib/room-claude.js` watchdog | the reaper | detached `node lib/room-claude.js reap CODE` |
 
 `hooks/row-guard.js` denies a duplicate row spawn; `row-map.js` records which panel row is which agent; `row-hold.js` (SubagentStop) tells a row that gave up to hold again; `row-rewake.js` (SessionStart resume, `asyncRewake`) re-spawns rows after `--resume`.
 
@@ -84,7 +84,7 @@ The plugin also ships one hooks module (Claude Code 2.1.292+; [mods plan](archiv
 - **The tail child's life.** It starts on `session.start` (also after a reload or a lost worker), after the join and after `classic.SessionStart`, unless the hello is sure the session has no seat. A `/clear` runs on under a new session id: the old child is stopped and one is started for the new id; `session.end` stops the child for good. A child that exits is started again after 1 s, doubling to 60 s; one that ran over 60 s before it exited was healthy, and the backoff starts over. It dies with the module (a reload, the session's end): the `$.process.spawn` loop is its life.
 - **Mid-turn wakes.** A wake while a main-loop turn runs (a `turn.start` with no `turn.complete` yet) is appended as an isMeta row, and its visible lines are logged. At that turn's `turn.complete` it is submitted after all when no main-loop tool call (`classic.PostToolUse` / `PostToolUseFailure` without `agent_id`) finished after the append: each finished call is followed by a model request, so without one the request then in flight was the turn's last and never carried the row. A wake neither a submit nor an append took is held for the next `turn.start` (at most `PENDING_MAX` 20, newest kept), when the session is evidently running turns again.
 - **Presence** has one writer for "working" on a typed prompt: the module (`node hooks/presence.js`, not awaited). at-room writes it only for an `@room` that came with no origin.
-- **`@room` fails closed.** When the prompt shim fails (it throws, times out or exits other than 0 or 2), an `@room` is blocked with the prompt suppressed, never handed to the model as typed text.
+- **`@room` fails closed.** When the prompt shim fails (it throws, times out or exits other than 0 or 2), an `@room` (or, in a seated session, an `@claude`) is blocked with the prompt suppressed, never handed to the model as typed text.
 - **The session title** `NAME.CODE` is set once per session id and address, so a switch to another room retitles the session.
 - **Copied constants.** `mod/core` keeps copies of a few `lib/` values (restart and notice timings from `lib/config.js`, the name and code patterns from `lib/text.js`, chat-line constants from `lib/room/render.js`). This is deliberate: `mod/` is ESM and imports no CommonJS, and `module-dollar-local` keeps `$` in the registering file anyway. The `test/mod-core*.test.js` equality tests keep the copies in step.
 
@@ -105,14 +105,14 @@ From `mod/register.mjs` (hooks.json `modules`), in registration order.
 | `tool.call` | `Write\|Edit\|MultiEdit\|NotebookEdit` | `mod/guard.mjs` | denies a write into the store, lexically or after $.fs.stat realPath; .catch fails closed on "sub-human" |
 | `tool.call` | `mcp__plugin_sub-human_room__hold` | `mod/guard.mjs` | denies hold outside a row subagent (no agentId) |
 | `tool.check` | `/^mcp__plugin_sub-human_room__/` | `mod/guard.mjs` | allows the room tools for a seated session (no permission prompt); hold only with agentId |
-| `prompt.submit` | (all) | `mod/prompt.mjs` | a relay of this module's own (mod/deliver.mjs) passes with RELAY_CONTEXT as context; drops an @room / room: whose origin is not composer, sdk or bridge (a peer, a notification, a plugin); a typed origin says whether the person is on Remote Control (bridge) or here; hands the origin to the shim below; a typed prompt the tail child delivers for carries the held rows text as context and writes "working" presence (node hooks/presence.js, not awaited) unless already working; .catch drops only an @room |
+| `prompt.submit` | (all) | `mod/prompt.mjs` | a relay of this module's own (mod/deliver.mjs) passes with RELAY_CONTEXT as context; drops an @room / room: (or, in a room, an @claude) whose origin is not composer, sdk or bridge (a peer, a notification, a plugin); a typed origin says whether the person is on Remote Control (bridge) or here; hands the origin to the shim below; a typed prompt the tail child delivers for carries the held rows text as context and writes "working" presence (node hooks/presence.js, not awaited) unless already working; .catch drops only an @room |
 | `classic.Notification` | `notification_type idle_prompt\|permission_prompt` | `mod/prompt.mjs` | notes the presence presence.js beneath writes, so the next prompt writes "working" again |
 | `classic.StopFailure` | (all) | `mod/prompt.mjs` | notes the error presence presence.js beneath writes |
-| `classic.UserPromptSubmit` | (all) | `mod/prompt.mjs` | sessionTitle NAME.CODE once per session id (members); no node for a relay, nor when not an @room and surely unseated, or a member's seat the tail child delivers for with no review open; else node hooks/prompt.js with sub_human_origin and the session's nonce, which at-room checks against the lease (systemMessage via $.ui.log; typed through Remote Control, a refusal is relayed as a prompt after the hook returns) |
+| `classic.UserPromptSubmit` | (all) | `mod/prompt.mjs` | sessionTitle NAME.CODE once per session id (members); no node for a relay, nor when not an @room (or a seated @claude) and surely unseated, or a member's seat the tail child delivers for with no review open; else node hooks/prompt.js with sub_human_origin and the session's nonce, which at-room checks against the lease (systemMessage via $.ui.log; typed through Remote Control, a refusal is relayed as a prompt after the hook returns) |
 | `tool.call` | `EnterPlanMode\|ExitPlanMode` | `mod/consent.mjs` | sets reviewMaybeOpen (a room review starts only through these) |
 | `classic.Stop` | (all) | `mod/consent.mjs` | node hooks/consent.js (the open-review nudge) only while a review may be open or the seat is unknown |
-| `classic.PostToolUse` | `tool_name TaskCreate\|TaskUpdate` | `mod/tasks.mjs` | node hooks/tasks.js (the room task mirror) only for the orch or an unknown seat |
-| `classic.TaskCompleted` | (all) | `mod/tasks.mjs` | node hooks/tasks.js (the gate; exit 2 -> block) only for the orch or an unknown seat; .catch blocks in the orch |
+| `classic.PostToolUse` | `tool_name TaskCreate\|TaskUpdate` | `mod/tasks.mjs` | node hooks/tasks.js (the room task mirror) only for the room's Claude or an unknown seat |
+| `classic.TaskCompleted` | (all) | `mod/tasks.mjs` | node hooks/tasks.js (the gate; exit 2 -> block) only for the room's Claude or an unknown seat; .catch blocks in the room's Claude |
 | `ui.render` | `UserMessage, origin peer\|peer-send-message\|plugin` | `mod/render.mjs` | draws another member's Claude as "bob's Claude: …" and a sub-human prompt as its chat lines, without "(for Claude)" lines |
 <!-- /gen:mod-hooks -->
 
@@ -127,10 +127,10 @@ Full names are `mcp__plugin_sub-human_room__<tool>`.
 | `read` | room (`mcp/room-server.js`) | yes | Read the shared sub-human room log: with ids, those entries in full (e.g. a cut-off line); without, your unseen entries, oldest first, at most 100. |
 | `propose` | room (`mcp/room-server.js`) | no | Ask people in the sub-human room to agree to a plan or decision (exactly one of text or path). |
 | `hold` | room (`mcp/hold.js`) | yes | Internal to sub-human row agents (sub-human:participant with member, sub-human:room with room). |
-| `task` | room (`mcp/task.js`) | no | Ask the sub-human room's orch to change the shared room task list; it is queued and the orch applies it. add needs subject; claim, release and done need id; done also needs evidence. |
+| `task` | room (`mcp/task.js`) | no | Ask the sub-human room's Claude to change the shared room task list; it is queued and the room's Claude applies it. add needs subject; claim, release and done need id; done also needs evidence. |
 <!-- /gen:mcp-tools -->
 
-`hold` is allowed only for row subagents (the module's guard, `mod/guard.mjs`, checks `agentId`); `task` is refused for the orch, which applies requests natively.
+`hold` is allowed only for row subagents (the module's guard, `mod/guard.mjs`, checks `agentId`); `task` is refused for the room's Claude, which applies requests natively.
 
 ## The room store
 
@@ -143,7 +143,7 @@ RoomStore
   validateChain()  verifyChain({fromOffset})                    the prev hash chain (incremental via log.idx)
   getCursor(reader) setCursor(reader, id)                       per-reader positions
   isHost                                                        this machine holds the room (FsRoomStore: true)
-  members.read() members.update(fn)                             atomic: lock locally, CAS remotely (orch bookkeeping)
+  members.read() members.update(fn)                             atomic: lock locally, CAS remotely (room Claude bookkeeping)
   members.join(rec) members.leave(name) members.beat(name, {presence?})   the seat ops (lib/room/members.js)
   blobs.put/get/has/ref/localPath                               plans/<hash>.md, room-relative refs
   kv.get/set/update/delete/list/lock                            small derived documents
@@ -156,9 +156,9 @@ RoomStore
 |---|---|---|
 | `log.jsonl` | `store.append` (hooks, MCP server; never the CLI) | append-only room log, one JSON entry per line, hash-chained |
 | `log.idx` | `verifyChain` / `readView` | checkpoint: offset, last id, hash, and offsets of every non-chat line |
-| `members.json` | `identity.join/leave/heartbeat` via `members.join/leave/beat`, `orch.*` via `members.update` | seats (`machine`, `seen_at`, `left_at`; for this machine's seats `pid`, `pid_start`, `session_id`, `cwd`) and the orch record (`job`, `claim`, `closing`) |
+| `members.json` | `identity.join/leave/heartbeat` via `members.join/leave/beat`, `lib/room-claude.js` via `members.update` | seats (`machine`, `seen_at`, `left_at`; for this machine's seats `pid`, `pid_start`, `session_id`, `cwd`) and the room's Claude record (`job`, `claim`, `closing`) |
 | `plans/<hash>.md` | `lib/proposal.create` | proposal text, addressed by sha256/12 of its bytes |
-| `tasks.json` (kv `tasks`) | `hooks/tasks.js` (orch only) | the task mirror: `tasks.fold()` of the log's `task` entries |
+| `tasks.json` (kv `tasks`) | `hooks/tasks.js` (room Claude only) | the task mirror: `tasks.fold()` of the log's `task` entries |
 | `presence/<name>.json` | `members.beat` (`hooks/presence.js`, also run by the module on a typed prompt; at-room, join, restore) | working / idle / permission / error, for row text |
 | `rows/<session_id>.json` | `hooks/row-map.js` | agent id → row (kind, name, parent) for the status line |
 | `rows/holds-<name>.json` | `mcp/hold.js` | which rows this seat's hold server is holding (row-guard, rewake) |
@@ -173,7 +173,7 @@ RoomStore
 | `<home>/sessions/by-pid/`, `by-sid/` | `lib/identity.js` | which seat a local claude pid / session id holds (machine-local, not room state) |
 | `<home>/sessions/mods/<sid>.json` | `hooks/mod-hello.js` | the hooks module's hello lease: this session's function hooks are loaded (join requires it) |
 | `<home>/machine.json` | `lib/home.js` `machineId()` | this machine's random id (16 hex digits, never the hostname), stored as each seat's `machine` |
-| `workdir.json` (kv `workdir`, host only) | `lib/seats.js` `enter` | the room's working directory (the first local seat's cwd): where the orch starts, also after a remote join |
+| `workdir.json` (kv `workdir`, host only) | `lib/seats.js` `enter` | the room's working directory (the first local seat's cwd): where the room's Claude starts, also after a remote join |
 | `remote/invites.json`, `remote/links.json` (host only, never streamed) | `lib/remote/auth.js` | sha256 of each unused invite (a handoff's: bound to one machine, its seats pre-bound); each link's token sha256 with its machine and the seats joined over it |
 | `remote/handoff.json` (kv `remote/handoff`; host only, never streamed) | `lib/handoff.js` (ask, the server's accept/refuse) | the planned handoff: the ask `{id, state, from, to, epoch, locator?, ask?, expires_at}`, then `moved` with the per-machine invites to the new host (kept `HANDOFF_INVITE_MS`) |
 | `handoff.json` (kv `handoff`; a mirror only) | the link daemon (`lib/handoff.js` onAsk) | the host's ask that a seat of this machine host the room; the tail wakes that seat's Claude once (`told_at`) |
@@ -192,7 +192,7 @@ An entry is `{id, at, from, via, kind, text?, prev, …kind fields}`. `id` is mo
 
 | via | Kinds | Written by |
 |---|---|---|
-| `human` | `say`, `signoff`, `objection`, `proposal` | hooks only: `@room` (at-room.js), the plan view / card answers (consent.js) |
+| `human` | `say`, `signoff`, `objection`, `proposal` | hooks only: `@room` and `@claude` (at-room.js), the plan view / card answers (consent.js) |
 | `agent` | `say`, `question`, `status`, `proposal`, `task_req` | the MCP server (`post`, `propose`, `task`) on behalf of a member's Claude |
 | `system` | `decision`, `member_joined`, `member_left`, `task`, `status`, `host_changed` | hooks, the reaper and the handoff (`lib/handoff.js`), with `{system: true}` |
 
@@ -200,7 +200,7 @@ An entry is `{id, at, from, via, kind, text?, prev, …kind fields}`. `id` is mo
 
 **Hash chain and `log.idx`.** `verifyChain` checks the chain incrementally from the `log.idx` checkpoint, which is trusted only while the line before its offset still hashes to the stored hash; otherwise it rebuilds from byte 0. The checkpoint also records the offset of every non-chat line, so `readView({after})` returns everything that decides lanes (proposals, answers, joins, tasks) plus the entries after `after`, without parsing the whole log. The tail runs `verifyChain` on its health tick and sends one `room log check: …` line per break (a `health` event). The chain makes edits around the store visible; it does not prevent them.
 
-**Who typed an `@room`.** The module's `prompt.submit` gate reads the origin Claude Code stamps on the prompt (`composer`, `sdk` or `bridge` count as typed; cc CONTRACT `prompt-origin-composer`) and drops any other `@room` before a hook runs; the shim hands that origin to at-room as `sub_human_origin`, and at-room posts only with a typed one that comes with this session's nonce (Security model). An origin that is lost on the way (a reload between the two hooks) is refused, and the person types it again.
+**Who typed an `@room` or `@claude`.** (Outside a room `@claude` is a plain prompt and passes untouched.) The module's `prompt.submit` gate reads the origin Claude Code stamps on the prompt (`composer`, `sdk` or `bridge` count as typed; cc CONTRACT `prompt-origin-composer`) and drops any other `@room` before a hook runs; the shim hands that origin to at-room as `sub_human_origin`, and at-room posts only with a typed one that comes with this session's nonce (Security model). An origin that is lost on the way (a reload between the two hooks) is refused, and the person types it again.
 
 **How an `@room` post looks.** The TUI trims trailing whitespace before the hook sees the prompt (accepted). On success at-room answers `continue:false` with a stop reason, which keeps the person's `❯ @room …` row and adds one "Operation stopped by hook: ✓ sent" line; the model sees both natively on its next turn. Refusals are `decision:block` with `suppressOriginalPrompt`, which works only inside `hookSpecificOutput`, so refused or forged text never reaches the model. Typed through Remote Control (origin `bridge`), a refusal is also the `systemMessage`, relayed to the phone (Process model, Remote Control); "✓ sent" is not (the phone shows the person's own row, and a relay costs a turn). When the posted text appears verbatim in the last assistant message (an accepted prompt suggestion, a copied draft), the entry carries `drafted:"agent"`; it is still posted.
 
@@ -208,11 +208,11 @@ An entry is `{id, at, from, via, kind, text?, prev, …kind fields}`. `id` is mo
 
 `lane(me, e, entries)` (`lib/room/lanes.js`) says whom an entry concerns:
 
-- **push**: the tail sends it now. A person's own words, joins and leaves (group chat) are `chat`: shown to the person, copied to the model, no wake. Anything `to` me or mentioning `@me`, a proposal naming me that I have not answered, an objection to my proposal, a task request (orch only) is a `wake`: one plugin prompt, one model turn.
+- **push**: the tail sends it now. A person's own words, joins and leaves (group chat) are `chat`: shown to the person, copied to the model, no wake. Anything `to` me or mentioning `@me` (for the room's Claude only `to=claude`, a person's leading `@claude` tag: an `@claude` inside the text is just words), a proposal naming me that I have not answered, an objection to my proposal, a task request (room Claude only) is a `wake`: one plugin prompt, one model turn.
 - **pull**: no wake. The tail sends it as "Room since your last turn", which the model reads with its next request.
 - **none**: my own posts.
 
-The tail batches push entries in a `Batcher` (`lib/tail.js`): flush after `SETTLE_MS` 1500 of quiet or `SETTLE_MAX_MS` 5000 after the first (orch: 3000 / 10000), so a burst costs at most one turn. Each entry is judged again at flush time against `readView`, so an entry answered or decided in the meantime is dropped. A `member_left` is held `LEAVE_SETTLE_MS` 8000 so a quick leave and rejoin shows nothing; the room row's hold progress line settles leaves the same way ("bob left" only after 8 s). A member's batch is group-chat lines without ids, plus `(for Claude)` lines in a wake; the orch's batch starts with `stateLine()` and keeps ids. All timings live in `lib/config.js` with `SUB_HUMAN_*_MS` overrides. The orch gets the overrides of the session that started it through its `--settings` env (the bg daemon filters the caller's env), so a room started with a short `SUB_HUMAN_ORCH_ORPHAN_MS` has a watchdog that honours it.
+The tail batches push entries in a `Batcher` (`lib/tail.js`): flush after `SETTLE_MS` 1500 of quiet or `SETTLE_MAX_MS` 5000 after the first (room Claude: 3000 / 10000), so a burst costs at most one turn. Each entry is judged again at flush time against `readView`, so an entry answered or decided in the meantime is dropped. A `member_left` is held `LEAVE_SETTLE_MS` 8000 so a quick leave and rejoin shows nothing; the room row's hold progress line settles leaves the same way ("bob left" only after 8 s). A member's batch is group-chat lines without ids, plus `(for Claude)` lines in a wake; the room Claude's batch starts with `stateLine()` and keeps ids. All timings live in `lib/config.js` with `SUB_HUMAN_*_MS` overrides. The room's Claude gets the overrides of the session that started it through its `--settings` env (the bg daemon filters the caller's env), so a room started with a short `SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS` has a watchdog that honours it.
 
 ## Consent
 
@@ -253,43 +253,43 @@ The plan-view review runs only in the modes `default`, `acceptEdits` and `auto` 
 ## Tasks
 
 ```
-member's Claude ─ task({op, …}) ─► task_req (via=agent, by=member)   push lane to the orch only
-orch ─ TaskCreate/TaskUpdate (metadata {req, by}) ─► native list sh-CODE under <claude config>/tasks/
+member's Claude ─ task({op, …}) ─► task_req (via=agent, by=member)   push lane to the room's Claude only
+room Claude ─ TaskCreate/TaskUpdate (metadata {req, by}) ─► native list sh-CODE under <claude config>/tasks/
 hooks/tasks.js PostToolUse ─► task entry (via=system, full snapshot) ─► tasks.json = tasks.fold(task entries)
 hooks/tasks.js TaskCompleted ─► tasks.gate(): exit 2 unless the owner asked done with evidence
 ```
 
-- **Reconcile.** A mirror run can be lost (a module hook that failed, a reload). So on every orch run `hooks/tasks.js` also compares the native list with the log and appends an `add` snapshot for each native task the log has no `task` entry for; the next run repairs a lost one.
-- The orch's **native task list is the ledger**: `CLAUDE_CODE_TASK_LIST_ID=sh-CODE`, passed through `--settings` env because the bg daemon filters the caller's env (`cc.DAEMON_ENV_ALLOW`). The plugin never writes under `~/.claude`.
+- **Reconcile.** A mirror run can be lost (a module hook that failed, a reload). So on every room Claude run `hooks/tasks.js` also compares the native list with the log and appends an `add` snapshot for each native task the log has no `task` entry for; the next run repairs a lost one.
+- The room Claude's **native task list is the ledger**: `CLAUDE_CODE_TASK_LIST_ID=sh-CODE`, passed through `--settings` env because the bg daemon filters the caller's env (`cc.DAEMON_ENV_ALLOW`). The plugin never writes under `~/.claude`.
 - **`metadata.req`** links a native task to the `task_req` it applies. The TaskCompleted input carries no metadata, so the gate reads the task file (which still shows the old status).
 - **`tasks.json` is a pure fold** of the log's `task` entries: delete it, refold, same file. Rows and `sub-human tasks` read only it.
-- **The gate**: only the owner's own `done` request with evidence after the last claim (or a trusted human entry from the owner citing it) passes. A blocked TaskUpdate drops every field in that call, so the orch is told to change status in a call of its own. Task 1, "room CODE open", stays open until the room is closing, which keeps the native list from being wiped.
+- **The gate**: only the owner's own `done` request with evidence after the last claim (or a trusted human entry from the owner citing it) passes. A blocked TaskUpdate drops every field in that call, so the room's Claude is told to change status in a call of its own. Task 1, "room CODE open", stays open until the room is closing, which keeps the native list from being wiped.
 
 ## Identity and liveness
 
-- **Binding.** `/sub-human NAME [CODE]` triggers `hooks/join.js` (UserPromptExpansion) before the model runs. A join that worked shows no `systemMessage` (Claude Code draws one as a warning; the title and the room row say it), unless the orch did not start or the session is in bypass-permissions mode; a refusal is the block reason and the `systemMessage` (which Remote Control shows). It writes the seat into `members.json` and the indexes `<home>/sessions/by-pid/<CLAUDE_PID>.json` and `by-sid/<session_id>.json`. The model never names itself. Without a CODE it joins the one open room (a live member seat, not closing), or opens a new one; several open rooms is an error that lists their codes. Rooms where only the orch is left are swept first. A member already in another room switches: the old room logs `member_left` "switched rooms".
+- **Binding.** `/sub-human NAME [CODE]` triggers `hooks/join.js` (UserPromptExpansion) before the model runs. A join that worked shows no `systemMessage` (Claude Code draws one as a warning; the title and the room row say it), unless the room's Claude did not start or the session is in bypass-permissions mode; a refusal is the block reason and the `systemMessage` (which Remote Control shows). It writes the seat into `members.json` and the indexes `<home>/sessions/by-pid/<CLAUDE_PID>.json` and `by-sid/<session_id>.json`. The model never names itself. Without a CODE it joins the one open room (a live member seat, not closing), or opens a new one; several open rooms is an error that lists their codes. Rooms where only the room's Claude is left are swept first. A member already in another room switches: the old room logs `member_left` "switched rooms".
 - **Resolution.** Hooks: payload `session_id`, then `CLAUDE_PID`. MCP server: `process.ppid` (MCP servers get no `CLAUDE_PID`). CLI and tail child: `CLAUDE_CODE_SESSION_ID` (the module sets it for the child), then `CLAUDE_PID`, then the nearest registered ancestor. `/clear` changes the session id but not the process: `session-restore.js` rebinds the new id to the seat found by pid. `--resume` is a new process with the old id: it rebinds the pid or rejoins the seat.
 - **Liveness.** `seatAlive(m)` (`lib/room/members.js`): not left, and, for a seat of this machine (`m.machine === machineId()`), the pid is alive with a start time equal to the stored `pid_start` (so a reused pid never keeps or adopts a seat). Any other seat (another machine's, or no pid) is alive while its `seen_at` lease is fresh (`SEAT_LEASE_MS` 120 s); the tail's health tick and the hold server renew it with `members.beat` at most every `SEAT_BEAT_MS` 30 s, and a presence write rides on the same op.
-- **Entering and leaving.** `lib/seats.js` `enter` (members.join, the session indexes, `member_joined` with `pubkey` and `machine`, the orch) and `exit` (members.leave, the reaper when nobody is left, `member_left`) are the one sequence the join and session-end hooks run. A name is one seat across machines: a live seat of another holder makes it "name taken". `host` and `join` are reserved names.
-- **Host gates.** Orch spawn, reap and watchdog (`lib/orch.js`) and proposal decisions run only where the room's store `isHost`; on any other machine they do nothing. A handoff (Remote rooms, Moving the host) flips `isHost` on both machines: `store.open` decides a room's kind again when its link file appears or goes, and the tail starts its session again over the new store.
+- **Entering and leaving.** `lib/seats.js` `enter` (members.join, the session indexes, `member_joined` with `pubkey` and `machine`, the room's Claude) and `exit` (members.leave, the reaper when nobody is left, `member_left`) are the one sequence the join and session-end hooks run. A name is one seat across machines: a live seat of another holder makes it "name taken". `host` and `join` are reserved names.
+- **Host gates.** Room Claude spawn, reap and watchdog (`lib/room-claude.js`) and proposal decisions run only where the room's store `isHost`; on any other machine they do nothing. A handoff (Remote rooms, Moving the host) flips `isHost` on both machines: `store.open` decides a room's kind again when its link file appears or goes, and the tail starts its session again over the new store.
 - **Address.** `NAME.CODE` is set as the session title (the module's `classic.UserPromptSubmit`, once per session id and address), which is what `SendMessage` and `ListAgents` use (cc CONTRACT `session-title-address`).
 
-## Orch lifecycle
+## The room's Claude: lifecycle
 
 ```
-join (no live orch) ─► claimSpawn: members.orch = {job:"pending", claim}  (under the members lock; a concurrent join sees it)
+join (no live room Claude) ─► claimSpawn: members.claude = {job:"pending", claim}  (under the members lock; a concurrent join sees it)
                     ─► startDetached ─► spawn(): claude stop <prevJob>; claude --bg …; find job in `claude agents --json`
                                          record {job} only if the claim is still current and the room is not closing
-orch session ─► /sub-human ─► join.js binds the "orch" seat (agent_type orchestrator + SUB_HUMAN_ROOM)
+room Claude session ─► /sub-human ─► join.js binds the "claude" seat (agent_type sub-human:room-claude + SUB_HUMAN_ROOM)
              ─► TaskCreate "room CODE open"
-last member SessionEnd ─► reap (detached): grace 10 s (a rejoin cancels) ─► set closing ─► status to orch
-                          "room closed: complete task 1" ─► wait ≤ 20 s ─► claude stop <job> ─► orch seat left
-crashed members (no SessionEnd) ─► orch tail child's health tick: watchdog() sees no live member for 60 s ─► closing + reap
+last member SessionEnd ─► reap (detached): grace 10 s (a rejoin cancels) ─► set closing ─► status to=claude
+                          "room closed: complete task 1" ─► wait ≤ 20 s ─► claude stop <job> ─► room Claude seat left
+crashed members (no SessionEnd) ─► room Claude tail child's health tick: watchdog() sees no live member for 60 s ─► closing + reap
 ```
 
-Debugging an orch by hand: `node lib/orch.js cmd CODE` prints the exact spawn command; or run `claude --agent sub-human:orchestrator --permission-mode plan` and type `/sub-human CODE` (an existing room) or `/sub-human` (a new room).
+Debugging the room's Claude by hand: `node lib/room-claude.js cmd CODE` prints the exact spawn command; or run `claude --agent sub-human:room-claude --permission-mode plan` and type `/sub-human CODE` (an existing room) or `/sub-human` (a new room).
 
-`needsSpawn` also respawns an orch whose pid is dead, whose claim is older than `ORCH_CLAIM_MS`, or which never bound within `ORCH_BIND_MS`. `openRooms()` ignores rooms where only the orch is left, and join sweeps those through the watchdog.
+`needsSpawn` also respawns a room Claude whose pid is dead, whose claim is older than `ROOM_CLAUDE_CLAIM_MS`, or which never bound within `ROOM_CLAUDE_BIND_MS`. `openRooms()` ignores rooms where only the room's Claude is left, and join sweeps those through the watchdog.
 
 ## Remote rooms
 
@@ -299,14 +299,14 @@ A room can have members on other machines. The machine that created it is the **
  HOST machine                                            REMOTE machine
  hooks / tail / MCP ──► FsRoomStore ◄── serve --stdio ◄══ transport ══► link daemon ──► MirrorRoomStore (FsRoomStore layout)
    (sign + place,        <home>/rooms/CODE   per connection    (ssh, or a   (one per room   ▲ reads: hooks, tail, MCP, rows
-    decide, orch)                             (scripts/sub-human)   pipe)        and home)       │ writes: bridge (worker thread,
+    decide, claude)                           (scripts/sub-human)   pipe)        and home)       │ writes: bridge (worker thread,
                                                                                              │          Atomics.wait, deadline)
                                                                                     hooks ───┘ sign with the local seat key
 ```
 
 **Joining.** On the host, a person in the room runs `/sub-human host [--ssh [user@host]] [--via JUMP]` (`lib/remote/hosting.js` hostInvite): `lib/remote/auth.js` mints a single-use invite `sh2.<CODE>.<locator>.<secret>.<hostkey>` and its PIN, and the join hook shows both as a block reason with `suppressOriginalPrompt`, to the person and never to the model. The secret is 128 bits; `hostkey` is the host's Ed25519 key for the joiner to pin (over ssh, the sshd host key; `0` for none). The PIN is never in the invite: the host keeps `sha256(secret:PIN)`, 5 tries and an expiry 15 minutes out (`INVITE_PIN_TRIES`, `INVITE_TTL_MS`), and the invite burns on its one use, its last wrong PIN, or expiry. On the other machine, `/sub-human join NAME INVITE PIN` is always a hidden block too (the typed prompt holds the PIN; `suppressOriginalPrompt` keeps it out of the conversation): it writes the link file (`lib/room/links.js`, with the PIN), starts the daemon detached and watches its first `hello` (`hosting.outcome`, up to `LINK_JOIN_WAIT_MS`), which sends the invite and the PIN; the host checks the PIN there, online only, and the redeemed token replaces both in the link file. The block says what next: `/sub-human NAME CODE` (the seat, as on the host), the admit line (ssh, below), or the refusal (`wrong PIN (4 tries left)`). Each wrong PIN, the burn and each new link are a status line from `room` in the host's log. A rejoin never restarts a link whose PIN was refused. From then on `store.open(CODE)` there returns the mirror. The older `sh1.<CODE>.<locator>.<secret>` (no PIN, no key; `sub-human invite`) still joins in one step with `/sub-human join NAME INVITE`. A seat's link ends with `/sub-human revoke NAME|LINK` or `sub-human revoke` (`hosting.revoke`): the token and any invite reserved for it burn, its `authorized_keys` lines go, its seats leave, its `serve` processes stop (each first ends its streams `{reason: 'AUTH'}`, so the joiner's daemon stops with "the host revoked this link" instead of redialing; a daemon that was offline then meets ssh refusing its key, which for a link with its own key and a token is `AUTH` too), and a room line says so.
 
-**Host and mirror.** `store.isHost` decides who does what. Only the host spawns, reaps and watches the orch, decides proposals, pins keys, mints invites and writes `members.update` and the streamed documents; on a mirror these throw `HOST_ONLY` or are gated off (`lib/orch.js`, `proposal.decide`). The host streams its log lines verbatim and three documents: `members` (`members.publicView`: no `pid`, `pid_start`, `session_id`, `cwd`), `presence/*` and `tasks`. Session-local state (`rows/*`, `members/NAME/review|title`, cursors, notices, the session indexes, keys) never leaves its machine. On a mirror a seat of this machine is judged by its session index (pid, start time, session); a seat of another machine lives by its lease (`seen_at`, `SEAT_LEASE_MS` 120 s, renewed by `beat`). A remote seat's join and leave reach the host's `lib/seats.js` through its server, which logs `member_joined`/`member_left` and runs the orch and the reaper there.
+**Host and mirror.** `store.isHost` decides who does what. Only the host spawns, reaps and watches the room's Claude, decides proposals, pins keys, mints invites and writes `members.update` and the streamed documents; on a mirror these throw `HOST_ONLY` or are gated off (`lib/room-claude.js`, `proposal.decide`). The host streams its log lines verbatim and three documents: `members` (`members.publicView`: no `pid`, `pid_start`, `session_id`, `cwd`), `presence/*` and `tasks`. Session-local state (`rows/*`, `members/NAME/review|title`, cursors, notices, the session indexes, keys) never leaves its machine. On a mirror a seat of this machine is judged by its session index (pid, start time, session); a seat of another machine lives by its lease (`seen_at`, `SEAT_LEASE_MS` 120 s, renewed by `beat`). A remote seat's join and leave reach the host's `lib/seats.js` through its server, which logs `member_joined`/`member_left` and runs the room's Claude and the reaper there.
 
 **Writes.** A hook's write (`@room`, an answer, join, leave, a beat) is signed on its own thread, then crosses `lib/remote/bridge.js`: the hook's thread posts one op to a worker and blocks in `Atomics.wait` until the reply or the deadline (`LINK_CALL_MS` 3 s, SessionEnd `LINK_CALL_END_MS` 1 s). The worker relays the op over the daemon's unix socket (`link.handle`; it loads no store and never the signer). With the link down the call is `OFFLINE` and nothing was sent: a card answer (consent), a proposal, a join or an agent's post is refused at once and the person is told, never queued. The one exception is the person's own `@room` post (see the outbox below). A slow link is not a down one: the frame went out and may land late, so a deadline is never "nothing was sent". The daemon answers every relayed op by `LINK_RELAY_MS` (2 s, inside the hook's 3 s): a person's `@room` post the host has not answered by then goes into the outbox under its nonce, answered `{queued, slow: true}` ("⧗ sending (slow link)"), and the host's late answer takes it out (the late copy is the post; a refusal is dropped and reported); any other op is `OFFLINE` with `protocol.UNKNOWN_OUTCOME`, as is the bridge's own deadline, and the store marks it `unknown`: the at-room hook says "⧗ not confirmed", the consent hook that the answer may still be recorded and answering again is safe (one answer per person per proposal; the same signed payload sent again is refused by its nonce). After a write the server polls the session's streams before it replies, so the mirror holds the write's lines when the hook's call returns (read-your-writes). The worker starts at a process's first write: a hook that only reads starts none.
 
@@ -348,35 +348,35 @@ A room can have members on other machines. The machine that created it is the **
 | `blob.get` | `{ref}` | `{bytes}` (base64) | a link | `blobs.get` |
 | `blob.put` | `{name, bytes}` | `{ref}` | a link | only `plans/<hash12 of the bytes>.md`, at most `PROPOSAL_FILE_MAX`, written once |
 | `ping` | `{}` | `{pong}` (the host's ms) | a link | the heartbeat; listed in the server's caps, so a client pings only a server that answers. A session whose hello carried `caps {ping: true}` and that then goes silent for `LINK_SILENT_MS` is closed |
-| `handoff.accept` | `{id, accept, locator, invites}` | `{ok, epoch, entry}` | a link, the ask's target seat | `lib/handoff.js` serverAccept: the ask pending and not expired, `accept` signed by the target's pinned key for this id, epoch and locator, the invites to that locator; appends `host_changed`; after the reply, stops the orch job and mirrors the new host |
+| `handoff.accept` | `{id, accept, locator, invites}` | `{ok, epoch, entry}` | a link, the ask's target seat | `lib/handoff.js` serverAccept: the ask pending and not expired, `accept` signed by the target's pinned key for this id, epoch and locator, the invites to that locator; appends `host_changed`; after the reply, stops the room's Claude job and mirrors the new host |
 | `handoff.refuse` | `{id}` | `{ok}` | a link, the ask's target seat | the ask becomes `refused` |
 
 Error codes, the same on both ends and on the wire: today's `INVALID`, `RATE`, `LOCK`, `NO_ROOM`, plus `OFFLINE` (the link is down or the deadline passed), `HOST_ONLY` (an op a mirror never performs), `AUTH` (no or bad token, a used invite, a `from` not this link's seat, a key mismatch, a bad signature, a replayed nonce, a stale `ts`), `FORK` (the mirror's last line is not the host's), `PROTOCOL` (unknown version, malformed frame) and `STALE` (another host epoch: a host the room moved away from, or a copy that has not caught up with the move).
 
 Stream events besides `entry`, `doc` and `end`: `handoff` (the ask, to the link holding its target seat only) and `moved` (after the `host_changed` line: `{epoch, host, machine, locator, invite}`, the invite this link's machine's alone), then `end {reason: 'moved'}`. Both are private to one link and never in the log.
 
-**Moving the host** (`lib/handoff.js`, the CLI bodies in `lib/cli/handoff.js`). The host's machine holds the log, serves the links and runs the orch on the host person's model account, so a sleeping host means an offline room. Authority is the log's: a `host_changed` entry (via system) `{epoch, host, machine, locator, accept?, ask?, promoted?}` moves it, and `store.hostState()` reads the last one (epoch 0 before any). There is no automatic failover.
+**Moving the host** (`lib/handoff.js`, the CLI bodies in `lib/cli/handoff.js`). The host's machine holds the log, serves the links and runs the room's Claude on the host person's model account, so a sleeping host means an offline room. Authority is the log's: a `host_changed` entry (via system) `{epoch, host, machine, locator, accept?, ask?, promoted?}` moves it, and `store.hostState()` reads the last one (epoch 0 before any). There is no automatic failover.
 
 ```
 A (host, alice)                         B (bob, mirror)                         C (carol, mirror)
 /sub-human handoff bob ─► remote/handoff {asked, epoch 1}
 serve(B's link) ─ ev handoff ─────────► daemon: kv handoff ─► tail: wake ─► AskUserQuestion card
-                                         (the hooks' card: the orch runs on bob's account; stay reachable)
+                                         (the hooks' card: the room's Claude runs on bob's account; stay reachable)
                                          "Host it here" (via=human, consent.js) ─► accept: mint one invite per
                                          other machine (auth.mintFor: that machine, its seats), sign host_accept
 serve(B's link) ◄─ op handoff.accept ──
   check ask, signature, invites; append host_changed {epoch 1, bob, B, locator, accept, ask}
-  orch record left; remote/handoff = moved + invites; reply (B's mirror holds the line: read-your-writes)
+  room Claude record left; remote/handoff = moved + invites; reply (B's mirror holds the line: read-your-writes)
   after the reply: claude stop <job>; link file = A's invite; daemon started (A mirrors B)
                                          takeOver: chain checked, daemon stopped, link removed (FsRoomStore),
-                                         seats' pid/session back (identity.adoptLocalSeats), orch started here
+                                         seats' pid/session back (identity.adoptLocalSeats), room Claude started here
 serve(C's link) ─ entry host_changed, ev moved {invite for C} , end moved ─────────► onMoved: link file ->
                                                                                       B + invite; reconnect
 ```
 
 - **Epochs are enforced, not merged.** The old host's `FsRoomStore.place` refuses every line once its log says the room moved to another machine (`STALE`; a `host_changed` naming this machine at a later epoch, a promote, passes). Its server then serves only `hello`, `subscribe`, `blob.get` and `ping`, so a member that reconnects late still gets the line and its machine's invite (kept a day). A server refuses a hello from a mirror at a later epoch (a host the room moved away from) and an append from another epoch. The link daemon sends its mirror's epoch with both.
 - **Unreachable new host.** A re-pointed link that cannot connect stays offline with a reason that names the new host and says to ask for an invite and run `/sub-human join NAME INVITE PIN`. That join (`/sub-human join NAME INVITE PIN`, an sh2 invite) replaces the link's credentials when the invite's locator differs, restarts the daemon and marks the link `rebind`, so the next `/sub-human NAME CODE` joins the seat again over the new link. `sub-human handoff --status` on the new host lists the machines that have not reconnected. Over SSH a re-pointed link keeps what this machine added to it (`hosting.linkTransport`, shared with an sh2 join): its own link key (one is made for an old host that had none), `mux` from `sub-human prime`, and the new host's sshd key pinned (a handoff's and a promote's invites carry it, as `host --ssh` does); `--via JUMP` on `handoff`/`promote` puts a ProxyJump in the locator. The link file then holds the admit request for the new host, and the offline reason (and `doctor`) shows it: the new host's `/sub-human admit shk1…` lets that key in for the handoff's invite, with no new invite or PIN.
-- **Promote** (`sub-human promote CODE --confirm CODE`, a person's own shell): refused while the link is online or down less than `PROMOTE_OFFLINE_MS` (10 min, `--force`). The member's full mirror becomes the room at epoch + 1 (`host_changed` with `promoted: true`) and prints one invite per other machine. **It can fork**: an old host that was only asleep goes on alone, and lines it wrote that the promoter never got are lost to the room. A member still linked to it stays on the old side until it gets an invite. When the old host returns, `sub-human demote CODE INVITE PIN` sets its log aside (`orphaned-<time>.jsonl`, never merged), stops its orch and mirrors the new host. A mirror whose copy is behind the promoter's catches up; one that is ahead (it got lines the promoter never did) meets `FORK` and re-mirrors with `sub-human link --reset`.
+- **Promote** (`sub-human promote CODE --confirm CODE`, a person's own shell): refused while the link is online or down less than `PROMOTE_OFFLINE_MS` (10 min, `--force`). The member's full mirror becomes the room at epoch + 1 (`host_changed` with `promoted: true`) and prints one invite per other machine. **It can fork**: an old host that was only asleep goes on alone, and lines it wrote that the promoter never got are lost to the room. A member still linked to it stays on the old side until it gets an invite. When the old host returns, `sub-human demote CODE INVITE PIN` sets its log aside (`orphaned-<time>.jsonl`, never merged), stops its room Claude and mirrors the new host. A mirror whose copy is behind the promoter's catches up; one that is ahead (it got lines the promoter never did) meets `FORK` and re-mirrors with `sub-human link --reset`.
 - **Limits.** The new host must be reachable by every member over the transport in the ask's locator. For SSH that means its `authorized_keys` must allow each member's key. The design for automating that has members send their SSH public key over the existing link, and the new host shows one consent card to authorize them all. That is not built: today each member sends the admit line its offline reason shows, and the new host pastes it (`/sub-human admit`); a member that cannot reach the new host at all is given an invite (`/sub-human host --ssh`) and joins with it and its PIN; the lab's `handoff` scenario does the latter. A handoff's invites are `sh2` invites (`auth.mintFor`: a record `{v: 2, handoff: true, machine, seats, expires_at}`): bound to one machine with its seats pre-bound, and with no PIN, since each travels only over that machine's already authenticated link.
 
 **Versions.** `protocol.PROTO` is the range of protocol versions an end speaks (now 1–2; 2 adds the sh2 PIN) and `PLUGIN_VERSION` its plugin version. The client's `hello` sends `proto` and `client`, with `v` the lowest version that hello needs (1, or 2 with a PIN), so a host from before 0.4, which checks `v === 1` and knows no `proto`, still answers. The server answers `v = negotiate(its range, the hello's)` (a hello without `proto` is `[v, v]`), plus its own `proto` and `server`. No overlap is `PROTOCOL` with `skewMessage`, which names the side to update: "host runs sub-human 0.4.0 (protocol 3–4); you run 0.3.0 (protocol 2). Update your plugin: /plugin update sub-human", or "The host must update" when the joiner is newer; the client rewrites an old host's "protocol vN is not served here" the same way. The daemon stops on it and the join shows it. Readers tolerate a newer host: lines of unknown kinds or fields are stored verbatim and rendered generically (an unknown `via` as "bob (via relay)", never as the person's words, and never a wake), and an unknown streamed document or event is skipped and logged instead of stopping the link. Writes stay strict: the host validates every payload, so a newer joiner's new kind is `INVALID` on an older host (the host is updated first). `test/remote-server.test.js` and `test/remote-link.test.js` fake N-1 and N+1 on both ends.
@@ -404,7 +404,7 @@ A hook that only reads costs nothing extra; one that writes pays about 20 ms, ne
 
 ## Security model
 
-One machine per room (its host), trusted collaborators: everyone on the host runs as its one OS user, and the host itself is trusted by everyone who joins it. The threat is a member's Claude (possibly steered by text posted in the room) speaking or consenting as a person. Defences: `via=human` only from hooks, signed with a key only hook processes load (on whichever machine the person sits; the host verifies against the key pinned in the log); the store guard (the hooks module's `mod/guard.mjs`, in-process) denies file-tool writes into the store and Bash commands that name it, set `SUB_HUMAN_HOME` or run the plugin's modules; the module's `prompt.submit` gate drops an `@room` whose engine-set origin is not the person's (composer, sdk, bridge), and at-room posts only with that origin and the session's module nonce (a seat requires the module). The module mints the nonce per session id, keeps it in `$.state`, and `mod-hello` writes it to the 0600 lease `<home>/sessions/mods/<sid>.json`: forging an `@room` takes reading that lease, which the guards deny by path but a determined local process can still do. The store guard is a string check: a script file written first, an obfuscated path or a variable built at run time evades it. What it cannot evade: `via=human` needs the seat key's signature, readers mark an unsigned human line "(unverified)", and the hash chain shows an edited log. The orch's typed-input refusal reads the origin unchecked, since forging it only refuses more. An `@room` is refused, never passed to the model, whenever the prompt shim fails; consent only from the native dialog; a link writes only as the seats joined over it, an SSH key reaches only its forced command's room and link, and the guard denies `sub-human host|admit|revoke|prime|invite|authorize|link|serve|handoff|promote|demote` to a model; the room's host moves only on the new host person's own card answer. Not covered: the `Read` tool, other MCP servers, a hostile local user. Full list: [README → Threat model](../plugin/sub-human/README.md#threat-model).
+One machine per room (its host), trusted collaborators: everyone on the host runs as its one OS user, and the host itself is trusted by everyone who joins it. The threat is a member's Claude (possibly steered by text posted in the room) speaking or consenting as a person. Defences: `via=human` only from hooks, signed with a key only hook processes load (on whichever machine the person sits; the host verifies against the key pinned in the log); the store guard (the hooks module's `mod/guard.mjs`, in-process) denies file-tool writes into the store and Bash commands that name it, set `SUB_HUMAN_HOME` or run the plugin's modules; the module's `prompt.submit` gate drops an `@room` whose engine-set origin is not the person's (composer, sdk, bridge), and at-room posts only with that origin and the session's module nonce (a seat requires the module). The module mints the nonce per session id, keeps it in `$.state`, and `mod-hello` writes it to the 0600 lease `<home>/sessions/mods/<sid>.json`: forging an `@room` takes reading that lease, which the guards deny by path but a determined local process can still do. The store guard is a string check: a script file written first, an obfuscated path or a variable built at run time evades it. What it cannot evade: `via=human` needs the seat key's signature, readers mark an unsigned human line "(unverified)", and the hash chain shows an edited log. The room Claude's typed-input refusal reads the origin unchecked, since forging it only refuses more. An `@room` is refused, never passed to the model, whenever the prompt shim fails; consent only from the native dialog; a link writes only as the seats joined over it, an SSH key reaches only its forced command's room and link, and the guard denies `sub-human host|admit|revoke|prime|invite|authorize|link|serve|handoff|promote|demote` to a model; the room's host moves only on the new host person's own card answer. Not covered: the `Read` tool, other MCP servers, a hostile local user. Full list: [README → Threat model](../plugin/sub-human/README.md#threat-model).
 
 ## Claude Code contract (generated)
 
@@ -448,7 +448,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `bg-dispatch-line` | §5 | incidental | `claude --bg` stdout line 1 is "backgrounded · <short> · <name>" (cc.JOB_RE). |
 | `agents-json` | §5 | API | `claude agents --json [--all]` prints [{pid?, id, sessionId, status, state, ...}] (cc.jobs). |
 | `bg-stop` | §5 | API | `claude stop <id>` (cc.stopCmd). |
-| `bg-logs` | §5 | API | `claude logs <id>` replays a bg session's screen; the demo's orch view runs it. |
+| `bg-logs` | §5 | API | `claude logs <id>` replays a bg session's screen; the demo's view of the room's Claude runs it. |
 | `daemon-env-filter` | §5 | env | The daemon keeps only allowlisted caller env keys (cc.DAEMON_ENV_ALLOW). |
 | `daemon-env-allowlist` | §5 | env | The pieces of the daemon allowlist (zWe + dWn + extras in 2.1.292) that DAEMON_ENV_ALLOW copies. |
 | `bg-worker-env` | §5 | incidental | Workers run with the daemon's own process.env plus the filtered dispatch env. |
@@ -461,7 +461,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `transcript-prompt-origin` | §8 | incidental | A typed prompt's transcript user entry has no origin or {kind:"human"} (also typed through Remote Control: prompt.submit reports that one as "bridge"); peers, notifications, channels and plugins carry their own kind. cc.lastHumanPrompt takes only the person's; hooks/consent.js picks the proposal a review opens from it (cc-2.1.292.md Remote Control). |
 | `bridge-forwarded-rows` | §8 | incidental | Remote Control forwards user and assistant rows, a command hook's systemMessage (hook_system_message, shown as an assistant line) and a few system kinds, never a $.ui.log notice (system informational); an isMeta user row goes as isSynthetic (not shown there, as far as seen). A function hook's result has no systemMessage, so the module reaches the phone only through a turn: mod/deliver.mjs relays room lines and an @room's refusal there as a prompt while the person types from Remote Control (cc-2.1.292.md Remote Control). |
 | `plugin-prompt-frame` | §8 | incidental | A plugin's $.prompt.submit between turns enters framed ("The <plugin> plugin sent a message: … This is how Claude Code surfaces a prompt a plugin submits between turns … Address the message above."), and the frame is the row Remote Control shows; asUser:true enters the text bare (the origin stays {kind:"plugin", name, asUser:true}, so cc.lastHumanPrompt still skips it). The relay submits asUser with only the room lines; what the model needs rides as context (cc-2.1.292.md Remote Control). |
-| `cross-session-inbound` | §8 | API | crossSessionInbound accept\|hold\|refuse; the orch sets accept. |
+| `cross-session-inbound` | §8 | API | crossSessionInbound accept\|hold\|refuse; the room's Claude sets accept. |
 | `harbor-kite-gate` | §8 | env | Cross-session messaging gate (default on). |
 | `pasted-content` | §8 | incidental | Long pastes are wrapped in <pasted_content id="N"> (cc.PASTED_RE). |
 | `session-title-address` | §8 | incidental | A hook's sessionTitle renames the session and writes the name to the session registry; ListAgents lists it and SendMessage `to` matches it exactly, so NAME.CODE is the address. Names are unique among live sessions: a second live session given the same name takes a suffixed one and is not reachable at NAME.CODE (cc-2.1.292.md Review spikes, S-title). |
@@ -473,7 +473,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `hooks-json-modules` | §10 | API | One hooks.json carries the command hooks and one module path under `modules` (relative to hooks.json); a second module is refused (S1). |
 | `module-dollar-local` | §10 | incidental | A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.mjs stays $-free (S1). |
 | `module-event-once` | §10 | incidental | A hooks module registers an event at most once without a matcher (validate and the loader refuse a second): mod/deliver.mjs owns session.start, the join and SessionStart (hello and the tail child), mod/prompt.mjs owns prompt.submit (the gate, rows context, presence). |
-| `modules-headless` | §10 | env | Modules are off only diskless or in a tool server's daemon (then by policy, safe mode, --bare): they load in -p and in a --bg worker such as the orch. A --bg dispatch prompt reaches prompt.submit as origin composer (S2). |
+| `modules-headless` | §10 | env | Modules are off only diskless or in a tool server's daemon (then by policy, safe mode, --bare): they load in -p and in a --bg worker such as the room's Claude. A --bg dispatch prompt reaches prompt.submit as origin composer (S2). |
 | `classic-chain-order` | §10 | incidental | A classic.<Event> chain is [managed settings hooks, ...modules in load order, core], and core runs every other settings hook. A module that answers without next() therefore skips every non-managed settings hook for that call (its own plugin's, other plugins' and the user's and project's command hooks) and the modules of plugins loaded after it; managed hooks and earlier-loaded modules still run (S1, S5; cc-2.1.292.md Review spikes, S-skip). sub-human answers without next() only where it blocks or stops a prompt (classic.UserPromptSubmit, TaskCompleted); it no longer answers PreToolUse. |
 | `prompt-submit-ups-order` | §10 | incidental | prompt.submit's core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). mod/prompt.mjs relies on it: classic.UserPromptSubmit runs inside prompt.submit's next(e), so prompt.submit hands it e.origin (the classic payload has none) in a module variable. |
 | `usermessage-draw-only` | §10 | incidental | A ui.render rewrite of UserMessage text changes only the drawing; origin, isExpanded, task and from are pinned. |
@@ -501,19 +501,18 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/cli/revoke.js`: `sub-human revoke LINK_ID\|NAME\|INVITE_REF\|INVITE [--room CODE] [--file AUTHORIZED_KEYS]`, on the host, in the person's own shell (the Bash guard refuses it to a model): end one link of a room hosted here (lib/remote/hosting.js revoke): its token is burnt (and any invite reserved for it), its authorized_keys lines removed, its seats leave and its running servers stop; a room line says so.
 - `lib/clock.js`: A tiny injectable clock, so code that waits (the `sub-human tail` settle and poll loops) can be tested without real sleeps.
 - `lib/config.js`: every timing and size cap in one place, named. Callers import the value they use; an env override is read by the caller through envMs() at the moment it needs the value (tests set the env per child process, some per call).
-- `lib/handoff.js`: moving a room's host to another member's machine. The host's machine holds the room's log, serves its links and runs its orch (billed to the host person's model account); a planned handoff moves all three before the host closes their laptop.
+- `lib/handoff.js`: moving a room's host to another member's machine. The host's machine holds the room's log, serves its links and runs its room Claude (billed to the host person's model account); a planned handoff moves all three before the host closes their laptop.
 - `lib/home.js`: where the plugin's store lives on this machine, and which machine this is.
 - `lib/identity.js`: where rooms live, who is in them, and which Claude session is asking.
 - `lib/io.js`: small file and process helpers shared by every module.
 - `lib/lock.js`: the one lockfile helper (room log, members.json, proposals, the task mirror, the row map).
 - `lib/notices.js`: join / leave lines for every human in the room, as a group chat shows them: "bob joined", "bob rejoined", "bob left" (no room code, no ids).
-- `lib/orch.js`: the room's headless orchestrator, a `claude --bg` session the join hook starts.
 - `lib/proposal.js`: proposals and the consent card. Every write goes through room.append().
 - `lib/remote/auth.js`: invites and link tokens, on the host. An invite is single-use and turns into a link token at the first hello; the token is the link's credential from then on.
 - `lib/remote/bridge.js`: a synchronous call from a hook's thread to asynchronous work on a worker thread, with a deadline.
 - `lib/remote/client.js`: the asynchronous side of the protocol, one connection to a room's server over a transport.
 - `lib/remote/hosting.js`: the host's side of an sh2 link, one step each, shared by the join hook (`/sub-human host`, `/sub-human admit`, `/sub-human revoke`: their output is a block reason, shown to the person and never to the model) and the CLI (lib/cli/host.js).
-- `lib/remote/link.js`: the link daemon, one per machine and room (`scripts/sub-human link CODE`, started detached by the join hook, like the orch starter).
+- `lib/remote/link.js`: the link daemon, one per machine and room (`scripts/sub-human link CODE`, started detached by the join hook, like the room's Claude starter).
 - `lib/remote/listener.js`: the host's WebSocket listener daemon (`scripts/sub-human listen [--port 7420]`), one per home.
 - `lib/remote/noise.js`: the end-to-end channel inside a WebSocket (lib/remote/transports/ws.js): Noise_NK_25519_ChaChaPoly_SHA256 (https://noiseprotocol.org/noise.html, revision 34), built on node:crypto only: X25519 through crypto.diffieHellman on KeyObjects, ChaCha20-Poly1305 (12-byte nonce: 4 zero bytes and the 64-bit little-endian counter), SHA-256, and the spec's HKDF, which is RFC 5869 HKDF-SHA256 with salt = ck and no info (crypto.hkdfSync).
 - `lib/remote/outbox.js`: the bounded @room outbox of a mirror. While the link is down, a person's @room post (already signed by the hook, so its nonce and ts are fixed) is kept here by the link daemon (lib/remote/link.js, the file's one writer) and placed in order once the link is back.
@@ -529,6 +528,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/remote/transports/ws.js`: the `wss` and `ws` kinds (./index.js register): protocol frames over a Noise_NK channel (lib/remote/noise.js) inside a WebSocket (lib/remote/ws.js) to the host's listener (lib/remote/listener.js), usually through a TLS front: Tailscale Serve or Funnel, or any HTTPS reverse proxy.
 - `lib/remote/webhost.js`: the host's side of a join over the web (1.1), shared by the join hook (`/sub-human host --tailscale [--funnel]`, `/sub-human host --url URL`, `/sub-human unhost`: block reasons the person reads, never the model) and the CLI (lib/cli/host.js, lib/cli/listen.js).
 - `lib/remote/ws.js`: a minimal WebSocket (RFC 6455) with no dependencies: the server end for the host's listener (lib/remote/listener.js, an http server on 127.0.0.1 only) and the client end for the joiner's link daemon (lib/remote/transports/ws.js) over net or tls, through an HTTP CONNECT proxy when the environment names one (a corporate network that allows only CONNECT to 443).
+- `lib/room-claude.js`: the room's own Claude (member claude, SendMessage name claude.CODE), a headless `claude --bg` session the join hook starts.
 - `lib/room.js`: the room log (envelope v3). A facade over lib/room/*, so callers keep one require.
 - `lib/room/consent.js`: the one fold of the room log into proposal / consent state.
 - `lib/room/envelope.js`: the signed envelope (sig v2) and the keys pinned in the log.
@@ -543,11 +543,11 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/rows.js`: participant rows in the agent panel. Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.js kv).
 - `lib/seats.js`: entering and leaving a room, the one sequence the join hook, the session-end hook and the remote server (lib/remote/server.js, for a seat on another machine) all run.
 - `lib/tail.js`: the room tail behind `sub-human tail` (scripts/sub-human), the hooks module's child (mod/deliver.mjs).
-- `lib/tasks.js`: the room's shared task list. The headless orch's own native task list (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list.
+- `lib/tasks.js`: the room's shared task list. The headless room Claude's own native task list (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list.
 - `lib/text.js`: the string helpers and name patterns every module shares.
 <!-- /gen:lib-modules -->
 
-Elsewhere: `hooks/common.js` (shared hook plumbing: `readInput`, `resolveSeat`, output helpers), `hooks/seat-key.js` (the signer), `scripts/sub-human` (the read-only CLI and the tail entry), `statusline/` (row text), `agents/` (`orchestrator`, `room`, `participant`), `skills/sub-human/` (the join skill and the role texts the hooks inject).
+Elsewhere: `hooks/common.js` (shared hook plumbing: `readInput`, `resolveSeat`, output helpers), `hooks/seat-key.js` (the signer), `scripts/sub-human` (the read-only CLI and the tail entry), `statusline/` (row text), `agents/` (`room-claude`, `room`, `participant`), `skills/sub-human/` (the join skill and the role texts the hooks inject).
 
 ## Performance
 
@@ -558,11 +558,11 @@ Everything is a `node` start, so the number of processes per event is the main c
 | a prompt, session with no seat | 0 (an `@room` there: 1, its refusal) |
 | a plain prompt, seated member | 0 while the tail child delivers and no review may be open (the session's first prompt: 1); +1 `presence.js`, not awaited, when the last presence was not "working" |
 | an `@room` post | 1 (`prompt.js`, through the module: signing) |
-| a prompt in the orch's session | 1 (`prompt.js`: its refusal of typed input) |
+| a prompt in the room Claude's session | 1 (`prompt.js`: its refusal of typed input) |
 | turn end (Stop) | 0 while no review may be open; else 1 (`consent.js`) |
 | `Bash`, `Write`/`Edit` | 0 (the module's in-process guard) |
 | a room MCP tool | 1 (`consent.js` PreToolUse; it exits after reading stdin outside plan mode) |
-| a member's own `TaskCreate`/`TaskUpdate`/completion | 0 (the orch: 1, `tasks.js`) |
+| a member's own `TaskCreate`/`TaskUpdate`/completion | 0 (the room's Claude: 1, `tasks.js`) |
 | session start, a join, `/clear` | +1 (`mod-hello.js`) |
 | `Agent`/`Task` | 2 (`row-guard.js`, `row-map.js`) |
 | `ExitPlanMode` during a review | up to 3 (Pre, PermissionRequest, Post) |

@@ -1,6 +1,6 @@
 # Facilitating, when asked
 
-Read this only when someone asks you to help the room decide or plan ("let's plan X", "@orch help us pick"). It is a toolbox, not a script: use what fits, skip the rest, and stop when they stop asking.
+Read this only when someone asks you to help the room decide or plan ("let's plan X", "@claude help us pick"). It is a toolbox, not a script: use what fits, skip the rest, and stop when they stop asking.
 
 ## Messages cost people a turn
 

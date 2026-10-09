@@ -137,8 +137,8 @@ function roomLive(code) {
   const identity = require('../identity.js');
   try {
     if (!identity.roomExists(code) || !identity.isHost(code)) return false;
-    const orch = identity.readMembers(code).orch;
-    return !(orch && (orch.stopped_at || orch.closing));
+    const roomClaude = identity.readMembers(code).claude;
+    return !(roomClaude && (roomClaude.stopped_at || roomClaude.closing));
   } catch { return false; }
 }
 

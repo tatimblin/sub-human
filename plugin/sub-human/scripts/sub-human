@@ -15,17 +15,17 @@
  *       the log from byte 0) and writes one JSON event per line for the mod to route (seat, chat, pull, wake,
  *       rows, health; lib/tail.js documents them), switching (or going silent) if the seat changes.
  *       Settle: entries are batched and written as ONE set of events (at most one wake) after
- *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most (the orch: 3000 / 10000,
- *       SUB_HUMAN_ORCH_SETTLE_MS / SUB_HUMAN_ORCH_SETTLE_MAX_MS). Each entry is judged again against the log at
+ *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most (the room's Claude: 3000 / 10000,
+ *       SUB_HUMAN_ROOM_CLAUDE_SETTLE_MS / SUB_HUMAN_ROOM_CLAUDE_SETTLE_MAX_MS). Each entry is judged again against the log at
  *       send time (answered / decided entries are dropped). A member_left X is held
  *       SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time both notices are dropped.
  *       A member's chat is a group chat (room.chatLines, no ids): "bob: <exact words>", "bob's Claude: …",
- *       "bob joined", "bob left". Lines meant only for Claude start with "(for Claude)". The orch's wake opens
+ *       "bob joined", "bob left". Lines meant only for Claude start with "(for Claude)". The room Claude's wake opens
  *       with room.stateLine() ("room now: …"), then one room.line(e, {full}) per entry (ids kept: its tools take
  *       them), a leave marked "· away 8s+"; its member_joined is pushed when lib/rows.js joinNote() says that
  *       member's row is not running (the line ends with the note and the Agent call).
  *       It never exits on an error: it logs to stderr (rate-limited), backs off and carries on. Every
- *       SUB_HUMAN_TAIL_HEALTH_MS (5000) it checks the log's hash chain and, as the orch, runs orch.watchdog(code).
+ *       SUB_HUMAN_TAIL_HEALTH_MS (5000) it checks the log's hash chain and, as the room's Claude, runs roomClaude.watchdog(code).
  *       It exits on --max-seconds, SIGTERM / SIGINT / SIGHUP, when its parent goes (the ppid changes) or when
  *       stdout closes.
  *   sub-human read [N[,M] | --id N[,M]] [--json] [--room CODE]
@@ -33,12 +33,12 @@
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
  *   sub-human who                      this session's identity: "<name> (<role>) in <code>"
  *   sub-human tasks [--json] [--room CODE]
- *       the room's shared task list (lib/tasks.js list(code), the orch's native list mirrored to
+ *       the room's shared task list (lib/tasks.js list(code), the room Claude's native list mirrored to
  *       the room document `tasks`): "#2 in_progress  bob  parser tests". --json prints the array.
  *   sub-human watch NAME [--room CODE] [--follow|--no-follow]
  *       NAME's thread: their own words, their Claude's posts (labelled "NAME's Claude"), their answers,
- *       their joins/leaves, and entries addressed to them. The orchestrator's posts are labelled
- *       "facilitator". Follows live when stdout is a terminal (or with --follow).
+ *       their joins/leaves, and entries addressed to them. The room Claude's posts are labelled
+ *       "claude". Follows live when stdout is a terminal (or with --follow).
  *   sub-human agent-statusline
  *       Claude Code's subagentStatusLine command (statusline/*). Never fails: on any error it prints
  *       nothing and exits 0.
@@ -251,7 +251,7 @@ function tasksCmd(args) {
 /** Who an entry is from, as a person reading a thread would say it. */
 function label(e) {
   if (e.via === 'system') return 'room';
-  if (e.from === 'orch') return 'facilitator';
+  if (e.from === 'claude') return 'claude';
   return e.via === 'agent' ? `${e.from}'s Claude` : e.from;
 }
 
@@ -276,7 +276,7 @@ function watch(args) {
     const e = room.normalize(raw);
     if (!show(e)) return;
     const who = label(e) + (room.unverifiedHuman(e) ? ' (unverified)' : '');
-    const whoStr = e.via === 'human' ? c('1', who) : who === 'facilitator' ? c('35', who) : c('2', who);
+    const whoStr = e.via === 'human' ? c('1', who) : who === 'claude' ? c('35', who) : c('2', who);
     const meta = [
       e.to && e.to !== 'room' && `→ ${e.to === name ? name : e.to}`,
       e.refs && e.refs.length && `refs ${e.refs.map(r => '#' + r).join(',')}`,

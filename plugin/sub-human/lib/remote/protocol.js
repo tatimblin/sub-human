@@ -10,7 +10,7 @@
  *   event    {id, ev, data}          a subscribe stream (id: the subscribe request's): ev 'entry' (data: the host
  *                                    line, verbatim), 'doc' (data: {key, value}: members, presence/NAME, tasks;
  *                                    value null for a document that is gone), 'end' (data: {reason}: 'closed',
- *                                    the room's orch was stopped; 'FORK', the host log was reset under the stream;
+ *                                    the room's Claude was stopped; 'FORK', the host log was reset under the stream;
  *                                    'moved', the room moved to another host: a 'moved' event came first),
  *                                    'handoff' (data: the host's ask that one of this link's seats host the room:
  *                                    {id, from, to, epoch, locator?, expires_at}; private to that link, never in the

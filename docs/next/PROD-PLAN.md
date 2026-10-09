@@ -29,7 +29,7 @@ Verdict: all three evaluators ranked 09 (core hardening), 01 (SSH-first) and 04 
    - `--via` for ProxyJump through a bastion;
    - a primed ControlMaster for MFA bastions;
    - `revoke` to remove access.
-7. **Planned `handoff`.** The host moves the room to another member before closing the laptop. A consent card appears first, because the orch moves to the new host's model account. There is no automatic failover, since that causes split-brain forks.
+7. **Planned `handoff`.** The host moves the room to another member before closing the laptop. A consent card appears first, because the room's Claude moves to the new host's model account. There is no automatic failover, since that causes split-brain forks.
 8. **Observability.**
    - `sub-human doctor`, with a redacted `--bundle` for sharing diagnostics;
    - link state shown on the room row and the statusline.

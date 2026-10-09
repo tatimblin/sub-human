@@ -1,7 +1,7 @@
 'use strict';
 // Tests for lib/seats.js and the host gates: enter and exit as one sequence, the
-// orch started in the room's working directory, and a mirror-shaped store (MemoryRoomStore with isHost false) where
-// the seat op is all that runs (the host logs the join and leave), the orch is never spawned, reaped or watched and
+// room Claude started in the room's working directory, and a mirror-shaped store (MemoryRoomStore with isHost false) where
+// the seat op is all that runs (the host logs the join and leave), the room's Claude is never spawned, reaped or watched and
 // no decision is written. lib/room/members.js publicView: what other machines see of the members document.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -10,7 +10,7 @@ const h = require('./helpers.js');
 const store = require(path.join(h.LIB, 'room', 'store.js'));
 const identity = require(path.join(h.LIB, 'identity.js'));
 const seats = require(path.join(h.LIB, 'seats.js'));
-const orch = require(path.join(h.LIB, 'orch.js'));
+const roomClaude = require(path.join(h.LIB, 'room-claude.js'));
 const proposal = require(path.join(h.LIB, 'proposal.js'));
 const members = require(path.join(h.LIB, 'room', 'members.js'));
 const config = require(path.join(h.LIB, 'config.js'));
@@ -20,7 +20,7 @@ const { MemoryRoomStore } = require('./support/memory-store.js');
 const H = 'abcdef012345';
 
 /**
- * A room whose store is mem (a fresh MemoryRoomStore, host or mirror-shaped), for the length of the test. The orch
+ * A room whose store is mem (a fresh MemoryRoomStore, host or mirror-shaped), for the length of the test. The room's Claude
  * starter is stubbed: started holds the cwd of each start.
  */
 function memoryRoom(t, { isHost }) {
@@ -30,7 +30,7 @@ function memoryRoom(t, { isHost }) {
   store.setBackend(() => mem);
   t.after(() => store.setBackend(null));
   const started = [];
-  t.mock.method(orch, 'startDetached', o => { started.push(o.cwd); return 1; });
+  t.mock.method(roomClaude, 'startDetached', o => { started.push(o.cwd); return 1; });
   return { code, mem, started };
 }
 
@@ -38,7 +38,7 @@ test('seats: enter logs member_joined with the pubkey and machine; exit leaves, 
   const { code, mem } = memoryRoom(t, { isHost: true });
   const pubkey = seatKey.publicPem(code, 'alice');
   const r = seats.enter({ code, name: 'alice', pid: process.pid, session_id: 'sa', cwd: '/x', pubkey });
-  assert.deepEqual(r, { ok: true, note: ' · starting the orch…' });
+  assert.deepEqual(r, { ok: true, note: ' · starting the room\'s Claude…' });
   const joined = mem.readAll().at(-1);
   assert.deepEqual([joined.kind, joined.from, joined.pubkey, joined.machine], ['member_joined', 'alice', pubkey, identity.machineId()]);
   assert.equal(identity.resolveBySession('sa').name, 'alice');
@@ -49,11 +49,11 @@ test('seats: enter logs member_joined with the pubkey and machine; exit leaves, 
   assert.equal(mem.readAll().length, 2);
 });
 
-test('seats: the orch runs in the room\'s working directory (the first local seat\'s cwd), also when a seat on another machine starts it', t => {
+test('seats: the room\'s Claude runs in the room\'s working directory (the first local seat\'s cwd), also when a seat on another machine starts it', t => {
   const { code, started } = memoryRoom(t, { isHost: true });
   seats.enter({ code, name: 'alice', pid: process.pid, session_id: 'sa', cwd: '/work/project', pubkey: seatKey.publicPem(code, 'alice') });
   seats.enter({ code, name: 'carol', pid: process.pid, session_id: 'sc', cwd: '/elsewhere', pubkey: seatKey.publicPem(code, 'carol') });
-  identity.setOrch(code, { stopped_at: new Date().toISOString() }); // the orch is gone: the next join starts one
+  identity.setRoomClaude(code, { stopped_at: new Date().toISOString() }); // the room's Claude is gone: the next join starts one
   // the remote server's enter: a seat of another machine, no cwd, in a process whose cwd is not the project
   assert.equal(seats.enter({ code, name: 'bob', machine: 'far-away', pubkey: seatKey.publicPem(code, 'bob') }).ok, true);
   assert.notEqual(process.cwd(), '/work/project');
@@ -71,16 +71,16 @@ test('seats: a key other than the pinned one gives the seat back (AUTH)', t => {
   assert.ok(mem.members.read().alice.left_at, 'the seat was given back');
 });
 
-test('host gates: on a mirror-shaped store enter is the seat op only (no member_joined, no orch), exit starts no reaper and logs nothing, the watchdog and decide do nothing', t => {
+test('host gates: on a mirror-shaped store enter is the seat op only (no member_joined, no claude), exit starts no reaper and logs nothing, the watchdog and decide do nothing', t => {
   const { code, mem, started } = memoryRoom(t, { isHost: false });
   assert.equal(identity.isHost(code), false);
   assert.deepEqual(seats.enter({ code, name: 'alice', pid: process.pid, session_id: 'sa', pubkey: seatKey.publicPem(code, 'alice') }), { ok: true, note: '' });
   assert.equal(identity.resolveBySession('sa').name, 'alice', 'this machine\'s indexes are written');
   assert.deepEqual(mem.readAll(), [], 'the host logs the join');
-  assert.deepEqual([mem.members.read().orch, started], [undefined, []], 'no spawn claim');
-  assert.equal(orch.claimSpawn(code), null);
-  assert.equal(orch.reapDetached(code), null, 'no reaper process');
-  assert.equal(orch.watchdog(code, { reaper: () => assert.fail('reaped off-host') }), 'not-host');
+  assert.deepEqual([mem.members.read().claude, started], [undefined, []], 'no spawn claim');
+  assert.equal(roomClaude.claimSpawn(code), null);
+  assert.equal(roomClaude.reapDetached(code), null, 'no reaper process');
+  assert.equal(roomClaude.watchdog(code, { reaper: () => assert.fail('reaped off-host') }), 'not-host');
   // every approver answered, but only the host decides
   mem.append({ kind: 'proposal', text: `proposal ${H}: x`, hash: H, approvers: ['alice'] }, { via: 'agent', from: 'alice' });
   assert.ok(proposal.answer({ code, name: 'alice' }, { hash: H }, { choice: 'Agree' }).entry);
@@ -88,7 +88,7 @@ test('host gates: on a mirror-shaped store enter is the seat op only (no member_
   assert.equal(mem.readAll().filter(e => e.kind === 'decision').length, 0);
   assert.equal(seats.exit(code, 'alice', 'session ended'), true);
   assert.ok(mem.members.read().alice.left_at);
-  assert.deepEqual([mem.members.read().orch, mem.readAll().filter(e => e.kind === 'member_left')], [undefined, []], 'the host logs the leave');
+  assert.deepEqual([mem.members.read().claude, mem.readAll().filter(e => e.kind === 'member_left')], [undefined, []], 'the host logs the leave');
 });
 
 test('identity on a mirror: a seat of this machine is resolved, rebound after /clear and renewed by its index records (the streamed document has no pid or session)', t => {

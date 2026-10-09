@@ -40,7 +40,7 @@ test('prompt: no hooks.json UserPromptSubmit entry; the module runs prompt.js (m
 });
 
 test('prompt: consent\'s subHuman {reviewOpen} rides on the one output (only the mod runs prompt.js)', () => {
-  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const shim = { as: 'bob' };
   lease(w, 'bob');
   const r = w.hook('prompt', ev({ prompt: 'hi', permission_mode: 'default' }), shim);
@@ -60,7 +60,7 @@ test('prompt: consent\'s subHuman {reviewOpen} rides on the one output (only the
 });
 
 test('prompt: an open review in plan mode adds consent\'s exit line to at-room\'s context; an @room post stops alone, the review still resolved', () => {
-  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const setReview = st => w.lib(() => room.open(w.code).store.kv.set('members/bob/review', st));
   const getReview = () => w.lib(() => room.open(w.code).store.kv.get('members/bob/review'));
   lease(w, 'bob');

@@ -4,20 +4,20 @@
  * for the log), so a seat is judged the same whichever machine holds the room. Zero dependencies beyond lib/.
  *
  * A seat record: {name, role, machine, joined_at, seen_at, left_at?}, plus the fields only the seat's own machine
- * can use (LOCAL_FIELDS: pid, pid_start, session_id, cwd). The orch record also keeps its bookkeeping
- * (lib/orch.js) across a (re)bind. A record with no machine is from before machine ids: this machine's.
+ * can use (LOCAL_FIELDS: pid, pid_start, session_id, cwd). The room's Claude record also keeps its bookkeeping
+ * (lib/room-claude.js) across a (re)bind. A record with no machine is from before machine ids: this machine's.
  *
  *   seatAlive(m) -> bool          not left, and: a seat of this machine with a pid: that pid is alive with its start
  *                                 time matching pid_start (a seat with no pid_start, or a pid whose start ps cannot
  *                                 read, counts as matching); any other seat (another machine's, or no pid): its lease
- *   orchPresence(o, now?) -> 'live' | 'starting' | null   the orch record as people are told about it: never listed
+ *   roomClaudePresence(o, now?) -> 'live' | 'starting' | null   the room's Claude record as people are told about it: never listed
  *                                 as present when it never ran or its start failed
  *   leaseFresh(m, now?) -> bool   seen_at younger than SEAT_LEASE_MS
  *   startMatches(m) -> bool       m.pid_start still describes the process now holding m.pid (on this machine)
  *   ops(store) -> {join, leave, beat}   the store's named ops over its members.update (atomic) and kv:
  *     join(rec) -> {ok, rejoin?, error?}   rec = {name, role, machine, ...LOCAL_FIELDS}. A name held by a live seat
  *                                 of another holder (another machine, or another pid) is "name taken"; otherwise
- *                                 the seat is (re)bound: rec, joined_at = seen_at = now, the orch's bookkeeping kept.
+ *                                 the seat is (re)bound: rec, joined_at = seen_at = now, the room Claude's bookkeeping kept.
  *     leave(name) -> bool         sets left_at and deletes presence/<name> (a mirror gets the deletion); false when
  *                                 there is no such seat or it left already
  *     beat(name, {presence?, now?}) -> bool   renews seen_at (at most every SEAT_BEAT_MS) and, with presence
@@ -25,18 +25,39 @@
  *                                 (RoomError INVALID for another state). false, writing nothing, for a seat that is
  *                                 absent or left. now: tests only (the host's clock otherwise).
  *   publicView(members) -> members   the document as other machines see it: LOCAL_FIELDS stripped
- *   PRESENCE_STATES, LOCAL_FIELDS
+ *   fromLegacy(members) -> members   0.4.x names read as new ones (every store's members.read runs it)
+ *   ROOM_CLAUDE ("claude"), LEGACY_ROOM_CLAUDE ("orch", read only), roomClaudeName(name), PRESENCE_STATES, LOCAL_FIELDS
  */
 
 const { isAlive } = require('../io.js');
 const { pidStart } = require('../lock.js');
 const { machineId } = require('../home.js');
-const { PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS, ORCH_BIND_MS, ORCH_CLAIM_MS, envMs } = require('../config.js');
+const { PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS, ROOM_CLAUDE_BIND_MS, ROOM_CLAUDE_CLAIM_MS, envMs } = require('../config.js');
 const { RoomError } = require('./validate.js');
 
 const PRESENCE_STATES = ['working', 'idle', 'permission', 'error'];
+/** The room's Claude: its member name, role and SendMessage name (claude.CODE). */
+const ROOM_CLAUDE = 'claude';
+/** 0.4.x wrote the room's Claude as member and role "orch". Read only (fromLegacy, roomClaudeName); never written. */
+const LEGACY_ROOM_CLAUDE = 'orch';
+const roomClaudeName = n => (n === LEGACY_ROOM_CLAUDE ? ROOM_CLAUDE : n);
+
+/**
+ * A members document as read, with 0.4.x names mapped (in place): the "orch" record becomes "claude" (unless a
+ * "claude" record exists) and role "orch" becomes "claude". The next write of the document has only new names.
+ */
+function fromLegacy(ms) {
+  if (!ms || typeof ms !== 'object') return ms;
+  const old = ms[LEGACY_ROOM_CLAUDE];
+  if (old !== undefined) {
+    delete ms[LEGACY_ROOM_CLAUDE];
+    if (old && typeof old === 'object' && !ms[ROOM_CLAUDE]) ms[ROOM_CLAUDE] = { ...old, name: ROOM_CLAUDE };
+  }
+  for (const m of Object.values(ms)) if (m && typeof m === 'object' && m.role === LEGACY_ROOM_CLAUDE) m.role = ROOM_CLAUDE;
+  return ms;
+}
 const LOCAL_FIELDS = ['pid', 'pid_start', 'session_id', 'cwd'];
-const ORCH_FIELDS = ['job', 'spawned_at', 'closing', 'by', 'job_session', 'claim']; // kept across the orch's (re)bind
+const ROOM_CLAUDE_FIELDS = ['job', 'spawned_at', 'closing', 'by', 'job_session', 'claim']; // kept across the room Claude's (re)bind
 
 const validPid = pid => Number.isInteger(pid) && pid > 0;
 const machineOf = m => m.machine || machineId();
@@ -61,7 +82,7 @@ function joinFold(ms, rec, code, now) {
   const cur = ms[rec.name];
   if (cur && !sameHolder(cur, rec) && seatAlive(cur)) return { next: null, result: { ok: false, error: `name taken: "${rec.name}" is already in ${code}` } };
   const keep = {};
-  if (rec.role === 'orch' && cur) for (const k of ORCH_FIELDS) if (cur[k] != null) keep[k] = cur[k];
+  if (rec.role === 'claude' && cur) for (const k of ROOM_CLAUDE_FIELDS) if (cur[k] != null) keep[k] = cur[k];
   const at = new Date(now).toISOString();
   ms[rec.name] = { ...rec, joined_at: at, seen_at: at, ...keep };
   return { next: ms, result: cur ? { ok: true, rejoin: true } : { ok: true } };
@@ -118,18 +139,21 @@ function publicView(members) {
 }
 
 /**
- * The orch as members see it: 'live' (bound: its pid on this machine alive, else it joined and its lease is fresh),
- * 'starting' (a spawn claim younger than ORCH_CLAIM_MS, or a job not bound within ORCH_BIND_MS), else null (never
- * ran, its start failed, stopped, left or closing). Same rules as lib/orch.js needsSpawn, from any machine.
+ * The room's Claude as members see it: 'live' (bound: its pid on this machine alive, else it joined and its lease is fresh),
+ * 'starting' (a spawn claim younger than ROOM_CLAUDE_CLAIM_MS, or a job not bound within ROOM_CLAUDE_BIND_MS), else null (never
+ * ran, its start failed, stopped, left or closing). Same rules as lib/room-claude.js needsSpawn, from any machine.
  */
-function orchPresence(o, now = Date.now()) {
+function roomClaudePresence(o, now = Date.now()) {
   if (!o || o.left_at || o.stopped_at || o.closing) return null;
   if (validPid(o.pid) && machineOf(o) === machineId()) return seatAlive(o) ? 'live' : null;
   if (o.joined_at && o.job !== 'pending' && !o.spawn_error && leaseFresh(o, now)) return 'live';
   const since = now - Date.parse(o.spawned_at || 0);
-  if (o.job === 'pending') return since <= envMs('SUB_HUMAN_ORCH_CLAIM_MS', ORCH_CLAIM_MS) ? 'starting' : null;
-  if (o.job) return since <= ORCH_BIND_MS ? 'starting' : null;
+  if (o.job === 'pending') return since <= envMs('SUB_HUMAN_ROOM_CLAUDE_CLAIM_MS', ROOM_CLAUDE_CLAIM_MS) ? 'starting' : null;
+  if (o.job) return since <= ROOM_CLAUDE_BIND_MS ? 'starting' : null;
   return null;
 }
 
-module.exports = { PRESENCE_STATES, LOCAL_FIELDS, seatAlive, orchPresence, leaseFresh, startMatches, ops, publicView };
+module.exports = {
+  PRESENCE_STATES, LOCAL_FIELDS, ROOM_CLAUDE, LEGACY_ROOM_CLAUDE, roomClaudeName, fromLegacy,
+  seatAlive, roomClaudePresence, leaseFresh, startMatches, ops, publicView,
+};

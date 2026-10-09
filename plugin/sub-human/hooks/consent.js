@@ -25,7 +25,7 @@
  *     dialog no hook opened (the model wrote the text itself) records nothing, and the model is told.
  *   Stop / UserPromptSubmit / Pre(room tools): a review left open is resolved and the model told to exit it.
  * Pre/Post(AskUserQuestion), the handoff card (lib/handoff.js): while the room's host asks this seat to host the room,
- * a card call that names the handoff shows the hooks' card ("Host room CODE on this machine?": the orch then runs on
+ * a card call that names the handoff shows the hooks' card ("Host room CODE on this machine?": the room's Claude then runs on
  * this person's model account, this machine must stay reachable); only the person's "Host it here" on the card as
  * built moves the room (handoff.accept, signed with the seat key), "Not now" refuses it, anything else records
  * nothing.
@@ -535,8 +535,8 @@ function postHandoff(input, me, r, answers) {
   if (!res.ok) {
     return say(`The room did NOT move: ${res.error}. ${me.name} has been told; return to what you were doing.`, { systemMessage: `sub-human: room ${me.code} did not move here: ${res.error}` }), true;
   }
-  say(`Room ${me.code} is hosted on this machine now (host epoch ${res.epoch}): ${me.name} agreed on the card. Its orch starts here, on ${me.name}'s model account. Post nothing about it (the room shows it); return to what you were doing.`,
-    { systemMessage: `sub-human: room ${me.code} is hosted here now (epoch ${res.epoch}); its orch runs on your model account. Keep this machine reachable for the others${res.note}` });
+  say(`Room ${me.code} is hosted on this machine now (host epoch ${res.epoch}): ${me.name} agreed on the card. The room's Claude starts here, on ${me.name}'s model account. Post nothing about it (the room shows it); return to what you were doing.`,
+    { systemMessage: `sub-human: room ${me.code} is hosted here now (epoch ${res.epoch}); the room's Claude runs on your model account. Keep this machine reachable for the others${res.note}` });
   return true;
 }
 

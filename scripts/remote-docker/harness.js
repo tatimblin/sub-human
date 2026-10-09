@@ -3,7 +3,7 @@
 /**
  * scripts/remote-docker/harness.js: remote rooms over real SSH, against a second machine faked with Docker.
  *
- *   devbox (container)   sshd + the host room in /home/host/.sub-human: alice (a sleeper seat; up names it), the orch's
+ *   devbox (container)   sshd + the host room in /home/host/.sub-human: alice (a sleeper seat; up names it), the room Claude's
  *                        `claude` a stub. scripts/remote-docker/host-cli.js drives its hooks.
  *   toxiproxy            in front of devbox:22, published on 127.0.0.1 (a port Docker picks): cut the link, add
  *                        latency.

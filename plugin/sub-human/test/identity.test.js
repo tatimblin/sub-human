@@ -33,16 +33,18 @@ test('identity: join validates names, reserved names and roles', () => {
   const code = h.newRoom();
   const j = (name, role = 'member', extra = {}) => identity.join({ code, name, role, pid: process.pid, session_id: 's1', cwd: '/x', ...extra });
   for (const bad of ['', 'a b', 'x'.repeat(33), 'semi;colon', null]) assert.equal(j(bad).ok, false, String(bad));
-  for (const r of ['orch', 'room', 'all', 'system', 'host', 'join', 'ROOM']) assert.match(j(r).error, /reserved/, r);
-  assert.match(j('alice', 'orch').error, /joins as "orch"/);
+  for (const r of ['claude', 'Claude', 'CLAUDE', 'orch', 'Orch', 'room', 'all', 'system', 'host', 'join', 'ROOM']) assert.match(j(r).error, /reserved/, r);
+  assert.match(j('alice', 'claude').error, /joins as "claude"/);
+  assert.match(j('orch', 'orch').error, /invalid role/, 'no orch alias: not a role');
+  assert.match(j('alice', 'orch').error, /invalid role/);
   assert.match(j('alice', 'admin').error, /invalid role/);
-  assert.match(j('alice', 'observer').error, /invalid role/, 'roles are orch and member only');
+  assert.match(j('alice', 'observer').error, /invalid role/, 'roles are claude and member only');
   assert.match(identity.join({ code: 'nope-0000', name: 'alice', role: 'member', pid: process.pid }).error, /no room/);
   assert.match(j('alice', 'member', { session_id: '../../x' }).error, /session_id/);
   assert.match(j('alice', 'member', { pid: 'x' }).error, /invalid pid/);
-  assert.deepEqual(j('orch', 'orch'), { ok: true });
-  const m = identity.readMembers(code).orch;
-  assert.equal(m.role, 'orch');
+  assert.deepEqual(j('claude', 'claude'), { ok: true });
+  const m = identity.readMembers(code).claude;
+  assert.equal(m.role, 'claude');
   assert.equal(m.pid, process.pid);
   assert.equal(m.pid_start, require(path.join(h.LIB, 'lock.js')).pidStart(process.pid), 'the process start time is stored with the pid');
   assert.equal(m.session_id, 's1');
@@ -137,7 +139,7 @@ test('identity: rebindSession after /clear; resolveSelf by CLAUDE_CODE_SESSION_I
   bob.kill();
 });
 
-test('identity: openRooms lists rooms with >= 1 live member seat (no orch needed) that are not closing', async () => {
+test('identity: openRooms lists rooms with >= 1 live member seat (no claude needed) that are not closing', async () => {
   h.freshHome();
   assert.deepEqual(identity.openRooms(), []);
   const a = h.newRoom();
@@ -154,14 +156,14 @@ test('identity: openRooms lists rooms with >= 1 live member seat (no orch needed
   await h.until(() => !identity.isAlive(s.pid));
   assert.deepEqual(identity.openRooms(), [a], 'dead member');
   assert.deepEqual(identity.liveMembers(b), []);
-  // an orch seat alone does not keep a room open: it is an orphan room (join sweeps it), still roomOpen for a resume
+  // a room Claude seat alone does not keep a room open: it is an orphan room (join sweeps it), still roomOpen for a resume
   const o = h.spawnSleeper();
-  identity.join({ code: b, name: 'orch', role: 'orch', pid: o.pid });
-  assert.deepEqual(identity.openRooms(), [a], 'orch-only room ignored');
+  identity.join({ code: b, name: 'claude', role: 'claude', pid: o.pid });
+  assert.deepEqual(identity.openRooms(), [a], 'claude-only room ignored');
   assert.deepEqual(identity.orphanRooms(), [b]);
   assert.equal(identity.roomOpen(b), true);
-  assert.deepEqual(identity.liveMembers(b), [], 'the orch is not a member');
-  identity.setOrch(b, { closing: new Date().toISOString() });
+  assert.deepEqual(identity.liveMembers(b), [], 'the room\'s Claude is not a member');
+  identity.setRoomClaude(b, { closing: new Date().toISOString() });
   assert.equal(identity.roomClosing(b), true);
   assert.deepEqual(identity.openRooms(), [a], 'closing');
   assert.deepEqual(identity.orphanRooms(), [], 'closing rooms are not swept again');
@@ -171,17 +173,17 @@ test('identity: openRooms lists rooms with >= 1 live member seat (no orch needed
   assert.deepEqual(identity.openRooms(), [], 'member left');
 });
 
-test('identity: members.json orch {job, pid}: setOrch before the bind, kept across the bind', () => {
+test('identity: members.json claude {job, pid}: setRoomClaude before the bind, kept across the bind', () => {
   h.freshHome();
   const code = h.newRoom();
-  const pre = identity.setOrch(code, { job: 'ab12cd34', spawned_at: '2026-10-05T00:00:00.000Z' });
-  assert.deepEqual(pre, { name: 'orch', role: 'orch', pid: null, job: 'ab12cd34', spawned_at: '2026-10-05T00:00:00.000Z' });
-  assert.deepEqual(identity.join({ code, name: 'orch', role: 'orch', pid: process.pid, session_id: 'so' }), { ok: true, rejoin: true });
-  const m = identity.readMembers(code).orch;
+  const pre = identity.setRoomClaude(code, { job: 'ab12cd34', spawned_at: '2026-10-05T00:00:00.000Z' });
+  assert.deepEqual(pre, { name: 'claude', role: 'claude', pid: null, job: 'ab12cd34', spawned_at: '2026-10-05T00:00:00.000Z' });
+  assert.deepEqual(identity.join({ code, name: 'claude', role: 'claude', pid: process.pid, session_id: 'so' }), { ok: true, rejoin: true });
+  const m = identity.readMembers(code).claude;
   assert.equal(m.job, 'ab12cd34');
   assert.equal(m.pid, process.pid);
-  assert.equal(identity.resolveByPid(process.pid).address, `orch.${code}`);
-  assert.throws(() => identity.setOrch('nope-0000', {}), /no room/);
+  assert.equal(identity.resolveByPid(process.pid).address, `claude.${code}`);
+  assert.throws(() => identity.setRoomClaude('nope-0000', {}), /no room/);
 });
 
 test('identity: presence is a per-member file written with the lease (members.beat); writePresence stores valid states and names only', () => {
@@ -247,15 +249,15 @@ test('identity: leave drops the by-pid index (under the members lock) but keeps 
   assert.equal(fs.existsSync(path.join(identity.roomDir(code), 'members.json.lock')), false, 'lock released');
 });
 
-test('identity: updateOrch merges a patch under the lock, writes nothing for null, drops undefined keys', () => {
+test('identity: updateRoomClaude merges a patch under the lock, writes nothing for null, drops undefined keys', () => {
   h.freshHome();
   const code = h.newRoom();
-  assert.equal(identity.updateOrch(code, () => null), null);
+  assert.equal(identity.updateRoomClaude(code, () => null), null);
   assert.deepEqual(identity.readMembers(code), {});
-  identity.updateOrch(code, o => { assert.equal(o, null); return { job: 'pending', claim: 'c1' }; });
-  const r = identity.updateOrch(code, o => ({ claim: undefined, job: o.job === 'pending' ? 'abcd1234' : 'x' }));
-  assert.deepEqual(r, { name: 'orch', role: 'orch', pid: null, job: 'abcd1234' });
-  assert.throws(() => identity.updateOrch('nope-0000', () => ({})), /no room/);
+  identity.updateRoomClaude(code, o => { assert.equal(o, null); return { job: 'pending', claim: 'c1' }; });
+  const r = identity.updateRoomClaude(code, o => ({ claim: undefined, job: o.job === 'pending' ? 'abcd1234' : 'x' }));
+  assert.deepEqual(r, { name: 'claude', role: 'claude', pid: null, job: 'abcd1234' });
+  assert.throws(() => identity.updateRoomClaude('nope-0000', () => ({})), /no room/);
 });
 
 test('identity: the seat lease: join stamps seen_at, heartbeat renews it (throttled, own seat only), seatAlive uses it only without a pid', async () => {
@@ -278,7 +280,7 @@ test('identity: the seat lease: join stamps seen_at, heartbeat renews it (thrott
   const remote = { name: 'zed', role: 'member', pid: null };
   assert.equal(identity.seatAlive({ ...remote, seen_at: new Date().toISOString() }), true);
   assert.equal(identity.seatAlive({ ...remote, seen_at: new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString() }), false);
-  assert.equal(identity.seatAlive(remote), false, 'no pid and no lease: not alive (an orch record before it binds)');
+  assert.equal(identity.seatAlive(remote), false, 'no pid and no lease: not alive (a room Claude record before it binds)');
   assert.equal(identity.seatAlive({ ...remote, seen_at: new Date().toISOString(), left_at: new Date().toISOString() }), false);
   identity.leave(code, 'alice');
   assert.equal(identity.heartbeat(me, Date.now() + 10 * config.SEAT_BEAT_MS), false, 'a left seat is not renewed');
@@ -376,4 +378,32 @@ test('identity: a seat of another machine is judged by its lease, whatever its p
   assert.match(identity.join({ code, name: 'zed', role: 'member', pid: process.pid }).error, /name taken/, 'held on another machine');
   assert.equal(identity.resolveByPid(process.pid), null);
   assert.match(identity.join({ code, name: 'amy', role: 'member' }).error, /invalid pid/, 'a seat of this machine needs its pid');
+});
+
+test('identity: a 0.4.x room names its Claude "orch" (members.json and the session index): read as claude, written as claude only', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const sid = 'aaaaaaaa-0000-4000-8000-0000000000aa';
+  const now = new Date().toISOString();
+  // members.json as 0.4.x wrote it: the room's Claude bound to this (live) process, plus a person
+  fs.writeFileSync(path.join(identity.roomDir(code), 'members.json'), JSON.stringify({
+    orch: { name: 'orch', role: 'orch', machine: identity.machineId(), pid: process.pid, session_id: sid, joined_at: now, seen_at: now, job: 'j0400' },
+    alice: { name: 'alice', role: 'member', machine: identity.machineId(), pid: process.ppid, joined_at: now, seen_at: now },
+  }));
+  const idx = { code, name: 'orch', role: 'orch', pid: process.pid, session_id: sid, address: `orch.${code}` };
+  fs.mkdirSync(path.join(identity.home(), 'sessions', 'by-sid'), { recursive: true });
+  fs.writeFileSync(path.join(identity.home(), 'sessions', 'by-sid', `${sid}.json`), JSON.stringify(idx));
+  const ms = identity.readMembers(code);
+  assert.deepEqual(Object.keys(ms).sort(), ['alice', 'claude']);
+  assert.deepEqual([ms.claude.name, ms.claude.role, ms.claude.job], ['claude', 'claude', 'j0400']);
+  assert.deepEqual(identity.liveMembers(code), ['alice'], 'the room\'s Claude is not a person');
+  assert.deepEqual(identity.lastSeat(sid), { code, name: 'claude', role: 'claude', address: `claude.${code}` });
+  const me = identity.resolveBySession(sid);
+  assert.deepEqual([me.name, me.role, me.address], ['claude', 'claude', `claude.${code}`]);
+  // the next write holds only new names
+  identity.setRoomClaude(code, { orphan_since: now });
+  const raw = JSON.parse(fs.readFileSync(path.join(identity.roomDir(code), 'members.json'), 'utf8'));
+  assert.deepEqual(Object.keys(raw).sort(), ['alice', 'claude']);
+  assert.deepEqual([raw.claude.name, raw.claude.role, raw.claude.job, raw.claude.orphan_since], ['claude', 'claude', 'j0400', now]);
+  assert.ok(!JSON.stringify(raw).includes('orch'), 'nothing written under the old name');
 });

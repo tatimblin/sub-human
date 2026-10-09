@@ -9,7 +9,7 @@ const NEW_SID = '8cea5671-97a8-49c2-bcdb-4a62d51b6a18';
 const hasRows = () => { try { require('../../lib/rows.js'); return true; } catch { return false; } };
 
 test('session-restore: after /clear, rebinds the new session id by CLAUDE_PID and re-injects the mechanics block', () => {
-  const w = new World({ orch: 'sleep', alice: 'act' });
+  const w = new World({ claude: 'sleep', alice: 'act' });
   w.append({ kind: 'say', text: 'hello room' }, { via: 'human', from: 'alice' });
   const r = w.hook('session-restore', { ...fixture('session-start-clear'), session_id: NEW_SID }, { as: 'alice', session: false });
   assert.equal(r.code, 0, r.stderr);
@@ -25,20 +25,20 @@ test('session-restore: after /clear, rebinds the new session id by CLAUDE_PID an
   assert.equal(w.lib(() => identity.resolveBySession(w.sid.alice)), null, 'old session id dropped');
 });
 
-test('session-restore: ROWS asks to re-create rows only if missing after clear/compact; the orch gets its block', () => {
-  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+test('session-restore: ROWS asks to re-create rows only if missing after clear/compact; the room\'s Claude gets its block', () => {
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const r = w.hook('session-restore', { ...fixture('session-start-clear'), session_id: NEW_SID }, { as: 'alice', session: false });
   const c = ctx(r);
   if (hasRows()) assert.match(c, /ROWS\n[^]*subagent_type: "sub-human:room"/, 'no live hold: the room row is listed');
   const r2 = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'alice' });
   assert.match(ctx(r2), /restored after compact/);
-  const ro = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'orch' });
-  assert.ok(ctx(ro).startsWith(`SUB-HUMAN: you are the headless helper of room ${w.code}`), ctx(ro).slice(0, 80));
-  assert.equal(hso(ro).sessionTitle, `orch.${w.code}`);
+  const ro = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'claude' });
+  assert.ok(ctx(ro).startsWith(`SUB-HUMAN: you are claude, the room's Claude of room ${w.code}`), ctx(ro).slice(0, 80));
+  assert.equal(hso(ro).sessionTitle, `claude.${w.code}`);
 });
 
 test('session-restore: --resume after the session ended rejoins the seat with a new pid and asks to re-create rows', () => {
-  const w = new World({ orch: 'sleep', alice: 'sleep', bob: 'sleep' });
+  const w = new World({ claude: 'sleep', alice: 'sleep', bob: 'sleep' });
   const oldSid = w.sid.alice;
   // exit: session-end marks alice left
   w.hook('session-end', fixture('session-end'), { as: 'alice' });
@@ -60,10 +60,10 @@ test('session-restore: --resume after the session ended rejoins the seat with a 
 });
 
 test('session-restore: --resume into a closing or closed room does nothing', () => {
-  const w = new World({ orch: 'sleep', alice: 'sleep' });
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
   const oldSid = w.sid.alice;
   w.hook('session-end', fixture('session-end'), { as: 'alice' }); // the last member: the reaper starts (grace 0 here)
-  w.lib(() => identity.setOrch(w.code, { closing: new Date().toISOString() }));
+  w.lib(() => identity.setRoomClaude(w.code, { closing: new Date().toISOString() }));
   w.pid.alice = process.pid;
   const r = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'resume', session_id: oldSid }, { as: 'alice', session: false });
   assert.equal(r.stdout, '');
@@ -71,7 +71,7 @@ test('session-restore: --resume into a closing or closed room does nothing', () 
 });
 
 test('session-restore: --resume after a crash (seat still registered, old pid dead) moves it to the new pid', async () => {
-  const w = new World({ orch: 'sleep', alice: 'sleep' });
+  const w = new World({ claude: 'sleep', alice: 'sleep' });
   process.kill(w.pid.alice, 'SIGKILL');
   for (let i = 0; i < 100 && identity.isAlive(w.pid.alice); i++) await new Promise(r => setTimeout(r, 20));
   w.pid.alice = process.pid; // new process, same session id; no session-end ran
@@ -81,13 +81,13 @@ test('session-restore: --resume after a crash (seat still registered, old pid de
 });
 
 test('session-restore: not joined -> nothing', () => {
-  const w = new World({ orch: 'sleep' });
+  const w = new World({ claude: 'sleep' });
   assert.equal(w.hook('session-restore', fixture('session-start-clear')).stdout, '');
 });
 
 test('session-restore: a review left open (plan file still the proposal) is restored and cleared after clear; a fresh one survives compact', () => {
   const proposal = require('../../lib/proposal.js');
-  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const text = '# Cursor paging\n\n1. after=\n';
   const hash = w.lib(() => proposal.create({ code: w.code, name: 'bob', role: 'member' }, { text, approvers: ['alice'] })).hash;
   const file = path.join(w.userHome, '.claude', 'plans', 'stuck.md');

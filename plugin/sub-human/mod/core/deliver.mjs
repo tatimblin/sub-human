@@ -4,7 +4,7 @@
  *   seat -> follow it; chat -> $.ui.log per line (a notice is one line, cc CONTRACT ui-log-notice), relayed as a
  *   prompt while the person types from Remote Control (relayText, batched by relayQueue); pull -> isMeta
  *   append; wake -> $.prompt.submit when idle, else append plus log, re-checked at the turn's end (turnLedger);
- *   rows -> held for the next prompt (the orch's ride on its wakes); health -> log plus append.
+ *   rows -> held for the next prompt (the room Claude's ride on its wakes); health -> log plus append.
  * Failure: pull is at most once (PULL_DELIVERY): the tail's cursor moves when the line is written, so a mod lost
  * between that write and the append drops it; a malformed event parses to null and is ignored.
  */
@@ -145,8 +145,8 @@ export function route(ev, { turnRunning = false, role = 'member', rows = null, r
     case 'rows': return [{ do: 'hold-rows', text: ev.text }];
     case 'health': return [...logLines(ev.text), { do: 'append', text: `${FOR_CLAUDE} ${ev.text}` }];
     case 'wake': {
-      // The orch has no person to type: its rows calls ride on its wakes. A member's go with the person's prompt.
-      const text = wakeText(ev.text, role === 'orch' ? rows : null);
+      // The room's Claude has no person to type: its rows calls ride on its wakes. A member's go with the person's prompt.
+      const text = wakeText(ev.text, role === 'claude' ? rows : null);
       const seen = visibleLines(ev.text);
       if (!turnRunning) return [{ do: 'submit', text, seen }];
       return [...logLines(seen), { do: 'mid-turn-wake', text }];

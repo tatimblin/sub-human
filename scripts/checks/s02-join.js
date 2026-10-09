@@ -11,16 +11,16 @@ module.exports = {
     det('member_joined bob (via system)', j && j.via === 'system', x.fmt(j));
     const warned = /sub-human: (?:opened room|joined |in room )[^\n]*/.exec(x.cap('S2', 'bob') || '');
     det('bob\'s join prints no line (a join that works shows no warning-styled systemMessage)', !warned, warned ? `"${warned[0]}" in ${x.capName('S2', 'bob')}` : `none in ${x.capName('S2', 'bob')}`);
-    const ha = x.st('S2', 1, 'holds-alice.json', {}), hb = x.st('S2', 1, 'holds-bob.json', {}), ho = x.st('S2', 1, 'holds-orch.json', {});
-    det('Rows: bob nested in alice\'s room row, alice in bob\'s, both in the orch\'s', ha.room && (ha.members || []).includes('bob') && hb.room && (hb.members || []).includes('alice') && ['alice', 'bob'].every(n => (ho.members || []).includes(n)),
-      `holds-alice ${JSON.stringify({ room: ha.room, members: ha.members })}; holds-bob ${JSON.stringify({ room: hb.room, members: hb.members })}; holds-orch ${JSON.stringify(ho.members)}`);
+    const ha = x.st('S2', 1, 'holds-alice.json', {}), hb = x.st('S2', 1, 'holds-bob.json', {}), ho = x.st('S2', 1, 'holds-claude.json', {});
+    det('Rows: bob nested in alice\'s room row, alice in bob\'s, both in the room\'s Claude\'s', ha.room && (ha.members || []).includes('bob') && hb.room && (hb.members || []).includes('alice') && ['alice', 'bob'].every(n => (ho.members || []).includes(n)),
+      `holds-alice ${JSON.stringify({ room: ha.room, members: ha.members })}; holds-bob ${JSON.stringify({ room: hb.room, members: hb.members })}; holds-claude ${JSON.stringify(ho.members)}`);
     const br = panelRows(x.cap('S2', 'bob'));
     const top = br.filter(r => !r.nested);
     det(`bob's panel: only the ${code} row at the top level (no stray participant row)`, top.length === 1 && top[0].label === code, br.map(r => r.line).join(' | ') || 'no rows');
-    const orr = panelRows(x.cap('S2', 'orch'));
-    det('The orch\'s panel lists alice and bob', ['alice', 'bob'].every(n => orr.some(r => r.label === n)), orr.map(r => r.line).join(' | ') || 'none');
-    const n = x.orchTurns(x.span('S2'));
-    beh(`The orch spent at most ${T.orchJoinCalls} model calls on the join (its row spawn)`, n, T.orchJoinCalls, `${n} orch assistant messages in S2`);
+    const orr = panelRows(x.cap('S2', 'claude'));
+    det('The room\'s Claude\'s panel lists alice and bob', ['alice', 'bob'].every(n => orr.some(r => r.label === n)), orr.map(r => r.line).join(' | ') || 'none');
+    const n = x.roomClaudeTurns(x.span('S2'));
+    beh(`The room's Claude spent at most ${T.roomClaudeJoinCalls} model calls on the join (its row spawn)`, n, T.roomClaudeJoinCalls, `${n} claude assistant messages in S2`);
     // the join as a group-chat line in alice's pane: the hooks module's $.ui.log row "sub-human: bob joined"
     const jt = readText(x.stateFile('S2', 'notice-alice.txt')) || '';
     const jl = /^\s*(⏺ )?(sub-human: )?bob joined\s*$/m.exec(jt);

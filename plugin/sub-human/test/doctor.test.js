@@ -92,7 +92,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.equal(akc.fix, `echo '${KEY}' | sub-human authorize ${LINK_ID} - --room ${code} --file ~/.ssh/authorized_keys`, 'the child\'s HOME is the user dir');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
-  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+\\), host 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+\\), speaking v2`));
+  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v2`));
   assert.match(lc.fix, /ask carolyn for an invite/, 'the room moved and this link never reached the new host');
   assert.match(lc.detail, /the room moved to carolyn's machine \(pipe:.*, host epoch 2; not reached from here yet/);
   const clock = byId(rep, `clock:${code}`);
@@ -111,7 +111,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   // the human-readable form (reading the link opened the store, which repairs the modes: open them again)
   fs.chmodSync(home, 0o755);
   r = run(['--quick'], env);
-  assert.match(r.stdout, /^sub-human doctor · plugin \d+\.\d+\.\d+ · node v/);
+  assert.match(r.stdout, /^sub-human doctor · plugin \d+\.\d+\.\d+(?:-[0-9a-z.]+)? · node v/);
   assert.match(r.stdout, /✗ home +.*\n +fix: sub-human doctor --fix/);
   assert.doesNotMatch(r.stdout, /host reachable/, '--quick says no hello');
 
@@ -202,26 +202,26 @@ test('doctor redactor: each rule alone', () => {
   assert.equal(doctor.redactor({ home: '/home/zed', shHome: '/home/zed/.sub-human' })('/home/zed/.sub-human/x'), '~/.sub-human/x');
 });
 
-test('doctor: a room whose orch job started but never took its seat (e.g. refused "name taken") fails, with the job\'s log', t => {
+test('doctor: a room whose claude job started but never took its seat (e.g. refused "name taken") fails, with the job\'s log', t => {
   h.freshHome(t);
   const identity = require(path.join(h.LIB, 'identity.js'));
   const { code } = h.register('alice', 'member', process.pid);
   const old = new Date(Date.now() - 5 * 60_000).toISOString();
-  identity.updateOrch(code, () => ({ job: 'job12345', spawned_at: old, pid: 4242, machine: 'another-machine', left_at: undefined }));
-  const [c] = doctor.checkOrchs();
-  assert.equal(c.id, `orch:${code}`);
+  identity.updateRoomClaude(code, () => ({ job: 'job12345', spawned_at: old, pid: 4242, machine: 'another-machine', left_at: undefined }));
+  const [c] = doctor.checkRoomClaudes();
+  assert.equal(c.id, `room-claude:${code}`);
   assert.equal(c.status, 'fail');
   assert.match(c.detail, /job job12345 was started \d+ s ago but never took its seat/);
   assert.match(c.fix, /claude logs job12345/);
-  identity.updateOrch(code, () => ({ spawned_at: new Date().toISOString() }));
-  assert.deepEqual(doctor.checkOrchs(), [], 'within the grace');
-  identity.updateOrch(code, () => ({ spawned_at: old, pid: process.pid, machine: identity.machineId() }));
-  const [ok] = doctor.checkOrchs();
-  assert.deepEqual([ok.id, ok.status], [`orch:${code}`, 'pass'], 'bound here and live: a ✓ line');
+  identity.updateRoomClaude(code, () => ({ spawned_at: new Date().toISOString() }));
+  assert.deepEqual(doctor.checkRoomClaudes(), [], 'within the grace');
+  identity.updateRoomClaude(code, () => ({ spawned_at: old, pid: process.pid, machine: identity.machineId() }));
+  const [ok] = doctor.checkRoomClaudes();
+  assert.deepEqual([ok.id, ok.status], [`room-claude:${code}`, 'pass'], 'bound here and live: a ✓ line');
   assert.match(ok.detail, new RegExp(`bound and live: job job12345, pid ${process.pid}`));
-  assert.match(doctor.format({ versions: { plugin: 'x', node: 'x', platform: 'x', arch: 'x' }, checks: [ok] }), /✓ orch /);
-  identity.updateOrch(code, () => ({ pid: 999999 }));
-  assert.deepEqual(doctor.checkOrchs(), [], 'bound but its process gone: the watchdog acts, doctor stays quiet');
+  assert.match(doctor.format({ versions: { plugin: 'x', node: 'x', platform: 'x', arch: 'x' }, checks: [ok] }), /✓ room's Claude /);
+  identity.updateRoomClaude(code, () => ({ pid: 999999 }));
+  assert.deepEqual(doctor.checkRoomClaudes(), [], 'bound but its process gone: the watchdog acts, doctor stays quiet');
 });
 
 test('doctor: a link stopped on a spent invite says to ask the host for a new one (joining again would reuse it)', () => {

@@ -2,8 +2,8 @@
 'use strict';
 // UserPromptExpansion(sub-human:sub-human): bind this session's identity before the model runs; the model never
 // chooses it. `/sub-human NAME [CODE]` joins CODE (else the one open room, else a new one) as NAME, leaving any other
-// room, and (re)starts a room's orch without waiting for it (lib/orch.js claimSpawn). Bare `/sub-human` binds the
-// orch's own session (agent_type sub-human:orchestrator + SUB_HUMAN_ROOM), else explains usage. Creates the seat
+// room, and (re)starts the room's Claude without waiting for it (lib/room-claude.js claimSpawn). Bare `/sub-human` binds the
+// room Claude's own session (agent_type sub-human:room-claude + SUB_HUMAN_ROOM), else explains usage. Creates the seat
 // key (hooks/seat-key.js). Out: the mechanics block (common.js contextBlock; a systemMessage only for a refusal or the
 // bypass-permissions warning: Claude Code draws one as a warning, and Remote Control shows it); the title
 // comes on the next prompt (mod/prompt.mjs), since UserPromptExpansion has no sessionTitle. Failure blocks the
@@ -11,7 +11,7 @@
 // without a fresh hello lease for this session (identity.modLeaseOk) the join is refused with NO_MODULE.
 // The seat key is made before the seat; its public key rides on member_joined, which pins it for the room's life
 // (lib/room/envelope.js): a join whose key differs from the one pinned for that name is refused (RoomError AUTH)
-// and the seat is given back. Entering and leaving are lib/seats.js (enter, exit, ensureOrch); orch, room, all,
+// and the seat is given back. Entering and leaving are lib/seats.js (enter, exit, ensureRoomClaude); claude, orch, room, all,
 // system, host, join, admit, revoke, handoff and unhost are reserved names.
 // `/sub-human host [--ssh [USER@HOST[:PORT]]] [--via JUMP]`: an sh2 invite to the room this session is in and its
 // PIN (host only; lib/remote/hosting.js hostInvite), for one machine, shown to the person once: a block reason
@@ -26,7 +26,7 @@
 // `/sub-human join NAME INVITE [PIN]`: a room hosted on another machine (an invite over ssh:, or pipe: for a
 // second home here). sh1 (no PIN): the link file (lib/room/links.js) from the invite, the link daemon started
 // (lib/remote/link.js start; it redeems the invite), then the join as above over the link (the host logs it and
-// runs the orch). sh2 (a PIN): the typed prompt holds the PIN, so this step always blocks with suppressOriginalPrompt
+// runs the room's Claude). sh2 (a PIN): the typed prompt holds the PIN, so this step always blocks with suppressOriginalPrompt
 // and the model never sees the invite or the PIN: the link file (with the PIN, until the host has checked it) and,
 // over ssh, the link's own key and the pinned host key (hosting.joinInvite), the daemon started and its first hello
 // watched (hosting.outcome); the block says what next: "/sub-human NAME CODE" once linked, the admit line to send
@@ -38,7 +38,7 @@
 // (lib/handoff.js ask, signed with this seat's key); NAME's Claude shows them a card, and only their answer there
 // moves the room. The reply is a block reason, to the person only.
 const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
-const orch = require('../lib/orch.js');
+const roomClaude = require('../lib/room-claude.js');
 const seats = require('../lib/seats.js');
 const auth = require('../lib/remote/auth.js');
 const link = require('../lib/remote/link.js');
@@ -49,11 +49,11 @@ const seatKey = require('./seat-key.js');
 const handoff = require('../lib/handoff.js');
 const envelope = require('../lib/room/envelope.js');
 const store = require('../lib/room/store.js');
-const { orchPresence } = require('../lib/room/members.js');
+const { roomClaudePresence } = require('../lib/room/members.js');
 
 const COMMANDS = new Set(['sub-human:sub-human', 'sub-human']);
-const ORCH_AGENT = 'sub-human:orchestrator';
-const USAGE = 'usage: /sub-human NAME [CODE]. It joins the open room as NAME, or opens one and starts its orch for you (the orch is never launched by hand). '
+const ROOM_CLAUDE_AGENT = 'sub-human:room-claude';
+const USAGE = 'usage: /sub-human NAME [CODE]. It joins the open room as NAME, or opens one and starts the room\'s Claude for you (it is never launched by hand). '
   + '/sub-human host [--ssh [USER@HOST]] [--via JUMP] gives an invite and its PIN for your room; /sub-human admit shk1.… lets a joiner\'s key in, /sub-human revoke NAME ends its link (or revoke REF, one leaked invite); /sub-human join NAME INVITE PIN joins a room on another machine; /sub-human handoff NAME asks NAME to host your room.';
 const BYPASS = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
 // A refusal is also the systemMessage: Remote Control shows a hook's systemMessage, not a block reason.
@@ -67,17 +67,17 @@ const hidden = (reason, { shareable = false } = {}) => out({
 });
 const NO_MODULE = 'sub-human needs Claude Code 2.1.292+ with function hooks on; not in --bare or safe mode';
 
-/** A note in a join's message that the person must hear: the orch could not start, or its last start failed. */
-const TROUBLE = /· no orch \(|the last start failed: /;
+/** A note in a join's message that the person must hear: the room's Claude could not start, or its last start failed. */
+const TROUBLE = /· no claude \(|the last start failed: /;
 
 /**
  * A join that worked: the mechanics block for the model. No systemMessage, which Claude Code draws as a warning (the
- * session title and the room row say it worked), unless something in it is one: the orch
+ * session title and the room row say it worked), unless something in it is one: the room's Claude
  * did not start, or the bypass-permissions warning.
  */
 function success(me, lead, msg, input) {
   presence(me, 'working');
-  const bypass = input.permission_mode === 'bypassPermissions' && me.role !== 'orch' ? BYPASS : '';
+  const bypass = input.permission_mode === 'bypassPermissions' && me.role !== 'claude' ? BYPASS : '';
   const warn = bypass || TROUBLE.test(msg) ? `sub-human: ${msg}${bypass}` : null;
   out({
     ...(warn ? { systemMessage: warn } : {}),
@@ -85,34 +85,34 @@ function success(me, lead, msg, input) {
   });
 }
 
-/** Close rooms where only the orch is left once they have been orphaned long enough (best effort; host only). */
+/** Close rooms where only the room's Claude is left once they have been orphaned long enough (best effort; host only). */
 function sweep() {
   try { identity.pruneModLeases(); } catch { /* the next join retries */ }
-  for (const c of identity.orphanRooms()) { try { orch.watchdog(c); } catch { /* next join retries */ } }
+  for (const c of identity.orphanRooms()) { try { roomClaude.watchdog(c); } catch { /* next join retries */ } }
 }
 
 function others(code, name) {
   const ms = Object.values(identity.readMembers(code)).filter(m => m && m.name && m.name !== name && !m.left_at
-    && (m.role !== 'orch' || orchPresence(m) === 'live'));
+    && (m.role !== 'claude' || roomClaudePresence(m) === 'live'));
   return ms.map(m => m.name).join(', ');
 }
 
-/** The orch's own launch `/sub-human` (or a debugging `/sub-human [CODE]` in an orch-agent session). */
-function bindOrch(input, base, cur, args) {
+/** The room Claude's own launch `/sub-human` (or a debugging `/sub-human [CODE]` in a room-claude agent session). */
+function bindRoomClaude(input, base, cur, args) {
   if (args.length > 1 || (args[0] && !identity.CODE_RE.test(args[0]))) {
-    return block('this session runs the orchestrator agent; members join from their own sessions with /sub-human NAME.');
+    return block('this session runs the room\'s Claude agent; members join from their own sessions with /sub-human NAME.');
   }
   const code = process.env.SUB_HUMAN_ROOM || args[0] || null;
-  if (cur && cur.role === 'orch' && (!code || cur.code === code)) return success(cur, 'room already open', `orch of room ${cur.code}`, input);
+  if (cur && cur.role === 'claude' && (!code || cur.code === code)) return success(cur, 'room already open', `claude of room ${cur.code}`, input);
   if (cur) return block(`this session is already ${cur.name} in room ${cur.code}.`);
   const fresh = !code;
   const c = code || identity.newCode();
   if (!identity.roomExists(c)) return block(`no room ${c}.`);
   if (identity.roomClosing(c)) return block(`room ${c} is closing.`);
-  const r = identity.join({ code: c, name: 'orch', role: 'orch', ...base });
-  if (!r || !r.ok) return block(`could not bind the orch of ${c}: ${(r && r.error) || 'unknown error'}`);
-  const me = { code: c, name: 'orch', role: 'orch', pid: base.pid, session_id: base.session_id || null, address: identity.address('orch', c) };
-  return success(me, fresh ? 'room created' : 'orch started', fresh ? `room ${c} open · others join with: /sub-human NAME ${c}` : `orch of room ${c}`, input);
+  const r = identity.join({ code: c, name: 'claude', role: 'claude', ...base });
+  if (!r || !r.ok) return block(`could not bind the room's Claude of ${c}: ${(r && r.error) || 'unknown error'}`);
+  const me = { code: c, name: 'claude', role: 'claude', pid: base.pid, session_id: base.session_id || null, address: identity.address('claude', c) };
+  return success(me, fresh ? 'room created' : 'claude started', fresh ? `room ${c} open · others join with: /sub-human NAME ${c}` : `claude of room ${c}`, input);
 }
 
 /** `--ssh [DEST] --via JUMP` (or `--tailscale [--funnel]`, `--url URL`, `--port P`) of /sub-human host: the flags,
@@ -203,7 +203,7 @@ function askHandoff(cur, argv) {
     if (!(e instanceof room.RoomError)) throw e;
     return block(`could not hand room ${cur.code} off: ${e.message}.`);
   }
-  return out({ decision: 'block', reason: `sub-human: asked ${to} to host room ${cur.code}. Their Claude shows them a card; nothing moves unless they agree there (until ${d.expires_at.slice(11, 16)} UTC). If they do, the room's log, links and orch move to their machine, the orch then runs on ${to}'s model account, and this machine follows as a member.` });
+  return out({ decision: 'block', reason: `sub-human: asked ${to} to host room ${cur.code}. Their Claude shows them a card; nothing moves unless they agree there (until ${d.expires_at.slice(11, 16)} UTC). If they do, the room's log, links and claude move to their machine, the room's Claude then runs on ${to}'s model account, and this machine follows as a member.` });
 }
 
 /** A daemon still dialing the old host: stop it, so the start that follows dials the link file's new one. */
@@ -257,12 +257,12 @@ run(input => {
   const base = { pid, session_id: input.session_id, cwd };
   const cur = whoami(input);
 
-  if (input.agent_type === ORCH_AGENT) return bindOrch(input, base, cur, args);
+  if (input.agent_type === ROOM_CLAUDE_AGENT) return bindRoomClaude(input, base, cur, args);
   if (args.length === 0) {
-    if (cur && cur.role !== 'orch') return block(`you are ${cur.name} in room ${cur.code} (address ${cur.name}.${cur.code}). ${USAGE}`);
+    if (cur && cur.role !== 'claude') return block(`you are ${cur.name} in room ${cur.code} (address ${cur.name}.${cur.code}). ${USAGE}`);
     return block(USAGE);
   }
-  if (cur && cur.role === 'orch') return block(`this session is the orch of room ${cur.code}; join from another session.`);
+  if (cur && cur.role === 'claude') return block(`this session is the room's Claude of room ${cur.code}; join from another session.`);
   if (args[0] === 'handoff' && args.length >= 2) return askHandoff(cur, args.slice(1));
   if (args[0] === 'host') return host(cur, args.slice(1));
   if (args[0] === 'admit' || args[0] === 'revoke') return hostAction(cur, args);
@@ -319,7 +319,7 @@ run(input => {
   // a link whose credentials a re-point replaced (lib/handoff.js): the seat joins again over it, even if seated
   const rebind = !identity.isHost(code) && !!(links.get(code) || {}).rebind;
   if (same && !rebind) {
-    return success(cur, 'already joined', `in room ${cur.code} as ${name}${seats.ensureOrch(code, cwd, name)}`, input);
+    return success(cur, 'already joined', `in room ${cur.code} as ${name}${seats.ensureRoomClaude(code, cwd, name)}`, input);
   }
   if (cur && !same) seats.exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
   // The seat's key (hooks/seat-key.js): via=human posts and answers are signed with it, and the log pins it.

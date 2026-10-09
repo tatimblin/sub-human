@@ -156,6 +156,29 @@ test('an @room fails closed: a shim that cannot run or exits other than 0 or 2 r
   expect(seen.classic[1].block).toBe(undefined)
 })
 
+test('@claude in a room: a peer one is dropped like an @room, a typed one runs node, a failed shim refuses it', async ($, on) => {
+  const seen = world($, on, { exitCode: 1 })
+  await start($)
+  const r: any = await submit($, '@claude plan it', 'peer')
+  expect(r.drop).toMatch(/this @claude came from another Claude session/)
+  expect(seen.entered).toEqual([])
+  await submit($, '@claude ship it')
+  expect(seen.scripts).toEqual(['mod-hello.js', 'prompt.js'])
+  expect(seen.classic[0].block).toMatch(/could not check who wrote this @claude/)
+  expect(seen.classic[0].suppressOriginalPrompt).toBe(true)
+})
+
+test('@claude outside a room is an ordinary prompt: no drop, no node, even from a peer', async ($, on) => {
+  const seen = world($, on, { hello: { ...OUT, seat: null } })
+  await start($)
+  await submit($, '@claude what is a monad?')
+  const r: any = await submit($, '@claude from a peer', 'peer')
+  expect(r.drop).toBe(undefined)
+  expect(seen.entered).toEqual(['@claude what is a monad?', '@claude from a peer'])
+  expect(seen.scripts).toEqual(['mod-hello.js'])
+  expect(seen.classic.every((c: any) => c.block === undefined)).toBe(true)
+})
+
 test('an @room whose shim is denied is refused, not let through', async ($, on) => {
   on('session.id', () => ({ value: SID }))
   on('process.run', () => ({ deny: 'no processes here' }))

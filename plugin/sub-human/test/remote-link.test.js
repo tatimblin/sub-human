@@ -191,6 +191,10 @@ test('mirror: applyLine appends a host line only when it chains; applyDoc writes
   mirror.applyDoc('members', { bob: { name: 'bob' } });
   mirror.applyDoc('presence/bob', { state: 'idle' });
   assert.deepEqual([mirror.members.read(), mirror.kv.get('presence/bob')], [{ bob: { name: 'bob' } }, { state: 'idle' }]);
+  // a 0.4.x host's members document names its Claude "orch": the mirror reads it as claude
+  mirror.applyDoc('members', { orch: { name: 'orch', role: 'orch', job: 'j1' }, bob: { name: 'bob', role: 'member' } });
+  assert.deepEqual(mirror.members.read(), { bob: { name: 'bob', role: 'member' }, claude: { name: 'claude', role: 'claude', job: 'j1' } });
+  mirror.applyDoc('members', { bob: { name: 'bob' } });
   mirror.applyDoc('presence/bob', null);
   assert.deepEqual(mirror.kv.list('presence/'), []);
   assert.throws(() => mirror.applyDoc('rows/x', {}), e => e.code === 'PROTOCOL');

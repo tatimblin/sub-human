@@ -7,7 +7,7 @@
 //            if session-end marked it left, rejoin the same name (when the room still exists) and log
 //            member_joined "rejoined (resumed)" with the seat's pubkey and machine (lib/seats.js). In a room hosted
 //            elsewhere the link daemon is started first and the host logs the rejoin (lib/remote/server.js).
-//            A room that is closing (the reaper is stopping its orch) is not rejoined.
+//            A room that is closing (the reaper is stopping its room Claude) is not rejoined.
 // Context = the same mechanics block as join (common.js contextBlock: the role template filled + ROWS, i.e.
 // lib/rows.js rowCalls(), which lists only the rows with no live hold: rows survive /clear and compaction, and
 // a re-spawn would duplicate the room row). On --resume the hold server is new, so every row is
@@ -48,12 +48,12 @@ function reseat(input) {
   if (input.source !== 'resume' || !pid) return null;
   const last = identity.lastSeat(input.session_id);
   if (!last) return null;
-  if (identity.roomClosing(last.code) || (last.role !== 'orch' && !identity.roomOpen(last.code))) return null;
+  if (identity.roomClosing(last.code) || (last.role !== 'claude' && !identity.roomOpen(last.code))) return null;
   const hosted = identity.isHost(last.code);
   if (!hosted && !link.start(last.code)) return null;
   const r = identity.join({ code: last.code, name: last.name, role: last.role, pid, session_id: input.session_id, cwd: input.cwd });
   if (!r || !r.ok) return null;
-  const pubkey = last.role === 'orch' ? undefined : seatKey.publicPem(last.code, last.name);
+  const pubkey = last.role === 'claude' ? undefined : seatKey.publicPem(last.code, last.name);
   if (hosted) room.open(last.code).append({ kind: 'member_joined', text: `${last.name} rejoined (resumed)`, pubkey, machine: identity.machineId() }, { via: 'system', from: last.name, system: true });
   return { ...last, pid, session_id: input.session_id };
 }

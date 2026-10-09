@@ -34,7 +34,7 @@ function perCall(w) {
   const out = [];
   w.lib(() => {
     const fs = new FsRoomStore(w.code), th = new ThreadRoomStore(w.code);
-    for (let i = 0; i < 40; i++) fs.append({ kind: 'status', text: `line ${i}` }, { via: 'system', from: 'orch', system: true });
+    for (let i = 0; i < 40; i++) fs.append({ kind: 'status', text: `line ${i}` }, { via: 'system', from: 'claude', system: true });
     th.lastId(); // the worker is up before timing
     const ops = {
       'lastId()': s => s.lastId(),
@@ -94,7 +94,7 @@ function perHook(w) {
   return out;
 }
 
-const w = new World({ orch: 'sleep', alice: 'act' });
+const w = new World({ claude: 'sleep', alice: 'act' });
 console.log(`node ${process.version}, ${process.platform}; per call n=${CALLS}, per hook n=${HOOKS}\n`);
 console.log('| | plain p50 / p99 (ms) | thread store p50 / p99 (ms) | overhead p50 / p99 (ms) |\n|---|---|---|---|');
 for (const l of [...perCall(w), start(), floor(), ...perHook(w)]) console.log(l);

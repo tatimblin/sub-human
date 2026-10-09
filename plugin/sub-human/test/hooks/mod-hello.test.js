@@ -9,7 +9,7 @@ const { World, PLUGIN } = require('./helpers.js');
 const { pidStart } = require(path.join(PLUGIN, 'lib', 'lock.js'));
 
 test('mod-hello: the lease records the parent claude pid, its start time and the module\'s nonce, and only the documented fields', t => {
-  const w = new World({ orch: 'sleep' }, { t });
+  const w = new World({ claude: 'sleep' }, { t });
   const sid = '0b9c6f8e-1111-4222-8333-444455557777';
   const nonce = '0123456789abcdef'.repeat(2);
   const r = w.hook('mod-hello', { session_id: sid, nonce }); // our process is the hook's parent, as claude is the module's

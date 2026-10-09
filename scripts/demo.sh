@@ -7,8 +7,8 @@
 #                   (--to: stop after that scene; a fresh run unless --from/--only is given too)
 #   scripts/demo.sh stop            kill the sh-* tmux sessions (never numbered ones)
 #
-# The orch has no tmux seat: the first /sub-human starts it as a `claude --bg` job (orch.CODE). Its "pane" in
-# the captures is `claude logs <job>` running in a tmux session sh-orch (read-only: never typed into). Nothing is ever typed into the orch, except in S9, where a viewer runs
+# The room's Claude has no tmux seat: the first /sub-human starts it as a `claude --bg` job (claude.CODE). Its "pane" in
+# the captures is `claude logs <job>` running in a tmux session sh-claude (read-only: never typed into). Nothing is ever typed into the room's Claude, except in S9, where a viewer runs
 # `claude attach <job>` in its own tmux session sh-viewer and types one line to show the refusal.
 # Home:     SUB_HUMAN_HOME=/tmp/sh-demo/home (fresh on a full run); seats work in /tmp/sh-demo/<seat>,
 #           each a copy of demo/app.pristine. Seats launch with env -i (HOME USER LOGNAME SHELL PATH TERM
@@ -33,9 +33,9 @@ HOME2="$BASE/home2"   # S11: carol's home, standing in for another machine
 export SNAP_DIR="${SNAP_DIR:-$REPO/docs/rebuild/screens}"
 LIB="node $REPO/scripts/demo-lib.js"
 SEATS=(alice bob)
-SESSIONS="sh-orch,sh-alice,sh-bob"
+SESSIONS="sh-claude,sh-alice,sh-bob"
 COLS=120; ROWS=40
-ORCH_COLS=200; ORCH_ROWS=50   # a --bg session renders at 200 columns: claude logs replays that
+ROOM_CLAUDE_COLS=200; ROOM_CLAUDE_ROWS=50   # a --bg session renders at 200 columns: claude logs replays that
 
 WINDOWS=0; PAUSE="${SUB_HUMAN_DEMO_PAUSE:-0}"; ONLY=""; FROM=""; TO=""; RESET=1
 MEMBER_MODEL=""   # empty: the seats use the user's default model; --member-model MODEL opts in
@@ -72,7 +72,7 @@ write_launcher() {
 # launch.sh SEAT [claude args…] — a clean env: env -i, then only what a login shell would give (SH_SEAT_HOME, when
 # set, is that seat's SUB_HUMAN_HOME: S11's second home). The tmux
 # server's global env may carry CLAUDE_CODE_* vars from whichever Claude Code session started it: a seat
-# (and the orch it spawns) must inherit none of them.
+# (and the room's Claude it spawns) must inherit none of them.
 seat=\$1; shift
 cd "$BASE/\$seat" || exit 1
 exec env -i HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-${USER:-}}" SHELL="${SHELL:-/bin/zsh}" \\
@@ -107,7 +107,7 @@ start_seat() { # seat [extra claude args…]
 
 setup() {
   if [ "$RESET" = 1 ]; then
-    for s in sh-orch sh-alice sh-bob sh-carol sh-viewer; do tmux kill-session -t "$s" 2>/dev/null; done
+    for s in sh-claude sh-alice sh-bob sh-carol sh-viewer; do tmux kill-session -t "$s" 2>/dev/null; done
     rm -rf "$BASE"
     mkdir -p "$SUB_HUMAN_HOME"
     for seat in "${SEATS[@]}"; do cp -R "$REPO/demo/app.pristine" "$BASE/$seat"; done
@@ -135,23 +135,23 @@ open_windows() {
 
 # ---------- step helpers ------------------------------------------------------------------------
 
-# orch_view — the orch's read-only "pane": a tmux session that runs `claude logs <job>` (a passive stream of
+# claude_view — the room Claude's read-only "pane": a tmux session that runs `claude logs <job>` (a passive stream of
 # the background session's terminal; nothing is ever typed there). Restarted if the stream ends.
-orch_view() {
-  local job; job=$(orch_job); [ -n "$job" ] || return 1
-  tmux kill-session -t sh-orch 2>/dev/null
-  tmux new-session -d -s sh-orch -x "${ORCH_COLS:-$COLS}" -y "${ORCH_ROWS:-$ROWS}" \
+claude_view() {
+  local job; job=$(claude_job); [ -n "$job" ] || return 1
+  tmux kill-session -t sh-claude 2>/dev/null
+  tmux new-session -d -s sh-claude -x "${ROOM_CLAUDE_COLS:-$COLS}" -y "${ROOM_CLAUDE_ROWS:-$ROWS}" \
     "while :; do env -i HOME=\"$HOME\" USER=\"$USER\" LOGNAME=\"${LOGNAME:-$USER}\" PATH=\"$PATH\" TERM=xterm-256color LANG=\"${LANG:-en_US.UTF-8}\" claude logs $job; sleep 2; done"
-  tmux set-window-option -t sh-orch window-size manual >/dev/null 2>&1
-  tmux resize-window -t sh-orch -x "${ORCH_COLS:-$COLS}" -y "${ORCH_ROWS:-$ROWS}" >/dev/null 2>&1
+  tmux set-window-option -t sh-claude window-size manual >/dev/null 2>&1
+  tmux resize-window -t sh-claude -x "${ROOM_CLAUDE_COLS:-$COLS}" -y "${ROOM_CLAUDE_ROWS:-$ROWS}" >/dev/null 2>&1
 }
 
-orch_job() { $LIB member-field orch job 2>/dev/null | tr -d '\n'; }
+claude_job() { $LIB member-field claude job 2>/dev/null | tr -d '\n'; }
 
-snap() { # caption — capture the panes (the orch via claude logs), and keep this step's state as evidence
-  local job; job=$(orch_job)
+snap() { # caption — capture the panes (the room's Claude via claude logs), and keep this step's state as evidence
+  local job; job=$(claude_job)
   # a fresh `claude logs` each time: its first screen is a full repaint (a long-running stream drifts)
-  orch_view && paint sh-orch 2
+  claude_view && paint sh-claude 2
   node "$REPO/scripts/snap.js" "$SESSIONS" "$SCENE" "$1"
   local r; r=$(room); [ -n "$r" ] || return 0
   STEP=$((STEP + 1))
@@ -166,7 +166,7 @@ snap() { # caption — capture the panes (the orch via claude logs), and keep th
   cp "$BASE/plans-before.txt" "$SNAP_DIR/state/plans-before.txt" 2>/dev/null || true
 }
 
-# dismiss_question SEAT — a seat's Claude may open its own AskUserQuestion (e.g. to relay an orch question to its
+# dismiss_question SEAT — a seat's Claude may open its own AskUserQuestion (e.g. to relay a room Claude question to its
 # person); typing a scripted line into it would pick an option instead of posting (run ocelot-0728). Esc it — never
 # a proposal (plan view or card), which only card_answer answers.
 dismiss_question() {
@@ -220,19 +220,19 @@ card_answer() { $LIB card "sh-$1" "$2" "${3:-}"; }
 
 # ---------- scenes ------------------------------------------------------------------------------
 
-S1() { # alice joins with no room open: the room is created and the headless orch spawned
+S1() { # alice joins with no room open: the room is created and the headless room's Claude spawned
   submit alice "/sub-human alice"
   ROOM=$($LIB wait-room --timeout 60)
   [ -n "$ROOM" ] || { ABORT="S1: no room dir after /sub-human alice (60 s)"; return 1; }
   export SUB_HUMAN_ROOM="$ROOM"
   need wait_log --kind member_joined --from alice --timeout 60 || return 1
-  need $LIB wait-member orch pid --not "" --timeout 120 --what "the orch job binds as orch of the room" || return 1
-  orch_view
+  need $LIB wait-member claude pid --not "" --timeout 120 --what "the room's Claude job binds as member claude" || return 1
+  claude_view
   need wait_pane alice "$(panel_row "$(room)")" 90 || return 1
-  need $LIB wait-holds orch alice --timeout 120 || return 1
+  need $LIB wait-holds claude alice --timeout 120 || return 1
   need $LIB wait-native-task "room $(room) open" --timeout 120 || return 1
   settle alice
-  snap "alice runs /sub-human alice: room $(room) opened, the orch started in the background; one $(room) row for her, an alice row in the orch's panel"
+  snap "alice runs /sub-human alice: room $(room) opened, the room's Claude started in the background; one $(room) row for her, an alice row in the room Claude's panel"
 }
 
 S2() { # bob joins
@@ -243,10 +243,10 @@ S2() { # bob joins
   mkdir -p "$SNAP_DIR/state/S2"
   wait_pane alice "^\s*(⏺ |⎿ )?(sub-human: )?bob joined\s*$" 60 --what "alice sees the chat line \"bob joined\"" && $LIB pane sh-alice > "$SNAP_DIR/state/S2/notice-alice.txt"
   need wait_pane bob "$(panel_row "$(room)")" 90 || return 1
-  need $LIB wait-holds orch bob --timeout 120 || return 1
+  need $LIB wait-holds claude bob --timeout 120 || return 1
   need $LIB wait-holds alice bob --timeout 90 || return 1
   settle alice bob
-  snap "bob joins: bob nested in alice's room row, alice in bob's; the orch lists both"
+  snap "bob joins: bob nested in alice's room row, alice in bob's; the room's Claude lists both"
 }
 
 S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
@@ -268,20 +268,20 @@ S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   need wait_pane bob "Message from @?alice\.|^\s*alice's Claude: " 120 --what "bob's pane shows alice's Claude's answer" || return 1
   need $LIB wait-idle sh-bob --timeout 120 || return 1
   settle alice bob
-  snap "bob's Claude asks alice's Claude natively (SendMessage to alice.$(room)); alice's Claude answers. No card, no orch turn"
+  snap "bob's Claude asks alice's Claude natively (SendMessage to alice.$(room)); alice's Claude answers. No card, no turn for the room's Claude"
 }
 
-# Scripted human answers when the orch asks before it proposes (each seat answers once, by @room).
-ANSWER_alice="@room @orch default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page"
-ANSWER_bob="@room @orch fine with that; 400 on a bad cursor. please propose it to alice and me"
+# Scripted human answers when the room's Claude asks before it proposes (each seat answers once, by @claude).
+ANSWER_alice="@claude default 20, max 50, {items, nextCursor}; a cursor past the end returns an empty page"
+ANSWER_bob="@claude fine with that; 400 on a bad cursor. please propose it to alice and me"
 
-S4() { # let's plan: bob @room @orch → orch proposes → each approver reads it in the plan view
+S4() { # let's plan: bob @claude → the room's Claude proposes → each approver reads it in the plan view
   local before; before=$($LIB log-max)
-  submit bob "@room @orch let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
+  submit bob "@claude let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
   need wait_log --kind say --from bob --via human --after "$before" --timeout 30 || return 1
-  if ! wait_log --kind proposal --from orch --after "$before" --timeout 150 --what "the orch proposes (or asks first)"; then
-    # the orch asked the people first (post to=NAME or SendMessage): each answers in one @room line
-    snap "The orch asks alice and bob before it writes the plan"
+  if ! wait_log --kind proposal --from claude --after "$before" --timeout 150 --what "the room's Claude proposes (or asks first)"; then
+    # the room's Claude asked the people first (post to=NAME or SendMessage): each answers in one @claude line
+    snap "The room's Claude asks alice and bob before it writes the plan"
     for seat in alice bob; do
       local var="ANSWER_$seat"
       need $LIB wait-idle "sh-$seat" --timeout 60 || return 1
@@ -289,12 +289,12 @@ S4() { # let's plan: bob @room @orch → orch proposes → each approver reads i
       submit "$seat" "${!var}"
       need wait_log --kind say --from "$seat" --via human --after "$b" --timeout 30 || return 1
     done
-    need wait_log --kind proposal --from orch --after "$before" --timeout 420 --what "the orch writes a plan and proposes it" || return 1
+    need wait_log --kind proposal --from claude --after "$before" --timeout 420 --what "the room's Claude writes a plan and proposes it" || return 1
   fi
   need wait_card alice "alice's card is open" || return 1
   need wait_card bob "bob's card is open" || return 1
   paint sh-alice; paint sh-bob   # the plan view's first paint (wait-idle counts an open plan view as busy)
-  snap "The orch proposes its plan: it opens in alice's and bob's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)"
+  snap "The room's Claude proposes its plan: it opens in alice's and bob's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)"
   read_plan alice
 }
 
@@ -312,7 +312,7 @@ read_plan() {
 
 NOTE5="add a test for a cursor past the end — \`after=zzz\` must 400, not 500"
 
-S5() { # bob objects with a note, alice agrees; the orch revises; both agree → decision
+S5() { # bob objects with a note, alice agrees; the room's Claude revises; both agree → decision
   local p1; p1=$($LIB last-id --kind proposal)
   need card_answer alice Agree || return 1
   need wait_log --kind signoff --from alice --via human --after "$p1" --timeout 30 || return 1
@@ -320,11 +320,11 @@ S5() { # bob objects with a note, alice agrees; the orch revises; both agree →
   need wait_log --kind objection --from bob --via human --after "$p1" --timeout 30 || return 1
   settle alice bob
   snap "alice agrees; bob objects with a note (via=human, byte-exact)"
-  need wait_log --kind proposal --from orch --after "$p1" --timeout 420 --what "the orch revises and proposes again" || return 1
+  need wait_log --kind proposal --from claude --after "$p1" --timeout 420 --what "the room's Claude revises and proposes again" || return 1
   need wait_card alice "alice's card for the revision" || return 1
   need wait_card bob "bob's card for the revision" || return 1
   paint sh-alice; paint sh-bob   # the plan view's first paint
-  snap "The orch revises: a new proposal, opened again for each"
+  snap "The room's Claude revises: a new proposal, opened again for each"
   local p2; p2=$($LIB last-id --kind proposal)
   need card_answer alice Agree || return 1
   need wait_log --kind signoff --from alice --via human --after "$p2" --timeout 30 || return 1
@@ -336,13 +336,13 @@ S5() { # bob objects with a note, alice agrees; the orch revises; both agree →
   snap "Both agree to the revision: a decision is logged; both Claudes are told once"
 }
 
-S6() { # shared tasks: alice's Claude adds, then claims, the orch applies natively; a non-owner done is refused; owner done
+S6() { # shared tasks: alice's Claude adds, then claims, the room's Claude applies natively; a non-owner done is refused; owner done
   local before; before=$($LIB log-max)
   # explicit tool name: in run osprey-3059 the model used post ("taking this") instead of the task tool. add leaves
   # the task pending with no owner (lynx-5140), and claim needs its id: so add, then claim by id.
   submit alice "put \"cursor paging handler\" on the room task list: call the mcp__plugin_sub-human_room__task tool with op \"add\", subject \"cursor paging handler\". Only that tool call: do not use post, do not edit any file"
   need wait_log --kind task_req --from alice --after "$before" --timeout 120 || return 1
-  need wait_log --kind task --after "$before" --timeout 180 --what "the orch applies the add natively (task entry)" || return 1
+  need wait_log --kind task --after "$before" --timeout 180 --what "the room's Claude applies the add natively (task entry)" || return 1
   local t; t=$($LIB task-id)
   local b1; b1=$($LIB log-max)
   submit alice "claim it for me: call the mcp__plugin_sub-human_room__task tool with op \"claim\", id \"$t\". Only that tool call: do not start the work, do not edit any file"
@@ -351,13 +351,13 @@ S6() { # shared tasks: alice's Claude adds, then claims, the orch applies native
   # the room row's task summary (what the S6 check reads); best-effort
   wait_pane alice "$(room).*(tasks? [0-9]+ open|#[0-9]+ you)" 30 --what "alice's room row shows the task summary"
   settle alice
-  snap "alice's Claude calls task(add), then task(claim #$t): the orch applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it"
+  snap "alice's Claude calls task(add), then task(claim #$t): the room's Claude applies each with TaskCreate/TaskUpdate; the room row and sub-human tasks show it"
   local b2; b2=$($LIB log-max)
   # explicit: the model may otherwise answer in text and never calls the tool (learning run badger-3918); honest
   # evidence: with "I ran the tests, 3/3 pass" bob's Claude declined to send a claim it had not checked (run falcon-2880)
   submit bob "call the mcp__plugin_sub-human_room__task tool now with op \"done\", id \"$t\", evidence \"bob checking the owner gate; no tests run\". It is alice's task: I want to see that the room refuses it. Send the request anyway and report the tool's reply in one line"
   need wait_log --kind task_req --from bob --after "$b2" --timeout 120 || return 1
-  need $LIB wait-orch-idle --after "$b2" --timeout 180 || return 1
+  need $LIB wait-claude-idle --after "$b2" --timeout 180 || return 1
   mkdir -p "$SNAP_DIR/state/S6"; $LIB synthetic-gate "$t" > "$SNAP_DIR/state/S6/gate-bob.json"
   settle bob
   snap "bob's Claude asks done on alice's task #$t: refused, the task stays in progress"
@@ -366,7 +366,7 @@ S6() { # shared tasks: alice's Claude adds, then claims, the orch applies native
   need wait_log --kind task_req --from alice --after "$b3" --timeout 120 || return 1
   need $LIB wait-tasks --id "$t" --status completed --timeout 180 || return 1
   settle alice
-  snap "alice's Claude asks done with evidence: the orch completes #$t (the gate passes the owner's request)"
+  snap "alice's Claude asks done with evidence: the room's Claude completes #$t (the gate passes the owner's request)"
 }
 
 S7() { # stray typing into a row view: the hint is on the row's own progress line; the row answers in one line
@@ -416,19 +416,19 @@ S8() { # resilience: /clear in alice keeps rows; bob /exit + --continue: rows re
   snap "After the resume the room still reaches bob: alice's words as a chat line"
 }
 
-S9() { # the orch refuses typed input: a viewer attaches and types one line
-  local job; job=$(orch_job)
+S9() { # the room's Claude refuses typed input: a viewer attaches and types one line
+  local job; job=$(claude_job)
   tmux kill-session -t sh-viewer 2>/dev/null
   tmux new-session -d -s sh-viewer -x $COLS -y $ROWS "env -i HOME=\"$HOME\" USER=\"$USER\" LOGNAME=\"${LOGNAME:-$USER}\" PATH=\"$PATH\" TERM=xterm-256color LANG=\"${LANG:-en_US.UTF-8}\" TMPDIR=\"${TMPDIR:-/tmp/}\" claude attach $job"
   tmux set-option -t sh-viewer remain-on-exit on >/dev/null
-  need $LIB wait-pane sh-viewer "orch\.$(room)|─{20}" --timeout 30 || return 1
+  need $LIB wait-pane sh-viewer "claude\.$(room)|─{20}" --timeout 30 || return 1
   paint sh-viewer   # the attached view's first paint
   local before; before=$($LIB log-max)
-  $LIB submit sh-viewer "hi orch, what's next?"
-  $LIB wait-pane sh-viewer "takes no typed input" --timeout 30 --what "the attached orch refuses the typed prompt"
-  orch_view && paint sh-orch 2
-  node "$REPO/scripts/snap.js" "sh-viewer,sh-orch" "$SCENE" "A viewer attaches to the orch and types: the prompt is refused with the hint; no orch turn"
-  mkdir -p "$SNAP_DIR/state/S9"; $LIB synthetic-orch-prompt > "$SNAP_DIR/state/S9/synthetic-prompt.json" 2>&1 || true
+  $LIB submit sh-viewer "hi claude, what's next?"
+  $LIB wait-pane sh-viewer "takes no typed input" --timeout 30 --what "the attached room's Claude refuses the typed prompt"
+  claude_view && paint sh-claude 2
+  node "$REPO/scripts/snap.js" "sh-viewer,sh-claude" "$SCENE" "A viewer attaches to the room's Claude and types: the prompt is refused with the hint; no turn for the room's Claude"
+  mkdir -p "$SNAP_DIR/state/S9"; $LIB synthetic-claude-prompt > "$SNAP_DIR/state/S9/synthetic-prompt.json" 2>&1 || true
   $LIB keys sh-viewer Left; sleep 1   # ← back to the agent view, then leave the viewer (killed next: nothing reads it)
   tmux kill-session -t sh-viewer 2>/dev/null
 }
@@ -450,7 +450,7 @@ S9b() { # a multi-line @room post: its later lines show nested under alice ("  �
   snap "alice posts three lines with @room; bob's pane nests lines 2 and 3 under \"alice: …\" (│), so they can't pass as a decision or a sign-off"
 }
 
-S10() { # leave: both exit → reap completes task 1 and stops the orch
+S10() { # leave: both exit → reap completes task 1 and stops the room's Claude
   local before; before=$($LIB log-max)
   exit_seat alice
   need wait_log --kind member_left --from alice --after "$before" --timeout 30 || return 1
@@ -462,10 +462,10 @@ S10() { # leave: both exit → reap completes task 1 and stops the orch
   need wait_log --kind member_left --from bob --after "$before" --timeout 30 || return 1
   $LIB wait-exited sh-alice --timeout 10; $LIB wait-exited sh-bob --timeout 10   # the exited panes' last paint
   snap "alice and bob exit (1. Exit and stop tasks): member_left for each"
-  need $LIB wait-member orch stopped_at --not "" --timeout 90 --what "the reaper stops the orch" || return 1
+  need $LIB wait-member claude stopped_at --not "" --timeout 90 --what "the reaper stops the room's Claude" || return 1
   # claude agents --json drops the stopped job a few seconds after stopped_at
   $LIB wait-job-gone --timeout 30
-  snap "The reaper: room closed, task 1 completed, the orch stopped (claude agents no longer lists it running)"
+  snap "The reaper: room closed, task 1 completed, the room's Claude stopped (claude agents no longer lists it running)"
 }
 
 # S11: what carol says, and the proposal alice's Claude puts to her alone
@@ -572,4 +572,4 @@ for SCENE in "${ALL[@]}"; do
 done
 
 say "done. screens in ${SNAP_DIR#$REPO/}; then: node scripts/checks.js && node scripts/walkthrough.js"
-echo "sessions: tmux attach -r -t sh-alice | sh-bob | sh-carol   (scripts/demo.sh stop); orch job: $(orch_job) (claude logs / stop / rm)"
+echo "sessions: tmux attach -r -t sh-alice | sh-bob | sh-carol   (scripts/demo.sh stop); claude job: $(claude_job) (claude logs / stop / rm)"

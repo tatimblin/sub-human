@@ -14,7 +14,7 @@
  *       enqueue(item) / arm() / flush() / stop(). Items wait in `pending` and go to onFlush(ready) as ONE
  *       batch after settleMs of quiet or settleMaxMs after the first one; an item younger than settleMs stays
  *       for the next batch. If onFlush throws, the batch goes back to pending and is retried after retryMs.
- *   formatOrchBatch(ready, ctx) -> lines     the orch's block: stateLine, then one full line per shown entry
+ *   formatRoomClaudeBatch(ready, ctx) -> lines     the room Claude's block: stateLine, then one full line per shown entry
  *   formatNdBatch(ready, ctx) -> {events, moved}   the hooks module's events for one batch (below)
  *   pullText(lines) -> text | null           "Room since your last turn" over lines, the newest kept under PULL_CAP
  *   missingRowsText(me, sid, {now}?) -> text | null   the Agent calls for this seat's rows that run nowhere
@@ -26,7 +26,7 @@
  *       'offline' (the host or the daemon is unreachable); null while it is online or connecting
  *   flushLine(flush) -> text | null   what became of the @room posts queued while the link was down (the daemon's
  *       document `link` flush {sent, unsent: [{text, why}]}): appended to LINK_BACK, or alone when some were not sent
- *   deps (tests): openRoom(code) -> Room (lib/room.js open), heartbeat(me) (identity.heartbeat), rows, notices, orch,
+ *   deps (tests): openRoom(code) -> Room (lib/room.js open), heartbeat(me) (identity.heartbeat), rows, notices, roomClaude,
  *       linkStatus(code) (lib/remote/link.js status)
  *
  * It writes one JSON event per line, which the mod routes. It reads from the cursor deliver-NAME (first run: from
@@ -39,7 +39,7 @@
  *                             the line is written, whether or not the mod then appended it
  *   {type:'wake', text}       what needs Claude now: to me / @me, a proposal for me, a decision on mine, a task
  *                             assigned to me, an objection to my proposal (members, with the room state line when
- *                             the batch moved a proposal); the orch's whole push block
+ *                             the batch moved a proposal); the room Claude's whole push block
  *   {type:'rows', text|null}  what the person's next prompt carries for Claude: pending-proposal reminders
  *                             (members) and the missing rows' Agent calls; sent at start and when it changes
  *                             (health tick); null clears it
@@ -59,6 +59,7 @@ const nodeFs = require('node:fs');
 const path = require('node:path');
 const realClock = require('./clock.js');
 const config = require('./config.js');
+const { roomClaudeName } = require('./room/members.js');
 
 const { envMs } = config;
 const FOR_CLAUDE = '(for Claude)';
@@ -77,10 +78,10 @@ function timings() {
     pollMs: envMs('SUB_HUMAN_POLL_MS', config.TAIL_POLL_MS),
     settleMs,
     settleMaxMs,
-    // The headless orch waits longer (nobody watches its latency), so a burst of answers, task requests or a
+    // The headless room Claude waits longer (nobody watches its latency), so a burst of answers, task requests or a
     // join lands as one turn, unless the member values are set explicitly.
-    orchSettleMs: envMs('SUB_HUMAN_ORCH_SETTLE_MS', process.env.SUB_HUMAN_SETTLE_MS ? settleMs : config.ORCH_SETTLE_MS),
-    orchSettleMaxMs: envMs('SUB_HUMAN_ORCH_SETTLE_MAX_MS', process.env.SUB_HUMAN_SETTLE_MAX_MS ? settleMaxMs : config.ORCH_SETTLE_MAX_MS),
+    roomClaudeSettleMs: envMs('SUB_HUMAN_ROOM_CLAUDE_SETTLE_MS', process.env.SUB_HUMAN_SETTLE_MS ? settleMs : config.ROOM_CLAUDE_SETTLE_MS),
+    roomClaudeSettleMaxMs: envMs('SUB_HUMAN_ROOM_CLAUDE_SETTLE_MAX_MS', process.env.SUB_HUMAN_SETTLE_MAX_MS ? settleMaxMs : config.ROOM_CLAUDE_SETTLE_MAX_MS),
     leaveMs: envMs('SUB_HUMAN_LEAVE_MS', config.LEAVE_SETTLE_MS),
     healthMs: envMs('SUB_HUMAN_TAIL_HEALTH_MS', config.TAIL_HEALTH_MS),
     backoffMs: envMs('SUB_HUMAN_TAIL_BACKOFF_MS', config.TAIL_BACKOFF_MS),
@@ -129,7 +130,7 @@ class Batcher {
 
 // ---------- formatters ----------
 /** ctx: {me, room, entries, show, joinNote, leaveMs} */
-function formatOrchBatch(ready, { me, room: rm, entries, show, joinNote, leaveMs }) {
+function formatRoomClaudeBatch(ready, { me, room: rm, entries, show, joinNote, leaveMs }) {
   const out = [];
   for (const { e, away } of ready) {
     const note = joinNote(e);
@@ -177,7 +178,7 @@ function formatNdBatch(ready, ctx) {
   let state = false;
   for (const p of ready) {
     const { e } = p;
-    if (me.role !== 'orch') {
+    if (me.role !== 'claude') {
       if (isMove(e) && seen.has(e.id)) continue; // an earlier child already sent it
       if (show(e, entries)) {
         const lines = rm.chatLines(e, { viewer: me.name, entries });
@@ -194,7 +195,7 @@ function formatNdBatch(ready, ctx) {
     } else if (show(e, entries, joinNote(e))) { pushed.push(p); continue; }
     if (rm.lane(me, e, entries) === 'pull') pull.push(...rm.chatLines(e, { viewer: me.name, entries }));
   }
-  if (me.role === 'orch') wake.push(...formatOrchBatch(pushed, ctx));
+  if (me.role === 'claude') wake.push(...formatRoomClaudeBatch(pushed, ctx));
   // no ids for a member: the plugin prompt's row is drawn expanded, (for Claude) lines included (people never see ids)
   else if (state && wake.length) wake.push(`${FOR_CLAUDE} ${rm.stateLine(me, entries, { ids: false })}`);
   const events = [];
@@ -213,23 +214,23 @@ const SPAWN_GRACE_MS = config.ROW_SPAWN_GRACE_MS;
 function missingRowsText(me, sid, { now = Date.now(), rows = require('./rows.js'), identity = require('./identity.js') } = {}) {
   try {
     const members = identity.readMembers(me.code);
-    // orch: missingRows skips members who joined under 45 s ago (their member_joined notice covers them)
-    let need = me.role === 'orch' ? rows.missingRows(me.code, me, { members })
+    // room Claude: missingRows skips members who joined under 45 s ago (their member_joined notice covers them)
+    let need = me.role === 'claude' ? rows.missingRows(me.code, me, { members })
       : rows.rowsNeeded(me.code, me, { members, held: rows.readHolds(me.code, me.name) });
     let map = {};
     try { map = rows.sessionRowMap(me.code, sid); } catch { /* none */ }
     const fresh = new Set(Object.values(map).filter(r => r && now - Date.parse(r.at) < SPAWN_GRACE_MS).map(r => r.name));
     need = need.filter(n => !fresh.has(n));
     if (!need.length) return null;
-    return `SUB-HUMAN ROWS: your ${me.role === 'orch' ? `rows for ${need.join(', ')} are` : 'room row is'} not running in this session. `
+    return `SUB-HUMAN ROWS: your ${me.role === 'claude' ? `rows for ${need.join(', ')} are` : 'room row is'} not running in this session. `
       + 'Make the call below first, in the same message as anything else you do, exactly as written.\n'
       + rows.rowCalls(me, members, { only: need });
   } catch { return null; }
 }
 
-/** lib/proposal.js reminder() for each proposal that names this member and awaits their answer; null for the orch or none. */
+/** lib/proposal.js reminder() for each proposal that names this member and awaits their answer; null for the room's Claude or none. */
 function remindersText(me, rm, { proposal = require('./proposal.js') } = {}) {
-  if (me.role === 'orch') return null;
+  if (me.role === 'claude') return null;
   const ps = proposal.pendingFor(me, rm.readView({ after: Infinity })) || [];
   if (!ps.length) return null;
   // Only the one a review opens next (the person's pick, else the oldest; hooks/consent.js), the others counted, so
@@ -241,14 +242,14 @@ function remindersText(me, rm, { proposal = require('./proposal.js') } = {}) {
 
 /**
  * The push lane (rm.lane). A member also gets every other member's join and leave (a group chat line). The
- * orch gets another member's member_joined when lib/rows.js joinNote() says that row is not running (the note
+ * room Claude gets another member's member_joined when lib/rows.js joinNote() says that row is not running (the note
  * carries the Agent call) or when the note is unavailable; a join whose row already runs is not pushed to it,
  * so a notice never invites a call that row-guard would deny.
  */
 function visibleTo(me, rm) {
-  if (me.role !== 'orch') {
+  if (me.role !== 'claude') {
     return (e, entries) => rm.lane(me, e, entries) === 'push' || isHostMove(e)
-      || (isMove(e) && e.via === 'system' && e.from !== me.name && e.from !== 'orch');
+      || (isMove(e) && e.via === 'system' && e.from !== me.name && roomClaudeName(e.from) !== 'claude'); // 0.4.x: "orch"
   }
   return (e, entries, note = '') => rm.lane(me, e, entries) === 'push'
     || (e.kind === 'member_joined' && e.from !== me.name && (SPAWN_NOTE.test(note) || !note));
@@ -331,7 +332,7 @@ function cursorKeeper(rm, reader, after, { log, dead }) {
 function flushBatch(ready, { me, rm, pushed, joinNote, leaveMs, notices, emit, cursor }) {
   const entries = rm.readView({ after: ready[0].e.id - 1 });
   const done = () => { for (const p of ready) cursor.release(p.e.id); cursor.save(); };
-  const seen = me.role === 'orch' ? new Set() : notices.shown(me.code, me.name);
+  const seen = me.role === 'claude' ? new Set() : notices.shown(me.code, me.name);
   const { events, moved } = formatNdBatch(ready, { me, room: rm, entries, show: pushed, joinNote, leaveMs, seen });
   if (!events.length) return done();
   if (moved.length) { try { notices.markShown(me.code, me.name, moved, 'mod'); } catch { /* best effort */ } }
@@ -372,8 +373,8 @@ function startSession(me, ctx) {
   const after = startCursor(rm, reader, me, last);
   rm.setCursor(reader, after);
   const s = { key: `${me.code}/${me.name}/${me.role}`, code: me.code, dead: false, lastTick: clock.now() };
-  const settleMs = me.role === 'orch' ? t.orchSettleMs : t.settleMs;
-  const settleMaxMs = me.role === 'orch' ? t.orchSettleMaxMs : t.settleMaxMs;
+  const settleMs = me.role === 'claude' ? t.roomClaudeSettleMs : t.settleMs;
+  const settleMaxMs = me.role === 'claude' ? t.roomClaudeSettleMaxMs : t.settleMaxMs;
   const cursor = cursorKeeper(rm, reader, after, { log, dead: () => s.dead });
   let seen = after;
   s.save = () => cursor.save();
@@ -427,7 +428,7 @@ function startSession(me, ctx) {
   }
 
   // Health: the hash chain from the log.idx checkpoint (one line per break), the link of a room hosted elsewhere
-  // (one line each time it goes down), and the orch's watchdog.
+  // (one line each time it goes down), and the room Claude's watchdog.
   let breakKey = null, linkKey = null, flushKey, rowsSent;
   function sendRows() {
     let text = null;
@@ -464,7 +465,7 @@ function startSession(me, ctx) {
       ho.markTold(s.code, a.id);
       emit([
         { type: 'chat', lines: [`room: ${a.from} asks you to host room ${s.code} on this machine; your Claude shows you a card`] },
-        { type: 'wake', text: `${FOR_CLAUDE} ${a.from} asks ${me.name} to host room ${s.code} on this machine (the room's orch would then run on ${me.name}'s model account, and this machine must stay reachable). Only ${me.name} can answer: call AskUserQuestion with the question "handoff ${a.id}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+        { type: 'wake', text: `${FOR_CLAUDE} ${a.from} asks ${me.name} to host room ${s.code} on this machine (the room's Claude would then run on ${me.name}'s model account, and this machine must stay reachable). Only ${me.name} can answer: call AskUserQuestion with the question "handoff ${a.id}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
       ]);
       return;
     }
@@ -480,7 +481,7 @@ function startSession(me, ctx) {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
     sendRows();
     if (s.moved()) return; // the room changed kind under this session: the next check starts it again
-    if (rm.store && me.role !== 'orch') { try { handoffHealth(); } catch (e) { log('handoff', e); } }
+    if (rm.store && me.role !== 'claude') { try { handoffHealth(); } catch (e) { log('handoff', e); } }
     if (rm.store && !rm.store.isHost) linkHealth();
     const r = rm.verifyChain();
     if (r.ok) breakKey = null;
@@ -493,7 +494,7 @@ function startSession(me, ctx) {
         emit([{ type: 'health', text: msg }]);
       }
     }
-    if (me.role === 'orch') deps.orch().watchdog(s.code);
+    if (me.role === 'claude') deps.roomClaude().watchdog(s.code);
   }
 
   // a timer callback that survives its own error
@@ -528,7 +529,7 @@ function runTail({
     heartbeat: deps.heartbeat || (me => require(path.join(LIB, 'identity.js')).heartbeat(me)),
     rows: deps.rows || require(path.join(LIB, 'rows.js')),
     notices: deps.notices || require(path.join(LIB, 'notices.js')),
-    orch: deps.orch ? () => deps.orch : (() => { let o; return () => o || (o = require(path.join(LIB, 'orch.js'))); })(),
+    roomClaude: deps.roomClaude ? () => deps.roomClaude : (() => { let o; return () => o || (o = require(path.join(LIB, 'room-claude.js'))); })(),
     identity: deps.identity || require(path.join(LIB, 'identity.js')),
     proposal: deps.proposal || require(path.join(LIB, 'proposal.js')),
     linkStatus: deps.linkStatus || (code => require(path.join(LIB, 'remote', 'link.js')).status(code)),
@@ -539,7 +540,7 @@ function runTail({
   // say which seat is followed, when that changes
   let seatSent;
   const sendSeat = me => {
-    const seat = me ? { name: me.name, code: me.code, role: me.role === 'orch' ? 'orch' : 'member', addr: `${me.name}.${me.code}` } : null;
+    const seat = me ? { name: me.name, code: me.code, role: me.role === 'claude' ? 'claude' : 'member', addr: `${me.name}.${me.code}` } : null;
     const key = JSON.stringify(seat);
     if (key === seatSent) return;
     seatSent = key;

@@ -15,30 +15,30 @@ const entry = (id, kind, from, text) => ({ id, at: new Date(1e12 + id * 1000).to
 test('snap: writes svg + txt, appends index, log excerpt since the previous scene, steps get own files', () => {
   const dir = tmp();
   const log = [entry(1, 'member_joined', 'alice', 'joined')];
-  snap('sh-orch', 'S1', 'open', { dir, capture: cap('\x1b[1mroom\x1b[0m otter-4821\n'), room: 'otter-4821', entries: log });
+  snap('sh-claude', 'S1', 'open', { dir, capture: cap('\x1b[1mroom\x1b[0m otter-4821\n'), room: 'otter-4821', entries: log });
   snap('sh-alice', 'S1', 'open', { dir, capture: cap('alice\n'), room: 'otter-4821', entries: log });
   log.push(entry(2, 'say', 'alice', 'hi <b>'), entry(3, 'say', 'bob', 'yo'));
-  snap('sh-orch', 'S4', 'alice posts', { dir, capture: cap('x\n'), room: 'otter-4821', entries: log });
-  snap('sh-orch', 'S4', 'bob posts', { dir, capture: cap('y\n'), room: 'otter-4821', entries: log });
+  snap('sh-claude', 'S4', 'alice posts', { dir, capture: cap('x\n'), room: 'otter-4821', entries: log });
+  snap('sh-claude', 'S4', 'bob posts', { dir, capture: cap('y\n'), room: 'otter-4821', entries: log });
 
   const idx = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'));
   assert.equal(idx.length, 4);
-  assert.deepEqual(idx.map(r => r.svg), ['S1-sh-orch.svg', 'S1-sh-alice.svg', 'S4-sh-orch.svg', 'S4-2-sh-orch.svg']);
+  assert.deepEqual(idx.map(r => r.svg), ['S1-sh-claude.svg', 'S1-sh-alice.svg', 'S4-sh-claude.svg', 'S4-2-sh-claude.svg']);
   assert.deepEqual(idx[0].log.map(e => e.id), [1]);
   assert.deepEqual(idx[1].log.map(e => e.id), [1]);   // same scene: same window
   assert.deepEqual(idx[2].log.map(e => e.id), [2, 3]); // only entries after S1
   assert.equal(idx[2].log[0].hash, undefined);         // chain fields dropped from excerpts
-  assert.equal(fs.readFileSync(path.join(dir, 'S1-sh-orch.txt'), 'utf8'), 'room otter-4821\n');
-  assert.match(fs.readFileSync(path.join(dir, 'S1-sh-orch.svg'), 'utf8'), /orch · S1/);
+  assert.equal(fs.readFileSync(path.join(dir, 'S1-sh-claude.txt'), 'utf8'), 'room otter-4821\n');
+  assert.match(fs.readFileSync(path.join(dir, 'S1-sh-claude.svg'), 'utf8'), /claude · S1/);
 });
 
 test('walkthrough: one section per scene in plan order, text excerpts, checks and log rendered', () => {
   const dir = tmp();
   const log = [entry(1, 'member_joined', 'alice', 'joined')];
-  for (const s of ['sh-bob', 'sh-orch', 'sh-alice']) snap(s, 'S2', 'alice joins', { dir, capture: cap(`\x1b[32m${s} pane says hello\x1b[0m\n`), room: 'r', entries: log });
+  for (const s of ['sh-bob', 'sh-claude', 'sh-alice']) snap(s, 'S2', 'alice joins', { dir, capture: cap(`\x1b[32m${s} pane says hello\x1b[0m\n`), room: 'r', entries: log });
   log.push(entry(2, 'say', 'alice', 'cursor <paging> & "x"\nsecond line'), entry(3, 'say', 'bob', ''));
-  snap('sh-orch', 'S11b', 'nested', { dir, capture: cap('nested work\n'), room: 'r', entries: log });
-  snap('sh-orch', 'S10', 'work', { dir, capture: cap('working on it\n'), room: 'r', entries: log });
+  snap('sh-claude', 'S11b', 'nested', { dir, capture: cap('nested work\n'), room: 'r', entries: log });
+  snap('sh-claude', 'S10', 'work', { dir, capture: cap('working on it\n'), room: 'r', entries: log });
   fs.writeFileSync(path.join(dir, 'waits.jsonl'), [
     { scene: 'S2', what: 'log: 1× member_joined', ok: true, ms: 1200 },
     { scene: 'S2', what: 'bob idle', ok: false, ms: 30000 },
@@ -52,11 +52,11 @@ test('walkthrough: one section per scene in plan order, text excerpts, checks an
   assert.equal(r.pass, 1); assert.equal(r.fail, 1);
   const order = ['id="S2"', 'id="S10"', 'id="S11b"'].map(s => html.indexOf(s));
   assert.ok(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1])), 'plan order');
-  // panes ordered orch, alice, bob, as text excerpts with palette classes
+  // panes ordered room Claude, alice, bob, as text excerpts with palette classes
   const s2 = html.slice(html.indexOf('id="S2"'), html.indexOf('id="S10"'));
   const seats = [...s2.matchAll(/<figcaption>(\w+)<\/figcaption>/g)].map(m => m[1]);
-  assert.deepEqual(seats, ['orch', 'alice', 'bob']);
-  assert.match(s2, /<figure class="term"><figcaption>orch<\/figcaption><pre><i class=a>sh-orch pane says hello<\/i><\/pre>/);
+  assert.deepEqual(seats, ['claude', 'alice', 'bob']);
+  assert.match(s2, /<figure class="term"><figcaption>claude<\/figcaption><pre><i class=a>sh-claude pane says hello<\/i><\/pre>/);
   assert.match(html, /\.term i\.a\{color:#98c379\}/);
   assert.doesNotMatch(html, /<svg/i, 'no svg in the page');
   assert.doesNotMatch(html, /<script/i, 'no scripts');
@@ -121,12 +121,12 @@ test('walkthrough excerpt rules: noise, plan view body, red lines kept through t
     '\u2500\u2500\u2500\u2500 bob.room-1 \u2500', '  \u23bf  Allowed by PermissionRequest hook', 'ok', '\u23fa', '\u25d0 medium \u00b7 /effort']) assert.ok(isNoise(l), l);
   for (const l of ['\u23fa alice: hi bob', '  \u2502 bob agreed to the proposal', '  \u23bf  Stop hook error: sub-human: review open']) assert.ok(!isNoise(l), l);
   const plan = ['\u23fa Entered plan mode', '\u2594\u2594\u2594\u2594\u2594\u2594', '   Ready to code?', "   Here is Claude's plan:", '  \u254c\u254c\u254c\u254c\u254c\u254c',
-    '   Plan: cursor paging', '   Context and more body', '   - body bullet', '  \u254c\u254c\u254c\u254c\u254c\u254c', '   \u2502 room proposal abc from orch',
+    '   Plan: cursor paging', '   Context and more body', '   - body bullet', '  \u254c\u254c\u254c\u254c\u254c\u254c', '   \u2502 room proposal abc from claude',
     '  \u2500\u2500\u2500\u2500\u2500\u2500', '   Would you like to proceed?', '   \u276f 1. Yes, and use auto mode', '     2. Yes, manually approve edits'];
   const info = classify(plan);
   assert.deepEqual(plan.filter((_, i) => info[i].drop), ['   Context and more body', '   - body bullet', '   \u276f 1. Yes, and use auto mode', '     2. Yes, manually approve edits']);
   const f = freshLines(plan.map(t => ({ text: t, html: t })), null).lines.map(l => l.text);
-  assert.deepEqual(f, ['   Plan: cursor paging', '   \u2502 room proposal abc from orch']);
+  assert.deepEqual(f, ['   Plan: cursor paging', '   \u2502 room proposal abc from claude']);
   // previous capture's lines (as a multiset) are not new; a repeat beyond the old count is
   const prev = freshLines([{ text: 'same line here', html: '' }], null).bag;
   assert.deepEqual(freshLines([{ text: 'same line here', html: '' }, { text: 'brand new line', html: '' }, { text: 'same line here', html: '' }], prev).lines.map(l => l.text), ['brand new line', 'same line here']);

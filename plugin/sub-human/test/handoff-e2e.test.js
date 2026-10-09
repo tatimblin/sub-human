@@ -1,10 +1,10 @@
 'use strict';
 // Moving a room's host, three machines on one (three SUB_HUMAN_HOMEs: alice's host A, bob's B, carol's C), the
 // real hooks as child processes and the link daemons over the pipe transport. `claude` is a stub per machine that
-// records its calls, so the orch's move shows as a `stop` on A and a `--bg` on B.
+// records its calls, so the room Claude's move shows as a `stop` on A and a `--bg` on B.
 //   planned: alice's /sub-human handoff bob -> bob's tail wakes his Claude -> the hooks' card -> "Host it here":
 //     host_changed (epoch 1, both seats' signatures) on every machine, B hosts (no link file), A and C mirror B and
-//     post through it, the orch stopped on A and started on B, A's old log refuses lines (STALE)
+//     post through it, the room's Claude stopped on A and started on B, A's old log refuses lines (STALE)
 //   refused: "Not now" leaves everything where it was, and alice's tail says so
 //   unreachable: the new host's locator unreachable for the others: they go offline with a reason that says what to
 //     do (no hang); a fresh invite from the new host re-points carol
@@ -44,7 +44,7 @@ function stubClaude(t, job) {
   const log = path.join(dir, 'calls.jsonl');
   const bin = path.join(dir, 'claude');
   fs.writeFileSync(bin, `#!${process.execPath}\nrequire('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`
-    + `if (process.argv.includes('--bg')) console.log('backgrounded · ${job} · orch.x');\n`);
+    + `if (process.argv.includes('--bg')) console.log('backgrounded · ${job} · claude.x');\n`);
   fs.chmodSync(bin, 0o755);
   const calls = () => { try { return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch { return []; } };
   return { bin, calls };
@@ -89,7 +89,7 @@ async function room(t, { carol: withCarol = true } = {}) {
   const alice = A.seat('alice'), bob = B.seat('bob'), carol = C && C.seat('carol');
   assert.equal(A.join(alice, 'alice').json.decision, undefined);
   const code = A.lib(() => store.listRooms()[0]);
-  await until(() => A.lib(() => identity.readMembers(code).orch || {}).job === 'aaaa1111', 8000, 50);
+  await until(() => A.lib(() => identity.readMembers(code).claude || {}).job === 'aaaa1111', 8000, 50);
   assert.equal(link2(B, bob, inviteOf(A.join(alice, 'host').json.reason), code).json.systemMessage, undefined);
   if (C) assert.equal(link2(C, carol, inviteOf(A.join(alice, 'host').json.reason), code).json.systemMessage, undefined);
   return { A, B, C, alice, bob, carol, code };
@@ -107,13 +107,13 @@ function answerCard(B, bob, id, label) {
 
 const ask = (B, code) => B.lib(() => store.open(code).kv.get(handoff.ASK_DOC));
 
-test('handoff e2e: planned, A to B with C following; the orch moves; the old host is STALE', async t => {
+test('handoff e2e: planned, A to B with C following; the room\'s Claude moves; the old host is STALE', async t => {
   const { A, B, C, alice, bob, carol, code } = await room(t);
 
   // alice asks; bob's machine gets the ask privately, his tail wakes his Claude to open the card
   const asked = A.join(alice, 'handoff bob').json;
   assert.equal(asked.decision, 'block', 'shown to alice, never to her Claude');
-  assert.match(asked.reason, /asked bob to host room .*orch then runs on bob's model account/);
+  assert.match(asked.reason, /asked bob to host room .*the room's Claude then runs on bob's model account/);
   await until(() => ask(B, code), 5000, 50);
   assert.equal(C.lib(() => store.open(code).kv.get(handoff.ASK_DOC)), null, 'carol\'s machine never sees it');
   const woke = (await B.tail(bob, 2)).split('\n').filter(Boolean).map(l => JSON.parse(l));
@@ -147,11 +147,11 @@ test('handoff e2e: planned, A to B with C following; the orch moves; the old hos
   }
   assert.equal(A.store(code).isHost, false);
 
-  // the orch: stopped on A (its job), started on B (billed to bob's account)
+  // the room's Claude: stopped on A (its job), started on B (billed to bob's account)
   // (A's server runs with the env of the pipe that spawned it, bob's daemon's, so the stop may land in either stub)
   await until(() => [...A.stub.calls(), ...B.stub.calls()].some(a => a[0] === 'stop' && a[1] === 'aaaa1111'), 8000, 50);
   await until(() => B.stub.calls().some(a => a.includes('--bg')), 8000, 50);
-  await until(() => B.lib(() => identity.readMembers(code).orch || {}).job === 'bbbb2222', 8000, 50);
+  await until(() => B.lib(() => identity.readMembers(code).claude || {}).job === 'bbbb2222', 8000, 50);
 
   // people post through the new host from both old machines
   assert.equal(C.say(carol, 'hello new host').json.continue, false);
@@ -270,7 +270,7 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
   await assert.rejects(client.connect(tr, { machine: C.lib(() => identity.machineId()), token: oldToken, epoch: 1 }),
     err => err.code === 'STALE' && /moved away from this host/.test(err.message));
 
-  // demote: its own log is set aside, its orch stopped, and it mirrors bob
+  // demote: its own log is set aside, its room Claude stopped, and it mirrors bob
   const d = A.cli(['demote', code, aliceInvite.invite, aliceInvite.pin]);
   assert.equal(d.status, 0, d.stderr);
   assert.match(d.stdout, /mirrors its new host now; its own log is kept in .*orphaned-/);
@@ -348,29 +348,29 @@ test('handoff and promote CLI: --via carries a ProxyJump into the new locator, a
   assert.match(B.cli(['promote', code, '--as', 'bob', '--ssh', 'me@box', '--via', 'bad host', '--confirm', code, '--force']).stderr, /--via needs a plain/);
 });
 
-/** The orch job's own `/sub-human` (agent sub-human:orchestrator, SUB_HUMAN_ROOM): it binds the seat "orch". */
-function bindOrch(m, code) {
-  const s = m.seat('orch');
+/** The room's Claude job's own `/sub-human` (agent sub-human:room-claude, SUB_HUMAN_ROOM): it binds the seat "claude". */
+function bindRoomClaude(m, code) {
+  const s = m.seat('claude');
   m.lease(s);
-  return m.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: '', agent_type: 'sub-human:orchestrator' }, s, { env: { SUB_HUMAN_ROOM: code } });
+  return m.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: '', agent_type: 'sub-human:room-claude' }, s, { env: { SUB_HUMAN_ROOM: code } });
 }
 
-test('handoff e2e: the new host\'s orch binds (the old host\'s live orch record, its machine and fresh lease, never holds the name)', async t => {
+test('handoff e2e: the new host\'s claude binds (the old host\'s live claude record, its machine and fresh lease, never holds the name)', async t => {
   const { A, B, alice, bob, code } = await room(t, { carol: false });
-  const onA = bindOrch(A, code);
+  const onA = bindRoomClaude(A, code);
   assert.doesNotMatch(JSON.stringify(onA.json || {}), /could not bind/, onA.stderr);
   const machineA = A.lib(() => identity.machineId());
-  await until(() => B.lib(() => (identity.readMembers(code).orch || {}).machine) === machineA, 5000, 50); // B's copy knows it, leased
+  await until(() => B.lib(() => (identity.readMembers(code).claude || {}).machine) === machineA, 5000, 50); // B's copy knows it, leased
 
   A.join(alice, 'handoff bob');
   await until(() => ask(B, code), 5000, 50);
   assert.match(answerCard(B, bob, ask(B, code).id, 'Host it here').post.json.systemMessage, /hosted here now/);
-  await until(() => B.lib(() => identity.readMembers(code).orch || {}).job === 'bbbb2222', 8000, 50);
+  await until(() => B.lib(() => identity.readMembers(code).claude || {}).job === 'bbbb2222', 8000, 50);
 
   // the job B started runs /sub-human: its seat binds on B
-  const onB = bindOrch(B, code);
+  const onB = bindRoomClaude(B, code);
   assert.doesNotMatch(JSON.stringify(onB.json || {}), /could not bind|name taken/, onB.stderr);
-  const o = B.lib(() => identity.readMembers(code).orch);
+  const o = B.lib(() => identity.readMembers(code).claude);
   assert.equal(o.machine, B.lib(() => identity.machineId()));
   assert.equal(o.left_at, undefined);
 });

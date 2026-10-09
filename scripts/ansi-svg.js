@@ -9,10 +9,10 @@
  * cells, combining marks / ZWJ / variation selectors take zero. The SVG uses no element ids, so
  * many can be inlined into one HTML page.
  *
- *   const { render } = require('./ansi-svg.js'); render(text, { title: 'orch' }) -> '<svg …>'
+ *   const { render } = require('./ansi-svg.js'); render(text, { title: 'claude' }) -> '<svg …>'
  *   renderHtml(text, { title, palette }) -> '<figure class="term"><pre>…</pre></figure>' (colours as
  *   shared palette classes; rowsHtml gives the per-row {raw, text, html} for excerpting)
- *   tmux capture-pane -ep -t S | node scripts/ansi-svg.js --title "orch" [--cols 120] [--rows 40] > out.svg
+ *   tmux capture-pane -ep -t S | node scripts/ansi-svg.js --title "claude" [--cols 120] [--rows 40] > out.svg
  */
 
 const THEME = {

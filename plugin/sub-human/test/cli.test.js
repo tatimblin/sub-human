@@ -185,7 +185,7 @@ test('cli tasks: the room list from lib/tasks.js list(code), plain and --json', 
   assert.equal(cli(['tasks', '--room', 'nope-0000']).status, 1);
 });
 
-test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the facilitator; nobody else', () => {
+test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the room Claude; nobody else', () => {
   h.freshHome();
   const { code } = h.register('alice');
   R = room.open(code);
@@ -195,8 +195,8 @@ test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the fa
   R.append({ kind: 'status', text: 'bob claude proposes' }, { via: 'agent', from: 'bob' }); // #3 shown
   say('alice', 'alice talks to the room');                                                // #4 hidden
   R.append({ kind: 'question', text: 'alice claude asks carol', to: 'carol' }, { via: 'agent', from: 'alice' }); // #5 hidden
-  R.append({ kind: 'question', text: 'bob, cursor or offset?', to: 'bob' }, { via: 'agent', from: 'orch' }); // #6 shown
-  say('orch', 'orch to the room', {}, 'agent');                                           // #7 hidden
+  R.append({ kind: 'question', text: 'bob, cursor or offset?', to: 'bob' }, { via: 'agent', from: 'claude' }); // #6 shown
+  say('claude', 'claude to the room', {}, 'agent');                                           // #7 hidden
   prop('alice', H, ['bob']);                                                              // #8 hidden
   say('bob', 'too broad\n  keep it small', { kind: 'objection', proposal_hash: H });      // #9 shown
   say('bob', 'ok', { kind: 'signoff', proposal_hash: H });                                // #10 shown
@@ -209,15 +209,15 @@ test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the fa
   assert.equal(whoOf(1), 'room');
   assert.equal(whoOf(2), 'bob');
   assert.equal(whoOf(3), "bob's Claude");
-  assert.equal(whoOf(6), 'facilitator');
+  assert.equal(whoOf(6), 'claude');
   assert.equal(whoOf(9), 'bob');
   assert.match(heads.find(l => l.startsWith('#9 ')), /objection {2}proposal abcdef$/);
   assert.ok(r.stdout.includes('    too broad\n      keep it small\n'), 'text verbatim, indented');
   assert.ok(!r.stdout.includes('\x1b['), 'no color when not a terminal');
-  // the orchestrator's own thread labels it facilitator
-  const o = cli(['watch', 'orch']).stdout;
-  assert.match(o, /^#6 \S+ {2}facilitator {2}question {2}→ bob/m);
-  assert.match(o, /^#7 \S+ {2}facilitator {2}say/m);
+  // the room Claude's own thread labels it claude
+  const o = cli(['watch', 'claude']).stdout;
+  assert.match(o, /^#6 \S+ {2}claude {2}question {2}→ bob/m);
+  assert.match(o, /^#7 \S+ {2}claude {2}say/m);
   assert.match(cli(['watch', 'zed']).stdout, /nothing from or to zed/);
   assert.equal(cli(['watch']).status, 2);
 });

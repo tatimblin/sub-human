@@ -12,7 +12,7 @@
  * Time comes from lib/clock.js unless the caller passes `now` (ms), so tests drive it without sleeps.
  *
  *   joinLeave(entries, viewer, {now, settle}) -> [{id, kind, name, at, settled, rejoin}]
- *       others' member_joined / member_left (never the orch's or viewer's own), in log order. A leave settles
+ *       others' member_joined / member_left (never the room Claude's or viewer's own), in log order. A leave settles
  *       settleMs() (SUB_HUMAN_LEAVE_MS, LEAVE_SETTLE_MS = 8 s, the same as the tail's) after it; a leave
  *       followed by a rejoin within it is no notice, and neither is that rejoin.
  *   text(n) -> "bob joined" | "bob rejoined" | "bob left"
@@ -24,6 +24,7 @@
  *       {shown, log: [{id, via, at}]} (lib/room/store.js kv)
  */
 const config = require('./config.js');
+const { roomClaudeName } = require('./room/members.js');
 const clock = require('./clock.js');
 const room = require('./room.js');
 
@@ -35,7 +36,7 @@ const settleMs = () => config.envMs('SUB_HUMAN_LEAVE_MS', LEAVE_SETTLE_MS);
 const isMove = e => e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
 
 function joinLeave(es, viewer, { now = clock.now(), settle = settleMs() } = {}) {
-  const list = (es || []).filter(e => isMove(e) && e.from !== viewer && e.from !== 'orch');
+  const list = (es || []).filter(e => isMove(e) && e.from !== viewer && roomClaudeName(e.from) !== 'claude'); // 0.4.x: "orch"
   const drop = new Set();
   for (const l of list) {
     if (l.kind !== 'member_left') continue;

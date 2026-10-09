@@ -19,7 +19,7 @@ test('prompt: titleFor titles once per session id and address, so a room switch 
   assert.equal(titleFor(a, 's2', { sid: 's1', addr: 'alice.otter-4821' }), null, 'not this session\'s hello');
   assert.equal(titleFor({ sid: 's2', seat: seat() }, 's2', { sid: 's1', addr: 'alice.otter-4821' }), 'alice.otter-4821', 'after /clear');
   assert.equal(titleFor(a, 's1', 's1'), 'alice.otter-4821', 'a sid-only mark (older module state) titles once more');
-  assert.equal(titleFor({ sid: 's1', seat: seat('otter-4821', 'orch') }, 's1'), null, 'the orch keeps its launch name');
+  assert.equal(titleFor({ sid: 's1', seat: seat('otter-4821', 'claude') }, 's1'), null, 'the room\'s Claude keeps its launch name');
   assert.equal(titleFor({ sid: 's1', seat: null }, 's1'), null);
   assert.equal(titleFor(null, 's1'), null);
 });
@@ -59,6 +59,6 @@ test('prompt: the mod writes "working" for a typed prompt of a member (or an unk
   assert.equal(writesWorking({ kind: 'peer' }, hello, null), false, 'not typed');
   assert.equal(writesWorking(undefined, hello, null), false);
   assert.equal(writesWorking({ kind: 'composer' }, { sid: 's1', seat: null }, null), false, 'no seat');
-  const orch = { sid: 's1', seat: seat('otter-4821', 'orch') };
-  assert.equal(writesWorking({ kind: 'composer' }, orch, null), false, 'the orch refuses typed prompts');
+  const roomClaude = { sid: 's1', seat: seat('otter-4821', 'claude') };
+  assert.equal(writesWorking({ kind: 'composer' }, roomClaude, null), false, 'the room\'s Claude refuses typed prompts');
 });

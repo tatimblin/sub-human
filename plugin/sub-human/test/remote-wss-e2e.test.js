@@ -238,7 +238,7 @@ test('the room closing stops serving it: the listener drops it and turns its Tai
   const R = await rig(t, { PATH: `${bin}:${process.env.PATH}`, SUB_HUMAN_LISTEN_CHECK_MS: '200' });
   const { host, alice, code } = R;
   host.join(alice, 'host --tailscale');
-  host.lib(() => require(path.join(h.LIB, 'identity.js')).updateOrch(code, o => ({ ...o, stopped_at: new Date().toISOString() })));
+  host.lib(() => require(path.join(h.LIB, 'identity.js')).updateRoomClaude(code, o => ({ ...o, stopped_at: new Date().toISOString() })));
   assert.ok(await h.until(() => !host.lib(() => listener.status()).rooms[code], 8000, 100), 'dropped from the served set');
   assert.ok(await h.until(() => fs.readFileSync(calls, 'utf8').includes(`serve --https=443 --set-path=/sub-human/${code} off`), 3000, 50));
 });

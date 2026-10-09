@@ -26,7 +26,7 @@ function world(names, { selfName } = {}) {
   process.env.SUB_HUMAN_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-sl-'));
   const code = identity.newCode();
   for (const name of names) {
-    const r = identity.join({ code, name, role: name === 'orch' ? 'orch' : 'member', pid: name === selfName ? process.pid : sleeper(), session_id: `sid-${name}`, cwd: os.tmpdir() });
+    const r = identity.join({ code, name, role: name === 'claude' ? 'claude' : 'member', pid: name === selfName ? process.pid : sleeper(), session_id: `sid-${name}`, cwd: os.tmpdir() });
     assert.ok(r.ok, r.error);
   }
   const file = path.join(identity.roomDir(code), 'log.jsonl');
@@ -36,7 +36,7 @@ function world(names, { selfName } = {}) {
     fs.appendFileSync(file, JSON.stringify({ id, at: new Date().toISOString(), from, via: 'human', kind, text: 'x', to: 'room', ...extra }) + '\n');
     return id;
   };
-  return { code, add, sys: (kind, extra) => add('orch', kind, { via: 'system', ...extra }) };
+  return { code, add, sys: (kind, extra) => add('claude', kind, { via: 'system', ...extra }) };
 }
 const env = { NO_COLOR: '1' };
 
@@ -48,32 +48,32 @@ test('statusline: only the agent-panel rows remain (no main status line)', () =>
   assert.equal(segments.state, undefined);
 });
 
-test('agentStatusline: orch rows by the row map, else by description; other tasks untouched; killed rows', () => {
-  const { code, add } = world(['orch', 'alice', 'bob']);
+test('agentStatusline: claude rows by the row map, else by description; other tasks untouched; killed rows', () => {
+  const { code, add } = world(['claude', 'alice', 'bob']);
   add('alice', 'proposal', prop(['alice', 'bob']));
   add('alice', 'signoff', { proposal_hash: H });
   fs.writeFileSync(path.join(identity.roomDir(code), 'tasks.json'), JSON.stringify([{ id: '2', subject: 'parser tests', status: 'in_progress', owner: 'bob' }]));
-  rows.recordRow(code, 'sid-orch', 'a1', { kind: 'participant', name: 'alice', parent: null });
+  rows.recordRow(code, 'sid-claude', 'a1', { kind: 'participant', name: 'alice', parent: null });
   const tasks = [
     { id: 'a1', type: 'local_agent', status: 'running', description: 'alice watcher' },
     { id: 'a2', type: 'local_agent', status: 'running', description: 'bob' },
     { id: 'a3', type: 'local_agent', status: 'running', description: 'run tests' },
     { id: 'a4', type: 'local_agent', status: 'killed', description: 'bob' },
-    { id: 'a5', type: 'local_agent', status: 'running', description: 'orch' },
+    { id: 'a5', type: 'local_agent', status: 'running', description: 'claude' },
   ];
-  const out = agentStatusline({ session_id: 'sid-orch', tasks }, { env }).split('\n').map(l => JSON.parse(l));
+  const out = agentStatusline({ session_id: 'sid-claude', tasks }, { env }).split('\n').map(l => JSON.parse(l));
   assert.deepEqual(out, [
     { id: 'a1', content: 'alice  ✓ agreed b7ca39' },
     { id: 'a2', content: 'bob  ⚠ reviewing b7ca39 · ◼ #2 parser tests' },
     { id: 'a4', content: 'bob  ⚠ row stopped' },
   ]);
-  assert.equal(agentStatusline({ session_id: 'sid-orch', tasks: [tasks[2]] }, { env }), '', 'no row tasks: nothing');
+  assert.equal(agentStatusline({ session_id: 'sid-claude', tasks: [tasks[2]] }, { env }), '', 'no row tasks: nothing');
   assert.equal(agentStatusline({ session_id: 'sid-nobody', tasks }, { env }), '');
   assert.equal(agentStatusline({}, { env }), '');
 });
 
 test('agentStatusline: a member\'s room row and the nested rows inside it (after /clear changed the session id)', () => {
-  const { code, add } = world(['orch', 'alice', 'bob', 'carol']);
+  const { code, add } = world(['claude', 'alice', 'bob', 'carol']);
   add('carol', 'proposal', prop(['alice', 'bob']));
   add('bob', 'objection', { proposal_hash: H });
   rows.recordRow(code, 'old-session', 'r1', { kind: 'room', name: code, parent: null });
@@ -98,8 +98,8 @@ test('agentStatusline: a member\'s room row and the nested rows inside it (after
 });
 
 test('agentStatusline: falls back to process ancestry in a child process', () => {
-  const { code, add } = world(['orch', 'alice'], { selfName: 'alice' });
-  add('orch', 'proposal', { ...prop(['alice']), via: 'system' });
+  const { code, add } = world(['claude', 'alice'], { selfName: 'alice' });
+  add('claude', 'proposal', { ...prop(['alice']), via: 'system' });
   const r = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(PLUGIN, 'statusline', 'index.js'))}).agentStatusline({tasks: [{id: 'x', status: 'running', description: ${JSON.stringify(code)}}]}, {env: {NO_COLOR: '1'}}))`],
     { env: { ...process.env }, encoding: 'utf8' });
   assert.match(JSON.parse(r.stdout).content, new RegExp(`^${code}  ⚠ your answer needed b7ca39`));

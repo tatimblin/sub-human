@@ -54,11 +54,11 @@
  *       incremental, from the checkpoint (FsRoomStore: <room>/log.idx), which it advances
  *   getCursor(reader) -> id, setCursor(reader, id)           per-reader positions
  *   isHost -> bool                          this machine holds the room (FsRoomStore: true). Only there do the
- *                                           orch's spawn, reap and watchdog and proposal decisions run.
+ *                                           room Claude's spawn, reap and watchdog and proposal decisions run.
  *   members.read() -> {name: record}; members.update(fn) -> written | null
  *       fn(current) returns the next object to store, or null/undefined to store nothing. Atomic: under a lock
  *       here, a compare-and-set retry loop for a remote store, so fn may run more than once (side effects in it
- *       must be idempotent). The orch's bookkeeping (lib/orch.js); a seat changes through the named ops:
+ *       must be idempotent). The room Claude's bookkeeping (lib/room-claude.js); a seat changes through the named ops:
  *   members.join(rec) -> {ok, rejoin?, error?}, members.leave(name, {reason, deadlineMs}?) -> bool,
  *   members.beat(name, {presence?}) -> bool
  *       lib/room/members.js ops (the same rules for every store; beat also writes presence/<name>). On a mirror
@@ -96,7 +96,8 @@
  *   toPayload(code, entry, opts), admit(code, payload, opts), placeAfter(store, p, {newest, prevLine, now})
  *                                the halves of append and place every RoomStore shares (see place)
  *   normalize(e)                 legacy display mapping (concern -> objection, agree -> signoff, plan_rev ->
- *                                proposal {hash}, plan_hash -> proposal_hash)
+ *                                proposal {hash}, plan_hash -> proposal_hash; 0.4.x's "orch" in from, to, by,
+ *                                owner -> "claude"). The log itself is never rewritten.
  *   hash12(data)
  *
  */
@@ -165,6 +166,7 @@ function normalize(e) {
   else if (n.plan_hash && !n.proposal_hash) n.proposal_hash = n.plan_hash;
   delete n.plan_hash;
   if (n.to == null) n.to = 'room';
+  for (const k of ['from', 'to', 'by', 'owner']) if (typeof n[k] === 'string') n[k] = members.roomClaudeName(n[k]); // 0.4.x "orch"
   return tag(n, STORE_OF.get(e));
 }
 
@@ -907,7 +909,7 @@ class FsRoomStore {
 
   // ----- members -----
   get _membersFile() { return path.join(this.dir, MEMBERS); }
-  _readMembers() { try { return readJson(this._membersFile, {}) || {}; } catch { return {}; } }
+  _readMembers() { try { return members.fromLegacy(readJson(this._membersFile, {}) || {}); } catch { return {}; } }
   _updateMembers(fn) {
     const file = this._membersFile;
     return withLock(file + '.lock', () => {

@@ -13,7 +13,7 @@
  *   create(me, {text|path, approvers?}) -> {hash, approvers, path, entry, again}
  *       Stores the blob plans/<hash>.md (hash = sha256/12 of the bytes; lib/room/store.js blobs) and appends
  *       `proposal` with path = that room-relative ref (older entries hold an absolute path). approvers
- *       default to the humans present (not orch, not left). An identical open proposal is not re-appended.
+ *       default to the humans present (not room Claude, not left). An identical open proposal is not re-appended.
  *       Throws ProposalError (message for the model) on bad input.
  *   Reading the log goes through lib/room/consent.js fold (latest proposal per hash, the
  *   latest answer per person, an objection voids a signoff), the same fold stateLine, lane() and the rows read.
@@ -96,7 +96,7 @@ const kvOf = me => room.open(me.code).store.kv;
 
 function humans(code) {
   return Object.values(identity.readMembers(code) || {})
-    .filter(m => m && m.name && m.role !== 'orch' && !m.left_at).map(m => m.name);
+    .filter(m => m && m.name && m.role !== 'claude' && !m.left_at).map(m => m.name);
 }
 
 // ---------- reading the log (lib/room/consent.js fold: the same semantics as stateLine, lane and the rows) ----------
@@ -268,7 +268,7 @@ function create(me, args = {}, { cwd } = {}) {
   else {
     if (!Array.isArray(args.approvers) || !args.approvers.every(a => typeof a === 'string')) refuse('approvers must be an array of names');
     approvers = [...new Set(args.approvers.map(a => a.trim().replace(/^@/, '')))];
-    if (approvers.includes('orch')) refuse('approvers are people; the orch cannot approve');
+    if (approvers.includes('claude')) refuse('approvers are people; the room\'s Claude cannot approve');
     const unknown = approvers.filter(a => !present.includes(a));
     if (unknown.length) refuse(`not in the room: ${unknown.join(', ')} (present: ${present.join(', ') || 'nobody'})`);
   }

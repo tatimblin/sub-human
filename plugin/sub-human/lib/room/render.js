@@ -24,6 +24,7 @@
  */
 
 const { normalize, unverifiedHuman } = require('./store.js');
+const { roomClaudeName, ROOM_CLAUDE } = require('./members.js');
 const { proposals, answers, answered, decided, approversOf } = require('./lanes.js');
 const { oneLine } = require('../text.js');
 const { fold } = require('./consent.js');
@@ -53,7 +54,8 @@ const otherVia = e => (e.via !== undefined && !KNOWN_VIAS.has(e.via)
 const who = e => {
   if (e.via === 'system') return 'room';
   if (otherVia(e)) return otherVia(e);
-  return e.via === 'agent' && e.from !== 'orch' ? `${e.from}'s Claude` : e.from;
+  const from = roomClaudeName(e.from); // 0.4.x logs name the room's Claude "orch"
+  return e.via === 'agent' && from !== ROOM_CLAUDE ? `${from}'s Claude` : from;
 };
 
 /**
@@ -111,11 +113,11 @@ function line(e, { full = false } = {}) {
 const tailLine = e => line(e);
 
 // ---------- chat rendering (what a human sees; no ids) ----------
-/** Who an entry is from, as a group chat names them: "bob", "bob's Claude", "orch", "room". */
+/** Who an entry is from, as a group chat names them: "bob", "bob's Claude", "claude", "room". */
 function chatWho(e) {
   if (e.via === 'system') return 'room';
   if (otherVia(e)) return otherVia(e);
-  if (e.from === 'orch') return 'orch';
+  if (roomClaudeName(e.from) === ROOM_CLAUDE) return ROOM_CLAUDE; // 0.4.x logs: "orch"
   if (e.via === 'agent') return `${e.from}'s Claude`;
   if (unverifiedHuman(e)) return `${e.from} ${UNVERIFIED}`;
   return e.drafted === 'agent' ? `${e.from} (Claude's wording)` : e.from;
@@ -306,7 +308,7 @@ function digestSections(entries = [], { members = {}, code = null } = {}) {
 
   const closedBy = new Set();
   for (const e of entries) {
-    if ((e.from === 'orch' || e.kind === 'decision') && e.refs) e.refs.forEach(r => closedBy.add(r));
+    if ((roomClaudeName(e.from) === ROOM_CLAUDE || e.kind === 'decision') && e.refs) e.refs.forEach(r => closedBy.add(r));
   }
   const open = entries.map(normalize)
     .filter(e => (e.kind === 'objection' || e.kind === 'question') && !closedBy.has(e.id))

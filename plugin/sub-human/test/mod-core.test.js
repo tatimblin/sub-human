@@ -127,7 +127,7 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
       ok({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: 'ROOM …', sessionTitle: 'alice.otter-4821' } }),
       { result: { additionalContext: ['ROOM …'], sessionTitle: 'alice.otter-4821' } }],
     ['row-hold', 'SubagentStop', ok({ decision: 'block', reason: 'Call hold again.' }), { result: { block: 'Call hold again.' } }],
-    ['tasks exit 2', 'TaskCompleted', { exitCode: 2, stdout: '', stderr: 'only the orch completes task 1\n' }, { result: { block: 'only the orch completes task 1' } }],
+    ['tasks exit 2', 'TaskCompleted', { exitCode: 2, stdout: '', stderr: 'only the room\'s Claude completes task 1\n' }, { result: { block: 'only the room\'s Claude completes task 1' } }],
     ['tasks exit 2 (PostToolUse)', 'PostToolUse', { exitCode: 2, stdout: '', stderr: 'dropped' }, { result: { block: 'dropped' } }],
     ['no output', 'UserPromptSubmit', ok(''), { result: {} }],
     ['plain stdout', 'SessionStart', ok('plain words'), { result: { additionalContext: ['plain words'] } }],
@@ -147,7 +147,7 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
 
 test('shim: a real hook\'s output translates (at-room posting through prompt.js)', async t => {
   const { toClassic } = await load('mod/core/shim.mjs');
-  const w = new World({ orch: 'sleep', alice: 'act' }, { t });
+  const w = new World({ claude: 'sleep', alice: 'act' }, { t });
   const nonce = 'f00d'.repeat(8);
   w.lib(() => require('../lib/identity.js').writeModLease(w.sid.alice, { nonce }));
   const r = w.hook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: '@room hello', sub_human_origin: 'composer', sub_human_nonce: nonce, transcript_path: '' }, { as: 'alice' });
@@ -182,6 +182,29 @@ test('prompt: parse is at-room\'s parse; the gate drops only an @room that no pe
   assert.equal(p.isAtRoom('room'), false);
 });
 
+test('prompt: parseClaude is at-room\'s; a seated session gates an untyped @claude like an @room, an unseated one lets it through', async () => {
+  const p = await load('mod/core/prompt.mjs');
+  const atRoom = require('../hooks/at-room.js');
+  for (const s of ['@claude hi', '@claude', '@claude  two', '@claudex', ' @claude x', '@Claude x', 'claude: x', '@room @claude x', 'hi @claude', '', '@claude\nmore'])
+    assert.equal(p.parseClaude(s), atRoom.parseClaude(s), JSON.stringify(s));
+  assert.equal(p.parseClaude('@room @claude x'), null, 'only a leading tag');
+  assert.equal(p.parse('@room @claude x'), '@claude x', 'a plain @room post');
+  const seated = { sid: 's1', seat: { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' } };
+  const unseated = { sid: 's1', seat: null };
+  const peer = { text: '@claude plan it', origin: { kind: 'peer' } };
+  assert.match(p.gateVerdict(peer, seated), /^✗ not posted: this @claude came from another Claude session/);
+  assert.equal(p.gateVerdict(peer, unseated), null, 'outside a room @claude is a plain prompt');
+  assert.equal(p.gateVerdict(peer, null), null, 'no hello: at-room decides');
+  assert.equal(p.gateVerdict({ ...peer, origin: { kind: 'composer' } }, seated), null);
+  assert.equal(p.gateVerdict({ text: 'ask @claude', origin: { kind: 'peer' } }, seated), null);
+  assert.deepEqual(p.failClosed('@claude ship it', seated), { block: atRoom.NO_ORIGIN.replace('@room', '@claude'), suppressOriginalPrompt: true });
+  assert.equal(p.failClosed('@claude ship it', unseated), null);
+  assert.equal(p.failClosed('@claude ship it'), null);
+  const e = prompt => ({ session_id: 's1', prompt });
+  assert.equal(p.needsNode(e('@claude hi'), unseated), false, 'unseated: an ordinary prompt, no node');
+  assert.equal(p.needsNode(e('@claude hi'), seated, { delivering: true, reviewFlag: false }), true, 'the post is signed in node');
+});
+
 test('prompt: needsNode skips node only for a surely unseated session and a prompt that is not an @room', async () => {
   const { needsNode } = await load('mod/core/prompt.mjs');
   const seat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
@@ -195,7 +218,7 @@ test('prompt: needsNode skips node only for a surely unseated session and a prom
   assert.equal(needsNode(e('hi'), null), true, 'no hello yet');
 });
 
-test('prompt: a seated member skips node only while the tail child delivers and no review may be open; never the orch', async () => {
+test('prompt: a seated member skips node only while the tail child delivers and no review may be open; never the room\'s Claude', async () => {
   const { needsNode, originKind } = await load('mod/core/prompt.mjs');
   const seat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
   const hello = { sid: 's1', seat };
@@ -205,7 +228,7 @@ test('prompt: a seated member skips node only while the tail child delivers and 
   assert.equal(needsNode(e('hi'), hello, { delivering: true, reviewFlag: true }), true, 'a review may be open');
   assert.equal(needsNode(e('hi'), hello, { delivering: true }), true, 'flag unset: unsure');
   assert.equal(needsNode(e('@room hi'), hello, { delivering: true, reviewFlag: false }), true, 'the post is signed in node');
-  assert.equal(needsNode(e('hi'), { sid: 's1', seat: { ...seat, role: 'orch' } }, { delivering: true, reviewFlag: false }), true, 'the orch: its refusal is node\'s');
+  assert.equal(needsNode(e('hi'), { sid: 's1', seat: { ...seat, role: 'claude' } }, { delivering: true, reviewFlag: false }), true, 'the room\'s Claude: its refusal is node\'s');
   assert.equal(originKind({ kind: 'composer' }), 'composer');
   assert.equal(originKind({ kind: 'plugin', name: 'sub-human' }), 'plugin:sub-human');
   assert.equal(originKind({ kind: 'plugin' }), 'plugin');
@@ -249,8 +272,8 @@ test('deliver: the routing table: chat is a notice, pull an append, wake a promp
   assert.equal(gateVerdict({ text: idle[0].text, origin: { kind: 'plugin', name: 'sub-human' } }), null, 'a wake never reads as a "room:" post');
   const mid = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' }, { turnRunning: true });
   assert.deepEqual(mid, [{ do: 'log', text: 'room: decided' }, { do: 'mid-turn-wake', text: idle[0].text }]);
-  const orch = d.route({ type: 'wake', text: 'room now: …' }, { role: 'orch', rows: 'SUB-HUMAN ROWS: …' });
-  assert.equal(orch[0].text, `${d.WAKE_HEAD}\nroom now: …\nSUB-HUMAN ROWS: …`, 'the orch\'s rows ride on its wakes');
+  const roomClaude = d.route({ type: 'wake', text: 'room now: …' }, { role: 'claude', rows: 'SUB-HUMAN ROWS: …' });
+  assert.equal(roomClaude[0].text, `${d.WAKE_HEAD}\nroom now: …\nSUB-HUMAN ROWS: …`, 'the room\'s Claude\'s rows ride on its wakes');
   assert.equal(d.route({ type: 'wake', text: 'x' }, { role: 'member', rows: 'R' })[0].text.includes('R'), false, 'a member\'s go with the person\'s prompt');
   assert.deepEqual(d.route({ type: 'health', text: 'room log check: …' }).map(a => a.do), ['log', 'append']);
   assert.deepEqual(d.route(null), []);
@@ -293,7 +316,7 @@ test('prompt: the origin queue hands prompt.submit\'s origin to the classic hook
 test('prefilter: consent and the task hooks are skipped only when sure', async () => {
   const f = await load('mod/core/prefilter.mjs');
   const member = { sid: 's1', seat: { name: 'alice', code: 'otter-4821', role: 'member' } };
-  const orch = { sid: 's1', seat: { name: 'orch', code: 'otter-4821', role: 'orch' } };
+  const roomClaude = { sid: 's1', seat: { name: 'claude', code: 'otter-4821', role: 'claude' } };
   const none = { sid: 's1', seat: null };
   assert.equal(f.consentNeeded(none, 's1', undefined), false, 'no seat: no review');
   assert.equal(f.consentNeeded(member, 's1', undefined), true, 'flag unset: unsure');
@@ -303,9 +326,9 @@ test('prefilter: consent and the task hooks are skipped only when sure', async (
   assert.equal(f.consentNeeded(none, 's2', undefined), true, 'another session\'s hello');
   assert.equal(f.consentNeeded(null, 's1', undefined), true);
   assert.equal(f.tasksNeeded(member, 's1'), false);
-  assert.equal(f.tasksNeeded(orch, 's1'), true);
+  assert.equal(f.tasksNeeded(roomClaude, 's1'), true);
   assert.equal(f.tasksNeeded(none, 's1', undefined), false);
-  assert.equal(f.tasksNeeded(none, 's1', 'otter-4821'), true, 'an orch before its join');
+  assert.equal(f.tasksNeeded(none, 's1', 'otter-4821'), true, 'a room Claude before its join');
   assert.equal(f.tasksNeeded(member, 's2'), true);
   assert.equal(f.tasksNeeded({ ...member, sid: null }, null), true);
   assert.equal(f.tasksNeeded(null, 's1'), true);
@@ -384,7 +407,7 @@ test('guard: the person-only CLI is sent to a terminal outside Claude Code, neve
 
 // ---------- mod-hello ----------
 test('mod-hello: prints the home and this session\'s seat, and writes the lease (0600)', t => {
-  const w = new World({ orch: 'sleep', alice: 'act' }, { t });
+  const w = new World({ claude: 'sleep', alice: 'act' }, { t });
   const r = w.hook('mod-hello', {}, { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.json, {
@@ -400,7 +423,7 @@ test('mod-hello: prints the home and this session\'s seat, and writes the lease 
 });
 
 test('mod-hello: an unseated session gets seat null (and a lease); a bad payload gets no lease', t => {
-  const w = new World({ orch: 'sleep' }, { t });
+  const w = new World({ claude: 'sleep' }, { t });
   const sid = '0b9c6f8e-1111-4222-8333-444455556666';
   const r = w.hook('mod-hello', { session_id: sid });
   assert.equal(r.code, 0, r.stderr);

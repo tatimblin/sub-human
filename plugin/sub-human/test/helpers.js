@@ -21,7 +21,7 @@
  * Temp dirs: requiring this file wraps fs.mkdtempSync / fs.mkdtemp / fs.promises.mkdtemp so every dir
  * this process creates under os.tmpdir() (by a helper, a test file or lib code) is tracked, and removes
  * them all when the process exits (also on SIGINT/SIGTERM/SIGHUP). Detached children a test started
- * (the session-end reaper, the orch starter in join) can outlive the test process and write into its
+ * (the session-end reaper, the room's Claude starter in join) can outlive the test process and write into its
  * home again, so the exit handler also leaves a small detached sweeper that removes the same dirs again
  * after 2 s and 10 s. Dirs live for the whole process, so nothing loses its home mid-run.
  * SUB_HUMAN_KEEP_TMP=1 keeps everything (for debugging a failure).

@@ -1,5 +1,5 @@
 'use strict';
-// hooks/tasks.js reconcile: a lost mirror run leaves a native task with no `task` entry; the next orch run of
+// hooks/tasks.js reconcile: a lost mirror run leaves a native task with no `task` entry; the next room Claude run of
 // tasks.js (mirror or gate) appends its snapshot, and never resurrects a task the log deleted.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -9,21 +9,21 @@ const { World, PLUGIN } = require('./helpers.js');
 const tasks = require(path.join(PLUGIN, 'lib', 'tasks.js'));
 
 const create = (id, subject, extra = {}) => ({
-  hook_event_name: 'PostToolUse', agent_type: 'sub-human:orchestrator', tool_name: 'TaskCreate',
+  hook_event_name: 'PostToolUse', agent_type: 'sub-human:room-claude', tool_name: 'TaskCreate',
   tool_input: { subject, description: subject, ...extra }, tool_response: { task: { id: String(id), subject } },
 });
 const update = (id, input) => ({
-  hook_event_name: 'PostToolUse', agent_type: 'sub-human:orchestrator', tool_name: 'TaskUpdate',
+  hook_event_name: 'PostToolUse', agent_type: 'sub-human:room-claude', tool_name: 'TaskUpdate',
   tool_input: { taskId: String(id), ...input }, tool_response: { success: true, taskId: String(id), updatedFields: Object.keys(input) },
 });
-const completed = (id, subject) => ({ hook_event_name: 'TaskCompleted', agent_type: 'sub-human:orchestrator', task_id: String(id), task_subject: subject });
+const completed = (id, subject) => ({ hook_event_name: 'TaskCompleted', agent_type: 'sub-human:room-claude', task_id: String(id), task_subject: subject });
 
 function world() {
-  const w = new World({ orch: 'sleep', bob: 'sleep' });
+  const w = new World({ claude: 'sleep', bob: 'sleep' });
   w.native = path.join(w.userHome, '.claude', 'tasks', `sh-${w.code}`);
   fs.mkdirSync(w.native, { recursive: true });
   w.writeNative = t => fs.writeFileSync(path.join(w.native, `${t.id}.json`), JSON.stringify(t));
-  w.run = (input, as = 'orch') => w.hook('tasks', input, { as, env: { CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}` } });
+  w.run = (input, as = 'claude') => w.hook('tasks', input, { as, env: { CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}` } });
   w.list = () => w.lib(() => tasks.list(w.code));
   w.taskEntries = () => w.entries().filter(e => e.kind === 'task');
   return w;

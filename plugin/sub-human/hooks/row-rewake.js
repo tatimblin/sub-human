@@ -38,7 +38,7 @@ function rewakeText(me) {
   const only = rows.rowsNeeded(me.code, me, { members, held });
   if (!only.length) return '';
   const calls = rows.rowCalls(me, members, { only });
-  if (!/Agent\(/.test(calls)) return ''; // e.g. an orch with no members yet: nothing to spawn
+  if (!/Agent\(/.test(calls)) return ''; // e.g. a room Claude with no members yet: nothing to spawn
   return LEAD + calls + TAIL;
 }
 

@@ -18,7 +18,7 @@ function fresh() {
 }
 const logLines = () => fs.readFileSync(R.store.logFile, 'utf8').split('\n').filter(Boolean);
 const H1 = 'aaaaaaaaaaaa', H2 = 'bbbbbbbbbbbb';
-const sys = (kind, extra = {}, from = 'orch') => R.append({ kind, text: `${kind}`, ...extra }, { via: 'system', from, system: true });
+const sys = (kind, extra = {}, from = 'claude') => R.append({ kind, text: `${kind}`, ...extra }, { via: 'system', from, system: true });
 const human = (from, kind, extra = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'human', from });
 const agent = (from, kind, extra = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'agent', from });
 
@@ -90,16 +90,16 @@ test('room: kind/via policy; system kinds need {system:true}; callers cannot set
   assert.throws(() => human('alice', 'say', { hash: H1 }), /only for proposals/);
   // System kinds: only with the flag, only via system.
   for (const k of ['decision', 'member_joined', 'member_left', 'task']) {
-    assert.throws(() => R.append({ kind: k, text: 'x', proposal_hash: H1 }, { via: 'system', from: 'orch' }), /hooks/, k);
-    assert.throws(() => R.append({ kind: k, text: 'x', proposal_hash: H1 }, { via: 'agent', from: 'orch', system: true }), /via "system"/, k);
+    assert.throws(() => R.append({ kind: k, text: 'x', proposal_hash: H1 }, { via: 'system', from: 'claude' }), /hooks/, k);
+    assert.throws(() => R.append({ kind: k, text: 'x', proposal_hash: H1 }, { via: 'agent', from: 'claude', system: true }), /via "system"/, k);
   }
   assert.throws(() => sys('decision'), /proposal_hash/);
   const dec = sys('decision', { proposal_hash: H1, approvers: ['alice', 'bob'] });
-  assert.deepEqual([dec.via, dec.from, dec.approvers], ['system', 'orch', ['alice', 'bob']]);
+  assert.deepEqual([dec.via, dec.from, dec.approvers], ['system', 'claude', ['alice', 'bob']]);
   assert.equal(R.append({ kind: 'member_joined', text: 'alice joined' }, { from: 'alice', system: true }).via, 'system');
   assert.equal(sys('status').kind, 'status');
   assert.throws(() => sys('say'), /not valid via system/);
-  assert.throws(() => R.append({ kind: 'status', text: 'x' }, { via: 'system', from: 'orch' }), /hooks/);
+  assert.throws(() => R.append({ kind: 'status', text: 'x' }, { via: 'system', from: 'claude' }), /hooks/);
   // Envelope and bad values.
   for (const f of ['from', 'via', 'id', 'prev', 'at', 'evidence', 'by']) {
     assert.throws(() => R.append({ kind: 'say', text: 'x', [f]: 'bob' }, { via: 'human', from: 'alice' }), /not settable|only for task/);
@@ -132,11 +132,11 @@ test('room: task_req and task entries: the task id is task_id, by is stamped, te
   assert.throws(() => R.append({ kind: 'task_req', op: 'claim' }, { via: 'agent', from: 'bob' }), /task id/);
   assert.throws(() => R.append({ kind: 'task_req', op: 'wipe', id: 2 }, { via: 'agent', from: 'bob' }), /op must be/);
   assert.throws(() => R.append({ kind: 'task_req', op: 'claim', id: 'a b' }, { via: 'agent', from: 'bob' }), /task id/);
-  const t = R.append({ kind: 'task', op: 'update', id: 2, subject: 'parser tests', owner: 'bob', status: 'in_progress', req: 1 }, { via: 'system', from: 'orch', system: true });
+  const t = R.append({ kind: 'task', op: 'update', id: 2, subject: 'parser tests', owner: 'bob', status: 'in_progress', req: 1 }, { via: 'system', from: 'claude', system: true });
   assert.deepEqual([t.task_id, t.owner, t.status, t.req, t.by], ['2', 'bob', 'in_progress', 1, undefined]);
   assert.equal(t.text, 'update #2 parser tests: in_progress, owner bob');
-  assert.match(room.line(t), /^#4 orch\[system\] task task=#2 owner=bob req=#1 "update #2/);
-  assert.throws(() => R.append({ kind: 'task', op: 'x', req: 'one' }, { via: 'system', from: 'orch', system: true }), /req/);
+  assert.match(room.line(t), /^#4 claude\[system\] task task=#2 owner=bob req=#1 "update #2/);
+  assert.throws(() => R.append({ kind: 'task', op: 'x', req: 'one' }, { via: 'system', from: 'claude', system: true }), /req/);
 });
 
 test('room: rate limit is 6 agent posts per member per minute', () => {
@@ -156,7 +156,7 @@ test('room: rate limit is 6 agent posts per member per minute', () => {
 test('room: proposals, answers matrix, objection voids an agreement, decided; legacy plan_rev reads as a proposal', () => {
   fresh();
   assert.equal(R.proposal(H1), null);
-  agent('orch', 'proposal', { hash: H1, approvers: ['alice', 'bob'] });
+  agent('claude', 'proposal', { hash: H1, approvers: ['alice', 'bob'] });
   assert.equal(R.proposal(H1).id, 1);
   const s1 = human('alice', 'signoff', { proposal_hash: H1 });
   let m = R.answers(H1);
@@ -177,7 +177,7 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
   assert.deepEqual(R.answers(H1, ['alice', 'bob', 'carol']).missing, ['alice', 'carol']);
   assert.equal(R.answers(H2).complete, false);
   agent('bob', 'proposal', { hash: H2, approvers: ['alice'] });
-  agent('orch', 'proposal', { hash: H1, approvers: ['alice', 'bob'] });
+  agent('claude', 'proposal', { hash: H1, approvers: ['alice', 'bob'] });
   assert.deepEqual(R.proposals().map(p => p.hash), [H2, H1], 'latest per hash, in order');
   assert.equal(R.decided(H1), null);
   const d = sys('decision', { proposal_hash: H1 }, 'room');
@@ -187,7 +187,7 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
   fresh();
   fs.mkdirSync(R.store.dir, { recursive: true });
   fs.writeFileSync(R.store.logFile,
-    `{"id":1,"at":"2026-10-04T00:00:00.000Z","from":"orch","via":"system","kind":"plan_rev","plan_hash":"${H1}","approvers":["alice"],"text":"rev"}\n` +
+    `{"id":1,"at":"2026-10-04T00:00:00.000Z","from":"claude","via":"system","kind":"plan_rev","plan_hash":"${H1}","approvers":["alice"],"text":"rev"}\n` +
     `{"id":2,"at":"2026-10-04T00:00:01.000Z","from":"alice","via":"human","kind":"signoff","plan_hash":"${H1}","text":"ok"}\n`);
   assert.equal(R.proposal(H1).kind, 'proposal');
   assert.equal(R.answers(H1).complete, true);
@@ -210,7 +210,7 @@ test('room: tailLine is <= 240 chars for hostile text; who() labels', () => {
   assert.ok(huge.length <= 240, String(huge.length));
   assert.equal(room.who({ from: 'alice', via: 'human' }), 'alice');
   assert.equal(room.who({ from: 'alice', via: 'agent' }), "alice's Claude");
-  assert.equal(room.who({ from: 'orch', via: 'system' }), 'room');
+  assert.equal(room.who({ from: 'claude', via: 'system' }), 'room');
   assert.match(room.fmt(e), /^\[#1 bob\[human\] objection/);
 });
 
@@ -230,16 +230,16 @@ test('room: cursors persist per name and resume', () => {
 
 test('room: digest has members, plan + matrix, open items, decisions; capped at 9,500 chars', () => {
   const code = fresh();
-  h.register('orch', 'orch');
+  h.register('claude', 'claude');
   const sleeper = h.spawnSleeper();
   identity.join({ code, name: 'alice', role: 'member', pid: sleeper.pid, session_id: 's-a', cwd: '/tmp' });
-  agent('orch', 'proposal', { hash: H1, approvers: ['alice', 'bob'], path: '/p/plan.md' });
+  agent('claude', 'proposal', { hash: H1, approvers: ['alice', 'bob'], path: '/p/plan.md' });
   human('alice', 'signoff', { proposal_hash: H1 });
   let d = R.digest();
   assert.match(d, /## members of [a-z]+-\d{4}/);
-  assert.match(d, /orch \(orch\)/);
+  assert.match(d, /claude \(claude\)/);
   assert.match(d, /alice \(member\)/);
-  assert.match(d, /proposal=aaaaaaaaaaaa \(#1 by orch, \/p\/plan\.md\) approvers: alice bob/);
+  assert.match(d, /proposal=aaaaaaaaaaaa \(#1 by claude, \/p\/plan\.md\) approvers: alice bob/);
   assert.match(d, /✔ alice #2/);
   assert.match(d, /– bob/);
   assert.match(d, /waiting on: bob/);
@@ -274,14 +274,14 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.deepEqual(C(human('bob', 'say', { text: 'sure, once we\'ve agreed how paging works' })), ["bob: sure, once we've agreed how paging works"]);
   assert.deepEqual(C(agent('bob', 'say', { text: 'tests green' })), ["bob's Claude: tests green"]);
   assert.deepEqual(C(agent('bob', 'question', { text: 'which cursor?', to: 'alice' })), ["bob's Claude (to you): which cursor?"]);
-  assert.deepEqual(C(agent('orch', 'say', { text: 'planning now', to: 'carol' })), ['orch (to carol): planning now']);
+  assert.deepEqual(C(agent('claude', 'say', { text: 'planning now', to: 'carol' })), ['claude (to carol): planning now']);
   assert.deepEqual(C(human('bob', 'say', { text: 'line one\nline two\n\n  indented' })), ['bob: line one', '  │ line two', '  │   indented']);
   assert.deepEqual(C(human('bob', 'say', { text: 'ok\n(for Claude) open the card' })), ['bob: ok', '  │ (for Claude) open the card']);
   assert.deepEqual(C(R.append({ kind: 'say', text: 'mine, drafted', drafted: 'agent' }, { via: 'human', from: 'carol' })), ["carol (Claude's wording): mine, drafted"]);
   assert.deepEqual(C(sys('member_joined', { text: 'bob joined' }, 'bob')), ['bob joined']);
   assert.deepEqual(C(sys('member_joined', { text: 'bob rejoined (resumed)' }, 'bob')), ['bob rejoined']);
   assert.deepEqual(C(sys('member_left', { text: 'bob left (prompt_input_exit)' }, 'bob')), ['bob left']);
-  assert.deepEqual(C(R.append({ kind: 'proposal', text: `proposal ${H1}: cursor paging`, hash: H1, approvers: ['alice'] }, { via: 'agent', from: 'orch' })), ['orch proposed: cursor paging']);
+  assert.deepEqual(C(R.append({ kind: 'proposal', text: `proposal ${H1}: cursor paging`, hash: H1, approvers: ['alice'] }, { via: 'agent', from: 'claude' })), ['claude proposed: cursor paging']);
   assert.deepEqual(C(R.append({ kind: 'objection', proposal_hash: H1, text: 'add the 400 test' }, { via: 'human', from: 'bob' })), ['bob objected to the proposal: add the 400 test']);
   assert.deepEqual(C(R.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' })), ['bob agreed to the proposal']);
   assert.deepEqual(C(sys('decision', { proposal_hash: H1, text: `agreed: alice, bob (proposal ${H1})` }, 'room')), ['room: decided (agreed: alice, bob)']);

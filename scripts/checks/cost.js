@@ -1,7 +1,7 @@
 'use strict';
 /**
  * cost: an approximate run cost for checks/context.js: tokens from every transcript (main + subagents) of the
- * seats and the orch within the run, at list prices (scripts/baselines.json prices).
+ * seats and the room's Claude within the run, at list prices (scripts/baselines.json prices).
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -38,7 +38,7 @@ function runCost({ index, runStart }) {
         }
       }
     };
-    for (const seat of ['alice', 'bob', 'carol']) walk(paths.seatProjectDir(seat)); // the orch's transcript is in alice's folder
+    for (const seat of ['alice', 'bob', 'carol']) walk(paths.seatProjectDir(seat)); // the room Claude's transcript is in alice's folder
     return `≈ $${usd.toFixed(2)} (${Object.entries(byModel).map(([m, c]) => `${m.replace(/^claude-/, '')} $${c.toFixed(2)}`).join(', ')}; list-price estimate from transcript token usage within the run)`;
   };
 }

@@ -50,9 +50,9 @@ Each failing search string had a minified name in it (`cr.status`, `Mk()`, `aP`,
 - The extras gained **`CLAUDE_CODE_DISABLE_PROACTIVITY`, `CLAUDE_CODE_DISABLE_STRUCTURED_OUTPUTS`, `CLAUDE_CODE_AUTO_MODE_TIER`, `CLAUDE_BG_AUTO_MEMORY_OFF`**: `"CLAUDE_CODE_DISABLE_PROACTIVITY","CLAUDE_CODE_AUTO_MODE_SERVER","CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS","CLAUDE_CODE_DISABLE_STRUCTURED_OUTPUTS","CLAUDE_CODE_AUTO_MODE_TIER","CLAUDE_BG_ISOLATION","CLAUDE_BG_SESSION_PERMISSION_RULES","CLAUDE_BG_MEMORY_TOGGLED_OFF","CLAUDE_BG_AUTO_MEMORY_OFF","CLAUDE_CODE_RESUME_SOURCE_ALIVE","CLAUDE_CODE_PLUGIN_DIRS"`.
 - The persisted `providerEnv` filter is still `zWe`. It now also drops `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` and `CLAUDE_CODE_HOST_GATEWAY_LINEAGE` unless their value is truthy (`z8r`).
 
-Still not on the list: `HOME`, `USER`, `CLAUDE_CODE_TASK_LIST_ID`, `CLAUDE_CODE_ENABLE_TODO_TOOLS`, any `SUB_HUMAN_*`, and auth secrets. The orch therefore still has to get its list id from `--settings` env, as it does now.
+Still not on the list: `HOME`, `USER`, `CLAUDE_CODE_TASK_LIST_ID`, `CLAUDE_CODE_ENABLE_TODO_TOOLS`, any `SUB_HUMAN_*`, and auth secrets. The room's Claude therefore still has to get its list id from `--settings` env, as it does now.
 
-**Fix.** `cc.DAEMON_ENV_ALLOW` now copies the 2.1.292 list: `EXTRA_KEYS` is a new array, and `MODEL_KEYS` and the `zWe` part have the new keys. `orch.cleanEnv` (the orch spawn's `KEEP_ENV`: the login basics plus `cc.daemonEnv`) now forwards those keys from the joiner's env, so a user who sets, for example, `CLAUDE_CODE_DISABLE_PROACTIVITY` gets it in the orch too, as the daemon would. The CONTRACT entry now searches for `JSON.stringify` of `cc.js`'s own arrays, so any key the binary adds, drops or reorders fails the probe instead of passing silently. The derived `daemon-env-names` check still covers the endpoint keys. Tests: `cc.test.js` (the new keys are in the allowlist) and `orch.test.js` (a new key reaches the spawn env).
+**Fix.** `cc.DAEMON_ENV_ALLOW` now copies the 2.1.292 list: `EXTRA_KEYS` is a new array, and `MODEL_KEYS` and the `zWe` part have the new keys. `room Claude.cleanEnv` (the room's Claude spawn's `KEEP_ENV`: the login basics plus `cc.daemonEnv`) now forwards those keys from the joiner's env, so a user who sets, for example, `CLAUDE_CODE_DISABLE_PROACTIVITY` gets it in the room's Claude too, as the daemon would. The CONTRACT entry now searches for `JSON.stringify` of `cc.js`'s own arrays, so any key the binary adds, drops or reorders fails the probe instead of passing silently. The derived `daemon-env-names` check still covers the endpoint keys. Tests: `cc.test.js` (the new keys are in the allowlist) and `room-claude.test.js` (a new key reaches the spawn env).
 
 ### hooks-modules (b)
 
@@ -178,7 +178,7 @@ So the `classic-chain-order` CONTRACT note ("the plugin's own command hooks") un
 
 `mcp/hold.js`'s 20 s progress beat (`HOLD_BEAT_MS`) therefore keeps the idle watchdog from firing. A hold still ends at the wall-clock limit (about 27.8 h by default, sooner if the user sets `MCP_TOOL_TIMEOUT`).
 
-**(c) One server instance serves the main thread and its subagents: yes.** A subagent whose definition has no `mcpServers` gets the parent's clients as they are: shape `if(!~.mcpServers?.length)return{clients:~,agentClients:[],tools:[],cleanup:async()=>{}}` (1 hit). A subagent whose definition lists `mcpServers` gets the parent's clients plus its own: shape `return{clients:[...~,...~],agentClients:~,tools:~,cleanup:~}` (1 hit). sub-human's agents (`orchestrator`, `room`, `participant`) name the room tools in `tools:` and have no `mcpServers`, so their room calls reach the same server process as the main thread's. In that process, `process.ppid` is the main claude pid.
+**(c) One server instance serves the main thread and its subagents: yes.** A subagent whose definition has no `mcpServers` gets the parent's clients as they are: shape `if(!~.mcpServers?.length)return{clients:~,agentClients:[],tools:[],cleanup:async()=>{}}` (1 hit). A subagent whose definition lists `mcpServers` gets the parent's clients plus its own: shape `return{clients:[...~,...~],agentClients:~,tools:~,cleanup:~}` (1 hit). sub-human's agents (`room Claude`, `room`, `participant`) name the room tools in `tools:` and have no `mcpServers`, so their room calls reach the same server process as the main thread's. In that process, `process.ppid` is the main claude pid.
 
 ### Search strings (now in the CONTRACT)
 
@@ -213,7 +213,7 @@ The CONTRACT now lists only what plugin code relies on. These entries came out o
 - `peer-envelope` (`from-session="`, `hop-chain="`, `(?: from-name="([^"<>\n\r]+)")?(?: from-mode="(`): the `<cross-session-message>` attribute order. `cc.parseEnvelope`, `ENVELOPE_RE` and `ATTR` went with it; nothing parsed envelopes.
 - `hook-timeout-default` (`asyncTimeout:e.timeout?e.timeout*1000:`, shape `var ~=600000,~=30000,`): the 600 s default hook timeout. `cc.HOOK_TIMEOUT_DEFAULT_MS` went.
 - `session-end-budget` (`.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS;if(e!==void 0)return e;`, shapes `if(~.timeout&&~.timeout*1000>~)~=~.timeout*1000;return Math.max(~,Math.min(~,~))}` and `var ~=1500,~=60000,`): SessionEnd's budget, the env override else the largest hook timeout clamped to [1500, 60000] ms. `cc.sessionEndBudgetMs` and `SESSION_END_*` went.
-- `cc.logsCmd` (the `bg-logs` entry stays: the demo's orch view runs `claude logs`), and the unused `cc.ENV` keys `ENABLE_TODO_TOOLS`, `SESSION_END_TIMEOUT`, `PLUGIN_ROOT`, `PLUGIN_DATA` and `PROJECT_DIR`.
+- `cc.logsCmd` (the `bg-logs` entry stays: the demo's room Claude view runs `claude logs`), and the unused `cc.ENV` keys `ENABLE_TODO_TOOLS`, `SESSION_END_TIMEOUT`, `PLUGIN_ROOT`, `PLUGIN_DATA` and `PROJECT_DIR`.
 
 ## Remote Control
 

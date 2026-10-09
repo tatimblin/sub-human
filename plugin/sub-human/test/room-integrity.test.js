@@ -18,7 +18,7 @@ function fresh() {
 }
 const H1 = 'aaaaaaaaaaaa', H2 = 'bbbbbbbbbbbb';
 const say = (from, text, via = 'human', extra = {}) => R.append({ kind: 'say', text, ...extra }, { via, from });
-const sys = (kind, extra, from = 'orch') => R.append({ kind, ...extra }, { via: 'system', from, system: true });
+const sys = (kind, extra, from = 'claude') => R.append({ kind, ...extra }, { via: 'system', from, system: true });
 const N = room.CHAT_NEST;
 const bare = l => !l.startsWith(N);
 
@@ -87,7 +87,7 @@ test('validate: text bytes, refs, approvers, string fields; append: the serializ
   say('bob', 'x', 'human', { refs: Array.from({ length: config.ENTRY_REFS_MAX }, (_, i) => i + 1) });
   err(() => R.append({ kind: 'proposal', text: 'p', hash: H1, approvers: Array.from({ length: config.ENTRY_LIST_MAX + 1 }, (_, i) => `n${i}`) }, { via: 'agent', from: 'bob' }), /too many approvers/);
   err(() => R.append({ kind: 'proposal', text: 'p', hash: H1, approvers: ['a'], path: 'p'.repeat(1025) }, { via: 'agent', from: 'bob' }), /invalid path/);
-  err(() => R.append({ kind: 'task', op: 'update', id: 1, subject: 's', detail: 'd'.repeat(config.ENTRY_STR_MAX + 1) }, { via: 'system', from: 'orch', system: true }), /detail/);
+  err(() => R.append({ kind: 'task', op: 'update', id: 1, subject: 's', detail: 'd'.repeat(config.ENTRY_STR_MAX + 1) }, { via: 'system', from: 'claude', system: true }), /detail/);
   // control characters are JSON-escaped six times their size: the stored line is capped separately
   err(() => say('bob', '\u0001'.repeat(12_000)), new RegExp(`entry is too large \\(\\d+ bytes as stored; the limit is ${config.LOG_LINE_MAX_BYTES}\\)`));
   assert.equal(R.validateChain().ok, true, 'a refused entry leaves the chain intact');
@@ -213,7 +213,7 @@ test('readView: lanes, proposals and notices judged against the view match readA
   sys('member_joined', { text: 'bob joined' }, 'bob');
   for (let i = 0; i < 30; i++) say(i % 2 ? 'alice' : 'bob', `chat ${i} @alice`);
   const forged = say('bob', 'forged words');
-  R.append({ kind: 'proposal', text: `proposal ${H1}: one`, hash: H1, approvers: ['alice', 'bob'] }, { via: 'agent', from: 'orch' });
+  R.append({ kind: 'proposal', text: `proposal ${H1}: one`, hash: H1, approvers: ['alice', 'bob'] }, { via: 'agent', from: 'claude' });
   for (let i = 0; i < 10; i++) say(['alice', 'bob', 'carol', 'dave'][i % 4], `more ${i}`, 'agent');
   R.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' });
   const ta = R.append({ kind: 'task_req', op: 'add', subject: 'docs' }, { via: 'agent', from: 'alice' });
@@ -221,7 +221,7 @@ test('readView: lanes, proposals and notices judged against the view match readA
   R.verifyChain(); // checkpoint here: the rest is new bytes
   for (let i = 0; i < 10; i++) say('bob', `late ${i}`);
   R.append({ kind: 'objection', proposal_hash: H1, text: 'wait' }, { via: 'human', from: 'alice' });
-  sys('decision', { proposal_hash: H1, text: `objected: alice (proposal ${H1})`, refs: [forged.id + 1] }, 'orch');
+  sys('decision', { proposal_hash: H1, text: `objected: alice (proposal ${H1})`, refs: [forged.id + 1] }, 'claude');
   R.append({ kind: 'proposal', text: `proposal ${H2}: two`, hash: H2, approvers: ['alice'] }, { via: 'agent', from: 'bob' });
   say('bob', 'last');
   const all = R.readAll();
@@ -231,7 +231,7 @@ test('readView: lanes, proposals and notices judged against the view match readA
     assert.deepEqual(view.map(e => e.id), [...view.map(e => e.id)].sort((a, b) => a - b), 'log order');
     for (const e of all.filter(x => x.id > after)) assert.ok(view.some(v => v.id === e.id), `#${e.id} after ${after} is in the view`);
     for (const e of all.filter(x => x.kind !== 'say' && x.kind !== 'status')) assert.ok(view.some(v => v.id === e.id), `non-chat #${e.id} in the view`);
-    for (const me of [{ name: 'alice', role: 'member' }, { name: 'bob', role: 'member' }, { name: 'carol', role: 'member' }, { name: 'orch', role: 'orch' }]) {
+    for (const me of [{ name: 'alice', role: 'member' }, { name: 'bob', role: 'member' }, { name: 'carol', role: 'member' }, { name: 'claude', role: 'claude' }]) {
       for (const e of all.filter(x => x.id > after)) {
         assert.equal(room.lane(me, e, view), room.lane(me, e, all), `lane ${me.name} #${e.id} (${e.kind}) after ${after}`);
       }

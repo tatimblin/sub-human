@@ -1,7 +1,7 @@
 'use strict';
 /**
  * plugin/sub-human/lib/handoff.js: moving a room's host to another member's machine. The host's machine holds the
- * room's log, serves its links and runs its orch (billed to the host person's model account); a planned handoff
+ * room's log, serves its links and runs its room Claude (billed to the host person's model account); a planned handoff
  * moves all three before the host closes their laptop. There is no automatic failover (it would split the room);
  * `promote` is the manual way out when the host is gone for good, and it can fork.
  *
@@ -17,18 +17,18 @@
  *      B's link only, as a private 'handoff' event (lib/remote/protocol.js); B's daemon keeps it in B's mirror
  *      (onAsk: the session-local document `handoff`); B's tail wakes B's Claude, which opens the card.
  *   2. the card (hooks/consent.js, AskUserQuestion; only B's own answer on the card as the hooks built it counts):
- *      it says the room's orch then runs on B's model account (billing, rate limits) and that B's machine must stay
+ *      it says the room's Claude then runs on B's model account (billing, rate limits) and that B's machine must stay
  *      reachable. "Not now": refuse (op handoff.refuse; A's tail tells the asker). "Host it here": accept.
  *   3. accept (B's hook): mints one single-use invite to B per other machine with a seat in the room (A's included;
  *      auth.mintFor: bound to that machine, its seats pre-bound), signs {kind: 'host_accept', id, epoch, locator}
  *      with B's seat key, and sends op handoff.accept. A's server (serverAccept) checks the ask, the signature
  *      against B's pinned key and the invites, appends host_changed (from A's seat, with B's signed acceptance and
- *      A's signed ask when the hook made it), marks the orch left and the document 'moved' with the invites; after
- *      the reply (afterMoved) it stops A's orch job and turns A into a mirror of B (a link file holding A's invite,
+ *      A's signed ask when the hook made it), marks the room's Claude left and the document 'moved' with the invites; after
+ *      the reply (afterMoved) it stops A's room Claude job and turns A into a mirror of B (a link file holding A's invite,
  *      its daemon started).
  *   4. B, once the reply is back (its mirror holds host_changed: read-your-writes): takeOver: the chain checked, its
  *      daemon stopped, the link file removed (B's store is an FsRoomStore now), its seats' local fields back from the
- *      session indexes, the old orch record retired, the orch started here (lib/seats.js ensureOrch).
+ *      session indexes, the old room Claude record retired, the room's Claude started here (lib/seats.js ensureRoomClaude).
  *   5. every other link of A gets a private 'moved' event after the host_changed line, with its machine's invite
  *      (A's server, streamEvent); its daemon (onMoved) re-points its link file at B and reconnects. A member offline
  *      during the handoff gets it when it reconnects to A, as long as A is up (HANDOFF_INVITE_MS). A member that
@@ -59,7 +59,7 @@
  *       lib/cli/handoff.js, after a confirmation): refused while the link is online, or down for less than
  *       PROMOTE_OFFLINE_MS without force. The other machines get sh2 invites with a PIN each, to hand out by hand.
  *   demote(code, invite, pin?) -> {orphan, request?}            an old host that was promoted away: its log is set
- *       aside (orphaned-<time>.jsonl, kept, never merged), its orch stopped, and it mirrors the new host
+ *       aside (orphaned-<time>.jsonl, kept, never merged), its room Claude stopped, and it mirrors the new host
  *   status(code) -> {host: hostState, doc, machines?}          for `sub-human handoff --status`
  *   HOST_DOC, ASK_DOC
  * A next host's locator may be a web one (wss://FRONT/…/sub-human/CODE, `--url`): it serves the room on its listener
@@ -97,7 +97,7 @@ const isWeb = locator => /^wss?:/.test(String(locator));
 const hostKeyFor = locator => (isWeb(locator) ? require('./remote/listener.js').hostKey()
   : /^ssh:/.test(String(locator)) ? require('./remote/sshkeys.js').hostKey() : null);
 /** This machine's seat name in CODE, for its link key's comment and its admit request. */
-const seatName = code => { try { return identity().localSeats(code).find(n => n !== 'orch') || 'member'; } catch { return 'member'; } };
+const seatName = code => { try { return identity().localSeats(code).find(n => n !== 'claude') || 'member'; } catch { return 'member'; } };
 /**
  * The link file that follows the room to locator with invite (lib/remote/hosting.js linkTransport): over ssh this
  * machine's own link key (made if it had none) and its mux kept, the new host's key pinned, and the admit request
@@ -122,7 +122,7 @@ function ask(code, { from, to, locator, sign, now = Date.now() }) {
   if (!s.isHost) throw err('HOST_ONLY', `room ${code} is hosted on another machine; only its host hands it off`);
   if (movedAway(s)) throw err('STALE', `room ${code} moved to another machine already`);
   const m = s.members.read()[to];
-  if (!m || m.left_at || m.role === 'orch') throw err('INVALID', `${to} is not in room ${code}`);
+  if (!m || m.left_at || m.role === 'claude') throw err('INVALID', `${to} is not in room ${code}`);
   if ((m.machine || machineId()) === machineId()) throw err('INVALID', `${to} is on this machine; a handoff moves the room to another machine`);
   if (!members.seatAlive(m)) throw err('OFFLINE', `${to} is not online; a handoff needs their answer`);
   const linked = Object.values(s.kv.get(auth.LINKS_KEY) || {}).some(l => l && l.machine === m.machine && (l.seats || []).includes(to));
@@ -187,11 +187,11 @@ function serverAccept(s, link, { id, accept: proof, locator, invites } = {}, now
   checkAccept(s, d, proof, loc);
   checkInvites(s.code, loc, invites);
   const entry = s.append({
-    kind: 'host_changed', text: `room ${s.code} moved to ${d.to}'s machine (host epoch ${d.epoch}); its orch restarts there`,
+    kind: 'host_changed', text: `room ${s.code} moved to ${d.to}'s machine (host epoch ${d.epoch}); the room's Claude restarts there`,
     epoch: d.epoch, host: d.to, machine: link.machine, locator: loc, accept: proof, ...(d.ask ? { ask: d.ask } : {}),
   }, { via: 'system', from: d.from, system: true });
   let job = null;
-  identity().updateOrch(s.code, o => {
+  identity().updateRoomClaude(s.code, o => {
     if (!o) return null;
     job = o.job && o.job !== 'pending' ? o.job : null;
     return { job: null, claim: undefined, left_at: iso(now), moved_at: iso(now) };
@@ -213,9 +213,9 @@ function serverRefuse(s, link, { id } = {}, now = Date.now()) {
   return { ok: true };
 }
 
-/** The old host after its reply: stop its orch job, then mirror the new host (a link holding its own invite). */
+/** The old host after its reply: stop its room Claude job, then mirror the new host (a link holding its own invite). */
 function afterMoved(s, { job } = {}) {
-  if (job) { try { require('./orch.js').releaseDetached(s.code, job); } catch { /* the job ends with its session */ } }
+  if (job) { try { require('./room-claude.js').releaseDetached(s.code, job); } catch { /* the job ends with its session */ } }
   const d = hostDoc(s);
   const invite = d && d.invites && d.invites[machineId()];
   if (!invite) return false;
@@ -282,7 +282,7 @@ function card(a, code) {
       header: 'Handoff',
       multiSelect: false,
       options: [
-        { label: YES, description: `${a.from} asks to move the room here. Its orch (the room's Claude helper) then runs on YOUR model account: your Claude or Bedrock billing and rate limits. This machine must stay on and reachable for the others.` },
+        { label: YES, description: `${a.from} asks to move the room here. The room's Claude then runs on YOUR model account: your Claude or Bedrock billing and rate limits. This machine must stay on and reachable for the others.` },
         { label: NO, description: `${a.from} stays the host; nothing changes.` },
       ],
     }],
@@ -293,7 +293,7 @@ function card(a, code) {
 function machinesOf(s) {
   const by = new Map();
   for (const m of Object.values(s.members.read())) {
-    if (!m || !m.name || m.left_at || m.role === 'orch' || !m.machine || m.machine === machineId()) continue;
+    if (!m || !m.name || m.left_at || m.role === 'claude' || !m.machine || m.machine === machineId()) continue;
     if (!by.has(m.machine)) by.set(m.machine, []);
     by.get(m.machine).push(m.name);
   }
@@ -372,10 +372,10 @@ function takeOver(code, { by, cwd, epoch, entry } = {}) {
   s.kv.delete(HOST_DOC);
   if (cwd && !s.kv.get(WORKDIR)) s.kv.set(WORKDIR, { cwd });
   const now = iso(Date.now());
-  // the old host's orch goes with its holder: its machine and lease too. Else claimSpawn clears left_at and the new
+  // the old host's room Claude goes with its holder: its machine and lease too. Else claimSpawn clears left_at and the new
   // job's bind meets a record on another machine with a fresh lease, still holding the name ("name taken")
-  identity().updateOrch(code, () => ({ job: null, pid: null, pid_start: undefined, machine: undefined, seen_at: undefined, claim: undefined, closing: undefined, left_at: now, stopped_at: now }));
-  return require('./seats.js').ensureOrch(code, cwd, by);
+  identity().updateRoomClaude(code, () => ({ job: null, pid: null, pid_start: undefined, machine: undefined, seen_at: undefined, claim: undefined, closing: undefined, left_at: now, stopped_at: now }));
+  return require('./seats.js').ensureRoomClaude(code, cwd, by);
 }
 
 // ---------- promote / demote ----------
@@ -417,8 +417,8 @@ function demote(code, invite, pin) {
   if (!transport) throw err('INVALID', `this machine cannot use "${inv.locator}"`);
   // without it the link's hello would spend one of the invite's tries on a missing PIN
   if (inv.v === 2 && !auth.PIN_RE.test(String(pin || ''))) throw err('INVALID', 'this invite needs the 6-digit PIN that came with it: sub-human demote CODE INVITE PIN');
-  const o = s.members.read().orch;
-  if (o && o.job && o.job !== 'pending') { try { require('./orch.js').releaseDetached(code, o.job); } catch { /* ends with its session */ } }
+  const o = s.members.read().claude;
+  if (o && o.job && o.job !== 'pending') { try { require('./room-claude.js').releaseDetached(code, o.job); } catch { /* ends with its session */ } }
   const orphan = s.setAside();
   for (const k of [auth.LINKS_KEY, auth.INVITES_KEY, HOST_DOC, WORKDIR, 'tasks']) s.kv.delete(k);
   for (const k of s.kv.list('presence/')) s.kv.delete(k);
@@ -426,7 +426,7 @@ function demote(code, invite, pin) {
   let request = null;
   if (inv.v === 2) {
     // the joiner's side of an sh2 invite (its PIN; over ssh the link's own key and the pinned host key)
-    const name = identity().localSeats(code).find(n => n !== 'orch') || 'host';
+    const name = identity().localSeats(code).find(n => n !== 'claude') || 'host';
     request = require('./remote/hosting.js').joinInvite({ inv, invite, pin, name }).request || null;
     links.set(code, { ...links.get(code), moved });
   } else links.set(code, { code, transport, invite, created_at: iso(Date.now()), moved });

@@ -1,8 +1,8 @@
 'use strict';
 /**
- * plugin/sub-human/lib/tasks.js: the room's shared task list. The headless orch's own native task list
+ * plugin/sub-human/lib/tasks.js: the room's shared task list. The headless room Claude's own native task list
  * (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list. Members ask for changes with the `task` tool
- * (mcp/task.js: a `task_req` log entry); the orch applies them with native TaskCreate/TaskUpdate;
+ * (mcp/task.js: a `task_req` log entry); the room's Claude applies them with native TaskCreate/TaskUpdate;
  * hooks/tasks.js logs each applied change as a `task` entry and rewrites the room document `tasks` as fold() of
  * those entries, and gates TaskCompleted. Rows and the CLI read only that document (tasks.json in the room
  * directory), never ~/.claude. Zero dependencies.
@@ -21,12 +21,12 @@
  *
  * Log entries (room.js stores the caller's task `id` as `task_id`, since `id` is the entry's own id):
  *   task_req (via agent): {kind:'task_req', from = by = requester, text, op, task_id, subject, detail, evidence, owner}
- *   task (via system, from orch): {kind:'task', text, op, task_id, subject, owner, status, blockedBy, req}
+ *   task (via system, from claude): {kind:'task', text, op, task_id, subject, owner, status, blockedBy, req}
  *
- * The orch links a native task to the request it applies with metadata {req: <log id>, by: <name>} (TaskCreate and
+ * The room's Claude links a native task to the request it applies with metadata {req: <log id>, by: <name>} (TaskCreate and
  * TaskUpdate both take metadata; TaskUpdate merges it).
  *
- * The room-open task: the orch's first act is TaskCreate "room CODE open" (in_progress, owner room). It keeps the
+ * The room-open task: the room Claude's first act is TaskCreate "room CODE open" (in_progress, owner room). It keeps the
  * native list from being wiped while other tasks are done. The gate refuses to complete it unless the room is
  * closing (members.json `closing`, set by the reaper); the mirror and summary leave it out.
  */
@@ -145,7 +145,7 @@ function validate(req) {
   }
   if (req.for != null && req.for !== '') {
     if (typeof req.for !== 'string' || !NAME_RE.test(req.for)) return no(`invalid name in for: "${req.for}"`);
-    if (['room', 'orch', 'all', 'system'].includes(req.for.toLowerCase())) return no(`"${req.for}" cannot own a task`);
+    if (['room', 'claude', 'all', 'system'].includes(req.for.toLowerCase())) return no(`"${req.for}" cannot own a task`);
     out.for = req.for;
   }
   return { ok: true, req: out };
@@ -172,13 +172,13 @@ function reqOf(e) {
 function isClosing(code) {
   let m = {};
   try { m = identity.readMembers(code) || {}; } catch { return false; }
-  return !!(m.closing || (m.orch && m.orch.closing) || (m._room && m._room.closing));
+  return !!(m.closing || (m.claude && m.claude.closing) || (m._room && m._room.closing));
 }
 
 const cites = (e, reqId) => (e.refs || []).includes(reqId) || new RegExp(`(^|[^\\d])#${reqId}(?!\\d)`).test(String(e.text || ''));
 
 /**
- * May the orch complete `task` ({id, subject, owner, req?})? Only on a task_req{op:'done', id} with
+ * May the room's Claude complete `task` ({id, subject, owner, req?})? Only on a task_req{op:'done', id} with
  * evidence, newer than the last claim of that task, made by the owner's Claude or confirmed by the owner's own
  * [human] words citing that request. task.req (the native task's metadata.req) is tried first when it names
  * such a request. The room-open task completes only while the room is closing.

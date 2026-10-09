@@ -7,7 +7,7 @@
  * the typed origin with its nonce written as the module does), a live sleeper standing in for the host seat's claude
  * process. State (the seat's name, pid and session) is in /home/host/harness.json. Prints one JSON object.
  *
- *   setup [SEAT]          a sleeper for SEAT (default alice), then `/sub-human SEAT` (opens the room; the orch's
+ *   setup [SEAT]          a sleeper for SEAT (default alice), then `/sub-human SEAT` (opens the room; the room Claude's
  *                         `claude` is a stub)
  *   say TEXT              the seat's `@room TEXT` through hooks/prompt.js (signed with its seat key)
  *   to NAME TEXT          a post the seat's Claude addresses to NAME (via=agent, store.append)

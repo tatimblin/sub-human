@@ -1,6 +1,6 @@
 'use strict';
-// hooks/tasks.js: the PostToolUse TaskCreate|TaskUpdate mirror and the TaskCompleted gate (orch only).
-// Payload shapes are the ones S1 logged from a --bg orch (docs/archive/next/S1-headless-orch.md §4).
+// hooks/tasks.js: the PostToolUse TaskCreate|TaskUpdate mirror and the TaskCompleted gate (room Claude only).
+// Payload shapes are the ones S1 logged from a --bg room Claude (docs/archive/next/S1-headless-claude.md §4).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -9,21 +9,21 @@ const { World, PLUGIN, room } = require('./helpers.js');
 const tasks = require(path.join(PLUGIN, 'lib', 'tasks.js'));
 
 const create = (id, subject, extra = {}) => ({
-  hook_event_name: 'PostToolUse', agent_type: 'sub-human:orchestrator', tool_name: 'TaskCreate',
+  hook_event_name: 'PostToolUse', agent_type: 'sub-human:room-claude', tool_name: 'TaskCreate',
   tool_input: { subject, description: subject, ...extra }, tool_response: { task: { id: String(id), subject } },
 });
 const update = (id, input, resp = {}) => ({
-  hook_event_name: 'PostToolUse', agent_type: 'sub-human:orchestrator', tool_name: 'TaskUpdate',
+  hook_event_name: 'PostToolUse', agent_type: 'sub-human:room-claude', tool_name: 'TaskUpdate',
   tool_input: { taskId: String(id), ...input }, tool_response: { success: true, taskId: String(id), updatedFields: Object.keys(input), ...resp },
 });
-const completed = (id, subject) => ({ hook_event_name: 'TaskCompleted', agent_type: 'sub-human:orchestrator', task_id: String(id), task_subject: subject, task_description: subject });
+const completed = (id, subject) => ({ hook_event_name: 'TaskCompleted', agent_type: 'sub-human:room-claude', task_id: String(id), task_subject: subject, task_description: subject });
 
 function world() {
-  const w = new World({ orch: 'sleep', alice: 'sleep', bob: 'sleep' });
+  const w = new World({ claude: 'sleep', alice: 'sleep', bob: 'sleep' });
   w.native = path.join(w.userHome, '.claude', 'tasks', `sh-${w.code}`);
   fs.mkdirSync(w.native, { recursive: true });
   w.writeNative = t => fs.writeFileSync(path.join(w.native, `${t.id}.json`), JSON.stringify(t));
-  w.run = (input, as = 'orch') => w.hook('tasks', input, { as, env: { CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}` } });
+  w.run = (input, as = 'claude') => w.hook('tasks', input, { as, env: { CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}` } });
   w.list = () => w.lib(() => tasks.list(w.code));
   w.taskEntries = () => w.entries().filter(e => e.kind === 'task');
   return w;
@@ -45,7 +45,7 @@ test('mirror: creates and updates land in tasks.json with a task entry; the room
   w.run(update(2, { addBlockedBy: ['3'] }));
   assert.deepEqual(w.list(), [{ id: '2', subject: 'parser tests', status: 'in_progress', owner: 'bob', blockedBy: ['3'] }]);
   const ents = w.taskEntries();
-  assert.deepEqual(ents.map(e => [e.via, e.from, e.op]), [['system', 'orch', 'add'], ['system', 'orch', 'claim'], ['system', 'orch', 'update'], ['system', 'orch', 'update']]);
+  assert.deepEqual(ents.map(e => [e.via, e.from, e.op]), [['system', 'claude', 'add'], ['system', 'claude', 'claim'], ['system', 'claude', 'update'], ['system', 'claude', 'update']]);
   assert.equal(ents[0].req, 7);
   assert.equal(ents[1].owner, 'bob');
 
@@ -62,7 +62,7 @@ test('mirror: creates and updates land in tasks.json with a task entry; the room
   assert.equal(w.taskEntries().at(-1).op, 'delete');
 });
 
-test('mirror: skips a refused update (success:false), _internal tasks and non-orch sessions', () => {
+test('mirror: skips a refused update (success:false), _internal tasks and non-claude sessions', () => {
   const w = world();
   w.run(create(2, 'docs'));
   const refused = update(2, { status: 'completed' });
@@ -126,12 +126,12 @@ test('gate: TaskCompleted exits 2 unless the owner asked for done; room task 1 u
   assert.equal(r.code, 0, r.stderr);
 });
 
-test('orch detection before binding: SUB_HUMAN_ROOM + agent_type', () => {
+test('claude detection before binding: SUB_HUMAN_ROOM + agent_type', () => {
   const w = world();
   const r = w.hook('tasks', create(2, 'early'), { env: { SUB_HUMAN_ROOM: w.code, CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}` } });
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(w.list().map(t => t.id), ['2']);
-  const r2 = w.hook('tasks', { ...create(3, 'not orch'), agent_type: 'general-purpose' }, { env: { SUB_HUMAN_ROOM: w.code } });
+  const r2 = w.hook('tasks', { ...create(3, 'not claude'), agent_type: 'general-purpose' }, { env: { SUB_HUMAN_ROOM: w.code } });
   assert.equal(r2.code, 0, r2.stderr);
   assert.deepEqual(w.list().map(t => t.id), ['2']);
 });

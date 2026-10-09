@@ -46,17 +46,17 @@
  *   demo-lib.js card <session> <Not yet|Agree|Object> [note]   answer the open proposal: in the plan view (Agree =
  *                                                  the "Yes" that keeps the seat's mode, Object = "Tell Claude what
  *                                                  to change" + note, Not yet = Esc) or, the fallback, on the card
- *   demo-lib.js wait-native-task <subject> [--timeout S]   wait until the orch's native list has it
+ *   demo-lib.js wait-native-task <subject> [--timeout S]   wait until the room Claude's native list has it
  *   demo-lib.js wait-tasks [--owner N] [--id N] [--status S] [--timeout S]   wait on <room>/tasks.json
  *   demo-lib.js task-id --owner N                 print the id of N's newest task in <room>/tasks.json
- *   demo-lib.js wait-orch-idle [--after ID] [--timeout S]   wait until the orch's transcript has an
+ *   demo-lib.js wait-claude-idle [--after ID] [--timeout S]   wait until the room Claude's transcript has an
  *                                                  end_turn after log entry ID and 6 s of quiet
- *   demo-lib.js wait-job-gone [--timeout S]       wait until `claude agents --json` no longer lists the orch job
- *   demo-lib.js orch-transcript                   print the orch session's transcript path
- *   demo-lib.js synthetic-gate <id>               run hooks/tasks.js as the orch's TaskCompleted for task <id> over the
+ *   demo-lib.js wait-job-gone [--timeout S]       wait until `claude agents --json` no longer lists the room's Claude job
+ *   demo-lib.js claude-transcript                   print the room's Claude session's transcript path
+ *   demo-lib.js synthetic-gate <id>               run hooks/tasks.js as the room Claude's TaskCompleted for task <id> over the
  *                                                  real log; print {status, stderr} (exit 2 = refused)
- *   demo-lib.js synthetic-orch-prompt             run hooks/at-room.js as the orch's UserPromptSubmit (shim stdin) for a
- *                                                  typed "hi" (CLAUDE_PID = the orch's pid); print its output
+ *   demo-lib.js synthetic-claude-prompt             run hooks/at-room.js as the room Claude's UserPromptSubmit (shim stdin) for a
+ *                                                  typed "hi" (CLAUDE_PID = the room Claude's pid); print its output
  *   demo-lib.js prune-index <index.json> <scene>…   drop those scenes' captures (before they run again)
  *   demo-lib.js plan-run <run.json> --all "S1 S2 …" [--fresh] <scene>…   write {scenes, partial}: a fresh run lists
  *                                                  only <scene>…, a resume adds them to those listed; --all order
@@ -168,9 +168,9 @@ async function until(what, timeoutS, fn, { recordMet = true } = {}) {
 
 const HOME_DIR = paths.home;
 const roomFile = f => path.join(HOME_DIR(), 'rooms', roomCode() || '-', f);
-const orchMember = () => readJson(roomFile('members.json'), {}).orch || {};
-function orchTranscript() {
-  const o = orchMember();
+const roomClaudeMember = () => readJson(roomFile('members.json'), {}).claude || {};
+function roomClaudeTranscript() {
+  const o = roomClaudeMember();
   if (!o.session_id) return null;
   const proj = paths.projectsDir();
   for (const d of fs.readdirSync(proj)) {
@@ -439,7 +439,7 @@ async function card(o, T) {
 
 async function waitNativeTask(o, T) {
   const subj = o._[0];
-  return exit(await until(o.what || `orch's native list has "${subj}"`, T, () => {
+  return exit(await until(o.what || `claude's native list has "${subj}"`, T, () => {
     const dir = paths.tasksDir(roomCode());
     return fs.readdirSync(dir).filter(f => f.endsWith('.json')).some(f => (readJson(path.join(dir, f), {}) || {}).subject === subj);
   }));
@@ -459,58 +459,58 @@ async function taskId(o) {
   return exit(t);
 }
 
-async function orchTranscriptCmd() {
-  const f = orchTranscript();
+async function roomClaudeTranscriptCmd() {
+  const f = roomClaudeTranscript();
   print(f || '');
   return exit(f);
 }
 
-async function waitOrchIdle(o, T) {
+async function waitRoomClaudeIdle(o, T) {
   const after = o.after != null ? readLog(roomCode()).find(e => e.id === +o.after) : null;
   const t0 = after ? after.at : new Date().toISOString();
   let n = -1, since = Date.now();
-  return exit(await until(o.what || `the orch's turn after #${o.after || 'now'} ends`, T, () => {
-    const es = jsonl(orchTranscript());
+  return exit(await until(o.what || `the room Claude's turn after #${o.after || 'now'} ends`, T, () => {
+    const es = jsonl(roomClaudeTranscript());
     if (es.length !== n) { n = es.length; since = Date.now(); return false; }
     const lastA = es.filter(e => e.type === 'assistant' && e.timestamp > t0).at(-1);
     return !!lastA && lastA.message && lastA.message.stop_reason === 'end_turn' && Date.now() - since > 6000;
   }));
 }
 
-/** Whether `claude agents --json` output (an array) lists the orch: by job id or session id (as checks/s10-leave.js reads it). */
-const listsOrch = (agents, orch) => Array.isArray(agents) && agents.some(y => (orch.job && y.id === orch.job) || (orch.session_id && y.sessionId === orch.session_id));
+/** Whether `claude agents --json` output (an array) lists the room's Claude: by job id or session id (as checks/s10-leave.js reads it). */
+const listsRoomClaude = (agents, roomClaude) => Array.isArray(agents) && agents.some(y => (roomClaude.job && y.id === roomClaude.job) || (roomClaude.session_id && y.sessionId === roomClaude.session_id));
 
 async function waitJobGone(o, T) {
-  const orch = orchMember();
-  return exit(await until(o.what || `claude agents no longer lists the orch job ${orch.job || ''}`.trim(), T, () => {
+  const roomClaude = roomClaudeMember();
+  return exit(await until(o.what || `claude agents no longer lists the room's Claude job ${roomClaude.job || ''}`.trim(), T, () => {
     const agents = JSON.parse(execFileSync('claude', ['agents', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
-    return Array.isArray(agents) && !listsOrch(agents, orch);
+    return Array.isArray(agents) && !listsRoomClaude(agents, roomClaude);
   }));
 }
 
-/** Run a plugin hook script as the orch's own hook would, over the real room: the child's {status, stdout, stderr}. */
-function runAsOrch(script, input, orch, env = {}) {
+/** Run a plugin hook script as the room Claude's own hook would, over the real room: the child's {status, stdout, stderr}. */
+function runAsRoomClaude(script, input, roomClaude, env = {}) {
   const r = spawnSync(process.execPath, [path.join(paths.PLUGIN, 'hooks', script)], {
     input: JSON.stringify(input), encoding: 'utf8',
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, SUB_HUMAN_HOME: HOME_DIR(), CLAUDE_PID: String(orch.pid || ''), CLAUDE_PLUGIN_ROOT: paths.PLUGIN, ...env },
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, SUB_HUMAN_HOME: HOME_DIR(), CLAUDE_PID: String(roomClaude.pid || ''), CLAUDE_PLUGIN_ROOT: paths.PLUGIN, ...env },
   });
   return { status: r.status, stdout: (r.stdout || '').trim(), stderr: (r.stderr || '').trim() };
 }
 
 async function syntheticGate(o) {
-  const orch = orchMember();
-  const input = { hook_event_name: 'TaskCompleted', session_id: orch.session_id, task_id: String(o._[0]), task_subject: '' };
-  const r = runAsOrch('tasks.js', input, orch, { CLAUDE_CODE_TASK_LIST_ID: paths.taskListId(roomCode()) });
+  const roomClaude = roomClaudeMember();
+  const input = { hook_event_name: 'TaskCompleted', session_id: roomClaude.session_id, task_id: String(o._[0]), task_subject: '' };
+  const r = runAsRoomClaude('tasks.js', input, roomClaude, { CLAUDE_CODE_TASK_LIST_ID: paths.taskListId(roomCode()) });
   print(JSON.stringify({ input, ...r, logMax: Math.max(0, ...readLog(roomCode()).map(e => e.id)) }, null, 1));
   return 0;
 }
 
-async function syntheticOrchPrompt() {
-  const orch = orchMember();
+async function syntheticRoomClaudePrompt() {
+  const roomClaude = roomClaudeMember();
   // as the mod's shim hands a typed prompt over
-  const input = { hook_event_name: 'UserPromptSubmit', session_id: orch.session_id, transcript_path: orchTranscript() || '', cwd: process.cwd(), prompt: 'hi', prompt_id: 'synthetic-1', permission_mode: 'plan', sub_human_origin: 'composer' };
-  const r = runAsOrch('at-room.js', input, orch);
-  print(JSON.stringify({ input: { prompt: input.prompt, session_id: input.session_id, pid: orch.pid }, ...r }, null, 1));
+  const input = { hook_event_name: 'UserPromptSubmit', session_id: roomClaude.session_id, transcript_path: roomClaudeTranscript() || '', cwd: process.cwd(), prompt: 'hi', prompt_id: 'synthetic-1', permission_mode: 'plan', sub_human_origin: 'composer' };
+  const r = runAsRoomClaude('at-room.js', input, roomClaude);
+  print(JSON.stringify({ input: { prompt: input.prompt, session_id: input.session_id, pid: roomClaude.pid }, ...r }, null, 1));
   return 0;
 }
 
@@ -591,11 +591,11 @@ const COMMANDS = {
   'wait-native-task': waitNativeTask,
   'wait-tasks': waitTasks,
   'task-id': taskId,
-  'orch-transcript': orchTranscriptCmd,
-  'wait-orch-idle': waitOrchIdle,
+  'claude-transcript': roomClaudeTranscriptCmd,
+  'wait-claude-idle': waitRoomClaudeIdle,
   'wait-job-gone': waitJobGone,
   'synthetic-gate': syntheticGate,
-  'synthetic-orch-prompt': syntheticOrchPrompt,
+  'synthetic-claude-prompt': syntheticRoomClaudePrompt,
   count: async o => { print(filterLog(o).length); return 0; },
   'last-id': lastId,
   'log-max': logMax,
@@ -617,4 +617,4 @@ async function main(argv = process.argv.slice(2)) {
 
 if (require.main === module) main().then(c => process.exit(c), e => { process.stderr.write(`demo-lib: ${e.message}\n`); process.exit(2); });
 
-module.exports = { KEY_BYTES, opts, COMMANDS, listsOrch };
+module.exports = { KEY_BYTES, opts, COMMANDS, listsRoomClaude };

@@ -6,7 +6,7 @@
  *   node scripts/walkthrough.js [--screens DIR] [--checks FILE] [--out FILE]
  *
  * One section per scene: what it must show, then per step the caption and a text excerpt of each pane
- * (orch, viewer, alice, bob): only the lines new since that session's previous capture, minus UI noise,
+ * (room Claude, viewer, alice, bob): only the lines new since that session's previous capture, minus UI noise,
  * capped at 10 lines, coloured from the .ansi capture (the .txt when there is none). Then the room-log
  * entries, the scripted waits (screens/waits.jsonl) and the checks from docs/rebuild/checks.json
  * ({scene: [{check, pass, evidence, kind?, status?: pass|fail|warn}], _meta?: {cost, run, note}}).
@@ -23,21 +23,21 @@ const REPO = path.resolve(__dirname, '..');
 
 const SCENES = {
   Metrics: ['Slim build vs the baselines', 'Room-caused wakes, join text, UI noise per capture and model calls per review against vole-8126, Phase 0 otter-0813 and the previous run (thresholds in scripts/baselines.json); no red lines'],
-  S1: ['alice joins with no room open', 'Room created; the orch started as a background job (no window); one room row for alice; the orch lists alice; room task #1'],
-  S2: ['bob joins', 'bob nested in alice\'s room row, alice in bob\'s; the orch lists both; no stray rows; alice sees the chat line "bob joined" and "+bob joined" on her room row'],
-  S3: ['Pairing with no plan', '@room both ways (receipt line, one wake, exact words); bob\'s Claude asks alice\'s Claude by SendMessage and gets an answer; no card; the orch is not woken'],
-  S4: ['"Let\'s plan"', 'bob @room @orch let\'s plan …; the orch writes a plan and proposes it; it opens in the native plan view in both terminals'],
-  S5: ['Object, revise, agree', 'bob objects with a note (byte-exact); the orch revises; both agree; a decision citing both'],
-  S6: ['Shared tasks', 'alice\'s Claude adds and claims a task; the orch applies it natively; rows and sub-human tasks show it; a non-owner done reaches the task tool and is refused (the gate check is marked SYNTHETIC when the orch declined before reaching it); the owner\'s done with evidence completes it'],
+  S1: ['alice joins with no room open', 'Room created; the room\'s Claude started as a background job (no window); one room row for alice; the room\'s Claude lists alice; room task #1'],
+  S2: ['bob joins', 'bob nested in alice\'s room row, alice in bob\'s; the room\'s Claude lists both; no stray rows; alice sees the chat line "bob joined" and "+bob joined" on her room row'],
+  S3: ['Pairing with no plan', '@room both ways (receipt line, one wake, exact words); bob\'s Claude asks alice\'s Claude by SendMessage and gets an answer; no card; the room\'s Claude is not woken'],
+  S4: ['"Let\'s plan"', 'bob @claude let\'s plan …; the room\'s Claude writes a plan and proposes it; it opens in the native plan view in both terminals'],
+  S5: ['Object, revise, agree', 'bob objects with a note (byte-exact); the room\'s Claude revises; both agree; a decision citing both'],
+  S6: ['Shared tasks', 'alice\'s Claude adds and claims a task; the room\'s Claude applies it natively; rows and sub-human tasks show it; a non-owner done reaches the task tool and is refused (the gate check is marked SYNTHETIC when the room\'s Claude declined before reaching it); the owner\'s done with evidence completes it'],
   S7: ['Stray typing in a row view', 'The row view shows the read-only hint; nothing is posted; the typed text reaches the row only when its hold next returns (then the one-line read-only reply), or not at all'],
   S8: ['Resilience', '/clear keeps alice\'s rows; bob --continue: rows return with no prompt (row-rewake) and the room still reaches him'],
-  S9: ['The orch takes no typed input', 'A viewer attaches (claude attach) and types: refused with the hint; no orch turn'],
+  S9: ['The room\'s Claude takes no typed input', 'A viewer attaches (claude attach) and types: refused with the hint; no claude turn'],
   S9b: ['A multi-line post stays nested', 'alice posts three lines with @room, the later two reading like a decision and a sign-off: byte-exact in the log; bob\'s pane shows them nested under "alice: …" (│), never as bare room lines; no consent entry'],
   S11: ['Join from another machine', 'alice\'s /sub-human host shows her a one-time invite; carol, in a second home (another machine, on this one), joins with it over the pipe link; her @room and her signoff are signed in her home and verified on the host, which decides; her mirror is the host\'s log byte for byte; nothing of her session reaches the host; her link daemon stops after she leaves'],
-  S10: ['Leave', 'alice exits; bob sees the chat line "alice left" once the leave settles (8 s); bob exits; the reaper completes task 1 and stops the orch; claude agents no longer lists it; each human saw a join/leave notice'],
+  S10: ['Leave', 'alice exits; bob sees the chat line "alice left" once the leave settles (8 s); bob exits; the reaper completes task 1 and stops the room\'s Claude; claude agents no longer lists it; each human saw a join/leave notice'],
 };
 const ORDER = Object.keys(SCENES);
-const SEAT_ORDER = ['orch', 'viewer', 'alice', 'bob', 'carol'];
+const SEAT_ORDER = ['claude', 'viewer', 'alice', 'bob', 'carol'];
 
 // excerpt limits
 const MAX_LINES = 10, HEAD = 3, TAIL = 6, MAX_ROWS = 3, EVIDENCE = 160, MERGE = 0.8, RULE_MAX = 16;
@@ -232,7 +232,7 @@ function excerpt(index, screens, pal) {
 /** "Slim build vs baselines" table from checks.json _metrics ({run, baseline, phase0}); '' when absent. */
 function metricsSection(m) {
   if (!m || !m.run || !m.baseline) return '';
-  const R = m.run, B = m.baseline, P = m.phase0 || {}, S = m.prev || null, seats = ['orch', 'alice', 'bob'];
+  const R = m.run, B = m.baseline, P = m.phase0 || {}, S = m.prev || null, seats = ['claude', 'alice', 'bob'];
   const g = (o, ...ks) => ks.reduce((x, k) => (x == null ? x : x[k]), o);
   const delta = (now, base) => {
     if (now == null || base == null) return '<td></td>';
@@ -380,7 +380,7 @@ ${pal.css('.term', new Set([...sections.matchAll(/<i class=([a-z]+)>/g)].map(m =
 <body>
 <div class="wrap">
 <h1>sub-human walkthrough · slim build</h1>
-<p class="sub">${esc(summary)}. Each step shows what changed in the orch (its background job, via <code>claude logs</code>), alice and bob terminals since their previous capture, then the checks (deterministic unless marked behavioural) and the room log.${meta.note ? ' ' + esc(meta.note) : ''}</p>
+<p class="sub">${esc(summary)}. Each step shows what changed in the room's Claude (its background job, via <code>claude logs</code>), alice and bob terminals since their previous capture, then the checks (deterministic unless marked behavioural) and the room log.${meta.note ? ' ' + esc(meta.note) : ''}</p>
 ${metricsSection(checksAll._metrics)}
 <nav>${toc}</nav>
 ${sections || '<p class="nochecks">No captures yet: run scripts/demo.sh.</p>'}

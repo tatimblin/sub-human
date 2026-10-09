@@ -1,5 +1,5 @@
 'use strict';
-// S5: bob objects with a note, alice agrees; the orch revises; both agree -> decision
+// S5: bob objects with a note, alice agrees; the room's Claude revises; both agree -> decision
 const path = require('node:path');
 const { readText } = require('../lib/io.js');
 
@@ -14,7 +14,7 @@ module.exports = {
     det('bob\'s objection via=human; the note byte-exact', ob && ob.via === 'human' && ob.text === DEMO.note5, ob ? `${x.fmt(ob)} (${ob.text === DEMO.note5 ? '===' : '!=='} typed)` : 'no objection');
     const sa = p1 && log.find(e => e.kind === 'signoff' && e.from === 'alice' && e.proposal_hash === p1.hash);
     det('alice\'s agreement on the first proposal via=human', sa && sa.via === 'human', x.fmt(sa));
-    det('The orch revised: a second proposal with a new hash', p2 && p2.from === 'orch' && p2.hash !== p1.hash, p2 ? `${p1.hash.slice(0, 6)} → ${p2.hash.slice(0, 6)} (#${p2.id})` : 'no revision');
+    det('The room\'s Claude revised: a second proposal with a new hash', p2 && p2.from === 'claude' && p2.hash !== p1.hash, p2 ? `${p1.hash.slice(0, 6)} → ${p2.hash.slice(0, 6)} (#${p2.id})` : 'no revision');
     const sig = p2 ? ['alice', 'bob'].map(n => log.find(e => e.kind === 'signoff' && e.via === 'human' && e.from === n && e.proposal_hash === p2.hash)) : [];
     const d = p2 && log.find(e => e.kind === 'decision' && e.proposal_hash === p2.hash);
     det('Both agree on the revision; the decision cites both answers', sig.length === 2 && sig.every(Boolean) && d && sig.every(y => (d.refs || []).includes(y.id)) && /^agreed: /.test(d.text),

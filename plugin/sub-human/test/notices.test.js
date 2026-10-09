@@ -20,11 +20,11 @@ const CODE = 'stoat-3644';
 const T0 = Date.parse('2026-10-05T10:00:00.000Z');
 const at = s => new Date(T0 + s * 1000).toISOString();
 const mv = (id, kind, from, s, text) => ({ id, at: at(s), from, via: 'system', kind, to: 'room', text: text || `${from} ${kind === 'member_left' ? 'left' : 'joined'}` });
-const MEMBERS = { orch: { name: 'orch', role: 'orch' }, alice: { name: 'alice', role: 'member' }, bob: { name: 'bob', role: 'member' } };
+const MEMBERS = { claude: { name: 'claude', role: 'claude' }, alice: { name: 'alice', role: 'member' }, bob: { name: 'bob', role: 'member' } };
 
 test('notices.joinLeave: others only, leaves settle after 8 s, a quick leave + rejoin is no notice', () => {
   const es = [
-    mv(1, 'member_joined', 'alice', 0), mv(2, 'member_joined', 'orch', 1), mv(3, 'member_joined', 'bob', 10),
+    mv(1, 'member_joined', 'alice', 0), mv(2, 'member_joined', 'claude', 1), mv(3, 'member_joined', 'bob', 10),
     { id: 4, at: at(11), from: 'bob', via: 'human', kind: 'say', text: 'hi' },
     mv(5, 'member_left', 'bob', 20), mv(6, 'member_joined', 'bob', 25, 'bob rejoined'), // back in 5 s: nothing
     mv(7, 'member_left', 'bob', 40), mv(8, 'member_joined', 'bob', 60, 'bob rejoined (resumed)'), // away 20 s
@@ -33,7 +33,7 @@ test('notices.joinLeave: others only, leaves settle after 8 s, a quick leave + r
   const ns = notices.joinLeave(es, 'alice', { now: T0 + 104_000, settle: 8000 });
   assert.deepEqual(ns.map(n => [n.id, n.kind, n.settled, n.rejoin]), [
     [3, 'member_joined', true, false], [7, 'member_left', true, false], [8, 'member_joined', true, true], [9, 'member_left', false, false],
-  ], 'own join, the orch, a say and the 5 s round trip are left out; #9 is still settling');
+  ], 'own join, the room\'s Claude, a say and the 5 s round trip are left out; #9 is still settling');
   assert.equal(notices.joinLeave(es, 'alice', { now: T0 + 108_000, settle: 8000 }).at(-1).settled, true);
   assert.deepEqual(notices.joinLeave(es, 'bob', { now: T0 + 200_000 }).map(n => n.id), [1], 'bob sees only alice');
 });
@@ -86,7 +86,7 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   process.env.SUB_HUMAN_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-notice-hold-'));
   const dir = path.join(process.env.SUB_HUMAN_HOME, 'rooms', CODE);
   fs.mkdirSync(dir, { recursive: true });
-  const ms = { orch: { name: 'orch', role: 'orch' }, alice: { name: 'alice', role: 'member' }, bob: { name: 'bob', role: 'member' } };
+  const ms = { claude: { name: 'claude', role: 'claude' }, alice: { name: 'alice', role: 'member' }, bob: { name: 'bob', role: 'member' } };
   const save = () => fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
   save();
   let id = 0;
@@ -130,7 +130,7 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
 // ---------- the tail child sends joins and leaves as chat events ----------
 // lib/tail.js in-process on a fake clock (test/tail.test.js covers the loop itself; test/cli.test.js the real child).
 const FAST = {
-  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, orchSettleMs: 300, orchSettleMaxMs: 1000,
+  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
   leaveMs: 600, healthMs: 5000, backoffMs: 200, backoffMaxMs: 1000, errorLogMs: 60_000, stallMs: 5000,
 };
 function startTail() {

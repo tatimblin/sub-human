@@ -139,10 +139,10 @@ test('mcp: read returns unseen entries (skipping own posts) then by id', async (
 test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, path}; approvers default to humans present', async () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const bob = h.spawnSleeper(), carol = h.spawnSleeper(), orch = h.spawnSleeper();
+  const bob = h.spawnSleeper(), carol = h.spawnSleeper(), roomClaude = h.spawnSleeper();
   identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sb' });
   identity.join({ code, name: 'carol', role: 'member', pid: carol.pid, session_id: 'sc' });
-  identity.join({ code, name: 'orch', role: 'orch', pid: orch.pid, session_id: 'so' });
+  identity.join({ code, name: 'claude', role: 'claude', pid: roomClaude.pid, session_id: 'so' });
   identity.leave(code, 'carol');
   R = room.open(code);
   const s = await ready();
@@ -154,7 +154,7 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   assert.equal(e.via, 'agent');
   assert.equal(e.from, 'alice');
   assert.match(e.hash, /^[0-9a-f]{12}$/);
-  assert.deepEqual(e.approvers, ['alice', 'bob'], 'orch and the departed carol are not approvers');
+  assert.deepEqual(e.approvers, ['alice', 'bob'], 'claude and the departed carol are not approvers');
   assert.equal(e.path, `plans/${e.hash}.md`, 'the entry holds a room-relative ref');
   const file = path.join(identity.roomDir(code), e.path);
   assert.equal(fs.readFileSync(file, 'utf8'), text);
@@ -175,12 +175,12 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   fs.unlinkSync(f);
   // Refusals.
   assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['zed'] })), /not in the room: zed/);
-  assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['orch'] })), /people/);
+  assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['claude'] })), /people/);
   assert.match(errText(await s.tool('propose', { text: 'x', path: f })), /exactly one/);
   assert.match(errText(await s.tool('propose', { path: '/nonexistent/plan.md' })), /no such file/);
   assert.match(errText(await s.tool('propose', { text: '  \n' })), /empty/);
   await s.close();
-  for (const p of [bob, carol, orch]) p.kill();
+  for (const p of [bob, carol, roomClaude]) p.kill();
 });
 
 // ---------- plug-in contract: a copy of the server beside a fake hold.js and a broken task.js ----------

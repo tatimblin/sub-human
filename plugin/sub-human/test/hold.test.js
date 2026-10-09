@@ -28,7 +28,7 @@ function setup(names, self) {
   const dir = path.join(process.env.SUB_HUMAN_HOME, 'rooms', code);
   fs.mkdirSync(dir, { recursive: true });
   const ms = {};
-  for (const n of names) ms[n] = { name: n, role: n === 'orch' ? 'orch' : 'member', joined_at: new Date().toISOString() };
+  for (const n of names) ms[n] = { name: n, role: n === 'claude' ? 'claude' : 'member', joined_at: new Date().toISOString() };
   const save = () => fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
   save();
   let id = 0;
@@ -38,7 +38,7 @@ function setup(names, self) {
     if (e.via === 'human') { e.room = code; e.sig = crypto.sign(null, Buffer.from(JSON.stringify(e)), seatKey.ensure(code, from)).toString('base64'); }
     fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify(e) + '\n');
   };
-  let me = { code, name: self, role: self === 'orch' ? 'orch' : 'member' };
+  let me = { code, name: self, role: self === 'claude' ? 'claude' : 'member' };
   const progress = [];
   const cancels = new Map();
   const ctx = {
@@ -59,12 +59,12 @@ function setup(names, self) {
 const pending = async (p, ms = 80) => (await Promise.race([p.then(() => 'done'), sleep(ms).then(() => 'pending')])) === 'pending';
 
 test('hold: tool definition and argument errors', async () => {
-  const w = setup(['orch', 'alice'], 'orch');
+  const w = setup(['claude', 'alice'], 'claude');
   assert.deepEqual(w.plug.tools.map(t => t.name), ['hold']);
   assert.equal(w.plug.call('nope', null, {}, {}), null);
   assert.match(textOf(await w.call({}).p), /hold needs/);
   assert.match(textOf(await w.call({ member: 'zed' }).p), /^STOP: zed is not in room/);
-  assert.match(textOf(await w.call({ member: 'orch' }).p), /^STOP: that is you/);
+  assert.match(textOf(await w.call({ member: 'claude' }).p), /^STOP: that is you/);
   assert.match(textOf(await w.call({ member: '../x' }).p), /^STOP/);
   assert.match(textOf(await w.call({ room: 'otter-1111' }).p), /^STOP: you are in room marmot-2509/);
   w.leaveMe();
@@ -72,7 +72,7 @@ test('hold: tool definition and argument errors', async () => {
 });
 
 test('hold {member}: blocks with progress, streams the thread, refuses a duplicate, keeps holding when the member leaves', async () => {
-  const w = setup(['orch', 'alice', 'bob'], 'orch');
+  const w = setup(['claude', 'alice', 'bob'], 'claude');
   w.add('alice', 'say');
   const a = w.call({ member: 'alice' });
   assert.ok(await pending(a.p), 'blocks');
@@ -80,24 +80,24 @@ test('hold {member}: blocks with progress, streams the thread, refuses a duplica
   assert.equal(w.progress[0].message, `alice: say 1${hold.HINT}`);
   assert.match(hold.HINT, /read-only · talk in main \(@room\)$/);
   w.add('bob', 'say');                       // not alice's thread
-  w.add('orch', 'question', { via: 'agent', to: 'alice' });
+  w.add('claude', 'question', { via: 'agent', to: 'alice' });
   await sleep(80);
-  assert.match(w.progress.at(-1).message, /^orch \(to alice\): question 3/);
+  assert.match(w.progress.at(-1).message, /^claude \(to alice\): question 3/);
   assert.ok(!w.progress.some(p => /^bob/.test(p.message)), 'other threads are not streamed');
   const n = w.progress.length;
   await sleep(250);
   assert.ok(w.progress.length > n, 'heartbeat keeps the idle timeout away');
   assert.match(textOf(await w.call({ member: 'alice' }).p), /^STOP: duplicate row: alice's row is already open/, 'one row per member');
-  assert.deepEqual(rows.readHolds(w.code, 'orch').members, ['alice']);
+  assert.deepEqual(rows.readHolds(w.code, 'claude').members, ['alice']);
   w.add('alice', 'member_left', { via: 'system' });
   w.leave('alice');
   assert.ok(await pending(a.p, 200), 'the row outlives the leave (it reads "left")');
   assert.match(w.progress.at(-1).message, /^alice left/);
-  assert.deepEqual(rows.readHolds(w.code, 'orch').members, ['alice']);
+  assert.deepEqual(rows.readHolds(w.code, 'claude').members, ['alice']);
 });
 
 test('hold: duplicate holds are refused for both kinds; the first one stays', async () => {
-  const w = setup(['orch', 'alice', 'bob'], 'alice');
+  const w = setup(['claude', 'alice', 'bob'], 'alice');
   const r1 = w.call({ room: w.code });
   const b1 = w.call({ member: 'bob' });
   assert.ok(await pending(r1.p) && await pending(b1.p));
@@ -108,7 +108,7 @@ test('hold: duplicate holds are refused for both kinds; the first one stays', as
 });
 
 test('hold: leave + rejoin keeps one hold per member, announces nothing, and spawns no second row', async () => {
-  const w = setup(['orch', 'alice', 'bob'], 'alice');
+  const w = setup(['claude', 'alice', 'bob'], 'alice');
   const r1 = w.call({ room: w.code });
   const b1 = w.call({ member: 'bob' });
   await sleep(30);
@@ -133,7 +133,7 @@ test('hold: leave + rejoin keeps one hold per member, announces nothing, and spa
 });
 
 test('hold: every hold STOPs when this seat leaves the room', async () => {
-  const w = setup(['orch', 'alice', 'bob'], 'alice');
+  const w = setup(['claude', 'alice', 'bob'], 'alice');
   const b = w.call({ member: 'bob' });
   const r = w.call({ room: w.code });
   assert.ok(await pending(r.p));
@@ -143,7 +143,7 @@ test('hold: every hold STOPs when this seat leaves the room', async () => {
 });
 
 test('hold {room}: children spawned with it are not announced; a newcomer is JOINED; one that never shows is re-announced', async () => {
-  const w = setup(['orch', 'alice', 'bob', 'carol'], 'alice');
+  const w = setup(['claude', 'alice', 'bob', 'carol'], 'alice');
   const r1 = w.call({ room: w.code });
   await sleep(30);
   const b = w.call({ member: 'bob' });       // carol's row never shows up
@@ -158,7 +158,7 @@ test('hold {room}: children spawned with it are not announced; a newcomer is JOI
 });
 
 test('hold {room}: RESPAWN when a child row is cancelled (Esc-kill); not when the room dies too', async () => {
-  const w = setup(['orch', 'alice', 'bob', 'carol'], 'alice');
+  const w = setup(['claude', 'alice', 'bob', 'carol'], 'alice');
   const r1 = w.call({ room: w.code });
   const b = w.call({ member: 'bob' });
   const c = w.call({ member: 'carol' });
@@ -179,7 +179,7 @@ test('hold {room}: RESPAWN when a child row is cancelled (Esc-kill); not when th
 });
 
 test('hold {room}: a respawn that lands while the room is re-calling is delivered on the next call', async () => {
-  const w = setup(['orch', 'alice', 'bob', 'carol'], 'alice');
+  const w = setup(['claude', 'alice', 'bob', 'carol'], 'alice');
   const r1 = w.call({ room: w.code });
   const b = w.call({ member: 'bob' });
   w.call({ member: 'carol' });
@@ -192,8 +192,8 @@ test('hold {room}: a respawn that lands while the room is re-calling is delivere
   assert.equal(textOf(await w.call({ room: w.code }).p), 'RESPAWN bob');
 });
 
-test('hold {member} on the orch side: a cancelled row is simply dropped', async () => {
-  const w = setup(['orch', 'alice'], 'orch');
+test('hold {member} on the room\'s Claude side: a cancelled row is simply dropped', async () => {
+  const w = setup(['claude', 'alice'], 'claude');
   const a = w.call({ member: 'alice' });
   await sleep(30);
   w.cancel(a.id);
@@ -208,7 +208,7 @@ test('hold {room}: after JOINED the room row still reads as running while it re-
   process.env.SUB_HUMAN_HOLD_ROOM_GAP_MS = '300';
   try {
     // seat "erin": earlier tests' hold servers still tick for "alice" and share SUB_HUMAN_HOME lookups
-    const w = setup(['orch', 'erin', 'bob'], 'erin');
+    const w = setup(['claude', 'erin', 'bob'], 'erin');
     const me = { code: w.code, name: 'erin', role: 'member' };
     const r1 = w.call({ room: w.code });
     w.call({ member: 'bob' });
@@ -232,7 +232,7 @@ test('hold {room}: after JOINED the room row still reads as running while it re-
 });
 
 test('hold: every progress line ends with the read-only hint and stays within 140 chars + hint', async () => {
-  const w = setup(['orch', 'alice', 'bob'], 'alice');
+  const w = setup(['claude', 'alice', 'bob'], 'alice');
   const r = w.call({ room: w.code });
   w.call({ member: 'bob' });
   await sleep(30);
@@ -248,7 +248,7 @@ test('hold: every progress line ends with the read-only hint and stays within 14
 });
 
 test('hold: a post marked provisional (old logs) shows at once, like any other', async () => {
-  const w = setup(['orch', 'alice'], 'orch');
+  const w = setup(['claude', 'alice'], 'claude');
   const a = w.call({ member: 'alice' });
   assert.ok(await pending(a.p));
   w.add('alice', 'say', { provisional: true }); // #1

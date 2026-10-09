@@ -26,7 +26,7 @@
  *   members.leave(name, {reason, deadlineMs}?)   op `leave`; the host logs "NAME left (reason)"
  *   members.beat(name, {presence?})   op `beat`, skipped (true) while the lease is younger than SEAT_BEAT_MS and
  *                            presence is unchanged
- *   members.update(fn)       HOST_ONLY (orch bookkeeping never runs here)
+ *   members.update(fn)       HOST_ONLY (room Claude bookkeeping never runs here)
  *   blobs.put(name, bytes)   op `blob.put`, then the mirror's copy; blobs.get(ref): the mirror's file, else op
  *                            `blob.get`; has, localPath: the mirror's file (the daemon prefetches every proposal's plan)
  *   kv.*                     local (rows/*, members/NAME/*, cursors, notices, link: session-local documents);

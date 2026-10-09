@@ -1,7 +1,7 @@
 # devbox: the "second machine" of the remote-rooms harness (scripts/remote-docker/harness.js). Node 24, an sshd that
 # takes keys only, a non-root user `host` whose home holds the room. The plugin is mounted read-only at /plugin and
-# the in-container helper at /harness. `claude` is a stub that fails, so the room's orch never starts (no real
-# Claude, no login): the harness checks the link, not the orch.
+# the in-container helper at /harness. `claude` is a stub that fails, so the room's Claude never starts (no real
+# Claude, no login): the harness checks the link, not the room's Claude.
 FROM node:24-bookworm-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssh-server procps tcpdump iproute2 \

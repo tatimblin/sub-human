@@ -9,9 +9,9 @@ const { World, PLUGIN, hso, decision, reason, ctx } = require('./helpers.js');
 
 const proposal = require(path.join(PLUGIN, 'lib', 'proposal.js'));
 
-/** A room with alice and bob (and orch); alice proposes `text` to `approvers`. */
+/** A room with alice and bob (and room Claude); alice proposes `text` to `approvers`. */
 function world(text = '# Rename fetchUser\n\n1. rename\n2. alias\n', approvers) {
-  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const r = w.lib(() => proposal.create({ code: w.code, name: 'alice', role: 'member' }, { text, ...(approvers ? { approvers } : {}) }));
   return { w, hash: r.hash, path: r.path };
 }
@@ -41,9 +41,9 @@ test('consent: Pre rewrites only a call that names my pending proposal; model an
   assert.deepEqual(q.options.map(o => o.label), ['Not yet', 'Agree', 'Object']);
   assert.ok(q.options.every(o => o.preview === '# Rename fetchUser\n\n1. rename\n2. alias\n'), 'short text: the full preview');
   assert.ok(!JSON.stringify(ui).includes('forged'));
-  // A unique 6-hex prefix also counts; the orch (not an approver) is never carded.
+  // A unique 6-hex prefix also counts; the room's Claude (not an approver) is never carded.
   assert.equal(decision(w.hook('consent', preAsk({ questions: [{ question: `open ${hash.slice(0, 6)}` }] }), { as: 'bob' })), 'ask');
-  assert.equal(w.hook('consent', preAsk({ questions: [{ question: `proposal ${hash}` }] }), { as: 'orch' }).stdout, '');
+  assert.equal(w.hook('consent', preAsk({ questions: [{ question: `proposal ${hash}` }] }), { as: 'claude' }).stdout, '');
   // No hash, but plainly about the one proposal pending for me: carded. Unrelated, or naming another id: untouched.
   assert.equal(decision(w.hook('consent', preAsk({ questions: [{ question: 'Do you agree with the cursor paging proposal? (Agree / Disagree)' }] }), { as: 'bob' })), 'ask');
   assert.equal(w.hook('consent', preAsk({ questions: [{ question: 'Which proposal format, md or txt?', header: 'fmt' }], note: 'see 9f8e7d6c5b4a' }), { as: 'bob' }).stdout, '');
@@ -188,8 +188,8 @@ test('review: EnterPlanMode is let through only for a pending proposal and a rev
   assert.equal(review(w), null);
   assert.equal(decision(enter('acceptEdits')), 'allow');
   assert.deepEqual([review(w).phase, review(w).mode], ['entering', 'acceptEdits']);
-  // No pending proposal for the orch / for a stranger to it: untouched.
-  assert.equal(w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'orch' }).stdout, '');
+  // No pending proposal for the room's Claude / for a stranger to it: untouched.
+  assert.equal(w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {} }), { as: 'claude' }).stdout, '');
   // The clear-context approve option fires no PostToolUse: no review while it is on.
   const w2 = world().w;
   fs.mkdirSync(path.join(w2.cwd, '.claude'), { recursive: true });
@@ -421,7 +421,7 @@ test('review: the note comes from the structured userFeedback field; the backup 
 });
 
 test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.mjs): Stop always reports subHuman {reviewOpen} beside its usual output', () => {
-  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const shim = { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } };
   const stop = extra => w.hook('consent', ev('Stop', null, { stop_hook_active: false, ...extra }), shim);
   // no review: nothing to say but the report
@@ -459,7 +459,7 @@ test('consent: a room tool call outside plan mode exits at once, loading nothing
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const preload = path.join(dir, 'loaded.js');
   fs.writeFileSync(preload, "process.on('exit', () => process.stderr.write('LOADED ' + JSON.stringify(Object.keys(require.cache)) + '\\n'));\n");
-  const w = new World({ orch: 'sleep', alice: 'act' }, { t });
+  const w = new World({ claude: 'sleep', alice: 'act' }, { t });
   const run = mode => {
     const r = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: mode, tool_input: { text: 'hi' } }), { as: 'alice', env: { NODE_OPTIONS: `--require ${preload}` } });
     assert.equal(r.code, 0, r.stderr);
@@ -576,7 +576,7 @@ test('Post(ExitPlanMode) with no review shown for a pending proposal: the model 
 const HELLO = '# Hello-world script\n\n1. create hello.sh\n2. chmod +x\n3. run it\n';
 /** alice proposes "Ship v2 Friday" then "Ship v3 Monday" to bob; bob's session plan file holds an unrelated plan. */
 function two() {
-  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const me = { code: w.code, name: 'alice', role: 'member' };
   const v2 = w.lib(() => proposal.create(me, { text: 'Ship v2 Friday', approvers: ['bob'] })).hash;
   const v3 = w.lib(() => proposal.create(me, { text: 'Ship v3 Monday', approvers: ['bob'] })).hash;

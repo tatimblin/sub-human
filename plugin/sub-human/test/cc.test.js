@@ -140,7 +140,7 @@ test('pasted content', () => {
 // ---------- jobs ----------
 
 test('parseDispatch / JOB_RE', () => {
-  assert.equal(cc.parseDispatch('backgrounded · 0b500131 · orch.ab12\n  claude agents   list sessions'), '0b500131');
+  assert.equal(cc.parseDispatch('backgrounded · 0b500131 · claude.ab12\n  claude agents   list sessions'), '0b500131');
   assert.equal(cc.parseDispatch('\u001b[0mbackgrounded · \u001b[36m0b500131'), null); // colour codes in the id: not parsed
   assert.equal(cc.parseDispatch('error: not trusted'), null);
   assert.equal(cc.parseDispatch(''), null);
@@ -148,7 +148,7 @@ test('parseDispatch / JOB_RE', () => {
 
 const AGENTS = J([
   { id: 'e738dbef', cwd: '/r', kind: 'background', startedAt: 1, sessionId: 'e738dbef-93a2', name: 'old', state: 'failed' },
-  { pid: 14474, id: '0a52ce26', cwd: '/r', kind: 'background', startedAt: 2, sessionId: '0a52ce26-6183', name: 'orch.ab12', status: 'busy', state: 'blocked' },
+  { pid: 14474, id: '0a52ce26', cwd: '/r', kind: 'background', startedAt: 2, sessionId: '0a52ce26-6183', name: 'claude.ab12', status: 'busy', state: 'blocked' },
   { pid: 38545, cwd: '/r', kind: 'interactive', startedAt: 3, sessionId: '310228bc-3e3a', name: 'repos-4a', status: 'idle' },
 ]);
 

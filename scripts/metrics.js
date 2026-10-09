@@ -8,8 +8,8 @@
  *
  * The run window is the first..last capture in screens/index.json (+30 s). Seats and their transcripts
  * (read-only): alice and bob are the top-level ~/.claude/projects/-private-tmp-sh-demo-SEAT/*.jsonl files; the
- * orch is a `claude --bg` job started in the joiner's folder, so its transcript is the file named after
- * members.json orch.session_id (wherever it is), and that file is left out of the folder's member seat.
+ * room Claude is a `claude --bg` job started in the joiner's folder, so its transcript is the file named after
+ * members.json claude.session_id (wherever it is), and that file is left out of the folder's member seat.
  *
  * - wakes: room-caused model turns: a user entry that is a sub-human plugin prompt (the hooks module's wake:
  *   origin {kind: plugin, name: sub-human}, not isMeta), a peer delivery (origin.kind peer), or the row-rewake
@@ -37,7 +37,7 @@ const path = require('node:path');
 const paths = require('./lib/paths.js');
 const { readJson, jsonl, textOf } = require('./lib/io.js');
 
-const SEATS = ['orch', 'alice', 'bob'];
+const SEATS = ['claude', 'alice', 'bob'];
 const NOISE = {
   plugin: /The sub-human plugin sent a message/, // one per plugin prompt row (its framing line)
   waiting: /Waiting for \d+ background agents?/,
@@ -57,30 +57,30 @@ const isToolResult = e => Array.isArray(e.message && e.message.content) && e.mes
 
 const projectsDir = p => p || paths.projectsDir();
 
-/** The orch session id from <home>/rooms/<code>/members.json (the newest room), or null. */
-function orchSession(home, code) {
+/** The room's Claude session id from <home>/rooms/<code>/members.json (the newest room), or null. */
+function roomClaudeSession(home, code) {
   if (!home) return null;
   try {
     const rooms = path.join(home, 'rooms');
     const c = code || fs.readdirSync(rooms).map(d => ({ d, m: fs.statSync(path.join(rooms, d)).mtimeMs })).sort((a, b) => b.m - a.m)[0].d;
-    const o = readJson(path.join(rooms, c, 'members.json'), {}).orch;
+    const o = readJson(path.join(rooms, c, 'members.json'), {}).claude;
     return (o && o.session_id) || null;
   } catch { return null; }
 }
 
 /** Transcript files of a seat: [{file, es}] limited to the window. */
-function transcripts(seat, from, to, projects, orchSid) {
+function transcripts(seat, from, to, projects, roomClaudeSid) {
   const base = projectsDir(projects);
   let files = [];
-  if (seat === 'orch') {
-    if (!orchSid) return [];
-    try { for (const d of fs.readdirSync(base)) { const f = path.join(base, d, `${orchSid}.jsonl`); if (fs.existsSync(f)) files.push(f); } } catch { return []; }
+  if (seat === 'claude') {
+    if (!roomClaudeSid) return [];
+    try { for (const d of fs.readdirSync(base)) { const f = path.join(base, d, `${roomClaudeSid}.jsonl`); if (fs.existsSync(f)) files.push(f); } } catch { return []; }
   } else {
     const dir = path.join(base, path.basename(paths.seatProjectDir(seat)));
-    try { files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl') && (!orchSid || f !== `${orchSid}.jsonl`)).map(f => path.join(dir, f)); } catch { return []; }
+    try { files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl') && (!roomClaudeSid || f !== `${roomClaudeSid}.jsonl`)).map(f => path.join(dir, f)); } catch { return []; }
   }
   return files.map(f => ({ file: f, es: jsonl(f) }))
-    .filter(({ es }) => seat === 'orch' || !es.some(e => e.agentSetting === 'sub-human:orchestrator')) // another room's orch in this folder
+    .filter(({ es }) => seat === 'claude' || !es.some(e => e.agentSetting === 'sub-human:room-claude')) // another room's Claude in this folder
     .filter(({ es }) => es.some(e => e.timestamp && e.timestamp >= from && e.timestamp <= to))
     .map(t => ({ ...t, es: t.es.filter(e => !e.timestamp || (e.timestamp >= from && e.timestamp <= to)) }));
 }
@@ -224,18 +224,18 @@ function measure({ screens, projects, home, code } = {}) {
   // the run starts a little before the first capture (S1's /sub-human); stop 30 s after the last one
   const from = new Date(Date.parse(times[0]) - 120_000).toISOString();
   const to = new Date(Date.parse(times.at(-1)) + 30_000).toISOString();
-  const orchSid = orchSession(home || process.env.SUB_HUMAN_HOME, code);
+  const roomClaudeSid = roomClaudeSession(home || process.env.SUB_HUMAN_HOME, code);
   const seats = {};
   const all = { lines: 0, captures: 0, waiting: 0, red: 0 };
   let wakes = 0;
   const cards = [];
   for (const seat of SEATS) {
-    const ts = transcripts(seat, from, to, projects, orchSid);
+    const ts = transcripts(seat, from, to, projects, roomClaudeSid);
     const m = seatTranscriptMetrics(ts);
     const noise = noiseFor(screens, index, seat);
     seats[seat] = { transcripts: ts.map(t => path.basename(t.file).slice(0, 8)), ...m, noise };
     wakes += m.wakes.turns;
-    if (seat !== 'orch') cards.push(...m.cards.map(c => ({ seat, ...c })));
+    if (seat !== 'claude') cards.push(...m.cards.map(c => ({ seat, ...c })));
     all.lines += noise.lines; all.captures += noise.captures; all.waiting += noise.waiting; all.red += noise.red;
   }
   const kinds = Object.keys(NOISE);
@@ -243,7 +243,7 @@ function measure({ screens, projects, home, code } = {}) {
   const avg = k => (cards.length ? +(cards.reduce((a, c) => a + c[k], 0) / cards.length).toFixed(2) : null);
   return {
     window: { from, to },
-    orchSession: orchSid,
+    roomClaudeSession: roomClaudeSid,
     seats,
     total: {
       wakes,
@@ -255,7 +255,7 @@ function measure({ screens, projects, home, code } = {}) {
         c.callsPerBurst = c.notices ? +(c.calls / c.notices).toFixed(2) : null;
         return c;
       })(),
-      joinChars: SEATS.filter(s => s !== 'orch').map(s => seats[s].injected.join),
+      joinChars: SEATS.filter(s => s !== 'claude').map(s => seats[s].injected.join),
       injectedTotal: SEATS.reduce((a, s) => a + seats[s].injected.total, 0),
       cards: { count: cards.length, toCard: avg('toCard'), after: avg('after'), perCard: cards.length ? +(cards.reduce((a, c) => a + c.toCard + c.after, 0) / cards.length).toFixed(2) : null, list: cards },
       noise: {

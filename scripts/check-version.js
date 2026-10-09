@@ -13,7 +13,7 @@
  *
  *   check({cwd?, base?}) -> {ok, base, from, to, changed: string[], why}   the same, for tests
  *   newer(a, b) -> bool   a > b, numeric per dot-separated part ("0.10.0" > "0.9.1"); a pre-release tail
- *                         after "-" compares as text
+ *                         after "-" compares per dot part as semver does ("beta.10" > "beta.2")
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -47,7 +47,18 @@ function newer(a, b) {
     if (d) return d > 0;
   }
   if (pa === pb) return false;
-  return !pa ? true : !pb ? false : pa > pb; // 1.0.0 > 1.0.0-rc.1
+  if (!pa || !pb) return !pa; // 1.0.0 > 1.0.0-rc.1
+  // pre-release identifiers per dot part, as semver: numbers numerically (beta.10 > beta.2), else as text
+  const ia = pa.split('.'), ib = pb.split('.');
+  for (let i = 0; i < Math.max(ia.length, ib.length); i++) {
+    if (ia[i] === undefined || ib[i] === undefined) return ib[i] === undefined; // more parts is newer
+    if (ia[i] === ib[i]) continue;
+    const na = /^\d+$/.test(ia[i]), nb = /^\d+$/.test(ib[i]);
+    if (na && nb) return Number(ia[i]) > Number(ib[i]);
+    if (na !== nb) return nb; // a number sorts before text
+    return ia[i] > ib[i];
+  }
+  return false;
 }
 
 function check({ cwd = process.cwd(), base } = {}) {

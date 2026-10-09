@@ -45,7 +45,7 @@ function agentStatusline(input = {}, { env = process.env } = {}) {
       if (!rec) {
         const d = String(t.description || '').trim();
         if (d === me.code) rec = { kind: 'room', name: d };
-        else if (members[d] && d !== me.name && d !== 'orch') rec = { kind: 'participant', name: d, parent: null };
+        else if (members[d] && d !== me.name && d !== 'claude') rec = { kind: 'participant', name: d, parent: null };
         else continue;
       }
       let content;

@@ -1,14 +1,14 @@
 // Wiring: the room task mirror and gate (mod/tasks.mjs). Run with `npm run test:mods`.
-// hooks/tasks.js runs only for the orch (or an unknown seat); its exit 2 blocks the completion; a member's own
+// hooks/tasks.js runs only for the room's Claude (or an unknown seat); its exit 2 blocks the completion; a member's own
 // native tasks start no node. A failed gate blocks wherever tasksNeeded holds.
 import { test, expect } from 'claude-code/testing'
 import { seatOf, helloOf, ran, scriptOf, session, start as startOf } from './support.mjs'
 
 const MEMBER = seatOf('bob')
-const ORCH = seatOf('orch', 'orch')
+const ROOM_CLAUDE = seatOf('claude', 'claude')
 const SID = 'sid-t'
 
-function world(on: any, { seat = ORCH as any, exitCode = 0, stderr = '', room = undefined as string | undefined, fail = false, envFail = false } = {}) {
+function world(on: any, { seat = ROOM_CLAUDE as any, exitCode = 0, stderr = '', room = undefined as string | undefined, fail = false, envFail = false } = {}) {
   const seen = { tasks: [] as any[], beneath: [] as string[] }
   session(on, SID)
   on('env.get', ($: any, e: any) => {
@@ -29,7 +29,7 @@ const start = ($: any) => startOf($, false)
 const created = ($: any) => $.classic.PostToolUse({ session_id: SID, tool_name: 'TaskCreate', tool_input: { subject: 'x' }, tool_response: { task: { id: '2', subject: 'x' } }, tool_use_id: 't1' } as any)
 const completed = ($: any) => $.classic.TaskCompleted({ session_id: SID, task_id: '2', task_subject: 'x' } as any)
 
-test('the orch: the mirror and the gate run hooks/tasks.js; exit 2 blocks the completion with its reason', async ($, on) => {
+test('the room\'s Claude: the mirror and the gate run hooks/tasks.js; exit 2 blocks the completion with its reason', async ($, on) => {
   const seen = world(on, { exitCode: 2, stderr: 'only bob may complete #2; ask them\nNothing in that TaskUpdate was saved.' })
   await start($)
   await created($)
@@ -39,7 +39,7 @@ test('the orch: the mirror and the gate run hooks/tasks.js; exit 2 blocks the co
   expect(seen.beneath).toEqual(['post TaskCreate'])
 })
 
-test('the orch: a completion the gate passes goes on', async ($, on) => {
+test('the room\'s Claude: a completion the gate passes goes on', async ($, on) => {
   const seen = world(on)
   await start($)
   const r: any = await completed($)
@@ -56,21 +56,21 @@ test('a member\'s own native tasks start no node', async ($, on) => {
   expect(seen.beneath).toEqual(['post TaskCreate', 'completed'])
 })
 
-test('no seat: no node, unless SUB_HUMAN_ROOM says an orch is starting', async ($, on) => {
+test('no seat: no node, unless SUB_HUMAN_ROOM says a room Claude is starting', async ($, on) => {
   const seen = world(on, { seat: null })
   await start($)
   await created($)
   expect(seen.tasks).toEqual([])
 })
 
-test('no seat but SUB_HUMAN_ROOM set (an orch before its join): tasks.js runs', async ($, on) => {
+test('no seat but SUB_HUMAN_ROOM set (a room Claude before its join): tasks.js runs', async ($, on) => {
   const seen = world(on, { seat: null, room: 'otter-4821' })
   await start($)
   await completed($)
   expect(seen.tasks.length).toBe(1)
 })
 
-test('the gate fails closed in the orch\'s session', async ($, on) => {
+test('the gate fails closed in the room\'s Claude\'s session', async ($, on) => {
   world(on, { fail: true })
   await start($)
   const r: any = await completed($)
@@ -85,7 +85,7 @@ test('no seat but SUB_HUMAN_ROOM set: a failed gate fails closed (tasks.js would
   expect(seen.beneath).toEqual([])
 })
 
-test('a failure in a session surely not the orch lets the completion go on', async ($, on) => {
+test('a failure in a session surely not the room\'s Claude lets the completion go on', async ($, on) => {
   const seen = world(on, { seat: MEMBER, envFail: true })
   await start($)
   const r: any = await completed($)

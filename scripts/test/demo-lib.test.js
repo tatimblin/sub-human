@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { COMMANDS, opts, listsOrch } = require('../demo-lib.js');
+const { COMMANDS, opts, listsRoomClaude } = require('../demo-lib.js');
 
 const LIB = path.join(__dirname, '..', 'demo-lib.js');
 const DEMO_SH = path.join(__dirname, '..', 'demo.sh');
@@ -102,11 +102,11 @@ test('demo-lib record: appends one waits.jsonl line for the current scene; --ok 
   ]);
 });
 
-test('demo-lib listsOrch: by job id or session id, as the S10 check reads claude agents --json', () => {
-  const orch = { job: 'job-1', session_id: 'sid-1' };
-  assert.equal(listsOrch([{ id: 'job-1', state: 'stopped' }], orch), true);
-  assert.equal(listsOrch([{ id: 'other', sessionId: 'sid-1' }], orch), true);
-  assert.equal(listsOrch([{ id: 'other', sessionId: 'sid-2' }], orch), false);
-  assert.equal(listsOrch([], orch), false);
-  assert.equal(listsOrch([{ id: undefined }], {}), false);
+test('demo-lib listsRoomClaude: by job id or session id, as the S10 check reads claude agents --json', () => {
+  const roomClaude = { job: 'job-1', session_id: 'sid-1' };
+  assert.equal(listsRoomClaude([{ id: 'job-1', state: 'stopped' }], roomClaude), true);
+  assert.equal(listsRoomClaude([{ id: 'other', sessionId: 'sid-1' }], roomClaude), true);
+  assert.equal(listsRoomClaude([{ id: 'other', sessionId: 'sid-2' }], roomClaude), false);
+  assert.equal(listsRoomClaude([], roomClaude), false);
+  assert.equal(listsRoomClaude([{ id: undefined }], {}), false);
 });

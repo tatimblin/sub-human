@@ -1,7 +1,7 @@
 'use strict';
 // Tests for lib/tail.js (the loop behind `sub-human tail`, the hooks module's child), in-process on a fake clock:
 // the events, settle, max window, leave hold, cursor restart, room switch, error recovery, the chain check and the
-// orch watchdog. The log, cursors and seats are real files in a temp SUB_HUMAN_HOME. test/cli.test.js keeps
+// room Claude watchdog. The log, cursors and seats are real files in a temp SUB_HUMAN_HOME. test/cli.test.js keeps
 // real-time smoke tests.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,12 +16,12 @@ const { createFake } = require(path.join(h.LIB, 'clock.js'));
 const tailLib = require(path.join(h.LIB, 'tail.js'));
 
 const FAST = {
-  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, orchSettleMs: 300, orchSettleMaxMs: 1000,
+  resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
   leaveMs: 600, healthMs: 5000, backoffMs: 200, backoffMaxMs: 1000, errorLogMs: 60_000, stallMs: 5000,
 };
 const DEFAULTS = {
-  ...FAST, settleMs: config.SETTLE_MS, settleMaxMs: config.SETTLE_MAX_MS, orchSettleMs: config.ORCH_SETTLE_MS,
-  orchSettleMaxMs: config.ORCH_SETTLE_MAX_MS, leaveMs: config.LEAVE_SETTLE_MS,
+  ...FAST, settleMs: config.SETTLE_MS, settleMaxMs: config.SETTLE_MAX_MS, roomClaudeSettleMs: config.ROOM_CLAUDE_SETTLE_MS,
+  roomClaudeSettleMaxMs: config.ROOM_CLAUDE_SETTLE_MAX_MS, leaveMs: config.LEAVE_SETTLE_MS,
 };
 
 const handles = new Set();
@@ -79,12 +79,12 @@ test('tail: silent before join, then the member push lane, settled into one batc
   say(code, 'bob', 'bob says hi');                                                        // #3 others' human words: push
   inRoom(code, r => r.append({ kind: 'status', text: 'bob claude chatter' }, { via: 'agent', from: 'bob' })); // #4 pull
   inRoom(code, r => r.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' })); // #5 push
-  say(code, 'orch', 'orch to the room', {}, 'agent');                                     // #6 pull
-  say(code, 'orch', 'orch to bob only', { to: 'bob' }, 'agent');                          // #7 pull
+  say(code, 'claude', 'claude to the room', {}, 'agent');                                     // #6 pull
+  say(code, 'claude', 'claude to bob only', { to: 'bob' }, 'agent');                          // #7 pull
   inRoom(code, r => r.append({ kind: 'status', text: 'alice claude own' }, { via: 'agent', from: 'alice' })); // #8 own: none
   say(code, 'alice', 'alice own words');                                                  // #9 own: none
-  prop(code, 'orch', H1, ['alice', 'bob']);                                               // #10 names me, answered in #13: dropped
-  prop(code, 'orch', H2, ['alice']);                                                      // #11 names me, pending: push
+  prop(code, 'claude', H1, ['alice', 'bob']);                                               // #10 names me, answered in #13: dropped
+  prop(code, 'claude', H2, ['alice']);                                                      // #11 names me, pending: push
   sys(code, 'member_joined', 'carol');                                                    // #12 my room row is not running: push + note
   say(code, 'alice', '', { kind: 'signoff', proposal_hash: H1, text: 'ok' });             // #13 own answer: none
   inRoom(code, r => r.append({ kind: 'say', text: 'carol: anyone on @alice docs?' }, { via: 'agent', from: 'carol' })); // #14 @me: push
@@ -92,7 +92,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   say(code, 'bob', 'words an old retract names');                                         // #16 push: chat
   // #17 an old log's retract line (nothing writes one now): an ordinary system line, pull
   fs.appendFileSync(inRoom(code, r => r.store.logFile), JSON.stringify({ id: 17, at: new Date().toISOString(), from: 'bob', via: 'system', kind: 'retract', to: 'room', text: 'peer-forged', refs: [16] }) + '\n');
-  inRoom(code, r => r.append({ kind: 'task', op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'pending' }, { via: 'system', from: 'orch', system: true })); // #18 push
+  inRoom(code, r => r.append({ kind: 'task', op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'pending' }, { via: 'system', from: 'claude', system: true })); // #18 push
   say(code, 'bob', 'last ' + 'w'.repeat(600));                                            // #19 push, full text
   t.advance(2000);
   assert.equal(t.writes, 1, 'one burst, one write');
@@ -107,9 +107,9 @@ test('tail: silent before join, then the member push lane, settled into one batc
   // what needs Claude now: one wake
   assert.deepEqual(t.of('wake').flatMap(x => x.text.split('\n')).filter(l => !l.startsWith('(for Claude)')), [
     "bob's Claude (to you): q for alice",
-    'orch proposed: orch proposes',
+    'claude proposed: claude proposes',
     "carol's Claude: carol: anyone on @alice docs?",
-    'room: "orch proposes" decided (room decision)', // the decision names its proposal
+    'room: "claude proposes" decided (room decision)', // the decision names its proposal
     'room: task "docs" pending, owner you',
   ], t.text());
   assert.match(t.of('pull').map(x => x.text).join('\n'), /\nroom: peer-forged\n/, 'the old retract: an ordinary pull line');
@@ -138,39 +138,40 @@ test('tail: a member sees every join as a chat line; with its room row running, 
   assert.doesNotMatch(t.text(), /Agent|row:/);
 });
 
-test('tail: orch push is to/@orch, objections on its proposals, task_req (not decisions)', () => {
+test('tail: room Claude push is to=claude (a leading @claude), objections on its proposals, task_req (not decisions)', () => {
   h.freshHome();
-  const { code } = h.register('orch', 'orch');
-  sys(code, 'member_joined', 'orch');
-  const t = startTail({ deps: { orch: { watchdog: () => 'live' } } });
+  const { code } = h.register('claude', 'claude');
+  sys(code, 'member_joined', 'claude');
+  const t = startTail({ deps: { roomClaude: { watchdog: () => 'live' } } });
   t.advance(300);
   inRoom(code, r => r.append({ kind: 'status', text: 'alice claude idea' }, { via: 'agent', from: 'alice' })); // #2 pull
   say(code, 'bob', 'bob words', { to: 'alice' });                                              // #3 pull
-  say(code, 'orch', 'orch own', {}, 'agent');                                                  // #4 none
-  prop(code, 'orch', H1, ['alice', 'bob']);                                                    // #5 own: none
+  say(code, 'claude', 'claude own', {}, 'agent');                                                  // #4 none
+  prop(code, 'claude', H1, ['alice', 'bob']);                                                    // #5 own: none
   sys(code, 'member_left', 'bob');                                                             // #6 pull
   say(code, 'alice', '', { kind: 'objection', proposal_hash: H1, text: 'no' });                // #7 push
   inRoom(code, r => r.append({ kind: 'task_req', op: 'add', subject: 'parser tests' }, { via: 'agent', from: 'bob' })); // #8 push
   sys(code, 'decision', 'room', { proposal_hash: H1 });                                        // #9 pull
-  say(code, 'alice', '@orch end');                                                             // #10 push
+  say(code, 'alice', 'end', { to: 'claude' });                                                 // #10 push: "@claude end"
+  say(code, 'bob', '@claude not a tag');                                                       // #11 pull: "@room @claude not a tag"
   t.advance(1500);
   assert.deepEqual(t.ids(), [7, 8, 10], t.text());
   assert.equal(t.batches(), 1);
-  assert.ok(t.text().includes('"@orch end"'));
+  assert.match(t.text(), /#10 alice\[human\] say to=claude "end"/);
 });
 
-test('tail: a member_joined notice says whether that row already runs (live holds), for the orch', () => {
+test('tail: a member_joined notice says whether that row already runs (live holds), for the room\'s Claude', () => {
   h.freshHome();
-  const { code } = h.register('orch', 'orch');
-  const t = startTail({ deps: { orch: { watchdog: () => 'live' } } });
+  const { code } = h.register('claude', 'claude');
+  const t = startTail({ deps: { roomClaude: { watchdog: () => 'live' } } });
   t.advance(300);
   sys(code, 'member_joined', 'bob');                                     // #1 first join: no row yet, pushed with the call
   t.advance(1500);
   assert.match(t.text(), /member_joined/);
-  rows.writeHolds(code, 'orch', { members: ['bob'] });                   // the orch's bob row is now held
+  rows.writeHolds(code, 'claude', { members: ['bob'] });                   // the room Claude's bob row is now held
   sys(code, 'member_left', 'bob');                                       // #2 pull
   sys(code, 'member_joined', 'bob');                                     // #3 rejoin: the row survived, not pushed
-  say(code, 'bob', '@orch back');                                        // #4
+  say(code, 'bob', 'back', { to: 'claude' });                            // #4
   t.advance(1500);
   assert.deepEqual(t.ids(), [1, 4], t.text());
   assert.match(t.entries()[0], /^#1 bob\[system\] member_joined .* · row: bob has no row running; spawn it now: Agent sub-human:participant, description "bob", prompt "member: bob"/);
@@ -179,13 +180,13 @@ test('tail: a member_joined notice says whether that row already runs (live hold
 
 test('tail: leave/rejoin collapse at the default 8 s hold (left+rejoin within 3 s prints nothing)', () => {
   h.freshHome();
-  const { code } = h.register('orch', 'orch');
-  const t = startTail({ timings: { ...DEFAULTS, orchSettleMs: 1500 }, deps: { orch: { watchdog: () => 'live' } } });
+  const { code } = h.register('claude', 'claude');
+  const t = startTail({ timings: { ...DEFAULTS, roomClaudeSettleMs: 1500 }, deps: { roomClaude: { watchdog: () => 'live' } } });
   t.advance(300);
   const t0 = t.clock.now();
-  // member_left is pull in the lanes; addressing it to the orch makes it push, to exercise the hold.
-  sys(code, 'member_left', 'bob', { to: 'orch' });                       // #1 back at 3 s: dropped with #3
-  sys(code, 'member_left', 'carol', { to: 'orch' });                     // #2 lone: printed at >= 8 s
+  // member_left is pull in the lanes; addressing it to the room's Claude makes it push, to exercise the hold.
+  sys(code, 'member_left', 'bob', { to: 'claude' });                       // #1 back at 3 s: dropped with #3
+  sys(code, 'member_left', 'carol', { to: 'claude' });                     // #2 lone: printed at >= 8 s
   t.advance(3000);
   sys(code, 'member_joined', 'bob');                                     // #3
   t.advance(4900);                                                       // 7.9 s: still held
@@ -195,18 +196,18 @@ test('tail: leave/rejoin collapse at the default 8 s hold (left+rejoin within 3 
   assert.ok(t.clock.now() - t0 >= 8000);
   assert.match(t.text(), / · away 8s\+/);
   assert.deepEqual(t.ids(), [2], t.text());
-  assert.equal(cursor(code, 'orch'), 3, 'dropped ids advance the cursor');
+  assert.equal(cursor(code, 'claude'), 3, 'dropped ids advance the cursor');
 });
 
-test('tail: the orch settles longer by default (two pushes 2 s apart are one batch)', () => {
+test('tail: the room\'s Claude settles longer by default (two pushes 2 s apart are one batch)', () => {
   h.freshHome();
-  const { code } = h.register('orch', 'orch');
-  sys(code, 'member_joined', 'orch');
-  const t = startTail({ timings: DEFAULTS, deps: { orch: { watchdog: () => 'live' } } });
+  const { code } = h.register('claude', 'claude');
+  sys(code, 'member_joined', 'claude');
+  const t = startTail({ timings: DEFAULTS, deps: { roomClaude: { watchdog: () => 'live' } } });
   t.advance(300);
-  say(code, 'alice', '@orch default 20, max 50');                       // #2
+  say(code, 'alice', 'default 20, max 50', { to: 'claude' });          // #2
   t.advance(2000);
-  say(code, 'bob', '@orch fine, please propose it');                    // #3
+  say(code, 'bob', 'fine, please propose it', { to: 'claude' });       // #3
   t.advance(2900);
   assert.equal(t.text(), '', 'still settling: 3 s of quiet after #3');
   t.advance(500);
@@ -332,11 +333,11 @@ test('tail: a hash-chain break is reported once per break, for Claude; the tail 
   assert.ok(t.text().includes('bob: still delivered\n'), t.text());
 });
 
-test('tail: the orch runs orch.watchdog(code) every health interval; a member never does', () => {
+test('tail: the room\'s Claude runs claude.watchdog(code) every health interval; a member never does', () => {
   h.freshHome();
-  const { code } = h.register('orch', 'orch');
+  const { code } = h.register('claude', 'claude');
   const calls = [];
-  const t = startTail({ deps: { orch: { watchdog: c => { calls.push(c); if (calls.length === 2) throw new Error('watchdog boom'); return 'live'; } } } });
+  const t = startTail({ deps: { roomClaude: { watchdog: c => { calls.push(c); if (calls.length === 2) throw new Error('watchdog boom'); return 'live'; } } } });
   t.advance(FAST.healthMs * 3 + 100);
   assert.deepEqual(calls, [code, code, code], 'it keeps going after a throw');
   assert.match(t.errs.join(''), /health check failed: watchdog boom/);
@@ -344,7 +345,7 @@ test('tail: the orch runs orch.watchdog(code) every health interval; a member ne
   h.freshHome();
   h.register('alice');
   const mcalls = [];
-  const m = startTail({ deps: { orch: { watchdog: c => mcalls.push(c) } } });
+  const m = startTail({ deps: { roomClaude: { watchdog: c => mcalls.push(c) } } });
   m.advance(FAST.healthMs * 2 + 100);
   assert.deepEqual(mcalls, []);
 });
@@ -413,7 +414,7 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   inRoom(code, r => r.append({ kind: 'status', text: 'bob claude chatter' }, { via: 'agent', from: 'bob' })); // #4 pull
   say(code, 'bob', '@alice can you look?');                                             // #5 @me: wake
   inRoom(code, r => r.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' })); // #6 wake
-  prop(code, 'orch', H2, ['alice']);                                                    // #7 a proposal for me: wake + state
+  prop(code, 'claude', H2, ['alice']);                                                    // #7 a proposal for me: wake + state
   t.advance(2000);
   assert.equal(t.writes, 1, 'ONE batch write (after the seat and rows events)');
   const batch = t.events().filter(x => ['chat', 'pull', 'wake'].includes(x.type));
@@ -423,7 +424,7 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   assert.equal(pull[0], tailLib.PULL_HEAD);
   assert.deepEqual(pull.slice(1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
   const wake = t.of('wake')[0].text.split('\n');
-  assert.deepEqual(wake.slice(0, 3), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", 'orch proposed: orch proposes']);
+  assert.deepEqual(wake.slice(0, 3), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", 'claude proposed: claude proposes']);
   assert.ok(wake[3].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
   assert.equal(inRoom(code, r => r.getCursor('deliver-alice')), 7);
   const notices = require(path.join(h.LIB, 'notices.js'));
@@ -447,19 +448,19 @@ test('tail: rows says the missing room row and the pending reminders at start an
   t.advance(FAST.healthMs);
   r = t.of('rows');
   assert.equal(r.at(-1).text, null, 'the row runs: cleared');
-  prop(code, 'orch', H2, ['alice']);
+  prop(code, 'claude', H2, ['alice']);
   t.advance(FAST.healthMs);
   assert.match(t.of('rows').at(-1).text, new RegExp(H2.slice(0, 6)), 'a proposal awaiting me is reminded');
 });
 
-test('tail: the orch gets its push block as one wake, the pull lane as pull; no chat', () => {
+test('tail: the room\'s Claude gets its push block as one wake, the pull lane as pull; no chat', () => {
   h.freshHome();
-  const { code } = h.register('orch', 'orch');
-  rows.writeHolds(code, 'orch', { members: ['bob'] });
-  const t = startNd({ sid: 'so', deps: { orch: { watchdog: () => 'live' } } });
+  const { code } = h.register('claude', 'claude');
+  rows.writeHolds(code, 'claude', { members: ['bob'] });
+  const t = startNd({ sid: 'so', deps: { roomClaude: { watchdog: () => 'live' } } });
   t.advance(300);
   inRoom(code, r => r.append({ kind: 'task_req', text: 'please add tests', op: 'add', subject: 'tests' }, { via: 'agent', from: 'bob' })); // #1 push
-  say(code, 'bob', 'bob to the room');                                                  // #2 pull for the orch
+  say(code, 'bob', 'bob to the room');                                                  // #2 pull for the room's Claude
   t.advance(2000);
   assert.deepEqual(t.of('chat'), []);
   const wake = t.of('wake');
@@ -480,21 +481,21 @@ test('tail: a chain break is a health event', () => {
   assert.deepEqual(t.of('health').map(x => x.text.slice(0, 40)), ['room log check: the hash chain breaks at']);
 });
 
-test('tail: a member\'s wake carries the room state without entry ids (the person sees the plugin prompt\'s row); the orch\'s keeps them', () => {
+test('tail: a member\'s wake carries the room state without entry ids (the person sees the plugin prompt\'s row); the room\'s Claude\'s keeps them', () => {
   h.freshHome();
   const { code } = h.register('alice');
   rows.writeHolds(code, 'alice', { room: true });
   sys(code, 'member_joined', 'alice');                                                  // #1
   const t = startNd({ sid: 's' });
   t.advance(300);
-  prop(code, 'orch', H1, ['alice']);                                                    // #2
+  prop(code, 'claude', H1, ['alice']);                                                    // #2
   say(code, 'alice', '', { kind: 'signoff', proposal_hash: H1, text: 'ok' });           // #3 own
   sys(code, 'decision', 'room', { proposal_hash: H1 });                                 // #4 a decision on mine: wake
   t.advance(2000);
   const state = t.of('wake').flatMap(x => x.text.split('\n')).filter(l => l.startsWith('(for Claude) room now:'));
   assert.ok(state.length >= 1, t.out);
   for (const l of state) assert.doesNotMatch(l, /#\d/, l);
-  assert.match(room.open(code).stateLine({ name: 'orch', role: 'orch' }, room.open(code).readAll()), /decided #4/);
+  assert.match(room.open(code).stateLine({ name: 'claude', role: 'claude' }, room.open(code).readAll()), /decided #4/);
 });
 
 test('tail: a room hosted elsewhere: one OFFLINE line when the link goes down, one "back online" line once it is online again', () => {

@@ -7,11 +7,11 @@
  *
  * Evidence only, nothing assumed: the room log ($SUB_HUMAN_HOME/rooms/CODE/log.jsonl), members.json, tasks.json,
  * plans/, the per-step state demo.sh saved (screens/state/SCENE/N: members.json, rows/, tasks.json,
- * `claude agents --json`, `sub-human tasks`, the orch's native task files; S6/gate-bob.json, S9/synthetic-prompt.json,
+ * `claude agents --json`, `sub-human tasks`, the room Claude's native task files; S6/gate-bob.json, S9/synthetic-prompt.json,
  * S11/: carol's mirror log, link status and file shape, both machine ids), S11's second home (--home2, default the
  * home's sibling home2),
- * the pane captures (screens/index.json + *.txt; the orch's pane is `claude logs <job>`) and the seats' Claude Code
- * transcripts (read-only; the orch's is the file named after its session id). A check whose evidence is missing
+ * the pane captures (screens/index.json + *.txt; the room Claude's pane is `claude logs <job>`) and the seats' Claude Code
+ * transcripts (read-only; the room Claude's is the file named after its session id). A check whose evidence is missing
  * fails and says so.
  *
  * The checks live in scripts/checks/*.js, one module per scene ({scene, run(ctx, {det, beh}, thresholds)}; ctx from
@@ -33,7 +33,7 @@ const { clip, readJson } = require('./lib/io.js');
 const { context } = require('./checks/context.js');
 const BASELINES = require('./baselines.json');
 
-const SCENES = ['s01-open', 's02-join', 's03-pairing', 's04-plan', 's05-consent', 's06-tasks', 's07-row-view', 's08-resilience', 's09-orch-typing', 's09b-multiline', 's11-remote', 's10-leave', 'run-metrics']
+const SCENES = ['s01-open', 's02-join', 's03-pairing', 's04-plan', 's05-consent', 's06-tasks', 's07-row-view', 's08-resilience', 's09-claude-typing', 's09b-multiline', 's11-remote', 's10-leave', 'run-metrics']
   .map(m => require(`./checks/${m}.js`));
 const ORDER = ['Metrics', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S9b', 'S11', 'S10'];
 
@@ -84,7 +84,7 @@ function main() {
   const res = runChecks(ctx, { planned });
   const summary = summarise(res);
   const skipped = planned ? ORDER.filter(k => k !== 'Metrics' && !planned.includes(k)) : [];
-  res._meta = { cost: ctx.cost(), run: `room ${ctx.code}, ${ctx.log.length} log entries, ${ctx.index.length} captures, orch job ${ctx.job}${skipped.length ? `; partial run: ${planned.join(', ')}` : ''}`, note: o.note || '', summary };
+  res._meta = { cost: ctx.cost(), run: `room ${ctx.code}, ${ctx.log.length} log entries, ${ctx.index.length} captures, claude job ${ctx.job}${skipped.length ? `; partial run: ${planned.join(', ')}` : ''}`, note: o.note || '', summary };
   if (skipped.length) res._meta.skipped = skipped;
   const M = ctx.metrics;
   if (M && !M.error) {

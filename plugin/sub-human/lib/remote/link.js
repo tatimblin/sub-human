@@ -1,7 +1,7 @@
 'use strict';
 /**
  * plugin/sub-human/lib/remote/link.js: the link daemon, one per machine and room (`scripts/sub-human link CODE`,
- * started detached by the join hook, like the orch starter). It holds the one connection to the host
+ * started detached by the join hook, like the room's Claude starter). It holds the one connection to the host
  * (lib/remote/client.js over the transport in the link file, lib/room/links.js), keeps the mirror
  * (lib/room/store-mirror.js applyLine / applyDoc / applyBlob) byte-identical to the host's log, prefetches every
  * proposal's plan, and serves the hooks of this machine on a unix socket: a hook's bridge worker

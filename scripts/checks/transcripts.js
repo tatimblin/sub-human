@@ -1,11 +1,11 @@
 'use strict';
 /**
- * transcripts: the seats' and the orch's Claude Code transcripts (read-only), for checks/context.js.
+ * transcripts: the seats' and the room Claude's Claude Code transcripts (read-only), for checks/context.js.
  *
- *   seatFiles(seat), entries(seat)             a seat's main transcript files and their entries ('orch': by session id)
+ *   seatFiles(seat), entries(seat)             a seat's main transcript files and their entries ('claude': by session id)
  *   inSpan, toolUses, assistantIds             filters over entries
  *   peerIn, wakeIn, chatIn, pullIn             peer messages, room wakes, chat rows and their isMeta copies
- *   chatTurn, orchTurns, replyAfter, noModelTurn   which model turns room traffic started
+ *   chatTurn, roomClaudeTurns, replyAfter, noModelTurn   which model turns room traffic started
  *   rowUserText, rowReply                      the row subagents' transcripts
  */
 const fs = require('node:fs');
@@ -55,17 +55,17 @@ function rowReply(seat, since) {
   return null;
 }
 
-/** The helpers that read a seat's own transcript files (the orch's found by its session id under projects/). */
-function transcripts({ orchSid, projects }) {
+/** The helpers that read a seat's own transcript files (the room Claude's found by its session id under projects/). */
+function transcripts({ roomClaudeSid, projects }) {
   const seatFiles = seat => {
-    if (seat === 'orch') { const f = []; try { for (const d of fs.readdirSync(projects)) { const p = path.join(projects, d, `${orchSid}.jsonl`); if (orchSid && fs.existsSync(p)) f.push(p); } } catch { /* none */ } return f; }
+    if (seat === 'claude') { const f = []; try { for (const d of fs.readdirSync(projects)) { const p = path.join(projects, d, `${roomClaudeSid}.jsonl`); if (roomClaudeSid && fs.existsSync(p)) f.push(p); } } catch { /* none */ } return f; }
     const dir = paths.seatProjectDir(seat);
-    // not an orch's transcript (this run's, or an earlier run's orch that also started in alice's folder)
-    const isOrch = f => f === `${orchSid}.jsonl` || /"agentSetting":"sub-human:orchestrator"/.test((readText(path.join(dir, f)) || '').slice(0, 2000));
-    try { return fs.readdirSync(dir).filter(f => f.endsWith('.jsonl') && !isOrch(f)).map(f => path.join(dir, f)); } catch { return []; }
+    // not a room Claude's transcript (this run's, or an earlier run's room Claude that also started in alice's folder)
+    const isRoomClaude = f => f === `${roomClaudeSid}.jsonl` || /"agentSetting":"sub-human:room-claude"/.test((readText(path.join(dir, f)) || '').slice(0, 2000));
+    try { return fs.readdirSync(dir).filter(f => f.endsWith('.jsonl') && !isRoomClaude(f)).map(f => path.join(dir, f)); } catch { return []; }
   };
   const tcache = {};
-  const entries = seat => (tcache[seat] = tcache[seat] || seatFiles(seat).flatMap(f => jsonl(f).map(e => ({ ...e, _file: path.basename(f) }))).filter(e => e.agentSetting !== 'sub-human:orchestrator' || seat === 'orch'));
+  const entries = seat => (tcache[seat] = tcache[seat] || seatFiles(seat).flatMap(f => jsonl(f).map(e => ({ ...e, _file: path.basename(f) }))).filter(e => e.agentSetting !== 'sub-human:room-claude' || seat === 'claude'));
   /** A transcript's main-thread entries of the file `ref` (an entry) came from, and ref's index in them; null if not found. */
   const around = (seat, ref) => {
     const f = ref && seatFiles(seat).find(x => path.basename(x) === ref._file);
@@ -97,7 +97,7 @@ function transcripts({ orchSid, projects }) {
     }
     return { woke: false, idle, evidence: 'idle; no model call after it' };
   }
-  const orchTurns = s => assistantIds(inSpan(entries('orch'), s)).size;
+  const roomClaudeTurns = s => assistantIds(inSpan(entries('claude'), s)).size;
 
   /** The assistant turn a wake started in seat's transcript: its text (all text blocks, in order) and tool names, up to the next prompt or notice. */
   function replyAfter(seat, wake) {
@@ -134,7 +134,7 @@ function transcripts({ orchSid, projects }) {
     }
     return { pass: false, evidence: `no hook receipt for #${e.id} in ${seat}'s transcripts` };
   }
-  return { seatFiles, entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn, pullIn, chatTurn, orchTurns, replyAfter, noModelTurn, rowUserText, rowReply };
+  return { seatFiles, entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn, pullIn, chatTurn, roomClaudeTurns, replyAfter, noModelTurn, rowUserText, rowReply };
 }
 
 module.exports = { transcripts };

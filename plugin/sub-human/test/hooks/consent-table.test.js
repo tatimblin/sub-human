@@ -11,8 +11,8 @@ const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
 const consent = require(path.join(PLUGIN, 'lib', 'room', 'consent.js'));
 
 test('consent table: proposal, re-proposal, revise, signoffs, objection after signoff, decision: all views agree', () => {
-  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep', carol: 'sleep', dave: 'sleep' });
-  const me = name => ({ code: w.code, name, role: name === 'orch' ? 'orch' : 'member' });
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep', carol: 'sleep', dave: 'sleep' });
+  const me = name => ({ code: w.code, name, role: name === 'claude' ? 'claude' : 'member' });
   const human = (from, kind, hash) => w.append({ kind, proposal_hash: hash }, { via: 'human', from });
   const create = (who, text, approvers) => w.lib(() => proposal.create(me(who), { text, approvers }));
 
@@ -88,7 +88,7 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
   }
   for (const name of people) {
     const h = latest[name];
-    const t = w.lib(() => rows.rowText(w.code, name, 'orch', { entries, tasks: [] }));
+    const t = w.lib(() => rows.rowText(w.code, name, 'claude', { entries, tasks: [] }));
     const s = want[h][name];
     assert.ok(t.startsWith(ROW[s]), `row ${name}: ${t}`);
     if (s !== 'objected') assert.ok(t.includes(titles[h]), `row ${name} names the proposal by its title: ${t}`);
@@ -97,8 +97,8 @@ test('consent table: proposal, re-proposal, revise, signoffs, objection after si
 });
 
 test('consent table: a note waiting for the person\'s Send is no answer in any view; Send makes it an objection everywhere', () => {
-  const w = new World({ orch: 'sleep', alice: 'act', bob: 'sleep' });
-  const me = name => ({ code: w.code, name, role: name === 'orch' ? 'orch' : 'member' });
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
+  const me = name => ({ code: w.code, name, role: name === 'claude' ? 'claude' : 'member' });
   const H = w.lib(() => proposal.create(me('alice'), { text: '# Rate limiting\n\n1. 100 rps\n', approvers: ['bob'] })).hash;
   w.lib(() => proposal.writeConfirm(me('bob'), { hash: H, note: 'open rate limiting', from: 'alice', title: 'Rate limiting', at: Date.now() }));
   const views = () => {

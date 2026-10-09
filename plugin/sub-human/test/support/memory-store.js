@@ -7,7 +7,7 @@
  * suite against both: that is the seam a store off this machine would implement.
  *
  *   new MemoryRoomStore(code, {isHost}?)   _lines (the serialized log, one string per entry) is open for tamper
- *       tests. isHost: false makes it mirror-shaped (the host gates: lib/orch.js, lib/proposal.js decide).
+ *       tests. isHost: false makes it mirror-shaped (the host gates: lib/room-claude.js, lib/proposal.js decide).
  *   members.join/leave/beat are lib/room/members.js ops over this store's compare-and-set update, as FsRoomStore's.
  */
 const path = require('node:path');
@@ -33,12 +33,12 @@ class MemoryRoomStore {
     this._checked = { count: 0, hash: hash12('') }; // the verifyChain checkpoint
     const self = this;
     this.members = {
-      read: () => clone(self._members.doc),
+      read: () => members.fromLegacy(clone(self._members.doc)),
       // compare-and-set: fn sees a copy at version v; the write lands only if nobody wrote since (retry otherwise)
       update(fn) {
         for (;;) {
           const { v, doc } = self._members;
-          const next = fn(clone(doc));
+          const next = fn(members.fromLegacy(clone(doc)));
           if (!next) return null;
           if (self._members.v !== v) continue;
           self._members = { v: v + 1, doc: clone(next) };

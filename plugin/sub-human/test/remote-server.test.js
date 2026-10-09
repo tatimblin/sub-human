@@ -22,7 +22,7 @@ const pipe = require(path.join(h.LIB, 'remote', 'transports', 'pipe.js'));
 const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
 const { flaky } = require('./support/flaky.js');
 
-// Never launch a real orch: a remote join on the host starts one as a local join does.
+// Never launch a real room Claude: a remote join on the host starts one as a local join does.
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
 const REMOTE = 'remote0machine01';
@@ -255,7 +255,7 @@ test('remote (memory): a remote answer is placed, then the host decides', async 
   const { code, host } = hostRoom(t);
   const c = await linked(t, host);
   await c.join(seat(code, 'alice'));
-  host.append({ kind: 'proposal', text: `proposal ${H}: x`, hash: H, approvers: ['alice'] }, { via: 'agent', from: 'orch' });
+  host.append({ kind: 'proposal', text: `proposal ${H}: x`, hash: H, approvers: ['alice'] }, { via: 'agent', from: 'claude' });
   const answer = await c.append(signed(code, 'alice', { kind: 'signoff', proposal_hash: H }));
   const last = host.readAll().at(-1);
   assert.deepEqual([last.kind, last.text, last.refs], ['decision', `agreed: alice (proposal ${H})`, [answer.id - 1, answer.id]]);
@@ -291,13 +291,13 @@ test('remote (memory): a cut mid-subscribe and a reconnect from {after, hash} re
   await rejects(again.subscribe(999, store.hash12(last), () => {}).ready, 'FORK');
 });
 
-test('remote (memory): the stream ends {reason: closed} when the room\'s orch is stopped', async t => {
+test('remote (memory): the stream ends {reason: closed} when the room\'s claude is stopped', async t => {
   const { code, host } = hostRoom(t);
-  identity.setOrch(code, { job: 'j1', spawned_at: new Date().toISOString() });
+  identity.setRoomClaude(code, { job: 'j1', spawned_at: new Date().toISOString() });
   const c = await linked(t, host);
   const { got, sub } = collect(c, 0, store.hash12(''));
   await sub.ready;
-  identity.setOrch(code, { stopped_at: new Date().toISOString() });
+  identity.setRoomClaude(code, { stopped_at: new Date().toISOString() });
   await h.until(() => got.ends.length, 3000, 20);
   assert.deepEqual(got.ends, ['closed']);
 });

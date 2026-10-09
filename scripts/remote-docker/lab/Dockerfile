@@ -2,7 +2,7 @@
 # tinyproxy (corp-proxy), and the network tools the scenarios use (iptables for a half-open link, tcpdump, nc with
 # CONNECT support for ssh ProxyCommand). entry.sh picks the role: devbox | bastion | joiner | proxy.
 # Users: `host` (the devbox's room owner), `jump` (the bastion's account), `joiner` (a joiner's person). sshd takes
-# keys only. `claude` is a stub that fails, so a room's orch never starts (no real Claude, no login).
+# keys only. `claude` is a stub that fails, so the room's Claude never starts (no real Claude, no login).
 FROM node:24-bookworm-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssh-server openssh-client procps iproute2 iptables tcpdump \

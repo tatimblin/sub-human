@@ -38,7 +38,7 @@ const FILES = {
   // a line written around the store
   raw: (s, e) => fs.appendFileSync(path.join(s.dir, 'log.jsonl'), JSON.stringify(e) + '\n'),
 };
-// A remote join on the host starts the orch, as a local one does: never a real one.
+// A remote join on the host starts the room's Claude, as a local one does: never a real one.
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false' });
 /** A mirror of a room hosted on a worker (test/support/remote-store.js), stopped when the test ends. */
 function mirrorOf(t) {
@@ -177,7 +177,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
   test(`store contract (${name}): member_joined pins a key; a keyed room never counts an unsigned answer and refuses another key`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
-    s.append({ kind: 'proposal', text: 'p', hash: H, approvers: ['alice', 'bob'] }, { via: 'agent', from: 'orch' });
+    s.append({ kind: 'proposal', text: 'p', hash: H, approvers: ['alice', 'bob'] }, { via: 'agent', from: 'claude' });
     // no key pinned yet: a legacy room, where an unsigned answer from a seat with no key still counts
     B.raw(s, rawLine(s, { from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H }));
     const forged = s.readAll().at(-1);

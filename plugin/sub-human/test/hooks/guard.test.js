@@ -29,7 +29,7 @@ function decide(tool, input, { w, seated = false, hello = true, agentId } = {}) 
 }
 
 test('guard table', () => {
-  const w = new World({ orch: 'sleep', alice: 'act' });
+  const w = new World({ claude: 'sleep', alice: 'act' });
   const H = w.home;
   const realH = fs.realpathSync(H);
   const T = [
@@ -57,7 +57,7 @@ test('guard table', () => {
 });
 
 test('guard: a write through a symlink into the home is denied, also into a directory not made yet', () => {
-  const w = new World({ orch: 'sleep', alice: 'act' });
+  const w = new World({ claude: 'sleep', alice: 'act' });
   const link = path.join(w.cwd, 'innocent');
   fs.symlinkSync(w.home, link);
   assert.equal(decide('Write', { file_path: path.join(link, 'rooms', w.code, 'log.jsonl'), content: 'x' }, { w }), 'deny');
@@ -66,7 +66,7 @@ test('guard: a write through a symlink into the home is denied, also into a dire
 });
 
 test('guard: the default home ~/.sub-human is protected, by its path and before mod-hello by its spelling', () => {
-  const w = new World({ orch: 'sleep', alice: 'act' });
+  const w = new World({ claude: 'sleep', alice: 'act' });
   const dflt = { ...w, home: path.join(w.userHome, '.sub-human'), userHome: w.userHome, cwd: w.cwd };
   assert.equal(decide('Write', { file_path: '~/.sub-human/rooms/x', content: 'x' }, { w: dflt }), 'deny');
   assert.equal(decide('Write', { file_path: path.join(w.userHome, '.sub-human', 'rooms', 'x'), content: 'x' }, { w: dflt }), 'deny');
@@ -75,7 +75,7 @@ test('guard: the default home ~/.sub-human is protected, by its path and before 
 });
 
 test('guard: hold is allowed for row subagents only', () => {
-  const w = new World({ orch: 'sleep', alice: 'act' });
+  const w = new World({ claude: 'sleep', alice: 'act' });
   assert.equal(decide('mcp__plugin_sub-human_room__hold', { room: w.code }, { w, seated: true, agentId: 'a1' }), 'allow');
   assert.equal(decide('mcp__plugin_sub-human_room__hold', { room: w.code }, { w, seated: false }), 'deny');
 });

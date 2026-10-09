@@ -33,7 +33,7 @@ Docker on this Mac. Nothing touches this Mac's sshd, `~/.ssh` or `~/.sub-human`.
 ```
 
 - **devbox**: node 24, sshd (keys only, `AllowTcpForwarding no`), user `host` with the room in
-  `/home/host/.sub-human`. The plugin is mounted read-only at `/plugin`; `claude` is a stub, so no orch runs. It is on
+  `/home/host/.sub-human`. The plugin is mounted read-only at `/plugin`; `claude` is a stub, so no room Claude runs. It is on
   the internal `core` network only: a joiner reaches it through toxiproxy (the chaos-able WAN path), through the
   bastion (ProxyJump) or, for 1.1, through tls-front.
 - **devbox-old**: the same image with plugin 0.2.0 from `git archive cb4d344 plugin/sub-human` baked in

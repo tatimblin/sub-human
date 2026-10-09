@@ -33,7 +33,7 @@ test('validate: op shapes; done needs evidence', () => {
 let nextId = 1;
 const req = (from, op, id, extra = {}) => ({ id: nextId++, from, via: 'agent', kind: 'task_req', text: `task ${op} #${id}`, op, task_id: String(id), owner: from, ...extra });
 const human = (from, text, refs) => ({ id: nextId++, from, via: 'human', kind: 'say', text, ...(refs ? { refs } : {}) });
-const oldRetract = ids => ({ id: nextId++, from: 'orch', via: 'system', kind: 'retract', text: 'retracted', refs: ids }); // old logs only
+const oldRetract = ids => ({ id: nextId++, from: 'claude', via: 'system', kind: 'retract', text: 'retracted', refs: ids }); // old logs only
 
 test('gate: the owner\'s done with evidence passes; another member\'s done fails', () => {
   const code = h.newRoom();
@@ -95,7 +95,7 @@ test('gate: the room-open task completes only while the room is closing', () => 
   const f = path.join(identity.roomDir(code), 'members.json');
   io.writeJsonAtomic(f, { ...identity.readMembers(code), closing: new Date().toISOString() });
   assert.equal(tasks.gate(code, t1, []).ok, true);
-  io.writeJsonAtomic(f, { orch: { name: 'orch', role: 'orch', pid: 1, closing: true } });
+  io.writeJsonAtomic(f, { claude: { name: 'claude', role: 'claude', pid: 1, closing: true } });
   assert.equal(tasks.isClosing(code), true);
 });
 
@@ -132,7 +132,7 @@ function ctxFor() {
 }
 const out = r => r.content[0].text;
 
-test('task tool: no orch, refusals, queued request', () => {
+test('task tool: the room Claude not running, refusals, queued request', () => {
   h.freshHome();
   const code = h.newRoom();
   const sleeper = h.spawnSleeper();
@@ -145,11 +145,11 @@ test('task tool: no orch, refusals, queued request', () => {
   const { name, description, inputSchema } = api.tools[0]; // model-facing fields; annotations are client metadata
   assert.ok(JSON.stringify({ name, description, inputSchema }).length <= 900);
 
-  assert.equal(out(api.call('task', me, { op: 'add', subject: 'parser tests' })), 'no orch: the room task list is unavailable');
+  assert.equal(out(api.call('task', me, { op: 'add', subject: 'parser tests' })), "the room's Claude is not running: the room task list is unavailable");
   assert.equal(R.readAll().length, 0);
 
-  const orchProc = h.spawnSleeper();
-  identity.join({ code, name: 'orch', role: 'orch', pid: orchProc.pid, session_id: 's-o' });
+  const roomClaudeProc = h.spawnSleeper();
+  identity.join({ code, name: 'claude', role: 'claude', pid: roomClaudeProc.pid, session_id: 's-o' });
   let r = api.call('task', me, { op: 'done', id: '2' });
   assert.equal(r.isError, true);
   assert.match(out(r), /evidence/);
@@ -157,7 +157,7 @@ test('task tool: no orch, refusals, queued request', () => {
 
   r = api.call('task', me, { op: 'add', subject: 'parser tests', detail: 'cover the edge cases', for: 'bob' });
   const e = R.readAll().at(-1);
-  assert.equal(out(r), 'queued; the orch applies it');
+  assert.equal(out(r), 'queued; the room\'s Claude applies it');
   assert.deepEqual([e.kind, e.from, e.via], ['task_req', 'alice', 'agent']);
   assert.deepEqual(tasks.reqOf(e), { op: 'add', id: null, subject: 'parser tests', detail: 'cover the edge cases', evidence: null, owner: 'bob', status: null, req: null, by: 'alice' });
 
@@ -166,8 +166,8 @@ test('task tool: no orch, refusals, queued request', () => {
   assert.deepEqual([tasks.reqOf(d).op, tasks.reqOf(d).id, tasks.reqOf(d).owner, tasks.reqOf(d).evidence], ['done', '2', 'alice', 'npm test green']);
   assert.match(d.text, /done #2/);
 
-  // the orch itself is told to use its native tools
-  assert.match(out(api.call('task', { code, name: 'orch', role: 'orch' }, { op: 'add', subject: 'x' })), /TaskCreate/);
+  // the room's Claude itself is told to use its native tools
+  assert.match(out(api.call('task', { code, name: 'claude', role: 'claude' }, { op: 'add', subject: 'x' })), /TaskCreate/);
 });
 
 test('gate: task.req (the native metadata) is tried first; fold keeps the last snapshot per task', () => {

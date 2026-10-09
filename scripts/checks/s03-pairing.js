@@ -36,8 +36,8 @@ module.exports = {
     det('alice\'s Claude answers natively (SendMessage back; bob receives it)', back.length >= 1 && pb.length >= 1, `alice SendMessage back (bob.${code} or the uds: reply address): ${back.length}${back[0] ? ` (to ${back[0].input.to})` : ''}; peer entries from alice in bob's transcript: ${pb.length}${pb[0] ? ` ("${clip(pb[0].origin.body, 70)}")` : ''}`);
     const cards = ['alice', 'bob'].flatMap(seat => x.toolUses(x.inSpan(x.entries(seat), s), 'AskUserQuestion'));
     det('No card and no proposal', cards.length === 0 && !x.logIn(s).some(y => y.kind === 'proposal'), `${cards.length} AskUserQuestion calls; proposals in S3: ${x.logIn(s).filter(y => y.kind === 'proposal').length}`);
-    // zero is the contract (the orch wakes only when addressed), not a budget: deterministic
-    const n = x.orchTurns(s);
-    det('The orch was not woken', n === 0, `${n} orch assistant messages in S3 (${s ? s.from.slice(11, 19) + '–' + s.to.slice(11, 19) : 'no window'})`);
+    // zero is the contract (the room's Claude wakes only when addressed), not a budget: deterministic
+    const n = x.roomClaudeTurns(s);
+    det('The room\'s Claude was not woken', n === 0, `${n} claude assistant messages in S3 (${s ? s.from.slice(11, 19) + '–' + s.to.slice(11, 19) : 'no window'})`);
   },
 };

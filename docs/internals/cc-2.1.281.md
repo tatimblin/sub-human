@@ -103,7 +103,7 @@ function kD(e){return J(we(),"tasks",aP(e))}  function U(e,n){return J(kD(e),`${
   ... process.stdout.write(hTe(g.short,g.idle?qIe:void 0,g.name)+"\n")
   ```
   - It goes to **stdout**. Line 1 is `backgrounded · <short> · <name>`, where `<short>` is the first 8 characters of the session id. Colors come from chalk, which normally turns them off when stdout is not a TTY. Errors go to stderr with exit code 1.
-  - **There is no `--json` for `--bg`.** Stability: incidental, since it is display text. `orch.js`'s `JOB_RE` relies on it.
+  - **There is no `--json` for `--bg`.** Stability: incidental, since it is display text. `room-claude.js`'s `JOB_RE` relies on it.
 - **Machine-readable list.** Search `isAgentsJsonInvocation`. `claude agents --json [--all]` prints an array of `{pid?, id(short), cwd, kind:"background"|"interactive", startedAt, sessionId, name?, status:"idle"|"waiting"|"busy", waitingFor?, state:"working"|"blocked"|"done"|"failed"|"stopped"}`. Without `--all`, finished bg jobs are filtered out. Search `pass its full session id (lowercase, as \`claude agents --json\` prints it)`. Stability: an advertised machine-readable interface (the non-TTY error suggests it), so prefer it over parsing.
 - **`claude stop <id>`.** Search `Stop a background session. Its conversation is kept`. It prints `stopped <id>`, plus worktree notes, or `couldn't confirm …`.
 - **`claude logs <id>`.** Search `Print the background session's recent terminal output.`. It replays recent PTY output and has no JSON form.

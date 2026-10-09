@@ -45,7 +45,7 @@ Claude Code 2.1.281 is installed at `/opt/homebrew/Caskroom/claude-code@latest/2
 | Plugin | `sub-human` |
 | MCP server | `room` |
 | MCP tools | `mcp__plugin_sub-human_room__<tool>` |
-| Plugin agents | `sub-human:orchestrator`, `sub-human:participant`, `sub-human:room` |
+| Plugin agents | `sub-human:room-claude`, `sub-human:participant`, `sub-human:room` |
 | Skill | `sub-human:sub-human` |
 
 ### Room storage (unchanged)
@@ -65,7 +65,7 @@ New per-session files (row state) live in `<room>/rows/`. They're owned by B.
 | UserPromptSubmit | — | `at-room.js` | A |
 | PreToolUse | `ExitPlanMode` | `plan-gate.js` | C |
 | PreToolUse | `Bash\|Write\|Edit\|MultiEdit\|NotebookEdit\|mcp__plugin_sub-human_room__.*` | `guard.js` | A |
-| PostToolUse | `ExitPlanMode` | `plan-result.js` | C (orch only) |
+| PostToolUse | `ExitPlanMode` | `plan-result.js` | C (room Claude only) |
 | PreToolUse | `Agent\|Task` | `row-guard.js` (deny a row spawn whose hold is live) | B |
 | PostToolUse | `Agent\|Task` | `row-map.js` | B |
 | SubagentStop | — | `row-hold.js` | B |
@@ -89,10 +89,10 @@ There is no process-ancestry walking and no `pid_start` checks. The exported API
 - `resolveSelf()`, used by the CLI and monitor:
   1. `CLAUDE_CODE_SESSION_ID` (or whichever env var Claude Code really sets; A verifies it), then
   2. the nearest ancestor pid that is a registered member pid, as a plain lookup.
-- `openRooms()`, which returns open room codes. A room is open when it has a live orch.
+- `openRooms()`, which returns open room codes. A room is open when it has a live room Claude.
 - `home()`, `roomDir(code)`, `newCode()`
 
-Each returns `{code, name, role: 'orch'|'member', session_id, pid}` or null.
+Each returns `{code, name, role: 'claude'|'member', session_id, pid}` or null.
 
 ### Room server plug-ins (owner A, `mcp/room-server.js`)
 
@@ -123,10 +123,10 @@ The `ctx` object:
 - `rowCalls(me, members)`: text for the model listing the exact Agent calls to make. A's `join.js` and `session-restore.js` and D's role text use it; don't hand-copy it.
 - `rowText(code, participantName, viewerName)`: deterministic row text from the log and presence.
 
-**Orchestrator rows.** One background `sub-human:participant` per member. Its prompt is `member: NAME`. It calls `hold({member: NAME})` once and never returns while the viewer is in the room: when NAME leaves the row reads `left` and is live again on rejoin (one row per member, ever). `hold` returns `STOP` when the viewer leaves, or at once for a duplicate (a second live hold for the same row); `hooks/row-guard.js` (PreToolUse Agent) denies the duplicate spawn itself.
+**Room Claude rows.** One background `sub-human:participant` per member. Its prompt is `member: NAME`. It calls `hold({member: NAME})` once and never returns while the viewer is in the room: when NAME leaves the row reads `left` and is live again on rejoin (one row per member, ever). `hold` returns `STOP` when the viewer leaves, or at once for a duplicate (a second live hold for the same row); `hooks/row-guard.js` (PreToolUse Agent) denies the duplicate spawn itself.
 
 **Member rows.** One background `sub-human:room` agent, labelled with the room code.
-- It spawns a `sub-human:participant` child for each **other** member except the orch. It also calls `hold({room: CODE})`, which returns `JOINED NAME` or `RESPAWN NAME`; on either, it spawns that child and holds again.
+- It spawns a `sub-human:participant` child for each **other** member except the room's Claude. It also calls `hold({room: CODE})`, which returns `JOINED NAME` or `RESPAWN NAME`; on either, it spawns that child and holds again.
 - When the member leaves, `hold` returns `STOP`.
 
 **Agent → participant map.** `row-map.js` (PostToolUse Agent) records each agent id → participant or room in `<room>/rows/<session_id>.json`. `subagentStatusLine` reads that file.
@@ -145,7 +145,7 @@ The `ctx` object:
 - If the human presses Esc or declines, nothing is logged. The form is re-offered after 10 minutes, or immediately when the model calls the tool `review()` because the human said "review".
 - A newer `plan_rev` cancels the stale form. When the client lacks the elicitation capability, it falls back to the `review` tool, which returns a clear error.
 
-**`plan-gate.js` and `plan-result.js`** become orch-only:
+**`plan-gate.js` and `plan-result.js`** become claude-only:
 - The gate denies until the matrix is complete, then allows with `updatedInput`.
 - plan-result logs the decision, plus its "post assignments" `additionalContext`.
 - Members never enter plan mode for sign-off.
@@ -159,10 +159,10 @@ The `ctx` object:
 
 ### Roles (owner D)
 
-- **`agents/orchestrator.md`:** the plugin agent's frontmatter, with `tools` excluding Bash, and its role prompt.
-- **`skills/sub-human/orchestrator.md` and `member.md`:** the context injected at join.
+- **`agents/room-claude.md`:** the plugin agent's frontmatter, with `tools` excluding Bash, and its role prompt.
+- **`skills/sub-human/room-claude.md` and `member.md`:** the context injected at join.
 - **`skills/sub-human/SKILL.md`**
-- **`README.md`:** the launch commands. The orch runs `claude --plugin-dir … --agent sub-human:orchestrator --permission-mode plan`, then `/sub-human`. A member runs `claude --plugin-dir …`, then `/sub-human NAME [CODE]`.
+- **`README.md`:** the launch commands. The room's Claude runs `claude --plugin-dir … --agent sub-human:room-claude --permission-mode plan`, then `/sub-human`. A member runs `claude --plugin-dir …`, then `/sub-human NAME [CODE]`.
 
 Role text must reference `lib/rows.js` output rather than hand-written Agent calls. In practice `join.js` appends `rowCalls()` to the injected context.
 

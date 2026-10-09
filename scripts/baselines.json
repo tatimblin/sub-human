@@ -9,8 +9,8 @@
   "wakes": 18,
   "noisePerCapture": 1.4,
   "callsPerReview": 5,
-  "orchJoinCalls": 2,
-  "orchTaskCalls": 14,
+  "roomClaudeJoinCalls": 2,
+  "roomClaudeTaskCalls": 14,
   "joinText": 900,
   "joinBlock": 1200
  },
@@ -19,7 +19,7 @@
    "run": "vole-8126",
    "note": "commit e83ffb5, recomputed with metrics.js from its 69 captures and the seats' transcripts",
    "wakes": {
-    "orch": 12,
+    "claude": 12,
     "alice": 17,
     "bob": 10,
     "total": 39
@@ -36,12 +36,12 @@
     "invalid": 5
    },
    "joinChars": {
-    "orch": 7662,
+    "claude": 7662,
     "alice": 5732,
     "bob": 5768
    },
    "injected": {
-    "orch": 7782,
+    "claude": 7782,
     "alice": 12987,
     "bob": 13542,
     "total": 34311
@@ -51,7 +51,7 @@
    "run": "otter-0813",
    "note": "the Phase 0 run (commit d08fec8), measured by metrics.js's previous version",
    "wakes": {
-    "orch": 8,
+    "claude": 8,
     "alice": 8,
     "bob": 7,
     "total": 23
@@ -68,12 +68,12 @@
     "invalid": 0
    },
    "joinChars": {
-    "orch": 7620,
+    "claude": 7620,
     "alice": 4968,
     "bob": 4994
    },
    "injected": {
-    "orch": 7740,
+    "claude": 7740,
     "alice": 12082,
     "bob": 13268,
     "total": 33090
@@ -81,9 +81,9 @@
   },
   "narwhal-2294": {
    "run": "narwhal-2294",
-   "note": "commit 138fec1 (waves 0-3; 73/73, 2 behavioural warnings), from its checks.json; seats and orch on the user's default model",
+   "note": "commit 138fec1 (waves 0-3; 73/73, 2 behavioural warnings), from its checks.json; seats and claude on the user's default model",
    "wakes": {
-    "orch": 8,
+    "claude": 8,
     "alice": 7,
     "bob": 8,
     "total": 23
@@ -100,12 +100,12 @@
     "invalid": 0
    },
    "joinChars": {
-    "orch": 709,
+    "claude": 709,
     "alice": 1104,
     "bob": 1098
    },
    "injected": {
-    "orch": 1953,
+    "claude": 1953,
     "alice": 4206,
     "bob": 5035,
     "total": 11194

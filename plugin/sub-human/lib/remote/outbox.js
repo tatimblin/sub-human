@@ -8,7 +8,7 @@
  * older than ageMs (LINK_OUTBOX_AGE_MS, inside the host's SIG_SKEW_MS) is dropped with a notice instead.
  *
  *   <mirror dir>/outbox.json (0600)   [{payload, queued_at}] in the order typed
- *   queueable(payload) -> bool        a via=human `say` to the room, signed (sig v2: nonce and ts)
+ *   queueable(payload) -> bool        a via=human `say` to the room or to claude (an @claude), signed (sig v2: nonce and ts)
  *   open(dir, {max?, ageMs?}) -> Outbox   (ageMs on it: how long a post may wait)
  *     items() -> [{payload, queued_at}]
  *     size() -> n
@@ -29,7 +29,7 @@ const config = require('../config.js');
  * @param {object} p
  * @returns {boolean}
  */
-const queueable = p => !!p && p.kind === 'say' && p.via === 'human' && (p.to === undefined || p.to === 'room')
+const queueable = p => !!p && p.kind === 'say' && p.via === 'human' && (p.to === undefined || p.to === 'room' || p.to === 'claude')
   && typeof p.nonce === 'string' && Number.isFinite(p.ts);
 
 /**

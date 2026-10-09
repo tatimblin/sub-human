@@ -11,7 +11,7 @@
  *       this seat leaves, when NAME is this seat or was never in the room, or when another row for NAME is
  *       already held here ("STOP: duplicate row": the newcomer ends, the first row stays).
  *   hold({room: CODE})     called by the member's sub-human:room row agent. Blocks; returns
- *       "JOINED a b"   other members (not the orch, not me) with no live hold here: someone joined, or the
+ *       "JOINED a b"   other members (not the room's Claude, not me) with no live hold here: someone joined, or the
  *                      room never spawned their row. A name is announced only after GRACE_MS without a hold
  *                      (so children spawned in the same message as this call are not double-announced), at
  *                      most ANNOUNCE_MAX times per name until its hold shows up.
@@ -48,7 +48,7 @@ const HINT = ' · read-only · talk in main (@room)';
 
 const clip = (s, n = MSG_MAX) => strs.clip(s, n);
 
-/** An entry as its group-chat line, no id: "alice: say 1", "orch (to alice): which cursor?", "alice left". */
+/** An entry as its group-chat line, no id: "alice: say 1", "claude (to alice): which cursor?", "alice left". */
 function entryLine(e) {
   const lines = room.chatLines(e).filter(l => !l.startsWith(room.FOR_CLAUDE));
   return clip(oneLine(lines.map(l => (l.startsWith(room.CHAT_NEST) ? l.slice(room.CHAT_NEST.length) : l)).join(' ')));
@@ -142,7 +142,7 @@ class HoldServer {
   others(code, ms) {
     const me = this.me;
     return Object.values(ms)
-      .filter(m => m && m.name && !m.left_at && m.role !== 'orch' && m.name !== 'orch' && (!me || m.name !== me.name))
+      .filter(m => m && m.name && !m.left_at && m.role !== 'claude' && m.name !== 'claude' && (!me || m.name !== me.name))
       .map(m => m.name);
   }
 
@@ -255,7 +255,7 @@ class HoldServer {
     if (this.memberHolds(code).some(x => x.name === h.name)) return;
     const live = this.roomHolds(code);
     const ended = this.roomEnded.get(code);
-    if (!live.length && !(ended && Date.now() - ended < config.HOLD_RESPAWN_AFTER_RETURN_MS)) return; // orch side: nobody respawns
+    if (!live.length && !(ended && Date.now() - ended < config.HOLD_RESPAWN_AFTER_RETURN_MS)) return; // room Claude side: nobody respawns
     if (!this.respawn.has(code)) this.respawn.set(code, new Set());
     this.respawn.get(code).add(h.name);
     this.expect.set(`${code}/${h.name}`, { at: Date.now(), n: 0 });

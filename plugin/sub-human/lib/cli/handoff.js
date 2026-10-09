@@ -18,7 +18,7 @@
  *       out by hand.
  *   demote(args, ctx)    sub-human demote CODE INVITE [PIN]
  *       On an old host the room was promoted away from: set its own log aside (kept in orphaned-<time>.jsonl,
- *       never merged), stop its orch, and mirror the new host with INVITE.
+ *       never merged), stop its room Claude, and mirror the new host with INVITE.
  * ctx = {die(msg, code?), out(line), err(line)}.
  * FORK_RISK(code, last) -> [line]   what promote prints before its --confirm
  */
@@ -51,8 +51,8 @@ function roomOf(flags, die) {
 function seatOf(code, as, die) {
   if (as) return as;
   const me = identity.resolveSelf();
-  if (me && me.code === code && me.role !== 'orch') return me.name;
-  const local = identity.localSeats(code).filter(n => n !== 'orch');
+  if (me && me.code === code && me.role !== 'claude') return me.name;
+  const local = identity.localSeats(code).filter(n => n !== 'claude');
   if (!local.length) die(`no seat of this machine is in room ${code}; join it first, or pass --as NAME`, 1);
   return local[0];
 }
@@ -101,7 +101,7 @@ function handoffCmd(args, ctx) {
   let d;
   try { d = handoff.ask(code, { from, to, locator: locatorOf(flags, die, code) }); } catch (e) { die(`could not hand room ${code} off: ${e.message}`, 1); }
   out(`asked ${to} to host room ${code} (host epoch ${d.epoch}); their Claude shows them a card until ${d.expires_at}.`);
-  out(`If ${to} agrees, the log, the links and the orch move to their machine (the orch then runs on ${to}'s model account), and this machine follows as a member. sub-human handoff --status --room ${code} shows how it went.`);
+  out(`If ${to} agrees, the log, the links and the room's Claude move to their machine (the room's Claude then runs on ${to}'s model account), and this machine follows as a member. sub-human handoff --status --room ${code} shows how it went.`);
 }
 
 const FORK_RISK = (code, last) => [

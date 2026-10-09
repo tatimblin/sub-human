@@ -26,7 +26,7 @@ const DOT_HOME = /(?:^|[^\w.-])\.sub-human(?![\w-])/;
 /** Something that runs JavaScript. */
 const RUNS_JS = /(?:^|[\s;&|(`'"/])(?:node|nodejs|bun|deno|npx|tsx|ts-node)(?=[\s;&|)`'"]|$)/;
 /** The plugin's modules that write the store or hold the seat key (test/ files are not matched). */
-const PLUGIN_CODE = /(?<!test\/)(?<![\w-])(?:lib\/(?:room|identity|proposal|consent|tasks|rows|notices|orch|io|lock|seats|remote|handoff|cli)(?![\w-])|hooks\/[\w-]+\.js\b|hooks\/(?:at-room|prompt|consent|join|seat-key|common|tasks|presence|session-end|session-restore|mod-hello|row-[\w-]+)(?![\w.-])|mcp\/[\w-]+(?:\.js)?(?![\w-]))/;
+const PLUGIN_CODE = /(?<!test\/)(?<![\w-])(?:lib\/(?:room|identity|proposal|consent|tasks|rows|notices|claude|io|lock|seats|remote|handoff|cli)(?![\w-])|hooks\/[\w-]+\.js\b|hooks\/(?:at-room|prompt|consent|join|seat-key|common|tasks|presence|session-end|session-restore|mod-hello|row-[\w-]+)(?![\w.-])|mcp\/[\w-]+(?:\.js)?(?![\w-]))/;
 /** Names the plugin outright, so the cwd need not be read. */
 const NAMES_PLUGIN = cmd => /sub-human/.test(cmd) || /lib\/room(?![\w-])/.test(cmd);
 

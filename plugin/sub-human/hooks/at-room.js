@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 'use strict';
 // UserPromptSubmit: "@room TEXT" or "room:TEXT" posts the human's exact words (via human, signed with the seat key)
-// and ends the prompt, so no model turn runs and nothing is paraphrased. No hooks.json entry: hooks/prompt.js runs
+// and ends the prompt, so no model turn runs and nothing is paraphrased. "@claude TEXT" posts the same way with
+// to=claude, which wakes the room's Claude; outside a room it is an ordinary prompt and passes through untouched.
+// Only a leading tag counts: "@room @claude TEXT" is a plain post, and a tag later in the text is just words. No hooks.json entry: hooks/prompt.js runs
 // handle(input) under mod/prompt.mjs's shim. In: the payload plus `sub_human_origin` and `sub_human_nonce`. An origin
 // counts only with this session's lease nonce, and only a typed one (composer, sdk, bridge; cc CONTRACT
 // prompt-origin-composer) may post: anything that can run node can claim an origin, only a lease reader the nonce.
 // Out: continue:false + "✓ sent" (the person's row stays, the model sees it next turn), or decision:block +
 // suppressOriginalPrompt (refused text never reaches the model). Failure: no origin, a bad nonce or no seat
-// refuses, and the person types it again. In the orch, a typed prompt is refused (it takes no typed input); with
-// no origin it runs, so a reload never loses the orch's wakes. "working" presence is written here only when no
+// refuses, and the person types it again. In the room's Claude, a typed prompt is refused (it takes no typed input); with
+// no origin it runs, so a reload never loses the room Claude's wakes. "working" presence is written here only when no
 // origin came (with one, mod/prompt.mjs has written it).
 // A post the store refuses (RATE, AUTH, or OFFLINE in a room hosted elsewhere whose link daemon is gone) blocks the
 // prompt with the reason. In a room hosted elsewhere whose link is down, the daemon queues the signed post instead
@@ -27,6 +29,14 @@ function parse(prompt) {
   if (prompt.startsWith('@room ')) return prompt.slice('@room '.length);
   if (prompt === '@room') return '';
   if (prompt.startsWith('room:')) { const t = prompt.slice('room:'.length); return t.startsWith(' ') ? t.slice(1) : t; }
+  return null;
+}
+
+/** "@claude TEXT" -> TEXT (posted to=claude: a wake for the room's Claude); anything else null. A copy of
+ * mod/core/prompt.mjs parseClaude (test/mod-core.test.js asserts they agree). */
+function parseClaude(prompt) {
+  if (prompt.startsWith('@claude ')) return prompt.slice('@claude '.length);
+  if (prompt === '@claude') return '';
   return null;
 }
 
@@ -66,16 +76,17 @@ function lastAssistantText(entries, promptId) {
 
 const DRAFT_MIN = 20; // shorter texts ("ok", "yes, ship it") show up in Claude's prose by chance
 
-/** True when the posted text is Claude's wording: "@room TEXT" in its last message, or a longer TEXT verbatim. */
+/** True when the posted text is Claude's wording: "@room TEXT" or "@claude TEXT" in its last message, or a longer
+ * TEXT verbatim. */
 function draftedByAgent(text, assistant) {
   const t = oneLine(text), a = oneLine(assistant);
   if (!t || !a) return false;
-  return a.includes('@room ' + t) || a.includes('room:' + t) || (t.length >= DRAFT_MIN && a.includes(t));
+  return a.includes('@room ' + t) || a.includes('room:' + t) || a.includes('@claude ' + t) || (t.length >= DRAFT_MIN && a.includes(t));
 }
 
-// ---------- the orch takes no typed input ----------
+// ---------- the room's Claude takes no typed input ----------
 const LAUNCH = /^\/(?:sub-human:)?sub-human(?:\s|$)/;
-const orchHint = me => `the orch takes no typed input; use @room or ask your Claude to message ${identity.address(me.name, me.code)}`;
+const roomClaudeHint = me => `the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message ${identity.address(me.name, me.code)}`;
 
 /** True when no earlier prompt of this session is in its transcript (a fresh session has none, or no file). */
 function firstPrompt(input) {
@@ -83,10 +94,10 @@ function firstPrompt(input) {
   return !es.some(e => e && e.type === 'user' && !e.isMeta && e.promptId && e.promptId !== input.prompt_id && !e.isSidechain);
 }
 
-/** For an orch session: null when the prompt may run (anything not typed, the launch command), else the refusal. */
-function orchRefusal(me, input, prompt, origin) {
+/** For a room Claude session: null when the prompt may run (anything not typed, the launch command), else the refusal. */
+function roomClaudeRefusal(me, input, prompt, origin) {
   if (origin === null || !TYPED_ORIGINS.has(origin)) return null;
-  return LAUNCH.test(prompt) && firstPrompt(input) ? null : orchHint(me);
+  return LAUNCH.test(prompt) && firstPrompt(input) ? null : roomClaudeHint(me);
 }
 
 /** The same words as the mod's GATE_FAILED (test/mod-core-prompt.test.js): either way the person types it again. */
@@ -107,25 +118,28 @@ function handle(input) {
   const claimed = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
   toPhone = claimed === 'bridge';
   const raw = prompt.startsWith('/') ? null : parse(prompt);
+  const wake = raw === null && !prompt.startsWith('/') ? parseClaude(prompt) : null;
+  const tag = wake !== null ? '@claude' : '@room';
   const me = whoami(input);
-  if (me && me.role === 'orch') { // the origin unchecked: a forged one here only refuses more
-    const refusal = orchRefusal(me, input, prompt, claimed);
+  if (me && me.role === 'claude') { // the origin unchecked: a forged one here only refuses more
+    const refusal = roomClaudeRefusal(me, input, prompt, claimed);
     if (refusal) return block(refusal);
   }
   if (me && claimed === null) presence(me, 'working');
-  if (raw === null) return;
+  if (raw === null && (wake === null || !me)) return; // outside a room, @claude is an ordinary prompt
 
   // not in a room first: typing it again would not help there
   if (!me) return block('✗ not posted: this session is not in a room. Join one first with /sub-human NAME [CODE].');
   const origin = claimed !== null && attested(input) ? claimed : null;
-  if (origin === null) return block(NO_ORIGIN);
+  if (origin === null) return block(NO_ORIGIN.replace('@room', tag));
   if (!TYPED_ORIGINS.has(origin)) {
-    return block(`✗ not posted: this prompt was not typed by you (origin "${origin.slice(0, 40)}"). Only your own typed @room posts as your words.`);
+    return block(`✗ not posted: this prompt was not typed by you (origin "${origin.slice(0, 40)}"). Only your own typed ${tag} posts as your words.`);
   }
   // A long paste arrives wrapped in <pasted_content>: post the person's text, marked normalized.
-  const { text, normalized } = cc.unwrapPasted(raw);
-  if (!text.trim()) return block('✗ not posted: there is nothing after @room.');
+  const { text, normalized } = cc.unwrapPasted(raw !== null ? raw : wake);
+  if (!text.trim()) return block(`✗ not posted: there is nothing after ${tag}.`);
   const entry = { kind: 'say', text };
+  if (wake !== null) entry.to = identity.ROOM_CLAUDE;
   if (normalized) entry.normalized = true;
   if (draftedByAgent(text, lastAssistantText(transcriptTail(input.transcript_path), input.prompt_id))) entry.drafted = 'agent';
   let placed;
@@ -147,7 +161,7 @@ function handle(input) {
   out({ continue: false, stopReason: sent, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 }
 
-module.exports = { handle, parse, TYPED_ORIGINS, NO_ORIGIN };
+module.exports = { handle, parse, parseClaude, TYPED_ORIGINS, NO_ORIGIN };
 
-// hooks/prompt.js calls handle(); the direct run is for the tests and scripts/demo-lib.js synthetic-orch-prompt.
+// hooks/prompt.js calls handle(); the direct run is for the tests and scripts/demo-lib.js synthetic-claude-prompt.
 if (require.main === module) run(handle);
