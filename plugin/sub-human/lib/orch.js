@@ -153,6 +153,7 @@ function claimSpawn(code, { now = clock.now(), by = null } = {}) {
   if (!identity.isHost(code)) return null;
   let out = null;
   identity.updateOrch(code, o => {
+    out = null; // fn may run again (a store that compares and sets): only the attempt that lands claims
     if (o && o.closing) return null;
     if (!needsSpawnRec(o, now)) return null;
     const claim = crypto.randomBytes(6).toString('hex');
