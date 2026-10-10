@@ -28,7 +28,7 @@ import type { MessagePort } from 'node:worker_threads';
 import * as config from '../config.ts';
 import { RoomError } from '../room/validate.ts';
 import { createRequire } from 'node:module';
-import type { CodedError } from './types-rest.ts';
+import type { CodedError } from './types-core.ts';
 
 // The worker loads its handler by path (createRequire: require(esm) is synchronous and caches like an import).
 const require = createRequire(import.meta.url);

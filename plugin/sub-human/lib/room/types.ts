@@ -10,6 +10,7 @@
 import type { KeyObject } from 'node:crypto';
 import type nodeFs from 'node:fs';
 import type { LockOpts } from '../lock.ts';
+import type { LinkSpec } from '../remote/types-rest.ts';
 
 // ---------- the log entry ----------
 
@@ -162,14 +163,14 @@ export interface EntryFields extends TaskFields {
  * The signed envelope (sig v2, envelope.ts sign): what a via=human payload carries beside its fields. sig covers the
  * payload without id, at, prev and sig (envelope.ts signable), so it stays valid wherever the line is placed.
  */
-export interface Envelope {
+export type Envelope = {
   room: string;
   from: string;
   nonce: string;
   ts: number;
   sigv: number;
   sig: string;
-}
+};
 
 /**
  * An entry before it is placed (store.ts fieldsOf, toPayload, admit): checked fields plus from and via. A via=human
@@ -289,13 +290,11 @@ export interface SeatRecord {
   cwd?: string | null;
 }
 
-/** members.join's answer. code: a mirror's RoomError code when the host refused. */
-export interface JoinResult {
-  ok: boolean;
-  rejoin?: boolean;
-  error?: string;
-  code?: string;
-}
+/** members.join's answer: joined (rejoin: the seat was in the room before), or refused with why. code: a mirror's
+ * RoomError code when the host refused. */
+export type JoinResult =
+  | { ok: true; rejoin?: boolean; error?: undefined; code?: undefined }
+  | { ok: false; error: string; code?: string; rejoin?: undefined };
 
 /** A seat's presence state (members.ts PRESENCE_STATES). */
 export type PresenceState = 'working' | 'idle' | 'permission' | 'error';
@@ -488,22 +487,16 @@ export type Lane = 'push' | 'pull' | 'none';
 
 // ---------- links (links.ts, link-state.ts) ----------
 
-/** links.ts Link.transport: how the daemon reaches the host's server (lib/remote/link.ts transportOf). */
-export interface LinkTransport {
-  kind: string;
-  /** a login link (`/sub-human join USER@HOST ROOM`): the person's own ssh login admits it */
-  login?: boolean;
-  [field: string]: unknown;
-}
-
 /** A link record, <home>/links/<code>.json (links.ts documents each field). */
 export interface Link {
   code: string;
-  transport: LinkTransport;
+  /** how the daemon reaches the host's server (lib/remote/link.ts transportOf); a login link (`/sub-human join
+   * USER@HOST ROOM`) is an ssh spec with login: the person's own ssh login admits it */
+  transport: LinkSpec;
   token?: string;
   invite?: string;
   pin?: string;
-  enroll?: { pin: string; name?: string; kind?: string; attempts?: number };
+  enroll?: { pin: string; name: string; kind?: string; attempts?: number };
   awaiting?: { at: string; ref: string; check: string; expires_at: string };
   refused?: { at: string; reason: string };
   request?: unknown;

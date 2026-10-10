@@ -57,7 +57,10 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import type { AuthorizedKeysScan, Check, CheckStatus, DoctorOptions, HelloReply, HelloResult, KeyLine, LinkFile, LinkReport, LinkStateView, LinkTransport, ProtoSpan, Reach, Report } from './types.ts';
+import type { AuthorizedKeysScan, Check, CheckStatus, DoctorOptions, HelloReply, HelloProbe, KeyLine, LinkReport, LinkStateView, LinkTransportView, Reach, Report } from './types.ts';
+import type { Link } from '../room/types.ts';
+import type { ProtoRange } from '../remote/types-core.ts';
+import type { LinkSpec, Transport } from '../remote/types-rest.ts';
 const require = createRequire(import.meta.url);
 
 const LIB = path.join(import.meta.dirname, '..');
@@ -82,21 +85,7 @@ interface Libs {
   'remote/transports/index.ts': typeof import('../remote/transports/index.ts');
   'remote/transports/ssh.ts': typeof import('../remote/transports/ssh.ts');
 }
-/** A transport as the wss/ws probe drives it (lib/remote/transports/index.ts open). */
-interface Transport {
-  onFrame(fn: (f: { id?: unknown; result?: HelloReply; error?: { code: string; message: string } }) => void): void;
-  onClose(fn: () => void): void;
-  send(frame: unknown): void;
-  close(): void;
-}
-/** lib/remote/listener.ts status(): the rooms it serves, as its state file has them. */
-interface ListenerStatus {
-  running: boolean;
-  pid?: number;
-  port?: number;
-  conns?: number;
-  rooms: Record<string, { url?: string; path?: string; mode?: string; tailscale?: { funnel?: boolean; bin?: string; path: string } }>;
-}
+type ListenerStatus = import('../remote/listener.ts').ListenStatus;
 /** A Claude Code settings file, as the hooks and Remote Control checks read it. */
 interface Settings {
   disableAllHooks?: unknown;
@@ -254,7 +243,7 @@ const lastLogError = (code: string): string[] => {
  * ssh's own complaint, as a hint (the link's own key the host lets in, `sub-human prime` for an MFA bastion, `--via`
  * for a jump host). link: the link file's {code, request?, transport} when known.
  */
-function sshHint(stderr: unknown, link: { code?: string; request?: unknown; transport?: LinkTransport } = {}): string | null {
+function sshHint(stderr: unknown, link: { code?: string; request?: unknown; transport?: LinkTransportView } = {}): string | null {
   const s = String(stderr || '');
   const code = link.code || 'CODE';
   const t = link.transport || {};
@@ -285,7 +274,7 @@ function sshHint(stderr: unknown, link: { code?: string; request?: unknown; tran
 }
 
 /** The hello a link's daemon would say, without a credential: the server answers it and nothing else. */
-function helloProbe(spec: LinkTransport, code: string, { timeoutMs = DOCTOR_HELLO_MS, env = process.env }: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): Promise<HelloResult> {
+function helloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_HELLO_MS, env = process.env }: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): Promise<HelloProbe> {
   const protocol = lib('remote/protocol.ts');
   let cmd: { argv: string[]; env: NodeJS.ProcessEnv } | undefined;
   try {
@@ -301,11 +290,11 @@ function helloProbe(spec: LinkTransport, code: string, { timeoutMs = DOCTOR_HELL
   // v 1: the least this probe needs, so a host before 0.4 (which checks v === 1 and knows no proto) answers too
   const params = { v: 1, proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.ts').machineId() };
   const argv = cmd.argv, childEnv = cmd.env;
-  return new Promise<HelloResult>(resolve => {
+  return new Promise<HelloProbe>(resolve => {
     const t0 = Date.now();
     let stderr = '', done = false;
     const child = spawn(argv[0], argv.slice(1), { env: childEnv, stdio: ['pipe', 'pipe', 'pipe'] });
-    const finish = (r: Omit<HelloResult, 'ms'>) => {
+    const finish = (r: Omit<HelloProbe, 'ms'>) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
@@ -318,7 +307,7 @@ function helloProbe(spec: LinkTransport, code: string, { timeoutMs = DOCTOR_HELL
       for (const f of dec.push(chunk)) {
         if (f.id !== 1) continue;
         if (f.error) finish({ ok: false, error: `${f.error.code}: ${f.error.message}`, code: f.error.code });
-        else finish({ ok: true, reply: f.result });
+        else finish({ ok: true, reply: f.result as HelloReply }); // the server's JSON, read defensively
       }
     });
     child.stderr.on('data', (d: Buffer) => { stderr += d; });
@@ -330,7 +319,7 @@ function helloProbe(spec: LinkTransport, code: string, { timeoutMs = DOCTOR_HELL
 }
 
 /** A wss/ws link's hello without a credential: the WebSocket, the Noise handshake pinned to the link's key, then hello. */
-async function webHelloProbe(spec: LinkTransport, code: string, { timeoutMs = DOCTOR_HELLO_MS } = {}): Promise<HelloResult> {
+async function webHelloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_HELLO_MS } = {}): Promise<HelloProbe> {
   const t0 = Date.now();
   const protocol = lib('remote/protocol.ts');
   let t: Transport | null = null;
@@ -339,7 +328,7 @@ async function webHelloProbe(spec: LinkTransport, code: string, { timeoutMs = DO
     const tr: Transport = await Promise.race([lib('remote/transports/index.ts').open(spec, { code }), deadline]);
     t = tr;
     const reply = await Promise.race([new Promise<HelloReply | undefined>((ok, no) => {
-      tr.onFrame(f => { if (f.id === 1) (f.error ? no(Object.assign(new Error(`${f.error.code}: ${f.error.message}`), { code: f.error.code })) : ok(f.result)); });
+      tr.onFrame(f => { if (f.id === 1) (f.error ? no(Object.assign(new Error(`${f.error.code}: ${f.error.message}`), { code: f.error.code })) : ok(f.result as HelloReply)); }); // as: the server's JSON, read defensively
       tr.onClose(() => no(new Error('the listener closed before answering')));
       tr.send(protocol.request(1, 'hello', { v: 1, proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.ts').machineId() }));
     }), deadline]);
@@ -402,27 +391,28 @@ function replyTime(reply: HelloReply | null): number | null {
 
 async function diagnoseLink(code: string, { quick, timeoutMs, env }: { quick: boolean; timeoutMs: number; env: NodeJS.ProcessEnv }): Promise<LinkReport> {
   const links = lib('room/links.ts');
-  const l: LinkFile = links.get(code) || {};
-  const spec: LinkTransport = l.transport || {};
-  let describe = spec.kind || '?';
-  try { describe = lib('remote/transports/index.ts').describe(spec); } catch { /* kind unknown */ }
+  const l: Partial<Link> = links.get(code) || {};
+  const spec: LinkSpec | undefined = l.transport;
+  const t: LinkTransportView = spec || {}; // what the report shows of it
+  let describe = t.kind || '?';
+  try { if (spec) describe = lib('remote/transports/index.ts').describe(spec); } catch { /* kind unknown */ }
   let daemon: LinkReport['daemon'] = { running: false };
   try { const s = lib('remote/link.ts').status(code); daemon = { running: !!s.running, pid: s.pid || null }; } catch { /* no mirror */ }
-  const st = (lib('room/link-state.ts').read(code) as LinkStateView | null) || { state: 'offline' };
+  const st: LinkStateView = lib('room/link-state.ts').read(code) || { state: 'offline' };
   if (st.pid) daemon = { running: lib('io.ts').isAlive(st.pid), pid: st.pid }; // the state record's own pid wins
   const recent = lastLogError(code);
-  const out: LinkReport = { code, transport: { kind: spec.kind, describe, user: spec.user, host: spec.host, port: spec.port, home: spec.home, ...(spec.login === true ? { login: true } : {}) },
-    credential: l.token ? 'token' : l.enroll ? 'invite PIN (not checked by the host yet)' : l.awaiting ? 'waiting for the host person to let it in' : l.invite ? 'invite (not redeemed yet)' : spec.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent,
+  const out: LinkReport = { code, transport: { kind: t.kind, describe, user: t.user, host: t.host, port: t.port, home: t.home, ...(t.login === true ? { login: true } : {}) },
+    credential: l.token ? 'token' : l.enroll ? 'invite PIN (not checked by the host yet)' : l.awaiting ? 'waiting for the host person to let it in' : l.invite ? 'invite (not redeemed yet)' : t.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent,
     // an ssh link whose key the new host has not let in yet (a handoff's follower; no secret in it)
     ...(!l.token && typeof l.request === 'string' ? { request: l.request } : {}),
     // the room's host moved (lib/handoff.ts): the link file was re-pointed at the new host; reached once a token came
     moved: l.moved ? { epoch: l.moved.epoch, host: l.moved.host, locator: l.moved.locator, demoted: !!l.moved.demoted, reached: !!l.moved.reached_at } : null };
   if (!quick) {
-    const r = await helloProbe(spec, code, { timeoutMs, env });
+    const r: HelloProbe = spec ? await helloProbe(spec, code, { timeoutMs, env }) : { ok: false, ms: 0, skipped: true, error: 'the link file names no transport' };
     const reply: HelloReply = r.reply || {};
     const hostTime = replyTime(reply);
     out.reach = {
-      ok: r.ok, ms: r.ms, error: r.error, skipped: !!r.skipped, hint: r.ok ? null : (spec.kind === 'ssh' ? (spec.login === true && lib('remote/transports/ssh.ts').loginFailure(r.stderr, spec, code)) || sshHint(r.stderr, { code, request: l.request, transport: spec }) : null),
+      ok: r.ok, ms: r.ms, error: r.error, skipped: !!r.skipped, hint: r.ok ? null : (spec && spec.kind === 'ssh' ? (spec.login === true && lib('remote/transports/ssh.ts').loginFailure(r.stderr ?? '', spec, code)) || sshHint(r.stderr, { code, request: l.request, transport: spec }) : null),
       stderr: r.stderr || '',
       protocol: r.ok ? { v: reply.v, proto: reply.proto || null, server: typeof reply.server === 'string' ? reply.server : null } : null,
       skewMs: r.ok && hostTime !== null ? Math.round(hostTime - (r.t0! + r.t1!) / 2) : null, // an answer carries t0 and t1
@@ -460,7 +450,7 @@ function linkChecks(d: LinkReport): Check[] {
   else if (!d.daemon.running && d.state.state !== 'online') fix = 'the connection is not running: type /sub-human in your session to start it again';
   if (d.reach) {
     const r = d.reach;
-    const span = (x: ProtoSpan | null | undefined) => (x && x.min !== undefined ? (x.min === x.max ? `${x.min}` : `${x.min}-${x.max}`) : '?');
+    const span = (x: ProtoRange | null | undefined) => (x && x.min !== undefined ? (x.min === x.max ? `${x.min}` : `${x.min}-${x.max}`) : '?');
     const local = `${span(protocol.PROTO)} (sub-human ${protocol.PLUGIN_VERSION})`;
     if (r.skipped) bits.push(r.error);
     else if (r.ok) {
@@ -570,7 +560,7 @@ function checkRoomClaudes({ now = Date.now() } = {}): Check[] {
     if (!o || !o.job || o.job === 'pending' || o.stopped_at || o.closing) continue;
     const since = Date.parse(o.spawned_at || '') || now;
     const bound = !!o.pid && !o.left_at && (o.machine || identity.machineId()) === identity.machineId();
-    if (bound && identity.seatAlive({ name: 'claude', ...o })) {
+    if (bound && identity.seatAlive(Object.assign({ name: 'claude' }, o))) {
       out.push(check(`room-claude:${code}`, 'pass', `room's Claude ${code}`, `bound and live: job ${o.job}, pid ${o.pid}`));
       continue;
     }
@@ -587,7 +577,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
   const akFile = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
   const scan = scanAuthorizedKeys(akFile);
   const codes = lib('room/links.ts').list();
-  const sshLinks = codes.some(c => (((lib('room/links.ts').get(c) || {}) as LinkFile).transport || {}).kind === 'ssh');
+  const sshLinks = codes.some(c => lib('room/links.ts').get(c)?.transport?.kind === 'ssh');
   checks.push(checkShim({ needed: scan.lines.some(l => l.shimmed) }));
   checks.push(checkAuthorizedKeys(scan));
   const sshV = sshVersion();

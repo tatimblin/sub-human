@@ -68,16 +68,14 @@ import * as envelope from '../room/envelope.ts';
 import { RoomError, hash12 } from '../room/store.ts';
 import { FOLLOW_POLL_MS, PROPOSAL_FILE_MAX, LINK_SILENT_MS, envMs } from '../config.ts';
 import type {
-  CodedError, DecodedFrame, ErrorFrame, EventData, EventName, FrameId, FrameTransport, HandoffAsk, IncomingRequest, LinkRecord,
-  MovedEventData,
-  MemberLike, Op, OpParams, OpResults, ProtoRange, ServedStore,
+  CodedError, DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpParams, OpResults, ProtoRange,
 } from './types-core.ts';
+import type { Transport } from './types-rest.ts';
+import type { Members, RoomStore } from '../room/types.ts';
 
 type Log = (msg: string) => void;
 /** What hello's credential gives: the link (null: answered, but still unauthenticated) and a new token, once. */
 interface Credential { link: LinkRecord | null; token?: string }
-/** A private event for this link (lib/handoff.ts streamEvent); end: the stream ends after it. */
-type PrivateEvent = { ev: 'handoff'; data: HandoffAsk; end?: undefined } | { ev: 'moved'; data: MovedEventData; end: true };
 /** A subscribe stream of a session. */
 interface Stream { tick(): void; stop(): void; end(reason: EventData['end']['reason'], message?: string): void }
 /** Each op's handler: the session, the request's params (as the peer sent them) and its id. */
@@ -87,7 +85,7 @@ const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const ANSWERS = new Set(['signoff', 'objection']);
 const WRITES = new Set(['join', 'leave', 'beat', 'append', 'handoff.accept', 'handoff.refuse']);
 const WHILE_MOVED = new Set(['hello', 'subscribe', 'blob.get', 'ping']); // what a host the room moved away from still serves
-const epochOf = (store: ServedStore): number => (typeof store.hostState === 'function' ? store.hostState().epoch : 0);
+const epochOf = (store: RoomStore): number => store.hostState().epoch;
 const stale = (msg: string): CodedError => new RoomError('STALE', msg);
 const WIRE_CODES: Set<string> = new Set(Object.values(protocol.CODES));
 const authError = (msg: string): CodedError => new RoomError('AUTH', msg);
@@ -129,7 +127,7 @@ function viaLogin(s: Session, machine: string): Credential {
   return r;
 }
 
-function known(store: ServedStore, token: unknown, linkId: string | null): Credential {
+function known(store: RoomStore, token: unknown, linkId: string | null): Credential {
   const link = auth.verifyToken(store, token);
   if (!link) throw authError('unknown link token; ask the host for a new invite');
   if (linkId && link.id !== linkId) throw authError(`this token is not link ${linkId}'s`);
@@ -138,12 +136,12 @@ function known(store: ServedStore, token: unknown, linkId: string | null): Crede
 
 // ---------- the subscribe stream ----------
 /** The host documents a mirror holds, as other machines may see them: key -> value. */
-function docsOf(store: ServedStore): Map<string, unknown> {
+function docsOf(store: RoomStore): Map<string, unknown> {
   const docs = new Map<string, unknown>([['members', members.publicView(store.members.read())], ['tasks', store.kv.get('tasks')]]);
   for (const k of store.kv.list('presence/')) docs.set(k, store.kv.get(k));
   return docs;
 }
-const stopped = (ms: Record<string, MemberLike>): boolean => !!(ms.claude && ms.claude.stopped_at);
+const stopped = (ms: Members): boolean => !!(ms.claude && ms.claude.stopped_at);
 
 /** Stream subscribe request `id`'s events from the line after `after`. Returns {tick() (poll now), stop()}. */
 function stream(s: Session, id: FrameId | undefined, after: number): Stream {
@@ -168,9 +166,9 @@ function stream(s: Session, id: FrameId | undefined, after: number): Stream {
     for (const e of entries) if (e.id > priv.lastId) priv.lastId = e.id;
     const docs = docsOf(s.store);
     sendDocs(docs);
-    const p = handoff.streamEvent(s.store, s.link, priv) as PrivateEvent | null;
+    const p = handoff.streamEvent(s.store, s.link, priv);
     if (p) { send(p.ev, p.data); if (p.end) return end('moved'); }
-    const now = stopped(docs.get('members') as Record<string, MemberLike>);
+    const now = stopped(docs.get('members') as Members); // docsOf's publicView
     if (now && !wasStopped) return end('closed');
     wasStopped = now;
   }
@@ -241,7 +239,7 @@ const OPS: OpHandlers = {
     own(s, payload.from);
     if (payload.via === 'system') throw authError('a link never writes via "system"; the host writes the room\'s own entries');
     const entry = s.store.place(payload);
-    if (ANSWERS.has(entry.kind)) {
+    if (ANSWERS.has(entry.kind) && entry.proposal_hash) {
       try { proposal.decide(s.store.code, entry.proposal_hash); } catch (e) { s.log(`sub-human serve: decide: ${e && (e as Error).stack || e}`); }
     }
     return { entry };
@@ -262,12 +260,12 @@ const OPS: OpHandlers = {
   },
 
   'handoff.accept'(s, params) {
-    const r = handoff.serverAccept(s.store, s.link, params);
+    const r = handoff.serverAccept(s.store, s.link!, params); // s.link: run() lets no op but hello in without it
     s.later = () => handoff.afterMoved(s.store, { job: r.job });
     return { ok: true, epoch: r.epoch, entry: r.entry };
   },
 
-  'handoff.refuse'(s, params) { return handoff.serverRefuse(s.store, s.link, params); },
+  'handoff.refuse'(s, params) { return handoff.serverRefuse(s.store, s.link!, params); }, // s.link: as above
 
   'blob.put'(s, { name, bytes }) {
     if (typeof bytes !== 'string') throw invalid('blob.put needs {name, bytes: base64}');
@@ -283,9 +281,9 @@ const OPS: OpHandlers = {
 
 // ---------- the session ----------
 class Session {
-  transport: FrameTransport;
+  transport: Transport;
   login: boolean;
-  store: ServedStore;
+  store: RoomStore;
   log: Log;
   linkId: string | null;
   proto: ProtoRange;
@@ -297,7 +295,7 @@ class Session {
   silentMs: number;
   heard: number;
   silence: NodeJS.Timeout | null;
-  constructor(transport: FrameTransport, store: ServedStore, log: Log, linkId: string | null | undefined, silentMs: number, {
+  constructor(transport: Transport, store: RoomStore, log: Log, linkId: string | null | undefined, silentMs: number, {
     proto = protocol.PROTO, version = protocol.PLUGIN_VERSION, login = false,
   }: { proto?: ProtoRange; version?: string; login?: boolean } = {}) {
     this.transport = transport;
@@ -384,8 +382,8 @@ class Session {
  * @param {{store: import('../room/store.ts').FsRoomStore, log?: (...a: any[]) => void, linkId?: string, login?: boolean, silentMs?: number, proto?: {min: number, max: number}, version?: string}} ctx
  * @returns {{close(): void}}
  */
-function serve(transport: FrameTransport, { store, log = () => {}, linkId, login = false, silentMs = envMs('SUB_HUMAN_LINK_SILENT_MS', LINK_SILENT_MS), proto, version }: {
-  store: ServedStore; log?: Log; linkId?: string; login?: boolean; silentMs?: number; proto?: ProtoRange; version?: string;
+function serve(transport: Transport, { store, log = () => {}, linkId, login = false, silentMs = envMs('SUB_HUMAN_LINK_SILENT_MS', LINK_SILENT_MS), proto, version }: {
+  store: RoomStore; log?: Log; linkId?: string; login?: boolean; silentMs?: number; proto?: ProtoRange; version?: string;
 }): { close(): void; revoked(): boolean } {
   const session = new Session(transport, store, log, linkId, silentMs, { proto, version, login });
   return { close() { session.stop(); transport.close(); }, revoked: () => session.revoked() };

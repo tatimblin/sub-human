@@ -44,19 +44,8 @@
 import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
 import { LINK_CALL_MS } from '../config.ts';
-import type { CodedError, Transport, WireFrame } from './types-rest.ts';
-
-/** A version range (lib/remote/protocol.ts PROTO). */
-interface ProtoRange {
-  min: number;
-  max: number;
-}
-
-/** A stream's event, as the client hands it on. */
-export interface StreamEvent {
-  ev: string;
-  data: any; // any: the event's payload (entry, doc, end, …), read by the subscriber
-}
+import type { CodedError, DecodedFrame, ProtoRange, StreamEvent } from './types-core.ts';
+import type { Transport } from './types-rest.ts';
 
 /** The server's caps, from its hello. */
 interface ServerCaps {
@@ -82,7 +71,8 @@ interface HelloResult {
 }
 
 export interface ConnectOpts {
-  machine: string;
+  /** this machine's id (home.machineId; null when it could not be read: the host refuses the hello) */
+  machine: string | null;
   token?: string;
   invite?: string;
   pin?: string;
@@ -124,7 +114,7 @@ class Client {
     transport.onClose(() => this._closed());
   }
 
-  _receive(f: WireFrame): void {
+  _receive(f: DecodedFrame): void {
     if (protocol.isEvent(f)) return this._event(f);
     const p = protocol.isReply(f) && this.pending.get(f.id as number);
     if (!p) return; // abandoned at its deadline, or not ours
@@ -134,11 +124,11 @@ class Client {
     else p.resolve(f.result);
   }
 
-  _event({ id, ev, data }: WireFrame): void {
+  _event({ id, ev, data }: DecodedFrame): void {
     const fn = this.streams.get(id as number);
     if (!fn) return;
     if (ev === 'end') this.streams.delete(id as number);
-    fn({ ev: ev as string, data });
+    fn({ ev, data } as StreamEvent); // the host's event, as it sent it: the subscriber checks what it reads
   }
 
   _closed(): void {
@@ -237,3 +227,4 @@ function olderHost(err: unknown, me: { version: string; proto: ProtoRange }): Er
 }
 
 export { connect };
+export type { Client };

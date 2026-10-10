@@ -81,33 +81,23 @@ import * as config from './config.ts';
 import * as identityMod from './identity.ts';
 import * as ioMod from './io.ts';
 import { createRequire } from 'node:module';
-import type { Card, HandoffAsk, HandoffDoc, HostState, LogEntry, MemberRec, Members, NewEntry, Seat } from './types-app.ts';
+import type { Card, HandoffAskDoc, HandoffDoc } from './types-app.ts';
+import type { Entry, EntryInput, HostProof, HostState, Link, Member, Members } from './room/types.ts';
+import type { HandoffAsk, LinkRecord, MovedEventData, PrivateEvent } from './remote/types-core.ts';
+import type { LinkSpec } from './remote/types-rest.ts';
+import type { MirrorRoomStore } from './room/store-mirror.ts';
+import type { Identity } from './identity.ts';
 
 const require = createRequire(import.meta.url);
 
 /** A room's store (lib/room/store.ts open): the host's FsRoomStore or a mirror's. */
 type Store = ReturnType<typeof store.open>;
 /** A link the host's server knows (lib/remote/auth.ts, the host document remote/links): its machine and seats. */
-interface LinkRec { machine: string, seats?: string[] }
+type LinkRec = Pick<LinkRecord, 'machine' | 'seats'>;
 /** One signed payload (lib/room/envelope.ts): the hook's seat key signs it. */
-type Sign = (payload: Record<string, unknown>) => Record<string, unknown>;
-/** The link file of a room this machine follows (lib/room/links.ts). */
-interface LinkFile {
-  code?: string;
-  transport?: unknown;
-  invite?: string;
-  token?: string;
-  request?: unknown;
-  created_at?: string;
-  rebind?: boolean;
-  moved?: { epoch?: number, host?: string, locator?: string, at?: string, demoted?: boolean };
-}
+type Sign = (payload: Record<string, unknown>) => HostProof;
 /** followLink: the link file's transport (null: a locator this machine cannot use) and the ssh admit request. */
-interface Follow { transport: unknown, request: unknown }
-/** A private stream event for one link (streamEvent). */
-type StreamEvent = { ev: 'handoff', data: HandoffAsk, end?: undefined } | { ev: 'moved', data: Partial<MovedData>, end: true };
-/** The 'moved' event's data, as a mirror's daemon gets it (onMoved). */
-interface MovedData { epoch: number, host: string, machine: string, locator: string, invite: string | null }
+interface Follow { transport: LinkSpec | null, request: string | null }
 interface Minted { machine: string, seats: string[], invite: string, pin?: string }
 
 const HOST_DOC = 'remote/handoff';
@@ -155,7 +145,7 @@ function ask(code: string, { from, to, locator, sign, now = Date.now() }: { from
   const s = store.open(code);
   if (!s.isHost) throw err('HOST_ONLY', `room ${code} is hosted on another machine; only its host hands it off`);
   if (movedAway(s)) throw err('STALE', `room ${code} moved to another machine already`);
-  const m: MemberRec | undefined = (s.members.read() as Members)[to];
+  const m: Member | undefined = (s.members.read() as Members)[to];
   if (!m || m.left_at || m.role === 'claude') throw err('INVALID', `${to} is not in room ${code}`);
   if ((m.machine || machineId()) === machineId()) throw err('INVALID', `${to} is on this machine; a handoff moves the room to another machine`);
   if (!members.seatAlive(m)) throw err('OFFLINE', `${to} is not online; a handoff needs their answer`);
@@ -181,17 +171,18 @@ function movedAway(s: Store): boolean {
 const askView = (d: HandoffAsk): HandoffAsk => ({ id: d.id, from: d.from, to: d.to, epoch: d.epoch, expires_at: d.expires_at, ...(d.locator ? { locator: d.locator } : {}) });
 
 /** sent: what this subscribe stream already sent (the ask's id, the 'moved' event) and the last log id it sent. */
-function streamEvent(s: Store, link: LinkRec | null | undefined, sent: { ask?: string, moved?: boolean, lastId: number }): StreamEvent | null {
+function streamEvent(s: Store, link: LinkRec | null | undefined, sent: { ask?: string, moved?: boolean, lastId: number }): PrivateEvent | null {
   const d = link && hostDoc(s);
   if (!d) return null;
   if (d.state === 'asked' && sent.ask !== d.id && (link.seats || []).includes(d.to) && !expired(d)) {
     sent.ask = d.id;
     return { ev: 'handoff', data: askView(d) };
   }
-  if (d.state === 'moved' && !sent.moved && d.host_id !== undefined && Number.isInteger(d.host_id) && sent.lastId >= d.host_id) {
+  // a moved document carries the new host's machine and locator (serverAccept)
+  if (d.state === 'moved' && !sent.moved && d.host_id !== undefined && Number.isInteger(d.host_id) && sent.lastId >= d.host_id && d.machine && d.locator) {
     sent.moved = true;
     const invite = (!expired({ expires_at: d.invites_expire_at }) && d.invites && d.invites[link.machine]) || null;
-    const data: Partial<MovedData> = { epoch: d.epoch, host: d.to, machine: d.machine, locator: d.locator, invite };
+    const data: MovedEventData = { epoch: d.epoch, host: d.to, machine: d.machine, locator: d.locator, invite };
     return { ev: 'moved', data, end: true };
   }
   return null;
@@ -214,7 +205,7 @@ function checkAccept(s: Store, d: HandoffDoc, proof: Record<string, unknown> | n
 
 /** handoff.accept's params (the next host's hook, over its link). */
 interface AcceptParams { id?: string, accept?: Record<string, unknown>, locator?: string, invites?: unknown }
-function serverAccept(s: Store, link: LinkRec, { id, accept: proof, locator, invites }: AcceptParams = {}, now: number = Date.now()): { entry: LogEntry, epoch: number, job: string | null } {
+function serverAccept(s: Store, link: LinkRec, { id, accept: proof, locator, invites }: AcceptParams = {}, now: number = Date.now()): { entry: Entry, epoch: number, job: string | null } {
   const d = hostDoc(s);
   if (!d || d.id !== id) throw err('INVALID', 'no such handoff is waiting (it was replaced or withdrawn)');
   if (!auth.mayWriteAs(link, d.to)) throw err('AUTH', `${d.to} has not joined over this link`);
@@ -225,12 +216,12 @@ function serverAccept(s: Store, link: LinkRec, { id, accept: proof, locator, inv
   if (!loc || !transportOf(loc)) throw err('INVALID', `"${loc}" is not a locator the host knows`);
   checkAccept(s, d, proof, loc);
   checkInvites(s.code, loc, invites);
-  const entry: LogEntry = s.append({
+  const entry: Entry = s.append({
     kind: 'host_changed', text: `room ${s.code} moved to ${d.to}'s machine; the room's Claude restarts there`,
     epoch: d.epoch, host: d.to, machine: link.machine, locator: loc, accept: proof, ...(d.ask ? { ask: d.ask } : {}),
   }, { via: 'system', from: d.from, system: true });
   let job: string | null = null;
-  identity().updateRoomClaude(s.code, (o: MemberRec | null) => {
+  identity().updateRoomClaude(s.code, (o: Member | null) => {
     if (!o) return null;
     job = o.job && o.job !== 'pending' ? o.job : null;
     return { job: null, claim: undefined, left_at: iso(now), moved_at: iso(now) };
@@ -256,8 +247,9 @@ function serverRefuse(s: Store, link: LinkRec, { id }: { id?: string } = {}, now
 function afterMoved(s: Store, { job }: { job?: string | null } = {}): boolean {
   if (job) { try { (require('./room-claude.ts') as typeof import('./room-claude.ts')).releaseDetached(s.code, job); } catch { /* the job ends with its session */ } }
   const d = hostDoc(s);
-  const invite = d && d.invites && d.invites[machineId()];
-  if (!invite) return false;
+  const me = machineId();
+  const invite = d && d.invites && me ? d.invites[me] : null;
+  if (!d || !invite || !d.locator) return false;
   const f = followLink(s.code, d.locator, invite);
   if (!f.transport) return false;
   links.set(s.code, { code: s.code, transport: f.transport, invite, ...(f.request ? { request: f.request } : {}), created_at: iso(Date.now()), moved: { epoch: d.epoch, host: d.to, locator: d.locator } });
@@ -271,7 +263,7 @@ function onAsk(mirror: Store, data: HandoffAsk | null | undefined): void {
   mirror.kv.set(ASK_DOC, { ...askView(data), at: iso(Date.now()) });
 }
 
-function onMoved(mirror: Store, data: MovedData | null | undefined): { self?: boolean, stop?: boolean, reason: string } {
+function onMoved(mirror: Store, data: MovedEventData | null | undefined): { self?: boolean, stop?: boolean, reason: string } {
   const code: string = mirror.code;
   const h: HostState = mirror.hostState();
   if (!data || h.epoch !== data.epoch || h.machine !== data.machine) {
@@ -280,7 +272,7 @@ function onMoved(mirror: Store, data: MovedData | null | undefined): { self?: bo
   if (data.machine === machineId()) return { self: true, stop: true, reason: `this machine hosts room ${code} now` };
   const how = `ask ${data.host} for an invite (/sub-human invite, there) and type the line it shows here`;
   if (!data.invite) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and no invite came for this machine; ${how}` };
-  const cur: LinkFile = links.get(code) || {};
+  const cur: Partial<Link> = links.get(code) || {};
   let f: Follow;
   try { f = followLink(code, data.locator, data.invite); } catch (e) { return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and this machine could not follow it: ${(e as Error).message}; ${how}` }; }
   if (!f.transport) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine at "${data.locator}", which this machine cannot use; ${how}` };
@@ -301,15 +293,15 @@ function whyOffline(code: string, message: string): string {
 }
 
 // ---------- the target ----------
-function pendingAsk(code: string, name: string, now: number = Date.now()): HandoffAsk | null {
-  let a: HandoffAsk | null;
+function pendingAsk(code: string, name: string, now: number = Date.now()): HandoffAskDoc | null {
+  let a: HandoffAskDoc | null;
   try { a = store.open(code).kv.get(ASK_DOC); } catch { return null; }
   if (!a || a.to !== name || expired(a, now)) return null;
   return a;
 }
 
 function markTold(code: string, id: string): void {
-  try { store.open(code).kv.update(ASK_DOC, (a: HandoffAsk | null) => (a && a.id === id && !a.told_at ? { ...a, told_at: iso(Date.now()) } : undefined)); } catch { /* told again */ }
+  try { store.open(code).kv.update(ASK_DOC, (a: HandoffAskDoc | null) => (a && a.id === id && !a.told_at ? { ...a, told_at: iso(Date.now()) } : undefined)); } catch { /* told again */ }
 }
 
 const question = (a: Pick<HandoffAsk, 'id'>, code: string) => `Host room ${code} on this machine? (handoff ${a.id})`;
@@ -351,10 +343,11 @@ function mintAll(s: Store, locator: string, { pin = false, machines = machinesOf
 }
 
 type Answer = { ok: true, epoch?: number, note?: string } | { ok: false, error: string };
-function accept(me: Pick<Seat, 'code' | 'name'>, { cwd, sign }: { cwd?: string, sign: Sign }): Answer {
+function accept(me: Pick<Identity, 'code' | 'name'>, { cwd, sign }: { cwd?: string, sign: Sign }): Answer {
   const code = me.code;
-  const s = store.open(code);
-  if (s.isHost) return { ok: false, error: `this machine hosts room ${code} already` };
+  const opened = store.open(code);
+  if (opened.isHost) return { ok: false, error: `this machine hosts room ${code} already` };
+  const s = opened as MirrorRoomStore; // not the host: open() gave the room's mirror
   const a = pendingAsk(code, me.name);
   if (!a) return { ok: false, error: 'no handoff is waiting for you (it expired or was withdrawn)' };
   if (s.hostState().epoch + 1 !== a.epoch) return { ok: false, error: 'the room changed hosts since this ask' };
@@ -373,8 +366,8 @@ function accept(me: Pick<Seat, 'code' | 'name'>, { cwd, sign }: { cwd?: string, 
   return { ok: true, epoch: a.epoch, note: takeOver(code, { by: me.name, cwd, epoch: a.epoch }) };
 }
 
-function refuse(me: Pick<Seat, 'code' | 'name'>): Answer {
-  const s = store.open(me.code);
+function refuse(me: Pick<Identity, 'code' | 'name'>): Answer {
+  const s = store.open(me.code) as MirrorRoomStore; // an ask comes only to a mirror (its daemon writes it: onAsk)
   const a = pendingAsk(me.code, me.name);
   if (!a) return { ok: false, error: 'no handoff is waiting for you' };
   try { s.request('handoff.refuse', { id: a.id }); } catch (e) {
@@ -393,7 +386,7 @@ function stopDaemon(code: string): void {
   for (const until = Date.now() + 3000; Date.now() < until && isAlive(st.pid); sleepSync(20));
 }
 
-function takeOver(code: string, { by, cwd, epoch, entry }: { by: string, cwd?: string, epoch?: number, entry?: NewEntry }): string {
+function takeOver(code: string, { by, cwd, epoch, entry }: { by: string, cwd?: string, epoch?: number, entry?: EntryInput }): string {
   const mirror = store.open(code);
   if (!entry) {
     const h: HostState = mirror.hostState();
@@ -421,7 +414,7 @@ function takeOver(code: string, { by, cwd, epoch, entry }: { by: string, cwd?: s
 }
 
 // ---------- promote / demote ----------
-interface Promoted { epoch: number, entry: LogEntry | undefined, invites: Minted[], note: string, last: number }
+interface Promoted { epoch: number, entry: Entry | undefined, invites: Minted[], note: string, last: number }
 function promote(code: string, { name, locator, force = false, cwd, now = Date.now() }: { name: string, locator?: string, force?: boolean, cwd?: string, now?: number }): Promoted {
   const s = store.open(code);
   if (s.isHost) throw err('INVALID', `this machine hosts room ${code} already`);
@@ -430,7 +423,7 @@ function promote(code: string, { name, locator, force = false, cwd, now = Date.n
   const gate = config.envMs('SUB_HUMAN_PROMOTE_OFFLINE_MS', config.PROMOTE_OFFLINE_MS, { allowZero: true });
   const down = now - (Date.parse(st.since || '') || now);
   if (!force && down < gate) throw err('INVALID', `the link to room ${code}'s host has been down ${Math.round(down / 1000)} s; promote only after ${Math.round(gate / 60_000)} min (or --force)`);
-  const m: MemberRec | undefined = (s.members.read() as Members)[name];
+  const m: Member | undefined = (s.members.read() as Members)[name];
   if (!m || m.left_at || m.machine !== machineId()) throw err('INVALID', `${name} isn't in room ${code} on this machine`);
   const full = s.validateChain();
   if (!full.ok || !s.lastId()) throw err('FORK', `this machine's copy of room ${code} is empty or does not chain; it cannot become the room`);
@@ -440,14 +433,14 @@ function promote(code: string, { name, locator, force = false, cwd, now = Date.n
   const epoch = h.epoch + 1;
   const last: number = s.lastId();
   const machines = machinesOf(s);
-  const entry: NewEntry = {
-    kind: 'host_changed', epoch, host: name, machine: machineId(), locator: loc, promoted: true,
+  const entry: EntryInput = {
+    kind: 'host_changed', epoch, host: name, machine: machineId() ?? undefined, locator: loc, promoted: true,
     text: `${name} made this machine the host of room ${code}: the old host was unreachable, and anything it wrote after #${last} isn't in the room`,
   };
   serveWeb(code, loc);
   const note = takeOver(code, { by: name, cwd, entry });
   const invites = mintAll(store.open(code), loc, { pin: true, machines }); // handed out by hand: each with its PIN
-  const placed: LogEntry | undefined = store.open(code).readAll().at(-1);
+  const placed: Entry | undefined = store.open(code).readAll().at(-1);
   return { epoch, entry: placed, invites, note, last };
 }
 
@@ -469,12 +462,12 @@ function demote(code: string, invite: string, pin?: string): { orphan: string | 
     let request: unknown = null;
     if (inv.v === 2) request = hosting().joinInvite({ inv, invite, pin, name }).request || null;
     else links.set(code, { code, transport, invite, created_at: iso(Date.now()) });
-    links.set(code, { ...links.get(code), rebind: true, moved: { locator: inv.locator, host: 'the new host', at: iso(Date.now()) } });
+    links.set(code, { ...links.get(code)!, rebind: true, moved: { locator: inv.locator, host: 'the new host', at: iso(Date.now()) } }); // written just above
     for (const until = Date.now() + 2000; st.running && Date.now() < until && ioMod.isAlive(st.pid);) ioMod.sleepSync(20);
     linkLib().start(code);
     return { orphan: null, request, follower: true };
   }
-  const o: MemberRec | undefined = (s.members.read() as Members).claude;
+  const o: Member | undefined = (s.members.read() as Members).claude;
   if (o && o.job && o.job !== 'pending') { try { (require('./room-claude.ts') as typeof import('./room-claude.ts')).releaseDetached(code, o.job); } catch { /* ends with its session */ } }
   const orphan: string | null = s.setAside();
   for (const k of [auth.LINKS_KEY, auth.INVITES_KEY, HOST_DOC, WORKDIR, 'tasks']) s.kv.delete(k);
@@ -484,7 +477,7 @@ function demote(code: string, invite: string, pin?: string): { orphan: string | 
   if (inv.v === 2) {
     // the joiner's side of an sh2 invite (its PIN; over ssh the link's own key and the pinned host key)
     request = hosting().joinInvite({ inv, invite, pin, name }).request || null;
-    links.set(code, { ...links.get(code), moved });
+    links.set(code, { ...links.get(code)!, moved }); // joinInvite wrote it
   } else links.set(code, { code, transport, invite, created_at: iso(Date.now()), moved });
   store.forget(code);
   linkLib().start(code);

@@ -66,6 +66,14 @@ interface ConnectOptions extends AcceptOptions {
 interface Head { status: number; headers: Record<string, string>; rest: Buffer; line: string }
 /** A WebSocket protocol failure as the 'error' event carries it. */
 type WsError = Error & { code: 'WS_PROTOCOL'; closeCode: number };
+/** A Conn's events and what each carries. */
+type ConnEvents = {
+  message: [data: Buffer, binary: boolean];
+  close: [code: number, reason: string];
+  error: [err: Error];
+  ping: [payload: Buffer];
+  pong: [payload: Buffer];
+};
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_PAYLOAD = 1024 * 1024;
@@ -76,7 +84,7 @@ const OP = { cont: 0, text: 1, binary: 2, close: 8, ping: 9, pong: 10 };
 const acceptKey = (key: unknown): string => crypto.createHash('sha1').update(String(key) + GUID).digest('base64');
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 
-class Conn extends EventEmitter {
+class Conn extends EventEmitter<ConnEvents> {
   socket: WsSocket;
   client: boolean;
   maxPayload: number;

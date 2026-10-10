@@ -146,7 +146,7 @@ const left = (n: number): string => `${n} ${n === 1 ? 'try' : 'tries'} left`;
 const refused = (msg: string, note: string | null): CodedError => Object.assign(new RoomError('AUTH', msg), { note });
 
 /** The PIN check of an sh2 record, inside the invites update: {next record, err to throw after} (err null: it holds). */
-function checkPin(inv: PinInvite, secret: string, pin: unknown, now: number): { next: PinInvite | null; err: CodedError | null } {
+function checkPin(inv: PinInvite, secret: string, pin: unknown, now: number): { next: PinInvite; err: CodedError } | { next: null; err: null } {
   const burnt = { ...inv, burnt_at: iso(now) };
   if (now > Date.parse(inv.expires_at)) {
     return { next: burnt, err: refused('this invite expired (an invite with a PIN lasts 15 minutes); ask the host for a new one', null) };
@@ -194,8 +194,7 @@ function redeemInvite(store: AuthStore, secret: string, { machine, linkId, pin, 
   machine: string; linkId?: string; pin?: unknown; now?: number;
 }): Redeemed {
   const key = sha256(secret);
-  // id and token_sha256 are set below before the record is stored and returned (an error throws first)
-  const link: Omit<LinkRecord, 'id' | 'token_sha256'> & { id: string | null; token_sha256: string | null } = { id: null, token_sha256: null, machine, seats: [], created_at: iso(now) };
+  let id = null as string | null, seats: string[] = []; // (as: set in the update; an error throws first)
   let err = null as CodedError | null, handoff = false, admission = null as AdmissionRecord | null; // (as: set in the update)
   store.kv.update(INVITES_KEY, (cur: Invites | null) => {
     err = null;
@@ -205,7 +204,7 @@ function redeemInvite(store: AuthStore, secret: string, { machine, linkId, pin, 
     if (inv && inv.admission) { // admission, as just set
       const r = admissionCheck(inv, { machine, linkId, now });
       if (r.err) { err = r.err; return r.next ? { ...cur, [key]: r.next } : undefined; }
-      link.id = inv.link;
+      id = inv.link;
       return { ...cur, [key]: { ...inv, used_at: iso(now) } };
     }
     if (inv && inv.burnt_at) throw new RoomError('AUTH', 'this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one');
@@ -219,15 +218,15 @@ function redeemInvite(store: AuthStore, secret: string, { machine, linkId, pin, 
       const r = checkPin(inv, secret, pin, now);
       if (r.err) { err = r.err; return { ...cur, [key]: r.next }; }
     }
-    link.id = inv.link || newLinkId();
-    if (Array.isArray(inv.seats)) link.seats = [...inv.seats];
-    return { ...cur, [key]: { ...inv, used_at: iso(now), link: link.id } };
+    id = inv.link || newLinkId();
+    if (Array.isArray(inv.seats)) seats = [...inv.seats];
+    return { ...cur, [key]: { ...inv, used_at: iso(now), link: id } };
   });
   if (err) throw err;
   const token = random();
-  link.token_sha256 = sha256(token);
-  store.kv.update(LINKS_KEY, (cur: Links | null) => ({ ...cur, [link.id as string]: link }));
-  return { token, link: link as LinkRecord, handoff, ...(admission ? { admission } : {}) };
+  const link: LinkRecord = { id: id!, token_sha256: sha256(token), machine, seats, created_at: iso(now) }; // id: the update ran without err
+  store.kv.update(LINKS_KEY, (cur: Links | null) => ({ ...cur, [link.id]: link }));
+  return { token, link, handoff, ...(admission ? { admission } : {}) };
 }
 
 /** An admission record's redemption (a short invite's joiner, after the host person let it in): {err, next?}. */
@@ -332,8 +331,9 @@ function enrollShort(store: AuthStore, key: string, { tried = [], joiner, now = 
   tried?: string[]; joiner: Joiner; now?: number; admitMs?: number;
 }): { secret: string; id: string; ref: string; expires_at: string } {
   let out = null as { secret: string; id: string; ref: string; expires_at: string } | null; // (as: set in the update)
-  store.kv.update(INVITES_KEY, (cur: Invites) => {
-    const inv = cur && cur[key];
+  store.kv.update(INVITES_KEY, (stored: Invites | null) => {
+    const cur = stored || {};
+    const inv = cur[key];
     if (!shortOpen(inv, now)) throw new RoomError('AUTH', 'this invite was used, burnt or expired meanwhile; ask the host for a new invite');
     const id = newLinkId();
     const secret = crypto.randomBytes(16).toString('base64url');
@@ -475,7 +475,7 @@ function verifyToken(store: AuthStore, token: unknown): LinkRecord | null {
  * @returns {object}
  */
 function bindSeat(store: AuthStore, linkId: string, name: string): LinkRecord {
-  const next: Links | undefined = store.kv.update(LINKS_KEY, (cur: Links | null) => {
+  const next = store.kv.update(LINKS_KEY, (cur: Links | null) => {
     const link = cur && cur[linkId];
     if (!link) throw new RoomError('AUTH', `no link ${linkId} in room ${store.code}`);
     return link.seats.includes(name) ? undefined : { ...cur, [linkId]: { ...link, seats: [...link.seats, name] } };
@@ -608,3 +608,4 @@ export {
   verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof, formatInvite, parseInvite, mintShort, startShort,
   failShort, enrollShort, shortLive, admissions, decideAdmission, lapseAdmissions, WAITING,
 };
+export type { Redeemed, ShortAttempt, Slotted };

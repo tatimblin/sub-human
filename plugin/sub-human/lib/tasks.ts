@@ -36,7 +36,8 @@ import { clip, NAME_RE } from './text.ts';
 import * as config from './config.ts';
 import { humanTrust } from './room/store.ts';
 import * as room from './room.ts';
-import type { LogEntry, Members, Task, TaskReq } from './types-app.ts';
+import type { Task, TaskReq } from './types-app.ts';
+import type { Entry, Members } from './room/types.ts';
 
 /** A task as it arrives to be cleaned (the mirror, a fold, hooks/tasks.ts's native task): loosely shaped. */
 interface RawTask {
@@ -58,7 +59,7 @@ interface ReqFields {
   req: number | null;
   by: string | null;
 }
-type GateResult = { ok: true, req?: LogEntry } | { ok: false, reason: string };
+type GateResult = { ok: true, req?: Entry } | { ok: false, reason: string };
 
 const OPS = ['add', 'claim', 'release', 'done'];
 const SUBJECT_MAX = config.TASK_SUBJECT_MAX;
@@ -101,7 +102,7 @@ function writeList(code: string, tasks: (RawTask | null | undefined)[]): Task[] 
 }
 
 /** The mirror as a pure fold of the log's `task` entries (via system). Each entry is the task's whole state. */
-function fold(entries: (LogEntry | null | undefined)[] | null | undefined): Task[] {
+function fold(entries: (Entry | null | undefined)[] | null | undefined): Task[] {
   const m = new Map<string, RawTask>();
   for (const e of entries || []) {
     if (!e || e.kind !== 'task' || e.via !== 'system' || e.task_id == null) continue;
@@ -112,7 +113,7 @@ function fold(entries: (LogEntry | null | undefined)[] | null | undefined): Task
   return clean([...m.values()]);
 }
 
-const refold = (code: string, entries: LogEntry[]): Task[] => writeList(code, fold(entries));
+const refold = (code: string, entries: Entry[]): Task[] => writeList(code, fold(entries));
 
 /** metadata.req as a log id (a positive integer, or its digits), else null. */
 function metaReq(md: unknown): number | null {
@@ -183,8 +184,8 @@ function requestText(r: TaskReq & { owner?: string | null }): string {
 }
 
 /** A task_req or task entry's task fields (the task id is the entry's task_id). */
-function reqOf(e: Partial<LogEntry> | null | undefined): ReqFields {
-  const t: Partial<LogEntry> = e || {};
+function reqOf(e: Partial<Entry> | null | undefined): ReqFields {
+  const t: Partial<Entry> = e || {};
   return {
     op: t.op, id: t.task_id == null ? null : String(t.task_id), subject: t.subject || null, detail: t.detail || null,
     evidence: t.evidence || null, owner: t.owner || null, status: t.status || null, req: t.req || null,
@@ -200,7 +201,7 @@ function isClosing(code: string): boolean {
   return !!(m.closing || (m.claude && m.claude.closing) || (m._room && m._room.closing));
 }
 
-const cites = (e: LogEntry, reqId: number) => (e.refs || []).includes(reqId) || new RegExp(`(^|[^\\d])#${reqId}(?!\\d)`).test(String(e.text || ''));
+const cites = (e: Entry, reqId: number) => (e.refs || []).includes(reqId) || new RegExp(`(^|[^\\d])#${reqId}(?!\\d)`).test(String(e.text || ''));
 
 /**
  * May the room's Claude complete `task` ({id, subject, owner, req?})? Only on a task_req{op:'done', id} with
@@ -208,7 +209,7 @@ const cites = (e: LogEntry, reqId: number) => (e.refs || []).includes(reqId) || 
  * [human] words citing that request. task.req (the native task's metadata.req) is tried first when it names
  * such a request. The room-open task completes only while the room is closing.
  */
-function gate(code: string, task: (RawTask & { req?: unknown }) | null | undefined, log: LogEntry[] = [], { closing }: { closing?: boolean } = {}): GateResult {
+function gate(code: string, task: (RawTask & { req?: unknown }) | null | undefined, log: Entry[] = [], { closing }: { closing?: boolean } = {}): GateResult {
   const id = String(task && task.id);
   if (isRoomTask(task, code)) {
     const c = closing === undefined ? isClosing(code) : closing;

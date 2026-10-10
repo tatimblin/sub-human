@@ -42,10 +42,8 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { RoomError } from '../room/validate.ts';
 import { CODE_RE } from '../text.ts';
-import * as ioMod from '../io.ts';
-import type { WriteFileAtomic } from './types-rest.ts';
+import * as io from '../io.ts';
 
-const io: { writeFileAtomic: WriteFileAtomic } = ioMod;
 
 const TYPE = 'ssh-ed25519';
 const REQ_PREFIX = 'shk1';

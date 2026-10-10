@@ -1,17 +1,17 @@
 /**
  * plugin/sub-human/lib/remote/types-core.ts: types only (erased at run time) for the remote core: the wire protocol,
- * the host's invite and link records, and what the server and the link daemon need from modules typed elsewhere.
+ * the host's invite and link records, and the link daemon's records.
  *
  *   wire protocol (lib/remote/protocol.ts)   frames (RequestFrame, ReplyFrame, EventFrame: discriminated on op / ev),
  *                                            each op's params (OpParams) and result (OpResults), each event's data
  *   host records (lib/remote/auth.ts)        InviteRecord (sh1, sh2 PIN, handoff, short, admission), LinkRecord
- *   local shapes                             the store (AuthStore, ServedStore), the mirror (MirrorStore), the client
- *                                            (LinkClient), the clock, a transport: only what these files use; the
- *                                            real types may replace them
+ *   the link daemon (lib/remote/link.ts)     its document `link`, its timings, a running link
  *
  * Request params are what a conforming peer sends. They arrive as parsed JSON, so the server still checks each
  * field it relies on (lib/remote/server.ts); the types document the protocol, not a validation.
  */
+
+import type { Entry, LinkStateWord, Payload, PresenceInput, RoomStore } from '../room/types.ts';
 
 // ---------- the wire protocol ----------
 
@@ -68,8 +68,8 @@ export interface HelloParams {
 }
 export interface JoinParams { name: string; role?: string; pubkey: string; proof: SignedPayload }
 export interface LeaveParams { name: string; reason?: string }
-export interface BeatParams { name: string; presence?: unknown }
-export interface AppendParams { payload: SignedPayload; epoch?: number }
+export interface BeatParams { name: string; presence?: PresenceInput }
+export interface AppendParams { payload: Payload; epoch?: number }
 /** What a hook hands the link daemon for an append: {queue: true} marks an @room post the outbox may keep. */
 export interface RelayAppendParams extends AppendParams { queue?: boolean }
 export interface SubscribeParams { after: number; hash: string | null }
@@ -111,11 +111,11 @@ export interface HelloResult {
 }
 export interface OkResult { ok: boolean }
 export interface JoinResult { ok: true; rejoin?: true }
-export interface AppendResult { entry: RoomEntry }
+export interface AppendResult { entry: Entry }
 export interface BlobGetResult { bytes: string | null }
 export interface BlobPutResult { ref: string }
 export interface PingResult { pong: number }
-export interface HandoffAcceptResult { ok: true; epoch: number; entry: RoomEntry }
+export interface HandoffAcceptResult { ok: true; epoch: number; entry: Entry }
 
 /** Each op's result. */
 export interface OpResults {
@@ -153,11 +153,10 @@ export type ReplyFrame<R = unknown> = ResultFrame<R> | ErrorFrame;
 
 /** A line of the host's log: one JSON entry, verbatim. */
 export type EntryLine = string;
-/** A room entry as the store places it (lib/room/store.ts). */
-export interface RoomEntry { id: number; kind: string; [field: string]: unknown }
 
 export interface DocEventData { key: string; value: unknown }
-export type EndReason = 'closed' | 'FORK' | 'moved' | 'AUTH';
+/** OFFLINE: the client's own, when the transport closed under a stream. */
+export type EndReason = 'closed' | 'FORK' | 'moved' | 'AUTH' | 'OFFLINE';
 export interface EndEventData { reason: EndReason; message?: string }
 /** The host's ask that one of this link's seats host the room (private to that link). */
 export interface HandoffAsk { id: string; from: string; to: string; epoch: number; locator?: string; expires_at: string }
@@ -175,13 +174,28 @@ export interface EventData {
 export type EventName = keyof EventData;
 /** A subscribe stream's event: {id, ev, data}, discriminated on ev. */
 export type EventFrame<E extends EventName = EventName> = { [K in E]: { id: FrameId; ev: K; data: EventData[K] } }[E];
+/** A link's private event on its subscribe stream (lib/handoff.ts streamEvent); end: the stream ends after it. */
+export type PrivateEvent =
+  | { ev: 'handoff'; data: HandoffAsk; end?: undefined }
+  | { ev: 'moved'; data: MovedEventData; end: true };
 /** An event as a client hands it on: {ev, data}. */
 export type StreamEvent<E extends EventName = EventName> = { [K in E]: { ev: K; data: EventData[K] } }[E];
 
 /** Any frame this protocol defines. */
 export type Frame = RequestFrame | ReplyFrame | EventFrame;
-/** A frame as the decoder yields it: a parsed JSON object, not yet checked (isRequest, isReply, isEvent narrow it). */
-export type DecodedFrame = { [field: string]: unknown };
+/**
+ * A frame as the decoder yields it: a parsed JSON object, not yet checked (isRequest, isReply, isEvent narrow it).
+ * The fields are the ones a frame of this protocol may carry; a peer's frame may carry others, or the wrong types.
+ */
+export interface DecodedFrame {
+  id?: FrameId;
+  op?: string;
+  params?: Record<string, unknown>;
+  result?: unknown;
+  error?: WireError;
+  ev?: string;
+  data?: unknown;
+}
 
 /** One side as skewMessage names it: its plugin version (null or '?' unknown) and range. */
 export interface PeerVersion { version?: string | null; proto: ProtoRange }
@@ -210,7 +224,7 @@ export interface HandoffInvite extends InviteLife {
 }
 export type ShortKind = 'ssh' | 'ws' | 'pipe';
 /** The joiner a short invite enrolled (lib/remote/enroll.ts). */
-export interface Joiner { machine: string; name: string; label?: string; key?: string | null; [field: string]: unknown }
+export interface Joiner { machine: string; name: string; label: string; key: string | null }
 /** A short invite: a 4-digit PIN, the whole secret (prs, in clear until it is used, burnt or revoked). */
 export interface ShortInvite extends InviteLife {
   v: 3; short: true; admission?: undefined; handoff?: undefined; machine?: undefined; seats?: undefined;
@@ -227,6 +241,8 @@ export interface AdmissionRecord extends InviteLife {
   expires_at: string;
   admitted_at?: string; admitted_by?: string | null; admit_sig?: unknown; admitted_until?: string;
   refused_at?: string; refused_by?: string | null;
+  /** the seats whose card showed it (lib/remote/admission.ts markTold) */
+  told?: string[];
 }
 /** One record of the host document remote/invites, keyed by sha256(secret). */
 export type InviteRecord = Sh1Invite | PinInvite | HandoffInvite | ShortInvite | AdmissionRecord;
@@ -248,106 +264,24 @@ export type Links = Record<string, LinkRecord>;
 /** A parsed sh1 or sh2 invite. */
 export interface ParsedInvite { v: 1 | 2; code: string; locator: string; secret: string; hostKey: string | null }
 
-// ---------- what these files need from modules typed elsewhere ----------
+// ---------- the store, as the remote code uses it ----------
 
-/** A room's kv documents (lib/room/store.ts kv). Values are stored JSON. */
-export interface KvLike {
-  /** any: a stored JSON document, read back unchecked (the caller narrows it). */
-  get(key: string, fallback?: unknown): any;
-  set(key: string, value: unknown, opts?: object): unknown;
-  /** fn gets the stored document (any: unchecked JSON) and returns the next one, or undefined to keep it. */
-  update(key: string, fn: (cur: any) => unknown, opts?: object): any;
-  list(prefix: string): string[];
-}
-
-/** The store auth.ts uses (lib/room/store.ts FsRoomStore, or a mirror's). */
-export interface AuthStore {
-  code: string;
-  isHost: boolean;
-  kv: KvLike;
-}
-
-/** The host epoch and where the room is (lib/room/store.ts hostState). */
-export interface HostState { epoch: number; host?: string | null; [field: string]: unknown }
-
-/** The host's store as server.ts serves it (lib/room/store.ts FsRoomStore). */
-export interface ServedStore extends AuthStore {
-  members: {
-    read(): Record<string, MemberLike>;
-    beat(name: string, opts: { presence?: unknown }): boolean;
-  };
-  blobs: {
-    get(ref: string): Buffer | null;
-    has(ref: string): boolean;
-    put(name: string, bytes: Buffer): unknown;
-  };
-  hostState?(): HostState;
-  tailer(opts: { after: number }): { poll(): { lines: string[]; entries: RoomEntry[]; reset?: boolean } };
-  lineHash(id: number): string | null;
-  place(payload: SignedPayload): RoomEntry;
-  append(entry: object, opts: object): unknown;
-}
-
-/** A member record as the members document holds it (lib/room/members.ts). */
-export interface MemberLike { machine?: string; left_at?: string; claude?: { stopped_at?: string | null } | null; [field: string]: unknown }
-
-/** A mirror's store as the link daemon keeps it (lib/room/store-mirror.ts). */
-export interface MirrorStore {
-  code: string;
-  dir: string;
-  isHost: boolean;
-  kv: KvLike;
-  members: { read(): Record<string, MemberLike> };
-  blobs: { ref(pathOrRef: unknown): string | null; has(ref: string): boolean };
-  hostState?(): HostState;
-  lastId(): number;
-  lineHash(id: number): string | null;
-  applyLine(line: string): RoomEntry;
-  applyDoc(key: string, value: unknown): unknown;
-  applyBlob(ref: string, bytes: Buffer): unknown;
-}
-
-/** A connection to a room's server, hello done (lib/remote/client.ts Client), as the link daemon uses it. */
-export interface LinkClient {
-  token: string | null;
-  closed: boolean;
-  request(op: string, params: object, opts?: { ms?: number }): Promise<unknown>;
-  subscribe(after: number, hash: string | null, onEvent: (ev: StreamEvent) => void): { ready: Promise<unknown>; stop(): void };
-  beat(name: string): Promise<OkResult | null | undefined>;
-  append(payload: SignedPayload): Promise<unknown>;
-  blobGet(ref: string): Promise<Buffer | null>;
-  supports?(op: string): boolean;
-  ping(ms?: number): Promise<{ pong: number; rttMs: number }>;
-  drain?(ms?: number): Promise<unknown>;
-  close(): void;
-}
-
-/** A timer handle from a Clock: Node's Timeout, or a fake clock's. */
-export type TimerHandle = { unref?(): unknown } | undefined | null;
-/** The injectable clock (lib/clock.ts): the methods the link daemon calls. */
-export interface Clock {
-  now(): number;
-  setTimeout(fn: () => void, ms: number): TimerHandle;
-  clearTimeout(h: TimerHandle): void;
-  setInterval(fn: () => void, ms: number): TimerHandle;
-  clearInterval(h: TimerHandle): void;
-}
-
-/** One frame transport (lib/remote/transports/*), as server.ts serves over it. */
-export interface FrameTransport {
-  send(frame: object): void;
-  onFrame(fn: (frame: DecodedFrame) => void): void;
-  onClose(fn: () => void): void;
-  close(): void;
-}
+/** The store auth.ts reads and writes (lib/room/store.ts FsRoomStore, or a mirror's): its code, role and documents. */
+export type AuthStore = Pick<RoomStore, 'code' | 'isHost' | 'kv'>;
 
 /** A RoomError as it is thrown and caught: the code, and what callers attach. */
-export interface CodedError extends Error { code?: string; note?: string | null; notListening?: boolean; unknown?: boolean }
+export interface CodedError extends Error {
+  code?: string;
+  note?: string | null;
+  /** lib/remote/link.ts: no daemon answers on the socket */
+  notListening?: boolean;
+  /** lib/remote/bridge.ts: the call went out and its outcome is unknown */
+  unknown?: boolean;
+  /** lib/remote/enroll.ts joinEnroll: the host charged a try for the attempt */
+  spent?: boolean;
+}
 
 // ---------- the link daemon (lib/remote/link.ts) ----------
-
-/** A link's state, in the one vocabulary of its document `link` and links/<code>.state.json. */
-export type LinkState = 'connecting' | 'online' | 'offline' | 'fork' | 'stopped';
 
 /** The queued posts a flush sent and the ones it dropped, with why. */
 export interface Flush { at: string; sent: number; unsent: { text: string; why: string }[] }
@@ -355,7 +289,7 @@ export interface Flush { at: string; sent: number; unsent: { text: string; why: 
 /** The mirror's document `link`, the daemon's own record. */
 export interface LinkDoc {
   pid?: number;
-  state?: LinkState;
+  state?: LinkStateWord;
   since?: string;
   socket?: string;
   reason?: string;
@@ -378,24 +312,10 @@ export interface LinkTimings {
 }
 
 /** A running link daemon (serveMirror). */
-export interface Link {
-  state(): LinkState;
+export interface RunningLink {
+  state(): LinkStateWord;
   stop(reason: string): void;
   wake(why?: string): Promise<void>;
   done: Promise<string>;
 }
 
-/** The link file of a room (lib/room/links.ts), as the daemon reads it. */
-export interface LinkFileLike {
-  token?: string;
-  invite?: unknown;
-  pin?: unknown;
-  enroll?: unknown;
-  rebind?: unknown;
-  awaiting?: unknown;
-  created_at: string;
-  refused?: { at?: string; reason?: string };
-  moved?: Record<string, unknown>;
-  transport?: { kind?: string; login?: boolean; key?: unknown; [field: string]: unknown };
-  [field: string]: unknown;
-}

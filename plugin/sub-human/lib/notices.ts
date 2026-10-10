@@ -26,7 +26,7 @@ import * as config from './config.ts';
 import { roomClaudeName } from './room/members.ts';
 import * as clock from './clock.ts';
 import * as room from './room.ts';
-import type { LogEntry } from './types-app.ts';
+import type { Entry } from './room/types.ts';
 
 /** One join / leave notice (joinLeave). */
 interface Notice {
@@ -43,9 +43,9 @@ const ROW_MS = config.ROW_NOTICE_MS;
 const VIAS: readonly string[] = ['mod'];
 
 const settleMs = () => config.envMs('SUB_HUMAN_LEAVE_MS', LEAVE_SETTLE_MS);
-const isMove = (e: LogEntry | null | undefined) => !!e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
+const isMove = (e: Entry | null | undefined) => !!e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
 
-function joinLeave(es: LogEntry[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() } = {}): Notice[] {
+function joinLeave(es: Entry[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() } = {}): Notice[] {
   const list = (es || []).filter(e => isMove(e) && e.from !== viewer && roomClaudeName(e.from) !== 'claude'); // 0.4.x: "orch"
   const drop = new Set<number>();
   for (const l of list) {
@@ -65,7 +65,7 @@ function text(n: Pick<Notice, 'kind' | 'name' | 'rejoin'>): string {
   return `${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
 }
 
-function rowSegment(es: LogEntry[] | null | undefined, viewer: string | null | undefined, { now = clock.now() } = {}): string {
+function rowSegment(es: Entry[] | null | undefined, viewer: string | null | undefined, { now = clock.now() } = {}): string {
   const fresh = (x: Notice) => now - Date.parse(x.at) - (x.kind === 'member_left' ? settleMs() : 0) < ROW_MS;
   const n = joinLeave(es, viewer, { now }).filter(x => x.settled && fresh(x)).at(-1);
   if (!n) return '';

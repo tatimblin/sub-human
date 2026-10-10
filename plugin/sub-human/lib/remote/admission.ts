@@ -29,29 +29,15 @@ import path from 'node:path';
 import * as auth from './auth.ts';
 import { RoomError } from '../room/validate.ts';
 import { createRequire } from 'node:module';
-import type { AdmissionRequest, AuthApi, StoreLike } from './types-rest.ts';
+import type { AdmissionRecord, Invites } from './types-core.ts';
+import type { Slotted } from './auth.ts';
+import type { RoomStore } from '../room/types.ts';
+import type { Card } from '../types-app.ts';
 
 const require = createRequire(import.meta.url);
 
-const authT = auth as unknown as AuthApi; // ./types-rest.ts AuthApi: until auth.ts is typed
-
-/** A member record, as lib/identity.ts readMembers gives it (that slice's). */
-interface MemberRec {
-  name?: string;
-  left_at?: string;
-  role?: string;
-  machine?: string;
-}
-
-/** What the card asks: AskUserQuestion's input. */
-export interface AdmitCard {
-  questions: {
-    question: string;
-    header: string;
-    multiSelect: boolean;
-    options: { label: string; description: string }[];
-  }[];
-}
+/** A join request waiting for the host person (auth.admissions): the admission record, with its slot and ref. */
+type AdmissionRequest = Slotted<AdmissionRecord>;
 
 /** Signs the record the person let in with their seat key. */
 type Signer = (rec: { kind: 'admit'; ref: string; link: string; key: string | null; machine: string }) => unknown;
@@ -59,20 +45,20 @@ type Signer = (rec: { kind: 'admit'; ref: string; link: string; key: string | nu
 const LET_IN = 'Let in';
 const REFUSE = 'Refuse';
 
-function hostStore(code: string): StoreLike {
-  const s: StoreLike = (require('../room.ts') as { open(code: string): { store: StoreLike } }).open(code).store;
+function hostStore(code: string): RoomStore {
+  const s = (require('../room.ts') as typeof import('../room.ts')).open(code).store;
   if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; only its host can let people in`);
   return s;
 }
 
-const pending = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => authT.admissions(hostStore(code), { now });
-const find = (code: string, ref: string): AdmissionRequest | null => authT.admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) || null;
+const pending = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => auth.admissions(hostStore(code), { now });
+const find = (code: string, ref: string): AdmissionRequest | null => auth.admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) || null;
 
 function targets(code: string, req: AdmissionRequest): string[] {
-  const identity: { readMembers(code: string): Record<string, MemberRec | null> | null } = require('../identity.ts');
-  const { machineId }: { machineId(): string } = require('../home.ts');
+  const identity: typeof import('../identity.ts') = require('../identity.ts');
+  const { machineId }: typeof import('../home.ts') = require('../home.ts');
   const here = Object.values(identity.readMembers(code) || {})
-    .filter((m): m is MemberRec & { name: string } => !!m && !!m.name && !m.left_at && m.role !== 'claude' && (!m.machine || m.machine === machineId())).map(m => m.name);
+    .filter(m => !!m && !!m.name && !m.left_at && m.role !== 'claude' && (!m.machine || m.machine === machineId())).map(m => m.name);
   return req.by && here.includes(req.by) ? [req.by] : here;
 }
 
@@ -81,7 +67,7 @@ const fp = (req: AdmissionRequest): string => (req.key ? sshkeysMod().fingerprin
 const describe = (req: AdmissionRequest): string => `${req.name} (${fp(req)}) on ${req.label || 'another machine'}`;
 const question = (req: AdmissionRequest, code: string): string => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
 
-function card(req: AdmissionRequest, code: string): AdmitCard {
+function card(req: AdmissionRequest, code: string): Card {
   return {
     questions: [{
       question: question(req, code),
@@ -95,7 +81,7 @@ function card(req: AdmissionRequest, code: string): AdmitCard {
   };
 }
 
-function roomLine(store: StoreLike, text: string): void {
+function roomLine(store: RoomStore, text: string): void {
   try { store.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }); } catch { /* the answer stands */ }
 }
 
@@ -116,7 +102,7 @@ function letIn(code: string, ref: string, { by = null, sign = null, now = Date.n
     sshkeys.appendAuthorized(file, shim.authorizedLine(code, req.link, key, h), key);
   }
   let rec: AdmissionRequest;
-  try { rec = authT.decideAdmission(store, req.ref, { decision: 'let-in', by, sig, now }); } catch (e) {
+  try { rec = auth.decideAdmission(store, req.ref, { decision: 'let-in', by, sig, now }); } catch (e) {
     if (file && req.admit === 'asked') sshkeysMod().removeAuthorized(file, code, req.link);
     throw e;
   }
@@ -128,22 +114,23 @@ function refuse(code: string, ref: string, { by = null, now = Date.now() }: { by
   const store = hostStore(code);
   const req = find(code, ref);
   if (!req) throw new RoomError('INVALID', `room ${code} has no join request ${ref} (/sub-human admit lists them)`);
-  const rec = authT.decideAdmission(store, req.ref, { decision: 'refused', by, now });
+  const rec = auth.decideAdmission(store, req.ref, { decision: 'refused', by, now });
   roomLine(store, `${by || 'the host'} refused ${describe(rec)}: nothing got in`);
   return { text: `refused: ${describe(rec)} does not get into room ${code}; their join stops` };
 }
 
 function markTold(code: string, ref: string, name: string): void {
   try {
-    hostStore(code).kv.update(authT.INVITES_KEY, (cur: Record<string, { admission?: boolean; told?: string[] }> | null) => {
+    hostStore(code).kv.update(auth.INVITES_KEY, (cur: Invites | null) => {
       const docs = cur || {};
       const k = Object.keys(docs).find(x => x.startsWith(ref) && docs[x].admission);
-      if (!k || (docs[k].told || []).includes(name)) return undefined;
-      return { ...cur, [k]: { ...docs[k], told: [...(docs[k].told || []), name] } };
+      const rec = k ? docs[k] : null;
+      if (!k || !rec || !rec.admission || (rec.told || []).includes(name)) return undefined;
+      return { ...cur, [k]: { ...rec, told: [...(rec.told || []), name] } };
     });
   } catch { /* told again */ }
 }
 
-const lapse = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => authT.lapseAdmissions(hostStore(code), { now });
+const lapse = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => auth.lapseAdmissions(hostStore(code), { now });
 
 export { pending, find, targets, describe, question, card, letIn, refuse, markTold, lapse, LET_IN, REFUSE };

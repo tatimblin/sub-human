@@ -26,7 +26,8 @@
 
 import { RoomError } from '../room/validate.ts';
 import { createRequire } from 'node:module';
-import type { AuthApi, MintedShort, StoreLike, TailscaleRec } from './types-rest.ts';
+import type { TailscaleRec } from './types-rest.ts';
+import type { RoomStore } from '../room/types.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -43,7 +44,7 @@ export interface FrontBase {
 }
 
 /** A web invite as hostWeb returns it. */
-export interface WebInvite extends MintedShort {
+export interface WebInvite extends ReturnType<typeof import('./auth.ts')['mintShort']> {
   short: true;
   line: string;
   locator: string;
@@ -54,10 +55,10 @@ export interface WebInvite extends MintedShort {
   text: string;
 }
 
-function hostStore(code: string): StoreLike {
-  const identity: { roomExists(code: string): boolean } = require('../identity.ts');
+function hostStore(code: string): RoomStore {
+  const identity: typeof import('../identity.ts') = require('../identity.ts');
   if (!identity.roomExists(code)) throw new RoomError('NO_ROOM', `no room "${code}"`);
-  const s: StoreLike = (require('../room.ts') as { open(code: string): { store: StoreLike } }).open(code).store;
+  const s = (require('../room.ts') as typeof import('../room.ts')).open(code).store;
   if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; its host does this`);
   return s;
 }
@@ -114,7 +115,7 @@ function hostWeb(code: string, { tailscale = false, funnel = false, url, port, b
     'Stop serving it with /sub-human invite --stop (closing the room does too).',
   ];
   // the URL and a 4-digit PIN (lib/remote/enroll.ts over the listener's text frames)
-  const r = (require('./auth.ts') as AuthApi).mintShort(store, { kind: 'ws', locator, hostKey, by, now });
+  const r = (require('./auth.ts') as typeof import('./auth.ts')).mintShort(store, { kind: 'ws', locator, hostKey, by, now });
   const line = `/sub-human join ${joinBase} ${r.pin}`;
   const text = (require('./hosting.ts') as typeof import('./hosting.ts')).shortText({
     code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, ref: r.ref,

@@ -49,6 +49,15 @@ test('seats: enter logs member_joined with the pubkey and machine; exit leaves, 
   assert.equal(mem.readAll().length, 2);
 });
 
+test('seats: a seat whose machine id could not be read (machine null) still joins; member_joined carries no machine', t => {
+  const { code, mem } = memoryRoom(t, { isHost: true });
+  const r = seats.enter({ code, name: 'alice', machine: null, pid: process.pid, session_id: 'sa', cwd: '/x', pubkey: seatKey.publicPem(code, 'alice') });
+  assert.equal(r.ok, true);
+  const joined = mem.readAll().at(-1);
+  assert.deepEqual([joined.kind, joined.from, 'machine' in joined], ['member_joined', 'alice', false]);
+  assert.equal(identity.readMembers(code).alice.machine, null);
+});
+
 test('seats: the room\'s Claude runs in the room\'s working directory (the first local seat\'s cwd), also when a seat on another machine starts it', t => {
   const { code, started } = memoryRoom(t, { isHost: true });
   seats.enter({ code, name: 'alice', pid: process.pid, session_id: 'sa', cwd: '/work/project', pubkey: seatKey.publicPem(code, 'alice') });

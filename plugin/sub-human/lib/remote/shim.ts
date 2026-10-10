@@ -48,10 +48,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { home, isTempPath, allowTmpRoot } from '../home.ts';
-import { writeFileAtomic as writeAtomic } from '../io.ts';
-import type { WriteFileAtomic } from './types-rest.ts';
-
-const writeFileAtomic: WriteFileAtomic = writeAtomic;
+import { writeFileAtomic } from '../io.ts';
 
 const PLAIN_PATH_RE = /^\/[A-Za-z0-9_\/.@+,:-]+$/;
 

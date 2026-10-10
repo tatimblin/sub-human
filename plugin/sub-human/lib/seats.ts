@@ -28,38 +28,33 @@
 import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as roomClaude from './room-claude.ts';
-import type { MemberRec } from './types-app.ts';
+import type { JoinResult, Member } from './room/types.ts';
 
 /** enter()'s seat: the join hook's, or the remote server's for a seat on another machine. */
 interface EnterOpts {
   code: string;
   name: string;
   role?: string;
-  machine?: string;
-  pid?: number;
-  session_id?: string;
-  cwd?: string;
+  machine?: string | null;
+  pid?: number | null;
+  session_id?: string | null;
+  cwd?: string | null;
   pubkey?: string;
 }
-interface EnterResult {
-  ok: boolean;
-  rejoin?: boolean;
-  error?: string;
-  code?: string;
-  note?: string;
-}
+/** identity.join's answer; note: what the join line adds (the room's Claude starting, or why it could not). */
+type EnterResult = JoinResult & { note?: string };
 
 const asSystem = (name: string) => ({ via: 'system', from: name, system: true });
 const WORKDIR = 'workdir'; // the room's working directory: {cwd}
 
 /** The first local seat's cwd becomes the room's working directory, where the room's Claude runs. */
-function keepWorkdir(code: string, cwd: string | undefined): void {
+function keepWorkdir(code: string, cwd: string | null | undefined): void {
   const kv = room.open(code).store.kv;
   if (cwd && !kv.get(WORKDIR)) kv.set(WORKDIR, { cwd });
 }
 
 function ensureRoomClaude(code: string, cwd: string | null | undefined, by: string): string {
-  let last: MemberRec | null = null;
+  let last: Member | null = null;
   try {
     last = identity.readMembers(code).claude || null;
     const c = roomClaude.claimSpawn(code, { by });
@@ -78,7 +73,8 @@ function enter({ code, name, role = 'member', machine = identity.machineId(), pi
   if (!identity.isHost(code)) return { ...r, note: '' };
   keepWorkdir(code, cwd);
   try {
-    room.open(code).append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}`, pubkey, machine }, asSystem(name));
+    // machine null: this machine's id could not be read; the seat joins without one (validate refuses a null machine)
+    room.open(code).append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}`, pubkey, ...(machine ? { machine } : {}) }, asSystem(name));
   } catch (e) {
     if ((e as { code?: unknown }).code !== 'AUTH') throw e;
     identity.leave(code, name, {});

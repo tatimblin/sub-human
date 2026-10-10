@@ -36,7 +36,8 @@
 
 import * as protocol from '../protocol.ts';
 import type { Duplex, Readable } from 'node:stream';
-import type { KindEntry, LineTransport, MemorySpec, OpenCtx, SpecBase, Transport, WireFrame } from '../types-rest.ts';
+import type { KindEntry, LineTransport, LinkSpec, MemorySpec, OpenCtx, SpecBase, Transport } from '../types-rest.ts';
+import type { DecodedFrame } from '../types-core.ts';
 import { RoomError } from '../../room/validate.ts';
 import { createRequire } from 'node:module';
 
@@ -66,13 +67,13 @@ function register<S extends SpecBase>(kind: string, entry: KindEntry<S>): void {
 const kinds = (): string[] => [...registry.keys()];
 const get = (kind: string): Registered | null => registry.get(kind) || null;
 
-function parse(locator: string): SpecBase | null {
+function parse(locator: string): LinkSpec | null {
   const s = String(locator);
   const i = s.indexOf(':');
   const e = i > 0 && get(s.slice(0, i));
   if (!e || !e.parse) return null;
   const spec = e.parse(s.slice(i + 1));
-  return spec ? { ...spec, kind: s.slice(0, i) } : null;
+  return spec ? { ...spec, kind: s.slice(0, i) } as LinkSpec : null; // as: the kind's own parse made its spec
 }
 
 async function open(spec: SpecBase, ctx: OpenCtx = {}): Promise<Transport> {
@@ -87,7 +88,7 @@ function describe(spec: SpecBase): string {
 }
 
 function lineTransport({ write, shut }: { write(line: string): void; shut(): void }): LineTransport {
-  const frameFns: ((frame: WireFrame) => void)[] = [], closeFns: (() => void)[] = [];
+  const frameFns: ((frame: DecodedFrame) => void)[] = [], closeFns: (() => void)[] = [];
   const dec = protocol.decoder();
   let closed = false;
   const end = () => {

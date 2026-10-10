@@ -252,3 +252,4 @@ export {
   PROTOCOL, MAX_MESSAGE, MAX_PLAINTEXT, NoiseError, CipherState, generateKeyPair, keyPair, dh, initiator, responder,
   loadOrCreateStatic,
 };
+export type { KeyPair, Handshake };

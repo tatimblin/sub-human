@@ -49,22 +49,13 @@ import * as ioMod from '../io.ts';
 import * as textMod from '../text.ts';
 import { createRequire } from 'node:module';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import type { IncomingMessage, Server } from 'node:http';
+import type { IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { ListenState, NoiseStatic, Refusal, ServedRoom, WriteFileAtomic, WsConn } from './types-rest.ts';
+import type { ListenState, Refusal, ServedRoom } from './types-rest.ts';
+import type { KeyPair } from './noise.ts';
+import type { DecodedFrame } from './types-core.ts';
+import type { Conn } from './ws.ts';
 
-/** lib/remote/noise.ts and lib/remote/ws.ts, as the listener uses them (another slice's; loaded on first use). */
-interface NoiseModule {
-  MAX_MESSAGE: number;
-  loadOrCreateStatic(file: string): NoiseStatic;
-}
-interface WsModule {
-  createServer(o: {
-    host?: string; port: number; maxPayload?: number; pingMs?: number;
-    accept?: (req: IncomingMessage) => boolean | number;
-    onConnection(conn: WsConn, req: IncomingMessage): void;
-  }): Promise<Server>;
-}
 
 /** The listener's status (status()). */
 export interface ListenStatus {
@@ -94,7 +85,7 @@ const dir = (): string => path.join(home(), 'listen');
 const stateFile = (): string => path.join(dir(), 'state.json');
 const logFile = (): string => path.join(dir(), 'listen.log');
 const keyFile = (): string => path.join(dir(), 'host-x25519.json');
-const staticKey = (): NoiseStatic => (require('./noise.ts') as NoiseModule).loadOrCreateStatic(keyFile());
+const staticKey = (): KeyPair => (require('./noise.ts') as typeof import('./noise.ts')).loadOrCreateStatic(keyFile());
 const hostKey = (): string => staticKey().pub.toString('base64url');
 const defaultPort = (): number => Number(process.env.SUB_HUMAN_LISTEN_PORT) || DEFAULT_PORT;
 
@@ -105,8 +96,8 @@ function read(): ListenState {
 /** Change the state file under its lock; fn(cur) returns the next state. */
 function update(fn: (cur: ListenState) => ListenState): ListenState {
   fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
-  const { withLock }: { withLock<T>(file: string, fn: () => T): T } = require('../lock.ts');
-  const { writeFileAtomic }: { writeFileAtomic: WriteFileAtomic } = ioMod;
+  const { withLock }: typeof import('../lock.ts') = require('../lock.ts');
+  const { writeFileAtomic } = ioMod;
   return withLock(path.join(dir(), 'state.lock'), () => {
     const next = fn(read());
     writeFileAtomic(stateFile(), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
@@ -192,7 +183,7 @@ function untailscale(rec: ServedRoom | null, log: (msg: string) => void = () => 
 async function run({ port = defaultPort(), log = (msg: string): unknown => process.stderr.write(`${new Date().toISOString()} sub-human listen: ${msg}\n`), closedCheckMs = Number(process.env.SUB_HUMAN_LISTEN_CHECK_MS) || CLOSED_CHECK_MS, idleMs = Number(process.env.SUB_HUMAN_LISTEN_IDLE_MS) || LISTEN_IDLE_MS }: {
   port?: number; log?: (msg: string) => unknown; closedCheckMs?: number; idleMs?: number;
 } = {}): Promise<{ why: string; port: number }> {
-  const ws: WsModule = require('./ws.ts');
+  const ws: typeof import('./ws.ts') = require('./ws.ts');
   const wsT: typeof import('./transports/ws.ts') = require('./transports/ws.ts');
   const { CODE_RE } = textMod;
   const s = staticKey();
@@ -213,7 +204,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     return p;
   };
 
-  async function onConnection(conn: WsConn, req: IncomingMessage): Promise<void> {
+  async function onConnection(conn: Conn, req: IncomingMessage): Promise<void> {
     preauth++;
     conns++;
     const who = req.headers['tailscale-user-login'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -270,9 +261,9 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
    * connection, each text message one line of its stdin and each line it writes one text message. Nothing else is
    * parsed here; the child runs the PAKE and counts the tries. It holds a pre-auth slot until it exits.
    */
-  function enrollConn(conn: WsConn, data: Buffer, { refusal, who }: { refusal: (code: string) => Refusal | null; who: unknown }): void {
+  function enrollConn(conn: Conn, data: Buffer, { refusal, who }: { refusal: (code: string) => Refusal | null; who: unknown }): void {
     const protocol: typeof import('./protocol.ts') = require('./protocol.ts');
-    let frame: { id?: unknown; op?: unknown; params?: { room?: unknown } } | null = null; // parsed JSON, checked below
+    let frame: DecodedFrame | null = null; // parsed JSON, checked below
     try { frame = JSON.parse(data.toString('utf8')); } catch { /* refused below */ }
     const code = frame && frame.params && frame.params.room;
     const no: Refusal | null = !frame || frame.op !== 'enroll.start' || typeof code !== 'string' ? { code: 'PROTOCOL', message: 'a text message that is not an enrollment' } : refusal(code);

@@ -68,7 +68,9 @@ import { readJson } from './io.ts';
 import * as config from './config.ts';
 import * as clock from './clock.ts';
 import * as cc from './cc.ts';
-import type { MemberRec, Members, RoomClaudePatch } from './types-app.ts';
+import type { Member, Members } from './room/types.ts';
+import type { RoomClaudePatch } from './identity.ts';
+import type { AgentJob } from './cc.ts';
 
 /** What spawnPlan builds a launch from. */
 interface PlanOpts {
@@ -90,17 +92,8 @@ interface SpawnOpts extends PlanOpts {
   prevJob?: string | null;
 }
 type SpawnResult = { ok: true, job: string } | { ok: false, error: string };
-/** A job as `claude agents --json` lists it (lib/cc.ts jobs), the fields read here. */
-interface Job {
-  id: string | null;
-  kind: string | null;
-  state: string | null;
-  name: string | null;
-  sessionId: string | null;
-  startedAt?: number;
-}
 /** A seat check (identity.seatAlive). */
-type Alive = (m: MemberRec) => boolean;
+type Alive = (m: Member) => boolean;
 type ReapResult = 'cancelled' | 'stopped' | 'no-claude';
 type WatchdogState = 'live' | 'waiting' | 'reaping' | 'closing' | 'no-claude' | 'no-room' | 'not-host';
 
@@ -175,7 +168,7 @@ function command(plan: Plan): string {
 
 // ---------- starting ----------
 
-function needsSpawnRec(o: MemberRec | null | undefined, now: number = clock.now()): boolean {
+function needsSpawnRec(o: Member | null | undefined, now: number = clock.now()): boolean {
   if (!o || o.left_at || o.stopped_at) return true;
   if (o.pid) return !identity.seatAlive(o); // bound (possibly before its starter recorded the job)
   // Date.parse(0) as before: String(0) parses as the year 2000
@@ -190,7 +183,7 @@ interface Claim { claim: string, prevJob: string | null }
 function claimSpawn(code: string, { now = clock.now(), by = null }: { now?: number, by?: string | null } = {}): Claim | null {
   if (!identity.isHost(code)) return null;
   let out: Claim | null = null;
-  identity.updateRoomClaude(code, (o: MemberRec | null): RoomClaudePatch | null => {
+  identity.updateRoomClaude(code, (o: Member | null): RoomClaudePatch | null => {
     out = null; // fn may run again (a store that compares and sets): only the attempt that lands claims
     if (o && o.closing) return null;
     if (!needsSpawnRec(o, now)) return null;
@@ -208,11 +201,11 @@ function claimSpawn(code: string, { now = clock.now(), by = null }: { now?: numb
 
 /** The job `claude agents --json` lists for this room (name claude.CODE, still running), else the parsed id. */
 function findJob(code: string, { parsed = null, env = cleanEnv() }: { parsed?: string | null, env?: Record<string, string> } = {}): { id: string, sessionId?: string | null } | null {
-  const list: Job[] | null = cc.jobs({ bin: claudeBin(), env, timeout: config.SPAWN_TIMEOUT_MS });
+  const list: AgentJob[] | null = cc.jobs({ bin: claudeBin(), env, timeout: config.SPAWN_TIMEOUT_MS });
   const fallback = parsed ? { id: parsed, sessionId: null } : null;
   if (!list) return fallback;
   const name = `claude.${code}`;
-  const mine = list.filter((j): j is Job & { id: string } => !!j.id && j.kind !== 'interactive' && !ENDED.has(j.state ?? '')
+  const mine = list.filter((j): j is AgentJob & { id: string } => !!j.id && j.kind !== 'interactive' && !ENDED.has(j.state ?? '')
     && (j.name === name || (!!parsed && j.id === parsed)));
   const pick = mine.find(j => j.id === parsed) || mine.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
   return pick ? { id: pick.id, sessionId: pick.sessionId } : fallback;
@@ -236,19 +229,19 @@ function spawn(opts: SpawnOpts): SpawnResult {
   const text = `${r.stdout || ''}\n${r.stderr || ''}`;
   const parsed = cc.parseDispatch(text);
   const found = r.error || (r.status !== 0 && !parsed) ? null : findJob(code, { parsed, env: plan.env });
-  const mine = (o: MemberRec | null) => !claim || (!!o && o.claim === claim);
+  const mine = (o: Member | null) => !claim || (!!o && o.claim === claim);
   if (!found) {
     const said = text.split('\n').map(s => s.trim()).filter(Boolean).find(s => /trust|error|not /i.test(s));
     const why = r.error ? r.error.message : (said || text.trim().split('\n')[0] || `exit ${r.status}`);
     const error = String(why).slice(0, 300);
     try {
-      identity.updateRoomClaude(code, (o: MemberRec | null): RoomClaudePatch | null => (mine(o) && !(o && o.closing) ? { job: null, claim: undefined, spawn_error: error } : null));
+      identity.updateRoomClaude(code, (o: Member | null): RoomClaudePatch | null => (mine(o) && !(o && o.closing) ? { job: null, claim: undefined, spawn_error: error } : null));
     } catch { /* room gone */ }
     return { ok: false, error };
   }
-  let rec: MemberRec | null = null;
+  let rec: Member | null = null;
   try {
-    rec = identity.updateRoomClaude(code, (o: MemberRec | null): RoomClaudePatch | null => {
+    rec = identity.updateRoomClaude(code, (o: Member | null): RoomClaudePatch | null => {
       if (!mine(o) || (o && o.closing)) return null;
       const patch: RoomClaudePatch = { job: found.id, job_session: found.sessionId || undefined, claim: undefined, spawn_error: undefined };
       if (!claim) {
@@ -292,9 +285,9 @@ const hasLiveMember = (members: Members, alive: Alive = identity.seatAlive): boo
   Object.values(members).some(m => !!m && m.role !== 'claude' && alive(m));
 
 /** Set claude.closing unless the room has a live member or is already closing / stopped. */
-function claimClose(code: string, now: number = clock.now()): { rec: MemberRec } | { why: ReapResult } {
+function claimClose(code: string, now: number = clock.now()): { rec: Member } | { why: ReapResult } {
   let why: ReapResult = 'no-claude';
-  const rec: MemberRec | null = identity.updateRoomClaude(code, (o: MemberRec | null, members: Members): RoomClaudePatch | null => {
+  const rec: Member | null = identity.updateRoomClaude(code, (o: Member | null, members: Members): RoomClaudePatch | null => {
     if (hasLiveMember(members)) { why = 'cancelled'; return null; }
     if (!o || (o.left_at && !o.job) || o.stopped_at || o.closing) return null; // closing: another reaper has it
     return { closing: iso(now) };
@@ -309,7 +302,7 @@ async function reap(code: string, {
   claimed = false,
 }: { graceMs?: number, waitMs?: number, pollMs?: number, claimed?: boolean } = {}): Promise<ReapResult> {
   if (!identity.roomExists(code)) return 'no-claude';
-  let o: MemberRec | undefined;
+  let o: Member | undefined;
   if (claimed) {
     o = (identity.readMembers(code) as Members).claude;
     if (!o || !o.closing || o.stopped_at) return 'no-claude';
@@ -352,10 +345,10 @@ function watchdog(code: string, { now = clock.now(), orphanMs = orphanMsDefault(
   if (!identity.roomExists(code)) return 'no-room';
   if (!identity.isHost(code)) return 'not-host';
   let state = 'no-claude' as WatchdogState; // set inside the update callback, which narrowing does not follow
-  identity.updateRoomClaude(code, (o: MemberRec | null, members: Members): RoomClaudePatch | null => {
+  identity.updateRoomClaude(code, (o: Member | null, members: Members): RoomClaudePatch | null => {
     if (!o || o.stopped_at || (o.left_at && !o.job)) return null;
     if (o.closing) { state = 'closing'; return null; }
-    const ms = Object.values(members).filter((m): m is MemberRec => !!m && !!m.name && m.role !== 'claude');
+    const ms = Object.values(members).filter((m): m is Member => !!m && !!m.name && m.role !== 'claude');
     if (ms.some(alive)) { state = 'live'; return o.orphan_since ? { orphan_since: undefined } : null; }
     // A member who joined after the stored observation makes it stale.
     const lastJoin = Math.max(0, ...ms.map(m => Date.parse(m.joined_at || '') || 0));

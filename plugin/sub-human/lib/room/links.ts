@@ -90,7 +90,7 @@ const has = (code: unknown): boolean => typeof code === 'string' && CODE_RE.test
 // a link the host refused before it held a token keeps no credential, only {refused: {at, reason}}; a login link
 // (transport.login) needs none before its first hello: the person's own ssh login to the host is the admission
 const credential = (l: Link): boolean => typeof l.token === 'string' || typeof l.invite === 'string' || (!!l.refused && typeof l.refused === 'object')
-  || l.transport.login === true || (!!l.enroll && typeof l.enroll === 'object' && typeof l.enroll.pin === 'string');
+  || ('login' in l.transport && l.transport.login === true) || (!!l.enroll && typeof l.enroll === 'object' && typeof l.enroll.pin === 'string');
 
 /**
  * @param {string} code

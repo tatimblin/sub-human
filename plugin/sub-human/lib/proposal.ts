@@ -58,10 +58,12 @@ import * as room from './room.ts';
 import { writeFileAtomic } from './io.ts';
 import { clip } from './text.ts';
 import * as config from './config.ts';
-import type { Card, Confirm, LogEntry, MemberRec, Members, Proposal, Review, Seat } from './types-app.ts';
+import type { Card, Confirm, Proposal, Review } from './types-app.ts';
+import type { Entry, Member, Members, ProposalState } from './room/types.ts';
+import type { Identity } from './identity.ts';
 
 /** Who acts: a seat's room and name are all these functions read. */
-type Me = Pick<Seat, 'code' | 'name'>;
+type Me = Pick<Identity, 'code' | 'name'>;
 /** lib/room/consent.ts fold's answer matrix for one proposal, the fields read here. */
 interface Matrix {
   hash: string;
@@ -104,24 +106,24 @@ function store(code: string, buf: Buffer): string {
   return hash;
 }
 
-const entriesOf = (me: Me, entries: LogEntry[] | null | undefined): LogEntry[] => entries || room.open(me.code).readAll();
+const entriesOf = (me: Me, entries: Entry[] | null | undefined): Entry[] => entries || room.open(me.code).readAll();
 const kvOf = (me: Me) => room.open(me.code).store.kv;
 
 function humans(code: string): string[] {
   return Object.values((identity.readMembers(code) || {}) as Members)
-    .filter((m): m is MemberRec => !!m && !!m.name && m.role !== 'claude' && !m.left_at).map(m => m.name);
+    .filter((m): m is Member => !!m && !!m.name && m.role !== 'claude' && !m.left_at).map(m => m.name);
 }
 
 // ---------- reading the log (lib/room/consent.ts fold: the same semantics as stateLine, lane and the rows) ----------
-const shape = (p: Proposal): Proposal => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
-const proposals = (entries: LogEntry[]): Proposal[] => [...room.fold(entries).proposals.values()].map(shape);
+const shape = (p: ProposalState): Proposal => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
+const proposals = (entries: Entry[]): Proposal[] => [...room.fold(entries).proposals.values()].map(shape);
 
-const decision = (hash: string, entries: LogEntry[]): LogEntry | null => room.fold(entries).decisions.get(hash) || null;
+const decision = (hash: string, entries: Entry[]): Entry | null => room.fold(entries).decisions.get(hash) || null;
 
 /** The answer matrix over p.approvers (the latest answer per person wins; an objection voids a signoff). */
-const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: LogEntry[]): Matrix => room.fold(entries).matrix(p.hash, p.approvers);
+const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: Entry[]): Matrix => room.fold(entries).matrix(p.hash, p.approvers);
 
-function pendingFor(me: Me | null | undefined, entries?: LogEntry[] | null): Proposal[] {
+function pendingFor(me: Me | null | undefined, entries?: Entry[] | null): Proposal[] {
   if (!me || !me.name) return [];
   return room.fold(entriesOf(me, entries)).pending(me.name).map(shape);
 }
@@ -133,7 +135,7 @@ const titles = new Map<string, string>(); // hash -> title: plans are content-ad
  * The title people see for proposal hash: the stored plan's first line, else the entry's "proposal HASH: title"
  * text, else ''. Not clipped (the caller clips to its width).
  */
-function title(code: string, hash: string, entry?: Pick<LogEntry, 'text'> | null): string {
+function title(code: string, hash: string, entry?: Pick<Entry, 'text'> | null): string {
   const known = titles.get(hash);
   if (known !== undefined) return known;
   const t = titleOf(read(code, hash));
@@ -257,7 +259,7 @@ function expand(p: string, cwd: string | undefined): string {
 
 /** The propose tool's arguments (checked here, so unknown). */
 interface CreateArgs { text?: unknown, path?: unknown, approvers?: unknown }
-interface Created { hash: string, approvers: string[], path: string, entry: LogEntry | undefined, again: boolean }
+interface Created { hash: string, approvers: string[], path: string, entry: Entry | undefined, again: boolean }
 
 function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd?: string } = {}): Created {
   if (!me || !me.code || !me.name) refuse('not in a room; run /sub-human');
@@ -295,13 +297,13 @@ function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd
 
   const hash = store(me.code, buf);
   const stored = planPath(me.code, hash);
-  const entries: LogEntry[] = r.readAll();
+  const entries: Entry[] = r.readAll();
   const open = proposals(entries).find(p => p.hash === hash);
   if (open && !decision(hash, entries) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
     return { hash, approvers, path: stored, entry: entries.find(e => e.id === open.id), again: true };
   }
   // the entry stores the room-relative ref; `path` returned is where the proposer can open it
-  const entry: LogEntry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers, path: planRef(hash) },
+  const entry: Entry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers, path: planRef(hash) },
     { via: 'agent', from: me.name });
   return { hash, approvers, path: stored, entry, again: false };
 }
@@ -311,13 +313,13 @@ function choiceOf(c: unknown): 'Agree' | 'Object' | 'Not yet' | null {
   return k === 'agree' ? 'Agree' : k === 'object' ? 'Object' : k === 'not yet' ? 'Not yet' : null;
 }
 
-type Answered = { entry: LogEntry } | { stale: true, why: string };
+type Answered = { entry: Entry } | { stale: true, why: string };
 function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?: unknown } = {}): Answered {
   const r = room.open(me.code);
   const choice = choiceOf(a.choice);
   if (choice !== 'Agree' && choice !== 'Object') return { stale: true, why: 'no choice' };
   return r.store.lock('proposal', (): Answered => {
-    const entries: LogEntry[] = r.readAll();
+    const entries: Entry[] = r.readAll();
     const f = room.fold(entries);
     const cur = f.proposals.get(p.hash);
     // Idempotent: one answer per person per proposal. A card and a plan view open at once, or a reopened card,
@@ -333,11 +335,11 @@ function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?
   });
 }
 
-function decide(code: string, hash: string): LogEntry | null {
+function decide(code: string, hash: string): Entry | null {
   if (!identity.isHost(code)) return null;
   const r = room.open(code);
-  return r.store.lock('proposal', (): LogEntry | null => {
-    const entries: LogEntry[] = r.readAll();
+  return r.store.lock('proposal', (): Entry | null => {
+    const entries: Entry[] = r.readAll();
     const f = room.fold(entries);
     const cur = f.proposals.get(hash);
     if (!cur || f.decisions.has(hash)) return null;

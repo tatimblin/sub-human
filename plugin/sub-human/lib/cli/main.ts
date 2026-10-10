@@ -107,6 +107,7 @@ import * as statusline from '../../statusline/index.ts';
 import { readInput } from '../io.ts';
 import { parse as parseArgs } from './args.ts';
 import type { CliIo, FlagSpec, Flags, Parsed } from './types.ts';
+import type { MirrorRoomStore } from '../room/store-mirror.ts';
 
 // Each command's own modules load when it runs (createRequire: require(esm) is synchronous), so the tail and
 // agent-statusline (run often) never load the remote stack, doctor or the host commands.
@@ -277,10 +278,11 @@ function watch(args: readonly string[]) {
     if (!show(e)) return;
     const who = label(e) + (room.unverifiedHuman(e) ? ' (unverified)' : '');
     const whoStr = e.via === 'human' ? c('1', who) : who === 'claude' ? c('35', who) : c('2', who);
+    const ph = e.hash || e.proposal_hash;
     const meta = [
       e.to && e.to !== 'room' && `→ ${e.to === name ? name : e.to}`,
       e.refs && e.refs.length && `refs ${e.refs.map((r: number) => '#' + r).join(',')}`,
-      (e.hash || e.proposal_hash) && `proposal ${(e.hash || e.proposal_hash).slice(0, 6)}`,
+      ph && `proposal ${ph.slice(0, 6)}`,
       e.task_id && `task #${e.task_id}`].filter(Boolean).join('  ');
     const head = c('2', `#${e.id} ${String(e.at || '').slice(11, 19)}`);
     console.log(`${head}  ${whoStr}  ${c(kindColor[e.kind] || '2', e.kind)}${meta ? '  ' + c('2', meta) : ''}`);
@@ -345,8 +347,9 @@ function linkCmd(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { reset: 0 });
   const code = rest[0];
   if (!code) die('usage: sub-human link CODE [--reset]');
-  const s = room.open(code).store;
-  if (s.isHost) die(`this machine hosts room "${code}"; there is no connection to start`, 1);
+  const opened = room.open(code).store;
+  if (opened.isHost) die(`this machine hosts room "${code}"; there is no connection to start`, 1);
+  const s = opened as MirrorRoomStore; // not the host: the room's mirror
   const link: typeof import('../remote/link.ts') = require('../remote/link.ts');
   if (!flags.reset) return link.run({ code }).then(() => process.exit(0), (e: Error) => die(e.message, 1));
   const st = link.status(code);

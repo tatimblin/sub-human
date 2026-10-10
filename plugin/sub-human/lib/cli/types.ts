@@ -2,6 +2,10 @@
  * plugin/sub-human/lib/cli/types.ts: the shared types of lib/cli/*.ts (type-only; nothing here runs).
  */
 
+import type { PipeSpec, SshSpec, WsSpec } from '../remote/types-rest.ts';
+import type { ProtoRange } from '../remote/types-core.ts';
+import type { LinkState } from '../room/types.ts';
+
 /** args.ts parse spec: 1 takes a value, 0 is a switch, '?' takes an optional value. */
 export type FlagSpec = Readonly<Record<string, 0 | 1 | '?'>>;
 
@@ -37,57 +41,23 @@ export interface Check {
   fix?: string;
 }
 
-/** A link file's transport as doctor reads it (lib/room/links.ts Link.transport; every field may be missing). */
-export interface LinkTransport {
-  kind?: string;
-  user?: string;
-  host?: string;
-  port?: number | string;
-  home?: string;
-  via?: string;
-  knownHosts?: string;
-  login?: boolean;
-}
-
-/** A link file as doctor reads it (lib/room/links.ts Link): only the fields it looks at. */
-export interface LinkFile {
-  transport?: LinkTransport;
-  token?: string;
-  invite?: string;
-  enroll?: unknown;
-  awaiting?: unknown;
-  request?: unknown;
-  moved?: { epoch?: number; host?: string; locator?: string; demoted?: boolean; reached_at?: string };
-}
+/** A link file's transport as doctor reads it (lib/room/links.ts Link.transport): any built-in kind's fields, each
+ * maybe missing (doctor reads a hand-edited file too). */
+export type LinkTransportView = { kind?: string } & Partial<Omit<SshSpec, 'kind'> & Omit<PipeSpec, 'kind'> & Omit<WsSpec, 'kind'>>;
 
 /** The link's state record (lib/room/link-state.ts read), or {state: 'offline'} when there is none. */
-export interface LinkStateView {
-  state: string;
-  since?: string;
-  attempt?: number;
-  rttMs?: number | null;
-  queued?: number;
-  lastError?: string | null;
-  source?: string;
-  pid?: number;
-}
-
-/** A protocol version range: protocol.PROTO, a hello reply's proto. */
-export interface ProtoSpan {
-  min: number;
-  max: number;
-}
+export type LinkStateView = Partial<LinkState> & Pick<LinkState, 'state'>;
 
 /** A hello reply as the probe reads it (the server's JSON, unvalidated: every field may be missing). */
 export interface HelloReply {
   v?: number;
-  proto?: ProtoSpan;
+  proto?: ProtoRange;
   server?: unknown;
   [k: string]: unknown;
 }
 
 /** doctor helloProbe(...) -> {ok, ms, reply?, error?, stderr?}; t0 and t1 are set on every answer (ok). */
-export interface HelloResult {
+export interface HelloProbe {
   ok: boolean;
   ms: number;
   t0?: number;
@@ -107,14 +77,14 @@ export interface Reach {
   skipped: boolean;
   hint: string | null;
   stderr: string;
-  protocol: { v?: number; proto: ProtoSpan | null; server: string | null } | null;
+  protocol: { v?: number; proto: ProtoRange | null; server: string | null } | null;
   skewMs: number | null;
 }
 
 /** diagnoseLink(code, opts) -> one link's report. */
 export interface LinkReport {
   code: string;
-  transport: { kind?: string; describe: string; user?: string; host?: string; port?: number | string; home?: string; login?: true };
+  transport: { kind?: string; describe: string; user?: string; host?: string; port?: number; home?: string; login?: true };
   credential: string;
   daemon: { running: boolean; pid?: number | null };
   state: LinkStateView;
@@ -140,7 +110,7 @@ export interface AuthorizedKeysScan {
 export interface Report {
   generated_at: string;
   versions: {
-    plugin: string | null; node: string; claude: string | null; protocol: ProtoSpan; ssh: string | null;
+    plugin: string | null; node: string; claude: string | null; protocol: ProtoRange; ssh: string | null;
     platform: string; arch: string; os: string;
   };
   checks: Check[];
