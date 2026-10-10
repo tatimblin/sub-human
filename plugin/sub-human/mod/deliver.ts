@@ -23,19 +23,23 @@ import { parseHello } from './core/seat.ts';
 import { answersItself, joinPayload, readReply, answerOf, CONFIRM_AFTER_MS } from './core/command.ts';
 import { shimArgv, shimEnv, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
-import type { On } from 'claude-code';
+import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
+import type { RelayIo, TailEvent, TailSeat } from './core/types.ts';
 
-const ROWS = { plugin: 'sub-human', key: 'rows' };
-const HELLO = { plugin: 'sub-human', key: 'hello' };
-const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' };
-const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' };
-const NONCE = { plugin: 'sub-human', key: 'nonce' };
+/** The tail child as the module tracks it; stream: its $.process.spawn stream, as stopChild ends it. */
+interface Child { sid: string; seat: TailSeat | null; stream: { return(value?: unknown): Promise<unknown> } | null; stopped: boolean; fails: number }
+
+const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
+const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
+const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
+const ERRORS = { plugin: 'sub-human', key: 'deliveryErrors' } as const;
+const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 
 /** Nonce reads and mints in order: two refreshes at once for one session id must hand mod-hello the same one. */
-let minting = Promise.resolve(null);
+let minting: Promise<string | null> = Promise.resolve(null);
 
 /** sid's nonce: the one kept in $.state, or a new one kept there first (mod-hello then writes it to the lease). */
-function nonceFor($, sid) {
+function nonceFor($: EngineInterface, sid: string): Promise<string | null> {
   const mint = async () => {
     const { value } = await $.state.get(NONCE);
     const kept = asNonce(value, sid);
@@ -49,7 +53,7 @@ function nonceFor($, sid) {
 }
 
 /** Run hooks/mod-hello.ts for sid and keep its answer in $.state (only a good answer replaces the last one). */
-async function sayHello($, sid) {
+async function sayHello($: EngineInterface, sid: string) {
   const root = $.plugin.root;
   const nonce = typeof sid === 'string' && sid ? await nonceFor($, sid) : null;
   const run = await $.process.run(shimArgv(root, 'mod-hello.ts'), {
@@ -63,13 +67,13 @@ async function sayHello($, sid) {
 }
 
 /** After a refresh failed: keep the last hello for the guard's home, but as no session's (prefilters run node). */
-async function forgetSession($) {
+async function forgetSession($: EngineInterface) {
   const value = asHello((await $.state.get(HELLO)).value);
   if (value && value.sid !== null) await $.state.set(HELLO, { ...value, sid: null });
 }
 
 /** mod-hello for sid; when it fails, forgetSession. */
-async function refresh($, sid) {
+async function refresh($: EngineInterface, sid: string) {
   let hello = null;
   try { hello = await sayHello($, sid); } catch { /* below */ }
   if (!hello) await forgetSession($);
@@ -78,11 +82,11 @@ async function refresh($, sid) {
 
 /** A join the command.run hook took (hooks/join.ts said so): {sid, context}, for the expansion it lets run next, so
  * the join hook beneath does not run a second time. Module state, set only while that next(e) runs. */
-let joined = null;
+let joined: { sid: string; context: string } | null = null;
 
 /** The current child: {sid, seat, stream, stopped}; null before the first start. Module state: a reload loses it
  * together with the child itself. */
-let child = null;
+let child: Child | null = null;
 /** The main-loop turn (running is null when idle, or unknown after a reload: then a wake is submitted, which waits
  * for idle anyway), its mid-turn wakes and the wakes held for the next turn. */
 const turns = turnLedger();
@@ -97,17 +101,17 @@ const relaying = new Set();
 /** When the delivery-error notice last showed ($.clock); a reload may show it once more. */
 let noticedAt = -Infinity;
 /** Error counts in order: two failures at once must not both read the same count. */
-let counting = Promise.resolve();
+let counting: Promise<void> = Promise.resolve();
 
-export const delivering = sid => !!(child && !child.stopped && child.sid === sid && child.seat);
+export const delivering = (sid: unknown) => !!(child && !child.stopped && child.sid === sid && child.seat);
 
-export function setRemote(on) { if (typeof on === 'boolean') remote = on; }
+export function setRemote(on: boolean | undefined) { if (typeof on === 'boolean') remote = on; }
 
-const userRow = text => ({ message: { type: 'user', content: [{ type: 'text', text }] } });
+const userRow = (text: string): SessionAppendArgs => ({ message: { type: 'user', content: [{ type: 'text', text }] } });
 
 /** One delivery failure: counted in $.state, and the person told unless they were told recently (or `tell` is
  * false: nothing was lost yet). Never throws. */
-function noteError($, { tell = true } = {}) {
+function noteError($: EngineInterface, { tell = true } = {}): Promise<void> {
   counting = counting.then(async () => {
     try {
       const { value } = await $.state.get(ERRORS);
@@ -126,13 +130,13 @@ function noteError($, { tell = true } = {}) {
 }
 
 /** The isMeta append (the model reads it with its next request); true when the row was stored. */
-async function appendRow($, text) {
+async function appendRow($: EngineInterface, text: string): Promise<boolean> {
   const r = await $.session.append(userRow(text)).catch(() => null);
   return !!(r && !r.deny);
 }
 
 /** Each line on its own notice, as a chat event's (a newline in one would be drawn as U+FFFD). */
-function logEach($, lines) {
+function logEach($: EngineInterface, lines: unknown) {
   for (const a of logLines(lines)) $.ui.log(a.text);
 }
 
@@ -142,7 +146,7 @@ function logEach($, lines) {
  * sees the room lines `seen` as notices, since no prompt row shows them (only "Prompt dropped by a hook"); lines
  * already shown are passed as none. Never throws.
  */
-function submitWake($, text, { appended = false, seen = [] } = {}) {
+function submitWake($: EngineInterface, text: string, { appended = false, seen = [] as string[] } = {}) {
   return (async () => {
     let r = null;
     try { r = await $.prompt.submit({ text }); } catch { /* below */ }
@@ -156,20 +160,20 @@ function submitWake($, text, { appended = false, seen = [] } = {}) {
 
 /** A wake while a turn runs: appended and checked at the turn's end; submitted when it cannot be appended, or when
  * the turn ended before the row was stored (no turn's end would check it). */
-async function midTurnWake($, text) {
+async function midTurnWake($: EngineInterface, text: string) {
   if (!(await appendRow($, text))) return submitWake($, text);
   // a clock that fails dates the row as never read: submitted again rather than lost
   const at = await $.clock.now().catch(() => Infinity);
   if (!turns.appended(text, at)) await submitWake($, text, { appended: true });
 }
 
-export const isRelay = text => relaying.has(text);
+export const isRelay = (text: string) => relaying.has(text);
 
 /**
  * What a relay needs of a hook's $, as plain functions (a hooks module passes no $ across an import): {now, after,
  * submit, log}. relayIo($) builds it here; mod/prompt.ts builds its own.
  */
-const relayIo = $ => ({
+const relayIo = ($: EngineInterface): RelayIo => ({
   now: () => $.clock.now(),
   after: (ms, fn) => $.clock.after(ms, fn),
   submit: text => $.prompt.submit({ text, asUser: true }),
@@ -177,12 +181,12 @@ const relayIo = $ => ({
 });
 
 /** Lines for the person on Remote Control (io: relayIo's shape): queued for the next relay. Never throws. */
-export function queueRelay(io, lines) {
+export function queueRelay(io: RelayIo, lines: unknown) {
   if (relayQ.add(lines)) scheduleRelay(io);
 }
 
 /** Flush the queue after RELAY_AFTER_MS (a prompt cannot be submitted from inside a hook) or the rest of the gap. */
-function scheduleRelay(io) {
+function scheduleRelay(io: RelayIo) {
   if (relayTimer || !relayQ.size || turns.running !== null) return; // a running turn's end schedules it
   relayTimer = true;
   void (async () => {
@@ -193,7 +197,7 @@ function scheduleRelay(io) {
 
 /** Every queued line as one relay prompt, once idle: only the lines, submitted asUser (mod/prompt.ts adds the
  * context). The person back at the terminal, or a prompt nothing took: the lines as notices here. Never throws. */
-async function flushRelay(io) {
+async function flushRelay(io: RelayIo) {
   if (turns.running !== null) return;
   const text = relayQ.take(await Promise.resolve().then(io.now).catch(() => 0));
   if (!text) return;
@@ -206,7 +210,7 @@ async function flushRelay(io) {
   } catch { asNotices(); } finally { relaying.delete(text); }
 }
 
-function stopChild(sid) {
+function stopChild(sid?: string) {
   const c = child;
   if (!c || (sid !== undefined && c.sid !== sid)) return;
   c.stopped = true;
@@ -216,18 +220,18 @@ function stopChild(sid) {
 }
 
 /** Start the child for sid unless it already runs for it; stops one for another session id. */
-function ensureChild($, sid) {
+function ensureChild($: EngineInterface, sid: unknown) {
   if (typeof sid !== 'string' || !sid) return;
   if (child && !child.stopped && child.sid === sid) return;
   if (child) stopChild();
-  const c = { sid, seat: null, stream: null, stopped: false, fails: 0 };
+  const c: Child = { sid, seat: null, stream: null, stopped: false, fails: 0 };
   child = c;
   void runChild($, c);
 }
 
 /** The child's loop: spawn, route each line, and on exit start again after the backoff (until stopped). Never
  * throws: it runs after the hook that started it returned, where nothing would handle a rejection. */
-async function runChild($, c) {
+async function runChild($: EngineInterface, c: Child) {
   const root = $.plugin.root;
   const now = () => $.clock.now().catch(() => 0);
   while (!c.stopped && child === c) {
@@ -251,7 +255,7 @@ async function runChild($, c) {
     c.fails = nextFails(c.fails, (await now()) - started);
     await noteError($, { tell: c.fails >= MOD_RESTART_TELL_FAILS });
     try {
-      await new Promise((resolve, reject) => { try { $.clock.after(restartDelay(c.fails - 1), resolve); } catch (err) { reject(err); } });
+      await new Promise<void>((resolve, reject) => { try { $.clock.after(restartDelay(c.fails - 1), resolve); } catch (err) { reject(err); } });
     } catch {
       // no timer here: give up; the next session.start, join or SessionStart starts a child again
       await noteError($);
@@ -263,20 +267,20 @@ async function runChild($, c) {
 
 /** classic.PostToolUse / PostToolUseFailure: note when a main-loop tool call finished (no agent_id). Without a
  * time the last one stands: a wake then reads as unread and is submitted again rather than lost. */
-async function toolDone($, e, next) {
+async function toolDone<E extends { readonly agent_id?: string }, R>($: EngineInterface, e: E, next: (e: E) => R | PromiseLike<R>): Promise<R> {
   if (!e.agent_id) {
     try { turns.toolDone(await $.clock.now()); } catch { /* above */ }
   }
   return next(e);
 }
 
-async function heldRows($) {
+async function heldRows($: EngineInterface): Promise<string | null> {
   const { value } = await $.state.get(ROWS);
   return typeof value === 'string' && value ? value : null;
 }
 
 /** One event's actions (mod/core/deliver.ts route). */
-async function apply($, c, ev) {
+async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
   if (!ev || c.stopped) return;
   const role = c.seat && c.seat.role === 'claude' ? 'claude' : 'member';
   const rows = ev.type === 'wake' && role === 'claude' ? await heldRows($) : null;

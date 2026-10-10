@@ -19,36 +19,37 @@ import { reviewOpenOf } from './core/prefilter.ts';
 import { delivering, setRemote, queueRelay, isRelay } from './deliver.ts';
 import { RELAY_CONTEXT } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
-import type { On } from 'claude-code';
+import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
+import type { Hello, ShimResult } from './core/types.ts';
 
-const HELLO = { plugin: 'sub-human', key: 'hello' };
-const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' };
-const TITLED = { plugin: 'sub-human', key: 'titled' };
-const ROWS = { plugin: 'sub-human', key: 'rows' };
-const NONCE = { plugin: 'sub-human', key: 'nonce' };
+const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
+const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
+const TITLED = { plugin: 'sub-human', key: 'titled' } as const;
+const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
+const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 const origins = originQueue();
 /** The last presence this module wrote or saw: 'working' skips the node start. Lost on reload: then written once. */
-let presence = null;
+let presence: string | null = null;
 
 /** The hello, or null before mod-hello answered. */
-async function helloOf($) {
+async function helloOf($: EngineInterface): Promise<Hello | null> {
   const { value } = await $.state.get(HELLO);
   return asHello(value);
 }
 
 /** Refusals for the person on Remote Control, held by the UserPromptSubmit shim until its prompt.submit returns. */
-let refusals = [];
+let refusals: string[] = [];
 
 /** Show text (an @room's refusal) to the person on Remote Control, where no notice shows (cc CONTRACT
  * bridge-forwarded-rows): held, then queued for the next relay (mod/deliver.ts) by the prompt.submit hook around
  * it, so the relay's submitter is that hook and this module's classic.UserPromptSubmit sees the relay (a plugin's
  * prompt skips the hook that submits it). */
-function relay(text) {
+function relay(text: unknown) {
   refusals.push(...String(text ?? '').split('\n'));
 }
 
 /** Queue the held refusals with this hook's $ (no $ crosses an import: mod/deliver.ts takes plain functions). */
-function sendRefusals($) {
+function sendRefusals($: EngineInterface) {
   if (!refusals.length) return;
   const lines = refusals;
   refusals = [];
@@ -61,12 +62,14 @@ function sendRefusals($) {
 }
 
 /** Relays the model has already been given RELAY_CONTEXT for (by prompt.submit), so the classic hook adds none. */
-const contexted = new Set();
+const contexted = new Set<string>();
 
 /** node hooks/prompt.ts with the classic payload (plus the origin), translated; its notices and report applied: a
  * notice is a $.ui.log line, or for a prompt typed through Remote Control a relay (mod/deliver.ts; the phone shows no
  * notice). An @room it did not handle (exit other than 0 or 2) is refused, and a person on Remote Control told. */
-async function runPrompt($, e, origin, hello) {
+async function runPrompt(
+  $: EngineInterface, e: ClassicHookInputs['UserPromptSubmit'], origin: string | null, hello: Hello | null,
+): Promise<ShimResult> {
   const root = $.plugin.root;
   const { value: kept } = await $.state.get(NONCE);
   const nonce = asNonce(kept, e.session_id);

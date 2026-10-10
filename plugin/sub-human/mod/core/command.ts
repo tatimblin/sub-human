@@ -15,6 +15,7 @@
  * answer and the notices. Failure: a shim that did not answer (timeout, crash) is one refusal notice pointing to the
  * doctor; the command is not run a second time.
  */
+import type { JoinReply, HookJson, HookJsonSpecific, OriginLike, RunOutput, SubHumanReport } from './types.ts';
 
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
 export const COMMANDS = Object.freeze(['sub-human:sub-human', 'sub-human']);
@@ -23,8 +24,8 @@ export const COMMANDS = Object.freeze(['sub-human:sub-human', 'sub-human']);
  * and any word of 3-10 digits, may carry a PIN. */
 const SECRET_VERBS = ['join', 'invite', 'admit'];
 const DIGITS = /^[0-9]{3,10}$/;
-const words = args => String(args ?? '').trim().split(/\s+/).filter(Boolean);
-export const mayHoldSecret = args => { const a = words(args); return SECRET_VERBS.includes(a[0]) || a.some(w => DIGITS.test(w)); };
+const words = (args: unknown) => String(args ?? '').trim().split(/\s+/).filter(Boolean);
+export const mayHoldSecret = (args: unknown) => { const a = words(args); return SECRET_VERBS.includes(a[0]) || a.some(w => DIGITS.test(w)); };
 
 /**
  * Whether the module answers this run itself. Typed here (composer): yes. Typed through Remote Control (bridge): only
@@ -33,14 +34,14 @@ export const mayHoldSecret = args => { const a = words(args); return SECRET_VERB
  * through the classic hook, which knows the agent type): no, the classic hook beneath answers, which keeps a typed PIN
  * out of the conversation itself.
  */
-export function answersItself(e, { roomClaude = false, nonce = null } = {}) {
+export function answersItself(e: { args?: unknown; origin?: OriginLike } | null | undefined, { roomClaude = false, nonce = null }: { roomClaude?: boolean; nonce?: string | null } = {}): boolean {
   if (roomClaude || !nonce || !e || typeof e.args !== 'string') return false;
   const kind = e.origin && e.origin.kind;
   return kind === 'composer' || (kind === 'bridge' && !mayHoldSecret(e.args));
 }
 
 /** hooks/join.ts's stdin: the UserPromptExpansion payload Claude Code would give it, marked as the module's. */
-export function joinPayload({ sid, cwd, args, nonce }) {
+export function joinPayload({ sid, cwd, args, nonce }: { sid: unknown; cwd: unknown; args: unknown; nonce: unknown }) {
   return {
     hook_event_name: 'UserPromptExpansion', session_id: sid, cwd, expansion_type: 'slash_command',
     command_name: 'sub-human:sub-human', command_args: String(args ?? ''), command_source: 'plugin',
@@ -52,12 +53,12 @@ export function joinPayload({ sid, cwd, args, nonce }) {
 export const CONFIRM_AFTER_MS = 150;
 
 /** One notice per line (a newline in one is drawn as U+FFFD, cc CONTRACT ui-log-notice); blank lines dropped. */
-export const noticeLines = text => String(text ?? '').split('\n').filter(l => l.trim());
+export const noticeLines = (text: unknown) => String(text ?? '').split('\n').filter(l => l.trim());
 
 const FAILED = '✗ /sub-human did not finish here. Run /sub-human doctor.';
 
 /** The last stdout line that parses as a JSON object, or null. */
-function lastJson(stdout) {
+function lastJson(stdout: unknown): HookJson | null {
   for (const line of String(stdout || '').trim().split('\n').reverse()) {
     try { const o = JSON.parse(line); if (o && typeof o === 'object' && !Array.isArray(o)) return o; } catch { /* next */ }
   }
@@ -69,12 +70,13 @@ function lastJson(stdout) {
  * {kind: 'say', lines, refused, shareable}, or {kind: 'failed', lines} when it did not answer as the module asked
  * (exit other than 0, no subHuman reply).
  */
-export function readReply(run) {
+export function readReply(run: RunOutput | null | undefined): JoinReply {
   if (!run || run.exitCode !== 0) return { kind: 'failed', lines: [FAILED] };
   const o = lastJson(run.stdout);
-  const say = o && o.subHuman && typeof o.subHuman.say === 'string' ? o.subHuman : null;
-  if (!say) return { kind: 'failed', lines: [FAILED] };
-  const hso = o.hookSpecificOutput && typeof o.hookSpecificOutput === 'object' ? o.hookSpecificOutput : {};
+  const sub = o && o.subHuman && typeof o.subHuman === 'object' ? o.subHuman as SubHumanReport : null;
+  const say = sub && typeof sub.say === 'string' ? sub : null;
+  if (!o || !say) return { kind: 'failed', lines: [FAILED] };
+  const hso: HookJsonSpecific = o.hookSpecificOutput && typeof o.hookSpecificOutput === 'object' ? o.hookSpecificOutput : {};
   if (say.joined === true && typeof hso.additionalContext === 'string' && hso.additionalContext) {
     return { kind: 'joined', context: hso.additionalContext, lines: noticeLines(say.say) };
   }
@@ -86,7 +88,7 @@ export function readReply(run) {
  * Remote Control: a shareable reply is the command's output row (result {text}); one that is not (none should be: the
  * module answers only prompts that hold no secret there) says where it is instead.
  */
-export function answerOf(reply, { bridge = false } = {}) {
+export function answerOf(reply: JoinReply, { bridge = false } = {}): { result: { text?: string }; logs: string[] } {
   if (!bridge) return { result: {}, logs: reply.lines };
   if (reply.kind === 'say' && reply.shareable && reply.lines.length) return { result: { text: reply.lines.join('\n') }, logs: [] };
   return { result: { text: 'the reply is on the terminal of the machine this session runs on.' }, logs: reply.lines };

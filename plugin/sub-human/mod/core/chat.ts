@@ -12,14 +12,14 @@ export const CHAT_LINES_MAX = 20;
 
 /** Control and bidi characters never reach the drawing (as lib/room/render.ts safeText). */
 const UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
-const clean = s => String(s).replace(/\r\n?/g, '\n').replace(UNSAFE, '');
+const clean = (s: unknown) => String(s).replace(/\r\n?/g, '\n').replace(UNSAFE, '');
 
 /**
  * A message another member's Claude sent: "bob's Claude: <first line>", further lines under NEST as
  * lib/room/render.ts chatLines lays out a message, at most CHAT_LINES_MAX then "[+N more lines: ctrl+o]".
  * null when fromName is not a seat address ("NAME.CODE").
  */
-export function peerLines(fromName, text) {
+export function peerLines(fromName: unknown, text: unknown): string[] | null {
   const who = parseAddr(fromName);
   if (!who) return null;
   let lines = clean(text).split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
@@ -32,7 +32,7 @@ export function peerLines(fromName, text) {
 }
 
 /** A sub-human prompt without its "(for Claude)" lines (the model still reads them); null when none is left. */
-export function roomLines(text) {
+export function roomLines(text: unknown): string[] | null {
   const lines = clean(text).split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim() && !l.startsWith(FOR_CLAUDE));
   return lines.length ? lines : null;
 }

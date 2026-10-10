@@ -10,13 +10,16 @@ import { peerLines, roomLines } from './core/chat.ts';
 import type { On } from 'claude-code';
 
 export function registerRender(on: On) {
-  on('ui.render', { component: 'UserMessage', props: { origin: { kind: ['peer', 'peer-send-message', 'plugin'] } } }, ($, e, next) => {
+  // the d.ts takes no list for a field nested in a union (origin.kind), the engine does (validate reads it): typed as
+  // the UserMessage matcher it is, the origin left to the engine
+  on('ui.render', { component: 'UserMessage', props: { origin: { kind: ['peer', 'peer-send-message', 'plugin'] } } } as { component: 'UserMessage' }, ($, e, next) => {
     const { text, origin, from, isExpanded } = e.props;
     if (isExpanded) return next(e);
     const isOurs = origin.kind === 'plugin';
-    const lines = isOurs ? (origin.name === $.plugin.name ? roomLines(text) : null) : peerLines(from && from.name, text);
+    const lines = origin.kind === 'plugin' ? (origin.name === $.plugin.name ? roomLines(text) : null) : peerLines(from && from.name, text);
     if (!lines) return next(e);
     const { Box, Text } = $.ui.resolve(e);
-    return h(Box, { flexDirection: 'column' }, ...lines.map((l, i) => h(Text, { key: `l${i}`, dimColor: !isOurs }, l)));
+    const tree = h(Box, { flexDirection: 'column' }, ...lines.map((l, i) => h(Text, { key: `l${i}`, dimColor: !isOurs }, l)));
+    return tree && typeof tree === 'object' ? tree : next(e); // a Box is an element (h is typed for any tag)
   }); // no .catch: a throw skips this hook for that one row (the engine draws its own) and the next row runs it again
 }

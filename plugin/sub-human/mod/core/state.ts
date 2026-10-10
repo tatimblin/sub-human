@@ -9,17 +9,21 @@
  *   asNonce(value, sid) -> string|null   the nonce kept for session id sid, or null
  *   mintNonce() -> string        32 hex characters from crypto.getRandomValues (the module runtime has it)
  */
+import type { Hello } from './types.ts';
 
 export const KEYS = Object.freeze(['hello', 'reviewMaybeOpen', 'rows', 'titled', 'deliveryErrors', 'nonce']);
 
-export const asHello = value => (value && typeof value === 'object' ? value : null);
+// the value is the module's own (sayHello stores only a parsed hello), so an object is taken as one
+export const asHello = (value: unknown): Hello | null => (value && typeof value === 'object' ? value as Hello : null);
 
 export const NONCE_RE = /^[0-9a-f]{32}$/;
 
-export const asNonce = (value, sid) => (value && typeof value === 'object' && typeof sid === 'string' && value.sid === sid
-  && typeof value.value === 'string' && NONCE_RE.test(value.value) ? value.value : null);
+export const asNonce = (value: unknown, sid: unknown): string | null => {
+  const v = value && typeof value === 'object' ? value as { sid?: unknown; value?: unknown } : null;
+  return v && typeof sid === 'string' && v.sid === sid && typeof v.value === 'string' && NONCE_RE.test(v.value) ? v.value : null;
+};
 
-export function mintNonce() {
+export function mintNonce(): string {
   const b = new Uint8Array(16);
   crypto.getRandomValues(b);
   return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
