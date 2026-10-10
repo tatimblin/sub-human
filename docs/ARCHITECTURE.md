@@ -60,19 +60,19 @@ Who spawns whom:
 <!-- gen:hooks -->
 | Event | Matcher | Script | Timeout | Async |
 |---|---|---|---|---|
-| UserPromptExpansion | `^(sub-human:)?sub-human$` | `hooks/join.js` | 10 s | — |
-| PreToolUse | `Agent\|Task` | `hooks/row-guard.js` | 10 s | — |
-| PreToolUse | `^(AskUserQuestion\|EnterPlanMode\|ExitPlanMode)$\|^mcp__plugin_sub-human_room__` | `hooks/consent.js` | 10 s | — |
-| PostToolUse | `Agent\|Task` | `hooks/row-map.js` | 10 s | — |
-| PostToolUse | `AskUserQuestion\|EnterPlanMode\|ExitPlanMode` | `hooks/consent.js` | 10 s | — |
-| PermissionRequest | `ExitPlanMode` | `hooks/consent.js` | 10 s | — |
-| SubagentStop | (all) | `hooks/row-hold.js` | 10 s | — |
-| SessionStart | `startup\|resume\|clear\|fork` | `hooks/row-launcher.js` | 10 s | async |
-| SessionStart | `compact\|clear\|resume` | `hooks/session-restore.js` | 10 s | — |
-| SessionStart | `resume` | `hooks/row-rewake.js` | 30 s | asyncRewake |
-| SessionEnd | (all) | `hooks/session-end.js` | 5 s | — |
-| Notification | `idle_prompt\|permission_prompt` | `hooks/presence.js` | 10 s | async |
-| StopFailure | (all) | `hooks/presence.js` | 10 s | async |
+| UserPromptExpansion | `^(sub-human:)?sub-human$` | `hooks/compile-cache.js` | 10 s | — |
+| PreToolUse | `Agent\|Task` | `hooks/compile-cache.js` | 10 s | — |
+| PreToolUse | `^(AskUserQuestion\|EnterPlanMode\|ExitPlanMode)$\|^mcp__plugin_sub-human_room__` | `hooks/compile-cache.js` | 10 s | — |
+| PostToolUse | `Agent\|Task` | `hooks/compile-cache.js` | 10 s | — |
+| PostToolUse | `AskUserQuestion\|EnterPlanMode\|ExitPlanMode` | `hooks/compile-cache.js` | 10 s | — |
+| PermissionRequest | `ExitPlanMode` | `hooks/compile-cache.js` | 10 s | — |
+| SubagentStop | (all) | `hooks/compile-cache.js` | 10 s | — |
+| SessionStart | `startup\|resume\|clear\|fork` | `hooks/compile-cache.js` | 10 s | async |
+| SessionStart | `compact\|clear\|resume` | `hooks/compile-cache.js` | 10 s | — |
+| SessionStart | `resume` | `hooks/compile-cache.js` | 30 s | asyncRewake |
+| SessionEnd | (all) | `hooks/compile-cache.js` | 5 s | — |
+| Notification | `idle_prompt\|permission_prompt` | `hooks/compile-cache.js` | 10 s | async |
+| StopFailure | (all) | `hooks/compile-cache.js` | 10 s | async |
 <!-- /gen:hooks -->
 
 ### Function hooks (generated)
@@ -89,32 +89,32 @@ The plugin also ships one hooks module (Claude Code 2.1.292+; [mods plan](archiv
 - **Copied constants.** `mod/core` keeps copies of a few `lib/` values (restart and notice timings from `lib/config.js`, the name and code patterns from `lib/text.js`, chat-line constants from `lib/room/render.js`). This is deliberate: `mod/` is ESM and imports no CommonJS, and `module-dollar-local` keeps `$` in the registering file anyway. The `test/mod-core*.test.js` equality tests keep the copies in step.
 
 <!-- gen:mod-hooks -->
-From `mod/register.mjs` (hooks.json `modules`), in registration order.
+From `mod/register.ts` (hooks.json `modules`), in registration order.
 
 | Event | Matcher | File | Does |
 |---|---|---|---|
-| `session.start` | (all) | `mod/deliver.mjs` | runs hooks/mod-hello.js with the session's nonce (minted once per session id into $.state; the lease keeps it; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node scripts/sub-human tail --ndjson, restarted with backoff; the seat's only delivery) and routes its events: chat -> $.ui.log (typed through Remote Control: relayed as a prompt of only the room lines, asUser, batched one per RELAY_GAP_MS), pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state |
-| `command.run` | `command sub-human:sub-human\|sub-human` | `mod/deliver.mjs` | answers /sub-human itself when typed here (or through Remote Control with no PIN in it; never in the room's Claude): node hooks/join.js through the shim (sub_human_via, the nonce), then its reply as $.ui.log notices with an empty answer (no row, nothing for the model to read or repeat; through Remote Control a reply with no secret is the command's output {text}), so none reads "blocked by hook"; a join that worked expands as before (next), its mechanics block handed to the expansion hook below, and a one-line confirmation logged; then mod-hello again. .catch passes it on to the classic hook |
-| `classic.UserPromptExpansion` | `command_name ^(sub-human:)?sub-human$` | `mod/deliver.mjs` | after the join (hooks/join.js beneath, or the mechanics block of the one command.run took, without running it again), runs mod-hello again for the new seat and starts the tail child |
-| `classic.SessionStart` | `source clear\|compact\|resume` | `mod/deliver.mjs` | after session-restore beneath (a /clear rebinds the seat to a new session id), runs mod-hello again and starts the tail child for that id; reviewMaybeOpen unsure |
-| `session.end` | (all) | `mod/deliver.mjs` | stops that session id's tail child |
-| `turn.start` | (all) | `mod/deliver.mjs` | marks a main-loop turn running (a wake then appends instead of submitting) |
-| `turn.complete` | (all) | `mod/deliver.mjs` | marks idle; submits a mid-turn wake no request carried (none followed a tool call that finished after it), and schedules the Remote Control relay held during the turn |
-| `classic.PostToolUse` | (all) | `mod/deliver.mjs` | observes when a main-loop tool call finished (a model request follows it, carrying a mid-turn wake) |
-| `classic.PostToolUseFailure` | (all) | `mod/deliver.mjs` | the same, for a tool call that failed |
-| `tool.call` | `Bash` | `mod/guard.mjs` | denies a command that names the store or runs the plugin's code (mod/core/guard.mjs bashVerdict); .catch fails closed on "sub-human" |
-| `tool.call` | `Write\|Edit\|MultiEdit\|NotebookEdit` | `mod/guard.mjs` | denies a write into the store, lexically or after $.fs.stat realPath; .catch fails closed on "sub-human" |
-| `tool.call` | `mcp__plugin_sub-human_room__hold` | `mod/guard.mjs` | denies hold outside a row subagent (no agentId) |
-| `tool.check` | `/^mcp__plugin_sub-human_room__/` | `mod/guard.mjs` | allows the room tools for a seated session (no permission prompt); hold only with agentId |
-| `prompt.submit` | (all) | `mod/prompt.mjs` | a relay of this module's own (mod/deliver.mjs) passes with RELAY_CONTEXT as context; drops an @room (or, in a room, an @claude) whose origin is not composer, sdk or bridge (a peer, a notification, a plugin); a typed origin says whether the person is on Remote Control (bridge) or here; hands the origin to the shim below; a typed prompt the tail child delivers for carries the held rows text as context and writes "working" presence (node hooks/presence.js, not awaited) unless already working; .catch drops only an @room |
-| `classic.Notification` | `notification_type idle_prompt\|permission_prompt` | `mod/prompt.mjs` | notes the presence presence.js beneath writes, so the next prompt writes "working" again |
-| `classic.StopFailure` | (all) | `mod/prompt.mjs` | notes the error presence presence.js beneath writes |
-| `classic.UserPromptSubmit` | (all) | `mod/prompt.mjs` | sessionTitle NAME.CODE once per session id (members); no node for a relay, nor when not an @room (or a seated @claude) and surely unseated, or a member's seat the tail child delivers for with no review open; else node hooks/prompt.js with sub_human_origin and the session's nonce, which at-room checks against the lease (systemMessage via $.ui.log; typed through Remote Control, a refusal is relayed as a prompt after the hook returns) |
-| `tool.call` | `EnterPlanMode\|ExitPlanMode` | `mod/consent.mjs` | sets reviewMaybeOpen (a room review starts only through these) |
-| `classic.Stop` | (all) | `mod/consent.mjs` | node hooks/consent.js (the open-review nudge) only while a review may be open or the seat is unknown |
-| `classic.PostToolUse` | `tool_name TaskCreate\|TaskUpdate` | `mod/tasks.mjs` | node hooks/tasks.js (the room task mirror) only for the room's Claude or an unknown seat |
-| `classic.TaskCompleted` | (all) | `mod/tasks.mjs` | node hooks/tasks.js (the gate; exit 2 -> block) only for the room's Claude or an unknown seat; .catch blocks in the room's Claude |
-| `ui.render` | `UserMessage, origin peer\|peer-send-message\|plugin` | `mod/render.mjs` | draws another member's Claude as "bob's Claude: …" and a sub-human prompt as its chat lines, without "(for Claude)" lines |
+| `session.start` | (all) | `mod/deliver.ts` | runs hooks/mod-hello.ts with the session's nonce (minted once per session id into $.state; the lease keeps it; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node scripts/sub-human tail --ndjson, restarted with backoff; the seat's only delivery) and routes its events: chat -> $.ui.log (typed through Remote Control: relayed as a prompt of only the room lines, asUser, batched one per RELAY_GAP_MS), pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state |
+| `command.run` | `command sub-human:sub-human\|sub-human` | `mod/deliver.ts` | answers /sub-human itself when typed here (or through Remote Control with no PIN in it; never in the room's Claude): node hooks/join.ts through the shim (sub_human_via, the nonce), then its reply as $.ui.log notices with an empty answer (no row, nothing for the model to read or repeat; through Remote Control a reply with no secret is the command's output {text}), so none reads "blocked by hook"; a join that worked expands as before (next), its mechanics block handed to the expansion hook below, and a one-line confirmation logged; then mod-hello again. .catch passes it on to the classic hook |
+| `classic.UserPromptExpansion` | `command_name ^(sub-human:)?sub-human$` | `mod/deliver.ts` | after the join (hooks/join.ts beneath, or the mechanics block of the one command.run took, without running it again), runs mod-hello again for the new seat and starts the tail child |
+| `classic.SessionStart` | `source clear\|compact\|resume` | `mod/deliver.ts` | after session-restore beneath (a /clear rebinds the seat to a new session id), runs mod-hello again and starts the tail child for that id; reviewMaybeOpen unsure |
+| `session.end` | (all) | `mod/deliver.ts` | stops that session id's tail child |
+| `turn.start` | (all) | `mod/deliver.ts` | marks a main-loop turn running (a wake then appends instead of submitting) |
+| `turn.complete` | (all) | `mod/deliver.ts` | marks idle; submits a mid-turn wake no request carried (none followed a tool call that finished after it), and schedules the Remote Control relay held during the turn |
+| `classic.PostToolUse` | (all) | `mod/deliver.ts` | observes when a main-loop tool call finished (a model request follows it, carrying a mid-turn wake) |
+| `classic.PostToolUseFailure` | (all) | `mod/deliver.ts` | the same, for a tool call that failed |
+| `tool.call` | `Bash` | `mod/guard.ts` | denies a command that names the store or runs the plugin's code (mod/core/guard.ts bashVerdict); .catch fails closed on "sub-human" |
+| `tool.call` | `Write\|Edit\|MultiEdit\|NotebookEdit` | `mod/guard.ts` | denies a write into the store, lexically or after $.fs.stat realPath; .catch fails closed on "sub-human" |
+| `tool.call` | `mcp__plugin_sub-human_room__hold` | `mod/guard.ts` | denies hold outside a row subagent (no agentId) |
+| `tool.check` | `/^mcp__plugin_sub-human_room__/` | `mod/guard.ts` | allows the room tools for a seated session (no permission prompt); hold only with agentId |
+| `prompt.submit` | (all) | `mod/prompt.ts` | a relay of this module's own (mod/deliver.ts) passes with RELAY_CONTEXT as context; drops an @room (or, in a room, an @claude) whose origin is not composer, sdk or bridge (a peer, a notification, a plugin); a typed origin says whether the person is on Remote Control (bridge) or here; hands the origin to the shim below; a typed prompt the tail child delivers for carries the held rows text as context and writes "working" presence (node hooks/presence.ts, not awaited) unless already working; .catch drops only an @room |
+| `classic.Notification` | `notification_type idle_prompt\|permission_prompt` | `mod/prompt.ts` | notes the presence presence.ts beneath writes, so the next prompt writes "working" again |
+| `classic.StopFailure` | (all) | `mod/prompt.ts` | notes the error presence presence.ts beneath writes |
+| `classic.UserPromptSubmit` | (all) | `mod/prompt.ts` | sessionTitle NAME.CODE once per session id (members); no node for a relay, nor when not an @room (or a seated @claude) and surely unseated, or a member's seat the tail child delivers for with no review open; else node hooks/prompt.ts with sub_human_origin and the session's nonce, which at-room checks against the lease (systemMessage via $.ui.log; typed through Remote Control, a refusal is relayed as a prompt after the hook returns) |
+| `tool.call` | `EnterPlanMode\|ExitPlanMode` | `mod/consent.ts` | sets reviewMaybeOpen (a room review starts only through these) |
+| `classic.Stop` | (all) | `mod/consent.ts` | node hooks/consent.ts (the open-review nudge) only while a review may be open or the seat is unknown |
+| `classic.PostToolUse` | `tool_name TaskCreate\|TaskUpdate` | `mod/tasks.ts` | node hooks/tasks.ts (the room task mirror) only for the room's Claude or an unknown seat |
+| `classic.TaskCompleted` | (all) | `mod/tasks.ts` | node hooks/tasks.ts (the gate; exit 2 -> block) only for the room's Claude or an unknown seat; .catch blocks in the room's Claude |
+| `ui.render` | `UserMessage, origin peer\|peer-send-message\|plugin` | `mod/render.ts` | draws another member's Claude as "bob's Claude: …" and a sub-human prompt as its chat lines, without "(for Claude)" lines |
 <!-- /gen:mod-hooks -->
 
 ### MCP tools (generated)
@@ -124,11 +124,11 @@ Full names are `mcp__plugin_sub-human_room__<tool>`.
 
 | Tool | Server (module) | readOnly | Description |
 |---|---|---|---|
-| `post` | room (`mcp/room-server.js`) | no | Post a note to the shared sub-human room as your human's Claude (labelled as yours, never as their words). |
-| `read` | room (`mcp/room-server.js`) | yes | Read the shared sub-human room log: with ids, those entries in full (e.g. a cut-off line); without, your unseen entries, oldest first, at most 100. |
-| `propose` | room (`mcp/room-server.js`) | no | Ask people in the sub-human room to agree to a plan or decision (exactly one of text or path). |
-| `hold` | room (`mcp/hold.js`) | yes | Internal to sub-human row agents (sub-human:participant with member, sub-human:room with room). |
-| `task` | room (`mcp/task.js`) | no | Ask the sub-human room's Claude to change the shared room task list; it is queued and the room's Claude applies it. add needs subject; claim, release and done need id; done also needs evidence. |
+| `post` | room (`mcp/room-server.ts`) | no | Post a note to the shared sub-human room as your human's Claude (labelled as yours, never as their words). |
+| `read` | room (`mcp/room-server.ts`) | yes | Read the shared sub-human room log: with ids, those entries in full (e.g. a cut-off line); without, your unseen entries, oldest first, at most 100. |
+| `propose` | room (`mcp/room-server.ts`) | no | Ask people in the sub-human room to agree to a plan or decision (exactly one of text or path). |
+| `hold` | room (`mcp/hold.ts`) | yes | Internal to sub-human row agents (sub-human:participant with member, sub-human:room with room). |
+| `task` | room (`mcp/task.ts`) | no | Ask the sub-human room's Claude to change the shared room task list; it is queued and the room's Claude applies it. add needs subject; claim, release and done need id; done also needs evidence. |
 <!-- /gen:mcp-tools -->
 
 `hold` is allowed only for row subagents (the module's guard, `mod/guard.mjs`, checks `agentId`); `task` is refused for the room's Claude, which applies requests natively.
@@ -428,7 +428,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `env-nested-strip` | §2 | incidental | A nested claude drops CLAUDE_CODE_SESSION_ID from its env. |
 | `hook-input-common` | §2 | API | Common hook input: session_id, transcript_path, cwd, prompt_id?, permission_mode?, agent_id?; no pid. |
 | `mcp-stdio-ppid` | §2 | incidental | A stdio MCP server is spawned without a shell (the Linux cgroup wrapper ends in exec), so its process.ppid is the claude pid; the room server resolves its caller that way. Not so when the user sets CLAUDE_CODE_SHELL_PREFIX (cc-2.1.292.md Review spikes, S-mcp a). |
-| `mcp-progress-resets-idle-timeout` | §2 | incidental | A tools/call has an idle watchdog (30 min for stdio, CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT) that each notifications/progress resets, and a wall-clock limit (MCP_TOOL_TIMEOUT, about 27.8 h by default) that progress does not extend. mcp/hold.js beats progress to keep a hold under the idle watchdog (cc-2.1.292.md Review spikes, S-mcp b). |
+| `mcp-progress-resets-idle-timeout` | §2 | incidental | A tools/call has an idle watchdog (30 min for stdio, CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT) that each notifications/progress resets, and a wall-clock limit (MCP_TOOL_TIMEOUT, about 27.8 h by default) that progress does not extend. mcp/hold.ts beats progress to keep a hold under the idle watchdog (cc-2.1.292.md Review spikes, S-mcp b). |
 | `mcp-server-shared-by-subagents` | §2 | incidental | A subagent with no mcpServers uses its parent's MCP clients, so the room tools a subagent calls reach the main thread's server process (cc-2.1.292.md Review spikes, S-mcp c). |
 | `plan-mode-attachment` | §3 | incidental | Transcript attachment {type:"plan_mode", planFilePath} (cc.planFile). |
 | `exitplan-normalize` | §3 | API | Pre/PermissionRequest hooks on ExitPlanMode see tool_input.plan and planFilePath. |
@@ -437,8 +437,8 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `plan-reject-dialog` | §3 | incidental | "No, keep planning" returns deny with the typed feedback. |
 | `plan-reject-user-feedback` | §3 | incidental | The rejected tool_result transcript entry carries top-level userFeedback (cc.planFeedback). |
 | `plan-reject-text` | §3 | incidental | Fallback: the note sits between "the user said:\n" and "\n\nNote: The user's next message". |
-| `plan-reject-remote` | §3 | incidental | Remote Control deny (observed 2.1.292): with a note ("Suggest edits") the terminal's shapes (userFeedback, "the user said:"); a bare deny says "STOP what you are doing…" with no userFeedback: cc.planFeedback null, nothing recorded. An ordinary message typed on the phone right after a bare Deny is attached to the deny as that note (observed live), so a note is never an objection by itself: it waits for the person's Send on the confirm card (hooks/consent.js). |
-| `auq-bridge-racer` | §3 | incidental | A tool with its own permission dialog (AskUserQuestion, the plan view) is raced by Remote Control when the session has bridge callbacks: the phone gets the card and its answer resolves the dialog, as the terminal's would; the tool_response is Claude Code's, never the model's. The confirm card for a review's note relies on it (hooks/consent.js). A card can still auto-resolve after the askUserQuestionTimeout idle (afkTimeoutMs): then nothing is recorded and the note waits. |
+| `plan-reject-remote` | §3 | incidental | Remote Control deny (observed 2.1.292): with a note ("Suggest edits") the terminal's shapes (userFeedback, "the user said:"); a bare deny says "STOP what you are doing…" with no userFeedback: cc.planFeedback null, nothing recorded. An ordinary message typed on the phone right after a bare Deny is attached to the deny as that note (observed live), so a note is never an objection by itself: it waits for the person's Send on the confirm card (hooks/consent.ts). |
+| `auq-bridge-racer` | §3 | incidental | A tool with its own permission dialog (AskUserQuestion, the plan view) is raced by Remote Control when the session has bridge callbacks: the phone gets the card and its answer resolves the dialog, as the terminal's would; the tool_response is Claude Code's, never the model's. The confirm card for a review's note relies on it (hooks/consent.ts). A card can still auto-resolve after the askUserQuestionTimeout idle (afkTimeoutMs): then nothing is recorded and the note waits. |
 | `permission-denied-auto-only` | §3 | incidental | PermissionDenied fires only for auto-mode classifier denials; no hook carries a user rejection note. |
 | `clear-context-setting` | §3 | API | showClearContextOnPlanAccept: the clear-context approve fires no PostToolUse (cc.clearContextOnPlanAccept). |
 | `task-list-id` | §4 | env | List id: env, team, teammate team, leader team, else session id (changes on /clear). |
@@ -459,8 +459,8 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `hook-async` | §7 | API | Per-hook async/asyncRewake fields. |
 | `stop-additional-context` | §7 | incidental | Stop hookSpecificOutput.additionalContext continues the turn with that text, like a block but without the red "Stop hook error" line or notification (only real blockingErrors get those). |
 | `prompt-origin-composer` | §8 | incidental | prompt.submit origin "composer" is only the person's own Enter (and a --bg dispatch prompt); -p is "sdk", peers "peer" (also from $.session.send), notifications "task-notification". No hook sets it; seen for a --bg dispatch and a mid-turn peer (cc-2.1.292.md Function hooks S2, S6). |
-| `transcript-prompt-origin` | §8 | incidental | A typed prompt's transcript user entry has no origin or {kind:"human"} (also typed through Remote Control: prompt.submit reports that one as "bridge"); peers, notifications, channels and plugins carry their own kind. cc.lastHumanPrompt takes only the person's; hooks/consent.js picks the proposal a review opens from it (cc-2.1.292.md Remote Control). |
-| `bridge-forwarded-rows` | §8 | incidental | Remote Control forwards user and assistant rows, a command hook's systemMessage (hook_system_message, shown as an assistant line) and a few system kinds, never a $.ui.log notice (system informational); an isMeta user row goes as isSynthetic (not shown there, as far as seen). A function hook's result has no systemMessage, so the module reaches the phone only through a turn: mod/deliver.mjs relays room lines and an @room's refusal there as a prompt while the person types from Remote Control (cc-2.1.292.md Remote Control). |
+| `transcript-prompt-origin` | §8 | incidental | A typed prompt's transcript user entry has no origin or {kind:"human"} (also typed through Remote Control: prompt.submit reports that one as "bridge"); peers, notifications, channels and plugins carry their own kind. cc.lastHumanPrompt takes only the person's; hooks/consent.ts picks the proposal a review opens from it (cc-2.1.292.md Remote Control). |
+| `bridge-forwarded-rows` | §8 | incidental | Remote Control forwards user and assistant rows, a command hook's systemMessage (hook_system_message, shown as an assistant line) and a few system kinds, never a $.ui.log notice (system informational); an isMeta user row goes as isSynthetic (not shown there, as far as seen). A function hook's result has no systemMessage, so the module reaches the phone only through a turn: mod/deliver.ts relays room lines and an @room's refusal there as a prompt while the person types from Remote Control (cc-2.1.292.md Remote Control). |
 | `plugin-prompt-frame` | §8 | incidental | A plugin's $.prompt.submit between turns enters framed ("The <plugin> plugin sent a message: … This is how Claude Code surfaces a prompt a plugin submits between turns … Address the message above."), and the frame is the row Remote Control shows; asUser:true enters the text bare (the origin stays {kind:"plugin", name, asUser:true}, so cc.lastHumanPrompt still skips it). The relay submits asUser with only the room lines; what the model needs rides as context (cc-2.1.292.md Remote Control). |
 | `cross-session-inbound` | §8 | API | crossSessionInbound accept\|hold\|refuse; the room's Claude sets accept. |
 | `harbor-kite-gate` | §8 | env | Cross-session messaging gate (default on). |
@@ -470,22 +470,22 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 | `subagent-statusline-precedence` | §9 | incidental | Any user/project/local/flag subagentStatusLine overrides the plugin's. |
 | `subagent-statusline-raw` | §9 | incidental | subagentStatusLine command gets no ${CLAUDE_PLUGIN_ROOT} substitution nor PLUGIN_ROOT/DATA env. |
 | `hook-events` | §10 | API | The hook event list; no plan-approved/rejected event. |
-| `hooks-modules` | §10 | env | Function hooks load for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on). An installed plugin names its module in hooks.json `modules`; "hooks/register.ts" is only the built-in plugins' fixed path. sub-human ships one, mod/register.mjs, named in hooks.json. |
+| `hooks-modules` | §10 | env | Function hooks load for installed plugins by default (GrowthBook tengu_plugin_hooks_modules, default on). An installed plugin names its module in hooks.json `modules`; "hooks/register.ts" is only the built-in plugins' fixed path. sub-human ships one, mod/register.ts, named in hooks.json. |
 | `hooks-json-modules` | §10 | API | One hooks.json carries the command hooks and one module path under `modules` (relative to hooks.json); a second module is refused (S1). |
-| `module-dollar-local` | §10 | incidental | A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.mjs stays $-free (S1). |
-| `module-event-once` | §10 | incidental | A hooks module registers an event at most once without a matcher (validate and the loader refuse a second): mod/deliver.mjs owns session.start, the join and SessionStart (hello and the tail child), mod/prompt.mjs owns prompt.submit (the gate, rows context, presence). |
+| `module-dollar-local` | §10 | incidental | A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.ts stays $-free (S1). |
+| `module-event-once` | §10 | incidental | A hooks module registers an event at most once without a matcher (validate and the loader refuse a second): mod/deliver.ts owns session.start, the join and SessionStart (hello and the tail child), mod/prompt.ts owns prompt.submit (the gate, rows context, presence). |
 | `modules-headless` | §10 | env | Modules are off only diskless or in a tool server's daemon (then by policy, safe mode, --bare): they load in -p and in a --bg worker such as the room's Claude. A --bg dispatch prompt reaches prompt.submit as origin composer (S2). |
 | `classic-chain-order` | §10 | incidental | A classic.<Event> chain is [managed settings hooks, ...modules in load order, core], and core runs every other settings hook. A module that answers without next() therefore skips every non-managed settings hook for that call (its own plugin's, other plugins' and the user's and project's command hooks) and the modules of plugins loaded after it; managed hooks and earlier-loaded modules still run (S1, S5; cc-2.1.292.md Review spikes, S-skip). sub-human answers without next() only where it blocks or stops a prompt (classic.UserPromptSubmit, TaskCompleted) and for the /sub-human expansion whose join its command.run hook already ran (classic.UserPromptExpansion: the join hook beneath must not run twice); it no longer answers PreToolUse. |
-| `prompt-submit-ups-order` | §10 | incidental | prompt.submit's core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). mod/prompt.mjs relies on it: classic.UserPromptSubmit runs inside prompt.submit's next(e), so prompt.submit hands it e.origin (the classic payload has none) in a module variable. |
+| `prompt-submit-ups-order` | §10 | incidental | prompt.submit's core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). mod/prompt.ts relies on it: classic.UserPromptSubmit runs inside prompt.submit's next(e), so prompt.submit hands it e.origin (the classic payload has none) in a module variable. |
 | `usermessage-draw-only` | §10 | incidental | A ui.render rewrite of UserMessage text changes only the drawing; origin, isExpanded, task and from are pinned. |
 | `plugin-types-state` | §10 | incidental | validate refuses a $.state value the plugin's own types contract (plugin.json "types": types/index.d.ts) does not declare in PluginState; sub-human declares sub-human.hello. |
 | `session-append-note` | §10 | incidental | $.session.append writes a user row as isMeta (the model reads it from the loop's next top; an idle session is not woken) and a system row as a notice the model never reads (S4). |
 | `session-append-notice-hidden` | §10 | incidental | A $.session.append system row is stored at level "info": drawn only in the ctrl+o transcript view (also after --resume), never in the default view. Chat lines go through $.ui.log instead (S4). |
-| `ui-log-notice` | §10 | incidental | $.ui.log lines are stored as system notices at level "notice": drawn dim as "<plugin>: <text>" in the default view, kept across --resume, never read by the model, no wake (S4). One line each: a newline in the text is drawn as U+FFFD (cc-2.1.292.md Function hooks), so mod/deliver.mjs logs a chat batch line by line. |
+| `ui-log-notice` | §10 | incidental | $.ui.log lines are stored as system notices at level "notice": drawn dim as "<plugin>: <text>" in the default view, kept across --resume, never read by the model, no wake (S4). One line each: a newline in the text is drawn as U+FFFD (cc-2.1.292.md Function hooks), so mod/deliver.ts logs a chat batch line by line. |
 | `command-run-every-command` | §10 | incidental | command.run fires for every slash command the person runs, a plugin's skill included (/sub-human), before it expands; a hook that answers without next() runs no command, so no UserPromptExpansion hook and no model turn. |
 | `command-run-empty-answer` | §10 | incidental | An answer {} (no text, no context) of a typed prompt adds no row at all: the command line is not echoed and nothing reaches the model; a {text} answer is the command's output row, shown under "sub-human: " (the hooking plugins' names) and read by the model with its echoed command line (local_command rows go to the API), and the model repeats it on its next turn (seen live), so the module shows replies with $.ui.log and answers {text} only through Remote Control, for a prompt and a reply that hold no secret. A prompt run by the SDK, or with pasted blocks before it, is echoed as a user row even then: the module leaves those to the classic hook. |
 | `expansion-block-frame` | §10 | incidental | A UserPromptExpansion block is drawn as a warning "UserPromptExpansion operation blocked by hook:\n<reason>" (never read by the model), and the expansion stops at the first block, before that hook's systemMessage is read: a block shows its reason alone. The classic join hook (no module) still answers this way. |
-| `modules-switch-cache` | §10 | incidental | Claude Code caches the hooks modules rollout switch in the global config's cachedGrowthBookFeatures (cc.modulesSwitch): false there explains a session with no module (hooks/join.js noModule, doctor). |
+| `modules-switch-cache` | §10 | incidental | Claude Code caches the hooks modules rollout switch in the global config's cachedGrowthBookFeatures (cc.modulesSwitch): false there explains a session with no module (hooks/join.ts noModule, doctor). |
 | `fs-write-plain` | §10 | incidental | $.fs.write is mkdir -p plus writeFile: not atomic, no mode, no lock. The mod never writes room state. |
 | `process-run-stdin` | §10 | API | $.process.run takes argv, stdin, env over the host env and a timeout. The child's parent is the claude process, but it gets no CLAUDE_PID or CLAUDE_CODE_SESSION_ID of this session (only whatever claude itself inherited), so shims pass the payload session_id (S3). |
 | `plugin-test-discovery` | §10 | incidental | `claude plugin test` collects every *.test.ts(x) under the plugin; node tests stay *.test.js (S8). |
@@ -497,61 +497,62 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 `lib/` only; each line is the module's header comment, whose full text documents its exports.
 
 <!-- gen:lib-modules -->
-- `lib/cc.js`: the single home for every Claude Code internal the plugin relies on.
-- `lib/cli/args.js`: the one flag parser of scripts/sub-human and lib/cli/*.js.
-- `lib/cli/doctor.js`: `sub-human doctor`, what is wrong with this machine's sub-human and how to fix it, and `doctor --bundle`, the same as redacted JSON to attach to a bug report.
-- `lib/cli/handoff.js`: the CLI bodies of moving a room's host (lib/handoff.js), for scripts/sub-human.
-- `lib/cli/host.js`: the host's and the joiner's setup commands of scripts/sub-human, in the person's own shell (the Bash guard refuses them to a model).
-- `lib/cli/listen.js`: the host's web listener commands of scripts/sub-human, in the person's own shell (the Bash guard refuses them to a model).
-- `lib/clock.js`: A tiny injectable clock, so code that waits (the `sub-human tail` settle and poll loops) can be tested without real sleeps.
-- `lib/config.js`: every timing and size cap in one place, named. Callers import the value they use; an env override is read by the caller through envMs() at the moment it needs the value (tests set the env per child process, some per call).
-- `lib/handoff.js`: moving a room's host to another member's machine. The host's machine holds the room's log, serves its links and runs its room Claude (billed to the host person's model account); a planned handoff moves all three before the host closes their laptop.
-- `lib/home.js`: where the plugin's store lives on this machine, and which machine this is.
-- `lib/identity.js`: where rooms live, who is in them, and which Claude session is asking.
-- `lib/io.js`: small file and process helpers shared by every module.
-- `lib/lock.js`: the one lockfile helper (room log, members.json, proposals, the task mirror, the row map).
-- `lib/notices.js`: join / leave lines for every human in the room, as a group chat shows them: "bob joined", "bob rejoined", "bob left" (no room code, no ids).
-- `lib/proposal.js`: proposals and the consent card. Every write goes through room.append().
-- `lib/remote/admission.js`: the host person's consent to a machine that typed an invite's PIN.
-- `lib/remote/auth.js`: invites and link tokens, on the host. An invite is single-use and turns into a link token at the first hello; the token is the link's credential from then on.
-- `lib/remote/bridge.js`: a synchronous call from a hook's thread to asynchronous work on a worker thread, with a deadline.
-- `lib/remote/client.js`: the asynchronous side of the protocol, one connection to a room's server over a transport.
-- `lib/remote/cpace.js`: CPace (draft-irtf-cfrg-cpace-21) with the cipher suite CPACE-RISTR255-SHA512, initiator-responder mode, plus the draft's explicit key confirmation (section 10.4).
-- `lib/remote/enroll.js`: the short invite's join. The host shows `/sub-human join you@box vole-8126 4829` (or a URL and the PIN); the 4-digit PIN is the whole secret, and it never travels: both ends run CPace (lib/remote/cpace.js, ristretto255 + SHA-512, initiator-responder, explicit key confirmation) with it.
-- `lib/remote/hosting.js`: the host's side of an invite, one step each, shared by the join hook (`/sub-human invite`, `/sub-human kick`: their output is a block reason, shown to the person and never to the model) and the CLI (lib/cli/host.js).
-- `lib/remote/link.js`: the link daemon, one per machine and room (`scripts/sub-human link CODE`, started detached by the join hook, like the room's Claude starter).
-- `lib/remote/listener.js`: the host's WebSocket listener daemon (`scripts/sub-human listen [--port 7420]`), one per home.
-- `lib/remote/noise.js`: the end-to-end channel inside a WebSocket (lib/remote/transports/ws.js): Noise_NK_25519_ChaChaPoly_SHA256 (https://noiseprotocol.org/noise.html, revision 34), built on node:crypto only: X25519 through crypto.diffieHellman on KeyObjects, ChaCha20-Poly1305 (12-byte nonce: 4 zero bytes and the 64-bit little-endian counter), SHA-256, and the spec's HKDF, which is RFC 5869 HKDF-SHA256 with salt = ck and no info (crypto.hkdfSync).
-- `lib/remote/outbox.js`: the bounded @room outbox of a mirror. While the link is down, a person's @room post (already signed by the hook, so its nonce and ts are fixed) is kept here by the link daemon (lib/remote/link.js, the file's one writer) and placed in order once the link is back.
-- `lib/remote/protocol.js`: the wire protocol between a link (lib/remote/client.js, on the machine of a remote member) and a room's server (lib/remote/server.js, on the host): the ops, the frame shapes, the error codes and the line codec.
-- `lib/remote/server.js`: one connection to a hosted room. `scripts/sub-human serve --stdio CODE` runs one per connection on the host (spawned by the client's pipe transport, or by an SSH forced command); the store contract test runs one on a worker thread over the memory transport.
-- `lib/remote/shim.js`: the stable `<home>/bin/serve` shim that an SSH forced command runs, and the authorized_keys lines that name it.
-- `lib/remote/sshkeys.js`: the SSH key material of an ssh link, on both machines.
-- `lib/remote/tailscale.js`: the few `tailscale` CLI calls `/sub-human invite --web \| --public` makes, each with a timeout, none interactive.
-- `lib/remote/transports/index.js`: the transport contract and the registry of kinds. A transport carries protocol frames (lib/remote/protocol.js) between a client and a server and knows nothing about them.
-- `lib/remote/transports/memory.js`: the in-process transport, a connected pair over a MessageChannel, so the two ends may live on different threads (the store contract's remote backend runs the server on a worker: a thread that makes synchronous bridge calls must never host the server).
-- `lib/remote/transports/pipe.js`: frames over a pair of pipes: a child process's stdio on the client side, this process's stdin/stdout on the server side (`scripts/sub-human serve --stdio CODE`).
-- `lib/remote/transports/ssh.js`: the ssh kind, the pipe kind (./pipe.js) with an `ssh` command in front.
-- `lib/remote/transports/ws.js`: the `wss` and `ws` kinds (./index.js register): protocol frames over a Noise_NK channel (lib/remote/noise.js) inside a WebSocket (lib/remote/ws.js) to the host's listener (lib/remote/listener.js), usually through a TLS front: Tailscale Serve or Funnel, or any HTTPS reverse proxy.
-- `lib/remote/webhost.js`: the host's side of a join over the web (1.1), shared by the join hook (`/sub-human invite --web`, `--public`, `--url URL`, `/sub-human invite --stop`: block reasons the person reads, never the model) and the CLI (lib/cli/host.js).
-- `lib/remote/ws.js`: a minimal WebSocket (RFC 6455) with no dependencies: the server end for the host's listener (lib/remote/listener.js, an http server on 127.0.0.1 only) and the client end for the joiner's link daemon (lib/remote/transports/ws.js) over net or tls, through an HTTP CONNECT proxy when the environment names one (a corporate network that allows only CONNECT to 443).
-- `lib/room-claude.js`: the room's own Claude (member claude, SendMessage name claude.CODE), a headless `claude --bg` session the join hook starts.
-- `lib/room.js`: the room log (envelope v3). A facade over lib/room/*, so callers keep one require.
-- `lib/room/consent.js`: the one fold of the room log into proposal / consent state.
-- `lib/room/envelope.js`: the signed envelope (sig v2) and the keys pinned in the log.
-- `lib/room/lanes.js`: who a log entry concerns, and the proposal queries that decide it.
-- `lib/room/link-state.js`: how this machine's link to a room hosted elsewhere is doing, for the room row (lib/rows.js), the agent statusline (statusline/segments.js), `sub-human doctor` (lib/cli/doctor.js) and the tail's link line (lib/tail.js linkLine).
-- `lib/room/links.js`: the link registry on this machine: which rooms are mirrors of a room hosted elsewhere, and how to reach them.
-- `lib/room/members.js`: the members document's rules, shared by every RoomStore (as placeAfter is for the log), so a seat is judged the same whichever machine holds the room.
-- `lib/room/render.js`: log entries as text, for Claude (ids kept) and for people (no ids).
-- `lib/room/store-mirror.js`: MirrorRoomStore, the RoomStore of a room hosted on another machine: an FsRoomStore directory kept byte-identical to the host's log by the link daemon (lib/remote/link.js), so every reader (readView, log.idx, tailer, verifyChain, rows, digests) works unchanged.
-- `lib/room/store.js`: the RoomStore seam, and FsRoomStore, its implementation over the room directory on this machine.
-- `lib/room/validate.js`: the room log's envelope rules (envelope v3): which kinds each `via` may write, the fields a caller may set, and the task fields of task_req / task entries. append() (store.js) runs validate() before it signs, and place() runs it again on the payload before it takes the log lock.
-- `lib/rows.js`: participant rows in the agent panel. Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.js kv).
-- `lib/seats.js`: entering and leaving a room, the one sequence the join hook, the session-end hook and the remote server (lib/remote/server.js, for a seat on another machine) all run.
-- `lib/tail.js`: the room tail behind `sub-human tail` (scripts/sub-human), the hooks module's child (mod/deliver.mjs).
-- `lib/tasks.js`: the room's shared task list. The headless room Claude's own native task list (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list.
-- `lib/text.js`: the string helpers and name patterns every module shares.
+- `lib/cc.ts`: the single home for every Claude Code internal the plugin relies on.
+- `lib/cli/args.ts`: the one flag parser of scripts/sub-human and lib/cli/*.ts.
+- `lib/cli/doctor.ts`: `sub-human doctor`, what is wrong with this machine's sub-human and how to fix it, and `doctor --bundle`, the same as redacted JSON to attach to a bug report.
+- `lib/cli/handoff.ts`: the CLI bodies of moving a room's host (lib/handoff.ts), for scripts/sub-human.
+- `lib/cli/host.ts`: the host's and the joiner's setup commands of scripts/sub-human, in the person's own shell (the Bash guard refuses them to a model).
+- `lib/cli/listen.ts`: the host's web listener commands of scripts/sub-human, in the person's own shell (the Bash guard refuses them to a model).
+- `lib/cli/main.ts`: the body of scripts/sub-human (a thin shim kept at its path: persisted artifacts run it), the read-only CLI over the room.
+- `lib/clock.ts`: A tiny injectable clock, so code that waits (the `sub-human tail` settle and poll loops) can be tested without real sleeps.
+- `lib/config.ts`: every timing and size cap in one place, named. Callers import the value they use; an env override is read by the caller through envMs() at the moment it needs the value (tests set the env per child process, some per call).
+- `lib/handoff.ts`: moving a room's host to another member's machine. The host's machine holds the room's log, serves its links and runs its room Claude (billed to the host person's model account); a planned handoff moves all three before the host closes their laptop.
+- `lib/home.ts`: where the plugin's store lives on this machine, and which machine this is.
+- `lib/identity.ts`: where rooms live, who is in them, and which Claude session is asking.
+- `lib/io.ts`: small file and process helpers shared by every module.
+- `lib/lock.ts`: the one lockfile helper (room log, members.json, proposals, the task mirror, the row map).
+- `lib/notices.ts`: join / leave lines for every human in the room, as a group chat shows them: "bob joined", "bob rejoined", "bob left" (no room code, no ids).
+- `lib/proposal.ts`: proposals and the consent card. Every write goes through room.append().
+- `lib/remote/admission.ts`: the host person's consent to a machine that typed an invite's PIN.
+- `lib/remote/auth.ts`: invites and link tokens, on the host. An invite is single-use and turns into a link token at the first hello; the token is the link's credential from then on.
+- `lib/remote/bridge.ts`: a synchronous call from a hook's thread to asynchronous work on a worker thread, with a deadline.
+- `lib/remote/client.ts`: the asynchronous side of the protocol, one connection to a room's server over a transport.
+- `lib/remote/cpace.ts`: CPace (draft-irtf-cfrg-cpace-21) with the cipher suite CPACE-RISTR255-SHA512, initiator-responder mode, plus the draft's explicit key confirmation (section 10.4).
+- `lib/remote/enroll.ts`: the short invite's join. The host shows `/sub-human join you@box vole-8126 4829` (or a URL and the PIN); the 4-digit PIN is the whole secret, and it never travels: both ends run CPace (lib/remote/cpace.ts, ristretto255 + SHA-512, initiator-responder, explicit key confirmation) with it.
+- `lib/remote/hosting.ts`: the host's side of an invite, one step each, shared by the join hook (`/sub-human invite`, `/sub-human kick`: their output is a block reason, shown to the person and never to the model) and the CLI (lib/cli/host.ts).
+- `lib/remote/link.ts`: the link daemon, one per machine and room (`scripts/sub-human link CODE`, started detached by the join hook, like the room's Claude starter).
+- `lib/remote/listener.ts`: the host's WebSocket listener daemon (`scripts/sub-human listen [--port 7420]`), one per home.
+- `lib/remote/noise.ts`: the end-to-end channel inside a WebSocket (lib/remote/transports/ws.ts): Noise_NK_25519_ChaChaPoly_SHA256 (https://noiseprotocol.org/noise.html, revision 34), built on node:crypto only: X25519 through crypto.diffieHellman on KeyObjects, ChaCha20-Poly1305 (12-byte nonce: 4 zero bytes and the 64-bit little-endian counter), SHA-256, and the spec's HKDF, which is RFC 5869 HKDF-SHA256 with salt = ck and no info (crypto.hkdfSync).
+- `lib/remote/outbox.ts`: the bounded @room outbox of a mirror. While the link is down, a person's @room post (already signed by the hook, so its nonce and ts are fixed) is kept here by the link daemon (lib/remote/link.ts, the file's one writer) and placed in order once the link is back.
+- `lib/remote/protocol.ts`: the wire protocol between a link (lib/remote/client.ts, on the machine of a remote member) and a room's server (lib/remote/server.ts, on the host): the ops, the frame shapes, the error codes and the line codec.
+- `lib/remote/server.ts`: one connection to a hosted room. `scripts/sub-human serve --stdio CODE` runs one per connection on the host (spawned by the client's pipe transport, or by an SSH forced command); the store contract test runs one on a worker thread over the memory transport.
+- `lib/remote/shim.ts`: the stable `<home>/bin/serve` shim that an SSH forced command runs, and the authorized_keys lines that name it.
+- `lib/remote/sshkeys.ts`: the SSH key material of an ssh link, on both machines.
+- `lib/remote/tailscale.ts`: the few `tailscale` CLI calls `/sub-human invite --web \| --public` makes, each with a timeout, none interactive.
+- `lib/remote/transports/index.ts`: the transport contract and the registry of kinds. A transport carries protocol frames (lib/remote/protocol.ts) between a client and a server and knows nothing about them.
+- `lib/remote/transports/memory.ts`: the in-process transport, a connected pair over a MessageChannel, so the two ends may live on different threads (the store contract's remote backend runs the server on a worker: a thread that makes synchronous bridge calls must never host the server).
+- `lib/remote/transports/pipe.ts`: frames over a pair of pipes: a child process's stdio on the client side, this process's stdin/stdout on the server side (`scripts/sub-human serve --stdio CODE`).
+- `lib/remote/transports/ssh.ts`: the ssh kind, the pipe kind (./pipe.ts) with an `ssh` command in front.
+- `lib/remote/transports/ws.ts`: the `wss` and `ws` kinds (./index.ts register): protocol frames over a Noise_NK channel (lib/remote/noise.ts) inside a WebSocket (lib/remote/ws.ts) to the host's listener (lib/remote/listener.ts), usually through a TLS front: Tailscale Serve or Funnel, or any HTTPS reverse proxy.
+- `lib/remote/webhost.ts`: the host's side of a join over the web (1.1), shared by the join hook (`/sub-human invite --web`, `--public`, `--url URL`, `/sub-human invite --stop`: block reasons the person reads, never the model) and the CLI (lib/cli/host.ts).
+- `lib/remote/ws.ts`: a minimal WebSocket (RFC 6455) with no dependencies: the server end for the host's listener (lib/remote/listener.ts, an http server on 127.0.0.1 only) and the client end for the joiner's link daemon (lib/remote/transports/ws.ts) over net or tls, through an HTTP CONNECT proxy when the environment names one (a corporate network that allows only CONNECT to 443).
+- `lib/room-claude.ts`: the room's own Claude (member claude, SendMessage name claude.CODE), a headless `claude --bg` session the join hook starts.
+- `lib/room.ts`: the room log (envelope v3). A facade over lib/room/*, so callers keep one require.
+- `lib/room/consent.ts`: the one fold of the room log into proposal / consent state.
+- `lib/room/envelope.ts`: the signed envelope (sig v2) and the keys pinned in the log.
+- `lib/room/lanes.ts`: who a log entry concerns, and the proposal queries that decide it.
+- `lib/room/link-state.ts`: how this machine's link to a room hosted elsewhere is doing, for the room row (lib/rows.ts), the agent statusline (statusline/segments.ts), `sub-human doctor` (lib/cli/doctor.ts) and the tail's link line (lib/tail.ts linkLine).
+- `lib/room/links.ts`: the link registry on this machine: which rooms are mirrors of a room hosted elsewhere, and how to reach them.
+- `lib/room/members.ts`: the members document's rules, shared by every RoomStore (as placeAfter is for the log), so a seat is judged the same whichever machine holds the room.
+- `lib/room/render.ts`: log entries as text, for Claude (ids kept) and for people (no ids).
+- `lib/room/store-mirror.ts`: MirrorRoomStore, the RoomStore of a room hosted on another machine: an FsRoomStore directory kept byte-identical to the host's log by the link daemon (lib/remote/link.ts), so every reader (readView, log.idx, tailer, verifyChain, rows, digests) works unchanged.
+- `lib/room/store.ts`: the RoomStore seam, and FsRoomStore, its implementation over the room directory on this machine.
+- `lib/room/validate.ts`: the room log's envelope rules (envelope v3): which kinds each `via` may write, the fields a caller may set, and the task fields of task_req / task entries. append() (store.ts) runs validate() before it signs, and place() runs it again on the payload before it takes the log lock.
+- `lib/rows.ts`: participant rows in the agent panel. Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.ts kv).
+- `lib/seats.ts`: entering and leaving a room, the one sequence the join hook, the session-end hook and the remote server (lib/remote/server.ts, for a seat on another machine) all run.
+- `lib/tail.ts`: the room tail behind `sub-human tail` (scripts/sub-human), the hooks module's child (mod/deliver.ts).
+- `lib/tasks.ts`: the room's shared task list. The headless room Claude's own native task list (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list.
+- `lib/text.ts`: the string helpers and name patterns every module shares.
 - `lib/vendor/noble/curves/abstract/curve.js`: Methods for elliptic curve multiplication by scalars.
 - `lib/vendor/noble/curves/abstract/edwards.js`: Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 - `lib/vendor/noble/curves/abstract/fft.js`: Experimental implementation of NTT / FFT (Fast Fourier Transform) over finite fields.
