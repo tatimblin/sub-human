@@ -17,7 +17,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { rowsHtml, palette } = require('./ansi-svg.js');
 const { isRed } = require('./metrics.js');
-const { readJson, readText, jsonl } = require('./lib/io.js');
+const { readJson, readText, jsonl } = require('./lib/io.ts');
 
 const REPO = path.resolve(__dirname, '..');
 

@@ -18,15 +18,15 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const identity = require(path.join(h.LIB, 'identity.js'));
-const envelope = require(path.join(h.LIB, 'room', 'envelope.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
-const links = require(path.join(h.LIB, 'room', 'links.js'));
-const handoff = require(path.join(h.LIB, 'handoff.js'));
-const client = require(path.join(h.LIB, 'remote', 'client.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const envelope = require(path.join(h.LIB, 'room', 'envelope.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
+const links = require(path.join(h.LIB, 'room', 'links.ts'));
+const handoff = require(path.join(h.LIB, 'handoff.ts'));
+const client = require(path.join(h.LIB, 'remote', 'client.ts'));
 const transports = require(path.join(h.LIB, 'remote', 'transports', 'index.js'));
-const { isAlive } = require(path.join(h.LIB, 'io.js'));
+const { isAlive } = require(path.join(h.LIB, 'io.ts'));
 const { Machine } = require('./support/two-homes.js');
 
 /** h.until, failing the test when fn never holds. */
@@ -206,7 +206,7 @@ test('handoff e2e: a new host the others cannot reach: offline with what to do, 
   await until(() => /can't reach yet/.test(C.status(code).reason || ''), 8000, 50);
   assert.match(C.status(code).reason, /moved to bob's machine, which this machine can't reach yet .*Ask bob for an invite \(\/sub-human invite there\) and type the line it shows here/);
   const t0 = Date.now();
-  const queued = C.say(carol, 'anyone?'); // an @room post waits in the outbox (lib/remote/outbox.js); nothing hangs
+  const queued = C.say(carol, 'anyone?'); // an @room post waits in the outbox (lib/remote/outbox.ts); nothing hangs
   assert.match(JSON.stringify(queued.json), /queued: room .* is offline/, queued.stderr);
   assert.ok(Date.now() - t0 < 8000, 'answered at once, never hung');
   assert.match(await C.tail(carol, 1), /the connection to room \S+ is down \(room .* moved to bob's machine/);
@@ -288,7 +288,7 @@ test('handoff e2e: promote when the host is gone; the old host back is STALE to 
 
 test('handoff e2e: over ssh (--via), each follower keeps its own link key and mux, pins the new host\'s key, and is told to ask for an invite until it is let in', async t => {
   const { A, B, C, alice, bob, code } = await room(t);
-  const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.js'));
+  const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.ts'));
   // bob's machine: its sshd host key (the invites it mints pin it) and the authorized_keys his admit writes
   const hk = path.join(B.user, 'ssh_host_ed25519_key');
   spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', hk]);

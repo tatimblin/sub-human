@@ -1,7 +1,7 @@
 'use strict';
 // S5: bob objects with a note, alice agrees; the room's Claude revises; both agree -> decision
 const path = require('node:path');
-const { readText } = require('../lib/io.js');
+const { readText } = require('../lib/io.ts');
 
 const MODE = { auto: /auto mode on/, acceptEdits: /accept edits on/, plan: /plan mode on/, default: /^(?![\s\S]*(auto mode on|accept edits on|plan mode on))/ };
 

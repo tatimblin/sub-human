@@ -1,6 +1,6 @@
 'use strict';
-// Join / leave lines (lib/notices.js) and where they surface: the tail child's chat events (scripts/sub-human
-// tail), the room row text (lib/rows.js) and the room hold's progress line (mcp/hold.js). Nothing here sleeps:
+// Join / leave lines (lib/notices.ts) and where they surface: the tail child's chat events (scripts/sub-human
+// tail), the room row text (lib/rows.ts) and the room hold's progress line (mcp/hold.ts). Nothing here sleeps:
 // the tail runs on a fake clock and the hold on node:test's mock timers.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -8,13 +8,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const h = require('./helpers.js');
-const notices = require(path.join(h.LIB, 'notices.js'));
-const rows = require(path.join(h.LIB, 'rows.js'));
-const room = require(path.join(h.LIB, 'room.js'));
+const notices = require(path.join(h.LIB, 'notices.ts'));
+const rows = require(path.join(h.LIB, 'rows.ts'));
+const room = require(path.join(h.LIB, 'room.ts'));
 let R = null; // the room under test
-const identity = require(path.join(h.LIB, 'identity.js'));
-const tailLib = require(path.join(h.LIB, 'tail.js'));
-const { createFake } = require(path.join(h.LIB, 'clock.js'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const tailLib = require(path.join(h.LIB, 'tail.ts'));
+const { createFake } = require(path.join(h.LIB, 'clock.ts'));
 
 const CODE = 'stoat-3644';
 const T0 = Date.parse('2026-10-05T10:00:00.000Z');
@@ -73,7 +73,7 @@ test('notices shown / markShown: ids merge and sort; via is required', () => {
 });
 
 // ---------- the room hold's progress line ----------
-// mcp/hold.js polls on the global timers and Date, so node:test's mock timers drive it: no real waiting.
+// mcp/hold.ts polls on the global timers and Date, so node:test's mock timers drive it: no real waiting.
 test('hold {room}: joins and settled leaves show as notices on the progress line; a quick round trip shows nothing', async t => {
   const ENV = { SUB_HUMAN_HOLD_POLL_MS: '20', SUB_HUMAN_HOLD_GRACE_MS: '100000', SUB_HUMAN_HOLD_WHO_MS: '20', SUB_HUMAN_LEAVE_MS: '300' };
   const old = Object.fromEntries(Object.keys(ENV).map(k => [k, process.env[k]]));
@@ -82,7 +82,7 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   const tick = ms => t.mock.timers.tick(ms);
   const until = (cond, ms) => { for (let i = 0; i < ms && !cond(); i += 20) tick(20); return cond(); };
   try {
-  const hold = require(path.join(h.PLUGIN, 'mcp', 'hold.js'));
+  const hold = require(path.join(h.PLUGIN, 'mcp', 'hold.ts'));
   process.env.SUB_HUMAN_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-notice-hold-'));
   const dir = path.join(process.env.SUB_HUMAN_HOME, 'rooms', CODE);
   fs.mkdirSync(dir, { recursive: true });
@@ -128,7 +128,7 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
 });
 
 // ---------- the tail child sends joins and leaves as chat events ----------
-// lib/tail.js in-process on a fake clock (test/tail.test.js covers the loop itself; test/cli.test.js the real child).
+// lib/tail.ts in-process on a fake clock (test/tail.test.js covers the loop itself; test/cli.test.js the real child).
 const FAST = {
   resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
   leaveMs: 600, healthMs: 5000, backoffMs: 200, backoffMaxMs: 1000, errorLogMs: 60_000, stallMs: 5000,

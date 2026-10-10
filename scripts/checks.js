@@ -29,7 +29,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const paths = require('./lib/paths.js');
-const { clip, readJson } = require('./lib/io.js');
+const { clip, readJson } = require('./lib/io.ts');
 const { context } = require('./checks/context.js');
 const BASELINES = require('./baselines.json');
 

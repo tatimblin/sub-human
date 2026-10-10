@@ -9,9 +9,9 @@
  * A section is the text between `<!-- gen:NAME -->` and `<!-- /gen:NAME -->`; everything else is hand-written
  * and left alone. Sections:
  *   hooks        hooks/hooks.json: event, matcher, script, timeout, async
- *   mod-hooks    the hooks module's function hooks: mod/register.mjs HOOKS (event, matcher, file, what it does)
+ *   mod-hooks    the hooks module's function hooks: mod/register.ts HOOKS (event, matcher, file, what it does)
  *   mcp-tools    the room MCP server's tools/list (spawned for real, so plug-ins are included)
- *   cc-contract  lib/cc.js CONTRACT: id, internals-doc section, stability, note
+ *   cc-contract  lib/cc.ts CONTRACT: id, internals-doc section, stability, note
  *   lib-modules  lib/**.js: each module's header comment, first sentence
  *
  *   generate() -> Promise<{name: markdown}>    render(doc, sections) -> doc    DOC (the doc's path)
@@ -57,15 +57,15 @@ function hooksSection() {
 
 // ---------- function hooks ----------
 async function modHooksSection() {
-  const { HOOKS } = await import(path.join(PLUGIN, 'mod', 'register.mjs'));
+  const { HOOKS } = await import(path.join(PLUGIN, 'mod', 'register.ts'));
   const rows = HOOKS.map(h => [code(h.event), h.matcher ? code(h.matcher) : '(all)', code(h.file), cell(h.does)]);
-  return 'From `mod/register.mjs` (hooks.json `modules`), in registration order.\n\n' + table(['Event', 'Matcher', 'File', 'Does'], rows);
+  return 'From `mod/register.ts` (hooks.json `modules`), in registration order.\n\n' + table(['Event', 'Matcher', 'File', 'Does'], rows);
 }
 
 // ---------- MCP tools ----------
 /** Spawn the room server, ask for tools/list, and stop it. Resolves the tool array. */
 function listTools() {
-  const server = path.join(PLUGIN, 'mcp', 'room-server.js');
+  const server = path.join(PLUGIN, 'mcp', 'room-server.ts');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-archdoc-'));
   const env = {};
   for (const [k, v] of Object.entries(process.env)) if (!/^(CLAUDE|SUB_HUMAN)/.test(k)) env[k] = v;
@@ -101,11 +101,11 @@ async function mcpSection() {
   const mcp = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.mcp.json'), 'utf8')).mcpServers;
   const serverName = Object.keys(mcp)[0];
   const owner = {};
-  for (const f of ['hold.js', 'task.js']) owner[require(path.join(PLUGIN, 'mcp', f)).TOOL.name] = `mcp/${f}`;
+  for (const f of ['hold.ts', 'task.ts']) owner[require(path.join(PLUGIN, 'mcp', f)).TOOL.name] = `mcp/${f}`;
   const tools = await listTools();
   const rows = tools.map(t => [
     code(t.name),
-    `${serverName} (${code(owner[t.name] || 'mcp/room-server.js')})`,
+    `${serverName} (${code(owner[t.name] || 'mcp/room-server.ts')})`,
     t.annotations && t.annotations.readOnlyHint ? 'yes' : 'no',
     cell(firstSentence(t.description, 0)),
   ]);
@@ -114,7 +114,7 @@ async function mcpSection() {
 
 // ---------- cc contract ----------
 function ccSection() {
-  const { CONTRACT } = require(path.join(PLUGIN, 'lib', 'cc.js'));
+  const { CONTRACT } = require(path.join(PLUGIN, 'lib', 'cc.ts'));
   const rows = CONTRACT.map(c => [code(c.id), `§${c.section}`, c.stability, cell(c.note)]);
   return table(['Id', '§', 'Stability', 'Note'], rows);
 }

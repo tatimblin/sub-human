@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * scripts/probe-cc.js: check the installed Claude Code binary against plugin/sub-human/lib/cc.js CONTRACT.
+ * scripts/probe-cc.js: check the installed Claude Code binary against plugin/sub-human/lib/cc.ts CONTRACT.
  *
  *   node scripts/probe-cc.js [--json] [--bin PATH] [--extra FILE.json] [--only id,id,...]
  *
@@ -16,7 +16,7 @@
  */
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
-const cc = require('./lib/paths.js').pluginLib('cc.js');
+const cc = require('./lib/paths.js').pluginLib('cc.ts');
 
 function arg(name) {
   const i = process.argv.indexOf(name);

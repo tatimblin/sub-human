@@ -1,10 +1,10 @@
 'use strict';
-// lib/cli/args.js: the one flag parser scripts/sub-human, lib/cli/*.js and the join hook's host flags share.
+// lib/cli/args.ts: the one flag parser scripts/sub-human, lib/cli/*.js and the join hook's host flags share.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const h = require('./helpers.js');
-const { parse } = require(path.join(h.LIB, 'cli', 'args.js'));
+const { parse } = require(path.join(h.LIB, 'cli', 'args.ts'));
 
 test('args.parse: values, switches, optional values, the rest in order, and -- ends the flags', () => {
   assert.deepEqual(parse(['a', '--room', 'vole-1', 'b', '--json'], { room: 1, json: 0 }), { flags: { room: 'vole-1', json: true }, rest: ['a', 'b'] });

@@ -21,20 +21,20 @@
  *   login NAME DEST CODE [SSH_OPT…]   `/sub-human join DEST CODE --as NAME`: a link over the person's own ssh login to
  *                                 DEST (no invite), with SSH_OPT… as for join: {ok, out, ms, code}; ok: the seat joined
  *   rejoin NAME CODE              `/sub-human NAME CODE` (a room hosted here, or one this machine links to)
- *   say NAME TEXT                 NAME's `@room TEXT` through hooks/prompt.js: {ok, ms, t0, out}
- *   prompt NAME TEXT              any typed prompt through hooks/prompt.js (e.g. a slash-free command)
- *   expand NAME ARGS              any `/sub-human ARGS` through hooks/join.js (invite --ssh, kick, handoff, …)
+ *   say NAME TEXT                 NAME's `@room TEXT` through hooks/prompt.ts: {ok, ms, t0, out}
+ *   prompt NAME TEXT              any typed prompt through hooks/prompt.ts (e.g. a slash-free command)
+ *   expand NAME ARGS              any `/sub-human ARGS` through hooks/join.ts (invite --ssh, kick, handoff, …)
  *   leave NAME                    SessionEnd for NAME, then its seat process stops
  *   short NAME DEST CODE|- PIN [--via J] [SSH_OPT…]   `/sub-human join DEST [CODE] PIN [--via J] --as NAME` (an
  *                                 invite's line; '-' for a URL): {ok, waiting, out, hidden}: ok once the host checked
  *                                 the PIN
  *   admitcard NAME LABEL          NAME, on the host, answers the oldest join request's card ("Let in" / "Refuse"):
  *                                 {ok, question, out, ref, key, link}
- *   card NAME LABEL               NAME answers the handoff card the hooks build (consent.js Pre, then Post with
+ *   card NAME LABEL               NAME answers the handoff card the hooks build (consent.ts Pre, then Post with
  *                                 LABEL, e.g. "Host it here"), as the person would on the AskUserQuestion card
  *   events NAME                   what NAME's tail delivered: [{t, ev}]
  *   dump CODE                     {code, machine, isHost, dir, log, entries, chain, members, link, home}
- *   link CODE                     the link daemon's status (lib/remote/link.js status)
+ *   link CODE                     the link daemon's status (lib/remote/link.ts status)
  *   probe                         what this plugin can do (feature detection for pending scenarios)
  */
 const fs = require('node:fs');
@@ -91,13 +91,13 @@ function newSeat(name, sshOpts) {
   });
   proc.unref();
   seat.pid = proc.pid;
-  lib('identity.js').writeModLease(seat.sid, { pid: seat.pid, nonce: seat.nonce });
+  lib('identity.ts').writeModLease(seat.sid, { pid: seat.pid, nonce: seat.nonce });
   st.seats[name] = seat;
   save(st);
   return seat;
 }
 
-const lease = seat => lib('identity.js').writeModLease(seat.sid, { pid: seat.pid, nonce: seat.nonce });
+const lease = seat => lib('identity.ts').writeModLease(seat.sid, { pid: seat.pid, nonce: seat.nonce });
 /** NAME's seat (a new one when none is alive), its ssh options set to opts when given. */
 function seatWith(name, opts) {
   let seat;
@@ -129,40 +129,40 @@ const cmds = {
   host(name) {
     const seat = newSeat(name);
     const r = expand(seat, name);
-    const code = lib('room/store.js').listRooms().find(c => lib('room/store.js').open(c).isHost) || null;
+    const code = lib('room/store.ts').listRooms().find(c => lib('room/store.ts').open(c).isHost) || null;
     const st = load();
     st.code = code;
     save(st);
-    return { ok: joinedOk(r.json), code, machine: lib('home.js').machineId(), seat: { name, pid: seat.pid }, out: reason(r.json), ms: r.ms };
+    return { ok: joinedOk(r.json), code, machine: lib('home.ts').machineId(), seat: { name, pid: seat.pid }, out: reason(r.json), ms: r.ms };
   },
 
   join(name, invite, ...rest) {
     const seat = seatWith(name, rest);
     const r = expand(seat, `join ${name} ${invite}`);
-    const parsed = lib('remote/auth.js').parseInvite(invite);
+    const parsed = lib('remote/auth.ts').parseInvite(invite);
     const out = reason(r.json) || '';
     return { ok: joinedOk(r.json), out, ms: r.ms, code: parsed && parsed.code, stderr: r.stderr };
   },
 
   linkinvite(name, invite, ...rest) {
     const seat = seatWith(name, rest);
-    const inv = lib('remote/auth.js').parseInvite(invite);
-    lib('room/links.js').set(inv.code, { code: inv.code, transport: lib('remote/link.js').transportOf(inv.locator), invite, created_at: new Date().toISOString() });
+    const inv = lib('remote/auth.ts').parseInvite(invite);
+    lib('room/links.ts').set(inv.code, { code: inv.code, transport: lib('remote/link.ts').transportOf(inv.locator), invite, created_at: new Date().toISOString() });
     const r = expand(seat, `${name} ${inv.code}`);
     return { ok: joinedOk(r.json), out: reason(r.json) || '', ms: r.ms, code: inv.code, stderr: r.stderr };
   },
 
   sh1(code, dest) {
-    const locator = lib('remote/link.js').sshLocator(dest);
-    return { invite: lib('remote/auth.js').mintInvite(lib('room/store.js').open(code), { locator }).invite };
+    const locator = lib('remote/link.ts').sshLocator(dest);
+    return { invite: lib('remote/auth.ts').mintInvite(lib('room/store.ts').open(code), { locator }).invite };
   },
 
   authorize(invite, pub, file = path.join(USER_HOME, '.ssh', 'authorized_keys')) {
-    const auth = lib('remote/auth.js'), sshkeys = lib('remote/sshkeys.js');
+    const auth = lib('remote/auth.ts'), sshkeys = lib('remote/sshkeys.ts');
     const inv = auth.parseInvite(invite);
-    const id = auth.reserveLink(lib('room/store.js').open(inv.code), inv.secret);
+    const id = auth.reserveLink(lib('room/store.ts').open(inv.code), inv.secret);
     const key = sshkeys.publicKey(pub);
-    const { shim, h } = lib('remote/hosting.js').shimReady();
+    const { shim, h } = lib('remote/hosting.ts').shimReady();
     const r = sshkeys.appendAuthorized(file, shim.authorizedLine(inv.code, id, key, h), key);
     return { linkId: id, out: `${r}: link ${id} of room ${inv.code}` };
   },
@@ -183,11 +183,11 @@ const cmds = {
     return { ok: /checked your PIN/.test(out) || /the host let you in/.test(out), waiting: /checked your PIN/.test(out), out, ms: r.ms, hidden: !!(r.json && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt), stderr: r.stderr };
   },
 
-  // NAME, on the host, answers the join request's card the hooks build (consent.js Pre with "admit REF", then Post)
+  // NAME, on the host, answers the join request's card the hooks build (consent.ts Pre with "admit REF", then Post)
   admitcard(name, label) {
     const seat = seatOf(name);
-    const code = load().code || lib('room/store.js').listRooms()[0];
-    const req = lib('remote/admission.js').pending(code)[0];
+    const code = load().code || lib('room/store.ts').listRooms()[0];
+    const req = lib('remote/admission.ts').pending(code)[0];
     if (!req) return { ok: false, out: 'no join request waits' };
     lease(seat);
     const pre = hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `admit ${req.ref}`, options: [] }] } }, seat);
@@ -201,8 +201,8 @@ const cmds = {
 
   card(name, label) {
     const seat = seatOf(name);
-    const code = load().code || lib('room/store.js').listRooms()[0];
-    const ask = lib('room/store.js').open(code).kv.get(lib('handoff.js').ASK_DOC);
+    const code = load().code || lib('room/store.ts').listRooms()[0];
+    const ask = lib('room/store.ts').open(code).kv.get(lib('handoff.ts').ASK_DOC);
     if (!ask) return { ok: false, out: 'no handoff ask on this machine' };
     lease(seat);
     const pre = hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `handoff ${ask.id}`, options: [] }] } }, seat);
@@ -252,8 +252,8 @@ const cmds = {
   },
 
   dump(code) {
-    const store = lib('room/store.js');
-    const envelope = lib('room/envelope.js');
+    const store = lib('room/store.ts');
+    const envelope = lib('room/envelope.ts');
     code = code || load().code;
     const s = store.open(code);
     const read = f => { try { return fs.readFileSync(path.join(s.dir, f), 'utf8'); } catch { return null; } };
@@ -265,34 +265,34 @@ const cmds = {
     let chain = null;
     try { chain = s.verifyChain(); } catch (e) { chain = { ok: false, error: e.message }; }
     let linkSt = null;
-    try { linkSt = s.isHost ? null : lib('remote/link.js').status(code); } catch (e) { linkSt = { error: e.message }; }
+    try { linkSt = s.isHost ? null : lib('remote/link.ts').status(code); } catch (e) { linkSt = { error: e.message }; }
     const homeSt = fs.existsSync(HOME) ? (fs.statSync(HOME).mode & 0o777).toString(8) : null;
-    return { code, machine: lib('home.js').machineId(), isHost: !!s.isHost, dir: s.dir, log: read('log.jsonl') || '', members: read('members.json'),
+    return { code, machine: lib('home.ts').machineId(), isHost: !!s.isHost, dir: s.dir, log: read('log.jsonl') || '', members: read('members.json'),
       entries, chain, link: linkSt, home: { path: HOME, mode: homeSt, files: walk(HOME) } };
   },
 
-  link(code) { return lib('remote/link.js').status(code || load().code); },
+  link(code) { return lib('remote/link.ts').status(code || load().code); },
 
   probe() {
     const usage = spawnSync(process.execPath, [CLI, '__lab_probe__'], { encoding: 'utf8', env: { ...process.env } });
     const words = new Set((usage.stderr + usage.stdout).replace(/^.*?usage:\s*sub-human/s, '').split('|').map(w => w.trim().split(/\s+/)[0]).filter(Boolean));
     let kinds = [];
-    try { kinds = require(path.join(PLUGIN, 'lib/remote/transports/index.js')).kinds(); } catch { kinds = ['pipe', 'memory', 'ssh'].filter(k => src('lib/remote/link.js').includes(`'${k}'`)); }
-    const protocol = lib('remote/protocol.js');
-    const files = ['lib/remote/ws.js', 'lib/remote/transports/ws.js', 'lib/remote/listener.js', 'lib/remote/outbox.js', 'lib/remote/doctor.js', 'lib/doctor.js',
-      'lib/remote/seal.js', 'lib/remote/handoff.js', 'lib/remote/noise.js', 'lib/remote/tailscale.js', 'lib/remote/enroll.js'].filter(f => fs.existsSync(path.join(PLUGIN, f)));
+    try { kinds = require(path.join(PLUGIN, 'lib/remote/transports/index.js')).kinds(); } catch { kinds = ['pipe', 'memory', 'ssh'].filter(k => src('lib/remote/link.ts').includes(`'${k}'`)); }
+    const protocol = lib('remote/protocol.ts');
+    const files = ['lib/remote/ws.ts', 'lib/remote/transports/ws.ts', 'lib/remote/listener.ts', 'lib/remote/outbox.ts', 'lib/remote/doctor.ts', 'lib/doctor.ts',
+      'lib/remote/seal.js', 'lib/remote/handoff.ts', 'lib/remote/noise.ts', 'lib/remote/tailscale.ts', 'lib/remote/enroll.ts'].filter(f => fs.existsSync(path.join(PLUGIN, f)));
     let version = null;
     try { version = JSON.parse(src('.claude-plugin/plugin.json')).version; } catch { /* none */ }
     return {
       version, cli: [...words], kinds, ops: protocol.OPS || [], protocolVersion: protocol.VERSION,
       protocolExports: Object.keys(protocol), files, cliPath: CLI,
       src: {
-        auth: { sh2: /\bsh2\b/.test(src('lib/remote/auth.js')), pin: /\bpin\b/i.test(src('lib/remote/auth.js')) },
-        join: { hostSsh: /host\s+--ssh|--ssh\b/.test(src('hooks/join.js')), urlPin: /https?:\/\//.test(src('hooks/join.js')) && /\bpin\b/i.test(src('hooks/join.js')), login: /\bloginSpec\b/.test(src('hooks/join.js')) },
+        auth: { sh2: /\bsh2\b/.test(src('lib/remote/auth.ts')), pin: /\bpin\b/i.test(src('lib/remote/auth.ts')) },
+        join: { hostSsh: /host\s+--ssh|--ssh\b/.test(src('hooks/join.ts')), urlPin: /https?:\/\//.test(src('hooks/join.ts')) && /\bpin\b/i.test(src('hooks/join.ts')), login: /\bloginSpec\b/.test(src('hooks/join.ts')) },
         // a seat kept across an outage: the daemon renews this machine's seats on every reconnect (keepSeats/beat)
-        link: { rejoin: /rejoin|keepSeats|localSeats/i.test(src('lib/remote/link.js')), outbox: /outbox/i.test(src('lib/remote/link.js')), ping: /\bping\b/.test(src('lib/remote/link.js')), wake: /\bwake\b/i.test(src('lib/remote/link.js')) },
+        link: { rejoin: /rejoin|keepSeats|localSeats/i.test(src('lib/remote/link.ts')), outbox: /outbox/i.test(src('lib/remote/link.ts')), ping: /\bping\b/.test(src('lib/remote/link.ts')), wake: /\bwake\b/i.test(src('lib/remote/link.ts')) },
         // the hello's version range: protocol.PROTO {min, max} and skewMessage (which side updates)
-        hello: { range: typeof protocol.skewMessage === 'function' || /min_v|vmin|minVersion|MIN_VERSION/.test(src('lib/remote/protocol.js') + src('lib/remote/server.js')) },
+        hello: { range: typeof protocol.skewMessage === 'function' || /min_v|vmin|minVersion|MIN_VERSION/.test(src('lib/remote/protocol.ts') + src('lib/remote/server.ts')) },
       },
     };
   },

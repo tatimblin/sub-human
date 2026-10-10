@@ -9,7 +9,7 @@
  *
  *   setup [SEAT]          a sleeper for SEAT (default alice), then `/sub-human SEAT` (opens the room; the room Claude's
  *                         `claude` is a stub)
- *   say TEXT              the seat's `@room TEXT` through hooks/prompt.js (signed with its seat key)
+ *   say TEXT              the seat's `@room TEXT` through hooks/prompt.ts (signed with its seat key)
  *   to NAME TEXT          a post the seat's Claude addresses to NAME (via=agent, store.append)
  *   dump                  {code, machine, home, log, members (raw members.json), entries: [{id, from, kind, v2, trust}],
  *                         files: [path relative to the room dir]}
@@ -49,18 +49,18 @@ const cmds = {
     const sleeper = spawn('sleep', ['86400'], { detached: true, stdio: 'ignore' });
     sleeper.unref();
     const seat = { name, pid: sleeper.pid, sid: crypto.randomUUID(), nonce: crypto.randomBytes(16).toString('hex') };
-    // the hooks module's hello lease (hooks/mod-hello.js writes it on session.start; join requires it)
-    lib('identity.js').writeModLease(seat.sid, { pid: seat.pid, nonce: seat.nonce });
+    // the hooks module's hello lease (hooks/mod-hello.ts writes it on session.start; join requires it)
+    lib('identity.ts').writeModLease(seat.sid, { pid: seat.pid, nonce: seat.nonce });
     const r = hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: name }, seat);
-    const code = lib('room/store.js').listRooms()[0];
-    s = { code, seat, machine: lib('home.js').machineId(), home: HOME, join: r.json };
+    const code = lib('room/store.ts').listRooms()[0];
+    s = { code, seat, machine: lib('home.ts').machineId(), home: HOME, join: r.json };
     fs.writeFileSync(STATE, JSON.stringify(s) + '\n', { mode: 0o600 });
     return s;
   },
 
   say(text) {
     const { seat } = state();
-    // typed: the origin and the session's nonce, as the hooks module hands them to hooks/prompt.js
+    // typed: the origin and the session's nonce, as the hooks module hands them to hooks/prompt.ts
     const r = hook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: `@room ${text}`, prompt_id: crypto.randomUUID(),
       sub_human_origin: 'composer', sub_human_nonce: seat.nonce }, seat);
     return { ok: !!(r.json && r.json.continue === false), out: r.json, stderr: r.stderr };
@@ -68,33 +68,33 @@ const cmds = {
 
   to(name, text) {
     const { code, seat } = state();
-    const e = lib('room/store.js').open(code).append({ kind: 'say', text, to: name }, { via: 'agent', from: seat.name });
+    const e = lib('room/store.ts').open(code).append({ kind: 'say', text, to: name }, { via: 'agent', from: seat.name });
     return { ok: true, id: e.id };
   },
 
   /** An sh1 invite to the room for DEST (internal: no command mints one; the Mac run links with it), and its key's line. */
   invite1(dest) {
     const { code } = state();
-    const L = lib('remote/link.js');
+    const L = lib('remote/link.ts');
     const locator = dest === 'pipe' ? L.pipeLocator() : L.sshLocator(dest);
-    return { invite: lib('remote/auth.js').mintInvite(lib('room/store.js').open(code), { locator }).invite };
+    return { invite: lib('remote/auth.ts').mintInvite(lib('room/store.ts').open(code), { locator }).invite };
   },
 
   /** The one-link forced-command line for the public key on stdin and that invite's reserved link, appended. */
   authorize(invite, file = '/home/host/.ssh/authorized_keys') {
-    const auth = lib('remote/auth.js'), sshkeys = lib('remote/sshkeys.js');
+    const auth = lib('remote/auth.ts'), sshkeys = lib('remote/sshkeys.ts');
     const inv = auth.parseInvite(invite);
-    const id = auth.reserveLink(lib('room/store.js').open(inv.code), inv.secret);
+    const id = auth.reserveLink(lib('room/store.ts').open(inv.code), inv.secret);
     const key = sshkeys.publicKey(fs.readFileSync(0, 'utf8'));
-    const { shim, h } = lib('remote/hosting.js').shimReady();
+    const { shim, h } = lib('remote/hosting.ts').shimReady();
     sshkeys.appendAuthorized(file, shim.authorizedLine(inv.code, id, key, h), key);
     return { linkId: id };
   },
 
   dump() {
     const { code, machine } = state();
-    const store = lib('room/store.js');
-    const envelope = lib('room/envelope.js');
+    const store = lib('room/store.ts');
+    const envelope = lib('room/envelope.ts');
     const s = store.open(code);
     const read = f => { try { return fs.readFileSync(path.join(s.dir, f), 'utf8'); } catch { return null; } };
     const entries = s.readAll().map(e => ({ id: e.id, from: e.from, via: e.via, kind: e.kind, to: e.to, text: e.text, machine: e.machine,

@@ -1,12 +1,12 @@
 'use strict';
-// hooks/mod-hello.js's lease: the module's $.process children are claude's own, so the lease names the parent.
+// hooks/mod-hello.ts's lease: the module's $.process children are claude's own, so the lease names the parent.
 // (The printed hello is covered in test/mod-core.test.js.)
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { World, PLUGIN } = require('./helpers.js');
-const { pidStart } = require(path.join(PLUGIN, 'lib', 'lock.js'));
+const { pidStart } = require(path.join(PLUGIN, 'lib', 'lock.ts'));
 
 test('mod-hello: the lease records the parent claude pid, its start time and the module\'s nonce, and only the documented fields', t => {
   const w = new World({ claude: 'sleep' }, { t });
@@ -25,5 +25,5 @@ test('mod-hello: the lease records the parent claude pid, its start time and the
     w.hook('mod-hello', { session_id: sid, nonce: bad });
     assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).nonce, undefined, String(bad));
   }
-  assert.equal(w.lib(() => require(path.join(PLUGIN, 'lib', 'identity.js')).modLeaseOk(sid, process.pid, Date.now() + 86_400_000)), true);
+  assert.equal(w.lib(() => require(path.join(PLUGIN, 'lib', 'identity.ts')).modLeaseOk(sid, process.pid, Date.now() + 86_400_000)), true);
 });

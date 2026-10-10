@@ -14,9 +14,9 @@ const { context, DEMO } = require('../checks/context.js');
 const { joinLineIn, admitCardState } = require('../lib/panes.js');
 
 const { Machine } = paths.pluginTest('support/two-homes.js');
-const store = paths.pluginLib('room/store.js');
-const proposal = paths.pluginLib('proposal.js');
-const link = paths.pluginLib('remote/link.js');
+const store = paths.pluginLib('room/store.ts');
+const proposal = paths.pluginLib('proposal.ts');
+const link = paths.pluginLib('remote/link.ts');
 
 const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
 const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };

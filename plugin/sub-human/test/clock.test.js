@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const clock = require(path.join(__dirname, '..', 'lib', 'clock.js'));
+const clock = require(path.join(__dirname, '..', 'lib', 'clock.ts'));
 
 test('clock: the real clock is Date.now and real timers', async () => {
   assert.ok(Math.abs(clock.now() - Date.now()) < 50);

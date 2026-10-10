@@ -1,9 +1,9 @@
 'use strict';
 /**
  * test/support/remote-store.js: the store contract's remote backend. A
- * MirrorRoomStore on the calling thread; on a worker thread, the room's server (lib/remote/server.js over the
- * host's FsRoomStore, <home>/rooms/<code>) and the link that keeps the mirror (lib/remote/link.js serveMirror),
- * joined by the memory transport. The mirror's writes cross lib/remote/bridge.js and the link's socket as in
+ * MirrorRoomStore on the calling thread; on a worker thread, the room's server (lib/remote/server.ts over the
+ * host's FsRoomStore, <home>/rooms/<code>) and the link that keeps the mirror (lib/remote/link.ts serveMirror),
+ * joined by the memory transport. The mirror's writes cross lib/remote/bridge.ts and the link's socket as in
  * production; only the transport differs (not a `serve --stdio` child). A thread that makes synchronous bridge
  * calls never hosts the server, so the server is on the worker.
  *
@@ -25,8 +25,8 @@ const MACHINE = 'remote0machine01';
  * @returns {{mirror: object, stop(): void}}
  */
 function remoteStore(code, { dir }) {
-  const { MirrorRoomStore } = require(path.join(LIB, 'room', 'store-mirror.js'));
-  const { socketPath } = require(path.join(LIB, 'remote', 'link.js'));
+  const { MirrorRoomStore } = require(path.join(LIB, 'room', 'store-mirror.ts'));
+  const { socketPath } = require(path.join(LIB, 'remote', 'link.ts'));
   const ready = new Int32Array(new SharedArrayBuffer(4));
   const worker = new Worker(__filename, { workerData: { code, dir, home: process.env.SUB_HUMAN_HOME, ready } });
   worker.unref();
@@ -40,13 +40,13 @@ function remoteStore(code, { dir }) {
 
 async function serveWorker({ code, dir, home, ready }) {
   process.env.SUB_HUMAN_HOME = home; // the test's home: a preloaded test/helpers.js gave this thread a fresh one
-  const store = require(path.join(LIB, 'room', 'store.js'));
-  const { MirrorRoomStore } = require(path.join(LIB, 'room', 'store-mirror.js'));
-  const { serveMirror } = require(path.join(LIB, 'remote', 'link.js'));
-  const auth = require(path.join(LIB, 'remote', 'auth.js'));
-  const server = require(path.join(LIB, 'remote', 'server.js'));
-  const client = require(path.join(LIB, 'remote', 'client.js'));
-  const memory = require(path.join(LIB, 'remote', 'transports', 'memory.js'));
+  const store = require(path.join(LIB, 'room', 'store.ts'));
+  const { MirrorRoomStore } = require(path.join(LIB, 'room', 'store-mirror.ts'));
+  const { serveMirror } = require(path.join(LIB, 'remote', 'link.ts'));
+  const auth = require(path.join(LIB, 'remote', 'auth.ts'));
+  const server = require(path.join(LIB, 'remote', 'server.ts'));
+  const client = require(path.join(LIB, 'remote', 'client.ts'));
+  const memory = require(path.join(LIB, 'remote', 'transports', 'memory.ts'));
   store.createRoom(code);
   const host = store.open(code);
   const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });

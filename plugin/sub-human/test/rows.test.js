@@ -1,5 +1,5 @@
 'use strict';
-// lib/rows.js: rowCalls text, spawn parsing, the row map, and deterministic row text.
+// lib/rows.ts: rowCalls text, spawn parsing, the row map, and deterministic row text.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const PLUGIN = path.join(__dirname, '..');
-const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
+const rows = require(path.join(PLUGIN, 'lib', 'rows.ts'));
 
 /** A room written by hand (members.json + log.jsonl), independent of the identity / room writers. */
 function makeRoom(members, entries = []) {
@@ -98,7 +98,7 @@ test('rowText (participant): proposal states from the room\'s Claude view, prese
   ];
   assert.equal(rows.rowText(code, 'bob', 'claude', { tasks: list }), '⚠ reviewing 593da0 · ◼ #2 parser tests');
   assert.equal(rows.rowText(code, 'alice', 'claude', { tasks: list }), '✓ agreed 593da0 · idle', 'a completed task is not open');
-  // default source: <room>/tasks.json (the mirror), when lib/tasks.js is absent or fails
+  // default source: <room>/tasks.json (the mirror), when lib/tasks.ts is absent or fails
   fs.writeFileSync(path.join(dir, 'tasks.json'), JSON.stringify(list));
   assert.match(rows.rowText(code, 'bob', 'claude'), /◼ #2 parser tests$/);
 });
@@ -176,12 +176,12 @@ test('rowText: every fixture stays within ROW_MAX; segments that do not fit are 
   assert.equal(rows.fit(['x'.repeat(80)]).length, rows.ROW_MAX);
 });
 
-test('rowText (room row): lib/tasks.js summary(code, viewer) is used when present; a throwing one is ignored', () => {
+test('rowText (room row): lib/tasks.ts summary(code, viewer) is used when present; a throwing one is ignored', () => {
   const { code } = makeRoom([{ name: 'claude' }, { name: 'alice' }]);
-  const file = path.join(PLUGIN, 'lib', 'tasks.js');
+  const file = path.join(PLUGIN, 'lib', 'tasks.ts');
   const real = fs.existsSync(file);
   if (real) {
-    require(path.join(PLUGIN, 'lib', 'room.js')).open(code).store.kv.set('tasks', [
+    require(path.join(PLUGIN, 'lib', 'room.ts')).open(code).store.kv.set('tasks', [
       { id: '2', subject: 'parser tests', status: 'in_progress', owner: 'alice' },
       { id: '4', subject: 'docs', status: 'pending', owner: 'bob' },
       { id: '5', subject: 'old', status: 'completed', owner: 'bob' },
@@ -190,7 +190,7 @@ test('rowText (room row): lib/tasks.js summary(code, viewer) is used when presen
     assert.equal(rows.rowText(code, 'alice', 'bob', { entries: [] }), '◼ #2 parser tests', 'participant row: tasks.mine()');
     return;
   }
-  const id = require.resolve(path.join(PLUGIN, 'lib', 'rows.js')).replace(/rows\.js$/, 'tasks.js');
+  const id = require.resolve(path.join(PLUGIN, 'lib', 'rows.ts')).replace(/rows\.js$/, 'tasks.ts');
   require.cache[id] = { id, filename: id, loaded: true, exports: { summary: (c, v) => `tasks 1 open · #2 ${v}`, list: () => [] } };
   try {
     assert.equal(rows.rowText(code, code, 'alice', { entries: [] }), '1 here · tasks 1 open · #2 alice');
@@ -207,7 +207,7 @@ test('missingRows: claude lists members without a live hold after the grace peri
   assert.deepEqual(rows.missingRows(code, { code, name: 'alice', role: 'member' }), [code]);
   rows.writeHolds(code, 'alice', { members: [], room: true });
   assert.deepEqual(rows.missingRows(code, { code, name: 'alice', role: 'member' }), []);
-  require(path.join(PLUGIN, 'lib', 'room.js')).open(code).store.kv.set('rows/holds-alice', { pid: 999999, at: new Date().toISOString(), members: [], room: true });
+  require(path.join(PLUGIN, 'lib', 'room.ts')).open(code).store.kv.set('rows/holds-alice', { pid: 999999, at: new Date().toISOString(), members: [], room: true });
   assert.deepEqual(rows.missingRows(code, { code, name: 'alice', role: 'member' }), [code], 'dead server pid: not live');
 });
 
@@ -218,7 +218,7 @@ test('joinNote: a member_joined notice says whether the row already runs here (l
   rows.writeHolds(code, 'claude', { members: ['bob'] });
   assert.match(rows.joinNote(roomClaude, 'bob'), /bob's row is already running .*make NO Agent call/);
   assert.match(rows.joinNote(roomClaude, 'alice'), /alice has no row running/);
-  require(path.join(PLUGIN, 'lib', 'room.js')).open(code).store.kv.set('rows/holds-claude', { pid: 999999, at: new Date().toISOString(), members: ['bob'], room: false });
+  require(path.join(PLUGIN, 'lib', 'room.ts')).open(code).store.kv.set('rows/holds-claude', { pid: 999999, at: new Date().toISOString(), members: ['bob'], room: false });
   assert.match(rows.joinNote(roomClaude, 'bob'), /no row running/, 'dead hold server: not running');
   const alice = { code, name: 'alice', role: 'member' };
   assert.equal(rows.joinNote(alice, 'bob'), `row: your room row is not running; spawn it now: ${rows.roomCall(code, ['bob'])}`);
@@ -231,7 +231,7 @@ test('joinNote: a member_joined notice says whether the row already runs here (l
 test('joinNote (Phase 0 fix): a room hold between its JOINED return and the re-call still counts as running', () => {
   const { code } = makeRoom([{ name: 'claude' }, { name: 'alice' }, { name: 'bob' }]);
   const alice = { code, name: 'alice', role: 'member' };
-  // hold.js writes room:false + roomUntil while the room agent re-calls hold after "JOINED bob"
+  // hold.ts writes room:false + roomUntil while the room agent re-calls hold after "JOINED bob"
   rows.writeHolds(code, 'alice', { members: [], room: false, roomUntil: Date.now() + 30_000 });
   assert.equal(rows.readHolds(code, 'alice').room, true);
   assert.match(rows.joinNote(alice, 'bob'), /make NO Agent call/);

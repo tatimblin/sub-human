@@ -219,13 +219,13 @@ test('two concurrent joins start one claude: the second sees the pending claim',
     `if (process.argv.includes('--bg')) { const z = new Int32Array(new SharedArrayBuffer(4)); for (let i = 0; i < 1200 && !fs.existsSync(${JSON.stringify(gate)}); i++) Atomics.wait(z, 0, 0, 25); console.log('backgrounded · 0b500131 · claude.x'); }\n`);
   fs.chmodSync(bin, 0o755);
   const starters = () => spawnSync('ps', ['-Ao', 'args'], { encoding: 'utf8' }).stdout.split('\n')
-    .filter(l => l.includes(path.join('lib', 'room-claude.js')) && l.includes(` start ${w.code} `)).length;
+    .filter(l => l.includes(path.join('lib', 'room-claude.ts')) && l.includes(` start ${w.code} `)).length;
   const { spawn: sp, spawnSync } = require('node:child_process');
   const { baseEnv, HOOKS } = require('./helpers.js');
   const run = who => new Promise(res => {
     w.modLease(w.sid[who]);
     const env = baseEnv({ SUB_HUMAN_HOME: w.home, HOME: w.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_CLAUDE: bin, SUB_HUMAN_PLUGIN_DIR: '', CLAUDE_PID: String(w.pid[who]) });
-    const p = sp(process.execPath, [path.join(HOOKS, 'join.js')], { env, cwd: w.cwd });
+    const p = sp(process.execPath, [path.join(HOOKS, 'join.ts')], { env, cwd: w.cwd });
     let out = '';
     p.stdout.on('data', d => { out += d; });
     p.on('close', () => res(JSON.parse(out)));
@@ -298,7 +298,7 @@ test('without the hooks module\'s hello lease for the session the join is refuse
 
 /** Write sid's hello lease as mod-hello would have, at time `at`, for the claude process pid. */
 function leaseAt(w, sid, pid, at) {
-  const { pidStart } = require(path.join(PLUGIN, 'lib', 'lock.js'));
+  const { pidStart } = require(path.join(PLUGIN, 'lib', 'lock.ts'));
   const dir = path.join(w.home, 'sessions', 'mods');
   fs.mkdirSync(dir, { recursive: true });
   const start = pidStart(pid);
@@ -445,7 +445,7 @@ test('joining another room switches to it; the room\'s Claude cannot switch room
   assert.match(hso(r).additionalContext, new RegExp(`in room ${newCode}`));
   // alice was the old room's last member: its detached reaper (grace 0 in tests) may already have appended its
   // "room closed" status after her departure, so the departure is the last entry that is not the reaper's.
-  const roomClaude = require(path.join(PLUGIN, 'lib', 'room-claude.js'));
+  const roomClaude = require(path.join(PLUGIN, 'lib', 'room-claude.ts'));
   const left = w.entries().filter(e => !(e.kind === 'status' && e.text === roomClaude.CLOSE_TEXT)).at(-1);
   assert.deepEqual([left.kind, left.from, left.via], ['member_left', 'alice', 'system'], 'old room logs the departure');
   assert.ok(w.members().alice.left_at, 'old seat marked left');
@@ -485,7 +485,7 @@ test('join marks presence "working"', () => {
   assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice')).state, 'working');
 });
 
-// ---------- the mechanics block (common.js contextBlock) ----------
+// ---------- the mechanics block (common.ts contextBlock) ----------
 
 /** contextBlock in-process, with templates from `root` (a stub plugin root) and a 5-member room. */
 function blockFor(role, root) {
@@ -494,7 +494,7 @@ function blockFor(role, root) {
   if (root) process.env.CLAUDE_PLUGIN_ROOT = root; else delete process.env.CLAUDE_PLUGIN_ROOT;
   try {
     return withHome(w.home, () => {
-      const common = require('../../hooks/common.js');
+      const common = require('../../hooks/common.ts');
       const name = role === 'claude' ? 'claude' : 'alice';
       return { text: common.contextBlock({ code: w.code, name, role }, 'joined'), code: w.code, common };
     });
@@ -568,7 +568,7 @@ test('block: no template file (or one without placeholders) falls back to the bu
 });
 
 test('seatTitle is the native address NAME.CODE', () => {
-  const common = require('../../hooks/common.js');
+  const common = require('../../hooks/common.ts');
   assert.equal(common.seatTitle({ code: 'vole-8126', name: 'alice' }), 'alice.vole-8126');
 });
 
@@ -585,7 +585,7 @@ test('classic (no module answering): a reply is the block reason alone, never al
   assert.equal(inv.json.hookSpecificOutput.suppressOriginalPrompt, true);
 });
 
-/** Run join.js as the module's command.run hook does (mod/core/command.mjs joinPayload): no CLAUDE_PID, the lease's
+/** Run join.ts as the module's command.run hook does (mod/core/command.ts joinPayload): no CLAUDE_PID, the lease's
  * nonce, this test process as the claude process (the shim's parent). */
 function viaModule(w, name, args, { nonce = 'ab'.repeat(16), leaseNonce = nonce } = {}) {
   w.pid[name] = process.pid;
@@ -633,8 +633,8 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
 test('the block lists the room\'s Claude only while it runs or is starting: never one that never ran or whose start failed', () => {
   const w = new World({ alice: 'sleep', bob: 'sleep' });
   const now = Date.now(), iso = ms => new Date(ms).toISOString();
-  const others = rec => withHome(w.home, () => require('../../lib/room/members.js').roomClaudePresence({ name: 'claude', role: 'claude', ...rec }, now));
-  // the rule (lib/room/members.js roomClaudePresence), from any machine
+  const others = rec => withHome(w.home, () => require('../../lib/room/members.ts').roomClaudePresence({ name: 'claude', role: 'claude', ...rec }, now));
+  // the rule (lib/room/members.ts roomClaudePresence), from any machine
   assert.equal(others({ job: null, spawn_error: 'exit 1' }), null, 'a failed start (the harness stub)');
   assert.equal(others({}), null, 'never spawned');
   assert.equal(others({ job: 'pending', spawned_at: iso(now - 1000) }), 'starting');
@@ -645,6 +645,6 @@ test('the block lists the room\'s Claude only while it runs or is starting: neve
   assert.equal(others({ job: 'j1', closing: true, seen_at: iso(now), joined_at: iso(now) }), null);
   // the block itself: a room whose room Claude failed to start does not say "with … room Claude"
   withHome(w.home, () => identity.updateRoomClaude(w.code, () => ({ name: 'claude', role: 'claude', job: null, spawn_error: 'exit 1', pid: null })));
-  const text = withHome(w.home, () => require('../../hooks/common.js').contextBlock({ code: w.code, name: 'alice', role: 'member' }, 'rejoined'));
+  const text = withHome(w.home, () => require('../../hooks/common.ts').contextBlock({ code: w.code, name: 'alice', role: 'member' }, 'rejoined'));
   assert.match(text, new RegExp(`room ${w.code} \\(with bob\\)`), text.slice(0, 120));
 });

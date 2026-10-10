@@ -35,7 +35,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const paths = require('./lib/paths.js');
-const { readJson, jsonl, textOf } = require('./lib/io.js');
+const { readJson, jsonl, textOf } = require('./lib/io.ts');
 
 const SEATS = ['claude', 'alice', 'bob'];
 const NOISE = {
@@ -108,7 +108,7 @@ function cardTurns(es) {
   for (let i = 0; i < main.length; i++) {
     const e = main[i];
     if (e.type !== 'assistant') continue;
-    // the card, or the plan view (ExitPlanMode "proposal <hash>": hooks/consent.js shows the proposal in the plan dialog)
+    // the card, or the plan view (ExitPlanMode "proposal <hash>": hooks/consent.ts shows the proposal in the plan dialog)
     const call = (e.message.content || []).find(c => c && c.type === 'tool_use' && (c.name === 'AskUserQuestion' || c.name === 'ExitPlanMode') && HASH_RE.test(JSON.stringify(c.input || {})));
     if (!call) continue;
     // back to the entry that started this turn (a user entry that is not a tool result)

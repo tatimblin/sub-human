@@ -22,7 +22,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { render } = require('./ansi-svg.js');
 const { home } = require('./lib/paths.js');
-const { readJson, jsonl } = require('./lib/io.js');
+const { readJson, jsonl } = require('./lib/io.ts');
 
 const REPO = path.resolve(__dirname, '..');
 const SNAP_DIR = process.env.SNAP_DIR ? path.resolve(process.env.SNAP_DIR) : path.join(REPO, 'docs/rebuild/screens');

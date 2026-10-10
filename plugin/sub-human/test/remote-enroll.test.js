@@ -1,5 +1,5 @@
 'use strict';
-// The short code's enrollment (lib/remote/enroll.js) over the memory transport, the host's end on a real hosted store:
+// The short code's enrollment (lib/remote/enroll.ts) over the memory transport, the host's end on a real hosted store:
 // the right code gets the joiner a sealed admission secret and the host an admission waiting for its person; a wrong
 // code costs exactly one try (counted before the host answers, so an attempt abandoned after the answer costs it too)
 // and the fifth burns the invite; key confirmation both ways (a bad tag either side is a wrong PIN); someone posing
@@ -12,13 +12,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-const enroll = require(path.join(h.LIB, 'remote', 'enroll.js'));
-const cpace = require(path.join(h.LIB, 'remote', 'cpace.js'));
-const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.js'));
-const protocol = require(path.join(h.LIB, 'remote', 'protocol.js'));
-const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+const enroll = require(path.join(h.LIB, 'remote', 'enroll.ts'));
+const cpace = require(path.join(h.LIB, 'remote', 'cpace.ts'));
+const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.ts'));
+const protocol = require(path.join(h.LIB, 'remote', 'protocol.ts'));
+const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.ts'));
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
@@ -240,7 +240,7 @@ test('enroll: the door line is in authorized_keys while an ssh code is live, and
 });
 
 test('doctor --bundle redacts a short invite\'s code wherever it shows', () => {
-  const doctor = require(path.join(h.LIB, 'cli', 'doctor.js'));
+  const doctor = require(path.join(h.LIB, 'cli', 'doctor.ts'));
   const red = doctor.redactor({ salt: 'x' });
   const out = red('could not link: /sub-human join NAME me@box vole-8126 482913 (wrong PIN); the URL https://box/sub-human/vole-8126 004211');
   assert.ok(!out.includes('482913') && !out.includes('004211'), out);

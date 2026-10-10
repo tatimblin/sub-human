@@ -1,8 +1,8 @@
 'use strict';
 // Invites end to end over the pipe transport, two homes on one machine (test/support/two-homes.js): the host's
 // /sub-human invite --pipe shows `/sub-human join pipe:HOME ROOM 4829` to the person only; the joiner types it
-// (a hidden step: the model never sees the PIN); the link daemon runs CPace with the PIN (lib/remote/enroll.js) and
-// then waits; the host's tail wakes the host seat's Claude, whose card (hooks/consent.js) is the only way in: Let in
+// (a hidden step: the model never sees the PIN); the link daemon runs CPace with the PIN (lib/remote/enroll.ts) and
+// then waits; the host's tail wakes the host seat's Claude, whose card (hooks/consent.ts) is the only way in: Let in
 // links the machine (a bare /sub-human then takes the seat), Refuse stops it, an AFK card records nothing, and a
 // request nobody answers lapses. A wrong PIN costs a try with a room line, the fifth burns the invite; the PIN is
 // never in a log, a link file after the attempt, or what the model gets.
@@ -12,10 +12,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-const admission = require(path.join(h.LIB, 'remote', 'admission.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
+const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+const admission = require(path.join(h.LIB, 'remote', 'admission.ts'));
 const { Machine } = require('./support/two-homes.js');
 
 const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '400', SUB_HUMAN_LINK_IDLE_MS: '1500' };
@@ -106,7 +106,7 @@ test('an invite over pipe: the host sees one line; join links in a hidden step; 
   await until(() => remote.lib(() => link.status(code)).state === 'online', 10000, 'the link online');
   const seated = remote.join(bob, '');
   assert.equal(seated.json.decision, undefined, seated.stdout);
-  assert.ok(remote.lib(() => require(path.join(h.LIB, 'identity.js')).readMembers(code)).bob, 'bob is seated');
+  assert.ok(remote.lib(() => require(path.join(h.LIB, 'identity.ts')).readMembers(code)).bob, 'bob is seated');
   assert.equal('join_as' in JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8')), false, 'the seat is taken: nothing pending');
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room' && e.kind === 'status').map(e => e.text).join('\n');
   assert.match(said, /bob on \S+ typed an invite's PIN; waiting for alice to let them in/);

@@ -1,5 +1,5 @@
 'use strict';
-// `sub-human doctor` (lib/cli/doctor.js): the checks, the CLI over a real pipe link to a second home, --fix, and the
+// `sub-human doctor` (lib/cli/doctor.ts): the checks, the CLI over a real pipe link to a second home, --fix, and the
 // redaction of --bundle.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -9,10 +9,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const doctor = require(path.join(h.LIB, 'cli', 'doctor.js'));
-const links = require(path.join(h.LIB, 'room', 'links.js'));
-const linkState = require(path.join(h.LIB, 'room', 'link-state.js'));
-const shim = require(path.join(h.LIB, 'remote', 'shim.js'));
+const doctor = require(path.join(h.LIB, 'cli', 'doctor.ts'));
+const links = require(path.join(h.LIB, 'room', 'links.ts'));
+const linkState = require(path.join(h.LIB, 'room', 'link-state.ts'));
+const shim = require(path.join(h.LIB, 'remote', 'shim.ts'));
 
 const KEY_B64 = crypto.randomBytes(51).toString('base64').replace(/=+$/, '');
 const KEY = `ssh-ed25519 ${KEY_B64}`;
@@ -207,7 +207,7 @@ test('doctor redactor: each rule alone', () => {
 
 test('doctor: a room whose claude job started but never took its seat (e.g. refused "name taken") fails, with the job\'s log', t => {
   h.freshHome(t);
-  const identity = require(path.join(h.LIB, 'identity.js'));
+  const identity = require(path.join(h.LIB, 'identity.ts'));
   const { code } = h.register('alice', 'member', process.pid);
   const old = new Date(Date.now() - 5 * 60_000).toISOString();
   identity.updateRoomClaude(code, () => ({ job: 'job12345', spawned_at: old, pid: 4242, machine: 'another-machine', left_at: undefined }));

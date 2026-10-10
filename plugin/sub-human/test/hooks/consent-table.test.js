@@ -1,14 +1,14 @@
 'use strict';
-// One log, every consent view: lib/room/consent.js fold feeds stateLine, lane(), the rows, proposal.matrix /
-// pendingFor and the consent gate (hooks/consent.js Pre(AskUserQuestion)); they must give the same answers.
+// One log, every consent view: lib/room/consent.ts fold feeds stateLine, lane(), the rows, proposal.matrix /
+// pendingFor and the consent gate (hooks/consent.ts Pre(AskUserQuestion)); they must give the same answers.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { World, PLUGIN, decision, room } = require('./helpers.js');
 
-const proposal = require(path.join(PLUGIN, 'lib', 'proposal.js'));
-const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
-const consent = require(path.join(PLUGIN, 'lib', 'room', 'consent.js'));
+const proposal = require(path.join(PLUGIN, 'lib', 'proposal.ts'));
+const rows = require(path.join(PLUGIN, 'lib', 'rows.ts'));
+const consent = require(path.join(PLUGIN, 'lib', 'room', 'consent.ts'));
 
 test('consent table: proposal, re-proposal, revise, signoffs, objection after signoff, decision: all views agree', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep', carol: 'sleep', dave: 'sleep' });

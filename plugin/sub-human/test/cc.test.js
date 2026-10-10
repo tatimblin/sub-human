@@ -1,5 +1,5 @@
 'use strict';
-// Tests for lib/cc.js (the Claude Code contract) and scripts/probe-cc.js. Fixture transcript lines follow
+// Tests for lib/cc.ts (the Claude Code contract) and scripts/probe-cc.js. Fixture transcript lines follow
 // the shapes in docs/internals/cc-2.1.281.md (checked against real 2.1.281 transcripts; unchanged in 2.1.292,
 // see docs/internals/cc-2.1.292.md).
 const test = require('node:test');
@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const cc = require(path.join(__dirname, '..', 'lib', 'cc.js'));
+const cc = require(path.join(__dirname, '..', 'lib', 'cc.ts'));
 
 const PROBE = path.join(__dirname, '..', '..', '..', 'scripts', 'probe-cc.js');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cc-'));
@@ -228,8 +228,8 @@ test('CONTRACT entries are well formed and unique', () => {
     assert.ok(ids.has(id), id);
 });
 
-test('every @cc tag in lib/cc.js names a string some CONTRACT entry searches for', () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'cc.js'), 'utf8');
+test('every @cc tag in lib/cc.ts names a string some CONTRACT entry searches for', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'cc.ts'), 'utf8');
   const all = new Set(cc.CONTRACT.flatMap(e => (Array.isArray(e.search) ? e.search : [e.search])));
   const tags = [...src.matchAll(/^ \* @cc (.+)$/gm)].map(m => m[1]);
   assert.ok(tags.length > 20);
@@ -250,11 +250,11 @@ test('shapeRe: ~ is one minified identifier, the rest is literal', () => {
 test('the plugin ships exactly one hooks module, at the path hooks.json names', () => {
   // cc CONTRACT hooks-json-modules / hooks-modules: an installed plugin's function hooks are the one module that
   // hooks/hooks.json names under `modules` (relative to hooks.json), loaded by default since 2.1.292.
-  // "hooks/register.ts" is the built-in plugins' fixed path, not ours: ours is mod/register.mjs, and no register.*
+  // "hooks/register.ts" is the built-in plugins' fixed path, not ours: ours is mod/register.ts, and no register.*
   // sits in hooks/ to be mistaken for it.
   const hooks = path.join(__dirname, '..', 'hooks');
   const json = JSON.parse(fs.readFileSync(path.join(hooks, 'hooks.json'), 'utf8'));
-  assert.deepEqual(json.modules, ['../mod/register.mjs'], 'hooks.json names one hooks module per plugin');
+  assert.deepEqual(json.modules, ['../mod/register.ts'], 'hooks.json names one hooks module per plugin');
   for (const m of json.modules) assert.ok(fs.statSync(path.resolve(hooks, m)).isFile(), `${m} exists`);
   assert.deepEqual(fs.readdirSync(hooks).filter(f => /^register\.[cm]?[jt]sx?$/.test(f)), []);
 });

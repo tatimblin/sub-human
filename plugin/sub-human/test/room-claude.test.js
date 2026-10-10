@@ -1,5 +1,5 @@
 'use strict';
-// Tests for lib/room-claude.js: the spawn argv and clean env, the job record, needsSpawn, and the reaper's steps
+// Tests for lib/room-claude.ts: the spawn argv and clean env, the job record, needsSpawn, and the reaper's steps
 // and timing. `claude` is a stub (SUB_HUMAN_CLAUDE) that records each call; nothing real is launched.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -7,8 +7,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const h = require('./helpers.js');
-const identity = require(path.join(h.LIB, 'identity.js'));
-const roomClaude = require(path.join(h.LIB, 'room-claude.js'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const roomClaude = require(path.join(h.LIB, 'room-claude.ts'));
 
 /** A stub claude: appends {argv, env, cwd} to calls.jsonl; `--bg` prints the backgrounded line; `agents --json`
  * prints `agents` (a JSON array) when given, else nothing (cc.jobs() then fails and the parsed id is used). */
@@ -78,7 +78,7 @@ test('room-claude: the spawner\'s SUB_HUMAN_*_MS overrides go through --settings
 });
 
 test('config: every override read through envMs matches the pattern the room\'s Claude forwards', () => {
-  const config = require(path.join(h.LIB, 'config.js'));
+  const config = require(path.join(h.LIB, 'config.ts'));
   const root = path.join(h.LIB, '..');
   const names = new Set();
   const walk = d => {
@@ -151,7 +151,7 @@ test('room-claude: reap waits the grace, marks closing, tells the room\'s Claude
   const o = h.spawnSleeper();
   identity.setRoomClaude(code, { job: 'cafe1234' });
   identity.join({ code, name: 'claude', role: 'claude', pid: o.pid, session_id: 'so' });
-  const room = require(path.join(h.LIB, 'room.js'));
+  const room = require(path.join(h.LIB, 'room.ts'));
   await withEnv({ SUB_HUMAN_CLAUDE: s.bin, CLAUDE_CONFIG_DIR: cfg }, async () => {
     const t0 = Date.now();
     const p = roomClaude.reap(code, { graceMs: 150, waitMs: 3000, pollMs: 50 });
@@ -206,15 +206,15 @@ test('room-claude: the CLI prints the manual command and refuses a bad code', ()
   h.freshHome();
   const code = h.newRoom();
   const { spawnSync } = require('node:child_process');
-  const r = spawnSync(process.execPath, [path.join(h.LIB, 'room-claude.js'), 'cmd', code], { env: h.childEnv({ SUB_HUMAN_PLUGIN_DIR: '' }), encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [path.join(h.LIB, 'room-claude.ts'), 'cmd', code], { env: h.childEnv({ SUB_HUMAN_PLUGIN_DIR: '' }), encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, new RegExp(`env -i .* claude --bg -n claude\\.${code} --agent sub-human:room-claude --permission-mode plan --settings `));
-  const bad = spawnSync(process.execPath, [path.join(h.LIB, 'room-claude.js'), 'reap', '../x'], { env: h.childEnv(), encoding: 'utf8' });
+  const bad = spawnSync(process.execPath, [path.join(h.LIB, 'room-claude.ts'), 'reap', '../x'], { env: h.childEnv(), encoding: 'utf8' });
   assert.equal(bad.status, 2);
 });
 
 // ---------- spawn env, claim, job lookup, respawn, watchdog ----------
-const cc = require(path.join(h.LIB, 'cc.js'));
+const cc = require(path.join(h.LIB, 'cc.ts'));
 
 test('room-claude: the spawn env is the login basics plus the daemon allowlist (cc.DAEMON_ENV_ALLOW), nothing else', () => {
   h.freshHome();
@@ -256,7 +256,7 @@ test('room-claude: concurrent claims from separate processes: exactly one wins',
   h.freshHome();
   const code = h.newRoom();
   const { spawn: sp } = require('node:child_process');
-  const src = `const o=require(${JSON.stringify(path.join(h.LIB, 'room-claude.js'))});process.stdout.write(JSON.stringify(o.claimSpawn(process.argv[1],{by:process.argv[2]})))`;
+  const src = `const o=require(${JSON.stringify(path.join(h.LIB, 'room-claude.ts'))});process.stdout.write(JSON.stringify(o.claimSpawn(process.argv[1],{by:process.argv[2]})))`;
   const run = by => new Promise(res => { let out = ''; const p = sp(process.execPath, ['-e', src, code, by], { env: h.childEnv({ SUB_HUMAN_HOME: identity.home() }) }); p.stdout.on('data', d => { out += d; }); p.on('close', () => res(JSON.parse(out || 'null'))); });
   const rs = await Promise.all(['a', 'b', 'c', 'd', 'e', 'f'].map(run));
   assert.equal(rs.filter(Boolean).length, 1, JSON.stringify(rs));
@@ -407,7 +407,7 @@ test('room-claude: crash-all-members (SIGKILL) -> the watchdog reaps the room\'s
   assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'dead00ff']]);
   const rec = identity.readMembers(code).claude;
   assert.ok(rec.closing && rec.left_at);
-  const room = require(path.join(h.LIB, 'room.js'));
+  const room = require(path.join(h.LIB, 'room.ts'));
   const R = room.open(code);
   assert.ok(R.readAll().some(e => e.kind === 'status' && e.text === roomClaude.CLOSE_TEXT));
   assert.deepEqual(identity.orphanRooms(), []);
@@ -420,7 +420,7 @@ test('room-claude: the watchdog CLI entry prints its state', () => {
   identity.setRoomClaude(code, { job: 'cafe0003' });
   identity.join({ code, name: 'alice', role: 'member', pid: process.pid });
   const { spawnSync } = require('node:child_process');
-  const r = spawnSync(process.execPath, [path.join(h.LIB, 'room-claude.js'), 'watchdog', code], { env: h.childEnv({ SUB_HUMAN_HOME: identity.home() }), encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [path.join(h.LIB, 'room-claude.ts'), 'watchdog', code], { env: h.childEnv({ SUB_HUMAN_HOME: identity.home() }), encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout.trim(), 'live');
 });

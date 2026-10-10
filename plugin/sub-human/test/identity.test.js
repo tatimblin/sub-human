@@ -1,13 +1,13 @@
 'use strict';
-// Tests for lib/identity.js: codes, membership, resolution (session id, registered pid, resolveSelf), open rooms, presence.
+// Tests for lib/identity.ts: codes, membership, resolution (session id, registered pid, resolveSelf), open rooms, presence.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const identity = require(path.join(h.LIB, 'identity.js'));
-const store = require(path.join(h.LIB, 'room', 'store.js'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
 
 test('identity: home, room codes are word-NNNN from the animal list and unique', () => {
   const home = h.freshHome();
@@ -46,7 +46,7 @@ test('identity: join validates names, reserved names and roles', () => {
   const m = identity.readMembers(code).claude;
   assert.equal(m.role, 'claude');
   assert.equal(m.pid, process.pid);
-  assert.equal(m.pid_start, require(path.join(h.LIB, 'lock.js')).pidStart(process.pid), 'the process start time is stored with the pid');
+  assert.equal(m.pid_start, require(path.join(h.LIB, 'lock.ts')).pidStart(process.pid), 'the process start time is stored with the pid');
   assert.equal(m.session_id, 's1');
   assert.equal(m.cwd, '/x');
   assert.ok(m.joined_at);
@@ -107,7 +107,7 @@ test('identity: resolution returns {code, name, role, session_id, pid, address} 
 
 /** Run `src` (a function source) in a child and return its JSON output. */
 function inChild(src, env = {}) {
-  const r = spawnSync(process.execPath, ['-e', `const i=require(${JSON.stringify(path.join(h.LIB, 'identity.js'))});` +
+  const r = spawnSync(process.execPath, ['-e', `const i=require(${JSON.stringify(path.join(h.LIB, 'identity.ts'))});` +
     `console.log(JSON.stringify((${src})()))`], { env: h.childEnv(env), encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   return JSON.parse(r.stdout);
@@ -263,7 +263,7 @@ test('identity: updateRoomClaude merges a patch under the lock, writes nothing f
 test('identity: the seat lease: join stamps seen_at, heartbeat renews it (throttled, own seat only), seatAlive uses it only without a pid', async () => {
   h.freshHome();
   const { code } = h.register('alice');
-  const config = require(path.join(h.LIB, 'config.js'));
+  const config = require(path.join(h.LIB, 'config.ts'));
   const me = identity.resolveByPid(process.pid);
   const seen = () => identity.readMembers(code).alice.seen_at;
   const t0 = Date.parse(seen());
@@ -288,7 +288,7 @@ test('identity: the seat lease: join stamps seen_at, heartbeat renews it (thrott
 
 test('identity: the hooks-module lease records the claude pid and its start time; join accepts it from that process or while recent', async () => {
   h.freshHome();
-  const { pidStart } = require(path.join(h.LIB, 'lock.js'));
+  const { pidStart } = require(path.join(h.LIB, 'lock.ts'));
   const FRESH = identity.MOD_LEASE_FRESH_MS;
   assert.ok(FRESH > 0 && FRESH < 86_400_000, 'the hook tests treat a day-old lease as stale');
   const sid = n => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -363,7 +363,7 @@ test('identity: machineId is made once per home, random, and every seat records 
 
 test('identity: a seat of another machine is judged by its lease, whatever its pid; it has no pid and no index here', async () => {
   h.freshHome();
-  const config = require(path.join(h.LIB, 'config.js'));
+  const config = require(path.join(h.LIB, 'config.ts'));
   const code = h.newRoom();
   const fresh = new Date().toISOString(), stale = new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString();
   const far = { name: 'zed', role: 'member', machine: 'far-away', pid: process.pid };

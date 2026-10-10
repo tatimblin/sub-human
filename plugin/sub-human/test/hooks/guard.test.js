@@ -1,6 +1,6 @@
 'use strict';
-// The store guard's verdicts (mod/core/guard.mjs), against a real temp home on disk. The hooks that apply them
-// in-process (mod/guard.mjs) are tested under `npm run test:mods` (mod/test/guard.test.ts); `decide` below does
+// The store guard's verdicts (mod/core/guard.ts), against a real temp home on disk. The hooks that apply them
+// in-process (mod/guard.ts) are tested under `npm run test:mods` (mod/test/guard.test.ts); `decide` below does
 // what they do, with node's realpath standing in for $.fs.stat's realPath. test/hooks/security.test.js has the
 // full Bash table.
 const test = require('node:test');
@@ -10,10 +10,10 @@ const path = require('node:path');
 const { World, PLUGIN } = require('./helpers.js');
 
 let g;
-test.before(async () => { g = await import(path.join(PLUGIN, 'mod', 'core', 'guard.mjs')); });
+test.before(async () => { g = await import(path.join(PLUGIN, 'mod', 'core', 'guard.ts')); });
 
 const real = p => { try { return fs.realpathSync(p); } catch { return undefined; } };
-/** What mod/guard.mjs decides for one call: 'allow' | 'deny' | undefined (no opinion). */
+/** What mod/guard.ts decides for one call: 'allow' | 'deny' | undefined (no opinion). */
 function decide(tool, input, { w, seated = false, hello = true, agentId } = {}) {
   const ctx = hello ? { home: w.home, realHome: real(w.home), userHome: w.userHome, pluginRoot: PLUGIN } : {};
   if (tool.startsWith(g.MCP_PREFIX)) { const v = g.roomToolVerdict({ tool, agentId }, seated); return v ? v.decision : undefined; }
@@ -49,7 +49,7 @@ test('guard table', () => {
     ['Write', { file_path: 'app.js', content: 'x' }, true, undefined],
     ['Write', { file_path: path.join(w.cwd, '.sub-human-notes.md'), content: 'x' }, true, undefined],
     ['Bash', { command: `echo x >> ${H}/rooms/log.jsonl` }, true, 'deny'],
-    ['Bash', { command: `node -e "require('${path.join(H, '..')}/x/sub-human/lib/room.js')"` }, true, 'deny'],
+    ['Bash', { command: `node -e "require('${path.join(H, '..')}/x/sub-human/lib/room.ts')"` }, true, 'deny'],
     ['Bash', { command: 'sub-human read' }, true, undefined],
     ['Bash', { command: 'npm test' }, false, undefined],
   ];

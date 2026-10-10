@@ -1,20 +1,20 @@
 'use strict';
-// Tests for lib/seats.js and the host gates: enter and exit as one sequence, the
+// Tests for lib/seats.ts and the host gates: enter and exit as one sequence, the
 // room Claude started in the room's working directory, and a mirror-shaped store (MemoryRoomStore with isHost false) where
 // the seat op is all that runs (the host logs the join and leave), the room's Claude is never spawned, reaped or watched and
-// no decision is written. lib/room/members.js publicView: what other machines see of the members document.
+// no decision is written. lib/room/members.ts publicView: what other machines see of the members document.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const identity = require(path.join(h.LIB, 'identity.js'));
-const seats = require(path.join(h.LIB, 'seats.js'));
-const roomClaude = require(path.join(h.LIB, 'room-claude.js'));
-const proposal = require(path.join(h.LIB, 'proposal.js'));
-const members = require(path.join(h.LIB, 'room', 'members.js'));
-const config = require(path.join(h.LIB, 'config.js'));
-const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const seats = require(path.join(h.LIB, 'seats.ts'));
+const roomClaude = require(path.join(h.LIB, 'room-claude.ts'));
+const proposal = require(path.join(h.LIB, 'proposal.ts'));
+const members = require(path.join(h.LIB, 'room', 'members.ts'));
+const config = require(path.join(h.LIB, 'config.ts'));
+const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'));
 const { MemoryRoomStore } = require('./support/memory-store.js');
 
 const H = 'abcdef012345';
@@ -94,7 +94,7 @@ test('host gates: on a mirror-shaped store enter is the seat op only (no member_
 test('seats: exit from a room hosted elsewhere while its link is offline is best effort: false, no throw (the seat lapses on the host)', t => {
   const { code, mem } = memoryRoom(t, { isHost: false });
   seats.enter({ code, name: 'alice', pid: process.pid, session_id: 'sa', pubkey: seatKey.publicPem(code, 'alice') });
-  const { RoomError } = require(path.join(h.LIB, 'room', 'validate.js'));
+  const { RoomError } = require(path.join(h.LIB, 'room', 'validate.ts'));
   t.mock.method(mem.members, 'leave', () => { throw new RoomError('OFFLINE', 'room is offline (the link is offline)'); });
   assert.equal(seats.exit(code, 'alice', 'session ended'), false);
 });
@@ -102,7 +102,7 @@ test('seats: exit from a room hosted elsewhere while its link is offline is best
 test('seats: exit on the host still throws a store error (nothing to lapse it)', t => {
   const { code, mem } = memoryRoom(t, { isHost: true });
   seats.enter({ code, name: 'alice', pid: process.pid, session_id: 'sa', pubkey: seatKey.publicPem(code, 'alice') });
-  const { RoomError } = require(path.join(h.LIB, 'room', 'validate.js'));
+  const { RoomError } = require(path.join(h.LIB, 'room', 'validate.ts'));
   t.mock.method(mem.members, 'leave', () => { throw new RoomError('LOCK', 'busy'); });
   assert.throws(() => seats.exit(code, 'alice', 'session ended'), /busy/);
 });

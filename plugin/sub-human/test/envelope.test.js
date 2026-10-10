@@ -1,12 +1,12 @@
 'use strict';
-// lib/room/envelope.js, pure: sig v2 covers the payload and not its place (id, at, prev), with sorted keys; v1
+// lib/room/envelope.ts, pure: sig v2 covers the payload and not its place (id, at, prev), with sorted keys; v1
 // (the stored line minus sig) still verifies; the ts bound; first-sight key pinning from member_joined.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const h = require('./helpers.js');
-const envelope = require(path.join(h.LIB, 'room', 'envelope.js'));
+const envelope = require(path.join(h.LIB, 'room', 'envelope.ts'));
 
 const CODE = 'otter-1234';
 const pair = () => crypto.generateKeyPairSync('ed25519');

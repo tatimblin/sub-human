@@ -9,7 +9,7 @@
  *     seat(name) -> {name, pid, sid}
  *     hook(script, input, seat, {env}?) -> spawnSync result + json   hooks/<script>.js as seat
  *     lease(seat)                     the hooks module's hello lease for the seat's session (with its nonce), as
- *                                     hooks/mod-hello.js writes it; join and every prompt write it first
+ *                                     hooks/mod-hello.ts writes it; join and every prompt write it first
  *     join(seat, args), say(seat, text), plain(seat, text)          the join expansion; an @room post; a prompt
  *     invite1(code) -> string         an sh1 invite (no PIN) to a room hosted here, for a second home (internal: no
  *                                     command makes one; the robustness tests link with it)
@@ -54,7 +54,7 @@ class Machine {
   seat(name) { return { name, pid: h.spawnSleeper(600).pid, sid: crypto.randomUUID(), nonce: crypto.randomBytes(16).toString('hex') }; }
 
   lease(seat) {
-    const identity = require(path.join(h.LIB, 'identity.js'));
+    const identity = require(path.join(h.LIB, 'identity.ts'));
     this.lib(() => identity.writeModLease(seat.sid, { pid: seat.pid, nonce: seat.nonce }));
   }
 
@@ -68,24 +68,24 @@ class Machine {
   join(seat, args) { this.lease(seat); return this.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat); }
   /** An sh1 invite (no PIN) to room code hosted here, for a second home on this machine (pipe). */
   invite1(code) {
-    const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-    const store = require(path.join(h.LIB, 'room', 'store.js'));
+    const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+    const store = require(path.join(h.LIB, 'room', 'store.ts'));
     return this.lib(() => auth.mintInvite(store.open(code), { locator: `pipe:${this.home}` }).invite);
   }
 
   /** This machine's link file for an sh1 invite (the join over it is then `NAME CODE`). */
   linkInvite1(code, invite) {
-    const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-    const links = require(path.join(h.LIB, 'room', 'links.js'));
-    const link = require(path.join(h.LIB, 'remote', 'link.js'));
+    const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+    const links = require(path.join(h.LIB, 'room', 'links.ts'));
+    const link = require(path.join(h.LIB, 'remote', 'link.ts'));
     const inv = auth.parseInvite(invite);
     this.lib(() => links.set(code, { code, transport: link.transportOf(inv.locator), invite, created_at: new Date().toISOString() }));
   }
 
   /** The whole join from this (second) home: the host's invite line, typed here, the host's admit, then the seat. */
   async joinVia(host, hostSeat, seat, { as = seat.name, line, invite = 'invite --pipe', ms = 15_000 } = {}) {
-    const admission = require(path.join(h.LIB, 'remote', 'admission.js'));
-    const links = require(path.join(h.LIB, 'room', 'links.js'));
+    const admission = require(path.join(h.LIB, 'remote', 'admission.ts'));
+    const links = require(path.join(h.LIB, 'room', 'links.ts'));
     const shown = line ? null : host.join(hostSeat, invite);
     const m = /\/sub-human (join (\S+)(?: ([a-z]+-\d{4}))? (\d{4}))/.exec(line || shown.json.reason);
     if (!m) throw new Error(`no invite line in: ${JSON.stringify(shown && shown.json)}`);

@@ -1,15 +1,15 @@
-// Wiring: /sub-human answered by the module (command.run in mod/deliver.mjs). Run with `npm run test:mods`.
-// The rules are tested in node (test/mod-core-command.test.js) and join.js's replies in test/hooks/join.test.js; this
-// checks the hook: typed here, join.js runs once through the shim with the nonce and its reply comes back as notices
+// Wiring: /sub-human answered by the module (command.run in mod/deliver.ts). Run with `npm run test:mods`.
+// The rules are tested in node (test/mod-core-command.test.js) and join.ts's replies in test/hooks/join.test.js; this
+// checks the hook: typed here, join.ts runs once through the shim with the nonce and its reply comes back as notices
 // (a secret) or the command's output (none), never as the command running; a join expands as before with the
 // mechanics block handed to the expansion hook in place of a second join; the room's Claude, the SDK and a reply that
 // failed take the paths they should.
 import { test, expect, mock } from 'claude-code/testing'
-import { OUT, ran, scriptOf, session, start } from './support.mjs'
+import { OUT, ran, scriptOf, session, start } from './support.ts'
 
 const SID = 'sid-c'
 
-/** The engine beneath: a session (its cwd), mod-hello, hooks/join.js answering `join`, and the command itself (when the
+/** The engine beneath: a session (its cwd), mod-hello, hooks/join.ts answering `join`, and the command itself (when the
  * hook passes it on: `ran` counts it, and a join's expansion raises classic.UserPromptExpansion as the engine does). */
 function world(engine: any, on: any, { join = {} as any, room = undefined as string | undefined } = {}) {
   const seen = { joins: [] as any[], logs: [] as string[], ran: 0, expansions: [] as any[], hellos: 0 }
@@ -19,8 +19,8 @@ function world(engine: any, on: any, { join = {} as any, room = undefined as str
   on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
   on('process.run', ($: any, e: any) => {
     const script = scriptOf(e)
-    if (script === 'mod-hello.js') { seen.hellos++; return ran(JSON.stringify(OUT)) }
-    if (script === 'join.js') { seen.joins.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env }); return ran(typeof join === 'string' ? join : JSON.stringify(join)) }
+    if (script === 'mod-hello.ts') { seen.hellos++; return ran(JSON.stringify(OUT)) }
+    if (script === 'join.ts') { seen.joins.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env }); return ran(typeof join === 'string' ? join : JSON.stringify(join)) }
     return ran('')
   })
   on('classic.UserPromptExpansion', ($: any, e: any) => { seen.expansions.push(e); return { additionalContext: ['from the classic join hook'] } })
@@ -33,7 +33,7 @@ function world(engine: any, on: any, { join = {} as any, room = undefined as str
 }
 const typed = ($: any, args: string, kind = 'composer') => $.command.run({ command: 'sub-human:sub-human', args, origin: { kind } } as any)
 
-test('typed here: join.js runs once through the shim with the nonce; an invite comes back as notices only (no output row, no command run)', async ($, on) => {
+test('typed here: join.ts runs once through the shim with the nonce; an invite comes back as notices only (no output row, no command run)', async ($, on) => {
   const say = 'invite to room otter-4821 for one machine …\n\n  /sub-human join me@box otter-4821 4821\n'
   const seen = world($, on, { join: { subHuman: { say, refused: false, shareable: false } } })
   await start($)
@@ -67,7 +67,7 @@ test('a join that worked expands as before: the mechanics block reaches the expa
   await start($)
   const r: any = await typed($, 'alice')
   expect(seen.ran).toBe(1)
-  expect(seen.expansions).toEqual([]) // the classic join hook beneath never ran: the module answered with join.js's block
+  expect(seen.expansions).toEqual([]) // the classic join hook beneath never ran: the module answered with join.ts's block
   expect(r.context).toEqual(['SUB-HUMAN: you are alice…'])
   expect(seen.joins.length).toBe(1)
   await clock.advance(200)

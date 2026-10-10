@@ -8,7 +8,7 @@
  */
 const path = require('node:path');
 const paths = require('../lib/paths.js');
-const { readJson, clip } = require('../lib/io.js');
+const { readJson, clip } = require('../lib/io.ts');
 
 function roomLog({ home, code, roomDir, log }) {
   const byKind = (k, f = {}) => log.filter(e => e.kind === k && Object.entries(f).every(([a, b]) => e[a] === b));
@@ -25,7 +25,7 @@ function roomLog({ home, code, roomDir, log }) {
   /** The room's hash chain, validated by the plugin's own room lib. */
   function chainOk() {
     process.env.SUB_HUMAN_HOME = home;
-    const r = paths.pluginLib('room.js').open(code).validateChain();
+    const r = paths.pluginLib('room.ts').open(code).validateChain();
     return { ok: !!r.ok, evidence: r.ok ? `validateChain ok over ${r.count} entries` : `chain breaks at #${r.badAt} (${r.count} entries)` };
   }
   return { byKind, fmt, logIn, props, shownVia, chainOk };

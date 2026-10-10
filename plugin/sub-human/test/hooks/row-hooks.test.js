@@ -1,5 +1,5 @@
 'use strict';
-// hooks/row-map.js (PostToolUse Agent), hooks/row-hold.js (SubagentStop), hooks/row-launcher.js (SessionStart).
+// hooks/row-map.ts (PostToolUse Agent), hooks/row-hold.ts (SubagentStop), hooks/row-launcher.ts (SessionStart).
 // Payload shapes are the ones logged in P0 (Claude Code 2.1.281).
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -10,8 +10,8 @@ const { spawn, spawnSync } = require('node:child_process');
 
 const PLUGIN = path.join(__dirname, '..', '..');
 for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE')) delete process.env[k];
-const identity = require(path.join(PLUGIN, 'lib', 'identity.js'));
-const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
+const identity = require(path.join(PLUGIN, 'lib', 'identity.ts'));
+const rows = require(path.join(PLUGIN, 'lib', 'rows.ts'));
 
 const sleepers = [];
 process.on('exit', () => { for (const p of sleepers) { try { p.kill('SIGKILL'); } catch { /* gone */ } } });
@@ -117,7 +117,7 @@ test('row-launcher: writes an executable launcher under SUB_HUMAN_HOME/bin that 
   const mtime = fs.statSync(f).mtimeMs;
   hook('row-launcher', { session_id: 'x', hook_event_name: 'SessionStart', source: 'clear' });
   assert.equal(fs.statSync(f).mtimeMs, mtime, 'unchanged content is not rewritten');
-  // and the SSH serve shim with its pointer at this plugin (lib/remote/shim.js)
+  // and the SSH serve shim with its pointer at this plugin (lib/remote/shim.ts)
   assert.equal(fs.statSync(path.join(home, 'bin', 'serve')).mode & 0o777, 0o700);
   assert.ok(fs.readFileSync(path.join(home, 'bin', 'current'), 'utf8').startsWith(path.resolve(PLUGIN) + '\n'));
   // The plugin settings point at the same place, through the shell's env default.
@@ -148,7 +148,7 @@ test('row-launcher: a temp-dir plugin root is refused unless allowed; stable roo
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stderr, /temp dir/);
   assert.ok(!fs.existsSync(f));
-  const launcher = require(path.join(PLUGIN, 'hooks', 'row-launcher.js'));
+  const launcher = require(path.join(PLUGIN, 'hooks', 'row-launcher.ts'));
   assert.equal(launcher.isTempRoot(tmpRoot), true);
   assert.equal(launcher.isTempRoot(PLUGIN), false);
   // allowed (tests, the demo): it is recorded, but after any stable root

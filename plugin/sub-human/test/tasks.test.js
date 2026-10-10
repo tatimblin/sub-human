@@ -1,15 +1,15 @@
 'use strict';
-// Tests for lib/tasks.js (validate, gate, summary, the mirror file) and the mcp/task.js plug-in.
+// Tests for lib/tasks.ts (validate, gate, summary, the mirror file) and the mcp/task.ts plug-in.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const h = require('./helpers.js');
-const identity = require(path.join(h.LIB, 'identity.js'));
-const room = require(path.join(h.LIB, 'room.js'));
-const tasks = require(path.join(h.LIB, 'tasks.js'));
-const io = require(path.join(h.LIB, 'io.js'));
-const taskPlugin = require(path.join(h.PLUGIN, 'mcp', 'task.js'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const room = require(path.join(h.LIB, 'room.ts'));
+const tasks = require(path.join(h.LIB, 'tasks.ts'));
+const io = require(path.join(h.LIB, 'io.ts'));
+const taskPlugin = require(path.join(h.PLUGIN, 'mcp', 'task.ts'));
 
 // ---------- validate ----------
 test('validate: op shapes; done needs evidence', () => {
@@ -123,7 +123,7 @@ test('writeList omits the room task; list and summary per viewer', () => {
   assert.equal(tasks.summary(code, 'x'), 'tasks 5 open · #1 o1 · #2 o2 · #3 o3 · +2');
 });
 
-// ---------- mcp/task.js ----------
+// ---------- mcp/task.ts ----------
 function ctxFor() {
   return {
     room, identity,

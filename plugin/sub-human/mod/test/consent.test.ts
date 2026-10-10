@@ -1,21 +1,21 @@
-// Wiring: consent's per-turn checks (mod/consent.mjs). Run with `npm run test:mods`.
-// A turn end runs node hooks/consent.js only while a review may be open; consent's own report clears the flag;
+// Wiring: consent's per-turn checks (mod/consent.ts). Run with `npm run test:mods`.
+// A turn end runs node hooks/consent.ts only while a review may be open; consent's own report clears the flag;
 // EnterPlanMode / ExitPlanMode set it again; every PreToolUse hook beneath sees each room tool call.
 import { test, expect } from 'claude-code/testing'
-import { seatOf, helloOf, ran, scriptOf, session, start } from './support.mjs'
+import { seatOf, helloOf, ran, scriptOf, session, start } from './support.ts'
 
 const OUT = helloOf(seatOf('bob'))
 const SID = 'sid-c'
 const POST = 'mcp__plugin_sub-human_room__post'
 
-/** The engine beneath: mod-hello answering `hello`, consent.js answering in turn from `answers` (the last repeats). */
+/** The engine beneath: mod-hello answering `hello`, consent.ts answering in turn from `answers` (the last repeats). */
 function world(on: any, { hello = OUT as any, answers = [{ subHuman: { reviewOpen: false } }] as any[] } = {}) {
   const seen = { consent: [] as any[], beneathStop: 0, beneathPre: [] as string[], tools: [] as string[] }
   session(on, SID)
   on('ui.log', () => ({ value: undefined }))
   on('process.run', ($: any, e: any) => {
     const script = scriptOf(e)
-    if (script === 'mod-hello.js') return ran(JSON.stringify(hello))
+    if (script === 'mod-hello.ts') return ran(JSON.stringify(hello))
     seen.consent.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env })
     const a = answers[Math.min(seen.consent.length - 1, answers.length - 1)]
     return ran(JSON.stringify(a))

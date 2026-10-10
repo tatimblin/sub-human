@@ -1,5 +1,5 @@
 'use strict';
-// Tests for lib/room.js. Each test gets a fresh SUB_HUMAN_HOME and room.
+// Tests for lib/room.ts. Each test gets a fresh SUB_HUMAN_HOME and room.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -7,8 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const h = require('./helpers.js');
-const room = require(path.join(h.LIB, 'room.js'));
-const identity = require(path.join(h.LIB, 'identity.js'));
+const room = require(path.join(h.LIB, 'room.ts'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
 
 let R = null; // the current test's room
 function fresh() {
@@ -31,7 +31,7 @@ const HOSTILE = [
 
 test('room: concurrent appends from 5 processes x 20 give 100 sequential ids and a valid prev chain', async () => {
   const code = fresh();
-  const script = `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.js'))}).arm();const r=require(${JSON.stringify(path.join(h.LIB, 'room.js'))}).open(process.env.CODE);` + // a hook-like (armed) writer
+  const script = `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'))}).arm();const r=require(${JSON.stringify(path.join(h.LIB, 'room.ts'))}).open(process.env.CODE);` + // a hook-like (armed) writer
     `for(let i=0;i<20;i++)r.append({kind:'say',text:process.env.WHO+' '+i},{via:'human',from:process.env.WHO});`;
   await Promise.all(['p1', 'p2', 'p3', 'p4', 'p5'].map(u => new Promise((resolve, reject) => {
     const c = spawn(process.execPath, ['-e', script], { env: h.childEnv({ CODE: code, WHO: u }), stdio: 'inherit' });

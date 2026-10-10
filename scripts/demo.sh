@@ -251,7 +251,7 @@ S2() { # bob joins
 
 S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   local before; before=$($LIB log-max)
-  submit alice "@room bob, can you take the parser tests? handler's in src/server.js"
+  submit alice "@room bob, can you take the parser tests? handler's in src/server.ts"
   need wait_log --kind say --from alice --via human --after "$before" --timeout 30 || return 1
   wait_pane alice "Operation stopped by hook: ✓ sent" 15
   need wait_pane bob "alice: bob, can you take the parser tests" 60 --what "bob's pane shows alice's exact words as a chat line" || return 1
@@ -261,8 +261,8 @@ S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   submit bob "@room sure, once we've agreed how paging works"
   need wait_log --kind say --from bob --via human --after "$before" --timeout 30 || return 1
   need $LIB wait-idle sh-alice --timeout 90 || return 1
-  submit bob "ask alice's Claude how createTask in src/store.js picks ids. just ask, change nothing"
-  # the engine's "Message from @bob.CODE", or the hooks module's drawing of that peer row (mod/render.mjs: "bob's Claude: …")
+  submit bob "ask alice's Claude how createTask in src/store.ts picks ids. just ask, change nothing"
+  # the engine's "Message from @bob.CODE", or the hooks module's drawing of that peer row (mod/render.ts: "bob's Claude: …")
   need wait_pane alice "Message from @?bob\.|^\s*bob's Claude: " 120 --what "alice's pane shows a message from bob's Claude" || return 1
   need $LIB wait-idle sh-alice --timeout 120 || return 1
   need wait_pane bob "Message from @?alice\.|^\s*alice's Claude: " 120 --what "bob's pane shows alice's Claude's answer" || return 1

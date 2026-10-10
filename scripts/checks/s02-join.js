@@ -1,7 +1,7 @@
 'use strict';
 // S2: bob joins
 const { panelRows } = require('../lib/panes.js');
-const { readText, clip } = require('../lib/io.js');
+const { readText, clip } = require('../lib/io.ts');
 
 module.exports = {
   scene: 'S2',

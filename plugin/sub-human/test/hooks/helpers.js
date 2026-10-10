@@ -19,8 +19,8 @@ const { spawnSync } = require('node:child_process');
 const PLUGIN = path.join(__dirname, '..', '..');
 const HOOKS = path.join(PLUGIN, 'hooks');
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
-const identity = require(path.join(PLUGIN, 'lib', 'identity.js'));
-const room = require(path.join(PLUGIN, 'lib', 'room.js'));
+const identity = require(path.join(PLUGIN, 'lib', 'identity.ts'));
+const room = require(path.join(PLUGIN, 'lib', 'room.ts'));
 
 const fixture = name => JSON.parse(fs.readFileSync(path.join(FIXTURES, name + '.json'), 'utf8'));
 
@@ -88,7 +88,7 @@ class World {
   members() { return this.lib(() => identity.readMembers(this.code)); }
   memberDir(name) { return path.join(this.home, 'rooms', this.code, 'members', name); }
 
-  /** The hooks module's hello lease for session id sid (hooks/mod-hello.js writes it on session.start; join needs it). */
+  /** The hooks module's hello lease for session id sid (hooks/mod-hello.ts writes it on session.start; join needs it). */
   modLease(sid) { if (sid) this.lib(() => identity.writeModLease(sid, { plugin_root: PLUGIN })); }
 
   /**

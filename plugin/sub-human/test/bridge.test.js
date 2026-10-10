@@ -1,5 +1,5 @@
 'use strict';
-// lib/remote/bridge.js (a synchronous call to a worker thread, with a deadline) and its proof gate: a RoomStore
+// lib/remote/bridge.ts (a synchronous call to a worker thread, with a deadline) and its proof gate: a RoomStore
 // whose every call crosses the bridge (test/support/thread-store.js) behaves as the FsRoomStore it forwards to, and
 // the hook suites pass over it (`npm run test:thread-store` runs all of test/hooks; consent.test.js runs here).
 const test = require('node:test');
@@ -8,14 +8,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const { createBridge } = require(path.join(h.LIB, 'remote', 'bridge.js'));
-const config = require(path.join(h.LIB, 'config.js'));
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const identity = require(path.join(h.LIB, 'identity.js'));
-const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
+const { createBridge } = require(path.join(h.LIB, 'remote', 'bridge.ts'));
+const config = require(path.join(h.LIB, 'config.ts'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'));
 const { ThreadRoomStore } = require('./support/thread-store.js');
 
-const BRIDGE = path.join(h.LIB, 'remote', 'bridge.js');
+const BRIDGE = path.join(h.LIB, 'remote', 'bridge.ts');
 const THREAD_STORE = path.join(__dirname, 'support', 'thread-store.js');
 
 /** A handler module in a temp dir: handle(method, params) runs HANDLERS[method]. */
@@ -141,7 +141,7 @@ test('thread store: appends (a signed human one too), compare-and-set updates, b
 test('gate: test/hooks/consent.test.js passes with every store call of every process on a worker thread', () => {
   const env = { ...process.env, SUB_HUMAN_TEST_THREAD_STORE: '1', NODE_OPTIONS: `--require ${THREAD_STORE}` };
   delete env.NODE_TEST_CONTEXT;
-  const probe = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(h.LIB, 'room', 'store.js'))}).open('otter-1234').constructor.name)`], { env, encoding: 'utf8' });
+  const probe = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(h.LIB, 'room', 'store.ts'))}).open('otter-1234').constructor.name)`], { env, encoding: 'utf8' });
   assert.equal(probe.stdout, 'ThreadRoomStore', 'the preload reaches child processes');
   const r = spawnSync(process.execPath, ['--test', path.join(__dirname, 'hooks', 'consent.test.js')], { env, encoding: 'utf8', timeout: 120_000 });
   assert.equal(r.status, 0, r.stdout + r.stderr);

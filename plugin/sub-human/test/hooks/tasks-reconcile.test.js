@@ -1,12 +1,12 @@
 'use strict';
-// hooks/tasks.js reconcile: a lost mirror run leaves a native task with no `task` entry; the next room Claude run of
-// tasks.js (mirror or gate) appends its snapshot, and never resurrects a task the log deleted.
+// hooks/tasks.ts reconcile: a lost mirror run leaves a native task with no `task` entry; the next room Claude run of
+// tasks.ts (mirror or gate) appends its snapshot, and never resurrects a task the log deleted.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { World, PLUGIN } = require('./helpers.js');
-const tasks = require(path.join(PLUGIN, 'lib', 'tasks.js'));
+const tasks = require(path.join(PLUGIN, 'lib', 'tasks.ts'));
 
 const create = (id, subject, extra = {}) => ({
   hook_event_name: 'PostToolUse', agent_type: 'sub-human:room-claude', tool_name: 'TaskCreate',
@@ -32,7 +32,7 @@ function world() {
 test('reconcile: a TaskCreate whose mirror run was dropped is restored by the next run', () => {
   const w = world();
   w.writeNative({ id: '2', subject: 'parser tests', description: 'cover edges', status: 'pending', owner: null, blockedBy: [], metadata: { req: 7, by: 'bob' } });
-  // TaskCreate #2 happened natively, but its PostToolUse never reached tasks.js
+  // TaskCreate #2 happened natively, but its PostToolUse never reached tasks.ts
   w.writeNative({ id: '3', subject: 'docs', status: 'pending', blockedBy: [] });
   const r = w.run(create(3, 'docs'));
   assert.equal(r.code, 0, r.stderr);

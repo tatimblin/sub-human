@@ -55,9 +55,9 @@
  *                                                  end_turn after log entry ID and 6 s of quiet
  *   demo-lib.js wait-job-gone [--timeout S]       wait until `claude agents --json` no longer lists the room's Claude job
  *   demo-lib.js claude-transcript                   print the room's Claude session's transcript path
- *   demo-lib.js synthetic-gate <id>               run hooks/tasks.js as the room Claude's TaskCompleted for task <id> over the
+ *   demo-lib.js synthetic-gate <id>               run hooks/tasks.ts as the room Claude's TaskCompleted for task <id> over the
  *                                                  real log; print {status, stderr} (exit 2 = refused)
- *   demo-lib.js synthetic-claude-prompt             run hooks/at-room.js as the room Claude's UserPromptSubmit (shim stdin) for a
+ *   demo-lib.js synthetic-claude-prompt             run hooks/at-room.ts as the room Claude's UserPromptSubmit (shim stdin) for a
  *                                                  typed "hi" (CLAUDE_PID = the room Claude's pid); print its output
  *   demo-lib.js prune-index <index.json> <scene>…   drop those scenes' captures (before they run again)
  *   demo-lib.js plan-run <run.json> --all "S1 S2 …" [--fresh] <scene>…   write {scenes, partial}: a fresh run lists
@@ -78,7 +78,7 @@ const path = require('node:path');
 const { execFileSync, spawn, spawnSync } = require('node:child_process');
 const { roomCode, readLog, strip } = require('./snap.js');
 const paths = require('./lib/paths.js');
-const { readJson, jsonl, esc } = require('./lib/io.js');
+const { readJson, jsonl, esc } = require('./lib/io.ts');
 const { panelRows, cardState, planState, joinLineIn, admitCardState } = require('./lib/panes.js');
 
 const REPO = paths.REPO;
@@ -430,7 +430,7 @@ async function answerCard(session, choice, note) {
   return 0;
 }
 
-/** The host's join-request card (lib/remote/admission.js): move onto "Let in" and Enter. */
+/** The host's join-request card (lib/remote/admission.ts): move onto "Let in" and Enter. */
 async function admitCard(o, T) {
   const session = o._[0];
   if (!(await until(`${session}: the join request's card open`, T, () => admitCardState(pane(session))))) return 1;
@@ -522,7 +522,7 @@ function runAsRoomClaude(script, input, roomClaude, env = {}) {
 async function syntheticGate(o) {
   const roomClaude = roomClaudeMember();
   const input = { hook_event_name: 'TaskCompleted', session_id: roomClaude.session_id, task_id: String(o._[0]), task_subject: '' };
-  const r = runAsRoomClaude('tasks.js', input, roomClaude, { CLAUDE_CODE_TASK_LIST_ID: paths.taskListId(roomCode()) });
+  const r = runAsRoomClaude('tasks.ts', input, roomClaude, { CLAUDE_CODE_TASK_LIST_ID: paths.taskListId(roomCode()) });
   print(JSON.stringify({ input, ...r, logMax: Math.max(0, ...readLog(roomCode()).map(e => e.id)) }, null, 1));
   return 0;
 }
@@ -531,7 +531,7 @@ async function syntheticRoomClaudePrompt() {
   const roomClaude = roomClaudeMember();
   // as the mod's shim hands a typed prompt over
   const input = { hook_event_name: 'UserPromptSubmit', session_id: roomClaude.session_id, transcript_path: roomClaudeTranscript() || '', cwd: process.cwd(), prompt: 'hi', prompt_id: 'synthetic-1', permission_mode: 'plan', sub_human_origin: 'composer' };
-  const r = runAsRoomClaude('at-room.js', input, roomClaude);
+  const r = runAsRoomClaude('at-room.ts', input, roomClaude);
   print(JSON.stringify({ input: { prompt: input.prompt, session_id: input.session_id, pid: roomClaude.pid }, ...r }, null, 1));
   return 0;
 }

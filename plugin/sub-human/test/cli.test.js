@@ -6,9 +6,9 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const room = require(path.join(h.LIB, 'room.js'));
+const room = require(path.join(h.LIB, 'room.ts'));
 let R = null; // the room under test
-const identity = require(path.join(h.LIB, 'identity.js'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
 
 // tail looks its seat up by CLAUDE_PID when it has no session id (no ps walk).
 const FAST = { CLAUDE_PID: String(process.pid), SUB_HUMAN_RESOLVE_MS: '100', SUB_HUMAN_UNSEATED_MS: '100', SUB_HUMAN_POLL_MS: '50', SUB_HUMAN_SETTLE_MS: '300', SUB_HUMAN_SETTLE_MAX_MS: '1000', SUB_HUMAN_LEAVE_MS: '600' };
@@ -164,7 +164,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
 });
 
 // ---------- tasks / watch NAME ----------
-test('cli tasks: the room list from lib/tasks.js list(code), plain and --json', () => {
+test('cli tasks: the room list from lib/tasks.ts list(code), plain and --json', () => {
   h.freshHome();
   const { code } = h.register('alice');
   R = room.open(code);

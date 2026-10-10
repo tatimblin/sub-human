@@ -1,5 +1,5 @@
 'use strict';
-// mcp/hold.js through its plug-in contract (create(ctx) -> {tools, call}) with a fake ctx: streaming,
+// mcp/hold.ts through its plug-in contract (create(ctx) -> {tools, call}) with a fake ctx: streaming,
 // STOP on leave, JOINED / RESPAWN for the member's room row, duplicate holds, and cancel handling.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -13,10 +13,10 @@ Object.assign(process.env, {
   SUB_HUMAN_HOLD_BEAT_MS: '150', SUB_HUMAN_HOLD_POLL_MS: '20', SUB_HUMAN_HOLD_GRACE_MS: '250',
   SUB_HUMAN_HOLD_RESPAWN_MS: '60', SUB_HUMAN_HOLD_WHO_MS: '20',
 });
-const identity = require(path.join(PLUGIN, 'lib', 'identity.js'));
-const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
-const hold = require(path.join(PLUGIN, 'mcp', 'hold.js'));
-const seatKey = require(path.join(PLUGIN, 'hooks', 'seat-key.js'));
+const identity = require(path.join(PLUGIN, 'lib', 'identity.ts'));
+const rows = require(path.join(PLUGIN, 'lib', 'rows.ts'));
+const hold = require(path.join(PLUGIN, 'mcp', 'hold.ts'));
+const seatKey = require(path.join(PLUGIN, 'hooks', 'seat-key.ts'));
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const textOf = r => r && r.content && r.content[0] && r.content[0].text;
@@ -32,7 +32,7 @@ function setup(names, self) {
   const save = () => fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
   save();
   let id = 0;
-  // signed as the at-room hook signs a person's post (hooks/seat-key.js), so it reads as theirs, not "(unverified)"
+  // signed as the at-room hook signs a person's post (hooks/seat-key.ts), so it reads as theirs, not "(unverified)"
   const add = (from, kind, extra = {}) => {
     const e = { id: ++id, at: new Date().toISOString(), from, via: 'human', kind, text: `${kind} ${id}`, to: 'room', ...extra };
     if (e.via === 'human') { e.room = code; e.sig = crypto.sign(null, Buffer.from(JSON.stringify(e)), seatKey.ensure(code, from)).toString('base64'); }

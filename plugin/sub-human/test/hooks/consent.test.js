@@ -1,5 +1,5 @@
 'use strict';
-// hooks/consent.js and lib/proposal.js: the hash-gated card rewrite, what Post records and drops, decisions.
+// hooks/consent.ts and lib/proposal.ts: the hash-gated card rewrite, what Post records and drops, decisions.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { World, PLUGIN, hso, decision, reason, ctx } = require('./helpers.js');
 
-const proposal = require(path.join(PLUGIN, 'lib', 'proposal.js'));
+const proposal = require(path.join(PLUGIN, 'lib', 'proposal.ts'));
 
 /** A room with alice and bob (and room Claude); alice proposes `text` to `approvers`. */
 function world(text = '# Rename fetchUser\n\n1. rename\n2. alias\n', approvers) {
@@ -420,7 +420,7 @@ test('review: the note comes from the structured userFeedback field; the backup 
   assert.ok(!fs.existsSync(path.join(w.memberDir('bob'), 'review.json.lock')), 'the lock is released');
 });
 
-test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.mjs): Stop always reports subHuman {reviewOpen} beside its usual output', () => {
+test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.ts): Stop always reports subHuman {reviewOpen} beside its usual output', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const shim = { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } };
   const stop = extra => w.hook('consent', ev('Stop', null, { stop_hook_active: false, ...extra }), shim);
@@ -429,7 +429,7 @@ test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.mjs): Stop always reports subHuma
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.json, { subHuman: { reviewOpen: false } });
   // a review still in restore: the nudge, and the report says it is open
-  w.lib(() => require(path.join(PLUGIN, 'lib', 'room.js')).open(w.code).store.kv.set('members/bob/review', { phase: 'restore', mode: 'default', at: Date.now() }));
+  w.lib(() => require(path.join(PLUGIN, 'lib', 'room.ts')).open(w.code).store.kv.set('members/bob/review', { phase: 'restore', mode: 'default', at: Date.now() }));
   r = stop({ permission_mode: 'auto' });
   assert.match(ctx(r), /restore bob's default mode/);
   assert.deepEqual(r.json.subHuman, { reviewOpen: true });
@@ -444,17 +444,17 @@ test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.mjs): Stop always reports subHuma
   assert.equal(w.hook('consent', ev('Stop', null, { permission_mode: 'default' }), { as: 'bob' }).stdout, '');
 });
 
-test('hooks.json: Stop is the module\'s (mod/consent.mjs); the room tools\' PreToolUse is the command hook alone, so every other PreToolUse hook sees them', async () => {
+test('hooks.json: Stop is the module\'s (mod/consent.ts); the room tools\' PreToolUse is the command hook alone, so every other PreToolUse hook sees them', async () => {
   const hooks = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
   assert.equal(hooks.Stop, undefined);
   assert.ok(hooks.PreToolUse.some(g => /hooks\/consent\.js/.test(g.hooks[0].command) && /\^mcp__plugin_sub-human_room__/.test(g.matcher)));
-  const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.mjs'));
-  for (const ev of ['classic.Stop', 'tool.call']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/consent.mjs'), ev);
+  const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts'));
+  for (const ev of ['classic.Stop', 'tool.call']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/consent.ts'), ev);
   // a module hook answering classic.PreToolUse without next(e) would skip every non-managed settings hook there
   assert.ok(!MOD.some(h => h.event === 'classic.PreToolUse'), 'no module hook on classic.PreToolUse');
 });
 
-test('consent: a room tool call outside plan mode exits at once, loading nothing but lib/io.js; in plan mode it loads the rest', t => {
+test('consent: a room tool call outside plan mode exits at once, loading nothing but lib/io.ts; in plan mode it loads the rest', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-consent-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const preload = path.join(dir, 'loaded.js');
@@ -469,9 +469,9 @@ test('consent: a room tool call outside plan mode exits at once, loading nothing
   for (const mode of ['default', 'acceptEdits', 'auto', 'bypassPermissions', undefined]) {
     const q = run(mode);
     assert.equal(q.stdout, '', String(mode));
-    assert.deepEqual(q.loaded.sort(), ['hooks/consent.js', 'lib/io.js'], String(mode));
+    assert.deepEqual(q.loaded.sort(), ['hooks/consent.ts', 'lib/io.ts'], String(mode));
   }
-  assert.ok(run('plan').loaded.includes('hooks/common.js'), 'plan mode: the review check runs');
+  assert.ok(run('plan').loaded.includes('hooks/common.ts'), 'plan mode: the review check runs');
 });
 
 // ---------- the transcript race: the model's call is not on disk yet, and Claude Code dropped plan ----------
@@ -589,8 +589,8 @@ const say = (w, prompt, tp) => {
   fs.appendFileSync(tp, JSON.stringify({ type: 'user', message: { role: 'user', content: prompt }, timestamp: new Date().toISOString() }) + '\n');
   return w.hook('prompt', ev('UserPromptSubmit', null, { permission_mode: 'default', prompt, transcript_path: tp }), { as: 'bob' });
 };
-/** What bob's tail holds for his next prompt about the proposals awaiting him (lib/tail.js remindersText). */
-const reminders = w => w.lib(() => require(path.join(PLUGIN, 'lib', 'tail.js')).remindersText({ code: w.code, name: 'bob', role: 'member' }, require(path.join(PLUGIN, 'lib', 'room.js')).open(w.code)));
+/** What bob's tail holds for his next prompt about the proposals awaiting him (lib/tail.ts remindersText). */
+const reminders = w => w.lib(() => require(path.join(PLUGIN, 'lib', 'tail.ts')).remindersText({ code: w.code, name: 'bob', role: 'member' }, require(path.join(PLUGIN, 'lib', 'room.ts')).open(w.code)));
 /** The live tool_result line of a Remote Control deny (2.1.292), with or without a note. */
 function phoneDeny(w, file, toolUseId, note) {
   const head = 'The user doesn\'t want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). ';
@@ -767,7 +767,7 @@ test('confirm: a message typed after a phone Deny lands as the note; the card as
   assert.match(ctx(sent), /^Recorded\..*bob objected to proposal/);
   const a = answers(w);
   assert.deepEqual(a.map(x => [x.kind, x.via, x.from, x.proposal_hash, x.text]), [['objection', 'human', 'bob', v2, 'open rate limiting']]);
-  assert.equal(w.lib(() => require(path.join(PLUGIN, 'lib', 'room.js')).humanTrust(a[0])), 'verified', 'signed with bob\'s seat key');
+  assert.equal(w.lib(() => require(path.join(PLUGIN, 'lib', 'room.ts')).humanTrust(a[0])), 'verified', 'signed with bob\'s seat key');
   assert.equal(waiting(w), null);
   // Recorded once: the card again is not the confirm card any more (and the proposal is not pending for bob).
   assert.equal(w.hook('consent', preAsk({ questions: [{ question: `objection ${v2}` }] }), { as: 'bob' }).stdout, '');

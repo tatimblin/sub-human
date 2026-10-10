@@ -2,7 +2,7 @@
 // Planned handoff (1.0, PROD-PLAN item 7): alice (the host, devbox) moves the room to bob on joiner-a before closing
 // her laptop; bea (joiner-b, through the bastion) follows. The real interfaces, in order:
 //   1. alice: `/sub-human handoff bob joiner@joiner-a` (the others will reach bob's machine at that address);
-//   2. bob's machine gets the ask privately; bob answers the card the hooks build ("Host it here", hooks/consent.js);
+//   2. bob's machine gets the ask privately; bob answers the card the hooks build ("Host it here", hooks/consent.ts);
 //   3. joiner-a holds the room (host epoch 1), devbox is a mirror of it, every link is re-pointed at joiner-a;
 //   4. over ssh the new host must let each member's key in (the documented 1.0 limit: not automated), so a member
 //      that cannot get in yet is offline with a reason naming bob and the way out, and `sub-human doctor --json`

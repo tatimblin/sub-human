@@ -16,8 +16,8 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { tmpDir } = require(path.join(__dirname, '..', 'helpers.js'));
 const { World, fixture } = require(path.join(__dirname, '..', 'hooks', 'helpers.js'));
-const { createBridge } = require(path.join(__dirname, '..', '..', 'lib', 'remote', 'bridge.js'));
-const { FsRoomStore } = require(path.join(__dirname, '..', '..', 'lib', 'room', 'store.js'));
+const { createBridge } = require(path.join(__dirname, '..', '..', 'lib', 'remote', 'bridge.ts'));
+const { FsRoomStore } = require(path.join(__dirname, '..', '..', 'lib', 'room', 'store.ts'));
 const { ThreadRoomStore } = require('./thread-store.js');
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(name); return i > 0 ? Number(process.argv[i + 1]) : fallback; };
@@ -53,7 +53,7 @@ function perCall(w) {
   return out;
 }
 
-/** A new bridge's first call: worker boot plus loading the handler (thread-store.js and lib/room/store.js). */
+/** A new bridge's first call: worker boot plus loading the handler (thread-store.js and lib/room/store.ts). */
 function start() {
   const xs = [];
   for (let i = 0; i < 20; i++) {
@@ -68,7 +68,7 @@ function start() {
 function floor() {
   const handler = path.join(tmpDir('sh-bench-'), 'empty.js');
   fs.writeFileSync(handler, 'exports.handle = () => true;\n');
-  const BRIDGE = require.resolve(path.join(__dirname, '..', '..', 'lib', 'remote', 'bridge.js'));
+  const BRIDGE = require.resolve(path.join(__dirname, '..', '..', 'lib', 'remote', 'bridge.ts'));
   const proc = body => time(() => spawnSync(process.execPath, ['-e', `const { createBridge } = require(${JSON.stringify(BRIDGE)}); ${body}`]));
   const a = [], b = [];
   for (let i = 0; i < HOOKS; i++) { a.push(proc('')); b.push(proc(`createBridge({ handler: ${JSON.stringify(handler)} }).call('x', {});`)); }
@@ -80,9 +80,9 @@ function perHook(w) {
   const proxy = { SUB_HUMAN_TEST_THREAD_STORE: '1', NODE_OPTIONS: `--require ${require.resolve('./thread-store.js')}` };
   const submit = prompt => ({ ...fixture('user-prompt-submit'), prompt });
   const hooks = {
-    'prompt.js, a plain prompt': ['prompt', submit('what changed?')],
-    'prompt.js, an @room post (signed append)': ['prompt', submit('@room bench')],
-    'presence.js, idle_prompt': ['presence', { hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'idle' }],
+    'prompt.ts, a plain prompt': ['prompt', submit('what changed?')],
+    'prompt.ts, an @room post (signed append)': ['prompt', submit('@room bench')],
+    'presence.ts, idle_prompt': ['presence', { hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'idle' }],
   };
   const out = [];
   for (const [name, [hook, input]] of Object.entries(hooks)) {

@@ -1,4 +1,4 @@
-// Wiring: the group-chat drawing of UserMessage rows (mod/render.mjs). Run with `npm run test:mods`.
+// Wiring: the group-chat drawing of UserMessage rows (mod/render.ts). Run with `npm run test:mods`.
 import { test, expect } from 'claude-code/testing'
 
 const SURFACES = ['terminal', 'desktop'] as const

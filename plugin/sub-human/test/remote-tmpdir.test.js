@@ -8,8 +8,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
 const { Machine } = require('./support/two-homes.js');
 
 const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;

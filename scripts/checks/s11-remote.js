@@ -5,7 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const paths = require('../lib/paths.js');
-const { readJson, readText } = require('../lib/io.js');
+const { readJson, readText } = require('../lib/io.ts');
 
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 
@@ -19,7 +19,7 @@ module.exports = {
   run(x, { det }) {
     const { code, log, DEMO } = x;
     process.env.SUB_HUMAN_HOME = x.home;
-    const room = paths.pluginLib('room.js');
+    const room = paths.pluginLib('room.ts');
     const trust = e => (e ? room.humanTrust(e) : null);
 
     const hostId = (readJson(x.stateFile('S11', 'machine-host.json'), {}) || {}).id;

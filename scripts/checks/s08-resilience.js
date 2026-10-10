@@ -2,7 +2,7 @@
 // S8: resilience: /clear keeps rows; /exit + --continue brings the row back with no prompt; the room still reaches bob
 const metrics = require('../metrics.js');
 const { panelRows } = require('../lib/panes.js');
-const { esc } = require('../lib/io.js');
+const { esc } = require('../lib/io.ts');
 
 module.exports = {
   scene: 'S8',

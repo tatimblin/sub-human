@@ -53,7 +53,7 @@ module.exports = {
     const inv = lab.invite(code);
     t.ev.secret(inv.split('.').pop());
     lab.authorize(inv, pub);
-    // the hello as a 9.9.9 joiner would say it (lib/remote/protocol.js): v, its range proto {min, max}, its version
+    // the hello as a 9.9.9 joiner would say it (lib/remote/protocol.ts): v, its range proto {min, max}, its version
     const frame = JSON.stringify({ id: 1, op: 'hello', params: { v: 99, proto: { min: 99, max: 99 }, client: '9.9.9', caps: {}, machine: 'future-machine' } });
     const r = lab.exec('joiner-a', ['sh', '-c', `printf '%s\\n' '${frame}' | timeout 20 ssh -F ${conf} -T host@devbox hello`], { user: 'joiner', allowFail: true, timeout: 30_000 });
     const reply = (r.stdout.split('\n').find(l => l.includes('"id":1')) || '').trim();

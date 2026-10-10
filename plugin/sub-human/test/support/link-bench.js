@@ -13,8 +13,8 @@
  */
 const path = require('node:path');
 const h = require('../helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
 const { Machine } = require('./two-homes.js');
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(name); return i > 0 ? Number(process.argv[i + 1]) : fallback; };
@@ -52,9 +52,9 @@ function roundTrip() {
 function perHook() {
   const states = ['idle', 'permission'];
   const hooks = {
-    'prompt.js, a plain prompt (no worker on the mirror)': (m, s) => m.plain(s, 'what changed?'),
-    'prompt.js, an @room post': (m, s, i) => m.say(s, `bench ${i}`),
-    'presence.js, a changed state': (m, s, i) => m.hook('presence', { hook_event_name: 'Notification', notification_type: `${states[i % 2]}_prompt` }, s),
+    'prompt.ts, a plain prompt (no worker on the mirror)': (m, s) => m.plain(s, 'what changed?'),
+    'prompt.ts, an @room post': (m, s, i) => m.say(s, `bench ${i}`),
+    'presence.ts, a changed state': (m, s, i) => m.hook('presence', { hook_event_name: 'Notification', notification_type: `${states[i % 2]}_prompt` }, s),
   };
   const out = [];
   for (const [name, run] of Object.entries(hooks)) {

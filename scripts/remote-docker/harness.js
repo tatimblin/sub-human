@@ -169,12 +169,12 @@ async function run({ out }) {
   const mtimeBefore = realHomeMtime();
   const before = running();
   const { Machine } = pluginTest('support/two-homes.js'); // also gives this process a temp SUB_HUMAN_HOME
-  const store = pluginLib('room/store.js');
-  const identity = pluginLib('identity.js');
-  const link = pluginLib('remote/link.js');
-  const envelope = pluginLib('room/envelope.js');
-  const client = pluginLib('remote/client.js');
-  const pipe = pluginLib('remote/transports/pipe.js');
+  const store = pluginLib('room/store.ts');
+  const identity = pluginLib('identity.ts');
+  const link = pluginLib('remote/link.ts');
+  const envelope = pluginLib('room/envelope.ts');
+  const client = pluginLib('remote/client.ts');
+  const pipe = pluginLib('remote/transports/pipe.ts');
   const keys = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-ssh-keys-'));
   let remote = null, remote2 = null, bob = null, daemonPid = null;
   const cleanup = [];
@@ -527,7 +527,7 @@ const manualState = () => JSON.parse(fs.readFileSync(path.join(MANUAL, 'state.js
 const opt = (args, flag, dflt) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : dflt; };
 /** Run fn with SUB_HUMAN_HOME set to a joiner's home (the plugin libs read it on every call). */
 const asJoiner = (j, fn) => { process.env.SUB_HUMAN_HOME = j.home; try { return fn(); } catch { return null; } };
-const linkOf = (st, j) => asJoiner(j, () => pluginLib('remote/link.js').status(st.code));
+const linkOf = (st, j) => asJoiner(j, () => pluginLib('remote/link.ts').status(st.code));
 
 async function up(args) {
   if (fs.existsSync(path.join(MANUAL, 'state.json'))) throw new Error(`already up (${MANUAL}); run down first`);

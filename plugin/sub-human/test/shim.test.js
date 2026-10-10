@@ -1,5 +1,5 @@
 'use strict';
-// The stable SSH serve shim (lib/remote/shim.js): refresh() writes <home>/bin/serve and its pointer only on a change
+// The stable SSH serve shim (lib/remote/shim.ts): refresh() writes <home>/bin/serve and its pointer only on a change
 // and refuses a temp root; the shim runs `sub-human serve ARGS` from the recorded root, else the newest version in
 // the plugin cache, with the recorded node, else node on PATH; migrateLines() rewrites what an older `authorize`
 // wrote for this home; `authorize --file` does that rewrite.
@@ -9,7 +9,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const shim = require(path.join(h.LIB, 'remote', 'shim.js'));
+const shim = require(path.join(h.LIB, 'remote', 'shim.ts'));
 
 const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1bJ1l3xq3fQnHk';
 const ALLOW = { SUB_HUMAN_ALLOW_TMP_ROOT: '1' };

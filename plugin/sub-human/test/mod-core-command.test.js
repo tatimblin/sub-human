@@ -1,14 +1,14 @@
 'use strict';
-// mod/core/command.mjs in node: when the module answers /sub-human itself, what it hands hooks/join.js, how it reads
+// mod/core/command.ts in node: when the module answers /sub-human itself, what it hands hooks/join.ts, how it reads
 // the reply, and how the reply goes out (an output row only when nothing secret can be in it). The wiring is in
-// mod/test/command.test.ts (npm run test:mods); join.js's side of the reply is test/hooks/join.test.js.
+// mod/test/command.test.ts (npm run test:mods); join.ts's side of the reply is test/hooks/join.test.js.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const PLUGIN = path.join(__dirname, '..');
-const load = () => import(path.join(PLUGIN, 'mod', 'core', 'command.mjs'));
+const load = () => import(path.join(PLUGIN, 'mod', 'core', 'command.ts'));
 const ran = (o, exitCode = 0) => ({ exitCode, stdout: typeof o === 'string' ? o : JSON.stringify(o) + '\n', stderr: '' });
 const NONCE = 'ab'.repeat(16);
 
@@ -21,12 +21,12 @@ test('command: it answers what was typed here, and through Remote Control only w
   for (const args of ['join dev vole-1234 4821', 'invite', 'admit', 'bob vole-1234 4821']) assert.equal(run('bridge', args), false, args);
   for (const kind of ['sdk', 'plugin', 'peer', 'unclassified']) assert.equal(run(kind), false, kind);
   assert.equal(answersItself({ args: '', origin: { kind: 'composer' } }, { nonce: NONCE, roomClaude: true }), false, 'the room\'s Claude binds through the classic hook');
-  assert.equal(answersItself({ args: '', origin: { kind: 'composer' } }, { nonce: null }), false, 'no nonce: join.js could not tell it is the module');
+  assert.equal(answersItself({ args: '', origin: { kind: 'composer' } }, { nonce: null }), false, 'no nonce: join.ts could not tell it is the module');
 });
 
-test('command: mayHoldSecret is hooks/join.js\'s rule for a hidden reply', async () => {
+test('command: mayHoldSecret is hooks/join.ts\'s rule for a hidden reply', async () => {
   const { mayHoldSecret } = await load();
-  const src = fs.readFileSync(path.join(PLUGIN, 'hooks', 'join.js'), 'utf8');
+  const src = fs.readFileSync(path.join(PLUGIN, 'hooks', 'join.ts'), 'utf8');
   assert.ok(src.includes("['join', 'invite', 'admit'].includes(args[0]) || args.some(a => DIGITS.test(a))"));
   assert.ok(src.includes('const DIGITS = /^[0-9]{3,10}$/;'));
   for (const [args, want] of [['', false], ['help', false], ['leave', false], ['bob vole-1234', false], ['join x', true], ['invite --web', true], ['admit', true], ['bob 482', true], ['bob 48', false]]) {
@@ -34,7 +34,7 @@ test('command: mayHoldSecret is hooks/join.js\'s rule for a hidden reply', async
   }
 });
 
-test('command: the payload is the UserPromptExpansion join.js reads, marked as the module\'s', async () => {
+test('command: the payload is the UserPromptExpansion join.ts reads, marked as the module\'s', async () => {
   const { joinPayload } = await load();
   const p = joinPayload({ sid: 's1', cwd: '/w', args: 'invite', nonce: NONCE });
   assert.deepEqual([p.hook_event_name, p.session_id, p.cwd, p.command_name, p.command_args, p.sub_human_via, p.sub_human_nonce],

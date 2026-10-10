@@ -38,7 +38,7 @@ const { spawn } = require('node:child_process');
 const PLUGIN = path.join(__dirname, '..');
 const LIB = path.join(PLUGIN, 'lib');
 const BIN = path.join(PLUGIN, 'scripts', 'sub-human');
-const MCP = path.join(PLUGIN, 'mcp', 'room-server.js');
+const MCP = path.join(PLUGIN, 'mcp', 'room-server.ts');
 
 // ---- temp-dir tracking ---------------------------------------------------------------------------
 const TRACK = Symbol.for('sub-human.test.tmp');
@@ -96,12 +96,12 @@ function tmpDir(prefix = 'sub-human-test-', t) {
 // ---- env -----------------------------------------------------------------------------------------
 const stripClaude = env => { for (const k of Object.keys(env)) if (k.startsWith('CLAUDE')) delete env[k]; return env; };
 stripClaude(process.env);
-// via=human appends need the seat signer that hooks/common.js installs in every hook process
-// (hooks/seat-key.js). A test process is trusted the same way; required lazily, so preloading loads no lib/.
-globalThis[Symbol.for('sub-human.human-signer')] = (code, name) => require(path.join(PLUGIN, 'hooks', 'seat-key.js')).ensure(code, name);
+// via=human appends need the seat signer that hooks/common.ts installs in every hook process
+// (hooks/seat-key.ts). A test process is trusted the same way; required lazily, so preloading loads no lib/.
+globalThis[Symbol.for('sub-human.human-signer')] = (code, name) => require(path.join(PLUGIN, 'hooks', 'seat-key.ts')).ensure(code, name);
 
 let identityMod = null; // loaded on first use, so preloading this file does not load lib/
-const identity = () => identityMod || (identityMod = require(path.join(LIB, 'identity.js')));
+const identity = () => identityMod || (identityMod = require(path.join(LIB, 'identity.ts')));
 
 let current = null;
 

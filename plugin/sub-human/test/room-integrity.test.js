@@ -7,8 +7,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const room = require(path.join(h.LIB, 'room.js'));
-const config = require(path.join(h.LIB, 'config.js'));
+const room = require(path.join(h.LIB, 'room.ts'));
+const config = require(path.join(h.LIB, 'config.ts'));
 
 let R = null; // the current test's room
 function fresh() {
@@ -130,7 +130,7 @@ test('readAll: cached per process, sees appends from other processes, rewrites a
   const code = fresh();
   say('alice', 'one');
   assert.equal(R.readAll().length, 1);
-  const r = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.js'))}).arm();require(${JSON.stringify(path.join(h.LIB, 'room.js'))}).open(${JSON.stringify(code)}).append({kind:'say',text:'two'},{via:'human',from:'bob'})`], { env: h.childEnv() });
+  const r = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'))}).arm();require(${JSON.stringify(path.join(h.LIB, 'room.ts'))}).open(${JSON.stringify(code)}).append({kind:'say',text:'two'},{via:'human',from:'bob'})`], { env: h.childEnv() });
   assert.equal(r.status, 0, String(r.stderr));
   assert.deepEqual(R.readAll().map(e => e.text), ['one', 'two']);
   const a = R.readAll();
@@ -207,8 +207,8 @@ test('verifyChain: checks only new bytes from log.idx, never passes a break, reb
 // ---------- readView ----------
 test('readView: lanes, proposals and notices judged against the view match readAll for entries after the cursor', () => {
   const code = fresh();
-  const lanes = require(path.join(h.LIB, 'room', 'lanes.js'));
-  const notices = require(path.join(h.LIB, 'notices.js'));
+  const lanes = require(path.join(h.LIB, 'room', 'lanes.ts'));
+  const notices = require(path.join(h.LIB, 'notices.ts'));
   sys('member_joined', { text: 'alice joined' }, 'alice');
   sys('member_joined', { text: 'bob joined' }, 'bob');
   for (let i = 0; i < 30; i++) say(i % 2 ? 'alice' : 'bob', `chat ${i} @alice`);

@@ -1,7 +1,7 @@
 'use strict';
 /**
- * test/support/thread-store.js: ThreadRoomStore, a RoomStore (lib/room/store.js documents the interface) that
- * forwards its calls through lib/remote/bridge.js to an FsRoomStore on a worker thread. Test only: the bridge's
+ * test/support/thread-store.js: ThreadRoomStore, a RoomStore (lib/room/store.ts documents the interface) that
+ * forwards its calls through lib/remote/bridge.ts to an FsRoomStore on a worker thread. Test only: the bridge's
  * proof gate (a hook can block on another thread's store and still pass).
  *
  *   new ThreadRoomStore(code, {dir}?)   every process shares one bridge, started on the first call. Each call
@@ -23,12 +23,12 @@
 const path = require('node:path');
 const { isMainThread } = require('node:worker_threads');
 const { isDeepStrictEqual } = require('node:util');
-const store = require(path.join(__dirname, '..', '..', 'lib', 'room', 'store.js'));
-const config = require(path.join(__dirname, '..', '..', 'lib', 'config.js'));
-const { createBridge } = require(path.join(__dirname, '..', '..', 'lib', 'remote', 'bridge.js'));
+const store = require(path.join(__dirname, '..', '..', 'lib', 'room', 'store.ts'));
+const config = require(path.join(__dirname, '..', '..', 'lib', 'config.ts'));
+const { createBridge } = require(path.join(__dirname, '..', '..', 'lib', 'remote', 'bridge.ts'));
 
-const envelope = require(path.join(__dirname, '..', '..', 'lib', 'room', 'envelope.js'));
-const { home } = require(path.join(__dirname, '..', '..', 'lib', 'home.js'));
+const envelope = require(path.join(__dirname, '..', '..', 'lib', 'room', 'envelope.ts'));
+const { home } = require(path.join(__dirname, '..', '..', 'lib', 'home.ts'));
 
 const { FsRoomStore, tag, blobRef } = store;
 

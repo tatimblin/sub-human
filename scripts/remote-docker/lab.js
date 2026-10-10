@@ -301,7 +301,7 @@ const FEATURES = {
   hostSsh: p => p.src.join.hostSsh,
   revoke: p => p.cli.includes('kick') || p.cli.includes('revoke'),
   heartbeat: p => p.ops.includes('ping') || p.src.link.ping,
-  outbox: p => p.files.includes('lib/remote/outbox.js') || p.src.link.outbox,
+  outbox: p => p.files.includes('lib/remote/outbox.ts') || p.src.link.outbox,
   autoRejoin: p => p.src.link.rejoin,
   wake: p => p.src.link.wake,
   handoff: p => p.cli.includes('handoff'),
@@ -309,7 +309,7 @@ const FEATURES = {
   ws: p => p.kinds.some(k => /^wss?$/.test(k)) || p.files.some(f => /ws\.js$|listener\.js$/.test(f)),
   urlPin: p => p.src.join.urlPin,
   loginJoin: p => p.src.join.login,
-  shortCode: p => p.files.includes('lib/remote/enroll.js'),
+  shortCode: p => p.files.includes('lib/remote/enroll.ts'),
   versionRange: p => p.src.hello.range,
 };
 

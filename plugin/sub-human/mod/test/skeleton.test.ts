@@ -1,8 +1,8 @@
-// Wiring: the skeleton (mod/register.mjs). Run with `npm run test:mods` (claude plugin test plugin/sub-human).
+// Wiring: the skeleton (mod/register.ts). Run with `npm run test:mods` (claude plugin test plugin/sub-human).
 // The test's $ has no state noun, so what the module kept in $.state sub-human/hello is read through the guard:
 // a room tool is allowed (tool.check) only once the hello names a seat.
 import { test, expect } from 'claude-code/testing'
-import { OUT as HELLO, ran, session } from './support.mjs'
+import { OUT as HELLO, ran, session } from './support.ts'
 
 const POST = 'mcp__plugin_sub-human_room__post'
 const OUT = { ...HELLO, realHome: '/private/u/.sub-human' }
@@ -13,7 +13,7 @@ function world(on: any, sid = 'sid-test') {
 }
 const verdict = async ($: any) => (await $.tool.check({ tool: POST, input: { text: 'hi' } })).decision
 
-test('session.start runs hooks/mod-hello.js with the payload session id and keeps the hello in $.state', async ($, on) => {
+test('session.start runs hooks/mod-hello.ts with the payload session id and keeps the hello in $.state', async ($, on) => {
   const runs: any[] = []
   world(on)
   on('process.run', ($, e: any) => { runs.push(e); return ran(JSON.stringify(OUT) + '\n') })

@@ -14,12 +14,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const identity = require(path.join(h.LIB, 'identity.js'));
-const proposal = require(path.join(h.LIB, 'proposal.js'));
-const rows = require(path.join(h.LIB, 'rows.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
-const { isAlive } = require(path.join(h.LIB, 'io.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const proposal = require(path.join(h.LIB, 'proposal.ts'));
+const rows = require(path.join(h.LIB, 'rows.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
+const { isAlive } = require(path.join(h.LIB, 'io.ts'));
 const { Machine } = require('./support/two-homes.js');
 
 const RETRY_MS = 4000; // the daemon's first retry after the server is killed: the window the OFFLINE checks run in
@@ -28,7 +28,7 @@ const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: String(RETRY_MS), SUB_HUMAN_LINK_RET
 const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
 const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
 const texts = log => log.split('\n').filter(Boolean).map(l => JSON.parse(l).text);
-/** The text of a tail's NDJSON events of these types (lib/tail.js). */
+/** The text of a tail's NDJSON events of these types (lib/tail.ts). */
 const events = (out, types) => out.split('\n').filter(Boolean).map(l => JSON.parse(l))
   .filter(ev => types.includes(ev.type)).map(ev => ev.text || (ev.lines || []).join('\n')).join('\n');
 

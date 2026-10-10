@@ -12,10 +12,10 @@ const net = require('node:net');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
-const listener = require(path.join(h.LIB, 'remote', 'listener.js'));
-const wsT = require(path.join(h.LIB, 'remote', 'transports', 'ws.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
+const listener = require(path.join(h.LIB, 'remote', 'listener.ts'));
+const wsT = require(path.join(h.LIB, 'remote', 'transports', 'ws.ts'));
 const { Machine } = require('./support/two-homes.js');
 
 const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '600', SUB_HUMAN_LINK_IDLE_MS: '20000' };
@@ -63,7 +63,7 @@ async function posts(t, { host, remote, alice, bob, code }, text) {
   assert.equal(remote.log(code), host.log(code), 'the mirror is byte-identical');
 }
 
-/** The join request's card on the host, answered by the person (hooks/consent.js), as in test/remote-short.test.js. */
+/** The join request's card on the host, answered by the person (hooks/consent.ts), as in test/remote-short.test.js. */
 function letIn(host, alice, ref, label = 'Let in') {
   const pre = host.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `admit ${ref}`, options: [] }] } }, alice);
   const c = pre.json.hookSpecificOutput.updatedInput;
@@ -88,8 +88,8 @@ test('wss 1.1: the listener refuses a handshake to another key, a room it does n
   const R = await rig(t);
   const { port, host, alice, code } = R;
   assert.ok(shortShown(host.join(alice, `invite --url http://127.0.0.1:${port}`).json.reason));
-  const ws = require(path.join(h.LIB, 'remote', 'ws.js'));
-  const noise = require(path.join(h.LIB, 'remote', 'noise.js'));
+  const ws = require(path.join(h.LIB, 'remote', 'ws.ts'));
+  const noise = require(path.join(h.LIB, 'remote', 'noise.ts'));
   const pinned = Buffer.from(host.lib(() => listener.hostKey()), 'base64url');
   assert.equal(fs.statSync(path.join(host.home, 'listen', 'host-x25519.json')).mode & 0o777, 0o600);
   const ss = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).stdout;
@@ -192,7 +192,7 @@ esac
   const carol = none.seat('carol');
   none.join(carol, 'carol');
   t.after(() => none.lib(() => listener.stop()));
-  const ts = require(path.join(h.LIB, 'remote', 'tailscale.js'));
+  const ts = require(path.join(h.LIB, 'remote', 'tailscale.ts'));
   if (!ts.bin({ PATH: '/usr/bin:/bin' })) assert.match(none.join(carol, 'invite --web').json.reason, /no tailscale CLI here/);
 });
 
@@ -203,7 +203,7 @@ test('the room closing stops serving it: the listener drops it and turns its Tai
   const R = await rig(t, { PATH: `${bin}:${process.env.PATH}`, SUB_HUMAN_LISTEN_CHECK_MS: '200' });
   const { host, alice, code } = R;
   host.join(alice, 'invite --web');
-  host.lib(() => require(path.join(h.LIB, 'identity.js')).updateRoomClaude(code, o => ({ ...o, stopped_at: new Date().toISOString() })));
+  host.lib(() => require(path.join(h.LIB, 'identity.ts')).updateRoomClaude(code, o => ({ ...o, stopped_at: new Date().toISOString() })));
   assert.ok(await h.until(() => !host.lib(() => listener.status()).rooms[code], 8000, 100), 'dropped from the served set');
   assert.ok(await h.until(() => fs.readFileSync(calls, 'utf8').includes(`serve --https=443 --set-path=/sub-human/${code} off`), 3000, 50));
 });
@@ -258,7 +258,7 @@ test('a web invite: the listener refuses an enrollment for a room it does not se
   const R = await rig(t);
   const { port, host, alice, code } = R;
   host.join(alice, `invite --url http://127.0.0.1:${port}`);
-  const ws = require(path.join(h.LIB, 'remote', 'ws.js'));
+  const ws = require(path.join(h.LIB, 'remote', 'ws.ts'));
   const ask = async (text, p = `/sub-human/${code}`) => {
     const conn = await ws.connect(`ws://127.0.0.1:${port}${p}`, { timeoutMs: 5000 });
     return new Promise(r => {

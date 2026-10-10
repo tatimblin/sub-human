@@ -1,8 +1,8 @@
-// Wiring: the in-process store guard (mod/guard.mjs). Run with `npm run test:mods`.
+// Wiring: the in-process store guard (mod/guard.ts). Run with `npm run test:mods`.
 // The verdict tables are tested in node (test/hooks/guard.test.js, security.test.js); this checks the hooks: what
 // each denies through $.tool.call, the realPath walk through $.fs.stat, the tool.check allow, and the .catch.
 import { test, expect } from 'claude-code/testing'
-import { OUT, ran, session, start } from './support.mjs'
+import { OUT, ran, session, start } from './support.ts'
 
 const HOME = OUT.home
 /** Links on this fake disk: a path under a key resolves under its value. */
@@ -44,7 +44,7 @@ test('Bash: a custom home is protected by its path once mod-hello said it; the r
   await hello($)
   expect(denied(await call($, { tool: 'Bash', command: `echo x >> ${HOME}/rooms/a/log.jsonl` }))).toBe(true)
   expect(denied(await call($, { tool: 'Bash', command: 'cat "$HOME/.sub-human/keys/a/bob.key"' }))).toBe(true)
-  expect(denied(await call($, { tool: 'Bash', command: "node -e \"require('/x/sub-human/lib/room.js')\"" }))).toBe(true)
+  expect(denied(await call($, { tool: 'Bash', command: "node -e \"require('/x/sub-human/lib/room.ts')\"" }))).toBe(true)
   expect(denied(await call($, { tool: 'Bash', command: 'sub-human read' }))).toBe(false)
   expect(r).toEqual(['Bash'])
 })

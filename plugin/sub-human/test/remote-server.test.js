@@ -1,5 +1,5 @@
 'use strict';
-// A room's server and the client (lib/remote/server.js, lib/remote/client.js) over
+// A room's server and the client (lib/remote/server.ts, lib/remote/client.ts) over
 // the memory transport and over `sub-human serve --stdio` as a child: hello with an invite or a token, the
 // named ops, "only as yourself" (AUTH), subscribe with {after, hash} (resume, FORK, the documents a mirror
 // holds), decide after a remote answer, and a flaky link (OFFLINE at the deadline, never a half-applied write).
@@ -11,15 +11,15 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const identity = require(path.join(h.LIB, 'identity.js'));
-const protocol = require(path.join(h.LIB, 'remote', 'protocol.js'));
-const server = require(path.join(h.LIB, 'remote', 'server.js'));
-const client = require(path.join(h.LIB, 'remote', 'client.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.js'));
-const pipe = require(path.join(h.LIB, 'remote', 'transports', 'pipe.js'));
-const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const protocol = require(path.join(h.LIB, 'remote', 'protocol.ts'));
+const server = require(path.join(h.LIB, 'remote', 'server.ts'));
+const client = require(path.join(h.LIB, 'remote', 'client.ts'));
+const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.ts'));
+const pipe = require(path.join(h.LIB, 'remote', 'transports', 'pipe.ts'));
+const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'));
 const { flaky } = require('./support/flaky.js');
 
 // Never launch a real room Claude: a remote join on the host starts one as a local join does.
@@ -384,8 +384,8 @@ test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) tak
 
 test('the forced-command line a host writes for a link: the stable shim, restrict, no versioned path; appended once, one key one link', t => {
   const { code } = hostRoom(t);
-  const shim = require(path.join(h.LIB, 'remote', 'shim.js'));
-  const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.js'));
+  const shim = require(path.join(h.LIB, 'remote', 'shim.ts'));
+  const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.ts'));
   assert.deepEqual(auth.parseInvite(auth.mintInvite(store.open(code), { locator: 'ssh:host@127.0.0.1:2222' }).invite).locator, 'ssh:host@127.0.0.1:2222');
   const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1bJ1l3xq3fQnHk';
   assert.equal(sshkeys.publicKey(`${KEY} me@laptop "quoted" $(id)\n`), KEY, 'the key\'s own comment is dropped');

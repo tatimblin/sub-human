@@ -10,8 +10,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.ts'));
 const { Machine } = require('./support/two-homes.js');
 
 const hiddenBlock = r => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
@@ -63,7 +63,7 @@ test('invite over ssh: the door in authorized_keys, the line with --via and no N
 
 test('join: a linked machine given another invite to the same host through the same bastion is linked already, not a move', t => {
   const { remote, bob, code } = room(t);
-  const links = require(path.join(h.LIB, 'room', 'links.js'));
+  const links = require(path.join(h.LIB, 'room', 'links.ts'));
   const transport = { kind: 'ssh', user: 'host', host: 'devbox', via: 'jump@bastion' };
   remote.lib(() => links.set(code, { code, transport, token: 'tok', created_at: new Date().toISOString() }));
   const r = remote.join(bob, `join host@devbox ${code} 1234 --via jump@bastion`);

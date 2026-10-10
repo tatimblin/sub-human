@@ -1,5 +1,5 @@
 'use strict';
-// lib/remote/tailscale.js against a fake `tailscale` that talks like the real CLI: a tailnet without Serve prints
+// lib/remote/tailscale.ts against a fake `tailscale` that talks like the real CLI: a tailnet without Serve prints
 // "Serve is not enabled on your tailnet. To enable, visit: https://login.tailscale.com/f/serve?node=…" and then waits
 // for an admin (the real one hung 20 s on a Mac). on() reads the output as it comes, kills the CLI at the URL (or
 // after its deadline) and says what to do; tailscaled not running or logged out says so too. No real tailscale runs.
@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const h = require('./helpers.js');
-const ts = require(path.join(h.LIB, 'remote', 'tailscale.js'));
+const ts = require(path.join(h.LIB, 'remote', 'tailscale.ts'));
 
 const UP = '{"BackendState":"Running","Self":{"DNSName":"box.tail1a2b.ts.net.","Online":true}}';
 const ENABLE_URL = 'https://login.tailscale.com/f/serve?node=nABC123CNTRL';
@@ -107,8 +107,8 @@ test('tailscale warm: one background HTTPS request to the served URL (the certif
 
 test('join text: a wss link to a ts.net name still connecting says Tailscale may be issuing a certificate', t => {
   h.freshHome(t);
-  const links = require(path.join(h.LIB, 'room', 'links.js'));
-  const hosting = require(path.join(h.LIB, 'remote', 'hosting.js'));
+  const links = require(path.join(h.LIB, 'room', 'links.ts'));
+  const hosting = require(path.join(h.LIB, 'remote', 'hosting.ts'));
   const code = 'vole-4321';
   links.set(code, { code, transport: { kind: 'wss', host: 'box.tail1a2b.ts.net', path: `/sub-human/${code}`, hostKey: 'A'.repeat(43) }, invite: 'x', created_at: 'now' });
   assert.match(hosting.joinText(code, 'bob', { state: 'waiting' }), /still connecting to room vole-4321 \(Tailscale may be issuing a certificate: .*keeps trying\); type \/sub-human in a moment/);

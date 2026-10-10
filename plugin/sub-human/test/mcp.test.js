@@ -1,5 +1,5 @@
 'use strict';
-// Tests for mcp/room-server.js: spawn it as a child of this (registered) test process and drive it with JSON-RPC.
+// Tests for mcp/room-server.ts: spawn it as a child of this (registered) test process and drive it with JSON-RPC.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -7,9 +7,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
 const h = require('./helpers.js');
-const room = require(path.join(h.LIB, 'room.js'));
+const room = require(path.join(h.LIB, 'room.ts'));
 let R = null; // the room under test
-const identity = require(path.join(h.LIB, 'identity.js'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
 
 const servers = new Set();
 test.afterEach(() => { for (const c of servers) c.kill(); servers.clear(); });
@@ -66,7 +66,7 @@ test('mcp: tools/list has post, read, propose plus plug-in tools, no plan/watch/
   const names = r.result.tools.map(t => t.name);
   assert.deepEqual(names.slice(0, 3), ['post', 'read', 'propose']);
   for (const n of ['watch', 'plan', 'review']) assert.ok(!names.includes(n), `${n} is gone`);
-  if (fs.existsSync(path.join(h.PLUGIN, 'mcp', 'hold.js'))) assert.ok(names.includes('hold'), 'hold plug-in loaded');
+  if (fs.existsSync(path.join(h.PLUGIN, 'mcp', 'hold.ts'))) assert.ok(names.includes('hold'), 'hold plug-in loaded');
   assert.equal(new Set(names).size, names.length, 'no duplicate tool names');
   assert.deepEqual(r.result.tools.find(t => t.name === 'post').inputSchema.properties.kind.enum, ['say', 'question', 'status']);
   // Schema budget, model-facing fields only (name, description, inputSchema; annotations and title are client
@@ -100,7 +100,7 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
   h.freshHome();
   const { code } = h.register('alice');
   const bob = h.spawnSleeper();
-  require(path.join(h.LIB, 'identity.js')).join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sb' });
+  require(path.join(h.LIB, 'identity.ts')).join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sb' });
   // A forged CLAUDE_PID pointing at bob changes nothing: the server uses its parent.
   const s = await ready({ CLAUDE_PID: String(bob.pid) });
   const e = payload(await s.tool('post', { kind: 'question', text: 'split auth into its own module?', refs: [1], to: 'bob' }));
@@ -183,7 +183,7 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   for (const p of [bob, carol, roomClaude]) p.kill();
 });
 
-// ---------- plug-in contract: a copy of the server beside a fake hold.js and a broken task.js ----------
+// ---------- plug-in contract: a copy of the server beside a fake hold.ts and a broken task.ts ----------
 const FAKE_HOLD = `
 let log = [];
 exports.create = ctx => ({
@@ -219,11 +219,11 @@ exports.create = ctx => ({
 function fakeServer() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-mcp-'));
   fs.mkdirSync(path.join(dir, 'mcp'));
-  fs.copyFileSync(h.MCP, path.join(dir, 'mcp', 'room-server.js'));
+  fs.copyFileSync(h.MCP, path.join(dir, 'mcp', 'room-server.ts'));
   fs.symlinkSync(h.LIB, path.join(dir, 'lib'));
-  fs.writeFileSync(path.join(dir, 'mcp', 'hold.js'), FAKE_HOLD);
-  fs.writeFileSync(path.join(dir, 'mcp', 'task.js'), 'throw new Error("half-written");');
-  return path.join(dir, 'mcp', 'room-server.js');
+  fs.writeFileSync(path.join(dir, 'mcp', 'hold.ts'), FAKE_HOLD);
+  fs.writeFileSync(path.join(dir, 'mcp', 'task.ts'), 'throw new Error("half-written");');
+  return path.join(dir, 'mcp', 'room-server.ts');
 }
 
 test('mcp: plug-ins get the ctx contract (request/response routing, progress, onCancel, whoami, caps, anonymous)', async () => {
@@ -231,7 +231,7 @@ test('mcp: plug-ins get the ctx contract (request/response routing, progress, on
   const server = fakeServer();
   const s = await ready({ SUB_HUMAN_DEBUG: '1' }, server, { elicitation: {} });
   const names = (await s.call('tools/list', {})).result.tools.map(t => t.name);
-  assert.deepEqual(names, ['post', 'read', 'propose', 'ask', 'slow', 'anon', 'info'], 'broken task.js skipped, core wins a clash');
+  assert.deepEqual(names, ['post', 'read', 'propose', 'ask', 'slow', 'anon', 'info'], 'broken task.ts skipped, core wins a clash');
   assert.match(fs.readFileSync(path.join(process.env.SUB_HUMAN_HOME, 'mcp-debug.log'), 'utf8'), /plugin failed task\.js/);
   // Not joined: plug-in tools error like core ones, except the anonymous ones.
   assert.equal(errText(await s.tool('ask')), 'not in a room; run /sub-human');

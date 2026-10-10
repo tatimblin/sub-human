@@ -2,7 +2,7 @@
 // The RoomStore seam holds: no plugin module outside lib/room/store*.js knows where a room's state lives or what
 // its files are called.
 // The hooks module (mod/*.mjs) is walked too: it knows no store path (mod-hello tells it the home).
-// Exceptions, by design: lib/home.js (the location: home, rooms/, roomDir) and lib/identity.js, which keeps
+// Exceptions, by design: lib/home.ts (the location: home, rooms/, roomDir) and lib/identity.ts, which keeps
 // this machine's session indexes (<home>/sessions/: which seat a local pid or session id holds; not room state)
 // and re-exports roomDir. A bare `identity.roomDir(code);` statement only validates a code and is allowed.
 const test = require('node:test');
@@ -44,7 +44,7 @@ test('store seam: no module outside lib/room/store*.js names a room file or buil
       const at = `${rel}:${i + 1}: ${l.trim()}`;
       if (FILE_NAMES.test(l)) bad.push(`names a room file: ${at}`);
       if (SEGMENTS.test(l)) bad.push(`builds a room path: ${at}`);
-      if (/\broomDir\(/.test(l) && !['lib/home.js', 'lib/identity.js'].includes(rel) && !/^\s*identity\.roomDir\(\w+\);/.test(l)) bad.push(`uses roomDir: ${at}`);
+      if (/\broomDir\(/.test(l) && !['lib/home.ts', 'lib/identity.ts'].includes(rel) && !/^\s*identity\.roomDir\(\w+\);/.test(l)) bad.push(`uses roomDir: ${at}`);
     });
   }
   assert.deepEqual(bad, []);

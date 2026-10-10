@@ -83,7 +83,7 @@ test('words: room Claude tools are exactly the plan list (no Bash)', () => {
   assert.ok(!tools.includes('Bash'));
 });
 
-test('words: SKILL.md allows only the live room tools (not hold: mod/guard.mjs denies it to a main thread)', () => {
+test('words: SKILL.md allows only the live room tools (not hold: mod/guard.ts denies it to a main thread)', () => {
   const t = read(SKILL);
   const allowed = [...t.matchAll(/^\s+- (\S+)$/gm)].map(m => m[1]);
   assert.deepEqual(allowed.sort(), ['post', 'read', 'propose', 'task'].map(x => PREFIX + x).sort());
@@ -148,7 +148,7 @@ test('words: a review is the plan view in the person\'s own session, never "a ca
     assert.doesNotMatch(t, /\bterminal\b/i, `${f} says terminal`);
     assert.doesNotMatch(t, /\b(he|she|his|her|him)\b/i, `${f}: names or they/them`);
   }
-  const server = read('mcp/room-server.js');
+  const server = read('mcp/room-server.ts');
   assert.doesNotMatch(server, /own terminal|answers a card/);
   assert.match(server, /in the plan view in their own session/);
 });

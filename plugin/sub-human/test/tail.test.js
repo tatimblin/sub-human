@@ -1,5 +1,5 @@
 'use strict';
-// Tests for lib/tail.js (the loop behind `sub-human tail`, the hooks module's child), in-process on a fake clock:
+// Tests for lib/tail.ts (the loop behind `sub-human tail`, the hooks module's child), in-process on a fake clock:
 // the events, settle, max window, leave hold, cursor restart, room switch, error recovery, the chain check and the
 // room Claude watchdog. The log, cursors and seats are real files in a temp SUB_HUMAN_HOME. test/cli.test.js keeps
 // real-time smoke tests.
@@ -8,12 +8,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const h = require('./helpers.js');
-const room = require(path.join(h.LIB, 'room.js'));
-const identity = require(path.join(h.LIB, 'identity.js'));
-const rows = require(path.join(h.LIB, 'rows.js'));
-const config = require(path.join(h.LIB, 'config.js'));
-const { createFake } = require(path.join(h.LIB, 'clock.js'));
-const tailLib = require(path.join(h.LIB, 'tail.js'));
+const room = require(path.join(h.LIB, 'room.ts'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const rows = require(path.join(h.LIB, 'rows.ts'));
+const config = require(path.join(h.LIB, 'config.ts'));
+const { createFake } = require(path.join(h.LIB, 'clock.ts'));
+const tailLib = require(path.join(h.LIB, 'tail.ts'));
 
 const FAST = {
   resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
@@ -119,7 +119,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   assert.ok(t.forClaude()[0].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed (`), t.forClaude()[0]);
   assert.ok(t.forClaude()[0].includes(`"proposal ${H2}"`), 'the card call carries the full hash');
   assert.equal(cursor(code, 'alice'), 19);
-  const notices = require(path.join(h.LIB, 'notices.js'));
+  const notices = require(path.join(h.LIB, 'notices.ts'));
   assert.ok(notices.shown(code, 'alice').has(12), 'the join is recorded as shown (a restarted child does not repeat it)');
   assert.deepEqual(t.errs, []);
 });
@@ -436,7 +436,7 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   assert.deepEqual(wake.slice(0, 3), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", 'claude proposed: claude proposes']);
   assert.ok(wake[3].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
   assert.equal(inRoom(code, r => r.getCursor('deliver-alice')), 7);
-  const notices = require(path.join(h.LIB, 'notices.js'));
+  const notices = require(path.join(h.LIB, 'notices.ts'));
   assert.ok(notices.shown(code, 'alice').has(2), 'the join is recorded as shown');
   t.stop();
   assert.deepEqual(t.errs, []);

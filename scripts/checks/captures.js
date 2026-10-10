@@ -10,7 +10,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const { readJson, readText } = require('../lib/io.js');
+const { readJson, readText } = require('../lib/io.ts');
 
 function captures({ screens, index }) {
   const caps = (scene, seat) => index.filter(r => r.scene === scene && r.session === `sh-${seat}`);

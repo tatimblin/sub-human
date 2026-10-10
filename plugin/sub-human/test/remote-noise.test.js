@@ -1,5 +1,5 @@
 'use strict';
-// lib/remote/noise.js against published Noise test vectors for Noise_NK_25519_ChaChaPoly_SHA256, vendored here:
+// lib/remote/noise.ts against published Noise test vectors for Noise_NK_25519_ChaChaPoly_SHA256, vendored here:
 //   cacophony: https://raw.githubusercontent.com/haskell-cryptography/cacophony/master/vectors/cacophony.txt
 //   snow:      https://raw.githubusercontent.com/mcginty/snow/main/tests/vectors/snow.txt
 // (fetched 2026-10-08; the NK_25519_ChaChaPoly_SHA256 object of each, verbatim). Messages alternate initiator,
@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const h = require('./helpers.js');
-const noise = require(path.join(h.LIB, 'remote', 'noise.js'));
+const noise = require(path.join(h.LIB, 'remote', 'noise.ts'));
 
 const VECTORS = [
   {

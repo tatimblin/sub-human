@@ -12,7 +12,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const metrics = require('../metrics.js');
 const paths = require('../lib/paths.js');
-const { readText, jsonl } = require('../lib/io.js');
+const { readText, jsonl } = require('../lib/io.ts');
 
 const isToolResults = e => Array.isArray(e.message && e.message.content) && e.message.content.every(c => c && c.type === 'tool_result');
 

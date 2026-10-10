@@ -2,7 +2,7 @@
 // No test and no dev run touches the real ~/.sub-human. Every test process runs under a temp SUB_HUMAN_HOME
 // (helpers.js, preloaded by test/index.js) that its children inherit. And a CLI run or a SessionStart from a dev
 // checkout or worktree without SUB_HUMAN_HOME (so on the real home) never takes over <home>/bin/current from the
-// installed plugin: lib/remote/shim.js refreshes passively there, forced only by host --ssh, admit, authorize and
+// installed plugin: lib/remote/shim.ts refreshes passively there, forced only by host --ssh, admit, authorize and
 // doctor --fix. Here the "real home" is a fake user's (HOME), so nothing real is touched either.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -11,8 +11,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const shim = require(path.join(h.LIB, 'remote', 'shim.js'));
-const { isTempPath } = require(path.join(h.LIB, 'home.js'));
+const shim = require(path.join(h.LIB, 'remote', 'shim.ts'));
+const { isTempPath } = require(path.join(h.LIB, 'home.ts'));
 
 test('guard: every test process has a temp SUB_HUMAN_HOME, never the real one, and its children inherit it', () => {
   const real = path.join(os.homedir(), '.sub-human');
@@ -20,7 +20,7 @@ test('guard: every test process has a temp SUB_HUMAN_HOME, never the real one, a
   assert.notEqual(path.resolve(process.env.SUB_HUMAN_HOME), path.resolve(real));
   assert.ok(isTempPath(process.env.SUB_HUMAN_HOME), process.env.SUB_HUMAN_HOME);
   assert.equal(h.childEnv().SUB_HUMAN_HOME, process.env.SUB_HUMAN_HOME);
-  const seen = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(h.LIB, 'home.js'))}).home())`],
+  const seen = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(h.LIB, 'home.ts'))}).home())`],
     { env: h.childEnv(), encoding: 'utf8' }).stdout;
   assert.equal(seen, process.env.SUB_HUMAN_HOME, 'a child resolves the temp home');
 });
@@ -44,7 +44,7 @@ test('guard: a dev-checkout CLI run and SessionStart on the real home leave the 
   const u = fakeUser(t);
   const before = fs.statSync(u.pointer).mtimeMs;
   for (const args of [['who'], ['tasks', '--json']]) spawnSync(process.execPath, [h.BIN, ...args], { env: u.env, encoding: 'utf8', timeout: 20_000 });
-  spawnSync(process.execPath, [path.join(h.PLUGIN, 'hooks', 'row-launcher.js')], { env: u.env, input: '{}', encoding: 'utf8', timeout: 20_000 });
+  spawnSync(process.execPath, [path.join(h.PLUGIN, 'hooks', 'row-launcher.ts')], { env: u.env, input: '{}', encoding: 'utf8', timeout: 20_000 });
   assert.equal(fs.readFileSync(u.pointer, 'utf8'), u.body, 'still the installed plugin');
   assert.equal(fs.statSync(u.pointer).mtimeMs, before, 'not even rewritten');
   assert.equal(fs.existsSync(path.join(u.user, '.sub-human', 'bin', 'serve')), false, 'no shim written either');

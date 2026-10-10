@@ -1,20 +1,20 @@
 'use strict';
-// The remote protocol's parts: the line codec (lib/remote/protocol.js), the
+// The remote protocol's parts: the line codec (lib/remote/protocol.ts), the
 // memory and pipe transports and their lookup (lib/remote/transports/*), the seeded flaky transport
-// (test/support/flaky.js), and invites, link tokens and seat proofs (lib/remote/auth.js).
+// (test/support/flaky.js), and invites, link tokens and seat proofs (lib/remote/auth.ts).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { MessageChannel } = require('node:worker_threads');
 const h = require('./helpers.js');
-const protocol = require(path.join(h.LIB, 'remote', 'protocol.js'));
+const protocol = require(path.join(h.LIB, 'remote', 'protocol.ts'));
 const transports = require(path.join(h.LIB, 'remote', 'transports', 'index.js'));
-const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.js'));
-const pipe = require(path.join(h.LIB, 'remote', 'transports', 'pipe.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-const config = require(path.join(h.LIB, 'config.js'));
-const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
+const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.ts'));
+const pipe = require(path.join(h.LIB, 'remote', 'transports', 'pipe.ts'));
+const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+const config = require(path.join(h.LIB, 'config.ts'));
+const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'));
 const { MemoryRoomStore } = require('./support/memory-store.js');
 const { flaky } = require('./support/flaky.js');
 

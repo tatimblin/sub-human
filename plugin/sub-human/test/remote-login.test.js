@@ -12,14 +12,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-const server = require(path.join(h.LIB, 'remote', 'server.js'));
-const client = require(path.join(h.LIB, 'remote', 'client.js'));
-const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.js'));
-const ssh = require(path.join(h.LIB, 'remote', 'transports', 'ssh.js'));
-const shim = require(path.join(h.LIB, 'remote', 'shim.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
+const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+const server = require(path.join(h.LIB, 'remote', 'server.ts'));
+const client = require(path.join(h.LIB, 'remote', 'client.ts'));
+const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.ts'));
+const ssh = require(path.join(h.LIB, 'remote', 'transports', 'ssh.ts'));
+const shim = require(path.join(h.LIB, 'remote', 'shim.ts'));
 const { Machine } = require('./support/two-homes.js');
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
@@ -151,7 +151,7 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
   b.onFrame(f => b.send(protocol().reply(f.id, { v: 1, proto: { min: 1, max: 9 }, server: '0.4.0', caps: [], room: code, link: null })));
   await assert.rejects(client.connect(a, { machine: 'remote0machine01', login: true }), e => e.code === 'PROTOCOL' && /makes no link over an ssh login/.test(e.message));
 });
-const protocol = () => require(path.join(h.LIB, 'remote', 'protocol.js'));
+const protocol = () => require(path.join(h.LIB, 'remote', 'protocol.ts'));
 
 test('serve CLI: --login needs --link, and is refused under SSH_ORIGINAL_COMMAND (a forced command), before any frame', t => {
   h.freshHome(t);
@@ -171,7 +171,7 @@ test('login e2e: join me@devbox ROOM links over the person\'s own ssh and takes 
   stopDaemon(t, remote, code);
   assert.equal(r.json.decision, undefined, r.json.reason || r.stderr);
   assert.match(r.json.hookSpecificOutput.additionalContext, /SUB-HUMAN: you are bob's Claude/);
-  const lf = remote.lib(() => require(path.join(h.LIB, 'room', 'links.js')).get(code));
+  const lf = remote.lib(() => require(path.join(h.LIB, 'room', 'links.ts')).get(code));
   assert.equal(lf.transport.login, true);
   assert.equal(typeof lf.token, 'string');
   assert.equal(lf.invite, undefined);
@@ -199,7 +199,7 @@ test('login e2e: join me@devbox ROOM links over the person\'s own ssh and takes 
   // that login can link again: a new link, and bob's seat joins again over it
   const again = remote.join(bob, `join me@devbox ${code} --as bob`);
   assert.equal(again.json.decision, undefined, again.json.reason);
-  const id2 = remote.lib(() => require(path.join(h.LIB, 'room', 'links.js')).get(code)).transport.link;
+  const id2 = remote.lib(() => require(path.join(h.LIB, 'room', 'links.ts')).get(code)).transport.link;
   assert.notEqual(id2, id);
   assert.deepEqual(Object.keys(links(host, code)), [id2]);
   assert.deepEqual(links(host, code)[id2].seats, ['bob']);
@@ -212,7 +212,7 @@ test('login e2e: a bare ssh alias (join dev ROOM) takes its user from ssh -G and
   const r = remote.join(bob, `join dev ${code} --as bob`);
   stopDaemon(t, remote, code);
   assert.equal(r.json.decision, undefined, r.json.reason || r.stderr);
-  const lf = remote.lib(() => require(path.join(h.LIB, 'room', 'links.js')).get(code));
+  const lf = remote.lib(() => require(path.join(h.LIB, 'room', 'links.ts')).get(code));
   assert.deepEqual([lf.transport.user, lf.transport.host, lf.transport.login], ['me', 'dev', true], 'the alias stays the host: its HostName, Port, ProxyJump apply');
   const argv = fs.readFileSync(sshLog, 'utf8').trim().split('\n').map(l => JSON.parse(l)).find(a => a[0] !== '-G');
   assert.ok(argv.includes('me@dev'), JSON.stringify(argv));
@@ -222,7 +222,7 @@ test('login e2e: a bare ssh alias (join dev ROOM) takes its user from ssh -G and
 });
 
 test('ssh.withUser / placeholder: only a bare alias is expanded; no ssh or a bad answer leaves it as typed', () => {
-  const ssh = require(path.join(h.LIB, 'remote', 'transports', 'ssh.js'));
+  const ssh = require(path.join(h.LIB, 'remote', 'transports', 'ssh.ts'));
   assert.equal(ssh.withUser('me@dev'), 'me@dev');
   assert.equal(ssh.withUser('dev', { bin: '/nonexistent/ssh' }), 'dev');
   assert.equal(ssh.withUser('bad;host'), 'bad;host');
@@ -238,7 +238,7 @@ test('login e2e: --home names a host home that is not ~/.sub-human; a primed (mu
   assert.match(miss.json.reason, /could not reach room .* over ssh me@devbox \(your ssh login\): me@devbox isn't set up for joining yet \(no ~\/\.sub-human\/bin\/serve\)\. On that machine, open the room in Claude Code \(\/sub-human\), then join again; if its sub-human folder is somewhere else, add --home PATH/);
   assert.deepEqual(links(host, code), {}, 'nothing minted');
   // as `sub-human prime CODE` leaves it: the link rides a master; the re-join to the same destination keeps that
-  const linksLib = require(path.join(h.LIB, 'room', 'links.js'));
+  const linksLib = require(path.join(h.LIB, 'room', 'links.ts'));
   remote.lib(() => { const l = linksLib.get(code); linksLib.set(code, { ...l, transport: { ...l.transport, mux: true } }); });
   const r = remote.join(bob, `join me@devbox ${code} --as bob --home ${host.home}`);
   assert.equal(r.json.decision, undefined, r.json.reason || r.stderr);
@@ -298,5 +298,5 @@ test('login join: the argument forms are told apart; bad parts are refused befor
   bad(`join me@devbox ${code} --as bob --via -oX`, /--via "-oX" isn't a plain/);
   bad(`join me@devbox ${code} --as bob --home relative`, /--home "relative" isn't a plain absolute path/);
   bad(`join me@devbox ${code} --as claude`, /"claude" is reserved/);
-  assert.equal(remote.lib(() => require(path.join(h.LIB, 'room', 'links.js')).list()).length, 0);
+  assert.equal(remote.lib(() => require(path.join(h.LIB, 'room', 'links.ts')).list()).length, 0);
 });

@@ -1,23 +1,23 @@
 'use strict';
-// mod/core/deliver.mjs in node: its timing constants against lib/config.js, the restart backoff, the notice's
+// mod/core/deliver.ts in node: its timing constants against lib/config.ts, the restart backoff, the notice's
 // window, and the turn ledger that decides which wakes are submitted again. The wiring is mod/test/deliver.test.ts.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const config = require('../lib/config.js');
+const config = require('../lib/config.ts');
 
 const load = rel => import(path.join(__dirname, '..', rel));
 
-// mod/ imports no CommonJS, so it keeps its own copies; each is skipped until lib/config.js names it.
+// mod/ imports no CommonJS, so it keeps its own copies; each is skipped until lib/config.ts names it.
 for (const key of ['MOD_RESTART_MS', 'MOD_RESTART_MAX_MS', 'MOD_RESTART_STEADY_MS', 'MOD_DELIVERY_ERROR_LOG_MS']) {
-  test(`deliver: ${key} equals lib/config.js`, { skip: !(key in config) && `lib/config.js has no ${key}` }, async () => {
-    const d = await load('mod/core/deliver.mjs');
+  test(`deliver: ${key} equals lib/config.ts`, { skip: !(key in config) && `lib/config.ts has no ${key}` }, async () => {
+    const d = await load('mod/core/deliver.ts');
     assert.equal(d[key], config[key]);
   });
 }
 
 test('deliver: the backoff doubles from MOD_RESTART_MS to MOD_RESTART_MAX_MS; a long run starts it over', async () => {
-  const d = await load('mod/core/deliver.mjs');
+  const d = await load('mod/core/deliver.ts');
   assert.deepEqual([0, 1, 2, 5, 6, 20].map(d.restartDelay), [1000, 2000, 4000, 32_000, 60_000, 60_000]);
   assert.equal(d.restartDelay(-1), d.MOD_RESTART_MS, 'after a reset');
   assert.equal(d.nextFails(2, 10), 3);
@@ -27,7 +27,7 @@ test('deliver: the backoff doubles from MOD_RESTART_MS to MOD_RESTART_MAX_MS; a 
 });
 
 test('deliver: the delivery-error notice is due once per window', async () => {
-  const d = await load('mod/core/deliver.mjs');
+  const d = await load('mod/core/deliver.ts');
   assert.equal(d.noticeDue(-Infinity, 5), true, 'never told');
   assert.equal(d.noticeDue(1000, 1000 + d.MOD_DELIVERY_ERROR_LOG_MS - 1), false);
   assert.equal(d.noticeDue(1000, 1000 + d.MOD_DELIVERY_ERROR_LOG_MS), true);
@@ -36,15 +36,15 @@ test('deliver: the delivery-error notice is due once per window', async () => {
 });
 
 test('deliver: the tail child gets the env a shimmed hook gets', async () => {
-  const d = await load('mod/core/deliver.mjs');
-  const { shimEnv } = await load('mod/core/shim.mjs');
+  const d = await load('mod/core/deliver.ts');
+  const { shimEnv } = await load('mod/core/shim.ts');
   assert.deepEqual(d.tailEnv('sid-1', '/p'), shimEnv({ session_id: 'sid-1' }, '/p'));
   assert.deepEqual(d.tailEnv('', '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '' }, 'no session id: none passed');
   assert.deepEqual(d.tailEnv(null, undefined), { CLAUDE_PLUGIN_ROOT: '', CLAUDE_PID: '' });
 });
 
 test('deliver: turn.start, a mid-turn wake, a tool call, turn.complete: only a wake no request carried comes back', async () => {
-  const d = await load('mod/core/deliver.mjs');
+  const d = await load('mod/core/deliver.ts');
   const t = d.turnLedger();
   assert.equal(t.running, null);
   assert.equal(t.appended('idle', 1), false, 'no turn runs: the caller submits it');
@@ -71,7 +71,7 @@ test('deliver: turn.start, a mid-turn wake, a tool call, turn.complete: only a w
 });
 
 test('deliver: a wake nothing took is held for the next turn.start, newest PENDING_MAX kept', async () => {
-  const d = await load('mod/core/deliver.mjs');
+  const d = await load('mod/core/deliver.ts');
   const t = d.turnLedger();
   assert.equal(t.hold('a'), 0);
   assert.equal(t.hold('b'), 0);
@@ -86,7 +86,7 @@ test('deliver: a wake nothing took is held for the next turn.start, newest PENDI
 });
 
 test('deliver: typed through Remote Control (remote), chat is relayed (queued); mid-turn, a notice now too. A relay is only the room lines', async () => {
-  const d = await load('mod/core/deliver.mjs');
+  const d = await load('mod/core/deliver.ts');
   const chat = { type: 'chat', lines: ['bob: hi', 'carol joined'] };
   assert.deepEqual(d.route(chat), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: 'carol joined' }]);
   assert.deepEqual(d.route(chat, { remote: true }), [{ do: 'relay', lines: ['bob: hi', 'carol joined'] }]);
@@ -99,7 +99,7 @@ test('deliver: typed through Remote Control (remote), chat is relayed (queued); 
   assert.doesNotMatch(relay, /for Claude/);
   assert.equal(d.relayText(''), '');
   assert.match(d.RELAY_CONTEXT, /^\(for Claude\) sub-human: .*Remote Control.*It needs no reply: a few words at most, or none/);
-  const { gateVerdict, onRemote } = await load('mod/core/prompt.mjs');
+  const { gateVerdict, onRemote } = await load('mod/core/prompt.ts');
   // a relay may start "room:": that is no post (there is no room: tag), whoever submits it
   assert.equal(gateVerdict({ text: relay.split('\n').slice(1).join('\n'), origin: { kind: 'plugin', name: 'sub-human' } }), null);
   assert.deepEqual(['bridge', 'composer', 'sdk', 'peer', 'plugin'].map(kind => onRemote({ kind })), [true, false, false, undefined, undefined]);
@@ -107,7 +107,7 @@ test('deliver: typed through Remote Control (remote), chat is relayed (queued); 
 });
 
 test('deliver: relayQueue sends every queued line as one relay, at most one per RELAY_GAP_MS', async () => {
-  const d = await load('mod/core/deliver.mjs');
+  const d = await load('mod/core/deliver.ts');
   const q = d.relayQueue();
   assert.equal(q.take(0), null, 'nothing queued');
   assert.equal(q.add(['', '  ']), false);

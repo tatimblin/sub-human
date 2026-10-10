@@ -1,20 +1,20 @@
 'use strict';
 /**
- * test/support/memory-store.js: MemoryRoomStore, a second RoomStore (lib/room/store.js documents the interface)
+ * test/support/memory-store.js: MemoryRoomStore, a second RoomStore (lib/room/store.ts documents the interface)
  * that keeps a room in this process's memory. Test only. It shares the envelope with FsRoomStore (store.toPayload
  * validates and signs, store.admit and store.placeAfter check and stamp id, at and prev), so ids, the prev chain,
  * signatures and the trust checks are byte-for-byte what the file store does. test/store-contract.test.js runs the same
  * suite against both: that is the seam a store off this machine would implement.
  *
  *   new MemoryRoomStore(code, {isHost}?)   _lines (the serialized log, one string per entry) is open for tamper
- *       tests. isHost: false makes it mirror-shaped (the host gates: lib/room-claude.js, lib/proposal.js decide).
- *   members.join/leave/beat are lib/room/members.js ops over this store's compare-and-set update, as FsRoomStore's.
+ *       tests. isHost: false makes it mirror-shaped (the host gates: lib/room-claude.ts, lib/proposal.ts decide).
+ *   members.join/leave/beat are lib/room/members.ts ops over this store's compare-and-set update, as FsRoomStore's.
  */
 const path = require('node:path');
-const store = require(path.join(__dirname, '..', '..', 'lib', 'room', 'store.js'));
-const config = require(path.join(__dirname, '..', '..', 'lib', 'config.js'));
-const envelope = require(path.join(__dirname, '..', '..', 'lib', 'room', 'envelope.js'));
-const members = require(path.join(__dirname, '..', '..', 'lib', 'room', 'members.js'));
+const store = require(path.join(__dirname, '..', '..', 'lib', 'room', 'store.ts'));
+const config = require(path.join(__dirname, '..', '..', 'lib', 'config.ts'));
+const envelope = require(path.join(__dirname, '..', '..', 'lib', 'room', 'envelope.ts'));
+const members = require(path.join(__dirname, '..', '..', 'lib', 'room', 'members.ts'));
 
 const { RoomError, hash12, tag, blobRef, checkKey, checkCursor, CHAT_KINDS } = store;
 const clone = v => (v === undefined ? undefined : structuredClone(v));

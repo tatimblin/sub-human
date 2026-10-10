@@ -1,5 +1,5 @@
 'use strict';
-// lib/remote/ws.js: the zero-dependency WebSocket. Its server end against Node's built-in WebSocket client (interop),
+// lib/remote/ws.ts: the zero-dependency WebSocket. Its server end against Node's built-in WebSocket client (interop),
 // its client end against its own server and against hand-made frames (fragmentation, control frames in between,
 // masking rules, the size limit, bad UTF-8), through an HTTP CONNECT proxy, over TLS, and the proxy environment.
 const test = require('node:test');
@@ -12,7 +12,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const ws = require(path.join(h.LIB, 'remote', 'ws.js'));
+const ws = require(path.join(h.LIB, 'remote', 'ws.ts'));
 
 const once = (em, ev) => new Promise(r => em.once(ev, (...a) => r(a)));
 
@@ -236,7 +236,7 @@ test('proxyFor: HTTPS_PROXY for wss, HTTP_PROXY for ws, NO_PROXY and loopback by
 
 test('listener: it exits on its own once its home is gone (no listener left serving a deleted home)', async t => {
   const { spawn } = require('node:child_process');
-  const { isAlive } = require(path.join(h.LIB, 'io.js'));
+  const { isAlive } = require(path.join(h.LIB, 'io.ts'));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-listen-gone-'));
   const env = h.childEnv({ SUB_HUMAN_HOME: home, SUB_HUMAN_ALLOW_TMP_ROOT: '1' });
   const child = spawn(process.execPath, [h.BIN, 'listen', '--port', '0'], { env, stdio: 'ignore' });

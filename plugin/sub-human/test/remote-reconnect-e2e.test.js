@@ -11,11 +11,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
-const links = require(path.join(h.LIB, 'room', 'links.js'));
-const { leaseFresh } = require(path.join(h.LIB, 'room', 'members.js'));
-const { isAlive } = require(path.join(h.LIB, 'io.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
+const links = require(path.join(h.LIB, 'room', 'links.ts'));
+const { leaseFresh } = require(path.join(h.LIB, 'room', 'members.ts'));
+const { isAlive } = require(path.join(h.LIB, 'io.ts'));
 const { Machine } = require('./support/two-homes.js');
 
 const BASE = {

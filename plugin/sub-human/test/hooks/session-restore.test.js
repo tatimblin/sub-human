@@ -6,7 +6,7 @@ const path = require('node:path');
 const { World, fixture, identity, ctx, hso, roomPlan } = require('./helpers.js');
 
 const NEW_SID = '8cea5671-97a8-49c2-bcdb-4a62d51b6a18';
-const hasRows = () => { try { require('../../lib/rows.js'); return true; } catch { return false; } };
+const hasRows = () => { try { require('../../lib/rows.ts'); return true; } catch { return false; } };
 
 test('session-restore: after /clear, rebinds the new session id by CLAUDE_PID and re-injects the mechanics block', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
@@ -86,7 +86,7 @@ test('session-restore: not joined -> nothing', () => {
 });
 
 test('session-restore: a review left open (plan file still the proposal) is restored and cleared after clear; a fresh one survives compact', () => {
-  const proposal = require('../../lib/proposal.js');
+  const proposal = require('../../lib/proposal.ts');
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const text = '# Cursor paging\n\n1. after=\n';
   const hash = w.lib(() => proposal.create({ code: w.code, name: 'bob', role: 'member' }, { text, approvers: ['alice'] })).hash;

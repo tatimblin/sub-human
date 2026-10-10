@@ -2,7 +2,7 @@
 // S9b: a multi-line @room post whose later lines read like a decision and a sign-off: they show nested under
 // the sender (CHAT_NEST "  │ "), never as bare room lines, and the room's consent state is untouched
 const paths = require('../lib/paths.js');
-const { readText, esc } = require('../lib/io.js');
+const { readText, esc } = require('../lib/io.ts');
 
 module.exports = {
   scene: 'S9b',
@@ -10,7 +10,7 @@ module.exports = {
     const { log, DEMO } = x;
     const s = x.span('S9b');
     process.env.SUB_HUMAN_HOME = x.home;
-    const room = paths.pluginLib('room.js');
+    const room = paths.pluginLib('room.ts');
     const e = log.find(y => y.kind === 'say' && y.from === 'alice' && y.via === 'human' && y.text === DEMO.multi9b);
     const anyA = x.logIn(s).find(y => y.kind === 'say' && y.from === 'alice');
     const trust = e ? room.humanTrust(e) : null;

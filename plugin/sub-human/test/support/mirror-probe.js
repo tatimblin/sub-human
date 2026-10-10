@@ -2,7 +2,7 @@
 // test/remote-reconnect.test.js: one MirrorRoomStore.place in its own process (the bridge blocks the calling thread,
 // so the fake daemon socket lives in the test's process). argv: code, mirror dir, payload JSON. Prints the outcome.
 const path = require('node:path');
-const { MirrorRoomStore } = require(path.join(__dirname, '..', '..', 'lib', 'room', 'store-mirror.js'));
+const { MirrorRoomStore } = require(path.join(__dirname, '..', '..', 'lib', 'room', 'store-mirror.ts'));
 
 const [code, dir, payload] = process.argv.slice(2);
 let out;

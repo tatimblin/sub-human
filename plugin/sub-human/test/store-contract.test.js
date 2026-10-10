@@ -1,7 +1,7 @@
 'use strict';
-// The RoomStore contract (lib/room/store.js), run against FsRoomStore (the room directory), MemoryRoomStore
+// The RoomStore contract (lib/room/store.ts), run against FsRoomStore (the room directory), MemoryRoomStore
 // (test/support/memory-store.js), ThreadRoomStore (test/support/thread-store.js: every call crosses
-// lib/remote/bridge.js to an FsRoomStore on a worker) and MirrorRoomStore (test/support/remote-store.js: the
+// lib/remote/bridge.ts to an FsRoomStore on a worker) and MirrorRoomStore (test/support/remote-store.js: the
 // mirror of a room whose server and link run on a worker, over the memory transport): append, ids and the prev
 // chain, signed human entries (sig v2 placed anywhere, v1 still read), keys pinned in the log, place's replay and
 // trust checks, the rate buckets, readView parity, watch and tailer, chain checks, cursors, members
@@ -16,16 +16,16 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const room = require(path.join(h.LIB, 'room.js'));
-const config = require(path.join(h.LIB, 'config.js'));
-const envelope = require(path.join(h.LIB, 'room', 'envelope.js'));
-const consent = require(path.join(h.LIB, 'room', 'consent.js'));
-const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const room = require(path.join(h.LIB, 'room.ts'));
+const config = require(path.join(h.LIB, 'config.ts'));
+const envelope = require(path.join(h.LIB, 'room', 'envelope.ts'));
+const consent = require(path.join(h.LIB, 'room', 'consent.ts'));
+const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'));
 const { MemoryRoomStore } = require('./support/memory-store.js');
 const { ThreadRoomStore } = require('./support/thread-store.js');
 const { remoteStore, MACHINE } = require('./support/remote-store.js');
-const { machineId } = require(path.join(h.LIB, 'home.js'));
+const { machineId } = require(path.join(h.LIB, 'home.ts'));
 
 const CODE = 'otter-1234';
 const FILES = {
@@ -376,7 +376,7 @@ test('store contract (fs): members.update is atomic across processes (no lost up
   h.freshHome(t);
   const dir = h.tmpDir('sh-store-cas-', t);
   const N = 6, K = 15;
-  const script = `const s=require(${JSON.stringify(path.join(h.LIB, 'room', 'store.js'))}).open(${JSON.stringify(CODE)},{dir:${JSON.stringify(dir)}});`
+  const script = `const s=require(${JSON.stringify(path.join(h.LIB, 'room', 'store.ts'))}).open(${JSON.stringify(CODE)},{dir:${JSON.stringify(dir)}});`
     + `const t=Number(process.argv[1]);while(Date.now()<t){}for(let i=0;i<${K};i++)s.members.update(m=>{m.n=(m.n||0)+1;m['p'+process.pid]=(m['p'+process.pid]||0)+1;return m;});`;
   const start = Date.now() + 400;
   await Promise.all(Array.from({ length: N }, () => new Promise((resolve, reject) => {
@@ -407,7 +407,7 @@ test('store: setBackend routes every open() (identity included) to another store
   const mem = new MemoryRoomStore(CODE);
   store.setBackend(() => mem);
   try {
-    const identity = require(path.join(h.LIB, 'identity.js'));
+    const identity = require(path.join(h.LIB, 'identity.ts'));
     mem.members.update(() => ({ alice: { name: 'alice', role: 'member', seen_at: new Date().toISOString() } }));
     assert.deepEqual(Object.keys(identity.readMembers(CODE)), ['alice']);
     assert.equal(identity.seatAlive(identity.readMembers(CODE).alice), true, 'no pid: the lease decides');

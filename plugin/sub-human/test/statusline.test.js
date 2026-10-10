@@ -1,5 +1,5 @@
 'use strict';
-// statusline/index.js (agentStatusline) and statusline/segments.js: the agent-panel rows. The main status
+// statusline/index.js (agentStatusline) and statusline/segments.ts: the agent-panel rows. The main status
 // line is gone (Phase 2).
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -10,9 +10,9 @@ const { spawn, spawnSync } = require('node:child_process');
 
 const PLUGIN = path.join(__dirname, '..');
 for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE')) delete process.env[k];
-const identity = require(path.join(PLUGIN, 'lib', 'identity.js'));
-const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
-const segments = require(path.join(PLUGIN, 'statusline', 'segments.js'));
+const identity = require(path.join(PLUGIN, 'lib', 'identity.ts'));
+const rows = require(path.join(PLUGIN, 'lib', 'rows.ts'));
+const segments = require(path.join(PLUGIN, 'statusline', 'segments.ts'));
 const index = require(path.join(PLUGIN, 'statusline', 'index.js'));
 const { agentStatusline } = index;
 

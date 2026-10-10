@@ -1,15 +1,15 @@
-// Wiring: the prompt gate and the UserPromptSubmit shim (mod/prompt.mjs). Run with `npm run test:mods`.
+// Wiring: the prompt gate and the UserPromptSubmit shim (mod/prompt.ts). Run with `npm run test:mods`.
 // The gate's table and the prefilter are tested in node (test/mod-core.test.js, test/hooks/security.test.js); this
 // checks the hooks: a peer @room is dropped before anything beneath runs, an unseated prompt starts no node, a
-// seated one runs hooks/prompt.js with the origin in its stdin, and the shim's answer and notices reach the session.
+// seated one runs hooks/prompt.ts with the origin in its stdin, and the shim's answer and notices reach the session.
 import { test, expect, mock } from 'claude-code/testing'
-import { SEAT, OUT, ran, scriptOf, session, start } from './support.mjs'
+import { SEAT, OUT, ran, scriptOf, session, start } from './support.ts'
 
 const SID = 'sid-p'
 const NONCE = /^[0-9a-f]{32}$/
 
 /**
- * The engine beneath the plugin: a session, mod-hello answering `hello`, hooks/prompt.js answering `prompt`, and a
+ * The engine beneath the plugin: a session, mod-hello answering `hello`, hooks/prompt.ts answering `prompt`, and a
  * core that, like the engine's, runs the UserPromptSubmit hooks inside prompt.submit (cc CONTRACT
  * prompt-submit-ups-order). Returns what ran: the scripts and their stdin, the classic results, the logged lines.
  */
@@ -22,9 +22,9 @@ function world(engine: any, on: any, { hello = OUT as any, prompt = '', exitCode
   on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
   on('process.run', ($: any, e: any) => {
     const script = scriptOf(e)
-    if (script === 'presence.js') { seen.presence.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env }); return ran('') }
+    if (script === 'presence.ts') { seen.presence.push({ stdin: JSON.parse(e.init.stdin), env: e.init.env }); return ran('') }
     seen.scripts.push(script)
-    if (script === 'mod-hello.js') { seen.hellos.push(JSON.parse(e.init.stdin)); return ran(seen.hello ? JSON.stringify(seen.hello) : '', seen.hello ? 0 : 1) }
+    if (script === 'mod-hello.ts') { seen.hellos.push(JSON.parse(e.init.stdin)); return ran(seen.hello ? JSON.stringify(seen.hello) : '', seen.hello ? 0 : 1) }
     seen.stdin.push(JSON.parse(e.init.stdin))
     seen.env.push(e.init.env)
     return ran(prompt, exitCode)
@@ -50,7 +50,7 @@ test('a peer @room is dropped before any hook beneath runs; the reason is the dr
     expect(r.drop).toMatch(/not posted/)
   }
   expect(seen.entered).toEqual([])
-  expect(seen.scripts).toEqual(['mod-hello.js'])
+  expect(seen.scripts).toEqual(['mod-hello.ts'])
 })
 
 test('an unseated session starts no node for a plain prompt; an @room there still reaches node (its refusal)', async ($, on) => {
@@ -58,9 +58,9 @@ test('an unseated session starts no node for a plain prompt; an @room there stil
   await start($)
   await submit($, 'hello there')
   await submit($, '/sub-human alice')
-  expect(seen.scripts).toEqual(['mod-hello.js'])
+  expect(seen.scripts).toEqual(['mod-hello.ts'])
   await submit($, '@room hi')
-  expect(seen.scripts).toEqual(['mod-hello.js', 'prompt.js'])
+  expect(seen.scripts).toEqual(['mod-hello.ts', 'prompt.ts'])
   expect(seen.classic.at(-1).block).toMatch(/not in a room/)
 })
 
@@ -68,15 +68,15 @@ test('before the hello (or after it failed) every prompt runs node: the mod does
   const seen = world($, on, { hello: null })
   await start($)
   await submit($, 'hello')
-  expect(seen.scripts).toEqual(['mod-hello.js', 'prompt.js'])
+  expect(seen.scripts).toEqual(['mod-hello.ts', 'prompt.ts'])
 })
 
-test('a seated prompt runs hooks/prompt.js with the origin, the session env and shim mode; its answer and notice come back', async ($, on) => {
+test('a seated prompt runs hooks/prompt.ts with the origin, the session env and shim mode; its answer and notice come back', async ($, on) => {
   const out = { systemMessage: 'bob joined', subHuman: { reviewOpen: false }, hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'Room since your last turn: …', sessionTitle: 'alice.otter-4821' } }
   const seen = world($, on, { prompt: JSON.stringify(out) })
   await start($)
   await submit($, 'what is next?')
-  expect(seen.scripts).toEqual(['mod-hello.js', 'prompt.js'])
+  expect(seen.scripts).toEqual(['mod-hello.ts', 'prompt.ts'])
   expect(seen.stdin[0].prompt).toBe('what is next?')
   expect(seen.stdin[0].sub_human_origin).toBe('composer')
   expect(seen.env[0].CLAUDE_CODE_SESSION_ID).toBe(SID)
@@ -163,7 +163,7 @@ test('@claude in a room: a peer one is dropped like an @room, a typed one runs n
   expect(r.drop).toMatch(/this @claude came from another Claude session/)
   expect(seen.entered).toEqual([])
   await submit($, '@claude ship it')
-  expect(seen.scripts).toEqual(['mod-hello.js', 'prompt.js'])
+  expect(seen.scripts).toEqual(['mod-hello.ts', 'prompt.ts'])
   expect(seen.classic[0].block).toMatch(/could not check who wrote this @claude/)
   expect(seen.classic[0].suppressOriginalPrompt).toBe(true)
 })
@@ -175,7 +175,7 @@ test('@claude outside a room is an ordinary prompt: no drop, no node, even from 
   const r: any = await submit($, '@claude from a peer', 'peer')
   expect(r.drop).toBe(undefined)
   expect(seen.entered).toEqual(['@claude what is a monad?', '@claude from a peer'])
-  expect(seen.scripts).toEqual(['mod-hello.js'])
+  expect(seen.scripts).toEqual(['mod-hello.ts'])
   expect(seen.classic.every((c: any) => c.block === undefined)).toBe(true)
 })
 
@@ -227,7 +227,7 @@ test('an @room typed through Remote Control: a refusal is relayed as a prompt of
   expect(relayed()).toEqual(['sub-human: ✗ not posted: the room is offline']) // only the line the person reads
   const i = seen.entered.length - 1
   expect([...(seen.contexts[i] ?? []), ...(seen.classic[i].additionalContext ?? [])]).toEqual([expect.stringMatching(/^\(for Claude\) sub-human: .*It needs no reply/)])
-  expect(seen.scripts.filter(x => x === 'prompt.js').length).toBe(1) // no node for the relay
+  expect(seen.scripts.filter(x => x === 'prompt.ts').length).toBe(1) // no node for the relay
   // typed here, the same answer is a notice
   const n = seen.logs.length
   await submit($, '@room again')

@@ -1,0 +1,250 @@
+/**
+ * plugin/sub-human/lib/config.ts: every timing and size cap in one place, named. Zero dependencies.
+ * Callers import the value they use; an env override is read by the caller through envMs() at the moment it
+ * needs the value (tests set the env per child process, some per call).
+ *
+ * timingEnv(src) -> {name: value}   the SUB_HUMAN_*_MS overrides in src with a numeric value (lib/room-claude.ts passes
+ *   them to the room's Claude, whose env the bg daemon would otherwise filter out)
+ * envMs(name, fallback, {allowZero}?) -> number
+ *   process.env[name] as a number of milliseconds, else fallback. Unset, empty, non-numeric, negative or
+ *   infinite values give the fallback. 0 also gives the fallback, unless allowZero is set: only the waits
+ *   where 0 means "do not wait" take it (REAP_GRACE_MS, REAP_WAIT_MS, REWAKE_WAIT_MS; the tests run the
+ *   reaper and the rewake hook with no wait). Everywhere else 0 would mean a busy loop or an instant
+ *   flush, so it is ignored.
+ */
+
+function envMs(name, fallback, { allowZero = false } = {}) {
+  const raw = process.env[name];
+  if (raw == null || String(raw).trim() === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  if (n === 0 && !allowZero) return fallback;
+  return n;
+}
+
+/** Every override envMs reads is named SUB_HUMAN_<WHAT>_MS (test/room-claude.test.js checks the callers). */
+const TIMING_ENV_RE = /^SUB_HUMAN_[A-Z0-9_]+_MS$/;
+
+function timingEnv(src = process.env) {
+  const out = {};
+  for (const [k, v] of Object.entries(src || {})) {
+    if (!TIMING_ENV_RE.test(k) || v == null || String(v).trim() === '') continue;
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= 0) out[k] = String(v);
+  }
+  return out;
+}
+
+module.exports = {
+  envMs,
+  timingEnv,
+  TIMING_ENV_RE,
+
+  // ---------- the room tail (scripts/sub-human tail, the hooks module's child) ----------
+  // Entries are batched into one set of events (at most one wake): flushed after SETTLE_MS of quiet, or
+  // SETTLE_MAX_MS after the batch's first entry.
+  SETTLE_MS: 1500,                 // SUB_HUMAN_SETTLE_MS
+  SETTLE_MAX_MS: 5000,             // SUB_HUMAN_SETTLE_MAX_MS
+  // The headless room Claude waits longer (nobody watches its latency), so a burst lands as one turn.
+  ROOM_CLAUDE_SETTLE_MS: 3000,            // SUB_HUMAN_ROOM_CLAUDE_SETTLE_MS
+  ROOM_CLAUDE_SETTLE_MAX_MS: 10_000,      // SUB_HUMAN_ROOM_CLAUDE_SETTLE_MAX_MS
+  // A member_left waits this long for a rejoin; a leave + rejoin inside it is no notice at all.
+  LEAVE_SETTLE_MS: 8000,           // SUB_HUMAN_LEAVE_MS (tail, notices, rows, hold)
+  UNSEATED_MS: 10_000,             // SUB_HUMAN_UNSEATED_MS: no seat yet, look it up this rarely
+  RESOLVE_MS: 2000,                // SUB_HUMAN_RESOLVE_MS: seated, re-resolve the seat this often
+  TAIL_POLL_MS: 250,               // SUB_HUMAN_POLL_MS: the tail's log poll
+  FOLLOW_POLL_MS: 250,             // room.follow default poll
+  WATCH_POLL_MS: 500,              // `sub-human watch --follow` poll
+
+  // ---------- the tail loop's health (lib/tail.ts) ----------
+  // The tail never exits on an error (each restart by the mod costs a backoff): it logs (rate-limited), backs
+  // off and carries on. Every TAIL_HEALTH_MS it checks the log's hash chain from the log.idx checkpoint and,
+  // while it is the room's Claude, runs roomClaude.watchdog(code).
+  TAIL_HEALTH_MS: 5000,            // SUB_HUMAN_TAIL_HEALTH_MS
+  TAIL_BACKOFF_MS: 1000,           // SUB_HUMAN_TAIL_BACKOFF_MS: first retry delay after an error, doubled per failure
+  TAIL_BACKOFF_MAX_MS: 30_000,     // SUB_HUMAN_TAIL_BACKOFF_MAX_MS
+  TAIL_ERROR_LOG_MS: 60_000,       // SUB_HUMAN_TAIL_ERROR_LOG_MS: one stderr line per error site per this long
+  // Seated, the poll loop must have ticked within this long, or the next seat check restarts the session.
+  TAIL_STALL_MS: 60_000,           // SUB_HUMAN_TAIL_STALL_MS
+
+  // ---------- locks (lib/lock.ts) ----------
+  // Locks are held for milliseconds. A waiter gives up (throws LOCK) after the timeout.
+  LOCK_TIMEOUT_MS: 15_000,
+  // A lock whose owner cannot be checked (another host, an unreadable or legacy body) is stale after this.
+  LOCK_STALE_MS: 10_000,
+  // The row map (lib/rows.ts) is written from PostToolUse / SubagentStop hooks: wait less, then throw.
+  ROWS_LOCK_TIMEOUT_MS: 3000,
+  ROWS_LOCK_STALE_MS: 5000,
+  // A crashed breaker's `.break` file is removed after this (breaking takes microseconds).
+  LOCK_BREAK_STALE_MS: 2000,
+  LOCK_START_SLACK_S: 2,           // pid start-time tolerance when checking a lock owner for pid reuse
+  LOCK_REUSE_CHECK_MS: 1000,       // a live owner's lock younger than this is never checked for pid reuse
+
+  // ---------- the room's Claude (lib/room-claude.ts) ----------
+  SPAWN_TIMEOUT_MS: 30_000,        // `claude --bg` and `claude stop`
+  REAP_GRACE_MS: 10_000,           // SUB_HUMAN_REAP_GRACE_MS (allowZero): a quick rejoin cancels the reap
+  REAP_WAIT_MS: 20_000,            // SUB_HUMAN_REAP_WAIT_MS (allowZero): wait for task 1 before `claude stop`
+  REAP_POLL_MS: 500,
+  ROOM_CLAUDE_BIND_MS: 120_000,           // a spawned room Claude that never bound in this long is spawned again
+
+  // ---------- room Claude lifecycle: spawn claim, watchdog, seat liveness (lib/room-claude.ts, lib/identity.ts) ----------
+  // A {job:'pending'} spawn claim older than this is stale (its detached starter died or hung): the next
+  // join claims again. Longer than a stop + a spawn (2 x SPAWN_TIMEOUT_MS) plus the job lookup.
+  ROOM_CLAUDE_CLAIM_MS: 90_000,           // SUB_HUMAN_ROOM_CLAUDE_CLAIM_MS
+  // roomClaude.watchdog reaps a room that has had no live member for this long (members that crashed leave no
+  // SessionEnd, so no reaper was started for them).
+  ROOM_CLAUDE_ORPHAN_MS: 60_000,          // SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS
+  // A seat's stored pid start time must match the live pid's within this (ps lstart has 1 s resolution).
+  PID_START_SLACK_S: 2,
+  // The seat lease (identity.heartbeat / seatAlive): the tail's health tick and the hold server renew members'
+  // seen_at at most every SEAT_BEAT_MS; a seat with no pid to check (a remote store) is alive while seen_at is
+  // younger than SEAT_LEASE_MS. Locally the pid and its start time stay the primary check.
+  SEAT_BEAT_MS: 30_000,
+  SEAT_LEASE_MS: 120_000,
+
+  // ---------- hooks ----------
+  REWAKE_WAIT_MS: 3000,            // SUB_HUMAN_REWAKE_WAIT_MS (allowZero): row-rewake waits for the seat
+  REWAKE_POLL_MS: 100,
+  ROW_SPAWN_GRACE_MS: 60_000,      // a row spawned this recently may not hold yet: never re-listed
+
+  // ---------- hooks module (mod/, hooks/mod-hello.ts) ----------
+  // A lease not from the joining claude process counts this long after it was written (the pid match is the real check).
+  MOD_LEASE_FRESH_MS: 120_000,
+  MOD_RESTART_MS: 1000,            // the tail child restarts after this, doubling per failure
+  MOD_RESTART_MAX_MS: 60_000,
+  MOD_RESTART_STEADY_MS: 60_000,   // a child that ran this long starts the backoff over
+  MOD_DELIVERY_ERROR_LOG_MS: 300_000, // the delivery-error notice shows at most once per this
+
+  // ---------- remote rooms (lib/remote/bridge.ts) ----------
+  // A hook's synchronous call over the link gives up (OFFLINE) after this, well inside the hook timeout.
+  LINK_CALL_MS: 3000,              // hooks with a 10 s timeout
+  LINK_CALL_END_MS: 1000,          // SessionEnd (5 s timeout)
+  // The link daemon answers a hook's relayed op by this, inside LINK_CALL_MS, even when the host has not: a signed
+  // @room post sent already then stays in the outbox under its nonce ("⧗ sending (slow link)"), and any other op
+  // says its outcome is unknown, never "nothing was sent" (a slow link delivers the frame late; lib/remote/link.ts).
+  LINK_RELAY_MS: 2000,             // SUB_HUMAN_LINK_RELAY_MS
+  // One protocol frame (lib/remote/protocol.ts), bytes: a plan blob (PROPOSAL_FILE_MAX) in base64 fits.
+  LINK_FRAME_MAX_BYTES: 1024 * 1024,
+  // The link daemon (lib/remote/link.ts): the join hook waits this long for it to listen; a lost connection is
+  // tried again after a jittered delay from LINK_RETRY_MS up to LINK_RETRY_MAX_MS; it exits LINK_IDLE_MS after
+  // this machine has no seat left in the room.
+  LINK_START_MS: 3000,
+  LINK_HELLO_MS: 15_000,           // the daemon's hello: an ssh transport connects (and authenticates) first
+  // A wss/ws link's WebSocket (TCP, TLS, upgrade), before the Noise handshake: a ts.net name's first TLS handshake
+  // waits while Tailscale fetches its certificate (~20 s seen cold), so this is generous.
+  WS_CONNECT_MS: 45_000,           // SUB_HUMAN_WS_CONNECT_MS
+  // Retries use decorrelated jitter: each delay is random in [LINK_RETRY_MS, 3 x the last one], capped at
+  // LINK_RETRY_MAX_MS, so links that dropped together do not redial together.
+  LINK_RETRY_MS: 1000,             // SUB_HUMAN_LINK_RETRY_MS
+  LINK_RETRY_MAX_MS: 10_000,       // SUB_HUMAN_LINK_RETRY_MAX_MS: a healed link is back within ~10 s (was 30 s: 26 s after a heal, live run)
+  LINK_IDLE_MS: 60_000,            // SUB_HUMAN_LINK_IDLE_MS
+  // A planned handoff (lib/handoff.ts): the ask waits this long for the target's card answer; the new host's
+  // invites the old host hands out (also to a member that reconnects late) are kept this long; a manual promote
+  // needs the link down at least PROMOTE_OFFLINE_MS (else --force).
+  HANDOFF_ASK_MS: 10 * 60_000,     // SUB_HUMAN_HANDOFF_ASK_MS
+  HANDOFF_INVITE_MS: 24 * 60 * 60_000,
+  HANDOFF_CALL_MS: 6000,           // the target's accept op (the old host appends, releases its room Claude): in a 10 s hook
+  PROMOTE_OFFLINE_MS: 10 * 60_000, // SUB_HUMAN_PROMOTE_OFFLINE_MS
+  // An sh2 invite (lib/remote/auth.ts): the host checks its PIN online only, INVITE_PIN_TRIES times, and the invite
+  // burns at the last wrong one or INVITE_TTL_MS after it was minted (whichever is first), or on success.
+  INVITE_TTL_MS: 15 * 60_000,
+  INVITE_PIN_TRIES: 5,
+  // A short invite (a 4-digit PIN, lib/remote/enroll.ts): the same 15 minutes and 5 tries, counted when the host
+  // answers an attempt (an attempt abandoned after that still costs its try). At most SHORT_LIVE_MAX open per room;
+  // ENROLL_MS bounds one attempt. The joiner's key then waits ADMIT_TTL_MS for the host person's card (Let in /
+  // Refuse) before it lapses.
+  SHORT_LIVE_MAX: 4,
+  ENROLL_MS: 20_000,               // SUB_HUMAN_ENROLL_MS
+  ADMIT_TTL_MS: 10 * 60_000,       // SUB_HUMAN_ADMIT_TTL_MS
+  // The join hook waits this long for a fresh link's first hello (redeem or refusal) before it answers.
+  LINK_JOIN_WAIT_MS: 6000,
+  // The app-level heartbeat (op ping, to a server whose caps list it): a ping every LINK_PING_MS; no pong within
+  // LINK_PONG_MS makes the link suspect (a new connection is made before the old one is dropped); none within
+  // LINK_DEAD_MS declares it dead (a half-open TCP or ssh link after a sleep). The server closes a session that
+  // said hello with caps.ping and then sent nothing for LINK_SILENT_MS.
+  LINK_PING_MS: 15_000,            // SUB_HUMAN_LINK_PING_MS
+  LINK_PONG_MS: 5000,              // SUB_HUMAN_LINK_PONG_MS
+  LINK_DEAD_MS: 10_000,            // SUB_HUMAN_LINK_DEAD_MS
+  LINK_SILENT_MS: 45_000,          // SUB_HUMAN_LINK_SILENT_MS (server side: 3 pings missed)
+  // Wake from sleep: a timer that ticks every LINK_WAKE_TICK_MS and finds the wall clock moved more than
+  // LINK_WAKE_GAP_MS past the tick (or away from the monotonic clock) means the machine slept: redial at once.
+  LINK_WAKE_TICK_MS: 2000,         // SUB_HUMAN_LINK_WAKE_TICK_MS
+  LINK_WAKE_GAP_MS: 5000,          // SUB_HUMAN_LINK_WAKE_GAP_MS
+  // A changed set of network addresses (os.networkInterfaces, polled this often) redials at once too.
+  LINK_NET_POLL_MS: 5000,          // SUB_HUMAN_LINK_NET_POLL_MS
+  // The @room outbox (lib/remote/outbox.ts): while the link is down a person's @room post is queued, at most
+  // LINK_OUTBOX_MAX posts, each for at most LINK_OUTBOX_AGE_MS. The host refuses a signature whose ts is more
+  // than SIG_SKEW_MS (10 min, lib/room/envelope.ts) from its clock, and the daemon never re-signs, so a post
+  // queued longer could never be placed: the age stays inside that window, with a minute for clock skew.
+  LINK_OUTBOX_MAX: 50,
+  LINK_OUTBOX_AGE_MS: 9 * 60_000,  // SUB_HUMAN_LINK_OUTBOX_AGE_MS
+
+  // ---------- rows (lib/rows.ts) ----------
+  PRESENCE_STALE_MS: 6 * 60 * 60 * 1000,
+  HOLDS_STALE_MS: 90_000,          // a holds file not refreshed in this long is dead
+  MISSING_GRACE_MS: 45_000,        // a member who joined this recently is covered by their join notice
+  ROW_NOTICE_MS: 120_000,          // a join / leave leads the room row this long
+  NOTICE_FRESH_MS: 90_000,         // only notices this young are delivered at the moment
+
+  // ---------- the hold tool (mcp/hold.ts) ----------
+  HOLD_BEAT_MS: 20_000,            // SUB_HUMAN_HOLD_BEAT_MS: progress re-sent so the MCP idle timeout never fires
+  HOLD_POLL_MS: 1000,              // SUB_HUMAN_HOLD_POLL_MS
+  HOLD_GRACE_MS: 20_000,           // SUB_HUMAN_HOLD_GRACE_MS: a name is announced only after this without a hold
+  HOLD_RESPAWN_MS: 1500,           // SUB_HUMAN_HOLD_RESPAWN_MS
+  HOLD_WHO_MS: 3000,               // SUB_HUMAN_HOLD_WHO_MS: how often `me` is re-resolved
+  HOLD_ROOM_GAP_MS: 30_000,        // SUB_HUMAN_HOLD_ROOM_GAP_MS: a returned room hold still counts as running
+  HOLD_RESPAWN_AFTER_RETURN_MS: 30_000, // a room hold that returned this recently still respawns a cancelled row
+
+  // ---------- room log (lib/room/*) ----------
+  RATE_MAX: 6,                     // agent posts to the room per `from` per RATE_WINDOW_MS
+  // Posts addressed to one member (to !== 'room') have their own bucket per (from, to): Claudes on two machines
+  // talk this way (native SendMessage does not cross machines), so a reply never eats the room budget.
+  RATE_ADDRESSED_MAX: 10,
+  RATE_WINDOW_MS: 60_000,
+
+  // ---------- room log integrity (lib/room/{store,validate,render}.js) ----------
+  ENTRY_TEXT_MAX_BYTES: 16 * 1024, // an entry's text, UTF-8 bytes (validate)
+  ENTRY_REFS_MAX: 50,              // refs per entry (validate)
+  ENTRY_STR_MAX: 4000,             // any other string field, JS .length (validate)
+  ENTRY_LIST_MAX: 50,              // approvers / blockedBy entries (validate)
+  LOG_LINE_MAX_BYTES: 64 * 1024,   // one serialized log line, UTF-8 bytes (append refuses longer)
+  CHAT_LINES_MAX: 20,              // text lines shown per chat message; the rest is "[+N more lines: read(...)]"
+  CHAT_NEST: '  │ ',              // the prefix of every continuation line of a chat message
+
+  // ---------- size caps (code points unless noted) ----------
+  CONTEXT_CAP: 9500,               // hook additionalContext (the CLI caps SessionStart / prompt context at 10k)
+  DIGEST_CAP: 9500,                // room.digest()
+  TAIL_MAX: 240,                   // room.line() compact form
+  TEXT_MAX: 2000,                  // room.line({full}) text
+  CHAT_WRAP: 400,                  // one chat output line
+  CHAT_MAX: 1500,                  // one chat message shown; the rest stays in the log
+  PULL_CAP: 1500,                  // the tail's "Room since your last turn" (pull event)
+  BLOCK_MAX: 900,                  // the join / restore mechanics block, with 5 members
+  ROW_MAX: 60,                     // a panel row's text
+  HOLD_MSG_MAX: 140,               // a hold progress line (+ its hint fits two row-view lines at 120 columns)
+  READ_MAX: 100,                   // the MCP read tool's unseen entries
+  SHOWN_MAX: 200,                  // notices-NAME.json ids kept
+  PRESENCE_DETAIL_MAX: 200,
+  TRANSCRIPT_TAIL_BYTES: 512 * 1024,
+  PROPOSAL_TITLE_MAX: 160,         // the proposal entry's title line, and each summary line of the card
+  PREVIEW_MAX: 2000,               // the card withholds a preview longer than this (JS .length)
+  PREVIEW_LINES: 20,               // about 24 lines show at 50 rows; keep a margin
+  SUMMARY_MAX: 1200,
+  SUMMARY_LINES: 12,
+  VIEW_MAX: 200_000,               // the plan dialog withholds approval above this (JS .length)
+  PROPOSAL_FILE_MAX: 256 * 1024,   // bytes
+  TASK_SUBJECT_MAX: 200,           // the task tool (JS .length)
+  TASK_DETAIL_MAX: 2000,
+  TASK_EVIDENCE_MAX: 2000,
+  TASK_REQ_DETAIL_SHOWN: 200,      // a task_req entry's text shows this much of the detail
+  TASK_REQ_EVIDENCE_SHOWN: 400,
+
+  // ---------- consent (lib/room/consent.ts, lib/proposal.ts, lib/rows.ts, hooks/consent.ts, hooks/session-restore.ts) ----------
+  ROW_TITLE_MAX: 24,               // a proposal's title in a panel row ("✔ decided Cursor paging")
+  REVIEW_LOCK_TIMEOUT_MS: 3000,    // members/NAME/review.json read-modify-write lock (hooks time out at 5-10 s)
+  // Pre(ExitPlanMode) needs the model's own input from the transcript, which 2.1.292 may not have written yet
+  // when the hook runs (and tool_input.plan is the plan file's text, empty before the review): poll this long.
+  EXIT_INPUT_WAIT_MS: 1500,        // SUB_HUMAN_EXIT_INPUT_WAIT_MS
+  EXIT_INPUT_POLL_MS: 50,
+  REVIEW_STALE_MS: 30 * 60 * 1000, // a plan-view review open this long is stuck: session-restore restores the plan file
+};

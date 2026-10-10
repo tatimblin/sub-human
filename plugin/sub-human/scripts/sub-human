@@ -7,13 +7,13 @@
  * (identity.resolveSelf(): the session id env, then the nearest registered ancestor claude pid).
  *
  *   sub-human tail [--ndjson] [--max-seconds S]
- *       The hooks module's child (mod/deliver.mjs starts it with $.process.spawn, CLAUDE_CODE_SESSION_ID set to the
+ *       The hooks module's child (mod/deliver.ts starts it with $.process.spawn, CLAUDE_CODE_SESSION_ID set to the
  *       session's id; --ndjson is accepted for that argv and is the only output). Silent until this session has a
  *       seat: while it has none it looks the seat up by CLAUDE_CODE_SESSION_ID / CLAUDE_PID every
  *       SUB_HUMAN_UNSEATED_MS (10000; a `ps` ancestor walk only when neither is set). Once seated it re-resolves
  *       every SUB_HUMAN_RESOLVE_MS (2000), follows that room from the cursor deliver-<name> (without re-reading
  *       the log from byte 0) and writes one JSON event per line for the mod to route (seat, chat, pull, wake,
- *       rows, health; lib/tail.js documents them), switching (or going silent) if the seat changes.
+ *       rows, health; lib/tail.ts documents them), switching (or going silent) if the seat changes.
  *       Settle: entries are batched and written as ONE set of events (at most one wake) after
  *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most (the room's Claude: 3000 / 10000,
  *       SUB_HUMAN_ROOM_CLAUDE_SETTLE_MS / SUB_HUMAN_ROOM_CLAUDE_SETTLE_MAX_MS). Each entry is judged again against the log at
@@ -22,7 +22,7 @@
  *       A member's chat is a group chat (room.chatLines, no ids): "bob: <exact words>", "bob's Claude: …",
  *       "bob joined", "bob left". Lines meant only for Claude start with "(for Claude)". The room Claude's wake opens
  *       with room.stateLine() ("room now: …"), then one room.line(e, {full}) per entry (ids kept: its tools take
- *       them), a leave marked "· away 8s+"; its member_joined is pushed when lib/rows.js joinNote() says that
+ *       them), a leave marked "· away 8s+"; its member_joined is pushed when lib/rows.ts joinNote() says that
  *       member's row is not running (the line ends with the note and the Agent call).
  *       It never exits on an error: it logs to stderr (rate-limited), backs off and carries on. Every
  *       SUB_HUMAN_TAIL_HEALTH_MS (5000) it checks the log's hash chain and, as the room's Claude, runs roomClaude.watchdog(code).
@@ -33,7 +33,7 @@
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
  *   sub-human who                      this session's identity: "<name> (<role>) in <code>"
  *   sub-human tasks [--json] [--room CODE]
- *       the room's shared task list (lib/tasks.js list(code), the room Claude's native list mirrored to
+ *       the room's shared task list (lib/tasks.ts list(code), the room Claude's native list mirrored to
  *       the room document `tasks`): "#2 in_progress  bob  parser tests". --json prints the array.
  *   sub-human watch NAME [--room CODE] [--follow|--no-follow]
  *       NAME's thread: their own words, their Claude's posts (labelled "NAME's Claude"), their answers,
@@ -43,52 +43,52 @@
  *       Claude Code's subagentStatusLine command (statusline/*). Never fails: on any error it prints
  *       nothing and exits 0.
  *   sub-human serve --stdio CODE [--link ID [--login]]
- *       One remote connection to room CODE hosted here (lib/remote/server.js): protocol frames on stdin and
- *       stdout (lib/remote/transports/pipe.js), errors on stderr; exits when stdin ends. A remote machine's
+ *       One remote connection to room CODE hosted here (lib/remote/server.ts): protocol frames on stdin and
+ *       stdout (lib/remote/transports/pipe.ts), errors on stderr; exits when stdin ends. A remote machine's
  *       link spawns it (a pipe), or sshd runs it as the forced command the host's admit wrote. Without a link token
  *       or an invite it answers hello and nothing else. --link ID: only that link's token (or the invite
  *       reserved for it) is accepted; any other is AUTH. A room this machine only mirrors is not served, unless
- *       the room moved away from here (lib/handoff.js): then this machine's old log is served read-only, so a
+ *       the room moved away from here (lib/handoff.ts): then this machine's old log is served read-only, so a
  *       member that reconnects late still gets the line that moved the room and its invite to the new host.
  *       --login: run over this account's own ssh login (`/sub-human join USER@HOST ROOM` on the other machine
- *       names the shim, <home>/bin/serve, with it): a hello with no token makes link ID (lib/remote/server.js), as
+ *       names the shim, <home>/bin/serve, with it): a hello with no token makes link ID (lib/remote/server.ts), as
  *       a process of this account may. Refused under SSH_ORIGINAL_COMMAND (a forced command: a restricted key, whose
  *       line fixes its arguments without --login anyway, or a ForceCommand).
  *   sub-human serve --enroll CODE --kind ssh|ws|pipe
- *       One PIN attempt at room CODE hosted here (lib/remote/enroll.js serveEnroll): the CPace exchange and
+ *       One PIN attempt at room CODE hosted here (lib/remote/enroll.ts serveEnroll): the CPace exchange and
  *       nothing else; it never serves the room. The ssh enrollment door's forced command and the web listener run it.
  *   sub-human link CODE [--reset]
- *       The link daemon of room CODE, hosted on another machine (lib/remote/link.js run): the join hook starts it
+ *       The link daemon of room CODE, hosted on another machine (lib/remote/link.ts run): the join hook starts it
  *       detached; it exits on its own once this machine has no seat left in the room. --reset (with no daemon
  *       running, e.g. after a FORK): forget this machine's copy of the room and start the daemon to copy it again.
  *   sub-human invite [--room ROOM] [--ssh [USER@HOST[:PORT]] [--via JUMP] | --web | --public | --url URL [--port P]]
- *       An invite line and its PIN, as /sub-human invite shows them (lib/cli/host.js; lib/remote/hosting.js hostInvite,
- *       webhost.js hostWeb). Over ssh by default, to this machine's own address (SUB_HUMAN_SSH_ADDR, else
+ *       An invite line and its PIN, as /sub-human invite shows them (lib/cli/host.ts; lib/remote/hosting.ts hostInvite,
+ *       webhost.ts hostWeb). Over ssh by default, to this machine's own address (SUB_HUMAN_SSH_ADDR, else
  *       user@hostname): the PIN vouches for this machine's sshd Ed25519 host key. --web: Tailscale Serve (tailnet only),
  *       --public: Tailscale Funnel, --url: any HTTPS front of your own, to the listener. --pipe: a second home here
  *       (tests, the demo). The host's card lets the joiner in
  *   sub-human invite --stop [--room ROOM]        stop serving the room over the web
  *   sub-human invite --cancel [REF] [--room ROOM]   cancel an invite nobody used (no REF: the one open, or the list)
- *   sub-human admit [REF [--refuse] [--yes]] [--room ROOM]                    (lib/cli/host.js)
+ *   sub-human admit [REF [--refuse] [--yes]] [--room ROOM]                    (lib/cli/host.ts)
  *       The join requests waiting for the host (no REF), or let one in (y/N first; --yes skips it), or --refuse it.
  *       The card in the host's session is the usual way; this is for a host with no session open.
- *   sub-human kick NAME [--room ROOM] [--file AUTHORIZED_KEYS]                (lib/cli/host.js)
+ *   sub-human kick NAME [--room ROOM] [--file AUTHORIZED_KEYS]                (lib/cli/host.ts)
  *       End NAME's connection: token burnt, its authorized_keys lines removed, its seats leave, a room line says so.
- *   sub-human prime ROOM [--persist 8h]                                       (lib/cli/host.js)
+ *   sub-human prime ROOM [--persist 8h]                                       (lib/cli/host.ts)
  *       On the joining machine: open a shared ssh connection (ControlMaster) for room ROOM's link, interactively,
  *       so an MFA bastion or host asks once; the link daemon then rides it.
- *   sub-human listen [--port 7420] | --start [--port P] | --stop | --status   (lib/cli/listen.js)
- *       The host's WebSocket listener (lib/remote/listener.js): 127.0.0.1 only, a Noise_NK handshake per connection,
+ *   sub-human listen [--port 7420] | --start [--port P] | --stop | --status   (lib/cli/listen.ts)
+ *       The host's WebSocket listener (lib/remote/listener.ts): 127.0.0.1 only, a Noise_NK handshake per connection,
  *       then `<home>/bin/serve --stdio CODE` for it. Without a flag it runs in this process.
  *   sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS]
- *       What is wrong on this machine and the fix for each (lib/cli/doctor.js): node, the home's modes, the serve
+ *       What is wrong on this machine and the fix for each (lib/cli/doctor.ts): node, the home's modes, the serve
  *       shim, authorized_keys lines that bypass it, ssh, each link (state, last error, a hello to its host with
  *       both protocol versions, clock skew), Claude Code against the internals, hooks, Remote Control. --bundle
  *       writes the same, redacted, for a bug report. Exit 1 when a check fails.
  *   sub-human handoff NAME [--room CODE] [--as SEAT] [--ssh USER@HOST[:PORT]] | handoff --status [--room CODE]
  *   sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT]] [--force] --confirm CODE
  *   sub-human demote CODE INVITE PIN
- *       Moving the room's host (lib/handoff.js; the bodies are lib/cli/handoff.js): a planned handoff to a member on
+ *       Moving the room's host (lib/handoff.ts; the bodies are lib/cli/handoff.ts): a planned handoff to a member on
  *       another machine (their card decides), the manual promote of this machine's copy when the host is gone for
  *       good (it can fork the room), and each other machine's way to follow it with the invite promote printed for
  *       it (the old host's own lines kept aside as orphaned).
@@ -98,12 +98,12 @@
 
 const path = require('node:path');
 const LIB = path.join(__dirname, '..', 'lib');
-const identity = require(path.join(LIB, 'identity.js'));
-const room = require(path.join(LIB, 'room.js'));
-const tasks = require(path.join(LIB, 'tasks.js'));
-const config = require(path.join(LIB, 'config.js'));
-const cc = require(path.join(LIB, 'cc.js'));
-const tailLib = require(path.join(LIB, 'tail.js'));
+const identity = require(path.join(LIB, 'identity.ts'));
+const room = require(path.join(LIB, 'room.ts'));
+const tasks = require(path.join(LIB, 'tasks.ts'));
+const config = require(path.join(LIB, 'config.ts'));
+const cc = require(path.join(LIB, 'cc.ts'));
+const tailLib = require(path.join(LIB, 'tail.ts'));
 const statusline = require(path.join(__dirname, '..', 'statusline', 'index.js'));
 
 const NOT_IN_ROOM = 'not in a room; type /sub-human in your Claude Code session';
@@ -113,9 +113,9 @@ function die(msg, code = 2) {
   process.exit(code);
 }
 
-/** lib/cli/args.js parse, dying on its error (exit 2). */
+/** lib/cli/args.ts parse, dying on its error (exit 2). */
 function parseFlags(args, spec) {
-  const p = require(path.join(LIB, 'cli', 'args.js')).parse(args, spec);
+  const p = require(path.join(LIB, 'cli', 'args.ts')).parse(args, spec);
   if (p.error) die(p.error);
   return p;
 }
@@ -138,7 +138,7 @@ function openRoom(explicit) {
   return { code: me.code, me, r: room.open(me.code) };
 }
 
-// ---------- tail: lib/tail.js runTail ----------
+// ---------- tail: lib/tail.ts runTail ----------
 function tail(args) {
   const { flags } = parseFlags(args, { 'max-seconds': 1, ndjson: 0 }); // --ndjson: the only output, accepted
   let maxSeconds = null;
@@ -173,9 +173,9 @@ function tail(args) {
 }
 
 // ---------- agent-statusline: dispatch to statusline/* ----------
-// lib/io.js readInput, never hooks/common.js: requiring that arms the seat-key signer (via=human writes), which
+// lib/io.ts readInput, never hooks/common.ts: requiring that arms the seat-key signer (via=human writes), which
 // the CLI and the tail must never load.
-const { readInput } = require(path.join(LIB, 'io.js'));
+const { readInput } = require(path.join(LIB, 'io.ts'));
 
 /** statusline agentStatusline(input) -> text ({"id","content"} lines); whatever goes wrong, print nothing and exit 0. */
 function agentStatusline() {
@@ -217,7 +217,7 @@ function who() {
 }
 
 // ---------- tasks ----------
-/** lib/tasks.js list(code): the room document `tasks` as the mirror writes it. */
+/** lib/tasks.ts list(code): the room document `tasks` as the mirror writes it. */
 const taskList = code => tasks.list(code) || [];
 
 function tasksCmd(args) {
@@ -287,13 +287,13 @@ function watch(args) {
   r.watch(print, { after: 0, intervalMs: config.WATCH_POLL_MS });
 }
 
-// ---------- serve --stdio CODE: lib/remote/server.js ----------
+// ---------- serve --stdio CODE: lib/remote/server.ts ----------
 function serve(args) {
   const { flags, rest } = parseFlags(args, { stdio: 0, link: 1, login: 0, enroll: 1, kind: 1 });
   if (flags.enroll !== undefined) return serveEnroll(flags, rest);
   const code = rest[0];
   if (!flags.stdio || !code || rest.length > 1) die('usage: sub-human serve --stdio CODE [--link ID [--login]]');
-  const { LINK_ID_RE } = require(path.join(LIB, 'remote', 'auth.js'));
+  const { LINK_ID_RE } = require(path.join(LIB, 'remote', 'auth.ts'));
   if (flags.link !== undefined && !LINK_ID_RE.test(flags.link)) die(`bad link id "${flags.link}"`);
   if (flags.login && flags.link === undefined) die('sub-human serve --login: names no --link ID');
   // sshd sets SSH_ORIGINAL_COMMAND only when a forced command runs (an authorized_keys command="…" or ForceCommand): a
@@ -302,63 +302,63 @@ function serve(args) {
     die('sub-human serve --login: refused: this connection came through a forced command (a restricted ssh key or ForceCommand), not your own ssh login; join with an invite (/sub-human invite on the host)', 1);
   }
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
-  const server = require(path.join(LIB, 'remote', 'server.js'));
-  const pipe = require(path.join(LIB, 'remote', 'transports', 'pipe.js'));
+  const server = require(path.join(LIB, 'remote', 'server.ts'));
+  const pipe = require(path.join(LIB, 'remote', 'transports', 'pipe.ts'));
   let s = room.open(code).store;
   if (!s.isHost) {
-    const handoff = require(path.join(LIB, 'handoff.js'));
+    const handoff = require(path.join(LIB, 'handoff.ts'));
     if (!handoff.movedAway(s)) die(`room "${code}" is not hosted on this machine (it holds a copy)`, 1);
-    s = require(path.join(LIB, 'room', 'store.js')).open(code, { dir: s.dir }); // the old log, read-only: it moved
+    s = require(path.join(LIB, 'room', 'store.ts')).open(code, { dir: s.dir }); // the old log, read-only: it moved
   }
   const srv = server.serve(pipe.stdio(), { store: s, linkId: flags.link, login: !!flags.login, log: msg => process.stderr.write(msg + '\n') });
   // `sub-human kick` stops this with SIGTERM: tell the link it was revoked first, so its daemon stops, not redials
   process.once('SIGTERM', () => { const told = srv.revoked(); setTimeout(() => process.exit(0), told ? 200 : 0); });
 }
 
-// serve --enroll CODE --kind ssh|ws|pipe: one short-code attempt (lib/remote/enroll.js), the PAKE and nothing else. The
+// serve --enroll CODE --kind ssh|ws|pipe: one short-code attempt (lib/remote/enroll.ts), the PAKE and nothing else. The
 // ssh enrollment door's forced command and the web listener run it; whatever command the other side asked for is ignored.
 function serveEnroll(flags, rest) {
   const code = flags.enroll;
   if (rest.length || !['ssh', 'ws', 'pipe'].includes(flags.kind) || !identity.CODE_RE.test(String(code))) die('usage: sub-human serve --enroll CODE --kind ssh|ws|pipe');
   if (!identity.roomExists(code) || !identity.isHost(code)) die(`no room "${code}" is hosted here`, 1);
-  const enroll = require(path.join(LIB, 'remote', 'enroll.js'));
-  const pipe = require(path.join(LIB, 'remote', 'transports', 'pipe.js'));
+  const enroll = require(path.join(LIB, 'remote', 'enroll.ts'));
+  const pipe = require(path.join(LIB, 'remote', 'transports', 'pipe.ts'));
   const s = room.open(code).store;
   enroll.serveEnroll(pipe.stdio(), { store: s, kind: flags.kind, log: msg => process.stderr.write(msg + '\n') })
     .then(() => process.stdout.write('', () => process.exit(0)), e => die(e.message, 1));
 }
 
-// ---------- link CODE [--reset]: lib/remote/link.js ----------
+// ---------- link CODE [--reset]: lib/remote/link.ts ----------
 function linkCmd(args) {
   const { flags, rest } = parseFlags(args, { reset: 0 });
   const code = rest[0];
   if (!code) die('usage: sub-human link CODE [--reset]');
   const s = room.open(code).store;
   if (s.isHost) die(`this machine hosts room "${code}"; there is no connection to start`, 1);
-  const link = require(path.join(LIB, 'remote', 'link.js'));
+  const link = require(path.join(LIB, 'remote', 'link.ts'));
   if (!flags.reset) return link.run({ code }).then(() => process.exit(0), e => die(e.message, 1));
   const st = link.status(code);
   if (st.running) die(`the connection to room ${code} is running (pid ${st.pid}); it copies the room afresh only once stopped (kill ${st.pid}, then run this again)`, 1);
   s.reset();
-  if (!link.start(code)) die(`the connection to room ${code} did not start; ${require(path.join(LIB, 'text.js')).cliLine('doctor')} says why`, 1);
+  if (!link.start(code)) die(`the connection to room ${code} did not start; ${require(path.join(LIB, 'text.ts')).cliLine('doctor')} says why`, 1);
   console.log(`room ${code}: copying it again from the host`);
 }
 
 const [cmd, ...args] = process.argv.slice(2);
-// Keep the SSH serve shim's pointer on this install and node (lib/remote/shim.js); not on the status line's hot path,
+// Keep the SSH serve shim's pointer on this install and node (lib/remote/shim.ts); not on the status line's hot path,
 // and never creating a home. Passive: a dev checkout's run never takes the pointer from another live install.
 if (cmd !== 'agent-statusline' && cmd !== 'doctor') { // doctor reports the shim as it is (--fix refreshes it)
-  try { if (require('node:fs').existsSync(identity.home())) require(path.join(LIB, 'remote', 'shim.js')).refresh(); } catch { /* best effort */ }
+  try { if (require('node:fs').existsSync(identity.home())) require(path.join(LIB, 'remote', 'shim.ts')).refresh(); } catch { /* best effort */ }
 }
-const doctor = args => require(path.join(LIB, 'cli', 'doctor.js')).main(args).then(c => process.exit(c), e => die(e.message, 2));
+const doctor = args => require(path.join(LIB, 'cli', 'doctor.ts')).main(args).then(c => process.exit(c), e => die(e.message, 2));
 const cmds = { doctor, tail, read, digest, who, tasks: tasksCmd, watch, serve, link: linkCmd, 'agent-statusline': agentStatusline };
 // lib/cli/*: each returns the exit code
 const viaCli = (file, fn) => a => process.exit(require(path.join(LIB, 'cli', file))[fn](a));
-Object.assign(cmds, { invite: viaCli('host.js', 'invite'), admit: viaCli('host.js', 'admit'), kick: viaCli('host.js', 'kick'), prime: viaCli('host.js', 'prime') });
+Object.assign(cmds, { invite: viaCli('host.ts', 'invite'), admit: viaCli('host.ts', 'admit'), kick: viaCli('host.ts', 'kick'), prime: viaCli('host.ts', 'prime') });
 // listen without --start/--stop/--status is the daemon itself: it returns null and keeps running
-Object.assign(cmds, { listen: a => { const c = require(path.join(LIB, 'cli', 'listen.js')).listen(a); if (c !== null) process.exit(c); } });
-// handoff, promote, demote: lib/cli/handoff.js
-const handoffCli = name => args => require(path.join(LIB, 'cli', 'handoff.js'))[name](args, { die, out: l => console.log(l), err: l => console.error(l) });
+Object.assign(cmds, { listen: a => { const c = require(path.join(LIB, 'cli', 'listen.ts')).listen(a); if (c !== null) process.exit(c); } });
+// handoff, promote, demote: lib/cli/handoff.ts
+const handoffCli = name => args => require(path.join(LIB, 'cli', 'handoff.ts'))[name](args, { die, out: l => console.log(l), err: l => console.error(l) });
 Object.assign(cmds, { handoff: handoffCli('handoff'), promote: handoffCli('promote'), demote: handoffCli('demote') });
 try {
   (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID [--login]] | link CODE [--reset] | invite [--ssh [USER@HOST]] [--via JUMP] | invite --web|--public|--url URL | invite --stop | invite --cancel [REF] | admit [REF] | kick NAME | prime ROOM | listen [--port P] [--start|--stop|--status] | handoff NAME | promote CODE | demote CODE INVITE PIN | doctor [--bundle [FILE]] | agent-statusline')))(args);

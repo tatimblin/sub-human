@@ -2,8 +2,8 @@
 'use strict';
 /**
  * scripts/remote-docker/lab/attack.js: someone who knows a room's code and can reach the host's sshd, but not the
- * 4-digit PIN, at the invite's enrollment door (lib/remote/enroll.js). Run inside a joiner container as its
- * user: `node /lab/attack.js CODE SSH_CONFIG [AVOID]`. The enrollment key is public (lib/remote/sshkeys.js
+ * 4-digit PIN, at the invite's enrollment door (lib/remote/enroll.ts). Run inside a joiner container as its
+ * user: `node /lab/attack.js CODE SSH_CONFIG [AVOID]`. The enrollment key is public (lib/remote/sshkeys.ts
  * enrollKey: derived from the room code), so the attacker has it. It tries, through that key:
  *   shell    a command of its own (`id`): the forced command runs instead, and answers no shell
  *   pty      a terminal (-tt): refused by `restrict`
@@ -20,8 +20,8 @@ const { spawnSync } = require('node:child_process');
 
 const [code, conf, avoid = ''] = process.argv.slice(2);
 const lib = name => require(path.join('/plugin', 'lib', name));
-const sshkeys = lib('remote/sshkeys.js');
-const enroll = lib('remote/enroll.js');
+const sshkeys = lib('remote/sshkeys.ts');
+const enroll = lib('remote/enroll.ts');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'attack-'));
 const key = sshkeys.writeEnrollKey(dir, code);
 const kh = path.join(dir, 'kh');

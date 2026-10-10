@@ -1,4 +1,4 @@
-// Wiring: the room's delivery through the hooks module (mod/deliver.mjs). Run with `npm run test:mods`.
+// Wiring: the room's delivery through the hooks module (mod/deliver.ts). Run with `npm run test:mods`.
 // The routing table and the turn ledger are tested in node (test/mod-core.test.js, test/mod-core-deliver.test.js);
 // the tail's events in test/tail.test.js. This checks the hooks: session.start spawns `node scripts/sub-human tail
 // --ndjson` for a seated session, restarted with backoff and stopped at the session's end, and its events reach
@@ -10,7 +10,7 @@
 // as a delivery error, and a mid-turn wake falls back to a prompt. The test's $ has no state noun either, so
 // deliveryErrors shows here only through its notice. A live check saw both appends land.
 import { test, expect, mock } from 'claude-code/testing'
-import { SEAT, OUT, ran, scriptOf, session, start } from './support.mjs'
+import { SEAT, OUT, ran, scriptOf, session, start } from './support.ts'
 
 const SID = 'sid-d'
 const line = (x: any) => JSON.stringify(x) + '\n'
@@ -52,8 +52,8 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
   on('process.run', ($: any, e: any) => {
     const script = scriptOf(e)
     seen.scripts.push(script)
-    if (script === 'prompt.js') return ran(JSON.stringify({ subHuman: { reviewOpen: false } }))
-    return ran(script === 'mod-hello.js' ? JSON.stringify(hello) : '')
+    if (script === 'prompt.ts') return ran(JSON.stringify({ subHuman: { reviewOpen: false } }))
+    return ran(script === 'mod-hello.ts' ? JSON.stringify(hello) : '')
   })
   on('process.spawn', async function* ($: any, e: any) {
     const n = seen.spawns.length
@@ -159,16 +159,16 @@ test('while the child delivers, a member\'s plain prompt starts no node once con
   await until(() => seen.spawns.length === 1)
   await new Promise(r => setTimeout(r, 50))
   const typed = (text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false } as any)
-  await typed('first')  // reviewMaybeOpen is unsure after session.start: prompt.js runs and reports no review
-  expect(seen.scripts.filter(x => x === 'prompt.js').length).toBe(1)
+  await typed('first')  // reviewMaybeOpen is unsure after session.start: prompt.ts runs and reports no review
+  expect(seen.scripts.filter(x => x === 'prompt.ts').length).toBe(1)
   expect(seen.classic[0].sessionTitle).toBe('alice.otter-4821')
   await typed('second')
   await typed('third')
-  expect(seen.scripts.filter(x => x === 'prompt.js').length).toBe(1)
+  expect(seen.scripts.filter(x => x === 'prompt.ts').length).toBe(1)
   expect(seen.classic[1].sessionTitle).toBe(undefined)
-  expect(seen.scripts.filter(x => x === 'presence.js').length).toBe(1)
+  expect(seen.scripts.filter(x => x === 'presence.ts').length).toBe(1)
   await typed('@room ship it') // a post is signed in node
-  expect(seen.scripts.filter(x => x === 'prompt.js').length).toBe(2)
+  expect(seen.scripts.filter(x => x === 'prompt.ts').length).toBe(2)
   seen.release()
 })
 
@@ -259,12 +259,12 @@ test('session.end stops the child: nothing restarts it, and the session no longe
   await until(() => seen.spawns.length === 1)
   await new Promise(r => setTimeout(r, 50))
   await typed($, 'first')
-  const before = seen.scripts.filter(x => x === 'prompt.js').length
+  const before = seen.scripts.filter(x => x === 'prompt.ts').length
   await typed($, 'second')
-  expect(seen.scripts.filter(x => x === 'prompt.js').length).toBe(before) // delivered: no node
+  expect(seen.scripts.filter(x => x === 'prompt.ts').length).toBe(before) // delivered: no node
   await $.session.end({ reason: 'other', sessionId: SID, resume: { id: SID } } as any)
   await typed($, 'third')
-  expect(seen.scripts.filter(x => x === 'prompt.js').length).toBe(before + 1) // no child: node runs again
+  expect(seen.scripts.filter(x => x === 'prompt.ts').length).toBe(before + 1) // no child: node runs again
   seen.release()
   await clock.advance(120_000)
   expect(seen.spawns.length).toBe(1)
@@ -310,7 +310,7 @@ test('a permission prompt, an idle prompt or a failed turn resets presence: the 
   await start($)
   await until(() => seen.spawns.length === 1)
   await new Promise(r => setTimeout(r, 50))
-  const working = () => seen.scripts.filter(x => x === 'presence.js').length
+  const working = () => seen.scripts.filter(x => x === 'presence.ts').length
   await typed($, 'one'); await typed($, 'two')
   expect(working()).toBe(1)
   await $.classic.Notification({ notification_type: 'permission_prompt', message: 'ok?' } as any)
@@ -333,7 +333,7 @@ test('typed through Remote Control, chat is relayed as a prompt of only its line
   await new Promise(r => setTimeout(r, 50))
   await $.prompt.submit({ text: 'from the phone', origin: { kind: 'bridge' }, wait: false } as any)
   const before = seen.prompts.length
-  const nodes = seen.scripts.filter(x => x === 'prompt.js').length
+  const nodes = seen.scripts.filter(x => x === 'prompt.ts').length
   seen.feed(line({ type: 'chat', lines: ['bob: hi', 'room: "Rate limiting" agreed (bob)'] }))
   await new Promise(r => setTimeout(r, 50))
   expect(seen.prompts.length).toBe(before) // not from inside the event's handling
@@ -344,7 +344,7 @@ test('typed through Remote Control, chat is relayed as a prompt of only its line
   expect(seen.prompts[i]).not.toContain('for Claude')
   const said = [...(seen.contexts[i] ?? []), ...(seen.classic[i].additionalContext ?? [])]
   expect(said).toEqual([expect.stringMatching(/^\(for Claude\) sub-human: the prompt above is room lines.*It needs no reply/)]) // once
-  expect(seen.scripts.filter(x => x === 'prompt.js').length).toBe(nodes) // no node: a relay is not the person's prompt
+  expect(seen.scripts.filter(x => x === 'prompt.ts').length).toBe(nodes) // no node: a relay is not the person's prompt
   expect(seen.logs).toEqual([])
   await typed($, 'back at the terminal')
   seen.feed(line({ type: 'chat', lines: ['bob: bye'] }))

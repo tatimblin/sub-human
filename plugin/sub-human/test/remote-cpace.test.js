@@ -1,5 +1,5 @@
 'use strict';
-// CPace (lib/remote/cpace.js) against the published vectors of draft-irtf-cfrg-cpace-21: the string utilities
+// CPace (lib/remote/cpace.ts) against the published vectors of draft-irtf-cfrg-cpace-21: the string utilities
 // (Appendix A.1.2, A.1.4, A.3.5) and CPACE-RISTR255-SHA512 (Appendix B.3: the generator, both messages, K, the
 // initiator-responder ISK, scalar_mult, and the invalid points scalar_mult_vfy must refuse). Then the properties the
 // enrollment relies on: a wrong password gives another key, a tag binds AD, a tampered share aborts.
@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const h = require('./helpers.js');
-const cpace = require(path.join(h.LIB, 'remote', 'cpace.js'));
+const cpace = require(path.join(h.LIB, 'remote', 'cpace.ts'));
 
 const hex = s => Buffer.from(s.replace(/\s+/g, ''), 'hex');
 const leScalar = s => hex(s); // the draft gives ya / yb little endian

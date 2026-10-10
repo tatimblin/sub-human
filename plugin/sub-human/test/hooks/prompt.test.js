@@ -1,5 +1,5 @@
 'use strict';
-// hooks/prompt.js: the one UserPromptSubmit process (at-room.js handle, then consent.js onPrompt) and how their
+// hooks/prompt.ts: the one UserPromptSubmit process (at-room.ts handle, then consent.ts onPrompt) and how their
 // outputs merge: a stopped prompt (@room post, refusal) goes out alone; otherwise one output with both contexts.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -7,10 +7,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { World, PLUGIN, HOOKS, room, hso, ctx, identity } = require('./helpers.js');
 
-const { merge } = require(path.join(PLUGIN, 'hooks', 'prompt.js'));
+const { merge } = require(path.join(PLUGIN, 'hooks', 'prompt.ts'));
 const NONCE = 'abcdef01'.repeat(4);
 const ev = (extra = {}) => ({ hook_event_name: 'UserPromptSubmit', sub_human_origin: 'composer', sub_human_nonce: NONCE, prompt_id: 'p1', ...extra });
-/** The module's lease for `as`'s session, holding the nonce ev() carries (hooks/mod-hello.js writes the real one). */
+/** The module's lease for `as`'s session, holding the nonce ev() carries (hooks/mod-hello.ts writes the real one). */
 const lease = (w, as) => w.lib(() => identity.writeModLease(w.sid[as], { nonce: NONCE }));
 const ctxOut = text => ({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } });
 
@@ -32,14 +32,14 @@ test('prompt: merge keeps a stopping output alone and otherwise joins the contex
   assert.deepEqual(merge([sent, unsent]), { ...sent, systemMessage: 'sub-human: ✗ not recorded' });
 });
 
-test('prompt: no hooks.json UserPromptSubmit entry; the module runs prompt.js (mod/prompt.mjs)', async () => {
+test('prompt: no hooks.json UserPromptSubmit entry; the module runs prompt.ts (mod/prompt.ts)', async () => {
   assert.equal(JSON.parse(fs.readFileSync(path.join(HOOKS, 'hooks.json'), 'utf8')).hooks.UserPromptSubmit, undefined);
-  const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.mjs'));
-  assert.ok(MOD.some(h => h.event === 'classic.UserPromptSubmit' && h.file === 'mod/prompt.mjs'));
-  assert.match(fs.readFileSync(path.join(PLUGIN, 'mod', 'prompt.mjs'), 'utf8'), /shimArgv\(root, 'prompt\.js'\)/);
+  const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts'));
+  assert.ok(MOD.some(h => h.event === 'classic.UserPromptSubmit' && h.file === 'mod/prompt.ts'));
+  assert.match(fs.readFileSync(path.join(PLUGIN, 'mod', 'prompt.ts'), 'utf8'), /shimArgv\(root, 'prompt\.js'\)/);
 });
 
-test('prompt: consent\'s subHuman {reviewOpen} rides on the one output (only the mod runs prompt.js)', () => {
+test('prompt: consent\'s subHuman {reviewOpen} rides on the one output (only the mod runs prompt.ts)', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
   const shim = { as: 'bob' };
   lease(w, 'bob');

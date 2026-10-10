@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const h = require('./helpers.js');
-const cc = require(path.join(h.LIB, 'cc.js'));
+const cc = require(path.join(h.LIB, 'cc.ts'));
 
 const PLUGIN = h.PLUGIN;
 const readJson = rel => JSON.parse(fs.readFileSync(path.join(PLUGIN, rel), 'utf8'));
@@ -50,7 +50,7 @@ test('hooks.json: the join with no node on PATH says what to do (exit 2, its std
   assert.match(bare.stderr, /^sub-human needs Node 24 or newer on the PATH .*restart claude from a shell where node -v works\.\n$/);
   const bin = require('node:fs').mkdtempSync(path.join(require('node:os').tmpdir(), 'sh-nodebin-'));
   require('node:fs').writeFileSync(path.join(bin, 'node'), '#!/bin/sh\necho "ran $1"\n', { mode: 0o755 });
-  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: { PATH: bin, CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' }), `ran ${PLUGIN}/hooks/join.js\n`);
+  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: { PATH: bin, CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' }), `ran ${PLUGIN}/hooks/join.ts\n`);
 });
 
 test('hooks.json: every command runs node on a script that exists in the plugin', () => {
@@ -78,9 +78,9 @@ test('hooks.json: every matcher is an exact-name list or an anchored regex (bina
 
 test('hooks.json: tool matchers select exactly the intended tools; the store guard is the module\'s, not a command hook', () => {
   const pre = hooks.PreToolUse.map(g => g.matcher);
-  assert.ok(!hooks.PreToolUse.some(g => /hooks\/guard\.js/.test(g.hooks[0].command)), 'the store guard is mod/guard.mjs');
-  assert.ok(!fs.existsSync(path.join(PLUGIN, 'hooks', 'guard.js')));
-  assert.deepEqual(readJson('hooks/hooks.json').modules, ['../mod/register.mjs']);
+  assert.ok(!hooks.PreToolUse.some(g => /hooks\/guard\.js/.test(g.hooks[0].command)), 'the store guard is mod/guard.ts');
+  assert.ok(!fs.existsSync(path.join(PLUGIN, 'hooks', 'guard.ts')));
+  assert.deepEqual(readJson('hooks/hooks.json').modules, ['../mod/register.ts']);
   const consent = hooks.PreToolUse.find(g => /hooks\/consent\.js/.test(g.hooks[0].command)).matcher;
   const m = (x, name) => cc.matcherMatches(x, name);
   for (const t of ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', ROOM + 'propose']) assert.ok(m(consent, t), `consent misses ${t}`);
@@ -99,7 +99,7 @@ test('hooks.json: every blocking hook has a timeout (<= 10 s, row-rewake aside);
 
 test('hooks.json: async only on hooks whose output nothing reads', () => {
   const asyncScripts = [...allHooks()].filter(x => x.hook.async).map(x => `${x.event}:${scriptOf(x.hook.command)}`).sort();
-  assert.deepEqual(asyncScripts, ['Notification:hooks/presence.js', 'SessionStart:hooks/row-launcher.js', 'StopFailure:hooks/presence.js']);
+  assert.deepEqual(asyncScripts, ['Notification:hooks/presence.ts', 'SessionStart:hooks/row-launcher.ts', 'StopFailure:hooks/presence.ts']);
 });
 
 test('no Monitor: the hooks module\'s tail child is the only delivery', () => {

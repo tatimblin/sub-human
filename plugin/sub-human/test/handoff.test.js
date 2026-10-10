@@ -1,5 +1,5 @@
 'use strict';
-// lib/handoff.js and the host epoch in one process: the host_changed entry's rules, the old host's log refusing
+// lib/handoff.ts and the host epoch in one process: the host_changed entry's rules, the old host's log refusing
 // lines once it says the room moved (STALE) while a promote's own entry passes, the server's epoch checks at hello
 // and append, the ask as a private event to the target's link only, the signed acceptance, the 'moved' event and
 // what a host the room moved away from still serves. The two-machine runs are test/handoff-e2e.test.js.
@@ -7,16 +7,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const identity = require(path.join(h.LIB, 'identity.js'));
-const envelope = require(path.join(h.LIB, 'room', 'envelope.js'));
-const { validate } = require(path.join(h.LIB, 'room', 'validate.js'));
-const server = require(path.join(h.LIB, 'remote', 'server.js'));
-const client = require(path.join(h.LIB, 'remote', 'client.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.js'));
-const handoff = require(path.join(h.LIB, 'handoff.js'));
-const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const envelope = require(path.join(h.LIB, 'room', 'envelope.ts'));
+const { validate } = require(path.join(h.LIB, 'room', 'validate.ts'));
+const server = require(path.join(h.LIB, 'remote', 'server.ts'));
+const client = require(path.join(h.LIB, 'remote', 'client.ts'));
+const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.ts'));
+const handoff = require(path.join(h.LIB, 'handoff.ts'));
+const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'));
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 

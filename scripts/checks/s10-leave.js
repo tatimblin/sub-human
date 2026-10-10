@@ -3,7 +3,7 @@
 const path = require('node:path');
 const paths = require('../lib/paths.js');
 const { MAIN_ROW } = require('../lib/panes.js');
-const { readJson, readText, clip } = require('../lib/io.js');
+const { readJson, readText, clip } = require('../lib/io.ts');
 
 module.exports = {
   scene: 'S10',

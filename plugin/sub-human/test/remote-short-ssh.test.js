@@ -12,11 +12,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.js'));
-const admission = require(path.join(h.LIB, 'remote', 'admission.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
+const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.ts'));
+const admission = require(path.join(h.LIB, 'remote', 'admission.ts'));
 const { Machine } = require('./support/two-homes.js');
 const { fakeSsh } = require('./support/fake-ssh.js');
 

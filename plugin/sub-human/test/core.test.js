@@ -1,5 +1,5 @@
 'use strict';
-// lib/io.js, lib/lock.js, lib/config.js, lib/text.js: the shared helpers.
+// lib/io.ts, lib/lock.ts, lib/config.ts, lib/text.ts: the shared helpers.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -7,10 +7,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const h = require('./helpers.js');
-const io = require(path.join(h.LIB, 'io.js'));
-const lock = require(path.join(h.LIB, 'lock.js'));
-const config = require(path.join(h.LIB, 'config.js'));
-const text = require(path.join(h.LIB, 'text.js'));
+const io = require(path.join(h.LIB, 'io.ts'));
+const lock = require(path.join(h.LIB, 'lock.ts'));
+const config = require(path.join(h.LIB, 'config.ts'));
+const text = require(path.join(h.LIB, 'text.ts'));
 
 test('text.clip counts code points and never splits a surrogate pair; oneLine', () => {
   assert.equal(text.clip('abcdef', 6), 'abcdef');
@@ -95,7 +95,7 @@ test('lock: processes racing a planted stale lock never assign the same log id',
   const dir = h.tmpDir('sh-lockrace-');
   const dead = await h.deadPid();
   fs.writeFileSync(path.join(dir, 'log.jsonl.lock'), `${dead} ${os.hostname()} 0`);
-  const script = `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.js'))}).arm();const r=require(${JSON.stringify(path.join(h.LIB, 'room.js'))}).open(${JSON.stringify(path.basename(dir))},{dir:${JSON.stringify(dir)}});`
+  const script = `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'))}).arm();const r=require(${JSON.stringify(path.join(h.LIB, 'room.ts'))}).open(${JSON.stringify(path.basename(dir))},{dir:${JSON.stringify(dir)}});`
     + `const t=Number(process.argv[1]);while(Date.now()<t){}for(let i=0;i<15;i++)r.append({kind:'say',text:'x'+i},{via:'human',from:'alice'});`;
   const start = Date.now() + 500;
   await Promise.all(Array.from({ length: 6 }, () => new Promise((resolve, reject) => {

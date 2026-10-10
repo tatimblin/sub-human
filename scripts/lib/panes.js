@@ -37,7 +37,7 @@ function cardState(p) {
   return opts.length ? { opts } : null;
 }
 
-/** The plan-approval dialog a room review opens in (hooks/consent.js), or null: its option lines. */
+/** The plan-approval dialog a room review opens in (hooks/consent.ts), or null: its option lines. */
 function planState(p) {
   if (!/Would you like to proceed\?/.test(p) || !/Tell Claude what to change|No, keep planning/.test(p)) return null;
   const opts = [];
@@ -60,7 +60,7 @@ function joinLineIn(txt) {
   return all.at(-1) || null;
 }
 
-/** The host's join-request card (lib/remote/admission.js question), or null: its option lines (Let in / Refuse). */
+/** The host's join-request card (lib/remote/admission.ts question), or null: its option lines (Let in / Refuse). */
 function admitCardState(p) {
   const lines = String(p || '').split('\n');
   const q = lines.findIndex(l => /Let \S+ \(.*\) on \S+ join room [a-z]+-\d{4}\?|\(admit [0-9a-f]{12}\)/.test(l));

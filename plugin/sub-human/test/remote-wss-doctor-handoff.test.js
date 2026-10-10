@@ -10,13 +10,13 @@ const net = require('node:net');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
-const links = require(path.join(h.LIB, 'room', 'links.js'));
-const listener = require(path.join(h.LIB, 'remote', 'listener.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-const handoff = require(path.join(h.LIB, 'handoff.js'));
-const doctor = require(path.join(h.LIB, 'cli', 'doctor.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
+const links = require(path.join(h.LIB, 'room', 'links.ts'));
+const listener = require(path.join(h.LIB, 'remote', 'listener.ts'));
+const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+const handoff = require(path.join(h.LIB, 'handoff.ts'));
+const doctor = require(path.join(h.LIB, 'cli', 'doctor.ts'));
 const { Machine } = require('./support/two-homes.js');
 
 const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '600', SUB_HUMAN_LINK_IDLE_MS: '20000' };
@@ -97,7 +97,7 @@ test('doctor: the listener, a room\'s Tailscale path present or gone, Funnel\'s 
   const probe = await remote.lib(() => doctor.helloProbe(lf.transport, code, { timeoutMs: 5000 }));
   assert.equal(probe.ok, true, probe.error);
   assert.ok(probe.reply && probe.reply.v >= 1);
-  const wrongKey = await remote.lib(() => doctor.helloProbe({ ...lf.transport, hostKey: require(path.join(h.LIB, 'remote', 'noise.js')).generateKeyPair().pub.toString('base64url') }, code, { timeoutMs: 5000 }));
+  const wrongKey = await remote.lib(() => doctor.helloProbe({ ...lf.transport, hostKey: require(path.join(h.LIB, 'remote', 'noise.ts')).generateKeyPair().pub.toString('base64url') }, code, { timeoutMs: 5000 }));
   assert.equal(wrongKey.ok, false, 'another pinned key gets no answer');
 });
 

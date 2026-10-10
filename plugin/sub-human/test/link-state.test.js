@@ -1,15 +1,15 @@
 'use strict';
-// lib/room/link-state.js (the link's state for the room row, the statusline and doctor) and its segment on the room
-// row (lib/rows.js rowText) and in the agent statusline (statusline/segments.js).
+// lib/room/link-state.ts (the link's state for the room row, the statusline and doctor) and its segment on the room
+// row (lib/rows.ts rowText) and in the agent statusline (statusline/segments.ts).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const h = require('./helpers.js');
-const links = require(path.join(h.LIB, 'room', 'links.js'));
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const ls = require(path.join(h.LIB, 'room', 'link-state.js'));
-const rows = require(path.join(h.LIB, 'rows.js'));
+const links = require(path.join(h.LIB, 'room', 'links.ts'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const ls = require(path.join(h.LIB, 'room', 'link-state.ts'));
+const rows = require(path.join(h.LIB, 'rows.ts'));
 
 const CODE = 'vole-4321';
 function linked(t) {
@@ -58,7 +58,7 @@ test('link-state: a daemon that died reads offline, whatever its last record sai
   assert.equal(ls.read(CODE).state, 'fork');
 });
 
-test('link-state: the daemon\'s record as lib/remote/link.js writes it (links.writeState): its own pid and detail decide', async t => {
+test('link-state: the daemon\'s record as lib/remote/link.ts writes it (links.writeState): its own pid and detail decide', async t => {
   linked(t);
   const at = new Date().toISOString();
   links.writeState(CODE, { state: 'online', since: at, attempt: 0, lastError: null, rttMs: 12, queued: 0, pid: process.pid, detail: 'online', at });
@@ -126,7 +126,7 @@ test('agent statusline: the room row carries the link state', t => {
   const real = ls.read;
   ls.read = c => (c === code ? { state: 'connecting', attempt: 2 } : null);
   t.after(() => { ls.read = real; });
-  const { agentStatusline } = require(path.join(h.PLUGIN, 'statusline', 'segments.js'));
+  const { agentStatusline } = require(path.join(h.PLUGIN, 'statusline', 'segments.ts'));
   const out = agentStatusline({ tasks: [{ id: 'a1', description: code, status: 'running' }] }, { env: { NO_COLOR: '1' } });
   const [line] = out.split('\n').map(l => JSON.parse(l));
   assert.equal(line.id, 'a1');

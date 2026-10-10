@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { World, fixture, hso, ctx, PLUGIN, identity, room } = require('./helpers.js');
-const rows = require(path.join(PLUGIN, 'lib', 'rows.js'));
+const rows = require(path.join(PLUGIN, 'lib', 'rows.ts'));
 /** The seat's rows are running: its hold server (this live test process) holds them. */
 const rowsRunning = (w, name, held) => w.lib(() => rows.writeHolds(w.code, name, held));
 
@@ -31,7 +31,7 @@ const HOSTILE = [
   'multi\n  indented\n\ttabbed\nlast line with trailing spaces   ',
 ];
 
-/** The module's nonce for every session here (hooks/mod-hello.js writes the real one to the lease). */
+/** The module's nonce for every session here (hooks/mod-hello.ts writes the real one to the lease). */
 const NONCE = '0123456789abcdef'.repeat(2);
 /** A prompt as the mod's shim hands it over: with its origin (composer: the person's own Enter) and the nonce. */
 const submit = (prompt, origin = 'composer') => ({ ...fixture('user-prompt-submit'), prompt, ...(origin ? { sub_human_origin: origin, sub_human_nonce: NONCE } : {}) });
@@ -298,7 +298,7 @@ test('a plain prompt outputs nothing (the title, digest and rows are the mod\'s)
   const r = atRoom(w, submit('hello'), { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.stdout, '');
-  // with an origin the mod is the one writer of "working" (mod/prompt.mjs)
+  // with an origin the mod is the one writer of "working" (mod/prompt.ts)
   assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice', null)), null);
   assert.equal(atRoom(w, submit('hello again', null), { as: 'alice' }).stdout, '');
   assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice')).state, 'working');

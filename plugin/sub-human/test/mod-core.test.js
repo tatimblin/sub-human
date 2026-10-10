@@ -1,7 +1,7 @@
 'use strict';
-// The hooks module's pure core (mod/core/*.mjs) in node, and hooks/mod-hello.js. The module's wiring is tested by
+// The hooks module's pure core (mod/core/*.mjs) in node, and hooks/mod-hello.ts. The module's wiring is tested by
 // `npm run test:mods` (mod/test/*.test.ts under `claude plugin test`); this file needs no Claude Code binary,
-// except the last test, which compares mod/register.mjs HOOKS with what `claude plugin validate` reads.
+// except the last test, which compares mod/register.ts HOOKS with what `claude plugin validate` reads.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -15,11 +15,11 @@ const load = rel => import(path.join(PLUGIN, rel));
 
 // ---------- copies kept equal ----------
 test('mod/core copies of the CommonJS patterns and chat constants are equal to their sources', async () => {
-  const seat = await load('mod/core/seat.mjs');
-  const chat = await load('mod/core/chat.mjs');
-  const text = require('../lib/text.js');
-  const config = require('../lib/config.js');
-  const room = require('../lib/room.js');
+  const seat = await load('mod/core/seat.ts');
+  const chat = await load('mod/core/chat.ts');
+  const text = require('../lib/text.ts');
+  const config = require('../lib/config.ts');
+  const room = require('../lib/room.ts');
   assert.equal(seat.NAME_RE.source, text.NAME_RE.source);
   assert.equal(seat.CODE_RE.source, text.CODE_RE.source);
   assert.equal(chat.NEST, config.CHAT_NEST);
@@ -42,7 +42,7 @@ test('mod/ is pure: no node: or CommonJS imports, no dynamic import(), no seat k
 
 // ---------- state ----------
 test('state: every $.state reference in mod/ names a key in KEYS, and KEYS is what types/index.d.ts declares', async () => {
-  const { KEYS } = await load('mod/core/state.mjs');
+  const { KEYS } = await load('mod/core/state.ts');
   const used = new Set();
   for (const f of fs.readdirSync(path.join(PLUGIN, 'mod')).filter(x => x.endsWith('.mjs'))) {
     const src = fs.readFileSync(path.join(PLUGIN, 'mod', f), 'utf8');
@@ -60,7 +60,7 @@ test('state: every $.state reference in mod/ names a key in KEYS, and KEYS is wh
 });
 
 test('state: asHello is null when absent; asNonce only for its own session id; mintNonce is 32 fresh hex characters', async () => {
-  const { asHello, asNonce, mintNonce, NONCE_RE } = await load('mod/core/state.mjs');
+  const { asHello, asNonce, mintNonce, NONCE_RE } = await load('mod/core/state.ts');
   for (const v of [undefined, null, 'x', 3, false]) assert.equal(asHello(v), null, String(v));
   const h = { sid: 's1', home: '/h', seat: null };
   assert.equal(asHello(h), h);
@@ -73,17 +73,17 @@ test('state: asHello is null when absent; asNonce only for its own session id; m
   assert.equal(asNonce({ sid: 's1', value: n }, undefined), null);
 });
 
-test('guard: the write tools hooked in mod/guard.mjs are mod/core/guard.mjs WRITE_TOOLS, and HOOKS says the same', async () => {
-  const { WRITE_TOOLS } = await load('mod/core/guard.mjs');
-  const { HOOKS } = await load('mod/register.mjs');
-  const src = fs.readFileSync(path.join(PLUGIN, 'mod', 'guard.mjs'), 'utf8');
+test('guard: the write tools hooked in mod/guard.ts are mod/core/guard.ts WRITE_TOOLS, and HOOKS says the same', async () => {
+  const { WRITE_TOOLS } = await load('mod/core/guard.ts');
+  const { HOOKS } = await load('mod/register.ts');
+  const src = fs.readFileSync(path.join(PLUGIN, 'mod', 'guard.ts'), 'utf8');
   assert.ok(src.includes(`on('tool.call', { tool: [${WRITE_TOOLS.map(t => `'${t}'`).join(', ')}] }`), 'the matcher literal');
-  assert.ok(HOOKS.some(h => h.file === 'mod/guard.mjs' && h.matcher === WRITE_TOOLS.join('|')));
+  assert.ok(HOOKS.some(h => h.file === 'mod/guard.ts' && h.matcher === WRITE_TOOLS.join('|')));
 });
 
 // ---------- seat ----------
 test('seat: parseHello keeps a good answer, refuses anything else; parseAddr reads NAME.CODE', async () => {
-  const { parseHello, parseAddr, seated } = await load('mod/core/seat.mjs');
+  const { parseHello, parseAddr, seated } = await load('mod/core/seat.ts');
   const out = { home: '/h', realHome: '/private/h', userHome: '/u', pluginRoot: '/p', seat: { name: 'alice', code: 'otter-4821', role: 'member' } };
   assert.deepEqual(parseHello(JSON.stringify(out) + '\n', 's1'), { sid: 's1', ...out, seat: { ...out.seat, addr: 'alice.otter-4821' } });
   assert.equal(parseHello('', 's1'), null);
@@ -100,7 +100,7 @@ test('seat: parseHello keeps a good answer, refuses anything else; parseAddr rea
 
 // ---------- shim ----------
 test('shim: the stdout -> ClassicResult table covers every output shape the hooks emit today', async () => {
-  const { toClassic, shimEnv, shimArgv } = await load('mod/core/shim.mjs');
+  const { toClassic, shimEnv, shimArgv } = await load('mod/core/shim.ts');
   const ok = (o, extra = {}) => ({ exitCode: 0, stdout: (typeof o === 'string' ? o : JSON.stringify(o)) + '\n', stderr: '', ...extra });
   const T = [
     // [what, event, run, expected {result, systemMessage?}]
@@ -113,7 +113,7 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
     ['at-room digest + notices + title', 'UserPromptSubmit',
       ok({ systemMessage: 'bob joined', hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'Room since your last turn: …', sessionTitle: 'alice.otter-4821' } }),
       { result: { additionalContext: ['Room since your last turn: …'], sessionTitle: 'alice.otter-4821' }, systemMessage: 'bob joined' }],
-    ['prompt.js title only', 'UserPromptSubmit',
+    ['prompt.ts title only', 'UserPromptSubmit',
       ok({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', sessionTitle: 'alice.otter-4821' } }),
       { result: { sessionTitle: 'alice.otter-4821' } }],
     ['consent Stop nudge', 'Stop',
@@ -142,14 +142,14 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
   for (const [what, event, run, want] of T) assert.deepEqual(toClassic(event, run), want, what);
   assert.deepEqual(shimEnv({ session_id: 's1' }, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: 's1' });
   assert.deepEqual(shimEnv({}, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '' });
-  assert.deepEqual(shimArgv('/p', 'prompt.js'), ['node', '/p/hooks/prompt.js']);
+  assert.deepEqual(shimArgv('/p', 'prompt.ts'), ['node', '/p/hooks/prompt.ts']);
 });
 
-test('shim: a real hook\'s output translates (at-room posting through prompt.js)', async t => {
-  const { toClassic } = await load('mod/core/shim.mjs');
+test('shim: a real hook\'s output translates (at-room posting through prompt.ts)', async t => {
+  const { toClassic } = await load('mod/core/shim.ts');
   const w = new World({ claude: 'sleep', alice: 'act' }, { t });
   const nonce = 'f00d'.repeat(8);
-  w.lib(() => require('../lib/identity.js').writeModLease(w.sid.alice, { nonce }));
+  w.lib(() => require('../lib/identity.ts').writeModLease(w.sid.alice, { nonce }));
   const r = w.hook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: '@room hello', sub_human_origin: 'composer', sub_human_nonce: nonce, transcript_path: '' }, { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
   const { result } = toClassic('UserPromptSubmit', { exitCode: r.code, stdout: r.stdout, stderr: r.stderr });
@@ -158,7 +158,7 @@ test('shim: a real hook\'s output translates (at-room posting through prompt.js)
 });
 
 test('shim: subHuman (a hook run with SUB_HUMAN_SHIM=1) comes out beside the result', async () => {
-  const { toClassic, SHIM_MODE } = await load('mod/core/shim.mjs');
+  const { toClassic, SHIM_MODE } = await load('mod/core/shim.ts');
   const ok = o => ({ exitCode: 0, stdout: JSON.stringify(o) + '\n', stderr: '' });
   assert.deepEqual(SHIM_MODE, { SUB_HUMAN_SHIM: '1' });
   assert.deepEqual(toClassic('Stop', ok({ subHuman: { reviewOpen: false } })), { result: {}, subHuman: { reviewOpen: false } });
@@ -169,8 +169,8 @@ test('shim: subHuman (a hook run with SUB_HUMAN_SHIM=1) comes out beside the res
 
 // ---------- prompt ----------
 test('prompt: parse is at-room\'s parse; the gate drops only an @room that no person typed', async () => {
-  const p = await load('mod/core/prompt.mjs');
-  const atRoom = require('../hooks/at-room.js');
+  const p = await load('mod/core/prompt.ts');
+  const atRoom = require('../hooks/at-room.ts');
   for (const s of ['@room hi', '@room', '@room  two', 'room:x', 'room: x', 'room:  x', '@roomx', ' @room x', 'hello', '', '/sub-human alice', 'Room: x', '@room\nmore'])
     assert.equal(p.parse(s), atRoom.parse(s), JSON.stringify(s));
   assert.deepEqual([...p.TYPED_ORIGINS], [...atRoom.TYPED_ORIGINS]);
@@ -184,8 +184,8 @@ test('prompt: parse is at-room\'s parse; the gate drops only an @room that no pe
 });
 
 test('prompt: parseClaude is at-room\'s; a seated session gates an untyped @claude like an @room, an unseated one lets it through', async () => {
-  const p = await load('mod/core/prompt.mjs');
-  const atRoom = require('../hooks/at-room.js');
+  const p = await load('mod/core/prompt.ts');
+  const atRoom = require('../hooks/at-room.ts');
   for (const s of ['@claude hi', '@claude', '@claude  two', '@claudex', ' @claude x', '@Claude x', 'claude: x', '@room @claude x', 'hi @claude', '', '@claude\nmore'])
     assert.equal(p.parseClaude(s), atRoom.parseClaude(s), JSON.stringify(s));
   assert.equal(p.parseClaude('@room @claude x'), null, 'only a leading tag');
@@ -207,7 +207,7 @@ test('prompt: parseClaude is at-room\'s; a seated session gates an untyped @clau
 });
 
 test('prompt: needsNode skips node only for a surely unseated session and a prompt that is not an @room', async () => {
-  const { needsNode } = await load('mod/core/prompt.mjs');
+  const { needsNode } = await load('mod/core/prompt.ts');
   const seat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
   const e = (prompt, sid = 's1') => ({ session_id: sid, prompt });
   assert.equal(needsNode(e('hi'), { sid: 's1', seat: null }), false);
@@ -220,7 +220,7 @@ test('prompt: needsNode skips node only for a surely unseated session and a prom
 });
 
 test('prompt: a seated member skips node only while the tail child delivers and no review may be open; never the room\'s Claude', async () => {
-  const { needsNode, originKind } = await load('mod/core/prompt.mjs');
+  const { needsNode, originKind } = await load('mod/core/prompt.ts');
   const seat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
   const hello = { sid: 's1', seat };
   const e = prompt => ({ session_id: 's1', prompt });
@@ -236,9 +236,9 @@ test('prompt: a seated member skips node only while the tail child delivers and 
   assert.equal(originKind(undefined), undefined);
 });
 
-// ---------- delivery (mod/core/deliver.mjs) ----------
+// ---------- delivery (mod/core/deliver.ts) ----------
 test('deliver: the child\'s argv and env; lines out of pieces; only well-formed events', async () => {
-  const d = await load('mod/core/deliver.mjs');
+  const d = await load('mod/core/deliver.ts');
   assert.deepEqual(d.tailArgv('/p'), ['node', '/p/scripts/sub-human', 'tail', '--ndjson']);
   assert.deepEqual(d.tailEnv('sid-1', '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: 'sid-1' });
   assert.equal(d.PULL_DELIVERY, 'at-most-once');
@@ -253,7 +253,7 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
   assert.equal(d.parseEvent('{"type":"exec","text":"rm"}'), null);
   assert.equal(d.parseEvent('not json'), null);
   // the tail's own event writer and this parser agree
-  const tail = require('../lib/tail.js');
+  const tail = require('../lib/tail.ts');
   const { events } = tail.formatNdBatch([], { me: { name: 'alice', role: 'member' }, room: {}, entries: [], show: () => false, joinNote: () => '', seen: new Set() });
   assert.deepEqual(events, []);
   for (const ev of [{ type: 'chat', lines: ['bob: hi'] }, { type: 'pull', text: tail.PULL_HEAD + '\nbob: hi' }, { type: 'wake', text: 'x' }, { type: 'health', text: 'room log check: x' }])
@@ -261,7 +261,7 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
 });
 
 test('deliver: the routing table: chat is a notice, pull an append, wake a prompt when idle and an append mid-turn', async () => {
-  const d = await load('mod/core/deliver.mjs');
+  const d = await load('mod/core/deliver.ts');
   // one $.ui.log per line: a notice is one line (a newline would be drawn as U+FFFD)
   assert.deepEqual(d.route({ type: 'chat', lines: ['bob: hi', '  │ more', 'carol joined'] }), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: '  │ more' }, { do: 'log', text: 'carol joined' }]);
   assert.deepEqual(d.route({ type: 'pull', text: 'Room since…' }), [{ do: 'append', text: 'Room since…' }]);
@@ -269,7 +269,7 @@ test('deliver: the routing table: chat is a notice, pull an append, wake a promp
   assert.deepEqual(d.route({ type: 'seat', seat: null }), [{ do: 'seat', seat: null }]);
   const idle = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' });
   assert.deepEqual(idle, [{ do: 'submit', text: `${d.WAKE_HEAD}\nroom: decided\n(for Claude) room now: …`, seen: ['room: decided'] }]);
-  const { gateVerdict } = await load('mod/core/prompt.mjs');
+  const { gateVerdict } = await load('mod/core/prompt.ts');
   assert.equal(gateVerdict({ text: idle[0].text, origin: { kind: 'plugin', name: 'sub-human' } }), null, 'a wake never reads as a "room:" post');
   const mid = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' }, { turnRunning: true });
   assert.deepEqual(mid, [{ do: 'log', text: 'room: decided' }, { do: 'mid-turn-wake', text: idle[0].text }]);
@@ -281,7 +281,7 @@ test('deliver: the routing table: chat is a notice, pull an append, wake a promp
 });
 
 test('deliver: unread, restartDelay, spawnWanted', async () => {
-  const d = await load('mod/core/deliver.mjs');
+  const d = await load('mod/core/deliver.ts');
   const wakes = [{ text: 'during a tool', at: 100 }, { text: 'during the last request', at: 300 }];
   assert.deepEqual(d.unread(wakes, 200), ['during the last request'], 'a tool call finished after the first: a request carried it');
   assert.deepEqual(d.unread(wakes, 0), ['during a tool', 'during the last request'], 'no tool call this turn: none was carried');
@@ -295,7 +295,7 @@ test('deliver: unread, restartDelay, spawnWanted', async () => {
 });
 
 test('prompt: the origin queue hands prompt.submit\'s origin to the classic hook; mergeClassic keeps ours on top', async () => {
-  const { originQueue, mergeClassic } = await load('mod/core/prompt.mjs');
+  const { originQueue, mergeClassic } = await load('mod/core/prompt.ts');
   const q = originQueue();
   assert.equal(q.take('@room x'), null, 'nothing waiting: at-room keeps its own checks');
   const a = q.push('@room x', 'composer');
@@ -315,7 +315,7 @@ test('prompt: the origin queue hands prompt.submit\'s origin to the classic hook
 
 // ---------- prefilter ----------
 test('prefilter: consent and the task hooks are skipped only when sure', async () => {
-  const f = await load('mod/core/prefilter.mjs');
+  const f = await load('mod/core/prefilter.ts');
   const member = { sid: 's1', seat: { name: 'alice', code: 'otter-4821', role: 'member' } };
   const roomClaude = { sid: 's1', seat: { name: 'claude', code: 'otter-4821', role: 'claude' } };
   const none = { sid: 's1', seat: null };
@@ -340,7 +340,7 @@ test('prefilter: consent and the task hooks are skipped only when sure', async (
 
 // ---------- chat ----------
 test('chat: a peer message is "NAME\'s Claude: …" with nested continuation lines; room lines drop (for Claude)', async () => {
-  const { peerLines, roomLines, NEST } = await load('mod/core/chat.mjs');
+  const { peerLines, roomLines, NEST } = await load('mod/core/chat.ts');
   assert.deepEqual(peerLines('bob.otter-4821', '  done\n\nnext: tests  \n'), ["bob's Claude: done", `${NEST}next: tests`]);
   assert.deepEqual(peerLines('bob.otter-4821', ''), ["bob's Claude"]);
   assert.equal(peerLines('Some session', 'hi'), null);
@@ -355,8 +355,8 @@ test('chat: a peer message is "NAME\'s Claude: …" with nested continuation lin
 });
 
 test('chat: the room\'s own chatLines come through roomLines unchanged', async () => {
-  const { roomLines } = await load('mod/core/chat.mjs');
-  const room = require('../lib/room.js');
+  const { roomLines } = await load('mod/core/chat.ts');
+  const room = require('../lib/room.ts');
   const e = { id: 7, from: 'bob', via: 'human', kind: 'say', to: 'room', text: 'sure\nonce we agree' };
   const lines = room.chatLines(e, { viewer: 'alice' });
   assert.deepEqual(roomLines(lines.join('\n')), lines);
@@ -364,7 +364,7 @@ test('chat: the room\'s own chatLines come through roomLines unchanged', async (
 
 // ---------- guard ----------
 test('guard: write targets, ancestors and the verdict before and after mod-hello', async () => {
-  const g = await load('mod/core/guard.mjs');
+  const g = await load('mod/core/guard.ts');
   assert.equal(g.normalize('/a/b/../c/./d/'), '/a/c/d');
   assert.equal(g.normalize('/..'), '/');
   assert.deepEqual(g.ancestors('/a/b'), ['/a/b', '/a', '/']);
@@ -389,18 +389,18 @@ test('guard: write targets, ancestors and the verdict before and after mod-hello
 });
 
 test('guard: the plugin-code rule reads the cwd only when the command does not name the plugin', async () => {
-  const g = await load('mod/core/guard.mjs');
-  assert.equal(g.needsCwd('node hooks/consent.js'), true);
-  assert.equal(g.needsCwd('node /x/sub-human/hooks/consent.js'), false);
+  const g = await load('mod/core/guard.ts');
+  assert.equal(g.needsCwd('node hooks/consent.ts'), true);
+  assert.equal(g.needsCwd('node /x/sub-human/hooks/consent.ts'), false);
   assert.equal(g.needsCwd('npm test'), false);
   const inPlugin = { pluginRoot: '/repo/plugin/sub-human', cwd: '/repo/plugin/sub-human/hooks' };
-  assert.ok(g.bashVerdict('node consent.js && node hooks/consent.js', inPlugin));
-  assert.equal(g.bashVerdict('node hooks/consent.js', { ...inPlugin, cwd: '/elsewhere' }), null);
-  assert.ok(g.bashVerdict('node hooks/consent.js', { ...inPlugin, cwd: '/elsewhere', realCwd: '/repo/plugin/sub-human' }));
+  assert.ok(g.bashVerdict('node consent.ts && node hooks/consent.ts', inPlugin));
+  assert.equal(g.bashVerdict('node hooks/consent.ts', { ...inPlugin, cwd: '/elsewhere' }), null);
+  assert.ok(g.bashVerdict('node hooks/consent.ts', { ...inPlugin, cwd: '/elsewhere', realCwd: '/repo/plugin/sub-human' }));
 });
 
 test('guard: the person-only CLI is sent to a terminal outside Claude Code, never to its ! mode (the PIN would land in the conversation)', async () => {
-  const g = await load('mod/core/guard.mjs');
+  const g = await load('mod/core/guard.ts');
   const why = g.bashVerdict('sub-human invite --ssh');
   assert.match(why, /in a terminal outside Claude Code, never with !/);
   assert.doesNotMatch(why, /in your own shell/);
@@ -420,7 +420,7 @@ test('mod-hello: prints the home and this session\'s seat, and writes the lease 
   const rec = JSON.parse(fs.readFileSync(lease, 'utf8'));
   assert.equal(rec.session_id, w.sid.alice);
   assert.equal(rec.seat, undefined, 'the seat is in the hello, not the lease');
-  assert.deepEqual(w.lib(() => require('../lib/identity.js').readModLease(w.sid.alice)), rec);
+  assert.deepEqual(w.lib(() => require('../lib/identity.ts').readModLease(w.sid.alice)), rec);
 });
 
 test('mod-hello: an unseated session gets seat null (and a lease); a bad payload gets no lease', t => {
@@ -450,6 +450,6 @@ test('validate: the module loads, every gating hook has a .catch, and HOOKS list
   assert.deepEqual(gating.filter(x => !x.hasCatch).map(x => x.hook), []);
   const line = hooksReport.notes.find(n => / hooks: /.test(n));
   const registered = line.slice(line.indexOf(' hooks: ') + 8).split(/, (?=[a-z]+\.[\w.]+(?:\{|,|$))/).map(h => h.replace(/\{.*$/, ''));
-  const { HOOKS } = await load('mod/register.mjs');
+  const { HOOKS } = await load('mod/register.ts');
   assert.deepEqual(registered, HOOKS.map(h => h.event));
 });

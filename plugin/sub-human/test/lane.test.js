@@ -1,12 +1,12 @@
 'use strict';
-// Tests for lib/room.js lane(), line({full}), stateLine() and the digest's text rule (fixes 0.3 / 0.4).
+// Tests for lib/room.ts lane(), line({full}), stateLine() and the digest's text rule (fixes 0.3 / 0.4).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const h = require('./helpers.js');
-const room = require(path.join(h.LIB, 'room.js'));
-const identity = require(path.join(h.LIB, 'identity.js'));
+const room = require(path.join(h.LIB, 'room.ts'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
 
 let R = null; // the current test's room
 function fresh() {
@@ -30,9 +30,9 @@ const ALICE = { name: 'alice', role: 'member' }, ROOM_CLAUDE = { name: 'claude',
 const E22 = {
   id: 22, at: '2026-10-04T19:00:01.000Z', from: 'claude', via: 'agent', kind: 'say', to: 'alice', refs: [18, 21],
   text: 'I reviewed this against the plan. It departs from it in two places. Bad or stale after: a malformed or stale ' +
-    'cursor silently sends the client back to page 1 (src/store.js:50-58). That can repeat tasks, and the plan suggested ' +
+    'cursor silently sends the client back to page 1 (src/store.ts:50-58). That can repeat tasks, and the plan suggested ' +
     'a 400 instead. And limit in the next-page link: the rel=next URL repeats the raw limit from the request, not the ' +
-    'capped value (src/server.js:38). Will you fix these, or should the room accept them as a plan revision?',
+    'capped value (src/server.ts:38). Will you fix these, or should the room accept them as a plan revision?',
 };
 
 test('line: full is the exact text with an explicit cut marker; compact never ends in a bare …', () => {

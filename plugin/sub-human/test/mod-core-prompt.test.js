@@ -1,12 +1,12 @@
 'use strict';
-// mod/core/prompt.mjs in node: the session title, the origin hand-off, the fail-closed @room refusal and the
+// mod/core/prompt.ts in node: the session title, the origin hand-off, the fail-closed @room refusal and the
 // "working" presence rule. The wiring is in mod/test/prompt.test.ts (npm run test:mods).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const PLUGIN = path.join(__dirname, '..');
-const load = () => import(path.join(PLUGIN, 'mod', 'core', 'prompt.mjs'));
+const load = () => import(path.join(PLUGIN, 'mod', 'core', 'prompt.ts'));
 const seat = (code = 'otter-4821', role = 'member') => ({ name: 'alice', code, role, addr: `alice.${code}` });
 
 test('prompt: titleFor titles once per session id and address, so a room switch sets the new title', async () => {
@@ -39,7 +39,7 @@ test('prompt: the origin hand-off gives a kind only to the prompt whose text it 
 
 test('prompt: an @room the shim could not handle is refused, never let through; one wording with at-room\'s', async () => {
   const p = await load();
-  const atRoom = require('../hooks/at-room.js');
+  const atRoom = require('../hooks/at-room.ts');
   assert.equal(p.GATE_FAILED, atRoom.NO_ORIGIN);
   assert.deepEqual(p.failClosed('@room ship it'), { block: p.GATE_FAILED, suppressOriginalPrompt: true });
   assert.equal(p.failClosed('room:ship it'), null, 'there is no room: tag');
@@ -54,7 +54,7 @@ test('prompt: the mod writes "working" for a typed prompt of a member (or an unk
   const { writesWorking } = await load();
   const hello = { sid: 's1', seat: seat() };
   assert.equal(writesWorking({ kind: 'composer' }, hello, null), true);
-  assert.equal(writesWorking({ kind: 'bridge' }, null, 'idle_prompt'), true, 'unknown seat: presence.js decides');
+  assert.equal(writesWorking({ kind: 'bridge' }, null, 'idle_prompt'), true, 'unknown seat: presence.ts decides');
   assert.equal(writesWorking({ kind: 'composer' }, hello, 'working'), false, 'already working');
   assert.equal(writesWorking({ kind: 'peer' }, hello, null), false, 'not typed');
   assert.equal(writesWorking(undefined, hello, null), false);

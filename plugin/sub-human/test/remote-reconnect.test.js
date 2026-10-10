@@ -1,7 +1,7 @@
 'use strict';
-// Reconnect hardening in the link daemon (lib/remote/link.js): jittered backoff, the wake and network watchers on a
-// fake clock, the outbox (lib/remote/outbox.js), and serveMirror in-process over the memory transport against a real
-// server (lib/remote/server.js): a half-open link caught by a missed pong, make-before-break with no duplicate
+// Reconnect hardening in the link daemon (lib/remote/link.ts): jittered backoff, the wake and network watchers on a
+// fake clock, the outbox (lib/remote/outbox.ts), and serveMirror in-process over the memory transport against a real
+// server (lib/remote/server.ts): a half-open link caught by a missed pong, make-before-break with no duplicate
 // line, the outbox sent in order (never consent; "placed already" counts as sent; kept on FORK), a lapsed lease
 // renewed with no log line, the link state file, the server closing a silent session, and an old server (no ping
 // in its caps) never pinged. Two homes and real processes: test/remote-reconnect-e2e.test.js.
@@ -10,20 +10,20 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
-const outbox = require(path.join(h.LIB, 'remote', 'outbox.js'));
-const protocol = require(path.join(h.LIB, 'remote', 'protocol.js'));
-const server = require(path.join(h.LIB, 'remote', 'server.js'));
-const client = require(path.join(h.LIB, 'remote', 'client.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-const links = require(path.join(h.LIB, 'room', 'links.js'));
-const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.js'));
-const clock = require(path.join(h.LIB, 'clock.js'));
-const { leaseFresh } = require(path.join(h.LIB, 'room', 'members.js'));
-const { RoomError } = require(path.join(h.LIB, 'room', 'validate.js'));
-const { MirrorRoomStore } = require(path.join(h.LIB, 'room', 'store-mirror.js'));
-const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
+const outbox = require(path.join(h.LIB, 'remote', 'outbox.ts'));
+const protocol = require(path.join(h.LIB, 'remote', 'protocol.ts'));
+const server = require(path.join(h.LIB, 'remote', 'server.ts'));
+const client = require(path.join(h.LIB, 'remote', 'client.ts'));
+const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+const links = require(path.join(h.LIB, 'room', 'links.ts'));
+const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.ts'));
+const clock = require(path.join(h.LIB, 'clock.ts'));
+const { leaseFresh } = require(path.join(h.LIB, 'room', 'members.ts'));
+const { RoomError } = require(path.join(h.LIB, 'room', 'validate.ts'));
+const { MirrorRoomStore } = require(path.join(h.LIB, 'room', 'store-mirror.ts'));
+const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'));
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 

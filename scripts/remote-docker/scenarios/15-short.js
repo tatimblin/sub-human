@@ -1,5 +1,5 @@
 'use strict';
-// Invites (a 4-digit PIN over CPace, lib/remote/enroll.js) with the host person's card, on real sshd:
+// Invites (a 4-digit PIN over CPace, lib/remote/enroll.ts) with the host person's card, on real sshd:
 //   ssh   alice's `/sub-human invite --ssh host@devbox` writes the enrollment door into authorized_keys and shows one
 //         line; bob on joiner-a types a wrong PIN (4 tries left), then the right one: his link runs the PAKE through
 //         the door over the WAN path, checks the host key sshd showed against the one vouched for inside it, makes its

@@ -1,7 +1,7 @@
 'use strict';
 // Optional, on this Mac, opt-in only (TS_SERVE=1 and a tailscale CLI: on PATH or /Applications/Tailscale.app): the
 // real Tailscale Serve in front of the plugin's real listener. A throwaway home, `sub-human listen --port <free>` in
-// it, then exactly the command `/sub-human invite --web` runs (lib/remote/tailscale.js serveArgs):
+// it, then exactly the command `/sub-human invite --web` runs (lib/remote/tailscale.ts serveArgs):
 //   tailscale serve --bg --https=443 --set-path=/sub-human-lab-<rand> http://127.0.0.1:<port>
 // a wss connection to https://<this node's MagicDNS name>/sub-human-lab-<rand> (Tailscale's own certificate, no extra
 // CA) and a Noise_NK handshake pinned to the listener's key: the listener answers inside the channel that it serves
@@ -27,9 +27,9 @@ module.exports = {
   title: 'real `tailscale serve --bg` (tailnet only) in front of the real listener, a pinned Noise handshake through it, then that path off',
   persona: 'P1 friends (1.1, real Tailscale)',
   budgetMs: 90_000,
-  skip: () => (process.env.TS_SERVE !== '1' ? 'opt-in: set TS_SERVE=1 (runs real `tailscale serve` on this Mac)' : !lib('remote/tailscale.js').bin() ? 'no tailscale CLI' : null),
+  skip: () => (process.env.TS_SERVE !== '1' ? 'opt-in: set TS_SERVE=1 (runs real `tailscale serve` on this Mac)' : !lib('remote/tailscale.ts').bin() ? 'no tailscale CLI' : null),
   async run(t) {
-    const ts = lib('remote/tailscale.js');
+    const ts = lib('remote/tailscale.ts');
     const bin = ts.bin();
     let me;
     try { me = ts.self(bin); } catch (e) { t.check('tailscale is up on this Mac', false, e.message); return; }
@@ -44,7 +44,7 @@ module.exports = {
       await t.sleep(800);
       const old = process.env.SUB_HUMAN_HOME;
       process.env.SUB_HUMAN_HOME = home;
-      const hostKey = lib('remote/listener.js').hostKey();
+      const hostKey = lib('remote/listener.ts').hostKey();
       process.env.SUB_HUMAN_HOME = old;
       const argv = ts.serveArgs({ path: p, port });
       t.log(`${bin} ${argv.join(' ')}`);
@@ -54,8 +54,8 @@ module.exports = {
       t.check(`tailscale ${argv.join(' ')}`, !!on, on ? 'ok' : refused.message);
       if (!on) return;
       ts.warm(`https://${me.dnsName}${p}`); // as /sub-human invite --web does: the certificate is fetched now
-      const ws = lib('remote/ws.js');
-      const wsT = lib('remote/transports/ws.js');
+      const ws = lib('remote/ws.ts');
+      const wsT = lib('remote/transports/ws.ts');
       let res;
       try {
         const conn = await ws.connect(`wss://${me.dnsName}${p}`, { timeoutMs: 45_000 }); // a cold ts.net certificate takes ~20 s

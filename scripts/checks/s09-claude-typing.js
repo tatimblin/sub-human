@@ -1,6 +1,6 @@
 'use strict';
 // S9: the room's Claude refuses typed input (a viewer attaches with claude attach and types one line)
-const { readJson } = require('../lib/io.js');
+const { readJson } = require('../lib/io.ts');
 
 module.exports = {
   scene: 'S9',

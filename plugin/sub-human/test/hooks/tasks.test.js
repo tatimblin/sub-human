@@ -1,12 +1,12 @@
 'use strict';
-// hooks/tasks.js: the PostToolUse TaskCreate|TaskUpdate mirror and the TaskCompleted gate (room Claude only).
+// hooks/tasks.ts: the PostToolUse TaskCreate|TaskUpdate mirror and the TaskCompleted gate (room Claude only).
 // Payload shapes are the ones S1 logged from a --bg room Claude (docs/archive/next/S1-headless-claude.md §4).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { World, PLUGIN, room } = require('./helpers.js');
-const tasks = require(path.join(PLUGIN, 'lib', 'tasks.js'));
+const tasks = require(path.join(PLUGIN, 'lib', 'tasks.ts'));
 
 const create = (id, subject, extra = {}) => ({
   hook_event_name: 'PostToolUse', agent_type: 'sub-human:room-claude', tool_name: 'TaskCreate',

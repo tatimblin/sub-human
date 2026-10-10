@@ -1,7 +1,7 @@
 'use strict';
-// The link registry (lib/room/links.js), the link daemon's pieces (lib/remote/link.js: socket path, locator,
-// handle, serveMirror's FORK and re-mirror, idleWatch) and the mirror's own writes (lib/room/store-mirror.js
-// applyLine, applyDoc), and the tail's one line for a link that is down (lib/tail.js linkLine);
+// The link registry (lib/room/links.ts), the link daemon's pieces (lib/remote/link.ts: socket path, locator,
+// handle, serveMirror's FORK and re-mirror, idleWatch) and the mirror's own writes (lib/room/store-mirror.ts
+// applyLine, applyDoc), and the tail's one line for a link that is down (lib/tail.ts linkLine);
 // the mirror through the bridge is in test/store-contract.test.js (remote), two homes in test/remote-e2e.test.js.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -9,18 +9,18 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const h = require('./helpers.js');
-const store = require(path.join(h.LIB, 'room', 'store.js'));
-const links = require(path.join(h.LIB, 'room', 'links.js'));
-const link = require(path.join(h.LIB, 'remote', 'link.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-const server = require(path.join(h.LIB, 'remote', 'server.js'));
-const client = require(path.join(h.LIB, 'remote', 'client.js'));
-const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.js'));
-const { MirrorRoomStore } = require(path.join(h.LIB, 'room', 'store-mirror.js'));
-const { linkLine } = require(path.join(h.LIB, 'tail.js'));
-const identity = require(path.join(h.LIB, 'identity.js'));
-const { writeJsonAtomic } = require(path.join(h.LIB, 'io.js'));
-const { pidStart } = require(path.join(h.LIB, 'lock.js'));
+const store = require(path.join(h.LIB, 'room', 'store.ts'));
+const links = require(path.join(h.LIB, 'room', 'links.ts'));
+const link = require(path.join(h.LIB, 'remote', 'link.ts'));
+const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+const server = require(path.join(h.LIB, 'remote', 'server.ts'));
+const client = require(path.join(h.LIB, 'remote', 'client.ts'));
+const memory = require(path.join(h.LIB, 'remote', 'transports', 'memory.ts'));
+const { MirrorRoomStore } = require(path.join(h.LIB, 'room', 'store-mirror.ts'));
+const { linkLine } = require(path.join(h.LIB, 'tail.ts'));
+const identity = require(path.join(h.LIB, 'identity.ts'));
+const { writeJsonAtomic } = require(path.join(h.LIB, 'io.ts'));
+const { pidStart } = require(path.join(h.LIB, 'lock.ts'));
 
 const mode = p => fs.statSync(p).mode & 0o777;
 
@@ -101,7 +101,7 @@ test('link: the socket path is short whatever the home; locators name a home, ne
 
 test('link: handle tries each socket in order; a missing one, or one in a directory open to others, is skipped', async t => {
   const net = require('node:net');
-  const protocol = require(path.join(h.LIB, 'remote', 'protocol.js'));
+  const protocol = require(path.join(h.LIB, 'remote', 'protocol.ts'));
   const serve = (file, result) => new Promise(resolve => {
     const srv = net.createServer(s => { const dec = protocol.decoder(); s.on('data', c => { for (const f of dec.push(c)) s.end(protocol.encode(protocol.reply(f.id, result))); }); });
     t.after(() => srv.close());
@@ -148,7 +148,7 @@ test('link: the ssh command: BatchMode, this machine\'s own options, the port, "
 });
 
 test('ssh: a ProxyJump rides the locator (?via=), as plain as the destination; the link\'s own options pin the host key and the key; prime opens a ControlMaster the daemon rides under BatchMode', t => {
-  const ssh = require(path.join(h.LIB, 'remote', 'transports', 'ssh.js'));
+  const ssh = require(path.join(h.LIB, 'remote', 'transports', 'ssh.ts'));
   assert.deepEqual(link.transportOf('ssh:me@far:2222?via=bastion'), { kind: 'ssh', user: 'me', host: 'far', port: 2222, via: 'bastion' });
   assert.deepEqual(link.transportOf('ssh:me@far?via=ops@jump.example:2200,jump2'), { kind: 'ssh', user: 'me', host: 'far', via: 'ops@jump.example:2200,jump2' });
   assert.equal(link.sshLocator('me@far', { via: 'bastion' }), 'ssh:me@far?via=bastion');
@@ -239,8 +239,8 @@ test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops 
 test('skew: a newer host\'s unknown entry kind, via and fields, an unknown document and an unknown event keep the link online; readers show them, never as a person\'s words', async t => {
   h.freshHome(t);
   const code = h.newRoom();
-  const room = require(path.join(h.LIB, 'room.js'));
-  const protocol = require(path.join(h.LIB, 'remote', 'protocol.js'));
+  const room = require(path.join(h.LIB, 'room.ts'));
+  const protocol = require(path.join(h.LIB, 'remote', 'protocol.ts'));
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
   t.after(() => fs.rmSync(path.dirname(link.socketPath(mirror.dir)), { recursive: true, force: true }));
   const at = new Date().toISOString();
@@ -275,9 +275,9 @@ test('skew: a newer host\'s unknown entry kind, via and fields, an unknown docum
   const chat = es.map(e => room.chatLines(e, { viewer: 'alice', entries: es }).join(' / '));
   assert.deepEqual(chat, ['room: a future room line', 'bob (via relay): not bob\'s own words', 'bob\'s Claude: plain']);
   assert.ok(es.every(e => typeof room.line(e, { full: true }) === 'string'));
-  const render = require(path.join(h.LIB, 'room', 'render.js'));
+  const render = require(path.join(h.LIB, 'room', 'render.ts'));
   assert.equal(typeof render.digest(es, { members: {}, code }), 'string');
-  const { lane } = require(path.join(h.LIB, 'room', 'lanes.js'));
+  const { lane } = require(path.join(h.LIB, 'room', 'lanes.ts'));
   assert.deepEqual(es.map(e => lane({ name: 'alice', role: 'member' }, e, es)), ['pull', 'pull', 'pull'], 'nothing unknown wakes anyone');
 });
 
@@ -287,12 +287,12 @@ test('link: a lost connection is retried with decorrelated jitter: each delay in
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
   t.after(() => fs.rmSync(path.dirname(link.socketPath(mirror.dir)), { recursive: true, force: true }));
   const at = [];
-  const { RoomError } = require(path.join(h.LIB, 'room', 'validate.js'));
+  const { RoomError } = require(path.join(h.LIB, 'room', 'validate.ts'));
   const connect = () => { at.push(Date.now()); return Promise.reject(new RoomError('OFFLINE', 'no route')); };
   // random() = 1: the top of each range, so the delays grow 3x per failure up to the cap. The delays are read from
   // what the daemon asks its clock for: the gaps between attempts also measured how late a loaded machine fires
   // timers, and an upper bound on them failed under load. Never online here, so every timer it sets is a retry.
-  const realClock = require(path.join(h.LIB, 'clock.js'));
+  const realClock = require(path.join(h.LIB, 'clock.ts'));
   const asked = [];
   const clock = { ...realClock, setTimeout: (fn, ms) => { asked.push(ms); return realClock.setTimeout(fn, ms); } };
   const l = await link.serveMirror({ mirror, connect, retryMs: 40, retryMaxMs: 400, random: () => 1, watch: false, seats: () => [], clock });
@@ -301,7 +301,7 @@ test('link: a lost connection is retried with decorrelated jitter: each delay in
   assert.deepEqual(asked.slice(0, 4), [120, 360, 400, 400]);
   const gaps = at.slice(1, 5).map((x, i) => x - at[i]);
   gaps.forEach((g, i) => assert.ok(g >= asked[i] - 5, `gap ${i}: ${g} ms, under the ${asked[i]} ms asked: ${gaps}`));
-  const config = require(path.join(h.LIB, 'config.js'));
+  const config = require(path.join(h.LIB, 'config.ts'));
   assert.deepEqual([config.LINK_RETRY_MS, config.LINK_RETRY_MAX_MS], [1000, 10_000]);
 });
 

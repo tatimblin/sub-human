@@ -92,14 +92,14 @@ probe finds it and the scenario runs. You can also force things:
 
 | feature | detected by | used in |
 |---|---|---|
-| `shortCode` | `lib/remote/enroll.js` (invites with a PIN over CPace) | every ssh join, security, short |
-| `hostSsh` | `hooks/join.js` handles `--ssh` | p2-corporate |
+| `shortCode` | `lib/remote/enroll.ts` (invites with a PIN over CPace) | every ssh join, security, short |
+| `hostSsh` | `hooks/join.ts` handles `--ssh` | p2-corporate |
 | `revoke`, `handoff`, `doctor` | the CLI's usage lists `kick` (`revoke` before 0.5.0-beta.6), `handoff`, `doctor` | security, handoff, p1-friends |
-| `heartbeat` | protocol op `ping` (or `ping` in `link.js`) | half-open |
-| `outbox` | `lib/remote/outbox.js` (or `outbox` in `link.js`) | p3-sleep |
-| `autoRejoin` | the daemon renews this machine's seats on reconnect (`keepSeats` in `link.js`) | p3-sleep |
+| `heartbeat` | protocol op `ping` (or `ping` in `link.ts`) | half-open |
+| `outbox` | `lib/remote/outbox.ts` (or `outbox` in `link.ts`) | p3-sleep |
+| `autoRejoin` | the daemon renews this machine's seats on reconnect (`keepSeats` in `link.ts`) | p3-sleep |
 | `versionRange` | `protocol.skewMessage` (the hello's `proto` range) | skew |
-| `ws`, `urlPin` | transport kind `ws`/`wss` or `ws.js`/`listener.js`; the join hook takes a URL + PIN | wss, wss-resilience |
+| `ws`, `urlPin` | transport kind `ws`/`wss` or `ws.ts`/`listener.ts`; the join hook takes a URL + PIN | wss, wss-resilience |
 | `loginJoin` | the join hook builds a login link (`loginSpec`) | login |
 
 ## Evidence
