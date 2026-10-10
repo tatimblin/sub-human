@@ -200,7 +200,7 @@ test('sh2 over ssh, without sshd: the joiner pins the host key and makes its own
   const ak = path.join(host.user, '.ssh', 'authorized_keys');
   const env = { SUB_HUMAN_SSH_HOST_KEY: `${hostKeyFile}.pub`, SUB_HUMAN_ALLOW_TMP_ROOT: '1', SUB_HUMAN_AUTHORIZED_KEYS: ak };
   Object.assign(host.extra, env);
-  const shown = host.join(alice, 'host --ssh me@127.0.0.1:1 --via jump.example');
+  const shown = host.join(alice, 'host --ssh me@127.0.0.1:1 --via jump.example --long');
   assert.ok(hiddenBlock(shown), shown.stderr);
   const { invite, pin } = shownInvite(shown.json.reason);
   const hk = sshkeys.ed25519Raw(fs.readFileSync(`${hostKeyFile}.pub`, 'utf8'));
@@ -249,13 +249,13 @@ test('sh2 over ssh, without sshd: the joiner pins the host key and makes its own
 
   // the CLI's one step: --ssh alone is this machine's own address; admit asks nothing with --yes (no terminal here)
   const cli = (args, extra = {}) => spawnSync(process.execPath, [h.BIN, ...args], { env: host.env(null, { ...env, ...extra }), encoding: 'utf8' });
-  const out = cli(['host', '--ssh', '--room', code], { SUB_HUMAN_SSH_ADDR: 'dev@box.example:2222' });
+  const out = cli(['host', '--ssh', '--long', '--room', code], { SUB_HUMAN_SSH_ADDR: 'dev@box.example:2222' });
   assert.equal(out.status, 0, out.stderr);
   const inv3 = /sh2\.\S+/.exec(out.stdout)[0];
   assert.equal(auth.parseInvite(inv3).locator, 'ssh:dev@box.example:2222');
   assert.match(out.stdout, /\nPIN \d{6} /);
   // inside Claude Code (its ! shell: CLAUDECODE=1) the output is model input: the PIN is masked, an sh1 invite refused
-  const inCc = cli(['host', '--ssh', '--room', code], { SUB_HUMAN_SSH_ADDR: 'dev@box.example:2222', CLAUDECODE: '1' });
+  const inCc = cli(['host', '--ssh', '--long', '--room', code], { SUB_HUMAN_SSH_ADDR: 'dev@box.example:2222', CLAUDECODE: '1' });
   assert.equal(inCc.status, 0, inCc.stderr);
   assert.doesNotMatch(inCc.stdout, /PIN \d{6}/);
   assert.match(inCc.stdout, /\nPIN ###### .*\nPIN hidden: this ran inside Claude Code.*terminal outside Claude Code, or use \/sub-human host/s);

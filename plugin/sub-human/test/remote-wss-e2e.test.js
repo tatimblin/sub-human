@@ -68,7 +68,7 @@ async function posts(t, { host, remote, alice, bob, code }, text) {
 test('wss 1.1: host --url shows a join URL + PIN to the person only; join NAME URL PIN links over ws + Noise with no admit step; posts flow', async t => {
   const R = await rig(t);
   const { port, host, remote, alice, bob, code } = R;
-  const out = host.join(alice, `host --url http://127.0.0.1:${port}`);
+  const out = host.join(alice, `host --url http://127.0.0.1:${port} --long`);
   assert.ok(hiddenBlock(out), out.stderr);
   assert.equal(out.json.systemMessage, undefined);
   const { url, pin } = shown(out.json.reason);
@@ -110,18 +110,20 @@ test('wss 1.1: host --url shows a join URL + PIN to the person only; join NAME U
   for (const s of [pin, parsed.secret, lf.token]) assert.ok(!log.includes(s));
   assert.match(log, new RegExp(`room ${code}: a connection from 127\\.0\\.0\\.1; serve pid \\d+`));
 
-  // a URL cut short, or one with only a PIN, is refused
-  for (const u of [url.split('#')[0], `http://127.0.0.1:${port}/${code}`, url.replace(/\.[^.]+$/, '')]) {
-    const r = remote.join(bob, `join bob ${u} ${pin}`);
-    assert.ok(hiddenBlock(r));
-    assert.match(r.json.reason, /not a whole join URL/);
-  }
+  // a URL whose fragment was cut short is refused; the URL with no fragment at all is the short form (a 6-digit
+  // code), and this machine is linked there already
+  const r = remote.join(bob, `join bob ${url.replace(/\.[^.]+$/, '')} ${pin}`);
+  assert.ok(hiddenBlock(r));
+  assert.match(r.json.reason, /not a whole join URL/);
+  const bare = remote.join(bob, `join bob ${url.split('#')[0]} ${pin}`);
+  assert.ok(hiddenBlock(bare));
+  assert.match(bare.json.reason, /linked to room \S+ already/);
 });
 
 test('wss 1.1: the listener refuses a handshake to another key, a room it does not serve, and plain HTTP', async t => {
   const R = await rig(t);
   const { port, host, alice, code } = R;
-  const { url } = shown(host.join(alice, `host --url http://127.0.0.1:${port}`).json.reason);
+  const { url } = shown(host.join(alice, `host --url http://127.0.0.1:${port} --long`).json.reason);
   const ws = require(path.join(h.LIB, 'remote', 'ws.js'));
   const noise = require(path.join(h.LIB, 'remote', 'noise.js'));
   const pinned = Buffer.from(url.split('.').pop(), 'base64url');
@@ -157,7 +159,7 @@ test('wss 1.1 reconnect: the link comes back after the listener restarts and aft
   const down = f => new Promise(r => { f.once('exit', r); f.kill('SIGKILL'); });
   let f = await front();
   t.after(() => f.kill('SIGKILL'));
-  const { url, pin } = shown(host.join(alice, `host --url https://localhost:${frontPort}`).json.reason);
+  const { url, pin } = shown(host.join(alice, `host --url https://localhost:${frontPort} --long`).json.reason);
   assert.match(url, new RegExp(`^https://localhost:${frontPort}/sub-human/${code}#`));
   const j = remote.join(bob, `join bob ${url} ${pin}`);
   assert.match(j.json.reason, /linked to room/, (() => { try { return fs.readFileSync(remote.lib(() => require(path.join(h.LIB, 'room', 'links.js')).logFile(code)), 'utf8'); } catch (e) { return e.message; } })());
@@ -199,7 +201,7 @@ esac
 `, { mode: 0o755 });
   const R = await rig(t, { PATH: `${bin}:${process.env.PATH}` });
   const { port, host, alice, code } = R;
-  const out = host.join(alice, 'host --tailscale');
+  const out = host.join(alice, 'host --tailscale --long');
   assert.ok(hiddenBlock(out), out.stderr);
   const { url } = shown(out.json.reason);
   assert.match(url, new RegExp(`^https://box\\.tail1a2b\\.ts\\.net/sub-human/${code}#`));
@@ -241,4 +243,75 @@ test('the room closing stops serving it: the listener drops it and turns its Tai
   host.lib(() => require(path.join(h.LIB, 'identity.js')).updateRoomClaude(code, o => ({ ...o, stopped_at: new Date().toISOString() })));
   assert.ok(await h.until(() => !host.lib(() => listener.status()).rooms[code], 8000, 100), 'dropped from the served set');
   assert.ok(await h.until(() => fs.readFileSync(calls, 'utf8').includes(`serve --https=443 --set-path=/sub-human/${code} off`), 3000, 50));
+});
+
+/** The join request's card on the host, answered by the person (hooks/consent.js), as in test/remote-short.test.js. */
+function letIn(host, alice, ref, label = 'Let in') {
+  const pre = host.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `admit ${ref}`, options: [] }] } }, alice);
+  const c = pre.json.hookSpecificOutput.updatedInput;
+  return host.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: c, tool_response: { questions: c.questions, answers: { [c.questions[0].question]: label } } }, alice);
+}
+const shortShown = reason => /\/sub-human join NAME (https?:\/\/\S+) (\d{6})\n/.exec(reason);
+
+test('web short code: host --url shows URL + 6-digit code (no #secret, no key); the PAKE runs in text frames through a TLS front; the listener key is pinned from inside it; the card lets the machine in', { skip: spawnSync('openssl', ['version']).status !== 0 && 'no openssl' }, async t => {
+  const certDir = h.tmpDir('sh-front-', t);
+  if (!testCa(certDir)) return t.skip('openssl could not make a test CA');
+  const R = await rig(t, {}, { NODE_EXTRA_CA_CERTS: path.join(certDir, 'ca.pem') });
+  const { port, host, remote, alice, bob, code } = R;
+  const frontPort = await freePort();
+  const f = await new Promise((ok, no) => {
+    const c = spawn(process.execPath, [path.join(__dirname, 'support', 'tls-front.js'), String(frontPort), String(port), path.join(certDir, 'c.pem'), path.join(certDir, 'k.pem')], { stdio: ['ignore', 'pipe', 'inherit'] });
+    c.stdout.once('data', () => ok(c));
+    c.once('exit', () => no(new Error('the front exited')));
+  });
+  t.after(() => f.kill('SIGKILL'));
+  const out = host.join(alice, `host --url https://localhost:${frontPort}`);
+  assert.ok(hiddenBlock(out), out.stderr);
+  const m = shortShown(out.json.reason);
+  assert.ok(m, out.json.reason);
+  assert.equal(m[1], `https://localhost:${frontPort}/sub-human/${code}`, 'the URL alone: no fragment, no key');
+  assert.doesNotMatch(out.json.reason, /#/);
+  const pin = m[2];
+  // a wrong code first: one try, and the room hears it
+  const bad = String((Number(pin) + 1) % 1_000_000).padStart(6, '0');
+  const w = remote.join(bob, `join bob ${m[1]} ${bad}`);
+  assert.ok(hiddenBlock(w));
+  assert.match(w.json.reason, /wrong code \(4 tries left\)/);
+  const j = remote.join(bob, `join bob ${m[1]} ${pin}`);
+  assert.ok(hiddenBlock(j));
+  assert.ok(!modelSees(j).includes(pin));
+  assert.match(j.json.reason, /checked your code/, (() => { try { return fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8'); } catch (e) { return e.message; } })());
+  const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
+  assert.equal(lf.transport.hostKey, host.lib(() => listener.hostKey()), 'the listener key, pinned from inside the PAKE');
+  assert.equal(lf.transport.kind, 'wss');
+  const ref = lf.awaiting.ref;
+  assert.match(letIn(host, alice, ref).json.hookSpecificOutput.additionalContext, /let bob's machine into room/);
+  assert.ok(await h.until(() => linkState(remote, code) === 'online', 15_000, 50), 'online once let in');
+  assert.equal(remote.join(bob, `bob ${code}`).json.decision, undefined);
+  await posts(t, R, 'over a short code');
+  const lg = fs.readFileSync(path.join(host.home, 'listen', 'listen.log'), 'utf8');
+  assert.match(lg, /a short-code attempt from/);
+  assert.ok(!lg.includes(pin) && !lg.includes(bad), 'the listener logs no code');
+});
+
+test('web short code: the listener refuses an enrollment for a room it does not serve, and a text message that is not one', async t => {
+  const R = await rig(t);
+  const { port, host, alice, code } = R;
+  host.join(alice, `host --url http://127.0.0.1:${port}`);
+  const ws = require(path.join(h.LIB, 'remote', 'ws.js'));
+  const ask = async (text, p = `/sub-human/${code}`) => {
+    const conn = await ws.connect(`ws://127.0.0.1:${port}${p}`, { timeoutMs: 5000 });
+    return new Promise(r => {
+      const got = [];
+      conn.on('message', d => got.push(String(d)));
+      conn.on('close', c => r({ code: c, got }));
+      conn.send(text);
+    });
+  };
+  const other = await ask(JSON.stringify({ id: 1, op: 'enroll.start', params: { v: 1, room: 'otter-0000' } }), '/sub-human/otter-0000');
+  assert.match(other.got[0], /not open for joins over the web here/);
+  const junk = await ask('hello');
+  assert.match(junk.got[0], /not an enrollment/);
+  const wrongPath = await ask(JSON.stringify({ id: 1, op: 'enroll.start', params: { v: 1, room: code } }), '/sub-human/otter-0000');
+  assert.match(wrongPath.got[0], /this URL is for room otter-0000/);
 });

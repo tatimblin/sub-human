@@ -93,7 +93,7 @@ test('doctor: the listener, a room\'s Tailscale path present or gone, Funnel\'s 
 
   // a joiner's wss link: doctor's hello goes over the WebSocket and the pinned Noise channel
   host.lib(() => listener.start({ port }));
-  const { url, pin } = shown(host.join(alice, `host --url http://127.0.0.1:${port}`).json.reason);
+  const { url, pin } = shown(host.join(alice, `host --url http://127.0.0.1:${port} --long`).json.reason);
   assert.match(remote.join(bob, `join bob ${url} ${pin}`).json.reason, /linked to room/);
   const lf = remote.lib(() => links.get(code));
   const probe = await remote.lib(() => doctor.helloProbe(lf.transport, code, { timeoutMs: 5000 }));
