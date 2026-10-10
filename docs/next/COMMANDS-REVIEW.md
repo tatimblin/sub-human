@@ -1,5 +1,10 @@
 # Command review: making sub-human simpler to use (0.5.0-beta.5)
 
+**Status: the commands part shipped in 0.5.0-beta.6** (CHANGELOG). Decisions taken on 2026-10-10: the default name is
+git's `user.name` (else the email's local part, else `$USER`); `host`/`revoke`/`unhost` became `invite`/`kick`/`invite
+--stop` and `invite --cancel`, with `leave`, `doctor` and `help` added; the PIN is 4 digits; the old forms were removed
+outright (no hidden aliases). The message style (rules 1 to 5 below) is a second pass, not done yet.
+
 Sources: four read-only reviews on 2026-10-10:
 - a newcomer walking through three setups;
 - the full command grammar;

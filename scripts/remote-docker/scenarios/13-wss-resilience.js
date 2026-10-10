@@ -24,8 +24,8 @@ module.exports = {
     const { lab, sleep } = t;
     const { code, host } = lab.hostRoom();
     await wssHost(t, lab);
-    const a = wssJoin(t, lab, host, code, 'joiner-a', 'bob');
-    const b = wssJoin(t, lab, host, code, 'joiner-b', 'ben', { proxy: true });
+    const a = await wssJoin(t, lab, host, code, 'joiner-a', 'bob');
+    const b = await wssJoin(t, lab, host, code, 'joiner-b', 'ben', { proxy: true });
     if (!t.check('bob (direct) and ben (corp-proxy) join over wss', a.ok && b.ok, `${a.out || 'ok'} / ${b.out || 'ok'}`)) return;
     const seats = [a.seat, b.seat];
     host.say('alice', 'wss-r before');

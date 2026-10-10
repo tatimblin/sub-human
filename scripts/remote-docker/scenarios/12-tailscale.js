@@ -1,11 +1,11 @@
 'use strict';
 // Optional, on this Mac, opt-in only (TS_SERVE=1 and a tailscale CLI: on PATH or /Applications/Tailscale.app): the
 // real Tailscale Serve in front of the plugin's real listener. A throwaway home, `sub-human listen --port <free>` in
-// it, then exactly the command `/sub-human host --tailscale` runs (lib/remote/tailscale.js serveArgs):
+// it, then exactly the command `/sub-human invite --web` runs (lib/remote/tailscale.js serveArgs):
 //   tailscale serve --bg --https=443 --set-path=/sub-human-lab-<rand> http://127.0.0.1:<port>
 // a wss connection to https://<this node's MagicDNS name>/sub-human-lab-<rand> (Tailscale's own certificate, no extra
 // CA) and a Noise_NK handshake pinned to the listener's key: the listener answers inside the channel that it serves
-// no such room, which only the holder of the pinned key can say. Then exactly what unhost runs (offArgs):
+// no such room, which only the holder of the pinned key can say. Then exactly what `invite --stop` runs (offArgs):
 //   tailscale serve --https=443 --set-path=/sub-human-lab-<rand> off
 // (only that path; never `serve reset`, never Funnel). The path must be gone from `tailscale serve status` after.
 // A tailnet without Serve/HTTPS: the CLI prints an enable URL and waits; tailscale.on() stops it within 10 s and the
@@ -53,7 +53,7 @@ module.exports = {
       // Serve/HTTPS not enabled on the tailnet (the CLI prints an enable URL and waits): on() stops it and says so
       t.check(`tailscale ${argv.join(' ')}`, !!on, on ? 'ok' : refused.message);
       if (!on) return;
-      ts.warm(`https://${me.dnsName}${p}`); // as /sub-human host --tailscale does: the certificate is fetched now
+      ts.warm(`https://${me.dnsName}${p}`); // as /sub-human invite --web does: the certificate is fetched now
       const ws = lib('remote/ws.js');
       const wsT = lib('remote/transports/ws.js');
       let res;

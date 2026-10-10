@@ -2,15 +2,15 @@
 'use strict';
 /**
  * scripts/remote-docker/lab/attack.js: someone who knows a room's code and can reach the host's sshd, but not the
- * 6-digit code, at the short invite's enrollment door (lib/remote/enroll.js). Run inside a joiner container as its
+ * 4-digit PIN, at the invite's enrollment door (lib/remote/enroll.js). Run inside a joiner container as its
  * user: `node /lab/attack.js CODE SSH_CONFIG [AVOID]`. The enrollment key is public (lib/remote/sshkeys.js
  * enrollKey: derived from the room code), so the attacker has it. It tries, through that key:
  *   shell    a command of its own (`id`): the forced command runs instead, and answers no shell
  *   pty      a terminal (-tt): refused by `restrict`
  *   forward  a stdio forward to the host's port 22 (-W): refused by `restrict`
- *   guesses  5 PAKE attempts with codes it does not know (AVOID: the real code, never guessed, so the run is
+ *   guesses  5 PAKE attempts with PINs it does not know (AVOID: the real PIN, never guessed, so the run is
  *            deterministic): each refused with the tries left, the last burning the invite
- *   after    one more attempt: the door is gone (ssh refuses the key) or answers that no code is open
+ *   after    one more attempt: the door is gone (ssh refuses the key) or answers that no invite is open
  * Prints one JSON object.
  */
 const fs = require('node:fs');
@@ -40,7 +40,7 @@ async function main() {
   process.env.SUB_HUMAN_SSH_OPTS = `-F ${conf}`;
   const joiner = { name: 'mallory', machine: 'attacker0machine', label: 'attacker', key: sshkeys.enrollKey(code).raw };
   let g = 0;
-  const next = () => { for (;;) { const c = String(g++).padStart(6, '0'); if (c !== avoid) return c; } };
+  const next = () => { for (;;) { const c = String(g++).padStart(4, '0'); if (c !== avoid) return c; } };
   for (let i = 0; i < 6; i++) {
     const t0 = Date.now();
     try {

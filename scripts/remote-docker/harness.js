@@ -28,10 +28,10 @@
  *       cut | heal | latency MS | down
  *       The manual mode, for real Claudes on this Mac: up starts devbox + toxiproxy with the room and the host's
  *       scripted seat (--host-seat, default alice). For each joiner (--joiners, default bob) it makes a throwaway
- *       key, mints that joiner's own ssh invite and authorizes the key for it in devbox, and creates under
+ *       key that logs in to the devbox account (a login join: no invite), and creates under
  *       /tmp/sub-human-remote-manual a home NAME-home (0700), a git project NAME-proj and NAME.env (0600:
- *       SUB_HUMAN_HOME, SUB_HUMAN_SSH_OPTS, SUB_HUMAN_INVITE). Source it, cd to the project, start
- *       `claude --plugin-dir plugin/sub-human --remote-control` and type /sub-human join NAME $SUB_HUMAN_INVITE.
+ *       SUB_HUMAN_HOME, SUB_HUMAN_SSH_OPTS). Source it, cd to the project, start
+ *       `claude --plugin-dir plugin/sub-human --remote-control` and type the /sub-human join line NAME.env names.
  *       say posts as the host seat (signed, the host's hook path); --to NAME addresses a post from the seat's
  *       Claude. status shows every joiner's link. cut/heal disable/enable the proxy; latency adds (MS > 0) or removes
  *       (0) a latency toxic. down stops it all and removes the manual state, every joiner's home, project, env and
@@ -66,7 +66,6 @@ function sh(cmd, args, { input, allowFail = false, timeout = 600_000 } = {}) {
 const dc = (args, o) => sh('docker', ['compose', '-f', COMPOSE, ...PROJECT, ...args], o);
 const dexec = (args, { user = 'host', ...o } = {}) => dc(['exec', '-T', '-u', user, '-e', `SUB_HUMAN_HOME=${HOST_HOME}`, 'devbox', ...args], o);
 const hostCli = (...args) => JSON.parse(dexec(['node', '/harness/host-cli.js', ...args]).stdout);
-const subHuman = (args, o) => dexec(['node', '/plugin/scripts/sub-human', ...args], o);
 const port = (svc, p) => Number(dc(['port', svc, String(p)]).stdout.trim().split(':').pop());
 
 async function toxi(api, method, p, body) {
@@ -100,13 +99,17 @@ function keygen(dir, name) {
 const sshOpts = (key, kh) => ['-F', '/dev/null', '-i', key, '-o', 'IdentitiesOnly=yes', '-o', `UserKnownHostsFile=${kh}`,
   '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=10', '-o', 'LogLevel=ERROR'].join(' ');
 
-/** Mint an ssh invite in devbox and authorize key.pub for it there: {invite, linkId, line}. */
+/** Mint an (internal) sh1 ssh invite in devbox and authorize key.pub for its one link there: {invite, linkId, line}. */
 function inviteAndAuthorize(code, sshPort, pub) {
-  const invite = subHuman(['invite', '--room', code, '--ssh', `host@127.0.0.1:${sshPort}`]).stdout.trim();
-  const r = subHuman(['authorize', invite, '-', '--file', '/home/host/.ssh/authorized_keys'], { input: fs.readFileSync(pub, 'utf8') });
-  const linkId = /link ([0-9a-f]{12})/.exec(r.stderr)[1];
+  const { invite } = hostCli('invite1', `host@127.0.0.1:${sshPort}`);
+  const { linkId } = JSON.parse(dexec(['node', '/harness/host-cli.js', 'authorize', invite], { input: fs.readFileSync(pub, 'utf8') }).stdout);
   const line = dexec(['cat', '/home/host/.ssh/authorized_keys']).stdout.split('\n').find(l => l.includes(linkId));
   return { invite, linkId, line };
+}
+
+/** Let key.pub log in to the devbox account as an ordinary line (no forced command): a login join. */
+function authorizeLogin(pub) {
+  dexec(['sh', '-c', 'mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 0600 ~/.ssh/authorized_keys'], { input: fs.readFileSync(pub, 'utf8') });
 }
 
 // ---------- evidence ----------
@@ -209,7 +212,9 @@ async function run({ out }) {
     remote = new Machine(null, 'joiner', { SUB_HUMAN_SSH_OPTS: opts, SUB_HUMAN_LINK_RETRY_MS: '1000', SUB_HUMAN_LINK_IDLE_MS: '3000' });
     bob = remote.seat('bob');
     ev.log(`joiner SUB_HUMAN_HOME ${remote.home}`);
-    const [joined, joinMs] = timed(() => remote.join(bob, `join bob ${A.invite}`));
+    // the link file the invite makes (internal: what an sh1 join wrote), then the seat over it
+    remote.linkInvite1(code, A.invite);
+    const [joined, joinMs] = timed(() => remote.join(bob, `bob ${code}`));
     ev.log(`join took ${fmt(joinMs)}: ${JSON.stringify(joined.json && (joined.json.reason || joined.json.systemMessage || '(no line: it worked)'))}`);
     // a join that works prints nothing; a refusal is a block
     if (!joined.json || joined.json.decision === 'block' || !(joined.json.hookSpecificOutput || {}).additionalContext) throw new Error(`join failed: ${JSON.stringify(joined.json)} ${joined.stderr}`);
@@ -262,13 +267,14 @@ async function run({ out }) {
     const hostRoomDir = d.dir;
     const exists = fs.existsSync(hostRoomDir);
     ev.log(`fs.existsSync(${hostRoomDir}) on this Mac: ${exists}`);
-    const fresh = subHuman(['invite', '--room', code]).stdout.trim(); // a real invite, pipe: locator = devbox's home
+    const fresh = hostCli('invite1', 'pipe').invite; // a real invite, pipe: locator = devbox's home
     const pipeInvite = fresh; // its locator is pipe:/home/host/.sub-human, a path that exists only in devbox
     ev.secret(fresh.split('.').pop());
     ev.log(`pipe invite locator: ${Buffer.from(fresh.split('.')[2], 'base64url').toString()}`);
     remote2 = new Machine(null, 'joiner2', { SUB_HUMAN_LINK_RETRY_MS: '1000', SUB_HUMAN_LINK_IDLE_MS: '1500' });
     const carl = remote2.seat('carl');
-    const [pj, pjMs] = timed(() => remote2.join(carl, `join carl ${pipeInvite}`));
+    remote2.linkInvite1(code, pipeInvite);
+    const [pj, pjMs] = timed(() => remote2.join(carl, `carl ${code}`));
     const pjReason = pj.json && (pj.json.reason || pj.json.systemMessage);
     ev.log(`pipe join from this Mac (${fmt(pjMs)}): ${pjReason}`);
     const st2 = remote2.lib(() => link.status(code));
@@ -535,19 +541,18 @@ async function up(args) {
   fs.mkdirSync(keys, { mode: 0o700 });
   const joiners = names.map(name => {
     const key = keygen(keys, name);
-    const A = inviteAndAuthorize(setup.code, sshPort, key + '.pub');
-    const j = { name, linkId: A.linkId, home: path.join(MANUAL, `${name}-home`), proj: path.join(MANUAL, `${name}-proj`), env: path.join(MANUAL, `${name}.env`) };
+    authorizeLogin(key + '.pub');
+    const j = { name, home: path.join(MANUAL, `${name}-home`), proj: path.join(MANUAL, `${name}-proj`), env: path.join(MANUAL, `${name}.env`) };
     fs.mkdirSync(j.home, { mode: 0o700 });
     fs.mkdirSync(j.proj, { mode: 0o700 });
     sh('git', ['init', '-q', j.proj]);
     const env = [
       `# sub-human remote-docker manual mode, joiner ${name}: source this in the shell you start ${name}'s Claude from.`,
-      `# room ${setup.code} in devbox (${hostSeat} is there); link ${A.linkId}; ssh via toxiproxy 127.0.0.1:${sshPort}`,
+      `# room ${setup.code} in devbox (${hostSeat} is there); your key logs in to host@devbox; ssh via toxiproxy 127.0.0.1:${sshPort}`,
       `export SUB_HUMAN_HOME='${j.home}'`,
       `export SUB_HUMAN_SSH_OPTS='${sshOpts(key, path.join(keys, `${name}.known_hosts`))}'`,
-      `export SUB_HUMAN_INVITE='${A.invite}'`,
       `# then: cd '${j.proj}' && claude --plugin-dir '${PLUGIN}' --remote-control`,
-      `# and type: /sub-human join ${name} <the invite: echo $SUB_HUMAN_INVITE>`,
+      `# and type: /sub-human join host@127.0.0.1:${sshPort} ${setup.code} --as ${name}`,
       '',
     ].join('\n');
     fs.writeFileSync(j.env, env, { mode: 0o600 });

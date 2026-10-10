@@ -14,14 +14,17 @@
  *     toxi(method, path, body)   the toxiproxy API
  *     keypair(svc, name) -> pubkey      ~/.ssh/NAME (ed25519) for the joiner user
  *     sshConfig(svc, name, hosts)       ~/.ssh/NAME.conf: one Host block per entry, then the shared defaults
- *     invite(code, {svc, dest}) / authorize(invite, pub, {svc}) on a devbox; trustOnBastion(pub)   (the sh1 path)
- *     hostInvite(hostSeat, name, {dest, via}) -> {invite, pin}   `/sub-human host --ssh DEST [--via JUMP]` (sh2 + PIN)
- *     join(opts) -> Promise<{seat, name, invite, linkId, conf, join, pub}>   a joiner over one ssh path. With sh2 (the
- *                       plugin has it, and opts.sh1 is not set): host --ssh on the host's seat, `/sub-human join NAME
- *                       INVITE PIN` (the link's own key; an admit line), the host's `/sub-human admit shk1…`, the link
- *                       online (the PIN checked at its first hello), then the seat `/sub-human NAME CODE`. sh1 (an
- *                       0.2.0 end): joinOver, `sub-human invite` + `authorize` + `/sub-human join NAME INVITE`
- *     features             {sh2Pin, hostSsh, revoke, heartbeat, outbox, autoRejoin, handoff, doctor, ws, urlPin,
+ *     invite(code, {svc, dest}) / authorize(invite, pub, {svc}) on a devbox; trustOnBastion(pub)   (the sh1 path: a
+ *                       0.2.0 end. devbox-old's own CLI; on the current devbox the plugin's lib through seat-cli, since
+ *                       no command mints one any more)
+ *     hostInvite(hostSeat, name, {dest, via}) -> {line, pin, text}   `/sub-human invite --ssh DEST [--via JUMP]`
+ *     join(opts) -> Promise<{seat, name, invite, pin, linkId, conf, join, pub}>   a joiner over one ssh path: invite
+ *                       --ssh on the host's seat, the line typed on the joiner (`/sub-human join DEST ROOM PIN [--via J]
+ *                       --as NAME`: the PAKE through the enrollment door, the link's own key), the host's card (Let in),
+ *                       the link online, then a bare `/sub-human` (the seat). sh1 (opts.sh1, or a 0.2.0 host):
+ *                       joinOver: invite + authorize + the joiner's sh1 join (a 0.2.0 joiner's `/sub-human join NAME
+ *                       INVITE`, else the link file it makes and `/sub-human NAME CODE`)
+ *     features             {hostSsh, revoke, heartbeat, outbox, autoRejoin, handoff, doctor, ws, urlPin,
  *                          versionRange, loginJoin, shortCode}: what the plugin in /plugin can do (seat-cli.js probe), overridable with
  *                          LAB_FEATURES=outbox=1,ws=0
  *   runScenarios({out, only, log}) -> {ok, results}   each scenarios/*.js in order; evidence under out/<id>/
@@ -103,6 +106,9 @@ class Lab {
       svc, user, home: subHome, cli,
       host: name => run('host', name),
       join: (name, invite, ...opts) => run('join', name, invite, ...opts),
+      linkinvite: (name, invite, ...opts) => run('linkinvite', name, invite, ...opts),
+      sh1: (code, dest) => run('sh1', code, dest),
+      authorize: (invite, pub, file) => run('authorize', invite, pub, ...(file ? [file] : [])),
       login: (name, dest, code, ...opts) => run('login', name, dest, code, ...opts),
       rejoin: (name, code) => run('rejoin', name, code),
       say: (name, text) => run('say', name, text),
@@ -212,12 +218,14 @@ class Lab {
   }
 
   invite(code, { svc = 'devbox', dest = 'host@devbox' } = {}) {
+    if (svc !== 'devbox-old') return this.seat(svc).sh1(code, dest).invite; // no command mints an sh1 invite any more
     const r = this.seat(svc).cli(['invite', '--room', code, '--ssh', dest]);
     if (r.status !== 0) throw new Error(`invite on ${svc}: ${r.stderr}`);
     return r.stdout.trim();
   }
 
   authorize(invite, pub, { svc = 'devbox' } = {}) {
+    if (svc !== 'devbox-old') return this.seat(svc).authorize(invite, pub, '/home/host/.ssh/authorized_keys');
     const r = this.seat(svc).cli(['authorize', invite, '-', '--file', '/home/host/.ssh/authorized_keys'], { input: pub + '\n' });
     if (r.status !== 0) throw new Error(`authorize on ${svc}: ${r.stderr}`);
     const m = /link ([0-9a-f]{12})/.exec(r.stderr + r.stdout);
@@ -247,38 +255,39 @@ class Lab {
     const invite = this.invite(code, { svc: hostSvc, dest });
     const { linkId } = this.authorize(invite, pub, { svc: hostSvc });
     const seat = this.seat(svc, { user, ...(home ? { home } : {}) });
-    const j = seat.join(name, invite, '-F', conf);
+    // a 0.2.0 joiner types the sh1 invite; the current plugin takes none, so the link file it would make, then the seat
+    const j = svc === 'devbox-old' ? seat.join(name, invite, '-F', conf) : seat.linkinvite(name, invite, '-F', conf);
     return { seat, name, invite, linkId, conf, join: j, pub };
   }
 
-  /** `/sub-human host --ssh DEST [--via JUMP]` in NAME's session on hostSeat: the sh2 invite and its PIN, as shown. */
+  /** `/sub-human invite --ssh DEST [--via JUMP]` in NAME's session on hostSeat: the line (no "/sub-human ") and its PIN. */
   hostInvite(hostSeat, name, { dest = 'host@devbox', via } = {}) {
-    const r = hostSeat.expand(name, `host --ssh ${dest}${via ? ` --via ${via}` : ''}${this.features.shortCode ? ' --long' : ''}`);
+    const r = hostSeat.expand(name, `invite --ssh ${dest}${via ? ` --via ${via}` : ''}`);
     const text = r.out || '';
-    const invite = (/\/sub-human join NAME (sh2\.\S+) PIN/.exec(text) || [])[1];
-    const pin = (/\bPIN (\d{6})\b/.exec(text) || [])[1];
-    if (!invite || !pin) throw new Error(`host --ssh on ${hostSeat.svc}: no invite and PIN in: ${text.slice(0, 300)}`);
-    return { invite, pin, text };
+    const m = /\/sub-human (join \S+ [a-z]+-\d{4} (\d{4})(?: --via \S+)?)\n/.exec(`${text}\n`);
+    if (!m) throw new Error(`invite --ssh on ${hostSeat.svc}: no line and PIN in: ${text.slice(0, 300)}`);
+    return { line: m[1], pin: m[2], text };
   }
 
   async join(opts) {
-    const { svc, name, code, hosts, via, viaFlag, home, host, hostName = 'alice', user = USERS[svc], hostSvc = 'devbox', dest = 'host@devbox', key = `id_${name}` } = opts;
-    if (opts.sh1 || !(this.features.sh2Pin && this.features.hostSsh) || hostSvc !== 'devbox') return this.joinOver(opts);
+    const { svc, name, code, hosts, via, viaFlag, home, host, hostName = 'alice', user = USERS[svc], hostSvc = 'devbox', dest = 'host@devbox', key = `id_${name}`, ms = 30_000 } = opts;
+    if (opts.sh1 || !this.features.shortCode || hostSvc !== 'devbox') return this.joinOver(opts);
     const t0 = Date.now();
     const pub = this.keypair(svc, key, user);
     const conf = this.sshConfig(svc, name, key, hosts, user);
     if (via === 'bastion') this.trustOnBastion(pub);
     const hostSeat = host || this.seat(hostSvc);
-    const { invite, pin } = this.hostInvite(hostSeat, hostName, { dest, via: viaFlag });
+    const { line, pin } = this.hostInvite(hostSeat, hostName, { dest, via: viaFlag });
     const seat = this.seat(svc, { user, ...(home ? { home } : {}) });
-    const linked = seat.join(name, invite, pin, '-F', conf);
-    const admitted = linked.admit ? hostSeat.expand(hostName, `admit ${linked.admit}`) : null;
-    const linkId = admitted && (/as link ([0-9a-f]{12})/.exec(admitted.out || '') || [])[1];
-    // the daemon redials (jittered backoff) until the host's admit lets its key in; its hello then spends the PIN
-    const online = linked.ok || (admitted && await until(() => { try { return seat.link(code).state === 'online'; } catch { return false; } }, 30_000, 250));
-    const seated = online ? seat.rejoin(name, code)
-      : { ok: false, out: `not linked: ${linked.out || ''} ${admitted ? `admit: ${admitted.out}` : ''} link ${JSON.stringify(seat.link(code))}` };
-    return { seat, name, invite, pin, linkId, conf, pub, linked, admitted, join: { ...seated, ms: Date.now() - t0 } };
+    // the line, typed on the joiner: the PAKE through the door, then the host person's card
+    const linked = seat.short(name, dest, code, pin, ...(viaFlag ? ['--via', viaFlag] : []), '-F', conf);
+    const admitted = linked.waiting ? hostSeat.admitcard(hostName, 'Let in') : null;
+    const linkId = admitted && admitted.link;
+    // the daemon redials (jittered backoff) until the card lets its key in
+    const online = !!(admitted && admitted.ok) && await until(() => { try { return seat.link(code).state === 'online'; } catch { return false; } }, ms, 250);
+    const seated = online ? seat.expand(name, '') // a bare /sub-human takes the seat
+      : { ok: false, out: `not linked: ${linked.out || ''} ${admitted ? `card: ${admitted.out}` : ''} link ${JSON.stringify(seat.link(code))}` };
+    return { seat, name, invite: line, pin, linkId, conf, pub, linked, admitted, join: { ...seated, ms: Date.now() - t0 } };
   }
 
   /** Logs since the current scenario started (runOne sets this.since), so one scenario never sees another's. */
@@ -289,9 +298,8 @@ class Lab {
 
 // ---------- features ----------
 const FEATURES = {
-  sh2Pin: p => p.src.auth.sh2 && p.src.auth.pin,
   hostSsh: p => p.src.join.hostSsh,
-  revoke: p => p.cli.includes('revoke'),
+  revoke: p => p.cli.includes('kick') || p.cli.includes('revoke'),
   heartbeat: p => p.ops.includes('ping') || p.src.link.ping,
   outbox: p => p.files.includes('lib/remote/outbox.js') || p.src.link.outbox,
   autoRejoin: p => p.src.link.rejoin,
@@ -326,7 +334,7 @@ class Evidence {
     this.metrics = {};
   }
   secret(s, min = 8) { if (s && String(s).length >= min) this.secrets.add(String(s)); }
-  /** An sh2 invite's secret and its PIN (6 digits, so only as the PIN it is: never a bare 6-digit number). */
+  /** An invite's secret (sh1/sh2) and its PIN (only where it stands as the PIN: never a bare 4-digit number). */
   invite(inv, pin) {
     if (inv) this.secret(String(inv).split('.')[3]);
     if (pin) this.pins = [...(this.pins || []), String(pin)];
@@ -335,8 +343,8 @@ class Evidence {
     let t = String(text);
     for (const s of this.secrets) t = t.split(s).join('<redacted>');
     for (const p of this.pins || []) t = t.replace(new RegExp(`(PIN\\D{0,3}|sh2\\.\\S+\\s+)${p}\\b`, 'g'), '$1<pin>');
-    // a short invite's line: /sub-human join NAME DEST [CODE] 482913 (the code is its whole secret)
-    for (const p of this.pins || []) t = t.replace(new RegExp(`(join\\s+\\S+\\s+\\S+(?:\\s+[a-z]+-\\d{4})?\\s+)${p}\\b`, 'g'), '$1<code>');
+    // an invite's line: join DEST ROOM 4829, or join URL 4829 (the PIN is its whole secret)
+    for (const p of this.pins || []) t = t.replace(new RegExp(`(join\\s+\\S+(?:\\s+[a-z]+-\\d{4})?\\s+)${p}\\b`, 'g'), '$1<pin>');
     return t.replace(/\b(sh[12])\.([a-z]+-\d{4}|[A-Z0-9]{4,8})\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]{16,}/g, '$1.$2.$3.<redacted>');
   }
   log(msg) {

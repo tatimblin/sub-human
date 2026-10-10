@@ -490,7 +490,7 @@ function startSession(me, ctx) {
   function admitHealth() {
     const adm = deps.admission();
     for (const q of adm.lapse(s.code, { now: clock.now() })) {
-      emit([{ type: 'health', text: `room: ${adm.describe(q)} typed your code, but nobody let them in within ${Math.round((Date.parse(q.expires_at) - Date.parse(q.created_at)) / 60_000)} minutes; their join stopped` }]);
+      emit([{ type: 'health', text: `room: ${adm.describe(q)} typed your PIN, but nobody let them in within ${Math.round((Date.parse(q.expires_at) - Date.parse(q.created_at)) / 60_000)} minutes; their join stopped` }]);
     }
     for (const q of adm.pending(s.code, { now: clock.now() })) {
       if ((q.told || []).includes(me.name) || !adm.targets(s.code, q).includes(me.name)) continue;

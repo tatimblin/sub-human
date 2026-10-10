@@ -2,16 +2,16 @@
 // Join with your own ssh login (no invite, PIN or admit): bob on joiner-a has a key the devbox account `host` takes as
 // an ordinary authorized_keys line (no command=), over the WAN path. Checked: a first connection to a host ssh does not
 // know yet fails at once with the exact `ssh host@devbox` to run once (BatchMode: no prompt, no hang) and mints no
-// link; after that one ssh, `/sub-human join bob host@devbox CODE` links and takes the seat in one step, through the
-// host's stable shim (written by alice's own join there); posts flow both ways; the room line names the link. A key the
-// host restricted to another link (its forced-command line) cannot use the login path: AUTH, no link. revoke ends it.
+// link; after that one ssh, `/sub-human join host@devbox CODE --as bob` links and takes the seat in one step, through
+// the host's stable shim (written by alice's own join there); posts flow both ways; the room line names the link. A key
+// the host restricted to another link (its forced-command line) cannot use the login path: AUTH, no link. kick ends it.
 const { WAN, delivered, converge, waitState } = require('./_lib.js');
 
 const AK = '/home/host/.ssh/authorized_keys';
 
 module.exports = {
   id: 'login',
-  title: 'join NAME host@devbox CODE over the joiner\'s own ssh login; unknown host key fails fast; a restricted key cannot use it',
+  title: 'join host@devbox CODE over the joiner\'s own ssh login; unknown host key fails fast; a restricted key cannot use it',
   persona: 'P1 own machines',
   requires: ['loginJoin'],
   budgetMs: 120_000,
@@ -42,7 +42,7 @@ module.exports = {
     t.log(`ssh host@devbox once: exit ${once.status} ${once.stderr.trim().split('\n')[0] || ''}`);
     const j = seat.login('bob', 'host@devbox', code, ...opts);
     t.log(`join (${j.ms} ms): ok ${j.ok} ${j.out}`);
-    if (!t.check('join bob host@devbox CODE links and takes the seat in one step', j.ok, j.out || `${j.ms} ms`)) return;
+    if (!t.check('join host@devbox CODE --as bob links and takes the seat in one step', j.ok, j.out || `${j.ms} ms`)) return;
     const lf = JSON.parse(lab.exec('joiner-a', ['cat', `${seat.home}/links/${code}.json`], { user: 'joiner' }).stdout);
     t.ev.secret(lf.token);
     const id = lf.transport && lf.transport.link;
@@ -61,7 +61,7 @@ module.exports = {
     const c = await converge(t, host, code, [seat]);
     t.check('mirror byte-identical to the host log, chains verify', c.ok, c.detail);
 
-    // a key restricted to another link: the forced-command line authorize writes (an sh1 invite's reserved link)
+    // a key restricted to another link: the forced-command line a host writes for one link (here an sh1 invite's)
     const carolPub = lab.keypair('joiner-a', 'id_carol');
     const { linkId: other } = lab.authorize(lab.invite(code), carolPub);
     const confC = lab.sshConfig('joiner-a', 'carol', 'id_carol', WAN);
@@ -74,10 +74,10 @@ module.exports = {
     t.check('the restricted key asking for `serve --login` by hand runs only its forced command', !/--login/.test(lab.exec('devbox', ['sh', '-c', 'ps -eo args | grep "[a]aaaaaaaaaaa"'], { allowFail: true }).stdout), `exit ${raw.status}`);
     t.check('the host still holds only bob\'s login link', JSON.stringify(Object.keys(linksOf())) === JSON.stringify([id]), JSON.stringify(Object.keys(linksOf())));
 
-    // revoke: the token goes, the serve stops, bob's link stops for good
-    const rv = host.expand('alice', 'revoke bob');
-    t.log(`revoke: ${rv.out}`);
-    t.check('revoke bob ends the login link (and says the login can link again)', new RegExp(`revoked link ${id} .*its serve stopped, bob left\\. It came over an ssh login`).test(rv.out || ''), (rv.out || '').slice(0, 200));
+    // kick: the token goes, the serve stops, bob's link stops for good
+    const rv = host.expand('alice', 'kick bob');
+    t.log(`kick: ${rv.out}`);
+    t.check('kick bob ends the login link (and says the login can join again)', new RegExp(`bob is out of room ${code}: its connection no longer reaches the room\\. It came over an ssh login`).test(rv.out || ''), (rv.out || '').slice(0, 200));
     const stopped = await waitState(seat, code, 'stopped', 20_000);
     t.check('bob\'s link stops (it does not redial)', stopped !== null, `${stopped} ms`);
   },

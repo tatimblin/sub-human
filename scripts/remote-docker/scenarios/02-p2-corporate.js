@@ -3,8 +3,8 @@
 // HTTP CONNECT. First the isolation itself is proved (no route, no DNS for the devbox or toxiproxy, no direct TLS).
 // Variant 1: ssh to the devbox with ProxyJump through the bastion (the joiner's own ssh config, -F). Variant 2, a
 // second home on joiner-b: ssh with ProxyCommand `nc -X connect` through corp-proxy to the WAN path. Both seats
-// post and receive; the bastion's and the proxy's logs show the hop. bea's invite comes from `/sub-human host --ssh
-// host@devbox --via jump@bastion`: the jump is in the invite's locator, so her link runs ssh -J itself.
+// post and receive; the bastion's and the proxy's logs show the hop. bea's invite comes from `/sub-human invite --ssh
+// host@devbox --via jump@bastion`: the jump is in the invite's line, so her link runs ssh -J itself.
 const { JUMP, PROXY, delivered, converge } = require('./_lib.js');
 
 module.exports = {
@@ -69,8 +69,8 @@ module.exports = {
     if (t.features.hostSsh) {
       const lf = JSON.parse(lab.exec('joiner-b', ['cat', `${v1.seat.home}/links/${code}.json`], { user: 'joiner' }).stdout);
       t.ev.write('bea-link-transport.json', lf.transport);
-      t.check('host --ssh --via: bea\'s invite carried the jump, her link dials ssh -J jump@bastion with its own key and the pinned host key',
+      t.check('invite --ssh --via: bea\'s line carried the jump, her link dials ssh -J jump@bastion with its own key and the pinned host key',
         v1.join.ok && lf.transport.via === 'jump@bastion' && !!lf.transport.key && !!lf.transport.alias, JSON.stringify({ via: lf.transport.via, key: !!lf.transport.key, alias: lf.transport.alias }));
-    } else t.pending('/sub-human host --ssh --via jump@bastion (one-step invite + authorize)', 'needs hostSsh');
+    } else t.pending('/sub-human invite --ssh --via jump@bastion', 'needs hostSsh');
   },
 };

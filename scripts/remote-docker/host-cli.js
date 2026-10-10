@@ -72,6 +72,25 @@ const cmds = {
     return { ok: true, id: e.id };
   },
 
+  /** An sh1 invite to the room for DEST (internal: no command mints one; the Mac run links with it), and its key's line. */
+  invite1(dest) {
+    const { code } = state();
+    const L = lib('remote/link.js');
+    const locator = dest === 'pipe' ? L.pipeLocator() : L.sshLocator(dest);
+    return { invite: lib('remote/auth.js').mintInvite(lib('room/store.js').open(code), { locator }).invite };
+  },
+
+  /** The one-link forced-command line for the public key on stdin and that invite's reserved link, appended. */
+  authorize(invite, file = '/home/host/.ssh/authorized_keys') {
+    const auth = lib('remote/auth.js'), sshkeys = lib('remote/sshkeys.js');
+    const inv = auth.parseInvite(invite);
+    const id = auth.reserveLink(lib('room/store.js').open(inv.code), inv.secret);
+    const key = sshkeys.publicKey(fs.readFileSync(0, 'utf8'));
+    const { shim, h } = lib('remote/hosting.js').shimReady();
+    sshkeys.appendAuthorized(file, shim.authorizedLine(inv.code, id, key, h), key);
+    return { linkId: id };
+  },
+
   dump() {
     const { code, machine } = state();
     const store = lib('room/store.js');
@@ -86,5 +105,5 @@ const cmds = {
 };
 
 const [cmd, ...args] = process.argv.slice(2);
-if (!cmds[cmd]) { console.error('usage: host-cli.js setup [SEAT] | say TEXT | to NAME TEXT | dump'); process.exit(2); }
+if (!cmds[cmd]) { console.error('usage: host-cli.js setup [SEAT] | say TEXT | to NAME TEXT | invite1 DEST | authorize INVITE [FILE] < PUBKEY | dump'); process.exit(2); }
 try { process.stdout.write(JSON.stringify(cmds[cmd](...args)) + '\n'); } catch (e) { console.error(e && e.stack || e); process.exit(1); }

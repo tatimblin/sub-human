@@ -3,20 +3,20 @@
 //   - the forced command refuses a shell: `ssh devbox ls` runs serve, not ls; no pty; no -W forwarding; the bastion
 //     account has no shell either
 //   - the stores are private: both homes 0700, nothing in them group- or world-readable
-//   - no secret in any log: invite secrets and link tokens appear nowhere but the joiner's own link file (sshd,
-//     tinyproxy, caddy and toxiproxy logs, link logs, the tails' output, the room logs and members, ps on every machine)
-//   - (1.0) a wrong PIN 5x burns the invite: the right PIN after that is refused too (an ssh sh2 join: the host
-//     admits the joiner's key first, the PIN is checked at each hello)
-//   - (1.0) /sub-human revoke bob: the link's key is gone from authorized_keys, its serve is stopped, bob's link
-//     stops (AUTH: it does not redial, and a post is refused, not queued); bea's link is untouched
+//   - no secret in any log: link tokens appear nowhere but the joiner's own link file (sshd, tinyproxy, caddy and
+//     toxiproxy logs, link logs, the tails' output, the room logs and members, ps on every machine)
+//   - a wrong PIN 5x burns the invite: each refused with the tries left (the PAKE through the enrollment door), and
+//     the right PIN after that gets nowhere
+//   - /sub-human kick bob: the link's key is gone from authorized_keys, its serve is stopped, bob's link stops (AUTH:
+//     it does not redial, and a post is refused, not queued); bea's link is untouched
 const { WAN, JUMP, waitState } = require('./_lib.js');
 
-// ssh as the joiner's link does it: its own key (an sh2 join made it, the host admitted it), its routing (-F)
+// ssh as the joiner's link does it: its own key (the join made it, the host's card let it in), its routing (-F)
 const linkSsh = (j, code) => `ssh -F ${j.conf} -i ${j.seat.home}/links/${code}/id_ed25519 -o IdentitiesOnly=yes`;
 
 module.exports = {
   id: 'security',
-  title: 'forced command refuses a shell; stores 0700; no secrets in logs; wrong PIN 5x burns the invite; revoke',
+  title: 'forced command refuses a shell; stores 0700; no secrets in logs; wrong PIN 5x burns the invite; kick',
   persona: 'all',
   budgetMs: 150_000,
   async run(t) {
@@ -27,11 +27,11 @@ module.exports = {
     if (!t.check('bob and bea join', a.join.ok && b.join.ok)) return;
     a.seat.say('bob', 'security hello');
     host.say('alice', 'security hello back');
-    const secrets = [a.invite, b.invite].map(i => i.split('.').pop());
+    const secrets = [];
     const tokens = [[a, 'joiner-a'], [b, 'joiner-b']].map(([j, svc]) => JSON.parse(lab.exec(svc, ['cat', `${j.seat.home}/links/${code}.json`]).stdout).token);
     // the evidence itself is redacted, so register them only after reading
     const all = [...secrets, ...tokens].filter(Boolean);
-    t.log(`${secrets.length} invite secrets and ${tokens.length} link tokens collected (redacted in this evidence)`);
+    t.log(`${tokens.length} link tokens collected (redacted in this evidence)`);
     for (const s of all) t.ev.secret(s);
 
     // forced command
@@ -72,45 +72,41 @@ module.exports = {
       if (/^grep|home/.test(where) && String(text).trim() && !leaks.some(l => l.startsWith(where))) leaks.push(`${where}: ${String(text).trim().split('\n')[0]}`);
     }
     t.ev.write('secret-scan.json', Object.fromEntries(Object.entries(sources).map(([k, v]) => [k, `${String(v).length} B scanned`])));
-    t.check('no invite secret or link token in any log, room file, process list or other file', !leaks.length, leaks.length ? leaks.join('; ') : `${Object.keys(sources).length} sources, ${all.length} secrets`);
+    t.check('no link token in any log, room file, process list or other file', !leaks.length, leaks.length ? leaks.join('; ') : `${Object.keys(sources).length} sources, ${all.length} secrets`);
 
-    // PIN burn (1.0: sh2 + PIN)
-    if (t.features.sh2Pin && t.features.hostSsh) {
-      const { invite: inv, pin } = lab.hostInvite(host, 'alice');
-      t.ev.invite(inv, pin);
+    // PIN burn: 5 wrong PINs through the enrollment door, then the right one gets nowhere
+    if (t.features.shortCode) {
+      const { pin } = lab.hostInvite(host, 'alice');
+      t.ev.invite(null, pin);
       const carol = lab.seat('joiner-a', { home: '.sub-human-pin' });
-      const wrong = String((Number(pin) + 1) % 1e6).padStart(6, '0');
-      const tries = [carol.join('carol', inv, wrong, '-F', a.conf)];
-      // over ssh the host admits carol's key first; her link's hello then brings the (wrong) PIN
-      const adm = tries[0].admit ? host.expand('alice', `admit ${tries[0].admit}`) : null;
-      await t.until(() => /wrong PIN|burn/i.test(JSON.stringify(carol.link(code))), 30_000, 300);
-      for (let i = 1; i < 5; i++) tries.push(carol.join('carol', inv, wrong, '-F', a.conf));
-      const first = carol.link(code);
-      const right = carol.join('carol', inv, pin, '-F', a.conf);
-      const after = carol.link(code);
-      t.ev.write('pin-tries.json', { admit: adm && adm.out, tries: tries.map(r => r.out), first, right: right.out, after });
-      t.check('each of 5 wrong PINs is refused (the first at the link\'s hello, after the admit)', !!adm && tries.every(r => !r.linked) && tries.slice(1).every(r => /wrong PIN|burn/i.test(r.out || '')),
-        [first.reason, ...tries.slice(1).map(r => r.out)].map(x => String(x || '').slice(0, 60)).join(' | '));
-      t.check('the right PIN after 5 wrong ones is refused: the invite burned', !right.linked && /burn|used|expired|unknown|too many/i.test(right.out || ''), (right.out || '').slice(0, 160));
+      const wrong = String((Number(pin) + 1) % 1e4).padStart(4, '0');
+      const tries = [];
+      for (let i = 0; i < 5; i++) tries.push(carol.short('carol', 'host@devbox', code, wrong, '-F', a.conf));
+      const right = carol.short('carol', 'host@devbox', code, pin, '-F', a.conf);
+      t.ev.write('pin-tries.json', { tries: tries.map(r => r.out), right: right.out });
+      t.check('each of 5 wrong PINs is refused with the tries left, in a hidden step; the fifth burns the invite',
+        tries.every(r => !r.ok && r.hidden) && tries.slice(0, 4).every((r, i) => new RegExp(`wrong PIN \\(${4 - i} tr`).test(r.out || '')) && /last try: the invite is burnt/.test(tries[4].out || ''),
+        tries.map(r => String(r.out || '').slice(0, 60)).join(' | '));
+      t.check('the right PIN after 5 wrong ones gets nowhere: the invite burned (its door shut)', !right.ok && /burn|shut|no invite for room/i.test(right.out || ''), (right.out || '').slice(0, 160));
       const hl = host.dump(code).entries.filter(e => e.kind === 'status' && /PIN|burn/i.test(e.text || '')).map(e => e.text);
-      t.check('the host\'s room shows the wrong PINs and the burn', hl.some(x => /burn/i.test(x)), hl.slice(-2).join(' | ').slice(0, 200));
-    } else t.pending('a wrong PIN 5x burns the invite', 'needs sh2Pin');
+      t.check('the host\'s room shows the wrong PINs and the burn', hl.some(x => /burn/i.test(x)) && !hl.some(x => x.includes(` ${pin}`) || x.includes(` ${wrong}`)), hl.slice(-2).join(' | ').slice(0, 200));
+    } else t.pending('a wrong PIN 5x burns the invite', 'needs shortCode');
 
-    // revoke (1.0): the person on the host, /sub-human revoke bob
+    // kick: the person on the host, /sub-human kick bob
     if (t.features.revoke) {
-      const r = host.expand('alice', 'revoke bob');
-      t.ev.write('revoke.json', r);
+      const r = host.expand('alice', 'kick bob');
+      t.ev.write('kick.json', r);
       const keys = lab.exec('devbox', ['cat', '/home/host/.ssh/authorized_keys'], { allowFail: true }).stdout;
-      t.check('/sub-human revoke bob removes the link\'s authorized_keys line', /revoked link/.test(r.out || '') && !!a.linkId && !keys.includes(a.linkId), (r.out || '').slice(0, 160));
+      t.check('/sub-human kick bob removes the link\'s authorized_keys line', /bob is out of room/.test(r.out || '') && !!a.linkId && !keys.includes(a.linkId), (r.out || '').slice(0, 160));
       const gone = await t.until(() => !lab.exec('devbox', ['sh', '-c', `pgrep -f '[s]erve --stdio ${code} --link ${a.linkId}' || true`]).stdout.trim(), 10_000, 300);
-      t.check("revoke stops that link's serve", gone, gone ? 'none running' : 'still running');
+      t.check("kick stops that link's serve", gone, gone ? 'none running' : 'still running');
       const st = await waitState(a.seat, code, ['stopped'], 20_000);
-      const post = a.seat.say('bob', 'after revoke');
+      const post = a.seat.say('bob', 'after kick');
       const ls = a.seat.link(code);
       t.check("bob's link stops (AUTH, it does not redial) and his post is refused, not queued", st !== null && ls.code === 'AUTH' && !post.ok,
         `${ls.state} ${ls.code || ''}: ${(ls.reason || '').slice(0, 80)}; post: ${(post.out || '').slice(0, 80)}`);
-      const bea = b.seat.say('bea', 'bea after revoke of bob');
-      t.check("bea's link is untouched by bob's revoke", bea.ok, bea.out || 'posted');
-    } else t.pending('revoke LINK removes the key, stops its serve and cuts the link', 'needs revoke');
+      const bea = b.seat.say('bea', 'bea after kick of bob');
+      t.check("bea's link is untouched by bob's kick", bea.ok, bea.out || 'posted');
+    } else t.pending('kick NAME removes the key, stops its serve and cuts the link', 'needs revoke');
   },
 };

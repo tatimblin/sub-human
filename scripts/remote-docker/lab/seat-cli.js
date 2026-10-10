@@ -10,21 +10,26 @@
  * State: $HOME/lab-seats<basename of SUB_HUMAN_HOME>.json, so one machine can hold two homes (two links to a room).
  *
  *   host NAME                     open a room here as NAME (`/sub-human NAME`): {code, machine, seat, out}
- *   join NAME INVITE [PIN] [SSH_OPT…]   `/sub-human join NAME INVITE [PIN]` (an sh2 invite takes its 6-digit PIN);
+ *   join NAME INVITE [SSH_OPT…]   `/sub-human join NAME INVITE` as a 0.2.0 plugin takes an sh1 invite (devbox-old);
  *                                 SSH_OPT… become SUB_HUMAN_SSH_OPTS for this seat's hooks and so for the link daemon
- *                                 the join starts: {ok, out, ms, code, linked, admit}. ok: the seat joined (sh1), or
- *                                 the link redeemed the invite (sh2: "linked"); admit: the shk1 request an ssh join
- *                                 shows for the host's /sub-human admit
- *   login NAME DEST CODE [SSH_OPT…]   `/sub-human join NAME DEST CODE`: a link over the person's own ssh login to DEST
- *                                 (no invite), with SSH_OPT… as for join: {ok, out, ms, code}; ok: the seat joined
+ *                                 the join starts: {ok, out, ms, code}
+ *   linkinvite NAME INVITE [SSH_OPT…]   the current plugin's way to an sh1 invite (a 0.2.0 host mints only those, and
+ *                                 no command takes one any more): the link file it makes, then `/sub-human NAME CODE`
+ *   sh1 CODE DEST                 (on a current host) an sh1 invite for DEST, minted with the plugin's lib: {invite}
+ *   authorize INVITE PUBKEY [FILE]   (on a current host) the one-link forced-command line for PUBKEY and that invite's
+ *                                 reserved link, appended to FILE (default ~/.ssh/authorized_keys): {linkId, out}
+ *   login NAME DEST CODE [SSH_OPT…]   `/sub-human join DEST CODE --as NAME`: a link over the person's own ssh login to
+ *                                 DEST (no invite), with SSH_OPT… as for join: {ok, out, ms, code}; ok: the seat joined
  *   rejoin NAME CODE              `/sub-human NAME CODE` (a room hosted here, or one this machine links to)
  *   say NAME TEXT                 NAME's `@room TEXT` through hooks/prompt.js: {ok, ms, t0, out}
  *   prompt NAME TEXT              any typed prompt through hooks/prompt.js (e.g. a slash-free command)
- *   expand NAME ARGS              any `/sub-human ARGS` through hooks/join.js (host --ssh, revoke, handoff, …)
+ *   expand NAME ARGS              any `/sub-human ARGS` through hooks/join.js (invite --ssh, kick, handoff, …)
  *   leave NAME                    SessionEnd for NAME, then its seat process stops
- *   short NAME DEST CODE|- PIN [SSH_OPT…]   `/sub-human join NAME DEST [CODE] PIN` (a short invite; '-' for a URL):
- *                                 {ok, waiting, out, hidden}: ok once the host checked the code
- *   admitcard NAME LABEL          NAME, on the host, answers the oldest join request's card ("Let in" / "Refuse")
+ *   short NAME DEST CODE|- PIN [--via J] [SSH_OPT…]   `/sub-human join DEST [CODE] PIN [--via J] --as NAME` (an
+ *                                 invite's line; '-' for a URL): {ok, waiting, out, hidden}: ok once the host checked
+ *                                 the PIN
+ *   admitcard NAME LABEL          NAME, on the host, answers the oldest join request's card ("Let in" / "Refuse"):
+ *                                 {ok, question, out, ref, key, link}
  *   card NAME LABEL               NAME answers the handoff card the hooks build (consent.js Pre, then Post with
  *                                 LABEL, e.g. "Host it here"), as the person would on the AskUserQuestion card
  *   events NAME                   what NAME's tail delivered: [{t, ev}]
@@ -93,6 +98,14 @@ function newSeat(name, sshOpts) {
 }
 
 const lease = seat => lib('identity.js').writeModLease(seat.sid, { pid: seat.pid, nonce: seat.nonce });
+/** NAME's seat (a new one when none is alive), its ssh options set to opts when given. */
+function seatWith(name, opts) {
+  let seat;
+  try { seat = seatOf(name); } catch { seat = null; }
+  if (!seat || !alive(seat.pid)) return newSeat(name, opts.join(' '));
+  if (opts.length) { seat.sshOpts = opts.join(' '); const st = load(); st.seats[name] = seat; save(st); }
+  return seat;
+}
 const expand = (seat, args) => { lease(seat); return hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, seat); };
 const typed = (seat, prompt) => {
   lease(seat);
@@ -124,38 +137,50 @@ const cmds = {
   },
 
   join(name, invite, ...rest) {
-    const pin = /^\d{6}$/.test(rest[0] || '') ? rest.shift() : null;
-    let seat;
-    try { seat = seatOf(name); } catch { seat = null; }
-    if (!seat || !alive(seat.pid)) seat = newSeat(name, rest.join(' '));
-    else if (rest.length) { seat.sshOpts = rest.join(' '); const st = load(); st.seats[name] = seat; save(st); }
-    const r = expand(seat, `join ${name} ${invite}${pin ? ` ${pin}` : ''}`);
-    let parsed = lib('remote/auth.js').parseInvite(invite);
-    if (!parsed) try { parsed = lib('remote/transports/ws.js').parseJoinUrl(invite); } catch { /* an older plugin */ }
+    const seat = seatWith(name, rest);
+    const r = expand(seat, `join ${name} ${invite}`);
+    const parsed = lib('remote/auth.js').parseInvite(invite);
     const out = reason(r.json) || '';
-    const linked = /^linked to room/.test(out);
-    const admit = (/\/sub-human admit (shk1\.\S+)/.exec(out) || [])[1] || null;
-    return { ok: joinedOk(r.json) || linked, linked, admit, out, ms: r.ms, code: parsed && parsed.code, stderr: r.stderr };
+    return { ok: joinedOk(r.json), out, ms: r.ms, code: parsed && parsed.code, stderr: r.stderr };
+  },
+
+  linkinvite(name, invite, ...rest) {
+    const seat = seatWith(name, rest);
+    const inv = lib('remote/auth.js').parseInvite(invite);
+    lib('room/links.js').set(inv.code, { code: inv.code, transport: lib('remote/link.js').transportOf(inv.locator), invite, created_at: new Date().toISOString() });
+    const r = expand(seat, `${name} ${inv.code}`);
+    return { ok: joinedOk(r.json), out: reason(r.json) || '', ms: r.ms, code: inv.code, stderr: r.stderr };
+  },
+
+  sh1(code, dest) {
+    const locator = lib('remote/link.js').sshLocator(dest);
+    return { invite: lib('remote/auth.js').mintInvite(lib('room/store.js').open(code), { locator }).invite };
+  },
+
+  authorize(invite, pub, file = path.join(USER_HOME, '.ssh', 'authorized_keys')) {
+    const auth = lib('remote/auth.js'), sshkeys = lib('remote/sshkeys.js');
+    const inv = auth.parseInvite(invite);
+    const id = auth.reserveLink(lib('room/store.js').open(inv.code), inv.secret);
+    const key = sshkeys.publicKey(pub);
+    const { shim, h } = lib('remote/hosting.js').shimReady();
+    const r = sshkeys.appendAuthorized(file, shim.authorizedLine(inv.code, id, key, h), key);
+    return { linkId: id, out: `${r}: link ${id} of room ${inv.code}` };
   },
 
   login(name, dest, code, ...rest) {
-    let seat;
-    try { seat = seatOf(name); } catch { seat = null; }
-    if (!seat || !alive(seat.pid)) seat = newSeat(name, rest.join(' '));
-    else if (rest.length) { seat.sshOpts = rest.join(' '); const st = load(); st.seats[name] = seat; save(st); }
-    const r = expand(seat, `join ${name} ${dest} ${code}`);
+    const seat = seatWith(name, rest);
+    const r = expand(seat, `join ${dest} ${code} --as ${name}`);
     return { ok: joinedOk(r.json), out: reason(r.json) || '', ms: r.ms, code, stderr: r.stderr };
   },
 
-  // `/sub-human join NAME DEST [CODE] PIN`: a short invite (DEST a URL: CODE is '-'); SSH_OPT… as for join
+  // `/sub-human join DEST [CODE] PIN [--via J] --as NAME`: an invite's line (DEST a URL: CODE is '-'); SSH_OPT… as for join
   short(name, dest, code, pin, ...rest) {
-    let seat;
-    try { seat = seatOf(name); } catch { seat = null; }
-    if (!seat || !alive(seat.pid)) seat = newSeat(name, rest.join(' '));
-    else if (rest.length) { seat.sshOpts = rest.join(' '); const st = load(); st.seats[name] = seat; save(st); }
-    const r = expand(seat, `join ${name} ${dest}${code === '-' ? '' : ` ${code}`} ${pin}`);
+    const via = rest[0] === '--via' ? ` --via ${rest[1]}` : '';
+    const opts = via ? rest.slice(2) : rest;
+    const seat = seatWith(name, opts);
+    const r = expand(seat, `join ${dest}${code === '-' ? '' : ` ${code}`} ${pin}${via} --as ${name}`);
     const out = reason(r.json) || '';
-    return { ok: /checked your code/.test(out) || /^linked to room/.test(out), waiting: /checked your code/.test(out), out, ms: r.ms, hidden: !!(r.json && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt), stderr: r.stderr };
+    return { ok: /checked your PIN/.test(out) || /the host let you in/.test(out), waiting: /checked your PIN/.test(out), out, ms: r.ms, hidden: !!(r.json && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt), stderr: r.stderr };
   },
 
   // NAME, on the host, answers the join request's card the hooks build (consent.js Pre with "admit REF", then Post)
@@ -171,7 +196,7 @@ const cmds = {
     const q = card.questions[0].question;
     const post = hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: { [q]: label } } }, seat);
     const ctx = post.json && post.json.hookSpecificOutput && post.json.hookSpecificOutput.additionalContext;
-    return { ok: /let \S+'s machine into room|refused/.test(ctx || ''), question: q, out: ctx, ref: req.ref, key: req.key, ms: pre.ms + post.ms, stderr: post.stderr };
+    return { ok: /let \S+'s machine into room|refused/.test(ctx || ''), question: q, out: ctx, ref: req.ref, key: req.key, link: req.link, ms: pre.ms + post.ms, stderr: post.stderr };
   },
 
   card(name, label) {
