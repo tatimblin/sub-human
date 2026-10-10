@@ -59,76 +59,87 @@ import { StringDecoder } from 'node:string_decoder';
 import fs from 'node:fs';
 import path from 'node:path';
 import { LINK_FRAME_MAX_BYTES } from '../config.ts';
+import type {
+  FrameId, Op, EventName, WireCode, ProtoRange, PeerVersion, OpParams, RequestFrame, AnyRequest, ResultFrame,
+  ErrorFrame, EventData, EventFrame, DecodedFrame, Caps, IncomingRequest,
+} from './types-core.ts';
 
-const PROTO = Object.freeze({ min: 1, max: 2 });
+const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 1, max: 2 });
 const VERSION = PROTO.max;
-const PLUGIN_VERSION = (() => {
+const PLUGIN_VERSION: string = (() => {
   try { return String(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || '?'); } catch { return '?'; }
 })();
 
-const isVersion = n => Number.isInteger(n) && n >= 1 && n <= 1000;
+const isVersion = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 1000;
+/** A hello's fields as they arrived: unchecked. */
+interface RangeFields { v?: unknown; proto?: { min?: unknown; max?: unknown } | null }
 /** @returns {{min: number, max: number} | null} */
-function rangeOf({ v, proto } = {}) {
+function rangeOf({ v, proto }: RangeFields = {}): ProtoRange | null {
   if (proto && isVersion(proto.min) && isVersion(proto.max) && proto.min <= proto.max) return { min: proto.min, max: proto.max };
   return isVersion(v) ? { min: v, max: v } : null;
 }
 /** @returns {number | null} */
-function negotiate(a, b) {
+function negotiate(a: ProtoRange, b: ProtoRange): number | null {
   const v = Math.min(a.max, b.max);
   return v >= Math.max(a.min, b.min) ? v : null;
 }
-const span = r => (r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`);
-const runs = (who, x) => `${who} ${x.version && x.version !== '?' ? `sub-human ${x.version}` : 'an unknown sub-human version'} (protocol ${span(x.proto)})`;
+const span = (r: ProtoRange): string => (r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`);
+const runs = (who: string, x: PeerVersion): string => `${who} ${x.version && x.version !== '?' ? `sub-human ${x.version}` : 'an unknown sub-human version'} (protocol ${span(x.proto)})`;
 /** @returns {string} */
-function skewMessage({ host, joiner }) {
+function skewMessage({ host, joiner }: { host: PeerVersion; joiner: PeerVersion }): string {
   const fix = joiner.proto.max < host.proto.min
     ? 'Update your plugin: /plugin update sub-human'
     : 'The host must update: ask them to run /plugin update sub-human';
   return `${runs('host runs', host)}; ${runs('you run', joiner).replace(/^you run sub-human /, 'you run ')}. ${fix}`;
 }
-const OPS = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping', 'handoff.accept', 'handoff.refuse'];
-const EVENTS = ['entry', 'doc', 'end', 'handoff', 'moved'];
-const CAPS = Object.freeze({ ops: OPS });
-const CODES = Object.freeze({
+const OPS: Op[] = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping', 'handoff.accept', 'handoff.refuse'];
+const EVENTS: EventName[] = ['entry', 'doc', 'end', 'handoff', 'moved'];
+const CAPS: Readonly<Caps> = Object.freeze({ ops: OPS });
+const CODES: Readonly<{ [C in WireCode]: C }> = Object.freeze({
   INVALID: 'INVALID', RATE: 'RATE', LOCK: 'LOCK', NO_ROOM: 'NO_ROOM',
   OFFLINE: 'OFFLINE', HOST_ONLY: 'HOST_ONLY', AUTH: 'AUTH', FORK: 'FORK', PROTOCOL: 'PROTOCOL', STALE: 'STALE',
 });
 
 const UNKNOWN_OUTCOME = 'the outcome is unknown: it went out and may still land';
 /** @returns {boolean} */
-const unknownOutcome = e => !!e && e.code === CODES.OFFLINE && (e.unknown === true || String(e.message).includes(UNKNOWN_OUTCOME));
+const unknownOutcome = (e: unknown): boolean => {
+  const x = e as { code?: unknown; unknown?: unknown; message?: unknown } | null | undefined; // any thrown value
+  return !!x && x.code === CODES.OFFLINE && (x.unknown === true || String(x.message).includes(UNKNOWN_OUTCOME));
+};
 
 /** @returns {{id: number|string, op: string, params: object}} */
-const request = (id, op, params = {}) => ({ id, op, params });
+function request<O extends Op>(id: FrameId, op: O, params?: OpParams[O]): RequestFrame<O>;
+function request(id: FrameId, op: string, params?: object): AnyRequest;
+function request(id: FrameId, op: string, params: object = {}): AnyRequest { return { id, op, params }; }
 /** @returns {{id: number|string, result: *}} */
-const reply = (id, result) => ({ id, result });
+const reply = <R>(id: FrameId | undefined, result: R): ResultFrame<R> => ({ id, result });
 /** @returns {{id: number|string, error: {code: string, message: string}}} */
-const error = (id, code, message) => ({ id, error: { code, message: String(message) } });
+const error = (id: FrameId | undefined, code: string, message: unknown): ErrorFrame => ({ id, error: { code, message: String(message) } });
 /** @returns {{id: number|string, ev: string, data: *}} */
-const event = (id, ev, data) => ({ id, ev, data });
+const event = <E extends EventName>(id: FrameId, ev: E, data: EventData[E]): EventFrame<E> => ({ id, ev, data }) as EventFrame<E>;
 
 /**
  * @param {object} frame
  * @returns {string} one newline-terminated line
  */
-const encode = frame => JSON.stringify(frame) + '\n';
+const encode = (frame: object): string => JSON.stringify(frame) + '\n';
 
-function parseLine(line) {
+function parseLine(line: string): DecodedFrame | ErrorFrame {
   if (Buffer.byteLength(line, 'utf8') > LINK_FRAME_MAX_BYTES) return error(null, CODES.PROTOCOL, `a frame over ${LINK_FRAME_MAX_BYTES} bytes`);
-  let f;
+  let f: unknown;
   try { f = JSON.parse(line); } catch { return error(null, CODES.PROTOCOL, 'a frame that is not JSON'); }
-  return f && typeof f === 'object' && !Array.isArray(f) ? f : error(null, CODES.PROTOCOL, 'a frame that is not an object');
+  return f && typeof f === 'object' && !Array.isArray(f) ? f as DecodedFrame : error(null, CODES.PROTOCOL, 'a frame that is not an object');
 }
 
 /** @returns {{push(chunk: string|Buffer): object[]}} */
-function decoder() {
+function decoder(): { push(chunk: string | Buffer): (DecodedFrame | ErrorFrame)[] } {
   const utf8 = new StringDecoder('utf8'); // a character split across two chunks stays whole
   let buf = '';
   return {
-    push(chunk) {
+    push(chunk: string | Buffer) {
       buf += typeof chunk === 'string' ? chunk : utf8.write(chunk);
       const lines = buf.split('\n');
-      buf = lines.pop();
+      buf = lines.pop() as string; // split gives at least one element
       const frames = lines.filter(Boolean).map(parseLine);
       if (Buffer.byteLength(buf, 'utf8') > LINK_FRAME_MAX_BYTES) { frames.push(parseLine(buf)); buf = ''; }
       return frames;
@@ -136,9 +147,12 @@ function decoder() {
   };
 }
 
-const isRequest = f => !!f && typeof f.op === 'string';
-const isReply = f => !!f && f.op === undefined && f.ev === undefined && ('result' in f || 'error' in f);
-const isEvent = f => !!f && typeof f.ev === 'string';
+/** A decoded frame's fields, read before the guards below say which frame it is. */
+type Fields = { op?: unknown; ev?: unknown; id?: unknown } | null | undefined;
+/** A request by its shape: op a string (whether this end serves it is the server's check). */
+const isRequest = (f: unknown): f is IncomingRequest => !!f && typeof (f as Fields)!.op === 'string';
+const isReply = (f: unknown): f is ResultFrame | ErrorFrame => !!f && (f as Fields)!.op === undefined && (f as Fields)!.ev === undefined && ('result' in (f as object) || 'error' in (f as object));
+const isEvent = (f: unknown): f is EventFrame => !!f && typeof (f as Fields)!.ev === 'string';
 
 export {
   PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, CAPS, CODES, UNKNOWN_OUTCOME,
