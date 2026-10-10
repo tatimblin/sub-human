@@ -4,10 +4,11 @@
  * operation blocked by hook: …" (cc CONTRACT expansion-block-frame), so good news and invites read as failures. The
  * module answers the command itself instead (cc CONTRACT command-run-every-command, command-run-empty-answer): it runs
  * hooks/join.js through the shim (sub_human_via "command.run" and the session's nonce) and shows its reply:
- *   - a reply that may hold a secret (the prompt could carry a PIN, or the reply is an invite): {} (no row, no echo,
- *     nothing for the model) and the lines as $.ui.log notices, this terminal only;
- *   - any other reply: {text}, the command's own output row ("sub-human: …"; the model reads it as the output of a
- *     command the person ran; Remote Control shows it);
+ *   - typed here: {} (no row, no echo, nothing for the model) and the lines as $.ui.log notices. An output row ({text})
+ *     would also be read by the model, which then repeats it on its next turn (seen live: "You've left …" under
+ *     "left vole-8126"), and a reply that may hold a PIN must never reach it;
+ *   - typed through Remote Control, where no notice shows: {text}, the command's own output row (the module answers
+ *     only prompts that hold no secret there);
  *   - a join that worked: the command expands as before (next), the mechanics block handed to the expansion hook
  *     beneath in place of a second run (takeJoined), and a one-line confirmation as a notice.
  * In: command.run's {command, args, origin}. Out: whether the module answers, the shim's stdin, the reply read, the
@@ -81,12 +82,12 @@ export function readReply(run) {
 }
 
 /**
- * How a reply goes out: {result, logs}. A shareable reply is the command's output row (result {text}); anything else is
- * notices only, result {} (no row, no echo). Through Remote Control a reply that is not shareable (none should be: the
+ * How a reply goes out: {result, logs}. Here: notices only, result {} (no row, no echo, nothing for the model). Through
+ * Remote Control: a shareable reply is the command's output row (result {text}); one that is not (none should be: the
  * module answers only prompts that hold no secret there) says where it is instead.
  */
 export function answerOf(reply, { bridge = false } = {}) {
+  if (!bridge) return { result: {}, logs: reply.lines };
   if (reply.kind === 'say' && reply.shareable && reply.lines.length) return { result: { text: reply.lines.join('\n') }, logs: [] };
-  if (bridge) return { result: { text: 'the reply is on the terminal of the machine this session runs on.' }, logs: reply.lines };
-  return { result: {}, logs: reply.lines };
+  return { result: { text: 'the reply is on the terminal of the machine this session runs on.' }, logs: reply.lines };
 }

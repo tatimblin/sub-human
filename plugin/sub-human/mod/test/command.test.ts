@@ -49,12 +49,15 @@ test('typed here: join.js runs once through the shim with the nonce; an invite c
   expect(seen.logs).toEqual(['invite to room otter-4821 for one machine …', '  /sub-human join me@box otter-4821 4821'])
 })
 
-test('a reply with no secret is the command\'s own output row, not a notice', async ($, on) => {
+test('a reply with no secret is a notice here (the model never reads it, so never repeats it), and the output row through Remote Control', async ($, on) => {
   const seen = world($, on, { join: { subHuman: { say: 'left otter-4821 · /sub-human joins again', refused: false, shareable: true } } })
   await start($)
   const r: any = await typed($, 'leave')
-  expect(r.text).toMatch(/left otter-4821 · \/sub-human joins again$/)
-  expect(seen.logs).toEqual([])
+  expect(r.text).toBeUndefined()
+  expect(seen.logs).toEqual(['left otter-4821 · /sub-human joins again'])
+  const phone: any = await typed($, 'leave', 'bridge')
+  expect(phone.text).toMatch(/left otter-4821 · \/sub-human joins again$/)
+  expect(seen.logs.length).toBe(1)
   expect(seen.ran).toBe(0)
 })
 

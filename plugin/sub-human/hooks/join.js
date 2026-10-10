@@ -420,11 +420,12 @@ function pickRoom() {
   return fail(`${open.length} rooms are open (${open.join(', ')}); say which: /sub-human NAME ROOM.`);
 }
 
-/** Who else is in the room, for a line: "with bob, carol", or how many beyond three. */
+/** Who else is in the room, for a line: "with bob, carol", or how many beyond three; the people only (the room's
+ * Claude is named where it matters: "@claude to ask the room's Claude"). */
 function withWhom(code, name) {
-  const here = others(code, name);
+  const names = others(code, name).split(', ').filter(n => n && n !== identity.ROOM_CLAUDE);
+  const here = names.join(', ');
   if (!here) return 'nobody else here yet';
-  const names = here.split(', ');
   return names.length > 3 ? `${names.length} others here` : `with ${here}`;
 }
 

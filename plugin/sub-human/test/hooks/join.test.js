@@ -609,7 +609,7 @@ test('through the module (command.run): every reply is {subHuman: {say}}, never 
   assert.equal(joined.decision, undefined);
   assert.match(joined.hookSpecificOutput.additionalContext, /^SUB-HUMAN: you are bob's Claude in room /);
   assert.equal(joined.subHuman.joined, true);
-  assert.match(joined.subHuman.say, new RegExp(`^joined ${w.code} as bob, with (claude, )?alice · @room to talk, @claude to ask the room's Claude`));
+  assert.match(joined.subHuman.say, new RegExp(`^joined ${w.code} as bob, with alice · @room to talk, @claude to ask the room's Claude`));
   assert.equal(w.members().bob.pid, process.pid, 'the seat\'s claude process is the shim\'s parent');
   const left = viaModule(w, 'bob', 'leave').json.subHuman;
   assert.deepEqual([left.say, left.refused], [`left ${w.code} · /sub-human joins again`, false]);

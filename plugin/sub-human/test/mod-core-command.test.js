@@ -54,9 +54,11 @@ test('command: a reply is read as a join, a notice, or a failure (one line point
   }
 });
 
-test('command: only a shareable reply is the command\'s output row; anything else is notices with an empty answer (no row, nothing for the model)', async () => {
+test('command: here every reply is notices with an empty answer (no row, nothing for the model to repeat); through Remote Control only a shareable one is the output row', async () => {
   const { answerOf } = await load();
-  assert.deepEqual(answerOf({ kind: 'say', lines: ['commands:', '  /sub-human …'], shareable: true }), { result: { text: 'commands:\n  /sub-human …' }, logs: [] });
+  const help = { kind: 'say', lines: ['commands:', '  /sub-human …'], shareable: true };
+  assert.deepEqual(answerOf(help), { result: {}, logs: help.lines });
+  assert.deepEqual(answerOf(help, { bridge: true }), { result: { text: 'commands:\n  /sub-human …' }, logs: [] });
   const secret = { kind: 'say', lines: ['  /sub-human join me@box vole-1234 4821'], shareable: false };
   assert.deepEqual(answerOf(secret), { result: {}, logs: secret.lines });
   const bridge = answerOf(secret, { bridge: true });

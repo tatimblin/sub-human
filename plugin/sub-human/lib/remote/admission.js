@@ -62,7 +62,7 @@ function card(req, code) {
       multiSelect: false,
       options: [
         { label: LET_IN, description: `${req.name} typed your PIN from another machine (names are what they say; ${fp(req)} is what their screen shows). Let in: that machine joins room ${code} and can post only as the people it brings. Undo any time: /sub-human kick ${req.name}.` },
-        { label: REFUSE, description: 'Nothing gets in; their join stops. Your code is used up either way.' },
+        { label: REFUSE, description: 'Nothing gets in; their join stops. The invite is used up either way.' },
       ],
     }],
   };

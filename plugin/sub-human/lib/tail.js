@@ -497,7 +497,7 @@ function startSession(me, ctx) {
       adm.markTold(s.code, q.ref, me.name);
       emit([
         { type: 'chat', lines: [`room: ${adm.describe(q)} typed your PIN and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})`] },
-        { type: 'wake', text: `${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite code from another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+        { type: 'wake', text: `${FOR_CLAUDE} ${adm.describe(q)} typed the PIN of ${me.name}'s invite from another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
       ]);
     }
     if (clock.now() - doorsSwept >= DOOR_SWEEP_MS) { doorsSwept = clock.now(); deps.sweepDoors(s.code); }
