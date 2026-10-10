@@ -26,24 +26,45 @@
 
 import { RoomError } from '../room/validate.ts';
 import { createRequire } from 'node:module';
+import type { AuthApi, MintedShort, StoreLike, TailscaleRec } from './types-rest.ts';
 
 const require = createRequire(import.meta.url);
 
-const listener = () => require('./listener.ts');
-const ts = () => require('./tailscale.ts');
-const wsT = () => require('./transports/ws.ts');
+const listener = (): typeof import('./listener.ts') => require('./listener.ts');
+const ts = (): typeof import('./tailscale.ts') => require('./tailscale.ts');
+const wsT = (): typeof import('./transports/ws.ts') => require('./transports/ws.ts');
 
-function hostStore(code) {
-  const identity = require('../identity.ts');
+/** A front's base URL, checked. */
+export interface FrontBase {
+  secure: boolean;
+  host: string;
+  port: number | undefined;
+  prefix: string;
+}
+
+/** A web invite as hostWeb returns it. */
+export interface WebInvite extends MintedShort {
+  short: true;
+  line: string;
+  locator: string;
+  hostKey: string;
+  base: string;
+  mode: string;
+  port: number;
+  text: string;
+}
+
+function hostStore(code: string): StoreLike {
+  const identity: { roomExists(code: string): boolean } = require('../identity.ts');
   if (!identity.roomExists(code)) throw new RoomError('NO_ROOM', `no room "${code}"`);
-  const s = require('../room.ts').open(code).store;
+  const s: StoreLike = (require('../room.ts') as { open(code: string): { store: StoreLike } }).open(code).store;
   if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; its host does this`);
   return s;
 }
 
 /** The front's base URL, checked: http(s)://host[:port][/prefix], nothing else. */
-function frontBase(text) {
-  let u;
+function frontBase(text: string): FrontBase {
+  let u: URL;
   try { u = new URL(String(text)); } catch { throw new RoomError('INVALID', `"${text}" is not a URL (https://host[:port][/prefix])`); }
   if ((u.protocol !== 'https:' && u.protocol !== 'http:') || u.username || u.password || u.search || u.hash) {
     throw new RoomError('INVALID', `--url takes a plain https://host[:port][/prefix], not "${text}"`);
@@ -52,7 +73,9 @@ function frontBase(text) {
   return { secure: u.protocol === 'https:', host: u.hostname, port: u.port ? Number(u.port) : undefined, prefix };
 }
 
-function hostWeb(code, { tailscale = false, funnel = false, url, port, by = null, now = Date.now() } = {}) {
+function hostWeb(code: string, { tailscale = false, funnel = false, url, port, by = null, now = Date.now() }: {
+  tailscale?: boolean; funnel?: boolean; url?: string; port?: number; by?: string | null; now?: number;
+} = {}): WebInvite {
   const store = hostStore(code);
   if (funnel) tailscale = true;
   if (!tailscale && !url) throw new RoomError('INVALID', 'say how joiners reach the listener: --web (Tailscale), --public (Funnel), or --url https://YOUR-FRONT');
@@ -61,7 +84,7 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, by = null
   const served = L.status().rooms[code];
   const { port: lport } = L.start(port ? { port } : {});
   const roomPath = `/sub-human/${code}`;
-  let base, mode, tsRec = null;
+  let base: FrontBase, mode: string, tsRec: TailscaleRec | null | undefined = null;
   if (tailscale) {
     const bin = ts().bin();
     if (!bin) throw new RoomError('INVALID', 'no tailscale CLI here (not on PATH, no /Applications/Tailscale.app); install Tailscale, or use --url with a front of your own');
@@ -75,7 +98,7 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, by = null
     mode = funnel ? 'funnel' : 'tailscale';
   } else {
     if (served && served.tailscale) L.untailscale(served);
-    base = frontBase(url);
+    base = frontBase(url!); // checked above: one of tailscale and url
     mode = 'url';
   }
   const p = `${base.prefix}${roomPath}`;
@@ -91,16 +114,16 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, by = null
     'Stop serving it with /sub-human invite --stop (closing the room does too).',
   ];
   // the URL and a 4-digit PIN (lib/remote/enroll.ts over the listener's text frames)
-  const r = require('./auth.ts').mintShort(store, { kind: 'ws', locator, hostKey, by, now });
+  const r = (require('./auth.ts') as AuthApi).mintShort(store, { kind: 'ws', locator, hostKey, by, now });
   const line = `/sub-human join ${joinBase} ${r.pin}`;
-  const text = require('./hosting.ts').shortText({
+  const text = (require('./hosting.ts') as typeof import('./hosting.ts')).shortText({
     code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, ref: r.ref,
     extra: [`Their machine checks this one's key (${hostKey.slice(0, 12)}…) as part of the PIN check, so nothing in between can read along.`, ...notes],
   });
   return { ...r, short: true, line, locator, hostKey, base: joinBase, mode, port: lport, text };
 }
 
-function unhost(code) {
+function unhost(code: string): { removed: boolean; text: string } {
   const L = listener();
   const rec = L.removeRoom(code);
   const off = rec ? L.untailscale(rec) : null;
@@ -114,7 +137,7 @@ function unhost(code) {
 
 /** The listener back for a room this home serves over the web, if it is not running (a reboot, a crash): the join
  * hook calls it when a seat of the host joins. Best effort; true when it runs. */
-function ensure(code) {
+function ensure(code: string): boolean {
   const L = listener();
   const st = L.status();
   const rec = st.rooms[code];
@@ -124,7 +147,7 @@ function ensure(code) {
 }
 
 /** The wss locator of room CODE behind a front at URL (https://FRONT[/prefix]): wss://FRONT/prefix/sub-human/CODE. */
-function webLocator(url, code) {
+function webLocator(url: string, code: string): string {
   const b = frontBase(url);
   const loc = wsT().locator({ host: b.host, port: b.port, path: `${b.prefix}/sub-human/${code}` }, b.secure);
   if (!loc) throw new RoomError('INVALID', `"${url}" gives no plain URL for room ${code}`);
@@ -133,7 +156,7 @@ function webLocator(url, code) {
 
 /** Serve room CODE at a web locator this machine will host it at (a handoff or promote to here): the listener up and
  * the room in its served set. A Tailscale path is not set up here: run /sub-human invite --web after the move. */
-function serveAt(code, locator) {
+function serveAt(code: string, locator: string): { port: number; hostKey: string } {
   const i = locator.indexOf(':');
   const spec = wsT().parse(locator.slice(i + 1));
   if (!spec) throw new RoomError('INVALID', `"${locator}" is not a web locator`);

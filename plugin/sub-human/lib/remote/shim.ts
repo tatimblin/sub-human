@@ -48,19 +48,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { home, isTempPath, allowTmpRoot } from '../home.ts';
-import { writeFileAtomic } from '../io.ts';
+import { writeFileAtomic as writeAtomic } from '../io.ts';
+import type { WriteFileAtomic } from './types-rest.ts';
+
+const writeFileAtomic: WriteFileAtomic = writeAtomic;
 
 const PLAIN_PATH_RE = /^\/[A-Za-z0-9_\/.@+,:-]+$/;
 
-const binDir = (h = home()) => path.join(path.resolve(h), 'bin');
-const shimPath = (h) => path.join(binDir(h), 'serve');
-const pointerPath = (h) => path.join(binDir(h), 'current');
-const pluginRoot = () => path.resolve(import.meta.dirname, '..', '..');
+const binDir = (h: string = home()): string => path.join(path.resolve(h), 'bin');
+const shimPath = (h?: string): string => path.join(binDir(h), 'serve');
+const pointerPath = (h?: string): string => path.join(binDir(h), 'current');
+const pluginRoot = (): string => path.resolve(import.meta.dirname, '..', '..');
 
 const CACHE_RE = /\/plugins\/cache\/[^/]+\/[^/]+\/[^/]+$/;
-const cacheDirOf = root => (CACHE_RE.test(path.resolve(root)) ? path.dirname(path.resolve(root)) : '');
+const cacheDirOf = (root: string): string => (CACHE_RE.test(path.resolve(root)) ? path.dirname(path.resolve(root)) : '');
 
-function shimBody() {
+function shimBody(): string {
   return `#!/bin/sh
 # written by sub-human lib/remote/shim.ts; the authorized_keys forced commands the host's admit writes run it.
 # Runs \`sub-human serve ARGS\` from the current plugin install with a working node, read from ./current at run time.
@@ -85,17 +88,17 @@ exec "$node" "$bin" serve "$@"
 }
 
 /** Write path's content when it differs. */
-function writeIfChanged(file, body, mode) {
-  let cur = null;
+function writeIfChanged(file: string, body: string, mode: number): boolean {
+  let cur: string | null = null;
   try { cur = fs.readFileSync(file, 'utf8'); } catch { /* none yet */ }
   if (cur === body) return false;
   writeFileAtomic(file, body, { mode });
   return true;
 }
 
-const hasCli = root => ['scripts/sub-human', 'bin/sub-human'].some(c => fs.existsSync(path.join(root, c)));
+const hasCli = (root: string): boolean => ['scripts/sub-human', 'bin/sub-human'].some(c => fs.existsSync(path.join(root, c)));
 
-function passive(root) {
+function passive(root: string): boolean {
   root = path.resolve(root);
   if (cacheDirOf(root)) return true;
   let cur;
@@ -103,7 +106,9 @@ function passive(root) {
   return !cur || path.resolve(cur) === root || !hasCli(cur);
 }
 
-function refresh({ root = pluginRoot(), node = process.execPath, env = process.env, force = false } = {}) {
+function refresh({ root = pluginRoot(), node = process.execPath, env = process.env, force = false }: {
+  root?: string; node?: string; env?: NodeJS.ProcessEnv; force?: boolean;
+} = {}): string | null {
   root = path.resolve(root);
   if (isTempPath(root) && !allowTmpRoot(env)) return null;
   if (/\n/.test(root + node)) return null;
@@ -114,18 +119,18 @@ function refresh({ root = pluginRoot(), node = process.execPath, env = process.e
   return shimPath();
 }
 
-const forcedCommand = (code, linkId, h = home()) =>
+const forcedCommand = (code: string, linkId: string, h: string = home()): string =>
   `SUB_HUMAN_HOME=${path.resolve(h)} ${shimPath(h)} --stdio ${code} --link ${linkId}`;
-const authorizedLine = (code, linkId, key, h = home()) =>
+const authorizedLine = (code: string, linkId: string, key: string, h: string = home()): string =>
   `command="${forcedCommand(code, linkId, h)}",restrict ${key} sub-human:${code}:${linkId}`;
 /** The short code's enrollment door (lib/remote/enroll.ts): the room's public enrollment key runs only the PAKE. */
-const enrollLine = (code, key, h = home()) =>
+const enrollLine = (code: string, key: string, h: string = home()): string =>
   `command="SUB_HUMAN_HOME=${path.resolve(h)} ${shimPath(h)} --enroll ${code} --kind ssh",restrict ${key} sub-human-enroll:${code}`;
 
 // What an older `authorize` wrote: command="SUB_HUMAN_HOME=<home> <node> <bin> serve --stdio CODE --link ID",restrict <key> sub-human:CODE:ID
 const OLD_LINE_RE = /^command="SUB_HUMAN_HOME=(\S+) (\S+) (\S+) serve --stdio (\S+) --link ([0-9a-f]{12})",restrict (\S+ \S+) sub-human:(\S+):(\S+)$/;
 
-function migrateLines(text, h = home()) {
+function migrateLines(text: string, h: string = home()): { text: string; migrated: number } {
   const want = path.resolve(h);
   let migrated = 0;
   const lines = String(text).split('\n').map(l => {
