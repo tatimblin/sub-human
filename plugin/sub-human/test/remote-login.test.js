@@ -44,6 +44,7 @@ function fakeSsh(t) {
   fs.writeFileSync(path.join(dir, 'ssh'), `#!${process.execPath}
 const fs = require('node:fs');
 const args = process.argv.slice(2);
+if (args[0] === '-G') { process.stdout.write('user me\\nhostname devbox.internal\\nport 22\\n'); process.exit(0); } // ssh -G ALIAS: the config, nothing connects
 if (process.env.FAKE_SSH_LOG) fs.appendFileSync(process.env.FAKE_SSH_LOG, JSON.stringify(args) + '\\n');
 const fail = process.env.FAKE_SSH_FAIL;
 if (fail === 'hostkey') { process.stderr.write('No ED25519 host key is known for devbox and you have requested strict checking.\\nHost key verification failed.\\n'); process.exit(255); }
@@ -201,6 +202,29 @@ test('login e2e: join NAME me@devbox CODE links over the person\'s own ssh and t
   assert.deepEqual(links(host, code)[id2].seats, ['bob']);
   assert.equal(remote.say(bob, 'back over a new link').json.continue, false);
   assert.equal(host.lib(() => store.open(code).readAll()).at(-1).text, 'back over a new link');
+});
+
+test('login e2e: a bare ssh alias (join NAME dev CODE) takes its user from ssh -G and keeps the alias as the host; YOU@ is named as a placeholder', t => {
+  const { remote, bob, code, sshLog } = setup(t);
+  const r = remote.join(bob, `join bob dev ${code}`);
+  stopDaemon(t, remote, code);
+  assert.equal(r.json.decision, undefined, r.json.reason || r.stderr);
+  const lf = remote.lib(() => require(path.join(h.LIB, 'room', 'links.js')).get(code));
+  assert.deepEqual([lf.transport.user, lf.transport.host, lf.transport.login], ['me', 'dev', true], 'the alias stays the host: its HostName, Port, ProxyJump apply');
+  const argv = fs.readFileSync(sshLog, 'utf8').trim().split('\n').map(l => JSON.parse(l)).find(a => a[0] !== '-G');
+  assert.ok(argv.includes('me@dev'), JSON.stringify(argv));
+  const you = remote.join(bob, `join bob YOU@dev ${code}`);
+  assert.match(you.json.reason, /"YOU@dev" still has the example's placeholder: put your user name on that machine in place of YOU \(or just the ssh alias, e\.g\. dev\)/);
+  assert.match(remote.join(bob, 'join bob dev').json.reason, /usage|invite/i, 'an alias without a room code is not a login join');
+});
+
+test('ssh.withUser / placeholder: only a bare alias is expanded; no ssh or a bad answer leaves it as typed', () => {
+  const ssh = require(path.join(h.LIB, 'remote', 'transports', 'ssh.js'));
+  assert.equal(ssh.withUser('me@dev'), 'me@dev');
+  assert.equal(ssh.withUser('dev', { bin: '/nonexistent/ssh' }), 'dev');
+  assert.equal(ssh.withUser('bad;host'), 'bad;host');
+  assert.equal(ssh.placeholder('YOU@dev'), true);
+  assert.equal(ssh.placeholder('yousef@dev'), false);
 });
 
 test('login e2e: --home names a host home that is not ~/.sub-human; a primed (mux) link keeps riding its master on a re-join', t => {

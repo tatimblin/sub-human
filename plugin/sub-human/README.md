@@ -38,11 +38,12 @@ The hook binds your name to your session before the model sees anything, so your
 
 A room lives on the machine that opened it, its **host**. If you can already ssh to the host's account (your own second machine, a dev box you log in to), join with that login. Anyone else joins with one line the host sends them, `/sub-human join NAME you@devbox vole-8126 482913`, and the host's card lets them in.
 
-### If you can already ssh to the host: `/sub-human join NAME USER@HOST CODE`
+### If you can already ssh to the host: `/sub-human join NAME HOST CODE`
 
 On your other machine, with the room's code:
 
 ```
+/sub-human join carol dev vole-8126                 # an alias from your ~/.ssh/config (its User, HostName, Port, ProxyJump)
 /sub-human join carol you@machine-a vole-8126
 /sub-human join carol you@devbox:2222 vole-8126 --via bastion   # a port, a jump host (ProxyJump)
 /sub-human join carol you@devbox vole-8126 --home /srv/sh        # the host's sub-human home is not ~/.sub-human

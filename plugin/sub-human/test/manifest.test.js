@@ -42,10 +42,24 @@ function alternatives(re) {
   return out;
 }
 
+test('hooks.json: the join with no node on PATH says what to do (exit 2, its stderr shown); with node it runs the hook', () => {
+  const { execFileSync, spawnSync } = require('node:child_process');
+  const join = [...allHooks()].find(x => x.event === 'UserPromptExpansion').hook.command;
+  const bare = spawnSync('/bin/sh', ['-c', join], { env: { PATH: '/nonexistent', CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' });
+  assert.equal(bare.status, 2);
+  assert.match(bare.stderr, /^sub-human needs Node 24 or newer on the PATH .*restart claude from a shell where node -v works\.\n$/);
+  const bin = require('node:fs').mkdtempSync(path.join(require('node:os').tmpdir(), 'sh-nodebin-'));
+  require('node:fs').writeFileSync(path.join(bin, 'node'), '#!/bin/sh\necho "ran $1"\n', { mode: 0o755 });
+  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: { PATH: bin, CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' }), `ran ${PLUGIN}/hooks/join.js\n`);
+});
+
 test('hooks.json: every command runs node on a script that exists in the plugin', () => {
   for (const { event, hook } of allHooks()) {
     assert.equal(hook.type, 'command', event);
-    assert.match(hook.command, /^node "\$\{CLAUDE_PLUGIN_ROOT\}\/[^"]+"$/, `${event}: ${hook.command}`);
+    // the join alone checks for node first, so a missing one says what to do (it is the first thing a person runs)
+    const NODE_CHECK = /^command -v node >\/dev\/null 2>&1 \|\| \{ echo '[^']+' >&2; exit 2; \}; exec /;
+    if (event === 'UserPromptExpansion') assert.match(hook.command, NODE_CHECK, hook.command);
+    assert.match(hook.command.replace(NODE_CHECK, ''), /^node "\$\{CLAUDE_PLUGIN_ROOT\}\/[^"]+"$/, `${event}: ${hook.command}`);
     const rel = scriptOf(hook.command);
     assert.ok(fs.existsSync(path.join(PLUGIN, rel)), `${event}: ${rel} is missing`);
   }

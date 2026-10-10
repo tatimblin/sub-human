@@ -228,7 +228,8 @@ function shortForm(argv) {
     const transport = link.transportOf(dest.startsWith('/') ? `pipe:${dest}` : dest);
     return transport ? { name, code, pin, transport } : { error: `"${dest}" is not a sub-human home on this machine` };
   }
-  const loc = link.sshLocator(dest, p.flags.via !== undefined ? { via: p.flags.via } : {});
+  if (sshT().placeholder(dest)) return { error: YOU_HINT(dest) };
+  const loc = link.sshLocator(sshT().withUser(dest), p.flags.via !== undefined ? { via: p.flags.via } : {});
   if (!loc) return { error: p.flags.via !== undefined && link.sshLocator(dest) ? `--via "${p.flags.via}" is not a plain [USER@]HOST[:PORT] list` : `"${dest}" is not a plain USER@HOST[:PORT]` };
   return { name, code, pin, transport: link.transportOf(loc) };
 }
@@ -280,7 +281,10 @@ function askHandoff(cur, argv) {
 
 const sshT = () => require('../lib/remote/transports/ssh.js');
 /** The third word of `/sub-human join NAME X …` names an ssh login (USER@HOST[:PORT]), not an invite or a join URL. */
-const loginForm = word => /@/.test(word) && !/^https?:\/\//.test(word) && !auth.parseInvite(word);
+// USER@HOST, or a bare ssh config alias (`dev`) followed by a room code
+const loginForm = (word, next) => !/^https?:\/\//.test(word) && !auth.parseInvite(word)
+  && (/@/.test(word) || (/^[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]{1,5})?$/.test(word) && identity.CODE_RE.test(next || '')));
+const YOU_HINT = d => `"${d}" still has the example's placeholder: put your user name on that machine in place of ${d.split('@')[0]} (or just the ssh alias, e.g. dev)`;
 const LOGIN_USAGE = 'usage: /sub-human join NAME USER@HOST[:PORT] CODE [--via JUMP] [--home PATH] (when you can already ssh to USER@HOST; else ask the host for an invite: /sub-human join NAME INVITE PIN)';
 const sameLogin = (a, b) => !!a && !!b && a.login === true && ['user', 'host', 'port', 'via', 'remoteHome'].every(k => a[k] === b[k]);
 
@@ -289,8 +293,10 @@ const sameLogin = (a, b) => !!a && !!b && a.login === true && ['user', 'host', '
 function linkLogin(argv) {
   const p = require('../lib/cli/args.js').parse(argv, { via: 1, home: 1 });
   if (p.error || p.rest.length !== 3) { block(LOGIN_USAGE); return null; }
-  const [name, dest, code] = p.rest;
+  const [name, typed, code] = p.rest;
   const { via, home } = p.flags;
+  if (sshT().placeholder(typed)) { block(YOU_HINT(typed)); return null; }
+  const dest = sshT().withUser(typed);
   const fail = msg => { block(msg); return null; };
   if (!identity.NAME_RE.test(name)) return fail(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
   if (identity.RESERVED.includes(name.toLowerCase())) return fail(`"${name}" is reserved`);
@@ -388,7 +394,7 @@ run(input => {
     if (sf) return linkShort(sf);
   }
   let login = null;
-  if (remote && args.length >= 3 && loginForm(args[2])) {
+  if (remote && args.length >= 3 && loginForm(args[2], args[3])) {
     login = linkLogin(args.slice(1));
     if (!login) return;
   } else if (remote && args.length >= 3) {

@@ -2,6 +2,14 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.0-beta.5 (2026-10-10), private beta
+
+Tested on Claude Code 2.1.292–2.1.296 with Node 24 and 26, on macOS and Linux.
+
+- `/sub-human join NAME dev CODE` takes a bare ssh config alias. The user comes from `ssh -G dev`, and the alias stays the host, so its HostName, Port, ProxyJump and keys apply. The same works for short invites (`… dev CODE 482913`).
+- A `YOU@host` typed as is from the examples gets a clear message instead of an ssh refusal.
+- With no `node` on PATH, `/sub-human` says so ("sub-human needs Node 24 or newer…") instead of "node: command not found".
+
 ## 0.5.0-beta.4 (2026-10-09), private beta
 
 Tested on Claude Code 2.1.292 with Node 24 and 26, on macOS and Linux.

@@ -77,6 +77,26 @@ function dest(text) {
 }
 
 /**
+ * A bare ssh config alias (`dev`) as the USER@ALIAS ssh would log in as: the user from `ssh -G ALIAS` (your
+ * ~/.ssh/config, else your local name; read locally, nothing connects). The alias stays the host, so its HostName,
+ * Port, ProxyJump and keys still apply. Anything else, or no ssh, comes back unchanged.
+ * @param {string} text
+ * @returns {string}
+ */
+function withUser(text, { bin = 'ssh' } = {}) {
+  const t = String(text);
+  if (t.includes('@') || !new RegExp(`^${SSH_HOST}(?::[0-9]{1,5})?$`).test(t)) return t;
+  const host = t.replace(/:[0-9]+$/, '');
+  try {
+    const r = require('node:child_process').spawnSync(bin, ['-G', host], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
+    const m = r.status === 0 && /^user (\S+)$/m.exec(r.stdout || '');
+    return m && new RegExp(`^${SSH_USER}$`).test(m[1]) ? `${m[1]}@${t}` : t;
+  } catch { return t; }
+}
+/** The `YOU@host` of the README's examples, typed as is. */
+const placeholder = text => /^(?:YOU|USER|you|user)@/.test(String(text));
+
+/**
  * @param {string} text
  * @returns {string | null}
  */
@@ -258,4 +278,5 @@ const kind = {
   describe: spec => `ssh ${at(spec)}${spec.via ? ` via ${spec.via}` : ''}${spec.login === true ? ' (your ssh login)' : ''}`,
 };
 
-module.exports = { dest, jump, parse, locator, command, enrollCommand, remoteCommand, loginSpec, loginCommand, loginFailure, primeCommand, controlPath, kind };
+module.exports = {
+  withUser, placeholder, dest, jump, parse, locator, command, enrollCommand, remoteCommand, loginSpec, loginCommand, loginFailure, primeCommand, controlPath, kind };

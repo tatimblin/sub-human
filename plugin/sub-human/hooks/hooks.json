@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/join.js\"",
+            "command": "command -v node >/dev/null 2>&1 || { echo 'sub-human needs Node 24 or newer on the PATH that Claude Code was started with, and none was found (node: command not found). Install it (https://nodejs.org, or nvm, fnm or mise) and restart claude from a shell where node -v works.' >&2; exit 2; }; exec node \"${CLAUDE_PLUGIN_ROOT}/hooks/join.js\"",
             "timeout": 10
           }
         ]
