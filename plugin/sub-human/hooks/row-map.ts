@@ -5,12 +5,16 @@
 // agent_id / agent_type are the spawning room, so parent = that id (nested row). The model may drop `name`:
 // the participant comes from the prompt ("member: NAME"), else the description. Silent; never blocks.
 import { identity, rows, run, resolveSeat } from './common.ts';
+import type { AgentCall, WithToolInput } from './types.ts';
 
-run(input => {
-  const ti = input.tool_input || {};
+/** The Agent tool's response, as far as the row map reads it. */
+interface SpawnResponse { agentId?: unknown; agent_id?: unknown; data?: { agentId?: unknown } }
+
+run((input: WithToolInput<'PostToolUse', AgentCall>) => {
+  const ti: AgentCall = input.tool_input || {};
   const type = String(ti.subagent_type || '');
   if (type !== rows.PARTICIPANT && type !== rows.ROOM_AGENT) return;
-  const r = typeof input.tool_response === 'object' && input.tool_response ? input.tool_response : {};
+  const r: SpawnResponse = typeof input.tool_response === 'object' && input.tool_response ? input.tool_response : {};
   const agentId = r.agentId || r.agent_id || (r.data && r.data.agentId);
   const me = resolveSeat(input, { ancestry: true });
   if (!agentId || !me) return;

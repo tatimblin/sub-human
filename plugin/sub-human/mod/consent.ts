@@ -11,13 +11,13 @@ import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS, SHIM_MODE, asNotice } fr
 import { consentNeeded, reviewOpenOf } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { asHello } from './core/state.ts';
-import type { On } from 'claude-code';
+import type { EngineInterface, On } from 'claude-code';
 
-const HELLO = { plugin: 'sub-human', key: 'hello' };
-const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' };
+const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
+const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 
 /** Whether consent must run for this session: the hello and the flag, read from $.state. */
-async function needed($, sid) {
+async function needed($: EngineInterface, sid: unknown): Promise<boolean> {
   const { value: hello } = await $.state.get(HELLO);
   const { value: flag } = await $.state.get(REVIEW);
   return consentNeeded(asHello(hello), sid, flag);

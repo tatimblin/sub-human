@@ -10,26 +10,38 @@ import os from 'node:os';
 import path from 'node:path';
 import { readInput } from '../lib/io.ts';
 import * as identity from '../lib/identity.ts';
+import type { Seat } from './types.ts';
+
+/** stdin: the session id and the module's nonce for it (mod/deliver.ts sayHello). */
+interface HelloIn { session_id?: unknown; nonce?: unknown }
+/** What the module reads back (mod/core/seat.ts parseHello). */
+interface Hello {
+  home: string;
+  realHome: string;
+  userHome: string;
+  pluginRoot: string;
+  seat: { name: string; code: string; role: string; addr: string } | null;
+}
 
 const PLUGIN_ROOT = path.join(import.meta.dirname, '..');
-const real = p => { try { return fs.realpathSync(p); } catch { return p; } };
+const real = (p: string) => { try { return fs.realpathSync(p); } catch { return p; } };
 
-function hello(input) {
+function hello(input: HelloIn): Hello {
   const sid = typeof input.session_id === 'string' ? input.session_id : null;
   const home = path.resolve(identity.home());
-  let seat = null;
+  let seat: Hello['seat'] = null;
   try {
-    const me = sid ? identity.resolveBySession(sid) : null;
+    const me: Seat | null = sid ? identity.resolveBySession(sid) : null;
     if (me) seat = { name: me.name, code: me.code, role: me.role, addr: identity.address(me.name, me.code) };
-  } catch (err) { process.stderr.write(`sub-human mod-hello: seat lookup failed: ${err && err.message}\n`); }
+  } catch (err) { process.stderr.write(`sub-human mod-hello: seat lookup failed: ${err instanceof Error ? err.message : err}\n`); }
   try { if (sid) identity.writeModLease(sid, { pid: identity.claudePid() || process.ppid, nonce: input.nonce }); } catch (err) {
-    process.stderr.write(`sub-human mod-hello: lease not written: ${err && err.message}\n`);
+    process.stderr.write(`sub-human mod-hello: lease not written: ${err instanceof Error ? err.message : err}\n`);
   }
   return { home, realHome: real(home), userHome: os.homedir(), pluginRoot: PLUGIN_ROOT, seat };
 }
 
 if (import.meta.main) {
-  let input = {};
+  let input: HelloIn = {};
   try { input = readInput({ strict: false }) || {}; } catch { input = {}; }
   process.stdout.write(JSON.stringify(hello(input)) + '\n');
 }

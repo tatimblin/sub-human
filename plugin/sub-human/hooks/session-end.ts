@@ -13,10 +13,11 @@ import path from 'node:path';
 import { identity, run, whoami } from './common.ts';
 import * as seats from '../lib/seats.ts';
 import { LINK_CALL_END_MS } from '../lib/config.ts';
+import type { HookIn } from './types.ts';
 
-const KEEP = new Set(['clear', 'resume']);
+const KEEP = new Set<string | undefined>(['clear', 'resume']);
 
-run(input => {
+run((input: HookIn<'SessionEnd'>) => {
   // This session id is over in this process (a /clear or /resume continues under another id, and mod-hello writes
   // that id's lease): a later --resume of it must say hello again before it can join.
   try { identity.deleteModLease(input.session_id); } catch { /* the join sweep prunes it */ }

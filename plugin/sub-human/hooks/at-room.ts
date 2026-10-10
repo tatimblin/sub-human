@@ -24,8 +24,9 @@ import { oneLine } from '../lib/text.ts';
 import * as config from '../lib/config.ts';
 import * as cc from '../lib/cc.ts';
 import * as seats from '../lib/seats.ts';
+import type { HookSpecificOutput, PromptIn, Seat } from './types.ts';
 
-function parse(prompt) {
+function parse(prompt: string): string | null {
   if (prompt.startsWith('@room ')) return prompt.slice('@room '.length);
   if (prompt === '@room') return '';
   return null;
@@ -33,7 +34,7 @@ function parse(prompt) {
 
 /** "@claude TEXT" -> TEXT (posted to=claude: a wake for the room's Claude); anything else null. A copy of
  * mod/core/prompt.ts parseClaude (test/mod-core.test.js asserts they agree). */
-function parseClaude(prompt) {
+function parseClaude(prompt: string): string | null {
   if (prompt.startsWith('@claude ')) return prompt.slice('@claude '.length);
   if (prompt === '@claude') return '';
   return null;
@@ -42,16 +43,25 @@ function parseClaude(prompt) {
 /** A person typing through Remote Control sees no block line there: a refusal also goes out as systemMessage, which
  * mod/prompt.ts relays to the phone (mod/deliver.ts relay). "✓ sent" stays a stop line only. */
 let toPhone = false;
-const phoneNote = text => (toPhone ? { systemMessage: `sub-human: ${text}` } : {});
+const phoneNote = (text: string) => (toPhone ? { systemMessage: `sub-human: ${text}` } : {});
 
-const block = (reason, extra = {}) => out({
+const block = (reason: string, extra: Partial<HookSpecificOutput> = {}) => out({
   decision: 'block', reason, ...phoneNote(reason),
   hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true, ...extra },
 });
 
+/** A transcript line as cc.readEntries parses it: the fields read here (untrusted JSON). */
+interface TranscriptEntry {
+  type?: string;
+  isSidechain?: boolean;
+  isMeta?: boolean;
+  promptId?: string;
+  message?: { content?: unknown };
+}
+
 const TAIL_BYTES = config.TRANSCRIPT_TAIL_BYTES;
 /** The last TAIL_BYTES of a JSONL transcript as parsed entries (oldest first); [] when unreadable. */
-const transcriptTail = file => cc.readEntries(file, { tailBytes: TAIL_BYTES });
+const transcriptTail = (file: string | undefined): TranscriptEntry[] => cc.readEntries(file, { tailBytes: TAIL_BYTES });
 const contentText = cc.contentText;
 
 /** prompt.submit origins a person types from (mod/core/prompt.ts TYPED_ORIGINS; bridge is the person typing
@@ -59,15 +69,15 @@ const contentText = cc.contentText;
 const TYPED_ORIGINS = new Set(['composer', 'sdk', 'bridge']);
 
 /** The text of the last assistant turn before this prompt (all its text blocks), or ''. */
-function lastAssistantText(entries, promptId) {
-  const parts = [];
+function lastAssistantText(entries: TranscriptEntry[], promptId: string | undefined): string {
+  const parts: string[] = [];
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i];
     if (!e || e.isSidechain) continue;
     if (e.type === 'assistant') { parts.unshift(contentText(e.message && e.message.content)); continue; }
     if (e.type !== 'user' || (promptId && e.promptId === promptId)) continue;
     const c = e.message && e.message.content;
-    const toolResult = Array.isArray(c) && c.length && c.every(b => b && b.type === 'tool_result');
+    const toolResult = Array.isArray(c) && c.length && c.every((b: { type?: unknown } | null) => b && b.type === 'tool_result');
     if (!toolResult && !e.isMeta && parts.length) break; // the human prompt that started that turn
   }
   return parts.join('\n');
@@ -77,7 +87,7 @@ const DRAFT_MIN = 20; // shorter texts ("ok", "yes, ship it") show up in Claude'
 
 /** True when the posted text is Claude's wording: "@room TEXT" or "@claude TEXT" in its last message, or a longer
  * TEXT verbatim. */
-function draftedByAgent(text, assistant) {
+function draftedByAgent(text: string, assistant: string): boolean {
   const t = oneLine(text), a = oneLine(assistant);
   if (!t || !a) return false;
   return a.includes('@room ' + t) || a.includes('@claude ' + t) || (t.length >= DRAFT_MIN && a.includes(t));
@@ -85,16 +95,16 @@ function draftedByAgent(text, assistant) {
 
 // ---------- the room's Claude takes no typed input ----------
 const LAUNCH = /^\/(?:sub-human:)?sub-human(?:\s|$)/;
-const roomClaudeHint = me => `the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message ${identity.address(me.name, me.code)}`;
+const roomClaudeHint = (me: Seat) => `the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message ${identity.address(me.name, me.code)}`;
 
 /** True when no earlier prompt of this session is in its transcript (a fresh session has none, or no file). */
-function firstPrompt(input) {
+function firstPrompt(input: PromptIn): boolean {
   const es = transcriptTail(input.transcript_path);
   return !es.some(e => e && e.type === 'user' && !e.isMeta && e.promptId && e.promptId !== input.prompt_id && !e.isSidechain);
 }
 
 /** For a room Claude session: null when the prompt may run (anything not typed, the launch command), else the refusal. */
-function roomClaudeRefusal(me, input, prompt, origin) {
+function roomClaudeRefusal(me: Seat, input: PromptIn, prompt: string, origin: string | null): string | null {
   if (origin === null || !TYPED_ORIGINS.has(origin)) return null;
   return LAUNCH.test(prompt) && firstPrompt(input) ? null : roomClaudeHint(me);
 }
@@ -103,7 +113,7 @@ function roomClaudeRefusal(me, input, prompt, origin) {
 const NO_ORIGIN = '✗ not posted: sub-human could not check who wrote this @room. Type it again.';
 
 /** True when the input carries this session's module nonce (its lease's): the origin beside it is the module's. */
-function attested(input) {
+function attested(input: PromptIn): boolean {
   const sid = input.session_id;
   if (typeof sid !== 'string' || typeof input.sub_human_nonce !== 'string') return false;
   const lease = identity.readModLease(sid);
@@ -111,7 +121,7 @@ function attested(input) {
 }
 
 /** The UserPromptSubmit handler: writes its one output (if any) through common.ts out(). hooks/prompt.ts calls it. */
-function handle(input) {
+function handle(input: PromptIn): void {
   const prompt = typeof input.prompt === 'string' ? input.prompt : '';
   // The origin the shim says the prompt came from (prompt.submit e.origin.kind), or null; it posts only attested.
   const claimed = typeof input.sub_human_origin === 'string' ? input.sub_human_origin : null;
@@ -137,7 +147,7 @@ function handle(input) {
   // A long paste arrives wrapped in <pasted_content>: post the person's text, marked normalized.
   const { text, normalized } = cc.unwrapPasted(raw !== null ? raw : wake);
   if (!text.trim()) return block(`✗ not posted: there is nothing after ${tag}.`);
-  const entry = { kind: 'say', text };
+  const entry: { kind: 'say'; text: string; to?: string; normalized?: true; drafted?: 'agent' } = { kind: 'say', text };
   if (wake !== null) entry.to = identity.ROOM_CLAUDE;
   if (normalized) entry.normalized = true;
   if (draftedByAgent(text, lastAssistantText(transcriptTail(input.transcript_path), input.prompt_id))) entry.drafted = 'agent';

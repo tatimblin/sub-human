@@ -13,15 +13,16 @@ import path from 'node:path';
 import { identity, rows, run, resolveSeat } from './common.ts';
 import { sleepSync } from '../lib/io.ts';
 import * as config from '../lib/config.ts';
+import type { HookIn, Seat } from './types.ts';
 
 const LEAD = 'sub-human: this session was resumed and its rows did not survive it. Re-create them now, exactly as written:\n';
 const TAIL = '\nWrite no text: make only these calls and end your turn.';
 const WAIT_MS = config.envMs('SUB_HUMAN_REWAKE_WAIT_MS', config.REWAKE_WAIT_MS, { allowZero: true });
 
-function findSeat(input) {
+function findSeat(input: HookIn<'SessionStart'>): Seat | null {
   const pid = identity.claudePid();
   const deadline = Date.now() + WAIT_MS;
-  let me = null;
+  let me: Seat | null = null;
   for (;;) {
     me = resolveSeat(input, { ancestry: true });
     if (me && (!pid || !me.pid || Number(me.pid) === Number(pid))) return me;
@@ -31,7 +32,7 @@ function findSeat(input) {
 }
 
 /** The rewake text for this seat, or '' when every row it should have is held. */
-function rewakeText(me) {
+function rewakeText(me: Seat): string {
   const members = identity.readMembers(me.code) || {};
   const held = rows.readHolds(me.code, me.name);
   const only = rows.rowsNeeded(me.code, me, { members, held });
@@ -42,7 +43,7 @@ function rewakeText(me) {
 }
 
 // Exit 2 with the text on stderr wakes the model; on any error run() logs it and the hook exits 0.
-run(input => {
+run((input: HookIn<'SessionStart'>) => {
   if (input.source && input.source !== 'resume') return;
   const me = findSeat(input);
   const text = me ? rewakeText(me) : '';

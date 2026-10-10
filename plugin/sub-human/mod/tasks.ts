@@ -12,22 +12,25 @@ import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { tasksNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { asHello } from './core/state.ts';
-import type { On } from 'claude-code';
+import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
+import type { ShimResult } from './core/types.ts';
 
-const HELLO = { plugin: 'sub-human', key: 'hello' };
+const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const TASK_GATE_FAILED = 'sub-human task gate failed closed: the check did not run. Send status alone in a TaskUpdate of its own to retry.';
 
-async function helloOf($) {
+async function helloOf($: EngineInterface) {
   const { value } = await $.state.get(HELLO);
   return asHello(value);
 }
 
-async function roomEnvOf($) {
+async function roomEnvOf($: EngineInterface) {
   return $.env.get('SUB_HUMAN_ROOM');
 }
 
 /** node hooks/tasks.ts for this event, or null when the session is surely not the room's Claude. */
-async function runTasks($, e, event) {
+async function runTasks(
+  $: EngineInterface, e: ClassicHookInputs['PostToolUse'] | ClassicHookInputs['TaskCompleted'], event: string,
+): Promise<ShimResult | null> {
   if (!tasksNeeded(await helloOf($), e.session_id, await roomEnvOf($))) return null;
   const root = $.plugin.root;
   const run = await $.process.run(shimArgv(root, 'tasks.ts'), {

@@ -8,9 +8,10 @@
 // participant rows are spawned inside its room row (a model once added a stray participant(self) call to the
 // join's single room-row call). Silent otherwise; never blocks anything else.
 import { identity, rows, run, deny, resolveSeat } from './common.ts';
+import type { AgentCall, WithToolInput } from './types.ts';
 
-run(input => {
-  const ti = input.tool_input || {};
+run((input: WithToolInput<'PreToolUse', AgentCall>) => {
+  const ti: AgentCall = input.tool_input || {};
   const type = String(ti.subagent_type || '');
   if (type !== rows.PARTICIPANT && type !== rows.ROOM_AGENT) return;
   const me = resolveSeat(input, { ancestry: true });

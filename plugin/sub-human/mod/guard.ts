@@ -12,24 +12,25 @@ import {
 } from './core/guard.ts';
 import { seated } from './core/seat.ts';
 import { asHello } from './core/state.ts';
-import type { On } from 'claude-code';
+import type { EngineInterface, On } from 'claude-code';
+import type { GuardCtx, Hello } from './core/types.ts';
 
-const HELLO = { plugin: 'sub-human', key: 'hello' };
+const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 
 /** The hello, or {} before mod-hello answered. */
-async function helloOf($) {
+async function helloOf($: EngineInterface): Promise<Hello | Record<string, never>> {
   const { value } = await $.state.get(HELLO);
   return asHello(value) ?? {};
 }
 
 /** Where p lands (every link resolved), or undefined when it cannot be stat'ed. */
-async function realOf($, p) {
+async function realOf($: EngineInterface, p: string): Promise<string | undefined> {
   const s = await $.fs.stat(p, { resolve: true }).catch(() => undefined);
   return s && typeof s.realPath === 'string' ? s.realPath : undefined;
 }
 
 /** Where abs lands: the nearest existing ancestor resolved, plus the rest of the path. */
-async function placed($, abs) {
+async function placed($: EngineInterface, abs: string): Promise<string | undefined> {
   for (const a of ancestors(abs)) {
     const r = await realOf($, a);
     if (r === undefined) continue;
@@ -42,7 +43,7 @@ async function placed($, abs) {
 export function registerGuard(on: On) {
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const h = await helloOf($);
-    const ctx = { ...h, pluginRoot: h.pluginRoot || $.plugin.root };
+    const ctx: GuardCtx & { pluginRoot: string } = { ...h, pluginRoot: h.pluginRoot || $.plugin.root };
     if (needsCwd(e.command)) {
       ctx.cwd = await $.session.cwd();
       ctx.realCwd = await realOf($, ctx.cwd);

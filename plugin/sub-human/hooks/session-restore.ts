@@ -21,18 +21,19 @@ import * as rows from '../lib/rows.ts';
 import * as proposal from '../lib/proposal.ts';
 import * as link from '../lib/remote/link.ts';
 import * as seatKey from './seat-key.ts';
+import type { HookIn, Seat } from './types.ts';
 
 const RECREATE = 'Your rows are not running (they do not survive --resume). Create them now, exactly as written:\n';
 const PARTIAL = 'Your other rows are still running; only the rows below are missing. Make only these calls, exactly as written:\n';
 
 /** The lead for the ROWS section: empty when nothing is missing (rowCalls then says the rows are intact). */
-function rowsLead(me) {
+function rowsLead(me: Seat): string {
   const held = rows.readHolds(me.code, me.name);
   if (!held) return RECREATE;
   return rows.rowsNeeded(me.code, me, { held }).length ? PARTIAL : '';
 }
 
-function reseat(input) {
+function reseat(input: HookIn<'SessionStart'>): Seat | null {
   const me = whoami(input);
   const pid = identity.claudePid();
   if (me) {
@@ -45,7 +46,7 @@ function reseat(input) {
     return { ...me, session_id: input.session_id || me.session_id };
   }
   if (input.source !== 'resume' || !pid) return null;
-  const last = identity.lastSeat(input.session_id);
+  const last: Pick<Seat, 'code' | 'name' | 'role' | 'address'> | null = identity.lastSeat(input.session_id);
   if (!last) return null;
   if (identity.roomClosing(last.code) || (last.role !== 'claude' && !identity.roomOpen(last.code))) return null;
   const hosted = identity.isHost(last.code);
@@ -57,7 +58,7 @@ function reseat(input) {
   return { ...last, pid, session_id: input.session_id };
 }
 
-run(input => {
+run((input: HookIn<'SessionStart'>) => {
   const me = reseat(input);
   if (!me) return;
   try {

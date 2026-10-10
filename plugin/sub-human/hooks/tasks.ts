@@ -28,8 +28,50 @@ import * as room from '../lib/room.ts';
 import * as tasks from '../lib/tasks.ts';
 import * as cc from '../lib/cc.ts';
 import { readJson } from '../lib/io.ts';
+import type { AnyHookIn, HookIn } from './types.ts';
 
-function roomClaudeRoom(input) {
+/** Anything that may carry task metadata (a call's input, a native task file). */
+type WithMeta = { metadata?: { _internal?: unknown; req?: unknown } | null } | null | undefined;
+
+/** A native task file (cc.taskFile JSON, read only): the fields read here. */
+interface NativeTask {
+  id?: unknown;
+  subject?: string;
+  status?: string;
+  owner?: string | null;
+  blockedBy?: unknown[];
+  description?: string;
+  metadata?: { _internal?: unknown; req?: unknown } | null;
+}
+
+/** A task's state in the mirror (lib/tasks.ts fold), and a `task` entry's fields. */
+interface TaskState { id: string; subject: string; status: string; owner: string | null; blockedBy: string[] }
+interface TaskRecord extends TaskState { op: string; req?: number }
+
+/** TaskCreate / TaskUpdate input, as sent (untrusted). */
+interface TaskCall {
+  taskId?: unknown;
+  subject?: string; // Claude Code checks a call against the tool's schema
+  status?: unknown;
+  owner?: unknown;
+  addBlockedBy?: unknown;
+  description?: string;
+  metadata?: { _internal?: unknown; req?: unknown } | null;
+}
+/** Their response, as far as the mirror reads it. */
+interface TaskResponse {
+  success?: boolean;
+  error?: unknown;
+  task?: { id?: unknown; subject?: string };
+  taskId?: unknown;
+  statusChange?: { to?: string };
+}
+
+/** What this script reads on stdin: PostToolUse TaskCreate|TaskUpdate, or TaskCompleted. */
+type TasksIn = Omit<AnyHookIn, 'tool_input' | 'tool_response'> & Omit<HookIn<'TaskCompleted'>, 'hook_event_name'>
+  & { tool_input?: TaskCall; tool_response?: TaskResponse };
+
+function roomClaudeRoom(input: TasksIn): string | null {
   const me = resolveSeat(input);
   if (me) return me.role === 'claude' ? me.code : null;
   const code = process.env.SUB_HUMAN_ROOM;
@@ -37,18 +79,18 @@ function roomClaudeRoom(input) {
   return null;
 }
 
-const listId = code => cc.taskListId() || `sh-${code}`;
-const readNative = (code, id) => (/^\d+$/.test(String(id)) ? readJson(cc.taskFile(listId(code), id)) : null);
-const internal = t => !!(t && t.metadata && t.metadata._internal);
+const listId = (code: string): string => cc.taskListId() || `sh-${code}`;
+const readNative = (code: string, id: string): NativeTask | null => (/^\d+$/.test(String(id)) ? readJson(cc.taskFile(listId(code), id)) : null);
+const internal = (t: WithMeta) => !!(t && t.metadata && t.metadata._internal);
 const RETRY = 'Nothing in that TaskUpdate was saved. Resend its other fields without status; change status only in a TaskUpdate of its own.';
 
 /** Legacy: the req number cited in a description, "(req #14 by bob)" or "evidence (#15): …"; the last wins. */
-function reqNumber(desc) {
+function reqNumber(desc: string | null | undefined): number | null {
   const all = [...String(desc || '').matchAll(/(?:req #|evidence \(#)(\d+)/g)];
-  return all.length ? Number(all.at(-1)[1]) : null;
+  return all.length ? Number(all[all.length - 1][1]) : null;
 }
 
-function opFor(prev, next, created) {
+function opFor(prev: TaskState | null, next: TaskState, created: boolean): string {
   if (created) return 'add';
   if (next.status === 'deleted') return 'delete';
   if (next.status === 'completed' && (!prev || prev.status !== 'completed')) return 'done';
@@ -56,13 +98,13 @@ function opFor(prev, next, created) {
   return 'update';
 }
 
-const same = (a, b) => !!a && !!b && a.subject === b.subject && a.status === b.status && (a.owner || null) === (b.owner || null)
+const same = (a: TaskState | null, b: TaskState) => !!a && !!b && a.subject === b.subject && a.status === b.status && (a.owner || null) === (b.owner || null)
   && JSON.stringify(a.blockedBy || []) === JSON.stringify(b.blockedBy || []);
 
-function mirror(code, input) {
-  const resp = input.tool_response || {};
+function mirror(code: string, input: TasksIn) {
+  const resp: TaskResponse = input.tool_response || {};
   if (resp.success === false || resp.error) return; // refused: the native list did not change
-  const inp = input.tool_input || {};
+  const inp: TaskCall = input.tool_input || {};
   const created = input.tool_name === 'TaskCreate';
   const id = String(created ? (resp.task && resp.task.id) || '' : resp.taskId || inp.taskId || '');
   if (!/^\d+$/.test(id)) return;
@@ -71,10 +113,10 @@ function mirror(code, input) {
   const r = room.open(code);
   tasks.withList(code, () => {
     const log = r.readAll();
-    const prev = tasks.fold(log).find(t => t.id === id) || null;
+    const prev: TaskState | null = tasks.fold(log).find((t: TaskState) => t.id === id) || null;
     const native = readNative(code, id);
     if (internal(native)) return;
-    const base = prev ? { ...prev } : native ? {
+    const base: TaskState = prev ? { ...prev } : native ? {
       id, subject: native.subject || '', status: native.status || 'pending', owner: native.owner || null,
       blockedBy: Array.isArray(native.blockedBy) ? native.blockedBy.map(String) : [],
     } : { id, subject: '', status: 'pending', owner: null, blockedBy: [] };
@@ -99,16 +141,16 @@ function mirror(code, input) {
   });
 }
 
-function record(r, t) {
+function record(r: ReturnType<typeof room.open>, t: TaskRecord) {
   const text = `#${t.id} "${t.subject}" ${t.op}${t.owner ? ` · ${t.owner}` : ''} · ${t.status}${t.req ? ` (req #${t.req})` : ''}`;
   r.append({ kind: 'task', text, ...t }, { via: 'system', from: 'claude', system: true });
 }
 
 /** The room Claude's native task files, by id (read only). */
-function nativeTasks(code) {
-  let names = [];
+function nativeTasks(code: string): NativeTask[] {
+  let names: string[] = [];
   try { names = fs.readdirSync(cc.tasksDir(listId(code))); } catch { return []; }
-  return names.map(n => /^(\d+)\.json$/.exec(n)).filter(Boolean).map(m => readNative(code, m[1])).filter(Boolean)
+  return names.map(n => /^(\d+)\.json$/.exec(n)).filter(m => m !== null).map(m => readNative(code, m[1])).filter(t => t !== null)
     .sort((a, b) => Number(a.id) - Number(b.id));
 }
 
@@ -119,12 +161,13 @@ function nativeTasks(code) {
  * deleted task's file can linger, so a gap in the other direction or a differing status proves nothing.
  * The snapshot is the file's whole state and its metadata.req, the same fields a TaskCreate entry carries.
  */
-function reconcile(code) {
+function reconcile(code: string) {
   const natives = nativeTasks(code);
   if (!natives.length) return;
   const r = room.open(code);
   tasks.withList(code, () => {
-    const seen = new Set(r.readAll().filter(e => e.kind === 'task' && e.via === 'system' && e.task_id != null).map(e => String(e.task_id)));
+    const seen = new Set(r.readAll().filter((e: { kind?: string; via?: string; task_id?: unknown }) => e.kind === 'task' && e.via === 'system' && e.task_id != null)
+      .map((e: { task_id?: unknown }) => String(e.task_id)));
     let added = 0;
     for (const n of natives) {
       const id = String(n.id);
@@ -139,11 +182,11 @@ function reconcile(code) {
   });
 }
 
-function gateHook(code, input) {
+function gateHook(code: string, input: TasksIn) {
   const id = String(input.task_id || '');
-  const native = readNative(code, id) || {};
+  const native: NativeTask = readNative(code, id) || {};
   const log = room.open(code).readAll();
-  const m = tasks.fold(log).find(t => t.id === id) || {};
+  const m: Partial<TaskState> = tasks.fold(log).find((t: TaskState) => t.id === id) || {};
   const task = {
     id,
     subject: input.task_subject || native.subject || m.subject || '',
@@ -157,8 +200,8 @@ function gateHook(code, input) {
   process.exitCode = 2;
 }
 
-let input = {};
-let code = null;
+let input: TasksIn = {};
+let code: string | null = null;
 try {
   input = readInput();
   code = roomClaudeRoom(input);
@@ -169,13 +212,13 @@ if (code) {
     else if (input.tool_name === 'TaskCreate' || input.tool_name === 'TaskUpdate') mirror(code, input);
   } catch (err) {
     if (input.hook_event_name === 'TaskCompleted') {
-      process.stderr.write(`sub-human task gate failed closed: ${err && err.message}\n`);
+      process.stderr.write(`sub-human task gate failed closed: ${err instanceof Error ? err.message : err}\n`);
       process.exitCode = 2;
     } else {
-      process.stderr.write(`sub-human tasks mirror: ${err && err.stack || err}\n`);
+      process.stderr.write(`sub-human tasks mirror: ${err instanceof Error && err.stack || err}\n`);
       process.exitCode = 1;
     }
   }
   // after the call's own entry, so that entry keeps its precise op; a failure here never changes the gate's verdict
-  try { reconcile(code); } catch (err) { process.stderr.write(`sub-human tasks reconcile: ${err && err.stack || err}\n`); }
+  try { reconcile(code); } catch (err) { process.stderr.write(`sub-human tasks reconcile: ${err instanceof Error && err.stack || err}\n`); }
 }
