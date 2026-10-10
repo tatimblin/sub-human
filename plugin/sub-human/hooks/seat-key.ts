@@ -23,49 +23,50 @@ import crypto from 'node:crypto';
 import * as store from '../lib/room/store.ts';
 import { writeFileAtomic } from '../lib/io.ts';
 
-const keyPath = (code, name) => store.pubPath(name, code).replace(/\.pub$/, '.key');
+const keyPath = (code: string, name: string): string => store.pubPath(name, code).replace(/\.pub$/, '.key');
 
-function mkdir700(dir) {
+function mkdir700(dir: string) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   try { fs.chmodSync(dir, 0o700); } catch { /* not ours to change */ }
 }
 
 /** Write data to file only if it does not exist yet (link of a private temp file: never a partial file). */
-function createOnce(file, data) {
+function createOnce(file: string, data: string): boolean {
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   const fd = fs.openSync(tmp, 'wx', 0o600);
   try { fs.writeSync(fd, data); } finally { fs.closeSync(fd); }
-  try { fs.linkSync(tmp, file); return true; } catch (e) { if (e.code === 'EEXIST') return false; throw e; } finally {
+  try { fs.linkSync(tmp, file); return true; } catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') return false; throw e; } finally {
     try { fs.unlinkSync(tmp); } catch { /* gone */ }
   }
 }
 
-const cache = new Map(); // key file -> KeyObject
+const cache = new Map<string, crypto.KeyObject>(); // key file -> KeyObject
 
-function ensure(code, name) {
+function ensure(code: string, name: string): crypto.KeyObject {
   const file = keyPath(code, name);
   const hit = cache.get(file);
   if (hit) return hit;
   mkdir700(path.dirname(file));
-  let pem = null;
-  try { pem = fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  let pem: string | null = null;
+  try { pem = fs.readFileSync(file, 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   if (!pem) {
     const { privateKey } = crypto.generateKeyPairSync('ed25519');
-    createOnce(file, privateKey.export({ type: 'pkcs8', format: 'pem' }));
+    createOnce(file, privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()); // PEM: always a string
     pem = fs.readFileSync(file, 'utf8'); // ours, or the one a concurrent hook created first
   }
   const key = crypto.createPrivateKey(pem);
   const pub = crypto.createPublicKey(key).export({ type: 'spki', format: 'pem' });
   const pubFile = store.pubPath(name, code);
-  let cur = null;
+  let cur: string | null = null;
   try { cur = fs.readFileSync(pubFile, 'utf8'); } catch { /* none yet */ }
   if (cur !== pub) writeFileAtomic(pubFile, pub, { mode: 0o600 });
   cache.set(file, key);
   return key;
 }
 
-const publicPem = (code, name) => crypto.createPublicKey(ensure(code, name)).export({ type: 'spki', format: 'pem' });
+const publicPem = (code: string, name: string): string => crypto.createPublicKey(ensure(code, name)).export({ type: 'spki', format: 'pem' }).toString(); // PEM: always a string
 
-function arm() { globalThis[store.SIGNER] = ensure; }
+// globalThis has no declared slot for the signer: lib/room/store.ts reads it back by the same symbol
+function arm() { (globalThis as Record<symbol, unknown>)[store.SIGNER] = ensure; }
 
 export { ensure, publicPem, arm, keyPath };

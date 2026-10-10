@@ -16,27 +16,29 @@
 import * as c from './common.ts';
 import * as atRoom from './at-room.ts';
 import * as consent from './consent.ts';
+import type { HookOutput, HookSpecificOutput } from './types.ts';
 
 const EVENT = 'UserPromptSubmit';
-const stops = o => !!o && (o.decision === 'block' || o.continue === false);
+const stops = (o: HookOutput | null | undefined) => !!o && (o.decision === 'block' || o.continue === false);
 
 /** Merge the handlers' outputs (in order) into the one this hook writes, or null. */
-function merge(outputs) {
-  const list = outputs.filter(Boolean);
+function merge(outputs: (HookOutput | null | undefined)[]): HookOutput | null {
+  const list = outputs.filter(o => !!o);
   const said = list.map(o => o.systemMessage).filter(Boolean);
   const notes = said.length ? { systemMessage: said.join('\n') } : {};
   const stop = list.find(stops);
   if (stop) return { ...stop, ...notes };
   if (!list.length) return null;
-  const merged = { ...notes };
-  const contexts = [];
+  // the first value of each top-level field wins, whatever field it is
+  const merged: HookOutput & Record<string, unknown> = { ...notes };
+  const contexts: string[] = [];
   for (const o of list) {
     const { hookSpecificOutput: hso, ...top } = o;
     for (const [k, v] of Object.entries(top)) if (merged[k] === undefined) merged[k] = v;
     if (!hso) continue;
     const { additionalContext, hookEventName, ...rest } = hso;
     if (additionalContext) contexts.push(additionalContext);
-    merged.hookSpecificOutput = { ...rest, ...(merged.hookSpecificOutput || {}), hookEventName: EVENT };
+    merged.hookSpecificOutput = { ...rest, ...(merged.hookSpecificOutput || {}), hookEventName: EVENT } satisfies HookSpecificOutput;
   }
   if (contexts.length) {
     merged.hookSpecificOutput = { ...(merged.hookSpecificOutput || { hookEventName: EVENT }), additionalContext: contexts.join('\n\n') };
@@ -45,11 +47,12 @@ function merge(outputs) {
 }
 
 function main() {
-  let input;
+  let input: Parameters<typeof atRoom.handle>[0];
   try { input = c.readInput(); } catch (err) { c.logError(err, 'prompt'); process.exitCode = 1; return; }
-  const outputs = [];
+  const outputs: HookOutput[] = [];
   let failed = false;
-  for (const [where, fn] of [['at-room', () => atRoom.handle(input)], ['consent', () => consent.onPrompt(input)]]) {
+  const handlers: [string, () => void][] = [['at-room', () => atRoom.handle(input)], ['consent', () => consent.onPrompt(input)]];
+  for (const [where, fn] of handlers) {
     const r = c.capture(fn);
     if (r.error) { c.logError(r.error, where); failed = true; }
     outputs.push(...r.outputs);
@@ -57,7 +60,7 @@ function main() {
   let o = merge(outputs);
   // Tell the mod whether a room review is still on record (mod/consent.ts flag); after a failure it stays unsure.
   if (!failed) {
-    let open;
+    let open: boolean | undefined;
     try { open = consent.reviewOpen(input); } catch (err) { c.logError(err, 'consent'); }
     if (open !== undefined) o = { ...(o || {}), subHuman: { reviewOpen: open } };
   }

@@ -11,17 +11,22 @@
 // join.ts and session-restore.ts write "working" too, and at-room.ts when no origin came.
 // Output: none (StopFailure ignores it).
 import { run, whoami, presence } from './common.ts';
+import type { HookIn } from './types.ts';
 
-const BY_TYPE = { idle_prompt: 'idle', permission_prompt: 'permission' };
+/** The events this script runs for (and "Working" from mod/prompt.ts); error as sent, a code or an object. */
+type PresenceIn = Omit<HookIn<'Notification'> & HookIn<'StopFailure'>, 'hook_event_name' | 'error'> & { hook_event_name?: string; error?: unknown };
 
-run(input => {
+const BY_TYPE: Record<string, string | undefined> = { idle_prompt: 'idle', permission_prompt: 'permission' };
+
+run((input: PresenceIn) => {
   const me = whoami(input);
   if (!me) return;
   if (input.hook_event_name === 'Working') return presence(me, 'working');
   if (input.hook_event_name === 'StopFailure') {
-    const err = input.error && typeof input.error === 'object' ? input.error.type || input.error.code : input.error;
+    const e = input.error;
+    const err = e && typeof e === 'object' ? (e as { type?: unknown }).type || (e as { code?: unknown }).code : e;
     return presence(me, 'error', err ? String(err) : 'stop failure');
   }
-  const state = BY_TYPE[input.notification_type];
+  const state = BY_TYPE[String(input.notification_type)];
   if (state) presence(me, state);
 });

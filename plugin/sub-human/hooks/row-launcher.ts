@@ -36,11 +36,11 @@ const rootsPath = () => path.join(binDir(), ROOTS);
 import { isTempPath as isTempRoot, allowTmpRoot as allowTmp } from '../lib/home.ts';
 import * as shim from '../lib/remote/shim.ts';
 
-const q = s => `'${String(s).replace(/'/g, `'\\''`)}'`;
-const cliOf = root => path.join(root, 'scripts', 'sub-human');
+const q = (s: string) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+const cliOf = (root: string) => path.join(root, 'scripts', 'sub-human');
 
 /** The launcher script for an ordered list of roots: exec the first whose CLI exists, else print nothing. */
-function launcherBody(roots) {
+function launcherBody(roots: string | string[]): string {
   const list = Array.isArray(roots) ? roots : [roots];
   const lines = list.map(r => `[ -f ${q(cliOf(r))} ] && exec node ${q(cliOf(r))} agent-statusline "$@"`);
   return '#!/bin/sh\n# written by sub-human hooks/row-launcher.ts (SessionStart); the plugin\'s subagentStatusLine runs it.\n'
@@ -49,9 +49,12 @@ function launcherBody(roots) {
 }
 
 /** The recorded roots, ordered for the launcher. */
-function orderRoots(rec) {
+/** roots.json: when each root last started a session, and whether it sits under a temp dir. */
+type RootsRec = Record<string, { at?: unknown; temp?: unknown } | null | undefined>;
+
+function orderRoots(rec: RootsRec | null): string[] {
   const xs = Object.entries(rec || {}).map(([root, v]) => ({ root, at: Number(v && v.at) || 0, temp: !!(v && v.temp) }));
-  xs.sort((a, b) => (a.temp - b.temp) || (b.at - a.at));
+  xs.sort((a, b) => (Number(a.temp) - Number(b.temp)) || (b.at - a.at));
   return xs.map(x => x.root);
 }
 
@@ -64,7 +67,7 @@ function writeLauncher(root = process.env.CLAUDE_PLUGIN_ROOT || path.join(import
   const temp = isTempRoot(root);
   if (temp && !allowTmp(env)) return null;
   fs.mkdirSync(binDir(), { recursive: true, mode: 0o700 });
-  const rec = readJson(rootsPath(), {}) || {};
+  const rec: RootsRec = readJson(rootsPath(), {}) || {};
   for (const r of Object.keys(rec)) if (!fs.existsSync(cliOf(r)) || (rec[r] && rec[r].temp && !allowTmp(env) && r !== root)) delete rec[r];
   rec[root] = { at: now, temp };
   const ordered = orderRoots(rec).slice(0, ROOTS_MAX);
@@ -84,6 +87,6 @@ if (import.meta.main) {
   try { fs.readFileSync(0, 'utf8'); } catch { /* stdin unused */ }
   try {
     if (!writeLauncher()) process.stderr.write('sub-human row-launcher: plugin root is under a temp dir; not used for the row status line (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)\n');
-  } catch (e) { process.stderr.write(`sub-human row-launcher error: ${e && e.stack || e}\n`); /* rows fall back to their default text */ }
-  try { shim.refresh(); } catch (e) { process.stderr.write(`sub-human serve shim error: ${e && e.message || e}\n`); }
+  } catch (e) { process.stderr.write(`sub-human row-launcher error: ${e instanceof Error && e.stack || e}\n`); /* rows fall back to their default text */ }
+  try { shim.refresh(); } catch (e) { process.stderr.write(`sub-human serve shim error: ${e instanceof Error && e.message || e}\n`); }
 }

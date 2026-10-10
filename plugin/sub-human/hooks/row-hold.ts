@@ -7,10 +7,11 @@
 // An Esc-kill does NOT fire SubagentStop; hold.ts's RESPAWN covers that. A row that stops for good
 // (STOP: this seat left, or a duplicate) is dropped from the row map.
 import { identity, rows, run, out, resolveSeat } from './common.ts';
+import type { HookIn, MemberRec } from './types.ts';
 
 const MAX_BLOCKS = 5;
 
-run(input => {
+run((input: HookIn<'SubagentStop'>) => {
   const type = String(input.agent_type || '');
   const id = input.agent_id ? String(input.agent_id) : '';
   if ((type !== rows.PARTICIPANT && type !== rows.ROOM_AGENT) || !id) return;
@@ -19,10 +20,11 @@ run(input => {
   if (!rec) return;
   const last = String(input.last_assistant_message || '').trim();
   if (/^(left|STOP)\b/i.test(last)) return rows.forgetRow(me.code, id);
-  const ms = identity.readMembers(me.code) || {};
+  const ms: Record<string, MemberRec | undefined> = identity.readMembers(me.code) || {};
+  const mine = ms[me.name];
   const wanted = rec.kind === 'room'
-    ? !!(ms[me.name] && !ms[me.name].left_at)
-    : !!(ms[rec.name] && ms[me.name] && !ms[me.name].left_at); // a member who left keeps the row ("left")
+    ? !!(mine && !mine.left_at)
+    : !!(ms[rec.name] && mine && !mine.left_at); // a member who left keeps the row ("left")
   let n = 0;
   try { n = rows.blockCount(me.code, id); } catch { /* first */ }
   if (wanted && n < MAX_BLOCKS) {
