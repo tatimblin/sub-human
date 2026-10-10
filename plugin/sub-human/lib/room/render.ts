@@ -28,6 +28,11 @@ import { proposals, answers, answered, decided, approversOf } from './lanes.ts';
 import { oneLine } from '../text.ts';
 import { fold } from './consent.ts';
 import { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP, CHAT_LINES_MAX, CHAT_NEST } from '../config.ts';
+import type { Entry, LaneViewer, Matrix, Members } from './types.ts';
+
+/** One digest line; id: the entry it shows, so the cap trims the oldest first. */
+interface DigestLine { id?: number; text: string }
+interface DigestSection { title: string | null; lines: DigestLine[] }
 
 const FOR_CLAUDE = '(for Claude)';
 const UNVERIFIED = '(unverified)';
@@ -40,19 +45,19 @@ const NEST = CHAT_NEST; // "  │ ": every continuation line of a message, so no
  */
 const BREAKS = /\r\n|[\r\v\f\u0085\u2028\u2029]/g;
 const UNSAFE = /[\u0000-\u0008\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
-const safeText = t => String(t).replace(BREAKS, '\n').replace(UNSAFE, '\ufffd');
+const safeText = (t: unknown): string => String(t).replace(BREAKS, '\n').replace(UNSAFE, '\ufffd');
 
 /**
  * A via this version does not know (a newer host wrote it) is never shown as the person's own words, nor as their
  * Claude's: "bob (via relay)".
  */
 const KNOWN_VIAS = new Set(['human', 'agent', 'system']);
-const otherVia = e => (e.via !== undefined && !KNOWN_VIAS.has(e.via)
+const otherVia = (e: Entry): string | null => (e.via !== undefined && !KNOWN_VIAS.has(e.via)
   ? `${e.from} (via ${/^[a-z_-]{1,16}$/.test(String(e.via)) ? e.via : '?'})` : null);
 
-const who = e => {
+const who = (e: Entry): string => {
   if (e.via === 'system') return 'room';
-  if (otherVia(e)) return otherVia(e);
+  if (otherVia(e)) return otherVia(e)!;
   const from = roomClaudeName(e.from); // 0.4.x logs name the room's Claude "orch"
   return e.via === 'agent' && from !== ROOM_CLAUDE ? `${from}'s Claude` : from;
 };
@@ -61,16 +66,16 @@ const who = e => {
  * An entry's text, JSON-quoted (so always one line), at most n code points. Longer text never ends in a bare
  * "…": the quote closes and an explicit marker names the call that fetches the rest. exact keeps whitespace.
  */
-function quote(e, n, { exact = false } = {}) {
+function quote(e: Entry, n: number, { exact = false }: { exact?: boolean } = {}): string {
   const raw = String(e.text ?? '');
   const t = exact ? raw : oneLine(raw);
   const cps = Array.from(t);
-  const js = x => JSON.stringify(x).replace(/[\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, c => `\\u${c.charCodeAt(0).toString(16)}`);
+  const js = (x: string): string => JSON.stringify(x).replace(/[\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, c => `\\u${c.charCodeAt(0).toString(16)}`);
   if (cps.length <= n) return js(t);
   return `${js(cps.slice(0, n).join(''))} [cut at ${n}/${cps.length}: read({ids:[${e.id}]})]`;
 }
 
-function header(e) {
+function header(e: Entry): string {
   const n = normalize(e);
   const parts = [`#${n.id}`, `${n.from}${n.via ? `[${n.via}]` : ''}`];
   if (unverifiedHuman(e)) parts.push(UNVERIFIED);
@@ -97,7 +102,7 @@ function header(e) {
  * `[cut at 2000/N: read({ids:[ID]})]`. Otherwise a compact line of at most TAIL_MAX chars (whitespace
  * collapsed), with the same explicit marker when the text is cut.
  */
-function line(e, { full = false } = {}) {
+function line(e: Entry, { full = false }: { full?: boolean } = {}): string {
   if (e.text == null) return full ? header(e) : header(e).slice(0, TAIL_MAX);
   if (full) return `${header(e)} ${quote(e, TEXT_MAX, { exact: true })}`;
   const head = header(e).slice(0, TAIL_MAX - 3);
@@ -109,13 +114,13 @@ function line(e, { full = false } = {}) {
     n = Math.max(0, n - Math.max(1, l.length - TAIL_MAX));
   }
 }
-const tailLine = e => line(e);
+const tailLine = (e: Entry): string => line(e);
 
 // ---------- chat rendering (what a human sees; no ids) ----------
 /** Who an entry is from, as a group chat names them: "bob", "bob's Claude", "claude", "room". */
-function chatWho(e) {
+function chatWho(e: Entry): string {
   if (e.via === 'system') return 'room';
-  if (otherVia(e)) return otherVia(e);
+  if (otherVia(e)) return otherVia(e)!;
   if (roomClaudeName(e.from) === ROOM_CLAUDE) return ROOM_CLAUDE; // 0.4.x logs: "orch"
   if (e.via === 'agent') return `${e.from}'s Claude`;
   if (unverifiedHuman(e)) return `${e.from} ${UNVERIFIED}`;
@@ -123,11 +128,11 @@ function chatWho(e) {
 }
 
 /** The person's name for a via=human line, with the unverified marker when its sig does not verify. */
-const humanName = e => (unverifiedHuman(e) ? `${e.from} ${UNVERIFIED}` : e.from);
+const humanName = (e: Entry): string => (unverifiedHuman(e) ? `${e.from} ${UNVERIFIED}` : e.from);
 
 /** Split one text line into pieces of at most n code points (rest: the later pieces), at a space when there is one. */
-function wrap(lineText, n = CHAT_WRAP, rest = n) {
-  const out = [];
+function wrap(lineText: string, n = CHAT_WRAP, rest = n): string[] {
+  const out: string[] = [];
   let cps = Array.from(lineText);
   while (cps.length > n) {
     let cut = cps.lastIndexOf(' ', n);
@@ -146,7 +151,7 @@ const TITLE_LABEL_MAX = 60;
  * The proposal hash names, as people see it: its title in quotes, from the proposal entry in entries ("proposal
  * HASH: TITLE"), one safe line of at most TITLE_LABEL_MAX code points; null without entries or that entry.
  */
-function proposalLabel(hash, entries) {
+function proposalLabel(hash: string | undefined, entries: readonly Entry[] | undefined): string | null {
   if (!hash || !Array.isArray(entries)) return null;
   const p = entries.find(x => x && x.kind === 'proposal' && x.hash === hash);
   const t = p && oneLine(safeText(String(p.text ?? '').replace(/^proposal [0-9a-f]{6,64}:\s*/, ''))).replace(/\n/g, ' ').trim();
@@ -156,21 +161,21 @@ function proposalLabel(hash, entries) {
 }
 
 /** An objection's note, or '' for none (a bare "Object" answer). */
-const noteOf = o => (o.text == null || /^Object$/.test(String(o.text)) ? '' : String(o.text));
+const noteOf = (o: Entry): string => (o.text == null || /^Object$/.test(String(o.text)) ? '' : String(o.text));
 
 /**
  * A decision as people read it: '"Ship v3 Monday" agreed (bob)', or '"Ship v3 Monday" not agreed: changes
  * requested by bob: keep status · agreed: alice' (each objector's note from the answers the decision refs). Without
  * the proposal in entries: 'decided (agreed: bob)' / 'not agreed (objected: bob)'.
  */
-function decisionText(n, entries) {
+function decisionText(n: Entry, entries: readonly Entry[] | undefined): string {
   const label = proposalLabel(n.proposal_hash, entries);
   const s = String(n.text ?? '').replace(/\s*\(proposal [0-9a-f]+\)\s*$/, '');
   const m = /^objected: ([^·]*?)(?: · agreed: (.*))?$/.exec(s);
   if (!label) return m ? `not agreed (${s})` : `decided (${s})`; // no title to name it by
   if (!m) return /^agreed: /.test(s) ? `${label} agreed (${s.slice(8)})` : `${label} decided (${s})`;
   const refs = new Set(n.refs || []);
-  const objs = entries.filter(x => x && refs.has(x.id) && x.kind === 'objection');
+  const objs = entries!.filter(x => x && refs.has(x.id) && x.kind === 'objection'); // a label means entries are there
   const by = m[1].split(/,\s*/).filter(Boolean).map(name => {
     const o = objs.find(x => x.from === name);
     const note = o ? oneLine(safeText(noteOf(o))) : '';
@@ -180,10 +185,10 @@ function decisionText(n, entries) {
 }
 
 /** The human-facing sentence for an entry (may span lines). entries: the log so far, to name a proposal by title. */
-function chatBody(e, viewer, entries) {
+function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[] | undefined): { head: string; text: string } {
   const n = normalize(e);
   const t = String(n.text ?? '');
-  const you = x => (x && x === viewer ? 'you' : x);
+  const you = (x: string | undefined): string | undefined => (x && x === viewer ? 'you' : x);
   const about = () => proposalLabel(n.proposal_hash, entries) || 'the proposal';
   switch (n.kind) {
     case 'member_joined': return { head: `${n.from} ${/\brejoined\b/.test(t) ? 'rejoined' : 'joined'}`, text: '' };
@@ -217,7 +222,7 @@ function chatBody(e, viewer, entries) {
  * call for the rest. \r, other controls and bidi overrides never reach the output (safeText).
  * viewer: the reader's name ("to you", "owner you"); entries: the log so far (a proposal's title).
  */
-function chatLines(e, { viewer, entries } = {}) {
+function chatLines(e: Entry, { viewer, entries }: { viewer?: string; entries?: readonly Entry[] } = {}): string[] {
   const { head, text } = chatBody(e, viewer, entries);
   if (!text) return [head];
   const cps = Array.from(text);
@@ -229,7 +234,7 @@ function chatLines(e, { viewer, entries } = {}) {
   if (more) lines = lines.slice(0, CHAT_LINES_MAX);
   lines[0] = `${head}: ${lines[0].replace(/^\s+/, '')}`;
   const nested = CHAT_WRAP - NEST.length;
-  const out = [];
+  const out: string[] = [];
   lines.forEach((l, i) => wrap(l, i ? nested : CHAT_WRAP, nested).forEach((piece, j) => out.push(i || j ? NEST + piece : piece)));
   if (more) out.push(`${NEST}[+${more} more line${more === 1 ? '' : 's'}: read({ids:[${e.id}]})]`);
   if (cut) out.push(`${FOR_CLAUDE} that message is cut at ${CHAT_MAX}/${cps.length} chars; read({ids:[${e.id}]}) has all of it`);
@@ -237,15 +242,15 @@ function chatLines(e, { viewer, entries } = {}) {
 }
 
 /** "waiting on dave · objected: carol" for an undecided proposal's consent matrix (lib/room/consent.ts), or '' when all agreed. */
-function waiting(m) {
+function waiting(m: Matrix): string {
   return [m.missing.length && `waiting on ${m.missing.join(', ')}`, m.objected.length && `objected: ${m.objected.join(', ')}`]
     .filter(Boolean).join(' · ');
 }
 
 /** "room now: proposal 3fa2c1 waiting on bob · you: answer needed · away: bob", from the log as it is now. */
-function stateLine(me, entries = [], { members = {}, ids = true } = {}) {
-  const parts = [];
-  const name = me && me.name;
+function stateLine(me: LaneViewer | null | undefined, entries: readonly Entry[] = [], { members = {}, ids = true }: { members?: Members | null; ids?: boolean } = {}): string {
+  const parts: string[] = [];
+  const name = (me && me.name) as string; // no seat: in no proposal
   const all = proposals(entries);
   const open = all.filter(p => !decided(p.hash, entries));
   const last = all.at(-1);
@@ -273,21 +278,21 @@ function stateLine(me, entries = [], { members = {}, ids = true } = {}) {
  * Full text for `sub-human read`: a "[#id …]" header line, then every line of the text nested under it (NEST),
  * so the text can't fake another entry's header.
  */
-function fmt(e) {
+function fmt(e: Entry): string {
   const body = e.text == null ? `(${e.kind}, no notes)` : safeText(e.text).split('\n').map(l => NEST + l).join('\n');
   return `[${header(e)} ${String(e.at || '').slice(11, 19)}]\n${body}`;
 }
 
 // ---------- the compaction digest ----------
 /** The ordered digest sections; items carry an id so the cap can trim the oldest first. */
-function digestSections(entries = [], { members = {}, code = null } = {}) {
+function digestSections(entries: readonly Entry[] = [], { members = {}, code = null }: { members?: Members | null; code?: string | null } = {}): DigestSection[] {
   members = members || {};
   const memberLines = Object.values(members).map(m => {
     const last = entries.filter(e => e.from === m.name && e.via !== 'system').at(-1);
     return { text: `  ${m.name} (${m.role})${m.left_at ? ' LEFT' : ''} last post ${last ? `#${last.id} ${String(last.at).slice(11, 19)}` : '-'}` };
   });
 
-  const planLines = [];
+  const planLines: DigestLine[] = [];
   const props = proposals(entries);
   const undecided = props.filter(p => !decided(p.hash, entries));
   for (const p of undecided.length ? undecided : props.slice(-1)) {
@@ -305,7 +310,7 @@ function digestSections(entries = [], { members = {}, code = null } = {}) {
   }
   if (!planLines.length) planLines.push({ text: '  (no proposals)' });
 
-  const closedBy = new Set();
+  const closedBy = new Set<number>();
   for (const e of entries) {
     if ((roomClaudeName(e.from) === ROOM_CLAUDE || e.kind === 'decision') && e.refs) e.refs.forEach(r => closedBy.add(r));
   }
@@ -327,7 +332,7 @@ function digestSections(entries = [], { members = {}, code = null } = {}) {
   ];
 }
 
-function renderSections(sections, trimmed) {
+function renderSections(sections: DigestSection[], trimmed: number): string {
   const out = [`ROOM DIGEST (generated from the log; ${new Date().toISOString().slice(0, 19)}Z)`];
   for (const s of sections) {
     if (s.title) out.push(`## ${s.title}`);
@@ -338,15 +343,15 @@ function renderSections(sections, trimmed) {
   return out.join('\n');
 }
 
-function digest(entries = [], ctx = {}) {
+function digest(entries: readonly Entry[] = [], ctx: { members?: Members | null; code?: string | null } = {}): string {
   const sections = digestSections(entries, ctx);
   let trimmed = 0;
   let text = renderSections(sections, trimmed);
   while (text.length > DIGEST_CAP) {
-    let oldest = null;
+    let oldest: { s: DigestSection; i: number } | null = null;
     for (const s of sections) {
       const i = s.lines.findIndex(l => l.id != null);
-      if (i >= 0 && (!oldest || s.lines[i].id < oldest.s.lines[oldest.i].id)) oldest = { s, i };
+      if (i >= 0 && (!oldest || s.lines[i].id! < oldest.s.lines[oldest.i].id!)) oldest = { s, i }; // findIndex: id set
     }
     if (!oldest) { const tag = '\n[digest cut at the cap: sub-human digest]'; return text.slice(0, DIGEST_CAP - tag.length) + tag; }
     oldest.s.lines.splice(oldest.i, 1);

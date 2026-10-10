@@ -21,15 +21,19 @@
 
 import { NAME_RE } from '../text.ts';
 import { ENTRY_TEXT_MAX_BYTES, ENTRY_REFS_MAX, ENTRY_STR_MAX, ENTRY_LIST_MAX } from '../config.ts';
+import type { EntryInput, HostFields, Kind, TaskFields, TaskOp, Validated, ValidateOpts, Via } from './types.ts';
 
-const AGENT_KINDS = ['say', 'question', 'status', 'proposal', 'task_req'];
-const HUMAN_KINDS = ['say', 'signoff', 'objection', 'proposal'];
-const SYSTEM_ONLY_KINDS = ['decision', 'member_joined', 'member_left', 'task', 'host_changed'];
-const TASK_OPS = ['add', 'claim', 'release', 'done'];
+const AGENT_KINDS: readonly string[] = ['say', 'question', 'status', 'proposal', 'task_req'];
+const HUMAN_KINDS: readonly string[] = ['say', 'signoff', 'objection', 'proposal'];
+const SYSTEM_ONLY_KINDS: readonly string[] = ['decision', 'member_joined', 'member_left', 'task', 'host_changed'];
+const TASK_OPS: readonly string[] = ['add', 'claim', 'release', 'done'];
 const SYSTEM_KINDS = [...SYSTEM_ONLY_KINDS, 'status'];
 const KINDS = [...new Set([...AGENT_KINDS, ...HUMAN_KINDS, ...SYSTEM_KINDS])];
-const KINDS_BY_VIA = { agent: AGENT_KINDS, human: HUMAN_KINDS, system: SYSTEM_KINDS };
-const VIAS = ['human', 'agent', 'system'];
+const KINDS_BY_VIA: Record<Via, readonly string[]> = { agent: AGENT_KINDS, human: HUMAN_KINDS, system: SYSTEM_KINDS };
+const VIAS: readonly string[] = ['human', 'agent', 'system'];
+const isVia = (v: unknown): v is Via => VIAS.includes(v as string);
+const isKind = (k: unknown): k is Kind => KINDS.includes(k as string);
+const isTaskOp = (op: unknown): op is TaskOp => TASK_OPS.includes(op as string);
 const HASH_RE = /^[0-9a-f]{6,64}$/;
 const HOST_FIELDS = ['epoch', 'host', 'locator', 'accept', 'ask', 'promoted'];
 const TASK_FIELDS = ['op', 'task_id', 'subject', 'detail', 'evidence', 'owner', 'status', 'req', 'blockedBy'];
@@ -39,14 +43,21 @@ const TASK_KINDS = ['task_req', 'task'];
 const PEM_RE = /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]{1,512}-----END PUBLIC KEY-----\n$/;
 const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
+/**
+ * A room error, code: INVALID | RATE | LOCK | NO_ROOM | AUTH | STALE | HOST_ONLY, and over a link the protocol's codes
+ * (lib/remote/protocol.ts CODES: OFFLINE, FORK, PROTOCOL, ...). unknown: an OFFLINE whose op went out (it may land).
+ */
 class RoomError extends Error {
-  constructor(code, message) { super(message); this.code = code; }
+  declare code: string;
+  declare unknown?: boolean;
+  constructor(code: string, message: string) { super(message); this.code = code; }
 }
 
-const bad = msg => { throw new RoomError('INVALID', msg); };
+function bad(msg: string): never { throw new RoomError('INVALID', msg); }
 
-function validate(entry, opts) {
+function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   if (!entry || typeof entry !== 'object') bad('entry must be an object');
+  const fields = entry as unknown as Record<string, unknown>; // every key is checked below
   for (const k of Object.keys(entry)) {
     if (!ENTRY_FIELDS.has(k)) bad(`field "${k}" is not settable by callers`);
   }
@@ -55,13 +66,13 @@ function validate(entry, opts) {
   const isTask = TASK_KINDS.includes(kind);
   if (entry.id !== undefined && !isTask) bad('field "id" is not settable by callers');
   if (entry.by !== undefined && !(kind === 'task_req' && entry.by === opts.from)) bad('field "by" is not settable by callers (task_req stamps it)');
-  for (const k of TASK_FIELDS) if (entry[k] !== undefined && !isTask) bad(`field "${k}" is only for task_req and task entries`);
+  for (const k of TASK_FIELDS) if (fields[k] !== undefined && !isTask) bad(`field "${k}" is only for task_req and task entries`);
   const task = isTask ? taskFields(kind, entry) : null;
   const text = entry.text === undefined && task ? taskText(kind, task) : entry.text;
   const bareAnswer = entry.text === undefined && (kind === 'signoff' || (kind === 'objection' && via === 'human'));
   if (typeof opts.from !== 'string' || !NAME_RE.test(opts.from)) bad(`invalid from "${opts.from}"`);
-  if (!VIAS.includes(via)) bad(`via must be one of ${VIAS.join(', ')}`);
-  if (!KINDS.includes(kind)) bad(`unknown kind "${kind}". Use one of: ${KINDS_BY_VIA[via].join(', ')}`);
+  if (!isVia(via)) bad(`via must be one of ${VIAS.join(', ')}`);
+  if (!isKind(kind)) bad(`unknown kind "${kind}". Use one of: ${KINDS_BY_VIA[via].join(', ')}`);
   if (via === 'system' && opts.system !== true) bad('via "system" is written only by the plugin\'s hooks');
   if (SYSTEM_ONLY_KINDS.includes(kind)) {
     if (opts.system !== true) bad(`${kind} is written only by the plugin's hooks`);
@@ -112,13 +123,13 @@ function validate(entry, opts) {
 
 const PROOF_MAX = 4096; // a signed acceptance or request, as JSON
 /** The host_changed fields, checked (null for another kind, which may carry none of them). */
-function hostFields(kind, entry) {
+function hostFields(kind: string, entry: EntryInput): HostFields | null {
   if (kind !== 'host_changed') {
-    for (const k of HOST_FIELDS) if (entry[k] !== undefined) bad(`field "${k}" is only for host_changed`);
+    for (const k of HOST_FIELDS) if ((entry as unknown as Record<string, unknown>)[k] !== undefined) bad(`field "${k}" is only for host_changed`);
     return null;
   }
   const { epoch, host, machine, locator, accept, ask, promoted } = entry;
-  if (!Number.isInteger(epoch) || epoch < 1) bad('host_changed needs epoch, a positive integer');
+  if (typeof epoch !== 'number' || !Number.isInteger(epoch) || epoch < 1) bad('host_changed needs epoch, a positive integer');
   if (typeof host !== 'string' || !NAME_RE.test(host)) bad('host_changed needs host, the new host\'s seat name');
   if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) bad('host_changed needs the new host\'s machine id');
   if (typeof locator !== 'string' || !locator || locator.length > 1024) bad('host_changed needs locator');
@@ -127,24 +138,25 @@ function hostFields(kind, entry) {
     if (!v || typeof v !== 'object' || Array.isArray(v) || JSON.stringify(v).length > PROOF_MAX) bad(`invalid ${k}`);
   }
   if (promoted !== undefined && promoted !== true) bad('promoted must be true');
-  const out = { epoch, host, locator };
+  const out: HostFields = { epoch, host, locator };
   if (accept !== undefined) out.accept = accept;
   if (ask !== undefined) out.ask = ask;
   if (promoted) out.promoted = true;
   return out;
 }
 
-const taskIdOk = v => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(v)) || (Number.isInteger(v) && v > 0);
-const optStr = (k, v, max) => { if (v !== undefined && (typeof v !== 'string' || v.length > max)) bad(`${k} must be a string of at most ${max} chars`); };
+const taskIdOk = (v: unknown): v is string | number => (typeof v === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(v)) || (typeof v === 'number' && Number.isInteger(v) && v > 0);
+const optStr = (k: string, v: unknown, max: number): void => { if (v !== undefined && (typeof v !== 'string' || v.length > max)) bad(`${k} must be a string of at most ${max} chars`); };
 
 /** The task fields of a task_req / task entry, checked; the caller's `id` (the task id) becomes task_id. */
-function taskFields(kind, entry) {
-  const t = {};
+function taskFields(kind: string, entry: EntryInput): TaskFields {
+  const t: TaskFields = {};
+  const fields = entry as unknown as Record<string, unknown>;
   const tid = entry.task_id !== undefined ? entry.task_id : entry.id;
   if (tid !== undefined) { if (!taskIdOk(tid)) bad('the task id must be a positive integer or a short id string'); t.task_id = String(tid); }
   if (entry.op !== undefined) t.op = entry.op;
   if (kind === 'task_req') {
-    if (!TASK_OPS.includes(t.op)) bad(`task_req op must be one of: ${TASK_OPS.join(', ')}`);
+    if (!isTaskOp(t.op)) bad(`task_req op must be one of: ${TASK_OPS.join(', ')}`);
     if (t.op === 'add' && !(typeof entry.subject === 'string' && entry.subject.trim())) bad('add needs a subject');
     if (t.op !== 'add' && t.task_id === undefined) bad(`${t.op} needs the task id`);
     if (t.op === 'done' && !(typeof entry.evidence === 'string' && entry.evidence.trim())) bad('done needs evidence');
@@ -158,13 +170,14 @@ function taskFields(kind, entry) {
   if (entry.req !== undefined && !(Number.isInteger(entry.req) && entry.req > 0)) bad('req must be a log id');
   if (entry.blockedBy !== undefined && !(Array.isArray(entry.blockedBy) && entry.blockedBy.every(taskIdOk))) bad('blockedBy must be task ids');
   if (entry.blockedBy !== undefined && entry.blockedBy.length > ENTRY_LIST_MAX) bad(`too many blockedBy ids (the limit is ${ENTRY_LIST_MAX})`);
-  for (const k of ['subject', 'detail', 'evidence', 'status', 'owner', 'req']) if (entry[k] !== undefined && entry[k] !== null) t[k] = entry[k];
+  // each was checked above (a string, a name, a log id)
+  for (const k of ['subject', 'detail', 'evidence', 'status', 'owner', 'req'] as const) if (fields[k] !== undefined && fields[k] !== null) (t as Record<string, unknown>)[k] = fields[k];
   if (entry.blockedBy !== undefined) t.blockedBy = entry.blockedBy.map(String);
   return t;
 }
 
 /** "claim #2 parser tests" / "#2 parser tests: in_progress, owner bob": the default text of a task entry. */
-function taskText(kind, t) {
+function taskText(kind: string, t: TaskFields): string {
   const id = t.task_id ? `#${t.task_id}` : '';
   const head = [t.op, id, t.subject].filter(Boolean).join(' ');
   if (kind === 'task_req') return head + (t.op === 'done' && t.evidence ? `; evidence: ${t.evidence}` : '');

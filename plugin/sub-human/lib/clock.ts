@@ -24,22 +24,59 @@
  * only affects the code under test. mock.timers is fine for a unit that uses globals and nothing else.
  */
 
-const real = {
+/** A timer handle: Node's Timeout from the real clock, a fake Handle from createFake(). */
+interface TimerHandle {
+  ref(): TimerHandle;
+  unref(): TimerHandle;
+  hasRef(): boolean;
+  refresh(): TimerHandle;
+  [Symbol.toPrimitive](): number;
+}
+type TimerCallback = (...args: any[]) => void; // any: a timer passes the caller's extra args through untouched
+type ClearArg = TimerHandle | number | null | undefined;
+
+/** The methods code that waits calls (default: the real clock). */
+interface Clock {
+  now(): number;
+  setTimeout(fn: TimerCallback, ms?: number, ...args: unknown[]): TimerHandle;
+  clearTimeout(h: ClearArg): void;
+  setInterval(fn: TimerCallback, ms?: number, ...args: unknown[]): TimerHandle;
+  clearInterval(h: ClearArg): void;
+  sleep(ms: number): Promise<void>;
+}
+
+/** createFake()'s clock: a Clock plus the controls tests drive it with. */
+interface FakeClock extends Clock {
+  advance(ms: number): void;
+  advanceAsync(ms: number): Promise<void>;
+  runAll(limit?: number): void;
+  pending(): number;
+  set(ms: number): void;
+}
+
+// The real clock's handles are always Node Timeouts (or what a caller kept of one: its number).
+const nodeHandle = (h: ClearArg) => (h ?? undefined) as NodeJS.Timeout | number | undefined;
+
+const real: Clock = {
   now: () => Date.now(),
   setTimeout: (fn, ms, ...a) => setTimeout(fn, ms, ...a),
-  clearTimeout: h => clearTimeout(h),
+  clearTimeout: h => clearTimeout(nodeHandle(h)),
   setInterval: (fn, ms, ...a) => setInterval(fn, ms, ...a),
-  clearInterval: h => clearInterval(h),
+  clearInterval: h => clearInterval(nodeHandle(h)),
   sleep: ms => new Promise(r => setTimeout(r, ms)),
 };
 
-function createFake({ now: start = 0 } = {}) {
+interface FakeTimer { id: number; seq: number; fn: TimerCallback; args: unknown[]; ms: number; due: number; repeat: boolean }
+
+function createFake({ now: start = 0 }: { now?: number } = {}): FakeClock {
   let now = start;
   let seq = 0;
-  const timers = new Map(); // id -> timer
+  const timers = new Map<number, FakeTimer>(); // id -> timer
 
-  class Handle {
-    constructor(t) { this.id = t.id; this._t = t; }
+  class Handle implements TimerHandle {
+    id: number;
+    _t: FakeTimer;
+    constructor(t: FakeTimer) { this.id = t.id; this._t = t; }
     ref() { return this; }
     unref() { return this; }
     hasRef() { return true; }
@@ -47,38 +84,38 @@ function createFake({ now: start = 0 } = {}) {
     [Symbol.toPrimitive]() { return this.id; }
   }
 
-  function add(fn, ms, args, repeat) {
+  function add(fn: TimerCallback, ms: number | undefined, args: unknown[], repeat: boolean): Handle {
     if (typeof fn !== 'function') throw new TypeError('callback must be a function');
     ms = Math.max(1, Number(ms) || 0); // Node clamps 0 to 1 ms
     const t = { id: ++seq, seq, fn, args, ms, due: now + ms, repeat };
     timers.set(t.id, t);
     return new Handle(t);
   }
-  const clear = h => { if (h != null) timers.delete(typeof h === 'object' ? h.id : h); };
+  const clear = (h: ClearArg): void => { if (h != null) timers.delete(typeof h === 'object' ? (h as Handle).id : Number(h)); };
 
-  function next(until) {
-    let best = null;
+  function next(until: number): FakeTimer | null {
+    let best: FakeTimer | null = null;
     for (const t of timers.values()) {
       if (t.due > until) continue;
       if (!best || t.due < best.due || (t.due === best.due && t.seq < best.seq)) best = t;
     }
     return best;
   }
-  function fire(t) {
+  function fire(t: FakeTimer): void {
     now = Math.max(now, t.due);
     if (t.repeat) { t.due += t.ms; t.seq = ++seq; } else timers.delete(t.id);
     t.fn(...t.args);
   }
 
-  const flush = () => new Promise(r => setImmediate(r));
+  const flush = () => new Promise<void>(r => setImmediate(r));
 
-  const clock = {
+  const clock: FakeClock = {
     now: () => now,
     setTimeout: (fn, ms, ...a) => add(fn, ms, a, false),
     clearTimeout: clear,
     setInterval: (fn, ms, ...a) => add(fn, ms, a, true),
     clearInterval: clear,
-    sleep: ms => new Promise(r => add(r, ms, [], false)),
+    sleep: ms => new Promise<void>(r => add(r, ms, [], false)),
 
     advance(ms) {
       const until = now + Math.max(0, Number(ms) || 0);
@@ -95,7 +132,7 @@ function createFake({ now: start = 0 } = {}) {
     runAll(limit = 1000) {
       for (let i = 0; timers.size; i++) {
         if (i >= limit) throw new Error(`runAll: still ${timers.size} timer(s) after ${limit} firings`);
-        fire(next(Infinity));
+        fire(next(Infinity)!); // timers is not empty, so some timer is due by Infinity
       }
     },
     pending: () => timers.size,
@@ -112,3 +149,4 @@ export {
   now, realSetTimeout as setTimeout, realClearTimeout as clearTimeout, realSetInterval as setInterval,
   realClearInterval as clearInterval, sleep, real, createFake,
 };
+export type { Clock, FakeClock, TimerHandle, TimerCallback };

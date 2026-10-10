@@ -31,14 +31,15 @@
  */
 
 import { normalize, humanTrust } from './store.ts';
+import type { Answer, Entry, Fold, Matrix, ProposalEntry, ProposalState } from './types.ts';
 
 const HASH_RE = /^[0-9a-f]{12}$/;
-const isHash = h => typeof h === 'string' && HASH_RE.test(h);
+const isHash = (h: unknown): h is string => typeof h === 'string' && HASH_RE.test(h);
 const ANSWER_KINDS = new Set(['signoff', 'objection']);
 
-const memo = new WeakMap();
+const memo = new WeakMap<object, { key: string; f: Fold }>();
 
-function fold(entries) {
+function fold(entries: readonly (Entry | null | undefined)[] | null | undefined): Fold {
   const list = Array.isArray(entries) ? entries : [];
   const last = list.length ? list[list.length - 1] : null;
   const key = `${list.length}:${last && last.id}`;
@@ -49,10 +50,10 @@ function fold(entries) {
   return f;
 }
 
-function compute(list) {
-  const proposals = new Map();
-  const answers = new Map();
-  const decisions = new Map();
+function compute(list: readonly (Entry | null | undefined)[]): Fold {
+  const proposals = new Map<string, ProposalState>();
+  const answers = new Map<string, Map<string, Answer>>();
+  const decisions = new Map<string, Entry>();
   for (const raw of list) {
     if (!raw) continue;
     const e = normalize(raw);
@@ -60,7 +61,7 @@ function compute(list) {
       if (!isHash(e.hash)) continue;
       proposals.delete(e.hash);
       const approvers = Array.isArray(e.approvers) ? e.approvers : [];
-      proposals.set(e.hash, { id: e.id, hash: e.hash, from: e.from, approvers, path: e.path || null, entry: e });
+      proposals.set(e.hash, { id: e.id, hash: e.hash, from: e.from, approvers, path: e.path || null, entry: e as ProposalEntry });
       continue;
     }
     const h = e.proposal_hash;
@@ -69,32 +70,32 @@ function compute(list) {
     if (e.via !== 'human' || typeof e.from !== 'string' || humanTrust(raw) === 'unverified') continue;
     if (ANSWER_KINDS.has(e.kind)) {
       if (!answers.has(h)) answers.set(h, new Map());
-      answers.get(h).set(e.from, { kind: e.kind, id: e.id, entry: e });
+      answers.get(h)!.set(e.from, { kind: e.kind as Answer['kind'], id: e.id, entry: e });
     } else if (e.kind === 'revoke' && answers.has(h)) {
-      answers.get(h).delete(e.from);
+      answers.get(h)!.delete(e.from);
     }
   }
 
-  const answerOf = (hash, name) => { const m = answers.get(hash); return (m && m.get(name)) || null; };
+  const answerOf = (hash: string, name: string): Answer | null => { const m = answers.get(hash); return (m && m.get(name)) || null; };
 
-  function matrix(hash, approvers) {
-    if (!Array.isArray(approvers)) { const p = proposals.get(hash); approvers = p ? p.approvers : []; }
-    const out = {}, signed = {};
+  function matrix(hash: string, approversArg?: string[]): Matrix {
+    const approvers = Array.isArray(approversArg) ? approversArg : proposals.get(hash)?.approvers ?? [];
+    const out: Matrix['answers'] = {}, signed: Matrix['signed'] = {};
     for (const n of approvers) {
       const a = answerOf(hash, n);
       out[n] = a ? { id: a.id, kind: a.kind } : null;
       signed[n] = a && a.kind === 'signoff' ? a.id : null;
     }
-    const by = kind => approvers.filter(n => out[n] && out[n].kind === kind);
+    const by = (kind: Answer['kind']) => approvers.filter(n => out[n] && out[n].kind === kind);
     const missing = approvers.filter(n => !out[n]);
     return { hash, approvers, answers: out, signed, agreed: by('signoff'), objected: by('objection'), missing,
       unsigned: approvers.filter(n => signed[n] == null), complete: approvers.length > 0 && missing.length === 0 };
   }
 
-  const pending = name => (name ? [...proposals.values()].filter(p => p.approvers.includes(name)
+  const pending = (name: string | null | undefined): ProposalState[] => (name ? [...proposals.values()].filter(p => p.approvers.includes(name)
     && !decisions.has(p.hash) && !answerOf(p.hash, name)) : []);
 
-  function status(hash) {
+  function status(hash: string): ReturnType<Fold['status']> {
     const p = proposals.get(hash);
     if (!p) return null;
     const m = matrix(hash);

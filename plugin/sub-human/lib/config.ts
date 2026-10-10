@@ -13,7 +13,7 @@
  *   flush, so it is ignored.
  */
 
-function envMs(name, fallback, { allowZero = false } = {}) {
+function envMs(name: string, fallback: number, { allowZero = false }: { allowZero?: boolean } = {}): number {
   const raw = process.env[name];
   if (raw == null || String(raw).trim() === '') return fallback;
   const n = Number(raw);
@@ -25,8 +25,8 @@ function envMs(name, fallback, { allowZero = false } = {}) {
 /** Every override envMs reads is named SUB_HUMAN_<WHAT>_MS (test/room-claude.test.js checks the callers). */
 const TIMING_ENV_RE = /^SUB_HUMAN_[A-Z0-9_]+_MS$/;
 
-function timingEnv(src = process.env) {
-  const out = {};
+function timingEnv(src: Record<string, string | undefined> | null = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(src || {})) {
     if (!TIMING_ENV_RE.test(k) || v == null || String(v).trim() === '') continue;
     const n = Number(v);

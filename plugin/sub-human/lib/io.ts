@@ -23,11 +23,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import TtyMod from 'node:tty';
 
-function readJson(file, fallback = null) {
+// Parsed JSON is an untyped boundary: callers narrow what they read.
+function readJson(file: string, fallback: any = null): any {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
 }
 
-function writeFileAtomic(file, data, { fsync = false, mode } = {}) {
+interface WriteOpts { fsync?: boolean; mode?: number }
+
+function writeFileAtomic(file: string, data: string | NodeJS.ArrayBufferView, { fsync = false, mode }: WriteOpts = {}): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   if (mode === undefined) {
     try { mode = fs.statSync(file).mode & 0o777; } catch { mode = 0o600; }
@@ -36,7 +39,7 @@ function writeFileAtomic(file, data, { fsync = false, mode } = {}) {
   try {
     const fd = fs.openSync(tmp, 'wx', mode);
     try {
-      fs.writeSync(fd, data);
+      if (typeof data === 'string') fs.writeSync(fd, data); else fs.writeSync(fd, data); // one overload each
       if (fsync) fs.fsyncSync(fd);
     } finally { fs.closeSync(fd); }
     // openSync's mode is filtered by the umask; set it exactly.
@@ -48,19 +51,20 @@ function writeFileAtomic(file, data, { fsync = false, mode } = {}) {
   }
 }
 
-function writeJsonAtomic(file, value, { compact = false, ...opts } = {}) {
+function writeJsonAtomic(file: string, value: unknown, { compact = false, ...opts }: WriteOpts & { compact?: boolean } = {}): void {
   writeFileAtomic(file, compact ? JSON.stringify(value) : JSON.stringify(value, null, 2) + '\n', opts);
 }
 
-function isAlive(pid) {
-  pid = Number(pid);
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+function isAlive(pid: unknown): boolean {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return false;
+  try { process.kill(n, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; }
 }
 
-const sleepSync = ms => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+const sleepSync = (ms: number): void => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
 
-function readInput({ strict = true } = {}) {
+// The stdin JSON is an untyped boundary (a hook input, a CLI request): callers narrow or type it.
+function readInput({ strict = true }: { strict?: boolean } = {}): any {
   if (TtyMod.isatty(0)) return {};
   let raw = '';
   try { raw = fs.readFileSync(0, 'utf8'); } catch { /* no stdin */ }

@@ -52,16 +52,22 @@ import { proveSeat } from '../remote/auth.ts';
 import { socketPaths, stopReason } from '../remote/link.ts';
 import { unknownOutcome, UNKNOWN_OUTCOME } from '../remote/protocol.ts';
 import { SEAT_BEAT_MS } from '../config.ts';
+import type { Entry, JoinResult, Members, Payload, Placed, PlaceOpts, PresenceInput, SeatRecord } from './types.ts';
+
+/** The bridge to this room's link daemon (lib/remote/bridge.ts), one per process. */
+type Bridge = { call(method: string, params: object, opts?: { deadlineMs?: number }): unknown; close(): void };
+// any: a reply is the daemon's JSON over the wire, as each op shapes it (lib/remote/link.ts)
+type Reply = any;
 
 const HANDLER = path.join(import.meta.dirname, '..', 'remote', 'link.ts');
-const streamed = key => key === 'members' || key === 'tasks' || /^presence\/[^/]+$/.test(key);
-const hostOnly = what => new RoomError('HOST_ONLY', `${what} runs only on the room's host`);
+const streamed = (key: string): boolean => key === 'members' || key === 'tasks' || /^presence\/[^/]+$/.test(key);
+const hostOnly = (what: string): RoomError => new RoomError('HOST_ONLY', `${what} runs only on the room's host`);
 
-let bridge = null; // one per process, started by its first op
+let bridge: Bridge | null = null; // one per process, started by its first op
 
 class MirrorRoomStore extends FsRoomStore {
   /** code: the room code; dir: the mirror's directory (default <home>/rooms/<code>). */
-  constructor(code, { dir } = {}) {
+  constructor(code: string, { dir }: { dir?: string } = {}) {
     super(code, { dir });
     this.isHost = false;
     const { members, blobs, kv } = this;
@@ -77,42 +83,46 @@ class MirrorRoomStore extends FsRoomStore {
       put: (name, bytes) => this._blobPut(this._call('blob.put', { name, bytes: Buffer.from(bytes).toString('base64') }).ref, bytes),
       get: ref => blobs.get(ref) || this._fetch(ref),
     };
-    const local = (what, fn) => (key, ...a) => { if (streamed(key)) throw hostOnly(`${what}("${key}")`); return fn(key, ...a); };
+    // F keeps each kv call's own signature (kv.update is generic)
+    const local = <F extends (key: string, ...a: any[]) => unknown>(what: string, fn: F): F =>
+      ((key: string, ...a: unknown[]) => { if (streamed(key)) throw hostOnly(`${what}("${key}")`); return fn(key, ...a); }) as F;
     this.kv = { ...kv, set: local('kv.set', kv.set), update: local('kv.update', kv.update), delete: local('kv.delete', kv.delete) };
   }
 
   /** @override the host places it: op `append`. opts.queue (an @room post): while the link is down the daemon may
    * queue it (lib/remote/outbox.ts); the payload comes back with `queued: n` (the posts waiting) and no id. */
-  place(payload, { queue } = {}) {
-    const r = this._call('append', queue ? { payload, queue: true } : { payload });
+  place(payload: Payload, opts: PlaceOpts & { queue: true }): Placed;
+  place(payload: Payload, opts?: PlaceOpts): Entry;
+  place(payload: Payload, { queue }: PlaceOpts = {}): Placed {
+    const r: Reply = this._call('append', queue ? { payload, queue: true } : { payload });
     return r.queued ? { ...payload, queued: r.queued, ...(r.slow ? { slow: true } : {}) } : tag(r.entry, this);
   }
 
   /** An op the daemon relays to the host as it is (lib/handoff.ts: handoff.accept, handoff.refuse). */
-  request(op, params, opts) { return this._call(op, params, opts); }
+  request(op: string, params?: object, opts?: { deadlineMs?: number }): Reply { return this._call(op, params, opts); }
 
   /** The daemon's document `link` (its socket path first: lib/remote/link.ts socketPaths), null when unreadable. */
-  _linkDoc() { try { return this.kv.get('link'); } catch { return null; } }
+  _linkDoc(): Reply { try { return this.kv.get('link'); } catch { return null; } }
 
   /** One op over the bridge to this room's link daemon (the socket it recorded, then the computed paths). */
-  _call(op, params, { deadlineMs } = {}) {
-    bridge = bridge || createBridge({ handler: HANDLER });
+  _call(op: string, params?: object, { deadlineMs }: { deadlineMs?: number } = {}): Reply {
+    bridge = bridge || (createBridge({ handler: HANDLER }) as Bridge);
     try {
       return bridge.call(op, { socket: socketPaths(this.dir, this._linkDoc()), params }, { deadlineMs });
     } catch (e) {
-      if (e.code !== 'OFFLINE') throw e;
+      if ((e as RoomError).code !== 'OFFLINE') throw e;
       if (unknownOutcome(e)) { // it went out: never "nothing was sent" (a slow link lands it later)
         throw Object.assign(new RoomError('OFFLINE', `room ${this.code}: no answer from the host in time (a slow link); ${UNKNOWN_OUTCOME}`), { unknown: true });
       }
       const why = stopReason(this.kv.get('link')); // the daemon stopped for good (an invite refused, a fork): say why
       if (why) throw new RoomError(why.code, `the link to room ${this.code} stopped: ${why.reason}; nothing was sent`);
-      throw new RoomError('OFFLINE', `room ${this.code} is offline (${e.message}); nothing was sent`);
+      throw new RoomError('OFFLINE', `room ${this.code} is offline (${(e as Error).message}); nothing was sent`);
     }
   }
 
-  _join({ name, role }) {
+  _join({ name, role }: SeatRecord): JoinResult {
     const key = humanKey(this.code, name);
-    const pubkey = crypto.createPublicKey(key).export({ type: 'spki', format: 'pem' });
+    const pubkey = crypto.createPublicKey(key).export({ type: 'spki', format: 'pem' }) as string; // pem: a string
     try {
       return this._call('join', { name, role, pubkey, proof: proveSeat(key, { room: this.code, name, pubkey }) });
     } catch (e) {
@@ -121,16 +131,16 @@ class MirrorRoomStore extends FsRoomStore {
     }
   }
 
-  _beat(name, presence) {
+  _beat(name: string, presence?: PresenceInput): boolean {
     const m = this.members.read()[name];
     if (!m || m.left_at) return false;
-    const fresh = Date.parse(m.seen_at) > Date.now() - SEAT_BEAT_MS;
+    const fresh = Date.parse(String(m.seen_at)) > Date.now() - SEAT_BEAT_MS;
     const cur = presence && this.kv.get(`presence/${name}`);
     if (fresh && (!presence || (cur && cur.state === presence.state && (cur.detail || null) === (presence.detail || null)))) return true;
     return this._call('beat', { name, presence }).ok;
   }
 
-  _fetch(ref) {
+  _fetch(ref: string): Buffer | null {
     const r = blobRef(ref);
     if (!r) return null;
     const { bytes } = this._call('blob.get', { ref: r });
@@ -142,8 +152,8 @@ class MirrorRoomStore extends FsRoomStore {
    * @param {string} line
    * @returns {object} the parsed entry
    */
-  applyLine(line) {
-    let e;
+  applyLine(line: string): Entry {
+    let e: Entry;
     try { e = JSON.parse(line); } catch { throw new RoomError('PROTOCOL', 'the host sent a log line that is not JSON'); }
     const last = this.lastId();
     if (!(e.id > last) || (e.prev !== undefined && e.prev !== this.lineHash(last))) {
@@ -159,9 +169,9 @@ class MirrorRoomStore extends FsRoomStore {
    * @param {string} key
    * @param {*} value
    */
-  applyDoc(key, value) {
+  applyDoc(key: string, value: unknown): Members | null | void {
     if (!streamed(key)) throw new RoomError('PROTOCOL', `the host streamed "${key}", which is not a room document`);
-    if (key === 'members') return this._updateMembers(() => value || {});
+    if (key === 'members') return this._updateMembers(() => (value || {}) as Members); // the host's document, as sent
     if (value === null) return fs.rmSync(this._kvFile(key), { force: true });
     return this._kvSet(key, value);
   }
@@ -171,9 +181,9 @@ class MirrorRoomStore extends FsRoomStore {
    * @param {string} ref
    * @param {Buffer} bytes
    */
-  applyBlob(ref, bytes) { return this._blobPut(ref, bytes); }
+  applyBlob(ref: string, bytes: Uint8Array): string { return this._blobPut(ref, bytes); }
 
-  reset() {
+  reset(): void {
     for (const f of [this.logFile, this._idxPath, this._membersFile]) fs.rmSync(f, { force: true });
     for (const key of ['tasks', ...this.kv.list('presence/')]) fs.rmSync(this._kvFile(key), { force: true });
   }

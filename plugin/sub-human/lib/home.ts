@@ -25,37 +25,37 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { CODE_RE } from './text.ts';
 
-const home = () => process.env.SUB_HUMAN_HOME || path.join(os.homedir(), '.sub-human');
-const roomsDir = () => path.join(home(), 'rooms');
-function roomDir(code) {
+const home = (): string => process.env.SUB_HUMAN_HOME || path.join(os.homedir(), '.sub-human');
+const roomsDir = (): string => path.join(home(), 'rooms');
+function roomDir(code: unknown): string {
   if (typeof code !== 'string' || !CODE_RE.test(code)) throw new Error(`invalid room code "${code}"`);
   return path.join(roomsDir(), code);
 }
 
-const readId = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8')).id || null; } catch { return null; } };
+const readId = (file: string): string | null => { try { return JSON.parse(fs.readFileSync(file, 'utf8')).id || null; } catch { return null; } };
 /** The id in file, else a new one linked into place (the first of two racing processes wins; both read it). */
-function readOrMakeId(file) {
+function readOrMakeId(file: string): string | null {
   const cur = readId(file);
   if (cur) return cur;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify({ id: crypto.randomBytes(8).toString('hex') }) + '\n', { mode: 0o600 });
-  try { fs.linkSync(tmp, file); } catch (e) { if (e.code !== 'EEXIST') throw e; } finally { fs.rmSync(tmp, { force: true }); }
+  try { fs.linkSync(tmp, file); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; } finally { fs.rmSync(tmp, { force: true }); }
   return readId(file);
 }
-const machines = new Map(); // home -> id
-function machineId() {
+const machines = new Map<string, string | null>(); // home -> id
+function machineId(): string | null {
   const h = home();
   if (!machines.has(h)) machines.set(h, readOrMakeId(path.join(h, 'machine.json')));
-  return machines.get(h);
+  return machines.get(h) ?? null;
 }
 
-const repaired = new Set(); // homes checked in this process
-function repairModes() {
+const repaired = new Set<string>(); // homes checked in this process
+function repairModes(): string[] {
   const h = home();
   if (repaired.has(h)) return [];
   repaired.add(h);
-  const changed = [];
+  const changed: string[] = [];
   const uid = typeof process.getuid === 'function' ? process.getuid() : null;
   for (const d of [h, ...['rooms', 'sessions', 'links', 'keys', 'bin'].map(n => path.join(h, n))]) {
     try {
@@ -68,14 +68,14 @@ function repairModes() {
   return changed;
 }
 
-const realish = p => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-const TMP_DIRS = () => [
+const realish = (p: string): string => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+const TMP_DIRS = (): string[] => [
   ...new Set([os.tmpdir(), '/tmp', '/private/tmp', '/var/tmp', '/private/var/tmp'].flatMap(d => [path.resolve(d), realish(d)])),
 ];
-function isTempPath(p) {
+function isTempPath(p: string): boolean {
   const cands = [path.resolve(p), realish(p)];
   return TMP_DIRS().some(t => cands.some(c => c === t || c.startsWith(t + path.sep)));
 }
-const allowTmpRoot = (env = process.env) => env.SUB_HUMAN_ALLOW_TMP_ROOT === '1';
+const allowTmpRoot = (env: NodeJS.ProcessEnv = process.env): boolean => env.SUB_HUMAN_ALLOW_TMP_ROOT === '1';
 
 export { home, roomsDir, roomDir, machineId, repairModes, isTempPath, allowTmpRoot };

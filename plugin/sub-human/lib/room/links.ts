@@ -65,11 +65,12 @@ import { home } from '../home.ts';
 import { readJson, writeJsonAtomic } from '../io.ts';
 import { CODE_RE } from '../text.ts';
 import { RoomError } from './validate.ts';
+import type { Link, LinkStateRecord } from './types.ts';
 
 /** @returns {string} <home>/links */
-const linksDir = () => path.join(home(), 'links');
+const linksDir = (): string => path.join(home(), 'links');
 
-function fileOf(code, ext = 'json') {
+function fileOf(code: unknown, ext = 'json'): string {
   if (typeof code !== 'string' || !CODE_RE.test(code)) throw new RoomError('INVALID', `invalid room code "${code}"`);
   return path.join(linksDir(), `${code}.${ext}`);
 }
@@ -78,17 +79,17 @@ function fileOf(code, ext = 'json') {
  * @param {string} code
  * @returns {object | null}
  */
-const get = code => (typeof code === 'string' && CODE_RE.test(code) ? readJson(fileOf(code)) : null);
+const get = (code: unknown): Link | null => (typeof code === 'string' && CODE_RE.test(code) ? readJson(fileOf(code)) : null);
 
 /**
  * @param {string} code
  * @returns {boolean}
  */
-const has = code => typeof code === 'string' && CODE_RE.test(code) && fs.existsSync(fileOf(code));
+const has = (code: unknown): boolean => typeof code === 'string' && CODE_RE.test(code) && fs.existsSync(fileOf(code));
 
 // a link the host refused before it held a token keeps no credential, only {refused: {at, reason}}; a login link
 // (transport.login) needs none before its first hello: the person's own ssh login to the host is the admission
-const credential = l => typeof l.token === 'string' || typeof l.invite === 'string' || (!!l.refused && typeof l.refused === 'object')
+const credential = (l: Link): boolean => typeof l.token === 'string' || typeof l.invite === 'string' || (!!l.refused && typeof l.refused === 'object')
   || l.transport.login === true || (!!l.enroll && typeof l.enroll === 'object' && typeof l.enroll.pin === 'string');
 
 /**
@@ -96,7 +97,7 @@ const credential = l => typeof l.token === 'string' || typeof l.invite === 'stri
  * @param {object} link
  * @returns {object}
  */
-function set(code, link) {
+function set(code: string, link: Link): Link {
   const file = fileOf(code);
   if (!link || link.code !== code || !link.transport || typeof link.transport.kind !== 'string' || !credential(link)) {
     throw new RoomError('INVALID', `a link needs {code: "${code}", transport: {kind}, token or invite}`);
@@ -110,7 +111,7 @@ function set(code, link) {
  * @param {string} code
  * @returns {boolean}
  */
-function remove(code) {
+function remove(code: string): boolean {
   try { fs.rmSync(dirOf(code), { recursive: true, force: true }); } catch { /* none */ }
   try { fs.unlinkSync(fileOf(code)); return true; } catch { return false; }
 }
@@ -119,11 +120,11 @@ function remove(code) {
  * @param {string} code
  * @returns {string}
  */
-const dirOf = code => fileOf(code).slice(0, -'.json'.length);
+const dirOf = (code: unknown): string => fileOf(code).slice(0, -'.json'.length);
 
 /** @returns {string[]} */
-function list() {
-  let names;
+function list(): string[] {
+  let names: string[];
   try { names = fs.readdirSync(linksDir()); } catch { return []; }
   return names.filter(n => n.endsWith('.json') && CODE_RE.test(n.slice(0, -5))).map(n => n.slice(0, -5)).sort();
 }
@@ -132,25 +133,25 @@ function list() {
  * @param {string} code
  * @returns {string}
  */
-const logFile = code => fileOf(code, 'log');
+const logFile = (code: unknown): string => fileOf(code, 'log');
 
 /**
  * @param {string} code
  * @returns {string}
  */
-const stateFile = code => fileOf(code, 'state.json');
+const stateFile = (code: unknown): string => fileOf(code, 'state.json');
 
 /**
  * @param {string} code
  * @returns {object | null}
  */
-const readState = code => (typeof code === 'string' && CODE_RE.test(code) ? readJson(stateFile(code)) : null);
+const readState = (code: unknown): LinkStateRecord | null => (typeof code === 'string' && CODE_RE.test(code) ? readJson(stateFile(code)) : null);
 
 /**
  * @param {string} code
  * @param {object} rec
  */
-function writeState(code, rec) {
+function writeState(code: string, rec: LinkStateRecord): void {
   const file = stateFile(code);
   fs.mkdirSync(linksDir(), { recursive: true, mode: 0o700 });
   writeJsonAtomic(file, rec, { mode: 0o600 });

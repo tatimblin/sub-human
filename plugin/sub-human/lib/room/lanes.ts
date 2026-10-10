@@ -19,38 +19,41 @@
 
 import { normalize } from './store.ts';
 import { fold } from './consent.ts';
+import type { Entry, Lane, LaneViewer, ProposalEntry } from './types.ts';
+
+type Entries = readonly (Entry | null | undefined)[];
 
 // ---------- proposals / decisions (all read lib/room/consent.ts fold: one set of semantics) ----------
 /** The latest proposal entry, legacy plan_rev included, with that hash. */
-function proposal(hash, entries = []) {
-  const p = fold(entries).proposals.get(hash);
+function proposal(hash: string | undefined, entries: Entries = []): ProposalEntry | null {
+  const p = hash === undefined ? undefined : fold(entries).proposals.get(hash);
   return p ? p.entry : null;
 }
 
 /** The latest proposal per distinct hash, in log order of that latest entry. */
-const proposals = (entries = []) => [...fold(entries).proposals.values()].map(p => p.entry);
+const proposals = (entries: Entries = []): ProposalEntry[] => [...fold(entries).proposals.values()].map(p => p.entry);
 
-const approversOf = p => (p && Array.isArray(p.approvers) ? p.approvers : []);
+const approversOf = (p: { approvers?: unknown } | null | undefined): string[] => (p && Array.isArray(p.approvers) ? p.approvers : []);
 
-function answers(hash, approvers, entries = []) {
+function answers(hash: string, approvers?: string[] | null, entries: Entries = []): { hash: string; signed: Record<string, number | null>; missing: string[]; complete: boolean } {
   const m = fold(entries).matrix(hash, Array.isArray(approvers) ? approvers : undefined);
   return { hash, signed: m.signed, missing: m.unsigned, complete: !!hash && m.approvers.length > 0 && m.unsigned.length === 0 };
 }
 
 /** name's latest via=human signoff or objection on hash, or null. */
-function answered(name, hash, entries = []) {
+function answered(name: string, hash: string, entries: Entries = []): Entry | null {
   const a = fold(entries).answerOf(hash, name);
   return a ? a.entry : null;
 }
 
-const decided = (hash, entries = []) => fold(entries).decisions.get(hash) || null;
+const decided = (hash: string, entries: Entries = []): Entry | null => fold(entries).decisions.get(hash) || null;
 
 // ---------- lanes ----------
-const esc = s => s.replace(/[.]/g, '\\.');
+const esc = (s: string): string => s.replace(/[.]/g, '\\.');
 /** "@name" anywhere in the text (case-insensitive, not part of a longer name). */
-const mentions = (text, name) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
+const mentions = (text: unknown, name: string): boolean => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
 /** Whether name is in proposal p: an approver or its author. */
-const inProposal = (p, name) => !!p && (approversOf(p).includes(name) || p.from === name);
+const inProposal = (p: Entry | null, name: string): boolean => !!p && (approversOf(p).includes(name) || p.from === name);
 
 /**
  * Which lane entry e takes for session me ({name, role}): 'push' (the tail sends it now: chat, or a wake), 'pull'
@@ -74,8 +77,8 @@ const inProposal = (p, name) => !!p && (approversOf(p).includes(name) || p.from 
  *     already told that Claude), and an objected decision is pull for all but the proposer (nothing to act
  *     on; a revision brings its own card).
  */
-function lane(me, e, entries) {
-  const name = me && me.name;
+function lane(me: LaneViewer | null | undefined, e: Entry, entries?: readonly Entry[]): Lane {
+  const name = (me && me.name) as string; // no seat: matches no from, to or approver
   const roomClaude = !!me && me.role === 'claude';
   const n = normalize(e);
   if (n.from === name && !(n.via === 'system' && (n.kind === 'decision' || n.kind === 'task'))) return 'none';
@@ -109,9 +112,9 @@ function lane(me, e, entries) {
  * A decision that needs no wake for name: name's answer completed it (consent.ts told that Claude in the
  * card's reply), or it is an objected decision on a proposal name did not write.
  */
-function quietDecision(name, d, entries) {
+function quietDecision(name: string, d: Entry, entries: readonly Entry[]): boolean {
   const refs = new Set(d.refs || []);
-  let last = null;
+  let last: Entry | null = null;
   for (const x of entries) if (refs.has(x.id) && (x.kind === 'signoff' || x.kind === 'objection') && (!last || x.id > last.id)) last = x;
   if (last && last.from === name && last.via === 'human') return true;
   if (/^objected:/.test(String(d.text || ''))) {

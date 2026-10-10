@@ -547,6 +547,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/room/render.ts`: log entries as text, for Claude (ids kept) and for people (no ids).
 - `lib/room/store-mirror.ts`: MirrorRoomStore, the RoomStore of a room hosted on another machine: an FsRoomStore directory kept byte-identical to the host's log by the link daemon (lib/remote/link.ts), so every reader (readView, log.idx, tailer, verifyChain, rows, digests) works unchanged.
 - `lib/room/store.ts`: the RoomStore seam, and FsRoomStore, its implementation over the room directory on this machine.
+- `lib/room/types.ts`: the room's shared shapes, types only (import type).
 - `lib/room/validate.ts`: the room log's envelope rules (envelope v3): which kinds each `via` may write, the fields a caller may set, and the task fields of task_req / task entries. append() (store.ts) runs validate() before it signs, and place() runs it again on the payload before it takes the log lock.
 - `lib/rows.ts`: participant rows in the agent panel. Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.ts kv).
 - `lib/seats.ts`: entering and leaving a room, the one sequence the join hook, the session-end hook and the remote server (lib/remote/server.ts, for a seat on another machine) all run.

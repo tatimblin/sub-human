@@ -30,6 +30,7 @@ import * as lanes from './room/lanes.ts';
 import * as render from './room/render.ts';
 import { fold } from './room/consent.ts';
 import { DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST } from './config.ts';
+import type { AppendOpts, Entry, EntryInput, LaneViewer, ReadViewOpts, RoomStore, TailerFs } from './room/types.ts';
 
 const pure = {
   RoomError, fold, DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST,
@@ -40,37 +41,42 @@ const pure = {
 };
 
 /** A Room over a RoomStore: the store's calls plus the queries and renderings that need this room's log. */
-function roomOver(s) {
-  const all = entries => entries || s.readAll();
+function roomOver(s: RoomStore) {
+  const all = (entries?: readonly Entry[] | null): readonly Entry[] => entries || s.readAll();
   return {
     ...pure,
     code: s.code, store: s,
-    append: (entry, opts) => s.append(entry, opts),
+    // the store's overloads (opts.queue: a mirror may answer with the queued post)
+    append: ((entry: EntryInput, opts?: AppendOpts) => s.append(entry, opts)) as RoomStore['append'],
     readAll: () => s.readAll(),
-    readById: ids => s.readById(ids),
-    readAfter: (id, f) => s.readAfter(id, f),
-    since: id => s.since(id),
+    readById: (ids: Parameters<RoomStore['readById']>[0]) => s.readById(ids),
+    readAfter: (id: number, f?: (e: Entry) => boolean) => s.readAfter(id, f),
+    since: (id: number) => s.since(id),
     lastId: () => s.lastId(),
-    readView: opts => s.readView(opts),
-    watch: (onEntry, opts) => s.watch(onEntry, opts),
-    tailer: opts => s.tailer(opts),
+    readView: (opts?: ReadViewOpts) => s.readView(opts),
+    watch: (onEntry: (e: Entry) => void, opts?: { after?: number; intervalMs?: number }) => s.watch(onEntry, opts),
+    tailer: (opts?: { fs?: TailerFs; after?: number }) => s.tailer(opts),
     validateChain: () => s.validateChain(),
-    verifyChain: opts => s.verifyChain(opts),
-    getCursor: name => s.getCursor(name),
-    setCursor: (name, id) => s.setCursor(name, id),
+    verifyChain: (opts?: Parameters<RoomStore['verifyChain']>[0]) => s.verifyChain(opts),
+    getCursor: (name: string) => s.getCursor(name),
+    setCursor: (name: string, id: number) => s.setCursor(name, id),
     members: () => s.members.read(),
-    stateLine: (me, entries, opts = {}) => render.stateLine(me, all(entries), { ...opts, members: s.members.read() }),
-    digest: entries => render.digest(all(entries), { members: s.members.read(), code: s.code }),
-    proposal: (hash, entries) => lanes.proposal(hash, all(entries)),
-    proposals: entries => lanes.proposals(all(entries)),
-    answers: (hash, approvers, entries) => lanes.answers(hash, approvers, all(entries)),
-    answered: (name, hash, entries) => lanes.answered(name, hash, all(entries)),
-    decided: (hash, entries) => lanes.decided(hash, all(entries)),
+    stateLine: (me: LaneViewer | null | undefined, entries?: readonly Entry[] | null, opts: { ids?: boolean } = {}) =>
+      render.stateLine(me, all(entries), { ...opts, members: s.members.read() }),
+    digest: (entries?: readonly Entry[] | null) => render.digest(all(entries), { members: s.members.read(), code: s.code }),
+    proposal: (hash: string, entries?: readonly Entry[] | null) => lanes.proposal(hash, all(entries)),
+    proposals: (entries?: readonly Entry[] | null) => lanes.proposals(all(entries)),
+    answers: (hash: string, approvers?: string[] | null, entries?: readonly Entry[] | null) => lanes.answers(hash, approvers, all(entries)),
+    answered: (name: string, hash: string, entries?: readonly Entry[] | null) => lanes.answered(name, hash, all(entries)),
+    decided: (hash: string, entries?: readonly Entry[] | null) => lanes.decided(hash, all(entries)),
   };
 }
 
-const rooms = new Map(); // code -> {s, room}
-function open(code, { store: s, dir } = {}) {
+/** One room: its store's calls plus the queries and renderings over its log (see the header). */
+type Room = ReturnType<typeof roomOver>;
+
+const rooms = new Map<string, { s: RoomStore; room: Room }>(); // code -> {s, room}
+function open(code: string, { store: s, dir }: { store?: RoomStore; dir?: string } = {}): Room {
   if (s || dir) return roomOver(s || store.open(code, { dir }));
   const st = store.open(code);
   const hit = rooms.get(code);
@@ -85,3 +91,4 @@ export { RoomError, fold, DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_
 export { hash12, normalize, verifyHuman, unverifiedHuman, humanTrust, roomExists } from './room/store.ts';
 export { line, tailLine, chatLines, FOR_CLAUDE, fmt, who } from './room/render.ts';
 export { approversOf, lane } from './room/lanes.ts';
+export type { Room };

@@ -23,6 +23,11 @@
  */
 
 import crypto from 'node:crypto';
+import type { KeyObject } from 'node:crypto';
+import type { Entry, Envelope } from './types.ts';
+
+/** What the envelope functions read of an entry or payload: any object, its envelope fields if it has them. */
+type Signable = object & Partial<Envelope>;
 
 const SIG_VERSION = 2;
 const SIG_SKEW_MS = 10 * 60 * 1000;
@@ -30,11 +35,11 @@ const SIG_SKEW_MS = 10 * 60 * 1000;
 const PLACED_FIELDS = ['id', 'at', 'prev', 'sig'];
 
 /** v with the keys of every plain object sorted, so the same fields serialize to the same bytes. */
-function sorted(v) {
+function sorted(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(sorted);
   if (!v || typeof v !== 'object') return v;
-  const out = {};
-  for (const k of Object.keys(v).sort()) out[k] = sorted(v[k]);
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(v).sort()) out[k] = sorted((v as Record<string, unknown>)[k]);
   return out;
 }
 
@@ -43,22 +48,22 @@ function sorted(v) {
  * @param {object} e
  * @returns {string}
  */
-function signable(e) {
-  const rest = { ...e };
+function signable(e: object): string {
+  const rest: Record<string, unknown> = { ...e };
   for (const k of PLACED_FIELDS) delete rest[k];
   return JSON.stringify(sorted(rest));
 }
 
-const isV2 = e => !!e && (e.sigv === SIG_VERSION || typeof e.nonce === 'string');
+const isV2 = (e: Signable | null | undefined): boolean => !!e && (e.sigv === SIG_VERSION || typeof e.nonce === 'string');
 
 /** v1: the stored entry without sig, in its stored key order. */
-const v1Bytes = e => { const { sig, ...rest } = e; return JSON.stringify(rest); };
+const v1Bytes = (e: Signable): string => { const { sig, ...rest } = e; return JSON.stringify(rest); };
 
 /** What e's signature covers, by its version. */
-const signedBytes = e => (isV2(e) ? signable(e) : v1Bytes(e));
+const signedBytes = (e: Signable): string => (isV2(e) ? signable(e) : v1Bytes(e));
 
 /** @returns {string} 16 random bytes as hex */
-const newNonce = () => crypto.randomBytes(16).toString('hex');
+const newNonce = (): string => crypto.randomBytes(16).toString('hex');
 
 /**
  * Sign payload with the seat's private key: adds room, from, nonce, ts, sigv and sig, and returns the new object.
@@ -67,10 +72,9 @@ const newNonce = () => crypto.randomBytes(16).toString('hex');
  * @param {{room: string, from: string, now?: number}} ctx
  * @returns {object}
  */
-function sign(payload, key, { room, from, now = Date.now() }) {
+function sign<P extends object>(payload: P, key: KeyObject, { room, from, now = Date.now() }: { room: string; from: string; now?: number }): P & Envelope {
   const e = { ...payload, room, from, nonce: newNonce(), ts: now, sigv: SIG_VERSION };
-  e.sig = crypto.sign(null, Buffer.from(signable(e), 'utf8'), key).toString('base64');
-  return e;
+  return { ...e, sig: crypto.sign(null, Buffer.from(signable(e), 'utf8'), key).toString('base64') };
 }
 
 /**
@@ -79,7 +83,7 @@ function sign(payload, key, { room, from, now = Date.now() }) {
  * @param {import('node:crypto').KeyObject} pub
  * @returns {boolean}
  */
-function verify(e, pub) {
+function verify(e: Signable | null | undefined, pub: KeyObject | null | undefined): boolean {
   if (!e || typeof e.sig !== 'string' || !pub) return false;
   try { return crypto.verify(null, Buffer.from(signedBytes(e), 'utf8'), pub, Buffer.from(e.sig, 'base64')); } catch { return false; }
 }
@@ -90,13 +94,14 @@ function verify(e, pub) {
  * @param {number} [skewMs]
  * @returns {boolean}
  */
-const freshTs = (e, now = Date.now(), skewMs = SIG_SKEW_MS) => !!e && Number.isFinite(e.ts) && Math.abs(now - e.ts) <= skewMs;
+const freshTs = (e: Signable | null | undefined, now = Date.now(), skewMs = SIG_SKEW_MS): boolean =>
+  !!e && typeof e.ts === 'number' && Number.isFinite(e.ts) && Math.abs(now - e.ts) <= skewMs;
 
 /**
  * @param {string} pem
  * @returns {import('node:crypto').KeyObject|null}
  */
-function parseKey(pem) {
+function parseKey(pem: unknown): KeyObject | null {
   if (typeof pem !== 'string') return null;
   try {
     const key = crypto.createPublicKey(pem);
@@ -109,8 +114,8 @@ function parseKey(pem) {
  * @param {object[]} entries
  * @returns {Map<string, import('node:crypto').KeyObject>}
  */
-function pinnedKeys(entries) {
-  const pins = new Map();
+function pinnedKeys(entries: readonly (Entry | null | undefined)[] | null | undefined): Map<string, KeyObject> {
+  const pins = new Map<string, KeyObject>();
   for (const e of entries || []) {
     if (!e || e.kind !== 'member_joined' || e.via !== 'system' || typeof e.from !== 'string' || pins.has(e.from)) continue;
     const key = parseKey(e.pubkey);
@@ -123,7 +128,7 @@ function pinnedKeys(entries) {
  * @param {object[]} entries
  * @returns {boolean}
  */
-const keyed = entries => pinnedKeys(entries).size > 0;
+const keyed = (entries: readonly (Entry | null | undefined)[] | null | undefined): boolean => pinnedKeys(entries).size > 0;
 
 export {
   SIG_VERSION, SIG_SKEW_MS, PLACED_FIELDS, signable, signedBytes, sign, verify, isV2, newNonce, freshTs, parseKey,

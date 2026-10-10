@@ -34,17 +34,17 @@ import * as config from './config.ts';
 const HOST = os.hostname();
 
 // ---------- process start times ----------
-const starts = new Map();
+const starts = new Map<number, { t: number; at: number }>();
 const PID_START_CACHE_MS = 30_000;
 
 /** Epoch seconds the process started, from ps; null when ps fails or the pid is gone. Cached per pid. */
-function pidStart(pid, { fresh = false } = {}) {
-  pid = Number(pid);
+function pidStart(pidArg: unknown, { fresh = false }: { fresh?: boolean } = {}): number | null {
+  const pid = Number(pidArg);
   if (!Number.isInteger(pid) || pid <= 0) return null;
   // Cached briefly only: a long-running tail or MCP server would otherwise keep matching a reused pid.
   const hit = starts.get(pid);
   if (!fresh && hit && Date.now() - hit.at < PID_START_CACHE_MS) return hit.t;
-  let t = null;
+  let t: number | null = null;
   try {
     const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 2000 });
     const s = String(r.stdout || '').trim();
@@ -60,15 +60,20 @@ const selfStart = () => Math.floor(Date.now() / 1000 - process.uptime());
 
 const ownerBody = () => `${process.pid} ${HOST} ${selfStart()}`;
 
-function parseOwner(body) {
+interface LockOwner { pid: number; host: string; start: number | null }
+
+function parseOwner(body: unknown): LockOwner | null {
   const m = /^(\d+) (\S+)(?: (\d+))?$/.exec(String(body).trim());
   return m ? { pid: Number(m[1]), host: m[2], start: m[3] != null ? Number(m[3]) : null } : null;
 }
 
 // ---------- judging ----------
+/** What judge() found at the lock path: dir for a legacy directory lock (body null). */
+interface Judgement { stale: boolean; ino: number; body: string | null; dir?: boolean }
+
 /** {stale, ino, body} for the file at lock now; null when there is none. */
-function judge(lock, staleMs) {
-  let st, body = '';
+function judge(lock: string, staleMs: number): Judgement | null {
+  let st: fs.Stats, body = '';
   try { st = fs.lstatSync(lock); } catch { return null; }
   if (st.isDirectory()) return { stale: Date.now() - st.mtimeMs > staleMs, ino: st.ino, body: null, dir: true };
   try { body = fs.readFileSync(lock, 'utf8'); } catch { return null; }
@@ -93,11 +98,11 @@ function judge(lock, staleMs) {
 const rand = () => Math.random().toString(36).slice(2, 10);
 
 /** Break the stale lock atomically (see the header). True when the caller should retry acquiring at once. */
-function breakStale(lock, staleMs) {
+function breakStale(lock: string, staleMs: number): boolean {
   const brk = lock + '.break';
-  let fd;
+  let fd: number;
   try { fd = fs.openSync(brk, 'wx'); } catch (e) {
-    if (e.code !== 'EEXIST') throw e;
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
     // Another waiter is breaking it right now, or one crashed doing so.
     try { if (Date.now() - fs.statSync(brk).mtimeMs > config.LOCK_BREAK_STALE_MS) fs.unlinkSync(brk); } catch { /* gone */ }
     return false;
@@ -107,7 +112,7 @@ function breakStale(lock, staleMs) {
     if (!j) return true;          // already gone: retry now
     if (!j.stale) return false;   // broken and re-taken meanwhile: wait for the new owner
     const victim = `${lock}.stale.${process.pid}.${rand()}`;
-    try { fs.renameSync(lock, victim); } catch (e) { if (e.code === 'ENOENT') return true; throw e; }
+    try { fs.renameSync(lock, victim); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return true; throw e; }
     let same = false;
     try {
       const st = fs.lstatSync(victim);
@@ -128,20 +133,25 @@ function breakStale(lock, staleMs) {
 }
 
 // ---------- the lock ----------
-function lockError(ErrorClass, lock) {
+/** An error class withLock throws on timeout (lib/room/validate.ts RoomError passes its own); code is set to 'LOCK'. */
+type LockErrorClass = new (message: string) => Error & { code?: string };
+
+interface LockOpts { timeoutMs?: number; staleMs?: number; ErrorClass?: LockErrorClass }
+
+function lockError(ErrorClass: LockErrorClass, lock: string): Error {
   const err = new ErrorClass(`could not acquire ${lock}`);
   err.code = 'LOCK';
   return err;
 }
 
 /** Run fn while holding an exclusive lockfile (see the header). */
-function withLock(lock, fn, { timeoutMs = config.LOCK_TIMEOUT_MS, staleMs = config.LOCK_STALE_MS, ErrorClass = Error } = {}) {
+function withLock<T>(lock: string, fn: () => T, { timeoutMs = config.LOCK_TIMEOUT_MS, staleMs = config.LOCK_STALE_MS, ErrorClass = Error }: LockOpts = {}): T {
   fs.mkdirSync(path.dirname(lock), { recursive: true, mode: 0o700 }); // in the store: private
   const deadline = Date.now() + timeoutMs;
-  let fd;
+  let fd: number;
   for (;;) {
     try { fd = fs.openSync(lock, 'wx', 0o600); break; } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
       const j = judge(lock, staleMs);
       if (!j) continue; // released between our open and our look
       if (j.stale && breakStale(lock, staleMs)) continue;
@@ -149,7 +159,7 @@ function withLock(lock, fn, { timeoutMs = config.LOCK_TIMEOUT_MS, staleMs = conf
       sleepSync(2 + Math.floor(Math.random() * 8));
     }
   }
-  let ino = null;
+  let ino: number | null = null;
   try {
     fs.writeSync(fd, ownerBody());
     ino = fs.fstatSync(fd).ino;
@@ -162,3 +172,4 @@ function withLock(lock, fn, { timeoutMs = config.LOCK_TIMEOUT_MS, staleMs = conf
 }
 
 export { withLock, pidStart, parseOwner };
+export type { LockOpts, LockOwner, LockErrorClass };

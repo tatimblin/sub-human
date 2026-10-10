@@ -35,50 +35,55 @@
 import { isAlive } from '../io.ts';
 import * as links from './links.ts';
 import { createRequire } from 'node:module';
+import type { LinkState, LinkStateWord } from './types.ts';
 
 const require = createRequire(import.meta.url);
 
-const STATES = new Set(['online', 'connecting', 'offline', 'fork', 'stopped']);
-const LEGACY = { up: 'online', down: 'offline' };
-const FOR_GOOD = new Set(['fork', 'stopped']);
+/** The mirror's document `link` (lib/remote/link.ts status), read defensively: any field may be absent. */
+interface LinkDoc { pid?: number; running?: boolean; state?: string; since?: string; reason?: string; code?: string }
 
-const stateFile = code => links.stateFile(code);
+const STATES = new Set<LinkStateWord>(['online', 'connecting', 'offline', 'fork', 'stopped']) as ReadonlySet<string>;
+const LEGACY: Record<string, LinkStateWord> = { up: 'online', down: 'offline' };
+const FOR_GOOD: ReadonlySet<string> = new Set<LinkStateWord>(['fork', 'stopped']);
+const isState = (s: unknown): s is LinkStateWord => STATES.has(s as string);
 
-const num = x => (Number.isFinite(Number(x)) && x !== null && x !== '' ? Number(x) : undefined);
-const str = x => (typeof x === 'string' && x ? x : undefined);
-const clean = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+const stateFile = (code: unknown): string => links.stateFile(code);
 
-function normalize(state, detail) {
-  if (FOR_GOOD.has(detail)) return detail;
-  const s = LEGACY[state] || state;
-  return STATES.has(s) ? s : 'offline';
+const num = (x: unknown): number | undefined => (Number.isFinite(Number(x)) && x !== null && x !== '' ? Number(x) : undefined);
+const str = (x: unknown): string | undefined => (typeof x === 'string' && x ? x : undefined);
+const clean = <O extends object>(o: O): O => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as O; // only undefined fields dropped
+
+function normalize(state: unknown, detail?: unknown): LinkStateWord {
+  if (FOR_GOOD.has(detail as string)) return detail as LinkStateWord;
+  const s = LEGACY[state as string] || state;
+  return isState(s) ? s : 'offline';
 }
 
 /** The mirror's `link` document (lib/remote/link.ts status), or null when it cannot be read. */
-function linkDoc(code) {
-  try { return require('../remote/link.ts').status(code); } catch { return null; }
+function linkDoc(code: string): LinkDoc | null {
+  try { return (require('../remote/link.ts') as typeof import('../remote/link.ts')).status(code); } catch { return null; }
 }
 
 const NOT_RUNNING = 'the link daemon is not running';
 
 /** Test seam: read() calls through this object, which a test may stub (test/link-state.test.js); an ES module's own
  * exports are read-only. */
-const seam = { read: code => readLink(code) };
-const read = code => seam.read(code);
+const seam = { read: (code: string): LinkState | null => readLink(code) };
+const read = (code: string): LinkState | null => seam.read(code);
 
-function readLink(code) {
+function readLink(code: string): LinkState | null {
   try {
     if (!links.get(code)) return null;
   } catch { return null; }
   const doc = linkDoc(code);
   let f = null;
   try { f = links.readState(code); } catch { f = null; }
-  if (f && typeof f === 'object' && (STATES.has(f.state) || f.state in LEGACY)) {
+  if (f && typeof f === 'object' && (STATES.has(f.state as string) || (f.state as string) in LEGACY)) {
     const pid = num(f.pid);
     const dead = pid ? !isAlive(pid) : !!(doc && doc.pid && !doc.running);
-    const st = clean({
+    const st: LinkState = clean({
       state: normalize(f.state, f.detail), since: str(f.since), attempt: num(f.attempt), lastError: str(f.lastError), prevError: str(f.prevError),
-      rttMs: num(f.rttMs), queued: num(f.queued), pid, detail: str(f.detail), source: 'state-file',
+      rttMs: num(f.rttMs), queued: num(f.queued), pid, detail: str(f.detail), source: 'state-file' as const,
     });
     if (dead && !FOR_GOOD.has(st.state)) return { ...st, state: 'offline', lastError: st.lastError || NOT_RUNNING, dead: true };
     return st;
@@ -87,31 +92,31 @@ function readLink(code) {
   const dead = !!(doc.pid && !doc.running);
   const state = normalize(doc.state);
   const lastError = str(doc.reason) || (dead ? NOT_RUNNING : undefined);
-  return clean({ state: dead && !FOR_GOOD.has(state) ? 'offline' : state, since: str(doc.since), lastError, ...(dead ? { dead: true } : {}), source: 'link-doc' });
+  return clean({ state: dead && !FOR_GOOD.has(state) ? 'offline' : state, since: str(doc.since), lastError, ...(dead ? { dead: true } : {}), source: 'link-doc' as const });
 }
 
-function ago(iso, now) {
+function ago(iso: string, now: number): string {
   const s = Math.round((now - Date.parse(iso)) / 1000);
   if (!Number.isFinite(s) || s < 0) return '';
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`;
 }
 
-function indicator(st, { now = Date.now() } = {}) {
+function indicator(st: Partial<LinkState> | null | undefined, { now = Date.now() }: { now?: number } = {}): string {
   if (!st) return '';
   const state = normalize(st.state, st.detail);
-  const queued = st.queued > 0 ? ` · ${st.queued} queued` : '';
+  const queued = (st.queued ?? 0) > 0 ? ` · ${st.queued} queued` : '';
   if (state === 'online') return '⇄ online';
   if (state === 'fork') return '✕ out of step: /sub-human doctor';
   if (state === 'stopped') return `✕ stopped${queued}`;
-  if (state === 'connecting') return st.attempt > 1 ? `… connecting (${st.attempt})${queued}` : `… connecting${queued}`;
+  if (state === 'connecting') return (st.attempt ?? 0) > 1 ? `… connecting (${st.attempt})${queued}` : `… connecting${queued}`;
   const t = st.since ? ago(st.since, now) : '';
   return `✕ offline${t ? ` ${t}` : ''}${queued}`;
 }
 
-function isDown(st) {
+function isDown(st: Partial<LinkState> | null | undefined): boolean {
   if (!st) return false;
   const state = normalize(st.state, st.detail);
-  return state === 'offline' || FOR_GOOD.has(state) || (state === 'connecting' && st.attempt > 1);
+  return state === 'offline' || FOR_GOOD.has(state) || (state === 'connecting' && (st.attempt ?? 0) > 1);
 }
 
 export { read, normalize, indicator, isDown, stateFile, STATES, seam };

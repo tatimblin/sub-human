@@ -47,6 +47,62 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import type { SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
+
+type Env = NodeJS.ProcessEnv;
+
+/** A content block of a transcript message, as far as these readers look (the rest of the JSON is not typed). */
+interface ContentBlock {
+  type?: string;
+  text?: unknown;
+  id?: string;
+  tool_use_id?: string;
+  is_error?: boolean;
+  content?: unknown;
+  input?: unknown;
+  [field: string]: unknown;
+}
+/** One parsed transcript line, as far as these readers look: read from disk, so every field is checked before use. */
+interface TranscriptEntry {
+  type?: string;
+  isMeta?: boolean;
+  isSidechain?: boolean;
+  isCompactSummary?: boolean;
+  message?: { content?: unknown };
+  origin?: unknown;
+  timestamp?: string;
+  attachment?: { type?: string; planFilePath?: string };
+  userFeedback?: unknown;
+  promptId?: string;
+  [field: string]: unknown;
+}
+/** A transcript line: raw (a cheap substring prefilter, then parse) or already parsed. */
+type TranscriptLine = string | TranscriptEntry;
+
+/** One `claude agents --json` row (parseAgentsJson): missing fields null. */
+interface AgentJob {
+  pid: number | null;
+  id: string | null;
+  sessionId: string | null;
+  status: string | null;
+  state: string | null;
+  kind: string | null;
+  name: string | null;
+  cwd: string | null;
+  startedAt: number | null;
+}
+
+/** One CONTRACT entry. */
+interface ContractEntry {
+  id: string;
+  section?: number;
+  stability: 'API' | 'env' | 'incidental';
+  search?: string | readonly string[];
+  shape?: string | readonly string[];
+  note: string;
+}
+/** One probe() result. */
+interface ProbeResult { id: string; stability: string; ok: boolean; missing: string[]; note: string }
 
 // ---------- env ----------
 
@@ -70,7 +126,7 @@ const ENV = Object.freeze({
  * @cc conversation_reset",newConversationId
  * @stability env
  */
-function sessionId(env = process.env) {
+function sessionId(env: Env = process.env): string | null {
   const s = env[ENV.SESSION_ID];
   return typeof s === 'string' && s ? s : null;
 }
@@ -80,7 +136,7 @@ function sessionId(env = process.env) {
  * @cc CLAUDE_PID:String(process.pid)
  * @stability env
  */
-function claudePid(env = process.env) {
+function claudePid(env: Env = process.env): number | null {
   const p = Number(env[ENV.PID]);
   return Number.isInteger(p) && p > 0 ? p : null;
 }
@@ -90,7 +146,7 @@ function claudePid(env = process.env) {
  * @cc CLAUDE_CODE_TASK_LIST_ID)return 
  * @stability env
  */
-function taskListId(env = process.env) {
+function taskListId(env: Env = process.env): string | null {
   const s = env[ENV.TASK_LIST_ID];
   return typeof s === 'string' && s ? s : null;
 }
@@ -102,7 +158,7 @@ function taskListId(env = process.env) {
  * @cc new Set(["CLAUDE_CONFIG_DIR","CLAUDE_INTERNAL_FC_OVERRIDES",
  * @stability env
  */
-function configDir(env = process.env) {
+function configDir(env: Env = process.env): string {
   const d = env[ENV.CONFIG_DIR] || path.join(env.HOME || os.homedir(), '.claude');
   return d.normalize('NFC');
 }
@@ -112,7 +168,7 @@ function configDir(env = process.env) {
  * @cc return e.replace(/[^a-zA-Z0-9_-]/g,"-")}
  * @stability incidental
  */
-const sanitizeId = s => String(s).replace(/[^a-zA-Z0-9_-]/g, '-');
+const sanitizeId = (s: unknown): string => String(s).replace(/[^a-zA-Z0-9_-]/g, '-');
 
 /**
  * <configDir>/tasks/<sanitized listId>: the native task list directory (file backend; the experimental v5
@@ -120,14 +176,14 @@ const sanitizeId = s => String(s).replace(/[^a-zA-Z0-9_-]/g, '-');
  * @cc return e.replace(/[^a-zA-Z0-9_-]/g,"-")}
  * @stability incidental
  */
-const tasksDir = (listId, env = process.env) => path.join(configDir(env), 'tasks', sanitizeId(listId));
+const tasksDir = (listId: string, env: Env = process.env): string => path.join(configDir(env), 'tasks', sanitizeId(listId));
 
 /**
  * <tasksDir>/<sanitized id>.json: one native task.
  * @cc return e.replace(/[^a-zA-Z0-9_-]/g,"-")}
  * @stability incidental
  */
-const taskFile = (listId, id, env = process.env) => path.join(tasksDir(listId, env), `${sanitizeId(id)}.json`);
+const taskFile = (listId: string, id: string | number, env: Env = process.env): string => path.join(tasksDir(listId, env), `${sanitizeId(id)}.json`);
 
 // ---------- settings ----------
 
@@ -138,7 +194,7 @@ const taskFile = (listId, id, env = process.env) => path.join(tasksDir(listId, e
  * @cc When true, the plan-approval dialog offers a "clear context" option. Defaults to false.
  * @stability API
  */
-function userSettingsFiles(cwd, env = process.env) {
+function userSettingsFiles(cwd: string | null | undefined, env: Env = process.env): string[] {
   const files = [path.join(configDir(env), 'settings.json')];
   if (cwd) files.push(path.join(cwd, '.claude', 'settings.json'), path.join(cwd, '.claude', 'settings.local.json'));
   return files;
@@ -150,7 +206,7 @@ function userSettingsFiles(cwd, env = process.env) {
  * @cc When true, the plan-approval dialog offers a "clear context" option. Defaults to false.
  * @stability API
  */
-function clearContextOnPlanAccept(cwd, env = process.env) {
+function clearContextOnPlanAccept(cwd: string | null | undefined, env: Env = process.env): boolean {
   return userSettingsFiles(cwd, env).some(f => {
     try { return JSON.parse(fs.readFileSync(f, 'utf8')).showClearContextOnPlanAccept === true; } catch { return false; }
   });
@@ -164,9 +220,9 @@ function clearContextOnPlanAccept(cwd, env = process.env) {
  * @cc ?.feedbackIsFromUser&&
  * @stability incidental
  */
-function readLines(file, { tailBytes } = {}) {
+function readLines(file: unknown, { tailBytes }: { tailBytes?: number } = {}): string[] {
   if (typeof file !== 'string' || !file) return [];
-  let text;
+  let text: string;
   try {
     const fd = fs.openSync(file, 'r');
     try {
@@ -189,8 +245,8 @@ function readLines(file, { tailBytes } = {}) {
 }
 
 /** Parsed entries from raw lines; torn or non-JSON lines are skipped. */
-function parseLines(lines) {
-  const es = [];
+function parseLines(lines: readonly TranscriptLine[]): TranscriptEntry[] {
+  const es: TranscriptEntry[] = [];
   for (const l of lines) {
     if (l && typeof l === 'object') { es.push(l); continue; }
     try { es.push(JSON.parse(l)); } catch { /* torn line */ }
@@ -203,11 +259,11 @@ function parseLines(lines) {
  * @cc ?.feedbackIsFromUser&&
  * @stability incidental
  */
-const readEntries = (file, opts) => parseLines(readLines(file, opts));
+const readEntries = (file: unknown, opts?: { tailBytes?: number }): TranscriptEntry[] => parseLines(readLines(file, opts));
 
 // Lines may be raw strings (cheap substring prefilter, then parse) or already-parsed entries.
-const lineHas = (l, ...subs) => typeof l !== 'string' || subs.every(s => l.includes(s));
-const asEntry = l => { if (l && typeof l === 'object') return l; try { return JSON.parse(l); } catch { return null; } };
+const lineHas = (l: TranscriptLine, ...subs: string[]): boolean => typeof l !== 'string' || subs.every(s => l.includes(s));
+const asEntry = (l: TranscriptLine): TranscriptEntry | null => { if (l && typeof l === 'object') return l; try { return JSON.parse(l); } catch { return null; } };
 
 /**
  * The session's plan file: toolInput.planFilePath (PreToolUse/PermissionRequest on ExitPlanMode see it,
@@ -215,7 +271,7 @@ const asEntry = l => { if (l && typeof l === 'object') return l; try { return JS
  * @cc type:"plan_mode",reminderType:
  * @stability incidental
  */
-function planFile(lines, toolInput) {
+function planFile(lines: readonly TranscriptLine[], toolInput?: { planFilePath?: unknown } | null): string | null {
   const ti = toolInput || {};
   if (typeof ti.planFilePath === 'string' && ti.planFilePath) return ti.planFilePath;
   for (let k = lines.length - 1; k >= 0; k--) {
@@ -227,8 +283,8 @@ function planFile(lines, toolInput) {
   return null;
 }
 
-const contentText = c => typeof c === 'string' ? c
-  : Array.isArray(c) ? c.map(b => (b && b.type === 'text' && typeof b.text === 'string') ? b.text : '').join('\n') : '';
+const contentText = (c: unknown): string => typeof c === 'string' ? c
+  : Array.isArray(c) ? c.map((b: ContentBlock | null) => (b && b.type === 'text' && typeof b.text === 'string') ? b.text : '').join('\n') : '';
 
 /** The text before a rejected tool's note ("…To tell you how to proceed, the user said:\n<note>"). */
 const SAID = 'the user said:\n';
@@ -249,16 +305,16 @@ const NOTE = '\n\nNote: The user\'s next message';
  * @cc ?.feedbackIsFromUser&&
  * @stability incidental
  */
-function planFeedback(lines, toolUseId) {
+function planFeedback(lines: readonly TranscriptLine[], toolUseId: string | null | undefined): string | null {
   if (!toolUseId) return null;
   for (let k = lines.length - 1; k >= 0; k--) {
     if (!lineHas(lines[k], toolUseId, 'tool_result')) continue;
     const e = asEntry(lines[k]);
     const msg = e && e.message;
-    const block = (msg && Array.isArray(msg.content) ? msg.content : []).find(b => b && b.type === 'tool_result' && b.tool_use_id === toolUseId);
+    const block = (msg && Array.isArray(msg.content) ? msg.content as (ContentBlock | null)[] : []).find(b => b && b.type === 'tool_result' && b.tool_use_id === toolUseId);
     if (!block) continue;
     if (!block.is_error) return null;
-    if (typeof e.userFeedback === 'string') return e.userFeedback;
+    if (typeof e!.userFeedback === 'string') return e!.userFeedback; // e is set: block came from its message
     const t = contentText(block.content);
     const at = t.indexOf(SAID);
     if (at < 0) return null;
@@ -275,13 +331,13 @@ function planFeedback(lines, toolUseId) {
  * @cc ,new Set(["plan","planFilePath"])]])
  * @stability incidental
  */
-function toolUseInput(lines, toolUseId) {
+function toolUseInput(lines: readonly TranscriptLine[], toolUseId: string | null | undefined): unknown {
   if (!toolUseId) return null;
   for (let k = lines.length - 1; k >= 0; k--) {
     if (!lineHas(lines[k], toolUseId, '"tool_use"')) continue;
     const e = asEntry(lines[k]);
     const c = e && e.message && e.message.content;
-    const b = (Array.isArray(c) ? c : []).find(x => x && x.type === 'tool_use' && x.id === toolUseId);
+    const b = (Array.isArray(c) ? c as (ContentBlock | null)[] : []).find(x => x && x.type === 'tool_use' && x.id === toolUseId);
     if (b) return b.input;
   }
   return null;
@@ -296,18 +352,18 @@ function toolUseInput(lines, toolUseId) {
  * @cc {kind:"human"}
  * @stability incidental
  */
-function lastHumanPrompt(lines) {
+function lastHumanPrompt(lines: readonly TranscriptLine[]): { text: string; at: number } | null {
   for (let k = lines.length - 1; k >= 0; k--) {
     if (!lineHas(lines[k], '"user"')) continue;
     const e = asEntry(lines[k]);
     if (!e || e.type !== 'user' || e.isMeta || e.isSidechain || e.isCompactSummary || !e.message) continue;
     const c = e.message.content;
-    if (Array.isArray(c) && c.some(b => b && b.type === 'tool_result')) continue;
+    if (Array.isArray(c) && c.some((b: ContentBlock | null) => b && b.type === 'tool_result')) continue;
     const text = contentText(c);
     if (!text.trim()) continue;
-    const kind = e.origin && typeof e.origin === 'object' ? e.origin.kind : undefined;
+    const kind = e.origin && typeof e.origin === 'object' ? (e.origin as { kind?: unknown }).kind : undefined;
     if (e.origin !== undefined && kind !== 'human') return null;
-    const at = Date.parse(e.timestamp);
+    const at = Date.parse(e.timestamp as string);
     return { text, at: Number.isFinite(at) ? at : 0 };
   }
   return null;
@@ -324,9 +380,9 @@ function lastHumanPrompt(lines) {
 const PASTED_RE = /(?:\n\n)?<pasted_content id="?(\w+)"?>\n([\s\S]*?)\n?<\/pasted_content id="?\1"?>\n?/g;
 
 /** {text, normalized}: the prompt with each paste wrapper replaced by its body. Same as at-room's unwrap. */
-function unwrapPasted(text) {
+function unwrapPasted(text: unknown): { text: string; normalized: boolean } {
   let normalized = false;
-  const t = String(text).replace(PASTED_RE, (_, _id, body) => { normalized = true; return body; });
+  const t = String(text).replace(PASTED_RE, (_: string, _id: string, body: string) => { normalized = true; return body; });
   return { text: t, normalized };
 }
 
@@ -344,7 +400,7 @@ const JOB_RE = /backgrounded\s*·\s*([0-9a-z]{4,40})\b/i;
  * @cc backgrounded \xB7
  * @stability incidental
  */
-function parseDispatch(text) {
+function parseDispatch(text: unknown): string | null {
   const m = JOB_RE.exec(String(text || ''));
   return m ? m[1] : null;
 }
@@ -354,14 +410,14 @@ function parseDispatch(text) {
  * @cc isAgentsJsonInvocation
  * @stability API
  */
-const agentsCmd = (all = false) => (all ? ['agents', '--json', '--all'] : ['agents', '--json']);
+const agentsCmd = (all = false): string[] => (all ? ['agents', '--json', '--all'] : ['agents', '--json']);
 
 /**
  * argv to stop a bg session (prints "stopped <id>"; the conversation is kept).
  * @cc Stop a background session. Its conversation is kept
  * @stability API
  */
-const stopCmd = id => ['stop', String(id)];
+const stopCmd = (id: unknown): string[] => ['stop', String(id)];
 
 /**
  * Parse `claude agents --json` stdout into [{pid, id, sessionId, status, state, kind, name, cwd, startedAt}]
@@ -370,15 +426,15 @@ const stopCmd = id => ['stop', String(id)];
  * @cc pass its full session id (lowercase, as `claude agents --json` prints it)
  * @stability API
  */
-function parseAgentsJson(text) {
-  let a;
+function parseAgentsJson(text: unknown): AgentJob[] | null {
+  let a: unknown;
   try { a = JSON.parse(String(text || '')); } catch { return null; }
   if (!Array.isArray(a)) return null;
-  const s = x => (typeof x === 'string' ? x : null);
-  return a.filter(j => j && typeof j === 'object').map(j => ({
-    pid: Number.isInteger(j.pid) && j.pid > 0 ? j.pid : null,
+  const s = (x: unknown): string | null => (typeof x === 'string' ? x : null);
+  return a.filter(j => j && typeof j === 'object').map((j: Record<string, unknown>) => ({
+    pid: Number.isInteger(j.pid) && (j.pid as number) > 0 ? j.pid as number : null,
     id: s(j.id), sessionId: s(j.sessionId), status: s(j.status), state: s(j.state),
-    kind: s(j.kind), name: s(j.name), cwd: s(j.cwd), startedAt: Number.isFinite(j.startedAt) ? j.startedAt : null,
+    kind: s(j.kind), name: s(j.name), cwd: s(j.cwd), startedAt: Number.isFinite(j.startedAt) ? j.startedAt as number : null,
   }));
 }
 
@@ -389,7 +445,16 @@ function parseAgentsJson(text) {
  * @cc isAgentsJsonInvocation
  * @stability API
  */
-function jobs({ all = false, bin = process.env.SUB_HUMAN_CLAUDE || 'claude', env = process.env, timeout = 15_000, run = spawnSync } = {}) {
+/** jobs() options; run: a spawnSync stand-in (tests). */
+interface JobsOpts {
+  all?: boolean;
+  bin?: string;
+  env?: Env;
+  timeout?: number;
+  run?: (bin: string, args: string[], opts: SpawnSyncOptionsWithStringEncoding) => { error?: Error; status: number | null; stdout: string } | null;
+}
+
+function jobs({ all = false, bin = process.env.SUB_HUMAN_CLAUDE || 'claude', env = process.env, timeout = 15_000, run = spawnSync }: JobsOpts = {}): AgentJob[] | null {
   let r;
   try { r = run(bin, agentsCmd(all), { env, encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'pipe'] }); } catch { return null; }
   if (!r || r.error || r.status !== 0) return null;
@@ -454,8 +519,8 @@ const DAEMON_ENV_SET = new Set(DAEMON_ENV_ALLOW);
  * @cc daemon_bg_dispatch_ingest
  * @stability env
  */
-function daemonEnv(env = process.env) {
-  const out = {};
+function daemonEnv(env: Env = process.env): Record<string, string> {
+  const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) if (DAEMON_ENV_SET.has(k) && v !== undefined) out[k] = v;
   return out;
 }
@@ -469,7 +534,7 @@ function daemonEnv(env = process.env) {
  * @cc /^[a-zA-Z0-9_|, -]+$/:/^[a-zA-Z0-9_|]+$/
  * @stability API
  */
-function matcherIsExact(m, { toolEvent = true } = {}) {
+function matcherIsExact(m: unknown, { toolEvent = true }: { toolEvent?: boolean } = {}): m is string {
   if (typeof m !== 'string' || !m || m === '*') return false;
   return (toolEvent ? /^[a-zA-Z0-9_|, -]+$/ : /^[a-zA-Z0-9_|]+$/).test(m);
 }
@@ -479,7 +544,7 @@ function matcherIsExact(m, { toolEvent = true } = {}) {
  * @cc Invalid regex pattern in hook matcher
  * @stability API
  */
-function matcherMatches(m, name, { toolEvent = true } = {}) {
+function matcherMatches(m: string | null | undefined, name: string, { toolEvent = true }: { toolEvent?: boolean } = {}): boolean {
   if (!m || m === '*') return true;
   if (matcherIsExact(m, { toolEvent })) {
     return m.split(toolEvent ? /[|,]/ : '|').map(s => s.trim()).filter(Boolean).includes(name);
@@ -494,14 +559,14 @@ function matcherMatches(m, name, { toolEvent = true } = {}) {
  * Shapes pin code whose meaning is in its structure (a fallback order, a numeric default) without naming the
  * build's minified identifiers, so a rebuild that only renames them still passes.
  */
-const shapeRe = shape => new RegExp(String(shape).split('~').map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\w$]+'));
+const shapeRe = (shape: unknown): RegExp => new RegExp(String(shape).split('~').map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\w$]+'));
 
 /**
  * Every Claude Code assumption the plugin makes. `search` is a literal string (or array: all must match) and
  * `shape` an optional code shape (or array; see shapeRe), both found in the 2.1.292 binary; scripts/probe-cc.js
  * checks them. `section` points into docs/internals/cc-2.1.281.md (changes in cc-2.1.292.md).
  */
-const CONTRACT = Object.freeze([
+const CONTRACT: readonly ContractEntry[] = Object.freeze([
   // §1 tasks
   { id: 'task-completed-block-drops-fields', section: 1, stability: 'incidental', search: 'TaskCompleted hooks cancelled (control stream closed)',
     note: 'A TaskCompleted block makes TaskUpdate return success:false, updatedFields:[] before the write: every field in that call (subject, metadata, owner) is discarded.' },
@@ -723,27 +788,27 @@ const CONTRACT = Object.freeze([
 const PROBED_VERSION = '2.1.292';
 const MIN_VERSION = '2.1.292';
 
-function compareVersions(a, b) {
-  const parse = v => { const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || '')); return m ? m.slice(1).map(Number) : null; };
+function compareVersions(a: unknown, b: unknown): -1 | 0 | 1 | null {
+  const parse = (v: unknown): number[] | null => { const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || '')); return m ? m.slice(1).map(Number) : null; };
   const x = parse(a), y = parse(b);
   if (!x || !y) return null;
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
   return 0;
 }
 
-const isFile = p => { try { return fs.statSync(p).isFile(); } catch { return false; } };
-function onPath(cmd, env) {
+const isFile = (p: string): boolean => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+function onPath(cmd: string, env: Env): string | null {
   for (const dir of (env.PATH || '').split(path.delimiter)) {
     if (dir && isFile(path.join(dir, cmd))) return path.join(dir, cmd);
   }
   return null;
 }
 function caskroom(root = '/opt/homebrew/Caskroom') {
-  let best = null;
-  let casks = [];
+  let best: { p: string; mt: number } | null = null;
+  let casks: string[] = [];
   try { casks = fs.readdirSync(root).filter(d => d.startsWith('claude-code')); } catch { return null; }
   for (const c of casks) {
-    let vs = [];
+    let vs: string[] = [];
     try { vs = fs.readdirSync(path.join(root, c)); } catch { continue; }
     for (const v of vs) {
       const p = path.join(root, c, v, 'claude');
@@ -755,8 +820,8 @@ function caskroom(root = '/opt/homebrew/Caskroom') {
   return best && best.p;
 }
 /** A JS shim (npm install) is followed to its real file only via realpath. */
-function locateBinary({ bin, env = process.env } = {}) {
-  for (const c of [bin, env.CLAUDE_BIN, onPath('claude', env), caskroom()].filter(Boolean)) {
+function locateBinary({ bin, env = process.env }: { bin?: string; env?: Env } = {}): string | null {
+  for (const c of [bin, env.CLAUDE_BIN, onPath('claude', env), caskroom()].filter((x): x is string => !!x)) {
     let p;
     try { p = fs.realpathSync(c); } catch { continue; }
     if (isFile(p)) return p;
@@ -764,7 +829,7 @@ function locateBinary({ bin, env = process.env } = {}) {
   return null;
 }
 
-function binaryVersion(buf) {
+function binaryVersion(buf: Buffer): string | null {
   const i = buf.indexOf('VERSION:"');
   if (i < 0) return null;
   const v = /^(\d+\.\d+\.\d+[^"]*)"/.exec(buf.toString('latin1', i + 9, i + 40));
@@ -776,9 +841,9 @@ function binaryVersion(buf) {
  * comm=` elsewhere, symlinks resolved) when the path names one (the cask's …/2.1.292/claude, the installer's
  * versions/2.1.292), else `<that binary> --version`. Used only to word a refusal (hooks/join.ts noModule).
  */
-function runningVersion(pid, { timeoutMs = 3000 } = {}) {
+function runningVersion(pid: unknown, { timeoutMs = 3000 }: { timeoutMs?: number } = {}): string | null {
   if (!Number.isInteger(Number(pid)) || Number(pid) <= 0) return null;
-  let exe = null;
+  let exe: string | null = null;
   try { exe = fs.readlinkSync(`/proc/${pid}/exe`); } catch {
     const r = spawnSync('ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8', timeout: timeoutMs });
     exe = String(r.stdout || '').trim() || null;
@@ -795,15 +860,15 @@ function runningVersion(pid, { timeoutMs = 3000 } = {}) {
 
 /** The global config file Claude Code keeps its cached feature switches in: $CLAUDE_CONFIG_DIR/.claude.json, else
  * ~/.claude.json. */
-const globalConfigFile = (env = process.env) => (env[ENV.CONFIG_DIR]
-  ? path.join(env[ENV.CONFIG_DIR], '.claude.json') : path.join(env.HOME || os.homedir(), '.claude.json'));
+const globalConfigFile = (env: Env = process.env): string => (env[ENV.CONFIG_DIR]
+  ? path.join(env[ENV.CONFIG_DIR]!, '.claude.json') : path.join(env.HOME || os.homedir(), '.claude.json'));
 
 /**
  * The installed plugins' hooks modules switch as Claude Code last cached it (cachedGrowthBookFeatures
  * .tengu_plugin_hooks_modules in the global config; CONTRACT hooks-modules, modules-switch-cache): true, false, or
  * undefined when unknown (no file, no entry: the default, on). Read only.
  */
-function modulesSwitch(env = process.env) {
+function modulesSwitch(env: Env = process.env): boolean | undefined {
   let j;
   try { j = JSON.parse(fs.readFileSync(globalConfigFile(env), 'utf8')); } catch { return undefined; }
   const v = j && j.cachedGrowthBookFeatures && j.cachedGrowthBookFeatures.tengu_plugin_hooks_modules;
@@ -813,8 +878,8 @@ function modulesSwitch(env = process.env) {
 // Buffer#indexOf over the whole binary cost ~50 ms a call and a shape regex over all of it seconds: the probe test
 // timed out with the suite running beside it. IDENT_MAX bounds one minified identifier (they are a few chars).
 const IDENT_MAX = 64;
-const latin1 = s => Buffer.from(String(s), 'utf8').toString('latin1');
-function shapeIn(text, shape) {
+const latin1 = (s: unknown): string => Buffer.from(String(s), 'utf8').toString('latin1');
+function shapeIn(text: string, shape: string): boolean {
   const parts = String(shape).split('~');
   let k = 0;
   for (let i = 1; i < parts.length; i++) if (parts[i].length > parts[k].length) k = i;
@@ -828,15 +893,15 @@ function shapeIn(text, shape) {
   }
   return false;
 }
-function quotedNames(text) {
-  const set = new Set();
+function quotedNames(text: string): Set<string> {
+  const set = new Set<string>();
   for (const m of text.matchAll(/"([A-Za-z_][A-Za-z0-9_]*)(?=")/g)) set.add(m[1]);
   return set;
 }
 
-function probe(buf, { entries = CONTRACT, envNames = true } = {}) {
+function probe(buf: Buffer, { entries = CONTRACT, envNames = true }: { entries?: readonly ContractEntry[]; envNames?: boolean } = {}): ProbeResult[] {
   const text = buf.toString('latin1');
-  const list = x => (x === undefined ? [] : Array.isArray(x) ? x : [x]);
+  const list = (x: string | readonly string[] | undefined): readonly string[] => (x === undefined ? [] : typeof x === 'string' ? [x] : x);
   const results = entries.map(e => {
     const missing = list(e.search).filter(s => text.indexOf(latin1(s)) < 0);
     for (const sh of list(e.shape)) if (!shapeIn(text, sh)) missing.push(`shape: ${sh}`);
@@ -858,3 +923,4 @@ export {
   PROBED_VERSION, MIN_VERSION, compareVersions, locateBinary, binaryVersion, probe, runningVersion, globalConfigFile,
   modulesSwitch,
 };
+export type { TranscriptEntry, TranscriptLine, ContentBlock, AgentJob, ContractEntry, ProbeResult, JobsOpts };
