@@ -22,7 +22,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        node: ['24', '26']
+        # 24.3.0: the floor (engines, hooks.json's node check): the first 24 that strips types without a warning
+        node: ['24.3.0', '24', '26']
         include:
           - os: macos-latest
             node: '24'
@@ -40,10 +41,9 @@ jobs:
           git config --global user.email "ci@sub-human.invalid"
       - name: npm ci (typescript and @types/node, for the typecheck only)
         run: npm ci
-      - name: typecheck (allowed to fail until the TypeScript migration's phase C, docs/next/TYPESCRIPT.md)
-        continue-on-error: true
+      - name: typecheck
         run: npm run typecheck
-      - name: npm test (the mods tests skip without Claude Code)
+      - name: npm test (the typecheck again, ~1 s; the mods tests skip without Claude Code)
         run: npm test
       - name: hook tests over the thread store
         run: npm run test:thread-store

@@ -14,7 +14,7 @@ How it works (processes, store layout, lanes, consent, tasks, the cc contract): 
 
 ## Commands
 
-- `npm test`: plugin tests and script tests (`node --test`, no dependencies), then `npm run test:mods`.
+- `npm test`: `npm run typecheck` (~1 s, zero errors), plugin tests and script tests (`node --test`, no dependencies), then `npm run test:mods`.
 - `npm run test:mods`: the hooks module's wiring tests (`mod/test/*.test.ts`) through `claude plugin test`; skipped without Claude Code 2.1.292+ or with hooks modules off.
 - `npm run validate`: `claude plugin validate plugin/sub-human --strict`.
 - `npm run typecheck`: `tsc` over the runtime (root `tsconfig.json`, `typings/claude-code` the committed Claude Code types; needs `npm ci`). The runtime is ESM `.ts` run by node 24.3+ type stripping; tests and repo scripts stay CommonJS JS. The migration plan: `docs/next/TYPESCRIPT.md`.

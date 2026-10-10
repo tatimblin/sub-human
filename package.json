@@ -6,7 +6,7 @@
     "node": ">=24.3"
   },
   "scripts": {
-    "test": "npm run --silent test:plugin && npm run --silent test:scripts && npm run --silent test:mods",
+    "test": "npm run --silent typecheck && npm run --silent test:plugin && npm run --silent test:scripts && npm run --silent test:mods",
     "test:plugin": "node --test plugin/sub-human/test",
     "test:scripts": "node --test --require ./plugin/sub-human/test/helpers.js scripts/test",
     "test:mods": "node scripts/test-mods.js",
