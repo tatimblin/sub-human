@@ -63,16 +63,104 @@ import * as realClock from './clock.ts';
 import * as config from './config.ts';
 import { roomClaudeName } from './room/members.ts';
 import { createRequire } from 'node:module';
+import type { Clock, LinkFlush, LinkStatus, LogEntry, Seat, TailEvent, TailSeat } from './types-app.ts';
 
 const require = createRequire(import.meta.url);
+
+// ---------- types ----------
+/** The room as a session reads it (lib/room.ts open): the calls made here. Tests hand in fakes. */
+interface TailRoom {
+  store?: { isHost: boolean } | null;
+  readView(opts: { after: number }): LogEntry[];
+  tailer(opts: { fs: typeof nodeFs }): { poll(): { entries: LogEntry[], reset?: boolean } };
+  lastId(): number;
+  getCursor(name: string): number;
+  setCursor(name: string, id: number): void;
+  verifyChain(): { ok: boolean, offset?: number, badAt?: number | null, line?: number };
+  lane(me: Seat, e: LogEntry, entries?: LogEntry[]): string;
+  chatLines(e: LogEntry, opts: { viewer: string, entries?: LogEntry[] }): string[];
+  line(e: LogEntry, opts: { full: boolean }): string;
+  stateLine(me: Seat, entries?: LogEntry[], opts?: { ids?: boolean }): string;
+}
+/** The push lane test (visibleTo): entries is the log at flush time; note is the joinNote of a member_joined. */
+type Show = (e: LogEntry, entries?: LogEntry[], note?: string) => boolean;
+/** A rate-limited logger (errorLog): where it failed, and the error. */
+type Log = (where: string, e: unknown) => void;
+/** The tail's write: text (whole lines) and a callback once it is out. */
+type Write = (text: string, done: () => void) => unknown;
+type Timings = ReturnType<typeof timings>;
+/** One item the Batcher holds: the entry, and when it was enqueued. */
+interface Item { e: LogEntry, away: boolean }
+type Pending<T> = T & { at: number };
+
+type RowsLib = Pick<typeof import('./rows.ts'), 'joinNote' | 'missingRows' | 'rowsNeeded' | 'readHolds' | 'sessionRowMap' | 'rowCalls'>;
+type IdentityLib = Pick<typeof import('./identity.ts'), 'readMembers' | 'heartbeat'>;
+type ProposalLib = Pick<typeof import('./proposal.ts'), 'pendingFor' | 'picked' | 'reminder'>;
+type NoticesLib = Pick<typeof import('./notices.ts'), 'shown' | 'markShown'>;
+type RoomClaudeLib = Pick<typeof import('./room-claude.ts'), 'watchdog'>;
+type HandoffLib = Pick<typeof import('./handoff.ts'), 'pendingAsk' | 'markTold' | 'hostDoc'>;
+type AdmissionLib = Pick<typeof import('./remote/admission.ts'), 'lapse' | 'pending' | 'targets' | 'describe' | 'markTold'>;
+/** runTail's deps (tests): each one replaces a module or call. */
+interface TailDeps {
+  openRoom(code: string): TailRoom;
+  heartbeat(me: Seat): unknown;
+  rows: RowsLib;
+  notices: NoticesLib;
+  roomClaude: RoomClaudeLib;
+  identity: IdentityLib;
+  proposal: ProposalLib;
+  linkStatus(code: string): LinkStatus;
+  handoff: HandoffLib;
+  admission: AdmissionLib;
+  sweepDoors(code: string): unknown;
+}
+/** The deps as a session uses them: the lazily loaded modules behind a getter. */
+type Deps = Omit<TailDeps, 'roomClaude' | 'handoff' | 'admission'> & {
+  roomClaude(): RoomClaudeLib;
+  handoff(): HandoffLib;
+  admission(): AdmissionLib;
+};
+/** What every session shares (runTail). */
+interface Ctx {
+  clock: Clock;
+  fs: typeof nodeFs;
+  write: Write;
+  log: Log;
+  t: Timings;
+  deps: Deps;
+  sid: string | null;
+}
+/** One seat's session (startSession): its key, and the calls the loop makes on it. */
+interface Session {
+  key: string;
+  code: string;
+  dead: boolean;
+  lastTick: number;
+  save(): void;
+  stalled(): boolean;
+  moved(): boolean;
+  killPoll(): void;
+  stop(): void;
+}
+/** formatNdBatch / formatRoomClaudeBatch's ctx. */
+interface FormatCtx {
+  me: Seat;
+  room: TailRoom;
+  entries: LogEntry[];
+  show: Show;
+  joinNote(e: LogEntry): string;
+  seen: Set<number>;
+  leaveMs: number;
+}
+type Cursor = ReturnType<typeof cursorKeeper>;
 
 const { envMs } = config;
 const FOR_CLAUDE = '(for Claude)';
 const DOOR_SWEEP_MS = 30_000;
 const SPAWN_NOTE = /no row running|is not running/;
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
-const isMove = e => e.kind === 'member_joined' || e.kind === 'member_left';
-const isHostMove = e => e.kind === 'host_changed' && e.via === 'system';
+const isMove = (e: LogEntry) => e.kind === 'member_joined' || e.kind === 'member_left';
+const isHostMove = (e: LogEntry) => e.kind === 'host_changed' && e.via === 'system';
 
 function timings() {
   const resolveMs = envMs('SUB_HUMAN_RESOLVE_MS', config.RESOLVE_MS);
@@ -98,15 +186,33 @@ function timings() {
 }
 
 // ---------- Batcher ----------
-class Batcher {
-  constructor({ clock = realClock, settleMs, settleMaxMs, retryMs = settleMs, onFlush, onError = () => {} }) {
-    Object.assign(this, { clock, settleMs, settleMaxMs, retryMs, onFlush, onError });
+class Batcher<T extends { e: { id: number } } = Item> {
+  clock: Clock;
+  settleMs: number;
+  settleMaxMs: number;
+  retryMs: number;
+  onFlush: (ready: Pending<T>[]) => unknown;
+  onError: (err: unknown) => void;
+  pending: Pending<T>[];
+  quietT: unknown;
+  maxT: unknown;
+  dead: boolean;
+  constructor({ clock = realClock, settleMs, settleMaxMs, retryMs = settleMs, onFlush, onError = () => {} }: {
+    clock?: Clock, settleMs: number, settleMaxMs: number, retryMs?: number,
+    onFlush: (ready: Pending<T>[]) => unknown, onError?: (err: unknown) => void,
+  }) {
+    this.clock = clock;
+    this.settleMs = settleMs;
+    this.settleMaxMs = settleMaxMs;
+    this.retryMs = retryMs;
+    this.onFlush = onFlush;
+    this.onError = onError;
     this.pending = []; // {at, ...item}
     this.quietT = null;
     this.maxT = null;
     this.dead = false;
   }
-  enqueue(item) { this.pending.push({ ...item, at: this.clock.now() }); this.arm(); }
+  enqueue(item: T) { this.pending.push({ ...item, at: this.clock.now() }); this.arm(); }
   arm() {
     if (this.dead) return;
     this.clock.clearTimeout(this.quietT);
@@ -136,8 +242,8 @@ class Batcher {
 
 // ---------- formatters ----------
 /** ctx: {me, room, entries, show, joinNote, leaveMs} */
-function formatRoomClaudeBatch(ready, { me, room: rm, entries, show, joinNote, leaveMs }) {
-  const out = [];
+function formatRoomClaudeBatch(ready: Item[], { me, room: rm, entries, show, joinNote, leaveMs }: FormatCtx): string[] {
+  const out: string[] = [];
   for (const { e, away } of ready) {
     const note = joinNote(e);
     if (show(e, entries, note)) out.push(rm.line(e, { full: true }) + (away ? ` · away ${Math.round(leaveMs / 1000)}s+` : '') + (note ? ` · ${note}` : ''));
@@ -145,23 +251,23 @@ function formatRoomClaudeBatch(ready, { me, room: rm, entries, show, joinNote, l
   return out.length ? [rm.stateLine(me, entries), ...out] : [];
 }
 
-const esc = s => s.replace(/[.]/g, '\\.');
+const esc = (s: string) => s.replace(/[.]/g, '\\.');
 /** "@name" in text, as lib/room/lanes.ts reads a mention. */
-const mentions = (text, name) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
+const mentions = (text: string | null | undefined, name: string) => new RegExp(`(^|[^A-Za-z0-9_.-])@${esc(name)}(?![A-Za-z0-9_-])`, 'i').test(String(text ?? ''));
 /**
  * A member's push entry that is group chat, not a request (the person sees it, Claude gets a copy, no wake):
  * a join or leave, and another person's own words not addressed to me.
  */
-function isChat(me, e) {
+function isChat(me: Seat, e: LogEntry): boolean {
   if (isMove(e) || isHostMove(e)) return true;
   return e.via === 'human' && e.kind === 'say' && e.to !== me.name && !mentions(e.text, me.name);
 }
 
 const PULL_HEAD = 'Room since your last turn (context for you, not for the user: mention it only if they ask):';
 /** The pull text: PULL_HEAD, then the newest lines that fit under PULL_CAP (a note says how many were left out). */
-function pullText(lines) {
+function pullText(lines: string[]): string | null {
   if (!lines.length) return null;
-  const kept = [];
+  const kept: string[] = [];
   let size = PULL_HEAD.length;
   for (let i = lines.length - 1; i >= 0; i--) {
     if (size + lines[i].length + 1 > config.PULL_CAP - 80) break;
@@ -178,9 +284,9 @@ function pullText(lines) {
  * ctx: {me, room, entries, show (the push lane, visibleTo), joinNote, seen, leaveMs}. moved: the join / leave ids
  * sent as chat (notices.markShown).
  */
-function formatNdBatch(ready, ctx) {
+function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], moved: number[] } {
   const { me, room: rm, entries, show, joinNote, seen } = ctx;
-  const chat = [], pull = [], wake = [], moved = [], pushed = [];
+  const chat: string[] = [], pull: string[] = [], wake: string[] = [], moved: number[] = [], pushed: Item[] = [];
   let state = false;
   for (const p of ready) {
     const { e } = p;
@@ -204,7 +310,7 @@ function formatNdBatch(ready, ctx) {
   if (me.role === 'claude') wake.push(...formatRoomClaudeBatch(pushed, ctx));
   // no ids for a member: the plugin prompt's row is drawn expanded, (for Claude) lines included (people never see ids)
   else if (state && wake.length) wake.push(`${FOR_CLAUDE} ${rm.stateLine(me, entries, { ids: false })}`);
-  const events = [];
+  const events: TailEvent[] = [];
   if (chat.length) events.push({ type: 'chat', lines: chat });
   const pt = pullText(pull);
   if (pt) events.push({ type: 'pull', text: pt });
@@ -217,15 +323,17 @@ const SPAWN_GRACE_MS = config.ROW_SPAWN_GRACE_MS;
  * The Agent calls for this seat's rows with no live hold, or null when they all run (or were just spawned). The
  * tail sends it as a `rows` event, so the person's next prompt carries it.
  */
-function missingRowsText(me, sid, { now = Date.now(), rows = require('./rows.ts'), identity = require('./identity.ts') } = {}) {
+function missingRowsText(me: Seat, sid: string | null, {
+  now = Date.now(), rows = require('./rows.ts') as RowsLib, identity = require('./identity.ts') as IdentityLib,
+}: { now?: number, rows?: RowsLib, identity?: IdentityLib } = {}): string | null {
   try {
     const members = identity.readMembers(me.code);
     // room Claude: missingRows skips members who joined under 45 s ago (their member_joined notice covers them)
     let need = me.role === 'claude' ? rows.missingRows(me.code, me, { members })
       : rows.rowsNeeded(me.code, me, { members, held: rows.readHolds(me.code, me.name) });
-    let map = {};
+    let map: ReturnType<RowsLib['sessionRowMap']> = {};
     try { map = rows.sessionRowMap(me.code, sid); } catch { /* none */ }
-    const fresh = new Set(Object.values(map).filter(r => r && now - Date.parse(r.at) < SPAWN_GRACE_MS).map(r => r.name));
+    const fresh = new Set(Object.values(map).filter(r => r && now - Date.parse(r.at as string) < SPAWN_GRACE_MS).map(r => r.name));
     need = need.filter(n => !fresh.has(n));
     if (!need.length) return null;
     return `SUB-HUMAN ROWS: your ${me.role === 'claude' ? `rows for ${need.join(', ')} are` : 'room row is'} not running in this session. `
@@ -235,13 +343,13 @@ function missingRowsText(me, sid, { now = Date.now(), rows = require('./rows.ts'
 }
 
 /** lib/proposal.ts reminder() for each proposal that names this member and awaits their answer; null for the room's Claude or none. */
-function remindersText(me, rm, { proposal = require('./proposal.ts') } = {}) {
+function remindersText(me: Seat, rm: Pick<TailRoom, 'readView'>, { proposal = require('./proposal.ts') as ProposalLib }: { proposal?: ProposalLib } = {}): string | null {
   if (me.role === 'claude') return null;
   const ps = proposal.pendingFor(me, rm.readView({ after: Infinity })) || [];
   if (!ps.length) return null;
   // Only the one a review opens next (the person's pick, else the oldest; hooks/consent.ts), the others counted, so
   // the model is never told to open a proposal the hooks will not show.
-  const p = proposal.picked(me, ps);
+  const p = proposal.picked(me, ps)!; // ps is not empty
   const more = ps.length - 1;
   return proposal.reminder(p, me.name) + (more ? ` (${more} more await ${me.name}'s answer; the hooks open whichever ${me.name} names next, else the oldest.)` : '');
 }
@@ -252,7 +360,7 @@ function remindersText(me, rm, { proposal = require('./proposal.ts') } = {}) {
  * carries the Agent call) or when the note is unavailable; a join whose row already runs is not pushed to it,
  * so a notice never invites a call that row-guard would deny.
  */
-function visibleTo(me, rm) {
+function visibleTo(me: Seat, rm: TailRoom): Show {
   if (me.role !== 'claude') {
     return (e, entries) => rm.lane(me, e, entries) === 'push' || isHostMove(e)
       || (isMove(e) && e.via === 'system' && e.from !== me.name && roomClaudeName(e.from) !== 'claude'); // 0.4.x: "orch"
@@ -263,7 +371,7 @@ function visibleTo(me, rm) {
 
 // ---------- the link of a room hosted elsewhere ----------
 const LINK_BACK = 'the connection to the room is back; @room posts go through again';
-function linkLine(st, code) {
+function linkLine(st: LinkStatus, code: string): { key: 'fork' | 'offline' | 'stopped', text: string } | null {
   const kept = st.queued ? `; ${st.queued} @room post(s) are kept, not sent` : '';
   if (st.state === 'fork') {
     return { key: 'fork', text: `this machine's copy of room ${code} no longer matches the host's${kept}. Run /sub-human doctor.` };
@@ -273,9 +381,9 @@ function linkLine(st, code) {
   if (st.state === 'stopped') return { key: 'stopped', text: `the connection to room ${code} stopped (${st.reason || 'for good'}); @room posts can't be sent${kept}. Run /sub-human doctor.` };
   return { key: 'offline', text: `the connection to room ${code} isn't running; @room posts can't be sent${kept}. Type /sub-human to reconnect.` };
 }
-function flushLine(f) {
+function flushLine(f: LinkFlush | null | undefined): string | null {
   if (!f || (!f.sent && !(f.unsent || []).length)) return null;
-  const parts = [];
+  const parts: string[] = [];
   if (f.sent) parts.push(`${f.sent} waiting @room post(s) sent`);
   for (const u of f.unsent || []) parts.push(`not sent (${u.why}): "${u.text}"`);
   return parts.join('; ');
@@ -283,21 +391,21 @@ function flushLine(f) {
 
 // ---------- reading ----------
 /** A rate-limited stderr logger: one line per `where` per everyMs, with the count it held back. */
-function errorLog(err, clock, everyMs) {
-  const last = new Map(); // where -> {at, held}
+function errorLog(err: (s: string) => unknown, clock: Clock, everyMs: number): Log {
+  const last = new Map<string, { at: number, held: number }>(); // where -> {at, held}
   return (where, e) => {
     const now = clock.now(), x = last.get(where);
     if (x && now - x.at < everyMs) { x.held++; return; }
     const more = x && x.held ? ` (+${x.held} more since)` : '';
     last.set(where, { at: now, held: 0 });
-    try { err(`sub-human tail: ${where} failed: ${e && e.message || e}${more}; retrying\n`); } catch { /* stderr closed */ }
+    try { err(`sub-human tail: ${where} failed: ${e && (e as Error).message || e}${more}; retrying\n`); } catch { /* stderr closed */ }
   };
 }
 
 // ---------- one seat's session ----------
 /** Where a seat's delivery starts: its saved cursor, else (its first run) its latest join, so nothing between the
  * join and the first lookup is lost, else the log's end. */
-function startCursor(rm, reader, me, last) {
+function startCursor(rm: Pick<TailRoom, 'getCursor' | 'readView'>, reader: string, me: Seat, last: number): number {
   const c = rm.getCursor(reader);
   if (c > 0 && c <= last) return c;
   // 0.4.x kept the room's Claude's cursor as deliver-orch: an upgraded room resumes there, so no @claude is skipped
@@ -314,16 +422,16 @@ function startCursor(rm, reader, me, last) {
  *   hold(id), release(id)   in flight, or out
  *   save()       move the saved cursor as far as it may go; a failed write is retried by the next save
  */
-function cursorKeeper(rm, reader, after, { log, dead }) {
-  const inflight = new Set();
+function cursorKeeper(rm: Pick<TailRoom, 'setCursor'>, reader: string, after: number, { log, dead }: { log: Log, dead: () => boolean }) {
+  const inflight = new Set<number>();
   let processed = after, saved = after;
   return {
-    saw(id) {
+    saw(id: number) {
       if (id <= processed) { saved = 0; rm.setCursor(reader, 0); }
       processed = id;
     },
-    hold: id => { inflight.add(id); },
-    release: id => { inflight.delete(id); },
+    hold: (id: number) => { inflight.add(id); },
+    release: (id: number) => { inflight.delete(id); },
     save() {
       if (dead()) return;
       const h = inflight.size ? Math.min(...inflight) - 1 : processed;
@@ -338,10 +446,13 @@ function cursorKeeper(rm, reader, after, { log, dead }) {
  * One settled batch as ONE write (at most one wake). Each entry is judged again against the log at flush time
  * (lane with entries: signed, decided, superseded); the cursor moves past the batch once it is written.
  */
-function flushBatch(ready, { me, rm, pushed, joinNote, leaveMs, notices, emit, cursor }) {
+function flushBatch(ready: Item[], { me, rm, pushed, joinNote, leaveMs, notices, emit, cursor }: {
+  me: Seat, rm: TailRoom, pushed: Show, joinNote: (e: LogEntry) => string, leaveMs: number, notices: NoticesLib,
+  emit: (events: TailEvent[], done?: () => void) => unknown, cursor: Cursor,
+}): unknown {
   const entries = rm.readView({ after: ready[0].e.id - 1 });
   const done = () => { for (const p of ready) cursor.release(p.e.id); cursor.save(); };
-  const seen = me.role === 'claude' ? new Set() : notices.shown(me.code, me.name);
+  const seen = me.role === 'claude' ? new Set<number>() : notices.shown(me.code, me.name);
   const { events, moved } = formatNdBatch(ready, { me, room: rm, entries, show: pushed, joinNote, leaveMs, seen });
   if (!events.length) return done();
   if (moved.length) { try { notices.markShown(me.code, me.name, moved, 'mod'); } catch { /* best effort */ } }
@@ -352,8 +463,8 @@ function flushBatch(ready, { me, rm, pushed, joinNote, leaveMs, notices, emit, c
  * A self-rescheduling timer that survives its own errors, backing off while they repeat (s.dead ends it).
  * The poll loop stamps s.lastTick on every tick, for the stall check.
  */
-function timerLoop({ clock, t, log, s }, where, fn, everyMs) {
-  let fails = 0, timer = null;
+function timerLoop({ clock, t, log, s }: { clock: Clock, t: Timings, log: Log, s: Pick<Session, 'dead' | 'lastTick'> }, where: string, fn: () => void, everyMs: number) {
+  let fails = 0, timer: unknown = null;
   const tick = () => {
     if (s.dead) return;
     let delay = everyMs;
@@ -366,47 +477,48 @@ function timerLoop({ clock, t, log, s }, where, fn, everyMs) {
       if (!s.dead) timer = clock.setTimeout(tick, delay);
     }
   };
-  return { start: now => { if (now) tick(); else timer = clock.setTimeout(tick, everyMs); }, stop: () => clock.clearTimeout(timer) };
+  return { start: (now: boolean) => { if (now) tick(); else timer = clock.setTimeout(tick, everyMs); }, stop: () => clock.clearTimeout(timer) };
 }
 
-function startSession(me, ctx) {
+function startSession(me: Seat, ctx: Ctx): Session {
   const { clock, fs, write, log, t, deps, sid } = ctx;
   const { rows, notices } = deps;
   const rm = deps.openRoom(me.code); // this session's room, held for its whole life (no re-binding)
   const reader = `deliver-${me.name}`;
-  const emit = (events, done = () => {}) => write(events.map(x => JSON.stringify(x)).join('\n') + '\n', done);
+  const emit = (events: TailEvent[], done: () => void = () => {}) => write(events.map(x => JSON.stringify(x)).join('\n') + '\n', done);
   // Where polling starts: taken before the backlog read, so nothing appended in between is missed (the
   // overlap is dropped by id).
   const tailer = rm.tailer({ fs });
   const last = rm.lastId();
   const after = startCursor(rm, reader, me, last);
   rm.setCursor(reader, after);
-  const s = { key: `${me.code}/${me.name}/${me.role}`, code: me.code, dead: false, lastTick: clock.now() };
+  // its calls (save, stalled, moved, killPoll, stop) are filled in below, before the loop reads them
+  const s = { key: `${me.code}/${me.name}/${me.role}`, code: me.code, dead: false, lastTick: clock.now() } as Session;
   const settleMs = me.role === 'claude' ? t.roomClaudeSettleMs : t.settleMs;
   const settleMaxMs = me.role === 'claude' ? t.roomClaudeSettleMaxMs : t.settleMaxMs;
   const cursor = cursorKeeper(rm, reader, after, { log, dead: () => s.dead });
   let seen = after;
   s.save = () => cursor.save();
   const pushed = visibleTo(me, rm);
-  const show = (e, entries, note) => pushed(e, entries, note) || rm.lane(me, e, entries) === 'pull';
+  const show: Show = (e, entries, note) => pushed(e, entries, note) || rm.lane(me, e, entries) === 'pull';
   // member_joined: say whether that member's row already runs here, so only a missing one is spawned
-  const joinNote = e => {
+  const joinNote = (e: LogEntry) => {
     if (e.kind !== 'member_joined') return '';
     try { return rows.joinNote(me, e.from); } catch { return ''; }
   };
 
   const flushCtx = { me, rm, pushed, joinNote, leaveMs: t.leaveMs, notices, emit, cursor };
-  const onFlush = ready => flushBatch(ready, flushCtx);
-  const batch = new Batcher({ clock, settleMs, settleMaxMs, retryMs: t.backoffMs, onFlush, onError: e => log('flush', e) });
+  const onFlush = (ready: Item[]) => flushBatch(ready, flushCtx);
+  const batch = new Batcher<Item>({ clock, settleMs, settleMaxMs, retryMs: t.backoffMs, onFlush, onError: e => log('flush', e) });
 
-  const held = new Map(); // name -> {e, timer}: member_left waiting leaveMs for a rejoin
-  const settled = e => guard('leave hold', () => { held.delete(e.from); batch.enqueue({ e, away: true }); });
-  const hold = e => ({ e, timer: clock.setTimeout(settled(e), t.leaveMs) });
-  function onEntry(e) {
+  const held = new Map<string, { e: LogEntry, timer: unknown }>(); // name -> {e, timer}: member_left waiting leaveMs for a rejoin
+  const settled = (e: LogEntry) => guard('leave hold', () => { held.delete(e.from); batch.enqueue({ e, away: true }); });
+  const hold = (e: LogEntry) => ({ e, timer: clock.setTimeout(settled(e), t.leaveMs) });
+  function onEntry(e: LogEntry): void {
     cursor.saw(e.id);
     if (e.kind === 'member_joined' && held.has(e.from)) {
       // left and back within leaveMs: neither notice is sent
-      const h = held.get(e.from);
+      const h = held.get(e.from)!; // has() above
       clock.clearTimeout(h.timer);
       held.delete(e.from);
       cursor.release(h.e.id);
@@ -422,7 +534,7 @@ function startSession(me, ctx) {
     }
     batch.enqueue({ e, away: false });
   }
-  const deliver = e => { if (s.dead || !(e.id > seen)) return; seen = e.id; onEntry(e); };
+  const deliver = (e: LogEntry) => { if (s.dead || !(e.id > seen)) return; seen = e.id; onEntry(e); };
 
   // The backlog: ids after the cursor, from the checkpointed view (no read from byte 0).
   let backlog = after < last;
@@ -438,9 +550,9 @@ function startSession(me, ctx) {
 
   // Health: the hash chain from the log.idx checkpoint (one line per break), the link of a room hosted elsewhere
   // (one line each time it goes down), and the room Claude's watchdog.
-  let breakKey = null, linkKey = null, flushKey, rowsSent;
+  let breakKey: string | null = null, linkKey: string | null = null, flushKey: string | null | undefined, rowsSent: string | null | undefined;
   function sendRows() {
-    let text = null;
+    let text: string | null = null;
     try {
       const missing = missingRowsText(me, sid, { now: clock.now(), rows, identity: deps.identity });
       text = [remindersText(me, rm, deps), missing].filter(Boolean).join('\n\n') || null;
@@ -456,7 +568,7 @@ function startSession(me, ctx) {
     if (flushKey === undefined || fresh) flushKey = f ? f.at : null; // a flush before this tail started is old news
     const flushed = fresh ? flushLine(f) : null;
     if ((l && l.key) === linkKey || (!l && st.state !== 'online')) { // no change (or coming back: the down line stands)
-      if (flushed && f.unsent && f.unsent.length) emit([{ type: 'health', text: flushed }]);
+      if (flushed && f && f.unsent && f.unsent.length) emit([{ type: 'health', text: flushed }]);
       return;
     }
     const was = linkKey;
@@ -465,10 +577,10 @@ function startSession(me, ctx) {
     else if (was) emit([{ type: 'health', text: flushed ? `${LINK_BACK}; ${flushed}` : LINK_BACK }]);
   }
   // A planned handoff: the ask waiting for this seat (a wake, once), or the asker told it was declined or expired.
-  let askKey = null;
+  let askKey: string | null = null;
   function handoffHealth() {
     const ho = deps.handoff();
-    if (!rm.store.isHost) {
+    if (!rm.store!.isHost) { // health() calls this only with a store
       const a = ho.pendingAsk(s.code, me.name, clock.now());
       if (!a || a.told_at) return;
       ho.markTold(s.code, a.id);
@@ -526,7 +638,7 @@ function startSession(me, ctx) {
   }
 
   // a timer callback that survives its own error
-  function guard(where, fn) { return () => { if (s.dead) return; try { fn(); } catch (e) { log(where, e); } }; }
+  function guard(where: string, fn: () => void) { return () => { if (s.dead) return; try { fn(); } catch (e) { log(where, e); } }; }
   const loops = { clock, t, log, s };
   const pollLoop = timerLoop(loops, 'poll', poll, t.pollMs);
   const healthLoop = timerLoop(loops, 'health check', health, t.healthMs);
@@ -535,7 +647,8 @@ function startSession(me, ctx) {
   sendRows();
 
   s.stalled = () => clock.now() - s.lastTick > t.stallMs;
-  s.moved = () => { try { return !!rm.store && deps.openRoom(me.code).store.isHost !== rm.store.isHost; } catch { return false; } };
+  // (a room without a store throws: the catch)
+  s.moved = () => { try { return !!rm.store && deps.openRoom(me.code).store!.isHost !== rm.store.isHost; } catch { return false; } };
   s.killPoll = () => pollLoop.stop(); // tests: simulate a poll loop that died
   s.stop = () => {
     pollLoop.stop();
@@ -547,36 +660,49 @@ function startSession(me, ctx) {
 }
 
 // ---------- the loop ----------
+/** runTail's options (lib/cli/main.ts; tests add a fake clock, timings and deps). */
+interface TailOpts {
+  clock?: Clock;
+  write: Write;
+  err?: (s: string) => unknown;
+  lookup: () => Seat | null;
+  timings?: Timings;
+  fs?: typeof nodeFs;
+  deps?: Partial<TailDeps>;
+  maxSeconds?: number | null;
+  sid?: string | null;
+}
 function runTail({
   clock = realClock, write, err = s => process.stderr.write(s), lookup, timings: tm = timings(), fs = nodeFs,
   deps = {}, maxSeconds = null, sid = null,
-} = {}) {
+}: TailOpts): { stop(): void, session(): Session | null } {
   const LIB = import.meta.dirname;
-  const d = {
-    openRoom: deps.openRoom || (() => { const r = require('./room.ts'); return code => r.open(code); })(),
-    heartbeat: deps.heartbeat || (me => require('./identity.ts').heartbeat(me)),
+  const d: Deps = {
+    openRoom: deps.openRoom || (() => { const r: typeof import('./room.ts') = require('./room.ts'); return (code: string) => r.open(code); })(),
+    heartbeat: deps.heartbeat || ((me: Seat) => (require('./identity.ts') as typeof import('./identity.ts')).heartbeat(me)),
     rows: deps.rows || require('./rows.ts'),
     notices: deps.notices || require('./notices.ts'),
-    roomClaude: deps.roomClaude ? () => deps.roomClaude : (() => { let o; return () => o || (o = require('./room-claude.ts')); })(),
+    roomClaude: deps.roomClaude ? () => deps.roomClaude! : (() => { let o: RoomClaudeLib | undefined; return () => o || (o = require('./room-claude.ts') as RoomClaudeLib); })(),
     identity: deps.identity || require('./identity.ts'),
     proposal: deps.proposal || require('./proposal.ts'),
-    linkStatus: deps.linkStatus || (code => require('./remote/link.ts').status(code)),
-    handoff: deps.handoff ? () => deps.handoff : (() => { let m; return () => m || (m = require('./handoff.ts')); })(),
-    admission: deps.admission ? () => deps.admission : (() => { let m; return () => m || (m = require('./remote/admission.ts')); })(),
-    sweepDoors: deps.sweepDoors || (code => require('./remote/enroll.ts').sweepDoors(code)),
+    linkStatus: deps.linkStatus || ((code: string) => (require('./remote/link.ts') as typeof import('./remote/link.ts')).status(code)),
+    handoff: deps.handoff ? () => deps.handoff! : (() => { let m: HandoffLib | undefined; return () => m || (m = require('./handoff.ts') as HandoffLib); })(),
+    admission: deps.admission ? () => deps.admission! : (() => { let m: AdmissionLib | undefined; return () => m || (m = require('./remote/admission.ts') as AdmissionLib); })(),
+    sweepDoors: deps.sweepDoors || ((code: string) => (require('./remote/enroll.ts') as typeof import('./remote/enroll.ts')).sweepDoors(code)),
   };
   const log = errorLog(err, clock, tm.errorLogMs);
-  const ctx = { clock, fs, write, log, t: tm, deps: d, sid };
+  const ctx: Ctx = { clock, fs, write, log, t: tm, deps: d, sid };
   // say which seat is followed, when that changes
-  let seatSent;
-  const sendSeat = me => {
-    const seat = me ? { name: me.name, code: me.code, role: me.role === 'claude' ? 'claude' : 'member', addr: `${me.name}.${me.code}` } : null;
+  let seatSent: string | undefined;
+  const sendSeat = (me: Seat | null) => {
+    const seat: TailSeat | null = me ? { name: me.name, code: me.code, role: me.role === 'claude' ? 'claude' : 'member', addr: `${me.name}.${me.code}` } : null;
     const key = JSON.stringify(seat);
     if (key === seatSent) return;
     seatSent = key;
-    try { write(JSON.stringify({ type: 'seat', seat }) + '\n', () => {}); } catch (e) { log('seat event', e); }
+    const ev: TailEvent = { type: 'seat', seat };
+    try { write(JSON.stringify(ev) + '\n', () => {}); } catch (e) { log('seat event', e); }
   };
-  let sess = null, timer = null, stopped = false;
+  let sess: Session | null = null, timer: unknown = null, stopped = false;
 
   function stopSess() {
     if (!sess) return;
@@ -588,7 +714,7 @@ function runTail({
 
   function check() {
     if (stopped) return;
-    let me = null, failed = false;
+    let me: Seat | null = null, failed = false;
     try { me = lookup(); } catch (e) { failed = true; log('seat lookup', e); } // transient: keep the current state
     if (!failed) {
       const key = me ? `${me.code}/${me.name}/${me.role}` : null;
