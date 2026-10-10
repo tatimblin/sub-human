@@ -7,7 +7,7 @@
  * answering there without next(e) would skip every other plugin's and the user's hooks (cc CONTRACT
  * classic-chain-order). Stop's additionalContext continues the turn (cc CONTRACT stop-additional-context).
  */
-import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS, SHIM_MODE } from './core/shim.mjs';
+import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS, SHIM_MODE, asNotice } from './core/shim.mjs';
 import { consentNeeded, reviewOpenOf } from './core/prefilter.mjs';
 import { mergeClassic } from './core/prompt.mjs';
 import { asHello } from './core/state.mjs';
@@ -38,7 +38,7 @@ export function registerConsent(on) {
       timeoutMs: SHIM_TIMEOUT_MS,
     });
     const { result, systemMessage, subHuman } = toClassic('Stop', run);
-    if (systemMessage) $.ui.log(systemMessage);
+    if (systemMessage) for (const line of asNotice(systemMessage).split('\n')) if (line.trim()) $.ui.log(line);
     const open = reviewOpenOf(subHuman);
     if (open !== undefined) await $.state.set(REVIEW, open);
     return mergeClassic(result, await next(e));

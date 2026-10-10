@@ -24,7 +24,7 @@ async function until(cond: () => boolean, ms = 3000) {
   }
 }
 
-const NOTICE = 'sub-human: a room message could not be delivered; `sub-human read` shows the room'
+const NOTICE = "a room message didn't arrive here. Run /sub-human doctor."
 type Opts = {
   hello?: any, pieces?: string[], gate?: Promise<void>,
   /** How the session takes a prompt the module submits (n counts from 0): entered, dropped by a hook, or failed. */

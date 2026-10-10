@@ -25,12 +25,18 @@
 // (hooks/seat-key.js), made before the seat: its public key rides on member_joined, which pins it for the room's life
 // (lib/room/envelope.js); a join whose key differs from the one pinned for that name is refused (RoomError AUTH) and
 // the seat given back. A seat needs the hooks module (its guard, prompt gate and delivery), so without a fresh hello
-// lease for this session (identity.modLeaseOk) the join is refused with NO_MODULE.
-// Out: a join that worked is the mechanics block (common.js contextBlock; a systemMessage only when the room's Claude
-// did not start, or the bypass-permissions warning); the title comes on the next prompt (mod/prompt.mjs). Everything
-// else is a block: no model turn. A PIN must never reach the model, so every `join`, `invite` and `admit` prompt, and
-// any prompt with a word of digits, is answered with hidden(): the typed prompt is suppressed from the conversation
-// (suppressOriginalPrompt travels with a block only), whatever form it turns out to be or whatever is wrong with it.
+// lease for this session (identity.modLeaseOk) the join is refused with noModule(): why, as far as it can tell.
+// Two ways in. Normally the hooks module runs this script for the command first (mod/command.mjs, command.run;
+// sub_human_via "command.run" with the session's nonce) and shows what it says itself: a reply is
+// {subHuman: {say, refused, shareable}}, which the module draws as a plain notice or as the command's own output, never
+// as "blocked by hook", and a join that worked also carries the mechanics block (the module then lets the command
+// expand and hands that block to the model). Without the module (classic: Claude Code runs this hooks.json hook itself)
+// a reply is a block, drawn "UserPromptExpansion operation blocked by hook: sub-human: …".
+// Out: a join that worked is the mechanics block (common.js contextBlock) plus a one-line confirmation for the person
+// (module) or a systemMessage only when something in it is a warning (classic); the title comes on the next prompt
+// (mod/prompt.mjs). Everything else is a reply: no model turn. A PIN must never reach the model, so every `join`,
+// `invite` and `admit` prompt, and any prompt with a word of digits, is answered with hidden(): the typed prompt is
+// suppressed from the conversation, whatever form it turns out to be or whatever is wrong with it.
 // For the same reason a join that carries a PIN never takes the seat in that step (the seat's mechanics block would
 // go to the model with the prompt): once the host lets this machine in, a bare /sub-human (no PIN) takes it.
 const { identity, room, out, run, whoami, presence, contextBlock } = require('./common.js');
@@ -51,62 +57,77 @@ const { roomClaudePresence } = require('../lib/room/members.js');
 
 const COMMANDS = new Set(['sub-human:sub-human', 'sub-human']);
 const ROOM_CLAUDE_AGENT = 'sub-human:room-claude';
-const USAGE = 'usage: /sub-human [NAME [ROOM]] opens or joins a room (your name defaults to your git name); /sub-human invite gives a line for someone on another machine. All commands: /sub-human help';
+const HELP_HINT = 'All commands: /sub-human help';
+const USAGE = `usage: /sub-human [NAME] joins or opens a room. ${HELP_HINT}`;
 const HELP = [
-  'sub-human commands:',
-  '  /sub-human                    in a room: who is here and how to invite; else join the open room, or open one, as your git name',
-  '  /sub-human NAME [ROOM]        join (or open) a room as NAME; ROOM only when more than one is open',
+  'commands:',
+  '  /sub-human                    in a room: who is here; else join the open room, or open one, as your git name',
+  '  /sub-human NAME [ROOM]        join (or open) a room as NAME; ROOM (like vole-8126) only when more than one is open',
   '  /sub-human invite             a line for someone on another machine to join this room (over ssh to this machine)',
   '      --ssh USER@HOST [--via JUMP]   the address they reach this machine at (default: SUB_HUMAN_SSH_ADDR, else you@this-host)',
   '      --web | --public | --url URL   over the web: Tailscale Serve (your tailnet), Tailscale Funnel (public), or your own HTTPS front',
   '      --stop                         stop serving this room over the web',
-  '      --cancel [REF]                 cancel an invite nobody used yet',
-  '  /sub-human join HOST ROOM PIN [--as NAME] [--via JUMP]   the line from an invite; the host\'s card lets you in',
+  '      --cancel [ID]                  cancel an invite nobody used yet (ID: only when several are open; it lists them)',
+  '  /sub-human join HOST ROOM PIN [--as NAME] [--via JUMP]   the line from an invite; the host lets you in',
   '  /sub-human join URL PIN [--as NAME]                       the same over the web',
   '  /sub-human join HOST ROOM [--as NAME] [--via JUMP] [--home PATH]   a room on a machine you can already ssh to: no invite',
-  '  /sub-human admit [REF]        (host) who is waiting to join; let one in (the card does the same)',
-  '  /sub-human kick NAME          (host) end NAME\'s connection to the room',
+  '  /sub-human admit [ID]         (host) who is waiting to join, and the ID that lets one in (the card does the same)',
+  '  /sub-human kick NAME          (host) end the connection NAME joined over',
   '  /sub-human leave              leave the room (the session stays open)',
   '  /sub-human handoff NAME [USER@HOST [--via JUMP] | https://FRONT]   ask NAME to host the room',
-  '  /sub-human doctor             what is wrong on this machine, read only (sub-human doctor --fix in a terminal fixes it)',
+  '  /sub-human doctor             what is wrong on this machine, and how to fix it (read only)',
   '  /sub-human help               this list',
   '  @room TEXT    post your exact words to the room       @claude TEXT    the same, and wake the room\'s Claude',
 ].join('\n');
-const JOIN_USAGE = 'usage: /sub-human join HOST ROOM PIN (the line from an invite), /sub-human join URL PIN, or /sub-human join HOST ROOM over your own ssh login. All commands: /sub-human help';
-const INVITE_USAGE = 'usage: /sub-human invite [--ssh USER@HOST [--via JUMP] | --web | --public | --url https://FRONT] | --stop | --cancel [REF]';
+const JOIN_USAGE = `usage: /sub-human join HOST ROOM PIN (the line from an invite). ${HELP_HINT}`;
+const INVITE_USAGE = `usage: /sub-human invite (an ssh line; --web for the web). ${HELP_HINT}`;
 const BYPASS = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
-const NO_MODULE = 'sub-human needs Claude Code 2.1.292+ with function hooks on; not in --bare or safe mode';
 const DIGITS = /^[0-9]{3,10}$/;
 
-// A refusal is also the systemMessage: Remote Control shows a hook's systemMessage, not a block reason.
-const block = reason => out({ decision: 'block', reason: `sub-human: ${reason}`, systemMessage: `sub-human: ${reason}` });
-// What only the person may read (an invite, a PIN they typed): the block reason alone, and the typed prompt hidden
-// from the conversation (suppressOriginalPrompt travels with a block only). shareable: also the systemMessage
-// (Remote Control shows it), for text that holds no secret and echoes nothing typed.
-const hidden = (reason, { shareable = false } = {}) => out({
-  decision: 'block', reason: `sub-human: ${reason}`, ...(shareable ? { systemMessage: `sub-human: ${reason}` } : {}),
-  hookSpecificOutput: { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true },
-});
+// Through the module (mod/command.mjs): set once per prompt, before any reply, from an attested sub_human_via.
+let viaModule = false;
+/**
+ * The one reply to this prompt. Through the module: {subHuman: {say, refused, shareable}} (the module shows it; shareable:
+ * no secret and nothing typed in it, so it may be the command's output, which Remote Control and the model also see).
+ * Classic: a block, its reason the text after "sub-human: " (Claude Code shows only the reason, never a systemMessage
+ * beside it, and never to the model); suppress: the typed prompt is kept out of the conversation as well.
+ */
+function reply(text, { refused = false, shareable = true, suppress = false } = {}) {
+  const t = `${refused ? '✗ ' : ''}${text}`;
+  if (viaModule) return out({ subHuman: { say: t, refused, shareable: shareable && !suppress } });
+  return out({
+    decision: 'block', reason: `sub-human: ${t}`,
+    ...(suppress ? { hookSpecificOutput: { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true } } : {}),
+  });
+}
+/** A refusal of a prompt that holds no secret. */
+const block = reason => reply(reason, { refused: true });
+/** What only the person may read (an invite, a PIN they typed): never the model's, the typed prompt hidden too.
+ * shareable: the text itself holds no secret and echoes nothing typed (still kept off the model with the prompt). */
+const hidden = (text, { refused = true } = {}) => reply(text, { refused, suppress: true });
+/** Not a refusal: what the person asked for (help, who is here, an invite, done). */
+const notice = (text, { secret = false } = {}) => reply(text, { suppress: secret || refuse === hiddenRefusal });
+const hiddenRefusal = r => hidden(r);
 // How this prompt's refusals go out: hidden() when it could carry a PIN (set once per prompt, before any parsing)
 let refuse = block;
 const fail = msg => { refuse(msg); return null; };
 
 /** A note in a join's message that the person must hear: the room's Claude could not start, or its last start failed. */
-const TROUBLE = /· no claude \(|the last start failed: /;
+const TROUBLE = /could not start|the last start failed: /;
 
 /**
- * A join that worked: the mechanics block for the model. No systemMessage, which Claude Code draws as a warning (the
- * session title and the room row say it worked), unless something in it is one: the room's Claude
- * did not start, or the bypass-permissions warning.
+ * A join that worked: the mechanics block for the model, and msg (one line: "joined vole-8126 as alice · …") for the
+ * person. Through the module msg is a notice. Classic: no systemMessage, which Claude Code draws as a warning (the
+ * session title and the room row say it worked), unless something in it is one: the room's Claude did not start, or
+ * the bypass-permissions warning.
  */
 function success(me, lead, msg, input) {
   presence(me, 'working');
   const bypass = input.permission_mode === 'bypassPermissions' && me.role !== 'claude' ? BYPASS : '';
   const warn = bypass || TROUBLE.test(msg) ? `sub-human: ${msg}${bypass}` : null;
-  out({
-    ...(warn ? { systemMessage: warn } : {}),
-    hookSpecificOutput: { hookEventName: 'UserPromptExpansion', additionalContext: contextBlock(me, lead) },
-  });
+  const hso = { hookEventName: 'UserPromptExpansion', additionalContext: contextBlock(me, lead) };
+  if (viaModule) return out({ hookSpecificOutput: hso, subHuman: { say: `${msg}${bypass}`, joined: true, shareable: true } });
+  out({ ...(warn ? { systemMessage: warn } : {}), hookSpecificOutput: hso });
 }
 
 /** Close rooms where only the room's Claude is left once they have been orphaned long enough (best effort; host only). */
@@ -140,88 +161,89 @@ function bindRoomClaude(input, base, cur, args) {
 }
 
 const hostOnly = (cur, what) => (!cur ? `join a room first (/sub-human); then /sub-human ${what}.`
-  : !identity.isHost(cur.code) ? `room ${cur.code} is hosted on another machine; its host does that.` : null);
+  : !identity.isHost(cur.code) ? `room ${cur.code} is hosted on another machine; only its host can do that.` : null);
 
 // ---------- invite ----------
-/** `/sub-human invite [--ssh [DEST]] [--via J] | --web | --public | --url U [--port P] | --pipe | --stop | --cancel [REF]`. */
+/** `/sub-human invite [--ssh [DEST]] [--via J] | --web | --public | --url U [--port P] | --pipe | --stop | --cancel [ID]`. */
 function invite(cur, argv) {
-  const why = hostOnly(cur, 'invite gives an invite to it');
+  const why = hostOnly(cur, 'invite');
   if (why) return refuse(why);
   const p = parseArgs(argv, { ssh: '?', via: 1, web: 0, public: 0, url: 1, port: 1, pipe: 0, stop: 0, cancel: '?' });
   const f = p.flags;
   const bad = p.error ? p.error.split(' ')[0] : p.rest.length ? p.rest[0] : f.port !== undefined && !/^[0-9]{1,5}$/.test(f.port) ? '--port' : null;
-  if (bad !== null) return refuse(`${INVITE_USAGE} ("${bad}"?)`);
+  if (bad !== null) return refuse(`"${bad}" isn't an invite option. ${INVITE_USAGE}`);
   const web = !!(f.web || f.public || f.url !== undefined);
   const ways = [f.ssh !== undefined || f.via !== undefined, web, !!f.pipe, !!f.stop, f.cancel !== undefined].filter(Boolean).length;
-  if (ways > 1) return refuse(`pick one: ${INVITE_USAGE}`);
+  if (ways > 1) return refuse(`pick one way at a time. ${INVITE_USAGE}`);
   try {
-    if (f.stop) return hidden(require('../lib/remote/webhost.js').unhost(cur.code).text, { shareable: true });
-    if (f.cancel !== undefined) return hidden(hosting.cancelInvite(cur.code, f.cancel === true ? undefined : f.cancel).text, { shareable: true });
+    if (f.stop) return notice(require('../lib/remote/webhost.js').unhost(cur.code).text);
+    if (f.cancel !== undefined) return notice(hosting.cancelInvite(cur.code, f.cancel === true ? undefined : f.cancel).text);
     const r = web
       ? require('../lib/remote/webhost.js').hostWeb(cur.code, { tailscale: !!(f.web || f.public), funnel: !!f.public, url: f.url, port: f.port !== undefined ? Number(f.port) : undefined, by: cur.name })
       : hosting.hostInvite(cur.code, { ssh: f.pipe ? undefined : f.ssh === undefined ? true : f.ssh, via: f.via, pipe: !!f.pipe, by: cur.name });
-    // the block reason only (this terminal, never the model): not a systemMessage, which Remote Control would carry off
-    return hidden(r.text);
+    // for this terminal only, never the model, nor Remote Control: it holds the PIN
+    return notice(r.text, { secret: true });
   } catch (e) { return refuse(e.message); }
 }
 
 // ---------- admit, kick, leave ----------
-/** `/sub-human admit [REF]`: the host's consent, as the card gives it. */
+/** `/sub-human admit [ID]`: the host's consent, as the card gives it. */
 function admit(cur, argv) {
-  const why = hostOnly(cur, 'admit lets in someone waiting to join it');
+  const why = hostOnly(cur, 'admit');
   if (why) return refuse(why);
-  if (argv.length > 1 || (argv[0] && !/^[0-9a-f]{6,12}$/.test(argv[0]))) return refuse('usage: /sub-human admit [REF] (no REF: who is waiting)');
+  if (argv.length > 1 || (argv[0] && !/^[0-9a-f]{6,12}$/.test(argv[0]))) return refuse(`usage: /sub-human admit (who is waiting), then /sub-human admit ID from that list. ${HELP_HINT}`);
   try {
     const adm = require('../lib/remote/admission.js');
     if (!argv.length) {
       const reqs = adm.pending(cur.code);
-      return hidden(reqs.length ? `waiting to join room ${cur.code}: ${reqs.map(q => `${adm.describe(q)}: /sub-human admit ${q.ref}`).join('; ')}` : `nobody is waiting to join room ${cur.code}.`, { shareable: true });
+      return notice(reqs.length ? `waiting to join room ${cur.code}: ${reqs.map(q => `${adm.describe(q)}: let them in with /sub-human admit ${q.ref}`).join('; ')}` : `nobody is waiting to join room ${cur.code}.`);
     }
     const sign = p => envelope.sign(p, store.humanKey(cur.code, cur.name), { room: cur.code, from: cur.name });
-    return hidden(adm.letIn(cur.code, argv[0], { by: cur.name, sign }).text, { shareable: true });
+    return notice(adm.letIn(cur.code, argv[0], { by: cur.name, sign }).text);
   } catch (e) { return refuse(e.message); }
 }
 
 /** `/sub-human kick NAME`: end the connection NAME joined over. */
 function kick(cur, argv) {
-  const why = hostOnly(cur, 'kick NAME ends their connection');
+  const why = hostOnly(cur, 'kick NAME');
   if (why) return refuse(why);
-  if (argv.length !== 1) return refuse('usage: /sub-human kick NAME (someone who joined from another machine)');
+  if (argv.length !== 1) return refuse(`usage: /sub-human kick NAME (someone who joined from another machine). ${HELP_HINT}`);
   if (argv[0] === cur.name) return refuse('that is you; /sub-human leave leaves the room.');
-  try { return hidden(hosting.kick(cur.code, argv[0]).text, { shareable: true }); } catch (e) { return refuse(e.message); }
+  try { return notice(hosting.kick(cur.code, argv[0]).text); } catch (e) { return refuse(e.message); }
 }
 
 /** `/sub-human leave`: exactly as exiting the session would, without /exit. The tail goes quiet with the seat. */
 function leave(cur, argv) {
-  if (argv.length) return refuse('usage: /sub-human leave');
-  if (!cur) return refuse('this session is not in a room.');
+  if (argv.length) return refuse(`usage: /sub-human leave. ${HELP_HINT}`);
+  if (!cur) return refuse('this session is not in a room; /sub-human joins one.');
   seats.exit(cur.code, cur.name, 'left');
-  return block(`you left room ${cur.code}. /sub-human joins again.`);
+  return notice(`left ${cur.code} · /sub-human joins again`);
 }
 
 // ---------- doctor, help ----------
 function doctor(argv) {
-  if (argv.includes('--fix') || argv.includes('--bundle')) return refuse(`${argv.includes('--fix') ? '--fix' : '--bundle'} changes or writes files: run sub-human doctor ${argv.join(' ')} in a terminal outside Claude Code.`);
-  if (argv.length) return refuse('usage: /sub-human doctor');
+  const { cliLine } = require('../lib/text.js');
+  if (argv.includes('--fix') || argv.includes('--bundle')) return refuse(`${argv.includes('--fix') ? '--fix' : '--bundle'} changes or writes files, so it runs in a terminal outside Claude Code: ${cliLine(`doctor ${argv.join(' ')}`)}`);
+  if (argv.length) return refuse(`usage: /sub-human doctor. ${HELP_HINT}`);
   const path = require('node:path');
   const r = require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'sub-human'), 'doctor', '--quick'], {
     encoding: 'utf8', timeout: 8000, env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
   });
   const text = `${r.stdout || ''}${r.stderr || ''}`.trim();
-  return hidden(text || `doctor did not finish (${r.error ? r.error.message : `exit ${r.status}`}); run sub-human doctor in a terminal.`, { shareable: true });
+  return text ? notice(text) : refuse(`the check did not finish (${r.error ? r.error.message : `exit ${r.status}`}). Run it in a terminal: ${cliLine('doctor')}`);
 }
 
 // ---------- handoff ----------
 /** `/sub-human handoff NAME [USER@HOST[:PORT] [--via JUMP] | https://FRONT]`: ask NAME to host the room cur is in. */
 function askHandoff(cur, argv) {
-  if (!cur) return block('join a room first; /sub-human handoff NAME then asks NAME to host it.');
+  if (!cur) return block('join a room first (/sub-human); then /sub-human handoff NAME asks NAME to host it.');
   const p = parseArgs(argv, { via: 1 });
-  if (p.error || p.rest.length < 1 || p.rest.length > 2) return block('usage: /sub-human handoff NAME [USER@HOST[:PORT] [--via JUMP] | https://FRONT]');
+  if (p.error || p.rest.length < 1 || p.rest.length > 2) return block(`usage: /sub-human handoff NAME. ${HELP_HINT}`);
   const [to, dest] = p.rest;
   const via = p.flags.via;
   let locator;
   if (/^https?:\/\//.test(dest || '')) { // a front to the new host's web listener (lib/remote/webhost.js)
-    if (via !== undefined) return block('--via is for an ssh address (USER@HOST[:PORT] --via JUMP), not a web front.');
+    if (via !== undefined) return block('--via goes with an ssh address (USER@HOST --via JUMP), not a web address.');
     try { locator = require('../lib/remote/webhost.js').webLocator(dest, cur.code); } catch (e) { return block(e.message); }
   } else {
     if (via !== undefined && dest === undefined) return block('--via goes with the ssh address the others reach the new host at: /sub-human handoff NAME USER@HOST --via JUMP');
@@ -229,22 +251,23 @@ function askHandoff(cur, argv) {
   }
   if (dest !== undefined && !locator) {
     return block(via !== undefined && link.sshLocator(dest)
-      ? `--via "${via}" is not a plain [USER@]HOST[:PORT] (comma-separated hops).`
-      : `"${dest}" is not a plain USER@HOST[:PORT] (or https://FRONT) the others can reach ${to}'s machine at.`);
+      ? `--via "${via}" isn't a plain [USER@]HOST[:PORT] (several hops: comma-separated).`
+      : `"${dest}" isn't a plain USER@HOST[:PORT] (or https://ADDRESS) the others can reach ${to}'s machine at.`);
   }
   let d;
   try {
     d = handoff.ask(cur.code, { from: cur.name, to, locator, sign: q => envelope.sign(q, store.humanKey(cur.code, cur.name), { room: cur.code, from: cur.name }) });
   } catch (e) {
     if (!(e instanceof room.RoomError)) throw e;
-    return block(`could not hand room ${cur.code} off: ${e.message}.`);
+    return block(`could not hand room ${cur.code} over: ${e.message}.`);
   }
-  return out({ decision: 'block', reason: `sub-human: asked ${to} to host room ${cur.code}. Their Claude shows them a card; nothing moves unless they agree there (until ${d.expires_at.slice(11, 16)} UTC). If they do, the room's log, links and claude move to their machine, the room's Claude then runs on ${to}'s model account, and this machine follows as a member.` });
+  return notice(`asked ${to} to host room ${cur.code}: a card asks them until ${d.expires_at.slice(11, 16)} UTC, and nothing moves unless they agree. If they do, the room and its Claude move to ${to}'s machine (on ${to}'s Claude account), and you stay in it.`);
 }
 
 // ---------- join ----------
-const YOU_HINT = d => `"${d}" still has the example's placeholder: put your user name on that machine in place of ${d.split('@')[0]} (or just the ssh alias, e.g. dev)`;
+const YOU_HINT = d => `"${d}" still has the example's placeholder: put your user name on that machine in place of ${d.split('@')[0]} (or just its ssh alias, e.g. dev)`;
 const sameLogin = (a, b) => !!a && !!b && a.login === true && ['user', 'host', 'port', 'via', 'remoteHome'].every(k => a[k] === b[k]);
+const NO_START = code => `the connection to room ${code} did not start. Run /sub-human doctor.`;
 
 /** A daemon still dialing the old host: stop it, so the start that follows dials the link file's new one. */
 function restartLink(code) {
@@ -261,7 +284,7 @@ const locatorOf = t => (t && t.kind === 'ssh' ? link.sshLocator(`${t.user}@${t.h
 /** A name typed with --as: checked; else the default name. null after a refuse(). */
 function nameFor(as, cwd) {
   if (as !== undefined) {
-    if (!identity.NAME_RE.test(as)) return fail(`invalid name "${as}" (letters, digits, . _ -, up to 32)`);
+    if (!identity.NAME_RE.test(as)) return fail(`"${as}" isn't a name (letters, digits, . _ -, up to 32)`);
     if (identity.RESERVED.includes(as.toLowerCase())) return fail(`"${as}" is reserved; pick another name`);
     return as;
   }
@@ -277,40 +300,46 @@ function join(argv, cwd) {
   const p = parseArgs(argv, { as: 1, via: 1, home: 1 });
   if (p.error) return fail(`${p.error}. ${JOIN_USAGE}`);
   const flag = p.rest.find(a => a.startsWith('--'));
-  if (flag) return fail(`"${flag}" is not a join flag. ${JOIN_USAGE}`);
+  if (flag) return fail(`"${flag}" isn't a join option. ${JOIN_USAGE}`);
   const r = p.rest;
   const { via, home } = p.flags;
   if (/^https?:\/\//.test(r[0] || '')) {
-    if (r.length !== 2) return fail(r.length < 2 ? 'a web join needs the PIN the host sent with the URL: /sub-human join URL PIN' : JOIN_USAGE);
-    if (via !== undefined || home !== undefined) return fail('--via and --home are for an ssh address, not a URL');
+    if (r.length !== 2) return fail(r.length < 2 ? 'a web join needs the PIN the host sent with the address: /sub-human join URL PIN' : JOIN_USAGE);
+    if (via !== undefined || home !== undefined) return fail('--via and --home go with an ssh address, not a web one');
     if (!auth.SHORT_PIN_RE.test(r[1])) return fail('the PIN is the 4 digits that came with the invite: /sub-human join URL PIN');
     const m = /^(https?):\/\/([^#\s]+)$/.exec(r[0]);
     const spec = m && wsT().parse(`//${m[2].replace(/\/+$/, '')}`);
     const code = spec && spec.path.split('/').filter(Boolean).pop();
-    if (!spec || !identity.CODE_RE.test(code || '')) return fail('that is not a join URL (https://HOST/…/sub-human/ROOM); ask the host to copy the whole line');
+    if (!spec || !identity.CODE_RE.test(code || '')) return fail('that isn\'t a join address (https://HOST/…/sub-human/ROOM). Paste the whole line the host sent you.');
     const name = nameFor(p.flags.as, cwd);
     if (!name) return null;
     return linkShort({ name, code, pin: r[1], transport: link.transportOf(wsT().locator(spec, m[1] === 'https')) });
   }
   if (r.length < 2 || r.length > 3) return fail(r.length === 1 ? `which room? ${JOIN_USAGE}` : JOIN_USAGE);
   const [dest, code, pin] = r;
-  if (!identity.CODE_RE.test(code)) return fail(`"${code}" is not a room (like vole-8126). ${JOIN_USAGE}`);
+  if (!identity.CODE_RE.test(code)) return fail(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
   if (pin !== undefined) {
     if (!auth.SHORT_PIN_RE.test(pin)) return fail('the PIN is the 4 digits that came with the invite: /sub-human join HOST ROOM PIN');
-    if (home !== undefined) return fail('--home is for a join over your own ssh login (no PIN): /sub-human join HOST ROOM --home PATH');
+    if (home !== undefined) return fail('--home goes with a join over your own ssh login (no PIN): /sub-human join HOST ROOM --home PATH');
     const name = nameFor(p.flags.as, cwd);
     if (!name) return null;
     if (/^pipe:\//.test(dest) || dest.startsWith('/')) { // a second home on this machine (tests, the demo)
-      if (via !== undefined) return fail('--via is for an ssh address');
+      if (via !== undefined) return fail('--via goes with an ssh address');
       const transport = link.transportOf(dest.startsWith('/') ? `pipe:${dest}` : dest);
-      return transport ? linkShort({ name, code, pin, transport }) : fail(`"${dest}" is not a sub-human home on this machine`);
+      return transport ? linkShort({ name, code, pin, transport }) : fail(`"${dest}" isn't a sub-human folder on this machine`);
     }
     if (sshT().placeholder(dest)) return fail(YOU_HINT(dest));
     const loc = link.sshLocator(sshT().withUser(dest), via !== undefined ? { via } : {});
-    if (!loc) return fail(via !== undefined && link.sshLocator(dest) ? `--via "${via}" is not a plain [USER@]HOST[:PORT] list` : `"${dest}" is not a plain USER@HOST[:PORT] or ssh alias`);
+    if (!loc) return fail(via !== undefined && link.sshLocator(dest) ? `--via "${via}" isn't a plain [USER@]HOST[:PORT] list` : `"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
     return linkShort({ name, code, pin, transport: link.transportOf(loc) });
   }
   return linkLogin({ dest, code, via, home, as: p.flags.as, cwd });
+}
+
+/** Where a join started with a PIN stands (hosting.joinText): a refusal when it was refused, else a notice. */
+function joinReply(code, name, o) {
+  const text = hosting.joinText(code, name, o);
+  return o.state === 'refused' ? refuse(text) : notice(text);
 }
 
 /** An invite's PIN: link only, the PAKE in the link daemon; always a hidden reply. */
@@ -318,13 +347,14 @@ function linkShort({ name, code, pin, transport }) {
   if (identity.roomExists(code) && identity.isHost(code)) return fail(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur = links.get(code);
   if (cur && cur.token && locatorOf(cur.transport) === locatorOf(transport)) {
-    return hidden(`this machine is linked to room ${code} already: /sub-human ${name} ${code}`);
+    notice(`this machine is in room ${code} already; /sub-human ${name} ${code} takes your place there.`);
+    return null;
   }
   if (cur) restartLink(code); // a pending join replaced, or the room's host moved: dial with the new file
   try { hosting.joinShort({ code, transport, pin, name }); } catch (e) { return fail(e.message); }
   if (cur) links.set(code, { ...links.get(code), rebind: true }); // a seat here joins again over the new link
-  if (!link.start(code)) return fail(`the link to room ${code} did not start; run /sub-human doctor`);
-  hidden(hosting.joinText(code, name, hosting.outcome(code)));
+  if (!link.start(code)) return fail(NO_START(code));
+  joinReply(code, name, hosting.outcome(code));
   return null;
 }
 
@@ -333,10 +363,10 @@ function linkShort({ name, code, pin, transport }) {
 function linkLogin({ dest: typed, code, via, home, as, cwd }) {
   if (sshT().placeholder(typed)) return fail(YOU_HINT(typed));
   const dest = sshT().withUser(typed);
-  if (!sshT().dest(dest)) return fail(`"${dest}" is not a plain USER@HOST[:PORT] or ssh alias. ${JOIN_USAGE}`);
-  if (via !== undefined && !sshT().jump(via)) return fail(`--via "${via}" is not a plain [USER@]HOST[:PORT] (comma-separated hops).`);
+  if (!sshT().dest(dest)) return fail(`"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias. ${JOIN_USAGE}`);
+  if (via !== undefined && !sshT().jump(via)) return fail(`--via "${via}" isn't a plain [USER@]HOST[:PORT] (several hops: comma-separated).`);
   const spec = sshT().loginSpec(dest, { via, home });
-  if (!spec) return fail(`--home "${home}" is not a plain absolute path (the host's sub-human home, e.g. /home/you/.sub-human).`);
+  if (!spec) return fail(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
   const name = nameFor(as, cwd);
   if (!name) return null;
   if (identity.roomExists(code) && identity.isHost(code)) return fail(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
@@ -349,10 +379,13 @@ function linkLogin({ dest: typed, code, via, home, as, cwd }) {
   try {
     links.set(code, { code, transport: { ...spec, ...(mux ? { mux: true } : {}) }, created_at: new Date().toISOString(), ...(cur ? { rebind: true } : {}) });
   } catch (e) { return fail(e.message); }
-  if (!link.start(code)) return fail(`the link to room ${code} did not start; run /sub-human doctor`);
+  if (!link.start(code)) return fail(NO_START(code));
   const o = hosting.outcome(code);
-  if (o.state === 'refused') return fail(`could not link to room ${code} over ${at}: ${o.reason}`);
-  if (o.state !== 'linked') return fail(`the link to room ${code} over ${at} is still connecting${o.reason ? ` (${o.reason})` : ''}; type /sub-human ${name} ${code} in a moment (/sub-human doctor says why if it does not come up)`);
+  if (o.state === 'refused') return fail(`could not reach room ${code} over ${at}: ${o.reason}`);
+  if (o.state !== 'linked') {
+    notice(`still connecting to room ${code} over ${at}${o.reason ? ` (${o.reason})` : ''}. Type /sub-human ${name} ${code} in a moment; if it doesn't come up, /sub-human doctor says why.`);
+    return null;
+  }
   return { name, code, isDefault: as === undefined };
 }
 
@@ -372,10 +405,10 @@ function finishJoin(l) {
     return fail(`could not join room ${code}: ${why.reason}`);
   }
   if (l.token) return { name, code, pending: true };
-  if (!link.start(code)) return fail(`the link to room ${code} did not start; run /sub-human doctor`);
+  if (!link.start(code)) return fail(NO_START(code));
   const o = hosting.outcome(code, { waitMs: 2000 });
   if (o.state === 'linked') return { name, code, pending: true };
-  refuse(hosting.joinText(code, name, o));
+  joinReply(code, name, o);
   return null;
 }
 
@@ -384,15 +417,23 @@ function pickRoom() {
   sweep();
   const open = identity.openRooms();
   if (open.length <= 1) return { code: open[0] || null };
-  return fail(`${open.length} rooms are open (${open.join(', ')}); say which: /sub-human ${'NAME ROOM'}.`);
+  return fail(`${open.length} rooms are open (${open.join(', ')}); say which: /sub-human NAME ROOM.`);
 }
 
-/** Bare `/sub-human` in a room: who is here, and how to bring someone in. */
+/** Who else is in the room, for a line: "with bob, carol", or how many beyond three. */
+function withWhom(code, name) {
+  const here = others(code, name);
+  if (!here) return 'nobody else here yet';
+  const names = here.split(', ');
+  return names.length > 3 ? `${names.length} others here` : `with ${here}`;
+}
+
+/** Bare `/sub-human` in a room: who is here, and how to bring someone in; a connection that stopped running starts again. */
 function status(cur) {
-  const here = others(cur.code, cur.name);
   const host = identity.isHost(cur.code);
-  return block(`you are ${cur.name} in room ${cur.code}${here ? ` with ${here}` : ' (nobody else yet)'}. `
-    + `${host ? 'Someone on this machine: /sub-human (in their session). Another machine: /sub-human invite. ' : ''}Leave: /sub-human leave. All commands: /sub-human help`);
+  if (!host) { try { link.start(cur.code); } catch { /* the doctor says why */ } } // its connection, if it stopped running
+  return notice(`you're ${cur.name} in room ${cur.code}, ${withWhom(cur.code, cur.name)} · `
+    + `${host ? 'another machine: /sub-human invite · ' : ''}leave: /sub-human leave`);
 }
 
 /**
@@ -408,25 +449,25 @@ function take({ name, code, isDefault = false }, { input, base, cur, cwd }) {
   }
   if (!code) {
     // Check the name before making a room for it.
-    if (!identity.NAME_RE.test(name)) return refuse(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
+    if (!identity.NAME_RE.test(name)) return refuse(`"${name}" isn't a name (letters, digits, . _ -, up to 32)`);
     if (identity.RESERVED.includes(name.toLowerCase())) return refuse(`"${name}" is reserved; pick another name`);
     code = identity.newCode();
     created = true;
   } else {
-    if (!identity.roomExists(code)) return refuse(`no room ${code}. Check it, or run /sub-human to open a new room.`);
-    if (identity.roomClosing(code)) return refuse(`room ${code} is closing; run /sub-human to open a new room.`);
+    if (!identity.roomExists(code)) return refuse(`there's no room ${code} on this machine. Check the name, or type /sub-human to open a new room.`);
+    if (identity.roomClosing(code)) return refuse(`room ${code} is closing; type /sub-human to open a new room.`);
     const pending = identity.isHost(code) ? null : links.get(code);
     if (pending && !pending.token && (pending.pin !== undefined || pending.enroll || pending.awaiting)) {
       // a join not let in yet: never start it again after a refusal (that would spend another try)
       const why = link.stopReason(link.status(code));
       if (why) return refuse(`could not join ${code}: ${why.reason}`);
-      if (!link.start(code)) return refuse(`the link to room ${code} did not start; run /sub-human doctor`);
+      if (!link.start(code)) return refuse(NO_START(code));
       const o = hosting.outcome(code, { waitMs: 2000 });
-      if (o.state !== 'linked') return refuse(hosting.joinText(code, name, o));
+      if (o.state !== 'linked') return joinReply(code, name, o);
     }
     if (!identity.isHost(code) && !link.start(code)) {
       const why = link.stopReason(link.status(code));
-      return refuse(why ? `could not join ${code}: the link to it stopped: ${why.reason}.` : `the link to room ${code} did not start; run /sub-human doctor`);
+      return refuse(why ? `could not join ${code}: its connection stopped (${why.reason}). Run /sub-human doctor.` : NO_START(code));
     }
   }
   const same = cur && cur.code === code && cur.name === name;
@@ -434,15 +475,15 @@ function take({ name, code, isDefault = false }, { input, base, cur, cwd }) {
   const rebind = !identity.isHost(code) && !!(links.get(code) || {}).rebind;
   if (same && !rebind) {
     dropJoinAs(code);
-    return success(cur, 'already joined', `in room ${cur.code} as ${name}${seats.ensureRoomClaude(code, cwd, name)}`, input);
+    return success(cur, 'already joined', `you're already in ${cur.code} as ${name}, ${withWhom(code, name)}${seats.ensureRoomClaude(code, cwd, name)}`, input);
   }
   // The seat's key (hooks/seat-key.js): via=human posts and answers are signed with it, and the log pins it.
   let pubkey;
-  try { pubkey = seatKey.publicPem(code, name); } catch (e) { return refuse(`could not create the seat key for ${name}: ${e.message}`); }
+  try { pubkey = seatKey.publicPem(code, name); } catch (e) { return refuse(`could not make ${name}'s signing key (${e.message}). Run /sub-human doctor.`); }
   if (cur && !same) seats.exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
   const r = seats.enter({ code, name, ...base, pubkey });
   if (!r.ok) {
-    if (isDefault && /^name taken/.test(r.error || '')) return refuse(`"${name}" is taken in room ${code}; pick one: /sub-human NAME${created ? '' : ` ${code}`}`);
+    if (isDefault && /^name taken/.test(r.error || '')) return refuse(`"${name}" is taken in room ${code}; pick another: /sub-human NAME${created ? '' : ` ${code}`}`);
     return refuse(`could not join ${code} as ${name}: ${r.error || 'unknown error'}`);
   }
   if (rebind) { const { rebind: _done, ...l } = links.get(code); links.set(code, l); }
@@ -452,10 +493,9 @@ function take({ name, code, isDefault = false }, { input, base, cur, cwd }) {
     try { require('../lib/remote/shim.js').refresh(); } catch { /* best effort */ } // the serve shim a login link runs
   }
   const me = { code, name, role: 'member', pid: base.pid, session_id: input.session_id || null, address: identity.address(name, code) };
-  const here = others(code, name);
   const msg = created
-    ? `opened room ${code} as ${name} · others: /sub-human`
-    : `${r.rejoin ? 'rejoined' : 'joined'} ${code} as ${name}${here ? ` (${here} here)` : ''}`;
+    ? `opened room ${code} as ${name} · on this machine others join with /sub-human; another machine: /sub-human invite`
+    : `${r.rejoin ? 'rejoined' : 'joined'} ${code} as ${name}, ${withWhom(code, name)} · @room to talk, @claude to ask the room's Claude`;
   return success(me, created ? 'room opened' : r.rejoin ? 'rejoined' : 'joined', `${msg}${r.note}`, input);
 }
 
@@ -467,16 +507,42 @@ function dropJoinAs(code) {
   } catch { /* a stale join_as only names the seat again */ }
 }
 
+/** True when the input carries this session's module nonce (its lease's): the module's command.run hook ran it. */
+function attested(input) {
+  const sid = input.session_id;
+  if (input.sub_human_via !== 'command.run' || typeof sid !== 'string' || typeof input.sub_human_nonce !== 'string') return false;
+  const lease = identity.readModLease(sid);
+  return !!lease && lease.session_id === sid && typeof lease.nonce === 'string' && lease.nonce === input.sub_human_nonce;
+}
+
+/**
+ * Why this session has no hooks module (no fresh lease from mod-hello), in words the person can act on: an old Claude
+ * Code (the running binary's version), its modules switch off (cc.modulesSwitch), else the doctor.
+ */
+function noModule(pid) {
+  const cc = require('../lib/cc.js');
+  let v = null;
+  try { v = cc.runningVersion(pid); } catch { /* unknown */ }
+  if (v && cc.compareVersions(v, cc.MIN_VERSION) < 0) return `sub-human needs Claude Code ${cc.MIN_VERSION} or newer, and this is ${v}. Update it (claude update), restart claude, then type /sub-human again.`;
+  let sw;
+  try { sw = cc.modulesSwitch(); } catch { /* unknown */ }
+  if (sw === false) return 'Claude Code has plugin hooks modules switched off for now, and sub-human needs them. Restart claude with network access, then type /sub-human again; /sub-human doctor says more.';
+  return 'sub-human\'s hooks module isn\'t running in this session (safe mode, --bare, a managed policy or an untrusted folder turns it off). Run /sub-human doctor.';
+}
+
 run(input => {
   if (!COMMANDS.has(input.command_name)) return;
   const args = String(input.command_args || '').trim().split(/\s+/).filter(Boolean);
   // Before anything else: a prompt that could carry a PIN is answered hidden, whatever goes wrong with it.
-  refuse = ['join', 'invite', 'admit'].includes(args[0]) || args.some(a => DIGITS.test(a)) ? hidden : block;
-  if (!identity.modLeaseOk(input.session_id, identity.claudePid())) {
-    return refuse === hidden ? hidden(NO_MODULE) : out({ decision: 'block', reason: NO_MODULE });
-  }
-  const pid = identity.claudePid();
-  if (!pid) return refuse('could not identify this Claude Code process (CLAUDE_PID is not set).');
+  refuse = ['join', 'invite', 'admit'].includes(args[0]) || args.some(a => DIGITS.test(a)) ? hiddenRefusal : block;
+  viaModule = attested(input);
+  // the module's $.process.run child has no CLAUDE_PID of this session: its parent is the claude process
+  const pid = identity.claudePid() || (viaModule ? process.ppid : null);
+  // read only, and what a refusal below points to: these work without the module
+  if (args[0] === 'help' && args.length === 1) return notice(HELP);
+  if (args[0] === 'doctor') return doctor(args.slice(1));
+  if (!identity.modLeaseOk(input.session_id, pid)) return refuse(noModule(pid || identity.claudePid()));
+  if (!pid) return refuse('could not tell which Claude Code session this is. Run /sub-human doctor.');
   const cwd = input.cwd || process.cwd();
   const base = { pid, session_id: input.session_id, cwd };
   const cur = whoami(input);
@@ -500,12 +566,11 @@ run(input => {
       if (!name) return refuse('no name to join as (no git user.name or $USER): /sub-human NAME');
       return take({ name, code: null, isDefault: true }, ctx);
     }
-    case 'help': return hidden(HELP, { shareable: true });
+    case 'help': return refuse(`usage: /sub-human help. ${HELP_HINT}`);
     case 'invite': return invite(cur, rest);
     case 'admit': return admit(cur, rest);
     case 'kick': return kick(cur, rest);
     case 'leave': return leave(cur, rest);
-    case 'doctor': return doctor(rest);
     case 'handoff': return askHandoff(cur, rest);
     case 'join': {
       const j = join(rest, cwd);
@@ -514,9 +579,9 @@ run(input => {
     default: {
       if (args.length > 2) return refuse(USAGE);
       const [name, code] = args;
-      if (!identity.NAME_RE.test(name)) return refuse(`invalid name "${name}" (letters, digits, . _ -, up to 32). ${USAGE}`);
+      if (!identity.NAME_RE.test(name)) return refuse(`"${name}" isn't a command or a name. ${USAGE}`);
       if (identity.RESERVED.includes(name.toLowerCase())) return refuse(`"${name}" is reserved; pick another name. ${USAGE}`);
-      if (code !== undefined && !identity.CODE_RE.test(code)) return refuse(`"${code}" is not a room (like vole-8126). ${USAGE}`);
+      if (code !== undefined && !identity.CODE_RE.test(code)) return refuse(`"${code}" isn't a room (like vole-8126). ${USAGE}`);
       return take({ name, code: code || (cur && cur.name === name ? cur.code : null) }, ctx);
     }
   }

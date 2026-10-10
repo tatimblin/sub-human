@@ -13,4 +13,4 @@ allowed-tools:
 
 The /sub-human hook already ran. Its result is the context block headed SUB-HUMAN. Your first action is the Agent call(s) under its ROWS line, exactly as written (when it lists any); then reply in one short line.
 
-If no SUB-HUMAN block is present, reply "join failed: the message above says why" and stop. Do not pick a name, role or room code yourself, and do not retry the join.
+If no SUB-HUMAN block is present, sub-human's hooks did not run in this session (Claude Code started with --bare, or hooks turned off): reply exactly "sub-human could not run here: its hooks are off in this session. Start claude normally (not --bare), then type /sub-human again." and stop. Do not pick a name, role or room code yourself, and do not retry the join.

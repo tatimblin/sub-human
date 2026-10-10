@@ -100,13 +100,13 @@ test('enroll: a wrong PIN costs one try (room line, tries left), the fifth burns
   assert.equal(shortOf(host, r.ref).tries, 3, 'charged before the host answered');
   for (let i = 0; i < 2; i++) await attempt(host, { pin: wrong }).joined.catch(() => {});
   const last = attempt(host, { pin: wrong });
-  await assert.rejects(last.joined, e => e.code === 'AUTH' && /that was the last try: the invite is burnt/.test(e.message));
+  await assert.rejects(last.joined, e => e.code === 'AUTH' && /that was the last try: this invite no longer works\. Ask the host for a new one/.test(e.message));
   const inv = shortOf(host, r.ref);
   assert.ok(inv.burnt_at && !('prs' in inv), 'burnt, and its code forgotten');
   await assert.rejects(attempt(host, { pin: r.pin }).joined, e => e.code === 'AUTH' && /no invite for room .* is open here/.test(e.message));
   const said = host.readAll().filter(e => e.from === 'room').map(e => e.text);
   assert.ok(said.some(x => /a wrong PIN for an invite to this room \(4 tries left\)/.test(x)));
-  assert.ok(said.some(x => /its last try: the invite is burnt/.test(x)));
+  assert.ok(said.some(x => /its last try: the invite no longer works/.test(x)));
   assert.ok(!said.join('\n').includes(r.pin) && !said.join('\n').includes(wrong));
 });
 

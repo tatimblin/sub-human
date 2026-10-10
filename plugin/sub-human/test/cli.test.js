@@ -129,7 +129,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   const code = h.newRoom();
   let r = cli(['who']);
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /not in a room; run \/sub-human/);
+  assert.match(r.stderr, /not in a room; type \/sub-human in your Claude Code session/);
   assert.equal(cli(['read']).status, 1);
   const bob = h.spawnSleeper();
   identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sbob' });

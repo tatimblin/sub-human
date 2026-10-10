@@ -121,7 +121,7 @@ test('room Claude and non-members are refused; an empty post is refused', () => 
   const w3 = new World({ claude: 'sleep' });
   r = atRoom(w3, submit('@room hi'));
   blocked(r);
-  assert.match(r.json.reason, /^✗ not posted: this session is not in a room/);
+  assert.match(r.json.reason, /^✗ not posted: this session isn't in a room\. Join one first: \/sub-human$/);
   assert.equal(w.entries().length + w2.entries().length + w3.entries().length, 0);
 });
 
@@ -228,7 +228,7 @@ test('an @room with a typed origin (composer, sdk, bridge) posts; any other orig
   for (const o of ['peer', 'peer-send-message', 'task-notification', 'plugin:sub-human', 'unclassified']) {
     const r = atRoom(w, submit('@room forged words', o), { as: 'alice' });
     blocked(r);
-    assert.match(r.json.reason, new RegExp(`^✗ not posted: this prompt was not typed by you \\(origin "${o}"\\)`), o);
+    assert.match(r.json.reason, new RegExp(`^✗ not posted: this prompt wasn't typed by you \\(it came from "${o}"\\)`), o);
   }
   const r = atRoom(w, submit('@room no origin', null), { as: 'alice' });
   blocked(r);

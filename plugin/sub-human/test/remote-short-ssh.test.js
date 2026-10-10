@@ -117,5 +117,5 @@ test('ssh invite: someone in between (another host key shown) gets one try, noth
   for (const k of Object.keys(host.lib(() => store.open(code).kv.get(auth.INVITES_KEY)))) host.join(alice, `invite --cancel ${k.slice(0, 12)}`);
   assert.equal(doorLines(ak, code).length, 0, 'no invite open: no door');
   const shut = remote.join(bob, `join me@127.0.0.1:2222 ${code} ${m[3]} --as bob`);
-  assert.match(shut.json.reason, /could not join room \S+: the host's door for PINs to room \S+ is shut/);
+  assert.match(shut.json.reason, /could not join room \S+: the invite to room \S+ no longer works .*ask the host for a new one/);
 });

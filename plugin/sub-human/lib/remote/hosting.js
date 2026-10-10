@@ -70,9 +70,9 @@ function roomLine(code, text) {
 /** The stable serve shim (an ssh forced command names it); the home path it carries. */
 function shimReady() {
   const shim = require('./shim.js');
-  if (!shim.refresh({ force: true })) throw new RoomError('INVALID', `the plugin root ${shim.pluginRoot()} is under a temp dir; sshd would run whatever sits there (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)`);
+  if (!shim.refresh({ force: true })) throw new RoomError('INVALID', `the plugin is installed under a temp folder (${shim.pluginRoot()}), which ssh would run from; install it normally (or set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow it)`);
   const h = path.resolve(require('../home.js').home());
-  if (!shim.PLAIN_PATH_RE.test(h)) throw new RoomError('INVALID', `the home path "${h}" has characters a forced command cannot carry plainly; move it`);
+  if (!shim.PLAIN_PATH_RE.test(h)) throw new RoomError('INVALID', `the sub-human folder "${h}" has characters ssh cannot carry plainly; move it (SUB_HUMAN_HOME) and try again`);
   return { shim, h };
 }
 
@@ -84,13 +84,13 @@ const selfAddress = () => process.env.SUB_HUMAN_SSH_ADDR || `${os.userInfo().use
  */
 function shortText({ code, how, line, ref, extra = [] }) {
   return [
-    `invite to room ${code}, for one machine, ${how}. Shown once; it lasts ${minutes(INVITE_TTL_MS)} minutes.`,
+    `invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes; send them this line:`,
     '',
     `  ${line}`,
     '',
-    'The 4-digit PIN is the whole secret: send this line privately (a direct message), or send it without the PIN and say the PIN. 5 wrong PINs burn it.',
-    'When they type it, a card here asks you to let them in (or refuse); nothing gets in before you answer.',
-    `Leaked? /sub-human invite --cancel ${ref} cancels just this invite.`,
+    'The 4-digit PIN is the whole secret: send the line privately, or send it without the PIN and say the PIN. After 5 wrong PINs it stops working.',
+    'When they type it, a card here asks you to let them in; nothing gets in before you answer.',
+    `Sent it to the wrong place? /sub-human invite --cancel ${ref} cancels just this invite.`,
     ...extra,
   ].join('\n');
 }
@@ -102,7 +102,7 @@ function hostInvite(code, { ssh = true, via, pipe = false, by = null, now = Date
     const locator = linkLib().pipeLocator();
     const r = auth.mintShort(store, { kind: 'pipe', locator, by, now });
     const line = `/sub-human join ${locator} ${code} ${r.pin}`;
-    return { ...r, short: true, locator, line, text: shortText({ code, how: '(a second home on this machine)', line, ref: r.ref }) };
+    return { ...r, short: true, locator, line, text: shortText({ code, how: 'from another sub-human folder on this machine', line, ref: r.ref }) };
   }
   const dest = ssh === true ? selfAddress() : String(ssh);
   if (sshT().placeholder(dest)) throw new RoomError('INVALID', `"${dest}" still has an example's placeholder: give the address the other machine reaches this one at (user@host, or set SUB_HUMAN_SSH_ADDR)`);
@@ -113,7 +113,7 @@ function hostInvite(code, { ssh = true, via, pipe = false, by = null, now = Date
   shimReady();
   const hostKey = sshkeys.hostKey();
   if (!hostKey) {
-    throw new RoomError('INVALID', 'no ssh host key is readable here (/etc/ssh/ssh_host_ed25519_key.pub, or SUB_HUMAN_SSH_HOST_KEY), and an ssh invite needs one to vouch for; the other machine can join over its own ssh login instead (/sub-human join HOST ROOM), or use /sub-human invite --web');
+    throw new RoomError('INVALID', 'an ssh invite needs this machine\'s ssh host key, and none is readable (/etc/ssh/ssh_host_ed25519_key.pub, or SUB_HUMAN_SSH_HOST_KEY). Someone who can ssh here can join without an invite (/sub-human join HOST ROOM), or invite over the web: /sub-human invite --web');
   }
   const file = path.resolve(sshkeys.authorizedKeysFile());
   const r = auth.mintShort(store, { kind: 'ssh', locator, hostKey, by, doorFile: file, now });
@@ -126,7 +126,7 @@ function hostInvite(code, { ssh = true, via, pipe = false, by = null, now = Date
     ...r, short: true, locator, hostKey, line,
     text: shortText({
       code, how: `over ssh ${dest}${via ? ` via ${via}` : ''}`, line, ref: r.ref,
-      extra: [`Their machine checks it reached this one (ssh host key ${sshkeys.fingerprint(hostKey)}) inside the PIN's handshake, and makes its own key; until you let it in, that key opens nothing (an authorized_keys line that only runs the PIN check is there while the invite is open).`],
+      extra: [`Their machine checks it reached this one (ssh host key ${sshkeys.fingerprint(hostKey)}) as part of the PIN check. Until you let them in they get nothing: while the invite is open, ssh here only checks PINs.`],
     }),
   };
 }
@@ -136,7 +136,7 @@ function linkIdOf(store, target) {
   if (auth.LINK_ID_RE.test(target) && auth.linkKnown(store, target)) return target;
   const hits = Object.values(all).filter(l => Array.isArray(l.seats) && l.seats.includes(target));
   if (hits.length === 1) return hits[0].id;
-  if (hits.length > 1) throw new RoomError('INVALID', `${target} joined over ${hits.length} links (${hits.map(l => l.id).join(', ')}); name one`);
+  if (hits.length > 1) throw new RoomError('INVALID', `${target} joined over ${hits.length} connections; ask them to leave the extra one, then kick again`);
   // a short code's joiner not linked yet (waiting for the card, or let in and not connected): its reserved link
   const asked = auth.admissions(store, { all: true }).filter(a => a.name === target && !a.used_at && !a.burnt_at);
   if (asked.length === 1) return asked[0].link;
@@ -148,14 +148,14 @@ function revokeInvite(code, store, ref, opts) {
   const { invite } = auth.findInvite(store, ref);
   if (invite.link) {
     const r = endLink(code, store, invite.link, opts);
-    return { ...r, ref, text: `invite ${ref} ${invite.used_at ? 'was used already, by' : 'was reserved for'} link ${invite.link}; ${r.text}` };
+    return { ...r, ref, text: `that invite ${invite.used_at ? 'was used already' : 'was being used'}; ${r.text}` };
   }
   const { state } = auth.burnInvite(store, ref);
   try { require('./enroll.js').sweepDoors(code); } catch { /* the tail sweeps it */ }
-  if (state === 'burnt') roomLine(code, `the host cancelled an unused invite (ref ${ref}): it no longer lets anyone in`);
+  if (state === 'burnt') roomLine(code, 'the host cancelled an unused invite: it no longer lets anyone in');
   const text = state === 'burnt'
-    ? `cancelled invite ${ref} of room ${code}: it lets no one in; every other invite and connection stays`
-    : `invite ${ref} of room ${code} was burnt already (a wrong PIN, expired, or cancelled); nothing changed`;
+    ? `cancelled the invite to room ${code} (${ref}): it lets no one in; everyone else stays`
+    : `that invite to room ${code} (${ref}) no longer worked already (wrong PINs, expired, or cancelled); nothing changed`;
   return { id: null, ref, seats: [], keys: 0, text };
 }
 
@@ -171,11 +171,11 @@ function cancelInvite(code, ref, { file = sshkeys.authorizedKeysFile(), now = Da
   const store = hostStore(code);
   if (ref === undefined || ref === null || ref === '') {
     const open = openInvites(store, now);
-    if (!open.length) return { refs: [], text: `room ${code} has no open invite` };
-    if (open.length > 1) return { refs: open.map(o => o.ref), text: `room ${code} has ${open.length} open invites; cancel one: ${open.map(o => `/sub-human invite --cancel ${o.ref}`).join(', ')}` };
+    if (!open.length) return { refs: [], text: `room ${code} has no open invite; nothing to cancel` };
+    if (open.length > 1) return { refs: open.map(o => o.ref), text: `room ${code} has ${open.length} open invites; cancel one: ${open.map(o => `/sub-human invite --cancel ${o.ref} (until ${o.expires_at.slice(11, 16)} UTC)`).join(', ')}` };
     ref = open[0].ref;
   }
-  if (!/^[0-9a-f]{12}$/.test(String(ref)) || !auth.findInvite(store, ref)) throw new RoomError('INVALID', `room ${code} has no invite ${ref} (/sub-human invite --cancel lists the open ones)`);
+  if (!/^[0-9a-f]{12}$/.test(String(ref)) || !auth.findInvite(store, ref)) throw new RoomError('INVALID', `room ${code} has no open invite ${ref}; /sub-human invite --cancel (no ID) lists the open ones`);
   return revokeInvite(code, store, ref, { file });
 }
 
@@ -191,8 +191,8 @@ function endLink(code, store, id, { file = sshkeys.authorizedKeysFile() } = {}) 
   const seatsLib = require('../seats.js');
   for (const name of seats) { try { seatsLib.exit(code, name, 'removed by the host'); } catch { /* gone already */ } }
   const login = !!(r.link && r.link.login); // a link made over this account's own ssh login (no key line of its own)
-  roomLine(code, `the host ended link ${id}${seats.length ? ` (${seats.join(', ')})` : ''}: its ${login ? 'token no longer reaches' : 'token and key no longer reach'} the room`);
-  const text = `${seats.length ? `${seats.join(', ')} ${seats.length === 1 ? 'is' : 'are'} out of room ${code}` : `ended link ${id} of room ${code}`}: its connection no longer reaches the room`
+  roomLine(code, `the host ended ${seats.length ? `${seats.join(', ')}'s connection` : 'a connection'} to the room`);
+  const text = `${seats.length ? `${seats.join(', ')} ${seats.length === 1 ? 'is' : 'are'} out of room ${code}` : `ended a connection to room ${code}`}: it no longer reaches the room`
     + (login ? `. It came over an ssh login to this account, which can join again: to shut that, take its key out of ${file}` : '');
   return { id, seats, keys, text };
 }
@@ -260,11 +260,11 @@ function outcome(code, { waitMs = LINK_JOIN_WAIT_MS } = {}) {
 
 function joinText(code, name, o) {
   const lf = links().get(code) || {};
-  if (o.state === 'linked') return `the host let you in to room ${code}: type /sub-human to take your seat as ${name}`;
+  if (o.state === 'linked') return `the host let you in to room ${code}: type /sub-human to join it as ${name}`;
   if (o.state === 'refused') return `could not join room ${code}: ${o.reason}`;
   if (lf.awaiting) {
     return `the host's machine checked your PIN. A card there now asks them to let you in as ${name} (${lf.awaiting.check}). `
-      + `Once they do, type /sub-human to take your seat (the request waits ${minutes(require('../config.js').ADMIT_TTL_MS)} minutes)`;
+      + `Once they do, type /sub-human to join (the request waits ${minutes(require('../config.js').ADMIT_TTL_MS)} minutes)`;
   }
   const t = lf.transport || {};
   const cert = t.kind === 'wss' && /\.ts\.net$/i.test(String(t.host || '')) && !o.reason

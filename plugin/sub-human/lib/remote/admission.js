@@ -35,7 +35,7 @@ const REFUSE = 'Refuse';
 
 function hostStore(code) {
   const s = require('../room.js').open(code).store;
-  if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; its host lets machines in`);
+  if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; only its host can let people in`);
   return s;
 }
 
@@ -61,7 +61,7 @@ function card(req, code) {
       header: 'Join',
       multiSelect: false,
       options: [
-        { label: LET_IN, description: `${req.name} typed your PIN from another machine (names are what they say; ${fp(req)} is what their screen shows). Let in: that machine joins room ${code} as one link and posts only as the seats it brings. Undo any time: /sub-human kick ${req.name}.` },
+        { label: LET_IN, description: `${req.name} typed your PIN from another machine (names are what they say; ${fp(req)} is what their screen shows). Let in: that machine joins room ${code} and can post only as the people it brings. Undo any time: /sub-human kick ${req.name}.` },
         { label: REFUSE, description: 'Nothing gets in; their join stops. Your code is used up either way.' },
       ],
     }],
@@ -75,7 +75,7 @@ function roomLine(store, text) {
 function letIn(code, ref, { by = null, sign = null, now = Date.now() } = {}) {
   const store = hostStore(code);
   const req = find(code, ref);
-  if (!req) throw new RoomError('INVALID', `no join request of room ${code} has the ref ${ref}`);
+  if (!req) throw new RoomError('INVALID', `room ${code} has no join request ${ref} (/sub-human admit lists them)`);
   const sig = sign ? sign({ kind: 'admit', ref: req.ref, link: req.link, key: req.key || null, machine: req.machine }) : null;
   let file = null;
   if (req.kind === 'ssh' && req.admit === 'asked') {
@@ -91,14 +91,14 @@ function letIn(code, ref, { by = null, sign = null, now = Date.now() } = {}) {
     if (file && req.admit === 'asked') require('./sshkeys.js').removeAuthorized(file, code, req.link);
     throw e;
   }
-  roomLine(store, `${by || 'the host'} let ${describe(rec)} in (link ${rec.link}); undo with: /sub-human kick ${rec.name}`);
-  return { id: rec.link, text: `let in: ${describe(rec)} may join room ${code} as link ${rec.link}${file ? ` (its key reaches only this room's server: a forced command in ${file})` : ''}. Their link connects within seconds. Undo: /sub-human kick ${rec.name}` };
+  roomLine(store, `${by || 'the host'} let ${describe(rec)} in; undo with: /sub-human kick ${rec.name}`);
+  return { id: rec.link, text: `let in: ${describe(rec)} joins room ${code} within seconds${file ? ` (their key opens only this room, nothing else on this machine)` : ''}. Undo: /sub-human kick ${rec.name}` };
 }
 
 function refuse(code, ref, { by = null, now = Date.now() } = {}) {
   const store = hostStore(code);
   const req = find(code, ref);
-  if (!req) throw new RoomError('INVALID', `no join request of room ${code} has the ref ${ref}`);
+  if (!req) throw new RoomError('INVALID', `room ${code} has no join request ${ref} (/sub-human admit lists them)`);
   const rec = auth.decideAdmission(store, req.ref, { decision: 'refused', by, now });
   roomLine(store, `${by || 'the host'} refused ${describe(rec)}: nothing got in`);
   return { text: `refused: ${describe(rec)} does not get into room ${code}; their join stops` };

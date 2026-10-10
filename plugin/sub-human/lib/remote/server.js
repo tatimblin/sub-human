@@ -94,7 +94,7 @@ function redeem(s, invite, machine, pin) {
     if (e.note) roomLine(s, e.note);
     throw e;
   }
-  if (r.admission) roomLine(s, `${r.admission.name}'s machine (${r.admission.label || machine}) linked to the room, let in by ${r.admission.admitted_by || 'the host'} (link ${r.link.id}); undo with: /sub-human kick ${r.admission.name}`);
+  if (r.admission) roomLine(s, `${r.admission.name}'s machine (${r.admission.label || machine}) joined the room, let in by ${r.admission.admitted_by || 'the host'}; undo with: /sub-human kick ${r.admission.name}`);
   else if (r.handoff) roomLine(s, `a machine (${machine}) followed the room here with the invite its handoff gave it (link ${r.link.id})`);
   else if (inv.v === 2) roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id})`);
   return r;
@@ -182,7 +182,7 @@ const OPS = {
     if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) throw invalid('hello needs this machine\'s id');
     const mine = epochOf(s.store);
     if (Number.isInteger(epoch) && epoch > mine) {
-      throw stale(`this machine's copy of room ${s.store.code} is at host epoch ${mine} and yours at ${epoch}: the room moved away from this host`);
+      throw stale(`room ${s.store.code} has moved away from this machine to a newer host. Run /sub-human doctor to see where it is`);
     }
     s.link = null;
     s.v = v;
@@ -221,8 +221,8 @@ const OPS = {
     if (!payload || typeof payload !== 'object') throw invalid('append needs {payload}');
     const mine = epochOf(s.store);
     if (Number.isInteger(epoch) && epoch !== mine) {
-      throw stale(epoch < mine ? `room ${s.store.code} changed hosts (epoch ${mine}); this copy is at ${epoch}: try again once it has caught up`
-        : `this host is at epoch ${mine} and the room at ${epoch}: the room moved away from this host`);
+      throw stale(epoch < mine ? `room ${s.store.code} changed hosts and this machine hasn't caught up yet; try again in a moment`
+        : `room ${s.store.code} has moved away from this machine to a newer host. Run /sub-human doctor to see where it is`);
     }
     own(s, payload.from);
     if (payload.via === 'system') throw authError('a link never writes via "system"; the host writes the room\'s own entries');
@@ -319,7 +319,7 @@ class Session {
     if (op !== 'hello' && !this.link) throw authError('say hello with this link\'s token first');
     if (!WHILE_MOVED.has(op) && handoff.movedAway(this.store)) {
       const h = this.store.hostState();
-      throw stale(`room ${this.store.code} moved to ${h.host}'s machine (host epoch ${h.epoch}); this host takes no more writes`);
+      throw stale(`room ${this.store.code} moved to ${h.host}'s machine; this machine takes no more messages for it`);
     }
     return OPS[op](this, params && typeof params === 'object' ? params : {}, id);
   }

@@ -32,7 +32,7 @@ test('deliver: the delivery-error notice is due once per window', async () => {
   assert.equal(d.noticeDue(1000, 1000 + d.MOD_DELIVERY_ERROR_LOG_MS - 1), false);
   assert.equal(d.noticeDue(1000, 1000 + d.MOD_DELIVERY_ERROR_LOG_MS), true);
   assert.equal(d.DELIVERY_ERROR_NOTICE.includes('\n'), false, 'a notice is one line');
-  assert.match(d.DELIVERY_ERROR_NOTICE, /sub-human read/);
+  assert.match(d.DELIVERY_ERROR_NOTICE, /^a room message didn't arrive here\. Run \/sub-human doctor\.$/);
 });
 
 test('deliver: the tail child gets the env a shimmed hook gets', async () => {

@@ -100,7 +100,7 @@ test('link-state: indicator wording', () => {
   assert.equal(ls.indicator({ state: 'offline', since, queued: 2 }, { now }), '✕ offline 2m · 2 queued');
   assert.equal(ls.indicator({ state: 'offline' }, { now }), '✕ offline');
   assert.equal(ls.indicator({ state: 'stopped', queued: 1 }), '✕ stopped · 1 queued');
-  assert.equal(ls.indicator({ state: 'fork' }), '✕ FORK: sub-human link --reset');
+  assert.equal(ls.indicator({ state: 'fork' }), '✕ out of step: /sub-human doctor');
   assert.deepEqual([{ state: 'online' }, { state: 'connecting', attempt: 1 }, { state: 'connecting', attempt: 2 }, { state: 'offline' }, { state: 'fork' }, { state: 'stopped' }].map(ls.isDown),
     [false, false, true, true, true, true]);
 });

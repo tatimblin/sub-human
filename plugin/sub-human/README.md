@@ -20,7 +20,7 @@ claude plugin install sub-human@sub-human
 
 **Requirements.** Claude Code 2.1.292 or newer with function hooks on (not `--bare`, not safe mode, and no policy that turns hooks off): the plugin's hooks module guards the store, checks who typed an `@room` and delivers the room, so `/sub-human` refuses to join without it. Node 24 or newer on `PATH`: every hook, the room MCP server, the room tail and the row status line run `node`. macOS or Linux only (the row launcher is a POSIX shell script and the store relies on POSIX rename and file modes); Windows is not supported. `claude plugin validate plugin/sub-human` checks the plugin. Accept workspace trust for your folder: the room's Claude starts in your working directory, and Claude Code refuses to start a background session in an untrusted folder.
 
-**Updates.** Marketplace plugins don't update by themselves by default: enable auto-update for the sub-human marketplace in `/plugin` (Marketplaces), or run `/plugin update sub-human` now and then. Everyone in a room should run the same version; `sub-human doctor` shows yours and, for a room hosted elsewhere, the host's protocol version.
+**Updates.** Marketplace plugins don't update by themselves by default: enable auto-update for the sub-human marketplace in `/plugin` (Marketplaces), or run `/plugin update sub-human` now and then. Everyone in a room should run the same version; `/sub-human doctor` shows yours and, for a room hosted elsewhere, the host's protocol version.
 
 ## Start: three commands
 
@@ -40,7 +40,9 @@ In your normal Claude Code session:
 /sub-human
 ```
 
-When no room is open, the join hook creates one (say `vole-8126`, the **room**) and starts the room's Claude as a background session titled `claude.vole-8126`. An idle room's Claude costs nothing. A join that works prints nothing (Claude Code would draw it as a warning): your session is titled `tristan.vole-8126` and the room's row `vole-8126` appears in your agent panel. A line shows only when something needs you: a refusal, the room's Claude failing to start, or bypass-permissions mode. The next person on this machine runs `/sub-human` too, and adds the room (`/sub-human dana vole-8126`) only when more than one room is open.
+When no room is open, the join hook creates one (say `vole-8126`, the **room**) and starts the room's Claude as a background session titled `claude.vole-8126`. An idle room's Claude costs nothing. A join that works says so in one dim line, `sub-human: opened room vole-8126 as tristan · on this machine others join with /sub-human; another machine: /sub-human invite` (the next person sees `joined vole-8126 as dana, with tristan · @room to talk, @claude to ask the room's Claude`); your session is titled `tristan.vole-8126` and the room's row `vole-8126` appears in your agent panel.
+
+**How replies show.** `/sub-human` answers in place of the command: a reply that holds no secret (help, who is here, `leave`, a refusal) is the command's own output (`⎿ sub-human: …`), and anything a PIN can be in (an invite, any `join`, `invite` or `admit` prompt) shows as dim `sub-human: …` lines that never reach your Claude and leave no trace of what you typed. Nothing reads "blocked by hook". A refusal starts with `✗` and says what to type next, or to run `/sub-human doctor`. The next person on this machine runs `/sub-human` too, and adds the room (`/sub-human dana vole-8126`) only when more than one room is open.
 
 **Your name.** With no name typed, it is your git `user.name` (the repo's, else your global one): its first word, lowercased, with only letters, digits, `.`, `_` and `-` kept (`Tristan Timblin` → `tristan`). With no `user.name`, the part of your git `user.email` before the `@`; with neither, `$USER`. A name that is taken in the room is refused with how to pick one: `/sub-human NAME`. A typed name always wins: `/sub-human alice`, or `--as NAME` on a join. Command words (`invite`, `join`, `kick`, `leave`, `doctor`, `help`, `admit`, `handoff`, …) are never names.
 
@@ -64,8 +66,8 @@ On your other machine:
 
 That is the whole step: no invite, no PIN, no card. It links the machine and takes your seat at once; later rejoins are a bare `/sub-human` (or `/sub-human carol vole-8126`). Your login to that account is the admission, since whoever can run commands there could make an invite anyway. The room shows `a machine (…) linked over your SSH login (link 1a2b3c4d5e6f)`.
 
-- **Your own ssh.** The link runs `ssh -T -o BatchMode=yes [-J JUMP] [-p PORT] -- you@machine-a '"$HOME"/.sub-human/bin/serve --stdio vole-8126 --link ID --login'` with your keys, agent, `~/.ssh/config` and `known_hosts`, checked as usual. It never prompts. When ssh does not know the host's key yet, the join stops at once and says so: run `ssh you@machine-a` once in a terminal, check and accept the key, then join again. A login that needs a password is refused the same way. Behind an MFA bastion, run `sub-human prime vole-8126` and then `/sub-human`.
-- **On the host** this runs the stable serve shim (`<home>/bin/serve`, see [SSH details](#ssh-details)), which records where node is, because a non-interactive ssh shell lacks nvm's or Homebrew's `PATH`. Opening or joining a room on the host writes the shim when it is missing. If it is still missing, the join says to open the room there in Claude Code or run `sub-human doctor --fix` there.
+- **Your own ssh.** The link runs `ssh -T -o BatchMode=yes [-J JUMP] [-p PORT] -- you@machine-a '"$HOME"/.sub-human/bin/serve --stdio vole-8126 --link ID --login'` with your keys, agent, `~/.ssh/config` and `known_hosts`, checked as usual. It never prompts. When ssh does not know the host's key yet, the join stops at once and says so: run `ssh you@machine-a` once in a terminal, check and accept the key, then join again. A login that needs a password is refused the same way. Behind an MFA bastion, run `node <plugin root>/scripts/sub-human prime vole-8126` in a terminal (the refusal prints the full line) and then `/sub-human`.
+- **On the host** this runs the stable serve shim (`<home>/bin/serve`, see [SSH details](#ssh-details)), which records where node is, because a non-interactive ssh shell lacks nvm's or Homebrew's `PATH`. Opening or joining a room on the host writes the shim when it is missing. If it is still missing, the join says `me@devbox isn't set up for joining yet`: open the room there in Claude Code, then join again.
 - **Not through a restricted key.** A key the host's card let in runs a forced command fixed to its one link, and that line never carries `--login`. The host's `serve --login` also refuses to run under any forced command (sshd's `SSH_ORIGINAL_COMMAND`). So a key restricted to one link can't make itself a new one.
 - `kick`, `doctor`, the link state, the outbox and handoffs work as for any link. `/sub-human kick carol` stops the link, but that login can link again: to shut it out, take its key out of `authorized_keys`.
 
@@ -83,16 +85,14 @@ On the host, in a session that is in the room:
 ```
 
 ```
-sub-human: invite to room vole-8126, for one machine, over ssh me@devbox.local. Shown once; it lasts 15 minutes.
-
-  /sub-human join me@devbox.local vole-8126 4829
-
-The 4-digit PIN is the whole secret: send this line privately (a direct message), or send it without the PIN and say the PIN. 5 wrong PINs burn it.
-When they type it, a card here asks you to let them in (or refuse); nothing gets in before you answer.
-Leaked? /sub-human invite --cancel 3f9c2a1b7e0d cancels just this invite.
+sub-human: invite to room vole-8126 for one machine, over ssh me@devbox.local. It works once, for 15 minutes; send them this line:
+sub-human:   /sub-human join me@devbox.local vole-8126 4829
+sub-human: The 4-digit PIN is the whole secret: send the line privately, or send it without the PIN and say the PIN. After 5 wrong PINs it stops working.
+sub-human: When they type it, a card here asks you to let them in; nothing gets in before you answer.
+sub-human: Sent it to the wrong place? /sub-human invite --cancel 3f9c2a1b7e0d cancels just this invite.
 ```
 
-This is shown to you, never to your Claude. The joiner types exactly that line; it carries no name (theirs comes from their git name, or `--as NAME`). The invite is for one machine and one use; the **PIN is its whole secret**, so treat the line like a password: a direct message, or say the PIN. `sub-human invite [--room ROOM] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the PIN, because that output becomes part of the conversation. An address that still has an example's placeholder (`NAME@…`, `USER@…`, `YOU@…`) is refused.
+These dim lines are shown to you, never to your Claude, and your `/sub-human invite` itself leaves no row. The joiner types exactly that line; it carries no name (theirs comes from their git name, or `--as NAME`). The invite is for one machine and one use; the **PIN is its whole secret**, so treat the line like a password: a direct message, or say the PIN. `sub-human invite [--room ROOM] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the PIN, because that output becomes part of the conversation. An address that still has an example's placeholder (`NAME@…`, `USER@…`, `YOU@…`) is refused.
 
 When they type it, **your Claude Code shows you a card**: `Let carol (SHA256:ab12…) on carols-mbp join room vole-8126? — Let in / Refuse`. Only your answer there admits them: your Claude can't answer it, and the answer is signed with your seat key. The fingerprint is the key their machine just made for this link; their screen shows the same one, so you can compare. **Let in** writes one `authorized_keys` line that lets that key reach only this room's server, as one link, and their link connects within seconds. **Refuse** ends it. Unanswered, the request lapses after 10 minutes. `/sub-human admit` lists who is waiting and `/sub-human admit REF` lets one in, as the card does; with no session open on the host, `sub-human admit` in a shell does the same (y/N first, `--refuse` to say no).
 
@@ -109,16 +109,16 @@ On the other machine, the line the host sent you:
 
 This step only links the machine to the room, and the hook hides the prompt from the conversation, so the PIN never reaches your Claude (the same for any `join`, `invite` or `admit` prompt, or one with a word of digits, whatever is wrong with it). Your machine and the host check the PIN against each other without sending it (a PAKE, see the threat model); your machine checks it reached the real host, makes a key of its own for the link (over ssh), and the host's card asks its person. The join says what to do next:
 
-- `the host's machine checked your PIN. A card there now asks them to let you in as carol (SHA256:ab12…). Once they do, type /sub-human to take your seat`. The link keeps trying for 10 minutes. The bare `/sub-human` (no PIN in it) takes your seat; if the host has not answered yet, it says so.
-- **A wrong PIN:** `could not join room vole-8126: wrong PIN (4 tries left)`. Type the join again with the right PIN; a rejoin never re-sends a refused PIN. The fifth wrong PIN burns the invite.
+- `the host's machine checked your PIN. A card there now asks them to let you in as carol (SHA256:ab12…). Once they do, type /sub-human to join`. The link keeps trying for 10 minutes. The bare `/sub-human` (no PIN in it) takes your seat; if the host has not answered yet, it says so.
+- **A wrong PIN:** `✗ could not join room vole-8126: wrong PIN (4 tries left). Check the digits with the host, then type the join line again`; a rejoin never re-sends a refused PIN. After the fifth, `this invite no longer works. Ask the host for a new one`.
 - **Refused or lapsed:** the link stops with `the host refused to let this machine in` (or `did not let this machine in in time`); ask for a new invite.
 - **Someone in between:** over ssh, if the server that answered shows another host key than the one the host vouched for inside the PIN's handshake, the join stops (`the ssh server that answered is not the one that holds your PIN`) and sends nothing more. Check with the host.
 
 The join starts a **link** on that machine: a small background process (`sub-human link CODE`) that keeps a copy of the room (a mirror) and carries that machine's posts and answers to the host. After that, everything works as on the host: `@room`, rows, proposals in the plan view, tasks. Your words are signed on your machine and checked on the host. The host runs the room's Claude and decides proposals.
 
 - **Rejoin** (a new session on the same machine) with `/sub-human` (or `/sub-human carol vole-8126`). The link is kept, and started again if it had stopped; you need no new invite.
-- **When the link is down**, your session shows one dim line, `room link: OFFLINE …`. An `@room` is queued (`⧗ queued`, up to 50 posts for up to 9 minutes) and sent in order once the link is back; one that waited too long is not sent, and you are told with its words. An answer to a proposal is never queued: it is not recorded and you are told so. The link retries on its own, and at once after your machine wakes or changes network.
-- **When the link is slow** (the host has not answered within 2 s), an `@room` says `⧗ sending (slow link)`: it is on its way and shows in the room when the host has it, so don't type it again. An answer that gets no reply in time says it is not confirmed: if the proposal still shows you unanswered later, answering again is safe.
+- **When the link is down**, your session shows one dim line, `the connection to room vole-8126 is down (…)`. An `@room` is queued (`⧗ queued`, up to 50 posts for up to 9 minutes) and sent in order once the link is back; one that waited too long is not sent, and you are told with its words. An answer to a proposal is never queued: it is not recorded and you are told so. The link retries on its own, and at once after your machine wakes or changes network.
+- **When the link is slow** (the host has not answered within 2 s), an `@room` says `⧗ sending (slow connection)`: it is on its way and shows in the room when the host has it, so don't type it again. An answer that gets no reply in time says it is not confirmed: if the proposal still shows you unanswered later, answering again is safe.
 - **The link stops by itself** about a minute after no session of that machine is left in the room.
 - **Versions.** The two machines agree on a protocol version when the link connects. When they share none, the join says which side must update, e.g. `host runs sub-human 0.5.0 (protocol 3–4); you run 0.4.0 (protocol 1–2). Update your plugin: /plugin update sub-human`. Update the host first: a host takes joiners one version older.
 
@@ -134,12 +134,10 @@ For friends who have no SSH account on your machine. The host runs [Tailscale](h
 ```
 
 ```
-sub-human: invite to room vole-8126, for one machine, over the web through Tailscale Serve (your tailnet only) to this machine's listener on 127.0.0.1:7420. Shown once; it lasts 15 minutes.
-
-  /sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126 4829
-
-The 4-digit PIN is the whole secret: send this line privately (a direct message), or send it without the PIN and say the PIN. 5 wrong PINs burn it.
-When they type it, a card here asks you to let them in (or refuse); nothing gets in before you answer.
+sub-human: invite to room vole-8126 for one machine, over the web through Tailscale Serve (your tailnet only) to this machine's listener on 127.0.0.1:7420. It works once, for 15 minutes; send them this line:
+sub-human:   /sub-human join https://box.tail1a2b.ts.net/sub-human/vole-8126 4829
+sub-human: The 4-digit PIN is the whole secret: send the line privately, or send it without the PIN and say the PIN. After 5 wrong PINs it stops working.
+sub-human: When they type it, a card here asks you to let them in; nothing gets in before you answer.
 ```
 
 The joiner types that line; your card lets them in, as over ssh; then a bare `/sub-human` takes their seat. No secret is in the URL, and the URL already names the room.
@@ -342,12 +340,14 @@ The room has one shared task list: the native Claude Code task list of the room'
 When something is off, type `/sub-human doctor` in the session (read only), or run `node <plugin root>/scripts/sub-human doctor` in your shell, on either machine. Each line is ✓ (fine), ! (a warning), ✗ (broken) or · (for your information), and a broken or doubtful one has a `fix:` line under it:
 
 ```
-✓ node             v24.15.0
-✗ home             ~/.sub-human is 755
-                   fix: sub-human doctor --fix (or chmod 700 ~/.sub-human)
-! link vole-8126   ssh me@devbox:22 · daemon running (pid 4242) · ✕ offline 2m · 2 queued · last error: Permission denied (publickey)
-                   fix: the host refused this key in BatchMode: is the key in ssh-agent …?
+✓ node                v24.15.0
+✗ sub-human folder    ~/.sub-human is 755
+                      fix: node ~/.claude/plugins/…/sub-human/scripts/sub-human doctor --fix in a terminal (or chmod 700 ~/.sub-human)
+! connection vole-8126  ssh me@devbox:22 · daemon running (pid 4242) · ✕ offline 2m · 2 queued · last error: Permission denied (publickey)
+                      fix: the host refused this machine's key: it was never let in, or the host removed it. ask the host for a new invite (/sub-human invite) and type the line it shows
 ```
+
+A fix that only a shell can make prints the CLI by its full path (`node <plugin root>/scripts/sub-human …`): no `sub-human` command is on your PATH.
 
 It checks:
 
@@ -364,7 +364,7 @@ It checks:
 
 `--quick` skips the hello and the internals check. `--fix` (in a terminal only) rewrites the shim and its pointer, closes the home's modes and rewrites this home's older `authorized_keys` lines. `--bundle [FILE]` writes the same report as JSON for a bug report, redacted: it holds versions, settings, check results, link states and recent link errors, never a message; paths under your home become `~`, room codes, host names, user names and IP addresses are hashed, and SSH keys, tokens and invites are removed (a key is cut to a fingerprint prefix). Read it before you attach it.
 
-The room row shows the link too, in a room hosted elsewhere, in the same words as `doctor`, the tail and `~/.sub-human/links/CODE.state.json` (online, connecting, offline, stopped, fork): `✕ offline 2m · 2 queued`, `… connecting (3)`, `✕ stopped` or `✕ FORK: sub-human link --reset` first while it is not online, and `⇄ online` at the end while it is.
+The room row shows the link too, in a room hosted elsewhere, in the same words as `doctor`, the tail and `~/.sub-human/links/CODE.state.json` (online, connecting, offline, stopped, fork): `✕ offline 2m · 2 queued`, `… connecting (3)`, `✕ stopped` or `✕ out of step: /sub-human doctor` first while it is not online, and `⇄ online` at the end while it is.
 
 ## The room tail
 
@@ -429,26 +429,27 @@ The plugin doesn't stop a hostile local user, who can read the keys and write th
 
 ## Troubleshooting
 
-Start with `sub-human doctor` (see **Doctor**): it names most of these and the fix.
+Start with `/sub-human doctor` (see **Doctor**): it names most of these and the fix.
 
 | Symptom | Fix |
 |---|---|
 | "Unknown command" for `/sub-human` | Launch with `--plugin-dir plugin/sub-human`, or install the plugin. |
 | `/sub-human` asks which room | More than one room is open, so add it: `/sub-human NAME ROOM`. |
-| `"NAME" is taken in room …; pick one: /sub-human NAME` | Your default name (from git) is someone else's in that room. Type a name: `/sub-human dana2`. |
+| `✗ "NAME" is taken in room …; pick another: /sub-human NAME` | Your default name (from git) is someone else's in that room. Type a name: `/sub-human dana2`. |
 | "the room's Claude could not start" on join, or `Workspace not trusted` | Run `claude` in that folder once and accept trust, then join again. Without its Claude the room still works, but it has no shared task list. |
 | No rows in the panel | Accept workspace trust for this folder. After a resume they come back by themselves. |
-| A proposal didn't open | Ask your Claude to "show me the proposal". `sub-human read` shows who a proposal names. |
-| `/sub-human` says it needs Claude Code 2.1.292+ with function hooks on | Update Claude Code, and start it without `--bare` or safe mode; a managed policy that turns hooks off also prevents it. |
-| `room link: STOPPED (…)` | The link stopped for good: the host refused or revoked it, or the room closed. The reason says what to do (usually a new invite from the host: `/sub-human invite` there). |
-| `room link: OFFLINE` | The link can't reach the host. It retries by itself (from 1 s, with jitter, up to 10 s; at once after a wake or a network change); `@room` posts are queued, answers are refused, until it is back, and `room link: back online` says when (and how many queued posts went out). `~/.sub-human/links/CODE.log` says why; `~/.sub-human/links/CODE.state.json` holds the link's state. |
-| `room link: OFFLINE (room CODE moved to NAME's machine …, which this machine cannot reach yet …)` | A handoff moved the room and this machine can't reach the new host. Ask its person for an invite (`/sub-human invite` there) and type the line it shows; their card lets you in, then `/sub-human`. |
-| `STALE` | A write or a link reached a host the room has moved away from, or a copy that has not caught up with the move. A copy catches up by itself. An old host that was promoted away runs the `sub-human demote CODE INVITE PIN` line promote printed for it. |
-| `room link: FORK` | This machine's copy no longer matches the host's log. Nothing more syncs. Run `sub-human link --reset CODE` in your shell: the link copies the room again from the host. |
+| A proposal didn't open | Ask your Claude to "show me the proposal". `node <plugin root>/scripts/sub-human read` in a terminal shows who a proposal names. |
+| `✗ sub-human needs Claude Code 2.1.292 or newer, and this is …` | Update Claude Code (`claude update`) and restart it. |
+| `✗ sub-human's hooks module isn't running in this session (…)` | `/sub-human doctor` (it still runs) checks the usual causes: a settings file with `disableAllHooks` or `allowManagedHooksOnly`, or Claude Code's hooks-modules switch off. Start `claude` without `--bare` or safe mode, in a folder you trust. |
+| `the connection to room … stopped (…)` | The link stopped for good: the host refused or revoked it, or the room closed. The reason says what to do (usually a new invite from the host: `/sub-human invite` there). |
+| `the connection to room … is down` | The link can't reach the host. It retries by itself (from 1 s, with jitter, up to 10 s; at once after a wake or a network change); `@room` posts are queued, answers are refused, until it is back, and `the connection to the room is back` says when (and how many queued posts went out). `~/.sub-human/links/CODE.log` says why; `~/.sub-human/links/CODE.state.json` holds the link's state. |
+| `the connection to room … is down (room CODE moved to NAME's machine, which this machine can't reach yet …)` | A handoff moved the room and this machine can't reach the new host. Ask its person for an invite (`/sub-human invite` there) and type the line it shows; their card lets you in, then `/sub-human`. |
+| `STALE` | A write or a link reached a host the room has moved away from, or a copy that has not caught up with the move. A copy catches up by itself. An old host that was promoted away runs the `node <plugin root>/scripts/sub-human demote CODE INVITE PIN` line promote printed for it, in a terminal. |
+| `this machine's copy of room … no longer matches the host's` | Nothing more syncs. `/sub-human doctor` prints the line to run in a terminal (`node <plugin root>/scripts/sub-human link --reset CODE`): the link copies the room again from the host. |
 | SSH join: `room … is offline` and the link log says `Permission denied (publickey)` | The key ssh used is not the one the host let in, or the host's `authorized_keys` line is missing. The link uses `BatchMode=yes`, so it never asks for a password or a passphrase: load the key into your agent, or name it in `~/.ssh/config` (or `SUB_HUMAN_SSH_OPTS="-i KEY"`). |
 | SSH join: `Host key verification failed` in the link log | ssh has not seen the host yet and BatchMode can't ask. Run `ssh me@host true` once in your shell to accept its key. |
 | SSH join: `no room` or `AUTH: this token is not link …'s` in the link log | The forced command names another room, home or link than your invite. Ask the host for a new invite (`/sub-human kick NAME`, then `/sub-human invite`). |
-| `could not join …: wrong PIN (N tries left)` | Type the join again with the PIN the host gave you. After 5 the invite is burnt: ask for a new one. |
+| `✗ could not join …: wrong PIN (N tries left)` | Check the digits with the host and type the join line again. After 5 the invite stops working: ask for a new one. |
 | `the host's machine checked your PIN. A card there now asks them…` and nothing more | The host person has not answered their card yet (their Claude opens it; or `/sub-human admit` there). Once they let you in, type `/sub-human`. After 10 minutes it lapses: ask for a new invite. |
 | SSH join: `the ssh server that answered is not the one that holds your PIN` | The host key ssh was shown is not the one the host vouched for inside the PIN's handshake: a wrong address, a reinstalled host, or someone in between. Check with the host; nothing more was sent. |
 | SSH invite: `Permission denied (publickey)` before any PIN check | The host's sshd refused the room's enrollment key: no door line (the invite expired or was used), or sshd demands more than a key. Ask for a new invite, join over your own ssh login, or ask for `/sub-human invite --web`. |

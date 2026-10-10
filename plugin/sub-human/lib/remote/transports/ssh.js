@@ -218,23 +218,24 @@ function loginFailure(stderr, spec, code) {
   const where = `${spec.user}@${spec.host}`;
   const once = loginCommand(spec);
   const home = spec.remoteHome || '~/.sub-human';
+  const { cliLine } = require('../../text.js');
   if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED|No (?:\S+ )?host key is known/i.test(s)) {
-    return `ssh does not know ${where}'s host key yet (or it changed), and a link never answers ssh's prompt: run \`${once}\` once in a terminal, check and accept the key, then join again`;
+    return `ssh doesn't know ${where}'s host key yet (or it changed), and sub-human never answers ssh's questions. Run \`${once}\` once in a terminal, check and accept the key, then join again`;
   }
   if (/Permission denied/i.test(s)) {
-    return `${where} refused your ssh login without a prompt (the link runs ssh with BatchMode: your keys or agent only, no password). Check that \`${once}\` logs in without a password; behind MFA, run sub-human prime ${code} first, then /sub-human NAME ${code}`;
+    return `${where} refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password. Check that \`${once}\` logs in without one, then join again; behind MFA, run \`${cliLine(`prime ${code}`)}\` in a terminal first`;
   }
   if (/bin\/serve/.test(s) && /not found|No such file|Unknown command|can't open/i.test(s)) {
-    return `${where} has no sub-human serve shim at ${home}/bin/serve: on that machine, open the room in Claude Code (/sub-human NAME), which writes it, or run sub-human doctor --fix there${spec.remoteHome ? '' : '; if its sub-human home is elsewhere, join with --home PATH'}`;
+    return `${where} isn't set up for joining yet (no ${home}/bin/serve). On that machine, open the room in Claude Code (/sub-human), then join again${spec.remoteHome ? '' : '; if its sub-human folder is somewhere else, add --home PATH'}`;
   }
   if (/^usage: sub-human serve --stdio CODE \[--link ID\]$/m.test(s)) {
-    return `the sub-human on ${where} is older than links over an ssh login: update the plugin there (/plugin update sub-human), or join with an invite`;
+    return `the sub-human on ${where} is too old for joining over an ssh login: update it there (/plugin update sub-human), or ask its host for an invite (/sub-human invite)`;
   }
-  if (/sub-human: no (plugin install|node)/.test(s)) return `${where}'s shim found no plugin or node: on that machine, start Claude Code once (or run sub-human doctor --fix there)`;
+  if (/sub-human: no (plugin install|node)/.test(s)) return `${where} found no sub-human plugin or node to run: on that machine, start Claude Code once, then join again`;
   const m = /^(no room "[^"]*"|room "[^"]*" is not hosted on this machine[^\n]*|sub-human serve --login: [^\n]*)$/m.exec(s);
   if (m) {
-    return /^no room/.test(m[1]) ? `room ${code} is not open on ${where} (no room with that code under ${home}): check the code, or open the room there first`
-      : /not hosted/.test(m[1]) ? `${where} only holds a copy of room ${code}; join through the machine that hosts it` : m[1];
+    return /^no room/.test(m[1]) ? `room ${code} isn't open on ${where} (nothing by that name in ${home}): check the room's name, or open it there first`
+      : /not hosted/.test(m[1]) ? `${where} only holds a copy of room ${code}; join the machine that hosts it` : m[1];
   }
   return null;
 }

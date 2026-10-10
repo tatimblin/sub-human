@@ -109,9 +109,10 @@ test('an invite over pipe: the host sees one line; join links in a hidden step; 
   assert.ok(remote.lib(() => require(path.join(h.LIB, 'identity.js')).readMembers(code)).bob, 'bob is seated');
   assert.equal('join_as' in JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8')), false, 'the seat is taken: nothing pending');
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room' && e.kind === 'status').map(e => e.text).join('\n');
-  assert.match(said, /bob on \S+ typed the PIN of invite [0-9a-f]{12}; waiting for alice to let them in/);
-  assert.match(said, /alice let bob \(request [0-9a-f]{6}\) on \S+ in \(link [0-9a-f]{12}\)/);
-  assert.match(said, /bob's machine \(\S+\) linked to the room, let in by alice \(link [0-9a-f]{12}\)/);
+  assert.match(said, /bob on \S+ typed an invite's PIN; waiting for alice to let them in/);
+  assert.match(said, /alice let bob \(request [0-9a-f]{6}\) on \S+ in; undo with: \/sub-human kick bob/);
+  assert.match(said, /bob's machine \(\S+\) joined the room, let in by alice; undo with: \/sub-human kick bob/);
+  assert.doesNotMatch(said, /\blink [0-9a-f]{12}|invite [0-9a-f]{12}/, 'no internal ids in the room\'s lines');
   const admitted = host.lib(() => admission.find(code, reqs[0].ref));
   assert.equal(admitted.admit, 'let-in');
   assert.ok(admitted.admit_sig && admitted.admit_sig.from === 'alice', 'the answer is signed with alice\'s seat key');
@@ -146,7 +147,7 @@ test('an invite: a wrong PIN costs a try with a room line; the fifth burns the i
   const bad = String((Number(pin2) + 7) % 10_000).padStart(4, '0');
   let last;
   for (let i = 0; i < 5; i++) last = remote.join(bob, `join pipe:${host.home} ${code} ${bad} --as bob`);
-  assert.match(last.json.reason, /that was the last try: the invite is burnt/);
+  assert.match(last.json.reason, /that was the last try: this invite no longer works\. Ask the host for a new one/);
   const after = remote.join(bob, `join pipe:${host.home} ${code} ${pin2} --as bob`);
   assert.match(after.json.reason, /no invite for room \S+ is open here/, 'the right PIN no longer works once burnt');
 });
@@ -184,7 +185,7 @@ test('an invite: Refuse stops the join; a request nobody answers lapses; kick NA
   const dave = remote.seat('dave');
   remote.join(dave, `join pipe:${host.home} ${code} ${pin} --as dave`);
   const r = host.join(alice, 'kick dave');
-  assert.match(r.json.reason, /ended link [0-9a-f]{12}/);
+  assert.match(r.json.reason, /ended a connection to room \S+: it no longer reaches the room/);
   assert.equal(host.lib(() => admission.pending(code)).length, 0);
 });
 
@@ -200,7 +201,8 @@ test('an invite: the host CLI masks the PIN inside Claude Code, `sub-human admit
   remote.join(bob, `join pipe:${host.home} ${code} ${pin} --as bob`);
   const list = spawnSync(process.execPath, [h.BIN, 'admit'], { env: host.env(null), encoding: 'utf8' });
   assert.match(list.stdout, /bob \(request [0-9a-f]{6}\) on \S+ wants to join room/);
-  const ref = /^([0-9a-f]{12}) /m.exec(list.stdout)[1];
+  const ref = /admit ([0-9a-f]{12}) \[--refuse\]$/m.exec(list.stdout)[1];
+  assert.ok(!/(^|\s)sub-human admit/.test(list.stdout.replace(/\S*\/scripts\/sub-human admit/g, '')), 'the CLI by its path, never a bare sub-human');
   const noTty = spawnSync(process.execPath, [h.BIN, 'admit', ref], { env: host.env(null), encoding: 'utf8' });
   assert.equal(noTty.status, 1);
   assert.match(noTty.stderr, /add --yes/);

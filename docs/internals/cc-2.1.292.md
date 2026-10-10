@@ -215,6 +215,23 @@ The CONTRACT now lists only what plugin code relies on. These entries came out o
 - `session-end-budget` (`.CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS;if(e!==void 0)return e;`, shapes `if(~.timeout&&~.timeout*1000>~)~=~.timeout*1000;return Math.max(~,Math.min(~,~))}` and `var ~=1500,~=60000,`): SessionEnd's budget, the env override else the largest hook timeout clamped to [1500, 60000] ms. `cc.sessionEndBudgetMs` and `SESSION_END_*` went.
 - `cc.logsCmd` (the `bg-logs` entry stays: the demo's room Claude view runs `claude logs`), and the unused `cc.ENV` keys `ENABLE_TODO_TOOLS`, `SESSION_END_TIMEOUT`, `PLUGIN_ROOT`, `PLUGIN_DATA` and `PROJECT_DIR`.
 
+## Command replies (0.5.0-beta.7)
+
+Read from the 2.1.292 binary for the message pass (`docs/next/COMMANDS-REVIEW.md`, "Messages: 5 rules"): how can `/sub-human` show the person its answer without "blocked by hook", and keep a PIN away from the model? CONTRACT `command-run-every-command`, `command-run-empty-answer`, `expansion-block-frame`, `modules-switch-cache`.
+
+| Output | How it is drawn | Does the model read it? |
+|---|---|---|
+| UserPromptExpansion `decision:"block"` | a warning row `UserPromptExpansion operation blocked by hook:\n<reason>` (plus `Original prompt: …` without `suppressOriginalPrompt`); the expansion stops at the first block, so a `systemMessage` beside it is never shown | no |
+| UserPromptExpansion `continue:false` + `stopReason` | `Operation stopped by hook: <reason>`, as a warning **and** an `isMeta` user row | yes (the meta row): never for a secret |
+| `prompt.submit` `{drop}` | `Prompt dropped by a hook: <reason>` | no |
+| `command.run` answered `{text}` without `next` | the command's own output row (`⎿ sub-human: <text>`; the hooking plugins' names lead it unless they are built in), after the echoed command line | yes: both are `local_command` rows, which go to the API |
+| `command.run` answered `{}` without `next` (typed in the terminal, no pasted blocks) | nothing at all: no echo, no row | no |
+| `$.ui.log` | a dim `sub-human: <text>` notice, one line each | no; not forwarded to Remote Control |
+
+`command.run` fires for every slash command, a plugin's skill included, before it expands (the dispatch calls the hook chain with the engine's run as core), so the module answers `/sub-human` itself: `{}` plus `$.ui.log` lines for anything a PIN can be in, `{text}` for the rest, and `next(e)` only for a join that worked, whose mechanics block it hands to its own `classic.UserPromptExpansion` hook (answered without `next`, so `hooks/join.js` does not run twice). An SDK prompt (`-p`), or one with pasted blocks before it, is echoed as a user row whatever the answer (`P = isNonInteractive || precedingInputBlocks.length || !By(origin)` in the answer's renderer): the module leaves those, a prompt through Remote Control that may hold a PIN, and the room's Claude's launch to the classic hook, which keeps the prompt out with `suppressOriginalPrompt`. Limits: `@room`'s receipt is still `Operation stopped by hook: ✓ sent` (UserPromptSubmit has no other way to end a prompt without a turn), and a `$.ui.log` line never reaches the phone.
+
+**Why a session has no module.** Modules wait for workspace trust, are off in safe mode and `--bare` (where the command hooks are off too), off for installed plugins under `allowManagedHooksOnly` / managed `disableAllHooks`, and off when the GrowthBook switch `tengu_plugin_hooks_modules` is (its last value is cached in the global config's `cachedGrowthBookFeatures`). `hooks/join.js noModule` names the cause it can see from a command hook (the running binary's version, the cached switch); `/sub-human doctor` and `help` run without the module.
+
 ## Remote Control
 
 Read from the 2.1.292 binary while porting remote rooms (phone tests on the feature branch found room chat and `@room` results missing on the phone). Searches and shapes are in the CONTRACT (`bridge-forwarded-rows`, `transcript-prompt-origin`, `plan-reject-remote`).

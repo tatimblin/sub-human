@@ -26,6 +26,10 @@ const COMMON = ['block', 'preventContinuation', 'stopReason'];
 
 export const shimArgv = (root, script) => ['node', `${root}/hooks/${script}`];
 
+/** A command hook's systemMessage as a $.ui.log line: without its own "sub-human: " lead, which $.ui.log adds (cc
+ * CONTRACT ui-log-notice), so no line reads "sub-human: sub-human: …". */
+export const asNotice = text => String(text ?? '').replace(/^sub-human: /gm, '');
+
 /** CLAUDE_PLUGIN_ROOT, the payload's session id, and an empty CLAUDE_PID: a $.process.run child inherits whatever
  * claude itself inherited (cc CONTRACT process-run-stdin). */
 export function shimEnv(e, root) {

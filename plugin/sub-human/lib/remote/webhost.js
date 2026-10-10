@@ -84,7 +84,7 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, by = null
   L.addRoom(code, { path: p, url: joinBase, mode, port: lport, ...(tsRec ? { tailscale: tsRec } : {}) });
   const how = mode === 'funnel' ? 'Tailscale Funnel (public)' : mode === 'tailscale' ? 'Tailscale Serve (your tailnet only)' : `your front ${base.host}`;
   const notes = [
-    ...(tsRec ? ['The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and a joiner\'s link keeps trying.'] : []),
+    ...(tsRec ? ['The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and their machine keeps trying.'] : []),
     ...(mode === 'funnel' ? [ts().CT_WARNING] : []),
     'Stop serving it with /sub-human invite --stop (closing the room does too).',
   ];
@@ -93,7 +93,7 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, by = null
   const line = `/sub-human join ${joinBase} ${r.pin}`;
   const text = require('./hosting.js').shortText({
     code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, ref: r.ref,
-    extra: [`Their link checks this machine's listener key (${hostKey.slice(0, 12)}…) inside the PIN's handshake and pins it; what sits in between sees ciphertext.`, ...notes],
+    extra: [`Their machine checks this one's key (${hostKey.slice(0, 12)}…) as part of the PIN check, so nothing in between can read along.`, ...notes],
   });
   return { ...r, short: true, line, locator, hostKey, base: joinBase, mode, port: lport, text };
 }

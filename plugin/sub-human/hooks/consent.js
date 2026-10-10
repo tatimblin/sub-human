@@ -554,8 +554,8 @@ function postHandoff(input, me, r, answers) {
   if (!res.ok) {
     return say(`The room did NOT move: ${res.error}. ${me.name} has been told; return to what you were doing.`, { systemMessage: `sub-human: room ${me.code} did not move here: ${res.error}` }), true;
   }
-  say(`Room ${me.code} is hosted on this machine now (host epoch ${res.epoch}): ${me.name} agreed on the card. The room's Claude starts here, on ${me.name}'s model account. Post nothing about it (the room shows it); return to what you were doing.`,
-    { systemMessage: `sub-human: room ${me.code} is hosted here now (epoch ${res.epoch}); the room's Claude runs on your model account. Keep this machine reachable for the others${res.note}` });
+  say(`Room ${me.code} is hosted on this machine now: ${me.name} agreed on the card. The room's Claude starts here, on ${me.name}'s Claude account. Post nothing about it (the room shows it); return to what you were doing.`,
+    { systemMessage: `sub-human: room ${me.code} is hosted on this machine now, and its Claude runs on your Claude account. Keep this machine reachable for the others${res.note}` });
   return true;
 }
 
@@ -588,7 +588,7 @@ function postAdmit(input, me, r, answers) {
     }
     const sign = p => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name });
     const res = adm.letIn(me.code, req.ref, { by: me.name, sign });
-    say(`${me.name} let ${req.name}'s machine into room ${me.code} (link ${res.id}). Post nothing about it (the room shows it); return to what you were doing.`,
+    say(`${me.name} let ${req.name}'s machine into room ${me.code}. Post nothing about it (the room shows it); return to what you were doing.`,
       { systemMessage: `sub-human: ${res.text}` });
   } catch (e) {
     say(`Nothing was done: ${e.message}. ${me.name} has been told; return to what you were doing.`, { systemMessage: `sub-human: ${req.name} was not let in: ${e.message}` });

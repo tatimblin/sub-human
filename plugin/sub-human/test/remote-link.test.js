@@ -353,11 +353,11 @@ test('tail: one line for a link that is not online, keyed fork, stopped or offli
   assert.equal(linkLine({ running: true, state: 'online' }, 'vole-1234'), null);
   assert.equal(linkLine({ running: true, state: 'connecting' }, 'vole-1234'), null);
   assert.deepEqual(linkLine({ running: false, state: 'fork' }, 'vole-1234'), {
-    key: 'fork', text: 'room link: FORK: this machine\'s copy of room vole-1234 no longer matches the host\'s; run sub-human link --reset vole-1234' });
-  assert.match(linkLine({ running: false, state: 'fork', queued: 3 }, 'vole-1234').text, /host's; 3 queued @room post\(s\) are kept, not sent; run sub-human link --reset/);
+    key: 'fork', text: 'this machine\'s copy of room vole-1234 no longer matches the host\'s. Run /sub-human doctor.' });
+  assert.match(linkLine({ running: false, state: 'fork', queued: 3 }, 'vole-1234').text, /host's; 3 @room post\(s\) are kept, not sent\. Run \/sub-human doctor\./);
   assert.deepEqual(linkLine({ running: true, state: 'offline', reason: 'the link closed' }, 'vole-1234'), {
-    key: 'offline', text: 'room link: OFFLINE (the link closed); @room posts are queued and sent when it is back, answers are refused' });
-  assert.match(linkLine({ running: false }, 'vole-1234').text, /the link daemon is not running/);
+    key: 'offline', text: 'the connection to room vole-1234 is down (the link closed); @room posts wait and go out when it\'s back, card answers can\'t be sent until then' });
+  assert.match(linkLine({ running: false }, 'vole-1234').text, /the connection to room vole-1234 isn't running; .*Type \/sub-human to reconnect\./);
   assert.deepEqual(linkLine({ running: false, state: 'stopped', reason: 'the room was closed' }, 'vole-1234'), {
-    key: 'stopped', text: 'room link: STOPPED (the room was closed); @room posts are refused' });
+    key: 'stopped', text: 'the connection to room vole-1234 stopped (the room was closed); @room posts can\'t be sent. Run /sub-human doctor.' });
 });

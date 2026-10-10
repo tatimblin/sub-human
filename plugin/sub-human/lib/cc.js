@@ -36,6 +36,8 @@
  *   locateBinary({bin?, env?}) -> path|null   the binary to probe: bin, $CLAUDE_BIN, `claude` on PATH (symlinks
  *                                        resolved), else the newest /opt/homebrew/Caskroom/claude-code*\/<v>/claude
  *   binaryVersion(buf) -> string|null    the VERSION:"…" literal in the binary
+ *   runningVersion(pid) -> string|null   the version the Claude Code process pid runs (its executable's path, else --version)
+ *   globalConfigFile(env), modulesSwitch(env) -> bool|undefined   the hooks modules switch Claude Code last cached
  *   probe(buf, {entries?, envNames?}) -> [{id, stability, ok, missing, note}]   every entry's search strings and
  *       shapes checked against the binary (scripts/probe-cc.js, `sub-human doctor`); envNames adds the derived
  *       daemon-env-names check (every DAEMON_ENV_ALLOW key is a quoted literal). One latin1 view, String#indexOf,
@@ -675,7 +677,7 @@ const CONTRACT = Object.freeze([
   { id: 'classic-chain-order', section: 10, stability: 'incidental', search: ['function-hook chain`', 'isManaged:!0,budgetMs:0,async run('],
     shape: ['`classic.${~.hook_event_name} function-hook chain`', '[~,...~("classic.PreToolUse",~),~]',
       '{name:"core",isCore:!0,budgetMs:0,async run(~){let ~=~(~),~=await ~(~(~,{managedHooksExcluded:~(~)}),~.tool)'],
-    note: 'A classic.<Event> chain is [managed settings hooks, ...modules in load order, core], and core runs every other settings hook. A module that answers without next() therefore skips every non-managed settings hook for that call (its own plugin\'s, other plugins\' and the user\'s and project\'s command hooks) and the modules of plugins loaded after it; managed hooks and earlier-loaded modules still run (S1, S5; cc-2.1.292.md Review spikes, S-skip). sub-human answers without next() only where it blocks or stops a prompt (classic.UserPromptSubmit, TaskCompleted); it no longer answers PreToolUse.' },
+    note: 'A classic.<Event> chain is [managed settings hooks, ...modules in load order, core], and core runs every other settings hook. A module that answers without next() therefore skips every non-managed settings hook for that call (its own plugin\'s, other plugins\' and the user\'s and project\'s command hooks) and the modules of plugins loaded after it; managed hooks and earlier-loaded modules still run (S1, S5; cc-2.1.292.md Review spikes, S-skip). sub-human answers without next() only where it blocks or stops a prompt (classic.UserPromptSubmit, TaskCompleted) and for the /sub-human expansion whose join its command.run hook already ran (classic.UserPromptExpansion: the join hook beneath must not run twice); it no longer answers PreToolUse.' },
   { id: 'prompt-submit-ups-order', section: 10, stability: 'incidental', search: 'the prompt was removed from the queue before it ran',
     shape: 'let ~=await ~(~.text,~.text===~?{managedHooksExcluded:!0}:{})',
     note: 'prompt.submit\'s core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). mod/prompt.mjs relies on it: classic.UserPromptSubmit runs inside prompt.submit\'s next(e), so prompt.submit hands it e.origin (the classic payload has none) in a module variable.' },
@@ -693,6 +695,18 @@ const CONTRACT = Object.freeze([
   { id: 'ui-log-notice', section: 10, stability: 'incidental', search: '$.ui.log (to debug): ',
     shape: '=(~)=>~(~(~.plugin,~.text),"notice");',
     note: '$.ui.log lines are stored as system notices at level "notice": drawn dim as "<plugin>: <text>" in the default view, kept across --resume, never read by the model, no wake (S4). One line each: a newline in the text is drawn as U+FFFD (cc-2.1.292.md Function hooks), so mod/deliver.mjs logs a chat batch line by line.' },
+  // §10 command.run: how /sub-human shows its replies (mod/command.mjs); cc-2.1.292.md "Command replies"
+  { id: 'command-run-every-command', section: 10, stability: 'incidental', search: 'a hook\'s own answer after next() dropped',
+    shape: 'engine:{run:~,textOf:(~)=>~.resultText,contextOf:(~)=>~.metaTexts,retell:~}',
+    note: 'command.run fires for every slash command the person runs, a plugin\'s skill included (/sub-human), before it expands; a hook that answers without next() runs no command, so no UserPromptExpansion hook and no model turn.' },
+  { id: 'command-run-empty-answer', section: 10, stability: 'incidental', search: 'but no command.run hook answered it',
+    shape: ['if(~===void 0&&~.length===0&&!~)return{messages:[],shouldQuery:!1,command:~}', '${~.map(~).join("+")}: ${~.text}'],
+    note: 'An answer {} (no text, no context) of a typed prompt adds no row at all: the command line is not echoed and nothing reaches the model; a {text} answer is the command\'s output row, shown under "sub-human: " (the hooking plugins\' names) and read by the model with its echoed command line (local_command rows go to the API), so the module answers {text} only for a prompt and a reply that hold no secret, and shows the rest with $.ui.log. A prompt run by the SDK, or with pasted blocks before it, is echoed as a user row even then: the module leaves those to the classic hook.' },
+  { id: 'expansion-block-frame', section: 10, stability: 'incidental', search: ['UserPromptExpansion operation blocked by hook:', 'Original prompt: '],
+    shape: 'if(~.blockingError)yield{blockingError:~.blockingError,suppressOriginalPrompt:~.suppressOriginalPrompt,...~},~="deny";if(~.message)yield{message:~.message,...~}',
+    note: 'A UserPromptExpansion block is drawn as a warning "UserPromptExpansion operation blocked by hook:\\n<reason>" (never read by the model), and the expansion stops at the first block, before that hook\'s systemMessage is read: a block shows its reason alone. The classic join hook (no module) still answers this way.' },
+  { id: 'modules-switch-cache', section: 10, stability: 'incidental', search: ['cachedGrowthBookFeatures', '"tengu_plugin_hooks_modules"'],
+    note: 'Claude Code caches the hooks modules rollout switch in the global config\'s cachedGrowthBookFeatures (cc.modulesSwitch): false there explains a session with no module (hooks/join.js noModule, doctor).' },
   { id: 'fs-write-plain', section: 10, stability: 'incidental', search: '$.fs.write (',
     shape: 'await ~(~(~),{recursive:!0}),await ~(~,~.text,"utf8"),~(`$.fs.write (',
     note: '$.fs.write is mkdir -p plus writeFile: not atomic, no mode, no lock. The mod never writes room state.' },
@@ -758,6 +772,45 @@ function binaryVersion(buf) {
   return v ? v[1] : null;
 }
 
+/**
+ * The version of the Claude Code process pid runs, or null: its executable's path (/proc/PID/exe on Linux, `ps -o
+ * comm=` elsewhere, symlinks resolved) when the path names one (the cask's …/2.1.292/claude, the installer's
+ * versions/2.1.292), else `<that binary> --version`. Used only to word a refusal (hooks/join.js noModule).
+ */
+function runningVersion(pid, { timeoutMs = 3000 } = {}) {
+  if (!Number.isInteger(Number(pid)) || Number(pid) <= 0) return null;
+  let exe = null;
+  try { exe = fs.readlinkSync(`/proc/${pid}/exe`); } catch {
+    const r = spawnSync('ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8', timeout: timeoutMs });
+    exe = String(r.stdout || '').trim() || null;
+  }
+  if (!exe) return null;
+  try { exe = fs.realpathSync(exe); } catch { /* as ps gave it */ }
+  const inPath = /(?:^|\/)(\d+\.\d+\.\d+)(?:\/|$)/.exec(exe);
+  if (inPath) return inPath[1];
+  if (!path.isAbsolute(exe)) return null;
+  const r = spawnSync(exe, ['--version'], { encoding: 'utf8', timeout: timeoutMs });
+  const m = /(\d+\.\d+\.\d+)/.exec(String(r.stdout || ''));
+  return m ? m[1] : null;
+}
+
+/** The global config file Claude Code keeps its cached feature switches in: $CLAUDE_CONFIG_DIR/.claude.json, else
+ * ~/.claude.json. */
+const globalConfigFile = (env = process.env) => (env[ENV.CONFIG_DIR]
+  ? path.join(env[ENV.CONFIG_DIR], '.claude.json') : path.join(env.HOME || os.homedir(), '.claude.json'));
+
+/**
+ * The installed plugins' hooks modules switch as Claude Code last cached it (cachedGrowthBookFeatures
+ * .tengu_plugin_hooks_modules in the global config; CONTRACT hooks-modules, modules-switch-cache): true, false, or
+ * undefined when unknown (no file, no entry: the default, on). Read only.
+ */
+function modulesSwitch(env = process.env) {
+  let j;
+  try { j = JSON.parse(fs.readFileSync(globalConfigFile(env), 'utf8')); } catch { return undefined; }
+  const v = j && j.cachedGrowthBookFeatures && j.cachedGrowthBookFeatures.tengu_plugin_hooks_modules;
+  return typeof v === 'boolean' ? v : undefined;
+}
+
 // Buffer#indexOf over the whole binary cost ~50 ms a call and a shape regex over all of it seconds: the probe test
 // timed out with the suite running beside it. IDENT_MAX bounds one minified identifier (they are a few chars).
 const IDENT_MAX = 64;
@@ -809,4 +862,5 @@ module.exports = {
   matcherIsExact, matcherMatches,
   shapeRe, CONTRACT,
   PROBED_VERSION, MIN_VERSION, compareVersions, locateBinary, binaryVersion, probe,
+  runningVersion, globalConfigFile, modulesSwitch,
 };

@@ -14,7 +14,7 @@ import {
   gateVerdict, GATE_FAILED, isAtRoom, isAtClaude, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
   writesWorking, onRemote,
 } from './core/prompt.mjs';
-import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.mjs';
+import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.mjs';
 import { reviewOpenOf } from './core/prefilter.mjs';
 import { delivering, setRemote, queueRelay, isRelay } from './deliver.mjs';
 import { RELAY_CONTEXT } from './core/deliver.mjs';
@@ -81,7 +81,7 @@ async function runPrompt($, e, origin, hello) {
     return failed;
   }
   const { result, systemMessage, subHuman } = toClassic('UserPromptSubmit', run);
-  if (systemMessage) { if (origin === 'bridge') relay(systemMessage); else $.ui.log(systemMessage); }
+  if (systemMessage) { if (origin === 'bridge') relay(systemMessage); else for (const line of asNotice(systemMessage).split('\n')) if (line.trim()) $.ui.log(line); }
   const open = reviewOpenOf(subHuman);
   if (open !== undefined) await $.state.set(REVIEW, open);
   return result;

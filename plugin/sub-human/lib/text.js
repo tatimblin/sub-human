@@ -8,7 +8,12 @@
  *   NAME_RE                  a seat name: letters, digits, . _ -, 1-32
  *   CODE_RE                  a room code: "otter-4821"
  *   SID_SAFE                 a session id safe to use in a file name
+ *   cliLine(args) -> string  the shell line that runs this plugin's CLI, `node <plugin root>/scripts/sub-human ARGS`
+ *                            (~ for the home folder): what a message prints when only a shell can do it, since no
+ *                            `sub-human` is on PATH
  */
+const os = require('node:os');
+const path = require('node:path');
 
 const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
 const CODE_RE = /^[a-z]+-\d{4}$/;
@@ -24,4 +29,12 @@ function clip(s, n) {
 
 const oneLine = s => (s == null ? '' : String(s)).replace(/\s+/g, ' ').trim();
 
-module.exports = { clip, oneLine, NAME_RE, CODE_RE, SID_SAFE };
+function cliLine(args = '') {
+  const root = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..');
+  const home = os.homedir();
+  const shown = home && (root === home || root.startsWith(home + path.sep)) ? `~${root.slice(home.length)}` : root;
+  const q = /[^\w@%+=:,./~-]/.test(shown) ? `'${root.replace(/'/g, "'\\''")}'` : shown;
+  return `node ${q}/scripts/sub-human${args ? ` ${args}` : ''}`;
+}
+
+module.exports = { clip, oneLine, cliLine, NAME_RE, CODE_RE, SID_SAFE };

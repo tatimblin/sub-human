@@ -104,7 +104,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   for (const [i, text] of ['is anyone there', 'second', 'third'].entries()) {
     const queued = remote.say(bob, text);
     assert.equal(queued.json.continue, false, queued.stderr);
-    assert.equal(queued.json.stopReason, `⧗ queued: room ${code} is offline; this post is sent when the link is back (${i + 1} waiting)`);
+    assert.equal(queued.json.stopReason, `⧗ queued: room ${code} is offline; this post goes out when the connection is back (${i + 1} waiting)`);
   }
   assert.equal(JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.state.json`), 'utf8')).queued, 3);
   assert.equal(fs.statSync(path.join(remote.home, 'rooms', code, 'outbox.json')).mode & 0o777, 0o600);
@@ -126,10 +126,10 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.deepEqual(host.lib(() => store.open(code).readAll().slice(-3).map(e => store.humanTrust(e))), ['verified', 'verified', 'verified']);
   assert.equal(fs.existsSync(path.join(remote.home, 'rooms', code, 'outbox.json')), false, 'the outbox is empty');
   const notice = events(await across, ['health']);
-  assert.equal(notice.match(/room link: OFFLINE/g).length, 1, notice);
-  assert.match(notice, /room link: OFFLINE \(.*\); @room posts are queued and sent when it is back, answers are refused/);
-  assert.equal(notice.match(/back online/g).length, 1, notice);
-  assert.match(notice, /back online; @room posts go through again; 3 queued @room post\(s\) sent/, 'one quiet line');
+  assert.equal(notice.match(/is down \(/g).length, 1, notice);
+  assert.match(notice, /the connection to room \S+ is down \(.*\); @room posts wait and go out when it's back/);
+  assert.equal(notice.match(/connection to the room is back/g).length, 1, notice);
+  assert.match(notice, /the connection to the room is back; @room posts go through again; 3 waiting @room post\(s\) sent/, 'one quiet line');
   assert.doesNotMatch(texts(host.log(code)).join('\n'), /bob (left|rejoined)/, 'no left/joined noise');
   assert.equal(remote.say(bob, 'back again').json.continue, false);
   assert.equal(remote.log(code), host.log(code));

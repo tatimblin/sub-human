@@ -152,10 +152,10 @@ function serveEnroll(transport, { store, kind, log = () => {}, timeoutMs = enrol
 
     function wrong() {
       const { left, burnt } = auth.failShort(store, st.offers.map(o => o.key), { now: now() });
-      roomLine(store, burnt ? `someone typed a wrong PIN for an invite to this room, its last try: the invite is burnt` : `someone typed a wrong PIN for an invite to this room (${left} ${left === 1 ? 'try' : 'tries'} left)`, log);
+      roomLine(store, burnt ? `someone typed a wrong PIN for an invite to this room, its last try: the invite no longer works` : `someone typed a wrong PIN for an invite to this room (${left} ${left === 1 ? 'try' : 'tries'} left)`, log);
       throw new RoomError('AUTH', burnt || !left
-        ? 'wrong PIN, and that was the last try: the invite is burnt; ask the host for a new invite'
-        : `wrong PIN (${left} ${left === 1 ? 'try' : 'tries'} left); type the join again with the PIN the host gave you`);
+        ? 'wrong PIN, and that was the last try: this invite no longer works. Ask the host for a new one (/sub-human invite on their side)'
+        : `wrong PIN (${left} ${left === 1 ? 'try' : 'tries'} left). Check the digits with the host, then type the join line again`);
     }
 
     function done({ i, ta }) {
@@ -164,7 +164,7 @@ function serveEnroll(transport, { store, kind, log = () => {}, timeoutMs = enrol
       if (!cpace.equal(unb64(ta, 64), cpace.tag(o.macKey, st.Ya, st.ADa))) return wrong();
       const r = auth.enrollShort(store, o.key, { tried: st.offers.map(x => x.key), joiner: st.joiner, now: now(), admitMs: config.envMs('SUB_HUMAN_ADMIT_TTL_MS', config.ADMIT_TTL_MS) });
       const j = st.joiner, fp = fingerprint(j.key);
-      roomLine(store, `${j.name} on ${j.label}${fp ? ` (${fp})` : ''} typed the PIN of invite ${o.ref}; waiting for ${o.by || 'the host'} to let them in (the card, or /sub-human admit ${r.ref})`, log);
+      roomLine(store, `${j.name} on ${j.label}${fp ? ` (${fp})` : ''} typed an invite's PIN; waiting for ${o.by || 'the host'} to let them in (the card, or /sub-human admit ${r.ref})`, log);
       return { box: seal(boxKey(o.isk, st.sid), { secret: r.secret, link: r.id, ref: r.ref, expires_at: r.expires_at }, st.sid) };
     }
 
@@ -320,7 +320,7 @@ function inviteFor(code, spec, secret, key) {
 async function enrollLink(code) {
   const links = require('../room/links.js');
   const l = links.get(code);
-  if (!l || !l.enroll || typeof l.enroll.pin !== 'string') throw new RoomError('AUTH', `this machine holds no PIN for room ${code}; type the join again`);
+  if (!l || !l.enroll || typeof l.enroll.pin !== 'string') throw new RoomError('AUTH', `this machine has no PIN for room ${code}; type the join line again`);
   if ((l.enroll.attempts || 0) >= MAX_SPENT) {
     const { enroll, ...rest } = l;
     links.set(code, { ...rest, refused: { at: new Date().toISOString(), reason: 'the host never answered' } });
@@ -352,7 +352,7 @@ async function enrollLink(code) {
       if (e && e.code === 'OFFLINE' && !e.spent && spec.kind === 'ssh' && typeof transport.stderr === 'function') {
         await new Promise(res => setTimeout(res, 100)); // ssh's last words may come just after its exit
         if (/Permission denied \(publickey/.test(transport.stderr())) {
-          throw new RoomError('AUTH', `the host's door for PINs to room ${code} is shut (its PIN was used, burnt, cancelled or expired, or this is not the host that made it); ask the host for a new invite`);
+          throw new RoomError('AUTH', `the invite to room ${code} no longer works (used, cancelled, expired or too many wrong PINs, or this isn't the machine that made it); ask the host for a new one`);
         }
       }
       throw e;

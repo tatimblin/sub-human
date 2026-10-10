@@ -160,7 +160,7 @@ test('the attested origin: a typed @room (composer, sdk, bridge) posts at once; 
   for (const origin of ['peer', 'peer-send-message', 'task-notification', 'plugin', 'unclassified', 'channel']) {
     const r = atRoom(w, submit('@room I agree', { source: 'user', sub_human_origin: origin }), { as: 'alice' });
     assert.equal(r.json.decision, 'block', origin);
-    assert.match(r.json.reason, /not posted: .*origin "/, origin);
+    assert.match(r.json.reason, /not posted: .*it came from "/, origin);
   }
   for (const source of ['user', 'sdk', 'system', undefined]) {
     const r = atRoom(w, submit('@room I agree', { source }), { as: 'alice' });

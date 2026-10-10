@@ -231,7 +231,7 @@ test('an @room typed through Remote Control: a refusal is relayed as a prompt of
   // typed here, the same answer is a notice
   const n = seen.logs.length
   await submit($, '@room again')
-  expect(seen.logs.slice(n)).toEqual(['sub-human: ✗ not posted: the room is offline'])
+  expect(seen.logs.slice(n)).toEqual(['✗ not posted: the room is offline']) // $.ui.log puts "sub-human: " before it: never twice
 })
 
 test('an @room typed through Remote Control that posted ("✓ sent", no systemMessage) relays nothing: no model turn', async ($, on) => {
@@ -244,5 +244,5 @@ test('an @room typed through Remote Control that posted ("✓ sent", no systemMe
   await clock.advance(5000)
   await new Promise(r => setTimeout(r, 200))
   expect(seen.entered).toEqual(['@room hi']) // this world's engine enters every prompt; no relay after it
-  expect(seen.logs.filter(l => !/could not be delivered/.test(l))).toEqual([]) // (this world runs no tail child)
+  expect(seen.logs.filter(l => !/didn't arrive here/.test(l))).toEqual([]) // (this world runs no tail child)
 })

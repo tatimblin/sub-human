@@ -28,8 +28,9 @@ export const RELAY_AFTER_MS = 250;
 export const RELAY_GAP_MS = 3000;
 /** Wakes held for the next turn.start, newest kept: a session that never runs a turn again must not grow it. */
 export const PENDING_MAX = 20;
-/** What the person sees when something the room sent may not have reached the session (one line). */
-export const DELIVERY_ERROR_NOTICE = 'sub-human: a room message could not be delivered; `sub-human read` shows the room';
+/** What the person sees when something the room sent may not have reached the session (one line; $.ui.log puts
+ * "sub-human: " before it). */
+export const DELIVERY_ERROR_NOTICE = "a room message didn't arrive here. Run /sub-human doctor.";
 
 export const PULL_DELIVERY = 'at-most-once';
 /** A wake's prompt starts with this "(for Claude)" head, so it never parses as a post (prompt.mjs gateVerdict). */

@@ -102,14 +102,17 @@ test('ssh.loginSpec / remoteCommand / command: the person\'s own ssh (BatchMode,
 test('ssh.loginFailure: what only the person can fix names the exact step; anything that may pass is null', () => {
   const spec = ssh.loginSpec('me@devbox', { link: ID });
   const f = s => ssh.loginFailure(s, spec, 'vole-1234');
-  assert.match(f('Host key verification failed.'), /run `ssh me@devbox` once in a terminal, check and accept the key/);
+  assert.match(f('Host key verification failed.'), /Run `ssh me@devbox` once in a terminal, check and accept the key, then join again/);
   assert.match(ssh.loginFailure('Host key verification failed.', { ...spec, port: 2222, via: 'b' }, 'vole-1234'), /`ssh -p 2222 -J b me@devbox`/);
-  assert.match(f('me@devbox: Permission denied (publickey).'), /refused your ssh login without a prompt .*sub-human prime vole-1234/);
-  assert.match(f('sh: 1: /home/me/.sub-human/bin/serve: not found'), /no sub-human serve shim at ~\/\.sub-human\/bin\/serve: on that machine, open the room in Claude Code .*--home PATH/);
-  assert.match(f('zsh:1: no such file or directory: /home/me/.sub-human/bin/serve'), /no sub-human serve shim/);
-  assert.match(ssh.loginFailure('env: /srv/sh/bin/serve: No such file or directory', { ...spec, remoteHome: '/srv/sh' }, 'vole-1234'), /shim at \/srv\/sh\/bin\/serve/);
-  assert.match(f('no room "vole-1234"'), /room vole-1234 is not open on me@devbox/);
-  assert.match(f('usage: sub-human serve --stdio CODE [--link ID]'), /older than links over an ssh login/);
+  assert.match(f('me@devbox: Permission denied (publickey).'), /refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password\..*run `node \S+\/scripts\/sub-human prime vole-1234` in a terminal first/);
+  assert.match(f('sh: 1: /home/me/.sub-human/bin/serve: not found'), /me@devbox isn't set up for joining yet \(no ~\/\.sub-human\/bin\/serve\)\. On that machine, open the room in Claude Code \(\/sub-human\), then join again; .*--home PATH/);
+  assert.match(f('zsh:1: no such file or directory: /home/me/.sub-human/bin/serve'), /isn't set up for joining yet/);
+  assert.match(ssh.loginFailure('env: /srv/sh/bin/serve: No such file or directory', { ...spec, remoteHome: '/srv/sh' }, 'vole-1234'), /\(no \/srv\/sh\/bin\/serve\)/);
+  assert.match(f('no room "vole-1234"'), /room vole-1234 isn't open on me@devbox/);
+  assert.match(f('usage: sub-human serve --stdio CODE [--link ID]'), /too old for joining over an ssh login/);
+  for (const s of ['Host key verification failed.', 'me@devbox: Permission denied (publickey).', 'sh: 1: /home/me/.sub-human/bin/serve: not found']) {
+    assert.doesNotMatch(f(s), /BatchMode|shim|(^|[^/])sub-human (prime|doctor)/, 'no internal words, no bare CLI');
+  }
   assert.match(f('sub-human serve --login: refused: this connection came through a forced command'), /forced command/);
   assert.equal(f('ssh: connect to host devbox port 22: Connection refused'), null);
   assert.equal(f('ssh: connect to host devbox port 22: Operation timed out'), null);
@@ -189,7 +192,7 @@ test('login e2e: join me@devbox ROOM links over the person\'s own ssh and takes 
 
   // kick by name: the token goes, bob leaves, its serve is stopped, the daemon stops with the reason
   const rv = host.join(alice, 'kick bob');
-  assert.match(rv.json.reason, new RegExp(`bob is out of room ${code}: its connection no longer reaches the room\\. It came over an ssh login to this account, which can join again`));
+  assert.match(rv.json.reason, new RegExp(`bob is out of room ${code}: it no longer reaches the room\\. It came over an ssh login to this account, which can join again`));
   assert.deepEqual(links(host, code), {});
   await h.until(() => remote.lib(() => link.status(code)).state === 'stopped', 10_000);
   assert.match(remote.lib(() => link.status(code)).reason, /revoked/);
@@ -214,7 +217,7 @@ test('login e2e: a bare ssh alias (join dev ROOM) takes its user from ssh -G and
   const argv = fs.readFileSync(sshLog, 'utf8').trim().split('\n').map(l => JSON.parse(l)).find(a => a[0] !== '-G');
   assert.ok(argv.includes('me@dev'), JSON.stringify(argv));
   const you = remote.join(bob, `join YOU@dev ${code} --as bob`);
-  assert.match(you.json.reason, /"YOU@dev" still has the example's placeholder: put your user name on that machine in place of YOU \(or just the ssh alias, e\.g\. dev\)/);
+  assert.match(you.json.reason, /"YOU@dev" still has the example's placeholder: put your user name on that machine in place of YOU \(or just its ssh alias, e\.g\. dev\)/);
   assert.match(remote.join(bob, 'join dev').json.reason, /which room/, 'an alias without a room is not a login join');
 });
 
@@ -232,7 +235,7 @@ test('login e2e: --home names a host home that is not ~/.sub-human; a primed (mu
   const miss = remote.join(bob, `join me@devbox ${code} --as bob`);
   stopDaemon(t, remote, code);
   assert.equal(miss.json.decision, 'block');
-  assert.match(miss.json.reason, /could not link to room .* over ssh me@devbox \(your ssh login\): me@devbox has no sub-human serve shim at ~\/\.sub-human\/bin\/serve: on that machine, open the room in Claude Code \(\/sub-human NAME\), which writes it, or run sub-human doctor --fix there; if its sub-human home is elsewhere, join with --home PATH/);
+  assert.match(miss.json.reason, /could not reach room .* over ssh me@devbox \(your ssh login\): me@devbox isn't set up for joining yet \(no ~\/\.sub-human\/bin\/serve\)\. On that machine, open the room in Claude Code \(\/sub-human\), then join again; if its sub-human folder is somewhere else, add --home PATH/);
   assert.deepEqual(links(host, code), {}, 'nothing minted');
   // as `sub-human prime CODE` leaves it: the link rides a master; the re-join to the same destination keeps that
   const linksLib = require(path.join(h.LIB, 'room', 'links.js'));
@@ -252,7 +255,7 @@ test('login e2e: an unknown host key fails at once with the exact ssh to run onc
   const r = a.remote.join(a.bob, `join me@devbox:2222 ${a.code} --as bob --via jump@bastion`);
   stopDaemon(t, a.remote, a.code);
   assert.equal(r.json.decision, 'block');
-  assert.match(r.json.reason, /ssh does not know me@devbox's host key yet \(or it changed\), and a link never answers ssh's prompt: run `ssh -p 2222 -J jump@bastion me@devbox` once in a terminal/);
+  assert.match(r.json.reason, /ssh doesn't know me@devbox's host key yet \(or it changed\), and sub-human never answers ssh's questions\. Run `ssh -p 2222 -J jump@bastion me@devbox` once in a terminal/);
   assert.ok(Date.now() - t0 < 5000, 'no wait for the join timeout');
   assert.deepEqual(links(a.host, a.code), {});
   // a later /sub-human NAME CODE (after the person accepted the key) dials again; here it is still refused, and says so
@@ -261,7 +264,7 @@ test('login e2e: an unknown host key fails at once with the exact ssh to run onc
   const b = setup(t, { FAKE_SSH_FAIL: 'denied' });
   const d = b.remote.join(b.bob, `join me@devbox ${b.code} --as bob`);
   stopDaemon(t, b.remote, b.code);
-  assert.match(d.json.reason, /me@devbox refused your ssh login without a prompt \(the link runs ssh with BatchMode/);
+  assert.match(d.json.reason, /me@devbox refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password/);
 });
 
 test('login e2e: a key restricted to another link (its forced command) cannot use the login path, nor can a pass-through forced command', t => {
@@ -290,10 +293,10 @@ test('login join: the argument forms are told apart; bad parts are refused befor
   const bad = (args, re) => { const r = remote.join(bob, args); assert.equal(r.json.decision, 'block', args); assert.match(r.json.reason, re, args); };
   bad(`join me@devbox --as bob`, /which room/);
   bad(`join me@devbox ${code} extra --as bob`, /the PIN is the 4 digits/);
-  bad(`join me@devbox not-a-code --as bob`, /"not-a-code" is not a room/);
-  bad(`join -oProxyCommand=x@y ${code} --as bob`, /is not a plain USER@HOST/);
-  bad(`join me@devbox ${code} --as bob --via -oX`, /--via "-oX" is not a plain/);
-  bad(`join me@devbox ${code} --as bob --home relative`, /--home "relative" is not a plain absolute path/);
+  bad(`join me@devbox not-a-code --as bob`, /"not-a-code" isn't a room/);
+  bad(`join -oProxyCommand=x@y ${code} --as bob`, /isn't a plain USER@HOST/);
+  bad(`join me@devbox ${code} --as bob --via -oX`, /--via "-oX" isn't a plain/);
+  bad(`join me@devbox ${code} --as bob --home relative`, /--home "relative" isn't a plain absolute path/);
   bad(`join me@devbox ${code} --as claude`, /"claude" is reserved/);
   assert.equal(remote.lib(() => require(path.join(h.LIB, 'room', 'links.js')).list()).length, 0);
 });

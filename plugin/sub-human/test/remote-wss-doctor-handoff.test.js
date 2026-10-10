@@ -121,7 +121,7 @@ test('handoff to a new host reached over the web: a ws locator, invites pinning 
   const card = pre.json.hookSpecificOutput.updatedInput;
   const q = card.questions[0].question;
   const post = B.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: { [q]: 'Host it here' } } }, bob);
-  assert.match(post.json.systemMessage, /hosted here now \(epoch 1\)/, post.stderr);
+  assert.match(post.json.systemMessage, /is hosted on this machine now, and its Claude runs on your Claude account/, post.stderr);
 
   // B serves the room on its listener; the invite B minted for A pins B's listener key; A follows over ws
   const bkey = B.lib(() => listener.hostKey());

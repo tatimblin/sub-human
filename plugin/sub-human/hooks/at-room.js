@@ -129,11 +129,11 @@ function handle(input) {
   if (raw === null && (wake === null || !me)) return; // outside a room, @claude is an ordinary prompt
 
   // not in a room first: typing it again would not help there
-  if (!me) return block('✗ not posted: this session is not in a room. Join one first with /sub-human NAME [CODE].');
+  if (!me) return block('✗ not posted: this session isn\'t in a room. Join one first: /sub-human');
   const origin = claimed !== null && attested(input) ? claimed : null;
   if (origin === null) return block(NO_ORIGIN.replace('@room', tag));
   if (!TYPED_ORIGINS.has(origin)) {
-    return block(`✗ not posted: this prompt was not typed by you (origin "${origin.slice(0, 40)}"). Only your own typed ${tag} posts as your words.`);
+    return block(`✗ not posted: this prompt wasn't typed by you (it came from "${origin.slice(0, 40)}"). Only your own typed ${tag} posts as your words.`);
   }
   // A long paste arrives wrapped in <pasted_content>: post the person's text, marked normalized.
   const { text, normalized } = cc.unwrapPasted(raw !== null ? raw : wake);
@@ -150,11 +150,11 @@ function handle(input) {
     return block(`✗ not posted: ${err.message}`); // OFFLINE (the outbox full, the daemon gone), RATE, AUTH
   }
   if (placed && placed.slow) { // sent, the host slow to answer: the daemon holds it under its nonce until it does
-    const q = `⧗ sending (slow link): room ${me.code} has not confirmed this post yet; it shows in the room once the host has it. No need to type it again`;
+    const q = `⧗ sending (slow connection): room ${me.code} hasn't confirmed this post yet; it shows in the room once the host has it. No need to type it again`;
     return out({ continue: false, stopReason: q, ...phoneNote(q), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
   }
   if (placed && placed.queued) { // a room hosted elsewhere, its link down: the daemon holds it (lib/remote/outbox.js)
-    const q = `⧗ queued: room ${me.code} is offline; this post is sent when the link is back (${placed.queued} waiting)`;
+    const q = `⧗ queued: room ${me.code} is offline; this post goes out when the connection is back (${placed.queued} waiting)`;
     return out({ continue: false, stopReason: q, ...phoneNote(q), hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
   }
   // @claude on the host with no room's Claude running (it stopped, or never bound): start it, as a rejoin would

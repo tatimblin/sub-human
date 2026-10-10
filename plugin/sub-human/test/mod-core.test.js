@@ -402,7 +402,7 @@ test('guard: the plugin-code rule reads the cwd only when the command does not n
 test('guard: the person-only CLI is sent to a terminal outside Claude Code, never to its ! mode (the PIN would land in the conversation)', async () => {
   const g = await load('mod/core/guard.mjs');
   const why = g.bashVerdict('sub-human invite --ssh');
-  assert.match(why, /in a terminal outside Claude Code: not with !/);
+  assert.match(why, /in a terminal outside Claude Code, never with !/);
   assert.doesNotMatch(why, /in your own shell/);
 });
 

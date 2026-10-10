@@ -29,6 +29,7 @@ const store = require('../room/store.js');
 const handoff = require('../handoff.js');
 const link = require('../remote/link.js');
 const { parse } = require('./args.js');
+const cli = args => require('../text.js').cliLine(args);
 
 /** args.parse, dying on its error (usage, exit 2). */
 function flagsOf(args, spec, die) {
@@ -79,9 +80,9 @@ const PROMOTE_USAGE = 'sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT
 function showStatus(code, { out }) {
   const st = handoff.status(code);
   const h = st.host;
-  out(`room ${code}: ${st.isHost ? 'hosted on this machine' : 'hosted on another machine'}; host epoch ${h.epoch}${h.host ? ` (${h.host}'s machine since #${h.id})` : ''}`);
+  out(`room ${code}: ${st.isHost ? 'hosted on this machine' : 'hosted on another machine'}${h.host ? ` (${h.host}'s machine since #${h.id})` : ''}`);
   const d = st.doc;
-  if (d) out(`last handoff ask: ${d.from} -> ${d.to}, epoch ${d.epoch}: ${d.state}${d.state === 'asked' ? ` until ${d.expires_at}` : ''}`);
+  if (d) out(`last handoff ask: ${d.from} -> ${d.to}: ${d.state}${d.state === 'asked' ? ` until ${d.expires_at}` : ''}`);
   for (const m of st.machines || []) {
     out(`  ${m.seats.join(', ')}: ${m.connected ? 'reconnected here' : `not reconnected yet. If they cannot reach this machine, give them a new invite (/sub-human invite in the room here); they type the line it shows`}`);
   }
@@ -101,15 +102,15 @@ function handoffCmd(args, ctx) {
   const from = seatOf(code, flags.as, die);
   let d;
   try { d = handoff.ask(code, { from, to, locator: locatorOf(flags, die, code) }); } catch (e) { die(`could not hand room ${code} off: ${e.message}`, 1); }
-  out(`asked ${to} to host room ${code} (host epoch ${d.epoch}); their Claude shows them a card until ${d.expires_at}.`);
-  out(`If ${to} agrees, the log, the links and the room's Claude move to their machine (the room's Claude then runs on ${to}'s model account), and this machine follows as a member. sub-human handoff --status --room ${code} shows how it went.`);
+  out(`asked ${to} to host room ${code}; their Claude shows them a card until ${d.expires_at}.`);
+  out(`If ${to} agrees, the room and its Claude move to their machine (on ${to}'s Claude account), and this machine stays in it. ${cli(`handoff --status --room ${code}`)} shows how it went.`);
 }
 
 const FORK_RISK = (code, last) => [
   `PROMOTE makes this machine's copy of room ${code} the room. Only do this when its host is gone for good.`,
   'If the old host is only slow, asleep or cut off, the room FORKS: lines it writes from now on reach nobody here,',
   `and lines it wrote after #${last} (the last one this machine has) are lost to the room. Members still linked to it`,
-  'keep talking to it until they follow. When it comes back, its owner runs: sub-human demote CODE INVITE PIN',
+  'keep talking to it until they follow. When it comes back, its owner runs the line this prints for it, in a terminal there',
   '(its own lines are kept in orphaned-<time>.jsonl, never merged).',
 ];
 
@@ -128,11 +129,11 @@ function promoteCmd(args, ctx) {
   const name = seatOf(code, flags.as, die);
   let r;
   try { r = handoff.promote(code, { name, locator: locatorOf(flags, die, code), force: !!flags.force, cwd: process.cwd() }); } catch (e) { die(`could not promote: ${e.message}`, 1); }
-  out(`this machine hosts room ${code} now (host epoch ${r.epoch})${r.note}`);
+  out(`this machine hosts room ${code} now${r.note}`);
   if (!r.invites.length) return out('no other machine had a seat in the room.');
   out('Give each machine its line, and its PIN some other way (each is single-use, lasts 15 minutes and only works on that machine); they run it in a terminal, then /sub-human in their session:');
   // inside Claude Code (its ! shell) the PINs are masked: that output would land in the conversation
-  const lines = r.invites.map(x => `  ${x.seats.join(', ')}: sub-human demote ${code} ${x.invite} ${x.pin}`);
+  const lines = r.invites.map(x => `  ${x.seats.join(', ')}: ${cli(`demote ${code} ${x.invite} ${x.pin}`)}`);
   out(require('./host.js').maskPins(lines.join('\n'), r.invites.map(x => x.pin)));
   out('(the old host runs its line too when it is back: its own lines are kept aside, never merged)');
 }
@@ -145,7 +146,7 @@ function demoteCmd(args, ctx) {
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
   let r;
   try { r = handoff.demote(code, invite, pin); } catch (e) { die(`could not demote: ${e.message}`, 1); }
-  out(`room ${code}: this machine mirrors its new host now${r.orphan ? `; its own log is kept in ${r.orphan}` : ''}.${r.follower ? ' Type /sub-human in your session to take your seat over it.' : ''}`);
+  out(`room ${code}: this machine follows its new host now${r.orphan ? `; its own log is kept in ${r.orphan}` : ''}.${r.follower ? ' Type /sub-human in your session to join it again.' : ''}`);
   if (r.request) out('Over ssh the new host has not let this machine in yet: if it cannot connect, ask them for an invite (/sub-human invite there) and type the line it shows in your session.');
 }
 

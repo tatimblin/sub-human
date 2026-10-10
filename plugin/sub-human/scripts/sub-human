@@ -106,7 +106,7 @@ const cc = require(path.join(LIB, 'cc.js'));
 const tailLib = require(path.join(LIB, 'tail.js'));
 const statusline = require(path.join(__dirname, '..', 'statusline', 'index.js'));
 
-const NOT_IN_ROOM = 'not in a room; run /sub-human';
+const NOT_IN_ROOM = 'not in a room; type /sub-human in your Claude Code session';
 
 function die(msg, code = 2) {
   process.stderr.write(msg + '\n');
@@ -334,13 +334,13 @@ function linkCmd(args) {
   const code = rest[0];
   if (!code) die('usage: sub-human link CODE [--reset]');
   const s = room.open(code).store;
-  if (s.isHost) die(`this machine has no link to room "${code}"; join it with /sub-human join`, 1);
+  if (s.isHost) die(`this machine hosts room "${code}"; there is no connection to start`, 1);
   const link = require(path.join(LIB, 'remote', 'link.js'));
   if (!flags.reset) return link.run({ code }).then(() => process.exit(0), e => die(e.message, 1));
   const st = link.status(code);
-  if (st.running) die(`the link daemon of room ${code} is running (pid ${st.pid}); it re-mirrors only once stopped`, 1);
+  if (st.running) die(`the connection to room ${code} is running (pid ${st.pid}); it copies the room afresh only once stopped (kill ${st.pid}, then run this again)`, 1);
   s.reset();
-  if (!link.start(code)) die(`the link daemon of room ${code} did not start`, 1);
+  if (!link.start(code)) die(`the connection to room ${code} did not start; ${require(path.join(LIB, 'text.js')).cliLine('doctor')} says why`, 1);
   console.log(`room ${code}: copying it again from the host`);
 }
 

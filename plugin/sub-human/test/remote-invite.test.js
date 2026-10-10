@@ -68,7 +68,7 @@ test('join: a linked machine given another invite to the same host through the s
   remote.lib(() => links.set(code, { code, transport, token: 'tok', created_at: new Date().toISOString() }));
   const r = remote.join(bob, `join host@devbox ${code} 1234 --via jump@bastion`);
   assert.ok(hiddenBlock(r));
-  assert.match(r.json.reason, /linked to room .* already/, r.json.reason);
+  assert.match(r.json.reason, /this machine is in room .* already; \/sub-human \S+ \S+ takes your place there/, r.json.reason);
   const kept = remote.lib(() => links.get(code));
   assert.deepEqual([kept.token, kept.rebind], ['tok', undefined], 'the working link is kept, its token not replaced');
 });

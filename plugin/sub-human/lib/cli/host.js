@@ -103,15 +103,15 @@ function admit(args) {
   if (!p.rest.length) {
     const reqs = adm.pending(code);
     if (!reqs.length) { say(`nobody is waiting to join room ${code}`); return 0; }
-    for (const q of reqs) say(`${q.ref}  ${adm.describe(q)} wants to join room ${code} (until ${q.expires_at.slice(11, 16)} UTC): sub-human admit ${q.ref} [--refuse]`);
+    for (const q of reqs) say(`${adm.describe(q)} wants to join room ${code} (until ${q.expires_at.slice(11, 16)} UTC): ${require('../text.js').cliLine(`admit ${q.ref}`)} [--refuse]`);
     return 0;
   }
   const req = adm.find(code, p.rest[0]);
-  if (!req) return fail(`no join request of room ${code} has the ref ${p.rest[0]} (sub-human admit lists them)`);
+  if (!req) return fail(`room ${code} has no join request ${p.rest[0]} (admit with no ID lists them)`);
   if (!p.flags.yes && !p.flags.refuse) {
     if (!process.stdin.isTTY) return fail('not a terminal: add --yes to let them in (or --refuse)');
-    const yes = ask(`${adm.describe(req)} typed your PIN and wants to join room ${code}.\nLet them in? That machine joins as one link and posts only as the seats it brings. [y/N] `);
-    if (!/^y(es)?$/i.test(yes)) return fail('not let in (the request still waits; sub-human admit REF --refuse ends it)');
+    const yes = ask(`${adm.describe(req)} typed your PIN and wants to join room ${code}.\nLet them in? That machine joins the room and can post only as the people it brings. [y/N] `);
+    if (!/^y(es)?$/i.test(yes)) return fail(`not let in; the request still waits (${require('../text.js').cliLine(`admit ${req.ref} --refuse`)} ends it)`);
   }
   try {
     say((p.flags.refuse ? adm.refuse(code, req.ref, { by: null }) : adm.letIn(code, req.ref, { by: null })).text);
@@ -125,7 +125,7 @@ function prime(args) {
   const code = p.rest[0];
   const links = require('../room/links.js');
   const l = links.get(code);
-  if (!l || !l.transport || l.transport.kind !== 'ssh') return fail(`this machine has no ssh link to room ${code}`);
+  if (!l || !l.transport || l.transport.kind !== 'ssh') return fail(`this machine isn't connected to room ${code} over ssh`);
   try {
     const ssh = require('../remote/transports/ssh.js');
     fs.mkdirSync(require('node:path').dirname(ssh.controlPath()), { recursive: true, mode: 0o700 });
@@ -133,8 +133,8 @@ function prime(args) {
     links.set(code, { ...l, transport: { ...l.transport, mux: true } });
     process.stderr.write(`opening a shared ssh connection for room ${code} (answer any prompt once)…\n`);
     const r = spawnSync(cmd, rest, { stdio: 'inherit' });
-    if (r.status !== 0) return fail(`ssh exited ${r.status}; the link still connects on its own, without the shared connection`);
-    say(`room ${code}: the link now rides this connection for ${p.flags.persist || '8h'} (it reconnects on its own after that; prime again for another MFA prompt)`);
+    if (r.status !== 0) return fail(`ssh exited ${r.status}; the room still connects on its own, without the shared connection`);
+    say(`room ${code}: its connection now rides this ssh login for ${p.flags.persist || '8h'} (after that it reconnects on its own; prime again for another MFA prompt)`);
     return 0;
   } catch (e) { return fail(e.message); }
 }

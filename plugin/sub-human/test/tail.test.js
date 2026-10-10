@@ -519,25 +519,26 @@ test('tail: a room hosted elsewhere: one OFFLINE line when the link goes down, o
   assert.deepEqual(health(), [], 'nothing while it is up');
   st = { running: true, state: 'offline', reason: 'the connection to the host closed' };
   t.advance(FAST.healthMs * 2 + 100);
-  assert.deepEqual(health(), ['room link: OFFLINE (the connection to the host closed); @room posts are queued and sent when it is back, answers are refused']);
+  assert.equal(health().length, 1, health().join('\n'));
+  assert.match(health()[0], /^the connection to room \S+ is down \(the connection to the host closed\); @room posts wait and go out when it's back/);
   st = { running: true, state: 'connecting' };
   t.advance(FAST.healthMs + 100);
   assert.equal(health().length, 1, 'connecting is not back yet');
   st = { running: true, state: 'online' };
   t.advance(FAST.healthMs * 2 + 100);
   assert.deepEqual(health().slice(1), [tailLib.LINK_BACK], 'once');
-  assert.equal(tailLib.LINK_BACK, 'room link: back online; @room posts go through again');
+  assert.equal(tailLib.LINK_BACK, 'the connection to the room is back; @room posts go through again');
   // down again; back with the queued posts sent: the one back-online line says so
   st = { running: true, state: 'offline', reason: 'x', queued: 2 };
   t.advance(FAST.healthMs * 2 + 100);
   st = { running: true, state: 'online', flush: { at: 'a', sent: 2, unsent: [] } };
   t.advance(FAST.healthMs * 2 + 100);
-  assert.deepEqual(health().slice(3), [`${tailLib.LINK_BACK}; 2 queued @room post(s) sent`]);
+  assert.deepEqual(health().slice(3), [`${tailLib.LINK_BACK}; 2 waiting @room post(s) sent`]);
   // a brief outage the tail never saw: posts sent quietly; one that was not sent is told
   st = { running: true, state: 'online', flush: { at: 'b', sent: 1, unsent: [] } };
   t.advance(FAST.healthMs * 2 + 100);
   assert.equal(health().length, 4, 'sent quietly');
   st = { running: true, state: 'online', flush: { at: 'c', sent: 0, unsent: [{ text: 'hi', why: 'it waited too long' }] } };
   t.advance(FAST.healthMs * 2 + 100);
-  assert.deepEqual(health().slice(4), ['room link: NOT sent (it waited too long): "hi"']);
+  assert.deepEqual(health().slice(4), ['not sent (it waited too long): "hi"']);
 });

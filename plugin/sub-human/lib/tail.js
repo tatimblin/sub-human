@@ -45,7 +45,7 @@
  *                             (health tick); null clears it
  *   {type:'health', text}     the hash-chain check's line (one per break), and in a room hosted elsewhere the
  *                             link's linkLine each time it goes off (FORK, STOPPED or OFFLINE; nothing while it stays so)
- *                             and LINK_BACK ("room link: back online; …", with flushLine) once it is online
+ *                             and LINK_BACK ("the connection to the room is back; …", with flushLine) once it is online
  *                             again: one quiet line, no "left"/"joined" (the daemon renews the seat's lapsed lease)
  *   A short code's join request (lib/remote/admission.js), on the host: a chat line for the person and a wake that
  *   tells Claude to open the card ("admit REF"), once per seat it is for; a request that lapsed is a health line; the
@@ -260,22 +260,22 @@ function visibleTo(me, rm) {
 }
 
 // ---------- the link of a room hosted elsewhere ----------
-const LINK_BACK = 'room link: back online; @room posts go through again';
+const LINK_BACK = 'the connection to the room is back; @room posts go through again';
 function linkLine(st, code) {
-  const kept = st.queued ? `; ${st.queued} queued @room post(s) are kept, not sent` : '';
+  const kept = st.queued ? `; ${st.queued} @room post(s) are kept, not sent` : '';
   if (st.state === 'fork') {
-    return { key: 'fork', text: `room link: FORK: this machine's copy of room ${code} no longer matches the host's${kept}; run sub-human link --reset ${code}` };
+    return { key: 'fork', text: `this machine's copy of room ${code} no longer matches the host's${kept}. Run /sub-human doctor.` };
   }
   if (st.running && st.state !== 'offline') return null;
-  if (st.running) return { key: 'offline', text: `room link: OFFLINE (${st.reason}); @room posts are queued and sent when it is back, answers are refused` };
-  if (st.state === 'stopped') return { key: 'stopped', text: `room link: STOPPED (${st.reason || 'for good'}); @room posts are refused${kept}` };
-  return { key: 'offline', text: `room link: OFFLINE (the link daemon is not running); @room posts are refused${kept}` };
+  if (st.running) return { key: 'offline', text: `the connection to room ${code} is down (${st.reason}); @room posts wait and go out when it's back, card answers can't be sent until then` };
+  if (st.state === 'stopped') return { key: 'stopped', text: `the connection to room ${code} stopped (${st.reason || 'for good'}); @room posts can't be sent${kept}. Run /sub-human doctor.` };
+  return { key: 'offline', text: `the connection to room ${code} isn't running; @room posts can't be sent${kept}. Type /sub-human to reconnect.` };
 }
 function flushLine(f) {
   if (!f || (!f.sent && !(f.unsent || []).length)) return null;
   const parts = [];
-  if (f.sent) parts.push(`${f.sent} queued @room post(s) sent`);
-  for (const u of f.unsent || []) parts.push(`NOT sent (${u.why}): "${u.text}"`);
+  if (f.sent) parts.push(`${f.sent} waiting @room post(s) sent`);
+  for (const u of f.unsent || []) parts.push(`not sent (${u.why}): "${u.text}"`);
   return parts.join('; ');
 }
 
@@ -454,7 +454,7 @@ function startSession(me, ctx) {
     if (flushKey === undefined || fresh) flushKey = f ? f.at : null; // a flush before this tail started is old news
     const flushed = fresh ? flushLine(f) : null;
     if ((l && l.key) === linkKey || (!l && st.state !== 'online')) { // no change (or coming back: the down line stands)
-      if (flushed && f.unsent && f.unsent.length) emit([{ type: 'health', text: `room link: ${flushed}` }]);
+      if (flushed && f.unsent && f.unsent.length) emit([{ type: 'health', text: flushed }]);
       return;
     }
     const was = linkKey;

@@ -84,16 +84,16 @@ test('host epoch: the old host takes no more lines once its log says the room mo
 
 test('server: a hello from a later epoch is STALE (a host the room moved from); an append from another epoch too', async t => {
   const { code, host } = hostRoom(t);
-  await rejects(linked(t, host, { epoch: 1 }), 'STALE', /moved away from this host/);
+  await rejects(linked(t, host, { epoch: 1 }), 'STALE', /moved away from this machine to a newer host\. Run \/sub-human doctor/);
   const c = await linked(t, host, { epoch: 0 });
   assert.equal(c.epoch, 0);
   await joinBob(c, code);
   const p = { from: 'bob', via: 'agent', kind: 'say', text: 'hi', to: 'room' };
-  await rejects(c.request('append', { payload: p, epoch: 1 }), 'STALE', /moved away from this host/);
+  await rejects(c.request('append', { payload: p, epoch: 1 }), 'STALE', /moved away from this machine to a newer host/);
   assert.equal((await c.request('append', { payload: p, epoch: 0 })).entry.text, 'hi');
   assert.equal((await c.request('append', { payload: { ...p, text: 'no epoch: an older daemon' } })).entry.via, 'agent');
   host.append({ ...moveTo(OTHER) }, sys('alice'));
-  await rejects(c.request('append', { payload: { ...p, text: 'late' }, epoch: 1 }), 'STALE', /takes no more writes/);
+  await rejects(c.request('append', { payload: { ...p, text: 'late' }, epoch: 1 }), 'STALE', /moved to \S+'s machine; this machine takes no more messages for it/);
   await rejects(c.beat('bob'), 'STALE');
   assert.equal(host.readAll().at(-1).kind, 'host_changed');
 });
@@ -119,7 +119,7 @@ test('handoff: the ask reaches the target\'s link only; a signed acceptance move
   const sign = p => envelope.sign(p, key, { room: code, from: 'bob' });
   const proof = sign({ kind: 'host_accept', id: d.id, epoch: 1, locator: 'pipe:/bobs/home' });
   const invites = { [OTHER]: auth.formatInvite({ code, locator: 'pipe:/bobs/home', secret: 'S'.repeat(32) }) };
-  await rejects(c.request('handoff.accept', { id: d.id, accept: { ...proof, epoch: 2 }, invites }), 'AUTH', /signed with their seat key/);
+  await rejects(c.request('handoff.accept', { id: d.id, accept: { ...proof, epoch: 2 }, invites }), 'AUTH', /bob's yes, signed with their own key/);
   await rejects(other.request('handoff.accept', { id: d.id, accept: proof, invites }), 'AUTH', /not joined over this link/);
   await rejects(c.request('handoff.accept', { id: d.id, accept: proof, invites: { [OTHER]: 'sh1.nope' } }), 'INVALID');
   const r = await c.request('handoff.accept', { id: d.id, accept: proof, invites });

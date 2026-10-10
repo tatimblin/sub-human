@@ -197,7 +197,7 @@ test('auth: an sh2 invite with a PIN (a promote\'s, handed out by hand) carries 
   // no PIN or a wrong one: a try each, and the room line the server posts; the right one redeems and burns the invite
   const wrong = String((Number(a.pin) + 1) % 1e6).padStart(6, '0');
   assert.throws(() => auth.redeemInvite(s, a.secret, { machine: 'm', now: t0 }), e => e.code === 'AUTH' && /needs its PIN/.test(e.message) && /4 tries left/.test(e.note));
-  assert.throws(() => auth.redeemInvite(s, a.secret, { machine: 'm', pin: wrong, now: t0 }), e => /wrong PIN \(3 tries left\)/.test(e.message));
+  assert.throws(() => auth.redeemInvite(s, a.secret, { machine: 'm', pin: wrong, now: t0 }), e => /wrong PIN \(3 tries left\)\. Check the digits with the host, then type the join line again/.test(e.message));
   const ok = auth.redeemInvite(s, a.secret, { machine: 'm', pin: a.pin, now: t0 + 60_000 });
   assert.equal(typeof ok.token, 'string');
   assert.throws(() => auth.redeemInvite(s, a.secret, { machine: 'm', pin: a.pin, now: t0 }), e => /used already/.test(e.message), 'single use');
@@ -206,20 +206,20 @@ test('auth: an sh2 invite with a PIN (a promote\'s, handed out by hand) carries 
   const b = mint();
   const bad = String((Number(b.pin) + 7) % 1e6).padStart(6, '0');
   for (let i = 4; i >= 1; i--) assert.throws(() => auth.redeemInvite(s, b.secret, { machine: 'm', pin: bad, now: t0 }), e => e.message.includes(`(${i} ${i === 1 ? 'try' : 'tries'} left)`));
-  assert.throws(() => auth.redeemInvite(s, b.secret, { machine: 'm', pin: bad, now: t0 }), e => /last try: the invite is burnt/.test(e.message) && /burnt/.test(e.note));
-  assert.throws(() => auth.redeemInvite(s, b.secret, { machine: 'm', pin: b.pin, now: t0 }), e => /this invite is burnt/.test(e.message), 'burnt, said so');
+  assert.throws(() => auth.redeemInvite(s, b.secret, { machine: 'm', pin: bad, now: t0 }), e => /last try: this invite no longer works/.test(e.message) && /burnt/.test(e.note));
+  assert.throws(() => auth.redeemInvite(s, b.secret, { machine: 'm', pin: b.pin, now: t0 }), e => /this invite no longer works/.test(e.message), 'burnt, said so');
 
   // 15 minutes: an expired invite burns, PIN or not
   const c = mint();
   assert.throws(() => auth.redeemInvite(s, c.secret, { machine: 'm', pin: c.pin, now: t0 + 15 * 60_000 + 1 }), e => /expired/.test(e.message));
-  assert.throws(() => auth.redeemInvite(s, c.secret, { machine: 'm', pin: c.pin, now: t0 }), e => /this invite is burnt/.test(e.message));
+  assert.throws(() => auth.redeemInvite(s, c.secret, { machine: 'm', pin: c.pin, now: t0 }), e => /this invite no longer works/.test(e.message));
 
   // only its machine redeems it; a link id reserved for it (an ssh forced command's --link) is the one it becomes;
   // revoking that link burns what was reserved
   const d = mint();
   assert.throws(() => auth.redeemInvite(s, d.secret, { machine: 'other', pin: d.pin, now: t0 }), e => /another machine/.test(e.message));
   const id = auth.reserveLink(s, d.secret);
-  assert.throws(() => auth.redeemInvite(s, d.secret, { machine: 'm', pin: d.pin, linkId: 'abcdef012345', now: t0 }), e => /not for link/.test(e.message));
+  assert.throws(() => auth.redeemInvite(s, d.secret, { machine: 'm', pin: d.pin, linkId: 'abcdef012345', now: t0 }), e => /for another connection/.test(e.message));
   const dl = auth.redeemInvite(s, d.secret, { machine: 'm', pin: d.pin, linkId: id, now: t0 });
   assert.equal(dl.link.id, id);
   assert.deepEqual(auth.revokeLink(s, id).link.id, id);

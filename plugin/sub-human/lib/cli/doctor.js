@@ -62,6 +62,8 @@ const LIB = path.join(__dirname, '..');
 const PLUGIN_ROOT = path.join(LIB, '..');
 const BIN = path.join(PLUGIN_ROOT, 'scripts', 'sub-human');
 const lib = name => require(path.join(LIB, name));
+/** A fix only a shell can make: the CLI by its path (no `sub-human` is on PATH; lib/text.js cliLine). */
+const cli = args => lib('text.js').cliLine(args);
 
 const NODE_MIN = 24;
 const DOCTOR_HELLO_MS = 8000;
@@ -97,7 +99,7 @@ function checkNode(version = process.versions.node) {
 
 function checkHome() {
   const h = lib('home.js').home();
-  if (!fs.existsSync(h)) return check('home', 'info', 'home', `${tilde(h)} does not exist yet (made at the first join)`);
+  if (!fs.existsSync(h)) return check('home', 'info', 'sub-human folder', `${tilde(h)} does not exist yet (made at the first join)`);
   const uid = typeof process.getuid === 'function' ? process.getuid() : null;
   const bad = [];
   for (const d of [h, ...STORE_DIRS.map(n => path.join(h, n))]) {
@@ -106,8 +108,8 @@ function checkHome() {
     if (uid !== null && st.uid !== uid) bad.push(`${tilde(d)} belongs to uid ${st.uid}`);
     else if (st.mode & 0o077) bad.push(`${tilde(d)} is ${(st.mode & 0o777).toString(8)}`);
   }
-  if (!bad.length) return check('home', 'pass', 'home', `${tilde(h)} and its store directories are 0700`);
-  return check('home', 'fail', 'home', bad.join('; '), `sub-human doctor --fix (or chmod 700 ${bad.map(b => b.split(' ')[0]).join(' ')})`);
+  if (!bad.length) return check('home', 'pass', 'sub-human folder', `${tilde(h)} and its folders are private (0700)`);
+  return check('home', 'fail', 'sub-human folder', bad.join('; '), `${cli('doctor --fix')} in a terminal (or chmod 700 ${bad.map(b => b.split(' ')[0]).join(' ')})`);
 }
 
 function checkShim({ needed }) {
@@ -115,7 +117,7 @@ function checkShim({ needed }) {
   const file = shim.shimPath(), ptr = shim.pointerPath();
   if (!fs.existsSync(file) && !fs.existsSync(ptr)) {
     return check('shim', needed ? 'fail' : 'info', 'serve shim', `${tilde(file)} is not there${needed ? ', and authorized_keys names it' : ' (only a host reached over SSH needs it)'}`,
-      needed ? 'sub-human doctor --fix (any sub-human command or a Claude Code start writes it)' : undefined);
+      needed ? 'start Claude Code once on this machine (it writes it), or run ' + cli('doctor --fix') + ' in a terminal' : undefined);
   }
   const problems = [];
   if (!isExec(file)) problems.push(`${tilde(file)} is missing or not executable`);
@@ -130,9 +132,9 @@ function checkShim({ needed }) {
   if (!problems.length) {
     return check('shim', stale ? 'warn' : 'pass', 'serve shim',
       stale ? `runs ${tilde(root)}, not this install (${tilde(shim.pluginRoot())})` : `runs ${tilde(root)} with ${tilde(node)}`,
-      stale ? 'sub-human doctor --fix, or start Claude Code once (SessionStart refreshes it)' : undefined);
+      stale ? 'start Claude Code once on this machine (it refreshes it), or run ' + cli('doctor --fix') + ' in a terminal' : undefined);
   }
-  return check('shim', 'fail', 'serve shim', problems.join('; '), 'sub-human doctor --fix (any sub-human command or a Claude Code start rewrites it)');
+  return check('shim', 'fail', 'serve shim', problems.join('; '), 'start Claude Code once on this machine (it rewrites it), or run ' + cli('doctor --fix') + ' in a terminal');
 }
 
 // command="SUB_HUMAN_HOME=<home> <...> --stdio CODE --link ID",restrict <type> <key> sub-human:CODE:ID
@@ -160,7 +162,7 @@ function checkAuthorizedKeys(scan) {
   const old = scan.lines.filter(l => !l.ok);
   if (!old.length) return check('authorized_keys', 'pass', 'authorized_keys', `${scan.lines.length} sub-human line(s), all through the shim`);
   const fixes = old.map(l => (l.parse === false ? `edit the unreadable sub-human line by hand in ${tilde(scan.file)}`
-    : `${l.home === h ? '' : `SUB_HUMAN_HOME=${l.home} `}sub-human doctor --fix${scan.file === path.join(os.homedir(), '.ssh', 'authorized_keys') ? '' : ` --authorized-keys ${tilde(scan.file)}`}`));
+    : `${l.home === h ? '' : `SUB_HUMAN_HOME=${l.home} `}${cli(`doctor --fix${scan.file === path.join(os.homedir(), '.ssh', 'authorized_keys') ? '' : ` --authorized-keys ${tilde(scan.file)}`}`)}`));
   return check('authorized_keys', 'warn', 'authorized_keys',
     `${old.length} of ${scan.lines.length} sub-human line(s) bypass the shim: they bake in a node and plugin path that break on an update`,
     [...new Set(fixes)].join('\n'));
@@ -174,7 +176,7 @@ function sshVersion() {
 
 function checkSsh({ needed, version }) {
   if (version) return check('ssh', 'pass', 'ssh', version);
-  return check('ssh', needed ? 'fail' : 'info', 'ssh', 'no ssh on PATH', needed ? 'install OpenSSH (the ssh links run `ssh -T -o BatchMode=yes`)' : undefined);
+  return check('ssh', needed ? 'fail' : 'info', 'ssh', 'no ssh on PATH', needed ? 'install OpenSSH: joining over ssh needs it' : undefined);
 }
 
 // ---------- links ----------
@@ -203,13 +205,13 @@ function sshHint(stderr, link = {}) {
   const t = link.transport || {};
   const newInvite = `ask the host for a new invite (/sub-human invite${t.via ? ` --via ${t.via}` : ''}) and type the line it shows`;
   if (/keyboard-interactive|Verification code|one-time password|Duo two-factor/i.test(s) && !/publickey\)\.?\s*$/i.test(s.trim())) {
-    return `the host or a jump host wants an interactive login (MFA): run sub-human prime ${code} once in your shell; the link then rides that connection for hours`;
+    return `the host or a jump host wants an interactive login (MFA): run ${cli(`prime ${code}`)} once in a terminal; the connection then rides that login for hours`;
   }
   if (/Permission denied/i.test(s)) {
     const admit = link.request
-      ? `the host has not let this link's key in yet; ${newInvite}`
-      : 'the host refused this link\'s key: it was never let in, or the host removed it. ' + newInvite;
-    return `${admit}. Behind a bastion with MFA, run sub-human prime ${code} first`;
+      ? `the host has not let this machine in yet; ${newInvite}`
+      : 'the host refused this machine\'s key: it was never let in, or the host removed it. ' + newInvite;
+    return `${admit}. Behind a bastion with MFA, run ${cli(`prime ${code}`)} in a terminal first`;
   }
   if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(s)) {
     return t.knownHosts
@@ -223,7 +225,7 @@ function sshHint(stderr, link = {}) {
   if (/timed out|Operation timed out/i.test(s)) {
     return `the host does not answer (asleep, offline or firewalled)${t.via ? '' : '; behind a bastion, the invite needs --via JUMP (/sub-human invite --via JUMP)'}`;
   }
-  if (/sub-human: no (plugin install|node)/.test(s)) return 'the host\'s shim found no plugin or node: on the host, start Claude Code once or run `sub-human doctor --fix`';
+  if (/sub-human: no (plugin install|node)/.test(s)) return 'the host found no sub-human plugin or node to run: on the host, start Claude Code once';
   return null;
 }
 
@@ -299,13 +301,13 @@ function checkListener({ quick = false } = {}) {
   const out = [st.running
     ? check('listener', 'pass', 'listener', `running (pid ${st.pid}) on 127.0.0.1:${st.port} · ${codes.length ? `serves ${codes.join(', ')}` : 'serves no room'}${st.conns ? ` · ${st.conns} connection(s)` : ''}`)
     : check('listener', 'fail', 'listener', `not running, but ${codes.join(', ')} ${codes.length === 1 ? 'is' : 'are'} served over the web: joiners cannot reach ${codes.length === 1 ? 'it' : 'them'}`,
-      `sub-human listen --start (or /sub-human invite --web again); its log: ${tilde(lib('remote/listener.js').logFile())}`)];
+      `/sub-human invite --web again in the room (or ${cli('listen --start')} in a terminal); its log: ${tilde(lib('remote/listener.js').logFile())}`)];
   const ts = lib('remote/tailscale.js');
   const serveStatus = {}; // bin -> stdout
   for (const code of codes) {
     const rec = st.rooms[code] || {};
     const id = `web:${code}`;
-    if (!lib('remote/listener.js').roomLive(code)) { out.push(check(id, 'warn', `web ${code}`, 'served over the web, but the room is closed or gone here', `sub-human invite --stop --room ${code}`)); continue; }
+    if (!lib('remote/listener.js').roomLive(code)) { out.push(check(id, 'warn', `web ${code}`, 'served over the web, but the room is closed or gone here', `${cli(`invite --stop --room ${code}`)} in a terminal`)); continue; }
     const where = rec.url || rec.path || '?';
     if (!rec.tailscale) { out.push(check(id, 'info', `web ${code}`, `${rec.mode === 'handoff' ? 'moved here by a handoff' : 'through your own front'} at ${where}`)); continue; }
     const kind = rec.tailscale.funnel ? 'funnel' : 'serve';
@@ -379,24 +381,24 @@ function linkChecks(d) {
   const lastError = d.state.lastError || (d.recent.length ? d.recent.at(-1).replace(/^\S+ sub-human link \S+: /, '') : null);
   if (lastError && d.state.state !== 'online') bits.push(`last error: ${lastError}`);
   if (d.moved) {
-    const where = `${d.moved.host || 'another'}'s machine${d.moved.locator ? ` (${d.moved.locator})` : ''}${d.moved.epoch !== undefined ? `, host epoch ${d.moved.epoch}` : ''}`;
-    bits.push(d.moved.reached ? `the room moved to ${where}; this link follows it` : `the room moved to ${where}; not reached from here yet`);
+    const where = `${d.moved.host || 'another'}'s machine`;
+    bits.push(d.moved.reached ? `the room moved to ${where}; this machine follows it` : `the room moved to ${where}; not reached from here yet`);
   }
   let status = d.state.state === 'online' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
   let fix;
-  if (d.state.state === 'fork') fix = `sub-human link --reset ${d.code}`;
+  if (d.state.state === 'fork') fix = `this machine's copy no longer matches the host's: run ${cli(`link --reset ${d.code}`)} in a terminal (it copies the room afresh; anything not sent is kept aside)`;
   else if (d.moved && !d.moved.reached && d.state.state !== 'online') {
     const who = d.moved.host || 'its host';
     fix = `${d.request ? `over ssh ${who} has not let this machine in yet. ` : ''}`
       + `Ask ${who} for an invite (/sub-human invite there) and type the line it shows`;
-  } else if (d.request && d.state.state !== 'online') fix = 'the host has not let this link\'s key in yet: ask them for an invite (/sub-human invite there) and type the line it shows';
+  } else if (d.request && d.state.state !== 'online') fix = 'the host has not let this machine in yet: ask them for an invite (/sub-human invite there) and type the line it shows';
   else if (d.transport.login && /revoked|unknown link token/i.test(lastError || '')) {
-    fix = `the host removed this link: ask them first, then link again over your ssh login: /sub-human join ${d.transport.user}@${d.transport.host}${d.transport.port ? `:${d.transport.port}` : ''} ${d.code}`;
-  } else if (/invite (is burnt|was used already|is unknown|expired)|handoff invite expired|last try|no longer accepts this link|revoked/i.test(lastError || '')) {
+    fix = `the host ended this connection: ask them first, then join again over your ssh login: /sub-human join ${d.transport.user}@${d.transport.host}${d.transport.port ? `:${d.transport.port}` : ''} ${d.code}`;
+  } else if (/invite (is burnt|was used already|is unknown|expired|no longer works)|handoff invite expired|last try|no longer accepts this link|revoked/i.test(lastError || '')) {
     // the link's invite (or key) is spent: joining again or restarting the daemon would only reuse it
-    fix = 'this link\'s invite is spent (burnt, used or expired) or the host removed it: ask the host for a new invite (/sub-human invite there) and type the line it shows';
-  } else if (/STALE/.test(lastError || '')) fix = 'this copy speaks to a host the room moved away from: sub-human handoff --status shows where it is';
-  else if (!d.daemon.running && d.state.state !== 'online') fix = `the join hook starts the daemon: /sub-human again, or run sub-human link ${d.code} in a shell`;
+    fix = 'the invite this machine joined with no longer works (used, expired, or too many wrong PINs), or the host ended the connection: ask the host for a new invite (/sub-human invite there) and type the line it shows';
+  } else if (/STALE|moved away/.test(lastError || '')) fix = 'the room moved to another host: ask its new host for an invite (/sub-human invite there) and type the line it shows';
+  else if (!d.daemon.running && d.state.state !== 'online') fix = 'the connection is not running: type /sub-human in your session to start it again';
   if (d.reach) {
     const r = d.reach;
     const span = x => (x && x.min !== undefined ? (x.min === x.max ? `${x.min}` : `${x.min}-${x.max}`) : '?');
@@ -412,7 +414,7 @@ function linkChecks(d) {
       fix = [r.hint, /PROTOCOL/.test(r.error || '') ? 'the two sides speak different protocol versions: update sub-human on the older side (/plugin update sub-human)' : null, fix].filter(Boolean).join('\n') || fix;
     }
     if (d.transport.kind === 'ssh' && !r.skipped) {
-      bits.push(r.ok ? 'ssh BatchMode works' : (/Permission denied|Host key/i.test(r.stderr) ? 'ssh BatchMode fails' : ''));
+      bits.push(r.ok ? 'ssh logs in without a prompt' : (/Permission denied|Host key/i.test(r.stderr) ? 'ssh cannot log in without a prompt' : ''));
     }
     if (r.ok) {
       const SIG_SKEW_MS = lib('room/envelope.js').SIG_SKEW_MS;
@@ -425,7 +427,7 @@ function linkChecks(d) {
       }
     }
   }
-  out.unshift(check(`link:${d.code}`, status, `link ${d.code}`, bits.filter(Boolean).join(' · '), fix));
+  out.unshift(check(`link:${d.code}`, status, `connection ${d.code}`, bits.filter(Boolean).join(' · '), fix));
   return out;
 }
 
@@ -456,7 +458,7 @@ function checkClaude({ version, quick, env }) {
   if (!missing.length) return { check: check('claude', 'pass', 'Claude Code', `${version}; all ${results.length} internals sub-human relies on are present`), probe: { total: results.length, missing } };
   return {
     check: check('claude', 'warn', 'Claude Code', `${version}; ${missing.length} of ${results.length} internals changed since ${cc.PROBED_VERSION}: ${missing.join(', ')}`,
-      'update sub-human (/plugin update sub-human); if it persists, report it with sub-human doctor --bundle'),
+      `update sub-human (/plugin update sub-human); if it persists, report it with ${cli('doctor --bundle')}`),
     probe: { total: results.length, missing },
   };
 }
@@ -466,11 +468,17 @@ function settingsFiles(env) {
   return cc.userSettingsFiles(process.cwd(), env).map(f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } }).filter(Boolean);
 }
 
-function checkHooks(settings) {
+function checkHooks(settings, env = process.env) {
   if (settings.some(s => s.disableAllHooks === true)) {
     return check('hooks', 'fail', 'hooks', 'a settings file sets disableAllHooks: sub-human\'s hooks and hooks module never run', 'remove disableAllHooks from your Claude Code settings');
   }
-  return check('hooks', 'pass', 'hooks', 'no settings file turns hooks off');
+  if (settings.some(s => s.allowManagedHooksOnly === true)) {
+    return check('hooks', 'fail', 'hooks', 'a settings file sets allowManagedHooksOnly: only managed hooks run, so sub-human cannot join a room', 'ask whoever manages this machine\'s Claude Code settings, or remove allowManagedHooksOnly from yours');
+  }
+  if (lib('cc.js').modulesSwitch(env) === false) {
+    return check('hooks', 'fail', 'hooks', 'Claude Code has plugin hooks modules switched off for now (its saved switch), so sub-human cannot join a room', 'restart claude with network access, which refreshes the switch; if this stays, hooks modules are off for your account');
+  }
+  return check('hooks', 'pass', 'hooks', 'no settings file turns hooks off; hooks modules are on');
 }
 
 function checkRemoteControl(env, settings) {
@@ -526,14 +534,14 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
   const sshV = sshVersion();
   checks.push(checkSsh({ needed: sshLinks, version: sshV }));
   const links = await Promise.all(codes.map(code => diagnoseLink(code, { quick, timeoutMs, env })));
-  if (!codes.length) checks.push(check('links', 'info', 'links', 'no links: every room this machine is in is hosted here'));
+  if (!codes.length) checks.push(check('links', 'info', 'connections', 'none: every room this machine is in is hosted here'));
   for (const d of links) checks.push(...linkChecks(d));
   checks.push(...checkRoomClaudes());
   const cv = claudeVersion(env);
   const cl = checkClaude({ version: cv, quick, env });
   checks.push(cl.check);
   const settings = settingsFiles(env);
-  checks.push(checkHooks(settings), checkRemoteControl(env, settings));
+  checks.push(checkHooks(settings, env), checkRemoteControl(env, settings));
   checks.push(...checkListener({ quick }));
   return {
     generated_at: new Date().toISOString(),
@@ -548,14 +556,14 @@ const PAINT = { pass: '32', warn: '33', fail: '31', info: '2' };
 function format(report, { color = false } = {}) {
   const c = (code, s) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
   const v = report.versions;
-  const lines = [`sub-human doctor · plugin ${v.plugin} · node v${v.node} · claude ${v.claude || '?'} · ${v.platform} ${v.arch}`];
+  const lines = [`checks · sub-human ${v.plugin} · node v${v.node} · claude ${v.claude || '?'} · ${v.platform} ${v.arch}`];
   const w = Math.max(...report.checks.map(x => x.title.length));
   for (const x of report.checks) {
     lines.push(`${c(PAINT[x.status], MARK[x.status])} ${x.title.padEnd(w)}  ${x.detail}`);
     if (x.fix) for (const f of String(x.fix).split('\n')) lines.push(`  ${' '.repeat(w)}  ${c('36', `fix: ${f}`)}`);
   }
   const n = s => report.checks.filter(x => x.status === s).length;
-  lines.push(`${n('fail')} failed, ${n('warn')} warnings · sub-human doctor --bundle writes a redacted copy for a bug report`);
+  lines.push(`${n('fail')} failed, ${n('warn')} warnings${n('fail') + n('warn') ? ' · a fix line says what to do' : ''} · for a bug report: ${cli('doctor --bundle')} in a terminal (a redacted copy)`);
   return lines.join('\n') + '\n';
 }
 

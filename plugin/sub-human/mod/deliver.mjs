@@ -20,6 +20,7 @@ import {
   relayQueue, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS,
 } from './core/deliver.mjs';
 import { parseHello } from './core/seat.mjs';
+import { answersItself, joinPayload, readReply, answerOf, CONFIRM_AFTER_MS } from './core/command.mjs';
 import { shimArgv, shimEnv, SHIM_TIMEOUT_MS } from './core/shim.mjs';
 import { asHello, asNonce, mintNonce } from './core/state.mjs';
 
@@ -73,6 +74,10 @@ async function refresh($, sid) {
   if (!hello) await forgetSession($);
 }
 
+
+/** A join the command.run hook took (hooks/join.js said so): {sid, context}, for the expansion it lets run next, so
+ * the join hook beneath does not run a second time. Module state, set only while that next(e) runs. */
+let joined = null;
 
 /** The current child: {sid, seat, stream, stopped}; null before the first start. Module state: a reload loses it
  * together with the child itself. */
@@ -302,9 +307,42 @@ export function registerDeliver(on) {
     return next(e);
   });
 
-  // after a join (hooks/join.js beneath): hello for the new seat; the child looks it up itself
+  // /sub-human answered here (mod/core/command.mjs): join.js through the shim, its reply as a notice or the command's
+  // output; a join that worked expands as before, its mechanics block handed to the expansion hook below
+  on('command.run', { command: ['sub-human:sub-human', 'sub-human'] }, async ($, e, next) => {
+    const sid = await $.session.id();
+    const nonce = asNonce((await $.state.get(NONCE)).value, sid);
+    if (!answersItself(e, { roomClaude: !!(await $.env.get('SUB_HUMAN_ROOM')), nonce })) return next(e);
+    const root = $.plugin.root;
+    const run = await $.process.run(shimArgv(root, 'join.js'), {
+      stdin: JSON.stringify(joinPayload({ sid, cwd: await $.session.cwd(), args: e.args, nonce })),
+      env: shimEnv({ session_id: sid }, root),
+      timeoutMs: SHIM_TIMEOUT_MS,
+    });
+    const reply = readReply(run);
+    if (reply.kind === 'joined') {
+      joined = { sid, context: reply.context };
+      try {
+        const r = await next(e);
+        // after the command's own row, which Claude Code adds once this hook returns
+        const confirm = () => { for (const line of reply.lines) $.ui.log(line); };
+        try { $.clock.after(CONFIRM_AFTER_MS, confirm); } catch { confirm(); }
+        return r;
+      } finally { joined = null; }
+    }
+    const { result, logs } = answerOf(reply, { bridge: e.origin.kind === 'bridge' });
+    for (const line of logs) $.ui.log(line);
+    try { await refresh($, sid); } catch { /* the next refresh tries again */ }
+    try { ensureChild($, sid); } catch { /* next start tries again */ }
+    return result;
+  }).catch(($, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module
+
+  // after a join (hooks/join.js beneath, or the one command.run above took): hello for the new seat; the child looks
+  // it up itself
   on('classic.UserPromptExpansion', { command_name: /^(sub-human:)?sub-human$/ }, async ($, e, next) => {
-    const r = await next(e);
+    const took = joined && joined.sid === e.session_id ? joined : null;
+    if (took) joined = null;
+    const r = took ? { additionalContext: [took.context] } : await next(e);
     try { await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
     try { ensureChild($, e.session_id); } catch { /* next start tries again */ }
     return r;

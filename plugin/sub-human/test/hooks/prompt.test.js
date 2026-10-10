@@ -93,5 +93,5 @@ test('prompt: outside a room only the report is written; an @room there is refus
   assert.equal(r.code, 0);
   const b = w.hook('prompt', ev({ prompt: '@room hi' }), { env: { CLAUDE_PID: undefined }, session: false });
   assert.equal(b.json.decision, 'block');
-  assert.match(b.json.reason, /not in a room/);
+  assert.match(b.json.reason, /isn't in a room/);
 });

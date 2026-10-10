@@ -28,7 +28,7 @@
  *                source: 'state-file'|'link-doc'}
  *   normalize(state, detail?) -> STATES member   an old or new word to the vocabulary (unknown: 'offline')
  *   indicator(st, {now}?) -> string  the compact segment: "⇄ online", "… connecting", "… connecting (3)",
- *       "✕ offline 2m · 2 queued", "✕ stopped", "✕ FORK: sub-human link --reset"; '' for null
+ *       "✕ offline 2m · 2 queued", "✕ stopped", "✕ out of step: /sub-human doctor"; '' for null
  *   isDown(st) -> bool               connecting after a first failure, offline, fork or stopped: worth leading a row with
  *   stateFile(code) -> string        <home>/links/<code>.state.json
  *   STATES                           Set of the five words
@@ -94,7 +94,7 @@ function indicator(st, { now = Date.now() } = {}) {
   const state = normalize(st.state, st.detail);
   const queued = st.queued > 0 ? ` · ${st.queued} queued` : '';
   if (state === 'online') return '⇄ online';
-  if (state === 'fork') return '✕ FORK: sub-human link --reset';
+  if (state === 'fork') return '✕ out of step: /sub-human doctor';
   if (state === 'stopped') return `✕ stopped${queued}`;
   if (state === 'connecting') return st.attempt > 1 ? `… connecting (${st.attempt})${queued}` : `… connecting${queued}`;
   const t = st.since ? ago(st.since, now) : '';

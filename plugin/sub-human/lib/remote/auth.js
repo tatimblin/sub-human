@@ -137,10 +137,10 @@ function checkPin(inv, secret, pin, now) {
   if (typeof pin === 'string' && PIN_RE.test(pin) && sameDigest(pinDigest(secret, pin), inv.pin_sha256)) return { next: null, err: null };
   const tries = Math.max(0, (Number(inv.tries) || 0) - 1);
   if (!tries) {
-    return { next: burnt, err: refused('wrong PIN, and that was the last try: the invite is burnt; ask the host for a new one', 'an invite was burnt after its last wrong PIN') };
+    return { next: burnt, err: refused('wrong PIN, and that was the last try: this invite no longer works. Ask the host for a new one (/sub-human invite on their side)', 'an invite was burnt after its last wrong PIN') };
   }
   const msg = typeof pin === 'string'
-    ? `wrong PIN (${left(tries)}); try again with the PIN the host gave you`
+    ? `wrong PIN (${left(tries)}). Check the digits with the host, then type the join line again`
     : 'this invite needs its PIN';
   return { next: { ...inv, tries }, err: refused(msg, `a wrong PIN for an invite (${left(tries)})`) };
 }
@@ -186,10 +186,10 @@ function redeemInvite(store, secret, { machine, linkId, pin, now = Date.now() })
       link.id = inv.link;
       return { ...cur, [key]: { ...inv, used_at: iso(now) } };
     }
-    if (inv && inv.burnt_at) throw new RoomError('AUTH', 'this invite is burnt (too many wrong PINs, expired, or revoked); ask the host for a new one');
+    if (inv && inv.burnt_at) throw new RoomError('AUTH', 'this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one');
     if (inv && inv.used_at) throw new RoomError('AUTH', 'this invite was used already (each invite works once); ask the host for a new one');
     if (!inv) throw new RoomError('AUTH', 'this invite is unknown or was used already; ask the host for a new one');
-    if (linkId !== undefined && inv.link !== linkId) throw new RoomError('AUTH', `this invite is not for link ${linkId}`);
+    if (linkId !== undefined && inv.link !== linkId) throw new RoomError('AUTH', 'this invite is for another connection');
     if (inv.machine && inv.machine !== machine) throw new RoomError('AUTH', 'this invite is for another machine');
     if (inv.v === 2 && inv.handoff) {
       if (now > Date.parse(inv.expires_at)) throw new RoomError('AUTH', 'this handoff invite expired; ask the new host for a new one');
@@ -214,7 +214,7 @@ function admissionCheck(inv, { machine, linkId, now }) {
   if (inv.admit === 'refused') return { err: new RoomError('AUTH', 'the host refused to let this machine in') };
   if (inv.burnt_at) return { err: new RoomError('AUTH', inv.admit === 'lapsed' ? 'the host did not let this machine in in time; ask them for a new invite' : 'the host revoked this join; ask them for a new invite') };
   if (inv.machine !== machine) return { err: new RoomError('AUTH', 'this join is for another machine') };
-  if (linkId !== undefined && inv.link !== linkId) return { err: new RoomError('AUTH', `this join is not for link ${linkId}`) };
+  if (linkId !== undefined && inv.link !== linkId) return { err: new RoomError('AUTH', 'this join is for another connection') };
   if (inv.admit !== 'let-in') {
     if (now > Date.parse(inv.expires_at)) return { err: new RoomError('AUTH', 'the host did not let this machine in in time; ask them for a new invite') }; // lapseAdmissions burns it, with a line
     return { err: new RoomError('OFFLINE', `${WAITING}; the link keeps trying`) };
@@ -345,7 +345,7 @@ function decideAdmission(store, ref, { decision, by = null, sig = null, now = Da
   let out = null;
   store.kv.update(INVITES_KEY, cur => {
     const hit = Object.keys(cur || {}).filter(k => REF_RE.test(String(ref)) && k.startsWith(ref) && cur[k].admission);
-    if (hit.length !== 1) throw new RoomError('AUTH', `no join request of room ${store.code} has the ref ${ref}`);
+    if (hit.length !== 1) throw new RoomError('AUTH', `room ${store.code} has no join request ${ref} (/sub-human admit lists them)`);
     const inv = cur[hit[0]];
     if (inv.admit !== 'asked' || inv.burnt_at) throw new RoomError('AUTH', `that join request was ${inv.admit === 'let-in' ? 'let in already' : inv.admit === 'refused' ? 'refused already' : 'withdrawn (revoked or lapsed)'}`);
     if (now > Date.parse(inv.expires_at)) throw new RoomError('AUTH', 'that join request lapsed; send them a new invite (/sub-human invite)');
@@ -472,7 +472,7 @@ const proveSeat = (key, { room, name, pubkey }) => envelope.sign({ kind: 'join',
 function checkSeatProof(proof, { room, name, pubkey }) {
   const ok = !!proof && proof.kind === 'join' && proof.room === room && proof.from === name && proof.pubkey === pubkey
     && envelope.isV2(proof) && envelope.freshTs(proof) && envelope.verify(proof, envelope.parseKey(pubkey));
-  if (!ok) throw new RoomError('AUTH', `a join needs a fresh proof signed by ${name}'s seat key`);
+  if (!ok) throw new RoomError('AUTH', `a join needs a fresh proof signed by ${name}'s own key`);
 }
 
 /**

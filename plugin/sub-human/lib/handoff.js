@@ -175,7 +175,7 @@ function checkAccept(s, d, proof, locator) {
   const pub = store.publicKey(d.to, s);
   const ok = !!proof && proof.kind === 'host_accept' && proof.room === s.code && proof.from === d.to && proof.id === d.id
     && proof.epoch === d.epoch && proof.locator === locator && envelope.isV2(proof) && envelope.freshTs(proof) && envelope.verify(proof, pub);
-  if (!ok) throw err('AUTH', `a handoff needs ${d.to}'s acceptance signed with their seat key`);
+  if (!ok) throw err('AUTH', `a handoff needs ${d.to}'s yes, signed with their own key`);
 }
 
 function serverAccept(s, link, { id, accept: proof, locator, invites } = {}, now = Date.now()) {
@@ -184,13 +184,13 @@ function serverAccept(s, link, { id, accept: proof, locator, invites } = {}, now
   if (!auth.mayWriteAs(link, d.to)) throw err('AUTH', `${d.to} has not joined over this link`);
   if (d.state !== 'asked') throw err('INVALID', `this handoff was ${d.state} already`);
   if (expired(d, now)) throw err('INVALID', `the handoff ask expired; ask ${d.from} to hand off again`);
-  if (s.hostState().epoch + 1 !== d.epoch) throw err('STALE', 'the room changed hosts since this ask');
+  if (s.hostState().epoch + 1 !== d.epoch) throw err('STALE', 'the room changed hosts since this was asked');
   const loc = d.locator || locator;
   if (!transportOf(loc)) throw err('INVALID', `"${loc}" is not a locator the host knows`);
   checkAccept(s, d, proof, loc);
   checkInvites(s.code, loc, invites);
   const entry = s.append({
-    kind: 'host_changed', text: `room ${s.code} moved to ${d.to}'s machine (host epoch ${d.epoch}); the room's Claude restarts there`,
+    kind: 'host_changed', text: `room ${s.code} moved to ${d.to}'s machine; the room's Claude restarts there`,
     epoch: d.epoch, host: d.to, machine: link.machine, locator: loc, accept: proof, ...(d.ask ? { ask: d.ask } : {}),
   }, { via: 'system', from: d.from, system: true });
   let job = null;
@@ -239,9 +239,9 @@ function onMoved(mirror, data) {
   const code = mirror.code;
   const h = mirror.hostState();
   if (!data || h.epoch !== data.epoch || h.machine !== data.machine) {
-    return { reason: `the host said room ${code} moved (epoch ${data && data.epoch}), but this copy does not hold that line yet` };
+    return { reason: `the host said room ${code} moved, but this machine hasn't received that yet` };
   }
-  if (data.machine === machineId()) return { self: true, stop: true, reason: `this machine hosts room ${code} now (host epoch ${h.epoch})` };
+  if (data.machine === machineId()) return { self: true, stop: true, reason: `this machine hosts room ${code} now` };
   const how = `ask ${data.host} for an invite (/sub-human invite, there) and type the line it shows here`;
   if (!data.invite) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and no invite came for this machine; ${how}` };
   const cur = links.get(code) || {};
@@ -253,14 +253,14 @@ function onMoved(mirror, data) {
     moved: { epoch: data.epoch, host: data.host, locator: data.locator, at: iso(Date.now()) },
   });
   if (cur.token === undefined && cur.invite === undefined) return { reason: 'repointed' };
-  return { reason: `room ${code} moved to ${data.host}'s machine (host epoch ${data.epoch}); reconnecting there` };
+  return { reason: `room ${code} moved to ${data.host}'s machine; reconnecting there` };
 }
 
 function whyOffline(code, message) {
   const l = links.get(code);
   if (!l || !l.moved || l.token) return message;
   const admit = l.request ? `Over ssh ${l.moved.host} has not let this machine in yet. ` : '';
-  return `room ${code} moved to ${l.moved.host}'s machine (${l.moved.locator}), which this machine cannot reach yet (${message}). ${admit}`
+  return `room ${code} moved to ${l.moved.host}'s machine, which this machine can't reach yet (${message}). ${admit}`
     + `Ask ${l.moved.host} for an invite (/sub-human invite there) and type the line it shows here`;
 }
 
@@ -391,7 +391,7 @@ function promote(code, { name, locator, force = false, cwd, now = Date.now() } =
   const down = now - (Date.parse(st.since || '') || now);
   if (!force && down < gate) throw err('INVALID', `the link to room ${code}'s host has been down ${Math.round(down / 1000)} s; promote only after ${Math.round(gate / 60_000)} min (or --force)`);
   const m = s.members.read()[name];
-  if (!m || m.left_at || m.machine !== machineId()) throw err('INVALID', `${name} is not a seat of this machine in room ${code}`);
+  if (!m || m.left_at || m.machine !== machineId()) throw err('INVALID', `${name} isn't in room ${code} on this machine`);
   const full = s.validateChain();
   if (!full.ok || !s.lastId()) throw err('FORK', `this machine's copy of room ${code} is empty or does not chain; it cannot become the room`);
   locator = locator || linkLib().pipeLocator();
@@ -402,7 +402,7 @@ function promote(code, { name, locator, force = false, cwd, now = Date.now() } =
   const machines = machinesOf(s);
   const entry = {
     kind: 'host_changed', epoch, host: name, machine: machineId(), locator, promoted: true,
-    text: `${name} promoted this machine to host room ${code} (host epoch ${epoch}): the old host was unreachable; lines it wrote after #${last} are not in the room`,
+    text: `${name} made this machine the host of room ${code}: the old host was unreachable, and anything it wrote after #${last} isn't in the room`,
   };
   serveWeb(code, locator);
   const note = takeOver(code, { by: name, cwd, entry });

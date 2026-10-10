@@ -80,8 +80,8 @@ export function bashVerdict(command, ctx = {}) {
   const cmd = typeof command === 'string' ? command : '';
   if (!cmd.trim()) return null;
   if (READ_CLI.test(cmd) || READ_DOCTOR.test(cmd)) return null;
-  if (DOCTOR_WRITES.test(cmd)) return 'doctor --fix and --bundle change or write files (run them yourself, in a terminal outside Claude Code; plain sub-human doctor is read only)';
-  if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it makes an invite, lets a machine in or out, or speaks for the room\'s link (run sub-human invite, admit, kick, prime, listen, link, serve, handoff, promote and demote yourself, in a terminal outside Claude Code: not with !, which puts the output, an invite and its PIN, into this conversation)';
+  if (DOCTOR_WRITES.test(cmd)) return 'doctor --fix and --bundle change or write files: the person runs them in a terminal outside Claude Code; in a session, /sub-human doctor is the read-only check';
+  if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it makes an invite, lets a machine in or out, or speaks for the room\'s connection: the person does that in their own session (/sub-human invite, admit, kick or handoff) or in a terminal outside Claude Code, never with !, which would put an invite and its PIN into this conversation';
   if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME)';
   if (DOT_HOME.test(cmd)) return 'it touches the room store (~/.sub-human)';
   for (const h of homeSpellings(ctx)) {
@@ -93,7 +93,7 @@ export function bashVerdict(command, ctx = {}) {
     const roots = [ctx.pluginRoot, ctx.realPluginRoot].filter(r => typeof r === 'string' && r.startsWith('/')).map(normalize);
     const cwds = [ctx.cwd, ctx.realCwd].filter(c => typeof c === 'string' && c.startsWith('/')).map(normalize);
     const inPlugin = NAMES_PLUGIN(cmd) || cwds.some(c => roots.some(r => isUnder(c, r)));
-    if (inPlugin) return "it runs sub-human's own modules or hooks (they write the room log and hold the seat keys)";
+    if (inPlugin) return "it runs sub-human's own modules or hooks (they write the room log and hold the people's signing keys)";
   }
   return null;
 }
