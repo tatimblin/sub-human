@@ -3,7 +3,7 @@
  * registerX(on). An event is hooked once per module without a matcher (validate), so each such event lives in one file.
  * The mod routes, node writes: nothing under mod/ writes room state or holds the seat key, and it knows the store only
  * from the hello (hooks/mod-hello.ts, kept in $.state). Every `$` call sits in the file that registers the hook
- * (cc CONTRACT module-dollar-local); mod/core/*.mjs is pure and tested in node.
+ * (cc CONTRACT module-dollar-local); mod/core/*.ts is pure and tested in node.
  *
  *   HOOKS     every hook the module registers, {event, matcher, file, does}: the one place each hook's behaviour is
  *             described. scripts/arch-doc.js renders it; test/mod-core.test.js checks it against validate.
@@ -14,6 +14,7 @@ import { registerPrompt } from './prompt.ts';
 import { registerConsent } from './consent.ts';
 import { registerTasks } from './tasks.ts';
 import { registerDeliver } from './deliver.ts';
+import type { On } from 'claude-code';
 
 export const HOOKS = [
   { event: 'session.start', matcher: '', file: 'mod/deliver.ts', does: 'runs hooks/mod-hello.ts with the session\'s nonce (minted once per session id into $.state; the lease keeps it; home, plugin root, seat into $.state); unless surely unseated, starts the tail child (node scripts/sub-human tail --ndjson, restarted with backoff; the seat\'s only delivery) and routes its events: chat -> $.ui.log (typed through Remote Control: relayed as a prompt of only the room lines, asUser, batched one per RELAY_GAP_MS), pull -> isMeta append, wake -> $.prompt.submit (mid-turn: append), rows -> $.state' },
@@ -40,8 +41,7 @@ export const HOOKS = [
   { event: 'ui.render', matcher: 'UserMessage, origin peer|peer-send-message|plugin', file: 'mod/render.ts', does: 'draws another member\'s Claude as "bob\'s Claude: …" and a sub-human prompt as its chat lines, without "(for Claude)" lines' },
 ];
 
-/** @type {import('claude-code').Register} */
-export function register(on) {
+export function register(on: On) {
   registerDeliver(on);
   registerGuard(on);
   registerPrompt(on);

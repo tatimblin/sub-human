@@ -38,6 +38,11 @@ jobs:
         run: |
           git config --global user.name "sub-human CI"
           git config --global user.email "ci@sub-human.invalid"
+      - name: npm ci (typescript and @types/node, for the typecheck only)
+        run: npm ci
+      - name: typecheck (allowed to fail until the TypeScript migration's phase C, docs/next/TYPESCRIPT.md)
+        continue-on-error: true
+        run: npm run typecheck
       - name: npm test (the mods tests skip without Claude Code)
         run: npm test
       - name: hook tests over the thread store

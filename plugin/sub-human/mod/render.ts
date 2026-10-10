@@ -7,9 +7,9 @@
  *   - anything else, a sender that is not a seat address, and every row while expanded (ctrl+o): the engine's.
  */
 import { peerLines, roomLines } from './core/chat.ts';
+import type { On } from 'claude-code';
 
-/** @param {import('claude-code').On} on */
-export function registerRender(on) {
+export function registerRender(on: On) {
   on('ui.render', { component: 'UserMessage', props: { origin: { kind: ['peer', 'peer-send-message', 'plugin'] } } }, ($, e, next) => {
     const { text, origin, from, isExpanded } = e.props;
     if (isExpanded) return next(e);

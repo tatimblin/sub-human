@@ -23,6 +23,7 @@ import { parseHello } from './core/seat.ts';
 import { answersItself, joinPayload, readReply, answerOf, CONFIRM_AFTER_MS } from './core/command.ts';
 import { shimArgv, shimEnv, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
+import type { On } from 'claude-code';
 
 const ROWS = { plugin: 'sub-human', key: 'rows' };
 const HELLO = { plugin: 'sub-human', key: 'hello' };
@@ -294,8 +295,7 @@ async function apply($, c, ev) {
   }
 }
 
-/** @param {import('claude-code').On} on */
-export function registerDeliver(on) {
+export function registerDeliver(on: On) {
   on('session.start', async ($, e, next) => {
     try {
       const sid = await $.session.id();

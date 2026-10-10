@@ -19,6 +19,7 @@ import { reviewOpenOf } from './core/prefilter.ts';
 import { delivering, setRemote, queueRelay, isRelay } from './deliver.ts';
 import { RELAY_CONTEXT } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
+import type { On } from 'claude-code';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' };
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' };
@@ -87,8 +88,7 @@ async function runPrompt($, e, origin, hello) {
   return result;
 }
 
-/** @param {import('claude-code').On} on */
-export function registerPrompt(on) {
+export function registerPrompt(on: On) {
   on('prompt.submit', async ($, e, next) => {
     // A relay this module submits: room lines for the person, never a post (its first line may read "room: …"). The
     // model gets what it needs as context, which the phone does not show.

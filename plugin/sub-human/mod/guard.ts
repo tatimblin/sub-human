@@ -12,6 +12,7 @@ import {
 } from './core/guard.ts';
 import { seated } from './core/seat.ts';
 import { asHello } from './core/state.ts';
+import type { On } from 'claude-code';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' };
 
@@ -38,8 +39,7 @@ async function placed($, abs) {
   return undefined;
 }
 
-/** @param {import('claude-code').On} on */
-export function registerGuard(on) {
+export function registerGuard(on: On) {
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const h = await helloOf($);
     const ctx = { ...h, pluginRoot: h.pluginRoot || $.plugin.root };

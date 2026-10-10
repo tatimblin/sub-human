@@ -11,6 +11,7 @@ import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS, SHIM_MODE, asNotice } fr
 import { consentNeeded, reviewOpenOf } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { asHello } from './core/state.ts';
+import type { On } from 'claude-code';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' };
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' };
@@ -22,8 +23,7 @@ async function needed($, sid) {
   return consentNeeded(asHello(hello), sid, flag);
 }
 
-/** @param {import('claude-code').On} on */
-export function registerConsent(on) {
+export function registerConsent(on: On) {
   on('tool.call', { tool: ['EnterPlanMode', 'ExitPlanMode'] }, async ($, e, next) => {
     await $.state.set(REVIEW, true);
     return next(e);

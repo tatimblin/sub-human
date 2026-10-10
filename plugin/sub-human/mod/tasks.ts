@@ -12,6 +12,7 @@ import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { tasksNeeded } from './core/prefilter.ts';
 import { mergeClassic } from './core/prompt.ts';
 import { asHello } from './core/state.ts';
+import type { On } from 'claude-code';
 
 const HELLO = { plugin: 'sub-human', key: 'hello' };
 const TASK_GATE_FAILED = 'sub-human task gate failed closed: the check did not run. Send status alone in a TaskUpdate of its own to retry.';
@@ -37,8 +38,7 @@ async function runTasks($, e, event) {
   return toClassic(event, run).result;
 }
 
-/** @param {import('claude-code').On} on */
-export function registerTasks(on) {
+export function registerTasks(on: On) {
   on('classic.PostToolUse', { tool_name: ['TaskCreate', 'TaskUpdate'] }, async ($, e, next) => {
     const ours = await runTasks($, e, 'PostToolUse');
     return ours ? mergeClassic(ours, await next(e)) : next(e);
