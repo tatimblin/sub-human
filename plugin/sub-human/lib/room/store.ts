@@ -114,22 +114,62 @@ import { RoomError, validate } from './validate.ts';
 import * as envelope from './envelope.ts';
 import * as members from './members.ts';
 import { createRequire } from 'node:module';
+import type { KeyObject } from 'node:crypto';
+import type { LockOpts } from '../lock.ts';
+import type {
+  AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, HumanTrust, KvApi, KvUpdateOpts, Members,
+  MembersApi, Payload, Placed, PlaceOpts, ReadViewOpts, RoomStore, Tailer, TailerFs, Validated, ValidateOpts,
+} from './types.ts';
 
 const require = createRequire(import.meta.url);
+
+/** The installed human signer (hooks/seat-key.ts arm): the seat's private key for (room, from), or null. */
+type HumanSigner = (room: string, from: string) => KeyObject | null | undefined;
+
+/** <room>/log.idx (see ZERO below): the verified prefix of the log and the byte ranges of its non-chat lines. */
+interface Checkpoint {
+  v: 1;
+  offset: number;
+  id: number;
+  hash: string;
+  count: number;
+  /** [id, offset, length] per non-chat line in the prefix */
+  marks: [number, number, number][];
+}
+
+/** One line of the log, found by lineAt: its byte range and id (null for a line without one). */
+interface LineSpan { start: number; end: number; id: number | null }
+
+/** Where a chain check broke: an id whose prev does not chain, or a corrupt line (badAt null, line 1-based). */
+interface ChainBreak { badAt: number | null; line?: number }
+
+/** readAll's cache of one log file (readCache). */
+interface ReadCache {
+  dev: number;
+  ino: number;
+  size: number;
+  mtimeMs: number;
+  offset: number;
+  tail: Buffer;
+  entries: Entry[];
+  partial: Entry[];
+}
+
+const errCode = (e: unknown): string | undefined => (e as NodeJS.ErrnoException | null)?.code;
 
 const LOG = 'log.jsonl';
 const IDX_FILE = 'log.idx';
 const MEMBERS = 'members.json';
 const CHAT_KINDS = new Set(['say', 'status']);
 
-const hash12 = data => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12);
+const hash12 = (data: string | Uint8Array): string => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12);
 
 // ---------- which store an entry was read from ----------
-const STORE_OF = new WeakMap(); // entry -> the RoomStore that read it
-const tag = (e, s) => { if (e && typeof e === 'object' && s) STORE_OF.set(e, s); return e; };
+const STORE_OF = new WeakMap<object, RoomStore>(); // entry -> the RoomStore that read it
+const tag = <E,>(e: E, s: RoomStore | null | undefined): E => { if (e && typeof e === 'object' && s) STORE_OF.set(e, s); return e; };
 
-function parseLines(text, s) {
-  const out = [];
+function parseLines(text: string, s: RoomStore): Entry[] {
+  const out: Entry[] = [];
   for (const line of text.split('\n')) {
     if (!line) continue;
     try { out.push(tag(JSON.parse(line), s)); } catch { /* torn or corrupt line: skip */ }
@@ -139,7 +179,7 @@ function parseLines(text, s) {
 
 /** The log's non-empty lines read backwards from byte `end` (newest first), as strings. Reads TAIL_CHUNK at a time. */
 const TAIL_CHUNK = 64 * 1024;
-function* linesBackward(fd, end) {
+function* linesBackward(fd: number, end: number): Generator<string, void, undefined> {
   let pos = end;
   let carry = Buffer.alloc(0);
   while (pos > 0) {
@@ -149,7 +189,7 @@ function* linesBackward(fd, end) {
     fs.readSync(fd, b, 0, n, pos);
     const buf = carry.length ? Buffer.concat([b, carry]) : b;
     let stop = buf.length;
-    let nl;
+    let nl: number;
     while (stop > 0 && (nl = buf.lastIndexOf(10, stop - 1)) >= 0) {
       if (stop > nl + 1) yield buf.toString('utf8', nl + 1, stop);
       stop = nl;
@@ -160,15 +200,15 @@ function* linesBackward(fd, end) {
 }
 
 /** Legacy entries (logs from before envelope v3) mapped for display and for the answer matrix. */
-function normalize(e) {
-  const n = { ...e };
+function normalize(e: Entry): Entry {
+  const n: Entry = { ...e };
   if (n.kind === 'concern') n.kind = 'objection';
   if (n.kind === 'agree' && n.plan_hash) n.kind = 'signoff';
   if (n.kind === 'plan_rev') { n.kind = 'proposal'; if (n.plan_hash && !n.hash) n.hash = n.plan_hash; }
   else if (n.plan_hash && !n.proposal_hash) n.proposal_hash = n.plan_hash;
   delete n.plan_hash;
   if (n.to == null) n.to = 'room';
-  for (const k of ['from', 'to', 'by', 'owner']) if (typeof n[k] === 'string') n[k] = members.roomClaudeName(n[k]); // 0.4.x "orch"
+  for (const k of ['from', 'to', 'by', 'owner'] as const) { const v = n[k]; if (typeof v === 'string') n[k] = members.roomClaudeName(v); } // 0.4.x "orch"
   return tag(n, STORE_OF.get(e));
 }
 
@@ -183,29 +223,29 @@ function normalize(e) {
  */
 const SIGNER = Symbol.for('sub-human.human-signer');
 const KEY_PART_RE = /^[A-Za-z0-9_.-]{1,64}$/;
-function keyDir(c) {
+function keyDir(c: unknown): string {
   if (typeof c !== 'string' || !KEY_PART_RE.test(c) || c.startsWith('.')) throw new RoomError('INVALID', `invalid room code "${c}"`);
   return path.join(home(), 'keys', c);
 }
-function pubPath(name, c) {
+function pubPath(name: unknown, c: unknown): string {
   if (typeof name !== 'string' || !KEY_PART_RE.test(name) || name.startsWith('.')) throw new RoomError('INVALID', `invalid name "${name}"`);
   return path.join(keyDir(c), `${name}.pub`);
 }
 
-function humanKey(c, from) {
-  const signer = globalThis[SIGNER];
-  let key = null;
+function humanKey(c: string, from: string): KeyObject {
+  const signer = (globalThis as unknown as Record<symbol, HumanSigner | undefined>)[SIGNER];
+  let key: KeyObject | null | undefined = null;
   if (typeof signer === 'function') { try { key = signer(c, from); } catch { key = null; } }
   if (!key) throw new RoomError('INVALID', 'via "human" is written only by sub-human\'s hooks for a person\'s own typed words or answers; post as via "agent"');
   return key;
 }
 
-const pubCache = new Map(); // file -> {mtimeMs, size, key}
+const pubCache = new Map<string, { mtimeMs: number; size: number; key: KeyObject | null }>(); // file -> {mtimeMs, size, key}
 /** The seat's key from <home>/keys/<code>/<name>.pub: what a legacy room (no key pinned) verifies against. */
-function localKey(name, c) {
-  let file;
+function localKey(name: string, c: string): KeyObject | null {
+  let file: string;
   try { file = pubPath(name, c); } catch { return null; }
-  let st;
+  let st: nodeFs.Stats;
   try { st = fs.statSync(file); } catch { pubCache.delete(file); return null; }
   const hit = pubCache.get(file);
   if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.key;
@@ -216,26 +256,26 @@ function localKey(name, c) {
 }
 
 /** The key name's entries in store s verify against: the one pinned in the log; the local .pub only when it pins none. */
-function publicKey(name, s) {
+function publicKey(name: string, s: RoomStore): KeyObject | null {
   const pins = s.pins();
   return pins.size ? pins.get(name) || null : localKey(name, s.code);
 }
 
-const verdicts = new Map(); // code \0 signed bytes \0 sig -> bool (bounded)
+const verdicts = new Map<string, boolean>(); // code \0 signed bytes \0 sig -> bool (bounded)
 const VERDICTS_MAX = 4096;
 /** The room a via=human entry was signed in: its `room` field (append stamps it), else the store that read it. */
-const roomOf = e => (typeof e.room === 'string' ? e.room : (STORE_OF.get(e) || {}).code || null);
+const roomOf = (e: Entry): string | null => (typeof e.room === 'string' ? e.room : STORE_OF.get(e)?.code || null);
 /** The store that read e when it holds e's room, else that room's store. */
-function storeOf(e, c) { const s = STORE_OF.get(e); return s && s.code === c ? s : open(c); }
+function storeOf(e: Entry, c: string): RoomStore { const s = STORE_OF.get(e); return s && s.code === c ? s : open(c); }
 
-function verifyHuman(e) {
+function verifyHuman(e: Entry | null | undefined): boolean {
   if (!e || e.via !== 'human' || typeof e.sig !== 'string' || typeof e.from !== 'string') return false;
   const c = roomOf(e);
   if (!c) return false;
   const k = `${c}\0${envelope.signedBytes(e)}\0${e.sig}`;
   const hit = verdicts.get(k);
   if (hit !== undefined) return hit;
-  let pub = null;
+  let pub: KeyObject | null = null;
   try { pub = publicKey(e.from, storeOf(e, c)); } catch { pub = null; }
   if (!pub) return false; // no verdict cached: the key may be pinned later
   const ok = envelope.verify(e, pub);
@@ -243,32 +283,35 @@ function verifyHuman(e) {
   verdicts.set(k, ok);
   return ok;
 }
-const unverifiedHuman = e => !!e && e.via === 'human' && !verifyHuman(e);
+const unverifiedHuman = (e: Entry | null | undefined): boolean => !!e && e.via === 'human' && !verifyHuman(e);
 /**
  * How far a via=human entry is the person's: 'verified' (its sig verifies), 'legacy' (no sig, in a room whose
  * log pins no key, from a seat with no local key: a room from before seat keys, or a reader that cannot tell
  * which room; shown "(unverified)" but still counted as an answer), 'unverified' (anything else: a bad sig, or
  * no sig in a keyed room or from a seat that has a key; never counted). null when not via=human.
  */
-function humanTrust(e) {
+function humanTrust(e: Entry | null | undefined): HumanTrust | null {
   if (!e || e.via !== 'human') return null;
   if (verifyHuman(e)) return 'verified';
   if (e.sig !== undefined || typeof e.from !== 'string') return 'unverified';
   const c = roomOf(e);
   if (!c) return 'legacy';
-  let keyed, file;
+  let keyed: boolean, file: string;
   try { keyed = storeOf(e, c).pins().size > 0; file = pubPath(e.from, c); } catch { return 'unverified'; }
   return keyed || fs.existsSync(file) ? 'unverified' : 'legacy';
 }
 
 // ---------- append = sign + place ----------
-const auth = msg => new RoomError('AUTH', msg);
+/** The log lock's timeout: RoomError LOCK with withLock's message (RoomError itself takes the code first). */
+class LockError extends RoomError { constructor(message: string) { super('LOCK', message); } }
+
+const auth = (msg: string): RoomError => new RoomError('AUTH', msg);
 /** The envelope fields sign() adds (lib/room/envelope.ts); only a via=human payload carries them. */
-const SIGNED_FIELDS = ['room', 'nonce', 'ts', 'sigv', 'sig'];
+const SIGNED_FIELDS = ['room', 'nonce', 'ts', 'sigv', 'sig'] as const;
 
 /** The fields an entry is stored with before it is placed: validated fields v with from, via and by. */
-function fieldsOf(v, from) {
-  const p = { from, via: v.via, kind: v.kind, to: v.to };
+function fieldsOf(v: Validated, from: string): Payload {
+  const p: Payload = { from, via: v.via, kind: v.kind, to: v.to };
   if (v.refs && v.refs.length) p.refs = v.refs;
   if (v.hash) p.hash = v.hash;
   if (v.approvers) p.approvers = v.approvers;
@@ -289,7 +332,7 @@ function fieldsOf(v, from) {
 }
 
 /** The client half of append: validate, and sign a via=human payload with the seat's key (the hook's signer). */
-function toPayload(c, entry, opts) {
+function toPayload(c: string | null | undefined, entry: EntryInput, opts: ValidateOpts): Payload {
   const v = validate(entry, opts);
   if (!c) throw new RoomError('NO_ROOM', 'no room bound; run /sub-human');
   const p = fieldsOf(v, opts.from);
@@ -301,21 +344,21 @@ function toPayload(c, entry, opts) {
  * stored form, so a field validate() would drop or reshape breaks the signature instead of landing unsigned.
  * system: the caller may write via=system (trusted callers only, as for append).
  */
-function admit(c, payload, { system } = {}) {
+function admit(c: string | null | undefined, payload: Payload, { system }: PlaceOpts = {}): Payload {
   if (!c) throw new RoomError('NO_ROOM', 'no room bound; run /sub-human');
   if (!payload || typeof payload !== 'object') throw new RoomError('INVALID', 'payload must be an object');
   const { from, via, room, nonce, ts, sigv, sig, ...fields } = payload;
-  const v = validate(fields, { via, from, system });
+  const v = validate(fields as EntryInput, { via, from, system }); // validate() checks each field's type
   const p = fieldsOf(v, from);
   const signed = SIGNED_FIELDS.filter(k => payload[k] !== undefined);
   if (v.via !== 'human' && signed.length) throw new RoomError('INVALID', `${signed.join(', ')}: only a person's entry is signed`);
-  for (const k of signed) p[k] = payload[k];
+  for (const k of signed) Object.assign(p, { [k]: payload[k] });
   return p;
 }
 
 /** An agent post's rate bucket: the room, or the one member it is addressed to (legacy lines have no `to`). */
-const bucket = e => (e.to && e.to !== 'room' ? e.to : 'room');
-const rateMax = p => (bucket(p) === 'room' ? config.RATE_MAX : config.RATE_ADDRESSED_MAX);
+const bucket = (e: { to?: string }): string => (e.to && e.to !== 'room' ? e.to : 'room');
+const rateMax = (p: Payload): number => (bucket(p) === 'room' ? config.RATE_MAX : config.RATE_ADDRESSED_MAX);
 
 /**
  * The newest entries (newest first) as a placement needs them: the last id, the agent posts p.from made to p's
@@ -323,9 +366,9 @@ const rateMax = p => (bucket(p) === 'room' ? config.RATE_MAX : config.RATE_ADDRE
  * `at` (the host's clock): a payload with a fresh ts may have been placed up to SIG_SKEW_MS after it was signed.
  * The log is in time order, so the scan stops at the window.
  */
-function scanTail(newest, p, now) {
+function scanTail(newest: Iterable<Entry>, p: Payload, now: number): { last: number | null; recent: number; replayed: boolean } {
   const span = p.via === 'agent' ? config.RATE_WINDOW_MS : p.nonce ? 2 * envelope.SIG_SKEW_MS : 0;
-  let last = null, recent = 0, replayed = false;
+  let last: number | null = null, recent = 0, replayed = false;
   for (const e of newest) {
     if (last === null) last = e.id || 0;
     if (!span || now - Date.parse(e.at) >= span) break;
@@ -336,7 +379,7 @@ function scanTail(newest, p, now) {
 }
 
 /** A via=human payload is the person's: v2, signed for this room, fresh, and verified against their pinned key. */
-function checkSigned(s, p, now) {
+function checkSigned(s: RoomStore, p: Payload, now: number): void {
   if (!envelope.isV2(p) || typeof p.sig !== 'string') throw auth('a person\'s entry must be signed with their seat key (sig v2)');
   if (p.room !== s.code) throw auth(`signed for room ${p.room}, not ${s.code}`);
   if (!envelope.freshTs(p, now)) throw auth(`the signature's ts is more than ${envelope.SIG_SKEW_MS / 60_000} minutes from the host's clock`);
@@ -346,7 +389,7 @@ function checkSigned(s, p, now) {
 }
 
 /** A member_joined pubkey pins its name at first sight; another key for a pinned name is refused. */
-function checkPin(s, p) {
+function checkPin(s: RoomStore, p: Payload): void {
   if (p.kind !== 'member_joined' || p.pubkey === undefined) return;
   const key = envelope.parseKey(p.pubkey);
   if (!key) throw new RoomError('INVALID', 'pubkey is not an Ed25519 public key');
@@ -360,7 +403,7 @@ function checkPin(s, p) {
  * the same whatever the backend. Returns {e, line}; throws RATE, AUTH, or INVALID for a line over
  * LOG_LINE_MAX_BYTES.
  */
-function placeAfter(s, p, { newest, prevLine, now }) {
+function placeAfter(s: RoomStore, p: Payload, { newest, prevLine, now }: { newest: Iterable<Entry>; prevLine: string; now: number }): { e: Entry; line: string } {
   const t = scanTail(newest, p, now);
   if (t.recent >= rateMax(p)) {
     const to = bucket(p) === 'room' ? '' : ` to ${p.to}`;
@@ -370,7 +413,7 @@ function placeAfter(s, p, { newest, prevLine, now }) {
   if (p.via === 'human') checkSigned(s, p, now);
   checkPin(s, p);
   const { sig, ...rest } = p;
-  const e = { id: (t.last || 0) + 1, at: new Date(now).toISOString(), ...rest, prev: hash12(prevLine || '') };
+  const e: Entry = { id: (t.last || 0) + 1, at: new Date(now).toISOString(), ...rest, prev: hash12(prevLine || '') };
   if (sig !== undefined) e.sig = sig;
   const line = JSON.stringify(e);
   const bytes = Buffer.byteLength(line, 'utf8');
@@ -385,10 +428,10 @@ function placeAfter(s, p, { newest, prevLine, now }) {
  * @param {object[]} entries
  * @returns {{epoch: number, host?: string, machine?: string, locator?: string, id?: number}}
  */
-function hostState(entries) {
-  let h = { epoch: 0 };
+function hostState(entries: readonly (Entry | null | undefined)[] | null | undefined): HostState {
+  let h: HostState = { epoch: 0 };
   for (const e of entries || []) {
-    if (e && e.kind === 'host_changed' && e.via === 'system' && Number.isInteger(e.epoch) && e.epoch > h.epoch) {
+    if (e && e.kind === 'host_changed' && e.via === 'system' && typeof e.epoch === 'number' && Number.isInteger(e.epoch) && e.epoch > h.epoch) {
       h = { epoch: e.epoch, host: e.host, machine: e.machine, locator: e.locator, id: e.id };
     }
   }
@@ -396,30 +439,30 @@ function hostState(entries) {
 }
 
 /** The log says the room moved to another machine; p may still be the host_changed that brings it here. */
-function checkHere(s, p) {
+function checkHere(s: RoomStore, p: Payload): void {
   const h = s.hostState();
   if (!h.machine || h.machine === machineId()) return;
-  if (p.kind === 'host_changed' && p.machine === machineId() && p.epoch > h.epoch) return;
+  if (p.kind === 'host_changed' && p.machine === machineId() && p.epoch !== undefined && p.epoch > h.epoch) return;
   throw new RoomError('STALE', `room ${s.code} moved to ${h.host}'s machine (epoch ${h.epoch}); this machine's copy takes no more lines`);
 }
 
 // ---------- keys of the small documents ----------
 const KEY_SEG = /^(?!\.)[A-Za-z0-9_.-]{1,128}$/;
-function checkKey(key) {
+function checkKey(key: unknown): string {
   const segs = typeof key === 'string' ? key.split('/') : [];
   if (!segs.length || segs.length > 3 || !segs.every(s => KEY_SEG.test(s))) throw new RoomError('INVALID', `invalid store key "${key}"`);
-  return key;
+  return key as string; // its segments matched KEY_SEG
 }
 const BLOB_RE = /^(plans)\/([A-Za-z0-9_][A-Za-z0-9_.-]{0,127})$/;
 /** A blob's room-relative ref ("plans/<x>"), from a ref or from the absolute path older entries stored. */
-function blobRef(p) {
+function blobRef(p: unknown): string | null {
   if (typeof p !== 'string' || !p) return null;
   if (BLOB_RE.test(p)) return p;
   if (path.isAbsolute(p)) { const m = /[\\/](plans)[\\/]([^\\/]+)$/.exec(p); if (m && BLOB_RE.test(`${m[1]}/${m[2]}`)) return `${m[1]}/${m[2]}`; }
   return null;
 }
 const CURSOR_RE = /^[A-Za-z0-9_.-]{1,64}$/;
-const checkCursor = name => { if (!CURSOR_RE.test(name)) throw new RoomError('INVALID', `invalid cursor name "${name}"`); return name; };
+const checkCursor = (name: string): string => { if (!CURSOR_RE.test(name)) throw new RoomError('INVALID', `invalid cursor name "${name}"`); return name; };
 
 // ---------- FsRoomStore ----------
 /**
@@ -427,7 +470,7 @@ const checkCursor = name => { if (!CURSOR_RE.test(name)) throw new RoomError('IN
  * is unchanged and parses only the appended bytes when it grew (same inode, the bytes before the old end
  * unchanged). A shrink, a new inode, a same-size rewrite or a changed tail drops the cache and re-reads.
  */
-const readCache = new Map(); // file -> {dev, ino, size, mtimeMs, offset, tail, entries, partial}
+const readCache = new Map<string, ReadCache>(); // file -> {dev, ino, size, mtimeMs, offset, tail, entries, partial}
 const TAIL_CHECK = 64;       // bytes before the cached end compared on growth
 
 /**
@@ -438,32 +481,32 @@ const TAIL_CHECK = 64;       // bytes before the cached end compared on growth
  * verifyChain() and readView() whenever they get further, trusted only while the line before `offset` still
  * hashes to `hash`, and rebuilt from byte 0 otherwise.
  */
-const ZERO = () => ({ v: 1, offset: 0, id: 0, hash: hash12(''), count: 0, marks: [] });
+const ZERO = (): Checkpoint => ({ v: 1, offset: 0, id: 0, hash: hash12(''), count: 0, marks: [] });
 
-function atBoundary(fd, off) {
+function atBoundary(fd: number, off: number): boolean {
   if (off === 0) return true;
   const b = Buffer.alloc(1);
   fs.readSync(fd, b, 0, 1, off - 1);
   return b[0] === 10;
 }
-const lineBefore = (fd, off) => { for (const l of linesBackward(fd, off)) return l; return ''; };
+const lineBefore = (fd: number, off: number): string => { for (const l of linesBackward(fd, off)) return l; return ''; };
 /** One backward read from byte `end`: the last line (the next entry's prev) and the parseable entries, newest first. */
-function tailFrom(fd, end) {
+function tailFrom(fd: number, end: number): { prevLine: string; newest: Generator<Entry> } {
   const lines = linesBackward(fd, end);
   const first = lines.next();
-  function* newest() {
+  function* newest(): Generator<Entry> {
     for (let n = first; !n.done; n = lines.next()) {
-      let e = null;
-      try { e = JSON.parse(n.value); } catch { /* corrupt line: skip */ }
+      let e: Entry | null = null;
+      try { e = JSON.parse(n.value as string); } catch { /* corrupt line: skip */ }
       if (e && typeof e === 'object') yield e;
     }
   }
   return { prevLine: first.done ? '' : first.value, newest: newest() };
 }
-const readRange = (fd, off, len) => { const b = Buffer.allocUnsafe(len); fs.readSync(fd, b, 0, len, off); return b; };
+const readRange = (fd: number, off: number, len: number): Buffer => { const b = Buffer.allocUnsafe(len); fs.readSync(fd, b, 0, len, off); return b; };
 
 /** The first line starting at or after byte pos (< end): {start, end, id} (id null for a line without one), or null. */
-function lineAt(fd, pos, end) {
+function lineAt(fd: number, pos: number, end: number): LineSpan | null {
   const W = 4096;
   let start = pos;
   if (pos > 0) {
@@ -494,22 +537,22 @@ function lineAt(fd, pos, end) {
 }
 
 /** Byte offset of the first line in [0, end) whose id is > after (ids rise through the log), or end. */
-function offsetAfter(fd, end, after) {
+function offsetAfter(fd: number, end: number, after: number): number {
   let lo = 0, hi = end;
-  const idAt = pos => { let L = lineAt(fd, pos, end); while (L && L.id === null) L = lineAt(fd, L.end, end); return L; };
+  const idAt = (pos: number): LineSpan | null => { let L = lineAt(fd, pos, end); while (L && L.id === null) L = lineAt(fd, L.end, end); return L; };
   while (lo < hi) {
     const mid = Math.floor((lo + hi) / 2);
     const L = idAt(mid);
-    if (!L || L.id > after) hi = mid; else lo = mid + 1;
+    if (!L || L.id! > after) hi = mid; else lo = mid + 1; // idAt skips lines without an id
   }
   const L = idAt(lo);
   return L ? L.start : end;
 }
 
 /** The last line boundary at or before the end of the file (0 when there is no file). */
-function endOffset(xfs, file) {
-  let fd;
-  try { fd = xfs.openSync(file, 'r'); } catch (e) { if (e.code === 'ENOENT') return 0; throw e; }
+function endOffset(xfs: TailerFs, file: string): number {
+  let fd: number;
+  try { fd = xfs.openSync(file, 'r'); } catch (e) { if (errCode(e) === 'ENOENT') return 0; throw e; }
   try {
     const size = xfs.fstatSync(fd).size;
     let end = size;
@@ -525,9 +568,21 @@ function endOffset(xfs, file) {
   } finally { xfs.closeSync(fd); }
 }
 
-class FsRoomStore {
+class FsRoomStore implements RoomStore {
+  declare code: string;
+  declare _dir: string | null;
+  declare isHost: boolean;
+  declare members: MembersApi;
+  declare blobs: BlobsApi;
+  declare kv: KvApi;
+  /** pins() and hostState() caches, keyed by the log file's dev:ino:size:mtime */
+  declare _pins?: { k: string; map: Map<string, KeyObject> };
+  declare _host?: { k: string; h: HostState };
+  /** a host_changed was placed through this store */
+  declare _moves?: boolean;
+
   /** code: the room code; dir: its directory (default <home>/rooms/<code>, read at each call). */
-  constructor(code, { dir } = {}) {
+  constructor(code: string, { dir }: { dir?: string } = {}) {
     if (!dir) roomDir(code); // validates the code
     this.code = code;
     this._dir = dir || null;
@@ -554,21 +609,21 @@ class FsRoomStore {
       lock: (key, fn, opts) => withLock(self._kvFile(key) + '.lock', fn, opts),
     };
   }
-  get dir() { return this._dir || roomDir(this.code); }
-  get logFile() { return path.join(this.dir, LOG); }
-  exists() { return fs.existsSync(this.dir); }
+  get dir(): string { return this._dir || roomDir(this.code); }
+  get logFile(): string { return path.join(this.dir, LOG); }
+  exists(): boolean { return fs.existsSync(this.dir); }
 
   // ----- reading -----
-  readAll() {
+  readAll(): Entry[] {
     const file = this.logFile;
-    let fd;
+    let fd: number;
     try { fd = fs.openSync(file, 'r'); } catch (e) {
-      if (e.code === 'ENOENT') { readCache.delete(file); return []; }
+      if (errCode(e) === 'ENOENT') { readCache.delete(file); return []; }
       throw e;
     }
     try {
       const st = fs.fstatSync(fd);
-      let c = readCache.get(file);
+      let c: ReadCache | null | undefined = readCache.get(file);
       if (c && (c.dev !== st.dev || c.ino !== st.ino || st.size < c.size || (st.size === c.size && st.mtimeMs !== c.mtimeMs))) c = null;
       if (c && st.size === c.size) return c.entries.concat(c.partial);
       let start = c ? c.offset - c.tail.length : 0;
@@ -593,18 +648,18 @@ class FsRoomStore {
     } finally { fs.closeSync(fd); }
   }
 
-  readById(ids) {
+  readById(ids: number | string | readonly (number | string)[]): Entry[] {
     const want = (Array.isArray(ids) ? ids : [ids]).map(Number);
     const byId = new Map(this.readAll().map(e => [e.id, e]));
-    return want.filter(i => byId.has(i)).map(i => byId.get(i));
+    return want.filter(i => byId.has(i)).map(i => byId.get(i)!);
   }
-  readAfter(seq, filterFn = () => true) { return this.readAll().filter(e => e.id > seq && filterFn(e)); }
-  since(id) { return this.readAfter(id); }
+  readAfter(seq: number, filterFn: (e: Entry) => boolean = () => true): Entry[] { return this.readAll().filter(e => e.id > seq && filterFn(e)); }
+  since(id: number): Entry[] { return this.readAfter(id); }
 
   /** The id of the last parseable line, from a read of the log's tail only. */
-  lastId() {
-    let fd;
-    try { fd = fs.openSync(this.logFile, 'r'); } catch (e) { if (e.code === 'ENOENT') return 0; throw e; }
+  lastId(): number {
+    let fd: number;
+    try { fd = fs.openSync(this.logFile, 'r'); } catch (e) { if (errCode(e) === 'ENOENT') return 0; throw e; }
     try {
       for (const l of linesBackward(fd, fs.fstatSync(fd).size)) {
         try { return JSON.parse(l).id || 0; } catch { /* corrupt: keep looking */ }
@@ -614,11 +669,11 @@ class FsRoomStore {
   }
 
   /** Poll the log for entries with id > after. Handles torn reads and a reset (truncated) log. */
-  watch(onEntry, { after = 0, intervalMs = config.FOLLOW_POLL_MS } = {}) {
+  watch(onEntry: (e: Entry) => void, { after = 0, intervalMs = config.FOLLOW_POLL_MS }: { after?: number; intervalMs?: number } = {}): () => void {
     const file = this.logFile, self = this;
     let offset = 0, seen = after, buf = '';
     const tick = () => {
-      let fd;
+      let fd: number;
       try { fd = fs.openSync(file, 'r'); } catch { return; }
       try {
         const size = fs.fstatSync(fd).size;
@@ -648,26 +703,26 @@ class FsRoomStore {
    * reset: the log shrank (it was reset), and reading began again from its start. The caller drops ids it has
    * seen. xfs: the fs module to read with (tests inject faults).
    */
-  tailer({ fs: xfs = nodeFs, after } = {}) {
+  tailer({ fs: xfs = nodeFs, after }: { fs?: TailerFs; after?: number } = {}): Tailer {
     const file = this.logFile, self = this;
     let offset = after === undefined ? endOffset(xfs, file) : this._offsetAfter(after);
     return {
       get offset() { return offset; },
       poll() {
-        let st;
-        try { st = xfs.statSync(file); } catch (e) { if (e.code === 'ENOENT') return { entries: [], lines: [], reset: false }; throw e; }
+        let st: nodeFs.Stats;
+        try { st = xfs.statSync(file); } catch (e) { if (errCode(e) === 'ENOENT') return { entries: [], lines: [], reset: false }; throw e; }
         let reset = false;
         if (st.size < offset) { offset = 0; reset = true; }
         if (st.size === offset) return { entries: [], lines: [], reset };
         const fd = xfs.openSync(file, 'r');
-        let buf;
+        let buf: Buffer;
         try {
           buf = Buffer.allocUnsafe(st.size - offset);
           xfs.readSync(fd, buf, 0, buf.length, offset);
         } finally { xfs.closeSync(fd); }
-        const entries = [], lines = [];
+        const entries: Entry[] = [], lines: string[] = [];
         let pos = 0;
-        for (let nl; (nl = buf.indexOf(10, pos)) >= 0; pos = nl + 1) {
+        for (let nl: number; (nl = buf.indexOf(10, pos)) >= 0; pos = nl + 1) {
           if (nl > pos) {
             const line = buf.toString('utf8', pos, nl);
             lines.push(line);
@@ -681,18 +736,18 @@ class FsRoomStore {
   }
 
   /** The byte offset of the first complete line whose id is > after (the end of the complete lines when none is). */
-  _offsetAfter(after) {
+  _offsetAfter(after: number): number {
     const end = endOffset(fs, this.logFile);
     if (!end) return 0;
     const fd = fs.openSync(this.logFile, 'r');
     try { return offsetAfter(fd, end, after); } finally { fs.closeSync(fd); }
   }
 
-  lineHash(id) {
+  lineHash(id: number): string | null {
     if (id === 0) return hash12('');
     if (!Number.isInteger(id) || id < 0) return null;
-    let fd;
-    try { fd = fs.openSync(this.logFile, 'r'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+    let fd: number;
+    try { fd = fs.openSync(this.logFile, 'r'); } catch (e) { if (errCode(e) === 'ENOENT') return null; throw e; }
     try {
       const end = fs.fstatSync(fd).size;
       const L = lineAt(fd, offsetAfter(fd, end, id - 1), end);
@@ -703,10 +758,15 @@ class FsRoomStore {
   }
 
   // ----- writing -----
-  append(entry, opts = {}) { return this.place(toPayload(this.code, entry, opts), opts); }
+  append(entry: EntryInput, opts: AppendOpts & { queue: true }): Placed;
+  append(entry: EntryInput, opts?: AppendOpts): Entry;
+  // no opts: validate() refuses the missing from
+  append(entry: EntryInput, opts: AppendOpts = {} as AppendOpts): Placed { return this.place(toPayload(this.code, entry, opts), opts); }
 
   /** Under the log lock, read only the log's tail (placeAfter stops at its window), then write one line. */
-  place(payload, opts = {}) {
+  place(payload: Payload, opts: PlaceOpts & { queue: true }): Placed;
+  place(payload: Payload, opts?: PlaceOpts): Entry;
+  place(payload: Payload, opts: PlaceOpts = {}): Placed {
     const d = this.dir; // NO_ROOM / invalid code before anything else
     const p = admit(this.code, payload, opts);
     fs.mkdirSync(d, { recursive: true, mode: 0o700 });
@@ -723,12 +783,12 @@ class FsRoomStore {
         if (e.kind === 'host_changed') this._moves = true;
         return e;
       } finally { fs.closeSync(fd); }
-    }, { ErrorClass: RoomError });
+    }, { ErrorClass: LockError });
   }
 
   /** The keys pinned in the log: envelope.pinnedKeys over the non-chat entries, cached until the file changes. */
-  pins() {
-    let st;
+  pins(): Map<string, KeyObject> {
+    let st: nodeFs.Stats;
     try { st = fs.statSync(this.logFile); } catch { return new Map(); }
     const k = `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}`;
     if (!this._pins || this._pins.k !== k) this._pins = { k, map: envelope.pinnedKeys(this.readView({ after: Infinity, save: false })) };
@@ -740,18 +800,18 @@ class FsRoomStore {
    * store, or a handoff on record here (lib/handoff.ts keeps its host document from the ask on). Otherwise an append
    * reads only the log's tail.
    */
-  _mayHaveMoved() { return !!this._moves || fs.existsSync(this._kvFile('remote/handoff')); }
+  _mayHaveMoved(): boolean { return !!this._moves || fs.existsSync(this._kvFile('remote/handoff')); }
 
   /** The last host_changed entry's {epoch, host, machine, locator, id}, else {epoch: 0}; cached until the log changes. */
-  hostState() {
-    let st;
+  hostState(): HostState {
+    let st: nodeFs.Stats;
     try { st = fs.statSync(this.logFile); } catch { return { epoch: 0 }; }
     const k = `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}`;
     if (!this._host || this._host.k !== k) this._host = { k, h: hostState(this.readView({ after: Infinity, save: false })) };
     return this._host.h;
   }
 
-  setAside() {
+  setAside(): string | null {
     if (!fs.existsSync(this.logFile)) return null;
     const file = path.join(this.dir, `orphaned-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`);
     fs.renameSync(this.logFile, file);
@@ -761,13 +821,13 @@ class FsRoomStore {
   }
 
   /** Check the whole prev chain. Returns {ok:true, count} or {ok:false, badAt: id, count} ({line} for a corrupt line). */
-  validateChain() {
+  validateChain(): ChainCheck {
     let raw = '';
     try { raw = fs.readFileSync(this.logFile, 'utf8'); } catch { return { ok: true, count: 0 }; }
     const lines = raw.split('\n').filter(Boolean);
     let prev = '';
     for (let i = 0; i < lines.length; i++) {
-      let e;
+      let e: Entry;
       try { e = JSON.parse(lines[i]); } catch { return { ok: false, badAt: null, line: i + 1, count: lines.length }; }
       if (e.prev !== undefined && e.prev !== hash12(prev)) return { ok: false, badAt: e.id, count: lines.length };
       prev = lines[i];
@@ -776,34 +836,34 @@ class FsRoomStore {
   }
 
   // ----- the verified checkpoint (log.idx), incremental verification, the hook view -----
-  get _idxPath() { return path.join(this.dir, IDX_FILE); }
+  get _idxPath(): string { return path.join(this.dir, IDX_FILE); }
   /** The saved checkpoint if it still matches the file, else the zero checkpoint. */
-  _checkpoint(fd, size) {
+  _checkpoint(fd: number, size: number): Checkpoint {
     const x = readJson(this._idxPath);
     if (x && x.v === 1 && Number.isInteger(x.offset) && x.offset >= 0 && x.offset <= size && typeof x.hash === 'string'
       && Array.isArray(x.marks) && atBoundary(fd, x.offset) && hash12(x.offset ? lineBefore(fd, x.offset) : '') === x.hash) return x;
     return ZERO();
   }
-  _saveCheckpoint(cp) { try { writeJsonAtomic(this._idxPath, cp, { compact: true }); } catch { /* read-only: next call rescans */ } }
+  _saveCheckpoint(cp: Checkpoint): void { try { writeJsonAtomic(this._idxPath, cp, { compact: true }); } catch { /* read-only: next call rescans */ } }
 
   /**
    * Parse the complete lines in [cp.offset, size), checking the chain from cp. Returns the parsed lines
    * ([{off, e}], corrupt ones left out), the checkpoint advanced over every line that chains (it stops at the
    * first break), and the break ({badAt} or {line}) if any. A last line without its newline is not scanned.
    */
-  _scan(fd, size, cp) {
+  _scan(fd: number, size: number, cp: Checkpoint): { out: { off: number; e: Entry }[]; next: Checkpoint; bad: ChainBreak | null; complete: number } {
     const start = cp.offset;
     const buf = Buffer.allocUnsafe(size - start);
     fs.readSync(fd, buf, 0, buf.length, start);
     const cut = buf.lastIndexOf(10);
-    const out = [];
-    const next = { ...cp, marks: cp.marks.slice() };
-    let bad = null, pos = 0;
+    const out: { off: number; e: Entry }[] = [];
+    const next: Checkpoint = { ...cp, marks: cp.marks.slice() };
+    let bad: ChainBreak | null = null, pos = 0;
     while (cut >= 0 && pos <= cut) {
       const nl = buf.indexOf(10, pos);
       if (nl > pos) {
         const l = buf.toString('utf8', pos, nl);
-        let e = null;
+        let e: Entry | null = null;
         try { e = tag(JSON.parse(l), this); } catch { if (!bad) bad = { badAt: null, line: next.count + 1 }; }
         if (e) {
           out.push({ off: start + pos, e });
@@ -826,15 +886,15 @@ class FsRoomStore {
    * it, read from the file when omitted); log.idx is then left alone. Only complete lines are checked. Lines
    * before the checkpoint are trusted; validateChain() re-checks the whole log.
    */
-  verifyChain({ fromOffset, prev, save = true } = {}) {
-    let fd;
+  verifyChain({ fromOffset, prev, save = true }: { fromOffset?: number; prev?: string; save?: boolean } = {}): ChainVerify {
+    let fd: number;
     try { fd = fs.openSync(this.logFile, 'r'); } catch (e) {
-      if (e.code === 'ENOENT') return { ok: true, count: 0, checked: 0, offset: 0, id: 0, hash: hash12(''), from: 0 };
+      if (errCode(e) === 'ENOENT') return { ok: true, count: 0, checked: 0, offset: 0, id: 0, hash: hash12(''), from: 0 };
       throw e;
     }
     try {
       const size = fs.fstatSync(fd).size;
-      let cp;
+      let cp: Checkpoint;
       if (fromOffset !== undefined) {
         if (!Number.isInteger(fromOffset) || fromOffset < 0 || fromOffset > size || !atBoundary(fd, fromOffset)) {
           const error = 'fromOffset is not a line boundary of the log';
@@ -844,7 +904,7 @@ class FsRoomStore {
       } else cp = this._checkpoint(fd, size);
       const { next, bad } = this._scan(fd, size, cp);
       if (save && fromOffset === undefined && next.offset > cp.offset) this._saveCheckpoint(next);
-      const r = {
+      const r: ChainVerify = {
         ok: !bad, count: next.count, checked: next.count - cp.count, offset: next.offset, id: next.id, hash: next.hash, from: cp.offset,
       };
       return bad ? { ...r, ...bad } : r;
@@ -856,15 +916,15 @@ class FsRoomStore {
    * tasks, joins and leaves) and every entry with id > after, in log order. Advances
    * log.idx as verifyChain() does, unless save is false.
    */
-  readView({ after = 0, save = true } = {}) {
+  readView({ after = 0, save = true }: ReadViewOpts = {}): Entry[] {
     if (!(after > 0)) return this.readAll();
-    let fd;
-    try { fd = fs.openSync(this.logFile, 'r'); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
+    let fd: number;
+    try { fd = fs.openSync(this.logFile, 'r'); } catch (e) { if (errCode(e) === 'ENOENT') return []; throw e; }
     try {
       const size = fs.fstatSync(fd).size;
       const cp = this._checkpoint(fd, size);
-      const got = new Map(); // offset -> entry
-      const parse = buf => { try { return tag(JSON.parse(buf.toString('utf8')), this); } catch { return null; } };
+      const got = new Map<number, Entry>(); // offset -> entry
+      const parse = (buf: Buffer): Entry | null => { try { return tag(JSON.parse(buf.toString('utf8')), this); } catch { return null; } };
       if (cp.marks.length) {
         // the marked lines, read in runs of nearby lines
         let i = 0;
@@ -904,15 +964,15 @@ class FsRoomStore {
   }
 
   // ----- cursors -----
-  _cursorFile(name) { return path.join(this.dir, `${checkCursor(name)}.cursor`); }
-  getCursor(name) { try { return Number(fs.readFileSync(this._cursorFile(name), 'utf8')) || 0; } catch { return 0; } }
+  _cursorFile(name: string): string { return path.join(this.dir, `${checkCursor(name)}.cursor`); }
+  getCursor(name: string): number { try { return Number(fs.readFileSync(this._cursorFile(name), 'utf8')) || 0; } catch { return 0; } }
   /** Atomic (write + rename), so a concurrent reader never sees an empty file. */
-  setCursor(name, n) { writeFileAtomic(this._cursorFile(name), String(n)); }
+  setCursor(name: string, n: number): void { writeFileAtomic(this._cursorFile(name), String(n)); }
 
   // ----- members -----
-  get _membersFile() { return path.join(this.dir, MEMBERS); }
-  _readMembers() { try { return members.fromLegacy(readJson(this._membersFile, {}) || {}); } catch { return {}; } }
-  _updateMembers(fn) {
+  get _membersFile(): string { return path.join(this.dir, MEMBERS); }
+  _readMembers(): Members { try { return members.fromLegacy(readJson(this._membersFile, {}) || {}); } catch { return {}; } }
+  _updateMembers(fn: (current: Members) => Members | null | undefined): Members | null {
     const file = this._membersFile;
     return withLock(file + '.lock', () => {
       const next = fn(this._readMembers());
@@ -923,23 +983,24 @@ class FsRoomStore {
   }
 
   // ----- blobs -----
-  _blobPut(name, bytes) {
+  _blobPut(name: string, bytes: string | Uint8Array): string {
     if (!BLOB_RE.test(String(name))) throw new RoomError('INVALID', `invalid blob name "${name}"`);
     writeFileAtomic(path.join(this.dir, name), bytes);
     return name;
   }
-  _blobGet(ref) {
+  _blobGet(ref: string): Buffer | null {
     const r = blobRef(ref);
     if (!r) return null;
     try { return fs.readFileSync(path.join(this.dir, r)); } catch { return null; }
   }
 
   // ----- kv -----
-  _kvFile(key) { return path.join(this.dir, `${checkKey(key)}.json`); }
-  _kvSet(key, value, { compact = false } = {}) { writeJsonAtomic(this._kvFile(key), value, { compact }); }
-  _kvUpdate(key, fn, { compact = false, timeoutMs, staleMs } = {}) {
+  _kvFile(key: string): string { return path.join(this.dir, `${checkKey(key)}.json`); }
+  _kvSet(key: string, value: unknown, { compact = false }: { compact?: boolean } = {}): void { writeJsonAtomic(this._kvFile(key), value, { compact }); }
+  // any: a kv document is JSON from disk (KvApi)
+  _kvUpdate<T = any>(key: string, fn: (current: T | null) => T | null | undefined, { compact = false, timeoutMs, staleMs }: KvUpdateOpts = {}): T | null | undefined {
     const file = this._kvFile(key);
-    const lockOpts = {};
+    const lockOpts: LockOpts = {};
     if (timeoutMs !== undefined) lockOpts.timeoutMs = timeoutMs;
     if (staleMs !== undefined) lockOpts.staleMs = staleMs;
     return withLock(file + '.lock', () => {
@@ -950,51 +1011,52 @@ class FsRoomStore {
       return next;
     }, lockOpts);
   }
-  _kvList(prefix) {
+  _kvList(prefix: unknown): string[] {
     const p = String(prefix || '');
     if (p && !p.endsWith('/')) throw new RoomError('INVALID', `kv.list needs a "dir/" prefix, not "${prefix}"`);
     if (p) checkKey(p.slice(0, -1));
-    let files;
+    let files: nodeFs.Dirent[];
     try { files = fs.readdirSync(path.join(this.dir, p), { withFileTypes: true }); } catch { return []; }
     return files.filter(d => d.isFile() && d.name.endsWith('.json') && KEY_SEG.test(d.name.slice(0, -5))).map(d => p + d.name.slice(0, -5)).sort();
   }
 
   // ----- locks -----
-  lock(name, fn, opts) { return withLock(path.join(this.dir, `${checkKey(name)}.lock`), fn, opts); }
+  lock<R>(name: string, fn: () => R, opts?: LockOpts): R { return withLock(path.join(this.dir, `${checkKey(name)}.lock`), fn, opts); }
 }
 
 // ---------- rooms ----------
-let backend = null; // tests: code -> RoomStore
-const stores = new Map(); // home \0 code -> FsRoomStore | MirrorRoomStore
+let backend: ((code: string) => RoomStore) | null = null; // tests: code -> RoomStore
+const stores = new Map<string, FsRoomStore>(); // home \0 code -> FsRoomStore | MirrorRoomStore
 /** A room hosted elsewhere: the link registry knows it (required here, not at load: store-mirror.ts extends this file). */
-const linked = c => require('./links.ts').has(c);
+const linked = (c: string): boolean => require('./links.ts').has(c);
 /**
  * The store of room `code`: a MirrorRoomStore when this machine links to the room (lib/room/links.ts), else an
  * FsRoomStore; decided once per home and code. {dir} (and only then) gives an uncached FsRoomStore over that directory.
  */
-function open(c, { dir } = {}) {
+function open(c: string, { dir }: { dir?: string } = {}): RoomStore {
   if (backend) return backend(c);
   if (dir) return new FsRoomStore(c, { dir });
   const k = `${home()}\0${c}`;
   let s = stores.get(k);
   if (!s || s.isHost === linked(c)) { // none yet, or a handoff wrote or removed the link since
     repairModes(); // a home an older version made 0755 (once per home and process)
-    s = linked(c) ? new (require('./store-mirror.ts').MirrorRoomStore)(c) : new FsRoomStore(c);
+    const mirror: typeof import('./store-mirror.ts') | null = linked(c) ? require('./store-mirror.ts') : null;
+    s = mirror ? new mirror.MirrorRoomStore(c) : new FsRoomStore(c);
     stores.set(k, s);
   }
   return s;
 }
 /** Drop the cached store of room c (this home): the next open() decides its kind again. */
-const forget = c => { stores.delete(`${home()}\0${c}`); };
-const setBackend = fn => { backend = typeof fn === 'function' ? fn : null; };
-const roomExists = c => typeof c === 'string' && CODE_RE.test(c) && (fs.existsSync(roomDir(c)) || linked(c));
+const forget = (c: string): void => { stores.delete(`${home()}\0${c}`); };
+const setBackend = (fn: ((code: string) => RoomStore) | null | undefined): void => { backend = typeof fn === 'function' ? fn : null; };
+const roomExists = (c: unknown): boolean => typeof c === 'string' && CODE_RE.test(c) && (fs.existsSync(roomDir(c)) || linked(c));
 /** Create room `code` (private, exclusive): false when it already exists. */
-function createRoom(c) {
+function createRoom(c: string): boolean {
   fs.mkdirSync(roomsDir(), { recursive: true, mode: 0o700 }); // the home and rooms/ too when new: private
   repairModes();
-  try { fs.mkdirSync(roomDir(c), { mode: 0o700 }); return true; } catch (e) { if (e.code === 'EEXIST') return false; throw e; }
+  try { fs.mkdirSync(roomDir(c), { mode: 0o700 }); return true; } catch (e) { if (errCode(e) === 'EEXIST') return false; throw e; }
 }
-const listRooms = () => { try { return fs.readdirSync(roomsDir()).filter(c => CODE_RE.test(c)); } catch { return []; } };
+const listRooms = (): string[] => { try { return fs.readdirSync(roomsDir()).filter(c => CODE_RE.test(c)); } catch { return []; } };
 
 export {
   RoomError, FsRoomStore, open, forget, setBackend, roomExists, createRoom, listRooms, hostState, hash12, normalize,
