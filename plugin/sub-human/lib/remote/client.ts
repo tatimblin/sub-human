@@ -44,11 +44,75 @@
 import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
 import { LINK_CALL_MS } from '../config.ts';
+import type { CodedError, Transport, WireFrame } from './types-rest.ts';
 
-const offline = msg => new RoomError('OFFLINE', msg);
+/** A version range (lib/remote/protocol.ts PROTO). */
+interface ProtoRange {
+  min: number;
+  max: number;
+}
+
+/** A stream's event, as the client hands it on. */
+export interface StreamEvent {
+  ev: string;
+  data: any; // any: the event's payload (entry, doc, end, …), read by the subscriber
+}
+
+/** The server's caps, from its hello. */
+interface ServerCaps {
+  ops?: unknown;
+}
+
+interface Pending {
+  resolve(result: any): void; // any: each op's result is its caller's to read
+  reject(e: Error): void;
+  timer: NodeJS.Timeout;
+}
+
+/** The server's answer to hello. */
+interface HelloResult {
+  v: number;
+  proto?: ProtoRange;
+  server?: string;
+  token?: string;
+  link: string | null;
+  room: string | null;
+  caps: ServerCaps | null;
+  epoch?: number;
+}
+
+export interface ConnectOpts {
+  machine: string;
+  token?: string;
+  invite?: string;
+  pin?: string;
+  login?: boolean;
+  epoch?: number;
+  caps?: object;
+  deadlineMs?: number;
+  helloMs?: number;
+  proto?: ProtoRange;
+  version?: string;
+}
+
+const offline = (msg: string): Error => new RoomError('OFFLINE', msg);
 
 class Client {
-  constructor(transport, { deadlineMs }) {
+  transport: Transport;
+  deadlineMs: number;
+  seq: number;
+  closed: boolean;
+  pending: Map<number, Pending>;
+  streams: Map<number, (e: StreamEvent) => void>;
+  token: string | null;
+  link: string | null;
+  room: string | null;
+  serverCaps: ServerCaps | null;
+  epoch: number | null;
+  declare v: number;
+  declare serverVersion: string | null;
+
+  constructor(transport: Transport, { deadlineMs }: { deadlineMs: number }) {
     this.transport = transport;
     this.deadlineMs = deadlineMs;
     this.seq = 0;
@@ -60,24 +124,24 @@ class Client {
     transport.onClose(() => this._closed());
   }
 
-  _receive(f) {
+  _receive(f: WireFrame): void {
     if (protocol.isEvent(f)) return this._event(f);
-    const p = protocol.isReply(f) && this.pending.get(f.id);
+    const p = protocol.isReply(f) && this.pending.get(f.id as number);
     if (!p) return; // abandoned at its deadline, or not ours
-    this.pending.delete(f.id);
+    this.pending.delete(f.id as number);
     clearTimeout(p.timer);
     if (f.error) p.reject(new RoomError(f.error.code, f.error.message));
     else p.resolve(f.result);
   }
 
-  _event({ id, ev, data }) {
-    const fn = this.streams.get(id);
+  _event({ id, ev, data }: WireFrame): void {
+    const fn = this.streams.get(id as number);
     if (!fn) return;
-    if (ev === 'end') this.streams.delete(id);
-    fn({ ev, data });
+    if (ev === 'end') this.streams.delete(id as number);
+    fn({ ev: ev as string, data });
   }
 
-  _closed() {
+  _closed(): void {
     this.closed = true;
     for (const [, p] of this.pending) { clearTimeout(p.timer); p.reject(offline('the link closed')); }
     this.pending.clear();
@@ -86,7 +150,7 @@ class Client {
     for (const fn of fns) fn({ ev: 'end', data: { reason: 'OFFLINE' } });
   }
 
-  _request(op, params, id = ++this.seq, ms = this.deadlineMs) {
+  _request(op: string, params: object, id: number = ++this.seq, ms: number = this.deadlineMs): Promise<any> { // any: the op's result
     if (this.closed) return Promise.reject(offline('the link is closed'));
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(offline(`${op}: no answer within ${ms} ms; ${protocol.UNKNOWN_OUTCOME}`)); }, ms);
@@ -95,59 +159,56 @@ class Client {
     });
   }
 
-  request(op, params, { ms } = {}) { return this._request(op, params, undefined, ms); }
-  join({ name, role = 'member', pubkey, proof }) { return this._request('join', { name, role, pubkey, proof }); }
-  leave(name, reason) { return this._request('leave', { name, reason }); }
-  beat(name, { presence } = {}) { return this._request('beat', { name, presence }); }
-  async append(payload) { return (await this._request('append', { payload })).entry; }
+  request(op: string, params: object, { ms }: { ms?: number } = {}): Promise<any> { return this._request(op, params, undefined, ms); }
+  join({ name, role = 'member', pubkey, proof }: { name: string; role?: string; pubkey: string; proof: object }): Promise<{ ok: boolean; rejoin?: boolean }> { return this._request('join', { name, role, pubkey, proof }); }
+  leave(name: string, reason?: string): Promise<{ ok: boolean }> { return this._request('leave', { name, reason }); }
+  beat(name: string, { presence }: { presence?: unknown } = {}): Promise<{ ok: boolean }> { return this._request('beat', { name, presence }); }
+  /** The entry as the server stored it. */
+  async append(payload: object): Promise<any> { return (await this._request('append', { payload })).entry; }
 
-  subscribe(after, hash, onEvent) {
+  subscribe(after: number, hash: string | null, onEvent: (e: StreamEvent) => void): { ready: Promise<unknown>; stop(): void } {
     const id = ++this.seq;
     this.streams.set(id, onEvent);
     const ready = this._request('subscribe', { after, hash }, id).catch(e => { this.streams.delete(id); throw e; });
     return { ready, stop: () => { this.streams.delete(id); } };
   }
 
-  async blobGet(ref) {
+  async blobGet(ref: string): Promise<Buffer | null> {
     const { bytes } = await this._request('blob.get', { ref });
     return bytes == null ? null : Buffer.from(bytes, 'base64');
   }
-  async blobPut(name, bytes) { return (await this._request('blob.put', { name, bytes: Buffer.from(bytes).toString('base64') })).ref; }
+  async blobPut(name: string, bytes: Buffer | string): Promise<string> { return (await this._request('blob.put', { name, bytes: Buffer.from(bytes).toString('base64') })).ref; }
 
-  drain(ms = this.deadlineMs) {
+  drain(ms: number = this.deadlineMs): Promise<void> {
     const until = Date.now() + ms;
     return new Promise(resolve => {
-      const check = () => (this.closed || !this.pending.size || Date.now() >= until ? resolve() : setTimeout(check, 10));
+      const check = (): unknown => (this.closed || !this.pending.size || Date.now() >= until ? resolve() : setTimeout(check, 10));
       check();
     });
   }
 
-  supports(op) { return !!this.serverCaps && Array.isArray(this.serverCaps.ops) && this.serverCaps.ops.includes(op); }
-  async ping(ms = this.deadlineMs) {
+  supports(op: string): boolean { return !!this.serverCaps && Array.isArray(this.serverCaps.ops) && this.serverCaps.ops.includes(op); }
+  async ping(ms: number = this.deadlineMs): Promise<{ pong: unknown; rttMs: number }> {
     const t0 = Date.now();
     const r = await this._request('ping', {}, undefined, ms);
     return { pong: r && r.pong, rttMs: Date.now() - t0 };
   }
 
-  close() { this.transport.close(); }
+  close(): void { this.transport.close(); }
 }
 
-/**
- * @param {object | Promise<object>} transport   {send(frame), onFrame(fn), onClose(fn), close()}, or a Promise of one
- * @param {{machine: string, token?: string, invite?: string, pin?: string, caps?: object, deadlineMs?: number, helloMs?: number, proto?: {min: number, max: number}, version?: string}} opts
- * @returns {Promise<Client>}
- */
-async function connect(transport, opts) {
+/** transport: {send(frame), onFrame(fn), onClose(fn), close()}, or a Promise of one */
+async function connect(transport: Transport | Promise<Transport>, opts: ConnectOpts): Promise<Client> {
   const { machine, token, invite, pin, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
-  const proto = opts.proto || protocol.PROTO, version = opts.version || protocol.PLUGIN_VERSION;
+  const proto: ProtoRange = opts.proto || protocol.PROTO, version: string = opts.version || protocol.PLUGIN_VERSION;
   const c = new Client(await transport, { deadlineMs });
-  const cred = invite !== undefined ? { invite, ...(pin !== undefined ? { pin } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
+  const cred: { invite?: string; pin?: string; token?: string; login?: boolean } = invite !== undefined ? { invite, ...(pin !== undefined ? { pin } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
   // v: what this hello needs at least. An sh2 invite (its PIN) needs 2; anything else asks for the oldest version this
   // end speaks, so a host from before 0.4 (it checks v === 1 and knows no proto) still answers.
   const need = Math.max(proto.min, pin !== undefined ? 2 : 1);
   const me = { version, proto };
   try {
-    let r;
+    let r: HelloResult;
     try {
       r = await c._request('hello', { v: need, proto, client: version, caps, machine, ...cred, ...(Number.isInteger(epoch) ? { epoch } : {}) }, ++c.seq, helloMs);
     } catch (e) {
@@ -167,7 +228,8 @@ async function connect(transport, opts) {
 }
 
 /** A host from before 0.4 refuses another v with "protocol vN is not served here (vM)": say who must update. */
-function olderHost(e, me) {
+function olderHost(err: unknown, me: { version: string; proto: ProtoRange }): Error | null {
+  const e = err as CodedError | null; // anything thrown
   const m = e && e.code === 'PROTOCOL' && /protocol v(\d+) is not served here \(v(\d+)\)/.exec(e.message);
   if (!m) return null;
   const v = Number(m[2]);
