@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// UserPromptSubmit: "@room TEXT" or "room:TEXT" posts the human's exact words (via human, signed with the seat key)
+// UserPromptSubmit: "@room TEXT" posts the human's exact words (via human, signed with the seat key)
 // and ends the prompt, so no model turn runs and nothing is paraphrased. "@claude TEXT" posts the same way with
 // to=claude, which wakes the room's Claude; outside a room it is an ordinary prompt and passes through untouched.
 // Only a leading tag counts: "@room @claude TEXT" is a plain post, and a tag later in the text is just words. No hooks.json entry: hooks/prompt.js runs
@@ -29,7 +29,6 @@ const seats = require(path.join(__dirname, '..', 'lib', 'seats.js'));
 function parse(prompt) {
   if (prompt.startsWith('@room ')) return prompt.slice('@room '.length);
   if (prompt === '@room') return '';
-  if (prompt.startsWith('room:')) { const t = prompt.slice('room:'.length); return t.startsWith(' ') ? t.slice(1) : t; }
   return null;
 }
 
@@ -82,7 +81,7 @@ const DRAFT_MIN = 20; // shorter texts ("ok", "yes, ship it") show up in Claude'
 function draftedByAgent(text, assistant) {
   const t = oneLine(text), a = oneLine(assistant);
   if (!t || !a) return false;
-  return a.includes('@room ' + t) || a.includes('room:' + t) || a.includes('@claude ' + t) || (t.length >= DRAFT_MIN && a.includes(t));
+  return a.includes('@room ' + t) || a.includes('@claude ' + t) || (t.length >= DRAFT_MIN && a.includes(t));
 }
 
 // ---------- the room's Claude takes no typed input ----------

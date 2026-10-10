@@ -1,7 +1,7 @@
 'use strict';
-// The short code over ssh end to end, two homes and no sshd: test/support/fake-ssh.js stands in for ssh + sshd (the
-// host key it shows, authorized_keys and its forced commands). /sub-human host --ssh writes the enrollment door (the
-// room's public enrollment key, forced to `serve --enroll CODE --kind ssh`) and shows `/sub-human join NAME DEST CODE
+// The invite over ssh end to end, two homes and no sshd: test/support/fake-ssh.js stands in for ssh + sshd (the
+// host key it shows, authorized_keys and its forced commands). /sub-human invite --ssh writes the enrollment door (the
+// room's public enrollment key, forced to `serve --enroll CODE --kind ssh`) and shows `/sub-human join DEST ROOM
 // PIN`; the joiner's link runs the PAKE through the door, checks that the host key ssh saw is the one the host vouched
 // for inside it, pins it, and makes its own key, which reaches nothing until the host person's card lets it in; then
 // the door line is gone and the key's line is the usual one-link forced command. Someone in between (another host key
@@ -51,13 +51,13 @@ function rig(t, { shown } = {}) {
 }
 
 const doorLines = (ak, code) => (fs.existsSync(ak) ? fs.readFileSync(ak, 'utf8').split('\n').filter(l => l.endsWith(` sub-human-enroll:${code}`)) : []);
-const shown = reason => /\/sub-human join NAME (\S+) ([a-z]+-\d{4}) (\d{6})/.exec(reason);
+const shown = reason => /\/sub-human join (\S+) ([a-z]+-\d{4}) (\d{4})/.exec(reason);
 
-test('ssh short code: the door, the PAKE through it, the vouched host key pinned, the joiner\'s own key let in by the host person\'s card', async t => {
+test('ssh invite: the door, the PAKE through it, the vouched host key pinned, the joiner\'s own key let in by the host person\'s card', async t => {
   const R = rig(t);
   if (!R) return t.skip('no ssh-keygen');
   const { host, remote, alice, bob, code, ak, hostKey } = R;
-  const out = host.join(alice, 'host --ssh me@127.0.0.1:2222');
+  const out = host.join(alice, 'invite --ssh me@127.0.0.1:2222');
   assert.ok(hiddenBlock(out), out.stderr);
   const m = shown(out.json.reason);
   assert.ok(m, out.json.reason);
@@ -66,9 +66,9 @@ test('ssh short code: the door, the PAKE through it, the vouched host key pinned
   assert.equal(doorLines(ak, code).length, 1, 'the door is open while the code is');
   assert.match(doorLines(ak, code)[0], new RegExp(`^command="SUB_HUMAN_HOME=${host.home} ${host.home}/bin/serve --enroll ${code} --kind ssh",restrict `));
 
-  const j = remote.join(bob, `join bob me@127.0.0.1:2222 ${code} ${m[3]}`);
+  const j = remote.join(bob, `join me@127.0.0.1:2222 ${code} ${m[3]} --as bob`);
   assert.ok(hiddenBlock(j), j.stderr);
-  assert.match(j.json.reason, /checked your code\. A card there now asks them to let you in; it names bob \(SHA256:/, (() => { try { return fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8'); } catch (e) { return e.message; } })());
+  assert.match(j.json.reason, /checked your PIN\. A card there now asks them to let you in as bob \(SHA256:/, (() => { try { return fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8'); } catch (e) { return e.message; } })());
   const dir = path.join(remote.home, 'links', code);
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
   assert.deepEqual(lf.transport, { kind: 'ssh', user: 'me', host: '127.0.0.1', port: 2222, key: path.join(dir, 'id_ed25519'), knownHosts: path.join(dir, 'known_hosts'), alias: `sub-human-${code}` });
@@ -89,32 +89,33 @@ test('ssh short code: the door, the PAKE through it, the vouched host key pinned
   assert.deepEqual(fs.readFileSync(ak, 'utf8').trim().split('\n').filter(Boolean),
     [`command="SUB_HUMAN_HOME=${host.home} ${host.home}/bin/serve --stdio ${code} --link ${id}",restrict ${sshkeys.openssh(joinerKey)} sub-human:${code}:${id}`]);
   assert.ok(await h.until(() => remote.lib(() => link.status(code)).state === 'online', 15_000, 50), 'online over ssh once let in');
-  assert.equal(remote.join(bob, `bob ${code}`).json.decision, undefined);
+  assert.equal(remote.join(bob, '').json.decision, undefined, 'a bare /sub-human takes the seat');
   const r = remote.say(bob, 'hello over a short code');
   assert.equal(r.json && r.json.continue, false);
   assert.ok(host.lib(() => store.open(code).readAll()).some(e => e.text === 'hello over a short code'));
-  // revoke: the key line goes; the link stops for good
-  assert.match(host.join(alice, 'revoke bob').json.reason, /1 authorized_keys line\(s\) removed/);
+  // kick: the key line goes; the link stops for good
+  assert.match(host.join(alice, 'kick bob').json.reason, /bob is out of room/);
+  assert.equal(fs.readFileSync(ak, 'utf8').trim(), '', 'the key line is gone');
   assert.ok(await h.until(() => remote.lib(() => link.status(code)).state === 'stopped', 15_000, 50));
 });
 
-test('ssh short code: someone in between (another host key shown) gets one try, nothing more; the joiner says so and keeps nothing', async t => {
+test('ssh invite: someone in between (another host key shown) gets one try, nothing more; the joiner says so and keeps nothing', async t => {
   const R = rig(t, { shown: true });
   if (!R) return t.skip('no ssh-keygen');
   const { host, remote, alice, bob, code, ak } = R;
-  const m = shown(host.join(alice, 'host --ssh me@127.0.0.1:2222').json.reason);
-  const j = remote.join(bob, `join bob me@127.0.0.1:2222 ${code} ${m[3]}`);
+  const m = shown(host.join(alice, 'invite --ssh me@127.0.0.1:2222').json.reason);
+  const j = remote.join(bob, `join me@127.0.0.1:2222 ${code} ${m[3]} --as bob`);
   assert.ok(hiddenBlock(j));
-  assert.match(j.json.reason, /could not link to room \S+: the ssh server that answered is not the one that holds your code/);
+  assert.match(j.json.reason, /could not join room \S+: the ssh server that answered is not the one that holds your PIN/);
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
-  assert.equal('enroll' in lf, false, 'the code is dropped');
+  assert.equal('enroll' in lf, false, 'the PIN is dropped');
   assert.equal(host.lib(() => admission.pending(code)).length, 0, 'nothing waits for the host person');
   const inv = Object.values(host.lib(() => store.open(code).kv.get(auth.INVITES_KEY)))[0];
   assert.equal(inv.tries, 4, 'one try spent');
   assert.equal(doorLines(ak, code).length, 1, 'the door stays while the code is open');
-  // the host revokes that invite: the door goes, and a join to it says so at once (no retrying a shut door)
-  for (const k of Object.keys(host.lib(() => store.open(code).kv.get(auth.INVITES_KEY)))) host.join(alice, `revoke ${k.slice(0, 12)}`);
-  assert.equal(doorLines(ak, code).length, 0, 'no code open: no door');
-  const shut = remote.join(bob, `join bob me@127.0.0.1:2222 ${code} ${m[3]}`);
-  assert.match(shut.json.reason, /could not link to room \S+: the host's door for codes to room \S+ is shut/);
+  // the host cancels that invite: the door goes, and a join to it says so at once (no retrying a shut door)
+  for (const k of Object.keys(host.lib(() => store.open(code).kv.get(auth.INVITES_KEY)))) host.join(alice, `invite --cancel ${k.slice(0, 12)}`);
+  assert.equal(doorLines(ak, code).length, 0, 'no invite open: no door');
+  const shut = remote.join(bob, `join me@127.0.0.1:2222 ${code} ${m[3]} --as bob`);
+  assert.match(shut.json.reason, /could not join room \S+: the host's door for PINs to room \S+ is shut/);
 });

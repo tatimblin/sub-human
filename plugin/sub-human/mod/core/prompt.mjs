@@ -10,13 +10,12 @@
  * through Remote Control). Only these may post @room. */
 export const TYPED_ORIGINS = Object.freeze(['composer', 'sdk', 'bridge']);
 
-/** "@room TEXT" / "room:TEXT" -> TEXT; anything else null. A copy of hooks/at-room.js parse() (test/mod-core.test.js
+/** "@room TEXT" -> TEXT; anything else null. A copy of hooks/at-room.js parse() (test/mod-core.test.js
  * asserts they agree). */
 export function parse(prompt) {
   if (typeof prompt !== 'string') return null;
   if (prompt.startsWith('@room ')) return prompt.slice('@room '.length);
   if (prompt === '@room') return '';
-  if (prompt.startsWith('room:')) { const t = prompt.slice('room:'.length); return t.startsWith(' ') ? t.slice(1) : t; }
   return null;
 }
 

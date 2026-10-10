@@ -382,42 +382,23 @@ test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) tak
   assert.equal(auth.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
 });
 
-test('cli: invite --ssh USER@HOST[:PORT]; authorize prints the forced-command line (the stable shim, restrict), --file appends it once', t => {
+test('the forced-command line a host writes for a link: the stable shim, restrict, no versioned path; appended once, one key one link', t => {
   const { code } = hostRoom(t);
-  const run = (args, input) => spawnSync(process.execPath, [h.BIN, ...args], { env: h.childEnv(), encoding: 'utf8', input });
-  const inv = run(['invite', '--room', code, '--ssh', 'host@127.0.0.1:2222']);
-  assert.equal(inv.status, 0, inv.stderr);
-  const invite = inv.stdout.trim();
-  assert.deepEqual(auth.parseInvite(invite).locator, 'ssh:host@127.0.0.1:2222');
-  for (const bad of ['-oProxyCommand=x@h', 'me@h;id', 'me@h:99999']) assert.notEqual(run(['invite', '--room', code, '--ssh', bad]).status, 0, bad);
-  const dir = h.tmpDir('sh-ak-', t);
-  const pub = path.join(dir, 'id.pub');
+  const shim = require(path.join(h.LIB, 'remote', 'shim.js'));
+  const sshkeys = require(path.join(h.LIB, 'remote', 'sshkeys.js'));
+  assert.deepEqual(auth.parseInvite(auth.mintInvite(store.open(code), { locator: 'ssh:host@127.0.0.1:2222' }).invite).locator, 'ssh:host@127.0.0.1:2222');
   const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1bJ1l3xq3fQnHk';
-  fs.writeFileSync(pub, `${KEY} me@laptop "quoted" $(id)\n`);
-  const r = run(['authorize', invite, pub]);
-  assert.equal(r.status, 0, r.stderr);
-  const id = auth.reserveLink(store.open(code), auth.parseInvite(invite).secret);
+  assert.equal(sshkeys.publicKey(`${KEY} me@laptop "quoted" $(id)\n`), KEY, 'the key\'s own comment is dropped');
+  for (const bad of [`command="sh" ${KEY}`, `${KEY}\n${KEY}`, 'not a key']) assert.equal(sshkeys.publicKey(bad), null, bad);
   const home = path.resolve(process.env.SUB_HUMAN_HOME);
-  assert.equal(r.stdout.trim(),
-    `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`);
-  assert.ok(!r.stdout.includes(process.execPath) && !r.stdout.includes(fs.realpathSync(h.BIN)), 'no versioned node or plugin path is baked in');
-  assert.equal(fs.statSync(path.join(home, 'bin', 'serve')).mode & 0o777, 0o700, 'authorize installed the shim');
-  assert.doesNotMatch(r.stdout, /laptop|quoted|\$\(/, 'the key\'s own comment is dropped');
-  // by link id, from stdin, into a file: appended once (0600), the same key with another line refused
-  const ak = path.join(dir, 'ssh', 'authorized_keys');
-  assert.equal(run(['authorize', id, '-', '--room', code, '--file', ak], KEY).status, 0);
-  assert.equal(run(['authorize', id, '-', '--room', code, '--file', ak], KEY).status, 0);
-  assert.equal(fs.readFileSync(ak, 'utf8'), r.stdout);
+  const id = 'abcdef012345';
+  const line = shim.authorizedLine(code, id, KEY, home);
+  assert.equal(line, `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`);
+  assert.ok(!line.includes(process.execPath) && !line.includes(fs.realpathSync(h.BIN)), 'no versioned node or plugin path is baked in');
+  const ak = path.join(h.tmpDir('sh-ak-', t), 'ssh', 'authorized_keys');
+  assert.equal(sshkeys.appendAuthorized(ak, line, KEY), 'added');
+  assert.equal(sshkeys.appendAuthorized(ak, line, KEY), 'present');
+  assert.equal(fs.readFileSync(ak, 'utf8'), `${line}\n`);
   assert.equal(fs.statSync(ak).mode & 0o777, 0o600);
-  const other = auth.mintInvite(store.open(code), { locator: 'ssh:me@far' }).invite;
-  assert.notEqual(run(['authorize', other, '-', '--file', ak], KEY).status, 0, 'one key, one link');
-  // refusals: options before the key, two keys, a link id without --room or unknown, a foreign room
-  for (const [args, input] of [
-    [['authorize', invite, '-'], `command="sh" ${KEY}`],
-    [['authorize', invite, '-'], `${KEY}\n${KEY}`],
-    [['authorize', invite, '-'], 'not a key'],
-    [['authorize', id, '-'], KEY],
-    [['authorize', 'ffffffffffff', '-', '--room', code], KEY],
-    [['authorize', invite, '-', '--room', 'vole-0000'], KEY],
-  ]) assert.notEqual(run(args, input).status, 0, `${args.join(' ')} <<< ${input}`);
+  assert.throws(() => sshkeys.appendAuthorized(ak, shim.authorizedLine(code, '0123456789ab', KEY, home), KEY), e => e.code === 'INVALID', 'one key, one link');
 });

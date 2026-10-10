@@ -102,7 +102,7 @@
  *                                  `ssh … -- user@host sub-human serve --stdio CODE` and the host's authorized_keys
  *                                  forced command decides what runs there (lib/remote/transports/ssh.js)
  *   sshCommand(spec, code, opts?) -> [cmd, ...args]   that ssh command line (lib/remote/transports/ssh.js command)
- *   A login link (transport.login, `/sub-human join NAME USER@HOST CODE`) has no invite: its first hello says {login:
+ *   A login link (transport.login, `/sub-human join USER@HOST ROOM`) has no invite: its first hello says {login:
  *                                  true} and the token it gets is kept as any other; ssh failures only the person can fix
  *                                  (lib/remote/transports/ssh.js loginFailure) are AUTH, so the daemon stops with them
  *   keyRefused(linkFile, transport, err) -> Promise<err'>   connectLink's: a dial of an ssh link with its own key
@@ -761,7 +761,7 @@ async function connectLink(code) {
   let c;
   try { c = await require('./client.js').connect(t, opts); } catch (e) {
     // the host refused the invite (a wrong PIN, burnt, used, expired): it and its PIN are spent here too, so the link
-    // file keeps no secret in clear (a new `/sub-human join NAME INVITE PIN` writes a fresh one)
+    // file keeps no secret in clear (a new join writes a fresh one)
     if (!l.token && !login && e && e.code === 'AUTH') scrubRefused(links, code, e.message);
     throw login ? await loginRefused(l, t, e, code) : await keyRefused(l, t, e);
   }
@@ -774,7 +774,7 @@ async function connectLink(code) {
 
 /**
  * An ssh link with its own key (an sh2 join) that held a token, so its key got in before: ssh refusing that key
- * now means the host took it out of authorized_keys (`sub-human revoke`, or by hand). That is AUTH, which stops
+ * now means the host took it out of authorized_keys (`/sub-human kick`, or by hand). That is AUTH, which stops
  * the daemon with the reason, not OFFLINE, which would redial a door that stays shut. Before the token (waiting
  * for the host's admit) a refusal is expected and stays OFFLINE.
  */

@@ -187,7 +187,8 @@ test('a forged origin: node hooks/prompt.js run by hand with sub_human_origin "c
 test('the mod\'s prompt gate drops an @room no person typed, before any hook; a typed one and plain prompts go on', async () => {
   const { gateVerdict, parse } = await import(path.join(PLUGIN, 'mod', 'core', 'prompt.mjs'));
   for (const kind of ['peer', 'peer-send-message', 'task-notification', 'plugin', 'unclassified', 'scheduled-trigger', 'channel'])
-    for (const text of ['@room I agree', 'room:I agree', '@room']) assert.match(gateVerdict({ text, origin: { kind } }) || '', /not posted/, `${kind}: ${text}`);
+    for (const text of ['@room I agree', '@room']) assert.match(gateVerdict({ text, origin: { kind } }) || '', /not posted/, `${kind}: ${text}`);
+  assert.equal(gateVerdict({ text: 'room:I agree', origin: { kind: 'peer' } }), null, 'room: is no tag: an ordinary prompt');
   assert.match(gateVerdict({ text: '@room x' }), /not posted/, 'no origin: refused');
   for (const kind of ['composer', 'sdk', 'bridge']) assert.equal(gateVerdict({ text: '@room ship it', origin: { kind } }), null, kind);
   assert.equal(gateVerdict({ text: 'hello @room', origin: { kind: 'peer' } }), null, 'not an @room: not the gate\'s');
@@ -241,7 +242,7 @@ test('Bash guard: allowed and denied commands', () => {
     'node --test plugin/sub-human/test/hooks/at-room.test.js', 'git diff plugin/sub-human/lib/room/store.js',
     'cat plugin/sub-human/lib/room/store.js', 'grep -n "require(" plugin/sub-human/lib/room.js', 'sed -n 1,40p plugin/sub-human/hooks/at-room.js',
     'node src/hooks/useFoo.js', 'node lib/io.js', 'ls ~/.sub-humanoid', 'ls /Users/u', 'python3 build.py', 'echo SUB_HUMANS',
-    'git log --grep "sub-human linked"',
+    'git log --grep "sub-human linked"', 'sub-human doctor', 'sub-human doctor --quick --json', '/repo/plugin/sub-human/scripts/sub-human doctor --timeout 3000',
   ];
   const deny = [
     `node -e "require('./plugin/sub-human/lib/room.js').append({kind:'signoff'},{via:'human',from:'bob'})"`,
@@ -254,11 +255,11 @@ test('Bash guard: allowed and denied commands', () => {
     `node -e "require('/x/sub-human/lib/seats.js').exit('vole-1234','bob','gone')"`, 'node /x/sub-human/lib/remote/link.js vole-1234',
     'sub-human invite', '/repo/plugin/sub-human/scripts/sub-human invite --room vole-1234', 'sub-human link vole-1234 --reset',
     'sub-human serve --stdio vole-1234', 'echo x; sub-human invite', 'sub-human invite --ssh me@far',
-    'sub-human authorize sh1.vole-1234.x.y ~/.ssh/id.pub', 'sub-human authorize abcdef012345 - --room vole-1234 --file f',
     'sub-human serve --stdio vole-1234 --link abcdef012345',
-    'sub-human host --ssh', 'node scripts/sub-human host --ssh me@far --via bastion', 'sub-human admit shk1.vole-1234.abcdef012345.k.bob --yes',
-    'sub-human revoke bob', 'sub-human prime vole-1234',
-    // a login link's serve, under any home: the person's /sub-human join NAME USER@HOST CODE, never the model's
+    'sub-human invite --web', 'node scripts/sub-human invite --ssh me@far --via bastion', 'sub-human admit abcdef012345 --yes',
+    'sub-human kick bob', 'sub-human invite --cancel', 'sub-human invite --stop', 'sub-human prime vole-1234',
+    'sub-human doctor --fix', 'sub-human doctor --bundle /tmp/x.json', 'sub-human doctor --quick --fix',
+    // a login link's serve, under any home: the person's /sub-human join USER@HOST ROOM, never the model's
     `ssh me@far '"$HOME"/.sub-human/bin/serve --stdio vole-1234 --link abcdef012345 --login'`,
     'ssh me@far env SUB_HUMAN_HOME=/srv/sh /srv/sh/bin/serve --stdio vole-1234 --link abcdef012345 --login',
     'ssh -p 2222 me@far /srv/sh/bin/serve --stdio vole-1234 --link abcdef012345 --login',

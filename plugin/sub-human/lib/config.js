@@ -150,7 +150,7 @@ module.exports = {
   // burns at the last wrong one or INVITE_TTL_MS after it was minted (whichever is first), or on success.
   INVITE_TTL_MS: 15 * 60_000,
   INVITE_PIN_TRIES: 5,
-  // A short invite (a 6-digit code, lib/remote/enroll.js): the same 15 minutes and 5 tries, counted when the host
+  // A short invite (a 4-digit PIN, lib/remote/enroll.js): the same 15 minutes and 5 tries, counted when the host
   // answers an attempt (an attempt abandoned after that still costs its try). At most SHORT_LIVE_MAX open per room;
   // ENROLL_MS bounds one attempt. The joiner's key then waits ADMIT_TTL_MS for the host person's card (Let in /
   // Refuse) before it lapses.

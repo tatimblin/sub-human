@@ -1,11 +1,11 @@
 'use strict';
 /**
- * plugin/sub-human/lib/remote/admission.js: the host person's consent to a machine that typed a short code. The code
+ * plugin/sub-human/lib/remote/admission.js: the host person's consent to a machine that typed an invite's PIN. The PIN
  * proved only that the joiner knows it (lib/remote/enroll.js); nothing gets in until a person on the host answers "Let
  * in" on the card their own Claude Code shows (hooks/consent.js, like the handoff card: only the answer on the card as
  * the hooks built it counts, never the model's), or runs `sub-human admit REF` in a shell (headless hosts), or types
- * `/sub-human admit REF`. Then, over ssh, the joiner's link key gets the forced-command line for its one link, exactly
- * as `admit` wrote it for a pasted request (lib/remote/shim.js authorizedLine), and the joiner's link redeems its
+ * `/sub-human admit REF`. Then, over ssh, the joiner's link key gets the forced-command line for its one link
+ * (lib/remote/shim.js authorizedLine), and the joiner's link redeems its
  * admission secret (lib/remote/auth.js admissionCheck). The room's tail on the host wakes the seat's Claude to open the
  * card once (lib/tail.js); a request nobody answers lapses after ADMIT_TTL_MS.
  *
@@ -61,7 +61,7 @@ function card(req, code) {
       header: 'Join',
       multiSelect: false,
       options: [
-        { label: LET_IN, description: `${req.name} typed your code from another machine (names are what they say; ${fp(req)} is what their screen shows). Let in: that machine joins room ${code} as one link and posts only as the seats it brings. Undo any time: /sub-human revoke ${req.name}.` },
+        { label: LET_IN, description: `${req.name} typed your PIN from another machine (names are what they say; ${fp(req)} is what their screen shows). Let in: that machine joins room ${code} as one link and posts only as the seats it brings. Undo any time: /sub-human kick ${req.name}.` },
         { label: REFUSE, description: 'Nothing gets in; their join stops. Your code is used up either way.' },
       ],
     }],
@@ -91,8 +91,8 @@ function letIn(code, ref, { by = null, sign = null, now = Date.now() } = {}) {
     if (file && req.admit === 'asked') require('./sshkeys.js').removeAuthorized(file, code, req.link);
     throw e;
   }
-  roomLine(store, `${by || 'the host'} let ${describe(rec)} in (link ${rec.link}); revoke it with: sub-human revoke ${rec.link}`);
-  return { id: rec.link, text: `let in: ${describe(rec)} may join room ${code} as link ${rec.link}${file ? ` (its key reaches only this room's server: a forced command in ${file})` : ''}. Their link connects within seconds. Undo: /sub-human revoke ${rec.name}` };
+  roomLine(store, `${by || 'the host'} let ${describe(rec)} in (link ${rec.link}); undo with: /sub-human kick ${rec.name}`);
+  return { id: rec.link, text: `let in: ${describe(rec)} may join room ${code} as link ${rec.link}${file ? ` (its key reaches only this room's server: a forced command in ${file})` : ''}. Their link connects within seconds. Undo: /sub-human kick ${rec.name}` };
 }
 
 function refuse(code, ref, { by = null, now = Date.now() } = {}) {

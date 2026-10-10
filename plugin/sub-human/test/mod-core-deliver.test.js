@@ -100,8 +100,8 @@ test('deliver: typed through Remote Control (remote), chat is relayed (queued); 
   assert.equal(d.relayText(''), '');
   assert.match(d.RELAY_CONTEXT, /^\(for Claude\) sub-human: .*Remote Control.*It needs no reply: a few words at most, or none/);
   const { gateVerdict, onRemote } = await load('mod/core/prompt.mjs');
-  // a relay may start "room:": the gate alone would read it as a post (mod/prompt.mjs lets its own relays by first)
-  assert.match(gateVerdict({ text: relay.split('\n').slice(1).join('\n'), origin: { kind: 'plugin', name: 'sub-human' } }), /not posted/);
+  // a relay may start "room:": that is no post (there is no room: tag), whoever submits it
+  assert.equal(gateVerdict({ text: relay.split('\n').slice(1).join('\n'), origin: { kind: 'plugin', name: 'sub-human' } }), null);
   assert.deepEqual(['bridge', 'composer', 'sdk', 'peer', 'plugin'].map(kind => onRemote({ kind })), [true, false, false, undefined, undefined]);
   assert.equal(onRemote(undefined), undefined);
 });

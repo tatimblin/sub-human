@@ -22,11 +22,9 @@ test('remote: a daemon started with one TMPDIR serves hooks running with another
   const alice = host.seat('alice'), bob = remote.seat('bob');
   host.join(alice, 'alice');
   const code = host.lib(() => store.listRooms()[0]);
-  const shown = host.join(alice, 'host').json;
-  const invite = /sh2\.\S+/.exec(shown.reason)[0], pin = /PIN (\d{6})/.exec(shown.reason)[1];
 
   // the join hook starts the daemon: it gets daemonTmp
-  assert.match(remote.join(bob, `join bob ${invite} ${pin}`).json.reason, /linked to room/);
+  await remote.joinVia(host, alice, bob);
   const daemon = remote.lib(() => link.status(code));
   const mirrorDir = path.join(remote.home, 'rooms', code);
   t.after(() => { kill(childOf(daemon.pid)); kill(daemon.pid); fs.rmSync(path.dirname(link.socketPath(mirrorDir)), { recursive: true, force: true }); });

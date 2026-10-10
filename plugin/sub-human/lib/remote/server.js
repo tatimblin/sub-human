@@ -10,7 +10,7 @@
  *       protocol range and plugin version (default protocol.PROTO, PLUGIN_VERSION; tests fake older and newer peers)
  *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
  *       (lib/remote/auth.js); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
- *       SSH forced command `sub-human authorize` writes): only that link's token, or the invite reserved for it,
+ *       SSH forced command the host's admit writes): only that link's token, or the invite reserved for it,
  *       is accepted; any other is AUTH (and such an invite stays unused). login (`serve --stdio CODE --link ID --login`,
  *       run over the host account's own ssh login, never by a forced command: their lines fix the arguments, and the
  *       CLI refuses --login under SSH_ORIGINAL_COMMAND): the connection is trusted as a process of the account owner,
@@ -94,9 +94,9 @@ function redeem(s, invite, machine, pin) {
     if (e.note) roomLine(s, e.note);
     throw e;
   }
-  if (r.admission) roomLine(s, `${r.admission.name}'s machine (${r.admission.label || machine}) linked to the room, let in by ${r.admission.admitted_by || 'the host'} (link ${r.link.id}); revoke it with: sub-human revoke ${r.link.id}`);
-  else if (r.handoff) roomLine(s, `a machine (${machine}) followed the room here with the invite its handoff gave it (link ${r.link.id}); revoke it with: sub-human revoke ${r.link.id}`);
-  else if (inv.v === 2) roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id}); revoke it with: sub-human revoke ${r.link.id}`);
+  if (r.admission) roomLine(s, `${r.admission.name}'s machine (${r.admission.label || machine}) linked to the room, let in by ${r.admission.admitted_by || 'the host'} (link ${r.link.id}); undo with: /sub-human kick ${r.admission.name}`);
+  else if (r.handoff) roomLine(s, `a machine (${machine}) followed the room here with the invite its handoff gave it (link ${r.link.id})`);
+  else if (inv.v === 2) roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id})`);
   return r;
 }
 
@@ -108,10 +108,10 @@ function roomLine(s, text) {
 /** hello {login: true}: a new link for a connection over the host account's own ssh login (Session.login), else AUTH. */
 function viaLogin(s, machine) {
   if (!s.login || !s.linkId) {
-    throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through the key admitted for link ${s.linkId}, which reaches that link only)` : ''}; join with an invite instead (/sub-human host --ssh on the host)`);
+    throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through the key admitted for link ${s.linkId}, which reaches that link only)` : ''}; join with an invite instead (/sub-human invite on the host)`);
   }
   const r = auth.loginLink(s.store, { id: s.linkId, machine });
-  roomLine(s, `a machine (${machine}) linked over your SSH login (link ${r.link.id}); revoke it with: sub-human revoke ${r.link.id}`);
+  roomLine(s, `a machine (${machine}) linked over your SSH login (link ${r.link.id})`);
   return r;
 }
 
@@ -331,7 +331,7 @@ class Session {
   }
 
   /** True when the host revoked this session's link (its record is gone): every stream then ends {reason: 'AUTH'},
-   * so the daemon stops with the reason instead of redialing a key that no longer gets in (`sub-human revoke`
+   * so the daemon stops with the reason instead of redialing a key that no longer gets in (`/sub-human kick`
    * stops this serve with SIGTERM: scripts/sub-human serve calls this first). */
   revoked() {
     if (!this.link || (this.store.kv.get(auth.LINKS_KEY, null) || {})[this.link.id]) return false;

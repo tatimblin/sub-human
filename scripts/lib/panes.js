@@ -49,22 +49,28 @@ function planState(p) {
 }
 
 /**
- * The invite /sub-human host showed in a capture, or null: sh2.CODE.LOCATOR.SECRET.HOSTKEY (a 22-character secret
- * and a 43-character key or "0") or the older sh1.CODE.LOCATOR.SECRET (a 32-character secret); plugin
- * lib/remote/auth.js. The pane may wrap it: a line break (and the next line's indent) between two of its
- * characters is dropped first. The last one shown wins.
+ * The line /sub-human invite showed in a capture, without its "/sub-human ", or null: "join DEST ROOM PIN" (DEST an
+ * ssh address or pipe:HOME; a 4-digit PIN; then any --via) or "join URL PIN". The pane may wrap it: a line break
+ * (and the next line's indent) inside a path is dropped first. The last one shown wins.
  */
-function inviteIn(txt) {
-  const joined = (txt || '').replace(/([A-Za-z0-9_.-])\n[\s│⎿]*(?=[A-Za-z0-9_.-])/g, '$1');
-  const re = /sh2\.[a-z]+-\d{4}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{22}\.(?:[A-Za-z0-9_-]{43}|0)(?![A-Za-z0-9_-])|sh1\.[a-z]+-\d{4}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{32}/g;
-  const all = [...joined.matchAll(re)].map(m => m[0]);
+function joinLineIn(txt) {
+  const joined = (txt || '').replace(/([A-Za-z0-9_./:@-])\n[ \t│⎿]*(?=[A-Za-z0-9_./:@-])/g, '$1'); // one wrap, not a blank line
+  const re = /\/sub-human (join (?:https?:\/\/\S+|\S+ [a-z]+-\d{4}) \d{4}(?: --via \S+)?)(?=\s|$)/g;
+  const all = [...joined.matchAll(re)].map(m => m[1]);
   return all.at(-1) || null;
 }
 
-/** The PIN /sub-human host showed with its invite ("PIN 482913"), or null; the last one wins. */
-function pinIn(txt) {
-  const all = [...String(txt || '').matchAll(/\bPIN (\d{6})\b/g)].map(m => m[1]);
-  return all.at(-1) || null;
+/** The host's join-request card (lib/remote/admission.js question), or null: its option lines (Let in / Refuse). */
+function admitCardState(p) {
+  const lines = String(p || '').split('\n');
+  const q = lines.findIndex(l => /Let \S+ \(.*\) on \S+ join room [a-z]+-\d{4}\?|\(admit [0-9a-f]{12}\)/.test(l));
+  if (q < 0) return null;
+  const opts = [];
+  for (let i = q + 1; i < lines.length && opts.length < 4; i++) {
+    const m = /^\s*(❯)?\s*(\d)\.\s+(Let in|Refuse|Type something|Chat about this)\b/.exec(lines[i]);
+    if (m) opts.push({ cur: !!m[1], n: +m[2], label: m[3] });
+  }
+  return opts.length ? { opts } : null;
 }
 
-module.exports = { MAIN_ROW, panelRows, statusLine, cardState, planState, inviteIn, pinIn };
+module.exports = { MAIN_ROW, panelRows, statusLine, cardState, planState, joinLineIn, admitCardState };

@@ -18,11 +18,15 @@ export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
 // ---------- Bash ----------
 /** The read-only CLI, with plain arguments only (no pipes, redirects, substitutions or chained commands). */
 const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|digest|who|tasks|watch)(?:\s+[\w.,:=@-]+)*\s*$/;
+/** doctor, read only: no --fix (it rewrites the shim and the home's modes) and no --bundle (it writes a file). */
+const READ_DOCTOR = /^\s*(?:[\w./~-]*\/)?sub-human\s+doctor(?:\s+(?:--quick|--json|--timeout\s+\d+))*\s*$/;
+/** doctor that changes things: the person runs it. */
+const DOCTOR_WRITES = /(?:^|[\s;&|(`'"/])sub-human\s+doctor\b[^;&|\n]*--(?:fix|bundle)(?![\w-])/;
 const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
-/** The CLI commands a person runs in their own shell: an invite, an SSH key's link, the link daemon, the room server, moving the room's host, the web listener. */
-const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|authorize|host|unhost|admit|revoke|prime|listen|link|serve|handoff|promote|demote)(?![\w-])/;
+/** The CLI commands a person runs in their own shell: an invite, letting a machine in or out, the link daemon, the room server, moving the room's host, the web listener. */
+const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|admit|kick|prime|listen|link|serve|handoff|promote|demote)(?![\w-])/;
 /** The host's serve shim asked to link a machine over an ssh login (`ssh you@host H/bin/serve --stdio CODE --link ID --login`),
- *  under any home path: a person's step (/sub-human join NAME USER@HOST CODE), as `sub-human serve` is. */
+ *  under any home path: a person's step (/sub-human join USER@HOST ROOM), as `sub-human serve` is. */
 const LOGIN_SERVE = /\bserve\b[^;&|\n]*--stdio\b[^;&|\n]*--login(?![\w-])/;
 /** A dot-dir named .sub-human anywhere (~/.sub-human, $HOME/.sub-human, /Users/x/.sub-human). */
 const DOT_HOME = /(?:^|[^\w.-])\.sub-human(?![\w-])/;
@@ -75,8 +79,9 @@ export const needsCwd = command => {
 export function bashVerdict(command, ctx = {}) {
   const cmd = typeof command === 'string' ? command : '';
   if (!cmd.trim()) return null;
-  if (READ_CLI.test(cmd)) return null;
-  if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it mints an invite, admits or revokes a link, or speaks for the room\'s link (run sub-human invite, authorize, host, unhost, admit, revoke, prime, listen, link, serve, handoff, promote and demote yourself, in a terminal outside Claude Code: not with !, which puts the output, an invite and its PIN, into this conversation)';
+  if (READ_CLI.test(cmd) || READ_DOCTOR.test(cmd)) return null;
+  if (DOCTOR_WRITES.test(cmd)) return 'doctor --fix and --bundle change or write files (run them yourself, in a terminal outside Claude Code; plain sub-human doctor is read only)';
+  if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it makes an invite, lets a machine in or out, or speaks for the room\'s link (run sub-human invite, admit, kick, prime, listen, link, serve, handoff, promote and demote yourself, in a terminal outside Claude Code: not with !, which puts the output, an invite and its PIN, into this conversation)';
   if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME)';
   if (DOT_HOME.test(cmd)) return 'it touches the room store (~/.sub-human)';
   for (const h of homeSpellings(ctx)) {

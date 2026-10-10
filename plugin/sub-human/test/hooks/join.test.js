@@ -104,18 +104,73 @@ test('debug launch: a room-claude agent session without SUB_HUMAN_ROOM opens a r
   assert.equal(w2.members().claude.pid, process.pid);
 });
 
-test('/sub-human with no name in a plain session explains usage; a seated member is told their seat', () => {
-  const w = new World({ alice: 'act' });
-  w.pid.me = w.pid.alice; // reuse a live pid that has no seat in another world
+const { spawnSync } = require('node:child_process');
+const NO_GIT = { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
+
+test('bare /sub-human: not in a room, it opens one as the default name (git user.name, first word, lowercased); in a room, a short status', () => {
   const plain = new World({}, { room: false });
   plain.pid.me = process.ppid; plain.sid.me = 'aaaaaaaa-0000-4000-8000-000000000005';
-  let r = plain.hook('join', expand(''), { as: 'me' });
+  spawnSync('git', ['init', '-q', plain.cwd]);
+  spawnSync('git', ['-C', plain.cwd, 'config', 'user.name', 'Dana Scully']);
+  let r = plain.hook('join', expand(''), { as: 'me', env: { ...NO_GIT, USER: 'ignored' } });
+  assert.equal(r.json.decision, undefined, r.stdout);
+  const code = fs.readdirSync(path.join(plain.home, 'rooms'))[0];
+  assert.ok(withHome(plain.home, () => identity.readMembers(code)).dana, 'joined as dana');
+  // seated: the status, no model turn
+  r = plain.hook('join', expand(''), { as: 'me', env: NO_GIT });
   assert.equal(r.json.decision, 'block');
-  assert.match(r.json.reason, /usage: \/sub-human NAME \[CODE\].*never launched by hand/);
-  assert.equal(fs.existsSync(path.join(plain.home, 'rooms')) ? fs.readdirSync(path.join(plain.home, 'rooms')).length : 0, 0, 'no room created');
-  r = w.hook('join', expand(''), { as: 'alice' });
+  assert.match(r.json.reason, new RegExp(`you are dana in room ${code}.*Another machine: /sub-human invite.*/sub-human help`));
+});
+
+test('the default name: git user.name, else the local part of user.email, else $USER; a taken one says how to pick another', () => {
+  const w = new World({ claude: 'sleep', dana: 'sleep' });
+  w.pid.me = process.pid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000015';
+  // no git name here: $USER, normalized
+  let r = w.hook('join', expand(''), { as: 'me', env: { ...NO_GIT, USER: 'Eve Polastri' } });
+  assert.equal(r.json.decision, undefined, r.stdout);
+  assert.ok(w.members().eve, 'joined as eve');
+  // the email's local part, when there is no user.name
+  const w2 = new World({ claude: 'sleep', dana: 'sleep' });
+  w2.pid.me = process.ppid; w2.sid.me = 'aaaaaaaa-0000-4000-8000-000000000016';
+  spawnSync('git', ['init', '-q', w2.cwd]);
+  spawnSync('git', ['-C', w2.cwd, 'config', 'user.email', 'Frank.Smith@example.com']);
+  r = w2.hook('join', expand(''), { as: 'me', env: { ...NO_GIT, USER: 'ignored' } });
+  assert.equal(r.json.decision, undefined, r.stdout);
+  assert.ok(w2.members()['frank.smith'], JSON.stringify(Object.keys(w2.members())));
+  // taken: refused with the hint; an explicit NAME always wins
+  const w3 = new World({ claude: 'sleep', dana: 'sleep' });
+  w3.pid.me = process.ppid; w3.sid.me = 'aaaaaaaa-0000-4000-8000-000000000017';
+  r = w3.hook('join', expand(''), { as: 'me', env: { ...NO_GIT, USER: 'dana' } });
   assert.equal(r.json.decision, 'block');
-  assert.match(r.json.reason, new RegExp(`you are alice in room ${w.code} \\(address alice\\.${w.code}\\)`));
+  assert.match(r.json.reason, new RegExp(`"dana" is taken in room ${w3.code}; pick one: /sub-human NAME ${w3.code}`));
+  r = w3.hook('join', expand('dana2'), { as: 'me', env: { ...NO_GIT, USER: 'dana' } });
+  assert.equal(r.json.decision, undefined, r.stdout);
+  // the rule itself
+  for (const [text, want] of [['Tristan Timblin', 'tristan'], ['José', 'jose'], ['doctor', null], ['help', null], ['  ', null], ['ann-marie', 'ann-marie']]) {
+    assert.equal(identity.normalizeName(text), want, text);
+  }
+});
+
+test('every verb is a reserved name: /sub-human doctor or help is never a person called doctor', () => {
+  for (const v of ['invite', 'join', 'kick', 'leave', 'doctor', 'help', 'admit', 'handoff']) assert.ok(identity.RESERVED.includes(v), v);
+  const w = new World({ claude: 'sleep', alice: 'act' });
+  const h = w.hook('join', expand('help'), { as: 'alice' });
+  assert.match(h.json.reason, /\/sub-human invite .*\n[\s\S]*\/sub-human join HOST ROOM PIN/);
+  assert.equal(w.members().help, undefined);
+  for (const name of ['kick', 'leave', 'doctor']) {
+    const r = w.hook('join', expand(`${name} vole-1234`), { as: 'alice' });
+    assert.equal(r.json.decision, 'block', name);
+  }
+});
+
+test('/sub-human leave: the seat leaves (as /exit would), the session stays; /sub-human joins again', () => {
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
+  const r = w.hook('join', expand('leave'), { as: 'alice' });
+  assert.equal(r.json.decision, 'block');
+  assert.match(r.json.reason, new RegExp(`you left room ${w.code}`));
+  assert.ok(w.members().alice.left_at, 'alice left');
+  assert.match(w.entries().map(e => e.text).join('\n'), /alice left \(left\)/);
+  assert.match(w.hook('join', expand('leave'), { as: 'alice' }).json.reason, /not in a room/);
 });
 
 test('NAME CODE joins a room whose claude runs: no spawn, no systemMessage; the block lists who is here', () => {
@@ -303,33 +358,72 @@ test('failures block with a reason and log nothing', () => {
   assert.match(r.json.reason, /is closing/);
 });
 
-test('/sub-human host: an invite to my room, shown to me only (a block), once per call; join NAME INVITE refuses what it cannot link', () => {
+test('/sub-human invite: an invite line for my room, shown to me only (a hidden block), a new PIN each call; no NAME in it', () => {
   const w = new World({ claude: 'sleep', alice: 'sleep' });
   w.pid.me = process.pid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000011';
-  assert.match(w.hook('join', expand('host'), { as: 'me' }).json.reason, /join a room first/);
-  const shown = w.hook('join', expand('host'), { as: 'alice' }).json;
+  assert.match(w.hook('join', expand('invite --pipe'), { as: 'me' }).json.reason, /join a room first/);
+  const shown = w.hook('join', expand('invite --pipe'), { as: 'alice' }).json;
   assert.equal(shown.decision, 'block');
   assert.deepEqual([shown.systemMessage, shown.hookSpecificOutput], [undefined, { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true }]);
-  const invite = /sh2\.\S+/.exec(shown.reason)[0];
-  assert.match(shown.reason, /\nPIN \d{6} /);
-  const auth = require(path.join(PLUGIN, 'lib', 'remote', 'auth.js'));
-  assert.deepEqual(auth.parseInvite(invite).code, w.code);
-  assert.equal(auth.parseInvite(invite).locator, `pipe:${w.home}`, 'this machine, this home');
-  assert.match(shown.reason, new RegExp(`/sub-human join NAME ${invite.replace(/[.]/g, '\\.')} PIN`));
-  assert.notEqual(/sh2\.\S+/.exec(w.hook('join', expand('host'), { as: 'alice' }).json.reason)[0], invite, 'a new one each time');
-  assert.match(w.hook('join', expand('host --frobnicate'), { as: 'alice' }).json.reason, /usage: \/sub-human host/);
-  const inv = locator => auth.formatInvite({ code: 'vole-1234', locator, secret: 'x'.repeat(32) });
-  const cases = [
-    ['join bob', /usage/],
-    ['join bob nonsense', /not an invite/],
-    [`join bob ${invite} 123456`, /hosted on this machine/],
-    [`join bob ${inv('tcp:far:22')}`, /through "tcp", which this machine does not support yet/],
-    [`join bob ${inv('ssh:-oProxyCommand=sh@far')}`, /not a plain user@host\[:port\]/],
-    [`join bob ${inv('ssh:me@far -oProxyCommand=sh')}`, /not a plain user@host\[:port\]/],
-  ];
-  for (const [args, re] of cases) assert.match(w.hook('join', expand(args), { as: 'me' }).json.reason, re, args);
+  const m = new RegExp(`\n  /sub-human join pipe:${w.home.replace(/[.]/g, '\\.')} ${w.code} (\\d{4})\n`).exec(shown.reason);
+  assert.ok(m, shown.reason);
+  assert.match(shown.reason, /The 4-digit PIN is the whole secret/);
+  assert.match(shown.reason, /\/sub-human invite --cancel [0-9a-f]{12}/);
+  assert.notEqual(new RegExp(`${w.code} (\\d{4})`).exec(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json.reason)[1], m[1], 'a new one each time');
+  for (const [args, re] of [['invite --frobnicate', /usage: \/sub-human invite/], ['invite --pipe --web', /pick one/], ['invite --ssh NAME@box', /placeholder/], ['invite --ssh USER@box', /placeholder/]]) {
+    const r = w.hook('join', expand(args), { as: 'alice' }).json;
+    assert.match(r.reason, re, args);
+    assert.equal(r.hookSpecificOutput && r.hookSpecificOutput.suppressOriginalPrompt, true, `${args}: hidden`);
+  }
+  // cancel: by ref, or the one open (here two are open: it lists them)
+  const many = w.hook('join', expand('invite --cancel'), { as: 'alice' }).json.reason;
+  assert.match(many, /has 2 open invites; cancel one: \/sub-human invite --cancel [0-9a-f]{12}/);
+  const ref = /--cancel ([0-9a-f]{12})/.exec(many)[1];
+  assert.match(w.hook('join', expand(`invite --cancel ${ref}`), { as: 'alice' }).json.reason, new RegExp(`cancelled invite ${ref}`));
+  assert.match(w.hook('join', expand('invite --cancel'), { as: 'alice' }).json.reason, /cancelled invite [0-9a-f]{12}/, 'the one left');
+  assert.match(w.hook('join', expand('invite --cancel'), { as: 'alice' }).json.reason, /no open invite/);
   assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
-  assert.equal(w.entries().length, 0);
+});
+
+test('SECURITY: every join, invite and admit prompt (and any with a word of digits) is answered hidden, whatever is wrong with it', () => {
+  const w = new World({ claude: 'sleep', alice: 'act' });
+  w.pid.me = process.ppid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000012';
+  const hiddenReply = r => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
+  const cases = [
+    ['join dev vole-1234 48291', /the PIN is the 4 digits/], // 5 digits
+    ['join dev vole-1234 482', /the PIN is the 4 digits/],
+    ['join dev vole-1234 4829123', /the PIN is the 4 digits/], // 7 digits
+    ['join dev vole-1234 4829 --home /h', /--home is for a join over your own ssh login/],
+    ['join dev vole-1234 4829 --frob', /"--frob" is not a join flag/],
+    ['join dev vole-1234 4829 extra', /usage: \/sub-human join/],
+    ['join https://box/sub-human/vole-1234 48291', /the PIN is the 4 digits/],
+    ['join https://box/sub-human/vole-1234', /needs the PIN/],
+    ['join https://box/sub-human/vole-1234 4829 --via j', /--via and --home are for an ssh address/],
+    ['join https://box/x/4829 4829', /not a join URL/],
+    ['join YOU@box vole-1234 4829', /placeholder/],
+    ['join dev 4829', /"4829" is not a room/],
+    ['join dev', /which room/],
+    ['join 4829', /which room/],
+    ['join pipe:/nowhere vole-1234 4829 --as b@d', /invalid name/],
+    ['join dev vole-1234 --as help', /reserved/],
+    ['dev vole-1234 4829', /usage/], // "join" left out
+    ['invite 4829', /join a room first/],
+    ['admit 4829', /join a room first/],
+    ['admit', /waiting|nobody is waiting|hosted on another machine/],
+    [`bob ${w.code} 4829`, /usage/],
+  ];
+  for (const [args, re] of cases) {
+    const r = w.hook('join', expand(args), { as: 'me' });
+    assert.ok(hiddenReply(r), `${args}: ${r.stdout}`);
+    assert.match(r.json.reason, re, args);
+    assert.equal(r.json.systemMessage, undefined, `${args}: nothing for Remote Control to carry off`);
+  }
+  // a mistyped PIN never lands anywhere the model reads, nor in the reply
+  for (const pin of ['48291', '4829123']) assert.ok(!w.hook('join', expand(`join dev vole-1234 ${pin}`), { as: 'me' }).json.reason.includes(pin));
+  assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
+  // without the hooks module's lease, a join is still hidden
+  const nl = w.hook('join', expand('join dev vole-1234 4829'), { as: 'me', modLease: false });
+  assert.ok(hiddenReply(nl), nl.stdout);
 });
 
 test('a bad name with no open room creates nothing', () => {
@@ -483,8 +577,8 @@ test('a refused join is also the systemMessage (Remote Control shows that, not a
   const r = w.hook('join', expand('a b c'), { as: 'alice' });
   assert.equal(r.json.decision, 'block');
   assert.equal(r.json.systemMessage, r.json.reason);
-  assert.match(r.json.reason, /usage: \/sub-human NAME/);
-  const inv = w.hook('join', expand('host'), { as: 'alice' });
+  assert.match(r.json.reason, /usage: \/sub-human \[NAME/);
+  const inv = w.hook('join', expand('invite --pipe'), { as: 'alice' });
   assert.equal(inv.json.decision, 'block');
   assert.match(inv.json.reason, /invite to room /);
   assert.equal(inv.json.systemMessage, undefined, 'the invite stays off Remote Control');

@@ -2,12 +2,13 @@
 /**
  * plugin/sub-human/lib/cli/doctor.js: `sub-human doctor`, what is wrong with this machine's sub-human and how to fix
  * it, and `doctor --bundle`, the same as redacted JSON to attach to a bug report. Read only, except --fix (the
- * shim refresh and the home's modes) and the bundle file. scripts/sub-human dispatches here.
+ * shim refresh, the home's modes, this home's older authorized_keys lines) and the bundle file. scripts/sub-human dispatches here.
  *
  *   sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS]
  *       --quick    skip the slow checks: the hello to each link's host and the Claude Code internals probe
- *       --fix      first refresh the serve shim and pointer (lib/remote/shim.js refresh) and repair the home's
- *                  modes (lib/home.js repairModes)
+ *       --fix      first refresh the serve shim and pointer (lib/remote/shim.js refresh), repair the home's
+ *                  modes (lib/home.js repairModes) and rewrite this home's older authorized_keys lines to run the
+ *                  shim (shim.migrateLines)
  *       --json     the report as JSON (unredacted: it stays on this machine)
  *       --bundle   write the redacted bundle (default ./sub-human-doctor-<time>.json) and print its path
  *       --authorized-keys   the file to scan (default ~/.ssh/authorized_keys)
@@ -20,7 +21,7 @@
  *   home         the home and its store directories are 0700 and this user's
  *   shim         <home>/bin/serve is the current shim and <home>/bin/current names an existing plugin and node
  *   authorized_keys   sub-human lines that bypass the shim (an older `authorize` baked node and the versioned
- *                plugin path in); fix: `sub-human authorize … --file F` rewrites them
+ *                plugin path in); fix: `sub-human doctor --fix` (with that line's SUB_HUMAN_HOME) rewrites them
  *   ssh          ssh present (`ssh -V`), when a link or an authorized line needs it
  *   link:CODE    per link: transport, the daemon (running, pid), state (lib/room/link-state.js), the last error
  *                (the state record, else the daemon's log), and unless --quick a hello to the host without a
@@ -159,7 +160,7 @@ function checkAuthorizedKeys(scan) {
   const old = scan.lines.filter(l => !l.ok);
   if (!old.length) return check('authorized_keys', 'pass', 'authorized_keys', `${scan.lines.length} sub-human line(s), all through the shim`);
   const fixes = old.map(l => (l.parse === false ? `edit the unreadable sub-human line by hand in ${tilde(scan.file)}`
-    : `echo '${l.type} ${l.key}' | ${l.home === h ? '' : `SUB_HUMAN_HOME=${l.home} `}sub-human authorize ${l.id} - --room ${l.code} --file ${tilde(scan.file)}`));
+    : `${l.home === h ? '' : `SUB_HUMAN_HOME=${l.home} `}sub-human doctor --fix${scan.file === path.join(os.homedir(), '.ssh', 'authorized_keys') ? '' : ` --authorized-keys ${tilde(scan.file)}`}`));
   return check('authorized_keys', 'warn', 'authorized_keys',
     `${old.length} of ${scan.lines.length} sub-human line(s) bypass the shim: they bake in a node and plugin path that break on an update`,
     [...new Set(fixes)].join('\n'));
@@ -193,34 +194,34 @@ const lastLogError = code => {
 };
 
 /**
- * ssh's own complaint, as a hint in the sh2 flow (the link's own key, the host's `/sub-human admit shk1…`, `sub-human
- * prime` for an MFA bastion, `--via` for a jump host). link: the link file's {code, request?, transport} when known.
+ * ssh's own complaint, as a hint (the link's own key the host lets in, `sub-human prime` for an MFA bastion, `--via`
+ * for a jump host). link: the link file's {code, request?, transport} when known.
  */
 function sshHint(stderr, link = {}) {
   const s = String(stderr || '');
   const code = link.code || 'CODE';
   const t = link.transport || {};
-  const newInvite = `ask the host for a new invite (/sub-human host --ssh${t.via ? ` --via ${t.via}` : ''}), then /sub-human join NAME INVITE PIN`;
+  const newInvite = `ask the host for a new invite (/sub-human invite${t.via ? ` --via ${t.via}` : ''}) and type the line it shows`;
   if (/keyboard-interactive|Verification code|one-time password|Duo two-factor/i.test(s) && !/publickey\)\.?\s*$/i.test(s.trim())) {
     return `the host or a jump host wants an interactive login (MFA): run sub-human prime ${code} once in your shell; the link then rides that connection for hours`;
   }
   if (/Permission denied/i.test(s)) {
     const admit = link.request
-      ? `the host has not let this link's key in yet: send them this line (it holds no secret) to paste in their session: /sub-human admit ${link.request}`
-      : 'the host refused this link\'s key: it was never admitted, or the host revoked it. Send the host the /sub-human admit shk1… line your join showed, or ' + newInvite;
+      ? `the host has not let this link's key in yet; ${newInvite}`
+      : 'the host refused this link\'s key: it was never let in, or the host removed it. ' + newInvite;
     return `${admit}. Behind a bastion with MFA, run sub-human prime ${code} first`;
   }
   if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED/i.test(s)) {
     return t.knownHosts
       ? `the host's ssh key is not the one its invite pinned (a reinstalled or different machine): check with the host, then ${newInvite}`
-      : 'the host key is unknown or changed: run `ssh USER@HOST` once by hand to check and accept it, or ' + newInvite + ' (an sh2 invite pins the key)';
+      : 'the host key is unknown or changed: run `ssh USER@HOST` once by hand to check and accept it, or ' + newInvite + ' (an invite pins the key)';
   }
   if (/Could not resolve hostname|Name or service not known|nodename nor servname/i.test(s)) {
-    return `the host name does not resolve from here (VPN or tailnet down?)${t.via ? '' : '; if it is only reachable through a jump host, ask the host for an invite with --via JUMP (/sub-human host --ssh --via JUMP)'}`;
+    return `the host name does not resolve from here (VPN or tailnet down?)${t.via ? '' : '; if it is only reachable through a jump host, ask the host for an invite with --via JUMP (/sub-human invite --via JUMP)'}`;
   }
   if (/Connection refused/i.test(s)) return 'nothing listens for ssh on that port';
   if (/timed out|Operation timed out/i.test(s)) {
-    return `the host does not answer (asleep, offline or firewalled)${t.via ? '' : '; behind a bastion, the invite needs --via JUMP (/sub-human host --ssh --via JUMP)'}`;
+    return `the host does not answer (asleep, offline or firewalled)${t.via ? '' : '; behind a bastion, the invite needs --via JUMP (/sub-human invite --via JUMP)'}`;
   }
   if (/sub-human: no (plugin install|node)/.test(s)) return 'the host\'s shim found no plugin or node: on the host, start Claude Code once or run `sub-human doctor --fix`';
   return null;
@@ -294,17 +295,17 @@ function checkListener({ quick = false } = {}) {
   let st;
   try { st = lib('remote/listener.js').status(); } catch (e) { return [check('listener', 'warn', 'listener', `could not read its state: ${e.message}`)]; }
   const codes = Object.keys(st.rooms || {});
-  if (!codes.length && !st.running) return [check('listener', 'info', 'listener', 'no room is served over the web here (/sub-human host --tailscale or --url starts it)')];
+  if (!codes.length && !st.running) return [check('listener', 'info', 'listener', 'no room is served over the web here (/sub-human invite --web or --url starts it)')];
   const out = [st.running
     ? check('listener', 'pass', 'listener', `running (pid ${st.pid}) on 127.0.0.1:${st.port} · ${codes.length ? `serves ${codes.join(', ')}` : 'serves no room'}${st.conns ? ` · ${st.conns} connection(s)` : ''}`)
     : check('listener', 'fail', 'listener', `not running, but ${codes.join(', ')} ${codes.length === 1 ? 'is' : 'are'} served over the web: joiners cannot reach ${codes.length === 1 ? 'it' : 'them'}`,
-      `sub-human listen --start (or /sub-human host --tailscale again); its log: ${tilde(lib('remote/listener.js').logFile())}`)];
+      `sub-human listen --start (or /sub-human invite --web again); its log: ${tilde(lib('remote/listener.js').logFile())}`)];
   const ts = lib('remote/tailscale.js');
   const serveStatus = {}; // bin -> stdout
   for (const code of codes) {
     const rec = st.rooms[code] || {};
     const id = `web:${code}`;
-    if (!lib('remote/listener.js').roomLive(code)) { out.push(check(id, 'warn', `web ${code}`, 'served over the web, but the room is closed or gone here', `sub-human unhost --room ${code}`)); continue; }
+    if (!lib('remote/listener.js').roomLive(code)) { out.push(check(id, 'warn', `web ${code}`, 'served over the web, but the room is closed or gone here', `sub-human invite --stop --room ${code}`)); continue; }
     const where = rec.url || rec.path || '?';
     if (!rec.tailscale) { out.push(check(id, 'info', `web ${code}`, `${rec.mode === 'handoff' ? 'moved here by a handoff' : 'through your own front'} at ${where}`)); continue; }
     const kind = rec.tailscale.funnel ? 'funnel' : 'serve';
@@ -317,12 +318,12 @@ function checkListener({ quick = false } = {}) {
       const text = serveStatus[bin];
       if (text === null) out.push(check(id, 'warn', `web ${code}`, `tailscale ${kind} ${rec.tailscale.path}: could not read tailscale serve status`, 'is Tailscale running? tailscale status'));
       else if (!text.includes(rec.tailscale.path)) {
-        out.push(check(id, 'fail', `web ${code}`, `tailscale ${kind} has no ${rec.tailscale.path} any more (a reset, or another serve replaced it)`, `/sub-human host --tailscale${rec.tailscale.funnel ? ' --funnel' : ''} in the room (it puts the path back)`));
+        out.push(check(id, 'fail', `web ${code}`, `tailscale ${kind} has no ${rec.tailscale.path} any more (a reset, or another serve replaced it)`, `/sub-human invite ${rec.tailscale.funnel ? '--public' : '--web'} in the room (it puts the path back)`));
         continue;
       }
     }
     out.push(rec.tailscale.funnel
-      ? check(id, 'warn', `web ${code}`, `Tailscale Funnel ${where}${quick ? '' : ' (path present)'}. ${ts.CT_WARNING}`, `/sub-human unhost when nobody needs to join from outside the tailnet`)
+      ? check(id, 'warn', `web ${code}`, `Tailscale Funnel ${where}${quick ? '' : ' (path present)'}. ${ts.CT_WARNING}`, `/sub-human invite --stop when nobody needs to join from outside the tailnet`)
       : check(id, 'pass', `web ${code}`, `Tailscale Serve (tailnet only) ${where}${quick ? '' : ' (path present)'}`));
   }
   return out;
@@ -350,8 +351,8 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
   if (st.pid) daemon = { running: lib('io.js').isAlive(st.pid), pid: st.pid }; // the state record's own pid wins
   const recent = lastLogError(code);
   const out = { code, transport: { kind: spec.kind, describe, user: spec.user, host: spec.host, port: spec.port, home: spec.home, ...(spec.login === true ? { login: true } : {}) },
-    credential: l.token ? 'token' : l.enroll ? 'short code (not checked by the host yet)' : l.awaiting ? 'waiting for the host person to let it in' : l.invite ? 'invite (not redeemed yet)' : spec.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent,
-    // an ssh link not admitted yet: the line its host pastes (/sub-human admit shk1…; no secret in it)
+    credential: l.token ? 'token' : l.enroll ? 'invite PIN (not checked by the host yet)' : l.awaiting ? 'waiting for the host person to let it in' : l.invite ? 'invite (not redeemed yet)' : spec.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent,
+    // an ssh link whose key the new host has not let in yet (a handoff's follower; no secret in it)
     ...(!l.token && typeof l.request === 'string' ? { request: l.request } : {}),
     // the room's host moved (lib/handoff.js): the link file was re-pointed at the new host; reached once a token came
     moved: l.moved ? { epoch: l.moved.epoch, host: l.moved.host, locator: l.moved.locator, demoted: !!l.moved.demoted, reached: !!l.moved.reached_at } : null };
@@ -386,16 +387,16 @@ function linkChecks(d) {
   if (d.state.state === 'fork') fix = `sub-human link --reset ${d.code}`;
   else if (d.moved && !d.moved.reached && d.state.state !== 'online') {
     const who = d.moved.host || 'its host';
-    fix = `${d.request ? `over ssh ${who} lets this machine's key in first: send them /sub-human admit ${d.request}\n` : ''}`
-      + `if this machine cannot reach the new host, ask ${who} for an invite it can use (/sub-human host there), then /sub-human join NAME INVITE PIN`;
-  } else if (d.request && d.state.state !== 'online') fix = `the host has not let this link's key in yet: send them /sub-human admit ${d.request}`;
+    fix = `${d.request ? `over ssh ${who} has not let this machine in yet. ` : ''}`
+      + `Ask ${who} for an invite (/sub-human invite there) and type the line it shows`;
+  } else if (d.request && d.state.state !== 'online') fix = 'the host has not let this link\'s key in yet: ask them for an invite (/sub-human invite there) and type the line it shows';
   else if (d.transport.login && /revoked|unknown link token/i.test(lastError || '')) {
-    fix = `the host revoked this link: ask them first, then link again over your ssh login: /sub-human join NAME ${d.transport.user}@${d.transport.host}${d.transport.port ? `:${d.transport.port}` : ''} ${d.code}`;
+    fix = `the host removed this link: ask them first, then link again over your ssh login: /sub-human join ${d.transport.user}@${d.transport.host}${d.transport.port ? `:${d.transport.port}` : ''} ${d.code}`;
   } else if (/invite (is burnt|was used already|is unknown|expired)|handoff invite expired|last try|no longer accepts this link|revoked/i.test(lastError || '')) {
     // the link's invite (or key) is spent: joining again or restarting the daemon would only reuse it
-    fix = 'this link\'s invite is spent (burnt, used or expired) or its access was revoked: ask the host for a new invite (/sub-human host there), then /sub-human join NAME INVITE PIN';
+    fix = 'this link\'s invite is spent (burnt, used or expired) or the host removed it: ask the host for a new invite (/sub-human invite there) and type the line it shows';
   } else if (/STALE/.test(lastError || '')) fix = 'this copy speaks to a host the room moved away from: sub-human handoff --status shows where it is';
-  else if (!d.daemon.running && d.state.state !== 'online') fix = `the join hook starts the daemon: /sub-human join again, or run sub-human link ${d.code} in a shell`;
+  else if (!d.daemon.running && d.state.state !== 'online') fix = `the join hook starts the daemon: /sub-human again, or run sub-human link ${d.code} in a shell`;
   if (d.reach) {
     const r = d.reach;
     const span = x => (x && x.min !== undefined ? (x.min === x.max ? `${x.min}` : `${x.min}-${x.max}`) : '?');
@@ -578,8 +579,9 @@ function redactor({ home = os.homedir(), shHome = lib('home.js').home(), hosts =
     let s = String(text == null ? '' : text).replace(/\x1b\[[0-9;]*m/g, '');
     s = s.replace(KEY_RE, (_, type, b64) => `${type} ${fingerprint(b64)}`);
     s = s.replace(/\bsh\d\.[A-Za-z0-9._~:-]+/g, 'sh1.<invite>');
-    // a short invite's 6-digit code is its whole secret (join NAME DEST CODE 482913): any lone 6-digit number goes
-    s = s.replace(/(?<![\w.:/-])\d{6}(?![\w.:/-])/g, '<code>');
+    // an invite's PIN is its whole secret (join DEST ROOM 4829; a promote's sh2 PIN has 6 digits): any lone 4- or
+    // 6-digit number goes
+    s = s.replace(/(?<![\w.:/-])(?:\d{4}|\d{6})(?![\w.:/-])/g, '<pin>');
     for (const h of shHomes) s = s.replace(new RegExp(`${esc(h)}(?![^/\\s"':,)])`, 'g'), '<sub-human-home>');
     for (const h of homes) s = s.replace(new RegExp(`${esc(h)}(?![^/\\s"':,)])`, 'g'), '~');
     // a pipe link names another home on this machine: never its path
@@ -660,7 +662,7 @@ function parseArgs(args) {
   return o;
 }
 
-function applyFix(write) {
+function applyFix(write, { authorizedKeys } = {}) {
   const h = lib('home.js');
   const done = [];
   if (fs.existsSync(h.home())) {
@@ -669,13 +671,22 @@ function applyFix(write) {
     const shim = lib('remote/shim.js');
     const r = shim.refresh({ force: true });
     done.push(r ? `the serve shim and pointer name ${tilde(shim.pluginRoot())} and ${tilde(process.execPath)}` : `the plugin root ${tilde(shim.pluginRoot())} is under a temp dir: the shim was not written`);
+    // this home's older authorized_keys lines (node and the versioned plugin path baked in) run the shim instead
+    const file = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
+    let text = null;
+    try { text = fs.readFileSync(file, 'utf8'); } catch { /* none */ }
+    const mig = text === null ? { migrated: 0 } : shim.migrateLines(text, h.home());
+    if (mig.migrated) {
+      lib('io.js').writeFileAtomic(fs.realpathSync(file), mig.text);
+      done.push(`rewrote ${mig.migrated} older sub-human line(s) in ${tilde(file)} to run ${tilde(shim.shimPath())}`);
+    }
   }
   for (const d of done) write(`fixed: ${d}\n`);
 }
 
 async function main(args, { write = s => process.stdout.write(s), env = process.env } = {}) {
   const o = parseArgs(args);
-  if (o.fix) applyFix(write);
+  if (o.fix) applyFix(write, { authorizedKeys: o.authorizedKeys });
   const report = await diagnose({ quick: o.quick, timeoutMs: o.timeoutMs, authorizedKeys: o.authorizedKeys, env });
   if (o.bundle !== null) {
     const file = path.resolve(o.bundle || `sub-human-doctor-${report.generated_at.replace(/[:.]/g, '-')}.json`);

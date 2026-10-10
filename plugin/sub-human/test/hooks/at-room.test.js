@@ -79,15 +79,12 @@ test('20 hostile strings after "@room " are logged byte-identical, via human, an
   });
 });
 
-test('room: prefix works (one optional space dropped), and identity falls back to CLAUDE_PID after /clear', () => {
+test('room: is no tag (an ordinary prompt), and identity falls back to CLAUDE_PID after /clear', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
-  posted(atRoom(w, submit('room:short    paste  two  spaces'), { as: 'alice' }));
-  posted(atRoom(w, submit('room: spaced'), { as: 'alice' }));
+  for (const p of ['room:short', 'room: spaced']) assert.equal((atRoom(w, submit(p), { as: 'alice' }).json || {}).decision, undefined, p);
   // new session id (after /clear), same CLAUDE_PID
   posted(atRoom(w, { ...submit('@room after clear'), session_id: '8cea5671-97a8-49c2-bcdb-4a62d51b6a18' }, { as: 'alice', session: false }));
-  assert.deepEqual(w.entries().map(e => [e.text, e.from]), [
-    ['short    paste  two  spaces', 'alice'], ['spaced', 'alice'], ['after clear', 'alice'],
-  ]);
+  assert.deepEqual(w.entries().map(e => [e.text, e.from]), [['after clear', 'alice']]);
 });
 
 test('pasted_content blocks are unwrapped and marked normalized', () => {
@@ -142,7 +139,6 @@ test('@claude: only a leading tag posts the words to=claude (the wake); "@room @
   assert.equal(posted(atRoom(w, submit('@claude let us plan cursor paging'), { as: 'alice' })), '✓ sent');
   posted(atRoom(w, submit('@room @claude this is a plain post'), { as: 'alice' }));
   posted(atRoom(w, submit('@room ask @claude later'), { as: 'alice' }));
-  posted(atRoom(w, submit('room: @claude also plain'), { as: 'alice' }));
   for (const p of ['please ask @claude', '@claudette hi', '@Claude hi', ' @claude hi', 'claude: hi', '@orch hi']) { // no 0.4.x alias
     const r = atRoom(w, submit(p), { as: 'alice' });
     assert.equal((r.json || {}).decision, undefined, p);
@@ -152,11 +148,10 @@ test('@claude: only a leading tag posts the words to=claude (the wake); "@room @
     ['let us plan cursor paging', 'claude', 'alice', 'human', 'say'],
     ['@claude this is a plain post', 'room', 'alice', 'human', 'say'],
     ['ask @claude later', 'room', 'alice', 'human', 'say'],
-    ['@claude also plain', 'room', 'alice', 'human', 'say'],
   ]);
   const lane = e => w.lib(() => room.lane({ name: 'claude', role: 'claude' }, e));
-  assert.deepEqual(w.entries().map(lane), ['push', 'pull', 'pull', 'pull'], 'only the leading @claude wakes the room\'s Claude');
-  assert.deepEqual(w.entries().map(e => w.lib(() => room.lane({ name: 'bob', role: 'member' }, e))), ['push', 'push', 'push', 'push'], 'everyone sees all four');
+  assert.deepEqual(w.entries().map(lane), ['push', 'pull', 'pull'], 'only the leading @claude wakes the room\'s Claude');
+  assert.deepEqual(w.entries().map(e => w.lib(() => room.lane({ name: 'bob', role: 'member' }, e))), ['push', 'push', 'push'], 'everyone sees all three');
 });
 
 test('@claude on the host with no room\'s Claude running starts it (a stopped one too); @room never does', async () => {

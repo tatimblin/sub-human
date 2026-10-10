@@ -177,7 +177,8 @@ test('prompt: parse is at-room\'s parse; the gate drops only an @room that no pe
   assert.equal(p.gateVerdict({ text: '@room x', origin: { kind: 'composer' } }), null);
   assert.equal(p.gateVerdict({ text: 'plain', origin: { kind: 'peer' } }), null);
   assert.match(p.gateVerdict({ text: '@room x', origin: { kind: 'peer' } }), /another Claude session/);
-  assert.match(p.gateVerdict({ text: 'room:x', origin: { kind: 'plugin', name: 'other' } }), /"plugin"/);
+  assert.match(p.gateVerdict({ text: '@room x', origin: { kind: 'plugin', name: 'other' } }), /"plugin"/);
+  assert.equal(p.gateVerdict({ text: 'room:x', origin: { kind: 'plugin', name: 'other' } }), null, 'room: is no tag');
   assert.equal(p.isAtRoom('@room'), true);
   assert.equal(p.isAtRoom('room'), false);
 });
@@ -400,7 +401,7 @@ test('guard: the plugin-code rule reads the cwd only when the command does not n
 
 test('guard: the person-only CLI is sent to a terminal outside Claude Code, never to its ! mode (the PIN would land in the conversation)', async () => {
   const g = await load('mod/core/guard.mjs');
-  const why = g.bashVerdict('sub-human host --ssh');
+  const why = g.bashVerdict('sub-human invite --ssh');
   assert.match(why, /in a terminal outside Claude Code: not with !/);
   assert.doesNotMatch(why, /in your own shell/);
 });

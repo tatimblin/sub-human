@@ -34,17 +34,17 @@ test('doctor: node floor, Remote Control, ssh hints and argument errors', () => 
   }
   assert.equal(doctor.checkRemoteControl({ CLAUDE_CODE_USE_BEDROCK: '0' }, []).status, 'info', '0 is off');
   assert.equal(doctor.checkRemoteControl({}, [{ env: { CLAUDE_CODE_USE_BEDROCK: '1' } }]).status, 'warn', 'from a settings file too');
-  // the sh2 flow: the host admits the link's own key (/sub-human admit shk1…), prime for MFA, --via for a bastion
+  // the host lets the link's own key in (a new invite, its card), prime for MFA, --via for a bastion
   const denied = doctor.sshHint('alice@box: Permission denied (publickey).', { code: 'vole-1234' });
-  assert.match(denied, /\/sub-human admit shk1… line your join showed, or ask the host for a new invite \(\/sub-human host --ssh\), then \/sub-human join NAME INVITE PIN/);
+  assert.match(denied, /never let in, or the host removed it\. ask the host for a new invite \(\/sub-human invite\) and type the line it shows/);
   assert.match(denied, /sub-human prime vole-1234/);
-  assert.doesNotMatch(denied, /authorize|ssh-agent|SUB_HUMAN_SSH_OPTS/, 'no sh1-era advice');
-  assert.match(doctor.sshHint('Permission denied (publickey).', { code: 'vole-1234', request: 'shk1.vole-1234.abc.KEY.bob' }), /send them this line .*: \/sub-human admit shk1\.vole-1234\.abc\.KEY\.bob/);
+  assert.doesNotMatch(denied, /authorize|shk1|ssh-agent|SUB_HUMAN_SSH_OPTS/, 'no sh1/sh2-era advice');
+  assert.match(doctor.sshHint('Permission denied (publickey).', { code: 'vole-1234', request: 'shk1.vole-1234.abc.KEY.bob' }), /has not let this link's key in yet; ask the host for a new invite/);
   assert.match(doctor.sshHint('Permission denied (publickey,keyboard-interactive).', { code: 'vole-1234' }), /interactive login \(MFA\): run sub-human prime vole-1234/);
-  assert.match(doctor.sshHint('Host key verification failed.', { transport: { knownHosts: '/x/known_hosts', via: 'jump' } }), /not the one its invite pinned.*\/sub-human host --ssh --via jump/);
+  assert.match(doctor.sshHint('Host key verification failed.', { transport: { knownHosts: '/x/known_hosts', via: 'jump' } }), /not the one its invite pinned.*\/sub-human invite --via jump/);
   assert.match(doctor.sshHint('Host key verification failed.'), /host key/);
   assert.match(doctor.sshHint('ssh: Could not resolve hostname box: nodename nor servname provided'), /does not resolve.*--via JUMP/);
-  assert.match(doctor.sshHint('ssh: connect to host box port 22: Operation timed out'), /does not answer.*\/sub-human host --ssh --via JUMP/);
+  assert.match(doctor.sshHint('ssh: connect to host box port 22: Operation timed out'), /does not answer.*\/sub-human invite --via JUMP/);
   assert.equal(doctor.sshHint('something else'), null);
   assert.throws(() => doctor.parseArgs(['--nope']), /usage: sub-human doctor/);
   assert.throws(() => doctor.parseArgs(['--timeout', 'x']), /--timeout/);
@@ -52,7 +52,7 @@ test('doctor: node floor, Remote Control, ssh hints and argument errors', () => 
   assert.deepEqual(doctor.parseArgs(['--bundle', 'f.json', '--quick']), { ...doctor.parseArgs([]), bundle: 'f.json', quick: true });
 });
 
-test('doctor: authorized_keys lines that bypass the shim are found, with the authorize line that rewrites them', t => {
+test('doctor: authorized_keys lines that bypass the shim are found (doctor --fix rewrites them)', t => {
   const home = h.freshHome(t);
   const file = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
   fs.writeFileSync(file, [
@@ -89,11 +89,11 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(byId(rep, 'home').fix, /sub-human doctor --fix/);
   const akc = byId(rep, 'authorized_keys');
   assert.equal(akc.status, 'warn');
-  assert.equal(akc.fix, `echo '${KEY}' | sub-human authorize ${LINK_ID} - --room ${code} --file ~/.ssh/authorized_keys`, 'the child\'s HOME is the user dir');
+  assert.equal(akc.fix, 'sub-human doctor --fix', 'this home\'s line, in the child\'s ~/.ssh/authorized_keys');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
   assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v2`));
-  assert.match(lc.fix, /ask carolyn for an invite/, 'the room moved and this link never reached the new host');
+  assert.match(lc.fix, /Ask carolyn for an invite/, 'the room moved and this link never reached the new host');
   assert.match(lc.detail, /the room moved to carolyn's machine \(pipe:.*, host epoch 2; not reached from here yet/);
   const clock = byId(rep, `clock:${code}`);
   assert.equal(clock.status, 'pass', 'the host\'s hello carries its time: one machine, no skew');
@@ -115,10 +115,12 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(r.stdout, /✗ home +.*\n +fix: sub-human doctor --fix/);
   assert.doesNotMatch(r.stdout, /host reachable/, '--quick says no hello');
 
-  // --fix: the modes and the shim; the home check passes after it
+  // --fix: the modes, the shim and this home's old key line; the home check passes after it
   fs.chmodSync(home, 0o755);
   r = run(['--fix', '--quick', '--json'], env);
   assert.match(r.stdout, /^fixed: made .* 0700$/m);
+  assert.match(r.stdout, /^fixed: rewrote 1 older sub-human line\(s\) in ~\/\.ssh\/authorized_keys to run /m);
+  assert.equal(fs.readFileSync(ak, 'utf8'), `${shim.authorizedLine(code, LINK_ID, KEY, home)}\n`);
   const fixed = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
   assert.equal(byId(fixed, 'home').status, 'pass');
   assert.equal(fs.statSync(home).mode & 0o777, 0o700);
@@ -228,7 +230,7 @@ test('doctor: a link stopped on a spent invite says to ask the host for a new on
   const d = state => ({ code: 'vole-1234', transport: { kind: 'pipe', describe: 'pipe /x' }, daemon: { running: false }, recent: [], moved: null, state });
   for (const why of ['this invite is burnt (too many wrong PINs, expired, or revoked); ask the host for a new one', 'this invite was used already (each invite works once); ask the host for a new one']) {
     const [c] = doctor.linkChecks(d({ state: 'stopped', lastError: why }));
-    assert.match(c.fix, /ask the host for a new invite \(\/sub-human host there\), then \/sub-human join NAME INVITE PIN/);
+    assert.match(c.fix, /ask the host for a new invite \(\/sub-human invite there\) and type the line it shows/);
     assert.doesNotMatch(c.fix, /join again|sub-human link vole-1234/);
   }
   assert.match(doctor.linkChecks(d({ state: 'offline', lastError: 'no route' }))[0].fix, /sub-human link vole-1234/, 'a daemon that is only gone is restarted');

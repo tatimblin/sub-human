@@ -9,16 +9,17 @@
  *       Ask NAME (a member on another machine, linked) to host the room. Their Claude shows them a card; the move
  *       happens only on their own answer there. USER@HOST / --ssh: how the others will reach NAME's machine (default:
  *       a second home on this machine, pipe:, the tests and the demo); --via: through that ProxyJump, as
- *       `host --ssh --via`. --as: which seat of this machine asks (default this session's, else the first). --status:
+ *       `invite --ssh --via`. --as: which seat of this machine asks (default this session's, else the first). --status:
  *       who hosts the room at which epoch, the last ask, and on a new host which machines have not reconnected yet,
  *       with what to tell them.
  *   promote(args, ctx)   sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT] [--via JUMP] | --url https://FRONT] [--force] [--confirm CODE]
  *       When the host is gone for good: this machine's full copy becomes the room at the next epoch. Prints what
  *       it risks and needs --confirm CODE (the room code typed back). Prints one invite per other machine to hand
- *       out by hand.
- *   demote(args, ctx)    sub-human demote CODE INVITE [PIN]
- *       On an old host the room was promoted away from: set its own log aside (kept in orphaned-<time>.jsonl,
- *       never merged), stop its room Claude, and mirror the new host with INVITE.
+ *       out by hand (each machine runs demote with its own).
+ *   demote(args, ctx)    sub-human demote CODE INVITE PIN
+ *       A machine follows a promoted room with the invite promote printed for it: a member's machine re-points its
+ *       link (its seats join again with /sub-human); an old host the room was promoted away from sets its own log
+ *       aside (kept in orphaned-<time>.jsonl, never merged), stops its room Claude, and mirrors the new host.
  * ctx = {die(msg, code?), out(line), err(line)}.
  * FORK_RISK(code, last) -> [line]   what promote prints before its --confirm
  */
@@ -82,7 +83,7 @@ function showStatus(code, { out }) {
   const d = st.doc;
   if (d) out(`last handoff ask: ${d.from} -> ${d.to}, epoch ${d.epoch}: ${d.state}${d.state === 'asked' ? ` until ${d.expires_at}` : ''}`);
   for (const m of st.machines || []) {
-    out(`  ${m.seats.join(', ')}: ${m.connected ? 'reconnected here' : `not reconnected yet. If they cannot reach this machine, give them a new invite (sub-human host --room ${code} [--ssh]); they run /sub-human join ${m.seats[0]} INVITE PIN, then /sub-human ${m.seats[0]} ${code}`}`);
+    out(`  ${m.seats.join(', ')}: ${m.connected ? 'reconnected here' : `not reconnected yet. If they cannot reach this machine, give them a new invite (/sub-human invite in the room here); they type the line it shows`}`);
   }
 }
 
@@ -108,7 +109,7 @@ const FORK_RISK = (code, last) => [
   `PROMOTE makes this machine's copy of room ${code} the room. Only do this when its host is gone for good.`,
   'If the old host is only slow, asleep or cut off, the room FORKS: lines it writes from now on reach nobody here,',
   `and lines it wrote after #${last} (the last one this machine has) are lost to the room. Members still linked to it`,
-  'keep talking to it until they get a new invite. When it comes back, its owner runs: sub-human demote CODE INVITE PIN',
+  'keep talking to it until they follow. When it comes back, its owner runs: sub-human demote CODE INVITE PIN',
   '(its own lines are kept in orphaned-<time>.jsonl, never merged).',
 ];
 
@@ -129,23 +130,23 @@ function promoteCmd(args, ctx) {
   try { r = handoff.promote(code, { name, locator: locatorOf(flags, die, code), force: !!flags.force, cwd: process.cwd() }); } catch (e) { die(`could not promote: ${e.message}`, 1); }
   out(`this machine hosts room ${code} now (host epoch ${r.epoch})${r.note}`);
   if (!r.invites.length) return out('no other machine had a seat in the room.');
-  out('Give each machine its invite, and its PIN some other way (each is single-use, lasts 15 minutes and only works on that machine):');
+  out('Give each machine its line, and its PIN some other way (each is single-use, lasts 15 minutes and only works on that machine); they run it in a terminal, then /sub-human in their session:');
   // inside Claude Code (its ! shell) the PINs are masked: that output would land in the conversation
-  const lines = r.invites.map(x => `  ${x.seats.join(', ')}: /sub-human join ${x.seats[0]} ${x.invite} ${x.pin}   (then /sub-human ${x.seats[0]} ${code})`);
+  const lines = r.invites.map(x => `  ${x.seats.join(', ')}: sub-human demote ${code} ${x.invite} ${x.pin}`);
   out(require('./host.js').maskPins(lines.join('\n'), r.invites.map(x => x.pin)));
-  out(`The old host, when it is back: sub-human demote ${code} <its invite above> <its PIN>`);
+  out('(the old host runs its line too when it is back: its own lines are kept aside, never merged)');
 }
 
 function demoteCmd(args, ctx) {
   const { die, out } = ctx;
   const { rest } = flagsOf(args, {}, die);
-  if (rest.length !== 2 && rest.length !== 3) die('usage: sub-human demote CODE INVITE [PIN]');
+  if (rest.length !== 2 && rest.length !== 3) die('usage: sub-human demote CODE INVITE PIN');
   const [code, invite, pin] = rest;
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
   let r;
   try { r = handoff.demote(code, invite, pin); } catch (e) { die(`could not demote: ${e.message}`, 1); }
-  out(`room ${code}: this machine mirrors its new host now${r.orphan ? `; its own log is kept in ${r.orphan}` : ''}.`);
-  if (r.request) out(`Over SSH the new host must let this machine's key in first: send them this line (it holds no secret):\n  /sub-human admit ${r.request}`);
+  out(`room ${code}: this machine mirrors its new host now${r.orphan ? `; its own log is kept in ${r.orphan}` : ''}.${r.follower ? ' Type /sub-human in your session to take your seat over it.' : ''}`);
+  if (r.request) out('Over ssh the new host has not let this machine in yet: if it cannot connect, ask them for an invite (/sub-human invite there) and type the line it shows in your session.');
 }
 
 module.exports = { handoff: handoffCmd, promote: promoteCmd, demote: demoteCmd, FORK_RISK };

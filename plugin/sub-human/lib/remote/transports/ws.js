@@ -10,15 +10,11 @@
  *            an IPv4 address; PATH is [A-Za-z0-9._~/-]* with no query, fragment or user info. Spec = {kind, host, port?,
  *            path}; the link file adds hostKey (the pinned X25519 public key, base64url), from the invite's host-key
  *            field (sh2 field 5: for a ws/wss locator it is this key, for ssh the sshd Ed25519 host key)
- *   Join URL https://HOST[:PORT]/PATH/CODE#SECRET.HOSTKEY   the same sh2 invite as a link a person can paste:
- *            the last path segment is the room code, the fragment the 128-bit invite secret and the pinned key (a
- *            fragment never leaves the joiner's machine in a request). http:// gives a ws:// locator. The PIN is never
- *            in it; it is typed apart
+ *   Join URL https://HOST[:PORT]/PATH/ROOM   what `/sub-human invite --web` shows with its PIN: the last path segment
+ *            is the room; http:// gives a ws:// locator. The joiner pins the listener's key the PIN's handshake
+ *            vouches for (lib/remote/enroll.js)
  *   parse(rest) -> Spec | null          the locator's rest ("//host:port/path")
  *   locator({host, port?, path}, secure = true) -> string | null
- *   joinUrl({locator, secret, hostKey}) -> string        the URL form of an sh2 ws/wss invite
- *   parseJoinUrl(text) -> {v: 2, code, locator, secret, hostKey, invite} | null   invite: the canonical sh2 string
- *                                       (lib/remote/auth.js formatInvite) the hello carries
  *   urlOf(spec) -> 'wss://host[:port]/path'
  *   PROLOGUE                            the Noise prologue, 'sub-human ws1'
  *   clientChannel(conn, {rs, code, timeoutMs?}) -> Promise<Duplex>   the initiator: message 1 carries {v: 1, room};
@@ -44,7 +40,6 @@ const { RoomError } = require('../../room/validate.js');
 const HOST_RE = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*\.?$/;
 const PATH_RE = /^\/[A-Za-z0-9._~/-]{0,200}$/;
 const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
-const SECRET_RE = /^[A-Za-z0-9_-]{16,128}$/;
 const PROLOGUE = Buffer.from('sub-human ws1');
 const HANDSHAKE_MS = 10_000;
 
@@ -68,26 +63,6 @@ function locator({ host, port, path = '/' }, secure = true) {
   const kind = secure ? 'wss' : 'ws';
   const rest = `//${String(host).toLowerCase()}${port ? `:${port}` : ''}${path}`;
   return parse(rest) ? `${kind}:${rest}` : null;
-}
-
-function joinUrl({ locator: loc, secret, hostKey }) {
-  const i = loc.indexOf(':');
-  const spec = parse(loc.slice(i + 1));
-  if (!spec || !hostKey) throw new RoomError('INVALID', 'a join URL needs a ws/wss locator and the host key');
-  return `${loc.slice(0, i) === 'ws' ? 'http' : 'https'}://${hostPort(spec)}${spec.path}#${secret}.${hostKey}`;
-}
-
-function parseJoinUrl(text) {
-  const m = /^(https?):\/\/([^#\s]+)#([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/.exec(String(text).trim());
-  if (!m) return null;
-  const spec = parse(`//${m[2]}`);
-  if (!spec || !SECRET_RE.test(m[3]) || !KEY_RE.test(m[4])) return null;
-  const code = spec.path.split('/').filter(Boolean).pop();
-  const { CODE_RE } = require('../../text.js');
-  if (!code || !CODE_RE.test(code)) return null;
-  const loc = locator(spec, m[1] === 'https');
-  const invite = require('../auth.js').formatInvite({ v: 2, code, locator: loc, secret: m[3], hostKey: m[4] });
-  return { v: 2, code, locator: loc, secret: m[3], hostKey: m[4], invite };
 }
 
 /** Plaintext bytes over a conn after the handshake: send/recv are the split CipherStates. */
@@ -201,4 +176,4 @@ const kind = {
   describe: spec => `${spec.kind} ${hostPort(spec)}${spec.path}`,
 };
 
-module.exports = { parse, locator, joinUrl, parseJoinUrl, urlOf, PROLOGUE, clientChannel, serverChannel, firstAny, kind };
+module.exports = { parse, locator, urlOf, PROLOGUE, clientChannel, serverChannel, firstAny, kind };

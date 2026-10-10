@@ -185,7 +185,7 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
     const refusal = code => {
       if (!CODE_RE.test(code)) return { code: 'PROTOCOL', message: 'not a room code' };
       if (at && CODE_RE.test(at) && at !== code) return { code: 'PROTOCOL', message: `this URL is for room ${at}, not ${code}` };
-      if (!(read().rooms || {})[code] || !roomLive(code)) return { code: 'OFFLINE', message: `room ${code} is not open for joins over the web here (the host can run /sub-human host --tailscale or --url again)` };
+      if (!(read().rooms || {})[code] || !roomLive(code)) return { code: 'OFFLINE', message: `room ${code} is not open for joins over the web here (the host can run /sub-human invite --web or --url again)` };
       return null;
     };
     let ch, first;

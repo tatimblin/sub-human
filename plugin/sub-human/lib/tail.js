@@ -496,7 +496,7 @@ function startSession(me, ctx) {
       if ((q.told || []).includes(me.name) || !adm.targets(s.code, q).includes(me.name)) continue;
       adm.markTold(s.code, q.ref, me.name);
       emit([
-        { type: 'chat', lines: [`room: ${adm.describe(q)} typed your code and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})`] },
+        { type: 'chat', lines: [`room: ${adm.describe(q)} typed your PIN and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})`] },
         { type: 'wake', text: `${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite code from another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
       ]);
     }

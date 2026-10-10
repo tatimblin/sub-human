@@ -63,7 +63,7 @@ const cacheDirOf = root => (CACHE_RE.test(path.resolve(root)) ? path.dirname(pat
 
 function shimBody() {
   return `#!/bin/sh
-# written by sub-human lib/remote/shim.js; the authorized_keys forced commands \`sub-human authorize\` writes run it.
+# written by sub-human lib/remote/shim.js; the authorized_keys forced commands the host's admit writes run it.
 # Runs \`sub-human serve ARGS\` from the current plugin install with a working node, read from ./current at run time.
 cur="$(dirname "$0")/current"
 root= node= cache=

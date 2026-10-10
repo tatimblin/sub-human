@@ -1,37 +1,31 @@
 'use strict';
 /**
  * plugin/sub-human/lib/remote/webhost.js: the host's side of a join over the web (1.1), shared by the join hook
- * (`/sub-human host --tailscale [--funnel]`, `/sub-human host --url URL`, `/sub-human unhost`: block reasons the
- * person reads, never the model) and the CLI (lib/cli/host.js, lib/cli/listen.js). The wire is
+ * (`/sub-human invite --web`, `--public`, `--url URL`, `/sub-human invite --stop`: block reasons the person reads,
+ * never the model) and the CLI (lib/cli/host.js). The wire is
  * lib/remote/transports/ws.js; the daemon lib/remote/listener.js; the Tailscale calls lib/remote/tailscale.js.
  *
- *   hostWeb(code, {tailscale?, funnel?, url?, port?, long?, by?, now?}) -> {pin, ref, short: true, line, …} | {invite, joinUrl, pin,
- *       expires_at, locator, hostKey, base, mode, text}
- *       By default a SHORT invite: `/sub-human join NAME https://HOST/…/sub-human/CODE 482913`, the 6-digit code the
- *       whole secret (lib/remote/auth.js mintShort, kind ws, vouching for the listener's X25519 key inside the PAKE,
- *       lib/remote/enroll.js); the host person's card admits the joiner. long: the sh2 form below (URL#SECRET.KEY + PIN).
- *       Starts the listener (idempotent, 127.0.0.1:port, default 7420), puts the room in its served set, and mints an
- *       sh2 invite whose locator is wss://HOST/…/sub-human/CODE and whose host-key field is the listener's X25519
- *       key (lib/remote/listener.js hostKey), with its PIN (lib/remote/auth.js: online only, 5 tries, 15 minutes).
- *       tailscale: Tailscale Serve for /sub-human/CODE -> http://127.0.0.1:PORT on this node's MagicDNS name (tailnet
- *       only), then one background request to it to warm its certificate (tailscale.warm); funnel: the same through
- *       Funnel (public; the text carries tailscale.CT_WARNING). url: any HTTPS front
- *       that forwards to the listener (the lab's tls-front, a reverse proxy of the person's own): the join URL is
- *       URL/sub-human/CODE. joinUrl is the paste-able form: https://HOST/…/sub-human/CODE#SECRET.HOSTKEY. Unlike ssh
- *       there is no admit step: the invite's secret, its PIN and the pinned key are the admission, and the room line
- *       the host writes when the PIN holds (lib/remote/server.js) records it
+ *   hostWeb(code, {tailscale?, funnel?, url?, port?, by?, now?}) -> {pin, ref, expires_at, short: true, line, locator,
+ *       hostKey, base, mode, port, text}
+ *       A short invite: `/sub-human join https://HOST/…/sub-human/ROOM 4829`, the 4-digit PIN the whole secret
+ *       (lib/remote/auth.js mintShort, kind ws, vouching for the listener's X25519 key inside the PAKE,
+ *       lib/remote/enroll.js); the host person's card admits the joiner. Starts the listener (idempotent,
+ *       127.0.0.1:port, default 7420) and puts the room in its served set; the locator is wss://HOST/…/sub-human/ROOM.
+ *       tailscale (`--web`): Tailscale Serve for /sub-human/CODE -> http://127.0.0.1:PORT on this node's MagicDNS name (tailnet
+ *       only), then one background request to it to warm its certificate (tailscale.warm); funnel (`--public`): the
+ *       same through Funnel (public; the text carries tailscale.CT_WARNING). url: any HTTPS front that forwards to the
+ *       listener (the lab's tls-front, a reverse proxy of the person's own): the join URL is URL/sub-human/ROOM
  *   ensure(code) -> bool   start the listener again for a room it serves (after a reboot): the join hook, on a host seat
  *   webLocator(url, code) -> 'wss://FRONT/prefix/sub-human/CODE'   a handoff's or promote's --url
  *   serveAt(code, locator) -> {port, hostKey}   this machine is about to host CODE at a web locator (lib/handoff.js accept,
- *       promote): the listener up, the room served; its invites pin hostKey. A Tailscale path is set up by host --tailscale
- *   unhost(code) -> {removed, text}   the room leaves the served set and its own Tailscale path (only that one) is
+ *       promote): the listener up, the room served; its invites pin hostKey. A Tailscale path is set up by invite --web
+ *   unhost(code) -> {removed, text}   (`invite --stop`) the room leaves the served set and its own Tailscale path (only that one) is
  *       turned off; the listener stops once it serves no room. Links already made keep their token but cannot
  *       reach the room over the web until it is hosted again
  *   frontBase(url) -> {secure, host, port?, prefix}   a front's base URL, checked: http(s)://host[:port][/prefix] only
  */
 
 const { RoomError } = require('../room/validate.js');
-const { INVITE_TTL_MS } = require('../config.js');
 
 const listener = () => require('./listener.js');
 const ts = () => require('./tailscale.js');
@@ -56,11 +50,11 @@ function frontBase(text) {
   return { secure: u.protocol === 'https:', host: u.hostname, port: u.port ? Number(u.port) : undefined, prefix };
 }
 
-function hostWeb(code, { tailscale = false, funnel = false, url, port, long = false, by = null, now = Date.now() } = {}) {
+function hostWeb(code, { tailscale = false, funnel = false, url, port, by = null, now = Date.now() } = {}) {
   const store = hostStore(code);
   if (funnel) tailscale = true;
-  if (!tailscale && !url) throw new RoomError('INVALID', 'say how joiners reach the listener: --tailscale [--funnel], or --url https://YOUR-FRONT');
-  if (tailscale && url) throw new RoomError('INVALID', '--tailscale and --url are two ways to the same listener; pick one');
+  if (!tailscale && !url) throw new RoomError('INVALID', 'say how joiners reach the listener: --web (Tailscale), --public (Funnel), or --url https://YOUR-FRONT');
+  if (tailscale && url) throw new RoomError('INVALID', '--web / --public and --url are two ways to the same listener; pick one');
   const L = listener();
   const served = L.status().rooms[code];
   const { port: lport } = L.start(port ? { port } : {});
@@ -92,30 +86,16 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, long = fa
   const notes = [
     ...(tsRec ? ['The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and a joiner\'s link keeps trying.'] : []),
     ...(mode === 'funnel' ? [ts().CT_WARNING] : []),
-    'Stop serving it with /sub-human unhost (closing the room does too).',
+    'Stop serving it with /sub-human invite --stop (closing the room does too).',
   ];
-  if (!long) { // the short form: the URL and a 6-digit code (lib/remote/enroll.js over the listener's text frames)
-    const r = require('./auth.js').mintShort(store, { kind: 'ws', locator, hostKey, by, now });
-    const line = `/sub-human join NAME ${joinBase} ${r.pin}`;
-    const text = require('./hosting.js').shortText({
-      code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, ref: r.ref,
-      extra: [`Their link checks this machine's listener key (${hostKey.slice(0, 12)}…) inside the code's handshake and pins it; what sits in between sees ciphertext.`, ...notes],
-    });
-    return { ...r, short: true, line, locator, hostKey, base: joinBase, mode, port: lport, text };
-  }
-  const r = require('./auth.js').mintInvite(store, { locator, pin: true, hostKey, now });
-  const joinUrl = wsT().joinUrl({ locator, secret: r.secret, hostKey });
-  const lines = [
-    `invite to room ${code}, for one machine, over the web through ${how} to this machine's listener on 127.0.0.1:${lport}. Shown once; it lasts ${Math.round(INVITE_TTL_MS / 60_000)} minutes.`,
-    '',
-    `  /sub-human join NAME ${joinUrl} PIN`,
-    '',
-    `PIN ${r.pin}  (send it apart from the link, e.g. say it; 5 wrong tries burn the invite)`,
-    `Leaked? /sub-human revoke ${require('./auth.js').inviteRef(r.secret)} burns just this invite (its ref; /sub-human unhost stops serving the whole room).`,
-    `The link pins this machine's listener key ${hostKey.slice(0, 12)}… and carries a one-time secret; with the PIN that is the whole admission (no admit step). The same invite as text: ${r.invite}`,
-  ];
-  lines.push(...notes);
-  return { ...r, joinUrl, locator, hostKey, base: joinBase, mode, port: lport, text: lines.join('\n') };
+  // the URL and a 4-digit PIN (lib/remote/enroll.js over the listener's text frames)
+  const r = require('./auth.js').mintShort(store, { kind: 'ws', locator, hostKey, by, now });
+  const line = `/sub-human join ${joinBase} ${r.pin}`;
+  const text = require('./hosting.js').shortText({
+    code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, ref: r.ref,
+    extra: [`Their link checks this machine's listener key (${hostKey.slice(0, 12)}…) inside the PIN's handshake and pins it; what sits in between sees ciphertext.`, ...notes],
+  });
+  return { ...r, short: true, line, locator, hostKey, base: joinBase, mode, port: lport, text };
 }
 
 function unhost(code) {
@@ -150,7 +130,7 @@ function webLocator(url, code) {
 }
 
 /** Serve room CODE at a web locator this machine will host it at (a handoff or promote to here): the listener up and
- * the room in its served set. A Tailscale path is not set up here: run /sub-human host --tailscale after the move. */
+ * the room in its served set. A Tailscale path is not set up here: run /sub-human invite --web after the move. */
 function serveAt(code, locator) {
   const i = locator.indexOf(':');
   const spec = wsT().parse(locator.slice(i + 1));

@@ -42,7 +42,7 @@ test('prompt: an @room the shim could not handle is refused, never let through; 
   const atRoom = require('../hooks/at-room.js');
   assert.equal(p.GATE_FAILED, atRoom.NO_ORIGIN);
   assert.deepEqual(p.failClosed('@room ship it'), { block: p.GATE_FAILED, suppressOriginalPrompt: true });
-  assert.deepEqual(p.failClosed('room:ship it'), { block: p.GATE_FAILED, suppressOriginalPrompt: true });
+  assert.equal(p.failClosed('room:ship it'), null, 'there is no room: tag');
   assert.equal(p.failClosed('ship it'), null);
   assert.equal(p.failClosed(undefined), null);
   // only exit 0 (an answer) and 2 (a block) count as the hook having handled it

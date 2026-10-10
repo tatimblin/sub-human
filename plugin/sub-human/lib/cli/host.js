@@ -1,31 +1,29 @@
 'use strict';
 /**
- * plugin/sub-human/lib/cli/host.js: the host's and the joiner's ssh setup commands of scripts/sub-human, in the
- * person's own shell (the Bash guard refuses them to a model). The work is lib/remote/hosting.js; this file parses
- * arguments and prints. Each export takes argv (after the command) and returns the exit code; a RoomError is
+ * plugin/sub-human/lib/cli/host.js: the host's and the joiner's setup commands of scripts/sub-human, in the person's
+ * own shell (the Bash guard refuses them to a model). The work is lib/remote/hosting.js and webhost.js; this file
+ * parses arguments and prints. Each export takes argv (after the command) and returns the exit code; a RoomError is
  * printed on stderr (exit 1), a usage error exits 2.
  *
- *   host(args)   sub-human host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP]
- *                an sh2 invite and its PIN, the block /sub-human host shows (hosting.hostInvite). Without --room, the
- *                one room hosted here with a live seat (else name it)
- *                sub-human host [--room CODE] --tailscale [--funnel] | --url URL [--port P]
- *                the same over the web: the listener, Tailscale Serve/Funnel or a front of your own, and a join URL
- *                with its PIN (lib/remote/webhost.js hostWeb)
- *   admit(args)  sub-human admit [REF [--refuse] [--yes]] [--room CODE]: a short code's join requests (no REF: list
+ *   invite(args) sub-human invite [--room ROOM] [--ssh [USER@HOST[:PORT]] [--via JUMP] | --web | --public | --url URL
+ *                [--port P] | --pipe] | --stop | --cancel [REF]
+ *                the invite line and its PIN, as /sub-human invite shows them (hosting.hostInvite, webhost.hostWeb):
+ *                over ssh by default; --web Tailscale Serve, --public Tailscale Funnel, --url a front of your own;
+ *                --stop stops serving the room over the web (webhost.unhost); --cancel [REF] cancels an unused
+ *                invite (hosting.cancelInvite). Without --room, the one room hosted here with a live seat
+ *   kick(args)   sub-human kick NAME [--room ROOM] [--file AUTHORIZED_KEYS]: end NAME's connection (hosting.kick)
+ *   admit(args)  sub-human admit [REF [--refuse] [--yes]] [--room ROOM]: the join requests waiting (no REF: list
  *                them); REF: let that one in after y/N (lib/remote/admission.js letIn), or --refuse. The card in the
- *                host's session is the usual way; this is for a host with no session open.
- *                sub-human admit REQUEST [--file AUTHORIZED_KEYS] [--yes]
- *                let a joiner's key in for the invite its request names (hosting.admit). On a terminal it shows who
- *                asks, the room, the key's fingerprint and the invite's age, and asks y/N first (--yes skips it)
- *   prime(args)  sub-human prime CODE [--persist 8h]
- *                the joiner's side, for an MFA bastion or host: open an ssh master for room CODE's link once,
+ *                host's session is the usual way; this is for a host with no session open
+ *   prime(args)  sub-human prime ROOM [--persist 8h]
+ *                the joiner's side, for an MFA bastion or host: open an ssh master for room ROOM's link once,
  *                interactively (ssh -M -N -f, ControlPersist), and mark the link to ride it (its transport's mux), so
  *                the link daemon's BatchMode ssh reuses it without a prompt (lib/remote/transports/ssh.js)
  *   hostedRoom(explicit?) -> code   --room, else the one open room hosted here (Error NO_ROOM otherwise)
  *   inClaudeCode(env?) -> bool      run inside Claude Code (CLAUDECODE=1 or CLAUDE_CODE_SESSION_ID): its ! shell, whose
  *                output becomes part of the conversation
  *   maskPins(text, pins, env?) -> text   inside Claude Code every PIN masked and PIN_HIDDEN appended; else text
- *                (host here, promote in lib/cli/handoff.js; `sub-human invite` refuses there instead)
+ *                (invite here, promote in lib/cli/handoff.js)
  */
 
 const fs = require('node:fs');
@@ -37,13 +35,13 @@ const fail = (s, code = 1) => { process.stderr.write(s.endsWith('\n') ? s : s + 
 
 /** Run inside Claude Code (its `!` shell, a Bash tool): whatever is printed lands in the conversation, model input. */
 const inClaudeCode = (env = process.env) => env.CLAUDECODE === '1' || !!env.CLAUDE_CODE_SESSION_ID;
-const PIN_HIDDEN = 'PIN hidden: this ran inside Claude Code, where the output becomes part of the conversation. Run it in a terminal outside Claude Code, or use /sub-human host in the room (its reply is shown to you only).';
+const PIN_HIDDEN = 'PIN hidden: this ran inside Claude Code, where the output becomes part of the conversation. Run it in a terminal outside Claude Code, or use /sub-human invite in the room (its reply is shown to you only).';
 
 /** text with every PIN in it masked, and why, when run inside Claude Code; else text as it is. */
 function maskPins(text, pins, env = process.env) {
   if (!inClaudeCode(env)) return text;
   let out = text;
-  for (const p of pins.filter(Boolean)) out = out.split(p).join('######');
+  for (const p of pins.filter(Boolean)) out = out.split(p).join('####');
   return `${out}\n${PIN_HIDDEN}`;
 }
 
@@ -53,21 +51,36 @@ function hostedRoom(explicit) {
   if (explicit) return explicit;
   const open = identity.openRooms().filter(c => identity.isHost(c));
   if (open.length === 1) return open[0];
-  throw Object.assign(new Error(open.length ? `${open.length} rooms are open here (${open.join(', ')}); name one with --room CODE` : 'no room is open here; name one with --room CODE'), { code: 'NO_ROOM' });
+  throw Object.assign(new Error(open.length ? `${open.length} rooms are open here (${open.join(', ')}); name one with --room ROOM` : 'no room is open here; name one with --room ROOM'), { code: 'NO_ROOM' });
 }
 
-function host(args) {
+const INVITE_USAGE = 'usage: sub-human invite [--room ROOM] [--ssh [USER@HOST[:PORT]] [--via JUMP] | --web | --public | --url URL [--port P] | --pipe] | --stop | --cancel [REF]';
+
+function invite(args) {
   // --ssh takes a value only when one follows that is not another flag
-  const p = parse(args, { ssh: '?', room: 1, via: 1, url: 1, port: 1, tailscale: 0, funnel: 0, long: 0, short: 0 });
-  const ssh = p.flags.ssh;
-  if (p.error || p.rest.length) return fail(p.error || 'usage: sub-human host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP] | [--tailscale [--funnel] | --url URL] [--port P] [--long]', 2);
-  const web = p.flags.tailscale || p.flags.funnel || p.flags.url !== undefined;
-  if (web && (ssh !== undefined || p.flags.via !== undefined)) return fail('--ssh and --tailscale / --url are different ways in; pick one', 2);
+  const p = parse(args, { ssh: '?', room: 1, via: 1, url: 1, port: 1, web: 0, public: 0, pipe: 0, stop: 0, cancel: '?' });
+  const f = p.flags;
+  if (p.error || p.rest.length) return fail(p.error || INVITE_USAGE, 2);
+  const web = !!(f.web || f.public || f.url !== undefined);
+  const ways = [f.ssh !== undefined || f.via !== undefined, web, !!f.pipe, !!f.stop, f.cancel !== undefined].filter(Boolean).length;
+  if (ways > 1) return fail(`pick one way: ${INVITE_USAGE}`, 2);
   try {
+    const code = hostedRoom(f.room);
+    if (f.stop) { say(require('../remote/webhost.js').unhost(code).text); return 0; }
+    if (f.cancel !== undefined) { say(require('../remote/hosting.js').cancelInvite(code, f.cancel === true ? undefined : f.cancel).text); return 0; }
     const r = web
-      ? require('../remote/webhost.js').hostWeb(hostedRoom(p.flags.room), { tailscale: !!p.flags.tailscale, funnel: !!p.flags.funnel, url: p.flags.url, long: !!p.flags.long, ...(p.flags.port ? { port: Number(p.flags.port) } : {}) })
-      : require('../remote/hosting.js').hostInvite(hostedRoom(p.flags.room), { ssh, via: p.flags.via, long: !!p.flags.long, short: !!p.flags.short });
+      ? require('../remote/webhost.js').hostWeb(code, { tailscale: !!(f.web || f.public), funnel: !!f.public, url: f.url, ...(f.port ? { port: Number(f.port) } : {}) })
+      : require('../remote/hosting.js').hostInvite(code, { ssh: f.pipe ? undefined : f.ssh === undefined ? true : f.ssh, via: f.via, pipe: !!f.pipe });
     say(maskPins(r.text, [r.pin]));
+    return 0;
+  } catch (e) { return fail(e.message); }
+}
+
+function kick(args) {
+  const { flags: f, rest, error } = parse(args, { room: 1, file: 1 });
+  if (error || rest.length !== 1) return fail('usage: sub-human kick NAME [--room ROOM] [--file AUTHORIZED_KEYS]', 2);
+  try {
+    say(require('../remote/hosting.js').kick(hostedRoom(f.room), rest[0], f.file ? { file: f.file } : {}).text);
     return 0;
   } catch (e) { return fail(e.message); }
 }
@@ -80,8 +93,10 @@ function ask(question) {
   return buf.subarray(0, n).toString('utf8').trim();
 }
 
-/** `sub-human admit [REF [--refuse]]` for a short code's join request (the card's, in a shell: headless hosts). */
-function admitShort(p) {
+/** `sub-human admit [REF [--refuse]]`: a join request (the card's, in a shell: headless hosts). */
+function admit(args) {
+  const p = parse(args, { yes: 0, room: 1, refuse: 0 });
+  if (p.error || p.rest.length > 1 || (p.rest.length && !/^[0-9a-f]{6,12}$/.test(p.rest[0]))) return fail(p.error || 'usage: sub-human admit [REF [--refuse] [--yes]] [--room ROOM]', 2);
   const adm = require('../remote/admission.js');
   let code;
   try { code = hostedRoom(p.flags.room); } catch (e) { return fail(e.message); }
@@ -95,7 +110,7 @@ function admitShort(p) {
   if (!req) return fail(`no join request of room ${code} has the ref ${p.rest[0]} (sub-human admit lists them)`);
   if (!p.flags.yes && !p.flags.refuse) {
     if (!process.stdin.isTTY) return fail('not a terminal: add --yes to let them in (or --refuse)');
-    const yes = ask(`${adm.describe(req)} typed your code and wants to join room ${code}.\nLet them in? That machine joins as one link and posts only as the seats it brings. [y/N] `);
+    const yes = ask(`${adm.describe(req)} typed your PIN and wants to join room ${code}.\nLet them in? That machine joins as one link and posts only as the seats it brings. [y/N] `);
     if (!/^y(es)?$/i.test(yes)) return fail('not let in (the request still waits; sub-human admit REF --refuse ends it)');
   }
   try {
@@ -104,28 +119,9 @@ function admitShort(p) {
   } catch (e) { return fail(e.message); }
 }
 
-function admit(args) {
-  const p = parse(args, { file: 1, yes: 0, room: 1, refuse: 0 });
-  if (!p.error && p.rest.length <= 1 && (!p.rest.length || /^[0-9a-f]{6,12}$/.test(p.rest[0]))) return admitShort(p);
-  if (p.error || p.rest.length !== 1) return fail(p.error || 'usage: sub-human admit [REF [--refuse] [--yes]] [--room CODE]  |  sub-human admit shk1.CODE.REF.KEY.NAME [--file AUTHORIZED_KEYS] [--yes]', 2);
-  const hosting = require('../remote/hosting.js');
-  const sshkeys = require('../remote/sshkeys.js');
-  const req = sshkeys.parseRequest(p.rest[0]);
-  if (!req) return fail('that is not an admit request (shk1.CODE.REF.KEY.NAME, from the joiner\'s /sub-human join)');
-  if (!p.flags.yes && process.stdin.isTTY) {
-    const yes = ask(`${req.name} asks to join room ${req.code} from another machine with ssh key ${sshkeys.fingerprint(req.key)}.\n`
-      + 'Admit it? That key will reach only this room\'s server, as one link, and still needs the invite\'s PIN. [y/N] ');
-    if (!/^y(es)?$/i.test(yes)) return fail('not admitted');
-  }
-  try {
-    say(hosting.admit(p.rest[0], p.flags.file ? { file: p.flags.file } : {}).text);
-    return 0;
-  } catch (e) { return fail(e.message); }
-}
-
 function prime(args) {
   const p = parse(args, { persist: 1 });
-  if (p.error || p.rest.length !== 1) return fail(p.error || 'usage: sub-human prime CODE [--persist 8h]', 2);
+  if (p.error || p.rest.length !== 1) return fail(p.error || 'usage: sub-human prime ROOM [--persist 8h]', 2);
   const code = p.rest[0];
   const links = require('../room/links.js');
   const l = links.get(code);
@@ -143,4 +139,4 @@ function prime(args) {
   } catch (e) { return fail(e.message); }
 }
 
-module.exports = { host, admit, prime, hostedRoom, inClaudeCode, maskPins, PIN_HIDDEN };
+module.exports = { invite, kick, admit, prime, hostedRoom, inClaudeCode, maskPins, PIN_HIDDEN };

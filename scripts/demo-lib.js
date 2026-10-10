@@ -39,8 +39,10 @@
  *                                                  transport), never its token (S11)
  *   demo-lib.js latest-plan                       print the latest plan_rev hash
  *   demo-lib.js readonly <session>                exit 0 if a read-only client is attached
- *   demo-lib.js invite <session>                  print the invite /sub-human host showed in that pane (exit 1: none)
- *   demo-lib.js pin <session>                     print the PIN /sub-human host showed with it (exit 1: none)
+ *   demo-lib.js join-line <session>               print the line /sub-human invite showed in that pane, without its
+ *                                                  "/sub-human " ("join DEST ROOM PIN"; exit 1: none)
+ *   demo-lib.js admit-card <session> [--timeout S]   wait for the host's join-request card in that pane and answer
+ *                                                  "Let in" on it (the person's own answer; S11)
  *   demo-lib.js wait-idle <session> [--timeout S] [--quiet S]   wait until the main prompt is idle (no
  *                                                  "esc to interrupt" and the pane unchanged for --quiet S, 3)
  *   demo-lib.js card <session> <Not yet|Agree|Object> [note]   answer the open proposal: in the plan view (Agree =
@@ -77,7 +79,7 @@ const { execFileSync, spawn, spawnSync } = require('node:child_process');
 const { roomCode, readLog, strip } = require('./snap.js');
 const paths = require('./lib/paths.js');
 const { readJson, jsonl, esc } = require('./lib/io.js');
-const { panelRows, cardState, planState, inviteIn, pinIn } = require('./lib/panes.js');
+const { panelRows, cardState, planState, joinLineIn, admitCardState } = require('./lib/panes.js');
 
 const REPO = paths.REPO;
 const SNAP_DIR = () => (process.env.SNAP_DIR ? path.resolve(process.env.SNAP_DIR) : path.join(REPO, 'docs/rebuild/screens'));
@@ -428,6 +430,26 @@ async function answerCard(session, choice, note) {
   return 0;
 }
 
+/** The host's join-request card (lib/remote/admission.js): move onto "Let in" and Enter. */
+async function admitCard(o, T) {
+  const session = o._[0];
+  if (!(await until(`${session}: the join request's card open`, T, () => admitCardState(pane(session))))) return 1;
+  await sleep(1200);
+  for (let i = 0; i < 6; i++) {
+    const st = admitCardState(pane(session));
+    const cur = st && st.opts.find(x => x.cur);
+    if (!cur || cur.label === 'Let in') break;
+    await keys(session, ['Up']);
+    await sleep(300);
+  }
+  await keys(session, ['Enter']);
+  await sleep(1500);
+  const p = pane(session);
+  if (/Submit answers|Review your answers/i.test(p) && /❯\s*1\.\s*Submit/.test(p)) { await keys(session, ['Enter']); await sleep(800); }
+  record(`${session}: answered the join request's card Let in`, true, 0);
+  return 0;
+}
+
 async function card(o, T) {
   const [session, choice, ...noteParts] = o._;
   const note = noteParts.join(' ');
@@ -575,8 +597,8 @@ const COMMANDS = {
   ready: async (o, T) => exit(await ready(o._[0], T)),
   readonly: async o => exit(readonlyAttached(o._[0])),
   pane: async o => { process.stdout.write(pane(o._[0])); return 0; },
-  invite: async o => { const inv = inviteIn(pane(o._[0])); if (inv) process.stdout.write(inv + '\n'); return exit(!!inv); },
-  pin: async o => { const p = pinIn(pane(o._[0])); if (p) process.stdout.write(p + '\n'); return exit(!!p); },
+  'join-line': async o => { const l = joinLineIn(pane(o._[0])); if (l) process.stdout.write(l + '\n'); return exit(!!l); },
+  'admit-card': admitCard,
   'wait-pane': waitPane,
   'wait-paint': waitPaint,
   'wait-exited': waitExited,

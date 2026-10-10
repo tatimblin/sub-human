@@ -29,18 +29,15 @@ const signal = (pid, sig) => { try { process.kill(pid, sig); } catch { /* gone *
 const ids = log => log.split('\n').filter(Boolean).map(l => JSON.parse(l).id);
 
 /** alice hosts, bob joins from the other home; returns what the tests need, cleaned up when the test ends. */
-function room(t, env) {
+async function room(t, env) {
   const host = new Machine(t, 'host'), remote = new Machine(t, 'remote', { ...BASE, ...env });
   const alice = host.seat('alice'), bob = remote.seat('bob');
   host.join(alice, 'alice');
   const code = host.lib(() => store.listRooms()[0]);
-  // an sh2 invite and its PIN: the PIN goes with the first hello only; every redial below says hello with the token
-  const shown = host.join(alice, 'host').json.reason;
-  const linked = remote.join(bob, `join bob ${/sh2\.\S+/.exec(shown)[0]} ${/PIN (\d{6})/.exec(shown)[1]}`);
-  assert.match(linked.json.reason, /linked to room/, linked.stderr);
+  // an invite and its PIN: the PIN goes into the PAKE only; every redial below says hello with the token
+  const { seated: joined } = await remote.joinVia(host, alice, bob);
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
-  assert.deepEqual(['pin' in lf, 'invite' in lf, typeof lf.token], [false, false, 'string']);
-  const joined = remote.join(bob, `bob ${code}`);
+  assert.deepEqual(['enroll' in lf, 'invite' in lf, typeof lf.token], [false, false, 'string']);
   assert.equal(joined.json.systemMessage, undefined, joined.stderr);
   const daemon = remote.lib(() => link.status(code)).pid;
   t.after(() => {
@@ -57,7 +54,7 @@ function room(t, env) {
 }
 
 test('remote e2e: a server that stops answering (half-open) is caught by a missed pong and replaced before it is dropped', async t => {
-  const r = room(t);
+  const r = await room(t);
   await h.until(() => r.st().rttMs != null, 5000, 50);
   assert.equal(r.st().state, 'online');
   const [old] = children(r.daemon);
@@ -77,7 +74,7 @@ test('remote e2e: a server that stops answering (half-open) is caught by a misse
 });
 
 test('remote e2e: a daemon frozen past the wake gap (as after a sleep) redials at once on waking, with no duplicate line', async t => {
-  const r = room(t, { SUB_HUMAN_LINK_PING_MS: '60000' }); // no ping in flight: the wake alone redials
+  const r = await room(t, { SUB_HUMAN_LINK_PING_MS: '60000' }); // no ping in flight: the wake alone redials
   await h.until(() => r.st().state === 'online', 5000, 50);
   const [old] = children(r.daemon);
   signal(r.daemon, 'SIGSTOP');
@@ -96,7 +93,7 @@ test('remote e2e: a daemon frozen past the wake gap (as after a sleep) redials a
 });
 
 test('remote e2e: a seat whose lease lapsed on the host during an outage is renewed on reconnect, with no left/joined line', async t => {
-  const r = room(t, { SUB_HUMAN_LINK_RETRY_MS: '2000', SUB_HUMAN_LINK_RETRY_MAX_MS: '2000' });
+  const r = await room(t, { SUB_HUMAN_LINK_RETRY_MS: '2000', SUB_HUMAN_LINK_RETRY_MAX_MS: '2000' });
   await h.until(() => r.st().state === 'online', 5000, 50);
   const [old] = children(r.daemon);
   signal(old, 'SIGKILL');

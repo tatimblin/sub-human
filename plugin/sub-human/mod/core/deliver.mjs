@@ -32,7 +32,7 @@ export const PENDING_MAX = 20;
 export const DELIVERY_ERROR_NOTICE = 'sub-human: a room message could not be delivered; `sub-human read` shows the room';
 
 export const PULL_DELIVERY = 'at-most-once';
-/** A wake's prompt starts with this "(for Claude)" head, so it never parses as a "room:" post (prompt.mjs gateVerdict). */
+/** A wake's prompt starts with this "(for Claude)" head, so it never parses as a post (prompt.mjs gateVerdict). */
 export const WAKE_HEAD = `${FOR_CLAUDE} sub-human room: act on what concerns you; the person sees these lines.`;
 /**
  * A relay: room lines (or an @room's refusal) for a person on Remote Control. The phone shows a session's user and

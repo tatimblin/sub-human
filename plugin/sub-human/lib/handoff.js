@@ -57,9 +57,12 @@
  *   promote(code, {name, locator?, force?, cwd?, now?}) -> {epoch, entry, invites: [{machine, seats, invite, pin}], note, last}
  *       a member's machine with a full mirror declares itself host at epoch + 1 (the person's own shell,
  *       lib/cli/handoff.js, after a confirmation): refused while the link is online, or down for less than
- *       PROMOTE_OFFLINE_MS without force. The other machines get sh2 invites with a PIN each, to hand out by hand.
- *   demote(code, invite, pin?) -> {orphan, request?}            an old host that was promoted away: its log is set
- *       aside (orphaned-<time>.jsonl, kept, never merged), its room Claude stopped, and it mirrors the new host
+ *       PROMOTE_OFFLINE_MS without force. The other machines get sh2 invites with a PIN each, to hand out by hand
+ *       (each runs `sub-human demote CODE INVITE PIN` with its own).
+ *   demote(code, invite, pin?) -> {orphan, request?, follower?}   a machine follows a promoted room: a member's
+ *       machine re-points its link (rebind: its seats join again with /sub-human; follower: true); an old host that
+ *       was promoted away sets its log aside (orphaned-<time>.jsonl, kept, never merged), stops its room Claude, and
+ *       mirrors the new host
  *   status(code) -> {host: hostState, doc, machines?}          for `sub-human handoff --status`
  *   HOST_DOC, ASK_DOC
  * A next host's locator may be a web one (wss://FRONT/…/sub-human/CODE, `--url`): it serves the room on its listener
@@ -239,7 +242,7 @@ function onMoved(mirror, data) {
     return { reason: `the host said room ${code} moved (epoch ${data && data.epoch}), but this copy does not hold that line yet` };
   }
   if (data.machine === machineId()) return { self: true, stop: true, reason: `this machine hosts room ${code} now (host epoch ${h.epoch})` };
-  const how = `ask ${data.host} for an invite (/sub-human host, there), then here: /sub-human join NAME INVITE PIN`;
+  const how = `ask ${data.host} for an invite (/sub-human invite, there) and type the line it shows here`;
   if (!data.invite) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and no invite came for this machine; ${how}` };
   const cur = links.get(code) || {};
   let f;
@@ -256,9 +259,9 @@ function onMoved(mirror, data) {
 function whyOffline(code, message) {
   const l = links.get(code);
   if (!l || !l.moved || l.token) return message;
-  const admit = l.request ? `Over ssh ${l.moved.host} has to let this machine's key in first: send them this line (it holds no secret): /sub-human admit ${l.request} . ` : '';
+  const admit = l.request ? `Over ssh ${l.moved.host} has not let this machine in yet. ` : '';
   return `room ${code} moved to ${l.moved.host}'s machine (${l.moved.locator}), which this machine cannot reach yet (${message}). ${admit}`
-    + `If it never can, ask ${l.moved.host} for an invite this machine can use (/sub-human host there), then: /sub-human join NAME INVITE PIN`;
+    + `Ask ${l.moved.host} for an invite (/sub-human invite there) and type the line it shows here`;
 }
 
 // ---------- the target ----------
@@ -410,13 +413,26 @@ function promote(code, { name, locator, force = false, cwd, now = Date.now() } =
 
 function demote(code, invite, pin) {
   const s = store.open(code);
-  if (!s.isHost) throw err('INVALID', `room ${code} is not hosted on this machine`);
   const inv = auth.parseInvite(invite);
   if (!inv || inv.code !== code) throw err('INVALID', `that is not an invite to room ${code}`);
   const transport = transportOf(inv.locator);
   if (!transport) throw err('INVALID', `this machine cannot use "${inv.locator}"`);
   // without it the link's hello would spend one of the invite's tries on a missing PIN
   if (inv.v === 2 && !auth.PIN_RE.test(String(pin || ''))) throw err('INVALID', 'this invite needs the 6-digit PIN that came with it: sub-human demote CODE INVITE PIN');
+  const name = identity().localSeats(code).find(n => n !== 'claude') || 'host';
+  if (!s.isHost) { // a member's machine follows the promoted room: its link re-pointed, its seats join again over it
+    const cur = links.get(code);
+    if (!cur) throw err('INVALID', `this machine has no copy of room ${code}`);
+    const st = linkLib().status(code);
+    if (st.running) { try { process.kill(st.pid, 'SIGTERM'); } catch { /* gone */ } }
+    let request = null;
+    if (inv.v === 2) request = require('./remote/hosting.js').joinInvite({ inv, invite, pin, name }).request || null;
+    else links.set(code, { code, transport, invite, created_at: iso(Date.now()) });
+    links.set(code, { ...links.get(code), rebind: true, moved: { locator: inv.locator, host: 'the new host', at: iso(Date.now()) } });
+    for (const until = Date.now() + 2000; st.running && Date.now() < until && require('./io.js').isAlive(st.pid);) require('./io.js').sleepSync(20);
+    linkLib().start(code);
+    return { orphan: null, request, follower: true };
+  }
   const o = s.members.read().claude;
   if (o && o.job && o.job !== 'pending') { try { require('./room-claude.js').releaseDetached(code, o.job); } catch { /* ends with its session */ } }
   const orphan = s.setAside();
@@ -426,7 +442,6 @@ function demote(code, invite, pin) {
   let request = null;
   if (inv.v === 2) {
     // the joiner's side of an sh2 invite (its PIN; over ssh the link's own key and the pinned host key)
-    const name = identity().localSeats(code).find(n => n !== 'claude') || 'host';
     request = require('./remote/hosting.js').joinInvite({ inv, invite, pin, name }).request || null;
     links.set(code, { ...links.get(code), moved });
   } else links.set(code, { code, transport, invite, created_at: iso(Date.now()), moved });

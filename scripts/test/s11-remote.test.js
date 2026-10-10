@@ -11,7 +11,7 @@ const { spawnSync } = require('node:child_process');
 const paths = require('../lib/paths.js');
 const { runChecks, SCENES } = require('../checks.js');
 const { context, DEMO } = require('../checks/context.js');
-const { inviteIn, pinIn } = require('../lib/panes.js');
+const { joinLineIn, admitCardState } = require('../lib/panes.js');
 
 const { Machine } = paths.pluginTest('support/two-homes.js');
 const store = paths.pluginLib('room/store.js');
@@ -23,19 +23,17 @@ const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 async function until(fn, ms) { for (const end = Date.now() + ms; !fn() && Date.now() < end;) await new Promise(r => setTimeout(r, 50)); return fn(); }
 
-test('panes: the invite /sub-human host showed, also when the pane wrapped it', () => {
-  const inv = `sh1.vole-1234.${Buffer.from('pipe:/tmp/sh-demo/home').toString('base64url')}.${'Ab_-'.repeat(8)}`;
-  assert.equal(inviteIn(`⏺ invite to room vole-1234 (shown once): ${inv.slice(0, 40)}\n    ${inv.slice(40)}\n  There, type: /sub-human join NAME ${inv}`), inv);
-  assert.equal(inviteIn(`x ${inv}\nThere`), inv, 'the next line is not glued to the secret');
-  assert.equal(inviteIn('no invite here'), null);
-  const key = 'K'.repeat(43);
-  for (const tail of [key, '0']) {
-    const inv2 = `sh2.vole-1234.${Buffer.from('ssh:me@far').toString('base64url')}.${'Ab_-'.repeat(5)}Ab.${tail}`;
-    const shown = `⏺ invite to room vole-1234 …\n\n    /sub-human join NAME ${inv2.slice(0, 50)}\n    ${inv2.slice(50)} PIN\n\n  PIN 482913  (send it apart)`;
-    assert.equal(inviteIn(shown), inv2, tail);
-    assert.equal(pinIn(shown), '482913');
-  }
-  assert.equal(pinIn('PIN 12345 is short'), null);
+test('panes: the line /sub-human invite showed, also when the pane wrapped it; the host\'s join-request card', () => {
+  const home = '/tmp/sh-demo/home';
+  const shown = `⏺ sub-human: invite to room vole-1234, for one machine, (a second home on this machine). Shown once\n\n    /sub-human join pipe:${home.slice(0, 9)}\n    ${home.slice(9)} vole-1234 4829\n\n  The 4-digit PIN is the whole secret`;
+  assert.equal(joinLineIn(shown), `join pipe:${home} vole-1234 4829`);
+  assert.equal(joinLineIn('  /sub-human join dev@box vole-1234 0042 --via jump\n'), 'join dev@box vole-1234 0042 --via jump');
+  assert.equal(joinLineIn('  /sub-human join https://box.ts.net/sub-human/vole-1234 1234\n'), 'join https://box.ts.net/sub-human/vole-1234 1234');
+  assert.equal(joinLineIn('no line here'), null);
+  assert.equal(joinLineIn('/sub-human join dev vole-1234 48291'), null, 'four digits only');
+  const card = 'Let carol (request 3f9c2a) on carols-mbp join room vole-1234? (admit 3f9c2a0b1c2d)\n❯ 1. Let in\n  2. Refuse\n  3. Type something';
+  assert.deepEqual(admitCardState(card).opts.map(o => [o.n, o.label, o.cur]), [[1, 'Let in', true], [2, 'Refuse', false], [3, 'Type something', false]]);
+  assert.equal(admitCardState('Agree to proposal abcdefabcdef?\n❯ 1. Agree'), null);
 });
 
 test('S11: carol from a second home passes every check over real evidence; a broken mirror, a leaked file or an invite left in the link file fail', async t => {
@@ -46,9 +44,9 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   host.join(alice, 'alice');
   const code = host.lib(() => store.listRooms()[0]);
   host.join(bob, `bob ${code}`);
-  const shown = host.join(alice, 'host').json.reason;
-  assert.match(remote.join(carol, `join carol ${inviteIn(shown)} ${pinIn(shown)}`).json.reason, /linked to room/);
-  const joined = remote.join(carol, `carol ${code}`).json;
+  const via = await remote.joinVia(host, alice, carol);
+  const shown = via.shown.json.reason;
+  const joined = via.seated.json;
   assert.equal(joined.systemMessage, undefined, 'a join that works prints no line');
   const daemon = remote.lib(() => link.status(code));
   t.after(() => {
@@ -76,7 +74,7 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   const shape = l => ({ mode: (fs.statSync(linkFile).mode & 0o777).toString(8), token: typeof l.token === 'string', invite: 'invite' in l, transport: l.transport });
   fs.writeFileSync(path.join(st, 'link-file.json'), JSON.stringify(shape(JSON.parse(fs.readFileSync(linkFile, 'utf8')))));
   const at = new Date().toISOString();
-  const caps = [['alice', 1, shown], ['alice', 2, `⏺ carol: ${DEMO.carol11}`], ['carol', 1, `❯ /sub-human join carol ${inviteIn(shown)} ${pinIn(shown)}\n  ⎿ sub-human: linked to room ${code}\n❯ /sub-human carol ${code}`]];
+  const caps = [['alice', 1, shown], ['alice', 2, `⏺ carol: ${DEMO.carol11}`], ['carol', 1, `❯ /sub-human\n  ⎿ joined ${code} as carol`]];
   fs.writeFileSync(path.join(screens, 'index.json'), JSON.stringify(caps.map(([seat, step]) => ({ scene: 'S11', session: `sh-${seat}`, step, time: at, txt: `S11-${step}-${seat}.txt`, room: code }))));
   for (const [seat, step, text] of caps) fs.writeFileSync(path.join(screens, `S11-${step}-${seat}.txt`), text);
 

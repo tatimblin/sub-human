@@ -3,14 +3,12 @@
  * plugin/sub-human/lib/remote/sshkeys.js: the SSH key material of an ssh link, on both machines. Zero dependencies
  * beyond node:crypto, node:fs and lib/io.js; `ssh-keygen` makes the joiner's key (it ships wherever ssh does).
  *
- * The flow (sh2 over ssh; README "Over SSH"): the host's invite carries its sshd Ed25519 host key, which the joiner
- * pins (a known_hosts of the link's own, HostKeyAlias, StrictHostKeyChecking yes: no first-use prompt, no MITM). The
- * joiner makes a key of its own for the link (never a key that travelled) and shows its person an admit request,
- * shk1.CODE.REF.KEY.NAME, to send back to the host: REF names the invite (lib/remote/auth.js inviteRef, not its
- * secret), KEY is the joiner's public key and NAME who asks (shown to the host, not trusted). The host's person
- * admits it (/sub-human admit REQUEST, or `sub-human admit`): the authorized_keys line with the forced command for
- * that invite's link (lib/remote/shim.js). ssh then connects, and the link's first hello still needs the PIN.
- *
+ * The joiner pins the host's sshd Ed25519 host key (a known_hosts of the link's own, HostKeyAlias,
+ * StrictHostKeyChecking yes: no first-use prompt, no MITM): an invite's PIN vouches for it (lib/remote/enroll.js), or
+ * a handoff's invite carries it. The joiner makes a key of its own for the link (never a key that travelled); the
+ * host's person lets it in on the card (lib/remote/admission.js): the authorized_keys line with the forced command
+ * for that link (lib/remote/shim.js).
+
  *   ed25519Raw(line) -> base64url | null      the 32-byte key of an "ssh-ed25519 AAAA… [comment]" line
  *   openssh(raw) -> "ssh-ed25519 AAAA…"        the public key line for a 32-byte key (base64url)
  *   fingerprint(raw) -> "SHA256:…"            as ssh-keygen -l prints it
@@ -18,9 +16,10 @@
  *                                              file), else /etc/ssh/ssh_host_ed25519_key.pub; null when unreadable
  *   knownHostsLine(alias, raw) -> string      "<alias> ssh-ed25519 AAAA…" (the link's HostKeyAlias)
  *   linkKey(dir, comment) -> {file, pub, raw} the link's own key in dir (id_ed25519, 0600), made once by ssh-keygen
- *   publicKey(text) -> "type base64" | null   the one public key line in text (ed25519, rsa, ecdsa, sk-*; no options),
- *                                              for `sub-human authorize PUBKEY`
- *   formatRequest({code, ref, key, name}) -> "shk1.CODE.REF.KEY.NAME";  parseRequest(text) -> {…} | null
+ *   publicKey(text) -> "type base64" | null   the one public key line in text (ed25519, rsa, ecdsa, sk-*; no options;
+ *                                              the lab's sh1 setup for a 0.2.0 joiner)
+ *   formatRequest({code, ref, key, name}) -> "shk1.CODE.REF.KEY.NAME"   a handoff follower's key the new host has not
+ *                                              let in yet (the link file's request; no secret in it)
  *   authorizedKeysFile() -> string            SUB_HUMAN_AUTHORIZED_KEYS, else ~/.ssh/authorized_keys
  *   appendAuthorized(file, line, key) -> 'added' | 'present'   append line (0600, dir 0700) unless it is there;
  *                                              RoomError INVALID when key is in the file with another line
@@ -29,7 +28,7 @@
  *
  * The short code's enrollment door (lib/remote/enroll.js): sshd has to let a joiner that holds no admitted key yet
  * reach `serve --enroll CODE`, and nothing else. Its key is PUBLIC by design: anyone who knows the room code derives it
- * (it is never derived from the 6-digit code, so it leaks nothing a guess could be checked against offline), and the
+ * (it is never derived from the 4-digit PIN, so it leaks nothing a guess could be checked against offline), and the
  * forced command behind it only runs the PAKE, whose tries the host counts.
  *   enrollKey(code) -> {seed, raw, pub}       the Ed25519 key of seed sha256("sub-human enroll key v1\0" + code)
  *   opensshPrivate({seed, raw, comment}) -> string   that key as an unencrypted openssh-key-v1 file (ssh -i reads it)
@@ -43,10 +42,9 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { RoomError } = require('../room/validate.js');
-const { CODE_RE, NAME_RE } = require('../text.js');
+const { CODE_RE } = require('../text.js');
 
 const TYPE = 'ssh-ed25519';
-const RAW_RE = /^[A-Za-z0-9_-]{43}$/;
 const REQ_PREFIX = 'shk1';
 
 /** The SSH wire form of an Ed25519 public key: string "ssh-ed25519", string key. */
@@ -119,20 +117,6 @@ function publicKey(text) {
 
 /** @returns {string} */
 const formatRequest = ({ code, ref, key, name }) => [REQ_PREFIX, code, ref, key, name].join('.');
-
-/**
- * @param {string} text
- * @returns {{code: string, ref: string, key: string, name: string} | null}
- */
-function parseRequest(text) {
-  const parts = typeof text === 'string' ? text.trim().split('.') : [];
-  if (parts.length < 5 || parts[0] !== REQ_PREFIX) return null;
-  const [, code, ref, key, ...rest] = parts;
-  const name = rest.join('.');
-  if (!CODE_RE.test(code) || !/^[0-9a-f]{12}$/.test(ref) || !RAW_RE.test(key) || !NAME_RE.test(name)) return null;
-  if (Buffer.from(key, 'base64url').length !== 32) return null;
-  return { code, ref, key, name };
-}
 
 /** @returns {string} */
 const authorizedKeysFile = () => process.env.SUB_HUMAN_AUTHORIZED_KEYS || path.join(os.homedir(), '.ssh', 'authorized_keys');
@@ -224,6 +208,6 @@ function writeEnrollKey(dir, code) {
 
 module.exports = {
   enrollKey, opensshPrivate, writeEnrollKey, removeTagged, ENROLL_TAG,
-  ed25519Raw, openssh, fingerprint, hostKey, knownHostsLine, linkKey, publicKey, formatRequest, parseRequest,
+  ed25519Raw, openssh, fingerprint, hostKey, knownHostsLine, linkKey, publicKey, formatRequest,
   authorizedKeysFile, appendAuthorized, removeAuthorized,
 };

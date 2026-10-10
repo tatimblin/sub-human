@@ -37,12 +37,17 @@
  *   seatAlive(m) -> bool                 not left, and: a seat of this machine with a pid: that pid is alive with
  *                                        its start time matching pid_start; any other seat: its lease (seen_at)
  *                                        is fresh (lib/room/members.js)
+ *   normalizeName(text) -> name | null   a name from a person's own name: the first word, lowercased, accents dropped,
+ *                                        only NAME_RE's characters; null when nothing is left or it is reserved
+ *   defaultName({cwd?, env?}) -> name | null   the name /sub-human uses when none is typed: git's user.name (cwd's
+ *                                        repo, else the global one), else the local part of git's user.email, else
+ *                                        $USER, each through normalizeName ("Tristan Timblin" -> "tristan")
  *   heartbeat(me, now?) -> bool          renew me's lease, seen_at (members.beat, at most every SEAT_BEAT_MS; the
  *                                        tail's health tick and the hold server); leaseFresh(m, now?)
  *   liveMembers(code) -> [name]          the people's seats (not the room's Claude) that are seatAlive
  *   join({code, name, role, machine?, pid, session_id, cwd}) -> {ok, error?, rejoin?}
  *       role is "claude" (the room's Claude) or "member". NAME_RE; reserved names (RESERVED) claude, orch (0.4.x's
- *       name for it), room, all, system, host, join, admit, revoke, handoff, unhost: only role claude may use
+ *       name for it), room, all, system, host, and every /sub-human verb (VERBS): only role claude may use
  *       "claude", and role claude must use it. members.join: a name held by a live seat of another holder
  *       (another pid, or another machine) is "name taken"; otherwise the name is (re)bound. The room's Claude record
  *       keeps its job / spawned_at across a (re)bind. machine defaults to this one; a seat of this machine needs
@@ -110,7 +115,9 @@ const { seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE, LEGAC
 const cc = require('./cc.js');
 // MOD_LEASE_FRESH_MS only covers a module whose $.process parent is not claude itself: a resumed session id whose
 // lease is older than this, from a process that is gone, cannot join.
-const RESERVED = [ROOM_CLAUDE, LEGACY_ROOM_CLAUDE, 'room', 'all', 'system', 'host', 'join', 'admit', 'revoke', 'handoff', 'unhost'];
+// the room's own names, then every /sub-human verb, so `/sub-human doctor` is never a person called doctor
+const VERBS = ['invite', 'join', 'kick', 'leave', 'doctor', 'help', 'admit', 'handoff', 'promote', 'demote'];
+const RESERVED = [ROOM_CLAUDE, LEGACY_ROOM_CLAUDE, 'room', 'all', 'system', 'host', ...VERBS];
 const ROLES = [ROOM_CLAUDE, 'member'];
 const ANIMALS = [
   'otter', 'badger', 'beaver', 'bison', 'camel', 'cheetah', 'condor', 'coyote',
@@ -122,6 +129,27 @@ const ANIMALS = [
   'raven', 'salmon', 'seal', 'shrew', 'sloth', 'stoat', 'swan', 'tapir',
   'tiger', 'toucan', 'turtle', 'vole', 'walrus', 'weasel', 'wombat', 'zebra',
 ];
+
+// ---------- the default name ----------
+function normalizeName(text) {
+  const first = String(text || '').trim().split(/\s+/)[0] || '';
+  const n = first.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9_.-]/g, '').replace(/^[._-]+/, '').slice(0, 32);
+  return n && NAME_RE.test(n) && !RESERVED.includes(n) ? n : null;
+}
+
+function defaultName({ cwd = process.cwd(), env = process.env } = {}) {
+  const git = key => {
+    try {
+      const r = spawnSync('git', ['config', '--get', key], { cwd, env, encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] });
+      return r.status === 0 ? String(r.stdout || '').trim() : '';
+    } catch { return ''; }
+  };
+  for (const pick of [() => git('user.name'), () => git('user.email').split('@')[0], () => env.USER || env.LOGNAME || '']) {
+    const n = normalizeName(pick());
+    if (n) return n;
+  }
+  return null;
+}
 
 // ---------- location ----------
 const store = require('./room/store.js');
@@ -470,7 +498,7 @@ function writePresence(code, name, state, detail) {
 }
 
 module.exports = {
-  NAME_RE, CODE_RE, RESERVED, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES,
+  NAME_RE, CODE_RE, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName,
   home, roomDir, machineId, newCode, roomExists, isHost, openRooms, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, setRoomClaude, updateRoomClaude, liveMembers, seatAlive, heartbeat, leaseFresh,
   isAlive, claudePid,

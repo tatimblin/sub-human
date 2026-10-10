@@ -3,12 +3,11 @@
  * plugin/sub-human/lib/cli/listen.js: the host's web listener commands of scripts/sub-human, in the person's own
  * shell (the Bash guard refuses them to a model). The work is lib/remote/listener.js and lib/remote/webhost.js.
  *
- *   listen(args)   sub-human listen [--port 7420]          run the listener in this process (`/sub-human host
- *                                                          --tailscale | --url` starts it detached, the same way)
+ *   listen(args)   sub-human listen [--port 7420]          run the listener in this process (`/sub-human invite
+ *                                                          --web | --url` starts it detached, the same way)
  *                  sub-human listen --start [--port P]     start it detached unless it runs (idempotent)
  *                  sub-human listen --stop                 stop it (idempotent)
  *                  sub-human listen --status               its state as JSON (pid, port, rooms served)
- *   unhost(args)   sub-human unhost [--room CODE]          stop serving a room over the web (webhost.unhost)
  */
 
 const { parse } = require('./args.js');
@@ -37,15 +36,4 @@ function listen(args) {
   return null; // the daemon keeps running
 }
 
-function unhost(args) {
-  const p = parse(args, { room: 1 });
-  if (p.error || p.rest.length) return fail('usage: sub-human unhost [--room CODE]', 2);
-  const room = p.flags.room;
-  try {
-    const { hostedRoom } = require('./host.js');
-    say(require('../remote/webhost.js').unhost(hostedRoom(room)).text);
-    return 0;
-  } catch (e) { return fail(e.message); }
-}
-
-module.exports = { listen, unhost };
+module.exports = { listen };

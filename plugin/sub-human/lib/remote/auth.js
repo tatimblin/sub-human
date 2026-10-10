@@ -8,7 +8,9 @@
  * with a proof signed by that seat's key. Zero dependencies beyond node:crypto and the envelope.
  *
  *   mintInvite(store, {locator, now?}) -> {invite, secret}   an sh1 invite: formatInvite({code, locator, secret});
- *                                                  records sha256(secret) with created_at. Host only (HOST_ONLY)
+ *                                                  records sha256(secret) with created_at. Host only (HOST_ONLY).
+ *                                                  Internal: no command mints one any more; a 0.2.0 joiner still
+ *                                                  links with one (the sub-human lab), and the tests use it
  *   mintFor(store, {locator, machine, seats, pin?, hostKey?, now?}) -> {invite, secret, pin?}   a handoff's sh2 invite (lib/handoff.js) for
  *                                                  one machine (hostKey: a ws/wss next host's listener key, pinned),
  *                                                  minted by the room's next host before it is the host
@@ -17,14 +19,9 @@
  *                                                  {v: 2, handoff: true, machine, seats, expires_at (HANDOFF_INVITE_MS)};
  *                                                  only that machine may redeem it, and its link starts with those
  *                                                  seats bound (they joined the room already; their keys are pinned).
- *                                                  pin: true (a promote's invites, handed out by hand): an ordinary sh2
- *                                                  PIN record (INVITE_TTL_MS, INVITE_PIN_TRIES) with the same binding
- *   mintInvite(store, {locator, pin: true, hostKey?, now?}) -> {invite, secret, pin, expires_at}   an sh2 invite and
- *                                                  its PIN (6 digits, never in the invite): the record adds v: 2,
- *                                                  pin_sha256 = sha256(secret:pin) (the host keeps neither in clear),
- *                                                  tries: INVITE_PIN_TRIES and expires_at (INVITE_TTL_MS). hostKey: the
- *                                                  host's public key (32 bytes, base64url) the joiner pins: sshd's Ed25519
- *                                                  key for an ssh locator, the listener's X25519 key for ws/wss (1.1)
+ *                                                  pin: true (a promote's invites, handed out by hand): an sh2 PIN record
+ *                                                  (6 digits, never in the invite; pin_sha256 = sha256(secret:pin),
+ *                                                  INVITE_TTL_MS, INVITE_PIN_TRIES) with the same binding
  *   redeemInvite(store, secret, {machine, pin?, linkId?, now?}) -> {token, link, handoff}   marks the invite used (an unknown,
  *                                                  used or burnt one is AUTH, saying which), records {id, token_sha256, machine,
  *                                                  seats, created_at}; id is the one reserveLink gave the invite, if
@@ -41,12 +38,11 @@
  *                                                  login: true} under the id the joiner chose (its serve's --link, so
  *                                                  revoke finds the process). AUTH for an id the room knows already
  *   reserveLink(store, secret) -> id               the link id an invite will redeem to, fixed now (kept on the
- *                                                  invite record): `sub-human authorize` names it in the forced
- *                                                  command before the invite is used. AUTH for an unknown invite
+ *                                                  invite record), so a forced command can name it before the
+ *                                                  invite is used (an sh1 invite, internal: a 0.2.0 joiner's way in,
+ *                                                  set up by the sub-human lab). AUTH for an unknown invite
  *   inviteRef(secret) -> string                    the invite's short public name: 12 hex of sha256(secret), the
- *                                                  start of its record's key (an admit request carries it, not the secret)
- *   reserveRef(store, ref, {now?}) -> {id, invite}   reserveLink by ref, for `admit`: AUTH for an unknown, used,
- *                                                  burnt or expired invite
+ *                                                  start of its record's key
  *   findInvite(store, ref) -> {key, invite} | null   the one invite whose ref is ref
  *   burnInvite(store, ref, {now?}) -> {state, invite}   burn one unused invite by its ref (a leaked one); state
  *                                                  'burnt', 'burnt already' or 'used' (then nothing changes). AUTH
@@ -66,15 +62,15 @@
  *   formatInvite({code, locator, secret, v?, hostKey?}) -> "sh1.<code>.<locator-base64url>.<secret>", or with v 2
  *                                                  "sh2.<code>.<locator-base64url>.<secret>.<hostKey | 0>"
  *   parseInvite(text) -> {v, code, locator, secret, hostKey} | null   either; hostKey null for none (sh1, or "0")
- *   Short invites (a 6-digit code, the whole secret; lib/remote/enroll.js runs CPace with it):
+ *   Short invites (a 4-digit PIN, the whole secret; lib/remote/enroll.js runs CPace with it):
  *   mintShort(store, {kind, locator, hostKey?, by?, doorFile?, now?}) -> {pin, ref, expires_at}   record {v: 3, short,
  *                                                  kind, locator, host_key, by, door_file, tries, expires_at, prs: the
- *                                                  code (CPace needs it in clear; dropped when used, burnt or revoked)};
+ *                                                  PIN (CPace needs it in clear; dropped when used, burnt or revoked)};
  *                                                  at most SHORT_LIVE_MAX open per room. Host only
  *   startShort(store, {kind, now?}) -> [{key, ref, prs, hostKey, kind, by}]   the open invites of that kind with a try
  *                                                  left, each charged a try now (before the host answers the attempt)
- *   failShort(store, keys, {now?}) -> {left, burnt}   a wrong code: invites at 0 tries burn
- *   enrollShort(store, key, {tried, joiner, now?, admitMs?}) -> {secret, id, ref, expires_at}   the code held: the
+ *   failShort(store, keys, {now?}) -> {left, burnt}   a wrong PIN: invites at 0 tries burn
+ *   enrollShort(store, key, {tried, joiner, now?, admitMs?}) -> {secret, id, ref, expires_at}   the PIN held: the
  *                                                  invite is used, the others tried get their try back, and an
  *                                                  admission record {v: 2, admission, machine, name, label, key, link,
  *                                                  admit: 'asked', by, door_file} keyed by a new secret the joiner gets
@@ -85,7 +81,8 @@
  *   lapseAdmissions(store, {now?}) -> [record]     burn the requests nobody answered in ADMIT_TTL_MS
  *   An admission record redeems (redeemInvite, no PIN) only on its machine, once let in (OFFLINE "waiting" before,
  *   AUTH once refused, lapsed or revoked); the result carries admission: the record
- *   PIN_RE                                         /^[0-9]{6}$/
+ *   PIN_RE                                         /^[0-9]{6}$/, an sh2 invite's PIN (a promote's invites, handed out by hand)
+ *   SHORT_PIN_RE                                   /^[0-9]{4}$/, a short invite's PIN
  *   INVITE_PREFIX, INVITE2_PREFIX                  'sh1', 'sh2'
  *   INVITES_KEY, LINKS_KEY                         the host documents remote/invites, remote/links (by sha256)
  *   LINK_ID_RE                                     /^[0-9a-f]{12}$/, a link id
@@ -100,6 +97,7 @@ const { INVITE_TTL_MS, INVITE_PIN_TRIES, HANDOFF_INVITE_MS, SHORT_LIVE_MAX, ENRO
 const INVITE_PREFIX = 'sh1';
 const INVITE2_PREFIX = 'sh2';
 const PIN_RE = /^[0-9]{6}$/;
+const SHORT_PIN_RE = /^[0-9]{4}$/;
 const HOST_KEY_RE = /^[A-Za-z0-9_-]{43}$/; // 32 bytes, base64url
 const REF_RE = /^[0-9a-f]{12}$/;
 const INVITES_KEY = 'remote/invites';
@@ -117,19 +115,11 @@ const iso = now => new Date(now).toISOString();
  * @param {{locator: string, now?: number}} opts   locator: the transport spec the invite points at
  * @returns {{invite: string, secret: string}}
  */
-function mintInvite(store, { locator, pin: withPin = false, hostKey = null, now = Date.now() }) {
+function mintInvite(store, { locator, now = Date.now() }) {
   if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room mints its invites');
-  if (!withPin) {
-    const secret = random();
-    store.kv.update(INVITES_KEY, cur => ({ ...cur, [sha256(secret)]: { created_at: iso(now) } }));
-    return { invite: formatInvite({ code: store.code, locator, secret }), secret };
-  }
-  if (hostKey !== null && !HOST_KEY_RE.test(String(hostKey))) throw new RoomError('INVALID', 'hostKey must be an Ed25519 public key, 32 bytes base64url');
-  const secret = crypto.randomBytes(16).toString('base64url'); // 128 bits
-  const pin = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
-  const rec = { v: 2, created_at: iso(now), expires_at: iso(now + INVITE_TTL_MS), tries: INVITE_PIN_TRIES, pin_sha256: pinDigest(secret, pin) };
-  store.kv.update(INVITES_KEY, cur => ({ ...cur, [sha256(secret)]: rec }));
-  return { invite: formatInvite({ v: 2, code: store.code, locator, secret, hostKey }), secret, pin, expires_at: rec.expires_at };
+  const secret = random();
+  store.kv.update(INVITES_KEY, cur => ({ ...cur, [sha256(secret)]: { created_at: iso(now) } }));
+  return { invite: formatInvite({ code: store.code, locator, secret }), secret };
 }
 
 const pinDigest = (secret, pin) => sha256(`${secret}:${pin}`);
@@ -150,8 +140,8 @@ function checkPin(inv, secret, pin, now) {
     return { next: burnt, err: refused('wrong PIN, and that was the last try: the invite is burnt; ask the host for a new one', 'an invite was burnt after its last wrong PIN') };
   }
   const msg = typeof pin === 'string'
-    ? `wrong PIN (${left(tries)}); type /sub-human join NAME INVITE PIN again with the PIN the host gave you`
-    : 'this invite needs its PIN: /sub-human join NAME INVITE PIN';
+    ? `wrong PIN (${left(tries)}); try again with the PIN the host gave you`
+    : 'this invite needs its PIN';
   return { next: { ...inv, tries }, err: refused(msg, `a wrong PIN for an invite (${left(tries)})`) };
 }
 
@@ -220,20 +210,20 @@ function redeemInvite(store, secret, { machine, linkId, pin, now = Date.now() })
 
 /** An admission record's redemption (a short invite's joiner, after the host person let it in): {err, next?}. */
 function admissionCheck(inv, { machine, linkId, now }) {
-  if (inv.used_at) return { err: new RoomError('AUTH', 'this machine\'s join was used already; ask the host for a new code') };
+  if (inv.used_at) return { err: new RoomError('AUTH', 'this machine\'s join was used already; ask the host for a new invite') };
   if (inv.admit === 'refused') return { err: new RoomError('AUTH', 'the host refused to let this machine in') };
-  if (inv.burnt_at) return { err: new RoomError('AUTH', inv.admit === 'lapsed' ? 'the host did not let this machine in in time; ask them for a new code' : 'the host revoked this join; ask them for a new code') };
+  if (inv.burnt_at) return { err: new RoomError('AUTH', inv.admit === 'lapsed' ? 'the host did not let this machine in in time; ask them for a new invite' : 'the host revoked this join; ask them for a new invite') };
   if (inv.machine !== machine) return { err: new RoomError('AUTH', 'this join is for another machine') };
   if (linkId !== undefined && inv.link !== linkId) return { err: new RoomError('AUTH', `this join is not for link ${linkId}`) };
   if (inv.admit !== 'let-in') {
-    if (now > Date.parse(inv.expires_at)) return { err: new RoomError('AUTH', 'the host did not let this machine in in time; ask them for a new code') }; // lapseAdmissions burns it, with a line
+    if (now > Date.parse(inv.expires_at)) return { err: new RoomError('AUTH', 'the host did not let this machine in in time; ask them for a new invite') }; // lapseAdmissions burns it, with a line
     return { err: new RoomError('OFFLINE', `${WAITING}; the link keeps trying`) };
   }
-  if (now > Date.parse(inv.admitted_until)) return { err: new RoomError('AUTH', 'this machine was let in, but did not connect in time; ask the host for a new code'), next: { ...inv, burnt_at: iso(now) } };
+  if (now > Date.parse(inv.admitted_until)) return { err: new RoomError('AUTH', 'this machine was let in, but did not connect in time; ask the host for a new invite'), next: { ...inv, burnt_at: iso(now) } };
   return { err: null };
 }
 
-// ---------- short invites: a 6-digit code (lib/remote/enroll.js) ----------
+// ---------- short invites: a 4-digit PIN (lib/remote/enroll.js) ----------
 const WAITING = 'waiting for the host to let this machine in';
 const shortOpen = (inv, now) => !!inv && inv.short === true && !inv.used_at && !inv.burnt_at && now <= Date.parse(inv.expires_at);
 /** A short invite that can still be used: open, with a try left or an attempt still in flight (ENROLL_MS). */
@@ -241,7 +231,7 @@ const shortLive = (inv, now = Date.now()) => shortOpen(inv, now)
   && (inv.tries > 0 || (!!inv.last_try_at && now - Date.parse(inv.last_try_at) < ENROLL_MS));
 
 /**
- * A short invite to this room: a 6-digit code, the whole secret (CPace's password, lib/remote/cpace.js). The host keeps
+ * A short invite to this room: a 4-digit PIN, the whole secret (CPace's password, lib/remote/cpace.js). The host keeps
  * it in its own store (the record's prs, host-only, never streamed) because CPace needs it in clear; it goes when the
  * invite is used, burnt or revoked. kind: the transport it is for ('ssh', 'ws', 'pipe'); hostKey: what the host attests
  * inside the PAKE (sshd's Ed25519 key for ssh, the listener's X25519 key for ws); by: the seat whose card admits the
@@ -256,10 +246,10 @@ function mintShort(store, { kind, locator, hostKey = null, by = null, doorFile =
   store.kv.update(INVITES_KEY, cur => {
     const live = Object.values(cur || {}).filter(i => shortLive(i, now));
     if (live.length >= SHORT_LIVE_MAX) {
-      throw new RoomError('INVALID', `${live.length} short invites to room ${store.code} are open already; wait until one is used or expires, or revoke one (/sub-human revoke REF)`);
+      throw new RoomError('INVALID', `${live.length} short invites to room ${store.code} are open already; wait until one is used or expires, or cancel one (/sub-human invite --cancel REF)`);
     }
     let pin;
-    do pin = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0'); while (live.some(i => i.prs === pin));
+    do pin = String(crypto.randomInt(0, 10_000)).padStart(4, '0'); while (live.some(i => i.prs === pin));
     const secret = crypto.randomBytes(16).toString('base64url'); // only its digest names the record; never shown
     const rec = { v: 3, short: true, kind, locator, host_key: hostKey, by, door_file: doorFile, created_at: iso(now), expires_at: iso(now + INVITE_TTL_MS), tries: INVITE_PIN_TRIES, prs: pin };
     out = { pin, ref: inviteRef(secret), expires_at: rec.expires_at };
@@ -285,7 +275,7 @@ function startShort(store, { kind, now = Date.now() }) {
   return out;
 }
 
-/** An attempt that did not hold (a wrong code): an invite it spent the last try of burns. {left, burnt} */
+/** An attempt that did not hold (a wrong PIN): an invite it spent the last try of burns. {left, burnt} */
 function failShort(store, keys, { now = Date.now() } = {}) {
   let left = 0, burnt = 0;
   store.kv.update(INVITES_KEY, cur => {
@@ -305,7 +295,7 @@ function failShort(store, keys, { now = Date.now() } = {}) {
 }
 
 /**
- * The attempt held for invite key: it is used (its code forgotten), the other invites the attempt charged get their
+ * The attempt held for invite key: it is used (its PIN forgotten), the other invites the attempt charged get their
  * try back, and an admission record is made: keyed by a new 128-bit secret only the joiner gets (inside the PAKE
  * channel), bound to the joiner's machine and its link key, waiting for the host person's answer (admit 'asked') for
  * ADMIT_TTL_MS. A redemption then needs admit 'let-in' (admissionCheck).
@@ -315,7 +305,7 @@ function enrollShort(store, key, { tried = [], joiner, now = Date.now(), admitMs
   let out = null;
   store.kv.update(INVITES_KEY, cur => {
     const inv = cur && cur[key];
-    if (!shortOpen(inv, now)) throw new RoomError('AUTH', 'this invite was used, burnt or expired meanwhile; ask the host for a new code');
+    if (!shortOpen(inv, now)) throw new RoomError('AUTH', 'this invite was used, burnt or expired meanwhile; ask the host for a new invite');
     const id = newLinkId();
     const secret = crypto.randomBytes(16).toString('base64url');
     const next = { ...cur };
@@ -358,7 +348,7 @@ function decideAdmission(store, ref, { decision, by = null, sig = null, now = Da
     if (hit.length !== 1) throw new RoomError('AUTH', `no join request of room ${store.code} has the ref ${ref}`);
     const inv = cur[hit[0]];
     if (inv.admit !== 'asked' || inv.burnt_at) throw new RoomError('AUTH', `that join request was ${inv.admit === 'let-in' ? 'let in already' : inv.admit === 'refused' ? 'refused already' : 'withdrawn (revoked or lapsed)'}`);
-    if (now > Date.parse(inv.expires_at)) throw new RoomError('AUTH', 'that join request lapsed; ask them for a new code (the host mints one with /sub-human host)');
+    if (now > Date.parse(inv.expires_at)) throw new RoomError('AUTH', 'that join request lapsed; send them a new invite (/sub-human invite)');
     const at = iso(now);
     const next = decision === 'let-in'
       ? { ...inv, admit: 'let-in', admitted_at: at, admitted_by: by, ...(sig ? { admit_sig: sig } : {}), admitted_until: iso(now + HANDOFF_INVITE_MS) }
@@ -412,12 +402,12 @@ function loginLink(store, { id, machine, now = Date.now() }) {
  * @returns {string}
  */
 function reserveLink(store, secret) {
-  if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room authorizes its links');
+  if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room reserves its links');
   const key = sha256(secret);
   let id = null;
   store.kv.update(INVITES_KEY, cur => {
     const inv = cur && cur[key];
-    if (!inv) throw new RoomError('AUTH', 'this invite is unknown; mint one with sub-human invite');
+    if (!inv) throw new RoomError('AUTH', 'this invite is unknown; make a new one with /sub-human invite');
     id = inv.link || newLinkId();
     return inv.link ? undefined : { ...cur, [key]: { ...inv, link: id } };
   });
@@ -514,28 +504,6 @@ const inviteRef = secret => sha256(secret).slice(0, 12);
 
 /**
  * @param {import('../room/store.js').FsRoomStore} store   the host's store (isHost)
- * @param {string} ref
- * @param {{now?: number}} [opts]
- * @returns {{id: string, invite: object}}
- */
-function reserveRef(store, ref, { now = Date.now() } = {}) {
-  if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room admits its links');
-  let out = null;
-  store.kv.update(INVITES_KEY, cur => {
-    const hit = Object.keys(cur || {}).filter(k => REF_RE.test(String(ref)) && k.startsWith(ref));
-    const inv = hit.length === 1 ? cur[hit[0]] : null;
-    if (!inv) throw new RoomError('AUTH', 'no invite of this room matches that request; mint a new one with /sub-human host');
-    if (inv.used_at || inv.burnt_at) throw new RoomError('AUTH', 'that invite was used or burnt already; mint a new one with /sub-human host');
-    if (inv.expires_at && now > Date.parse(inv.expires_at)) throw new RoomError('AUTH', 'that invite expired; mint a new one with /sub-human host');
-    const id = inv.link || newLinkId();
-    out = { id, invite: { ...inv, link: id } };
-    return inv.link ? undefined : { ...cur, [hit[0]]: out.invite };
-  });
-  return out;
-}
-
-/**
- * @param {import('../room/store.js').FsRoomStore} store   the host's store (isHost)
  * @param {string} id
  * @param {{now?: number}} [opts]
  * @returns {{link: object | null, invites: number} | null}
@@ -590,7 +558,7 @@ function burnInvite(store, ref, { now = Date.now() } = {}) {
     const inv = cur[hit[0]];
     if (inv.used_at) { out = { state: 'used', invite: inv }; return undefined; }
     if (inv.burnt_at) { out = { state: 'burnt already', invite: inv }; return undefined; }
-    const { prs, ...kept } = inv; // a short invite's code goes with it
+    const { prs, ...kept } = inv; // a short invite's PIN goes with it
     out = { state: 'burnt', invite: { ...kept, burnt_at: iso(now) } };
     return { ...cur, [hit[0]]: out.invite };
   });
@@ -601,6 +569,6 @@ function burnInvite(store, ref, { now = Date.now() } = {}) {
 const links = store => store.kv.get(LINKS_KEY, null) || {};
 
 module.exports = {
-  INVITE_PREFIX, INVITE2_PREFIX, PIN_RE, inviteRef, findInvite, burnInvite, reserveRef, revokeLink, links, INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, mintFor, redeemInvite, loginLink, reserveLink, linkKnown, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
+  INVITE_PREFIX, INVITE2_PREFIX, PIN_RE, SHORT_PIN_RE, inviteRef, findInvite, burnInvite, revokeLink, links, INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, mintFor, redeemInvite, loginLink, reserveLink, linkKnown, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
   formatInvite, parseInvite, mintShort, startShort, failShort, enrollShort, shortLive, admissions, decideAdmission, lapseAdmissions, WAITING,
 };

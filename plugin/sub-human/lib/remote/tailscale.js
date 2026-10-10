@@ -1,6 +1,6 @@
 'use strict';
 /**
- * plugin/sub-human/lib/remote/tailscale.js: the few `tailscale` CLI calls `/sub-human host --tailscale [--funnel]`
+ * plugin/sub-human/lib/remote/tailscale.js: the few `tailscale` CLI calls `/sub-human invite --web | --public`
  * makes, each with a timeout, none interactive. It drives the person's own tailscaled; nothing is embedded.
  *
  *   bin(env?) -> string | null       SUB_HUMAN_TAILSCALE, else `tailscale` on PATH, else
@@ -19,7 +19,7 @@
  *                                    tailscale.com/f/serve?node=…" and then waits for an admin; so the first enable
  *                                    URL it prints, or no success within timeoutMs (SERVE_MS, 10 s;
  *                                    SUB_HUMAN_TAILSCALE_SERVE_MS), kills it and throws RoomError INVALID
- *                                    notEnabled(…): the admin page, then "run /sub-human host --tailscale again".
+ *                                    notEnabled(…): the admin page, then "run /sub-human invite --web again".
  *                                    tailscaled not running or logged out: RoomError OFFLINE with what to do. Any other
  *                                    refusal: INVALID with Tailscale's own words
  *   off({bin, path, funnel?}) -> {ok, error?}
@@ -90,7 +90,7 @@ function classify(text) {
   return null;
 }
 
-const again = funnel => `/sub-human host --tailscale${funnel ? ' --funnel' : ''}`;
+const again = funnel => `/sub-human invite ${funnel ? '--public' : '--web'}`;
 
 function notEnabled({ feature = 'Serve', url = null, funnel = false, waited = null } = {}) {
   const f = funnel ? 'Funnel' : feature;

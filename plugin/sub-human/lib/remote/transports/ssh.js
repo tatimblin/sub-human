@@ -1,7 +1,7 @@
 'use strict';
 /**
  * plugin/sub-human/lib/remote/transports/ssh.js: the ssh kind, the pipe kind (./pipe.js) with an `ssh` command in
- * front. For an admitted key the host's authorized_keys forced command (`sub-human authorize` / `admit`,
+ * front. For an admitted key the host's authorized_keys forced command (the card's admit,
  * lib/remote/shim.js) decides what runs there and ignores the remote command named here; a login link (no forced
  * command: the person's own login to the host account) names the host's stable shim itself (remoteCommand).
  *
@@ -26,12 +26,12 @@
  *         mux         -o ControlMaster=no -o ControlPath=<home>/ssh/cm-%C   ride a master `sub-human prime CODE` opened
  *                     (one MFA prompt for hours); with none open, ssh connects as usual. BatchMode stays on, so the
  *                     daemon never waits on a prompt and never becomes a master itself
- *       Over a login link (spec.login, `/sub-human join NAME USER@HOST CODE`: the person's own ssh login to the host's
+ *       Over a login link (spec.login, `/sub-human join USER@HOST ROOM`: the person's own ssh login to the host's
  *       account is the admission, no invite) the remote command is the host's stable shim instead (remoteCommand), and
  *       no link option is added: the person's own keys, agent, ~/.ssh/config and known_hosts decide, BatchMode on
  *   loginSpec(dest, {via?, home?, link?}) -> Spec | null   a login link's transport: {kind: 'ssh', user, host,
  *       port?, via?, login: true, link, remoteHome?}. link: the link id this machine picks (12 hex, random by default;
- *       the host's server records the link under it, so `sub-human revoke` finds its serve process by its argv); home:
+ *       the host's server records the link under it, so `/sub-human kick` finds its serve process by its argv); home:
  *       the host's SUB_HUMAN_HOME when it is not ~/.sub-human (a plain absolute path). null when any part is not plain
  *   remoteCommand(spec, code) -> string   what ssh asks the host to run: `sub-human serve --stdio CODE` for an
  *       admitted key (its forced command ignores it), else (login) `"$HOME"/.sub-human/bin/serve --stdio CODE --link ID
@@ -94,7 +94,8 @@ function withUser(text, { bin = 'ssh' } = {}) {
   } catch { return t; }
 }
 /** The `YOU@host` of the README's examples, typed as is. */
-const placeholder = text => /^(?:YOU|USER|you|user)@/.test(String(text));
+// an example's word left in: YOU@box, USER@box, NAME@box, or a bare NAME / USER / YOU / HOST
+const placeholder = text => /^(?:YOU|USER|NAME|you|user|name)@/.test(String(text)) || /^(?:YOU|USER|NAME|HOST|DEST)$/.test(String(text)) || /@(?:HOST|DEST)$/.test(String(text));
 
 /**
  * @param {string} text

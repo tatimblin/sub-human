@@ -1,7 +1,7 @@
 'use strict';
 // Two machines on one: two SUB_HUMAN_HOMEs, the host's (alice, carol) and a remote
-// member's (bob). The real hooks run as child processes on both sides; bob joins with the invite /sub-human host
-// gave, and his link daemon (scripts/sub-human link, started by the join hook) spawns the host's server
+// member's (bob). The real hooks run as child processes on both sides; bob joins with the line /sub-human invite
+// gave (the host's admit lets him in, a bare /sub-human seats him), and his link daemon (scripts/sub-human link, started by the join hook) spawns the host's server
 // (scripts/sub-human serve --stdio) through the pipe transport. Checked: the mirror's log is byte-identical to the
 // host's and both chain; bob's @room verifies on the host; his signoff leads to the host's decision (the plan was
 // prefetched for his card); a post addressed to bob reaches his tail and not carol's; his presence shows in the
@@ -40,15 +40,12 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.equal(host.join(alice, 'alice').json.decision, undefined);
   const code = host.lib(() => store.listRooms()[0]);
   host.join(carol, `carol ${code}`);
-  const shown = host.join(alice, 'host').json;
-  assert.equal(shown.decision, 'block', 'shown to the person, never to the model');
-  const invite = /sh2\.\S+/.exec(shown.reason)[0], pin = /PIN (\d{6})/.exec(shown.reason)[1];
-
-  // bob links from the other home with the invite and its PIN (a hidden step: the join hook starts his link daemon,
-  // which redeems the invite, the host checking the PIN), then takes his seat
-  const linked = remote.join(bob, `join bob ${invite} ${pin}`);
-  assert.match(linked.json.reason, /linked to room/, linked.stderr);
-  const joined = remote.join(bob, `bob ${code}`);
+  // bob links from the other home with the line and its PIN (a hidden step: the join hook starts his link daemon,
+  // which runs the PAKE with the host), alice lets him in, and a bare /sub-human takes his seat
+  const via = await remote.joinVia(host, alice, bob);
+  assert.equal(via.shown.json.decision, 'block', 'shown to the person, never to the model');
+  assert.match(via.typed.json.reason, /checked your PIN/, via.typed.stderr);
+  const joined = via.seated;
   assert.equal(joined.json.systemMessage, undefined, joined.stderr);
   assert.match(joined.json.hookSpecificOutput.additionalContext, /SUB-HUMAN: you are bob's Claude/);
   const daemon = remote.lib(() => link.status(code));
@@ -160,7 +157,6 @@ test('remote e2e: an invite used already is refused at join with that reason, no
   const alice = host.seat('alice'), bob = first.seat('bob'), carol = third.seat('carol');
   host.join(alice, 'alice');
   const code = host.lib(() => store.listRooms()[0]);
-  const invite = host.invite1(code);
   const cleanup = m => () => {
     const st = m.lib(() => link.status(code));
     if (st.pid) { kill(childOf(st.pid)); kill(st.pid); }
@@ -168,13 +164,13 @@ test('remote e2e: an invite used already is refused at join with that reason, no
   };
   t.after(cleanup(first));
   t.after(cleanup(third));
-  assert.equal(first.join(bob, `join bob ${invite}`).json.systemMessage, undefined, 'the first machine redeems it');
+  const via = await first.joinVia(host, alice, bob);
+  assert.equal(via.seated.json.decision, undefined, 'the first machine uses it');
 
-  const refused = third.join(carol, `join carol ${invite}`);
+  const refused = third.join(carol, `${via.line} --as carol`);
   assert.equal(refused.json.decision, 'block', refused.stderr);
-  assert.match(refused.json.reason, /this invite was used already/);
+  assert.match(refused.json.reason, /no invite for room \S+ is open here/);
   assert.doesNotMatch(refused.json.reason, /offline|hung up/);
-  assert.equal(refused.json.systemMessage, refused.json.reason, 'Remote Control shows the refusal too');
-  assert.equal(third.lib(() => link.status(code)).code, 'AUTH');
+  assert.equal(refused.json.hookSpecificOutput.suppressOriginalPrompt, true, 'the PIN stays out of the conversation');
   assert.doesNotMatch(host.log(code), /carol/);
 });

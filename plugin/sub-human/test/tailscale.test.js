@@ -34,17 +34,17 @@ test('tailscale on: "Serve is not enabled … To enable, visit: URL" and a hang:
   const t0 = Date.now();
   assert.throws(() => serveIt(f.bin, { timeoutMs: 8000 }), e => {
     assert.equal(e.code, 'INVALID');
-    assert.equal(e.message, `Tailscale Serve isn't enabled on your tailnet yet. An admin turns it on once at ${ENABLE_URL} (or Admin console → DNS → HTTPS Certificates and Serve), then run /sub-human host --tailscale again.`);
+    assert.equal(e.message, `Tailscale Serve isn't enabled on your tailnet yet. An admin turns it on once at ${ENABLE_URL} (or Admin console → DNS → HTTPS Certificates and Serve), then run /sub-human invite --web again.`);
     return true;
   });
   assert.ok(Date.now() - t0 < 5000, `stopped at the URL, not the deadline (${Date.now() - t0} ms)`);
   assert.equal(f.alive(), false, 'the hanging CLI was killed');
 });
 
-test('tailscale on: Funnel not enabled names Funnel and --funnel', t => {
+test('tailscale on: Funnel not enabled names Funnel and --public', t => {
   const f = fake(t, { serveBody: `echo "Funnel is not enabled on your tailnet."; echo "To enable, visit:"; echo "  https://login.tailscale.com/f/funnel?node=nX"; sleep 30` });
   assert.throws(() => serveIt(f.bin, { funnel: true, timeoutMs: 8000 }),
-    /Tailscale Funnel isn't enabled on your tailnet yet\. An admin turns it on once at https:\/\/login\.tailscale\.com\/f\/funnel\?node=nX .*then run \/sub-human host --tailscale --funnel again\./);
+    /Tailscale Funnel isn't enabled on your tailnet yet\. An admin turns it on once at https:\/\/login\.tailscale\.com\/f\/funnel\?node=nX .*then run \/sub-human invite --public again\./);
 });
 
 test('tailscale on: no answer and no URL within the deadline: killed, the same advice with the admin console', t => {
@@ -52,7 +52,7 @@ test('tailscale on: no answer and no URL within the deadline: killed, the same a
   const t0 = Date.now();
   assert.throws(() => serveIt(f.bin, { timeoutMs: 600 }), e => {
     assert.equal(e.code, 'INVALID');
-    assert.match(e.message, /^Tailscale Serve isn't enabled on your tailnet yet \(tailscale serve gave no answer within 1 s\)\. An admin turns it on once at https:\/\/login\.tailscale\.com\/admin\/dns .*run \/sub-human host --tailscale again\.$/);
+    assert.match(e.message, /^Tailscale Serve isn't enabled on your tailnet yet \(tailscale serve gave no answer within 1 s\)\. An admin turns it on once at https:\/\/login\.tailscale\.com\/admin\/dns .*run \/sub-human invite --web again\.$/);
     return true;
   });
   assert.ok(Date.now() - t0 < 4000);
@@ -66,7 +66,7 @@ test('tailscale on: success (exit 0 with the --bg banner) returns the record', t
 
 test('tailscale on: tailscaled not running, or logged out: OFFLINE with what to do', t => {
   const down = fake(t, { serveBody: 'echo "failed to connect to local Tailscale daemon for /localapi/v0/serve-config; not running? Error: dial unix /var/run/tailscale/tailscaled.sock: connect: no such file or directory" >&2; exit 1' });
-  assert.throws(() => serveIt(down.bin), e => e.code === 'OFFLINE' && /^Tailscale isn't running on this machine: start the Tailscale app \(or tailscaled\) and log in, then run \/sub-human host --tailscale again/.test(e.message));
+  assert.throws(() => serveIt(down.bin), e => e.code === 'OFFLINE' && /^Tailscale isn't running on this machine: start the Tailscale app \(or tailscaled\) and log in, then run \/sub-human invite --web again/.test(e.message));
   const out = fake(t, { serveBody: 'echo "Logged out."; exit 1' });
   assert.throws(() => serveIt(out.bin), e => e.code === 'OFFLINE' && /logged out on this machine: log in/.test(e.message));
   const other = fake(t, { serveBody: 'echo "invalid argument: bad thing" >&2; exit 2' });
@@ -111,6 +111,6 @@ test('join text: a wss link to a ts.net name still connecting says Tailscale may
   const hosting = require(path.join(h.LIB, 'remote', 'hosting.js'));
   const code = 'vole-4321';
   links.set(code, { code, transport: { kind: 'wss', host: 'box.tail1a2b.ts.net', path: `/sub-human/${code}`, hostKey: 'A'.repeat(43) }, invite: 'x', created_at: 'now' });
-  assert.match(hosting.joinText(code, 'bob', { state: 'waiting' }), /still connecting \(Tailscale may be issuing a certificate: .*keeps trying\); type \/sub-human bob vole-4321/);
+  assert.match(hosting.joinText(code, 'bob', { state: 'waiting' }), /still connecting to room vole-4321 \(Tailscale may be issuing a certificate: .*keeps trying\); type \/sub-human in a moment/);
   assert.doesNotMatch(hosting.joinText(code, 'bob', { state: 'waiting', reason: 'no route' }), /certificate/);
 });

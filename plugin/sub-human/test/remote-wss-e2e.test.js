@@ -1,10 +1,10 @@
 'use strict';
-// 1.1 end to end on one machine, two homes (test/support/two-homes.js): the host's `/sub-human host --url` starts the
-// listener (127.0.0.1 only) and shows a join URL + PIN to the person only; the joiner's `/sub-human join NAME URL PIN`
-// links over a WebSocket and a Noise_NK channel that pins the listener's key, with no admit step; posts flow and the
-// mirror converges. A wrong PIN costs a try. The link daemon's reconnect works over ws: the listener restarted and
-// a TLS front (the shape of Tailscale Serve) restarted. `--tailscale [--funnel]` runs the exact tailscale commands
-// against a fake `tailscale` on PATH, and unhost turns only that path off.
+// 1.1 end to end on one machine, two homes (test/support/two-homes.js): the host's `/sub-human invite --url` starts the
+// listener (127.0.0.1 only) and shows a join URL + PIN to the person only; the joiner's `/sub-human join URL PIN` runs
+// the PAKE in text frames, pins the listener's key from inside it, and the host's card lets the machine in; a bare
+// /sub-human takes the seat; posts flow and the mirror converges. A wrong PIN costs a try. The link daemon's reconnect
+// works over ws: the listener restarted and a TLS front (the shape of Tailscale Serve) restarted. `--web` / `--public`
+// run the exact tailscale commands against a fake `tailscale` on PATH, and `invite --stop` turns only that path off.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -14,7 +14,6 @@ const { spawn, spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
 const store = require(path.join(h.LIB, 'room', 'store.js'));
 const link = require(path.join(h.LIB, 'remote', 'link.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
 const listener = require(path.join(h.LIB, 'remote', 'listener.js'));
 const wsT = require(path.join(h.LIB, 'remote', 'transports', 'ws.js'));
 const { Machine } = require('./support/two-homes.js');
@@ -25,7 +24,6 @@ const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
 const freePort = () => new Promise(r => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
 const hiddenBlock = r => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
 const modelSees = r => JSON.stringify([r.json && r.json.hookSpecificOutput && r.json.hookSpecificOutput.additionalContext, r.json && r.json.systemMessage]);
-const shown = reason => ({ url: /https?:\/\/\S+#\S+/.exec(reason)[0], pin: /PIN (\d{6})/.exec(reason)[1] });
 
 /** A CA of our own and a localhost certificate it signed (the joiner trusts the CA through NODE_EXTRA_CA_CERTS, as a
  * ts.net certificate is publicly trusted): the leaf PEM, or null when openssl cannot. */
@@ -65,68 +63,37 @@ async function posts(t, { host, remote, alice, bob, code }, text) {
   assert.equal(remote.log(code), host.log(code), 'the mirror is byte-identical');
 }
 
-test('wss 1.1: host --url shows a join URL + PIN to the person only; join NAME URL PIN links over ws + Noise with no admit step; posts flow', async t => {
-  const R = await rig(t);
-  const { port, host, remote, alice, bob, code } = R;
-  const out = host.join(alice, `host --url http://127.0.0.1:${port} --long`);
-  assert.ok(hiddenBlock(out), out.stderr);
-  assert.equal(out.json.systemMessage, undefined);
-  const { url, pin } = shown(out.json.reason);
-  assert.match(url, new RegExp(`^http://127\\.0\\.0\\.1:${port}/sub-human/${code}#[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{43}$`));
-  const st = host.lib(() => listener.status());
-  assert.ok(st.running && st.port === port && st.rooms[code], JSON.stringify(st));
-  assert.equal(url.split('.').pop(), host.lib(() => listener.hostKey()), 'the URL pins the listener\'s X25519 key');
-  assert.equal(fs.statSync(path.join(host.home, 'listen', 'host-x25519.json')).mode & 0o777, 0o600);
-  const ss = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).stdout;
-  if (ss) assert.match(ss, /127\.0\.0\.1:\d+ \(LISTEN\)/, 'loopback only');
-  // the URL is an sh2 invite in another form
-  const parsed = wsT.parseJoinUrl(url);
-  assert.equal(parsed.locator, `ws://127.0.0.1:${port}/sub-human/${code}`);
-  assert.deepEqual(auth.parseInvite(parsed.invite), { v: 2, code, locator: parsed.locator, secret: parsed.secret, hostKey: parsed.hostKey });
-  assert.ok(new RegExp(parsed.invite.replace(/[.]/g, '\\.')).test(out.json.reason), 'the plain sh2 string is shown too');
-
-  // a wrong PIN: refused, a try spent, hidden from the model
-  const wrong = String((Number(pin) + 1) % 1e6).padStart(6, '0');
-  const bad = remote.join(bob, `join bob ${url} ${wrong}`);
-  assert.ok(hiddenBlock(bad));
-  assert.match(bad.json.reason, /could not link to room .*wrong PIN \(4 tries left\)/);
-  assert.ok(!modelSees(bad).includes(wrong) && !modelSees(bad).includes(parsed.secret));
-
-  const ok = remote.join(bob, `join bob ${url} ${pin}`);
-  assert.ok(hiddenBlock(ok), ok.stderr);
-  assert.match(ok.json.reason, new RegExp(`linked to room ${code}: the host checked your PIN\\. Now type: /sub-human bob ${code}`));
-  assert.ok(!modelSees(ok).includes(pin) && !modelSees(ok).includes(parsed.secret));
+/** The join request's card on the host, answered by the person (hooks/consent.js), as in test/remote-short.test.js. */
+function letIn(host, alice, ref, label = 'Let in') {
+  const pre = host.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `admit ${ref}`, options: [] }] } }, alice);
+  const c = pre.json.hookSpecificOutput.updatedInput;
+  return host.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: c, tool_response: { questions: c.questions, answers: { [c.questions[0].question]: label } } }, alice);
+}
+const shortShown = reason => /\/sub-human join (https?:\/\/\S+) (\d{4})\n/.exec(reason);
+/** bob joins with the line the host was shown: the PAKE, the host's card, the link online, a bare /sub-human. */
+async function webJoin({ host, remote, alice, bob, code }, reason) {
+  const m = shortShown(reason);
+  assert.ok(m, reason);
+  const j = remote.join(bob, `join ${m[1]} ${m[2]} --as bob`);
+  assert.match(j.json.reason, /checked your PIN/, (() => { try { return fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8'); } catch (e) { return e.message; } })());
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
-  assert.deepEqual(lf.transport, { kind: 'ws', host: '127.0.0.1', port, path: `/sub-human/${code}`, hostKey: parsed.hostKey });
-  assert.deepEqual([typeof lf.token, 'pin' in lf, 'invite' in lf, 'request' in lf], ['string', false, false, false], 'no admit request: the PIN was the admission');
-  assert.match(host.lib(() => store.open(code).readAll()).map(e => e.text).join('\n'), /linked to the room with an invite and its PIN \(link [0-9a-f]{12}\)/);
+  letIn(host, alice, lf.awaiting.ref);
+  assert.ok(await h.until(() => linkState(remote, code) === 'online', 15_000, 50), 'online once let in');
+  assert.equal(remote.join(bob, '').json.decision, undefined);
+  return m;
+}
 
-  const seated = remote.join(bob, `bob ${code}`);
-  assert.equal(seated.json.decision, undefined, seated.json.reason);
-  await posts(t, R, 'hello over wss');
-
-  // what the listener logged holds no secret
-  const log = fs.readFileSync(host.lib(() => listener.logFile()), 'utf8');
-  for (const s of [pin, parsed.secret, lf.token]) assert.ok(!log.includes(s));
-  assert.match(log, new RegExp(`room ${code}: a connection from 127\\.0\\.0\\.1; serve pid \\d+`));
-
-  // a URL whose fragment was cut short is refused; the URL with no fragment at all is the short form (a 6-digit
-  // code), and this machine is linked there already
-  const r = remote.join(bob, `join bob ${url.replace(/\.[^.]+$/, '')} ${pin}`);
-  assert.ok(hiddenBlock(r));
-  assert.match(r.json.reason, /not a whole join URL/);
-  const bare = remote.join(bob, `join bob ${url.split('#')[0]} ${pin}`);
-  assert.ok(hiddenBlock(bare));
-  assert.match(bare.json.reason, /linked to room \S+ already/);
-});
 
 test('wss 1.1: the listener refuses a handshake to another key, a room it does not serve, and plain HTTP', async t => {
   const R = await rig(t);
   const { port, host, alice, code } = R;
-  const { url } = shown(host.join(alice, `host --url http://127.0.0.1:${port} --long`).json.reason);
+  assert.ok(shortShown(host.join(alice, `invite --url http://127.0.0.1:${port}`).json.reason));
   const ws = require(path.join(h.LIB, 'remote', 'ws.js'));
   const noise = require(path.join(h.LIB, 'remote', 'noise.js'));
-  const pinned = Buffer.from(url.split('.').pop(), 'base64url');
+  const pinned = Buffer.from(host.lib(() => listener.hostKey()), 'base64url');
+  assert.equal(fs.statSync(path.join(host.home, 'listen', 'host-x25519.json')).mode & 0o777, 0o600);
+  const ss = spawnSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).stdout;
+  if (ss) assert.match(ss, /127\.0\.0\.1:\d+ \(LISTEN\)/, 'loopback only');
   // a joiner pinning another key: message 2 cannot come (the listener cannot read message 1)
   const c1 = await ws.connect(`ws://127.0.0.1:${port}/sub-human/${code}`);
   await assert.rejects(wsT.clientChannel(c1, { rs: noise.generateKeyPair().pub, code }), e => e.code === 'OFFLINE' && /closed \(4401/.test(e.message));
@@ -137,8 +104,8 @@ test('wss 1.1: the listener refuses a handshake to another key, a room it does n
   const c3 = await ws.connect(`ws://127.0.0.1:${port}/sub-human/${code}`);
   await assert.rejects(wsT.clientChannel(c3, { rs: pinned, code: 'vole-0001' }), /this URL is for room/);
   assert.equal((await fetch(`http://127.0.0.1:${port}/`)).status, 426);
-  // unhost: no longer served, and the listener stops with no room left
-  const un = host.join(alice, 'unhost');
+  // invite --stop: no longer served, and the listener stops with no room left
+  const un = host.join(alice, 'invite --stop');
   assert.ok(hiddenBlock(un));
   assert.match(un.json.reason, new RegExp(`room ${code} is no longer served over the web; the listener stopped`));
   assert.equal(host.lib(() => listener.status()).running, false);
@@ -159,12 +126,9 @@ test('wss 1.1 reconnect: the link comes back after the listener restarts and aft
   const down = f => new Promise(r => { f.once('exit', r); f.kill('SIGKILL'); });
   let f = await front();
   t.after(() => f.kill('SIGKILL'));
-  const { url, pin } = shown(host.join(alice, `host --url https://localhost:${frontPort} --long`).json.reason);
-  assert.match(url, new RegExp(`^https://localhost:${frontPort}/sub-human/${code}#`));
-  const j = remote.join(bob, `join bob ${url} ${pin}`);
-  assert.match(j.json.reason, /linked to room/, (() => { try { return fs.readFileSync(remote.lib(() => require(path.join(h.LIB, 'room', 'links.js')).logFile(code)), 'utf8'); } catch (e) { return e.message; } })());
+  const m = await webJoin(R, host.join(alice, `invite --url https://localhost:${frontPort}`).json.reason);
+  assert.equal(m[1], `https://localhost:${frontPort}/sub-human/${code}`);
   assert.equal(JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8')).transport.kind, 'wss');
-  assert.equal(remote.join(bob, `bob ${code}`).json.decision, undefined);
   await posts(t, R, 'before any restart');
 
   // 1. the listener restarts (a plugin update, a crash): every serve child goes with it; the link redials
@@ -189,7 +153,7 @@ test('wss 1.1 reconnect: the link comes back after the listener restarts and aft
   assert.ok(await h.until(() => host.lib(() => store.open(code).readAll()).filter(e => e.text === 'queued over wss').length === 1, 10_000, 50), 'the queued post lands once');
 });
 
-test('host --tailscale [--funnel]: the exact tailscale commands (a fake tailscale on PATH), the CT-log line, and unhost turns only that path off', async t => {
+test('invite --web / --public: the exact tailscale commands (a fake tailscale on PATH), the CT-log line, and invite --stop turns only that path off', async t => {
   const bin = h.tmpDir('sh-fake-ts-', t);
   const calls = path.join(bin, 'calls.log');
   fs.writeFileSync(path.join(bin, 'tailscale'), `#!/bin/sh
@@ -201,10 +165,9 @@ esac
 `, { mode: 0o755 });
   const R = await rig(t, { PATH: `${bin}:${process.env.PATH}` });
   const { port, host, alice, code } = R;
-  const out = host.join(alice, 'host --tailscale --long');
+  const out = host.join(alice, 'invite --web');
   assert.ok(hiddenBlock(out), out.stderr);
-  const { url } = shown(out.json.reason);
-  assert.match(url, new RegExp(`^https://box\\.tail1a2b\\.ts\\.net/sub-human/${code}#`));
+  assert.equal(shortShown(out.json.reason)[1], `https://box.tail1a2b.ts.net/sub-human/${code}`);
   assert.match(out.json.reason, /Tailscale Serve \(your tailnet only\)/);
   assert.match(out.json.reason, /can take ~20 s while Tailscale issues its certificate; it is being fetched now/);
   assert.doesNotMatch(out.json.reason, /certificate-transparency/);
@@ -212,15 +175,15 @@ esac
   const lines = () => fs.readFileSync(calls, 'utf8').trim().split('\n');
   assert.deepEqual(lines(), ['status --json', `serve --bg --https=443 --set-path=${p} http://127.0.0.1:${port}`]);
   // again: a new invite, the same serve path (not run twice)
-  host.join(alice, 'host --tailscale');
+  host.join(alice, 'invite --web');
   assert.equal(lines().filter(l => l.startsWith('serve')).length, 1);
-  // --funnel: opt-in, the serve path off first, then funnel, with the one-line CT warning
-  const fun = host.join(alice, 'host --tailscale --funnel');
+  // --public: opt-in, the serve path off first, then funnel, with the one-line CT warning
+  const fun = host.join(alice, 'invite --public');
   assert.match(fun.json.reason, /Tailscale Funnel \(public\)/);
   assert.match(fun.json.reason, /public certificate-transparency logs/);
   assert.deepEqual(lines().slice(-2), [`serve --https=443 --set-path=${p} off`, `funnel --bg --https=443 --set-path=${p} http://127.0.0.1:${port}`]);
-  // unhost: only our path, never `serve reset`
-  const un = host.join(alice, 'unhost');
+  // invite --stop: only our path, never `serve reset`
+  const un = host.join(alice, 'invite --stop');
   assert.match(un.json.reason, new RegExp(`tailscale funnel ${p} is off`));
   assert.equal(lines().at(-1), `funnel --https=443 --set-path=${p} off`);
   assert.ok(!lines().some(l => /reset/.test(l)));
@@ -230,7 +193,7 @@ esac
   none.join(carol, 'carol');
   t.after(() => none.lib(() => listener.stop()));
   const ts = require(path.join(h.LIB, 'remote', 'tailscale.js'));
-  if (!ts.bin({ PATH: '/usr/bin:/bin' })) assert.match(none.join(carol, 'host --tailscale').json.reason, /no tailscale CLI here/);
+  if (!ts.bin({ PATH: '/usr/bin:/bin' })) assert.match(none.join(carol, 'invite --web').json.reason, /no tailscale CLI here/);
 });
 
 test('the room closing stops serving it: the listener drops it and turns its Tailscale path off', async t => {
@@ -239,21 +202,13 @@ test('the room closing stops serving it: the listener drops it and turns its Tai
   fs.writeFileSync(path.join(bin, 'tailscale'), `#!/bin/sh\necho "$@" >> "${calls}"\n[ "$1" = status ] && echo '{"Self":{"DNSName":"box.ts.net."}}'\nexit 0\n`, { mode: 0o755 });
   const R = await rig(t, { PATH: `${bin}:${process.env.PATH}`, SUB_HUMAN_LISTEN_CHECK_MS: '200' });
   const { host, alice, code } = R;
-  host.join(alice, 'host --tailscale');
+  host.join(alice, 'invite --web');
   host.lib(() => require(path.join(h.LIB, 'identity.js')).updateRoomClaude(code, o => ({ ...o, stopped_at: new Date().toISOString() })));
   assert.ok(await h.until(() => !host.lib(() => listener.status()).rooms[code], 8000, 100), 'dropped from the served set');
   assert.ok(await h.until(() => fs.readFileSync(calls, 'utf8').includes(`serve --https=443 --set-path=/sub-human/${code} off`), 3000, 50));
 });
 
-/** The join request's card on the host, answered by the person (hooks/consent.js), as in test/remote-short.test.js. */
-function letIn(host, alice, ref, label = 'Let in') {
-  const pre = host.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `admit ${ref}`, options: [] }] } }, alice);
-  const c = pre.json.hookSpecificOutput.updatedInput;
-  return host.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: c, tool_response: { questions: c.questions, answers: { [c.questions[0].question]: label } } }, alice);
-}
-const shortShown = reason => /\/sub-human join NAME (https?:\/\/\S+) (\d{6})\n/.exec(reason);
-
-test('web short code: host --url shows URL + 6-digit code (no #secret, no key); the PAKE runs in text frames through a TLS front; the listener key is pinned from inside it; the card lets the machine in', { skip: spawnSync('openssl', ['version']).status !== 0 && 'no openssl' }, async t => {
+test('a web invite: invite --url shows URL + 4-digit PIN (no #secret, no key, no NAME); the PAKE runs in text frames through a TLS front; the listener key is pinned from inside it; the card lets the machine in', { skip: spawnSync('openssl', ['version']).status !== 0 && 'no openssl' }, async t => {
   const certDir = h.tmpDir('sh-front-', t);
   if (!testCa(certDir)) return t.skip('openssl could not make a test CA');
   const R = await rig(t, {}, { NODE_EXTRA_CA_CERTS: path.join(certDir, 'ca.pem') });
@@ -265,39 +220,44 @@ test('web short code: host --url shows URL + 6-digit code (no #secret, no key); 
     c.once('exit', () => no(new Error('the front exited')));
   });
   t.after(() => f.kill('SIGKILL'));
-  const out = host.join(alice, `host --url https://localhost:${frontPort}`);
+  const out = host.join(alice, `invite --url https://localhost:${frontPort}`);
+  assert.equal(out.json.systemMessage, undefined, 'the PIN stays off Remote Control');
+  const st = host.lib(() => listener.status());
+  assert.ok(st.running && st.port === port && st.rooms[code], JSON.stringify(st));
   assert.ok(hiddenBlock(out), out.stderr);
   const m = shortShown(out.json.reason);
   assert.ok(m, out.json.reason);
   assert.equal(m[1], `https://localhost:${frontPort}/sub-human/${code}`, 'the URL alone: no fragment, no key');
   assert.doesNotMatch(out.json.reason, /#/);
   const pin = m[2];
-  // a wrong code first: one try, and the room hears it
-  const bad = String((Number(pin) + 1) % 1_000_000).padStart(6, '0');
-  const w = remote.join(bob, `join bob ${m[1]} ${bad}`);
+  // a wrong PIN first: one try, and the room hears it
+  const bad = String((Number(pin) + 1) % 10_000).padStart(4, '0');
+  const w = remote.join(bob, `join ${m[1]} ${bad} --as bob`);
   assert.ok(hiddenBlock(w));
-  assert.match(w.json.reason, /wrong code \(4 tries left\)/);
-  const j = remote.join(bob, `join bob ${m[1]} ${pin}`);
+  assert.match(w.json.reason, /wrong PIN \(4 tries left\)/);
+  assert.ok(!modelSees(w).includes(bad));
+  const j = remote.join(bob, `join ${m[1]} ${pin} --as bob`);
   assert.ok(hiddenBlock(j));
   assert.ok(!modelSees(j).includes(pin));
-  assert.match(j.json.reason, /checked your code/, (() => { try { return fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8'); } catch (e) { return e.message; } })());
+  assert.match(j.json.reason, /checked your PIN/, (() => { try { return fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8'); } catch (e) { return e.message; } })());
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
   assert.equal(lf.transport.hostKey, host.lib(() => listener.hostKey()), 'the listener key, pinned from inside the PAKE');
   assert.equal(lf.transport.kind, 'wss');
   const ref = lf.awaiting.ref;
   assert.match(letIn(host, alice, ref).json.hookSpecificOutput.additionalContext, /let bob's machine into room/);
   assert.ok(await h.until(() => linkState(remote, code) === 'online', 15_000, 50), 'online once let in');
-  assert.equal(remote.join(bob, `bob ${code}`).json.decision, undefined);
-  await posts(t, R, 'over a short code');
+  assert.equal(remote.join(bob, '').json.decision, undefined, 'a bare /sub-human takes the seat');
+  await posts(t, R, 'over a web invite');
   const lg = fs.readFileSync(path.join(host.home, 'listen', 'listen.log'), 'utf8');
   assert.match(lg, /a short-code attempt from/);
-  assert.ok(!lg.includes(pin) && !lg.includes(bad), 'the listener logs no code');
+  assert.ok(!lg.includes(` ${pin}`) && !lg.includes(` ${bad}`), 'the listener logs no PIN');
+  assert.match(lg, new RegExp(`room ${code}: a connection from 127\\.0\\.0\\.1; serve pid \\d+`));
 });
 
-test('web short code: the listener refuses an enrollment for a room it does not serve, and a text message that is not one', async t => {
+test('a web invite: the listener refuses an enrollment for a room it does not serve, and a text message that is not one', async t => {
   const R = await rig(t);
   const { port, host, alice, code } = R;
-  host.join(alice, `host --url http://127.0.0.1:${port}`);
+  host.join(alice, `invite --url http://127.0.0.1:${port}`);
   const ws = require(path.join(h.LIB, 'remote', 'ws.js'));
   const ask = async (text, p = `/sub-human/${code}`) => {
     const conn = await ws.connect(`ws://127.0.0.1:${port}${p}`, { timeoutMs: 5000 });

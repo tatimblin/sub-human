@@ -10,8 +10,6 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const h = require('./helpers.js');
 const shim = require(path.join(h.LIB, 'remote', 'shim.js'));
-const auth = require(path.join(h.LIB, 'remote', 'auth.js'));
-const store = require(path.join(h.LIB, 'room', 'store.js'));
 
 const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1bJ1l3xq3fQnHk';
 const ALLOW = { SUB_HUMAN_ALLOW_TMP_ROOT: '1' };
@@ -88,20 +86,18 @@ test('migrateLines rewrites this home\'s old forced commands to the shim; other 
   assert.equal(shim.migrateLines(out, home).migrated, 0, 'idempotent');
 });
 
-test('cli: authorize --file rewrites an older line for this home, then finds its own line there', t => {
+test('cli: doctor --fix rewrites an older line for this home to run the shim; other lines stay', t => {
   h.freshHome(t);
   const code = h.newRoom();
   h.register('alice', 'member');
-  const run = (args, input) => spawnSync(process.execPath, [h.BIN, ...args], { env: h.childEnv(), encoding: 'utf8', input });
-  const invite = auth.mintInvite(store.open(code), { locator: 'ssh:me@far' }).invite;
-  const id = auth.reserveLink(store.open(code), auth.parseInvite(invite).secret);
+  const run = args => spawnSync(process.execPath, [h.BIN, ...args], { env: h.childEnv(), encoding: 'utf8' });
+  const id = 'a1b2c3d4e5f6';
   const home = path.resolve(process.env.SUB_HUMAN_HOME);
   const ak = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
   const old = `command="SUB_HUMAN_HOME=${home} ${process.execPath} ${h.BIN} serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`;
   fs.writeFileSync(ak, `ssh-rsa AAAAB3 me\n${old}\n`, { mode: 0o600 });
-  const r = run(['authorize', id, '-', '--room', code, '--file', ak], KEY);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /rewrote 1 older sub-human line/);
+  const r = run(['doctor', '--fix', '--quick', '--authorized-keys', ak]);
+  assert.match(r.stdout, /fixed: rewrote 1 older sub-human line/, r.stderr);
   assert.equal(fs.readFileSync(ak, 'utf8'), `ssh-rsa AAAAB3 me\n${shim.authorizedLine(code, id, KEY, home)}\n`);
   assert.equal(fs.statSync(ak).mode & 0o777, 0o600);
 });

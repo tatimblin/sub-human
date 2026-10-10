@@ -23,7 +23,6 @@ const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: 
 const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
 const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
 const freePort = () => new Promise(r => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
-const shown = reason => ({ url: /https?:\/\/\S+#\S+/.exec(reason)[0], pin: /PIN (\d{6})/.exec(reason)[1] });
 
 function cleanup(t, machines, code) {
   t.after(() => {
@@ -65,7 +64,7 @@ test('doctor: the listener, a room\'s Tailscale path present or gone, Funnel\'s 
   const checks = () => host.lib(() => doctor.checkListener({}));
   assert.match(checks()[0].detail, /no room is served over the web/);
 
-  host.join(alice, 'host --tailscale');
+  host.join(alice, 'invite --web');
   let c = checks();
   assert.equal(c[0].status, 'pass');
   assert.match(c[0].detail, new RegExp(`running \\(pid \\d+\\) on 127\\.0\\.0\\.1:${port} · serves ${code}`));
@@ -74,9 +73,9 @@ test('doctor: the listener, a room\'s Tailscale path present or gone, Funnel\'s 
   // the path gone behind our back (a serve reset): a failure, with the fix
   fs.writeFileSync(ts.served, '');
   c = checks();
-  assert.deepEqual([c[1].status, c[1].fix], ['fail', '/sub-human host --tailscale in the room (it puts the path back)']);
+  assert.deepEqual([c[1].status, c[1].fix], ['fail', '/sub-human invite --web in the room (it puts the path back)']);
   // Funnel: a warning that the name is public
-  host.join(alice, 'host --tailscale --funnel');
+  host.join(alice, 'invite --public');
   c = checks();
   assert.equal(c[1].status, 'warn');
   assert.match(c[1].detail, /Tailscale Funnel .*\(path present\)\. .*certificate-transparency/);
@@ -93,8 +92,7 @@ test('doctor: the listener, a room\'s Tailscale path present or gone, Funnel\'s 
 
   // a joiner's wss link: doctor's hello goes over the WebSocket and the pinned Noise channel
   host.lib(() => listener.start({ port }));
-  const { url, pin } = shown(host.join(alice, `host --url http://127.0.0.1:${port} --long`).json.reason);
-  assert.match(remote.join(bob, `join bob ${url} ${pin}`).json.reason, /linked to room/);
+  await remote.joinVia(host, alice, bob, { invite: `invite --url http://127.0.0.1:${port}` });
   const lf = remote.lib(() => links.get(code));
   const probe = await remote.lib(() => doctor.helloProbe(lf.transport, code, { timeoutMs: 5000 }));
   assert.equal(probe.ok, true, probe.error);
@@ -111,10 +109,7 @@ test('handoff to a new host reached over the web: a ws locator, invites pinning 
   const code = A.lib(() => store.listRooms()[0]);
   cleanup(t, [A, B], () => code);
   // bob joins over the pipe (any transport); alice asks him to host the room behind his web front
-  const shownPipe = A.join(alice, 'host').json.reason;
-  const inv = { invite: /sh2\.\S+/.exec(shownPipe)[0], pin: /PIN (\d{6})/.exec(shownPipe)[1] };
-  assert.match(B.join(bob, `join bob ${inv.invite} ${inv.pin}`).json.reason, /linked to room/);
-  assert.equal(B.join(bob, `bob ${code}`).json.decision, undefined);
+  assert.equal((await B.joinVia(A, alice, bob)).seated.json.decision, undefined);
   const asked = A.join(alice, `handoff bob http://127.0.0.1:${bport}`).json;
   assert.match(asked.reason, /asked bob to host room/, JSON.stringify(asked));
   const loc = `ws://127.0.0.1:${bport}/sub-human/${code}`;

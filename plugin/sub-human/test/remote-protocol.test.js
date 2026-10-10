@@ -178,19 +178,19 @@ test('auth: an invite is one string, redeemed once for a token; the host keeps o
   assert.throws(() => auth.mintInvite(new MemoryRoomStore(CODE, { isHost: false }), { locator: 'x' }), e => e.code === 'HOST_ONLY');
 });
 
-test('auth: an sh2 invite carries the room, locator, a 128-bit secret and the host key, never the PIN; the host checks the PIN online: 5 tries, 15 minutes, burnt on success or the last try', t => {
+test('auth: an sh2 invite with a PIN (a promote\'s, handed out by hand) carries the room, locator, a 128-bit secret and the host key, never the PIN; the host checks the PIN online: 5 tries, 15 minutes, burnt on success or the last try', t => {
   h.freshHome(t);
   const s = new MemoryRoomStore(CODE);
   const hostKey = crypto.generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x;
   const t0 = Date.parse('2026-10-08T12:00:00Z');
-  const mint = (opts = {}) => auth.mintInvite(s, { locator: 'ssh:me@far:2222', pin: true, hostKey, now: t0, ...opts });
+  const mint = (opts = {}) => auth.mintFor(s, { locator: 'ssh:me@far:2222', machine: 'm', seats: ['bob'], pin: true, hostKey, now: t0, ...opts });
   const a = mint();
   assert.match(a.invite, /^sh2\.otter-1234\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
   assert.match(a.pin, /^[0-9]{6}$/);
   assert.ok(!a.invite.includes(a.pin) || !a.invite.split('.').includes(a.pin), 'the PIN is not a part of the invite');
   assert.equal(Buffer.from(a.secret, 'base64url').length, 16, '128 bits');
   assert.deepEqual(auth.parseInvite(a.invite), { v: 2, code: CODE, locator: 'ssh:me@far:2222', secret: a.secret, hostKey });
-  assert.equal(auth.parseInvite(auth.mintInvite(s, { locator: 'pipe:/h', pin: true }).invite).hostKey, null, 'no key: "0"');
+  assert.equal(auth.parseInvite(auth.mintFor(s, { locator: 'pipe:/h', machine: 'm', seats: [], pin: true }).invite).hostKey, null, 'no key: "0"');
   const stored = JSON.stringify(s.kv.get(auth.INVITES_KEY));
   assert.ok(!stored.includes(a.secret) && !stored.includes(`"${a.pin}"`), 'neither the secret nor the PIN in clear on the host');
 
@@ -214,24 +214,20 @@ test('auth: an sh2 invite carries the room, locator, a 128-bit secret and the ho
   assert.throws(() => auth.redeemInvite(s, c.secret, { machine: 'm', pin: c.pin, now: t0 + 15 * 60_000 + 1 }), e => /expired/.test(e.message));
   assert.throws(() => auth.redeemInvite(s, c.secret, { machine: 'm', pin: c.pin, now: t0 }), e => /this invite is burnt/.test(e.message));
 
-  // admit names an invite by its ref (never the secret); a used or expired one is refused; revoke burns what was reserved
+  // only its machine redeems it; a link id reserved for it (an ssh forced command's --link) is the one it becomes;
+  // revoking that link burns what was reserved
   const d = mint();
-  const ref = auth.inviteRef(d.secret);
-  assert.match(ref, /^[0-9a-f]{12}$/);
-  const r1 = auth.reserveRef(s, ref, { now: t0 });
-  assert.equal(auth.reserveRef(s, ref, { now: t0 }).id, r1.id, 'the same link id again');
-  assert.throws(() => auth.reserveRef(s, ref, { now: t0 + 16 * 60_000 }), e => /expired/.test(e.message));
-  assert.throws(() => auth.reserveRef(s, auth.inviteRef(a.secret), { now: t0 }), e => /used or burnt/.test(e.message));
-  assert.throws(() => auth.reserveRef(s, 'zz', { now: t0 }), e => e.code === 'AUTH');
+  assert.throws(() => auth.redeemInvite(s, d.secret, { machine: 'other', pin: d.pin, now: t0 }), e => /another machine/.test(e.message));
+  const id = auth.reserveLink(s, d.secret);
   assert.throws(() => auth.redeemInvite(s, d.secret, { machine: 'm', pin: d.pin, linkId: 'abcdef012345', now: t0 }), e => /not for link/.test(e.message));
-  const dl = auth.redeemInvite(s, d.secret, { machine: 'm', pin: d.pin, linkId: r1.id, now: t0 });
-  assert.equal(dl.link.id, r1.id);
-  assert.deepEqual(auth.revokeLink(s, r1.id).link.id, r1.id);
+  const dl = auth.redeemInvite(s, d.secret, { machine: 'm', pin: d.pin, linkId: id, now: t0 });
+  assert.equal(dl.link.id, id);
+  assert.deepEqual(auth.revokeLink(s, id).link.id, id);
   assert.equal(auth.verifyToken(s, dl.token), null, 'the token is dead');
-  assert.equal(auth.revokeLink(s, r1.id), null, 'nothing left to revoke');
+  assert.equal(auth.revokeLink(s, id), null, 'nothing left to revoke');
   const e2 = mint();
-  const r2 = auth.reserveRef(s, auth.inviteRef(e2.secret), { now: t0 });
-  assert.deepEqual(auth.revokeLink(s, r2.id), { link: null, invites: 1 }, 'an admitted invite not yet redeemed is burnt');
+  const r2 = auth.reserveLink(s, e2.secret);
+  assert.deepEqual(auth.revokeLink(s, r2), { link: null, invites: 1 }, 'a reserved invite not yet redeemed is burnt');
   assert.throws(() => auth.redeemInvite(s, e2.secret, { machine: 'm', pin: e2.pin, now: t0 }), e => e.code === 'AUTH');
 });
 

@@ -1,14 +1,14 @@
 'use strict';
 /**
- * plugin/sub-human/lib/remote/enroll.js: the short code's join. The host shows `/sub-human join NAME you@box vole-8126
- * 482913` (or a URL and the code); the 6-digit code is the whole secret, and it never travels: both ends run CPace
+ * plugin/sub-human/lib/remote/enroll.js: the short invite's join. The host shows `/sub-human join you@box vole-8126
+ * 4829` (or a URL and the PIN); the 4-digit PIN is the whole secret, and it never travels: both ends run CPace
  * (lib/remote/cpace.js, ristretto255 + SHA-512, initiator-responder, explicit key confirmation) with it. Guessing is
  * online only: the host charges one of the invite's 5 tries for each attempt it answers (before it answers), so a
  * man in the middle or a prober gets one guess per attempt and the invite burns after 5 (lib/remote/auth.js
  * startShort, failShort). Inside the PAKE the host vouches for the key the joiner then pins (sshd's Ed25519 host key over
  * ssh, the listener's X25519 key over the web), and hands over a fresh 128-bit secret (sealed with a key derived from
  * ISK) bound to the joiner's machine and its new link key. That secret redeems nothing until the host PERSON answers
- * the card (lib/remote/admission.js): this replaces the pasted `/sub-human admit shk1…` line.
+ * the card (lib/remote/admission.js).
  *
  * Frames (lib/remote/protocol.js line codec), one attempt per connection:
  *   joiner -> {id: 1, op: 'enroll.start', params: {v: 1, room, sid, ya, ada}}   sid 16 random bytes, ya the CPace share,
@@ -18,10 +18,10 @@
  *            SHORT_LIVE_MAX; each charged a try): its share, its associated data JSON {v, kind, room, key} (key: what
  *            the host vouches for) and its tag Tb = HMAC(mac_key, lv_cat(yb, adb)). An error: AUTH (no open invite)
  *   joiner -> {id: 2, op: 'enroll.finish', params: {i, ta}}   the offer whose Tb checked, and Ta = HMAC(mac_key,
- *            lv_cat(ya, ada)); or {id: 2, op: 'enroll.fail'} when none did (the joiner's code is wrong)
+ *            lv_cat(ya, ada)); or {id: 2, op: 'enroll.fail'} when none did (the joiner's PIN is wrong)
  *   host   -> {id: 2, result: {box}}   ChaCha20-Poly1305 under HKDF-SHA512(ISK, sid, "sub-human enroll box v1") of
- *            {secret, link, ref, expires_at}; or AUTH "wrong code (N tries left)" (the invite burns at the last)
- * CI = lv_cat("sub-human enroll v1", "joiner", "host", ROOM, KIND): a code minted for ssh never works over the web.
+ *            {secret, link, ref, expires_at}; or AUTH "wrong PIN (N tries left)" (the invite burns at the last)
+ * CI = lv_cat("sub-human enroll v1", "joiner", "host", ROOM, KIND): a PIN minted for ssh never works over the web.
  *
  * Transports: pipe (`serve --enroll CODE --kind pipe` with the host's home), ssh (the enrollment door: the room's
  * public enrollment key, lib/remote/sshkeys.js enrollKey, whose authorized_keys line forces `serve --enroll CODE --kind
@@ -31,19 +31,19 @@
  *
  *   ci(code, kind) -> Buffer
  *   serveEnroll(transport, {store, kind, log?, timeoutMs?, now?}) -> Promise<outcome>   the host's end of one attempt
- *       ('enrolled', 'wrong code', 'closed', 'timeout', or an error's message); the door is swept after
+ *       ('enrolled', 'wrong PIN', 'closed', 'timeout', or an error's message); the door is swept after
  *   joinEnroll({code, kind, pin, joiner, transport, checkKey?, timeoutMs?}) -> Promise<{secret, link, ref, expires_at,
  *       key}>   the joiner's end. checkKey(key) throws to stop before the joiner's tag goes out (ssh: the vouched key is
- *       not the one ssh saw). RoomError AUTH for a wrong code or a refusal (its message says what is left); OFFLINE
+ *       not the one ssh saw). RoomError AUTH for a wrong PIN or a refusal (its message says what is left); OFFLINE
  *       when the host could not be reached; an error after the host answered start carries spent: true (a try is gone)
  *   openTransport(spec, code, {dir}) -> Promise<{transport, sawKey()}>   the joiner's connection for a link spec
  *   enrollLink(code) -> Promise<void>   the link daemon's first step for a link file with `enroll` (lib/remote/link.js
  *       connectLink): the attempt, then the link file holds the pinned key, the admission secret as its invite, and
- *       `awaiting`; the code is dropped once the host answered (held or wrong). At most MAX_SPENT attempts that reached
+ *       `awaiting`; the PIN is dropped once the host answered (held or wrong). At most MAX_SPENT attempts that reached
  *       the host without an answer are made; then it stops (AUTH)
  *   openDoor(code, {file?}) -> file     the host's door line for room CODE in authorized_keys (shim.enrollLine)
  *   sweepDoors(code, {now?}) -> n       remove the door line when no short ssh invite of the room is live (used,
- *       burnt, revoked or expired): after each attempt, from the host's room tail, revoke and host
+ *       burnt, cancelled or expired): after each attempt, from the host's room tail, kick, invite --cancel and invite
  *   joinerLabel() -> string             this machine's short host name, as the host's card shows it (not trusted)
  */
 
@@ -134,7 +134,7 @@ function serveEnroll(transport, { store, kind, log = () => {}, timeoutMs = enrol
       const joiner = joinerOf(ADa, kind);
       const open = auth.startShort(store, { kind, now: now() });
       if (!open.length) {
-        throw new RoomError('AUTH', `no code for room ${store.code} is open here (used, burnt, revoked or expired); ask the host for a new one`);
+        throw new RoomError('AUTH', `no invite for room ${store.code} is open here (used, burnt, cancelled or expired); ask the host for a new one`);
       }
       const offers = [];
       for (const o of open) {
@@ -152,10 +152,10 @@ function serveEnroll(transport, { store, kind, log = () => {}, timeoutMs = enrol
 
     function wrong() {
       const { left, burnt } = auth.failShort(store, st.offers.map(o => o.key), { now: now() });
-      roomLine(store, burnt ? `someone typed a wrong code for an invite to this room, its last try: the invite is burnt` : `someone typed a wrong code for an invite to this room (${left} ${left === 1 ? 'try' : 'tries'} left)`, log);
+      roomLine(store, burnt ? `someone typed a wrong PIN for an invite to this room, its last try: the invite is burnt` : `someone typed a wrong PIN for an invite to this room (${left} ${left === 1 ? 'try' : 'tries'} left)`, log);
       throw new RoomError('AUTH', burnt || !left
-        ? 'wrong code, and that was the last try: the invite is burnt; ask the host for a new code'
-        : `wrong code (${left} ${left === 1 ? 'try' : 'tries'} left); type the join again with the code the host gave you`);
+        ? 'wrong PIN, and that was the last try: the invite is burnt; ask the host for a new invite'
+        : `wrong PIN (${left} ${left === 1 ? 'try' : 'tries'} left); type the join again with the PIN the host gave you`);
     }
 
     function done({ i, ta }) {
@@ -164,7 +164,7 @@ function serveEnroll(transport, { store, kind, log = () => {}, timeoutMs = enrol
       if (!cpace.equal(unb64(ta, 64), cpace.tag(o.macKey, st.Ya, st.ADa))) return wrong();
       const r = auth.enrollShort(store, o.key, { tried: st.offers.map(x => x.key), joiner: st.joiner, now: now(), admitMs: config.envMs('SUB_HUMAN_ADMIT_TTL_MS', config.ADMIT_TTL_MS) });
       const j = st.joiner, fp = fingerprint(j.key);
-      roomLine(store, `${j.name} on ${j.label}${fp ? ` (${fp})` : ''} typed the code of invite ${o.ref}; waiting for ${o.by || 'the host'} to let them in (the card, or /sub-human admit ${r.ref})`, log);
+      roomLine(store, `${j.name} on ${j.label}${fp ? ` (${fp})` : ''} typed the PIN of invite ${o.ref}; waiting for ${o.by || 'the host'} to let them in (the card, or /sub-human admit ${r.ref})`, log);
       return { box: seal(boxKey(o.isk, st.sid), { secret: r.secret, link: r.id, ref: r.ref, expires_at: r.expires_at }, st.sid) };
     }
 
@@ -189,7 +189,7 @@ function serveEnroll(transport, { store, kind, log = () => {}, timeoutMs = enrol
         if (code === 'INVALID') log(`enroll: ${e && e.stack || e}`);
         try { sweepDoors(store.code, { now: now() }); } catch (e2) { log(`door sweep: ${e2.message}`); } // a burn closes it now
         transport.send(protocol.error(id, code, e.message));
-        finish(/^wrong code/.test(e.message) ? 'wrong code' : e.message);
+        finish(/^wrong PIN/.test(e.message) ? 'wrong PIN' : e.message);
       }
     });
   });
@@ -217,7 +217,7 @@ function requester(t, timeoutMs) {
 }
 
 async function joinEnroll({ code, kind, pin, joiner, transport, checkKey = () => {}, timeoutMs = enrollMs() }) {
-  if (!KINDS.has(kind) || !CODE_RE.test(code) || !auth.PIN_RE.test(String(pin))) throw new RoomError('INVALID', 'enrollment needs a room code, a transport and a 6-digit code');
+  if (!KINDS.has(kind) || !CODE_RE.test(code) || !auth.SHORT_PIN_RE.test(String(pin))) throw new RoomError('INVALID', 'enrollment needs a room, a transport and a 4-digit PIN');
   const t = await transport;
   const ask = requester(t, timeoutMs);
   const sid = crypto.randomBytes(16);
@@ -238,7 +238,7 @@ async function joinEnroll({ code, kind, pin, joiner, transport, checkKey = () =>
     });
     if (!hit) {
       await ask(2, 'enroll.fail', {}); // answered AUTH with the tries left
-      throw new RoomError('AUTH', 'wrong code');
+      throw new RoomError('AUTH', 'wrong PIN');
     }
     let vouched;
     try { vouched = JSON.parse(hit.adb.toString('utf8')); } catch { vouched = null; }
@@ -320,11 +320,11 @@ function inviteFor(code, spec, secret, key) {
 async function enrollLink(code) {
   const links = require('../room/links.js');
   const l = links.get(code);
-  if (!l || !l.enroll || typeof l.enroll.pin !== 'string') throw new RoomError('AUTH', `this machine holds no code for room ${code}; type the join again`);
+  if (!l || !l.enroll || typeof l.enroll.pin !== 'string') throw new RoomError('AUTH', `this machine holds no PIN for room ${code}; type the join again`);
   if ((l.enroll.attempts || 0) >= MAX_SPENT) {
     const { enroll, ...rest } = l;
     links.set(code, { ...rest, refused: { at: new Date().toISOString(), reason: 'the host never answered' } });
-    throw new RoomError('AUTH', `${MAX_SPENT} attempts reached the host without an answer (each costs one of the code's tries); type the join again`);
+    throw new RoomError('AUTH', `${MAX_SPENT} attempts reached the host without an answer (each costs one of the invite's tries); type the join again`);
   }
   const spec = l.transport;
   const kind = kindOf(spec);
@@ -336,10 +336,10 @@ async function enrollLink(code) {
   const { transport, sawKey } = await openTransport(spec, code, { dir });
   const checkKey = vouched => {
     if (spec.kind === 'ssh') {
-      if (!vouched) throw new RoomError('AUTH', 'the host vouched for no ssh host key, so this machine cannot pin it; ask the host for an invite with --long');
+      if (!vouched) throw new RoomError('AUTH', 'the host vouched for no ssh host key, so this machine cannot pin it; ask the host to update');
       const saw = sawKey();
       if (saw !== vouched) {
-        throw new RoomError('AUTH', `the ssh server that answered is not the one that holds your code (its host key ${saw ? sshkeys.fingerprint(saw) : '(none read)'} is not the ${sshkeys.fingerprint(vouched)} the host vouched for): someone may be in between, so nothing more was sent. Check with the host before you try again`);
+        throw new RoomError('AUTH', `the ssh server that answered is not the one that holds your PIN (its host key ${saw ? sshkeys.fingerprint(saw) : '(none read)'} is not the ${sshkeys.fingerprint(vouched)} the host vouched for): someone may be in between, so nothing more was sent. Check with the host before you try again`);
       }
     }
     if ((spec.kind === 'wss' || spec.kind === 'ws') && !vouched) throw new RoomError('AUTH', 'the host vouched for no listener key; ask the host to update');
@@ -352,7 +352,7 @@ async function enrollLink(code) {
       if (e && e.code === 'OFFLINE' && !e.spent && spec.kind === 'ssh' && typeof transport.stderr === 'function') {
         await new Promise(res => setTimeout(res, 100)); // ssh's last words may come just after its exit
         if (/Permission denied \(publickey/.test(transport.stderr())) {
-          throw new RoomError('AUTH', `the host's door for codes to room ${code} is shut (its code was used, burnt, revoked or expired, or this is not the host that minted it); ask the host for a new code`);
+          throw new RoomError('AUTH', `the host's door for PINs to room ${code} is shut (its PIN was used, burnt, cancelled or expired, or this is not the host that made it); ask the host for a new invite`);
         }
       }
       throw e;
