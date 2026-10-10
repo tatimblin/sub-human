@@ -47,12 +47,7 @@ import * as links from '../lib/room/links.ts';
 import * as hosting from '../lib/remote/hosting.ts';
 const wsT = (): typeof import('../lib/remote/transports/ws.ts') => require('../lib/remote/transports/ws.ts');
 const sshT = (): typeof import('../lib/remote/transports/ssh.ts') => require('../lib/remote/transports/ssh.ts');
-/** A flag's spec in lib/cli/args.ts parse: 0 takes no value, 1 one, '?' an optional one. */
-type FlagSpec = 0 | 1 | '?';
-type FlagValue<K extends FlagSpec> = K extends 0 ? true : K extends 1 ? string : string | true;
-/** lib/cli/args.ts parse: each flag given (its value; true for one that has none), the other words, or why it failed. */
-interface Parsed<S extends Record<string, FlagSpec>> { flags: { [k in keyof S]?: FlagValue<S[k]> }; rest: string[]; error?: string }
-const parseArgs = <const S extends Record<string, FlagSpec>>(argv: string[], spec: S): Parsed<S> => (require('../lib/cli/args.ts') as typeof import('../lib/cli/args.ts')).parse(argv, spec);
+const parseArgs = <const S extends FlagSpec>(argv: string[], spec: S): Parsed<S> => (require('../lib/cli/args.ts') as typeof import('../lib/cli/args.ts')).parse(argv, spec);
 import * as seatKey from './seat-key.ts';
 import * as handoff from '../lib/handoff.ts';
 import * as envelope from '../lib/room/envelope.ts';
@@ -64,6 +59,7 @@ import childProcess from 'node:child_process';
 import * as ccMod from '../lib/cc.ts';
 import { createRequire } from 'node:module';
 import type { JoinIn } from './types.ts';
+import type { FlagSpec, Parsed } from '../lib/cli/types.ts';
 import type { Link, Member } from '../lib/room/types.ts';
 import type { LinkSpec, SshSpec } from '../lib/remote/types-rest.ts';
 import type { Outcome } from '../lib/remote/hosting.ts';

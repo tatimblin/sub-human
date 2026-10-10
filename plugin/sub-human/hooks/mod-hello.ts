@@ -11,17 +11,12 @@ import path from 'node:path';
 import { readInput } from '../lib/io.ts';
 import * as identity from '../lib/identity.ts';
 import type { Identity } from '../lib/identity.ts';
+import type { PluginState } from 'claude-code';
 
 /** stdin: the session id and the module's nonce for it (mod/deliver.ts sayHello). */
 interface HelloIn { session_id?: unknown; nonce?: unknown }
-/** What the module reads back (mod/core/seat.ts parseHello). */
-interface Hello {
-  home: string;
-  realHome: string;
-  userHome: string;
-  pluginRoot: string;
-  seat: { name: string; code: string; role: string; addr: string } | null;
-}
+/** What the module reads back (mod/core/seat.ts parseHello adds the session id): types/index.d.ts SubHumanHello. */
+type Hello = Omit<PluginState['sub-human']['hello'], 'sid'>;
 
 const PLUGIN_ROOT = path.join(import.meta.dirname, '..');
 const real = (p: string) => { try { return fs.realpathSync(p); } catch { return p; } };

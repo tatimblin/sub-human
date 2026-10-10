@@ -67,15 +67,13 @@ import {
   ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS,
 } from './config.ts';
 import type { Holds, RowRec, Spawn, Task } from './types-app.ts';
-import type { Entry, Member, Members } from './room/types.ts';
+import type { Entry, LinkState, Member, Members } from './room/types.ts';
 import type { Identity } from './identity.ts';
 
 /** members as callers hand them over: readMembers(code) (by name) or a list. */
 type MemberInput = Members | Member[] | null | undefined;
 /** The seat a row is drawn for or spawned from. */
 type Me = Pick<Identity, 'code' | 'name' | 'role'>;
-/** The link of a room hosted elsewhere (lib/room/link-state.ts read), or null. */
-type Link = ReturnType<typeof linkState.read>;
 /** paint(): warn / ok / dim, with colour or without. */
 interface Paint { warn(s: string): string, ok(s: string): string, dim(s: string): string }
 /** A proposal as a row reads it (proposals() below). */
@@ -98,7 +96,7 @@ interface RowOpts {
   now?: number;
   tasks?: Task[];
   taskSummary?: string | null;
-  link?: Link;
+  link?: LinkState | null;
 }
 /** The row map document rows/<session_id>. */
 interface RowMap { byAgent?: Record<string, RowRec> }
@@ -426,7 +424,7 @@ function participantText(code: string, name: string, viewer: string | null | und
   return fit(parts);
 }
 
-function roomText(code: string, viewer: string | null | undefined, es: Entry[], ms: Member[], now: number, c: Paint, summary: string, link: Link): string {
+function roomText(code: string, viewer: string | null | undefined, es: Entry[], ms: Member[], now: number, c: Paint, summary: string, link: LinkState | null): string {
   const parts: string[] = [];
   // a room hosted elsewhere: the link leads the row while it is down or reconnecting, and closes it while up
   // (lib/room/link-state.ts indicator: "✕ offline 2m · 2 queued", "… connecting (3)", "⇄ online")

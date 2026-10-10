@@ -909,3 +909,4 @@ export {
   run, serveMirror, idleWatch, socketPath, socketPaths, handle, status, stopReason, start, pipeLocator, sshLocator,
   transportOf, sshCommand, linkTimings, nextDelay, wakeWatch, netWatch, netSignature, keyRefused,
 };
+export type { LinkStatus };

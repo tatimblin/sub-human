@@ -62,8 +62,12 @@ test('hold: tool definition and argument errors', async () => {
   const w = setup(['claude', 'alice'], 'claude');
   assert.deepEqual(w.plug.tools.map(t => t.name), ['hold']);
   assert.equal(w.plug.call('nope', null, {}, {}), null);
-  assert.match(textOf(await w.call({}).p), /hold needs/);
-  assert.match(textOf(await w.call({ member: 'zed' }).p), /^STOP: zed is not in room/);
+  const bad = await w.call({}).p;
+  assert.match(textOf(bad), /hold needs/);
+  assert.equal(bad.isError, true, 'a call without member or room is refused as an error');
+  const stop = await w.call({ member: 'zed' }).p;
+  assert.match(textOf(stop), /^STOP: zed is not in room/);
+  assert.equal(stop.isError, undefined, 'a STOP is an answer for the row, not an error');
   assert.match(textOf(await w.call({ member: 'claude' }).p), /^STOP: that is you/);
   assert.match(textOf(await w.call({ member: '../x' }).p), /^STOP/);
   assert.match(textOf(await w.call({ room: 'otter-1111' }).p), /^STOP: you are in room marmot-2509/);

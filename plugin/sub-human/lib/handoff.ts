@@ -83,7 +83,7 @@ import * as ioMod from './io.ts';
 import { createRequire } from 'node:module';
 import type { Card, HandoffAskDoc, HandoffDoc } from './types-app.ts';
 import type { Entry, EntryInput, HostProof, HostState, Link, Member, Members } from './room/types.ts';
-import type { HandoffAsk, LinkRecord, MovedEventData, PrivateEvent } from './remote/types-core.ts';
+import type { HandoffAsk, HandoffInvite, Invites, LinkRecord, MovedEventData, PrivateEvent } from './remote/types-core.ts';
 import type { LinkSpec } from './remote/types-rest.ts';
 import type { MirrorRoomStore } from './room/store-mirror.ts';
 import type { Identity } from './identity.ts';
@@ -484,8 +484,6 @@ function demote(code: string, invite: string, pin?: string): { orphan: string | 
   return { orphan, request };
 }
 
-/** An invite record (lib/remote/auth.ts, the host document remote/invites), the fields status reads. */
-interface InviteRec { handoff?: boolean, machine?: string, seats: string[], used_at?: string }
 interface Status {
   host: HostState;
   isHost: boolean;
@@ -497,7 +495,7 @@ function status(code: string): Status {
   const out: Status = { host: s.hostState(), isHost: s.isHost, doc: hostDoc(s) };
   if (s.isHost) {
     const linksNow = Object.values((s.kv.get(auth.LINKS_KEY) || {}) as Record<string, LinkRec>);
-    const inv = Object.values((s.kv.get(auth.INVITES_KEY) || {}) as Record<string, InviteRec>).filter(i => i.handoff);
+    const inv = Object.values((s.kv.get(auth.INVITES_KEY) || {}) as Invites).filter((i): i is HandoffInvite => !!i && i.handoff === true);
     out.machines = inv.map(i => ({ machine: i.machine, seats: i.seats, connected: !!i.used_at || linksNow.some(l => l.machine === i.machine) }));
   }
   return out;

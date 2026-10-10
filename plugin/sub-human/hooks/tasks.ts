@@ -30,6 +30,7 @@ import * as cc from '../lib/cc.ts';
 import { readJson } from '../lib/io.ts';
 import type { AnyHookIn, HookIn } from './types.ts';
 import type { RawTask } from '../lib/tasks.ts';
+import type { Task } from '../lib/types-app.ts';
 
 /** Anything that may carry task metadata (a call's input, a native task file). */
 type WithMeta = { metadata?: { _internal?: unknown; req?: unknown } | null } | null | undefined;
@@ -42,7 +43,7 @@ interface NativeTask extends RawTask {
 }
 
 /** A task's state in the mirror (lib/tasks.ts fold), and a `task` entry's fields. */
-interface TaskState { id: string; subject: string; status: string; owner: string | null; blockedBy: string[] }
+type TaskState = Omit<Task, 'metadata'>;
 interface TaskRecord extends TaskState { op: string; req?: number }
 
 /** TaskCreate / TaskUpdate input, as sent (untrusted). */

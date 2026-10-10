@@ -18,7 +18,6 @@ const LIB = path.join(import.meta.dirname, '..', 'lib');
 import * as identity from '../lib/identity.ts';
 import * as rows from '../lib/rows.ts';
 import type { Members } from '../lib/room/types.ts';
-import type { RowRec } from '../lib/types-app.ts';
 import type { Identity } from '../lib/identity.ts';
 
 /** One task of the subagentStatusLine input (Claude Code's agent panel), as read here (untrusted). */

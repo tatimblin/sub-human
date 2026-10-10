@@ -36,11 +36,10 @@ import { isAlive } from '../io.ts';
 import * as links from './links.ts';
 import { createRequire } from 'node:module';
 import type { LinkState, LinkStateWord } from './types.ts';
+import type { LinkStatus } from '../remote/link.ts';
 
 const require = createRequire(import.meta.url);
 
-/** The mirror's document `link` (lib/remote/link.ts status), read defensively: any field may be absent. */
-interface LinkDoc { pid?: number; running?: boolean; state?: string; since?: string; reason?: string; code?: string }
 
 const STATES = new Set<LinkStateWord>(['online', 'connecting', 'offline', 'fork', 'stopped']) as ReadonlySet<string>;
 const LEGACY: Record<string, LinkStateWord> = { up: 'online', down: 'offline' };
@@ -60,7 +59,7 @@ function normalize(state: unknown, detail?: unknown): LinkStateWord {
 }
 
 /** The mirror's `link` document (lib/remote/link.ts status), or null when it cannot be read. */
-function linkDoc(code: string): LinkDoc | null {
+function linkDoc(code: string): LinkStatus | null {
   try { return (require('../remote/link.ts') as typeof import('../remote/link.ts')).status(code); } catch { return null; }
 }
 

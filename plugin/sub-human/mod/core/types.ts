@@ -4,6 +4,7 @@
  * engine event is `unknown` until checked.
  */
 import type { ClassicResult, PluginState, ProcessRunResult, PromptSubmitResult } from 'claude-code';
+import type { TailEvent as TailLine, TailSeat as TailLineSeat } from '../../lib/types-app.ts';
 
 /** The hello as $.state keeps it (types/index.d.ts SubHumanHello; mod/core/seat.ts parseHello). */
 export type Hello = PluginState['sub-human']['hello'];
@@ -49,15 +50,12 @@ export interface GuardCtx {
   realCwd?: string | null;
 }
 
-/** A tail child's seat event's seat (lib/tail.ts). */
-export interface TailSeat { name: string; code: string; role?: string }
+/** A tail child's seat event's seat, as parseEvent checks it: its name and code (lib/tail.ts sends role and addr too). */
+export type TailSeat = Pick<TailLineSeat, 'name' | 'code'> & Partial<Omit<TailLineSeat, 'name' | 'code'>>;
 
-/** A tail child's ndjson event, parsed (mod/core/deliver.ts parseEvent). */
-export type TailEvent =
-  | { type: 'seat'; seat: TailSeat | null }
-  | { type: 'chat'; lines: string[] }
-  | { type: 'rows'; text: string | null }
-  | { type: 'pull' | 'wake' | 'health'; text: string };
+/** A tail child's ndjson event, parsed (mod/core/deliver.ts parseEvent): lib/tail.ts's TailEvent, the seat as checked.
+ * A type-only import, erased when Claude Code or node loads this file. */
+export type TailEvent = Exclude<TailLine, { type: 'seat' }> | { type: 'seat'; seat: TailSeat | null };
 
 /** One $ call an event maps to (mod/core/deliver.ts route). */
 export type DeliverAction =

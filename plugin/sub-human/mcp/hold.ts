@@ -37,13 +37,10 @@ import * as room from '../lib/room.ts';
 import * as strs from '../lib/text.ts';
 import * as config from '../lib/config.ts';
 import type { CallMeta, JsonRpcId, Me, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
+import type { Entry, Members } from '../lib/room/types.ts';
 
 /** What the hold server needs of the room-server ctx (the tests pass a fake one). */
 type HoldContext = Pick<PluginContext, 'whoami' | 'progress' | 'identity'> & Partial<Pick<PluginContext, 'text' | 'log' | 'onCancel'>>;
-/** A room entry, as hold reads it. */
-type Entry = Parameters<typeof room.chatLines>[0];
-/** A member record of the room (identity.readMembers). */
-type Members = Record<string, { name?: string; role?: string; left_at?: string } | undefined>;
 
 /** One blocked hold call: a participant row's (member NAME) or the room row's (name = the room code). */
 interface HoldBase {
@@ -124,7 +121,7 @@ class HoldServer {
   }
 
   log(...a: unknown[]) { try { this.ctx.log && this.ctx.log('hold', ...a); } catch { /* debug only */ } }
-  text(s: string): ToolResult { return this.ctx.text ? this.ctx.text(s) : { content: [{ type: 'text', text: s }] }; }
+  text(s: string, isError = false): ToolResult { return this.ctx.text ? this.ctx.text(s, isError) : { content: [{ type: 'text', text: s }], ...(isError ? { isError: true as const } : {}) }; }
   memberHolds(code: string) { return [...this.holds.values()].filter(h => h.kind === 'member' && h.code === code); }
   roomHolds(code: string) { return [...this.holds.values()].filter(h => h.kind === 'room' && h.code === code); }
   members(code: string): Members { try { return this.ctx.identity.readMembers(code) || {}; } catch { return {}; } }
@@ -346,7 +343,7 @@ class HoldServer {
       const move = this.newMove(rh, code, now);
       h.msg = move || (last ? entryLine(last) : `room ${code}`);
     } else {
-      return this.text('hold needs {member: NAME} (participant row) or {room: CODE} (room row).'); // text() takes no isError: this was never sent as an error
+      return this.text('hold needs {member: NAME} (participant row) or {room: CODE} (room row).', true);
     }
 
     const held = h;

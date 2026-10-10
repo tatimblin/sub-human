@@ -44,7 +44,7 @@
 import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
 import { LINK_CALL_MS } from '../config.ts';
-import type { CodedError, DecodedFrame, ProtoRange, StreamEvent } from './types-core.ts';
+import type { CodedError, DecodedFrame, HelloResult, ProtoRange, StreamEvent } from './types-core.ts';
 import type { Transport } from './types-rest.ts';
 
 /** The server's caps, from its hello. */
@@ -58,17 +58,11 @@ interface Pending {
   timer: NodeJS.Timeout;
 }
 
-/** The server's answer to hello. */
-interface HelloResult {
-  v: number;
-  proto?: ProtoRange;
-  server?: string;
-  token?: string;
-  link: string | null;
-  room: string | null;
+/** The server's answer to hello (types-core HelloResult), as a host of any version sends it: one from before 0.4
+ * names no proto, server or epoch. */
+type HelloReply = Pick<HelloResult, 'v' | 'link' | 'room'> & Partial<Pick<HelloResult, 'proto' | 'server' | 'token' | 'epoch'>> & {
   caps: ServerCaps | null;
-  epoch?: number;
-}
+};
 
 export interface ConnectOpts {
   /** this machine's id (home.machineId; null when it could not be read: the host refuses the hello) */
@@ -198,7 +192,7 @@ async function connect(transport: Transport | Promise<Transport>, opts: ConnectO
   const need = Math.max(proto.min, pin !== undefined ? 2 : 1);
   const me = { version, proto };
   try {
-    let r: HelloResult;
+    let r: HelloReply;
     try {
       r = await c._request('hello', { v: need, proto, client: version, caps, machine, ...cred, ...(Number.isInteger(epoch) ? { epoch } : {}) }, ++c.seq, helloMs);
     } catch (e) {

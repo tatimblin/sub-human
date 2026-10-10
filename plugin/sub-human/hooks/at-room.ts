@@ -26,6 +26,7 @@ import * as cc from '../lib/cc.ts';
 import * as seats from '../lib/seats.ts';
 import type { HookSpecificOutput, PromptIn } from './types.ts';
 import type { Identity } from '../lib/identity.ts';
+import type { TranscriptEntry } from '../lib/cc.ts';
 
 function parse(prompt: string): string | null {
   if (prompt.startsWith('@room ')) return prompt.slice('@room '.length);
@@ -50,15 +51,6 @@ const block = (reason: string, extra: Partial<HookSpecificOutput> = {}) => out({
   decision: 'block', reason, ...phoneNote(reason),
   hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true, ...extra },
 });
-
-/** A transcript line as cc.readEntries parses it: the fields read here (untrusted JSON). */
-interface TranscriptEntry {
-  type?: string;
-  isSidechain?: boolean;
-  isMeta?: boolean;
-  promptId?: string;
-  message?: { content?: unknown };
-}
 
 const TAIL_BYTES = config.TRANSCRIPT_TAIL_BYTES;
 /** The last TAIL_BYTES of a JSONL transcript as parsed entries (oldest first); [] when unreadable. */

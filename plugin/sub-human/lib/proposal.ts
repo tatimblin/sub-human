@@ -59,21 +59,11 @@ import { writeFileAtomic } from './io.ts';
 import { clip } from './text.ts';
 import * as config from './config.ts';
 import type { Card, Confirm, Proposal, Review } from './types-app.ts';
-import type { Entry, Member, Members, ProposalState } from './room/types.ts';
+import type { Entry, Matrix, Member, Members, ProposalState } from './room/types.ts';
 import type { Identity } from './identity.ts';
 
 /** Who acts: a seat's room and name are all these functions read. */
 type Me = Pick<Identity, 'code' | 'name'>;
-/** lib/room/consent.ts fold's answer matrix for one proposal, the fields read here. */
-interface Matrix {
-  hash: string;
-  approvers: string[];
-  answers: Record<string, { id: number, kind: string } | null>;
-  agreed: string[];
-  objected: string[];
-  missing: string[];
-  complete: boolean;
-}
 
 const HASH_RE = /^[0-9a-f]{12}$/;
 const QUESTION_RE = /^Agree to proposal ([0-9a-f]{12})\?$/;

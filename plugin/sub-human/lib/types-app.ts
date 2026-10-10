@@ -132,20 +132,3 @@ export type TailEvent =
   | { type: 'wake', text: string }
   | { type: 'rows', text: string | null }
   | { type: 'health', text: string };
-
-/** The link document of a room hosted elsewhere (lib/remote/link.ts status). */
-export interface LinkStatus {
-  state?: string;
-  running?: boolean;
-  reason?: string;
-  queued?: number;
-  pid?: number;
-  since?: string;
-  flush?: LinkFlush | null;
-}
-/** What became of the @room posts queued while the link was down. */
-export interface LinkFlush {
-  at?: string;
-  sent?: number;
-  unsent?: { text: string, why: string }[];
-}

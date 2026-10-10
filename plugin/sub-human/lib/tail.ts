@@ -63,28 +63,20 @@ import * as realClock from './clock.ts';
 import * as config from './config.ts';
 import { roomClaudeName } from './room/members.ts';
 import { createRequire } from 'node:module';
-import type { LinkFlush, LinkStatus, TailEvent, TailSeat } from './types-app.ts';
+import type { TailEvent, TailSeat } from './types-app.ts';
+import type { LinkStatus } from './remote/link.ts';
+import type { Flush } from './remote/types-core.ts';
 import type { Clock, TimerHandle } from './clock.ts';
-import type { Entry, RoomStore } from './room/types.ts';
+import type { Entry } from './room/types.ts';
 import type { Identity } from './identity.ts';
+import type { Room } from './room.ts';
 
 const require = createRequire(import.meta.url);
 
 // ---------- types ----------
 /** The room as a session reads it (lib/room.ts open): the calls made here. Tests hand in fakes. */
-interface TailRoom {
-  store?: RoomStore | null;
-  readView(opts: { after: number }): Entry[];
-  tailer(opts: { fs: typeof nodeFs }): { poll(): { entries: Entry[], reset?: boolean } };
-  lastId(): number;
-  getCursor(name: string): number;
-  setCursor(name: string, id: number): void;
-  verifyChain(): { ok: boolean, offset?: number, badAt?: number | null, line?: number };
-  lane(me: Identity, e: Entry, entries?: Entry[]): string;
-  chatLines(e: Entry, opts: { viewer: string, entries?: Entry[] }): string[];
-  line(e: Entry, opts: { full: boolean }): string;
-  stateLine(me: Identity, entries?: Entry[], opts?: { ids?: boolean }): string;
-}
+type TailRoom = Pick<Room, 'readView' | 'tailer' | 'lastId' | 'getCursor' | 'setCursor' | 'verifyChain' | 'lane' | 'chatLines' | 'line' | 'stateLine'>
+  & { store?: Room['store'] | null };
 /** The push lane test (visibleTo): entries is the log at flush time; note is the joinNote of a member_joined. */
 type Show = (e: Entry, entries?: Entry[], note?: string) => boolean;
 /** A rate-limited logger (errorLog): where it failed, and the error. */
@@ -384,7 +376,7 @@ function linkLine(st: LinkStatus, code: string): { key: 'fork' | 'offline' | 'st
   if (st.state === 'stopped') return { key: 'stopped', text: `the connection to room ${code} stopped (${st.reason || 'for good'}); @room posts can't be sent${kept}. Run /sub-human doctor.` };
   return { key: 'offline', text: `the connection to room ${code} isn't running; @room posts can't be sent${kept}. Type /sub-human to reconnect.` };
 }
-function flushLine(f: LinkFlush | null | undefined): string | null {
+function flushLine(f: Flush | null | undefined): string | null {
   if (!f || (!f.sent && !(f.unsent || []).length)) return null;
   const parts: string[] = [];
   if (f.sent) parts.push(`${f.sent} waiting @room post(s) sent`);

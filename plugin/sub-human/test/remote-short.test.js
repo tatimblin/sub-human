@@ -189,6 +189,18 @@ test('an invite: Refuse stops the join; a request nobody answers lapses; kick NA
   assert.equal(host.lib(() => admission.pending(code)).length, 0);
 });
 
+test('invite --cancel: an unknown ref is refused; an open invite is cancelled; cancelling it again changes nothing', t => {
+  const hosting = require(path.join(h.LIB, 'remote', 'hosting.ts'));
+  const { host, code } = room(t);
+  assert.throws(() => host.lib(() => hosting.cancelInvite(code, '0123456789ab')), /has no open invite 0123456789ab/);
+  const inv = host.lib(() => hosting.hostInvite(code, { pipe: true }));
+  const r = host.lib(() => hosting.cancelInvite(code, inv.ref));
+  assert.match(r.text, /^cancelled the invite to room .* it lets no one in/);
+  assert.ok(host.lib(() => auth.findInvite(store.open(code), inv.ref)).invite.burnt_at);
+  assert.match(host.lib(() => hosting.cancelInvite(code, inv.ref)).text, /no longer worked already/);
+  assert.match(host.lib(() => hosting.cancelInvite(code)).text, /has no open invite; nothing to cancel/);
+});
+
 test('an invite: the host CLI masks the PIN inside Claude Code, `sub-human admit` lists and lets in from a shell', async t => {
   const { host, remote, alice, bob, code } = room(t);
   stopDaemon(t, remote, code);
