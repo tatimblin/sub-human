@@ -556,6 +556,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/tail.ts`: the room tail behind `sub-human tail` (scripts/sub-human), the hooks module's child (mod/deliver.ts).
 - `lib/tasks.ts`: the room's shared task list. The headless room Claude's own native task list (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list.
 - `lib/text.ts`: the string helpers and name patterns every module shares.
+- `lib/types-app.ts`: shared types of the app slice (tail, rows, proposal, handoff, room-claude, tasks, seats, notices).
 - `lib/vendor/noble/curves/abstract/curve.js`: Methods for elliptic curve multiplication by scalars.
 - `lib/vendor/noble/curves/abstract/edwards.js`: Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 - `lib/vendor/noble/curves/abstract/fft.js`: Experimental implementation of NTT / FFT (Fast Fourier Transform) over finite fields.

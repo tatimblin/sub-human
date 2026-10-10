@@ -26,17 +26,28 @@ import * as config from './config.ts';
 import { roomClaudeName } from './room/members.ts';
 import * as clock from './clock.ts';
 import * as room from './room.ts';
+import type { LogEntry } from './types-app.ts';
+
+/** One join / leave notice (joinLeave). */
+interface Notice {
+  id: number;
+  kind: string;
+  name: string;
+  at: string;
+  settled: boolean;
+  rejoin: boolean;
+}
 
 const LEAVE_SETTLE_MS = config.LEAVE_SETTLE_MS;
 const ROW_MS = config.ROW_NOTICE_MS;
-const VIAS = ['mod'];
+const VIAS: readonly string[] = ['mod'];
 
 const settleMs = () => config.envMs('SUB_HUMAN_LEAVE_MS', LEAVE_SETTLE_MS);
-const isMove = e => e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
+const isMove = (e: LogEntry | null | undefined) => !!e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
 
-function joinLeave(es, viewer, { now = clock.now(), settle = settleMs() } = {}) {
+function joinLeave(es: LogEntry[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() } = {}): Notice[] {
   const list = (es || []).filter(e => isMove(e) && e.from !== viewer && roomClaudeName(e.from) !== 'claude'); // 0.4.x: "orch"
-  const drop = new Set();
+  const drop = new Set<number>();
   for (const l of list) {
     if (l.kind !== 'member_left') continue;
     const back = list.find(j => j.kind === 'member_joined' && j.from === l.from && j.id > l.id);
@@ -49,32 +60,32 @@ function joinLeave(es, viewer, { now = clock.now(), settle = settleMs() } = {}) 
   }));
 }
 
-function text(n) {
+function text(n: Pick<Notice, 'kind' | 'name' | 'rejoin'>): string {
   if (n.kind === 'member_left') return `${n.name} left`;
   return `${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
 }
 
-function rowSegment(es, viewer, { now = clock.now() } = {}) {
-  const fresh = x => now - Date.parse(x.at) - (x.kind === 'member_left' ? settleMs() : 0) < ROW_MS;
+function rowSegment(es: LogEntry[] | null | undefined, viewer: string | null | undefined, { now = clock.now() } = {}): string {
+  const fresh = (x: Notice) => now - Date.parse(x.at) - (x.kind === 'member_left' ? settleMs() : 0) < ROW_MS;
   const n = joinLeave(es, viewer, { now }).filter(x => x.settled && fresh(x)).at(-1);
   if (!n) return '';
   return n.kind === 'member_left' ? `−${n.name} left` : `+${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
 }
 
 // ---------- what was already shown to a member ----------
-const kvOf = code => room.open(code).store.kv;
-const shownKey = name => `rows/notices-${name}`;
-function shown(code, name) {
+const kvOf = (code: string) => room.open(code).store.kv;
+const shownKey = (name: string) => `rows/notices-${name}`;
+function shown(code: string, name: string): Set<number> {
   const v = kvOf(code).get(shownKey(name), null);
   return new Set(v && Array.isArray(v.shown) ? v.shown : []);
 }
 /** Record ids as shown to name, and how (`via`: "mod", the tail child). */
-function markShown(code, name, ids, via, { now = clock.now() } = {}) {
+function markShown(code: string, name: string, ids: number[], via: string, { now = clock.now() } = {}): void {
   if (!VIAS.includes(via)) throw new Error(`markShown: via must be one of ${VIAS.join(', ')}`);
   if (!ids.length) return;
   const kv = kvOf(code);
   const cur = kv.get(shownKey(name), {}) || {};
-  const s = [...new Set([...(Array.isArray(cur.shown) ? cur.shown : []), ...ids])].sort((a, b) => a - b).slice(-config.SHOWN_MAX);
+  const s = [...new Set<number>([...(Array.isArray(cur.shown) ? cur.shown : []), ...ids])].sort((a, b) => a - b).slice(-config.SHOWN_MAX);
   const at = new Date(now).toISOString();
   const log = [...(Array.isArray(cur.log) ? cur.log : []), ...ids.map(id => ({ id, via, at }))].slice(-config.SHOWN_MAX);
   kv.set(shownKey(name), { shown: s, log }, { compact: true });

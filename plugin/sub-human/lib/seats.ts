@@ -28,46 +28,66 @@
 import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as roomClaude from './room-claude.ts';
+import type { MemberRec } from './types-app.ts';
 
-const asSystem = name => ({ via: 'system', from: name, system: true });
+/** enter()'s seat: the join hook's, or the remote server's for a seat on another machine. */
+interface EnterOpts {
+  code: string;
+  name: string;
+  role?: string;
+  machine?: string;
+  pid?: number;
+  session_id?: string;
+  cwd?: string;
+  pubkey?: string;
+}
+interface EnterResult {
+  ok: boolean;
+  rejoin?: boolean;
+  error?: string;
+  code?: string;
+  note?: string;
+}
+
+const asSystem = (name: string) => ({ via: 'system', from: name, system: true });
 const WORKDIR = 'workdir'; // the room's working directory: {cwd}
 
 /** The first local seat's cwd becomes the room's working directory, where the room's Claude runs. */
-function keepWorkdir(code, cwd) {
+function keepWorkdir(code: string, cwd: string | undefined): void {
   const kv = room.open(code).store.kv;
   if (cwd && !kv.get(WORKDIR)) kv.set(WORKDIR, { cwd });
 }
 
-function ensureRoomClaude(code, cwd, by) {
-  let last = null;
+function ensureRoomClaude(code: string, cwd: string | null | undefined, by: string): string {
+  let last: MemberRec | null = null;
   try {
     last = identity.readMembers(code).claude || null;
     const c = roomClaude.claimSpawn(code, { by });
     if (!c) return '';
-    seam.startDetached({ code, cwd: cwd || (room.open(code).store.kv.get(WORKDIR) || {}).cwd, ...c });
+    seam.startDetached({ code, cwd: cwd || (room.open(code).store.kv.get(WORKDIR) as { cwd?: string } | null || {}).cwd, ...c });
   } catch (e) {
-    return ` · the room's Claude could not start (${String(e.message || e).slice(0, 200)}); /sub-human still works, but there is no room task list`;
+    return ` · the room's Claude could not start (${String((e as Error).message || e).slice(0, 200)}); /sub-human still works, but there is no room task list`;
   }
   const failed = last && last.spawn_error ? ` (the last start failed: ${last.spawn_error})` : '';
   return ` · starting the room's Claude…${failed}`;
 }
 
-function enter({ code, name, role = 'member', machine = identity.machineId(), pid, session_id, cwd, pubkey }) {
-  const r = identity.join({ code, name, role, machine, pid, session_id, cwd });
+function enter({ code, name, role = 'member', machine = identity.machineId(), pid, session_id, cwd, pubkey }: EnterOpts): EnterResult {
+  const r: EnterResult = identity.join({ code, name, role, machine, pid, session_id, cwd });
   if (!r.ok) return r;
   if (!identity.isHost(code)) return { ...r, note: '' };
   keepWorkdir(code, cwd);
   try {
     room.open(code).append({ kind: 'member_joined', text: `${name} ${r.rejoin ? 'rejoined' : 'joined'}`, pubkey, machine }, asSystem(name));
   } catch (e) {
-    if (e.code !== 'AUTH') throw e;
-    identity.leave(code, name);
-    return { ok: false, error: e.message, code: 'AUTH' };
+    if ((e as { code?: unknown }).code !== 'AUTH') throw e;
+    identity.leave(code, name, {});
+    return { ok: false, error: (e as Error).message, code: 'AUTH' };
   }
   return { ...r, note: ensureRoomClaude(code, cwd, name) };
 }
 
-function exit(code, name, reason, { deadlineMs } = {}) {
+function exit(code: string, name: string, reason: string, { deadlineMs }: { deadlineMs?: number } = {}): boolean {
   try {
     if (!identity.leave(code, name, { reason, deadlineMs })) return false;
   } catch (e) {
@@ -84,6 +104,6 @@ function exit(code, name, reason, { deadlineMs } = {}) {
 
 /** Test seam: the room's Claude starts through this object, which a test may stub (test/seats.test.js); an ES
  * module's own exports are read-only. */
-const seam = { startDetached: o => roomClaude.startDetached(o) };
+const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]) => roomClaude.startDetached(o) };
 
 export { enter, exit, ensureRoomClaude, seam };
