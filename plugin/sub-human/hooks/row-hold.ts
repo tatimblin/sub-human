@@ -7,7 +7,8 @@
 // An Esc-kill does NOT fire SubagentStop; hold.ts's RESPAWN covers that. A row that stops for good
 // (STOP: this seat left, or a duplicate) is dropped from the row map.
 import { identity, rows, run, out, resolveSeat } from './common.ts';
-import type { HookIn, MemberRec } from './types.ts';
+import type { HookIn } from './types.ts';
+import type { Member } from '../lib/room/types.ts';
 
 const MAX_BLOCKS = 5;
 
@@ -20,7 +21,7 @@ run((input: HookIn<'SubagentStop'>) => {
   if (!rec) return;
   const last = String(input.last_assistant_message || '').trim();
   if (/^(left|STOP)\b/i.test(last)) return rows.forgetRow(me.code, id);
-  const ms: Record<string, MemberRec | undefined> = identity.readMembers(me.code) || {};
+  const ms: Record<string, Member | undefined> = identity.readMembers(me.code) || {};
   const mine = ms[me.name];
   const wanted = rec.kind === 'room'
     ? !!(mine && !mine.left_at)

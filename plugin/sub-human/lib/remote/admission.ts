@@ -134,3 +134,4 @@ function markTold(code: string, ref: string, name: string): void {
 const lapse = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => auth.lapseAdmissions(hostStore(code), { now });
 
 export { pending, find, targets, describe, question, card, letIn, refuse, markTold, lapse, LET_IN, REFUSE };
+export type { Signer };

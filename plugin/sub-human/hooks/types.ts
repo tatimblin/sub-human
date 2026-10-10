@@ -1,6 +1,8 @@
-// The shapes the hooks share: what a hook reads on stdin, what it writes, and the store records it handles.
-// Types only (import type); the hook inputs come from Claude Code's own declarations ('claude-code').
+// The shapes the hooks share: what a hook reads on stdin and what it writes. Types only (import type); the hook
+// inputs come from Claude Code's own declarations ('claude-code'), the store records from lib/ (a seat: identity.ts
+// Identity; a member: room/types.ts Member; cards, proposals, reviews and notes: types-app.ts).
 import type { BaseHookInput, ClassicHookInputs } from 'claude-code';
+import type { Entry } from '../lib/room/types.ts';
 
 /** A classic hook event's name (PreToolUse, Stop, ...). */
 export type HookEvent = keyof ClassicHookInputs;
@@ -27,26 +29,6 @@ export type PromptIn = HookIn<'UserPromptSubmit'> & { sub_human_origin?: unknown
 
 /** UserPromptExpansion as join.ts reads it: the payload plus what mod/core/command.ts joinPayload adds. */
 export type JoinIn = HookIn<'UserPromptExpansion'> & { sub_human_via?: unknown; sub_human_nonce?: unknown; agent_type?: string };
-
-/** A seat (lib/identity.ts seat()): who a hook runs for. */
-export interface Seat {
-  code: string;
-  name: string;
-  role: string;
-  /** undefined only for a seat taken back from a payload that carried none (hooks/session-restore.ts) */
-  session_id?: string | null;
-  pid: number;
-  address: string;
-}
-
-/** A room member's record (lib/identity.ts readMembers values): the fields the hooks read. */
-export interface MemberRec {
-  name: string;
-  role?: string;
-  left_at?: string | null;
-  pid?: number;
-  session_id?: string | null;
-}
 
 /** hookSpecificOutput, for every event the hooks answer. */
 export interface HookSpecificOutput {
@@ -84,34 +66,12 @@ export interface HookOutput {
  * (untrusted: each field checked). */
 export interface CardOption { label?: unknown; description?: unknown; preview?: unknown }
 export interface CardQuestion { question?: unknown; header?: unknown; multiSelect?: unknown; options?: CardOption[] }
-/** A card the hooks build (lib/proposal.ts, lib/handoff.ts, lib/remote/admission.ts). */
-export interface Card { questions: { question: string; options: { label: string; description: string }[] }[] }
-
-/** A proposal pending for a seat (lib/proposal.ts pendingFor). */
-export interface PendingProposal { id?: number; hash: string; approvers?: string[]; path?: string; from?: string | null }
-
-/** A note waiting for the person's Send (lib/proposal.ts readConfirm). */
-export interface ConfirmNote { hash: string; note: string; from: string | null; title: string | null; at: number; asked?: number }
-
-/** The plan-view review's state (members/NAME/review.json, lib/proposal.ts readReview). */
-export interface ReviewState {
-  phase: 'entering' | 'shown' | 'exiting' | 'restore';
-  mode?: string;
-  at?: number;
-  hash?: string;
-  from?: string | null;
-  file?: string;
-  backup?: string | null;
-  restored?: boolean;
-  tool_use_id?: string | null;
-  said?: string;
-  resolved?: boolean;
-  foreign?: boolean;
-  card?: string;
-}
-
-/** lib/proposal.ts answer, then decide: what record() hands back. */
-export interface Recorded { stale?: boolean; failed?: string; unknown?: boolean; decision?: { text: string } | null }
+/** lib/proposal.ts answer, then decide: what consent's record() hands back. failed: a RoomError (the link to the host
+ * is down); unknown: the answer went out and may still land. */
+export type Recorded =
+  | { stale: true; why: string; entry?: undefined; decision?: undefined; failed?: undefined; unknown?: undefined }
+  | { entry: Entry; decision: Entry | null; stale?: undefined; failed?: undefined; unknown?: undefined }
+  | { failed: string; unknown?: true; stale?: undefined; entry?: undefined; decision?: undefined };
 
 /** An Agent / Task call's input as the row hooks read it (untrusted: each field checked). */
 export interface AgentCall { subagent_type?: unknown; prompt?: unknown; description?: unknown; name?: unknown }

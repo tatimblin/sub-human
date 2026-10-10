@@ -41,7 +41,7 @@ import type { Entry, Members } from './room/types.ts';
 
 /** A task as it arrives to be cleaned (the mirror, a fold, hooks/tasks.ts's native task): loosely shaped. */
 interface RawTask {
-  id?: string | number | null;
+  id?: unknown;
   subject?: string;
   status?: string;
   owner?: string | null;
@@ -234,3 +234,4 @@ export {
   OPS, list, fold, refold, metaReq, summary, mine, validate, gate, reqOf, requestText, isRoomTask, isClosing,
   writeList, withList,
 };
+export type { RawTask };

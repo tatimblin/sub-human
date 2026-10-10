@@ -63,27 +63,30 @@ export interface Card {
     options: { label: string, description: string, preview?: string }[];
   }[];
 }
-/** members/NAME/review: the plan-view review state (hooks/consent.ts). */
+/** members/NAME/review: the plan-view review state (hooks/consent.ts writes it). */
 export interface Review {
-  phase?: string;
+  phase: 'entering' | 'shown' | 'exiting' | 'restore';
   mode?: string;
   at?: number;
   hash?: string;
-  from?: string;
+  from?: string | null;
   file?: string;
   backup?: string | null;
   restored?: boolean;
-  tool_use_id?: string;
-  [k: string]: unknown;
+  tool_use_id?: string | null;
+  said?: string;
+  resolved?: boolean;
+  foreign?: boolean;
+  card?: string;
 }
-/** members/NAME/confirm: a review's note waiting for the person's Send. */
+/** members/NAME/confirm: a review's note waiting for the person's Send (asked: when its card was shown). */
 export interface Confirm {
   hash: string;
   note: string;
-  from?: string;
-  title?: string;
-  at?: number;
-  asked?: unknown;
+  from: string | null;
+  title: string | null;
+  at: number;
+  asked?: number;
 }
 
 // ---------- lib/handoff.ts ----------

@@ -29,16 +29,13 @@ import * as tasks from '../lib/tasks.ts';
 import * as cc from '../lib/cc.ts';
 import { readJson } from '../lib/io.ts';
 import type { AnyHookIn, HookIn } from './types.ts';
+import type { RawTask } from '../lib/tasks.ts';
 
 /** Anything that may carry task metadata (a call's input, a native task file). */
 type WithMeta = { metadata?: { _internal?: unknown; req?: unknown } | null } | null | undefined;
 
 /** A native task file (cc.taskFile JSON, read only): the fields read here. */
-interface NativeTask {
-  id?: unknown;
-  subject?: string;
-  status?: string;
-  owner?: string | null;
+interface NativeTask extends RawTask {
   blockedBy?: unknown[];
   description?: string;
   metadata?: { _internal?: unknown; req?: unknown } | null;

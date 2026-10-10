@@ -44,6 +44,7 @@ import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as proposal from '../lib/proposal.ts';
 import { createRequire } from 'node:module';
+import type { EntryInput } from '../lib/room/types.ts';
 import type { CallMeta, CallToolParams, JsonRpcError, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 
 // loadPlugins() requires each plug-in by path (createRequire: require(esm) is synchronous).
@@ -195,9 +196,8 @@ function post(me: Me, args: ToolArgs) {
   if (typeof kind !== 'string' || !POST_KINDS.includes(kind)) {
     return text(`refused: kind must be one of ${POST_KINDS.join(', ')}. To ask for agreement, use propose; only people answer it, on their own card.`, true);
   }
-  const entry: { kind: string; text: unknown; to?: unknown; refs?: unknown } = { kind, text: body };
-  if (to !== undefined) entry.to = to;
-  if (refs !== undefined) entry.refs = refs;
+  // the model's arguments, unchecked: validate() (append) checks each field's type
+  const entry = { kind, text: body, ...(to !== undefined ? { to } : {}), ...(refs !== undefined ? { refs } : {}) } as EntryInput;
   return json(room.open(me.code).append(entry, { via: 'agent', from: me.name }));
 }
 

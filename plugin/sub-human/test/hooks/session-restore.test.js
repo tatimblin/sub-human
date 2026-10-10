@@ -59,6 +59,22 @@ test('session-restore: --resume after the session ended rejoins the seat with a 
   assert.equal(w.lib(() => identity.resolveByPid(process.pid)).name, 'alice');
 });
 
+test('session-restore: --resume rejoins when this machine\'s id cannot be read (member_joined carries no machine)', () => {
+  const w = new World({});
+  fs.writeFileSync(path.join(w.home, 'machine.json'), '{}\n'); // unreadable id: home.machineId() is null, from the start
+  w.join('claude', 'sleep');
+  w.join('alice', 'sleep');
+  w.join('bob', 'sleep');
+  const oldSid = w.sid.alice;
+  w.hook('session-end', fixture('session-end'), { as: 'alice' });
+  w.pid.alice = process.pid;
+  const r = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'resume', session_id: oldSid }, { as: 'alice', session: false });
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(ctx(r), /restored after resume/);
+  const e = w.entries().at(-1);
+  assert.deepEqual([e.kind, e.from, 'machine' in e], ['member_joined', 'alice', false]);
+});
+
 test('session-restore: --resume into a closing or closed room does nothing', () => {
   const w = new World({ claude: 'sleep', alice: 'sleep' });
   const oldSid = w.sid.alice;

@@ -24,7 +24,8 @@ import { oneLine } from '../lib/text.ts';
 import * as config from '../lib/config.ts';
 import * as cc from '../lib/cc.ts';
 import * as seats from '../lib/seats.ts';
-import type { HookSpecificOutput, PromptIn, Seat } from './types.ts';
+import type { HookSpecificOutput, PromptIn } from './types.ts';
+import type { Identity } from '../lib/identity.ts';
 
 function parse(prompt: string): string | null {
   if (prompt.startsWith('@room ')) return prompt.slice('@room '.length);
@@ -95,7 +96,7 @@ function draftedByAgent(text: string, assistant: string): boolean {
 
 // ---------- the room's Claude takes no typed input ----------
 const LAUNCH = /^\/(?:sub-human:)?sub-human(?:\s|$)/;
-const roomClaudeHint = (me: Seat) => `the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message ${identity.address(me.name, me.code)}`;
+const roomClaudeHint = (me: Identity) => `the room's Claude takes no typed input; type @claude in your own session, or ask your Claude to message ${identity.address(me.name, me.code)}`;
 
 /** True when no earlier prompt of this session is in its transcript (a fresh session has none, or no file). */
 function firstPrompt(input: PromptIn): boolean {
@@ -104,7 +105,7 @@ function firstPrompt(input: PromptIn): boolean {
 }
 
 /** For a room Claude session: null when the prompt may run (anything not typed, the launch command), else the refusal. */
-function roomClaudeRefusal(me: Seat, input: PromptIn, prompt: string, origin: string | null): string | null {
+function roomClaudeRefusal(me: Identity, input: PromptIn, prompt: string, origin: string | null): string | null {
   if (origin === null || !TYPED_ORIGINS.has(origin)) return null;
   return LAUNCH.test(prompt) && firstPrompt(input) ? null : roomClaudeHint(me);
 }

@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { readInput } from '../lib/io.ts';
 import * as identity from '../lib/identity.ts';
-import type { Seat } from './types.ts';
+import type { Identity } from '../lib/identity.ts';
 
 /** stdin: the session id and the module's nonce for it (mod/deliver.ts sayHello). */
 interface HelloIn { session_id?: unknown; nonce?: unknown }
@@ -31,7 +31,7 @@ function hello(input: HelloIn): Hello {
   const home = path.resolve(identity.home());
   let seat: Hello['seat'] = null;
   try {
-    const me: Seat | null = sid ? identity.resolveBySession(sid) : null;
+    const me: Identity | null = sid ? identity.resolveBySession(sid) : null;
     if (me) seat = { name: me.name, code: me.code, role: me.role, addr: identity.address(me.name, me.code) };
   } catch (err) { process.stderr.write(`sub-human mod-hello: seat lookup failed: ${err instanceof Error ? err.message : err}\n`); }
   try { if (sid) identity.writeModLease(sid, { pid: identity.claudePid() || process.ppid, nonce: input.nonce }); } catch (err) {

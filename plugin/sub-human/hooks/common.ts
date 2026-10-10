@@ -24,7 +24,9 @@ import { readInput } from '../lib/io.ts';
 import * as config from '../lib/config.ts';
 import { roomClaudePresence } from '../lib/room/members.ts';
 import * as seatKeyMod from './seat-key.ts';
-import type { HookOutput, MemberRec, Seat } from './types.ts';
+import type { HookOutput } from './types.ts';
+import type { Member } from '../lib/room/types.ts';
+import type { Identity } from '../lib/identity.ts';
 // Every hook process may write via=human (a person's own typed words or card answers): install the seat-key
 // signer (hooks/seat-key.ts). The MCP server and the CLI never load this file, so they cannot.
 seatKeyMod.arm();
@@ -75,8 +77,8 @@ function run<I extends object>(body: (input: I) => void, onError?: (err: unknown
 }
 
 /** readMembers() ({name: record}) as an array, in join order. */
-const members = (code: string): MemberRec[] => Object.values<MemberRec>(identity.readMembers(code) || {}).filter(m => m && m.name);
-const hasLeft = (m: MemberRec) => !!m.left_at;
+const members = (code: string): Member[] => Object.values<Member>(identity.readMembers(code) || {}).filter(m => m && m.name);
+const hasLeft = (m: Member) => !!m.left_at;
 
 const attempt = <T>(f: () => T): T | null => { try { return f(); } catch { return null; } };
 
@@ -88,8 +90,8 @@ const attempt = <T>(f: () => T): T | null => { try { return f(); } catch { retur
  * hook may run without CLAUDE_PID, e.g. by hand); the others never walk, so an unjoined session stays
  * cheap and a hook never borrows the seat of whatever claude process happens to be an ancestor.
  */
-function resolveSeat(input: { session_id?: unknown } = {}, { ancestry = false } = {}): Seat | null {
-  let me: Seat | null = input && input.session_id ? attempt(() => identity.resolveBySession(input.session_id)) : null;
+function resolveSeat(input: { session_id?: unknown } = {}, { ancestry = false } = {}): Identity | null {
+  let me: Identity | null = input && input.session_id ? attempt(() => identity.resolveBySession(input.session_id)) : null;
   if (!me) { const pid = identity.claudePid(); if (pid) me = attempt(() => identity.resolveByPid(pid)); }
   if (!me && ancestry) me = attempt(() => identity.resolveSelf());
   return me && me.code && me.name ? me : null;
@@ -99,7 +101,7 @@ function resolveSeat(input: { session_id?: unknown } = {}, { ancestry = false } 
 const whoami = (input: { session_id?: unknown } = {}) => resolveSeat(input);
 
 /** Best-effort presence write for the resolved member. */
-function presence(me: Seat | null, state: string, detail?: string) {
+function presence(me: Identity | null, state: string, detail?: string) {
   try { if (me) identity.writePresence(me.code, me.name, state, detail); } catch { /* best-effort */ }
 }
 
@@ -126,7 +128,7 @@ function template(role: string) {
 }
 
 /** The placeholder values: {NAME} {CODE} {OTHERS} {ADDR_EXAMPLE} {PLUGIN}. */
-function fillVars(me: Seat, ms = members(me.code)): Record<TemplateVar, string> {
+function fillVars(me: Identity, ms = members(me.code)): Record<TemplateVar, string> {
   const live = ms.filter(m => !hasLeft(m) && m.name !== me.name);
   const humans = live.filter(m => m.role !== 'claude').map(m => m.name);
   // the room's Claude only when it runs (or is starting): a stub or a failed start is not someone in the room
@@ -141,7 +143,7 @@ function fillVars(me: Seat, ms = members(me.code)): Record<TemplateVar, string> 
 type TemplateVar = 'NAME' | 'CODE' | 'OTHERS' | 'ADDR_EXAMPLE' | 'PLUGIN';
 const fill = (t: string, vars: Record<TemplateVar, string>) => t.replace(/\{(NAME|CODE|OTHERS|ADDR_EXAMPLE|PLUGIN)\}/g, (_, k: TemplateVar) => vars[k]);
 
-const roleText = (role: string, me: Seat | null) => (me ? fill(template(role), fillVars(me)) : template(role));
+const roleText = (role: string, me: Identity | null) => (me ? fill(template(role), fillVars(me)) : template(role));
 
 const clip = (s: string, n = CAP) => text.clip(s, n);
 
@@ -150,7 +152,7 @@ const clip = (s: string, n = CAP) => text.clip(s, n);
  * server (rows/holds-NAME.json): rows survive /clear, compaction and a re-run of /sub-human, and a second
  * spawn would duplicate them. After --resume the server is new, so all.
  */
-function rowCalls(me: Seat): string {
+function rowCalls(me: Identity): string {
   try {
     const ms = identity.readMembers(me.code);
     const held = rows.readHolds(me.code, me.name);
@@ -166,7 +168,7 @@ function rowCalls(me: Seat): string {
  * rowCalls() cut to its Agent(...) lines when the full text would overflow the block. Several participant
  * calls (the room's Claude) become one call pattern plus the names, so the block stays inside the budget with 5 members.
  */
-function compactRows(text: string, me: Seat): string {
+function compactRows(text: string, me: Identity): string {
   const calls = text.split('\n').map(l => l.trim()).filter(l => /^Agent\(\{.*\}\)$/.test(l));
   const tail = me.role === 'claude' ? '\nOn member_joined, follow its "row:" note.' : '';
   if (!calls.length) return `Your rows are running; make no Agent call for them.${tail}`;
@@ -179,14 +181,14 @@ function compactRows(text: string, me: Seat): string {
 }
 
 /** The seat as a session title: its native address "alice.vole-8126" (SendMessage / ListAgents reach it by it). */
-const seatTitle = (me: Seat) => identity.address(me.name, me.code);
+const seatTitle = (me: Identity) => identity.address(me.name, me.code);
 
 /**
  * The context the join / restore hooks inject: the role template filled for this seat, then ROWS (rowCalls, cut
  * to the bare calls when the whole block would pass BLOCK_MAX). lead (e.g. "restored after clear") is a
  * short last line. No roster or digest: others' words arrive through the hooks module's tail child (chat, pull, wake).
  */
-function contextBlock(me: Seat, lead?: string, { rowsLead = '', rowsText = null }: { rowsLead?: string; rowsText?: string | null } = {}) {
+function contextBlock(me: Identity, lead?: string, { rowsLead = '', rowsText = null }: { rowsLead?: string; rowsText?: string | null } = {}) {
   const text = roleText(me.role, me);
   const tail = lead ? `\n(${lead})` : '';
   let rows = rowsText != null ? rowsText : rowCalls(me);

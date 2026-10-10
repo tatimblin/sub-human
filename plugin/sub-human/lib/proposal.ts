@@ -95,8 +95,8 @@ const planRef = (hash: string) => `plans/${hash}.md`;
 const blobs = (code: string) => room.open(code).store.blobs;
 /** Where a person can open the stored plan (a local file; the ref when the store has none). */
 const planPath = (code: string, hash: string): string => blobs(code).localPath(planRef(hash)) || planRef(hash);
-function read(code: string, hash: string): string | null {
-  if (!HASH_RE.test(String(hash))) return null;
+function read(code: string, hash: string | null | undefined): string | null {
+  if (typeof hash !== 'string' || !HASH_RE.test(hash)) return null;
   try { const b: Buffer | null = blobs(code).get(planRef(hash)); return b == null ? null : b.toString('utf8'); } catch { return null; }
 }
 function store(code: string, buf: Buffer): string {
@@ -313,7 +313,7 @@ function choiceOf(c: unknown): 'Agree' | 'Object' | 'Not yet' | null {
   return k === 'agree' ? 'Agree' : k === 'object' ? 'Object' : k === 'not yet' ? 'Not yet' : null;
 }
 
-type Answered = { entry: Entry } | { stale: true, why: string };
+type Answered = { entry: Entry, stale?: undefined } | { stale: true, why: string, entry?: undefined };
 function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?: unknown } = {}): Answered {
   const r = room.open(me.code);
   const choice = choiceOf(a.choice);
