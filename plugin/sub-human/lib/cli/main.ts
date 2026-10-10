@@ -106,6 +106,7 @@ import * as tailLib from '../tail.ts';
 import * as statusline from '../../statusline/index.ts';
 import { readInput } from '../io.ts';
 import { parse as parseArgs } from './args.ts';
+import type { CliIo, FlagSpec, Flags, Parsed } from './types.ts';
 
 // Each command's own modules load when it runs (createRequire: require(esm) is synchronous), so the tail and
 // agent-statusline (run often) never load the remote stack, doctor or the host commands.
@@ -114,26 +115,28 @@ const require = createRequire(import.meta.url);
 
 const NOT_IN_ROOM = 'not in a room; type /sub-human in your Claude Code session';
 
-function die(msg, code = 2) {
+function die(msg: string, code = 2): never {
   process.stderr.write(msg + '\n');
   process.exit(code);
 }
 
 /** lib/cli/args.ts parse, dying on its error (exit 2). */
-function parseFlags(args, spec) {
+function parseFlags<S extends FlagSpec>(args: readonly string[], spec: S): Parsed<S> {
   const p = parseArgs(args, spec);
   if (p.error) die(p.error);
   return p;
 }
 
-const intList = s => String(s).split(',').filter(Boolean).map(x => {
+const intList = (s: string): number[] => String(s).split(',').filter(Boolean).map(x => {
   const n = Number(x.replace(/^#/, ''));
   if (!Number.isInteger(n) || n <= 0) die(`bad id "${x}"`);
   return n;
 });
 
+type Entry = Parameters<typeof room.fmt>[0];
+
 /** Open the room: an explicit code, else this session's. Returns {code, me|null, r: Room}. */
-function openRoom(explicit) {
+function openRoom(explicit?: string) {
   if (explicit) {
     if (!identity.roomExists(explicit)) die(`no room "${explicit}"`, 1);
     const me = identity.resolveSelf();
@@ -145,22 +148,23 @@ function openRoom(explicit) {
 }
 
 // ---------- tail: lib/tail.ts runTail ----------
-function tail(args) {
+function tail(args: readonly string[]) {
   const { flags } = parseFlags(args, { 'max-seconds': 1, ndjson: 0 }); // --ndjson: the only output, accepted
-  let maxSeconds = null;
+  let maxSeconds: number | null = null;
   if (flags['max-seconds'] != null) {
     maxSeconds = Number(flags['max-seconds']);
     if (!(maxSeconds > 0)) die(`bad --max-seconds "${flags['max-seconds']}"`);
   }
-  let handle = null;
+  let handle: ReturnType<typeof tailLib.runTail> | null = null;
   // the reader is gone: nobody to notify
   process.stdout.on('error', () => {
     try { if (handle) handle.stop(); } catch { /* exiting */ }
     process.exit(0);
   });
   // A stray error is logged and the loop carries on (each restart by the mod costs a backoff).
-  const lastResort = e => {
-    try { process.stderr.write(`sub-human tail: unexpected error: ${e && e.stack || e}\n`); } catch { /* closed */ }
+  const lastResort = (e: unknown) => {
+    const err = e as { stack?: unknown } | null | undefined;
+    try { process.stderr.write(`sub-human tail: unexpected error: ${err && err.stack || e}\n`); } catch { /* closed */ }
   };
   process.on('uncaughtException', lastResort);
   process.on('unhandledRejection', lastResort);
@@ -170,10 +174,11 @@ function tail(args) {
   const lookup = sid || pid
     ? () => (sid && identity.resolveBySession(sid)) || (pid && identity.resolveByPid(pid)) || null
     : () => identity.resolveSelf();
-  handle = tailLib.runTail({ write: (text, done) => process.stdout.write(text, done), lookup, maxSeconds, sid });
+  const h = tailLib.runTail({ write: (text: string, done?: (err?: Error | null) => void) => process.stdout.write(text, done), lookup, maxSeconds, sid });
+  handle = h;
   // The mod's child: stop cleanly on the way out, and never outlive the session that started it.
-  const quit = () => { try { handle.stop(); } catch { /* exiting */ } process.exit(0); };
-  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, quit);
+  const quit = () => { try { h.stop(); } catch { /* exiting */ } process.exit(0); };
+  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) process.on(sig, quit);
   const ppid = process.ppid;
   setInterval(() => { if (process.ppid !== ppid) quit(); }, config.TAIL_HEALTH_MS).unref();
 }
@@ -191,11 +196,11 @@ function agentStatusline() {
 }
 
 // ---------- read / digest / who ----------
-function read(args) {
+function read(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { id: 1, json: 0, room: 1 });
   if (!flags.id && rest.length) flags.id = rest.join(','); // `sub-human read 22`, as the cut marker says
   const { me, r } = openRoom(flags.room);
-  const show = es => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : room.fmt(e) + '\n'));
+  const show = (es: Entry[]) => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : room.fmt(e) + '\n'));
   if (flags.id) {
     const es = r.readById(intList(flags.id));
     if (!es.length) die('(no such entries)', 1);
@@ -206,10 +211,10 @@ function read(args) {
   const es = r.readAfter(r.getCursor(cursor));
   if (!es.length) return console.log('(no new messages)');
   show(es);
-  r.setCursor(cursor, es.at(-1).id);
+  r.setCursor(cursor, es.at(-1)!.id); // es is not empty
 }
 
-function digest(args) {
+function digest(args: readonly string[]) {
   const { flags } = parseFlags(args, { room: 1 });
   const { r } = openRoom(flags.room);
   process.stdout.write(r.digest() + '\n');
@@ -223,20 +228,20 @@ function who() {
 
 // ---------- tasks ----------
 /** lib/tasks.ts list(code): the room document `tasks` as the mirror writes it. */
-const taskList = code => tasks.list(code) || [];
+const taskList = (code: string) => tasks.list(code) || [];
 
-function tasksCmd(args) {
+function tasksCmd(args: readonly string[]) {
   const { flags } = parseFlags(args, { json: 0, room: 1 });
   const { code } = openRoom(flags.room);
   let list;
-  try { list = taskList(code); } catch (e) { die(`the room task list is unavailable: ${e.message}`, 1); }
+  try { list = taskList(code); } catch (e) { die(`the room task list is unavailable: ${(e as Error).message}`, 1); }
   list = list.filter(t => t && !(t.metadata && t.metadata._internal));
   if (flags.json) return console.log(JSON.stringify(list));
   if (!list.length) return console.log(`(no tasks in room ${code})`);
   const w = Math.max(...list.map(t => String(t.status || '').length));
   const o = Math.max(...list.map(t => String(t.owner || '-').length));
   for (const t of list) {
-    const blocked = Array.isArray(t.blockedBy) && t.blockedBy.length ? `  (blocked by ${t.blockedBy.map(b => '#' + b).join(',')})` : '';
+    const blocked = Array.isArray(t.blockedBy) && t.blockedBy.length ? `  (blocked by ${t.blockedBy.map((b: string | number) => '#' + b).join(',')})` : '';
     const subject = String(t.subject ?? '').replace(/\s+/g, ' ');
     console.log(`#${t.id}  ${String(t.status || '').padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${blocked}`);
   }
@@ -244,37 +249,37 @@ function tasksCmd(args) {
 
 // ---------- watch NAME ----------
 /** Who an entry is from, as a person reading a thread would say it. */
-function label(e) {
+function label(e: Entry): string {
   if (e.via === 'system') return 'room';
   if (e.from === 'claude') return 'claude';
   return e.via === 'agent' ? `${e.from}'s Claude` : e.from;
 }
 
-function inThread(name) {
-  return e => e.from === name || e.to === name || (e.kind === 'task' && e.owner === name);
+function inThread(name: string) {
+  return (e: Entry) => e.from === name || e.to === name || (e.kind === 'task' && e.owner === name);
 }
 
-function watch(args) {
+function watch(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { room: 1, follow: 0, 'no-follow': 0 });
   const name = rest[0];
   if (!name) die('usage: sub-human watch NAME [--room CODE] [--follow|--no-follow]');
   if (!identity.NAME_RE.test(name)) die(`bad name "${name}"`);
   const { code, r } = openRoom(flags.room);
   const color = process.stdout.isTTY && !('NO_COLOR' in process.env);
-  const c = (code_, s) => color ? `\x1b[${code_}m${s}\x1b[0m` : s;
-  const kindColor = {
+  const c = (code_: string, s: string) => color ? `\x1b[${code_}m${s}\x1b[0m` : s;
+  const kindColor: Record<string, string> = {
     decision: '1;32', signoff: '32', objection: '31', proposal: '1;34', task_req: '36', task: '36',
     member_joined: '2;32', member_left: '2;31',
   };
   const show = inThread(name);
-  const print = raw => {
+  const print = (raw: Entry) => {
     const e = room.normalize(raw);
     if (!show(e)) return;
     const who = label(e) + (room.unverifiedHuman(e) ? ' (unverified)' : '');
     const whoStr = e.via === 'human' ? c('1', who) : who === 'claude' ? c('35', who) : c('2', who);
     const meta = [
       e.to && e.to !== 'room' && `→ ${e.to === name ? name : e.to}`,
-      e.refs && e.refs.length && `refs ${e.refs.map(r => '#' + r).join(',')}`,
+      e.refs && e.refs.length && `refs ${e.refs.map((r: number) => '#' + r).join(',')}`,
       (e.hash || e.proposal_hash) && `proposal ${(e.hash || e.proposal_hash).slice(0, 6)}`,
       e.task_id && `task #${e.task_id}`].filter(Boolean).join('  ');
     const head = c('2', `#${e.id} ${String(e.at || '').slice(11, 19)}`);
@@ -283,7 +288,7 @@ function watch(args) {
   };
   const follow = flags.follow ? true : flags['no-follow'] ? false : !!process.stdout.isTTY;
   if (!follow) {
-    const es = r.readAll().filter(e => show(room.normalize(e)));
+    const es = r.readAll().filter((e: Entry) => show(room.normalize(e)));
     if (!es.length) return console.log(`(nothing from or to ${name} in room ${code})`);
     return es.forEach(print);
   }
@@ -293,12 +298,14 @@ function watch(args) {
 }
 
 // ---------- serve --stdio CODE: lib/remote/server.ts ----------
-function serve(args) {
-  const { flags, rest } = parseFlags(args, { stdio: 0, link: 1, login: 0, enroll: 1, kind: 1 });
-  if (flags.enroll !== undefined) return serveEnroll(flags, rest);
+const SERVE_FLAGS = { stdio: 0, link: 1, login: 0, enroll: 1, kind: 1 } as const;
+
+function serve(args: readonly string[]) {
+  const { flags, rest } = parseFlags(args, SERVE_FLAGS);
+  if (flags.enroll !== undefined) return serveEnroll(flags.enroll, flags, rest);
   const code = rest[0];
   if (!flags.stdio || !code || rest.length > 1) die('usage: sub-human serve --stdio CODE [--link ID [--login]]');
-  const { LINK_ID_RE } = require('../remote/auth.ts');
+  const { LINK_ID_RE }: typeof import('../remote/auth.ts') = require('../remote/auth.ts');
   if (flags.link !== undefined && !LINK_ID_RE.test(flags.link)) die(`bad link id "${flags.link}"`);
   if (flags.login && flags.link === undefined) die('sub-human serve --login: names no --link ID');
   // sshd sets SSH_ORIGINAL_COMMAND only when a forced command runs (an authorized_keys command="…" or ForceCommand): a
@@ -307,61 +314,63 @@ function serve(args) {
     die('sub-human serve --login: refused: this connection came through a forced command (a restricted ssh key or ForceCommand), not your own ssh login; join with an invite (/sub-human invite on the host)', 1);
   }
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
-  const server = require('../remote/server.ts');
-  const pipe = require('../remote/transports/pipe.ts');
+  const server: typeof import('../remote/server.ts') = require('../remote/server.ts');
+  const pipe: typeof import('../remote/transports/pipe.ts') = require('../remote/transports/pipe.ts');
   let s = room.open(code).store;
   if (!s.isHost) {
-    const handoff = require('../handoff.ts');
+    const handoff: typeof import('../handoff.ts') = require('../handoff.ts');
+    const store: typeof import('../room/store.ts') = require('../room/store.ts');
     if (!handoff.movedAway(s)) die(`room "${code}" is not hosted on this machine (it holds a copy)`, 1);
-    s = require('../room/store.ts').open(code, { dir: s.dir }); // the old log, read-only: it moved
+    s = store.open(code, { dir: s.dir }); // the old log, read-only: it moved
   }
-  const srv = server.serve(pipe.stdio(), { store: s, linkId: flags.link, login: !!flags.login, log: msg => process.stderr.write(msg + '\n') });
+  const srv = server.serve(pipe.stdio(), { store: s, linkId: flags.link, login: !!flags.login, log: (msg: string) => process.stderr.write(msg + '\n') });
   // `sub-human kick` stops this with SIGTERM: tell the link it was revoked first, so its daemon stops, not redials
   process.once('SIGTERM', () => { const told = srv.revoked(); setTimeout(() => process.exit(0), told ? 200 : 0); });
 }
 
 // serve --enroll CODE --kind ssh|ws|pipe: one short-code attempt (lib/remote/enroll.ts), the PAKE and nothing else. The
 // ssh enrollment door's forced command and the web listener run it; whatever command the other side asked for is ignored.
-function serveEnroll(flags, rest) {
-  const code = flags.enroll;
-  if (rest.length || !['ssh', 'ws', 'pipe'].includes(flags.kind) || !identity.CODE_RE.test(String(code))) die('usage: sub-human serve --enroll CODE --kind ssh|ws|pipe');
+function serveEnroll(code: string, flags: Flags<typeof SERVE_FLAGS>, rest: string[]) {
+  if (rest.length || flags.kind === undefined || !['ssh', 'ws', 'pipe'].includes(flags.kind) || !identity.CODE_RE.test(String(code))) die('usage: sub-human serve --enroll CODE --kind ssh|ws|pipe');
   if (!identity.roomExists(code) || !identity.isHost(code)) die(`no room "${code}" is hosted here`, 1);
-  const enroll = require('../remote/enroll.ts');
-  const pipe = require('../remote/transports/pipe.ts');
+  const enroll: typeof import('../remote/enroll.ts') = require('../remote/enroll.ts');
+  const pipe: typeof import('../remote/transports/pipe.ts') = require('../remote/transports/pipe.ts');
   const s = room.open(code).store;
-  enroll.serveEnroll(pipe.stdio(), { store: s, kind: flags.kind, log: msg => process.stderr.write(msg + '\n') })
-    .then(() => process.stdout.write('', () => process.exit(0)), e => die(e.message, 1));
+  enroll.serveEnroll(pipe.stdio(), { store: s, kind: flags.kind, log: (msg: string) => process.stderr.write(msg + '\n') })
+    .then(() => process.stdout.write('', () => process.exit(0)), (e: Error) => die(e.message, 1));
 }
 
 // ---------- link CODE [--reset]: lib/remote/link.ts ----------
-function linkCmd(args) {
+function linkCmd(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { reset: 0 });
   const code = rest[0];
   if (!code) die('usage: sub-human link CODE [--reset]');
   const s = room.open(code).store;
   if (s.isHost) die(`this machine hosts room "${code}"; there is no connection to start`, 1);
-  const link = require('../remote/link.ts');
-  if (!flags.reset) return link.run({ code }).then(() => process.exit(0), e => die(e.message, 1));
+  const link: typeof import('../remote/link.ts') = require('../remote/link.ts');
+  if (!flags.reset) return link.run({ code }).then(() => process.exit(0), (e: Error) => die(e.message, 1));
   const st = link.status(code);
   if (st.running) die(`the connection to room ${code} is running (pid ${st.pid}); it copies the room afresh only once stopped (kill ${st.pid}, then run this again)`, 1);
   s.reset();
-  if (!link.start(code)) die(`the connection to room ${code} did not start; ${require('../text.ts').cliLine('doctor')} says why`, 1);
+  const text: typeof import('../text.ts') = require('../text.ts');
+  if (!link.start(code)) die(`the connection to room ${code} did not start; ${text.cliLine('doctor')} says why`, 1);
   console.log(`room ${code}: copying it again from the host`);
 }
 
-const doctor = args => require('./doctor.ts').main(args).then(c => process.exit(c), e => die(e.message, 2));
-const cmds = { doctor, tail, read, digest, who, tasks: tasksCmd, watch, serve, link: linkCmd, 'agent-statusline': agentStatusline };
+type Command = (args: readonly string[]) => unknown;
+const doctor: Command = args => (require('./doctor.ts') as typeof import('./doctor.ts')).main(args).then(c => process.exit(c), (e: Error) => die(e.message, 2));
+const cmds: Record<string, Command> = { doctor, tail, read, digest, who, tasks: tasksCmd, watch, serve, link: linkCmd, 'agent-statusline': agentStatusline };
 // lib/cli/*: each returns the exit code
-const viaCli = (file, fn) => a => process.exit(require(`./${file}`)[fn](a));
-Object.assign(cmds, { invite: viaCli('host.ts', 'invite'), admit: viaCli('host.ts', 'admit'), kick: viaCli('host.ts', 'kick'), prime: viaCli('host.ts', 'prime') });
+const viaCli = (fn: 'invite' | 'admit' | 'kick' | 'prime'): Command => a => process.exit((require('./host.ts') as typeof import('./host.ts'))[fn](a));
+Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick'), prime: viaCli('prime') });
 // listen without --start/--stop/--status is the daemon itself: it returns null and keeps running
-Object.assign(cmds, { listen: a => { const c = require('./listen.ts').listen(a); if (c !== null) process.exit(c); } });
+Object.assign(cmds, { listen: (a: readonly string[]) => { const c = (require('./listen.ts') as typeof import('./listen.ts')).listen(a); if (c !== null) process.exit(c); } });
 // handoff, promote, demote: lib/cli/handoff.ts
-const handoffCli = name => args => require('./handoff.ts')[name](args, { die, out: l => console.log(l), err: l => console.error(l) });
+const handoffCli = (name: 'handoff' | 'promote' | 'demote'): Command => args => (require('./handoff.ts') as typeof import('./handoff.ts'))[name](args, { die, out: l => console.log(l), err: l => console.error(l) } satisfies CliIo);
 Object.assign(cmds, { handoff: handoffCli('handoff'), promote: handoffCli('promote'), demote: handoffCli('demote') });
 
 /** Run one command: argv is what follows `sub-human` (scripts/sub-human passes process.argv.slice(2)). */
-function main([cmd, ...args] = process.argv.slice(2)) {
+function main([cmd, ...args]: string[] = process.argv.slice(2)) {
   // Keep the SSH serve shim's pointer on this install and node (lib/remote/shim.ts); not on the status line's hot
   // path, and never creating a home. Passive: a dev checkout's run never takes the pointer from another live install.
   if (cmd !== 'agent-statusline' && cmd !== 'doctor') { // doctor reports the shim as it is (--fix refreshes it)
@@ -370,7 +379,7 @@ function main([cmd, ...args] = process.argv.slice(2)) {
   try {
     (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID [--login]] | link CODE [--reset] | invite [--ssh [USER@HOST]] [--via JUMP] | invite --web|--public|--url URL | invite --stop | invite --cancel [REF] | admit [REF] | kick NAME | prime ROOM | listen [--port P] [--start|--stop|--status] | handoff NAME | promote CODE | demote CODE INVITE PIN | doctor [--bundle [FILE]] | agent-statusline')))(args);
   } catch (e) {
-    die(e.message, 2);
+    die((e as Error).message, 2);
   }
 }
 

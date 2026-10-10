@@ -57,32 +57,84 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import type { AuthorizedKeysScan, Check, CheckStatus, DoctorOptions, HelloReply, HelloResult, KeyLine, LinkFile, LinkReport, LinkStateView, LinkTransport, ProtoSpan, Reach, Report } from './types.ts';
 const require = createRequire(import.meta.url);
 
 const LIB = path.join(import.meta.dirname, '..');
 const PLUGIN_ROOT = path.join(LIB, '..');
 const BIN = path.join(PLUGIN_ROOT, 'scripts', 'sub-human');
-const lib = name => require(path.join(LIB, name));
+/** The modules doctor loads lazily, by their path under lib/. */
+interface Libs {
+  'text.ts': typeof import('../text.ts');
+  'home.ts': typeof import('../home.ts');
+  'io.ts': typeof import('../io.ts');
+  'cc.ts': typeof import('../cc.ts');
+  'config.ts': typeof import('../config.ts');
+  'identity.ts': typeof import('../identity.ts');
+  'room/links.ts': typeof import('../room/links.ts');
+  'room/link-state.ts': typeof import('../room/link-state.ts');
+  'room/envelope.ts': typeof import('../room/envelope.ts');
+  'remote/shim.ts': typeof import('../remote/shim.ts');
+  'remote/protocol.ts': typeof import('../remote/protocol.ts');
+  'remote/link.ts': typeof import('../remote/link.ts');
+  'remote/listener.ts': typeof import('../remote/listener.ts');
+  'remote/tailscale.ts': typeof import('../remote/tailscale.ts');
+  'remote/transports/index.ts': typeof import('../remote/transports/index.ts');
+  'remote/transports/ssh.ts': typeof import('../remote/transports/ssh.ts');
+}
+/** A transport as the wss/ws probe drives it (lib/remote/transports/index.ts open). */
+interface Transport {
+  onFrame(fn: (f: { id?: unknown; result?: HelloReply; error?: { code: string; message: string } }) => void): void;
+  onClose(fn: () => void): void;
+  send(frame: unknown): void;
+  close(): void;
+}
+/** lib/remote/listener.ts status(): the rooms it serves, as its state file has them. */
+interface ListenerStatus {
+  running: boolean;
+  pid?: number;
+  port?: number;
+  conns?: number;
+  rooms: Record<string, { url?: string; path?: string; mode?: string; tailscale?: { funnel?: boolean; bin?: string; path: string } }>;
+}
+/** A Claude Code settings file, as the hooks and Remote Control checks read it. */
+interface Settings {
+  disableAllHooks?: unknown;
+  allowManagedHooksOnly?: unknown;
+  apiKeyHelper?: unknown;
+  env?: Record<string, unknown>;
+}
+/** redactor(opts): what to hash, and the salt. */
+interface RedactorOptions {
+  home?: string;
+  shHome?: string;
+  hosts?: string[];
+  users?: string[];
+  rooms?: string[];
+  members?: string[];
+  salt?: string;
+}
+const lib = <K extends keyof Libs>(name: K): Libs[K] => require(path.join(LIB, name));
 /** A fix only a shell can make: the CLI by its path (no `sub-human` is on PATH; lib/text.ts cliLine). */
-const cli = args => lib('text.ts').cliLine(args);
+const cli = (args: string): string => lib('text.ts').cliLine(args);
 
 /** 24.3: the first 24 that strips TypeScript without an ExperimentalWarning (every hook is .ts). */
 const NODE_MIN = [24, 3];
 const DOCTOR_HELLO_MS = 8000;
 const SKEW_WARN_MS = 2 * 60 * 1000;
 const STORE_DIRS = ['rooms', 'sessions', 'links', 'keys', 'bin'];
-const NO_REMOTE_CONTROL = {
+const NO_REMOTE_CONTROL: Record<string, string> = {
   CLAUDE_CODE_USE_BEDROCK: 'Bedrock', CLAUDE_CODE_USE_VERTEX: 'Vertex', CLAUDE_CODE_USE_FOUNDRY: 'Foundry',
   ANTHROPIC_API_KEY: 'an API key', ANTHROPIC_AUTH_TOKEN: 'an auth token',
 };
 
-const check = (id, status, title, detail, fix) => ({ id, status, title, detail, ...(fix ? { fix } : {}) });
-const tilde = (p, h = os.homedir()) => (p && h && (p === h || p.startsWith(h + path.sep)) ? '~' + p.slice(h.length) : p);
-const isExec = p => { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } };
-const readText = p => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } };
-const truthy = v => v !== undefined && v !== '' && v !== '0' && String(v).toLowerCase() !== 'false';
+const check = (id: string, status: CheckStatus, title: string, detail: string, fix?: string): Check => ({ id, status, title, detail, ...(fix ? { fix } : {}) });
+const tilde = <P extends string | null | undefined>(p: P, h = os.homedir()): P | string => (p && h && (p === h || p.startsWith(h + path.sep)) ? '~' + p.slice(h.length) : p);
+const isExec = (p: string) => { try { fs.accessSync(p, fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; } };
+const readText = (p: string): string | null => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } };
+const truthy = (v: unknown) => v !== undefined && v !== '' && v !== '0' && String(v).toLowerCase() !== 'false';
 
-function pluginVersion() {
+function pluginVersion(): string | null {
   try { return JSON.parse(fs.readFileSync(path.join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'), 'utf8')).version || null; } catch { return null; }
 }
 
@@ -104,7 +156,7 @@ function checkHome() {
   const h = lib('home.ts').home();
   if (!fs.existsSync(h)) return check('home', 'info', 'sub-human folder', `${tilde(h)} does not exist yet (made at the first join)`);
   const uid = typeof process.getuid === 'function' ? process.getuid() : null;
-  const bad = [];
+  const bad: string[] = [];
   for (const d of [h, ...STORE_DIRS.map(n => path.join(h, n))]) {
     let st;
     try { st = fs.statSync(d); } catch { continue; }
@@ -115,14 +167,14 @@ function checkHome() {
   return check('home', 'fail', 'sub-human folder', bad.join('; '), `${cli('doctor --fix')} in a terminal (or chmod 700 ${bad.map(b => b.split(' ')[0]).join(' ')})`);
 }
 
-function checkShim({ needed }) {
+function checkShim({ needed }: { needed: boolean }): Check {
   const shim = lib('remote/shim.ts');
   const file = shim.shimPath(), ptr = shim.pointerPath();
   if (!fs.existsSync(file) && !fs.existsSync(ptr)) {
     return check('shim', needed ? 'fail' : 'info', 'serve shim', `${tilde(file)} is not there${needed ? ', and authorized_keys names it' : ' (only a host reached over SSH needs it)'}`,
       needed ? 'start Claude Code once on this machine (it writes it), or run ' + cli('doctor --fix') + ' in a terminal' : undefined);
   }
-  const problems = [];
+  const problems: string[] = [];
   if (!isExec(file)) problems.push(`${tilde(file)} is missing or not executable`);
   else if (readText(file) !== shim.shimBody()) problems.push(`${tilde(file)} is an older shim`);
   const lines = (readText(ptr) || '').split('\n');
@@ -143,10 +195,10 @@ function checkShim({ needed }) {
 // command="SUB_HUMAN_HOME=<home> <...> --stdio CODE --link ID",restrict <type> <key> sub-human:CODE:ID
 const KEY_LINE_RE = /^command="SUB_HUMAN_HOME=(\S+) (.+?) --stdio (\S+) --link ([0-9a-f]{12})",restrict (\S+) (\S+) sub-human:(\S+):(\S+)\s*$/;
 
-function scanAuthorizedKeys(file) {
+function scanAuthorizedKeys(file: string): AuthorizedKeysScan {
   const text = readText(file);
   if (text === null) return { file, exists: false, lines: [] };
-  const lines = [];
+  const lines: KeyLine[] = [];
   for (const l of text.split('\n')) {
     if (!/\bsub-human:/.test(l) && !/ serve --stdio /.test(l)) continue;
     const m = KEY_LINE_RE.exec(l.trim());
@@ -158,7 +210,7 @@ function scanAuthorizedKeys(file) {
   return { file, exists: true, lines };
 }
 
-function checkAuthorizedKeys(scan) {
+function checkAuthorizedKeys(scan: AuthorizedKeysScan): Check {
   const h = path.resolve(lib('home.ts').home());
   if (!scan.exists) return check('authorized_keys', 'info', 'authorized_keys', `${tilde(scan.file)}: none (this machine hosts no room over SSH)`);
   if (!scan.lines.length) return check('authorized_keys', 'info', 'authorized_keys', `${tilde(scan.file)}: no sub-human lines`);
@@ -171,20 +223,20 @@ function checkAuthorizedKeys(scan) {
     [...new Set(fixes)].join('\n'));
 }
 
-function sshVersion() {
+function sshVersion(): string | null {
   const r = spawnSync('ssh', ['-V'], { encoding: 'utf8', timeout: 5000 });
   if (r.error) return null;
   return String(r.stderr || r.stdout || '').trim().split('\n')[0] || 'ssh (unknown version)';
 }
 
-function checkSsh({ needed, version }) {
+function checkSsh({ needed, version }: { needed: boolean; version: string | null }): Check {
   if (version) return check('ssh', 'pass', 'ssh', version);
   return check('ssh', needed ? 'fail' : 'info', 'ssh', 'no ssh on PATH', needed ? 'install OpenSSH: joining over ssh needs it' : undefined);
 }
 
 // ---------- links ----------
-const lastLogError = code => {
-  let text;
+const lastLogError = (code: string): string[] => {
+  let text: string;
   try {
     const file = lib('room/links.ts').logFile(code);
     const fd = fs.openSync(file, 'r');
@@ -202,7 +254,7 @@ const lastLogError = code => {
  * ssh's own complaint, as a hint (the link's own key the host lets in, `sub-human prime` for an MFA bastion, `--via`
  * for a jump host). link: the link file's {code, request?, transport} when known.
  */
-function sshHint(stderr, link = {}) {
+function sshHint(stderr: unknown, link: { code?: string; request?: unknown; transport?: LinkTransport } = {}): string | null {
   const s = String(stderr || '');
   const code = link.code || 'CODE';
   const t = link.transport || {};
@@ -233,9 +285,9 @@ function sshHint(stderr, link = {}) {
 }
 
 /** The hello a link's daemon would say, without a credential: the server answers it and nothing else. */
-function helloProbe(spec, code, { timeoutMs = DOCTOR_HELLO_MS, env = process.env } = {}) {
+function helloProbe(spec: LinkTransport, code: string, { timeoutMs = DOCTOR_HELLO_MS, env = process.env }: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): Promise<HelloResult> {
   const protocol = lib('remote/protocol.ts');
-  let cmd;
+  let cmd: { argv: string[]; env: NodeJS.ProcessEnv } | undefined;
   try {
     if (spec.kind === 'ssh') {
       const extra = String(env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean);
@@ -243,16 +295,17 @@ function helloProbe(spec, code, { timeoutMs = DOCTOR_HELLO_MS, env = process.env
     } else if (spec.kind === 'pipe' && typeof spec.home === 'string') {
       cmd = { argv: [process.execPath, BIN, 'serve', '--stdio', code], env: { ...env, SUB_HUMAN_HOME: spec.home } };
     }
-  } catch (e) { return Promise.resolve({ ok: false, ms: 0, error: e.message }); }
+  } catch (e) { return Promise.resolve({ ok: false, ms: 0, error: (e as Error).message }); }
   if (!cmd && (spec.kind === 'wss' || spec.kind === 'ws')) return webHelloProbe(spec, code, { timeoutMs });
   if (!cmd) return Promise.resolve({ ok: false, ms: 0, skipped: true, error: `no reachability check for the ${spec.kind} transport` });
   // v 1: the least this probe needs, so a host before 0.4 (which checks v === 1 and knows no proto) answers too
   const params = { v: 1, proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.ts').machineId() };
-  return new Promise(resolve => {
+  const argv = cmd.argv, childEnv = cmd.env;
+  return new Promise<HelloResult>(resolve => {
     const t0 = Date.now();
     let stderr = '', done = false;
-    const child = spawn(cmd.argv[0], cmd.argv.slice(1), { env: cmd.env, stdio: ['pipe', 'pipe', 'pipe'] });
-    const finish = r => {
+    const child = spawn(argv[0], argv.slice(1), { env: childEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    const finish = (r: Omit<HelloResult, 'ms'>) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
@@ -261,14 +314,14 @@ function helloProbe(spec, code, { timeoutMs = DOCTOR_HELLO_MS, env = process.env
     };
     const timer = setTimeout(() => finish({ ok: false, error: `no answer within ${timeoutMs} ms` }), timeoutMs);
     const dec = protocol.decoder();
-    child.stdout.on('data', chunk => {
+    child.stdout.on('data', (chunk: Buffer) => {
       for (const f of dec.push(chunk)) {
         if (f.id !== 1) continue;
         if (f.error) finish({ ok: false, error: `${f.error.code}: ${f.error.message}`, code: f.error.code });
         else finish({ ok: true, reply: f.result });
       }
     });
-    child.stderr.on('data', d => { stderr += d; });
+    child.stderr.on('data', (d: Buffer) => { stderr += d; });
     child.stdin.on('error', () => { /* the child is gone; its exit says so */ });
     child.on('error', e => finish({ ok: false, error: e.message }));
     child.on('exit', (c, sig) => finish({ ok: false, error: `the ${spec.kind} command exited (${sig || c}) before answering` }));
@@ -277,28 +330,30 @@ function helloProbe(spec, code, { timeoutMs = DOCTOR_HELLO_MS, env = process.env
 }
 
 /** A wss/ws link's hello without a credential: the WebSocket, the Noise handshake pinned to the link's key, then hello. */
-async function webHelloProbe(spec, code, { timeoutMs = DOCTOR_HELLO_MS } = {}) {
+async function webHelloProbe(spec: LinkTransport, code: string, { timeoutMs = DOCTOR_HELLO_MS } = {}): Promise<HelloResult> {
   const t0 = Date.now();
   const protocol = lib('remote/protocol.ts');
-  let t = null;
-  const deadline = new Promise((_, no) => setTimeout(() => no(new Error(`no answer within ${timeoutMs} ms`)), timeoutMs).unref());
+  let t: Transport | null = null;
+  const deadline = new Promise<never>((_, no) => setTimeout(() => no(new Error(`no answer within ${timeoutMs} ms`)), timeoutMs).unref());
   try {
-    t = await Promise.race([lib('remote/transports/index.ts').open(spec, { code }), deadline]);
-    const reply = await Promise.race([new Promise((ok, no) => {
-      t.onFrame(f => { if (f.id === 1) (f.error ? no(Object.assign(new Error(`${f.error.code}: ${f.error.message}`), { code: f.error.code })) : ok(f.result)); });
-      t.onClose(() => no(new Error('the listener closed before answering')));
-      t.send(protocol.request(1, 'hello', { v: 1, proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.ts').machineId() }));
+    const tr: Transport = await Promise.race([lib('remote/transports/index.ts').open(spec, { code }), deadline]);
+    t = tr;
+    const reply = await Promise.race([new Promise<HelloReply | undefined>((ok, no) => {
+      tr.onFrame(f => { if (f.id === 1) (f.error ? no(Object.assign(new Error(`${f.error.code}: ${f.error.message}`), { code: f.error.code })) : ok(f.result)); });
+      tr.onClose(() => no(new Error('the listener closed before answering')));
+      tr.send(protocol.request(1, 'hello', { v: 1, proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.ts').machineId() }));
     }), deadline]);
     return { ok: true, ms: Date.now() - t0, t0, t1: Date.now(), reply };
   } catch (e) {
-    return { ok: false, ms: Date.now() - t0, error: e.message, ...(e.code ? { code: e.code } : {}) };
+    const err = e as Error & { code?: string };
+    return { ok: false, ms: Date.now() - t0, error: err.message, ...(err.code ? { code: err.code } : {}) };
   } finally { if (t) t.close(); }
 }
 
 /** The host's web listener and the rooms it serves (lib/remote/listener.ts), with their Tailscale paths. */
-function checkListener({ quick = false } = {}) {
-  let st;
-  try { st = lib('remote/listener.ts').status(); } catch (e) { return [check('listener', 'warn', 'listener', `could not read its state: ${e.message}`)]; }
+function checkListener({ quick = false } = {}): Check[] {
+  let st: ListenerStatus;
+  try { st = lib('remote/listener.ts').status(); } catch (e) { return [check('listener', 'warn', 'listener', `could not read its state: ${(e as Error).message}`)]; }
   const codes = Object.keys(st.rooms || {});
   if (!codes.length && !st.running) return [check('listener', 'info', 'listener', 'no room is served over the web here (/sub-human invite --web or --url starts it)')];
   const out = [st.running
@@ -306,7 +361,7 @@ function checkListener({ quick = false } = {}) {
     : check('listener', 'fail', 'listener', `not running, but ${codes.join(', ')} ${codes.length === 1 ? 'is' : 'are'} served over the web: joiners cannot reach ${codes.length === 1 ? 'it' : 'them'}`,
       `/sub-human invite --web again in the room (or ${cli('listen --start')} in a terminal); its log: ${tilde(lib('remote/listener.ts').logFile())}`)];
   const ts = lib('remote/tailscale.ts');
-  const serveStatus = {}; // bin -> stdout
+  const serveStatus: Record<string, string | null> = {}; // bin -> stdout
   for (const code of codes) {
     const rec = st.rooms[code] || {};
     const id = `web:${code}`;
@@ -316,11 +371,12 @@ function checkListener({ quick = false } = {}) {
     const kind = rec.tailscale.funnel ? 'funnel' : 'serve';
     if (!quick) {
       const bin = rec.tailscale.bin || ts.bin();
-      if (!(bin in serveStatus)) {
+      const key = String(bin); // no tailscale binary: the one entry 'null'
+      if (!(key in serveStatus)) {
         const r = bin ? spawnSync(bin, ['serve', 'status', '--json'], { encoding: 'utf8', timeout: 10_000 }) : { status: 1, stdout: '' };
-        serveStatus[bin] = r.status === 0 ? String(r.stdout || '') : null;
+        serveStatus[key] = r.status === 0 ? String(r.stdout || '') : null;
       }
-      const text = serveStatus[bin];
+      const text = serveStatus[key];
       if (text === null) out.push(check(id, 'warn', `web ${code}`, `tailscale ${kind} ${rec.tailscale.path}: could not read tailscale serve status`, 'is Tailscale running? tailscale status'));
       else if (!text.includes(rec.tailscale.path)) {
         out.push(check(id, 'fail', `web ${code}`, `tailscale ${kind} has no ${rec.tailscale.path} any more (a reset, or another serve replaced it)`, `/sub-human invite ${rec.tailscale.funnel ? '--public' : '--web'} in the room (it puts the path back)`));
@@ -335,7 +391,7 @@ function checkListener({ quick = false } = {}) {
 }
 
 /** The host's clock from a hello reply, when it carries one (ms). */
-function replyTime(reply) {
+function replyTime(reply: HelloReply | null): number | null {
   for (const k of ['time', 'now', 'ts', 'at']) {
     const v = reply && reply[k];
     const ms = typeof v === 'number' ? v : typeof v === 'string' ? Date.parse(v) : NaN;
@@ -344,18 +400,18 @@ function replyTime(reply) {
   return null;
 }
 
-async function diagnoseLink(code, { quick, timeoutMs, env }) {
+async function diagnoseLink(code: string, { quick, timeoutMs, env }: { quick: boolean; timeoutMs: number; env: NodeJS.ProcessEnv }): Promise<LinkReport> {
   const links = lib('room/links.ts');
-  const l = links.get(code) || {};
-  const spec = l.transport || {};
+  const l: LinkFile = links.get(code) || {};
+  const spec: LinkTransport = l.transport || {};
   let describe = spec.kind || '?';
   try { describe = lib('remote/transports/index.ts').describe(spec); } catch { /* kind unknown */ }
-  let daemon = { running: false };
+  let daemon: LinkReport['daemon'] = { running: false };
   try { const s = lib('remote/link.ts').status(code); daemon = { running: !!s.running, pid: s.pid || null }; } catch { /* no mirror */ }
-  const st = lib('room/link-state.ts').read(code) || { state: 'offline' };
+  const st = (lib('room/link-state.ts').read(code) as LinkStateView | null) || { state: 'offline' };
   if (st.pid) daemon = { running: lib('io.ts').isAlive(st.pid), pid: st.pid }; // the state record's own pid wins
   const recent = lastLogError(code);
-  const out = { code, transport: { kind: spec.kind, describe, user: spec.user, host: spec.host, port: spec.port, home: spec.home, ...(spec.login === true ? { login: true } : {}) },
+  const out: LinkReport = { code, transport: { kind: spec.kind, describe, user: spec.user, host: spec.host, port: spec.port, home: spec.home, ...(spec.login === true ? { login: true } : {}) },
     credential: l.token ? 'token' : l.enroll ? 'invite PIN (not checked by the host yet)' : l.awaiting ? 'waiting for the host person to let it in' : l.invite ? 'invite (not redeemed yet)' : spec.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent,
     // an ssh link whose key the new host has not let in yet (a handoff's follower; no secret in it)
     ...(!l.token && typeof l.request === 'string' ? { request: l.request } : {}),
@@ -363,32 +419,32 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
     moved: l.moved ? { epoch: l.moved.epoch, host: l.moved.host, locator: l.moved.locator, demoted: !!l.moved.demoted, reached: !!l.moved.reached_at } : null };
   if (!quick) {
     const r = await helloProbe(spec, code, { timeoutMs, env });
-    const reply = r.reply || {};
+    const reply: HelloReply = r.reply || {};
     const hostTime = replyTime(reply);
     out.reach = {
       ok: r.ok, ms: r.ms, error: r.error, skipped: !!r.skipped, hint: r.ok ? null : (spec.kind === 'ssh' ? (spec.login === true && lib('remote/transports/ssh.ts').loginFailure(r.stderr, spec, code)) || sshHint(r.stderr, { code, request: l.request, transport: spec }) : null),
       stderr: r.stderr || '',
       protocol: r.ok ? { v: reply.v, proto: reply.proto || null, server: typeof reply.server === 'string' ? reply.server : null } : null,
-      skewMs: r.ok && hostTime !== null ? Math.round(hostTime - (r.t0 + r.t1) / 2) : null,
+      skewMs: r.ok && hostTime !== null ? Math.round(hostTime - (r.t0! + r.t1!) / 2) : null, // an answer carries t0 and t1
     };
   }
   return out;
 }
 
-function linkChecks(d) {
+function linkChecks(d: LinkReport): Check[] {
   const ls = lib('room/link-state.ts');
   const protocol = lib('remote/protocol.ts');
-  const out = [];
-  const bits = [`${d.transport.describe}`, `daemon ${d.daemon.running ? `running (pid ${d.daemon.pid})` : 'not running'}`, ls.indicator(d.state) || d.state.state];
+  const out: Check[] = [];
+  const bits: (string | null | undefined)[] = [`${d.transport.describe}`, `daemon ${d.daemon.running ? `running (pid ${d.daemon.pid})` : 'not running'}`, ls.indicator(d.state) || d.state.state];
   if (d.state.rttMs !== undefined) bits.push(`rtt ${d.state.rttMs} ms`);
-  const lastError = d.state.lastError || (d.recent.length ? d.recent.at(-1).replace(/^\S+ sub-human link \S+: /, '') : null);
+  const lastError = d.state.lastError || (d.recent.length ? d.recent.at(-1)!.replace(/^\S+ sub-human link \S+: /, '') : null);
   if (lastError && d.state.state !== 'online') bits.push(`last error: ${lastError}`);
   if (d.moved) {
     const where = `${d.moved.host || 'another'}'s machine`;
     bits.push(d.moved.reached ? `the room moved to ${where}; this machine follows it` : `the room moved to ${where}; not reached from here yet`);
   }
-  let status = d.state.state === 'online' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
-  let fix;
+  let status: CheckStatus = d.state.state === 'online' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
+  let fix: string | undefined;
   if (d.state.state === 'fork') fix = `this machine's copy no longer matches the host's: run ${cli(`link --reset ${d.code}`)} in a terminal (it copies the room afresh; anything not sent is kept aside)`;
   else if (d.moved && !d.moved.reached && d.state.state !== 'online') {
     const who = d.moved.host || 'its host';
@@ -404,11 +460,11 @@ function linkChecks(d) {
   else if (!d.daemon.running && d.state.state !== 'online') fix = 'the connection is not running: type /sub-human in your session to start it again';
   if (d.reach) {
     const r = d.reach;
-    const span = x => (x && x.min !== undefined ? (x.min === x.max ? `${x.min}` : `${x.min}-${x.max}`) : '?');
+    const span = (x: ProtoSpan | null | undefined) => (x && x.min !== undefined ? (x.min === x.max ? `${x.min}` : `${x.min}-${x.max}`) : '?');
     const local = `${span(protocol.PROTO)} (sub-human ${protocol.PLUGIN_VERSION})`;
     if (r.skipped) bits.push(r.error);
     else if (r.ok) {
-      const p = r.protocol || {};
+      const p: Partial<NonNullable<Reach['protocol']>> = r.protocol || {};
       const host = `${p.proto ? span(p.proto) : p.v} (sub-human ${p.server || 'before 0.4'})`;
       bits.push(`host reachable in ${r.ms} ms; protocol here ${local}, host ${host}, speaking v${p.v}`);
     } else {
@@ -435,17 +491,17 @@ function linkChecks(d) {
 }
 
 // ---------- Claude Code ----------
-function claudeVersion(env) {
+function claudeVersion(env: NodeJS.ProcessEnv): string | null {
   const r = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 15_000, env });
   if (r.error || r.status !== 0) return null;
   const m = /(\d+\.\d+\.\d+)/.exec(r.stdout || '');
   return m ? m[1] : null;
 }
 
-function checkClaude({ version, quick, env }) {
+function checkClaude({ version, quick, env }: { version: string | null; quick: boolean; env: NodeJS.ProcessEnv }): { check: Check; probe?: Report['probe'] } {
   const cc = lib('cc.ts');
   if (!version) return { check: check('claude', 'warn', 'Claude Code', 'no `claude` on PATH here', 'install Claude Code, or put it on PATH for this shell') };
-  if (cc.compareVersions(version, cc.MIN_VERSION) < 0) {
+  if ((cc.compareVersions(version, cc.MIN_VERSION) ?? 0) < 0) { // null (unreadable) is not older
     return { check: check('claude', 'fail', 'Claude Code', `${version}; sub-human needs ${cc.MIN_VERSION}+ (function hooks)`, 'update Claude Code (claude update)') };
   }
   const same = cc.compareVersions(version, cc.PROBED_VERSION) === 0;
@@ -456,7 +512,7 @@ function checkClaude({ version, quick, env }) {
   const bin = cc.locateBinary({ env });
   if (!bin) return { check: check('claude', 'info', 'Claude Code', `${version}; the binary was not found to check its internals`) };
   let results;
-  try { results = cc.probe(fs.readFileSync(bin)); } catch (e) { return { check: check('claude', 'info', 'Claude Code', `${version}; internals not checked (${e.message})`) }; }
+  try { results = cc.probe(fs.readFileSync(bin)); } catch (e) { return { check: check('claude', 'info', 'Claude Code', `${version}; internals not checked (${(e as Error).message})`) }; }
   const missing = results.filter(r => !r.ok).map(r => r.id);
   if (!missing.length) return { check: check('claude', 'pass', 'Claude Code', `${version}; all ${results.length} internals sub-human relies on are present`), probe: { total: results.length, missing } };
   return {
@@ -466,12 +522,12 @@ function checkClaude({ version, quick, env }) {
   };
 }
 
-function settingsFiles(env) {
+function settingsFiles(env: NodeJS.ProcessEnv): Settings[] {
   const cc = lib('cc.ts');
   return cc.userSettingsFiles(process.cwd(), env).map(f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } }).filter(Boolean);
 }
 
-function checkHooks(settings, env = process.env) {
+function checkHooks(settings: Settings[], env = process.env): Check {
   if (settings.some(s => s.disableAllHooks === true)) {
     return check('hooks', 'fail', 'hooks', 'a settings file sets disableAllHooks: sub-human\'s hooks and hooks module never run', 'remove disableAllHooks from your Claude Code settings');
   }
@@ -484,8 +540,8 @@ function checkHooks(settings, env = process.env) {
   return check('hooks', 'pass', 'hooks', 'no settings file turns hooks off; hooks modules are on');
 }
 
-function checkRemoteControl(env, settings) {
-  const seen = [];
+function checkRemoteControl(env: NodeJS.ProcessEnv, settings: Settings[]): Check {
+  const seen: string[] = [];
   for (const [k, what] of Object.entries(NO_REMOTE_CONTROL)) {
     if (truthy(env[k]) || settings.some(s => s.env && truthy(s.env[k]))) seen.push(what);
   }
@@ -503,10 +559,10 @@ const ROOM_CLAUDE_BIND_GRACE_MS = 90_000;
  * ROOM_CLAUDE_BIND_GRACE_MS ago) but never bound its seat: the job runs, its /sub-human was refused (e.g. "name taken"), so the room's Claude is not running. A fail, with the job's
  * log and the restart.
  */
-function checkRoomClaudes({ now = Date.now() } = {}) {
+function checkRoomClaudes({ now = Date.now() } = {}): Check[] {
   const identity = lib('identity.ts');
-  const out = [];
-  let codes = [];
+  const out: Check[] = [];
+  let codes: string[] = [];
   try { codes = identity.openRooms().filter(c => identity.isHost(c)); } catch { return out; }
   for (const code of codes) {
     let o;
@@ -526,12 +582,12 @@ function checkRoomClaudes({ now = Date.now() } = {}) {
   return out;
 }
 
-async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorizedKeys, env = process.env } = {}) {
+async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorizedKeys, env = process.env }: { quick?: boolean; timeoutMs?: number; authorizedKeys?: string; env?: NodeJS.ProcessEnv } = {}): Promise<Report> {
   const checks = [checkPlugin(), checkNode(), checkHome()];
   const akFile = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
   const scan = scanAuthorizedKeys(akFile);
   const codes = lib('room/links.ts').list();
-  const sshLinks = codes.some(c => ((lib('room/links.ts').get(c) || {}).transport || {}).kind === 'ssh');
+  const sshLinks = codes.some(c => (((lib('room/links.ts').get(c) || {}) as LinkFile).transport || {}).kind === 'ssh');
   checks.push(checkShim({ needed: scan.lines.some(l => l.shimmed) }));
   checks.push(checkAuthorizedKeys(scan));
   const sshV = sshVersion();
@@ -553,11 +609,11 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
   };
 }
 
-const MARK = { pass: '✓', warn: '!', fail: '✗', info: '·' };
-const PAINT = { pass: '32', warn: '33', fail: '31', info: '2' };
+const MARK: Record<CheckStatus, string> = { pass: '✓', warn: '!', fail: '✗', info: '·' };
+const PAINT: Record<CheckStatus, string> = { pass: '32', warn: '33', fail: '31', info: '2' };
 
-function format(report, { color = false } = {}) {
-  const c = (code, s) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
+function format(report: Report, { color = false } = {}): string {
+  const c = (code: string, s: string) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
   const v = report.versions;
   const lines = [`checks · sub-human ${v.plugin} · node v${v.node} · claude ${v.claude || '?'} · ${v.platform} ${v.arch}`];
   const w = Math.max(...report.checks.map(x => x.title.length));
@@ -565,30 +621,30 @@ function format(report, { color = false } = {}) {
     lines.push(`${c(PAINT[x.status], MARK[x.status])} ${x.title.padEnd(w)}  ${x.detail}`);
     if (x.fix) for (const f of String(x.fix).split('\n')) lines.push(`  ${' '.repeat(w)}  ${c('36', `fix: ${f}`)}`);
   }
-  const n = s => report.checks.filter(x => x.status === s).length;
+  const n = (s: CheckStatus) => report.checks.filter(x => x.status === s).length;
   lines.push(`${n('fail')} failed, ${n('warn')} warnings${n('fail') + n('warn') ? ' · a fix line says what to do' : ''} · for a bug report: ${cli('doctor --bundle')} in a terminal (a redacted copy)`);
   return lines.join('\n') + '\n';
 }
 
 // ---------- redaction ----------
-const hash8 = (s, salt) => crypto.createHash('sha256').update(`${salt}:${s}`).digest('hex').slice(0, 8);
+const hash8 = (s: string, salt: string) => crypto.createHash('sha256').update(`${salt}:${s}`).digest('hex').slice(0, 8);
 const KEY_RE = /\b(ssh-(?:ed25519|rsa|dss)|ecdsa-sha2-nistp\d+|sk-(?:ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com) ([A-Za-z0-9+/]{16,}={0,3})/g;
-function fingerprint(b64) {
+function fingerprint(b64: string): string {
   try { return 'SHA256:' + crypto.createHash('sha256').update(Buffer.from(b64, 'base64')).digest('base64').replace(/=+$/, '').slice(0, 12); } catch { return 'SHA256:?'; }
 }
 
-function redactor({ home = os.homedir(), shHome = lib('home.ts').home(), hosts = [], users = [], rooms = [], members = [], salt = crypto.randomBytes(8).toString('hex') } = {}) {
-  const real = p => { try { return fs.realpathSync(p); } catch { return p; } };
+function redactor({ home = os.homedir(), shHome = lib('home.ts').home(), hosts = [], users = [], rooms = [], members = [], salt = crypto.randomBytes(8).toString('hex') }: RedactorOptions = {}): (text: unknown) => string {
+  const real = (p: string) => { try { return fs.realpathSync(p); } catch { return p; } };
   const homes = [...new Set([home, real(home)].filter(h => h && h !== '/'))].sort((a, b) => b.length - a.length);
   // a SUB_HUMAN_HOME outside $HOME (a temp dir, another disk) names nothing under ~: it is <sub-human-home>
-  const under = p => homes.some(h => p === h || p.startsWith(h + '/'));
+  const under = (p: string) => homes.some(h => p === h || p.startsWith(h + '/'));
   const shHomes = [...new Set([shHome, real(shHome)].filter(h => h && h !== '/' && !under(h)))].sort((a, b) => b.length - a.length);
   const names = [...new Set([...hosts, os.hostname(), os.hostname().split('.')[0]].filter(h => h && h.length > 2 && h !== 'localhost'))].sort((a, b) => b.length - a.length);
   const people = [...new Set([...users, (() => { try { return os.userInfo().username; } catch { return ''; } })()].filter(u => u && u.length > 2))];
-  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return text => {
     let s = String(text == null ? '' : text).replace(/\x1b\[[0-9;]*m/g, '');
-    s = s.replace(KEY_RE, (_, type, b64) => `${type} ${fingerprint(b64)}`);
+    s = s.replace(KEY_RE, (_: string, type: string, b64: string) => `${type} ${fingerprint(b64)}`);
     s = s.replace(/\bsh\d\.[A-Za-z0-9._~:-]+/g, 'sh1.<invite>');
     // an invite's PIN is its whole secret (join DEST ROOM 4829; a promote's sh2 PIN has 6 digits): any lone 4- or
     // 6-digit number goes
@@ -596,14 +652,14 @@ function redactor({ home = os.homedir(), shHome = lib('home.ts').home(), hosts =
     for (const h of shHomes) s = s.replace(new RegExp(`${esc(h)}(?![^/\\s"':,)])`, 'g'), '<sub-human-home>');
     for (const h of homes) s = s.replace(new RegExp(`${esc(h)}(?![^/\\s"':,)])`, 'g'), '~');
     // a pipe link names another home on this machine: never its path
-    s = s.replace(/\bpipe([: ])(\/[^\s"'),]+)/g, (_, sep, p) => `pipe${sep}<home-${hash8(p, salt)}>`);
+    s = s.replace(/\bpipe([: ])(\/[^\s"'),]+)/g, (_: string, sep: string, p: string) => `pipe${sep}<home-${hash8(p, salt)}>`);
     s = s.replace(/\/(Users|home)\/[^/\s"']+/g, '/$1/<user>');
     for (const n of names) s = s.replace(new RegExp(`(?<![\\w.-])${esc(n)}(?![\\w-])`, 'g'), `host-${hash8(n, salt)}`);
     for (const u of people) s = s.replace(new RegExp(`(?<![\\w.-])${esc(u)}(?=@)`, 'g'), `user-${hash8(u, salt)}`);
     for (const r of rooms) s = s.replace(new RegExp(`(?<![\\w-])${esc(r)}(?![\\w-])`, 'g'), `room-${hash8(r, salt)}`);
     for (const m of members) s = s.replace(new RegExp(`(?<![\\w.-])${esc(m)}(?![\\w-])`, 'g'), `member-${hash8(m, salt)}`);
     // any other user@host (an email, an ssh destination this machine has no link to)
-    s = s.replace(/(?<![\w.-])([A-Za-z0-9_.+-]+)@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/g, (m, u, h) => `user-${hash8(u, salt)}@host-${hash8(h, salt)}`);
+    s = s.replace(/(?<![\w.-])([A-Za-z0-9_.+-]+)@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/g, (m: string, u: string, h: string) => `user-${hash8(u, salt)}@host-${hash8(h, salt)}`);
     s = s.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, m => `ip-${hash8(m, salt)}`);
     s = s.replace(/\b[0-9a-f]{16,}\b/gi, '<hex>');
     s = s.replace(/\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{20,}\b/g, '<secret>');
@@ -613,20 +669,20 @@ function redactor({ home = os.homedir(), shHome = lib('home.ts').home(), hosts =
 }
 
 /** The report as an allowlist: versions, config, check verdicts, link states and recent errors; no message text. */
-function bundle(report, { salt, env = process.env } = {}) {
+function bundle(report: Report, { salt, env = process.env }: { salt?: string; env?: NodeJS.ProcessEnv } = {}) {
   const links = report.links || [];
   const s = salt || crypto.randomBytes(8).toString('hex'); // per bundle: names hash the same within it, never across
   const red = redactor({
     salt: s,
-    hosts: [...links.map(d => d.transport.host), ...webHosts()].filter(Boolean),
-    users: links.map(d => d.transport.user).filter(Boolean),
+    hosts: [...links.map(d => d.transport.host), ...webHosts()].filter((h): h is string => !!h),
+    users: links.map(d => d.transport.user).filter((u): u is string => !!u),
     rooms: [...links.map(d => d.code), ...webRooms()],
-    members: links.map(d => d.moved && d.moved.host).filter(m => m && m.length > 1),
+    members: links.map(d => d.moved && d.moved.host).filter((m): m is string => !!m && m.length > 1),
   });
   const config = lib('config.ts');
   const timings = Object.fromEntries(Object.entries(config).filter(([k, v]) => /^[A-Z][A-Z0-9_]+$/.test(k) && (typeof v === 'number' || typeof v === 'boolean')));
   const overrides = Object.fromEntries(Object.entries(env).filter(([k]) => config.TIMING_ENV_RE.test(k)).map(([k, v]) => [k, Number(v)]));
-  const opt = x => (x === undefined || x === null ? undefined : x);
+  const opt = <T>(x: T): T | undefined => (x === undefined || x === null ? undefined : x);
   return {
     kind: 'sub-human-doctor-bundle', format: 1, generated_at: report.generated_at,
     note: 'redacted: no messages, keys, tokens or invites; paths under $HOME are ~, host and user names hashed',
@@ -653,19 +709,21 @@ function bundle(report, { salt, env = process.env } = {}) {
 
 const webRooms = () => { try { return Object.keys(lib('remote/listener.ts').status().rooms || {}); } catch { return []; } };
 /** The hostnames of the rooms this machine serves over the web (a ts.net name is redacted like a link's host). */
-function webHosts() {
+function webHosts(): (string | null)[] {
   try {
-    return Object.values(lib('remote/listener.ts').status().rooms || {}).map(r => { try { return new URL(r.url).hostname; } catch { return null; } });
+    const rooms: ListenerStatus['rooms'] = lib('remote/listener.ts').status().rooms || {};
+    return Object.values(rooms).map(r => { try { return new URL(r.url ?? '').hostname; } catch { return null; } });
   } catch { return []; }
 }
 
 // ---------- CLI ----------
-function parseArgs(args) {
-  const { flags: f, rest, error } = require('./args.ts').parse(args, { quick: 0, fix: 0, json: 0, bundle: '?', 'authorized-keys': 1, timeout: 1 });
+function parseArgs(args: readonly string[]): DoctorOptions {
+  const { parse }: typeof import('./args.ts') = require('./args.ts');
+  const { flags: f, rest, error } = parse(args, { quick: 0, fix: 0, json: 0, bundle: '?', 'authorized-keys': 1, timeout: 1 });
   if (rest.length) throw new Error(`usage: sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS] (not ${rest[0]})`);
   if (error && /^--timeout/.test(error)) throw new Error('--timeout needs a number of milliseconds');
   if (error || f['authorized-keys'] === '') throw new Error('--authorized-keys needs a file');
-  const o = {
+  const o: DoctorOptions = {
     quick: !!f.quick, fix: !!f.fix, json: !!f.json, bundle: f.bundle === undefined ? null : f.bundle === true ? '' : f.bundle,
     authorizedKeys: f['authorized-keys'], timeoutMs: f.timeout === undefined ? DOCTOR_HELLO_MS : Number(f.timeout),
   };
@@ -673,9 +731,9 @@ function parseArgs(args) {
   return o;
 }
 
-function applyFix(write, { authorizedKeys } = {}) {
+function applyFix(write: (s: string) => void, { authorizedKeys }: { authorizedKeys?: string } = {}) {
   const h = lib('home.ts');
-  const done = [];
+  const done: string[] = [];
   if (fs.existsSync(h.home())) {
     const changed = h.repairModes();
     if (changed.length) done.push(`made ${changed.map(d => tilde(d)).join(', ')} 0700`);
@@ -684,10 +742,10 @@ function applyFix(write, { authorizedKeys } = {}) {
     done.push(r ? `the serve shim and pointer name ${tilde(shim.pluginRoot())} and ${tilde(process.execPath)}` : `the plugin root ${tilde(shim.pluginRoot())} is under a temp dir: the shim was not written`);
     // this home's older authorized_keys lines (node and the versioned plugin path baked in) run the shim instead
     const file = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
-    let text = null;
+    let text: string | null = null;
     try { text = fs.readFileSync(file, 'utf8'); } catch { /* none */ }
-    const mig = text === null ? { migrated: 0 } : shim.migrateLines(text, h.home());
-    if (mig.migrated) {
+    const mig = text === null ? null : shim.migrateLines(text, h.home());
+    if (mig && mig.migrated) {
       lib('io.ts').writeFileAtomic(fs.realpathSync(file), mig.text);
       done.push(`rewrote ${mig.migrated} older sub-human line(s) in ${tilde(file)} to run ${tilde(shim.shimPath())}`);
     }
@@ -695,7 +753,7 @@ function applyFix(write, { authorizedKeys } = {}) {
   for (const d of done) write(`fixed: ${d}\n`);
 }
 
-async function main(args, { write = s => process.stdout.write(s), env = process.env } = {}) {
+async function main(args: readonly string[], { write = (s: string) => { process.stdout.write(s); }, env = process.env }: { write?: (s: string) => void; env?: NodeJS.ProcessEnv } = {}): Promise<number> {
   const o = parseArgs(args);
   if (o.fix) applyFix(write, { authorizedKeys: o.authorizedKeys });
   const report = await diagnose({ quick: o.quick, timeoutMs: o.timeoutMs, authorizedKeys: o.authorizedKeys, env });
