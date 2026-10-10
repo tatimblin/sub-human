@@ -149,7 +149,7 @@ function convert(file, text) {
     if (KEEP_LAZY.some(re => re.test(s.spec)) || KEEP_LAZY_FILES.includes(path.relative(PLUGIN, file))) { needRequire = true; return `require('${s.spec}')`; }
     if (lazy.has(s.spec)) return lazy.get(s.spec);
     const base = path.basename(s.spec).replace(/\.[cm]?[jt]s$/, '').replace(/^node:/, '');
-    const stem = base === 'index' ? path.basename(path.dirname(s.spec)) : base;
+    const stem = base === 'index' ? path.basename(path.dirname(s.abs || path.resolve(path.dirname(file), s.spec))) : base;
     let id = s.builtin ? camel(stem) : `${camel(stem)}Mod`;
     if (words.has(id) || lazy.has(id)) id = `${camel(path.basename(path.dirname(s.abs || 'x')) + '-' + stem)}Mod`;
     while (words.has(id)) id += '_';
@@ -215,6 +215,76 @@ function textFiles() {
   out.push(...walk(path.join(ROOT, 'scripts'), f => /\.(m?js|ts|json|md|sh)$/.test(f) && f !== __filename));
   return out;
 }
+
+// ---------- 4. --relazy BASE: the lazy requires that loaded more than the file did ----------
+// Run after 1-3, with BASE the commit before them. Step 2 hoisted every lazy require into a static import, which
+// would make each hook load the remote stack, the vendored curve and more at start. A hoisted import stays only when
+// its module was loaded at load time anyway: it is in the closure of the file's top-level requires at BASE. Any
+// other goes back to a lazy require (createRequire(import.meta.url): require(esm) is synchronous, so no runtime
+// module may use top-level await), at the same call sites.
+/** What a CommonJS file requires at load time: its top-level require statements (const ... = require(S), or a bare
+ * require(S)... statement), resolved to absolute paths. */
+function eagerOf(file, text) {
+  const consts = constsOf(text, path.dirname(file));
+  const out = new Set();
+  for (const m of text.matchAll(new RegExp(String.raw`^(?:const (?:\{[^}]*\}|[\w$]+) = )?require\(${SPEC_RE}\)`, 'gm'))) {
+    const r = evalSpec(m[1], consts, path.dirname(file));
+    if (!r || (r.spec && isBuiltin(r.spec))) continue;
+    out.add(r.abs || path.resolve(path.dirname(file), r.spec));
+  }
+  return out;
+}
+
+function relazy(base) {
+  const git = (...a) => execFileSync('git', a, { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 << 20 });
+  const rel = f => path.relative(ROOT, f).split(path.sep).join('/');
+  const was = git('ls-tree', '-r', '--name-only', base, '--', ...DIRS.map(d => `plugin/sub-human/${d}`)).split('\n')
+    .filter(f => f.endsWith('.js') && !f.includes('/vendor/')).map(f => path.join(ROOT, f));
+  const baseText = new Map(was.map(f => [f, git('show', `${base}:${rel(f)}`)]));
+  const closure = new Map();
+  const closureAt = file => {
+    if (closure.has(file)) return closure.get(file);
+    const seen = new Set();
+    const visit = f => {
+      for (const t of eagerOf(f, baseText.get(f) || '')) if (!seen.has(t) && baseText.has(t)) { seen.add(t); visit(t); }
+    };
+    visit(file);
+    closure.set(file, seen);
+    return seen;
+  };
+  // the processes: each hook, the MCP server and its plug-ins, the statusline (scripts/sub-human agent-statusline)
+  const entries = was.filter(f => /\/(hooks\/[^/]+|mcp\/[^/]+|statusline\/index)\.js$/.test(f));
+  for (const f of was) {
+    const ts = toTs(f);
+    let text = fs.readFileSync(ts, 'utf8');
+    const top = eagerOf(f, baseText.get(f));
+    const lazyOnes = [];
+    for (const m of text.matchAll(/^import \* as ([\w$]+) from '(\.[^']+)';\n/gm)) {
+      const target = path.resolve(path.dirname(f), m[2]).replace(/\.ts$/, '.js');
+      if (!baseText.has(target) || top.has(target)) continue; // a top-level require, or not a converted module
+      if (closureAt(f).has(target)) continue; // loaded at load time anyway: static is no more work
+      // every entry that loads f at load time loads target (and all it loads) anyway
+      const users = entries.filter(e => e === f || closureAt(e).has(f));
+      const need = [target, ...closureAt(target)];
+      if (users.length && users.every(e => need.every(n => n === e || closureAt(e).has(n)))) continue;
+      lazyOnes.push({ line: m[0], id: m[1], spec: m[2] });
+    }
+    if (!lazyOnes.length) continue;
+    for (const l of lazyOnes) {
+      text = text.replace(l.line, '');
+      text = text.replace(new RegExp(String.raw`(?<![\w$.])${l.id.replace(/\$/g, '\\$')}(?![\w$])`, 'g'), `require('${l.spec}')`);
+    }
+    if (!/^const require = createRequire\(import\.meta\.url\);$/m.test(text)) {
+      const all = [...text.matchAll(/^import [^;]*;[^\n]*$/gm)];
+      const at = all.at(-1).index + all.at(-1)[0].length;
+      text = `${text.slice(0, at)}\nimport { createRequire } from 'node:module';\n\nconst require = createRequire(import.meta.url);${text.slice(at)}`;
+    }
+    if (!DRY) fs.writeFileSync(ts, text);
+    process.stdout.write(`${rel(ts)}: lazy again: ${lazyOnes.map(l => l.spec).join(' ')}\n`);
+  }
+}
+const ri = process.argv.indexOf('--relazy');
+if (ri > 0) { relazy(process.argv[ri + 1]); process.exit(0); }
 
 // ---------- run ----------
 for (const f of renamed) gitMv(f, toTs(f));

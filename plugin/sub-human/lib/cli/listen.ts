@@ -10,7 +10,9 @@
  */
 
 import { parse } from './args.ts';
-import * as listenerMod from '../remote/listener.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const say = s => process.stdout.write(s.endsWith('\n') ? s : s + '\n');
 const fail = (s, code = 1) => { process.stderr.write(s.endsWith('\n') ? s : s + '\n'); return code; };
@@ -22,7 +24,7 @@ function listen(args) {
   if (p.error === '--port needs a value') return fail('--port takes a port number', 2);
   const doStart = !!p.flags.start, doStop = !!p.flags.stop, doStatus = !!p.flags.status;
   if (p.error || p.rest.length || doStart + doStop + doStatus > 1) return fail('usage: sub-human listen [--port 7420] | --start [--port P] | --stop | --status', 2);
-  const L = listenerMod;
+  const L = require('../remote/listener.ts');
   try {
     if (doStatus) { say(JSON.stringify(L.status(), null, 2)); return 0; }
     if (doStop) { say(L.stop() ? 'the listener stopped' : 'no listener was running'); return 0; }

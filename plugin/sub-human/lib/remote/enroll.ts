@@ -56,17 +56,9 @@ import * as auth from './auth.ts';
 import { RoomError } from '../room/validate.ts';
 import * as config from '../config.ts';
 import { CODE_RE, NAME_RE } from '../text.ts';
-import * as sshkeysMod from './sshkeys.ts';
-import * as transportsMod from './transports/index.ts';
-import * as pipeMod from './transports/pipe.ts';
-import * as sshMod from './transports/ssh.ts';
-import * as wsMod from './transports/ws.ts';
-import * as remoteWsMod from './ws.ts';
-import * as linkMod from './link.ts';
-import * as linksMod from '../room/links.ts';
-import * as homeMod from '../home.ts';
-import * as roomMod from '../room.ts';
-import * as hostingMod from './hosting.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const V = 1;
 const KINDS = new Set(['ssh', 'ws', 'pipe']);
@@ -115,7 +107,7 @@ function joinerOf(ada, kind) {
   return { name: j.name, machine: j.machine, label: j.label, key: j.key };
 }
 
-const fingerprint = key => (key ? sshkeysMod.fingerprint(key) : null);
+const fingerprint = key => (key ? require('./sshkeys.ts').fingerprint(key) : null);
 
 // ---------- the host ----------
 /** A line in the room from the room itself, best effort. */
@@ -276,7 +268,7 @@ function joinerLabel() {
 
 /** The text-message transport of a WebSocket: one frame per text message. */
 function wsTransport(conn) {
-  const { lineTransport } = transportsMod;
+  const { lineTransport } = require('./transports/index.ts');
   const { transport, receive, end } = lineTransport({ write: line => conn.send(line.replace(/\n$/, '')), shut: () => conn.close(1000, 'done') });
   conn.on('message', (data, binary) => { if (binary) { conn.close(1003, 'text frames only'); return; } receive(`${data.toString('utf8')}\n`); });
   conn.on('close', end);
@@ -287,16 +279,16 @@ function wsTransport(conn) {
 async function openTransport(spec, code, { dir }) {
   if (spec.kind === 'pipe') {
     if (typeof spec.home !== 'string' || !spec.home.startsWith('/')) throw new RoomError('INVALID', 'the link\'s pipe names no home');
-    const pipe = pipeMod;
+    const pipe = require('./transports/pipe.ts');
     return { transport: pipe.spawn(process.execPath, [BIN, 'serve', '--enroll', code, '--kind', 'pipe'], { env: { ...process.env, SUB_HUMAN_HOME: spec.home } }) };
   }
   if (spec.kind === 'ssh') {
-    const sshkeys = sshkeysMod;
+    const sshkeys = require('./sshkeys.ts');
     const key = sshkeys.writeEnrollKey(dir, code);
     const knownHosts = path.join(dir, 'enroll_known_hosts');
     fs.writeFileSync(knownHosts, '', { mode: 0o600 }); // empty each time: ssh writes the key it is shown
-    const [cmd, ...args] = sshMod.enrollCommand(spec, code, { key, knownHosts });
-    const transport = pipeMod.spawn(cmd, args);
+    const [cmd, ...args] = require('./transports/ssh.ts').enrollCommand(spec, code, { key, knownHosts });
+    const transport = require('./transports/pipe.ts').spawn(cmd, args);
     const sawKey = () => {
       const alias = `sub-human-enroll-${code}`;
       const line = (fs.readFileSync(knownHosts, 'utf8').split('\n').find(l => l.startsWith(`${alias} `)) || '');
@@ -305,12 +297,12 @@ async function openTransport(spec, code, { dir }) {
     return { transport, sawKey };
   }
   if (spec.kind === 'wss' || spec.kind === 'ws') {
-    const wsT = wsMod;
+    const wsT = require('./transports/ws.ts');
     const s = wsT.parse(`//${spec.host}${spec.port ? `:${spec.port}` : ''}${spec.path}`);
     if (!s) throw new RoomError('INVALID', 'the link\'s WebSocket URL is not a plain host[:port]/path');
     let conn;
     try {
-      conn = await remoteWsMod.connect(wsT.urlOf({ ...s, kind: spec.kind }), { maxPayload: 64 * 1024, timeoutMs: config.envMs('SUB_HUMAN_WS_CONNECT_MS', config.WS_CONNECT_MS) });
+      conn = await require('./ws.ts').connect(wsT.urlOf({ ...s, kind: spec.kind }), { maxPayload: 64 * 1024, timeoutMs: config.envMs('SUB_HUMAN_WS_CONNECT_MS', config.WS_CONNECT_MS) });
     } catch (e) { throw new RoomError('OFFLINE', e.message); }
     return { transport: wsTransport(conn) };
   }
@@ -321,14 +313,14 @@ const kindOf = spec => (spec.kind === 'wss' || spec.kind === 'ws' ? 'ws' : spec.
 
 /** The link file's invite after enrollment: an sh2 invite string with the admission secret (never shown to anyone). */
 function inviteFor(code, spec, secret, key) {
-  const link = linkMod;
+  const link = require('./link.ts');
   const loc = spec.kind === 'ssh' ? link.sshLocator(`${spec.user}@${spec.host}${spec.port ? `:${spec.port}` : ''}`, spec.via ? { via: spec.via } : {})
-    : spec.kind === 'pipe' ? link.pipeLocator(spec.home) : wsMod.urlOf(spec);
+    : spec.kind === 'pipe' ? link.pipeLocator(spec.home) : require('./transports/ws.ts').urlOf(spec);
   return auth.formatInvite({ v: 2, code, locator: loc, secret, hostKey: spec.kind === 'pipe' ? null : key });
 }
 
 async function enrollLink(code) {
-  const links = linksMod;
+  const links = require('../room/links.ts');
   const l = links.get(code);
   if (!l || !l.enroll || typeof l.enroll.pin !== 'string') throw new RoomError('AUTH', `this machine has no PIN for room ${code}; type the join line again`);
   if ((l.enroll.attempts || 0) >= MAX_SPENT) {
@@ -340,9 +332,9 @@ async function enrollLink(code) {
   const kind = kindOf(spec);
   const dir = links.dirOf(code);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const sshkeys = sshkeysMod;
+  const sshkeys = require('./sshkeys.ts');
   const linkKey = spec.kind === 'ssh' ? sshkeys.linkKey(dir, `sub-human:${code}:${l.enroll.name}`) : null;
-  const joiner = { name: l.enroll.name, machine: homeMod.machineId(), label: joinerLabel(), key: linkKey ? linkKey.raw : null };
+  const joiner = { name: l.enroll.name, machine: require('../home.ts').machineId(), label: joinerLabel(), key: linkKey ? linkKey.raw : null };
   const { transport, sawKey } = await openTransport(spec, code, { dir });
   const checkKey = vouched => {
     if (spec.kind === 'ssh') {
@@ -392,14 +384,14 @@ async function enrollLink(code) {
 
 // ---------- the door (ssh) ----------
 function storeOf(code) {
-  const s = roomMod.open(code).store;
+  const s = require('../room.ts').open(code).store;
   if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine`);
   return s;
 }
 
-function openDoor(code, { file = sshkeysMod.authorizedKeysFile() } = {}) {
-  const sshkeys = sshkeysMod;
-  const { shim, h } = hostingMod.shimReady();
+function openDoor(code, { file = require('./sshkeys.ts').authorizedKeysFile() } = {}) {
+  const sshkeys = require('./sshkeys.ts');
+  const { shim, h } = require('./hosting.ts').shimReady();
   const k = sshkeys.enrollKey(code);
   const line = shim.enrollLine(code, k.pub, h);
   const f = path.resolve(file);
@@ -413,7 +405,7 @@ function sweepDoors(code, { now = Date.now() } = {}) {
   const s = storeOf(code);
   const all = Object.values(s.kv.get(auth.INVITES_KEY, null) || {}).filter(i => i && i.short && i.kind === 'ssh');
   if (!all.length || all.some(i => auth.shortLive(i, now))) return 0;
-  const sshkeys = sshkeysMod;
+  const sshkeys = require('./sshkeys.ts');
   let n = 0;
   for (const f of new Set(all.map(i => i.door_file).filter(Boolean))) {
     try { n += sshkeys.removeTagged(f, sshkeys.ENROLL_TAG(code)); } catch { /* the next sweep */ }

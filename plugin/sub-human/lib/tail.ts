@@ -62,16 +62,9 @@ import path from 'node:path';
 import * as realClock from './clock.ts';
 import * as config from './config.ts';
 import { roomClaudeName } from './room/members.ts';
-import * as rowsMod from './rows.ts';
-import * as identityMod from './identity.ts';
-import * as proposalMod from './proposal.ts';
-import * as roomMod from './room.ts';
-import * as noticesMod from './notices.ts';
-import * as roomClaudeMod from './room-claude.ts';
-import * as linkMod from './remote/link.ts';
-import * as handoffMod from './handoff.ts';
-import * as admissionMod from './remote/admission.ts';
-import * as enrollMod from './remote/enroll.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const { envMs } = config;
 const FOR_CLAUDE = '(for Claude)';
@@ -224,7 +217,7 @@ const SPAWN_GRACE_MS = config.ROW_SPAWN_GRACE_MS;
  * The Agent calls for this seat's rows with no live hold, or null when they all run (or were just spawned). The
  * tail sends it as a `rows` event, so the person's next prompt carries it.
  */
-function missingRowsText(me, sid, { now = Date.now(), rows = rowsMod, identity = identityMod } = {}) {
+function missingRowsText(me, sid, { now = Date.now(), rows = require('./rows.ts'), identity = require('./identity.ts') } = {}) {
   try {
     const members = identity.readMembers(me.code);
     // room Claude: missingRows skips members who joined under 45 s ago (their member_joined notice covers them)
@@ -242,7 +235,7 @@ function missingRowsText(me, sid, { now = Date.now(), rows = rowsMod, identity =
 }
 
 /** lib/proposal.ts reminder() for each proposal that names this member and awaits their answer; null for the room's Claude or none. */
-function remindersText(me, rm, { proposal = proposalMod } = {}) {
+function remindersText(me, rm, { proposal = require('./proposal.ts') } = {}) {
   if (me.role === 'claude') return null;
   const ps = proposal.pendingFor(me, rm.readView({ after: Infinity })) || [];
   if (!ps.length) return null;
@@ -560,17 +553,17 @@ function runTail({
 } = {}) {
   const LIB = import.meta.dirname;
   const d = {
-    openRoom: deps.openRoom || (() => { const r = roomMod; return code => r.open(code); })(),
-    heartbeat: deps.heartbeat || (me => identityMod.heartbeat(me)),
-    rows: deps.rows || rowsMod,
-    notices: deps.notices || noticesMod,
-    roomClaude: deps.roomClaude ? () => deps.roomClaude : (() => { let o; return () => o || (o = roomClaudeMod); })(),
-    identity: deps.identity || identityMod,
-    proposal: deps.proposal || proposalMod,
-    linkStatus: deps.linkStatus || (code => linkMod.status(code)),
-    handoff: deps.handoff ? () => deps.handoff : (() => { let m; return () => m || (m = handoffMod); })(),
-    admission: deps.admission ? () => deps.admission : (() => { let m; return () => m || (m = admissionMod); })(),
-    sweepDoors: deps.sweepDoors || (code => enrollMod.sweepDoors(code)),
+    openRoom: deps.openRoom || (() => { const r = require('./room.ts'); return code => r.open(code); })(),
+    heartbeat: deps.heartbeat || (me => require('./identity.ts').heartbeat(me)),
+    rows: deps.rows || require('./rows.ts'),
+    notices: deps.notices || require('./notices.ts'),
+    roomClaude: deps.roomClaude ? () => deps.roomClaude : (() => { let o; return () => o || (o = require('./room-claude.ts')); })(),
+    identity: deps.identity || require('./identity.ts'),
+    proposal: deps.proposal || require('./proposal.ts'),
+    linkStatus: deps.linkStatus || (code => require('./remote/link.ts').status(code)),
+    handoff: deps.handoff ? () => deps.handoff : (() => { let m; return () => m || (m = require('./handoff.ts')); })(),
+    admission: deps.admission ? () => deps.admission : (() => { let m; return () => m || (m = require('./remote/admission.ts')); })(),
+    sweepDoors: deps.sweepDoors || (code => require('./remote/enroll.ts').sweepDoors(code)),
   };
   const log = errorLog(err, clock, tm.errorLogMs);
   const ctx = { clock, fs, write, log, t: tm, deps: d, sid };

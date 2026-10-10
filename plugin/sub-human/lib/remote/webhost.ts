@@ -25,22 +25,18 @@
  */
 
 import { RoomError } from '../room/validate.ts';
-import * as listenerMod from './listener.ts';
-import * as tailscaleMod from './tailscale.ts';
-import * as wsMod from './transports/ws.ts';
-import * as identityMod from '../identity.ts';
-import * as roomMod from '../room.ts';
-import * as authMod from './auth.ts';
-import * as hostingMod from './hosting.ts';
+import { createRequire } from 'node:module';
 
-const listener = () => listenerMod;
-const ts = () => tailscaleMod;
-const wsT = () => wsMod;
+const require = createRequire(import.meta.url);
+
+const listener = () => require('./listener.ts');
+const ts = () => require('./tailscale.ts');
+const wsT = () => require('./transports/ws.ts');
 
 function hostStore(code) {
-  const identity = identityMod;
+  const identity = require('../identity.ts');
   if (!identity.roomExists(code)) throw new RoomError('NO_ROOM', `no room "${code}"`);
-  const s = roomMod.open(code).store;
+  const s = require('../room.ts').open(code).store;
   if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; its host does this`);
   return s;
 }
@@ -95,9 +91,9 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, by = null
     'Stop serving it with /sub-human invite --stop (closing the room does too).',
   ];
   // the URL and a 4-digit PIN (lib/remote/enroll.ts over the listener's text frames)
-  const r = authMod.mintShort(store, { kind: 'ws', locator, hostKey, by, now });
+  const r = require('./auth.ts').mintShort(store, { kind: 'ws', locator, hostKey, by, now });
   const line = `/sub-human join ${joinBase} ${r.pin}`;
-  const text = hostingMod.shortText({
+  const text = require('./hosting.ts').shortText({
     code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, ref: r.ref,
     extra: [`Their machine checks this one's key (${hostKey.slice(0, 12)}…) as part of the PIN check, so nothing in between can read along.`, ...notes],
   });

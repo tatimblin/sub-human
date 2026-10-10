@@ -29,8 +29,9 @@ import * as handoff from '../handoff.ts';
 import * as link from '../remote/link.ts';
 import { parse } from './args.ts';
 import * as textMod from '../text.ts';
-import * as webhostMod from '../remote/webhost.ts';
-import * as hostMod from './host.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 const cli = args => textMod.cliLine(args);
 
 /** args.parse, dying on its error (usage, exit 2). */
@@ -65,7 +66,7 @@ function seatOf(code, as, die) {
 function locatorOf(flags, die, code) {
   if (flags.url !== undefined) {
     if (flags.ssh !== undefined || flags.via !== undefined) die('--ssh/--via and --url are two ways in; pick one');
-    try { return webhostMod.webLocator(flags.url, code); } catch (e) { die(e.message); }
+    try { return require('../remote/webhost.ts').webLocator(flags.url, code); } catch (e) { die(e.message); }
   }
   if (flags.ssh === undefined) {
     if (flags.via !== undefined) die('--via is for an ssh address (USER@HOST[:PORT] --via JUMP)');
@@ -136,7 +137,7 @@ function promoteCmd(args, ctx) {
   out('Give each machine its line, and its PIN some other way (each is single-use, lasts 15 minutes and only works on that machine); they run it in a terminal, then /sub-human in their session:');
   // inside Claude Code (its ! shell) the PINs are masked: that output would land in the conversation
   const lines = r.invites.map(x => `  ${x.seats.join(', ')}: ${cli(`demote ${code} ${x.invite} ${x.pin}`)}`);
-  out(hostMod.maskPins(lines.join('\n'), r.invites.map(x => x.pin)));
+  out(require('./host.ts').maskPins(lines.join('\n'), r.invites.map(x => x.pin)));
   out('(the old host runs its line too when it is back: its own lines are kept aside, never merged)');
 }
 

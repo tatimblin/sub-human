@@ -95,7 +95,7 @@
  *   sshLocator(dest, {via}?) -> 'ssh:user@host[:port][?via=JUMP]' | null   an invite's locator for a room reached over SSH (null: not
  *                                  a plain user@host[:port])
  *   transportOf(locator) -> Spec | null   the link file's transport for an invite's locator: the transport
- *                                  registry's parse (lib/remote/transports/index.js), {kind: 'pipe', home} or
+ *                                  registry's parse (lib/remote/transports/index.ts), {kind: 'pipe', home} or
  *                                  {kind: 'ssh', user, host, port?, via?} today. connectLink opens it with {code}: pipe runs
  *                                  this plugin's own `sub-human serve --stdio CODE` with that home; ssh runs
  *                                  `ssh … -- user@host sub-human serve --stdio CODE` and the host's authorized_keys
@@ -120,23 +120,20 @@ import { RoomError } from '../room/validate.ts';
 import { isAlive, sleepSync } from '../io.ts';
 import * as config from '../config.ts';
 import * as realClock from '../clock.ts';
-import * as handoffMod from '../handoff.ts';
 import * as storeMod from '../room/store.ts';
 import * as linksMod from '../room/links.ts';
 import * as homeMod from '../home.ts';
-import * as transportsMod from './transports/index.ts';
-import * as sshMod from './transports/ssh.ts';
-import * as outboxMod from './outbox.ts';
 import * as identityMod from '../identity.ts';
 import * as membersMod from '../room/members.ts';
-import * as enrollMod from './enroll.ts';
-import * as clientMod from './client.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const BIN = path.join(import.meta.dirname, '..', '..', 'scripts', 'sub-human');
 const RELAY = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put', 'handoff.accept', 'handoff.refuse']);
 const HANDOFF_SELF_STOP_MS = 10_000;
 const SUN_PATH_MAX = 103; // a unix socket's path: 104 bytes on macOS with its NUL (108 on Linux)
-const handoff = () => handoffMod;
+const handoff = () => require('../handoff.ts');
 const STOPPED = new Set(['fork', 'stopped']);
 const hash12 = data => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12); // lib/room/store.ts's, without loading a store
 
@@ -269,8 +266,8 @@ function start(code) {
  */
 const pipeLocator = (h = homeMod.home()) => `pipe:${h}`;
 
-const transports = () => transportsMod;
-const sshLocator = (dest, opts) => sshMod.locator(dest, opts);
+const transports = () => require('./transports/index.ts');
+const sshLocator = (dest, opts) => require('./transports/ssh.ts').locator(dest, opts);
 
 /**
  * @param {string} locator
@@ -284,7 +281,7 @@ const transportOf = locator => transports().parse(locator);
  * @param {string[]} [opts]
  * @returns {string[]}
  */
-const sshCommand = (t, code, opts) => sshMod.command(t, code, opts);
+const sshCommand = (t, code, opts) => require('./transports/ssh.ts').command(t, code, opts);
 
 // ---------- the daemon ----------
 const listening = (srv, file) => new Promise((resolve, reject) => {
@@ -419,7 +416,7 @@ async function serveMirror({
 }) {
   const T = linkTimings({ ...timings, retryMs, retryMaxMs });
   const sockFile = socketPath(mirror.dir);
-  const box = outbox || outboxMod.open(mirror.dir);
+  const box = outbox || require('./outbox.ts').open(mirror.dir);
   const localSeats = seats || (() => identityMod.localSeats(mirror.code));
   const saveState = writeState || (rec => linksMod.writeState(mirror.code, rec));
   let state = 'connecting', reason = null, client = null, retry = null, hb = null, delay = T.retryMs, finish;
@@ -448,7 +445,7 @@ async function serveMirror({
     if (state === 'connecting') await first;
     let p = params, queue = false;
     if (op === 'append' && p && p.queue) ({ queue, ...p } = p);
-    const queueable = queue && outboxMod.queueable(p.payload);
+    const queueable = queue && require('./outbox.ts').queueable(p.payload);
     if (state !== 'online') {
       if (queueable && !STOPPED.has(state)) {
         const n = box.add(p.payload, clock.now());
@@ -755,7 +752,7 @@ async function connectLink(code) {
   let l = links.get(code);
   if (!l) throw new RoomError('AUTH', `this machine has no link to room ${code} any more`);
   if (!l.token && typeof l.invite !== 'string' && l.enroll) { // a short code: the PAKE first (lib/remote/enroll.ts)
-    await enrollMod.enrollLink(code);
+    await require('./enroll.ts').enrollLink(code);
     l = links.get(code);
   }
   const login = !!l.transport && l.transport.login === true; // a link over the person's own ssh login: no invite
@@ -769,7 +766,7 @@ async function connectLink(code) {
   const opts = { machine: homeMod.machineId(), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...cred };
   const t = transports().open(l.transport, { code });
   let c;
-  try { c = await clientMod.connect(t, opts); } catch (e) {
+  try { c = await require('./client.ts').connect(t, opts); } catch (e) {
     // the host refused the invite (a wrong PIN, burnt, used, expired): it and its PIN are spent here too, so the link
     // file keeps no secret in clear (a new join writes a fresh one)
     if (!l.token && !login && e && e.code === 'AUTH') scrubRefused(links, code, e.message);
@@ -808,7 +805,7 @@ async function loginRefused(l, t, e, code) {
   const tr = await Promise.resolve(t).catch(() => null);
   if (!tr || typeof tr.stderr !== 'function') return e;
   await new Promise(r => setTimeout(r, 100)); // ssh's last words may come just after its exit
-  const why = sshMod.loginFailure(tr.stderr(), l.transport, code);
+  const why = require('./transports/ssh.ts').loginFailure(tr.stderr(), l.transport, code);
   return why ? new RoomError('AUTH', why) : e;
 }
 

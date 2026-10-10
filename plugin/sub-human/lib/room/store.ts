@@ -113,8 +113,9 @@ import * as config from '../config.ts';
 import { RoomError, validate } from './validate.ts';
 import * as envelope from './envelope.ts';
 import * as members from './members.ts';
-import * as linksMod from './links.ts';
-import * as storeMirrorMod from './store-mirror.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const LOG = 'log.jsonl';
 const IDX_FILE = 'log.idx';
@@ -966,7 +967,7 @@ class FsRoomStore {
 let backend = null; // tests: code -> RoomStore
 const stores = new Map(); // home \0 code -> FsRoomStore | MirrorRoomStore
 /** A room hosted elsewhere: the link registry knows it (required here, not at load: store-mirror.ts extends this file). */
-const linked = c => linksMod.has(c);
+const linked = c => require('./links.ts').has(c);
 /**
  * The store of room `code`: a MirrorRoomStore when this machine links to the room (lib/room/links.ts), else an
  * FsRoomStore; decided once per home and code. {dir} (and only then) gives an uncached FsRoomStore over that directory.
@@ -978,7 +979,7 @@ function open(c, { dir } = {}) {
   let s = stores.get(k);
   if (!s || s.isHost === linked(c)) { // none yet, or a handoff wrote or removed the link since
     repairModes(); // a home an older version made 0755 (once per home and process)
-    s = linked(c) ? new (storeMirrorMod.MirrorRoomStore)(c) : new FsRoomStore(c);
+    s = linked(c) ? new (require('./store-mirror.ts').MirrorRoomStore)(c) : new FsRoomStore(c);
     stores.set(k, s);
   }
   return s;

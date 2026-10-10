@@ -34,7 +34,9 @@
  */
 import { isAlive } from '../io.ts';
 import * as links from './links.ts';
-import * as linkMod from '../remote/link.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const STATES = new Set(['online', 'connecting', 'offline', 'fork', 'stopped']);
 const LEGACY = { up: 'online', down: 'offline' };
@@ -54,7 +56,7 @@ function normalize(state, detail) {
 
 /** The mirror's `link` document (lib/remote/link.ts status), or null when it cannot be read. */
 function linkDoc(code) {
-  try { return linkMod.status(code); } catch { return null; }
+  try { return require('../remote/link.ts').status(code); } catch { return null; }
 }
 
 const NOT_RUNNING = 'the link daemon is not running';

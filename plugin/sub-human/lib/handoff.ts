@@ -78,15 +78,11 @@ import { RoomError } from './room/validate.ts';
 import { machineId } from './home.ts';
 import { isAlive, sleepSync } from './io.ts';
 import * as config from './config.ts';
-import * as linkMod from './remote/link.ts';
 import * as identityMod from './identity.ts';
-import * as listenerMod from './remote/listener.ts';
-import * as sshkeysMod from './remote/sshkeys.ts';
-import * as hostingMod from './remote/hosting.ts';
-import * as webhostMod from './remote/webhost.ts';
-import * as roomClaudeMod from './room-claude.ts';
-import * as seatsMod from './seats.ts';
 import * as ioMod from './io.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const HOST_DOC = 'remote/handoff';
 const ASK_DOC = 'handoff';
@@ -98,15 +94,15 @@ const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 const iso = ms => new Date(ms).toISOString();
 const err = (code, msg) => new RoomError(code, msg);
-const linkLib = () => linkMod;
+const linkLib = () => require('./remote/link.ts');
 const identity = () => identityMod;
 const transportOf = locator => (typeof locator === 'string' ? linkLib().transportOf(locator) : null);
 // A next host reached over the web (wss/ws, lib/remote/transports/ws.ts): its invites pin its listener's X25519 key,
 // and the link file that follows one carries that key.
 // Over ssh its invites pin its sshd Ed25519 host key (lib/remote/sshkeys.ts hostKey; none when unreadable).
 const isWeb = locator => /^wss?:/.test(String(locator));
-const hostKeyFor = locator => (isWeb(locator) ? listenerMod.hostKey()
-  : /^ssh:/.test(String(locator)) ? sshkeysMod.hostKey() : null);
+const hostKeyFor = locator => (isWeb(locator) ? require('./remote/listener.ts').hostKey()
+  : /^ssh:/.test(String(locator)) ? require('./remote/sshkeys.ts').hostKey() : null);
 /** This machine's seat name in CODE, for its link key's comment and its admit request. */
 const seatName = code => { try { return identity().localSeats(code).find(n => n !== 'claude') || 'member'; } catch { return 'member'; } };
 /**
@@ -118,11 +114,11 @@ const seatName = code => { try { return identity().localSeats(code).find(n => n 
 function followLink(code, locator, invite) {
   const inv = typeof invite === 'string' ? auth.parseInvite(invite) : null;
   if (!inv || inv.code !== code || inv.locator !== locator || !transportOf(locator)) return { transport: transportOf(locator), request: null };
-  return hostingMod.linkTransport({ inv, name: seatName(code), cur: links.get(code) });
+  return require('./remote/hosting.ts').linkTransport({ inv, name: seatName(code), cur: links.get(code) });
 }
 /** This machine, about to host CODE at a web locator: its listener up, the room in its served set. */
 function serveWeb(code, locator) {
-  if (isWeb(locator)) webhostMod.serveAt(code, locator);
+  if (isWeb(locator)) require('./remote/webhost.ts').serveAt(code, locator);
 }
 const askMs = () => config.envMs('SUB_HUMAN_HANDOFF_ASK_MS', config.HANDOFF_ASK_MS);
 const expired = (doc, now = Date.now()) => !(Date.parse(doc && doc.expires_at) > now);
@@ -226,7 +222,7 @@ function serverRefuse(s, link, { id } = {}, now = Date.now()) {
 
 /** The old host after its reply: stop its room Claude job, then mirror the new host (a link holding its own invite). */
 function afterMoved(s, { job } = {}) {
-  if (job) { try { roomClaudeMod.releaseDetached(s.code, job); } catch { /* the job ends with its session */ } }
+  if (job) { try { require('./room-claude.ts').releaseDetached(s.code, job); } catch { /* the job ends with its session */ } }
   const d = hostDoc(s);
   const invite = d && d.invites && d.invites[machineId()];
   if (!invite) return false;
@@ -386,7 +382,7 @@ function takeOver(code, { by, cwd, epoch, entry } = {}) {
   // the old host's room Claude goes with its holder: its machine and lease too. Else claimSpawn clears left_at and the new
   // job's bind meets a record on another machine with a fresh lease, still holding the name ("name taken")
   identity().updateRoomClaude(code, () => ({ job: null, pid: null, pid_start: undefined, machine: undefined, seen_at: undefined, claim: undefined, closing: undefined, left_at: now, stopped_at: now }));
-  return seatsMod.ensureRoomClaude(code, cwd, by);
+  return require('./seats.ts').ensureRoomClaude(code, cwd, by);
 }
 
 // ---------- promote / demote ----------
@@ -434,7 +430,7 @@ function demote(code, invite, pin) {
     const st = linkLib().status(code);
     if (st.running) { try { process.kill(st.pid, 'SIGTERM'); } catch { /* gone */ } }
     let request = null;
-    if (inv.v === 2) request = hostingMod.joinInvite({ inv, invite, pin, name }).request || null;
+    if (inv.v === 2) request = require('./remote/hosting.ts').joinInvite({ inv, invite, pin, name }).request || null;
     else links.set(code, { code, transport, invite, created_at: iso(Date.now()) });
     links.set(code, { ...links.get(code), rebind: true, moved: { locator: inv.locator, host: 'the new host', at: iso(Date.now()) } });
     for (const until = Date.now() + 2000; st.running && Date.now() < until && ioMod.isAlive(st.pid);) ioMod.sleepSync(20);
@@ -442,7 +438,7 @@ function demote(code, invite, pin) {
     return { orphan: null, request, follower: true };
   }
   const o = s.members.read().claude;
-  if (o && o.job && o.job !== 'pending') { try { roomClaudeMod.releaseDetached(code, o.job); } catch { /* ends with its session */ } }
+  if (o && o.job && o.job !== 'pending') { try { require('./room-claude.ts').releaseDetached(code, o.job); } catch { /* ends with its session */ } }
   const orphan = s.setAside();
   for (const k of [auth.LINKS_KEY, auth.INVITES_KEY, HOST_DOC, WORKDIR, 'tasks']) s.kv.delete(k);
   for (const k of s.kv.list('presence/')) s.kv.delete(k);
@@ -450,7 +446,7 @@ function demote(code, invite, pin) {
   let request = null;
   if (inv.v === 2) {
     // the joiner's side of an sh2 invite (its PIN; over ssh the link's own key and the pinned host key)
-    request = hostingMod.joinInvite({ inv, invite, pin, name }).request || null;
+    request = require('./remote/hosting.ts').joinInvite({ inv, invite, pin, name }).request || null;
     links.set(code, { ...links.get(code), moved });
   } else links.set(code, { code, transport, invite, created_at: iso(Date.now()), moved });
   store.forget(code);

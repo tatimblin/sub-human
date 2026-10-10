@@ -28,17 +28,15 @@
 import path from 'node:path';
 import * as auth from './auth.ts';
 import { RoomError } from '../room/validate.ts';
-import * as roomMod from '../room.ts';
-import * as identityMod from '../identity.ts';
-import * as homeMod from '../home.ts';
-import * as sshkeysMod from './sshkeys.ts';
-import * as hostingMod from './hosting.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const LET_IN = 'Let in';
 const REFUSE = 'Refuse';
 
 function hostStore(code) {
-  const s = roomMod.open(code).store;
+  const s = require('../room.ts').open(code).store;
   if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; only its host can let people in`);
   return s;
 }
@@ -47,14 +45,14 @@ const pending = (code, { now = Date.now() } = {}) => auth.admissions(hostStore(c
 const find = (code, ref) => auth.admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) || null;
 
 function targets(code, req) {
-  const identity = identityMod;
-  const { machineId } = homeMod;
+  const identity = require('../identity.ts');
+  const { machineId } = require('../home.ts');
   const here = Object.values(identity.readMembers(code) || {})
     .filter(m => m && m.name && !m.left_at && m.role !== 'claude' && (!m.machine || m.machine === machineId())).map(m => m.name);
   return req.by && here.includes(req.by) ? [req.by] : here;
 }
 
-const fp = req => (req.key ? sshkeysMod.fingerprint(req.key) : `request ${req.ref.slice(0, 6)}`);
+const fp = req => (req.key ? require('./sshkeys.ts').fingerprint(req.key) : `request ${req.ref.slice(0, 6)}`);
 const describe = req => `${req.name} (${fp(req)}) on ${req.label || 'another machine'}`;
 const question = (req, code) => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
 
@@ -84,15 +82,15 @@ function letIn(code, ref, { by = null, sign = null, now = Date.now() } = {}) {
   let file = null;
   if (req.kind === 'ssh' && req.admit === 'asked') {
     // the key line first, then the record: a failed write leaves the request waiting, not let in without a key
-    const sshkeys = sshkeysMod;
-    const { shim, h } = hostingMod.shimReady();
+    const sshkeys = require('./sshkeys.ts');
+    const { shim, h } = require('./hosting.ts').shimReady();
     const key = sshkeys.openssh(req.key);
     file = path.resolve(req.door_file || sshkeys.authorizedKeysFile());
     sshkeys.appendAuthorized(file, shim.authorizedLine(code, req.link, key, h), key);
   }
   let rec;
   try { rec = auth.decideAdmission(store, req.ref, { decision: 'let-in', by, sig, now }); } catch (e) {
-    if (file && req.admit === 'asked') sshkeysMod.removeAuthorized(file, code, req.link);
+    if (file && req.admit === 'asked') require('./sshkeys.ts').removeAuthorized(file, code, req.link);
     throw e;
   }
   roomLine(store, `${by || 'the host'} let ${describe(rec)} in; undo with: /sub-human kick ${rec.name}`);

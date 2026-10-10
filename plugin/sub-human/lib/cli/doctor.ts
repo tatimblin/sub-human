@@ -57,7 +57,6 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import * as argsMod from './args.ts';
 const require = createRequire(import.meta.url);
 
 const LIB = path.join(import.meta.dirname, '..');
@@ -282,7 +281,7 @@ async function webHelloProbe(spec, code, { timeoutMs = DOCTOR_HELLO_MS } = {}) {
   let t = null;
   const deadline = new Promise((_, no) => setTimeout(() => no(new Error(`no answer within ${timeoutMs} ms`)), timeoutMs).unref());
   try {
-    t = await Promise.race([lib('remote/transports/index.js').open(spec, { code }), deadline]);
+    t = await Promise.race([lib('remote/transports/index.ts').open(spec, { code }), deadline]);
     const reply = await Promise.race([new Promise((ok, no) => {
       t.onFrame(f => { if (f.id === 1) (f.error ? no(Object.assign(new Error(`${f.error.code}: ${f.error.message}`), { code: f.error.code })) : ok(f.result)); });
       t.onClose(() => no(new Error('the listener closed before answering')));
@@ -348,7 +347,7 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
   const l = links.get(code) || {};
   const spec = l.transport || {};
   let describe = spec.kind || '?';
-  try { describe = lib('remote/transports/index.js').describe(spec); } catch { /* kind unknown */ }
+  try { describe = lib('remote/transports/index.ts').describe(spec); } catch { /* kind unknown */ }
   let daemon = { running: false };
   try { const s = lib('remote/link.ts').status(code); daemon = { running: !!s.running, pid: s.pid || null }; } catch { /* no mirror */ }
   const st = lib('room/link-state.ts').read(code) || { state: 'offline' };
@@ -660,7 +659,7 @@ function webHosts() {
 
 // ---------- CLI ----------
 function parseArgs(args) {
-  const { flags: f, rest, error } = argsMod.parse(args, { quick: 0, fix: 0, json: 0, bundle: '?', 'authorized-keys': 1, timeout: 1 });
+  const { flags: f, rest, error } = require('./args.ts').parse(args, { quick: 0, fix: 0, json: 0, bundle: '?', 'authorized-keys': 1, timeout: 1 });
   if (rest.length) throw new Error(`usage: sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS] (not ${rest[0]})`);
   if (error && /^--timeout/.test(error)) throw new Error('--timeout needs a number of milliseconds');
   if (error || f['authorized-keys'] === '') throw new Error('--authorized-keys needs a file');

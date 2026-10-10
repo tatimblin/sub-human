@@ -45,17 +45,11 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { RoomError } from '../room/validate.ts';
 import { isAlive, sleepSync } from '../io.ts';
-import * as homeMod from '../home.ts';
-import * as noiseMod from './noise.ts';
-import * as lockMod from '../lock.ts';
 import * as ioMod from '../io.ts';
-import * as identityMod from '../identity.ts';
-import * as tailscaleMod from './tailscale.ts';
-import * as wsMod from './ws.ts';
-import * as transportsWsMod from './transports/ws.ts';
 import * as textMod from '../text.ts';
-import * as shimMod from './shim.ts';
-import * as protocolMod from './protocol.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const DEFAULT_PORT = 7420;
 const PREAUTH_MAX = 16;
@@ -68,12 +62,12 @@ const HOME_CHECK_MS = 2000;
 const CLOSED_CHECK_MS = 30_000;
 const BIN = path.join(import.meta.dirname, '..', '..', 'scripts', 'sub-human');
 
-const home = () => path.resolve(homeMod.home());
+const home = () => path.resolve(require('../home.ts').home());
 const dir = () => path.join(home(), 'listen');
 const stateFile = () => path.join(dir(), 'state.json');
 const logFile = () => path.join(dir(), 'listen.log');
 const keyFile = () => path.join(dir(), 'host-x25519.json');
-const staticKey = () => noiseMod.loadOrCreateStatic(keyFile());
+const staticKey = () => require('./noise.ts').loadOrCreateStatic(keyFile());
 const hostKey = () => staticKey().pub.toString('base64url');
 const defaultPort = () => Number(process.env.SUB_HUMAN_LISTEN_PORT) || DEFAULT_PORT;
 
@@ -84,7 +78,7 @@ function read() {
 /** Change the state file under its lock; fn(cur) returns the next state. */
 function update(fn) {
   fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
-  const { withLock } = lockMod;
+  const { withLock } = require('../lock.ts');
   const { writeFileAtomic } = ioMod;
   return withLock(path.join(dir(), 'state.lock'), () => {
     const next = fn(read());
@@ -146,7 +140,7 @@ function stop() {
 
 /** Is room CODE still open on this host (not stopped, closing or gone)? */
 function roomLive(code) {
-  const identity = identityMod;
+  const identity = require('../identity.ts');
   try {
     if (!identity.roomExists(code) || !identity.isHost(code)) return false;
     const roomClaude = identity.readMembers(code).claude;
@@ -158,15 +152,15 @@ function roomLive(code) {
 function untailscale(rec, log = () => {}) {
   if (!rec || !rec.tailscale) return null;
   try {
-    const r = tailscaleMod.off(rec.tailscale);
+    const r = require('./tailscale.ts').off(rec.tailscale);
     log(`tailscale ${rec.tailscale.funnel ? 'funnel' : 'serve'} ${rec.tailscale.path} off: ${r.ok ? 'done' : r.error}`);
     return r;
   } catch (e) { log(`tailscale off: ${e.message}`); return { ok: false, error: e.message }; }
 }
 
 async function run({ port = defaultPort(), log = msg => process.stderr.write(`${new Date().toISOString()} sub-human listen: ${msg}\n`), closedCheckMs = Number(process.env.SUB_HUMAN_LISTEN_CHECK_MS) || CLOSED_CHECK_MS, idleMs = Number(process.env.SUB_HUMAN_LISTEN_IDLE_MS) || LISTEN_IDLE_MS } = {}) {
-  const ws = wsMod;
-  const wsT = transportsWsMod;
+  const ws = require('./ws.ts');
+  const wsT = require('./transports/ws.ts');
   const { CODE_RE } = textMod;
   const s = staticKey();
   let mine = false;
@@ -180,7 +174,7 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
   const publishConns = () => { try { update(cur => (cur.pid === process.pid ? { ...cur, conns } : cur)); } catch { /* best effort */ } };
 
   const shimCmd = () => {
-    const shim = shimMod;
+    const shim = require('./shim.ts');
     const p = shim.refresh();
     if (!p) throw new RoomError('INVALID', `the plugin root ${shim.pluginRoot()} is under a temp dir; the listener will not run what sits there (SUB_HUMAN_ALLOW_TMP_ROOT=1 allows it)`);
     return p;
@@ -244,7 +238,7 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
    * parsed here; the child runs the PAKE and counts the tries. It holds a pre-auth slot until it exits.
    */
   function enrollConn(conn, data, { refusal, who }) {
-    const protocol = protocolMod;
+    const protocol = require('./protocol.ts');
     let frame = null;
     try { frame = JSON.parse(data.toString('utf8')); } catch { /* refused below */ }
     const code = frame && frame.params && frame.params.room;
@@ -289,7 +283,7 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
   const srv = await ws.createServer({
     host: '127.0.0.1',
     port,
-    maxPayload: noiseMod.MAX_MESSAGE + 64,
+    maxPayload: require('./noise.ts').MAX_MESSAGE + 64,
     pingMs: WS_PING_MS,
     accept: () => (preauth >= PREAUTH_MAX || conns >= LISTEN_MAX ? 503 : true),
     onConnection: (conn, req) => { onConnection(conn, req).catch(e => log(`connection: ${e.stack || e}`)); },

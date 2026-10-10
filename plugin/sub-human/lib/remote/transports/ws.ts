@@ -1,5 +1,5 @@
 /**
- * plugin/sub-human/lib/remote/transports/ws.ts: the `wss` and `ws` kinds (./index.js register): protocol frames
+ * plugin/sub-human/lib/remote/transports/ws.ts: the `wss` and `ws` kinds (./index.ts register): protocol frames
  * over a Noise_NK channel (lib/remote/noise.ts) inside a WebSocket (lib/remote/ws.ts) to the host's listener
  * (lib/remote/listener.ts), usually through a TLS front: Tailscale Serve or Funnel, or any HTTPS reverse proxy.
  * The front sees TLS-decrypted WebSocket frames that hold only Noise ciphertext; only the holder of the X25519 key
@@ -29,16 +29,16 @@
  *   binary WebSocket message. A message that does not decrypt, or a text message, closes the conn (1002 / 1003).
  *   kind = {parse, open, describe}      open(spec, {code}) connects (lib/remote/ws.ts connect, so HTTPS_PROXY / NO_PROXY
  *       apply; within WS_CONNECT_MS, 45 s: a ts.net name's first TLS handshake waits on its certificate), runs
- *       clientChannel and returns the transport (./index.js fromDuplex). A failed connect is OFFLINE (the link daemon
+ *       clientChannel and returns the transport (./index.ts fromDuplex). A failed connect is OFFLINE (the link daemon
  *       retries); INVALID without a code or a pinned key
  */
 
 import { Duplex } from 'node:stream';
 import { RoomError } from '../../room/validate.ts';
-import * as noiseMod from '../noise.ts';
-import * as wsMod from '../ws.ts';
 import * as configMod from '../../config.ts';
-import * as .Mod from './index.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const HOST_RE = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*\.?$/;
 const PATH_RE = /^\/[A-Za-z0-9._~/-]{0,200}$/;
@@ -46,8 +46,8 @@ const KEY_RE = /^[A-Za-z0-9_-]{43}$/;
 const PROLOGUE = Buffer.from('sub-human ws1');
 const HANDSHAKE_MS = 10_000;
 
-const noise = () => noiseMod;
-const ws = () => wsMod;
+const noise = () => require('../noise.ts');
+const ws = () => require('../ws.ts');
 
 function parse(rest) {
   const m = /^\/\/([^/:?#@\s]+)(?::([0-9]{1,5}))?(\/[^?#\s]*)?$/.exec(String(rest));
@@ -170,7 +170,7 @@ const kind = {
     } catch (e) { throw new RoomError('OFFLINE', e.message); }
     try {
       const duplex = await clientChannel(conn, { rs: Buffer.from(spec.hostKey, 'base64url'), code: ctx.code });
-      return .Mod.fromDuplex(duplex);
+      return require('./index.ts').fromDuplex(duplex);
     } catch (e) {
       conn.terminate();
       throw e;

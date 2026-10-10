@@ -47,18 +47,19 @@
  *       the room's public enrollment key, a fresh known_hosts filled with accept-new (Ed25519 only, unhashed), no
  *       mux; read back and compared with the host key the host vouches for inside the PAKE
  *   controlPath(home?) -> string   <home>/ssh/cm-%C
- *   kind = {parse, open, describe}   the `ssh` kind (./index.js register); open(spec, {code}) spawns command() over
+ *   kind = {parse, open, describe}   the `ssh` kind (./index.ts register); open(spec, {code}) spawns command() over
  *                                  ./pipe.ts (INVALID without a code)
  */
 
 import path from 'node:path';
 import { RoomError } from '../../room/validate.ts';
 import childProcess from 'node:child_process';
-import * as homeMod from '../../home.ts';
 import * as textMod from '../../text.ts';
 import CryptoMod from 'node:crypto';
 import FsMod from 'node:fs';
-import * as pipeMod from './pipe.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const SSH_USER = '[A-Za-z_][A-Za-z0-9_.-]{0,31}';
 const SSH_HOST = '[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})';
@@ -144,7 +145,7 @@ function locator(text, { via } = {}) {
 }
 
 /** @returns {string} */
-const controlPath = (h = homeMod.home()) => path.join(path.resolve(h), 'ssh', 'cm-%C');
+const controlPath = (h = require('../../home.ts').home()) => path.join(path.resolve(h), 'ssh', 'cm-%C');
 
 /** The spec, checked again; the link options its local fields ask for. */
 function checked(spec, code) {
@@ -280,7 +281,7 @@ const kind = {
     if (!ctx.code) throw new RoomError('INVALID', 'an ssh transport connects to a room: open(spec, {code})');
     if (spec.mux === true) FsMod.mkdirSync(path.dirname(controlPath()), { recursive: true, mode: 0o700 });
     const [cmd, ...args] = command(spec, ctx.code);
-    return pipeMod.spawn(cmd, args);
+    return require('./pipe.ts').spawn(cmd, args);
   },
   describe: spec => `ssh ${at(spec)}${spec.via ? ` via ${spec.via}` : ''}${spec.login === true ? ' (your ssh login)' : ''}`,
 };

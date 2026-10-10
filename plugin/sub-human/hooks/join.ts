@@ -45,24 +45,21 @@ import * as auth from '../lib/remote/auth.ts';
 import * as link from '../lib/remote/link.ts';
 import * as links from '../lib/room/links.ts';
 import * as hosting from '../lib/remote/hosting.ts';
-const wsT = () => wsMod;
-const sshT = () => sshMod;
-const parseArgs = (argv, spec) => argsMod.parse(argv, spec);
+const wsT = () => require('../lib/remote/transports/ws.ts');
+const sshT = () => require('../lib/remote/transports/ssh.ts');
+const parseArgs = (argv, spec) => require('../lib/cli/args.ts').parse(argv, spec);
 import * as seatKey from './seat-key.ts';
 import * as handoff from '../lib/handoff.ts';
 import * as envelope from '../lib/room/envelope.ts';
 import * as store from '../lib/room/store.ts';
 import { roomClaudePresence } from '../lib/room/members.ts';
-import * as wsMod from '../lib/remote/transports/ws.ts';
-import * as sshMod from '../lib/remote/transports/ssh.ts';
-import * as argsMod from '../lib/cli/args.ts';
-import * as webhostMod from '../lib/remote/webhost.ts';
-import * as admissionMod from '../lib/remote/admission.ts';
 import * as textMod from '../lib/text.ts';
 import PathMod from 'node:path';
 import childProcess from 'node:child_process';
-import * as shimMod from '../lib/remote/shim.ts';
 import * as ccMod from '../lib/cc.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const COMMANDS = new Set(['sub-human:sub-human', 'sub-human']);
 const ROOM_CLAUDE_AGENT = 'sub-human:room-claude';
@@ -185,10 +182,10 @@ function invite(cur, argv) {
   const ways = [f.ssh !== undefined || f.via !== undefined, web, !!f.pipe, !!f.stop, f.cancel !== undefined].filter(Boolean).length;
   if (ways > 1) return refuse(`pick one way at a time. ${INVITE_USAGE}`);
   try {
-    if (f.stop) return notice(webhostMod.unhost(cur.code).text);
+    if (f.stop) return notice(require('../lib/remote/webhost.ts').unhost(cur.code).text);
     if (f.cancel !== undefined) return notice(hosting.cancelInvite(cur.code, f.cancel === true ? undefined : f.cancel).text);
     const r = web
-      ? webhostMod.hostWeb(cur.code, { tailscale: !!(f.web || f.public), funnel: !!f.public, url: f.url, port: f.port !== undefined ? Number(f.port) : undefined, by: cur.name })
+      ? require('../lib/remote/webhost.ts').hostWeb(cur.code, { tailscale: !!(f.web || f.public), funnel: !!f.public, url: f.url, port: f.port !== undefined ? Number(f.port) : undefined, by: cur.name })
       : hosting.hostInvite(cur.code, { ssh: f.pipe ? undefined : f.ssh === undefined ? true : f.ssh, via: f.via, pipe: !!f.pipe, by: cur.name });
     // for this terminal only, never the model, nor Remote Control: it holds the PIN
     return notice(r.text, { secret: true });
@@ -202,7 +199,7 @@ function admit(cur, argv) {
   if (why) return refuse(why);
   if (argv.length > 1 || (argv[0] && !/^[0-9a-f]{6,12}$/.test(argv[0]))) return refuse(`usage: /sub-human admit (who is waiting), then /sub-human admit ID from that list. ${HELP_HINT}`);
   try {
-    const adm = admissionMod;
+    const adm = require('../lib/remote/admission.ts');
     if (!argv.length) {
       const reqs = adm.pending(cur.code);
       return notice(reqs.length ? `waiting to join room ${cur.code}: ${reqs.map(q => `${adm.describe(q)}: let them in with /sub-human admit ${q.ref}`).join('; ')}` : `nobody is waiting to join room ${cur.code}.`);
@@ -253,7 +250,7 @@ function askHandoff(cur, argv) {
   let locator;
   if (/^https?:\/\//.test(dest || '')) { // a front to the new host's web listener (lib/remote/webhost.ts)
     if (via !== undefined) return block('--via goes with an ssh address (USER@HOST --via JUMP), not a web address.');
-    try { locator = webhostMod.webLocator(dest, cur.code); } catch (e) { return block(e.message); }
+    try { locator = require('../lib/remote/webhost.ts').webLocator(dest, cur.code); } catch (e) { return block(e.message); }
   } else {
     if (via !== undefined && dest === undefined) return block('--via goes with the ssh address the others reach the new host at: /sub-human handoff NAME USER@HOST --via JUMP');
     locator = dest === undefined ? undefined : link.sshLocator(dest, via !== undefined ? { via } : {});
@@ -499,8 +496,8 @@ function take({ name, code, isDefault = false }, { input, base, cur, cwd }) {
   if (rebind) { const { rebind: _done, ...l } = links.get(code); links.set(code, l); }
   dropJoinAs(code);
   if (identity.isHost(code)) {
-    try { webhostMod.ensure(code); } catch { /* best effort */ } // the listener after a reboot
-    try { shimMod.refresh(); } catch { /* best effort */ } // the serve shim a login link runs
+    try { require('../lib/remote/webhost.ts').ensure(code); } catch { /* best effort */ } // the listener after a reboot
+    try { require('../lib/remote/shim.ts').refresh(); } catch { /* best effort */ } // the serve shim a login link runs
   }
   const me = { code, name, role: 'member', pid: base.pid, session_id: input.session_id || null, address: identity.address(name, code) };
   const msg = created

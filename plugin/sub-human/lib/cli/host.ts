@@ -28,14 +28,10 @@
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { parse } from './args.ts';
-import * as identityMod from '../identity.ts';
-import * as webhostMod from '../remote/webhost.ts';
-import * as hostingMod from '../remote/hosting.ts';
-import * as admissionMod from '../remote/admission.ts';
-import * as textMod from '../text.ts';
-import * as linksMod from '../room/links.ts';
-import * as sshMod from '../remote/transports/ssh.ts';
 import PathMod from 'node:path';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const say = s => process.stdout.write(s.endsWith('\n') ? s : s + '\n');
 const fail = (s, code = 1) => { process.stderr.write(s.endsWith('\n') ? s : s + '\n'); return code; };
@@ -54,7 +50,7 @@ function maskPins(text, pins, env = process.env) {
 
 /** The room: --room, else the one open room hosted here. */
 function hostedRoom(explicit) {
-  const identity = identityMod;
+  const identity = require('../identity.ts');
   if (explicit) return explicit;
   const open = identity.openRooms().filter(c => identity.isHost(c));
   if (open.length === 1) return open[0];
@@ -73,11 +69,11 @@ function invite(args) {
   if (ways > 1) return fail(`pick one way: ${INVITE_USAGE}`, 2);
   try {
     const code = hostedRoom(f.room);
-    if (f.stop) { say(webhostMod.unhost(code).text); return 0; }
-    if (f.cancel !== undefined) { say(hostingMod.cancelInvite(code, f.cancel === true ? undefined : f.cancel).text); return 0; }
+    if (f.stop) { say(require('../remote/webhost.ts').unhost(code).text); return 0; }
+    if (f.cancel !== undefined) { say(require('../remote/hosting.ts').cancelInvite(code, f.cancel === true ? undefined : f.cancel).text); return 0; }
     const r = web
-      ? webhostMod.hostWeb(code, { tailscale: !!(f.web || f.public), funnel: !!f.public, url: f.url, ...(f.port ? { port: Number(f.port) } : {}) })
-      : hostingMod.hostInvite(code, { ssh: f.pipe ? undefined : f.ssh === undefined ? true : f.ssh, via: f.via, pipe: !!f.pipe });
+      ? require('../remote/webhost.ts').hostWeb(code, { tailscale: !!(f.web || f.public), funnel: !!f.public, url: f.url, ...(f.port ? { port: Number(f.port) } : {}) })
+      : require('../remote/hosting.ts').hostInvite(code, { ssh: f.pipe ? undefined : f.ssh === undefined ? true : f.ssh, via: f.via, pipe: !!f.pipe });
     say(maskPins(r.text, [r.pin]));
     return 0;
   } catch (e) { return fail(e.message); }
@@ -87,7 +83,7 @@ function kick(args) {
   const { flags: f, rest, error } = parse(args, { room: 1, file: 1 });
   if (error || rest.length !== 1) return fail('usage: sub-human kick NAME [--room ROOM] [--file AUTHORIZED_KEYS]', 2);
   try {
-    say(hostingMod.kick(hostedRoom(f.room), rest[0], f.file ? { file: f.file } : {}).text);
+    say(require('../remote/hosting.ts').kick(hostedRoom(f.room), rest[0], f.file ? { file: f.file } : {}).text);
     return 0;
   } catch (e) { return fail(e.message); }
 }
@@ -104,13 +100,13 @@ function ask(question) {
 function admit(args) {
   const p = parse(args, { yes: 0, room: 1, refuse: 0 });
   if (p.error || p.rest.length > 1 || (p.rest.length && !/^[0-9a-f]{6,12}$/.test(p.rest[0]))) return fail(p.error || 'usage: sub-human admit [REF [--refuse] [--yes]] [--room ROOM]', 2);
-  const adm = admissionMod;
+  const adm = require('../remote/admission.ts');
   let code;
   try { code = hostedRoom(p.flags.room); } catch (e) { return fail(e.message); }
   if (!p.rest.length) {
     const reqs = adm.pending(code);
     if (!reqs.length) { say(`nobody is waiting to join room ${code}`); return 0; }
-    for (const q of reqs) say(`${adm.describe(q)} wants to join room ${code} (until ${q.expires_at.slice(11, 16)} UTC): ${textMod.cliLine(`admit ${q.ref}`)} [--refuse]`);
+    for (const q of reqs) say(`${adm.describe(q)} wants to join room ${code} (until ${q.expires_at.slice(11, 16)} UTC): ${require('../text.ts').cliLine(`admit ${q.ref}`)} [--refuse]`);
     return 0;
   }
   const req = adm.find(code, p.rest[0]);
@@ -118,7 +114,7 @@ function admit(args) {
   if (!p.flags.yes && !p.flags.refuse) {
     if (!process.stdin.isTTY) return fail('not a terminal: add --yes to let them in (or --refuse)');
     const yes = ask(`${adm.describe(req)} typed your PIN and wants to join room ${code}.\nLet them in? That machine joins the room and can post only as the people it brings. [y/N] `);
-    if (!/^y(es)?$/i.test(yes)) return fail(`not let in; the request still waits (${textMod.cliLine(`admit ${req.ref} --refuse`)} ends it)`);
+    if (!/^y(es)?$/i.test(yes)) return fail(`not let in; the request still waits (${require('../text.ts').cliLine(`admit ${req.ref} --refuse`)} ends it)`);
   }
   try {
     say((p.flags.refuse ? adm.refuse(code, req.ref, { by: null }) : adm.letIn(code, req.ref, { by: null })).text);
@@ -130,11 +126,11 @@ function prime(args) {
   const p = parse(args, { persist: 1 });
   if (p.error || p.rest.length !== 1) return fail(p.error || 'usage: sub-human prime ROOM [--persist 8h]', 2);
   const code = p.rest[0];
-  const links = linksMod;
+  const links = require('../room/links.ts');
   const l = links.get(code);
   if (!l || !l.transport || l.transport.kind !== 'ssh') return fail(`this machine isn't connected to room ${code} over ssh`);
   try {
-    const ssh = sshMod;
+    const ssh = require('../remote/transports/ssh.ts');
     fs.mkdirSync(PathMod.dirname(ssh.controlPath()), { recursive: true, mode: 0o700 });
     const [cmd, ...rest] = ssh.primeCommand(l.transport, code, p.flags.persist ? { persist: p.flags.persist } : {});
     links.set(code, { ...l, transport: { ...l.transport, mux: true } });

@@ -46,19 +46,19 @@ import * as auth from './auth.ts';
 import * as sshkeys from './sshkeys.ts';
 import { RoomError } from '../room/validate.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
-import * as sshMod from './transports/ssh.ts';
 import * as linkMod from './link.ts';
 import * as linksMod from '../room/links.ts';
 import * as roomMod from '../room.ts';
 import * as identityMod from '../identity.ts';
-import * as shimMod from './shim.ts';
 import * as homeMod from '../home.ts';
-import * as enrollMod from './enroll.ts';
 import * as seatsMod from '../seats.ts';
 import * as ioMod from '../io.ts';
 import * as configMod from '../config.ts';
+import { createRequire } from 'node:module';
 
-const sshT = () => sshMod;
+const require = createRequire(import.meta.url);
+
+const sshT = () => require('./transports/ssh.ts');
 const linkLib = () => linkMod;
 const links = () => linksMod;
 const roomOf = code => roomMod.open(code);
@@ -79,7 +79,7 @@ function roomLine(code, text) {
 
 /** The stable serve shim (an ssh forced command names it); the home path it carries. */
 function shimReady() {
-  const shim = shimMod;
+  const shim = require('./shim.ts');
   if (!shim.refresh({ force: true })) throw new RoomError('INVALID', `the plugin is installed under a temp folder (${shim.pluginRoot()}), which ssh would run from; install it normally (or set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow it)`);
   const h = path.resolve(homeMod.home());
   if (!shim.PLAIN_PATH_RE.test(h)) throw new RoomError('INVALID', `the sub-human folder "${h}" has characters ssh cannot carry plainly; move it (SUB_HUMAN_HOME) and try again`);
@@ -127,7 +127,7 @@ function hostInvite(code, { ssh = true, via, pipe = false, by = null, now = Date
   }
   const file = path.resolve(sshkeys.authorizedKeysFile());
   const r = auth.mintShort(store, { kind: 'ssh', locator, hostKey, by, doorFile: file, now });
-  try { enrollMod.openDoor(code, { file }); } catch (e) {
+  try { require('./enroll.ts').openDoor(code, { file }); } catch (e) {
     try { auth.burnInvite(store, r.ref); } catch { /* it lapses */ }
     throw e;
   }
@@ -161,7 +161,7 @@ function revokeInvite(code, store, ref, opts) {
     return { ...r, ref, text: `that invite ${invite.used_at ? 'was used already' : 'was being used'}; ${r.text}` };
   }
   const { state } = auth.burnInvite(store, ref);
-  try { enrollMod.sweepDoors(code); } catch { /* the tail sweeps it */ }
+  try { require('./enroll.ts').sweepDoors(code); } catch { /* the tail sweeps it */ }
   if (state === 'burnt') roomLine(code, 'the host cancelled an unused invite: it no longer lets anyone in');
   const text = state === 'burnt'
     ? `cancelled the invite to room ${code} (${ref}): it lets no one in; everyone else stays`
@@ -195,7 +195,7 @@ function endLink(code, store, id, { file = sshkeys.authorizedKeysFile() } = {}) 
   const doors = new Set([path.resolve(file), ...auth.admissions(store, { all: true }).filter(a => a.link === id && a.door_file).map(a => path.resolve(a.door_file))]);
   let keys = 0;
   for (const f of doors) keys += sshkeys.removeAuthorized(f, code, id);
-  try { enrollMod.sweepDoors(code); } catch { /* the tail sweeps it */ }
+  try { require('./enroll.ts').sweepDoors(code); } catch { /* the tail sweeps it */ }
   spawnSync('pkill', ['-f', '--', `--stdio ${code} --link ${id}`], { stdio: 'ignore' });
   const seats = r.link ? r.link.seats || [] : [];
   const seatsLib = seatsMod;
