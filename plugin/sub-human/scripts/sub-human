@@ -50,6 +50,9 @@
  *       reserved for it) is accepted; any other is AUTH. A room this machine only mirrors is not served, unless
  *       the room moved away from here (lib/handoff.js): then this machine's old log is served read-only, so a
  *       member that reconnects late still gets the line that moved the room and its invite to the new host.
+ *   sub-human serve --enroll CODE --kind ssh|ws|pipe
+ *       One short-code attempt at room CODE hosted here (lib/remote/enroll.js serveEnroll): the CPace exchange and
+ *       nothing else; it never serves the room. The ssh enrollment door's forced command and the web listener run it.
  *   sub-human link CODE [--reset]
  *       The link daemon of room CODE, hosted on another machine (lib/remote/link.js run): the join hook starts it
  *       detached; it exits on its own once this machine has no seat left in the room. --reset (with no daemon
@@ -299,7 +302,8 @@ function watch(args) {
 
 // ---------- serve --stdio CODE: lib/remote/server.js ----------
 function serve(args) {
-  const { flags, rest } = parseFlags(args, { stdio: 0, link: 1 });
+  const { flags, rest } = parseFlags(args, { stdio: 0, link: 1, enroll: 1, kind: 1 });
+  if (flags.enroll !== undefined) return serveEnroll(flags, rest);
   const code = rest[0];
   if (!flags.stdio || !code || rest.length > 1) die('usage: sub-human serve --stdio CODE [--link ID]');
   const { LINK_ID_RE } = require(path.join(LIB, 'remote', 'auth.js'));
@@ -316,6 +320,19 @@ function serve(args) {
   const srv = server.serve(pipe.stdio(), { store: s, linkId: flags.link, log: msg => process.stderr.write(msg + '\n') });
   // `sub-human revoke` stops this with SIGTERM: tell the link it was revoked first, so its daemon stops, not redials
   process.once('SIGTERM', () => { const told = srv.revoked(); setTimeout(() => process.exit(0), told ? 200 : 0); });
+}
+
+// serve --enroll CODE --kind ssh|ws|pipe: one short-code attempt (lib/remote/enroll.js), the PAKE and nothing else. The
+// ssh enrollment door's forced command and the web listener run it; whatever command the other side asked for is ignored.
+function serveEnroll(flags, rest) {
+  const code = flags.enroll;
+  if (rest.length || !['ssh', 'ws', 'pipe'].includes(flags.kind) || !identity.CODE_RE.test(String(code))) die('usage: sub-human serve --enroll CODE --kind ssh|ws|pipe');
+  if (!identity.roomExists(code) || !identity.isHost(code)) die(`no room "${code}" is hosted here`, 1);
+  const enroll = require(path.join(LIB, 'remote', 'enroll.js'));
+  const pipe = require(path.join(LIB, 'remote', 'transports', 'pipe.js'));
+  const s = room.open(code).store;
+  enroll.serveEnroll(pipe.stdio(), { store: s, kind: flags.kind, log: msg => process.stderr.write(msg + '\n') })
+    .then(() => process.stdout.write('', () => process.exit(0)), e => die(e.message, 1));
 }
 
 // ---------- link CODE [--reset], invite: lib/remote/link.js, lib/remote/auth.js ----------

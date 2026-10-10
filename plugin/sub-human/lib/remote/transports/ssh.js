@@ -27,6 +27,9 @@
  *                     daemon never waits on a prompt and never becomes a master itself
  *   primeCommand(spec, code, {persist}?) -> [cmd, ...args]   the master: interactive (no BatchMode), -M -N -f
  *       -o ControlPersist=PERSIST (default 8h), the same link options and ControlPath
+ *   enrollCommand(spec, code, {key, knownHosts, opts?}) -> [cmd, ...args]   a short code's enrollment (lib/remote/enroll.js):
+ *       the room's public enrollment key, a fresh known_hosts filled with accept-new (Ed25519 only, unhashed), no
+ *       mux; read back and compared with the host key the host vouches for inside the PAKE
  *   controlPath(home?) -> string   <home>/ssh/cm-%C
  *   kind = {parse, open, describe}   the `ssh` kind (./index.js register); open(spec, {code}) spawns command() over
  *                                  ./pipe.js (INVALID without a code)
@@ -145,6 +148,23 @@ function primeCommand(spec, code, { persist = '8h', opts = String(process.env.SU
   return ['ssh', '-M', '-N', '-f', '-o', `ControlPersist=${persist}`, '-o', 'ServerAliveInterval=15', ...opts, ...local, ...tail];
 }
 
+/**
+ * The joiner's ssh to a short code's enrollment door (lib/remote/enroll.js): the room's public enrollment key, and a
+ * fresh known_hosts of its own that ssh fills with the host key it is shown (accept-new: there is no key to pin yet).
+ * Ed25519 host keys only, never hashed or updated, so the joiner can read back exactly the key ssh verified and compare
+ * it with the one the host vouches for inside the PAKE channel. These options come first, so neither the joiner's
+ * SUB_HUMAN_SSH_OPTS nor its ~/.ssh/config can change them (ssh takes the first value of an option).
+ * @returns {string[]}
+ */
+function enrollCommand(spec, code, { key, knownHosts, opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean) }) {
+  const { tail } = checked(spec, code);
+  const file = (k, v) => { if (typeof v !== 'string' || !LOCAL_PATH_RE.test(v)) throw new RoomError('INVALID', `the enrollment ${k} is not a plain absolute path`); return v; };
+  return ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-i', file('key', key), '-o', `UserKnownHostsFile=${file('known_hosts', knownHosts)}`,
+    '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'StrictHostKeyChecking=accept-new', '-o', `HostKeyAlias=sub-human-enroll-${code}`, '-o', 'HostKeyAlgorithms=ssh-ed25519',
+    '-o', 'UpdateHostKeys=no', '-o', 'HashKnownHosts=no', '-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'ConnectTimeout=15',
+    '-o', 'ServerAliveInterval=15', ...opts, ...tail, `sub-human serve --enroll ${code}`];
+}
+
 const kind = {
   parse,
   open(spec, ctx = {}) {
@@ -156,4 +176,4 @@ const kind = {
   describe: spec => `ssh ${at(spec)}${spec.via ? ` via ${spec.via}` : ''}`,
 };
 
-module.exports = { dest, jump, parse, locator, command, primeCommand, controlPath, kind };
+module.exports = { dest, jump, parse, locator, command, enrollCommand, primeCommand, controlPath, kind };

@@ -5,8 +5,11 @@
  * person reads, never the model) and the CLI (lib/cli/host.js, lib/cli/listen.js). The wire is
  * lib/remote/transports/ws.js; the daemon lib/remote/listener.js; the Tailscale calls lib/remote/tailscale.js.
  *
- *   hostWeb(code, {tailscale?, funnel?, url?, port?, now?}) -> {invite, joinUrl, pin, expires_at, locator, hostKey,
- *       base, mode, text}
+ *   hostWeb(code, {tailscale?, funnel?, url?, port?, long?, by?, now?}) -> {pin, ref, short: true, line, …} | {invite, joinUrl, pin,
+ *       expires_at, locator, hostKey, base, mode, text}
+ *       By default a SHORT invite: `/sub-human join NAME https://HOST/…/sub-human/CODE 482913`, the 6-digit code the
+ *       whole secret (lib/remote/auth.js mintShort, kind ws, vouching for the listener's X25519 key inside the PAKE,
+ *       lib/remote/enroll.js); the host person's card admits the joiner. long: the sh2 form below (URL#SECRET.KEY + PIN).
  *       Starts the listener (idempotent, 127.0.0.1:port, default 7420), puts the room in its served set, and mints an
  *       sh2 invite whose locator is wss://HOST/…/sub-human/CODE and whose host-key field is the listener's X25519
  *       key (lib/remote/listener.js hostKey), with its PIN (lib/remote/auth.js: online only, 5 tries, 15 minutes).
@@ -53,7 +56,7 @@ function frontBase(text) {
   return { secure: u.protocol === 'https:', host: u.hostname, port: u.port ? Number(u.port) : undefined, prefix };
 }
 
-function hostWeb(code, { tailscale = false, funnel = false, url, port, now = Date.now() } = {}) {
+function hostWeb(code, { tailscale = false, funnel = false, url, port, long = false, by = null, now = Date.now() } = {}) {
   const store = hostStore(code);
   if (funnel) tailscale = true;
   if (!tailscale && !url) throw new RoomError('INVALID', 'say how joiners reach the listener: --tailscale [--funnel], or --url https://YOUR-FRONT');
@@ -85,9 +88,23 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, now = Dat
   const hostKey = L.hostKey();
   const joinBase = `${base.secure ? 'https' : 'http'}://${base.host}${base.port ? `:${base.port}` : ''}${p}`;
   L.addRoom(code, { path: p, url: joinBase, mode, port: lport, ...(tsRec ? { tailscale: tsRec } : {}) });
+  const how = mode === 'funnel' ? 'Tailscale Funnel (public)' : mode === 'tailscale' ? 'Tailscale Serve (your tailnet only)' : `your front ${base.host}`;
+  const notes = [
+    ...(tsRec ? ['The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and a joiner\'s link keeps trying.'] : []),
+    ...(mode === 'funnel' ? [ts().CT_WARNING] : []),
+    'Stop serving it with /sub-human unhost (closing the room does too).',
+  ];
+  if (!long) { // the short form: the URL and a 6-digit code (lib/remote/enroll.js over the listener's text frames)
+    const r = require('./auth.js').mintShort(store, { kind: 'ws', locator, hostKey, by, now });
+    const line = `/sub-human join NAME ${joinBase} ${r.pin}`;
+    const text = require('./hosting.js').shortText({
+      code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, ref: r.ref,
+      extra: [`Their link checks this machine's listener key (${hostKey.slice(0, 12)}…) inside the code's handshake and pins it; what sits in between sees ciphertext.`, ...notes],
+    });
+    return { ...r, short: true, line, locator, hostKey, base: joinBase, mode, port: lport, text };
+  }
   const r = require('./auth.js').mintInvite(store, { locator, pin: true, hostKey, now });
   const joinUrl = wsT().joinUrl({ locator, secret: r.secret, hostKey });
-  const how = mode === 'funnel' ? 'Tailscale Funnel (public)' : mode === 'tailscale' ? 'Tailscale Serve (your tailnet only)' : `your front ${base.host}`;
   const lines = [
     `invite to room ${code}, for one machine, over the web through ${how} to this machine's listener on 127.0.0.1:${lport}. Shown once; it lasts ${Math.round(INVITE_TTL_MS / 60_000)} minutes.`,
     '',
@@ -97,9 +114,7 @@ function hostWeb(code, { tailscale = false, funnel = false, url, port, now = Dat
     `Leaked? /sub-human revoke ${require('./auth.js').inviteRef(r.secret)} burns just this invite (its ref; /sub-human unhost stops serving the whole room).`,
     `The link pins this machine's listener key ${hostKey.slice(0, 12)}… and carries a one-time secret; with the PIN that is the whole admission (no admit step). The same invite as text: ${r.invite}`,
   ];
-  if (tsRec) lines.push('The first connection to a new ts.net name can take ~20 s while Tailscale issues its certificate; it is being fetched now, and a joiner\'s link keeps trying.');
-  if (mode === 'funnel') lines.push(ts().CT_WARNING);
-  lines.push(`Stop serving it with /sub-human unhost (closing the room does too).`);
+  lines.push(...notes);
   return { ...r, joinUrl, locator, hostKey, base: joinBase, mode, port: lport, text: lines.join('\n') };
 }
 

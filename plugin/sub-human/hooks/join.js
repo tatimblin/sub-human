@@ -118,10 +118,10 @@ function bindRoomClaude(input, base, cur, args) {
 /** `--ssh [DEST] --via JUMP` (or `--tailscale [--funnel]`, `--url URL`, `--port P`) of /sub-human host: the flags,
  * or null after a block(). */
 function hostFlags(rest) {
-  const p = require('../lib/cli/args.js').parse(rest, { ssh: '?', via: 1, tailscale: 0, funnel: 0, url: 1, port: 1 });
+  const p = require('../lib/cli/args.js').parse(rest, { ssh: '?', via: 1, tailscale: 0, funnel: 0, url: 1, port: 1, long: 0, short: 0 });
   const f = p.flags;
   const bad = p.error ? p.error.split(' ')[0] : p.rest.length ? p.rest[0] : f.port !== undefined && !/^[0-9]{1,5}$/.test(f.port) ? '--port' : null;
-  if (bad !== null) { block(`usage: /sub-human host [--ssh [USER@HOST[:PORT]]] [--via JUMP] | --tailscale [--funnel] | --url https://FRONT ("${bad}"?)`); return null; }
+  if (bad !== null) { block(`usage: /sub-human host [--ssh [USER@HOST[:PORT]]] [--via JUMP] | --tailscale [--funnel] | --url https://FRONT [--long] ("${bad}"?)`); return null; }
   if (f.port !== undefined) f.port = Number(f.port);
   const web = f.tailscale || f.funnel || f.url !== undefined;
   if (web && (f.ssh !== undefined || f.via !== undefined)) { block('--ssh and --tailscale / --url are different ways in; pick one'); return null; }
@@ -137,8 +137,8 @@ function host(cur, rest) {
   let r;
   try {
     r = f.web
-      ? require('../lib/remote/webhost.js').hostWeb(cur.code, { tailscale: !!f.tailscale, funnel: !!f.funnel, url: f.url, port: f.port })
-      : hosting.hostInvite(cur.code, { ssh: f.ssh, via: f.via });
+      ? require('../lib/remote/webhost.js').hostWeb(cur.code, { tailscale: !!f.tailscale, funnel: !!f.funnel, url: f.url, port: f.port, long: !!f.long, by: cur.name })
+      : hosting.hostInvite(cur.code, { ssh: f.ssh, via: f.via, long: !!f.long, short: !!f.short, by: cur.name });
   } catch (e) { return block(e.message); }
   // the block reason only (this terminal, never the model): not a systemMessage, which Remote Control would carry off
   return hidden(r.text);
@@ -148,7 +148,18 @@ function host(cur, rest) {
 function hostAction(cur, args) {
   try {
     if (args[0] === 'admit') {
-      if (args.length !== 2) return block('usage: /sub-human admit shk1.CODE.REF.KEY.NAME (the line a joiner\'s /sub-human join showed them)');
+      const adm = require('../lib/remote/admission.js');
+      if (args.length === 1 || /^[0-9a-f]{6,12}$/.test(args[1] || '')) { // a short code's join request: the card's ref
+        if (!cur || !identity.isHost(cur.code)) return block('admit from a session in the room hosted here: /sub-human NAME first.');
+        if (args.length === 1) {
+          const reqs = adm.pending(cur.code);
+          return block(reqs.length ? `waiting to join room ${cur.code}: ${reqs.map(q => `${adm.describe(q)}: /sub-human admit ${q.ref}`).join('; ')}` : `nobody is waiting to join room ${cur.code}.`);
+        }
+        if (args.length !== 2) return block('usage: /sub-human admit REF');
+        const sign = p => envelope.sign(p, store.humanKey(cur.code, cur.name), { room: cur.code, from: cur.name });
+        return hidden(adm.letIn(cur.code, args[1], { by: cur.name, sign }).text, { shareable: true });
+      }
+      if (args.length !== 2) return block('usage: /sub-human admit REF (a join request; /sub-human admit lists them), or shk1.CODE.REF.KEY.NAME (an older join\'s line)');
       return hidden(hosting.admit(args[1]).text, { shareable: true });
     }
     if (args.length !== 2) return block('usage: /sub-human revoke LINK_ID|NAME|INVITE_REF|INVITE (in the room hosted here)');
@@ -174,6 +185,54 @@ function linkInvite2(inv, invite, pin, name) {
   if (cur) links.set(inv.code, { ...links.get(inv.code), rebind: true }); // the seat joins again over the new link
   if (!link.start(inv.code)) return hidden(`the link to room ${inv.code} did not start; its log is ${links.logFile(inv.code)}.`, { shareable: true });
   return hidden(hosting.joinText(inv.code, name, hosting.outcome(inv.code), j.request), { shareable: true });
+}
+
+/**
+ * The short forms of a join, the code last: `join NAME USER@HOST[:PORT] [--via JUMP] CODE PIN`, `join NAME pipe:HOME
+ * CODE PIN` and `join NAME https://HOST/…/sub-human/CODE PIN` (no `#`). {name, code, transport, pin} | {error} | null
+ * (not a short form: the sh1/sh2 paths below).
+ */
+function shortForm(argv) {
+  const p = require('../lib/cli/args.js').parse(argv, { via: 1 });
+  const r = p.rest;
+  if (p.error || r.length < 3 || !auth.PIN_RE.test(r[r.length - 1])) return null;
+  const [name, dest] = r;
+  const pin = r[r.length - 1];
+  if (/^https?:\/\//.test(dest)) {
+    if (dest.includes('#') || r.length !== 3) return null; // URL#SECRET.KEY: the sh2 form
+    if (p.flags.via !== undefined) return { error: '--via is for an ssh address, not a URL' };
+    const m = /^(https?):\/\/([^#\s]+)$/.exec(dest);
+    const spec = m && wsT().parse(`//${m[2].replace(/\/+$/, '')}`);
+    const code = spec && spec.path.split('/').filter(Boolean).pop();
+    if (!spec || !identity.CODE_RE.test(code || '')) return { error: 'that is not a join URL (https://HOST/…/sub-human/CODE); ask the host to copy the whole line' };
+    return { name, code, pin, transport: link.transportOf(wsT().locator(spec, m[1] === 'https')) };
+  }
+  if (r.length !== 4) return null;
+  const code = r[2];
+  if (!identity.CODE_RE.test(code)) return { error: `"${code}" is not a room code (like vole-8126)` };
+  if (/^pipe:\//.test(dest) || dest.startsWith('/')) {
+    if (p.flags.via !== undefined) return { error: '--via is for an ssh address' };
+    const transport = link.transportOf(dest.startsWith('/') ? `pipe:${dest}` : dest);
+    return transport ? { name, code, pin, transport } : { error: `"${dest}" is not a sub-human home on this machine` };
+  }
+  const loc = link.sshLocator(dest, p.flags.via !== undefined ? { via: p.flags.via } : {});
+  if (!loc) return { error: p.flags.via !== undefined && link.sshLocator(dest) ? `--via "${p.flags.via}" is not a plain [USER@]HOST[:PORT] list` : `"${dest}" is not a plain USER@HOST[:PORT]` };
+  return { name, code, pin, transport: link.transportOf(loc) };
+}
+
+/** `/sub-human join NAME DEST CODE PIN` (a short code): link only, the PAKE in the link daemon; always a hidden block. */
+function linkShort({ name, code, pin, transport }) {
+  if (!identity.NAME_RE.test(name)) return hidden(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
+  if (identity.roomExists(code) && identity.isHost(code)) return hidden(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
+  const cur = links.get(code);
+  if (cur && cur.token && locatorOf(cur.transport) === locatorOf(transport)) {
+    return hidden(`this machine is linked to room ${code} already: /sub-human ${name} ${code}`, { shareable: true });
+  }
+  if (cur) restartLink(code); // a pending join replaced, or the room's host moved: dial with the new file
+  try { hosting.joinShort({ code, transport, pin, name }); } catch (e) { return hidden(e.message, { shareable: true }); }
+  if (cur && cur.token) links.set(code, { ...links.get(code), rebind: true });
+  if (!link.start(code)) return hidden(`the link to room ${code} did not start; its log is ${links.logFile(code)}.`, { shareable: true });
+  return hidden(hosting.joinText(code, name, hosting.outcome(code), null), { shareable: true });
 }
 
 /** `/sub-human handoff NAME [USER@HOST[:PORT] [--via JUMP] | https://FRONT]`: ask NAME to host the room cur is in. */
@@ -272,6 +331,11 @@ run(input => {
     try { return hidden(require('../lib/remote/webhost.js').unhost(cur.code).text, { shareable: true }); } catch (e) { return block(e.message); }
   }
   const remote = args[0] === 'join';
+  if (remote && args.length >= 4) { // a short code (the code last): whatever happens, it is hidden from the model
+    const sf = shortForm(args.slice(1));
+    if (sf && sf.error) return hidden(sf.error);
+    if (sf) return linkShort(sf);
+  }
   if (remote && args.length >= 3) {
     // a PIN may be in this prompt: whatever happens, it is hidden from the model
     const url = /^https?:\/\//.test(args[2]) ? wsT().parseJoinUrl(args[2]) : null; // a join URL: an sh2 invite
@@ -302,7 +366,7 @@ run(input => {
     if (!identity.roomExists(code)) return block(`no room ${code}. Check the code, or run /sub-human ${name} to open a new room.`);
     if (identity.roomClosing(code)) return block(`room ${code} is closing; run /sub-human ${name} to open a new room.`);
     const pending = identity.isHost(code) ? null : links.get(code);
-    if (pending && !pending.token && pending.pin !== undefined) {
+    if (pending && !pending.token && (pending.pin !== undefined || pending.enroll || pending.awaiting)) {
       // an sh2 link not redeemed yet: never start it again after a refusal (that would spend another PIN try)
       const why = link.stopReason(link.status(code));
       if (why) return block(`could not join ${code}: ${why.reason}`);

@@ -25,8 +25,11 @@
  *       message 2's payload is {ok: true} or {error: {code, message}} (authenticated: only the pinned key could
  *       write it) -> RoomError with that code. Message 2 failing to decrypt is AUTH: whoever answered does not hold
  *       the key the invite pinned. A close before message 2 is OFFLINE with the listener's reason
- *   serverChannel(conn, {s, check(hello) -> {code, message} | null, timeoutMs?}) -> Promise<{duplex, hello}>   the
- *       responder; check refuses a room (its error is sent in message 2, then the conn closes)
+ *   serverChannel(conn, {s, check(hello) -> {code, message} | null, timeoutMs?, m1?}) -> Promise<{duplex, hello}>   the
+ *       responder; check refuses a room (its error is sent in message 2, then the conn closes); m1: message 1 when the
+ *       caller read it already (the listener peeks: a TEXT first message is a short code's enrollment instead,
+ *       lib/remote/enroll.js)
+ *   firstAny(conn, timeoutMs) -> Promise<{data, binary}>   the first message of either kind
  *   The Duplex: plaintext bytes; each write is cut into Noise messages of at most noise.MAX_PLAINTEXT bytes, each one
  *   binary WebSocket message. A message that does not decrypt, or a text message, closes the conn (1002 / 1003).
  *   kind = {parse, open, describe}      open(spec, {code}) connects (lib/remote/ws.js connect, so HTTPS_PROXY / NO_PROXY
@@ -125,6 +128,18 @@ function firstMessage(conn, timeoutMs, what) {
   });
 }
 
+/** The first message, text or binary (or a close / timeout). */
+function firstAny(conn, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { done(); conn.terminate(); reject(new RoomError('OFFLINE', `the joiner: no message within ${timeoutMs} ms`)); }, timeoutMs);
+    const onMsg = (data, binary) => { done(); resolve({ data, binary }); };
+    const onClose = code => { done(); reject(new RoomError('OFFLINE', `the joiner: closed (${code})`)); };
+    const done = () => { clearTimeout(t); conn.off('message', onMsg); conn.off('close', onClose); };
+    conn.on('message', onMsg);
+    conn.on('close', onClose);
+  });
+}
+
 async function clientChannel(conn, { rs, code, timeoutMs = HANDSHAKE_MS }) {
   const hs = noise().initiator({ rs, prologue: PROLOGUE });
   conn.send(hs.writeMessage(Buffer.from(JSON.stringify({ v: 1, room: code }))));
@@ -143,9 +158,9 @@ async function clientChannel(conn, { rs, code, timeoutMs = HANDSHAKE_MS }) {
   return channel(conn, hs.split());
 }
 
-async function serverChannel(conn, { s, check = () => null, timeoutMs = HANDSHAKE_MS }) {
+async function serverChannel(conn, { s, check = () => null, timeoutMs = HANDSHAKE_MS, m1: first }) {
   const hs = noise().responder({ s, prologue: PROLOGUE });
-  const m1 = await firstMessage(conn, timeoutMs, 'the joiner');
+  const m1 = first || await firstMessage(conn, timeoutMs, 'the joiner');
   let hello;
   try { hello = jsonOf(hs.readMessage(m1)); } catch {
     conn.close(4401, 'handshake failed');
@@ -186,4 +201,4 @@ const kind = {
   describe: spec => `${spec.kind} ${hostPort(spec)}${spec.path}`,
 };
 
-module.exports = { parse, locator, joinUrl, parseJoinUrl, urlOf, PROLOGUE, clientChannel, serverChannel, kind };
+module.exports = { parse, locator, joinUrl, parseJoinUrl, urlOf, PROLOGUE, clientChannel, serverChannel, firstAny, kind };

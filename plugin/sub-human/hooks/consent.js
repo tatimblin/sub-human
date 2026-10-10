@@ -29,6 +29,10 @@
  * this person's model account, this machine must stay reachable); only the person's "Host it here" on the card as
  * built moves the room (handoff.accept, signed with the seat key), "Not now" refuses it, anything else records
  * nothing.
+ * Pre/Post(AskUserQuestion), a join request's card (lib/remote/admission.js), on the host: while a machine that typed this
+ * person's short code waits, a card call that names it ("admit REF") shows the hooks' card ("Let carol (SHA256:…) on
+ * carols-mbp join room CODE?"); only the person's "Let in" on the card as built admits it (signed with the seat key),
+ * "Refuse" ends it, anything else records nothing.
  * Pre/Post(AskUserQuestion): the confirm card for a waiting note (only the person's Send on the card as built records
  * the objection with the note, byte-exact; Discard drops it; AFK or no answer keeps it), else the card fallback;
  * "Not yet", AFK, stale hashes record nothing. Stop nudges once when a waiting note's card was never shown. An answer is
@@ -139,7 +143,22 @@ function handoffAsked(me, input) {
   return /handoff/i.test(s) || s.includes(handoff.question(a, me.code)) ? a : null;
 }
 
+/** A short code's join request waiting for me on the host, when this card call is about it (it names its ref, or
+ * carries the card's question, or says "admit" while exactly one waits). */
+function admitAsked(me, input) {
+  if (!c.identity.isHost(me.code)) return null;
+  const s = JSON.stringify(input || {});
+  if (!/admit|join/i.test(s)) return null;
+  const reqs = admission().pending(me.code).filter(q => admission().targets(me.code, q).includes(me.name));
+  const named = reqs.filter(q => s.includes(q.ref) || s.includes(admission().question(q, me.code)) || (s.match(/\b[0-9a-f]{6,12}\b/g) || []).some(t => q.ref.startsWith(t)));
+  if (named.length) return named[0];
+  return /\badmit\b/i.test(s) && reqs.length === 1 ? reqs[0] : null;
+}
+const admission = () => require(path.join(__dirname, '..', 'lib', 'remote', 'admission.js'));
+
 function pre(input, me) {
+  const ad = admitAsked(me, input.tool_input);
+  if (ad) return c.pre('ask', `room ${me.code}: ${ad.name} asks to join`, { updatedInput: admission().card(ad, me.code) });
   const ho = handoffAsked(me, input.tool_input);
   if (ho) return c.pre('ask', `room ${me.code}: ${ho.from} asks ${me.name} to host it`, { updatedInput: handoff.card(ho, me.code) });
   const waiting = waitingNote(me, input.tool_input);
@@ -540,9 +559,47 @@ function postHandoff(input, me, r, answers) {
   return true;
 }
 
+/**
+ * Post(AskUserQuestion) for a join request's card (lib/remote/admission.js): only the person's own answer on the card
+ * as the hooks built it counts. "Let in" admits the machine (signed with the seat key), "Refuse" ends the request;
+ * AFK, another answer or an edited card records nothing. Returns false when the call was not that card.
+ */
+function postAdmit(input, me, r, answers) {
+  if (!c.identity.isHost(me.code)) return false;
+  const shown = Array.isArray(r.questions) ? r.questions : [];
+  const asked = [...shown, ...((input.tool_input && input.tool_input.questions) || [])].map(q => q && q.question).filter(Boolean);
+  const m = asked.map(q => /\(admit ([0-9a-f]{12})\)$/.exec(String(q))).find(Boolean);
+  if (!m) return false;
+  const adm = admission();
+  const req = adm.find(me.code, m[1]);
+  const say = (t, top) => c.context('PostToolUse', t, top);
+  if (!req) return say(`Nothing was done: no join request ${m[1]} in room ${me.code}. Return to what you were doing.`), true;
+  const card = adm.card(req, me.code).questions[0];
+  const same = q => q && q.question === card.question && Array.isArray(q.options) && q.options.length === card.options.length
+    && q.options.every((o, i) => o && o.label === card.options[i].label && o.description === card.options[i].description);
+  const label = answers && Object.hasOwn(answers, card.question) ? String(answers[card.question]) : null;
+  if (r.afkTimeoutMs || r.followUp || label == null || !shown.some(same) || ![adm.LET_IN, adm.REFUSE].includes(label)) {
+    return say(`Nothing was decided: the join card closed without ${me.name}'s answer, and ${req.name} still waits. If ${me.name} asks, call AskUserQuestion with "admit ${req.ref}" again; return to what you were doing.`), true;
+  }
+  try {
+    if (label === adm.REFUSE) {
+      adm.refuse(me.code, req.ref, { by: me.name });
+      return say(`${me.name} refused ${req.name}; nothing got in. Post nothing about it (the room shows it); return to what you were doing.`), true;
+    }
+    const sign = p => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name });
+    const res = adm.letIn(me.code, req.ref, { by: me.name, sign });
+    say(`${me.name} let ${req.name}'s machine into room ${me.code} (link ${res.id}). Post nothing about it (the room shows it); return to what you were doing.`,
+      { systemMessage: `sub-human: ${res.text}` });
+  } catch (e) {
+    say(`Nothing was done: ${e.message}. ${me.name} has been told; return to what you were doing.`, { systemMessage: `sub-human: ${req.name} was not let in: ${e.message}` });
+  }
+  return true;
+}
+
 function postAsk(input, me) {
   const r = input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {};
   const answers = r.answers && typeof r.answers === 'object' ? r.answers : null;
+  if (postAdmit(input, me, r, answers)) return;
   if (postHandoff(input, me, r, answers)) return;
   if (postConfirm(input, me, r, answers)) return;
   const asked = [...(Array.isArray(r.questions) ? r.questions : []), ...((input.tool_input && input.tool_input.questions) || [])]

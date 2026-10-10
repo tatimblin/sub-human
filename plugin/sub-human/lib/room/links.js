@@ -7,7 +7,7 @@
  * Machine-local, like the session indexes: it never syncs. Zero dependencies beyond lib/home.js, lib/io.js and
  * lib/text.js.
  *
- * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, pin?, refused?, request?, rebind?, moved?, created_at}
+ * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, pin?, enroll?, awaiting?, refused?, request?, rebind?, moved?, created_at}
  *   transport  how the daemon reaches the host's server (lib/remote/link.js transportOf: an invite's locator), plus
  *              what this machine adds for ssh (lib/remote/transports/ssh.js: key, knownHosts, alias, mux), files in
  *              dirOf(code)
@@ -17,6 +17,10 @@
  *   refused    {at, reason}: the host refused the invite before any token (a wrong PIN, burnt, used, expired); the
  *              daemon then dropped invite, pin and rebind (lib/remote/link.js), so no spent secret stays here
  *   request    an ssh link's admit request for the host (lib/remote/hosting.js linkTransport; no secret in it)
+ *   enroll     {pin, name, kind, attempts?}: a short code's join (lib/remote/enroll.js) not run yet: the 6-digit code
+ *              the daemon runs CPace with, dropped once the host answered it (a wrong code, or it held)
+ *   awaiting   {at, ref, check, expires_at}: the code held and the host person's card decides (no secret in it); the
+ *              invite then is the admission secret the host sent inside the PAKE channel
  *   moved      {epoch, host, locator, at?, reached_at?, demoted?}: a handoff or promote re-pointed this link
  * The resume point is the mirror itself (its last line and that line's hash), not a field here.
  *
@@ -81,7 +85,8 @@ const get = code => (typeof code === 'string' && CODE_RE.test(code) ? readJson(f
 const has = code => typeof code === 'string' && CODE_RE.test(code) && fs.existsSync(fileOf(code));
 
 // a link the host refused before it held a token keeps no credential, only {refused: {at, reason}}
-const credential = l => typeof l.token === 'string' || typeof l.invite === 'string' || (!!l.refused && typeof l.refused === 'object');
+const credential = l => typeof l.token === 'string' || typeof l.invite === 'string' || (!!l.refused && typeof l.refused === 'object')
+  || (!!l.enroll && typeof l.enroll === 'object' && typeof l.enroll.pin === 'string');
 
 /**
  * @param {string} code

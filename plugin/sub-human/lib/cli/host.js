@@ -11,7 +11,10 @@
  *                sub-human host [--room CODE] --tailscale [--funnel] | --url URL [--port P]
  *                the same over the web: the listener, Tailscale Serve/Funnel or a front of your own, and a join URL
  *                with its PIN (lib/remote/webhost.js hostWeb)
- *   admit(args)  sub-human admit REQUEST [--file AUTHORIZED_KEYS] [--yes]
+ *   admit(args)  sub-human admit [REF [--refuse] [--yes]] [--room CODE]: a short code's join requests (no REF: list
+ *                them); REF: let that one in after y/N (lib/remote/admission.js letIn), or --refuse. The card in the
+ *                host's session is the usual way; this is for a host with no session open.
+ *                sub-human admit REQUEST [--file AUTHORIZED_KEYS] [--yes]
  *                let a joiner's key in for the invite its request names (hosting.admit). On a terminal it shows who
  *                asks, the room, the key's fingerprint and the invite's age, and asks y/N first (--yes skips it)
  *   prime(args)  sub-human prime CODE [--persist 8h]
@@ -55,15 +58,15 @@ function hostedRoom(explicit) {
 
 function host(args) {
   // --ssh takes a value only when one follows that is not another flag
-  const p = parse(args, { ssh: '?', room: 1, via: 1, url: 1, port: 1, tailscale: 0, funnel: 0 });
+  const p = parse(args, { ssh: '?', room: 1, via: 1, url: 1, port: 1, tailscale: 0, funnel: 0, long: 0, short: 0 });
   const ssh = p.flags.ssh;
-  if (p.error || p.rest.length) return fail(p.error || 'usage: sub-human host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP] | [--tailscale [--funnel] | --url URL] [--port P]', 2);
+  if (p.error || p.rest.length) return fail(p.error || 'usage: sub-human host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP] | [--tailscale [--funnel] | --url URL] [--port P] [--long]', 2);
   const web = p.flags.tailscale || p.flags.funnel || p.flags.url !== undefined;
   if (web && (ssh !== undefined || p.flags.via !== undefined)) return fail('--ssh and --tailscale / --url are different ways in; pick one', 2);
   try {
     const r = web
-      ? require('../remote/webhost.js').hostWeb(hostedRoom(p.flags.room), { tailscale: !!p.flags.tailscale, funnel: !!p.flags.funnel, url: p.flags.url, ...(p.flags.port ? { port: Number(p.flags.port) } : {}) })
-      : require('../remote/hosting.js').hostInvite(hostedRoom(p.flags.room), { ssh, via: p.flags.via });
+      ? require('../remote/webhost.js').hostWeb(hostedRoom(p.flags.room), { tailscale: !!p.flags.tailscale, funnel: !!p.flags.funnel, url: p.flags.url, long: !!p.flags.long, ...(p.flags.port ? { port: Number(p.flags.port) } : {}) })
+      : require('../remote/hosting.js').hostInvite(hostedRoom(p.flags.room), { ssh, via: p.flags.via, long: !!p.flags.long, short: !!p.flags.short });
     say(maskPins(r.text, [r.pin]));
     return 0;
   } catch (e) { return fail(e.message); }
@@ -77,9 +80,34 @@ function ask(question) {
   return buf.subarray(0, n).toString('utf8').trim();
 }
 
+/** `sub-human admit [REF [--refuse]]` for a short code's join request (the card's, in a shell: headless hosts). */
+function admitShort(p) {
+  const adm = require('../remote/admission.js');
+  let code;
+  try { code = hostedRoom(p.flags.room); } catch (e) { return fail(e.message); }
+  if (!p.rest.length) {
+    const reqs = adm.pending(code);
+    if (!reqs.length) { say(`nobody is waiting to join room ${code}`); return 0; }
+    for (const q of reqs) say(`${q.ref}  ${adm.describe(q)} wants to join room ${code} (until ${q.expires_at.slice(11, 16)} UTC): sub-human admit ${q.ref} [--refuse]`);
+    return 0;
+  }
+  const req = adm.find(code, p.rest[0]);
+  if (!req) return fail(`no join request of room ${code} has the ref ${p.rest[0]} (sub-human admit lists them)`);
+  if (!p.flags.yes && !p.flags.refuse) {
+    if (!process.stdin.isTTY) return fail('not a terminal: add --yes to let them in (or --refuse)');
+    const yes = ask(`${adm.describe(req)} typed your code and wants to join room ${code}.\nLet them in? That machine joins as one link and posts only as the seats it brings. [y/N] `);
+    if (!/^y(es)?$/i.test(yes)) return fail('not let in (the request still waits; sub-human admit REF --refuse ends it)');
+  }
+  try {
+    say((p.flags.refuse ? adm.refuse(code, req.ref, { by: null }) : adm.letIn(code, req.ref, { by: null })).text);
+    return 0;
+  } catch (e) { return fail(e.message); }
+}
+
 function admit(args) {
-  const p = parse(args, { file: 1, yes: 0 });
-  if (p.error || p.rest.length !== 1) return fail(p.error || 'usage: sub-human admit shk1.CODE.REF.KEY.NAME [--file AUTHORIZED_KEYS] [--yes]', 2);
+  const p = parse(args, { file: 1, yes: 0, room: 1, refuse: 0 });
+  if (!p.error && p.rest.length <= 1 && (!p.rest.length || /^[0-9a-f]{6,12}$/.test(p.rest[0]))) return admitShort(p);
+  if (p.error || p.rest.length !== 1) return fail(p.error || 'usage: sub-human admit [REF [--refuse] [--yes]] [--room CODE]  |  sub-human admit shk1.CODE.REF.KEY.NAME [--file AUTHORIZED_KEYS] [--yes]', 2);
   const hosting = require('../remote/hosting.js');
   const sshkeys = require('../remote/sshkeys.js');
   const req = sshkeys.parseRequest(p.rest[0]);

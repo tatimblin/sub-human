@@ -2,7 +2,9 @@
 /**
  * plugin/sub-human/lib/remote/listener.js: the host's WebSocket listener daemon (`scripts/sub-human listen [--port
  * 7420]`), one per home. It binds 127.0.0.1 only; a TLS front (Tailscale Serve or Funnel, the lab's Caddy, a
- * person's own reverse proxy) is the only way in from elsewhere. For each WebSocket it runs the Noise_NK handshake
+ * person's own reverse proxy) is the only way in from elsewhere. A WebSocket whose first message is TEXT is a short code's
+ * attempt (lib/remote/enroll.js): for a room this home serves, `<home>/bin/serve --enroll CODE --kind ws` runs the PAKE
+ * over its text frames (a pre-auth slot until it exits). For each other WebSocket it runs the Noise_NK handshake
  * as the responder with the host's static X25519 key (lib/remote/transports/ws.js serverChannel), checks the room
  * the joiner names is one this home serves over ws, and only then spawns `<home>/bin/serve --stdio CODE` (the stable
  * shim, lib/remote/shim.js) for that one connection, piping decrypted bytes to its stdin and its stdout back. It never
@@ -179,20 +181,18 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
     conns++;
     const who = req.headers['tailscale-user-login'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     conn.on('error', () => {});
-    let ch;
+    const at = String(req.url || '').split('?')[0].split('/').filter(Boolean).pop();
+    const refusal = code => {
+      if (!CODE_RE.test(code)) return { code: 'PROTOCOL', message: 'not a room code' };
+      if (at && CODE_RE.test(at) && at !== code) return { code: 'PROTOCOL', message: `this URL is for room ${at}, not ${code}` };
+      if (!(read().rooms || {})[code] || !roomLive(code)) return { code: 'OFFLINE', message: `room ${code} is not open for joins over the web here (the host can run /sub-human host --tailscale or --url again)` };
+      return null;
+    };
+    let ch, first;
     try {
-      ch = await wsT.serverChannel(conn, {
-        s,
-        timeoutMs: HANDSHAKE_MS,
-        check: hello => {
-          const code = hello.room;
-          const at = String(req.url || '').split('?')[0].split('/').filter(Boolean).pop();
-          if (!CODE_RE.test(code)) return { code: 'PROTOCOL', message: 'not a room code' };
-          if (at && CODE_RE.test(at) && at !== code) return { code: 'PROTOCOL', message: `this URL is for room ${at}, not ${code}` };
-          if (!(read().rooms || {})[code] || !roomLive(code)) return { code: 'OFFLINE', message: `room ${code} is not open for joins over the web here (the host can run /sub-human host --tailscale or --url again)` };
-          return null;
-        },
-      });
+      first = await wsT.firstAny(conn, HANDSHAKE_MS);
+      if (!first.binary) return enrollConn(conn, first.data, { refusal, who }); // a short code: text frames, lib/remote/enroll.js
+      ch = await wsT.serverChannel(conn, { s, timeoutMs: HANDSHAKE_MS, m1: first.data, check: hello => refusal(hello.room) });
     } catch (e) {
       preauth--;
       conns--;
@@ -226,6 +226,54 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
       ch.duplex.destroy();
       publishConns();
     });
+  }
+
+  /**
+   * A short code's attempt (its first message is text): `<home>/bin/serve --enroll CODE --kind ws` for this one
+   * connection, each text message one line of its stdin and each line it writes one text message. Nothing else is
+   * parsed here; the child runs the PAKE and counts the tries. It holds a pre-auth slot until it exits.
+   */
+  function enrollConn(conn, data, { refusal, who }) {
+    const protocol = require('./protocol.js');
+    let frame = null;
+    try { frame = JSON.parse(data.toString('utf8')); } catch { /* refused below */ }
+    const code = frame && frame.params && frame.params.room;
+    const no = !frame || frame.op !== 'enroll.start' || typeof code !== 'string' ? { code: 'PROTOCOL', message: 'a text message that is not an enrollment' } : refusal(code);
+    const release = () => { preauth--; conns--; publishConns(); };
+    if (no) {
+      conn.send(protocol.encode(protocol.error(frame && frame.id !== undefined ? frame.id : null, no.code, no.message)).trimEnd());
+      conn.close(4404, 'refused');
+      log(`refused an enrollment from ${who}: ${no.message}`);
+      return release();
+    }
+    let child;
+    try {
+      child = spawn(shimCmd(), ['--enroll', code, '--kind', 'ws'], { env: { ...process.env, SUB_HUMAN_HOME: home() }, stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (e) {
+      log(`room ${code}: could not start the enrollment: ${e.message}`);
+      conn.close(1011, 'no enrollment');
+      return release();
+    }
+    children.add(child);
+    log(`room ${code}: a short-code attempt from ${who}; enroll pid ${child.pid}`);
+    publishConns();
+    const dec = protocol.decoder();
+    child.stdin.on('error', () => {});
+    child.stdin.write(`${data.toString('utf8').replace(/\n/g, '')}\n`);
+    child.stdout.on('data', d => { for (const f of dec.push(d)) conn.send(JSON.stringify(f)); });
+    child.stderr.on('data', d => { for (const l of String(d).split('\n').filter(Boolean)) log(`room ${code} enroll ${child.pid}: ${l}`); });
+    conn.on('message', (m, binary) => {
+      if (binary || m.length > 16 * 1024) { conn.close(1003, 'text frames only'); return; }
+      child.stdin.write(`${m.toString('utf8').replace(/\n/g, '')}\n`);
+    });
+    conn.on('close', () => { child.stdin.end(); setTimeout(() => { try { child.kill(); } catch { /* gone */ } }, 2000).unref(); });
+    child.on('exit', (c, sig) => {
+      children.delete(child);
+      log(`room ${code}: enroll ${child.pid} exited (${sig || c})`);
+      setTimeout(() => { if (conn.state === 'open') conn.close(1000, 'done'); }, 50);
+      release();
+    });
+    return undefined;
   }
 
   const srv = await ws.createServer({

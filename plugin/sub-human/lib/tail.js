@@ -27,7 +27,7 @@
  *   flushLine(flush) -> text | null   what became of the @room posts queued while the link was down (the daemon's
  *       document `link` flush {sent, unsent: [{text, why}]}): appended to LINK_BACK, or alone when some were not sent
  *   deps (tests): openRoom(code) -> Room (lib/room.js open), heartbeat(me) (identity.heartbeat), rows, notices, roomClaude,
- *       linkStatus(code) (lib/remote/link.js status)
+ *       linkStatus(code) (lib/remote/link.js status), admission (lib/remote/admission.js), sweepDoors(code)
  *
  * It writes one JSON event per line, which the mod routes. It reads from the cursor deliver-NAME (first run: from
  * the seat's join) and sees the push and pull lanes. Events:
@@ -47,6 +47,9 @@
  *                             link's linkLine each time it goes off (FORK, STOPPED or OFFLINE; nothing while it stays so)
  *                             and LINK_BACK ("room link: back online; …", with flushLine) once it is online
  *                             again: one quiet line, no "left"/"joined" (the daemon renews the seat's lapsed lease)
+ *   A short code's join request (lib/remote/admission.js), on the host: a chat line for the person and a wake that
+ *   tells Claude to open the card ("admit REF"), once per seat it is for; a request that lapsed is a health line; the
+ *   enrollment door is swept (lib/remote/enroll.js sweepDoors) every 30 s.
  *   A planned handoff (lib/handoff.js): the ask waiting for this seat (its machine's mirror) is a chat line for the
  *   person and a wake that tells Claude to open the card, once; the asker gets a health line when the ask is
  *   declined or expires; host_changed is a chat line for every member. A session whose room changed kind (a
@@ -63,6 +66,7 @@ const { roomClaudeName } = require('./room/members.js');
 
 const { envMs } = config;
 const FOR_CLAUDE = '(for Claude)';
+const DOOR_SWEEP_MS = 30_000;
 const SPAWN_NOTE = /no row running|is not running/;
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
 const isMove = e => e.kind === 'member_joined' || e.kind === 'member_left';
@@ -480,11 +484,30 @@ function startSession(me, ctx) {
     askKey = key;
     emit([{ type: 'health', text: `room handoff: ${d.to} ${state === 'refused' ? 'declined to host' : 'did not answer the ask to host'} room ${s.code}; this machine stays the host` }]);
   }
+  // A short code's join request (lib/remote/admission.js), on the host: this seat's card, opened by its Claude once; a
+  // request nobody answered lapses with a line. The enrollment door closes once no ssh code is open (every SWEEP_MS).
+  let doorsSwept = 0;
+  function admitHealth() {
+    const adm = deps.admission();
+    for (const q of adm.lapse(s.code, { now: clock.now() })) {
+      emit([{ type: 'health', text: `room: ${adm.describe(q)} typed your code, but nobody let them in within ${Math.round((Date.parse(q.expires_at) - Date.parse(q.created_at)) / 60_000)} minutes; their join stopped` }]);
+    }
+    for (const q of adm.pending(s.code, { now: clock.now() })) {
+      if ((q.told || []).includes(me.name) || !adm.targets(s.code, q).includes(me.name)) continue;
+      adm.markTold(s.code, q.ref, me.name);
+      emit([
+        { type: 'chat', lines: [`room: ${adm.describe(q)} typed your code and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})`] },
+        { type: 'wake', text: `${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite code from another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+      ]);
+    }
+    if (clock.now() - doorsSwept >= DOOR_SWEEP_MS) { doorsSwept = clock.now(); deps.sweepDoors(s.code); }
+  }
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
     sendRows();
     if (s.moved()) return; // the room changed kind under this session: the next check starts it again
     if (rm.store && me.role !== 'claude') { try { handoffHealth(); } catch (e) { log('handoff', e); } }
+    if (rm.store && rm.store.isHost && me.role !== 'claude') { try { admitHealth(); } catch (e) { log('admission', e); } }
     if (rm.store && !rm.store.isHost) linkHealth();
     const r = rm.verifyChain();
     if (r.ok) breakKey = null;
@@ -537,6 +560,8 @@ function runTail({
     proposal: deps.proposal || require(path.join(LIB, 'proposal.js')),
     linkStatus: deps.linkStatus || (code => require(path.join(LIB, 'remote', 'link.js')).status(code)),
     handoff: deps.handoff ? () => deps.handoff : (() => { let m; return () => m || (m = require(path.join(LIB, 'handoff.js'))); })(),
+    admission: deps.admission ? () => deps.admission : (() => { let m; return () => m || (m = require(path.join(LIB, 'remote', 'admission.js'))); })(),
+    sweepDoors: deps.sweepDoors || (code => require(path.join(LIB, 'remote', 'enroll.js')).sweepDoors(code)),
   };
   const log = errorLog(err, clock, tm.errorLogMs);
   const ctx = { clock, fs, write, log, t: tm, deps: d, sid };

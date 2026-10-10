@@ -38,6 +38,9 @@
  *                                    `SUB_HUMAN_HOME=<home> <home>/bin/serve --stdio CODE --link ID`
  *   authorizedLine(code, linkId, key, homeDir?) -> string
  *                                    command="<forcedCommand>",restrict <key> sub-human:CODE:ID
+ *   enrollLine(code, key, homeDir?) -> string
+ *                                    command="SUB_HUMAN_HOME=<home> <home>/bin/serve --enroll CODE --kind ssh",restrict <key>
+ *                                    sub-human-enroll:CODE: a short code's enrollment door (lib/remote/enroll.js)
  *   migrateLines(text, homeDir?) -> {text, migrated}
  *                                    rewrite the lines an older `authorize` wrote for this home (node and the
  *                                    versioned CLI baked in) to name the shim; other lines are kept as they are
@@ -116,6 +119,9 @@ const forcedCommand = (code, linkId, h = home()) =>
   `SUB_HUMAN_HOME=${path.resolve(h)} ${shimPath(h)} --stdio ${code} --link ${linkId}`;
 const authorizedLine = (code, linkId, key, h = home()) =>
   `command="${forcedCommand(code, linkId, h)}",restrict ${key} sub-human:${code}:${linkId}`;
+/** The short code's enrollment door (lib/remote/enroll.js): the room's public enrollment key runs only the PAKE. */
+const enrollLine = (code, key, h = home()) =>
+  `command="SUB_HUMAN_HOME=${path.resolve(h)} ${shimPath(h)} --enroll ${code} --kind ssh",restrict ${key} sub-human-enroll:${code}`;
 
 // What an older `authorize` wrote: command="SUB_HUMAN_HOME=<home> <node> <bin> serve --stdio CODE --link ID",restrict <key> sub-human:CODE:ID
 const OLD_LINE_RE = /^command="SUB_HUMAN_HOME=(\S+) (\S+) (\S+) serve --stdio (\S+) --link ([0-9a-f]{12})",restrict (\S+ \S+) sub-human:(\S+):(\S+)$/;
@@ -133,5 +139,5 @@ function migrateLines(text, h = home()) {
 }
 
 module.exports = {
-  shimPath, pointerPath, pluginRoot, cacheDirOf, shimBody, refresh, passive, forcedCommand, authorizedLine, migrateLines, PLAIN_PATH_RE,
+  shimPath, pointerPath, pluginRoot, cacheDirOf, shimBody, refresh, passive, forcedCommand, authorizedLine, enrollLine, migrateLines, PLAIN_PATH_RE,
 };

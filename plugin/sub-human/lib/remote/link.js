@@ -10,7 +10,8 @@
  * modules are required inside run).
  *
  *   run({code, log?}) -> Promise<reason>
- *       serveMirror over the link file's transport (connectLink: hello with the token, or the invite once, with its
+ *       serveMirror over the link file's transport (connectLink: a short code's enrollment first when the link file
+ *       holds one (lib/remote/enroll.js enrollLink), then hello with the token, or the invite once, with its
  *       PIN for an sh2 one, whose token then replaces both in the link file, so a redial never sends the PIN again;
  *       caps {ping: true}), until it stops; also stops LINK_IDLE_MS
  *       (SUB_HUMAN_LINK_IDLE_MS) after this machine has no seat left in the room (idleWatch), and on SIGTERM,
@@ -730,7 +731,7 @@ function scrubRefused(links, code, reason) {
   try {
     const cur = links.get(code);
     if (!cur || cur.token) return;
-    const { invite, pin, rebind, ...rest } = cur;
+    const { invite, pin, rebind, enroll, awaiting, ...rest } = cur;
     links.set(code, { ...rest, refused: { at: new Date().toISOString(), reason: String(reason).slice(0, 300) } });
   } catch { /* the stop reason still says it */ }
 }
@@ -738,8 +739,12 @@ function scrubRefused(links, code, reason) {
 /** The link file's connection: hello with the token, or with the invite once (its token then replaces it). */
 async function connectLink(code) {
   const links = require('../room/links.js');
-  const l = links.get(code);
+  let l = links.get(code);
   if (!l) throw new RoomError('AUTH', `this machine has no link to room ${code} any more`);
+  if (!l.token && typeof l.invite !== 'string' && l.enroll) { // a short code: the PAKE first (lib/remote/enroll.js)
+    await require('./enroll.js').enrollLink(code);
+    l = links.get(code);
+  }
   if (!l.token && typeof l.invite !== 'string') {
     throw new RoomError('AUTH', `the host refused this link's invite${l.refused && l.refused.reason ? ` (${l.refused.reason})` : ''}; ask the host for a new one`);
   }
@@ -757,7 +762,7 @@ async function connectLink(code) {
     throw await keyRefused(l, t, e);
   }
   if (!l.token) {
-    const { invite, pin, ...rest } = l; // an sh2 invite's PIN is spent with it
+    const { invite, pin, awaiting, ...rest } = l; // an sh2 invite's PIN is spent with it
     links.set(code, { ...rest, token: c.token, ...(rest.moved ? { moved: { ...rest.moved, reached_at: new Date().toISOString() } } : {}) });
   }
   return c;
@@ -787,7 +792,7 @@ function idleWatch(link, mirror, idleMs) {
   // an invite not redeemed yet (an ssh join waits for the host to admit its key): kept trying for the invite's life
   const redeeming = () => {
     const l = require('../room/links.js').get(mirror.code);
-    return !!l && !l.token && typeof l.invite === 'string' && Date.now() - Date.parse(l.created_at) < config.INVITE_TTL_MS;
+    return !!l && !l.token && (typeof l.invite === 'string' || !!l.enroll) && Date.now() - Date.parse(l.created_at) < config.INVITE_TTL_MS;
   };
   const seated = () => {
     const s = link.state();

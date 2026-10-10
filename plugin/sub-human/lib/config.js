@@ -150,6 +150,13 @@ module.exports = {
   // burns at the last wrong one or INVITE_TTL_MS after it was minted (whichever is first), or on success.
   INVITE_TTL_MS: 15 * 60_000,
   INVITE_PIN_TRIES: 5,
+  // A short invite (a 6-digit code, lib/remote/enroll.js): the same 15 minutes and 5 tries, counted when the host
+  // answers an attempt (an attempt abandoned after that still costs its try). At most SHORT_LIVE_MAX open per room;
+  // ENROLL_MS bounds one attempt. The joiner's key then waits ADMIT_TTL_MS for the host person's card (Let in /
+  // Refuse) before it lapses.
+  SHORT_LIVE_MAX: 4,
+  ENROLL_MS: 20_000,               // SUB_HUMAN_ENROLL_MS
+  ADMIT_TTL_MS: 10 * 60_000,       // SUB_HUMAN_ADMIT_TTL_MS
   // The join hook waits this long for a fresh link's first hello (redeem or refusal) before it answers.
   LINK_JOIN_WAIT_MS: 6000,
   // The app-level heartbeat (op ping, to a server whose caps list it): a ping every LINK_PING_MS; no pong within

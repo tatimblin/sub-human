@@ -5,7 +5,11 @@
  * and never to the model) and the CLI (lib/cli/host.js). The joiner's side is joinInvite() below; the
  * key material is lib/remote/sshkeys.js.
  *
- *   hostInvite(code, {ssh?, via?, now?}) -> {invite, pin, expires_at, locator, hostKey, text}
+ *   hostInvite(code, {ssh?, via?, long?, short?, by?, now?}) -> {pin, ref, expires_at, short: true, line, text} | {invite, pin, …}
+ *       Over ssh, a SHORT invite by default (lib/remote/enroll.js): `/sub-human join NAME DEST [--via J] CODE PIN`, the
+ *       6-digit code the whole secret (auth.mintShort, kind ssh, vouching for sshd's host key), and the enrollment door
+ *       in authorized_keys (enroll.openDoor); by: the seat whose card admits the joiner. long: the sh2 invite below.
+ *       A pipe invite is sh2 unless short (then `/sub-human join NAME pipe:HOME CODE PIN`). The sh2 form:
  *       an sh2 invite to room CODE (hosted here) and its PIN (lib/remote/auth.js mintInvite). ssh: undefined for a
  *       pipe invite (a second home on this machine); true for this machine's own address (SUB_HUMAN_SSH_ADDR, else
  *       <user>@<hostname>); or "user@host[:port]". via: a ProxyJump for the joiner ("bastion", "me@jump:2222"). Over
@@ -36,7 +40,9 @@
  *   outcome(code, {waitMs?}) -> {state: 'linked' | 'refused' | 'waiting', reason?}   the link daemon's first hello,
  *       watched for up to waitMs (LINK_JOIN_WAIT_MS): linked (the PIN held), refused (its reason: a wrong PIN, an
  *       expired invite, a protocol skew), or waiting (ssh not admitted yet, or slow)
- *   joinText(code, name, outcome, request?) -> string   what the joiner's person reads next
+ *   joinShort({code, transport, pin, name}) -> {code}   a short code's link file before the PAKE (the daemon runs it)
+ *   joinText(code, name, outcome, request?) -> string   what the joiner's person reads next (a short code: the host's
+ *       card names them and the check their screen shows)
  */
 
 const os = require('node:os');
@@ -78,12 +84,34 @@ function shimReady() {
 
 const selfAddress = () => process.env.SUB_HUMAN_SSH_ADDR || `${os.userInfo().username}@${os.hostname()}`;
 
-function hostInvite(code, { ssh, via, now = Date.now() } = {}) {
+/**
+ * The text a short invite is shown with: the one line the joiner types (the code is the whole secret), and what
+ * happens next on this side (the card).
+ */
+function shortText({ code, how, line, ref, extra = [] }) {
+  return [
+    `invite to room ${code}, for one machine, ${how}. Shown once; it lasts ${minutes(INVITE_TTL_MS)} minutes.`,
+    '',
+    `  ${line}`,
+    '',
+    'The 6-digit code is the whole secret: send this line privately (a direct message), or send it without the code and say the code. 5 wrong codes burn it.',
+    'When they type it, a card here asks you to let them in (or refuse); nothing gets in before you answer. In a shell: sub-human admit.',
+    `Leaked? /sub-human revoke ${ref} burns just this invite (its ref; the room and its links stay).`,
+    ...extra,
+  ].join('\n');
+}
+
+function hostInvite(code, { ssh, via, long = false, short = false, by = null, now = Date.now() } = {}) {
   const store = hostStore(code);
   let locator, hostKey = null, dest = null;
   if (ssh === undefined || ssh === false) {
     if (via !== undefined) throw new RoomError('INVALID', '--via is for an ssh invite (--ssh)');
     locator = linkLib().pipeLocator();
+    if (short && !long) { // a second home on this machine, by a short code (tests, and anyone who wants it)
+      const r = auth.mintShort(store, { kind: 'pipe', locator, by, now });
+      const line = `/sub-human join NAME ${locator} ${code} ${r.pin}`;
+      return { ...r, short: true, locator, line, text: shortText({ code, how: '(a second home on this machine)', line, ref: r.ref }) };
+    }
   } else {
     dest = ssh === true ? selfAddress() : String(ssh);
     locator = sshT().locator(dest, via !== undefined ? { via } : {});
@@ -92,6 +120,7 @@ function hostInvite(code, { ssh, via, now = Date.now() } = {}) {
     }
     shimReady();
     hostKey = sshkeys.hostKey();
+    if (!long) return hostShortSsh(code, store, { dest, via, locator, hostKey, by, now });
   }
   const r = auth.mintInvite(store, { locator, pin: true, hostKey, now });
   const lines = [
@@ -109,6 +138,27 @@ function hostInvite(code, { ssh, via, now = Date.now() } = {}) {
     lines.push('Their join then shows them a line to send back to you: paste it here, /sub-human admit shk1.…, to let their key in.');
   }
   return { ...r, locator, hostKey, text: lines.join('\n') };
+}
+
+/** host --ssh's short invite: the code, and the enrollment door in authorized_keys (lib/remote/enroll.js). */
+function hostShortSsh(code, store, { dest, via, locator, hostKey, by, now }) {
+  if (!hostKey) {
+    throw new RoomError('INVALID', 'no ssh host key is readable here (/etc/ssh/ssh_host_ed25519_key.pub, or SUB_HUMAN_SSH_HOST_KEY), and a short code needs one to vouch for; use /sub-human host --ssh --long (an sh2 invite)');
+  }
+  const file = path.resolve(sshkeys.authorizedKeysFile());
+  const r = auth.mintShort(store, { kind: 'ssh', locator, hostKey, by, doorFile: file, now });
+  try { require('./enroll.js').openDoor(code, { file }); } catch (e) {
+    try { auth.burnInvite(store, r.ref); } catch { /* it lapses */ }
+    throw e;
+  }
+  const line = `/sub-human join NAME ${dest}${via ? ` --via ${via}` : ''} ${code} ${r.pin}`;
+  return {
+    ...r, short: true, locator, hostKey, line,
+    text: shortText({
+      code, how: `over ssh ${dest}${via ? ` via ${via}` : ''}`, line, ref: r.ref,
+      extra: [`Their machine checks it reached this one (ssh host key ${sshkeys.fingerprint(hostKey)}) inside the code's handshake, and makes its own key; until you let it in, that key opens nothing (an authorized_keys line that only runs the code check is there while the invite is open).`],
+    }),
+  };
 }
 
 function admit(request, { file = sshkeys.authorizedKeysFile(), now = Date.now() } = {}) {
@@ -136,6 +186,9 @@ function linkIdOf(store, target) {
   const hits = Object.values(all).filter(l => Array.isArray(l.seats) && l.seats.includes(target));
   if (hits.length === 1) return hits[0].id;
   if (hits.length > 1) throw new RoomError('INVALID', `${target} joined over ${hits.length} links (${hits.map(l => l.id).join(', ')}); name one`);
+  // a short code's joiner not linked yet (waiting for the card, or let in and not connected): its reserved link
+  const asked = auth.admissions(store, { all: true }).filter(a => a.name === target && !a.used_at && !a.burnt_at);
+  if (asked.length === 1) return asked[0].link;
   throw new RoomError('INVALID', `"${target}" is neither a link or an invite of room ${store.code} nor a seat that joined over a link`);
 }
 
@@ -161,6 +214,7 @@ function revokeInvite(code, store, ref, opts) {
     return { ...r, ref, text: `invite ${ref} ${invite.used_at ? 'was used already, by' : 'was reserved for'} link ${invite.link}; ${r.text}` };
   }
   const { state } = auth.burnInvite(store, ref);
+  try { require('./enroll.js').sweepDoors(code); } catch { /* the tail sweeps it */ }
   if (state === 'burnt') roomLine(code, `the host revoked an unused invite (ref ${ref}): it no longer lets anyone in`);
   const text = state === 'burnt'
     ? `revoked invite ${ref} of room ${code}: it is burnt and lets no one in; every other invite and link stays`
@@ -174,7 +228,10 @@ function revoke(code, target, { file = sshkeys.authorizedKeysFile() } = {}) {
   if (ref) return revokeInvite(code, store, ref, { file });
   const id = linkIdOf(store, String(target));
   const r = auth.revokeLink(store, id) || { link: null, invites: 0 };
-  const keys = sshkeys.removeAuthorized(path.resolve(file), code, id);
+  const doors = new Set([path.resolve(file), ...auth.admissions(store, { all: true }).filter(a => a.link === id && a.door_file).map(a => path.resolve(a.door_file))]);
+  let keys = 0;
+  for (const f of doors) keys += sshkeys.removeAuthorized(f, code, id);
+  try { require('./enroll.js').sweepDoors(code); } catch { /* the tail sweeps it */ }
   spawnSync('pkill', ['-f', '--', `--stdio ${code} --link ${id}`], { stdio: 'ignore' });
   const seats = r.link ? r.link.seats || [] : [];
   const seatsLib = require('../seats.js');
@@ -235,14 +292,19 @@ function outcome(code, { waitMs = LINK_JOIN_WAIT_MS } = {}) {
     if (stopped) return { state: 'refused', reason: stopped.reason };
     const lf = links().get(code);
     if (st.state === 'online' && lf && lf.token) return { state: 'linked' };
-    if (st.state === 'offline' && lf && lf.request) return { state: 'waiting', reason: st.reason };
+    if (st.state === 'offline' && lf && (lf.request || lf.awaiting)) return { state: 'waiting', reason: st.reason };
     if (Date.now() >= until) return { state: 'waiting', reason: st.reason };
   }
 }
 
 function joinText(code, name, o, request) {
-  if (o.state === 'linked') return `linked to room ${code}: the host checked your PIN. Now type: /sub-human ${name} ${code}`;
+  const lf = links().get(code) || {};
+  if (o.state === 'linked') return `linked to room ${code}: ${lf.awaiting || o.short ? 'the host let this machine in' : 'the host checked your PIN'}. Now type: /sub-human ${name} ${code}`;
   if (o.state === 'refused') return `could not link to room ${code}: ${o.reason}`;
+  if (lf.awaiting) {
+    return `the host's machine checked your code. A card there now asks them to let you in; it names ${name} (${lf.awaiting.check}). `
+      + `Once they do, type: /sub-human ${name} ${code}  (the link keeps trying for ${minutes(require('../config.js').ADMIT_TTL_MS)} minutes)`;
+  }
   if (request) {
     return `this machine made a key of its own for room ${code}; the host has to let it in first. Send them this line (it holds no secret):\n\n`
       + `  /sub-human admit ${request}\n\n`
@@ -254,4 +316,14 @@ function joinText(code, name, o, request) {
   return `the link to room ${code} is still connecting${o.reason ? ` (${o.reason})` : cert}; type /sub-human ${name} ${code} in a moment`;
 }
 
-module.exports = { hostInvite, admit, revoke, linkTransport, joinInvite, outcome, joinText, shimReady };
+/**
+ * `/sub-human join NAME DEST CODE PIN` (or URL PIN): the link file for a short code, before any attempt: the
+ * transport to the host's door, and the code (enroll, 0600, dropped once the host answered). The daemon runs the
+ * PAKE (lib/remote/enroll.js enrollLink).
+ */
+function joinShort({ code, transport, pin, name }) {
+  links().set(code, { code, transport, enroll: { pin, name }, created_at: new Date().toISOString() });
+  return { code };
+}
+
+module.exports = { hostInvite, admit, revoke, linkTransport, joinInvite, joinShort, outcome, joinText, shimReady, shortText };

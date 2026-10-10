@@ -25,6 +25,16 @@
  *   appendAuthorized(file, line, key) -> 'added' | 'present'   append line (0600, dir 0700) unless it is there;
  *                                              RoomError INVALID when key is in the file with another line
  *   removeAuthorized(file, code, id) -> n     drop every line that ends "sub-human:CODE:ID"; the count
+ *   removeTagged(file, tag) -> n              drop every line that ends " TAG" (the enrollment door: sub-human-enroll:CODE)
+ *
+ * The short code's enrollment door (lib/remote/enroll.js): sshd has to let a joiner that holds no admitted key yet
+ * reach `serve --enroll CODE`, and nothing else. Its key is PUBLIC by design: anyone who knows the room code derives it
+ * (it is never derived from the 6-digit code, so it leaks nothing a guess could be checked against offline), and the
+ * forced command behind it only runs the PAKE, whose tries the host counts.
+ *   enrollKey(code) -> {seed, raw, pub}       the Ed25519 key of seed sha256("sub-human enroll key v1\0" + code)
+ *   opensshPrivate({seed, raw, comment}) -> string   that key as an unencrypted openssh-key-v1 file (ssh -i reads it)
+ *   writeEnrollKey(dir, code) -> file         dir/enroll_ed25519 (0600) with its .pub, for the joiner's ssh
+ *   ENROLL_TAG(code) -> 'sub-human-enroll:CODE'
  */
 
 const fs = require('node:fs');
@@ -165,7 +175,55 @@ function removeAuthorized(file, code, id) {
   return n;
 }
 
+function removeTagged(file, tag) {
+  const cur = readText(file);
+  if (!cur) return 0;
+  const lines = cur.split('\n');
+  const kept = lines.filter(l => !l.trimEnd().endsWith(` ${tag}`));
+  const n = lines.length - kept.length;
+  if (n) require('../io.js').writeFileAtomic(fs.realpathSync(file), kept.join('\n'), { mode: 0o600 });
+  return n;
+}
+
+// ---------- the enrollment door's key ----------
+const ENROLL_TAG = code => `sub-human-enroll:${code}`;
+const PKCS8_ED25519 = Buffer.from('302e020100300506032b657004220420', 'hex');
+const SPKI_ED25519 = Buffer.from('302a300506032b6570032100', 'hex');
+
+function enrollKey(code) {
+  if (!CODE_RE.test(String(code))) throw new RoomError('INVALID', `invalid room code "${code}"`);
+  const seed = crypto.createHash('sha256').update(`sub-human enroll key v1\0${code}`).digest();
+  const priv = crypto.createPrivateKey({ key: Buffer.concat([PKCS8_ED25519, seed]), format: 'der', type: 'pkcs8' });
+  const raw = crypto.createPublicKey(priv).export({ format: 'der', type: 'spki' }).subarray(SPKI_ED25519.length).toString('base64url');
+  return { seed, raw, pub: openssh(raw) };
+}
+
+/** openssh-key-v1 (PROTOCOL.key): no cipher, no kdf, one key; the private part is seed || public key. */
+function opensshPrivate({ seed, raw, comment = '' }) {
+  const u32 = n => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+  const str = b => Buffer.concat([u32(Buffer.byteLength(b)), Buffer.from(b)]);
+  const pub = Buffer.from(raw, 'base64url');
+  const check = crypto.createHash('sha256').update(pub).digest().subarray(0, 4);
+  let priv = Buffer.concat([check, check, str(TYPE), str(pub), str(Buffer.concat([seed, pub])), str(comment)]);
+  const pad = (8 - (priv.length % 8)) % 8;
+  priv = Buffer.concat([priv, Buffer.from(Array.from({ length: pad }, (_, i) => i + 1))]);
+  const body = Buffer.concat([Buffer.from('openssh-key-v1\0'), str('none'), str('none'), str(''), u32(1), str(wire(raw)), str(priv)]);
+  const b64 = body.toString('base64').match(/.{1,70}/g).join('\n');
+  return `-----BEGIN OPENSSH PRIVATE KEY-----\n${b64}\n-----END OPENSSH PRIVATE KEY-----\n`;
+}
+
+function writeEnrollKey(dir, code) {
+  const k = enrollKey(code);
+  const file = path.join(dir, 'enroll_ed25519');
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(file, opensshPrivate({ ...k, comment: ENROLL_TAG(code) }), { mode: 0o600 });
+  fs.chmodSync(file, 0o600);
+  fs.writeFileSync(`${file}.pub`, `${k.pub} ${ENROLL_TAG(code)}\n`, { mode: 0o600 });
+  return file;
+}
+
 module.exports = {
+  enrollKey, opensshPrivate, writeEnrollKey, removeTagged, ENROLL_TAG,
   ed25519Raw, openssh, fingerprint, hostKey, knownHostsLine, linkKey, publicKey, formatRequest, parseRequest,
   authorizedKeysFile, appendAuthorized, removeAuthorized,
 };
