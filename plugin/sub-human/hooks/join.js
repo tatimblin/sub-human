@@ -237,7 +237,8 @@ function linkLogin(argv) {
   if (identity.roomExists(code) && identity.isHost(code)) return fail(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur = links.get(code);
   const at = sshT().kind.describe(spec); // "ssh you@host … (your ssh login)"
-  if (cur && cur.token && sameLogin(cur.transport, spec)) return { name, code }; // linked this way already: just the seat
+  const spent = (link.stopReason(link.status(code)) || {}).code === 'AUTH'; // revoked, or a host key changed: link anew
+  if (cur && cur.token && sameLogin(cur.transport, spec) && !spent) return { name, code }; // linked this way already: just the seat
   if (cur) restartLink(code); // a link replaced (another way in, or a refused one): dial with the new file
   const mux = cur && cur.transport && cur.transport.mux === true && cur.transport.user === spec.user && cur.transport.host === spec.host && cur.transport.port === spec.port;
   try {

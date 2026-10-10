@@ -192,6 +192,15 @@ test('login e2e: join NAME me@devbox CODE links over the person\'s own ssh and t
   assert.deepEqual(links(host, code), {});
   await h.until(() => remote.lib(() => link.status(code)).state === 'stopped', 10_000);
   assert.match(remote.lib(() => link.status(code)).reason, /revoked/);
+  // that login can link again: a new link, and bob's seat joins again over it
+  const again = remote.join(bob, `join bob me@devbox ${code}`);
+  assert.equal(again.json.decision, undefined, again.json.reason);
+  const id2 = remote.lib(() => require(path.join(h.LIB, 'room', 'links.js')).get(code)).transport.link;
+  assert.notEqual(id2, id);
+  assert.deepEqual(Object.keys(links(host, code)), [id2]);
+  assert.deepEqual(links(host, code)[id2].seats, ['bob']);
+  assert.equal(remote.say(bob, 'back over a new link').json.continue, false);
+  assert.equal(host.lib(() => store.open(code).readAll()).at(-1).text, 'back over a new link');
 });
 
 test('login e2e: --home names a host home that is not ~/.sub-human; a primed (mux) link keeps riding its master on a re-join', t => {
