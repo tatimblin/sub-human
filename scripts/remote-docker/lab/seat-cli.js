@@ -22,6 +22,9 @@
  *   prompt NAME TEXT              any typed prompt through hooks/prompt.js (e.g. a slash-free command)
  *   expand NAME ARGS              any `/sub-human ARGS` through hooks/join.js (host --ssh, revoke, handoff, …)
  *   leave NAME                    SessionEnd for NAME, then its seat process stops
+ *   short NAME DEST CODE|- PIN [SSH_OPT…]   `/sub-human join NAME DEST [CODE] PIN` (a short invite; '-' for a URL):
+ *                                 {ok, waiting, out, hidden}: ok once the host checked the code
+ *   admitcard NAME LABEL          NAME, on the host, answers the oldest join request's card ("Let in" / "Refuse")
  *   card NAME LABEL               NAME answers the handoff card the hooks build (consent.js Pre, then Post with
  *                                 LABEL, e.g. "Host it here"), as the person would on the AskUserQuestion card
  *   events NAME                   what NAME's tail delivered: [{t, ev}]
@@ -144,6 +147,33 @@ const cmds = {
     return { ok: joinedOk(r.json), out: reason(r.json) || '', ms: r.ms, code, stderr: r.stderr };
   },
 
+  // `/sub-human join NAME DEST [CODE] PIN`: a short invite (DEST a URL: CODE is '-'); SSH_OPT… as for join
+  short(name, dest, code, pin, ...rest) {
+    let seat;
+    try { seat = seatOf(name); } catch { seat = null; }
+    if (!seat || !alive(seat.pid)) seat = newSeat(name, rest.join(' '));
+    else if (rest.length) { seat.sshOpts = rest.join(' '); const st = load(); st.seats[name] = seat; save(st); }
+    const r = expand(seat, `join ${name} ${dest}${code === '-' ? '' : ` ${code}`} ${pin}`);
+    const out = reason(r.json) || '';
+    return { ok: /checked your code/.test(out) || /^linked to room/.test(out), waiting: /checked your code/.test(out), out, ms: r.ms, hidden: !!(r.json && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt), stderr: r.stderr };
+  },
+
+  // NAME, on the host, answers the join request's card the hooks build (consent.js Pre with "admit REF", then Post)
+  admitcard(name, label) {
+    const seat = seatOf(name);
+    const code = load().code || lib('room/store.js').listRooms()[0];
+    const req = lib('remote/admission.js').pending(code)[0];
+    if (!req) return { ok: false, out: 'no join request waits' };
+    lease(seat);
+    const pre = hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `admit ${req.ref}`, options: [] }] } }, seat);
+    const card = pre.json && pre.json.hookSpecificOutput && pre.json.hookSpecificOutput.updatedInput;
+    if (!card) return { ok: false, out: 'the hooks built no card', pre: pre.json, stderr: pre.stderr };
+    const q = card.questions[0].question;
+    const post = hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: { [q]: label } } }, seat);
+    const ctx = post.json && post.json.hookSpecificOutput && post.json.hookSpecificOutput.additionalContext;
+    return { ok: /let \S+'s machine into room|refused/.test(ctx || ''), question: q, out: ctx, ref: req.ref, key: req.key, ms: pre.ms + post.ms, stderr: post.stderr };
+  },
+
   card(name, label) {
     const seat = seatOf(name);
     const code = load().code || lib('room/store.js').listRooms()[0];
@@ -225,7 +255,7 @@ const cmds = {
     try { kinds = require(path.join(PLUGIN, 'lib/remote/transports/index.js')).kinds(); } catch { kinds = ['pipe', 'memory', 'ssh'].filter(k => src('lib/remote/link.js').includes(`'${k}'`)); }
     const protocol = lib('remote/protocol.js');
     const files = ['lib/remote/ws.js', 'lib/remote/transports/ws.js', 'lib/remote/listener.js', 'lib/remote/outbox.js', 'lib/remote/doctor.js', 'lib/doctor.js',
-      'lib/remote/seal.js', 'lib/remote/handoff.js', 'lib/remote/noise.js', 'lib/remote/tailscale.js'].filter(f => fs.existsSync(path.join(PLUGIN, f)));
+      'lib/remote/seal.js', 'lib/remote/handoff.js', 'lib/remote/noise.js', 'lib/remote/tailscale.js', 'lib/remote/enroll.js'].filter(f => fs.existsSync(path.join(PLUGIN, f)));
     let version = null;
     try { version = JSON.parse(src('.claude-plugin/plugin.json')).version; } catch { /* none */ }
     return {

@@ -508,9 +508,12 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/lock.js`: the one lockfile helper (room log, members.json, proposals, the task mirror, the row map).
 - `lib/notices.js`: join / leave lines for every human in the room, as a group chat shows them: "bob joined", "bob rejoined", "bob left" (no room code, no ids).
 - `lib/proposal.js`: proposals and the consent card. Every write goes through room.append().
+- `lib/remote/admission.js`: the host person's consent to a machine that typed a short code.
 - `lib/remote/auth.js`: invites and link tokens, on the host. An invite is single-use and turns into a link token at the first hello; the token is the link's credential from then on.
 - `lib/remote/bridge.js`: a synchronous call from a hook's thread to asynchronous work on a worker thread, with a deadline.
 - `lib/remote/client.js`: the asynchronous side of the protocol, one connection to a room's server over a transport.
+- `lib/remote/cpace.js`: CPace (draft-irtf-cfrg-cpace-21) with the cipher suite CPACE-RISTR255-SHA512, initiator-responder mode, plus the draft's explicit key confirmation (section 10.4).
+- `lib/remote/enroll.js`: the short code's join. The host shows `/sub-human join NAME you@box vole-8126 482913` (or a URL and the code); the 6-digit code is the whole secret, and it never travels: both ends run CPace (lib/remote/cpace.js, ristretto255 + SHA-512, initiator-responder, explicit key confirmation) with it.
 - `lib/remote/hosting.js`: the host's side of an sh2 link, one step each, shared by the join hook (`/sub-human host`, `/sub-human admit`, `/sub-human revoke`: their output is a block reason, shown to the person and never to the model) and the CLI (lib/cli/host.js).
 - `lib/remote/link.js`: the link daemon, one per machine and room (`scripts/sub-human link CODE`, started detached by the join hook, like the room's Claude starter).
 - `lib/remote/listener.js`: the host's WebSocket listener daemon (`scripts/sub-human listen [--port 7420]`), one per home.
@@ -545,6 +548,20 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/tail.js`: the room tail behind `sub-human tail` (scripts/sub-human), the hooks module's child (mod/deliver.mjs).
 - `lib/tasks.js`: the room's shared task list. The headless room Claude's own native task list (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list.
 - `lib/text.js`: the string helpers and name patterns every module shares.
+- `lib/vendor/noble/curves/abstract/curve.js`: Methods for elliptic curve multiplication by scalars.
+- `lib/vendor/noble/curves/abstract/edwards.js`: Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
+- `lib/vendor/noble/curves/abstract/fft.js`: Experimental implementation of NTT / FFT (Fast Fourier Transform) over finite fields.
+- `lib/vendor/noble/curves/abstract/frost.js`: FROST: Flexible Round-Optimized Schnorr Threshold Protocol for Two-Round Schnorr Signatures.
+- `lib/vendor/noble/curves/abstract/hash-to-curve.js`: Produces a uniformly random byte string using a cryptographic hash function H that outputs b bits.
+- `lib/vendor/noble/curves/abstract/modular.js`: Utils for modular division and fields. Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
+- `lib/vendor/noble/curves/abstract/montgomery.js`: Montgomery curve methods. It's not really whole montgomery curve, just bunch of very specific methods for X25519 / X448 from [RFC 7748](https://www.rfc-editor.org/rfc/rfc7748) @module
+- `lib/vendor/noble/curves/abstract/oprf.js`: RFC 9497: Oblivious Pseudorandom Functions (OPRFs) Using Prime-Order Groups. https://www.rfc-editor.org/rfc/rfc9497
+- `lib/vendor/noble/curves/ed25519.js`: ed25519 Twisted Edwards curve with following addons: - X25519 ECDH - Ristretto cofactor elimination - Elligator hash-to-group / point indistinguishability @module
+- `lib/vendor/noble/curves/utils.js`: Hex, bytes and number utilities. @module
+- `lib/vendor/noble/hashes/_md.js`: Internal Merkle-Damgard hash utils. @module
+- `lib/vendor/noble/hashes/_u64.js`: 
+- `lib/vendor/noble/hashes/sha2.js`: SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
+- `lib/vendor/noble/hashes/utils.js`: Checks if something is Uint8Array. Be careful: nodejs Buffer will return true. @param a - value to test @returns `true` when the value is a Uint8Array-compatible view. @example Check whether a value is a Uint8Array-compatible view.
 <!-- /gen:lib-modules -->
 
 Elsewhere: `hooks/common.js` (shared hook plumbing: `readInput`, `resolveSeat`, output helpers), `hooks/seat-key.js` (the signer), `scripts/sub-human` (the read-only CLI and the tail entry), `statusline/` (row text), `agents/` (`room-claude`, `room`, `participant`), `skills/sub-human/` (the join skill and the role texts the hooks inject).

@@ -88,7 +88,7 @@ async function wssHost(t, lab) {
 }
 
 function wssJoin(t, lab, host, code, svc, name, { proxy = false } = {}) {
-  const r = host.expand('alice', 'host --url https://tls-front');
+  const r = host.expand('alice', `host --url https://tls-front${lab.features.shortCode ? ' --long' : ''}`);
   const text = (r.json && r.json.reason) || '';
   const url = (JOIN_URL_RE.exec(text) || [])[0];
   const pin = (/\bPIN (\d{6})\b/.exec(text) || [])[1];

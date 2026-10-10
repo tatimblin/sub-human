@@ -112,4 +112,9 @@ test('ssh short code: someone in between (another host key shown) gets one try, 
   const inv = Object.values(host.lib(() => store.open(code).kv.get(auth.INVITES_KEY)))[0];
   assert.equal(inv.tries, 4, 'one try spent');
   assert.equal(doorLines(ak, code).length, 1, 'the door stays while the code is open');
+  // the host revokes that invite: the door goes, and a join to it says so at once (no retrying a shut door)
+  for (const k of Object.keys(host.lib(() => store.open(code).kv.get(auth.INVITES_KEY)))) host.join(alice, `revoke ${k.slice(0, 12)}`);
+  assert.equal(doorLines(ak, code).length, 0, 'no code open: no door');
+  const shut = remote.join(bob, `join bob me@127.0.0.1:2222 ${code} ${m[3]}`);
+  assert.match(shut.json.reason, /could not link to room \S+: the host's door for codes to room \S+ is shut/);
 });

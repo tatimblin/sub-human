@@ -36,7 +36,7 @@ The hook binds your name to your session before the model sees anything, so your
 
 ## Join from another machine
 
-A room lives on the machine that opened it, its **host**. If you can already ssh to the host's account (your own second machine, a dev box you log in to), join with that login. Anyone else joins with an invite and its PIN.
+A room lives on the machine that opened it, its **host**. If you can already ssh to the host's account (your own second machine, a dev box you log in to), join with that login. Anyone else joins with one line the host sends them, `/sub-human join NAME you@devbox vole-8126 482913`, and the host's card lets them in.
 
 ### If you can already ssh to the host: `/sub-human join NAME USER@HOST CODE`
 
@@ -65,40 +65,42 @@ On the host, in a session that is in the room:
 /sub-human host --ssh                       # this machine's address: SUB_HUMAN_SSH_ADDR, else you@hostname
 /sub-human host --ssh me@devbox.local:2222  # or name it
 /sub-human host --ssh me@devbox --via bastion   # the joiner reaches it through a jump host (ProxyJump)
-/sub-human host                             # a pipe invite, for a second home on this machine
+/sub-human host --tailscale                 # over the web: see Join from anywhere: Tailscale
 ```
 
 ```
 sub-human: invite to room vole-8126, for one machine, over ssh me@devbox.local. Shown once; it lasts 15 minutes.
 
-  /sub-human join NAME sh2.vole-8126.c3NoOm1l….Qm9i….YkkF… PIN
+  /sub-human join NAME me@devbox.local vole-8126 482913
 
-PIN 482913  (send it apart from the invite, e.g. say it; 5 wrong tries burn the invite)
-The invite pins this machine's ssh host key SHA256:dl2/IPcY….
-Their join then shows them a line to send back to you: paste it here, /sub-human admit shk1.…, to let their key in.
+The 6-digit code is the whole secret: send this line privately (a direct message), or send it without the code and say the code. 5 wrong codes burn it.
+When they type it, a card here asks you to let them in (or refuse); nothing gets in before you answer. In a shell: sub-human admit.
+Leaked? /sub-human revoke 3f9c2a1b7e0d burns just this invite (its ref; the room and its links stay).
 ```
 
-This is shown to you, never to your Claude. The invite is for one machine and one use. It carries the room, how to reach the host, a single-use secret and the host's SSH host key; the **PIN is not in it**. Send the invite in chat and say the PIN some other way. Only the host checks the PIN, when the joiner's link first connects: 5 wrong tries or 15 minutes and the invite is burnt, and the room shows each wrong PIN. `sub-human host [--room CODE] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code. Inside Claude Code (its `!` mode) it masks the PIN, because that output becomes part of the conversation, and `sub-human invite` refuses.
+This is shown to you, never to your Claude. The joiner types exactly that line with their name. The invite is for one machine and one use; the **6-digit code is its whole secret**, so treat the line like a password: a direct message, or say the code. `sub-human host [--room CODE] [--ssh [USER@HOST]] [--via JUMP]` prints the same in a terminal outside Claude Code; inside Claude Code (its `!` mode) it masks the code, because that output becomes part of the conversation.
 
-### Joining: `/sub-human join NAME INVITE PIN`
+When they type it, **your Claude Code shows you a card**: `Let carol (SHA256:ab12…) on carols-mbp join room vole-8126? — Let in / Refuse`. Only your answer there admits them: your Claude can't answer it, and the answer is signed with your seat key. The fingerprint is the key their machine just made for this link; their screen shows the same one, so you can compare. **Let in** writes one `authorized_keys` line that lets that key reach only this room's server, as one link (as `admit` always did), and their link connects within seconds. **Refuse** ends it. Unanswered, the request lapses after 10 minutes. With no session open on the host, `sub-human admit` in a shell lists the requests and `sub-human admit REF` asks y/N (`--refuse` to say no); `/sub-human admit REF` typed in the room does the same as the card.
 
-On the other machine:
+`/sub-human host --ssh --long` gives the older two-part invite instead (`sh2.…` plus a PIN, and the pasted `/sub-human admit shk1.…` line), for a joiner on sub-human older than 0.5.0-beta.4. `/sub-human host` with no flag gives one for a second home on this machine (`--short` for the short form there).
+
+### Joining: `/sub-human join NAME DEST CODE 482913`
+
+On the other machine, the line the host sent you, with your name:
 
 ```
-/sub-human join carol sh2.vole-8126.c3NoOm1l….Qm9i….YkkF… 482913
+/sub-human join carol me@devbox.local vole-8126 482913
+/sub-human join carol https://box.tail1a2b.ts.net/sub-human/vole-8126 482913   # over the web
 ```
 
-This step only links the machine to the room, and the hook stops the prompt there, so neither the invite nor the PIN reaches your Claude. It says what to do next:
+This step only links the machine to the room, and the hook stops the prompt there, so the code never reaches your Claude. (A login join, `/sub-human join NAME USER@HOST CODE`, has no code after the room; with one, it is a short invite.) Your machine and the host check the code against each other without sending it (a PAKE, see the threat model); your machine checks it reached the real host, makes a key of its own for the link (over ssh), and the host's card asks its person. The join says what to do next:
 
-- **Pipe, or an SSH key the host already let in:** `linked to room vole-8126: the host checked your PIN. Now type: /sub-human carol vole-8126`. That second command takes your seat, as any rejoin does.
-- **SSH, the first time:** the join made an SSH key of its own for this link (`<home>/links/vole-8126/id_ed25519`; no key ever travels) and pinned the host's key from the invite (no "unknown host" prompt, and no other host key is accepted). Send the host the line it shows you; it holds no secret:
+- `the host's machine checked your code. A card there now asks them to let you in; it names carol (SHA256:ab12…). Once they do, type: /sub-human carol vole-8126`. The link keeps trying for 10 minutes. That second command takes your seat, as any rejoin does.
+- **A wrong code:** `could not link to room vole-8126: wrong code (4 tries left)`. Type the join again with the right code; a rejoin never re-sends a refused code. The fifth wrong code burns the invite.
+- **Refused or lapsed:** the link stops with `the host refused to let this machine in` (or `did not let this machine in in time`); ask for a new code.
+- **Someone in between:** over ssh, if the server that answered shows another host key than the one the host vouched for inside the code's handshake, the join stops (`the ssh server that answered is not the one that holds your code`) and sends nothing more. Check with the host.
 
-  ```
-  /sub-human admit shk1.vole-8126.4f1c2a9b03de.Qm9i….carol
-  ```
-
-  The host pastes it into their session (or runs `sub-human admit shk1.…` in a shell, which asks y/N first). That is their consent: it names who asks and the key's fingerprint, and adds one `authorized_keys` line that lets that key reach only this room's server, as this one link. Your link keeps trying for 15 minutes; once the key is in, it connects and the host checks your PIN. Then type `/sub-human carol vole-8126`. Typing it earlier shows the admit line again.
-- **A wrong PIN:** `could not link to room vole-8126: wrong PIN (4 tries left)`. Type the join again with the right PIN. A rejoin never re-sends a refused PIN.
+Older invites still work: `/sub-human join NAME sh2.… PIN` (and `https://…#SECRET.KEY PIN`). Over ssh that join makes its own key too and shows you a line to send back, `/sub-human admit shk1.vole-8126.4f1c2a9b03de.Qm9i….carol` (no secret in it), which the host pastes; the PIN is checked when the link first connects. A wrong PIN says `wrong PIN (4 tries left)`.
 
 The join starts a **link** on that machine: a small background process (`sub-human link CODE`) that keeps a copy of the room (a mirror) and carries that machine's posts and answers to the host. After that, everything works as on the host: `@room`, rows, proposals in the plan view, tasks. Your words are signed on your machine and checked on the host. The host runs the room's Claude and decides proposals.
 
@@ -114,7 +116,7 @@ For friends who have no SSH account on your machine. The host runs [Tailscale](h
 
 ```
 /sub-human host --tailscale            # Tailscale Serve: people on your tailnet (or a node you shared) only
-/sub-human host --tailscale --funnel   # Tailscale Funnel: anyone with the URL and the PIN (opt-in)
+/sub-human host --tailscale --funnel   # Tailscale Funnel: anyone with the URL and the code (opt-in)
 /sub-human host --url https://my.front/sh   # any HTTPS front of yours that forwards to 127.0.0.1:7420
 /sub-human unhost                      # stop serving this room over the web
 ```
@@ -122,13 +124,13 @@ For friends who have no SSH account on your machine. The host runs [Tailscale](h
 ```
 sub-human: invite to room vole-8126, for one machine, over the web through Tailscale Serve (your tailnet only) to this machine's listener on 127.0.0.1:7420. Shown once; it lasts 15 minutes.
 
-  /sub-human join NAME https://box.tail1a2b.ts.net/sub-human/vole-8126#Qm9iIGlz….YkkFm1x… PIN
+  /sub-human join NAME https://box.tail1a2b.ts.net/sub-human/vole-8126 482913
 
-PIN 482913  (send it apart from the link, e.g. say it; 5 wrong tries burn the invite)
-The link pins this machine's listener key YkkFm1xT0a2c… and carries a one-time secret; with the PIN that is the whole admission (no admit step). The same invite as text: sh2.vole-8126.…
+The 6-digit code is the whole secret: send this line privately (a direct message), or send it without the code and say the code. 5 wrong codes burn it.
+When they type it, a card here asks you to let them in (or refuse); nothing gets in before you answer. In a shell: sub-human admit.
 ```
 
-The joiner types `/sub-human join carol https://box.tail1a2b.ts.net/sub-human/vole-8126#… 482913`, then `/sub-human carol vole-8126`, as for any invite. The whole URL matters: the part after `#` is the invite's 128-bit secret and the host's key, and a browser or a server never sees it. A URL without it, or a short one with only a PIN, is refused.
+The joiner types `/sub-human join carol https://box.tail1a2b.ts.net/sub-human/vole-8126 482913`; your card lets them in, as over ssh; then they type `/sub-human carol vole-8126`. No secret is in the URL. `--long` gives the older `https://…/vole-8126#SECRET.KEY` link plus a PIN instead (no card: the secret, the PIN and the pinned key were the admission).
 
 What happens:
 
@@ -139,9 +141,9 @@ What happens:
   ```
 
   `--funnel` runs `tailscale funnel` with the same flags instead. The name comes from `tailscale status --json` (your node's MagicDNS name). `/sub-human unhost`, and the room closing, turn off that one path (`tailscale serve --https=443 --set-path=/sub-human/vole-8126 off`) and nothing else; it never runs `serve reset`. Tailscale's HTTPS certificates and Serve (and, for Funnel, the Funnel attribute) must be enabled for your tailnet. When they are not, `tailscale serve` prints an enable URL and waits; sub-human stops it at that URL (or after 10 s) and says: `Tailscale Serve isn't enabled on your tailnet yet. An admin turns it on once at <URL> (or Admin console → DNS → HTTPS Certificates and Serve), then run /sub-human host --tailscale again.` Tailscale not running, stopped or logged out is named as such. The first HTTPS connection to a new ts.net name waits ~20 s while Tailscale issues its certificate: the host fetches it right after `serve` (one background request), a joiner's WebSocket waits up to 45 s (`SUB_HUMAN_WS_CONNECT_MS`), and the link keeps trying after that.
-- **Funnel is public.** Its hostname is published in public certificate-transparency logs, so anyone can find your node's name. The room still needs the URL's secret and the PIN, and the host shows that warning each time.
-- The joiner's link connects with a WebSocket (through `HTTPS_PROXY` / `https_proxy` when set, honouring `NO_PROXY`: a corporate network that allows only `CONNECT` to port 443 works) and opens an end-to-end **Noise_NK** channel inside it, pinned to the listener's key from the URL. Tailscale, Funnel's relays or your front see TLS-decrypted WebSocket frames that hold only Noise ciphertext. The PIN, the secret, the link token and every post travel inside.
-- **No admit step.** Over SSH the host lets a key in; over the web the secret, the PIN (checked by the host, online, 5 tries, 15 minutes) and the pinned key are the admission, and the room line `a machine (…) linked to the room with an invite and its PIN (link …)` records it. `revoke` ends such a link as any other.
+- **Funnel is public.** Its hostname is published in public certificate-transparency logs, so anyone can find your node's name. Anyone who finds it can spend the code's tries (5, then the invite burns), never get in without the code and your card; the host shows that warning each time.
+- The joiner's link connects with a WebSocket (through `HTTPS_PROXY` / `https_proxy` when set, honouring `NO_PROXY`: a corporate network that allows only `CONNECT` to port 443 works). The first connection runs the code's PAKE in text frames: in it the host vouches for the listener's X25519 key and hands over a one-time secret, both readable only by the one who knows the code. From then on every connection is an end-to-end **Noise_NK** channel pinned to that key. Tailscale, Funnel's relays or your front see the PAKE's public values, then Noise ciphertext; the code itself never travels.
+- **The card is the admission.** The code proves only that the joiner has it; your Let in admits the machine, and the room line `carol's machine (…) linked to the room, let in by alice (link …)` records it. `revoke` ends such a link as any other.
 - The listener runs one `serve --stdio CODE` per connection through the stable shim, like an SSH forced command. It survives a sleep; after a reboot, the host's next `/sub-human NAME CODE` starts it again. `sub-human listen --status` shows its pid, port and the rooms it serves (also in `<home>/listen/state.json`); `--stop` stops it.
 - **Any HTTPS front.** `--url https://my.front/prefix` names a reverse proxy of yours (Caddy, nginx, a NetBird or ZeroTier address with a certificate) that forwards `/prefix/sub-human/CODE` WebSocket upgrades to `127.0.0.1:7420`. The joiner's machine must trust its certificate (a public CA, or `NODE_EXTRA_CA_CERTS`).
 
@@ -153,6 +155,7 @@ On the host, `/sub-human revoke carol` (in a session in the room) or `sub-human 
 
 ### SSH details
 
+- **The enrollment door (short codes).** While an ssh short invite is open, `authorized_keys` also holds `command="SUB_HUMAN_HOME=… …/.sub-human/bin/serve --enroll vole-8126 --kind ssh",restrict ssh-ed25519 AAAA… sub-human-enroll:vole-8126`. Its key is the room's public enrollment key (derived from the room code; see the threat model): it runs only the code's PAKE. The line goes once no ssh code of the room is live. The joiner's ssh to it uses that key, a fresh known_hosts with `StrictHostKeyChecking=accept-new` and Ed25519 host keys only, so it can compare what it was shown with the key the host vouches for.
 - **Forced command.** The line `admit` (or `authorize`) writes is `command="SUB_HUMAN_HOME=… …/.sub-human/bin/serve --stdio vole-8126 --link 1a2b3c4d5e6f",restrict ssh-ed25519 AAAA… sub-human:vole-8126:1a2b3c4d5e6f`. Whatever the other side asks to run, that key runs only this room's server, for that one link (`restrict`: no shell, pty or forwarding), and the server accepts only that link's token, or the invite reserved for it. `<home>/bin/serve` is a stable shim that finds the current plugin install and node when it runs, so the line keeps working after a plugin update or a node upgrade. Paths are absolute because sshd's `PATH` has no Homebrew. The file is `~/.ssh/authorized_keys`, or `SUB_HUMAN_AUTHORIZED_KEYS`, or `--file F`.
 - **The joiner's ssh.** The link runs `ssh -T -o BatchMode=yes … -i <link key> -o IdentitiesOnly=yes -o UserKnownHostsFile=<link known_hosts> -o StrictHostKeyChecking=yes -o HostKeyAlias=sub-human-CODE [-J JUMP] -- me@devbox.local`. A jump host is reached with your own `~/.ssh/config` and agent (a host alias works as `--via`). An invite names only a plain `user@host[:port]` and jump hosts: it can't carry an ssh option or a command. `SUB_HUMAN_SSH_OPTS` (space-separated, in the joiner's own environment) adds ssh options; it is meant for tests and unusual setups.
 - **MFA bastions.** `sub-human prime CODE [--persist 8h]`, on the joining machine, opens one shared connection interactively (answer the MFA prompt once), and the link rides it (`ControlPath <home>/ssh/cm-%C`). The link itself never prompts (BatchMode) and never opens a shared connection of its own; with none open it connects as usual.
@@ -309,11 +312,12 @@ The room has one shared task list: the native Claude Code task list of the room'
 | `who` | People, the room's Claude and their presence. |
 | `watch NAME` | NAME's thread: their own words, their Claude's posts (labelled), and their answers to proposals. |
 | `tasks [--json]` | The room's shared task list. |
-| `host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP]` | An sh2 invite and its PIN, as `/sub-human host` shows them. |
-| `host [--room CODE] --tailscale [--funnel] \| --url URL [--port P]` | The same over the web: the listener, Tailscale Serve (or Funnel) or your own front, and a join URL with its PIN. |
+| `host [--room CODE] [--ssh [USER@HOST[:PORT]]] [--via JUMP] [--long \| --short]` | A short invite (`/sub-human join NAME DEST CODE 482913`) as `/sub-human host` shows it; `--long` an sh2 invite and its PIN; no `--ssh`: an sh2 pipe invite (`--short` for the short form). |
+| `host [--room CODE] --tailscale [--funnel] \| --url URL [--port P] [--long]` | The same over the web: the listener, Tailscale Serve (or Funnel) or your own front, and a join URL with its code (`--long`: a URL#SECRET.KEY and a PIN). |
 | `unhost [--room CODE]` | Stop serving a room over the web (its own Tailscale path goes off). |
 | `listen [--port 7420] \| --start \| --stop \| --status` | The host's web listener (127.0.0.1 only); `/sub-human host --tailscale` starts it for you. |
-| `admit REQUEST [--file F] [--yes]` | Let in the SSH key a joiner's admit request (`shk1.…`) carries, for that invite's link only; asks y/N first. |
+| `admit [REF [--refuse] [--yes]]` | The short-code join requests waiting for you (no REF), or let one in (asks y/N) or refuse it: the card, for a host with no session open. |
+| `admit REQUEST [--file F] [--yes]` | Let in the SSH key an older join's admit request (`shk1.…`) carries, for that invite's link only; asks y/N first. |
 | `revoke LINK_ID\|NAME\|INVITE_REF\|INVITE [--room CODE] [--file F]` | End a link: token burnt, key line removed, its seats leave. Or burn one unused invite (a leaked one) by its ref or the invite itself. |
 | `prime CODE [--persist 8h]` | On a joining machine: one shared SSH connection, opened interactively, for an MFA bastion; the link rides it. |
 | `invite [--ssh USER@HOST[:PORT]] [--via JUMP]` | An older one-step `sh1` invite (no PIN) to a room hosted here. |
@@ -392,21 +396,27 @@ The security model is one machine, one OS user, per room: everyone on the host i
 Remote rooms add:
 
 - **An invite is shown once** and works for one machine; the host keeps only its hash. An invite is untrusted input: its locator is a home path (pipe) or a plain `user@host[:port]` with plain jump hosts (ssh), and the link always runs this plugin's own server, or `ssh` with fixed options, never a command or an ssh option the invite names.
-- **The PIN is a second factor checked online only.** It is never in the invite and never seals or derives anything: the host keeps `sha256(secret:PIN)`, checks it at the link's first connection, and burns the invite after 5 wrong tries, 15 minutes, or its one use. The join that carries it is hidden from your Claude (the prompt is blocked and suppressed), and the joining machine drops it with the invite once the host answered. A leaked invite alone gets nowhere; a leaked invite plus a key the host admitted gets 5 guesses.
-- **Over SSH, keys are made where they are used.** The joiner's link key is made on the joiner's machine; the host admits only its public key, by pasting the request, and the invite pins the host's SSH host key on the joiner's side.
+- **A short invite's 6-digit code is its whole secret, and it never travels.** Both machines run CPace (draft-irtf-cfrg-cpace-21, ristretto255 + SHA-512, initiator-responder, with the draft's key confirmation both ways) with the code as the password; the group code is the vendored, hash-pinned `@noble/curves` 2.4.0 (`lib/vendor/noble`, its MANIFEST and LICENSE; `test/vendor-noble.test.js` fails on any edit), checked against the draft's published vectors. What crosses the wire are random-looking group elements and MACs: watching them tells an eavesdropper nothing it can test guesses against, offline or later.
+- **Guessing is online only, and counted before the host answers.** The host charges one of the invite's 5 tries when it answers an attempt, so an attempt abandoned after that answer still costs its try; the fifth wrong code burns the invite, as do 15 minutes or its one use. Each wrong code is a room line. An attacker (a prober, or someone in the middle of a real join) gets one guess per attempt: 5 guesses in a million, then the invite is gone. With several short invites open (at most 4 per room), one attempt is tried against each and charged on each, so the odds are at most 20 in a million; a success gives the others their try back. The host keeps the code in its own store (CPace needs it in clear) and drops it once the invite is used, burnt or revoked.
+- **The code authenticates the host, then the host's key is pinned.** Inside the PAKE the host vouches for its key: sshd's Ed25519 host key over ssh, the listener's X25519 key over the web. Over ssh the joiner's ssh records the host key it was shown (a fresh known_hosts, Ed25519 only, `accept-new`) and the joiner stops, before its own confirmation goes out, unless it is the vouched one: someone between the joiner and the host (a spoofed name, a hostile network) learns at most whether its one guess was right. The joiner then pins that key, as an `sh2` invite pinned it. Over the web the joiner pins the vouched listener key and every later connection is Noise_NK to it.
+- **The code is not the admission; the host person is.** A code that holds gets the joiner a fresh 128-bit secret (sealed under a key derived from the PAKE's ISK, bound to that machine and, over ssh, to the link key the joiner made and sent inside the PAKE). It redeems nothing until a person on the host answers **Let in** on the card (`hooks/consent.js`: only the answer on the card as the hooks built it counts, never the model's; the answer is signed with that person's seat key) or runs `sub-human admit REF` in a shell. Unanswered requests lapse after 10 minutes.
+- **The ssh enrollment door.** A joiner with no admitted key still has to get through sshd. While an ssh short invite is open, `authorized_keys` holds one more line: `command="… serve --enroll CODE --kind ssh",restrict <the room's enrollment key> sub-human-enroll:CODE`. That key's private half is **public by design**: anyone who knows the room code derives it (sha256 of a label and the code). It is never derived from the 6-digit code, so trying keys at sshd tests no guess. What the door lets anyone who reaches sshd and knows the room code do: run the PAKE (a guess, charged), spend the invite's tries until it burns (a denial of service on that one invite), and see that a room by that code is hosted there. What it does not: run a shell, a pty, forwarding or any other command (`restrict`, a forced command that ignores what was asked), read the room, post, or learn anything about the code beyond one guess per try. The line goes when no ssh short invite is live (used, burnt, revoked or expired; the host's tail sweeps every 30 s, and each attempt and revoke sweeps), and `serve --enroll` refuses a room with no open code whatever the file says. Limits: sshd itself must accept public keys for that account (an `AuthenticationMethods` that also demands a password or MFA defeats the door; use `--long` then), the host's sshd must have a readable Ed25519 host key, and during those 15 minutes an attacker on the network can burn the invite.
+- **The code is treated like the PIN everywhere.** `host` shows it to the person only (a hidden block, never a systemMessage); in Claude Code's `!` shell `sub-human host` masks it; the join that carries it is blocked and suppressed, so the model never sees it; the link file holds it (0600) only until the host answers; it is in no log or room line, and `doctor --bundle` cuts any 6-digit number. **History caveat:** what you type at Claude Code's prompt stays in its prompt history (the up arrow, and its history file under `~/.claude`), as a PIN did; after a burn or a use the code is worthless.
+- **An sh2 invite's PIN is a second factor checked online only.** It is never in the invite and never seals or derives anything: the host keeps `sha256(secret:PIN)`, checks it at the link's first connection, and burns the invite after 5 wrong tries, 15 minutes, or its one use. The join that carries it is hidden from your Claude (the prompt is blocked and suppressed), and the joining machine drops it with the invite once the host answered. A leaked invite alone gets nowhere; a leaked invite plus a key the host admitted gets 5 guesses.
+- **Over SSH, keys are made where they are used.** The joiner's link key is made on the joiner's machine; the host admits only its public key (the card, or a pasted `shk1` request), and the joiner pins the host's SSH host key (vouched for inside the PAKE, or carried in an `sh2` invite).
 - **Over SSH, the host's `authorized_keys` decides what runs**: `admit` (or `sub-human authorize`) writes a `command="… serve --stdio CODE --link ID",restrict` line, so the key reaches that room's server for that link and nothing else, and the server refuses another link's token there.
 - **An ssh login to the host's account is trusted as that account.** `/sub-human join NAME USER@HOST CODE` runs `serve --login` over the joiner's own login, and the server then makes a link with no invite, because that login could make one anyway. A restricted key can't get there: its line fixes `serve`'s arguments without `--login`, and `serve --login` refuses to run under a forced command (`SSH_ORIGINAL_COMMAND` is set). Give someone a login to your account only if you would give them the account.
 - **A link token is a seat-level credential.** The invite turns into a token at the link's first connection. It is stored in clear in `<home>/links/<CODE>.json` (0600, the same trust as the seat key) and hashed on the host. Whoever holds it can post as the seats joined over that link, never as anyone else: the host checks every entry's `from` against them and its signature against the key pinned in the log.
 - **Keys are pinned strictly.** A name is its key for the room's life, on every machine. A lost key, or the same name from a new machine, means a new name.
 - **Addressed posts are not private.** A post to one person (`to`) has its own rate limit, but the whole room reads the log, on every machine.
-- **The guard denies `sub-human host`, `unhost`, `admit`, `revoke`, `prime`, `listen`, `invite`, `authorize`, `link`, `serve`, `handoff`, `promote` and `demote` to a model**, and `/sub-human host` shows the invite and PIN to you, not to your Claude.
+- **The guard denies `sub-human host`, `unhost`, `admit`, `revoke`, `prime`, `listen`, `invite`, `authorize`, `link`, `serve`, `handoff`, `promote` and `demote` to a model**, and `/sub-human host` shows the invite and its code (or PIN) to you, not to your Claude.
 - **Moving the host needs the new host's person.** Only their own answer on the handoff card moves the room, signed with their seat key. The `host_changed` entry carries that signature and the old host's signed ask. A handoff's invites travel only over each machine's existing authenticated link. Each one works for one machine and is bound to that machine's seats. The old host keeps them for a day so a member that reconnects late still gets one, then they lapse. A `promote` is a person's own command in their own shell, recorded in the log with their name.
 
 Over the web (Tailscale Serve, Funnel or your own front), who sees what:
 
 - **The listener binds `127.0.0.1` only.** Nothing on your LAN can reach it; Serve, Funnel or your front is the only way in. Before a Noise handshake completes it holds at most 16 connections in handshake (64 in all), gives each 10 seconds, and takes frames of at most 64 kB.
-- **Tailscale (or your front) ends TLS, not the room's encryption.** It sees which IPs connect, when, and how many bytes; Funnel's relays see the same. Inside the WebSocket every byte is Noise_NK ciphertext (X25519, ChaCha20-Poly1305, SHA-256, from `node:crypto` only; checked against the published cacophony and snow test vectors), keyed to the listener's own X25519 key (`<home>/listen/host-x25519.json`, 0600, random, one per home, used for nothing else). The joiner pins that key from the URL: a front that answers with another key gets a `could not link … the host did not prove the key the invite pinned` and the link stops. The path names the room code; the URL's `#` part (secret and key) is never sent to any server.
-- **Funnel's name is public** (certificate-transparency logs), so expect probes: each costs nothing without the secret, a guessed PIN costs one of 5 tries, and every wrong PIN is a line in the room.
+- **Tailscale (or your front) ends TLS, not the room's encryption.** It sees which IPs connect, when, and how many bytes; Funnel's relays see the same. Inside the WebSocket every byte is Noise_NK ciphertext (X25519, ChaCha20-Poly1305, SHA-256, from `node:crypto` only; checked against the published cacophony and snow test vectors), keyed to the listener's own X25519 key (`<home>/listen/host-x25519.json`, 0600, random, one per home, used for nothing else). The joiner pins that key from inside the short code's PAKE (or from an `sh2` URL's `#` part): a front that answers with another key gets a `could not link … the host did not prove the key the invite pinned` and the link stops. The path names the room code. A short code's PAKE runs in WebSocket text frames before any Noise: the front sees its public values and the sealed secret, never the code.
+- **Funnel's name is public** (certificate-transparency logs), so expect probes: a guessed code (or PIN) costs one of 5 tries, every wrong one is a line in the room, and even the right code gets only as far as your card.
 - **The host is still trusted**: the listener hands decrypted bytes to `serve --stdio CODE`, which checks the hello exactly as over SSH.
 
 The plugin doesn't stop a hostile local user, who can read the keys and write the files directly. The hash chain makes such edits visible. It doesn't prevent them.
@@ -431,6 +441,10 @@ Start with `sub-human doctor` (see **Doctor**): it names most of these and the f
 | SSH join: `room … is offline` and the link log says `Permission denied (publickey)` | The key ssh used is not the one the host authorized, or the host's `authorized_keys` line is missing. The link uses `BatchMode=yes`, so it never asks for a password or a passphrase: load the key into your agent, or name it in `~/.ssh/config` (or `SUB_HUMAN_SSH_OPTS="-i KEY"`). |
 | SSH join: `Host key verification failed` in the link log | ssh has not seen the host yet and BatchMode can't ask. Run `ssh me@host true` once in your shell to accept its key. |
 | SSH join: `no room` or `AUTH: this token is not link …'s` in the link log | The forced command names another room, home or link than your invite. Ask the host to run `sub-human authorize` again with your invite and key. |
+| `could not link …: wrong code (N tries left)` | Type the join again with the code the host gave you. After 5 the invite is burnt: ask for a new one. |
+| `the host's machine checked your code. A card there now asks them…` and nothing more | The host person has not answered their card yet (their Claude opens it; or `sub-human admit` in their shell). After 10 minutes it lapses: ask for a new code. |
+| SSH join: `the ssh server that answered is not the one that holds your code` | The host key ssh was shown is not the one the host vouched for inside the code's handshake: a wrong address, a reinstalled host, or someone in between. Check with the host; nothing more was sent. |
+| SSH short code: `Permission denied (publickey)` before any code check | The host's sshd refused the room's enrollment key: no door line (the code expired or was used), or sshd demands more than a key. Ask for a new code, or for `/sub-human host --ssh --long`. |
 | Web join: `could not link … the host did not prove the key the invite pinned` | Whoever answered at that URL is not the listener the invite was made for (a changed host key, the wrong front, or someone in between). Ask the host for a new invite. |
 | Web join: `still connecting (Tailscale may be issuing a certificate …)` | A new ts.net name's first TLS handshake waits on its certificate (~20 s). The link keeps trying; type `/sub-human NAME CODE` in a moment. |
 | Web join: `still connecting` and the link log says `answered 502` / `404` | The front reaches no listener: on the host, `sub-human listen --status`; with Tailscale, `tailscale serve status` should list `/sub-human/CODE`. Run `/sub-human host --tailscale` again. |

@@ -10,7 +10,7 @@
  *                       and known_hosts wiped, toxiproxy reset, iptables flushed
  *     down()            compose down -v --remove-orphans
  *     exec(svc, argv, {user, env, input, allowFail, timeout}) -> spawnSync result
- *     seat(svc, {home?}) -> Machine-side driver: host/join/rejoin/say/expand/leave/events/dump/link (lab/seat-cli.js)
+ *     seat(svc, {home?}) -> Machine-side driver: host/join/login/short/admitcard/rejoin/say/expand/leave/events/dump/link (lab/seat-cli.js)
  *     toxi(method, path, body)   the toxiproxy API
  *     keypair(svc, name) -> pubkey      ~/.ssh/NAME (ed25519) for the joiner user
  *     sshConfig(svc, name, hosts)       ~/.ssh/NAME.conf: one Host block per entry, then the shared defaults
@@ -22,7 +22,7 @@
  *                       online (the PIN checked at its first hello), then the seat `/sub-human NAME CODE`. sh1 (an
  *                       0.2.0 end): joinOver, `sub-human invite` + `authorize` + `/sub-human join NAME INVITE`
  *     features             {sh2Pin, hostSsh, revoke, heartbeat, outbox, autoRejoin, handoff, doctor, ws, urlPin,
- *                          versionRange, loginJoin}: what the plugin in /plugin can do (seat-cli.js probe), overridable with
+ *                          versionRange, loginJoin, shortCode}: what the plugin in /plugin can do (seat-cli.js probe), overridable with
  *                          LAB_FEATURES=outbox=1,ws=0
  *   runScenarios({out, only, log}) -> {ok, results}   each scenarios/*.js in order; evidence under out/<id>/
  * Scenario module: {id, title, persona, requires?: [feature], budgetMs?, linkEnv?: {SUB_HUMAN_LINK_*_MS}, run(t)}.
@@ -110,6 +110,8 @@ class Lab {
       expand: (name, args) => run('expand', name, ...args.split(' ')),
       leave: name => run('leave', name),
       card: (name, label) => run('card', name, label),
+      short: (name, dest, code, pin, ...opts) => run('short', name, dest, code, pin, ...opts),
+      admitcard: (name, label) => run('admitcard', name, label),
       events: name => run('events', name),
       dump: code => run('dump', code),
       link: code => run('link', code),
@@ -251,7 +253,7 @@ class Lab {
 
   /** `/sub-human host --ssh DEST [--via JUMP]` in NAME's session on hostSeat: the sh2 invite and its PIN, as shown. */
   hostInvite(hostSeat, name, { dest = 'host@devbox', via } = {}) {
-    const r = hostSeat.expand(name, `host --ssh ${dest}${via ? ` --via ${via}` : ''}`);
+    const r = hostSeat.expand(name, `host --ssh ${dest}${via ? ` --via ${via}` : ''}${this.features.shortCode ? ' --long' : ''}`);
     const text = r.out || '';
     const invite = (/\/sub-human join NAME (sh2\.\S+) PIN/.exec(text) || [])[1];
     const pin = (/\bPIN (\d{6})\b/.exec(text) || [])[1];
@@ -299,6 +301,7 @@ const FEATURES = {
   ws: p => p.kinds.some(k => /^wss?$/.test(k)) || p.files.some(f => /ws\.js$|listener\.js$/.test(f)),
   urlPin: p => p.src.join.urlPin,
   loginJoin: p => p.src.join.login,
+  shortCode: p => p.files.includes('lib/remote/enroll.js'),
   versionRange: p => p.src.hello.range,
 };
 
@@ -332,6 +335,8 @@ class Evidence {
     let t = String(text);
     for (const s of this.secrets) t = t.split(s).join('<redacted>');
     for (const p of this.pins || []) t = t.replace(new RegExp(`(PIN\\D{0,3}|sh2\\.\\S+\\s+)${p}\\b`, 'g'), '$1<pin>');
+    // a short invite's line: /sub-human join NAME DEST [CODE] 482913 (the code is its whole secret)
+    for (const p of this.pins || []) t = t.replace(new RegExp(`(join\\s+\\S+\\s+\\S+(?:\\s+[a-z]+-\\d{4})?\\s+)${p}\\b`, 'g'), '$1<code>');
     return t.replace(/\b(sh[12])\.([a-z]+-\d{4}|[A-Z0-9]{4,8})\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]{16,}/g, '$1.$2.$3.<redacted>');
   }
   log(msg) {

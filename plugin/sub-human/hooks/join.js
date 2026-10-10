@@ -41,6 +41,12 @@
 // linked, the seat is taken in the same step (nothing secret is in this prompt, and no host step waits), else the
 // block says why (an unknown host key: the exact `ssh USER@HOST` to run once; no shim on the host: what to run there).
 // A host joining its own room refreshes the stable serve shim passively (lib/remote/shim.js), so a login link finds it.
+// Short invites (lib/remote/enroll.js): `/sub-human host --ssh|--tailscale|--url` shows `/sub-human join NAME DEST CODE
+// 482913` (DEST user@host[:port] [--via J], or a URL whose last segment is CODE with no CODE word after it, or pipe:HOME
+// with --short); `--long` keeps the sh2 form. `/sub-human join NAME DEST CODE 482913` (a 6-digit code last, so not the
+// login join) writes the link file with the code (hosting.joinShort) and starts the daemon, which runs the PAKE; always a
+// hidden block. `/sub-human admit [REF]` (host): the waiting join requests, or let one in (lib/remote/admission.js), as
+// the card does.
 // `/sub-human handoff NAME [USER@HOST[:PORT] [--via JUMP] | https://FRONT]`: the host asks NAME (a member on another machine) to host the room
 // (lib/handoff.js ask, signed with this seat's key); NAME's Claude shows them a card, and only their answer there
 // moves the room. The reply is a block reason, to the person only.

@@ -239,6 +239,13 @@ test('enroll: the door line is in authorized_keys while an ssh code is live, and
   assert.equal(enroll.sweepDoors(code), 1, 'none live: gone');
 });
 
+test('doctor --bundle redacts a short invite\'s code wherever it shows', () => {
+  const doctor = require(path.join(h.LIB, 'cli', 'doctor.js'));
+  const red = doctor.redactor({ salt: 'x' });
+  const out = red('could not link: /sub-human join NAME me@box vole-8126 482913 (wrong code); the URL https://box/sub-human/vole-8126 004211');
+  assert.ok(!out.includes('482913') && !out.includes('004211'), out);
+});
+
 test('enrollment key: derived from the room code only, an openssh file ssh-keygen reads, never from the 6-digit code', t => {
   const a = sshkeys.enrollKey('vole-8126'), b = sshkeys.enrollKey('vole-8126'), c = sshkeys.enrollKey('vole-8127');
   assert.equal(a.raw, b.raw);

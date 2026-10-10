@@ -1,7 +1,7 @@
 ---
 name: sub-human
 description: "Join or open a shared room with people in other Claude Code sessions: /sub-human NAME [CODE] (CODE only when more than one room is open). Another machine: /sub-human join NAME USER@HOST CODE over your ssh login, or an invite from /sub-human host."
-argument-hint: "[NAME [CODE] | host [--ssh [USER@HOST]] | join NAME USER@HOST CODE | join NAME INVITE PIN | admit REQUEST | revoke NAME|INVITE_REF]"
+argument-hint: "[NAME [CODE] | host [--ssh [USER@HOST]] | join NAME USER@HOST CODE | join NAME DEST CODE 482913 | join NAME INVITE PIN | admit [REF] | revoke NAME|INVITE_REF]"
 arguments: [name, code]
 disable-model-invocation: true
 allowed-tools:

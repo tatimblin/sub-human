@@ -19,7 +19,7 @@ function mint(t, host, code) {
   const url = 'https://tls-front';
   const out = process.env.LAB_WS_INVITE === 'cli'
     ? (r => r.stdout + r.stderr)(host.cli(['invite', '--room', code, '--url', url, '--pin']))
-    : (j => (j && j.reason) || JSON.stringify(j || {}))(host.expand('alice', `host --url ${url}`).json); // the block reason: the person's text
+    : (j => (j && j.reason) || JSON.stringify(j || {}))(host.expand('alice', `host --url ${url}${t.lab.features.shortCode ? ' --long' : ''}`).json); // the block reason: the person's text
   const u = (URL_RE.exec(out) || [])[0], pin = ((PIN_RE.exec(out) || [])[1] || '').replace(/\D/g, '');
   t.ev.secret(pin);
   if (u) t.ev.secret(u.split('#')[1].split('.')[0]); // the invite secret

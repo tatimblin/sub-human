@@ -350,7 +350,7 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
   if (st.pid) daemon = { running: lib('io.js').isAlive(st.pid), pid: st.pid }; // the state record's own pid wins
   const recent = lastLogError(code);
   const out = { code, transport: { kind: spec.kind, describe, user: spec.user, host: spec.host, port: spec.port, home: spec.home, ...(spec.login === true ? { login: true } : {}) },
-    credential: l.token ? 'token' : l.invite ? 'invite (not redeemed yet)' : spec.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent,
+    credential: l.token ? 'token' : l.enroll ? 'short code (not checked by the host yet)' : l.awaiting ? 'waiting for the host person to let it in' : l.invite ? 'invite (not redeemed yet)' : spec.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent,
     // an ssh link not admitted yet: the line its host pastes (/sub-human admit shk1…; no secret in it)
     ...(!l.token && typeof l.request === 'string' ? { request: l.request } : {}),
     // the room's host moved (lib/handoff.js): the link file was re-pointed at the new host; reached once a token came
@@ -578,6 +578,8 @@ function redactor({ home = os.homedir(), shHome = lib('home.js').home(), hosts =
     let s = String(text == null ? '' : text).replace(/\x1b\[[0-9;]*m/g, '');
     s = s.replace(KEY_RE, (_, type, b64) => `${type} ${fingerprint(b64)}`);
     s = s.replace(/\bsh\d\.[A-Za-z0-9._~:-]+/g, 'sh1.<invite>');
+    // a short invite's 6-digit code is its whole secret (join NAME DEST CODE 482913): any lone 6-digit number goes
+    s = s.replace(/(?<![\w.:/-])\d{6}(?![\w.:/-])/g, '<code>');
     for (const h of shHomes) s = s.replace(new RegExp(`${esc(h)}(?![^/\\s"':,)])`, 'g'), '<sub-human-home>');
     for (const h of homes) s = s.replace(new RegExp(`${esc(h)}(?![^/\\s"':,)])`, 'g'), '~');
     // a pipe link names another home on this machine: never its path

@@ -338,7 +338,17 @@ async function enrollLink(code) {
   };
   let r;
   try {
-    r = await joinEnroll({ code, kind, pin: l.enroll.pin, joiner, transport, checkKey });
+    r = await joinEnroll({ code, kind, pin: l.enroll.pin, joiner, transport, checkKey }).catch(async e => {
+      // sshd refused the room's enrollment key: no door (the code was used, burnt, revoked or expired), so retrying
+      // cannot help. Anything else before the host answered stays OFFLINE (the link retries)
+      if (e && e.code === 'OFFLINE' && !e.spent && spec.kind === 'ssh' && typeof transport.stderr === 'function') {
+        await new Promise(res => setTimeout(res, 100)); // ssh's last words may come just after its exit
+        if (/Permission denied \(publickey/.test(transport.stderr())) {
+          throw new RoomError('AUTH', `the host's door for codes to room ${code} is shut (its code was used, burnt, revoked or expired, or this is not the host that minted it); ask the host for a new code`);
+        }
+      }
+      throw e;
+    });
   } catch (e) {
     const cur = links.get(code) || l;
     if (e && (e.code === 'AUTH' || e.code === 'PROTOCOL')) {
