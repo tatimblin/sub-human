@@ -377,7 +377,7 @@ function main([cmd, ...args]: string[] = process.argv.slice(2)) {
   // Keep the SSH serve shim's pointer on this install and node (lib/remote/shim.ts); not on the status line's hot
   // path, and never creating a home. Passive: a dev checkout's run never takes the pointer from another live install.
   if (cmd !== 'agent-statusline' && cmd !== 'doctor') { // doctor reports the shim as it is (--fix refreshes it)
-    try { if (fs.existsSync(identity.home())) require('../remote/shim.ts').refresh(); } catch { /* best effort */ }
+    try { if (fs.existsSync(identity.home())) (require('../remote/shim.ts') as typeof import('../remote/shim.ts')).refresh(); } catch { /* best effort */ }
   }
   try {
     (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID [--login]] | link CODE [--reset] | invite [--ssh [USER@HOST]] [--via JUMP] | invite --web|--public|--url URL | invite --stop | invite --cancel [REF] | admit [REF] | kick NAME | prime ROOM | listen [--port P] [--start|--stop|--status] | handoff NAME | promote CODE | demote CODE INVITE PIN | doctor [--bundle [FILE]] | agent-statusline')))(args);

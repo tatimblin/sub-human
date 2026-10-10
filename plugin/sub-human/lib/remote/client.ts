@@ -44,7 +44,8 @@
 import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
 import { LINK_CALL_MS } from '../config.ts';
-import type { CodedError, DecodedFrame, HelloResult, ProtoRange, StreamEvent } from './types-core.ts';
+import type { CodedError, DecodedFrame, HelloResult, Op, OpResults, ProtoRange, StreamEvent } from './types-core.ts';
+import type { Entry } from '../room/types.ts';
 import type { Transport } from './types-rest.ts';
 
 /** The server's caps, from its hello. */
@@ -53,7 +54,7 @@ interface ServerCaps {
 }
 
 interface Pending {
-  resolve(result: any): void; // any: each op's result is its caller's to read
+  resolve(result: unknown): void;
   reject(e: Error): void;
   timer: NodeJS.Timeout;
 }
@@ -134,7 +135,10 @@ class Client {
     for (const fn of fns) fn({ ev: 'end', data: { reason: 'OFFLINE' } });
   }
 
-  _request(op: string, params: object, id: number = ++this.seq, ms: number = this.deadlineMs): Promise<any> { // any: the op's result
+  /** An op's result as the host sent it (types-core OpResults: what a conforming host answers). */
+  _request<O extends Op>(op: O, params: object, id?: number, ms?: number): Promise<OpResults[O]>;
+  _request(op: string, params: object, id?: number, ms?: number): Promise<unknown>;
+  _request(op: string, params: object, id: number = ++this.seq, ms: number = this.deadlineMs): Promise<unknown> {
     if (this.closed) return Promise.reject(offline('the link is closed'));
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(offline(`${op}: no answer within ${ms} ms; ${protocol.UNKNOWN_OUTCOME}`)); }, ms);
@@ -143,12 +147,12 @@ class Client {
     });
   }
 
-  request(op: string, params: object, { ms }: { ms?: number } = {}): Promise<any> { return this._request(op, params, undefined, ms); }
+  request(op: string, params: object, { ms }: { ms?: number } = {}): Promise<unknown> { return this._request(op, params, undefined, ms); }
   join({ name, role = 'member', pubkey, proof }: { name: string; role?: string; pubkey: string; proof: object }): Promise<{ ok: boolean; rejoin?: boolean }> { return this._request('join', { name, role, pubkey, proof }); }
   leave(name: string, reason?: string): Promise<{ ok: boolean }> { return this._request('leave', { name, reason }); }
   beat(name: string, { presence }: { presence?: unknown } = {}): Promise<{ ok: boolean }> { return this._request('beat', { name, presence }); }
   /** The entry as the server stored it. */
-  async append(payload: object): Promise<any> { return (await this._request('append', { payload })).entry; }
+  async append(payload: object): Promise<Entry> { return (await this._request('append', { payload })).entry; }
 
   subscribe(after: number, hash: string | null, onEvent: (e: StreamEvent) => void): { ready: Promise<unknown>; stop(): void } {
     const id = ++this.seq;

@@ -80,7 +80,7 @@ const HOME_CHECK_MS = 2000;
 const CLOSED_CHECK_MS = 30_000;
 const BIN = path.join(import.meta.dirname, '..', '..', 'scripts', 'sub-human');
 
-const home = (): string => path.resolve((require('../home.ts') as { home(): string }).home());
+const home = (): string => path.resolve((require('../home.ts') as typeof import('../home.ts')).home());
 const dir = (): string => path.join(home(), 'listen');
 const stateFile = (): string => path.join(dir(), 'state.json');
 const logFile = (): string => path.join(dir(), 'listen.log');
@@ -159,10 +159,7 @@ function stop(): boolean {
 
 /** Is room CODE still open on this host (not stopped, closing or gone)? */
 function roomLive(code: string): boolean {
-  const identity: {
-    roomExists(code: string): boolean; isHost(code: string): boolean;
-    readMembers(code: string): Record<string, { stopped_at?: string; closing?: unknown } | undefined>;
-  } = require('../identity.ts');
+  const identity: typeof import('../identity.ts') = require('../identity.ts');
   try {
     if (!identity.roomExists(code) || !identity.isHost(code)) return false;
     const roomClaude = identity.readMembers(code).claude;
@@ -307,7 +304,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
   const srv = await ws.createServer({
     host: '127.0.0.1',
     port,
-    maxPayload: require('./noise.ts').MAX_MESSAGE + 64,
+    maxPayload: (require('./noise.ts') as typeof import('./noise.ts')).MAX_MESSAGE + 64,
     pingMs: WS_PING_MS,
     accept: () => (preauth >= PREAUTH_MAX || conns >= LISTEN_MAX ? 503 : true),
     onConnection: (conn, req) => { onConnection(conn, req).catch((e: Error) => log(`connection: ${e.stack || e}`)); },

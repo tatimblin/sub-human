@@ -1028,7 +1028,7 @@ class FsRoomStore implements RoomStore {
 let backend: ((code: string) => RoomStore) | null = null; // tests: code -> RoomStore
 const stores = new Map<string, FsRoomStore>(); // home \0 code -> FsRoomStore | MirrorRoomStore
 /** A room hosted elsewhere: the link registry knows it (required here, not at load: store-mirror.ts extends this file). */
-const linked = (c: string): boolean => require('./links.ts').has(c);
+const linked = (c: string): boolean => (require('./links.ts') as typeof import('./links.ts')).has(c);
 /**
  * The store of room `code`: a MirrorRoomStore when this machine links to the room (lib/room/links.ts), else an
  * FsRoomStore; decided once per home and code. {dir} (and only then) gives an uncached FsRoomStore over that directory.

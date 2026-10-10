@@ -59,7 +59,7 @@ export interface HostFields {
  * task only; it becomes task_id), by only a task_req's own author. Callers pass what the model sent, so validate()
  * checks every field's type itself.
  */
-export interface EntryInput {
+export type EntryInput = {
   kind: string;
   text?: string;
   to?: string;
@@ -92,7 +92,7 @@ export interface EntryInput {
   status?: string;
   req?: number;
   blockedBy?: (string | number)[];
-}
+};
 
 /** validate()'s opts: from is the resolved seat name (never the model's); system: a trusted hook writes via=system. */
 export interface ValidateOpts {

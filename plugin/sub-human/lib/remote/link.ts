@@ -172,7 +172,7 @@ const handoff = (): typeof import('../handoff.ts') => require('../handoff.ts');
 const outboxMod = (): typeof import('./outbox.ts') => require('./outbox.ts');
 /** lib/remote/client.ts and lib/remote/enroll.ts, loaded when used: what this file calls on them. */
 const clientMod = (): typeof import('./client.ts') => require('./client.ts');
-const enrollMod = (): { enrollLink(code: string): Promise<unknown> } => require('./enroll.ts');
+const enrollMod = (): typeof import('./enroll.ts') => require('./enroll.ts');
 const STOPPED: Set<unknown> = new Set(['fork', 'stopped']);
 const hash12 = (data: string): string => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12); // lib/room/store.ts's, without loading a store
 

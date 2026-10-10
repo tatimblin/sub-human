@@ -57,7 +57,7 @@ function bad(msg: string): never { throw new RoomError('INVALID', msg); }
 
 function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   if (!entry || typeof entry !== 'object') bad('entry must be an object');
-  const fields = entry as unknown as Record<string, unknown>; // every key is checked below
+  const fields: Record<string, unknown> = entry; // every key is checked below
   for (const k of Object.keys(entry)) {
     if (!ENTRY_FIELDS.has(k)) bad(`field "${k}" is not settable by callers`);
   }
@@ -125,7 +125,7 @@ const PROOF_MAX = 4096; // a signed acceptance or request, as JSON
 /** The host_changed fields, checked (null for another kind, which may carry none of them). */
 function hostFields(kind: string, entry: EntryInput): HostFields | null {
   if (kind !== 'host_changed') {
-    for (const k of HOST_FIELDS) if ((entry as unknown as Record<string, unknown>)[k] !== undefined) bad(`field "${k}" is only for host_changed`);
+    for (const k of HOST_FIELDS) if ((entry as Record<string, unknown>)[k] !== undefined) bad(`field "${k}" is only for host_changed`);
     return null;
   }
   const { epoch, host, machine, locator, accept, ask, promoted } = entry;
@@ -151,7 +151,7 @@ const optStr = (k: string, v: unknown, max: number): void => { if (v !== undefin
 /** The task fields of a task_req / task entry, checked; the caller's `id` (the task id) becomes task_id. */
 function taskFields(kind: string, entry: EntryInput): TaskFields {
   const t: TaskFields = {};
-  const fields = entry as unknown as Record<string, unknown>;
+  const fields: Record<string, unknown> = entry;
   const tid = entry.task_id !== undefined ? entry.task_id : entry.id;
   if (tid !== undefined) { if (!taskIdOk(tid)) bad('the task id must be a positive integer or a short id string'); t.task_id = String(tid); }
   if (entry.op !== undefined) t.op = entry.op;
