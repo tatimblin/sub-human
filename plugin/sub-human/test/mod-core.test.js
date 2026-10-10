@@ -1,5 +1,5 @@
 'use strict';
-// The hooks module's pure core (mod/core/*.mjs) in node, and hooks/mod-hello.ts. The module's wiring is tested by
+// The hooks module's pure core (mod/core/*.ts) in node, and hooks/mod-hello.ts. The module's wiring is tested by
 // `npm run test:mods` (mod/test/*.test.ts under `claude plugin test`); this file needs no Claude Code binary,
 // except the last test, which compares mod/register.ts HOOKS with what `claude plugin validate` reads.
 const test = require('node:test');
@@ -44,7 +44,7 @@ test('mod/ is pure: no node: or CommonJS imports, no dynamic import(), no seat k
 test('state: every $.state reference in mod/ names a key in KEYS, and KEYS is what types/index.d.ts declares', async () => {
   const { KEYS } = await load('mod/core/state.ts');
   const used = new Set();
-  for (const f of fs.readdirSync(path.join(PLUGIN, 'mod')).filter(x => x.endsWith('.mjs'))) {
+  for (const f of fs.readdirSync(path.join(PLUGIN, 'mod')).filter(x => x.endsWith('.ts'))) {
     const src = fs.readFileSync(path.join(PLUGIN, 'mod', f), 'utf8');
     for (const m of src.matchAll(/\{ plugin: '([^']+)', key: '([^']+)' \}/g)) {
       assert.equal(m[1], 'sub-human', f);
@@ -142,7 +142,7 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
   for (const [what, event, run, want] of T) assert.deepEqual(toClassic(event, run), want, what);
   assert.deepEqual(shimEnv({ session_id: 's1' }, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: 's1' });
   assert.deepEqual(shimEnv({}, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '' });
-  assert.deepEqual(shimArgv('/p', 'prompt.ts'), ['node', '/p/hooks/prompt.ts']);
+  assert.deepEqual(shimArgv('/p', 'prompt.ts'), ['node', '--import', '/p/hooks/compile-cache.js', '/p/hooks/prompt.ts']);
 });
 
 test('shim: a real hook\'s output translates (at-room posting through prompt.ts)', async t => {
@@ -391,6 +391,8 @@ test('guard: write targets, ancestors and the verdict before and after mod-hello
 test('guard: the plugin-code rule reads the cwd only when the command does not name the plugin', async () => {
   const g = await load('mod/core/guard.ts');
   assert.equal(g.needsCwd('node hooks/consent.ts'), true);
+  assert.equal(g.needsCwd('node hooks/consent.js'), true); // the name before the TypeScript migration
+  assert.equal(g.needsCwd('node mcp/room-server.js'), true);
   assert.equal(g.needsCwd('node /x/sub-human/hooks/consent.ts'), false);
   assert.equal(g.needsCwd('npm test'), false);
   const inPlugin = { pluginRoot: '/repo/plugin/sub-human', cwd: '/repo/plugin/sub-human/hooks' };

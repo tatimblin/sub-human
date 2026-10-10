@@ -18,7 +18,7 @@ claude plugin marketplace add /path/to/sub-human
 claude plugin install sub-human@sub-human
 ```
 
-**Requirements.** Claude Code 2.1.292 or newer with function hooks on (not `--bare`, not safe mode, and no policy that turns hooks off): the plugin's hooks module guards the store, checks who typed an `@room` and delivers the room, so `/sub-human` refuses to join without it. Node 24 or newer on `PATH`: every hook, the room MCP server, the room tail and the row status line run `node`. macOS or Linux only (the row launcher is a POSIX shell script and the store relies on POSIX rename and file modes); Windows is not supported. `claude plugin validate plugin/sub-human` checks the plugin. Accept workspace trust for your folder: the room's Claude starts in your working directory, and Claude Code refuses to start a background session in an untrusted folder.
+**Requirements.** Claude Code 2.1.292 or newer with function hooks on (not `--bare`, not safe mode, and no policy that turns hooks off): the plugin's hooks module guards the store, checks who typed an `@room` and delivers the room, so `/sub-human` refuses to join without it. Node 24.3 or newer on `PATH`: every hook, the room MCP server, the room tail and the row status line run `node`. macOS or Linux only (the row launcher is a POSIX shell script and the store relies on POSIX rename and file modes); Windows is not supported. `claude plugin validate plugin/sub-human` checks the plugin. Accept workspace trust for your folder: the room's Claude starts in your working directory, and Claude Code refuses to start a background session in an untrusted folder.
 
 **Updates.** Marketplace plugins don't update by themselves by default: enable auto-update for the sub-human marketplace in `/plugin` (Marketplaces), or run `/plugin update sub-human` now and then. Everyone in a room should run the same version; `/sub-human doctor` shows yours and, for a room hosted elsewhere, the host's protocol version.
 
@@ -351,7 +351,7 @@ A fix that only a shell can make prints the CLI by its full path (`node <plugin 
 
 It checks:
 
-- the plugin's version, and Node 24 or newer;
+- the plugin's version, and Node 24.3 or newer;
 - that the home and its directories are private (0700);
 - that the SSH serve shim (`<home>/bin/serve`) and its pointer name a plugin install and a node that still exist;
 - `authorized_keys` lines from sub-human 0.2 that bypass the shim (they break on the next plugin or node update); `--fix` rewrites them;
@@ -392,7 +392,7 @@ The security model is one machine, one OS user, per room: everyone on the host i
 - **Bash guard.** The same module checks every `Bash` command and denies one that:
   - names the store (its path, `~/.sub-human`, `$HOME/.sub-human`, the keys under it);
   - names or sets `SUB_HUMAN_HOME`;
-  - runs the plugin's own modules or hooks with `node`, `bun`, `deno` or `npx` (`lib/room*`, `lib/identity`, `lib/proposal`, `hooks/*.js`, `mcp/*.js`).
+  - runs the plugin's own modules or hooks with `node`, `bun`, `deno` or `npx` (`lib/room*`, `lib/identity`, `lib/proposal`, `hooks/*.ts`, `mcp/*.ts`, and their `.js` names of earlier versions).
 
   The read-only CLI (`sub-human read`, `digest`, `who`, `tasks`, `watch`) stays allowed, and so do reading the plugin's source and running its tests. This is a string check. A determined command can evade it, for example a script written to a file first, or a path built at run time. What can't be evaded is the signature: a line written around the store has no valid one, so it shows as unverified and counts for nothing.
 - **Not covered.** The `Read` tool is not guarded, so a model can read the store, including the private key files. Other MCP servers that write files aren't guarded either.

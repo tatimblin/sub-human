@@ -3,6 +3,8 @@
     "room": {
       "command": "node",
       "args": [
+        "--import",
+        "${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js",
         "${CLAUDE_PLUGIN_ROOT}/mcp/room-server.ts"
       ]
     }

@@ -24,7 +24,8 @@ const CLASSIC_FIELDS = {
 };
 const COMMON = ['block', 'preventContinuation', 'stopReason'];
 
-export const shimArgv = (root, script) => ['node', `${root}/hooks/${script}`];
+/** node on hooks/<script>, the compile cache preloaded as hooks.json does it (hooks/compile-cache.js). */
+export const shimArgv = (root, script) => ['node', '--import', `${root}/hooks/compile-cache.js`, `${root}/hooks/${script}`];
 
 /** A command hook's systemMessage as a $.ui.log line: without its own "sub-human: " lead, which $.ui.log adds (cc
  * CONTRACT ui-log-notice), so no line reads "sub-human: sub-human: …". */

@@ -20,10 +20,12 @@ function* allHooks() {
     for (const g of groups) for (const hk of g.hooks) yield { event, matcher: g.matcher, hook: hk };
   }
 }
+/** The hook's script: the last plugin path in its command (the first is the compile-cache preload). */
 const scriptOf = cmd => {
-  const m = /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"\s]+)/.exec(cmd);
+  const m = [...cmd.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"\s]+)/g)].at(-1);
   return m && m[1];
 };
+const PRELOAD = 'node --import "${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js" ';
 // Top-level alternatives of a regex (splits on | outside parentheses and classes).
 function alternatives(re) {
   const out = [];
@@ -42,27 +44,49 @@ function alternatives(re) {
   return out;
 }
 
-test('hooks.json: the join with no node on PATH says what to do (exit 2, its stderr shown); with node it runs the hook', () => {
+test('hooks.json: the join with no node on PATH, or one older than 24.3, says what to do (exit 2, its stderr shown); with node it runs the hook', () => {
   const { execFileSync, spawnSync } = require('node:child_process');
   const join = [...allHooks()].find(x => x.event === 'UserPromptExpansion').hook.command;
   const bare = spawnSync('/bin/sh', ['-c', join], { env: { PATH: '/nonexistent', CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' });
   assert.equal(bare.status, 2);
-  assert.match(bare.stderr, /^sub-human needs Node 24 or newer on the PATH .*restart claude from a shell where node -v works\.\n$/);
+  assert.match(bare.stderr, /^sub-human needs Node 24\.3 or newer on the PATH .*found none \(node: command not found\)\..*restart claude from a shell where node -v works\.\n$/);
   const bin = require('node:fs').mkdtempSync(path.join(require('node:os').tmpdir(), 'sh-nodebin-'));
-  require('node:fs').writeFileSync(path.join(bin, 'node'), '#!/bin/sh\necho "ran $1"\n', { mode: 0o755 });
-  assert.equal(execFileSync('/bin/sh', ['-c', join], { env: { PATH: bin, CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' }), `ran ${PLUGIN}/hooks/join.ts\n`);
+  const fake = v => require('node:fs').writeFileSync(path.join(bin, 'node'), `#!/bin/sh\nif [ "$1" = -v ]; then echo ${v}; exit 0; fi\necho "ran $*"\n`, { mode: 0o755 });
+  for (const v of ['v24.2.1', 'v24.0.0', 'v22.12.0', 'v8.9.4']) {
+    fake(v);
+    const old = spawnSync('/bin/sh', ['-c', join], { env: { PATH: bin, CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' });
+    assert.equal(old.status, 2, v);
+    assert.match(old.stderr, new RegExp(`^sub-human needs Node 24\\.3 or newer .*found node ${v.replace(/\./g, '\\.')}\\. `), v);
+  }
+  for (const v of ['v24.3.0', 'v24.15.0', 'v25.0.0', 'v26.1.0', 'v30.0.0', 'v100.0.0']) {
+    fake(v);
+    assert.equal(execFileSync('/bin/sh', ['-c', join], { env: { PATH: bin, CLAUDE_PLUGIN_ROOT: PLUGIN }, encoding: 'utf8' }),
+      `ran --import ${PLUGIN}/hooks/compile-cache.js ${PLUGIN}/hooks/join.ts\n`, v);
+  }
 });
 
 test('hooks.json: every command runs node on a script that exists in the plugin', () => {
   for (const { event, hook } of allHooks()) {
     assert.equal(hook.type, 'command', event);
     // the join alone checks for node first, so a missing one says what to do (it is the first thing a person runs)
-    const NODE_CHECK = /^command -v node >\/dev\/null 2>&1 \|\| \{ echo '[^']+' >&2; exit 2; \}; exec /;
+    const NODE_CHECK = /^v=\$\(node -v 2>\/dev\/null\); case "\$v" in [\s\S]+? >&2; exit 2;; esac; exec /;
     if (event === 'UserPromptExpansion') assert.match(hook.command, NODE_CHECK, hook.command);
-    assert.match(hook.command.replace(NODE_CHECK, ''), /^node "\$\{CLAUDE_PLUGIN_ROOT\}\/[^"]+"$/, `${event}: ${hook.command}`);
+    // the compile cache preloaded, then the hook (hooks/compile-cache.js)
+    assert.ok(hook.command.replace(NODE_CHECK, '').startsWith(PRELOAD), `${event}: ${hook.command}`);
+    assert.match(hook.command.replace(NODE_CHECK, '').slice(PRELOAD.length), /^"\$\{CLAUDE_PLUGIN_ROOT\}\/[^"]+\.ts"$/, `${event}: ${hook.command}`);
     const rel = scriptOf(hook.command);
     assert.ok(fs.existsSync(path.join(PLUGIN, rel)), `${event}: ${rel} is missing`);
   }
+});
+
+test('every ${CLAUDE_PLUGIN_ROOT}/ path in hooks.json and .mcp.json, and every module, exists (validate does not check them)', () => {
+  const paths = [];
+  const collect = s => { for (const m of String(s).matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s]+)/g)) paths.push(m[1]); };
+  for (const { hook } of allHooks()) collect(hook.command);
+  for (const srv of Object.values(readJson('.mcp.json').mcpServers)) { collect(srv.command); (srv.args || []).forEach(collect); }
+  assert.ok(paths.includes('mcp/room-server.ts') && paths.includes('hooks/compile-cache.js') && paths.includes('hooks/join.ts'), paths.join(' '));
+  for (const rel of paths) assert.ok(fs.existsSync(path.join(PLUGIN, rel)), `${rel} is missing`);
+  for (const rel of readJson('hooks/hooks.json').modules) assert.ok(fs.existsSync(path.join(PLUGIN, 'hooks', rel)), `module ${rel} is missing`);
 });
 
 test('hooks.json: every matcher is an exact-name list or an anchored regex (binary rule: regexes are unanchored)', () => {
@@ -78,10 +102,10 @@ test('hooks.json: every matcher is an exact-name list or an anchored regex (bina
 
 test('hooks.json: tool matchers select exactly the intended tools; the store guard is the module\'s, not a command hook', () => {
   const pre = hooks.PreToolUse.map(g => g.matcher);
-  assert.ok(!hooks.PreToolUse.some(g => /hooks\/guard\.js/.test(g.hooks[0].command)), 'the store guard is mod/guard.ts');
+  assert.ok(!hooks.PreToolUse.some(g => /hooks\/guard\.ts/.test(g.hooks[0].command)), 'the store guard is mod/guard.ts');
   assert.ok(!fs.existsSync(path.join(PLUGIN, 'hooks', 'guard.ts')));
   assert.deepEqual(readJson('hooks/hooks.json').modules, ['../mod/register.ts']);
-  const consent = hooks.PreToolUse.find(g => /hooks\/consent\.js/.test(g.hooks[0].command)).matcher;
+  const consent = hooks.PreToolUse.find(g => /hooks\/consent\.ts/.test(g.hooks[0].command)).matcher;
   const m = (x, name) => cc.matcherMatches(x, name);
   for (const t of ['AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode', ROOM + 'propose']) assert.ok(m(consent, t), `consent misses ${t}`);
   for (const t of ['mcp__x__ExitPlanMode', 'ExitPlanModeV2', 'Edit']) assert.ok(!m(consent, t), `consent wrongly matches ${t}`);

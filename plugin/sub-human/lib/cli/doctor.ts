@@ -16,7 +16,7 @@
  *
  * Checks, each {id, status: pass|warn|fail|info, title, detail, fix?}:
  *   plugin       the plugin's version (plugin.json) and root
- *   node         Node 24 or newer
+ *   node         Node 24.3 or newer
  *   home         the home and its store directories are 0700 and this user's
  *   shim         <home>/bin/serve is the current shim and <home>/bin/current names an existing plugin and node
  *   authorized_keys   sub-human lines that bypass the shim (an older `authorize` baked node and the versioned
@@ -66,7 +66,8 @@ const lib = name => require(path.join(LIB, name));
 /** A fix only a shell can make: the CLI by its path (no `sub-human` is on PATH; lib/text.ts cliLine). */
 const cli = args => lib('text.ts').cliLine(args);
 
-const NODE_MIN = 24;
+/** 24.3: the first 24 that strips TypeScript without an ExperimentalWarning (every hook is .ts). */
+const NODE_MIN = [24, 3];
 const DOCTOR_HELLO_MS = 8000;
 const SKEW_WARN_MS = 2 * 60 * 1000;
 const STORE_DIRS = ['rooms', 'sessions', 'links', 'keys', 'bin'];
@@ -92,10 +93,11 @@ function checkPlugin() {
 }
 
 function checkNode(version = process.versions.node) {
-  const major = Number(String(version).split('.')[0]);
-  return major >= NODE_MIN
+  const [major, minor] = String(version).split('.').map(Number);
+  const min = NODE_MIN.join('.');
+  return major > NODE_MIN[0] || (major === NODE_MIN[0] && minor >= NODE_MIN[1])
     ? check('node', 'pass', 'node', `v${version}`)
-    : check('node', 'fail', 'node', `v${version}; sub-human needs Node ${NODE_MIN} or newer`, `install Node ${NODE_MIN}+ (e.g. nvm install ${NODE_MIN}); the hooks run on the node Claude Code finds on PATH`);
+    : check('node', 'fail', 'node', `v${version}; sub-human needs Node ${min} or newer`, `install Node ${min}+ (e.g. nvm install ${NODE_MIN[0]}); the hooks run on the node Claude Code finds on PATH`);
 }
 
 function checkHome() {

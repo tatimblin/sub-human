@@ -22,13 +22,15 @@ test('session.start runs hooks/mod-hello.ts with the payload session id and keep
   expect(runs.length).toBe(1)
   const sid = 'sid-test'
   expect(runs[0].argv[0]).toBe('node')
-  expect(runs[0].argv[1]).toMatch(/\/hooks\/mod-hello\.js$/)
+  expect(runs[0].argv[1]).toBe('--import')
+  expect(runs[0].argv[2]).toMatch(/\/hooks\/compile-cache\.js$/)
+  expect(runs[0].argv[3]).toMatch(/\/hooks\/mod-hello\.ts$/)
   const stdin = JSON.parse(runs[0].init.stdin)
   expect(stdin.session_id).toBe(sid)
   expect(stdin.nonce).toMatch(/^[0-9a-f]{32}$/) // the lease keeps it; at-room checks an origin against it
   expect(runs[0].init.env.CLAUDE_CODE_SESSION_ID).toBe(sid)
   expect(runs[0].init.env.CLAUDE_PID).toBe('')
-  expect(runs[0].init.env.CLAUDE_PLUGIN_ROOT).toBe(runs[0].argv[1].replace(/\/hooks\/mod-hello\.js$/, ''))
+  expect(runs[0].init.env.CLAUDE_PLUGIN_ROOT).toBe(runs[0].argv[3].replace(/\/hooks\/mod-hello\.ts$/, ''))
   expect(await verdict($)).toBe('allow')
 })
 

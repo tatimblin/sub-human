@@ -12,7 +12,7 @@ export const OUT = helloOf(SEAT);
 /** A $.process.run result. */
 export const ran = (stdout = '', exitCode = 0, stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } });
 /** The hooks/ script a $.process.run call runs ("mod-hello.ts"). */
-export const scriptOf = e => String(e.argv[1]).replace(/^.*\/hooks\//, '');
+export const scriptOf = e => String(e.argv.at(-1)).replace(/^.*\/hooks\//, '');
 
 /** The session every world starts from: its id, and a session.start the engine takes. */
 export function session(on, sid) {

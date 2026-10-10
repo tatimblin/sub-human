@@ -22,10 +22,11 @@ const run = (args, env) => spawnSync(h.BIN, ['doctor', ...args], { env: h.childE
 const byId = (report, id) => report.checks.find(c => c.id === id);
 
 test('doctor: node floor, Remote Control, ssh hints and argument errors', () => {
-  assert.equal(doctor.checkNode('24.0.0').status, 'pass');
+  for (const v of ['24.3.0', '24.15.0', '25.0.0', '26.1.0']) assert.equal(doctor.checkNode(v).status, 'pass', v);
+  for (const v of ['24.2.1', '24.0.0', '23.11.0']) assert.equal(doctor.checkNode(v).status, 'fail', v);
   const old = doctor.checkNode('22.11.0');
   assert.equal(old.status, 'fail');
-  assert.match(old.fix, /Node 24\+/);
+  assert.match(old.fix, /Node 24\.3\+/);
   assert.equal(doctor.checkRemoteControl({}, []).status, 'info');
   for (const env of [{ CLAUDE_CODE_USE_BEDROCK: '1' }, { CLAUDE_CODE_USE_VERTEX: 'true' }, { ANTHROPIC_API_KEY: 'sk-x' }]) {
     const c = doctor.checkRemoteControl(env, []);
