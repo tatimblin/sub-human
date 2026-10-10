@@ -58,6 +58,7 @@ import * as textMod from '../../text.ts';
 import CryptoMod from 'node:crypto';
 import FsMod from 'node:fs';
 import { createRequire } from 'node:module';
+import type { KindEntry, OpenCtx, SshDest, SshSpec, Transport } from '../types-rest.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -70,11 +71,8 @@ const ALIAS_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const LINK_ID_RE = /^[0-9a-f]{12}$/;
 const HOME_RE = /^\/[A-Za-z0-9_\/.@+,:-]+$/; // lib/remote/shim.ts PLAIN_PATH_RE: nothing a remote shell expands
 
-/**
- * @param {string} text   user@host[:port]
- * @returns {{user: string, host: string, port?: number} | null}
- */
-function dest(text) {
+/** text: user@host[:port] */
+function dest(text: string): SshDest | null {
   const m = SSH_RE.exec(String(text));
   if (!m) return null;
   const port = m[3] === undefined ? undefined : Number(m[3]);
@@ -86,10 +84,8 @@ function dest(text) {
  * A bare ssh config alias (`dev`) as the USER@ALIAS ssh would log in as: the user from `ssh -G ALIAS` (your
  * ~/.ssh/config, else your local name; read locally, nothing connects). The alias stays the host, so its HostName,
  * Port, ProxyJump and keys still apply. Anything else, or no ssh, comes back unchanged.
- * @param {string} text
- * @returns {string}
  */
-function withUser(text, { bin = 'ssh' } = {}) {
+function withUser(text: string, { bin = 'ssh' }: { bin?: string } = {}): string {
   const t = String(text);
   if (t.includes('@') || !new RegExp(`^${SSH_HOST}(?::[0-9]{1,5})?$`).test(t)) return t;
   const host = t.replace(/:[0-9]+$/, '');
@@ -101,13 +97,9 @@ function withUser(text, { bin = 'ssh' } = {}) {
 }
 /** The `YOU@host` of the README's examples, typed as is. */
 // an example's word left in: YOU@box, USER@box, NAME@box, or a bare NAME / USER / YOU / HOST
-const placeholder = text => /^(?:YOU|USER|NAME|you|user|name)@/.test(String(text)) || /^(?:YOU|USER|NAME|HOST|DEST)$/.test(String(text)) || /@(?:HOST|DEST)$/.test(String(text));
+const placeholder = (text: string): boolean => /^(?:YOU|USER|NAME|you|user|name)@/.test(String(text)) || /^(?:YOU|USER|NAME|HOST|DEST)$/.test(String(text)) || /@(?:HOST|DEST)$/.test(String(text));
 
-/**
- * @param {string} text
- * @returns {string | null}
- */
-function jump(text) {
+function jump(text: string): string | null {
   const hops = String(text).split(',');
   if (hops.length > 4) return null;
   for (const h of hops) {
@@ -117,11 +109,7 @@ function jump(text) {
   return String(text);
 }
 
-/**
- * @param {string} rest
- * @returns {{user: string, host: string, port?: number, via?: string} | null}
- */
-function parse(rest) {
+function parse(rest: string): (SshDest & { via?: string }) | null {
   const [d, q, ...more] = String(rest).split('?');
   if (more.length) return null;
   const spec = dest(d);
@@ -131,31 +119,25 @@ function parse(rest) {
   return via ? { ...spec, via } : null;
 }
 
-const at = d => `${d.user}@${d.host}${d.port ? `:${d.port}` : ''}`;
+const at = (d: SshDest): string => `${d.user}@${d.host}${d.port ? `:${d.port}` : ''}`;
 
-/**
- * @param {string} text
- * @param {{via?: string}} [opts]
- * @returns {string | null}
- */
-function locator(text, { via } = {}) {
+function locator(text: string, { via }: { via?: string } = {}): string | null {
   const d = dest(text);
   if (!d || (via !== undefined && !jump(via))) return null;
   return `ssh:${at(d)}${via !== undefined ? `?via=${via}` : ''}`;
 }
 
-/** @returns {string} */
-const controlPath = (h = require('../../home.ts').home()) => path.join(path.resolve(h), 'ssh', 'cm-%C');
+const controlPath = (h: string = (require('../../home.ts') as typeof import('../../home.ts')).home()): string => path.join(path.resolve(h), 'ssh', 'cm-%C');
 
 /** The spec, checked again; the link options its local fields ask for. */
-function checked(spec, code) {
+function checked(spec: SshSpec, code: string): { d: SshDest; local: string[]; tail: string[] } {
   const d = spec && dest(at(spec));
   if (!d) throw new RoomError('INVALID', 'the link\'s ssh destination is not a plain user@host[:port]');
   if (spec.via !== undefined && !jump(spec.via)) throw new RoomError('INVALID', 'the link\'s ProxyJump is not a plain [user@]host[:port] list');
   const { CODE_RE } = textMod;
   if (!CODE_RE.test(code)) throw new RoomError('INVALID', `invalid room code "${code}"`);
-  const local = [];
-  const file = (k, v) => { if (typeof v !== 'string' || !LOCAL_PATH_RE.test(v)) throw new RoomError('INVALID', `the link's ${k} is not a plain absolute path`); return v; };
+  const local: string[] = [];
+  const file = (k: string, v: unknown): string => { if (typeof v !== 'string' || !LOCAL_PATH_RE.test(v)) throw new RoomError('INVALID', `the link's ${k} is not a plain absolute path`); return v; };
   if (spec.key !== undefined) local.push('-i', file('key', spec.key), '-o', 'IdentitiesOnly=yes');
   if (spec.knownHosts !== undefined) {
     if (typeof spec.alias !== 'string' || !ALIAS_RE.test(spec.alias)) throw new RoomError('INVALID', 'the link\'s pinned host key has no plain alias');
@@ -173,25 +155,14 @@ function checked(spec, code) {
   return { d, local, tail: [...(spec.via !== undefined ? ['-J', spec.via] : []), ...(d.port ? ['-p', String(d.port)] : []), '--', `${d.user}@${d.host}`] };
 }
 
-/**
- * @param {{user: string, host: string, port?: number, via?: string, key?: string, knownHosts?: string, alias?: string, mux?: boolean}} spec
- * @param {string} code
- * @param {string[]} [opts]
- * @returns {string[]}
- */
-function command(spec, code, opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean)) {
+function command(spec: SshSpec, code: string, opts: string[] = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean)): string[] {
   const { local, tail } = checked(spec, code);
   const mux = spec.mux === true ? ['-o', 'ControlMaster=no'] : [];
   return ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', ...opts,
     ...mux, ...local, ...tail, remoteCommand(spec, code)];
 }
 
-/**
- * @param {{login?: boolean, link?: string, remoteHome?: string}} spec
- * @param {string} code
- * @returns {string}
- */
-function remoteCommand(spec, code) {
+function remoteCommand(spec: Pick<SshSpec, 'login' | 'link' | 'remoteHome'>, code: string): string {
   if (spec.login !== true) return `sub-human serve --stdio ${code}`;
   const args = `--stdio ${code} --link ${spec.link} --login`;
   return spec.remoteHome !== undefined
@@ -199,27 +170,16 @@ function remoteCommand(spec, code) {
     : `"$HOME"/.sub-human/bin/serve ${args}`;
 }
 
-/**
- * @param {string} text   user@host[:port]
- * @param {{via?: string, home?: string, link?: string}} [o]
- * @returns {object | null}
- */
-function loginSpec(text, { via, home, link = CryptoMod.randomBytes(6).toString('hex') } = {}) {
+/** text: user@host[:port] */
+function loginSpec(text: string, { via, home, link = CryptoMod.randomBytes(6).toString('hex') }: { via?: string; home?: string; link?: string } = {}): SshSpec | null {
   const d = dest(text);
   if (!d || (via !== undefined && !jump(via)) || (home !== undefined && !HOME_RE.test(String(home))) || !LINK_ID_RE.test(String(link))) return null;
   return { kind: 'ssh', ...d, ...(via !== undefined ? { via } : {}), login: true, link, ...(home !== undefined ? { remoteHome: path.resolve(home) } : {}) };
 }
 
-/** @returns {string} */
-const loginCommand = spec => ['ssh', ...(spec.port ? ['-p', String(spec.port)] : []), ...(spec.via ? ['-J', spec.via] : []), `${spec.user}@${spec.host}`].join(' ');
+const loginCommand = (spec: SshSpec): string => ['ssh', ...(spec.port ? ['-p', String(spec.port)] : []), ...(spec.via ? ['-J', spec.via] : []), `${spec.user}@${spec.host}`].join(' ');
 
-/**
- * @param {string} stderr
- * @param {object} spec
- * @param {string} code
- * @returns {string | null}
- */
-function loginFailure(stderr, spec, code) {
+function loginFailure(stderr: string, spec: SshSpec, code: string): string | null {
   const s = String(stderr || '');
   const where = `${spec.user}@${spec.host}`;
   const once = loginCommand(spec);
@@ -246,13 +206,7 @@ function loginFailure(stderr, spec, code) {
   return null;
 }
 
-/**
- * @param {object} spec
- * @param {string} code
- * @param {{persist?: string, opts?: string[]}} [o]
- * @returns {string[]}
- */
-function primeCommand(spec, code, { persist = '8h', opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean) } = {}) {
+function primeCommand(spec: SshSpec, code: string, { persist = '8h', opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean) }: { persist?: string; opts?: string[] } = {}): string[] {
   if (!/^[0-9]{1,5}[smhd]?$/.test(persist)) throw new RoomError('INVALID', `--persist "${persist}" is not a time (e.g. 8h)`);
   const { local, tail } = checked({ ...spec, mux: true }, code);
   return ['ssh', '-M', '-N', '-f', '-o', `ControlPersist=${persist}`, '-o', 'ServerAliveInterval=15', ...opts, ...local, ...tail];
@@ -264,24 +218,23 @@ function primeCommand(spec, code, { persist = '8h', opts = String(process.env.SU
  * Ed25519 host keys only, never hashed or updated, so the joiner can read back exactly the key ssh verified and compare
  * it with the one the host vouches for inside the PAKE channel. These options come first, so neither the joiner's
  * SUB_HUMAN_SSH_OPTS nor its ~/.ssh/config can change them (ssh takes the first value of an option).
- * @returns {string[]}
  */
-function enrollCommand(spec, code, { key, knownHosts, opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean) }) {
+function enrollCommand(spec: SshSpec, code: string, { key, knownHosts, opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean) }: { key: string; knownHosts: string; opts?: string[] }): string[] {
   const { tail } = checked(spec, code);
-  const file = (k, v) => { if (typeof v !== 'string' || !LOCAL_PATH_RE.test(v)) throw new RoomError('INVALID', `the enrollment ${k} is not a plain absolute path`); return v; };
+  const file = (k: string, v: unknown): string => { if (typeof v !== 'string' || !LOCAL_PATH_RE.test(v)) throw new RoomError('INVALID', `the enrollment ${k} is not a plain absolute path`); return v; };
   return ['ssh', '-T', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-i', file('key', key), '-o', `UserKnownHostsFile=${file('known_hosts', knownHosts)}`,
     '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'StrictHostKeyChecking=accept-new', '-o', `HostKeyAlias=sub-human-enroll-${code}`, '-o', 'HostKeyAlgorithms=ssh-ed25519',
     '-o', 'UpdateHostKeys=no', '-o', 'HashKnownHosts=no', '-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'ConnectTimeout=15',
     '-o', 'ServerAliveInterval=15', ...opts, ...tail, `sub-human serve --enroll ${code}`];
 }
 
-const kind = {
+const kind: Required<KindEntry<SshSpec>> = {
   parse,
-  open(spec, ctx = {}) {
+  open(spec, ctx: OpenCtx = {}): Transport {
     if (!ctx.code) throw new RoomError('INVALID', 'an ssh transport connects to a room: open(spec, {code})');
     if (spec.mux === true) FsMod.mkdirSync(path.dirname(controlPath()), { recursive: true, mode: 0o700 });
     const [cmd, ...args] = command(spec, ctx.code);
-    return require('./pipe.ts').spawn(cmd, args);
+    return (require('./pipe.ts') as typeof import('./pipe.ts')).spawn(cmd, args);
   },
   describe: spec => `ssh ${at(spec)}${spec.via ? ` via ${spec.via}` : ''}${spec.login === true ? ' (your ssh login)' : ''}`,
 };

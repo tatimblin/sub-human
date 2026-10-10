@@ -9,19 +9,16 @@
  */
 
 import { MessageChannel } from 'node:worker_threads';
+import type { MessagePort } from 'node:worker_threads';
 import { lineTransport } from './index.ts';
+import type { Transport } from '../types-rest.ts';
 
-/** @returns {[object, object]} */
-function pair() {
+function pair(): [Transport, Transport] {
   const { port1, port2 } = new MessageChannel();
   return [over(port1), over(port2)];
 }
 
-/**
- * @param {import('node:worker_threads').MessagePort} port
- * @returns {object}
- */
-function over(port) {
+function over(port: MessagePort): Transport {
   const { transport, receive, end } = lineTransport({ write: line => port.postMessage(line), shut: () => port.close() });
   port.on('message', receive);
   port.on('close', end); // either end closed the channel

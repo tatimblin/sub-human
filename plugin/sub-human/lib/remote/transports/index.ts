@@ -35,33 +35,38 @@
  */
 
 import * as protocol from '../protocol.ts';
+import type { Duplex, Readable } from 'node:stream';
+import type { KindEntry, LineTransport, MemorySpec, OpenCtx, SpecBase, Transport, WireFrame } from '../types-rest.ts';
 import { RoomError } from '../../room/validate.ts';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 
-const registry = new Map(); // kind -> {open, parse?, describe?}
+interface Registered {
+  open: KindEntry['open'];
+  parse: NonNullable<KindEntry['parse']> | null;
+  describe: NonNullable<KindEntry['describe']> | null;
+}
+
+const registry = new Map<string, Registered>(); // kind -> {open, parse?, describe?}
 /** kinds(), kept current by register (an ESM live binding). */
-export let KINDS = [];
+export let KINDS: string[] = [];
 
 const KIND_RE = /^[a-z][a-z0-9-]{0,15}$/;
 
-function register(kind, entry) {
+function register<S extends SpecBase>(kind: string, entry: KindEntry<S>): void {
   if (!KIND_RE.test(String(kind))) throw new Error(`transport kind "${kind}" is not a short lower-case name`);
   if (registry.has(kind)) throw new Error(`transport kind "${kind}" is registered already`);
   if (!entry || typeof entry.open !== 'function') throw new Error(`transport kind "${kind}" needs open(spec, ctx)`);
-  registry.set(kind, { open: entry.open, parse: entry.parse || null, describe: entry.describe || null });
+  const e: KindEntry = entry; // a kind's own spec type: the registry hands each kind only the specs that name it
+  registry.set(kind, { open: e.open, parse: e.parse || null, describe: e.describe || null });
   KINDS = kinds();
 }
 
-const kinds = () => [...registry.keys()];
-const get = kind => registry.get(kind) || null;
+const kinds = (): string[] => [...registry.keys()];
+const get = (kind: string): Registered | null => registry.get(kind) || null;
 
-/**
- * @param {string} locator
- * @returns {object | null}
- */
-function parse(locator) {
+function parse(locator: string): SpecBase | null {
   const s = String(locator);
   const i = s.indexOf(':');
   const e = i > 0 && get(s.slice(0, i));
@@ -70,24 +75,19 @@ function parse(locator) {
   return spec ? { ...spec, kind: s.slice(0, i) } : null;
 }
 
-/**
- * @param {{kind: string}} spec
- * @param {{code?: string}} [ctx]
- * @returns {Promise<{send(frame: object): void, onFrame(fn: (frame: object) => void): void, onClose(fn: () => void): void, close(): void}>}
- */
-async function open(spec, ctx = {}) {
+async function open(spec: SpecBase, ctx: OpenCtx = {}): Promise<Transport> {
   const e = get(spec && spec.kind);
   if (!e) throw new RoomError('INVALID', `unknown transport "${spec && spec.kind}" (${kinds().join(', ')})`);
   return e.open(spec, ctx);
 }
 
-function describe(spec) {
+function describe(spec: SpecBase): string {
   const e = get(spec && spec.kind);
   return e && e.describe ? e.describe(spec) : String(spec && spec.kind);
 }
 
-function lineTransport({ write, shut }) {
-  const frameFns = [], closeFns = [];
+function lineTransport({ write, shut }: { write(line: string): void; shut(): void }): LineTransport {
+  const frameFns: ((frame: WireFrame) => void)[] = [], closeFns: (() => void)[] = [];
   const dec = protocol.decoder();
   let closed = false;
   const end = () => {
@@ -95,17 +95,17 @@ function lineTransport({ write, shut }) {
     closed = true;
     for (const fn of closeFns) fn();
   };
-  const transport = {
+  const transport: Transport = {
     send(frame) { if (!closed) write(protocol.encode(frame)); },
     onFrame(fn) { frameFns.push(fn); },
     onClose(fn) { closeFns.push(fn); },
     close() { if (!closed) { shut(); end(); } },
   };
-  const receive = chunk => { for (const f of dec.push(chunk)) for (const fn of frameFns) fn(f); };
+  const receive = (chunk: string | Buffer): void => { for (const f of dec.push(chunk)) for (const fn of frameFns) fn(f); };
   return { transport, receive, end };
 }
 
-function fromDuplex(stream, { readable = stream } = {}) {
+function fromDuplex(stream: Duplex, { readable = stream }: { readable?: Readable } = {}): Transport {
   const { transport, receive, end } = lineTransport({
     write: line => stream.write(line),
     shut: () => { stream.end(); stream.destroy(); if (readable !== stream) readable.destroy(); },
@@ -120,12 +120,13 @@ export { register, kinds, get, parse, open, describe, lineTransport, fromDuplex 
 // ---------- the built-in kinds ----------
 // Their modules import this one (lineTransport), so each loads on first use, through its `kind` export: a
 // require (createRequire; require(esm) is synchronous) so no kind's code loads until a link or invite needs it.
-const lazy = file => ({
-  open: (spec, ctx) => require(file).kind.open(spec, ctx),
-  parse: rest => require(file).kind.parse(rest),
-  describe: spec => require(file).kind.describe(spec),
+type KindModule = { kind: Required<KindEntry> };
+const lazy = (file: string): KindEntry => ({
+  open: (spec, ctx) => (require(file) as KindModule).kind.open(spec, ctx),
+  parse: rest => (require(file) as KindModule).kind.parse(rest),
+  describe: spec => (require(file) as KindModule).kind.describe(spec),
 });
-register('memory', { open: spec => require('./memory.ts').over(spec.port), describe: () => 'memory' });
+register<MemorySpec>('memory', { open: spec => (require('./memory.ts') as typeof import('./memory.ts')).over(spec.port), describe: () => 'memory' });
 register('pipe', lazy('./pipe.ts'));
 register('ssh', lazy('./ssh.ts'));
 register('wss', lazy('./ws.ts')); // ./ws.ts: a Noise channel in a WebSocket, through a TLS front

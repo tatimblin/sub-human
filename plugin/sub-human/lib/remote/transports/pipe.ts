@@ -21,23 +21,18 @@ import path from 'node:path';
 import { spawn as spawnChild } from 'node:child_process';
 import { lineTransport } from './index.ts';
 import { RoomError } from '../../room/validate.ts';
+import type { KindEntry, OpenCtx, PipeSpec, Transport } from '../types-rest.ts';
 
 const BIN = path.join(import.meta.dirname, '..', '..', '..', 'scripts', 'sub-human');
 
-/**
- * @param {string} cmd
- * @param {string[]} args
- * @param {{env?: object, cwd?: string}} [opts]
- * @returns {object}
- */
-function spawn(cmd, args, opts = {}) {
+function spawn(cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv; cwd?: string } = {}): Transport {
   const child = spawnChild(cmd, args, { env: opts.env || process.env, cwd: opts.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
   const { transport, receive, end } = lineTransport({
     write: line => child.stdin.write(line),
     shut: () => { child.stdin.end(); child.kill(); },
   });
   let tail = '';
-  child.stderr.on('data', d => { process.stderr.write(d); tail = (tail + d).slice(-2048); });
+  child.stderr.on('data', (d: Buffer) => { process.stderr.write(d); tail = (tail + d).slice(-2048); });
   child.stderr.on('error', () => { /* the child is gone */ });
   transport.stderr = () => tail;
   child.stdin.on('error', end); // the child is gone: its exit closes us too
@@ -47,8 +42,7 @@ function spawn(cmd, args, opts = {}) {
   return transport;
 }
 
-/** @returns {object} */
-function stdio() {
+function stdio(): Transport {
   const { transport, receive, end } = lineTransport({
     write: line => process.stdout.write(line),
     shut: () => process.stdin.destroy(),
@@ -59,9 +53,9 @@ function stdio() {
   return transport;
 }
 
-const kind = {
+const kind: Required<KindEntry<PipeSpec>> = {
   parse: rest => (/^\/.*$/.test(rest) ? { home: rest } : null),
-  open(spec, ctx = {}) {
+  open(spec, ctx: OpenCtx = {}) {
     if (ctx.code) {
       if (typeof spec.home !== 'string' || !spec.home.startsWith('/')) throw new RoomError('INVALID', 'the link\'s pipe names no home');
       return spawn(process.execPath, [BIN, 'serve', '--stdio', ctx.code], { env: { ...process.env, SUB_HUMAN_HOME: spec.home } });
