@@ -13,9 +13,10 @@ const LIB = path.join(import.meta.dirname, '..', 'lib');
 import * as tasks from '../lib/tasks.ts';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
+import type { Me, PluginApi, PluginContext, JsonSchema, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 
-const S = d => ({ type: 'string', description: d });
-const TOOL = {
+const S = (d: string): JsonSchema => ({ type: 'string', description: d });
+const TOOL: ToolDefinition = {
   name: 'task',
   title: 'Request a room task change',
   description: 'Ask the sub-human room\'s Claude to change the shared room task list; it is queued and the room\'s Claude applies it. '
@@ -36,15 +37,15 @@ const TOOL = {
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 };
 
-function create(ctx = {}) {
-  const text = ctx.text || ((s, isError) => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) }));
+function create(ctx: Partial<Pick<PluginContext, 'text'>> = {}): PluginApi {
+  const text = ctx.text || ((s: unknown, isError?: boolean): ToolResult => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) }));
 
-  function roomClaudeLive(code) {
+  function roomClaudeLive(code: string) {
     const o = identity.readMembers(code).claude;
     return !!(o && o.role === 'claude' && identity.seatAlive(o));
   }
 
-  function call(name, me, args) {
+  function call(name: string, me: Me, args: ToolArgs): ToolResult {
     if (name !== 'task') return text(`unknown tool ${name}`, true);
     if (me.role === 'claude') return text('you hold the room task list: apply requests with TaskCreate/TaskUpdate', true);
     const v = tasks.validate(args || {});
@@ -56,8 +57,8 @@ function create(ctx = {}) {
       const m = identity.readMembers(me.code)[r.for];
       if (!m || m.role === 'claude') return text(`refused: no member named ${r.for} in ${me.code}`, true);
     }
-    const task = { op: r.op, owner };
-    for (const k of ['id', 'subject', 'detail', 'evidence']) if (r[k] !== undefined) task[k] = r[k];
+    const task: { op: string; owner: string; id?: string; subject?: string; detail?: string; evidence?: string } = { op: r.op, owner };
+    for (const k of ['id', 'subject', 'detail', 'evidence'] as const) if (r[k] !== undefined) task[k] = r[k];
     room.open(me.code).append({ kind: 'task_req', text: tasks.requestText(task), ...task }, { via: 'agent', from: me.name });
     return text('queued; the room\'s Claude applies it');
   }
