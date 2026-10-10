@@ -66,45 +66,80 @@ import * as linkState from './room/link-state.ts';
 import {
   ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS,
 } from './config.ts';
+import type { Holds, LogEntry, MemberRec, Members, RowRec, Seat, Spawn, Task } from './types-app.ts';
+
+/** members as callers hand them over: readMembers(code) (by name) or a list. */
+type MemberInput = Members | MemberRec[] | null | undefined;
+/** The seat a row is drawn for or spawned from. */
+type Me = Pick<Seat, 'code' | 'name' | 'role'>;
+/** The link of a room hosted elsewhere (lib/room/link-state.ts read), or null. */
+type Link = ReturnType<typeof linkState.read>;
+/** paint(): warn / ok / dim, with colour or without. */
+interface Paint { warn(s: string): string, ok(s: string): string, dim(s: string): string }
+/** A proposal as a row reads it (proposals() below). */
+interface RowProposal {
+  id: number;
+  hash: string;
+  from: string;
+  approvers: string[];
+  verdict: Record<string, { kind: string, id: number }>;
+  decided: number;
+  agreed: number;
+  objectors: string[];
+  name: string;
+}
+/** rowText's options. */
+interface RowOpts {
+  color?: boolean;
+  entries?: LogEntry[];
+  members?: MemberInput;
+  now?: number;
+  tasks?: Task[];
+  taskSummary?: string | null;
+  link?: Link;
+}
+/** The row map document rows/<session_id>. */
+interface RowMap { byAgent?: Record<string, RowRec> }
 
 const PARTICIPANT = 'sub-human:participant';
 const ROOM_AGENT = 'sub-human:room';
 const { NAME_RE, SID_SAFE, oneLine } = text;
 
 // ---------- small helpers ----------
-const clip = (s, n = ROW_MAX) => text.clip(s, n);
-const h6 = h => String(h || '').slice(0, 6);
-const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-function ago(iso, now = Date.now()) {
+const clip = (s: string, n: number = ROW_MAX): string => text.clip(s, n);
+const h6 = (h: string | null | undefined) => String(h || '').slice(0, 6);
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+function ago(iso: string, now: number = Date.now()): string {
   const s = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
   if (!Number.isFinite(s)) return '';
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`;
 }
 
 /** The room's small documents (lib/room/store.ts kv). */
-const kvOf = code => room.open(code).store.kv;
+const kvOf = (code: string) => room.open(code).store.kv;
 /** The room log (lib/room/store.ts readAll: cached, parses only appended bytes), entries with an id. */
-function readLog(code) {
-  try { return room.open(code).readAll().filter(e => e && Number.isInteger(e.id)); } catch { return []; }
+function readLog(code: string): LogEntry[] {
+  try { return room.open(code).readAll().filter((e: LogEntry | null) => e && Number.isInteger(e.id)); } catch { return []; }
 }
-function memberList(members) {
+function memberList(members: MemberInput): MemberRec[] {
   if (!members) return [];
-  const list = Array.isArray(members) ? members : Object.entries(members).map(([k, v]) => ({ name: k, ...(v || {}) }));
-  return list.filter(m => m && typeof m.name === 'string' && NAME_RE.test(m.name));
+  const list: (MemberRec | null | undefined)[] = Array.isArray(members) ? members
+    : Object.entries(members).map(([k, v]) => ({ name: k, ...(v || {}) }));
+  return list.filter((m): m is MemberRec => !!m && typeof m.name === 'string' && NAME_RE.test(m.name));
 }
-const isActive = m => !!m && !m.left_at;
-const isRoomClaude = m => m.role === 'claude' || m.name === 'claude';
-function readMembers(code) { try { return identity.readMembers(code) || {}; } catch { return {}; } }
+const isActive = (m: MemberRec | null | undefined) => !!m && !m.left_at;
+const isRoomClaude = (m: MemberRec) => m.role === 'claude' || m.name === 'claude';
+function readMembers(code: string): Members { try { return identity.readMembers(code) || {}; } catch { return {}; } }
 
-const normKind = e => room.normalize(e).kind;
+const normKind = (e: LogEntry): string => room.normalize(e).kind;
 
 // ---------- spawning ----------
-const participantCall = name =>
+const participantCall = (name: string) =>
   `Agent({subagent_type: "${PARTICIPANT}", description: "${name}", prompt: "member: ${name}", run_in_background: true})`;
-const roomCall = (code, names) =>
+const roomCall = (code: string, names: string[]) =>
   `Agent({subagent_type: "${ROOM_AGENT}", description: "${code}", prompt: "room: ${code}\\nmembers: ${names.length ? names.join(', ') : '(none)'}", run_in_background: true})`;
 
-function rowCalls(me, members, { only = null } = {}) {
+function rowCalls(me: Me | null | undefined, members: MemberInput, { only = null }: { only?: string[] | null } = {}): string {
   if (!me || !me.code) return '';
   const others = memberList(members).filter(m => isActive(m) && m.name !== me.name);
   const want = Array.isArray(only) ? new Set(only) : null;
@@ -144,7 +179,7 @@ function rowCalls(me, members, { only = null } = {}) {
  * spawn only when the row is not running. A spawn of a running row is denied by hooks/row-guard.ts, which
  * Claude Code renders as a red error, so the notice prevents the attempt. '' for my own join.
  */
-function joinNote(me, name, { held } = {}) {
+function joinNote(me: Me | null | undefined, name: string | null | undefined, { held }: { held?: Holds | null } = {}): string {
   if (!me || !me.code || !name || name === me.name || name === 'claude') return '';
   const h = held === undefined ? readHolds(me.code, me.name) : held;
   if (me.role === 'claude') {
@@ -159,9 +194,9 @@ function joinNote(me, name, { held } = {}) {
 }
 
 /** Rows this seat should have but `held` (readHolds) shows no live hold for. Room Claude: names; member: [code]. */
-function rowsNeeded(code, me, { members, held = null } = {}) {
+function rowsNeeded(code: string, me: Pick<Seat, 'name' | 'role'>, { members, held = null }: { members?: MemberInput, held?: Holds | null } = {}): string[] {
   const ms = memberList(members || readMembers(code));
-  const h = held || { members: [], room: false };
+  const h: Pick<Holds, 'members' | 'room'> = held || { members: [], room: false };
   if (me.role === 'claude') {
     return ms.filter(m => isActive(m) && !isRoomClaude(m) && m.name !== me.name && !h.members.includes(m.name)).map(m => m.name);
   }
@@ -169,11 +204,12 @@ function rowsNeeded(code, me, { members, held = null } = {}) {
 }
 
 /** Which row an Agent(...) spawn is: from subagent_type plus the prompt / description / name. */
-function parseSpawn(input, members, code) {
+function parseSpawn(input: unknown, members: MemberInput, code?: string | null): Spawn | null {
   if (!input || typeof input !== 'object') return null;
-  const type = String(input.subagent_type || '');
+  const call = input as Record<string, unknown>; // the Agent tool's input: each field is checked below
+  const type = String(call.subagent_type || '');
   const known = new Set(memberList(members).map(m => m.name));
-  const fields = [input.prompt, input.description, input.name].map(x => (typeof x === 'string' ? x.trim() : ''));
+  const fields = [call.prompt, call.description, call.name].map(x => (typeof x === 'string' ? x.trim() : ''));
   if (type === PARTICIPANT || type === 'participant') {
     for (const f of fields) {
       const m = /\bmember:\s*([A-Za-z0-9_.-]{1,32})/.exec(f);
@@ -193,15 +229,15 @@ function parseSpawn(input, members, code) {
 }
 
 // ---------- the agent -> row map ----------
-const mapKey = sid => `rows/${SID_SAFE.test(String(sid)) ? sid : 'unknown'}`;
+const mapKey = (sid: unknown) => `rows/${SID_SAFE.test(String(sid)) ? sid : 'unknown'}`;
 const NOT_A_MAP = /^rows\/(holds|notices|blocks)-/;
 
 /** The row map's lock: wait up to ROWS_LOCK_TIMEOUT_MS, then throw (the hook logs it); never write unlocked. */
 const LOCK = { compact: true, timeoutMs: ROWS_LOCK_TIMEOUT_MS, staleMs: ROWS_LOCK_STALE_MS };
 
-function recordRow(code, sessionId, agentId, rec) {
+function recordRow(code: string, sessionId: string | null | undefined, agentId: string, rec: Omit<RowRec, 'at'>): boolean { // stamped with at here
   if (!code || !agentId) return false;
-  kvOf(code).update(mapKey(sessionId), cur => {
+  kvOf(code).update(mapKey(sessionId), (cur: RowMap | null) => {
     const byAgent = cur && cur.byAgent && typeof cur.byAgent === 'object' ? cur.byAgent : {};
     byAgent[agentId] = { ...rec, at: new Date().toISOString() };
     return { byAgent };
@@ -209,28 +245,28 @@ function recordRow(code, sessionId, agentId, rec) {
   return true;
 }
 
-const sessionKeys = code => { try { return kvOf(code).list('rows/').filter(k => !NOT_A_MAP.test(k)); } catch { return []; } };
+const sessionKeys = (code: string): string[] => { try { return kvOf(code).list('rows/').filter((k: string) => !NOT_A_MAP.test(k)); } catch { return []; } };
 
-function readRowMap(code) {
-  const out = {};
+function readRowMap(code: string): Record<string, RowRec> {
+  const out: Record<string, RowRec> = {};
   const kv = kvOf(code);
   for (const k of sessionKeys(code)) {
-    const m = kv.get(k, null);
+    const m: RowMap | null = kv.get(k, null);
     if (m && m.byAgent && typeof m.byAgent === 'object') Object.assign(out, m.byAgent);
   }
   return out;
 }
 
 /** The agent -> row records this session id spawned ({} when none). */
-function sessionRowMap(code, sid) {
-  const m = kvOf(code).get(mapKey(sid), null);
+function sessionRowMap(code: string, sid: string | null | undefined): Record<string, RowRec> {
+  const m: RowMap | null = kvOf(code).get(mapKey(sid), null);
   return (m && m.byAgent && typeof m.byAgent === 'object') ? m.byAgent : {};
 }
 
-function forgetRow(code, agentId) {
+function forgetRow(code: string, agentId: string): void {
   const kv = kvOf(code);
   for (const k of sessionKeys(code)) {
-    kv.update(k, m => {
+    kv.update(k, (m: RowMap | null) => {
       if (!(m && m.byAgent && m.byAgent[agentId])) return undefined;
       delete m.byAgent[agentId];
       return m;
@@ -239,14 +275,14 @@ function forgetRow(code, agentId) {
 }
 
 /** How often hooks/row-hold.ts blocked agentId's stop (rows/blocks-ID); setBlockCount(code, id, n). */
-const blocksKey = id => `rows/blocks-${String(id).replace(/[^A-Za-z0-9_-]/g, '') || 'x'}`;
-const blockCount = (code, id) => Number(kvOf(code).get(blocksKey(id), 0)) || 0;
-const setBlockCount = (code, id, n) => kvOf(code).set(blocksKey(id), Number(n) || 0, { compact: true });
+const blocksKey = (id: unknown) => `rows/blocks-${String(id).replace(/[^A-Za-z0-9_-]/g, '') || 'x'}`;
+const blockCount = (code: string, id: string): number => Number(kvOf(code).get(blocksKey(id), 0)) || 0;
+const setBlockCount = (code: string, id: string, n: unknown): void => kvOf(code).set(blocksKey(id), Number(n) || 0, { compact: true });
 
 // ---------- hold liveness (mcp/hold.ts writes, the status line reads) ----------
-const holdsKey = name => `rows/holds-${name}`;
-function writeHolds(code, name, { members = [], room = false, roomUntil = 0 } = {}) {
-  const rec = { pid: process.pid, at: new Date().toISOString(), members: [...new Set(members)].sort(), room: !!room };
+const holdsKey = (name: string) => `rows/holds-${name}`;
+function writeHolds(code: string, name: string, { members = [], room = false, roomUntil = 0 }: { members?: string[], room?: boolean, roomUntil?: number } = {}): void {
+  const rec: Holds = { pid: process.pid, at: new Date().toISOString(), members: [...new Set(members)].sort(), room: !!room };
   if (!room && roomUntil) rec.roomUntil = new Date(roomUntil).toISOString();
   try { kvOf(code).set(holdsKey(name), rec, { compact: true }); } catch { /* best effort */ }
 }
@@ -255,8 +291,8 @@ function writeHolds(code, name, { members = [], room = false, roomUntil = 0 } = 
  * returned JOINED/RESPAWN is being re-called by its row agent, so the room row is still running (a join
  * notice read in that gap would invite a second room-row spawn, which row-guard then denies in red).
  */
-function readHolds(code, name, now = Date.now()) {
-  let h = null;
+function readHolds(code: string, name: string, now: number = Date.now()): Holds | null {
+  let h: Holds | null = null; // as writeHolds wrote it (members is checked: an older writer)
   try { h = kvOf(code).get(holdsKey(name), null); } catch { h = null; }
   if (!h || !isAlive(h.pid) || now - Date.parse(h.at) > HOLDS_STALE_MS) return null;
   const members = Array.isArray(h.members) ? h.members : [];
@@ -264,10 +300,10 @@ function readHolds(code, name, now = Date.now()) {
 }
 
 /** Rows this seat should have but holds nothing for. Room Claude: members. Member: the room row ([code]). */
-function missingRows(code, me, { now = Date.now(), members } = {}) {
+function missingRows(code: string, me: Pick<Seat, 'name' | 'role'>, { now = Date.now(), members }: { now?: number, members?: MemberInput } = {}): string[] {
   const ms = memberList(members || readMembers(code));
-  const h = readHolds(code, me.name, now) || { members: [], room: false };
-  const old = m => !m.joined_at || now - Date.parse(m.joined_at) > MISSING_GRACE_MS;
+  const h: Pick<Holds, 'members' | 'room'> = readHolds(code, me.name, now) || { members: [], room: false };
+  const old = (m: MemberRec) => !m.joined_at || now - Date.parse(m.joined_at) > MISSING_GRACE_MS;
   if (me.role === 'claude') {
     return ms.filter(m => isActive(m) && !isRoomClaude(m) && m.name !== me.name && old(m) && !h.members.includes(m.name)).map(m => m.name);
   }
@@ -277,15 +313,15 @@ function missingRows(code, me, { now = Date.now(), members } = {}) {
 
 // ---------- row text ----------
 const ESC = '\x1b[';
-const paint = on => (on
+const paint = (on: boolean): Paint => (on
   ? { warn: s => `${ESC}33m${s}${ESC}0m`, ok: s => `${ESC}32m${s}${ESC}0m`, dim: s => `${ESC}2m${s}${ESC}0m` }
   : { warn: s => s, ok: s => s, dim: s => s });
-const plainLen = s => Array.from(String(s).replace(/\x1b\[[0-9;]*m/g, '')).length;
+const plainLen = (s: string) => Array.from(String(s).replace(/\x1b\[[0-9;]*m/g, '')).length;
 const SEP = ' · ';
 
 /** Join segments with " · ", keeping whole segments while they fit in ROW_MAX; a lone first one is clipped. */
-function fit(parts) {
-  const ps = parts.filter(Boolean);
+function fit(parts: (string | null | undefined | false)[]): string {
+  const ps = parts.filter((p): p is string => !!p);
   if (!ps.length) return '';
   let out = ps[0], len = plainLen(ps[0]);
   if (len > ROW_MAX) return clip(ps[0].replace(/\x1b\[[0-9;]*m/g, ''));
@@ -301,11 +337,11 @@ function fit(parts) {
  * Proposals in log order (of their latest entry), from lib/room/consent.ts fold: {id, hash, approvers, verdict: {name:
  * {kind, id}} (approvers' current answers), decided (decision id or 0), agreed (count), objectors, name (title)}.
  */
-function proposals(es, code) {
+function proposals(es: LogEntry[], code: string | null | undefined): RowProposal[] {
   const f = room.fold(es);
-  return [...f.proposals.values()].map(fp => {
+  return [...f.proposals.values()].map((fp): RowProposal => {
     const m = f.matrix(fp.hash);
-    const verdict = {};
+    const verdict: RowProposal['verdict'] = {};
     for (const n of fp.approvers) if (m.answers[n]) verdict[n] = m.answers[n];
     const d = f.decisions.get(fp.hash);
     return { id: fp.id, hash: fp.hash, from: fp.from, approvers: fp.approvers, verdict, decided: d ? d.id : 0,
@@ -313,32 +349,32 @@ function proposals(es, code) {
   });
 }
 /** What a row calls a proposal: its title (lib/proposal.ts title), clipped; the short hash when it has none. */
-function label(code, fp) {
+function label(code: string | null | undefined, fp: { hash: string, entry?: LogEntry }): string {
   let t = '';
   try { t = code ? oneLine(proposal.title(code, fp.hash, fp.entry)) : ''; } catch { /* unreadable: the hash */ }
   return t ? clip(t, ROW_TITLE_MAX) : h6(fp.hash);
 }
 /** A closed proposal: "✔ decided TITLE" when everyone agreed, "✖ blocked TITLE" when someone objected. */
-const decidedText = (p, c) => (p.objectors.length ? c.warn(`✖ blocked ${p.name}`) : c.ok(`✔ decided ${p.name}`));
+const decidedText = (p: RowProposal, c: Paint) => (p.objectors.length ? c.warn(`✖ blocked ${p.name}`) : c.ok(`✔ decided ${p.name}`));
 /** Undecided proposals that name `name` and that `name` has not answered (newest last). */
-const awaiting = (ps, name) => ps.filter(p => !p.decided && p.approvers.includes(name) && !p.verdict[name]);
+const awaiting = (ps: RowProposal[], name: string) => ps.filter(p => !p.decided && p.approvers.includes(name) && !p.verdict[name]);
 /** The proposal a row reports for `name`: the newest that names them, else the newest. */
-const latestFor = (ps, name) => ps.filter(p => p.approvers.includes(name)).at(-1) || ps.at(-1) || null;
+const latestFor = (ps: RowProposal[], name: string) => ps.filter(p => p.approvers.includes(name)).at(-1) || ps.at(-1) || null;
 
 // ---------- tasks (lib/tasks.ts: the mirror of the room Claude's native list) ----------
-const taskSummary = (code, viewer) => oneLine(tasks.summary(code, viewer) || '');
+const taskSummary = (code: string, viewer: string | null | undefined) => oneLine(tasks.summary(code, viewer) || '');
 /** NAME's open task on the room list: in progress first, else the first pending. */
-function openTask(list, name) {
-  const mine = list.filter(t => t && t.owner === name && t.status !== 'completed' && t.status !== 'deleted'
+function openTask(list: (Task | null | undefined)[], name: string): Task | null {
+  const mine = list.filter((t): t is Task => !!t && t.owner === name && t.status !== 'completed' && t.status !== 'deleted'
     && !(t.metadata && t.metadata._internal));
   return mine.find(t => t.status === 'in_progress') || mine[0] || null;
 }
 
-function presenceOf(code, name, es, now) {
-  let p = null;
+function presenceOf(code: string, name: string, es: LogEntry[], now: number): string | null {
+  let p: { state?: unknown, at?: string } | null = null;
   try { p = kvOf(code).get(`presence/${name}`, null); } catch { p = null; }
   if (!p || typeof p.state !== 'string') return null;
-  const at = Date.parse(p.at);
+  const at = Date.parse(p.at as string); // NaN when absent, as before
   if (Number.isFinite(at)) {
     if (now - at > PRESENCE_STALE_MS) return null;
     // Anything they posted after the presence write means they are back at it: the old state is stale.
@@ -354,11 +390,11 @@ function presenceOf(code, name, es, now) {
   return clip(s, 12);
 }
 
-function participantText(code, name, viewer, es, ms, now, c, taskList) {
+function participantText(code: string, name: string, viewer: string | null | undefined, es: LogEntry[], ms: MemberRec[], now: number, c: Paint, taskList: Task[]): string {
   const m = ms.find(x => x.name === name);
   if (!m) return 'not in the room';
   if (m.left_at) return 'left';
-  const parts = [];
+  const parts: string[] = [];
   const p = latestFor(proposals(es, code), name);
   if (p) {
     const v = p.verdict[name];
@@ -388,12 +424,12 @@ function participantText(code, name, viewer, es, ms, now, c, taskList) {
   return fit(parts);
 }
 
-function roomText(code, viewer, es, ms, now, c, summary, link) {
-  const parts = [];
+function roomText(code: string, viewer: string | null | undefined, es: LogEntry[], ms: MemberRec[], now: number, c: Paint, summary: string, link: Link): string {
+  const parts: string[] = [];
   // a room hosted elsewhere: the link leads the row while it is down or reconnecting, and closes it while up
   // (lib/room/link-state.ts indicator: "✕ offline 2m · 2 queued", "… connecting (3)", "⇄ online")
-  const linkSeg = linkState.indicator(link, { now });
-  if (linkSeg && link.state !== 'online') parts.push(linkState.isDown(link) ? c.warn(linkSeg) : c.dim(linkSeg));
+  const linkSeg: string = linkState.indicator(link, { now });
+  if (linkSeg && link?.state !== 'online') parts.push(linkState.isDown(link) ? c.warn(linkSeg) : c.dim(linkSeg));
   // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left" (lib/notices.ts)
   const move = notices.rowSegment(es, viewer, { now });
   if (move) parts.push(c.dim(move));
@@ -401,7 +437,7 @@ function roomText(code, viewer, es, ms, now, c, summary, link) {
   const need = viewer ? awaiting(ps, viewer) : [];
   const p = viewer ? latestFor(ps, viewer) : ps.at(-1);
   if (need.length) {
-    parts.push(c.warn(`⚠ your answer needed ${need.at(-1).name}${need.length > 1 ? ` +${need.length - 1}` : ''}`));
+    parts.push(c.warn(`⚠ your answer needed ${need[need.length - 1].name}${need.length > 1 ? ` +${need.length - 1}` : ''}`));
   } else if (p) {
     const v = viewer && p.verdict[viewer];
     const n = `${p.agreed}/${p.approvers.length}`;
@@ -420,7 +456,7 @@ function roomText(code, viewer, es, ms, now, c, summary, link) {
     if (mail) parts.push(c.warn(`✉ ${mail} for you`));
   }
   if (summary) parts.push(summary);
-  if (linkSeg && link.state === 'online') parts.push(c.dim(linkSeg));
+  if (linkSeg && link?.state === 'online') parts.push(c.dim(linkSeg));
   return fit(parts);
 }
 
@@ -429,7 +465,7 @@ function roomText(code, viewer, es, ms, now, c, summary, link) {
  *        taskSummary (string, default tasks.summary(code, viewer)),
  *        link (the room row: lib/room/link-state.ts State or null, default read(code))}.
  */
-function rowText(code, name, viewer, opts = {}) {
+function rowText(code: string, name: string | null | undefined, viewer: string | null | undefined, opts: RowOpts = {}): string {
   const now = opts.now || Date.now();
   const es = opts.entries || readLog(code);
   const ms = memberList(opts.members || readMembers(code));
@@ -442,7 +478,7 @@ function rowText(code, name, viewer, opts = {}) {
   return participantText(code, name, viewer, es, ms, now, c, Array.isArray(opts.tasks) ? opts.tasks : tasks.mine(code, name));
 }
 
-const rowLine = (label, text) => (text ? `${label}  ${text}` : label);
+const rowLine = (label: string, text: string | null | undefined): string => (text ? `${label}  ${text}` : label);
 
 export {
   PARTICIPANT, ROOM_AGENT, ROW_MAX, rowCalls, rowsNeeded, joinNote, participantCall, roomCall, parseSpawn, rowText,

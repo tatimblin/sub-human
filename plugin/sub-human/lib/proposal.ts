@@ -58,6 +58,20 @@ import * as room from './room.ts';
 import { writeFileAtomic } from './io.ts';
 import { clip } from './text.ts';
 import * as config from './config.ts';
+import type { Card, Confirm, LogEntry, MemberRec, Members, Proposal, Review, Seat } from './types-app.ts';
+
+/** Who acts: a seat's room and name are all these functions read. */
+type Me = Pick<Seat, 'code' | 'name'>;
+/** lib/room/consent.ts fold's answer matrix for one proposal, the fields read here. */
+interface Matrix {
+  hash: string;
+  approvers: string[];
+  answers: Record<string, { id: number, kind: string } | null>;
+  agreed: string[];
+  objected: string[];
+  missing: string[];
+  complete: boolean;
+}
 
 const HASH_RE = /^[0-9a-f]{12}$/;
 const QUESTION_RE = /^Agree to proposal ([0-9a-f]{12})\?$/;
@@ -71,56 +85,57 @@ const FILE_MAX = config.PROPOSAL_FILE_MAX;
 const TITLE_MAX = config.PROPOSAL_TITLE_MAX;
 
 class ProposalError extends Error {}
-const refuse = m => { throw new ProposalError(m); };
+function refuse(m: string): never { throw new ProposalError(m); }
 
-const hash12 = buf => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 12);
+const hash12 = (buf: crypto.BinaryLike) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 12);
 /** A plan's ref in the room's blob store: room-relative, so the room can live anywhere (lib/room/store.ts blobs). */
-const planRef = hash => `plans/${hash}.md`;
-const blobs = code => room.open(code).store.blobs;
+const planRef = (hash: string) => `plans/${hash}.md`;
+const blobs = (code: string) => room.open(code).store.blobs;
 /** Where a person can open the stored plan (a local file; the ref when the store has none). */
-const planPath = (code, hash) => blobs(code).localPath(planRef(hash)) || planRef(hash);
-function read(code, hash) {
+const planPath = (code: string, hash: string): string => blobs(code).localPath(planRef(hash)) || planRef(hash);
+function read(code: string, hash: string): string | null {
   if (!HASH_RE.test(String(hash))) return null;
-  try { const b = blobs(code).get(planRef(hash)); return b == null ? null : b.toString('utf8'); } catch { return null; }
+  try { const b: Buffer | null = blobs(code).get(planRef(hash)); return b == null ? null : b.toString('utf8'); } catch { return null; }
 }
-function store(code, buf) {
+function store(code: string, buf: Buffer): string {
   const hash = hash12(buf);
   const b = blobs(code);
   if (!b.has(planRef(hash))) b.put(planRef(hash), buf);
   return hash;
 }
 
-const entriesOf = (me, entries) => entries || room.open(me.code).readAll();
-const kvOf = me => room.open(me.code).store.kv;
+const entriesOf = (me: Me, entries: LogEntry[] | null | undefined): LogEntry[] => entries || room.open(me.code).readAll();
+const kvOf = (me: Me) => room.open(me.code).store.kv;
 
-function humans(code) {
-  return Object.values(identity.readMembers(code) || {})
-    .filter(m => m && m.name && m.role !== 'claude' && !m.left_at).map(m => m.name);
+function humans(code: string): string[] {
+  return Object.values((identity.readMembers(code) || {}) as Members)
+    .filter((m): m is MemberRec => !!m && !!m.name && m.role !== 'claude' && !m.left_at).map(m => m.name);
 }
 
 // ---------- reading the log (lib/room/consent.ts fold: the same semantics as stateLine, lane and the rows) ----------
-const shape = p => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
-const proposals = entries => [...room.fold(entries).proposals.values()].map(shape);
+const shape = (p: Proposal): Proposal => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
+const proposals = (entries: LogEntry[]): Proposal[] => [...room.fold(entries).proposals.values()].map(shape);
 
-const decision = (hash, entries) => room.fold(entries).decisions.get(hash) || null;
+const decision = (hash: string, entries: LogEntry[]): LogEntry | null => room.fold(entries).decisions.get(hash) || null;
 
 /** The answer matrix over p.approvers (the latest answer per person wins; an objection voids a signoff). */
-const matrix = (p, entries) => room.fold(entries).matrix(p.hash, p.approvers);
+const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: LogEntry[]): Matrix => room.fold(entries).matrix(p.hash, p.approvers);
 
-function pendingFor(me, entries) {
+function pendingFor(me: Me | null | undefined, entries?: LogEntry[] | null): Proposal[] {
   if (!me || !me.name) return [];
   return room.fold(entriesOf(me, entries)).pending(me.name).map(shape);
 }
 
 /** A proposal's title: the first non-empty line of its text, heading / list / quote markers dropped. */
-const titleOf = text => String(text || '').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').trim()).find(Boolean) || '';
-const titles = new Map(); // hash -> title: plans are content-addressed, so a hash's title never changes
+const titleOf = (text: string | null | undefined) => String(text || '').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').trim()).find(Boolean) || '';
+const titles = new Map<string, string>(); // hash -> title: plans are content-addressed, so a hash's title never changes
 /**
  * The title people see for proposal hash: the stored plan's first line, else the entry's "proposal HASH: title"
  * text, else ''. Not clipped (the caller clips to its width).
  */
-function title(code, hash, entry) {
-  if (titles.has(hash)) return titles.get(hash);
+function title(code: string, hash: string, entry?: Pick<LogEntry, 'text'> | null): string {
+  const known = titles.get(hash);
+  if (known !== undefined) return known;
   const t = titleOf(read(code, hash));
   if (t) { titles.set(hash, t); return t; }
   const m = entry && /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(entry.text || ''));
@@ -128,36 +143,36 @@ function title(code, hash, entry) {
 }
 
 // ---------- the card ----------
-const question = hash => `Agree to proposal ${hash}?`;
+const question = (hash: string) => `Agree to proposal ${hash}?`;
 
-function summary(text) {
+function summary(text: string): string {
   const lines = text.split('\n');
-  const out = [];
+  const out: string[] = [];
   let len = 0, used = 0;
   for (const l of lines) {
     if (out.length >= SUMMARY_LINES) break;
-    const s = clip(l, TITLE_MAX);
+    const s: string = clip(l, TITLE_MAX);
     if (len + s.length + 1 > SUMMARY_MAX) break;
     out.push(s); len += s.length + 1; used++;
   }
-  while (out.length && !out.at(-1).trim()) out.pop();
+  while (out.length && !out[out.length - 1].trim()) out.pop();
   const rest = lines.length - used;
   return out.join('\n') + (rest > 0 ? `\n… (${rest} more lines)` : '');
 }
 
 /** p.path: the stored ref (room-relative; older entries hold an absolute path, read by its plans/ name). */
-function preview(p, code) {
+function preview(p: Proposal, code: string): string {
   const b = blobs(code);
-  const ref = b.ref(p.path) || planRef(p.hash);
-  const file = b.localPath(ref) || ref;
-  let text = null;
-  try { const buf = b.get(ref); text = buf == null ? null : buf.toString('utf8'); } catch { /* missing */ }
+  const ref: string = b.ref(p.path) || planRef(p.hash);
+  const file: string = b.localPath(ref) || ref;
+  let text: string | null = null;
+  try { const buf: Buffer | null = b.get(ref); text = buf == null ? null : buf.toString('utf8'); } catch { /* missing */ }
   if (text == null) return `(proposal ${p.hash}: the text is missing; expected at ${file})`;
   if (text.length <= PREVIEW_MAX && text.split('\n').length <= PREVIEW_LINES) return text;
   return `${summary(text)}\n\nFull text: ${file}`;
 }
 
-function cardQuestion(p, code) {
+function cardQuestion(p: Proposal, code: string): Card['questions'][number] {
   const pv = preview(p, code);
   const desc = {
     'Not yet': 'Decide later; nothing is recorded',
@@ -165,12 +180,12 @@ function cardQuestion(p, code) {
     Object: 'Block it; press n to say why',
   };
   return { question: question(p.hash), header: 'Consent', multiSelect: false,
-    options: ['Not yet', 'Agree', 'Object'].map(label => ({ label, description: desc[label], preview: pv })) };
+    options: (['Not yet', 'Agree', 'Object'] as const).map(label => ({ label, description: desc[label], preview: pv })) };
 }
-const cardFor = (ps, code) => ({ questions: ps.slice(0, 4).map(p => cardQuestion(p, code)) });
-const card = (p, code) => cardFor([p], code);
+const cardFor = (ps: Proposal[], code: string): Card => ({ questions: ps.slice(0, 4).map(p => cardQuestion(p, code)) });
+const card = (p: Proposal, code: string): Card => cardFor([p], code);
 
-function viewable(p, code) {
+function viewable(p: Pick<Proposal, 'hash'>, code: string): boolean {
   const t = read(code, p.hash);
   return t != null && t.length <= VIEW_MAX && !UNSAFE_RE.test(t.replace(/\r\n/g, '\n'));
 }
@@ -178,7 +193,7 @@ function viewable(p, code) {
 // ---------- which proposal a review opens (the hook picks; the model never does) ----------
 const STOP_WORDS = new Set(('a an and answer approve agree are be can do for from i in is it let me my now object of on one open '
   + 'or please plan proposal proposals read review see show that the this to view want with you your').split(' '));
-const wordsOf = s => (String(s || '').toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
+const wordsOf = (s: string | null | undefined) => (String(s || '').toLowerCase().match(/[\p{L}\p{N}]+/gu) || []);
 
 /**
  * The pending proposal the person's words name, or null: a hash (a 6–12 hex prefix of exactly one; several
@@ -186,14 +201,14 @@ const wordsOf = s => (String(s || '').toLowerCase().match(/[\p{L}\p{N}]+/gu) || 
  * in no other pending proposal's title (a unique best; "Open v3" -> "Ship v3 Monday"), else the same over the
  * full texts. Common words ("open", "the", "proposal") never count.
  */
-function namedIn(ps, prompt, code) {
+function namedIn(ps: Proposal[], prompt: string | null | undefined, code: string): Proposal | null {
   const s = String(prompt || '').toLowerCase();
   const hex = s.match(/\b[0-9a-f]{6,12}\b/g) || [];
   const byHash = ps.filter(p => hex.some(t => p.hash.startsWith(t) && ps.filter(q => q.hash.startsWith(t)).length === 1));
   if (byHash.length) return byHash[0];
   const words = [...new Set(wordsOf(s))].filter(w => !STOP_WORDS.has(w));
   if (!words.length || !ps.length) return null;
-  for (const field of [p => title(code, p.hash, p.entry), p => read(code, p.hash) || '']) {
+  for (const field of [(p: Proposal) => title(code, p.hash, p.entry), (p: Proposal) => read(code, p.hash) || '']) {
     const sets = ps.map(p => new Set(wordsOf(field(p))));
     const scores = sets.map((set, i) => words.filter(w => set.has(w) && sets.every((o, j) => j === i || !o.has(w))).length);
     const max = Math.max(...scores);
@@ -209,47 +224,51 @@ function namedIn(ps, prompt, code) {
  */
 const PROPOSE_RE = new RegExp('^\\s*(?:@\\S+\\s+)?(?:(?:ok(?:ay)?|now|so|please|pls|hey|then|and|let\'?s|can you|could you|would you|go ahead and)[\\s,]+)*'
   + '(?:propose|(?:make|draft|write|send|put up|put forward|post|create)\\s+(?:a|another|my|our|the|this|new)?\\s*(?:new\\s+)?proposal(?!s? (?:from|by|of)\\b))\\b', 'i');
-const proposeIntent = prompt => PROPOSE_RE.test(String(prompt || ''));
+const proposeIntent = (prompt: string | null | undefined): boolean => PROPOSE_RE.test(String(prompt || ''));
 
 /**
  * members/NAME/pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/consent.ts reads it from
  * the transcript at Pre(EnterPlanMode), or a card call named). A review opens that one while pending, else the oldest.
  */
-const pickKey = me => `members/${me.name}/pick`;
-const readPick = me => { try { return kvOf(me).get(pickKey(me), null); } catch { return null; } };
+const pickKey = (me: Me) => `members/${me.name}/pick`;
+const readPick = (me: Me): { hash: string | null, at: number } | null => { try { return kvOf(me).get(pickKey(me), null); } catch { return null; } };
 /** Record what prompt names among ps (null when nothing) and return the proposal a review opens next; prompt null (not the person's words): the earlier pick stands. */
-function choose(me, ps, prompt) {
+function choose(me: Me, ps: Proposal[], prompt: string | null | undefined): Proposal | null {
   if (prompt == null) return picked(me, ps);
   const hit = namedIn(ps, prompt, me.code);
   kvOf(me).set(pickKey(me), { hash: hit ? hit.hash : null, at: Date.now() }, { compact: true });
   return hit || ps[0] || null;
 }
 /** The proposal a review opens among ps (pending, oldest first): the person's pick when it is one of them, else the oldest. */
-function picked(me, ps) {
+function picked(me: Me, ps: Proposal[]): Proposal | null {
   const pk = readPick(me);
   return (pk && pk.hash && ps.find(p => p.hash === pk.hash)) || ps[0] || null;
 }
 
 /** How the model opens proposal hash for its person: the plan view (the hooks fall back to the card). */
-const openCall = hash => `call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`;
-const reminder = (p, name) => `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}, unless ${name} asked you to propose something: then do that, and this waits.`;
+const openCall = (hash: string) => `call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`;
+const reminder = (p: Pick<Proposal, 'hash'>, name: string) => `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}, unless ${name} asked you to propose something: then do that, and this waits.`;
 
 // ---------- writing ----------
-function expand(p, cwd) {
+function expand(p: string, cwd: string | undefined): string {
   if (p === '~' || p.startsWith('~/')) p = path.join(os.homedir(), p.slice(1));
   return path.resolve(cwd || process.cwd(), p);
 }
 
-function create(me, args = {}, { cwd } = {}) {
+/** The propose tool's arguments (checked here, so unknown). */
+interface CreateArgs { text?: unknown, path?: unknown, approvers?: unknown }
+interface Created { hash: string, approvers: string[], path: string, entry: LogEntry | undefined, again: boolean }
+
+function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd?: string } = {}): Created {
   if (!me || !me.code || !me.name) refuse('not in a room; run /sub-human');
   const r = room.open(me.code);
   const { text, path: file } = args;
   if ((text == null) === (file == null)) refuse('give exactly one of text or path');
-  let buf;
+  let buf: Buffer;
   if (file != null) {
     if (typeof file !== 'string' || !file.trim()) refuse('path must be a file path');
     const abs = expand(file, cwd);
-    let st;
+    let st: fs.Stats;
     try { st = fs.statSync(abs); } catch { refuse(`no such file: ${abs}`); }
     if (!st.isFile()) refuse(`not a file: ${abs}`);
     if (st.size > FILE_MAX) refuse(`file too large (${st.size} bytes; max ${FILE_MAX})`);
@@ -262,11 +281,12 @@ function create(me, args = {}, { cwd } = {}) {
   if (!buf.toString('utf8').trim()) refuse('the proposal is empty');
 
   const present = humans(me.code);
-  let approvers;
+  let approvers: string[];
   if (args.approvers == null) approvers = present;
   else {
-    if (!Array.isArray(args.approvers) || !args.approvers.every(a => typeof a === 'string')) refuse('approvers must be an array of names');
-    approvers = [...new Set(args.approvers.map(a => a.trim().replace(/^@/, '')))];
+    const named = args.approvers;
+    if (!Array.isArray(named) || !named.every((a): a is string => typeof a === 'string')) refuse('approvers must be an array of names');
+    approvers = [...new Set(named.map(a => a.trim().replace(/^@/, '')))];
     if (approvers.includes('claude')) refuse('approvers are people; the room\'s Claude cannot approve');
     const unknown = approvers.filter(a => !present.includes(a));
     if (unknown.length) refuse(`not in the room: ${unknown.join(', ')} (present: ${present.join(', ') || 'nobody'})`);
@@ -275,28 +295,29 @@ function create(me, args = {}, { cwd } = {}) {
 
   const hash = store(me.code, buf);
   const stored = planPath(me.code, hash);
-  const entries = r.readAll();
+  const entries: LogEntry[] = r.readAll();
   const open = proposals(entries).find(p => p.hash === hash);
   if (open && !decision(hash, entries) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
     return { hash, approvers, path: stored, entry: entries.find(e => e.id === open.id), again: true };
   }
   // the entry stores the room-relative ref; `path` returned is where the proposer can open it
-  const entry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers, path: planRef(hash) },
+  const entry: LogEntry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers, path: planRef(hash) },
     { via: 'agent', from: me.name });
   return { hash, approvers, path: stored, entry, again: false };
 }
 
-function choiceOf(c) {
+function choiceOf(c: unknown): 'Agree' | 'Object' | 'Not yet' | null {
   const k = String(c || '').trim().toLowerCase();
   return k === 'agree' ? 'Agree' : k === 'object' ? 'Object' : k === 'not yet' ? 'Not yet' : null;
 }
 
-function answer(me, p, a = {}) {
+type Answered = { entry: LogEntry } | { stale: true, why: string };
+function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?: unknown } = {}): Answered {
   const r = room.open(me.code);
   const choice = choiceOf(a.choice);
   if (choice !== 'Agree' && choice !== 'Object') return { stale: true, why: 'no choice' };
-  return r.store.lock('proposal', () => {
-    const entries = r.readAll();
+  return r.store.lock('proposal', (): Answered => {
+    const entries: LogEntry[] = r.readAll();
     const f = room.fold(entries);
     const cur = f.proposals.get(p.hash);
     // Idempotent: one answer per person per proposal. A card and a plan view open at once, or a reopened card,
@@ -306,17 +327,17 @@ function answer(me, p, a = {}) {
     }
     const notes = typeof a.notes === 'string' && a.notes.trim() ? a.notes : undefined;
     const kind = choice === 'Agree' ? 'signoff' : 'objection';
-    const e = { kind, proposal_hash: cur.hash };
+    const e: { kind: string, proposal_hash: string, text?: string } = { kind, proposal_hash: cur.hash };
     if (notes !== undefined) e.text = notes; // byte-exact
     return { entry: r.append(e, { via: 'human', from: me.name }) };
   });
 }
 
-function decide(code, hash) {
+function decide(code: string, hash: string): LogEntry | null {
   if (!identity.isHost(code)) return null;
   const r = room.open(code);
-  return r.store.lock('proposal', () => {
-    const entries = r.readAll();
+  return r.store.lock('proposal', (): LogEntry | null => {
+    const entries: LogEntry[] = r.readAll();
     const f = room.fold(entries);
     const cur = f.proposals.get(hash);
     if (!cur || f.decisions.has(hash)) return null;
@@ -325,7 +346,7 @@ function decide(code, hash) {
     const text = m.objected.length
       ? `objected: ${m.objected.join(', ')}${m.agreed.length ? ` · agreed: ${m.agreed.join(', ')}` : ''} (proposal ${hash})`
       : `agreed: ${m.agreed.join(', ')} (proposal ${hash})`;
-    const refs = cur.approvers.map(n => m.answers[n].id);
+    const refs = cur.approvers.map((n: string) => m.answers[n]!.id); // complete: every approver has answered
     return r.append({ kind: 'decision', text, proposal_hash: hash, refs: [cur.id, ...refs] }, { via: 'system', from: 'room', system: true });
   });
 }
@@ -336,15 +357,15 @@ function decide(code, hash) {
  * `backup` is the session plan file's text before the review overwrote it (null: there was none), recorded
  * BEFORE the overwrite, so a crash between the two never loses the person's own plan.
  */
-const reviewKey = me => `members/${me.name}/review`;
-const readReview = me => kvOf(me).get(reviewKey(me), null);
-const writeReview = (me, st) => kvOf(me).set(reviewKey(me), st, { compact: true });
-function clearReview(me) { kvOf(me).delete(reviewKey(me)); }
+const reviewKey = (me: Me) => `members/${me.name}/review`;
+const readReview = (me: Me): Review | null => kvOf(me).get(reviewKey(me), null);
+const writeReview = (me: Me, st: Review): void => kvOf(me).set(reviewKey(me), st, { compact: true });
+function clearReview(me: Me): void { kvOf(me).delete(reviewKey(me)); }
 /** Every read-modify-write of the review state runs under this lock (hooks of one session can overlap). */
-const withReview = (me, fn) => kvOf(me).lock(reviewKey(me), fn, { timeoutMs: config.REVIEW_LOCK_TIMEOUT_MS });
+const withReview = <T>(me: Me, fn: () => T): T => kvOf(me).lock(reviewKey(me), fn, { timeoutMs: config.REVIEW_LOCK_TIMEOUT_MS });
 
 /** Put the session plan file back as it was before the review (atomically); marks st.restored. */
-function restorePlan(st) {
+function restorePlan(st: Review | null | undefined): void {
   if (!st || !st.file || st.restored) return;
   try {
     if (typeof st.backup === 'string') writeFileAtomic(st.file, st.backup);
@@ -358,15 +379,15 @@ function restorePlan(st) {
  * plan file when it still holds the proposal's text (a file the person wrote since is left alone) and clear
  * the state. force: the session restarted (/clear, --resume). Returns 'restored' | 'cleared' | null.
  */
-function restoreStale(me, { force = false, now = Date.now() } = {}) {
+function restoreStale(me: Me | null | undefined, { force = false, now = Date.now() } = {}): 'restored' | 'cleared' | null {
   if (!me || !me.code || !me.name) return null;
   return withReview(me, () => {
     const st = readReview(me);
     if (!st) return null;
     if (!force && !(now - (Number(st.at) || 0) > config.REVIEW_STALE_MS)) return null;
-    let out = 'cleared';
+    let out: 'restored' | 'cleared' = 'cleared';
     if (st.file && !st.restored && st.hash) {
-      let cur = null;
+      let cur: Buffer | null = null;
       try { cur = fs.readFileSync(st.file); } catch { /* gone */ }
       if (cur && hash12(cur) === st.hash) { restorePlan(st); out = 'restored'; }
     }
@@ -382,23 +403,23 @@ function restoreStale(me, { force = false, now = Date.now() } = {}) {
  * after a bare deny lands there too) records nothing by itself: the note waits here until the person answers the
  * confirm card. One per person: a newer note replaces it.
  */
-const confirmKey = me => `members/${me.name}/confirm`;
-const readConfirm = me => { try { return kvOf(me).get(confirmKey(me), null); } catch { return null; } };
-const writeConfirm = (me, c) => kvOf(me).set(confirmKey(me), c, { compact: true });
-function clearConfirm(me) { try { kvOf(me).delete(confirmKey(me)); } catch { /* none */ } }
+const confirmKey = (me: Me) => `members/${me.name}/confirm`;
+const readConfirm = (me: Me): Confirm | null => { try { return kvOf(me).get(confirmKey(me), null); } catch { return null; } };
+const writeConfirm = (me: Me, c: Confirm): void => kvOf(me).set(confirmKey(me), c, { compact: true });
+function clearConfirm(me: Me): void { try { kvOf(me).delete(confirmKey(me)); } catch { /* none */ } }
 
 const CONFIRM_NOTE_MAX = 300;
 const CONFIRM_TITLE_MAX = 80;
 /** The confirm card's question: what Send does, in the person's words; the note clipped (the preview has it all). */
-const confirmQuestion = c => `Send ${c.from ? `to ${c.from} ` : ''}as changes requested on "${clip(c.title || `proposal ${c.hash}`, CONFIRM_TITLE_MAX)}": "${clip(String(c.note).replace(/\s+/g, ' ').trim(), CONFIRM_NOTE_MAX)}"?`;
+const confirmQuestion = (c: Confirm): string => `Send ${c.from ? `to ${c.from} ` : ''}as changes requested on "${clip(c.title || `proposal ${c.hash}`, CONFIRM_TITLE_MAX)}": "${clip(String(c.note).replace(/\s+/g, ' ').trim(), CONFIRM_NOTE_MAX)}"?`;
 /** The AskUserQuestion input for a waiting note: Send records the objection with it, Discard records nothing. */
-function confirmCard(c) {
+function confirmCard(c: Confirm): Card {
   const desc = {
     Send: `Record your objection${c.from ? ` to ${c.from}'s proposal` : ''}, with this note`,
     Discard: 'Record nothing; the proposal stays unanswered (reopen it any time)',
   };
   return { questions: [{ question: confirmQuestion(c), header: 'Consent', multiSelect: false,
-    options: ['Send', 'Discard'].map(label => ({ label, description: desc[label], preview: String(c.note) })) }] };
+    options: (['Send', 'Discard'] as const).map(label => ({ label, description: desc[label], preview: String(c.note) })) }] };
 }
 
 export {
