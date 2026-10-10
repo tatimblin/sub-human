@@ -174,12 +174,20 @@ function serveEnroll(transport, { store, kind, log = () => {}, timeoutMs = enrol
       try {
         if (!protocol.isRequest(f)) throw new RoomError('PROTOCOL', 'expected a request');
         if (f.op === 'enroll.start' && !st) { transport.send(protocol.reply(id, start(f.params))); return; }
-        if (f.op === 'enroll.finish' && st && !st.over) { st.over = true; transport.send(protocol.reply(id, done(f.params || {}))); return finish('enrolled'); }
+        if (f.op === 'enroll.finish' && st && !st.over) {
+          st.over = true;
+          const answer = done(f.params || {});
+          // the code is spent: close the door before the joiner hears back, so it never outlives the code
+          try { sweepDoors(store.code, { now: now() }); } catch (e) { log(`door sweep: ${e.message}`); }
+          transport.send(protocol.reply(id, answer));
+          return finish('enrolled');
+        }
         if (f.op === 'enroll.fail' && st && !st.over) { st.over = true; wrong(); }
         throw new RoomError('PROTOCOL', `enrollment: an unexpected ${f.op}`);
       } catch (e) {
         const code = e && Object.values(protocol.CODES).includes(e.code) ? e.code : 'INVALID';
         if (code === 'INVALID') log(`enroll: ${e && e.stack || e}`);
+        try { sweepDoors(store.code, { now: now() }); } catch (e2) { log(`door sweep: ${e2.message}`); } // a burn closes it now
         transport.send(protocol.error(id, code, e.message));
         finish(/^wrong code/.test(e.message) ? 'wrong code' : e.message);
       }
