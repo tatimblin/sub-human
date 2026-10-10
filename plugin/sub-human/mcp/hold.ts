@@ -36,6 +36,31 @@ import * as notices from '../lib/notices.ts';
 import * as room from '../lib/room.ts';
 import * as strs from '../lib/text.ts';
 import * as config from '../lib/config.ts';
+import type { CallMeta, JsonRpcId, Me, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
+
+/** What the hold server needs of the room-server ctx (the tests pass a fake one). */
+type HoldContext = Pick<PluginContext, 'whoami' | 'progress' | 'identity'> & Partial<Pick<PluginContext, 'text' | 'log' | 'onCancel'>>;
+/** A room entry, as hold reads it. */
+type Entry = Parameters<typeof room.chatLines>[0];
+/** A member record of the room (identity.readMembers). */
+type Members = Record<string, { name?: string; role?: string; left_at?: string } | undefined>;
+
+/** One blocked hold call: a participant row's (member NAME) or the room row's (name = the room code). */
+interface HoldBase {
+  id: JsonRpcId | undefined;
+  token: ProgressToken | undefined;
+  n: number;
+  msg: string;
+  sentAt: number;
+  code: string;
+  started: number;
+  name: string;
+  resolve?: (r: ToolResult) => void; // set as the call blocks, before it is in holds
+}
+type Hold = (HoldBase & { kind: 'member' }) | (HoldBase & { kind: 'room'; moves: Set<number> });
+type RoomHold = Extract<Hold, { kind: 'room' }>;
+/** The seat this server serves (for rows/holds-<me> and the lease). */
+interface Seat { code: string; name: string; pid?: number; savedAt?: number }
 
 const { envMs } = config;
 const { NAME_RE, oneLine } = strs;
@@ -45,15 +70,15 @@ const END = 'End now without calling any tool.';
 // Shown on every progress line, right above the row view's input box: the row takes no input.
 const HINT = ' · read-only · talk in main (@room)';
 
-const clip = (s, n = MSG_MAX) => strs.clip(s, n);
+const clip = (s: string, n = MSG_MAX) => strs.clip(s, n);
 
 /** An entry as its group-chat line, no id: "alice: say 1", "claude (to alice): which cursor?", "alice left". */
-function entryLine(e) {
-  const lines = room.chatLines(e).filter(l => !l.startsWith(room.FOR_CLAUDE));
-  return clip(oneLine(lines.map(l => (l.startsWith(room.CHAT_NEST) ? l.slice(room.CHAT_NEST.length) : l)).join(' ')));
+function entryLine(e: Entry): string {
+  const lines = room.chatLines(e).filter((l: string) => !l.startsWith(room.FOR_CLAUDE));
+  return clip(oneLine(lines.map((l: string) => (l.startsWith(room.CHAT_NEST) ? l.slice(room.CHAT_NEST.length) : l)).join(' ')));
 }
 
-const TOOL = {
+const TOOL: ToolDefinition = {
   name: 'hold',
   title: 'sub-human row hold',
   description: 'Internal to sub-human row agents (sub-human:participant with member, sub-human:room with room). '
@@ -71,7 +96,17 @@ const TOOL = {
 };
 
 class HoldServer {
-  constructor(ctx) {
+  ctx: HoldContext;
+  BEAT_MS: number; POLL_MS: number; GRACE_MS: number; RESPAWN_MS: number; WHO_MS: number; ROOM_GAP_MS: number;
+  holds: Map<JsonRpcId | undefined, Hold>;
+  expect: Map<string, { at: number; n: number }>;
+  respawn: Map<string, Set<string>>;
+  roomGone: Map<string, number>;
+  roomEnded: Map<string, number>;
+  logState: Map<string, { lastId: number; count: number; entries: Entry[] }>;
+  me: Me | null; meAt: number; timer: NodeJS.Timeout | null; seat: Seat | null;
+
+  constructor(ctx: HoldContext) {
     this.ctx = ctx;
     this.BEAT_MS = envMs('SUB_HUMAN_HOLD_BEAT_MS', config.HOLD_BEAT_MS);
     this.POLL_MS = envMs('SUB_HUMAN_HOLD_POLL_MS', config.HOLD_POLL_MS);
@@ -88,18 +123,18 @@ class HoldServer {
     this.me = null; this.meAt = 0; this.timer = null; this.seat = null;
   }
 
-  log(...a) { try { this.ctx.log && this.ctx.log('hold', ...a); } catch { /* debug only */ } }
-  text(s) { return this.ctx.text ? this.ctx.text(s) : { content: [{ type: 'text', text: s }] }; }
-  memberHolds(code) { return [...this.holds.values()].filter(h => h.kind === 'member' && h.code === code); }
-  roomHolds(code) { return [...this.holds.values()].filter(h => h.kind === 'room' && h.code === code); }
-  members(code) { try { return this.ctx.identity.readMembers(code) || {}; } catch { return {}; } }
-  present(ms, name) { return !!(ms[name] && !ms[name].left_at); }
+  log(...a: unknown[]) { try { this.ctx.log && this.ctx.log('hold', ...a); } catch { /* debug only */ } }
+  text(s: string): ToolResult { return this.ctx.text ? this.ctx.text(s) : { content: [{ type: 'text', text: s }] }; }
+  memberHolds(code: string) { return [...this.holds.values()].filter(h => h.kind === 'member' && h.code === code); }
+  roomHolds(code: string) { return [...this.holds.values()].filter(h => h.kind === 'room' && h.code === code); }
+  members(code: string): Members { try { return this.ctx.identity.readMembers(code) || {}; } catch { return {}; } }
+  present(ms: Members, name: string) { const m = ms[name]; return !!(m && !m.left_at); }
 
   /** The room's entries, and `fresh`: the ones that arrived since the last call (none on the first call for a room). */
-  readEntries(code) {
-    let entries = [];
-    try { entries = room.open(code).readAll().filter(e => e && Number.isInteger(e.id)); } catch { /* no log yet */ }
-    const last = entries.length ? entries.at(-1).id : 0;
+  readEntries(code: string): { entries: Entry[]; fresh: Entry[] } {
+    let entries: Entry[] = [];
+    try { entries = room.open(code).readAll().filter((e: Entry) => e && Number.isInteger(e.id)); } catch { /* no log yet */ }
+    const last: number = entries.length ? entries.at(-1)!.id : 0;
     const st = this.logState.get(code);
     if (st && st.lastId === last && st.count === entries.length) return { entries: st.entries, fresh: [] };
     const fresh = st ? entries.filter(e => e.id > st.lastId) : [];
@@ -107,7 +142,7 @@ class HoldServer {
     return { entries, fresh };
   }
 
-  progress(h, msg) {
+  progress(h: Hold, msg?: string) {
     if (msg) h.msg = msg;
     h.sentAt = Date.now();
     if (h.token == null) return;
@@ -115,14 +150,14 @@ class HoldServer {
     try { this.ctx.progress(h.token, h.n, h.msg + HINT); } catch { /* client gone */ }
   }
 
-  finish(h, s) {
+  finish(h: Hold, s: string) {
     if (!this.holds.has(h.id)) return;
     this.holds.delete(h.id);
     // A room hold returning JOINED/RESPAWN is re-called by its row agent at once: the row is still running.
     if (h.kind === 'room' && !/^STOP\b/.test(s)) this.roomEnded.set(h.code, Date.now());
     else if (h.kind === 'room') this.roomEnded.delete(h.code);
     this.log('RETURN', h.id, s);
-    h.resolve(this.text(s));
+    h.resolve!(this.text(s));
     this.saveSeat();
     if (!this.holds.size) this.stopTimer();
   }
@@ -138,17 +173,17 @@ class HoldServer {
     });
   }
 
-  others(code, ms) {
+  others(code: string, ms: Members): string[] {
     const me = this.me;
     return Object.values(ms)
-      .filter(m => m && m.name && !m.left_at && m.role !== 'claude' && m.name !== 'claude' && (!me || m.name !== me.name))
+      .filter((m): m is NonNullable<typeof m> & { name: string } => !!(m && m.name) && !m.left_at && m.role !== 'claude' && m.name !== 'claude' && (!me || m.name !== me.name))
       .map(m => m.name);
   }
 
   /** Names the room should spawn now (JOINED). Marks them announced. */
-  missing(code, ms, now) {
+  missing(code: string, ms: Members, now: number): string[] {
     const live = new Set(this.memberHolds(code).map(h => h.name));
-    const out = [];
+    const out: string[] = [];
     for (const n of this.others(code, ms)) {
       const k = `${code}/${n}`;
       if (live.has(n)) { this.expect.delete(k); continue; }
@@ -160,8 +195,8 @@ class HoldServer {
     return out;
   }
 
-  roomReply(code, joined) {
-    const lines = [];
+  roomReply(code: string, joined: string[]): string {
+    const lines: string[] = [];
     const rs = this.respawn.get(code);
     if (rs && rs.size) { lines.push(`RESPAWN ${[...rs].join(' ')}`); this.respawn.delete(code); }
     if (joined.length) lines.push(`JOINED ${joined.join(' ')}`);
@@ -189,13 +224,13 @@ class HoldServer {
       for (const h of [...this.holds.values()].filter(x => x.code === code)) {
         if (h.kind === 'member') {
           // NAME leaving keeps the row (it reads "left"); only this seat leaving ends it (above).
-          const mine = fresh.filter(e => e.from === h.name || e.to === h.name);
-          if (mine.length) this.progress(h, entryLine(mine.at(-1)));
+          const mine = fresh.filter((e: Entry) => e.from === h.name || e.to === h.name);
+          if (mine.length) this.progress(h, entryLine(mine.at(-1)!));
         } else {
           const reply = this.roomReply(code, this.missing(code, ms, now));
           if (reply) { this.finish(h, reply); continue; }
-          const plain = fresh.filter(e => e.kind !== 'member_joined' && e.kind !== 'member_left');
-          if (plain.length) this.progress(h, entryLine(plain.at(-1)));
+          const plain = fresh.filter((e: Entry) => e.kind !== 'member_joined' && e.kind !== 'member_left');
+          if (plain.length) this.progress(h, entryLine(plain.at(-1)!));
           const move = this.newMove(h, code, now);
           if (move) this.progress(h, move);
         }
@@ -207,32 +242,32 @@ class HoldServer {
     if (seat && now - (seat.savedAt || 0) >= this.BEAT_MS / 2) {
       seat.savedAt = now;
       this.saveSeat();
-      try { this.ctx.identity.heartbeat && this.ctx.identity.heartbeat(this.me || seat, now); } catch (e) { this.log('heartbeat', e.message); }
+      try { this.ctx.identity.heartbeat && this.ctx.identity.heartbeat(this.me || seat, now); } catch (e) { this.log('heartbeat', (e as Error).message); }
     }
   }
 
   /** The newest join / settled leave this room hold has not shown yet, as a notice line (marks them shown). */
-  newMove(h, code, now) {
+  newMove(h: RoomHold, code: string, now: number): string {
     const { entries } = this.readEntries(code);
     const me = this.me;
-    const fresh = notices.joinLeave(entries, me && me.name, { now }).filter(n => n.settled && !h.moves.has(n.id));
+    const fresh = notices.joinLeave(entries, me && me.name, { now }).filter((n: { settled?: boolean; id: number }) => n.settled && !h.moves.has(n.id));
     for (const n of fresh) h.moves.add(n.id);
-    const n = fresh.filter(x => now - Date.parse(x.at) < config.NOTICE_FRESH_MS).at(-1);
+    const n = fresh.filter((x: { at: string }) => now - Date.parse(x.at) < config.NOTICE_FRESH_MS).at(-1);
     return n ? clip(notices.text(n)) : '';
   }
 
   startTimer() {
     if (this.timer) return;
-    this.timer = setInterval(() => { try { this.tick(); } catch (e) { this.log('tick error', e.message); } }, this.POLL_MS);
+    this.timer = setInterval(() => { try { this.tick(); } catch (e) { this.log('tick error', (e as Error).message); } }, this.POLL_MS);
     if (this.timer.unref) this.timer.unref();
   }
   stopTimer() { if (this.timer) { clearInterval(this.timer); this.timer = null; } }
 
-  onCancelled(h) {
+  onCancelled(h: Hold) {
     if (!this.holds.has(h.id)) return;
     this.holds.delete(h.id);
     this.log('CANCELLED', h.id, h.kind, h.name || h.code);
-    h.resolve(this.text(`(cancelled)`));
+    h.resolve!(this.text(`(cancelled)`));
     if (h.kind === 'room') this.roomEnded.delete(h.code);
     this.saveSeat();
     if (h.kind === 'room') { this.roomGone.set(h.code, Date.now()); this.respawn.delete(h.code); }
@@ -245,7 +280,7 @@ class HoldServer {
     if (!this.holds.size) this.stopTimer();
   }
 
-  respawnCheck(h) {
+  respawnCheck(h: Hold) {
     const code = h.code;
     const gone = this.roomGone.get(code);
     if (gone && Date.now() - gone < this.RESPAWN_MS * 4) return;
@@ -255,30 +290,32 @@ class HoldServer {
     const live = this.roomHolds(code);
     const ended = this.roomEnded.get(code);
     if (!live.length && !(ended && Date.now() - ended < config.HOLD_RESPAWN_AFTER_RETURN_MS)) return; // room Claude side: nobody respawns
-    if (!this.respawn.has(code)) this.respawn.set(code, new Set());
-    this.respawn.get(code).add(h.name);
+    let rs = this.respawn.get(code);
+    if (!rs) this.respawn.set(code, rs = new Set());
+    rs.add(h.name);
     this.expect.set(`${code}/${h.name}`, { at: Date.now(), n: 0 });
     for (const r of live) this.finish(r, this.roomReply(code, []));
     if (!this.holds.size) this.stopTimer();
   }
 
   /** The latest entry `pick` accepts, for a new hold's first line. */
-  lastShown(code, pick) {
+  lastShown(code: string, pick: (e: Entry) => boolean): Entry | undefined {
     return this.readEntries(code).entries.filter(pick).at(-1);
   }
 
-  call(name, who0, args = {}, meta = {}) {
+  call(name: string, who0: Me | null, args: ToolArgs = {}, meta: CallMeta = {}): ToolResult | Promise<ToolResult> | null {
     if (name !== 'hold') return null;
     let cur = who0;
     if (!cur) { try { cur = this.ctx.whoami(); } catch { cur = null; } }
-    const early = s => { this.log('RETURN now', meta.id, args.member || args.room || '', s); return this.text(s); };
+    const early = (s: string) => { this.log('RETURN now', meta.id, args.member || args.room || '', s); return this.text(s); };
     if (!cur) return early(`STOP: not in a room. ${END}`);
     this.me = cur; this.meAt = Date.now();
     this.seat = this.seat && this.seat.code === cur.code && this.seat.name === cur.name ? this.seat : { code: cur.code, name: cur.name, pid: cur.pid };
     const code = cur.code;
     const member = typeof args.member === 'string' ? args.member.trim().replace(/^@/, '') : '';
     const roomCode = typeof args.room === 'string' ? args.room.trim() : '';
-    const h = { id: meta.id, token: meta.progressToken, n: 0, msg: '', sentAt: 0, code, started: Date.now() };
+    const base = { id: meta.id, token: meta.progressToken, n: 0, msg: '', sentAt: 0, code, started: Date.now() };
+    let h: Hold;
 
     if (member) {
       if (!NAME_RE.test(member)) return early(`STOP: "${member}" is not a member name. ${END}`);
@@ -287,9 +324,9 @@ class HoldServer {
       // A member who left is still a row (it reads "left"); only a name never in the room is refused.
       if (!ms[member]) return early(`STOP: ${member} is not in room ${code}. ${END}`);
       if (this.memberHolds(code).some(x => x.name === member)) return early(`STOP: duplicate row: ${member}'s row is already open. ${END}`);
-      Object.assign(h, { kind: 'member', name: member });
+      h = { ...base, kind: 'member', name: member };
       this.expect.delete(`${code}/${member}`);
-      const last = this.lastShown(code, e => e.from === member || e.to === member);
+      const last = this.lastShown(code, (e: Entry) => e.from === member || e.to === member);
       h.msg = last ? entryLine(last) : `${member} · in room ${code}`;
     } else if (roomCode) {
       if (roomCode !== code) return early(`STOP: you are in room ${code}, not ${roomCode}. ${END}`);
@@ -302,21 +339,23 @@ class HoldServer {
       this.roomGone.delete(code);
       const reply = this.roomReply(code, this.missing(code, ms, now));
       if (reply) { this.log('RETURN now', meta.id, reply); this.roomEnded.set(code, now); this.saveSeat(); return this.text(reply); }
-      Object.assign(h, { kind: 'room', name: code, moves: new Set() });
-      const last = this.lastShown(code, e => e.kind !== 'member_joined' && e.kind !== 'member_left');
+      const rh: RoomHold = { ...base, kind: 'room', name: code, moves: new Set() };
+      h = rh;
+      const last = this.lastShown(code, (e: Entry) => e.kind !== 'member_joined' && e.kind !== 'member_left');
       // a re-called room hold (after JOINED) still shows the join that brought it back, if it is recent
-      const move = this.newMove(h, code, now);
+      const move = this.newMove(rh, code, now);
       h.msg = move || (last ? entryLine(last) : `room ${code}`);
     } else {
-      return this.text('hold needs {member: NAME} (participant row) or {room: CODE} (room row).', true);
+      return this.text('hold needs {member: NAME} (participant row) or {room: CODE} (room row).'); // text() takes no isError: this was never sent as an error
     }
 
-    return new Promise(resolve => {
-      h.resolve = resolve;
-      this.holds.set(h.id, h);
-      this.log('HOLD', h.id, h.kind, h.name);
-      if (this.ctx.onCancel && h.id != null) this.ctx.onCancel(h.id, () => this.onCancelled(h));
-      this.progress(h);
+    const held = h;
+    return new Promise<ToolResult>(resolve => {
+      held.resolve = resolve;
+      this.holds.set(held.id, held);
+      this.log('HOLD', held.id, held.kind, held.name);
+      if (this.ctx.onCancel && held.id != null) this.ctx.onCancel(held.id, () => this.onCancelled(held));
+      this.progress(held);
       this.saveSeat();
       this.startTimer();
     });
@@ -324,11 +363,11 @@ class HoldServer {
 }
 
 /** The room-server plug-in: one HoldServer behind {tools, call}. */
-function create(ctx) {
+function create(ctx: HoldContext): PluginApi & { server: HoldServer; _state: Pick<HoldServer, 'holds' | 'expect' | 'respawn'> } {
   const s = new HoldServer(ctx);
   // anonymous: room-server calls hold with me = null instead of erroring, so a row outside a room gets STOP.
   return {
-    tools: [TOOL], call: (...a) => s.call(...a), anonymous: ['hold'], server: s,
+    tools: [TOOL], call: (...a: Parameters<HoldServer['call']>) => s.call(...a), anonymous: ['hold'], server: s,
     _state: { holds: s.holds, expect: s.expect, respawn: s.respawn },
   };
 }

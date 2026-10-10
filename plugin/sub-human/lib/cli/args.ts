@@ -10,8 +10,10 @@
  *       error: the first problem, for the caller to print with its usage (flags and rest are as far as they got)
  */
 
-function parse(args, spec) {
-  const flags = {}, rest = [];
+import type { FlagSpec, Flags, Parsed } from './types.ts';
+
+function parse<S extends FlagSpec>(args: readonly string[], spec: S): Parsed<S> {
+  const flags: Record<string, string | true> = {}, rest: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--') { rest.push(...args.slice(i + 1)); break; }
@@ -20,11 +22,11 @@ function parse(args, spec) {
     if (spec[k] === 0) flags[k] = true;
     else if (spec[k] === '?') flags[k] = args[i + 1] !== undefined && !String(args[i + 1]).startsWith('--') ? args[++i] : true;
     else {
-      if (args[i + 1] === undefined) return { flags, rest, error: `${a} needs a value` };
+      if (args[i + 1] === undefined) return { flags: flags as Flags<S>, rest, error: `${a} needs a value` };
       flags[k] = args[++i];
     }
   }
-  return { flags, rest };
+  return { flags: flags as Flags<S>, rest };
 }
 
 export { parse };

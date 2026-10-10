@@ -44,6 +44,7 @@ import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as proposal from '../lib/proposal.ts';
 import { createRequire } from 'node:module';
+import type { CallMeta, CallToolParams, JsonRpcError, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 
 // loadPlugins() requires each plug-in by path (createRequire: require(esm) is synchronous).
 const require = createRequire(import.meta.url);
@@ -53,9 +54,9 @@ const PLUGINS = ['hold.ts', 'task.ts'];
 const POST_KINDS = ['say', 'question', 'status'];
 // MCP revisions this server speaks (newest first): answer with the client's when listed, else our newest.
 const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
-const negotiateProtocol = v => (PROTOCOL_VERSIONS.includes(v) ? v : PROTOCOL_VERSIONS[0]);
+const negotiateProtocol = (v: unknown): string => (typeof v === 'string' && PROTOCOL_VERSIONS.includes(v) ? v : PROTOCOL_VERSIONS[0]);
 // serverInfo.version follows the plugin manifest, so one bump versions both.
-const VERSION = (() => {
+const VERSION: string = (() => {
   try {
     return JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || '0.0.0';
   } catch { return '0.0.0'; }
@@ -63,17 +64,17 @@ const VERSION = (() => {
 
 // ---------- transport ----------
 let closed = false;
-function send(msg) {
+function send(msg: JsonRpcOutgoing) {
   if (closed) return;
   try { process.stdout.write(JSON.stringify(msg) + '\n'); } catch { shutdown(); }
 }
 process.stdout.on('error', () => shutdown());
-const reply = (id, result) => send({ jsonrpc: '2.0', id, result });
-const fail = (id, code, message) => send({ jsonrpc: '2.0', id, error: { code, message } });
-const text = (s, isError) => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) });
-const json = v => text(JSON.stringify(v));
+const reply = (id: JsonRpcId | null, result: unknown) => send({ jsonrpc: '2.0', id, result });
+const fail = (id: JsonRpcId | null, code: number, message: string) => send({ jsonrpc: '2.0', id, error: { code, message } });
+const text = (s: unknown, isError?: boolean): ToolResult => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) });
+const json = (v: unknown) => text(JSON.stringify(v));
 
-function log(...a) {
+function log(...a: unknown[]) {
   if (process.env.SUB_HUMAN_DEBUG !== '1') return;
   try {
     const line = a.map(x => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
@@ -82,7 +83,9 @@ function log(...a) {
   } catch { /* debug only */ }
 }
 
-let plugins = [];
+/** A loaded plug-in: its file, its api, and the tools it takes with me = null. */
+interface Plugin { file: string; api: PluginApi; anonymous: Set<string> }
+let plugins: Plugin[] = [];
 function shutdown() {
   if (closed) return;
   closed = true;
@@ -91,52 +94,53 @@ function shutdown() {
 }
 
 // ---------- server -> client requests ----------
-const outgoing = new Map(); // our request id -> {resolve, reject}
+const outgoing = new Map<JsonRpcId, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>(); // our request id -> {resolve, reject}
 let nextReq = 1;
-function request(method, params) {
+function request(method: string, params?: unknown): OutgoingRequest {
   const id = `sh-${process.pid}-${nextReq++}`;
-  const p = new Promise((resolve, reject) => {
+  const p: OutgoingRequest = new Promise((resolve, reject) => {
     outgoing.set(id, { resolve, reject });
     send({ jsonrpc: '2.0', id, method, params });
   });
   p.id = id;
   return p;
 }
-function cancelRequest(id, reason) {
+function cancelRequest(id: string, reason?: string) {
   send({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: id, ...(reason ? { reason } : {}) } });
   const w = outgoing.get(id);
   if (w) { outgoing.delete(id); w.reject({ code: 'CANCELLED', message: reason || 'cancelled' }); }
 }
-const notify = (method, params) => send({ jsonrpc: '2.0', method, ...(params !== undefined ? { params } : {}) });
-const progress = (progressToken, n, message) => {
+const notify = (method: string, params?: unknown) => send({ jsonrpc: '2.0', method, ...(params !== undefined ? { params } : {}) });
+const progress = (progressToken: ProgressToken | null | undefined, n: number, message?: string) => {
   if (progressToken == null) return;
   notify('notifications/progress', { progressToken, progress: n, ...(message ? { message } : {}) });
 };
 
 // ---------- client -> server cancellation ----------
-const cancelHandlers = new Map(); // tools/call id -> [fn]
-const cancelled = new Set();      // tools/call ids the client cancelled: never reply to them
-function onCancel(requestId, fn) {
-  if (!cancelHandlers.has(requestId)) cancelHandlers.set(requestId, []);
-  cancelHandlers.get(requestId).push(fn);
+const cancelHandlers = new Map<JsonRpcId, ((reason?: unknown) => void)[]>(); // tools/call id -> [fn]
+const cancelled = new Set<JsonRpcId>();      // tools/call ids the client cancelled: never reply to them
+function onCancel(requestId: JsonRpcId, fn: (reason?: unknown) => void) {
+  let fns = cancelHandlers.get(requestId);
+  if (!fns) cancelHandlers.set(requestId, fns = []);
+  fns.push(fn);
 }
 
 // ---------- identity ----------
 /** A stdio server is spawned without a shell, so our parent is the claude process (cc CONTRACT mcp-stdio-ppid). */
-function whoami() {
+function whoami(): Me | null {
   const pid = process.ppid > 1 ? process.ppid : null;
   return pid ? identity.resolveByPid(pid) : null;
 }
 
-let clientCapabilities = {};
-const ctx = {
+let clientCapabilities: Record<string, unknown> = {};
+const ctx: PluginContext = {
   send, notify, request, cancelRequest, progress, onCancel, whoami,
   clientCaps: () => clientCapabilities,
   room, identity, proposal, text, log,
 };
 
 // ---------- core tools ----------
-const CORE = [
+const CORE: ToolDefinition[] = [
   {
     name: 'post',
     title: 'Post to the room',
@@ -186,18 +190,18 @@ const CORE = [
   },
 ];
 
-function post(me, args) {
+function post(me: Me, args: ToolArgs) {
   const { kind, text: body, to, refs } = args;
-  if (!POST_KINDS.includes(kind)) {
+  if (typeof kind !== 'string' || !POST_KINDS.includes(kind)) {
     return text(`refused: kind must be one of ${POST_KINDS.join(', ')}. To ask for agreement, use propose; only people answer it, on their own card.`, true);
   }
-  const entry = { kind, text: body };
+  const entry: { kind: string; text: unknown; to?: unknown; refs?: unknown } = { kind, text: body };
   if (to !== undefined) entry.to = to;
   if (refs !== undefined) entry.refs = refs;
   return json(room.open(me.code).append(entry, { via: 'agent', from: me.name }));
 }
 
-function read(me, args) {
+function read(me: Me, args: ToolArgs) {
   if (args.ids !== undefined) {
     const ids = Array.isArray(args.ids) ? args.ids : [args.ids];
     if (!ids.length || !ids.every(i => Number.isInteger(Number(i)) && Number(i) > 0)) return text('ids must be positive integers', true);
@@ -206,12 +210,12 @@ function read(me, args) {
   const r = room.open(me.code);
   const cursor = `mcp-${me.name}`;
   const all = r.readAfter(r.getCursor(cursor));
-  if (all.length) r.setCursor(cursor, all.at(-1).id);
-  const unseen = all.filter(e => !(e.from === me.name && e.via === 'agent'));
+  if (all.length) r.setCursor(cursor, all.at(-1)!.id);
+  const unseen = all.filter((e: { from?: string; via?: string }) => !(e.from === me.name && e.via === 'agent'));
   return json(unseen.length > READ_MAX ? unseen.slice(-READ_MAX) : unseen);
 }
 
-function propose(me, args) {
+function propose(me: Me, args: ToolArgs) {
   let r;
   try { r = proposal.create(me, args); } catch (e) {
     if (e instanceof proposal.ProposalError) return text(`refused: ${e.message}`, true);
@@ -224,19 +228,19 @@ function propose(me, args) {
 }
 
 // ---------- plug-ins ----------
-function loadPlugins() {
-  const out = [];
+function loadPlugins(): Plugin[] {
+  const out: Plugin[] = [];
   for (const file of PLUGINS) {
     const full = path.join(import.meta.dirname, file);
     if (!fs.existsSync(full)) { log('plugin missing', file); continue; }
     try {
-      const mod = require(full);
-      const api = mod && typeof mod.create === 'function' ? mod.create(ctx) : null;
+      const mod: { create?: unknown } | null = require(full); // a plug-in: checked below, not trusted
+      const api: PluginApi | null = mod && typeof mod.create === 'function' ? mod.create(ctx) : null;
       if (!api || !Array.isArray(api.tools) || typeof api.call !== 'function') { log('plugin has no {tools, call}', file); continue; }
       out.push({ file, api, anonymous: new Set(Array.isArray(api.anonymous) ? api.anonymous : []) });
       log('plugin loaded', file, api.tools.map(t => t.name));
     } catch (e) {
-      log('plugin failed', file, e && e.stack || String(e));
+      log('plugin failed', file, (e as Error | null) && (e as Error).stack || String(e));
     }
   }
   return out;
@@ -253,52 +257,57 @@ function toolList() {
   return tools;
 }
 
-const ownerOf = name => plugins.find(p => p.api.tools.some(t => t && t.name === name));
+const ownerOf = (name: unknown) => plugins.find(p => p.api.tools.some(t => t && t.name === name));
 
 /** Settle a tools/call: reply once, unless the client cancelled it. */
-function settle(id, r) {
+function settle(id: JsonRpcId, r: ToolResult | null | undefined) {
   cancelHandlers.delete(id);
   if (cancelled.delete(id)) return;
   if (r === undefined || r === null) return reply(id, text('error: the tool returned nothing', true));
   reply(id, r);
 }
 
-function callTool(id, params) {
+function callTool(id: JsonRpcId, params: CallToolParams | undefined) {
   const name = params && params.name;
   const args = (params && params.arguments) || {};
-  const meta = { id, progressToken: params && params._meta ? params._meta.progressToken : undefined };
+  const meta: CallMeta = { id, progressToken: params && params._meta ? params._meta.progressToken : undefined };
   const isCore = CORE.some(t => t.name === name);
   const owner = isCore ? null : ownerOf(name);
   if (!isCore && !owner) { cancelHandlers.delete(id); return fail(id, -32602, `unknown tool ${name}`); }
-  let me = null;
-  try { me = whoami(); } catch (e) { log('whoami failed', e && e.message); }
-  if (!me && !(owner && owner.anonymous.has(name))) return settle(id, text('not in a room; run /sub-human', true));
+  let me: Me | null = null;
+  try { me = whoami(); } catch (e) { log('whoami failed', (e as Error | null) && (e as Error).message); }
+  // owner: a plug-in lists the tool by this name, so name is a string
+  if (!me && !(owner && owner.anonymous.has(name!))) return settle(id, text('not in a room; run /sub-human', true));
   if (isCore) {
+    const self = me!; // a core tool never runs without one (returned above)
     let r;
     try {
-      r = name === 'post' ? post(me, args) : name === 'read' ? read(me, args) : propose(me, args);
-    } catch (e) { r = text(`refused: ${e.message}`, true); }
+      r = name === 'post' ? post(self, args) : name === 'read' ? read(self, args) : propose(self, args);
+    } catch (e) { r = text(`refused: ${(e as Error).message}`, true); }
     return settle(id, r);
   }
   let r;
-  try { r = owner.api.call(name, me, args, meta); } catch (e) { return settle(id, text(`error: ${e.message}`, true)); }
-  if (r && typeof r.then === 'function') {
-    r.then(v => settle(id, v), e => settle(id, text(`error: ${e && e.message || e}`, true)));
-  } else settle(id, r);
+  // not core: owner is the plug-in that lists the tool
+  try { r = owner!.api.call(name!, me, args, meta); } catch (e) { return settle(id, text(`error: ${(e as Error).message}`, true)); }
+  if (r && typeof (r as Promise<ToolResult>).then === 'function') {
+    (r as Promise<ToolResult>).then(v => settle(id, v), (e: unknown) => settle(id, text(`error: ${(e as Error | null) && (e as Error).message || e}`, true)));
+  } else settle(id, r as ToolResult | null);
 }
 
 // ---------- dispatch ----------
-function handle(msg) {
+function handle(msg: JsonRpcIncoming | null) {
   if (msg && msg.jsonrpc === '2.0' && msg.method === undefined && msg.id != null && ('result' in msg || 'error' in msg)) {
     const w = outgoing.get(msg.id);
-    if (w) { outgoing.delete(msg.id); 'error' in msg ? w.reject(msg.error) : w.resolve(msg.result); }
+    if (w) { outgoing.delete(msg.id); if ('error' in msg) w.reject(msg.error); else w.resolve(msg.result); }
     return;
   }
   if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') {
     if (msg && msg.id != null) fail(msg.id, -32600, 'invalid request');
     return;
   }
-  const { id, method, params } = msg;
+  const { method } = msg;
+  const id = msg.id as JsonRpcId; // null or absent only for a notification, which gets no reply
+  const params = msg.params as Record<string, any> | undefined; // the client's, per method: each case reads what it needs
   const isNote = id === undefined || id === null;
   switch (method) {
     case 'initialize':
@@ -318,7 +327,7 @@ function handle(msg) {
       if (fns) {
         cancelled.add(rid);
         cancelHandlers.delete(rid);
-        for (const fn of fns) { try { fn(params.reason); } catch (e) { log('onCancel handler failed', e && e.message); } }
+        for (const fn of fns) { try { fn(params!.reason); } catch (e) { log('onCancel handler failed', (e as Error | null) && (e as Error).message); } } // params: it held rid
       }
       return;
     }
@@ -329,7 +338,7 @@ function handle(msg) {
     case 'tools/call':
       // Register a cancel slot before the call so a plug-in's onCancel and a late settle agree.
       if (!cancelHandlers.has(id)) cancelHandlers.set(id, []);
-      try { return callTool(id, params); } catch (e) { return settle(id, text(`error: ${e.message}`, true)); }
+      try { return callTool(id, params); } catch (e) { return settle(id, text(`error: ${(e as Error).message}`, true)); }
     default:
       if (!isNote) fail(id, -32601, `method not found: ${method}`);
   }
@@ -340,21 +349,22 @@ plugins = loadPlugins();
 // ---------- stdin ----------
 let buf = '';
 process.stdin.setEncoding('utf8');
-process.stdin.on('data', chunk => {
+process.stdin.on('data', (chunk: string) => {
   buf += chunk;
-  let nl;
+  let nl: number;
   while ((nl = buf.indexOf('\n')) >= 0) {
     const line = buf.slice(0, nl).trim();
     buf = buf.slice(nl + 1);
     if (!line) continue;
-    let msg;
+    let msg: JsonRpcIncoming | null;
     try { msg = JSON.parse(line); } catch { send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); continue; }
     try { handle(msg); } catch (e) {
-      log('handle failed', e && e.stack);
-      if (msg && msg.id != null && msg.method) fail(msg.id, -32603, String(e && e.message));
+      const err = e as Error | null;
+      log('handle failed', err && err.stack);
+      if (msg && msg.id != null && msg.method) fail(msg.id, -32603, String(err && err.message));
     }
   }
 });
 process.stdin.on('end', shutdown);
 process.stdin.on('close', shutdown);
-for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, shutdown);
+for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) process.on(sig, shutdown);

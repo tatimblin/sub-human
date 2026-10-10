@@ -504,6 +504,7 @@ Every internal the plugin relies on, from `lib/cc.js` `CONTRACT`. `§` points in
 - `lib/cli/host.ts`: the host's and the joiner's setup commands of scripts/sub-human, in the person's own shell (the Bash guard refuses them to a model).
 - `lib/cli/listen.ts`: the host's web listener commands of scripts/sub-human, in the person's own shell (the Bash guard refuses them to a model).
 - `lib/cli/main.ts`: the body of scripts/sub-human (a thin shim kept at its path: persisted artifacts run it), the read-only CLI over the room.
+- `lib/cli/types.ts`: the shared types of lib/cli/*.ts (type-only; nothing here runs).
 - `lib/clock.ts`: A tiny injectable clock, so code that waits (the `sub-human tail` settle and poll loops) can be tested without real sleeps.
 - `lib/config.ts`: every timing and size cap in one place, named. Callers import the value they use; an env override is read by the caller through envMs() at the moment it needs the value (tests set the env per child process, some per call).
 - `lib/handoff.ts`: moving a room's host to another member's machine. The host's machine holds the room's log, serves its links and runs its room Claude (billed to the host person's model account); a planned handoff moves all three before the host closes their laptop.
