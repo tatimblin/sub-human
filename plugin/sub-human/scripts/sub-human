@@ -42,7 +42,7 @@
  *   sub-human agent-statusline
  *       Claude Code's subagentStatusLine command (statusline/*). Never fails: on any error it prints
  *       nothing and exits 0.
- *   sub-human serve --stdio CODE [--link ID]
+ *   sub-human serve --stdio CODE [--link ID [--login]]
  *       One remote connection to room CODE hosted here (lib/remote/server.js): protocol frames on stdin and
  *       stdout (lib/remote/transports/pipe.js), errors on stderr; exits when stdin ends. A remote machine's
  *       link spawns it (a pipe), or sshd runs it as the forced command `authorize` wrote. Without a link token
@@ -50,6 +50,10 @@
  *       reserved for it) is accepted; any other is AUTH. A room this machine only mirrors is not served, unless
  *       the room moved away from here (lib/handoff.js): then this machine's old log is served read-only, so a
  *       member that reconnects late still gets the line that moved the room and its invite to the new host.
+ *       --login: run over this account's own ssh login (`/sub-human join NAME USER@HOST CODE` on the other machine
+ *       names the shim, <home>/bin/serve, with it): a hello with no token makes link ID (lib/remote/server.js), as
+ *       a process of this account may. Refused under SSH_ORIGINAL_COMMAND (a forced command: a restricted key, whose
+ *       line fixes its arguments without --login anyway, or a ForceCommand).
  *   sub-human serve --enroll CODE --kind ssh|ws|pipe
  *       One short-code attempt at room CODE hosted here (lib/remote/enroll.js serveEnroll): the CPace exchange and
  *       nothing else; it never serves the room. The ssh enrollment door's forced command and the web listener run it.
@@ -302,12 +306,18 @@ function watch(args) {
 
 // ---------- serve --stdio CODE: lib/remote/server.js ----------
 function serve(args) {
-  const { flags, rest } = parseFlags(args, { stdio: 0, link: 1, enroll: 1, kind: 1 });
+  const { flags, rest } = parseFlags(args, { stdio: 0, link: 1, login: 0, enroll: 1, kind: 1 });
   if (flags.enroll !== undefined) return serveEnroll(flags, rest);
   const code = rest[0];
-  if (!flags.stdio || !code || rest.length > 1) die('usage: sub-human serve --stdio CODE [--link ID]');
+  if (!flags.stdio || !code || rest.length > 1) die('usage: sub-human serve --stdio CODE [--link ID [--login]]');
   const { LINK_ID_RE } = require(path.join(LIB, 'remote', 'auth.js'));
   if (flags.link !== undefined && !LINK_ID_RE.test(flags.link)) die(`bad link id "${flags.link}"`);
+  if (flags.login && flags.link === undefined) die('sub-human serve --login: names no --link ID');
+  // sshd sets SSH_ORIGINAL_COMMAND only when a forced command runs (an authorized_keys command="…" or ForceCommand): a
+  // key restricted that way is not the account's own login, whatever command it asked for
+  if (flags.login && process.env.SSH_ORIGINAL_COMMAND !== undefined) {
+    die('sub-human serve --login: refused: this connection came through a forced command (a restricted ssh key or ForceCommand), not your own ssh login; join with an invite (/sub-human host --ssh on the host)', 1);
+  }
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
   const server = require(path.join(LIB, 'remote', 'server.js'));
   const pipe = require(path.join(LIB, 'remote', 'transports', 'pipe.js'));
@@ -317,7 +327,7 @@ function serve(args) {
     if (!handoff.movedAway(s)) die(`room "${code}" is not hosted on this machine (it holds a copy)`, 1);
     s = require(path.join(LIB, 'room', 'store.js')).open(code, { dir: s.dir }); // the old log, read-only: it moved
   }
-  const srv = server.serve(pipe.stdio(), { store: s, linkId: flags.link, log: msg => process.stderr.write(msg + '\n') });
+  const srv = server.serve(pipe.stdio(), { store: s, linkId: flags.link, login: !!flags.login, log: msg => process.stderr.write(msg + '\n') });
   // `sub-human revoke` stops this with SIGTERM: tell the link it was revoked first, so its daemon stops, not redials
   process.once('SIGTERM', () => { const told = srv.revoked(); setTimeout(() => process.exit(0), told ? 200 : 0); });
 }
@@ -421,7 +431,7 @@ Object.assign(cmds, { listen: a => { const c = require(path.join(LIB, 'cli', 'li
 const handoffCli = name => args => require(path.join(LIB, 'cli', 'handoff.js'))[name](args, { die, out: l => console.log(l), err: l => console.error(l) });
 Object.assign(cmds, { handoff: handoffCli('handoff'), promote: handoffCli('promote'), demote: handoffCli('demote') });
 try {
-  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] [--via JUMP] | authorize INVITE|LINK_ID PUBKEY [--file F] | host [--ssh [USER@HOST]] [--via JUMP] | admit REQUEST | revoke LINK_ID|NAME|INVITE_REF | prime CODE | host --tailscale [--funnel] | host --url URL | listen [--port P] [--start|--stop|--status] | unhost [--room CODE] | handoff NAME | promote CODE | demote CODE INVITE [PIN] | doctor [--bundle [FILE]] | agent-statusline')))(args);
+  (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID [--login]] | link CODE [--reset] | invite [--ssh USER@HOST[:PORT]] [--via JUMP] | authorize INVITE|LINK_ID PUBKEY [--file F] | host [--ssh [USER@HOST]] [--via JUMP] | admit REQUEST | revoke LINK_ID|NAME|INVITE_REF | prime CODE | host --tailscale [--funnel] | host --url URL | listen [--port P] [--start|--stop|--status] | unhost [--room CODE] | handoff NAME | promote CODE | demote CODE INVITE [PIN] | doctor [--bundle [FILE]] | agent-statusline')))(args);
 } catch (e) {
   die(e.message, 2);
 }

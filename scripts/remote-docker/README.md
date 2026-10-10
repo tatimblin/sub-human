@@ -72,6 +72,7 @@ Docker on this Mac. Nothing touches this Mac's sshd, `~/.ssh` or `~/.sub-human`.
 | `wss` | 1.1 | the host's `sub-human listen` on 127.0.0.1:7420; `/sub-human host --url https://tls-front` mints a join URL (`https://tls-front/sub-human/CODE#SECRET.KEY`) + PIN; bob and (through corp-proxy) ben link with it (no admit step) and take their seats; a wrong PIN is refused; posts flow both ways; mirrors converge; Caddy's log holds no post text | pass |
 | `tailscale` | 1.1 | opt-in (`TS_SERVE=1` and a tailscale CLI): the plugin's real `sub-human listen` and exactly the commands `host --tailscale` / `unhost` run (`tailscale serve --bg --https=443 --set-path=/sub-human-lab-<rand> http://127.0.0.1:<port>`, then `… --set-path=… off`), with a wss + Noise_NK handshake through the node's MagicDNS name pinned to the listener's key (never Funnel, never `serve reset`). The certificate is warmed first and the connect waits 45 s (a cold ts.net name takes ~20 s). A tailnet without Serve/HTTPS fails the serve check with the plugin's message (the admin URL), within 10 s | skip |
 | `wss-resilience` | P3/P2 (1.1) | bob (direct) and ben (corp-proxy) over wss: `docker pause devbox` `LAB_WSS_SLEEP_S` (45) s, both offline, a post queued, back within 30 s, the queued post once; iptables DROP to tls-front / corp-proxy, both dead within `LAB_PING_DEADLINE_MS` and back after the heal; the listener killed and restarted, both redial; converged throughout | pass |
+| `login` | P1 | bob's own key is an ordinary line in the devbox account's `authorized_keys`; `/sub-human join bob host@devbox CODE` (no invite, PIN or admit) first fails at once on the unknown host key, naming `ssh host@devbox` to run once (BatchMode, no hang, no link minted); after that ssh it links and seats in one step through the host's shim (written by alice's join), `serve … --login` runs as host, the room line names the link, posts flow, mirror converges; a key `authorize` restricted to another link gets AUTH on the login path and mints nothing; `/sub-human revoke bob` stops the link | pass |
 
 Statuses: **pass**; **fail** (a check failed: exit 1); **pending** (the feature is not in the plugin yet, so the
 scenario or check is not run); **bug** (a known plugin bug; exit 0 unless `LAB_STRICT=1`); **skip** (opt-in).
@@ -99,6 +100,7 @@ probe finds it and the scenario runs. You can also force things:
 | `autoRejoin` | the daemon renews this machine's seats on reconnect (`keepSeats` in `link.js`) | p3-sleep |
 | `versionRange` | `protocol.skewMessage` (the hello's `proto` range) | skew |
 | `ws`, `urlPin` | transport kind `ws`/`wss` or `ws.js`/`listener.js`; the join hook takes a URL + PIN | wss, wss-resilience |
+| `loginJoin` | the join hook builds a login link (`loginSpec`) | login |
 
 ## Evidence
 

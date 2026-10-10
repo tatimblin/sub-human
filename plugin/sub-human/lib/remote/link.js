@@ -102,6 +102,9 @@
  *                                  `ssh … -- user@host sub-human serve --stdio CODE` and the host's authorized_keys
  *                                  forced command decides what runs there (lib/remote/transports/ssh.js)
  *   sshCommand(spec, code, opts?) -> [cmd, ...args]   that ssh command line (lib/remote/transports/ssh.js command)
+ *   A login link (transport.login, `/sub-human join NAME USER@HOST CODE`) has no invite: its first hello says {login:
+ *                                  true} and the token it gets is kept as any other; ssh failures only the person can fix
+ *                                  (lib/remote/transports/ssh.js loginFailure) are AUTH, so the daemon stops with them
  *   keyRefused(linkFile, transport, err) -> Promise<err'>   connectLink's: a dial of an ssh link with its own key
  *                                  and a token that ssh refused ("Permission denied (publickey)": the host revoked the
  *                                  key) is AUTH, so the daemon stops; anything else is err as it was
@@ -745,12 +748,13 @@ async function connectLink(code) {
     await require('./enroll.js').enrollLink(code);
     l = links.get(code);
   }
-  if (!l.token && typeof l.invite !== 'string') {
+  const login = !!l.transport && l.transport.login === true; // a link over the person's own ssh login: no invite
+  if (!l.token && typeof l.invite !== 'string' && !login) {
     throw new RoomError('AUTH', `the host refused this link's invite${l.refused && l.refused.reason ? ` (${l.refused.reason})` : ''}; ask the host for a new one`);
   }
   const kind = l.transport && l.transport.kind;
   if (!transports().get(kind)) throw new RoomError('PROTOCOL', `unknown transport "${kind}" (${transports().kinds().join(', ')})`);
-  const cred = l.token ? { token: l.token } : { invite: l.invite, ...(typeof l.pin === 'string' ? { pin: l.pin } : {}) };
+  const cred = l.token ? { token: l.token } : login ? { login: true } : { invite: l.invite, ...(typeof l.pin === 'string' ? { pin: l.pin } : {}) };
   const epoch = require('../room/store.js').open(code).hostState().epoch;
   const opts = { machine: require('../home.js').machineId(), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...cred };
   const t = transports().open(l.transport, { code });
@@ -758,8 +762,8 @@ async function connectLink(code) {
   try { c = await require('./client.js').connect(t, opts); } catch (e) {
     // the host refused the invite (a wrong PIN, burnt, used, expired): it and its PIN are spent here too, so the link
     // file keeps no secret in clear (a new `/sub-human join NAME INVITE PIN` writes a fresh one)
-    if (!l.token && e && e.code === 'AUTH') scrubRefused(links, code, e.message);
-    throw await keyRefused(l, t, e);
+    if (!l.token && !login && e && e.code === 'AUTH') scrubRefused(links, code, e.message);
+    throw login ? await loginRefused(l, t, e, code) : await keyRefused(l, t, e);
   }
   if (!l.token) {
     const { invite, pin, awaiting, ...rest } = l; // an sh2 invite's PIN is spent with it
@@ -782,6 +786,20 @@ async function keyRefused(l, t, e) {
   return /Permission denied \(publickey/.test(tr.stderr())
     ? new RoomError('AUTH', 'the host no longer accepts this link\'s ssh key (it was revoked); ask the host for a new invite')
     : e;
+}
+
+/**
+ * A login link's ssh gave up for a reason only the person can fix (lib/remote/transports/ssh.js loginFailure: an
+ * unknown host key, a refused login, no shim or no room on the host): AUTH with that reason, so the daemon stops and
+ * the join says what to run, instead of redialing a door that stays shut. Anything else is err as it was.
+ */
+async function loginRefused(l, t, e, code) {
+  if (!e || e.code !== 'OFFLINE') return e;
+  const tr = await Promise.resolve(t).catch(() => null);
+  if (!tr || typeof tr.stderr !== 'function') return e;
+  await new Promise(r => setTimeout(r, 100)); // ssh's last words may come just after its exit
+  const why = require('./transports/ssh.js').loginFailure(tr.stderr(), l.transport, code);
+  return why ? new RoomError('AUTH', why) : e;
 }
 
 function idleWatch(link, mirror, idleMs) {

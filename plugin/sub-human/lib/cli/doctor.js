@@ -349,8 +349,8 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
   const st = lib('room/link-state.js').read(code) || { state: 'offline' };
   if (st.pid) daemon = { running: lib('io.js').isAlive(st.pid), pid: st.pid }; // the state record's own pid wins
   const recent = lastLogError(code);
-  const out = { code, transport: { kind: spec.kind, describe, user: spec.user, host: spec.host, port: spec.port, home: spec.home },
-    credential: l.token ? 'token' : l.invite ? 'invite (not redeemed yet)' : 'none', daemon, state: st, recent,
+  const out = { code, transport: { kind: spec.kind, describe, user: spec.user, host: spec.host, port: spec.port, home: spec.home, ...(spec.login === true ? { login: true } : {}) },
+    credential: l.token ? 'token' : l.invite ? 'invite (not redeemed yet)' : spec.login === true ? 'ssh login (not linked yet)' : 'none', daemon, state: st, recent,
     // an ssh link not admitted yet: the line its host pastes (/sub-human admit shk1…; no secret in it)
     ...(!l.token && typeof l.request === 'string' ? { request: l.request } : {}),
     // the room's host moved (lib/handoff.js): the link file was re-pointed at the new host; reached once a token came
@@ -360,7 +360,7 @@ async function diagnoseLink(code, { quick, timeoutMs, env }) {
     const reply = r.reply || {};
     const hostTime = replyTime(reply);
     out.reach = {
-      ok: r.ok, ms: r.ms, error: r.error, skipped: !!r.skipped, hint: r.ok ? null : (spec.kind === 'ssh' ? sshHint(r.stderr, { code, request: l.request, transport: spec }) : null),
+      ok: r.ok, ms: r.ms, error: r.error, skipped: !!r.skipped, hint: r.ok ? null : (spec.kind === 'ssh' ? (spec.login === true && lib('remote/transports/ssh.js').loginFailure(r.stderr, spec, code)) || sshHint(r.stderr, { code, request: l.request, transport: spec }) : null),
       stderr: r.stderr || '',
       protocol: r.ok ? { v: reply.v, proto: reply.proto || null, server: typeof reply.server === 'string' ? reply.server : null } : null,
       skewMs: r.ok && hostTime !== null ? Math.round(hostTime - (r.t0 + r.t1) / 2) : null,
@@ -389,7 +389,9 @@ function linkChecks(d) {
     fix = `${d.request ? `over ssh ${who} lets this machine's key in first: send them /sub-human admit ${d.request}\n` : ''}`
       + `if this machine cannot reach the new host, ask ${who} for an invite it can use (/sub-human host there), then /sub-human join NAME INVITE PIN`;
   } else if (d.request && d.state.state !== 'online') fix = `the host has not let this link's key in yet: send them /sub-human admit ${d.request}`;
-  else if (/invite (is burnt|was used already|is unknown|expired)|handoff invite expired|last try|no longer accepts this link|revoked/i.test(lastError || '')) {
+  else if (d.transport.login && /revoked|unknown link token/i.test(lastError || '')) {
+    fix = `the host revoked this link: ask them first, then link again over your ssh login: /sub-human join NAME ${d.transport.user}@${d.transport.host}${d.transport.port ? `:${d.transport.port}` : ''} ${d.code}`;
+  } else if (/invite (is burnt|was used already|is unknown|expired)|handoff invite expired|last try|no longer accepts this link|revoked/i.test(lastError || '')) {
     // the link's invite (or key) is spent: joining again or restarting the daemon would only reuse it
     fix = 'this link\'s invite is spent (burnt, used or expired) or its access was revoked: ask the host for a new invite (/sub-human host there), then /sub-human join NAME INVITE PIN';
   } else if (/STALE/.test(lastError || '')) fix = 'this copy speaks to a host the room moved away from: sub-human handoff --status shows where it is';

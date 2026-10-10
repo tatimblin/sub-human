@@ -91,6 +91,22 @@ test('host gates: on a mirror-shaped store enter is the seat op only (no member_
   assert.deepEqual([mem.members.read().claude, mem.readAll().filter(e => e.kind === 'member_left')], [undefined, []], 'the host logs the leave');
 });
 
+test('seats: exit from a room hosted elsewhere while its link is offline is best effort: false, no throw (the seat lapses on the host)', t => {
+  const { code, mem } = memoryRoom(t, { isHost: false });
+  seats.enter({ code, name: 'alice', pid: process.pid, session_id: 'sa', pubkey: seatKey.publicPem(code, 'alice') });
+  const { RoomError } = require(path.join(h.LIB, 'room', 'validate.js'));
+  t.mock.method(mem.members, 'leave', () => { throw new RoomError('OFFLINE', 'room is offline (the link is offline)'); });
+  assert.equal(seats.exit(code, 'alice', 'session ended'), false);
+});
+
+test('seats: exit on the host still throws a store error (nothing to lapse it)', t => {
+  const { code, mem } = memoryRoom(t, { isHost: true });
+  seats.enter({ code, name: 'alice', pid: process.pid, session_id: 'sa', pubkey: seatKey.publicPem(code, 'alice') });
+  const { RoomError } = require(path.join(h.LIB, 'room', 'validate.js'));
+  t.mock.method(mem.members, 'leave', () => { throw new RoomError('LOCK', 'busy'); });
+  assert.throws(() => seats.exit(code, 'alice', 'session ended'), /busy/);
+});
+
 test('identity on a mirror: a seat of this machine is resolved, rebound after /clear and renewed by its index records (the streamed document has no pid or session)', t => {
   const { code, mem } = memoryRoom(t, { isHost: false });
   seats.enter({ code, name: 'alice', pid: process.pid, session_id: 'sa', pubkey: seatKey.publicPem(code, 'alice') });

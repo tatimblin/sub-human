@@ -15,6 +15,8 @@
  *                                 the join starts: {ok, out, ms, code, linked, admit}. ok: the seat joined (sh1), or
  *                                 the link redeemed the invite (sh2: "linked"); admit: the shk1 request an ssh join
  *                                 shows for the host's /sub-human admit
+ *   login NAME DEST CODE [SSH_OPT…]   `/sub-human join NAME DEST CODE`: a link over the person's own ssh login to DEST
+ *                                 (no invite), with SSH_OPT… as for join: {ok, out, ms, code}; ok: the seat joined
  *   rejoin NAME CODE              `/sub-human NAME CODE` (a room hosted here, or one this machine links to)
  *   say NAME TEXT                 NAME's `@room TEXT` through hooks/prompt.js: {ok, ms, t0, out}
  *   prompt NAME TEXT              any typed prompt through hooks/prompt.js (e.g. a slash-free command)
@@ -133,6 +135,15 @@ const cmds = {
     return { ok: joinedOk(r.json) || linked, linked, admit, out, ms: r.ms, code: parsed && parsed.code, stderr: r.stderr };
   },
 
+  login(name, dest, code, ...rest) {
+    let seat;
+    try { seat = seatOf(name); } catch { seat = null; }
+    if (!seat || !alive(seat.pid)) seat = newSeat(name, rest.join(' '));
+    else if (rest.length) { seat.sshOpts = rest.join(' '); const st = load(); st.seats[name] = seat; save(st); }
+    const r = expand(seat, `join ${name} ${dest} ${code}`);
+    return { ok: joinedOk(r.json), out: reason(r.json) || '', ms: r.ms, code, stderr: r.stderr };
+  },
+
   card(name, label) {
     const seat = seatOf(name);
     const code = load().code || lib('room/store.js').listRooms()[0];
@@ -222,7 +233,7 @@ const cmds = {
       protocolExports: Object.keys(protocol), files, cliPath: CLI,
       src: {
         auth: { sh2: /\bsh2\b/.test(src('lib/remote/auth.js')), pin: /\bpin\b/i.test(src('lib/remote/auth.js')) },
-        join: { hostSsh: /host\s+--ssh|--ssh\b/.test(src('hooks/join.js')), urlPin: /https?:\/\//.test(src('hooks/join.js')) && /\bpin\b/i.test(src('hooks/join.js')) },
+        join: { hostSsh: /host\s+--ssh|--ssh\b/.test(src('hooks/join.js')), urlPin: /https?:\/\//.test(src('hooks/join.js')) && /\bpin\b/i.test(src('hooks/join.js')), login: /\bloginSpec\b/.test(src('hooks/join.js')) },
         // a seat kept across an outage: the daemon renews this machine's seats on every reconnect (keepSeats/beat)
         link: { rejoin: /rejoin|keepSeats|localSeats/i.test(src('lib/remote/link.js')), outbox: /outbox/i.test(src('lib/remote/link.js')), ping: /\bping\b/.test(src('lib/remote/link.js')), wake: /\bwake\b/i.test(src('lib/remote/link.js')) },
         // the hello's version range: protocol.PROTO {min, max} and skewMessage (which side updates)
