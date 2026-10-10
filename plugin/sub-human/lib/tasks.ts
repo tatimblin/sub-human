@@ -36,6 +36,29 @@ import { clip, NAME_RE } from './text.ts';
 import * as config from './config.ts';
 import { humanTrust } from './room/store.ts';
 import * as room from './room.ts';
+import type { LogEntry, Members, Task, TaskReq } from './types-app.ts';
+
+/** A task as it arrives to be cleaned (the mirror, a fold, hooks/tasks.ts's native task): loosely shaped. */
+interface RawTask {
+  id?: string | number | null;
+  subject?: string;
+  status?: string;
+  owner?: string | null;
+  blockedBy?: unknown;
+}
+/** reqOf: a task_req or task entry's task fields. */
+interface ReqFields {
+  op: string | undefined;
+  id: string | null;
+  subject: string | null;
+  detail: string | null;
+  evidence: string | null;
+  owner: string | null;
+  status: string | null;
+  req: number | null;
+  by: string | null;
+}
+type GateResult = { ok: true, req?: LogEntry } | { ok: false, reason: string };
 
 const OPS = ['add', 'claim', 'release', 'done'];
 const SUBJECT_MAX = config.TASK_SUBJECT_MAX;
@@ -45,41 +68,41 @@ const SUMMARY_ITEMS = 3;
 const OPEN = new Set(['pending', 'in_progress']);
 
 /** The mirror is the room document `tasks` (lib/room/store.ts kv; tasks.json on disk). */
-const kvOf = code => room.open(code).store.kv;
+const kvOf = (code: string) => room.open(code).store.kv;
 /** Run fn under the mirror's lock (hooks/tasks.ts: read the log, append, refold, as one step). */
-const withList = (code, fn) => kvOf(code).lock('tasks', fn);
+const withList = <T>(code: string, fn: () => T): T => kvOf(code).lock('tasks', fn);
 /** Claude Code's task store for a list id (read only; the plugin never writes there). */
 
-const idNum = id => Number(id);
-const byId = (a, b) => idNum(a.id) - idNum(b.id) || String(a.id).localeCompare(String(b.id));
+const idNum = (id: unknown) => Number(id);
+const byId = (a: RawTask, b: RawTask) => idNum(a.id) - idNum(b.id) || String(a.id).localeCompare(String(b.id));
 
-function isRoomTask(t, code) {
+function isRoomTask(t: RawTask | null | undefined, code?: string): boolean {
   if (!t) return false;
   if (t.owner === 'room') return true;
   const s = String(t.subject || '');
   return code ? s === `room ${code} open` : /^room \S+ open$/.test(s);
 }
 
-function list(code) {
-  let v = [];
+function list(code: string): Task[] {
+  let v: unknown = [];
   try { v = kvOf(code).get('tasks', []); } catch { v = []; }
   return Array.isArray(v) ? v.filter(t => t && t.id != null).sort(byId) : [];
 }
 
-const clean = (tasks, code) => tasks.filter(t => t && t.id != null && !isRoomTask(t, code)).map(t => ({
+const clean = (tasks: (RawTask | null | undefined)[], code?: string): Task[] => tasks.filter((t): t is RawTask => !!t && t.id != null && !isRoomTask(t, code)).map(t => ({
   id: String(t.id), subject: String(t.subject || ''), status: t.status || 'pending',
   owner: t.owner || null, blockedBy: Array.isArray(t.blockedBy) ? t.blockedBy.map(String) : [],
 })).sort(byId);
 
-function writeList(code, tasks) {
+function writeList(code: string, tasks: (RawTask | null | undefined)[]): Task[] {
   const c = clean(tasks, code);
   kvOf(code).set('tasks', c);
   return c;
 }
 
 /** The mirror as a pure fold of the log's `task` entries (via system). Each entry is the task's whole state. */
-function fold(entries) {
-  const m = new Map();
+function fold(entries: (LogEntry | null | undefined)[] | null | undefined): Task[] {
+  const m = new Map<string, RawTask>();
   for (const e of entries || []) {
     if (!e || e.kind !== 'task' || e.via !== 'system' || e.task_id == null) continue;
     const id = String(e.task_id);
@@ -89,18 +112,18 @@ function fold(entries) {
   return clean([...m.values()]);
 }
 
-const refold = (code, entries) => writeList(code, fold(entries));
+const refold = (code: string, entries: LogEntry[]): Task[] => writeList(code, fold(entries));
 
 /** metadata.req as a log id (a positive integer, or its digits), else null. */
-function metaReq(md) {
-  const n = md && typeof md === 'object' ? Number(md.req) : NaN;
+function metaReq(md: unknown): number | null {
+  const n = md && typeof md === 'object' ? Number((md as { req?: unknown }).req) : NaN;
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-const isOpen = t => OPEN.has(t.status || 'pending');
-const mine = (code, name) => list(code).filter(t => isOpen(t) && t.owner === name);
+const isOpen = (t: Task) => OPEN.has(t.status || 'pending');
+const mine = (code: string, name: string): Task[] => list(code).filter(t => isOpen(t) && t.owner === name);
 
-function summary(code, viewer) {
+function summary(code: string, viewer: string | null | undefined): string {
   const all = list(code).filter(t => !isRoomTask(t, code));
   if (!all.length) return '';
   const open = all.filter(isOpen);
@@ -112,15 +135,16 @@ function summary(code, viewer) {
 }
 
 // ---------- requests ----------
-const str = v => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim());
+const str = (v: unknown) => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim());
 
 /** The `task` tool's arguments: {op, id?, subject?, detail?, evidence?, for?}. Returns the normalized req. */
-function validate(req) {
-  const no = error => ({ ok: false, error });
-  if (!req || typeof req !== 'object') return no('task needs {op}');
+function validate(input: unknown): { ok: true, req: TaskReq } | { ok: false, error: string } {
+  const no = (error: string) => ({ ok: false as const, error });
+  if (!input || typeof input !== 'object') return no('task needs {op}');
+  const req = input as Record<string, unknown>; // the tool's arguments: each field is checked below
   const op = req.op;
-  if (!OPS.includes(op)) return no(`op must be one of ${OPS.join(', ')}`);
-  const out = { op };
+  if (typeof op !== 'string' || !OPS.includes(op)) return no(`op must be one of ${OPS.join(', ')}`);
+  const out: TaskReq = { op };
   if (op === 'add') {
     const subject = str(req.subject);
     if (!subject) return no('add needs a subject');
@@ -150,16 +174,17 @@ function validate(req) {
   return { ok: true, req: out };
 }
 
-function requestText(r) {
+/** r: a validate()d req (done always carries evidence) plus its owner. */
+function requestText(r: TaskReq & { owner?: string | null }): string {
   const who = r.owner ? ` for ${r.owner}` : '';
   if (r.op === 'add') return `task add${who}: ${r.subject}${r.detail ? ` (${clip(r.detail.replace(/\s+/g, ' '), config.TASK_REQ_DETAIL_SHOWN)})` : ''}`;
-  if (r.op === 'done') return `task done #${r.id}${who}: ${clip(r.evidence.replace(/\s+/g, ' '), config.TASK_REQ_EVIDENCE_SHOWN)}`;
+  if (r.op === 'done') return `task done #${r.id}${who}: ${clip(r.evidence!.replace(/\s+/g, ' '), config.TASK_REQ_EVIDENCE_SHOWN)}`;
   return `task ${r.op} #${r.id}${who}`;
 }
 
 /** A task_req or task entry's task fields (the task id is the entry's task_id). */
-function reqOf(e) {
-  const t = e || {};
+function reqOf(e: Partial<LogEntry> | null | undefined): ReqFields {
+  const t: Partial<LogEntry> = e || {};
   return {
     op: t.op, id: t.task_id == null ? null : String(t.task_id), subject: t.subject || null, detail: t.detail || null,
     evidence: t.evidence || null, owner: t.owner || null, status: t.status || null, req: t.req || null,
@@ -168,13 +193,14 @@ function reqOf(e) {
 }
 
 // ---------- the TaskCompleted gate ----------
-function isClosing(code) {
-  let m = {};
+function isClosing(code: string): boolean {
+  // members.json, plus the older room-wide closing marks (a top-level `closing`, `_room`)
+  let m: Members & { closing?: unknown } = {};
   try { m = identity.readMembers(code) || {}; } catch { return false; }
   return !!(m.closing || (m.claude && m.claude.closing) || (m._room && m._room.closing));
 }
 
-const cites = (e, reqId) => (e.refs || []).includes(reqId) || new RegExp(`(^|[^\\d])#${reqId}(?!\\d)`).test(String(e.text || ''));
+const cites = (e: LogEntry, reqId: number) => (e.refs || []).includes(reqId) || new RegExp(`(^|[^\\d])#${reqId}(?!\\d)`).test(String(e.text || ''));
 
 /**
  * May the room's Claude complete `task` ({id, subject, owner, req?})? Only on a task_req{op:'done', id} with
@@ -182,7 +208,7 @@ const cites = (e, reqId) => (e.refs || []).includes(reqId) || new RegExp(`(^|[^\
  * [human] words citing that request. task.req (the native task's metadata.req) is tried first when it names
  * such a request. The room-open task completes only while the room is closing.
  */
-function gate(code, task, log = [], { closing } = {}) {
+function gate(code: string, task: (RawTask & { req?: unknown }) | null | undefined, log: LogEntry[] = [], { closing }: { closing?: boolean } = {}): GateResult {
   const id = String(task && task.id);
   if (isRoomTask(task, code)) {
     const c = closing === undefined ? isClosing(code) : closing;
