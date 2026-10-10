@@ -42,7 +42,12 @@
  * before loading anything else.
  */
 
+import { createRequire } from 'node:module';
 import { readInput } from '../lib/io.ts';
+
+// The rest of this file's modules load only past the quiet exit below, so they are required (createRequire:
+// require(esm) is synchronous and caches like an import), not imported: a static import would load them first.
+const require = createRequire(import.meta.url);
 
 /** A room tool call outside plan mode: preRoomTool acts only in plan mode, so nothing else needs loading. */
 const quiet = input => !!input && input.hook_event_name === 'PreToolUse' && input.permission_mode !== 'plan'
@@ -55,18 +60,17 @@ if (import.meta.main) {
   if (quiet(entry.input)) process.exit(0);
 }
 
-import fs from 'node:fs';
-import path from 'node:path';
-import * as c from './common.ts';
-import * as proposal from '../lib/proposal.ts';
-import * as cc from '../lib/cc.ts';
-import { writeFileAtomic } from '../lib/io.ts';
-import * as config from '../lib/config.ts';
+const fs = require('node:fs');
+const path = require('node:path');
+const c = require('./common.ts');
+const proposal = require('../lib/proposal.ts');
+const cc = require('../lib/cc.ts');
+const { writeFileAtomic } = require('../lib/io.ts');
+const config = require('../lib/config.ts');
 const { TRANSCRIPT_TAIL_BYTES } = config;
-import * as handoff from '../lib/handoff.ts';
-import * as envelope from '../lib/room/envelope.ts';
-import * as roomStore from '../lib/room/store.ts';
-import * as admissionMod from '../lib/remote/admission.ts';
+const handoff = require('../lib/handoff.ts');
+const envelope = require('../lib/room/envelope.ts');
+const roomStore = require('../lib/room/store.ts');
 
 const RECORDED = 'Recorded. The room shows it (and any note) already: post nothing about it. Agreeing is not a go-ahead to build; wait for the decision and your people.';
 /** Answers this run could not record, for the person (dispatch puts them in the output's systemMessage). */
@@ -154,7 +158,7 @@ function admitAsked(me, input) {
   if (named.length) return named[0];
   return /\badmit\b/i.test(s) && reqs.length === 1 ? reqs[0] : null;
 }
-const admission = () => admissionMod;
+const admission = () => require('../lib/remote/admission.ts');
 
 function pre(input, me) {
   const ad = admitAsked(me, input.tool_input);

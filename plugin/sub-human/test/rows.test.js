@@ -190,7 +190,7 @@ test('rowText (room row): lib/tasks.ts summary(code, viewer) is used when presen
     assert.equal(rows.rowText(code, 'alice', 'bob', { entries: [] }), '◼ #2 parser tests', 'participant row: tasks.mine()');
     return;
   }
-  const id = require.resolve(path.join(PLUGIN, 'lib', 'rows.ts')).replace(/rows\.js$/, 'tasks.ts');
+  const id = require.resolve(path.join(PLUGIN, 'lib', 'rows.ts')).replace(/rows\.ts$/, 'tasks.ts');
   require.cache[id] = { id, filename: id, loaded: true, exports: { summary: (c, v) => `tasks 1 open · #2 ${v}`, list: () => [] } };
   try {
     assert.equal(rows.rowText(code, code, 'alice', { entries: [] }), '1 here · tasks 1 open · #2 alice');

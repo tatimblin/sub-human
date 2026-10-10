@@ -5,7 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const paths = require('../lib/paths.js');
-const { readJson, readText } = require('../lib/io.ts');
+const { readJson, readText } = require('../lib/io.js');
 
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
 

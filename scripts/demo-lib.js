@@ -78,7 +78,7 @@ const path = require('node:path');
 const { execFileSync, spawn, spawnSync } = require('node:child_process');
 const { roomCode, readLog, strip } = require('./snap.js');
 const paths = require('./lib/paths.js');
-const { readJson, jsonl, esc } = require('./lib/io.ts');
+const { readJson, jsonl, esc } = require('./lib/io.js');
 const { panelRows, cardState, planState, joinLineIn, admitCardState } = require('./lib/panes.js');
 
 const REPO = paths.REPO;

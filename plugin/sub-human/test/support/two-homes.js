@@ -7,7 +7,7 @@
  *
  *   new Machine(t?, name, env?)   env: extra variables for every child (e.g. SUB_HUMAN_LINK_RETRY_MS)
  *     seat(name) -> {name, pid, sid}
- *     hook(script, input, seat, {env}?) -> spawnSync result + json   hooks/<script>.js as seat
+ *     hook(script, input, seat, {env}?) -> spawnSync result + json   hooks/<script>.ts as seat
  *     lease(seat)                     the hooks module's hello lease for the seat's session (with its nonce), as
  *                                     hooks/mod-hello.ts writes it; join and every prompt write it first
  *     join(seat, args), say(seat, text), plain(seat, text)          the join expansion; an @room post; a prompt
@@ -59,7 +59,7 @@ class Machine {
   }
 
   hook(script, input, seat, { env } = {}) {
-    const r = spawnSync(process.execPath, [path.join(h.PLUGIN, 'hooks', `${script}.js`)], {
+    const r = spawnSync(process.execPath, [path.join(h.PLUGIN, 'hooks', `${script}.ts`)], {
       input: JSON.stringify({ ...input, session_id: seat.sid, cwd: this.cwd }), env: this.env(seat, env), encoding: 'utf8', cwd: this.cwd, timeout: 30_000,
     });
     return { ...r, json: r.stdout.trim() ? JSON.parse(r.stdout) : null };

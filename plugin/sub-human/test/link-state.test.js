@@ -123,9 +123,9 @@ test('agent statusline: the room row carries the link state', t => {
   h.freshHome(t);
   const { code } = h.register('alice', 'member', process.pid);
   // a seat in a mirror needs a running daemon; the link state is what this test is about, so stub its read
-  const real = ls.read;
-  ls.read = c => (c === code ? { state: 'connecting', attempt: 2 } : null);
-  t.after(() => { ls.read = real; });
+  const real = ls.seam.read;
+  ls.seam.read = c => (c === code ? { state: 'connecting', attempt: 2 } : null);
+  t.after(() => { ls.seam.read = real; });
   const { agentStatusline } = require(path.join(h.PLUGIN, 'statusline', 'segments.ts'));
   const out = agentStatusline({ tasks: [{ id: 'a1', description: code, status: 'running' }] }, { env: { NO_COLOR: '1' } });
   const [line] = out.split('\n').map(l => JSON.parse(l));

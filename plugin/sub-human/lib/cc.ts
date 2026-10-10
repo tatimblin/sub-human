@@ -666,7 +666,7 @@ const CONTRACT = Object.freeze([
     note: 'One hooks.json carries the command hooks and one module path under `modules` (relative to hooks.json); a second module is refused (S1).' },
   { id: 'module-dollar-local', section: 10, stability: 'incidental',
     search: '$ is followed only into a function declared in this same file, never across an import',
-    note: 'A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.mjs stays $-free (S1).' },
+    note: 'A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.ts stays $-free (S1).' },
   { id: 'module-event-once', section: 10, stability: 'incidental', search: '" without a matcher"',
     shape: 'is registered twice${~?"":" without a matcher"}',
     note: 'A hooks module registers an event at most once without a matcher (validate and the loader refuse a second): mod/deliver.ts owns session.start, the join and SessionStart (hello and the tail child), mod/prompt.ts owns prompt.submit (the gate, rows context, presence).' },

@@ -33,7 +33,7 @@ function env(extra = {}) {
   return { ...e, CLAUDE_PLUGIN_ROOT: PLUGIN, ...extra };
 }
 function hook(name, input, extra) {
-  const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', name + '.js')], { input: JSON.stringify(input), env: env(extra), encoding: 'utf8', timeout: 20_000 });
+  const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', name + '.ts')], { input: JSON.stringify(input), env: env(extra), encoding: 'utf8', timeout: 20_000 });
   return { code: r.status, stdout: r.stdout, stderr: r.stderr, json: r.stdout.trim() ? JSON.parse(r.stdout) : null };
 }
 const launched = (agentId, ti) => ({ isAsync: true, status: 'async_launched', agentId, description: ti.description, prompt: ti.prompt });
@@ -246,7 +246,7 @@ test('row-rewake: silent exit 0 when nothing is missing, outside a room, with no
 
 test('row-rewake: registered in hooks.json for SessionStart resume with asyncRewake', () => {
   const cfg = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8'));
-  const e = cfg.hooks.SessionStart.find(x => x.hooks.some(h => /row-rewake\.js/.test(h.command)));
+  const e = cfg.hooks.SessionStart.find(x => x.hooks.some(h => /row-rewake\.ts/.test(h.command)));
   assert.ok(e, 'registered');
   assert.equal(e.matcher, 'resume');
   assert.equal(e.hooks[0].asyncRewake, true);

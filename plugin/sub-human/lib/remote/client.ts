@@ -12,7 +12,7 @@
  *       host account's own ssh login (lib/remote/server.ts); a host that returns no token for it is PROTOCOL. proto / version: fakes for the skew tests.
  *       epoch: the mirror's host epoch (lib/handoff.ts), sent in the hello; the server's is client.epoch (0 from a
  *       server that sends none).
- *       transport may also be a Promise of one (lib/remote/transports/index.js open()). Says hello; resolves once the server answered (the token from a redeemed invite is on client.token).
+ *       transport may also be a Promise of one (lib/remote/transports/index.ts open()). Says hello; resolves once the server answered (the token from a redeemed invite is on client.token).
  *       helloMs (default deadlineMs) bounds the hello alone: a transport such as ssh connects before it answers.
  *       A refused hello closes the transport and rejects.
  *   Client

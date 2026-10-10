@@ -447,7 +447,7 @@ test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.ts): Stop always reports subHuman
 test('hooks.json: Stop is the module\'s (mod/consent.ts); the room tools\' PreToolUse is the command hook alone, so every other PreToolUse hook sees them', async () => {
   const hooks = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
   assert.equal(hooks.Stop, undefined);
-  assert.ok(hooks.PreToolUse.some(g => /hooks\/consent\.js/.test(g.hooks[0].command) && /\^mcp__plugin_sub-human_room__/.test(g.matcher)));
+  assert.ok(hooks.PreToolUse.some(g => /hooks\/consent\.ts/.test(g.hooks[0].command) && /\^mcp__plugin_sub-human_room__/.test(g.matcher)));
   const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts'));
   for (const ev of ['classic.Stop', 'tool.call']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/consent.ts'), ev);
   // a module hook answering classic.PreToolUse without next(e) would skip every non-managed settings hook there
@@ -458,7 +458,12 @@ test('consent: a room tool call outside plan mode exits at once, loading nothing
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-consent-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const preload = path.join(dir, 'loaded.js');
-  fs.writeFileSync(preload, "process.on('exit', () => process.stderr.write('LOADED ' + JSON.stringify(Object.keys(require.cache)) + '\\n'));\n");
+  // every file a require or an import loads (require.cache lists no ES module)
+  fs.writeFileSync(preload, [
+    'const seen = [];',
+    "require('node:module').registerHooks({ load(url, ctx, next) { if (url.startsWith('file:')) seen.push(require('node:url').fileURLToPath(url)); return next(url, ctx); } });",
+    "process.on('exit', () => process.stderr.write('LOADED ' + JSON.stringify(seen) + '\\n'));",
+  ].join('\n') + '\n');
   const w = new World({ claude: 'sleep', alice: 'act' }, { t });
   const run = mode => {
     const r = w.hook('consent', ev('PreToolUse', 'mcp__plugin_sub-human_room__post', { permission_mode: mode, tool_input: { text: 'hi' } }), { as: 'alice', env: { NODE_OPTIONS: `--require ${preload}` } });

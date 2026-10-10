@@ -44,7 +44,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { RoomError } from '../room/validate.ts';
-import HttpsMod from 'node:https';
 
 const MAC_APP = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
 const CALL_MS = 20_000;
@@ -200,7 +199,7 @@ function on({ bin: b, path: p, port, funnel = false, timeoutMs = serveMs() }) {
  */
 function warm(url, { timeoutMs = WARM_MS, env = process.env } = {}) {
   if (env.SUB_HUMAN_TAILSCALE_WARM === '0' || !/^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/[A-Za-z0-9._~/-]*$/.test(String(url))) return null;
-  const code = `const r=HttpsMod.get(${JSON.stringify(url)},{timeout:${Number(timeoutMs)}},s=>{s.resume();s.on('end',()=>process.exit(0))});`
+  const code = `const r=require('node:https').get(${JSON.stringify(url)},{timeout:${Number(timeoutMs)}},s=>{s.resume();s.on('end',()=>process.exit(0))});`
     + 'r.on(\'timeout\',()=>r.destroy());r.on(\'error\',()=>process.exit(0));';
   try {
     const c = spawn(process.execPath, ['-e', code], { detached: true, stdio: 'ignore' });

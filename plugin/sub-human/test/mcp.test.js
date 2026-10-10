@@ -232,7 +232,7 @@ test('mcp: plug-ins get the ctx contract (request/response routing, progress, on
   const s = await ready({ SUB_HUMAN_DEBUG: '1' }, server, { elicitation: {} });
   const names = (await s.call('tools/list', {})).result.tools.map(t => t.name);
   assert.deepEqual(names, ['post', 'read', 'propose', 'ask', 'slow', 'anon', 'info'], 'broken task.ts skipped, core wins a clash');
-  assert.match(fs.readFileSync(path.join(process.env.SUB_HUMAN_HOME, 'mcp-debug.log'), 'utf8'), /plugin failed task\.js/);
+  assert.match(fs.readFileSync(path.join(process.env.SUB_HUMAN_HOME, 'mcp-debug.log'), 'utf8'), /plugin failed task\.ts/);
   // Not joined: plug-in tools error like core ones, except the anonymous ones.
   assert.equal(errText(await s.tool('ask')), 'not in a room; run /sub-human');
   assert.equal((await s.tool('anon')).result.content[0].text, 'anonymous');

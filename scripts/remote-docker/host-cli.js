@@ -34,7 +34,7 @@ function hook(script, input, seat) {
     ...process.env, SUB_HUMAN_HOME: HOME, HOME: '/home/host', CLAUDE_PLUGIN_ROOT: PLUGIN, CLAUDE_PID: String(seat.pid),
     SUB_HUMAN_CLAUDE: '/usr/local/bin/claude', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0',
   };
-  const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', `${script}.js`)], {
+  const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', `${script}.ts`)], {
     input: JSON.stringify({ ...input, session_id: seat.sid, cwd: CWD }), env, cwd: CWD, encoding: 'utf8', timeout: 30_000,
   });
   return { status: r.status, json: r.stdout.trim() ? JSON.parse(r.stdout) : null, stderr: r.stderr };

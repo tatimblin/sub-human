@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const metrics = require('../metrics.js');
-const { readText, esc } = require('../lib/io.ts');
+const { readText, esc } = require('../lib/io.js');
 
 module.exports = {
   scene: 'S4',

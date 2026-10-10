@@ -207,7 +207,12 @@ function convert(file, text) {
 // ---------- 3. rename mentions ----------
 const names = new Set([...renamed].map(f => path.basename(f).replace(/\.m?js$/, '')).filter(n => n !== 'index'));
 const MENTION = new RegExp(String.raw`(?<![\w.-])(${[...names].sort((a, b) => b.length - a.length).map(n => n.replace(/[-.]/g, '\\$&')).join('|')})\.m?js\b`, 'g');
-function renameMentions(text) { return text.replace(MENTION, '$1.ts'); }
+// scripts/ has an io.js of its own (scripts/lib/io.js): its require('./lib/io.js') lines are not the plugin's
+const SCRIPTS_OWN = /(require\('\.{1,2}\/lib\/io)\.ts'\)/g;
+function renameMentions(text, file) {
+  const out = text.replace(MENTION, '$1.ts');
+  return file.startsWith(path.join(ROOT, 'scripts') + path.sep) ? out.replace(SCRIPTS_OWN, "$1.js')") : out;
+}
 
 function textFiles() {
   const out = walk(PLUGIN, f => /\.(m?js|ts|json|md)$/.test(f) || path.basename(f) === 'sub-human')
@@ -296,7 +301,7 @@ for (const f of cjsFiles) {
 }
 for (const f of textFiles()) {
   const src = fs.readFileSync(f, 'utf8');
-  const out = renameMentions(src);
+  const out = renameMentions(src, f);
   if (out !== src && !DRY) fs.writeFileSync(f, out);
 }
 process.stdout.write(todo.length ? `by hand:\n${todo.map(t => `  ${t}`).join('\n')}\n` : 'nothing left by hand\n');

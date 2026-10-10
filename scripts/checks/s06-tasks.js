@@ -1,7 +1,7 @@
 'use strict';
 // S6: shared tasks: add, claim, a refused non-owner done, the owner's done
 const { panelRows } = require('../lib/panes.js');
-const { readJson, clip } = require('../lib/io.ts');
+const { readJson, clip } = require('../lib/io.js');
 
 module.exports = {
   scene: 'S6',

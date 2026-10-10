@@ -43,6 +43,10 @@ import path from 'node:path';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as proposal from '../lib/proposal.ts';
+import { createRequire } from 'node:module';
+
+// loadPlugins() requires each plug-in by path (createRequire: require(esm) is synchronous).
+const require = createRequire(import.meta.url);
 
 const READ_MAX = 100;
 const PLUGINS = ['hold.ts', 'task.ts'];

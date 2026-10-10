@@ -50,7 +50,9 @@ const CWD = path.join(USER_HOME, 'work');
 const CLI = ['scripts/sub-human', 'bin/sub-human'].map(p => path.join(PLUGIN, p)).find(p => fs.existsSync(p));
 if (!HOME) { console.error('seat-cli: SUB_HUMAN_HOME is not set'); process.exit(2); }
 
-const lib = name => require(path.join(PLUGIN, 'lib', name));
+/** A plugin file by its .ts name, or its .js one in a plugin from before the TypeScript migration (devbox-old). */
+const pick = rel => { const ts = rel.replace(/\.js$/, '.ts'); return fs.existsSync(path.join(PLUGIN, ts)) ? ts : ts.replace(/\.ts$/, '.js'); };
+const lib = name => require(path.join(PLUGIN, pick(path.join('lib', name))));
 const load = () => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return { seats: {} }; } };
 const save = s => fs.writeFileSync(STATE, JSON.stringify(s, null, 2) + '\n', { mode: 0o600 });
 const seatOf = name => { const s = load().seats[name]; if (!s) throw new Error(`no seat ${name} on this machine`); return s; };
@@ -68,7 +70,7 @@ function baseEnv(seat) {
 
 function hook(script, input, seat) {
   const t0 = Date.now();
-  const r = spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', `${script}.js`)], {
+  const r = spawnSync(process.execPath, [path.join(PLUGIN, pick(`hooks/${script}.ts`))], {
     input: JSON.stringify({ ...input, session_id: seat.sid, cwd: CWD }), env: baseEnv(seat), cwd: CWD, encoding: 'utf8', timeout: 30_000,
   });
   let json = null;
@@ -123,7 +125,7 @@ function walk(dir) {
   });
 }
 
-function src(rel) { try { return fs.readFileSync(path.join(PLUGIN, rel), 'utf8'); } catch { return ''; } }
+function src(rel) { try { return fs.readFileSync(path.join(PLUGIN, /\.[jt]s$/.test(rel) ? pick(rel) : rel), 'utf8'); } catch { return ''; } }
 
 const cmds = {
   host(name) {
@@ -277,10 +279,10 @@ const cmds = {
     const usage = spawnSync(process.execPath, [CLI, '__lab_probe__'], { encoding: 'utf8', env: { ...process.env } });
     const words = new Set((usage.stderr + usage.stdout).replace(/^.*?usage:\s*sub-human/s, '').split('|').map(w => w.trim().split(/\s+/)[0]).filter(Boolean));
     let kinds = [];
-    try { kinds = require(path.join(PLUGIN, 'lib/remote/transports/index.js')).kinds(); } catch { kinds = ['pipe', 'memory', 'ssh'].filter(k => src('lib/remote/link.ts').includes(`'${k}'`)); }
+    try { kinds = lib('remote/transports/index.ts').kinds(); } catch { kinds = ['pipe', 'memory', 'ssh'].filter(k => src('lib/remote/link.ts').includes(`'${k}'`)); }
     const protocol = lib('remote/protocol.ts');
     const files = ['lib/remote/ws.ts', 'lib/remote/transports/ws.ts', 'lib/remote/listener.ts', 'lib/remote/outbox.ts', 'lib/remote/doctor.ts', 'lib/doctor.ts',
-      'lib/remote/seal.js', 'lib/remote/handoff.ts', 'lib/remote/noise.ts', 'lib/remote/tailscale.ts', 'lib/remote/enroll.ts'].filter(f => fs.existsSync(path.join(PLUGIN, f)));
+      'lib/remote/seal.js', 'lib/remote/handoff.ts', 'lib/remote/noise.ts', 'lib/remote/tailscale.ts', 'lib/remote/enroll.ts'].map(pick).filter(f => fs.existsSync(path.join(PLUGIN, f)));
     let version = null;
     try { version = JSON.parse(src('.claude-plugin/plugin.json')).version; } catch { /* none */ }
     return {

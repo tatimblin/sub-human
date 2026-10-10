@@ -1,6 +1,6 @@
 'use strict';
 // S7: stray typing in a row view: the read-only hint; nothing is posted
-const { clip, esc } = require('../lib/io.ts');
+const { clip, esc } = require('../lib/io.js');
 
 module.exports = {
   scene: 'S7',

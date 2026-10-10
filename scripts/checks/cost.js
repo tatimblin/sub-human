@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const metrics = require('../metrics.js');
 const paths = require('../lib/paths.js');
-const { jsonl } = require('../lib/io.ts');
+const { jsonl } = require('../lib/io.js');
 
 /** cost({index, runStart})() → "≈ $X (model $Y, …; …)". */
 function runCost({ index, runStart }) {

@@ -1,7 +1,7 @@
 'use strict';
-// The RoomStore seam holds: no plugin module outside lib/room/store*.js knows where a room's state lives or what
+// The RoomStore seam holds: no plugin module outside lib/room/store*.ts knows where a room's state lives or what
 // its files are called.
-// The hooks module (mod/*.mjs) is walked too: it knows no store path (mod-hello tells it the home).
+// The hooks module (mod/*.ts) is walked too: it knows no store path (mod-hello tells it the home).
 // Exceptions, by design: lib/home.ts (the location: home, rooms/, roomDir) and lib/identity.ts, which keeps
 // this machine's session indexes (<home>/sessions/: which seat a local pid or session id holds; not room state)
 // and re-exports roomDir. A bare `identity.roomDir(code);` statement only validates a code and is allowed.
@@ -18,7 +18,7 @@ function sources() {
     for (const x of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, x.name);
       if (x.isDirectory()) { if (x.name !== 'test' && x.name !== 'node_modules') walk(p); }
-      else if (x.name.endsWith('.js') || x.name.endsWith('.mjs')) out.push(p);
+      else if (/\.(m?js|ts)$/.test(x.name)) out.push(p);
     }
   };
   walk(PLUGIN);
@@ -32,11 +32,11 @@ function stripComments(src) {
     .split('\n').map(l => l.replace(/(^|[^:'"`\\])\/\/.*$/, '$1')).join('\n');
 }
 
-const STORE = /^lib\/room\/store[^/]*\.js$/;
+const STORE = /^lib\/room\/store[^/]*\.ts$/;
 const FILE_NAMES = /['"`/][^'"`\n]*\b(log\.jsonl|log\.idx|members\.json|tasks\.json|review\.json|holds-[^'"`]*\.json|\.cursor)\b/;
 const SEGMENTS = /path\.join\([^\n]*?['"`](rows|presence|plans|members|keys)['"`]/;
 
-test('store seam: no module outside lib/room/store*.js names a room file or builds a path into a room', () => {
+test('store seam: no module outside lib/room/store*.ts names a room file or builds a path into a room', () => {
   const bad = [];
   for (const { rel, code } of sources()) {
     if (STORE.test(rel)) continue;

@@ -8,7 +8,7 @@
  */
 const path = require('node:path');
 const paths = require('../lib/paths.js');
-const { readJson, clip } = require('../lib/io.ts');
+const { readJson, clip } = require('../lib/io.js');
 
 function roomLog({ home, code, roomDir, log }) {
   const byKind = (k, f = {}) => log.filter(e => e.kind === k && Object.entries(f).every(([a, b]) => e[a] === b));

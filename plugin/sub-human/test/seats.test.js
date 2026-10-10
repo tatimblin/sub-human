@@ -30,7 +30,7 @@ function memoryRoom(t, { isHost }) {
   store.setBackend(() => mem);
   t.after(() => store.setBackend(null));
   const started = [];
-  t.mock.method(roomClaude, 'startDetached', o => { started.push(o.cwd); return 1; });
+  t.mock.method(seats.seam, 'startDetached', o => { started.push(o.cwd); return 1; });
   return { code, mem, started };
 }
 

@@ -7,7 +7,7 @@
  *   setInterval(fn, ms, ...args) / clearInterval(h)
  *   sleep(ms) -> Promise                 resolves after ms
  *
- * The module itself is the real clock (require(...).now() etc.); `.real` is the same object to pass around.
+ * The module itself is the real clock (import * as clock; clock.now() etc.); `.real` is the same object to pass around.
  *
  * createFake({ now = 0 }) -> a clock with the same methods plus:
  *   advance(ms)                          move time forward, firing due timers in order (by due time, then
@@ -104,4 +104,11 @@ function createFake({ now: start = 0 } = {}) {
   return clock;
 }
 
-module.exports = { ...real, real, createFake };
+// The module itself is the real clock: each method of `real`, exported under its own name (aliased so the module
+// scope never shadows the global timers they call).
+const { now, setTimeout: realSetTimeout, clearTimeout: realClearTimeout, setInterval: realSetInterval,
+  clearInterval: realClearInterval, sleep } = real;
+export {
+  now, realSetTimeout as setTimeout, realClearTimeout as clearTimeout, realSetInterval as setInterval,
+  realClearInterval as clearInterval, sleep, real, createFake,
+};

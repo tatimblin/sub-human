@@ -44,7 +44,7 @@ function ensureRoomClaude(code, cwd, by) {
     last = identity.readMembers(code).claude || null;
     const c = roomClaude.claimSpawn(code, { by });
     if (!c) return '';
-    roomClaude.startDetached({ code, cwd: cwd || (room.open(code).store.kv.get(WORKDIR) || {}).cwd, ...c });
+    seam.startDetached({ code, cwd: cwd || (room.open(code).store.kv.get(WORKDIR) || {}).cwd, ...c });
   } catch (e) {
     return ` · the room's Claude could not start (${String(e.message || e).slice(0, 200)}); /sub-human still works, but there is no room task list`;
   }
@@ -82,4 +82,8 @@ function exit(code, name, reason, { deadlineMs } = {}) {
   return true;
 }
 
-export { enter, exit, ensureRoomClaude };
+/** Test seam: the room's Claude starts through this object, which a test may stub (test/seats.test.js); an ES
+ * module's own exports are read-only. */
+const seam = { startDetached: o => roomClaude.startDetached(o) };
+
+export { enter, exit, ensureRoomClaude, seam };

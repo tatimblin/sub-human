@@ -1,5 +1,5 @@
 /**
- * plugin/sub-human/lib/remote/transports/index.js: the transport contract and the registry of kinds. A transport
+ * plugin/sub-human/lib/remote/transports/index.ts: the transport contract and the registry of kinds. A transport
  * carries protocol frames (lib/remote/protocol.ts) between a client and a server and knows nothing about
  * them. Built in: memory (./memory.ts, a pair in one process or across worker threads), pipe (./pipe.ts, a
  * child's stdio or this process's), ssh (./ssh.ts, the pipe kind with an `ssh` command in front), and wss / ws
@@ -37,9 +37,12 @@
 import * as protocol from '../protocol.ts';
 import { RoomError } from '../../room/validate.ts';
 import { createRequire } from 'node:module';
+
 const require = createRequire(import.meta.url);
 
 const registry = new Map(); // kind -> {open, parse?, describe?}
+/** kinds(), kept current by register (an ESM live binding). */
+export let KINDS = [];
 
 const KIND_RE = /^[a-z][a-z0-9-]{0,15}$/;
 
@@ -48,6 +51,7 @@ function register(kind, entry) {
   if (registry.has(kind)) throw new Error(`transport kind "${kind}" is registered already`);
   if (!entry || typeof entry.open !== 'function') throw new Error(`transport kind "${kind}" needs open(spec, ctx)`);
   registry.set(kind, { open: entry.open, parse: entry.parse || null, describe: entry.describe || null });
+  KINDS = kinds();
 }
 
 const kinds = () => [...registry.keys()];
@@ -111,13 +115,11 @@ function fromDuplex(stream, { readable = stream } = {}) {
   return transport;
 }
 
-module.exports = {
-  register, kinds, get, parse, open, describe, lineTransport, fromDuplex,
-  get KINDS() { return kinds(); },
-};
+export { register, kinds, get, parse, open, describe, lineTransport, fromDuplex };
 
 // ---------- the built-in kinds ----------
-// Their modules require this one (lineTransport), so each loads on first use, through its `kind` export.
+// Their modules import this one (lineTransport), so each loads on first use, through its `kind` export: a
+// require (createRequire; require(esm) is synchronous) so no kind's code loads until a link or invite needs it.
 const lazy = file => ({
   open: (spec, ctx) => require(file).kind.open(spec, ctx),
   parse: rest => require(file).kind.parse(rest),

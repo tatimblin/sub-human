@@ -4,7 +4,7 @@
  * server on a worker: a thread that makes synchronous bridge calls must never host the server). Test and
  * contract use; no network. Frames cross as encoded lines, as on a pipe.
  *
- *   pair() -> [Transport, Transport]   two connected ends (./index.js documents Transport)
+ *   pair() -> [Transport, Transport]   two connected ends (./index.ts documents Transport)
  *   over(port) -> Transport            one end over a MessagePort handed to another thread (workerData)
  */
 

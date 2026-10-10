@@ -1,5 +1,5 @@
 'use strict';
-// statusline/index.js (agentStatusline) and statusline/segments.ts: the agent-panel rows. The main status
+// statusline/index.ts (agentStatusline) and statusline/segments.ts: the agent-panel rows. The main status
 // line is gone (Phase 2).
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -13,7 +13,7 @@ for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE')) delete pro
 const identity = require(path.join(PLUGIN, 'lib', 'identity.ts'));
 const rows = require(path.join(PLUGIN, 'lib', 'rows.ts'));
 const segments = require(path.join(PLUGIN, 'statusline', 'segments.ts'));
-const index = require(path.join(PLUGIN, 'statusline', 'index.js'));
+const index = require(path.join(PLUGIN, 'statusline', 'index.ts'));
 const { agentStatusline } = index;
 
 const H = 'b7ca39aa0011';
@@ -100,7 +100,7 @@ test('agentStatusline: a member\'s room row and the nested rows inside it (after
 test('agentStatusline: falls back to process ancestry in a child process', () => {
   const { code, add } = world(['claude', 'alice'], { selfName: 'alice' });
   add('claude', 'proposal', { ...prop(['alice']), via: 'system' });
-  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(PLUGIN, 'statusline', 'index.js'))}).agentStatusline({tasks: [{id: 'x', status: 'running', description: ${JSON.stringify(code)}}]}, {env: {NO_COLOR: '1'}}))`],
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(PLUGIN, 'statusline', 'index.ts'))}).agentStatusline({tasks: [{id: 'x', status: 'running', description: ${JSON.stringify(code)}}]}, {env: {NO_COLOR: '1'}}))`],
     { env: { ...process.env }, encoding: 'utf8' });
   assert.match(JSON.parse(r.stdout).content, new RegExp(`^${code}  ⚠ your answer needed b7ca39`));
 });

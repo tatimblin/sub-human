@@ -61,7 +61,12 @@ function linkDoc(code) {
 
 const NOT_RUNNING = 'the link daemon is not running';
 
-function read(code) {
+/** Test seam: read() calls through this object, which a test may stub (test/link-state.test.js); an ES module's own
+ * exports are read-only. */
+const seam = { read: code => readLink(code) };
+const read = code => seam.read(code);
+
+function readLink(code) {
   try {
     if (!links.get(code)) return null;
   } catch { return null; }
@@ -109,4 +114,4 @@ function isDown(st) {
   return state === 'offline' || FOR_GOOD.has(state) || (state === 'connecting' && st.attempt > 1);
 }
 
-export { read, normalize, indicator, isDown, stateFile, STATES };
+export { read, normalize, indicator, isDown, stateFile, STATES, seam };

@@ -15,7 +15,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const paths = require('../lib/paths.js');
-const { readJson, jsonl, textOf } = require('../lib/io.ts');
+const { readJson, jsonl, textOf } = require('../lib/io.js');
 const { captures } = require('./captures.js');
 const { transcripts } = require('./transcripts.js');
 const { roomLog } = require('./log.js');

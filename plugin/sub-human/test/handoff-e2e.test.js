@@ -25,7 +25,7 @@ const link = require(path.join(h.LIB, 'remote', 'link.ts'));
 const links = require(path.join(h.LIB, 'room', 'links.ts'));
 const handoff = require(path.join(h.LIB, 'handoff.ts'));
 const client = require(path.join(h.LIB, 'remote', 'client.ts'));
-const transports = require(path.join(h.LIB, 'remote', 'transports', 'index.js'));
+const transports = require(path.join(h.LIB, 'remote', 'transports', 'index.ts'));
 const { isAlive } = require(path.join(h.LIB, 'io.ts'));
 const { Machine } = require('./support/two-homes.js');
 

@@ -85,7 +85,7 @@ test('config: every override read through envMs matches the pattern the room\'s 
     for (const f of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, f.name);
       if (f.isDirectory()) { if (!['test', 'node_modules'].includes(f.name)) walk(p); continue; }
-      if (!/\.(c?js|mjs)$/.test(f.name) && f.name !== 'sub-human') continue;
+      if (!/\.(c?js|mjs|ts)$/.test(f.name) && f.name !== 'sub-human') continue;
       for (const m of fs.readFileSync(p, 'utf8').matchAll(/envMs\(\s*['"]([A-Z0-9_]+)['"]/g)) names.add(m[1]);
     }
   };

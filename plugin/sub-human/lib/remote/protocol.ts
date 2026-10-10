@@ -56,12 +56,14 @@
  */
 
 import { StringDecoder } from 'node:string_decoder';
+import fs from 'node:fs';
+import path from 'node:path';
 import { LINK_FRAME_MAX_BYTES } from '../config.ts';
 
 const PROTO = Object.freeze({ min: 1, max: 2 });
 const VERSION = PROTO.max;
 const PLUGIN_VERSION = (() => {
-  try { return String(require('../../.claude-plugin/plugin.json').version || '?'); } catch { return '?'; }
+  try { return String(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || '?'); } catch { return '?'; }
 })();
 
 const isVersion = n => Number.isInteger(n) && n >= 1 && n <= 1000;

@@ -80,8 +80,8 @@ function open(code, { store: s, dir } = {}) {
   return r;
 }
 
-module.exports = {
-  ...pure,
-  open,
-  roomExists: store.roomExists,
-};
+// The pure helpers (`pure`, spread into every Room) are also the module's own exports.
+export { RoomError, fold, DIGEST_CAP, TAIL_MAX, CHAT_MAX, CHAT_WRAP, CHAT_LINES_MAX, CHAT_NEST, open };
+export { hash12, normalize, verifyHuman, unverifiedHuman, humanTrust, roomExists } from './room/store.ts';
+export { line, tailLine, chatLines, FOR_CLAUDE, fmt, who } from './room/render.ts';
+export { approversOf, lane } from './room/lanes.ts';

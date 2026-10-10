@@ -1,5 +1,5 @@
 /**
- * plugin/sub-human/lib/cli/args.ts: the one flag parser of scripts/sub-human and lib/cli/*.js. Zero dependencies.
+ * plugin/sub-human/lib/cli/args.ts: the one flag parser of scripts/sub-human and lib/cli/*.ts. Zero dependencies.
  *
  *   parse(args, spec) -> {flags, rest, error?}
  *       spec: {name: 1}  --name VALUE (the next argument, whatever it is; none: error "--name needs a value")

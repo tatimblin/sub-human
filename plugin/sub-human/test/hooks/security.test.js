@@ -19,6 +19,13 @@ let bashVerdict, denyText;
 test.before(async () => ({ bashVerdict, denyText } = await import(path.join(PLUGIN, 'mod', 'core', 'guard.ts'))));
 
 const ROOM_JS = path.join(PLUGIN, 'lib', 'room.ts');
+/** A probe's prelude: loads() lists every file a require or an import loaded (require.cache lists no ES module). */
+const LOADS = `const __loads = [];
+    require('node:module').registerHooks({ load(url, ctx, next) {
+      if (url.startsWith('file:')) __loads.push(require('node:url').fileURLToPath(url));
+      return next(url, ctx);
+    } });
+    const loads = () => __loads;`;
 const H1 = 'aaaaaaaaaaaa';
 const submit = (prompt, extra = {}) => ({ ...fixture('user-prompt-submit'), prompt, ...extra });
 /** The module's nonce here; the lease holds it for the session at-room runs for (as hooks/mod-hello.ts writes it). */
@@ -197,10 +204,10 @@ test('the mod\'s prompt gate drops an @room no person typed, before any hook; a 
 
 test('the room MCP server, hold and task never load a seat key and cannot write via=human', t => {
   const w = new World({ claude: 'sleep', alice: 'act' }, { t });
-  const probe = `
+  const probe = `${LOADS}
     const path = require('node:path');
     for (const f of ['room-server.ts', 'hold.ts', 'task.ts']) require(path.join(${JSON.stringify(path.join(PLUGIN, 'mcp'))}, f));
-    const loaded = Object.keys(require.cache).filter(f => /seat-key|hooks[\\/\\\\]/.test(f));
+    const loaded = loads().filter(f => /seat-key|hooks[\\/\\\\]/.test(f));
     const room = require(${JSON.stringify(ROOM_JS)}).open(${JSON.stringify(w.code)});
     let err = null;
     try { room.append({ kind: 'say', text: 'x' }, { via: 'human', from: 'alice' }); } catch (e) { err = e.code; }
@@ -212,18 +219,18 @@ test('the room MCP server, hold and task never load a seat key and cannot write 
   // and no file outside hooks/ requires the key module
   const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(x => x.isDirectory() ? walk(path.join(d, x.name)) : [path.join(d, x.name)]);
   for (const f of [...walk(path.join(PLUGIN, 'mcp')), ...walk(path.join(PLUGIN, 'lib')), path.join(PLUGIN, 'scripts', 'sub-human')]) {
-    assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /require\([^)]*seat-key|\.key['"`]/, f);
+    assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /require\([^)]*seat-key|(?:\bfrom\s*|import\(\s*)['"][^'"]*seat-key|\.key['"`]/, f);
   }
 });
 
 test('`sub-human serve` (the remote server) never loads a seat key or installs a signer', t => {
   const w = new World({ claude: 'sleep', alice: 'act' }, { t });
   const bin = path.join(PLUGIN, 'scripts', 'sub-human');
-  const probe = `
+  const probe = `${LOADS}
     process.argv = [process.argv[0], ${JSON.stringify(bin)}, 'serve', '--stdio', ${JSON.stringify(w.code)}];
     process.on('exit', () => process.stderr.write('PROBE' + JSON.stringify({
-      loaded: Object.keys(require.cache).filter(f => /seat-key|hooks[\\/\\\\]/.test(f)),
-      server: Object.keys(require.cache).some(f => /remote[\\/\\\\]server\\.js$/.test(f)),
+      loaded: loads().filter(f => /seat-key|hooks[\\/\\\\]/.test(f)),
+      server: loads().some(f => /remote[\\/\\\\]server\\.ts$/.test(f)),
       signer: typeof globalThis[Symbol.for('sub-human.human-signer')] })));
     require(${JSON.stringify(bin)});`;
   const hello = JSON.stringify({ id: 1, op: 'hello', params: { v: 1, caps: {}, machine: 'm1' } }) + '\n';

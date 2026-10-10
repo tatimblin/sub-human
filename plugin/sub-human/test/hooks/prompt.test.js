@@ -36,7 +36,7 @@ test('prompt: no hooks.json UserPromptSubmit entry; the module runs prompt.ts (m
   assert.equal(JSON.parse(fs.readFileSync(path.join(HOOKS, 'hooks.json'), 'utf8')).hooks.UserPromptSubmit, undefined);
   const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts'));
   assert.ok(MOD.some(h => h.event === 'classic.UserPromptSubmit' && h.file === 'mod/prompt.ts'));
-  assert.match(fs.readFileSync(path.join(PLUGIN, 'mod', 'prompt.ts'), 'utf8'), /shimArgv\(root, 'prompt\.js'\)/);
+  assert.match(fs.readFileSync(path.join(PLUGIN, 'mod', 'prompt.ts'), 'utf8'), /shimArgv\(root, 'prompt\.ts'\)/);
 });
 
 test('prompt: consent\'s subHuman {reviewOpen} rides on the one output (only the mod runs prompt.ts)', () => {

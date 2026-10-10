@@ -105,7 +105,7 @@ class World {
     }
     for (const k of Object.keys(env)) if (env[k] === undefined) delete e[k];
     if (name === 'join' && modLease) this.modLease(inp.session_id);
-    const r = spawnSync(process.execPath, [path.join(HOOKS, name + '.js')], {
+    const r = spawnSync(process.execPath, [path.join(HOOKS, name + '.ts')], {
       input: JSON.stringify(inp), env: e, encoding: 'utf8', cwd: this.cwd, timeout: 30_000,
     });
     let json = null;

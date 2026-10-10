@@ -1,6 +1,6 @@
 'use strict';
 // S3: pairing with no plan: @room both ways, then Claude-to-Claude SendMessage
-const { clip } = require('../lib/io.ts');
+const { clip } = require('../lib/io.js');
 
 module.exports = {
   scene: 'S3',

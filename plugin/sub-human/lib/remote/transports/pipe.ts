@@ -4,13 +4,13 @@
  * two-home test spawns the server with the host's SUB_HUMAN_HOME; SSH is the same with
  * `ssh -T -o BatchMode=yes … -- USER@HOST` as the command (./ssh.ts).
  *
- *   spawn(cmd, args, {env?, cwd?}) -> Transport   the client end; the child's exit closes it (./index.js
+ *   spawn(cmd, args, {env?, cwd?}) -> Transport   the client end; the child's exit closes it (./index.ts
  *                                                 documents Transport). stderr passes through to ours, and its
  *                                                 last 2 KiB stay readable as transport.stderr() (the link daemon
  *                                                 reads why ssh gave up). close() ends the child's stdin and stops it
  *   stdio() -> Transport                           the server end over process.stdin / process.stdout; nothing
  *                                                 else may write to stdout while it is open. stdin's end closes it
- *   kind = {parse, open, describe}                 the `pipe` kind (./index.js register):
+ *   kind = {parse, open, describe}                 the `pipe` kind (./index.ts register):
  *       parse(rest)  locator `pipe:<home>` (an absolute path) -> {home}: a room hosted under another home here
  *       open(spec, ctx)  with ctx.code (the link daemon): this plugin's own `sub-human serve --stdio CODE` with
  *                    SUB_HUMAN_HOME=spec.home; a cmd in the spec is then ignored. Without: spec.cmd [bin, ...args]
