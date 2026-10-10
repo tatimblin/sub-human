@@ -126,23 +126,57 @@ import * as homeMod from '../home.ts';
 import * as identityMod from '../identity.ts';
 import * as membersMod from '../room/members.ts';
 import { createRequire } from 'node:module';
+import type {
+  Clock, CodedError, DecodedFrame, ErrorFrame, FrameId, Link, LinkClient, LinkDoc, LinkFileLike, LinkState, LinkTimings,
+  MirrorStore, MovedEventData, ReplyFrame, RoomEntry, SignedPayload, StreamEvent, Flush, TimerHandle,
+} from './types-core.ts';
+import type { Outbox, OutboxItem } from './outbox.ts';
 
 const require = createRequire(import.meta.url);
+
+/** One relayed op's params as a hook sends them: an append may carry {queue: true}. */
+type RelayParams = { queue?: boolean; payload?: SignedPayload; [field: string]: unknown };
+type Relay = (op: string, params: RelayParams) => Promise<unknown>;
+/** The daemon's document `link`, and whether its pid lives. */
+type LinkStatus = (LinkDoc & { running: true; pid: number }) | (LinkDoc & { running: false });
+/** A transport as connectLink opens it (lib/remote/transports/*): ssh's keeps its stderr. */
+type TransportLike = { stderr?(): string } | null | undefined;
+/** The link daemon's options (serveMirror). */
+interface ServeMirrorOptions {
+  mirror: MirrorStore;
+  connect: () => Promise<LinkClient>;
+  log?: (msg: string) => void;
+  retryMs?: number;
+  retryMaxMs?: number;
+  timings?: Partial<LinkTimings>;
+  clock?: Clock;
+  random?: () => number;
+  mono?: () => number;
+  netSignature?: () => string;
+  watch?: boolean;
+  seats?: () => string[];
+  writeState?: (rec: object) => void;
+  outbox?: Outbox;
+}
 
 const BIN = path.join(import.meta.dirname, '..', '..', 'scripts', 'sub-human');
 const RELAY = new Set(['join', 'leave', 'beat', 'append', 'blob.get', 'blob.put', 'handoff.accept', 'handoff.refuse']);
 const HANDOFF_SELF_STOP_MS = 10_000;
 const SUN_PATH_MAX = 103; // a unix socket's path: 104 bytes on macOS with its NUL (108 on Linux)
-const handoff = () => require('../handoff.ts');
-const STOPPED = new Set(['fork', 'stopped']);
-const hash12 = data => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12); // lib/room/store.ts's, without loading a store
+const handoff = (): typeof import('../handoff.ts') => require('../handoff.ts');
+const outboxMod = (): typeof import('./outbox.ts') => require('./outbox.ts');
+/** lib/remote/client.ts and lib/remote/enroll.ts, loaded when used: what this file calls on them. */
+const clientMod = (): { connect(t: unknown, opts: object): Promise<LinkClient> } => require('./client.ts');
+const enrollMod = (): { enrollLink(code: string): Promise<unknown> } => require('./enroll.ts');
+const STOPPED: Set<unknown> = new Set(['fork', 'stopped']);
+const hash12 = (data: string): string => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12); // lib/room/store.ts's, without loading a store
 
 // ---------- the hook's side ----------
 /**
  * @param {string} dir   the mirror's directory
  * @returns {string}
  */
-function socketPath(dir) {
+function socketPath(dir: string): string {
   const own = path.join(path.resolve(dir), '.link', 'link.sock');
   if (Buffer.byteLength(own) <= SUN_PATH_MAX) return own;
   const h = crypto.createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 12);
@@ -151,10 +185,10 @@ function socketPath(dir) {
 
 /** The fixed per-user directory a socket goes in when the mirror's own path is too long: /tmp/sub-human-<uid>.
  * Never TMPDIR, which a daemon started by a listener, sshd or launchd and the session's hooks need not share. */
-const shortBase = () => `/tmp/sub-human-${typeof process.getuid === 'function' ? process.getuid() : 'u'}`;
+const shortBase = (): string => `/tmp/sub-human-${typeof process.getuid === 'function' ? process.getuid() : 'u'}`;
 
 /** 0.4.1's path, <os.tmpdir()>/sh-<hash8>/link.sock: a daemon that version started still answers there. */
-function legacySocketPath(dir) {
+function legacySocketPath(dir: string): string {
   const h = crypto.createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 8);
   return path.join(os.tmpdir(), `sh-${h}`, 'link.sock');
 }
@@ -166,27 +200,27 @@ function legacySocketPath(dir) {
  * @param {{socket?: string} | null} [doc]   the mirror's document `link`
  * @returns {string[]}
  */
-function socketPaths(dir, doc) {
-  const rec = doc && typeof doc.socket === 'string' && path.isAbsolute(doc.socket) ? [doc.socket] : [];
+function socketPaths(dir: string, doc?: { socket?: unknown } | null): string[] {
+  const rec: string[] = doc && typeof doc.socket === 'string' && path.isAbsolute(doc.socket) ? [doc.socket] : [];
   return [...new Set([...rec, socketPath(dir), legacySocketPath(dir)])];
 }
 
 /** A directory only this user can enter: a real directory (not a symlink), ours, no group or other bits. */
-function isPrivateDir(dir) {
-  let st;
+function isPrivateDir(dir: string): boolean {
+  let st: fs.Stats;
   try { st = fs.lstatSync(dir); } catch { return false; }
   return st.isDirectory() && (typeof process.getuid !== 'function' || st.uid === process.getuid()) && !(st.mode & 0o077);
 }
 
 /** Make the socket's directory 0700 (and the shared /tmp base when it is under it) and check both: AUTH when one is
  * a symlink, someone else's or open to others. */
-function ensurePrivateDir(dir) {
+function ensurePrivateDir(dir: string): void {
   const base = shortBase();
   if (path.dirname(dir) === base) {
-    try { fs.mkdirSync(base, { mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+    try { fs.mkdirSync(base, { mode: 0o700 }); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; }
     if (!isPrivateDir(base)) throw new RoomError('AUTH', `${base} is not private to this user (a symlink, someone else's, or open to others)`);
   }
-  try { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  try { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; }
   if (!isPrivateDir(dir)) throw new RoomError('AUTH', `${dir} is not private to this user`);
 }
 
@@ -195,35 +229,35 @@ function ensurePrivateDir(dir) {
  * @param {{socket: string | string[], params: object}} params   socket: one path, or socketPaths' list, tried in order
  * @returns {Promise<*>}
  */
-async function handle(method, { socket, params }) {
+async function handle(method: string, { socket, params }: { socket: string | string[]; params: object }): Promise<unknown> {
   if (!RELAY.has(method)) throw new RoomError('PROTOCOL', `${method} is not relayed to the host`);
-  let last = null;
+  let last: CodedError | null = null;
   for (const file of Array.isArray(socket) ? socket : [socket]) {
     // a socket in a directory someone else could have made is never handed a seat's op
     if (!isPrivateDir(path.dirname(file))) continue;
     try { return await relayOnce(file, method, params); } catch (e) {
-      if (!e.notListening) throw e;
-      last = e;
+      if (!(e as CodedError).notListening) throw e;
+      last = e as CodedError;
     }
   }
   throw last || new RoomError('OFFLINE', 'the link daemon is not running (ENOENT)');
 }
 
 /** One op over one socket; an error before the connection is made is marked notListening (try the next path). */
-function relayOnce(socket, method, params) {
+function relayOnce(socket: string, method: string, params: object): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const conn = net.createConnection(socket);
     const dec = protocol.decoder();
     let connected = false;
     conn.on('connect', () => { connected = true; conn.write(protocol.encode(protocol.request(1, method, params))); });
-    conn.on('data', chunk => {
-      const [f] = dec.push(chunk);
+    conn.on('data', (chunk: Buffer) => {
+      const [f] = dec.push(chunk) as ReplyFrame[]; // the daemon answers with one reply
       if (!f) return;
       conn.end();
       if (f.error) reject(new RoomError(f.error.code, f.error.message));
       else resolve(f.result);
     });
-    conn.on('error', e => reject(Object.assign(new RoomError('OFFLINE', `the link daemon is not running (${e.code || e.message})`), connected ? {} : { notListening: true })));
+    conn.on('error', (e: NodeJS.ErrnoException) => reject(Object.assign(new RoomError('OFFLINE', `the link daemon is not running (${e.code || e.message})`), connected ? {} : { notListening: true })));
     conn.on('close', () => reject(new RoomError('OFFLINE', 'the link daemon hung up')));
   });
 }
@@ -232,9 +266,9 @@ function relayOnce(socket, method, params) {
  * @param {string} code
  * @returns {{running: boolean, pid?: number, state?: string, since?: string, reason?: string}}
  */
-function status(code) {
-  const st = storeMod.open(code).kv.get('link') || {};
-  return { ...st, running: isAlive(st.pid) };
+function status(code: string): LinkStatus {
+  const st: LinkDoc = storeMod.open(code).kv.get('link') || {};
+  return { ...st, running: isAlive(st.pid) } as LinkStatus; // running: its pid (a number) lives
 }
 
 /**
@@ -243,7 +277,7 @@ function status(code) {
  * @param {{state?: string, reason?: string, code?: string} | null} st
  * @returns {{code: string, reason: string} | null}
  */
-function stopReason(st) {
+function stopReason(st: LinkDoc | null | undefined): { code: string; reason: string } | null {
   if (!st || !STOPPED.has(st.state) || !st.reason) return null;
   return { code: st.code || (st.state === 'fork' ? 'FORK' : 'OFFLINE'), reason: st.reason };
 }
@@ -252,7 +286,7 @@ function stopReason(st) {
  * @param {string} code
  * @returns {boolean}
  */
-function start(code) {
+function start(code: string): boolean {
   if (status(code).running) return true;
   const fd = fs.openSync(linksMod.logFile(code), 'a', 0o600);
   try { spawn(process.execPath, [BIN, 'link', code], { detached: true, stdio: ['ignore', fd, fd] }).unref(); } finally { fs.closeSync(fd); }
@@ -264,16 +298,17 @@ function start(code) {
  * @param {string} [h]   the host's home
  * @returns {string}
  */
-const pipeLocator = (h = homeMod.home()) => `pipe:${h}`;
+const pipeLocator = (h: string = homeMod.home()): string => `pipe:${h}`;
 
-const transports = () => require('./transports/index.ts');
-const sshLocator = (dest, opts) => require('./transports/ssh.ts').locator(dest, opts);
+const transports = (): typeof import('./transports/index.ts') => require('./transports/index.ts');
+const ssh = (): typeof import('./transports/ssh.ts') => require('./transports/ssh.ts');
+const sshLocator = (dest: string, opts?: { via?: string }): string | null => ssh().locator(dest, opts);
 
 /**
  * @param {string} locator
  * @returns {{kind: string} | null}
  */
-const transportOf = locator => transports().parse(locator);
+const transportOf = (locator: string): ReturnType<typeof import('./transports/index.ts')['parse']> => transports().parse(locator);
 
 /**
  * @param {{user: string, host: string, port?: number}} t
@@ -281,25 +316,25 @@ const transportOf = locator => transports().parse(locator);
  * @param {string[]} [opts]
  * @returns {string[]}
  */
-const sshCommand = (t, code, opts) => require('./transports/ssh.ts').command(t, code, opts);
+const sshCommand = (t: { user: string; host: string; port?: number }, code: string, opts?: string[]): string[] => ssh().command(t, code, opts);
 
 // ---------- the daemon ----------
-const listening = (srv, file) => new Promise((resolve, reject) => {
+const listening = (srv: net.Server, file: string): Promise<void> => new Promise((resolve, reject) => {
   srv.once('error', reject);
   srv.listen(file, () => { srv.off('error', reject); resolve(); });
 });
-const answers = file => new Promise(resolve => {
+const answers = (file: string): Promise<boolean> => new Promise(resolve => {
   const c = net.createConnection(file);
   c.on('connect', () => { c.destroy(); resolve(true); });
   c.on('error', () => resolve(false));
 });
 
 /** A server on the socket file, in a directory only this user can enter; a stale socket file is replaced. */
-async function listen(file, onConn) {
+async function listen(file: string, onConn: (sock: net.Socket) => void): Promise<net.Server> {
   ensurePrivateDir(path.dirname(file));
   const srv = net.createServer(onConn);
   try { await listening(srv, file); } catch (e) {
-    if (e.code !== 'EADDRINUSE') throw e;
+    if ((e as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw e;
     if (await answers(file)) throw new RoomError('LOCK', `a link daemon already listens on ${file}`);
     fs.rmSync(file, { force: true });
     await listening(srv, file);
@@ -309,26 +344,28 @@ async function listen(file, onConn) {
 }
 
 /** One hook's request: the op relayed, or the error, as one frame. */
-async function answer(f, relay) {
+async function answer(f: DecodedFrame | ErrorFrame, relay: Relay): Promise<ReplyFrame> {
+  const g = f as { id?: FrameId; op?: unknown }; // the frame as it came, for the error
   try {
-    if (!protocol.isRequest(f) || !RELAY.has(f.op)) throw new RoomError('PROTOCOL', `not an op a hook may relay: ${f.op}`);
+    if (!protocol.isRequest(f) || !RELAY.has(f.op)) throw new RoomError('PROTOCOL', `not an op a hook may relay: ${g.op}`);
     return protocol.reply(f.id, await relay(f.op, f.params));
-  } catch (e) {
-    return protocol.error(f.id ?? null, protocol.CODES[e.code] ? e.code : 'INVALID', e.message);
+  } catch (err) {
+    const e = err as CodedError;
+    return protocol.error(g.id ?? null, (protocol.CODES as Record<string, string | undefined>)[e.code!] ? e.code! : 'INVALID', e.message);
   }
 }
 
-function serveHook(sock, relay) {
+function serveHook(sock: net.Socket, relay: Relay): void {
   const dec = protocol.decoder();
   sock.on('error', () => { /* the hook gave up at its deadline */ });
-  sock.on('data', chunk => {
+  sock.on('data', (chunk: Buffer) => {
     for (const f of dec.push(chunk)) answer(f, relay).then(out => sock.end(protocol.encode(out)));
   });
 }
 
 // ---------- reconnect: backoff, wake, network change ----------
 /** Every timing the daemon uses, from lib/config.ts and its SUB_HUMAN_LINK_*_MS overrides, then `over`. */
-const linkTimings = (over = {}) => ({
+const linkTimings = (over: Partial<LinkTimings> = {}): LinkTimings => ({
   retryMs: config.envMs('SUB_HUMAN_LINK_RETRY_MS', config.LINK_RETRY_MS),
   retryMaxMs: config.envMs('SUB_HUMAN_LINK_RETRY_MAX_MS', config.LINK_RETRY_MAX_MS),
   pingMs: config.envMs('SUB_HUMAN_LINK_PING_MS', config.LINK_PING_MS),
@@ -349,14 +386,16 @@ const linkTimings = (over = {}) => ({
  * @param {() => number} [random]
  * @returns {number}
  */
-const nextDelay = (prev, base, cap, random = Math.random) => Math.round(Math.min(cap, base + random() * (Math.max(base, prev * 3) - base)));
+const nextDelay = (prev: number, base: number, cap: number, random: () => number = Math.random): number => Math.round(Math.min(cap, base + random() * (Math.max(base, prev * 3) - base)));
 
 /**
  * Call onWake(gapMs) when a timer ticking every tickMs finds the wall clock moved more than gapMs past the tick, or
  * away from the monotonic clock (which does not count a sleep): the machine slept, or its clock jumped.
  * @returns {() => void} unwatch
  */
-function wakeWatch({ onWake, tickMs, gapMs, clock = realClock, mono = () => performance.now() }) {
+function wakeWatch({ onWake, tickMs, gapMs, clock = realClock, mono = () => performance.now() }: {
+  onWake: (gapMs: number) => void; tickMs: number; gapMs: number; clock?: Clock; mono?: () => number;
+}): () => void {
   let wall = clock.now(), m = mono();
   const t = clock.setInterval(() => {
     const w = clock.now(), mm = mono();
@@ -370,8 +409,8 @@ function wakeWatch({ onWake, tickMs, gapMs, clock = realClock, mono = () => perf
 }
 
 /** This machine's external addresses (not loopback, not IPv6 link-local), as one comparable string. */
-function netSignature(ifaces = os.networkInterfaces()) {
-  const out = [];
+function netSignature(ifaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): string {
+  const out: string[] = [];
   for (const [name, list] of Object.entries(ifaces || {})) {
     for (const a of list || []) if (a && !a.internal && !/^fe80:/i.test(a.address)) out.push(`${name}/${a.address}`);
   }
@@ -382,11 +421,13 @@ function netSignature(ifaces = os.networkInterfaces()) {
  * Call onChange() when signature() differs from the last poll's (an address came, went or moved).
  * @returns {() => void} unwatch
  */
-function netWatch({ onChange, pollMs, clock = realClock, signature = netSignature }) {
-  let last;
+function netWatch({ onChange, pollMs, clock = realClock, signature = netSignature }: {
+  onChange: () => void; pollMs: number; clock?: Clock; signature?: () => string;
+}): () => void {
+  let last: string;
   try { last = signature(); } catch { last = ''; }
   const t = clock.setInterval(() => {
-    let now;
+    let now: string;
     try { now = signature(); } catch { return; }
     if (now !== last) { last = now; onChange(); }
   }, pollMs);
@@ -395,14 +436,14 @@ function netWatch({ onChange, pollMs, clock = realClock, signature = netSignatur
 }
 
 /** A host line the mirror holds already (the same id and bytes): two streams overlap while a link is swapped. */
-function held(mirror, line) {
-  let id;
+function held(mirror: MirrorStore, line: string): boolean {
+  let id: unknown;
   try { id = JSON.parse(line).id; } catch { return false; }
-  return Number.isInteger(id) && id <= mirror.lastId() && mirror.lineHash(id) === hash12(line);
+  return Number.isInteger(id) && (id as number) <= mirror.lastId() && mirror.lineHash(id as number) === hash12(line);
 }
 const PLACED_ALREADY = /placed already/; // lib/room/store.ts: its nonce is in the log, so an earlier try landed
-const clip = (s, n = 200) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-const FATAL = new Set(['FORK', 'AUTH', 'PROTOCOL']);
+const clip = (s: string, n = 200): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+const FATAL: Set<unknown> = new Set(['FORK', 'AUTH', 'PROTOCOL']);
 
 /**
  * @param {{mirror: object, connect: () => Promise<object>, log?: (msg: string) => void, retryMs?: number, retryMaxMs?: number,
@@ -413,42 +454,44 @@ const FATAL = new Set(['FORK', 'AUTH', 'PROTOCOL']);
 async function serveMirror({
   mirror, connect, log = () => {}, retryMs, retryMaxMs, timings, clock = realClock, random = Math.random,
   mono, netSignature: netSig, watch = true, seats, writeState, outbox,
-}) {
+}: ServeMirrorOptions): Promise<Link> {
   const T = linkTimings({ ...timings, retryMs, retryMaxMs });
   const sockFile = socketPath(mirror.dir);
-  const box = outbox || require('./outbox.ts').open(mirror.dir);
+  const box = outbox || outboxMod().open(mirror.dir);
   const localSeats = seats || (() => identityMod.localSeats(mirror.code));
   const saveState = writeState || (rec => linksMod.writeState(mirror.code, rec));
-  let state = 'connecting', reason = null, client = null, retry = null, hb = null, delay = T.retryMs, finish;
-  let dialing = null, attempts = 0, lastError = null, prevError = null, rttMs = null, doc = {}, pub = null, pubSince = null, flushed = null;
-  const unwatch = [];
-  const done = new Promise(resolve => { finish = resolve; });
+  let state: LinkState = 'connecting', reason: string | null = null, client: LinkClient | null = null;
+  let retry: TimerHandle = null, hb: TimerHandle = null, delay = T.retryMs, finish: (why: string) => void;
+  let dialing: Promise<void> | null = null, attempts = 0, lastError: string | null = null, prevError: string | null = null;
+  let rttMs: number | null = null, doc: LinkDoc = {}, pub: string | null = null, pubSince: string | null = null, flushed: Flush | null = null;
+  const unwatch: (() => void)[] = [];
+  const done = new Promise<string>(resolve => { finish = resolve; });
 
   /** The two records observers read: the mirror's document `link` (lib/tail.ts) and links/<code>.state.json. */
   function publish() {
     const d = { ...doc, ...(box.size() ? { queued: box.size() } : {}), ...(flushed ? { flush: flushed } : {}) };
-    try { mirror.kv.set('link', d); } catch (e) { log(`status: ${e.message}`); }
+    try { mirror.kv.set('link', d); } catch (e) { log(`status: ${(e as Error).message}`); }
     const p = state === 'offline' && dialing ? 'connecting' : state; // a redial under way reads connecting
     if (p !== pub) { pub = p; pubSince = new Date(clock.now()).toISOString(); }
     const rec = { state: p, since: pubSince, attempt: attempts, lastError, ...(prevError ? { prevError } : {}), rttMs, queued: box.size(), pid: process.pid, detail: state, at: new Date(clock.now()).toISOString() };
-    try { saveState(rec); } catch (e) { log(`state: ${e.message}`); }
+    try { saveState(rec); } catch (e) { log(`state: ${(e as Error).message}`); }
   }
 
-  function setState(s, why = null, code = null) {
+  function setState(s: LinkState, why: string | null = null, code: string | null = null) {
     state = s;
     reason = why;
     doc = { pid: process.pid, state, since: new Date(clock.now()).toISOString(), socket: sockFile, ...(why ? { reason: why } : {}), ...(code ? { code } : {}) };
     publish();
   }
 
-  async function relay(op, params) {
+  async function relay(op: string, params: RelayParams): Promise<unknown> {
     if (state === 'connecting') await first;
-    let p = params, queue = false;
+    let p = params, queue: boolean | undefined = false;
     if (op === 'append' && p && p.queue) ({ queue, ...p } = p);
-    const queueable = queue && require('./outbox.ts').queueable(p.payload);
+    const queueable = queue && outboxMod().queueable(p.payload);
     if (state !== 'online') {
       if (queueable && !STOPPED.has(state)) {
-        const n = box.add(p.payload, clock.now());
+        const n = box.add(p.payload!, clock.now()); // queueable: a payload
         log(`offline: an @room post is queued (${n} waiting)`);
         publish();
         return { queued: n };
@@ -457,12 +500,12 @@ async function serveMirror({
     }
     const epoch = op === 'append' && typeof mirror.hostState === 'function' ? mirror.hostState().epoch : undefined;
     const sent = epoch === undefined ? p : { ...p, epoch };
-    return queueable ? sendPost(client, sent) : answerBy(client.request(op, sent), op);
+    return queueable ? sendPost(client!, sent) : answerBy(client!.request(op, sent), op); // client: online
   }
 
   /** The hook gives up at LINK_CALL_MS, so the daemon answers first (relayMs): an op the host has not answered by
    * then went out and may still land (a slow link), so it is OFFLINE with an unknown outcome, never "not sent". */
-  function answerBy(req, op) {
+  function answerBy(req: Promise<unknown>, op: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const t = clock.setTimeout(() => reject(new RoomError('OFFLINE',
         `${op}: no answer from the host within ${T.relayMs} ms (a slow link); ${protocol.UNKNOWN_OUTCOME}`)), T.relayMs);
@@ -478,8 +521,8 @@ async function serveMirror({
    * first leaves it queued: the next connection sends it again, and the host's nonce check makes that a no-op
    * when the first copy landed.
    */
-  function sendPost(c, sent) {
-    const { payload } = sent;
+  function sendPost(c: LinkClient, sent: RelayParams): Promise<unknown> {
+    const payload = sent.payload!; // queueable: a signed post
     const req = c.request('append', sent, { ms: box.ageMs || config.LINK_OUTBOX_AGE_MS });
     return new Promise((resolve, reject) => {
       let slow = false;
@@ -493,7 +536,7 @@ async function serveMirror({
       req.then(r => {
         if (!slow) { clock.clearTimeout(t); resolve(r); return; }
         if (box.remove(payload.nonce)) { log('slow link: the @room post that was in flight landed'); publish(); }
-      }, e => {
+      }, (e: CodedError) => {
         if (!slow) { clock.clearTimeout(t); reject(e); return; }
         if (PLACED_ALREADY.test(e.message)) { if (box.remove(payload.nonce)) publish(); return; }
         if (e.code === 'OFFLINE' && (c.closed || c !== client)) return; // kept: the next connection sends it again
@@ -506,7 +549,7 @@ async function serveMirror({
     });
   }
 
-  function stop(st, why, code = null) {
+  function stop(st: LinkState, why: string, code: string | null = null) {
     if (STOPPED.has(state)) return;
     clock.clearTimeout(retry);
     clock.clearTimeout(hb);
@@ -525,7 +568,7 @@ async function serveMirror({
     finish(why);
   }
 
-  function fail(e) {
+  function fail(e: CodedError) {
     if (e.code === 'FORK') return stop('fork', e.message, 'FORK');
     if (e.code === 'AUTH' || e.code === 'PROTOCOL') return stop('stopped', e.message, e.code);
     const c = client;
@@ -541,7 +584,7 @@ async function serveMirror({
   }
 
   /** No pong within deadMs: c is dead (a half-open link). A dial already under way decides what comes next. */
-  function dead(c, why) {
+  function dead(c: LinkClient, why: string) {
     if (c !== client) return;
     if (!dialing) return fail(new RoomError('OFFLINE', why));
     client = null;
@@ -553,7 +596,7 @@ async function serveMirror({
   }
 
   /** Ping c every pingMs while it is the connection: a late pong redials (make before break), a missing one is dead. */
-  function heartbeat(c) {
+  function heartbeat(c: LinkClient) {
     clock.clearTimeout(hb);
     if (!(T.pingMs > 0) || typeof c.supports !== 'function' || !c.supports('ping')) return;
     const tick = () => {
@@ -573,23 +616,23 @@ async function serveMirror({
     hb = clock.setTimeout(tick, T.pingMs);
   }
 
-  function prefetch(c, e) {
+  function prefetch(c: LinkClient, e: RoomEntry) {
     if (e.kind !== 'proposal' || !e.hash) return;
     const ref = mirror.blobs.ref(e.path) || `plans/${e.hash}.md`;
     if (mirror.blobs.has(ref)) return;
-    c.blobGet(ref).then(b => b && mirror.applyBlob(ref, b), err => log(`plan ${ref}: ${err.message}`));
+    c.blobGet(ref).then(b => b && mirror.applyBlob(ref, b), (err: Error) => log(`plan ${ref}: ${err.message}`));
   }
 
   // A document this version does not stream (a newer host's) is skipped, not fatal: the mirror never takes it.
-  function applyDoc(data) {
+  function applyDoc(data: StreamEvent<'doc'>['data']) {
     if (!data || typeof data.key !== 'string') return log('skipped: a document with no key');
     try { mirror.applyDoc(data.key, data.value); } catch (e) {
-      if (e.code !== 'PROTOCOL') throw e;
-      log(`skipped: ${e.message}`);
+      if ((e as CodedError).code !== 'PROTOCOL') throw e;
+      log(`skipped: ${(e as Error).message}`);
     }
   }
 
-  function onEvent(c, { ev, data }) {
+  function onEvent(c: LinkClient, { ev, data }: StreamEvent) {
     if (STOPPED.has(state)) return;
     try {
       if (ev === 'entry') { if (!held(mirror, data)) prefetch(c, mirror.applyLine(data)); }
@@ -608,13 +651,14 @@ async function serveMirror({
         }
         else fail(new RoomError(data.reason, data.message ? String(data.message).slice(0, 200) : data.reason === 'FORK' ? 'the host log was reset' : 'the connection to the host closed'));
       }
-    } catch (e) {
+    } catch (err) {
+      const e = err as CodedError;
       stop(e.code === 'FORK' ? 'fork' : 'stopped', e.message, e.code === 'FORK' ? 'FORK' : null);
     }
   }
 
   let movedHere = false;
-  function moved(data) {
+  function moved(data: MovedEventData) {
     const r = handoff().onMoved(mirror, data);
     log(`moved: ${r.reason}`);
     if (r.self) {
@@ -625,9 +669,9 @@ async function serveMirror({
 
   /** This machine's live seats renew their lease on the host, so one that lapsed while the link was down is back,
    * quietly: a beat writes no log line (no "left", no "joined"); its pinned key and its link binding never changed. */
-  async function keepSeats(c) {
-    let names = [];
-    try { names = localSeats(); } catch (e) { log(`seats: ${e.message}`); }
+  async function keepSeats(c: LinkClient) {
+    let names: string[] = [];
+    try { names = localSeats(); } catch (e) { log(`seats: ${(e as Error).message}`); }
     const { leaseFresh } = membersMod;
     for (const name of names) {
       const m = mirror.members.read()[name];
@@ -636,19 +680,19 @@ async function serveMirror({
         if (!r || !r.ok) log(`seat ${name} is not in room ${mirror.code} on the host any more; /sub-human ${name} ${mirror.code} joins again`);
         else if (m && !leaseFresh(m)) log(`seat ${name}: its lease had lapsed on the host; renewed`);
       } catch (e) {
-        if (e.code === 'OFFLINE') throw e;
-        log(`seat ${name}: ${e.message}`);
+        if ((e as CodedError).code === 'OFFLINE') throw e;
+        log(`seat ${name}: ${(e as Error).message}`);
       }
     }
   }
 
   /** Send the queued @room posts on c, oldest first (c subscribed: the mirror is the host's prefix). A post the host
    * already holds (an earlier try landed) is answered "placed already" by its nonce: done. OFFLINE keeps the rest. */
-  async function flush(c) {
+  async function flush(c: LinkClient) {
     let sent = 0;
-    const unsent = [];
+    const unsent: Flush['unsent'] = [];
     const note = () => { if (sent || unsent.length) flushed = { at: new Date(clock.now()).toISOString(), sent, unsent }; };
-    const drop = (x, why) => { unsent.push({ text: clip(String(x.payload.text || '')), why }); log(`a queued @room post was not sent: ${why}`); };
+    const drop = (x: OutboxItem, why: string) => { unsent.push({ text: clip(String(x.payload.text || '')), why }); log(`a queued @room post was not sent: ${why}`); };
     for (;;) {
       for (const x of box.expire(clock.now())) drop(x, 'it waited too long (the host refuses a signature that old)');
       const x = box.first();
@@ -656,7 +700,8 @@ async function serveMirror({
       try {
         await c.append(x.payload);
         sent++;
-      } catch (e) {
+      } catch (err) {
+        const e = err as CodedError;
         if (e.code === 'OFFLINE' || e.code === 'LOCK') { note(); throw e; }
         if (PLACED_ALREADY.test(e.message)) sent++;
         else drop(x, e.message);
@@ -671,14 +716,14 @@ async function serveMirror({
    * Make a new connection (subscribe from the mirror's last line, renew the seats, send the outbox), and only once
    * it is live swap it in and close the old one; a hook's op meanwhile still goes over the old one. One at a time.
    */
-  function dial(why = null) {
+  function dial(why: string | null = null): Promise<void> {
     if (STOPPED.has(state)) return Promise.resolve();
     if (dialing) return dialing;
     clock.clearTimeout(retry);
     retry = null;
     attempts++;
     dialing = (async () => {
-      let c = null;
+      let c: LinkClient | null = null;
       try {
         log(client ? `redialing (${why}); the current connection stays until the new one is live` : `connecting${why ? ` (${why})` : ''}`);
         c = await connect();
@@ -698,7 +743,8 @@ async function serveMirror({
         log(`online: subscribed after line ${after}${old ? '; swapped in, the old connection is closed' : ''}`);
         heartbeat(c);
         if (old) retire(old);
-      } catch (e) {
+      } catch (err) {
+        const e = err as CodedError;
         if (c && c !== client) c.close();
         dialing = null;
         if (STOPPED.has(state)) return;
@@ -711,13 +757,13 @@ async function serveMirror({
   }
 
   /** Close a replaced connection once the ops in flight on it are answered (a hook's write must not fail for a swap). */
-  function retire(old) {
+  function retire(old: LinkClient) {
     const d = typeof old.drain === 'function' ? old.drain() : Promise.resolve();
     d.then(() => old.close(), () => old.close());
   }
 
     /** A wake, a network change, a late pong or a signal: redial now, with the backoff reset. */
-  function redial(why) {
+  function redial(why: string): Promise<void> {
     if (STOPPED.has(state)) return Promise.resolve();
     delay = T.retryMs;
     if (!dialing) log(`${why}: redialing now`);
@@ -737,9 +783,9 @@ async function serveMirror({
 }
 
 /** A link the host refused before it held a token: drop the invite, its PIN and the pending rebind; say why. */
-function scrubRefused(links, code, reason) {
+function scrubRefused(links: typeof linksMod, code: string, reason: unknown): void {
   try {
-    const cur = links.get(code);
+    const cur: LinkFileLike | null = links.get(code);
     if (!cur || cur.token) return;
     const { invite, pin, rebind, enroll, awaiting, ...rest } = cur;
     links.set(code, { ...rest, refused: { at: new Date().toISOString(), reason: String(reason).slice(0, 300) } });
@@ -747,13 +793,13 @@ function scrubRefused(links, code, reason) {
 }
 
 /** The link file's connection: hello with the token, or with the invite once (its token then replaces it). */
-async function connectLink(code) {
+async function connectLink(code: string): Promise<LinkClient> {
   const links = linksMod;
-  let l = links.get(code);
+  let l: LinkFileLike | null = links.get(code);
   if (!l) throw new RoomError('AUTH', `this machine has no link to room ${code} any more`);
   if (!l.token && typeof l.invite !== 'string' && l.enroll) { // a short code: the PAKE first (lib/remote/enroll.ts)
-    await require('./enroll.ts').enrollLink(code);
-    l = links.get(code);
+    await enrollMod().enrollLink(code);
+    l = links.get(code) as LinkFileLike; // enrollLink keeps the link file (it threw otherwise)
   }
   const login = !!l.transport && l.transport.login === true; // a link over the person's own ssh login: no invite
   if (!l.token && typeof l.invite !== 'string' && !login) {
@@ -765,8 +811,9 @@ async function connectLink(code) {
   const epoch = storeMod.open(code).hostState().epoch;
   const opts = { machine: homeMod.machineId(), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...cred };
   const t = transports().open(l.transport, { code });
-  let c;
-  try { c = await require('./client.ts').connect(t, opts); } catch (e) {
+  let c: LinkClient;
+  try { c = await clientMod().connect(t, opts); } catch (err) {
+    const e = err as CodedError;
     // the host refused the invite (a wrong PIN, burnt, used, expired): it and its PIN are spent here too, so the link
     // file keeps no secret in clear (a new join writes a fresh one)
     if (!l.token && !login && e && e.code === 'AUTH') scrubRefused(links, code, e.message);
@@ -785,7 +832,7 @@ async function connectLink(code) {
  * the daemon with the reason, not OFFLINE, which would redial a door that stays shut. Before the token (waiting
  * for the host's admit) a refusal is expected and stays OFFLINE.
  */
-async function keyRefused(l, t, e) {
+async function keyRefused(l: LinkFileLike, t: TransportLike | Promise<TransportLike>, e: CodedError | null | undefined): Promise<CodedError | null | undefined> {
   if (!e || e.code !== 'OFFLINE' || !l.token || !l.transport || l.transport.kind !== 'ssh' || !l.transport.key) return e;
   const tr = await Promise.resolve(t).catch(() => null);
   if (!tr || typeof tr.stderr !== 'function') return e;
@@ -800,23 +847,23 @@ async function keyRefused(l, t, e) {
  * unknown host key, a refused login, no shim or no room on the host): AUTH with that reason, so the daemon stops and
  * the join says what to run, instead of redialing a door that stays shut. Anything else is err as it was.
  */
-async function loginRefused(l, t, e, code) {
+async function loginRefused(l: LinkFileLike, t: TransportLike | Promise<TransportLike>, e: CodedError | null | undefined, code: string): Promise<CodedError | null | undefined> {
   if (!e || e.code !== 'OFFLINE') return e;
   const tr = await Promise.resolve(t).catch(() => null);
   if (!tr || typeof tr.stderr !== 'function') return e;
   await new Promise(r => setTimeout(r, 100)); // ssh's last words may come just after its exit
-  const why = require('./transports/ssh.ts').loginFailure(tr.stderr(), l.transport, code);
+  const why = ssh().loginFailure(tr.stderr(), l.transport, code);
   return why ? new RoomError('AUTH', why) : e;
 }
 
-function idleWatch(link, mirror, idleMs) {
+function idleWatch(link: Link, mirror: MirrorStore, idleMs: number): () => void {
   const { machineId } = homeMod;
   const { leaseFresh } = membersMod;
   const identity = identityMod;
   const leased = () => Object.values(mirror.members.read()).some(m => m && m.machine === machineId() && !m.left_at && leaseFresh(m));
   // an invite not redeemed yet (an ssh join waits for the host to admit its key): kept trying for the invite's life
   const redeeming = () => {
-    const l = linksMod.get(mirror.code);
+    const l: LinkFileLike | null = linksMod.get(mirror.code);
     return !!l && !l.token && (typeof l.invite === 'string' || !!l.enroll) && Date.now() - Date.parse(l.created_at) < config.INVITE_TTL_MS;
   };
   const seated = () => {
@@ -835,7 +882,9 @@ function idleWatch(link, mirror, idleMs) {
  * @param {{code: string, log?: (msg: string) => void}} opts
  * @returns {Promise<string>}
  */
-async function run({ code, log = msg => process.stderr.write(`${new Date().toISOString()} sub-human link ${code}: ${msg}\n`) }) {
+async function run({ code, log = msg => process.stderr.write(`${new Date().toISOString()} sub-human link ${code}: ${msg}\n`) }: {
+  code: string; log?: (msg: string) => unknown;
+}): Promise<string> {
   const store = storeMod;
   const mirror = store.open(code);
   if (mirror.isHost) throw new RoomError('INVALID', `this machine has no link to room ${code}`);
