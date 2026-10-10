@@ -6,8 +6,8 @@
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| `serve --stdio` sits unchanged behind a listener (04, 07, 08, 10) | **Confirmed** | `server.serve(transport, …)` takes any `{send, onFrame, onClose, close}`. Spawning `serve --stdio CODE` and piping bytes needs no change to server.js. |
-| `server.js` in-process in a long-lived daemon (02, 03, 05, 06) | **Works, risky** | `lib/lock.js` waits with `sleepSync`, and seats, place and decide are synchronous. One lock wait stalls every link in the daemon. One process per connection keeps today's isolation. |
+| `serve --stdio` sits unchanged behind a listener (04, 07, 08, 10) | **Confirmed** | `server.serve(transport, …)` takes any `{send, onFrame, onClose, close}`. Spawning `serve --stdio CODE` and piping bytes needs no change to server.ts. |
+| `server.ts` in-process in a long-lived daemon (02, 03, 05, 06) | **Works, risky** | `lib/lock.ts` waits with `sleepSync`, and seats, place and decide are synchronous. One lock wait stalls every link in the daemon. One process per connection keeps today's isolation. |
 | Plan 06: "split the handler from the stdio loop" | **Refuted** | `serve()` is already independent of the transport. |
 | A new duplex transport slots in cleanly | **Partly** | `lineTransport` makes a new kind about 15 lines. But kinds are hard-coded in `transportOf`, `connectLink` and `transports/index.open`. `open()` is synchronous and hello goes out at once, so a transport that connects asynchronously (WS, handshake, DHT) needs an async `open()`. |
 | PAKE: "impossible in node:crypto" (05) vs "40–60 lines of BigInt" (02, 08) | **Unclear** | Doable, but hand-rolled security code. Plan 05's alternative is sound and cheaper: pin the host's public key in the invite and use the PIN as an online second factor. |
@@ -22,11 +22,11 @@
 |---|---|---|
 | Transport registry | all | Map each kind to `{parse(locator), open(spec) -> Promise<Transport>}`, plus `fromDuplex(stream)` over `lineTransport`. Move pipe and memory onto it. About 120 lines, no behaviour change. |
 | Stable server shim | 01 (every listener needs it) | `<home>/bin/sub-human`, rewritten at SessionStart to point at the current plugin root and node. `authorize` and the listeners spawn through it. |
-| Host listener daemon | 02–05, 07, 08, 10 | `listener.js` takes a Duplex from any acceptor (TCP, WS, relay, DHT). It enforces pre-auth limits (hello deadline, frame cap, per-IP count), spawns `serve --stdio` through the shim and exits when idle, like `link.js`. This ends "no host daemon"; document that once. |
-| WebSocket | 02, 04, 07, 08, 10 | `ws.js`: RFC 6455 server and client, HTTPS_PROXY CONNECT, close on a missed ping. About 300 lines. Node's global `WebSocket` ignores proxy environment variables, so we need our own client anyway. |
+| Host listener daemon | 02–05, 07, 08, 10 | `listener.ts` takes a Duplex from any acceptor (TCP, WS, relay, DHT). It enforces pre-auth limits (hello deadline, frame cap, per-IP count), spawns `serve --stdio` through the shim and exits when idle, like `link.ts`. This ends "no host daemon"; document that once. |
+| WebSocket | 02, 04, 07, 08, 10 | `ws.ts`: RFC 6455 server and client, HTTPS_PROXY CONNECT, close on a missed ping. About 300 lines. Node's global `WebSocket` ignores proxy environment variables, so we need our own client anyway. |
 | E2E channel | 02, 03, 07, 08, 10 | `secure.js`, Duplex to Duplex: Noise IK/NK (X25519, HKDF, ChaCha20-Poly1305), host key pinned from the invite, token-derived PSK for reconnects. **No PAKE at first.** |
 | sh2 invite with PIN | 01, 02, 04, 05, 07–10 | `{code, locators[], hostKey, secret, expires}`, PIN stored as a hash, 5-attempt burn, 15-minute TTL. Take the PIN through the expansion hook, as invites are taken today. An AskUserQuestion answer (05, 06, 09, 10) is visible to the model. |
-| Reconnect hardening | 01, 09; per-transport pings in 04, 07, 08 | Build it once in `link.js` and the protocol: a `ping` op, wake detection, jittered backoff, session supersede, auto-rejoin, and a hello version range. |
+| Reconnect hardening | 01, 09; per-transport pings in 04, 07, 08 | Build it once in `link.ts` and the protocol: a `ping` op, wake detection, jittered backoff, session supersede, auto-rejoin, and a hello version range. |
 
 Then a new transport costs 1–3 d.
 
@@ -60,7 +60,7 @@ Then a new transport costs 1–3 d.
 - Harness plus an N-1 version-skew job in GitHub Actions.
 
 **1.1: reachable without SSH (about 15–20 d)**
-- `listener.js`, `ws.js`, a `wss:` locator and sh2 PIN invites.
+- `listener.ts`, `ws.ts`, a `wss:` locator and sh2 PIN invites.
 - Ship it as plan 04's Serve/Funnel recipe. It works the same for a LAN, a tailnet IP or a bring-your-own tunnel URL (no adapters).
 
 **1.2: two laptops behind NAT (about 20 d)**

@@ -34,14 +34,14 @@ Behind the scenes: `sub-human listen` starts on `127.0.0.1:<port>`, then `tailsc
 ## 3. Architecture changes
 | Area | Change |
 |---|---|
-| `lib/remote/transports/ws.js` (new, ~250 lines, zero deps) | RFC 6455 framing over `node:http` upgrade (server) and `node:https`/`tls` (client). Text frames carry today's NDJSON lines through `lineTransport`. Ping every 15 s; 2 missed pongs closes the link, mirroring ssh's `ServerAliveInterval`. Node 22's global `WebSocket` is used client-side when present. |
-| `lib/remote/transports/index.js` | `KINDS += 'ws'`. `open({kind:'ws', url})`. |
-| `lib/remote/link.js` | `wssLocator(host, port?, path)` and `transportOf('wss:host[:port]/path')`, validated like ssh: a hostname plus an optional port and a fixed path charset, with no userinfo or query. Allow only `*.ts.net` hosts or the user's own `--allow-host`, so an invite cannot point the daemon at an arbitrary server. |
-| `bin/sub-human listen` (new) → `lib/remote/listener.js` | A per-host daemon, one per home. It accepts WS upgrades and spawns `serve --stdio CODE` per connection, piping frames both ways, so `server.js` is untouched. It also enforces pre-auth limits: 1 MiB frames, 8 unauthenticated connections per IP (taken from `X-Forwarded-For` / Tailscale-Funnel headers, or the proxy-protocol header), a 10 s hello deadline, and an idle exit when no hosted room has a link. |
-| `lib/remote/tailscale.js` (new) | Wraps the CLI: `tailscale status --json` (DNS name, Funnel capability, peer list), `serve`/`funnel --bg … ` and `… off` on room close, `whois --json` (advisory display of who the tailnet peer is). It wraps every call with a timeout. |
-| `lib/remote/auth.js` | `mintInvite({pin:true})` adds a 6-digit secret, `expires_at`, and an attempt counter (5 tries, then the invite burns). Redemption stays the same: the hashed link token replaces the invite. `parseJoinUrl(url, pin)` → `{code, locator, secret}`, so the rest of the join path sees a normal invite. |
-| `hooks/join.js`, `/sub-human host` | Add the `join NAME URL PIN` form. `host` picks the transport. The block-reason text is shown to the person only, as today. |
-| `lib/room/links.js` | The link file stores `transport: {kind:'ws', url}`. Nothing else changes. |
+| `lib/remote/transports/ws.ts` (new, ~250 lines, zero deps) | RFC 6455 framing over `node:http` upgrade (server) and `node:https`/`tls` (client). Text frames carry today's NDJSON lines through `lineTransport`. Ping every 15 s; 2 missed pongs closes the link, mirroring ssh's `ServerAliveInterval`. Node 22's global `WebSocket` is used client-side when present. |
+| `lib/remote/transports/index.ts` | `KINDS += 'ws'`. `open({kind:'ws', url})`. |
+| `lib/remote/link.ts` | `wssLocator(host, port?, path)` and `transportOf('wss:host[:port]/path')`, validated like ssh: a hostname plus an optional port and a fixed path charset, with no userinfo or query. Allow only `*.ts.net` hosts or the user's own `--allow-host`, so an invite cannot point the daemon at an arbitrary server. |
+| `bin/sub-human listen` (new) → `lib/remote/listener.ts` | A per-host daemon, one per home. It accepts WS upgrades and spawns `serve --stdio CODE` per connection, piping frames both ways, so `server.ts` is untouched. It also enforces pre-auth limits: 1 MiB frames, 8 unauthenticated connections per IP (taken from `X-Forwarded-For` / Tailscale-Funnel headers, or the proxy-protocol header), a 10 s hello deadline, and an idle exit when no hosted room has a link. |
+| `lib/remote/tailscale.ts` (new) | Wraps the CLI: `tailscale status --json` (DNS name, Funnel capability, peer list), `serve`/`funnel --bg … ` and `… off` on room close, `whois --json` (advisory display of who the tailnet peer is). It wraps every call with a timeout. |
+| `lib/remote/auth.ts` | `mintInvite({pin:true})` adds a 6-digit secret, `expires_at`, and an attempt counter (5 tries, then the invite burns). Redemption stays the same: the hashed link token replaces the invite. `parseJoinUrl(url, pin)` → `{code, locator, secret}`, so the rest of the join path sees a normal invite. |
+| `hooks/join.ts`, `/sub-human host` | Add the `join NAME URL PIN` form. `host` picks the transport. The block-reason text is shown to the person only, as today. |
+| `lib/room/links.ts` | The link file stores `transport: {kind:'ws', url}`. Nothing else changes. |
 | `scripts/remote-docker/` | Add a Headscale + DERP container pair and a Toxiproxy-fronted ws listener. Run the existing reconnect/FORK suites against ws. |
 
 Not done: tsnet embedding. libtailscale ships C/Swift/Python/Ruby bindings only, and using it from Node needs a cgo shared library plus an N-API addon, which breaks "zero dependencies". A Go sidecar binary is possible later (M5) but adds a release pipeline.
@@ -63,7 +63,7 @@ Not done: tsnet embedding. libtailscale ships C/Swift/Python/Ruby bindings only,
 - **Tailscale outages:** the coordination server being down does not break existing tailnet connections. Funnel depends on Tailscale's ingress, so ssh stays as a documented fallback.
 
 ## 6. Cost to the developer
-$0/month and no ops. Users can use Tailscale's free Personal plan (Funnel and sharing are "available for all plans"). Funnel bandwidth limits are not configurable, but NDJSON chat plus plan blobs of 1 MiB or less is tiny. The only maintenance is tracking changes to the `tailscale` CLI output, which an `npm run probe` check covers, the same way `lib/cc.js` handles Claude Code.
+$0/month and no ops. Users can use Tailscale's free Personal plan (Funnel and sharing are "available for all plans"). Funnel bandwidth limits are not configurable, but NDJSON chat plus plan blobs of 1 MiB or less is tiny. The only maintenance is tracking changes to the `tailscale` CLI output, which an `npm run probe` check covers, the same way `lib/cc.ts` handles Claude Code.
 
 ## 7. Prior art
 - **Tailscale node sharing** (https://tailscale.com/kb/1084/sharing): the recipient must already have a tailnet and be its admin, and the shared node is quarantined. *Copy:* least-exposure sharing. *Avoid:* making it the primary join path. Asking a coworker to make a tailnet is too much friction, so it is an option, not the default.
@@ -76,9 +76,9 @@ $0/month and no ops. Users can use Tailscale's free Personal plan (Funnel and sh
 - **NetBird** (https://pkg.go.dev/github.com/netbirdio/netbird) and **ZeroTier** (https://discuss.zerotier.com/t/zerotier-private-network-limit-free-tier/17486): both are WireGuard/P2P overlays with relays, and ZeroTier's free tier has shrunk. *Lesson:* the transport must stay overlay-agnostic (`wss:` to any hostname with `--allow-host`), so a NetBird/ZeroTier/Nebula IP works with `host --listen 100.x.y.z`. Only the convenience wiring is Tailscale-specific.
 
 ## 8. Milestones
-- **M1, ws transport + listener (4–5 days):** `ws.js`, `listener.js`, `wss:` locator, Docker tests with Toxiproxy (latency, reset, black-hole).
-- **M2, PIN invites + URL join (2 days):** `auth.js` PIN/TTL/attempts, `join NAME URL PIN`, revoke.
-- **M3, Tailscale wiring (3 days):** `tailscale.js`, auto-pick Funnel/Serve/ssh in `/sub-human host`, teardown on close, probe checks, Headscale container in CI.
+- **M1, ws transport + listener (4–5 days):** `ws.ts`, `listener.ts`, `wss:` locator, Docker tests with Toxiproxy (latency, reset, black-hole).
+- **M2, PIN invites + URL join (2 days):** `auth.ts` PIN/TTL/attempts, `join NAME URL PIN`, revoke.
+- **M3, Tailscale wiring (3 days):** `tailscale.ts`, auto-pick Funnel/Serve/ssh in `/sub-human host`, teardown on close, probe checks, Headscale container in CI.
 - **M4, discovery + polish (2 days):** `/.well-known/rooms`, `/sub-human rooms`, WhoIs labels, proxy env support.
 - **M5, optional (1–2 weeks):** a Go tsnet sidecar so a host can join a tailnet without installing tailscaled. Do it only if demand shows up.
 
@@ -98,4 +98,4 @@ $0/month and no ops. Users can use Tailscale's free Personal plan (Funnel and sh
 | Privacy | 4 (E2E to host. Tailscale sees metadata only. Headscale is an option.) |
 | $0 cost | 5 |
 | Effort | 4 (about 2.5 weeks to M4) |
-| Fit with existing code | 5 (one new transport + listener. server.js, protocol and auth model unchanged.) |
+| Fit with existing code | 5 (one new transport + listener. server.ts, protocol and auth model unchanged.) |

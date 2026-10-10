@@ -1,6 +1,6 @@
 # Archive
 
-Design history: research, spikes, plans and briefs from earlier phases. Kept for the reasoning; none of it describes the current build. For the current state see `docs/rebuild/` (the walkthrough and its checks), `docs/internals/`, and `docs/ARCHITECTURE.md`. Paths inside these files are as written then: `docs/X` there is now `docs/archive/X`, and `docs/next/AUDIT-PLAN.md`, `docs/next/MODS-PLAN.md` and `docs/next/REVIEW-PLAN.md` are now in `docs/archive/`.
+Design history: research, spikes, plans and briefs from earlier phases. Kept for the reasoning; none of it describes the current build. For the current state see `docs/rebuild/` (the walkthrough and its checks), `docs/internals/`, and `docs/ARCHITECTURE.md`. Paths inside these files are as written then: `docs/X` there is now `docs/archive/X`, and `docs/next/AUDIT-PLAN.md`, `docs/next/MODS-PLAN.md`, `docs/next/REVIEW-PLAN.md` and `docs/next/TYPESCRIPT.md` are now in `docs/archive/`.
 
 Roughly in the order it was written:
 
@@ -25,3 +25,4 @@ Roughly in the order it was written:
 - [MODS-PLAN.md](MODS-PLAN.md): the move to a function-hooks module (W0–W4: guard, prompt gate, delivery through the tail child, no Monitor; done 2026-10-07).
 - [REVIEW-PLAN.md](REVIEW-PLAN.md): the follow-up to the three-way review of the mods build (R0–R5: spikes, bugs, structure, dead code, comments and docs, hotspots and a short live run; done 2026-10-07).
 - [REMOTE-PLAN.md](REMOTE-PLAN.md): remote rooms, a room hosted on one machine and joined from others (PR1–PR6: keys in the log and sig v2, machine ids and host gates, the bridge, the protocol and server, the mirror and link daemon, docs and demo S11; done 2026-10-07 over the pipe transport, SSH next).
+- [TYPESCRIPT.md](TYPESCRIPT.md): the move of the runtime to TypeScript with no build step (A codemod, B six typed slices, C integration; 4079 → 0 strict errors; done 2026-10-10, 0.5.0-beta.8).

@@ -18,7 +18,7 @@ Verdict: all three evaluators ranked 09 (core hardening), 01 (SSH-first) and 04 
 2. **Move `bin/` to `scripts/`.** Org sync rejects plugins with a top-level `bin/`. Bump `version` on every release, because marketplace auto-update is off by default.
 3. **Transport registry.** Replace the three hard-coded kind switches, accept a Duplex adapter, and allow `open()` to be async. A later transport then costs 1–3 days.
 4. **Protocol skew.** `hello` carries a min/max version range and the client version. The error names which side needs to update. Old clients tolerate unknown entry kinds.
-5. **Reconnect hardening, once, in `link.js`:**
+5. **Reconnect hardening, once, in `link.ts`:**
    - jittered backoff;
    - an immediate redial on wake or network change;
    - app-level ping;
@@ -42,7 +42,7 @@ Verdict: all three evaluators ranked 09 (core hardening), 01 (SSH-first) and 04 
 Who this serves: coworkers on SSH dev boxes, including through bastions and with Bedrock, and anyone already on a tailnet.
 
 ## 1.1 — URL + PIN for friends (about 2 weeks)
-- Add a `ws:` listener daemon on 127.0.0.1 that spawns `serve --stdio` for each connection. It is a minimal zero-dependency WebSocket server in `lib/remote/ws.js`.
+- Add a `ws:` listener daemon on 127.0.0.1 that spawns `serve --stdio` for each connection. It is a minimal zero-dependency WebSocket server in `lib/remote/ws.ts`.
 - The joiner pins the host key carried in the invite, and the session runs over a Noise channel built on `node:crypto` with no PAKE.
 - Ship it as a Tailscale recipe:
   - **Serve (tailnet only):** the default.

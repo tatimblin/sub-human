@@ -61,24 +61,24 @@ New per-session files (row state) live in `<room>/rows/`. They're owned by B.
 
 | Event | Matcher | Script | Owner |
 |---|---|---|---|
-| UserPromptExpansion | `^(sub-human:)?sub-human$` | `join.js` | A |
-| UserPromptSubmit | — | `at-room.js` | A |
+| UserPromptExpansion | `^(sub-human:)?sub-human$` | `join.ts` | A |
+| UserPromptSubmit | — | `at-room.ts` | A |
 | PreToolUse | `ExitPlanMode` | `plan-gate.js` | C |
-| PreToolUse | `Bash\|Write\|Edit\|MultiEdit\|NotebookEdit\|mcp__plugin_sub-human_room__.*` | `guard.js` | A |
+| PreToolUse | `Bash\|Write\|Edit\|MultiEdit\|NotebookEdit\|mcp__plugin_sub-human_room__.*` | `guard.ts` | A |
 | PostToolUse | `ExitPlanMode` | `plan-result.js` | C (room Claude only) |
-| PreToolUse | `Agent\|Task` | `row-guard.js` (deny a row spawn whose hold is live) | B |
-| PostToolUse | `Agent\|Task` | `row-map.js` | B |
-| SubagentStop | — | `row-hold.js` | B |
-| SessionStart | all | `row-launcher.js` (writes the subagentStatusLine launcher) | B |
-| SessionStart | `compact\|clear\|resume` | `session-restore.js` | A |
+| PreToolUse | `Agent\|Task` | `row-guard.ts` (deny a row spawn whose hold is live) | B |
+| PostToolUse | `Agent\|Task` | `row-map.ts` | B |
+| SubagentStop | — | `row-hold.ts` | B |
+| SessionStart | all | `row-launcher.ts` (writes the subagentStatusLine launcher) | B |
+| SessionStart | `compact\|clear\|resume` | `session-restore.ts` | A |
 | PreCompact | — | `precompact-note.js` | A |
-| SessionEnd | — | `session-end.js` | A |
-| Notification | `idle_prompt\|permission_prompt` | `presence.js` | A |
-| StopFailure | — | `presence.js` | A |
+| SessionEnd | — | `session-end.ts` | A |
+| Notification | `idle_prompt\|permission_prompt` | `presence.ts` | A |
+| StopFailure | — | `presence.ts` | A |
 
 `plan-backup.js` and `stop-feedback.js` are deleted (C deletes them and their tests).
 
-### Identity (owner A, `lib/identity.js`)
+### Identity (owner A, `lib/identity.ts`)
 
 There is no process-ancestry walking and no `pid_start` checks. The exported API:
 - `join({code, name, role, pid, session_id, cwd})`
@@ -94,7 +94,7 @@ There is no process-ancestry walking and no `pid_start` checks. The exported API
 
 Each returns `{code, name, role: 'claude'|'member', session_id, pid}` or null.
 
-### Room server plug-ins (owner A, `mcp/room-server.js`)
+### Room server plug-ins (owner A, `mcp/room-server.ts`)
 
 The server loads `./hold.js` (B) and `./signoff.js` (C). Each exports `create(ctx)`, which returns `{ tools: [toolDef], call(name, me, args, meta) }`. `call` returns a result or a Promise of one; `meta` is `{ id, progressToken }`.
 
@@ -119,21 +119,21 @@ The `ctx` object:
 
 ### Rows (owner B)
 
-**`lib/rows.js`** exports:
-- `rowCalls(me, members)`: text for the model listing the exact Agent calls to make. A's `join.js` and `session-restore.js` and D's role text use it; don't hand-copy it.
+**`lib/rows.ts`** exports:
+- `rowCalls(me, members)`: text for the model listing the exact Agent calls to make. A's `join.ts` and `session-restore.ts` and D's role text use it; don't hand-copy it.
 - `rowText(code, participantName, viewerName)`: deterministic row text from the log and presence.
 
-**Room Claude rows.** One background `sub-human:participant` per member. Its prompt is `member: NAME`. It calls `hold({member: NAME})` once and never returns while the viewer is in the room: when NAME leaves the row reads `left` and is live again on rejoin (one row per member, ever). `hold` returns `STOP` when the viewer leaves, or at once for a duplicate (a second live hold for the same row); `hooks/row-guard.js` (PreToolUse Agent) denies the duplicate spawn itself.
+**Room Claude rows.** One background `sub-human:participant` per member. Its prompt is `member: NAME`. It calls `hold({member: NAME})` once and never returns while the viewer is in the room: when NAME leaves the row reads `left` and is live again on rejoin (one row per member, ever). `hold` returns `STOP` when the viewer leaves, or at once for a duplicate (a second live hold for the same row); `hooks/row-guard.ts` (PreToolUse Agent) denies the duplicate spawn itself.
 
 **Member rows.** One background `sub-human:room` agent, labelled with the room code.
 - It spawns a `sub-human:participant` child for each **other** member except the room's Claude. It also calls `hold({room: CODE})`, which returns `JOINED NAME` or `RESPAWN NAME`; on either, it spawns that child and holds again.
 - When the member leaves, `hold` returns `STOP`.
 
-**Agent → participant map.** `row-map.js` (PostToolUse Agent) records each agent id → participant or room in `<room>/rows/<session_id>.json`. `subagentStatusLine` reads that file.
+**Agent → participant map.** `row-map.ts` (PostToolUse Agent) records each agent id → participant or room in `<room>/rows/<session_id>.json`. `subagentStatusLine` reads that file.
 
-**Plugin `settings.json`.** It sets `{"subagentStatusLine": {"type":"command","command":"<launcher path>"}}`. `${CLAUDE_PLUGIN_ROOT}` is empty there. So `row-launcher.js` writes a launcher, at a fixed path B chooses and verifies (for example `~/.sub-human/bin/row-status`), that execs `node <plugin>/bin/sub-human agent-statusline`.
+**Plugin `settings.json`.** It sets `{"subagentStatusLine": {"type":"command","command":"<launcher path>"}}`. `${CLAUDE_PLUGIN_ROOT}` is empty there. So `row-launcher.ts` writes a launcher, at a fixed path B chooses and verifies (for example `~/.sub-human/bin/row-status`), that execs `node <plugin>/bin/sub-human agent-statusline`.
 
-**The `sub-human` CLI.** B adds or keeps the `agent-statusline` and `statusline` subcommand logic in `statusline/*.js`. `bin/sub-human` dispatches to them and is owned by C.
+**The `sub-human` CLI.** B adds or keeps the `agent-statusline` and `statusline` subcommand logic in `statusline/*.ts`. `bin/sub-human` dispatches to them and is owned by C.
 
 ### Sign-off (owner C)
 
@@ -164,7 +164,7 @@ The `ctx` object:
 - **`skills/sub-human/SKILL.md`**
 - **`README.md`:** the launch commands. The room's Claude runs `claude --plugin-dir … --agent sub-human:room-claude --permission-mode plan`, then `/sub-human`. A member runs `claude --plugin-dir …`, then `/sub-human NAME [CODE]`.
 
-Role text must reference `lib/rows.js` output rather than hand-written Agent calls. In practice `join.js` appends `rowCalls()` to the injected context.
+Role text must reference `lib/rows.ts` output rather than hand-written Agent calls. In practice `join.ts` appends `rowCalls()` to the injected context.
 
 ### Visualization (owner E)
 

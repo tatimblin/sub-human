@@ -8,8 +8,6 @@
  *     "the room's Claude is not running: the room task list is unavailable" and appends nothing.
  */
 
-import path from 'node:path';
-const LIB = path.join(import.meta.dirname, '..', 'lib');
 import * as tasks from '../lib/tasks.ts';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';

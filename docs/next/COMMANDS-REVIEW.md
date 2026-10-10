@@ -35,7 +35,7 @@ Sources: four read-only reviews on 2026-10-10:
 6. **Traps.**
    - `/sub-human doctor` and `/sub-human help` open a room as a person named "doctor" or "help".
    - The invite line contains a literal `NAME`, so pasting it unchanged joins as "NAME".
-7. **A security bug.** A `join` with a mistyped code (5 or 7 digits, or with `--home`) falls through to `block()` instead of `hidden()`, so the code can stay in the conversation (hooks/join.js:208, 295).
+7. **A security bug.** A `join` with a mistyped code (5 or 7 digits, or with `--home`) falls through to `block()` instead of `hidden()`, so the code can stay in the conversation (hooks/join.ts:208, 295).
 
 ## Proposed commands
 

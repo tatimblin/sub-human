@@ -45,7 +45,7 @@ import * as room from '../lib/room.ts';
 import * as proposal from '../lib/proposal.ts';
 import { createRequire } from 'node:module';
 import type { EntryInput } from '../lib/room/types.ts';
-import type { CallMeta, CallToolParams, JsonRpcError, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
+import type { CallMeta, CallToolParams, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 
 // loadPlugins() requires each plug-in by path (createRequire: require(esm) is synchronous).
 const require = createRequire(import.meta.url);

@@ -88,7 +88,7 @@ Sources: three research passes, run on 2026-10-08:
   Move remote hosting and handoff to `docs/REMOTE.md`, the threat model to `SECURITY.md`, and the troubleshooting table to `docs/TROUBLESHOOTING.md`.
 - [ ] **Confirm a join on screen**: `sub-human: alice joined vole-1234 · 1 here · @room to talk`.
 - [ ] **`/sub-human doctor`** inside Claude Code (read only, through the hidden-block expansion; `--fix` stays outside Claude Code).
-- [ ] **Split the join refusal** at `hooks/join.js:68` by cause:
+- [ ] **Split the join refusal** at `hooks/join.ts:68` by cause:
   - Claude Code too old;
   - mods not loaded;
   - a managed policy;

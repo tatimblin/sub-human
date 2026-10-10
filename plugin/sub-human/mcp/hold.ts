@@ -30,7 +30,6 @@
  *   SUB_HUMAN_HOLD_ROOM_GAP_MS 30000.
  */
 
-import path from 'node:path';
 import * as rows from '../lib/rows.ts';
 import * as notices from '../lib/notices.ts';
 import * as room from '../lib/room.ts';

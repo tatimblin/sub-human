@@ -1,8 +1,9 @@
 {
-  // npm run typecheck (docs/next/TYPESCRIPT.md, decision 8). Nothing is emitted: node strips the types of each .ts it
+  // npm run typecheck (docs/archive/TYPESCRIPT.md, decision 8). Nothing is emitted: node strips the types of each .ts it
   // loads (Node 24.3+) and Claude Code transpiles the hooks module (mod/); only this checks them.
   "compilerOptions": {
     "strict": true,
+    "noUnusedLocals": true,
     "noEmit": true,
     "target": "es2024",
     "module": "nodenext",

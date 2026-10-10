@@ -20,8 +20,6 @@
  */
 
 import fs from 'node:fs';
-import path from 'node:path';
-const LIB = path.join(import.meta.dirname, '..', 'lib');
 import { readInput, resolveSeat } from './common.ts';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';

@@ -31,7 +31,6 @@
  */
 
 import * as identity from './identity.ts';
-import * as cc from './cc.ts';
 import { clip, NAME_RE } from './text.ts';
 import * as config from './config.ts';
 import { humanTrust } from './room/store.ts';

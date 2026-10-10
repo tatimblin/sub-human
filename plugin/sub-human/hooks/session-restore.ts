@@ -15,7 +15,6 @@
 // A plan-view review left behind (hooks/consent.ts; members/NAME/review.json) is closed here: after clear or
 // resume always, after compact only when it is older than REVIEW_STALE_MS. The session plan file gets the
 // person's own text back (lib/proposal.ts restoreStale) and the review state is cleared.
-import path from 'node:path';
 import { identity, room, run, out, whoami, presence, contextBlock, seatTitle, logError } from './common.ts';
 import * as rows from '../lib/rows.ts';
 import * as proposal from '../lib/proposal.ts';

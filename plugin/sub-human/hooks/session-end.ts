@@ -9,7 +9,6 @@
 // child: the seat is marked left and the reaper started (detached) before the log append, which is the
 // only step that can wait on a lock. In a room hosted elsewhere the leave is one op over the link, within
 // LINK_CALL_END_MS; the host logs member_left and runs the reaper.
-import path from 'node:path';
 import { identity, run, whoami } from './common.ts';
 import * as seats from '../lib/seats.ts';
 import { LINK_CALL_END_MS } from '../lib/config.ts';

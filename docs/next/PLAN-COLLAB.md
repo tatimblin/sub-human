@@ -2,7 +2,7 @@
 
 Status: design, 2026-10-08. Not built. Sources:
 - the decisions the user reached in conversation (recorded under Decisions, verbatim in substance);
-- the code on `master` as of `2d425b6` (`lib/proposal.js`, `lib/room/consent.js`, `lib/room/lanes.js`, `lib/room/render.js`, `lib/rows.js`, `lib/tasks.js`, `mcp/room-server.js` `propose`, `mcp/task.js`, `hooks/consent.js`, `agents/room-claude.md`, `skills/sub-human/{member,facilitate}.md`);
+- the code on `master` as of `2d425b6` (`lib/proposal.ts`, `lib/room/consent.ts`, `lib/room/lanes.ts`, `lib/room/render.ts`, `lib/rows.ts`, `lib/tasks.ts`, `mcp/room-server.ts` `propose`, `mcp/task.ts`, `hooks/consent.ts`, `agents/room-claude.md`, `skills/sub-human/{member,facilitate}.md`);
 - `feature/remote-rooms` `7065803` and `ea26ae6`: the hook picks the proposal from the person's words (`proposal.choose` / `picked`, `members/NAME/pick`) and always shows that proposal's text in the native plan view; Remote Control "Suggest edits" (deny with a note) records an objection with the note, a bare deny records nothing; only a hook-opened review records. `answer` (any machine) and `decide` (host only) replace `record` there. This note targets the code after that branch merges.
 
 Goal: people shape one plan together, from any session, terminal or phone, without anyone writing a second plan for the same thing, and with agreement still meaning exactly one thing: every named person approved that exact text in their own dialog.
@@ -67,11 +67,11 @@ All new fields are optional; a proposal without them is version 1 of its own thr
 | `withdraw` (new kind) | `proposal_hash`, `text?` | the proposer withdraws the thread whose head this is | `withdraw` tool, via=agent |
 | `decision` | `outcome` | `agreed` \| `changes_requested` (legacy `objected:` text reads as `changes_requested`) | `proposal.decide` |
 
-`lib/room/validate.js`: `thread`, `version`, `supersedes`, `replaces`, `base`, `asked_by`, `plan_task` on `proposal` only (hashes by `HASH_RE`, `replaces` ≤ 4); `withdraw` in `AGENT_KINDS` with `proposal_hash` required; `outcome` on `decision` only, system only.
+`lib/room/validate.ts`: `thread`, `version`, `supersedes`, `replaces`, `base`, `asked_by`, `plan_task` on `proposal` only (hashes by `HASH_RE`, `replaces` ≤ 4); `withdraw` in `AGENT_KINDS` with `proposal_hash` required; `outcome` on `decision` only, system only.
 
 Superseding, merging and withdrawing write **no** decision entry: the fold derives those closes from the `proposal` and `withdraw` entries. Only a completed answer matrix writes a `decision`, as today. This keeps `decide` host-only and simple on `feature/remote-rooms`, and every machine computes the same state from the same log.
 
-### The fold (`lib/room/consent.js`)
+### The fold (`lib/room/consent.ts`)
 
 `fold(entries)` stays the one interpretation. Additions:
 
@@ -92,7 +92,7 @@ Link rules, checked in the fold (not only in `create`), so a hand-built entry ca
 
 `test/hooks/consent-table.test.js` gains rows for every line above; the table still feeds every view.
 
-### Writers (`lib/proposal.js`)
+### Writers (`lib/proposal.ts`)
 
 ```
 create(me, {text|path, approvers?, revises?, merges?, asked_by?, plan_task?})
@@ -108,9 +108,9 @@ decide(code, hash)-> outcome agreed | changes_requested; text "TITLE: agreed (al
 changes(code, from, to) -> the change summary (below), from the stored blobs only
 ```
 
-Config (`lib/config.js`): `REVISE_MAX: 3`, `REVISE_WINDOW_MS: 600_000`, `CHANGES_MAX_LINES: 12`.
+Config (`lib/config.ts`): `REVISE_MAX: 3`, `REVISE_WINDOW_MS: 600_000`, `CHANGES_MAX_LINES: 12`.
 
-### Plan tasks (`lib/tasks.js`, `mcp/task.js`)
+### Plan tasks (`lib/tasks.ts`, `mcp/task.ts`)
 
 - Subject `plan: <topic>` (`propose` adds and claims one when the proposer holds none, decided 5), owner = the person whose Claude plans, claimed at add (`in_progress`). Detail: who it concerns.
 - `task({op:'add', subject:'plan: …'})` replies with the other open `plan:` tasks, so the check happens in the call that claims: `queued; the room's Claude applies it. Open plans: #4 plan: paging API (bob)`. Same in `sub-human tasks --json` (`plan: true`).
@@ -121,11 +121,11 @@ Config (`lib/config.js`): `REVISE_MAX: 3`, `REVISE_WINDOW_MS: 600_000`, `CHANGES
 
 | Area | Change |
 |---|---|
-| **Lanes** (`lanes.js`) | An objection pushes to the thread's proposer and to the version's author (room Claude included), not only `p.from`. A version pushes to every approver who has not answered it (today's rule, now heads only). A superseded head's pending review drops at flush time (judged against `readView`). The room's Claude gets push for a `plan:` task_req (it applies it anyway) and for an `agreed` decision when another thread is open or in force (to flag D7 conflicts). |
-| **Room lines** (`render.js`) | Every outcome names the plan and version when > 1. See the table below. |
-| **Rows** (`rows.js`) | One line per thread, not per hash: `◐ Ship v3 Monday v3 1/3 · you: answer`; `✎ changes requested by bob` on the proposer's row; `plan: paging API` tasks show on their owner's row as today. |
+| **Lanes** (`lanes.ts`) | An objection pushes to the thread's proposer and to the version's author (room Claude included), not only `p.from`. A version pushes to every approver who has not answered it (today's rule, now heads only). A superseded head's pending review drops at flush time (judged against `readView`). The room's Claude gets push for a `plan:` task_req (it applies it anyway) and for an `agreed` decision when another thread is open or in force (to flag D7 conflicts). |
+| **Room lines** (`render.ts`) | Every outcome names the plan and version when > 1. See the table below. |
+| **Rows** (`rows.ts`) | One line per thread, not per hash: `◐ Ship v3 Monday v3 1/3 · you: answer`; `✎ changes requested by bob` on the proposer's row; `plan: paging API` tasks show on their owner's row as today. |
 | **stateLine** | Threads, heads only: `room now: Ship v3 Monday v3 waiting on carol · you: answer needed (…)`. |
-| **Plan view** (`hooks/consent.js`) | The hook-opened review of a version > 1 shows a hook-composed header, then the plan (below). The pick (`proposal.choose`) maps words naming any version of a thread to its head; a pick of a closed version opens the head and the model is told "v2 was replaced by v3; showing v3". |
+| **Plan view** (`hooks/consent.ts`) | The hook-opened review of a version > 1 shows a hook-composed header, then the plan (below). The pick (`proposal.choose`) maps words naming any version of a thread to its head; a pick of a closed version opens the head and the model is told "v2 was replaced by v3; showing v3". |
 | **Room Claude** (`agents/room-claude.md`) | Revise on `@claude revise: …`, merge on `@claude merge`, flag overlaps once (D7). |
 | **Role texts** | "in their own terminal" → "in their session" (propose tool description, `facilitate.md`); names or they/them; one line each on revising, `plan:` tasks and withdraw. |
 
@@ -266,7 +266,7 @@ Each phase ends green (`npm test`, `npm run docs`, `npm run validate`) and commi
 
 ### P1 Versions in the log
 
-Files: `lib/room/validate.js`, `lib/room/consent.js`, `lib/proposal.js`, `lib/config.js`, `lib/room/lanes.js`, `lib/room/render.js`, `lib/rows.js`, `test/hooks/consent-table.test.js`, `test/lane.test.js`, `test/rows.test.js`, `test/room.test.js`.
+Files: `lib/room/validate.ts`, `lib/room/consent.ts`, `lib/proposal.ts`, `lib/config.ts`, `lib/room/lanes.ts`, `lib/room/render.ts`, `lib/rows.ts`, `test/hooks/consent-table.test.js`, `test/lane.test.js`, `test/rows.test.js`, `test/room.test.js`.
 
 - Fields and the `withdraw` kind; `decision.outcome`.
 - Fold threads, heads, `inForce`, link rules; `pending` heads only.
@@ -276,7 +276,7 @@ Files: `lib/room/validate.js`, `lib/room/consent.js`, `lib/proposal.js`, `lib/co
 
 ### P2 The plan view shows versions
 
-Files: `hooks/consent.js`, `lib/proposal.js` (`changes`, compose, pick → head), `scripts/sub-human` (`show HASH [--changes]`), `lib/cc.js` (nothing new expected; re-run `npm run probe`), `test/hooks/consent.test.js`, `test/cli.test.js`.
+Files: `hooks/consent.ts`, `lib/proposal.ts` (`changes`, compose, pick → head), `scripts/sub-human` (`show HASH [--changes]`), `lib/cc.ts` (nothing new expected; re-run `npm run probe`), `test/hooks/consent.test.js`, `test/cli.test.js`.
 
 - Compose the header and diff for version > 1; the signoff check compares against it.
 - `choose` / `picked` map any version's words or hash to the head; the model is told when it named a closed one.
@@ -285,7 +285,7 @@ Files: `hooks/consent.js`, `lib/proposal.js` (`changes`, compose, pick → head)
 
 ### P3 Tools and role texts
 
-Files: `mcp/room-server.js` (`propose` gains `revises`, `merges`, `asked_by`, `plan_task`; new `withdraw` tool), `mcp/task.js` (open `plan:` tasks in the add reply), `lib/tasks.js` (`plan` flag, gate accepts a closed thread as evidence), `skills/sub-human/member.md`, `skills/sub-human/facilitate.md`, `test/mcp.test.js`, `test/tasks.test.js`, `docs/ARCHITECTURE.md` (generated tables via `npm run docs`).
+Files: `mcp/room-server.ts` (`propose` gains `revises`, `merges`, `asked_by`, `plan_task`; new `withdraw` tool), `mcp/task.ts` (open `plan:` tasks in the add reply), `lib/tasks.ts` (`plan` flag, gate accepts a closed thread as evidence), `skills/sub-human/member.md`, `skills/sub-human/facilitate.md`, `test/mcp.test.js`, `test/tasks.test.js`, `docs/ARCHITECTURE.md` (generated tables via `npm run docs`).
 
 - member.md gains, in its existing terse style: before planning, add a claimed `plan: <topic>` task and read the open plans its reply lists; on overlap ask the person before writing; on "changes requested" draft a revision and send it only when the person says so; withdraw only when the person asks.
 - "in their own terminal" → "in their session"; names or they/them.
@@ -293,7 +293,7 @@ Files: `mcp/room-server.js` (`propose` gains `revises`, `merges`, `asked_by`, `p
 
 ### P4 The room's Claude
 
-Files: `agents/room-claude.md`, `lib/room/lanes.js` (room Claude push for `plan:` task_req, agreed-with-other-thread), `skills/sub-human/room-claude.md`, `test/lane.test.js`, `test/room-claude.test.js`.
+Files: `agents/room-claude.md`, `lib/room/lanes.ts` (room Claude push for `plan:` task_req, agreed-with-other-thread), `skills/sub-human/room-claude.md`, `test/lane.test.js`, `test/room-claude.test.js`.
 
 - `@claude revise: …` → read the head and the words, `propose({revises, asked_by})`. `@claude merge` → the named or flagged pair, `propose({merges, asked_by})`.
 - When applying a `plan:` add, compare against open plans and threads; on overlap, one message to the two owners, once per pair. On an agreed decision with another thread in force, compare; on conflict, one message to everyone named on both. Otherwise silent.

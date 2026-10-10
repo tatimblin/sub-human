@@ -18,7 +18,6 @@
 // copy is the post), and a deadline whose outcome is unknown is "⧗ not confirmed", never "not posted". Typed through Remote Control (origin bridge), a refusal is also the
 // systemMessage, which the module relays to the phone (a block line does not show there); "✓ sent" is not (the phone
 // shows the person's own row, and a relay costs a model turn).
-import path from 'node:path';
 import { identity, room, out, run, whoami, presence } from './common.ts';
 import { oneLine } from '../lib/text.ts';
 import * as config from '../lib/config.ts';

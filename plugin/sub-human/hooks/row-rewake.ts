@@ -9,7 +9,6 @@
 // It runs concurrently with session-restore.ts, which may re-join the seat (resume after session-end), so
 // it polls up to SUB_HUMAN_REWAKE_WAIT_MS (REWAKE_WAIT_MS, 3000; 0 = no wait) for the seat, preferring the
 // moment it is bound to this claude process (CLAUDE_PID).
-import path from 'node:path';
 import { identity, rows, run, resolveSeat } from './common.ts';
 import { sleepSync } from '../lib/io.ts';
 import * as config from '../lib/config.ts';

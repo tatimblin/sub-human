@@ -13,8 +13,6 @@
  *   The seat comes from input.session_id (identity.resolveBySession), else identity.resolveSelf().
  *   Colour is off when NO_COLOR is set or SUB_HUMAN_COLOR=0.
  */
-import path from 'node:path';
-const LIB = path.join(import.meta.dirname, '..', 'lib');
 import * as identity from '../lib/identity.ts';
 import * as rows from '../lib/rows.ts';
 import type { Members } from '../lib/room/types.ts';

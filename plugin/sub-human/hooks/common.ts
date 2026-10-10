@@ -15,7 +15,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const PLUGIN_ROOT = path.join(import.meta.dirname, '..');
-const LIB = path.join(PLUGIN_ROOT, 'lib');
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as rows from '../lib/rows.ts';

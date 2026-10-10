@@ -58,7 +58,6 @@
  */
 
 import nodeFs from 'node:fs';
-import path from 'node:path';
 import * as realClock from './clock.ts';
 import * as config from './config.ts';
 import { roomClaudeName } from './room/members.ts';
@@ -672,7 +671,6 @@ function runTail({
   clock = realClock, write, err = s => process.stderr.write(s), lookup, timings: tm = timings(), fs = nodeFs,
   deps = {}, maxSeconds = null, sid = null,
 }: TailOpts): { stop(): void, session(): Session | null } {
-  const LIB = import.meta.dirname;
   const d: Deps = {
     openRoom: deps.openRoom || (() => { const r: typeof import('./room.ts') = require('./room.ts'); return (code: string) => r.open(code); })(),
     heartbeat: deps.heartbeat || ((me: Identity) => (require('./identity.ts') as typeof import('./identity.ts')).heartbeat(me)),

@@ -1,7 +1,21 @@
 # TypeScript migration plan
 
-Status: in progress (2026-10-10). Sources: three read-only research passes the same day: Node's type stripping, the
-codebase inventory, and TypeScript in Claude Code plugins.
+Status: **done**, 0.5.0-beta.8 (2026-10-10). Sources: three read-only research passes the same day: Node's type
+stripping, the codebase inventory, and TypeScript in Claude Code plugins.
+
+## Outcome
+
+- Phases A, B (six slices) and C are merged. Strict `tsc` went from 4079 errors after A to 0, with `noUnusedLocals`
+  on; it runs first in `npm test` and fails CI (Node 24.3.0, 24, 26).
+- The types found three bugs: a hold refusal was not marked `isError`; a join or resume crashed when `machine.json`
+  could not be read; a log lock timeout lost its message.
+- Latency: with the compile-cache preload (`hooks/compile-cache.js`) a hook starts within about 5 ms of the JS build
+  (the prompt hook, 36 → 41 ms median); without it, about 50 ms more.
+- Still JavaScript: `scripts/sub-human` (frozen path, and node strips nothing in an extensionless file),
+  `hooks/compile-cache.js` (a preload that must strip nothing), `lib/vendor/noble` (hash-pinned), and the tests and repo
+  scripts (the unchanged safety net).
+- Follow-ups: convert the tests to TypeScript; `lib/proposal.ts` `shape()` drops the entry's title; `promote` with an
+  unreadable machine id.
 
 ## What "TypeScript" means for this plugin
 

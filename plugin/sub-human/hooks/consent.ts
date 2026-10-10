@@ -86,7 +86,6 @@ if (import.meta.main) {
 }
 
 const fs: typeof import('node:fs') = require('node:fs');
-const path: typeof import('node:path') = require('node:path');
 const c: typeof import('./common.ts') = require('./common.ts');
 const proposal: typeof import('../lib/proposal.ts') = require('../lib/proposal.ts');
 const cc: typeof import('../lib/cc.ts') = require('../lib/cc.ts');
