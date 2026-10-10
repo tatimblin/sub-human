@@ -34,6 +34,13 @@
 // `/sub-human NAME CODE`. OFFLINE, AUTH and the like block the prompt with the reason. An invite whose locator is not
 // the link's (the room moved to another host, lib/handoff.js) replaces the link's credentials, and the seat joins again
 // over it; an invite to a room this machine hosts says how to demote it (an old host the room was promoted away from).
+// `/sub-human join NAME USER@HOST[:PORT] CODE [--via JUMP] [--home PATH]` (the third word holds an "@" and is no invite
+// or URL): the person can already ssh to the host's account, so that login is the admission: no invite, PIN or admit.
+// The link file names the host's stable shim (lib/remote/transports/ssh.js loginSpec; --home: the host's sub-human
+// home when it is not ~/.sub-human), the daemon is started and its first hello watched (hosting.outcome); once
+// linked, the seat is taken in the same step (nothing secret is in this prompt, and no host step waits), else the
+// block says why (an unknown host key: the exact `ssh USER@HOST` to run once; no shim on the host: what to run there).
+// A host joining its own room refreshes the stable serve shim passively (lib/remote/shim.js), so a login link finds it.
 // `/sub-human handoff NAME [USER@HOST[:PORT] [--via JUMP] | https://FRONT]`: the host asks NAME (a member on another machine) to host the room
 // (lib/handoff.js ask, signed with this seat's key); NAME's Claude shows them a card, and only their answer there
 // moves the room. The reply is a block reason, to the person only.
@@ -54,7 +61,7 @@ const { roomClaudePresence } = require('../lib/room/members.js');
 const COMMANDS = new Set(['sub-human:sub-human', 'sub-human']);
 const ROOM_CLAUDE_AGENT = 'sub-human:room-claude';
 const USAGE = 'usage: /sub-human NAME [CODE]. It joins the open room as NAME, or opens one and starts the room\'s Claude for you (it is never launched by hand). '
-  + '/sub-human host [--ssh [USER@HOST]] [--via JUMP] gives an invite and its PIN for your room; /sub-human admit shk1.… lets a joiner\'s key in, /sub-human revoke NAME ends its link (or revoke REF, one leaked invite); /sub-human join NAME INVITE PIN joins a room on another machine; /sub-human handoff NAME asks NAME to host your room.';
+  + '/sub-human host [--ssh [USER@HOST]] [--via JUMP] gives an invite and its PIN for your room; /sub-human admit shk1.… lets a joiner\'s key in, /sub-human revoke NAME ends its link (or revoke REF, one leaked invite); /sub-human join NAME USER@HOST CODE joins a room on a machine you can already ssh to, /sub-human join NAME INVITE PIN one you were invited to; /sub-human handoff NAME asks NAME to host your room.';
 const BYPASS = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
 // A refusal is also the systemMessage: Remote Control shows a hook's systemMessage, not a block reason.
 const block = reason => out({ decision: 'block', reason: `sub-human: ${reason}`, systemMessage: `sub-human: ${reason}` });
@@ -206,6 +213,43 @@ function askHandoff(cur, argv) {
   return out({ decision: 'block', reason: `sub-human: asked ${to} to host room ${cur.code}. Their Claude shows them a card; nothing moves unless they agree there (until ${d.expires_at.slice(11, 16)} UTC). If they do, the room's log, links and claude move to their machine, the room's Claude then runs on ${to}'s model account, and this machine follows as a member.` });
 }
 
+const sshT = () => require('../lib/remote/transports/ssh.js');
+/** The third word of `/sub-human join NAME X …` names an ssh login (USER@HOST[:PORT]), not an invite or a join URL. */
+const loginForm = word => /@/.test(word) && !/^https?:\/\//.test(word) && !auth.parseInvite(word);
+const LOGIN_USAGE = 'usage: /sub-human join NAME USER@HOST[:PORT] CODE [--via JUMP] [--home PATH] (when you can already ssh to USER@HOST; else ask the host for an invite: /sub-human join NAME INVITE PIN)';
+const sameLogin = (a, b) => !!a && !!b && a.login === true && ['user', 'host', 'port', 'via', 'remoteHome'].every(k => a[k] === b[k]);
+
+/** `/sub-human join NAME USER@HOST[:PORT] CODE [--via J] [--home P]`: link over the person's own ssh login; {name, code}
+ * once linked (the caller takes the seat), or null after a block(). */
+function linkLogin(argv) {
+  const p = require('../lib/cli/args.js').parse(argv, { via: 1, home: 1 });
+  if (p.error || p.rest.length !== 3) { block(LOGIN_USAGE); return null; }
+  const [name, dest, code] = p.rest;
+  const { via, home } = p.flags;
+  const fail = msg => { block(msg); return null; };
+  if (!identity.NAME_RE.test(name)) return fail(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
+  if (identity.RESERVED.includes(name.toLowerCase())) return fail(`"${name}" is reserved`);
+  if (!identity.CODE_RE.test(code)) return fail(`"${code}" is not a room code (like vole-8126). ${LOGIN_USAGE}`);
+  if (!sshT().dest(dest)) return fail(`"${dest}" is not a plain USER@HOST[:PORT]. ${LOGIN_USAGE}`);
+  if (via !== undefined && !sshT().jump(via)) return fail(`--via "${via}" is not a plain [USER@]HOST[:PORT] (comma-separated hops).`);
+  const spec = sshT().loginSpec(dest, { via, home });
+  if (!spec) return fail(`--home "${home}" is not a plain absolute path (the host's sub-human home, e.g. /home/you/.sub-human).`);
+  if (identity.roomExists(code) && identity.isHost(code)) return fail(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
+  const cur = links.get(code);
+  const at = sshT().kind.describe(spec); // "ssh you@host … (your ssh login)"
+  if (cur && cur.token && sameLogin(cur.transport, spec)) return { name, code }; // linked this way already: just the seat
+  if (cur) restartLink(code); // a link replaced (another way in, or a refused one): dial with the new file
+  const mux = cur && cur.transport && cur.transport.mux === true && cur.transport.user === spec.user && cur.transport.host === spec.host && cur.transport.port === spec.port;
+  try {
+    links.set(code, { code, transport: { ...spec, ...(mux ? { mux: true } : {}) }, created_at: new Date().toISOString(), ...(cur ? { rebind: true } : {}) });
+  } catch (e) { return fail(e.message); }
+  if (!link.start(code)) return fail(`the link to room ${code} did not start; its log is ${links.logFile(code)}.`);
+  const o = hosting.outcome(code);
+  if (o.state === 'refused') return fail(`could not link to room ${code} over ${at}: ${o.reason}`);
+  if (o.state !== 'linked') return fail(`the link to room ${code} over ${at} is still connecting${o.reason ? ` (${o.reason})` : ''}; type /sub-human ${name} ${code} in a moment (sub-human doctor says why if it does not come up)`);
+  return { name, code };
+}
+
 /** A daemon still dialing the old host: stop it, so the start that follows dials the link file's new one. */
 function restartLink(code) {
   const st = link.status(code);
@@ -272,7 +316,11 @@ run(input => {
     try { return hidden(require('../lib/remote/webhost.js').unhost(cur.code).text, { shareable: true }); } catch (e) { return block(e.message); }
   }
   const remote = args[0] === 'join';
-  if (remote && args.length >= 3) {
+  let login = null;
+  if (remote && args.length >= 3 && loginForm(args[2])) {
+    login = linkLogin(args.slice(1));
+    if (!login) return;
+  } else if (remote && args.length >= 3) {
     // a PIN may be in this prompt: whatever happens, it is hidden from the model
     const url = /^https?:\/\//.test(args[2]) ? wsT().parseJoinUrl(args[2]) : null; // a join URL: an sh2 invite
     const inv = url || auth.parseInvite(args[2]);
@@ -281,10 +329,10 @@ run(input => {
     if (inv && inv.v === 2) return linkInvite2(inv, url ? url.invite : args[2], args[3], args[1]);
     if (args.length === 4) return hidden(inv ? 'this invite (sh1) takes no PIN: /sub-human join NAME INVITE' : 'that is not an invite (sh2.…); ask the host for one: /sub-human host.');
   }
-  if (remote ? args.length !== 3 : args.length > 2) return block(USAGE);
-  const name = remote ? args[1] : args[0];
+  if (!login && (remote ? args.length !== 3 : args.length > 2)) return block(USAGE);
+  const name = login ? login.name : remote ? args[1] : args[0];
 
-  let code = remote ? linkRoom(args[2]) : args[1] || (cur && cur.name === name ? cur.code : null);
+  let code = login ? login.code : remote ? linkRoom(args[2]) : args[1] || (cur && cur.name === name ? cur.code : null);
   if (remote && !code) return;
   let created = false;
   if (!code) {
@@ -328,7 +376,10 @@ run(input => {
   const r = seats.enter({ code, name, ...base, pubkey });
   if (!r.ok) return block(`could not join ${code} as ${name}: ${r.error || 'unknown error'}`);
   if (rebind) { const { rebind: _done, ...l } = links.get(code); links.set(code, l); }
-  if (identity.isHost(code)) { try { require('../lib/remote/webhost.js').ensure(code); } catch { /* best effort */ } } // the listener after a reboot
+  if (identity.isHost(code)) {
+    try { require('../lib/remote/webhost.js').ensure(code); } catch { /* best effort */ } // the listener after a reboot
+    try { require('../lib/remote/shim.js').refresh(); } catch { /* best effort */ } // the serve shim a login link runs
+  }
   const me = { code, name, role: 'member', pid, session_id: input.session_id || null, address: identity.address(name, code) };
   const here = others(code, name);
   const msg = created

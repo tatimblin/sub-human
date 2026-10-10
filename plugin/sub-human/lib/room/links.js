@@ -10,7 +10,8 @@
  * Link = {code, transport: {kind: 'pipe', home} | …, token?, invite?, pin?, refused?, request?, rebind?, moved?, created_at}
  *   transport  how the daemon reaches the host's server (lib/remote/link.js transportOf: an invite's locator), plus
  *              what this machine adds for ssh (lib/remote/transports/ssh.js: key, knownHosts, alias, mux), files in
- *              dirOf(code)
+ *              dirOf(code); or a login link's {kind: 'ssh', user, host, port?, via?, login: true, link, remoteHome?, mux?}
+ *              (`/sub-human join NAME USER@HOST CODE`, ssh.js loginSpec): no invite, no key or host key of its own
  *   invite     the invite the daemon redeems at its first hello, until it holds the token
  *   pin        an sh2 invite's PIN, sent with it at that hello and dropped with it (the host checks it)
  *   token      the link's credential (the server keeps its sha256): kept in clear here, like the seat key
@@ -80,8 +81,10 @@ const get = code => (typeof code === 'string' && CODE_RE.test(code) ? readJson(f
  */
 const has = code => typeof code === 'string' && CODE_RE.test(code) && fs.existsSync(fileOf(code));
 
-// a link the host refused before it held a token keeps no credential, only {refused: {at, reason}}
-const credential = l => typeof l.token === 'string' || typeof l.invite === 'string' || (!!l.refused && typeof l.refused === 'object');
+// a link the host refused before it held a token keeps no credential, only {refused: {at, reason}}; a login link
+// (transport.login) needs none before its first hello: the person's own ssh login to the host is the admission
+const credential = l => typeof l.token === 'string' || typeof l.invite === 'string' || (!!l.refused && typeof l.refused === 'object')
+  || l.transport.login === true;
 
 /**
  * @param {string} code

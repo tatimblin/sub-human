@@ -22,7 +22,7 @@
  *                       online (the PIN checked at its first hello), then the seat `/sub-human NAME CODE`. sh1 (an
  *                       0.2.0 end): joinOver, `sub-human invite` + `authorize` + `/sub-human join NAME INVITE`
  *     features             {sh2Pin, hostSsh, revoke, heartbeat, outbox, autoRejoin, handoff, doctor, ws, urlPin,
- *                          versionRange}: what the plugin in /plugin can do (seat-cli.js probe), overridable with
+ *                          versionRange, loginJoin}: what the plugin in /plugin can do (seat-cli.js probe), overridable with
  *                          LAB_FEATURES=outbox=1,ws=0
  *   runScenarios({out, only, log}) -> {ok, results}   each scenarios/*.js in order; evidence under out/<id>/
  * Scenario module: {id, title, persona, requires?: [feature], budgetMs?, linkEnv?: {SUB_HUMAN_LINK_*_MS}, run(t)}.
@@ -103,6 +103,7 @@ class Lab {
       svc, user, home: subHome, cli,
       host: name => run('host', name),
       join: (name, invite, ...opts) => run('join', name, invite, ...opts),
+      login: (name, dest, code, ...opts) => run('login', name, dest, code, ...opts),
       rejoin: (name, code) => run('rejoin', name, code),
       say: (name, text) => run('say', name, text),
       prompt: (name, text) => run('prompt', name, text),
@@ -297,6 +298,7 @@ const FEATURES = {
   doctor: p => p.cli.includes('doctor'),
   ws: p => p.kinds.some(k => /^wss?$/.test(k)) || p.files.some(f => /ws\.js$|listener\.js$/.test(f)),
   urlPin: p => p.src.join.urlPin,
+  loginJoin: p => p.src.join.login,
   versionRange: p => p.src.hello.range,
 };
 

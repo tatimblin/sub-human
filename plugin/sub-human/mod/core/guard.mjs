@@ -21,6 +21,9 @@ const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|digest|who|tasks|watch
 const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
 /** The CLI commands a person runs in their own shell: an invite, an SSH key's link, the link daemon, the room server, moving the room's host, the web listener. */
 const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|authorize|host|unhost|admit|revoke|prime|listen|link|serve|handoff|promote|demote)(?![\w-])/;
+/** The host's serve shim asked to link a machine over an ssh login (`ssh you@host H/bin/serve --stdio CODE --link ID --login`),
+ *  under any home path: a person's step (/sub-human join NAME USER@HOST CODE), as `sub-human serve` is. */
+const LOGIN_SERVE = /\bserve\b[^;&|\n]*--stdio\b[^;&|\n]*--login(?![\w-])/;
 /** A dot-dir named .sub-human anywhere (~/.sub-human, $HOME/.sub-human, /Users/x/.sub-human). */
 const DOT_HOME = /(?:^|[^\w.-])\.sub-human(?![\w-])/;
 /** Something that runs JavaScript. */
@@ -73,7 +76,7 @@ export function bashVerdict(command, ctx = {}) {
   const cmd = typeof command === 'string' ? command : '';
   if (!cmd.trim()) return null;
   if (READ_CLI.test(cmd)) return null;
-  if (PERSON_CLI.test(cmd)) return 'it mints an invite, admits or revokes a link, or speaks for the room\'s link (run sub-human invite, authorize, host, unhost, admit, revoke, prime, listen, link, serve, handoff, promote and demote yourself, in a terminal outside Claude Code: not with !, which puts the output, an invite and its PIN, into this conversation)';
+  if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it mints an invite, admits or revokes a link, or speaks for the room\'s link (run sub-human invite, authorize, host, unhost, admit, revoke, prime, listen, link, serve, handoff, promote and demote yourself, in a terminal outside Claude Code: not with !, which puts the output, an invite and its PIN, into this conversation)';
   if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME)';
   if (DOT_HOME.test(cmd)) return 'it touches the room store (~/.sub-human)';
   for (const h of homeSpellings(ctx)) {

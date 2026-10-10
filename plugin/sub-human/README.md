@@ -36,11 +36,28 @@ The hook binds your name to your session before the model sees anything, so your
 
 ## Join from another machine
 
-A room lives on the machine that opened it, its **host**. Someone on another machine joins with an invite and its PIN.
+A room lives on the machine that opened it, its **host**. If you can already ssh to the host's account (your own second machine, a dev box you log in to), join with that login. Anyone else joins with an invite and its PIN.
+
+### If you can already ssh to the host: `/sub-human join NAME USER@HOST CODE`
+
+On your other machine, with the room's code:
+
+```
+/sub-human join carol you@machine-a vole-8126
+/sub-human join carol you@devbox:2222 vole-8126 --via bastion   # a port, a jump host (ProxyJump)
+/sub-human join carol you@devbox vole-8126 --home /srv/sh        # the host's sub-human home is not ~/.sub-human
+```
+
+That is the whole step: no invite, no PIN, no admit. It links the machine and takes your seat at once (`joined vole-8126 as carol`); later rejoins are `/sub-human carol vole-8126`. Your login to that account is the admission, since whoever can run commands there could make an invite anyway. The room shows `a machine (…) linked over your SSH login (link 1a2b3c4d5e6f)`.
+
+- **Your own ssh.** The link runs `ssh -T -o BatchMode=yes [-J JUMP] [-p PORT] -- you@machine-a '"$HOME"/.sub-human/bin/serve --stdio vole-8126 --link ID --login'` with your keys, agent, `~/.ssh/config` and `known_hosts`, checked as usual. A host alias from your config works. It never prompts. When ssh does not know the host's key yet, the join stops at once and says so: run `ssh you@machine-a` once in a terminal, check and accept the key, then join again. A login that needs a password is refused the same way. Behind an MFA bastion, run `sub-human prime vole-8126` and then `/sub-human carol vole-8126`.
+- **On the host** this runs the stable serve shim (`<home>/bin/serve`, see [SSH details](#ssh-details)), which records where node is, because a non-interactive ssh shell lacks nvm's or Homebrew's `PATH`. Opening or joining a room on the host writes the shim when it is missing. If it is still missing, the join says to open the room there in Claude Code or run `sub-human doctor --fix` there.
+- **Not through a restricted key.** A key that `admit` let in runs a forced command fixed to its one link, and that line never carries `--login`. The host's `serve --login` also refuses to run under any forced command (sshd's `SSH_ORIGINAL_COMMAND`). So a key restricted to one link can't make itself a new one.
+- `revoke`, `doctor`, the link state, the outbox and handoffs work as for any ssh link. Revoking stops the link, but that login can link again: to shut it out, take its key out of `authorized_keys`.
 
 Three transports exist: **SSH** (the other machine reaches the host's account with an SSH key), **the web** (a join URL and a PIN, through Tailscale or any HTTPS front of yours; see [Join from anywhere: Tailscale](#join-from-anywhere-tailscale)) and the **pipe** (a second sub-human home on the same machine, another `SUB_HUMAN_HOME`; what the tests and the demo use). Host on a machine that stays awake (a dev box): when the host sleeps, the room is down for everyone.
 
-### Inviting: `/sub-human host`
+### Inviting someone who can't ssh to the host: `/sub-human host`
 
 On the host, in a session that is in the room:
 
@@ -378,6 +395,7 @@ Remote rooms add:
 - **The PIN is a second factor checked online only.** It is never in the invite and never seals or derives anything: the host keeps `sha256(secret:PIN)`, checks it at the link's first connection, and burns the invite after 5 wrong tries, 15 minutes, or its one use. The join that carries it is hidden from your Claude (the prompt is blocked and suppressed), and the joining machine drops it with the invite once the host answered. A leaked invite alone gets nowhere; a leaked invite plus a key the host admitted gets 5 guesses.
 - **Over SSH, keys are made where they are used.** The joiner's link key is made on the joiner's machine; the host admits only its public key, by pasting the request, and the invite pins the host's SSH host key on the joiner's side.
 - **Over SSH, the host's `authorized_keys` decides what runs**: `admit` (or `sub-human authorize`) writes a `command="… serve --stdio CODE --link ID",restrict` line, so the key reaches that room's server for that link and nothing else, and the server refuses another link's token there.
+- **An ssh login to the host's account is trusted as that account.** `/sub-human join NAME USER@HOST CODE` runs `serve --login` over the joiner's own login, and the server then makes a link with no invite, because that login could make one anyway. A restricted key can't get there: its line fixes `serve`'s arguments without `--login`, and `serve --login` refuses to run under a forced command (`SSH_ORIGINAL_COMMAND` is set). Give someone a login to your account only if you would give them the account.
 - **A link token is a seat-level credential.** The invite turns into a token at the link's first connection. It is stored in clear in `<home>/links/<CODE>.json` (0600, the same trust as the seat key) and hashed on the host. Whoever holds it can post as the seats joined over that link, never as anyone else: the host checks every entry's `from` against them and its signature against the key pinned in the log.
 - **Keys are pinned strictly.** A name is its key for the room's life, on every machine. A lost key, or the same name from a new machine, means a new name.
 - **Addressed posts are not private.** A post to one person (`to`) has its own rate limit, but the whole room reads the log, on every machine.

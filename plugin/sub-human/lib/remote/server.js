@@ -6,12 +6,16 @@
  * It never loads the signer (test/hooks/security.test.js): a via=human payload arrives signed by the remote
  * hook and is verified against the key pinned in the log (lib/room/envelope.js), then placed (store.place).
  *
- *   serve(transport, {store, log?, linkId?, silentMs?, proto?, version?}) -> {close(), revoked()}   proto / version: this end's
+ *   serve(transport, {store, log?, linkId?, login?, silentMs?, proto?, version?}) -> {close(), revoked()}   proto / version: this end's
  *       protocol range and plugin version (default protocol.PROTO, PLUGIN_VERSION; tests fake older and newer peers)
  *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
  *       (lib/remote/auth.js); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
  *       SSH forced command `sub-human authorize` writes): only that link's token, or the invite reserved for it,
- *       is accepted; any other is AUTH (and such an invite stays unused). store is the room's store as store.open(code)
+ *       is accepted; any other is AUTH (and such an invite stays unused). login (`serve --stdio CODE --link ID --login`,
+ *       run over the host account's own ssh login, never by a forced command: their lines fix the arguments, and the
+ *       CLI refuses --login under SSH_ORIGINAL_COMMAND): the connection is trusted as a process of the account owner,
+ *       so a hello {login: true} with no token records link ID (auth.loginLink) and returns its token, with a room
+ *       line; without login such a hello is AUTH. store is the room's store as store.open(code)
  *       gives it in this process: seats and decide reach the room through that too. Ops:
  *         hello      version: the highest common one of the two ranges (protocol.negotiate), else PROTOCOL with
  *                    protocol.skewMessage (which side must update); verifyToken, or redeemInvite with the hello's
@@ -100,6 +104,16 @@ function roomLine(s, text) {
   try { s.store.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }); } catch (e) { s.log(`sub-human serve: room line: ${e && e.message}`); }
 }
 
+/** hello {login: true}: a new link for a connection over the host account's own ssh login (Session.login), else AUTH. */
+function viaLogin(s, machine) {
+  if (!s.login || !s.linkId) {
+    throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through the key admitted for link ${s.linkId}, which reaches that link only)` : ''}; join with an invite instead (/sub-human host --ssh on the host)`);
+  }
+  const r = auth.loginLink(s.store, { id: s.linkId, machine });
+  roomLine(s, `a machine (${machine}) linked over your SSH login (link ${r.link.id}); revoke it with: sub-human revoke ${r.link.id}`);
+  return r;
+}
+
 function known(store, token, linkId) {
   const link = auth.verifyToken(store, token);
   if (!link) throw authError('unknown link token; ask the host for a new invite');
@@ -171,7 +185,8 @@ const OPS = {
     }
     s.link = null;
     s.v = v;
-    const r = invite !== undefined ? redeem(s, invite, machine, pin) : token !== undefined ? known(s.store, token, s.linkId) : { link: null };
+    const r = invite !== undefined ? redeem(s, invite, machine, pin) : token !== undefined ? known(s.store, token, s.linkId)
+      : params.login === true ? viaLogin(s, machine) : { link: null };
     s.link = r.link;
     if (caps && caps.ping === true) s.expireSilent();
     // time: the host's clock (ms), so a joiner (sub-human doctor) can measure the skew that SIG_SKEW_MS bounds; additive
@@ -253,8 +268,9 @@ const OPS = {
 
 // ---------- the session ----------
 class Session {
-  constructor(transport, store, log, linkId, silentMs, { proto = protocol.PROTO, version = protocol.PLUGIN_VERSION } = {}) {
+  constructor(transport, store, log, linkId, silentMs, { proto = protocol.PROTO, version = protocol.PLUGIN_VERSION, login = false } = {}) {
     this.transport = transport;
+    this.login = login === true;
     this.store = store;
     this.log = log;
     this.linkId = linkId || null;
@@ -331,11 +347,11 @@ class Session {
 
 /**
  * @param {{send(frame: object): void, onFrame(fn: (frame: object) => void): void, onClose(fn: () => void): void, close(): void}} transport
- * @param {{store: import('../room/store.js').FsRoomStore, log?: (...a: any[]) => void, linkId?: string, silentMs?: number, proto?: {min: number, max: number}, version?: string}} ctx
+ * @param {{store: import('../room/store.js').FsRoomStore, log?: (...a: any[]) => void, linkId?: string, login?: boolean, silentMs?: number, proto?: {min: number, max: number}, version?: string}} ctx
  * @returns {{close(): void}}
  */
-function serve(transport, { store, log = () => {}, linkId, silentMs = envMs('SUB_HUMAN_LINK_SILENT_MS', LINK_SILENT_MS), proto, version }) {
-  const session = new Session(transport, store, log, linkId, silentMs, { proto, version });
+function serve(transport, { store, log = () => {}, linkId, login = false, silentMs = envMs('SUB_HUMAN_LINK_SILENT_MS', LINK_SILENT_MS), proto, version }) {
+  const session = new Session(transport, store, log, linkId, silentMs, { proto, version, login });
   return { close() { session.stop(); transport.close(); }, revoked: () => session.revoked() };
 }
 

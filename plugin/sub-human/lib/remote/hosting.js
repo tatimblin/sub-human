@@ -21,7 +21,9 @@
  *       it) or the invite itself (sh1/sh2 or a join URL). A link: its token stops working (auth.revokeLink, which also
  *       burns an invite reserved for it), its authorized_keys lines go, its seats leave ("revoked by the host"), its
  *       running `serve` processes are stopped, and a room line says so. An invite no link holds: just it is burnt
- *       (auth.burnInvite), with a room line; one reserved for or used by a link revokes that link
+ *       (auth.burnInvite), with a room line; one reserved for or used by a link revokes that link. A link made over this
+ *       account's own ssh login (auth.loginLink) has no key line: its token goes and its serve is stopped, and the text
+ *       says that login can link again
  *   joinInvite({inv, invite, pin, name, now?}) -> {code, request?}   the joiner's link file for an sh2 invite: over
  *       ssh, the link's own key (sshkeys.linkKey in links.dirOf(code)) and, when the invite carries one, the host
  *       key pinned in a known_hosts of the link's own; over ws/wss, the listener's X25519 key the invite carries,
@@ -179,8 +181,11 @@ function revoke(code, target, { file = sshkeys.authorizedKeysFile() } = {}) {
   const seats = r.link ? r.link.seats || [] : [];
   const seatsLib = require('../seats.js');
   for (const name of seats) { try { seatsLib.exit(code, name, 'revoked by the host'); } catch { /* gone already */ } }
-  roomLine(code, `the host revoked link ${id}${seats.length ? ` (${seats.join(', ')})` : ''}: its token and key no longer reach the room`);
-  const text = `revoked link ${id} of room ${code}: token burnt${r.invites ? `, ${r.invites} invite(s) burnt` : ''}, ${keys} authorized_keys line(s) removed from ${file}${seats.length ? `, ${seats.join(', ')} left` : ''}`;
+  const login = !!(r.link && r.link.login); // a link made over this account's own ssh login (no key line of its own)
+  roomLine(code, `the host revoked link ${id}${seats.length ? ` (${seats.join(', ')})` : ''}: its ${login ? 'token no longer reaches' : 'token and key no longer reach'} the room`);
+  const text = `revoked link ${id} of room ${code}: token burnt${r.invites ? `, ${r.invites} invite(s) burnt` : ''}, `
+    + (login ? 'its serve stopped' : `${keys} authorized_keys line(s) removed from ${file}`) + (seats.length ? `, ${seats.join(', ')} left` : '')
+    + (login ? `. It came over an ssh login to this account, which can link again: to shut that, take its key out of ${file}` : '');
   return { id, seats, keys, text };
 }
 

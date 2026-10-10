@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "sub-human",
-  "version": "0.5.0-beta.2",
+  "version": "0.5.0-beta.3",
   "description": "Work together from separate Claude Code sessions on one machine: one command joins a shared room, @room posts your exact words, Claudes message each other natively, a headless helper keeps the room's task list, and consent opens in each person's plan view (a question card as fallback).",
   "author": {
     "name": "Tristan Timblin",

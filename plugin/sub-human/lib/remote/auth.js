@@ -34,6 +34,12 @@
  *                                                  past expires_at it burns; a wrong PIN costs a try, the last one burns
  *                                                  it. Each is AUTH saying what is left; error.note is the room line.
  *                                                  A handoff invite needs no PIN: only its machine, before expires_at
+ *   loginLink(store, {id, machine, now?}) -> {token, link}   a link for a connection that arrived over the host
+ *                                                  account's own ssh login (`serve --login`, lib/remote/server.js): no
+ *                                                  invite, since whoever can run commands as this account may mint one
+ *                                                  anyway. Records {id, token_sha256, machine, seats: [], created_at,
+ *                                                  login: true} under the id the joiner chose (its serve's --link, so
+ *                                                  revoke finds the process). AUTH for an id the room knows already
  *   reserveLink(store, secret) -> id               the link id an invite will redeem to, fixed now (kept on the
  *                                                  invite record): `sub-human authorize` names it in the forced
  *                                                  command before the invite is used. AUTH for an unknown invite
@@ -184,6 +190,24 @@ function redeemInvite(store, secret, { machine, linkId, pin, now = Date.now() })
   link.token_sha256 = sha256(token);
   store.kv.update(LINKS_KEY, cur => ({ ...cur, [link.id]: link }));
   return { token, link, handoff };
+}
+
+/**
+ * @param {import('../room/store.js').FsRoomStore} store   the host's store (isHost)
+ * @param {{id: string, machine: string, now?: number}} opts
+ * @returns {{token: string, link: object}}
+ */
+function loginLink(store, { id, machine, now = Date.now() }) {
+  if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room links machines to it');
+  if (!LINK_ID_RE.test(String(id))) throw new RoomError('INVALID', 'a login link needs its id (12 hex)');
+  if (linkKnown(store, id)) throw new RoomError('AUTH', `link ${id} exists already in room ${store.code}; it says hello with its token (join again for a new link)`);
+  const token = random();
+  const link = { id, token_sha256: sha256(token), machine, seats: [], created_at: iso(now), login: true };
+  store.kv.update(LINKS_KEY, cur => {
+    if (cur && cur[id]) throw new RoomError('AUTH', `link ${id} exists already in room ${store.code}`);
+    return { ...cur, [id]: link };
+  });
+  return { token, link };
 }
 
 /**
@@ -380,6 +404,6 @@ function burnInvite(store, ref, { now = Date.now() } = {}) {
 const links = store => store.kv.get(LINKS_KEY, null) || {};
 
 module.exports = {
-  INVITE_PREFIX, INVITE2_PREFIX, PIN_RE, inviteRef, findInvite, burnInvite, reserveRef, revokeLink, links, INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, mintFor, redeemInvite, reserveLink, linkKnown, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
+  INVITE_PREFIX, INVITE2_PREFIX, PIN_RE, inviteRef, findInvite, burnInvite, reserveRef, revokeLink, links, INVITES_KEY, LINKS_KEY, LINK_ID_RE, mintInvite, mintFor, redeemInvite, loginLink, reserveLink, linkKnown, verifyToken, bindSeat, mayWriteAs, proveSeat, checkSeatProof,
   formatInvite, parseInvite,
 };

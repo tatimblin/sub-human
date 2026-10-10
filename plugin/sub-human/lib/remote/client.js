@@ -6,10 +6,11 @@
  * signer: a via=human payload, and a join's seat proof (lib/remote/auth.js proveSeat), reach it already
  * signed.
  *
- *   connect(transport, {machine, token?, invite?, pin?, epoch?, caps?, deadlineMs?, helloMs?, proto?, version?}) -> Promise<Client>
+ *   connect(transport, {machine, token?, invite?, pin?, login?, epoch?, caps?, deadlineMs?, helloMs?, proto?, version?}) -> Promise<Client>
  *       hello carries {v, proto, client} (lib/remote/protocol.js): the server picks the version; a version outside
  *       this end's range, or a refusal from a host too old or too new, is PROTOCOL with skewMessage (who must update).
- *       pin: an sh2 invite's PIN (checked by the host, never here). proto / version: fakes for the skew tests.
+ *       pin: an sh2 invite's PIN (checked by the host, never here). login: true (no token, no invite): a link over the
+ *       host account's own ssh login (lib/remote/server.js); a host that returns no token for it is PROTOCOL. proto / version: fakes for the skew tests.
  *       epoch: the mirror's host epoch (lib/handoff.js), sent in the hello; the server's is client.epoch (0 from a
  *       server that sends none).
  *       transport may also be a Promise of one (lib/remote/transports/index.js open()). Says hello; resolves once the server answered (the token from a redeemed invite is on client.token).
@@ -138,10 +139,10 @@ class Client {
  * @returns {Promise<Client>}
  */
 async function connect(transport, opts) {
-  const { machine, token, invite, pin, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
+  const { machine, token, invite, pin, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
   const proto = opts.proto || protocol.PROTO, version = opts.version || protocol.PLUGIN_VERSION;
   const c = new Client(await transport, { deadlineMs });
-  const cred = invite !== undefined ? { invite, ...(pin !== undefined ? { pin } : {}) } : token !== undefined ? { token } : {};
+  const cred = invite !== undefined ? { invite, ...(pin !== undefined ? { pin } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
   // v: what this hello needs at least. An sh2 invite (its PIN) needs 2; anything else asks for the oldest version this
   // end speaks, so a host from before 0.4 (it checks v === 1 and knows no proto) still answers.
   const need = Math.max(proto.min, pin !== undefined ? 2 : 1);
@@ -157,6 +158,7 @@ async function connect(transport, opts) {
     if (!theirs || r.v < proto.min || r.v > proto.max || r.v < need) {
       throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: r.server, proto: theirs || { min: r.v, max: r.v } }, joiner: me }));
     }
+    if (cred.login && !r.token) throw new RoomError('PROTOCOL', `the host's sub-human (${r.server || 'before 0.4'}) makes no link over an ssh login; update it there, or join with an invite`);
     Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null, epoch: Number.isInteger(r.epoch) ? r.epoch : 0 });
   } catch (e) {
     c.close();
