@@ -46,7 +46,7 @@ module.exports = {
     let card = null;
     await t.until(() => { card = a.seat.card('bob', 'Host it here'); return card.ok || !/no handoff ask/.test(card.out || ''); }, 20_000, 500);
     t.ev.write('handoff-card.json', card);
-    t.check("bob's machine got the ask and his card answer moved the room", card && card.ok && /hosted here now \(epoch 1\)/.test(card.out || ''), (card && card.out || '').slice(0, 160));
+    t.check("bob's machine got the ask and his card answer moved the room", card && card.ok && /is hosted on this machine now/.test(card.out || ''), (card && card.out || '').slice(0, 160));
 
     // 3. the move
     const isHost = await t.until(() => a.seat.dump(code).isHost, 30_000, 500);
@@ -95,7 +95,7 @@ module.exports = {
       `bea->bob ${s.ok && d.ok}, bob->alice ${s2.ok && d2.ok}, alice->bea ${s3.ok && d3.ok}${s.ok ? '' : `; ${s.out}`}${s3.ok ? '' : `; ${s3.out}`}`);
     const st = a.seat.cli(['handoff', '--status', '--room', code]);
     t.ev.write('handoff-status.txt', st.stdout + st.stderr);
-    t.check('sub-human handoff --status on joiner-a: hosted here at epoch 1, no machine left behind', /hosted on this machine; host epoch 1/.test(st.stdout) && !/not reconnected/.test(st.stdout),
+    t.check('sub-human handoff --status on joiner-a: hosted here at epoch 1, no machine left behind', /hosted on this machine \(bob's machine since #\d+\)/.test(st.stdout) && !/epoch/.test(st.stdout) && !/not reconnected/.test(st.stdout),
       st.stdout.trim().split('\n').slice(0, 3).join(' / ').slice(0, 200));
     const after = await converge(t, a.seat, code, [host, b.seat]);
     t.check('every copy byte-identical to the new host, chains verify, the old lines kept', after.ok && after.host.log.startsWith(before.host.log), after.detail);

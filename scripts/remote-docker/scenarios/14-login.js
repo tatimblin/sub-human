@@ -33,7 +33,7 @@ module.exports = {
     const first = seat.login('bob', 'host@devbox', code, ...opts);
     const firstMs = Date.now() - t0;
     t.log(`first join (${firstMs} ms): ${first.out}`);
-    t.check('a host ssh does not know yet: the join stops at once with the exact ssh to run once', !first.ok && /run `ssh host@devbox` once in a terminal/.test(first.out) && firstMs < 15_000, `${firstMs} ms: ${first.out.slice(0, 160)}`);
+    t.check('a host ssh does not know yet: the join stops at once with the exact ssh to run once', !first.ok && /Run `ssh host@devbox` once in a terminal/.test(first.out) && firstMs < 15_000, `${firstMs} ms: ${first.out.slice(0, 160)}`);
     const linksOf = () => JSON.parse(lab.exec('devbox', ['cat', `/home/host/.sub-human/rooms/${code}/remote/links.json`], { allowFail: true }).stdout || '{}');
     t.check('nothing was linked on the host', !Object.keys(linksOf()).length);
 
@@ -49,7 +49,7 @@ module.exports = {
     t.check('the link file holds a login transport and a token, no invite, no key of its own',
       lf.transport.login === true && typeof lf.token === 'string' && !lf.invite && !lf.transport.key && !lf.transport.knownHosts, JSON.stringify({ ...lf.transport }));
     const lines = host.dump(code).entries.filter(e => e.from === 'room').map(e => e.text).join('\n');
-    t.check('the room line names the link made over the ssh login', new RegExp(`linked over your SSH login \\(link ${id}\\)`).test(lines), lines.split('\n').slice(-1)[0]);
+    t.check('the room line says a machine joined over the ssh login, with no internal id', new RegExp('joined over your ssh login$', 'm').test(lines) && !lines.includes(id), lines.split('\n').slice(-1)[0]);
     const ps = lab.exec('devbox', ['sh', '-c', 'ps -eo user,args | grep "[s]erve --stdio"'], { allowFail: true }).stdout;
     t.check('on the devbox, serve runs as host through the shim, with --login and the link id', new RegExp(`--stdio ${code} --link ${id} --login`).test(ps), ps.trim().split('\n')[0]);
 
@@ -69,7 +69,7 @@ module.exports = {
     const r = carol.login('carol', 'host@devbox', code, '-F', confC);
     t.log(`carol (restricted key) join: ${r.out}`);
     t.check('a key restricted to another link cannot make a link over the login path (AUTH, says why)',
-      !r.ok && new RegExp(`came through the key admitted for link ${other}`).test(r.out), r.out.slice(0, 200));
+      !r.ok && /came through a key that was let in for one other connection/.test(r.out), r.out.slice(0, 200));
     const raw = lab.exec('joiner-a', ['sh', '-c', `timeout 15 ssh -F ${confC} -T host@devbox '"$HOME"/.sub-human/bin/serve --stdio ${code} --link aaaaaaaaaaaa --login' </dev/null`], { user: 'joiner', allowFail: true, timeout: 30_000 });
     t.check('the restricted key asking for `serve --login` by hand runs only its forced command', !/--login/.test(lab.exec('devbox', ['sh', '-c', 'ps -eo args | grep "[a]aaaaaaaaaaa"'], { allowFail: true }).stdout), `exit ${raw.status}`);
     t.check('the host still holds only bob\'s login link', JSON.stringify(Object.keys(linksOf())) === JSON.stringify([id]), JSON.stringify(Object.keys(linksOf())));
@@ -77,7 +77,7 @@ module.exports = {
     // kick: the token goes, the serve stops, bob's link stops for good
     const rv = host.expand('alice', 'kick bob');
     t.log(`kick: ${rv.out}`);
-    t.check('kick bob ends the login link (and says the login can join again)', new RegExp(`bob is out of room ${code}: its connection no longer reaches the room\\. It came over an ssh login`).test(rv.out || ''), (rv.out || '').slice(0, 200));
+    t.check('kick bob ends the login link (and says the login can join again)', new RegExp(`bob is out of room ${code}: it no longer reaches the room\\. It came over an ssh login`).test(rv.out || ''), (rv.out || '').slice(0, 200));
     const stopped = await waitState(seat, code, 'stopped', 20_000);
     t.check('bob\'s link stops (it does not redial)', stopped !== null, `${stopped} ms`);
   },

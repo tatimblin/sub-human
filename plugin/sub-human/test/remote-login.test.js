@@ -132,14 +132,14 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
   };
   const authErr = re => e => e.code === 'AUTH' && re.test(e.message);
   // an authorized_keys line's session (--link, no --login): its key reaches that link only
-  await assert.rejects(dial({ linkId: ID }, { login: true }), authErr(/did not arrive over the host account's own ssh login \(it came through the key admitted for link abcdef012345/));
+  await assert.rejects(dial({ linkId: ID }, { login: true }), authErr(/did not arrive over the host account's own ssh login \(it came through a key that was let in for one other connection/));
   await assert.rejects(dial({}, { login: true }), authErr(/did not arrive over the host account's own ssh login/));
   assert.deepEqual(auth.links(host), {}, 'nothing minted');
   const c = await dial({ linkId: ID, login: true }, { login: true });
   assert.equal(typeof c.token, 'string');
   assert.equal(c.link, ID);
   assert.deepEqual({ ...auth.links(host)[ID], token_sha256: '-', created_at: '-' }, { id: ID, token_sha256: '-', machine: 'remote0machine01', seats: [], created_at: '-', login: true });
-  assert.match(host.readAll().at(-1).text, new RegExp(`a machine \\(remote0machine01\\) linked over your SSH login \\(link ${ID}\\)$`));
+  assert.match(host.readAll().at(-1).text, /a machine \(remote0machine01\) joined over your ssh login$/);
   // the id is taken now: a second login hello for it is refused; the token says hello as any link's
   await assert.rejects(dial({ linkId: ID, login: true }, { login: true }), authErr(/link abcdef012345 exists already/));
   const again = await dial({ linkId: ID, login: true }, { token: c.token });
@@ -178,7 +178,7 @@ test('login e2e: join me@devbox ROOM links over the person\'s own ssh and takes 
   const id = lf.transport.link;
   assert.deepEqual(Object.keys(links(host, code)), [id]);
   assert.deepEqual(links(host, code)[id].seats, ['bob']);
-  assert.match(roomLines(host, code), new RegExp(`a machine \\([0-9a-f]{16}\\) linked over your SSH login \\(link ${id}\\)`));
+  assert.match(roomLines(host, code), /a machine \([0-9a-f]{16}\) joined over your ssh login/);
   const argv = fs.readFileSync(sshLog, 'utf8').trim().split('\n').map(l => JSON.parse(l))[0];
   assert.ok(argv.includes('BatchMode=yes') && !argv.some(a => /StrictHostKeyChecking/.test(a)));
   assert.equal(argv.at(-1), `"$HOME"/.sub-human/bin/serve --stdio ${code} --link ${id} --login`);
@@ -277,7 +277,7 @@ test('login e2e: a key restricted to another link (its forced command) cannot us
   const j1 = r1.join(carol, `join me@devbox ${s.code} --as carol`);
   stopDaemon(t, r1, s.code);
   assert.equal(j1.json.decision, 'block');
-  assert.match(j1.json.reason, /did not arrive over the host account's own ssh login \(it came through the key admitted for link 0123456789ab, which reaches that link only\)/);
+  assert.match(j1.json.reason, /did not arrive over the host account's own ssh login \(it came through a key that was let in for one other connection, and reaches only that one\)/);
   // a forced command that passes the asked-for command through (sshd still sets SSH_ORIGINAL_COMMAND): refused too
   const r2 = new Machine(t, 'passthru', { ...LINK_ENV, PATH: `${fakeSsh(t)}:${process.env.PATH}`, FAKE_SSH_HOME: s.host.user, FAKE_SSH_FORCED: 'eval "$SSH_ORIGINAL_COMMAND"' });
   const dan = r2.seat('dan');
@@ -285,7 +285,7 @@ test('login e2e: a key restricted to another link (its forced command) cannot us
   stopDaemon(t, r2, s.code);
   assert.match(j2.json.reason, /refused: this connection came through a forced command \(a restricted ssh key or ForceCommand\), not your own ssh login/);
   assert.deepEqual(links(s.host, s.code), {}, 'no link was minted');
-  assert.doesNotMatch(roomLines(s.host, s.code), /linked over your SSH login/);
+  assert.doesNotMatch(roomLines(s.host, s.code), /joined over your ssh login/);
 });
 
 test('login join: the argument forms are told apart; bad parts are refused before anything is written', t => {

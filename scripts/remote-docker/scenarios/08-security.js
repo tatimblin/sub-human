@@ -85,11 +85,11 @@ module.exports = {
       const right = carol.short('carol', 'host@devbox', code, pin, '-F', a.conf);
       t.ev.write('pin-tries.json', { tries: tries.map(r => r.out), right: right.out });
       t.check('each of 5 wrong PINs is refused with the tries left, in a hidden step; the fifth burns the invite',
-        tries.every(r => !r.ok && r.hidden) && tries.slice(0, 4).every((r, i) => new RegExp(`wrong PIN \\(${4 - i} tr`).test(r.out || '')) && /last try: the invite is burnt/.test(tries[4].out || ''),
+        tries.every(r => !r.ok && r.hidden) && tries.slice(0, 4).every((r, i) => new RegExp(`wrong PIN \\(${4 - i} tr`).test(r.out || '')) && /last try: this invite no longer works/.test(tries[4].out || ''),
         tries.map(r => String(r.out || '').slice(0, 60)).join(' | '));
-      t.check('the right PIN after 5 wrong ones gets nowhere: the invite burned (its door shut)', !right.ok && /burn|shut|no invite for room/i.test(right.out || ''), (right.out || '').slice(0, 160));
-      const hl = host.dump(code).entries.filter(e => e.kind === 'status' && /PIN|burn/i.test(e.text || '')).map(e => e.text);
-      t.check('the host\'s room shows the wrong PINs and the burn', hl.some(x => /burn/i.test(x)) && !hl.some(x => x.includes(` ${pin}`) || x.includes(` ${wrong}`)), hl.slice(-2).join(' | ').slice(0, 200));
+      t.check('the right PIN after 5 wrong ones gets nowhere: the invite burned (its door shut)', !right.ok && /burn|shut|no invite for room|no longer works/i.test(right.out || ''), (right.out || '').slice(0, 160));
+      const hl = host.dump(code).entries.filter(e => e.kind === 'status' && /PIN|burn|no longer works/i.test(e.text || '')).map(e => e.text);
+      t.check('the host\'s room shows the wrong PINs and the burn', hl.some(x => /burn|no longer works/i.test(x)) && !hl.some(x => x.includes(` ${pin}`) || x.includes(` ${wrong}`)), hl.slice(-2).join(' | ').slice(0, 200));
     } else t.pending('a wrong PIN 5x burns the invite', 'needs shortCode');
 
     // kick: the person on the host, /sub-human kick bob

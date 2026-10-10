@@ -108,10 +108,10 @@ function roomLine(s, text) {
 /** hello {login: true}: a new link for a connection over the host account's own ssh login (Session.login), else AUTH. */
 function viaLogin(s, machine) {
   if (!s.login || !s.linkId) {
-    throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through the key admitted for link ${s.linkId}, which reaches that link only)` : ''}; join with an invite instead (/sub-human invite on the host)`);
+    throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through a key that was let in for one other connection, and reaches only that one)` : ''}; join with an invite instead (/sub-human invite on the host)`);
   }
   const r = auth.loginLink(s.store, { id: s.linkId, machine });
-  roomLine(s, `a machine (${machine}) linked over your SSH login (link ${r.link.id})`);
+  roomLine(s, `a machine (${machine}) joined over your ssh login`);
   return r;
 }
 

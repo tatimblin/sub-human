@@ -24,7 +24,7 @@ module.exports = {
     t.ev.write('hook.json', p);
     t.check('the hook answers within the hook deadline (3 s), the prompt never hangs', p.ms < 3500, `${p.ms} ms`);
     t.check('the hook never says "nothing was sent" or "not posted" for a frame that went out', !/nothing was sent|not posted/i.test(p.out || ''), (p.out || 'posted').slice(0, 160));
-    t.check('the person is told it is on its way: "⧗ sending (slow link)" (or ✓ sent if the host answered in time)', p.ok && /sending \(slow link\)|^✓ sent/.test(p.out || ''), (p.out || '').slice(0, 120));
+    t.check('the person is told it is on its way: "⧗ sending (slow connection)" (or ✓ sent if the host answered in time)', p.ok && /sending \(slow connection\)|^✓ sent/.test(p.out || ''), (p.out || '').slice(0, 120));
     const q = a.seat.link(code);
     t.log(`bob's link right after: ${JSON.stringify(q)}`);
     await sleep(8000);

@@ -113,12 +113,12 @@ module.exports = {
     t.check('no forwarding', res.forward && res.forward.status !== 0 && !/SSH-2\.0/.test(res.forward.out), JSON.stringify(res.forward));
     const g = res.guesses || [];
     t.check('5 guesses: each refused with the tries left, the fifth burns the invite',
-      g.length === 6 && g.slice(0, 4).every((x, i) => x.code === 'AUTH' && new RegExp(`wrong PIN \\(${4 - i} tr`).test(x.message)) && /last try: the invite is burnt/.test(g[4].message), JSON.stringify(g.map(x => x.message)));
+      g.length === 6 && g.slice(0, 4).every((x, i) => x.code === 'AUTH' && new RegExp(`wrong PIN \\(${4 - i} tr`).test(x.message)) && /last try: this invite no longer works/.test(g[4].message), JSON.stringify(g.map(x => x.message)));
     t.check('a sixth attempt finds the door shut (or no invite open)', g[5] && !g[5].ok && /Permission denied|no invite for room|closed the enrollment/.test(g[5].message), g[5] && g[5].message);
     t.check('the door line is gone after the burn', door().length === 0, `${door().length} line(s)`);
     const carol = lab.seat('joiner-a', { home: '.sub-human-carol' });
     const late = carol.short('carol', 'host@devbox', code, m3 ? m3[3] : '0000', '-F', conf);
-    t.check('the right PIN after the burn gets nowhere: the door is shut, said at once', !late.ok && /door for PINs to room \S+ is shut/.test(late.out), late.out.slice(0, 200));
+    t.check('the right PIN after the burn gets nowhere: the door is shut, said at once', !late.ok && /the invite to room \S+ no longer works/.test(late.out), late.out.slice(0, 200));
     const lines = host.dump(code).entries.filter(e => e.from === 'room').map(e => e.text).join('\n');
     t.check('the room heard each wrong PIN, and never a PIN', /wrong PIN for an invite to this room/.test(lines) && !lines.includes(` ${pin}`) && !(m3 && lines.includes(` ${m3[3]}`)));
   },
