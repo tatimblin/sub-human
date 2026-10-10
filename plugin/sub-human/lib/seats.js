@@ -22,7 +22,8 @@
  *       identity.leave (members.leave) → on the host: when no live member is left, the reaper (lib/room-claude.js
  *       reapDetached) → member_left via system "NAME left (reason)". The seat is left and the reaper started
  *       before the append, the only step that can wait on a lock (SessionEnd has seconds; deadlineMs bounds a
- *       mirror's op). Idempotent: a seat absent or already left returns false and writes nothing.
+ *       mirror's op). Idempotent: a seat absent or already left returns false and writes nothing. In a room
+ *       hosted elsewhere a leave the link can't carry (offline, timed out) returns false: the seat lapses there.
  */
 
 const identity = require('./identity.js');
@@ -68,7 +69,14 @@ function enter({ code, name, role = 'member', machine = identity.machineId(), pi
 }
 
 function exit(code, name, reason, { deadlineMs } = {}) {
-  if (!identity.leave(code, name, { reason, deadlineMs })) return false;
+  try {
+    if (!identity.leave(code, name, { reason, deadlineMs })) return false;
+  } catch (e) {
+    // a room hosted elsewhere with its link down (or slow at session end): the host lets the seat lapse with its
+    // lease, so leaving here is best effort and never a stack trace on /exit
+    if (e instanceof room.RoomError && !identity.isHost(code)) return false;
+    throw e;
+  }
   if (!identity.isHost(code)) return true;
   try { if (!identity.liveMembers(code).length) roomClaude.reapDetached(code); } catch { /* the room Claude's watchdog closes it */ }
   room.open(code).append({ kind: 'member_left', text: `${name} left (${reason})` }, asSystem(name));
