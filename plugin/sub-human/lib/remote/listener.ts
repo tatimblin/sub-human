@@ -48,6 +48,33 @@ import { isAlive, sleepSync } from '../io.ts';
 import * as ioMod from '../io.ts';
 import * as textMod from '../text.ts';
 import { createRequire } from 'node:module';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { IncomingMessage, Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import type { ListenState, NoiseStatic, Refusal, ServedRoom, WriteFileAtomic, WsConn } from './types-rest.ts';
+
+/** lib/remote/noise.ts and lib/remote/ws.ts, as the listener uses them (another slice's; loaded on first use). */
+interface NoiseModule {
+  MAX_MESSAGE: number;
+  loadOrCreateStatic(file: string): NoiseStatic;
+}
+interface WsModule {
+  createServer(o: {
+    host?: string; port: number; maxPayload?: number; pingMs?: number;
+    accept?: (req: IncomingMessage) => boolean | number;
+    onConnection(conn: WsConn, req: IncomingMessage): void;
+  }): Promise<Server>;
+}
+
+/** The listener's status (status()). */
+export interface ListenStatus {
+  running: boolean;
+  pid?: number | null;
+  port?: number;
+  started_at?: string;
+  conns?: number;
+  rooms: Record<string, ServedRoom>;
+}
 
 const require = createRequire(import.meta.url);
 
@@ -62,24 +89,24 @@ const HOME_CHECK_MS = 2000;
 const CLOSED_CHECK_MS = 30_000;
 const BIN = path.join(import.meta.dirname, '..', '..', 'scripts', 'sub-human');
 
-const home = () => path.resolve(require('../home.ts').home());
-const dir = () => path.join(home(), 'listen');
-const stateFile = () => path.join(dir(), 'state.json');
-const logFile = () => path.join(dir(), 'listen.log');
-const keyFile = () => path.join(dir(), 'host-x25519.json');
-const staticKey = () => require('./noise.ts').loadOrCreateStatic(keyFile());
-const hostKey = () => staticKey().pub.toString('base64url');
-const defaultPort = () => Number(process.env.SUB_HUMAN_LISTEN_PORT) || DEFAULT_PORT;
+const home = (): string => path.resolve((require('../home.ts') as { home(): string }).home());
+const dir = (): string => path.join(home(), 'listen');
+const stateFile = (): string => path.join(dir(), 'state.json');
+const logFile = (): string => path.join(dir(), 'listen.log');
+const keyFile = (): string => path.join(dir(), 'host-x25519.json');
+const staticKey = (): NoiseStatic => (require('./noise.ts') as NoiseModule).loadOrCreateStatic(keyFile());
+const hostKey = (): string => staticKey().pub.toString('base64url');
+const defaultPort = (): number => Number(process.env.SUB_HUMAN_LISTEN_PORT) || DEFAULT_PORT;
 
-function read() {
+function read(): ListenState {
   try { return JSON.parse(fs.readFileSync(stateFile(), 'utf8')) || {}; } catch { return {}; }
 }
 
 /** Change the state file under its lock; fn(cur) returns the next state. */
-function update(fn) {
+function update(fn: (cur: ListenState) => ListenState): ListenState {
   fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
-  const { withLock } = require('../lock.ts');
-  const { writeFileAtomic } = ioMod;
+  const { withLock }: { withLock<T>(file: string, fn: () => T): T } = require('../lock.ts');
+  const { writeFileAtomic }: { writeFileAtomic: WriteFileAtomic } = ioMod;
   return withLock(path.join(dir(), 'state.lock'), () => {
     const next = fn(read());
     writeFileAtomic(stateFile(), JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
@@ -87,19 +114,19 @@ function update(fn) {
   });
 }
 
-function status() {
+function status(): ListenStatus {
   const s = read();
-  const running = isAlive(s.pid);
+  const running: boolean = isAlive(s.pid);
   return { running, ...(running ? { pid: s.pid, port: s.port, started_at: s.started_at, conns: s.conns || 0 } : {}), rooms: s.rooms || {} };
 }
 
-function addRoom(code, rec) {
+function addRoom(code: string, rec: ServedRoom): ServedRoom {
   update(s => ({ ...s, rooms: { ...(s.rooms || {}), [code]: { ...rec, at: new Date().toISOString() } } }));
   return rec;
 }
 
-function removeRoom(code) {
-  let had = null;
+function removeRoom(code: string): ServedRoom | null {
+  let had: ServedRoom | null = null;
   update(s => {
     const rooms = { ...(s.rooms || {}) };
     had = rooms[code] || null;
@@ -109,38 +136,42 @@ function removeRoom(code) {
   return had;
 }
 
-function start({ port = defaultPort() } = {}) {
+function start({ port = defaultPort() }: { port?: number } = {}): { pid: number; port: number; started: boolean } {
   const cur = status();
-  if (cur.running) return { pid: cur.pid, port: cur.port, started: false };
+  if (cur.running) return { pid: cur.pid!, port: cur.port!, started: false }; // a running listener has both
   fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
   hostKey(); // made here, not raced by the daemon
   const fd = fs.openSync(logFile(), 'a', 0o600);
-  let child;
+  let child: ReturnType<typeof spawn>;
   try {
     child = spawn(process.execPath, [BIN, 'listen', '--port', String(port)], { detached: true, stdio: ['ignore', fd, fd], env: process.env });
     child.unref();
   } finally { fs.closeSync(fd); }
   for (const until = Date.now() + LISTEN_START_MS; Date.now() < until; sleepSync(25)) {
     const s = status();
-    if (s.running && s.pid === child.pid && s.port === port) return { pid: s.pid, port, started: true };
+    if (s.running && s.pid === child.pid && s.port === port) return { pid: s.pid!, port, started: true }; // running: a pid
     if (!isAlive(child.pid)) break;
   }
   const tail = (() => { try { return fs.readFileSync(logFile(), 'utf8').trim().split('\n').slice(-2).join(' / '); } catch { return ''; } })();
   throw new RoomError('LOCK', `the listener did not come up on 127.0.0.1:${port}${tail ? ` (${tail})` : ''}; its log is ${logFile()}`);
 }
 
-function stop() {
+function stop(): boolean {
   const s = status();
   if (!s.running) return false;
-  try { process.kill(s.pid, 'SIGTERM'); } catch { return false; }
-  for (const until = Date.now() + 3000; Date.now() < until && isAlive(s.pid); sleepSync(25)) { /* wait */ }
-  if (isAlive(s.pid)) try { process.kill(s.pid, 'SIGKILL'); } catch { /* gone */ }
+  const pid = s.pid!; // running: a pid
+  try { process.kill(pid, 'SIGTERM'); } catch { return false; }
+  for (const until = Date.now() + 3000; Date.now() < until && isAlive(pid); sleepSync(25)) { /* wait */ }
+  if (isAlive(pid)) try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
   return true;
 }
 
 /** Is room CODE still open on this host (not stopped, closing or gone)? */
-function roomLive(code) {
-  const identity = require('../identity.ts');
+function roomLive(code: string): boolean {
+  const identity: {
+    roomExists(code: string): boolean; isHost(code: string): boolean;
+    readMembers(code: string): Record<string, { stopped_at?: string; closing?: unknown } | undefined>;
+  } = require('../identity.ts');
   try {
     if (!identity.roomExists(code) || !identity.isHost(code)) return false;
     const roomClaude = identity.readMembers(code).claude;
@@ -149,18 +180,20 @@ function roomLive(code) {
 }
 
 /** Turn a room's Tailscale path off, if it has one (never another path, never `serve reset`). */
-function untailscale(rec, log = () => {}) {
+function untailscale(rec: ServedRoom | null, log: (msg: string) => void = () => {}): { ok: boolean; error?: string | null } | null {
   if (!rec || !rec.tailscale) return null;
   try {
-    const r = require('./tailscale.ts').off(rec.tailscale);
+    const r = (require('./tailscale.ts') as typeof import('./tailscale.ts')).off(rec.tailscale);
     log(`tailscale ${rec.tailscale.funnel ? 'funnel' : 'serve'} ${rec.tailscale.path} off: ${r.ok ? 'done' : r.error}`);
     return r;
-  } catch (e) { log(`tailscale off: ${e.message}`); return { ok: false, error: e.message }; }
+  } catch (e) { log(`tailscale off: ${(e as Error).message}`); return { ok: false, error: (e as Error).message }; }
 }
 
-async function run({ port = defaultPort(), log = msg => process.stderr.write(`${new Date().toISOString()} sub-human listen: ${msg}\n`), closedCheckMs = Number(process.env.SUB_HUMAN_LISTEN_CHECK_MS) || CLOSED_CHECK_MS, idleMs = Number(process.env.SUB_HUMAN_LISTEN_IDLE_MS) || LISTEN_IDLE_MS } = {}) {
-  const ws = require('./ws.ts');
-  const wsT = require('./transports/ws.ts');
+async function run({ port = defaultPort(), log = (msg: string): unknown => process.stderr.write(`${new Date().toISOString()} sub-human listen: ${msg}\n`), closedCheckMs = Number(process.env.SUB_HUMAN_LISTEN_CHECK_MS) || CLOSED_CHECK_MS, idleMs = Number(process.env.SUB_HUMAN_LISTEN_IDLE_MS) || LISTEN_IDLE_MS }: {
+  port?: number; log?: (msg: string) => unknown; closedCheckMs?: number; idleMs?: number;
+} = {}): Promise<{ why: string; port: number }> {
+  const ws: WsModule = require('./ws.ts');
+  const wsT: typeof import('./transports/ws.ts') = require('./transports/ws.ts');
   const { CODE_RE } = textMod;
   const s = staticKey();
   let mine = false;
@@ -168,31 +201,31 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
     if (isAlive(cur.pid) && cur.pid !== process.pid) throw new RoomError('LOCK', `a listener already runs here (pid ${cur.pid}, port ${cur.port})`);
     return cur;
   });
-  let preauth = 0, conns = 0, finish;
-  const done = new Promise(r => { finish = r; });
-  const children = new Set();
+  let preauth = 0, conns = 0, finish: (why: string) => void = () => {};
+  const done = new Promise<string>(r => { finish = r; });
+  const children = new Set<ChildProcessWithoutNullStreams>();
   const publishConns = () => { try { update(cur => (cur.pid === process.pid ? { ...cur, conns } : cur)); } catch { /* best effort */ } };
 
-  const shimCmd = () => {
-    const shim = require('./shim.ts');
+  const shimCmd = (): string => {
+    const shim: typeof import('./shim.ts') = require('./shim.ts');
     const p = shim.refresh();
     if (!p) throw new RoomError('INVALID', `the plugin root ${shim.pluginRoot()} is under a temp dir; the listener will not run what sits there (SUB_HUMAN_ALLOW_TMP_ROOT=1 allows it)`);
     return p;
   };
 
-  async function onConnection(conn, req) {
+  async function onConnection(conn: WsConn, req: IncomingMessage): Promise<void> {
     preauth++;
     conns++;
     const who = req.headers['tailscale-user-login'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     conn.on('error', () => {});
     const at = String(req.url || '').split('?')[0].split('/').filter(Boolean).pop();
-    const refusal = code => {
+    const refusal = (code: string): Refusal | null => {
       if (!CODE_RE.test(code)) return { code: 'PROTOCOL', message: 'not a room code' };
       if (at && CODE_RE.test(at) && at !== code) return { code: 'PROTOCOL', message: `this URL is for room ${at}, not ${code}` };
       if (!(read().rooms || {})[code] || !roomLive(code)) return { code: 'OFFLINE', message: `room ${code} is not open for joins over the web here (the host can run /sub-human invite --web or --url again)` };
       return null;
     };
-    let ch, first;
+    let ch: { duplex: import('node:stream').Duplex; hello: { room: string } }, first: { data: Buffer; binary: boolean };
     try {
       first = await wsT.firstAny(conn, HANDSHAKE_MS);
       if (!first.binary) return enrollConn(conn, first.data, { refusal, who }); // a short code: text frames, lib/remote/enroll.ts
@@ -200,16 +233,16 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
     } catch (e) {
       preauth--;
       conns--;
-      log(`refused a connection from ${who}: ${e.message}`);
+      log(`refused a connection from ${who}: ${(e as Error).message}`);
       return;
     }
     preauth--;
     const code = ch.hello.room;
-    let child;
+    let child: ChildProcessWithoutNullStreams;
     try {
       child = spawn(shimCmd(), ['--stdio', code], { env: { ...process.env, SUB_HUMAN_HOME: home() }, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) {
-      log(`room ${code}: could not start serve: ${e.message}`);
+      log(`room ${code}: could not start serve: ${(e as Error).message}`);
       ch.duplex.destroy();
       conns--;
       return;
@@ -220,7 +253,7 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
     child.stdout.pipe(ch.duplex);
     ch.duplex.pipe(child.stdin);
     child.stdin.on('error', () => {});
-    child.stderr.on('data', d => { for (const l of String(d).split('\n').filter(Boolean)) log(`room ${code} serve ${child.pid}: ${l}`); });
+    child.stderr.on('data', (d: Buffer) => { for (const l of String(d).split('\n').filter(Boolean)) log(`room ${code} serve ${child.pid}: ${l}`); });
     ch.duplex.on('error', () => {});
     ch.duplex.on('close', () => { child.stdin.end(); setTimeout(() => { try { child.kill(); } catch { /* gone */ } }, 2000).unref(); });
     child.on('exit', (c, sig) => {
@@ -237,12 +270,12 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
    * connection, each text message one line of its stdin and each line it writes one text message. Nothing else is
    * parsed here; the child runs the PAKE and counts the tries. It holds a pre-auth slot until it exits.
    */
-  function enrollConn(conn, data, { refusal, who }) {
-    const protocol = require('./protocol.ts');
-    let frame = null;
+  function enrollConn(conn: WsConn, data: Buffer, { refusal, who }: { refusal: (code: string) => Refusal | null; who: unknown }): void {
+    const protocol: typeof import('./protocol.ts') = require('./protocol.ts');
+    let frame: { id?: unknown; op?: unknown; params?: { room?: unknown } } | null = null; // parsed JSON, checked below
     try { frame = JSON.parse(data.toString('utf8')); } catch { /* refused below */ }
     const code = frame && frame.params && frame.params.room;
-    const no = !frame || frame.op !== 'enroll.start' || typeof code !== 'string' ? { code: 'PROTOCOL', message: 'a text message that is not an enrollment' } : refusal(code);
+    const no: Refusal | null = !frame || frame.op !== 'enroll.start' || typeof code !== 'string' ? { code: 'PROTOCOL', message: 'a text message that is not an enrollment' } : refusal(code);
     const release = () => { preauth--; conns--; publishConns(); };
     if (no) {
       conn.send(protocol.encode(protocol.error(frame && frame.id !== undefined ? frame.id : null, no.code, no.message)).trimEnd());
@@ -250,11 +283,11 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
       log(`refused an enrollment from ${who}: ${no.message}`);
       return release();
     }
-    let child;
+    let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(shimCmd(), ['--enroll', code, '--kind', 'ws'], { env: { ...process.env, SUB_HUMAN_HOME: home() }, stdio: ['pipe', 'pipe', 'pipe'] });
+      child = spawn(shimCmd(), ['--enroll', code as string, '--kind', 'ws'], { env: { ...process.env, SUB_HUMAN_HOME: home() }, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) {
-      log(`room ${code}: could not start the enrollment: ${e.message}`);
+      log(`room ${code}: could not start the enrollment: ${(e as Error).message}`);
       conn.close(1011, 'no enrollment');
       return release();
     }
@@ -264,8 +297,8 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
     const dec = protocol.decoder();
     child.stdin.on('error', () => {});
     child.stdin.write(`${data.toString('utf8').replace(/\n/g, '')}\n`);
-    child.stdout.on('data', d => { for (const f of dec.push(d)) conn.send(JSON.stringify(f)); });
-    child.stderr.on('data', d => { for (const l of String(d).split('\n').filter(Boolean)) log(`room ${code} enroll ${child.pid}: ${l}`); });
+    child.stdout.on('data', (d: Buffer) => { for (const f of dec.push(d)) conn.send(JSON.stringify(f)); });
+    child.stderr.on('data', (d: Buffer) => { for (const l of String(d).split('\n').filter(Boolean)) log(`room ${code} enroll ${child.pid}: ${l}`); });
     conn.on('message', (m, binary) => {
       if (binary || m.length > 16 * 1024) { conn.close(1003, 'text frames only'); return; }
       child.stdin.write(`${m.toString('utf8').replace(/\n/g, '')}\n`);
@@ -286,15 +319,15 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
     maxPayload: require('./noise.ts').MAX_MESSAGE + 64,
     pingMs: WS_PING_MS,
     accept: () => (preauth >= PREAUTH_MAX || conns >= LISTEN_MAX ? 503 : true),
-    onConnection: (conn, req) => { onConnection(conn, req).catch(e => log(`connection: ${e.stack || e}`)); },
+    onConnection: (conn, req) => { onConnection(conn, req).catch((e: Error) => log(`connection: ${e.stack || e}`)); },
   });
-  const real = srv.address().port;
+  const real = (srv.address() as AddressInfo).port; // a TCP listener
   update(cur => { mine = true; return { ...cur, pid: process.pid, port: real, started_at: new Date().toISOString(), conns: 0, rooms: cur.rooms || {} }; });
   log(`listening on 127.0.0.1:${real} (host key ${hostKey().slice(0, 12)}…)`);
 
   let idleSince = Date.now();
   const sweep = setInterval(() => {
-    let rooms = {};
+    let rooms: Record<string, ServedRoom> = {};
     try { rooms = read().rooms || {}; } catch { /* next time */ }
     for (const [code, rec] of Object.entries(rooms)) {
       if (roomLive(code)) continue;
@@ -314,7 +347,7 @@ async function run({ port = defaultPort(), log = msg => process.stderr.write(`${
   }, HOME_CHECK_MS);
   orphan.unref();
 
-  function end(why) {
+  function end(why: string): void {
     clearInterval(sweep);
     clearInterval(orphan);
     srv.close();

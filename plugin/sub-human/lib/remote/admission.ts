@@ -29,34 +29,59 @@ import path from 'node:path';
 import * as auth from './auth.ts';
 import { RoomError } from '../room/validate.ts';
 import { createRequire } from 'node:module';
+import type { AdmissionRequest, AuthApi, StoreLike } from './types-rest.ts';
 
 const require = createRequire(import.meta.url);
+
+const authT = auth as unknown as AuthApi; // ./types-rest.ts AuthApi: until auth.ts is typed
+
+/** A member record, as lib/identity.ts readMembers gives it (that slice's). */
+interface MemberRec {
+  name?: string;
+  left_at?: string;
+  role?: string;
+  machine?: string;
+}
+
+/** What the card asks: AskUserQuestion's input. */
+export interface AdmitCard {
+  questions: {
+    question: string;
+    header: string;
+    multiSelect: boolean;
+    options: { label: string; description: string }[];
+  }[];
+}
+
+/** Signs the record the person let in with their seat key. */
+type Signer = (rec: { kind: 'admit'; ref: string; link: string; key: string | null; machine: string }) => unknown;
 
 const LET_IN = 'Let in';
 const REFUSE = 'Refuse';
 
-function hostStore(code) {
-  const s = require('../room.ts').open(code).store;
+function hostStore(code: string): StoreLike {
+  const s: StoreLike = (require('../room.ts') as { open(code: string): { store: StoreLike } }).open(code).store;
   if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; only its host can let people in`);
   return s;
 }
 
-const pending = (code, { now = Date.now() } = {}) => auth.admissions(hostStore(code), { now });
-const find = (code, ref) => auth.admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) || null;
+const pending = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => authT.admissions(hostStore(code), { now });
+const find = (code: string, ref: string): AdmissionRequest | null => authT.admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) || null;
 
-function targets(code, req) {
-  const identity = require('../identity.ts');
-  const { machineId } = require('../home.ts');
+function targets(code: string, req: AdmissionRequest): string[] {
+  const identity: { readMembers(code: string): Record<string, MemberRec | null> | null } = require('../identity.ts');
+  const { machineId }: { machineId(): string } = require('../home.ts');
   const here = Object.values(identity.readMembers(code) || {})
-    .filter(m => m && m.name && !m.left_at && m.role !== 'claude' && (!m.machine || m.machine === machineId())).map(m => m.name);
+    .filter((m): m is MemberRec & { name: string } => !!m && !!m.name && !m.left_at && m.role !== 'claude' && (!m.machine || m.machine === machineId())).map(m => m.name);
   return req.by && here.includes(req.by) ? [req.by] : here;
 }
 
-const fp = req => (req.key ? require('./sshkeys.ts').fingerprint(req.key) : `request ${req.ref.slice(0, 6)}`);
-const describe = req => `${req.name} (${fp(req)}) on ${req.label || 'another machine'}`;
-const question = (req, code) => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
+const sshkeysMod = (): typeof import('./sshkeys.ts') => require('./sshkeys.ts');
+const fp = (req: AdmissionRequest): string => (req.key ? sshkeysMod().fingerprint(req.key) : `request ${req.ref.slice(0, 6)}`);
+const describe = (req: AdmissionRequest): string => `${req.name} (${fp(req)}) on ${req.label || 'another machine'}`;
+const question = (req: AdmissionRequest, code: string): string => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
 
-function card(req, code) {
+function card(req: AdmissionRequest, code: string): AdmitCard {
   return {
     questions: [{
       question: question(req, code),
@@ -70,52 +95,55 @@ function card(req, code) {
   };
 }
 
-function roomLine(store, text) {
+function roomLine(store: StoreLike, text: string): void {
   try { store.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }); } catch { /* the answer stands */ }
 }
 
-function letIn(code, ref, { by = null, sign = null, now = Date.now() } = {}) {
+function letIn(code: string, ref: string, { by = null, sign = null, now = Date.now() }: {
+  by?: string | null; sign?: Signer | null; now?: number;
+} = {}): { id: string; text: string } {
   const store = hostStore(code);
   const req = find(code, ref);
   if (!req) throw new RoomError('INVALID', `room ${code} has no join request ${ref} (/sub-human admit lists them)`);
   const sig = sign ? sign({ kind: 'admit', ref: req.ref, link: req.link, key: req.key || null, machine: req.machine }) : null;
-  let file = null;
+  let file: string | null = null;
   if (req.kind === 'ssh' && req.admit === 'asked') {
     // the key line first, then the record: a failed write leaves the request waiting, not let in without a key
-    const sshkeys = require('./sshkeys.ts');
-    const { shim, h } = require('./hosting.ts').shimReady();
-    const key = sshkeys.openssh(req.key);
+    const sshkeys = sshkeysMod();
+    const { shim, h } = (require('./hosting.ts') as typeof import('./hosting.ts')).shimReady();
+    const key = sshkeys.openssh(req.key!); // an ssh request carries the joiner's link key (enroll.ts joinerOf)
     file = path.resolve(req.door_file || sshkeys.authorizedKeysFile());
     sshkeys.appendAuthorized(file, shim.authorizedLine(code, req.link, key, h), key);
   }
-  let rec;
-  try { rec = auth.decideAdmission(store, req.ref, { decision: 'let-in', by, sig, now }); } catch (e) {
-    if (file && req.admit === 'asked') require('./sshkeys.ts').removeAuthorized(file, code, req.link);
+  let rec: AdmissionRequest;
+  try { rec = authT.decideAdmission(store, req.ref, { decision: 'let-in', by, sig, now }); } catch (e) {
+    if (file && req.admit === 'asked') sshkeysMod().removeAuthorized(file, code, req.link);
     throw e;
   }
   roomLine(store, `${by || 'the host'} let ${describe(rec)} in; undo with: /sub-human kick ${rec.name}`);
   return { id: rec.link, text: `let in: ${describe(rec)} joins room ${code} within seconds${file ? ` (their key opens only this room, nothing else on this machine)` : ''}. Undo: /sub-human kick ${rec.name}` };
 }
 
-function refuse(code, ref, { by = null, now = Date.now() } = {}) {
+function refuse(code: string, ref: string, { by = null, now = Date.now() }: { by?: string | null; now?: number } = {}): { text: string } {
   const store = hostStore(code);
   const req = find(code, ref);
   if (!req) throw new RoomError('INVALID', `room ${code} has no join request ${ref} (/sub-human admit lists them)`);
-  const rec = auth.decideAdmission(store, req.ref, { decision: 'refused', by, now });
+  const rec = authT.decideAdmission(store, req.ref, { decision: 'refused', by, now });
   roomLine(store, `${by || 'the host'} refused ${describe(rec)}: nothing got in`);
   return { text: `refused: ${describe(rec)} does not get into room ${code}; their join stops` };
 }
 
-function markTold(code, ref, name) {
+function markTold(code: string, ref: string, name: string): void {
   try {
-    hostStore(code).kv.update(auth.INVITES_KEY, cur => {
-      const k = Object.keys(cur || {}).find(x => x.startsWith(ref) && cur[x].admission);
-      if (!k || (cur[k].told || []).includes(name)) return undefined;
-      return { ...cur, [k]: { ...cur[k], told: [...(cur[k].told || []), name] } };
+    hostStore(code).kv.update(authT.INVITES_KEY, (cur: Record<string, { admission?: boolean; told?: string[] }> | null) => {
+      const docs = cur || {};
+      const k = Object.keys(docs).find(x => x.startsWith(ref) && docs[x].admission);
+      if (!k || (docs[k].told || []).includes(name)) return undefined;
+      return { ...cur, [k]: { ...docs[k], told: [...(docs[k].told || []), name] } };
     });
   } catch { /* told again */ }
 }
 
-const lapse = (code, { now = Date.now() } = {}) => auth.lapseAdmissions(hostStore(code), { now });
+const lapse = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => authT.lapseAdmissions(hostStore(code), { now });
 
 export { pending, find, targets, describe, question, card, letIn, refuse, markTold, lapse, LET_IN, REFUSE };
