@@ -23,21 +23,42 @@ import path from 'node:path';
 import { readJson, writeJsonAtomic } from '../io.ts';
 import { RoomError } from '../room/validate.ts';
 import * as config from '../config.ts';
+import type { SignedPayload } from './types-core.ts';
+
+/** A queued @room post: the signed payload as the hook made it, and when it was queued. */
+interface OutboxItem { payload: SignedPayload; queued_at: string }
+/** A signed @room post (queueable): its nonce and ts are fixed. */
+type QueuedPost = SignedPayload & { nonce: string; ts: number };
+
+interface Outbox {
+  file: string;
+  ageMs: number;
+  items(): OutboxItem[];
+  size(): number;
+  add(payload: SignedPayload, now?: number, opts?: { force?: boolean }): number;
+  first(): OutboxItem | undefined;
+  drop(): void;
+  remove(nonce: unknown): boolean;
+  expire(now?: number): OutboxItem[];
+}
 
 /**
  * @param {object} p
  * @returns {boolean}
  */
-const queueable = p => !!p && p.kind === 'say' && p.via === 'human' && (p.to === undefined || p.to === 'room' || p.to === 'claude')
-  && typeof p.nonce === 'string' && Number.isFinite(p.ts);
+const queueable = (p: unknown): p is QueuedPost => {
+  const q = p as SignedPayload | null | undefined; // a relayed append's payload, unchecked
+  return !!q && q.kind === 'say' && q.via === 'human' && (q.to === undefined || q.to === 'room' || q.to === 'claude')
+  && typeof q.nonce === 'string' && Number.isFinite(q.ts);
+};
 
 /**
  * @param {string} dir
  * @param {{max?: number, ageMs?: number}} [opts]
  */
-function open(dir, { max = config.LINK_OUTBOX_MAX, ageMs = config.envMs('SUB_HUMAN_LINK_OUTBOX_AGE_MS', config.LINK_OUTBOX_AGE_MS) } = {}) {
+function open(dir: string, { max = config.LINK_OUTBOX_MAX, ageMs = config.envMs('SUB_HUMAN_LINK_OUTBOX_AGE_MS', config.LINK_OUTBOX_AGE_MS) }: { max?: number; ageMs?: number } = {}): Outbox {
   const file = path.join(dir, 'outbox.json');
-  const load = () => { const v = readJson(file); return Array.isArray(v) ? v.filter(x => x && x.payload) : []; };
+  const load = (): OutboxItem[] => { const v: unknown = readJson(file); return Array.isArray(v) ? v.filter(x => x && x.payload) : []; };
   let list = load();
   const save = () => {
     if (!list.length) { fs.rmSync(file, { force: true }); return; }
@@ -49,7 +70,7 @@ function open(dir, { max = config.LINK_OUTBOX_MAX, ageMs = config.envMs('SUB_HUM
     ageMs,
     items: () => list.slice(),
     size: () => list.length,
-    add(payload, now = Date.now(), { force = false } = {}) {
+    add(payload: SignedPayload, now = Date.now(), { force = false } = {}) {
       if (!force && list.length >= max) throw new RoomError('OFFLINE', `the room is offline and ${max} @room posts are queued already; nothing more is queued`);
       list.push({ payload, queued_at: new Date(now).toISOString() });
       save();
@@ -57,7 +78,7 @@ function open(dir, { max = config.LINK_OUTBOX_MAX, ageMs = config.envMs('SUB_HUM
     },
     first: () => list[0],
     drop() { list.shift(); save(); },
-    remove(nonce) {
+    remove(nonce: unknown) {
       const i = list.findIndex(x => x.payload.nonce === nonce);
       if (i < 0) return false;
       list.splice(i, 1);
@@ -73,3 +94,4 @@ function open(dir, { max = config.LINK_OUTBOX_MAX, ageMs = config.envMs('SUB_HUM
 }
 
 export { queueable, open };
+export type { Outbox, OutboxItem };

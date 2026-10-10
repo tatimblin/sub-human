@@ -42,6 +42,30 @@ import tls from 'node:tls';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import type { Duplex } from 'node:stream';
+
+/** The byte stream under a Conn: an upgraded http socket, or a net/tls socket (setNoDelay when it has one). */
+type WsSocket = Duplex & { setNoDelay?(noDelay?: boolean): unknown };
+type ConnState = 'open' | 'closing' | 'closed';
+interface ConnOptions { client: boolean; maxPayload?: number; pingMs?: number; head?: Buffer | null }
+interface AcceptOptions { maxPayload?: number; pingMs?: number }
+interface ServerOptions extends AcceptOptions {
+  host?: string;
+  port: number;
+  onConnection(conn: Conn, req: http.IncomingMessage): void;
+  accept?(req: http.IncomingMessage): boolean | number;
+}
+interface ConnectOptions extends AcceptOptions {
+  proxy?: string | null;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+  tls?: tls.ConnectionOptions;
+  env?: NodeJS.ProcessEnv;
+}
+/** An HTTP answer head read off a socket. */
+interface Head { status: number; headers: Record<string, string>; rest: Buffer; line: string }
+/** A WebSocket protocol failure as the 'error' event carries it. */
+type WsError = Error & { code: 'WS_PROTOCOL'; closeCode: number };
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_PAYLOAD = 1024 * 1024;
@@ -49,11 +73,23 @@ const CLOSE_WAIT_MS = 2000;
 const HEADER_MAX = 16 * 1024;
 const OP = { cont: 0, text: 1, binary: 2, close: 8, ping: 9, pong: 10 };
 
-const acceptKey = key => crypto.createHash('sha1').update(String(key) + GUID).digest('base64');
+const acceptKey = (key: unknown): string => crypto.createHash('sha1').update(String(key) + GUID).digest('base64');
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 class Conn extends EventEmitter {
-  constructor(socket, { client, maxPayload = MAX_PAYLOAD, pingMs = 0, head = null }) {
+  socket: WsSocket;
+  client: boolean;
+  maxPayload: number;
+  state: ConnState;
+  _buf: Buffer;
+  _frags: { op: number; parts: Buffer[]; size: number } | null;
+  _sentClose: boolean;
+  _gotClose?: boolean;
+  _closeCode: number;
+  _closeReason: string;
+  _heard: boolean;
+  _pinger: NodeJS.Timeout | null;
+  constructor(socket: WsSocket, { client, maxPayload = MAX_PAYLOAD, pingMs = 0, head = null }: ConnOptions) {
     super();
     this.socket = socket;
     this.client = client;
@@ -67,8 +103,8 @@ class Conn extends EventEmitter {
     this._heard = true;
     this._pinger = null;
     socket.setNoDelay && socket.setNoDelay(true);
-    socket.on('data', d => this._data(d));
-    socket.on('error', e => { if (this.listenerCount('error')) this.emit('error', e); });
+    socket.on('data', (d: Buffer) => this._data(d));
+    socket.on('error', (e: Error) => { if (this.listenerCount('error')) this.emit('error', e); });
     socket.on('close', () => this._closed());
     socket.on('end', () => socket.end());
     if (pingMs > 0) {
@@ -82,7 +118,7 @@ class Conn extends EventEmitter {
     if (head && head.length) setImmediate(() => this._data(head));
   }
 
-  _frame(op, payload, fin = true) {
+  _frame(op: number, payload: Buffer, fin = true): boolean {
     const len = payload.length;
     const mask = this.client;
     const hl = 2 + (len < 126 ? 0 : len < 65536 ? 2 : 8) + (mask ? 4 : 0);
@@ -100,15 +136,15 @@ class Conn extends EventEmitter {
     return this.socket.write(Buffer.concat([h, body]));
   }
 
-  send(data) {
+  send(data: string | Buffer | Uint8Array): boolean {
     if (this.state !== 'open') return false;
     const text = typeof data === 'string';
     return this._frame(text ? OP.text : OP.binary, text ? Buffer.from(data, 'utf8') : Buffer.from(data));
   }
 
-  ping(data = Buffer.alloc(0)) { if (this.state === 'open') this._frame(OP.ping, Buffer.from(data).subarray(0, 125)); }
+  ping(data: Buffer | string = Buffer.alloc(0)): void { if (this.state === 'open') this._frame(OP.ping, Buffer.from(data).subarray(0, 125)); }
 
-  close(code = 1000, reason = '') {
+  close(code = 1000, reason: unknown = ''): void {
     if (this.state === 'closed' || this._sentClose) return;
     this._sentClose = true;
     this.state = 'closing';
@@ -124,35 +160,35 @@ class Conn extends EventEmitter {
     t.unref();
   }
 
-  terminate() {
+  terminate(): void {
     if (this.state === 'closed') return;
     this._closeCode = this._gotClose ? this._closeCode : 1006;
     this.socket.destroy();
   }
 
-  _fail(code, why) {
-    if (this.listenerCount('error')) this.emit('error', Object.assign(new Error(why), { code: 'WS_PROTOCOL', closeCode: code }));
+  _fail(code: number, why: string): void {
+    if (this.listenerCount('error')) this.emit('error', Object.assign(new Error(why), { code: 'WS_PROTOCOL' as const, closeCode: code }) satisfies WsError);
     this._closeCode = code;
     this._closeReason = why;
     this.close(code, why);
     this.socket.end();
   }
 
-  _closed() {
+  _closed(): void {
     if (this.state === 'closed') return;
     this.state = 'closed';
-    clearInterval(this._pinger);
+    clearInterval(this._pinger ?? undefined);
     this.emit('close', this._closeCode, this._closeReason);
   }
 
-  _data(d) {
+  _data(d: Buffer): void {
     this._heard = true;
     this._buf = this._buf.length ? Buffer.concat([this._buf, d]) : d;
     while (this.state !== 'closed' && this._parse()) { /* one frame each */ }
   }
 
   /** One frame off the buffer: true when one was taken, false when more bytes are needed or the conn failed. */
-  _parse() {
+  _parse(): boolean {
     const b = this._buf;
     if (b.length < 2) return false;
     const fin = (b[0] & 0x80) !== 0, rsv = b[0] & 0x70, op = b[0] & 0x0f;
@@ -202,7 +238,7 @@ class Conn extends EventEmitter {
     return true;
   }
 
-  _control(op, payload) {
+  _control(op: number, payload: Buffer): void {
     if (op === OP.ping) { if (this.state === 'open') this._frame(OP.pong, payload); this.emit('ping', payload); return; }
     if (op === OP.pong) { this.emit('pong', payload); return; }
     if (op === OP.close) {
@@ -221,12 +257,12 @@ class Conn extends EventEmitter {
 }
 
 // ---------- the server end ----------
-function refuse(socket, status, text) {
+function refuse(socket: Duplex, status: number, text: string): null {
   try { socket.end(`HTTP/1.1 ${status} ${http.STATUS_CODES[status] || 'Error'}\r\nConnection: close\r\nContent-Type: text/plain\r\nContent-Length: ${Buffer.byteLength(text)}\r\n\r\n${text}`); } catch { /* gone */ }
   return null;
 }
 
-function accept(req, socket, head, { maxPayload, pingMs } = {}) {
+function accept(req: http.IncomingMessage, socket: Duplex, head: Buffer, { maxPayload, pingMs }: AcceptOptions = {}): Conn | null {
   const hd = req.headers;
   if (req.method !== 'GET') return refuse(socket, 405, 'a WebSocket upgrade is a GET\n');
   if (String(hd.upgrade || '').toLowerCase() !== 'websocket' || !/(^|,)\s*upgrade\s*(,|$)/i.test(String(hd.connection || ''))) return refuse(socket, 426, 'upgrade required\n');
@@ -237,11 +273,11 @@ function accept(req, socket, head, { maxPayload, pingMs } = {}) {
   return new Conn(socket, { client: false, maxPayload, pingMs, head });
 }
 
-function createServer({ host = '127.0.0.1', port, onConnection, accept: allow = () => true, maxPayload, pingMs }) {
+function createServer({ host = '127.0.0.1', port, onConnection, accept: allow = () => true, maxPayload, pingMs }: ServerOptions): Promise<http.Server> {
   const srv = http.createServer((req, res) => { res.writeHead(426, { 'content-type': 'text/plain', connection: 'close' }); res.end('upgrade required\n'); });
   srv.on('upgrade', (req, socket, head) => {
     socket.on('error', () => { /* a peer that went away */ });
-    let ok;
+    let ok: boolean | number;
     try { ok = allow(req); } catch { ok = 500; }
     if (ok !== true) return refuse(socket, typeof ok === 'number' ? ok : 404, 'not here\n');
     const conn = accept(req, socket, head, { maxPayload, pingMs });
@@ -255,9 +291,9 @@ function createServer({ host = '127.0.0.1', port, onConnection, accept: allow = 
 }
 
 // ---------- the client end ----------
-const LOOPBACK = h => h === 'localhost' || /^127\./.test(h) || h === '::1' || h === '[::1]';
+const LOOPBACK = (h: string): boolean => h === 'localhost' || /^127\./.test(h) || h === '::1' || h === '[::1]';
 
-function proxyFor(url, env = process.env) {
+function proxyFor(url: string, env: NodeJS.ProcessEnv = process.env): string | null {
   const u = new URL(url);
   const secure = u.protocol === 'wss:' || u.protocol === 'https:';
   const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
@@ -277,13 +313,13 @@ function proxyFor(url, env = process.env) {
   return p ? String(p) : null;
 }
 
-const connectError = msg => Object.assign(new Error(msg), { code: 'WS_CONNECT' });
+const connectError = (msg: string): Error & { code: 'WS_CONNECT' } => Object.assign(new Error(msg), { code: 'WS_CONNECT' as const });
 
 /** Read an HTTP response head off socket: {status, headers, rest}. */
-function readHead(socket, what) {
+function readHead(socket: Duplex, what: string): Promise<Head> {
   return new Promise((resolve, reject) => {
     let buf = Buffer.alloc(0);
-    const onData = d => {
+    const onData = (d: Buffer) => {
       buf = Buffer.concat([buf, d]);
       const i = buf.indexOf('\r\n\r\n');
       if (i < 0) { if (buf.length > HEADER_MAX) { done(); reject(connectError(`${what}: an answer head over ${HEADER_MAX} bytes`)); } return; }
@@ -291,12 +327,12 @@ function readHead(socket, what) {
       const lines = buf.subarray(0, i).toString('latin1').split('\r\n');
       const m = /^HTTP\/1\.[01] (\d{3})/.exec(lines[0]);
       if (!m) return reject(connectError(`${what}: not an HTTP answer`));
-      const headers = {};
+      const headers: Record<string, string> = {};
       for (const l of lines.slice(1)) { const k = l.indexOf(':'); if (k > 0) headers[l.slice(0, k).trim().toLowerCase()] = l.slice(k + 1).trim(); }
       resolve({ status: Number(m[1]), headers, rest: buf.subarray(i + 4), line: lines[0] });
     };
     const onEnd = () => { done(); reject(connectError(`${what}: the connection closed before an answer`)); };
-    const onErr = e => { done(); reject(connectError(`${what}: ${e.message}`)); };
+    const onErr = (e: Error) => { done(); reject(connectError(`${what}: ${e.message}`)); };
     const done = () => { socket.off('data', onData); socket.off('end', onEnd); socket.off('close', onEnd); socket.off('error', onErr); };
     socket.on('data', onData);
     socket.on('end', onEnd);
@@ -305,17 +341,17 @@ function readHead(socket, what) {
   });
 }
 
-function tcp(host, port, secure, tlsOpts, what) {
+function tcp(host: string, port: number, secure: boolean, tlsOpts: tls.ConnectionOptions, what: string): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
     const opts = { host, port, ...(secure ? { servername: net.isIP(host) ? undefined : host, ALPNProtocols: ['http/1.1'], ...tlsOpts } : {}) };
     const s = secure ? tls.connect(opts) : net.connect(opts);
     s.once(secure ? 'secureConnect' : 'connect', () => { s.off('error', no); resolve(s); });
-    const no = e => reject(connectError(`${what} ${host}:${port}: ${e.message}`));
+    const no = (e: Error) => reject(connectError(`${what} ${host}:${port}: ${e.message}`));
     s.once('error', no);
   });
 }
 
-async function viaProxy(proxyUrl, host, port, tlsOpts) {
+async function viaProxy(proxyUrl: string, host: string, port: number, tlsOpts: tls.ConnectionOptions): Promise<net.Socket> {
   const p = new URL(proxyUrl);
   if (p.protocol !== 'http:' && p.protocol !== 'https:') throw connectError(`proxy ${p.protocol} is not supported (an http:// CONNECT proxy)`);
   const s = await tcp(p.hostname.replace(/^\[|\]$/g, ''), Number(p.port || (p.protocol === 'https:' ? 443 : 80)), p.protocol === 'https:', tlsOpts, 'proxy');
@@ -328,23 +364,23 @@ async function viaProxy(proxyUrl, host, port, tlsOpts) {
   return s;
 }
 
-async function connect(url, { proxy, headers = {}, maxPayload, pingMs, timeoutMs = 15_000, tls: tlsOpts = {}, env = process.env } = {}) {
+async function connect(url: string, { proxy, headers = {}, maxPayload, pingMs, timeoutMs = 15_000, tls: tlsOpts = {}, env = process.env }: ConnectOptions = {}): Promise<Conn> {
   const u = new URL(url);
   const secure = u.protocol === 'wss:' || u.protocol === 'https:';
   if (!secure && u.protocol !== 'ws:' && u.protocol !== 'http:') throw connectError(`not a WebSocket URL: ${u.protocol}`);
   const host = u.hostname.replace(/^\[|\]$/g, '');
   const port = Number(u.port || (secure ? 443 : 80));
   const px = proxy === undefined ? proxyFor(url, env) : proxy;
-  let sock = null, timer;
+  let sock = null as net.Socket | null, timer: NodeJS.Timeout | undefined; // (as: set inside work, read in catch)
   const work = (async () => {
     if (px) {
       const raw = await viaProxy(px, host, port, tlsOpts);
       sock = raw;
       if (secure) {
-        sock = await new Promise((resolve, reject) => {
+        sock = await new Promise<tls.TLSSocket>((resolve, reject) => {
           const t = tls.connect({ socket: raw, servername: net.isIP(host) ? undefined : host, ALPNProtocols: ['http/1.1'], ...tlsOpts });
           t.once('secureConnect', () => { t.off('error', no); resolve(t); });
-          const no = e => reject(connectError(`TLS to ${host} through the proxy: ${e.message}`));
+          const no = (e: Error) => reject(connectError(`TLS to ${host} through the proxy: ${e.message}`));
           t.once('error', no);
         });
       }
@@ -359,7 +395,7 @@ async function connect(url, { proxy, headers = {}, maxPayload, pingMs, timeoutMs
     if (r.headers['sec-websocket-extensions']) throw connectError('the server chose an extension that was not offered');
     return new Conn(sock, { client: true, maxPayload, pingMs, head: r.rest });
   })();
-  const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(connectError(`no WebSocket to ${u.host} within ${timeoutMs} ms`)), timeoutMs); });
+  const deadline = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(connectError(`no WebSocket to ${u.host} within ${timeoutMs} ms`)), timeoutMs); });
   try {
     return await Promise.race([work, deadline]);
   } catch (e) {
