@@ -2,9 +2,9 @@
 
 Pair up in Claude Code without giving up your own session.
 
-Everyone keeps their own terminal, repo and Claude. sub-human puts you in a room together: you can chat, your
-Claudes can message each other, and there's a shared Claude you can ask for help planning or keeping a task list.
-Works on one machine, or across machines over ssh or the web.
+Everyone keeps their own terminal, repo and Claude. sub-human puts you in a room together. You can chat, your
+Claudes can message each other, and a shared Claude can help plan or keep a task list. It works on one machine or
+across machines, over ssh or the web.
 
 ## Install
 
@@ -65,16 +65,16 @@ The host gets a prompt to let them in, and then they run `/sub-human` to take th
 /sub-human leave           leave the room
 /sub-human kick NAME       disconnect someone
 /sub-human handoff NAME    hand hosting to someone else
-/sub-human doctor          something's off? start here
+/sub-human doctor          check your setup when something breaks
 /sub-human help            everything else
 ```
 
 ## Good to know
 
-- The room lives on the machine that opened it. If that machine sleeps, the room is down.
+- The room runs on the machine that opened it. If that machine sleeps, the room is down.
 - PINs and invite lines never reach any Claude.
 - The room's Claude only does something when you `@claude` it. An idle room costs nothing.
-- Nothing to build and no dependencies: the plugin is TypeScript that Node runs directly.
+- There's nothing to build and no dependencies. Node runs the plugin's TypeScript directly.
 
-Full docs: [plugin/sub-human/README.md](plugin/sub-human/README.md). How it works:
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The full docs are in [plugin/sub-human/README.md](plugin/sub-human/README.md), and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how it works.
