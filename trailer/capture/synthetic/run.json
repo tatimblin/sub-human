@@ -1,0 +1,15 @@
+{
+ "take": "synthetic",
+ "synthetic": true,
+ "room": "vole-8126",
+ "durationMs": 223205.90672243567,
+ "scenes": [
+  "S1",
+  "S2",
+  "S3",
+  "S4",
+  "S5",
+  "S6b"
+ ],
+ "checks": "n/a (synthetic take)"
+}
