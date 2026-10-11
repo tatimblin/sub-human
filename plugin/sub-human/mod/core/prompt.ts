@@ -1,7 +1,8 @@
 /**
  * plugin/sub-human/mod/core/prompt.ts: the prompt gate and the UserPromptSubmit prefilter, as pure functions
  * (mod/prompt.ts registers the hooks). In: a prompt.submit event, or a classic UserPromptSubmit payload plus the
- * hello. Out: a drop reason, whether node must run, the session title, the merged classic result.
+ * hello. Out: a drop reason, whether node must run, the session title, the merged classic result, and an @room
+ * receipt's row without Claude Code's "Operation stopped by hook: " frame (receiptBook).
  * Failure: closed for an @room, and an @claude in a room (GATE_FAILED, failClosed): either let through would reach the model as the
  * person's words. Anything else unsure runs node.
  */
@@ -138,4 +139,39 @@ export function mergeClassic(ours: ShimResult | null = {}, theirs: ShimResult | 
   if (a.sessionTitle) out.sessionTitle = a.sessionTitle;
   if (a.suppressOriginalPrompt) out.suppressOriginalPrompt = true;
   return out;
+}
+
+/** How Claude Code draws a UserPromptSubmit stop: a warning row "Operation stopped by hook: <stopReason>" (cc
+ * CONTRACT ups-stop-frame). An @room's receipt ("✓ sent", "⧗ queued: …") is such a stop. */
+export const STOP_FRAME = 'Operation stopped by hook: ';
+
+/** A row as session.append hands it, as far as receiptBook reads it. */
+type RowLike = { type?: unknown; content?: unknown };
+
+/**
+ * The receipts this module's prompt hook stopped a prompt with, waiting for their warning row (session.append, door
+ * notice). expect(reason) as the stop leaves the hook; rewrite(row) answers that row with the frame cut off, the
+ * receipt alone (cc CONTRACT session-append-notice-rewrite), or null for any other row. Only a system row that is
+ * exactly the frame around a waiting receipt is ours: another plugin's stop, a second copy, or a row after a reload
+ * keeps the engine's words. A receipt whose row never came (a block beneath won) is forgotten after `max` more.
+ */
+export function receiptBook(max = 8) {
+  const waiting: string[] = [];
+  return {
+    expect(reason: unknown) {
+      if (typeof reason !== 'string' || !reason) return;
+      waiting.push(reason);
+      if (waiting.length > max) waiting.shift();
+    },
+    rewrite<M extends RowLike>(row: M | null | undefined): M | null {
+      if (!row || row.type !== 'system' || !Array.isArray(row.content) || row.content.length !== 1) return null;
+      const block = row.content[0] as { type?: unknown; text?: unknown } | null;
+      if (!block || block.type !== 'text' || typeof block.text !== 'string' || !block.text.startsWith(STOP_FRAME)) return null;
+      const i = waiting.indexOf(block.text.slice(STOP_FRAME.length));
+      if (i < 0) return null;
+      const [reason] = waiting.splice(i, 1);
+      return { ...row, content: [{ type: 'text', text: reason }] };
+    },
+    get size() { return waiting.length; },
+  };
 }

@@ -8,11 +8,12 @@
  * also says where the person is (onRemote): through Remote Control, room lines and an @room's refusal are relayed
  * as prompts (mod/deliver.ts), since the phone shows no $.ui.log notice. A relay is only the lines the person reads;
  * what the model needs (RELAY_CONTEXT) goes as context (prompt.submit, else classic.UserPromptSubmit
- * additionalContext), and no node runs for it.
+ * additionalContext), and no node runs for it. An @room's receipt (the shim's stop, "✓ sent") shows as itself: the
+ * warning row Claude Code draws for the stop loses its "Operation stopped by hook: " frame (session.append).
  */
 import {
   gateVerdict, GATE_FAILED, isAtRoom, isAtClaude, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
-  writesWorking, onRemote,
+  writesWorking, onRemote, receiptBook,
 } from './core/prompt.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { reviewOpenOf } from './core/prefilter.ts';
@@ -28,6 +29,8 @@ const TITLED = { plugin: 'sub-human', key: 'titled' } as const;
 const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 const origins = originQueue();
+/** The @room receipts (stopReason) whose warning row session.append shows without "Operation stopped by hook: ". */
+const receipts = receiptBook();
 /** The last presence this module wrote or saw: 'working' skips the node start. Lost on reload: then written once. */
 let presence: string | null = null;
 
@@ -146,6 +149,16 @@ export function registerPrompt(on: On) {
     }
     if (!needsNode(e, hello, { delivering: delivering(e.session_id), reviewFlag })) return mergeClassic(top, await next(e));
     const ours = await runPrompt($, e, origins.take(e.prompt), hello);
-    return mergeClassic({ ...ours, ...top }, await next(e));
+    const merged = mergeClassic({ ...ours, ...top }, await next(e));
+    if (ours.preventContinuation && !merged.block) receipts.expect(merged.stopReason);
+    return merged;
   }).catch(($, e, next) => failClosed(e.prompt) ?? next(e)); // a plain prompt goes on, as when a command hook fails
+
+  // The stop above is drawn as a warning row "Operation stopped by hook: ✓ sent" (cc CONTRACT ups-stop-frame): that
+  // row, and only one whose receipt is waiting, is kept as the receipt alone (cc CONTRACT
+  // session-append-notice-rewrite). The model's own copy (an isMeta user row) is left as it is.
+  on('session.append', { door: 'notice' }, ($, e, next) => {
+    const row = receipts.rewrite(e.message);
+    return next(row ? { ...e, message: row } : e);
+  }).catch(($, e, next) => next(e)); // a failure keeps the engine's words
 }

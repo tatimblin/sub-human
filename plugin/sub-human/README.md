@@ -239,7 +239,8 @@ Two tags, both at the very start of the prompt:
 Either is posted **verbatim** as your words (`via=human`). No model turn runs, and the receipt is one line:
 
 ```
-⏺ Operation stopped by hook: ✓ sent
+❯ @room ship the cursor paging today
+⏺ ✓ sent
 ```
 
 - Only a leading tag counts. `@room ask @claude later` is a plain post that wakes nothing, and so is `@room @claude …`.

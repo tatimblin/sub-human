@@ -62,3 +62,24 @@ test('prompt: the mod writes "working" for a typed prompt of a member (or an unk
   const roomClaude = { sid: 's1', seat: seat('otter-4821', 'claude') };
   assert.equal(writesWorking({ kind: 'composer' }, roomClaude, null), false, 'the room\'s Claude refuses typed prompts');
 });
+
+test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the receipt alone, once', async () => {
+  const { receiptBook, STOP_FRAME } = await load();
+  const book = receiptBook(2);
+  const notice = text => ({ type: 'system', name: 'informational', content: [{ type: 'text', text }] });
+  assert.equal(book.rewrite(notice(`${STOP_FRAME}✓ sent`)), null, 'nothing waiting: the engine\'s words stay');
+  book.expect('✓ sent');
+  assert.equal(book.rewrite(notice(`${STOP_FRAME}✓ sent (Claude's wording)`)), null, 'another receipt');
+  assert.equal(book.rewrite({ type: 'user', isMeta: true, content: [{ type: 'text', text: `${STOP_FRAME}✓ sent` }] }), null, 'the model\'s copy is left alone');
+  assert.equal(book.rewrite(notice('✓ sent')), null, 'no frame');
+  assert.deepEqual(book.rewrite(notice(`${STOP_FRAME}✓ sent`)), notice('✓ sent'));
+  assert.equal(book.rewrite(notice(`${STOP_FRAME}✓ sent`)), null, 'once');
+  book.expect('a'); book.expect('b'); book.expect('c');
+  assert.equal(book.size, 2, 'a stop whose row never came is forgotten');
+  assert.equal(book.rewrite(notice(`${STOP_FRAME}a`)), null);
+  assert.deepEqual(book.rewrite(notice(`${STOP_FRAME}c`)), notice('c'));
+  book.expect(''); book.expect(undefined);
+  assert.equal(book.size, 1);
+  assert.equal(book.rewrite(null), null);
+  assert.equal(book.rewrite({ type: 'system', content: [{ type: 'text', text: `${STOP_FRAME}b` }, { type: 'text', text: 'x' }] }), null, 'one text block only');
+});

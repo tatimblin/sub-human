@@ -134,6 +134,22 @@ test('receipt is "✓ sent" plus the unwrap note, and nothing else (no room code
   assert.equal(r.json.systemMessage, undefined, 'systemMessage is not rendered with continue:false');
 });
 
+test('a receipt is a one-line stop (continue:false), so the module shows its warning row as the receipt alone', async () => {
+  const { receiptBook, STOP_FRAME } = await import(path.join(PLUGIN, 'mod', 'core', 'prompt.ts'));
+  const w = new World({ claude: 'sleep', alice: 'act' });
+  for (const p of ['@room hello', '@claude plan it']) {
+    const r = atRoom(w, submit(p), { as: 'alice' });
+    assert.equal(r.json.continue, false, p);
+    assert.equal(r.json.decision, undefined, p);
+    assert.doesNotMatch(r.json.stopReason, /\n/, p);
+    // what Claude Code draws for the stop (cc CONTRACT ups-stop-frame), after the module saw that stop
+    const book = receiptBook();
+    book.expect(r.json.stopReason);
+    const row = { type: 'system', content: [{ type: 'text', text: STOP_FRAME + r.json.stopReason }] };
+    assert.deepEqual(book.rewrite(row).content, [{ type: 'text', text: r.json.stopReason }], p);
+  }
+});
+
 test('@claude: only a leading tag posts the words to=claude (the wake); "@room @claude", a mid-text tag and other prompts are not wakes', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   assert.equal(posted(atRoom(w, submit('@claude let us plan cursor paging'), { as: 'alice' })), '✓ sent');

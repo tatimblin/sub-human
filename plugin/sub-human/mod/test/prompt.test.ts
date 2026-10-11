@@ -95,6 +95,44 @@ test('a typed @room posts through node: ✓ sent stops the prompt; sdk and bridg
   expect(seen.classic[0].stopReason).toBe('✓ sent')
 })
 
+// The test kit has no bottom for session.append in 2.1.292 (a test's answer without next is skipped, and next has no
+// implementation, so the call rejects): the test's hook beneath records the row the module handed down.
+function rows(on: any) {
+  const kept: string[] = []
+  on('session.append', ($: any, e: any, next: any) => { kept.push(e.message.content[0].text); return next(e) })
+  let n = 0
+  return async ($: any, text: string, type = 'system', door = 'notice') => {
+    await $.session.append({
+      message: { type, ...(type === 'system' ? { name: 'informational' } : { role: 'user', isMeta: true }), content: [{ type: 'text', text }] },
+      door, origin: { kind: 'engine' }, uuid: `u${n++}`,
+    }).catch(() => null)
+    return kept.at(-1)
+  }
+}
+
+test('an @room receipt shows as itself: its stop\'s warning row loses "Operation stopped by hook: ", no other row does', async ($, on) => {
+  const seen = world($, on, { prompt: JSON.stringify({ continue: false, stopReason: '✓ sent' }) })
+  const append = rows(on)
+  await start($)
+  expect(await append($, 'Operation stopped by hook: ✓ sent')).toBe('Operation stopped by hook: ✓ sent') // nothing posted yet
+  await submit($, '@room ship it')
+  expect(seen.classic[0].stopReason).toBe('✓ sent')
+  expect(await append($, 'Operation stopped by hook: ✓ sent', 'user', 'note')).toBe('Operation stopped by hook: ✓ sent') // the model's copy
+  expect(await append($, 'Operation stopped by hook: another plugin')).toBe('Operation stopped by hook: another plugin')
+  expect(await append($, 'Operation stopped by hook: ✓ sent')).toBe('✓ sent')
+  expect(await append($, 'Operation stopped by hook: ✓ sent')).toBe('Operation stopped by hook: ✓ sent') // once per stop
+})
+
+test('a refused @room (a block) leaves no receipt waiting', async ($, on) => {
+  const refused = { decision: 'block', reason: '✗ not posted: the room is offline', hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true } }
+  world($, on, { prompt: JSON.stringify(refused) })
+  const append = rows(on)
+  await start($)
+  await submit($, '@room ship it')
+  const frame = 'Operation stopped by hook: ✗ not posted: the room is offline'
+  expect(await append($, frame)).toBe(frame)
+})
+
 test('a classic UserPromptSubmit with no prompt.submit above it (a lost hand-off) runs node without an origin or nonce', async ($, on) => {
   const seen = world($, on)
   await start($)

@@ -24,7 +24,7 @@
  * - noise: UI lines per capture of the seat's pane: the plugin prompt's framing ("The sub-human
  *   plugin sent a message", one per row), "Waiting for N background agents",
  *   "hook error", "blocked by hook", "Invalid tool parameters"; `perCapture` = all of them / captures,
- *   `perCaptureExWaiting` without "Waiting for". "Operation stopped by hook" (the @room receipt) is counted
+ *   `perCaptureExWaiting` without "Waiting for". The @room receipt ("⏺ ✓ sent") is counted
  *   apart as `receipts`, not noise. `red`: lines drawn in a red foreground (from the .ansi capture) or
  *   reading "hook error".
  * - cards: for each consent card or plan-view review (an AskUserQuestion or ExitPlanMode call naming a proposal
@@ -195,6 +195,9 @@ function isRed(line) {
   return false;
 }
 
+/** An @room receipt line: "⏺ ✓ sent" / "⏺ ⧗ queued: …" (0.5.0-beta.9), or the older "Operation stopped by hook: …". */
+const RECEIPT = /^⏺ (?:Operation stopped by hook: )?[✓⧗] |Operation stopped by hook/;
+
 function noiseFor(screens, index, seat) {
   const caps = index.filter(r => r.session === `sh-${seat}`);
   const n = { captures: caps.length, lines: 0, receipts: 0, red: 0 };
@@ -203,7 +206,7 @@ function noiseFor(screens, index, seat) {
     let t = '';
     try { t = fs.readFileSync(path.join(screens, r.txt), 'utf8'); } catch { continue; }
     for (const l of t.split('\n')) {
-      if (/Operation stopped by hook/.test(l)) n.receipts++;
+      if (RECEIPT.test(l)) n.receipts++;
       let hit = false;
       for (const [k, re] of Object.entries(NOISE)) if (re.test(l)) { n[k]++; hit = true; }
       if (hit) n.lines++;
