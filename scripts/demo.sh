@@ -9,8 +9,9 @@
 #                   seat panes 120×36, prompts typed a key at a time, every pane recorded by scripts/capture.js into
 #                   trailer/capture/NAME/ (capture.jsonl + run.json; NAME defaults to take-DATE-TIME) with a marker
 #                   per beat. The seats are clones of one git repo (/tmp/sh-demo/origin.git), and S6b builds the
-#                   agreed plan: alice's Claude the handler, bob's Claude the tests; both push, and both people pull
-#                   and run npm test. Checks run at the end; their verdict goes in run.json.
+#                   agreed plan: alice's Claude the handler, bob's Claude the tests (an Explore subagent reads the code
+#                   first); both push, and both people pull and run npm test. After bob joins, alice and then bob
+#                   open the room row in their agent panel. Checks run at the end; their verdict goes in run.json.
 #   scripts/demo.sh stop            kill the sh-* tmux sessions (never numbered ones), and stop a capture
 #
 # The room's Claude has no tmux seat: the first /sub-human starts it as a `claude --bg` job (claude.CODE). Its "pane" in
@@ -65,7 +66,7 @@ while [ $# -gt 0 ]; do
     --no-reset) RESET=0 ;;
     --film) FILM=1 ;;
     --take) TAKE="$2"; shift ;;
-    -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
@@ -279,7 +280,28 @@ wait_card() {
 
 # card_answer SEAT CHOICE [NOTE] — answer the open proposal: Not yet (Esc) / Agree (the "Yes" that keeps the mode) /
 # Object + note ("Tell Claude what to change"); on the fallback card, its own options
-card_answer() { $LIB card "sh-$1" "$2" "${3:-}"; }
+# DWELL (film, S5's revision): paging the plan view, rest 1.5 s on the first page that matches it
+DWELL=""
+card_answer() { $LIB card "sh-$1" "$2" "${3:-}" ${DWELL:+--dwell "$DWELL"}; }
+
+# show_room SEAT OTHER (film): the person opens the room row in their agent panel (↓ onto it, Enter), and the members
+# show inside it (└ OTHER). A 2 s look, then back: ↑ to main and Enter (the room view closes, the cursor stays on main),
+# then one ↑ to the prompt. One only: a second ↑ with the focus already on the prompt recalls the last prompt (S7, S8).
+show_room() {
+  local s=$1 o=$2
+  need $LIB wait-idle "sh-$s" --timeout 60 || return 1
+  need $LIB select-row "sh-$s" "$(room)" || return 1
+  keys "$s" Enter
+  need wait_pane "$s" "^\s*└\s*[⏺◯●]\s+$o(\s|$)" 15 --what "$s's panel shows $o inside the $(room) row" || return 1
+  mkdir -p "$SNAP_DIR/state/$SCENE"; $LIB pane "sh-$s" > "$SNAP_DIR/state/$SCENE/panel-$s.txt"
+  sleep 2   # the look (no paint wait: the row's view keeps a live spinner and token count)
+  need $LIB select-row "sh-$s" main --key Up || return 1
+  keys "$s" Enter
+  need wait_pane "$s" "─ $(room) ─" 10 --absent --what "$s's room view closed" || return 1
+  need wait_pane "$s" "^❯\s+[⏺◯●]\s+main(\s|$)" 5 --what "$s's panel cursor stays on main" || return 1
+  keys "$s" Up
+  need wait_pane "$s" "^❯\s+(└\s*)?[⏺◯●]\s" 5 --absent --what "$s's focus is back on the prompt" || return 1
+}
 
 # ---------- scenes ------------------------------------------------------------------------------
 
@@ -312,6 +334,11 @@ S2() { # bob joins
   need $LIB wait-holds alice bob --timeout 90 || return 1
   settle alice bob
   snap "bob joins: bob nested in alice's room row, alice in bob's; the room's Claude lists both"
+  if [ "$FILM" = 1 ]; then
+    mark panel "Everyone in the room shows up in your agent panel"
+    show_room alice bob || return 1
+    show_room bob alice || return 1
+  fi
 }
 
 S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
@@ -382,6 +409,7 @@ read_plan() {
 }
 
 NOTE5="add a test for a cursor past the end — \`after=zzz\` must 400, not 500"
+DWELL5='bob asked|400, not 500'   # the revision's page with bob's note (in the room's Claude's words, so either)
 
 S5() { # bob objects with a note, alice agrees; the room's Claude revises; both agree → decision
   local p1; p1=$($LIB last-id --kind proposal)
@@ -399,9 +427,11 @@ S5() { # bob objects with a note, alice agrees; the room's Claude revises; both 
   paint sh-alice; paint sh-bob   # the plan view's first paint
   snap "The room's Claude revises: a new proposal, opened again for each"
   local p2; p2=$($LIB last-id --kind proposal)
-  need card_answer alice Agree || return 1
-  need wait_log --kind signoff --from alice --via human --after "$p2" --timeout 30 || return 1
-  need card_answer bob Agree || return 1
+  [ "$FILM" = 1 ] && DWELL="$DWELL5"   # each stops on the page with bob's note before paging on
+  need card_answer alice Agree || { DWELL=""; return 1; }
+  need wait_log --kind signoff --from alice --via human --after "$p2" --timeout 30 || { DWELL=""; return 1; }
+  need card_answer bob Agree || { DWELL=""; return 1; }
+  DWELL=""
   need wait_log --kind decision --after "$p2" --timeout 30 || return 1
   mark agreed "Both agree: the decision is logged"
   need $LIB wait-idle sh-alice --timeout 90 || return 1
@@ -445,52 +475,64 @@ S6() { # shared tasks: alice's Claude adds, then claims, the room's Claude appli
 
 # S6b (--film only): the agreed plan, built. alice's Claude puts its two halves on the room task list, one for each
 # person; each Claude claims its own and builds it in its own checkout (alice's: the handler in src/, bob's: the tests in
-# test/), pushes to the shared origin, and alice's Claude tells bob's when the handler is in. Then alice and bob pull and
-# run npm test themselves (Claude Code's ! bash mode: no model turn), and the driver re-runs it in both checkouts as
-# evidence (state/S6b).
-TASK6b_H="paging handler: src/server.js + src/store.js"
-TASK6b_T="paging tests: test/paging.test.js"
-RUN6b="npm test --silent | grep -E ' (tests|pass|fail) [0-9]+$'"   # node --test's summary: ℹ tests 6 / ℹ pass 6 / ℹ fail 0
-PASS6b='[ℹ#] pass [1-9][0-9]*\s*\n\s*(⎿\s*)?[ℹ#] fail 0\s*$'      # that summary under the person's own run
+# test/, after an Explore subagent of its own reads the code: its row shows in bob's panel next to the room row), pushes
+# to the shared origin, and alice's Claude tells bob's when the handler is in. Then alice and bob pull and run npm test
+# themselves (Claude Code's ! bash mode), and the driver re-runs it in both checkouts as evidence (state/S6b).
+# The prompts are what a person would type, with no tool names. Which task is whose comes from the log (alice's add
+# request names the owner, the room's Claude's add cites the request), so the subjects can be the Claude's own words.
+RUN6b="git pull && npm test"
+# node --test's summary under a run: ℹ pass 6 / ℹ fail 0 / … / ℹ duration_ms 81.2 (the duration makes each run's its own)
+PASS6b='[ℹ#] pass [1-9][0-9]*\s*\n\s*(⎿\s*)?[ℹ#] fail 0\s*\n(\s*[ℹ#] [a-z]+ [0-9]+\s*\n){0,4}\s*[ℹ#] duration_ms [0-9.]+'
+
+stop_bg() { pkill -P "$1" 2>/dev/null; kill "$1" 2>/dev/null; return 0; }   # a background ( … ) and what it runs
 
 S6b() {
   [ -d "$BASE/origin.git" ] || { ABORT="S6b: the seats are not git checkouts (S6b needs a --film run from S1)"; return 1; }
   local before; before=$($LIB log-max)
+  local d="$SNAP_DIR/state/S6b" seat; mkdir -p "$d"
   mark split "alice's Claude splits the plan into two tasks: one for her, one for bob"
-  submit alice "the plan is agreed: put its two halves on the room task list. Call the mcp__plugin_sub-human_room__task tool twice with op \"add\": subject \"$TASK6b_H\" for \"alice\", and subject \"$TASK6b_T\" for \"bob\". Only those two calls: do not edit any file"
+  submit alice "the plan's agreed. split it into two tasks on the room's task list: the handler for me, the tests for bob. just the tasks for now"
   need wait_log --kind task_req --from alice --after "$before" --count 2 --timeout 120 --what "alice's Claude asks for both tasks" || return 1
-  need $LIB wait-tasks --subject "$TASK6b_H" --timeout 180 || return 1
-  need $LIB wait-tasks --subject "$TASK6b_T" --timeout 180 || return 1
-  local h t; h=$($LIB task-id --subject "$TASK6b_H"); t=$($LIB task-id --subject "$TASK6b_T")
-  [ -n "$h" ] && [ -n "$t" ] || { ABORT="S6b: no task ids in tasks.json for the two halves"; return 1; }
+  local h t
+  h=$($LIB task-for --owner alice --after "$before" --timeout 180 --what "the room's Claude adds alice's task (the handler)")
+  t=$($LIB task-for --owner bob --after "$before" --timeout 180 --what "the room's Claude adds bob's task (the tests)")
+  [ -n "$h" ] && [ -n "$t" ] || { ABORT="S6b: the room's Claude did not add one task for alice and one for bob"; return 1; }
   settle alice
   snap "alice's Claude puts the agreed plan's two halves on the room task list: #$h the handler, #$t the tests"
 
   mark build "Each Claude builds its half in its own checkout"
-  submit alice "claim #$h (mcp__plugin_sub-human_room__task, op \"claim\", id \"$h\"), then build GET /tasks paging exactly as the room decided, in src/server.js and src/store.js only. When npm test passes: git commit, git pull --rebase, git push. Then ask done on #$h with that test run as evidence, and tell bob's Claude in one line that the handler is pushed"
-  submit bob "claim #$t (mcp__plugin_sub-human_room__task, op \"claim\", id \"$t\"), then write the tests for the paging the room decided, in test/paging.test.js only: src/ is alice's, never edit it. git commit, git pull --rebase, git push. Once alice's Claude says the handler is pushed: git pull and npm test; when it passes, ask done on #$t with that run as evidence"
+  submit alice "claim #$h and build the paging handler the way we agreed, in src/server.js and src/store.js only. when npm test passes, commit, pull --rebase and push. then mark #$h done on the room's list with that test run, and tell bob's Claude the handler's pushed"
+  # bob's Claude sends an Explore subagent first: watch his panel for its row from before he types, and mark the beat
+  # the moment it shows (the S6b check reads the saved pane)
+  ( $LIB wait-subagent-row sh-bob --save "$d/panel-subagent-bob.txt" --timeout 900 --what "bob's panel shows his Claude's own subagent" > "$d/subagent-rows-bob.txt" \
+    && mark subagent "bob's Claude sends a subagent to read the code: it shows in his panel" ) &
+  local ps=$!
+  submit bob "claim #$t and write the tests for the paging we agreed, in test/paging.test.js only. have an Explore subagent read src/server.js and src/store.js first. src/ is alice's, don't touch it. commit, pull --rebase and push. once alice's Claude says the handler's pushed, pull, run npm test, and mark #$t done on the room's list with that run"
   # play both people while their Claudes work: any permission dialog gets "Yes" until that seat's task is completed
   $LIB approve-until sh-alice --task-done "$h" --timeout 900 & local pa=$!
   $LIB approve-until sh-bob --task-done "$t" --timeout 900 & local pb=$!
   if ! $LIB wait-tasks --id "$h" --owner alice --status in_progress --timeout 180 || ! $LIB wait-tasks --id "$t" --owner bob --status in_progress --timeout 180; then
-    kill "$pa" "$pb" 2>/dev/null; ABORT="S6b: the claims of #$h (alice) and #$t (bob) were not applied"; return 1
+    kill "$pa" "$pb" 2>/dev/null; stop_bg "$ps"; ABORT="S6b: the claims of #$h (alice) and #$t (bob) were not applied"; return 1
   fi
   mark claimed "Each claims its own task on the room's list"
-  wait "$pa" || { kill "$pb" 2>/dev/null; ABORT="S6b: alice's task #$h was not completed (900 s)"; return 1; }
+  wait "$pa" || { kill "$pb" 2>/dev/null; stop_bg "$ps"; ABORT="S6b: alice's task #$h was not completed (900 s)"; return 1; }
   mark handler "alice's Claude pushes the handler and tells bob's Claude"
-  wait "$pb" || { ABORT="S6b: bob's task #$t was not completed (900 s)"; return 1; }
+  wait "$pb" || { stop_bg "$ps"; ABORT="S6b: bob's task #$t was not completed (900 s)"; return 1; }
+  [ -s "$d/panel-subagent-bob.txt" ] || { stop_bg "$ps"; record "bob's panel showed no subagent row while his Claude built" fail; }
   mark tested "bob's Claude pulls it: his tests pass against her handler"
   need $LIB wait-idle sh-alice --timeout 180 || return 1
   need $LIB wait-idle sh-bob --timeout 180 || return 1
   snap "Both halves built: alice's Claude completes #$h and bob's Claude #$t, each on its own test run"
 
   mark tests "alice and bob pull and run the tests themselves"
-  submit alice "!git pull -q --rebase && $RUN6b"
-  submit bob "!git pull -q --rebase && $RUN6b"
-  need wait_pane alice "$PASS6b" 120 --below "npm test --silent" --what "alice's pane: her npm test passes" || return 1
-  need wait_pane bob "$PASS6b" 120 --below "npm test --silent" --what "bob's pane: his npm test passes" || return 1
+  # the whole npm test output scrolls the typed line off a 36-row pane: wait for a summary that was not there before
+  $LIB wait-pane sh-alice "$PASS6b" --new --timeout 150 --what "alice's pane: her npm test passes" & local wa=$!
+  $LIB wait-pane sh-bob "$PASS6b" --new --timeout 150 --what "bob's pane: his npm test passes" & local wb=$!
+  submit alice "!$RUN6b"
+  submit bob "!$RUN6b"
+  wait "$wa" || { kill "$wb" 2>/dev/null; ABORT="S6b: timed out waiting: alice's npm test passing in her pane"; return 1; }
+  wait "$wb" || { ABORT="S6b: timed out waiting: bob's npm test passing in his pane"; return 1; }
   mark pass "npm test passes in both checkouts"
-  local d="$SNAP_DIR/state/S6b" seat; mkdir -p "$d"
   echo "$h $t" > "$d/tasks.txt"
   for seat in alice bob; do
     $LIB pane "sh-$seat" > "$d/pane-$seat.txt"

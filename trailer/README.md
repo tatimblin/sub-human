@@ -40,8 +40,9 @@ Props (all optional): `take`, `music` (a URL or a path under `public/`, faded in
   to `fit` seconds. Anything over 1.3× shows a small clock badge. A segment also names its caption, the camera
   (`pane` + `zoom` + `find`: centre on the row holding some text) and callouts.
 
-The cuts use the beats `demo.sh --film` marks: `open`, `join`, `talk`, `reply`, `claudes`, `plan`, `proposal`,
-`answers`, `revision`, `agreed`, `split`, `build`, `claimed`, `handler`, `tested`, `tests` and `pass`. Inside a beat
+The cuts use the beats `demo.sh --film` marks: `open`, `join`, `panel`, `talk`, `reply`, `claudes`, `plan`, `proposal`,
+`answers`, `revision`, `agreed`, `split`, `build`, `subagent`, `claimed`, `handler`, `tested`, `tests` and `pass`
+(`subagent` lands when the row shows, so it can come before `claimed`). Inside a beat
 they anchor on what a pane shows: demo.sh's own waits (`alice: bob, can you take the parser tests`,
 `must 400, not 500`) and Claude Code's lines (`You've joined room`, `☐ Consent`, `Write(test/`, `ℹ pass`). Typed
 input sits after `❯` and a no-break space, so anchor on the typed text itself (`@ro`, `ask al`), not on `❯ `. If a take lacks a segment's anchors, the segment is skipped with an `[edl]` warning. The

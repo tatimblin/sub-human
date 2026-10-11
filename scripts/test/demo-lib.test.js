@@ -40,6 +40,61 @@ test('demo.sh --film: the story scenes only, S6b defined, every mark has a short
   for (const m of marks) assert.ok(m[2].length > 0 && m[2].length <= 80, `caption for ${m[1]}: ${m[2]}`);
 });
 
+test('demo-lib: wait-pane --new takes only a summary the pane did not show before; demo.sh\'s PASS6b reads a real run', () => {
+  const { newMatches } = require('../demo-lib.js');
+  const sh = fs.readFileSync(DEMO_SH, 'utf8');
+  const src = /^PASS6b='([^']+)'/m.exec(sh)[1];
+  // the end of a ! git pull && npm test in a 36-row pane (Claude Code 2.1.292): the typed line has scrolled off
+  const sum = ms => `     ✔ GET /health (16.5ms)\n     ℹ tests 32\n     ℹ suites 0\n     ℹ pass 32\n     ℹ fail 0\n     ℹ cancelled 0\n     ℹ skipped 0\n     ℹ todo 0\n     ℹ duration_ms ${ms}\n`;
+  const before = `⏺ Bash(npm test)\n${sum('90.2')}\n⏺ All pass.\n❯ \n`;
+  assert.deepEqual(newMatches(src, before, before), []);
+  const after = `${sum('90.2')}\n⏺ All pass.\n${sum('497.934875')}\n⏺ This pull added 24 more test files.\n❯ \n`;
+  const got = newMatches(src, before, after);
+  assert.equal(got.length, 1);
+  assert.match(got[0], /duration_ms 497\.934875$/);
+  assert.deepEqual(newMatches(src, '', sum('1.2').replace('fail 0', 'fail 1')), []);
+  assert.deepEqual(newMatches(src, '', 'ℹ pass 3\nℹ fail 0\n'), []); // cut off: not the whole summary yet
+  assert.match(sh, /^RUN6b="git pull && npm test"$/m);
+});
+
+test('demo-lib taskFor: the task the room\'s Claude added for a person\'s add request, after an id', () => {
+  const { taskFor } = require('../demo-lib.js');
+  const log = [
+    { id: 3, kind: 'task_req', from: 'alice', op: 'add', subject: 'Paging handler', owner: 'alice' },
+    { id: 4, kind: 'task_req', from: 'alice', op: 'add', subject: 'Paging tests', owner: 'bob' },
+    { id: 5, kind: 'task', from: 'claude', op: 'add', task_id: '2', subject: 'Paging handler', req: 3 },
+    { id: 7, kind: 'task_req', from: 'bob', op: 'claim', task_id: '2', owner: 'bob' },
+  ];
+  assert.equal(taskFor(log, 'alice', 2), '2');
+  assert.equal(taskFor(log, 'bob', 2), null); // asked, not applied yet
+  assert.equal(taskFor([...log, { id: 6, kind: 'task', op: 'add', task_id: '3', req: 4 }], 'bob', 2), '3');
+  assert.equal(taskFor(log, 'alice', 3), null); // only requests after the id
+});
+
+test('panes: an opened room row and its members; a Claude\'s own subagent rows (Claude Code 2.1.292)', () => {
+  const { roomRowMembers, subagentRows } = require('../lib/panes.js');
+  // alice after ↓ ↓ Enter on the room row: the room view, bob inside the row
+  const open = '─── egret-7989 ─\n❯ Message @sub-human:room…\n────\n  ↑/↓ to select · ctrl+x ctrl+k to stop all agents\n\n  ◯ main\n❯ ⏺ egret-7989  +bob joined · 2 here\n  └ ◯ bob  working\n';
+  assert.deepEqual(roomRowMembers(open, 'egret-7989').members, ['bob']);
+  assert.deepEqual(roomRowMembers('  ⏺ main\n  ◯ egret-7989  2 here\n', 'egret-7989').members, []);
+  assert.equal(roomRowMembers(open, 'swan-6397'), null);
+  assert.deepEqual(subagentRows(open, 'egret-7989'), []);
+  const sub = '  ⏺ main\n  ◯ egret-7989  +alice joined · 2 here\n  ◯ Explore  Explain GET /tasks flow                     4s · ↓ 19.3k tokens\n';
+  assert.deepEqual(subagentRows(sub, 'egret-7989').map(r => [r.label, r.text.split('  ')[0]]), [['Explore', 'Explain GET /tasks flow']]);
+});
+
+test('demo.sh --film: the panel beat opens the room row and comes back with one ↑; S6b prompts name no tool', () => {
+  const sh = fs.readFileSync(DEMO_SH, 'utf8');
+  const show = /^show_room\(\) \{\n([\s\S]*?)\n\}/m.exec(sh)[1];
+  assert.match(show, /select-row "sh-\$s" "\$\(room\)"/);
+  assert.match(show, /select-row "sh-\$s" main --key Up/);
+  assert.equal((show.match(/keys "\$s" Up/g) || []).length, 1);
+  assert.match(sh, /mark panel "Everyone in the room shows up in your agent panel"/);
+  const s6b = /^S6b\(\) \{\n([\s\S]*?)\n\}/m.exec(sh)[1];
+  for (const m of s6b.matchAll(/submit (?:alice|bob) "([^"]*)"/g)) assert.doesNotMatch(m[1], /mcp__|op \\"|tool/, m[1]);
+  assert.match(s6b, /wait-subagent-row sh-bob/);
+});
+
 test('demo-lib: demo.sh edits no JSON inline (node -e)', () => {
   assert.doesNotMatch(fs.readFileSync(DEMO_SH, 'utf8'), /node -e/);
 });

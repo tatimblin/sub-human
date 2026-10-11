@@ -18,6 +18,21 @@ function panelRows(txt) {
   return out;
 }
 
+/** The room row and the members shown inside it (an opened room row: └ rows under it), or null: {room, members}. */
+function roomRowMembers(txt, code) {
+  const rows = panelRows(txt);
+  const i = rows.findIndex(r => !r.nested && r.label === code);
+  if (i < 0) return null;
+  const members = [];
+  for (const r of rows.slice(i + 1)) { if (!r.nested) break; members.push(r.label); }
+  return { room: rows[i], members };
+}
+
+/** Top-level panel rows besides main and the room row: a Claude's own subagents (◯ Explore  Read server and store). */
+function subagentRows(txt, code) {
+  return panelRows(txt).filter(r => !r.nested && r.label !== code && r.label !== 'main');
+}
+
 /** Status line under the prompt (the ⬡ line between the prompt box and the panel). */
 function statusLine(txt) {
   const l = (txt || '').split('\n').filter(x => /^\s*⬡\s/.test(x)).at(-1);
@@ -85,4 +100,4 @@ function admitCardState(p) {
   return opts.length ? { opts } : null;
 }
 
-module.exports = { MAIN_ROW, panelRows, statusLine, cardState, planState, joinLineIn, joinNotices, admitCardState };
+module.exports = { MAIN_ROW, panelRows, roomRowMembers, subagentRows, statusLine, cardState, planState, joinLineIn, joinNotices, admitCardState };
