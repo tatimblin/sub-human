@@ -14,8 +14,12 @@
  *   demo-lib.js ready <session> [--timeout S]     handle the trust dialog (choose "Yes, I trust this folder"
  *                                                  explicitly), then wait for the prompt
  *   demo-lib.js pane <session>                    print the pane as plain text
- *   demo-lib.js wait-pane <session> <regex> [--timeout S] [--absent] [--what TEXT] [--below REGEX]
- *                                                  (--below: only the pane text under the last line matching REGEX)
+ *   demo-lib.js wait-pane <session> <regex> [--timeout S] [--absent] [--what TEXT] [--below REGEX] [--new]
+ *                                                  (--below: only the pane text under the last line matching REGEX;
+ *                                                  --new: only a match whose text was not in the pane when the wait began)
+ *   demo-lib.js wait-subagent-row <session> [--save FILE] [--timeout S]   wait until the agent panel shows a row of
+ *                                                  the seat's own subagent (a top-level row besides main and the room);
+ *                                                  --save: that pane's text, at that moment
  *   demo-lib.js wait-paint <session> [--quiet S] [--timeout S]   wait until the pane has text and is unchanged
  *                                                  for --quiet S (1; spinners and elapsed counters ignored);
  *                                                  recorded in waits.jsonl only when it times out
@@ -48,12 +52,16 @@
  *                                                  "Let in" on it (the person's own answer; S11)
  *   demo-lib.js wait-idle <session> [--timeout S] [--quiet S]   wait until the main prompt is idle (no
  *                                                  "esc to interrupt" and the pane unchanged for --quiet S, 3)
- *   demo-lib.js card <session> <Not yet|Agree|Object> [note]   answer the open proposal: in the plan view (Agree =
- *                                                  the "Yes" that keeps the seat's mode, Object = "Tell Claude what
- *                                                  to change" + note, Not yet = Esc) or, the fallback, on the card
+ *   demo-lib.js card <session> <Not yet|Agree|Object> [note] [--dwell REGEX]   answer the open proposal: in the plan
+ *                                                  view (Agree = the "Yes" that keeps the seat's mode, Object = "Tell
+ *                                                  Claude what to change" + note, Not yet = Esc) or, the fallback, on the
+ *                                                  card. --dwell: paging the plan view, rest 1.5 s on the first page
+ *                                                  that matches REGEX (the film: a person reading that part)
  *   demo-lib.js wait-native-task <subject> [--timeout S]   wait until the room Claude's native list has it
  *   demo-lib.js wait-tasks [--owner N] [--id N] [--subject S] [--status S] [--timeout S]   wait on <room>/tasks.json
  *   demo-lib.js task-id [--owner N] [--subject S]   print the id of the newest such task in <room>/tasks.json
+ *   demo-lib.js task-for --owner N [--after ID] [--timeout S]   wait until the room's Claude has applied the newest
+ *                                                  task add asked for N (after log entry ID); print its task id
  *   demo-lib.js wait-claude-idle [--after ID] [--timeout S]   wait until the room Claude's transcript has an
  *                                                  end_turn after log entry ID and 6 s of quiet
  *   demo-lib.js wait-job-gone [--timeout S]       wait until `claude agents --json` no longer lists the room's Claude job
@@ -82,7 +90,7 @@ const { execFileSync, spawn, spawnSync } = require('node:child_process');
 const { roomCode, readLog, strip } = require('./snap.js');
 const paths = require('./lib/paths.js');
 const { readJson, jsonl, esc } = require('./lib/io.js');
-const { panelRows, cardState, planState, joinLineIn, admitCardState } = require('./lib/panes.js');
+const { panelRows, subagentRows, cardState, planState, joinLineIn, admitCardState } = require('./lib/panes.js');
 
 const REPO = paths.REPO;
 const SNAP_DIR = () => (process.env.SNAP_DIR ? path.resolve(process.env.SNAP_DIR) : path.join(REPO, 'docs/rebuild/screens'));
@@ -226,7 +234,7 @@ function filterLog(o) {
   return es;
 }
 
-const FLAGS = ['absent', 'latest-plan', 'fresh']; // options that take no value
+const FLAGS = ['absent', 'latest-plan', 'fresh', 'new']; // options that take no value
 
 function opts(args) {
   const o = { _: [] };
@@ -309,12 +317,33 @@ function paneBelow(text, below) {
   return i < 0 ? '' : lines.slice(i + 1).join('\n');
 }
 
+/** The texts of re's matches in now that were not in before (re's source, matched line-wise and globally). */
+function newMatches(src, before, now) {
+  const all = t => [...String(t || '').matchAll(new RegExp(src, 'gm'))].map(m => m[0]);
+  const old = new Set(all(before));
+  return all(now).filter(m => !old.has(m));
+}
+
 async function waitPane(o, T) {
   const [session, src] = o._;
   const re = new RegExp(src, 'm');
-  const what = o.what || `${session} pane ${o.absent ? '!~' : '~'} /${src}/${o.below ? ` below /${o.below}/` : ''}`;
+  const what = o.what || `${session} pane ${o.absent ? '!~' : '~'} /${src}/${o.below ? ` below /${o.below}/` : ''}${o.new ? ' (new)' : ''}`;
   const text = () => paneBelow(pane(session), o.below);
-  return exit(await until(what, T, () => (o.absent ? !re.test(text()) : re.test(text()))));
+  const before = o.new ? text() : '';
+  return exit(await until(what, T, () => (o.absent ? !re.test(text()) : o.new ? newMatches(src, before, text()).length > 0 : re.test(text()))));
+}
+
+async function waitSubagentRow(o, T) {
+  const session = o._[0];
+  const rows = await until(o.what || `${session}: a subagent's row in the agent panel`, T, () => {
+    const p = pane(session);
+    const r = subagentRows(p, roomCode());
+    if (!r.length) return false;
+    if (o.save) { fs.mkdirSync(path.dirname(o.save), { recursive: true }); fs.writeFileSync(o.save, p + '\n'); }
+    return r;
+  });
+  if (rows) print(rows.map(r => r.line).join('\n'));
+  return exit(rows);
 }
 
 /** A pane's text without spinner glyphs and elapsed counters (they change while nothing else does). */
@@ -427,10 +456,20 @@ async function waitIdle(o, T) {
 }
 
 /** Answer a proposal open in the plan view: Not yet = Esc, Agree = the "Yes" that keeps the mode, Object = change + note. */
-async function answerPlanView(session, pv, choice, note) {
+async function answerPlanView(session, pv, choice, note, dwell) {
   if (choice === 'Not yet') { await keys(session, ['Escape']); record(`${session}: closed the plan view (Esc)`, true, 0); return 0; }
   // read it all, as a person would: PgDn to the end, where the hook's line names the proposal and the "Yes" that keeps the mode
-  for (let i = 0; i < 40 && !/room proposal [0-9a-f]{12}/.test(pane(session)); i++) { await keys(session, ['PageDown']); await sleep(250); }
+  // (--dwell: a rest on the first page that shows that part)
+  const dwellRe = dwell ? new RegExp(dwell, 'm') : null;
+  let dwelt = false;
+  const rest = async () => {
+    if (!dwellRe || dwelt || !dwellRe.test(pane(session))) return;
+    dwelt = true;
+    await sleep(1500);
+    record(`${session}: rested 1.5 s on the plan page that shows /${dwell}/`, true, 1500);
+  };
+  await rest();
+  for (let i = 0; i < 40 && !/room proposal [0-9a-f]{12}/.test(pane(session)); i++) { await keys(session, ['PageDown']); await sleep(250); await rest(); }
   const keep = (/Agree: "([^"]+)" keeps/.exec(pane(session).replace(/\s*\n\s*│?\s*/g, ' ')) || [])[1];
   const want = choice === 'Agree'
     ? pv.opts.find(x => x.label === keep) || pv.opts.find(x => /^Yes/.test(x.label))
@@ -507,7 +546,7 @@ async function card(o, T) {
   if (!(await until(`${session}: proposal open (plan view or card)`, T, () => planState(pane(session)) || cardState(pane(session))))) return 1;
   await sleep(1200);
   const pv = planState(pane(session));
-  return pv ? answerPlanView(session, pv, choice, note) : answerCard(session, choice, note);
+  return pv ? answerPlanView(session, pv, choice, note, o.dwell) : answerCard(session, choice, note);
 }
 
 async function waitNativeTask(o, T) {
@@ -530,6 +569,19 @@ async function taskId(o) {
   const t = roomTasks().filter(x => (!o.owner || x.owner === o.owner) && (!o.subject || x.subject === o.subject)).at(-1);
   print(t ? t.id : '');
   return exit(t);
+}
+
+/** The task id the room's Claude gave the newest add asked for owner (a task_req add after `after`), or null. */
+function taskFor(log, owner, after = 0) {
+  const req = log.filter(e => e.kind === 'task_req' && e.op === 'add' && e.owner === owner && e.id > +after).at(-1);
+  const t = req && log.find(e => e.kind === 'task' && e.op === 'add' && e.req === req.id);
+  return t ? String(t.task_id) : null;
+}
+
+async function taskForCmd(o, T) {
+  const id = await until(o.what || `the room's Claude adds the task asked for ${o.owner}`, T, () => taskFor(readLog(roomCode()), o.owner, o.after || 0));
+  if (id) print(id);
+  return exit(id);
 }
 
 async function roomClaudeTranscriptCmd() {
@@ -664,6 +716,8 @@ const COMMANDS = {
   'wait-native-task': waitNativeTask,
   'wait-tasks': waitTasks,
   'task-id': taskId,
+  'task-for': taskForCmd,
+  'wait-subagent-row': waitSubagentRow,
   'claude-transcript': roomClaudeTranscriptCmd,
   'wait-claude-idle': waitRoomClaudeIdle,
   'wait-job-gone': waitJobGone,
@@ -690,4 +744,4 @@ async function main(argv = process.argv.slice(2)) {
 
 if (require.main === module) main().then(c => process.exit(c), e => { process.stderr.write(`demo-lib: ${e.message}\n`); process.exit(2); });
 
-module.exports = { KEY_BYTES, opts, COMMANDS, listsRoomClaude, keyDelays, paneBelow };
+module.exports = { KEY_BYTES, opts, COMMANDS, listsRoomClaude, keyDelays, paneBelow, newMatches, taskFor };

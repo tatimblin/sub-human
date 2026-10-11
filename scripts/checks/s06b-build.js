@@ -2,9 +2,12 @@
 // S6b (--film): the agreed plan built: two room tasks (alice: the handler, bob: the tests), each Claude builds its half in
 // its own checkout of one repo and pushes, then alice and bob pull and run npm test. Evidence: the room log, tasks.json
 // and what demo.sh saved in state/S6b (task ids, each checkout's git log and HEAD, the origin's HEAD, the driver's own
-// npm test run per checkout, and both panes after the people's own run).
+// npm test run per checkout, both panes after the people's own run, and bob's pane when his Claude's subagent showed).
+// The film's agent-panel beats are checked here too (S6b runs only in --film): state/S2/panel-NAME.txt, each person's
+// pane with the room row opened.
 const path = require('node:path');
 const { readJson, readText, clip } = require('../lib/io.js');
+const { roomRowMembers, subagentRows } = require('../lib/panes.js');
 
 /** `git log --format='commit %H %an%n%s' --name-only` -> [{sha, author, subject, files}] */
 function parseGitLog(text) {
@@ -26,20 +29,31 @@ function tapSummary(text) {
   return { tests: n('tests'), pass: n('pass'), fail: n('fail'), exit: e ? +e[1] : null };
 }
 
-/** The pane text under the people's own run (the ! bash-mode line), as demo-lib's wait-pane --below reads it. */
-function belowRun(pane) {
-  const ls = String(pane || '').split('\n');
-  let i = -1;
-  ls.forEach((l, n) => { if (/npm test --silent/.test(l)) i = n; });
-  return i < 0 ? '' : ls.slice(i + 1).join('\n');
+/**
+ * The last node --test summary shown in a pane (the people's own run is the last one: the pane is saved right after
+ * it), as demo.sh's PASS6b reads it: {pass, fail, text} from "ℹ pass N / ℹ fail M / … / ℹ duration_ms D", or null.
+ */
+function lastSummary(pane) {
+  const re = /[ℹ#] pass (\d+)\s*\n\s*(?:⎿\s*)?[ℹ#] fail (\d+)\s*\n(?:\s*[ℹ#] [a-z]+ \d+\s*\n){0,4}\s*[ℹ#] duration_ms [\d.]+/g;
+  const m = [...String(pane || '').matchAll(re)].at(-1);
+  return m ? { pass: +m[1], fail: +m[2], text: m[0].split('\n').map(l => l.trim()).join(' / ') } : null;
 }
 
 module.exports = {
   scene: 'S6b',
-  parseGitLog, tapSummary,
+  parseGitLog, tapSummary, lastSummary,
   run(x, { det }) {
-    const { log, roomDir } = x;
+    const { log, roomDir, code } = x;
     const f = (...p) => x.stateFile('S6b', ...p);
+    // S2 (film): each person opens the room row in their agent panel, and the other shows inside it
+    for (const [who, other] of [['alice', 'bob'], ['bob', 'alice']]) {
+      const rm = roomRowMembers(readText(x.stateFile('S2', `panel-${who}.txt`)), code);
+      det(`${who} opens the ${code} row in the agent panel: ${other} shows inside it`, rm && rm.members.includes(other),
+        rm ? `${rm.room.line} | ${rm.members.map(n => `└ ${n}`).join(' | ') || 'no member rows'} (state/S2/panel-${who}.txt)` : `no ${code} row in state/S2/panel-${who}.txt`);
+    }
+    const sub = subagentRows(readText(f('panel-subagent-bob.txt')), code);
+    det('bob\'s Claude runs a subagent of its own: its row shows in his panel beside the room row', sub.length > 0,
+      sub.length ? `${sub.map(r => r.line).join(' | ')} (state/S6b/panel-subagent-bob.txt)` : 'no subagent row saved (state/S6b/panel-subagent-bob.txt)');
     const [h, t] = (readText(f('tasks.txt')) || '').trim().split(/\s+/);
     const tasks = readJson(path.join(roomDir, 'tasks.json'), []) || [];
     const th = tasks.find(y => String(y.id) === h), tt = tasks.find(y => String(y.id) === t);
@@ -67,9 +81,9 @@ module.exports = {
       const s = tapSummary(readText(f(`npm-test-${who}.txt`)));
       det(`npm test passes in ${who}'s checkout, with the paging tests (the driver's own run)`, s.exit === 0 && s.fail === 0 && s.pass === s.tests && s.tests > 1,
         `state/S6b/npm-test-${who}.txt: tests ${s.tests}, pass ${s.pass}, fail ${s.fail}, exit ${s.exit}`);
-      const below = belowRun(readText(f(`pane-${who}.txt`)));
-      det(`${who}'s pane shows ${who === 'alice' ? 'her' : 'his'} own npm test passing`, /[ℹ#] pass [1-9]\d*\s*\n\s*(⎿\s*)?[ℹ#] fail 0\s*$/m.test(below),
-        clip(below.split('\n').filter(l => /[ℹ#]\s*(tests|pass|fail) \d/.test(l)).join(' / '), 160) || `no run in state/S6b/pane-${who}.txt`);
+      const ls = lastSummary(readText(f(`pane-${who}.txt`)));
+      det(`${who}'s pane shows ${who === 'alice' ? 'her' : 'his'} own npm test passing`, ls && ls.pass > 0 && ls.fail === 0,
+        ls ? clip(ls.text, 160) : `no npm test summary in state/S6b/pane-${who}.txt`);
     }
   },
 };
