@@ -445,6 +445,11 @@ async function answerPlanView(session, pv, choice, note) {
   if (choice === 'Object') { await literal(session, note || 'object'); await sleep(600); }
   await keys(session, ['Enter']);
   await sleep(1500);
+  // an objection's note is confirmed in one more question ("Send to claude as changes requested …? Send / Discard")
+  if (choice === 'Object') {
+    await until(`${session}: the note's Send / Discard question`, 15, () => /❯\s*1\.\s*Send\b/.test(pane(session)));
+    if (/❯\s*1\.\s*Send\b/.test(pane(session))) { await keys(session, ['Enter']); await sleep(1500); }
+  }
   record(`${session}: answered in the plan view ${choice}${choice === 'Object' ? ` with note "${note}"` : ` (${want.label})`}`, true, 0);
   return 0;
 }
