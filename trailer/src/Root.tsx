@@ -18,7 +18,7 @@ export const RemotionRoot: React.FC = () => {
         height={1080}
         calculateMetadata={calculateTrailerMetadata}
         defaultProps={{
-          take: 'synthetic',
+          take: 'take4',
           edit: 'trailer' as const,
           seats: ['alice', 'bob'],
           music: null,
@@ -38,7 +38,7 @@ export const RemotionRoot: React.FC = () => {
         height={1080}
         calculateMetadata={calculateTrailerMetadata}
         defaultProps={{
-          take: 'synthetic',
+          take: 'take4',
           edit: 'trailer' as const,
           seats: ['alice', 'bob'],
           music: null,
@@ -58,14 +58,14 @@ export const RemotionRoot: React.FC = () => {
         height={720}
         calculateMetadata={calculateTrailerMetadata}
         defaultProps={{
-          take: 'synthetic',
+          take: 'take4',
           edit: 'readme' as const,
           seats: ['alice', 'bob'],
           music: null,
           musicVolume: 0.5,
           keyClicks: false,
           scrubWords: [],
-          dropRows: ['Update available! Run:', 'ctrl-g to edit', 'shift+tab to cycle', 'proposed by claude'],
+          dropRows: ['Update available! Run:', 'ctrl+g to edit', 'ctrl-g to edit', 'shift+tab to cycle', 'proposed by claude', 'Tip: '],
           compact: true,
         }}
       />

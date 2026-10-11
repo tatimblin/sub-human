@@ -3,7 +3,7 @@
  * stills: render key frames of a take for review, bundling once. Frames are picked from the cut the
  * composition logs ([cut] id@frame+length): ~70% into each listed segment, plus the hook and the end card.
  *
- *   node scripts/stills.mjs [--take synthetic] [--comp Trailer] [--only join,card-zoom] [--out out/stills]
+ *   node scripts/stills.mjs [--take take4] [--comp Trailer] [--only join,card-zoom] [--out out/stills]
  */
 import path from 'node:path';
 import fs from 'node:fs';
@@ -16,7 +16,7 @@ const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : dflt;
 };
-const take = arg('take', 'synthetic');
+const take = arg('take', 'take4');
 const comps = arg('comp', 'Trailer').split(',');
 const only = arg('only', '') ? arg('only', '').split(',') : null;
 const outDir = path.resolve(ROOT, arg('out', 'out/stills'));

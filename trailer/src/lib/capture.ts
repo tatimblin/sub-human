@@ -33,6 +33,42 @@ export type ScrubOptions = {
 /** Rows dropped by default: the update nag. */
 export const DEFAULT_DROP_ROWS = ['Update available! Run:'];
 
+/**
+ * Rows blanked in place (the layout keeps its shape): the account's login warning, the completion menus that list
+ * the machine's own skills, commands, agents, MCP servers and other sessions while a prompt is typed, and Claude
+ * Code's rotating tips (noise in a cut).
+ */
+const BLANK_ROWS = [
+  /Your login expires|run \/login to renew|Run \/login|\/login to sign in/,
+  /^ {2}⎿[ \u00a0]{2}Tip: /,
+  /^ {2,6}[+*◇] \S/, // "@" menu: files, agents, MCP resources
+  /^ {2}(?:❯ | {2})@"[^"]+" +message session/, // "@" menu: other sessions on this machine
+  /^ {2}(?:❯ | {2})\/[\w:.-]+(?: \([^)]*\))? {2,}\S/, // "/" menu: commands and skills
+];
+/** a "/" menu entry's description runs on, deeply indented, below it */
+const MENU_CONTINUATION = /^ {40,}\S/;
+
+function blankRows(ansi: string): string {
+  const lines = ansi.split('\n');
+  let prevBlanked = false;
+  let changed = false;
+  for (let i = 0; i < lines.length; i++) {
+    const text = plain(lines[i]);
+    const hit: boolean = BLANK_ROWS.some((re) => re.test(text)) || (prevBlanked && MENU_CONTINUATION.test(text));
+    if (hit) {
+      lines[i] = '';
+      changed = true;
+    }
+    prevBlanked = hit;
+  }
+  return changed ? lines.join('\n') : ansi;
+}
+
+/** the model and plan: the banner's "Opus 5.5 (1M context) · Claude Max", or "Claude Opus 5.5 (1M context)" in a commit trailer */
+const MODEL = '(?:Opus|Sonnet|Haiku|Fable|Mythos)(?: \\d+(?:\\.\\d+)*)?(?: \\([^)\\n]*\\))?';
+const BANNER_PLAN = new RegExp(`${MODEL} · (?:Claude (?:Max|Pro|Team|Enterprise)|API Usage Billing|Claude API)[^\\x1b\\n]*`, 'g');
+const MODEL_NAME = new RegExp(`Claude ${MODEL}`, 'g');
+
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -42,6 +78,11 @@ const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  */
 export function scrub(ansi: string, opts: ScrubOptions = {}): string {
   let s = ansi
+    .replace(BANNER_PLAN, '')
+    .replace(MODEL_NAME, 'Claude')
+    // a Claude's scratchpad (/tmp/claude-UID/<project>/<session>/scratchpad) and the plugin's own CLI by its full path
+    .replace(/(?:\/private)?\/tmp\/claude-\d+\/[^/\s]+\/[0-9a-f-]{36}\/scratchpad/g, '/tmp/scratchpad')
+    .replace(/\/(?:Users|home)\/[^/\s]+\/[^\s'"`]*?\/plugin\/sub-human\/scripts\/sub-human\b/g, 'sub-human')
     .replace(/(?:\/private)?\/tmp\/sh-demo\/home\d*/g, '~/.sub-human')
     .replace(/(?:\/private)?\/tmp\/sh-demo\/(?:[A-Za-z0-9_-]+)/g, '~/app')
     .replace(/-private-tmp-sh-demo-[A-Za-z0-9_-]+/g, '-app')
@@ -82,7 +123,7 @@ export function parseCapture(take: string, text: string, opts: ScrubOptions = {}
     end = Math.max(end, o.t || 0);
     if (o.kind === 'meta') meta = o;
     else if (o.kind === 'frame') {
-      (frames[o.session] ||= []).push({ ...o, ansi: dropRows(scrub(o.ansi, opts), drop) });
+      (frames[o.session] ||= []).push({ ...o, ansi: dropRows(blankRows(scrub(o.ansi, opts)), drop) });
     } else if (o.kind === 'marker') markers.push({ ...o, caption: o.caption ? scrub(o.caption, opts) : o.caption });
   }
   if (!meta) {
