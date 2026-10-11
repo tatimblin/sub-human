@@ -157,6 +157,10 @@ start_seat() { # seat [extra claude args…]
 setup() {
   if [ "$RESET" = 1 ]; then
     for s in sh-claude sh-alice sh-bob sh-carol sh-viewer; do tmux kill-session -t "$s" 2>/dev/null; done
+    # an aborted run leaves its room's Claude (a claude --bg job started in a seat dir) and dying seats' session-end
+    # hooks, which write the old room back into the home after the rm: stop them and wait before resetting
+    pkill -f "claude daemon run .*\"cwd\":\"(/private)?$BASE/" 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -f "(/private)?$BASE/" >/dev/null || break; sleep 1; done
     rm -rf "$BASE"
     mkdir -p "$SUB_HUMAN_HOME"
     if [ "$FILM" = 1 ]; then film_repo || { echo "film: could not set up the seats' git checkouts" >&2; exit 1; }
