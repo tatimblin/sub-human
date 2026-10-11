@@ -50,7 +50,7 @@ module.exports = {
       const lines = (readText(path.join(screens, r.txt)) || '').split('\n');
       const end = lines.findIndex(l => MAIN_ROW.test(l));
       for (const l of end < 0 ? lines : lines.slice(0, end)) {
-        if (/(^|[\s(])#\d+\b/.test(l) && !/\btasks?\b|◼/.test(l)) hits.push(`${r.txt}: ${clip(l, 90)}`);
+        if (/(^|[\s(])#\d+\b/.test(l) && !/\btasks?\b|◼|\b(claim(ed|s)?|done|complete[sd]?)\b/i.test(l)) hits.push(`${r.txt}: ${clip(l, 90)}`);
       }
     }
     det('No room entry ids (#N) in the members\' panes (task numbers aside)', hits.length === 0, hits.length ? `${hits.length} line(s): ${hits.slice(0, 4).join(' | ')}` : `none in ${memberCaps.length} captures`);

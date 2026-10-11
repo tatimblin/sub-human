@@ -11,3 +11,7 @@ docs/rebuild/screens/
 # docs/archive/MODS-PLAN.md W1 keeps them out of git
 plugin/sub-human/tsconfig.json
 plugin/sub-human/.claude-plugin/types/
+
+# demo.sh --film takes (scripts/capture.js); only the hand-made fixture is kept
+trailer/capture/*
+!trailer/capture/fixture/

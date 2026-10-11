@@ -29,6 +29,7 @@ const SCENES = {
   S4: ['"Let\'s plan"', 'bob @claude let\'s plan …; the room\'s Claude writes a plan and proposes it; it opens in the native plan view in both terminals'],
   S5: ['Object, revise, agree', 'bob objects with a note (byte-exact); the room\'s Claude revises; both agree; a decision citing both'],
   S6: ['Shared tasks', 'alice\'s Claude adds and claims a task; the room\'s Claude applies it natively; rows and sub-human tasks show it; a non-owner done reaches the task tool and is refused (the gate check is marked SYNTHETIC when the room\'s Claude declined before reaching it); the owner\'s done with evidence completes it'],
+  S6b: ['Build what was agreed (--film)', 'alice\'s Claude puts the plan\'s two halves on the room task list; alice\'s Claude builds the handler (src/) and bob\'s the tests (test/), each in its own checkout of one repo; each pushes and completes its own task with evidence; alice and bob pull and npm test passes in both'],
   S7: ['Stray typing in a row view', 'The row view shows the read-only hint; nothing is posted; the typed text reaches the row only when its hold next returns (then the one-line read-only reply), or not at all'],
   S8: ['Resilience', '/clear keeps alice\'s rows; bob --continue: rows return with no prompt (row-rewake) and the room still reaches him'],
   S9: ['The room\'s Claude takes no typed input', 'A viewer attaches (claude attach) and types: refused with the hint; no claude turn'],

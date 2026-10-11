@@ -19,6 +19,27 @@ test('demo-lib: every subcommand demo.sh calls is a command', () => {
   for (const c of used) assert.ok(Object.hasOwn(COMMANDS, c), `demo.sh calls ${c}`);
 });
 
+test('demo-lib: film typing paces a long line to about 4.5 s, a short one key by key; wait-pane --below reads under a line', () => {
+  const { keyDelays, paneBelow } = require('../demo-lib.js');
+  const long = keyDelays('x'.repeat(300)).reduce((a, b) => a + b, 0);
+  assert.ok(long > 3500 && long < 5500, `${long} ms`);
+  const short = keyDelays('@room hi, bob');
+  assert.equal(short.length, 13);
+  assert.ok(short.every(d => d >= 7 && d <= 140), short.join(' '));
+  assert.equal(paneBelow('a\n! npm test --silent\n# fail 1\n! npm test --silent\n# fail 0', 'npm test --silent'), '# fail 0');
+  assert.equal(paneBelow('no run here', 'npm test --silent'), '');
+  assert.equal(paneBelow('all', undefined), 'all');
+});
+
+test('demo.sh --film: the story scenes only, S6b defined, every mark has a short caption', () => {
+  const sh = fs.readFileSync(DEMO_SH, 'utf8');
+  assert.match(sh, /\[ "\$FILM" = 1 \] && ALL=\(S1 S2 S3 S4 S5 S6b S10\)/);
+  assert.match(sh, /^S6b\(\) \{/m);
+  const marks = [...sh.matchAll(/^\s*mark ([a-z]+) "([^"]*)"/gm)];
+  assert.ok(marks.length >= 15, `${marks.length} marks`);
+  for (const m of marks) assert.ok(m[2].length > 0 && m[2].length <= 80, `caption for ${m[1]}: ${m[2]}`);
+});
+
 test('demo-lib: demo.sh edits no JSON inline (node -e)', () => {
   assert.doesNotMatch(fs.readFileSync(DEMO_SH, 'utf8'), /node -e/);
 });

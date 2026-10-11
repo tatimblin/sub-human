@@ -5,7 +5,13 @@
 #
 #   scripts/demo.sh [--windows] [--pause] [--only S6[,S7]] [--from S6] [--to S3] [--member-model MODEL] [--no-reset]
 #                   (--to: stop after that scene; a fresh run unless --from/--only is given too)
-#   scripts/demo.sh stop            kill the sh-* tmux sessions (never numbered ones)
+#   scripts/demo.sh --film [--take NAME] [same options]   a trailer take: the story scenes only (S1 S2 S3 S4 S5 S6b S10),
+#                   seat panes 120×36, prompts typed a key at a time, every pane recorded by scripts/capture.js into
+#                   trailer/capture/NAME/ (capture.jsonl + run.json; NAME defaults to take-DATE-TIME) with a marker
+#                   per beat. The seats are clones of one git repo (/tmp/sh-demo/origin.git), and S6b builds the
+#                   agreed plan: alice's Claude the handler, bob's Claude the tests; both push, and both people pull
+#                   and run npm test. Checks run at the end; their verdict goes in run.json.
+#   scripts/demo.sh stop            kill the sh-* tmux sessions (never numbered ones), and stop a capture
 #
 # The room's Claude has no tmux seat: the first /sub-human starts it as a `claude --bg` job (claude.CODE). Its "pane" in
 # the captures is `claude logs <job>` running in a tmux session sh-claude (read-only: never typed into). Nothing is ever typed into the room's Claude, except in S9, where a viewer runs
@@ -38,10 +44,12 @@ COLS=120; ROWS=40
 ROOM_CLAUDE_COLS=200; ROOM_CLAUDE_ROWS=50   # a --bg session renders at 200 columns: claude logs replays that
 
 WINDOWS=0; PAUSE="${SUB_HUMAN_DEMO_PAUSE:-0}"; ONLY=""; FROM=""; TO=""; RESET=1
+FILM=0; TAKE=""
 MEMBER_MODEL=""   # empty: the seats use the user's default model; --member-model MODEL opts in
 
 case "${1:-}" in
   stop)
+    node "$REPO/scripts/capture.js" stop
     for s in $(tmux ls -F '#{session_name}' 2>/dev/null | grep -E '^sh-'); do tmux kill-session -t "$s" && echo "killed $s"; done
     exit 0 ;;
 esac
@@ -55,13 +63,51 @@ while [ $# -gt 0 ]; do
     --to) TO="$2"; shift ;;
     --member-model) MEMBER_MODEL="$2"; shift ;;
     --no-reset) RESET=0 ;;
-    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+    --film) FILM=1 ;;
+    --take) TAKE="$2"; shift ;;
+    -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
 done
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+
+# ---------- film (--film) -----------------------------------------------------------------------
+# A trailer take: fixed 120×36 seat panes (the room's Claude's view stays 200×50: claude logs replays a 200-column
+# render), typed prompts (demo-lib's SH_DEMO_TYPING), and the seats' Claude Code shows no cwd and no update notice.
+# Nothing personal: the seats' git uses a demo-only global config ($BASE/gitconfig, empty) and per-checkout
+# user.name/email (alice / alice@example.invalid). No user settings file is written.
+FILM_ENV=""
+if [ "$FILM" = 1 ]; then
+  COLS=120; ROWS=36
+  export SH_DEMO_TYPING=1
+  TAKE="${TAKE:-take-$(date +%Y%m%d-%H%M%S)}"
+  TAKE_DIR="$REPO/trailer/capture/$TAKE"
+  FILM_ENV="CLAUDE_CODE_HIDE_CWD=1 DISABLE_AUTOUPDATER=1 GIT_CONFIG_GLOBAL=$BASE/gitconfig GIT_CONFIG_NOSYSTEM=1"
+fi
+CAPTURE="node $REPO/scripts/capture.js"
+# mark BEAT CAPTION: a marker in the take at this moment (film only)
+mark() { [ "$FILM" = 1 ] && $CAPTURE mark "$SCENE" "$1" "$2"; return 0; }
+g() { GIT_CONFIG_GLOBAL="$BASE/gitconfig" GIT_CONFIG_NOSYSTEM=1 git "$@"; }   # the seats' git, never the user's config
+
+# film_repo: the seats' checkouts are clones of one bare repo, so each Claude builds in its own checkout and the code
+# moves between them the way it does between two people: push, pull
+film_repo() {
+  local o="$BASE/origin.git" s="$BASE/seed"
+  : > "$BASE/gitconfig"
+  g init -q --bare -b main "$o" || return 1
+  cp -R "$REPO/demo/app.pristine" "$s"
+  g -C "$s" init -q -b main && g -C "$s" add -A \
+    && g -C "$s" -c user.name=tasks-api -c user.email=tasks-api@example.invalid commit -qm "tasks-api" \
+    && g -C "$s" push -q "$o" main || return 1
+  rm -rf "$s"
+  local seat
+  for seat in "${SEATS[@]}"; do
+    g clone -q "$o" "$BASE/$seat" || return 1
+    g -C "$BASE/$seat" config user.name "$seat"; g -C "$BASE/$seat" config user.email "$seat@example.invalid"
+  done
+}
 
 # ---------- sessions ----------------------------------------------------------------------------
 
@@ -77,7 +123,7 @@ seat=\$1; shift
 cd "$BASE/\$seat" || exit 1
 exec env -i HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-${USER:-}}" SHELL="${SHELL:-/bin/zsh}" \\
   PATH="$PATH" TERM="\${TERM:-xterm-256color}" LANG="${LANG:-en_US.UTF-8}" TMPDIR="${TMPDIR:-/tmp/}" \\
-  SUB_HUMAN_HOME="\${SH_SEAT_HOME:-$SUB_HUMAN_HOME}" \\
+  SUB_HUMAN_HOME="\${SH_SEAT_HOME:-$SUB_HUMAN_HOME}" $FILM_ENV \\
   claude "\$@"
 EOF
   chmod +x "$BASE/launch.sh"
@@ -87,6 +133,9 @@ claude_args() { # seat [extra…]
   local seat=$1; shift
   printf '%q ' --plugin-dir "$PLUGIN"
   [ -n "$MEMBER_MODEL" ] && printf '%q ' --model "$MEMBER_MODEL"
+  # film: S6b's tests and git run with no permission dialog per command (approve-until answers any other dialog)
+  [ "$FILM" = 1 ] && printf '%q ' --allowedTools 'Bash(npm test:*)' 'Bash(git add:*)' 'Bash(git commit:*)' 'Bash(git pull:*)' \
+    'Bash(git push:*)' 'Bash(git status:*)' 'Bash(git diff:*)' 'Bash(git log:*)'
   [ $# -gt 0 ] && printf '%q ' "$@"
 }
 
@@ -110,7 +159,8 @@ setup() {
     for s in sh-claude sh-alice sh-bob sh-carol sh-viewer; do tmux kill-session -t "$s" 2>/dev/null; done
     rm -rf "$BASE"
     mkdir -p "$SUB_HUMAN_HOME"
-    for seat in "${SEATS[@]}"; do cp -R "$REPO/demo/app.pristine" "$BASE/$seat"; done
+    if [ "$FILM" = 1 ]; then film_repo || { echo "film: could not set up the seats' git checkouts" >&2; exit 1; }
+    else for seat in "${SEATS[@]}"; do cp -R "$REPO/demo/app.pristine" "$BASE/$seat"; done; fi
     mkdir -p "$SNAP_DIR"; rm -rf "$SNAP_DIR"/*.svg "$SNAP_DIR"/*.txt "$SNAP_DIR"/*.ansi "$SNAP_DIR/index.json" "$SNAP_DIR/waits.jsonl" "$SNAP_DIR/state"
     ls "$HOME/.claude/plans" > "$BASE/plans-before.txt" 2>/dev/null
   fi
@@ -137,13 +187,22 @@ open_windows() {
 
 # claude_view — the room Claude's read-only "pane": a tmux session that runs `claude logs <job>` (a passive stream of
 # the background session's terminal; nothing is ever typed there). Restarted if the stream ends.
+# In --film the fresh view paints in sh-claude-next first, then takes sh-claude's name: the recording never sees an
+# empty view.
 claude_view() {
   local job; job=$(claude_job); [ -n "$job" ] || return 1
-  tmux kill-session -t sh-claude 2>/dev/null
-  tmux new-session -d -s sh-claude -x "${ROOM_CLAUDE_COLS:-$COLS}" -y "${ROOM_CLAUDE_ROWS:-$ROWS}" \
+  local s=sh-claude
+  [ "$FILM" = 1 ] && tmux has-session -t sh-claude 2>/dev/null && s=sh-claude-next
+  tmux kill-session -t "$s" 2>/dev/null
+  tmux new-session -d -s "$s" -x "${ROOM_CLAUDE_COLS:-$COLS}" -y "${ROOM_CLAUDE_ROWS:-$ROWS}" \
     "while :; do env -i HOME=\"$HOME\" USER=\"$USER\" LOGNAME=\"${LOGNAME:-$USER}\" PATH=\"$PATH\" TERM=xterm-256color LANG=\"${LANG:-en_US.UTF-8}\" claude logs $job; sleep 2; done"
-  tmux set-window-option -t sh-claude window-size manual >/dev/null 2>&1
-  tmux resize-window -t sh-claude -x "${ROOM_CLAUDE_COLS:-$COLS}" -y "${ROOM_CLAUDE_ROWS:-$ROWS}" >/dev/null 2>&1
+  tmux set-window-option -t "$s" window-size manual >/dev/null 2>&1
+  tmux resize-window -t "$s" -x "${ROOM_CLAUDE_COLS:-$COLS}" -y "${ROOM_CLAUDE_ROWS:-$ROWS}" >/dev/null 2>&1
+  if [ "$s" = sh-claude-next ]; then
+    paint sh-claude-next 2
+    tmux kill-session -t sh-claude 2>/dev/null
+    tmux rename-session -t sh-claude-next sh-claude
+  fi
 }
 
 claude_job() { $LIB member-field claude job 2>/dev/null | tr -d '\n'; }
@@ -221,6 +280,7 @@ card_answer() { $LIB card "sh-$1" "$2" "${3:-}"; }
 # ---------- scenes ------------------------------------------------------------------------------
 
 S1() { # alice joins with no room open: the room is created and the headless room's Claude spawned
+  mark open "alice opens a room; the room gets its own Claude"
   submit alice "/sub-human alice"
   ROOM=$($LIB wait-room --timeout 60)
   [ -n "$ROOM" ] || { ABORT="S1: no room dir after /sub-human alice (60 s)"; return 1; }
@@ -236,6 +296,7 @@ S1() { # alice joins with no room open: the room is created and the headless roo
 }
 
 S2() { # bob joins
+  mark join "bob joins from his own session"
   submit bob "/sub-human bob"
   need wait_log --kind member_joined --from bob --timeout 60 || return 1
   # the join as a group-chat line in alice's pane ("sub-human: bob joined": the hooks module's $.ui.log notice, no
@@ -251,6 +312,7 @@ S2() { # bob joins
 
 S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   local before; before=$($LIB log-max)
+  mark talk "alice asks bob in the room, in her own words"
   submit alice "@room bob, can you take the parser tests? handler's in src/server.js"
   need wait_log --kind say --from alice --via human --after "$before" --timeout 30 || return 1
   wait_pane alice "Operation stopped by hook: ✓ sent" 15
@@ -258,9 +320,11 @@ S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   need $LIB wait-idle sh-bob --timeout 90 || return 1
   settle alice
   snap "alice posts with @room: one receipt line for her (✓ sent), bob's pane shows \"alice: …\" with her exact words"
+  mark reply "bob answers: once they agree how paging works"
   submit bob "@room sure, once we've agreed how paging works"
   need wait_log --kind say --from bob --via human --after "$before" --timeout 30 || return 1
   need $LIB wait-idle sh-alice --timeout 90 || return 1
+  mark claudes "bob's Claude asks alice's Claude directly"
   submit bob "ask alice's Claude how createTask in src/store.js picks ids. just ask, change nothing"
   # the engine's "Message from @bob.CODE", or the hooks module's drawing of that peer row (mod/render.ts: "bob's Claude: …")
   need wait_pane alice "Message from @?bob\.|^\s*bob's Claude: " 120 --what "alice's pane shows a message from bob's Claude" || return 1
@@ -277,10 +341,12 @@ ANSWER_bob="@claude fine with that; 400 on a bad cursor. please propose it to al
 
 S4() { # let's plan: bob @claude → the room's Claude proposes → each approver reads it in the plan view
   local before; before=$($LIB log-max)
+  mark plan "bob asks the room's Claude to plan cursor paging"
   submit bob "@claude let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first"
   need wait_log --kind say --from bob --via human --after "$before" --timeout 30 || return 1
   if ! wait_log --kind proposal --from claude --after "$before" --timeout 150 --what "the room's Claude proposes (or asks first)"; then
     # the room's Claude asked the people first (post to=NAME or SendMessage): each answers in one @claude line
+    mark questions "The room's Claude asks them first; each answers"
     snap "The room's Claude asks alice and bob before it writes the plan"
     for seat in alice bob; do
       local var="ANSWER_$seat"
@@ -292,6 +358,7 @@ S4() { # let's plan: bob @claude → the room's Claude proposes → each approve
     need wait_log --kind proposal --from claude --after "$before" --timeout 420 --what "the room's Claude writes a plan and proposes it" || return 1
   fi
   need wait_card alice "alice's card is open" || return 1
+  mark proposal "The plan opens for alice and bob to review"
   need wait_card bob "bob's card is open" || return 1
   paint sh-alice; paint sh-bob   # the plan view's first paint (wait-idle counts an open plan view as busy)
   snap "The room's Claude proposes its plan: it opens in alice's and bob's native plan view, all of it scrollable (Yes / Tell Claude what to change / Esc)"
@@ -314,6 +381,7 @@ NOTE5="add a test for a cursor past the end — \`after=zzz\` must 400, not 500"
 
 S5() { # bob objects with a note, alice agrees; the room's Claude revises; both agree → decision
   local p1; p1=$($LIB last-id --kind proposal)
+  mark answers "alice agrees; bob objects with a note"
   need card_answer alice Agree || return 1
   need wait_log --kind signoff --from alice --via human --after "$p1" --timeout 30 || return 1
   need card_answer bob Object "$NOTE5" || return 1
@@ -321,6 +389,7 @@ S5() { # bob objects with a note, alice agrees; the room's Claude revises; both 
   settle alice bob
   snap "alice agrees; bob objects with a note (via=human, byte-exact)"
   need wait_log --kind proposal --from claude --after "$p1" --timeout 420 --what "the room's Claude revises and proposes again" || return 1
+  mark revision "The room's Claude revises the plan"
   need wait_card alice "alice's card for the revision" || return 1
   need wait_card bob "bob's card for the revision" || return 1
   paint sh-alice; paint sh-bob   # the plan view's first paint
@@ -330,6 +399,7 @@ S5() { # bob objects with a note, alice agrees; the room's Claude revises; both 
   need wait_log --kind signoff --from alice --via human --after "$p2" --timeout 30 || return 1
   need card_answer bob Agree || return 1
   need wait_log --kind decision --after "$p2" --timeout 30 || return 1
+  mark agreed "Both agree: the decision is logged"
   need $LIB wait-idle sh-alice --timeout 90 || return 1
   need $LIB wait-idle sh-bob --timeout 90 || return 1
   sleep 6   # the decision's notice reaches both seats after they go idle; it draws no pane text to wait on
@@ -367,6 +437,66 @@ S6() { # shared tasks: alice's Claude adds, then claims, the room's Claude appli
   need $LIB wait-tasks --id "$t" --status completed --timeout 180 || return 1
   settle alice
   snap "alice's Claude asks done with evidence: the room's Claude completes #$t (the gate passes the owner's request)"
+}
+
+# S6b (--film only): the agreed plan, built. alice's Claude puts its two halves on the room task list, one for each
+# person; each Claude claims its own and builds it in its own checkout (alice's: the handler in src/, bob's: the tests in
+# test/), pushes to the shared origin, and alice's Claude tells bob's when the handler is in. Then alice and bob pull and
+# run npm test themselves (Claude Code's ! bash mode: no model turn), and the driver re-runs it in both checkouts as
+# evidence (state/S6b).
+TASK6b_H="paging handler: src/server.js + src/store.js"
+TASK6b_T="paging tests: test/paging.test.js"
+RUN6b="npm test --silent | grep -E ' (tests|pass|fail) [0-9]+$'"   # node --test's summary: ℹ tests 6 / ℹ pass 6 / ℹ fail 0
+PASS6b='[ℹ#] pass [1-9][0-9]*\s*\n\s*(⎿\s*)?[ℹ#] fail 0\s*$'      # that summary under the person's own run
+
+S6b() {
+  [ -d "$BASE/origin.git" ] || { ABORT="S6b: the seats are not git checkouts (S6b needs a --film run from S1)"; return 1; }
+  local before; before=$($LIB log-max)
+  mark split "alice's Claude splits the plan into two tasks: one for her, one for bob"
+  submit alice "the plan is agreed: put its two halves on the room task list. Call the mcp__plugin_sub-human_room__task tool twice with op \"add\": subject \"$TASK6b_H\" for \"alice\", and subject \"$TASK6b_T\" for \"bob\". Only those two calls: do not edit any file"
+  need wait_log --kind task_req --from alice --after "$before" --count 2 --timeout 120 --what "alice's Claude asks for both tasks" || return 1
+  need $LIB wait-tasks --subject "$TASK6b_H" --timeout 180 || return 1
+  need $LIB wait-tasks --subject "$TASK6b_T" --timeout 180 || return 1
+  local h t; h=$($LIB task-id --subject "$TASK6b_H"); t=$($LIB task-id --subject "$TASK6b_T")
+  [ -n "$h" ] && [ -n "$t" ] || { ABORT="S6b: no task ids in tasks.json for the two halves"; return 1; }
+  settle alice
+  snap "alice's Claude puts the agreed plan's two halves on the room task list: #$h the handler, #$t the tests"
+
+  mark build "Each Claude builds its half in its own checkout"
+  submit alice "claim #$h (mcp__plugin_sub-human_room__task, op \"claim\", id \"$h\"), then build GET /tasks paging exactly as the room decided, in src/server.js and src/store.js only. When npm test passes: git commit, git pull --rebase, git push. Then ask done on #$h with that test run as evidence, and tell bob's Claude in one line that the handler is pushed"
+  submit bob "claim #$t (mcp__plugin_sub-human_room__task, op \"claim\", id \"$t\"), then write the tests for the paging the room decided, in test/paging.test.js only: src/ is alice's, never edit it. git commit, git pull --rebase, git push. Once alice's Claude says the handler is pushed: git pull and npm test; when it passes, ask done on #$t with that run as evidence"
+  # play both people while their Claudes work: any permission dialog gets "Yes" until that seat's task is completed
+  $LIB approve-until sh-alice --task-done "$h" --timeout 900 & local pa=$!
+  $LIB approve-until sh-bob --task-done "$t" --timeout 900 & local pb=$!
+  if ! $LIB wait-tasks --id "$h" --owner alice --status in_progress --timeout 180 || ! $LIB wait-tasks --id "$t" --owner bob --status in_progress --timeout 180; then
+    kill "$pa" "$pb" 2>/dev/null; ABORT="S6b: the claims of #$h (alice) and #$t (bob) were not applied"; return 1
+  fi
+  mark claimed "Each claims its own task on the room's list"
+  wait "$pa" || { kill "$pb" 2>/dev/null; ABORT="S6b: alice's task #$h was not completed (900 s)"; return 1; }
+  mark handler "alice's Claude pushes the handler and tells bob's Claude"
+  wait "$pb" || { ABORT="S6b: bob's task #$t was not completed (900 s)"; return 1; }
+  mark tested "bob's Claude pulls it: his tests pass against her handler"
+  need $LIB wait-idle sh-alice --timeout 180 || return 1
+  need $LIB wait-idle sh-bob --timeout 180 || return 1
+  snap "Both halves built: alice's Claude completes #$h and bob's Claude #$t, each on its own test run"
+
+  mark tests "alice and bob pull and run the tests themselves"
+  submit alice "!git pull -q --rebase && $RUN6b"
+  submit bob "!git pull -q --rebase && $RUN6b"
+  need wait_pane alice "$PASS6b" 120 --below "npm test --silent" --what "alice's pane: her npm test passes" || return 1
+  need wait_pane bob "$PASS6b" 120 --below "npm test --silent" --what "bob's pane: his npm test passes" || return 1
+  mark pass "npm test passes in both checkouts"
+  local d="$SNAP_DIR/state/S6b" seat; mkdir -p "$d"
+  echo "$h $t" > "$d/tasks.txt"
+  for seat in alice bob; do
+    $LIB pane "sh-$seat" > "$d/pane-$seat.txt"
+    (cd "$BASE/$seat" && npm test --silent > "$d/npm-test-$seat.txt" 2>&1; echo "exit $?" >> "$d/npm-test-$seat.txt")
+    g -C "$BASE/$seat" log --format='commit %H %an%n%s' --name-only > "$d/git-log-$seat.txt" 2>&1
+    g -C "$BASE/$seat" rev-parse HEAD > "$d/head-$seat.txt" 2>&1
+  done
+  g -C "$BASE/origin.git" rev-parse main > "$d/head-origin.txt" 2>&1
+  settle alice bob
+  snap "alice and bob pull and run npm test in their own checkouts: both pass"
 }
 
 S7() { # stray typing into a row view: the hint is on the row's own progress line; the row answers in one line
@@ -452,6 +582,7 @@ S9b() { # a multi-line @room post: its later lines show nested under alice ("  �
 
 S10() { # leave: both exit → reap completes task 1 and stops the room's Claude
   local before; before=$($LIB log-max)
+  mark leave "alice and bob leave; the room closes itself"
   exit_seat alice
   need wait_log --kind member_left --from alice --after "$before" --timeout 30 || return 1
   # the leave reaches bob as a chat line once it has settled (8 s with no rejoin)
@@ -463,6 +594,7 @@ S10() { # leave: both exit → reap completes task 1 and stops the room's Claude
   $LIB wait-exited sh-alice --timeout 10; $LIB wait-exited sh-bob --timeout 10   # the exited panes' last paint
   snap "alice and bob exit (1. Exit and stop tasks): member_left for each"
   need $LIB wait-member claude stopped_at --not "" --timeout 90 --what "the reaper stops the room's Claude" || return 1
+  mark closed "The room's Claude stops"
   # claude agents --json drops the stopped job a few seconds after stopped_at
   $LIB wait-job-gone --timeout 30
   snap "The reaper: room closed, task 1 completed, the room's Claude stopped (claude agents no longer lists it running)"
@@ -535,12 +667,22 @@ S11() { # remote: carol joins from a second home (another machine, on this one) 
 }
 
 ALL=(S1 S2 S3 S4 S5 S6 S7 S8 S9 S9b S11 S10)
+# --film: the story only (S6–S9, S9b and S11 show mechanics; S6b builds what was agreed)
+[ "$FILM" = 1 ] && ALL=(S1 S2 S3 S4 S5 S6b S10)
 
 # ---------- main --------------------------------------------------------------------------------
 
 # a subset resumes against the running sessions, unless it starts at S1 (which needs a fresh home)
 if [ -n "$ONLY$FROM" ] && [[ "$ONLY" != *",S1,"* ]] && [ "$FROM" != S1 ]; then RESET=0; fi
+if [ "$FILM" = 1 ] && [ -e "$TAKE_DIR/capture.jsonl" ]; then echo "film: take $TAKE exists ($TAKE_DIR); pick another --take" >&2; exit 2; fi
 setup
+if [ "$FILM" = 1 ]; then
+  # the recording: from here to the end (or an abort), every pane change of sh-alice, sh-bob and sh-claude
+  $CAPTURE start "$TAKE_DIR" --take "$TAKE" --interval 100 &
+  trap '$CAPTURE stop' EXIT
+  for _ in $(seq 50); do [ -e "$REPO/trailer/capture/.active.json" ] && break; sleep 0.1; done
+  say "── recording take $TAKE -> ${TAKE_DIR#$REPO/}"
+fi
 [ -z "$ROOM" ] && [ -d "$SUB_HUMAN_HOME/rooms" ] && ROOM=$(room) && [ -n "$ROOM" ] && export SUB_HUMAN_ROOM="$ROOM"
 
 run=(); on=0; [ -z "$FROM" ] && on=1
@@ -565,7 +707,9 @@ for SCENE in "${ALL[@]}"; do
   if [ "$PAUSE" = 1 ]; then read -r -p "── next: $SCENE — press Enter " </dev/tty; fi
   say "── $SCENE"
   ABORT=""
+  [ "$FILM" = 1 ] && $CAPTURE scene "$SCENE" start
   "$SCENE"
+  if [ "$FILM" = 1 ]; then $CAPTURE scene "$SCENE" "$([ -n "$ABORT" ] && echo aborted || echo ok)" ${ABORT:+"$ABORT"}; fi
   if [ -n "$ABORT" ]; then
     printf '\n\033[1;31m✗ %s\033[0m\n' "$ABORT" >&2
     record "scene aborted: $ABORT" fail
@@ -576,5 +720,12 @@ for SCENE in "${ALL[@]}"; do
   [ "$SCENE" = "$TO" ] && break
 done
 
+if [ "$FILM" = 1 ]; then
+  # stop the recording, then the checks; their verdict goes in the take's run.json
+  $CAPTURE stop
+  node "$REPO/scripts/checks.js" --out "$TAKE_DIR/checks.json" > "$TAKE_DIR/checks.txt" 2>&1; tail -n 3 "$TAKE_DIR/checks.txt"
+  $CAPTURE stop --dir "$TAKE_DIR" --checks "$TAKE_DIR/checks.json"
+  say "take $TAKE: ${TAKE_DIR#$REPO/}/capture.jsonl, run.json (checks: checks.txt)"
+fi
 say "done. screens in ${SNAP_DIR#$REPO/}; then: node scripts/checks.js && node scripts/walkthrough.js"
 echo "sessions: tmux attach -r -t sh-alice | sh-bob | sh-carol   (scripts/demo.sh stop); claude job: $(claude_job) (claude logs / stop / rm)"

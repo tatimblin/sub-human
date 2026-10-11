@@ -30,11 +30,13 @@ How it works (processes, store layout, lanes, consent, tasks, the cc contract): 
 
 ```
 scripts/demo.sh [--windows] [--pause] [--only S6[,S7]] [--from S6] [--to S3] [--member-model MODEL] [--no-reset]
+scripts/demo.sh --film [--take NAME]  # a trailer take -> trailer/capture/NAME/
 scripts/demo.sh stop                  # kill the sh-* tmux sessions
 node scripts/checks.js && node scripts/walkthrough.js
 ```
 
 - A short run: `--only S1,S2,S4,S5,S9,S9b,S10` (a set with S1 starts fresh). `checks.js` skips the scenes not run (`screens/run.json`).
+- A trailer take: `scripts/demo.sh --film [--take NAME]` runs the story only (S1–S5, S6b, S10) at 120×36 with prompts typed a key at a time. `scripts/capture.js` records every pane change and a marker per beat to `trailer/capture/NAME/capture.jsonl` + `run.json` (scene timings, checks verdict); `trailer/capture/fixture/` is a hand-made sample. In film mode the seats are clones of one git repo (`/tmp/sh-demo/origin.git`), and S6b builds the agreed plan: alice's Claude writes the handler and bob's Claude the tests, each pushes, and both people pull and run `npm test` (checks in `checks/s06b-build.js`).
 - A timed-out `need` wait aborts the scene. The run stops and says how to resume with `--from SCENE`.
 - `checks.js` exits 1 only when a **deterministic** check fails (log, chain, files, panes).
 - **Behavioural** checks (model-call counts, wakes, noise) are compared against `baselines.json` thresholds and only warn.

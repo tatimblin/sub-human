@@ -7,13 +7,15 @@
  *   demo-lib.js keys  <session> <Key>…            Enter Esc Up Down Left Right Tab Space BSpace C-c C-d
  *   demo-lib.js literal <session> <text>          type text as keystrokes (send-keys -l): for form text boxes
  *   demo-lib.js submit <session> <text>           type text, Enter; for a "/command", Enter again if the
- *                                                  picker swallowed the first Enter
+ *                                                  picker swallowed the first Enter. With SH_DEMO_TYPING=1 (demo.sh
+ *                                                  --film) the text is typed a key at a time, at a person's pace
  *   demo-lib.js select-row <session> <label> [--key Down|Up]   move the agent-panel cursor (❯) onto the
  *                                                  row labelled <label> (└ children too), one key at a time
  *   demo-lib.js ready <session> [--timeout S]     handle the trust dialog (choose "Yes, I trust this folder"
  *                                                  explicitly), then wait for the prompt
  *   demo-lib.js pane <session>                    print the pane as plain text
- *   demo-lib.js wait-pane <session> <regex> [--timeout S] [--absent] [--what TEXT]
+ *   demo-lib.js wait-pane <session> <regex> [--timeout S] [--absent] [--what TEXT] [--below REGEX]
+ *                                                  (--below: only the pane text under the last line matching REGEX)
  *   demo-lib.js wait-paint <session> [--quiet S] [--timeout S]   wait until the pane has text and is unchanged
  *                                                  for --quiet S (1; spinners and elapsed counters ignored);
  *                                                  recorded in waits.jsonl only when it times out
@@ -21,9 +23,10 @@
  *   demo-lib.js wait-room [--timeout S]           wait for a room dir; prints the code
  *   demo-lib.js wait-log --kind K [--from N] [--via V] [--count N] [--latest-plan] [--after ID]
  *                        [--text-has S] [--timeout S] [--what TEXT]
- *   demo-lib.js approve-until <session> --kind K [wait-log filters] [--timeout S]
+ *   demo-lib.js approve-until <session> (--kind K [wait-log filters] | --task-done ID) [--timeout S]
  *                        play the seat's human while its Claude works: answer each permission dialog
- *                        with option 2 ("Yes, and …" for the session; else 1. Yes) until the log matches;
+ *                        with option 2 ("Yes, and …" for the session; else 1. Yes) until the log matches
+ *                        (or, with --task-done, until <room>/tasks.json has task ID completed);
  *                        with --quiet S, then keep at it until its background agents are done (only the room
  *                        row left in its panel) and no dialog has shown for S seconds
  *   demo-lib.js wait-holds <seat> <name> [--timeout S]   wait until <seat>'s room server holds <name>'s row
@@ -49,8 +52,8 @@
  *                                                  the "Yes" that keeps the seat's mode, Object = "Tell Claude what
  *                                                  to change" + note, Not yet = Esc) or, the fallback, on the card
  *   demo-lib.js wait-native-task <subject> [--timeout S]   wait until the room Claude's native list has it
- *   demo-lib.js wait-tasks [--owner N] [--id N] [--status S] [--timeout S]   wait on <room>/tasks.json
- *   demo-lib.js task-id --owner N                 print the id of N's newest task in <room>/tasks.json
+ *   demo-lib.js wait-tasks [--owner N] [--id N] [--subject S] [--status S] [--timeout S]   wait on <room>/tasks.json
+ *   demo-lib.js task-id [--owner N] [--subject S]   print the id of the newest such task in <room>/tasks.json
  *   demo-lib.js wait-claude-idle [--after ID] [--timeout S]   wait until the room Claude's transcript has an
  *                                                  end_turn after log entry ID and 6 s of quiet
  *   demo-lib.js wait-job-gone [--timeout S]       wait until `claude agents --json` no longer lists the room's Claude job
@@ -109,6 +112,32 @@ function pasteRaw(session, bytes) {
 
 function typeText(session, text) { pasteRaw(session, text); }
 
+/**
+ * The film's typing (SH_DEMO_TYPING=1): a key at a time, so a capture shows the words being typed. A small varied
+ * delay per key, a little more after a space or a comma, about 4.5 s for a long line at most (each key is a send-keys -l
+ * through the helper client). Text with a newline is pasted (a typed newline would submit).
+ */
+const filmTyping = () => process.env.SH_DEMO_TYPING === '1';
+function keyDelays(text, seed = text.length) {
+  const per = Math.max(12, Math.min(55, Math.round(4500 / Math.max(1, text.length))));
+  let x = seed || 1;
+  return [...text].map(ch => {
+    x = (x * 1103515245 + 12345) & 0x7fffffff;
+    const jitter = 0.6 + (x % 1000) / 1250; // 0.6–1.4
+    return Math.round(per * jitter + (/[ ,.;:?!]/.test(ch) ? per : 0));
+  });
+}
+async function typeHuman(session, text) {
+  if (text.includes('\n')) return pasteRaw(session, text);
+  const c = await helperClient();
+  const ds = keyDelays(text);
+  const chars = [...text];
+  for (let i = 0; i < chars.length; i++) {
+    tmux('send-keys', '-c', c, '-l', '-t', tgt(session), '--', chars[i]);
+    await sleep(ds[i]);
+  }
+}
+
 const KEYS_SESSION = 'sh-keys';
 function writableClient(session) {
   try { return tmux('list-clients', '-t', session, '-F', '#{client_name} #{client_readonly}').split('\n').map(l => l.trim().split(' ')).find(([n, ro]) => n && ro === '0')?.[0] || null; } catch { return null; }
@@ -135,6 +164,7 @@ async function keys(session, list, gap = 120) {
 }
 
 async function literal(session, text) {
+  if (filmTyping()) return typeHuman(session, text);
   tmux('send-keys', '-c', await helperClient(), '-l', '-t', tgt(session), '--', text);
 }
 
@@ -237,7 +267,7 @@ async function ready(session, timeoutS) {
 }
 
 async function submit(session, text) {
-  typeText(session, text);
+  if (filmTyping()) await typeHuman(session, text); else typeText(session, text);
   await sleep(500);
   await keys(session, ['Enter']);
   if (!text.startsWith('/')) return;
@@ -269,11 +299,22 @@ async function selectRow(o) {
   return 1;
 }
 
+/** The pane text below the last line matching `below` (a regex source; '' when no line matches), or all of it. */
+function paneBelow(text, below) {
+  if (!below) return text;
+  const lines = text.split('\n');
+  const re = new RegExp(below);
+  let i = -1;
+  lines.forEach((l, n) => { if (re.test(l)) i = n; });
+  return i < 0 ? '' : lines.slice(i + 1).join('\n');
+}
+
 async function waitPane(o, T) {
   const [session, src] = o._;
   const re = new RegExp(src, 'm');
-  const what = o.what || `${session} pane ${o.absent ? '!~' : '~'} /${src}/`;
-  return exit(await until(what, T, () => (o.absent ? !re.test(pane(session)) : re.test(pane(session)))));
+  const what = o.what || `${session} pane ${o.absent ? '!~' : '~'} /${src}/${o.below ? ` below /${o.below}/` : ''}`;
+  const text = () => paneBelow(pane(session), o.below);
+  return exit(await until(what, T, () => (o.absent ? !re.test(text()) : re.test(text()))));
 }
 
 /** A pane's text without spinner glyphs and elapsed counters (they change while nothing else does). */
@@ -311,12 +352,17 @@ async function waitLog(o, T) {
 async function approveUntil(o, T) {
   const session = o._[0];
   const n = +(o.count || 1);
-  const what = o.what || `${session}: approve its Claude's permission dialogs until ${n}× ${o.kind}${o.from ? ` from ${o.from}` : ''}`;
+  const byTask = o['task-done'] != null;
+  const target = byTask ? `task #${o['task-done']} completed` : `${n}× ${o.kind}${o.from ? ` from ${o.from}` : ''}`;
+  const what = o.what || `${session}: approve its Claude's permission dialogs until ${target}`;
   let approvals = 0, last = 0, met = 0, calm = 0;
   const quietMs = +(o.quiet || 0) * 1000;
+  const done = byTask
+    ? () => roomTasks().some(t => String(t.id) === String(o['task-done']) && t.status === 'completed')
+    : () => filterLog(o).length >= n;
   const ok = await until(what + (quietMs ? `, then its background agents finish` : ''), T, () => {
     const p = pane(session);
-    if (!met && filterLog(o).length >= n) met = Date.now();
+    if (!met && done()) met = Date.now();
     if (met && !quietMs) return true;
     if (met) {
       const busy = /Do you want to /.test(p) || panelRows(p).some(r => !r.nested && r.label !== roomCode());
@@ -470,13 +516,13 @@ async function waitNativeTask(o, T) {
 const roomTasks = () => readJson(roomFile('tasks.json'), []) || [];
 
 async function waitTasks(o, T) {
-  const what = o.what || `tasks.json has a task${o.id ? ' #' + o.id : ''}${o.owner ? ' owned by ' + o.owner : ''}${o.status ? ' ' + o.status : ''}`;
+  const what = o.what || `tasks.json has a task${o.id ? ' #' + o.id : ''}${o.subject ? ` "${o.subject}"` : ''}${o.owner ? ' owned by ' + o.owner : ''}${o.status ? ' ' + o.status : ''}`;
   return exit(await until(what, T, () =>
-    roomTasks().some(t => (!o.id || String(t.id) === String(o.id)) && (!o.owner || t.owner === o.owner) && (!o.status || t.status === o.status))));
+    roomTasks().some(t => (!o.id || String(t.id) === String(o.id)) && (!o.subject || t.subject === o.subject) && (!o.owner || t.owner === o.owner) && (!o.status || t.status === o.status))));
 }
 
 async function taskId(o) {
-  const t = roomTasks().filter(x => !o.owner || x.owner === o.owner).at(-1);
+  const t = roomTasks().filter(x => (!o.owner || x.owner === o.owner) && (!o.subject || x.subject === o.subject)).at(-1);
   print(t ? t.id : '');
   return exit(t);
 }
@@ -639,4 +685,4 @@ async function main(argv = process.argv.slice(2)) {
 
 if (require.main === module) main().then(c => process.exit(c), e => { process.stderr.write(`demo-lib: ${e.message}\n`); process.exit(2); });
 
-module.exports = { KEY_BYTES, opts, COMMANDS, listsRoomClaude };
+module.exports = { KEY_BYTES, opts, COMMANDS, listsRoomClaude, keyDelays, paneBelow };
