@@ -2,7 +2,7 @@
 // S1: alice joins, no room open: the room is created and the headless room Claude spawned
 const fs = require('node:fs');
 const path = require('node:path');
-const { panelRows } = require('../lib/panes.js');
+const { panelRows, joinNotices } = require('../lib/panes.js');
 
 module.exports = {
   scene: 'S1',
@@ -18,8 +18,11 @@ module.exports = {
     const oc = x.cap('S1', 'claude') || '';
     det('The room\'s Claude bound itself as claude of the room (agent sub-human:room-claude, pid, session id)', ms.claude && ms.claude.role === 'claude' && ms.claude.pid && ms.claude.session_id && /@sub-human:room-claude/.test(oc),
       `members.json claude role=${ms.claude && ms.claude.role} pid=${ms.claude && ms.claude.pid}; "${(/UserPromptExpansion says: [^\n]*/.exec(oc) || ['no join line'])[0]}" in ${x.capName('S1', 'claude')} (claude logs ${job})`);
-    const warned = /sub-human: (?:opened room|joined |in room )[^\n]*/.exec(x.cap('S1', 'alice') || '');
-    det('alice\'s join prints no line (a join that works shows no warning-styled systemMessage)', !warned, warned ? `"${warned[0]}" in ${x.capName('S1', 'alice')}` : `none in ${x.capName('S1', 'alice')}`);
+    // since 0.5.0-beta.7 a join that works shows one dim notice from the hooks module (command.run), no hook frame
+    const jn = joinNotices(x.cap('S1', 'alice'));
+    const want = new RegExp(`^⏺ sub-human: opened room ${code} as alice · on this machine others join with /sub-human`);
+    det('alice\'s join shows one line, "sub-human: opened room CODE as alice · …", and no "blocked by hook" frame', jn.notices.length === 1 && want.test(jn.notices[0]) && !jn.frame,
+      `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S1', 'alice')}`);
     const ar = panelRows(x.cap('S1', 'alice'));
     det(`alice's panel: one ${code} row`, ar.filter(r => !r.nested).length === 1 && ar[0].label === code, ar.map(r => r.line).join(' | ') || 'no rows');
     const orr = panelRows(oc);

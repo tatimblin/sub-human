@@ -60,6 +60,18 @@ function joinLineIn(txt) {
   return all.at(-1) || null;
 }
 
+/**
+ * What a join showed in a capture (0.5.0-beta.7: the hooks module answers /sub-human itself): `notices`, the dim
+ * "⏺ sub-human: opened room …" / "joined …" / "rejoined …" / "in room …" lines (first line of each, the pane may wrap
+ * it), and `frame`, the first hook frame drawn ("blocked by hook", "Operation stopped by hook", "hook error"), or null.
+ */
+function joinNotices(txt) {
+  const lines = String(txt || '').split('\n');
+  const notices = lines.filter(l => /^\s*⏺ sub-human: (?:opened room|joined |rejoined |in room )/.test(l)).map(l => l.trim());
+  const f = lines.find(l => /blocked by hook|stopped by hook|hook error/i.test(l));
+  return { notices, frame: f ? f.trim() : null };
+}
+
 /** The host's join-request card (lib/remote/admission.ts question), or null: its option lines (Let in / Refuse). */
 function admitCardState(p) {
   const lines = String(p || '').split('\n');
@@ -73,4 +85,4 @@ function admitCardState(p) {
   return opts.length ? { opts } : null;
 }
 
-module.exports = { MAIN_ROW, panelRows, statusLine, cardState, planState, joinLineIn, admitCardState };
+module.exports = { MAIN_ROW, panelRows, statusLine, cardState, planState, joinLineIn, joinNotices, admitCardState };

@@ -25,7 +25,7 @@
  *   plugin sent a message", one per row), "Waiting for N background agents",
  *   "hook error", "blocked by hook", "Invalid tool parameters"; `perCapture` = all of them / captures,
  *   `perCaptureExWaiting` without "Waiting for". The @room receipt ("⏺ ✓ sent") is counted
- *   apart as `receipts`, not noise. `red`: lines drawn in a red foreground (from the .ansi capture) or
+ *   apart as `receipts`, not noise. `red`: lines drawn mostly in a red foreground (from the .ansi capture; isRed) or
  *   reading "hook error".
  * - cards: for each consent card or plan-view review (an AskUserQuestion or ExitPlanMode call naming a proposal
  *   hash) in a member transcript,
@@ -182,17 +182,33 @@ function seatTranscriptMetrics(ts) {
   return { wakes: w, chat, injected: inj, cards };
 }
 
-/** A line drawn in a red foreground: SGR 31/91, 256-color reds, or a truecolor red. */
+const RED_256 = [1, 9, 124, 160, 161, 196, 197, 203, 204, 210];
+
+/**
+ * A line drawn in red: red (SGR 31/91, a 256-color red or a truecolor red) is the foreground of at least half its
+ * visible non-space characters, as an error line is. Red tokens in syntax-highlighted code (a JSON string in a plan,
+ * `await` in a diff) are a minority of their line and do not count.
+ */
 function isRed(line) {
+  let red = false, n = 0, r = 0;
+  const count = s => { const k = s.replace(/\s/g, '').length; n += k; if (red) r += k; };
+  let last = 0;
   for (const m of line.matchAll(/\x1b\[([0-9;]*)m/g)) {
-    const p = m[1].split(';').map(Number);
+    count(line.slice(last, m.index));
+    last = m.index + m[0].length;
+    const p = m[1] === '' ? [0] : m[1].split(';').map(Number);
     for (let i = 0; i < p.length; i++) {
-      if (p[i] === 31 || p[i] === 91) return true;
-      if (p[i] === 38 && p[i + 1] === 5) { if ([1, 9, 124, 160, 161, 196, 197, 203, 204, 210].includes(p[i + 2])) return true; i += 2; continue; }
-      if (p[i] === 38 && p[i + 1] === 2) { const [r, g, b] = p.slice(i + 2, i + 5); if (r >= 200 && g <= 115 && b <= 140 && r - g >= 120) return true; i += 4; }
+      const c = p[i];
+      if (c === 0 || c === 39) red = false;
+      else if (c === 31 || c === 91) red = true;
+      else if ((c >= 30 && c <= 37) || (c >= 90 && c <= 97)) red = false;
+      else if (c === 38 && p[i + 1] === 5) { red = RED_256.includes(p[i + 2]); i += 2; }
+      else if (c === 38 && p[i + 1] === 2) { const [R, G, B] = p.slice(i + 2, i + 5); red = R >= 200 && G <= 115 && B <= 140 && R - G >= 120; i += 4; }
+      else if (c === 48 && (p[i + 1] === 5 || p[i + 1] === 2)) i += p[i + 1] === 5 ? 2 : 4; // a background: skip its args
     }
   }
-  return false;
+  count(line.slice(last).replace(/\x1b\[[0-9;]*[A-Za-z]/g, ''));
+  return n > 0 && r * 2 >= n;
 }
 
 /** An @room receipt line: "⏺ ✓ sent" / "⏺ ⧗ queued: …" (0.5.0-beta.9), or the older "Operation stopped by hook: …". */

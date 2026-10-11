@@ -1,6 +1,6 @@
 'use strict';
 // S2: bob joins
-const { panelRows } = require('../lib/panes.js');
+const { panelRows, joinNotices } = require('../lib/panes.js');
 const { readText, clip } = require('../lib/io.js');
 
 module.exports = {
@@ -9,8 +9,11 @@ module.exports = {
     const { code } = x;
     const j = x.byKind('member_joined', { from: 'bob' })[0];
     det('member_joined bob (via system)', j && j.via === 'system', x.fmt(j));
-    const warned = /sub-human: (?:opened room|joined |in room )[^\n]*/.exec(x.cap('S2', 'bob') || '');
-    det('bob\'s join prints no line (a join that works shows no warning-styled systemMessage)', !warned, warned ? `"${warned[0]}" in ${x.capName('S2', 'bob')}` : `none in ${x.capName('S2', 'bob')}`);
+    // since 0.5.0-beta.7 a join that works shows one dim notice from the hooks module (command.run), no hook frame
+    const jn = joinNotices(x.cap('S2', 'bob'));
+    const want = new RegExp(`^⏺ sub-human: joined ${code} as bob, with alice · @room to talk, @claude to ask the room's Claude`);
+    det('bob\'s join shows one line, "sub-human: joined CODE as bob, with alice · …", and no "blocked by hook" frame', jn.notices.length === 1 && want.test(jn.notices[0]) && !jn.frame,
+      `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S2', 'bob')}`);
     const ha = x.st('S2', 1, 'holds-alice.json', {}), hb = x.st('S2', 1, 'holds-bob.json', {}), ho = x.st('S2', 1, 'holds-claude.json', {});
     det('Rows: bob nested in alice\'s room row, alice in bob\'s, both in the room\'s Claude\'s', ha.room && (ha.members || []).includes('bob') && hb.room && (hb.members || []).includes('alice') && ['alice', 'bob'].every(n => (ho.members || []).includes(n)),
       `holds-alice ${JSON.stringify({ room: ha.room, members: ha.members })}; holds-bob ${JSON.stringify({ room: hb.room, members: hb.members })}; holds-claude ${JSON.stringify(ho.members)}`);
