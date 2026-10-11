@@ -23,7 +23,7 @@ const { runCost } = require('./cost.js');
 
 /** The demo's scripted words (scripts/demo.sh): checks compare the log against them byte for byte. */
 const DEMO = {
-  alice3: "bob, can you take the parser tests? handler's in src/server.ts",
+  alice3: "bob, can you take the parser tests? handler's in src/server.js",
   bob4: "let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first", // typed as "@claude …": posted to=claude
   note5: 'add a test for a cursor past the end — `after=zzz` must 400, not 500',
   viewer9: "hi claude, what's next?",
