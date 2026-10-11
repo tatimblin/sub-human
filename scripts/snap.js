@@ -35,7 +35,8 @@ function roomCode() {
     for (const d of fs.readdirSync(dir)) {
       const log = path.join(dir, d, 'log.jsonl');
       let m;
-      try { m = fs.statSync(log).mtimeMs; } catch { try { m = fs.statSync(path.join(dir, d)).mtimeMs; } catch { continue; } }
+      // only a room with a log: a dying run's seats can leave a bare rooms/CODE/rows dir behind after the reset
+      try { m = fs.statSync(log).mtimeMs; } catch { continue; }
       if (!best || m > best.m) best = { d, m };
     }
   } catch { /* no rooms yet */ }
