@@ -1,0 +1,40 @@
+{
+  "name": "sub-human-trailer",
+  "version": "1.0.0",
+  "description": "The sub-human trailer: Remotion compositions that replay captured terminal frames (see README.md).",
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@remotion/bundler": "4.0.534",
+    "@remotion/cli": "4.0.534",
+    "@remotion/fonts": "4.0.534",
+    "@remotion/media": "4.0.534",
+    "@remotion/renderer": "4.0.534",
+    "@remotion/studio": "4.0.534",
+    "@remotion/transitions": "4.0.534",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.534"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "4.0.534",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.39.5",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "trailer": "remotion render Trailer",
+    "square": "remotion render TrailerSquare",
+    "readme": "remotion render ReadmeLoop",
+    "stills": "node scripts/stills.mjs",
+    "fixture": "node scripts/make-fixture.mjs",
+    "sfx": "node scripts/make-sfx.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src && tsc --noEmit",
+    "upgrade": "remotion upgrade",
+    "check:ansi": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-ansi.mjs"
+  }
+}
