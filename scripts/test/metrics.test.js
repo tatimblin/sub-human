@@ -54,6 +54,13 @@ test('isRed: SGR 31/91, 256-color and truecolor reds; other colors are not', () 
   assert.ok(!isRed('\x1b[38;5;220mUpdate available'));
   assert.ok(!isRed('\x1b[38;2;215;119;87mClaude Code'));
   assert.ok(!isRed('plain'));
+  // an error line: red text after a dim prefix still counts
+  assert.ok(isRed('  \x1b[2m⎿\x1b[22m  \x1b[31mError: ENOENT: no such file\x1b[39m'));
+  // syntax highlighting (run take4): JSON strings red in a plan, `await` 197 on a diff's added line
+  assert.ok(!isRed('   { \x1b[36m"items"\x1b[39m: [ {\x1b[36m"id"\x1b[39m: \x1b[32m3\x1b[39m, \x1b[36m"title"\x1b[39m: \x1b[31m"..."\x1b[39m, \x1b[36m"done"\x1b[39m: \x1b[34mfalse\x1b[39m, \x1b[36m"createdAt"\x1b[39m: \x1b[31m"..."\x1b[39m} ], \x1b[36m"nextCursor"\x1b[39m: \x1b[31m"eyJjIjoi..."\x1b[39m }'));
+  assert.ok(!isRed('     \x1b[38;5;77m\x1b[48;5;22m 82 +\x1b[38;5;231m  \x1b[38;5;81mconst\x1b[38;5;231m first = \x1b[38;5;197mawait\x1b[38;5;231m \x1b[38;5;148mget\x1b[38;5;231m(\x1b[38;5;186m\'?limit=\x1b[48;5;28m100\x1b[48;5;22m\'\x1b[38;5;231m);   \x1b[39m\x1b[49m'));
+  // a 256-color background is not a foreground: 48;5;196 behind plain text is not red
+  assert.ok(!isRed('\x1b[48;5;196mplain on red\x1b[49m'));
 });
 
 // ---------- the hooks module's delivery (plugin prompts, $.ui.log chat rows, isMeta copies) ----------

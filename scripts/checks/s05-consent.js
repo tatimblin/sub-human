@@ -1,12 +1,31 @@
 'use strict';
 // S5: bob objects with a note, alice agrees; the room's Claude revises; both agree -> decision
+const crypto = require('node:crypto');
 const path = require('node:path');
 const { readText } = require('../lib/io.js');
 
-const MODE = { auto: /auto mode on/, acceptEdits: /accept edits on/, plan: /plan mode on/, default: /^(?![\s\S]*(auto mode on|accept edits on|plan mode on))/ };
+const hash12 = t => crypto.createHash('sha256').update(Buffer.from(t, 'utf8')).digest('hex').slice(0, 12);
+
+/**
+ * A room review: an ExitPlanMode call that showed a room proposal in the plan dialog. Its recorded plan is the
+ * model's "proposal <hash>" stub, or, when the hooks wrote the proposal into the plan file before the call (a later
+ * review: the file's path is known from the first), the proposal's own text, which Claude Code records in its place
+ * (hash12 of it is the proposal's hash). The no-dialog close after an objection ("approved exiting plan mode") is not one.
+ */
+function isReview(call, es, hashes) {
+  const plan = String((call.input || {}).plan || '');
+  const stub = /^proposal ([0-9a-f]{12})\b/.exec(plan);
+  if (!(stub ? hashes.has(stub[1]) : hashes.has(hash12(plan)))) return false;
+  const res = es.flatMap(e => (e.type === 'user' && Array.isArray(e.message && e.message.content) ? e.message.content : [])).find(r => r && r.type === 'tool_result' && r.tool_use_id === call.id);
+  const t = res ? (typeof res.content === 'string' ? res.content : JSON.stringify(res.content)) : '';
+  return !/^User has approved exiting plan mode/.test(t);
+}
+
+const MODE ={ auto: /auto mode on/, acceptEdits: /accept edits on/, plan: /plan mode on/, default: /^(?![\s\S]*(auto mode on|accept edits on|plan mode on))/ };
 
 module.exports = {
   scene: 'S5',
+  isReview,
   run(x, { det }) {
     const { log, props, DEMO } = x;
     const p1 = props[0], p2 = props[1];
@@ -28,10 +47,11 @@ module.exports = {
     // (put back as it was, or removed when it did not exist before: plans-before.txt vs the S5 last step's plans.txt)
     const before = new Set((readText(x.stateFile('plans-before.txt')) || '').split('\n').filter(Boolean));
     const after = x.stText('S5', 'last', 'plans.txt');
+    const hashes = new Set(props.map(p => p.hash));
     for (const seat of ['alice', 'bob']) {
       const es = x.entries(seat).filter(e => !e.isSidechain && e.timestamp && e.timestamp >= x.runStart && e.timestamp <= (x.span('S5') || {}).to); // this run's, up to S5's end
       const mode0 = (es.find(e => e.permissionMode) || {}).permissionMode;
-      const reviews = x.toolUses(es, 'ExitPlanMode').filter(c => /^proposal [0-9a-f]{12}\b/.test(String((c.input || {}).plan || '')));
+      const reviews = x.toolUses(es, 'ExitPlanMode').filter(c => isReview(c, es, hashes));
       const enters = es.filter(e => e.attachment && e.attachment.type === 'plan_mode');
       const exits = es.filter(e => e.attachment && e.attachment.type === 'plan_mode_exit');
       const lastMode = (es.filter(e => e.permissionMode).at(-1) || {}).permissionMode;
