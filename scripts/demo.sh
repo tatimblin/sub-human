@@ -315,7 +315,7 @@ S3() { # pairing with no plan: @room both ways, then Claude↔Claude SendMessage
   mark talk "alice asks bob in the room, in her own words"
   submit alice "@room bob, can you take the parser tests? handler's in src/server.js"
   need wait_log --kind say --from alice --via human --after "$before" --timeout 30 || return 1
-  wait_pane alice "Operation stopped by hook: ✓ sent" 15
+  wait_pane alice "✓ sent" 15
   need wait_pane bob "alice: bob, can you take the parser tests" 60 --what "bob's pane shows alice's exact words as a chat line" || return 1
   need $LIB wait-idle sh-bob --timeout 90 || return 1
   settle alice
@@ -572,7 +572,7 @@ S9b() { # a multi-line @room post: its later lines show nested under alice ("  �
   need $LIB wait-idle sh-alice --timeout 60 || return 1
   submit alice "@room $MULTI9b"
   need wait_log --kind say --from alice --via human --after "$before" --text-has "notes from the paging spike" --timeout 30 || return 1
-  wait_pane alice "Operation stopped by hook: ✓ sent" 15
+  wait_pane alice "✓ sent" 15
   need wait_pane bob "alice: notes from the paging spike:" 60 --what "bob's pane shows the post's first line under alice's name" || return 1
   need $LIB wait-idle sh-bob --timeout 90 || return 1
   mkdir -p "$SNAP_DIR/state/S9b"; $LIB pane sh-bob > "$SNAP_DIR/state/S9b/pane-bob.txt"
