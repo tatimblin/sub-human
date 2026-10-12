@@ -71,8 +71,12 @@
  *   demo-lib.js synthetic-claude-prompt             run hooks/at-room.ts as the room Claude's UserPromptSubmit (shim stdin) for a
  *                                                  typed "hi" (CLAUDE_PID = the room Claude's pid); print its output
  *   demo-lib.js prune-index <index.json> <scene>…   drop those scenes' captures (before they run again)
- *   demo-lib.js plan-run <run.json> --all "S1 S2 …" [--fresh] <scene>…   write {scenes, partial}: a fresh run lists
- *                                                  only <scene>…, a resume adds them to those listed; --all order
+ *   demo-lib.js plan-run <run.json> --all "S1 S2 …" [--fresh] [--seats "A B"] <scene>…   write {scenes, partial}: a
+ *                                                  fresh run lists only <scene>…, a resume adds them to those listed;
+ *                                                  --all order. --seats: the two people (seats: [A, B]; the checks
+ *                                                  default to alice and bob)
+ *   demo-lib.js run-words <run.json> <key> <text> [<key> <text>]…   the people's scripted words in run.json's words
+ *                                                  (the checks compare the log against them)
  *   demo-lib.js record --what TEXT [--ok false]   one line in waits.jsonl for a driver step that is not a wait
  *
  * Every wait appends {scene, what, ok, ms, time} to $SNAP_DIR/waits.jsonl (scene from $DEMO_SCENE)
@@ -682,7 +686,18 @@ async function planRun(o) {
   const all = String(o.all || '').split(' ').filter(Boolean);
   const prev = o.fresh ? [] : (readJson(f, {}) || {}).scenes || [];
   const scenes = all.filter(x => prev.includes(x) || add.includes(x));
-  writeJson(f, { scenes, partial: scenes.length < all.length });
+  const seats = String(o.seats || '').split(' ').filter(Boolean);
+  writeJson(f, { scenes, partial: scenes.length < all.length, ...(seats.length ? { seats } : {}) });
+  return 0;
+}
+
+async function runWords(o) {
+  const [f, ...kv] = o._;
+  if (kv.length % 2) throw new Error('run-words <run.json> <key> <text> …: a key with no text');
+  const r = readJson(f, {}) || {};
+  const words = { ...(r.words || {}) };
+  for (let i = 0; i < kv.length; i += 2) words[kv[i]] = kv[i + 1];
+  writeJson(f, { ...r, words });
   return 0;
 }
 
@@ -731,6 +746,7 @@ const COMMANDS = {
   'latest-plan': latestPlan,
   'prune-index': pruneIndex,
   'plan-run': planRun,
+  'run-words': runWords,
   record: recordCmd,
 };
 

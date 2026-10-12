@@ -120,7 +120,7 @@ test('joinNotices: one dim join line (0.5.0-beta.7), its first line when wrapped
 
 test('S1/S2: the join check wants exactly one notice in the current format and no hook frame', () => {
   const s1 = SCENES.find(m => m.scene === 'S1'), s2 = SCENES.find(m => m.scene === 'S2');
-  const base = { code: 'husky-7354', roomDir: '/nonexistent', members: {}, st: (s, n, f, d) => d, nativeTasks: () => [], entries: () => [], capName: (s, seat) => `${s}-sh-${seat}.txt`,
+  const base = { A: 'alice', B: 'bob', code: 'husky-7354', roomDir: '/nonexistent', members: {}, st: (s, n, f, d) => d, nativeTasks: () => [], entries: () => [], capName: (s, seat) => `${s}-sh-${seat}.txt`,
     byKind: () => [], fmt: () => '', span: () => null, roomClaudeTurns: () => 0, stateFile: () => '/nonexistent', shownVia: () => null, chatIn: () => [], pullIn: () => [], wakeIn: () => [], chatTurn: () => null, textOf: () => '' };
   const verdict = (mod, seat, pane) => {
     const x = { ...base, cap: (s, who) => (who === seat ? pane : '') };
@@ -137,6 +137,12 @@ test('S1/S2: the join check wants exactly one notice in the current format and n
   assert.equal(verdict(s2, 'bob', joined), true);
   assert.equal(verdict(s2, 'bob', '⏺ sub-human: rejoined husky-7354 as bob, with alice · @room to talk, @claude to ask the room\'s Claude\n'), false);
   assert.equal(verdict(s2, 'bob', joined + '⏺ UserPromptExpansion operation blocked by hook\n'), false);
+  // the film's people (screens/run.json seats): the same checks under their names
+  const film = (mod, seat, pane) => runChecks({ ...base, A: 'tristan', B: 'jess', cap: (s, who) => (who === seat ? pane : '') }, { scenes: [mod] })[mod.scene].find(c => /join shows one line/.test(c.check));
+  assert.equal(film(s1, 'tristan', opened.replace('as alice', 'as tristan')).pass, true);
+  assert.equal(film(s1, 'tristan', opened).pass, false); // alice's line is not tristan's
+  assert.match(film(s2, 'jess', '').check, /^jess's join shows one line, "sub-human: joined CODE as jess, with tristan/);
+  assert.equal(film(s2, 'jess', '⏺ sub-human: joined husky-7354 as jess, with tristan · @room to talk, @claude to ask the room\'s Claude\n').pass, true);
 });
 
 test('S5 isReview: a "proposal <hash>" stub or a proposal\'s own text (Claude Code records the plan file); not the no-dialog close', () => {

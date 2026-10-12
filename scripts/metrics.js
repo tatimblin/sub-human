@@ -7,7 +7,7 @@
  *   require('./metrics.js').measure({screens, home})       same, as an object (used by checks.js)
  *
  * The run window is the first..last capture in screens/index.json (+30 s). Seats and their transcripts
- * (read-only): alice and bob are the top-level ~/.claude/projects/-private-tmp-sh-demo-SEAT/*.jsonl files; the
+ * (read-only): the two people (alice and bob unless measure() is given seats) are the top-level ~/.claude/projects/-private-tmp-sh-demo-SEAT/*.jsonl files; the
  * room Claude is a `claude --bg` job started in the joiner's folder, so its transcript is the file named after
  * members.json claude.session_id (wherever it is), and that file is left out of the folder's member seat.
  *
@@ -37,7 +37,6 @@ const path = require('node:path');
 const paths = require('./lib/paths.js');
 const { readJson, jsonl, textOf } = require('./lib/io.js');
 
-const SEATS = ['claude', 'alice', 'bob'];
 const NOISE = {
   plugin: /The sub-human plugin sent a message/, // one per plugin prompt row (its framing line)
   waiting: /Waiting for \d+ background agents?/,
@@ -236,7 +235,8 @@ function noiseFor(screens, index, seat) {
   return n;
 }
 
-function measure({ screens, projects, home, code } = {}) {
+function measure({ screens, projects, home, code, seats: people = ['alice', 'bob'] } = {}) {
+  const SEATS = ['claude', ...people];
   const index = screens ? readJson(path.join(screens, 'index.json'), []) : [];
   const times = index.map(r => r.time).filter(Boolean).sort();
   if (!times.length) return { error: `no captures in ${screens}` };
@@ -266,7 +266,7 @@ function measure({ screens, projects, home, code } = {}) {
     seats,
     total: {
       wakes,
-      roomWakesMembers: seats.alice.wakes.turns + seats.bob.wakes.turns,
+      roomWakesMembers: people.reduce((a, s) => a + seats[s].wakes.turns, 0),
       pluginWakes: SEATS.reduce((a, s) => a + seats[s].wakes.plugin, 0),
       chat: (() => {
         const c = { notices: 0, pulls: 0, turns: 0, calls: 0 };
@@ -293,7 +293,8 @@ if (require.main === module) {
   const a = process.argv.slice(2), o = {};
   for (let i = 0; i < a.length; i++) if (a[i].startsWith('--')) o[a[i].slice(2)] = a[++i];
   const screens = path.resolve(o.screens || path.join(__dirname, '..', 'docs/rebuild/screens'));
-  process.stdout.write(JSON.stringify(measure({ screens, home: o.home || paths.demoHome() }), null, 1) + '\n');
+  const seats = (readJson(path.join(screens, 'run.json'), {}) || {}).seats; // the run's two people (demo.sh plan-run)
+  process.stdout.write(JSON.stringify(measure({ screens, home: o.home || paths.demoHome(), seats }), null, 1) + '\n');
 }
 
 module.exports = { measure, BASELINES, BASELINE, PHASE0, PREV, NOISE, trigger, isChatNotice, isPull, seatTranscriptMetrics, cardTurns, isRed };

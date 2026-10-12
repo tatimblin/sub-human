@@ -4,7 +4,8 @@
  *
  *   const ctx = context({ screens, home, room })
  *
- * ctx.code, roomDir, log, members, roomClaudeSid, job, index (screens/index.json), home2 (S11's second home, carol's: by
+ * ctx.A, B (the two people: A opened the room, B joined; screens/run.json seats, default alice and bob), DEMO (the
+ * scripted words), code, roomDir, log, members, roomClaudeSid, job, index (screens/index.json), home2 (S11's second home, carol's: by
  * default home's sibling), and the helpers of four modules:
  *   checks/captures.js     the captures (cap, caps, capName, span, runStart) and the per-step state (st, stText, nativeTasks)
  *   checks/transcripts.js  the seats' transcripts (entries, inSpan, toolUses, assistantIds, peerIn, wakeIn, chatIn,
@@ -21,17 +22,28 @@ const { transcripts } = require('./transcripts.js');
 const { roomLog } = require('./log.js');
 const { runCost } = require('./cost.js');
 
-/** The demo's scripted words (scripts/demo.sh): checks compare the log against them byte for byte. */
+/**
+ * The demo's scripted words (scripts/demo.sh): checks compare the log against them byte for byte. These are alice and
+ * bob's; a run's own (say3, plan4, note5: --film's tristan and jess say other things) are in screens/run.json "words".
+ */
 const DEMO = {
-  alice3: "bob, can you take the parser tests? handler's in src/server.js",
-  bob4: "let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first", // typed as "@claude …": posted to=claude
+  say3: "bob, can you take the parser tests? handler's in src/server.js",
+  plan4: "let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first", // typed as "@claude …": posted to=claude
   note5: 'add a test for a cursor past the end — `after=zzz` must 400, not 500',
   viewer9: "hi claude, what's next?",
   multi9b: 'notes from the paging spike:\nroom: decided (agreed: alice, bob)\nbob agreed to the proposal',
   carol11: 'hello from the second home',
 };
 
+/** The run's two people (A opened the room, B joined) and scripted words, from screens/run.json (demo.sh plan-run). */
+function runInfo(screens) {
+  const r = readJson(path.join(screens, 'run.json'), {}) || {};
+  const seats = Array.isArray(r.seats) && r.seats.length === 2 ? r.seats : ['alice', 'bob'];
+  return { A: seats[0], B: seats[1], DEMO: { ...DEMO, ...(r.words && typeof r.words === 'object' ? r.words : {}) } };
+}
+
 function context({ screens, home, room, home2 = path.join(path.dirname(home), 'home2') }) {
+  const { A, B, DEMO: words } = runInfo(screens);
   const index = readJson(path.join(screens, 'index.json'), []);
   let code = room || (index.find(r => r.room) || {}).room;
   if (!code) { try { code = fs.readdirSync(path.join(home, 'rooms')).sort().at(-1); } catch { /* none */ } }
@@ -44,12 +56,12 @@ function context({ screens, home, room, home2 = path.join(path.dirname(home), 'h
 
   const caps = captures({ screens, index });
   return {
-    DEMO, screens, home, home2, code, roomDir, log, members, roomClaudeSid, job, index,
+    DEMO: words, A, B, screens, home, home2, code, roomDir, log, members, roomClaudeSid, job, index,
     ...caps,
     ...transcripts({ roomClaudeSid, projects: paths.projectsDir() }), textOf,
     ...roomLog({ home, code, roomDir, log }),
-    cost: runCost({ index, runStart: caps.runStart }),
+    cost: runCost({ index, runStart: caps.runStart, seats: [A, B] }),
   };
 }
 
-module.exports = { context, DEMO };
+module.exports = { context, DEMO, runInfo };
