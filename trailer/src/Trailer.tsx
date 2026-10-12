@@ -16,19 +16,23 @@ import { loadCapture, type Capture } from './lib/capture';
 import { stripAnsi } from './lib/ansi';
 import { outputFrame, resolveEdit, type Edit, type ResolvedEdit } from './lib/edl';
 import { useTake } from './lib/useTake';
-import { COLORS, sideLayout, stackedLayout, type StageLayout } from './design';
+import { COLORS, sideLayout, splitLayout, stackedLayout, type SplitLayout, type StageLayout } from './design';
 import { Replay } from './components/Replay';
+import { SplitReplay } from './components/SplitReplay';
 import { Wordmark } from './components/Wordmark';
 import { EndCard } from './scenes/EndCard';
 import { MONO, SANS } from './fonts/fonts';
 import { trailerEdit } from './edits/trailer';
+import { socialEdit } from './edits/social';
 import { readmeEdit } from './edits/readme';
+import { trailerEdit as trailerV1 } from './edits/v1/trailer';
+import { readmeEdit as readmeV1 } from './edits/v1/readme';
 
 export type TrailerProps = {
   /** a folder under trailer/capture/ holding capture.jsonl[.gz] ("synthetic", "fixture", or a real take id) */
   take: string;
-  /** which cut: the trailer's or the README loop's */
-  edit: 'trailer' | 'readme';
+  /** which cut: the trailer's, the 15 s social cut, the README loop's (or the take4-era v1 cuts) */
+  edit: 'trailer' | 'social' | 'readme' | 'trailer-v1' | 'readme-v1';
   /** the panes, left to right (or top to bottom) */
   seats: string[];
   /** optional music: a URL, or a path under public/ */
@@ -44,7 +48,7 @@ export type TrailerProps = {
   compact: boolean;
 };
 
-const EDITS: Record<TrailerProps['edit'], Edit> = { trailer: trailerEdit, readme: readmeEdit };
+const EDITS: Record<TrailerProps['edit'], Edit> = { trailer: trailerEdit, social: socialEdit, readme: readmeEdit, 'trailer-v1': trailerV1, 'readme-v1': readmeV1 };
 const FADE = 20; // frames of crossfade into the end card
 const HOLD = 1.2; // seconds the last replay frame holds (the end card's crossfade starts in it)
 
@@ -52,7 +56,8 @@ const scrubOpts = (p: TrailerProps) => ({ words: p.scrubWords, dropRows: p.dropR
 
 function timing(edit: Edit, resolved: ResolvedEdit, fps: number) {
   const hook = Math.round(edit.hookSeconds * fps);
-  const main = hook + resolved.frames + Math.round(HOLD * fps);
+  // a loop (no end card) runs straight back to its start: no hold on the last frame
+  const main = hook + resolved.frames + Math.round((edit.v2 && !edit.endSeconds ? 0 : HOLD) * fps);
   const end = Math.round(edit.endSeconds * fps);
   return { hook, main, end, total: end > 0 ? main + end - FADE : main };
 }
@@ -75,8 +80,9 @@ export const calculateTrailerMetadata: CalculateMetadataFunction<TrailerProps> =
   };
 };
 
-function layoutFor(width: number, height: number, cap: Capture, seats: string[], compact: boolean): StageLayout {
+function layoutFor(width: number, height: number, cap: Capture, seats: string[], compact: boolean, edit: Edit): StageLayout | SplitLayout {
   const s = cap.meta.sessions[seats[0]] || { cols: 120, rows: 40 };
+  if (edit.v2) return splitLayout(width, height, seats, s.cols, s.rows, { captions: edit.captions !== false, node: !!edit.roomNode });
   if (width / height > 1.5 && height >= 1000) return sideLayout(width, height, seats, s.cols, s.rows);
   if (width === height) return stackedLayout(width, height, seats, s.cols, { top: 84, captionZone: 176, gap: 26, mx: 44, compact });
   return stackedLayout(width, height, seats, s.cols, { top: 14, captionZone: 84, gap: 12, mx: 30, compact });
@@ -189,12 +195,32 @@ const Main: React.FC<{ cap: Capture; edit: Edit; resolved: ResolvedEdit; layout:
   );
 };
 
+/** The v2 cut: the split replay from its first frame (no hook), dimming before the end card (or fading, for a loop). */
+const SplitMain: React.FC<{ cap: Capture; edit: Edit; resolved: ResolvedEdit; layout: SplitLayout }> = ({ cap, edit, resolved, layout }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const end = resolved.frames;
+  const opacity = edit.endSeconds
+    ? interpolate(frame, [end + fps * HOLD - FADE - 8, end + fps * HOLD - 4], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.65, 0, 0.35, 1) })
+    : Math.min(
+        interpolate(frame, [0, fps * 0.25], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }),
+        interpolate(frame, [end - fps * 0.35, end], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }),
+      );
+  return (
+    <AbsoluteFill style={{ background: `radial-gradient(ellipse 80% 70% at 50% 40%, ${COLORS.bgLift} 0%, ${COLORS.bg} 75%)` }}>
+      <AbsoluteFill style={{ opacity }}>
+        <SplitReplay cap={cap} edit={resolved} layout={layout} frame={frame} roomNode={!!edit.roomNode} captions={edit.captions !== false} subtitle="Claude Code" />
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+};
+
 export const Trailer: React.FC<TrailerProps> = (props) => {
   const { fps, width, height } = useVideoConfig();
   const cap = useTake(props.take, scrubOpts(props));
   const edit = EDITS[props.edit];
   const resolved = useMemo(() => (cap ? resolveEdit(cap, edit, fps) : null), [cap, edit, fps]);
-  const layout = useMemo(() => (cap ? layoutFor(width, height, cap, props.seats, props.compact) : null), [cap, width, height, props.seats, props.compact]);
+  const layout = useMemo(() => (cap ? layoutFor(width, height, cap, props.seats, props.compact, edit) : null), [cap, width, height, props.seats, props.compact, edit]);
   if (!cap || !resolved || !layout) return <AbsoluteFill style={{ background: COLORS.bg }} />;
   const t = timing(edit, resolved, fps);
   const music = props.music ? (/^(https?:|data:)/.test(props.music) ? props.music : staticFile(props.music)) : null;
@@ -203,13 +229,15 @@ export const Trailer: React.FC<TrailerProps> = (props) => {
       {t.end > 0 ? (
         <TransitionSeries>
           <TransitionSeries.Sequence name="Hook and replay" durationInFrames={t.main} premountFor={fps}>
-            <Main cap={cap} edit={edit} resolved={resolved} layout={layout} hook={t.hook} />
+            {layout.kind === 'split' ? <SplitMain cap={cap} edit={edit} resolved={resolved} layout={layout} /> : <Main cap={cap} edit={edit} resolved={resolved} layout={layout} hook={t.hook} />}
           </TransitionSeries.Sequence>
           <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: FADE })} />
           <TransitionSeries.Sequence name="End card" durationInFrames={t.end} premountFor={fps}>
-            <EndCard />
+            <EndCard variant={edit.v2 ? (edit.endCard ?? 'full') : 'v1'} />
           </TransitionSeries.Sequence>
         </TransitionSeries>
+      ) : layout.kind === 'split' ? (
+        <SplitMain cap={cap} edit={edit} resolved={resolved} layout={layout} />
       ) : (
         <Main cap={cap} edit={edit} resolved={resolved} layout={layout} hook={t.hook} />
       )}

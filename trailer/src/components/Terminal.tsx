@@ -22,7 +22,7 @@ export function visibleRows(ansi: string, nrows: number, box: PaneBox): { row: C
   return rows.slice(start, start + box.rows);
 }
 
-const Row: React.FC<{ row: Cell[]; box: PaneBox }> = ({ row, box }) => {
+export const Row: React.FC<{ row: Cell[]; box: PaneBox }> = ({ row, box }) => {
   const rs = runs(row);
   return (
     <>

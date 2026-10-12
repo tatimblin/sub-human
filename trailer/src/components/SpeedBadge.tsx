@@ -5,16 +5,18 @@ import { COLORS, type StageLayout } from '../design';
 import { MONO } from '../fonts/fonts';
 
 /** A quiet "12×" with a clock whose hand runs at source speed, shown while a segment plays faster than 1×. */
-export const SpeedBadge: React.FC<{ edit: ResolvedEdit; frame: number; layout: StageLayout; sourceMs: number; opacity?: number }> = ({
-  edit,
-  frame,
-  layout,
-  sourceMs,
-  opacity = 1,
-}) => {
+export const SpeedBadge: React.FC<{
+  edit: ResolvedEdit;
+  frame: number;
+  layout: Pick<StageLayout, 'width' | 'height' | 'captionBottom'>;
+  sourceMs: number;
+  opacity?: number;
+  /** only over segments marked as model time */
+  modelOnly?: boolean;
+}> = ({ edit, frame, layout, sourceMs, opacity = 1, modelOnly = false }) => {
   const { fps } = useVideoConfig();
   const { seg } = segmentAt(edit, frame);
-  if (seg.rate < 1.3) return null;
+  if (seg.rate < 1.3 || (modelOnly && !seg.model)) return null;
   const local = frame - seg.outStart;
   const k = Math.min(
     interpolate(local, [0, fps * 0.25], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }),

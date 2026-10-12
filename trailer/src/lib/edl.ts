@@ -39,12 +39,73 @@ export type Callout = {
   find: string | string[];
 };
 
+/** v2: one pane's own camera (zoom within its half). */
+export type PaneView = {
+  /** relative to the layout's default framing (1) */
+  zoom?: number;
+  /** centre on the row holding this text, or the first of several that is there (searched at the segment's end) */
+  find?: string | string[];
+  /** or hold to the top or bottom of the screen (the bottom bar: the agent panel) */
+  anchor?: 'top' | 'bottom';
+};
+
+/** A message crossing between panes: a tag in the sender's colour flies from one to the other. */
+export type Tag = {
+  from: string; // a seat, or "claude" (the room's Claude)
+  to: string | string[];
+  /** who it is from, as the tag's header says it ("bob's Claude", "bob"); the colour is `from`'s */
+  sender: string;
+  /** who it is for, as the header says it (default: the destination's name) */
+  toLabel?: string;
+  label: string;
+  /** the row it leaves from / lands on (else the pane's middle) */
+  fromFind?: string | string[];
+  toFind?: string | string[];
+  /** it lands when this source time plays (else at `end` of the segment) */
+  arrive?: Anchor;
+  /** flight, in output seconds (default 1) */
+  dur?: number;
+  /** or by fraction of the segment */
+  start?: number;
+  end?: number;
+};
+
+/** A rectangle drawn round the rows holding some text, in the colour of `who`, with an optional label. */
+export type Mark = {
+  pane: string;
+  find: string | string[];
+  /** match a whole row (trimmed), not a substring: "❯" is the empty prompt */
+  exact?: boolean;
+  rows?: number;
+  who?: string;
+  label?: string;
+};
+
 export type Segment = {
   id: string;
   from: Anchor;
-  to: Anchor;
+  /** not needed with `hold` */
+  to?: Anchor;
+  /** freeze on `from` for this many output seconds (the title, a message in flight) */
+  hold?: number;
   /** playback rate; default 1 */
   speed?: number;
+  /** model time: the speed badge shows over it (and only over it) */
+  model?: boolean;
+  /** v2: each pane's camera; panes not named keep their default framing */
+  views?: Record<string, PaneView>;
+  /** v2: a slow push in across the segment (both panes' zoom grows to this factor; for holds) */
+  drift?: number;
+  /** v2: the pane the beat is about (the other steps back a little) */
+  focus?: string;
+  tags?: Tag[];
+  marks?: Mark[];
+  /** v2: false hides the room's Claude's plate (before the room exists) */
+  room?: boolean;
+  /** v2: the title over the split */
+  overlay?: 'title';
+  /** a cut to somewhere else in the take: the screens dip to dark between */
+  dip?: boolean;
   /** squeeze to this many output seconds (never slower than 1x); wins over speed */
   fit?: number;
   /** caption text; defaults to the caption of the latest marker at `from` */
@@ -62,10 +123,21 @@ export type Edit = {
   hookTeaser?: string;
   /** seconds of end card */
   endSeconds: number;
+  /** v2: the split-screen cut (panes zoom within their halves, name plates, message tags, no hook) */
+  v2?: boolean;
+  /** v2: the room's Claude's plate between the panes (tags fly to and from it) */
+  roomNode?: boolean;
+  /** v2: captions (off for the README loop: name plates only) */
+  captions?: boolean;
+  /** v2: the end card's form */
+  endCard?: 'full' | 'short';
   segments: Segment[];
 };
 
-export type ResolvedSegment = Segment & {
+export type ResolvedTag = Tag & { arriveT: number | null };
+
+export type ResolvedSegment = Omit<Segment, 'tags'> & {
+  tags?: ResolvedTag[];
   srcStart: number;
   srcEnd: number;
   rate: number;
@@ -123,9 +195,21 @@ export function resolveEdit(cap: Capture, edit: Edit, fps: number): ResolvedEdit
   let out = 0;
   for (const seg of edit.segments) {
     const a = resolveAnchor(cap, seg.from);
-    const b = resolveAnchor(cap, seg.to);
+    const tags = seg.tags?.map((g) => ({ ...g, arriveT: g.arrive != null ? resolveAnchor(cap, g.arrive) : null }));
+    if (seg.hold) {
+      if (a == null) {
+        warnings.push(`segment ${seg.id}: no anchor ${describe(seg.from)} in take ${cap.take}; skipped`);
+        continue;
+      }
+      const outFrames = Math.max(1, Math.round(seg.hold * fps));
+      const marker = [...cap.markers].reverse().find((k) => k.t <= a + 1);
+      segments.push({ ...seg, tags, srcStart: a, srcEnd: a, rate: 0, outStart: out, outFrames, captionText: seg.caption ?? marker?.caption ?? '' });
+      out += outFrames;
+      continue;
+    }
+    const b = seg.to == null ? null : resolveAnchor(cap, seg.to);
     if (a == null || b == null) {
-      warnings.push(`segment ${seg.id}: no anchor ${a == null ? describe(seg.from) : describe(seg.to)} in take ${cap.take}; skipped`);
+      warnings.push(`segment ${seg.id}: no anchor ${a == null ? describe(seg.from) : describe(seg.to ?? '(none)')} in take ${cap.take}; skipped`);
       continue;
     }
     if (b <= a) {
@@ -136,7 +220,7 @@ export function resolveEdit(cap: Capture, edit: Edit, fps: number): ResolvedEdit
     const rate = seg.fit ? Math.max(1, len / (seg.fit * 1000)) : seg.speed || 1;
     const outFrames = Math.max(1, Math.round((len / rate / 1000) * fps));
     const marker = [...cap.markers].reverse().find((k) => k.t <= a + 1);
-    segments.push({ ...seg, srcStart: a, srcEnd: b, rate, outStart: out, outFrames, captionText: seg.caption ?? marker?.caption ?? '' });
+    segments.push({ ...seg, tags, srcStart: a, srcEnd: b, rate, outStart: out, outFrames, captionText: seg.caption ?? marker?.caption ?? '' });
     out += outFrames;
   }
   for (const w of warnings) console.warn('[edl] ' + w);
@@ -155,6 +239,7 @@ export function segmentAt(edit: ResolvedEdit, f: number): { seg: ResolvedSegment
 /** Source time (ms) shown at replay frame f. */
 export function sourceTime(edit: ResolvedEdit, f: number, fps: number): number {
   const { seg } = segmentAt(edit, f);
+  if (seg.rate === 0) return seg.srcStart;
   const local = Math.max(0, Math.min(seg.outFrames, f - seg.outStart));
   return Math.min(seg.srcEnd, seg.srcStart + (local / fps) * 1000 * seg.rate);
 }
@@ -162,16 +247,17 @@ export function sourceTime(edit: ResolvedEdit, f: number, fps: number): number {
 /** Replay frames at which source time t plays (none if it was cut). */
 export function outputFrame(edit: ResolvedEdit, t: number, fps: number): { frame: number; rate: number } | null {
   for (const s of edit.segments) {
+    if (s.rate === 0) continue;
     if (t >= s.srcStart && t < s.srcEnd) return { frame: s.outStart + Math.floor(((t - s.srcStart) / s.rate / 1000) * fps), rate: s.rate };
   }
   return null;
 }
 
 /** The row (0-based, in the session's screen) holding `text` near the end of a segment, or null. */
-export function findRow(cap: Capture, session: string, seg: { srcStart: number; srcEnd: number }, text: string | string[]): number | null {
+export function findRow(cap: Capture, session: string, seg: { srcStart: number; srcEnd: number }, text: string | string[], times?: number[]): number | null {
   const rows = cap.meta.sessions[session]?.rows;
   for (const want of Array.isArray(text) ? text : [text]) {
-    for (const t of [seg.srcEnd - 1, (seg.srcStart + seg.srcEnd) / 2, seg.srcStart]) {
+    for (const t of times ?? [seg.srcEnd - 1, (seg.srcStart + seg.srcEnd) / 2, seg.srcStart]) {
       const f = frameAt(cap, session, t);
       if (!f) continue;
       const r = screenRows(f.ansi, rows);

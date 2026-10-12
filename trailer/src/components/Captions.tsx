@@ -1,7 +1,7 @@
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, useVideoConfig } from 'remotion';
 import type { ResolvedEdit } from '../lib/edl';
-import { COLORS, type StageLayout } from '../design';
+import { COLORS, PEOPLE, type StageLayout } from '../design';
 import { MONO, SANS } from '../fonts/fonts';
 
 type Block = { start: number; end: number; text: string; eyebrow?: string };
@@ -17,8 +17,25 @@ export function captionBlocks(edit: ResolvedEdit): Block[] {
   return out.filter((b) => b.text);
 }
 
+type CaptionLayout = Pick<StageLayout, 'width' | 'height' | 'captionBottom' | 'captionSize' | 'eyebrowSize'>;
+
+/** "alice", "bob" and "the room's Claude" in their own colours (the colour always sits on the name). */
+const NAMES = new RegExp(`(${["room's Claude", 'alice', 'bob'].join('|')})`, 'g');
+const KEY: Record<string, string> = { alice: 'alice', bob: 'bob', "room's Claude": 'claude' };
+function coloured(text: string): React.ReactNode {
+  return text.split(NAMES).map((part, i) =>
+    KEY[part] ? (
+      <span key={i} style={{ color: PEOPLE[KEY[part]].color, fontWeight: 650 }}>
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
+}
+
 /** Captions for muted viewing: one line (two at most), an optional accent eyebrow naming the command. */
-export const Captions: React.FC<{ edit: ResolvedEdit; frame: number; layout: StageLayout; opacity?: number }> = ({ edit, frame, layout, opacity = 1 }) => {
+export const Captions: React.FC<{ edit: ResolvedEdit; frame: number; layout: CaptionLayout; opacity?: number; names?: boolean }> = ({ edit, frame, layout, opacity = 1, names = false }) => {
   const { fps } = useVideoConfig();
   const block = captionBlocks(edit).find((b) => frame >= b.start && frame < b.end);
   if (!block) return null;
@@ -62,7 +79,7 @@ export const Captions: React.FC<{ edit: ResolvedEdit; frame: number; layout: Sta
             textWrap: 'balance',
           }}
         >
-          {block.text}
+          {names ? coloured(block.text) : block.text}
         </div>
       </div>
     </AbsoluteFill>
