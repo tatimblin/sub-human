@@ -1,6 +1,7 @@
 'use strict';
 // S10: leave: both exit, the reaper completes task 1 and stops the room's Claude; plus run-wide notice and id checks
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const paths = require('../lib/paths.js');
 const { MAIN_ROW } = require('../lib/panes.js');
 const { readJson, readText, clip, esc } = require('../lib/io.js');
@@ -35,7 +36,7 @@ module.exports = {
     // every human saw a join/leave notice
     const moves = log.filter(e => (e.kind === 'member_joined' || e.kind === 'member_left') && e.via === 'system' && e.from !== 'claude');
     const per = [A, B].map(n => {
-      const rec = readJson(path.join(roomDir, 'rows', `notices-${n}.json`), {});
+      const rec = readJson(path.join(x.rowsDir(n), `notices-${n}.json`), {});
       const lg = Array.isArray(rec.log) ? rec.log : [];
       const items = lg.map(y => { const e = log.find(z => z.id === y.id); return `#${y.id} ${e ? `${e.from} ${e.kind === 'member_left' ? 'left' : 'joined'}` : '?'} via ${y.via}`; });
       return { n, lg, items };
@@ -57,5 +58,16 @@ module.exports = {
       }
     }
     det('No room entry ids (#N) in the members\' panes (task numbers aside)', hits.length === 0, hits.length ? `${hits.length} line(s): ${hits.slice(0, 4).join(' | ')}` : `none in ${memberCaps.length} captures`);
+
+    // --film: B's machine reached the room over ssh to a private sshd (scripts/devbox.sh): it stops after S10
+    if (x.remote && x.remote[B]) {
+      const devbox = path.join(path.dirname(path.dirname(x.remote[B])), 'devbox');
+      const cfg = path.join(devbox, 'sshd_config');
+      const ps = spawnSync('pgrep', ['-f', `sshd -D -e -f ${cfg}`], { encoding: 'utf8' });
+      const pids = (ps.stdout || '').trim().split('\n').filter(Boolean);
+      const pidFile = readText(path.join(devbox, 'sshd.pid'));
+      det('The private sshd (devbox) stopped after the room closed: no process serves its config', pids.length === 0 && !pidFile,
+        `${pids.length ? `still running: pid ${pids.join(', ')}` : 'no sshd for ' + cfg}; sshd.pid ${pidFile ? `still there (${pidFile.trim()})` : 'gone'}`);
+    }
   },
 };

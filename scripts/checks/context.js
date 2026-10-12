@@ -4,7 +4,9 @@
  *
  *   const ctx = context({ screens, home, room })
  *
- * ctx.A, B (the two people: A opened the room, B joined; screens/run.json seats, default alice and bob), DEMO (the
+ * ctx.A, B (the two people: A opened the room, B joined; screens/run.json seats, default alice and bob), remote
+ * ({NAME: HOME}: a seat on another machine and its sub-human home there, --film's jess; run.json remote), rowsDir(NAME)
+ * (that seat's rows/: in the host's room dir, or in its own mirror), DEMO (the
  * scripted words), code, roomDir, log, members, roomClaudeSid, job, index (screens/index.json), home2 (S11's second home, carol's: by
  * default home's sibling), and the helpers of four modules:
  *   checks/captures.js     the captures (cap, caps, capName, span, runStart) and the per-step state (st, stText, nativeTasks)
@@ -39,11 +41,12 @@ const DEMO = {
 function runInfo(screens) {
   const r = readJson(path.join(screens, 'run.json'), {}) || {};
   const seats = Array.isArray(r.seats) && r.seats.length === 2 ? r.seats : ['alice', 'bob'];
-  return { A: seats[0], B: seats[1], DEMO: { ...DEMO, ...(r.words && typeof r.words === 'object' ? r.words : {}) } };
+  const remote = r.remote && typeof r.remote === 'object' ? r.remote : {};
+  return { A: seats[0], B: seats[1], remote, DEMO: { ...DEMO, ...(r.words && typeof r.words === 'object' ? r.words : {}) } };
 }
 
 function context({ screens, home, room, home2 = path.join(path.dirname(home), 'home2') }) {
-  const { A, B, DEMO: words } = runInfo(screens);
+  const { A, B, remote, DEMO: words } = runInfo(screens);
   const index = readJson(path.join(screens, 'index.json'), []);
   let code = room || (index.find(r => r.room) || {}).room;
   if (!code) { try { code = fs.readdirSync(path.join(home, 'rooms')).sort().at(-1); } catch { /* none */ } }
@@ -55,11 +58,13 @@ function context({ screens, home, room, home2 = path.join(path.dirname(home), 'h
   const job = members.claude && members.claude.job;
 
   const caps = captures({ screens, index });
+  // a seat's session-local room files (rows/…): the host's room dir, or that seat's mirror on its own machine
+  const rowsDir = name => path.join(remote[name] ? path.join(remote[name], 'rooms', code) : roomDir, 'rows');
   return {
-    DEMO: words, A, B, screens, home, home2, code, roomDir, log, members, roomClaudeSid, job, index,
+    DEMO: words, A, B, remote, rowsDir, screens, home, home2, code, roomDir, log, members, roomClaudeSid, job, index,
     ...caps,
     ...transcripts({ roomClaudeSid, projects: paths.projectsDir() }), textOf,
-    ...roomLog({ home, code, roomDir, log }),
+    ...roomLog({ home, code, roomDir, log, rowsDir }),
     cost: runCost({ index, runStart: caps.runStart, seats: [A, B] }),
   };
 }

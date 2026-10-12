@@ -8,7 +8,7 @@ const { context } = require('../checks/context.js');
 
 // the API the scene modules read (checks/context.js composes it from captures, transcripts, log and cost)
 const API = [
-  'DEMO', 'A', 'B', 'screens', 'home', 'home2', 'code', 'roomDir', 'log', 'members', 'roomClaudeSid', 'job', 'index', 'props', 'runStart',
+  'DEMO', 'A', 'B', 'remote', 'rowsDir', 'screens', 'home', 'home2', 'code', 'roomDir', 'log', 'members', 'roomClaudeSid', 'job', 'index', 'props', 'runStart',
   'caps', 'cap', 'capName', 'span', 'stateDir', 'st', 'stText', 'nativeTasks', 'stateFile',
   'seatFiles', 'entries', 'inSpan', 'toolUses', 'assistantIds', 'peerIn', 'wakeIn', 'chatIn', 'pullIn', 'chatTurn', 'roomClaudeTurns', 'textOf',
   'byKind', 'fmt', 'logIn', 'replyAfter', 'shownVia', 'noModelTurn', 'rowUserText', 'rowReply', 'chainOk', 'cost',

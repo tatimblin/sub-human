@@ -14,8 +14,13 @@
 #                   side (the handler in src/server.js, after an Explore subagent reads the store), each with its own
 #                   tests. tristan's Claude pushes and tells jess's; only then does jess's pull, run npm test and push.
 #                   Both people pull and run npm test. After jess joins, each opens the room row in the agent panel.
+#                   jess is another machine: her seat has its own sub-human home ($BASE/laptop/home) and ssh config,
+#                   and S2 joins her over a real ssh link to a private sshd on 127.0.0.1 (scripts/devbox.sh: run as
+#                   you, never root, never ~/.ssh): tristan's /sub-human invite shows `/sub-human join devbox ROOM
+#                   PIN`, jess types it, tristan's card lets her in, a bare /sub-human seats her. The sshd stops after
+#                   S10 (or an abort; a resume starts it again).
 #                   Checks run at the end; their verdict goes in run.json.
-#   scripts/demo.sh stop            kill the sh-* tmux sessions (never numbered ones), and stop a capture
+#   scripts/demo.sh stop            kill the sh-* tmux sessions (never numbered ones), stop a capture and the film's sshd
 #
 # Seats: SEAT_A opens the room, SEAT_B joins: alice and bob (--film: tristan and jess). S6–S9, S9b and S11 never run
 # in --film and keep alice and bob.
@@ -42,6 +47,12 @@ PLUGIN="$REPO/plugin/sub-human"
 BASE=/tmp/sh-demo
 export SUB_HUMAN_HOME="$BASE/home"
 HOME2="$BASE/home2"   # S11: carol's home, standing in for another machine
+# --film: jess's seat is another machine over ssh. LAPTOP is her machine (her sub-human home, her ssh config and
+# known_hosts); DEVBOX is tristan's as ssh reaches it: a private sshd (scripts/devbox.sh) with its own host key and the
+# authorized_keys sub-human writes the invite's door and the card's Let in line to (SUB_HUMAN_AUTHORIZED_KEYS).
+LAPTOP="$BASE/laptop"; DEVBOX="$BASE/devbox"
+SSH_PORT="${SH_DEMO_SSH_PORT:-2222}"
+DEVBOX_SH="$REPO/scripts/devbox.sh"
 export SNAP_DIR="${SNAP_DIR:-$REPO/docs/rebuild/screens}"
 LIB="node $REPO/scripts/demo-lib.js"
 SEAT_A=alice; SEAT_B=bob   # the two people: A opens the room, B joins (--film: tristan and jess)
@@ -56,6 +67,7 @@ case "${1:-}" in
   stop)
     node "$REPO/scripts/capture.js" stop
     for s in $(tmux ls -F '#{session_name}' 2>/dev/null | grep -E '^sh-'); do tmux kill-session -t "$s" && echo "killed $s"; done
+    "$DEVBOX_SH" down "$DEVBOX"
     exit 0 ;;
 esac
 
@@ -70,12 +82,13 @@ while [ $# -gt 0 ]; do
     --no-reset) RESET=0 ;;
     --film) FILM=1 ;;
     --take) TAKE="$2"; shift ;;
-    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,42p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
 done
 [ "$FILM" = 1 ] && { SEAT_A=tristan; SEAT_B=jess; }
+REMOTE=0; [ "$FILM" = 1 ] && REMOTE=1   # SEAT_B joins from another machine over ssh (S2)
 SEATS=("$SEAT_A" "$SEAT_B")
 SESSIONS="sh-claude,sh-$SEAT_A,sh-$SEAT_B"
 
@@ -120,6 +133,33 @@ film_repo() {
   done
 }
 
+# seat_env (--film): the two machines' environments, one KEY=VALUE per line in $BASE/seat-env/SEAT (launch.sh adds
+# them after the defaults, so they win).
+#   A, the host: its ssh address is the alias devbox (the invite's line reads `/sub-human join devbox …`, never a user
+#      name), the private sshd's host key, the authorized_keys that sshd reads, and its own ssh config (ssh -G devbox
+#      names the user for the invite's record)
+#   B, another machine: her own sub-human home, her own ssh config (devbox -> 127.0.0.1:SSH_PORT, her known_hosts) for
+#      every ssh sub-human runs there, and her machine's name on the host's card
+seat_env() {
+  mkdir -p "$BASE/seat-env" "$LAPTOP/home"
+  printf '%s\n' "SUB_HUMAN_SSH_ADDR=devbox" "SUB_HUMAN_SSH_HOST_KEY=$DEVBOX/ssh_host_ed25519_key.pub" \
+    "SUB_HUMAN_AUTHORIZED_KEYS=$DEVBOX/.ssh/authorized_keys" "SUB_HUMAN_SSH_OPTS=-F $DEVBOX/ssh_config" > "$BASE/seat-env/$SEAT_A"
+  printf '%s\n' "SUB_HUMAN_HOME=$LAPTOP/home" "SUB_HUMAN_SSH_OPTS=-F $LAPTOP/.ssh/config" \
+    "SUB_HUMAN_MACHINE_LABEL=$SEAT_B-laptop" > "$BASE/seat-env/$SEAT_B"
+}
+# devbox_up / devbox_down (--film): the private sshd (scripts/devbox.sh). up keeps the host key and authorized_keys of
+# a resumed take (jess's link pinned that key; her admitted line is in that file). down stops sshd and its sessions;
+# with --link (after S10) jess's link daemon first, which would otherwise redial for a while. After an abort her daemon
+# is left to redial: a resume (--from) starts sshd again and her link comes back by itself.
+devbox_up() { "$DEVBOX_SH" up "$DEVBOX" "$LAPTOP" "$SSH_PORT" >&2; }
+devbox_down() {
+  if [ "${1:-}" = --link ]; then
+    local p; p=$($LIB json-field "$LAPTOP/home/rooms/${ROOM:-none}/link.json" pid 2>/dev/null)
+    [ -n "$p" ] && kill "$p" 2>/dev/null
+  fi
+  "$DEVBOX_SH" down "$DEVBOX" >&2
+}
+
 # ---------- sessions ----------------------------------------------------------------------------
 
 write_launcher() {
@@ -127,14 +167,17 @@ write_launcher() {
   cat > "$BASE/launch.sh" <<EOF
 #!/usr/bin/env bash
 # launch.sh SEAT [claude args…] — a clean env: env -i, then only what a login shell would give (SH_SEAT_HOME, when
-# set, is that seat's SUB_HUMAN_HOME: S11's second home). The tmux
+# set, is that seat's SUB_HUMAN_HOME: S11's second home), then the lines of $BASE/seat-env/SEAT (KEY=VALUE, one
+# per line: --film's two machines, seat_env). The tmux
 # server's global env may carry CLAUDE_CODE_* vars from whichever Claude Code session started it: a seat
 # (and the room's Claude it spawns) must inherit none of them.
 seat=\$1; shift
 cd "$BASE/\$seat" || exit 1
+extra=()
+if [ -f "$BASE/seat-env/\$seat" ]; then while IFS= read -r l; do [ -n "\$l" ] && extra+=("\$l"); done < "$BASE/seat-env/\$seat"; fi
 exec env -i HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-${USER:-}}" SHELL="${SHELL:-/bin/zsh}" \\
   PATH="$PATH" TERM="\${TERM:-xterm-256color}" LANG="${LANG:-en_US.UTF-8}" TMPDIR="${TMPDIR:-/tmp/}" \\
-  SUB_HUMAN_HOME="\${SH_SEAT_HOME:-$SUB_HUMAN_HOME}" $FILM_ENV \\
+  SUB_HUMAN_HOME="\${SH_SEAT_HOME:-$SUB_HUMAN_HOME}" $FILM_ENV \${extra[@]+"\${extra[@]}"} \\
   claude "\$@"
 EOF
   chmod +x "$BASE/launch.sh"
@@ -171,6 +214,7 @@ setup() {
     # an aborted run leaves its room's Claude (a claude --bg job started in a seat dir) and dying seats' session-end
     # hooks, which write the old room back into the home after the rm: stop them and wait before resetting
     pkill -f "claude daemon run .*\"cwd\":\"(/private)?$BASE/" 2>/dev/null
+    "$DEVBOX_SH" down "$DEVBOX" >/dev/null 2>&1   # an earlier take's sshd
     for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -f "(/private)?$BASE/" >/dev/null || break; sleep 1; done
     rm -rf "$BASE"
     mkdir -p "$SUB_HUMAN_HOME"
@@ -178,6 +222,10 @@ setup() {
     else for seat in "${SEATS[@]}"; do cp -R "$REPO/demo/app.pristine" "$BASE/$seat"; done; fi
     mkdir -p "$SNAP_DIR"; rm -rf "$SNAP_DIR"/*.svg "$SNAP_DIR"/*.txt "$SNAP_DIR"/*.ansi "$SNAP_DIR/index.json" "$SNAP_DIR/waits.jsonl" "$SNAP_DIR/state"
     ls "$HOME/.claude/plans" > "$BASE/plans-before.txt" 2>/dev/null
+  fi
+  if [ "$REMOTE" = 1 ]; then
+    seat_env
+    devbox_up || { echo "film: the private sshd for jess's ssh join did not start (scripts/devbox.sh; SH_DEMO_SSH_PORT picks another port)" >&2; exit 1; }
   fi
   write_launcher
   local fresh=()
@@ -232,6 +280,8 @@ snap() { # caption — capture the panes (the room's Claude via claude logs), an
   local d="$SNAP_DIR/state/$SCENE/$STEP"   # this step's evidence (checks.js reads state/SCENE/N)
   mkdir -p "$d"
   cp "$SUB_HUMAN_HOME/rooms/$r/members.json" "$SUB_HUMAN_HOME/rooms/$r"/rows/*.json "$d/" 2>/dev/null || true
+  # B on another machine (--film): B's rows are session-local, in B's mirror there (holds-B, notices-B, …)
+  [ "$REMOTE" = 1 ] && cp "$LAPTOP/home/rooms/$r"/rows/*"-$SEAT_B".json "$d/" 2>/dev/null
   cp "$SUB_HUMAN_HOME/rooms/$r/tasks.json" "$d/" 2>/dev/null || true
   claude agents --json > "$d/agents.json" 2>/dev/null || true
   "$PLUGIN/scripts/sub-human" tasks --room "$r" > "$d/sub-human-tasks.txt" 2>&1 || true
@@ -332,10 +382,13 @@ S1() { # A joins with no room open: the room is created and the headless room's 
   snap "$a runs /sub-human $a: room $(room) opened, the room's Claude started in the background; one $(room) row in $a's panel, a $a row in the room Claude's panel"
 }
 
-S2() { # B joins
+S2() { # B joins (--film: from another machine, over ssh: S2_ssh)
   local a=$SEAT_A b=$SEAT_B
-  mark join "$b joins from another session"
-  submit "$b" "/sub-human $b"
+  if [ "$REMOTE" = 1 ]; then S2_ssh || return 1
+  else
+    mark join "$b joins from another session"
+    submit "$b" "/sub-human $b"
+  fi
   need wait_log --kind member_joined --from "$b" --timeout 60 || return 1
   # the join as a group-chat line in A's pane ("sub-human: B joined": the hooks module's $.ui.log notice, no
   # model turn); kept as evidence
@@ -351,6 +404,46 @@ S2() { # B joins
     show_room "$a" "$b" || return 1
     show_room "$b" "$a" || return 1
   fi
+}
+
+# S2_ssh (--film): B joins A's room from her machine over ssh. A's /sub-human invite shows A one line with a 4-digit PIN
+# (to A only: the hook's hidden reply, never A's Claude); the driver reads it off A's pane (never through a model) and
+# B types it: her link runs the PIN check through the host's enrollment door over ssh (scripts/devbox.sh's sshd), and
+# A's card asks "Let B … on B-laptop join room …?"; A answers Let in (demo-lib admit-card: the person's own answer on the
+# card); once B's link is in (the host's line "B's machine (…) joined the room"), a bare /sub-human takes her seat.
+S2_ssh() {
+  local a=$SEAT_A b=$SEAT_B
+  local before; before=$($LIB log-max)
+  local d="$SNAP_DIR/state/S2"; mkdir -p "$d"
+  mark invite "$a invites $b's machine: one line with a PIN"
+  submit "$a" "/sub-human invite"
+  need wait_pane "$a" "invite to room $(room) for one machine, over ssh devbox" 30 --what "$a's pane shows the ssh invite (to $a, never to $a's Claude)" || return 1
+  local line; line=$($LIB join-line "sh-$a")
+  [[ "$line" =~ ^join\ devbox\ $(room)\ [0-9]{4}$ ]] || { ABORT="S2: no \"join devbox $(room) PIN\" line readable in $a's pane (read: ${line:-nothing})"; return 1; }
+  echo "$line" > "$d/join-line.txt"   # the checks look for its PIN in every transcript (it must be in none)
+  record "the driver read $a's invite line off $a's pane"
+  settle "$a"
+  snap "$a runs /sub-human invite: one line for $b's machine, /sub-human join devbox $(room) and a 4-digit PIN, shown to $a only"
+  mark join "$b joins from her machine over ssh"
+  submit "$b" "/sub-human $line"
+  need wait_pane "$b" "checked your PIN" 90 --what "$b's link ran the PIN check with the host over ssh; $a's card asks" || return 1
+  settle "$b"
+  snap "$b types the line: her machine checks the PIN with the host over ssh (her Claude never sees it); a card on $a's machine asks"
+  mark card "$a lets her in"
+  need $LIB admit-card "sh-$a" --timeout 120 || return 1
+  need wait_log --kind status --from room --text-has "$b's machine (" --after "$before" --timeout 60 --what "$b's link connects over ssh once let in (the host's line)" || return 1
+  $LIB link-shape "$LAPTOP/home/links/$(room).json" > "$d/link-file.json" 2>/dev/null
+  mark seated "$b takes her seat in the room"
+  submit "$b" "/sub-human"
+  local tries=0
+  until $LIB wait-log --kind member_joined --from "$b" --after "$before" --timeout 20 >/dev/null 2>&1 || [ $tries -ge 3 ]; do
+    record "$b's seat: /sub-human again" fail
+    submit "$b" "/sub-human"
+    tries=$((tries + 1))
+  done
+  cp "$LAPTOP/home/machine.json" "$d/machine-$b.json" 2>/dev/null
+  cp "$SUB_HUMAN_HOME/machine.json" "$d/machine-host.json" 2>/dev/null
+  return 0
 }
 
 # The people's scripted words. The checks compare the log against them byte for byte: demo.sh writes them into
@@ -707,6 +800,10 @@ S10() { # leave: both exit → reap completes task 1 and stops the room's Claude
   # claude agents --json drops the stopped job a few seconds after stopped_at
   $LIB wait-job-gone --timeout 30
   snap "The reaper: room closed, task 1 completed, the room's Claude stopped (claude agents no longer lists it running)"
+  if [ "$REMOTE" = 1 ]; then   # the ssh side: B's link daemon (it stops by itself a minute after; now), then the sshd
+    devbox_down --link
+    "$DEVBOX_SH" status "$DEVBOX" && record "the private sshd still runs after S10" fail || record "the private sshd stopped after S10"
+  fi
 }
 
 # S11: what carol says, and the proposal alice's Claude puts to her alone
@@ -788,7 +885,7 @@ setup
 if [ "$FILM" = 1 ]; then
   # the recording: from here to the end (or an abort), every pane change of the two seats and sh-claude, keyed by name
   $CAPTURE start "$TAKE_DIR" --take "$TAKE" --interval 100 --sessions "$SEAT_A=sh-$SEAT_A,$SEAT_B=sh-$SEAT_B,claude=sh-claude" &
-  trap '$CAPTURE stop' EXIT
+  trap '$CAPTURE stop; devbox_down' EXIT   # the sshd too: an abort leaves none running (a resume starts it again)
   for _ in $(seq 50); do [ -e "$REPO/trailer/capture/.active.json" ] && break; sleep 0.1; done
   say "── recording take $TAKE -> ${TAKE_DIR#$REPO/}"
 fi
@@ -805,7 +902,8 @@ done
 # the planned scenes (a fresh run replaces the list, a resume adds to it), the two seats and the people's scripted
 # words; checks.js reads them
 fresh=(); [ "$RESET" = 1 ] && fresh=(--fresh)
-$LIB plan-run "$SNAP_DIR/run.json" --all "${ALL[*]}" --seats "$SEAT_A $SEAT_B" ${fresh[@]+"${fresh[@]}"} ${run[@]+"${run[@]}"}
+remote=(); [ "$REMOTE" = 1 ] && remote=(--remote "$SEAT_B=$LAPTOP/home")
+$LIB plan-run "$SNAP_DIR/run.json" --all "${ALL[*]}" --seats "$SEAT_A $SEAT_B" ${remote[@]+"${remote[@]}"} ${fresh[@]+"${fresh[@]}"} ${run[@]+"${run[@]}"}
 $LIB run-words "$SNAP_DIR/run.json" say3 "$SAY3" plan4 "$PLAN4" note5 "$NOTE5"
 
 started=0; [ -z "$FROM" ] && started=1

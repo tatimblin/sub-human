@@ -42,8 +42,9 @@
  *                                                  entry (0 if none)
  *   demo-lib.js log-max                           print the highest log id
  *   demo-lib.js json-string <text>                print text as a JSON string literal (for a tool argument in a prompt)
+ *   demo-lib.js json-field <file> <field>         print a JSON file's top-level field (exit 1: none; --film: jess's link pid)
  *   demo-lib.js link-shape <file>                 print a link file's shape (mode, token: bool, invite: bool,
- *                                                  transport), never its token (S11)
+ *                                                  transport, its ssh user as …), never its token (S11, --film S2)
  *   demo-lib.js latest-plan                       print the latest plan_rev hash
  *   demo-lib.js readonly <session>                exit 0 if a read-only client is attached
  *   demo-lib.js join-line <session>               print the line /sub-human invite showed in that pane, without its
@@ -71,10 +72,11 @@
  *   demo-lib.js synthetic-claude-prompt             run hooks/at-room.ts as the room Claude's UserPromptSubmit (shim stdin) for a
  *                                                  typed "hi" (CLAUDE_PID = the room Claude's pid); print its output
  *   demo-lib.js prune-index <index.json> <scene>…   drop those scenes' captures (before they run again)
- *   demo-lib.js plan-run <run.json> --all "S1 S2 …" [--fresh] [--seats "A B"] <scene>…   write {scenes, partial}: a
- *                                                  fresh run lists only <scene>…, a resume adds them to those listed;
- *                                                  --all order. --seats: the two people (seats: [A, B]; the checks
- *                                                  default to alice and bob)
+ *   demo-lib.js plan-run <run.json> --all "S1 S2 …" [--fresh] [--seats "A B"] [--remote "NAME=HOME"] <scene>…   write
+ *                                                  {scenes, partial}: a fresh run lists only <scene>…, a resume adds them
+ *                                                  to those listed; --all order. --seats: the two people (seats: [A, B];
+ *                                                  the checks default to alice and bob). --remote: a seat on another
+ *                                                  machine and its sub-human home there (remote: {NAME: HOME}; --film's jess)
  *   demo-lib.js run-words <run.json> <key> <text> [<key> <text>]…   the people's scripted words in run.json's words
  *                                                  (the checks compare the log against them)
  *   demo-lib.js record --what TEXT [--ok false]   one line in waits.jsonl for a driver step that is not a wait
@@ -661,7 +663,9 @@ async function linkShape(o) {
   let st;
   try { st = fs.statSync(f); } catch { return 1; }
   const l = readJson(f, {}) || {};
-  print(JSON.stringify({ mode: (st.mode & 0o777).toString(8), token: typeof l.token === 'string', invite: 'invite' in l, transport: l.transport }));
+  // an ssh transport's user is the login on the host (in --film your own account name): never in the evidence
+  const t = l.transport && typeof l.transport === 'object' ? { ...l.transport, ...('user' in l.transport ? { user: '…' } : {}) } : l.transport;
+  print(JSON.stringify({ mode: (st.mode & 0o777).toString(8), token: typeof l.token === 'string', invite: 'invite' in l, transport: t }));
   return 0;
 }
 
@@ -687,7 +691,9 @@ async function planRun(o) {
   const prev = o.fresh ? [] : (readJson(f, {}) || {}).scenes || [];
   const scenes = all.filter(x => prev.includes(x) || add.includes(x));
   const seats = String(o.seats || '').split(' ').filter(Boolean);
-  writeJson(f, { scenes, partial: scenes.length < all.length, ...(seats.length ? { seats } : {}) });
+  // --remote NAME=HOME: a seat on another machine (--film's jess, over ssh) and her sub-human home there
+  const remote = Object.fromEntries(String(o.remote || '').split(' ').filter(Boolean).map(kv => kv.split('=')).filter(([k, v]) => k && v));
+  writeJson(f, { scenes, partial: scenes.length < all.length, ...(seats.length ? { seats } : {}), ...(Object.keys(remote).length ? { remote } : {}) });
   return 0;
 }
 
@@ -742,6 +748,7 @@ const COMMANDS = {
   'last-id': lastId,
   'log-max': logMax,
   'json-string': async o => { process.stdout.write(JSON.stringify(o._.join(' '))); return 0; },
+  'json-field': async o => { const v = (readJson(o._[0], {}) || {})[o._[1]]; if (v != null) print(String(v)); return exit(v != null); },
   'link-shape': linkShape,
   'latest-plan': latestPlan,
   'prune-index': pruneIndex,
