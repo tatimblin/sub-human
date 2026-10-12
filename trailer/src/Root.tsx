@@ -19,7 +19,7 @@ export const RemotionRoot: React.FC = () => {
         height={1080}
         calculateMetadata={calculateTrailerMetadata}
         defaultProps={{
-          take: 'take5',
+          take: 'take7',
           edit: 'trailer' as const,
           seats: [] as string[],
           music: null,
@@ -39,7 +39,7 @@ export const RemotionRoot: React.FC = () => {
         height={1080}
         calculateMetadata={calculateTrailerMetadata}
         defaultProps={{
-          take: 'take5',
+          take: 'take7',
           edit: 'trailer' as const,
           seats: [] as string[],
           music: null,
@@ -59,7 +59,7 @@ export const RemotionRoot: React.FC = () => {
         height={1350}
         calculateMetadata={calculateTrailerMetadata}
         defaultProps={{
-          take: 'take5',
+          take: 'take7',
           edit: 'social' as const,
           seats: [] as string[],
           music: null,
@@ -79,7 +79,7 @@ export const RemotionRoot: React.FC = () => {
         height={720}
         calculateMetadata={calculateTrailerMetadata}
         defaultProps={{
-          take: 'take5',
+          take: 'take7',
           edit: 'readme' as const,
           seats: [] as string[],
           music: null,

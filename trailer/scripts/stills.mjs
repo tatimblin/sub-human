@@ -16,7 +16,7 @@ const arg = (name, dflt) => {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : dflt;
 };
-const take = arg('take', 'take5');
+const take = arg('take', 'take7');
 const comps = arg('comp', 'Trailer').split(',');
 const only = arg('only', '') ? arg('only', '').split(',') : null;
 // --at 0.3,0.7: where in each segment to take a still (default 0.7); --frames 10,200: exact frames instead

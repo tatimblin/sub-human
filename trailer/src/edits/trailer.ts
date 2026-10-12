@@ -125,7 +125,7 @@ export function tagsFor(c: Cast, w: Words, A: Anchors) {
   return {
     talk: { from: a, to: b, sender: a, toLabel: b, label: w.talkLabel, fromFind: w.talkFind, toFind: w.talkGot, arrive: A.bGotTalk, dur: 1.1 },
     ask: { from: b, to: a, sender: `${b}'s Claude`, toLabel: `${a}'s Claude`, label: w.askLabel, fromFind: w.askFind, toFind: [`Question from ${b}`, `${b}'s Claude: `], arrive: A.aGotAsk, dur: 1.1 },
-    answer: { from: a, to: b, sender: `${a}'s Claude`, toLabel: `${b}'s Claude`, label: w.answerLabel, fromFind: [`Answer ${b}`, 'Searched for', `Question from ${b}`], toFind: `${a}'s Claude: `, arrive: A.bGotAnswer, dur: 1.1 },
+    answer: { from: a, to: b, sender: `${a}'s Claude`, toLabel: `${b}'s Claude`, label: w.answerLabel, fromFind: [`Answer ${b}`, 'Searched for', 'Read 1 file', `Question from ${b}`], toFind: `${a}'s Claude: `, arrive: A.bGotAnswer, dur: 1.1 },
     planAsk: { from: b, to: ['claude', a], sender: b, label: '"@claude let\'s plan cursor paging"', fromFind: '@claude let', toFind: '(to claude)', arrive: A.aSeesPlanAsk, dur: 1.2 },
     plan: { from: 'claude', to: [a, b], sender: "the room's Claude", label: '"Plan: cursor paging for GET /tasks"', toFind: ['Plan: cursor paging', 'Ready to code'], arrive: A.planOpen, dur: 1.0 },
     note: { from: b, to: 'claude', sender: b, label: w.noteLabel, fromFind: w.note, start: 0.05, end: 0.85 },
@@ -152,10 +152,10 @@ export function beatsFor(c: Cast, w: Words, A: Anchors) {
       model: true,
       focus: a,
       caption: CAPTION.claudes,
-      views: { [a]: { zoom: 1.5, find: ['Searched for', `Question from ${b}`] }, [b]: { zoom: 1.5, find: w.askFind } },
+      views: { [a]: { zoom: 1.5, find: ['Searched for', 'Read 1 file', 'Reading 1 file', `Question from ${b}`] }, [b]: { zoom: 1.5, find: w.askFind } },
       marks: [{ pane: a, find: '❯', exact: true, label: `${a}'s prompt, untouched` }],
     } satisfies Segment,
-    answerFly: { id: 'answer-fly', from: plus(A.bGotAnswer, -1100), to: plus(A.bGotAnswer, 1700), speed: 1, caption: CAPTION.claudes, views: { [a]: { zoom: 1.5, find: [`Answer ${b}`, 'Searched for'] }, [b]: { zoom: 1.5, find: `${a}'s Claude: ` } }, tags: [TAG.answer] } satisfies Segment,
+    answerFly: { id: 'answer-fly', from: plus(A.bGotAnswer, -1100), to: plus(A.bGotAnswer, 1700), speed: 1, caption: CAPTION.claudes, views: { [a]: { zoom: 1.5, find: [`Answer ${b}`, 'Searched for', 'Read 1 file'] }, [b]: { zoom: 1.5, find: `${a}'s Claude: ` } }, tags: [TAG.answer] } satisfies Segment,
     planOpen: { id: 'plan-open', from: plus(A.planOpen, -300), to: plus(A.planOpen, 2200), speed: 1, caption: CAPTION.plan, views: both(c, 1.3, ['Plan: cursor paging', 'Ready to code']), tags: [TAG.plan] } satisfies Segment,
     noteInPlan: {
       id: 'note-in-plan',

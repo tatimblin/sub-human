@@ -21,7 +21,7 @@ const arg = (name, dflt) => {
   return i > 0 ? process.argv[i + 1] : dflt;
 };
 const flag = (name) => process.argv.includes(`--${name}`);
-const take = arg('take', 'take5');
+const take = arg('take', 'take7');
 const dir = path.join(ROOT, 'capture', take);
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'prescrub-'));
@@ -38,10 +38,13 @@ const cap = parseCapture(take, raw);
 
 // what must never ship: a person's paths, account or plan, the model, the machine's skills, MCP servers and sessions
 const user = os.userInfo().username;
+// the take's people are named on screen by design (take7: tristan and jess), so a seat's name is not a leak
+const seats = new Set(Object.keys(cap.meta.sessions ?? {}).map((k) => k.toLowerCase()));
+const owner = ['tristan', 'timblin'].filter((w) => !seats.has(w)).join('|');
 const NEVER = [
   ['home path', /\/(?:Users|home)\/|~\/(?:repos|Documents|Desktop)\b/],
   ['username', new RegExp(`\\b${user}\\b`, 'i')],
-  ['owner name', /tristan|timblin/i],
+  ['owner name', new RegExp(owner, 'i')],
   ['email', /[\w.+-]+@[\w-]+\.(?:com|org|net|io|dev)\b/],
   ['model', /\b(?:Opus|Sonnet|Haiku|Mythos|Fable)\b/],
   ['plan', /Claude (?:Max|Pro|Team|Enterprise)|API Usage Billing/],

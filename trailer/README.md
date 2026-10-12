@@ -12,14 +12,13 @@ npx remotion render Trailer --props='{"take":"<take-id>"}'
 ```
 
 `<take-id>` is a folder under `capture/` holding `capture.jsonl` or `capture.jsonl.gz`, the take that
-`scripts/demo.sh --film --take <take-id>` records: `meta`, `frame` and `marker` lines. The default is `take5`, a real
-run of the whole story the cuts are timed to; `take4` is the one before it; `synthetic` is a generated one for
-development. `take6` (not recorded yet) has new people and a new build; see "Takes and casts" below. The MP4 lands
-in `out/`.
+`scripts/demo.sh --film --take <take-id>` records: `meta`, `frame` and `marker` lines. The default is `take7`, a real
+run of the whole story with tristan and jess that the cuts are timed to; `take5` and `take4` are alice-and-bob takes
+before it; `synthetic` is a generated one for development. See "Takes and casts" below. The MP4 lands in `out/`.
 
 The compositions follow `STORYBOARD.md` (v2): `Trailer` (1920×1080, ~68 s), `TrailerSquare` (1080×1080, the same cut
 stacked), `Social15` (1080×1350, 15 s) and `ReadmeLoop` (1280×720, ~9 s, loops; no captions). Same `--props`.
-The README GIF: `ffmpeg -i out/ReadmeLoop-take5.mp4 -vf "fps=12,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=4" out/ReadmeLoop-take5.gif`.
+The README GIF: `ffmpeg -i out/ReadmeLoop-take7.mp4 -vf "fps=12,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=4" out/ReadmeLoop-take7.gif`.
 The take4-era cuts are still there as `edit: "trailer-v1"` and `"readme-v1"`. `npm run dev` opens Remotion Studio.
 
 Props (all optional): `take`, `edit` (`trailer`, `social`, `readme`, `trailer-v1`, `readme-v1`), `music` (a URL or a path under `public/`, faded in and out), `musicVolume`,
@@ -36,13 +35,15 @@ hard-codes a name.
 
 - take4, take5 (and `synthetic`, `fixture`): alice and bob. alice's Claude writes the handler and bob's the tests
   (`testsStory` in `src/edits/trailer.ts`).
-- take6: tristan and jess (session keys `tristan`, `jess`, `claude`). Both Claudes write code: tristan's the store
-  (`src/store.js`, listTasks with an opaque cursor), jess's the HTTP handler (`src/server.js`, `?limit&after`, 400 on
-  a bad cursor), each with its own tests; jess's Claude waits for tristan's "pushed", then pulls and runs npm test
-  (`halvesStory` in `src/edits/halves.ts`).
+- take7: tristan and jess (session keys `tristan`, `jess`, `claude`). Both Claudes write code: tristan's the store
+  (`src/store.js`, listTasks with a keyset cursor), jess's the HTTP handler (`src/server.js`, 400 on a bad cursor),
+  each with its own tests. jess's Claude sends an Explore subagent to read the store; tristan's Claude pushes and
+  tells jess's ("listTasks is pushed to main"), which pulls, builds the handler on it, then pulls again and runs
+  npm test on both halves (`halvesStory` in `src/edits/halves.ts`). take6 was an aborted take of the same story
+  and is not configured.
 - A take not listed gets the newest story, with its people read from the capture's sessions.
 
-To time the take6 cut to the real take: render `npx remotion compositions --props='{"take":"take6"}' --log=verbose |
+To time the halves cut to a new take: render `npx remotion compositions --props='{"take":"take7"}' --log=verbose |
 grep '\[cut\]\|\[edl\]'`, then adjust `WORDS` and `BUILD` at the top of `src/edits/halves.ts` (the text each
 anchor waits for after its beat), then the segments' offsets. Each build anchor is `any(text after a beat, the beat
 itself)`, so a missing text falls back to the marker rather than dropping the segment.
@@ -60,7 +61,7 @@ itself)`, so a missing text falls back to the marker rather than dropping the se
   `npm run check:ansi [capture.jsonl | screen.ansi …]` proves the two read every screen identically.
 - `src/components/Terminal.tsx` draws a screen on a fixed cell grid in bundled JetBrains Mono, with Noto Sans
   Symbols for the glyphs it lacks (⏺ ⎿ ⏵ ✻ …). Runs that might not advance one cell are pinned to their cells.
-- `src/edits/trailer.ts` builds the v2 cuts (trailer, social, README loop) from a cast; `halves.ts` is take6's
+- `src/edits/trailer.ts` builds the v2 cuts (trailer, social, README loop) from a cast; `halves.ts` is take7's
   build. A cut is ordered segments `[from, to)` keyed off markers (`"plan"`, `"proposal+2s"`), "the first frame
   where a pane shows X", or `{ any: [...] }` (the first of several the take has). Each plays at `speed`, is squeezed
   to `fit` seconds, or (`hold`) freezes a frame. Model time is marked `model`, and only there does the clock badge
@@ -74,7 +75,7 @@ itself)`, so a missing text falls back to the marker rather than dropping the se
 
 The cuts use the beats `demo.sh --film` marks: `open`, `join`, `panel`, `talk`, `reply`, `claudes`, `plan`, `proposal`,
 `answers`, `revision`, `agreed`, `split`, `build`, `subagent`, `claimed`, `handler`, `tested`, `tests` and `pass`
-(`subagent` lands when the row shows, so it can come before `claimed`); take6 adds `store` (or keeps `handler`),
+(`subagent` lands when the row shows, so it can come before `claimed`); take7 adds `pushed`, `handoff`, `pulled`,
 `leave` and `closed`. Inside a beat
 they anchor on what a pane shows: demo.sh's own waits (`alice: bob, can you take the parser tests`,
 `must 400, not 500`) and Claude Code's lines (`You've joined room`, `☐ Consent`, `Write(test/`, `ℹ pass`). Typed
@@ -98,13 +99,14 @@ npm run lint
 ```
 
 `prescrub.mjs` bundles `src/lib/scrub.ts` (the loader's scrub, without Remotion) and checks every distinct screen
-line for a home path, the account's name, an email, the model or plan, a login warning, the machine's skills, MCP
+line for a home path, the account's name (unless it is one of the take's seats, as tristan is in take7), an email, the model or plan, a login warning, the machine's skills, MCP
 servers or sessions; it exits 1 on a hit. `--audit` only checks; `--lines` prints every line to read through.
 
 ## Files
 
-- `capture/take5/` is the take the cuts are timed to (2026-10-11, Claude Code 2.1.292, 120×36 seats; it adds the
-  agent-panel beats `panel` and `subagent`), `capture/take4/` the one before. Git keeps `capture.jsonl.gz` +
+- `capture/take7/` is the take the cuts are timed to (2026-10-12, Claude Code 2.1.292, 120×36 seats, tristan and
+  jess, room falcon-0515; all 66 checks pass), `capture/take5/` (alice and bob; it added the agent-panel beats
+  `panel` and `subagent`) and `capture/take4/` the ones before. Git keeps `capture.jsonl.gz` +
   `run.json` only (`git add -f`; `capture/*` is ignored), and that gzip is pre-scrubbed (`scripts/prescrub.mjs`):
   every frame already went through the loader's scrub and row blanking, so no home path, account or skill list is
   in git. The raw `capture.jsonl` stays local; the loader prefers it when present and renders the same.

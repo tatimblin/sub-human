@@ -8,9 +8,9 @@ From the demo research of 2026-10-11:
 - Keep both people on screen.
 - End with one call to action.
 
-The people are per take (`src/takes.ts`): take6 on is **tristan** (opens the room, blue) and **jess** (joins,
+The people are per take (`src/takes.ts`): take6 on (take7 is the default) is **tristan** (opens the room, blue) and **jess** (joins,
 violet); take4 and take5 were alice and bob, with bob's Claude writing only the tests. The room's Claude is clay in
-every take. The table is take6's.
+every take. The table is take7's.
 
 | s | Beat | On-screen text |
 |---|---|---|
@@ -23,7 +23,7 @@ every take. The table is take6's.
 | 30–36 | `@claude let's plan…`. The room's Claude thinks (8×), then the plan opens in both panes. | Ask the room's Claude for a plan. It opens for both of you. |
 | 36–46 | jess says no with "must 400, not 500". The revised plan shows the note, then both say yes. | Each person approves. No Claude can say yes for you. |
 | 46–52 | Split screen: the plan becomes two tasks. tristan's Claude writes the store (`src/store.js`: listTasks with an opaque cursor), jess's the HTTP handler (`src/server.js`: `?limit&after`, 400 on a bad cursor), each with its own tests (6×). The subagent row shows in a panel. | Each Claude builds its half: tristan's the store, jess's the API. |
-| 52–55 | tristan's Claude pushes and tells jess's Claude (a tag flies); jess's Claude pulls and runs npm test | Your Claudes keep each other posted. |
+| 52–55 | tristan's Claude pushes and tells jess's Claude (a tag flies); jess's Claude pulls, builds the handler on it, then runs npm test on both halves | Your Claudes keep each other posted. |
 | 55–58 | Both npm test runs pass, side by side | Tests pass for both. |
 | 58–62 | (Optional, only with an honest ssh take) `/sub-human join dev vole-8126` | Same room, across machines over ssh. |
 | 62–68 | End card | Pair up with others in Claude Code as native subagents · the two /plugin lines · Then run /sub-human. · repo URL |

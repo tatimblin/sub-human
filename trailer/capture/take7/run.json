@@ -1,0 +1,90 @@
+{
+ "take": "take7",
+ "started": "2026-10-12T01:21:04.854Z",
+ "interval": 100,
+ "sessions": {
+  "tristan": "sh-tristan",
+  "jess": "sh-jess",
+  "claude": "sh-claude"
+ },
+ "scenes": [
+  {
+   "scene": "S1",
+   "startT": 5880,
+   "started": "2026-10-12T01:21:10.735Z",
+   "endT": 28345,
+   "ended": "2026-10-12T01:21:33.199Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S2",
+   "startT": 28374,
+   "started": "2026-10-12T01:21:33.228Z",
+   "endT": 69077,
+   "ended": "2026-10-12T01:22:13.931Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S3",
+   "startT": 69107,
+   "started": "2026-10-12T01:22:13.961Z",
+   "endT": 156197,
+   "ended": "2026-10-12T01:23:41.051Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S4",
+   "startT": 156226,
+   "started": "2026-10-12T01:23:41.081Z",
+   "endT": 226906,
+   "ended": "2026-10-12T01:24:51.761Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S5",
+   "startT": 226936,
+   "started": "2026-10-12T01:24:51.790Z",
+   "endT": 330686,
+   "ended": "2026-10-12T01:26:35.540Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S6b",
+   "startT": 330716,
+   "started": "2026-10-12T01:26:35.570Z",
+   "endT": 505102,
+   "ended": "2026-10-12T01:29:29.957Z",
+   "status": "ok"
+  },
+  {
+   "scene": "S10",
+   "startT": 505131,
+   "started": "2026-10-12T01:29:29.985Z",
+   "endT": 559016,
+   "ended": "2026-10-12T01:30:23.870Z",
+   "status": "ok"
+  }
+ ],
+ "ended": "2026-10-12T01:30:24.021Z",
+ "durationMs": 559167,
+ "room": "falcon-0515",
+ "counts": {
+  "lines": 2345,
+  "frames": 2321,
+  "markers": 23
+ },
+ "checks": {
+  "summary": {
+   "deterministic": {
+    "pass": 66,
+    "fail": 0
+   },
+   "behavioural": {
+    "pass": 4,
+    "warn": 0
+   }
+  },
+  "failed": [],
+  "pass": true
+ }
+}

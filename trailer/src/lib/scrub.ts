@@ -91,6 +91,8 @@ export function scrub(ansi: string, opts: ScrubOptions = {}): string {
     // a Claude's scratchpad (/tmp/claude-UID/<project>/<session>/scratchpad) and the plugin's own CLI by its full path
     .replace(/(?:\/private)?\/tmp\/claude-\d+\/[^/\s]+\/[0-9a-f-]{36}\/scratchpad/g, '/tmp/scratchpad')
     .replace(/\/(?:Users|home)\/[^/\s]+\/[^\s'"`]*?\/plugin\/sub-human\/scripts\/sub-human\b/g, 'sub-human')
+    // the plugin's own files by a home-relative checkout path (~/<dirs>/plugin/sub-human/…): from the plugin dir on
+    .replace(/~\/[^\s'"`]*?\/(plugin\/sub-human\/)/g, '$1')
     .replace(/(?:\/private)?\/tmp\/sh-demo\/home\d*/g, '~/.sub-human')
     .replace(/(?:\/private)?\/tmp\/sh-demo\/(?:[A-Za-z0-9_-]+)/g, '~/app')
     .replace(/-private-tmp-sh-demo-[A-Za-z0-9_-]+/g, '-app')

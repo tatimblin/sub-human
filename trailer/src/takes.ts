@@ -6,8 +6,9 @@ import { halvesStory } from './edits/halves';
 /**
  * Per take: who is in it (the cast: names and colours, name plates, captions, tag labels) and which story its
  * cuts tell. take4/take5 (and the synthetic and fixture takes) are alice and bob, with bob's Claude writing the
- * tests; take6 is tristan and jess, both Claudes writing code. A take not listed here gets the newest story, with
- * its two people read from the capture (the first two sessions that are not "claude", in the capture's order).
+ * tests; take7 is tristan and jess, both Claudes writing code (take6, an aborted take, is not listed). A take not
+ * listed here gets the newest story, with its two people read from the capture (the first two sessions that are not
+ * "claude", in the capture's order).
  */
 type TakeConfig = { cast: Cast; story: (c: Cast, room: string) => Story };
 
@@ -17,7 +18,7 @@ export const TAKES: Record<string, TakeConfig> = {
   take5: TESTS,
   synthetic: TESTS,
   fixture: TESTS,
-  take6: { cast: TRISTAN_JESS, story: halvesStory },
+  take7: { cast: TRISTAN_JESS, story: halvesStory },
 };
 
 export function castFor(take: string, cap: Capture): Cast {
