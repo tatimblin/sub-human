@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { THEME, screenRows } from '../lib/ansi';
 import { MONO, SANS } from '../fonts/fonts';
-import type { SplitPane as Box, Who } from '../design';
+import type { SplitPane as Box } from '../design';
+import type { Who } from '../cast';
 import { Row } from './Terminal';
 
 /** A pane's inner camera: zoom z (absolute, 1 = the screen's full width) and the content point (cx, cy) at the window's centre. */

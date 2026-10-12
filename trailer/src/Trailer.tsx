@@ -16,15 +16,14 @@ import { loadCapture, type Capture } from './lib/capture';
 import { stripAnsi } from './lib/ansi';
 import { outputFrame, resolveEdit, type Edit, type ResolvedEdit } from './lib/edl';
 import { useTake } from './lib/useTake';
-import { COLORS, sideLayout, splitLayout, stackedLayout, type SplitLayout, type StageLayout } from './design';
+import { COLORS, TAGLINE, sideLayout, splitLayout, stackedLayout, type SplitLayout, type StageLayout } from './design';
 import { Replay } from './components/Replay';
 import { SplitReplay } from './components/SplitReplay';
 import { Wordmark } from './components/Wordmark';
 import { EndCard } from './scenes/EndCard';
 import { MONO, SANS } from './fonts/fonts';
-import { trailerEdit } from './edits/trailer';
-import { socialEdit } from './edits/social';
-import { readmeEdit } from './edits/readme';
+import { CastContext } from './cast';
+import { castFor, storyFor } from './takes';
 import { trailerEdit as trailerV1 } from './edits/v1/trailer';
 import { readmeEdit as readmeV1 } from './edits/v1/readme';
 
@@ -33,7 +32,7 @@ export type TrailerProps = {
   take: string;
   /** which cut: the trailer's, the 15 s social cut, the README loop's (or the take4-era v1 cuts) */
   edit: 'trailer' | 'social' | 'readme' | 'trailer-v1' | 'readme-v1';
-  /** the panes, left to right (or top to bottom) */
+  /** the panes, left to right (or top to bottom); empty = the take's two people (takes.ts) */
   seats: string[];
   /** optional music: a URL, or a path under public/ */
   music: string | null;
@@ -48,7 +47,18 @@ export type TrailerProps = {
   compact: boolean;
 };
 
-const EDITS: Record<TrailerProps['edit'], Edit> = { trailer: trailerEdit, social: socialEdit, readme: readmeEdit, 'trailer-v1': trailerV1, 'readme-v1': readmeV1 };
+/** The cut: the v2 ones come from the take's story (its cast and build, takes.ts); the v1 ones are take4-era, alice and bob. */
+function editFor(take: string, cap: Capture, which: TrailerProps['edit']): Edit {
+  if (which === 'trailer-v1') return trailerV1;
+  if (which === 'readme-v1') return readmeV1;
+  return storyFor(take, cap)[which];
+}
+
+function seatsFor(take: string, cap: Capture, seats: string[]): string[] {
+  if (seats?.length) return seats;
+  const c = castFor(take, cap);
+  return [c.a, c.b];
+}
 const FADE = 20; // frames of crossfade into the end card
 const HOLD = 1.2; // seconds the last replay frame holds (the end card's crossfade starts in it)
 
@@ -65,7 +75,7 @@ function timing(edit: Edit, resolved: ResolvedEdit, fps: number) {
 export const calculateTrailerMetadata: CalculateMetadataFunction<TrailerProps> = async ({ props, compositionId }) => {
   const fps = 30;
   const cap = await loadCapture(props.take, scrubOpts(props));
-  const edit = EDITS[props.edit];
+  const edit = editFor(props.take, cap, props.edit);
   const resolved = resolveEdit(cap, edit, fps);
   const t = timing(edit, resolved, fps);
   // the cut, in composition frames: handy for `npx remotion still --frame=N`
@@ -186,7 +196,7 @@ const Main: React.FC<{ cap: Capture; edit: Edit; resolved: ResolvedEdit; layout:
                 maxWidth: width * 0.8,
               }}
             >
-              Pair up in Claude Code without giving up your own session.
+              {TAGLINE}
             </div>
           </div>
         </AbsoluteFill>
@@ -218,13 +228,17 @@ const SplitMain: React.FC<{ cap: Capture; edit: Edit; resolved: ResolvedEdit; la
 export const Trailer: React.FC<TrailerProps> = (props) => {
   const { fps, width, height } = useVideoConfig();
   const cap = useTake(props.take, scrubOpts(props));
-  const edit = EDITS[props.edit];
-  const resolved = useMemo(() => (cap ? resolveEdit(cap, edit, fps) : null), [cap, edit, fps]);
-  const layout = useMemo(() => (cap ? layoutFor(width, height, cap, props.seats, props.compact, edit) : null), [cap, width, height, props.seats, props.compact, edit]);
-  if (!cap || !resolved || !layout) return <AbsoluteFill style={{ background: COLORS.bg }} />;
+  const edit = useMemo(() => (cap ? editFor(props.take, cap, props.edit) : null), [cap, props.take, props.edit]);
+  const resolved = useMemo(() => (cap && edit ? resolveEdit(cap, edit, fps) : null), [cap, edit, fps]);
+  const layout = useMemo(
+    () => (cap && edit ? layoutFor(width, height, cap, seatsFor(props.take, cap, props.seats), props.compact, edit) : null),
+    [cap, width, height, props.take, props.seats, props.compact, edit],
+  );
+  if (!cap || !edit || !resolved || !layout) return <AbsoluteFill style={{ background: COLORS.bg }} />;
   const t = timing(edit, resolved, fps);
   const music = props.music ? (/^(https?:|data:)/.test(props.music) ? props.music : staticFile(props.music)) : null;
   return (
+    <CastContext.Provider value={castFor(props.take, cap)}>
     <AbsoluteFill style={{ background: COLORS.bg }}>
       {t.end > 0 ? (
         <TransitionSeries>
@@ -255,5 +269,6 @@ export const Trailer: React.FC<TrailerProps> = (props) => {
         />
       ) : null}
     </AbsoluteFill>
+    </CastContext.Provider>
   );
 };

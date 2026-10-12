@@ -16,10 +16,12 @@ import { rowText, screenRows, stripAnsi } from './ansi';
  *  - { after, session, text, offset? }   the first frame of `session` at or after anchor `after` where `text`
  *                         (or any of several) appears: shows up more often than on the frame before. Robust to how
  *                         long a real model took, and to the same text already being on screen.
+ *  - { any: [a, b, …] }  the first of several that the take has (a text anchor, then its beat as a fallback)
  */
 export type Anchor =
   | string
   | { t: number }
+  | { any: Anchor[] }
   | { beat: string; offset?: number }
   | { after: Anchor; session: string; text: string | string[]; offset?: number };
 
@@ -171,6 +173,13 @@ export function resolveAnchor(cap: Capture, a: Anchor): number | null {
     return mk ? mk.t : null;
   }
   if ('t' in a) return a.t;
+  if ('any' in a) {
+    for (const x of a.any) {
+      const r = resolveAnchor(cap, x);
+      if (r != null) return r;
+    }
+    return null;
+  }
   if ('beat' in a) {
     const base = resolveAnchor(cap, a.beat);
     return base == null ? null : base + (a.offset || 0);

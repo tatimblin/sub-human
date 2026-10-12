@@ -1,7 +1,8 @@
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, useVideoConfig } from 'remotion';
 import type { ResolvedEdit } from '../lib/edl';
-import { COLORS, PEOPLE, type StageLayout } from '../design';
+import { COLORS, type StageLayout } from '../design';
+import { people, useCast, type Cast } from '../cast';
 import { MONO, SANS } from '../fonts/fonts';
 
 type Block = { start: number; end: number; text: string; eyebrow?: string };
@@ -19,13 +20,14 @@ export function captionBlocks(edit: ResolvedEdit): Block[] {
 
 type CaptionLayout = Pick<StageLayout, 'width' | 'height' | 'captionBottom' | 'captionSize' | 'eyebrowSize'>;
 
-/** "alice", "bob" and "the room's Claude" in their own colours (the colour always sits on the name). */
-const NAMES = new RegExp(`(${["room's Claude", 'alice', 'bob'].join('|')})`, 'g');
-const KEY: Record<string, string> = { alice: 'alice', bob: 'bob', "room's Claude": 'claude' };
-function coloured(text: string): React.ReactNode {
-  return text.split(NAMES).map((part, i) =>
-    KEY[part] ? (
-      <span key={i} style={{ color: PEOPLE[KEY[part]].color, fontWeight: 650 }}>
+/** The take's two people and "the room's Claude" in their own colours (the colour always sits on the name). */
+function coloured(text: string, c: Cast): React.ReactNode {
+  const p = people(c);
+  const key: Record<string, string> = { [c.a]: c.a, [c.b]: c.b, "room's Claude": 'claude' };
+  const names = new RegExp(`(${["room's Claude", c.a, c.b].join('|')})`, 'g');
+  return text.split(names).map((part, i) =>
+    key[part] ? (
+      <span key={i} style={{ color: p[key[part]].color, fontWeight: 650 }}>
         {part}
       </span>
     ) : (
@@ -37,6 +39,7 @@ function coloured(text: string): React.ReactNode {
 /** Captions for muted viewing: one line (two at most), an optional accent eyebrow naming the command. */
 export const Captions: React.FC<{ edit: ResolvedEdit; frame: number; layout: CaptionLayout; opacity?: number; names?: boolean }> = ({ edit, frame, layout, opacity = 1, names = false }) => {
   const { fps } = useVideoConfig();
+  const cast = useCast();
   const block = captionBlocks(edit).find((b) => frame >= b.start && frame < b.end);
   if (!block) return null;
   const local = frame - block.start;
@@ -79,7 +82,7 @@ export const Captions: React.FC<{ edit: ResolvedEdit; frame: number; layout: Cap
             textWrap: 'balance',
           }}
         >
-          {names ? coloured(block.text) : block.text}
+          {names ? coloured(block.text, cast) : block.text}
         </div>
       </div>
     </AbsoluteFill>

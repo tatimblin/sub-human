@@ -14,7 +14,8 @@ npx remotion render Trailer --props='{"take":"<take-id>"}'
 `<take-id>` is a folder under `capture/` holding `capture.jsonl` or `capture.jsonl.gz`, the take that
 `scripts/demo.sh --film --take <take-id>` records: `meta`, `frame` and `marker` lines. The default is `take5`, a real
 run of the whole story the cuts are timed to; `take4` is the one before it; `synthetic` is a generated one for
-development. The MP4 lands in `out/`.
+development. `take6` (not recorded yet) has new people and a new build; see "Takes and casts" below. The MP4 lands
+in `out/`.
 
 The compositions follow `STORYBOARD.md` (v2): `Trailer` (1920×1080, ~68 s), `TrailerSquare` (1080×1080, the same cut
 stacked), `Social15` (1080×1350, 15 s) and `ReadmeLoop` (1280×720, ~9 s, loops; no captions). Same `--props`.
@@ -24,7 +25,27 @@ The take4-era cuts are still there as `edit: "trailer-v1"` and `"readme-v1"`. `n
 Props (all optional): `take`, `edit` (`trailer`, `social`, `readme`, `trailer-v1`, `readme-v1`), `music` (a URL or a path under `public/`, faded in and out), `musicVolume`,
 `keyClicks` (a soft click per typed key; off), `scrubWords` (extra words to replace: a username, a hostname),
 `dropRows` (screen rows to remove, by text), `compact` (stacked panes drop blank rows; on for `ReadmeLoop`),
-`seats` (default `["alice","bob"]`).
+`seats` (default: the take's two people).
+
+## Takes and casts
+
+`src/takes.ts` says, per take, who is in it and which story its cuts tell. The cast (`src/cast.ts`) is the person
+who opens the room (left or top, blue), the one who joins (violet) and the room's Claude (clay); its names are the
+capture's session keys. Name plates, captions, tag headers, marks and the anchors' text all come from it, so no cut
+hard-codes a name.
+
+- take4, take5 (and `synthetic`, `fixture`): alice and bob. alice's Claude writes the handler and bob's the tests
+  (`testsStory` in `src/edits/trailer.ts`).
+- take6: tristan and jess (session keys `tristan`, `jess`, `claude`). Both Claudes write code: tristan's the store
+  (`src/store.js`, listTasks with an opaque cursor), jess's the HTTP handler (`src/server.js`, `?limit&after`, 400 on
+  a bad cursor), each with its own tests; jess's Claude waits for tristan's "pushed", then pulls and runs npm test
+  (`halvesStory` in `src/edits/halves.ts`).
+- A take not listed gets the newest story, with its people read from the capture's sessions.
+
+To time the take6 cut to the real take: render `npx remotion compositions --props='{"take":"take6"}' --log=verbose |
+grep '\[cut\]\|\[edl\]'`, then adjust `WORDS` and `BUILD` at the top of `src/edits/halves.ts` (the text each
+anchor waits for after its beat), then the segments' offsets. Each build anchor is `any(text after a beat, the beat
+itself)`, so a missing text falls back to the marker rather than dropping the segment.
 
 ## How it works
 
@@ -39,20 +60,22 @@ Props (all optional): `take`, `edit` (`trailer`, `social`, `readme`, `trailer-v1
   `npm run check:ansi [capture.jsonl | screen.ansi …]` proves the two read every screen identically.
 - `src/components/Terminal.tsx` draws a screen on a fixed cell grid in bundled JetBrains Mono, with Noto Sans
   Symbols for the glyphs it lacks (⏺ ⎿ ⏵ ✻ …). Runs that might not advance one cell are pinned to their cells.
-- `src/edits/trailer.ts`, `social.ts` and `readme.ts` are the v2 cuts: ordered segments `[from, to)` keyed off
-  markers (`"plan"`, `"proposal+2s"`) or "the first frame where a pane shows X". Each plays at `speed`, is squeezed
+- `src/edits/trailer.ts` builds the v2 cuts (trailer, social, README loop) from a cast; `halves.ts` is take6's
+  build. A cut is ordered segments `[from, to)` keyed off markers (`"plan"`, `"proposal+2s"`), "the first frame
+  where a pane shows X", or `{ any: [...] }` (the first of several the take has). Each plays at `speed`, is squeezed
   to `fit` seconds, or (`hold`) freezes a frame. Model time is marked `model`, and only there does the clock badge
   show. A segment names its caption, each pane's own camera (`views`: `zoom`, `find` a row, or `anchor` to the
   bottom bar), the pane it is about (`focus`), `marks` (a box round some rows, in a person's colour, with a label)
   and `tags`: a message crossing between panes, flown as a card in the sender's colour from one row to another,
   landing when the receiving pane shows it (`arrive`). `src/components/SplitReplay.tsx` draws them: both panes always
   on screen, zooming within their halves, with name plates and the room's Claude's plate between them
-  (`design.ts` `PEOPLE`: one name and one colour each). `src/edits/v1/` holds the take4-era cuts (one stage camera,
+  (the take's cast: one name and one colour each). `src/edits/v1/` holds the take4-era cuts (one stage camera,
   `components/Replay.tsx`).
 
 The cuts use the beats `demo.sh --film` marks: `open`, `join`, `panel`, `talk`, `reply`, `claudes`, `plan`, `proposal`,
 `answers`, `revision`, `agreed`, `split`, `build`, `subagent`, `claimed`, `handler`, `tested`, `tests` and `pass`
-(`subagent` lands when the row shows, so it can come before `claimed`). Inside a beat
+(`subagent` lands when the row shows, so it can come before `claimed`); take6 adds `store` (or keeps `handler`),
+`leave` and `closed`. Inside a beat
 they anchor on what a pane shows: demo.sh's own waits (`alice: bob, can you take the parser tests`,
 `must 400, not 500`) and Claude Code's lines (`You've joined room`, `☐ Consent`, `Write(test/`, `ℹ pass`). Typed
 input sits after `❯` and a no-break space, so anchor on the typed text itself (`@ro`, `ask al`), not on `❯ `. If a take lacks a segment's anchors, the segment is skipped with an `[edl]` warning. The

@@ -1,6 +1,6 @@
 # sub-human
 
-Pair up in Claude Code without giving up your own session.
+Pair up with others in Claude Code as native subagents
 
 Everyone keeps their own terminal, repo and Claude. sub-human puts you in a room together. You can chat, your
 Claudes can message each other, and a shared Claude can help plan or keep a task list. It works on one machine or

@@ -1,6 +1,6 @@
 import React from 'react';
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { COLORS } from '../design';
+import { COLORS, TAGLINE } from '../design';
 import { MONO, SANS } from '../fonts/fonts';
 import { Wordmark } from '../components/Wordmark';
 
@@ -14,8 +14,8 @@ const rise = (frame: number, at: number, fps: number) => {
 };
 
 /**
- * The call to action. `full` and `short` (the v2 cuts): "Pair up in Claude Code.", the two /plugin lines, "Then run
- * /sub-human." and the repo (`short`, for the 15 s cut, comes up faster). `v1`: the take4 cut's card.
+ * The call to action. `full` and `short` (the v2 cuts): the tagline, the two /plugin lines, "Then run /sub-human."
+ * and the repo (`short`, for the 15 s cut, comes up faster). `v1`: the take4 cut's card.
  */
 export const EndCard: React.FC<{ variant?: 'v1' | 'full' | 'short' }> = ({ variant = 'full' }) => {
   const frame = useCurrentFrame();
@@ -37,11 +37,11 @@ export const EndCard: React.FC<{ variant?: 'v1' | 'full' | 'short' }> = ({ varia
         </div>
         {v1 ? (
           <div style={{ ...rise(frame, fps * 0.25, fps), fontFamily: SANS, fontSize: 36 * u, color: COLORS.textSoft, letterSpacing: '-0.01em', textAlign: 'center', maxWidth: width * 0.84 }}>
-            Pair up in Claude Code without giving up your own session.
+            {TAGLINE}
           </div>
         ) : (
-          <div style={{ ...rise(frame, fps * 0.2 * k, fps), fontFamily: SANS, fontSize: 64 * u, fontWeight: 600, color: COLORS.text, letterSpacing: '-0.025em', textAlign: 'center', maxWidth: width * 0.9 }}>
-            Pair up in Claude Code.
+          <div style={{ ...rise(frame, fps * 0.2 * k, fps), fontFamily: SANS, fontSize: 56 * u, fontWeight: 600, color: COLORS.text, letterSpacing: '-0.025em', lineHeight: 1.15, textAlign: 'center', textWrap: 'balance', maxWidth: width * 0.9 }}>
+            {TAGLINE}
           </div>
         )}
         <div

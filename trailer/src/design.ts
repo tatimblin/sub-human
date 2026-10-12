@@ -96,17 +96,8 @@ export function stackedLayout(width: number, height: number, seats: string[], co
   };
 }
 
-/**
- * Who is who: alice, bob and the room's Claude each keep one name and one colour for the whole cut. The colour
- * never appears without the name beside it (name plates, message tags, caption names).
- */
-export type Who = { name: string; color: string };
-export const PEOPLE: Record<string, Who> = {
-  alice: { name: 'alice', color: '#6cb6ff' },
-  bob: { name: 'bob', color: '#c39bff' },
-  claude: { name: "the room's Claude", color: COLORS.accent },
-};
-export const who = (key: string): Who => PEOPLE[key] ?? { name: key, color: COLORS.textSoft };
+/** The tagline: the title over the split, the end card's first line (and the v1 cuts' hook and card). */
+export const TAGLINE = 'Pair up with others in Claude Code as native subagents';
 
 /**
  * The split-screen layout (v2 edits): every pane is a fixed window onto its 120×36 screen, and the camera lives

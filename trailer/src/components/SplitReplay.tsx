@@ -3,7 +3,8 @@ import { AbsoluteFill, Easing, interpolate, spring, useVideoConfig } from 'remot
 import { frameAt, type Capture } from '../lib/capture';
 import { findRow, outputFrame, segmentAt, sourceTime, type ResolvedEdit, type ResolvedSegment, type ResolvedTag } from '../lib/edl';
 import { rowText, screenRows } from '../lib/ansi';
-import { COLORS, who, type SplitLayout, type SplitPane as Box } from '../design';
+import { COLORS, TAGLINE, type SplitLayout, type SplitPane as Box } from '../design';
+import { useWho } from '../cast';
 import { MONO, SANS } from '../fonts/fonts';
 import { clampInner, SplitPane, toWindow, type InnerCam } from './SplitPane';
 import { Captions } from './Captions';
@@ -83,6 +84,7 @@ type Props = {
 /** The v2 replay: both panes always on screen, each with its own camera, name plates, message tags and captions. */
 export const SplitReplay: React.FC<Props> = ({ cap, edit, layout, frame, roomNode, captions, subtitle }) => {
   const { fps } = useVideoConfig();
+  const who = useWho();
   const f = Math.max(0, Math.min(edit.frames - 1, frame));
   const { seg, index } = segmentAt(edit, f);
   const t = sourceTime(edit, f, fps);
@@ -264,7 +266,7 @@ function tagSpan(edit: ResolvedEdit, s: ResolvedSegment, g: ResolvedTag, fps: nu
 
 /** The room's Claude: not a pane, a plate between the two (tags fly to and from it). */
 const RoomNode: React.FC<{ layout: SplitLayout; pulse: number[]; k: number }> = ({ layout, pulse, k }) => {
-  const c = who('claude');
+  const c = useWho()('claude');
   const s = layout.plateSize;
   const glow = pulse.length ? Math.max(...pulse.map((d) => interpolate(Math.abs(d), [0, 14], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }))) : 0;
   return (
@@ -307,6 +309,7 @@ const FlyingTag: React.FC<{ cap: Capture; layout: SplitLayout; cams: InnerCam[];
   t,
 }) => {
   const u = layout.u;
+  const who = useWho();
   const point = (name: string, find: string | string[] | undefined, times: number[]) => {
     if (name === 'claude') return { x: layout.node.x, y: layout.node.y + layout.plateSize * 0.6 };
     const pi = layout.panes.findIndex((p) => p.name === name);
@@ -435,7 +438,7 @@ const Title: React.FC<{ layout: SplitLayout; k: number; local: number }> = ({ la
             maxWidth: layout.width * 0.86,
           }}
         >
-          Pair up without giving up your own Claude.
+          {TAGLINE}
         </div>
       </div>
     </AbsoluteFill>

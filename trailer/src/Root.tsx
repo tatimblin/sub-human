@@ -21,7 +21,7 @@ export const RemotionRoot: React.FC = () => {
         defaultProps={{
           take: 'take5',
           edit: 'trailer' as const,
-          seats: ['alice', 'bob'],
+          seats: [] as string[],
           music: null,
           musicVolume: 0.5,
           keyClicks: false,
@@ -41,7 +41,7 @@ export const RemotionRoot: React.FC = () => {
         defaultProps={{
           take: 'take5',
           edit: 'trailer' as const,
-          seats: ['alice', 'bob'],
+          seats: [] as string[],
           music: null,
           musicVolume: 0.5,
           keyClicks: false,
@@ -61,7 +61,7 @@ export const RemotionRoot: React.FC = () => {
         defaultProps={{
           take: 'take5',
           edit: 'social' as const,
-          seats: ['alice', 'bob'],
+          seats: [] as string[],
           music: null,
           musicVolume: 0.5,
           keyClicks: false,
@@ -81,7 +81,7 @@ export const RemotionRoot: React.FC = () => {
         defaultProps={{
           take: 'take5',
           edit: 'readme' as const,
-          seats: ['alice', 'bob'],
+          seats: [] as string[],
           music: null,
           musicVolume: 0.5,
           keyClicks: false,
