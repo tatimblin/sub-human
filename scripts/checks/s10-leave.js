@@ -3,15 +3,15 @@
 const path = require('node:path');
 const paths = require('../lib/paths.js');
 const { MAIN_ROW } = require('../lib/panes.js');
-const { readJson, readText, clip } = require('../lib/io.js');
+const { readJson, readText, clip, esc } = require('../lib/io.js');
 
 module.exports = {
   scene: 'S10',
   run(x, { det }) {
-    const { code, log, members, job, roomClaudeSid, roomDir, index, screens } = x;
+    const { code, log, members, job, roomClaudeSid, roomDir, index, screens, A, B } = x;
     const s = x.span('S10');
-    const la = x.logIn(s).find(e => e.kind === 'member_left' && e.from === 'alice'), lb = x.logIn(s).find(e => e.kind === 'member_left' && e.from === 'bob');
-    det('Both leave: member_left alice and bob', la && lb, `${x.fmt(la)}; ${x.fmt(lb)}`);
+    const la = x.logIn(s).find(e => e.kind === 'member_left' && e.from === A), lb = x.logIn(s).find(e => e.kind === 'member_left' && e.from === B);
+    det(`Both leave: member_left ${A} and ${B}`, la && lb, `${x.fmt(la)}; ${x.fmt(lb)}`);
     const cl = log.find(e => e.kind === 'status' && e.to === 'claude' && e.via === 'system' && /room closed/.test(e.text));
     det('The reaper marks the room closing and tells the room\'s Claude "room closed: complete task 1"', cl && members.claude && members.claude.closing, `${x.fmt(cl)}; members.json claude.closing ${members.claude && members.claude.closing}`);
     const t1 = x.nativeTasks('S10', 'last').find(t => t.id === '1');
@@ -26,15 +26,15 @@ module.exports = {
     const taskEntries = log.filter(e => e.kind === 'task').length;
     const tj = readJson(path.join(roomDir, 'tasks.json'), null);
     if (taskEntries) det('<room>/tasks.json stays', Array.isArray(tj), tj ? `${tj.length} task(s) kept (${taskEntries} task entries in the log)` : `missing (${taskEntries} task entries in the log)`);
-    const ln = /^\s*(⏺ )?(sub-human: )?alice left\s*$/m.exec(readText(x.stateFile('S10', 'notice-bob.txt')) || '');
-    const via = la && x.shownVia('bob', la.id);
+    const ln = new RegExp(`^\\s*(⏺ )?(sub-human: )?${esc(A)} left\\s*$`, 'm').exec(readText(x.stateFile('S10', `notice-${B}.txt`)) || '');
+    const via = la && x.shownVia(B, la.id);
     const early = la && lb && Date.parse(lb.at) - Date.parse(la.at) < 8000;
-    det('bob sees the chat line "alice left" once the leave settled (8 s)', ln && via === 'mod' && !early,
-      `${ln ? `"${ln[0]}" in bob's pane (state/S10/notice-bob.txt)` : 'not seen in bob\'s pane'}; rows/notices-bob.json: #${la ? la.id : '?'} shown via ${via || 'nothing'}; bob left ${la && lb ? ((Date.parse(lb.at) - Date.parse(la.at)) / 1000).toFixed(1) : '?'} s after alice`);
+    det(`${B} sees the chat line "${A} left" once the leave settled (8 s)`, ln && via === 'mod' && !early,
+      `${ln ? `"${ln[0]}" in ${B}'s pane (state/S10/notice-${B}.txt)` : `not seen in ${B}'s pane`}; rows/notices-${B}.json: #${la ? la.id : '?'} shown via ${via || 'nothing'}; ${B} left ${la && lb ? ((Date.parse(lb.at) - Date.parse(la.at)) / 1000).toFixed(1) : '?'} s after ${A}`);
 
     // every human saw a join/leave notice
     const moves = log.filter(e => (e.kind === 'member_joined' || e.kind === 'member_left') && e.via === 'system' && e.from !== 'claude');
-    const per = ['alice', 'bob'].map(n => {
+    const per = [A, B].map(n => {
       const rec = readJson(path.join(roomDir, 'rows', `notices-${n}.json`), {});
       const lg = Array.isArray(rec.log) ? rec.log : [];
       const items = lg.map(y => { const e = log.find(z => z.id === y.id); return `#${y.id} ${e ? `${e.from} ${e.kind === 'member_left' ? 'left' : 'joined'}` : '?'} via ${y.via}`; });
@@ -43,14 +43,17 @@ module.exports = {
     det('Each human saw a join/leave notice (rows/notices-NAME.json: what was shown, and how)', per.every(p => p.lg.length > 0),
       per.map(p => `${p.n}: ${p.items.join(', ') || 'none'}`).join('; ') + `; ${moves.length} joins/leaves of members in the log`);
 
-    // no entry ids in what people see: the members' panes outside the agent panel
+    // no entry ids in what people see: the members' panes outside the agent panel. A room task's number (#3) is no
+    // entry id: a line that names only task numbers is fine, whatever its wording ("#3, which she's now working on")
     const hits = [];
-    const memberCaps = index.filter(r => r.session === 'sh-alice' || r.session === 'sh-bob');
+    const taskIds = new Set([...(Array.isArray(tj) ? tj.map(t => String(t.id)) : []), ...log.filter(e => e.kind === 'task' && e.task_id != null).map(e => String(e.task_id))]);
+    const memberCaps = index.filter(r => r.session === `sh-${A}` || r.session === `sh-${B}`);
     for (const r of memberCaps) {
       const lines = (readText(path.join(screens, r.txt)) || '').split('\n');
       const end = lines.findIndex(l => MAIN_ROW.test(l));
       for (const l of end < 0 ? lines : lines.slice(0, end)) {
-        if (/(^|[\s(])#\d+\b/.test(l) && !/\btasks?\b|◼|\b(claim(ed|s)?|done|complete[sd]?)\b/i.test(l)) hits.push(`${r.txt}: ${clip(l, 90)}`);
+        const ns = [...l.matchAll(/(?:^|[\s(])#(\d+)\b/g)].map(m => m[1]);
+        if (ns.length && !ns.every(n => taskIds.has(n)) && !/\btasks?\b|◼|\b(claim(ed|s)?|done|complete[sd]?)\b/i.test(l)) hits.push(`${r.txt}: ${clip(l, 90)}`);
       }
     }
     det('No room entry ids (#N) in the members\' panes (task numbers aside)', hits.length === 0, hits.length ? `${hits.length} line(s): ${hits.slice(0, 4).join(' | ')}` : `none in ${memberCaps.length} captures`);

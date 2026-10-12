@@ -91,8 +91,41 @@ test('demo.sh --film: the panel beat opens the room row and comes back with one 
   assert.equal((show.match(/keys "\$s" Up/g) || []).length, 1);
   assert.match(sh, /mark panel "Everyone in the room shows up in your agent panel"/);
   const s6b = /^S6b\(\) \{\n([\s\S]*?)\n\}/m.exec(sh)[1];
-  for (const m of s6b.matchAll(/submit (?:alice|bob) "([^"]*)"/g)) assert.doesNotMatch(m[1], /mcp__|op \\"|tool/, m[1]);
-  assert.match(s6b, /wait-subagent-row sh-bob/);
+  const prompts = [...s6b.matchAll(/submit "\$[ab]" "([^"]*)"/g)].map(m => m[1]);
+  assert.ok(prompts.length >= 3, `${prompts.length} S6b prompts`);
+  for (const p of prompts) assert.doesNotMatch(p, /mcp__|op \\"|tool/, p);
+  assert.match(s6b, /wait-subagent-row "sh-\$b"/);
+});
+
+test('demo.sh --film: tristan opens the room and jess joins; no alice or bob in the film\'s words or captions', () => {
+  const sh = fs.readFileSync(DEMO_SH, 'utf8');
+  assert.match(sh, /\[ "\$FILM" = 1 \] && \{ SEAT_A=tristan; SEAT_B=jess; \}/);
+  assert.match(sh, /--sessions "\$SEAT_A=sh-\$SEAT_A,\$SEAT_B=sh-\$SEAT_B,claude=sh-claude"/);
+  // the words the film types (its branch of the scripted words), the S6b scene and the marks' captions
+  const words = /^if \[ "\$FILM" = 1 \]; then\n(  SAY3=[\s\S]*?)\nelse\n/m.exec(sh)[1];
+  const s6b = /^S6b\(\) \{\n([\s\S]*?)\n\}/m.exec(sh)[1];
+  const film = ['S1', 'S2', 'S3', 'S4', 'S5', 'S10'].map(s => new RegExp(`^${s}\\(\\) \\{[^\\n]*\\n([\\s\\S]*?)\\n\\}`, 'm').exec(sh)[1]);
+  for (const t of [words, s6b, ...film]) assert.doesNotMatch(t, /\b(alice|bob)\b/i);
+  // the handoff waits on the state itself: A's commit on the origin, then in B's checkout
+  assert.match(s6b, /wait_commit "\$BASE\/origin\.git" "\$a"/);
+  assert.match(s6b, /wait_commit "\$BASE\/\$b" "\$a"/);
+  // each half is real code with its own tests
+  assert.match(s6b, /src\/store\.js and test\/store-paging\.test\.js only/);
+  assert.match(s6b, /src\/server\.js and test\/server-paging\.test\.js only/);
+});
+
+test('demo-lib plan-run --seats and run-words: the run\'s people and scripted words in run.json, as checks/context.js reads them', () => {
+  const { runInfo } = require('../checks/context.js');
+  const d = tmp();
+  const f = path.join(d, 'run.json');
+  assert.equal(lib(['plan-run', f, '--all', ALL, '--seats', 'tristan jess', '--fresh', 'S1']).status, 0);
+  assert.equal(lib(['run-words', f, 'say3', 'jess, can you take the HTTP side?', 'note5', 'a garbled cursor like `after=zzz` must 400, not 500 — add a test for it']).status, 0);
+  assert.deepEqual(readJson(f), { scenes: ['S1'], partial: true, seats: ['tristan', 'jess'], words: { say3: 'jess, can you take the HTTP side?', note5: 'a garbled cursor like `after=zzz` must 400, not 500 — add a test for it' } });
+  const r = runInfo(d);
+  assert.deepEqual([r.A, r.B, r.DEMO.say3], ['tristan', 'jess', 'jess, can you take the HTTP side?']);
+  assert.match(r.DEMO.plan4, /^let's plan cursor paging/); // a word the run did not write: the default
+  assert.deepEqual([runInfo(tmp()).A, runInfo(tmp()).B], ['alice', 'bob']); // no run.json
+  assert.equal(lib(['run-words', f, 'say3']).status, 2); // a key with no text
 });
 
 test('demo-lib: demo.sh edits no JSON inline (node -e)', () => {

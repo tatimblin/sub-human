@@ -5,6 +5,7 @@
  * trailer renderer reads (a hand-made sample: trailer/capture/fixture/).
  *
  *   capture.js start <dir> [--sessions alice=sh-alice,bob=sh-bob,claude=sh-claude] [--interval 100] [--take NAME]
+ *                         (a frame's session is the key: demo.sh --film passes tristan=sh-tristan,jess=sh-jess,claude=sh-claude)
  *                         the poller (demo.sh --film runs it in the background): every --interval ms, `tmux capture-pane
  *                         -ep` of each session; a frame line only when that pane's text changed. A session not there
  *                         yet (sh-claude before S1) or gone for a moment is skipped. SIGTERM/SIGINT: a last poll, then

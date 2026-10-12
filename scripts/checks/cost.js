@@ -9,8 +9,8 @@ const metrics = require('../metrics.js');
 const paths = require('../lib/paths.js');
 const { jsonl } = require('../lib/io.js');
 
-/** cost({index, runStart})() → "≈ $X (model $Y, …; …)". */
-function runCost({ index, runStart }) {
+/** cost({index, runStart, seats})() → "≈ $X (model $Y, …; …)". */
+function runCost({ index, runStart, seats = ['alice', 'bob'] }) {
   return function cost() {
     const P = metrics.BASELINES.prices;
     const price = m => (Object.entries(P).find(([k]) => k !== 'default' && m.includes(k)) || [null, P.default])[1];
@@ -38,7 +38,7 @@ function runCost({ index, runStart }) {
         }
       }
     };
-    for (const seat of ['alice', 'bob', 'carol']) walk(paths.seatProjectDir(seat)); // the room Claude's transcript is in alice's folder
+    for (const seat of [...seats, 'carol']) walk(paths.seatProjectDir(seat)); // the room Claude's transcript is in the first seat's folder
     return `≈ $${usd.toFixed(2)} (${Object.entries(byModel).map(([m, c]) => `${m.replace(/^claude-/, '')} $${c.toFixed(2)}`).join(', ')}; list-price estimate from transcript token usage within the run)`;
   };
 }
