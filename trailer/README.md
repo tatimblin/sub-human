@@ -16,12 +16,16 @@ npx remotion render Trailer --props='{"take":"<take-id>"}'
 run of the whole story with tristan and jess that the cuts are timed to; `take5` and `take4` are alice-and-bob takes
 before it; `synthetic` is a generated one for development. See "Takes and casts" below. The MP4 lands in `out/`.
 
-The compositions follow `STORYBOARD.md` (v2): `Trailer` (1920×1080, ~68 s), `TrailerSquare` (1080×1080, the same cut
-stacked), `Social15` (1080×1350, 15 s) and `ReadmeLoop` (1280×720, ~9 s, loops; no captions). Same `--props`.
-The README GIF: `ffmpeg -i out/ReadmeLoop-take7.mp4 -vf "fps=12,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=4" out/ReadmeLoop-take7.gif`.
+The compositions: `Trailer` (1920×1080, ~68 s), `TrailerSquare` (1080×1080, the same cut stacked), `Social15`
+(1080×1350, 15 s) and `ReadmeLoop` (1280×720, ~8 s, loops). Same `--props`. For take7 the default cuts are v3, the
+"native" ones (`src/edits/native.ts`): `STORYBOARD.md`'s take7 beats in the take4 cut's look (real terminal windows,
+one camera that pushes in on the pane that matters, plain captions, a few callout labels, the v1 title and end card;
+no message tags, name plates or per-person colours). The v2 split-screen cuts are `edit: "trailer-v2"`,
+`"social-v2"`, `"readme-v2"` (the default for take4 and take5); `"trailer-v3"` etc. name v3 explicitly.
+The README GIF: `ffmpeg -i out/ReadmeLoop-take7-v3.mp4 -vf "fps=12,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=4" out/ReadmeLoop-take7-v3.gif`.
 The take4-era cuts are still there as `edit: "trailer-v1"` and `"readme-v1"`. `npm run dev` opens Remotion Studio.
 
-Props (all optional): `take`, `edit` (`trailer`, `social`, `readme`, `trailer-v1`, `readme-v1`), `music` (a URL or a path under `public/`, faded in and out), `musicVolume`,
+Props (all optional): `take`, `edit` (`trailer`, `social`, `readme` in the take's style; or `-v3`, `-v2` of each, `trailer-v1`, `readme-v1`), `music` (a URL or a path under `public/`, faded in and out), `musicVolume`,
 `keyClicks` (a soft click per typed key; off), `scrubWords` (extra words to replace: a username, a hostname),
 `dropRows` (screen rows to remove, by text), `compact` (stacked panes drop blank rows; on for `ReadmeLoop`),
 `seats` (default: the take's two people).
@@ -90,7 +94,7 @@ npx remotion compositions --log=verbose | grep '\[cut\]'
 ## Checking a take
 
 ```
-npm run stills -- --take <take-id>                  # out/stills/: ~70% into every segment, the end card
+npm run stills -- --take <take-id> [--edit trailer-v1]  # out/stills/: ~70% into every segment, the end card
 npm run stills -- --comp Social15,ReadmeLoop --only ask-fly,plan-open,end --at 0.3,0.8
 npm run stills -- --frames 600,756                  # exact frames (a tag in flight)
 npx remotion still Trailer out/f.png --frame=1048   # one frame

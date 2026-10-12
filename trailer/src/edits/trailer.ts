@@ -219,6 +219,8 @@ export type Story = {
   trailer: Edit;
   social: Edit;
   readme: Edit;
+  /** the v3 ("native") cuts, where the story has them (halves.ts, take7): edits/native.ts */
+  native?: { trailer: Edit; social: Edit; readme: Edit };
 };
 
 /** The trailer from the cold open to both people's yes (every story shares it); the build is each story's own. */

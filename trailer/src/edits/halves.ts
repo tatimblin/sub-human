@@ -1,4 +1,5 @@
 import type { Edit, Segment, Tag } from '../lib/edl';
+import { nativeCuts } from './native';
 import type { Cast } from '../cast';
 import { anchorsFor, any, at, beatsFor, captionsFor, plus, readmeEdit, socialEdit, storySegments, tagsFor, wordsFor, type Story, type Words } from './trailer';
 
@@ -16,7 +17,7 @@ import { anchorsFor, any, at, beatsFor, captionsFor, plus, readmeEdit, socialEdi
  */
 
 /** S1–S5 as take7 shows them (demo.sh's film prompts), beyond the names. */
-const WORDS = (c: Cast, room: string): Words => ({
+export const WORDS = (c: Cast, room: string): Words => ({
   ...wordsFor(c, room),
   talkLabel: `"${c.b}, can you take the HTTP side of paging?"`,
   answerLabel: '"A counter: nextId++ from 1, in insertion order."',
@@ -27,7 +28,7 @@ const WORDS = (c: Cast, room: string): Words => ({
 });
 
 /** The build's moments, as each pane shows them. */
-const BUILD = (c: Cast) => {
+export const BUILD = (c: Cast) => {
   const { a, b } = c;
   return {
     /** the two tasks on the room's list: a's Claude lists both, b's pane gets its own */
@@ -161,5 +162,5 @@ export function halvesStory(c: Cast, room: string): Story {
     ],
   };
   const s = { cast: c, words, A, CAPTION, TAG, BEATS };
-  return { ...s, trailer, social: socialEdit(s), readme: readmeEdit(s) };
+  return { ...s, trailer, social: socialEdit(s), readme: readmeEdit(s), native: nativeCuts(c, words, A, B) };
 }

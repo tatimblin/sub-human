@@ -1,5 +1,10 @@
 # Trailer storyboard (v2, ~68 s)
 
+The v3 cut (`src/edits/native.ts`, take7's default) tells this story in the take4 cut's visual language instead
+of the split screen below: the v1 title over the plan, one camera pushing in on the active pane, side by side only
+for the join, the plan opening and the tests passing; a message between Claudes shows as the line it is in the
+receiving pane. No tags, name plates or per-person colours. The rules below are v2's.
+
 From the demo research of 2026-10-11:
 - Lead with the result, not a logo.
 - State the problem.

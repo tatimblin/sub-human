@@ -3,7 +3,7 @@
  * stills: render key frames of a take for review, bundling once. Frames are picked from the cut the
  * composition logs ([cut] id@frame+length): ~70% into each listed segment, plus the hook and the end card.
  *
- *   node scripts/stills.mjs [--take take4] [--comp Trailer] [--only join,card-zoom] [--out out/stills]
+ *   node scripts/stills.mjs [--take take4] [--edit trailer-v1] [--comp Trailer] [--only join,card-zoom] [--out out/stills]
  */
 import path from 'node:path';
 import fs from 'node:fs';
@@ -28,7 +28,8 @@ fs.mkdirSync(outDir, { recursive: true });
 const serveUrl = await bundle({ entryPoint: path.join(ROOT, 'src/index.ts'), publicDir: path.join(ROOT, 'public') });
 for (const id of comps) {
   let cut = '';
-  const inputProps = { take };
+  const edit = arg('edit', '');
+  const inputProps = edit ? { take, edit } : { take };
   const composition = await selectComposition({
     serveUrl,
     id,

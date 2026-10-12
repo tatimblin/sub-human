@@ -99,6 +99,7 @@ export const Replay: React.FC<Props> = ({ cap, edit, layout, frame, chrome = 1, 
   const v = viewCentre(layout);
 
   const focus = seg.camera?.pane;
+  const modelOnly = useMemo(() => edit.segments.some((s) => s.model), [edit]);
   const placed: PlacedCallout[] = [];
   const panes = layout.panes.map((box) => {
     const fr = frameAt(cap, box.name, t);
@@ -177,7 +178,8 @@ export const Replay: React.FC<Props> = ({ cap, edit, layout, frame, chrome = 1, 
       ) : null}
       <Callouts items={placed} progress={Math.min(calloutIn, calloutOut) * chrome} scale={layout.height / 1080} />
       <Captions edit={edit} frame={f} layout={layout} opacity={chrome} />
-      <SpeedBadge edit={edit} frame={f} layout={layout} sourceMs={t} opacity={chrome} />
+      {/* an edit that marks its model time (v3) badges only that; the v1 cuts badge every sped-up segment */}
+      <SpeedBadge edit={edit} frame={f} layout={layout} sourceMs={t} opacity={chrome} modelOnly={modelOnly} />
     </AbsoluteFill>
   );
 };

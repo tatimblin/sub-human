@@ -15,14 +15,16 @@ const rise = (frame: number, at: number, fps: number) => {
 
 /**
  * The call to action. `full` and `short` (the v2 cuts): the tagline, the two /plugin lines, "Then run /sub-human."
- * and the repo (`short`, for the 15 s cut, comes up faster). `v1`: the take4 cut's card.
+ * and the repo (`short`, for the 15 s cut, comes up faster). `v1`: the take4 cut's card. `native` (`native-short`):
+ * the v1 card with "Then run /sub-human." in its last line (the v3 cuts).
  */
-export const EndCard: React.FC<{ variant?: 'v1' | 'full' | 'short' }> = ({ variant = 'full' }) => {
+export const EndCard: React.FC<{ variant?: 'v1' | 'full' | 'short' | 'native' | 'native-short' }> = ({ variant = 'full' }) => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
   const u = Math.min(width / 1920, height / 1080) * (width < height * 1.2 ? 1.45 : 1);
-  const k = variant === 'short' ? 0.55 : 1; // the short card's lines arrive sooner
-  const v1 = variant === 'v1';
+  const k = variant === 'short' || variant === 'native-short' ? 0.55 : 1; // the short card's lines arrive sooner
+  const native = variant === 'native' || variant === 'native-short';
+  const v1 = variant === 'v1' || native;
   return (
     <AbsoluteFill
       style={{
@@ -36,7 +38,7 @@ export const EndCard: React.FC<{ variant?: 'v1' | 'full' | 'short' }> = ({ varia
           <Wordmark size={(v1 ? 112 : 84) * u} blink />
         </div>
         {v1 ? (
-          <div style={{ ...rise(frame, fps * 0.25, fps), fontFamily: SANS, fontSize: 36 * u, color: COLORS.textSoft, letterSpacing: '-0.01em', textAlign: 'center', maxWidth: width * 0.84 }}>
+          <div style={{ ...rise(frame, fps * 0.25 * k, fps), fontFamily: SANS, fontSize: 36 * u, color: COLORS.textSoft, letterSpacing: '-0.01em', textAlign: 'center', maxWidth: width * 0.84 }}>
             {TAGLINE}
           </div>
         ) : (
@@ -65,7 +67,14 @@ export const EndCard: React.FC<{ variant?: 'v1' | 'full' | 'short' }> = ({ varia
             </div>
           ))}
         </div>
-        {v1 ? (
+        {native ? (
+          <div style={{ ...rise(frame, fps * 1.3 * k, fps), display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 * u, textAlign: 'center' }}>
+            <div style={{ fontFamily: SANS, fontSize: 30 * u, color: COLORS.textSoft, letterSpacing: '-0.005em' }}>
+              Then run <span style={{ fontFamily: MONO, color: COLORS.text }}>/sub-human</span>.
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: 24 * u, color: COLORS.textFaint }}>{REPO}</div>
+          </div>
+        ) : v1 ? (
           <div style={{ ...rise(frame, fps * 1.3, fps), fontFamily: SANS, fontSize: 24 * u, color: COLORS.textFaint, letterSpacing: '0.005em', textAlign: 'center' }}>
             Then restart Claude Code. <span style={{ color: COLORS.textSoft }}>{REPO}</span>
           </div>

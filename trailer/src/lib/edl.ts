@@ -131,8 +131,12 @@ export type Edit = {
   roomNode?: boolean;
   /** v2: captions (off for the README loop: name plates only) */
   captions?: boolean;
-  /** v2: the end card's form */
-  endCard?: 'full' | 'short';
+  /** the end card's form: the v2 cuts' `full` / `short`, the take4 cut's `v1`, or v3's (`native`, `native-short`) */
+  endCard?: 'full' | 'short' | 'v1' | 'native' | 'native-short';
+  /** v1/v3: a loop (no end card): the last frame does not hold, so it runs straight back to its start */
+  loop?: boolean;
+  /** v1/v3: always the side-by-side stage with its camera (the README loop's 1280×720 would otherwise stack) */
+  stage?: 'side';
   segments: Segment[];
 };
 

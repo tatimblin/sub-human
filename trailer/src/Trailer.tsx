@@ -23,15 +23,18 @@ import { Wordmark } from './components/Wordmark';
 import { EndCard } from './scenes/EndCard';
 import { MONO, SANS } from './fonts/fonts';
 import { CastContext } from './cast';
-import { castFor, storyFor } from './takes';
+import { castFor, storyFor, styleFor } from './takes';
 import { trailerEdit as trailerV1 } from './edits/v1/trailer';
 import { readmeEdit as readmeV1 } from './edits/v1/readme';
 
 export type TrailerProps = {
   /** a folder under trailer/capture/ holding capture.jsonl[.gz] ("synthetic", "fixture", or a real take id) */
   take: string;
-  /** which cut: the trailer's, the 15 s social cut, the README loop's (or the take4-era v1 cuts) */
-  edit: 'trailer' | 'social' | 'readme' | 'trailer-v1' | 'readme-v1';
+  /**
+   * which cut: the trailer's, the 15 s social cut, the README loop's, in the take's default style (takes.ts: v3 for
+   * take7, v2 before it); or one style by name: `-v3` native, `-v2` split screen, `-v1` the take4-era cuts
+   */
+  edit: Cut | `${Cut}-v2` | `${Cut}-v3` | 'trailer-v1' | 'readme-v1';
   /** the panes, left to right (or top to bottom); empty = the take's two people (takes.ts) */
   seats: string[];
   /** optional music: a URL, or a path under public/ */
@@ -47,11 +50,18 @@ export type TrailerProps = {
   compact: boolean;
 };
 
-/** The cut: the v2 ones come from the take's story (its cast and build, takes.ts); the v1 ones are take4-era, alice and bob. */
+type Cut = 'trailer' | 'social' | 'readme';
+
+/**
+ * The cut: the v2 and v3 ones come from the take's story (its cast and build, takes.ts), v3 where the story has it
+ * (else v2); the v1 ones are take4-era, alice and bob.
+ */
 function editFor(take: string, cap: Capture, which: TrailerProps['edit']): Edit {
   if (which === 'trailer-v1') return trailerV1;
   if (which === 'readme-v1') return readmeV1;
-  return storyFor(take, cap)[which];
+  const [cut, style = styleFor(take)] = which.split('-') as [Cut, string?];
+  const story = storyFor(take, cap);
+  return (style === 'v3' && story.native ? story.native : story)[cut];
 }
 
 function seatsFor(take: string, cap: Capture, seats: string[]): string[] {
@@ -67,7 +77,7 @@ const scrubOpts = (p: TrailerProps) => ({ words: p.scrubWords, dropRows: p.dropR
 function timing(edit: Edit, resolved: ResolvedEdit, fps: number) {
   const hook = Math.round(edit.hookSeconds * fps);
   // a loop (no end card) runs straight back to its start: no hold on the last frame
-  const main = hook + resolved.frames + Math.round((edit.v2 && !edit.endSeconds ? 0 : HOLD) * fps);
+  const main = hook + resolved.frames + Math.round(((edit.v2 || edit.loop) && !edit.endSeconds ? 0 : HOLD) * fps);
   const end = Math.round(edit.endSeconds * fps);
   return { hook, main, end, total: end > 0 ? main + end - FADE : main };
 }
@@ -93,7 +103,8 @@ export const calculateTrailerMetadata: CalculateMetadataFunction<TrailerProps> =
 function layoutFor(width: number, height: number, cap: Capture, seats: string[], compact: boolean, edit: Edit): StageLayout | SplitLayout {
   const s = cap.meta.sessions[seats[0]] || { cols: 120, rows: 40 };
   if (edit.v2) return splitLayout(width, height, seats, s.cols, s.rows, { captions: edit.captions !== false, node: !!edit.roomNode });
-  if (width / height > 1.5 && height >= 1000) return sideLayout(width, height, seats, s.cols, s.rows);
+  if ((width / height > 1.5 && height >= 1000) || edit.stage === 'side') return sideLayout(width, height, seats, s.cols, s.rows);
+  if (height > width) return stackedLayout(width, height, seats, s.cols, { top: 96, captionZone: 230, gap: 28, mx: 44, compact });
   if (width === height) return stackedLayout(width, height, seats, s.cols, { top: 84, captionZone: 176, gap: 26, mx: 44, compact });
   return stackedLayout(width, height, seats, s.cols, { top: 14, captionZone: 84, gap: 12, mx: 30, compact });
 }
@@ -247,7 +258,7 @@ export const Trailer: React.FC<TrailerProps> = (props) => {
           </TransitionSeries.Sequence>
           <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: FADE })} />
           <TransitionSeries.Sequence name="End card" durationInFrames={t.end} premountFor={fps}>
-            <EndCard variant={edit.v2 ? (edit.endCard ?? 'full') : 'v1'} />
+            <EndCard variant={edit.endCard ?? (edit.v2 ? 'full' : 'v1')} />
           </TransitionSeries.Sequence>
         </TransitionSeries>
       ) : layout.kind === 'split' ? (
