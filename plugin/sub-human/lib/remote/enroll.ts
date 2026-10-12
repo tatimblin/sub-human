@@ -310,9 +310,12 @@ async function joinEnroll({ code, kind, pin, joiner, transport, checkKey = () =>
   }
 }
 
-/** This machine's short name, for the host's card ("carol on carols-mbp"): what the joiner says, never trusted. */
-function joinerLabel(): string {
-  const n = String(os.hostname() || '').split('.')[0].replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 64);
+/**
+ * This machine's short name, for the host's card ("carol on carols-mbp"): what the joiner says, never trusted.
+ * SUB_HUMAN_MACHINE_LABEL names it instead of the host name (a machine whose host name says nothing, a demo).
+ */
+function joinerLabel(env: NodeJS.ProcessEnv = process.env): string {
+  const n = String(env.SUB_HUMAN_MACHINE_LABEL || os.hostname() || '').split('.')[0].replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 64);
   return LABEL_RE.test(n) ? n : 'a-machine';
 }
 

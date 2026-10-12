@@ -226,6 +226,10 @@ test('ssh.withUser / placeholder: only a bare alias is expanded; no ssh or a bad
   assert.equal(ssh.withUser('me@dev'), 'me@dev');
   assert.equal(ssh.withUser('dev', { bin: '/nonexistent/ssh' }), 'dev');
   assert.equal(ssh.withUser('bad;host'), 'bad;host');
+  // SUB_HUMAN_SSH_OPTS (opts) go before -G: a -F config there names the alias's User
+  const cfg = path.join(h.tmpDir('sh-sshcfg-'), 'config');
+  fs.writeFileSync(cfg, 'Host devbox\n  HostName 127.0.0.1\n  User someone\n');
+  if (spawnSync('ssh', ['-G', 'x'], { stdio: 'ignore' }).status === 0) assert.equal(ssh.withUser('devbox', { opts: ['-F', cfg] }), 'someone@devbox');
   assert.equal(ssh.placeholder('YOU@dev'), true);
   assert.equal(ssh.placeholder('yousef@dev'), false);
 });

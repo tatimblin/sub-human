@@ -83,14 +83,15 @@ function dest(text: string): SshDest | null {
 /**
  * A bare ssh config alias (`dev`) as the USER@ALIAS ssh would log in as: the user from `ssh -G ALIAS` (your
  * ~/.ssh/config, else your local name; read locally, nothing connects). The alias stays the host, so its HostName,
- * Port, ProxyJump and keys still apply. Anything else, or no ssh, comes back unchanged.
+ * Port, ProxyJump and keys still apply. opts (default SUB_HUMAN_SSH_OPTS, as every ssh this machine runs: a `-F FILE`
+ * there is the config the link's ssh reads too) go before -G. Anything else, or no ssh, comes back unchanged.
  */
-function withUser(text: string, { bin = 'ssh' }: { bin?: string } = {}): string {
+function withUser(text: string, { bin = 'ssh', opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean) }: { bin?: string; opts?: string[] } = {}): string {
   const t = String(text);
   if (t.includes('@') || !new RegExp(`^${SSH_HOST}(?::[0-9]{1,5})?$`).test(t)) return t;
   const host = t.replace(/:[0-9]+$/, '');
   try {
-    const r = childProcess.spawnSync(bin, ['-G', host], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
+    const r = childProcess.spawnSync(bin, [...opts, '-G', host], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
     const m = r.status === 0 && /^user (\S+)$/m.exec(r.stdout || '');
     return m && new RegExp(`^${SSH_USER}$`).test(m[1]) ? `${m[1]}@${t}` : t;
   } catch { return t; }

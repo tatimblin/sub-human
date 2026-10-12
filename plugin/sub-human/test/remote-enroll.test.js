@@ -257,3 +257,9 @@ test('enrollment key: derived from the room code only, an openssh file ssh-keyge
   if (kg.error) return t.skip('no ssh-keygen here');
   assert.equal(kg.stdout.trim().split(' ').slice(0, 2).join(' '), a.pub);
 });
+
+test('joinerLabel: the short host name, or SUB_HUMAN_MACHINE_LABEL; anything unplain is made plain', () => {
+  assert.equal(enroll.joinerLabel({ SUB_HUMAN_MACHINE_LABEL: 'laptop' }), 'laptop');
+  assert.equal(enroll.joinerLabel({ SUB_HUMAN_MACHINE_LABEL: 'jess laptop.local' }), 'jess-laptop');
+  assert.match(enroll.joinerLabel({}), /^[A-Za-z0-9._-]{1,64}$/);
+});

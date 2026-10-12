@@ -148,9 +148,12 @@ function hostInvite(code: string, { ssh = true, via, pipe = false, by = null, no
   }
   const dest = ssh === true ? selfAddress() : String(ssh);
   if (sshT().placeholder(dest)) throw new RoomError('INVALID', `"${dest}" still has an example's placeholder: give the address the other machine reaches this one at (user@host, or set SUB_HUMAN_SSH_ADDR)`);
-  const locator = sshT().locator(dest, via !== undefined ? { via } : {});
+  // a bare ssh alias (`devbox`): the line shows it as given, and the joiner's own ssh config resolves it there (the
+  // join's withUser); the invite's record holds this machine's reading of it (ssh -G: the user)
+  const full = sshT().withUser(dest);
+  const locator = sshT().locator(full, via !== undefined ? { via } : {});
   if (!locator) {
-    throw new RoomError('INVALID', sshT().dest(dest) ? `--via "${via}" is not a plain [user@]host[:port]` : `"${dest}" is not a plain user@host[:port]${ssh === true ? ' (set SUB_HUMAN_SSH_ADDR, or give --ssh USER@HOST)' : ''}`);
+    throw new RoomError('INVALID', sshT().dest(full) ? `--via "${via}" is not a plain [user@]host[:port]` : `"${dest}" is not a plain user@host[:port] or ssh alias${ssh === true ? ' (set SUB_HUMAN_SSH_ADDR, or give --ssh USER@HOST)' : ''}`);
   }
   shimReady();
   const hostKey = sshkeys.hostKey();

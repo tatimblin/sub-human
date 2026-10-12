@@ -41,6 +41,21 @@ test('invite over ssh: the door in authorized_keys, the line with --via and no N
   assert.match(host.join(alice, 'invite --ssh -oProxyCommand=x@far').json.reason, /not a plain user@host/);
   assert.match(host.join(alice, 'invite --ssh me@far --via -oX').json.reason, /--via .* is not a plain/);
   assert.match(host.join(alice, 'invite --ssh YOU@far').json.reason, /placeholder/);
+  // a bare ssh alias: the line names it as given (the joiner's own config resolves it); the record holds user@alias
+  // as this machine's ssh reads it (SUB_HUMAN_SSH_OPTS's -F config: its User)
+  const cfg = path.join(host.user, 'ssh_config');
+  fs.writeFileSync(cfg, 'Host devbox\n  HostName 127.0.0.1\n  Port 2222\n  User dev\n');
+  const aliasEnv = { ...host.extra };
+  Object.assign(host.extra, { SUB_HUMAN_SSH_OPTS: `-F ${cfg}` });
+  const al = host.join(alice, 'invite --ssh devbox');
+  Object.keys(host.extra).forEach(k => { if (!(k in aliasEnv)) delete host.extra[k]; });
+  assert.ok(hiddenBlock(al), al.stderr);
+  assert.match(al.json.reason, new RegExp(`\n  /sub-human join devbox ${code} \\d{4}\n`));
+  assert.match(al.json.reason, /over ssh devbox\./);
+  const auth = require(path.join(h.LIB, 'remote', 'auth.ts'));
+  const locs = Object.values(host.lib(() => store.open(code).kv.get(auth.INVITES_KEY)) || {}).map(i => i.locator);
+  assert.ok(locs.includes('ssh:dev@devbox'), JSON.stringify(locs));
+  host.join(alice, `invite --cancel ${/invite --cancel ([0-9a-f]{12})/.exec(al.json.reason)[1]}`);
 
   // the CLI: --ssh alone (or nothing) is this machine's own address
   const cli = (args, extra = {}) => spawnSync(process.execPath, [h.BIN, ...args], { env: host.env(null, { ...env, ...extra }), encoding: 'utf8' });
