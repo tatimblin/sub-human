@@ -7,16 +7,23 @@ import { MONO, SANS } from '../fonts/fonts';
 
 type Block = { start: number; end: number; text: string; eyebrow?: string };
 
-/** Consecutive segments with the same caption share one block, so the caption holds still across them. */
-export function captionBlocks(edit: ResolvedEdit): Block[] {
+/** Consecutive segments that share `same` merge into one block, so that line holds still across them. */
+function runs(edit: ResolvedEdit, same: (a: Block, s: ResolvedEdit['segments'][number]) => boolean): Block[] {
   const out: Block[] = [];
   for (const s of edit.segments) {
     const prev = out[out.length - 1];
-    if (prev && prev.text === s.captionText && prev.eyebrow === s.eyebrow) prev.end = s.outStart + s.outFrames;
+    if (prev && same(prev, s)) prev.end = s.outStart + s.outFrames;
     else out.push({ start: s.outStart, end: s.outStart + s.outFrames, text: s.captionText, eyebrow: s.eyebrow });
   }
   return out.filter((b) => b.text);
 }
+
+/** The white caption's blocks: keyed on its text alone, so a new eyebrow over the same caption doesn't flash it. */
+export const captionBlocks = (edit: ResolvedEdit): Block[] => runs(edit, (b, s) => b.text === s.captionText);
+
+/** The orange eyebrow's blocks: keyed on caption and eyebrow, so it fades on its own when only it changes. */
+const eyebrowBlocks = (edit: ResolvedEdit): Block[] =>
+  runs(edit, (b, s) => b.text === s.captionText && b.eyebrow === s.eyebrow).filter((b) => b.eyebrow);
 
 type CaptionLayout = Pick<StageLayout, 'width' | 'height' | 'captionBottom' | 'captionSize' | 'eyebrowSize'>;
 
@@ -42,15 +49,19 @@ export const Captions: React.FC<{ edit: ResolvedEdit; frame: number; layout: Cap
   const cast = useCast();
   const block = captionBlocks(edit).find((b) => frame >= b.start && frame < b.end);
   if (!block) return null;
-  const local = frame - block.start;
-  const fadeIn = interpolate(local, [0, fps * 0.4], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.16, 1, 0.3, 1) });
-  const fadeOut = interpolate(block.end - frame, [0, fps * 0.3], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const k = Math.min(fadeIn, fadeOut);
+  const brow = eyebrowBlocks(edit).find((b) => frame >= b.start && frame < b.end);
+  const fade = (b: Block) => {
+    const fadeIn = interpolate(frame - b.start, [0, fps * 0.4], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.bezier(0.16, 1, 0.3, 1) });
+    const fadeOut = interpolate(b.end - frame, [0, fps * 0.3], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+    return { fadeIn, k: Math.min(fadeIn, fadeOut) };
+  };
+  const line = fade(block);
+  const eyebrow = brow ? fade(brow) : null;
   return (
-    <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: layout.captionBottom, opacity: opacity * k }}>
+    <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: layout.captionBottom, opacity }}>
       <div
         style={{
-          translate: `0 ${interpolate(fadeIn, [0, 1], [layout.captionSize * 0.35, 0])}px`,
+          translate: `0 ${interpolate(line.fadeIn, [0, 1], [layout.captionSize * 0.35, 0])}px`,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -58,16 +69,17 @@ export const Captions: React.FC<{ edit: ResolvedEdit; frame: number; layout: Cap
           maxWidth: layout.width * 0.8,
         }}
       >
-        {block.eyebrow ? (
+        {brow && eyebrow ? (
           <div
             style={{
               fontFamily: MONO,
               fontSize: layout.eyebrowSize,
               color: COLORS.accent,
               letterSpacing: '0.04em',
+              opacity: Math.min(eyebrow.k, line.k),
             }}
           >
-            {block.eyebrow}
+            {brow.eyebrow}
           </div>
         ) : null}
         <div
@@ -80,6 +92,7 @@ export const Captions: React.FC<{ edit: ResolvedEdit; frame: number; layout: Cap
             lineHeight: 1.25,
             textAlign: 'center',
             textWrap: 'balance',
+            opacity: line.k,
           }}
         >
           {names ? coloured(block.text, cast) : block.text}
