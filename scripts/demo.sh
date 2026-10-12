@@ -551,13 +551,13 @@ S6b() {
   snap "$a's Claude puts the agreed plan's two halves on the room task list: #$h the store, #$t the handler"
 
   mark build "Each Claude builds its half in its own checkout"
-  submit "$a" "claim #$h and build listTasks as agreed, in src/store.js and test/store-paging.test.js only. once npm test passes, commit and push, tell $b's Claude it's pushed, then mark #$h done with that run"
+  submit "$a" "claim #$h and build listTasks as agreed, in src/store.js and test/store-paging.test.js only. once npm test passes, commit and push to main, tell $b's Claude it's pushed, then mark #$h done with that run"
   # B's Claude sends an Explore subagent first: watch B's panel for its row from before B types, and mark the beat
   # the moment it shows (the S6b check reads the saved pane)
   ( $LIB wait-subagent-row "sh-$b" --save "$d/panel-subagent-$b.txt" --timeout 900 --what "$b's panel shows $b's Claude's own subagent" > "$d/subagent-rows-$b.txt" \
     && mark subagent "$b's Claude sends a subagent to read the store first" ) &
   local ps=$!
-  submit "$b" "claim #$t. send an Explore agent to read src/store.js, then build the handler against the agreed listTasks, in src/server.js and test/server-paging.test.js only. when $a's Claude says the store's pushed, pull, run npm test, commit, push, and mark #$t done with that run"
+  submit "$b" "claim #$t. send an Explore agent to read src/store.js, then build the handler against the agreed listTasks, in src/server.js and test/server-paging.test.js only. when $a's Claude says the store's pushed, pull main, run npm test, commit and push to main, and mark #$t done with that run"
   # play both people while their Claudes work: any permission dialog gets "Yes" until that seat's task is completed
   $LIB approve-until "sh-$a" --task-done "$h" --timeout 900 & local pa=$!
   $LIB approve-until "sh-$b" --task-done "$t" --timeout 900 & local pb=$!
