@@ -115,6 +115,7 @@ From `mod/register.ts` (hooks.json `modules`), in registration order.
 | `classic.PostToolUse` | `tool_name TaskCreate\|TaskUpdate` | `mod/tasks.ts` | node hooks/tasks.ts (the room task mirror) only for the room's Claude or an unknown seat |
 | `classic.TaskCompleted` | (all) | `mod/tasks.ts` | node hooks/tasks.ts (the gate; exit 2 -> block) only for the room's Claude or an unknown seat; .catch blocks in the room's Claude |
 | `ui.render` | `UserMessage, origin peer\|peer-send-message\|plugin` | `mod/render.ts` | draws another member's Claude as "bob's Claude: …" and a sub-human prompt as its chat lines, without "(for Claude)" lines |
+| `session.send` | (all) | `mod/send.ts` | a SendMessage to NAME.CODE of this room whose seat is on another machine (members.json machine is not this home's machine.json id; the native send reaches only this machine's sessions) is posted to the room instead, addressed to NAME, through the room server ($.mcp.call post), and answered delivered (or not, with the room's refusal); anything else, or a failure, passes on |
 <!-- /gen:mod-hooks -->
 
 ### MCP tools (generated)

@@ -114,10 +114,11 @@ test('tail: silent before join, then the member push lane, settled into one batc
   ], t.text());
   assert.match(t.of('pull').map(x => x.text).join('\n'), /\nroom: peer-forged\n/, 'the old retract: an ordinary pull line');
   assert.doesNotMatch(t.chat().join('\n'), /#\d/, 'no ids in what the human sees');
-  assert.deepEqual(t.forClaude().map(l => l.slice(0, 40)), ['(for Claude) room now: proposal bbbbbb w']);
+  assert.deepEqual(t.forClaude().map(l => l.slice(0, 40)), ["(for Claude) to answer bob's Claude: Sen", '(for Claude) room now: proposal bbbbbb w']);
+  assert.equal(t.forClaude()[0], `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'a post to me names how to answer its Claude');
   assert.match(t.of('rows').at(-1).text, /SUB-HUMAN ROWS: your room row is not running/, 'the missing row is the rows event');
-  assert.ok(t.forClaude()[0].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed (`), t.forClaude()[0]);
-  assert.ok(t.forClaude()[0].includes(`"proposal ${H2}"`), 'the card call carries the full hash');
+  assert.ok(t.forClaude()[1].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed (`), t.forClaude()[1]);
+  assert.ok(t.forClaude()[1].includes(`"proposal ${H2}"`), 'the card call carries the full hash');
   assert.equal(cursor(code, 'alice'), 19);
   const notices = require(path.join(h.LIB, 'notices.ts'));
   assert.ok(notices.shown(code, 'alice').has(12), 'the join is recorded as shown (a restarted child does not repeat it)');
@@ -433,8 +434,8 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   assert.equal(pull[0], tailLib.PULL_HEAD);
   assert.deepEqual(pull.slice(1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
   const wake = t.of('wake')[0].text.split('\n');
-  assert.deepEqual(wake.slice(0, 3), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", 'claude proposed: claude proposes']);
-  assert.ok(wake[3].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
+  assert.deepEqual(wake.slice(0, 4), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'claude proposed: claude proposes']);
+  assert.ok(wake[4].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
   assert.equal(inRoom(code, r => r.getCursor('deliver-alice')), 7);
   const notices = require(path.join(h.LIB, 'notices.ts'));
   assert.ok(notices.shown(code, 'alice').has(2), 'the join is recorded as shown');

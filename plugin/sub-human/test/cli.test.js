@@ -59,7 +59,7 @@ test('cli tail (smoke): silent before join, then one settled block; resumes from
   say('bob', 'bob says hi');                             // #3
   R.append({ kind: 'question', text: 'q for alice', to: 'alice' }, { via: 'agent', from: 'bob' }); // #4
   await a.until("bob's Claude (to you): q for alice\n");
-  assert.deepEqual(a.lines(), ['bob: bob says hi', "bob's Claude (to you): q for alice"], a.out);
+  assert.deepEqual(a.lines(), ['bob: bob says hi', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`], a.out);
   assert.deepEqual([a.of('chat').length, a.of('wake').length], [1, 1], 'one burst: one chat, one wake');
   // The cursor is saved once stdout drained; stopping before then replays #4 (at-least-once), so wait for it.
   assert.equal(await h.until(() => R.getCursor('deliver-alice') === 4, 3000), true, 'the cursor reached #4');

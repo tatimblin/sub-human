@@ -409,6 +409,35 @@ test('guard: the person-only CLI is sent to a terminal outside Claude Code, neve
 });
 
 // ---------- mod-hello ----------
+test('send: SendMessage to a seat on another machine goes through the room; everything else passes on', async () => {
+  const { remotePeer, postArgs, postResult } = await load('mod/core/send.ts');
+  const seat = { name: 'jess', code: 'vole-8126', role: 'member', addr: 'jess.vole-8126' };
+  const members = {
+    alice: { name: 'alice', machine: 'aaaa' },
+    claude: { name: 'claude', role: 'claude', machine: 'aaaa' },
+    jess: { name: 'jess', machine: 'bbbb' },
+    kim: { name: 'kim', machine: 'bbbb' },
+    gone: { name: 'gone', machine: 'aaaa', left_at: '2026-10-12T00:00:00Z' },
+    old: { name: 'old' }, // before machine ids: never judged remote
+  };
+  assert.equal(remotePeer('alice.vole-8126', seat, members, 'bbbb'), 'alice');
+  assert.equal(remotePeer('claude.vole-8126', seat, members, 'bbbb'), 'claude', "the room's Claude runs on the host");
+  assert.equal(remotePeer('kim.vole-8126', seat, members, 'bbbb'), null, 'same machine: the native send');
+  assert.equal(remotePeer('jess.vole-8126', seat, members, 'bbbb'), null, 'never to myself');
+  assert.equal(remotePeer('alice.otter-4821', seat, members, 'bbbb'), null, 'another room');
+  assert.equal(remotePeer('gone.vole-8126', seat, members, 'bbbb'), null, 'a seat that left');
+  assert.equal(remotePeer('old.vole-8126', seat, members, 'bbbb'), null);
+  assert.equal(remotePeer('nobody.vole-8126', seat, members, 'bbbb'), null);
+  assert.equal(remotePeer('alice', seat, members, 'bbbb'), null, 'not an address');
+  assert.equal(remotePeer('alice.vole-8126', null, members, 'bbbb'), null, 'no seat');
+  assert.equal(remotePeer('alice.vole-8126', seat, null, 'bbbb'), null, 'no members document');
+  assert.equal(remotePeer('alice.vole-8126', seat, members, undefined), null, 'no machine id');
+  assert.deepEqual(postArgs('alice', 'hi?'), { kind: 'say', to: 'alice', text: 'hi?' });
+  assert.deepEqual(postResult('alice', { content: [{ type: 'text', text: '{"id":7}' }] }), { isDelivered: true });
+  assert.deepEqual(postResult('alice', { isError: true, content: [{ type: 'text', text: 'refused: rate' }] }),
+    { isDelivered: false, reason: 'Not sent to alice (on another machine, reached through the room): refused: rate' });
+});
+
 test('mod-hello: prints the home and this session\'s seat, and writes the lease (0600)', t => {
   const w = new World({ claude: 'sleep', alice: 'act' }, { t });
   const r = w.hook('mod-hello', {}, { as: 'alice' });

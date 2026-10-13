@@ -294,6 +294,12 @@ function formatNdBatch(ready: Item[], ctx: FormatCtx): { events: TailEvent[], mo
           if (isMove(e)) moved.push(e.id);
         } else {
           wake.push(...lines);
+          // a Claude's post addressed to me: answer that Claude, not the room (on another machine the post is how
+          // its SendMessage arrived; mod/send.ts carries the reply back the same way)
+          if (e.via === 'agent' && e.to === me.name && e.from && e.from !== me.name) {
+            const who = e.from === 'claude' ? "the room's Claude" : `${e.from}'s Claude`;
+            wake.push(`${FOR_CLAUDE} to answer ${who}: SendMessage ${e.from}.${me.code}`);
+          }
           if (STATE_KINDS.has(e.kind)) state = true;
         }
         continue;
