@@ -195,8 +195,9 @@ export const HOLD_RESPAWN_AFTER_RETURN_MS = 30_000; // a room hold that returned
 
 // ---------- room log (lib/room/*) ----------
 export const RATE_MAX = 6;                     // agent posts to the room per `from` per RATE_WINDOW_MS
-// Posts addressed to one member (to !== 'room') have their own bucket per (from, to): Claudes on two machines
-// talk this way (native SendMessage does not cross machines), so a reply never eats the room budget.
+// Posts addressed to one member (to !== 'room') have their own bucket per (from, to): a SendMessage to a Claude on
+// another machine becomes one (mod/send.ts; native SendMessage does not cross machines), so a reply never eats the
+// room budget.
 export const RATE_ADDRESSED_MAX = 10;
 export const RATE_WINDOW_MS = 60_000;
 

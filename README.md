@@ -6,6 +6,8 @@ Everyone keeps their own terminal, repo and Claude. sub-human puts you in a room
 Claudes can message each other, and a shared Claude can help plan or keep a task list. It works on one machine or
 across machines, over ssh or the web.
 
+![Two machines in one sub-human room: tristan opens a room on devbox, jess joins from her laptop over ssh and asks the room's Claude for a plan, both approve it in their own plan view, and tristan's Claude builds his half](docs/media/sub-human-readme-loop.webp)
+
 ## Install
 
 ```

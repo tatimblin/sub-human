@@ -48,7 +48,7 @@ test('words: member text carries the mechanics (identity, address, @room, quotin
   const t = read(MEMBER);
   for (const s of ['{NAME}\'s Claude', 'room {CODE}', '"you", not by name', '@room', 'exact words', 'group chat',
     'already sees', 'never repeat them', '(for Claude)', 'never print it', 'room ids',
-    'SendMessage', 'ListAgents', '{ADDR_EXAMPLE}', 'AskUserQuestion', 'hash', 'reopen', 'agreed, confirmed or approved',
+    'SendMessage', 'on any machine', '{ADDR_EXAMPLE}', 'AskUserQuestion', 'hash', 'reopen', 'agreed, confirmed or approved',
     'commitment', 'task', 'propose', PREFIX]) {
     assert.ok(t.includes(s), `member.md lacks "${s}"`);
   }
