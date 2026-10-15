@@ -25,12 +25,15 @@
  *   link:CODE    per link: transport, the daemon (running, pid), state (lib/room/link-state.ts), the last error
  *                (the state record, else the daemon's log), and unless --quick a hello to the host without a
  *                credential (the server answers it and nothing else) with a timeout: reachable, round trip, both
- *                sides' protocol versions, and over ssh whether BatchMode works (ssh's own error, classified)
+ *                sides' protocol versions, and over ssh whether BatchMode works (ssh's own error, classified).
+ *                A dormant link (stopped: the room closed, or no seat of this machine is left) is info and gets no hello
  *   clock:CODE   skew against the host, when its hello reply carries a time (warn 2 min, fail SIG_SKEW_MS)
  *   room-claude:CODE  per open room hosted here: the room's Claude bound and its process live (pass); its job started over
  *                90 s ago but never bound its seat (fail)
  *   claude       Claude Code's version against cc.MIN_VERSION and cc.PROBED_VERSION; when it differs from the
- *                probed one, unless --quick, the internals probe (cc.probe, ~3 s)
+ *                probed one, unless --quick, the internals probe (cc.probe, ~3 s). Info "probe could not run" (no
+ *                probe in the report) when the binary found has no VERSION marker (a launcher), is another version
+ *                than `claude --version`, or lacks every internal
  *   hooks        settings that turn hooks off (disableAllHooks): the plugin then cannot seat anyone
  *   remote_control   whether Remote Control (the phone) is likely available: it needs a claude.ai login and is
  *                unavailable with Bedrock, Vertex, Foundry or an API key (informational)
@@ -49,7 +52,8 @@
  *   helloProbe(spec, code, {timeoutMs, env}?) -> Promise<{ok, ms, reply?, error?, stderr?}>
  *   main(args) -> Promise<exitCode>;  parseArgs(args) -> options (lib/cli/args.ts; Error with the usage)
  *   for tests: checkNode(version?), checkRemoteControl(env, settings), checkListener({quick?}), checkRoomClaudes({now?}),
- *       scanAuthorizedKeys(file), linkChecks(linkReport) -> [check], sshHint(stderr, {code?, request?, transport?})
+ *       checkClaude({version, quick, env}) -> {check, probe?}, scanAuthorizedKeys(file), linkChecks(linkReport) -> [check],
+ *       sshHint(stderr, {code?, request?, transport?})
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -389,6 +393,16 @@ function replyTime(reply: HelloReply | null): number | null {
   return null;
 }
 
+/**
+ * A link that stopped for good with nothing wrong: its room closed, or no seat of this machine is left in it
+ * (lib/remote/link.ts ROOM_CLOSED_REASON, NO_SEAT_REASON). Doctor does not dial it and shows it as info.
+ */
+function dormant(st: LinkStateView): 'closed' | 'no-seat' | null {
+  const link = lib('remote/link.ts');
+  if (st.state !== 'stopped' || !st.lastError) return null;
+  return st.lastError.includes(link.ROOM_CLOSED_REASON) ? 'closed' : st.lastError.includes(link.NO_SEAT_REASON) ? 'no-seat' : null;
+}
+
 async function diagnoseLink(code: string, { quick, timeoutMs, env }: { quick: boolean; timeoutMs: number; env: NodeJS.ProcessEnv }): Promise<LinkReport> {
   const links = lib('room/links.ts');
   const l: Partial<Link> = links.get(code) || {};
@@ -407,7 +421,7 @@ async function diagnoseLink(code: string, { quick, timeoutMs, env }: { quick: bo
     ...(!l.token && typeof l.request === 'string' ? { request: l.request } : {}),
     // the room's host moved (lib/handoff.ts): the link file was re-pointed at the new host; reached once a token came
     moved: l.moved ? { epoch: l.moved.epoch, host: l.moved.host, locator: l.moved.locator, demoted: !!l.moved.demoted, reached: !!l.moved.reached_at } : null };
-  if (!quick) {
+  if (!quick && !dormant(st)) { // a dormant link's host has no room for it: no hello
     const r: HelloProbe = spec ? await helloProbe(spec, code, { timeoutMs, env }) : { ok: false, ms: 0, skipped: true, error: 'the link file names no transport' };
     const reply: HelloReply = r.reply || {};
     const hostTime = replyTime(reply);
@@ -435,7 +449,10 @@ function linkChecks(d: LinkReport): Check[] {
   }
   let status: CheckStatus = d.state.state === 'online' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
   let fix: string | undefined;
-  if (d.state.state === 'fork') fix = `this machine's copy no longer matches the host's: run ${cli(`link --reset ${d.code}`)} in a terminal (it copies the room afresh; anything not sent is kept aside)`;
+  const quiet = dormant(d.state);
+  if (quiet === 'closed') fix = 'the room was closed; this machine\'s copy is kept, nothing to do';
+  else if (quiet === 'no-seat') fix = 'the connection is not running: type /sub-human in your session to start it again';
+  else if (d.state.state === 'fork') fix = `this machine's copy no longer matches the host's: run ${cli(`link --reset ${d.code}`)} in a terminal (it copies the room afresh; anything not sent is kept aside)`;
   else if (d.moved && !d.moved.reached && d.state.state !== 'online') {
     const who = d.moved.host || 'its host';
     fix = `${d.request ? `over ssh ${who} has not let this machine in yet. ` : ''}`
@@ -459,8 +476,8 @@ function linkChecks(d: LinkReport): Check[] {
       bits.push(`host reachable in ${r.ms} ms; protocol here ${local}, host ${host}, speaking v${p.v}`);
     } else {
       bits.push(`host unreachable: ${r.error}`);
-      status = 'fail';
-      fix = [r.hint, /PROTOCOL/.test(r.error || '') ? 'the two sides speak different protocol versions: update sub-human on the older side (/plugin update sub-human)' : null, fix].filter(Boolean).join('\n') || fix;
+      if (!quiet) status = 'fail';
+      if (!quiet) fix = [r.hint, /PROTOCOL/.test(r.error || '') ? 'the two sides speak different protocol versions: update sub-human on the older side (/plugin update sub-human)' : null, fix].filter(Boolean).join('\n') || fix;
     }
     if (d.transport.kind === 'ssh' && !r.skipped) {
       bits.push(r.ok ? 'ssh logs in without a prompt' : (/Permission denied|Host key/i.test(r.stderr) ? 'ssh cannot log in without a prompt' : ''));
@@ -476,6 +493,7 @@ function linkChecks(d: LinkReport): Check[] {
       }
     }
   }
+  if (quiet) status = 'info';
   out.unshift(check(`link:${d.code}`, status, `connection ${d.code}`, bits.filter(Boolean).join(' · '), fix));
   return out;
 }
@@ -501,9 +519,19 @@ function checkClaude({ version, quick, env }: { version: string | null; quick: b
   }
   const bin = cc.locateBinary({ env });
   if (!bin) return { check: check('claude', 'info', 'Claude Code', `${version}; the binary was not found to check its internals`) };
+  const cannot = (why: string) => ({ check: check('claude', 'info', 'Claude Code', `${version}; internals probe could not run: ${why}`), probe: null });
   let results;
-  try { results = cc.probe(fs.readFileSync(bin)); } catch (e) { return { check: check('claude', 'info', 'Claude Code', `${version}; internals not checked (${(e as Error).message})`) }; }
+  try {
+    const buf = fs.readFileSync(bin);
+    // the probe only means something against the binary `claude --version` runs: not a launcher, not another version
+    const bv = cc.binaryVersion(buf);
+    if (!bv) return cannot(`${tilde(bin)} is not the Claude Code binary (a launcher script?); set CLAUDE_BIN to it`);
+    if (cc.compareVersions(bv, version) !== 0) return cannot(`${tilde(bin)} is ${bv} while \`claude --version\` says ${version}; set CLAUDE_BIN to the ${version} binary`);
+    results = cc.probe(buf);
+  } catch (e) { return cannot((e as Error).message); }
   const missing = results.filter(r => !r.ok).map(r => r.id);
+  // every entry missing is a probe that read the wrong thing, not every internal changed at once
+  if (missing.length === results.length) return cannot(`none of the ${results.length} internals was found in ${tilde(bin)}; set CLAUDE_BIN to the Claude Code binary`);
   if (!missing.length) return { check: check('claude', 'pass', 'Claude Code', `${version}; all ${results.length} internals sub-human relies on are present`), probe: { total: results.length, missing } };
   return {
     check: check('claude', 'warn', 'Claude Code', `${version}; ${missing.length} of ${results.length} internals changed since ${cc.PROBED_VERSION}: ${missing.join(', ')}`,
@@ -761,5 +789,5 @@ async function main(args: readonly string[], { write = (s: string) => { process.
 
 export {
   diagnose, format, bundle, redactor, helloProbe, checkListener, checkRoomClaudes, linkChecks, scanAuthorizedKeys,
-  checkNode, checkRemoteControl, sshHint, main, parseArgs, DOCTOR_HELLO_MS,
+  checkNode, checkRemoteControl, checkClaude, sshHint, main, parseArgs, DOCTOR_HELLO_MS,
 };
