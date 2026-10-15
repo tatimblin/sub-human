@@ -24,7 +24,7 @@
  * documents named). rotate() seals the active segment now (tests; an append rotates on its own when due).
  */
 
-import * as roomWatch from './watch.ts';
+import { createRequire } from 'node:module';
 import type { Change } from './watch.ts';
 import nodeFs from 'node:fs';
 import path from 'node:path';
@@ -46,6 +46,9 @@ import type {
 } from './types.ts';
 
 const fs = nodeFs;
+const require = createRequire(import.meta.url);
+/** lib/room/watch.ts: only the host's streams watch a room (lib/remote/server.ts), never a hook or the status line. */
+const roomWatch = (): typeof import('./watch.ts') => require('./watch.ts');
 const MOVED = 'log.moved';
 /** The kv document that says the room heard its log is waiting on older sessions (heldOnce); gone at the next rotation. */
 const ROTATION_HELD = 'log/rotation-held';
@@ -140,7 +143,7 @@ class FsRoomStore implements RoomStore {
   snapshot(): (SnapshotWire & { held: number }) | null { return logIo.snapshotOf(this.dir); }
   tailer(opts: { fs?: TailerFs; after?: number } = {}): Tailer { return logIo.tailer(this.dir, opts); }
   /** What changes in the room's directory (lib/room/watch.ts): the log, and which documents; null: anything may have. */
-  watch(onChange: (change: Change | null) => void): () => void { return roomWatch.watch(this.dir, onChange); }
+  watch(onChange: (change: Change | null) => void): () => void { return roomWatch().watch(this.dir, onChange); }
   lineHash(id: number): string | null { return logIo.lineHash(this.dir, id); }
   validateChain(): ChainCheck { return logIo.validateChain(this.dir); }
   verifyChain(opts: { fromOffset?: number; prev?: string } = {}): ChainVerify { return logIo.verifyChain(this.dir, opts); }
