@@ -197,17 +197,17 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
   assert.match(room.line(R.readAll()[1]), new RegExp(`^#2 alice\\[human\\] \\(unverified\\) signoff proposal=${H1} "ok"$`));
 });
 
-test('room: tailLine is <= 240 chars for hostile text; who() labels', () => {
+test('room: line is <= 240 chars for hostile text; who() labels', () => {
   fresh();
   for (const s of HOSTILE) {
     const e = human('bob', 'objection', { proposal_hash: H1, refs: [1, 2, 3, 4, 5, 6, 7], to: 'alice' });
-    const line = room.tailLine({ ...e, text: s });
+    const line = room.line({ ...e, text: s });
     assert.ok(line.length <= room.TAIL_MAX, `${line.length}: ${line}`);
     assert.ok(!line.includes('\n'));
   }
   const e = R.readAll()[0];
-  assert.match(room.tailLine(e), /^#1 bob\[human\] objection to=alice refs=#1,#2,#3,#4,#5,… proposal=aaaaaaaaaaaa "/);
-  const huge = room.tailLine({ id: 123456, from: 'b'.repeat(32), via: 'agent', kind: 'proposal', to: 'c'.repeat(32), refs: [1],
+  assert.match(room.line(e), /^#1 bob\[human\] objection to=alice refs=#1,#2,#3,#4,#5,… proposal=aaaaaaaaaaaa "/);
+  const huge = room.line({ id: 123456, from: 'b'.repeat(32), via: 'agent', kind: 'proposal', to: 'c'.repeat(32), refs: [1],
     approvers: Array(8).fill('x'.repeat(32)), hash: H1, text: '"\\'.repeat(3000) } as Entry); // no at: tailLine shows none
   assert.ok(huge.length <= 240, String(huge.length));
   assert.equal(room.who({ from: 'alice', via: 'human' } as Entry), 'alice');
@@ -273,8 +273,8 @@ test('room: legacy entries (agree, concern, no via) still read, render and appen
     '{"id":2,"at":"2026-10-04T00:07:48.786Z","from":"alice","kind":"agree","text":"fine"}\n' +
     '{"id":3,"at":"2026-10-04T00:07:49.786Z","from":"alice","via":"human","kind":"revoke","plan_hash":"aaaaaaaaaaaa","text":"wait"}\n');
   assert.equal(R.readAll().length, 3);
-  assert.match(room.tailLine(R.readAll()[0]), /^#1 bob objection "slow"$/);
-  assert.match(room.tailLine(R.readAll()[1]), /^#2 alice agree "fine"$/);
+  assert.match(room.line(R.readAll()[0]), /^#1 bob objection "slow"$/);
+  assert.match(room.line(R.readAll()[1]), /^#2 alice agree "fine"$/);
   assert.match(R.digest(), /#1 bob objection/);
   assert.equal(human('alice', 'say').id, 4);
   assert.equal(R.validateChain().ok, true, 'legacy lines without prev are tolerated');

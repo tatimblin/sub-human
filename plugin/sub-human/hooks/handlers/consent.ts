@@ -395,7 +395,7 @@ function postExit(input: ConsentIn, me: Identity) {
     const plan = typeof res.plan === 'string' ? res.plan : typeof ti.plan === 'string' ? ti.plan : '';
     const own = typeof res.plan === 'string' && res.plan.trim() ? review.hash12(Buffer.from(res.plan, 'utf8')) : null;
     return { ...ev, pending: pendingOf(me, ps), callNames: plan.length < 300 ? named(ps, callOf([ti, modelInput(input)])).map(p => p.hash) : [],
-      proposed: !!own && proposal.proposals(c.room.open(me.code).readAll()).some(p => p.hash === own) };
+      proposed: !!own && (rm => proposal.proposals(rm.readAll(), rm.trust))(c.room.open(me.code)).some(p => p.hash === own) };
   });
 }
 

@@ -208,7 +208,7 @@ function read(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { id: 1, json: 0, room: 1 });
   if (!flags.id && rest.length) flags.id = rest.join(','); // `sub-human read 22`, as the cut marker says
   const { me, r } = openRoom(flags.room);
-  const show = (es: Entry[]) => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : room.fmt(e) + '\n'));
+  const show = (es: readonly Entry[]) => es.forEach(e => console.log(flags.json ? JSON.stringify(e) : r.fmt(e) + '\n'));
   if (flags.id) {
     const es = r.readById(intList(flags.id));
     if (!es.length) die('(no such entries)', 1);
@@ -292,7 +292,7 @@ function watch(args: readonly string[]) {
   const print = (raw: Entry) => {
     const e = room.normalize(raw);
     if (!show(e)) return;
-    const who = label(e) + (room.unverifiedHuman(e) ? ' (unverified)' : '');
+    const who = label(e) + (raw.via === 'human' && r.trust(raw) !== 'verified' ? ' (unverified)' : '');
     const whoStr = e.via === 'human' ? c('1', who) : who === 'claude' ? c('35', who) : c('2', who);
     const ph = e.hash || e.proposal_hash;
     const meta = [
@@ -312,7 +312,16 @@ function watch(args: readonly string[]) {
   }
   console.log(c('2', `${name}'s thread in room ${code} (Ctrl-C to stop)`) + '\n');
   process.stdout.on('error', () => process.exit(0));
-  r.watch(print, { after: 0, intervalMs: config.WATCH_POLL_MS });
+  // the whole thread, then each new line: a tailer from the log's start (a reset log is read again from its start)
+  const tl = r.tailer({ after: 0 });
+  let seen = 0;
+  const tick = () => {
+    const { entries, reset } = tl.poll();
+    if (reset) seen = 0;
+    for (const e of entries) if (e.id > seen) { seen = e.id; print(e); }
+  };
+  tick();
+  setInterval(tick, config.WATCH_POLL_MS);
 }
 
 // ---------- serve --stdio CODE: lib/remote/server.ts ----------

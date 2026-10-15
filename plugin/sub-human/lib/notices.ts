@@ -24,58 +24,13 @@
  *       {shown, log: [{id, via, at}]} (lib/room/store.ts kv)
  */
 import * as config from './config.ts';
-import { roomClaudeName } from './room/members.ts';
 import * as clock from './clock.ts';
 import * as room from './room.ts';
-import { leftWhy } from './room/render.ts';
-import type { Entry } from './room/types.ts';
+import * as render from './room/render.ts';
 
 /** One join / leave notice (joinLeave). */
-interface Notice {
-  id: number;
-  kind: string;
-  name: string;
-  at: string;
-  settled: boolean;
-  rejoin: boolean;
-  /** a leave's reason as the chat line gives it (" (connection lost)"), else '' */
-  why: string;
-}
-
-const LEAVE_SETTLE_MS = config.LEAVE_SETTLE_MS;
-const ROW_MS = config.ROW_NOTICE_MS;
+const { joinLeave, noticeText: text, rowSegment } = render;
 const VIAS: readonly string[] = ['mod'];
-
-const settleMs = () => config.envMs('SUB_HUMAN_LEAVE_MS', LEAVE_SETTLE_MS);
-const isMove = (e: Entry | null | undefined) => !!e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
-
-function joinLeave(es: Entry[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() } = {}): Notice[] {
-  const list = (es || []).filter(e => isMove(e) && e.from !== viewer && roomClaudeName(e.from) !== 'claude'); // 0.4.x: "orch"
-  const drop = new Set<number>();
-  for (const l of list) {
-    if (l.kind !== 'member_left') continue;
-    const back = list.find(j => j.kind === 'member_joined' && j.from === l.from && j.id > l.id);
-    if (back && Date.parse(back.at) - Date.parse(l.at) < settle) { drop.add(l.id); drop.add(back.id); }
-  }
-  return list.filter(e => !drop.has(e.id)).map(e => ({
-    id: e.id, kind: e.kind, name: e.from, at: e.at,
-    settled: e.kind === 'member_joined' || now - Date.parse(e.at) >= settle,
-    rejoin: e.kind === 'member_joined' && /\brejoined\b/.test(String(e.text || '')),
-    why: e.kind === 'member_left' ? leftWhy(String(e.text || '')) : '',
-  }));
-}
-
-function text(n: Pick<Notice, 'kind' | 'name' | 'rejoin'> & { why?: string }): string {
-  if (n.kind === 'member_left') return `${n.name} left${n.why || ''}`;
-  return `${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
-}
-
-function rowSegment(es: Entry[] | null | undefined, viewer: string | null | undefined, { now = clock.now() } = {}): string {
-  const fresh = (x: Notice) => now - Date.parse(x.at) - (x.kind === 'member_left' ? settleMs() : 0) < ROW_MS;
-  const n = joinLeave(es, viewer, { now }).filter(x => x.settled && fresh(x)).at(-1);
-  if (!n) return '';
-  return n.kind === 'member_left' ? `−${n.name} left${n.why}` : `+${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
-}
 
 // ---------- what was already shown to a member ----------
 const kvOf = (code: string) => room.open(code).store.kv;

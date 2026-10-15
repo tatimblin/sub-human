@@ -8,7 +8,8 @@ import { spawnSync } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
 import * as config from '../lib/config.ts';
-import * as lanes from '../lib/room/lanes.ts';
+import * as consent from '../lib/room/consent.ts';
+import { lane } from '../lib/room/deliver.ts';
 import * as notices from '../lib/notices.ts';
 import type { Room } from '../lib/room.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
@@ -140,8 +141,8 @@ test('readAll: cached per process, sees appends from other processes, rewrites a
   assert.equal(r.status, 0, String(r.stderr));
   assert.deepEqual(R.readAll().map(e => e.text), ['one', 'two']);
   const a = R.readAll();
-  a.push({ id: 99 } as Entry); // deliberate: a bare entry pushed onto a read's copy
-  assert.equal(R.readAll().length, 2, 'each call returns its own array');
+  assert.equal(R.readAll(), a, 'the cached array itself, while the log is unchanged');
+  assert.throws(() => (a as Entry[]).push({ id: 99 } as Entry), TypeError, 'frozen: a caller cannot change what the next read returns');
   // same-size rewrite
   const raw = fs.readFileSync((R.store as FsRoomStore).logFile, 'utf8');
   fs.writeFileSync((R.store as FsRoomStore).logFile, raw.replace('"two"', '"TWO"'));
@@ -237,12 +238,13 @@ test('readView: lanes, proposals and notices judged against the view match readA
     for (const e of all.filter(x => x.kind !== 'say' && x.kind !== 'status')) assert.ok(view.some(v => v.id === e.id), `non-chat #${e.id} in the view`);
     for (const me of [{ name: 'alice', role: 'member' }, { name: 'bob', role: 'member' }, { name: 'carol', role: 'member' }, { name: 'claude', role: 'claude' }]) {
       for (const e of all.filter(x => x.id > after)) {
-        assert.equal(room.lane(me, e, view), room.lane(me, e, all), `lane ${me.name} #${e.id} (${e.kind}) after ${after}`);
+        assert.equal(R.deliver(me, e, { entries: view }), R.deliver(me, e, { entries: all }), `deliver ${me.name} #${e.id} (${e.kind}) after ${after}`);
+        assert.equal(lane(me, e, view, R.trust), lane(me, e, all, R.trust), `lane ${me.name} #${e.id} (${e.kind}) after ${after}`);
       }
       assert.equal(R.stateLine(me, view), R.stateLine(me, all));
       assert.deepEqual(notices.joinLeave(view, me.name), notices.joinLeave(all, me.name));
     }
-    assert.deepEqual(lanes.proposals(view), lanes.proposals(all));
+    assert.deepEqual(consent.proposals(view, R.trust), consent.proposals(all, R.trust));
   }
   assert.ok(R.readView({ after: last - 3 }).length < all.length / 2, 'the view leaves old chat out');
   assert.deepEqual(R.readView({ after: 0 }), all, 'after 0 is the whole log');

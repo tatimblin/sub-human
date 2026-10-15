@@ -1,10 +1,11 @@
 /**
- * plugin/sub-human/lib/room/consent.ts: the one fold of the room log into proposal / consent state. Pure apart from
- * store.ts humanTrust (reads the seats' public keys), CommonJS, zero dependencies beyond store.ts.
- * stateLine and lane() (lanes.ts, render.ts), the rows (lib/rows.ts) and the consent gate (lib/proposal.ts,
+ * plugin/sub-human/lib/room/consent.ts: the one fold of the room log into proposal / consent state, and the queries
+ * over it. Pure: whether a person's answer is theirs comes in as trust (the store's RoomStore.trust: trust.ts).
+ * stateLine and deliver() (render.ts, deliver.ts), the rows (lib/rows.ts) and the consent gate (lib/proposal.ts,
  * hooks/handlers/consent.ts) all read this, so they cannot disagree.
  *
- *   fold(entries) -> F   memoized per entries array (same array, same length and last id -> same F)
+ *   fold(entries, trust) -> F   memoized per trust on (length, first and last entry): the store's cached reads give
+ *                  the same entry objects call after call, so a repeat fold of an unchanged log is a lookup
  *     F.proposals  Map hash -> {id, hash, from, approvers, same, path, entry}   the LATEST proposal entry per hash,
  *                  Map order = log order of that latest entry; same: its approvers that are one person (groupsOf)
  *     F.answers    Map hash -> Map name -> {kind: 'signoff'|'objection', id, entry}   per seat, the latest answer
@@ -20,13 +21,23 @@
  *     F.answerable(name) -> [proposal]   the same, but another seat of name's person answering leaves one in: the
  *                  seat's own answer still counts, and overrides (the hooks record an answer from a card already open)
  *     F.status(hash) -> {proposal, decision, matrix, state: 'open'|'agreed'|'blocked'|'superseded'}|null
+ *   Queries (each a read of fold(entries, trust)):
+ *     proposal(hash, entries, trust) -> Entry|null     the latest proposal with that hash
+ *     proposals(entries, trust) -> Entry[]             the latest entry per distinct hash, in log order
+ *     answers(hash, approvers, entries, trust) -> {hash, signed: {name: id|null}, missing, complete}
+ *         approvers default to that proposal's. signed[name] = the id of name's current signoff (the latest answer
+ *         wins: an objection voids an earlier signoff); missing = approvers with no current signoff.
+ *     answered(name, hash, entries, trust) -> Entry|null   name's latest via=human answer on hash
+ *     decided(hash, entries, trust) -> Entry|null      the decision entry for that hash
+ *     approversOf(p) -> [name]
+ *   titleOf(e) -> string           the title a proposal entry carries ("proposal HASH: title"), '' for none
  *
  * Semantics (one place):
  *   - Entries are read through normalize() (legacy plan_rev / plan_hash / concern / agree).
  *   - Only valid 12-hex hashes (sha256/12 of the plan bytes, lib/proposal.ts) count.
  *   - The latest proposal entry per hash wins (approvers, path, author). Answers attach to the hash (the text),
  *     wherever they sit in the log.
- *   - A via=human answer counts only when store.humanTrust says it is the person's: signed with the seat's key
+ *   - A via=human answer counts only when trust says it is the person's: signed with the seat's key
  *     (which only hook processes hold), or unsigned from a seat that has no key at all (a room from before seat
  *     keys). A bad sig, or an unsigned answer from a seat with a key, is ignored.
  *   - Per person, the latest via=human signoff / objection wins: an objection voids that person's earlier
@@ -45,26 +56,31 @@
  * so the fold's "latest" and the decision's refs agree for everything the hooks write.
  */
 
-import { normalize, humanTrust } from './store.ts';
-import type { Answer, Entry, Fold, Matrix, ProposalEntry, ProposalState } from './types.ts';
+import { normalize } from './rules.ts';
+import { HASH_RE } from '../text.ts';
+import type { Answer, Entry, Fold, Matrix, ProposalEntry, ProposalState, Trust } from './types.ts';
 
-const HASH_RE = /^[0-9a-f]{12}$/;
+type Entries = readonly (Entry | null | undefined)[];
 const isHash = (h: unknown): h is string => typeof h === 'string' && HASH_RE.test(h);
 const ANSWER_KINDS = new Set(['signoff', 'objection']);
 
 /** The title a proposal entry carries ("proposal HASH: title"), '' for none. */
-const titleOf = (e: Entry): string => { const m = /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(e.text ?? '')); return m ? m[1].trim() : ''; };
+const titleOf = (e: Pick<Entry, 'text'>): string => { const m = /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(e.text ?? '')); return m ? m[1].trim() : ''; };
 
-const memo = new WeakMap<object, { key: string; f: Fold }>();
+/** The last few folds per trust: (length, first, last entry) -> F. */
+const MEMO_SLOTS = 4;
+const memo = new WeakMap<Trust, { n: number; first: unknown; last: unknown; f: Fold }[]>();
 
-function fold(entries: readonly (Entry | null | undefined)[] | null | undefined): Fold {
+function fold(entries: Entries | null | undefined, trust: Trust): Fold {
   const list = Array.isArray(entries) ? entries : [];
-  const last = list.length ? list[list.length - 1] : null;
-  const key = `${list.length}:${last && last.id}`;
-  const hit = memo.get(list);
-  if (hit && hit.key === key) return hit.f;
-  const f = compute(list);
-  memo.set(list, { key, f });
+  const n = list.length, first = n ? list[0] : null, last = n ? list[n - 1] : null;
+  let slots = memo.get(trust);
+  if (!slots) memo.set(trust, slots = []);
+  const hit = slots.find(x => x.n === n && x.first === first && x.last === last);
+  if (hit) return hit.f;
+  const f = compute(list, trust);
+  slots.unshift({ n, first, last, f });
+  if (slots.length > MEMO_SLOTS) slots.pop();
   return f;
 }
 
@@ -83,7 +99,7 @@ function groupsOf(same: unknown, approvers: string[]): string[][] {
   return out;
 }
 
-function compute(list: readonly (Entry | null | undefined)[]): Fold {
+function compute(list: Entries, trust: Trust): Fold {
   const proposals = new Map<string, ProposalState>();
   const answers = new Map<string, Map<string, Answer>>();
   // per hash and seat, its latest answer or revoke (null) and where it sits in the log: a same group's newest wins
@@ -92,7 +108,9 @@ function compute(list: readonly (Entry | null | undefined)[]): Fold {
   const decisions = new Map<string, Entry>();
   const superseded = new Map<string, string>();
   for (const raw of list) {
-    if (!raw) continue;
+    // only a proposal or a line naming one (current or legacy fields) can change the state: the rest is passed over
+    // without normalizing (most of a log is chat)
+    if (!raw || (raw.kind !== 'proposal' && raw.kind !== 'plan_rev' && raw.proposal_hash === undefined && raw.plan_hash === undefined)) continue;
     const e = normalize(raw);
     if (e.kind === 'proposal') {
       if (!isHash(e.hash)) continue;
@@ -111,7 +129,7 @@ function compute(list: readonly (Entry | null | undefined)[]): Fold {
     const h = e.proposal_hash;
     if (!isHash(h)) continue;
     if (e.kind === 'decision') { if (e.via === 'system') decisions.set(h, e); continue; }
-    if (e.via !== 'human' || typeof e.from !== 'string' || humanTrust(raw) === 'unverified') continue;
+    if (e.via !== 'human' || typeof e.from !== 'string' || trust(raw) === 'unverified') continue;
     const mark = (a: Answer | null) => {
       if (!latest.has(h)) latest.set(h, new Map());
       latest.get(h)!.set(e.from, { at: ++seq, a });
@@ -181,4 +199,18 @@ function compute(list: readonly (Entry | null | undefined)[]): Fold {
   return { proposals, answers, decisions, superseded, answerOf, ownAnswer, matrix, pending, answerable, status };
 }
 
-export { fold, groupsOf, HASH_RE };
+// ---------- queries ----------
+const proposal = (hash: string | undefined, entries: Entries, trust: Trust): ProposalEntry | null => {
+  const p = hash === undefined ? undefined : fold(entries, trust).proposals.get(hash);
+  return p ? p.entry : null;
+};
+const proposals = (entries: Entries, trust: Trust): ProposalEntry[] => [...fold(entries, trust).proposals.values()].map(p => p.entry);
+const approversOf = (p: { approvers?: unknown } | null | undefined): string[] => (p && Array.isArray(p.approvers) ? p.approvers : []);
+function answers(hash: string, approvers: string[] | null | undefined, entries: Entries, trust: Trust): { hash: string; signed: Record<string, number | null>; missing: string[]; complete: boolean } {
+  const m = fold(entries, trust).matrix(hash, Array.isArray(approvers) ? approvers : undefined);
+  return { hash, signed: m.signed, missing: m.unsigned, complete: !!hash && m.approvers.length > 0 && m.unsigned.length === 0 };
+}
+const answered = (name: string, hash: string, entries: Entries, trust: Trust): Entry | null => fold(entries, trust).answerOf(hash, name)?.entry ?? null;
+const decided = (hash: string | undefined, entries: Entries, trust: Trust): Entry | null => (hash === undefined ? null : fold(entries, trust).decisions.get(hash) || null);
+
+export { fold, groupsOf, titleOf, proposal, proposals, answers, answered, decided, approversOf };

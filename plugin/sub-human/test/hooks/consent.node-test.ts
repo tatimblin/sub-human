@@ -1002,7 +1002,7 @@ test('confirm: a message typed after a phone Deny lands as the note; the card as
   assert.match(ctx(sent)!, /^Recorded\..*bob objected to proposal/);
   const a = answers(w);
   assert.deepEqual(a.map(x => [x.kind, x.via, x.from, x.proposal_hash, x.text]), [['objection', 'human', 'bob', v3, 'open rate limiting']]);
-  assert.equal(w.lib(() => roomLib.humanTrust(a[0])), 'verified', 'signed with bob\'s seat key');
+  assert.equal(w.lib(() => roomLib.open(w.code).trust(a[0])), 'verified', 'signed with bob\'s seat key');
   assert.equal(waiting(w), null);
   // Recorded once: the card again is not the confirm card any more (and the proposal is not pending for bob).
   assert.equal(w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' }).stdout, '');

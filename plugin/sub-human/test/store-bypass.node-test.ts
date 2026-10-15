@@ -1,7 +1,9 @@
-// The RoomStore seam holds: no plugin module outside lib/room/store*.ts knows where a room's state lives or what
-// its files are called.
-// The hooks module (mod/*.ts) is walked too: it knows no store path (mod-hello tells it the home), save the reads
-// in ALLOWED below.
+// The RoomStore seam holds, structurally first: the log's bytes (lib/room/log-io.ts) are imported by
+// lib/room/fs-store.ts alone, and FsRoomStore itself only by the store's own files (registry.ts opens it, store-mirror.ts
+// composes it, store.ts is the seam's one import). Every other module reads and writes a room through a RoomStore.
+// What an import graph cannot say is checked lexically, and only there: no module outside the store's files names a
+// room file or builds a path into a room. The hooks module (mod/*.ts) is walked too: it knows no store path
+// (mod-hello tells it the home), save the reads in ALLOWED below.
 // Exceptions, by design: lib/home.ts (the location: home, rooms/, roomDir) and lib/identity.ts, which keeps
 // this machine's session indexes (<home>/sessions/: which seat a local pid or session id holds; not room state)
 // and re-exports roomDir. A bare `identity.roomDir(code);` statement only validates a code and is allowed.
@@ -12,7 +14,7 @@ import path from 'node:path';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
 
-function sources(): { rel: string; code: string }[] {
+function files(): string[] {
   const out: string[] = [];
   const walk = (d: string): void => {
     for (const x of fs.readdirSync(d, { withFileTypes: true })) {
@@ -23,8 +25,9 @@ function sources(): { rel: string; code: string }[] {
   };
   walk(PLUGIN);
   out.push(path.join(PLUGIN, 'scripts', 'sub-human'));
-  return out.map(f => ({ rel: path.relative(PLUGIN, f), code: stripComments(fs.readFileSync(f, 'utf8')) }));
+  return out;
 }
+const sources = (): { rel: string; code: string }[] => files().map(f => ({ rel: path.relative(PLUGIN, f), code: stripComments(fs.readFileSync(f, 'utf8')) }));
 
 /** The source without comments (block and line), keeping line numbers. */
 function stripComments(src: string): string {
@@ -32,10 +35,47 @@ function stripComments(src: string): string {
     .split('\n').map(l => l.replace(/(^|[^:'"`\\])\/\/.*$/, '$1')).join('\n');
 }
 
-const STORE = /^lib\/room\/store[^/]*\.ts$/;
+// ---------- structure: who imports what ----------
+/** The plugin files rel imports (import ... from, export ... from, import(), require()), as plugin-relative paths. */
+function importsOf(rel: string, code: string): string[] {
+  const out = new Set<string>();
+  const re = /\b(?:from|import|require)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g;
+  for (let m; (m = re.exec(code));) out.add(path.normalize(path.join(path.dirname(rel), m[1])));
+  // createRequire's lazy loads by a joined path: require(path.join(import.meta.dirname, '…', 'x.ts'))
+  const joined = /path\.join\(import\.meta\.dirname((?:\s*,\s*['"][^'"]+['"])+)\)/g;
+  for (let m; (m = joined.exec(code));) out.add(path.normalize(path.join(path.dirname(rel), ...[...m[1].matchAll(/['"]([^'"]+)['"]/g)].map(x => x[1]))));
+  return [...out];
+}
+function importers(target: string): string[] {
+  return sources().filter(s => importsOf(s.rel, s.code).includes(target)).map(s => s.rel).sort();
+}
+
+/** The store's own files: the only ones that may know a room's files (lib/room/store.ts lists them). */
+const STORE_FILES = ['lib/room/fs-store.ts', 'lib/room/log-io.ts', 'lib/room/keys.ts', 'lib/room/registry.ts', 'lib/room/store-mirror.ts', 'lib/room/store.ts'];
+
+test('store seam: only lib/room/fs-store.ts imports the log\'s bytes (lib/room/log-io.ts)', () => {
+  assert.deepEqual(importers('lib/room/log-io.ts'), ['lib/room/fs-store.ts']);
+});
+
+test('store seam: FsRoomStore is opened by the registry, composed by the mirror and exported by the seam, nothing else', () => {
+  assert.deepEqual(importers('lib/room/fs-store.ts'), ['lib/room/registry.ts', 'lib/room/store-mirror.ts', 'lib/room/store.ts']);
+  // the mirror composes a store: it never extends one, and calls no private (_name) member of it
+  const mirror = stripComments(fs.readFileSync(path.join(PLUGIN, 'lib/room/store-mirror.ts'), 'utf8'));
+  assert.doesNotMatch(mirror, /\bextends\s+FsRoomStore\b/);
+  assert.deepEqual(mirror.match(/\blocal\._\w+/g) || [], [], 'no private member of the composed store');
+});
+
+test('store seam: the import scan finds a bypass', () => {
+  assert.deepEqual(importsOf('lib/x.ts', "import * as io from './room/log-io.ts';"), ['lib/room/log-io.ts']);
+  assert.deepEqual(importsOf('mcp/x.ts', "const io = require('../lib/room/log-io.ts');"), ['lib/room/log-io.ts']);
+  assert.deepEqual(importsOf('lib/room/x.ts', "export { readAll } from './log-io.ts';"), ['lib/room/log-io.ts']);
+  assert.deepEqual(importsOf('lib/room/x.ts', "const io = await import('./log-io.ts');"), ['lib/room/log-io.ts']);
+});
+
+// ---------- what imports cannot show: names of room files and paths into a room ----------
 /**
  * Direct reads kept on purpose, each matched by file and line. Only reads: every write still goes through the store.
- * mod/send.ts: the hooks module runs in Claude Code's module runtime, where lib/room/store.ts (node:fs) cannot load,
+ * mod/send.ts: the hooks module runs in Claude Code's module runtime, where the store (node:fs) cannot load,
  * so it reads the members document with $.fs.read to tell whether a SendMessage's target seat is on another machine.
  * The alternatives cost every send to a room address a node child or a room-server round trip. The read is the
  * FsRoomStore layout (a mirror keeps the host's members document in the same file); remotePeer (mod/core/send.ts)
@@ -45,13 +85,13 @@ const ALLOWED = [
   { rel: 'mod/send.ts', line: /^\s*\$\.fs\.read\(`\$\{hello\.home\}\/rooms\/\$\{seat\.code\}\/members\.json`\)\.then\(parse, \(\) => null\),$/ },
 ];
 const allowed = (rel: string, l: string): boolean => ALLOWED.some(a => a.rel === rel && a.line.test(l));
-const FILE_NAMES = /['"`/][^'"`\n]*\b(log\.jsonl|log\.idx|members\.json|tasks\.json|review\.json|holds-[^'"`]*\.json|\.cursor)\b/;
+const FILE_NAMES = /['"`/][^'"`\n]*\b(log\.jsonl|log\.idx|log\.moved|members\.json|tasks\.json|review\.json|session\.json|holds-[^'"`]*\.json|\.cursor)\b/;
 const SEGMENTS = /path\.join\([^\n]*?['"`](rows|presence|plans|members|keys)['"`]/;
 
-test('store seam: no module outside lib/room/store*.ts names a room file or builds a path into a room', () => {
+test('store seam: no module outside the store\'s files names a room file or builds a path into a room', () => {
   const bad: string[] = [];
   for (const { rel, code } of sources()) {
-    if (STORE.test(rel)) continue;
+    if (STORE_FILES.includes(rel)) continue;
     code.split('\n').forEach((l, i) => {
       const at = `${rel}:${i + 1}: ${l.trim()}`;
       if (allowed(rel, l)) return;
@@ -63,7 +103,7 @@ test('store seam: no module outside lib/room/store*.ts names a room file or buil
   assert.deepEqual(bad, []);
 });
 
-test('store seam: the checks above do catch a bypass', () => {
+test('store seam: the lexical checks do catch a bypass', () => {
   assert.ok(FILE_NAMES.test("fs.readFileSync(path.join(dir, 'log.jsonl'))"));
   assert.ok(FILE_NAMES.test('`${code}/members.json`'));
   assert.ok(SEGMENTS.test("path.join(identity.roomDir(code), 'rows', x)"));

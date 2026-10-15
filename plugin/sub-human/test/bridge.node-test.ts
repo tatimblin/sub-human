@@ -108,9 +108,9 @@ test('thread store: appends (a signed human one too), compare-and-set updates, b
   const tail = th.tailer();
   const a = th.append({ kind: 'say', text: 'hello' }, { via: 'agent', from: 'alice' });
   const s = th.append({ kind: 'say', text: 'typed' }, { via: 'human', from: 'alice' });
-  assert.equal(store.roomOf(a), code, 'entries come back tagged with their room');
   assert.deepEqual(fsStore.readAll(), [a, s]);
-  assert.equal(store.humanTrust(fsStore.readAll()[1]), 'verified', 'signed on the worker with the key taken here');
+  assert.equal(fsStore.trust(fsStore.readAll()[1]), 'verified', 'signed on the worker with the key taken here');
+  assert.equal(th.trust(th.readAll()[1]), 'verified', 'and judged here the same way');
   assert.deepEqual(th.readView({ after: 1 }), fsStore.readView({ after: 1 }));
   assert.deepEqual(tail.poll().entries.map(e => e.id), [1, 2]);
   assert.equal(th.validateChain().ok, true);

@@ -84,7 +84,7 @@ test('a raw forged line (no sig, or a sig by another key) never counts as consen
   fs.appendFileSync(logFile(w), JSON.stringify(e) + '\n');
   w.lib(() => {
     const all = room.open(w.code).readAll();
-    assert.deepEqual(all.slice(-2).map(x => room.verifyHuman(x)), [false, false]);
+    assert.deepEqual(all.slice(-2).map(x => room.open(w.code).trust(x)), ['unverified', 'unverified']);
     assert.deepEqual(room.open(w.code).answers(H1).missing, ['alice', 'bob'], 'neither forged signoff counts');
     for (const x of all.slice(-2)) {
       assert.equal(room.chatLines(x, { viewer: 'alice' })[0], 'bob (unverified) agreed to the proposal');
@@ -109,10 +109,11 @@ test('a hook-signed post verifies; editing any signed field breaks it; a keyless
   assert.equal(mode(kdir), 0o700);
   assert.equal(mode(path.join(kdir, 'alice.key')), 0o600);
   w.lib(() => {
-    assert.equal(room.verifyHuman(e), true);
+    const trust = room.open(w.code).trust;
+    assert.equal(trust(e), 'verified');
     assert.equal(room.chatLines(e, { viewer: 'bob' })[0], 'alice: ship it');
-    assert.equal(room.verifyHuman({ ...e, text: 'ship it now' }), false);
-    assert.equal(room.verifyHuman({ ...e, from: 'bob' }), false);
+    assert.equal(trust({ ...e, text: 'ship it now' }), 'unverified');
+    assert.equal(trust({ ...e, from: 'bob' }), 'unverified');
     // legacy: a seat with no key at all (a pre-key log)
     const legacy = { id: 9, at: e.at, from: 'carol', via: 'human', kind: 'say', to: 'room', text: 'old words' };
     assert.equal(room.chatLines(legacy, { viewer: 'alice' })[0], 'carol (unverified): old words');
@@ -134,7 +135,7 @@ test('join pins the seat key in member_joined: the keyed room never counts an un
   fs.appendFileSync(logFile(w), JSON.stringify({ id: lines(w).length + 1, at: new Date().toISOString(), from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H1 }) + '\n');
   w.lib(() => {
     const R = room.open(w.code);
-    assert.equal(room.humanTrust(R.readAll().at(-1)), 'unverified');
+    assert.equal(R.trust(R.readAll().at(-1)), 'unverified');
     assert.deepEqual(R.answers(H1).missing, ['bob']);
   });
   // bob's key is lost; a new session joining as bob makes a new one: refused, and the seat is given back

@@ -98,7 +98,7 @@ interface RowProposal {
 /** rowText's options. */
 interface RowOpts {
   color?: boolean;
-  entries?: Entry[];
+  entries?: readonly Entry[];
   members?: MemberInput;
   now?: number;
   tasks?: Task[];
@@ -111,6 +111,25 @@ interface RowMap { byAgent?: Record<string, RowRec> }
 const { NAME_RE, SID_SAFE, oneLine } = text;
 
 // ---------- small helpers ----------
+/** The log read back from its end (ids rise through it): the newest entry pick accepts, among those with id > after. */
+function lastWhere(es: readonly Entry[], pick: (e: Entry) => boolean, after = 0): Entry | null {
+  for (let i = es.length - 1; i >= 0; i--) {
+    const e = es[i];
+    if (typeof e.id === 'number' && e.id <= after) return null;
+    if (pick(e)) return e;
+  }
+  return null;
+}
+/** How many entries with id > after pick accepts. */
+function countAfter(es: readonly Entry[], pick: (e: Entry) => boolean, after: number): number {
+  let n = 0;
+  for (let i = es.length - 1; i >= 0; i--) {
+    const e = es[i];
+    if (typeof e.id === 'number' && e.id <= after) break;
+    if (typeof e.id === 'number' && pick(e)) n++;
+  }
+  return n;
+}
 const clip = (s: string, n: number = ROW_MAX): string => text.clip(s, n);
 const h6 = (h: string | null | undefined) => String(h || '').slice(0, 6);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -123,8 +142,8 @@ function ago(iso: string, now: number = Date.now()): string {
 /** The room's small documents (lib/room/store.ts kv). */
 const kvOf = (code: string) => room.open(code).store.kv;
 /** The room log (lib/room/store.ts readAll: cached, parses only appended bytes), entries with an id. */
-function readLog(code: string): Entry[] {
-  try { return room.open(code).readAll().filter((e: Entry | null) => e && Number.isInteger(e.id)); } catch { return []; }
+function readLog(code: string): readonly Entry[] {
+  try { return room.open(code).readAll(); } catch { return []; }
 }
 function memberList(members: MemberInput): Member[] {
   if (!members) return [];
@@ -343,8 +362,8 @@ function fit(parts: (string | null | undefined | false)[]): string {
  * {kind, id}} (approvers' current answers: a person's seats share one), decided (decision id or 0), agreed (count of
  * people), objectors (one seat per person), also, people (count), superseded (a revision retired it), name (title)}.
  */
-function proposals(es: Entry[], code: string | null | undefined): RowProposal[] {
-  const f = room.fold(es);
+function proposals(es: readonly Entry[], code: string | null | undefined): RowProposal[] {
+  const f = code ? room.open(code).fold(es) : room.fold(es); // the room's store judges its people's answers
   return [...f.proposals.values()].map((fp): RowProposal => {
     const m = f.matrix(fp.hash);
     const verdict: RowProposal['verdict'] = {};
@@ -379,7 +398,7 @@ function openTask(list: (Task | null | undefined)[], name: string): Task | null 
   return mine.find(t => t.status === 'in_progress') || mine[0] || null;
 }
 
-function presenceOf(code: string, name: string, es: Entry[], now: number): string | null {
+function presenceOf(code: string, name: string, es: readonly Entry[], now: number): string | null {
   let p: { state?: unknown, at?: string } | null = null;
   try { p = kvOf(code).get(`presence/${name}`, null); } catch { p = null; }
   if (!p || typeof p.state !== 'string') return null;
@@ -387,7 +406,7 @@ function presenceOf(code: string, name: string, es: Entry[], now: number): strin
   if (Number.isFinite(at)) {
     if (now - at > PRESENCE_STALE_MS) return null;
     // Anything they posted after the presence write means they are back at it: the old state is stale.
-    const last = es.filter(e => e.from === name).at(-1);
+    const last = lastWhere(es, e => e.from === name);
     if (last && Date.parse(last.at) > at) return null;
   }
   const s = p.state.toLowerCase();
@@ -399,7 +418,7 @@ function presenceOf(code: string, name: string, es: Entry[], now: number): strin
   return clip(s, 12);
 }
 
-function participantText(code: string, name: string, viewer: string | null | undefined, es: Entry[], ms: Member[], now: number, c: Paint, taskList: Task[]): string {
+function participantText(code: string, name: string, viewer: string | null | undefined, es: readonly Entry[], ms: Member[], now: number, c: Paint, taskList: Task[]): string {
   const m = ms.find(x => x.name === name);
   if (!m) return 'not in the room';
   if (m.left_at) return 'left';
@@ -409,7 +428,7 @@ function participantText(code: string, name: string, viewer: string | null | und
   if (p) {
     const v = p.verdict[name];
     // Build phase: their latest status after the decision replaces "decided".
-    const st = p.decided ? es.filter(e => e.from === name && e.id > p.decided && e.kind === 'status').at(-1) : null;
+    const st = p.decided ? lastWhere(es, e => e.from === name && e.kind === 'status', p.decided) : null;
     if (st) parts.push(`${st.via === 'agent' ? 'Claude ' : ''}status: ${oneLine(st.text)}`);
     else if (p.decided) parts.push(decidedText(p, c));
     else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${p.name}`));
@@ -421,20 +440,19 @@ function participantText(code: string, name: string, viewer: string | null | und
   const pres = presenceOf(code, name, es, now);
   if (pres) parts.push(pres === 'idle' ? c.dim(pres) : c.warn(pres));
   if (viewer && viewer !== name) {
-    let lastReply = 0;
-    for (const e of es) if (e.from === viewer && (e.to === name || e.to === 'room' || !e.to)) lastReply = e.id;
-    const mail = es.filter(e => e.from === name && e.to === viewer && e.id > lastReply).length;
+    const lastReply = lastWhere(es, e => e.from === viewer && (e.to === name || e.to === 'room' || !e.to))?.id || 0;
+    const mail = countAfter(es, e => e.from === name && e.to === viewer, lastReply);
     if (mail) parts.push(c.warn(`✉ ${mail} for you`));
   }
   if (!parts.length || (parts.length === 1 && pres)) {
-    const last = es.filter(e => e.from === name && e.kind !== 'member_joined' && e.kind !== 'member_left').at(-1);
+    const last = lastWhere(es, e => e.from === name && e.kind !== 'member_joined' && e.kind !== 'member_left');
     if (last) parts.push(c.dim(`${last.via === 'agent' ? 'Claude ' : ''}${normKind(last)} ${ago(last.at, now)}`));
     else if (!parts.length) parts.push(c.dim('joined'));
   }
   return fit(parts);
 }
 
-function roomText(code: string, viewer: string | null | undefined, es: Entry[], ms: Member[], now: number, c: Paint, summary: string, link: LinkState | null): string {
+function roomText(code: string, viewer: string | null | undefined, es: readonly Entry[], ms: Member[], now: number, c: Paint, summary: string, link: LinkState | null): string {
   const parts: string[] = [];
   // a room hosted elsewhere: the link leads the row while it is down or reconnecting, and closes it while up
   // (lib/room/link-state.ts indicator: "✕ offline 2m · 2 queued", "… connecting (3)", "⇄ online")
@@ -462,9 +480,8 @@ function roomText(code: string, viewer: string | null | undefined, es: Entry[], 
     parts.push(c.dim(`${ms.filter(m => isActive(m) && !isRoomClaude(m)).length} here`));
   }
   if (viewer) {
-    let lastOwn = 0;
-    for (const e of es) if (e.from === viewer && e.via === 'human') lastOwn = e.id;
-    const mail = es.filter(e => e.id > lastOwn && e.to === viewer && e.from !== viewer).length;
+    const lastOwn = lastWhere(es, e => e.from === viewer && e.via === 'human')?.id || 0;
+    const mail = countAfter(es, e => e.to === viewer && e.from !== viewer, lastOwn);
     if (mail) parts.push(c.warn(`✉ ${mail} for you`));
   }
   if (summary) parts.push(summary);

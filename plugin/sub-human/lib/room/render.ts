@@ -1,41 +1,56 @@
 /**
  * plugin/sub-human/lib/room/render.ts: log entries as text, for Claude (ids kept) and for people (no ids).
  *
- *   line(e, {full}) one notice line. full: the exact text (JSON-quoted) up to TEXT_MAX = 2,000 code
+ * Every call that shows a person's line takes the store's trust (RoomStore.trust; NO_TRUST when absent: every
+ * person's line then reads "(unverified)"), so a line is marked by the store that read it.
+ *
+ *   line(e, {full, trust}) one notice line. full: the exact text (JSON-quoted) up to TEXT_MAX = 2,000 code
  *     points, then `[cut at 2000/N: read({ids:[ID]})]`; without full, <= TAIL_MAX (240) chars with the same
  *     marker when cut. Never a bare "…". A drafted:"agent" entry's header carries "(NAME, Claude's wording)".
- *     tailLine(e) = line(e).
- *   chatLines(e, {viewer, entries?}) -> [string]   one entry as group-chat lines, no ids; continuation lines nested
+ *   chatLines(e, {viewer, entries?, trust}) -> [string]   one entry as group-chat lines, no ids; continuation lines nested
  *     under the sender with CHAT_NEST ("  │ "), at most CHAT_LINES_MAX text lines (below). With entries (the log
  *     so far) an answer or decision names its proposal by title and short hash: 'bob agreed to "Ship v3 Monday"
  *     (3fa2c1)', 'room: "Ship v3 Monday" (3fa2c1) agreed (bob)', 'room: "Ship v3 Monday" (3fa2c1) not agreed: changes
  *     requested by bob: keep status'; a proposal that retires an earlier one adds 'replaces "Ship v3" (9c01de)'.
  *     A leave keeps its reason: "bob left (connection lost)", "bob left (session ended)"
- *   fmt(e)                   full text for `sub-human read`, body lines nested the same way;
+ *   fmt(e, {trust})          full text for `sub-human read`, body lines nested the same way;
  *     who(e) ("alice" | "alice's Claude" | "room")
- *   stateLine(me, entries, {members, ids}) -> "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed ·
+ *   stateLine(me, entries, {members, ids, trust}) -> "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed ·
  *     away: carol"  (waiting on = no answer yet, objected = current answer is an objection; lib/room/consent.ts fold;
  *     ids:false drops the decision's "#N", for a member's wake, which the person sees too)
- *   digest(entries, {members, code}) <= DIGEST_CAP chars: members, open proposals + approvers + answers, open
+ *   digest(entries, {members, code, trust}) <= DIGEST_CAP chars: members, open proposals + approvers + answers, open
  *     objections/questions, decisions, last 10 human entries in full by the line() rule.
  *   FOR_CLAUDE               "(for Claude)": the prefix of chat lines meant only for the model
  *   UNVERIFIED               "(unverified)": after the name of a via=human entry whose sig does not verify
- *     (store.unverifiedHuman: a legacy line, or one written around append). It stays readable, never as the
+ *     (trust.ts unverified: a legacy line, or one written around append). It stays readable, never as the
  *     person's own words; the consent fold ignores it.
+ * Join and leave notices (what a group chat shows: "bob joined", "bob rejoined", "bob left (connection lost)"; no
+ * room code, no ids), drawn by the tail's chat line at the moment (mod/deliver.ts), the room row's text for a while
+ * after (lib/rows.ts rowText) and the room row view's progress line (mcp/hold.ts):
+ *   joinLeave(entries, viewer, {now, settle}) -> [{id, kind, name, at, settled, rejoin, why}]
+ *       others' member_joined / member_left (never the room Claude's or viewer's own), in log order. A leave settles
+ *       settleMs() (SUB_HUMAN_LEAVE_MS, LEAVE_SETTLE_MS = 8 s, the same as the tail's) after it; a leave followed by
+ *       a rejoin within it is no notice, and neither is that rejoin. why: a leave's " (REASON)" (leftWhy), else ''.
+ *       Time comes from lib/clock.ts unless the caller passes `now` (ms), so tests drive it without sleeps.
+ *   noticeText(n) -> "bob joined" | "bob rejoined" | "bob left" | "bob left (connection lost)"
+ *   rowSegment(entries, viewer, {now}) -> "+bob joined" | "−bob left (connection lost)" | ''   the newest settled
+ *       notice of the last ROW_NOTICE_MS (2 min)
  */
 
-import { normalize, unverifiedHuman } from './store.ts';
+import { normalize } from './rules.ts';
 import { roomClaudeName, ROOM_CLAUDE } from './members.ts';
-import { proposals, answers, answered, decided, approversOf } from './lanes.ts';
+import { fold, proposals, answers, answered, decided, approversOf } from './consent.ts';
+import { NO_TRUST, unverified } from './trust.ts';
 import { oneLine } from '../text.ts';
-import { fold } from './consent.ts';
-import { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP, CHAT_LINES_MAX, CHAT_NEST } from '../config.ts';
-import type { Entry, LaneViewer, Matrix, Members } from './types.ts';
+import * as clock from '../clock.ts';
+import { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP, CHAT_LINES_MAX, CHAT_NEST, LEAVE_SETTLE_MS, ROW_NOTICE_MS, envMs } from '../config.ts';
+import type { Entry, LaneViewer, Matrix, Members, Trust } from './types.ts';
 import { FOR_CLAUDE } from '../../mod/core/constants.ts';
 
 /** One digest line; id: the entry it shows, so the cap trims the oldest first. */
 interface DigestLine { id?: number; text: string }
 interface DigestSection { title: string | null; lines: DigestLine[] }
+interface DigestCtx { members?: Members | null; code?: string | null; trust?: Trust }
 
 const UNVERIFIED = '(unverified)';
 const NEST = CHAT_NEST; // "  │ ": every continuation line of a message, so none can pass as a line of its own
@@ -77,10 +92,10 @@ function quote(e: Entry, n: number, { exact = false }: { exact?: boolean } = {})
   return `${js(cps.slice(0, n).join(''))} [cut at ${n}/${cps.length}: read({ids:[${e.id}]})]`;
 }
 
-function header(e: Entry): string {
+function header(e: Entry, trust: Trust): string {
   const n = normalize(e);
   const parts = [`#${n.id}`, `${n.from}${n.via ? `[${n.via}]` : ''}`];
-  if (unverifiedHuman(e)) parts.push(UNVERIFIED);
+  if (unverified(trust, e)) parts.push(UNVERIFIED);
   if (n.drafted === 'agent') parts.push(`(${n.from}, Claude's wording)`);
   parts.push(n.kind);
   if (n.to && n.to !== 'room') parts.push(`to=${n.to}`);
@@ -104,10 +119,11 @@ function header(e: Entry): string {
  * `[cut at 2000/N: read({ids:[ID]})]`. Otherwise a compact line of at most TAIL_MAX chars (whitespace
  * collapsed), with the same explicit marker when the text is cut.
  */
-function line(e: Entry, { full = false }: { full?: boolean } = {}): string {
-  if (e.text == null) return full ? header(e) : header(e).slice(0, TAIL_MAX);
-  if (full) return `${header(e)} ${quote(e, TEXT_MAX, { exact: true })}`;
-  const head = header(e).slice(0, TAIL_MAX - 3);
+function line(e: Entry, { full = false, trust = NO_TRUST }: { full?: boolean; trust?: Trust } = {}): string {
+  const h = header(e, trust);
+  if (e.text == null) return full ? h : h.slice(0, TAIL_MAX);
+  if (full) return `${h} ${quote(e, TEXT_MAX, { exact: true })}`;
+  const head = h.slice(0, TAIL_MAX - 3);
   let n = 200;
   for (;;) {
     const l = `${head} ${quote(e, n)}`;
@@ -116,21 +132,20 @@ function line(e: Entry, { full = false }: { full?: boolean } = {}): string {
     n = Math.max(0, n - Math.max(1, l.length - TAIL_MAX));
   }
 }
-const tailLine = (e: Entry): string => line(e);
 
 // ---------- chat rendering (what a human sees; no ids) ----------
 /** Who an entry is from, as a group chat names them: "bob", "bob's Claude", "claude", "room". */
-function chatWho(e: Entry): string {
+function chatWho(e: Entry, trust: Trust): string {
   if (e.via === 'system') return 'room';
   if (otherVia(e)) return otherVia(e)!;
   if (roomClaudeName(e.from) === ROOM_CLAUDE) return ROOM_CLAUDE; // 0.4.x logs: "orch"
   if (e.via === 'agent') return `${e.from}'s Claude`;
-  if (unverifiedHuman(e)) return `${e.from} ${UNVERIFIED}`;
+  if (unverified(trust, e)) return `${e.from} ${UNVERIFIED}`;
   return e.drafted === 'agent' ? `${e.from} (Claude's wording)` : e.from;
 }
 
 /** The person's name for a via=human line, with the unverified marker when its sig does not verify. */
-const humanName = (e: Entry): string => (unverifiedHuman(e) ? `${e.from} ${UNVERIFIED}` : e.from);
+const humanName = (e: Entry, trust: Trust): string => (unverified(trust, e) ? `${e.from} ${UNVERIFIED}` : e.from);
 
 /** Split one text line into pieces of at most n code points (rest: the later pieces), at a space when there is one. */
 function wrap(lineText: string, n = CHAT_WRAP, rest = n): string[] {
@@ -149,9 +164,11 @@ function wrap(lineText: string, n = CHAT_WRAP, rest = n): string[] {
 }
 
 const TITLE_LABEL_MAX = 60;
+/** A proposal entry's text starts "proposal HASH: " (lib/proposal.ts create); consent.ts titleOf reads the title after it. */
+const TITLE_PREFIX = /^proposal [0-9a-f]{6,64}:\s*/;
 /** A proposal entry's title ("proposal HASH: TITLE"), one safe line of at most TITLE_LABEL_MAX code points ('' for none). */
 function titleText(p: Entry): string {
-  const t = oneLine(safeText(String(p.text ?? '').replace(/^proposal [0-9a-f]{6,64}:\s*/, ''))).replace(/\n/g, ' ').trim();
+  const t = oneLine(safeText(String(p.text ?? '').replace(TITLE_PREFIX, ''))).replace(/\n/g, ' ').trim();
   const cps = Array.from(t);
   return cps.length > TITLE_LABEL_MAX ? `${cps.slice(0, TITLE_LABEL_MAX - 1).join('').trimEnd()}…` : t;
 }
@@ -168,11 +185,11 @@ function proposalLabel(hash: string | undefined, entries: readonly Entry[] | und
 }
 
 /** The proposals entry e retired (lib/room/consent.ts superseded: same sender, same title), each labelled; [] without entries. */
-function retiredBy(e: Entry, entries: readonly Entry[] | undefined): string[] {
+function retiredBy(e: Entry, entries: readonly Entry[] | undefined, trust: Trust): string[] {
   if (!Array.isArray(entries) || !e.hash) return [];
   const before = entries.filter(x => x && x.id < e.id);
-  const was = fold(before).superseded;
-  return [...fold([...before, e]).superseded].filter(([old, by]) => by === e.hash && !was.has(old))
+  const was = fold(before, trust).superseded;
+  return [...fold([...before, e], trust).superseded].filter(([old, by]) => by === e.hash && !was.has(old))
     .map(([old]) => proposalLabel(old, before) || `(${old.slice(0, 6)})`);
 }
 
@@ -213,7 +230,7 @@ function leftWhy(t: string): string {
 }
 
 /** The human-facing sentence for an entry (may span lines). entries: the log so far, to name a proposal by title. */
-function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[] | undefined): { head: string; text: string } {
+function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[] | undefined, trust: Trust): { head: string; text: string } {
   const n = normalize(e);
   const t = String(n.text ?? '');
   const you = (x: string | undefined): string | undefined => (x && x === viewer ? 'you' : x);
@@ -224,23 +241,23 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[
     case 'proposal': {
       // the short hash tells revisions apart; a revision names what it replaces (its earlier one, retired)
       const h = n.hash ? ` (${String(n.hash).slice(0, 6)})` : '';
-      const was = retiredBy(n, entries);
-      return { head: `${chatWho(n)} proposed`, text: `${t.replace(/^proposal [0-9a-f]{6,64}:\s*/, '')}${h}${was.length ? `\nreplaces ${was.join(', ')}` : ''}` };
+      const was = retiredBy(n, entries, trust);
+      return { head: `${chatWho(n, trust)} proposed`, text: `${t.replace(TITLE_PREFIX, '')}${h}${was.length ? `\nreplaces ${was.join(', ')}` : ''}` };
     }
-    case 'signoff': return { head: `${humanName(e)} agreed to ${about()}`, text: '' };
+    case 'signoff': return { head: `${humanName(e, trust)} agreed to ${about()}`, text: '' };
     case 'objection':
       return n.via === 'human' && n.proposal_hash
-        ? { head: `${humanName(e)} objected to ${about()}`, text: noteOf(n) }
-        : { head: chatWho(n), text: t };
+        ? { head: `${humanName(e, trust)} objected to ${about()}`, text: noteOf(n) }
+        : { head: chatWho(n, trust), text: t };
     case 'decision': return { head: 'room', text: decisionText(n, entries) };
     case 'task': {
       const status = n.status ? ` ${n.status}` : '';
       return { head: 'room', text: `task "${n.subject || n.task_id || '?'}"${status}${n.owner ? `, owner ${you(n.owner)}` : ''}` };
     }
-    case 'task_req': return { head: chatWho(n), text: `asks to ${n.op} task "${n.subject || n.task_id || '?'}"` };
+    case 'task_req': return { head: chatWho(n, trust), text: `asks to ${n.op} task "${n.subject || n.task_id || '?'}"` };
     default: {
       const to = n.to && n.to !== 'room' ? ` (to ${you(n.to)})` : '';
-      return { head: `${chatWho(n)}${to}`, text: t };
+      return { head: `${chatWho(n, trust)}${to}`, text: t };
     }
   }
 }
@@ -255,8 +272,8 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[
  * call for the rest. \r, other controls and bidi overrides never reach the output (safeText).
  * viewer: the reader's name ("to you", "owner you"); entries: the log so far (a proposal's title).
  */
-function chatLines(e: Entry, { viewer, entries }: { viewer?: string; entries?: readonly Entry[] } = {}): string[] {
-  const { head, text } = chatBody(e, viewer, entries);
+function chatLines(e: Entry, { viewer, entries, trust = NO_TRUST }: { viewer?: string; entries?: readonly Entry[]; trust?: Trust } = {}): string[] {
+  const { head, text } = chatBody(e, viewer, entries, trust);
   if (!text) return [head];
   const cps = Array.from(text);
   const cut = cps.length > CHAT_MAX;
@@ -281,21 +298,21 @@ function waiting(m: Matrix): string {
 }
 
 /** "room now: proposal 3fa2c1 waiting on bob · you: answer needed · away: bob", from the log as it is now. */
-function stateLine(me: LaneViewer | null | undefined, entries: readonly Entry[] = [], { members = {}, ids = true }: { members?: Members | null; ids?: boolean } = {}): string {
+function stateLine(me: LaneViewer | null | undefined, entries: readonly Entry[] = [], { members = {}, ids = true, trust = NO_TRUST }: { members?: Members | null; ids?: boolean; trust?: Trust } = {}): string {
   const parts: string[] = [];
   const name = (me && me.name) as string; // no seat: in no proposal
-  const all = proposals(entries);
-  const retired = fold(entries).superseded; // a revision's earlier one is not open (lib/room/consent.ts)
-  const open = all.filter(p => !decided(p.hash, entries) && !retired.has(p.hash));
+  const all = proposals(entries, trust);
+  const retired = fold(entries, trust).superseded; // a revision's earlier one is not open (lib/room/consent.ts)
+  const open = all.filter(p => !decided(p.hash, entries, trust) && !retired.has(p.hash));
   const last = all.at(-1);
   const shown = open.length ? open.slice(-3) : last ? [last] : [];
   if (!shown.length) parts.push('no proposals');
   for (const p of shown) {
-    const dec = decided(p.hash, entries);
-    const where = dec ? `decided${ids ? ` #${dec.id}` : ''}` : waiting(fold(entries).matrix(p.hash)) || 'agreed by all';
+    const dec = decided(p.hash, entries, trust);
+    const where = dec ? `decided${ids ? ` #${dec.id}` : ''}` : waiting(fold(entries, trust).matrix(p.hash)) || 'agreed by all';
     let s = `proposal ${p.hash.slice(0, 6)} ${where}`;
     if (approversOf(p).includes(name)) {
-      const a = answered(name, p.hash, entries);
+      const a = answered(name, p.hash, entries, trust);
       // the open-the-card call is spelled out right in the notice: a model skipped it when it was only in the join text
       const needed = `answer needed (call EnterPlanMode, then ExitPlanMode with plan "proposal ${p.hash}")`;
       s += ` · you: ${a ? (a.kind === 'signoff' ? 'agreed' : 'objected') : dec ? 'not answered' : needed}`;
@@ -312,14 +329,14 @@ function stateLine(me: LaneViewer | null | undefined, entries: readonly Entry[] 
  * Full text for `sub-human read`: a "[#id …]" header line, then every line of the text nested under it (NEST),
  * so the text can't fake another entry's header.
  */
-function fmt(e: Entry): string {
+function fmt(e: Entry, { trust = NO_TRUST }: { trust?: Trust } = {}): string {
   const body = e.text == null ? `(${e.kind}, no notes)` : safeText(e.text).split('\n').map(l => NEST + l).join('\n');
-  return `[${header(e)} ${String(e.at || '').slice(11, 19)}]\n${body}`;
+  return `[${header(e, trust)} ${String(e.at || '').slice(11, 19)}]\n${body}`;
 }
 
 // ---------- the compaction digest ----------
 /** The ordered digest sections; items carry an id so the cap can trim the oldest first. */
-function digestSections(entries: readonly Entry[] = [], { members = {}, code = null }: { members?: Members | null; code?: string | null } = {}): DigestSection[] {
+function digestSections(entries: readonly Entry[] = [], { members = {}, code = null, trust = NO_TRUST }: DigestCtx = {}): DigestSection[] {
   members = members || {};
   const memberLines = Object.values(members).map(m => {
     const last = entries.filter(e => e.from === m.name && e.via !== 'system').at(-1);
@@ -327,19 +344,19 @@ function digestSections(entries: readonly Entry[] = [], { members = {}, code = n
   });
 
   const planLines: DigestLine[] = [];
-  const props = proposals(entries);
-  const retired = fold(entries).superseded; // a revision's earlier one is not waiting on anyone (lib/room/consent.ts pending)
-  const undecided = props.filter(p => !decided(p.hash, entries) && !retired.has(p.hash));
+  const props = proposals(entries, trust);
+  const retired = fold(entries, trust).superseded; // a revision's earlier one is not waiting on anyone (lib/room/consent.ts pending)
+  const undecided = props.filter(p => !decided(p.hash, entries, trust) && !retired.has(p.hash));
   for (const p of undecided.length ? undecided : props.slice(-1)) {
-    const m = answers(p.hash, approversOf(p), entries);
-    const dec = decided(p.hash, entries);
+    const m = answers(p.hash, approversOf(p), entries, trust);
+    const dec = decided(p.hash, entries, trust);
     planLines.push({ text: `  proposal=${p.hash} (#${p.id} by ${who(p)}${p.path ? `, ${p.path}` : ''}) approvers: ${approversOf(p).join(' ') || '(none)'}${dec ? ` DECIDED #${dec.id}` : ''}` });
     for (const n of approversOf(p)) {
-      const a = answered(n, p.hash, entries);
+      const a = answered(n, p.hash, entries, trust);
       planLines.push({ text: `  ${m.signed[n] ? '✔' : a ? '✗' : '–'} ${n}${a ? ` #${a.id}` : ''}` });
     }
     if (!dec) {
-      const f = fold(entries).matrix(p.hash);
+      const f = fold(entries, trust).matrix(p.hash);
       planLines.push({ text: `  waiting on: ${f.missing.join(', ') || '(nobody)'}${f.objected.length ? ` · objected: ${f.objected.join(', ')}` : ''}` });
     }
   }
@@ -355,7 +372,7 @@ function digestSections(entries: readonly Entry[] = [], { members = {}, code = n
   const decisions = entries.map(normalize).filter(e => e.kind === 'decision')
     .map(e => ({ id: e.id, text: `  #${e.id} proposal=${e.proposal_hash || '-'}: ${quote(e, 120)}` }));
   const human = entries.filter(e => e.via === 'human').slice(-10)
-    .map(e => ({ id: e.id, text: `  #${e.id} ${humanName(e)}${e.drafted === 'agent' ? ` (${e.from}, Claude's wording)` : ''} ${e.kind}: ${e.text == null ? '(no notes)' : quote(e, TEXT_MAX, { exact: true })}` }));
+    .map(e => ({ id: e.id, text: `  #${e.id} ${humanName(e, trust)}${e.drafted === 'agent' ? ` (${e.from}, Claude's wording)` : ''} ${e.kind}: ${e.text == null ? '(no notes)' : quote(e, TEXT_MAX, { exact: true })}` }));
 
   return [
     { title: `members of ${code || 'this room'}`, lines: memberLines },
@@ -378,7 +395,7 @@ function renderSections(sections: DigestSection[], trimmed: number): string {
   return out.join('\n');
 }
 
-function digest(entries: readonly Entry[] = [], ctx: { members?: Members | null; code?: string | null } = {}): string {
+function digest(entries: readonly Entry[] = [], ctx: DigestCtx = {}): string {
   const sections = digestSections(entries, ctx);
   let trimmed = 0;
   let text = renderSections(sections, trimmed);
@@ -396,4 +413,56 @@ function digest(entries: readonly Entry[] = [], ctx: { members?: Members | null;
   return text;
 }
 
-export { FOR_CLAUDE, line, tailLine, chatLines, fmt, who, stateLine, digest, leftWhy };
+// ---------- join and leave notices ----------
+/** One join / leave notice (joinLeave). */
+interface Notice {
+  id: number;
+  kind: string;
+  name: string;
+  at: string;
+  settled: boolean;
+  rejoin: boolean;
+  /** a leave's reason as the chat line gives it (" (connection lost)"), else '' */
+  why: string;
+}
+const settleMs = () => envMs('SUB_HUMAN_LEAVE_MS', LEAVE_SETTLE_MS);
+const isMove = (e: Entry | null | undefined) => !!e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
+
+function joinLeave(es: readonly Entry[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() } = {}): Notice[] {
+  const list = (es || []).filter(e => isMove(e) && e.from !== viewer && roomClaudeName(e.from) !== ROOM_CLAUDE); // 0.4.x: "orch"
+  const drop = new Set<number>();
+  const next = new Map<string, Entry>(); // name -> its next join, walking back
+  for (let i = list.length - 1; i >= 0; i--) {
+    const l = list[i];
+    if (l.kind === 'member_joined') { next.set(l.from, l); continue; }
+    const back = next.get(l.from);
+    if (back && Date.parse(back.at) - Date.parse(l.at) < settle) { drop.add(l.id); drop.add(back.id); }
+  }
+  return list.filter(e => !drop.has(e.id)).map(e => ({
+    id: e.id, kind: e.kind, name: e.from, at: e.at,
+    settled: e.kind === 'member_joined' || now - Date.parse(e.at) >= settle,
+    rejoin: e.kind === 'member_joined' && /\brejoined\b/.test(String(e.text || '')),
+    why: e.kind === 'member_left' ? leftWhy(String(e.text || '')) : '',
+  }));
+}
+
+function noticeText(n: Pick<Notice, 'kind' | 'name' | 'rejoin'> & { why?: string }): string {
+  if (n.kind === 'member_left') return `${n.name} left${n.why || ''}`;
+  return `${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
+}
+
+function rowSegment(es: readonly Entry[] | null | undefined, viewer: string | null | undefined, { now = clock.now() } = {}): string {
+  const settle = settleMs();
+  const fresh = (x: Notice) => now - Date.parse(x.at) - (x.kind === 'member_left' ? settle : 0) < ROW_NOTICE_MS;
+  // only the log's last ROW_NOTICE_MS + settle can hold a fresh notice, or the rejoin that cancels one: the log is in
+  // time order, so read back to there
+  const list = es || [];
+  let from = list.length;
+  while (from > 0 && !(now - Date.parse(list[from - 1].at) > ROW_NOTICE_MS + 2 * settle)) from--;
+  const n = joinLeave(list.slice(from), viewer, { now, settle }).filter(x => x.settled && fresh(x)).at(-1);
+  if (!n) return '';
+  return n.kind === 'member_left' ? `−${n.name} left${n.why}` : `+${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
+}
+
+export { FOR_CLAUDE, line, chatLines, fmt, who, stateLine, digest, leftWhy, joinLeave, noticeText, rowSegment };
+export type { Notice };

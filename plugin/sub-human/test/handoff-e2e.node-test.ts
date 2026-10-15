@@ -50,7 +50,7 @@ type TestMachine = Machine & {
   cli: (args: string[], extra?: Record<string, string>) => SpawnSyncReturns<string>;
   status: (code: string) => ReturnType<typeof link.status>;
   store: (code: string) => ReturnType<typeof store.open>;
-  read: (code: string) => Entry[];
+  read: (code: string) => readonly Entry[];
 };
 /** room()'s machines and seats: carol's only when she was asked for. */
 interface Room { A: TestMachine; B: TestMachine; alice: Seat; bob: Seat; code: string }
@@ -176,7 +176,7 @@ test('handoff e2e: planned, A to B with C following; the room\'s Claude moves; t
   assert.equal(A.say(alice, 'from the old host').json!.continue, false);
   const last = B.read(code).slice(-2);
   assert.deepEqual(last.map(e => [e.from, e.text]), [['carol', 'hello new host'], ['alice', 'from the old host']]);
-  assert.deepEqual(B.lib(() => last.map(e => store.humanTrust(e))), ['verified', 'verified']);
+  assert.deepEqual(B.lib(() => last.map(e => store.trustOf(e))), ['verified', 'verified']);
   await until(() => A.log(code) === B.log(code) && C.log(code) === B.log(code), 5000, 50);
 
   // the old host's own log takes no more lines (its file, read as a host's)

@@ -25,7 +25,7 @@ import * as protocol from '../lib/remote/protocol.ts';
 import * as ssh from '../lib/remote/transports/ssh.ts';
 import * as room from '../lib/room.ts';
 import * as render from '../lib/room/render.ts';
-import { lane } from '../lib/room/lanes.ts';
+import { lane } from '../lib/room/deliver.ts';
 import { RoomError } from '../lib/room/validate.ts';
 import * as realClock from '../lib/clock.ts';
 import * as config from '../lib/config.ts';

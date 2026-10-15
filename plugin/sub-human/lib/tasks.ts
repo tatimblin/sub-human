@@ -13,7 +13,8 @@
  *   summary(code, viewer) -> "tasks 3 open · #2 you · #4 bob" ('' with no tasks; "tasks: all N done")
  *   mine(code, name) -> open tasks owned by name (for a participant row: `◼ #2 parser tests`)
  *   validate(req) -> {ok:true, req} | {ok:false, error}      the `task` tool's arguments
- *   gate(code, task, log, {closing}?) -> {ok:true, req?} | {ok:false, reason}   TaskCompleted rule (task.req: a hint)
+ *   gate(code, task, log, {closing, trust}?) -> {ok:true, req?} | {ok:false, reason}   TaskCompleted rule (task.req: a hint;
+ *       trust: the store the log was read from, RoomStore.trust; default the room's store)
  *   reqOf(e) -> {op, id, subject, detail, evidence, owner, by}   a task_req entry's fields
  *   requestText(req) -> one-line text for a task_req entry
  *   isRoomTask(t, code?), isClosing(code), writeList(code, tasks), withList(code, fn) (the mirror's lock)
@@ -33,10 +34,10 @@
 import * as identity from './identity.ts';
 import { clip, NAME_RE } from './text.ts';
 import * as config from './config.ts';
-import { humanTrust } from './room/store.ts';
+import { open } from './room/store.ts';
 import * as room from './room.ts';
 import type { Task, TaskReq } from './types-app.ts';
-import type { Entry, Members } from './room/types.ts';
+import type { Entry, Members, Trust } from './room/types.ts';
 
 /** A task as it arrives to be cleaned (the mirror, a fold, hooks/handlers/tasks.ts's native task): loosely shaped. */
 interface RawTask {
@@ -101,7 +102,7 @@ function writeList(code: string, tasks: (RawTask | null | undefined)[]): Task[] 
 }
 
 /** The mirror as a pure fold of the log's `task` entries (via system). Each entry is the task's whole state. */
-function fold(entries: (Entry | null | undefined)[] | null | undefined): Task[] {
+function fold(entries: readonly (Entry | null | undefined)[] | null | undefined): Task[] {
   const m = new Map<string, RawTask>();
   for (const e of entries || []) {
     if (!e || e.kind !== 'task' || e.via !== 'system' || e.task_id == null) continue;
@@ -112,7 +113,7 @@ function fold(entries: (Entry | null | undefined)[] | null | undefined): Task[] 
   return clean([...m.values()]);
 }
 
-const refold = (code: string, entries: Entry[]): Task[] => writeList(code, fold(entries));
+const refold = (code: string, entries: readonly Entry[]): Task[] => writeList(code, fold(entries));
 
 /** metadata.req as a log id (a positive integer, or its digits), else null. */
 function metaReq(md: unknown): number | null {
@@ -208,7 +209,7 @@ const cites = (e: Entry, reqId: number) => (e.refs || []).includes(reqId) || new
  * [human] words citing that request. task.req (the native task's metadata.req) is tried first when it names
  * such a request. The room-open task completes only while the room is closing.
  */
-function gate(code: string, task: (RawTask & { req?: unknown }) | null | undefined, log: Entry[] = [], { closing }: { closing?: boolean } = {}): GateResult {
+function gate(code: string, task: (RawTask & { req?: unknown }) | null | undefined, log: readonly Entry[] = [], { closing, trust }: { closing?: boolean; trust?: Trust } = {}): GateResult {
   const id = String(task && task.id);
   if (isRoomTask(task, code)) {
     const c = closing === undefined ? isClosing(code) : closing;
@@ -221,9 +222,10 @@ function gate(code: string, task: (RawTask & { req?: unknown }) | null | undefin
   const dones = reqs.filter(e => reqOf(e).op === 'done' && e.id > lastClaim && String(reqOf(e).evidence || '').trim()).reverse();
   const hint = dones.findIndex(e => e.id === Number(task.req));
   if (hint > 0) dones.unshift(...dones.splice(hint, 1));
+  const judge = trust || open(code).trust;
   for (const d of dones) {
     if (d.from === owner) return { ok: true, req: d };
-    const confirmed = log.some(e => e.via === 'human' && humanTrust(e) !== 'unverified' && e.from === owner && e.id > lastClaim && cites(e, d.id));
+    const confirmed = log.some(e => e.via === 'human' && judge(e) !== 'unverified' && e.from === owner && e.id > lastClaim && cites(e, d.id));
     if (confirmed) return { ok: true, req: d };
   }
   return { ok: false, reason: `only ${owner} may complete #${id}; ask them` };

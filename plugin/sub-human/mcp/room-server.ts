@@ -3,15 +3,20 @@
  * plugin/sub-human/mcp/room-server.ts: the room's stdio MCP server (JSON-RPC 2.0, one message per line).
  * Zero dependencies. Each Claude Code session runs its own copy, as a direct child of claude.
  *
- * Identity: the caller is the claude process that spawned us (cc CONTRACT mcp-stdio-ppid), so
- * me = identity.resolveByPid(process.ppid), a direct lookup, re-resolved on every call (the session joins after the
- * server starts). The model never names itself. Not joined -> every core tool returns "not in a room; run /sub-human".
+ * Identity: the session that spawned us. Claude Code gives a stdio server its session id (cc CONTRACT
+ * env-mcp-session), so me = identity.resolveBySession(CLAUDE_CODE_SESSION_ID); the id is fixed at spawn and /clear
+ * moves the session to a new one (env-clear-session-id), so a seat that rebound since is found by its claude process
+ * instead, our parent (mcp-stdio-ppid): identity.resolveByPid(process.ppid). Re-resolved on every call (the session
+ * joins after the server starts). The model never names itself. Not joined -> every core tool returns "not in a
+ * room; run /sub-human".
  *
  * Core tools:
  *   post({kind, text, to?, refs?})   kinds: say question status; via "agent", from = the resolved member. Refused
  *       when it repeats the member's objection note, waiting for their Send or sent in the last 10 minutes (relayed).
  *   read({ids?})   with ids: those entries in full. Without: this member's unseen entries (cursor mcp-<name>),
- *       skipping its own Claude's posts; at most 100, oldest first.
+ *       skipping its own Claude's posts; at most 100, oldest first. Each entry is one rendered line (lib/room/render.ts
+ *       line {full}): "#ID FROM[VIA] (unverified)? KIND … "TEXT"", no signature material, and a person's line whose
+ *       signature does not verify marked "(unverified)" (not their words for certain).
  *   propose({text|path, approvers?})   lib/proposal.create: stores plans/<hash>.md, appends `proposal`
  *       {hash, approvers, path}; approvers default to the humans present. Each approver answers a consent
  *       card (hooks/handlers/consent.ts); a proposer who is also an approver is told to open the card now. The reply
@@ -34,7 +39,7 @@
  *                                     rejects with {code:'CANCELLED'}
  *   progress(progressToken, progress, message)   notifications/progress (no-op without a token)
  *   onCancel(requestId, fn)           fn(reason) when the client cancels that tools/call (once)
- *   whoami()                          resolveByPid(process.ppid); me or null (each call opens me.code's Room)
+ *   whoami()                          the session's seat (Identity above); me or null (each call opens me.code's Room)
  *   clientCaps()                      the client capabilities from initialize (e.g. .elicitation)
  *   room, identity, proposal          the libs
  *   text(s, isError)                  an MCP text result
@@ -47,7 +52,7 @@ import path from 'node:path';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as proposal from '../lib/proposal.ts';
-import * as store from '../lib/room/store.ts';
+import * as cc from '../lib/cc.ts';
 import { cliCmd } from '../lib/text.ts';
 import { createRequire } from 'node:module';
 import type { Entry, EntryInput } from '../lib/room/types.ts';
@@ -81,13 +86,6 @@ const reply = (id: JsonRpcId | null, result: unknown) => send({ jsonrpc: '2.0', 
 const fail = (id: JsonRpcId | null, code: number, message: string) => send({ jsonrpc: '2.0', id, error: { code, message } });
 const text = (s: unknown, isError?: boolean): ToolResult => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) });
 const json = (v: unknown) => text(JSON.stringify(v));
-/** An entry as the model reads it: without the signature material (sig, nonce, ts, room, pubkey: tokens it cannot
- *  use) and, for a person's line, with `trust` (verified | legacy | unverified: not the person's words for certain). */
-function readable(e: Entry): Record<string, unknown> {
-  const { sig, nonce, ts, room: _room, pubkey, ...rest } = e as Entry & { ts?: unknown; room?: unknown; pubkey?: unknown };
-  const trust = e.via === 'human' ? store.humanTrust(e) : null;
-  return trust ? { ...rest, trust } : rest;
-}
 
 function log(...a: unknown[]) {
   if (process.env.SUB_HUMAN_DEBUG !== '1') return;
@@ -141,8 +139,12 @@ function onCancel(requestId: JsonRpcId, fn: (reason?: unknown) => void) {
 }
 
 // ---------- identity ----------
-/** A stdio server is spawned without a shell, so our parent is the claude process (cc CONTRACT mcp-stdio-ppid). */
+/** The seat of the session that spawned us: by its id (cc CONTRACT env-mcp-session), else (after a /clear) by our
+ * parent, the claude process: a stdio server is spawned without a shell (cc CONTRACT mcp-stdio-ppid). */
 function whoami(): Me | null {
+  const sid = cc.sessionId();
+  const bySid = sid ? identity.resolveBySession(sid) : null;
+  if (bySid) return bySid;
   const pid = process.ppid > 1 ? process.ppid : null;
   return pid ? identity.resolveByPid(pid) : null;
 }
@@ -234,18 +236,21 @@ function post(me: Me, args: ToolArgs) {
   return json(room.open(me.code).append(entry, { via: 'agent', from: me.name }));
 }
 
+/** Entries as the model reads them: one rendered line each (render.line full), the trust marker in it. */
+const lines = (r: ReturnType<typeof room.open>, es: readonly Entry[], none: string) => text(es.length ? es.map(e => r.line(e, { full: true })).join('\n') : none);
+
 function read(me: Me, args: ToolArgs) {
+  const r = room.open(me.code);
   if (args.ids !== undefined) {
     const ids = Array.isArray(args.ids) ? args.ids : [args.ids];
     if (!ids.length || !ids.every(i => Number.isInteger(Number(i)) && Number(i) > 0)) return text('ids must be positive integers', true);
-    return json(room.open(me.code).readById(ids.map(Number)).map(readable));
+    return lines(r, r.readById(ids.map(Number)), '(no such entries)');
   }
-  const r = room.open(me.code);
   const cursor = `mcp-${me.name}`;
   const all = r.readAfter(r.getCursor(cursor));
   if (all.length) r.setCursor(cursor, all.at(-1)!.id);
   const unseen = all.filter((e: { from?: string; via?: string }) => !(e.from === me.name && e.via === 'agent'));
-  return json((unseen.length > READ_MAX ? unseen.slice(-READ_MAX) : unseen).map(readable));
+  return lines(r, unseen.length > READ_MAX ? unseen.slice(-READ_MAX) : unseen, '(nothing new)');
 }
 
 function propose(me: Me, args: ToolArgs) {
@@ -258,7 +263,7 @@ function propose(me: Me, args: ToolArgs) {
   const t = proposal.title(me.code, r.hash, r.entry);
   if (r.retired.length) lines.push(`It replaces your earlier ${r.retired.map(h => `proposal ${h}`).join(', ')} (same title): no longer pending, and answers on it do not carry over.`);
   // the same title from someone else is not a revision: both stay open, so say so (people can't tell them apart)
-  const f = room.fold(room.open(me.code).readAll());
+  const f = room.open(me.code).fold();
   const twins = t ? [...f.proposals.values()].filter(p => p.hash !== r.hash && p.from !== me.name && !f.decisions.has(p.hash)
     && !f.superseded.has(p.hash) && proposal.title(me.code, p.hash, p.entry) === t) : [];
   for (const p of twins) lines.push(`Warning: ${p.from}'s proposal ${p.hash} is also pending with the title "${t}"; both stay open. Give this one a distinct title if it is not the same question.`);

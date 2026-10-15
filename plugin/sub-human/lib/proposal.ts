@@ -82,7 +82,7 @@ import * as config from './config.ts';
 import * as cc from './cc.ts';
 import { NEXT, hash12, showNote } from './consent/review.ts';
 import type { Card, Confirm, Proposal, Review } from './types-app.ts';
-import type { Entry, Matrix, Member, Members, ProposalState } from './room/types.ts';
+import type { Entry, Matrix, Member, Members, ProposalState, Trust } from './room/types.ts';
 import type { Identity } from './identity.ts';
 
 /** Who acts: a seat's room and name are all these functions read. */
@@ -118,7 +118,7 @@ function store(code: string, buf: Buffer): string {
   return hash;
 }
 
-const entriesOf = (me: Me, entries: Entry[] | null | undefined): Entry[] => entries || room.open(me.code).readAll();
+const entriesOf = (me: Me, entries: readonly Entry[] | null | undefined): readonly Entry[] => entries || room.open(me.code).readAll();
 const kvOf = (me: Me) => room.open(me.code).store.kv;
 
 function humans(code: string): string[] {
@@ -169,24 +169,24 @@ function sameOk(code: string): boolean {
 
 // ---------- reading the log (lib/room/consent.ts fold: the same semantics as stateLine, lane and the rows) ----------
 const shape = (p: ProposalState): Proposal => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
-const proposals = (entries: Entry[]): Proposal[] => [...room.fold(entries).proposals.values()].map(shape);
+const proposals = (entries: readonly Entry[], trust: Trust = room.trustOf): Proposal[] => [...room.fold(entries, trust).proposals.values()].map(shape);
 
-const decision = (hash: string, entries: Entry[]): Entry | null => room.fold(entries).decisions.get(hash) || null;
+const decision = (hash: string, entries: readonly Entry[], trust: Trust = room.trustOf): Entry | null => room.fold(entries, trust).decisions.get(hash) || null;
 
 /** The answer matrix over p.approvers (the latest answer per person wins; an objection voids a signoff). */
-const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: Entry[]): Matrix => room.fold(entries).matrix(p.hash, p.approvers);
+const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: readonly Entry[], trust: Trust = room.trustOf): Matrix => room.fold(entries, trust).matrix(p.hash, p.approvers);
 
-function pendingFor(me: Me | null | undefined, entries?: Entry[] | null): Proposal[] {
+function pendingFor(me: Me | null | undefined, entries?: readonly Entry[] | null): Proposal[] {
   if (!me || !me.name) return [];
-  return room.fold(entriesOf(me, entries)).pending(me.name).map(shape);
+  return room.open(me.code).fold(entriesOf(me, entries)).pending(me.name).map(shape);
 }
-function answerableFor(me: Me | null | undefined, entries?: Entry[] | null): Proposal[] {
+function answerableFor(me: Me | null | undefined, entries?: readonly Entry[] | null): Proposal[] {
   if (!me || !me.name) return [];
-  return room.fold(entriesOf(me, entries)).answerable(me.name).map(shape);
+  return room.open(me.code).fold(entriesOf(me, entries)).answerable(me.name).map(shape);
 }
 
 /** A proposal's title: the first non-empty line of its text, heading / list / quote markers dropped. */
-const titleOf = (text: string | null | undefined) => String(text || '').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').trim()).find(Boolean) || '';
+const planTitle = (text: string | null | undefined) => String(text || '').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').trim()).find(Boolean) || '';
 const titles = new Map<string, string>(); // hash -> title: plans are content-addressed, so a hash's title never changes
 /**
  * The title people see for proposal hash: the stored plan's first line, else the entry's "proposal HASH: title"
@@ -195,7 +195,7 @@ const titles = new Map<string, string>(); // hash -> title: plans are content-ad
 function title(code: string, hash: string, entry?: Pick<Entry, 'text'> | null): string {
   const known = titles.get(hash);
   if (known !== undefined) return known;
-  const t = titleOf(read(code, hash));
+  const t = planTitle(read(code, hash));
   if (t) { titles.set(hash, t); return t; }
   const m = entry && /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(entry.text || ''));
   return m ? m[1].trim() : '';
@@ -284,7 +284,7 @@ function namedIn(ps: Proposal[], prompt: string | null | undefined, code: string
 function replacedIn(ps: Proposal[], prompt: string | null | undefined, code: string): { old: string, p: Proposal } | null {
   const hex = String(prompt || '').toLowerCase().match(/\b[0-9a-f]{6,12}\b/g) || [];
   if (!hex.length || !ps.length || hex.some(t => ps.some(p => p.hash.startsWith(t)))) return null;
-  const f = room.fold(room.open(code).readAll());
+  const f = room.open(code).fold();
   for (const t of hex) {
     const named = [...f.superseded.keys()].filter(h => h.startsWith(t));
     if (named.length !== 1 || [...f.proposals.keys()].filter(h => h.startsWith(t)).length !== 1) continue;
@@ -404,19 +404,19 @@ function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd
 
   const hash = store(me.code, buf);
   const stored = planPath(me.code, hash);
-  const entries: Entry[] = r.readAll();
-  const open = proposals(entries).find(p => p.hash === hash);
-  const before = room.fold(entries).superseded;
-  if (open && !decision(hash, entries) && !before.has(hash) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
+  const entries = r.readAll();
+  const open = proposals(entries, r.trust).find(p => p.hash === hash);
+  const before = r.fold(entries).superseded;
+  if (open && !decision(hash, entries, r.trust) && !before.has(hash) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
     return { hash, approvers, path: stored, entry: entries.find(e => e.id === open.id), again: true, retired: [] };
   }
   // the entry stores the room-relative ref; `path` returned is where the proposer can open it
-  const entry: Entry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers,
+  const entry: Entry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(planTitle(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers,
     ...(same.length ? { same } : {}), path: planRef(hash) },
     { via: 'agent', from: me.name });
   // what this entry retired: superseded by it now and not before (lib/room/consent.ts); a retired proposal proposed
   // again is appended anew (above), which brings it back
-  const retired = [...room.fold([...entries, entry]).superseded].filter(([old, by]) => by === hash && !before.has(old)).map(([old]) => old);
+  const retired = [...r.fold([...entries, entry]).superseded].filter(([old, by]) => by === hash && !before.has(old)).map(([old]) => old);
   return { hash, approvers, path: stored, entry, again: false, retired };
 }
 
@@ -431,8 +431,7 @@ function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?
   const choice = choiceOf(a.choice);
   if (choice !== 'Agree' && choice !== 'Object') return { stale: true, why: 'no choice' };
   return r.store.lock('proposal', (): Answered => {
-    const entries: Entry[] = r.readAll();
-    const f = room.fold(entries);
+    const f = r.fold();
     const cur = f.proposals.get(p.hash);
     // Idempotent: one answer per seat per proposal. A card and a plan view open at once, or a reopened card,
     // never record twice, and the decision's refs are exactly the answers the fold reads as current. Another seat
@@ -455,11 +454,11 @@ function decide(code: string, hash: string): Entry | null {
   if (!identity.isHost(code)) return null;
   const r = room.open(code);
   return r.store.lock('proposal', (): Entry | null => {
-    const entries: Entry[] = r.readAll();
-    const f = room.fold(entries);
+    const entries = r.readAll();
+    const f = r.fold(entries);
     const cur = f.proposals.get(hash);
     if (!cur || f.decisions.has(hash) || f.superseded.has(hash)) return null;
-    const m = matrix(cur, entries);
+    const m = matrix(cur, entries, r.trust);
     if (!m.complete) return null;
     const text = m.objected.length
       ? `objected: ${people(m, m.objected)}${m.agreed.length ? ` · agreed: ${people(m, m.agreed)}` : ''} (proposal ${hash})`

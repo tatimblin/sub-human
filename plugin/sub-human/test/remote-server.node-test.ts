@@ -90,7 +90,7 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   assert.deepEqual([joined!.machine, joined!.pubkey], [REMOTE, seatKey.publicPem(code, 'alice')], 'the key is pinned');
   assert.deepEqual(await c.beat('alice', { presence: { state: 'working', detail: 'tests' } }), { ok: true });
   const say = await c.append(signed(code, 'alice', { kind: 'say', text: 'hello from afar' }));
-  assert.equal(store.humanTrust(host.readById([say.id])[0]), 'verified');
+  assert.equal(host.trust(host.readById([say.id])[0]), 'verified');
   const note = await c.append({ from: 'alice', via: 'agent', kind: 'say', text: 'her Claude', to: 'room' });
   assert.equal(note.id, say.id + 1);
   const plan = Buffer.from('# the plan\n');

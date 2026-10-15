@@ -3,7 +3,7 @@
 // lib/remote/bridge.ts to an FsRoomStore on a worker) and MirrorRoomStore (test/support/remote-store.ts: the
 // mirror of a room whose server and link run on a worker, over the memory transport): append, ids and the prev
 // chain, signed human entries (sig v2 placed anywhere, v1 still read), keys pinned in the log, place's replay and
-// trust checks, the rate buckets, readView parity, watch and tailer, chain checks, cursors, members
+// trust checks and verdicts, the rate buckets, readView parity, the tailer, chain checks, cursors, members
 // compare-and-set (across processes for the file store) and the named seat ops, blobs and the small documents.
 // All passing is what lets a room move off this machine behind the same interface. The cases that write as the
 // system or write the host's documents directly are host-only (a mirror refuses them: HOST_ONLY, AUTH); the
@@ -101,7 +101,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(all[1].prev, store.hash12(JSON.stringify(all[0])), 'prev = hash12 of the previous stored line');
     assert.equal(s.lastId(), 3);
     assert.deepEqual(s.readById([3, 1, 9]).map(e => e.id), [3, 1]);
-    assert.deepEqual(s.since(1).map(e => e.id), [2, 3]);
+    assert.deepEqual(s.readAfter(1).map(e => e.id), [2, 3]);
     assert.deepEqual(s.readAfter(0, e => e.via === 'agent').map(e => e.id), [2, 3]);
   });
 
@@ -111,8 +111,8 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const e = say(s, 'alice', 'mine');
     assert.equal(e.room, CODE);
     assert.equal(typeof e.sig, 'string');
-    assert.equal(store.humanTrust(s.readAll()[0]), 'verified');
-    assert.equal(store.unverifiedHuman(s.readAll()[0]), false);
+    assert.equal(s.trust(s.readAll()[0]), 'verified');
+    assert.equal(s.trust(s.readAll()[0]), s.trust(s.readAll()[0]), 'the same verdict again');
     assert.throws(() => s.append({ kind: 'nope' }, { via: 'agent', from: 'bob' }), (e2: Err) => e2.code === 'INVALID');
     for (let i = 0; i < config.RATE_MAX; i++) say(s, 'bob', `p${i}`, 'agent');
     assert.throws(() => say(s, 'bob', 'one too many', 'agent'), (e2: Err) => e2.code === 'RATE');
@@ -177,13 +177,13 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const moved = other.place(placed(s.readAll()[0]));
     assert.deepEqual([moved.id, moved.sig], [3, e.sig]);
     assert.notEqual(moved.prev, e.prev);
-    assert.equal(store.humanTrust(other.readAll()[2]), 'verified');
+    assert.equal(other.trust(other.readAll()[2]), 'verified');
     // a v1 line (signed over the stored line minus sig, as before sig v2) still reads as the person's
     const v1 = rawLine(other, { from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'old', room: CODE });
     v1.sig = crypto.sign(null, Buffer.from(JSON.stringify(v1)), seatKey.ensure(CODE, 'alice')).toString('base64');
     B.raw(other, v1);
     say(other, 'alice', 'v2 after v1');
-    assert.deepEqual(other.readAll().slice(-2).map(store.humanTrust), ['verified', 'verified']);
+    assert.deepEqual(other.readAll().slice(-2).map(e => other.trust(e)), ['verified', 'verified']);
     assert.deepEqual(other.validateChain(), { ok: true, count: 5 });
     assert.equal(other.verifyChain().ok, true, 'a mixed v1/v2 log chains');
   });
@@ -196,13 +196,13 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     B.raw(s, rawLine(s, { from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H }));
     const forged = s.readAll().at(-1);
     assert.equal(s.pins().size, 0);
-    assert.equal(store.humanTrust(forged), 'legacy');
+    assert.equal(s.trust(forged), 'legacy');
     // alice joins with her key: the room is keyed from here on
     const alice = seatKey.publicPem(CODE, 'alice');
     sys(s, 'member_joined', 'alice', { pubkey: alice });
     assert.deepEqual([...s.pins().keys()], ['alice']);
     assert.ok(s.pins().get('alice')!.equals(crypto.createPublicKey(alice)));
-    assert.equal(store.humanTrust(forged), 'unverified', 'a keyed room never returns legacy');
+    assert.equal(s.trust(forged), 'unverified', 'a keyed room never returns legacy');
     // the same key again (a rejoin) is fine; another key for a pinned name is refused
     sys(s, 'member_joined', 'alice', { pubkey: alice });
     const stranger = crypto.generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' }) as string; // pem is a string
@@ -211,7 +211,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     s.append({ kind: 'signoff', proposal_hash: H }, { via: 'human', from: 'alice' });
     assert.throws(() => s.append({ kind: 'signoff', proposal_hash: H }, { via: 'human', from: 'bob' }), (e: Err) => e.code === 'AUTH' && /no key is pinned for bob/.test(e.message));
     assert.throws(() => s.place({ from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H }), (e: Err) => e.code === 'AUTH');
-    const m = consent.fold(s.readAll()).matrix(H);
+    const m = consent.fold(s.readAll(), s.trust).matrix(H);
     assert.deepEqual([m.agreed, m.missing], [['alice'], ['bob']]);
   });
 
@@ -252,17 +252,12 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.deepEqual(s.readView({ after: 4 }).filter(e => e.id > 4), all.filter(e => e.id > 4), 'the same entries as readAll after `after`');
   });
 
-  test(`store contract (${name}): watch delivers ids after \`after\` then new ones; a tailer only what is appended later`, async t => {
+  test(`store contract (${name}): a tailer gives only what is appended after it was made`, t => {
     h.freshHome(t);
     const s = B.make(t);
     say(s, 'alice', 'a'); say(s, 'alice', 'b');
     const tl = s.tailer();
-    const got: number[] = [];
-    const stop = s.watch(e => got.push(e.id), { after: 1, intervalMs: 10 });
     say(s, 'alice', 'c');
-    await h.until(() => got.length === 2, 2000, 10);
-    stop();
-    assert.deepEqual(got, [2, 3]);
     const p = tl.poll();
     assert.deepEqual(p.entries.map(e => e.id), [3]);
     assert.equal(p.reset, false);
@@ -382,7 +377,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(r.proposals().length, 1);
     assert.match(r.stateLine({ name: 'alice' }), /^room now: proposal abcdef .* · you: answer needed .* · away: bob$/);
     assert.match(r.digest(), new RegExp(`## members of ${CODE}`));
-    assert.equal(r.lane({ name: 'alice', role: 'member' }, r.readAll()[0], r.readAll()), 'push');
+    assert.equal(r.deliver({ name: 'alice', role: 'member' }, r.readAll()[0], { entries: r.readAll() }), 'wake');
   });
 }
 
@@ -437,7 +432,7 @@ test('store contract (remote): a write goes through the host and reads back at o
   assert.equal(s.isHost, false);
   const e = say(s, 'alice', 'hi');
   assert.deepEqual([s.lastId(), s.readAll().at(-1)], [e.id, e], 'read-your-writes');
-  assert.equal(store.humanTrust(s.readAll().at(-1)), 'verified');
+  assert.equal(s.trust(s.readAll().at(-1)), 'verified');
   // the join: the seat's key and a proof from this thread's signer; the host logs member_joined with them
   assert.deepEqual(s.members.join({ name: 'erin', role: 'member', machine: MACHINE }), { ok: true });
   const joined = s.readAll().at(-1)!;
