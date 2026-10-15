@@ -359,7 +359,10 @@ function serve(args: readonly string[]) {
     if (!handoff.movedAway(s)) die(`room "${code}" is not hosted on this machine (it holds a copy)`, 1);
     s = store.open(code, { dir: s.dir }); // the old log, read-only: it moved
   }
-  const srv = server.serve(pipe.stdio(), {
+  const t = pipe.stdio();
+  // the session closed its end (no link in time over the web, a silent peer): nothing is left for this process to do
+  t.onClose(() => { setTimeout(() => process.exit(0), 200); });
+  const srv = server.serve(t, {
     store: s, linkId: flags.link, login: !!flags.login, via: flags.via === 'ws' ? 'ws' : null, peer: flags.peer ?? null,
     log: (msg: string) => process.stderr.write(msg + '\n'),
   });

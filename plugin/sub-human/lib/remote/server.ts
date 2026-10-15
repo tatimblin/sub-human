@@ -71,7 +71,9 @@
  *       seats is sent as the private 'handoff' event.
  *         ping       {pong: the host's ms}: the link daemon's heartbeat (lib/remote/link.ts). A session whose hello
  *                    carried caps {ping: true} and that then sends no frame for silentMs (LINK_SILENT_MS) is closed:
- *                    the peer is gone (a half-open link after a sleep)
+ *                    the peer is gone (a half-open link after a sleep). A web session (via ws) that has made no
+ *                    link within authMs (LINK_AUTH_WAIT_MS, 10 s) of its start is closed: a Noise handshake anyone
+ *                    can make holds a serve process no longer
  *       Quotas (lib/config.ts LINK_QUOTAS, lib/remote/quota.ts): before each op, its count: hello per connection (and
  *       per link once it has one), join and leave (seat), subscribe and a new blob.put per link in the host document
  *       remote/quota, beat, blob.get, ping and handoff.* per connection; over one is RATE QUOTA.
@@ -100,7 +102,7 @@ import type { Reason } from '../reasons.ts';
 import { machineIn } from '../home.ts';
 import * as options from '../room/options.ts';
 import {
-  FOLLOW_POLL_MS, REPLAY_BATCH, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_FRAME_MAX_BYTES,
+  FOLLOW_POLL_MS, REPLAY_BATCH, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_FRAME_MAX_BYTES, LINK_AUTH_WAIT_MS,
 } from '../config.ts';
 import type {
   CodedError, DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpParams, OpResults, ProtoRange,
@@ -427,6 +429,7 @@ class Session {
   silentMs: number;
   heard: number;
   silence: NodeJS.Timeout | null;
+  unlinked: NodeJS.Timeout | null = null;
   /** the challenge the last hello's reply handed out: the next hello's machine proof signs it (machine-key.ts proofFor) */
   challenge: string | null = null;
   constructor(transport: Transport, store: RoomStore, log: Log, linkId: string | null | undefined, silentMs: number, {
@@ -522,9 +525,23 @@ class Session {
     return true;
   }
 
+  /** A web session closes unless a hello made it a link within ms (anyone can complete a Noise handshake). */
+  expireUnlinked(ms: number): void {
+    if (!(ms > 0)) return;
+    this.unlinked = setTimeout(() => {
+      if (this.link) return;
+      this.log(`sub-human serve: no link ${ms} ms after the connection began; closing it`);
+      this.stop();
+      this.transport.close();
+    }, ms);
+    this.unlinked.unref();
+  }
+
   stop(): void {
     clearInterval(this.silence ?? undefined);
     this.silence = null;
+    clearTimeout(this.unlinked ?? undefined);
+    this.unlinked = null;
     for (const st of [...this.streams]) st.stop();
   }
 }
@@ -534,10 +551,11 @@ class Session {
  * @param {{store: import('../room/store.ts').FsRoomStore, log?: (...a: any[]) => void, linkId?: string, login?: boolean, via?: 'ws' | null, peer?: string | null, silentMs?: number, proto?: {min: number, max: number}, version?: string}} ctx
  * @returns {{close(): void}}
  */
-function serve(transport: Transport, { store, log = () => {}, linkId, login = false, via = null, peer = null, silentMs = LINK_SILENT_MS, proto, version }: {
-  store: RoomStore; log?: Log; linkId?: string; login?: boolean; via?: 'ws' | null; peer?: string | null; silentMs?: number; proto?: ProtoRange; version?: string;
+function serve(transport: Transport, { store, log = () => {}, linkId, login = false, via = null, peer = null, silentMs = LINK_SILENT_MS, authMs = LINK_AUTH_WAIT_MS, proto, version }: {
+  store: RoomStore; log?: Log; linkId?: string; login?: boolean; via?: 'ws' | null; peer?: string | null; silentMs?: number; authMs?: number; proto?: ProtoRange; version?: string;
 }): { close(): void; revoked(): boolean } {
   const session = new Session(transport, store, log, linkId, silentMs, { proto, version, login, via, peer });
+  if (via === 'ws') session.expireUnlinked(authMs);
   return { close() { session.stop(); transport.close(); }, revoked: () => session.revoked() };
 }
 

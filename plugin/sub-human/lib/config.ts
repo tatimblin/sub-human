@@ -165,6 +165,9 @@ export const LINK_PING_MS = 15_000;            // SUB_HUMAN_LINK_PING_MS
 export const LINK_PONG_MS = 5000;              // SUB_HUMAN_LINK_PONG_MS
 export const LINK_DEAD_MS = 10_000;            // SUB_HUMAN_LINK_DEAD_MS
 export const LINK_SILENT_MS = 45_000;          // server side: 3 pings missed
+// A web session (lib/remote/server.ts, via ws) that has made no link this long after it began is closed: a Noise
+// handshake alone (anyone can make one) holds a serve process no longer than this.
+export const LINK_AUTH_WAIT_MS = 10_000;
 // Wake from sleep: a timer that ticks every LINK_WAKE_TICK_MS and finds the wall clock moved more than
 // LINK_WAKE_GAP_MS past the tick (or away from the monotonic clock) means the machine slept: redial at once.
 export const LINK_WAKE_TICK_MS = 2000;         // SUB_HUMAN_LINK_WAKE_TICK_MS
