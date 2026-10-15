@@ -7,7 +7,7 @@ import path from 'node:path';
 import { spawn, execFileSync, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import * as h from './helpers.ts';
-import * as cc from '../lib/cc.ts';
+import * as cc from '../lib/cc/env.ts';
 import * as config from '../lib/config.ts';
 import { SHIM_TIMEOUT_MS } from '../mod/core/shim.ts';
 import type { ToolDefinition } from '../mcp/types.ts';

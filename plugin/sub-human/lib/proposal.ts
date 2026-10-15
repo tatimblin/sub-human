@@ -81,7 +81,7 @@ import * as session from './room/session.ts';
 import { writeFileAtomic } from './io.ts';
 import { clip, oneLine, hash12, HASH_RE } from './text.ts';
 import * as config from './config.ts';
-import * as cc from './cc.ts';
+import * as cc from './cc/env.ts';
 import { NEXT, showNote } from './consent/review.ts';
 import type { Card, Confirm, Proposal, Review } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, ProposalState, Trust } from './room/types.ts';

@@ -79,7 +79,7 @@
  *   lastSeat(sid) -> {code, name, role}|null   the seat a session id last held, left or not (for --resume)
  *   localSeats(code) -> [name]           this machine's seats in code that a live claude process holds, by the
  *                                        session indexes (resolveByPid): what a mirror knows while its link is down
- *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set; lib/cc.ts)
+ *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set; lib/cc/env.ts)
  *   adoptLocalSeats(code) -> [name]      after this machine became the room's host (lib/handoff.ts): its seats' records
  *                                        get back pid, pid_start and session_id from the session indexes (a mirror's
  *                                        members document never held them), so they resolve here as host seats
@@ -120,7 +120,7 @@ import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS, SESSION_INDEX_TTL_MS } from './config
 import {
   seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE,
 } from './room/members.ts';
-import * as cc from './cc.ts';
+import * as cc from './cc/env.ts';
 import type { JoinResult, Member, Members, MembersApi, PresenceState, Role, SeatRecord } from './room/types.ts';
 
 /** A resolved seat (resolveBySession, resolveByPid, resolveSelf): address = NAME.CODE, the session title. */

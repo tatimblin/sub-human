@@ -42,7 +42,8 @@ export const OPEN: Readonly<Record<string, OpenVerb>> = Object.freeze({ help, do
 export type Session = Omit<Ctx, 'pid' | 'cur'> & { pid: number | null; seat(): Identity | null };
 
 export function noModule(pid: number | null): string {
-  const cc: typeof import('../cc.ts') = require('../cc.ts');
+  const cc: typeof import('../cc/contract.ts') & typeof import('../cc/bg.ts') & typeof import('../cc/env.ts') =
+    { ...require('../cc/contract.ts'), ...require('../cc/bg.ts'), ...require('../cc/env.ts') };
   let v: string | null = null;
   try { v = cc.runningVersion(pid); } catch { /* unknown */ }
   if (v && (cc.compareVersions(v, cc.MIN_VERSION) ?? 0) < 0) return `sub-human needs Claude Code ${cc.MIN_VERSION} or newer, and this is ${v}. Update it (claude update), restart claude, then type /sub-human again.`;

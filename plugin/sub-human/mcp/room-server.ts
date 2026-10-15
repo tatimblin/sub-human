@@ -52,7 +52,7 @@ import path from 'node:path';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as proposal from '../lib/proposal.ts';
-import * as cc from '../lib/cc.ts';
+import * as cc from '../lib/cc/env.ts';
 import { cliCmd } from '../lib/text.ts';
 import { createRequire } from 'node:module';
 import type { Entry, EntryInput } from '../lib/room/types.ts';

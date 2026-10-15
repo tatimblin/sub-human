@@ -74,10 +74,11 @@ import * as room from './room.ts';
 import { readJson } from './io.ts';
 import * as config from './config.ts';
 import * as clock from './clock.ts';
-import * as cc from './cc.ts';
+import * as cc from './cc/bg.ts';
+import * as ccEnv from './cc/env.ts';
 import type { Member, Members } from './room/types.ts';
 import type { RoomClaudePatch } from './identity.ts';
-import type { AgentJob } from './cc.ts';
+import type { AgentJob } from './cc/bg.ts';
 
 /** What spawnPlan builds a launch from. */
 interface PlanOpts {
@@ -114,7 +115,7 @@ const ENDED = new Set(['done', 'failed', 'stopped']);
 
 const claudeBin = () => process.env.SUB_HUMAN_CLAUDE || 'claude';
 const taskListId = (code: string) => `sh-${code}`;
-const tasksDir = (code: string): string => cc.tasksDir(taskListId(code));
+const tasksDir = (code: string): string => ccEnv.tasksDir(taskListId(code));
 const iso = (ms: number) => new Date(ms).toISOString();
 const claimMs = () => config.ROOM_CLAUDE_CLAIM_MS;
 const orphanMsDefault = () => config.envMs('SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS', config.ROOM_CLAUDE_ORPHAN_MS);
@@ -139,7 +140,7 @@ function pluginDirFor(root: string = process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_RO
   if (process.env.SUB_HUMAN_PLUGIN_DIR !== undefined) return process.env.SUB_HUMAN_PLUGIN_DIR || null;
   let real = root;
   try { real = fs.realpathSync(root); } catch { /* as given */ }
-  const installed = [path.join(cc.configDir(), 'plugins'), path.join(os.homedir(), '.claude', 'plugins')]
+  const installed = [path.join(ccEnv.configDir(), 'plugins'), path.join(os.homedir(), '.claude', 'plugins')]
     .some(d => real.startsWith(d + path.sep) || root.startsWith(d + path.sep));
   return installed ? null : root;
 }

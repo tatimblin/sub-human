@@ -11,7 +11,8 @@
  *   hooks        hooks/hooks.json: event, matcher, script, timeout, async
  *   mod-hooks    the hooks module's function hooks: mod/register.ts HOOKS (event, matcher, file, what it does)
  *   mcp-tools    the room MCP server's tools/list (spawned for real, so plug-ins are included)
- *   cc-contract  lib/cc.ts CONTRACT: id, internals-doc section, stability, note
+ *   cc-contract  lib/cc/contract.json: id, internals-doc section, stability, the versions it was checked on, note
+ *                (and a version it was reported to change on)
  *   lib-modules  lib/**.ts (and lib's .js): each module's header comment, first sentence
  *
  *   generate() -> Promise<{name: markdown}>    render(doc, sections) -> doc    DOC (the doc's path)
@@ -115,9 +116,10 @@ async function mcpSection() {
 
 // ---------- cc contract ----------
 function ccSection() {
-  const { CONTRACT } = require(path.join(PLUGIN, 'lib', 'cc.ts'));
-  const rows = CONTRACT.map(c => [code(c.id), `§${c.section}`, c.stability, cell(c.note)]);
-  return table(['Id', '§', 'Stability', 'Note'], rows);
+  const { probed, entries } = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'lib', 'cc', 'contract.json'), 'utf8'));
+  const degraded = c => (c.degraded || []).map(d => ` **Reported changed from ${d.from}${d.issue ? ` (#${d.issue})` : ''}:** ${d.note}`).join('');
+  const rows = entries.map(c => [code(c.id), `§${c.section}`, c.stability, `${c.since}–${probed}`, cell(c.note + degraded(c))]);
+  return table(['Id', '§', 'Stability', 'Checked on', 'Note'], rows);
 }
 
 // ---------- lib modules ----------

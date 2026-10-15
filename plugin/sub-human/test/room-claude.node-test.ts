@@ -9,10 +9,10 @@ import { spawnSync, spawn as sp } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as identity from '../lib/identity.ts';
 import * as roomClaude from '../lib/room-claude.ts';
-import * as cc from '../lib/cc.ts';
+import * as cc from '../lib/cc/bg.ts';
 import * as config from '../lib/config.ts';
 import * as room from '../lib/room.ts';
-import type { AgentJob } from '../lib/cc.ts';
+import type { AgentJob } from '../lib/cc/bg.ts';
 
 /** One call the stub claude recorded. */
 interface StubCall { argv: string[]; env: Record<string, string>; cwd: string }

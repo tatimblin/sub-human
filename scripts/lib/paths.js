@@ -21,7 +21,7 @@ const pluginLib = name => require(path.join(PLUGIN, 'lib', name));
 const pluginTest = name => require(path.join(PLUGIN, 'test', name));
 
 const DEMO_BASE = '/tmp/sh-demo';
-// required on first use, so a script that needs only one lib (probe-cc: cc.ts) loads only that one
+// required on first use, so a script that needs only one lib (probe-cc: cc/contract.ts) loads only that one
 const home = () => pluginLib('identity.ts').home();
 const demoHome = () => process.env.SUB_HUMAN_HOME || path.join(DEMO_BASE, 'home');
 const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');

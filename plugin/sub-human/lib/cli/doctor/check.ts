@@ -26,7 +26,9 @@ interface Libs {
   'text.ts': typeof import('../../text.ts');
   'home.ts': typeof import('../../home.ts');
   'io.ts': typeof import('../../io.ts');
-  'cc.ts': typeof import('../../cc.ts');
+  'cc/contract.ts': typeof import('../../cc/contract.ts');
+  'cc/env.ts': typeof import('../../cc/env.ts');
+  'cc/bg.ts': typeof import('../../cc/bg.ts');
   'config.ts': typeof import('../../config.ts');
   'identity.ts': typeof import('../../identity.ts');
   'room/links.ts': typeof import('../../room/links.ts');

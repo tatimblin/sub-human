@@ -113,7 +113,7 @@ import * as identity from '../identity.ts';
 import * as room from '../room.ts';
 import * as tasks from '../tasks.ts';
 import * as config from '../config.ts';
-import * as cc from '../cc.ts';
+import * as cc from '../cc/env.ts';
 import * as tailLib from '../tail.ts';
 import * as statusline from '../../statusline/index.ts';
 import { readInput } from '../io.ts';

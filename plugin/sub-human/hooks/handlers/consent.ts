@@ -57,7 +57,8 @@ let c!: C;
 let proposal!: typeof import('../../lib/proposal.ts');
 let review!: typeof import('../../lib/consent/review.ts');
 let card!: typeof import('../../lib/consent/card.ts');
-let cc!: typeof import('../../lib/cc.ts');
+let cc!: typeof import('../../lib/cc/transcript.ts');
+let ccEnv!: typeof import('../../lib/cc/env.ts');
 let writeFileAtomic!: typeof import('../../lib/io.ts')['writeFileAtomic'];
 let config!: typeof import('../../lib/config.ts');
 let handoff!: typeof import('../../lib/handoff.ts');
@@ -72,7 +73,8 @@ function load() {
   proposal = require('../../lib/proposal.ts');
   review = require('../../lib/consent/review.ts');
   card = require('../../lib/consent/card.ts');
-  cc = require('../../lib/cc.ts');
+  cc = require('../../lib/cc/transcript.ts');
+  ccEnv = require('../../lib/cc/env.ts');
   ({ writeFileAtomic } = require('../../lib/io.ts') as typeof import('../../lib/io.ts'));
   config = require('../../lib/config.ts');
   handoff = require('../../lib/handoff.ts');
@@ -106,7 +108,7 @@ function record(me: Identity, hash: string, a: { choice: 'Agree' | 'Object'; not
 // ---------- facts ----------
 const REVIEW_MODES = ['default', 'acceptEdits', 'auto'];
 /** The clear-context approve option fires no PostToolUse and starts implementing: no review then. */
-const reviewable = (input: ConsentIn) => REVIEW_MODES.includes(String(input.permission_mode)) && !cc.clearContextOnPlanAccept(input.cwd);
+const reviewable = (input: ConsentIn) => REVIEW_MODES.includes(String(input.permission_mode)) && !ccEnv.clearContextOnPlanAccept(input.cwd);
 
 /** The transcript's lines, read once per hook run (the tail: the review is always recent). */
 function lines(input: ConsentIn): string[] {
