@@ -16,7 +16,12 @@ import * as config from '../../lib/config.ts';
 import type { HookIn, Reply } from '../types.ts';
 import type { Identity } from '../../lib/identity.ts';
 
-const LEAD = 'sub-human: this session was resumed and its rows did not survive it. Re-create them now, exactly as written:\n';
+/** The model is told plainly that the rows are not running: after a resume the conversation still lists the old
+ * process's background tasks as running, and a model that trusts that list restores nothing (seen live). The hold
+ * check (rows.readHolds: a live, fresh hold of this process) is what says they are gone. */
+const LEAD = 'sub-human: this session was resumed, and its rows are NOT running: they ended with the old process. '
+  + 'The conversation may still list them as running; that list is from before the resume (the hooks checked: no row holds). '
+  + 'Re-create them now, exactly as written:\n';
 const TAIL = '\nWrite no text: make only these calls and end your turn.';
 const WAIT_MS = config.envMs('SUB_HUMAN_REWAKE_WAIT_MS', config.REWAKE_WAIT_MS, { allowZero: true });
 

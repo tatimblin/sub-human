@@ -233,7 +233,12 @@ test('row-rewake: a resumed member with no room row -> exit 2 with the room-row 
   assert.equal(r.stdout, '');
   assert.ok(r.stderr.includes(rows.roomCall(code, ['bob'])), r.stderr);
   assert.match(r.stderr, /resumed/);
+  assert.match(r.stderr, /its rows are NOT running/, 'said plainly: a model trusting the old task list restored nothing');
+  assert.match(r.stderr, /may still list them as running; that list is from before the resume/);
   assert.match(r.stderr, /Write no text/);
+  // a live hold of this process: nothing to restore, no wake
+  rows.writeHolds(code, 'alice', { room: true });
+  assert.equal(rewake('sid-alice').code, 0);
 });
 
 test('row-rewake: a resumed claude gets only the missing participant rows', () => {
