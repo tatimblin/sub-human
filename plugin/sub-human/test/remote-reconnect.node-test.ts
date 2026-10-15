@@ -381,12 +381,19 @@ test('link: a seat whose lease lapsed on the host during the outage is renewed o
 });
 
 test('link: an old server (no ping in its caps) is never pinged; the state file is links/<code>.state.json', async t => {
-  const r = await rig(t, { serverCaps: { ops: protocol.OPS.filter(o => o !== 'ping') } });
-  const l = await r.start({ writeState: undefined });
-  t.after(() => l.stop('done'));
-  await h.until(() => l.state() === 'online', 3000, 5);
-  await h.sleep(FAST.pingMs * 4);
-  assert.equal(r.pings.n, 0);
+  // on a fake clock: four ping intervals pass at once, and the same advance pings a server that has ping
+  const pinged = async (serverCaps?: { ops: string[] }) => {
+    const r = await rig(t, serverCaps ? { serverCaps } : {});
+    const c = clock.createFake({ now: Date.now() });
+    const l = await r.start({ writeState: undefined, clock: c });
+    t.after(() => l.stop('done'));
+    await h.until(() => l.state() === 'online', 3000, 5);
+    await c.advanceAsync(FAST.pingMs * 4);
+    return { r, n: r.pings.n };
+  };
+  assert.ok((await pinged()).n > 0, 'a server with ping in its caps is pinged on the same clock');
+  const { r, n } = await pinged({ ops: protocol.OPS.filter(o => o !== 'ping') });
+  assert.equal(n, 0);
   const st = links.readState(r.code)!;
   assert.deepEqual([st.state, st.attempt, st.lastError, st.rttMs, st.queued, st.pid, st.detail], ['online', 0, null, null, 0, process.pid, 'online']);
   assert.ok(Date.parse(st.since!) <= Date.parse(st.at!));
