@@ -228,7 +228,7 @@ export interface PeerVersion { version?: string | null; proto: ProtoRange }
 /** Lifecycle fields any invite record may carry. */
 interface InviteLife {
   created_at: string;
-  /** The link id it redeemed to (an admission's: the one its enrollment reserved, the door's forced command names). */
+  /** The link id it redeemed to (an admission's: the one its PIN reserved; over ssh, the login's --link). */
   link?: string;
   used_at?: string;
   burnt_at?: string;

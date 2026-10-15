@@ -227,7 +227,7 @@ function linkIdOf(store: RoomStore, target: string): string {
   const hits = Object.values(all).filter(l => Array.isArray(l.seats) && l.seats.includes(target));
   if (hits.length === 1) return hits[0].id;
   if (hits.length > 1) throw new RoomError('INVALID', `${target} joined over ${hits.length} connections; ask them to leave the extra one, then kick again`);
-  // a short code's joiner not linked yet (waiting for the card, or let in and not connected): its reserved link
+  // an invite's joiner not linked yet (waiting for the card, or let in and not connected): its reserved link
   const asked = admission.admissions(store, { all: true }).filter(a => a.name === target && !a.used_at && !a.burnt_at);
   if (asked.length === 1) return asked[0].link;
   throw new RoomError('INVALID', `nobody called "${target}" joined room ${store.code} from another machine`);

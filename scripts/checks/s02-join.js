@@ -49,7 +49,8 @@ module.exports = {
 
 /**
  * --film: B joined from another machine (her own sub-human home, x.remote[B]) over ssh to the private sshd
- * (scripts/devbox.sh, in DEVBOX next to her machine's dir): the link, the card, her seat over the link, the PIN.
+ * (scripts/devbox.sh, in DEVBOX next to her machine's dir) through her own ssh login: the link, nothing of the
+ * plugin's in authorized_keys, the card, her seat over the link, the SECRET and the PIN kept from every Claude.
  */
 function remoteJoin(x, det, j) {
   const { code, A, B, log } = x;
@@ -57,12 +58,14 @@ function remoteJoin(x, det, j) {
   const devbox = path.join(path.dirname(path.dirname(rh)), 'devbox');
   const lf = readJson(path.join(rh, 'links', `${code}.json`), null);
   const t = (lf && lf.transport) || {};
-  const pinned = readText(t.knownHosts || '') || '';
-  const hostKey = (readText(path.join(devbox, 'ssh_host_ed25519_key.pub')) || '').trim().split(/\s+/).slice(0, 2).join(' ');
-  det(`${B}'s machine is linked over ssh: her links registry holds an ssh link to devbox, let in (a token, no PIN), pinned to devbox's sshd host key`,
-    t.kind === 'ssh' && t.host === 'devbox' && lf && typeof lf.token === 'string' && !lf.enroll && !!hostKey && pinned.trim() === `${t.alias} ${hostKey}`,
-    lf ? `transport ${t.kind} to ${t.host}${t.port ? `:${t.port}` : ''}; token ${typeof lf.token === 'string' ? 'yes' : 'no'}; PIN ${lf.enroll ? 'still in the file' : 'dropped'}; known_hosts ${pinned.trim() === `${t.alias} ${hostKey}` ? 'pins devbox\'s host key' : hostKey ? 'does NOT pin devbox\'s host key' : `(no ${devbox}/ssh_host_ed25519_key.pub)`}`
+  const own = t.kind === 'ssh' && t.login === true && !t.key && !t.knownHosts; // her own ssh login: nothing of the plugin's pinned or let in
+  det(`${B}'s machine is linked over her own ssh login to devbox: her links registry holds a login link, let in (a token, no SECRET or PIN left), with no key or known_hosts of the plugin's`,
+    t.kind === 'ssh' && t.host === 'devbox' && own && lf && typeof lf.token === 'string' && lf.invite === undefined && lf.pin === undefined && !lf.pin_wanted,
+    lf ? `transport ${t.kind} to ${t.host}${t.port ? `:${t.port}` : ''} (${t.login === true ? 'her ssh login' : 'not a login link'}${t.key || t.knownHosts ? '; a key or known_hosts of the plugin\'s' : ''}); token ${typeof lf.token === 'string' ? 'yes' : 'no'}; SECRET ${lf.invite === undefined ? 'dropped' : 'still in the file'}; PIN ${lf.pin === undefined ? 'dropped' : 'still in the file'}`
       : `no ${path.join(rh, 'links', `${code}.json`)}`);
+  const ak = readText(path.join(devbox, '.ssh', 'authorized_keys')) || '';
+  det('Nothing of sub-human\'s in devbox\'s authorized_keys: no door, no forced command (her login key is the only line)',
+    !/sub-human/.test(ak), `${ak.split('\n').filter(Boolean).length} line(s); ${/sub-human/.test(ak) ? 'a sub-human line' : 'none of sub-human\'s'}`);
 
   // the card: only the host person's own answer on it lets a machine in (hooks/handlers/consent.ts postAdmit), signed with A's seat key
   const envelope = paths.pluginLib('room/envelope.ts');
@@ -83,24 +86,28 @@ function remoteJoin(x, det, j) {
     j && hers && j.machine === hers && j.machine !== host && linked && linked.id < j.id,
     `${x.fmt(j)}; machine ${j ? j.machine : '?'} (hers ${hers || 'unknown'}, host ${host || 'not saved'}); ${x.fmt(linked)}`);
 
-  // the PIN: the hook shows it to A and takes it from B; no Claude ever gets it. A's transcript keeps the invite's
-  // lines as display rows (type system, the dim "sub-human: …" lines A saw; Claude Code never sends those to the
-  // model); any other entry holding "ROOM PIN" (a prompt, a meta copy, an answer, a tool call) is a leak
+  // the SECRET and the PIN: the hook shows them to A and takes them from B; no Claude ever gets either. A's transcript
+  // keeps the invite's lines as display rows (type system, the dim "sub-human: …" lines A saw; Claude Code never sends
+  // those to the model); any other entry holding the SECRET or "join PIN" (a prompt, a meta copy, an answer, a tool
+  // call) is a leak
   const shown = (readText(x.stateFile('S2', 'join-line.txt')) || '').trim();
-  const pin = (/ (\d{4})$/.exec(shown) || [])[1];
-  const needle = `${code} ${pin}`;
+  const secret = (/ ([0-9a-z]{39})(?: |$)/.exec(shown) || [])[1];
+  const pin = (readText(x.stateFile('S2', 'join-pin.txt')) || '').trim();
+  const needles = secret && /^\d{4}$/.test(pin) ? [secret, `join ${pin}`] : [];
   const files = [...new Set([A, B].flatMap(s => jsonlUnder(paths.seatProjectDir(s))).concat(x.seatFiles('claude')))];
   let display = 0;
   const leaked = [];
-  for (const f of pin ? files : []) {
-    if (!(readText(f) || '').includes(needle)) continue;
+  for (const f of needles.length ? files : []) {
+    const text = readText(f) || '';
+    if (!needles.some(n => text.includes(n))) continue;
     for (const e of jsonl(f)) {
-      if (!JSON.stringify(e).includes(needle)) continue;
+      const j = JSON.stringify(e);
+      if (!needles.some(n => j.includes(n))) continue;
       if (e.type === 'system') display++; else leaked.push(`${path.basename(f)} ${e.type}${e.isMeta ? ' (meta)' : ''}`);
     }
   }
-  det('The PIN reached no Claude: no model-bound entry in any transcript (either seat, their subagents, the room\'s Claude) holds the invite\'s "ROOM PIN"', !!pin && leaked.length === 0,
-    pin ? `${files.length} transcript file(s) read; ${leaked.length ? `in ${leaked.slice(0, 4).join(', ')}` : 'in none'}; ${display} display-only row(s) (the invite ${A} saw)` : 'state/S2/join-line.txt not saved');
+  det('The SECRET and the PIN reached no Claude: no model-bound entry in any transcript (either seat, their subagents, the room\'s Claude) holds the line\'s SECRET or "join PIN"', needles.length > 0 && leaked.length === 0,
+    needles.length ? `${files.length} transcript file(s) read; ${leaked.length ? `in ${leaked.slice(0, 4).join(', ')}` : 'in none'}; ${display} display-only row(s) (the invite ${A} saw)` : 'state/S2/join-line.txt or join-pin.txt not saved');
 }
 
 /** Every .jsonl under dir (a seat's transcripts and its subagents'). */

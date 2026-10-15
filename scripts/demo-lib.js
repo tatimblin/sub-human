@@ -48,7 +48,9 @@
  *   demo-lib.js latest-plan                       print the latest plan_rev hash
  *   demo-lib.js readonly <session>                exit 0 if a read-only client is attached
  *   demo-lib.js join-line <session>               print the line /sub-human invite showed in that pane, without its
- *                                                  "/sub-human " ("join DEST ROOM PIN"; exit 1: none)
+ *                                                  "/sub-human " ("join DEST ROOM SECRET [--home H]"; exit 1: none)
+ *   demo-lib.js join-pin <session>                print the PIN /sub-human invite showed apart from that line (exit 1:
+ *                                                  none)
  *   demo-lib.js admit-card <session> [--timeout S]   wait for the host's join-request card in that pane and answer
  *                                                  "Let in" on it (the person's own answer; S11)
  *   demo-lib.js wait-idle <session> [--timeout S] [--quiet S]   wait until the main prompt is idle (no
@@ -96,7 +98,7 @@ const { execFileSync, spawn, spawnSync } = require('node:child_process');
 const { roomCode, readLog, strip } = require('./snap.js');
 const paths = require('./lib/paths.js');
 const { readJson, jsonl, esc } = require('./lib/io.js');
-const { panelRows, subagentRows, cardState, planState, joinLineIn, admitCardState } = require('./lib/panes.js');
+const { panelRows, subagentRows, cardState, planState, joinLineIn, pinIn, admitCardState } = require('./lib/panes.js');
 
 const REPO = paths.REPO;
 const SNAP_DIR = () => (process.env.SNAP_DIR ? path.resolve(process.env.SNAP_DIR) : path.join(REPO, 'docs/rebuild/screens'));
@@ -723,6 +725,7 @@ const COMMANDS = {
   readonly: async o => exit(readonlyAttached(o._[0])),
   pane: async o => { process.stdout.write(pane(o._[0])); return 0; },
   'join-line': async o => { const l = joinLineIn(pane(o._[0])); if (l) process.stdout.write(l + '\n'); return exit(!!l); },
+  'join-pin': async o => { const p = pinIn(pane(o._[0])); if (p) process.stdout.write(p + '\n'); return exit(!!p); },
   'admit-card': admitCard,
   'wait-pane': waitPane,
   'wait-paint': waitPaint,

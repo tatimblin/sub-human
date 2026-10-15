@@ -39,7 +39,7 @@ interface ToolResponse extends CardResponse { plan?: unknown; planWasEdited?: un
 /** Every event consent handles (PreToolUse, PostToolUse, PermissionRequest, Stop, UserPromptSubmit), with the
  * transcript's lines once read (lines()). */
 type ConsentIn = Omit<AnyHookIn, 'tool_input'> & { tool_input?: ConsentToolInput; _lines?: string[] | null };
-/** A short code's join request waiting on the host (lib/remote/admission.ts pending). */
+/** An invite's join request waiting on the host (lib/remote/admission.ts pending). */
 type JoinRequest = ReturnType<typeof import('../../lib/remote/admission.ts')['pending']>[number];
 
 // The rest of this file's modules load only past the quiet exit in handle(), so they are required (createRequire:

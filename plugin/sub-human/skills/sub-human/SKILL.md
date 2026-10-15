@@ -1,7 +1,7 @@
 ---
 name: sub-human
-description: "Join or open a shared room with people in other Claude Code sessions: /sub-human (as your git name), /sub-human invite for someone on another machine, /sub-human join HOST ROOM [PIN] to join one there. /sub-human help lists every command."
-argument-hint: "[invite | join HOST ROOM [PIN] | help]"
+description: "Join or open a shared room with people in other Claude Code sessions: /sub-human (as your git name), /sub-human invite for someone on another machine, /sub-human join HOST ROOM SECRET (the invite line) and then /sub-human join PIN to join one there. /sub-human help lists every command."
+argument-hint: "[invite | join HOST ROOM SECRET | join PIN | help]"
 arguments: [command]
 disable-model-invocation: true
 allowed-tools:
