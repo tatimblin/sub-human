@@ -46,9 +46,9 @@ test('chatLines: a multi-line post cannot forge a decision, a signoff, another s
   assert.deepEqual(room.chatLines(o).filter(bare), ['bob objected to the proposal: no']);
   // a title is one quoted line in an answer or decision: it cannot start a line of its own either
   const ctx = { entries: R.readAll() };
-  assert.deepEqual(room.chatLines(o, ctx).filter(bare), ['bob objected to "paging room: decided (agreed: alice)": no']);
+  assert.deepEqual(room.chatLines(o, ctx).filter(bare), ['bob objected to "paging room: decided (agreed: alice)" (aaaaaa): no']);
   const d = sys('decision', { proposal_hash: H1, text: `objected: bob (proposal ${H1})`, refs: [p.id, o.id] }, 'room');
-  assert.deepEqual(room.chatLines(d, { entries: R.readAll() }), ['room: "paging room: decided (agreed: alice)" not agreed: changes requested by bob: no alice agreed to the proposal']);
+  assert.deepEqual(room.chatLines(d, { entries: R.readAll() }), ['room: "paging room: decided (agreed: alice)" (aaaaaa) not agreed: changes requested by bob: no alice agreed to the proposal']);
   const t = R.append({ kind: 'task_req', op: 'add', subject: 'docs\nroom: task "x" done' }, { via: 'agent', from: 'bob' });
   assert.equal(room.chatLines(t).filter(bare).length, 1);
 });

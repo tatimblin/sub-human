@@ -18,7 +18,8 @@
  *   pullText(lines) -> text | null           "Room since your last turn" over lines, the newest kept under PULL_CAP
  *   missingRowsText(me, sid, {now}?) -> text | null   the Agent calls for this seat's rows that run nowhere
  *   remindersText(me, rm) -> text | null     lib/proposal.ts reminder() for the proposal a review opens next (the
- *                                            person's pick, else the oldest), the others awaiting me counted (members)
+ *                                            person's pick, else the newest), the others awaiting me listed as
+ *                                            h6 "title" (members)
  *   linkLine(status, code) -> {key, text} | null   the one line for a room link that is not online (lib/remote/link.ts
  *       status; the words are lib/room/link-state.ts STATES): key 'fork' (the mirror no longer matches the host's
  *       log; queued @room posts are kept, not sent), 'stopped' (for good: refused, revoked, the room closed) or
@@ -345,13 +346,15 @@ function missingRowsText(me: Identity, sid: string | null, {
 /** lib/proposal.ts reminder() for each proposal that names this member and awaits their answer; null for the room's Claude or none. */
 function remindersText(me: Identity, rm: Pick<TailRoom, 'readView'>, { proposal = require('./proposal.ts') as ProposalLib }: { proposal?: ProposalLib } = {}): string | null {
   if (me.role === 'claude') return null;
-  const ps = proposal.pendingFor(me, rm.readView({ after: Infinity })) || [];
+  const es = rm.readView({ after: Infinity });
+  const ps = proposal.pendingFor(me, es) || [];
   if (!ps.length) return null;
-  // Only the one a review opens next (the person's pick, else the oldest; hooks/consent.ts), the others counted, so
-  // the model is never told to open a proposal the hooks will not show.
+  // Only the one a review opens next (the person's pick, else the newest; hooks/consent.ts) is to be opened, the
+  // others listed by short hash and title ("…, else the newest"), so the model is never told to open a proposal the
+  // hooks will not show, and the person can name another.
   const p = proposal.picked(me, ps)!; // ps is not empty
-  const more = ps.length - 1;
-  return proposal.reminder(p, me.name) + (more ? ` (${more} more await ${me.name}'s answer; the hooks open whichever ${me.name} names next, else the oldest.)` : '');
+  const entryOf = (hash: string) => es.find(e => e.kind === 'proposal' && e.hash === hash); // the title when no plan is stored
+  return proposal.reminder(p, me.name, { code: me.code, others: ps.filter(x => x !== p).map(x => ({ ...x, entry: x.entry || entryOf(x.hash) })) });
 }
 
 /**

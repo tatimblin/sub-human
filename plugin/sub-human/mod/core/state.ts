@@ -11,7 +11,7 @@
  */
 import type { Hello } from './types.ts';
 
-export const KEYS = Object.freeze(['hello', 'reviewMaybeOpen', 'rows', 'titled', 'deliveryErrors', 'nonce']);
+export const KEYS = Object.freeze(['hello', 'reviewMaybeOpen', 'rows', 'rowsInjected', 'titled', 'deliveryErrors', 'nonce']);
 
 // the value is the module's own (sayHello stores only a parsed hello), so an object is taken as one
 export const asHello = (value: unknown): Hello | null => (value && typeof value === 'object' ? value as Hello : null);

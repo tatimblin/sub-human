@@ -281,7 +281,7 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.deepEqual(C(sys('member_joined', { text: 'bob joined' }, 'bob')), ['bob joined']);
   assert.deepEqual(C(sys('member_joined', { text: 'bob rejoined (resumed)' }, 'bob')), ['bob rejoined']);
   assert.deepEqual(C(sys('member_left', { text: 'bob left (prompt_input_exit)' }, 'bob')), ['bob left']);
-  assert.deepEqual(C(R.append({ kind: 'proposal', text: `proposal ${H1}: cursor paging`, hash: H1, approvers: ['alice'] }, { via: 'agent', from: 'claude' })), ['claude proposed: cursor paging']);
+  assert.deepEqual(C(R.append({ kind: 'proposal', text: `proposal ${H1}: cursor paging`, hash: H1, approvers: ['alice'] }, { via: 'agent', from: 'claude' })), ['claude proposed: cursor paging (aaaaaa)']);
   assert.deepEqual(C(R.append({ kind: 'objection', proposal_hash: H1, text: 'add the 400 test' }, { via: 'human', from: 'bob' })), ['bob objected to the proposal: add the 400 test']);
   assert.deepEqual(C(R.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' })), ['bob agreed to the proposal']);
   assert.deepEqual(C(sys('decision', { proposal_hash: H1, text: `agreed: alice, bob (proposal ${H1})` }, 'room')), ['room: decided (agreed: alice, bob)']);
@@ -289,18 +289,26 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   // with the log, an answer and a decision name their proposal by title (with two pending, which one was decided)
   const all = R.readAll();
   const W = (e, viewer = 'alice') => room.chatLines(e, { viewer, entries: R.readAll() });
-  assert.deepEqual(W(all.find(x => x.kind === 'signoff')), ['bob agreed to "cursor paging"']);
-  assert.deepEqual(W(all.find(x => x.kind === 'objection')), ['bob objected to "cursor paging": add the 400 test']);
-  assert.deepEqual(W(all.find(x => x.kind === 'decision')), ['room: "cursor paging" agreed (alice, bob)']);
+  assert.deepEqual(W(all.find(x => x.kind === 'signoff')), ['bob agreed to "cursor paging" (aaaaaa)']);
+  assert.deepEqual(W(all.find(x => x.kind === 'objection')), ['bob objected to "cursor paging" (aaaaaa): add the 400 test']);
+  assert.deepEqual(W(all.find(x => x.kind === 'decision')), ['room: "cursor paging" (aaaaaa) agreed (alice, bob)']);
   const p2 = R.append({ kind: 'proposal', text: `proposal ${H2}: Ship v3 Monday`, hash: H2, approvers: ['bob', 'carol'] }, { via: 'agent', from: 'alice' });
   const o2 = R.append({ kind: 'objection', proposal_hash: H2, text: 'keep status; clients depend on it' }, { via: 'human', from: 'bob' });
   const s2 = R.append({ kind: 'signoff', proposal_hash: H2 }, { via: 'human', from: 'carol' });
   const d2 = sys('decision', { proposal_hash: H2, text: `objected: bob · agreed: carol (proposal ${H2})`, refs: [p2.id, o2.id, s2.id] }, 'room');
-  assert.deepEqual(W(d2), ['room: "Ship v3 Monday" not agreed: changes requested by bob: keep status; clients depend on it · agreed: carol']);
+  assert.deepEqual(W(d2), ['room: "Ship v3 Monday" (bbbbbb) not agreed: changes requested by bob: keep status; clients depend on it · agreed: carol']);
   const o3 = R.append({ kind: 'objection', proposal_hash: H2 }, { via: 'human', from: 'dave' });
   const d3 = sys('decision', { proposal_hash: H2, text: `objected: dave (proposal ${H2})`, refs: [p2.id, o3.id] }, 'room');
-  assert.deepEqual(W(d3), ['room: "Ship v3 Monday" not agreed: changes requested by dave']);
+  assert.deepEqual(W(d3), ['room: "Ship v3 Monday" (bbbbbb) not agreed: changes requested by dave']);
   assert.deepEqual(C(d3), ['room: not agreed (objected: dave)'], 'without the log: no title');
+  // a revision (same sender, same title, the earlier one undecided) names what it replaces; another sender's does not
+  const H3 = 'cccccccccccc', H4 = 'dddddddddddd', H5 = 'eeeeeeeeeeee';
+  W(R.append({ kind: 'proposal', text: `proposal ${H3}: Rate limits`, hash: H3, approvers: ['bob'] }, { via: 'agent', from: 'alice' }));
+  const rev = R.append({ kind: 'proposal', text: `proposal ${H4}: Rate limits`, hash: H4, approvers: ['bob'] }, { via: 'agent', from: 'alice' });
+  assert.deepEqual(W(rev), ['alice\'s Claude proposed: Rate limits (dddddd)', `${room.CHAT_NEST}replaces "Rate limits" (cccccc)`]);
+  assert.deepEqual(C(rev), ['alice\'s Claude proposed: Rate limits (dddddd)'], 'without the log: no replaces line');
+  const twin = R.append({ kind: 'proposal', text: `proposal ${H5}: Rate limits`, hash: H5, approvers: ['alice'] }, { via: 'agent', from: 'bob' });
+  assert.deepEqual(W(twin), ['bob\'s Claude proposed: Rate limits (eeeeee)']);
   const long = human('bob', 'say', { text: 'y'.repeat(room.CHAT_MAX + 10) });
   const ls = C(long);
   assert.equal(ls.at(-1), `(for Claude) that message is cut at ${room.CHAT_MAX}/${room.CHAT_MAX + 10} chars; read({ids:[${long.id}]}) has all of it`);

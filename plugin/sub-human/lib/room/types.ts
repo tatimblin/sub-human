@@ -462,7 +462,7 @@ export interface ProposalStatus {
   proposal: ProposalState;
   decision: Entry | null;
   matrix: Matrix;
-  state: 'open' | 'agreed' | 'blocked';
+  state: 'open' | 'agreed' | 'blocked' | 'superseded';
 }
 
 /** consent.ts fold(entries): the one proposal / consent state. */
@@ -470,6 +470,8 @@ export interface Fold {
   proposals: Map<string, ProposalState>;
   answers: Map<string, Map<string, Answer>>;
   decisions: Map<string, Entry>;
+  /** hash -> the newer hash that retired it (same sender, same title, while undecided) */
+  superseded: Map<string, string>;
   answerOf(hash: string, name: string): Answer | null;
   matrix(hash: string, approvers?: string[]): Matrix;
   pending(name: string | null | undefined): ProposalState[];

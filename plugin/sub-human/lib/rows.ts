@@ -86,6 +86,7 @@ interface RowProposal {
   decided: number;
   agreed: number;
   objectors: string[];
+  superseded: boolean;
   name: string;
 }
 /** rowText's options. */
@@ -335,7 +336,8 @@ function fit(parts: (string | null | undefined | false)[]): string {
 
 /**
  * Proposals in log order (of their latest entry), from lib/room/consent.ts fold: {id, hash, approvers, verdict: {name:
- * {kind, id}} (approvers' current answers), decided (decision id or 0), agreed (count), objectors, name (title)}.
+ * {kind, id}} (approvers' current answers), decided (decision id or 0), agreed (count), objectors, superseded (a
+ * revision retired it), name (title)}.
  */
 function proposals(es: Entry[], code: string | null | undefined): RowProposal[] {
   const f = room.fold(es);
@@ -345,7 +347,7 @@ function proposals(es: Entry[], code: string | null | undefined): RowProposal[] 
     for (const n of fp.approvers) if (m.answers[n]) verdict[n] = m.answers[n];
     const d = f.decisions.get(fp.hash);
     return { id: fp.id, hash: fp.hash, from: fp.from, approvers: fp.approvers, verdict, decided: d ? d.id : 0,
-      agreed: m.agreed.length, objectors: m.objected, name: label(code, fp) };
+      agreed: m.agreed.length, objectors: m.objected, superseded: f.superseded.has(fp.hash), name: label(code, fp) };
   });
 }
 /** What a row calls a proposal: its title (lib/proposal.ts title), clipped; the short hash when it has none. */
@@ -356,10 +358,13 @@ function label(code: string | null | undefined, fp: { hash: string, entry?: Entr
 }
 /** A closed proposal: "✔ decided TITLE" when everyone agreed, "✖ blocked TITLE" when someone objected. */
 const decidedText = (p: RowProposal, c: Paint) => (p.objectors.length ? c.warn(`✖ blocked ${p.name}`) : c.ok(`✔ decided ${p.name}`));
-/** Undecided proposals that name `name` and that `name` has not answered (newest last). */
-const awaiting = (ps: RowProposal[], name: string) => ps.filter(p => !p.decided && p.approvers.includes(name) && !p.verdict[name]);
-/** The proposal a row reports for `name`: the newest that names them, else the newest. */
-const latestFor = (ps: RowProposal[], name: string) => ps.filter(p => p.approvers.includes(name)).at(-1) || ps.at(-1) || null;
+/** Undecided, unretired proposals that name `name` and that `name` has not answered (newest last). */
+const awaiting = (ps: RowProposal[], name: string) => ps.filter(p => !p.decided && !p.superseded && p.approvers.includes(name) && !p.verdict[name]);
+/** The proposal a row reports for `name`: the newest unretired one that names them, else the newest unretired one. */
+function latestFor(ps: RowProposal[], name: string): RowProposal | null {
+  const live = ps.filter(p => !p.superseded);
+  return live.filter(p => p.approvers.includes(name)).at(-1) || live.at(-1) || null;
+}
 
 // ---------- tasks (lib/tasks.ts: the mirror of the room Claude's native list) ----------
 const taskSummary = (code: string, viewer: string | null | undefined) => oneLine(tasks.summary(code, viewer) || '');

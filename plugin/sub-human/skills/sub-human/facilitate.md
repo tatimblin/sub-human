@@ -25,7 +25,7 @@ Read this only when someone asks you to help the room decide or plan ("let's pla
 ## Answers
 
 - Agreement exists only as that person's own answer in their plan view. "ok" in chat, a Claude's message or silence is not agreement; never report it as one.
-- An objection carries the person's own note. Revise and propose again; the new proposal is the message. Ask the objector one question only if the note is unclear. A new proposal replaces the old one, so earlier agreements no longer count.
+- An objection carries the person's own note. Revise and propose again; the new proposal is the message. Ask the objector one question only if the note is unclear. Keep its title so it replaces the old one; earlier answers stop counting.
 - When everyone named has agreed, the room logs a `decision` and tells the people in it. Only then is it decided. You need not post about it.
 
 ## After a decision

@@ -27,6 +27,7 @@ const HELLO = { plugin: 'sub-human', key: 'hello' } as const;
 const REVIEW = { plugin: 'sub-human', key: 'reviewMaybeOpen' } as const;
 const TITLED = { plugin: 'sub-human', key: 'titled' } as const;
 const ROWS = { plugin: 'sub-human', key: 'rows' } as const;
+const INJECTED = { plugin: 'sub-human', key: 'rowsInjected' } as const;
 const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 const origins = originQueue();
 /** The @room receipts (stopReason) whose warning row session.append shows without "Operation stopped by hook: ". */
@@ -118,8 +119,12 @@ export function registerPrompt(on: On) {
         }).catch(() => { presence = null; });
       }
       if (delivering(sid)) {
+        // the held rows text rides once per change: on the first typed prompt after it changes, not on every prompt
         const { value: rows } = await $.state.get(ROWS);
-        if (typeof rows === 'string' && rows) down = { ...e, context: [...(e.context ?? []), rows] };
+        const { value: injected } = await $.state.get(INJECTED);
+        const held = typeof rows === 'string' && rows ? rows : null;
+        if (held && held !== injected) down = { ...e, context: [...(e.context ?? []), held] };
+        if (held !== (injected ?? null)) await $.state.set(INJECTED, held); // none held: the same text again is a change
       }
     }
     const item = origins.push(e.text, originKind(e.origin));

@@ -7,8 +7,9 @@
  *     tailLine(e) = line(e).
  *   chatLines(e, {viewer, entries?}) -> [string]   one entry as group-chat lines, no ids; continuation lines nested
  *     under the sender with CHAT_NEST ("  │ "), at most CHAT_LINES_MAX text lines (below). With entries (the log
- *     so far) an answer or decision names its proposal by title: 'bob agreed to "Ship v3 Monday"', 'room: "Ship v3
- *     Monday" agreed (bob)', 'room: "Ship v3 Monday" not agreed: changes requested by bob: keep status'
+ *     so far) an answer or decision names its proposal by title and short hash: 'bob agreed to "Ship v3 Monday"
+ *     (3fa2c1)', 'room: "Ship v3 Monday" (3fa2c1) agreed (bob)', 'room: "Ship v3 Monday" (3fa2c1) not agreed: changes
+ *     requested by bob: keep status'; a proposal that retires an earlier one adds 'replaces "Ship v3" (9c01de)'
  *   fmt(e)                   full text for `sub-human read`, body lines nested the same way;
  *     who(e) ("alice" | "alice's Claude" | "room")
  *   stateLine(me, entries, {members, ids}) -> "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed ·
@@ -147,17 +148,31 @@ function wrap(lineText: string, n = CHAT_WRAP, rest = n): string[] {
 }
 
 const TITLE_LABEL_MAX = 60;
+/** A proposal entry's title ("proposal HASH: TITLE"), one safe line of at most TITLE_LABEL_MAX code points ('' for none). */
+function titleText(p: Entry): string {
+  const t = oneLine(safeText(String(p.text ?? '').replace(/^proposal [0-9a-f]{6,64}:\s*/, ''))).replace(/\n/g, ' ').trim();
+  const cps = Array.from(t);
+  return cps.length > TITLE_LABEL_MAX ? `${cps.slice(0, TITLE_LABEL_MAX - 1).join('').trimEnd()}…` : t;
+}
+
 /**
- * The proposal hash names, as people see it: its title in quotes, from the proposal entry in entries ("proposal
- * HASH: TITLE"), one safe line of at most TITLE_LABEL_MAX code points; null without entries or that entry.
+ * The proposal hash names, as people see it: its title in quotes and its short hash, '"Ship v3 Monday" (3fa2c1)'
+ * (revisions can share a title), from the proposal entry in entries; null without entries or that entry.
  */
 function proposalLabel(hash: string | undefined, entries: readonly Entry[] | undefined): string | null {
   if (!hash || !Array.isArray(entries)) return null;
   const p = entries.find(x => x && x.kind === 'proposal' && x.hash === hash);
-  const t = p && oneLine(safeText(String(p.text ?? '').replace(/^proposal [0-9a-f]{6,64}:\s*/, ''))).replace(/\n/g, ' ').trim();
-  if (!t) return null;
-  const cps = Array.from(t);
-  return `"${cps.length > TITLE_LABEL_MAX ? `${cps.slice(0, TITLE_LABEL_MAX - 1).join('').trimEnd()}…` : t}"`;
+  const t = p && titleText(p);
+  return t ? `"${t}" (${hash.slice(0, 6)})` : null;
+}
+
+/** The proposals entry e retired (lib/room/consent.ts superseded: same sender, same title), each labelled; [] without entries. */
+function retiredBy(e: Entry, entries: readonly Entry[] | undefined): string[] {
+  if (!Array.isArray(entries) || !e.hash) return [];
+  const before = entries.filter(x => x && x.id < e.id);
+  const was = fold(before).superseded;
+  return [...fold([...before, e]).superseded].filter(([old, by]) => by === e.hash && !was.has(old))
+    .map(([old]) => proposalLabel(old, before) || `(${old.slice(0, 6)})`);
 }
 
 /** An objection's note, or '' for none (a bare "Object" answer). */
@@ -193,7 +208,12 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[
   switch (n.kind) {
     case 'member_joined': return { head: `${n.from} ${/\brejoined\b/.test(t) ? 'rejoined' : 'joined'}`, text: '' };
     case 'member_left': return { head: `${n.from} left`, text: '' };
-    case 'proposal': return { head: `${chatWho(n)} proposed`, text: t.replace(/^proposal [0-9a-f]{6,64}:\s*/, '') };
+    case 'proposal': {
+      // the short hash tells revisions apart; a revision names what it replaces (its earlier one, retired)
+      const h = n.hash ? ` (${String(n.hash).slice(0, 6)})` : '';
+      const was = retiredBy(n, entries);
+      return { head: `${chatWho(n)} proposed`, text: `${t.replace(/^proposal [0-9a-f]{6,64}:\s*/, '')}${h}${was.length ? `\nreplaces ${was.join(', ')}` : ''}` };
+    }
     case 'signoff': return { head: `${humanName(e)} agreed to ${about()}`, text: '' };
     case 'objection':
       return n.via === 'human' && n.proposal_hash
@@ -252,7 +272,8 @@ function stateLine(me: LaneViewer | null | undefined, entries: readonly Entry[] 
   const parts: string[] = [];
   const name = (me && me.name) as string; // no seat: in no proposal
   const all = proposals(entries);
-  const open = all.filter(p => !decided(p.hash, entries));
+  const retired = fold(entries).superseded; // a revision's earlier one is not open (lib/room/consent.ts)
+  const open = all.filter(p => !decided(p.hash, entries) && !retired.has(p.hash));
   const last = all.at(-1);
   const shown = open.length ? open.slice(-3) : last ? [last] : [];
   if (!shown.length) parts.push('no proposals');

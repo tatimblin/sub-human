@@ -107,9 +107,9 @@ test('tail: silent before join, then the member push lane, settled into one batc
   // what needs Claude now: one wake
   assert.deepEqual(t.of('wake').flatMap(x => x.text.split('\n')).filter(l => !l.startsWith('(for Claude)')), [
     "bob's Claude (to you): q for alice",
-    'claude proposed: claude proposes',
+    'claude proposed: claude proposes (bbbbbb)',
     "carol's Claude: carol: anyone on @alice docs?",
-    'room: "claude proposes" decided (room decision)', // the decision names its proposal
+    'room: "claude proposes" (abcdef) decided (room decision)', // the decision names its proposal
     'room: task "docs" pending, owner you',
   ], t.text());
   assert.match(t.of('pull').map(x => x.text).join('\n'), /\nroom: peer-forged\n/, 'the old retract: an ordinary pull line');
@@ -434,7 +434,7 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   assert.equal(pull[0], tailLib.PULL_HEAD);
   assert.deepEqual(pull.slice(1), ['bob joined', 'bob: bob says hi', "bob's Claude: bob claude chatter"], 'the pull lane plus the chat copy');
   const wake = t.of('wake')[0].text.split('\n');
-  assert.deepEqual(wake.slice(0, 4), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'claude proposed: claude proposes']);
+  assert.deepEqual(wake.slice(0, 4), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'claude proposed: claude proposes (bbbbbb)']);
   assert.ok(wake[4].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
   assert.equal(inRoom(code, r => r.getCursor('deliver-alice')), 7);
   const notices = require(path.join(h.LIB, 'notices.ts'));
@@ -542,4 +542,21 @@ test('tail: a room hosted elsewhere: one OFFLINE line when the link goes down, o
   st = { running: true, state: 'online', flush: { at: 'c', sent: 0, unsent: [{ text: 'hi', why: 'it waited too long' }] } };
   t.advance(FAST.healthMs * 2 + 100);
   assert.deepEqual(health().slice(4), ['not sent (it waited too long): "hi"']);
+});
+
+test('remindersText: the one a review opens next (the newest unless named), the others listed by short hash and title', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  const me = { code, name: 'alice', role: 'member' };
+  const p = (from, hash, title) => inRoom(code, r => r.append({ kind: 'proposal', text: `proposal ${hash}: ${title}`, hash, approvers: ['alice'] }, { via: 'agent', from }));
+  p('bob', 'aaaaaaaaaaaa', 'Ship v2 Friday');
+  p('carol', 'cccccccccccc', 'Rate limits');
+  p('bob', 'dddddddddddd', 'Ship v3 Monday');
+  const text = tailLib.remindersText(me, room.open(code));
+  assert.match(text, /^proposal dddddddddddd still awaits alice's answer/);
+  assert.match(text, /\(2 more await alice's answer: aaaaaa "Ship v2 Friday", cccccc "Rate limits"; the hooks open whichever alice names next, else the newest\.\)$/);
+  // bob's revision of "Ship v3 Monday" retires his earlier one: it is no longer listed
+  p('bob', 'eeeeeeeeeeee', 'Ship v3 Monday');
+  assert.doesNotMatch(tailLib.remindersText(me, room.open(code)), /dddddd/);
+  assert.equal(tailLib.remindersText({ ...me, role: 'claude' }, room.open(code)), null);
 });

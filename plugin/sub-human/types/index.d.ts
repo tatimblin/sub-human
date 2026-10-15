@@ -30,6 +30,8 @@ declare module 'claude-code' {
       /** What the person's next prompt carries for Claude (pending-proposal reminders, missing row calls): the
        * tail child's last rows event (mod/deliver.ts); null: nothing. */
       rows: string | null;
+      /** The rows text mod/prompt.ts last added to a typed prompt: it rides again only once it changes; null: none. */
+      rowsInjected: string | null;
       /** The session id and address mod/prompt.ts last set as the title: titled again after a /clear or a switch. */
       titled: { sid: string; addr: string };
       /** How many times the room's delivery failed this session (mod/deliver.ts): an event not applied, a tail

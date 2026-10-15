@@ -8,7 +8,7 @@
  *   Pre(EnterPlanMode): a proposal is pending for me and my mode allows a review: allow silently; 'entering' with
  *     hash = the person's pick (lib/proposal.ts choose: what their latest prompt in the transcript names, a hash or
  *     words only its title / text has, "Open v3"; cc.lastHumanPrompt, the person's own words only), else the
- *     oldest. When the plan file is known already, back it up and write the proposal text there (showEarly; again
+ *     newest. When the plan file is known already, back it up and write the proposal text there (showEarly; again
  *     at Post(EnterPlanMode)). A latest prompt that asks to propose something (proposal.proposeIntent, "propose to
  *     alice: …") and names no pending proposal's hash opens no review: plan mode is left alone and the model told so.
  *   Pre(ExitPlanMode), entering: always `ask` with updatedInput.plan = that proposal's text, whatever the call
@@ -277,7 +277,7 @@ function preEnter(input: ConsentIn, me: Identity) {
   const pending = pendingFor(me).filter(p => proposal.viewable(p, me.code));
   if (!pending.length || !reviewable(input)) return;
   restorePlan(old); // a review left behind: its backup goes back before a new one is taken
-  // The person's pick, else the oldest: never the model's choice. The pick is what the person's latest prompt names
+  // The person's pick, else the newest: never the model's choice. The pick is what the person's latest prompt names
   // (cc.lastHumanPrompt: only their own words; a peer's or a plugin's prompt keeps the earlier pick), unless a pick
   // made after that prompt (a card call naming one) stands.
   const said: { text: string; at: number } | null = cc.lastHumanPrompt(lines(input));
