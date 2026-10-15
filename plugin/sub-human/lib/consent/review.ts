@@ -1,5 +1,6 @@
 /**
  * plugin/sub-human/lib/consent/review.ts: the consent hook's session-side state machine, as one pure reducer.
+ *
  *   reduce(state, event, ctx) -> {state, effects, say}
  * state: {review, note}, the seat's two documents (members/NAME/review: the plan-view review; members/NAME/confirm: a
  * review's note waiting for the person's Send). The room's record of a proposal (who agreed, the decision) is not
