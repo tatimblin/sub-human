@@ -26,7 +26,8 @@
  *   pendingNews(sid) -> {code, name, state, text} | null   the invite join this session started: 'waiting' (dialing,
  *       or the host's card has not answered), 'pin' (the host asks for the PIN: text says to type it), 'linked' (the
  *       host let this machine in: text says to type /sub-human) or 'refused' (text: its reason); null when there is
- *       none. The seatless session's tail (lib/tail.ts) says each once
+ *       none. The seatless session's tail (lib/tail.ts) says each once; text '' when the command's own answer said
+ *       the same (join_told, written by the join step), so the person reads it once
  *   noSecret(dest, code) -> string     a pipe join without its SECRET: the line the host sent has one
  */
 import * as identity from '../identity.ts';
@@ -78,7 +79,14 @@ const sameLogin = (a: LinkSpec | undefined, b: SshSpec) => !!a && !!b && a.kind 
 /** Where an invite join stands (hosting.joinText), as a step: a refusal when it was refused. tells: this session's tail
  * says what the host answers (the session that typed the line). */
 function stands(code: string, name: string, o: Outcome, tells = false): Step {
-  return say(hosting.joinText(code, name, o, { tells }), o.state === 'refused');
+  const text = hosting.joinText(code, name, o, { tells });
+  told(code, text);
+  return say(text, o.state === 'refused');
+}
+
+/** What the person was just told about this join (the command's own answer): the tail does not say it again. */
+function told(code: string, text: string): void {
+  try { const l = links.get(code); if (l) links.set(code, { ...l, join_told: text }); } catch { /* the tail may repeat it */ }
 }
 
 export function linkLine({ name, code, word, transport, sid }: { name: string; code: string; word: string; transport: LinkSpec; sid?: string | null }): Step {
@@ -157,7 +165,7 @@ export function finishJoin(l: Link): Step {
   const why = linkSocket.stopReason(linkSocket.status(code));
   if (l.pin_wanted && !l.token) return stands(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) });
   if (why && !l.token) {
-    try { const { join_as: _gone, join_sid: _sid, ...rest } = links.get(code) || l; links.set(code, rest); } catch { /* no credential left: nothing to keep */ }
+    try { const { join_as: _gone, join_sid: _sid, join_told: _told, ...rest } = links.get(code) || l; links.set(code, rest); } catch { /* no credential left: nothing to keep */ }
     return refuse(`could not join room ${code}: ${why.reason}`);
   }
   if (l.token) return take({ name, code, pending: true });
@@ -193,7 +201,7 @@ export function ensureLinked(code: string, name: string): Step | null {
 export function dropJoinAs(code: string): void {
   try {
     const l = identity.isHost(code) ? null : links.get(code);
-    if (l && (l.join_as !== undefined || l.join_sid !== undefined)) { const { join_as: _done, join_sid: _sid, ...rest } = l; links.set(code, rest); }
+    if (l && (l.join_as !== undefined || l.join_sid !== undefined)) { const { join_as: _done, join_sid: _sid, join_told: _told, ...rest } = l; links.set(code, rest); }
   } catch { /* a stale join_as only names the seat again */ }
 }
 
@@ -205,12 +213,14 @@ export function pendingNews(sid: string | null | undefined): News | null {
   const l = pendingJoins().find(j => j.join_sid === sid);
   if (!l) return null;
   const code = l.code, name = String(l.join_as);
+  // the command's own answer said it already (join_told): nothing new for the tail to say
+  const fresh = (n: News): News => (n.text && n.text.replace(/^✗ /, '') === l.join_told ? { ...n, text: '' } : n);
   if (l.pin_wanted && !l.token && l.pin === undefined) {
-    return { code, name, state: 'pin', text: hosting.joinText(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) }) };
+    return fresh({ code, name, state: 'pin', text: hosting.joinText(code, name, { state: 'pin', ...(l.pin_wanted.message ? { reason: l.pin_wanted.message } : {}) }) });
   }
   const st = linkSocket.status(code);
   const stopped = linkSocket.stopReason(st);
-  if (stopped && !l.token) return { code, name, state: 'refused', text: `could not join room ${code}: ${stopped.reason}` };
-  if (l.token && st.state === 'online') return { code, name, state: 'linked', text: hosting.joinText(code, name, { state: 'linked' }) };
+  if (stopped && !l.token) return fresh({ code, name, state: 'refused', text: `✗ could not join room ${code}: ${stopped.reason}` });
+  if (l.token && st.state === 'online') return fresh({ code, name, state: 'linked', text: hosting.joinText(code, name, { state: 'linked' }) });
   return { code, name, state: 'waiting', text: '' };
 }

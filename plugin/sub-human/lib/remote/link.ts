@@ -550,9 +550,12 @@ function idleWatch(link: RunningLink, mirror: MirrorRoomStore, idleMs: number, {
       && (leaseFresh(m) || (live ??= identity.localSeats(mirror.code)).includes(m.name)));
   };
   // an invite not redeemed yet (waiting for the host person's card): kept trying for the invite's life and the card's
+  // and a join the host let in whose person has not typed /sub-human yet (join_as): kept for as long too, so a
+  // let-in machine's link does not stop NO_SEAT a minute later
   const redeeming = () => {
     const l: Link | null = linksMod.get(mirror.code);
-    return !!l && !l.token && typeof l.invite === 'string' && now() - Date.parse(l.created_at ?? '') < config.INVITE_TTL_MS + config.ADMIT_TTL_MS;
+    const young = !!l && now() - Date.parse(l.created_at ?? '') < config.INVITE_TTL_MS + config.ADMIT_TTL_MS;
+    return young && ((!l!.token && typeof l!.invite === 'string') || (!!l!.token && typeof l!.join_as === 'string'));
   };
   const seated = () => {
     const s = link.state();

@@ -423,3 +423,34 @@ test('tail: one line for a link that is not online, keyed fork, stopped or offli
   assert.deepEqual(linkLine({ running: false, state: 'stopped', reason: 'the room was closed' }, 'vole-1234'), {
     key: 'stopped', text: 'the connection to room vole-1234 stopped (the room was closed); @room posts can\'t be sent. Run /sub-human doctor.' });
 });
+
+test('link: a join the host let in whose person has not typed /sub-human yet keeps its daemon (live: NO_SEAT after 60 s)', async t => {
+  h.freshHome(t);
+  const code = 'vole-4321';
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't', join_as: 'bob', join_sid: 'sid-1', created_at: new Date().toISOString() });
+  store.createRoom(code);
+  const mirror = store.open(code) as MirrorRoomStore;
+  let stopped: string | null = null;
+  const unwatch = link.idleWatch({ state: () => 'online', stop: why => { stopped = why; } } as RunningLink, mirror, 150);
+  t.after(unwatch);
+  await h.sleep(500);
+  assert.equal(stopped, null, 'let in, its seat not taken yet: kept');
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' }); // the seat taken: join_as gone
+  await h.until(() => stopped, 3000, 20);
+  assert.equal(stopped, link.NO_SEAT_REASON);
+});
+
+test('join news: what the join command already said is not said again by the tail', async t => {
+  h.freshHome(t);
+  const joining = await import('../lib/remote/joining.ts');
+  const hosting = await import('../lib/remote/hosting.ts');
+  const code = 'vole-9876';
+  const pin = { at: new Date().toISOString(), left: 5 };
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, invite: 'x'.repeat(39), join_as: 'bob', join_sid: 'sid-1', pin_wanted: pin, created_at: new Date().toISOString() });
+  const said = hosting.joinText(code, 'bob', { state: 'pin' });
+  links.set(code, { ...links.get(code)!, join_told: said });
+  const n = joining.pendingNews('sid-1')!;
+  assert.deepEqual([n.state, n.text], ['pin', ''], 'the command said it: the tail says nothing');
+  links.set(code, { ...links.get(code)!, join_told: 'something else' });
+  assert.equal(joining.pendingNews('sid-1')!.text, said);
+});

@@ -607,6 +607,8 @@ export interface Link {
   join_as?: string;
   /** the session that typed the PIN join (lib/remote/joining.ts pendingNews: its tail says when the host let it in) */
   join_sid?: string;
+  /** what the join command last told the person (lib/remote/joining.ts): the tail does not repeat it */
+  join_told?: string;
   moved?: { epoch?: number; host: string; locator: string; at?: string; reached_at?: string; demoted?: boolean };
   created_at?: string;
 }
