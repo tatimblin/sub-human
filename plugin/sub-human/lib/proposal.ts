@@ -51,9 +51,12 @@
  *   reminder(p, name, {code, others}?) -> string   the re-ask wording (a review closed without an answer is fine to
  *                                  reopen); others: the other pending proposals, listed as h6 "title"
  *   namedIn(ps, prompt, code) -> p|null   the pending proposal a person's words name (hash, else distinctive title / text words)
+ *   replacedIn(ps, prompt, code) -> {old, p}|null   the words name no pending hash but a superseded one (old) whose
+ *                                  latest revision p is among ps: a review opens p, and says so
  *   proposeIntent(prompt) -> bool  the person's words ask their Claude to propose something ("propose to alice: …"):
  *                                  no review opens on such a prompt (hooks/consent.ts Pre(EnterPlanMode))
- *   choose(me, ps, prompt) -> p    store that pick (members/NAME/pick) and return it, else the newest (hooks/consent.ts)
+ *   choose(me, ps, prompt) -> p    store that pick (namedIn, else replacedIn's p; members/NAME/pick) and return it,
+ *                                  else the newest (hooks/consent.ts)
  *   picked(me, ps) -> p            Pre(EnterPlanMode): the stored pick when still among ps, else the newest
  *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
  * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
@@ -257,6 +260,26 @@ function namedIn(ps: Proposal[], prompt: string | null | undefined, code: string
 }
 
 /**
+ * The words name no pending proposal's hash but an earlier revision's: a 6–12 hex prefix of exactly one proposal in
+ * the room that a later one retired (lib/room/consent.ts superseded), followed to its latest revision, which must be
+ * among ps. {old, p}, else null.
+ */
+function replacedIn(ps: Proposal[], prompt: string | null | undefined, code: string): { old: string, p: Proposal } | null {
+  const hex = String(prompt || '').toLowerCase().match(/\b[0-9a-f]{6,12}\b/g) || [];
+  if (!hex.length || !ps.length || hex.some(t => ps.some(p => p.hash.startsWith(t)))) return null;
+  const f = room.fold(room.open(code).readAll());
+  for (const t of hex) {
+    const named = [...f.superseded.keys()].filter(h => h.startsWith(t));
+    if (named.length !== 1 || [...f.proposals.keys()].filter(h => h.startsWith(t)).length !== 1) continue;
+    let h = named[0];
+    for (let i = 0; i < 64 && f.superseded.has(h); i++) h = f.superseded.get(h)!; // a chain of revisions, bounded
+    const p = ps.find(x => x.hash === h);
+    if (p) return { old: named[0], p };
+  }
+  return null;
+}
+
+/**
  * The person's own words ask their Claude to propose something (not to open or answer a proposal): "propose to
  * alice: …", "please make a proposal …", "can you draft a proposal …". Such a prompt never opens a review: the
  * pending one waits for a prompt that asks for it, or a plain one.
@@ -274,7 +297,7 @@ const readPick = (me: Me): { hash: string | null, at: number } | null => { try {
 /** Record what prompt names among ps (null when nothing) and return the proposal a review opens next; prompt null (not the person's words): the earlier pick stands. */
 function choose(me: Me, ps: Proposal[], prompt: string | null | undefined): Proposal | null {
   if (prompt == null) return picked(me, ps);
-  const hit = namedIn(ps, prompt, me.code);
+  const hit = namedIn(ps, prompt, me.code) || replacedIn(ps, prompt, me.code)?.p || null;
   kvOf(me).set(pickKey(me), { hash: hit ? hit.hash : null, at: Date.now() }, { compact: true });
   return hit || ps.at(-1) || null;
 }
@@ -487,5 +510,5 @@ export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
   readConfirm, writeConfirm, clearConfirm, confirmCard, confirmQuestion, namedIn, choose, picked, readPick,
   proposeIntent, create, proposals, pendingFor, answerableFor, personOf, sameOk, card, cardFor, question, preview, viewable, openCall, matrix, answer,
-  decide, decision, humans, reminder, read, hash12, title,
+  decide, decision, humans, reminder, read, hash12, title, replacedIn,
 };

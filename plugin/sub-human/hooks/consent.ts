@@ -7,7 +7,8 @@
  * and own the dialog's text; the model only calls EnterPlanMode, then ExitPlanMode (whatever plan it passes):
  *   Pre(EnterPlanMode): a proposal is pending for me and my mode allows a review: allow silently; 'entering' with
  *     hash = the person's pick (lib/proposal.ts choose: what their latest prompt in the transcript names, a hash or
- *     words only its title / text has, "Open v3"; cc.lastHumanPrompt, the person's own words only), else the
+ *     words only its title / text has, "Open v3"; cc.lastHumanPrompt, the person's own words only; a superseded
+ *     hash opens its latest revision, and the allow reason says "proposal OLD was replaced by NEW"), else the
  *     newest. When the plan file is known already, back it up and write the proposal text there (showEarly; again
  *     at Post(EnterPlanMode)). A latest prompt that asks to propose something (proposal.proposeIntent, "propose to
  *     alice: …") and names no pending proposal's hash opens no review: plan mode is left alone and the model told so.
@@ -293,13 +294,17 @@ function preEnter(input: ConsentIn, me: Identity) {
     return c.context('PreToolUse', `sub-human: no room review now: ${me.name} asked you to propose something, so do that (the room's propose tool). The proposal awaiting ${me.name} stays pending; open it when ${me.name} asks.`);
   }
   const kept: { at: number } | null = proposal.readPick(me);
-  const p: Proposal = (said && !(kept && kept.at > said.at) ? proposal.choose(me, pending, said.text) : proposal.picked(me, pending))!; // pending is not empty
+  const fresh = !!said && !(kept && kept.at > said.at);
+  const p: Proposal = (fresh ? proposal.choose(me, pending, said!.text) : proposal.picked(me, pending))!; // pending is not empty
+  // the person named an earlier revision: its latest opens (choose), and the model is told which, never silently
+  const was = fresh ? proposal.replacedIn(pending, said!.text, me.code) : null;
   const st: Review = { phase: 'entering', mode: input.permission_mode, at: Date.now(), hash: p.hash, from: p.from || null };
   writeReview(me, st);
   const cf: Confirm | null = proposal.readConfirm(me);
   if (cf && cf.hash === p.hash) proposal.clearConfirm(me); // reviewed again: a note waiting for it is superseded
   showEarly(input, me, st);
-  c.pre('allow', `sub-human: opening room proposal ${p.hash} for ${me.name}`);
+  c.pre('allow', was && was.p.hash === p.hash ? `sub-human: proposal ${was.old} was replaced by ${p.hash}; opening ${p.hash} for ${me.name}`
+    : `sub-human: opening room proposal ${p.hash} for ${me.name}`);
 }
 
 /**
