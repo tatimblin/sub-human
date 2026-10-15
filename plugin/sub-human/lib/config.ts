@@ -201,6 +201,11 @@ export const RATE_MAX = 6;                     // agent posts to the room per `f
 // room budget.
 export const RATE_ADDRESSED_MAX = 10;
 export const RATE_WINDOW_MS = 60_000;
+// A person's own posts over a link (lib/remote/server.ts append): a seat on another machine holds its own key and
+// token, so a script there could post as fast as it likes (each @claude a wake of the host's room Claude, each line
+// log growth). A person types one keystroke per post; this is well above that. Local hooks are not limited.
+export const LINK_HUMAN_RATE_MAX = 30;          // via=human entries per seat per RATE_WINDOW_MS, over a link
+export const LINK_BLOBS_MAX = 40;               // blob.put per connection (a proposal's plan each; the daemon reconnects)
 
 // ---------- room log integrity (lib/room/{store,validate,render}.js) ----------
 export const ENTRY_TEXT_MAX_BYTES = 16 * 1024; // an entry's text, UTF-8 bytes (validate)

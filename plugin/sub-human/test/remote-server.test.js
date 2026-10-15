@@ -104,6 +104,13 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   await h.until(() => got.lines.length === logLines(code).length, 3000, 20);
   assert.equal(JSON.parse(got.lines.at(-1)).text, 'alice left (session ended)');
 
+  // a person's posts over a link are bounded (LINK_HUMAN_RATE_MAX per minute); an agent post has its own budget
+  const config = require(path.join(h.LIB, 'config.ts'));
+  assert.deepEqual(await c.join(seat(code, 'alice')), { ok: true, rejoin: true });
+  for (let i = 0; i < config.LINK_HUMAN_RATE_MAX - 1; i++) await c.append(signed(code, 'alice', { kind: 'say', text: `fast ${i}` }));
+  await assert.rejects(c.append(signed(code, 'alice', { kind: 'say', text: 'one too many' })), e => e.code === 'RATE' && /alice posted/.test(e.message));
+  await rejects(c.append(signed(code, 'alice', { kind: 'signoff', proposal_hash: 'abcdef012345', text: 'an answer counts too' })), 'RATE');
+
   // the token reconnects as the same link; the invite was single-use
   const again = await client.connect(served(t, host), { machine: REMOTE, token: c.token });
   t.after(() => again.close());
