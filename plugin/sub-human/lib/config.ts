@@ -51,7 +51,9 @@ export const LEAVE_SETTLE_MS = 8000;           // SUB_HUMAN_LEAVE_MS (tail, noti
 export const UNSEATED_MS = 10_000;             // SUB_HUMAN_UNSEATED_MS: no seat yet, look it up this rarely
 export const RESOLVE_MS = 2000;                // SUB_HUMAN_RESOLVE_MS: seated, re-resolve the seat this often
 export const TAIL_POLL_MS = 250;               // SUB_HUMAN_POLL_MS: the tail's log poll
-export const FOLLOW_POLL_MS = 250;             // the remote server's log poll (lib/remote/server.ts)
+export const FOLLOW_POLL_MS = 250;             // the remote server's poll of a room it cannot watch (lib/room/watch.ts)
+export const FOLLOW_SLOW_MS = 2000;            // and of one it watches (fs.watch), for an event the watcher missed
+export const REPLAY_BATCH = 500;               // lines per turn of a first sync's replay; the next waits for the transport to drain
 export const WATCH_POLL_MS = 500;              // `sub-human watch --follow` poll
 
 // ---------- the tail loop's health (lib/tail.ts) ----------
@@ -204,10 +206,23 @@ export const RATE_WINDOW_MS = 60_000;
 // come near; a person types one keystroke per post. High enough for the tests' bursts (150 per name), low enough
 // to bound a flood through the local hooks.
 export const RATE_HUMAN_MAX = 300;             // via=human entries per seat per RATE_WINDOW_MS
-// The same over a link (lib/remote/server.ts append): a seat on another machine holds its own key and token, so a
-// script there could post as fast as it likes (each @claude a wake of the host's room Claude, each line log growth).
-export const LINK_HUMAN_RATE_MAX = 30;          // via=human entries per seat per RATE_WINDOW_MS, over a link
-export const LINK_BLOBS_MAX = 40;               // blob.put per connection (a proposal's plan each; the daemon reconnects)
+// Per-link quotas on the host (lib/remote/quota.ts, lib/remote/server.ts), one row per op: a link on another machine
+// holds its own key and token, so a script there could send as fast as it likes (each @claude a wake of the host's room
+// Claude, each line log growth, each subscribe a replay). Where each count lives: `log` the room's own lines by that
+// seat; `link` the host document remote/quota (a reconnect does not reset it); `session` the connection's memory.
+export const LINK_QUOTAS = {
+  'append.human': { max: 30, windowMs: 60_000, per: 'log' },       // a person's posts, per seat
+  'append.agent': { max: 30, windowMs: 60_000, per: 'log' },       // a Claude's posts, per seat, every addressee together
+  'blob.put': { max: 40, windowMs: 60 * 60_000, per: 'link' },     // new plans stored
+  subscribe: { max: 60, windowMs: 10 * 60_000, per: 'link' },      // each one a replay from the asked line
+  seat: { max: 30, windowMs: 10 * 60_000, per: 'link' },           // join and leave
+  hello: { max: 120, windowMs: 10 * 60_000, per: 'link' },         // a link's hellos (each reconnect says one)
+  'hello.session': { max: 10, windowMs: 60_000, per: 'session' },  // any hello on one connection (an invite's, a token's)
+  beat: { max: 120, windowMs: 60_000, per: 'session' },            // a lease renewal per seat every SEAT_BEAT_MS, and reconnects
+  'blob.get': { max: 600, windowMs: 60_000, per: 'session' },      // plans fetched
+  ping: { max: 60, windowMs: 60_000, per: 'session' },             // one every LINK_PING_MS
+  handoff: { max: 20, windowMs: 60_000, per: 'session' },          // handoff.accept and handoff.refuse
+} as const;
 
 // ---------- what a home stops keeping (lib/gc.ts; it runs from the join path) ----------
 // A closed room (no seat alive, no link to it, its room Claude stopped) nobody touched in this long is deleted, with its

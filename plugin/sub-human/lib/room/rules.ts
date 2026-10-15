@@ -17,7 +17,7 @@
  *   scanTail(newest, p, now) -> {last, recent, replayed}   the tail as a placement needs it (below)
  *   rates: per `from` per RATE_WINDOW_MS, agent posts to the room RATE_MAX, to one member RATE_ADDRESSED_MAX (a
  *       bucket per (from, to)), and a person's own entries RATE_HUMAN_MAX (high: a person never reaches it; a script
- *       flooding through the hooks does. A link's human posts have the host's lower cap, LINK_HUMAN_RATE_MAX,
+ *       flooding through the hooks does. A link's posts have the host's per-link quotas, LINK_QUOTAS,
  *       lib/remote/server.ts). RoomError RATE
  *   checkSigned(p, keys, now)    a via=human payload is the person's: v2, signed for this room, ts within
  *                                SIG_SKEW_MS of now, verified against their pinned key. RoomError AUTH

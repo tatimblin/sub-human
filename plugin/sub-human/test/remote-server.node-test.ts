@@ -16,6 +16,8 @@ import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
 import * as invites from '../lib/remote/invites.ts';
 import * as hostLinks from '../lib/remote/host-links.ts';
+import * as quota from '../lib/remote/quota.ts';
+import { MemoryRoomStore } from './support/memory-store.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
 import * as pipe from '../lib/remote/transports/pipe.ts';
 import * as seatKey from '../hooks/seat-key.ts';
@@ -116,7 +118,7 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
 
   // a person's posts over a link are bounded (LINK_HUMAN_RATE_MAX per minute); an agent post has its own budget
   assert.deepEqual(await c.join(seat(code, 'alice')), { ok: true, rejoin: true });
-  for (let i = 0; i < config.LINK_HUMAN_RATE_MAX - 1; i++) await c.append(signed(code, 'alice', { kind: 'say', text: `fast ${i}` }));
+  for (let i = 0; i < config.LINK_QUOTAS['append.human'].max - 1; i++) await c.append(signed(code, 'alice', { kind: 'say', text: `fast ${i}` }));
   await assert.rejects(c.append(signed(code, 'alice', { kind: 'say', text: 'one too many' })), (e: CodedError) => e.code === 'RATE' && /alice posted/.test(e.message));
   await rejects(c.append(signed(code, 'alice', { kind: 'signoff', proposal_hash: 'abcdef012345', text: 'an answer counts too' })), 'RATE');
 
@@ -474,4 +476,53 @@ test('remote (memory): subscribe {snapshot: true} gets the snapshot first only f
   await r.sub.ready;
   assert.ok(await h.until(() => r.got.filter(e => e.ev === 'entry').length === total, 5000, 10), `${r.got.length} of ${total}`);
   assert.ok(!r.got.some(e => e.ev === 'snapshot'));
+});
+
+test('quotas: one table for every op; a link\'s plans, seats and subscribes survive a reconnect; a connection\'s hellos are its own', async t => {
+  const { host } = hostRoom(t);
+  const made = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
+  const dial = () => client.connect(served(t, host), { machine: REMOTE, token: made.token });
+  const plans = config.LINK_QUOTAS['blob.put'].max;
+  let c = await dial();
+  for (let i = 0; i < plans; i++) {
+    const bytes = Buffer.from(`# plan ${i}\n`);
+    await c.blobPut(`plans/${store.hash12(bytes)}.md`, bytes);
+    if (i === Math.floor(plans / 2)) { c.close(); c = await dial(); } // a reconnect resets nothing
+  }
+  const more = Buffer.from('# one too many\n');
+  await assert.rejects(c.blobPut(`plans/${store.hash12(more)}.md`, more), (e: CodedError) => e.code === 'RATE' && e.reason === 'QUOTA' && /try again in \d+ s/.test(e.message));
+  const again = Buffer.from('# plan 0\n');
+  assert.equal(await c.blobPut(`plans/${store.hash12(again)}.md`, again), `plans/${store.hash12(again)}.md`, 'a plan stored already is no new one');
+  c.close();
+  // one connection's hellos: the session's own count
+  const [a, b] = memory.pair();
+  const srv = server.serve(b, { store: host });
+  t.after(() => srv.close());
+  const got: DecodedFrame[] = [];
+  a.onFrame(f => got.push(f));
+  const n = config.LINK_QUOTAS['hello.session'].max;
+  for (let i = 1; i <= n + 1; i++) a.send(protocol.request(i, 'hello', { proto: protocol.PROTO, caps: {}, machine: REMOTE }));
+  await h.until(() => got.length === n + 1, 3000, 5);
+  assert.deepEqual(got.slice(0, n).map(f => !!f.result), new Array(n).fill(true));
+  assert.deepEqual([got[n].error!.code, got[n].error!.reason], ['RATE', 'QUOTA']);
+  a.close();
+});
+
+test('quotas: the log counts a seat\'s posts by via; a link window drops what has passed; a session window is per op', () => {
+  const now = Date.parse('2026-10-15T12:00:00Z');
+  const at = (ago: number) => new Date(now - ago).toISOString();
+  const es = [{ from: 'bob', via: 'agent', at: at(120_000) }, ...Array.from({ length: 29 }, () => ({ from: 'bob', via: 'agent', at: at(1000) })), { from: 'bob', via: 'human', at: at(500) }] as Entry[];
+  assert.equal(quota.fromLog(es, { from: 'bob', via: 'agent', windowMs: 60_000, now }), 29, 'the one older than the window is not counted');
+  quota.checkLog(es, { from: 'bob', via: 'agent', op: 'append.agent', now });
+  assert.throws(() => quota.checkLog([...es, { from: 'bob', via: 'agent', at: at(10) } as Entry], { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: CodedError) => e.reason === 'QUOTA' && /bob posted 30 times in 1 min/.test(e.message));
+  const s = new MemoryRoomStore('otter-1234');
+  const seatQ = config.LINK_QUOTAS.seat;
+  for (let i = 0; i < seatQ.max; i++) quota.charge(s, 'abcdef012345', 'seat', { now });
+  assert.throws(() => quota.charge(s, 'abcdef012345', 'seat', { now }), (e: CodedError) => e.code === 'RATE');
+  quota.charge(s, '0123456789ab', 'seat', { now }); // another link: its own count
+  quota.charge(s, 'abcdef012345', 'seat', { now: now + seatQ.windowMs }); // the window passed
+  const w = quota.session();
+  for (let i = 0; i < config.LINK_QUOTAS.ping.max; i++) w.take('ping', now);
+  assert.throws(() => w.take('ping', now), (e: CodedError) => e.reason === 'QUOTA');
+  w.take('beat', now);
 });
