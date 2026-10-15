@@ -136,13 +136,27 @@ Full names are `mcp__plugin_sub-human_room__<tool>`.
 
 ## The room store
 
-Everything persistent goes through the **RoomStore** interface in `lib/room/store.ts` (the header there is the full contract). `lib/room.ts` wraps it: `room.open(code) → Room` (cached per code, no process-wide state) adds lanes, rendering and validation on top. No module outside `lib/room/store*.ts` knows a room's file names (`test/store-bypass.node-test.ts`).
+Everything persistent goes through the **RoomStore** interface in `lib/room/store.ts` (the header there is the full contract). `lib/room.ts` wraps it: `room.open(code) → Room` (cached per code, no process-wide state) adds delivery, rendering and the consent queries on top, each judged by the store's own trust.
+
+The store is five files behind `store.ts`, each with one job:
+
+| File | Job | I/O |
+|---|---|---|
+| `lib/room/trust.ts` | whether a `via=human` entry is the person's: `verdict(e, ctx)` over the keys a store passes in (`pins()`, the seat's local `.pub` for a legacy room); `trustOver(ctx)` is a store's `trust` | none |
+| `lib/room/rules.ts` | what a placement checks and stamps: `toPayload`, `admit`, `scanTail`, the rates, `checkSigned`, `checkPin`, `checkHere`, `placeAfter`; `normalize` | none |
+| `lib/room/log-io.ts` | the log's bytes: the cached `readAll`, `readView` and its in-memory checkpoint, `verifyChain` and `log.idx`, the tailer, the locked append | the log; imported by `fs-store.ts` alone |
+| `lib/room/fs-store.ts` | `FsRoomStore`: a room directory on this machine; `pins()` and `hostState()` carried forward one new line at a time | the room's files (the only module that names them) |
+| `lib/room/registry.ts` | which store a code opens (`open`, `setBackend`), the rooms on this machine, `trustOf(e)` (an entry judged by the store of the room it names) | the rooms directory; `keys.ts` the seats' public keys |
+
+`MirrorRoomStore` (`lib/room/store-mirror.ts`, a room hosted elsewhere) composes an `FsRoomStore` over its mirror directory: every read is that store's, every write an op to the link daemon, and the daemon writes through the store's public `appendVerbatim` and `reset`. `test/store-bypass.node-test.ts` checks the seam structurally (only `fs-store.ts` imports `log-io.ts`; `FsRoomStore` is imported only by the registry, the mirror and the seam; the mirror extends nothing and calls no private member) and lexically only where an import graph cannot say it (no module outside the store's files names a room file or builds a path into one).
 
 ```
 RoomStore
-  append(entry, {via, from, system}) -> Entry                  validate, then id/at/prev/sig under the log lock
-  readAll() readById(ids) readAfter(id) since(id) lastId() readView({after}) watch(fn) tailer({after}) lineHash(id)
-  validateChain()  verifyChain({fromOffset})                    the prev hash chain (incremental via log.idx)
+  append(entry, {via, from, system}) -> Entry                  validate, sign a person's entry, then rules.placeAfter under the log lock
+  trust(e) -> verified | legacy | unverified | null           whether e, read from this store, is the person's: passed to every fold and render
+  readAll() readById(ids) readAfter(id) lastId() readView({after}) tailer({after}) lineHash(id)
+  pins() hostState()                                            the keys the log pins, who holds the room by its log
+  validateChain()  verifyChain({fromOffset, save})              the prev hash chain (incremental via log.idx)
   getCursor(reader) setCursor(reader, id)                       per-reader positions
   isHost                                                        this machine holds the room (FsRoomStore: true)
   members.read() members.update(fn)                             atomic: lock locally, CAS remotely (room Claude bookkeeping)
@@ -152,24 +166,22 @@ RoomStore
   lock(name, fn)                                                room-wide mutex (proposal answers)
 ```
 
+`readAll()` returns the store's cached array, frozen: a repeat read of an unchanged log is the same array, and callers never change it. That is what lets `consent.fold(entries, trust)` (memoized per trust on length, first and last entry) and the trust cache (a signature's verdict kept on the entry object) hit call after call.
+
 **FsRoomStore** layout. The home is `$SUB_HUMAN_HOME` or `~/.sub-human`; room directories are 0700 and files 0600. A mirror (a room hosted elsewhere, `MirrorRoomStore`) has the same layout; its log, `log.idx`, `members.json`, `presence/*`, `tasks.json` and `plans/` are the host's, written only by the link daemon.
 
 | Path (under `<home>/rooms/<CODE>/` unless absolute) | Owner (writer) | Purpose |
 |---|---|---|
 | `log.jsonl` | `store.append` (hooks, MCP server; never the CLI) | append-only room log, one JSON entry per line, hash-chained |
-| `log.idx` | `verifyChain` / `readView` | checkpoint: offset, last id, hash, and offsets of every non-chat line |
+| `log.idx` | `verifyChain` (the tail's health tick: lazily, every 64 KiB or minute of log) | checkpoint: offset, last id, hash, and offsets of every non-chat line; `readView` starts from it and keeps its own in memory |
+| `log.moved` | `place` of a `host_changed` | the log may say the room moved: `place` reads the log's host before each line (`rules.checkHere`); without it an append reads only the log's tail |
 | `members.json` | `identity.join/leave/heartbeat` via `members.join/leave/beat`, `lib/room-claude.ts` via `members.update` | seats (`machine`, `seen_at`, `left_at`; for this machine's seats `pid`, `pid_start`, `session_id`, `cwd`) and the room's Claude record (`job`, `claim`, `closing`) |
 | `plans/<hash>.md` | `lib/proposal.create` | proposal text, addressed by sha256/12 of its bytes |
 | `tasks.json` (kv `tasks`) | `hooks/handlers/tasks.ts` (room Claude only) | the task mirror: `tasks.fold()` of the log's `task` entries |
 | `presence/<name>.json` | `members.beat` (`hooks/handlers/presence.ts`, also run by the module on a typed prompt; at-room, join, restore) | working / idle / permission / error, for row text |
 | `rows/<session_id>.json` | `hooks/handlers/row-map.ts` | agent id → row (kind, name, parent) for the status line |
-| `rows/holds-<name>.json` | `mcp/hold.ts` | which rows this seat's hold server is holding (row-guard, rewake) |
-| `rows/blocks-<agent>.json` | `hooks/handlers/row-hold.ts` | SubagentStop block counter |
-| `rows/notices-<name>.json` | `lib/notices.ts` | join/leave lines already shown |
-| `members/<name>/review.json` | `hooks/handlers/consent.ts` (under its lock) | plan-view review phase, mode and plan-file backup |
-| `members/<name>/pick.json` | `hooks/handlers/consent.ts` (Pre(EnterPlanMode), from the person's latest prompt; a card call naming one) | the pending proposal the person last named; the next review opens it |
-| `members/<name>/confirm.json` | `hooks/handlers/consent.ts` (a review closed with a note; cleared by Send, Discard or a new review of it) | the note waiting for the person's Send on the confirm card: {hash, note, from, title, stage} (`lib/consent/review.ts`: waiting, nudged, asked, reoffered, told; a note an earlier version wrote carries flags, read by `stageOf`) |
-| `<reader>.cursor` | each reader | `deliver-NAME` (the tail child), `read-NAME` (CLI), `mcp-NAME` (`read` tool) |
+| `members/<name>/session.json` (kv `members/<name>/session`; this machine's, never streamed) | `lib/room/session.ts`: the tail (`cursor`, `shown`), `hooks/handlers/consent.ts` (`review` under its own lock, `pick`, `confirm`), `mcp/hold.ts` (`holds`), `hooks/handlers/row-hold.ts` (`blocks`) | the seat's session document: the tail's delivery cursor; the join and leave notices already shown and how; the plan-view review (phase, mode, plan-file backup); the pending proposal the person last named; the note waiting for Send on the confirm card ({hash, note, from, title, stage}: `lib/consent/review.ts`); which rows this seat's hold server holds (row-guard, rewake); row-hold's SubagentStop block counts. A seat with none reads what 0.5.0-beta.15 kept in `rows/holds-`, `rows/notices-`, `rows/blocks-`, `members/<name>/{review,pick,confirm}` and `deliver-<name>.cursor`; its first write migrates them |
+| `<reader>.cursor` | each reader | `read-NAME` (CLI), `mcp-NAME` (`read` tool); `deliver-orch` read once by an upgraded 0.4.x room's Claude |
 | `*.lock` | `lib/lock.ts` | O_EXCL lockfiles, body `PID HOST START`; stale ones broken atomically |
 | `<home>/keys/<CODE>/<name>.key`, `.pub` | `hooks/seat-key.ts` | Ed25519 seat key pair (dir 0700) |
 | `<home>/sessions/by-pid/`, `by-sid/` | `lib/identity.ts` | which seat a local claude pid / session id holds (machine-local, not room state) |
@@ -186,7 +198,7 @@ RoomStore
 | `<home>/bin/row-status`, `roots.json` | `hooks/launcher.ts` | the status-line launcher and the plugin roots it may run |
 | `<home>/bin/serve`, `current` | `lib/remote/shim.ts` (SessionStart, a join on the host, every CLI run, the card admit) | the SSH forced command's stable shim, and the plugin root, node and plugin cache dir it runs |
 
-**MemoryRoomStore** (`test/support/memory-store.ts`) is a second implementation that keeps a room in memory and implements `members.update` as a compare-and-set retry loop, as a remote store would. It shares `store.toPayload` / `store.admit` / `store.placeAfter` and the seat ops of `lib/room/members.ts`, so ids, chain, signatures, the trust checks and seat rules are byte-identical. `test/store-contract.node-test.ts` runs one suite against both, and against `test/support/thread-store.ts` (every call over `lib/remote/bridge.ts` to an FsRoomStore on a worker). That is the **remote seam**: a store that keeps rooms off-machine implements the same interface (`store.setBackend(factory)` swaps it in). The seat private keys stay local whatever the store; liveness falls back to the `seen_at` lease for a seat of another machine or with no pid. What other machines may see of `members.json` is `members.publicView` (no `pid`, `pid_start`, `session_id`, `cwd`).
+**MemoryRoomStore** (`test/support/memory-store.ts`) is a second implementation that keeps a room in memory, implements `members.update` as a compare-and-set retry loop, as a remote store would, and holds `lock(name)` while its function runs (one taken inside itself is `LOCK`). It shares `rules.ts` (`toPayload`, `admit`, `placeAfter`), `trust.ts` and the seat ops of `lib/room/members.ts`, so ids, chain, signatures, the trust checks and seat rules are byte-identical. `test/store-contract.node-test.ts` runs one suite against four backends: the file store, the memory store, `test/support/thread-store.ts` (every call over `lib/remote/bridge.ts` to an FsRoomStore on a worker) and a mirror (`test/support/remote-store.ts`). That is the **remote seam**: a store that keeps rooms off-machine implements the same interface (`store.setBackend(factory)` swaps it in). The seat private keys stay local whatever the store; liveness falls back to the `seen_at` lease for a seat of another machine or with no pid. What other machines may see of `members.json` is `members.publicView` (no `pid`, `pid_start`, `session_id`, `cwd`).
 
 ## Entries and `via`
 
@@ -198,33 +210,34 @@ An entry is `{id, at, from, via, kind, text?, prev, …kind fields}`. `id` is mo
 | `agent` | `say`, `question`, `status`, `proposal`, `task_req` | the MCP server (`post`, `propose`, `task`) on behalf of a member's Claude |
 | `system` | `decision`, `member_joined`, `member_left`, `task`, `status`, `host_changed` | hooks, the reaper and the handoff (`lib/handoff.ts`), with `{system: true}` |
 
-**Signing.** Every hook process runs `seat-key.arm()`, which installs a signer. `append` is `place(toPayload(…))`: `toPayload` validates and, for `via=human`, signs (sig v2, `lib/room/envelope.ts`: Ed25519 over the payload with sorted keys plus `room`, `from`, `nonce`, `ts`, without `id`/`at`/`prev`, so a payload signed on one machine can be placed on another). `place` validates again, refuses a replayed nonce or a `ts` outside `SIG_SKEW_MS`, verifies the signature, then stamps `id`, `at`, `prev` under the log lock. The MCP server, CLI, tail and module never load `seat-key.ts` (`test/hooks/security.node-test.ts`), so they cannot write `via=human`; the store refuses. Keys are pinned in the log: the join hook puts the seat's public key in `member_joined`, the first key seen per name is that name's key for the room's life, and a join with another key is refused (`AUTH`). Readers call `store.humanTrust(e)`: `verified` (v2, or v1 from before the pin, against the pinned key; the local `.pub` only in a room that pins none), `legacy` (unsigned, in a room that pins no key, from a seat with no local key), or `unverified` (shown as `bob (unverified): …`, never counted for consent or tasks).
+**Signing.** Every hook process runs `seat-key.arm()`, which installs a signer. `append` is `place(toPayload(…))`: `toPayload` validates and, for `via=human`, signs (sig v2, `lib/room/envelope.ts`: Ed25519 over the payload with sorted keys plus `room`, `from`, `nonce`, `ts`, without `id`/`at`/`prev`, so a payload signed on one machine can be placed on another). `place` validates again, refuses a replayed nonce or a `ts` outside `SIG_SKEW_MS`, verifies the signature, then stamps `id`, `at`, `prev` under the log lock. The MCP server, CLI, tail and module never load `seat-key.ts` (`test/hooks/security.node-test.ts`), so they cannot write `via=human`; the store refuses. Keys are pinned in the log: the join hook puts the seat's public key in `member_joined`, the first key seen per name is that name's key for the room's life, and a join with another key is refused (`AUTH`). Readers ask the store that read the entry, `store.trust(e)` (`lib/room/trust.ts`, explicit: the store's keys go in, nothing rides on the entry): `verified` (v2, or v1 from before the pin, against the pinned key, signed for this room; the local `.pub` only in a room that pins none), `legacy` (unsigned, in a room that pins no key, from a seat with no local key), or `unverified` (shown as `bob (unverified): …`, never counted for consent or tasks). `Room` passes its store's trust to every fold, render and delivery; a caller with an entry and no store uses `trustOf(e)` (the store of the room the entry names; an entry naming none is never verified). MCP `read` gives the model the rendered line (`render.line({full})`), so the marker is in what it reads.
 
-**Hash chain and `log.idx`.** `verifyChain` checks the chain incrementally from the `log.idx` checkpoint, which is trusted only while the line before its offset still hashes to the stored hash; otherwise it rebuilds from byte 0. The checkpoint also records the offset of every non-chat line, so `readView({after})` returns everything that decides lanes (proposals, answers, joins, tasks) plus the entries after `after`, without parsing the whole log. The tail runs `verifyChain` on its health tick and sends one `room log check: …` line per break (a `health` event). The chain makes edits around the store visible; it does not prevent them.
+**Hash chain and `log.idx`.** `verifyChain` checks the chain incrementally from the `log.idx` checkpoint, which is trusted only while the line before its offset still hashes to the stored hash; otherwise it rebuilds from byte 0. The checkpoint also records the offset of every non-chat line, so `readView({after})` returns everything that decides delivery (proposals, answers, joins, tasks) plus the entries after `after`, without parsing the whole log; a process keeps the checkpoint it reached in memory and parses only what was appended since. The tail runs `verifyChain` on its health tick (writing `log.idx` lazily) and sends one `room log check: …` line per break (a `health` event). The chain makes edits around the store visible; it does not prevent them.
 
 **Who typed an `@room` or `@claude`.** (Outside a room `@claude` is a plain prompt and passes untouched.) The module's `prompt.submit` gate reads the origin Claude Code stamps on the prompt (`composer`, `sdk` or `bridge` count as typed; cc CONTRACT `prompt-origin-composer`) and drops any other `@room` before a hook runs; the shim hands that origin to at-room as `sub_human_origin`, and at-room posts only with a typed one that comes with this session's nonce (Security model). An origin that is lost on the way (a reload between the two hooks) is refused, and the person types it again.
 
 **How an `@room` post looks.** The TUI trims trailing whitespace before the hook sees the prompt (accepted). On success at-room answers `continue:false` with a stop reason, which keeps the person's `❯ @room …` row and adds one warning line, "Operation stopped by hook: ✓ sent to room CODE (Claude wasn't asked)" (for `@claude`, "✓ sent; the room's Claude will answer"), and an isMeta copy of it; the model sees the row and the copy natively on its next turn. The module's `session.append` hook keeps that warning line as the receipt alone (only for a stop its shim just returned, matched whole; cc CONTRACT `ups-stop-frame`, `session-append-notice-rewrite`), so the person sees `⏺ ✓ sent to room CODE (Claude wasn't asked)`, after `--resume` too. The receipt says who reads the post, so where the frame stays (2.1.300 was reported not to rewrite) it still reads as delivered, not as an error. Refusals are `decision:block` with `suppressOriginalPrompt`, which works only inside `hookSpecificOutput`, so refused or forged text never reaches the model. Typed through Remote Control (origin `bridge`), a refusal is also the `systemMessage`, relayed to the phone (Process model, Remote Control); "✓ sent" is not (the phone shows the person's own row, and a relay costs a turn). When the posted text appears verbatim in the last assistant message (an accepted prompt suggestion, a copied draft), the entry carries `drafted:"agent"`; it is still posted.
 
-## Lanes and settle batching
+## Delivery and settle batching
 
-`lane(me, e, entries)` (`lib/room/lanes.ts`) says whom an entry concerns:
+`deliver(me, e, {entries, trust, note})` (`lib/room/deliver.ts`) says what one entry is for one seat, one of four classes:
 
-- **push**: the tail sends it now. A person's own words, joins and leaves (group chat) are `chat`: shown to the person, copied to the model, no wake. Anything `to` me or mentioning `@me` (for the room's Claude only `to=claude`, a person's leading `@claude` tag: an `@claude` inside the text is just words), a proposal naming me that I have not answered, an objection to my proposal, a task request (room Claude only) is a `wake`: one plugin prompt, one model turn.
-- **pull**: no wake. The tail sends it as "Room since your last turn", which the model reads with its next request.
-- **none**: my own posts.
+- **wake**: needs Claude now: one plugin prompt, one model turn. Anything `to` me or mentioning `@me` (for the room's Claude only `to=claude`, a person's leading `@claude` tag: an `@claude` inside the text is just words), a proposal naming me that I have not answered, a decision on a proposal I am in, a task assigned to me that someone else asked for, an objection to my proposal; for the room's Claude a task request and a join whose row note says no row runs.
+- **notice**: for the person, no wake (the tail's `chat` event): another person's own words not addressed to me, another member's join or leave, a host move. The model gets a copy as context.
+- **context**: for Claude, no wake: the tail sends it as "Room since your last turn", which the model reads with its next request.
+- **none**: my own posts, and what concerns neither me nor the room's state.
 
-The tail batches push entries in a `Batcher` (`lib/tail.ts`): flush after `SETTLE_MS` 1500 of quiet or `SETTLE_MAX_MS` 5000 after the first (room Claude: 3000 / 10000), so a burst costs at most one turn. Each entry is judged again at flush time against `readView`, so an entry answered or decided in the meantime is dropped. A `member_left` is held `LEAVE_SETTLE_MS` 8000 so a quick leave and rejoin shows nothing; the room row's hold progress line settles leaves the same way ("bob left" only after 8 s). A member's batch is group-chat lines without ids, plus `(for Claude)` lines in a wake; the room Claude's batch starts with `stateLine()` and keeps ids. All timings live in `lib/config.ts` with `SUB_HUMAN_*_MS` overrides. The room's Claude gets the overrides of the session that started it through its `--settings` env (the bg daemon filters the caller's env), so a room started with a short `SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS` has a watchdog that honours it.
+Its first step, `lane()` (push: notice or wake; pull: context; none), is kept for its table tests. The tail batches what is not `none` in a `Batcher` (`lib/tail.ts`): flush after `SETTLE_MS` 1500 of quiet or `SETTLE_MAX_MS` 5000 after the first (room Claude: 3000 / 10000), so a burst costs at most one turn. Each entry is judged again at flush time against `readView`, so an entry answered or decided in the meantime is dropped. A `member_left` is held `LEAVE_SETTLE_MS` 8000 so a quick leave and rejoin shows nothing; the room row's hold progress line settles leaves the same way ("bob left" only after 8 s). A member's batch is group-chat lines without ids, plus `(for Claude)` lines in a wake; the room Claude's batch starts with `stateLine()` and keeps ids. All timings live in `lib/config.ts` with `SUB_HUMAN_*_MS` overrides. The room's Claude gets the overrides of the session that started it through its `--settings` env (the bg daemon filters the caller's env), so a room started with a short `SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS` has a watchdog that honours it.
 
 ## Consent
 
 ```
 propose tool (via=agent)          ──► proposal {hash, approvers, same?, path=plans/<hash>.md}
-                                        │ push lane to each approver
+                                        │ a wake for each approver
                                         │ the tail's reminder names only the one a review opens next (the others listed as h6 "title")
-approver's Claude: EnterPlanMode ──► consent.ts Pre: allow silently, review.json {phase: entering, mode, hash}
+approver's Claude: EnterPlanMode ──► consent.ts Pre: allow silently, the session's review {phase: entering, mode, hash}
                                       hash = what the person's latest prompt names (cc.lastHumanPrompt: their own words
-                                      only; proposal.choose → members/<name>/pick: a hash, or words only its title / text
+                                      only; proposal.choose → the session's pick: a hash, or words only its title / text
                                       has, "Open v3"), else the earlier pick, else the newest (never the model's choice)
                                       plan file path already known → back it up, write the proposal text now (Post: again)
                    ExitPlanMode  ──► consent.ts Pre: always ask with updatedInput.plan = that proposal's text, whatever
@@ -234,7 +247,7 @@ approver's Claude: EnterPlanMode ──► consent.ts Pre: allow silently, revie
                                         │ native plan view (scrollable), the person answers
    "Yes …"                        ──► Post(ExitPlanMode): signoff via=human (only if text unedited); restore plan file + mode
    "Tell Claude what to change",  ──► Stop / next ExitPlanMode / prompt: cc.planFeedback(transcript) → nothing recorded:
-   phone "Suggest edits"/deny+note,   the note waits in members/<name>/confirm; PermissionRequest: allow with setMode
+   phone "Suggest edits"/deny+note,   the note waits in the session's confirm; PermissionRequest: allow with setMode
    phone message after a bare deny    (no dialog), records nothing; the model is told to open the confirm card
    confirm card (AskUserQuestion) ──► Pre: the hooks' card "Send to <proposer> as changes requested on "<title>": "<note>"?"
                                       (Send / Discard); Post: only the person's Send on that card → objection via=human,
@@ -259,7 +272,7 @@ One person in two seats is one approver. A seat's `account` (in the members docu
 ## Tasks
 
 ```
-member's Claude ─ task({op, …}) ─► task_req (via=agent, by=member)   push lane to the room's Claude only
+member's Claude ─ task({op, …}) ─► task_req (via=agent, by=member)   a wake for the room's Claude only
 room Claude ─ TaskCreate/TaskUpdate (metadata {req, by}) ─► native list sh-CODE under <claude config>/tasks/
 hooks/handlers/tasks.ts PostToolUse ─► task entry (via=system, full snapshot) ─► tasks.json = tasks.fold(task entries)
 hooks/handlers/tasks.ts TaskCompleted ─► tasks.gate(): exit 2 unless the owner asked done with evidence
@@ -428,12 +441,12 @@ Every internal the plugin relies on, from `lib/cc.ts` `CONTRACT`. `§` points in
 | `task-update-schema` | §1 | API | TaskUpdate metadata merges; null deletes a key. |
 | `task-create-metadata` | §1 | API | TaskCreate accepts metadata. |
 | `env-child-session` | §2 | env | Hooks, Bash, statusLine and subagentStatusLine get CLAUDE_PID and CLAUDE_CODE_SESSION_ID (cc.ENV, sessionId, claudePid). The SessionEnd command hook's shell check reads both to start node only for a session with a lease or a seat (hooks.json). |
-| `env-mcp-session` | §2 | env | MCP stdio servers get CLAUDE_CODE_SESSION_ID (fixed at spawn) but not CLAUDE_PID. |
+| `env-mcp-session` | §2 | env | MCP stdio servers get CLAUDE_CODE_SESSION_ID (fixed at spawn) but not CLAUDE_PID; the room server finds its seat by it (mcp/room-server.ts whoami). |
 | `env-plugin-mcp` | §2 | env | Plugin MCP servers get CLAUDE_PLUGIN_ROOT/DATA in env. |
 | `env-clear-session-id` | §2 | incidental | /clear updates process.env.CLAUDE_CODE_SESSION_ID; running MCP servers keep the old id. |
 | `env-nested-strip` | §2 | incidental | A nested claude drops CLAUDE_CODE_SESSION_ID from its env. |
 | `hook-input-common` | §2 | API | Common hook input: session_id, transcript_path, cwd, prompt_id?, permission_mode?, agent_id?; no pid. |
-| `mcp-stdio-ppid` | §2 | incidental | A stdio MCP server is spawned without a shell (the Linux cgroup wrapper ends in exec), so its process.ppid is the claude pid; the room server resolves its caller that way. Not so when the user sets CLAUDE_CODE_SHELL_PREFIX (cc-2.1.292.md Review spikes, S-mcp a). |
+| `mcp-stdio-ppid` | §2 | incidental | A stdio MCP server is spawned without a shell (the Linux cgroup wrapper ends in exec), so its process.ppid is the claude pid; the room server resolves its caller that way when its session id names no seat (after a /clear, env-clear-session-id). Not so when the user sets CLAUDE_CODE_SHELL_PREFIX (cc-2.1.292.md Review spikes, S-mcp a). |
 | `mcp-progress-resets-idle-timeout` | §2 | incidental | A tools/call has an idle watchdog (30 min for stdio, CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT) that each notifications/progress resets, and a wall-clock limit (MCP_TOOL_TIMEOUT, about 27.8 h by default) that progress does not extend. mcp/hold.ts beats progress to keep a hold under the idle watchdog (cc-2.1.292.md Review spikes, S-mcp b). |
 | `mcp-server-shared-by-subagents` | §2 | incidental | A subagent with no mcpServers uses its parent's MCP clients, so the room tools a subagent calls reach the main thread's server process (cc-2.1.292.md Review spikes, S-mcp c). |
 | `plan-mode-attachment` | §3 | incidental | Transcript attachment {type:"plan_mode", planFilePath} (cc.planFile). |
@@ -535,7 +548,6 @@ Every internal the plugin relies on, from `lib/cc.ts` `CONTRACT`. `§` points in
 - `lib/identity.ts`: where rooms live, who is in them, and which Claude session is asking.
 - `lib/io.ts`: small file and process helpers shared by every module.
 - `lib/lock.ts`: the one lockfile helper (room log, members.json, proposals, the task mirror, the row map).
-- `lib/notices.ts`: join / leave lines for every human in the room, as a group chat shows them: "bob joined", "bob rejoined", "bob left (connection lost)" (no room code, no ids).
 - `lib/proposal.ts`: proposals and the consent card. Every write goes through room.append().
 - `lib/remote/admission.ts`: the host person's consent to a machine that typed an invite's PIN.
 - `lib/remote/auth.ts`: invites and link tokens, on the host. An invite is single-use and turns into a link token at the first hello; the token is the link's credential from then on.
@@ -564,19 +576,26 @@ Every internal the plugin relies on, from `lib/cc.ts` `CONTRACT`. `§` points in
 - `lib/remote/webhost.ts`: the host's side of a join over the web (1.1), shared by the join hook (`/sub-human invite --web`, `--public`, `--url URL`, `/sub-human invite --stop`: block reasons the person reads, never the model) and the CLI (lib/cli/host.ts).
 - `lib/remote/ws.ts`: a minimal WebSocket (RFC 6455) with no dependencies: the server end for the host's listener (lib/remote/listener.ts, an http server on 127.0.0.1 only) and the client end for the joiner's link daemon (lib/remote/transports/ws.ts) over net or tls, through an HTTP CONNECT proxy when the environment names one (a corporate network that allows only CONNECT to 443).
 - `lib/room-claude.ts`: the room's own Claude (member claude, SendMessage name claude.CODE), a headless `claude --bg` session the join hook starts.
-- `lib/room.ts`: the room log (envelope v3). A facade over lib/room/*, so callers keep one require.
-- `lib/room/consent.ts`: the one fold of the room log into proposal / consent state.
+- `lib/room.ts`: the room log (envelope v3). A facade over lib/room/*, so callers keep one import.
+- `lib/room/consent.ts`: the one fold of the room log into proposal / consent state, and the queries over it.
+- `lib/room/deliver.ts`: what one log entry is for one seat. Pure (the consent state comes from consent.ts fold over the entries passed in, judged with the store's trust).
 - `lib/room/envelope.ts`: the signed envelope (sig v2) and the keys pinned in the log.
-- `lib/room/lanes.ts`: who a log entry concerns, and the proposal queries that decide it.
+- `lib/room/fs-store.ts`: FsRoomStore, the RoomStore of a room whose directory is on this machine (<home>/rooms/<code>, or {dir}). lib/room/store.ts documents the interface; this is the only module that knows a room's file names (test/store-bypass.node-test.ts) and the only one that imports log-io.ts (the log's bytes).
+- `lib/room/keys.ts`: where the seats' keys live on this machine, <home>/keys/<code>/ (dir 0700; hooks/seat-key.ts creates them; the private keys never leave this machine, whatever the store).
 - `lib/room/link-state.ts`: how this machine's link to a room hosted elsewhere is doing, for the room row (lib/rows.ts), the agent statusline (statusline/segments.ts), `sub-human doctor` (lib/cli/doctor.ts) and the tail's link line (lib/tail.ts linkLine).
 - `lib/room/links.ts`: the link registry on this machine: which rooms are mirrors of a room hosted elsewhere, and how to reach them.
+- `lib/room/log-io.ts`: the bytes of a room log, <room>/log.jsonl, and its checkpoint <room>/log.idx.
 - `lib/room/members.ts`: the members document's rules, shared by every RoomStore (as placeAfter is for the log), so a seat is judged the same whichever machine holds the room.
+- `lib/room/registry.ts`: which RoomStore a room code opens, and the rooms on this machine.
 - `lib/room/render.ts`: log entries as text, for Claude (ids kept) and for people (no ids).
-- `lib/room/store-mirror.ts`: MirrorRoomStore, the RoomStore of a room hosted on another machine: an FsRoomStore directory kept byte-identical to the host's log by the link daemon (lib/remote/link.ts), so every reader (readView, log.idx, tailer, verifyChain, rows, digests) works unchanged.
-- `lib/room/store.ts`: the RoomStore seam, and FsRoomStore, its implementation over the room directory on this machine.
+- `lib/room/rules.ts`: the placement rules every RoomStore shares, so the chain and the checks are the same whatever the backend (the file store, a test's memory store, the host placing a mirror's payload).
+- `lib/room/session.ts`: one document per seat, members/<name>/session in the room's kv: what this machine keeps for that seat's session, in one place.
+- `lib/room/store-mirror.ts`: MirrorRoomStore, the RoomStore of a room hosted on another machine: it composes an FsRoomStore over a directory the link daemon (lib/remote/link.ts) keeps byte-identical to the host's log, so every reader (readView, log.idx, tailer, verifyChain, rows, digests) is that store's, unchanged.
+- `lib/room/store.ts`: the RoomStore seam: the interface every store implements, and the one import the rest of the plugin takes the store from.
+- `lib/room/trust.ts`: whether a via=human entry is the person's. Pure: no file, no store; the keys come in through a TrustCtx the store builds (its pinned keys, and the seat's local .pub for a legacy room).
 - `lib/room/types.ts`: the room's shared shapes, types only (import type).
 - `lib/room/validate.ts`: the room log's envelope rules (envelope v3): which kinds each `via` may write, the fields a caller may set, and the task fields of task_req / task entries. append() (store.ts) runs validate() before it signs, and place() runs it again on the payload before it takes the log lock.
-- `lib/rows.ts`: participant rows in the agent panel. Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.ts kv).
+- `lib/rows.ts`: participant rows in the agent panel. Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.ts kv) and the holds and blocks of a seat's session document (lib/room/session.ts).
 - `lib/seats.ts`: entering and leaving a room, the one sequence the join hook, the session-end hook and the remote server (lib/remote/server.ts, for a seat on another machine) all run.
 - `lib/tail.ts`: the room tail behind `sub-human tail` (scripts/sub-human), the hooks module's child (mod/deliver.ts).
 - `lib/tasks.ts`: the room's shared task list. The headless room Claude's own native task list (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list.
@@ -642,7 +661,16 @@ Everything is a `node` start, so the number of processes per event is the main c
 
 So a session that never joins a room starts no node on any event but `/sub-human` (`mod/test/starts.test.ts` holds that), where before it paid 2 at its start and 1 to 3 on every subagent, card, plan-mode call, room tool, notification, compact, clear, resume and its end. The SessionEnd check is a few shell builtins (`[ -e ]` on three paths) in the shell Claude Code runs every command hook in.
 
-Long-lived per seated session: the tail child and the MCP server (one idle `node` each); a session with no seat runs only the MCP server, unless it typed a PIN join (then also the tail child, which looks the join up every 2 s until the host's card answered, every 10 s after). Measured in the audit waves: the at-room hook at **36 ms with a 100k-entry log** (was 243 ms before `log.idx` and tail-only reads), `append` **1.8 ms**. `append` reads only the log's tail for `id` and `prev` (a person's entry also reads back `2 × SIG_SKEW_MS` for its nonce, and the pinned keys from the non-chat lines `log.idx` marks); readers keep a per-file cache and parse only appended bytes.
+Long-lived per seated session: the tail child and the MCP server (one idle `node` each); a session with no seat runs only the MCP server, unless it typed a PIN join (then also the tail child, which looks the join up every 2 s until the host's card answered, every 10 s after). `append` reads only the log's tail for `id` and `prev` (a person's entry also reads back `2 × SIG_SKEW_MS` for its nonce); the pinned keys and the room's host come from the store's non-chat entries, carried forward one new line at a time. Readers keep a per-file cache and parse only appended bytes: `readAll` returns that cache itself, and `readView` keeps the checkpoint it reached in memory, so the health tick neither re-parses nor rewrites `log.idx` (`verifyChain` writes it lazily, every 64 KiB or minute of log).
+
+The 100k-entry budget (`test/perf.node-test.ts`, in-process after warm-up, the median of 15; a log written as a day of a busy room leaves it: one entry a second, a proposal every 1,000 with answers, 1 % signed human words), measured on this Mac before the stage 5 store split (0.5.0-beta.15 plus stages 1 to 4) and after:
+
+| | Budget | Before | After |
+|---|---|---|---|
+| an `@room` post: the signed append | ≤ 50 ms | 150 ms (cold 175) | **1.5 ms** (cold 130) |
+| the agent-panel status line (room row and one participant row) | ≤ 30 ms | 73 ms (cold 352) | **5.5 ms** (cold 77) |
+
+Before, a person's append re-read the pinned keys from the whole log (no `log.idx` to start from) inside the log lock, and the status line refolded consent over every entry, normalizing each, and scanned the log several times per row. The cold numbers are a process's first call, which parses the log once.
 
 ## Testing
 

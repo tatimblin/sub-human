@@ -132,6 +132,16 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(s.append({ kind: 'say', text: 'mine', to: 'alice' }, { via: 'agent', from: 'dave' }).from, 'dave', 'per sender');
   });
 
+  test(`store contract (${name}): a person's own entries have a rate too, per seat (the host's link cap is lower)`, t => {
+    h.freshHome(t);
+    const s = B.make(t);
+    const cap = name === 'remote' ? config.LINK_HUMAN_RATE_MAX : config.RATE_HUMAN_MAX;
+    for (let i = 0; i < cap; i++) say(s, 'alice', `w${i}`);
+    assert.throws(() => say(s, 'alice', 'one too many'), (e: Err) => e.code === 'RATE' && /alice posted/.test(e.message));
+    assert.equal(say(s, 'bob', 'another person').from, 'bob', 'per seat');
+    assert.equal(say(s, 'alice', 'her Claude', 'agent').via, 'agent', 'her Claude has its own bucket');
+  });
+
   test(`store contract (${name}): members.join/leave/beat: one seat per name across machines, judged by lease off this machine`, { skip: B.hostOnly }, t => {
     h.freshHome(t);
     const s = B.make(t);
