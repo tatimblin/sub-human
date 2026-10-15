@@ -5,14 +5,20 @@
  * hooks/consent.ts) all read this, so they cannot disagree.
  *
  *   fold(entries) -> F   memoized per entries array (same array, same length and last id -> same F)
- *     F.proposals  Map hash -> {id, hash, from, approvers, path, entry}   the LATEST proposal entry per hash,
- *                  Map order = log order of that latest entry
- *     F.answers    Map hash -> Map name -> {kind: 'signoff'|'objection', id, entry}   per person, the latest answer
+ *     F.proposals  Map hash -> {id, hash, from, approvers, same, path, entry}   the LATEST proposal entry per hash,
+ *                  Map order = log order of that latest entry; same: its approvers that are one person (groupsOf)
+ *     F.answers    Map hash -> Map name -> {kind: 'signoff'|'objection', id, entry}   per seat, the latest answer
+ *     F.answerOf(hash, name) -> answer|null   the answer that counts for name: the latest of its person's seats
+ *     F.ownAnswer(hash, name) -> answer|null  name's own (lib/proposal.ts answer: one per seat)
  *     F.decisions  Map hash -> entry   the latest via=system decision per hash
  *     F.superseded Map hash -> newer hash   undecided proposals a later one retired (below)
  *     F.matrix(hash, approvers?) -> {hash, approvers, answers: {name: {id, kind}|null}, signed: {name: id|null},
- *                  agreed, objected, missing (no answer), unsigned (no signoff), complete (everyone answered)}
+ *                  agreed, objected, missing (no answer), unsigned (no signoff), complete (everyone answered),
+ *                  also: {name: [its person's other seats]}, people (how many people the approvers are)}
+ *                  agreed / objected / missing list one name per person: the seat that answered, else its first
  *     F.pending(name) -> [proposal]   undecided, unretired proposals naming name that name has not answered (log order)
+ *     F.answerable(name) -> [proposal]   the same, but another seat of name's person answering leaves one in: the
+ *                  seat's own answer still counts, and overrides (the hooks record an answer from a card already open)
  *     F.status(hash) -> {proposal, decision, matrix, state: 'open'|'agreed'|'blocked'|'superseded'}|null
  *
  * Semantics (one place):
@@ -25,13 +31,17 @@
  *     keys). A bad sig, or an unsigned answer from a seat with a key, is ignored.
  *   - Per person, the latest via=human signoff / objection wins: an objection voids that person's earlier
  *     signoff (and a later signoff replaces an objection). A legacy via=human `revoke` clears the answer.
+ *   - One person in several seats: a proposal's `same` groups (lib/proposal.ts create: seats of one account) are one
+ *     person. The newest answer from any seat of the group counts for every seat of it, and a revoke from one clears
+ *     the group. A proposal with no `same` (an older proposer's, or one person per seat) counts every seat: stricter,
+ *     never wrong.
  *   - A decision is as recorded: the latest via=system decision with that proposal_hash closes it.
  *     state: 'blocked' when an approver's current answer is an objection, else 'agreed'.
  *   - A revision retires: a proposal entry retires every earlier undecided proposal with the same `from` and the
  *     same title (the "proposal HASH: title" text), so it is no longer pending ('superseded'). Answers stay with
  *     their hash: none carry over to the newer one. Another sender's proposal with the same title stays open. A
  *     later entry for a retired hash (proposed again) brings it back.
- * Recording (lib/proposal.ts answer, then decide) is idempotent on top of this: one answer per person per hash,
+ * Recording (lib/proposal.ts answer, then decide) is idempotent on top of this: one answer per seat per hash,
  * so the fold's "latest" and the decision's refs agree for everything the hooks write.
  */
 
@@ -58,9 +68,27 @@ function fold(entries: readonly (Entry | null | undefined)[] | null | undefined)
   return f;
 }
 
+/** A proposal's same groups as the fold reads them: names among approvers, disjoint, 2+ each (older entries: none). */
+function groupsOf(same: unknown, approvers: string[]): string[][] {
+  if (!Array.isArray(same)) return [];
+  const seen = new Set<string>();
+  const out: string[][] = [];
+  for (const g of same) {
+    if (!Array.isArray(g)) continue;
+    const names = [...new Set(g.filter((n): n is string => typeof n === 'string' && approvers.includes(n) && !seen.has(n)))];
+    if (names.length < 2) continue;
+    for (const n of names) seen.add(n);
+    out.push(names);
+  }
+  return out;
+}
+
 function compute(list: readonly (Entry | null | undefined)[]): Fold {
   const proposals = new Map<string, ProposalState>();
   const answers = new Map<string, Map<string, Answer>>();
+  // per hash and seat, its latest answer or revoke (null) and where it sits in the log: a same group's newest wins
+  const latest = new Map<string, Map<string, { at: number; a: Answer | null }>>();
+  let seq = 0;
   const decisions = new Map<string, Entry>();
   const superseded = new Map<string, string>();
   for (const raw of list) {
@@ -77,39 +105,70 @@ function compute(list: readonly (Entry | null | undefined)[]): Fold {
         }
       }
       const approvers = Array.isArray(e.approvers) ? e.approvers : [];
-      proposals.set(e.hash, { id: e.id, hash: e.hash, from: e.from, approvers, path: e.path || null, entry: e as ProposalEntry });
+      proposals.set(e.hash, { id: e.id, hash: e.hash, from: e.from, approvers, same: groupsOf(e.same, approvers), path: e.path || null, entry: e as ProposalEntry });
       continue;
     }
     const h = e.proposal_hash;
     if (!isHash(h)) continue;
     if (e.kind === 'decision') { if (e.via === 'system') decisions.set(h, e); continue; }
     if (e.via !== 'human' || typeof e.from !== 'string' || humanTrust(raw) === 'unverified') continue;
+    const mark = (a: Answer | null) => {
+      if (!latest.has(h)) latest.set(h, new Map());
+      latest.get(h)!.set(e.from, { at: ++seq, a });
+    };
     if (ANSWER_KINDS.has(e.kind)) {
       if (!answers.has(h)) answers.set(h, new Map());
-      answers.get(h)!.set(e.from, { kind: e.kind as Answer['kind'], id: e.id, entry: e });
+      const a: Answer = { kind: e.kind as Answer['kind'], id: e.id, entry: e };
+      answers.get(h)!.set(e.from, a);
+      mark(a);
     } else if (e.kind === 'revoke' && answers.has(h)) {
       answers.get(h)!.delete(e.from);
+      mark(null);
     }
   }
 
-  const answerOf = (hash: string, name: string): Answer | null => { const m = answers.get(hash); return (m && m.get(name)) || null; };
+  const ownAnswer = (hash: string, name: string): Answer | null => { const m = answers.get(hash); return (m && m.get(name)) || null; };
+  /** The seats of name's person on hash: its same group, else name alone. */
+  const groupOf = (groups: string[][], name: string): string[] => groups.find(g => g.includes(name)) || [name];
+  /** The answer that counts for a person's seats: the newest answer or revoke of any of them. */
+  function current(hash: string, seats: string[]): Answer | null {
+    const m = latest.get(hash);
+    if (!m) return null;
+    let best: { at: number; a: Answer | null } | null = null;
+    for (const n of seats) { const x = m.get(n); if (x && (!best || x.at > best.at)) best = x; }
+    return best ? best.a : null;
+  }
+  const answerOf = (hash: string, name: string): Answer | null => current(hash, groupOf(proposals.get(hash)?.same ?? [], name));
 
   function matrix(hash: string, approversArg?: string[]): Matrix {
     const approvers = Array.isArray(approversArg) ? approversArg : proposals.get(hash)?.approvers ?? [];
-    const out: Matrix['answers'] = {}, signed: Matrix['signed'] = {};
-    for (const n of approvers) {
-      const a = answerOf(hash, n);
-      out[n] = a ? { id: a.id, kind: a.kind } : null;
-      signed[n] = a && a.kind === 'signoff' ? a.id : null;
+    const groups = groupsOf(proposals.get(hash)?.same, approvers);
+    const out: Matrix['answers'] = {}, signed: Matrix['signed'] = {}, also: Matrix['also'] = {};
+    const agreed: string[] = [], objected: string[] = [], missing: string[] = [];
+    const done = new Set<string>();
+    let people = 0;
+    for (const first of approvers) {
+      if (done.has(first)) continue;
+      const seats = groupOf(groups, first);
+      const a = current(hash, seats);
+      for (const n of seats) {
+        done.add(n);
+        out[n] = a ? { id: a.id, kind: a.kind } : null;
+        signed[n] = a && a.kind === 'signoff' ? a.id : null;
+      }
+      // the person by the seat that answered, else its first
+      const shown = a && seats.includes(a.entry.from) ? a.entry.from : first;
+      if (seats.length > 1) also[shown] = seats.filter(n => n !== shown);
+      (!a ? missing : a.kind === 'signoff' ? agreed : objected).push(shown);
+      people++;
     }
-    const by = (kind: Answer['kind']) => approvers.filter(n => out[n] && out[n].kind === kind);
-    const missing = approvers.filter(n => !out[n]);
-    return { hash, approvers, answers: out, signed, agreed: by('signoff'), objected: by('objection'), missing,
+    return { hash, approvers, answers: out, signed, agreed, objected, missing, also, people,
       unsigned: approvers.filter(n => signed[n] == null), complete: approvers.length > 0 && missing.length === 0 };
   }
 
-  const pending = (name: string | null | undefined): ProposalState[] => (name ? [...proposals.values()].filter(p => p.approvers.includes(name)
-    && !decisions.has(p.hash) && !superseded.has(p.hash) && !answerOf(p.hash, name)) : []);
+  const open = (p: ProposalState, name: string) => p.approvers.includes(name) && !decisions.has(p.hash) && !superseded.has(p.hash);
+  const pending = (name: string | null | undefined): ProposalState[] => (name ? [...proposals.values()].filter(p => open(p, name) && !answerOf(p.hash, name)) : []);
+  const answerable = (name: string | null | undefined): ProposalState[] => (name ? [...proposals.values()].filter(p => open(p, name) && !ownAnswer(p.hash, name)) : []);
 
   function status(hash: string): ReturnType<Fold['status']> {
     const p = proposals.get(hash);
@@ -119,7 +178,7 @@ function compute(list: readonly (Entry | null | undefined)[]): Fold {
     return { proposal: p, decision: d, matrix: m, state: !d ? (superseded.has(hash) ? 'superseded' : 'open') : m.objected.length ? 'blocked' : 'agreed' };
   }
 
-  return { proposals, answers, decisions, superseded, answerOf, matrix, pending, status };
+  return { proposals, answers, decisions, superseded, answerOf, ownAnswer, matrix, pending, answerable, status };
 }
 
-export { fold, HASH_RE };
+export { fold, groupsOf, HASH_RE };

@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/cc.ts: the single home for every Claude Code internal the plugin relies on.
  *
  * Source of truth: docs/internals/cc-2.1.281.md (a full read of the 2.1.281 binary; the § numbers point there)
- * and docs/internals/cc-2.1.292.md (what changed in 2.1.292, checked against that binary). Every export names
+ * and docs/internals/cc-2.1.292.md, cc-2.1.296.md (what changed in each, checked against that binary). Every export names
  * the literal string to search the binary for (`@cc`) and how stable the assumption is (`@stability`):
  *   API         documented hook/settings schema, a `.describe()` string, or an exported name
  *   env         a named env var or flag
@@ -25,17 +25,20 @@
  *   planFile(lines, toolInput?), planFeedback(lines, toolUseId), toolUseInput(lines, toolUseId)
  *   contentText(content), PASTED_RE, unwrapPasted(text)
  *   JOB_RE, parseDispatch(text), parseAgentsJson(text), jobs(opts), agentsCmd(all), stopCmd(id)
+ *   parseDaemonStatus(text), daemonStatus(opts)   `claude daemon status`: {running, pid, version}
+ *   exeState(pid, {readlink?, ps?, exists?}) -> {exe, deleted}|null   the executable a process runs, and whether it
+ *                                        was deleted since (an upgrade): /proc/PID/exe on Linux, `ps -o comm=` elsewhere
  *   DAEMON_ENV_ALLOW, daemonEnv(env)
  *   matcherIsExact(m, {toolEvent}), matcherMatches(m, name, {toolEvent})
  *   shapeRe(shape)                       a shape as a RegExp: `~` = one minified identifier, the rest literal
  *   CONTRACT                             [{id, search, shape?, stability, note}]
- *   PROBED_VERSION                       the Claude Code version CONTRACT was last checked against ('2.1.292')
+ *   PROBED_VERSION                       the Claude Code version CONTRACT was last checked against ('2.1.296')
  *   MIN_VERSION                          the oldest that can run the plugin (function hooks: '2.1.292')
  *   compareVersions(a, b) -> -1|0|1      numeric per dot-separated part; null for an unreadable one
  *   locateBinary({bin?, env?}) -> path|null   the binary to probe: bin, $CLAUDE_BIN, `claude` on PATH (symlinks
  *                                        resolved), else the newest /opt/homebrew/Caskroom/claude-code*\/<v>/claude
  *   binaryVersion(buf) -> string|null    the VERSION:"…" literal in the binary
- *   runningVersion(pid) -> string|null   the version the Claude Code process pid runs (its executable's path, else --version)
+ *   runningVersion(pid) -> string|null   the version the Claude Code process pid runs (exeState's path, else --version)
  *   globalConfigFile(env), modulesSwitch(env) -> bool|undefined   the hooks modules switch Claude Code last cached
  *   probe(buf, {entries?, envNames?}) -> [{id, stability, ok, missing, note}]   every entry's search strings and
  *       shapes checked against the binary (scripts/probe-cc.js, `sub-human doctor`); envNames adds the derived
@@ -461,46 +464,78 @@ function jobs({ all = false, bin = process.env.SUB_HUMAN_CLAUDE || 'claude', env
   return parseAgentsJson(r.stdout);
 }
 
+/** `claude daemon status` as parseDaemonStatus reads it: running with its pid and version, or not running. */
+interface DaemonStatus { running: boolean; pid: number | null; version: string | null }
+
+/**
+ * Parse `claude daemon status` stdout: "pid:     N" and "version: X" lines while the bg daemon runs, else "not
+ * running" (and exit 1). {running, pid, version} (pid or version null when its line is missing or unreadable), or
+ * null when the text is neither.
+ * @cc Show daemon pid, version, uptime
+ * @stability incidental
+ */
+function parseDaemonStatus(text: unknown): DaemonStatus | null {
+  const t = String(text || '');
+  const pid = /^pid:\s+(\d+)\s*$/m.exec(t);
+  const version = /^version:\s+(\S+)\s*$/m.exec(t);
+  if (pid || version) return { running: true, pid: pid && Number(pid[1]) > 0 ? Number(pid[1]) : null, version: version ? version[1] : null };
+  return /^not running\b/m.test(t) ? { running: false, pid: null, version: null } : null;
+}
+
+/**
+ * Run `claude daemon status` and parse it (parseDaemonStatus): its exit status is not checked, as "not running"
+ * exits 1. null when the command cannot be spawned or prints something else. Options as jobs() (no `all`).
+ * @cc Show daemon pid, version, uptime
+ * @stability incidental
+ */
+function daemonStatus({ bin = process.env.SUB_HUMAN_CLAUDE || 'claude', env = process.env, timeout = 15_000, run = spawnSync }: Omit<JobsOpts, 'all'> = {}): DaemonStatus | null {
+  let r;
+  try { r = run(bin, ['daemon', 'status'], { env, encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'pipe'] }); } catch { return null; }
+  if (!r || r.error) return null;
+  return parseDaemonStatus(r.stdout);
+}
+
 // ---------- daemon env allowlist ----------
 
-// The daemon's dispatch allowlist as 2.1.292 builds it (minified names of that build in brackets):
-// [qRr] = [zWe] + [dWn] + EXTRA_KEYS, where
-// [zWe] = CLAUDE_CONFIG_DIR, CLAUDE_INTERNAL_FC_OVERRIDES, MODEL_KEYS, CUSTOM_MODEL_KEYS, CLAUDE_CODE_SUBAGENT_MODEL_FORCE,
+// The daemon's dispatch allowlist as 2.1.296 builds it (minified names of that build in brackets):
+// [CNr] = [q6e] + [l5n] + EXTRA_KEYS, where
+// [q6e] = CLAUDE_CONFIG_DIR, CLAUDE_INTERNAL_FC_OVERRIDES, MODEL_KEYS, CUSTOM_MODEL_KEYS, CLAUDE_CODE_SUBAGENT_MODEL_FORCE,
 //         CLAUDE_CODE_CLIENT_DATA_URL, PROVIDER_KEYS, CLOUD_KEYS
-// [dWn] = PATH, CLAUDE_CODE_EXTRA_BODY, CLAUDE_CODE_HOST_CREDS_FILE, ENDPOINT_KEYS
+// [l5n] = PATH, CLAUDE_CODE_EXTRA_BODY, CLAUDE_CODE_HOST_CREDS_FILE, ENDPOINT_KEYS
 // The arrays below keep the binary's order: CONTRACT `daemon-env-allowlist` searches for them as JSON text.
-const MODEL_KEYS = [ // [oit]
+const MODEL_KEYS = [ // [eut]
   'ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_MODEL',
   ...['FABLE', 'HAIKU', 'OPUS', 'SONNET'].flatMap(f => [`ANTHROPIC_DEFAULT_${f}_MODEL`, `ANTHROPIC_DEFAULT_${f}_MODEL_DESCRIPTION`,
     `ANTHROPIC_DEFAULT_${f}_MODEL_NAME`, `ANTHROPIC_DEFAULT_${f}_MODEL_SUPPORTED_CAPABILITIES`]),
-  'ANTHROPIC_SMALL_FAST_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION', 'CLAUDE_CODE_SUBAGENT_MODEL',
+  'ANTHROPIC_SMALL_FAST_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION', 'CLAUDE_CODE_SUBAGENT_MODEL', 'CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL',
   'CLAUDE_CODE_3P_PROBE_WROTE_SONNET_DEFAULT', 'CLAUDE_CODE_3P_PROBE_WROTE_OPUS_DEFAULT', 'CLAUDE_CODE_3P_PROBE_WROTE_HAIKU_DEFAULT',
   'CLAUDE_CODE_3P_SEEDED_SONNET_DEFAULT', 'CLAUDE_CODE_3P_SEEDED_OPUS_DEFAULT',
 ];
-const CUSTOM_MODEL_KEYS = ['ANTHROPIC_CUSTOM_MODEL_OPTION', 'ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION', // [vLn]
+const CUSTOM_MODEL_KEYS = ['ANTHROPIC_CUSTOM_MODEL_OPTION', 'ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION', // [nWn]
   'ANTHROPIC_CUSTOM_MODEL_OPTION_NAME', 'ANTHROPIC_CUSTOM_MODEL_OPTION_SUPPORTED_CAPABILITIES'];
-const PROVIDER_KEYS = ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', // [O6]
+const PROVIDER_KEYS = ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', // [hV]
   'CLAUDE_CODE_USE_ANTHROPIC_AWS', 'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD', 'CLAUDE_CODE_USE_MANTLE', 'CLAUDE_CODE_USE_GATEWAY',
   'ANTHROPIC_FOUNDRY_RESOURCE', 'ANTHROPIC_VERTEX_PROJECT_ID', 'ANTHROPIC_AWS_WORKSPACE_ID', 'ANTHROPIC_GOOGLE_CLOUD_PROJECT',
   'ANTHROPIC_GOOGLE_CLOUD_LOCATION', 'ANTHROPIC_GOOGLE_CLOUD_WORKSPACE_ID', 'CLOUD_ML_REGION'];
 const CLOUD_KEYS = ['AWS_REGION', 'AWS_DEFAULT_REGION', 'ANTHROPIC_BEDROCK_REGION_PREFIX', 'AWS_PROFILE', 'AWS_CONFIG_FILE',
   'AWS_SHARED_CREDENTIALS_FILE', 'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT',
   'CLAUDE_SECURESTORAGE_CONFIG_DIR', 'CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST', 'CLAUDE_CODE_HOST_GATEWAY_LINEAGE'];
-// [ILe]: every endpoint of [Mqe] and its companions
+// [uUe]: every endpoint and its companions
 const ENDPOINT_KEYS = ['ANTHROPIC_BASE_URL', '_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS',
   'ANTHROPIC_BEDROCK_BASE_URL', 'CLAUDE_CODE_SKIP_BEDROCK_AUTH', 'ANTHROPIC_VERTEX_BASE_URL', 'CLAUDE_CODE_SKIP_VERTEX_AUTH',
   'ANTHROPIC_FOUNDRY_BASE_URL', 'CLAUDE_CODE_SKIP_FOUNDRY_AUTH', 'ANTHROPIC_AWS_BASE_URL', 'CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH',
   'ANTHROPIC_GOOGLE_CLOUD_BASE_URL', 'CLAUDE_CODE_SKIP_ANTHROPIC_GOOGLE_CLOUD_AUTH', 'ANTHROPIC_BEDROCK_MANTLE_BASE_URL',
   'CLAUDE_CODE_SKIP_MANTLE_AUTH'];
-const EXTRA_KEYS = ['CLAUDE_CODE_DISABLE_PROACTIVITY', 'CLAUDE_CODE_AUTO_MODE_SERVER', 'CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS',
-  'CLAUDE_CODE_DISABLE_STRUCTURED_OUTPUTS', 'CLAUDE_CODE_AUTO_MODE_TIER', 'CLAUDE_BG_ISOLATION', 'CLAUDE_BG_SESSION_PERMISSION_RULES',
-  'CLAUDE_BG_MEMORY_TOGGLED_OFF', 'CLAUDE_BG_AUTO_MEMORY_OFF', 'CLAUDE_CODE_RESUME_SOURCE_ALIVE', 'CLAUDE_CODE_PLUGIN_DIRS'];
+const EXTRA_KEYS = ['CLAUDE_CODE_DISABLE_PROACTIVITY', 'CLAUDE_CODE_RESTRICT_PERSONAL_CONFIG', 'CLAUDE_CODE_AUTO_MODE_SERVER',
+  'CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS', 'CLAUDE_CODE_DISABLE_STRUCTURED_OUTPUTS', 'CLAUDE_CODE_AUTO_MODE_TIER', 'CLAUDE_BG_ISOLATION',
+  'CLAUDE_BG_SESSION_PERMISSION_RULES', 'CLAUDE_BG_MEMORY_TOGGLED_OFF', 'CLAUDE_BG_AUTO_MEMORY_OFF', 'CLAUDE_CODE_RESUME_SOURCE_ALIVE',
+  'CLAUDE_CODE_PLUGIN_DIRS'];
 
 /**
- * The env keys the bg daemon keeps from a `claude --bg` dispatch (zWe + dWn + EXTRA_KEYS above), exactly as
- * 2.1.292 builds it (2.1.292 added CLAUDE_CODE_CLIENT_DATA_URL, three CLAUDE_CODE_3P_* model keys,
+ * The env keys the bg daemon keeps from a `claude --bg` dispatch (q6e + l5n + EXTRA_KEYS above), exactly as
+ * 2.1.296 builds it (2.1.292 added CLAUDE_CODE_CLIENT_DATA_URL, three CLAUDE_CODE_3P_* model keys,
  * CLAUDE_CODE_DISABLE_PROACTIVITY, CLAUDE_CODE_DISABLE_STRUCTURED_OUTPUTS, CLAUDE_CODE_AUTO_MODE_TIER and
- * CLAUDE_BG_AUTO_MEMORY_OFF). Every other caller env key (CLAUDE_CODE_TASK_LIST_ID, SUB_HUMAN_*, HOME, ...) is dropped;
+ * CLAUDE_BG_AUTO_MEMORY_OFF; 2.1.296 CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL and CLAUDE_CODE_RESTRICT_PERSONAL_CONFIG). Every other caller env key (CLAUDE_CODE_TASK_LIST_ID, SUB_HUMAN_*, HOME, ...) is dropped;
  * the worker runs with the daemon's own process.env plus these. Auth secrets (ANTHROPIC_API_KEY, ...) are
  * not in it. Pass state to a bg job through argv (`--settings '{"env":{...}}'`) instead.
  * @cc daemon_bg_dispatch_ingest
@@ -563,8 +598,8 @@ const shapeRe = (shape: unknown): RegExp => new RegExp(String(shape).split('~').
 
 /**
  * Every Claude Code assumption the plugin makes. `search` is a literal string (or array: all must match) and
- * `shape` an optional code shape (or array; see shapeRe), both found in the 2.1.292 binary; scripts/probe-cc.js
- * checks them. `section` points into docs/internals/cc-2.1.281.md (changes in cc-2.1.292.md).
+ * `shape` an optional code shape (or array; see shapeRe), both found in the 2.1.296 binary; scripts/probe-cc.js
+ * checks them. `section` points into docs/internals/cc-2.1.281.md (changes in cc-2.1.292.md and cc-2.1.296.md).
  */
 const CONTRACT: readonly ContractEntry[] = Object.freeze([
   // §1 tasks
@@ -626,7 +661,7 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
     shape: 'if(~==="no"){if(!~&&!~)return null;return{behavior:"deny",feedback:',
     note: '"No, keep planning" returns deny with the typed feedback.' },
   { id: 'plan-reject-user-feedback', section: 3, stability: 'incidental', search: '?.feedbackIsFromUser&&',
-    shape: ['userFeedback:~.behavior==="ask"?~.userFeedback:void 0,toolResultRemedy:', 'userFeedback:~,toolResultRemedy:~,mcpMeta:'],
+    shape: ['userFeedback:~.behavior==="ask"?~.userFeedback:void 0,toolResultRemedy:', 'toolDenialUnanswered:~,userFeedback:~,toolResultRemedy:~,'],
     note: 'The rejected tool_result transcript entry carries top-level userFeedback (cc.planFeedback).' },
   { id: 'plan-reject-text', section: 3, stability: 'incidental', search: ['To tell you how to proceed, the user said:\n', 'Note: The user\'s next message may contain a correction'],
     note: 'Fallback: the note sits between "the user said:\\n" and "\\n\\nNote: The user\'s next message".' },
@@ -672,11 +707,16 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
     ],
     shape: ['new Set(["CLAUDE_CONFIG_DIR","CLAUDE_INTERNAL_FC_OVERRIDES",...~,"CLAUDE_CODE_CLIENT_DATA_URL",...~,"AWS_REGION",',
       `=new Set([...~,...~,${JSON.stringify(EXTRA_KEYS).slice(1)})`],
-    note: 'The pieces of the daemon allowlist (zWe + dWn + extras in 2.1.292) that DAEMON_ENV_ALLOW copies.' },
+    note: 'The pieces of the daemon allowlist (q6e + l5n + extras in 2.1.296) that DAEMON_ENV_ALLOW copies.' },
+  { id: 'daemon-status', section: 5, stability: 'incidental', search: ['Show daemon pid, version, uptime', '`pid:     ${', '`version: ${'],
+    note: '`claude daemon status` prints "pid:     N" and "version: X" while the bg daemon runs, else "not running" and exits 1 (cc.daemonStatus; doctor\'s daemon check, cc-2.1.296.md).' },
+  { id: 'daemon-upgrade-exit', section: 5, stability: 'incidental', search: ['exiting for upgrade', '; upgrade polling disabled'],
+    note: 'The daemon polls its own binary and, when it was deleted or replaced, exits or restarts for the upgrade (deferred while workers are busy, up to a cap). It does not poll in some modes, nor when it cannot resolve the binary at start ("upgrade polling disabled"): such a daemon keeps running a deleted binary, which doctor\'s daemon check flags (cc-2.1.296.md).' },
   { id: 'bg-worker-env', section: 5, stability: 'incidental', search: 'CLAUDE_CODE_SESSION_KIND:"bg",CLAUDE_BG_BACKEND:"daemon",FORCE_COLOR',
     note: 'Workers run with the daemon\'s own process.env plus the filtered dispatch env.' },
-  { id: 'bg-provider-env', section: 5, stability: 'incidental', search: 'stripped disallowed providerEnv key(s)',
-    note: 'Persisted providerEnv is filtered through p0e too.' },
+  { id: 'bg-provider-env', section: 5, stability: 'incidental',
+    search: ['ignored these saved environment entries in the job\'s state.json', 'not kept for background sessions'],
+    note: 'A job\'s persisted providerEnv (state.json) is filtered through the same base allowlist (q6e in 2.1.296); a dropped key is logged as "not kept for background sessions".' },
   // §7 hooks
   { id: 'matcher-rule', section: 7, stability: 'API', search: ['Invalid regex pattern in hook matcher', '/^[a-zA-Z0-9_|, -]+$/:/^[a-zA-Z0-9_|]+$/'],
     note: 'Exact-name list vs unanchored regex (cc.matcherIsExact, cc.matcherMatches).' },
@@ -702,8 +742,8 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
   { id: 'cross-session-inbound', section: 8, stability: 'API', search: 'Inbound cross-session peer messages (SendMessage from your other sessions)',
     note: 'crossSessionInbound accept|hold|refuse; the room\'s Claude sets accept.' },
   { id: 'harbor-kite-gate', section: 8, stability: 'env', search: '"tengu_harbor_kite",!0)',
-    shape: '{let ~=~.CLAUDE_CODE_HARBOR_KITE;if(~!==void 0)return ~(~);',
-    note: 'Cross-session messaging gate (default on).' },
+    shape: 'messagingBeyondOwnAgentsDisabled)return!1;let ~=~.CLAUDE_CODE_HARBOR_KITE;if(~!==void 0)return ~(~);',
+    note: 'Cross-session messaging gate (default on); since 2.1.296 the process\'s messagingBeyondOwnAgentsDisabled restriction (beside backgroundTasksDisabled) turns it off before CLAUDE_CODE_HARBOR_KITE is read.' },
   { id: 'pasted-content', section: 8, stability: 'incidental', search: ['<pasted_content id="', '</pasted_content id="'],
     note: 'Long pastes are wrapped in <pasted_content id="N"> (cc.PASTED_RE).' },
   { id: 'session-title-address', section: 8, stability: 'incidental',
@@ -776,7 +816,7 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
   { id: 'session-append-notice-rewrite', section: 10, stability: 'incidental', search: 'session.append: a rewrite of row',
     shape: ['case"system":{if(!("content"in ~)||typeof ~.content!=="string")return ~;let ~=~([~.content],~).join(',
       'if(!~.fills)~.keep([~]);return ~(~),{message:~,uuid:~.uuid}', 'return ~.subtype==="local_command"?"command":"notice"'],
-    note: 'Every system row the engine adds (door "notice"), the stop\'s warning row included, passes session.append before it is kept, and a rewrite of its one text block is the row the screen draws and the transcript keeps (so --resume draws it too); its level stays (a warning: an amber ⏺). Seen live on 2.1.292: "Operation stopped by hook: ✓ sent" rewritten to "✓ sent" drew "⏺ ✓ sent" and was stored so. The d.ts says only that the screen "may show the row just before its rewrite".' },
+    note: 'Every system row the engine adds (door "notice"), the stop\'s warning row included, passes session.append before it is kept, and a rewrite of its one text block is the row the screen draws and the transcript keeps (so --resume draws it too); its level stays (a warning: an amber ⏺). Seen live on 2.1.292: "Operation stopped by hook: ✓ sent" rewritten to "✓ sent" drew "⏺ ✓ sent" and was stored so. On 2.1.300 it was reported not to rewrite (the frame stayed): the receipt\'s words read as a delivery under the frame too (hooks/at-room.ts). The d.ts says only that the screen "may show the row just before its rewrite".' },
   { id: 'modules-switch-cache', section: 10, stability: 'incidental', search: ['cachedGrowthBookFeatures', '"tengu_plugin_hooks_modules"'],
     note: 'Claude Code caches the hooks modules rollout switch in the global config\'s cachedGrowthBookFeatures (cc.modulesSwitch): false there explains a session with no module (hooks/join.ts noModule, doctor).' },
   { id: 'fs-write-plain', section: 10, stability: 'incidental', search: '$.fs.write (',
@@ -793,7 +833,7 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
 ]);
 
 // ---------- the binary, for the probe and doctor ----------
-const PROBED_VERSION = '2.1.292';
+const PROBED_VERSION = '2.1.296';
 const MIN_VERSION = '2.1.292';
 
 function compareVersions(a: unknown, b: unknown): -1 | 0 | 1 | null {
@@ -844,23 +884,46 @@ function binaryVersion(buf: Buffer): string | null {
   return v ? v[1] : null;
 }
 
+/** exeState() options: stand-ins for the system calls (tests). */
+interface ExeStateOpts {
+  readlink?: (p: string) => string;
+  ps?: (pid: number) => string | null;
+  exists?: (p: string) => boolean;
+  timeoutMs?: number;
+}
+
 /**
- * The version of the Claude Code process pid runs, or null: its executable's path (/proc/PID/exe on Linux, `ps -o
- * comm=` elsewhere, symlinks resolved) when the path names one (the cask's …/2.1.292/claude, the installer's
- * versions/2.1.292), else `<that binary> --version`. Used only to word a refusal (hooks/join.ts noModule).
+ * The executable process pid runs, and whether it was deleted since it started (an upgrade replaced it), or null
+ * (no such process, nothing readable). Linux: /proc/PID/exe, whose link reads "<path> (deleted)" then. Elsewhere
+ * (macOS): `ps -o comm=`, deleted when that is an absolute path that no longer exists; a bare name (started
+ * through PATH) says nothing, so deleted is false.
+ */
+function exeState(pid: unknown, { readlink = fs.readlinkSync, exists = fs.existsSync, timeoutMs = 3000,
+  ps = (p: number) => String(spawnSync('ps', ['-o', 'comm=', '-p', String(p)], { encoding: 'utf8', timeout: timeoutMs }).stdout || '') }: ExeStateOpts = {}): { exe: string; deleted: boolean } | null {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  let link: string | null = null;
+  try { link = String(readlink(`/proc/${n}/exe`)); } catch { /* not Linux, or no such process */ }
+  if (link) return link.endsWith(' (deleted)') ? { exe: link.slice(0, -' (deleted)'.length), deleted: true } : { exe: link, deleted: false };
+  let exe: string | null;
+  try { exe = String(ps(n) || '').trim() || null; } catch { exe = null; }
+  if (!exe) return null;
+  return { exe, deleted: path.isAbsolute(exe) && !exists(exe) };
+}
+
+/**
+ * The version of the Claude Code process pid runs, or null: its executable's path (exeState, symlinks resolved) when
+ * the path names one (the cask's …/2.1.292/claude, the installer's versions/2.1.292), else `<that binary>
+ * --version` while it still exists. Used only to word a refusal (hooks/join.ts noModule).
  */
 function runningVersion(pid: unknown, { timeoutMs = 3000 }: { timeoutMs?: number } = {}): string | null {
-  if (!Number.isInteger(Number(pid)) || Number(pid) <= 0) return null;
-  let exe: string | null = null;
-  try { exe = fs.readlinkSync(`/proc/${pid}/exe`); } catch {
-    const r = spawnSync('ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8', timeout: timeoutMs });
-    exe = String(r.stdout || '').trim() || null;
-  }
-  if (!exe) return null;
+  const st = exeState(pid, { timeoutMs });
+  if (!st) return null;
+  let exe = st.exe;
   try { exe = fs.realpathSync(exe); } catch { /* as ps gave it */ }
   const inPath = /(?:^|\/)(\d+\.\d+\.\d+)(?:\/|$)/.exec(exe);
   if (inPath) return inPath[1];
-  if (!path.isAbsolute(exe)) return null;
+  if (!path.isAbsolute(exe) || st.deleted) return null;
   const r = spawnSync(exe, ['--version'], { encoding: 'utf8', timeout: timeoutMs });
   const m = /(\d+\.\d+\.\d+)/.exec(String(r.stdout || ''));
   return m ? m[1] : null;
@@ -927,8 +990,8 @@ export {
   ENV, sessionId, claudePid, taskListId, configDir, sanitizeId, tasksDir, taskFile, userSettingsFiles,
   clearContextOnPlanAccept, readLines, readEntries, parseLines, planFile, planFeedback, toolUseInput,
   lastHumanPrompt, contentText, SAID, NOTE, PASTED_RE, unwrapPasted, JOB_RE, parseDispatch, agentsCmd, stopCmd,
-  parseAgentsJson, jobs, DAEMON_ENV_ALLOW, daemonEnv, matcherIsExact, matcherMatches, shapeRe, CONTRACT,
+  parseAgentsJson, jobs, parseDaemonStatus, daemonStatus, exeState, DAEMON_ENV_ALLOW, daemonEnv, matcherIsExact, matcherMatches, shapeRe, CONTRACT,
   PROBED_VERSION, MIN_VERSION, compareVersions, locateBinary, binaryVersion, probe, runningVersion, globalConfigFile,
   modulesSwitch,
 };
-export type { TranscriptEntry, TranscriptLine, ContentBlock, AgentJob, ContractEntry, ProbeResult, JobsOpts };
+export type { TranscriptEntry, TranscriptLine, ContentBlock, AgentJob, ContractEntry, ProbeResult, JobsOpts, DaemonStatus, ExeStateOpts };

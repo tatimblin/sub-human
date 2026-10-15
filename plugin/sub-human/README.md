@@ -237,12 +237,16 @@ Two tags, both at the very start of the prompt:
 - **`@room …`** posts your words to everyone. It never wakes the room's Claude.
 - **`@claude …`** posts your words to everyone too, addressed to `claude`, and wakes the room's Claude.
 
-Either is posted **verbatim** as your words (`via=human`). No model turn runs, and the receipt is one line:
+Either is posted **verbatim** as your words (`via=human`). No model turn runs, and the receipt is one line that says who reads it:
 
 ```
 ❯ @room ship the cursor paging today
-⏺ ✓ sent
+⏺ ✓ sent to room vole-8126 (Claude wasn't asked)
+❯ @claude plan cursor paging with me
+⏺ ✓ sent; the room's Claude will answer
 ```
+
+If your Claude Code shows it as "Operation stopped by hook: ✓ sent …", that is the same receipt: nothing went wrong.
 
 - Only a leading tag counts. `@room ask @claude later` is a plain post that wakes nothing, and so is `@room @claude …`.
 - Outside a room, `@claude …` is an ordinary prompt to your own Claude.
@@ -269,7 +273,7 @@ Every person's own words reach everyone. A Claude's post reaches you when it is 
 
 ## Agreeing to a proposal
 
-Anyone can propose something. Tell your Claude "propose this" (a plan from your own plan mode, a file or some text), or ask the room's Claude to plan. The proposal names its approvers, by default the people in the room.
+Anyone can propose something. Tell your Claude "propose this" (a plan from your own plan mode, a file or some text), or ask the room's Claude to plan. The proposal names its approvers, by default the people in the room. If you sit in the room twice, on the host and again from another machine over your own ssh login (`/sub-human join USER@HOST ROOM`), your seats count as one approver: the answer you give last, from either, is yours, and the decision names one seat ("agreed: tristan (also laptop)"). Seats that joined by invite are each their own person, and so are two seats on the host itself, since people can share a machine.
 
 When a proposal names you, your Claude opens it in Claude Code's plan-approval dialog, the same view your own plans use. The plugin's hooks put the real proposal there, byte for byte, whatever your Claude wrote:
 
@@ -329,7 +333,7 @@ The room has one shared task list: the native Claude Code task list of the room'
 | `admit [REF [--refuse] [--yes]]` | The join requests waiting for you (no REF), or let one in (asks y/N) or refuse it: the card, for a host with no session open. |
 | `kick NAME [--room ROOM] [--file F]` | End NAME's connection: token burnt, key line removed, its seats leave. |
 | `prime CODE [--persist 8h]` | On a joining machine: one shared SSH connection, opened interactively, for an MFA bastion; the link rides it. |
-| `link CODE [--reset]` | Run the link to room CODE hosted elsewhere (in the foreground; joins start it in the background). `--reset` copies the room again after a FORK. |
+| `link CODE [--reset \| --forget [--force]]` | Run the link to room CODE hosted elsewhere (in the foreground; joins start it in the background). `--reset` copies the room again after a FORK. `--forget` drops a closed room from this machine for good (never done automatically: the host can open it again): the copy moves to `rooms/CODE.forgotten-<time>` and the link is removed. It needs the link stopped because the room closed or no seat is left (`--force`: any stopped link). |
 | `handoff NAME [--ssh USER@HOST[:PORT] \| --url https://FRONT]`, `handoff --status` | Ask NAME to host the room (their card decides); who hosts it at which epoch, and who hasn't reconnected. |
 | `promote CODE --confirm CODE [--force]` | This machine's copy becomes the room, when its host is gone for good. Can fork the room. |
 | `demote CODE INVITE PIN` | Follow a promoted room with the line promote printed for this machine (an old host also sets its own log aside). |
@@ -443,7 +447,7 @@ Start with `/sub-human doctor` (see **Doctor**): it names most of these and the 
 | A proposal didn't open | Ask your Claude to "show me the proposal". `node <plugin root>/scripts/sub-human read` in a terminal shows who a proposal names, and `sub-human show HASH` its text. |
 | `✗ sub-human needs Claude Code 2.1.292 or newer, and this is …` | Update Claude Code (`claude update`) and restart it. |
 | `✗ sub-human's hooks module isn't running in this session (…)` | `/sub-human doctor` (it still runs) checks the usual causes: a settings file with `disableAllHooks` or `allowManagedHooksOnly`, or Claude Code's hooks-modules switch off. Start `claude` without `--bare` or safe mode, in a folder you trust. |
-| `the connection to room … stopped (…)` | The link stopped for good: the host refused or revoked it, or the room closed. The reason says what to do (usually a new invite from the host: `/sub-human invite` there). |
+| `the connection to room … stopped (…)` | The link stopped for good: the host refused or revoked it, or the room closed. The reason says what to do (usually a new invite from the host: `/sub-human invite` there). A closed room reconnects with `/sub-human` if the host opens it again; `sub-human link CODE --forget` drops it for good. |
 | `the connection to room … is down` | The link can't reach the host. It retries by itself (from 1 s, with jitter, up to 10 s; at once after a wake or a network change); `@room` posts are queued, answers are refused, until it is back, and `the connection to the room is back` says when (and how many queued posts went out). `~/.sub-human/links/CODE.log` says why; `~/.sub-human/links/CODE.state.json` holds the link's state. |
 | `the connection to room … is down (room CODE moved to NAME's machine, which this machine can't reach yet …)` | A handoff moved the room and this machine can't reach the new host. Ask its person for an invite (`/sub-human invite` there) and type the line it shows; their card lets you in, then `/sub-human`. |
 | `STALE` | A write or a link reached a host the room has moved away from, or a copy that has not caught up with the move. A copy catches up by itself. An old host that was promoted away runs the `node <plugin root>/scripts/sub-human demote CODE INVITE PIN` line promote printed for it, in a terminal. |

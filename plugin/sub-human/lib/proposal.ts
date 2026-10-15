@@ -3,16 +3,21 @@
  * CommonJS, zero dependencies. Every write goes through room.append().
  *
  * Log entries:
- *   proposal  via=agent, from = the proposer, {hash, approvers[], path, text}   (propose tool)
+ *   proposal  via=agent, from = the proposer, {hash, approvers[], same?, path, text}   (propose tool)
  *   signoff | objection  via=human, from = the approver, {proposal_hash, text?}  (consent.ts, from the card;
  *             text = the card's notes, byte-exact, omitted when there are none)
  *   decision  via=system, from "room", {proposal_hash, refs: the answer ids, text "agreed: …" | "objected: …"}
- *             written once, when every approver has answered.
+ *             written once, when every approver has answered. text names one seat per person: "agreed: tristan (also
+ *             laptop), bob".
  *
  *   create(me, {text|path, approvers?}) -> {hash, approvers, path, entry, again, retired}
  *       Stores the blob plans/<hash>.md (hash = sha256/12 of the bytes; lib/room/store.ts blobs) and appends
  *       `proposal` with path = that room-relative ref (older entries hold an absolute path). approvers
  *       default to the humans present (not room Claude, not left). An identical open proposal is not re-appended.
+ *       same: the approvers that are one person (sameOf: seats with one account; the host's local seats only
+ *       while there is one of them), groups of 2+; the fold counts one answer for the group (lib/room/consent.ts).
+ *       Written only where the host accepts it (sameOk: this machine is the host, or its link daemon's hello
+ *       listed the field, lib/remote/protocol.ts FIELDS).
  *       retired: the hashes of my undecided proposals with the same title that this one supersedes (the fold
  *       retires them, lib/room/consent.ts: no longer pending, answers on them do not carry over).
  *       Throws ProposalError (message for the model) on bad input.
@@ -20,6 +25,9 @@
  *   latest answer per person, an objection voids a signoff), the same fold stateLine, lane() and the rows read.
  *   proposals(entries) -> [p]      the latest proposal entry per hash, as {id, hash, approvers, path, from}
  *   pendingFor(me, entries?) -> [p] proposals naming me that I have not answered, undecided, not superseded
+ *                                  (another seat of my person answering counts as mine)
+ *   answerableFor(me, entries?) -> [p]   the same, by my own seat's answer only: a card or review already open
+ *                                  still records, and that later answer counts for my person (the hooks' answer paths)
  *   card(p, code) -> {questions:[…]}     the AskUserQuestion input (Not yet first, Agree, Object)
  *   cardFor(ps, code) -> {questions:[…]} one question per proposal (at most 4)
  *   question(hash) -> "Agree to proposal <hash>?";  QUESTION_RE parses it back
@@ -28,7 +36,7 @@
  *   matrix(p, entries) -> {hash, approvers, answers:{name: {id, kind}|null}, agreed, objected, missing, complete, …}
  *   answer(me, p, {choice:'Agree'|'Object', notes?}) -> {entry}|{stale:true, why}
  *       under the proposal lock: appends the person's answer (signed, so any machine may write it). Idempotent:
- *       a person who already answered that hash (or a decided / superseded / unknown one) is stale; one answer per person.
+ *       a seat that already answered that hash (or a decided / superseded / unknown one) is stale; one answer per seat.
  *   decide(code, hash) -> Entry|null
  *       host only (identity.isHost; null elsewhere): under the proposal lock, appends the decision once every
  *       approver has answered. Idempotent: a decided, superseded, unknown or incomplete proposal appends nothing (null). The
@@ -36,6 +44,8 @@
  *   title(code, hash, entry?) -> string  the stored plan's first line (else the entry's title text, else '')
  *   decision(hash, entries) -> Entry|null
  *   humans(code) -> [name]         members present who can approve
+ *   personOf(m) -> string|undefined   who a seat is for consent: its account (lib/seats.ts enter), else nobody shared
+ *   sameOk(code) -> bool           this machine may write a proposal's same (the host, or its host's caps list it)
  *   viewable(p, code) -> bool      the plan dialog can show it: stored, <= VIEW_MAX chars, no control or bidi
  *                                  characters (the dialog withholds approval for those); else the card
  *   reminder(p, name, {code, others}?) -> string   the re-ask wording (a review closed without an answer is fine to
@@ -111,6 +121,36 @@ function humans(code: string): string[] {
     .filter((m): m is Member => !!m && !!m.name && m.role !== 'claude' && !m.left_at).map(m => m.name);
 }
 
+/**
+ * Who a seat is, for consent: its account (the host's seats and its login links' carry the host's machine id).
+ * Only an account merges seats; two invite seats from one machine are two people.
+ */
+const personOf = (m: Pick<Member, 'account'> | null | undefined): string | undefined => (m && typeof m.account === 'string' && m.account) || undefined;
+
+/**
+ * The approvers that are one person: groups of 2+ seats with one account, in approvers' order. Seats on the
+ * account's own machine (machine = account: the host's local seats) are that person only while there is one of
+ * them among the people present: several people can share one machine (a room on one machine), so two or more
+ * are each their own person, and a login link's seat then merges with none of them.
+ */
+function sameOf(approvers: string[], ms: Members): string[][] {
+  const here = (who: string) => Object.values(ms).filter(m => !!m && m.role !== 'claude' && !m.left_at && personOf(m) === who && m.machine === who).length;
+  const by = new Map<string, string[]>();
+  for (const n of approvers) {
+    const m = ms[n], who = personOf(m);
+    if (!who || (m.machine === who && here(who) > 1)) continue;
+    by.set(who, [...(by.get(who) || []), n]);
+  }
+  return [...by.values()].filter(g => g.length > 1);
+}
+
+/** The host accepts a proposal's `same`: this machine is the host, or the link's host listed it (protocol.ts FIELDS). */
+function sameOk(code: string): boolean {
+  const s = room.open(code).store;
+  if (s.isHost) return true;
+  try { const d: { fields?: unknown } | null = s.kv.get('link', null); return !!d && Array.isArray(d.fields) && d.fields.includes('same'); } catch { return false; }
+}
+
 // ---------- reading the log (lib/room/consent.ts fold: the same semantics as stateLine, lane and the rows) ----------
 const shape = (p: ProposalState): Proposal => ({ id: p.id, hash: p.hash, approvers: p.approvers, path: p.path, from: p.from });
 const proposals = (entries: Entry[]): Proposal[] => [...room.fold(entries).proposals.values()].map(shape);
@@ -123,6 +163,10 @@ const matrix = (p: Pick<Proposal, 'hash' | 'approvers'>, entries: Entry[]): Matr
 function pendingFor(me: Me | null | undefined, entries?: Entry[] | null): Proposal[] {
   if (!me || !me.name) return [];
   return room.fold(entriesOf(me, entries)).pending(me.name).map(shape);
+}
+function answerableFor(me: Me | null | undefined, entries?: Entry[] | null): Proposal[] {
+  if (!me || !me.name) return [];
+  return room.fold(entriesOf(me, entries)).answerable(me.name).map(shape);
 }
 
 /** A proposal's title: the first non-empty line of its text, heading / list / quote markers dropped. */
@@ -305,6 +349,7 @@ function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd
     if (unknown.length) refuse(`not in the room: ${unknown.join(', ')} (present: ${present.join(', ') || 'nobody'})`);
   }
   if (!approvers.length) refuse('nobody to ask: no humans are in the room');
+  const same = sameOk(me.code) ? sameOf(approvers, identity.readMembers(me.code) || {}) : [];
 
   const hash = store(me.code, buf);
   const stored = planPath(me.code, hash);
@@ -315,7 +360,8 @@ function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd
     return { hash, approvers, path: stored, entry: entries.find(e => e.id === open.id), again: true, retired: [] };
   }
   // the entry stores the room-relative ref; `path` returned is where the proposer can open it
-  const entry: Entry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers, path: planRef(hash) },
+  const entry: Entry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers,
+    ...(same.length ? { same } : {}), path: planRef(hash) },
     { via: 'agent', from: me.name });
   // what this entry retired: superseded by it now and not before (lib/room/consent.ts); a retired proposal proposed
   // again is appended anew (above), which brings it back
@@ -337,9 +383,10 @@ function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?
     const entries: Entry[] = r.readAll();
     const f = room.fold(entries);
     const cur = f.proposals.get(p.hash);
-    // Idempotent: one answer per person per proposal. A card and a plan view open at once, or a reopened card,
-    // never record twice, and the decision's refs are exactly the answers the fold reads as current.
-    if (!cur || !cur.approvers.includes(me.name) || f.decisions.has(cur.hash) || f.superseded.has(cur.hash) || f.answerOf(cur.hash, me.name)) {
+    // Idempotent: one answer per seat per proposal. A card and a plan view open at once, or a reopened card,
+    // never record twice, and the decision's refs are exactly the answers the fold reads as current. Another seat
+    // of the same person having answered does not stop this one: the newer answer counts for both.
+    if (!cur || !cur.approvers.includes(me.name) || f.decisions.has(cur.hash) || f.superseded.has(cur.hash) || f.ownAnswer(cur.hash, me.name)) {
       return { stale: true, why: 'answered, decided, superseded or unknown' };
     }
     const notes = typeof a.notes === 'string' && a.notes.trim() ? a.notes : undefined;
@@ -349,6 +396,9 @@ function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?
     return { entry: r.append(e, { via: 'human', from: me.name }) };
   });
 }
+
+/** "tristan (also laptop), bob": one name per person, its other seats after it. */
+const people = (m: Matrix, names: string[]): string => names.map(n => (m.also[n] && m.also[n].length ? `${n} (also ${m.also[n].join(', ')})` : n)).join(', ');
 
 function decide(code: string, hash: string): Entry | null {
   if (!identity.isHost(code)) return null;
@@ -361,9 +411,10 @@ function decide(code: string, hash: string): Entry | null {
     const m = matrix(cur, entries);
     if (!m.complete) return null;
     const text = m.objected.length
-      ? `objected: ${m.objected.join(', ')}${m.agreed.length ? ` · agreed: ${m.agreed.join(', ')}` : ''} (proposal ${hash})`
-      : `agreed: ${m.agreed.join(', ')} (proposal ${hash})`;
-    const refs = cur.approvers.map((n: string) => m.answers[n]!.id); // complete: every approver has answered
+      ? `objected: ${people(m, m.objected)}${m.agreed.length ? ` · agreed: ${people(m, m.agreed)}` : ''} (proposal ${hash})`
+      : `agreed: ${people(m, m.agreed)} (proposal ${hash})`;
+    // complete: every approver has answered (a person's seats share one answer)
+    const refs = [...new Set(cur.approvers.map((n: string) => m.answers[n]!.id))];
     return r.append({ kind: 'decision', text, proposal_hash: hash, refs: [cur.id, ...refs] }, { via: 'system', from: 'room', system: true });
   });
 }
@@ -457,6 +508,6 @@ function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown)
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
   readConfirm, writeConfirm, clearConfirm, confirmCard, confirmQuestion, repeatsNote, namedIn, choose, picked, readPick,
-  proposeIntent, create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, confirmCall, showConfirm,
-  matrix, answer, decide, decision, humans, reminder, read, hash12, title,
+  proposeIntent, create, proposals, pendingFor, answerableFor, personOf, sameOk, card, cardFor, question, preview, viewable, openCall,
+  confirmCall, showConfirm, matrix, answer, decide, decision, humans, reminder, read, hash12, title,
 };

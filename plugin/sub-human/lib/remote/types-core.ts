@@ -34,7 +34,7 @@ export type WireCode =
   | 'INVALID' | 'RATE' | 'LOCK' | 'NO_ROOM' | 'OFFLINE' | 'HOST_ONLY' | 'AUTH' | 'FORK' | 'PROTOCOL' | 'STALE';
 
 /** What an end serves (protocol.CAPS), in a hello reply. */
-export interface Caps { ops: readonly string[] }
+export interface Caps { ops: readonly string[]; fields?: readonly string[] }
 
 /** A signed room payload as lib/room/envelope.ts makes it: kind, from, room and the sig v2 fields, plus the kind's own. */
 export interface SignedPayload {
@@ -296,6 +296,8 @@ export interface LinkDoc {
   code?: string;
   queued?: number;
   flush?: Flush;
+  /** online: the entry fields the host's hello listed (protocol.ts FIELDS), which this machine may write */
+  fields?: string[];
 }
 
 /** Every timing the link daemon uses (linkTimings). */

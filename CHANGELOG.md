@@ -2,6 +2,20 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.0-beta.13 (2026-10-14), private beta
+
+Tested on Claude Code 2.1.296 with Node 24, on macOS.
+
+### Fixes
+- **The link stays up while a session is alive.** A seat whose Claude Code process is still running keeps its link through a sleep or pause longer than the seat lease; the link daemon no longer stops itself, and suspended time never counts as idle. (#7)
+- **Doctor flags a stale bg daemon.** `sub-human doctor` (also `--quick`) fails when the bg daemon runs a Claude Code binary an upgrade deleted, and warns when it runs a version other than `claude --version`; the fix line is `claude daemon stop --any --keep-workers`, which `--fix` never runs. (#5)
+- **`sub-human link CODE --forget`.** Drops a closed room's link for good, by hand: refused for a room hosted here or while the daemon runs, and unless the link stopped because the room closed or no seat is left (`--force` for any other reason). The room folder is set aside as `rooms/CODE.forgotten-TIME`, and doctor's closed-room fix names both ways out. (#5)
+- **One person in two seats counts once.** Seats of the same account (a host seat and one over a login link) count as one approver: the newest answer from either seat stands for both, and decisions name one seat per person ("agreed: tristan (also laptop)"). Two seats on the host stay two people. (#6)
+- **A clearer @room receipt.** The receipt reads as a delivery under Claude Code's "Operation stopped by hook" frame: "✓ sent to room CODE (Claude wasn't asked)" for @room, "✓ sent; the room's Claude will answer" for @claude. (#6)
+
+### Internals
+- The cc CONTRACT is checked against Claude Code 2.1.296 (daemon env allowlist, providerEnv filter, harbor-kite gate, userFeedback shape), with new `daemon-status` and `daemon-upgrade-exit` entries; the delta is in `docs/internals/cc-2.1.296.md`. (#5)
+
 ## 0.5.0-beta.12 (2026-10-14), private beta
 
 Tested on Claude Code 2.1.296 with Node 24, on macOS.

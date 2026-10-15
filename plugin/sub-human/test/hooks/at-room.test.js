@@ -68,7 +68,7 @@ test('20 hostile strings after "@room " are logged byte-identical, via human, an
   for (const s of HOSTILE) {
     const r = atRoom(w, submit('@room ' + s), { as: 'alice' });
     const receipt = posted(r);
-    assert.equal(receipt, '✓ sent');
+    assert.equal(receipt, `✓ sent to room ${w.code} (Claude wasn't asked)`);
     assert.doesNotMatch(receipt, /block|error|sub-human:/i);
   }
   const es = w.entries();
@@ -125,12 +125,12 @@ test('room Claude and non-members are refused; an empty post is refused', () => 
   assert.equal(w.entries().length + w2.entries().length + w3.entries().length, 0);
 });
 
-test('receipt is "✓ sent" plus the unwrap note, and nothing else (no room code, no id)', () => {
+test('receipt is "✓ sent to room CODE (Claude wasn\'t asked)" plus the unwrap note, and nothing else (no id)', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   let r = atRoom(w, submit('@room hello'), { as: 'alice' });
-  assert.equal(posted(r), '✓ sent');
+  assert.equal(posted(r), `✓ sent to room ${w.code} (Claude wasn't asked)`);
   r = atRoom(w, submit('@room \n\n<pasted_content id="1">\nA\n</pasted_content id="1">\n'), { as: 'alice' });
-  assert.equal(r.json.stopReason, '✓ sent (pasted text unwrapped)');
+  assert.equal(r.json.stopReason, `✓ sent to room ${w.code} (Claude wasn't asked) (pasted text unwrapped)`);
   assert.equal(r.json.systemMessage, undefined, 'systemMessage is not rendered with continue:false');
 });
 
@@ -152,7 +152,7 @@ test('a receipt is a one-line stop (continue:false), so the module shows its war
 
 test('@claude: only a leading tag posts the words to=claude (the wake); "@room @claude", a mid-text tag and other prompts are not wakes', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
-  assert.equal(posted(atRoom(w, submit('@claude let us plan cursor paging'), { as: 'alice' })), '✓ sent');
+  assert.equal(posted(atRoom(w, submit('@claude let us plan cursor paging'), { as: 'alice' })), "✓ sent; the room's Claude will answer");
   posted(atRoom(w, submit('@room @claude this is a plain post'), { as: 'alice' }));
   posted(atRoom(w, submit('@room ask @claude later'), { as: 'alice' }));
   for (const p of ['please ask @claude', '@claudette hi', '@Claude hi', ' @claude hi', 'claude: hi', '@orch hi']) { // no 0.4.x alias
@@ -183,7 +183,7 @@ test('@claude on the host with no room\'s Claude running starts it (a stopped on
   assert.equal(w.members().claude, undefined, '@room starts nothing');
   const r = atRoom(w, submit('@claude add a task: test'), { as: 'alice', env });
   posted(r);
-  assert.match(r.json.stopReason, /^✓ sent · starting the room's Claude…$/);
+  assert.match(r.json.stopReason, /^✓ sent; the room's Claude will answer · starting the room's Claude…$/);
   assert.ok(['pending', '0b500131'].includes(w.members().claude.job), 'claimed');
   const end = Date.now() + 8000;
   while (!bg() && Date.now() < end) await new Promise(res => setTimeout(res, 30));

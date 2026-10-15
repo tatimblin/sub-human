@@ -37,7 +37,9 @@
  * "Not yet", AFK, stale hashes record nothing. Stop nudges once when a waiting note's card was never shown; a card shown
  * and interrupted (no Post), or still not shown after the nudge, is offered again once, at the next prompt (reoffer),
  * with the tail's reminder for it saying the same (lib/proposal.ts showConfirm). An answer is
- * lib/proposal.ts answer, then decide (a no-op on a machine that does not hold the room; its host decides). An
+ * lib/proposal.ts answer, then decide (a no-op on a machine that does not hold the room; its host decides). A review
+ * or card opens only for a proposal pendingFor lists (another seat of the same person answering closes it); an answer
+ * given on one already open records against answerableFor (that seat's own answer only), and counts for the person. An
  * answer the room refuses (OFFLINE, AUTH) is never lost silently: a systemMessage tells the person, the context
  * the model. Post(ExitPlanMode) for the person's own plan offers to propose it; when it is, unedited, a pending
  * proposal of their own, their approval is their signoff (via=human). Run with SUB_HUMAN_SHIM=1
@@ -157,7 +159,7 @@ function onlyPending(pending: Proposal[], input: unknown): Proposal[] {
 function waitingNote(me: Identity, input: ConsentToolInput | undefined): { cf: Confirm; p: Proposal } | null {
   const cf: Confirm | null = proposal.readConfirm(me);
   if (!cf) return null;
-  const p = pendingFor(me).find(x => x.hash === cf.hash);
+  const p = answerableFor(me).find(x => x.hash === cf.hash);
   if (!p) { proposal.clearConfirm(me); return null; }
   const s = JSON.stringify(input || {});
   const tokens = s.match(/[0-9a-f]{6,12}/g) || [];
@@ -220,8 +222,11 @@ const readReview = (me: Identity): Review | null => proposal.readReview(me);
 const writeReview = (me: Identity, st: Review) => proposal.writeReview(me, st);
 const clearReview = (me: Identity) => proposal.clearReview(me);
 const restorePlan = (st: Review | null) => proposal.restorePlan(st);
-/** The proposals pending for me (lib/proposal.ts pendingFor). */
+/** The proposals pending for me (lib/proposal.ts pendingFor): what opens a review or a card. */
 const pendingFor = (me: Identity): Proposal[] => proposal.pendingFor(me);
+/** The proposals my own seat may still answer (lib/proposal.ts answerableFor): what an answer already given on an
+ * open review or card records against, even when another seat of my person answered meanwhile. */
+const answerableFor = (me: Identity): Proposal[] => proposal.answerableFor(me);
 
 /** The transcript's lines, read once per hook run (the tail: the review is always recent). */
 function lines(input: ConsentIn): string[] {
@@ -261,7 +266,7 @@ function resolveShown(input: ConsentIn, me: Identity, st: Review): string {
   if (st.phase !== 'shown' || st.resolved) return st.said || '';
   st.resolved = true;
   const note = feedback(input, st.tool_use_id);
-  const p = pendingFor(me).find(x => x.hash === st.hash);
+  const p = answerableFor(me).find(x => x.hash === st.hash);
   if (note == null || !note.trim()) st.said = `${me.name} closed the review of proposal ${st.hash} without answering; nothing was recorded.`;
   else if (!p) st.said = `proposal ${st.hash}: nothing recorded (already answered, decided or unknown).`;
   else {
@@ -445,7 +450,7 @@ function postExit(input: ConsentIn, me: Identity) {
   if (st.phase !== 'shown') return;
   // A "Yes" in the dialog: only a person can choose it (the exiting phase above is the hook's own allow).
   const r: ToolResponse = input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {};
-  const p = pendingFor(me).find(x => x.hash === st.hash);
+  const p = answerableFor(me).find(x => x.hash === st.hash);
   let line: string;
   if (r.planWasEdited || typeof r.plan !== 'string' || proposal.hash12(Buffer.from(r.plan, 'utf8')) !== st.hash) {
     line = `${me.name} edited proposal ${st.hash} in the review; nothing was recorded. If they want the edited text agreed, propose it.`;
@@ -570,7 +575,7 @@ function postConfirm(input: ConsentIn, me: Identity, r: ToolResponse, answers: R
     return say(`${me.name} discarded the note; nothing was recorded and proposal ${cf.hash} still awaits ${me.name}'s answer (reopening it later is fine). Return to what you were doing.`), true;
   }
   if (label !== 'Send') return told(), say(`proposal ${cf.hash}: no Send/Discard answer; nothing was recorded and the note waits. Return to what you were doing.`), true;
-  const p = pendingFor(me).find(x => x.hash === cf.hash);
+  const p = answerableFor(me).find(x => x.hash === cf.hash);
   if (!p) { proposal.clearConfirm(me); return say(`proposal ${cf.hash}: nothing recorded (already answered, decided or unknown).`), true; }
   const res = record(me, p, { choice: 'Object', notes: cf.note });
   if (!res.failed) proposal.clearConfirm(me); // not sent (the room unreachable): the note waits for another Send
@@ -663,7 +668,7 @@ function postAsk(input: ConsentIn, me: Identity) {
   if (r.afkTimeoutMs || r.followUp || !keys.length) {
     return say(`Nothing was recorded: the card closed without ${me.name}'s answer. Reopening it later is fine; return to what you were doing.`);
   }
-  const pending = pendingFor(me);
+  const pending = answerableFor(me);
   const out: string[] = [];
   let recorded = false;
   for (const k of keys) {

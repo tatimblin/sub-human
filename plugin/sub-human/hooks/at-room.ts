@@ -160,7 +160,9 @@ function handle(input: PromptIn): void {
   }
   // @claude on the host with no room's Claude running (it stopped, or never bound): start it, as a rejoin would
   const start = wake !== null ? seats.ensureRoomClaude(me.code, input.cwd, me.name) : '';
-  const sent = `✓ sent${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}${start}`;
+  // it names who reads it, so under the stop's frame (cc CONTRACT ups-stop-frame) it reads as done, not as an error
+  const head = wake !== null ? "✓ sent; the room's Claude will answer" : `✓ sent to room ${me.code} (Claude wasn't asked)`;
+  const sent = `${head}${normalized ? ' (pasted text unwrapped)' : ''}${entry.drafted ? " (Claude's wording)" : ''}${start}`;
   out({ continue: false, stopReason: sent, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 }
 

@@ -15,7 +15,7 @@ const lease = (w, as) => w.lib(() => identity.writeModLease(w.sid[as], { nonce: 
 const ctxOut = text => ({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } });
 
 test('prompt: merge keeps a stopping output alone and otherwise joins the contexts, the first output\'s fields winning', () => {
-  const sent = { continue: false, stopReason: '✓ sent', hookSpecificOutput: { hookEventName: 'UserPromptSubmit', sessionTitle: 'bob.x' } };
+  const sent = { continue: false, stopReason: "✓ sent to room otter-4821 (Claude wasn't asked)", hookSpecificOutput: { hookEventName: 'UserPromptSubmit', sessionTitle: 'bob.x' } };
   const block = { decision: 'block', reason: 'no', hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true } };
   assert.deepEqual(merge([sent, ctxOut('exit plan mode first')]), sent);
   assert.deepEqual(merge([block, ctxOut('exit plan mode first')]), block);

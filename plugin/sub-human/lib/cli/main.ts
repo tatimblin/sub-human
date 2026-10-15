@@ -57,10 +57,15 @@
  *   sub-human serve --enroll CODE --kind ssh|ws|pipe
  *       One PIN attempt at room CODE hosted here (lib/remote/enroll.ts serveEnroll): the CPace exchange and
  *       nothing else; it never serves the room. The ssh enrollment door's forced command and the web listener run it.
- *   sub-human link CODE [--reset]
+ *   sub-human link CODE [--reset | --forget [--force]]
  *       The link daemon of room CODE, hosted on another machine (lib/remote/link.ts run): the join hook starts it
  *       detached; it exits on its own once this machine has no seat left in the room. --reset (with no daemon
  *       running, e.g. after a FORK): forget this machine's copy of the room and start the daemon to copy it again.
+ *       --forget (with no daemon running, the link stopped because the room closed or no seat is left; --force: for
+ *       any other reason): drop the room from this machine for good. Never automatic (a closed room can open
+ *       again). Its log is set aside as a demote's is, the copy moves to rooms/<code>.forgotten-<time> (not a room
+ *       code, so no listing or open sees it, and nothing opens it as a room hosted here), then the link goes. It
+ *       prints the archive's path.
  *   sub-human invite [--room ROOM] [--ssh [USER@HOST[:PORT]] [--via JUMP] | --web | --public | --url URL [--port P]]
  *       An invite line and its PIN, as /sub-human invite shows them (lib/cli/host.ts; lib/remote/hosting.ts hostInvite,
  *       webhost.ts hostWeb). Over ssh by default, to this machine's own address (SUB_HUMAN_SSH_ADDR, else
@@ -97,6 +102,7 @@
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import * as identity from '../identity.ts';
 import * as room from '../room.ts';
@@ -352,22 +358,43 @@ function serveEnroll(code: string, flags: Flags<typeof SERVE_FLAGS>, rest: strin
     .then(() => process.stdout.write('', () => process.exit(0)), (e: Error) => die(e.message, 1));
 }
 
-// ---------- link CODE [--reset]: lib/remote/link.ts ----------
+// ---------- link CODE [--reset | --forget [--force]]: lib/remote/link.ts ----------
 function linkCmd(args: readonly string[]) {
-  const { flags, rest } = parseFlags(args, { reset: 0 });
+  const { flags, rest } = parseFlags(args, { reset: 0, forget: 0, force: 0 });
   const code = rest[0];
-  if (!code) die('usage: sub-human link CODE [--reset]');
+  if (!code || (flags.reset && flags.forget)) die('usage: sub-human link CODE [--reset | --forget [--force]]');
   const opened = room.open(code).store;
-  if (opened.isHost) die(`this machine hosts room "${code}"; there is no connection to start`, 1);
+  if (opened.isHost) die(`this machine hosts room "${code}"; there is no connection to ${flags.forget ? 'forget' : 'start'}`, 1);
   const s = opened as MirrorRoomStore; // not the host: the room's mirror
   const link: typeof import('../remote/link.ts') = require('../remote/link.ts');
-  if (!flags.reset) return link.run({ code }).then(() => process.exit(0), (e: Error) => die(e.message, 1));
+  if (!flags.reset && !flags.forget) return link.run({ code }).then(() => process.exit(0), (e: Error) => die(e.message, 1));
   const st = link.status(code);
+  if (st.running && flags.forget) die(`the connection to room ${code} is running (pid ${st.pid}); it forgets the room only once stopped (kill ${st.pid}, then run this again)`, 1);
   if (st.running) die(`the connection to room ${code} is running (pid ${st.pid}); it copies the room afresh only once stopped (kill ${st.pid}, then run this again)`, 1);
+  if (flags.forget) return forgetLink(code, s, !!flags.force);
   s.reset();
   const text: typeof import('../text.ts') = require('../text.ts');
   if (!link.start(code)) die(`the connection to room ${code} did not start; ${text.cliLine('doctor')} says why`, 1);
   console.log(`room ${code}: copying it again from the host`);
+}
+
+// link CODE --forget: the copy moves before the link file goes, so no moment has a bare rooms/<code> (that opens as a
+// room hosted here: a fork of the room)
+function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
+  const link: typeof import('../remote/link.ts') = require('../remote/link.ts');
+  const why = (require('../room/link-state.ts') as typeof import('../room/link-state.ts')).read(code)?.lastError || '';
+  if (!force && !why.includes(link.ROOM_CLOSED_REASON) && !why.includes(link.NO_SEAT_REASON)) {
+    die(`room ${code}: the connection did not stop because the room closed or no seat of this machine is left (${why || 'no reason on record'}); add --force to forget it anyway`, 1);
+  }
+  const store: typeof import('../room/store.ts') = require('../room/store.ts');
+  const links: typeof import('../room/links.ts') = require('../room/links.ts');
+  const { roomsDir } = require('../home.ts') as typeof import('../home.ts');
+  s.setAside(); // a demote's idiom: the log is kept beside the outbox, never merged
+  let archive: string | null = path.join(roomsDir(), `${code}.forgotten-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+  try { fs.renameSync(s.dir, archive); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; archive = null; }
+  links.remove(code);
+  store.forget(code);
+  console.log(archive ? `room ${code}: forgotten; this machine's copy is kept at ${archive}` : `room ${code}: forgotten (this machine had no copy of it)`);
 }
 
 type Command = (args: readonly string[]) => unknown;
@@ -390,7 +417,7 @@ function main([cmd, ...args]: string[] = process.argv.slice(2)) {
     try { if (fs.existsSync(identity.home())) (require('../remote/shim.ts') as typeof import('../remote/shim.ts')).refresh(); } catch { /* best effort */ }
   }
   try {
-    (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | show HASH | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID [--login]] | link CODE [--reset] | invite [--ssh [USER@HOST]] [--via JUMP] | invite --web|--public|--url URL | invite --stop | invite --cancel [REF] | admit [REF] | kick NAME | prime ROOM | listen [--port P] [--start|--stop|--status] | handoff NAME | promote CODE | demote CODE INVITE PIN | doctor [--bundle [FILE]] | agent-statusline')))(args);
+    (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | show HASH | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID [--login]] | link CODE [--reset | --forget [--force]] | invite [--ssh [USER@HOST]] [--via JUMP] | invite --web|--public|--url URL | invite --stop | invite --cancel [REF] | admit [REF] | kick NAME | prime ROOM | listen [--port P] [--start|--stop|--status] | handoff NAME | promote CODE | demote CODE INVITE PIN | doctor [--bundle [FILE]] | agent-statusline')))(args);
   } catch (e) {
     die((e as Error).message, 2);
   }

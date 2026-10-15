@@ -362,6 +362,18 @@ test('link: an old server (no ping in its caps) is never pinged; the state file 
   assert.deepEqual(links.list(), [], 'a state file is not a link');
 });
 
+test('link: online, the mirror\'s document link lists the entry fields the host\'s caps list (same); an old host\'s lists none', async t => {
+  for (const [caps, want] of [[undefined, ['same']], [{ ops: protocol.OPS }, undefined]]) {
+    const r = await rig(t, { serverCaps: caps });
+    const l = await r.start();
+    await h.until(() => l.state() === 'online', 3000, 5);
+    assert.deepEqual(r.mirror.kv.get('link').fields, want);
+    l.stop('done');
+    await l.done;
+  }
+  assert.deepEqual(protocol.CAPS.fields, ['same']);
+});
+
 test('server: a session that said hello with caps.ping and then goes silent is closed; one without is kept', async t => {
   const { code, host } = (() => { h.freshHome(t); const c = h.newRoom(); return { code: c, host: store.open(c) }; })();
   const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });

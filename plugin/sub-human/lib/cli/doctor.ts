@@ -26,11 +26,15 @@
  *                (the state record, else the daemon's log), and unless --quick a hello to the host without a
  *                credential (the server answers it and nothing else) with a timeout: reachable, round trip, both
  *                sides' protocol versions, and over ssh whether BatchMode works (ssh's own error, classified).
- *                A dormant link (stopped: the room closed, or no seat of this machine is left) is info and gets no hello
+ *                A dormant link (stopped: the room closed, or no seat of this machine is left) is info and gets no hello;
+ *                a closed one's fix: /sub-human reconnects if the host opens it again, `link CODE --forget` drops it
  *   clock:CODE   skew against the host, when its hello reply carries a time (warn 2 min, fail SIG_SKEW_MS)
  *   room-claude:CODE  per open room hosted here: the room's Claude bound and its process live (pass); its last start
  *                failed (spawn_error), or its job started over 90 s ago but never bound its seat (fail, with the job's
  *                state from `claude agents --json --all`, e.g. failed when the bg daemon crashed it)
+ *   daemon       the bg daemon (`claude daemon status`, also with --quick): its executable deleted since it started
+ *                (fail: it runs a Claude Code an upgrade removed), its version other than `claude --version` (warn),
+ *                not running or unreadable (info). --fix never stops it: the fix line says how
  *   claude       Claude Code's version against cc.MIN_VERSION and cc.PROBED_VERSION; when it differs from the
  *                probed one, unless --quick, the internals probe (cc.probe, ~3 s). Info "probe could not run" (no
  *                probe in the report) when the binary found has no VERSION marker (a launcher), is another version
@@ -53,6 +57,7 @@
  *   helloProbe(spec, code, {timeoutMs, env}?) -> Promise<{ok, ms, reply?, error?, stderr?}>
  *   main(args) -> Promise<exitCode>;  parseArgs(args) -> options (lib/cli/args.ts; Error with the usage)
  *   for tests: checkNode(version?), checkRemoteControl(env, settings), checkListener({quick?}), checkRoomClaudes({now?, jobs?}),
+ *       checkDaemon({version, status?, exe?}),
  *       checkClaude({version, quick, env}) -> {check, probe?}, scanAuthorizedKeys(file), linkChecks(linkReport) -> [check],
  *       sshHint(stderr, {code?, request?, transport?})
  */
@@ -451,7 +456,7 @@ function linkChecks(d: LinkReport): Check[] {
   let status: CheckStatus = d.state.state === 'online' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
   let fix: string | undefined;
   const quiet = dormant(d.state);
-  if (quiet === 'closed') fix = 'the room was closed; this machine\'s copy is kept, nothing to do';
+  if (quiet === 'closed') fix = `the room was closed; this machine's copy is kept. If the host opens it again, /sub-human reconnects; ${cli(`link ${d.code} --forget`)} in a terminal drops it for good`;
   else if (quiet === 'no-seat') fix = 'the connection is not running: type /sub-human in your session to start it again';
   else if (d.state.state === 'fork') fix = `this machine's copy no longer matches the host's: run ${cli(`link --reset ${d.code}`)} in a terminal (it copies the room afresh; anything not sent is kept aside)`;
   else if (d.moved && !d.moved.reached && d.state.state !== 'online') {
@@ -573,7 +578,8 @@ function checkRemoteControl(env: NodeJS.ProcessEnv, settings: Settings[]): Check
 // ---------- the report ----------
 const ROOM_CLAUDE_BIND_GRACE_MS = 90_000;
 
-const DAEMON_HINT = 'if Claude Code was upgraded since the bg daemon started, restart the daemon (stop its process; `claude agents` starts a new one)';
+const DAEMON_HINT = 'the bg daemon check says whether the daemon runs a Claude Code that was upgraded away since, and how to restart it';
+const DAEMON_STOP = 'claude daemon stop --any --keep-workers in a terminal (detached sessions keep running); the next `claude agents` or `claude --bg` starts a fresh daemon';
 const RESTART = (code: string) => `then /sub-human NAME ${code} (in the room) starts it again`;
 
 /**
@@ -619,6 +625,32 @@ function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc.ts').jobs({ a
   return out;
 }
 
+/**
+ * The bg daemon (`claude daemon status`): fail when the executable it runs was deleted since it started (Claude Code
+ * was upgraded or reinstalled under it; the daemon normally restarts itself for that, CONTRACT daemon-upgrade-exit,
+ * and one that did not crashed every room's Claude it started, issue #5), warn when its version is not `claude --version`'s,
+ * info when it is not running or its status is unreadable. status, exe: cc.daemonStatus and cc.exeState (tests).
+ */
+function checkDaemon({ version, env = process.env, status = () => lib('cc.ts').daemonStatus({ env }), exe = (pid: number) => lib('cc.ts').exeState(pid) }: {
+  version: string | null; env?: NodeJS.ProcessEnv; status?: () => import('../cc.ts').DaemonStatus | null; exe?: (pid: number) => { exe: string; deleted: boolean } | null;
+}): Check {
+  let st: import('../cc.ts').DaemonStatus | null = null;
+  try { st = status(); } catch { st = null; }
+  if (!st) return check('daemon', 'info', 'bg daemon', 'could not read `claude daemon status`');
+  if (!st.running) return check('daemon', 'info', 'bg daemon', 'not running (the next `claude agents` or `claude --bg` starts one)');
+  const who = `pid ${st.pid ?? '?'}${st.version ? `, ${st.version}` : ''}`;
+  let x: { exe: string; deleted: boolean } | null = null;
+  if (st.pid) { try { x = exe(st.pid); } catch { x = null; } }
+  if (x && x.deleted) {
+    return check('daemon', 'fail', 'bg daemon', `running (${who}) from ${tilde(x.exe)}, which was deleted since it started (Claude Code was upgraded or reinstalled): background sessions it starts, the room's Claude included, can crash`, DAEMON_STOP);
+  }
+  const cc = lib('cc.ts');
+  if (st.version && version && cc.compareVersions(st.version, version) !== 0) {
+    return check('daemon', 'warn', 'bg daemon', `running (${who}) while \`claude --version\` says ${version}: background sessions start on the daemon's version`, DAEMON_STOP);
+  }
+  return check('daemon', 'pass', 'bg daemon', `running (${who})`);
+}
+
 async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorizedKeys, env = process.env }: { quick?: boolean; timeoutMs?: number; authorizedKeys?: string; env?: NodeJS.ProcessEnv } = {}): Promise<Report> {
   const checks = [checkPlugin(), checkNode(), checkHome()];
   const akFile = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
@@ -635,7 +667,7 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
   checks.push(...checkRoomClaudes());
   const cv = claudeVersion(env);
   const cl = checkClaude({ version: cv, quick, env });
-  checks.push(cl.check);
+  checks.push(cl.check, checkDaemon({ version: cv, env }));
   const settings = settingsFiles(env);
   checks.push(checkHooks(settings, env), checkRemoteControl(env, settings));
   checks.push(...checkListener({ quick }));
@@ -809,5 +841,5 @@ async function main(args: readonly string[], { write = (s: string) => { process.
 
 export {
   diagnose, format, bundle, redactor, helloProbe, checkListener, checkRoomClaudes, linkChecks, scanAuthorizedKeys,
-  checkNode, checkRemoteControl, checkClaude, sshHint, main, parseArgs, DOCTOR_HELLO_MS,
+  checkNode, checkRemoteControl, checkClaude, checkDaemon, sshHint, main, parseArgs, DOCTOR_HELLO_MS,
 };
