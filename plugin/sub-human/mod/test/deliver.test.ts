@@ -5,10 +5,10 @@
 // the session: a chat event is a $.ui.log notice and starts no turn, a wake while idle submits one prompt (and logs
 // its visible lines when a hook drops it), a wake mid-turn goes to an append (and logs them) instead, and a failure
 // leaves a notice.
-// The test kit has no bottom for a plugin's own $.session.append in 2.1.292 (a test's on('session.append') is not
-// reached by it: "no implementation for session.append"), so every append here fails: a pull is lost and counted
-// as a delivery error, and a mid-turn wake falls back to a prompt. The test's $ has no state noun either, so
-// deliveryErrors shows here only through its notice. A live check saw both appends land.
+// The 2.1.292 test kit had no bottom for a plugin's own $.session.append, so every append failed and these tests
+// were written around that. Since 2.1.296 (at the latest) the kit stores the row and a test's on('session.append')
+// is reached by the module's call: world() keeps or refuses each append (`append`), so both paths are tested here.
+// The test's $ has no state noun, so deliveryErrors shows here only through its notice.
 import { test, expect, mock } from 'claude-code/testing'
 import { SEAT, OUT, ran, scriptOf, session, start } from './support.ts'
 
@@ -29,6 +29,8 @@ type Opts = {
   hello?: any, pieces?: string[], gate?: Promise<void>,
   /** How the session takes a prompt the module submits (n counts from 0): entered, dropped by a hook, or failed. */
   submit?: (text: string, n: number) => 'ok' | 'drop' | 'throw',
+  /** How the session takes a row the module appends (n counts from 0): stored, refused, or failed. */
+  append?: (text: string, n: number) => 'ok' | 'deny' | 'throw',
   /** A child of the test's own in place of the one below (n counts from 0). */
   spawn?: (n: number, e: any) => AsyncGenerator<any, any, any>,
 }
@@ -38,9 +40,10 @@ type Opts = {
  * feeds it, staying up until the test ends (`release`); later children only wait; the session's notices, prompts
  * (each attempt in `submits`, the ones that entered in `prompts`) and scripts recorded.
  */
-function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.resolve(), submit = () => 'ok', spawn }: Opts = {}) {
+function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.resolve(), submit = () => 'ok', append = () => 'ok', spawn }: Opts = {}) {
   const seen = {
     spawns: [] as any[], logs: [] as string[], prompts: [] as string[], submits: [] as string[], contexts: [] as any[],
+    appends: [] as string[], appended: [] as string[],
     scripts: [] as string[], classic: [] as any[], ended: [] as number[], release: () => {}, feed: (text: string) => {},
   }
   let released = false
@@ -73,6 +76,16 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
     } finally { seen.ended.push(n) }
   })
   on('ui.log', ($: any, e: any) => { seen.logs.push(e.text); return { value: undefined } })
+  on('session.append', async ($: any, e: any, next: any) => {
+    const text = e.message.content.map((b: any) => b.text).join('')
+    const how = append(text, seen.appends.length)
+    seen.appends.push(text)
+    if (how === 'throw') throw new Error('no session to keep it')
+    if (how === 'deny') return { deny: 'not now' }
+    const r = await next(e)
+    seen.appended.push(text)
+    return r
+  })
   on('prompt.submit', async ($: any, e: any) => {
     const how = submit(e.text, seen.submits.length)
     seen.submits.push(e.text)
@@ -118,27 +131,48 @@ test('chat is a notice and starts no turn; a pull starts none either; a wake whi
   ]
   const seen = world($, on, { pieces })
   await start($)
-  await until(() => seen.prompts.length === 1 && seen.logs.length === 3).catch(() => { throw new Error(JSON.stringify(seen)) })
-  // one notice per line (a newline would show as U+FFFD); the pull the kit cannot append is a delivery error
-  expect(seen.logs).toEqual(['bob: hi', 'carol joined', NOTICE])
+  await until(() => seen.prompts.length === 1 && seen.logs.length === 2 && seen.appended.length === 1).catch(() => { throw new Error(JSON.stringify(seen)) })
+  // one notice per line (a newline would show as U+FFFD); the pull is a row the model reads, not a turn
+  expect(seen.logs).toEqual(['bob: hi', 'carol joined'])
+  expect(seen.appended).toEqual(['Room since your last turn (…):\nbob: hi'])
   expect(seen.prompts.length).toBe(1)
   expect(seen.prompts[0]).toMatch(/^\(for Claude\) sub-human room/)
   expect(seen.prompts[0]).toMatch(/bob's Claude \(to you\): q\?$/)
   seen.release()
 })
 
-test('a wake mid-turn goes to an append and logs what the person would see; a refused append falls back to a prompt', async ($, on) => {
+const DECIDED = /^\(for Claude\) sub-human room[^\n]*\nroom: decided \(room decision\)\n\(for Claude\) room now: …$/
+
+/** A world whose child waits for the turn to be running before it writes a wake; `go` lets it write. */
+function midTurn($: any, on: any, opts: Opts = {}) {
   let go = () => {}
   const gate = new Promise<void>(r => { go = r })
-  // the child here waits for the turn to be running before it writes its wake
-  const seen = world($, on, { gate, pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'wake', text: 'room: decided (room decision)\n(for Claude) room now: …' })] })
+  const seen = world($, on, { ...opts, gate, pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'wake', text: 'room: decided (room decision)\n(for Claude) room now: …' })] })
+  return { seen, go }
+}
+
+test('a wake mid-turn goes to an append and logs what the person would see; no prompt is submitted', async ($, on) => {
+  const { seen, go } = midTurn($, on)
+  await start($)
+  await $.turn.start({ text: 'working on it', turnId: 't1' } as any)
+  go()
+  await until(() => seen.logs.length === 1 && seen.appended.length === 1)
+  expect(seen.logs).toEqual(['room: decided (room decision)'])
+  expect(seen.appended[0]).toMatch(DECIDED)
+  await new Promise(r => setTimeout(r, 50))
+  expect(seen.submits).toEqual([])
+  seen.release()
+})
+
+test('a wake mid-turn whose append is refused falls back to a prompt, whole', async ($, on) => {
+  const { seen, go } = midTurn($, on, { append: () => 'deny' })
   await start($)
   await $.turn.start({ text: 'working on it', turnId: 't1' } as any)
   go()
   await until(() => seen.logs.length === 1 && seen.prompts.length === 1)
   expect(seen.logs).toEqual(['room: decided (room decision)'])
-  // the kit refuses the append (see the head of this file): the wake is submitted after all, whole
-  expect(seen.prompts[0]).toMatch(/^\(for Claude\) sub-human room[^\n]*\nroom: decided \(room decision\)\n\(for Claude\) room now: …$/)
+  expect(seen.appended).toEqual([])
+  expect(seen.prompts[0]).toMatch(DECIDED)
   seen.release()
 })
 
@@ -194,14 +228,28 @@ test('while the child delivers, a member\'s plain prompt starts no node once con
 const WAKE = (text: string) => line({ type: 'wake', text })
 const typed = ($: any, text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false } as any)
 
-test('a wake whose prompt a hook drops shows its room lines, and is delivered at the next turn.start', async ($, on) => {
+test('a wake whose prompt a hook drops shows its room lines, and is appended instead', async ($, on) => {
   const wake = WAKE("bob's Claude (to you): q?\n  │ which file?\n(for Claude) room now: …")
-  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + wake], submit: (_, n) => (n === 0 ? 'drop' : 'ok') })
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + wake], submit: () => 'drop' })
+  await start($)
+  await until(() => seen.submits.length === 1 && seen.logs.length === 2 && seen.appended.length === 1)
+  expect(seen.prompts).toEqual([])
+  expect(seen.logs).toEqual(["bob's Claude (to you): q?", '  │ which file?'])
+  expect(seen.appended[0]).toMatch(/^\(for Claude\) sub-human room[^\n]*\nbob's Claude \(to you\): q\?\n/)
+  await $.turn.start({ text: 'next', turnId: 't1' } as any)
+  await new Promise(r => setTimeout(r, 50))
+  expect(seen.submits.length).toBe(1) // the model has it: not held for the next turn
+  seen.release()
+})
+
+test('a wake whose prompt a hook drops and whose append is refused shows its room lines, and is delivered at the next turn.start', async ($, on) => {
+  const wake = WAKE("bob's Claude (to you): q?\n  │ which file?\n(for Claude) room now: …")
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + wake], submit: (_, n) => (n === 0 ? 'drop' : 'ok'), append: () => 'deny' })
   await start($)
   await until(() => seen.submits.length === 1 && seen.logs.length === 3)
   expect(seen.prompts).toEqual([])
   // no prompt row shows a dropped wake: its visible lines are notices, one per line, without "(for Claude)" lines;
-  // then the kit cannot append it, so the person is told it is not delivered yet
+  // then its append is refused, so the person is told it is not delivered yet
   expect(seen.logs).toEqual(["bob's Claude (to you): q?", '  │ which file?', NOTICE])
   await $.turn.start({ text: 'next', turnId: 't1' } as any)
   await until(() => seen.prompts.length === 1)
@@ -213,7 +261,7 @@ test('a wake whose prompt a hook drops shows its room lines, and is delivered at
 test('a mid-turn wake that can be neither appended nor submitted waits for the next turn, then is delivered', async ($, on) => {
   let go = () => {}
   const gate = new Promise<void>(r => { go = r })
-  const seen = world($, on, { gate, pieces: [line({ type: 'seat', seat: SEAT }) + WAKE('room: decided')], submit: (_, n) => (n === 0 ? 'throw' : 'ok') })
+  const seen = world($, on, { gate, pieces: [line({ type: 'seat', seat: SEAT }) + WAKE('room: decided')], submit: (_, n) => (n === 0 ? 'throw' : 'ok'), append: () => 'deny' })
   await start($)
   await $.turn.start({ text: 'working on it', turnId: 't1' } as any)
   go()
@@ -229,7 +277,7 @@ test('a mid-turn wake that can be neither appended nor submitted waits for the n
 
 test('delivery errors are told once per window, however many there are', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })] })
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })], append: () => 'deny' })
   const pull = line({ type: 'pull', text: 'Room since your last turn (…):\nbob: hi' })
   await start($)
   await until(() => seen.spawns.length === 1)
@@ -304,18 +352,35 @@ test('a /clear (a new session id) stops the old child and starts one for the new
 })
 
 test('turn.start, a mid-turn wake, a tool call, turn.complete: the wake is delivered once, never twice', async ($, on) => {
-  // the kit refuses the append, so the wake is submitted at once; the ledger's re-submit of an appended wake no
-  // request carried is checked in node (test/mod-core-deliver.test.js)
-  let go = () => {}
-  const gate = new Promise<void>(r => { go = r })
-  const seen = world($, on, { gate, pieces: [line({ type: 'seat', seat: SEAT }) + WAKE('room: decided')] })
+  // appended mid-turn, and a tool call finished after it: the request that followed carried it, so the turn's end
+  // submits nothing (the ledger's rules are checked in node, test/mod-core-deliver.test.js)
+  const clock = mock.clock(on, { now: 1_000 })
+  const { seen, go } = midTurn($, on)
   on('classic.PostToolUse', () => ({}))
   await start($)
   await $.turn.start({ text: 'working on it', turnId: 't1' } as any)
   go()
-  await until(() => seen.prompts.length === 1)
+  await until(() => seen.appended.length === 1)
+  await new Promise(r => setTimeout(r, 50))
+  await clock.advance(10)
   await $.classic.PostToolUse({ tool_name: 'Read', tool_input: {}, tool_response: {}, tool_use_id: 'u1' } as any)
   await $.turn.complete({ turnId: 't1', answer: 'done' } as any).catch(() => {})
+  await $.turn.start({ text: 'next', turnId: 't2' } as any)
+  await new Promise(r => setTimeout(r, 50))
+  expect(seen.appended.length).toBe(1)
+  expect(seen.submits).toEqual([])
+  seen.release()
+})
+
+test('a wake appended mid-turn that no later request carried is submitted at the turn\'s end, once', async ($, on) => {
+  const { seen, go } = midTurn($, on)
+  await start($)
+  await $.turn.start({ text: 'working on it', turnId: 't1' } as any)
+  go()
+  await until(() => seen.appended.length === 1)
+  await $.turn.complete({ turnId: 't1', answer: 'done' } as any).catch(() => {})
+  await until(() => seen.prompts.length === 1)
+  expect(seen.prompts[0]).toMatch(DECIDED)
   await $.turn.start({ text: 'next', turnId: 't2' } as any)
   await new Promise(r => setTimeout(r, 50))
   expect(seen.prompts.length).toBe(1)

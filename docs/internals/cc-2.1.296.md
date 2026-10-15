@@ -39,6 +39,10 @@ Issue #5: a host's bg daemon kept running a `claude` binary that an upgrade had 
 
 How doctor tells the executable was deleted (`cc.exeState`): on Linux `/proc/PID/exe` reads `<path> (deleted)`; on macOS `ps -o comm=` gives the path the daemon was started with (`/opt/homebrew/Caskroom/claude-code@latest/2.1.296/claude` here), and a missing absolute path means deleted. A bare `claude` (started through PATH) says nothing, so it is not flagged. A daemon whose version differs from `claude --version` but whose binary still exists is a warn.
 
+## The test kit stores a plugin's own `$.session.append`
+
+In 2.1.292 `claude plugin test` had no bottom for a plugin's own `$.session.append` (`no implementation for session.append`), and a test's `on('session.append')` was not reached by it, so `mod/test/deliver.test.ts` was written with every append failing. In 2.1.296 the kit stores the row (the call resolves to `{ message, uuid }`), and a test's `on('session.append', ($, e, next) => …)` sees the module's call (door `note`) and may answer `{ deny }`. Six deliver tests that expected the failure path timed out. Nothing the plugin does at runtime changed, so this is no CONTRACT entry: the tests now pick, per world, whether an append is kept or refused, and cover both paths.
+
 ## Currently passing entries
 
 The other 74 CONTRACT entries and `daemon-env-names` pass unchanged at their 2.1.296 sites. `PROBED_VERSION` is now `2.1.296`; `MIN_VERSION` stays `2.1.292` (nothing the plugin needs is newer).
