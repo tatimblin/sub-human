@@ -732,6 +732,18 @@ Stage 6 (segments and the snapshot) measured the same test, and a fresh process 
 
 The warm append reads back only the active segment and the snapshot's window; the status line reads `room.readRecent` (every non-chat entry and the lines since the last rotation) instead of every line.
 
+**Idle cost per seat (stage 8, for the hub decision).** The plan's test for Stage 9 (the hub) is: skip it if, at N ≤ 5 seats, tail + hold + status line cost under 1% of a core idle, with no `ps` on the hot path. This was measured on an Apple M2 (8 cores, macOS, node 24.15, Claude Code 2.1.296) in a scratch home with fake seats (sleeping processes) and a fake MCP client, no real Claude. Each tail and room MCP server was left idle for 60 s, and `ps -o time=` was read at the start and end of the window (10 ms resolution). The status line figure is the median of 20 fresh runs. A PATH shim logged every `ps`.
+
+| Per seat | 1 seat: CPU % of a core | 1 seat: `ps`/min | 5 seats: CPU % per seat | 5 seats: `ps`/min |
+|---|---|---|---|---|
+| room tail | 0.28 | 2 | 0.22–0.23 | 10 per tail (50 on the machine) |
+| room MCP server with its holds (1 s timer only while a hold is open) | 0.18 | 0 | 0.18–0.20 | 0 |
+| status line, one refresh (a fresh `node`) | 30 ms CPU, 40 ms wall | 0 | 40 ms CPU, 40 ms wall | 0 |
+| status line every 5 s (Claude Code's rate while rows show) | 0.6–0.8 | 0 | 0.6–0.8 | 0 |
+| **total** | **1.1–1.3** | 2 | **1.0–1.2** | 10 per host tail |
+
+The only idle `ps` is the host tail's seat sweep: `ps -o lstart= -p PID` per local seat (`lib/lock.ts` pidStart, cached 30 s), not the batched `pidStarts`. Tail and hold together cost 0.4–0.5 % per seat and stay flat from 1 to 5 seats. The total is just over budget because of the status line, which is Claude Code starting a node process every 5 s; a hub would not remove that cost. Not measured: the room's Claude's own tail, a seat in a room hosted elsewhere (its link daemon), the host's per-link `serve`, and real sessions.
+
 ## Testing
 
 - `npm test`: `npm run typecheck` (strict `tsc` over the runtime and, with `tsconfig.test.json`, the tests; zero errors), then `node --test` over `plugin/sub-human/test/**/*.node-test.ts` (each file in its own process, in parallel; `test/helpers.ts`, preloaded with `--import`, strips `CLAUDE*` env and removes temp dirs) and `scripts/test`. Hooks are driven as child processes with JSON payloads, through `hooks/run.ts <handler>` as Claude Code and the module run them (`test/hooks/`; `test/hooks/stdin.node-test.ts` feeds every handler stdin it cannot use). The tail runs on a fake clock (`lib/clock.ts`).
