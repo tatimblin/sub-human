@@ -144,9 +144,13 @@ function ago(iso: string, now: number = Date.now()): string {
 /** The room's small documents (lib/room/store.ts kv). */
 const kvOf = (code: string) => room.open(code).store.kv;
 const storeOf = (code: string) => room.open(code).store;
-/** The room log (lib/room/store.ts readAll: cached, parses only appended bytes), entries with an id. */
+/**
+ * The room log as a row reads it: every non-chat entry, and every line since the log's last rotation (lib/room.ts
+ * readRecent; the whole log before one). A row looks back only over recent chat (the last post, the mail since the
+ * viewer's last reply: everything in that window is after an older reply), so a cold status line parses one segment.
+ */
 function readLog(code: string): readonly Entry[] {
-  try { return room.open(code).readAll(); } catch { return []; }
+  try { return room.open(code).readRecent(); } catch { return []; }
 }
 function memberList(members: MemberInput): Member[] {
   if (!members) return [];
