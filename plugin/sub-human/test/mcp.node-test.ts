@@ -153,7 +153,7 @@ test('mcp: a post that repeats the person\'s objection note is refused, waiting 
   proposal.writeConfirm(me, { hash, note: 'Open rate limiting\nfirst', from: 'bob', title: 'Ship v3', at: Date.now() });
   // the note relayed (case, spacing and quotes aside): refused, pointing at the confirm card
   const twice = errText(await s.tool('post', { kind: 'say', text: 'alice objects: “open rate limiting  first”.' }));
-  assert.equal(twice, `refused: that is alice's note on proposal ${hash}, which waits for alice's Send; posting it would relay it twice. call AskUserQuestion with the question "objection ${hash}" so alice can send or discard it.`);
+  assert.equal(twice, `refused: that is alice's note on proposal ${hash}, which waits for alice's Send; posting it would relay it twice. call AskUserQuestion with "objection ${hash}" so alice can send or discard it.`);
   // an unrelated say passes
   assert.equal(payload(await s.tool('post', { kind: 'say', text: 'rate limits look fine to me' })).text, 'rate limits look fine to me');
   // a short note matches only exactly

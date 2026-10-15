@@ -122,7 +122,7 @@ export const NEXT = {
   /** the fallback card */
   card: (h: string) => `call AskUserQuestion with "proposal ${h}"`,
   /** a note's confirm card */
-  note: (h: string) => `call AskUserQuestion with the question "objection ${h}"`,
+  note: (h: string) => `call AskUserQuestion with "objection ${h}"`,
   handoff: 'call AskUserQuestion with "handoff"',
   admit: (ref: string) => `call AskUserQuestion with "admit ${ref}"`,
 };
@@ -130,7 +130,11 @@ export const NEXT = {
 /** The dialog's "Yes" that leaves the mode as it was (any other "Yes" works too; the mode is then set back). */
 const KEEP: Record<string, string | undefined> = { default: 'Yes, manually approve edits', auto: 'Yes, and use auto mode', acceptEdits: 'Yes, and auto-accept edits' };
 const DONE = 'Return to what you were doing.';
-const keepNote = (n: string) => `Don't post the note or answer for ${n}.`;
+/** The note is the person's: the model neither posts it nor answers its card for them. */
+const keepNote = (_n: string) => 'Don\'t post or answer it yourself.';
+/** The longest text one consent hook adds to the model's context: a step says one or two short lines, so more is a
+ *  bug (a part repeated, a title run long), and the cap keeps it from flooding the turn. */
+export const SAY_MAX = 600;
 
 /** Every line the consent hook says; n a person's name, h a proposal hash. */
 export const SAY = {
@@ -153,7 +157,7 @@ export const SAY = {
   planView: (n: string, h: string) => `Open it in the plan view instead: ${NEXT.open(h)}. The hooks show ${n} the full proposal.`,
   unread: (n: string, h: string) => `${n}'s answer in the review of proposal ${h} is not on record yet; nothing was recorded.`,
   closed: (n: string, h: string) => `${n} closed the review of proposal ${h} without answering; nothing was recorded.`,
-  noted: (n: string, h: string) => `${n} closed the review of proposal ${h} with a note; nothing is recorded yet. Once the review is closed, ${NEXT.note(h)} (Send or Discard). ${keepNote(n)}`,
+  noted: (n: string, h: string) => `${n} left a note on ${h}, unrecorded. Once the review closes, ${NEXT.note(h)}. ${keepNote(n)}`,
   nothingToShow: (h: string | undefined) => `${h ? `proposal ${h}` : 'the room proposal'}: nothing to show (already answered, decided or unknown); nothing was recorded.`,
   reviewClosed: 'The room review is closed and the mode is restored; this was not a plan to carry out.',
   cardInstead: (n: string, h: string) => ` The plan view could not show proposal ${h}: ${NEXT.card(h)} so ${n} answers on the card.`,
@@ -161,16 +165,16 @@ export const SAY = {
   modeChanged: (n: string, mode: string | undefined) => `The dialog's "Yes" changed the mode; ${NEXT.restore(n, mode)}. Do not carry out the proposal.`,
   notAPlan: 'This was a room review, not a plan to carry out.',
   foreign: (n: string, h: string | undefined) => ` The plan you passed was not shown (this plan mode showed ${n} room proposal ${h}; the plan file is back as it was).`,
-  unshown: (n: string, hs: string, again: string) => `sub-human: nothing was recorded for proposal ${hs}: the room review did not open, so that dialog was not ${n}'s answer. Don't tell ${n} they answered. Ask ${n} to answer it again (${again}); do not carry out the proposal.`,
+  unshown: (n: string, hs: string, again: string) => `Nothing recorded for ${hs}: no review opened, so ${n} did not answer (don't say they did). Ask again (${again}); don't carry it out.`,
   offerPropose: (n: string, where: string) => `sub-human: if ${n} wants the room to agree to this plan, call the room propose tool with ${where}. Only on ${n}'s word.`,
   stillOpen: (n: string, next: string) => `sub-human: ${n}'s room review is still open: ${next}.`,
   roomToolDenied: (said: string) => `sub-human: ${said ? `${said} ` : ''}Post nothing about the review. First ${NEXT.exit}; then return to what you were doing.`,
   promptExit: (said: string) => `sub-human: ${said ? `${said} ` : ''}Before anything else, ${NEXT.exit}; then continue.`,
   // the note and its confirm card
   noteAsk: (n: string, h: string) => `room proposal ${h}: ${n}'s note, to send or discard`,
-  nudge: (n: string, h: string) => `sub-human: ${n}'s note on proposal ${h} is not recorded yet: ${NEXT.note(h)} (Send or Discard). ${keepNote(n)}`,
-  reoffer: (n: string, h: string, interrupted: boolean) => `sub-human: ${n}'s note on proposal ${h} is still not recorded.${interrupted ? '' : ' Its card was never shown.'} ${showNote(n, h, interrupted)} ${keepNote(n)}`,
-  renudge: (n: string, h: string) => `sub-human: ${n}'s note on proposal ${h} is still not recorded and its card was not shown again. The Esc was no answer: ${NEXT.note(h)} now, before anything else. ${keepNote(n)}`,
+  nudge: (n: string, h: string) => `${n}'s note on ${h} waits: ${NEXT.note(h)} (Send or Discard). ${keepNote(n)}`,
+  reoffer: (n: string, h: string, interrupted: boolean) => `${n}'s note on ${h}:${interrupted ? '' : ' its card was never shown.'} ${showNote(n, h, interrupted)} ${keepNote(n)}`,
+  renudge: (n: string, h: string) => `${n}'s note on ${h} still waits; Esc was no answer. First, ${NEXT.note(h)}. ${keepNote(n)}`,
   noteNoAnswer: (n: string, h: string) => `Nothing was recorded: the card closed without ${n}'s answer; the note waits. If ${n} asks, ${NEXT.note(h)}. ${DONE}`,
   noteOther: (h: string) => `proposal ${h}: no Send/Discard answer; nothing was recorded and the note waits. ${DONE}`,
   discarded: (n: string, h: string) => `${n} discarded the note; nothing was recorded and proposal ${h} still awaits ${n}'s answer. ${DONE}`,
@@ -197,8 +201,8 @@ export const SAY = {
  */
 export function showNote(n: string, h: string, interrupted = false): string {
   return interrupted
-    ? `${n} pressed Esc on its card: no answer, not a decline. Show it again now, before anything else: ${NEXT.note(h)}.`
-    : `Show ${n} the card now, before anything else: ${NEXT.note(h)}.`;
+    ? `Esc was no answer, not a decline. First, ${NEXT.note(h)}.`
+    : `First, ${NEXT.note(h)}.`;
 }
 
 // ---------- the note ----------
@@ -554,6 +558,7 @@ function noteAtPrompt(state: State, ev: Extract<Event, { type: 'prompt' }>, ctx:
 
 /** A say's parts as text; outcome(hash) is the answer effect's line, recorded whether any answer was recorded. */
 export function textOf(parts: Part[], outcome: (hash: string) => string, recorded: boolean): string {
-  return parts.map(p => (typeof p === 'string' ? p : 'answer' in p ? outcome(p.answer) : recorded ? p.ifRecorded : '').trim())
+  const text = parts.map(p => (typeof p === 'string' ? p : 'answer' in p ? outcome(p.answer) : recorded ? p.ifRecorded : '').trim())
     .filter(Boolean).join(' ');
+  return text.length > SAY_MAX ? `${text.slice(0, SAY_MAX - 1)}…` : text;
 }

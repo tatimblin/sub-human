@@ -279,7 +279,7 @@ test('exited with no review shown: the model is told nothing was recorded; the p
   const theirs = [{ hash: H, from: 'alice', viewable: true }];
   const told = post({ pending: theirs });
   assert.deepEqual(told.effects, [{ do: 'pick', hash: H }]);
-  assert.match((told.say as { parts: string[] }).parts[0], /nothing was recorded for proposal .*Don't tell bob they answered/);
+  assert.match((told.say as { parts: string[] }).parts[0], /Nothing recorded for [0-9a-f]{12}: no review opened, so bob did not answer \(don't say they did\)/);
   assert.match((post({ pending: [{ ...theirs[0], viewable: false }] }).say as { parts: string[] }).parts[0], /call AskUserQuestion with "proposal /, 'not viewable: the card');
   assert.deepEqual(post({ pending: theirs, response: { ...EVENTS.exited.response, isAgent: true } }).say, null, 'a subagent\'s plan');
   // bob's own pending proposal, unedited: his signoff
@@ -322,4 +322,22 @@ test('words: every line the model is told is short; the mechanic per phase is on
   lines.push(review.showNote('bob', H), review.showNote('bob', H, true));
   for (const l of lines) assert.ok(l.length <= 280, `${l.length}: ${l}`);
   for (const l of Object.values(review.NEXT).map(call)) assert.ok(String(l).length <= 100, String(l));
+});
+
+test('words: the note\'s and review\'s longest lines stay under 160 characters with a 7-letter name; a composed text is capped', () => {
+  const n = 'tristan', h = 'abcdef012345';
+  const lines = {
+    noted: review.SAY.noted(n, h), nudge: review.SAY.nudge(n, h), renudge: review.SAY.renudge(n, h),
+    reoffer: review.SAY.reoffer(n, h, true), reofferUnshown: review.SAY.reoffer(n, h, false),
+    unshown: review.SAY.unshown(n, h, `"proposal ${h}"`),
+  };
+  for (const [k, s] of Object.entries(lines)) {
+    assert.ok(s.length < 160, `${k} is ${s.length}: ${s}`);
+    if (k !== 'unshown') assert.ok(s.includes(`call AskUserQuestion with "objection ${h}"`), `${k} still names the card's call`);
+  }
+  assert.match(lines.reoffer, /Esc was no answer, not a decline/, 'the Esc is said to be no answer');
+  assert.match(lines.unshown, /don't say they did/, 'the model is told not to claim an answer');
+  const long = review.textOf(Array.from({ length: 20 }, () => lines.noted), () => '', false);
+  assert.equal(long.length, review.SAY_MAX);
+  assert.ok(long.endsWith('…'));
 });
