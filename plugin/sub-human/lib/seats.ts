@@ -36,13 +36,30 @@
  *       whose lease is fresh again (a beat that did not run back) is given back. Returns the names it ended.
  *   back(code, name) -> bool   on the host: clears lapsed_at and, when it was set, logs member_joined "NAME rejoined"
  *       (the remote server runs it after each beat). false when the seat had not lapsed.
+ *   take(want, {pid, session_id, cwd, cur, pubkey}) -> Taken   the /sub-human join's seat (lib/commands/join.ts): NAME in
+ *       ROOM (code null: the one open room, sweeping orphans first, else a new one; several open is a refusal). In a room
+ *       hosted elsewhere the link is started first (lib/remote/joining.ts ensureLinked). The same seat again is "already
+ *       joined" (unless a re-pointed link must rebind it); another seat of this session leaves first ("switched rooms");
+ *       pubkey(code, name) is the seat key's public half (hooks/seat-key.ts, which only the join hook loads). Taken:
+ *       {ok: true, me, lead, msg} (lead: the mechanics block's last line; msg: the line for the person) or
+ *       {ok: false, text, refused} (a refusal, or where a join not let in yet stands)
+ *   withWhom(code, name) -> string   "with bob, carol", "4 others here" or "nobody else here yet" (the people only)
  */
 
 import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as roomClaude from './room-claude.ts';
 import * as config from './config.ts';
+import * as links from './room/links.ts';
+import { roomClaudePresence } from './room/members.ts';
+import { createRequire } from 'node:module';
 import type { JoinResult, Member } from './room/types.ts';
+import type { Identity } from './identity.ts';
+import type { Wanted } from './remote/joining.ts';
+
+const require = createRequire(import.meta.url);
+// loaded only by take(): the session-end hook and the remote server never need the link or the listener
+const joining = (): typeof import('./remote/joining.ts') => require('./remote/joining.ts');
 
 /** enter()'s seat: the join hook's, or the remote server's for a seat on another machine. */
 interface EnterOpts {
@@ -164,8 +181,84 @@ function back(code: string, name: string): boolean {
   return was;
 }
 
+/** take()'s answer: a seat taken (the mechanics block's lead line, the person's line), or a refusal / where it stands. */
+export type Taken = { ok: true; me: Identity; lead: string; msg: string } | { ok: false; text: string; refused: boolean };
+/** take()'s process: the seat's claude pid and session, the seat this session holds now, and its key's public half. */
+interface TakeCtx { pid: number; session_id: string | undefined; cwd: string; cur: Identity | null; pubkey(code: string, name: string): string }
+
+const no = (text: string, refused = true): Taken => ({ ok: false, text, refused });
+const msgOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** Who else is in the room, live (the room's Claude only while it runs). */
+function others(code: string, name: string): string[] {
+  return Object.values<Member>(identity.readMembers(code)).filter(m => m && m.name && m.name !== name && !m.left_at
+    && (m.role !== 'claude' || roomClaudePresence(m) === 'live')).map(m => m.name);
+}
+
+function withWhom(code: string, name: string): string {
+  const names = others(code, name).filter(n => n !== identity.ROOM_CLAUDE);
+  if (!names.length) return 'nobody else here yet';
+  return names.length > 3 ? `${names.length} others here` : `with ${names.join(', ')}`;
+}
+
+/** Close rooms where only the room's Claude is left once they have been orphaned long enough (best effort; host only). */
+function sweepOrphans(): void {
+  try { identity.pruneModLeases(); } catch { /* the next join retries */ }
+  for (const c of identity.orphanRooms()) { try { roomClaude.watchdog(c); } catch { /* next join retries */ } }
+}
+
+function take({ name, code, isDefault = false }: Wanted, { pid, session_id, cwd, cur, pubkey }: TakeCtx): Taken {
+  let created = false;
+  if (!code) {
+    sweepOrphans();
+    const open: string[] = identity.openRooms();
+    if (open.length > 1) return no(`${open.length} rooms are open (${open.join(', ')}); say which: /sub-human NAME ROOM.`);
+    code = open[0] || null;
+  }
+  if (!code) {
+    // Check the name before making a room for it.
+    if (!identity.NAME_RE.test(name)) return no(`"${name}" isn't a name (letters, digits, . _ -, up to 32)`);
+    if (identity.RESERVED.includes(name.toLowerCase())) return no(`"${name}" is reserved; pick another name`);
+    code = identity.newCode();
+    created = true;
+  } else {
+    if (!identity.roomExists(code)) return no(`there's no room ${code} on this machine. Check the name, or type /sub-human to open a new room.`);
+    if (identity.roomClosing(code)) return no(`room ${code} is closing; type /sub-human to open a new room.`);
+    const step = joining().ensureLinked(code, name);
+    if (step && step.kind === 'say') return no(step.text, step.refused);
+  }
+  const host = identity.isHost(code);
+  const same = !!cur && cur.code === code && cur.name === name;
+  // a link whose credentials a re-point replaced (lib/handoff.ts): the seat joins again over it, even if seated
+  const rebind = !host && !!(links.get(code) || {}).rebind;
+  if (cur && same && !rebind) {
+    joining().dropJoinAs(code);
+    return { ok: true, me: cur, lead: 'already joined', msg: `you're already in ${cur.code} as ${name}, ${withWhom(code, name)}${ensureRoomClaude(code, cwd, name)}` };
+  }
+  // The seat's key: via=human posts and answers are signed with it, and the log pins it.
+  let key: string;
+  try { key = pubkey(code, name); } catch (e) { return no(`could not make ${name}'s signing key (${msgOf(e)}). Run /sub-human doctor.`); }
+  if (cur && !same) exit(cur.code, cur.name, 'switched rooms'); // exactly as exiting the session would
+  const r = enter({ code, name, pid, session_id, cwd, pubkey: key });
+  if (!r.ok) {
+    if (isDefault && /^name taken/.test(r.error || '')) return no(`"${name}" is taken in room ${code}; pick another: /sub-human NAME${created ? '' : ` ${code}`}`);
+    return no(`could not join ${code} as ${name}: ${r.error || 'unknown error'}`);
+  }
+  if (rebind) { const { rebind: _done, ...l } = links.get(code)!; links.set(code, l); } // rebind: read from it
+  joining().dropJoinAs(code);
+  if (host) {
+    try { (require('./remote/webhost.ts') as typeof import('./remote/webhost.ts')).ensure(code); } catch { /* best effort */ } // the listener after a reboot
+    try { (require('./remote/shim.ts') as typeof import('./remote/shim.ts')).refresh(); } catch { /* best effort */ } // the serve shim a login link runs
+  }
+  const me: Identity = { code, name, role: 'member', pid, session_id: session_id || null, address: identity.address(name, code) };
+  const msg = created
+    ? `opened room ${code} as ${name} · on this machine others join with /sub-human; another machine: /sub-human invite`
+    : `${r.rejoin ? 'rejoined' : 'joined'} ${code} as ${name}, ${withWhom(code, name)} · @room to talk, @claude to ask the room's Claude`;
+  return { ok: true, me, lead: created ? 'room opened' : r.rejoin ? 'rejoined' : 'joined', msg: `${msg}${r.note}` };
+}
+
 /** Test seam: the room's Claude starts through this object, which a test may stub (test/seats.node-test.ts); an ES
  * module's own exports are read-only. */
 const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]) => roomClaude.startDetached(o) };
 
-export { enter, exit, sweep, back, ensureRoomClaude, seam };
+export { enter, exit, sweep, back, ensureRoomClaude, seam, take, withWhom };

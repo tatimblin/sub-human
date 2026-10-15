@@ -168,7 +168,7 @@ test('budgets: the join\'s waits fit its hook timeout, and every lock gives up b
   const timeoutOf = (script: string) => Math.min(...[...allHooks()].filter(x => scriptOf(x.hook.command) === `hooks/handlers/${script}`).map(x => x.hook.timeout));
   const join = timeoutOf('join.ts') * 1000;
   assert.equal(join, SHIM_TIMEOUT_MS, 'the module runs join.ts under the same budget');
-  // a re-join over a new link: stop the old daemon (1 s, hooks/handlers/join.ts restartLink), start the new one, wait for its
+  // a re-join over a new link: stop the old daemon (1 s, lib/remote/joining.ts restartLink), start the new one, wait for its
   // first answer; with a second for node's start and the store, it ends before the hook is killed
   const NODE_START_MS = 1000, RESTART_MS = 1000;
   const waits = RESTART_MS + config.LINK_START_MS + config.LINK_JOIN_WAIT_MS + NODE_START_MS;
