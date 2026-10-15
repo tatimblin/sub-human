@@ -220,7 +220,7 @@ function relayed(me: Me, body: unknown): string | null {
     return `refused: that is ${me.name}'s note on proposal ${cf.hash}, which waits for ${me.name}'s Send; posting it would relay it twice. ${proposal.confirmCall(cf.hash)} so ${me.name} can send or discard it.`;
   }
   const since = Date.now() - RELAY_WINDOW_MS;
-  const sent = room.open(me.code).readAll().findLast(e => e.kind === 'objection' && e.via === 'human' && e.from === me.name
+  const sent = room.open(me.code).readRecent().findLast(e => e.kind === 'objection' && e.via === 'human' && e.from === me.name
     && typeof e.text === 'string' && Date.parse(e.at) >= since && proposal.repeatsNote({ note: e.text }, body));
   return sent ? `refused: ${me.name} already sent that note as their objection to proposal ${sent.proposal_hash}; the room shows it, so posting it would relay it twice.` : null;
 }

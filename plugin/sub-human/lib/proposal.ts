@@ -121,7 +121,9 @@ function store(code: string, buf: Buffer): string {
   return hash;
 }
 
-const entriesOf = (me: Me, entries: readonly Entry[] | null | undefined): readonly Entry[] => entries || room.open(me.code).readAll();
+// the recent view: every non-chat entry (proposals, answers, decisions, revisions, revokes: all the consent fold reads)
+// and the lines since the last rotation
+const entriesOf = (me: Me, entries: readonly Entry[] | null | undefined): readonly Entry[] => entries || room.open(me.code).readRecent();
 const kvOf = (me: Me) => room.open(me.code).store.kv;
 const storeOf = (me: Me) => room.open(me.code).store;
 
@@ -425,7 +427,7 @@ function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd
 
   const hash = store(me.code, buf);
   const stored = planPath(me.code, hash);
-  const entries = r.readAll();
+  const entries = r.readRecent();
   const open = proposals(entries, r.trust).find(p => p.hash === hash);
   const before = r.fold(entries).superseded;
   if (open && !decision(hash, entries, r.trust) && !before.has(hash) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
@@ -475,7 +477,7 @@ function decide(code: string, hash: string): Entry | null {
   if (!identity.isHost(code)) return null;
   const r = room.open(code);
   return r.store.lock('proposal', (): Entry | null => {
-    const entries = r.readAll();
+    const entries = r.readRecent();
     const f = r.fold(entries);
     const cur = f.proposals.get(hash);
     if (!cur || f.decisions.has(hash) || f.superseded.has(hash)) return null;
