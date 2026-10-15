@@ -170,7 +170,7 @@ test('identity: openRooms lists rooms with >= 1 live member seat (no claude need
   assert.deepEqual(identity.orphanRooms(), [b]);
   assert.equal(identity.roomOpen(b), true);
   assert.deepEqual(identity.liveMembers(b), [], 'the room\'s Claude is not a member');
-  identity.setRoomClaude(b, { closing: new Date().toISOString() });
+  identity.updateRoomClaude(b, () => ({ closing: new Date().toISOString() }));
   assert.equal(identity.roomClosing(b), true);
   assert.deepEqual(identity.openRooms(), [a], 'closing');
   assert.deepEqual(identity.orphanRooms(), [], 'closing rooms are not swept again');
@@ -180,17 +180,17 @@ test('identity: openRooms lists rooms with >= 1 live member seat (no claude need
   assert.deepEqual(identity.openRooms(), [], 'member left');
 });
 
-test('identity: members.json claude {job, pid}: setRoomClaude before the bind, kept across the bind', () => {
+test('identity: members.json claude {job, pid}: updateRoomClaude before the bind, kept across the bind', () => {
   h.freshHome();
   const code = h.newRoom();
-  const pre = identity.setRoomClaude(code, { job: 'ab12cd34', spawned_at: '2026-10-05T00:00:00.000Z' });
+  const pre = identity.updateRoomClaude(code, () => ({ job: 'ab12cd34', spawned_at: '2026-10-05T00:00:00.000Z' }));
   assert.deepEqual(pre, { name: 'claude', role: 'claude', pid: null, job: 'ab12cd34', spawned_at: '2026-10-05T00:00:00.000Z' });
   assert.deepEqual(identity.join({ code, name: 'claude', role: 'claude', pid: process.pid, session_id: 'so' }), { ok: true, rejoin: true });
   const m = identity.readMembers(code).claude;
   assert.equal(m.job, 'ab12cd34');
   assert.equal(m.pid, process.pid);
   assert.equal(identity.resolveByPid(process.pid)!.address, `claude.${code}`);
-  assert.throws(() => identity.setRoomClaude('nope-0000', {}), /no room/);
+  assert.throws(() => identity.updateRoomClaude('nope-0000', () => ({})), /no room/);
 });
 
 test('identity: presence is a per-member file written with the lease (members.beat); writePresence stores valid states and names only', () => {
@@ -406,9 +406,15 @@ test('identity: a 0.4.x room names its Claude "orch" (members.json and the sessi
   const me = identity.resolveBySession(sid)!;
   assert.deepEqual([me.name, me.role, me.address], ['claude', 'claude', `claude.${code}`]);
   // the next write holds only new names
-  identity.setRoomClaude(code, { orphan_since: now });
+  identity.updateRoomClaude(code, () => ({ orphan_since: now }));
   const raw = JSON.parse(fs.readFileSync(path.join(identity.roomDir(code), 'members.json'), 'utf8'));
   assert.deepEqual(Object.keys(raw).sort(), ['alice', 'claude']);
   assert.deepEqual([raw.claude.name, raw.claude.role, raw.claude.job, raw.claude.orphan_since], ['claude', 'claude', 'j0400', now]);
   assert.ok(!JSON.stringify(raw).includes('orch'), 'nothing written under the old name');
+});
+
+test('lock: pidStarts reads many pids\' start times with one ps call, the same pidStart reads one by one', () => {
+  const a = h.spawnSleeper(), b = h.spawnSleeper();
+  lockLib.pidStarts([a.pid!, b.pid!, process.pid]);
+  for (const p of [a.pid!, b.pid!, process.pid]) assert.equal(lockLib.pidStart(p), lockLib.pidStart(p, { fresh: true }), `pid ${p}`);
 });

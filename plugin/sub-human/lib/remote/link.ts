@@ -124,6 +124,7 @@ import { spawn } from 'node:child_process';
 import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
 import { isAlive, sleepSync } from '../io.ts';
+import { hash12 } from '../text.ts';
 import * as config from '../config.ts';
 import * as realClock from '../clock.ts';
 import * as storeMod from '../room/store.ts';
@@ -183,7 +184,6 @@ const STOPPED: Set<unknown> = new Set(['fork', 'stopped']);
 /** Why a link stopped for good with nothing wrong: lib/cli/doctor.ts matches them (a dormant link). */
 const ROOM_CLOSED_REASON = 'the room was closed';
 const NO_SEAT_REASON = 'no seat of this machine is left in the room';
-const hash12 = (data: string): string => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12); // lib/room/store.ts's, without loading a store
 
 // ---------- the hook's side ----------
 /**
@@ -193,7 +193,7 @@ const hash12 = (data: string): string => crypto.createHash('sha256').update(data
 function socketPath(dir: string): string {
   const own = path.join(path.resolve(dir), '.link', 'link.sock');
   if (Buffer.byteLength(own) <= SUN_PATH_MAX) return own;
-  const h = crypto.createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 12);
+  const h = hash12(path.resolve(dir));
   return path.join(shortBase(), h, 'link.sock');
 }
 

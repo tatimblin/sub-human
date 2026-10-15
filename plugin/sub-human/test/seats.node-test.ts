@@ -65,7 +65,7 @@ test('seats: the room\'s Claude runs in the room\'s working directory (the first
   const { code, started } = memoryRoom(t, { isHost: true });
   seats.enter({ code, name: 'alice', pid: process.pid, session_id: 'sa', cwd: '/work/project', pubkey: seatKey.publicPem(code, 'alice') });
   seats.enter({ code, name: 'carol', pid: process.pid, session_id: 'sc', cwd: '/elsewhere', pubkey: seatKey.publicPem(code, 'carol') });
-  identity.setRoomClaude(code, { stopped_at: new Date().toISOString() }); // the room's Claude is gone: the next join starts one
+  identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() })); // the room's Claude is gone: the next join starts one
   // the remote server's enter: a seat of another machine, no cwd, in a process whose cwd is not the project
   assert.equal(seats.enter({ code, name: 'bob', machine: 'far-away', pubkey: seatKey.publicPem(code, 'bob') }).ok, true);
   assert.notEqual(process.cwd(), '/work/project');

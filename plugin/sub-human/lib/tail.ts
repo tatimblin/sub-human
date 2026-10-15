@@ -618,7 +618,7 @@ function startSession(me: Identity, ctx: Ctx): Session {
     if (rm.store && me.role !== 'claude') { try { handoffHealth(); } catch (e) { log('handoff', e); } }
     if (rm.store && rm.store.isHost && me.role !== 'claude') { try { admitHealth(); } catch (e) { log('admission', e); } }
     if (rm.store && !rm.store.isHost) linkHealth();
-    const r = rm.verifyChain();
+    const r = rm.verifyChain({ save: 'lazy' }); // log.idx is written as it gets 64 KiB or a minute further, not every tick
     if (r.ok) breakKey = null;
     else {
       const key = `${r.offset}|${r.badAt}|${r.line}`;

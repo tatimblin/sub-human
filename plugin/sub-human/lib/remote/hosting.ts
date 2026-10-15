@@ -55,7 +55,6 @@ import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
 import * as linkMod from './link.ts';
 import * as linksMod from '../room/links.ts';
 import * as roomMod from '../room.ts';
-import * as identityMod from '../identity.ts';
 import * as homeMod from '../home.ts';
 import * as seatsMod from '../seats.ts';
 import * as ioMod from '../io.ts';
@@ -100,18 +99,9 @@ const links = () => linksMod;
 const roomOf = (code: string) => roomMod.open(code);
 const minutes = (ms: number): number => Math.round(ms / 60_000);
 
-function hostStore(code: string): RoomStore {
-  const identity = identityMod;
-  if (!identity.roomExists(code)) throw new RoomError('NO_ROOM', `no room "${code}"`);
-  const s = roomOf(code).store;
-  if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; its host does this`);
-  return s;
-}
-
+const hostStore = (code: string): RoomStore => roomMod.hostStore(code);
 /** A line in the room from the room itself, best effort. */
-function roomLine(code: string, text: string): void {
-  try { roomOf(code).append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }); } catch { /* the action stands */ }
-}
+const roomLine = (code: string, text: string): void => roomMod.roomLine(roomOf(code), text);
 
 /** The stable serve shim (an ssh forced command names it); the home path it carries. */
 function shimReady(): { shim: typeof import('./shim.ts'); h: string } {

@@ -80,7 +80,7 @@ test('session-restore: --resume into a closing or closed room does nothing', () 
   const w = new World({ claude: 'sleep', alice: 'sleep' });
   const oldSid = w.sid.alice;
   w.hook('session-end', fixture('session-end'), { as: 'alice' }); // the last member: the reaper starts (grace 0 here)
-  w.lib(() => identity.setRoomClaude(w.code, { closing: new Date().toISOString() }));
+  w.lib(() => identity.updateRoomClaude(w.code, () => ({ closing: new Date().toISOString() })));
   w.pid.alice = process.pid;
   const r = w.hook('session-restore', { ...fixture('session-start-clear'), source: 'resume', session_id: oldSid }, { as: 'alice', session: false });
   assert.equal(r.stdout, '');

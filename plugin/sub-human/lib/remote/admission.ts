@@ -45,11 +45,8 @@ type Signer = (rec: { kind: 'admit'; ref: string; link: string; key: string | nu
 const LET_IN = 'Let in';
 const REFUSE = 'Refuse';
 
-function hostStore(code: string): RoomStore {
-  const s = (require('../room.ts') as typeof import('../room.ts')).open(code).store;
-  if (!s.isHost) throw new RoomError('HOST_ONLY', `room ${code} is hosted on another machine; only its host can let people in`);
-  return s;
-}
+const roomLib = (): typeof import('../room.ts') => require('../room.ts');
+const hostStore = (code: string): RoomStore => roomLib().hostStore(code, { what: 'only its host can let people in' });
 
 const pending = (code: string, { now = Date.now() }: { now?: number } = {}): AdmissionRequest[] => auth.admissions(hostStore(code), { now });
 const find = (code: string, ref: string): AdmissionRequest | null => auth.admissions(hostStore(code), { all: true }).find(r => r.ref === ref || (ref && ref.length >= 6 && r.ref.startsWith(ref))) || null;
@@ -81,9 +78,6 @@ function card(req: AdmissionRequest, code: string): Card {
   };
 }
 
-function roomLine(store: RoomStore, text: string): void {
-  try { store.append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }); } catch { /* the answer stands */ }
-}
 
 function letIn(code: string, ref: string, { by = null, sign = null, now = Date.now() }: {
   by?: string | null; sign?: Signer | null; now?: number;
@@ -106,7 +100,7 @@ function letIn(code: string, ref: string, { by = null, sign = null, now = Date.n
     if (file && req.admit === 'asked') sshkeysMod().removeAuthorized(file, code, req.link);
     throw e;
   }
-  roomLine(store, `${by || 'the host'} let ${describe(rec)} in; undo with: /sub-human kick ${rec.name}`);
+  roomLib().roomLine(store, `${by || 'the host'} let ${describe(rec)} in; undo with: /sub-human kick ${rec.name}`);
   return { id: rec.link, text: `let in: ${describe(rec)} joins room ${code} within seconds${file ? ` (their key opens only this room, nothing else on this machine)` : ''}. Undo: /sub-human kick ${rec.name}` };
 }
 
@@ -115,7 +109,7 @@ function refuse(code: string, ref: string, { by = null, now = Date.now() }: { by
   const req = find(code, ref);
   if (!req) throw new RoomError('INVALID', `room ${code} has no join request ${ref} (/sub-human admit lists them)`);
   const rec = auth.decideAdmission(store, req.ref, { decision: 'refused', by, now });
-  roomLine(store, `${by || 'the host'} refused ${describe(rec)}: nothing got in`);
+  roomLib().roomLine(store, `${by || 'the host'} refused ${describe(rec)}: nothing got in`);
   return { text: `refused: ${describe(rec)} does not get into room ${code}; their join stops` };
 }
 

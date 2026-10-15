@@ -7,6 +7,7 @@
  *       START = the process start time in epoch seconds. A waiter retries every few ms; after timeoutMs
  *       (LOCK_TIMEOUT_MS) it throws ErrorClass (default Error) with code 'LOCK'. It never runs fn unlocked.
  *   pidStart(pid) -> epoch seconds | null   via `ps -o lstart= -p PID` (cached per pid; null when ps fails)
+ *   pidStarts(pids)                     fill that cache for many pids with one ps call (a scan over every room's seats)
  *
  * Stale locks. A lock is stale when its owner is on this host and either its pid is dead or that pid now
  * belongs to a different process (its start time differs by more than LOCK_START_SLACK_S: pid reuse). A
@@ -53,6 +54,20 @@ function pidStart(pidArg: unknown, { fresh = false }: { fresh?: boolean } = {}):
   } catch { t = null; }
   if (t != null) starts.set(pid, { t, at: Date.now() });
   return t;
+}
+
+/** Read the start times of pids with one ps call into pidStart's cache (pids it cannot read are left to pidStart). */
+function pidStarts(pids: readonly number[]): void {
+  const want = [...new Set(pids)].filter(p => Number.isInteger(p) && p > 0 && !(starts.get(p) && Date.now() - starts.get(p)!.at < PID_START_CACHE_MS));
+  if (want.length < 2) return; // none, or one: pidStart's own call is the same cost
+  try {
+    const r = spawnSync('ps', ['-o', 'pid=,lstart=', '-p', want.join(',')], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: 2000 });
+    for (const line of String(r.stdout || '').split('\n')) {
+      const m = /^\s*(\d+)\s+(.+?)\s*$/.exec(line);
+      const ms = m ? Date.parse(m[2]) : NaN;
+      if (m && Number.isFinite(ms)) starts.set(Number(m[1]), { t: Math.floor(ms / 1000), at: Date.now() });
+    }
+  } catch { /* pidStart asks one by one */ }
 }
 
 /** This process's start time without spawning ps (Node's uptime is measured from process start). */
@@ -171,5 +186,5 @@ function withLock<T>(lock: string, fn: () => T, { timeoutMs = config.LOCK_TIMEOU
   }
 }
 
-export { withLock, pidStart, parseOwner };
+export { withLock, pidStart, pidStarts, parseOwner };
 export type { LockOpts, LockOwner, LockErrorClass };

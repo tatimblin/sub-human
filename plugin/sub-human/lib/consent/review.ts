@@ -52,7 +52,7 @@
  * the dialog's plan with the proposal goes through shownHash (the composed text's hash then).
  */
 
-import crypto from 'node:crypto';
+import { hash12 } from '../text.ts';
 import type { Confirm, NoteStage, Review } from '../types-app.ts';
 import type { CardAnswer } from './card.ts';
 
@@ -105,8 +105,6 @@ export type Say =
 
 export interface Step { state: State; effects: Effect[]; say: Say | null }
 
-/** sha256/12 of a text's bytes: a plan's hash (lib/proposal.ts hash12 is this). */
-export const hash12 = (buf: crypto.BinaryLike) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 12);
 /** The hash the dialog's plan must have for an answer to count: the proposal's own (PLAN-COLLAB: the composed text's). */
 export const shownHash = (r: Review): string | undefined => r.hash;
 

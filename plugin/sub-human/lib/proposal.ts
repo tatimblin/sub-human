@@ -1,6 +1,6 @@
 /**
  * plugin/sub-human/lib/proposal.ts: proposals and the consent card.
- * CommonJS, zero dependencies. Every write goes through room.append().
+ * Every write goes through room.append().
  *
  * Log entries:
  *   proposal  via=agent, from = the proposer, {hash, approvers[], same?, path, text}   (propose tool)
@@ -79,10 +79,10 @@ import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as session from './room/session.ts';
 import { writeFileAtomic } from './io.ts';
-import { clip, oneLine } from './text.ts';
+import { clip, oneLine, hash12, HASH_RE } from './text.ts';
 import * as config from './config.ts';
 import * as cc from './cc.ts';
-import { NEXT, hash12, showNote } from './consent/review.ts';
+import { NEXT, showNote } from './consent/review.ts';
 import type { Card, Confirm, Proposal, Review } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, ProposalState, Trust } from './room/types.ts';
 import type { Identity } from './identity.ts';
@@ -90,7 +90,6 @@ import type { Identity } from './identity.ts';
 /** Who acts: a seat's room and name are all these functions read. */
 type Me = Pick<Identity, 'code' | 'name'>;
 
-const HASH_RE = /^[0-9a-f]{12}$/;
 const QUESTION_RE = /^Agree to proposal ([0-9a-f]{12})\?$/;
 const PREVIEW_MAX = config.PREVIEW_MAX;     // the card withholds a longer preview (JS .length)
 const PREVIEW_LINES = config.PREVIEW_LINES; // about 24 lines show at 50 rows; keep a margin

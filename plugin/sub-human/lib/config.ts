@@ -51,7 +51,7 @@ export const LEAVE_SETTLE_MS = 8000;           // SUB_HUMAN_LEAVE_MS (tail, noti
 export const UNSEATED_MS = 10_000;             // SUB_HUMAN_UNSEATED_MS: no seat yet, look it up this rarely
 export const RESOLVE_MS = 2000;                // SUB_HUMAN_RESOLVE_MS: seated, re-resolve the seat this often
 export const TAIL_POLL_MS = 250;               // SUB_HUMAN_POLL_MS: the tail's log poll
-export const FOLLOW_POLL_MS = 250;             // room.follow default poll
+export const FOLLOW_POLL_MS = 250;             // the remote server's log poll (lib/remote/server.ts)
 export const WATCH_POLL_MS = 500;              // `sub-human watch --follow` poll
 
 // ---------- the tail loop's health (lib/tail.ts) ----------

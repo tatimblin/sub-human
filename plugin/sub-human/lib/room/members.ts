@@ -32,7 +32,7 @@
  *   ROOM_CLAUDE ("claude"), LEGACY_ROOM_CLAUDE ("orch", read only), roomClaudeName(name), PRESENCE_STATES, LOCAL_FIELDS
  */
 
-import { isAlive } from '../io.ts';
+import { isAlive, validPid } from '../io.ts';
 import { pidStart } from '../lock.ts';
 import { machineId } from '../home.ts';
 import {
@@ -74,7 +74,6 @@ function fromLegacy<M extends Members | null | undefined>(ms: M): M {
 const LOCAL_FIELDS = ['pid', 'pid_start', 'session_id', 'cwd'] as const;
 const ROOM_CLAUDE_FIELDS = ['job', 'spawned_at', 'closing', 'by', 'job_session', 'claim'] as const; // kept across the room Claude's (re)bind
 
-const validPid = (pid: unknown): pid is number => Number.isInteger(pid) && (pid as number) > 0;
 const machineOf = (m: SeatLike): string | null => m.machine || machineId();
 
 /** The stored start time still describes the process now holding m.pid (tolerates legacy / unreadable). */

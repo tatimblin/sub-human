@@ -3,11 +3,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as review from '../lib/consent/review.ts';
+import { hash12 } from '../lib/text.ts';
 import type { Event, State, Step } from '../lib/consent/review.ts';
 import type { Confirm, NoteStage, Review } from '../lib/types-app.ts';
 
 const TEXT = '# Ship v3 Monday\n\n1. tag\n';
-const H = review.hash12(Buffer.from(TEXT, 'utf8'));
+const H = hash12(Buffer.from(TEXT, 'utf8'));
 const OTHER = 'bbbbbbbbbbbb';
 const ctx = { name: 'bob', now: 5000 };
 const target = { hash: H, from: 'alice', title: 'Ship v3 Monday' };

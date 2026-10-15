@@ -80,7 +80,7 @@ test('/sub-human NAME with no open room: opens a room, joins as a member, spawns
 
 test('the room\'s Claude\'s launch /sub-human binds it (agent_type sub-human:room-claude + SUB_HUMAN_ROOM) and keeps the job', () => {
   const w = new World({ alice: 'sleep' });
-  w.lib(() => identity.setRoomClaude(w.code, { job: '0b500131', spawned_at: new Date().toISOString() }));
+  w.lib(() => identity.updateRoomClaude(w.code, () => ({ job: '0b500131', spawned_at: new Date().toISOString() })));
   w.pid.claude = process.pid; w.sid.claude = 'aaaaaaaa-0000-4000-8000-000000000002';
   const input = { ...expand(''), agent_type: 'sub-human:room-claude', permission_mode: 'plan' };
   const r = w.hook('join', input, { as: 'claude', env: { SUB_HUMAN_ROOM: w.code } });
@@ -428,7 +428,7 @@ test('failures block with a reason and log nothing', () => {
   }
   assert.equal(w.entries().length, 0);
   // a closing room is not joined
-  w.lib(() => identity.setRoomClaude(w.code, { closing: new Date().toISOString() }));
+  w.lib(() => identity.updateRoomClaude(w.code, () => ({ closing: new Date().toISOString() })));
   const r = w.hook('join', expand(`bob ${w.code}`), { as: 'me' });
   assert.match(r.json!.reason!, /is closing/);
 });
