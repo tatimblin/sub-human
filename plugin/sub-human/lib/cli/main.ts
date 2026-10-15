@@ -419,8 +419,10 @@ function linkCmd(args: readonly string[]) {
 function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
   const st = (require('../room/link-state.ts') as typeof import('../room/link-state.ts')).read(code);
   const why = st?.lastError || '';
-  if (!force && st?.lastReason !== 'ROOM_CLOSED' && st?.lastReason !== 'NO_SEAT') {
-    die(`room ${code}: the connection did not stop because the room closed or no seat of this machine is left (${why || 'no reason on record'}); add --force to forget it anyway`, 1);
+  // dormant (the room closed, no seat left) or spent (the host removed this machine: its token gets nowhere now)
+  const ended = ['ROOM_CLOSED', 'NO_SEAT', 'LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED'];
+  if (!force && !ended.includes(String(st?.lastReason))) {
+    die(`room ${code}: the connection did not stop because the room closed, no seat of this machine is left or the host removed it (${why || 'no reason on record'}); add --force to forget it anyway`, 1);
   }
   const store: typeof import('../room/store.ts') = require('../room/store.ts');
   const links: typeof import('../room/links.ts') = require('../room/links.ts');

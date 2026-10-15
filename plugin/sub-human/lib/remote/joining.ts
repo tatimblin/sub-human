@@ -50,6 +50,8 @@ export interface Wanted { name: string; code: string | null; isDefault?: boolean
 /** What a join step ends in. */
 export type Step = { kind: 'take'; want: Wanted } | { kind: 'say'; text: string; refused: boolean };
 
+/** A stopped link whose token never gets in again (lib/remote/link.ts drops it): a new invite line replaces it. */
+const SPENT_REASONS: ReadonlySet<string> = new Set(['LINK_REVOKED', 'TOKEN_UNKNOWN', 'KEY_REVOKED']);
 const take = (want: Wanted): Step => ({ kind: 'take', want });
 const say = (text: string, refused = false): Step => ({ kind: 'say', text, refused });
 const refuse = (text: string): Step => say(text, true);
@@ -82,7 +84,9 @@ function stands(code: string, name: string, o: Outcome, tells = false): Step {
 export function linkLine({ name, code, word, transport, sid }: { name: string; code: string; word: string; transport: LinkSpec; sid?: string | null }): Step {
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
-  if (cur && cur.token && locatorOf(cur.transport) === locatorOf(transport)) {
+  // a link that stopped as spent (kicked: its token gets nowhere now) is replaced by the new line, never re-seated over
+  const spent = !!cur && SPENT_REASONS.has(String((linkSocket.stopReason(linkSocket.status(code)) || {}).why || ''));
+  if (cur && cur.token && !spent && locatorOf(cur.transport) === locatorOf(transport)) {
     return say(`this machine is in room ${code} already; /sub-human ${name} ${code} takes your place there.`);
   }
   if (cur) restartLink(code); // a pending join replaced, or the room's host moved: dial with the new file
@@ -166,6 +170,10 @@ export function finishJoin(l: Link): Step {
 export function ensureLinked(code: string, name: string): Step | null {
   if (identity.isHost(code)) return null;
   const pending = links.get(code);
+  // a link the host ended (kicked: lib/remote/link.ts dropped its token): no seat over it; a new invite line replaces it
+  if (pending && !pending.token && pending.refused && typeof pending.invite !== 'string' && !(pending.transport && 'login' in pending.transport && pending.transport.login === true)) {
+    return refuse(`could not join ${code}: ${pending.refused.reason}`);
+  }
   if (pending && !pending.token && (pending.pin !== undefined || pending.pin_wanted || pending.awaiting || typeof pending.invite === 'string')) {
     // a join not let in yet: never started again after a refusal or while it waits for its PIN (a PIN is typed)
     if (pending.pin_wanted && pending.pin === undefined) return stands(code, name, { state: 'pin', ...(pending.pin_wanted.message ? { reason: pending.pin_wanted.message } : {}) });

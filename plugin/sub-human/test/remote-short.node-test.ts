@@ -284,3 +284,37 @@ test('an invite: the host CLI masks the SECRET and the PIN inside Claude Code, `
   assert.match(yes.stdout, /let in: bob/);
   await until(() => remote.lib(() => linkSocket.status(code)).state === 'online', 10000, 'online');
 });
+
+test('kick over pipe: the joiner\'s daemon stops LINK_REVOKED with the host\'s reason and drops its token; a new invite line replaces the link; --forget needs no --force', async t => {
+  const { host, remote, alice, bob, code } = room(t);
+  stopDaemon(t, remote, code);
+  await remote.joinVia(host, alice, bob);
+  await until(() => remote.lib(() => linkSocket.status(code)).state === 'online', 10000, 'online');
+  const kicked = host.join(alice, 'kick bob');
+  assert.match(kicked.json!.reason || kicked.stdout, /bob is out of room/);
+  const why = await until(() => remote.lib(() => linkSocket.stopReason(linkSocket.status(code))), 10000, 'the daemon stopping');
+  if (!why) throw new Error("no reason");
+  assert.equal(why.why, 'LINK_REVOKED', JSON.stringify(why));
+  assert.match(why.reason, /removed this machine from room/);
+  const lf = remote.lib(() => links.get(code))!;
+  assert.equal(lf.token, undefined, 'the spent token is dropped');
+  assert.equal(lf.refused!.why, 'LINK_REVOKED');
+  // no seat over it: the bare /sub-human says why, it takes nothing
+  const bare = remote.join(bob, `bob ${code}`);
+  assert.match(bare.json!.reason || '', /removed this machine/, bare.stdout);
+  assert.equal(host.lib(() => identityLib.readMembers(code)).bob.left_at !== undefined, true, 'no ghost seat on the host');
+  // a new invite line for the same room replaces the dead link (no "this machine is in room X already")
+  const inv = host.join(alice, 'invite --pipe');
+  const m = shown(inv.json!.reason!)!;
+  const typed = await typeLine(remote, bob, code, m.line, 'bob');
+  assert.doesNotMatch(typed.json!.reason!, /in room \S+ already/);
+  // forget: a spent link needs no --force
+  const daemon = remote.lib(() => linkSocket.status(code));
+  if (daemon.pid) { kill(childOf(daemon.pid)); kill(daemon.pid); }
+  await until(() => !remote.lib(() => linkSocket.status(code)).running, 5000, 'the daemon gone');
+  remote.lib(() => { const { token: _t, invite: _i, ...rest } = links.get(code)!; links.set(code, { ...rest, refused: { at: new Date().toISOString(), reason: 'kicked', why: 'LINK_REVOKED' } }); });
+  fs.writeFileSync(path.join(remote.home, 'links', `${code}.state.json`), JSON.stringify({ state: 'stopped', lastReason: 'LINK_REVOKED', lastError: 'the host removed this machine' }));
+  const f = spawnSync(process.execPath, [h.BIN, 'link', code, '--forget'], { env: remote.env(null), encoding: 'utf8' });
+  assert.equal(f.status, 0, f.stderr);
+  assert.match(f.stdout, /forgotten/);
+});
