@@ -153,6 +153,25 @@ test('rows are held and ride on the person\'s next typed prompt as context, once
   seen.release()
 })
 
+test('the held rows text rides once per change: the same text on the next prompt is not added again; a changed text is', async ($, on) => {
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT }) + line({ type: 'rows', text: 'proposal a1 still awaits alice' })] })
+  const typed = (text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false } as any)
+  await start($)
+  await until(() => seen.spawns.length === 1)
+  await new Promise(r => setTimeout(r, 50))
+  await typed('first')
+  expect(seen.contexts.at(-1)).toEqual(['proposal a1 still awaits alice'])
+  await typed('second')
+  expect(seen.contexts.at(-1) ?? []).toEqual([])
+  seen.feed(line({ type: 'rows', text: 'proposal b2 still awaits alice' }))
+  await new Promise(r => setTimeout(r, 50))
+  await typed('third')
+  expect(seen.contexts.at(-1)).toEqual(['proposal b2 still awaits alice'])
+  await typed('fourth')
+  expect(seen.contexts.at(-1) ?? []).toEqual([])
+  seen.release()
+})
+
 test('while the child delivers, a member\'s plain prompt starts no node once consent said no review is open; the mod titles the session', async ($, on) => {
   const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })] })
   await start($)
