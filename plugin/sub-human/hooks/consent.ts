@@ -35,7 +35,10 @@
  * "Refuse" ends it, anything else records nothing.
  * Pre/Post(AskUserQuestion): the confirm card for a waiting note (only the person's Send on the card as built records
  * the objection with the note, byte-exact; Discard drops it; AFK or no answer keeps it), else the card fallback;
- * "Not yet", AFK, stale hashes record nothing. Stop nudges once when a waiting note's card was never shown. An answer is
+ * "Not yet", AFK, stale hashes record nothing. Stop nudges once when a waiting note's card was never shown; a card shown
+ * and interrupted (no Post), or still not shown after the nudge, is offered again once, at the next prompt (reoffer),
+ * with the tail's reminder for it saying the same (lib/proposal.ts showConfirm: an Esc is no answer); an interrupted
+ * one the model still does not show that turn, once more at its Stop (renudge). An answer is
  * lib/proposal.ts answer, then decide (a no-op on a machine that does not hold the room; its host decides). A review
  * or card opens only for a proposal pendingFor lists (another seat of the same person answering closes it); an answer
  * given on one already open records against answerableFor (that seat's own answer only), and counts for the person. An
@@ -253,8 +256,8 @@ const blank = (v: unknown) => v == null || (typeof v === 'string' && !v.trim());
 /** The person's "Tell Claude what to change" note for that dialog (structured userFeedback first); null when none (Esc). */
 const feedback = (input: ConsentIn, toolUseId: string | null | undefined): string | null => cc.planFeedback(lines(input), toolUseId);
 
-/** How the model shows the person the confirm card for a waiting note. */
-const confirmCall = (hash: string) => `call AskUserQuestion with the question "objection ${hash}"`;
+/** How the model shows the person the confirm card for a waiting note (lib/proposal.ts). */
+const { confirmCall } = proposal;
 
 /**
  * The dialog closed: a note never counts on its own. "Tell Claude what to change", a phone deny with a note and a
@@ -499,12 +502,14 @@ function stop(input: ConsentIn, me: Identity) {
 }
 
 /** Stop with no review open: a note waiting for the person's Send whose card was never shown (the model ignored
- * the line after the review closed). Once only: a card shown and left unanswered is the person's to reopen. */
+ * the line after the review closed), or one whose interrupted card reoffer offered again this turn and the model did
+ * not show (renudge). Once each: a card shown and left unanswered after that is the person's to reopen. */
 function unasked(me: Identity) {
   const cf: Confirm | null = proposal.readConfirm(me);
-  if (!cf || cf.asked) return;
+  if (cf && renudgeDue(cf)) return renudge(me, cf);
+  if (!cf || cf.asked || cf.nudged) return;
   if (!pendingFor(me).some(p => p.hash === cf.hash)) return proposal.clearConfirm(me);
-  proposal.writeConfirm(me, { ...cf, asked: Date.now() });
+  proposal.writeConfirm(me, { ...cf, nudged: Date.now() }); // not asked: no card was shown
   c.context('Stop', `sub-human: ${me.name}'s note on proposal ${cf.hash} is not recorded yet: ${confirmCall(cf.hash)} so ${me.name} can send or discard it. Don't post the note or answer for ${me.name}.`);
 }
 
@@ -522,10 +527,38 @@ function preRoomTool(input: ConsentIn, me: Identity) {
   c.deny(`sub-human: ${said ? said + ' ' : ''}Post nothing about the review. First ${EXIT_HOW}; then return to what you were doing.`);
 }
 
+/**
+ * UserPromptSubmit with no review open: a waiting note whose confirm card was shown (asked) and closed with no Post
+ * (the person interrupted it, so no hook said a word), or never shown though Stop nudged (nudged): the note would
+ * wait unseen. Offer it again, once (again). The tail's reminder on this prompt says the same (proposal.showConfirm).
+ */
+const reofferDue = (cf: Confirm | null): cf is Confirm => !!(cf && (cf.asked || cf.nudged) && !cf.again);
+function reoffer(me: Identity) {
+  const cf: Confirm | null = proposal.readConfirm(me);
+  if (!reofferDue(cf)) return;
+  if (!pendingFor(me).some(p => p.hash === cf.hash)) return proposal.clearConfirm(me);
+  const now = Date.now();
+  // an interrupted card: the Stop of this turn nudges once more if the model does not show it (renudge)
+  proposal.writeConfirm(me, { ...cf, again: now, ...(cf.asked ? { reoffered: now } : {}) });
+  const show = cf.asked ? proposal.showConfirm(me.name, cf.hash, true) : `Its card was never shown. ${proposal.showConfirm(me.name, cf.hash)}`;
+  c.context('UserPromptSubmit', `sub-human: ${me.name}'s note on proposal ${cf.hash} is still not recorded. ${show} Don't post the note or answer for ${me.name}.`);
+}
+
+/**
+ * Stop after reoffer offered an interrupted card again and no card was asked since: the model took the Esc for the
+ * person's decline (Claude Code reports it so). Once (renudged); then the card is the person's to ask for.
+ */
+const renudgeDue = (cf: Confirm | null): boolean => !!(cf && cf.reoffered && !cf.renudged && !((cf.asked || 0) >= cf.reoffered));
+function renudge(me: Identity, cf: Confirm) {
+  if (!pendingFor(me).some(p => p.hash === cf.hash)) return proposal.clearConfirm(me);
+  proposal.writeConfirm(me, { ...cf, renudged: Date.now() });
+  c.context('Stop', `sub-human: ${me.name}'s note on proposal ${cf.hash} is still not recorded and its card was not shown again. ${proposal.showConfirm(me.name, cf.hash, true)} Don't post the note or answer for ${me.name}.`);
+}
+
 /** UserPromptSubmit: a review left open by Esc (no hook fires then). Still in plan mode: exit it first. */
 function prompt(input: ConsentIn, me: Identity) {
   const st = readReview(me);
-  if (!st) return;
+  if (!st) return reoffer(me);
   if (input.permission_mode === 'plan' && st.phase !== 'restore') {
     const said = resolveShown(input, me, st);
     st.phase = 'exiting';
@@ -553,14 +586,16 @@ function postConfirm(input: ConsentIn, me: Identity, r: ToolResponse, answers: R
   const same = (q: CardQuestion | null | undefined) => q && q.question === card.question && Array.isArray(q.options) && q.options.length === card.options.length
     && q.options.every((o, i) => o && o.label === card.options[i].label && o.description === card.options[i].description);
   const label = answers && Object.hasOwn(answers, card.question) ? String(answers[card.question]) : null;
+  const told = () => proposal.writeConfirm(me, { ...cf, again: Date.now() }); // the model was told: no re-offer
   if (r.afkTimeoutMs || r.followUp || label == null || !shown.some(same)) {
+    told();
     return say(`Nothing was recorded: the card closed without ${me.name}'s answer, and the note waits. If ${me.name} asks, ${confirmCall(cf.hash)} again; return to what you were doing.`), true;
   }
   if (label === 'Discard') {
     proposal.clearConfirm(me);
     return say(`${me.name} discarded the note; nothing was recorded and proposal ${cf.hash} still awaits ${me.name}'s answer (reopening it later is fine). Return to what you were doing.`), true;
   }
-  if (label !== 'Send') return say(`proposal ${cf.hash}: no Send/Discard answer; nothing was recorded and the note waits. Return to what you were doing.`), true;
+  if (label !== 'Send') return told(), say(`proposal ${cf.hash}: no Send/Discard answer; nothing was recorded and the note waits. Return to what you were doing.`), true;
   const p = answerableFor(me).find(x => x.hash === cf.hash);
   if (!p) { proposal.clearConfirm(me); return say(`proposal ${cf.hash}: nothing recorded (already answered, decided or unknown).`), true; }
   const res = record(me, p, { choice: 'Object', notes: cf.note });
@@ -720,13 +755,14 @@ function route(input: ConsentIn) {
 const onPrompt = (input: ConsentIn) => dispatch({ ...input, hook_event_name: 'UserPromptSubmit' });
 
 /** True when this session's seat has a room review on record (review.json), or a note whose confirm card was never
- * shown (Stop nudges once); false with no seat. */
+ * shown (Stop nudges once), or one the next prompt offers again (reoffer), so the module still runs node; false with
+ * no seat. */
 function reviewOpen(input: ConsentIn): boolean {
   const me = c.whoami(input);
   if (!me) return false;
   if (readReview(me)) return true;
   const cf: Confirm | null = proposal.readConfirm(me);
-  return !!(cf && !cf.asked);
+  return !!(cf && !cf.asked && !cf.nudged) || reofferDue(cf) || renudgeDue(cf);
 }
 
 /**

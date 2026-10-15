@@ -143,7 +143,7 @@ test('gate: test/hooks/consent.test.js passes with every store call of every pro
   delete env.NODE_TEST_CONTEXT;
   const probe = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(h.LIB, 'room', 'store.ts'))}).open('otter-1234').constructor.name)`], { env, encoding: 'utf8' });
   assert.equal(probe.stdout, 'ThreadRoomStore', 'the preload reaches child processes');
-  const r = spawnSync(process.execPath, ['--test', path.join(__dirname, 'hooks', 'consent.test.js')], { env, encoding: 'utf8', timeout: 120_000 });
+  const r = spawnSync(process.execPath, ['--test', path.join(__dirname, 'hooks', 'consent.test.js')], { env, encoding: 'utf8', timeout: 180_000 }); // ~110 s under a full parallel run
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /# fail 0|ℹ fail 0/);
 });

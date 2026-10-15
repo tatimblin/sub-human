@@ -62,7 +62,12 @@
  * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
  * A review's note waiting for the person's Send (the room document members/NAME/confirm): readConfirm, writeConfirm,
- *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question.
+ *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question,
+ *   confirmCall(hash) -> how the model opens that card, showConfirm(name, hash, interrupted?) -> the line telling it to
+ *   open the card now, before anything else, and after an Esc that the Esc was no answer (hooks/consent.ts reoffer and
+ *   lib/tail.ts remindersText say the same); repeatsNote(c,
+ *   text) -> bool: a post carries that note (case, spacing and quote marks aside; a note under 12 chars only when
+ *   equal), so posting it would relay it twice.
  */
 
 import fs from 'node:fs';
@@ -72,7 +77,7 @@ import crypto from 'node:crypto';
 import * as identity from './identity.ts';
 import * as room from './room.ts';
 import { writeFileAtomic } from './io.ts';
-import { clip } from './text.ts';
+import { clip, oneLine } from './text.ts';
 import * as config from './config.ts';
 import type { Card, Confirm, Proposal, Review } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, ProposalState } from './room/types.ts';
@@ -320,6 +325,16 @@ function picked(me: Me, ps: Proposal[]): Proposal | null {
 
 /** How the model opens proposal hash for its person: the plan view (the hooks fall back to the card). */
 const openCall = (hash: string) => `call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`;
+/** How the model shows the person the confirm card for a waiting note (hooks/consent.ts builds it). */
+const confirmCall = (hash: string) => `call AskUserQuestion with the question "objection ${hash}"`;
+/**
+ * The model is to show that card now: one wording for every line that says so on the same prompt, so none is softer.
+ * interrupted: the card was shown and closed with no answer (Confirm.asked, no Post: the person pressed Esc), which
+ * the model sees as the person declining; it is said to be neither, and the card due once more.
+ */
+const showConfirm = (name: string, hash: string, interrupted = false) => interrupted
+  ? `${name} pressed Esc on its card: an interruption, not a choice, though it reads as declined. The note is neither sent nor discarded. Show ${name} the card once more, now, before you answer or do anything else: ${confirmCall(hash)}, so ${name} can Send or Discard it.`
+  : `Show ${name} the card now, before you answer or do anything else: ${confirmCall(hash)}, so ${name} can send or discard the note.`;
 /** A proposal as a list item: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room to read it from). */
 function listed(code: string | undefined, p: Pick<Proposal, 'hash' | 'entry'>): string {
   const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';
@@ -517,9 +532,23 @@ function confirmCard(c: Confirm): Card {
     options: (['Send', 'Discard'] as const).map(label => ({ label, description: desc[label], preview: String(c.note) })) }] };
 }
 
+/** Notes shorter than this match a post only when equal: "no" or "later" would match half the room's posts. */
+const NOTE_MATCH_MIN = 12;
+const QUOTES_RE = /["'“”‘’]/g;
+const plainOf = (s: unknown): string => oneLine(oneLine(s).toLowerCase().replace(QUOTES_RE, ''));
+/**
+ * The post `text` carries the note `c.note` (mcp/room-server.ts post: a Claude relaying its person's objection):
+ * case, spacing and quote marks aside, the post contains it; a note under NOTE_MATCH_MIN chars only when equal.
+ */
+function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown): boolean {
+  const note = plainOf(c && c.note), post = plainOf(text);
+  if (!note) return false;
+  return note.length < NOTE_MATCH_MIN ? post === note : post.includes(note);
+}
+
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
-  readConfirm, writeConfirm, clearConfirm, confirmCard, confirmQuestion, namedIn, choose, picked, readPick,
-  proposeIntent, create, proposals, pendingFor, answerableFor, personOf, sameOk, card, cardFor, question, preview, viewable, openCall, matrix, answer,
-  decide, decision, humans, reminder, read, hash12, title, replacedIn,
+  readConfirm, writeConfirm, clearConfirm, confirmCard, confirmQuestion, repeatsNote, namedIn, choose, picked, readPick,
+  proposeIntent, create, proposals, pendingFor, answerableFor, personOf, sameOk, card, cardFor, question, preview, viewable, openCall,
+  confirmCall, showConfirm, matrix, answer, decide, decision, humans, reminder, read, hash12, title, replacedIn,
 };

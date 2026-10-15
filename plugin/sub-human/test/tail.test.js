@@ -576,3 +576,29 @@ test('remindersText: the one a review opens next (the newest unless named), the 
   assert.doesNotMatch(tailLib.remindersText(me, room.open(code)), /dddddd/);
   assert.equal(tailLib.remindersText({ ...me, role: 'claude' }, room.open(code)), null);
 });
+
+test('remindersText: a note of mine waiting on the picked proposal points at the confirm card, not a new review', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  const me = { code, name: 'alice', role: 'member' };
+  inRoom(code, r => r.append({ kind: 'proposal', text: 'proposal dddddddddddd: Ship v3 Monday', hash: 'dddddddddddd', approvers: ['alice'] }, { via: 'agent', from: 'bob' }));
+  const proposal = require(path.join(h.LIB, 'proposal.ts'));
+  // a note on another proposal: the ordinary reminder
+  proposal.writeConfirm(me, { hash: 'aaaaaaaaaaaa', note: 'open rate limiting', from: 'bob', title: null, at: Date.now() });
+  assert.match(tailLib.remindersText(me, room.open(code)), /^proposal dddddddddddd still awaits alice's answer/);
+  // waiting, not yet offered again: show it now, as consent's reoffer on the same prompt says (never a softer line)
+  const cf = { hash: 'dddddddddddd', note: 'open rate limiting', from: 'bob', title: 'Ship v3 Monday', at: Date.now() };
+  for (const extra of [{}, { nudged: Date.now() }]) {
+    proposal.writeConfirm(me, { ...cf, ...extra });
+    assert.equal(tailLib.remindersText(me, room.open(code)),
+      'proposal dddddddddddd: alice\'s note is not recorded yet. Show alice the card now, before you answer or do anything else: call AskUserQuestion with the question "objection dddddddddddd", so alice can send or discard the note. Don\'t reopen the review (that drops the note).');
+  }
+  // shown and interrupted (asked, no answer): the Esc is said to be no answer, as consent's reoffer says it
+  proposal.writeConfirm(me, { ...cf, asked: Date.now() });
+  assert.equal(tailLib.remindersText(me, room.open(code)),
+    'proposal dddddddddddd: alice\'s note is not recorded yet. alice pressed Esc on its card: an interruption, not a choice, though it reads as declined. The note is neither sent nor discarded. Show alice the card once more, now, before you answer or do anything else: call AskUserQuestion with the question "objection dddddddddddd", so alice can Send or Discard it. Don\'t reopen the review (that drops the note).');
+  // offered again (or its no-answer close told): the card is alice's to ask for
+  proposal.writeConfirm(me, { ...cf, asked: Date.now(), again: Date.now() });
+  assert.equal(tailLib.remindersText(me, room.open(code)),
+    'proposal dddddddddddd: alice\'s note waits to be sent or discarded; if alice asks, call AskUserQuestion with the question "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
+});
