@@ -1,15 +1,16 @@
 /**
- * plugin/sub-human/lib/remote/shim.ts: the stable `<home>/bin/serve` shim that an SSH forced command runs, and the
- * authorized_keys lines that name it. Zero dependencies beyond lib/home.ts and lib/io.ts.
+ * plugin/sub-human/lib/remote/shim.ts: the stable `<home>/bin/serve` shim that a joiner's ssh login runs on the host
+ * (lib/remote/transports/ssh.ts remoteCommand), as did the forced-command lines an admit wrote before protocol 3.
+ * Zero dependencies beyond lib/home.ts and lib/io.ts.
  *
  * Why: the plugin cache is versioned (~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/) and node often is
- * too (~/.nvm/versions/node/v24.15.0/bin/node). A forced command that bakes either path silently runs the OLD
- * server after a plugin update and breaks after a node upgrade. So the line names only the shim, and the shim
+ * too (~/.nvm/versions/node/v24.15.0/bin/node). A remote command that bakes either path silently runs the OLD
+ * server after a plugin update and breaks after a node upgrade. So the command names only the shim, and the shim
  * finds the plugin and node at run time:
  *   - <home>/bin/current holds three lines: the plugin root, the node that last ran it, and the plugin cache dir
  *     the root's version sits in (empty outside the cache). refresh() rewrites it (only on a change), so it follows
- *     plugin updates and node upgrades. Forced (force: true) by the commands that make a forced command: `host
- *     --ssh`, `admit`, `authorize` and `doctor --fix`. Passive (every join and restore, hooks/launcher.ts, and
+ *     plugin updates and node upgrades. Forced (force: true) by an ssh invite (lib/remote/hosting.ts shimReady)
+ *     and `doctor --fix`. Passive (every join and restore, hooks/launcher.ts, and
  *     every CLI run, scripts/sub-human): only from an installed plugin (a root under the Claude Code plugin cache),
  *     or when the recorded root is gone or none is recorded, or for the recorded root itself (a new node). So a dev
  *     checkout or a worktree run without SUB_HUMAN_HOME never takes over the pointer of the real home;
@@ -33,14 +34,7 @@
  *                                    alone (passive(): whether it would write)
  *   passive(root) -> bool            a passive refresh from root may write: root is in the plugin cache, or the
  *                                    pointer is missing, names root, or names a root with no CLI any more
- *   forcedCommand(code, linkId, homeDir?) -> string
- *                                    `SUB_HUMAN_HOME=<home> <home>/bin/serve --stdio CODE --link ID`
- *   authorizedLine(code, linkId, key, homeDir?) -> string
- *                                    command="<forcedCommand>",restrict <key> sub-human:CODE:ID
- *   enrollLine(code, key, homeDir?) -> string
- *                                    command="SUB_HUMAN_HOME=<home> <home>/bin/serve --enroll CODE --kind ssh",restrict <key>
- *                                    sub-human-enroll:CODE: a short code's enrollment door (lib/remote/enroll.ts)
- *   PLAIN_PATH_RE                    a path a forced command can carry plainly (no shell or sshd specials)
+ *   PLAIN_PATH_RE                    a path an ssh remote command can carry plainly (no shell or sshd specials)
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -59,7 +53,7 @@ const cacheDirOf = (root: string): string => (CACHE_RE.test(path.resolve(root)) 
 
 function shimBody(): string {
   return `#!/bin/sh
-# written by sub-human lib/remote/shim.ts; the authorized_keys forced commands the host's admit writes run it.
+# written by sub-human lib/remote/shim.ts; a joiner's ssh login runs it (and forced commands an older sub-human wrote).
 # Runs \`sub-human serve ARGS\` from the current plugin install with a working node, read from ./current at run time.
 cur="$(dirname "$0")/current"
 root= node= cache=
@@ -113,15 +107,6 @@ function refresh({ root = pluginRoot(), node = process.execPath, env = process.e
   return shimPath();
 }
 
-const forcedCommand = (code: string, linkId: string, h: string = home()): string =>
-  `SUB_HUMAN_HOME=${path.resolve(h)} ${shimPath(h)} --stdio ${code} --link ${linkId}`;
-const authorizedLine = (code: string, linkId: string, key: string, h: string = home()): string =>
-  `command="${forcedCommand(code, linkId, h)}",restrict ${key} sub-human:${code}:${linkId}`;
-/** The short code's enrollment door (lib/remote/enroll.ts): the room's public enrollment key runs only the PAKE. */
-const enrollLine = (code: string, key: string, h: string = home()): string =>
-  `command="SUB_HUMAN_HOME=${path.resolve(h)} ${shimPath(h)} --enroll ${code} --kind ssh",restrict ${key} sub-human-enroll:${code}`;
-
 export {
-  shimPath, pointerPath, pluginRoot, cacheDirOf, shimBody, refresh, passive, forcedCommand, authorizedLine,
-  enrollLine, PLAIN_PATH_RE,
+  shimPath, pointerPath, pluginRoot, cacheDirOf, shimBody, refresh, passive, PLAIN_PATH_RE,
 };

@@ -29,7 +29,6 @@
     "typings/claude-code-tools"
   ],
   "exclude": [
-    "plugin/sub-human/lib/vendor",
     "plugin/sub-human/mod/test",
     "plugin/sub-human/test"
   ]

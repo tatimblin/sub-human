@@ -8,7 +8,6 @@
     "typings/claude-code-tools"
   ],
   "exclude": [
-    "plugin/sub-human/lib/vendor",
     "plugin/sub-human/test/fixtures"
   ]
 }
