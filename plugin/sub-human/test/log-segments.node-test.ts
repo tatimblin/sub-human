@@ -219,3 +219,47 @@ test('rotation guard: a room Claude job spawned by an older plugin (no log_v, no
   note(s, 'after the old job stopped');
   assert.ok(fs.existsSync(path.join(s.dir!, 'log-0001.jsonl')));
 });
+
+// Review finding 11: a mirror that began from its host's snapshot keeps its anchor's hash across its own rotations
+// (a subscribe at the anchor after a handoff asks it), and a lost snapshot.json there is rebuilt from the snapshot it
+// began from plus its segments (the host's entries before its first line survive); a tailer many rotations behind
+// reads on without a reset (a reset reads as FORK to a link).
+test('mirror from a snapshot: the anchor\'s hash after its own rotation; a lost snapshot.json keeps the installed entries', t => {
+  const { s: host } = room(t, 1024);
+  sys(host, 'member_joined', 'alice', { pubkey: seatKey.publicPem(host.code, 'alice') });
+  for (let i = 0; i < 20; i++) say(host, 'alice', `before ${i} ${'z'.repeat(60)}`);
+  const { held: _held, ...wire } = host.snapshot()!;
+  const after = host.tailer({ after: wire.id });
+  for (let i = 0; i < 30; i++) say(host, 'alice', `after ${i} ${'z'.repeat(60)}`);
+  const lines = after.poll().lines;
+  const mdir = h.tmpDir('sh-mirror-', t);
+  const mirror = store.open(host.code, { dir: mdir }) as FsRoomStore;
+  mirror.installSnapshot(wire);
+  for (const l of lines) mirror.appendVerbatim(l);
+  assert.ok(fs.existsSync(path.join(mdir, 'log-0001.jsonl')), 'the mirror rotated on its own');
+  assert.equal(mirror.lineHash(wire.id), wire.hash, 'the anchor\'s hash, from the mirror\'s first segment');
+  assert.equal(mirror.lineHash(wire.id), host.lineHash(wire.id));
+  const want = { ids: mirror.readAll().map(e => e.id), pins: [...mirror.pins().keys()] };
+  assert.deepEqual(want.pins, ['alice'], 'alice\'s key came with the snapshot');
+  fs.rmSync(path.join(mdir, 'snapshot.json'));
+  const again = store.open(host.code, { dir: mdir }) as FsRoomStore;
+  assert.deepEqual(again.readAll().map(e => e.id), want.ids, 'rebuilt: the installed snapshot\'s entries and every line after');
+  assert.deepEqual([...again.pins().keys()], ['alice']);
+  assert.equal(again.lineHash(wire.id), wire.hash);
+  assert.equal(again.snapshot()!.id, mirror.snapshot()!.id);
+});
+
+test('tailer: more than 4 rotations behind, it reads on from where it was (no reset)', t => {
+  const { s } = room(t, 1024);
+  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, 'alice') });
+  say(s, 'alice', 'first');
+  const tl = s.tailer();
+  assert.deepEqual(tl.poll().entries, []);
+  const from = s.lastId();
+  for (let i = 0; i < 120; i++) say(s, 'alice', `m${i} ${'z'.repeat(80)}`);
+  const sealed = fs.readdirSync(s.dir!).filter(n => /^log-\d{4}\.jsonl$/.test(n)).length;
+  assert.ok(sealed >= 6, `rotated ${sealed} times`);
+  const got = tl.poll();
+  assert.equal(got.reset, false, 'no start over');
+  assert.deepEqual(got.entries.map(e => e.id), ids(120, from + 1), 'every line once, in order');
+});
