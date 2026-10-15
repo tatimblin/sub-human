@@ -8,7 +8,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import * as h from './helpers.ts';
 import * as noise from '../lib/remote/noise.ts';
 
 const VECTORS = [
@@ -49,7 +48,7 @@ const VECTORS = [
   },
 ];
 
-const hex = s => Buffer.from(s, 'hex');
+const hex = (s: string) => Buffer.from(s, 'hex');
 
 for (const v of VECTORS) {
   test(`Noise NK vector (${v.source}): every message byte for byte, both sides`, () => {
@@ -65,7 +64,7 @@ for (const v of VECTORS) {
     assert.equal(c2.toString('hex'), m2.ciphertext, 'message 2');
     assert.equal(i.readMessage(c2).toString('hex'), m2.payload);
     assert.ok(i.done && r.done);
-    if (v.handshake_hash) assert.equal(i.handshakeHash.toString('hex'), v.handshake_hash);
+    if (v.handshake_hash) assert.equal(i.handshakeHash!.toString('hex'), v.handshake_hash);
     assert.deepEqual(i.handshakeHash, r.handshakeHash);
     const ic = i.split(), rc = r.split();
     rest.forEach((m, k) => {

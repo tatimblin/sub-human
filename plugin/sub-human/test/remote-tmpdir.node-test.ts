@@ -11,8 +11,9 @@ import * as store from '../lib/room/store.ts';
 import * as link from '../lib/remote/link.ts';
 import { Machine } from './support/two-homes.ts';
 
-const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
+const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
+// a missing pid (null/undefined) throws in process.kill and is ignored, like a gone one
+const kill = (pid: number | null | undefined) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
 
 test('remote: a daemon started with one TMPDIR serves hooks running with another; the doc records its socket', async t => {
   const daemonTmp = h.tmpDir('sh-tmp-daemon-', t), hookTmp = h.tmpDir('sh-tmp-hook-', t);
@@ -36,8 +37,8 @@ test('remote: a daemon started with one TMPDIR serves hooks running with another
   // every later hook runs with hookTmp (the session's own TMPDIR)
   remote.extra.TMPDIR = hookTmp;
   const joined = remote.join(bob, `bob ${code}`);
-  assert.equal(joined.json.systemMessage, undefined, joined.stderr);
-  assert.equal(remote.say(bob, 'across TMPDIRs').json.continue, false);
+  assert.equal(joined.json!.systemMessage, undefined, joined.stderr);
+  assert.equal(remote.say(bob, 'across TMPDIRs').json!.continue, false);
   const said = host.lib(() => store.open(code).readAll()).at(-1);
-  assert.deepEqual([said.from, said.text], ['bob', 'across TMPDIRs']);
+  assert.deepEqual([said!.from, said!.text], ['bob', 'across TMPDIRs']);
 });

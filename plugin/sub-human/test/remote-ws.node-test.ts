@@ -1,7 +1,7 @@
 // lib/remote/ws.ts: the zero-dependency WebSocket. Its server end against Node's built-in WebSocket client (interop),
 // its client end against its own server and against hand-made frames (fragmentation, control frames in between,
 // masking rules, the size limit, bad UTF-8), through an HTTP CONNECT proxy, over TLS, and the proxy environment.
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -11,13 +11,20 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync, spawn } from 'node:child_process';
 import tls from 'node:tls';
+import type { EventEmitter } from 'node:events';
+import type { AddressInfo } from 'node:net';
 import * as h from './helpers.ts';
 import * as ws from '../lib/remote/ws.ts';
 import { isAlive } from '../lib/io.ts';
 
-const once = (em, ev) => new Promise(r => em.once(ev, (...a) => r(a)));
+/** The next `ev` from an emitter: its listener's arguments (A: what that event carries). */
+const once = <A extends unknown[] = unknown[]>(em: EventEmitter, ev: string) => new Promise<A>(r => em.once(ev, (...a: unknown[]) => r(a as A)));
+/** A listening server's port. */
+const portOf = (srv: { address(): string | AddressInfo | null }) => (srv.address() as AddressInfo).port;
+type Msg = [data: Buffer, binary: boolean];
+type Closed = [code: number, reason: string];
 
-async function echoServer(t, opts = {}) {
+async function echoServer(t: TestContext, opts: Partial<Parameters<typeof ws.createServer>[0]> = {}) {
   const srv = await ws.createServer({
     port: 0,
     ...opts,
@@ -26,7 +33,7 @@ async function echoServer(t, opts = {}) {
     },
   });
   t.after(() => srv.close());
-  return { srv, port: srv.address().port };
+  return { srv, port: portOf(srv) };
 }
 
 test('ws server: interop with Node\'s built-in WebSocket client (text, binary, close code)', async t => {
@@ -34,15 +41,15 @@ test('ws server: interop with Node\'s built-in WebSocket client (text, binary, c
   const c = new WebSocket(`ws://127.0.0.1:${port}/sub-human/otter-1234`);
   c.binaryType = 'arraybuffer';
   await new Promise((ok, no) => { c.onopen = ok; c.onerror = no; });
-  const got = [];
+  const got: (string | ArrayBuffer)[] = [];
   c.onmessage = e => got.push(e.data);
   c.send('hello');
   const big = crypto.randomBytes(70_000);
   c.send(big);
   for (let i = 0; i < 100 && got.length < 2; i++) await new Promise(r => setTimeout(r, 10));
   assert.equal(got[0], '/sub-human/otter-1234:hello');
-  assert.ok(Buffer.from(got[1]).equals(big), 'a 70 kB binary message (64-bit length) echoes intact');
-  const closed = new Promise(r => { c.onclose = e => r(e); });
+  assert.ok(Buffer.from(got[1] as ArrayBuffer).equals(big), 'a 70 kB binary message (64-bit length) echoes intact');
+  const closed = new Promise<CloseEvent>(r => { c.onclose = e => r(e); });
   c.send('bye');
   const e = await closed;
   assert.equal(e.code, 4000);
@@ -50,11 +57,11 @@ test('ws server: interop with Node\'s built-in WebSocket client (text, binary, c
 });
 
 test('ws server: Node\'s client closing with a code reaches the server', async t => {
-  let closed;
-  const done = new Promise(r => { closed = r; });
+  let closed!: (v: Closed) => void;
+  const done = new Promise<Closed>(r => { closed = r; });
   const srv = await ws.createServer({ port: 0, onConnection: c => c.on('close', (code, reason) => closed([code, reason])) });
   t.after(() => srv.close());
-  const c = new WebSocket(`ws://127.0.0.1:${srv.address().port}/x`);
+  const c = new WebSocket(`ws://127.0.0.1:${portOf(srv)}/x`);
   await new Promise(r => { c.onopen = r; });
   c.close(4100, 'done here');
   assert.deepEqual(await done, [4100, 'done here']);
@@ -63,24 +70,24 @@ test('ws server: Node\'s client closing with a code reaches the server', async t
 test('ws client <-> ws server: text, binary, ping/pong, close handshake', async t => {
   const { port } = await echoServer(t);
   const c = await ws.connect(`ws://127.0.0.1:${port}/a`);
-  const m = once(c, 'message');
+  const m = once<Msg>(c, 'message');
   c.send('x');
   const [d, bin] = await m;
   assert.equal(d.toString(), '/a:x');
   assert.equal(bin, false);
-  const pong = once(c, 'pong');
+  const pong = once<[Buffer]>(c, 'pong');
   c.ping(Buffer.from('p1'));
   assert.equal((await pong)[0].toString(), 'p1');
-  const b = once(c, 'message');
+  const b = once<Msg>(c, 'message');
   c.send(Buffer.from([0, 1, 2, 255]));
   assert.deepEqual([...(await b)[0]], [0, 1, 2, 255]);
-  const cl = once(c, 'close');
+  const cl = once<Closed>(c, 'close');
   c.send('bye');
   assert.deepEqual(await cl, [4000, 'asked']);
 });
 
 test('ws server: an upgrade the accept hook refuses is answered before any 101; a plain GET is 426', async t => {
-  const { port } = await echoServer(t, { accept: req => (req.url.startsWith('/ok') ? true : 404) });
+  const { port } = await echoServer(t, { accept: req => (req.url!.startsWith('/ok') ? true : 404) });
   await assert.rejects(ws.connect(`ws://127.0.0.1:${port}/nope`), /404/);
   const r = await fetch(`http://127.0.0.1:${port}/ok`);
   assert.equal(r.status, 426);
@@ -89,29 +96,29 @@ test('ws server: an upgrade the accept hook refuses is answered before any 101; 
 });
 
 /** A raw server: answer the upgrade, then write bytes we choose; collects what the client sends. */
-async function rawServer(t, onSock) {
+async function rawServer(t: TestContext, onSock: (sock: net.Socket) => void) {
   const srv = net.createServer(sock => {
     let buf = '';
-    const onData = d => {
+    const onData = (d: Buffer) => {
       buf += d.toString('latin1');
       const i = buf.indexOf('\r\n\r\n');
       if (i < 0) return;
       sock.off('data', onData);
-      const key = /sec-websocket-key: (\S+)/i.exec(buf)[1];
+      const key = /sec-websocket-key: (\S+)/i.exec(buf)![1];
       sock.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${ws.acceptKey(key)}\r\n\r\n`);
       onSock(sock);
     };
     sock.on('data', onData);
     sock.on('error', () => {});
   });
-  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  await new Promise<void>(r => srv.listen(0, '127.0.0.1', r));
   t.after(() => srv.close());
-  return srv.address().port;
+  return portOf(srv);
 }
-const frame = (b0, payload) => Buffer.concat([Buffer.from([b0, payload.length]), payload]);
+const frame = (b0: number, payload: Buffer) => Buffer.concat([Buffer.from([b0, payload.length]), payload]);
 
 test('ws client: a fragmented message with a ping in between is reassembled, and the ping answered', async t => {
-  let gotPong = null;
+  let gotPong: Buffer | null = null;
   const port = await rawServer(t, sock => {
     sock.write(Buffer.concat([
       frame(0x01, Buffer.from('hel')), // text, not fin
@@ -119,10 +126,10 @@ test('ws client: a fragmented message with a ping in between is reassembled, and
       frame(0x00, Buffer.from('lo ')), // continuation
       frame(0x80, Buffer.from('wörld')), // final continuation
     ]));
-    sock.on('data', d => { if ((d[0] & 0x0f) === 0x0a) gotPong = d; });
+    sock.on('data', (d: Buffer) => { if ((d[0] & 0x0f) === 0x0a) gotPong = d; });
   });
   const c = await ws.connect(`ws://127.0.0.1:${port}/`);
-  const [d] = await once(c, 'message');
+  const [d] = await once<Msg>(c, 'message');
   assert.equal(d.toString(), 'hello wörld');
   for (let i = 0; i < 50 && !gotPong; i++) await new Promise(r => setTimeout(r, 10));
   assert.ok(gotPong && (gotPong[1] & 0x80), 'the pong is masked (client frames always are)');
@@ -134,20 +141,20 @@ test('ws client: a masked server frame (1002), an oversized frame (1009) and bad
     [Buffer.from([0x82, 0x81, 1, 2, 3, 4, 9]), 1002, {}],
     [frame(0x82, Buffer.alloc(100)), 1009, { maxPayload: 50 }],
     [frame(0x81, Buffer.from([0xff, 0xfe])), 1007, {}],
-  ]) {
+  ] as [Buffer, number, { maxPayload?: number }][]) {
     const port = await rawServer(t, sock => sock.write(bytes));
     const c = await ws.connect(`ws://127.0.0.1:${port}/`, opts);
     c.on('error', () => {});
-    const [got] = await once(c, 'close');
+    const [got] = await once<Closed>(c, 'close');
     assert.equal(got, code);
   }
 });
 
 test('ws server: an unmasked client frame is refused 1002; a message over maxPayload 1009', async t => {
-  const codes = [];
+  const codes: number[] = [];
   const srv = await ws.createServer({ port: 0, maxPayload: 1000, onConnection: c => { c.on('error', () => {}); c.on('close', code => codes.push(code)); } });
   t.after(() => srv.close());
-  const port = srv.address().port;
+  const port = portOf(srv);
   for (const bytes of [frame(0x82, Buffer.from('raw')), Buffer.concat([Buffer.from([0x02, 0x80 | 120]), Buffer.alloc(4), Buffer.alloc(120)])]) {
     const s = net.connect(port, '127.0.0.1');
     await once(s, 'connect');
@@ -165,27 +172,27 @@ test('ws keepalive: a peer that stops answering is terminated after two ping int
   const port = await rawServer(t, () => { /* never answers, never sends */ });
   const c = await ws.connect(`ws://127.0.0.1:${port}/`, { pingMs: 100 });
   const t0 = Date.now();
-  const [code] = await once(c, 'close');
+  const [code] = await once<Closed>(c, 'close');
   assert.equal(code, 1006);
   assert.ok(Date.now() - t0 < 1000);
 });
 
 test('ws client through an HTTP CONNECT proxy', async t => {
   const { port } = await echoServer(t);
-  const seen = [];
+  const seen: (string | undefined)[] = [];
   const proxy = http.createServer((q, s) => s.end());
   proxy.on('connect', (req, sock, head) => {
     seen.push(req.url);
-    const [hh, pp] = req.url.split(':');
+    const [hh, pp] = req.url!.split(':');
     const up = net.connect(Number(pp), hh, () => { sock.write('HTTP/1.1 200 Connection established\r\n\r\n'); up.write(head); up.pipe(sock).pipe(up); });
     up.on('error', () => sock.destroy());
     sock.on('error', () => up.destroy());
   });
-  await new Promise(r => proxy.listen(0, '127.0.0.1', r));
+  await new Promise<void>(r => proxy.listen(0, '127.0.0.1', r));
   t.after(() => proxy.close());
   // loopback is never proxied from the environment, so name the proxy outright
-  const c = await ws.connect(`ws://127.0.0.1:${port}/p`, { proxy: `http://127.0.0.1:${proxy.address().port}` });
-  const m = once(c, 'message');
+  const c = await ws.connect(`ws://127.0.0.1:${port}/p`, { proxy: `http://127.0.0.1:${portOf(proxy)}` });
+  const m = once<Msg>(c, 'message');
   c.send('via');
   assert.equal((await m)[0].toString(), '/p:via');
   assert.deepEqual(seen, [`127.0.0.1:${port}`]);
@@ -193,9 +200,9 @@ test('ws client through an HTTP CONNECT proxy', async t => {
   // a proxy that refuses
   const deny = http.createServer();
   deny.on('connect', (req, sock) => sock.end('HTTP/1.1 403 Forbidden\r\n\r\n'));
-  await new Promise(r => deny.listen(0, '127.0.0.1', r));
+  await new Promise<void>(r => deny.listen(0, '127.0.0.1', r));
   t.after(() => deny.close());
-  await assert.rejects(ws.connect(`wss://example.invalid/x`, { proxy: `http://127.0.0.1:${deny.address().port}` }), /refused CONNECT example\.invalid:443: HTTP\/1\.1 403/);
+  await assert.rejects(ws.connect(`wss://example.invalid/x`, { proxy: `http://127.0.0.1:${portOf(deny)}` }), /refused CONNECT example\.invalid:443: HTTP\/1\.1 403/);
 });
 
 test('ws client over TLS (wss) with a CA of our own', { skip: spawnSync('openssl', ['version']).status !== 0 && 'no openssl' }, async t => {
@@ -208,12 +215,12 @@ test('ws client over TLS (wss) with a CA of our own', { skip: spawnSync('openssl
   const { port } = await echoServer(t);
   // a TLS front that forwards to the plain listener, the shape of Tailscale Serve
   const front = tls.createServer({ cert, key }, s => { const u = net.connect(port, '127.0.0.1'); s.pipe(u).pipe(s); u.on('error', () => s.destroy()); s.on('error', () => u.destroy()); });
-  await new Promise(ok => front.listen(0, '127.0.0.1', ok));
+  await new Promise<void>(ok => front.listen(0, '127.0.0.1', ok));
   t.after(() => front.close());
-  const url = `wss://localhost:${front.address().port}/tls`;
+  const url = `wss://localhost:${portOf(front)}/tls`;
   await assert.rejects(ws.connect(url), /TLS to localhost/);
   const c = await ws.connect(url, { tls: { ca: cert } });
-  const m = once(c, 'message');
+  const m = once<Msg>(c, 'message');
   c.send('sec');
   assert.equal((await m)[0].toString(), '/tls:sec');
   c.terminate();

@@ -4,12 +4,10 @@
 // enrollment relies on: a wrong password gives another key, a tag binds AD, a tampered share aborts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import * as h from './helpers.ts';
 import * as cpace from '../lib/remote/cpace.ts';
 
-const hex = s => Buffer.from(s.replace(/\s+/g, ''), 'hex');
-const leScalar = s => hex(s); // the draft gives ya / yb little endian
+const hex = (s: string) => Buffer.from(s.replace(/\s+/g, ''), 'hex');
+const leScalar = (s: string) => hex(s); // the draft gives ya / yb little endian
 
 test('CPace string utilities: prepend_len, lv_cat, transcript_ir (draft A.1.2, A.1.4, A.3.5)', () => {
   assert.equal(cpace.prependLen(Buffer.alloc(0)).toString('hex'), '00');
@@ -60,8 +58,8 @@ test('CPACE-RISTR255-SHA512 vectors (draft B.3.1-B.3.5): generator string and ge
   assert.equal(Buffer.from(g.toBytes()).toString('hex'), V.g);
   assert.equal(cpace.scalarMult(V.ya, g).toString('hex'), V.Ya);
   assert.equal(cpace.scalarMult(V.yb, g).toString('hex'), V.Yb);
-  assert.equal(cpace.scalarMultVfy(V.ya, hex(V.Yb)).toString('hex'), V.K);
-  assert.equal(cpace.scalarMultVfy(V.yb, hex(V.Ya)).toString('hex'), V.K);
+  assert.equal(cpace.scalarMultVfy(V.ya, hex(V.Yb))!.toString('hex'), V.K);
+  assert.equal(cpace.scalarMultVfy(V.yb, hex(V.Ya))!.toString('hex'), V.K);
   assert.deepEqual(cpace.transcriptIr(hex(V.Ya), V.ADa, hex(V.Yb), V.ADb), hex(V.transcript));
   assert.deepEqual(cpace.isk(V.sid, hex(V.K), hex(V.transcript)), hex(V.ISK));
 
@@ -69,15 +67,16 @@ test('CPACE-RISTR255-SHA512 vectors (draft B.3.1-B.3.5): generator string and ge
   const a = cpace.initiator({ prs: V.PRS, ci: V.CI, sid: V.sid, ad: V.ADa, y: V.ya });
   assert.equal(a.Y.toString('hex'), V.Ya);
   const b = cpace.responder({ prs: V.PRS, ci: V.CI, sid: V.sid, ad: V.ADb, Ya: a.Y, ADa: V.ADa, y: V.yb });
+  assert.ok(b);
   assert.equal(b.Y.toString('hex'), V.Yb);
   assert.deepEqual(b.isk, hex(V.ISK));
-  assert.deepEqual(a.finish(b.Y, V.ADb).isk, hex(V.ISK));
+  assert.deepEqual(a.finish(b.Y, V.ADb)!.isk, hex(V.ISK));
 });
 
 test('CPACE-RISTR255-SHA512 vectors (draft B.3.10, B.3.11): scalar_mult, and scalar_mult_vfy refuses a non-point and the neutral element', () => {
   const s = hex('7cd0e075fa7955ba52c02759a6c90dbbfc10e6d40aea8d283e407d88cf538a05');
   const X = hex('2c3c6b8c4f3800e7aef6864025b4ed79bd599117e427c41bd47d93d654b4a51c');
-  assert.equal(cpace.scalarMultVfy(s, X).toString('hex'), '7c13645fe790a468f62c39beb7388e541d8405d1ade69d1778c5fe3e7f6b600e');
+  assert.equal(cpace.scalarMultVfy(s, X)!.toString('hex'), '7c13645fe790a468f62c39beb7388e541d8405d1ade69d1778c5fe3e7f6b600e');
   assert.equal(cpace.scalarMultVfy(s, hex('2b3c6b8c4f3800e7aef6864025b4ed79bd599117e427c41bd47d93d654b4a51c')), null, 'Y_i1 does not decode');
   assert.equal(cpace.scalarMultVfy(s, Buffer.alloc(32)), null, 'Y_i2 is G.I');
   assert.equal(cpace.responder({ prs: V.PRS, ci: V.CI, sid: V.sid, ad: V.ADb, Ya: Buffer.alloc(32), ADa: V.ADa }), null, 'B aborts on G.I');
@@ -89,10 +88,12 @@ test('CPACE-RISTR255-SHA512 vectors (draft B.3.10, B.3.11): scalar_mult, and sca
 test('CPace with key confirmation: the right password agrees and the tags check; a wrong one, other AD, or another sid does not', () => {
   const ci = cpace.lvCat(Buffer.from('ci'));
   const sid = Buffer.from('0123456789abcdef');
-  const run = (pwA, pwB, { adB = Buffer.from('b'), sidB = sid } = {}) => {
+  const run = (pwA: string, pwB: string, { adB = Buffer.from('b'), sidB = sid }: { adB?: Buffer; sidB?: Buffer } = {}) => {
     const a = cpace.initiator({ prs: Buffer.from(pwA), ci, sid, ad: Buffer.from('a') });
     const b = cpace.responder({ prs: Buffer.from(pwB), ci, sid: sidB, ad: adB, Ya: a.Y, ADa: Buffer.from('a') });
+    assert.ok(b);
     const ka = a.finish(b.Y, adB);
+    assert.ok(ka);
     const tb = cpace.tag(b.macKey, b.Y, adB);
     return { ok: cpace.equal(cpace.tag(ka.macKey, b.Y, adB), tb), same: cpace.equal(ka.isk, b.isk) };
   };
@@ -102,7 +103,9 @@ test('CPace with key confirmation: the right password agrees and the tags check;
   // the tag covers B's AD: the joiner checks the host's attested keys through it
   const a = cpace.initiator({ prs: Buffer.from('1'), ci, sid, ad: Buffer.from('a') });
   const b = cpace.responder({ prs: Buffer.from('1'), ci, sid, ad: Buffer.from('keys'), Ya: a.Y, ADa: Buffer.from('a') });
+  assert.ok(b);
   const ka = a.finish(b.Y, Buffer.from('other keys'));
+  assert.ok(ka);
   assert.ok(!cpace.equal(cpace.tag(ka.macKey, b.Y, Buffer.from('other keys')), cpace.tag(b.macKey, b.Y, Buffer.from('keys'))));
   assert.ok(cpace.sampleScalar() < cpace.ORDER);
 });

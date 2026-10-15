@@ -4,7 +4,7 @@
 // line, the outbox sent in order (never consent; "placed already" counts as sent; kept on FORK), a lapsed lease
 // renewed with no log line, the link state file, the server closing a silent session, and an old server (no ping
 // in its caps) never pinged. Two homes and real processes: test/remote-reconnect-e2e.node-test.ts.
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -25,14 +25,23 @@ import { leaseFresh } from '../lib/room/members.ts';
 import { RoomError } from '../lib/room/validate.ts';
 import { MirrorRoomStore } from '../lib/room/store-mirror.ts';
 import * as seatKey from '../hooks/seat-key.ts';
+import type { Client } from '../lib/remote/client.ts';
+import type { CodedError, DecodedFrame, Flush, RunningLink, SignedPayload } from '../lib/remote/types-core.ts';
+import type { SshSpec, Transport } from '../lib/remote/types-rest.ts';
+import type { Entry, EntryInput, Link, LinkStateRecord, RoomStore } from '../lib/room/types.ts';
 
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false', SUB_HUMAN_REAP_GRACE_MS: '0', SUB_HUMAN_REAP_WAIT_MS: '0' });
 
+/** os.networkInterfaces() as netSignature takes it. */
+type Ifaces = Parameters<typeof link.netSignature>[0];
+/** What test/support/mirror-probe.ts prints. */
+interface ProbeOut { code?: string; message: string; unknown?: boolean }
+
 const REMOTE = 'remote0machine01';
 const FAST = { pingMs: 40, pongMs: 60, deadMs: 250 };
-const signed = (code, name, entry) => store.toPayload(code, entry, { via: 'human', from: name });
-const say = (code, text) => signed(code, 'bob', { kind: 'say', text });
-const lines = file => { try { return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean); } catch { return []; } };
+const signed = (code: string, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
+const say = (code: string, text: string) => signed(code, 'bob', { kind: 'say', text });
+const lines = (file: string) => { try { return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean); } catch { return []; } };
 
 // ---------- pure pieces ----------
 test('reconnect: nextDelay is decorrelated jitter in [base, 3 x prev], capped', () => {
@@ -43,7 +52,7 @@ test('reconnect: nextDelay is decorrelated jitter in [base, 3 x prev], capped', 
   assert.equal(link.nextDelay(9000, 1000, 10_000, () => 0), 1000, 'never below base');
   for (let i = 0; i < 200; i++) {
     const d = link.nextDelay(4000, 1000, 10_000);
-    assert.ok(d >= 1000 && d <= 10_000, d);
+    assert.ok(d >= 1000 && d <= 10_000, String(d));
   }
   const t = link.linkTimings();
   assert.deepEqual([t.retryMs, t.retryMaxMs, t.pingMs, t.pongMs, t.deadMs, t.wakeTickMs, t.wakeGapMs, t.netPollMs],
@@ -54,7 +63,7 @@ test('reconnect: nextDelay is decorrelated jitter in [base, 3 x prev], capped', 
 test('reconnect: wakeWatch on a fake clock: a late tick or a wall clock off the monotonic one is a wake; steady ticks are not', () => {
   const c = clock.createFake({ now: 1_000_000 });
   let mono = 0;
-  const woke = [];
+  const woke: number[] = [];
   const unwatch = link.wakeWatch({ onWake: g => woke.push(g), tickMs: 1000, gapMs: 5000, clock: c, mono: () => mono });
   const tick = (ms = 1000) => { mono += ms; c.advance(ms); };
   for (let i = 0; i < 10; i++) tick();
@@ -63,7 +72,7 @@ test('reconnect: wakeWatch on a fake clock: a late tick or a wall clock off the 
   c.set(c.now() + 60_000);
   tick();
   assert.equal(woke.length, 1);
-  assert.ok(woke[0] >= 59_000, woke);
+  assert.ok(woke[0] >= 59_000, String(woke));
   tick();
   assert.equal(woke.length, 1, 'once');
   // the timer ran on time but the wall clock jumped against the monotonic one (a clock step)
@@ -89,11 +98,12 @@ test('reconnect: netWatch calls onChange once per changed address set; netSignat
   c.advance(5000);
   assert.equal(changes, 1);
   unwatch();
-  const a = { lo0: [{ address: '127.0.0.1', internal: true }], en0: [{ address: '10.0.0.2', internal: false }, { address: 'fe80::1', internal: false }] };
-  const b = { en0: [{ address: 'fe80::1', internal: false }, { address: '10.0.0.2', internal: false }] };
+  // the fields netSignature reads of os.networkInterfaces()
+  const a = { lo0: [{ address: '127.0.0.1', internal: true }], en0: [{ address: '10.0.0.2', internal: false }, { address: 'fe80::1', internal: false }] } as unknown as Ifaces;
+  const b = { en0: [{ address: 'fe80::1', internal: false }, { address: '10.0.0.2', internal: false }] } as unknown as Ifaces;
   assert.equal(link.netSignature(a), link.netSignature(b));
   assert.equal(link.netSignature(a), 'en0/10.0.0.2', 'link-local IPv6 is not a network change');
-  assert.equal(link.netSignature({ en0: [{ address: '2001:db8::5', internal: false }] }), 'en0/2001:db8::5');
+  assert.equal(link.netSignature({ en0: [{ address: '2001:db8::5', internal: false }] } as unknown as Ifaces), 'en0/2001:db8::5');
   assert.equal(typeof link.netSignature(), 'string');
 });
 
@@ -111,38 +121,59 @@ test('outbox: only a signed @room or @claude post by a person is queueable; at m
   assert.equal(outbox.queueable({ ...p, to: 'claude' }), true, 'an @claude post is queued like an @room');
   const dir = h.tmpDir('sh-outbox-', t);
   const box = outbox.open(dir, { max: 3, ageMs: 1000 });
-  assert.deepEqual([box.add(p, 0), box.add(say(code, 'two'), 500), box.add(say(code, 'three'), 900)], [1, 2, 3]);
-  assert.throws(() => box.add(say(code, 'four')), e => e.code === 'OFFLINE' && /3 @room posts are queued already/.test(e.message));
+  assert.deepEqual([box.add(p as SignedPayload, 0), box.add(say(code, 'two') as SignedPayload, 500), box.add(say(code, 'three') as SignedPayload, 900)], [1, 2, 3]);
+  assert.throws(() => box.add(say(code, 'four') as SignedPayload), (e: CodedError) => e.code === 'OFFLINE' && /3 @room posts are queued already/.test(e.message));
   assert.equal(fs.statSync(box.file).mode & 0o777, 0o600);
   assert.deepEqual(outbox.open(dir).items().map(x => x.payload.text), ['hi', 'two', 'three'], 'kept on disk');
   assert.deepEqual(box.expire(1600).map(x => x.payload.text), ['hi', 'two']);
-  assert.equal(box.first().payload.text, 'three');
+  assert.equal(box.first()!.payload.text, 'three');
   box.drop();
   assert.equal(box.size(), 0);
   assert.equal(fs.existsSync(box.file), false, 'an empty outbox is no file');
 });
 
 // ---------- serveMirror against a real server ----------
+/** What the daemon answers a hook's op: the placed entry, or a queued post. */
+interface HookReply { entry?: Entry; queued?: number; slow?: boolean }
+/** One connection rig() made: its client, and cut() to make it half-open. */
+interface Conn { c: Client; cut(): void }
+/** What rig() returns. */
+interface Rig {
+  code: string;
+  host: store.FsRoomStore;
+  conns: Conn[];
+  pings: { n: number };
+  sessions: ReturnType<typeof server.serve>[];
+  refuse: boolean;
+  slowMs?: number;
+  connect(): Promise<Client>;
+  mirror: MirrorRoomStore;
+  states: LinkStateRecord[];
+  logged: string[];
+  start(opts?: Partial<Parameters<typeof link.serveMirror>[0]>): Promise<RunningLink>;
+  same(): boolean;
+  hook(op: string, params: object): Promise<HookReply>;
+}
 /** A host room with bob joined over one link; connect() makes a new memory pair each dial. cut(i) makes connection i
  * half-open (nothing crosses either way, nothing closes); refuse makes new dials fail; slowMs delays every frame to
  * the host (a slow upstream, not a dead one). */
-async function rig(t, { serverCaps } = {}) {
+async function rig(t: TestContext, { serverCaps }: { serverCaps?: Client['serverCaps'] } = {}): Promise<Rig> {
   h.freshHome(t);
   const code = h.newRoom();
-  const host = store.open(code);
+  const host = store.open(code) as store.FsRoomStore;
   const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });
   const { token } = auth.redeemInvite(host, secret, { machine: REMOTE });
-  const sessions = [], conns = [];
+  const sessions: Rig['sessions'] = [], conns: Rig['conns'] = [];
   const pings = { n: 0 };
-  const r = { code, host, conns, pings, sessions, refuse: false };
+  const r = { code, host, conns, pings, sessions, refuse: false } as Rig; // the rest is set below
   r.connect = async () => {
     if (r.refuse) throw new RoomError('OFFLINE', 'no route to host');
     const [a, b] = memory.pair();
     let cut = false;
-    const half = {
+    const half: Transport = {
       send: f => { if (!cut) b.send(f); },
       onFrame: fn => {
-        const deliver = f => { if (cut) return; if (f.op === 'ping') pings.n++; fn(f); };
+        const deliver = (f: DecodedFrame) => { if (cut) return; if (f.op === 'ping') pings.n++; fn(f); };
         b.onFrame(f => (r.slowMs ? setTimeout(() => deliver(f), r.slowMs) : deliver(f))); // r.slowMs: upstream latency
       },
       onClose: fn => b.onClose(fn),
@@ -166,22 +197,22 @@ async function rig(t, { serverCaps } = {}) {
   r.logged = [];
   r.start = (opts = {}) => link.serveMirror({
     mirror: r.mirror, connect: r.connect, log: m => r.logged.push(m), timings: FAST, retryMs: 30, retryMaxMs: 60, watch: false,
-    seats: () => [], writeState: rec => r.states.push(rec), ...opts,
+    seats: () => [], writeState: rec => r.states.push(rec as LinkStateRecord), ...opts,
   });
   r.same = () => fs.existsSync(r.mirror.logFile) && fs.readFileSync(r.mirror.logFile, 'utf8') === fs.readFileSync(host.logFile, 'utf8');
-  r.hook = (op, params) => link.handle(op, { socket: link.socketPath(r.mirror.dir), params });
+  r.hook = (op, params) => link.handle(op, { socket: link.socketPath(r.mirror.dir), params }) as Promise<HookReply>;
   t.after(() => fs.rmSync(path.dirname(link.socketPath(r.mirror.dir)), { recursive: true, force: true }));
   return r;
 }
-const ids = file => lines(file).map(l => JSON.parse(l).id);
-const unique = a => new Set(a).size === a.length;
+const ids = (file: string) => lines(file).map(l => JSON.parse(l).id);
+const unique = (a: unknown[]) => new Set(a).size === a.length;
 
 test('link: a half-open connection is caught by a missed pong; the new one is made before the old is dropped, with no duplicate line', async t => {
   const r = await rig(t);
   const l = await r.start();
   t.after(() => l.stop('done'));
   await h.until(() => l.state() === 'online' && r.states.some(s => s.rttMs != null), 3000, 5);
-  const up = r.states.findLast(s => s.state === 'online');
+  const up = r.states.findLast(s => s.state === 'online')!;
   assert.deepEqual([up.attempt, up.queued, up.pid, up.detail, typeof up.rttMs], [0, 0, process.pid, 'online', 'number']);
   r.host.append({ kind: 'status', text: 'before' }, { via: 'system', from: 'room', system: true });
   await h.until(r.same, 3000, 5);
@@ -199,7 +230,7 @@ test('link: a half-open connection is caught by a missed pong; the new one is ma
   assert.ok(r.same());
   assert.ok(unique(ids(r.mirror.logFile)));
   assert.equal(r.mirror.verifyChain().ok, true);
-  assert.equal((await r.hook('append', { payload: say(r.code, 'over the new one') })).entry.text, 'over the new one');
+  assert.equal((await r.hook('append', { payload: say(r.code, 'over the new one') })).entry!.text, 'over the new one');
 });
 
 test('link: no pong within deadMs and no new connection: the link is dead (OFFLINE), retried, and back once the host answers', async t => {
@@ -210,17 +241,17 @@ test('link: no pong within deadMs and no new connection: the link is dead (OFFLI
   r.refuse = true;
   r.conns[0].cut();
   await h.until(() => l.state() === 'offline', 3000, 5);
-  const down = r.states.findLast(s => s.state !== 'online');
-  assert.match(down.lastError, /no pong within 250 ms|no route to host/);
+  const down = r.states.findLast(s => s.state !== 'online')!;
+  assert.match(down.lastError!, /no pong within 250 ms|no route to host/);
   assert.ok(r.conns[0].c.closed);
-  await assert.rejects(r.hook('append', { payload: say(r.code, 'x') }), e => e.code === 'OFFLINE');
-  await h.until(() => r.states.at(-1).state === 'offline' && r.states.at(-1).attempt >= 2, 3000, 5);
+  await assert.rejects(r.hook('append', { payload: say(r.code, 'x') }), (e: CodedError) => e.code === 'OFFLINE');
+  await h.until(() => r.states.at(-1)!.state === 'offline' && r.states.at(-1)!.attempt! >= 2, 3000, 5);
   r.refuse = false;
   await h.until(() => l.state() === 'online', 3000, 5);
-  assert.equal(r.states.at(-1).attempt, 0);
+  assert.equal(r.states.at(-1)!.attempt, 0);
   // online again: no current error; why it went offline is kept apart as prevError
-  assert.equal(r.states.at(-1).lastError, null);
-  assert.match(r.states.at(-1).prevError, /no pong within 250 ms|no route to host/);
+  assert.equal(r.states.at(-1)!.lastError, null);
+  assert.match(r.states.at(-1)!.prevError!, /no pong within 250 ms|no route to host/);
 });
 
 test('link: wake() while online makes before it breaks: hooks\' appends during repeated swaps land once each, in order', async t => {
@@ -228,8 +259,8 @@ test('link: wake() while online makes before it breaks: hooks\' appends during r
   const l = await r.start();
   t.after(() => l.stop('done'));
   await h.until(() => l.state() === 'online', 3000, 5);
-  const texts = [];
-  const writes = [];
+  const texts: string[] = [];
+  const writes: Promise<HookReply>[] = [];
   for (let i = 0; i < 30; i++) {
     texts.push(`p${i}`);
     writes.push(r.hook('append', { payload: say(r.code, `p${i}`) }));
@@ -260,13 +291,13 @@ test('link: offline, an @room post is queued (consent and agents\' posts are not
   const posts = ['one', 'two', 'three'].map(text => say(r.code, text));
   for (const [i, p] of posts.entries()) assert.deepEqual(await r.hook('append', { payload: p, queue: true }), { queued: i + 1 });
   await assert.rejects(r.hook('append', { payload: signed(r.code, 'bob', { kind: 'signoff', proposal_hash: 'abcdef012345' }), queue: true }),
-    e => e.code === 'OFFLINE', 'consent is never queued');
+    (e: CodedError) => e.code === 'OFFLINE', 'consent is never queued');
   await assert.rejects(r.hook('append', { payload: store.toPayload(r.code, { kind: 'say', text: 'agent' }, { via: 'agent', from: 'bob' }), queue: true }),
-    e => e.code === 'OFFLINE', 'an agent\'s post is never queued');
-  await assert.rejects(r.hook('append', { payload: say(r.code, 'not marked') }), e => e.code === 'OFFLINE', 'only a post the hook marks queue');
-  await assert.rejects(r.hook('beat', { name: 'bob' }), e => e.code === 'OFFLINE');
+    (e: CodedError) => e.code === 'OFFLINE', 'an agent\'s post is never queued');
+  await assert.rejects(r.hook('append', { payload: say(r.code, 'not marked') }), (e: CodedError) => e.code === 'OFFLINE', 'only a post the hook marks queue');
+  await assert.rejects(r.hook('beat', { name: 'bob' }), (e: CodedError) => e.code === 'OFFLINE');
   assert.equal(r.mirror.kv.get('link').queued, 3);
-  assert.equal(r.states.at(-1).queued, 3);
+  assert.equal(r.states.at(-1)!.queued, 3);
   // "two" reached the host before the link died (its reply was lost): it must not land twice
   r.host.place(posts[1]);
   const before = r.host.readAll().length;
@@ -281,7 +312,7 @@ test('link: offline, an @room post is queued (consent and agents\' posts are not
   const st = r.mirror.kv.get('link');
   assert.equal(st.queued, undefined);
   assert.deepEqual([st.flush.sent, st.flush.unsent], [3, []]);
-  assert.equal(r.states.at(-1).queued, 0);
+  assert.equal(r.states.at(-1)!.queued, 0);
 });
 
 test('link: a queued post that waited too long is dropped and reported, never re-signed', async t => {
@@ -300,7 +331,7 @@ test('link: a queued post that waited too long is dropped and reported, never re
   await l.wake('test');
   await h.until(() => l.state() === 'online', 3000, 5);
   assert.deepEqual(r.host.readAll().filter(e => e.kind === 'say').map(e => e.text), ['fresh one']);
-  const f = r.mirror.kv.get('link').flush;
+  const f: Flush = r.mirror.kv.get('link').flush;
   assert.equal(f.sent, 1);
   assert.deepEqual(f.unsent.map(u => u.text), ['stale one']);
   assert.match(f.unsent[0].why, /waited too long/);
@@ -325,7 +356,7 @@ test('link: a FORK at reconnect keeps the queued posts and says so', async t => 
   assert.deepEqual(outbox.open(r.mirror.dir).items().map(x => x.payload.text), ['kept']);
   assert.equal(r.mirror.kv.get('link').queued, 1);
   assert.match(r.logged.join('\n'), /FORK in room .*1 queued @room post\(s\) are kept, not sent/);
-  assert.deepEqual([r.states.at(-1).state, r.states.at(-1).detail], ['fork', 'fork']);
+  assert.deepEqual([r.states.at(-1)!.state, r.states.at(-1)!.detail], ['fork', 'fork']);
 });
 
 test('link: a seat whose lease lapsed on the host during the outage is renewed on reconnect, with no log line', async t => {
@@ -356,15 +387,15 @@ test('link: an old server (no ping in its caps) is never pinged; the state file 
   await h.until(() => l.state() === 'online', 3000, 5);
   await h.sleep(FAST.pingMs * 4);
   assert.equal(r.pings.n, 0);
-  const st = links.readState(r.code);
+  const st = links.readState(r.code)!;
   assert.deepEqual([st.state, st.attempt, st.lastError, st.rttMs, st.queued, st.pid, st.detail], ['online', 0, null, null, 0, process.pid, 'online']);
-  assert.ok(Date.parse(st.since) <= Date.parse(st.at));
+  assert.ok(Date.parse(st.since!) <= Date.parse(st.at!));
   assert.equal(fs.statSync(links.stateFile(r.code)).mode & 0o777, 0o600);
   assert.deepEqual(links.list(), [], 'a state file is not a link');
 });
 
 test('link: online, the mirror\'s document link lists the entry fields the host\'s caps list (same); an old host\'s lists none', async t => {
-  for (const [caps, want] of [[undefined, ['same']], [{ ops: protocol.OPS }, undefined]]) {
+  for (const [caps, want] of [[undefined, ['same']], [{ ops: protocol.OPS }, undefined]] as [Client['serverCaps'] | undefined, string[] | undefined][]) {
     const r = await rig(t, { serverCaps: caps });
     const l = await r.start();
     await h.until(() => l.state() === 'online', 3000, 5);
@@ -379,7 +410,7 @@ test('server: a session that said hello with caps.ping and then goes silent is c
   const { code, host } = (() => { h.freshHome(t); const c = h.newRoom(); return { code: c, host: store.open(c) }; })();
   const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });
   const { token } = auth.redeemInvite(host, secret, { machine: REMOTE });
-  const open = async caps => {
+  const open = async (caps: object) => {
     const [a, b] = memory.pair();
     const srv = server.serve(b, { store: host, silentMs: 120 });
     t.after(() => srv.close());
@@ -398,8 +429,8 @@ test('server: a session that said hello with caps.ping and then goes silent is c
 
 // ---------- a slow link: a timed-out frame went out, so it is never "nothing was sent" (the lab's slow-link ghost) ----------
 const SLOW = { pingMs: 0, relayMs: 80 };
-const posts = host => host.readAll().filter(e => e.kind === 'say').map(e => e.text);
-const box = r => outbox.open(r.mirror.dir);
+const posts = (host: RoomStore) => host.readAll().filter(e => e.kind === 'say').map(e => e.text);
+const box = (r: Rig) => outbox.open(r.mirror.dir);
 
 test('link: a slow link\'s @room post is "sending", kept under its nonce; the late copy is the post, a resend is a replay', async t => {
   const r = await rig(t);
@@ -416,7 +447,7 @@ test('link: a slow link\'s @room post is "sending", kept under its nonce; the la
   await h.until(() => posts(r.host).length === 1 && box(r).size() === 0, 3000, 5);
   assert.deepEqual(posts(r.host), ['slow one'], 'the late copy is the post, once');
   r.slowMs = 0;
-  await assert.rejects(r.hook('append', { payload: p, queue: true }), e => e.code === 'AUTH' && /placed already/.test(e.message), 'a resend is a replay');
+  await assert.rejects(r.hook('append', { payload: p, queue: true }), (e: CodedError) => e.code === 'AUTH' && /placed already/.test(e.message), 'a resend is a replay');
   await h.until(r.same, 3000, 5);
   assert.deepEqual(posts(r.host), ['slow one']);
   assert.match(r.logged.join('\n'), /slow link: an @room post has no answer within 80 ms/);
@@ -431,14 +462,14 @@ test('link: an op that is never queued times out with an unknown outcome; retryi
   await h.until(() => l.state() === 'online', 3000, 5);
   r.slowMs = 400;
   const agent = store.toPayload(r.code, { kind: 'say', text: 'an agent post' }, { via: 'agent', from: 'bob' });
-  await assert.rejects(r.hook('append', { payload: agent, queue: true }), e => e.code === 'OFFLINE' && protocol.unknownOutcome(e) && !/nothing was sent/.test(e.message));
+  await assert.rejects(r.hook('append', { payload: agent, queue: true }), (e: CodedError) => e.code === 'OFFLINE' && protocol.unknownOutcome(e) && !/nothing was sent/.test(e.message));
   const once = signed(r.code, 'bob', { kind: 'say', text: 'signed once' }); // not marked queue: as an answer is sent
-  await assert.rejects(r.hook('append', { payload: once }), e => protocol.unknownOutcome(e));
+  await assert.rejects(r.hook('append', { payload: once }), (e: CodedError) => protocol.unknownOutcome(e));
   assert.equal(box(r).size(), 0, 'never queued');
   await h.until(() => posts(r.host).length === 2, 3000, 5);
   r.slowMs = 0;
   // a retry of the same signed payload (its nonce) is refused as placed already: it can never land twice
-  await assert.rejects(r.hook('append', { payload: once }), e => e.code === 'AUTH' && /placed already/.test(e.message));
+  await assert.rejects(r.hook('append', { payload: once }), (e: CodedError) => e.code === 'AUTH' && /placed already/.test(e.message));
   assert.deepEqual(posts(r.host), ['an agent post', 'signed once']);
 });
 
@@ -476,7 +507,7 @@ test('link: a slow post answered "placed already" counts as sent; one the host r
   const bad = { ...say(r.code, 'a bad signature'), sig: 'AAAA' };
   assert.deepEqual(await r.hook('append', { payload: bad, queue: true }), { queued: 1, slow: true });
   await h.until(() => box(r).size() === 0, 3000, 5);
-  const f = r.mirror.kv.get('link').flush;
+  const f: Flush = r.mirror.kv.get('link').flush;
   assert.deepEqual([f.sent, f.unsent.map(u => u.text)], [0, ['a bad signature']]);
   assert.deepEqual(posts(r.host), ['placed by another way']);
 });
@@ -488,23 +519,23 @@ test('mirror store: a deadline that passed after the op went out is "unknown", n
   const sock = link.socketPath(dir);
   fs.mkdirSync(path.dirname(sock), { recursive: true, mode: 0o700 });
   t.after(() => fs.rmSync(path.dirname(sock), { recursive: true, force: true }));
-  const reply = { mode: null };
+  const reply: { mode: string | null } = { mode: null };
   const srv = net.createServer(c => c.on('data', d => {
     const f = JSON.parse(String(d).split('\n')[0]);
     if (reply.mode === 'unknown') c.end(protocol.encode(protocol.error(f.id, 'OFFLINE', `append: no answer from the host within 2000 ms (a slow link); ${protocol.UNKNOWN_OUTCOME}`)));
     else if (reply.mode === 'offline') c.end(protocol.encode(protocol.error(f.id, 'OFFLINE', 'the link is offline')));
     // 'silent': no answer, so the bridge's own deadline passes
   }));
-  await new Promise(res => srv.listen(sock, res));
+  await new Promise<void>(res => srv.listen(sock, res));
   t.after(() => srv.close());
   const payload = JSON.stringify(signed(code, 'bob', { kind: 'say', text: 'x' }));
   // the bridge blocks its calling thread, so the store runs in a child process and this one serves the socket
-  const probe = mode => {
+  const probe = (mode: string) => {
     reply.mode = mode;
-    return new Promise(resolve => {
+    return new Promise<ProbeOut>(resolve => {
       const child = child_process.fork(path.join(import.meta.dirname, 'support', 'mirror-probe.ts'), [code, dir, payload], { stdio: ['ignore', 'pipe', 'inherit', 'ipc'] });
       let out = '';
-      child.stdout.on('data', d => { out += d; });
+      child.stdout!.on('data', d => { out += d; });
       child.on('exit', () => resolve(JSON.parse(out)));
     });
   };
@@ -525,25 +556,26 @@ test('link: the host revokes the link: its serve ends the stream AUTH, the daemo
   const r = await rig(t);
   const l = await r.start();
   await h.until(() => l.state() === 'online', 3000, 5);
-  const [id] = Object.keys(r.host.kv.get(auth.LINKS_KEY));
-  assert.equal(r.sessions.at(-1).revoked(), false, 'not revoked yet: nothing sent');
+  const [id] = Object.keys(r.host.kv.get(auth.LINKS_KEY)!);
+  assert.equal(r.sessions.at(-1)!.revoked(), false, 'not revoked yet: nothing sent');
   auth.revokeLink(r.host, id);
   for (const s of r.sessions) s.revoked(); // sub-human revoke SIGTERMs the link's serve processes
   assert.match(await l.done, /the host revoked this link/);
   assert.equal(l.state(), 'stopped');
   assert.equal(r.mirror.kv.get('link').code, 'AUTH');
-  await assert.rejects(r.hook('append', { payload: say(r.code, 'after revoke'), queue: true }), e => e.code === 'OFFLINE');
+  await assert.rejects(r.hook('append', { payload: say(r.code, 'after revoke'), queue: true }), (e: CodedError) => e.code === 'OFFLINE');
   assert.equal(box(r).size(), 0, 'not queued: the link is gone for good');
 });
 
 test('link: an ssh link with its own key and a token that ssh now refuses is AUTH (revoked); waiting for an admit stays OFFLINE', async () => {
   const off = new RoomError('OFFLINE', 'the link closed');
   const denied = { stderr: () => 'host@devbox: Permission denied (publickey).\r\n' };
-  const own = { token: 'tok', transport: { kind: 'ssh', user: 'host', host: 'devbox', key: '/k/id_ed25519' } };
+  const sshTo: SshSpec = { kind: 'ssh', user: 'host', host: 'devbox', key: '/k/id_ed25519' };
+  const own = { token: 'tok', transport: sshTo } as Link; // the fields keyRefused reads (no code)
   const e1 = await link.keyRefused(own, denied, off);
-  assert.deepEqual([e1.code, /revoked/.test(e1.message)], ['AUTH', true]);
+  assert.deepEqual([e1!.code, /revoked/.test(e1!.message)], ['AUTH', true]);
   assert.equal(await link.keyRefused({ ...own, token: undefined, invite: 'sh2.x' }, denied, off), off, 'not admitted yet: keep trying');
-  assert.equal(await link.keyRefused({ ...own, transport: { ...own.transport, key: undefined } }, denied, off), off, 'the user\'s own keys: maybe an agent not loaded');
+  assert.equal(await link.keyRefused({ ...own, transport: { ...sshTo, key: undefined } }, denied, off), off, 'the user\'s own keys: maybe an agent not loaded');
   assert.equal(await link.keyRefused(own, { stderr: () => 'ssh: connect to host devbox port 22: Connection refused' }, off), off);
-  assert.equal(await link.keyRefused(own, Promise.resolve(denied), off).then(e => e.code), 'AUTH', 'an async transport');
+  assert.equal(await link.keyRefused(own, Promise.resolve(denied), off).then(e => e!.code), 'AUTH', 'an async transport');
 });

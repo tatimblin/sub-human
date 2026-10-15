@@ -4,7 +4,7 @@
 // the wake gap (SIGSTOP/SIGCONT, as a sleep looks to it) redials at once; a seat whose lease lapsed on the host while
 // the link was down is renewed on reconnect with no "left"/"joined" line. Every time the mirror stays
 // byte-identical to the host's log with no duplicate line. The outbox end to end is in test/remote-e2e.node-test.ts.
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,12 +23,13 @@ const BASE = {
   SUB_HUMAN_LINK_WAKE_TICK_MS: '200', SUB_HUMAN_LINK_WAKE_GAP_MS: '1000',
 };
 
-const children = pid => spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean).map(Number);
-const signal = (pid, sig) => { try { process.kill(pid, sig); } catch { /* gone */ } };
-const ids = log => log.split('\n').filter(Boolean).map(l => JSON.parse(l).id);
+const children = (pid: number | undefined) => spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean).map(Number);
+// a missing pid throws in process.kill and is ignored, like a gone one
+const signal = (pid: number | undefined, sig: NodeJS.Signals) => { try { process.kill(pid as number, sig); } catch { /* gone */ } };
+const ids = (log: string) => log.split('\n').filter(Boolean).map(l => JSON.parse(l).id);
 
 /** alice hosts, bob joins from the other home; returns what the tests need, cleaned up when the test ends. */
-async function room(t, env) {
+async function room(t: TestContext, env?: Record<string, string>) {
   const host = new Machine(t, 'host'), remote = new Machine(t, 'remote', { ...BASE, ...env });
   const alice = host.seat('alice'), bob = remote.seat('bob');
   host.join(alice, 'alice');
@@ -37,7 +38,7 @@ async function room(t, env) {
   const { seated: joined } = await remote.joinVia(host, alice, bob);
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
   assert.deepEqual(['enroll' in lf, 'invite' in lf, typeof lf.token], [false, false, 'string']);
-  assert.equal(joined.json.systemMessage, undefined, joined.stderr);
+  assert.equal(joined.json!.systemMessage, undefined, joined.stderr);
   const daemon = remote.lib(() => link.status(code)).pid;
   t.after(() => {
     for (const c of children(daemon)) signal(c, 'SIGKILL');
@@ -48,7 +49,7 @@ async function room(t, env) {
   const st = () => remote.lib(() => links.readState(code)) || {};
   const daemonLog = () => fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8');
   const same = () => remote.log(code) === host.log(code);
-  const post = text => host.lib(() => store.open(code).append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }));
+  const post = (text: string) => host.lib(() => store.open(code).append({ kind: 'status', text }, { via: 'system', from: 'room', system: true }));
   return { host, remote, alice, bob, code, daemon, st, daemonLog, same, post };
 }
 
@@ -64,7 +65,7 @@ test('remote e2e: a server that stops answering (half-open) is caught by a misse
   assert.match(r.daemonLog(), /swapped in, the old connection is closed/);
   await h.until(r.same, 5000, 50);
   assert.ok(r.same(), 'the mirror caught up over the new server');
-  assert.equal(r.remote.say(r.bob, 'over the new link').json.continue, false);
+  assert.equal(r.remote.say(r.bob, 'over the new link').json!.continue, false);
   assert.ok(r.same());
   assert.equal(new Set(ids(r.remote.log(r.code))).size, ids(r.remote.log(r.code)).length, 'no duplicate line');
   assert.equal(r.remote.lib(() => store.open(r.code).verifyChain()).ok, true);
@@ -87,7 +88,7 @@ test('remote e2e: a daemon frozen past the wake gap (as after a sleep) redials a
   await h.until(r.same, 5000, 50);
   assert.ok(r.same());
   assert.equal(new Set(ids(r.remote.log(r.code))).size, ids(r.remote.log(r.code)).length);
-  assert.equal(r.remote.say(r.bob, 'awake').json.continue, false);
+  assert.equal(r.remote.say(r.bob, 'awake').json!.continue, false);
   assert.ok(r.same());
 });
 
@@ -97,7 +98,7 @@ test('remote e2e: a seat whose lease lapsed on the host during an outage is rene
   const [old] = children(r.daemon);
   signal(old, 'SIGKILL');
   await h.until(() => r.st().state === 'offline', 5000, 20);
-  assert.match(r.st().lastError, /closed/);
+  assert.match(r.st().lastError!, /closed/);
   r.host.lib(() => store.open(r.code).members.update(ms => { ms.bob.seen_at = new Date(0).toISOString(); return ms; }));
   assert.equal(r.host.lib(() => leaseFresh(store.open(r.code).members.read().bob)), false, 'the host counts bob gone');
   const before = r.host.log(r.code);

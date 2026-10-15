@@ -1,7 +1,7 @@
 // lib/remote/bridge.ts (a synchronous call to a worker thread, with a deadline) and its proof gate: a RoomStore
 // whose every call crosses the bridge (test/support/thread-store.ts) behaves as the FsRoomStore it forwards to, and
 // the hook suites pass over it (`npm run test:thread-store` runs all of test/hooks; consent.node-test.ts runs here).
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,12 +13,14 @@ import * as store from '../lib/room/store.ts';
 import * as identity from '../lib/identity.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import { ThreadRoomStore } from './support/thread-store.ts';
+import type { RoomError } from '../lib/room/validate.ts';
+import type { Member } from '../lib/room/types.ts';
 
 const BRIDGE = path.join(h.LIB, 'remote', 'bridge.ts');
 const THREAD_STORE = path.join(import.meta.dirname, 'support', 'thread-store.ts');
 
 /** A handler module in a temp dir: handle(method, params) runs HANDLERS[method]. */
-function handlerFile(t) {
+function handlerFile(t: TestContext) {
   const file = path.join(h.tmpDir('sh-bridge-', t), 'handler.js');
   fs.writeFileSync(file, `
     const HANDLERS = {
@@ -44,7 +46,7 @@ test('bridge: a call returns the handler\'s result (a structured clone); a throw
   assert.equal(b.call('later', { ms: 20 }), 20, 'an async handler is awaited');
   assert.throws(() => b.call('throws', { why: 'rate', code: 'RATE' }), e => e instanceof store.RoomError && e.code === 'RATE' && e.message === 'no: rate');
   assert.throws(() => b.call('throws', { why: 'plain' }), e => e instanceof store.RoomError && e.code === 'INVALID' && e.message === 'no: plain');
-  assert.throws(() => b.call('fn', {}), e => e.code === 'INVALID' && /could not be cloned/.test(e.message), 'a result that does not clone is an error, not a timeout');
+  assert.throws(() => b.call('fn', {}), (e: RoomError) => e.code === 'INVALID' && /could not be cloned/.test(e.message), 'a result that does not clone is an error, not a timeout');
   assert.deepEqual(b.call('echo', 1).got, 1, 'the bridge still answers');
 });
 
@@ -58,10 +60,10 @@ test('bridge: no answer by the deadline is OFFLINE; nothing is retried, the late
   const b = createBridge({ handler: handlerFile(t), deadlineMs: 150 });
   t.after(() => b.close());
   const t0 = Date.now();
-  assert.throws(() => b.call('later', { ms: 400 }), e => e.code === 'OFFLINE' && /later: no answer within 150 ms/.test(e.message));
+  assert.throws(() => b.call('later', { ms: 400 }), (e: RoomError) => e.code === 'OFFLINE' && /later: no answer within 150 ms/.test(e.message));
   const took = Date.now() - t0;
   assert.ok(took >= 150 && took < 400, `gave up at the deadline (${took} ms)`);
-  assert.throws(() => b.call('later', { ms: 400 }, { deadlineMs: 50 }), e => e.code === 'OFFLINE', 'a per-call deadline');
+  assert.throws(() => b.call('later', { ms: 400 }, { deadlineMs: 50 }), (e: RoomError) => e.code === 'OFFLINE', 'a per-call deadline');
   assert.equal(b.call('later', { ms: 500 }, { deadlineMs: 2000 }), 500, 'the abandoned calls\' replies are skipped');
 });
 
@@ -70,7 +72,7 @@ test('bridge: a handler that needs the calling thread cannot finish while it wai
   t.after(() => b.close());
   const flag = new Int32Array(new SharedArrayBuffer(4));
   setImmediate(() => Atomics.store(flag, 0, 1)); // runs only once this thread is free again
-  assert.throws(() => b.call('callerFlag', { flag }), e => e.code === 'OFFLINE');
+  assert.throws(() => b.call('callerFlag', { flag }), (e: RoomError) => e.code === 'OFFLINE');
   await new Promise(r => setImmediate(r));
   assert.equal(b.call('callerFlag', { flag }), 'set', 'with the calling thread free, the same work finishes');
 });
@@ -88,7 +90,7 @@ test('bridge: the worker is unref\'d: a hook-like process exits when its body re
 });
 
 test('bridge: the deadlines fit inside the hook timeouts (SessionEnd has its own)', () => {
-  const hooks = JSON.parse(fs.readFileSync(path.join(h.PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
+  const hooks: Record<string, { hooks: { timeout: number }[] }[]> = JSON.parse(fs.readFileSync(path.join(h.PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
   for (const [event, groups] of Object.entries(hooks)) {
     for (const hk of groups.flatMap(g => g.hooks)) {
       const budget = event === 'SessionEnd' ? config.LINK_CALL_END_MS : config.LINK_CALL_MS;
@@ -116,12 +118,12 @@ test('thread store: appends (a signed human one too), compare-and-set updates, b
   // members.update: fn runs again when another writer got in between its read and its write
   let runs = 0;
   th.members.update(m => {
-    if (runs++ === 0) fsStore.members.update(cur => ({ ...cur, bob: { role: 'member' } }));
-    return { ...m, alice: { role: 'member' } };
+    if (runs++ === 0) fsStore.members.update(cur => ({ ...cur, bob: { role: 'member' } as Member })); // bare records (no name): the store keeps what it is given
+    return { ...m, alice: { role: 'member' } as Member };
   });
   assert.equal(runs, 2);
   assert.deepEqual(Object.keys(fsStore.members.read()).sort(), ['alice', 'bob']);
-  assert.deepEqual(th.kv.update('tasks', v => ({ n: ((v && v.n) || 0) + 1 })), { n: 1 });
+  assert.deepEqual(th.kv.update<{ n: number }>('tasks', v => ({ n: ((v && v.n) || 0) + 1 })), { n: 1 });
   assert.equal(th.kv.update('tasks', () => undefined), undefined);
   assert.deepEqual(fsStore.kv.get('tasks'), { n: 1 });
   assert.equal(th.kv.update('tasks', () => null), null);
@@ -129,16 +131,16 @@ test('thread store: appends (a signed human one too), compare-and-set updates, b
 
   assert.equal(th.blobs.put('plans/p.md', Buffer.from('# plan')), 'plans/p.md');
   assert.ok(Buffer.isBuffer(th.blobs.get('plans/p.md')));
-  assert.equal(fsStore.blobs.get('plans/p.md').toString(), '# plan');
+  assert.equal(fsStore.blobs.get('plans/p.md')!.toString(), '# plan');
   assert.equal(th.lock('proposal', () => th.lastId()), 2, 'a store call under the room lock');
 
-  delete globalThis[store.SIGNER];
-  assert.throws(() => th.append({ kind: 'say', text: 'forged' }, { via: 'human', from: 'alice' }), e => e.code === 'INVALID', 'no signer here: refused before the worker');
+  delete (globalThis as unknown as Record<symbol, unknown>)[store.SIGNER];
+  assert.throws(() => th.append({ kind: 'say', text: 'forged' }, { via: 'human', from: 'alice' }), (e: RoomError) => e.code === 'INVALID', 'no signer here: refused before the worker');
   assert.equal(fsStore.lastId(), 2);
 });
 
 test('gate: test/hooks/consent.node-test.ts passes with every store call of every process on a worker thread', () => {
-  const env = { ...process.env, SUB_HUMAN_TEST_THREAD_STORE: '1', NODE_OPTIONS: `--import ${THREAD_STORE}` };
+  const env: NodeJS.ProcessEnv = { ...process.env, SUB_HUMAN_TEST_THREAD_STORE: '1', NODE_OPTIONS: `--import ${THREAD_STORE}` };
   delete env.NODE_TEST_CONTEXT;
   const probe = spawnSync(process.execPath, ['-e', `process.stdout.write(require(${JSON.stringify(path.join(h.LIB, 'room', 'store.ts'))}).open('otter-1234').constructor.name)`], { env, encoding: 'utf8' });
   assert.equal(probe.stdout, 'ThreadRoomStore', 'the preload reaches child processes');
