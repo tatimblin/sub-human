@@ -9,6 +9,7 @@
 // system or write the host's documents directly are host-only (a mirror refuses them: HOST_ONLY, AUTH); the
 // remote cases at the end cover what a mirror does instead.
 import test from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,47 +27,60 @@ import { ThreadRoomStore } from './support/thread-store.ts';
 import { remoteStore, MACHINE } from './support/remote-store.ts';
 import { machineId } from '../lib/home.ts';
 import * as identity from '../lib/identity.ts';
+import type { Entry, EntryInput, Member, Members, Payload, RoomStore, Via } from '../lib/room/types.ts';
+
+type Err = Error & { code?: string };
+/** A store under test and how to change its log around it. */
+interface Backend {
+  make(t: TestContext): RoomStore;
+  hostOnly?: string;
+  /** replace line i (0-based) of the log */
+  tamper(s: RoomStore, i: number, fn: (line: string) => string): void;
+  /** a line written around the store */
+  raw(s: RoomStore, e: object): void;
+}
 
 const CODE = 'otter-1234';
-const FILES = {
+const FILES: Pick<Backend, 'tamper' | 'raw'> = {
   // replace line i (0-based) of the log
   tamper: (s, i, fn) => {
-    const lines = fs.readFileSync(path.join(s.dir, 'log.jsonl'), 'utf8').split('\n').filter(Boolean);
-    lines[i] = fn(lines[i]);
-    fs.writeFileSync(path.join(s.dir, 'log.jsonl'), lines.join('\n') + '\n');
+    const lines = fs.readFileSync(path.join(s.dir!, 'log.jsonl'), 'utf8').split('\n').filter(Boolean);
+    lines[i] = fn(lines[i]!);
+    fs.writeFileSync(path.join(s.dir!, 'log.jsonl'), lines.join('\n') + '\n');
   },
   // a line written around the store
-  raw: (s, e) => fs.appendFileSync(path.join(s.dir, 'log.jsonl'), JSON.stringify(e) + '\n'),
+  raw: (s, e) => fs.appendFileSync(path.join(s.dir!, 'log.jsonl'), JSON.stringify(e) + '\n'),
 };
 // A remote join on the host starts the room's Claude, as a local one does: never a real one.
 Object.assign(process.env, { SUB_HUMAN_CLAUDE: '/usr/bin/false' });
 /** A mirror of a room hosted on a worker (test/support/remote-store.ts), stopped when the test ends. */
-function mirrorOf(t) {
+function mirrorOf(t: TestContext): RoomStore {
   const r = remoteStore(CODE, { dir: h.tmpDir('sh-mirror-', t) });
   t.after(() => r.stop());
   return r.mirror;
 }
 const HOST_ONLY = 'host only: it writes as the system or the host\'s documents directly';
-const BACKENDS = {
+const BACKENDS: Record<string, Backend> = {
   fs: { make: t => store.open(CODE, { dir: h.tmpDir('sh-store-', t) }), ...FILES },
   thread: { make: t => new ThreadRoomStore(CODE, { dir: h.tmpDir('sh-store-', t) }), ...FILES },
   remote: { make: mirrorOf, hostOnly: HOST_ONLY, ...FILES },
   memory: {
     make: () => new MemoryRoomStore(CODE),
-    tamper: (s, i, fn) => { s._lines[i] = fn(s._lines[i]); },
-    raw: (s, e) => { s._lines.push(JSON.stringify(e)); },
+    // s is this backend's own make(): a MemoryRoomStore
+    tamper: (s, i, fn) => { const m = s as MemoryRoomStore; m._lines[i] = fn(m._lines[i]!); },
+    raw: (s, e) => { (s as MemoryRoomStore)._lines.push(JSON.stringify(e)); },
   },
 };
 
-const say = (s, from, text, via = 'human') => s.append({ kind: 'say', text }, { via, from });
-const sys = (s, kind, from, extra = {}) => s.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true });
+const say = (s: RoomStore, from: string, text: string, via: Via = 'human') => s.append({ kind: 'say', text }, { via, from });
+const sys = (s: RoomStore, kind: string, from: string, extra: Partial<EntryInput> = {}) => s.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true });
 const H = 'abcdef012345';
 /** The next raw line of s: id and prev chained, as a writer around the store would make it. */
-const rawLine = (s, fields) => {
+const rawLine = (s: RoomStore, fields: Omit<Entry, 'id' | 'at' | 'prev'>): Entry => {
   const last = s.readAll().at(-1);
   return { id: (last ? last.id : 0) + 1, at: new Date().toISOString(), ...fields, prev: store.hash12(last ? JSON.stringify(last) : '') };
 };
-const placed = ({ id, at, prev, ...payload }) => payload;
+const placed = ({ id, at, prev, ...payload }: Entry): Payload => payload as Payload; // a stored line's payload
 
 for (const [name, B] of Object.entries(BACKENDS)) {
   test(`store contract (${name}): append assigns rising ids and chains prev; reads agree`, t => {
@@ -80,7 +94,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.deepEqual([a.id, b.id, c.id], [1, 2, 3]);
     assert.equal(a.prev, store.hash12(''));
     assert.equal(c.by, 'bob', 'task_req gets by = from');
-    for (const [k, v] of Object.entries({ from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'one' })) assert.equal(a[k], v);
+    for (const [k, v] of Object.entries({ from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'one' })) assert.equal(a[k as keyof Entry], v);
     assert.ok(Date.parse(a.at) <= Date.now());
     const all = s.readAll();
     assert.deepEqual(all.map(e => e.id), [1, 2, 3]);
@@ -99,21 +113,21 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.equal(typeof e.sig, 'string');
     assert.equal(store.humanTrust(s.readAll()[0]), 'verified');
     assert.equal(store.unverifiedHuman(s.readAll()[0]), false);
-    assert.throws(() => s.append({ kind: 'nope' }, { via: 'agent', from: 'bob' }), e2 => e2.code === 'INVALID');
+    assert.throws(() => s.append({ kind: 'nope' }, { via: 'agent', from: 'bob' }), (e2: Err) => e2.code === 'INVALID');
     for (let i = 0; i < config.RATE_MAX; i++) say(s, 'bob', `p${i}`, 'agent');
-    assert.throws(() => say(s, 'bob', 'one too many', 'agent'), e2 => e2.code === 'RATE');
-    assert.throws(() => s.append({ kind: 'say', text: 'x'.repeat(config.LOG_LINE_MAX_BYTES) }, { via: 'system', from: 'room', system: true }), e2 => e2.code === 'INVALID');
+    assert.throws(() => say(s, 'bob', 'one too many', 'agent'), (e2: Err) => e2.code === 'RATE');
+    assert.throws(() => s.append({ kind: 'say', text: 'x'.repeat(config.LOG_LINE_MAX_BYTES) }, { via: 'system', from: 'room', system: true }), (e2: Err) => e2.code === 'INVALID');
     assert.equal(s.lastId(), 1 + config.RATE_MAX, 'nothing refused was written');
   });
 
   test(`store contract (${name}): a post addressed to one member has its own rate bucket per (from, to)`, t => {
     h.freshHome(t);
     const s = B.make(t);
-    const to = (who, text) => s.append({ kind: 'say', text, to: who }, { via: 'agent', from: 'bob' });
+    const to = (who: string, text: string) => s.append({ kind: 'say', text, to: who }, { via: 'agent', from: 'bob' });
     for (let i = 0; i < config.RATE_MAX; i++) say(s, 'bob', `p${i}`, 'agent');
-    assert.throws(() => say(s, 'bob', 'room is full', 'agent'), e => e.code === 'RATE');
+    assert.throws(() => say(s, 'bob', 'room is full', 'agent'), (e: Err) => e.code === 'RATE');
     for (let i = 0; i < config.RATE_ADDRESSED_MAX; i++) to('alice', `a${i}`);
-    assert.throws(() => to('alice', 'one too many'), e => e.code === 'RATE' && /to alice/.test(e.message));
+    assert.throws(() => to('alice', 'one too many'), (e: Err) => e.code === 'RATE' && /to alice/.test(e.message));
     assert.equal(to('carol', 'another bucket').to, 'carol');
     assert.equal(s.append({ kind: 'say', text: 'mine', to: 'alice' }, { via: 'agent', from: 'dave' }).from, 'dave', 'per sender');
   });
@@ -129,20 +143,20 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     // alice's seat on another machine has a fresh lease: taken from here, whatever pid asks; her own machine rejoins
     const taken = s.members.join({ name: 'alice', role: 'member', machine: here, pid: process.pid });
     assert.equal(taken.ok, false);
-    assert.match(taken.error, /name taken: "alice" is already in otter-1234/);
+    assert.match(taken.error!, /name taken: "alice" is already in otter-1234/);
     assert.deepEqual(s.members.join({ name: 'alice', role: 'member', machine: 'far-away' }), { ok: true, rejoin: true });
     // a stale lease frees the name
     s.members.update(ms => { ms.alice.seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString(); return ms; });
     assert.deepEqual(s.members.join({ name: 'alice', role: 'member', machine: here, pid: process.pid }), { ok: true, rejoin: true });
     assert.deepEqual([s.members.read().alice.machine, s.members.read().alice.pid], [here, process.pid]);
     // beat: the lease (at most every SEAT_BEAT_MS) and presence; a bad state writes nothing
-    const later = Date.parse(s.members.read().alice.seen_at) + config.SEAT_BEAT_MS + 1;
+    const later = Date.parse(s.members.read().alice.seen_at!) + config.SEAT_BEAT_MS + 1;
     assert.equal(s.members.beat('alice', { now: later, presence: { state: 'idle', detail: 'x' } }), true);
     assert.equal(s.members.read().alice.seen_at, new Date(later).toISOString());
     assert.deepEqual(s.kv.get('presence/alice'), { state: 'idle', at: new Date(later).toISOString(), detail: 'x' });
     assert.equal(s.members.beat('alice', { now: later + 1000 }), true);
     assert.equal(s.members.read().alice.seen_at, new Date(later).toISOString(), 'renewed at most every SEAT_BEAT_MS');
-    assert.throws(() => s.members.beat('alice', { presence: { state: 'away' } }), e => e.code === 'INVALID');
+    assert.throws(() => s.members.beat('alice', { presence: { state: 'away' } }), (e: Err) => e.code === 'INVALID');
     assert.equal(s.members.beat('zed'), false, 'no seat');
     // leave: once
     assert.equal(s.members.leave('alice'), true);
@@ -187,16 +201,16 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const alice = seatKey.publicPem(CODE, 'alice');
     sys(s, 'member_joined', 'alice', { pubkey: alice });
     assert.deepEqual([...s.pins().keys()], ['alice']);
-    assert.ok(s.pins().get('alice').equals(crypto.createPublicKey(alice)));
+    assert.ok(s.pins().get('alice')!.equals(crypto.createPublicKey(alice)));
     assert.equal(store.humanTrust(forged), 'unverified', 'a keyed room never returns legacy');
     // the same key again (a rejoin) is fine; another key for a pinned name is refused
     sys(s, 'member_joined', 'alice', { pubkey: alice });
-    const stranger = crypto.generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' });
-    assert.throws(() => sys(s, 'member_joined', 'alice', { pubkey: stranger }), e => e.code === 'AUTH' && /a lost key means a new name/.test(e.message));
+    const stranger = crypto.generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' }) as string; // pem is a string
+    assert.throws(() => sys(s, 'member_joined', 'alice', { pubkey: stranger }), (e: Err) => e.code === 'AUTH' && /a lost key means a new name/.test(e.message));
     // alice's signed answer counts; bob, with a local key but none pinned, is refused, signed or not
     s.append({ kind: 'signoff', proposal_hash: H }, { via: 'human', from: 'alice' });
-    assert.throws(() => s.append({ kind: 'signoff', proposal_hash: H }, { via: 'human', from: 'bob' }), e => e.code === 'AUTH' && /no key is pinned for bob/.test(e.message));
-    assert.throws(() => s.place({ from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H }), e => e.code === 'AUTH');
+    assert.throws(() => s.append({ kind: 'signoff', proposal_hash: H }, { via: 'human', from: 'bob' }), (e: Err) => e.code === 'AUTH' && /no key is pinned for bob/.test(e.message));
+    assert.throws(() => s.place({ from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H }), (e: Err) => e.code === 'AUTH');
     const m = consent.fold(s.readAll()).matrix(H);
     assert.deepEqual([m.agreed, m.missing], [['alice'], ['bob']]);
   });
@@ -206,17 +220,17 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const s = B.make(t);
     const p = store.toPayload(CODE, { kind: 'say', text: 'once' }, { via: 'human', from: 'alice' });
     s.place(p);
-    assert.throws(() => s.place(p), e => e.code === 'AUTH' && /nonce/.test(e.message), 'a replay');
+    assert.throws(() => s.place(p), (e: Err) => e.code === 'AUTH' && /nonce/.test(e.message), 'a replay');
     const key = seatKey.ensure(CODE, 'alice');
-    const fields = { from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'x' };
+    const fields: Payload = { from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'x' };
     const refused = [
       envelope.sign(fields, key, { room: CODE, from: 'alice', now: Date.now() - envelope.SIG_SKEW_MS - 1000 }),
       envelope.sign(fields, key, { room: 'vole-0000', from: 'alice' }),
       { ...envelope.sign(fields, key, { room: CODE, from: 'alice' }), text: 'changed' },
     ];
-    for (const r of refused) assert.throws(() => s.place(r), e => e.code === 'AUTH', JSON.stringify(r).slice(0, 80));
-    assert.throws(() => s.place({ ...fields, via: 'agent', nonce: 'n', sig: 's' }), e => e.code === 'INVALID', 'only a person\'s entry is signed');
-    assert.throws(() => s.place({ ...fields, via: 'system', kind: 'status' }), e => e.code === 'INVALID', 'system needs {system: true}');
+    for (const r of refused) assert.throws(() => s.place(r), (e: Err) => e.code === 'AUTH', JSON.stringify(r).slice(0, 80));
+    assert.throws(() => s.place({ ...fields, via: 'agent', nonce: 'n', sig: 's' }), (e: Err) => e.code === 'INVALID', 'only a person\'s entry is signed');
+    assert.throws(() => s.place({ ...fields, via: 'system', kind: 'status' }), (e: Err) => e.code === 'INVALID', 'system needs {system: true}');
     assert.equal(s.lastId(), 1, 'nothing refused was written');
   });
 
@@ -243,7 +257,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const s = B.make(t);
     say(s, 'alice', 'a'); say(s, 'alice', 'b');
     const tl = s.tailer();
-    const got = [];
+    const got: number[] = [];
     const stop = s.watch(e => got.push(e.id), { after: 1, intervalMs: 10 });
     say(s, 'alice', 'c');
     await h.until(() => got.length === 2, 2000, 10);
@@ -304,7 +318,7 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     s.setCursor('tail-alice', 7);
     assert.equal(s.getCursor('tail-alice'), 7);
     assert.equal(s.getCursor('tail-bob'), 0);
-    assert.throws(() => s.setCursor('../x', 1), e => e.code === 'INVALID');
+    assert.throws(() => s.setCursor('../x', 1), (e: Err) => e.code === 'INVALID');
   });
 
   test(`store contract (${name}): members read/update: atomic, null writes nothing, reads are copies`, { skip: B.hostOnly }, t => {
@@ -314,9 +328,9 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     assert.deepEqual(s.members.update(ms => ({ ...ms, alice: { name: 'alice', role: 'member' } })), { alice: { name: 'alice', role: 'member' } });
     assert.equal(s.members.update(() => null), null);
     const r = s.members.read();
-    r.alice.role = 'changed';
+    (r.alice as { role: string }).role = 'changed'; // deliberate: not a role, only a change to a copy
     assert.equal(s.members.read().alice.role, 'member', 'mutating a read changes nothing stored');
-    s.members.update(ms => { ms.bob = { name: 'bob' }; return ms; });
+    s.members.update(ms => { ms.bob = { name: 'bob' } as Member; return ms; });
     assert.deepEqual(Object.keys(s.members.read()).sort(), ['alice', 'bob']);
   });
 
@@ -327,12 +341,12 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     const ref = s.blobs.put('plans/abcdef012345.md', bytes);
     assert.equal(ref, 'plans/abcdef012345.md');
     assert.ok(s.blobs.has(ref));
-    assert.ok(s.blobs.get(ref).equals(bytes));
+    assert.ok(s.blobs.get(ref)!.equals(bytes));
     assert.equal(s.blobs.ref('/old/home/rooms/otter-1234/plans/abcdef012345.md'), ref, 'an older entry\'s absolute path');
-    assert.ok(s.blobs.get('/old/home/rooms/otter-1234/plans/abcdef012345.md').equals(bytes));
+    assert.ok(s.blobs.get('/old/home/rooms/otter-1234/plans/abcdef012345.md')!.equals(bytes));
     assert.equal(s.blobs.get('plans/missing.md'), null);
     assert.equal(s.blobs.ref('../etc/passwd'), null);
-    assert.throws(() => s.blobs.put('../x', bytes), e => e.code === 'INVALID');
+    assert.throws(() => s.blobs.put('../x', bytes), (e: Err) => e.code === 'INVALID');
   });
 
   test(`store contract (${name}): kv: get/set/update/delete/list, update undefined keeps and null deletes`, { skip: B.hostOnly }, t => {
@@ -348,15 +362,15 @@ for (const [name, B] of Object.entries(BACKENDS)) {
     s.kv.set('presence/bob', { state: 'working' });
     s.kv.set('members/alice/review', { phase: 'shown' });
     assert.deepEqual(s.kv.list('presence/'), ['presence/alice', 'presence/bob']);
-    assert.deepEqual(s.kv.update('presence/alice', cur => ({ ...cur, at: 1 })), { state: 'idle', at: 1 });
+    assert.deepEqual(s.kv.update<object>('presence/alice', cur => ({ ...cur, at: 1 })), { state: 'idle', at: 1 });
     assert.equal(s.kv.update('presence/bob', () => null), null);
     assert.deepEqual(s.kv.list('presence/'), ['presence/alice']);
     s.kv.delete('presence/alice');
     assert.deepEqual(s.kv.list('presence/'), []);
     assert.equal(s.kv.lock('tasks', () => 'ran'), 'ran');
     assert.equal(s.lock('proposal', () => 'ran'), 'ran');
-    assert.throws(() => s.kv.get('../x'), e => e.code === 'INVALID');
-    assert.throws(() => s.kv.list('presence'), e => e.code === 'INVALID');
+    assert.throws(() => s.kv.get('../x'), (e: Err) => e.code === 'INVALID');
+    assert.throws(() => s.kv.list('presence'), (e: Err) => e.code === 'INVALID');
   });
 
   test(`store contract (${name}): a Room over the store renders and queries this room only`, { skip: B.hostOnly }, t => {
@@ -379,7 +393,7 @@ test('store contract (fs): members.update is atomic across processes (no lost up
   const script = `const s=require(${JSON.stringify(path.join(h.LIB, 'room', 'store.ts'))}).open(${JSON.stringify(CODE)},{dir:${JSON.stringify(dir)}});`
     + `const t=Number(process.argv[1]);while(Date.now()<t){}for(let i=0;i<${K};i++)s.members.update(m=>{m.n=(m.n||0)+1;m['p'+process.pid]=(m['p'+process.pid]||0)+1;return m;});`;
   const start = Date.now() + 400;
-  await Promise.all(Array.from({ length: N }, () => new Promise((resolve, reject) => {
+  await Promise.all(Array.from({ length: N }, () => new Promise<void>((resolve, reject) => {
     const c = spawn(process.execPath, ['-e', script, String(start)], { env: h.childEnv(), stdio: ['ignore', 'ignore', 'pipe'] });
     let err = '';
     c.stderr.on('data', d => { err += d; });
@@ -395,8 +409,9 @@ test('store contract (memory): members.update retries when another writer got in
   let calls = 0;
   s.members.update(ms => {
     calls++;
-    if (calls === 1) s.members.update(x => ({ ...x, other: 1 })); // a concurrent writer between read and write
-    return { ...ms, mine: 1 };
+    // numbers, not seats: the memory store's compare-and-set does not look inside
+    if (calls === 1) s.members.update(x => ({ ...x, other: 1 }) as unknown as Members); // a concurrent writer between read and write
+    return { ...ms, mine: 1 } as unknown as Members;
   });
   assert.equal(calls, 2, 'fn ran again on the newer version');
   assert.deepEqual(s.members.read(), { other: 1, mine: 1 });
@@ -425,13 +440,13 @@ test('store contract (remote): a write goes through the host and reads back at o
   assert.equal(store.humanTrust(s.readAll().at(-1)), 'verified');
   // the join: the seat's key and a proof from this thread's signer; the host logs member_joined with them
   assert.deepEqual(s.members.join({ name: 'erin', role: 'member', machine: MACHINE }), { ok: true });
-  const joined = s.readAll().at(-1);
+  const joined = s.readAll().at(-1)!;
   assert.deepEqual([joined.kind, joined.from, joined.machine, joined.pubkey], ['member_joined', 'erin', MACHINE, seatKey.publicPem(CODE, 'erin')]);
   assert.deepEqual([s.members.read().erin.machine, 'pid' in s.members.read().erin], [MACHINE, false], 'a seat on another machine lives by its lease');
   assert.equal(s.members.beat('erin', { presence: { state: 'idle' } }), true);
   assert.equal(s.kv.get('presence/erin').state, 'idle', 'presence written on the host, streamed back');
   assert.equal(s.members.leave('erin', { reason: 'done' }), true);
-  assert.equal(s.readAll().at(-1).text, 'erin left (done)');
+  assert.equal(s.readAll().at(-1)!.text, 'erin left (done)');
   assert.ok(s.members.read().erin.left_at);
   assert.equal(s.members.beat('erin'), false, 'a left seat');
   assert.deepEqual(store.open(CODE).readAll().map(x => x.id), s.readAll().map(x => x.id), 'the host log');
@@ -440,13 +455,13 @@ test('store contract (remote): a write goes through the host and reads back at o
 test('store contract (remote): the host\'s documents and system writes are refused; session-local documents stay on this machine', t => {
   h.freshHome(t);
   const s = mirrorOf(t);
-  assert.throws(() => s.members.update(() => ({})), e => e.code === 'HOST_ONLY');
+  assert.throws(() => s.members.update(() => ({})), (e: Err) => e.code === 'HOST_ONLY');
   for (const key of ['members', 'tasks', 'presence/alice']) {
-    assert.throws(() => s.kv.set(key, {}), e => e.code === 'HOST_ONLY', key);
-    assert.throws(() => s.kv.delete(key), e => e.code === 'HOST_ONLY', key);
+    assert.throws(() => s.kv.set(key, {}), (e: Err) => e.code === 'HOST_ONLY', key);
+    assert.throws(() => s.kv.delete(key), (e: Err) => e.code === 'HOST_ONLY', key);
   }
-  assert.throws(() => s.kv.update('tasks', () => []), e => e.code === 'HOST_ONLY');
-  assert.throws(() => sys(s, 'status', 'alice'), e => e.code === 'AUTH' && /never writes via "system"/.test(e.message));
+  assert.throws(() => s.kv.update('tasks', () => []), (e: Err) => e.code === 'HOST_ONLY');
+  assert.throws(() => sys(s, 'status', 'alice'), (e: Err) => e.code === 'AUTH' && /never writes via "system"/.test(e.message));
   s.kv.set('rows/notices-alice', { ids: [1] });
   s.setCursor('tail-alice', 3);
   assert.deepEqual([s.kv.get('rows/notices-alice'), s.getCursor('tail-alice')], [{ ids: [1] }, 3]);
@@ -460,12 +475,12 @@ test('store contract (remote): blobs are put on the host by their content and fe
   const plan = Buffer.from('# plan\né\n');
   const ref = `plans/${store.hash12(plan)}.md`;
   assert.equal(s.blobs.put(ref, plan), ref);
-  assert.ok(s.blobs.has(ref) && store.open(CODE).blobs.get(ref).equals(plan));
-  assert.throws(() => s.blobs.put('plans/abcdef012345.md', plan), e => e.code === 'INVALID' && /content/.test(e.message));
+  assert.ok(s.blobs.has(ref) && store.open(CODE).blobs.get(ref)!.equals(plan));
+  assert.throws(() => s.blobs.put('plans/abcdef012345.md', plan), (e: Err) => e.code === 'INVALID' && /content/.test(e.message));
   const other = Buffer.from('# only on the host\n');
   const ref2 = store.open(CODE).blobs.put(`plans/${store.hash12(other)}.md`, other);
   assert.equal(s.blobs.has(ref2), false);
-  assert.ok(s.blobs.get(ref2).equals(other), 'fetched over the link');
+  assert.ok(s.blobs.get(ref2)!.equals(other), 'fetched over the link');
   assert.equal(s.blobs.get('plans/missing.md'), null);
 });
 
@@ -476,7 +491,7 @@ test('store contract (remote): with the link down a write is OFFLINE at once and
   say(r.mirror, 'alice', 'before');
   r.stop();
   const t0 = Date.now();
-  assert.throws(() => say(r.mirror, 'alice', 'after'), e => e.code === 'OFFLINE' && /nothing was sent/.test(e.message));
+  assert.throws(() => say(r.mirror, 'alice', 'after'), (e: Err) => e.code === 'OFFLINE' && /nothing was sent/.test(e.message));
   assert.ok(Date.now() - t0 < config.LINK_CALL_MS, 'not at the deadline: the daemon is gone');
   assert.deepEqual(r.mirror.readAll().map(e => e.text), ['before']);
   assert.deepEqual(store.open(CODE).readAll().map(e => e.text), ['before']);

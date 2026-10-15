@@ -10,18 +10,21 @@ import * as room from '../lib/room.ts';
 import * as config from '../lib/config.ts';
 import * as lanes from '../lib/room/lanes.ts';
 import * as notices from '../lib/notices.ts';
+import type { Room } from '../lib/room.ts';
+import type { FsRoomStore } from '../lib/room/store.ts';
+import type { Entry, EntryInput, Via } from '../lib/room/types.ts';
 
-let R = null; // the current test's room
+let R: Room = null!; // the current test's room (fresh() opens it)
 function fresh() {
   h.freshHome();
   R = room.open(h.newRoom());
   return R.code;
 }
 const H1 = 'aaaaaaaaaaaa', H2 = 'bbbbbbbbbbbb';
-const say = (from, text, via = 'human', extra = {}) => R.append({ kind: 'say', text, ...extra }, { via, from });
-const sys = (kind, extra, from = 'claude') => R.append({ kind, ...extra }, { via: 'system', from, system: true });
+const say = (from: string, text: string, via: Via = 'human', extra: Partial<EntryInput> = {}) => R.append({ kind: 'say', text, ...extra }, { via, from });
+const sys = (kind: string, extra: Partial<EntryInput>, from = 'claude') => R.append({ kind, ...extra }, { via: 'system', from, system: true });
 const N = room.CHAT_NEST;
-const bare = l => !l.startsWith(N);
+const bare = (l: string) => !l.startsWith(N);
 
 // ---------- forged lines ----------
 test('chatLines: a multi-line post cannot forge a decision, a signoff, another sender or a (for Claude) line', () => {
@@ -62,7 +65,7 @@ test('chatLines: at most CHAT_LINES_MAX text lines, then a visible marker naming
   assert.equal(ls.length, config.CHAT_LINES_MAX + 1);
   assert.equal(ls.at(-1), `${N}[+7 more lines: read({ids:[${e.id}]})]`);
   const one = room.chatLines(say('bob', Array.from({ length: config.CHAT_LINES_MAX + 1 }, () => 'x').join('\n')));
-  assert.match(one.at(-1), /\[\+1 more line: read/);
+  assert.match(one.at(-1)!, /\[\+1 more line: read/);
 });
 
 test('fmt and line: the text cannot fake another entry header', () => {
@@ -80,7 +83,7 @@ test('fmt and line: the text cannot fake another entry header', () => {
 // ---------- size caps ----------
 test('validate: text bytes, refs, approvers, string fields; append: the serialized line', () => {
   fresh();
-  const err = (fn, re) => assert.throws(fn, e => e.code === 'INVALID' && re.test(e.message), re.source);
+  const err = (fn: () => unknown, re: RegExp) => assert.throws(fn, (e: Error & { code?: string }) => e.code === 'INVALID' && re.test(e.message), re.source);
   say('bob', 'x'.repeat(config.ENTRY_TEXT_MAX_BYTES));
   err(() => say('bob', 'x'.repeat(config.ENTRY_TEXT_MAX_BYTES + 1)), /text is too long \(16385 bytes; the limit is 16384\)/);
   err(() => say('bob', 'é'.repeat(config.ENTRY_TEXT_MAX_BYTES / 2 + 1)), /text is too long/); // bytes, not chars
@@ -98,11 +101,11 @@ test('validate: text bytes, refs, approvers, string fields; append: the serializ
 test('append: id and prev from the tail, past a corrupt or unterminated last line, and on a large log', () => {
   fresh();
   say('alice', 'one');
-  fs.appendFileSync(R.store.logFile, '{"torn": ');
+  fs.appendFileSync((R.store as FsRoomStore).logFile, '{"torn": ');
   const e = say('bob', 'two');
   assert.equal(e.id, 2);
   assert.equal(e.prev, room.hash12('{"torn": '), 'prev hashes the last line, even a corrupt one');
-  const lines = fs.readFileSync(R.store.logFile, 'utf8').split('\n');
+  const lines = fs.readFileSync((R.store as FsRoomStore).logFile, 'utf8').split('\n');
   assert.equal(lines[1], '{"torn": ');
   assert.equal(R.lastId(), 2);
   // a log much bigger than one tail chunk: a system append reads only its end (a person's append also reads back
@@ -110,18 +113,20 @@ test('append: id and prev from the tail, past a corrupt or unterminated last lin
   fresh();
   const big = 'b'.repeat(8000);
   for (let i = 0; i < 40; i++) say('alice', big + i);
-  const reads = [];
+  const reads: number[] = [];
   const orig = fs.readSync;
-  fs.readSync = function (fd, buf, off, len, pos) { reads.push(len); return orig.apply(this, arguments); };
+  fs.readSync = function (this: unknown, fd: number, buf: NodeJS.ArrayBufferView, off: number, len: number, pos: fs.ReadPosition | null) {
+    reads.push(len); return orig.apply(this, arguments as unknown as Parameters<typeof orig>);
+  } as typeof fs.readSync;
   try { R.append({ kind: 'status', text: 'after' }, { via: 'system', from: 'room', system: true }); } finally { fs.readSync = orig; }
-  assert.ok(reads.reduce((a, b) => a + b, 0) < 70 * 1024, `append read ${reads.reduce((a, b) => a + b, 0)} bytes of a ${fs.statSync(R.store.logFile).size} byte log`);
+  assert.ok(reads.reduce((a, b) => a + b, 0) < 70 * 1024, `append read ${reads.reduce((a, b) => a + b, 0)} bytes of a ${fs.statSync((R.store as FsRoomStore).logFile).size} byte log`);
   assert.deepEqual(R.validateChain(), { ok: true, count: 41 });
 });
 
 test('append: the agent rate limit still counts only the last RATE_WINDOW_MS', () => {
   fresh();
   for (let i = 0; i < config.RATE_MAX; i++) say('bob', `m${i}`, 'agent');
-  assert.throws(() => say('bob', 'over', 'agent'), e => e.code === 'RATE');
+  assert.throws(() => say('bob', 'over', 'agent'), (e: Error & { code?: string }) => e.code === 'RATE');
   say('carol', 'other', 'agent');
   say('bob', 'human words are not limited');
 });
@@ -135,40 +140,40 @@ test('readAll: cached per process, sees appends from other processes, rewrites a
   assert.equal(r.status, 0, String(r.stderr));
   assert.deepEqual(R.readAll().map(e => e.text), ['one', 'two']);
   const a = R.readAll();
-  a.push({ id: 99 });
+  a.push({ id: 99 } as Entry); // deliberate: a bare entry pushed onto a read's copy
   assert.equal(R.readAll().length, 2, 'each call returns its own array');
   // same-size rewrite
-  const raw = fs.readFileSync(R.store.logFile, 'utf8');
-  fs.writeFileSync(R.store.logFile, raw.replace('"two"', '"TWO"'));
+  const raw = fs.readFileSync((R.store as FsRoomStore).logFile, 'utf8');
+  fs.writeFileSync((R.store as FsRoomStore).logFile, raw.replace('"two"', '"TWO"'));
   const t = new Date(Date.now() + 5000);
-  fs.utimesSync(R.store.logFile, t, t);
+  fs.utimesSync((R.store as FsRoomStore).logFile, t, t);
   assert.deepEqual(R.readAll().map(e => e.text), ['one', 'TWO']);
   // grown with an edited middle
-  fs.writeFileSync(R.store.logFile, raw.replace('"one"', '"one!"'));
+  fs.writeFileSync((R.store as FsRoomStore).logFile, raw.replace('"one"', '"one!"'));
   assert.deepEqual(R.readAll().map(e => e.text), ['one!', 'two']);
   // reset
-  fs.writeFileSync(R.store.logFile, '');
+  fs.writeFileSync((R.store as FsRoomStore).logFile, '');
   assert.deepEqual(R.readAll(), []);
   say('carol', 'fresh');
   assert.deepEqual(R.readAll().map(e => [e.id, e.text]), [[1, 'fresh']]);
   // an unterminated last line is parsed but not cached as complete
-  fs.appendFileSync(R.store.logFile, JSON.stringify({ id: 2, kind: 'say', text: 'half' }));
+  fs.appendFileSync((R.store as FsRoomStore).logFile, JSON.stringify({ id: 2, kind: 'say', text: 'half' }));
   assert.deepEqual(R.readAll().map(e => e.id), [1, 2]);
-  fs.appendFileSync(R.store.logFile, '\n');
+  fs.appendFileSync((R.store as FsRoomStore).logFile, '\n');
   assert.deepEqual(R.readAll().map(e => e.id), [1, 2]);
-  fs.unlinkSync(R.store.logFile);
+  fs.unlinkSync((R.store as FsRoomStore).logFile);
   assert.deepEqual(R.readAll(), []);
 });
 
 // ---------- incremental verification ----------
 test('verifyChain: checks only new bytes from log.idx, never passes a break, rebuilds on reset', () => {
   fresh();
-  const idx = () => JSON.parse(fs.readFileSync(path.join(R.store.dir, 'log.idx'), 'utf8'));
+  const idx = () => JSON.parse(fs.readFileSync(path.join(R.store.dir!, 'log.idx'), 'utf8'));
   assert.deepEqual(R.verifyChain(), { ok: true, count: 0, checked: 0, offset: 0, id: 0, hash: room.hash12(''), from: 0 });
   for (let i = 0; i < 5; i++) say('alice', `m${i}`);
   let r = R.verifyChain();
   assert.equal(r.ok, true); assert.equal(r.checked, 5); assert.equal(r.count, 5); assert.equal(r.id, 5);
-  assert.equal(r.offset, fs.statSync(R.store.logFile).size);
+  assert.equal(r.offset, fs.statSync((R.store as FsRoomStore).logFile).size);
   assert.equal(idx().offset, r.offset);
   r = R.verifyChain();
   assert.equal(r.checked, 0, 'nothing new');
@@ -176,13 +181,13 @@ test('verifyChain: checks only new bytes from log.idx, never passes a break, reb
   r = R.verifyChain();
   assert.deepEqual([r.ok, r.checked, r.count, r.from > 0], [true, 2, 7, true]);
   // a line being written (no newline yet) waits for the next call
-  fs.appendFileSync(R.store.logFile, '{"id":8');
+  fs.appendFileSync((R.store as FsRoomStore).logFile, '{"id":8');
   r = R.verifyChain();
   assert.deepEqual([r.ok, r.checked], [true, 0]);
-  fs.writeFileSync(R.store.logFile, fs.readFileSync(R.store.logFile, 'utf8').replace(/\{"id":8$/, ''));
+  fs.writeFileSync((R.store as FsRoomStore).logFile, fs.readFileSync((R.store as FsRoomStore).logFile, 'utf8').replace(/\{"id":8$/, ''));
   // a forged line appended after the checkpoint is caught, and the checkpoint stays before it
   const before = idx().offset;
-  fs.appendFileSync(R.store.logFile, JSON.stringify({ id: 8, at: new Date().toISOString(), from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H1, prev: 'ffffffffffff' }) + '\n');
+  fs.appendFileSync((R.store as FsRoomStore).logFile, JSON.stringify({ id: 8, at: new Date().toISOString(), from: 'bob', via: 'human', kind: 'signoff', to: 'room', proposal_hash: H1, prev: 'ffffffffffff' }) + '\n');
   r = R.verifyChain();
   assert.deepEqual([r.ok, r.badAt], [false, 8]);
   assert.equal(idx().offset, before);
@@ -191,15 +196,15 @@ test('verifyChain: checks only new bytes from log.idx, never passes a break, reb
   assert.equal(R.verifyChain({ fromOffset: 3 }).ok, false, 'not a line boundary');
   assert.equal(R.verifyChain({ fromOffset: 0 }).badAt, 8);
   // the log was reset under the checkpoint: verified again from byte 0
-  fs.writeFileSync(R.store.logFile, '');
+  fs.writeFileSync((R.store as FsRoomStore).logFile, '');
   say('carol', 'new room');
   r = R.verifyChain();
   assert.deepEqual([r.ok, r.from, r.count], [true, 0, 1]);
   // an edit of the line at the checkpoint invalidates it
   say('carol', 'second');
   R.verifyChain();
-  const lines = fs.readFileSync(R.store.logFile, 'utf8');
-  fs.writeFileSync(R.store.logFile, lines.replace('"second"', '"SECOND"'));
+  const lines = fs.readFileSync((R.store as FsRoomStore).logFile, 'utf8');
+  fs.writeFileSync((R.store as FsRoomStore).logFile, lines.replace('"second"', '"SECOND"'));
   r = R.verifyChain();
   assert.equal(r.from, 0, 'checkpoint no longer matches: from byte 0');
   assert.equal(r.ok, true, 'the edited line is the last one, so its successor does not exist yet');
@@ -224,7 +229,7 @@ test('readView: lanes, proposals and notices judged against the view match readA
   R.append({ kind: 'proposal', text: `proposal ${H2}: two`, hash: H2, approvers: ['alice'] }, { via: 'agent', from: 'bob' });
   say('bob', 'last');
   const all = R.readAll();
-  const last = all.at(-1).id;
+  const last = all.at(-1)!.id;
   for (const after of [1, 5, forged.id - 1, forged.id, 40, 47, 50, last - 3, last, Infinity]) {
     const view = R.readView({ after });
     assert.deepEqual(view.map(e => e.id), [...view.map(e => e.id)].sort((a, b) => a - b), 'log order');

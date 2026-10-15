@@ -4,10 +4,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
 import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
 import * as lock from '../lib/lock.ts';
+import type { FsRoomStore } from '../lib/room/store.ts';
 
 test('room: a held log lock times out as RoomError LOCK with a message', async t => {
   h.freshHome();
@@ -15,7 +15,7 @@ test('room: a held log lock times out as RoomError LOCK with a message', async t
   R.append({ kind: 'say', text: 'first' }, { via: 'agent', from: 'alice' });
   const sleeper = h.spawnSleeper(30);
   await h.sleep(100);
-  const L = R.store.logFile + '.lock';
+  const L = (R.store as FsRoomStore).logFile + '.lock'; // freshHome: the file store
   fs.writeFileSync(L, `${sleeper.pid} ${os.hostname()} ${lock.pidStart(sleeper.pid)}`); // a live owner
   // the clock runs 1000x fast, so LOCK_TIMEOUT_MS passes in a few ms
   const realNow = Date.now;

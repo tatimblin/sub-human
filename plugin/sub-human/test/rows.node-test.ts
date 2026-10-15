@@ -6,17 +6,23 @@ import os from 'node:os';
 import path from 'node:path';
 import * as rows from '../lib/rows.ts';
 import * as roomLib from '../lib/room.ts';
+import type { Identity } from '../lib/identity.ts';
+import type { Entry, Member, Members } from '../lib/room/types.ts';
+import type { Task } from '../lib/types-app.ts';
 
-const PLUGIN = path.join(import.meta.dirname, '..');
+/** A seat as rows reads it. */
+type Seat = Pick<Identity, 'code' | 'name' | 'role'>;
+const me = (m: Seat): Seat => m;
+type RowOpts = NonNullable<Parameters<typeof rows.rowText>[3]>;
 
 /** A room written by hand (members.json + log.jsonl), independent of the identity / room writers. */
-function makeRoom(members, entries = []) {
+function makeRoom(members: (Pick<Member, 'name'> & Partial<Member>)[], entries: object[] = []) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-rows-'));
   process.env.SUB_HUMAN_HOME = home;
   const code = 'marmot-2509';
   const dir = path.join(home, 'rooms', code);
   fs.mkdirSync(dir, { recursive: true });
-  const ms = {};
+  const ms: Members = {};
   for (const m of members) ms[m.name] = { role: m.name === 'claude' ? 'claude' : 'member', joined_at: new Date(0).toISOString(), ...m };
   fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
   const log = entries.map((e, i) => JSON.stringify({ id: i + 1, at: new Date(Date.now() - (entries.length - i) * 1000).toISOString(), via: 'agent', to: 'room', text: 'x', ...e }));
@@ -24,8 +30,6 @@ function makeRoom(members, entries = []) {
   return { home, code, dir, ms };
 }
 const H = '593da0aaaaaa';
-const plan = (approvers, hash = H) => ({ kind: 'plan_rev', via: 'system', from: 'claude', plan_hash: hash, approvers });
-const human = (from, kind, extra = {}) => ({ via: 'human', from, kind, plan_hash: H, ...extra });
 
 test('rowCalls: claude gets one participant call per active member; none for claude or left members', () => {
   const { ms, code } = makeRoom([{ name: 'claude' }, { name: 'alice' }, { name: 'bob' }, { name: 'carol', left_at: 'x' }]);
@@ -45,13 +49,13 @@ test('rowCalls: a member gets one room call labelled with the code, listing the 
   const t = rows.rowCalls({ code, name: 'alice', role: 'member' }, ms);
   assert.match(t, /subagent_type: "sub-human:room", description: "marmot-2509", prompt: "room: marmot-2509\\nmembers: bob, dave", run_in_background: true/);
   assert.equal((t.match(/Agent\(/g) || []).length, 1);
-  const solo = rows.rowCalls({ code, name: 'alice', role: 'member' }, [{ name: 'claude', role: 'claude' }, { name: 'alice' }]);
+  const solo = rows.rowCalls({ code, name: 'alice', role: 'member' }, [{ name: 'claude', role: 'claude' }, { name: 'alice' }] as Member[]); // alice: a record without its role
   assert.match(solo, /members: \(none\)/);
   assert.equal(rows.rowCalls(null, ms), '');
 });
 
 test('parseSpawn: name from the prompt, else the description; room code from prompt or description', () => {
-  const ms = { alice: {}, bob: {} };
+  const ms = { alice: {}, bob: {} } as unknown as Members; // empty records: parseSpawn reads only the names
   assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'member: bob', description: 'whatever' }, ms), { kind: 'participant', name: 'bob' });
   assert.deepEqual(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'hold it', description: 'alice' }, ms), { kind: 'participant', name: 'alice' });
   assert.equal(rows.parseSpawn({ subagent_type: 'sub-human:participant', prompt: 'x', description: 'zed' }, ms), null);
@@ -74,10 +78,10 @@ test('row map: records per session, merges across sessions (/clear), forgets', (
   assert.equal(Object.keys(rows.readRowMap(code)).length, 2, 'holds files are not row maps');
 });
 
-const prop = (approvers, hash = H, extra = {}) => ({ kind: 'proposal', via: 'human', from: 'alice', hash, approvers, path: `plans/${hash}.md`, ...extra });
-const answer = (from, kind, hash = H, extra = {}) => ({ via: 'human', from, kind, proposal_hash: hash, ...extra });
+const prop = (approvers: string[], hash = H, extra: Partial<Entry> = {}) => ({ kind: 'proposal', via: 'human', from: 'alice', hash, approvers, path: `plans/${hash}.md`, ...extra });
+const answer = (from: string, kind: string, hash = H, extra: Partial<Entry> = {}) => ({ via: 'human', from, kind, proposal_hash: hash, ...extra });
 const decision = (hash = H) => ({ kind: 'decision', via: 'system', from: 'claude', proposal_hash: hash, text: 'agreed by all' });
-const fitsRow = t => assert.ok(Array.from(t.replace(/\x1b\[[0-9;]*m/g, '')).length <= rows.ROW_MAX, `"${t}" over ROW_MAX`);
+const fitsRow = (t: string) => assert.ok(Array.from(t.replace(/\x1b\[[0-9;]*m/g, '')).length <= rows.ROW_MAX, `"${t}" over ROW_MAX`);
 
 test('rowText (participant): proposal states from the room\'s Claude view, presence, and the open task', () => {
   const { code, dir } = makeRoom([{ name: 'claude' }, { name: 'alice' }, { name: 'bob' }], [
@@ -85,7 +89,7 @@ test('rowText (participant): proposal states from the room\'s Claude view, prese
     prop(['alice', 'bob']),
     answer('alice', 'signoff'),
   ]);
-  const tasks = [];
+  const tasks: Task[] = [];
   assert.equal(rows.rowText(code, 'alice', 'claude', { tasks }), '✓ agreed 593da0');
   assert.equal(rows.rowText(code, 'bob', 'claude', { tasks }), '⚠ reviewing 593da0');
   fs.mkdirSync(path.join(dir, 'presence'), { recursive: true });
@@ -95,7 +99,7 @@ test('rowText (participant): proposal states from the room\'s Claude view, prese
     { id: '1', subject: 'room marmot-2509 open', status: 'in_progress', owner: 'room' },
     { id: '2', subject: 'parser tests', status: 'in_progress', owner: 'bob' },
     { id: '3', subject: 'docs', status: 'completed', owner: 'alice' },
-  ];
+  ] as Task[]; // no blockedBy: rowText reads none
   assert.equal(rows.rowText(code, 'bob', 'claude', { tasks: list }), '⚠ reviewing 593da0 · ◼ #2 parser tests');
   assert.equal(rows.rowText(code, 'alice', 'claude', { tasks: list }), '✓ agreed 593da0 · idle', 'a completed task is not open');
   // default source: <room>/tasks.json (the mirror), when lib/tasks.ts is absent or fails
@@ -110,12 +114,12 @@ test('rowText (participant): objection (no entry id), decided, status after the 
     { kind: 'say', from: 'bob', via: 'agent', to: 'alice' },
     { kind: 'say', from: 'bob', via: 'agent', to: 'alice' },
   ]);
-  const tasks = [];
+  const tasks: Task[] = [];
   assert.equal(rows.rowText(code, 'bob', 'claude', { tasks }), '✖ objected');
   assert.equal(rows.rowText(code, 'bob', 'alice', { tasks }), '✖ objected · ✉ 2 for you');
   assert.equal(rows.rowText(code, 'carol', 'claude', { tasks }), 'left');
   assert.equal(rows.rowText(code, 'zed', 'claude', { tasks }), 'not in the room');
-  const add = e => fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: rows.readLog(code).length + 1, at: new Date().toISOString(), to: 'room', ...e }) + '\n');
+  const add = (e: object) => fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: rows.readLog(code).length + 1, at: new Date().toISOString(), to: 'room', ...e }) + '\n');
   add(decision());
   assert.equal(rows.rowText(code, 'alice', 'claude', { tasks }), '✖ blocked 593da0', 'bob objected: the closed proposal is blocked, not decided');
   add({ kind: 'status', via: 'agent', from: 'alice', text: 'handler done,\n12/12 tests pass in test/tasks.node-test.ts and more words here' });
@@ -138,9 +142,9 @@ test('rowText (participant): a hashless proposal post counts for nothing, an old
 test('rowText (room row): answer needed, agreed, objected, decided, mail and the task summary', () => {
   const { code } = makeRoom([{ name: 'claude' }, { name: 'alice' }, { name: 'bob' }], [{ kind: 'say', from: 'alice', via: 'human' }]);
   assert.equal(rows.rowText(code, code, 'alice', { taskSummary: '' }), '2 here', 'humans only: the room\'s Claude is headless');
-  const mk = list => list.map((e, i) => ({ id: i + 1, at: new Date().toISOString(), text: 'x', to: 'room', ...e }));
+  const mk = (list: Partial<Entry>[]): Entry[] => list.map((e, i) => ({ id: i + 1, at: new Date().toISOString(), text: 'x', to: 'room', ...e }) as Entry); // {} lines: fillers
   const es = mk([prop(['alice', 'bob']), answer('bob', 'signoff'), { kind: 'say', from: 'claude', via: 'agent', to: 'alice' }]);
-  const o = extra => ({ entries: es, taskSummary: '', ...extra });
+  const o = (extra?: RowOpts): RowOpts => ({ entries: es, taskSummary: '', ...extra });
   assert.equal(rows.rowText(code, code, 'alice', o()), '⚠ your answer needed 593da0 · ✉ 1 for you');
   assert.equal(rows.rowText(code, code, 'bob', o()), '✓ agreed 593da0 1/2');
   es.push(...mk([{}, {}, {}, answer('alice', 'objection')]).slice(3));
@@ -161,11 +165,11 @@ test('rowText (room row): answer needed, agreed, objected, decided, mail and the
 test('rowText: every fixture stays within ROW_MAX; segments that do not fit are dropped whole', () => {
   const { code } = makeRoom([{ name: 'claude' }, { name: 'alice' }, { name: 'bob' }]);
   const long = 'tasks 12 open · #2 you · #4 bob · #7 carol · #9 dave · #11 erin · #13 frank';
-  const es = [prop(['alice', 'bob']), { kind: 'say', from: 'claude', via: 'agent', to: 'alice' }].map((e, i) => ({ id: i + 1, at: new Date().toISOString(), text: 'x', ...e }));
+  const es = [prop(['alice', 'bob']), { kind: 'say', from: 'claude', via: 'agent', to: 'alice' }].map((e, i): Entry => ({ id: i + 1, at: new Date().toISOString(), text: 'x', ...e }));
   const room = rows.rowText(code, code, 'alice', { entries: es, taskSummary: long });
   assert.equal(room, '⚠ your answer needed 593da0 · ✉ 1 for you', 'the summary does not fit: dropped, not cut');
   fitsRow(room);
-  const tasks = [{ id: '22', subject: 'a very long subject line about the parser and its many tests', status: 'pending', owner: 'bob' }];
+  const tasks = [{ id: '22', subject: 'a very long subject line about the parser and its many tests', status: 'pending', owner: 'bob' }] as Task[]; // no blockedBy
   const p = rows.rowText(code, 'bob', 'alice', { entries: es, tasks });
   assert.equal(p, '⚠ reviewing 593da0 · ◼ #22 a very long subject line ab…');
   fitsRow(p);
@@ -189,26 +193,26 @@ test('rowText (room row): lib/tasks.ts summary(code, viewer) is used', () => {
 
 test('missingRows: claude lists members without a live hold after the grace period; member checks its room row', () => {
   const { code } = makeRoom([{ name: 'claude' }, { name: 'alice' }, { name: 'bob', joined_at: new Date().toISOString() }]);
-  assert.deepEqual(rows.missingRows(code, { code, name: 'claude', role: 'claude' }), ['alice'], 'bob just joined: grace');
+  assert.deepEqual(rows.missingRows(code, me({ code, name: 'claude', role: 'claude' })), ['alice'], 'bob just joined: grace');
   rows.writeHolds(code, 'claude', { members: ['alice'] });
-  assert.deepEqual(rows.missingRows(code, { code, name: 'claude', role: 'claude' }), []);
-  assert.deepEqual(rows.missingRows(code, { code, name: 'alice', role: 'member' }), [code]);
+  assert.deepEqual(rows.missingRows(code, me({ code, name: 'claude', role: 'claude' })), []);
+  assert.deepEqual(rows.missingRows(code, me({ code, name: 'alice', role: 'member' })), [code]);
   rows.writeHolds(code, 'alice', { members: [], room: true });
-  assert.deepEqual(rows.missingRows(code, { code, name: 'alice', role: 'member' }), []);
+  assert.deepEqual(rows.missingRows(code, me({ code, name: 'alice', role: 'member' })), []);
   roomLib.open(code).store.kv.set('rows/holds-alice', { pid: 999999, at: new Date().toISOString(), members: [], room: true });
-  assert.deepEqual(rows.missingRows(code, { code, name: 'alice', role: 'member' }), [code], 'dead server pid: not live');
+  assert.deepEqual(rows.missingRows(code, me({ code, name: 'alice', role: 'member' })), [code], 'dead server pid: not live');
 });
 
 test('joinNote: a member_joined notice says whether the row already runs here (live holds), so only a missing row is spawned', () => {
   const { code } = makeRoom([{ name: 'claude' }, { name: 'alice' }, { name: 'bob' }]);
-  const roomClaude = { code, name: 'claude', role: 'claude' };
+  const roomClaude: Seat = { code, name: 'claude', role: 'claude' };
   assert.match(rows.joinNote(roomClaude, 'bob'), /bob has no row running; spawn it now: Agent sub-human:participant, description "bob", prompt "member: bob"/);
   rows.writeHolds(code, 'claude', { members: ['bob'] });
   assert.match(rows.joinNote(roomClaude, 'bob'), /bob's row is already running .*make NO Agent call/);
   assert.match(rows.joinNote(roomClaude, 'alice'), /alice has no row running/);
   roomLib.open(code).store.kv.set('rows/holds-claude', { pid: 999999, at: new Date().toISOString(), members: ['bob'], room: false });
   assert.match(rows.joinNote(roomClaude, 'bob'), /no row running/, 'dead hold server: not running');
-  const alice = { code, name: 'alice', role: 'member' };
+  const alice: Seat = { code, name: 'alice', role: 'member' };
   assert.equal(rows.joinNote(alice, 'bob'), `row: your room row is not running; spawn it now: ${rows.roomCall(code, ['bob'])}`);
   rows.writeHolds(code, 'alice', { room: true });
   assert.match(rows.joinNote(alice, 'bob'), /your room row adds bob by itself; make NO Agent call/);
@@ -218,15 +222,15 @@ test('joinNote: a member_joined notice says whether the row already runs here (l
 
 test('joinNote (Phase 0 fix): a room hold between its JOINED return and the re-call still counts as running', () => {
   const { code } = makeRoom([{ name: 'claude' }, { name: 'alice' }, { name: 'bob' }]);
-  const alice = { code, name: 'alice', role: 'member' };
+  const alice: Seat = { code, name: 'alice', role: 'member' };
   // hold.ts writes room:false + roomUntil while the room agent re-calls hold after "JOINED bob"
   rows.writeHolds(code, 'alice', { members: [], room: false, roomUntil: Date.now() + 30_000 });
-  assert.equal(rows.readHolds(code, 'alice').room, true);
+  assert.equal(rows.readHolds(code, 'alice')!.room, true);
   assert.match(rows.joinNote(alice, 'bob'), /make NO Agent call/);
   assert.doesNotMatch(rows.joinNote(alice, 'bob'), /not running|Agent\(/);
   assert.deepEqual(rows.rowsNeeded(code, alice, { held: rows.readHolds(code, 'alice') }), []);
   rows.writeHolds(code, 'alice', { members: [], room: false, roomUntil: Date.now() - 1 });
-  assert.equal(rows.readHolds(code, 'alice').room, false, 'the gap expired: the row really stopped');
+  assert.equal(rows.readHolds(code, 'alice')!.room, false, 'the gap expired: the row really stopped');
   assert.match(rows.joinNote(alice, 'bob'), /not running/);
 });
 
@@ -235,7 +239,7 @@ test('claude (headless --bg): rowCalls / rowsNeeded / joinNote ignore members.js
   const ms = JSON.parse(fs.readFileSync(path.join(dir, 'members.json'), 'utf8'));
   ms.claude = { job: 'job-123', pid: process.pid, role: 'claude', name: 'claude', session_id: 'sid-claude' };
   fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
-  const roomClaude = { code, name: 'claude', role: 'claude' };
+  const roomClaude: Seat = { code, name: 'claude', role: 'claude' };
   const t = rows.rowCalls(roomClaude, ms);
   assert.equal((t.match(/Agent\(/g) || []).length, 3, 'alice, bob + the NAME template in the join rule');
   assert.doesNotMatch(t, /description: "(claude|carol)"/);
@@ -250,8 +254,8 @@ test('claude (headless --bg): rowCalls / rowsNeeded / joinNote ignore members.js
   // the room's Claude\'s own record without a name field (contract: room Claude:{job, pid}) is still not a member
   ms.claude = { job: 'job-123', pid: process.pid };
   assert.deepEqual(rows.rowsNeeded(code, roomClaude, { members: ms }), ['alice', 'bob']);
-  assert.deepEqual(rows.rowsNeeded(code, { code, name: 'alice', role: 'member' }, { members: ms }), [code]);
-  assert.match(rows.rowCalls({ code, name: 'alice', role: 'member' }, ms), /members: bob"/);
+  assert.deepEqual(rows.rowsNeeded(code, me({ code, name: 'alice', role: 'member' }), { members: ms }), [code]);
+  assert.match(rows.rowCalls(me({ code, name: 'alice', role: 'member' }), ms), /members: bob"/);
 });
 
 test('rowText: a proposal is named by its stored plan\'s title (clipped), not its hash', () => {
@@ -260,7 +264,7 @@ test('rowText: a proposal is named by its stored plan\'s title (clipped), not it
   fs.mkdirSync(path.join(dir, 'plans'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'plans', `${h1}.md`), '\n## Cursor paging for /users\n\n1. after=\n');
   fs.writeFileSync(path.join(dir, 'plans', `${h2}.md`), '# A very long proposal title that will not fit in a row\n');
-  const mk = list => list.map((e, i) => ({ id: i + 1, at: new Date().toISOString(), text: 'x', to: 'room', ...e }));
+  const mk = (list: Partial<Entry>[]): Entry[] => list.map((e, i) => ({ id: i + 1, at: new Date().toISOString(), text: 'x', to: 'room', ...e }) as Entry); // {} lines: fillers
   const es = mk([prop(['alice', 'bob'], h1), answer('bob', 'signoff', h1)]);
   assert.equal(rows.rowText(code, code, 'alice', { entries: es, taskSummary: '' }), '⚠ your answer needed Cursor paging for /users');
   assert.equal(rows.rowText(code, code, 'bob', { entries: es, taskSummary: '' }), '✓ agreed Cursor paging for /users 1/2');

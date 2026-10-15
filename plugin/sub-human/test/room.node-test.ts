@@ -8,18 +8,21 @@ import { spawn } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
 import * as identity from '../lib/identity.ts';
+import type { Room } from '../lib/room.ts';
+import type { FsRoomStore } from '../lib/room/store.ts';
+import type { AppendOpts, Entry, EntryInput } from '../lib/room/types.ts';
 
-let R = null; // the current test's room
+let R: Room = null!; // the current test's room (fresh() opens it)
 function fresh() {
   h.freshHome();
   R = room.open(h.newRoom());
   return R.code;
 }
-const logLines = () => fs.readFileSync(R.store.logFile, 'utf8').split('\n').filter(Boolean);
+const logLines = () => fs.readFileSync((R.store as FsRoomStore).logFile, 'utf8').split('\n').filter(Boolean);
 const H1 = 'aaaaaaaaaaaa', H2 = 'bbbbbbbbbbbb';
-const sys = (kind, extra = {}, from = 'claude') => R.append({ kind, text: `${kind}`, ...extra }, { via: 'system', from, system: true });
-const human = (from, kind, extra = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'human', from });
-const agent = (from, kind, extra = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'agent', from });
+const sys = (kind: string, extra: Partial<EntryInput> = {}, from = 'claude') => R.append({ kind, text: `${kind}`, ...extra }, { via: 'system', from, system: true });
+const human = (from: string, kind: string, extra: Partial<EntryInput> = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'human', from });
+const agent = (from: string, kind: string, extra: Partial<EntryInput> = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'agent', from });
 
 const HOSTILE = [
   `she said "no" and 'maybe'`, 'rm -rf $(whoami) && echo $HOME', 'run `cat /etc/passwd` please',
@@ -32,7 +35,7 @@ test('room: concurrent appends from 5 processes x 20 give 100 sequential ids and
   const code = fresh();
   const script = `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'))}).arm();const r=require(${JSON.stringify(path.join(h.LIB, 'room.ts'))}).open(process.env.CODE);` + // a hook-like (armed) writer
     `for(let i=0;i<20;i++)r.append({kind:'say',text:process.env.WHO+' '+i},{via:'human',from:process.env.WHO});`;
-  await Promise.all(['p1', 'p2', 'p3', 'p4', 'p5'].map(u => new Promise((resolve, reject) => {
+  await Promise.all(['p1', 'p2', 'p3', 'p4', 'p5'].map(u => new Promise<void>((resolve, reject) => {
     const c = spawn(process.execPath, ['-e', script], { env: h.childEnv({ CODE: code, WHO: u }), stdio: 'inherit' });
     c.on('exit', status => (status === 0 ? resolve() : reject(new Error(`${u} exited ${status}`))));
   })));
@@ -43,7 +46,7 @@ test('room: concurrent appends from 5 processes x 20 give 100 sequential ids and
   assert.equal(es[0].prev, room.hash12(''));
   for (let i = 1; i < es.length; i++) assert.equal(es[i].prev, room.hash12(lines[i - 1]), `chain broken at #${es[i].id}`);
   for (const u of ['p1', 'p2', 'p3', 'p4', 'p5']) assert.equal(es.filter(e => e.from === u).length, 20);
-  assert.ok(!fs.existsSync(R.store.logFile + '.lock'));
+  assert.ok(!fs.existsSync((R.store as FsRoomStore).logFile + '.lock'));
   assert.deepEqual(R.validateChain(), { ok: true, count: 100 });
 });
 
@@ -52,15 +55,15 @@ test('room: validateChain spots an edited line', () => {
   human('alice', 'say'); human('bob', 'say'); human('alice', 'say');
   const lines = logLines();
   lines[1] = lines[1].replace('bob say', 'bob SAID');
-  fs.writeFileSync(R.store.logFile, lines.join('\n') + '\n');
+  fs.writeFileSync((R.store as FsRoomStore).logFile, lines.join('\n') + '\n');
   assert.equal(R.validateChain().ok, false);
   assert.equal(R.validateChain().badAt, 3);
 });
 
 test('room: a stale lock from a dead process is cleaned up', () => {
   fresh();
-  fs.mkdirSync(R.store.dir, { recursive: true });
-  fs.writeFileSync(R.store.logFile + '.lock', `999999 ${os.hostname()} 0`);
+  fs.mkdirSync(R.store.dir!, { recursive: true });
+  fs.writeFileSync((R.store as FsRoomStore).logFile + '.lock', `999999 ${os.hostname()} 0`);
   assert.equal(human('alice', 'say').id, 1);
 });
 
@@ -69,7 +72,7 @@ test('room: kind/via policy; system kinds need {system:true}; callers cannot set
   for (const k of ['say', 'question', 'status']) assert.equal(agent('alice', k).via, 'agent');
   assert.equal(agent('alice', 'proposal', { hash: H1, approvers: ['bob'] }).hash, H1);
   for (const k of ['signoff', 'objection', 'decision', 'member_joined', 'task', 'plan_rev']) {
-    assert.throws(() => agent('alice', k, { proposal_hash: H1 }), e => e.code === 'INVALID', k);
+    assert.throws(() => agent('alice', k, { proposal_hash: H1 }), (e: Error & { code?: string }) => e.code === 'INVALID', k);
   }
   assert.equal(human('alice', 'say').via, 'human');
   assert.equal(human('alice', 'signoff', { proposal_hash: H1 }).kind, 'signoff');
@@ -103,11 +106,11 @@ test('room: kind/via policy; system kinds need {system:true}; callers cannot set
   for (const f of ['from', 'via', 'id', 'prev', 'at', 'evidence', 'by']) {
     assert.throws(() => R.append({ kind: 'say', text: 'x', [f]: 'bob' }, { via: 'human', from: 'alice' }), /not settable|only for task/);
   }
-  assert.throws(() => R.append({ kind: 'say', text: 'x' }, { via: 'human' }), /invalid from/);
+  assert.throws(() => R.append({ kind: 'say', text: 'x' }, { via: 'human' } as AppendOpts), /invalid from/); // deliberate: no from
   assert.throws(() => R.append({ kind: 'say', text: 'x' }, { via: 'human', from: 'a b' }), /invalid from/);
   assert.throws(() => R.append({ kind: 'say', text: 'x' }, { via: 'robot', from: 'a' }), /via must be/);
   assert.throws(() => R.append({ kind: 'say', text: ' \t ' }, { via: 'human', from: 'a' }), /empty/);
-  assert.throws(() => R.append({ kind: 'say', text: 'x', refs: ['1'] }, { via: 'human', from: 'a' }), /refs/);
+  assert.throws(() => R.append({ kind: 'say', text: 'x', refs: ['1'] as unknown as number[] }, { via: 'human', from: 'a' }), /refs/); // deliberate: a string ref
   assert.throws(() => R.append({ kind: 'say', text: 'x', to: 'a b' }, { via: 'human', from: 'a' }), /invalid to/);
   assert.throws(() => R.append({ kind: 'signoff', text: 'x', proposal_hash: 'XYZ' }, { via: 'human', from: 'a' }), /proposal_hash/);
   assert.throws(() => agent('a', 'proposal', { hash: H1, approvers: ['ok', 'not ok'] }), /approvers/);
@@ -135,20 +138,20 @@ test('room: task_req and task entries: the task id is task_id, by is stamped, te
   assert.deepEqual([t.task_id, t.owner, t.status, t.req, t.by], ['2', 'bob', 'in_progress', 1, undefined]);
   assert.equal(t.text, 'update #2 parser tests: in_progress, owner bob');
   assert.match(room.line(t), /^#4 claude\[system\] task task=#2 owner=bob req=#1 "update #2/);
-  assert.throws(() => R.append({ kind: 'task', op: 'x', req: 'one' }, { via: 'system', from: 'claude', system: true }), /req/);
+  assert.throws(() => R.append({ kind: 'task', op: 'x', req: 'one' as unknown as number }, { via: 'system', from: 'claude', system: true }), /req/); // deliberate: a string req
 });
 
 test('room: rate limit is 6 agent posts per member per minute', () => {
   fresh();
   for (let i = 0; i < 6; i++) agent('alice', 'status');
-  assert.throws(() => agent('alice', 'say'), e => e.code === 'RATE' && /alice/.test(e.message));
+  assert.throws(() => agent('alice', 'say'), (e: Error & { code?: string }) => e.code === 'RATE' && /alice/.test(e.message));
   assert.equal(agent('bob', 'status').from, 'bob', 'other members are unaffected');
   assert.equal(human('alice', 'say').via, 'human', 'human words are never rate limited');
   for (let i = 0; i < 10; i++) sys('member_joined', {}, 'alice');
   // Entries older than a minute do not count.
   const lines = logLines().map(l => JSON.parse(l));
   const old = new Date(Date.now() - 61_000).toISOString();
-  fs.writeFileSync(R.store.logFile, lines.map(e => JSON.stringify({ ...e, at: old })).join('\n') + '\n');
+  fs.writeFileSync((R.store as FsRoomStore).logFile, lines.map(e => JSON.stringify({ ...e, at: old })).join('\n') + '\n');
   assert.equal(agent('alice', 'status').from, 'alice');
 });
 
@@ -156,7 +159,7 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
   fresh();
   assert.equal(R.proposal(H1), null);
   agent('claude', 'proposal', { hash: H1, approvers: ['alice', 'bob'] });
-  assert.equal(R.proposal(H1).id, 1);
+  assert.equal(R.proposal(H1)!.id, 1);
   const s1 = human('alice', 'signoff', { proposal_hash: H1 });
   let m = R.answers(H1);
   assert.deepEqual(m.signed, { alice: s1.id, bob: null });
@@ -169,7 +172,7 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
   assert.ok(!('mallory' in m.signed));
   const o = human('alice', 'objection', { proposal_hash: H1 });
   assert.deepEqual(R.answers(H1).missing, ['alice']);
-  assert.equal(R.answered('alice', H1).id, o.id);
+  assert.equal(R.answered('alice', H1)!.id, o.id);
   assert.equal(R.answered('carol', H1), null);
   human('bob', 'objection', { proposal_hash: H2 });
   assert.deepEqual(R.answers(H1).missing, ['alice']);
@@ -180,15 +183,15 @@ test('room: proposals, answers matrix, objection voids an agreement, decided; le
   assert.deepEqual(R.proposals().map(p => p.hash), [H2, H1], 'latest per hash, in order');
   assert.equal(R.decided(H1), null);
   const d = sys('decision', { proposal_hash: H1 }, 'room');
-  assert.equal(R.decided(H1).id, d.id);
+  assert.equal(R.decided(H1)!.id, d.id);
   assert.equal(R.decided(H2), null);
   // a Phase 0 log: plan_rev / plan_hash read as proposal / proposal_hash
   fresh();
-  fs.mkdirSync(R.store.dir, { recursive: true });
-  fs.writeFileSync(R.store.logFile,
+  fs.mkdirSync(R.store.dir!, { recursive: true });
+  fs.writeFileSync((R.store as FsRoomStore).logFile,
     `{"id":1,"at":"2026-10-04T00:00:00.000Z","from":"claude","via":"system","kind":"plan_rev","plan_hash":"${H1}","approvers":["alice"],"text":"rev"}\n` +
     `{"id":2,"at":"2026-10-04T00:00:01.000Z","from":"alice","via":"human","kind":"signoff","plan_hash":"${H1}","text":"ok"}\n`);
-  assert.equal(R.proposal(H1).kind, 'proposal');
+  assert.equal(R.proposal(H1)!.kind, 'proposal');
   assert.equal(R.answers(H1).complete, true);
   // a keyless legacy answer still counts, and reads as unverified (no seat key signed it)
   assert.match(room.line(R.readAll()[1]), new RegExp(`^#2 alice\\[human\\] \\(unverified\\) signoff proposal=${H1} "ok"$`));
@@ -205,11 +208,11 @@ test('room: tailLine is <= 240 chars for hostile text; who() labels', () => {
   const e = R.readAll()[0];
   assert.match(room.tailLine(e), /^#1 bob\[human\] objection to=alice refs=#1,#2,#3,#4,#5,… proposal=aaaaaaaaaaaa "/);
   const huge = room.tailLine({ id: 123456, from: 'b'.repeat(32), via: 'agent', kind: 'proposal', to: 'c'.repeat(32), refs: [1],
-    approvers: Array(8).fill('x'.repeat(32)), hash: H1, text: '"\\'.repeat(3000) });
+    approvers: Array(8).fill('x'.repeat(32)), hash: H1, text: '"\\'.repeat(3000) } as Entry); // no at: tailLine shows none
   assert.ok(huge.length <= 240, String(huge.length));
-  assert.equal(room.who({ from: 'alice', via: 'human' }), 'alice');
-  assert.equal(room.who({ from: 'alice', via: 'agent' }), "alice's Claude");
-  assert.equal(room.who({ from: 'claude', via: 'system' }), 'room');
+  assert.equal(room.who({ from: 'alice', via: 'human' } as Entry), 'alice');
+  assert.equal(room.who({ from: 'alice', via: 'agent' } as Entry), "alice's Claude");
+  assert.equal(room.who({ from: 'claude', via: 'system' } as Entry), 'room');
   assert.match(room.fmt(e), /^\[#1 bob\[human\] objection/);
 });
 
@@ -264,8 +267,8 @@ test('room: digest skips a proposal its proposer revised (superseded), as pendin
 
 test('room: legacy entries (agree, concern, no via) still read, render and append after', () => {
   fresh();
-  fs.mkdirSync(R.store.dir, { recursive: true });
-  fs.writeFileSync(R.store.logFile,
+  fs.mkdirSync(R.store.dir!, { recursive: true });
+  fs.writeFileSync((R.store as FsRoomStore).logFile,
     '{"id":1,"at":"2026-10-04T00:07:47.786Z","from":"bob","kind":"concern","text":"slow"}\n' +
     '{"id":2,"at":"2026-10-04T00:07:48.786Z","from":"alice","kind":"agree","text":"fine"}\n' +
     '{"id":3,"at":"2026-10-04T00:07:49.786Z","from":"alice","via":"human","kind":"revoke","plan_hash":"aaaaaaaaaaaa","text":"wait"}\n');
@@ -280,7 +283,7 @@ test('room: legacy entries (agree, concern, no via) still read, render and appen
 // ---------- chat rendering: what a human sees (no ids) ----------
 test('chatLines: group-chat lines with no ids, exact words, multi-line and long text, no "(for Claude)" spoofing', () => {
   fresh();
-  const C = (e, viewer = 'alice') => room.chatLines(e, { viewer });
+  const C = (e: Entry, viewer = 'alice') => room.chatLines(e, { viewer });
   assert.deepEqual(C(human('bob', 'say', { text: 'sure, once we\'ve agreed how paging works' })), ["bob: sure, once we've agreed how paging works"]);
   assert.deepEqual(C(agent('bob', 'say', { text: 'tests green' })), ["bob's Claude: tests green"]);
   assert.deepEqual(C(agent('bob', 'question', { text: 'which cursor?', to: 'alice' })), ["bob's Claude (to you): which cursor?"]);
@@ -305,10 +308,10 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.deepEqual(C(sys('task', { op: 'update', id: 2, subject: 'docs', owner: 'alice', status: 'in_progress' })), ['room: task "docs" in_progress, owner you']);
   // with the log, an answer and a decision name their proposal by title (with two pending, which one was decided)
   const all = R.readAll();
-  const W = (e, viewer = 'alice') => room.chatLines(e, { viewer, entries: R.readAll() });
-  assert.deepEqual(W(all.find(x => x.kind === 'signoff')), ['bob agreed to "cursor paging" (aaaaaa)']);
-  assert.deepEqual(W(all.find(x => x.kind === 'objection')), ['bob objected to "cursor paging" (aaaaaa): add the 400 test']);
-  assert.deepEqual(W(all.find(x => x.kind === 'decision')), ['room: "cursor paging" (aaaaaa) agreed (alice, bob)']);
+  const W = (e: Entry, viewer = 'alice') => room.chatLines(e, { viewer, entries: R.readAll() });
+  assert.deepEqual(W(all.find(x => x.kind === 'signoff')!), ['bob agreed to "cursor paging" (aaaaaa)']);
+  assert.deepEqual(W(all.find(x => x.kind === 'objection')!), ['bob objected to "cursor paging" (aaaaaa): add the 400 test']);
+  assert.deepEqual(W(all.find(x => x.kind === 'decision')!), ['room: "cursor paging" (aaaaaa) agreed (alice, bob)']);
   const p2 = R.append({ kind: 'proposal', text: `proposal ${H2}: Ship v3 Monday`, hash: H2, approvers: ['bob', 'carol'] }, { via: 'agent', from: 'alice' });
   const o2 = R.append({ kind: 'objection', proposal_hash: H2, text: 'keep status; clients depend on it' }, { via: 'human', from: 'bob' });
   const s2 = R.append({ kind: 'signoff', proposal_hash: H2 }, { via: 'human', from: 'carol' });
@@ -331,6 +334,6 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.equal(ls.at(-1), `(for Claude) that message is cut at ${room.CHAT_MAX}/${room.CHAT_MAX + 10} chars; read({ids:[${long.id}]}) has all of it`);
   assert.ok(ls.slice(0, -1).every(l => Array.from(l).length <= room.CHAT_WRAP), 'every line fits CHAT_WRAP');
   assert.ok(ls.slice(1, -1).every(l => l.startsWith(room.CHAT_NEST)), 'wrapped pieces are nested too');
-  assert.match(ls.at(-2), /\[cut: the rest is in the room log\]$/);
+  assert.match(ls.at(-2)!, /\[cut: the rest is in the room log\]$/);
   for (const e of R.readAll()) for (const l of C(e)) if (!l.startsWith('(for Claude)')) assert.doesNotMatch(l, /#\d/, l);
 });

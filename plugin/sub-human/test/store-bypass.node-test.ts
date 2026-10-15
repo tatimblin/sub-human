@@ -12,9 +12,9 @@ import path from 'node:path';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
 
-function sources() {
-  const out = [];
-  const walk = d => {
+function sources(): { rel: string; code: string }[] {
+  const out: string[] = [];
+  const walk = (d: string): void => {
     for (const x of fs.readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, x.name);
       if (x.isDirectory()) { if (x.name !== 'test' && x.name !== 'node_modules') walk(p); }
@@ -27,7 +27,7 @@ function sources() {
 }
 
 /** The source without comments (block and line), keeping line numbers. */
-function stripComments(src) {
+function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
     .split('\n').map(l => l.replace(/(^|[^:'"`\\])\/\/.*$/, '$1')).join('\n');
 }
@@ -44,12 +44,12 @@ const STORE = /^lib\/room\/store[^/]*\.ts$/;
 const ALLOWED = [
   { rel: 'mod/send.ts', line: /^\s*\$\.fs\.read\(`\$\{hello\.home\}\/rooms\/\$\{seat\.code\}\/members\.json`\)\.then\(parse, \(\) => null\),$/ },
 ];
-const allowed = (rel, l) => ALLOWED.some(a => a.rel === rel && a.line.test(l));
+const allowed = (rel: string, l: string): boolean => ALLOWED.some(a => a.rel === rel && a.line.test(l));
 const FILE_NAMES = /['"`/][^'"`\n]*\b(log\.jsonl|log\.idx|members\.json|tasks\.json|review\.json|holds-[^'"`]*\.json|\.cursor)\b/;
 const SEGMENTS = /path\.join\([^\n]*?['"`](rows|presence|plans|members|keys)['"`]/;
 
 test('store seam: no module outside lib/room/store*.ts names a room file or builds a path into a room', () => {
-  const bad = [];
+  const bad: string[] = [];
   for (const { rel, code } of sources()) {
     if (STORE.test(rel)) continue;
     code.split('\n').forEach((l, i) => {

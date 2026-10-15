@@ -4,14 +4,13 @@ import test from 'node:test';
 import assert from 'node:assert';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import fs from 'node:fs';
-import { PLUGIN, LIB, newRoom, register, childEnv, spawnSleeper } from './helpers.ts';
+import { PLUGIN, newRoom, register, childEnv, spawnSleeper } from './helpers.ts';
 import * as rows from '../lib/rows.ts';
 import * as roomLib from '../lib/room.ts';
 
 const HOOK = path.join(PLUGIN, 'hooks', 'session-restore.ts');
 
-function restore(pid, source, sid) {
+function restore(pid: number | undefined, source: string, sid: string): string {
   const r = spawnSync(process.execPath, [HOOK], {
     input: JSON.stringify({ hook_event_name: 'SessionStart', source, session_id: sid, cwd: process.cwd() }),
     env: childEnv({ CLAUDE_PID: String(pid) }), encoding: 'utf8',
@@ -20,7 +19,7 @@ function restore(pid, source, sid) {
   return JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
 }
 
-const calls = ctx => (ctx.match(/Agent\(\{subagent_type: "sub-human:(?:participant|room)", description: "(?!NAME")[^\n]*/g) || []);
+const calls = (ctx: string): string[] => (ctx.match(/Agent\(\{subagent_type: "sub-human:(?:participant|room)", description: "(?!NAME")[^\n]*/g) || []);
 
 test('restore: /clear with a live room hold lists no row calls; without one it does', () => {
   const code = newRoom();
