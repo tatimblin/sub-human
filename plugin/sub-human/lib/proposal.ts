@@ -14,8 +14,8 @@
  *       Stores the blob plans/<hash>.md (hash = sha256/12 of the bytes; lib/room/store.ts blobs) and appends
  *       `proposal` with path = that room-relative ref (older entries hold an absolute path). approvers
  *       default to the humans present (not room Claude, not left). An identical open proposal is not re-appended.
- *       same: the approvers that are one person (sameOf: seats with one account; the host's local seats only
- *       while there is one of them), groups of 2+; the fold counts one answer for the group (lib/room/consent.ts).
+ *       same: the approvers that are one person (sameOf: the room owner's seat on the host with the seats over
+ *       the host account's login links; never two seats on the host), groups of 2+; the fold counts one answer for the group (lib/room/consent.ts).
  *       Written only where the host accepts it (sameOk: this machine is the host, or its link daemon's hello
  *       listed the field, lib/remote/protocol.ts FIELDS).
  *       retired: the hashes of my undecided proposals with the same title that this one supersedes (the fold
@@ -122,22 +122,33 @@ function humans(code: string): string[] {
 
 /**
  * Who a seat is, for consent: its account (the host's seats and its login links' carry the host's machine id).
- * Only an account merges seats; two invite seats from one machine are two people.
+ * Only an account merges seats (on the host, only the owner's: sameOf); two invite seats from one machine are two people.
  */
 const personOf = (m: Pick<Member, 'account'> | null | undefined): string | undefined => (m && typeof m.account === 'string' && m.account) || undefined;
 
 /**
- * The approvers that are one person: groups of 2+ seats with one account, in approvers' order. Seats on the
- * account's own machine (machine = account: the host's local seats) are that person only while there is one of
- * them among the people present: several people can share one machine (a room on one machine), so two or more
- * are each their own person, and a login link's seat then merges with none of them.
+ * The seat of the person who opened the room, among the host's own seats of account `who` (machine = account): the
+ * one the room recorded (lib/room/members.ts join), else, in a room from before that, the earliest-joined one present.
+ */
+function ownerOf(ms: Members, who: string): string | undefined {
+  const host = Object.values(ms).filter(m => !!m && m.role !== 'claude' && personOf(m) === who && m.machine === who);
+  const marked = host.find(m => m.owner);
+  if (marked) return marked.name;
+  const at = (m: Member) => { const t = Date.parse(String(m.joined_at)); return Number.isFinite(t) ? t : Infinity; };
+  return host.filter(m => !m.left_at).sort((a, b) => at(a) - at(b))[0]?.name;
+}
+
+/**
+ * The approvers that are one person: groups of 2+ seats with one account, in approvers' order. A login link's seats
+ * (the account's, on another machine) are the person who opened the room (ownerOf); of the seats on the account's
+ * own machine (machine = account: the host's) only that owner's counts: several people can share one machine, so
+ * the others there are each their own person. An invite's seat has no account and merges with none.
  */
 function sameOf(approvers: string[], ms: Members): string[][] {
-  const here = (who: string) => Object.values(ms).filter(m => !!m && m.role !== 'claude' && !m.left_at && personOf(m) === who && m.machine === who).length;
   const by = new Map<string, string[]>();
   for (const n of approvers) {
     const m = ms[n], who = personOf(m);
-    if (!who || (m.machine === who && here(who) > 1)) continue;
+    if (!who || (m.machine === who && ownerOf(ms, who) !== n)) continue;
     by.set(who, [...(by.get(who) || []), n]);
   }
   return [...by.values()].filter(g => g.length > 1);
