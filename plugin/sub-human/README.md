@@ -64,7 +64,7 @@ On your other machine:
 /sub-human join dev vole-8126 --as carol                  # a name other than your git name
 ```
 
-That is the whole step: no invite, no PIN, no card. It links the machine and takes your seat at once; later rejoins are a bare `/sub-human` (or `/sub-human carol vole-8126`). Your login to that account is the admission, since whoever can run commands there could make an invite anyway. The room shows `a machine (…) linked over your SSH login (link 1a2b3c4d5e6f)`.
+That is the whole step: no invite, no PIN, no card. It links the machine and takes your seat at once; later rejoins are a bare `/sub-human` (or `/sub-human carol vole-8126`). Your login to that account is the admission, since whoever can run commands there could make an invite anyway. The room shows `a machine linked over your SSH login`.
 
 - **Your own ssh.** The link runs `ssh -T -o BatchMode=yes [-J JUMP] [-p PORT] -- you@machine-a '"$HOME"/.sub-human/bin/serve --stdio vole-8126 --link ID --login'` with your keys, agent, `~/.ssh/config` and `known_hosts`, checked as usual. It never prompts. When ssh does not know the host's key yet, the join stops at once and says so: run `ssh you@machine-a` once in a terminal, check and accept the key, then join again. A login that needs a password is refused the same way. Behind an MFA bastion, run `node <plugin root>/scripts/sub-human prime vole-8126` in a terminal (the refusal prints the full line) and then `/sub-human`.
 - **On the host** this runs the stable serve shim (`<home>/bin/serve`, see [SSH details](#ssh-details)), which records where node is, because a non-interactive ssh shell lacks nvm's or Homebrew's `PATH`. Opening or joining a room on the host writes the shim when it is missing. If it is still missing, the join says `me@devbox isn't set up for joining yet`: open the room there in Claude Code, then join again.
@@ -396,7 +396,7 @@ The security model is one machine, one OS user, per room: everyone on the host i
   - names or sets `SUB_HUMAN_HOME`;
   - runs the plugin's own modules or hooks with `node`, `bun`, `deno` or `npx` (`lib/room*`, `lib/identity`, `lib/proposal`, `hooks/*.ts`, `mcp/*.ts`, and their `.js` names of earlier versions).
 
-  The read-only CLI (`sub-human read`, `digest`, `who`, `tasks`, `watch`) stays allowed, and so do reading the plugin's source and running its tests. This is a string check. A determined command can evade it, for example a script written to a file first, or a path built at run time. What can't be evaded is the signature: a line written around the store has no valid one, so it shows as unverified and counts for nothing.
+  The read-only CLI (`sub-human read`, `digest`, `who`, `tasks`, `watch`, `show HASH`) stays allowed, and so do reading the plugin's source and running its tests. This is a string check. A determined command can evade it, for example a script written to a file first, or a path built at run time. What can't be evaded is the signature: a line written around the store has no valid one, so it shows as unverified and counts for nothing.
 - **Not covered.** The `Read` tool is not guarded, so a model can read the store, including the private key files. Other MCP servers that write files aren't guarded either.
 - **File modes.** The home and every directory in it are 0700 (a home an older version made 0755 is closed when a room is opened), and the log and state files are 0600.
 - **Row launcher and serve shim.** The status-line launcher in `<home>/bin/row-status` and the SSH serve shim `<home>/bin/serve` run only plugin roots outside temp directories (`/tmp`, `os.tmpdir()`), unless `SUB_HUMAN_ALLOW_TMP_ROOT=1` is set.
@@ -440,7 +440,7 @@ Start with `/sub-human doctor` (see **Doctor**): it names most of these and the 
 | `✗ "NAME" is taken in room …; pick another: /sub-human NAME` | Your default name (from git) is someone else's in that room. Type a name: `/sub-human dana2`. |
 | "the room's Claude could not start" on join, or `Workspace not trusted` | Run `claude` in that folder once and accept trust, then join again. Without its Claude the room still works, but it has no shared task list. |
 | No rows in the panel | Accept workspace trust for this folder. After a resume they come back by themselves. |
-| A proposal didn't open | Ask your Claude to "show me the proposal". `node <plugin root>/scripts/sub-human read` in a terminal shows who a proposal names. |
+| A proposal didn't open | Ask your Claude to "show me the proposal". `node <plugin root>/scripts/sub-human read` in a terminal shows who a proposal names, and `sub-human show HASH` its text. |
 | `✗ sub-human needs Claude Code 2.1.292 or newer, and this is …` | Update Claude Code (`claude update`) and restart it. |
 | `✗ sub-human's hooks module isn't running in this session (…)` | `/sub-human doctor` (it still runs) checks the usual causes: a settings file with `disableAllHooks` or `allowManagedHooksOnly`, or Claude Code's hooks-modules switch off. Start `claude` without `--bare` or safe mode, in a folder you trust. |
 | `the connection to room … stopped (…)` | The link stopped for good: the host refused or revoked it, or the room closed. The reason says what to do (usually a new invite from the host: `/sub-human invite` there). |

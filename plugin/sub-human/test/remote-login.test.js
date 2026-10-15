@@ -139,7 +139,7 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
   assert.equal(typeof c.token, 'string');
   assert.equal(c.link, ID);
   assert.deepEqual({ ...auth.links(host)[ID], token_sha256: '-', created_at: '-' }, { id: ID, token_sha256: '-', machine: 'remote0machine01', seats: [], created_at: '-', login: true });
-  assert.match(host.readAll().at(-1).text, /a machine \(remote0machine01\) joined over your ssh login$/);
+  assert.match(host.readAll().at(-1).text, /^a machine linked over your SSH login$/);
   // the id is taken now: a second login hello for it is refused; the token says hello as any link's
   await assert.rejects(dial({ linkId: ID, login: true }, { login: true }), authErr(/link abcdef012345 exists already/));
   const again = await dial({ linkId: ID, login: true }, { token: c.token });
@@ -178,7 +178,9 @@ test('login e2e: join me@devbox ROOM links over the person\'s own ssh and takes 
   const id = lf.transport.link;
   assert.deepEqual(Object.keys(links(host, code)), [id]);
   assert.deepEqual(links(host, code)[id].seats, ['bob']);
-  assert.match(roomLines(host, code), /a machine \([0-9a-f]{16}\) joined over your ssh login/);
+  assert.match(roomLines(host, code), /^a machine linked over your SSH login$/m, 'a link, not a join: no second joined line');
+  assert.ok(!roomLines(host, code).includes(id), 'no internal id');
+  assert.doesNotMatch(roomLines(host, code), /joined over your ssh login/);
   const argv = fs.readFileSync(sshLog, 'utf8').trim().split('\n').map(l => JSON.parse(l))[0];
   assert.ok(argv.includes('BatchMode=yes') && !argv.some(a => /StrictHostKeyChecking/.test(a)));
   assert.equal(argv.at(-1), `"$HOME"/.sub-human/bin/serve --stdio ${code} --link ${id} --login`);
@@ -289,7 +291,7 @@ test('login e2e: a key restricted to another link (its forced command) cannot us
   stopDaemon(t, r2, s.code);
   assert.match(j2.json.reason, /refused: this connection came through a forced command \(a restricted ssh key or ForceCommand\), not your own ssh login/);
   assert.deepEqual(links(s.host, s.code), {}, 'no link was minted');
-  assert.doesNotMatch(roomLines(s.host, s.code), /joined over your ssh login/);
+  assert.doesNotMatch(roomLines(s.host, s.code), /linked over your SSH login/);
 });
 
 test('login join: the argument forms are told apart; bad parts are refused before anything is written', t => {

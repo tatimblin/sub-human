@@ -49,7 +49,7 @@ module.exports = {
     t.check('the link file holds a login transport and a token, no invite, no key of its own',
       lf.transport.login === true && typeof lf.token === 'string' && !lf.invite && !lf.transport.key && !lf.transport.knownHosts, JSON.stringify({ ...lf.transport }));
     const lines = host.dump(code).entries.filter(e => e.from === 'room').map(e => e.text).join('\n');
-    t.check('the room line says a machine joined over the ssh login, with no internal id', new RegExp('joined over your ssh login$', 'm').test(lines) && !lines.includes(id), lines.split('\n').slice(-1)[0]);
+    t.check('the room line says a machine linked over the ssh login, with no internal id', new RegExp('^a machine linked over your SSH login$', 'm').test(lines) && !lines.includes(id), lines.split('\n').slice(-1)[0]);
     const ps = lab.exec('devbox', ['sh', '-c', 'ps -eo user,args | grep "[s]erve --stdio"'], { allowFail: true }).stdout;
     t.check('on the devbox, serve runs as host through the shim, with --login and the link id', new RegExp(`--stdio ${code} --link ${id} --login`).test(ps), ps.trim().split('\n')[0]);
 

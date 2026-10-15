@@ -796,6 +796,7 @@ async function main(args: readonly string[], { write = (s: string) => { process.
   const report = await diagnose({ quick: o.quick, timeoutMs: o.timeoutMs, authorizedKeys: o.authorizedKeys, env });
   if (o.bundle !== null) {
     const file = path.resolve(o.bundle || `sub-human-doctor-${report.generated_at.replace(/[:.]/g, '-')}.json`);
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 }); // a folder named for the bundle may not exist yet
     fs.writeFileSync(file, JSON.stringify(bundle(report, { env }), null, 1) + '\n', { mode: 0o600 });
     write(`wrote ${file}: redacted (no messages, keys, tokens or invites; host names hashed). Read it before you attach it.\n`);
   } else if (o.json) {

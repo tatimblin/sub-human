@@ -158,9 +158,29 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.ok(r.stdout.length <= room.DIGEST_CAP + 1);
   assert.equal(cli(['digest', '--room', 'nope-0000']).status, 1);
   assert.equal(cli(['post', 'hello']).status, 2, 'there is no post command');
-  assert.match(cli(['nope']).stderr, /usage: sub-human tail \| read .*tasks \[--json\] \| watch NAME \| serve --stdio CODE \[--link ID \[--login\]\] \| link CODE \[--reset\] \| invite \[--ssh \[USER@HOST\]\] \[--via JUMP\] \| .*invite --cancel \[REF\] \| admit \[REF\] \| kick NAME \| prime ROOM .*\| agent-statusline$/m);
+  assert.match(cli(['nope']).stderr, /usage: sub-human tail \| read .*\| digest \| show HASH \| who \| tasks \[--json\] \| watch NAME \| serve --stdio CODE \[--link ID \[--login\]\] \| link CODE \[--reset\] \| invite \[--ssh \[USER@HOST\]\] \[--via JUMP\] \| .*invite --cancel \[REF\] \| admit \[REF\] \| kick NAME \| prime ROOM .*\| agent-statusline$/m);
   for (const gone of ['plan', 'statusline', 'host', 'unhost', 'revoke', 'authorize']) assert.equal(cli([gone]).status, 2, `${gone} is dropped`);
   bob.kill();
+});
+
+test('cli show HASH: a proposal\'s stored text, this session\'s room or --room; unknown or malformed hashes fail', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  h.register('alice', 'member', process.pid, code);
+  const proposal = require(path.join(h.LIB, 'proposal.ts'));
+  const text = '# Cursor paging\n\n1. add cursor param\n';
+  const { hash } = proposal.create({ code, name: 'alice' }, { text, approvers: ['alice'] });
+  let r = cli(['show', hash]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, text);
+  r = cli(['show', hash, '--room', code], { CLAUDE_PID: '1' });
+  assert.equal(r.stdout, text, 'an explicit room');
+  r = cli(['show', '000000000000']);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, new RegExp(`no proposal 000000000000 in room ${code}`));
+  assert.equal(cli(['show', '../../keys/x']).status, 1, 'not a hash: never a path');
+  assert.equal(cli(['show']).status, 2);
+  assert.equal(cli(['show', hash, '--room', 'nope-0000']).status, 1);
 });
 
 // ---------- tasks / watch NAME ----------

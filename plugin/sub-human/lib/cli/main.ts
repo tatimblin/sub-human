@@ -31,6 +31,7 @@
  *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
  *   sub-human who                      this session's identity: "<name> (<role>) in <code>"
+ *   sub-human show HASH [--room CODE]  a proposal's stored text (lib/proposal.ts read(code, hash), plans/<HASH>.md)
  *   sub-human tasks [--json] [--room CODE]
  *       the room's shared task list (lib/tasks.ts list(code), the room Claude's native list mirrored to
  *       the room document `tasks`): "#2 in_progress  bob  parser tests". --json prints the array.
@@ -196,7 +197,7 @@ function agentStatusline() {
   } catch { /* keep the default rendering */ }
 }
 
-// ---------- read / digest / who ----------
+// ---------- read / digest / show / who ----------
 function read(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { id: 1, json: 0, room: 1 });
   if (!flags.id && rest.length) flags.id = rest.join(','); // `sub-human read 22`, as the cut marker says
@@ -219,6 +220,15 @@ function digest(args: readonly string[]) {
   const { flags } = parseFlags(args, { room: 1 });
   const { r } = openRoom(flags.room);
   process.stdout.write(r.digest() + '\n');
+}
+
+function show(args: readonly string[]) {
+  const { flags, rest } = parseFlags(args, { room: 1 });
+  if (rest.length !== 1) die('usage: sub-human show HASH [--room CODE]');
+  const { code } = openRoom(flags.room);
+  const text = (require('../proposal.ts') as typeof import('../proposal.ts')).read(code, rest[0]);
+  if (text == null) die(`no proposal ${rest[0]} in room ${code}`, 1);
+  process.stdout.write(text.endsWith('\n') ? text : text + '\n');
 }
 
 function who() {
@@ -362,7 +372,7 @@ function linkCmd(args: readonly string[]) {
 
 type Command = (args: readonly string[]) => unknown;
 const doctor: Command = args => (require('./doctor.ts') as typeof import('./doctor.ts')).main(args).then(c => process.exit(c), (e: Error) => die(e.message, 2));
-const cmds: Record<string, Command> = { doctor, tail, read, digest, who, tasks: tasksCmd, watch, serve, link: linkCmd, 'agent-statusline': agentStatusline };
+const cmds: Record<string, Command> = { doctor, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, 'agent-statusline': agentStatusline };
 // lib/cli/*: each returns the exit code
 const viaCli = (fn: 'invite' | 'admit' | 'kick' | 'prime'): Command => a => process.exit((require('./host.ts') as typeof import('./host.ts'))[fn](a));
 Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick'), prime: viaCli('prime') });
@@ -380,7 +390,7 @@ function main([cmd, ...args]: string[] = process.argv.slice(2)) {
     try { if (fs.existsSync(identity.home())) (require('../remote/shim.ts') as typeof import('../remote/shim.ts')).refresh(); } catch { /* best effort */ }
   }
   try {
-    (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID [--login]] | link CODE [--reset] | invite [--ssh [USER@HOST]] [--via JUMP] | invite --web|--public|--url URL | invite --stop | invite --cancel [REF] | admit [REF] | kick NAME | prime ROOM | listen [--port P] [--start|--stop|--status] | handoff NAME | promote CODE | demote CODE INVITE PIN | doctor [--bundle [FILE]] | agent-statusline')))(args);
+    (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | show HASH | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID [--login]] | link CODE [--reset] | invite [--ssh [USER@HOST]] [--via JUMP] | invite --web|--public|--url URL | invite --stop | invite --cancel [REF] | admit [REF] | kick NAME | prime ROOM | listen [--port P] [--start|--stop|--status] | handoff NAME | promote CODE | demote CODE INVITE PIN | doctor [--bundle [FILE]] | agent-statusline')))(args);
   } catch (e) {
     die((e as Error).message, 2);
   }
