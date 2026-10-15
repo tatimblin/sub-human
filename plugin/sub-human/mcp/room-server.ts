@@ -8,7 +8,8 @@
  * server starts). The model never names itself. Not joined -> every core tool returns "not in a room; run /sub-human".
  *
  * Core tools:
- *   post({kind, text, to?, refs?})   kinds: say question status; via "agent", from = the resolved member.
+ *   post({kind, text, to?, refs?})   kinds: say question status; via "agent", from = the resolved member. Refused
+ *       when it repeats the member's objection note, waiting for their Send or sent in the last 10 minutes (relayed).
  *   read({ids?})   with ids: those entries in full. Without: this member's unseen entries (cursor mcp-<name>),
  *       skipping its own Claude's posts; at most 100, oldest first.
  *   propose({text|path, approvers?})   lib/proposal.create: stores plans/<hash>.md, appends `proposal`
@@ -55,6 +56,7 @@ const require = createRequire(import.meta.url);
 const READ_MAX = 100;
 const PLUGINS = ['hold.ts', 'task.ts'];
 const POST_KINDS = ['say', 'question', 'status'];
+const RELAY_WINDOW_MS = 10 * 60_000; // a post repeating the person's objection sent this recently is refused (relayed)
 // MCP revisions this server speaks (newest first): answer with the client's when listed, else our newest.
 const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const negotiateProtocol = (v: unknown): string => (typeof v === 'string' && PROTOCOL_VERSIONS.includes(v) ? v : PROTOCOL_VERSIONS[0]);
@@ -193,11 +195,30 @@ const CORE: ToolDefinition[] = [
   },
 ];
 
+/**
+ * A post that relays the person's objection note (proposal.repeatsNote): the note waiting for their Send on the
+ * confirm card, or one they sent in the last RELAY_WINDOW_MS. Either way the room would show it twice; the refusal
+ * says why, else null. The receiving side does not dedupe.
+ */
+function relayed(me: Me, body: unknown): string | null {
+  if (typeof body !== 'string') return null;
+  const cf = proposal.readConfirm(me);
+  if (cf && proposal.repeatsNote(cf, body)) {
+    return `refused: that is ${me.name}'s note on proposal ${cf.hash}, which waits for ${me.name}'s Send; posting it would relay it twice. ${proposal.confirmCall(cf.hash)} so ${me.name} can send or discard it.`;
+  }
+  const since = Date.now() - RELAY_WINDOW_MS;
+  const sent = room.open(me.code).readAll().findLast(e => e.kind === 'objection' && e.via === 'human' && e.from === me.name
+    && typeof e.text === 'string' && Date.parse(e.at) >= since && proposal.repeatsNote({ note: e.text }, body));
+  return sent ? `refused: ${me.name} already sent that note as their objection to proposal ${sent.proposal_hash}; the room shows it, so posting it would relay it twice.` : null;
+}
+
 function post(me: Me, args: ToolArgs) {
   const { kind, text: body, to, refs } = args;
   if (typeof kind !== 'string' || !POST_KINDS.includes(kind)) {
     return text(`refused: kind must be one of ${POST_KINDS.join(', ')}. To ask for agreement, use propose; only people answer it, on their own card.`, true);
   }
+  const twice = relayed(me, body);
+  if (twice) return text(twice, true);
   // the model's arguments, unchecked: validate() (append) checks each field's type
   const entry = { kind, text: body, ...(to !== undefined ? { to } : {}), ...(refs !== undefined ? { refs } : {}) } as EntryInput;
   return json(room.open(me.code).append(entry, { via: 'agent', from: me.name }));

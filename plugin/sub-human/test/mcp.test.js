@@ -120,6 +120,33 @@ test('mcp: post is stamped from the parent pid (process.ppid), not env; system a
   bob.kill();
 });
 
+test('mcp: a post that repeats the person\'s objection note is refused, waiting for Send or just sent; others pass', async () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  const proposal = require(path.join(h.LIB, 'proposal.ts'));
+  const me = { code, name: 'alice', role: 'member' };
+  R = room.open(code);
+  const s = await ready();
+  const hash = 'abcdef012345';
+  proposal.writeConfirm(me, { hash, note: 'Open rate limiting\nfirst', from: 'bob', title: 'Ship v3', at: Date.now() });
+  // the note relayed (case, spacing and quotes aside): refused, pointing at the confirm card
+  const twice = errText(await s.tool('post', { kind: 'say', text: 'alice objects: “open rate limiting  first”.' }));
+  assert.equal(twice, `refused: that is alice's note on proposal ${hash}, which waits for alice's Send; posting it would relay it twice. call AskUserQuestion with the question "objection ${hash}" so alice can send or discard it.`);
+  // an unrelated say passes
+  assert.equal(payload(await s.tool('post', { kind: 'say', text: 'rate limits look fine to me' })).text, 'rate limits look fine to me');
+  // a short note matches only exactly
+  proposal.writeConfirm(me, { hash, note: 'Not yet', from: 'bob', title: null, at: Date.now() });
+  assert.equal(payload(await s.tool('post', { kind: 'say', text: 'not yet sure about the paging' })).kind, 'say');
+  assert.match(errText(await s.tool('post', { kind: 'say', text: '"not yet"' })), /^refused: that is alice's note/);
+  // the reverse order: Send pressed first (the objection recorded), the relay second
+  proposal.clearConfirm(me);
+  R.append({ kind: 'objection', proposal_hash: hash, text: 'Open rate limiting first' }, { via: 'human', from: 'alice' });
+  assert.equal(errText(await s.tool('post', { kind: 'status', text: 'alice objected: open rate limiting first' })),
+    `refused: alice already sent that note as their objection to proposal ${hash}; the room shows it, so posting it would relay it twice.`);
+  assert.equal(R.readAll().filter(e => e.via === 'agent').length, 2, 'only the two unrelated posts');
+  await s.close();
+});
+
 test('mcp: read returns unseen entries (skipping own posts) then by id', async () => {
   h.freshHome();
   const { code } = h.register('alice');

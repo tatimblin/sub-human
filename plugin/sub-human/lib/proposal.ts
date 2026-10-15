@@ -50,7 +50,8 @@
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
  * A review's note waiting for the person's Send (the room document members/NAME/confirm): readConfirm, writeConfirm,
  *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question,
- *   confirmCall(hash) -> how the model opens that card.
+ *   confirmCall(hash) -> how the model opens that card; repeatsNote(c, text) -> bool: a post carries that note (case,
+ *   spacing and quote marks aside; a note under 12 chars only when equal), so posting it would relay it twice.
  */
 
 import fs from 'node:fs';
@@ -60,7 +61,7 @@ import crypto from 'node:crypto';
 import * as identity from './identity.ts';
 import * as room from './room.ts';
 import { writeFileAtomic } from './io.ts';
-import { clip } from './text.ts';
+import { clip, oneLine } from './text.ts';
 import * as config from './config.ts';
 import type { Card, Confirm, Proposal, Review } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, ProposalState } from './room/types.ts';
@@ -435,9 +436,23 @@ function confirmCard(c: Confirm): Card {
     options: (['Send', 'Discard'] as const).map(label => ({ label, description: desc[label], preview: String(c.note) })) }] };
 }
 
+/** Notes shorter than this match a post only when equal: "no" or "later" would match half the room's posts. */
+const NOTE_MATCH_MIN = 12;
+const QUOTES_RE = /["'“”‘’]/g;
+const plainOf = (s: unknown): string => oneLine(oneLine(s).toLowerCase().replace(QUOTES_RE, ''));
+/**
+ * The post `text` carries the note `c.note` (mcp/room-server.ts post: a Claude relaying its person's objection):
+ * case, spacing and quote marks aside, the post contains it; a note under NOTE_MATCH_MIN chars only when equal.
+ */
+function repeatsNote(c: Pick<Confirm, 'note'> | null | undefined, text: unknown): boolean {
+  const note = plainOf(c && c.note), post = plainOf(text);
+  if (!note) return false;
+  return note.length < NOTE_MATCH_MIN ? post === note : post.includes(note);
+}
+
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
-  readConfirm, writeConfirm, clearConfirm, confirmCard, confirmQuestion, namedIn, choose, picked, readPick,
+  readConfirm, writeConfirm, clearConfirm, confirmCard, confirmQuestion, repeatsNote, namedIn, choose, picked, readPick,
   proposeIntent, create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, confirmCall, matrix, answer,
   decide, decision, humans, reminder, read, hash12, title,
 };
