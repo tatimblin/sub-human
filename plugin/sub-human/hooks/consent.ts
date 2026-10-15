@@ -37,7 +37,8 @@
  * "Not yet", AFK, stale hashes record nothing. Stop nudges once when a waiting note's card was never shown. An answer is
  * lib/proposal.ts answer, then decide (a no-op on a machine that does not hold the room; its host decides). An
  * answer the room refuses (OFFLINE, AUTH) is never lost silently: a systemMessage tells the person, the context
- * the model. Post(ExitPlanMode) for the person's own plan offers to propose it. Run with SUB_HUMAN_SHIM=1
+ * the model. Post(ExitPlanMode) for the person's own plan offers to propose it; when it is, unedited, a pending
+ * proposal of their own, their approval is their signoff (via=human). Run with SUB_HUMAN_SHIM=1
  * (mod/consent.ts) the output also carries subHuman {reviewOpen}. Outside plan mode the room-tool entry exits
  * before loading anything else.
  */
@@ -308,7 +309,6 @@ function showEarly(input: ConsentIn, me: Identity, st: Review) {
   if (!file || text == null || st.file) return;
   let backup: string | null = null;
   try { backup = fs.readFileSync(file, 'utf8'); } catch { /* none yet */ }
-  if (backup === text) backup = null;
   Object.assign(st, { file, backup, restored: false });
   writeReview(me, st);
   try { writeFileAtomic(file, text); } catch (err) {
@@ -345,7 +345,6 @@ function preExit(input: ConsentIn, me: Identity) {
   if (st.file === file && !st.restored) backup = st.backup; // showEarly already backed it up and wrote the text
   else if (file) {
     try { backup = fs.readFileSync(file, 'utf8'); } catch { /* none yet */ }
-    if (backup === text) backup = null; // left over from an earlier review: nothing of the person's to keep
   }
   // A plan of the model's own (not the proposal, not a stub) is never shown here: the model's input as sent, or
   // the plan Claude Code read from the file unless that is just what the file held before the review.
@@ -669,6 +668,12 @@ function postPlan(input: ConsentIn, me: Identity) {
   const r: ToolResponse = input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {};
   if (r.isAgent || typeof r.plan !== 'string' || !r.plan.trim()) return;
   const hash = proposal.hash12(Buffer.from(r.plan, 'utf8'));
+  // My own pending proposal, approved unedited in my own plan mode: that is my answer to it.
+  const mine = r.planWasEdited ? undefined : pendingFor(me).find(p => p.hash === hash && p.from === me.name);
+  if (mine) {
+    const res = record(me, mine, { choice: 'Agree' });
+    return c.context('PostToolUse', res.failed ? failed(me, hash, res) : res.stale ? `proposal ${hash}: nothing recorded (already answered or decided).` : done(me, 'Agree', hash, res));
+  }
   if (proposal.proposals(c.room.open(me.code).readAll()).some((p: Proposal) => p.hash === hash)) return; // already proposed
   const where = r.filePath ? `{path: ${JSON.stringify(r.filePath)}}` : '{text: <the plan>}';
   c.context('PostToolUse', `sub-human: if ${me.name} wants the room to agree to this plan, call the room propose tool with ${where}. Only on ${me.name}'s word; planning is optional.`);

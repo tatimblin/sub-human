@@ -346,8 +346,9 @@ function decide(code: string, hash: string): Entry | null {
 // ---------- the plan-view review state (hooks/consent.ts, hooks/session-restore.ts) ----------
 /**
  * members/NAME/review: {phase, mode, at, hash?, from?, file?, backup?, restored?, tool_use_id?, …}.
- * `backup` is the session plan file's text before the review overwrote it (null: there was none), recorded
- * BEFORE the overwrite, so a crash between the two never loses the person's own plan.
+ * `backup` is the session plan file's text before the review overwrote it, even when that is the proposal's own
+ * text (null only when there was no file: the one the review created is removed on close), recorded BEFORE the
+ * overwrite, so a crash between the two never loses the person's own plan.
  */
 const reviewKey = (me: Me) => `members/${me.name}/review`;
 const readReview = (me: Me): Review | null => kvOf(me).get(reviewKey(me), null);
