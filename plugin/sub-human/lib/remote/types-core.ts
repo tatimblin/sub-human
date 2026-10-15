@@ -280,6 +280,8 @@ export interface AdmissionRecord extends InviteLife {
   refused_at?: string; refused_by?: string | null;
   /** the seats whose card showed it (lib/remote/admission.ts markTold) */
   told?: string[];
+  /** the other machines (proven ids) that presented this used invite: the room heard of each once (invites.ts) */
+  others?: string[];
 }
 /** One record of the host document remote/invites, keyed by sha256(secret). */
 export type InviteRecord = BoundInvite | ShortInvite | AdmissionRecord;

@@ -25,7 +25,10 @@
  *   keyHolds(decoded, role, key) -> bool   the tag names this key (constant time)
  *   idOf(secret) -> string              the secret as the host's records name it (base64url, 22 characters)
  *   admissionRef(secret) -> string      the ref (12 hex) of the join request its PIN makes on the host (invites.ts
- *                                       admissionSlot), which the card and the joiner's screen both show
+ *                                       admissionSlot): the name `/sub-human admit REF` takes
+ *   joinCheck(machine, key?) -> "check 3f9c-2a71"   what the card and the joiner's screen both show: from the machine id
+ *                                       the joiner's machine key proves and, over the web, its link's XK key, so a
+ *                                       thief holding the same line and PIN shows another check than the real joiner
  *   ROLES                               'listener', 'machine'
  */
 import crypto from 'node:crypto';
@@ -74,6 +77,12 @@ function keyHolds(d: { secret: Buffer; tag: Buffer }, role: Role, key: unknown):
 
 const idOf = (secret: Buffer): string => Buffer.from(secret).toString('base64url');
 const admissionRef = (secret: Buffer): string => crypto.createHash('sha256').update(`${idOf(secret)}/admission`).digest('hex').slice(0, 12);
+/** What the host's card and the joiner's screen both show, to compare: 8 hex of the joiner's proven machine id and,
+ *  over the web, the Noise key its link proved (XK). Another machine with the same line and PIN shows another check. */
+const joinCheck = (machine: string, key: string | null = null): string => {
+  const h = crypto.createHash('sha256').update(`sub-human join check v1/${machine}/${key || ''}`).digest('hex');
+  return `check ${h.slice(0, 4)}-${h.slice(4, 8)}`;
+};
 
-export { ALPHABET, SECRET_BYTES, TAG_BYTES, WORD_LEN, WORD_RE, ROLES, mint, tagOf, encode, decode, keyHolds, idOf, admissionRef };
+export { ALPHABET, SECRET_BYTES, TAG_BYTES, WORD_LEN, WORD_RE, ROLES, mint, tagOf, encode, decode, keyHolds, idOf, admissionRef, joinCheck };
 export type { Role };

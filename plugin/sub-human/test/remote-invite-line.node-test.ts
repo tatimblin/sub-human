@@ -126,7 +126,17 @@ test('the PIN online: none asked for (free), a wrong one costs a try and a room 
   assert.equal(inviteSecret.admissionRef(r.secret), invites.admissionSlot(r.id).slice(0, 12), 'the joiner computes the request\'s ref itself');
   assert.ok(recordOf(host, r.ref).used_at, 'the invite is used: no more PINs');
   assert.equal(redeem(carol)!.reason, 'ADMIT_WAITING', 'its redial without the PIN waits for the card');
-  assert.equal(redeem(mallory, r.pin)!.reason, 'INVITE_USED', 'another machine with the line and the PIN: used');
+  const second = redeem(mallory, r.pin)!;
+  assert.equal(second.reason, 'INVITE_USED', 'another machine with the line and the PIN: used');
+  // the check the card shows is the machine's, not the line's: a thief with the line and the PIN shows another one,
+  // and the room hears of the second machine with both checks (once)
+  const carolCheck = inviteSecret.joinCheck(carol.id), malloryCheck = inviteSecret.joinCheck(mallory.id);
+  assert.notEqual(carolCheck, malloryCheck);
+  assert.match(carolCheck, /^check [0-9a-f]{4}-[0-9a-f]{4}$/);
+  assert.equal(admission.describe({ ...adm, slot: invites.admissionSlot(r.id), ref: adm.from }), `carol (${carolCheck}) on carols-mbp`);
+  assert.ok(String(second.note).includes(malloryCheck) && String(second.note).includes(carolCheck), String(second.note));
+  assert.match(String(second.note), /a second machine \(check .*\) presented invite [0-9a-f]{12}, which carol \(check .*\) used already: if carol's screen does not show .*, refuse the card and invite again/);
+  assert.equal(redeem(mallory, r.pin)!.note, undefined, 'one room line per machine');
   assert.equal(adm.from, r.ref, 'the request names the invite it came from');
   admission.decide(host, invites.admissionSlot(r.id).slice(0, 12), { decision: 'let-in', by: 'alice', now });
   const made = invites.redeemInvite(host, r.id, { machine: carol.id, proven: carol.id, as, now });

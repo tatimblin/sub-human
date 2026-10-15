@@ -42,7 +42,8 @@
  *       hello is OFFLINE ADMIT_WAITING. Every outcome but the first carries note, the room line.
  *     An invite line's, used: its admission decides (admission.ts check): waiting, refused, lapsed, or let in (then
  *       on the machine its key proved and, over the web, with the key it proved: the link is made, bound to that one
- *       name and that key)
+ *       name and that key). Another machine gets INVITE_USED, and the room a line naming both checks (invite-secret.ts
+ *       joinCheck), once per machine (the admission's `others`, at most OTHERS_MAX)
  *     An unknown, used or burnt invite is AUTH with its reason (INVITE_UNKNOWN, INVITE_USED, INVITE_BURNT,
  *       INVITE_EXPIRED, ...); error.note is the room line
  *   admissionSlot(secret) -> string     the kv key of an invite line's admission: sha256(secret + "/admission")
@@ -60,6 +61,7 @@ import { CODE_RE, NAME_RE } from '../text.ts';
 import { INVITE_TTL_MS, INVITE_PIN_TRIES, HANDOFF_INVITE_MS, SHORT_LIVE_MAX, ADMIT_TTL_MS, PIN_BACKOFF_MS, envMs } from '../config.ts';
 import * as hostLinks from './host-links.ts';
 import * as admission from './admission.ts';
+import * as secretMod from './invite-secret.ts';
 import type { Reason } from '../reasons.ts';
 import type {
   AuthStore, BoundInvite, CodedError, Invites, InviteRecord, ShortInvite, AdmissionRecord, LinkRecord, ParsedInvite, ShortKind,
@@ -78,6 +80,8 @@ const REF_RE = /^[0-9a-f]{12}$/;
 const LABEL_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const INVITES_KEY = 'remote/invites';
 const SECRET_RE = /^[A-Za-z0-9_-]{16,128}$/;
+/** The other machines an admission remembers presenting its used invite (one room line each). */
+const OTHERS_MAX = 8;
 const KINDS: readonly ShortKind[] = ['ssh', 'ws', 'pipe'];
 
 const sha256 = (s: unknown): string => crypto.createHash('sha256').update(String(s)).digest('hex');
@@ -146,8 +150,16 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
   if (inv.used_at) {
     const slot = admissionSlot(secret);
     const adm = cur[slot];
-    // another machine than the one whose PIN held: the invite is spent for it (each invite works once)
-    if (!adm || !adm.admission || adm.machine !== proven) return { err: authError('this invite was used already (each invite works once); ask the host for a new one', 'INVITE_USED') };
+    // another machine than the one whose PIN held: the invite is spent for it (each invite works once). The room hears
+    // of it once per machine: if the real joiner is the second one, the one waiting on the card is not them
+    if (!adm || !adm.admission || adm.machine !== proven) {
+      const used = authError('this invite was used already (each invite works once); ask the host for a new one', 'INVITE_USED');
+      if (!adm || !adm.admission || !proven || (adm.others || []).includes(proven) || (adm.others || []).length >= OTHERS_MAX) return { err: used };
+      const second = secretMod.joinCheck(proven, peerKey);
+      const note = `a second machine (${second}) presented invite ${ref}, which ${adm.name} (${secretMod.joinCheck(adm.machine, adm.key)}) used already: `
+        + `if ${adm.name}'s screen does not show ${secretMod.joinCheck(adm.machine, adm.key)}, refuse the card${adm.admit === 'let-in' ? ` (let in already: /sub-human kick ${adm.name})` : ''} and invite again`;
+      return { err: Object.assign(used, { note }), next: { ...cur, [admissionSlot(secret)]: { ...adm, others: [...(adm.others || []), proven] } } };
+    }
     const r = admission.check(adm, { machine: proven || '', linkId, peerKey, now });
     if (r.err) return { err: r.err, ...(r.next ? { next: { ...cur, [slot]: r.next } } : {}) };
     return {

@@ -80,7 +80,7 @@ function scrubRefused(code: string, reason: unknown, why: Reason | null | undefi
 }
 
 /** What an invite line's host answered, kept in the link file (see the header); false: not one of those answers. */
-function keepAnswer(code: string, e: CodedError, word: { secret: Buffer }, sentPin: boolean): boolean {
+function keepAnswer(code: string, e: CodedError, word: { secret: Buffer }, sentPin: boolean, ownKey: string | null = null): boolean {
   const cur: Link | null = linksMod.get(code);
   if (!cur || cur.token) return false;
   const { pin, pin_wanted, ...rest } = cur;
@@ -93,7 +93,9 @@ function keepAnswer(code: string, e: CodedError, word: { secret: Buffer }, sentP
   if (e.code === 'OFFLINE' && e.reason === 'ADMIT_WAITING') {
     if (sentPin || !cur.awaiting) {
       const ref = secretMod().admissionRef(word.secret);
-      linksMod.set(code, { ...rest, awaiting: cur.awaiting || { at, ref, check: `request ${ref.slice(0, 6)}`, expires_at: new Date(Date.now() + config.ADMIT_TTL_MS).toISOString() } });
+      // the check the host's card shows: this machine's proven id and, over the web, this link's own key
+      const check = secretMod().joinCheck(machineKeyMod().idOf(machineKeyMod().publicKey()), ownKey);
+      linksMod.set(code, { ...rest, awaiting: cur.awaiting || { at, ref, check, expires_at: new Date(Date.now() + config.ADMIT_TTL_MS).toISOString() } });
     }
     return true;
   }
@@ -158,7 +160,7 @@ async function connectLink(code: string): Promise<Client> {
   try { c = await clientMod().connect(t, opts); } catch (err) {
     const e = err as CodedError;
     // an invite line's PIN steps: kept in the link file (the join asks for the PIN again, or waits for the card)
-    if (word && e && keepAnswer(code, e, word, sentPin)) throw e;
+    if (word && e && keepAnswer(code, e, word, sentPin, own ? own.pub.toString('base64url') : null)) throw e;
     // the host refused the invite (a wrong PIN, burnt, used, expired): it and its PIN are spent here too, so the link
     // file keeps no secret in clear (a new join writes a fresh one)
     if (!l.token && typeof l.invite === 'string' && e && e.code === 'AUTH') scrubRefused(code, e.message, e.reason);
