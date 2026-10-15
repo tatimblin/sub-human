@@ -4,24 +4,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import * as atRoom from '../hooks/at-room.ts';
+import type { Hello, HelloSeat, RunOutput } from '../mod/core/types.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
-const load = () => import(path.join(PLUGIN, 'mod', 'core', 'prompt.ts'));
-const seat = (code = 'otter-4821', role = 'member') => ({ name: 'alice', code, role, addr: `alice.${code}` });
+const load = (): Promise<typeof import('../mod/core/prompt.ts')> => import(path.join(PLUGIN, 'mod', 'core', 'prompt.ts'));
+const seat = (code = 'otter-4821', role: HelloSeat['role'] = 'member'): HelloSeat => ({ name: 'alice', code, role, addr: `alice.${code}` });
 
 test('prompt: titleFor titles once per session id and address, so a room switch sets the new title', async () => {
   const { titleFor } = await load();
-  const a = { sid: 's1', seat: seat() };
+  const a = { sid: 's1', seat: seat() } as Hello; // a hello as titleFor reads it: sid and seat only
   assert.equal(titleFor(a, 's1', undefined), 'alice.otter-4821');
   assert.equal(titleFor(a, 's1', { sid: 's1', addr: 'alice.otter-4821' }), null, 'already titled');
-  const b = { sid: 's1', seat: seat('badger-2971') };
+  const b = { sid: 's1', seat: seat('badger-2971') } as Hello;
   assert.equal(titleFor(b, 's1', { sid: 's1', addr: 'alice.otter-4821' }), 'alice.badger-2971', 'switched rooms');
   assert.equal(titleFor(a, 's2', { sid: 's1', addr: 'alice.otter-4821' }), null, 'not this session\'s hello');
-  assert.equal(titleFor({ sid: 's2', seat: seat() }, 's2', { sid: 's1', addr: 'alice.otter-4821' }), 'alice.otter-4821', 'after /clear');
+  assert.equal(titleFor({ sid: 's2', seat: seat() } as Hello, 's2', { sid: 's1', addr: 'alice.otter-4821' }), 'alice.otter-4821', 'after /clear');
   assert.equal(titleFor(a, 's1', 's1'), 'alice.otter-4821', 'a sid-only mark (older module state) titles once more');
-  assert.equal(titleFor({ sid: 's1', seat: seat('otter-4821', 'claude') }, 's1'), null, 'the room\'s Claude keeps its launch name');
-  assert.equal(titleFor({ sid: 's1', seat: null }, 's1'), null);
-  assert.equal(titleFor(null, 's1'), null);
+  assert.equal(titleFor({ sid: 's1', seat: seat('otter-4821', 'claude') } as Hello, 's1', undefined), null, 'the room\'s Claude keeps its launch name');
+  assert.equal(titleFor({ sid: 's1', seat: null } as Hello, 's1', undefined), null);
+  assert.equal(titleFor(null, 's1', undefined), null);
 });
 
 test('prompt: the origin hand-off gives a kind only to the prompt whose text it was pushed with', async () => {
@@ -38,12 +39,14 @@ test('prompt: the origin hand-off gives a kind only to the prompt whose text it 
 });
 
 test('prompt: parse and parseClaude take the tag with one whitespace character after it (a newline too), as hooks/at-room.ts does', async () => {
-  const p = await load('mod/core/prompt.ts');
-  for (const [text, want] of [['@room hi', 'hi'], ['@room', ''], ['@room\nhi', 'hi'], ['@Room hi', null], ['@room  x', ' x'], ['@roommate hi', null], ['room: hi', null], [' @room hi', null]]) {
+  const p = await load();
+  const rooms: [string, string | null][] = [['@room hi', 'hi'], ['@room', ''], ['@room\nhi', 'hi'], ['@Room hi', null], ['@room  x', ' x'], ['@roommate hi', null], ['room: hi', null], [' @room hi', null]];
+  for (const [text, want] of rooms) {
     assert.equal(p.parse(text), want, JSON.stringify(text));
     assert.equal(atRoom.parse(text), want, JSON.stringify(text));
   }
-  for (const [text, want] of [['@claude plan', 'plan'], ['@claude\nplan', 'plan'], ['@Claude', null], ['@claude', ''], ['@claudette', null]]) {
+  const claudes: [string, string | null][] = [['@claude plan', 'plan'], ['@claude\nplan', 'plan'], ['@Claude', null], ['@claude', ''], ['@claudette', null]];
+  for (const [text, want] of claudes) {
     assert.equal(p.parseClaude(text), want, JSON.stringify(text));
     assert.equal(atRoom.parseClaude(text), want, JSON.stringify(text));
   }
@@ -57,27 +60,27 @@ test('prompt: an @room the shim could not handle is refused, never let through; 
   assert.equal(p.failClosed('ship it'), null);
   assert.equal(p.failClosed(undefined), null);
   // only exit 0 (an answer) and 2 (a block) count as the hook having handled it
-  for (const exitCode of [1, 124, null, undefined]) assert.equal(p.shimFailed({ exitCode }), true, String(exitCode));
+  for (const exitCode of [1, 124, null, undefined]) assert.equal(p.shimFailed({ exitCode } as RunOutput), true, String(exitCode)); // null: deliberately not a number
   for (const exitCode of [0, 2]) assert.equal(p.shimFailed({ exitCode }), false, String(exitCode));
 });
 
 test('prompt: the mod writes "working" for a typed prompt of a member (or an unknown seat), once', async () => {
   const { writesWorking } = await load();
-  const hello = { sid: 's1', seat: seat() };
+  const hello = { sid: 's1', seat: seat() } as Hello; // sid and seat only
   assert.equal(writesWorking({ kind: 'composer' }, hello, null), true);
   assert.equal(writesWorking({ kind: 'bridge' }, null, 'idle_prompt'), true, 'unknown seat: presence.ts decides');
   assert.equal(writesWorking({ kind: 'composer' }, hello, 'working'), false, 'already working');
   assert.equal(writesWorking({ kind: 'peer' }, hello, null), false, 'not typed');
   assert.equal(writesWorking(undefined, hello, null), false);
-  assert.equal(writesWorking({ kind: 'composer' }, { sid: 's1', seat: null }, null), false, 'no seat');
-  const roomClaude = { sid: 's1', seat: seat('otter-4821', 'claude') };
+  assert.equal(writesWorking({ kind: 'composer' }, { sid: 's1', seat: null } as Hello, null), false, 'no seat');
+  const roomClaude = { sid: 's1', seat: seat('otter-4821', 'claude') } as Hello;
   assert.equal(writesWorking({ kind: 'composer' }, roomClaude, null), false, 'the room\'s Claude refuses typed prompts');
 });
 
 test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the receipt alone, once', async () => {
   const { receiptBook, STOP_FRAME } = await load();
   const book = receiptBook(2);
-  const notice = text => ({ type: 'system', name: 'informational', content: [{ type: 'text', text }] });
+  const notice = (text: string) => ({ type: 'system', name: 'informational', content: [{ type: 'text', text }] });
   // hooks/at-room.ts's receipts: the whole stop reason is matched, so an @room's and an @claude's never cross
   const SENT = "✓ sent to room otter-4821 (Claude wasn't asked)", WAKE = "✓ sent; the room's Claude will answer";
   assert.equal(book.rewrite(notice(`${STOP_FRAME}${SENT}`)), null, 'nothing waiting: the engine\'s words stay');

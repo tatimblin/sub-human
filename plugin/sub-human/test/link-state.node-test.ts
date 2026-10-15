@@ -1,24 +1,25 @@
 // lib/room/link-state.ts (the link's state for the room row, the statusline and doctor) and its segment on the room
 // row (lib/rows.ts rowText) and in the agent statusline (statusline/segments.ts).
 import test from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import path from 'node:path';
 import * as h from './helpers.ts';
 import * as links from '../lib/room/links.ts';
 import * as store from '../lib/room/store.ts';
 import * as ls from '../lib/room/link-state.ts';
 import * as rows from '../lib/rows.ts';
 import { agentStatusline } from '../statusline/segments.ts';
+import type { LinkState, Members } from '../lib/room/types.ts';
 
 const CODE = 'vole-4321';
-function linked(t) {
+function linked(t: TestContext) {
   h.freshHome(t);
   links.set(CODE, { code: CODE, transport: { kind: 'pipe', home: '/elsewhere' }, token: 't', created_at: 'now' });
   store.createRoom(CODE);
 }
-const writeState = st => fs.writeFileSync(ls.stateFile(CODE), JSON.stringify(st));
-const setDoc = doc => store.open(CODE).kv.set('link', doc);
+const writeState = (st: unknown) => fs.writeFileSync(ls.stateFile(CODE), JSON.stringify(st));
+const setDoc = (doc: unknown) => store.open(CODE).kv.set('link', doc);
 
 test('link-state: null for a room hosted here (no link); the state file wins, read defensively', t => {
   h.freshHome(t);
@@ -30,9 +31,9 @@ test('link-state: null for a room hosted here (no link); the state file wins, re
   writeState({ state: 'connecting', since: '2026-01-01T00:00:00.000Z', attempt: 3, lastError: 'ECONNREFUSED', rttMs: null, queued: 2, extra: 1 });
   assert.deepEqual(ls.read(CODE), { state: 'connecting', since: '2026-01-01T00:00:00.000Z', attempt: 3, lastError: 'ECONNREFUSED', queued: 2, source: 'state-file' });
   fs.writeFileSync(ls.stateFile(CODE), '{not json');
-  assert.equal(ls.read(CODE).source, 'link-doc', 'an unreadable state file falls back to the link document');
+  assert.equal(ls.read(CODE)!.source, 'link-doc', 'an unreadable state file falls back to the link document');
   writeState({ state: 'sideways' });
-  assert.equal(ls.read(CODE).state, 'online', 'an unknown state too');
+  assert.equal(ls.read(CODE)!.state, 'online', 'an unknown state too');
 });
 
 test('link-state: without the state file, the link document says it in the same words (online/connecting/offline/stopped/fork)', t => {
@@ -41,21 +42,21 @@ test('link-state: without the state file, the link document says it in the same 
   const map = { online: 'online', connecting: 'connecting', offline: 'offline', stopped: 'stopped', fork: 'fork', sideways: 'offline' };
   for (const [doc, want] of Object.entries(map)) {
     setDoc({ pid: process.pid, state: doc, since: '2026-01-01T00:00:00.000Z', reason: doc === 'offline' ? 'no route' : undefined });
-    assert.equal(ls.read(CODE).state, want, doc);
+    assert.equal(ls.read(CODE)!.state, want, doc);
   }
   setDoc({ pid: process.pid, state: 'offline', reason: 'no route' });
-  assert.equal(ls.read(CODE).lastError, 'no route');
+  assert.equal(ls.read(CODE)!.lastError, 'no route');
 });
 
 test('link-state: a daemon that died reads offline, whatever its last record said (a fork stays a fork)', async t => {
   linked(t);
   const dead = await h.deadPid();
   setDoc({ pid: dead, state: 'online' });
-  assert.deepEqual([ls.read(CODE).state, ls.read(CODE).lastError], ['offline', 'the link daemon is not running']);
+  assert.deepEqual([ls.read(CODE)!.state, ls.read(CODE)!.lastError], ['offline', 'the link daemon is not running']);
   writeState({ state: 'online', rttMs: 12 });
-  assert.equal(ls.read(CODE).state, 'offline');
+  assert.equal(ls.read(CODE)!.state, 'offline');
   writeState({ state: 'fork' });
-  assert.equal(ls.read(CODE).state, 'fork');
+  assert.equal(ls.read(CODE)!.state, 'fork');
 });
 
 test('link-state: the daemon\'s record as lib/remote/link.ts writes it (links.writeState): its own pid and detail decide', async t => {
@@ -65,28 +66,29 @@ test('link-state: the daemon\'s record as lib/remote/link.ts writes it (links.wr
   assert.deepEqual(ls.read(CODE), { state: 'online', since: at, attempt: 0, rttMs: 12, queued: 0, pid: process.pid, detail: 'online', source: 'state-file' });
   const dead = await h.deadPid();
   links.writeState(CODE, { state: 'online', since: at, attempt: 0, lastError: null, rttMs: 12, queued: 1, pid: dead, detail: 'online', at });
-  assert.deepEqual([ls.read(CODE).state, ls.read(CODE).lastError, ls.read(CODE).dead], ['offline', 'the link daemon is not running', true]);
+  assert.deepEqual([ls.read(CODE)!.state, ls.read(CODE)!.lastError, ls.read(CODE)!.dead], ['offline', 'the link daemon is not running', true]);
   links.writeState(CODE, { state: 'fork', since: at, attempt: 0, lastError: 'the host log was reset', pid: dead, detail: 'fork', at });
-  assert.equal(ls.read(CODE).state, 'fork', 'a fork is a fork, daemon or not');
+  assert.equal(ls.read(CODE)!.state, 'fork', 'a fork is a fork, daemon or not');
   links.writeState(CODE, { state: 'stopped', since: at, attempt: 0, lastError: 'AUTH: unknown token', pid: dead, detail: 'stopped', at });
-  assert.deepEqual([ls.read(CODE).state, ls.read(CODE).lastError], ['stopped', 'AUTH: unknown token'], 'stopped is for good, daemon or not');
+  assert.deepEqual([ls.read(CODE)!.state, ls.read(CODE)!.lastError], ['stopped', 'AUTH: unknown token'], 'stopped is for good, daemon or not');
 });
 
 test('link-state: a record written before 0.4.1 (up / down, detail fork or stopped) reads in the one vocabulary', async t => {
   linked(t);
   const at = new Date().toISOString();
   links.writeState(CODE, { state: 'up', since: at, attempt: 0, rttMs: 12, queued: 0, pid: process.pid, detail: 'online', at });
-  assert.equal(ls.read(CODE).state, 'online');
+  assert.equal(ls.read(CODE)!.state, 'online');
   links.writeState(CODE, { state: 'down', since: at, attempt: 2, lastError: 'no route', pid: process.pid, detail: 'offline', at });
-  assert.deepEqual([ls.read(CODE).state, ls.read(CODE).lastError], ['offline', 'no route']);
+  assert.deepEqual([ls.read(CODE)!.state, ls.read(CODE)!.lastError], ['offline', 'no route']);
   links.writeState(CODE, { state: 'down', since: at, lastError: 'the host log was reset', pid: process.pid, detail: 'fork', at });
-  assert.equal(ls.read(CODE).state, 'fork');
+  assert.equal(ls.read(CODE)!.state, 'fork');
   links.writeState(CODE, { state: 'down', since: at, lastError: 'AUTH: unknown token', pid: process.pid, detail: 'stopped', at });
-  assert.equal(ls.read(CODE).state, 'stopped');
+  assert.equal(ls.read(CODE)!.state, 'stopped');
   assert.deepEqual(['up', 'down', 'online', 'connecting', 'offline', 'fork', 'stopped', 'x'].map(s => ls.normalize(s)),
     ['online', 'offline', 'online', 'connecting', 'offline', 'fork', 'stopped', 'offline']);
-  assert.equal(ls.indicator({ state: 'up' }), '⇄ online', 'the row reads an old record in the new words');
-  assert.equal(ls.isDown({ state: 'down', detail: 'stopped' }), true);
+  // deliberately an old record's word, outside LinkStateWord
+  assert.equal(ls.indicator({ state: 'up' } as unknown as LinkState), '⇄ online', 'the row reads an old record in the new words');
+  assert.equal(ls.isDown({ state: 'down', detail: 'stopped' } as unknown as LinkState), true); // deliberately old, with a detail
 });
 
 test('link-state: indicator wording', () => {
@@ -101,13 +103,16 @@ test('link-state: indicator wording', () => {
   assert.equal(ls.indicator({ state: 'offline' }, { now }), '✕ offline');
   assert.equal(ls.indicator({ state: 'stopped', queued: 1 }), '✕ stopped · 1 queued');
   assert.equal(ls.indicator({ state: 'fork' }), '✕ out of step: /sub-human doctor');
-  assert.deepEqual([{ state: 'online' }, { state: 'connecting', attempt: 1 }, { state: 'connecting', attempt: 2 }, { state: 'offline' }, { state: 'fork' }, { state: 'stopped' }].map(ls.isDown),
+  assert.deepEqual(([{ state: 'online' }, { state: 'connecting', attempt: 1 }, { state: 'connecting', attempt: 2 }, { state: 'offline' }, { state: 'fork' }, { state: 'stopped' }] as LinkState[]).map(ls.isDown),
     [false, false, true, true, true, true]);
 });
 
 test('room row: the link leads while offline or connecting again and closes the row while online; none for a room hosted here', t => {
   const code = 'vole-0001';
-  const o = link => ({ entries: [], members: { alice: { role: 'member' }, bob: { role: 'member' } }, taskSummary: 'tasks 1 open', link });
+  // members by role only (rowText counts them); a link as the row reads it (no source)
+  const o = (link: Partial<LinkState> | null) => ({
+    entries: [], members: { alice: { role: 'member' }, bob: { role: 'member' } } as unknown as Members, taskSummary: 'tasks 1 open', link: link as LinkState | null,
+  });
   assert.equal(rows.rowText(code, code, 'alice', o(null)), '2 here · tasks 1 open');
   assert.equal(rows.rowText(code, code, 'alice', o({ state: 'online' })), '2 here · tasks 1 open · ⇄ online');
   assert.equal(rows.rowText(code, code, 'alice', o({ state: 'connecting', attempt: 3 })), '… connecting (3) · 2 here · tasks 1 open');
@@ -124,7 +129,7 @@ test('agent statusline: the room row carries the link state', t => {
   const { code } = h.register('alice', 'member', process.pid);
   // a seat in a mirror needs a running daemon; the link state is what this test is about, so stub its read
   const real = ls.seam.read;
-  ls.seam.read = c => (c === code ? { state: 'connecting', attempt: 2 } : null);
+  ls.seam.read = c => (c === code ? { state: 'connecting', attempt: 2 } as LinkState : null);
   t.after(() => { ls.seam.read = real; });
   const out = agentStatusline({ tasks: [{ id: 'a1', description: code, status: 'running' }] }, { env: { NO_COLOR: '1' } });
   const [line] = out.split('\n').map(l => JSON.parse(l));

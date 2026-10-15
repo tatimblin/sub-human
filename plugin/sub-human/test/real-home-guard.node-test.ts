@@ -4,6 +4,7 @@
 // installed plugin: lib/remote/shim.ts refreshes passively there, forced only by host --ssh, admit, authorize and
 // doctor --fix. Here the "real home" is a fake user's (HOME), so nothing real is touched either.
 import test from 'node:test';
+import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -25,7 +26,7 @@ test('guard: every test process has a temp SUB_HUMAN_HOME, never the real one, a
 });
 
 /** A fake user whose ~/.sub-human records an installed plugin (a root under the plugin cache, with a CLI). */
-function fakeUser(t) {
+function fakeUser(t: TestContext) {
   const user = h.tmpDir('sh-user-', t);
   const installed = path.join(user, '.claude', 'plugins', 'cache', 'mkt', 'sub-human', '0.3.9');
   fs.mkdirSync(path.join(installed, 'scripts'), { recursive: true });

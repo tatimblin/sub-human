@@ -4,11 +4,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import * as config from '../lib/config.ts';
+import type { TailEvent } from '../mod/core/types.ts';
 
-const load = rel => import(path.join(import.meta.dirname, '..', rel));
+interface Core {
+  'mod/core/deliver.ts': typeof import('../mod/core/deliver.ts');
+  'mod/core/shim.ts': typeof import('../mod/core/shim.ts');
+  'mod/core/prompt.ts': typeof import('../mod/core/prompt.ts');
+}
+const load = <K extends keyof Core>(rel: K): Promise<Core[K]> => import(path.join(import.meta.dirname, '..', rel));
 
 // mod/ imports no CommonJS, so it keeps its own copies; each is skipped until lib/config.ts names it.
-for (const key of ['MOD_RESTART_MS', 'MOD_RESTART_MAX_MS', 'MOD_RESTART_STEADY_MS', 'MOD_DELIVERY_ERROR_LOG_MS']) {
+for (const key of ['MOD_RESTART_MS', 'MOD_RESTART_MAX_MS', 'MOD_RESTART_STEADY_MS', 'MOD_DELIVERY_ERROR_LOG_MS'] as const) {
   test(`deliver: ${key} equals lib/config.ts`, { skip: !(key in config) && `lib/config.ts has no ${key}` }, async () => {
     const d = await load('mod/core/deliver.ts');
     assert.equal(d[key], config[key]);
@@ -86,7 +92,7 @@ test('deliver: a wake nothing took is held for the next turn.start, newest PENDI
 
 test('deliver: typed through Remote Control (remote), chat is relayed (queued); mid-turn, a notice now too. A relay is only the room lines', async () => {
   const d = await load('mod/core/deliver.ts');
-  const chat = { type: 'chat', lines: ['bob: hi', 'carol joined'] };
+  const chat: TailEvent = { type: 'chat', lines: ['bob: hi', 'carol joined'] };
   assert.deepEqual(d.route(chat), [{ do: 'log', text: 'bob: hi' }, { do: 'log', text: 'carol joined' }]);
   assert.deepEqual(d.route(chat, { remote: true }), [{ do: 'relay', lines: ['bob: hi', 'carol joined'] }]);
   assert.deepEqual(d.route(chat, { remote: true, turnRunning: true }), [
@@ -100,7 +106,7 @@ test('deliver: typed through Remote Control (remote), chat is relayed (queued); 
   assert.match(d.RELAY_CONTEXT, /^\(for Claude\) sub-human: .*Remote Control.*It needs no reply: a few words at most, or none/);
   const { gateVerdict, onRemote } = await load('mod/core/prompt.ts');
   // a relay may start "room:": that is no post (there is no room: tag), whoever submits it
-  assert.equal(gateVerdict({ text: relay.split('\n').slice(1).join('\n'), origin: { kind: 'plugin', name: 'sub-human' } }), null);
+  assert.equal(gateVerdict({ text: relay.split('\n').slice(1).join('\n'), origin: { kind: 'plugin', name: 'sub-human' } }, undefined), null);
   assert.deepEqual(['bridge', 'composer', 'sdk', 'peer', 'plugin'].map(kind => onRemote({ kind })), [true, false, false, undefined, undefined]);
   assert.equal(onRemote(undefined), undefined);
 });

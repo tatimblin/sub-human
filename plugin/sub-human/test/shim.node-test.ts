@@ -14,7 +14,7 @@ const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1
 const ALLOW = { SUB_HUMAN_ALLOW_TMP_ROOT: '1' };
 
 /** A fake plugin version dir whose CLI prints "<tag> <args>". */
-function fakeVersion(dir, tag, sub = 'scripts') {
+function fakeVersion(dir: string, tag: string, sub = 'scripts') {
   fs.mkdirSync(path.join(dir, sub), { recursive: true });
   fs.writeFileSync(path.join(dir, sub, 'sub-human'), `console.log(${JSON.stringify(tag)}, process.argv.slice(2).join(' '))\n`);
   return dir;
@@ -89,9 +89,9 @@ test('cli: doctor --fix rewrites an older line for this home to run the shim; ot
   h.freshHome(t);
   const code = h.newRoom();
   h.register('alice', 'member');
-  const run = args => spawnSync(process.execPath, [h.BIN, ...args], { env: h.childEnv(), encoding: 'utf8' });
+  const run = (args: string[]) => spawnSync(process.execPath, [h.BIN, ...args], { env: h.childEnv(), encoding: 'utf8' });
   const id = 'a1b2c3d4e5f6';
-  const home = path.resolve(process.env.SUB_HUMAN_HOME);
+  const home = path.resolve(process.env.SUB_HUMAN_HOME!);
   const ak = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
   const old = `command="SUB_HUMAN_HOME=${home} ${process.execPath} ${h.BIN} serve --stdio ${code} --link ${id}",restrict ${KEY} sub-human:${code}:${id}`;
   fs.writeFileSync(ak, `ssh-rsa AAAAB3 me\n${old}\n`, { mode: 0o600 });

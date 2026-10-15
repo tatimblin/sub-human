@@ -1,8 +1,6 @@
 // lib/cli/args.ts: the one flag parser scripts/sub-human, lib/cli/*.js and the join hook's host flags share.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import * as h from './helpers.ts';
 import { parse } from '../lib/cli/args.ts';
 
 test('args.parse: values, switches, optional values, the rest in order, and -- ends the flags', () => {

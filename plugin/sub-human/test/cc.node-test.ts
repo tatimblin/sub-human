@@ -8,24 +8,30 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as cc from '../lib/cc.ts';
+import type { JobsOpts, ProbeResult } from '../lib/cc.ts';
+
+/** scripts/probe-cc.js --json. */
+interface ProbeOut { ok: boolean; version: string; cpuMs: number; results: ProbeResult[] }
+/** A runner's answer, as jobs() and daemonStatus() read it. */
+type RunAnswer = ReturnType<NonNullable<JobsOpts['run']>>;
 
 const PROBE = path.join(import.meta.dirname, '..', '..', '..', 'scripts', 'probe-cc.js');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-cc-'));
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-const J = o => JSON.stringify(o);
+const J = (o: unknown) => JSON.stringify(o);
 const REJECT = 'The user doesn\'t want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n';
 const NOTE_SUFFIX = '\n\nNote: The user\'s next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they\'d prefer you to work, consider saving that to memory for future sessions.';
 
-const planAttach = p => J({ type: 'attachment', isSidechain: false, attachment: { type: 'plan_mode', reminderType: 'full', isSubAgent: false, planFilePath: p, planExists: false } });
-const toolUse = (id, input) => J({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'ExitPlanMode', input }] } });
-const rejected = (id, note, { structured = true } = {}) => J({
+const planAttach = (p: string) => J({ type: 'attachment', isSidechain: false, attachment: { type: 'plan_mode', reminderType: 'full', isSubAgent: false, planFilePath: p, planExists: false } });
+const toolUse = (id: string, input: unknown) => J({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'ExitPlanMode', input }] } });
+const rejected = (id: string, note: string, { structured = true } = {}) => J({
   type: 'user', promptId: 'p1',
   message: { role: 'user', content: [{ type: 'tool_result', content: REJECT + note + NOTE_SUFFIX, is_error: true, tool_use_id: id }] },
   toolDenialKind: 'user-rejected', ...(structured ? { userFeedback: note } : {}),
 });
-const escaped = id => J({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'The user doesn\'t want to proceed with this tool use. The tool use was rejected', is_error: true, tool_use_id: id }] } });
-const approved = id => J({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'User has approved your plan.', tool_use_id: id }] } });
+const escaped = (id: string) => J({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'The user doesn\'t want to proceed with this tool use. The tool use was rejected', is_error: true, tool_use_id: id }] } });
+const approved = (id: string) => J({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'User has approved your plan.', tool_use_id: id }] } });
 
 // ---------- env ----------
 
@@ -116,12 +122,12 @@ test('planAnswer: null until the tool_result is on disk; then the note, or note 
 });
 
 test('lastHumanPrompt: the newest prompt only when it is the person\'s (no origin, or kind human); tool results and meta rows skipped', () => {
-  const user = (content, extra = {}) => J({ type: 'user', message: { role: 'user', content }, timestamp: '2026-10-08T10:00:00.000Z', ...extra });
+  const user = (content: unknown, extra = {}) => J({ type: 'user', message: { role: 'user', content }, timestamp: '2026-10-08T10:00:00.000Z', ...extra });
   assert.deepEqual(cc.lastHumanPrompt([user('open v2'), user('Open v3')]), { text: 'Open v3', at: Date.parse('2026-10-08T10:00:00.000Z') });
-  assert.equal(cc.lastHumanPrompt([user('Open v3', { origin: { kind: 'human' } })]).text, 'Open v3');
-  assert.equal(cc.lastHumanPrompt([user([{ type: 'text', text: 'Open v3' }])]).text, 'Open v3');
+  assert.equal(cc.lastHumanPrompt([user('Open v3', { origin: { kind: 'human' } })])!.text, 'Open v3');
+  assert.equal(cc.lastHumanPrompt([user([{ type: 'text', text: 'Open v3' }])])!.text, 'Open v3');
   const skipped = [user([{ type: 'tool_result', tool_use_id: 't', content: 'x' }]), user('caveat', { isMeta: true }), user('side', { isSidechain: true }), J({ type: 'assistant', message: { content: 'hi' } })];
-  assert.equal(cc.lastHumanPrompt([user('Open v3'), ...skipped]).text, 'Open v3');
+  assert.equal(cc.lastHumanPrompt([user('Open v3'), ...skipped])!.text, 'Open v3');
   for (const kind of ['peer', 'task-notification', 'channel', 'plugin', 'unclassified', undefined]) {
     assert.equal(cc.lastHumanPrompt([user('Open v3'), user('open v2', { origin: kind === undefined ? {} : { kind } })]), null, String(kind));
   }
@@ -131,7 +137,7 @@ test('lastHumanPrompt: the newest prompt only when it is the person\'s (no origi
 test('planFeedback: the Remote Control deny shapes observed on 2.1.292 (with a note, and bare)', () => {
   const head = 'The user doesn\'t want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). ';
   const tail = '\n\nNote: The user\'s next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they\'d prefer you to work, consider saving that to memory for future sessions.';
-  const line = (id, content, extra) => J({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content, is_error: true, tool_use_id: id }] }, toolDenialKind: 'user-rejected', ...extra });
+  const line = (id: string, content: string, extra: object) => J({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content, is_error: true, tool_use_id: id }] }, toolDenialKind: 'user-rejected', ...extra });
   const noted = `${head}To tell you how to proceed, the user said:\nDiscard this plan${tail}`;
   assert.equal(cc.planFeedback([line('p1', noted, { toolUseResult: `Error: ${noted}`, userFeedback: 'Discard this plan' })], 'p1'), 'Discard this plan');
   assert.equal(cc.planFeedback([line('p1', noted, { toolUseResult: `Error: ${noted}` })], 'p1'), 'Discard this plan', 'the text alone');
@@ -170,6 +176,7 @@ const AGENTS = J([
 
 test('parseAgentsJson', () => {
   const js = cc.parseAgentsJson(AGENTS);
+  assert.ok(js);
   assert.equal(js.length, 3);
   assert.deepEqual(js[0], { pid: null, id: 'e738dbef', sessionId: 'e738dbef-93a2', status: null, state: 'failed', kind: 'background', name: 'old', cwd: '/r', startedAt: 1 });
   assert.equal(js[1].pid, 14474);
@@ -179,12 +186,12 @@ test('parseAgentsJson', () => {
 });
 
 test('jobs() runs agents --json through an injected runner', () => {
-  const calls = [];
-  const run = (bin, args) => { calls.push([bin, args]); return { status: 0, stdout: AGENTS }; };
-  assert.equal(cc.jobs({ all: true, bin: 'cl', run }).length, 3);
+  const calls: [string, string[]][] = [];
+  const run = (bin: string, args: string[]) => { calls.push([bin, args]); return { status: 0, stdout: AGENTS }; };
+  assert.equal(cc.jobs({ all: true, bin: 'cl', run })!.length, 3);
   assert.deepEqual(calls[0], ['cl', ['agents', '--json', '--all']]);
   assert.equal(cc.jobs({ run: () => ({ status: 1, stdout: '' }) }), null);
-  assert.equal(cc.jobs({ run: () => ({ error: new Error('ENOENT') }) }), null);
+  assert.equal(cc.jobs({ run: () => ({ error: new Error('ENOENT') }) as RunAnswer }), null); // no status or stdout, as spawnSync's failure
   assert.equal(cc.jobs({ run: () => { throw new Error('x'); } }), null);
   assert.deepEqual(cc.stopCmd(7), ['stop', '7']);
   assert.deepEqual(cc.agentsCmd(), ['agents', '--json']);
@@ -200,11 +207,11 @@ test('parseDaemonStatus / daemonStatus: pid and version, not running, anything e
   assert.deepEqual(cc.parseDaemonStatus('version: 2.1.296\n'), { running: true, pid: null, version: '2.1.296' });
   assert.equal(cc.parseDaemonStatus(''), null);
   assert.equal(cc.parseDaemonStatus('Usage: claude daemon [subcommand]'), null);
-  const calls = [];
-  const run = (bin, args) => { calls.push([bin, args]); return { status: 0, stdout: DAEMON_UP }; };
-  assert.equal(cc.daemonStatus({ bin: 'cl', run }).pid, 51234);
+  const calls: [string, string[]][] = [];
+  const run = (bin: string, args: string[]) => { calls.push([bin, args]); return { status: 0, stdout: DAEMON_UP }; };
+  assert.equal(cc.daemonStatus({ bin: 'cl', run })!.pid, 51234);
   assert.deepEqual(calls[0], ['cl', ['daemon', 'status']]);
-  assert.equal(cc.daemonStatus({ run: () => ({ status: 1, stdout: DAEMON_DOWN }) }).running, false, 'exit 1 is "not running", not an error');
+  assert.equal(cc.daemonStatus({ run: () => ({ status: 1, stdout: DAEMON_DOWN }) })!.running, false, 'exit 1 is "not running", not an error');
   assert.equal(cc.daemonStatus({ run: () => ({ error: new Error('ENOENT'), status: null, stdout: '' }) }), null);
   assert.equal(cc.daemonStatus({ run: () => { throw new Error('x'); } }), null);
   assert.equal(cc.daemonStatus({ run: () => ({ status: 0, stdout: 'unknown command' }) }), null);
@@ -228,7 +235,7 @@ test('exeState: /proc/PID/exe " (deleted)" on Linux; elsewhere ps -o comm=, dele
   for (const bad of [0, -1, 'x', null, 1.5]) assert.equal(cc.exeState(bad, { readlink: never, ps: never }), null);
   // a live process of this test run: its executable exists
   const self = cc.exeState(process.pid);
-  assert.equal(self.deleted, false);
+  assert.equal(self!.deleted, false);
 });
 
 test('DAEMON_ENV_ALLOW and daemonEnv', () => {
@@ -324,7 +331,7 @@ const probeRun = spawnSync(process.execPath, [PROBE, '--json'], { encoding: 'utf
 const haveBinary = probeRun.status !== 2;
 
 test('probe: the installed binary satisfies the contract', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
-  const out = JSON.parse(probeRun.stdout);
+  const out: ProbeOut = JSON.parse(probeRun.stdout);
   const failed = out.results.filter(r => !r.ok).map(r => `${r.id}: ${r.missing.join(' | ')}`);
   assert.deepEqual(failed, [], `claude ${out.version}`);
   assert.equal(probeRun.status, 0);
@@ -336,7 +343,7 @@ test('probe: a mutated search string fails', { skip: !haveBinary && 'no Claude C
   const extra = J([{ id: 'mutated', search: 'Inbound cross-session peer messages (SendMessage from your other sessions)!!x' }]);
   const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'cross-session-inbound'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
   assert.equal(r.status, 1);
-  const out = JSON.parse(r.stdout);
+  const out: ProbeOut = JSON.parse(r.stdout);
   assert.equal(out.ok, false);
   assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['cross-session-inbound', true], ['mutated', false]]);
 });
@@ -346,39 +353,39 @@ test('probe: a mutated shape fails', { skip: !haveBinary && 'no Claude Code bina
     { id: 'shape-mutated', search: 'Valid types are: approve, block', shape: 'case"block":~.permissionBehavior="allow"' }]);
   const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'none'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
   assert.equal(r.status, 1);
-  const out = JSON.parse(r.stdout);
+  const out: ProbeOut = JSON.parse(r.stdout);
   assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['shape-ok', true], ['shape-mutated', false]]);
   assert.match(out.results[1].missing[0], /^shape: /);
 });
 
 test('probe: a mutated function-hooks entry fails (search and shape)', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
-  const by = id => cc.CONTRACT.find(e => e.id === id);
+  const by = (id: string) => cc.CONTRACT.find(e => e.id === id)!;
   const extra = J([
-    { id: 'modules-search-mutated', search: by('hooks-json-modules').search[2] + '!!x' },
-    { id: 'chain-shape-mutated', search: by('classic-chain-order').search, shape: by('classic-chain-order').shape[0].replace('function-hook chain', 'function-hooks chain') },
-    { id: 'notice-level-mutated', search: by('session-append-notice-hidden').search[0], shape: by('session-append-notice-hidden').shape.replace('"info"', '"notice"') },
+    { id: 'modules-search-mutated', search: by('hooks-json-modules').search![2] + '!!x' },
+    { id: 'chain-shape-mutated', search: by('classic-chain-order').search, shape: by('classic-chain-order').shape![0].replace('function-hook chain', 'function-hooks chain') },
+    { id: 'notice-level-mutated', search: by('session-append-notice-hidden').search![0], shape: (by('session-append-notice-hidden').shape as string).replace('"info"', '"notice"') },
   ]);
   const r = spawnSync(process.execPath, [PROBE, '--json', '--only', 'hooks-json-modules,classic-chain-order,session-append-notice-hidden'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: extra } });
   assert.equal(r.status, 1);
-  const out = JSON.parse(r.stdout);
+  const out: ProbeOut = JSON.parse(r.stdout);
   assert.deepEqual(out.results.map(x => [x.id, x.ok]), [['hooks-json-modules', true], ['classic-chain-order', true], ['session-append-notice-hidden', true],
     ['modules-search-mutated', false], ['chain-shape-mutated', false], ['notice-level-mutated', false]]);
 });
 
 test('probe: each review-spike entry fails on a mutated search or shape', { skip: !haveBinary && 'no Claude Code binary found' }, () => {
   // cc-2.1.292.md "Review spikes": the MCP, title and chain-order entries each fail when one string is off by a character
-  const by = id => cc.CONTRACT.find(e => e.id === id);
-  const list = x => (Array.isArray(x) ? x : [x]);
+  const by = (id: string) => cc.CONTRACT.find(e => e.id === id)!;
+  const list = (x: string | readonly string[]) => (Array.isArray(x) ? x : [x]) as readonly string[];
   const ids = ['mcp-stdio-ppid', 'mcp-progress-resets-idle-timeout', 'mcp-server-shared-by-subagents', 'session-title-address', 'classic-chain-order'];
-  const extra = [];
+  const extra: { id: string; search: string; shape?: string }[] = [];
   for (const id of ids) {
     const e = by(id);
-    list(e.search).forEach((s, i) => extra.push({ id: `${id}/search${i}`, search: s + '!!x' }));
-    list(e.shape || []).forEach((sh, i) => extra.push({ id: `${id}/shape${i}`, search: list(e.search)[0], shape: sh.replace(/[a-zA-Z]{4,}/, w => w + 'Q') }));
+    list(e.search!).forEach((s, i) => extra.push({ id: `${id}/search${i}`, search: s + '!!x' }));
+    list(e.shape || []).forEach((sh, i) => extra.push({ id: `${id}/shape${i}`, search: list(e.search!)[0], shape: sh.replace(/[a-zA-Z]{4,}/, w => w + 'Q') }));
   }
   const r = spawnSync(process.execPath, [PROBE, '--json', '--only', ids.join(',')], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, CC_PROBE_EXTRA: J(extra) } });
   assert.equal(r.status, 1);
-  const out = JSON.parse(r.stdout);
+  const out: ProbeOut = JSON.parse(r.stdout);
   assert.deepEqual(out.results.map(x => [x.id, x.ok]), [...ids.map(id => [id, true]), ...extra.map(x => [x.id, false])]);
 });
 

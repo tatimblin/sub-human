@@ -14,9 +14,27 @@ import * as room from '../lib/room.ts';
 import * as atRoom from '../hooks/at-room.ts';
 import * as tail from '../lib/tail.ts';
 import * as identity from '../lib/identity.ts';
+import type { Entry } from '../lib/room/types.ts';
+import type { Hello, HelloSeat, RunOutput } from '../mod/core/types.ts';
+
+/** A route action that carries text (submit, mid-turn-wake, log, append). */
+type WithText = { text: string };
 
 const PLUGIN = path.join(import.meta.dirname, '..');
-const load = rel => import(path.join(PLUGIN, rel));
+/** The modules this file loads, by path under the plugin. */
+interface Mods {
+  'mod/core/chat.ts': typeof import('../mod/core/chat.ts');
+  'mod/core/deliver.ts': typeof import('../mod/core/deliver.ts');
+  'mod/core/guard.ts': typeof import('../mod/core/guard.ts');
+  'mod/core/prefilter.ts': typeof import('../mod/core/prefilter.ts');
+  'mod/core/prompt.ts': typeof import('../mod/core/prompt.ts');
+  'mod/core/seat.ts': typeof import('../mod/core/seat.ts');
+  'mod/core/send.ts': typeof import('../mod/core/send.ts');
+  'mod/core/shim.ts': typeof import('../mod/core/shim.ts');
+  'mod/core/state.ts': typeof import('../mod/core/state.ts');
+  'mod/register.ts': typeof import('../mod/register.ts');
+}
+const load = <K extends keyof Mods>(rel: K): Promise<Mods[K]> => import(path.join(PLUGIN, rel));
 
 // ---------- copies kept equal ----------
 test('mod/core copies of the CommonJS patterns and chat constants are equal to their sources', async () => {
@@ -30,10 +48,10 @@ test('mod/core copies of the CommonJS patterns and chat constants are equal to t
 });
 
 test('mod/ is pure: no node: or CommonJS imports, no dynamic import(), no seat key, no store writes', () => {
-  const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(x => x.isDirectory() ? walk(path.join(d, x.name)) : [path.join(d, x.name)]);
+  const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap(x => x.isDirectory() ? walk(path.join(d, x.name)) : [path.join(d, x.name)]);
   const files = walk(path.join(PLUGIN, 'mod')).filter(f => /\.(mjs|ts)$/.test(f));
   assert.ok(files.length >= 8);
-  const code = f => fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
+  const code = (f: string) => fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
   for (const f of files.filter(x => !x.endsWith('.ts'))) {
     const src = code(f);
     assert.doesNotMatch(src, /from\s+['"]node:|require\(|\bimport\(/, f);
@@ -45,7 +63,7 @@ test('mod/ is pure: no node: or CommonJS imports, no dynamic import(), no seat k
 // ---------- state ----------
 test('state: every $.state reference in mod/ names a key in KEYS, and KEYS is what types/index.d.ts declares', async () => {
   const { KEYS } = await load('mod/core/state.ts');
-  const used = new Set();
+  const used = new Set<string>();
   for (const f of fs.readdirSync(path.join(PLUGIN, 'mod')).filter(x => x.endsWith('.ts'))) {
     const src = fs.readFileSync(path.join(PLUGIN, 'mod', f), 'utf8');
     for (const m of src.matchAll(/\{ plugin: '([^']+)', key: '([^']+)' \}/g)) {
@@ -92,9 +110,10 @@ test('seat: parseHello keeps a good answer, refuses anything else; parseAddr rea
   assert.equal(parseHello('not json', 's1'), null);
   assert.equal(parseHello(JSON.stringify({ home: 'relative' }), 's1'), null);
   const bad = parseHello(JSON.stringify({ ...out, seat: { name: '../x', code: 'otter-4821' } }), 's1');
+  assert.ok(bad);
   assert.equal(bad.seat, null);
   assert.equal(seated(bad), false);
-  assert.equal(parseHello(JSON.stringify({ home: '/h' }), null).realHome, '/h');
+  assert.equal(parseHello(JSON.stringify({ home: '/h' }), null)!.realHome, '/h');
   assert.deepEqual(parseAddr('bob.otter-4821'), { name: 'bob', code: 'otter-4821' });
   assert.deepEqual(parseAddr('b.o.b.otter-4821'), { name: 'b.o.b', code: 'otter-4821' });
   for (const x of ['bob', 'Bob session', 'bob.otter-48', '.otter-4821', null, 42]) assert.equal(parseAddr(x), null, String(x));
@@ -103,8 +122,8 @@ test('seat: parseHello keeps a good answer, refuses anything else; parseAddr rea
 // ---------- shim ----------
 test('shim: the stdout -> ClassicResult table covers every output shape the hooks emit today', async () => {
   const { toClassic, shimEnv, shimArgv } = await load('mod/core/shim.ts');
-  const ok = (o, extra = {}) => ({ exitCode: 0, stdout: (typeof o === 'string' ? o : JSON.stringify(o)) + '\n', stderr: '', ...extra });
-  const T = [
+  const ok = (o: unknown, extra = {}): RunOutput => ({ exitCode: 0, stdout: (typeof o === 'string' ? o : JSON.stringify(o)) + '\n', stderr: '', ...extra });
+  const T: [string, string, RunOutput, unknown][] = [
     // [what, event, run, expected {result, systemMessage?}]
     ['at-room ✓ sent', 'UserPromptSubmit',
       ok({ continue: false, stopReason: "✓ sent to room otter-4821 (Claude wasn't asked)", hookSpecificOutput: { hookEventName: 'UserPromptSubmit', sessionTitle: 'alice.otter-4821' } }),
@@ -156,12 +175,12 @@ test('shim: a real hook\'s output translates (at-room posting through prompt.ts)
   assert.equal(r.code, 0, r.stderr);
   const { result } = toClassic('UserPromptSubmit', { exitCode: r.code, stdout: r.stdout, stderr: r.stderr });
   assert.equal(result.preventContinuation, true);
-  assert.match(result.stopReason, /^✓ sent/);
+  assert.match(result.stopReason!, /^✓ sent/);
 });
 
 test('shim: subHuman (a hook run with SUB_HUMAN_SHIM=1) comes out beside the result', async () => {
   const { toClassic, SHIM_MODE } = await load('mod/core/shim.ts');
-  const ok = o => ({ exitCode: 0, stdout: JSON.stringify(o) + '\n', stderr: '' });
+  const ok = (o: unknown): RunOutput => ({ exitCode: 0, stdout: JSON.stringify(o) + '\n', stderr: '' });
   assert.deepEqual(SHIM_MODE, { SUB_HUMAN_SHIM: '1' });
   assert.deepEqual(toClassic('Stop', ok({ subHuman: { reviewOpen: false } })), { result: {}, subHuman: { reviewOpen: false } });
   assert.deepEqual(toClassic('Stop', ok({ hookSpecificOutput: { hookEventName: 'Stop', additionalContext: 'exit' }, subHuman: { reviewOpen: true } })),
@@ -175,11 +194,11 @@ test('prompt: parse is at-room\'s parse; the gate drops only an @room that no pe
   for (const s of ['@room hi', '@room', '@room  two', 'room:x', 'room: x', 'room:  x', '@roomx', ' @room x', 'hello', '', '/sub-human alice', 'Room: x', '@room\nmore'])
     assert.equal(p.parse(s), atRoom.parse(s), JSON.stringify(s));
   assert.deepEqual([...p.TYPED_ORIGINS], [...atRoom.TYPED_ORIGINS]);
-  assert.equal(p.gateVerdict({ text: '@room x', origin: { kind: 'composer' } }), null);
-  assert.equal(p.gateVerdict({ text: 'plain', origin: { kind: 'peer' } }), null);
-  assert.match(p.gateVerdict({ text: '@room x', origin: { kind: 'peer' } }), /another Claude session/);
-  assert.match(p.gateVerdict({ text: '@room x', origin: { kind: 'plugin', name: 'other' } }), /"plugin"/);
-  assert.equal(p.gateVerdict({ text: 'room:x', origin: { kind: 'plugin', name: 'other' } }), null, 'room: is no tag');
+  assert.equal(p.gateVerdict({ text: '@room x', origin: { kind: 'composer' } }, undefined), null);
+  assert.equal(p.gateVerdict({ text: 'plain', origin: { kind: 'peer' } }, undefined), null);
+  assert.match(p.gateVerdict({ text: '@room x', origin: { kind: 'peer' } }, undefined)!, /another Claude session/);
+  assert.match(p.gateVerdict({ text: '@room x', origin: { kind: 'plugin', name: 'other' } }, undefined)!, /"plugin"/);
+  assert.equal(p.gateVerdict({ text: 'room:x', origin: { kind: 'plugin', name: 'other' } }, undefined), null, 'room: is no tag');
   assert.equal(p.isAtRoom('@room'), true);
   assert.equal(p.isAtRoom('room'), false);
 });
@@ -190,10 +209,11 @@ test('prompt: parseClaude is at-room\'s; a seated session gates an untyped @clau
     assert.equal(p.parseClaude(s), atRoom.parseClaude(s), JSON.stringify(s));
   assert.equal(p.parseClaude('@room @claude x'), null, 'only a leading tag');
   assert.equal(p.parse('@room @claude x'), '@claude x', 'a plain @room post');
-  const seated = { sid: 's1', seat: { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' } };
-  const unseated = { sid: 's1', seat: null };
+  // hellos as the core reads them: sid and seat only
+  const seated = { sid: 's1', seat: { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' } } as Hello;
+  const unseated = { sid: 's1', seat: null } as Hello;
   const peer = { text: '@claude plan it', origin: { kind: 'peer' } };
-  assert.match(p.gateVerdict(peer, seated), /^✗ not posted: this @claude came from another Claude session/);
+  assert.match(p.gateVerdict(peer, seated)!, /^✗ not posted: this @claude came from another Claude session/);
   assert.equal(p.gateVerdict(peer, unseated), null, 'outside a room @claude is a plain prompt');
   assert.equal(p.gateVerdict(peer, null), null, 'no hello: at-room decides');
   assert.equal(p.gateVerdict({ ...peer, origin: { kind: 'composer' } }, seated), null);
@@ -201,35 +221,35 @@ test('prompt: parseClaude is at-room\'s; a seated session gates an untyped @clau
   assert.deepEqual(p.failClosed('@claude ship it', seated), { block: atRoom.NO_ORIGIN.replace('@room', '@claude'), suppressOriginalPrompt: true });
   assert.equal(p.failClosed('@claude ship it', unseated), null);
   assert.equal(p.failClosed('@claude ship it'), null);
-  const e = prompt => ({ session_id: 's1', prompt });
+  const e = (prompt: string) => ({ session_id: 's1', prompt });
   assert.equal(p.needsNode(e('@claude hi'), unseated), false, 'unseated: an ordinary prompt, no node');
   assert.equal(p.needsNode(e('@claude hi'), seated, { delivering: true, reviewFlag: false }), true, 'the post is signed in node');
 });
 
 test('prompt: needsNode skips node only for a surely unseated session and a prompt that is not an @room', async () => {
   const { needsNode } = await load('mod/core/prompt.ts');
-  const seat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
-  const e = (prompt, sid = 's1') => ({ session_id: sid, prompt });
-  assert.equal(needsNode(e('hi'), { sid: 's1', seat: null }), false);
-  assert.equal(needsNode(e('/sub-human alice'), { sid: 's1', seat: null }), false);
-  assert.equal(needsNode(e('@room hi'), { sid: 's1', seat: null }), true, 'node refuses it: not in a room');
-  assert.equal(needsNode(e('hi'), { sid: 's1', seat }), true);
-  assert.equal(needsNode(e('hi'), { sid: 's0', seat: null }), true, 'another session\'s hello (a /clear not refreshed yet)');
-  assert.equal(needsNode(e('hi'), { sid: null, seat: null }), true, 'a failed refresh');
+  const seat: HelloSeat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
+  const e = (prompt: string, sid = 's1') => ({ session_id: sid, prompt });
+  assert.equal(needsNode(e('hi'), { sid: 's1', seat: null } as Hello), false);
+  assert.equal(needsNode(e('/sub-human alice'), { sid: 's1', seat: null } as Hello), false);
+  assert.equal(needsNode(e('@room hi'), { sid: 's1', seat: null } as Hello), true, 'node refuses it: not in a room');
+  assert.equal(needsNode(e('hi'), { sid: 's1', seat } as Hello), true);
+  assert.equal(needsNode(e('hi'), { sid: 's0', seat: null } as Hello), true, 'another session\'s hello (a /clear not refreshed yet)');
+  assert.equal(needsNode(e('hi'), { sid: null, seat: null } as Hello), true, 'a failed refresh');
   assert.equal(needsNode(e('hi'), null), true, 'no hello yet');
 });
 
 test('prompt: a seated member skips node only while the tail child delivers and no review may be open; never the room\'s Claude', async () => {
   const { needsNode, originKind } = await load('mod/core/prompt.ts');
-  const seat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
-  const hello = { sid: 's1', seat };
-  const e = prompt => ({ session_id: 's1', prompt });
+  const seat: HelloSeat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
+  const hello = { sid: 's1', seat } as Hello; // sid and seat only
+  const e = (prompt: string) => ({ session_id: 's1', prompt });
   assert.equal(needsNode(e('hi'), hello, { delivering: true, reviewFlag: false }), false);
   assert.equal(needsNode(e('hi'), hello, { delivering: false, reviewFlag: false }), true, 'no tail child yet: unsure, node runs');
   assert.equal(needsNode(e('hi'), hello, { delivering: true, reviewFlag: true }), true, 'a review may be open');
   assert.equal(needsNode(e('hi'), hello, { delivering: true }), true, 'flag unset: unsure');
   assert.equal(needsNode(e('@room hi'), hello, { delivering: true, reviewFlag: false }), true, 'the post is signed in node');
-  assert.equal(needsNode(e('hi'), { sid: 's1', seat: { ...seat, role: 'claude' } }, { delivering: true, reviewFlag: false }), true, 'the room\'s Claude: its refusal is node\'s');
+  assert.equal(needsNode(e('hi'), { sid: 's1', seat: { ...seat, role: 'claude' } } as Hello, { delivering: true, reviewFlag: false }), true, 'the room\'s Claude: its refusal is node\'s');
   assert.equal(originKind({ kind: 'composer' }), 'composer');
   assert.equal(originKind({ kind: 'plugin', name: 'sub-human' }), 'plugin:sub-human');
   assert.equal(originKind({ kind: 'plugin' }), 'plugin');
@@ -253,7 +273,9 @@ test('deliver: the child\'s argv and env; lines out of pieces; only well-formed 
   assert.equal(d.parseEvent('{"type":"exec","text":"rm"}'), null);
   assert.equal(d.parseEvent('not json'), null);
   // the tail's own event writer and this parser agree
-  const { events } = tail.formatNdBatch([], { me: { name: 'alice', role: 'member' }, room: {}, entries: [], show: () => false, joinNote: () => '', seen: new Set() });
+  // a stub ctx: an empty batch reads none of it
+  const ctx = { me: { name: 'alice', role: 'member' }, room: {}, entries: [], show: () => false, joinNote: () => '', seen: new Set() };
+  const { events } = tail.formatNdBatch([], ctx as unknown as Parameters<typeof tail.formatNdBatch>[1]);
   assert.deepEqual(events, []);
   for (const ev of [{ type: 'chat', lines: ['bob: hi'] }, { type: 'pull', text: tail.PULL_HEAD + '\nbob: hi' }, { type: 'wake', text: 'x' }, { type: 'health', text: 'room log check: x' }])
     assert.deepEqual(d.parseEvent(JSON.stringify(ev)), ev);
@@ -269,12 +291,12 @@ test('deliver: the routing table: chat is a notice, pull an append, wake a promp
   const idle = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' });
   assert.deepEqual(idle, [{ do: 'submit', text: `${d.WAKE_HEAD}\nroom: decided\n(for Claude) room now: …`, seen: ['room: decided'] }]);
   const { gateVerdict } = await load('mod/core/prompt.ts');
-  assert.equal(gateVerdict({ text: idle[0].text, origin: { kind: 'plugin', name: 'sub-human' } }), null, 'a wake never reads as a "room:" post');
+  assert.equal(gateVerdict({ text: (idle[0] as WithText).text, origin: { kind: 'plugin', name: 'sub-human' } }, undefined), null, 'a wake never reads as a "room:" post');
   const mid = d.route({ type: 'wake', text: 'room: decided\n(for Claude) room now: …' }, { turnRunning: true });
-  assert.deepEqual(mid, [{ do: 'log', text: 'room: decided' }, { do: 'mid-turn-wake', text: idle[0].text }]);
+  assert.deepEqual(mid, [{ do: 'log', text: 'room: decided' }, { do: 'mid-turn-wake', text: (idle[0] as WithText).text }]);
   const roomClaude = d.route({ type: 'wake', text: 'room now: …' }, { role: 'claude', rows: 'SUB-HUMAN ROWS: …' });
-  assert.equal(roomClaude[0].text, `${d.WAKE_HEAD}\nroom now: …\nSUB-HUMAN ROWS: …`, 'the room\'s Claude\'s rows ride on its wakes');
-  assert.equal(d.route({ type: 'wake', text: 'x' }, { role: 'member', rows: 'R' })[0].text.includes('R'), false, 'a member\'s go with the person\'s prompt');
+  assert.equal((roomClaude[0] as WithText).text, `${d.WAKE_HEAD}\nroom now: …\nSUB-HUMAN ROWS: …`, 'the room\'s Claude\'s rows ride on its wakes');
+  assert.equal((d.route({ type: 'wake', text: 'x' }, { role: 'member', rows: 'R' })[0] as WithText).text.includes('R'), false, 'a member\'s go with the person\'s prompt');
   assert.deepEqual(d.route({ type: 'health', text: 'room log check: …' }).map(a => a.do), ['log', 'append']);
   assert.deepEqual(d.route(null), []);
 });
@@ -288,9 +310,8 @@ test('deliver: unread, restartDelay, spawnWanted', async () => {
   assert.deepEqual(d.unread(null, 0), []);
   assert.deepEqual([0, 1, 2, 6, 7, 20].map(d.restartDelay), [1000, 2000, 4000, 60_000, 60_000, 60_000]);
   assert.equal(d.spawnWanted(null), true, 'unsure: start it');
-  assert.equal(d.spawnWanted({ seat: null }), false);
-  assert.equal(d.spawnWanted({ seat: { name: 'a' } }), true);
-  const seat = { name: 'alice', code: 'otter-4821', role: 'member', addr: 'alice.otter-4821' };
+  assert.equal(d.spawnWanted({ seat: null } as Hello), false); // a hello as spawnWanted reads it: the seat only
+  assert.equal(d.spawnWanted({ seat: { name: 'a' } } as Hello), true);
 });
 
 test('prompt: the origin queue hands prompt.submit\'s origin to the classic hook; mergeClassic keeps ours on top', async () => {
@@ -315,9 +336,10 @@ test('prompt: the origin queue hands prompt.submit\'s origin to the classic hook
 // ---------- prefilter ----------
 test('prefilter: consent and the task hooks are skipped only when sure', async () => {
   const f = await load('mod/core/prefilter.ts');
-  const member = { sid: 's1', seat: { name: 'alice', code: 'otter-4821', role: 'member' } };
-  const roomClaude = { sid: 's1', seat: { name: 'claude', code: 'otter-4821', role: 'claude' } };
-  const none = { sid: 's1', seat: null };
+  // hellos as the prefilter reads them: sid and seat only
+  const member = { sid: 's1', seat: { name: 'alice', code: 'otter-4821', role: 'member' } } as Hello;
+  const roomClaude = { sid: 's1', seat: { name: 'claude', code: 'otter-4821', role: 'claude' } } as Hello;
+  const none = { sid: 's1', seat: null } as Hello;
   assert.equal(f.consentNeeded(none, 's1', undefined), false, 'no seat: no review');
   assert.equal(f.consentNeeded(member, 's1', undefined), true, 'flag unset: unsure');
   assert.equal(f.consentNeeded(member, 's1', true), true);
@@ -325,13 +347,13 @@ test('prefilter: consent and the task hooks are skipped only when sure', async (
   assert.equal(f.consentNeeded(none, 's2', false), false, 'the flag alone is enough');
   assert.equal(f.consentNeeded(none, 's2', undefined), true, 'another session\'s hello');
   assert.equal(f.consentNeeded(null, 's1', undefined), true);
-  assert.equal(f.tasksNeeded(member, 's1'), false);
-  assert.equal(f.tasksNeeded(roomClaude, 's1'), true);
+  assert.equal(f.tasksNeeded(member, 's1', undefined), false);
+  assert.equal(f.tasksNeeded(roomClaude, 's1', undefined), true);
   assert.equal(f.tasksNeeded(none, 's1', undefined), false);
   assert.equal(f.tasksNeeded(none, 's1', 'otter-4821'), true, 'a room Claude before its join');
-  assert.equal(f.tasksNeeded(member, 's2'), true);
-  assert.equal(f.tasksNeeded({ ...member, sid: null }, null), true);
-  assert.equal(f.tasksNeeded(null, 's1'), true);
+  assert.equal(f.tasksNeeded(member, 's2', undefined), true);
+  assert.equal(f.tasksNeeded({ ...member, sid: null }, null, undefined), true);
+  assert.equal(f.tasksNeeded(null, 's1', undefined), true);
   assert.equal(f.reviewOpenOf({ reviewOpen: false }), false);
   assert.equal(f.reviewOpenOf({ reviewOpen: 'no' }), undefined);
   assert.equal(f.reviewOpenOf(undefined), undefined);
@@ -346,6 +368,7 @@ test('chat: a peer message is "NAME\'s Claude: …" with nested continuation lin
   assert.equal(peerLines(undefined, 'hi'), null);
   const many = Array.from({ length: 25 }, (_, i) => `l${i}`).join('\n');
   const out = peerLines('bob.otter-4821', many);
+  assert.ok(out);
   assert.equal(out.length, 21);
   assert.equal(out.at(-1), `${NEST}[+5 more lines: ctrl+o]`);
   assert.deepEqual(peerLines('bob.otter-4821', 'a‮b\u0007c\r\nd'), ["bob's Claude: abc", `${NEST}d`]);
@@ -355,7 +378,7 @@ test('chat: a peer message is "NAME\'s Claude: …" with nested continuation lin
 
 test('chat: the room\'s own chatLines come through roomLines unchanged', async () => {
   const { roomLines } = await load('mod/core/chat.ts');
-  const e = { id: 7, from: 'bob', via: 'human', kind: 'say', to: 'room', text: 'sure\nonce we agree' };
+  const e = { id: 7, from: 'bob', via: 'human', kind: 'say', to: 'room', text: 'sure\nonce we agree' } as Entry; // no at: chatLines does not read it
   const lines = room.chatLines(e, { viewer: 'alice' });
   assert.deepEqual(roomLines(lines.join('\n')), lines);
 });
@@ -402,14 +425,14 @@ test('guard: the plugin-code rule reads the cwd only when the command does not n
 test('guard: the person-only CLI is sent to a terminal outside Claude Code, never to its ! mode (the PIN would land in the conversation)', async () => {
   const g = await load('mod/core/guard.ts');
   const why = g.bashVerdict('sub-human invite --ssh');
-  assert.match(why, /in a terminal outside Claude Code, never with !/);
-  assert.doesNotMatch(why, /in your own shell/);
+  assert.match(why!, /in a terminal outside Claude Code, never with !/);
+  assert.doesNotMatch(why!, /in your own shell/);
 });
 
 // ---------- mod-hello ----------
 test('send: SendMessage to a seat on another machine goes through the room; everything else passes on', async () => {
   const { remotePeer, postArgs, postResult } = await load('mod/core/send.ts');
-  const seat = { name: 'jess', code: 'vole-8126', role: 'member', addr: 'jess.vole-8126' };
+  const seat: HelloSeat = { name: 'jess', code: 'vole-8126', role: 'member', addr: 'jess.vole-8126' };
   const members = {
     alice: { name: 'alice', machine: 'aaaa' },
     claude: { name: 'claude', role: 'claude', machine: 'aaaa' },
@@ -457,27 +480,33 @@ test('mod-hello: an unseated session gets seat null (and a lease); a bad payload
   const sid = '0b9c6f8e-1111-4222-8333-444455556666';
   const r = w.hook('mod-hello', { session_id: sid });
   assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.json.seat, null);
-  assert.equal(r.json.home, w.home);
+  const hello = r.json as unknown as Hello; // mod-hello prints a hello, not a hook answer
+  assert.equal(hello.seat, null);
+  assert.equal(hello.home, w.home);
   assert.ok(fs.existsSync(path.join(w.home, 'sessions', 'mods', `${sid}.json`)));
   const bad = w.hook('mod-hello', { session_id: '../../x' });
   assert.equal(bad.code, 0, bad.stderr);
-  assert.equal(bad.json.seat, null);
+  assert.equal((bad.json as unknown as Hello).seat, null);
   assert.ok(!fs.existsSync(path.join(w.home, 'sessions', 'mods', '..')) || !fs.readdirSync(path.join(w.home, 'sessions', 'mods')).some(f => f.includes('x')));
 });
 
 // ---------- the module, as validate reads it ----------
 const validate = spawnSync('claude', ['plugin', 'validate', PLUGIN, '--strict', '--json'], { encoding: 'utf8', timeout: 60_000, env: { ...process.env, HOME: process.env.HOME || os.homedir() } });
+/** The parts of `claude plugin validate --json` this reads. */
+interface ValidateReport {
+  success: boolean;
+  contents: { type: string; gatingHooks?: { hook: string; hasCatch: boolean }[]; notes: string[] }[];
+}
 const haveClaude = !validate.error && /^\s*\{/.test(validate.stdout || '');
 
 test('validate: the module loads, every gating hook has a .catch, and HOOKS lists exactly what it registers', { skip: !haveClaude && 'no claude binary' }, async () => {
-  const report = JSON.parse(validate.stdout);
+  const report: ValidateReport = JSON.parse(validate.stdout);
   assert.equal(report.success, true, validate.stdout);
-  const hooksReport = report.contents.find(c => c.type === 'hooks');
+  const hooksReport = report.contents.find(c => c.type === 'hooks')!;
   const gating = hooksReport.gatingHooks || [];
   assert.ok(gating.length >= 4);
   assert.deepEqual(gating.filter(x => !x.hasCatch).map(x => x.hook), []);
-  const line = hooksReport.notes.find(n => / hooks: /.test(n));
+  const line = hooksReport.notes.find(n => / hooks: /.test(n))!;
   const registered = line.slice(line.indexOf(' hooks: ') + 8).split(/, (?=[a-z]+\.[\w.]+(?:\{|,|$))/).map(h => h.replace(/\{.*$/, ''));
   const { HOOKS } = await load('mod/register.ts');
   assert.deepEqual(registered, HOOKS.map(h => h.event));

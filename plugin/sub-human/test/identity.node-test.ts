@@ -10,6 +10,9 @@ import * as store from '../lib/room/store.ts';
 import * as lockLib from '../lib/lock.ts';
 import { pidStart } from '../lib/lock.ts';
 import * as config from '../lib/config.ts';
+import type { Member } from '../lib/room/types.ts';
+
+type JoinRequest = NonNullable<Parameters<typeof identity.join>[0]>;
 
 test('identity: home, room codes are word-NNNN from the animal list and unique', () => {
   const home = h.freshHome();
@@ -33,17 +36,19 @@ test('identity: home, room codes are word-NNNN from the animal list and unique',
 test('identity: join validates names, reserved names and roles', () => {
   h.freshHome();
   const code = h.newRoom();
-  const j = (name, role = 'member', extra = {}) => identity.join({ code, name, role, pid: process.pid, session_id: 's1', cwd: '/x', ...extra });
+  // name null: deliberately not a string, to see the refusal
+  const j = (name: string | null, role = 'member', extra: Partial<JoinRequest> = {}) =>
+    identity.join({ code, name: name as string, role, pid: process.pid, session_id: 's1', cwd: '/x', ...extra });
   for (const bad of ['', 'a b', 'x'.repeat(33), 'semi;colon', null]) assert.equal(j(bad).ok, false, String(bad));
-  for (const r of ['claude', 'Claude', 'CLAUDE', 'orch', 'Orch', 'room', 'all', 'system', 'host', 'join', 'ROOM']) assert.match(j(r).error, /reserved/, r);
-  assert.match(j('alice', 'claude').error, /joins as "claude"/);
-  assert.match(j('orch', 'orch').error, /invalid role/, 'no orch alias: not a role');
-  assert.match(j('alice', 'orch').error, /invalid role/);
-  assert.match(j('alice', 'admin').error, /invalid role/);
-  assert.match(j('alice', 'observer').error, /invalid role/, 'roles are claude and member only');
-  assert.match(identity.join({ code: 'nope-0000', name: 'alice', role: 'member', pid: process.pid }).error, /no room/);
-  assert.match(j('alice', 'member', { session_id: '../../x' }).error, /session_id/);
-  assert.match(j('alice', 'member', { pid: 'x' }).error, /invalid pid/);
+  for (const r of ['claude', 'Claude', 'CLAUDE', 'orch', 'Orch', 'room', 'all', 'system', 'host', 'join', 'ROOM']) assert.match(j(r).error!, /reserved/, r);
+  assert.match(j('alice', 'claude').error!, /joins as "claude"/);
+  assert.match(j('orch', 'orch').error!, /invalid role/, 'no orch alias: not a role');
+  assert.match(j('alice', 'orch').error!, /invalid role/);
+  assert.match(j('alice', 'admin').error!, /invalid role/);
+  assert.match(j('alice', 'observer').error!, /invalid role/, 'roles are claude and member only');
+  assert.match(identity.join({ code: 'nope-0000', name: 'alice', role: 'member', pid: process.pid }).error!, /no room/);
+  assert.match(j('alice', 'member', { session_id: '../../x' }).error!, /session_id/);
+  assert.match(j('alice', 'member', { pid: 'x' }).error!, /invalid pid/);
   assert.deepEqual(j('claude', 'claude'), { ok: true });
   const m = identity.readMembers(code).claude;
   assert.equal(m.role, 'claude');
@@ -61,10 +66,10 @@ test('identity: a live holder makes the name taken; the same pid rejoins; a dead
   assert.deepEqual(identity.join({ code, name: 'alice', role: 'member', pid: other.pid, session_id: 'sa' }), { ok: true });
   const taken = identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: 'sb' });
   assert.equal(taken.ok, false);
-  assert.match(taken.error, /name taken/);
+  assert.match(taken.error!, /name taken/);
   assert.deepEqual(identity.join({ code, name: 'alice', role: 'member', pid: other.pid, session_id: 'sa2' }), { ok: true, rejoin: true });
   assert.equal(identity.resolveBySession('sa'), null, 'the old session id no longer resolves');
-  assert.equal(identity.resolveBySession('sa2').name, 'alice');
+  assert.equal(identity.resolveBySession('sa2')!.name, 'alice');
   other.kill();
   await h.until(() => !identity.isAlive(other.pid));
   assert.deepEqual(identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: 'sb' }), { ok: true, rejoin: true });
@@ -76,7 +81,7 @@ test('identity: leave frees the name, drops the pid index, keeps lastSeat for --
   h.freshHome();
   const { code } = h.register('alice');
   const sid = `sess-alice-${process.pid}`;
-  assert.equal(identity.resolveByPid(process.pid).name, 'alice');
+  assert.equal(identity.resolveByPid(process.pid)!.name, 'alice');
   assert.equal(identity.leave(code, 'alice'), true);
   assert.ok(identity.readMembers(code).alice.left_at);
   assert.equal(identity.resolveByPid(process.pid), null);
@@ -108,7 +113,7 @@ test('identity: resolution returns {code, name, role, session_id, pid, address} 
 });
 
 /** Run `src` (a function source) in a child and return its JSON output. */
-function inChild(src, env = {}) {
+function inChild(src: string, env: Record<string, string> = {}) {
   const r = spawnSync(process.execPath, ['-e', `const i=require(${JSON.stringify(path.join(h.LIB, 'identity.ts'))});` +
     `console.log(JSON.stringify((${src})()))`], { env: h.childEnv(env), encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
@@ -121,7 +126,7 @@ test('identity: rebindSession after /clear; resolveSelf by CLAUDE_CODE_SESSION_I
   const bob = h.spawnSleeper();
   identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sbob' });
   assert.equal(identity.rebindSession(process.pid, 'new-sid'), true);
-  assert.equal(identity.resolveBySession('new-sid').name, 'alice');
+  assert.equal(identity.resolveBySession('new-sid')!.name, 'alice');
   assert.equal(identity.resolveBySession(`sess-alice-${process.pid}`), null);
   assert.equal(identity.readMembers(code).alice.session_id, 'new-sid');
   assert.equal(identity.rebindSession(process.pid, '../x'), false);
@@ -137,7 +142,7 @@ test('identity: rebindSession after /clear; resolveSelf by CLAUDE_CODE_SESSION_I
   const code2 = h.newRoom();
   h.register('carol', 'member', process.pid, code2);
   assert.ok(identity.readMembers(code).alice.left_at);
-  assert.equal(identity.resolveByPid(process.pid).code, code2);
+  assert.equal(identity.resolveByPid(process.pid)!.code, code2);
   bob.kill();
 });
 
@@ -184,7 +189,7 @@ test('identity: members.json claude {job, pid}: setRoomClaude before the bind, k
   const m = identity.readMembers(code).claude;
   assert.equal(m.job, 'ab12cd34');
   assert.equal(m.pid, process.pid);
-  assert.equal(identity.resolveByPid(process.pid).address, `claude.${code}`);
+  assert.equal(identity.resolveByPid(process.pid)!.address, `claude.${code}`);
   assert.throws(() => identity.setRoomClaude('nope-0000', {}), /no room/);
 });
 
@@ -218,11 +223,11 @@ test('identity: pid reuse: a live pid with a different start time is not the sea
   const idx = JSON.parse(fs.readFileSync(path.join(identity.home(), 'sessions', 'by-pid', `${s.pid}.json`), 'utf8'));
   assert.equal(idx.pid_start, start, 'the by-pid index carries it too');
   assert.deepEqual(identity.liveMembers(code), ['alice']);
-  assert.equal(identity.resolveByPid(s.pid).name, 'alice');
+  assert.equal(identity.resolveByPid(s.pid)!.name, 'alice');
   // Pretend the seat was registered by an older process that had this pid.
   const file = path.join(identity.roomDir(code), 'members.json');
   const ms = JSON.parse(fs.readFileSync(file, 'utf8'));
-  ms.alice.pid_start = start - 3600;
+  ms.alice.pid_start = start! - 3600;
   fs.writeFileSync(file, JSON.stringify(ms));
   assert.equal(identity.isAlive(s.pid), true, 'the pid itself is alive');
   assert.equal(identity.seatAlive(identity.readMembers(code).alice), false);
@@ -246,7 +251,7 @@ test('identity: leave drops the by-pid index (under the members lock) but keeps 
   assert.ok(fs.existsSync(byPid));
   assert.equal(identity.leave(code, 'alice'), true);
   assert.equal(fs.existsSync(byPid), false);
-  assert.equal(identity.lastSeat('sl').name, 'alice');
+  assert.equal(identity.lastSeat('sl')!.name, 'alice');
   assert.equal(identity.leave(code, 'alice'), false, 'already left');
   assert.equal(fs.existsSync(path.join(identity.roomDir(code), 'members.json.lock')), false, 'lock released');
 });
@@ -257,7 +262,7 @@ test('identity: updateRoomClaude merges a patch under the lock, writes nothing f
   assert.equal(identity.updateRoomClaude(code, () => null), null);
   assert.deepEqual(identity.readMembers(code), {});
   identity.updateRoomClaude(code, o => { assert.equal(o, null); return { job: 'pending', claim: 'c1' }; });
-  const r = identity.updateRoomClaude(code, o => ({ claim: undefined, job: o.job === 'pending' ? 'abcd1234' : 'x' }));
+  const r = identity.updateRoomClaude(code, o => ({ claim: undefined, job: o!.job === 'pending' ? 'abcd1234' : 'x' }));
   assert.deepEqual(r, { name: 'claude', role: 'claude', pid: null, job: 'abcd1234' });
   assert.throws(() => identity.updateRoomClaude('nope-0000', () => ({})), /no room/);
 });
@@ -266,7 +271,7 @@ test('identity: the seat lease: join stamps seen_at, heartbeat renews it (thrott
   h.freshHome();
   const { code } = h.register('alice');
   const me = identity.resolveByPid(process.pid);
-  const seen = () => identity.readMembers(code).alice.seen_at;
+  const seen = () => identity.readMembers(code).alice.seen_at!;
   const t0 = Date.parse(seen());
   assert.ok(Number.isFinite(t0), 'join stamps seen_at');
   assert.equal(identity.heartbeat(me, t0 + 1000), false, 'renewed at most every SEAT_BEAT_MS');
@@ -278,7 +283,7 @@ test('identity: the seat lease: join stamps seen_at, heartbeat renews it (thrott
   assert.equal(identity.seatAlive({ ...m, seen_at: new Date(0).toISOString() }), true);
   assert.equal(identity.seatAlive({ ...m, pid: await h.deadPid(), seen_at: new Date().toISOString() }), false);
   // no pid info (a seat kept by a store off this machine): the lease decides
-  const remote = { name: 'zed', role: 'member', pid: null };
+  const remote: Member = { name: 'zed', role: 'member', pid: null };
   assert.equal(identity.seatAlive({ ...remote, seen_at: new Date().toISOString() }), true);
   assert.equal(identity.seatAlive({ ...remote, seen_at: new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString() }), false);
   assert.equal(identity.seatAlive(remote), false, 'no pid and no lease: not alive (a room Claude record before it binds)');
@@ -291,18 +296,19 @@ test('identity: the hooks-module lease records the claude pid and its start time
   h.freshHome();
   const FRESH = identity.MOD_LEASE_FRESH_MS;
   assert.ok(FRESH > 0 && FRESH < 86_400_000, 'the hook tests treat a day-old lease as stale');
-  const sid = n => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
-  const file = s => path.join(identity.home(), 'sessions', 'mods', `${s}.json`);
+  const sid = (n: number) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const file = (s: string) => path.join(identity.home(), 'sessions', 'mods', `${s}.json`);
   const now = Date.now();
 
   const nonce = 'ab'.repeat(16);
   assert.equal(identity.writeModLease(sid(1), { pid: process.pid, nonce }), true);
   const rec = identity.readModLease(sid(1));
+  assert.ok(rec);
   assert.deepEqual(Object.keys(rec).sort(), ['at', 'nonce', 'pid', 'pid_start', 'session_id']);
   assert.equal(rec.pid, process.pid);
   assert.equal(rec.pid_start, pidStart(process.pid));
   assert.equal(rec.nonce, nonce);
-  assert.ok(Math.abs(Date.parse(rec.at) - now) < 5000);
+  assert.ok(Math.abs(Date.parse(rec.at!) - now) < 5000);
 
   assert.equal(identity.modLeaseOk(sid(1), process.pid, now + 10 * FRESH), true, 'this process: however old');
   const other = h.spawnSleeper().pid;
@@ -316,14 +322,14 @@ test('identity: the hooks-module lease records the claude pid and its start time
   assert.equal(identity.modLeaseOk(sid(2), dead, now + FRESH + 1000), false);
   assert.equal(identity.modLeaseOk(sid(2), other, now + FRESH + 1000), false);
   // a reused pid: same number, another start time
-  fs.writeFileSync(file(sid(3)), JSON.stringify({ ...rec, session_id: sid(3), pid_start: rec.pid_start - 3600 }));
+  fs.writeFileSync(file(sid(3)), JSON.stringify({ ...rec, session_id: sid(3), pid_start: rec.pid_start! - 3600 }));
   assert.equal(identity.modLeaseOk(sid(3), process.pid, now + FRESH + 1000), false);
   // another session's lease copied into this session's file does not count
   fs.writeFileSync(file(sid(4)), JSON.stringify({ ...rec, session_id: sid(1) }));
   assert.equal(identity.modLeaseOk(sid(4), process.pid, now), false);
 
   identity.writeModLease(sid(5), {});
-  assert.equal(identity.readModLease(sid(5)).pid, null);
+  assert.equal(identity.readModLease(sid(5))!.pid, null);
   assert.equal(identity.modLeaseOk(sid(5), process.pid, now), true, 'no pid: while recent');
   assert.equal(identity.modLeaseOk(sid(5), process.pid, now + FRESH + 1000), false);
 
@@ -335,7 +341,7 @@ test('identity: the hooks-module lease records the claude pid and its start time
 test('identity: pruneModLeases deletes leases whose process is gone (or reused), and pid-less ones past the fresh window', async () => {
   h.freshHome();
   const FRESH = identity.MOD_LEASE_FRESH_MS;
-  const sid = n => `bbbbbbbb-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  const sid = (n: number) => `bbbbbbbb-0000-4000-8000-${String(n).padStart(12, '0')}`;
   const dir = path.join(identity.home(), 'sessions', 'mods');
   identity.writeModLease(sid(1), { pid: process.pid });
   identity.writeModLease(sid(2), { pid: await h.deadPid() });
@@ -352,7 +358,7 @@ test('identity: pruneModLeases deletes leases whose process is gone (or reused),
 test('identity: machineId is made once per home, random, and every seat records it', () => {
   const home = h.freshHome();
   const id = identity.machineId();
-  assert.match(id, /^[0-9a-f]{16}$/);
+  assert.match(id!, /^[0-9a-f]{16}$/);
   assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'machine.json'), 'utf8')).id, id);
   assert.equal(identity.machineId(), id);
   h.freshHome();
@@ -365,7 +371,7 @@ test('identity: a seat of another machine is judged by its lease, whatever its p
   h.freshHome();
   const code = h.newRoom();
   const fresh = new Date().toISOString(), stale = new Date(Date.now() - config.SEAT_LEASE_MS - 1).toISOString();
-  const far = { name: 'zed', role: 'member', machine: 'far-away', pid: process.pid };
+  const far: Member = { name: 'zed', role: 'member', machine: 'far-away', pid: process.pid };
   assert.equal(identity.seatAlive({ ...far, seen_at: fresh }), true);
   assert.equal(identity.seatAlive({ ...far, seen_at: stale }), false, 'a live pid here says nothing about another machine');
   assert.equal(identity.seatAlive({ ...far, pid: await h.deadPid(), seen_at: fresh }), true);
@@ -374,9 +380,9 @@ test('identity: a seat of another machine is judged by its lease, whatever its p
   const z = identity.readMembers(code).zed;
   assert.deepEqual([z.machine, z.pid, z.session_id], ['far-away', undefined, undefined]);
   assert.deepEqual(identity.liveMembers(code), ['zed']);
-  assert.match(identity.join({ code, name: 'zed', role: 'member', pid: process.pid }).error, /name taken/, 'held on another machine');
+  assert.match(identity.join({ code, name: 'zed', role: 'member', pid: process.pid }).error!, /name taken/, 'held on another machine');
   assert.equal(identity.resolveByPid(process.pid), null);
-  assert.match(identity.join({ code, name: 'amy', role: 'member' }).error, /invalid pid/, 'a seat of this machine needs its pid');
+  assert.match(identity.join({ code, name: 'amy', role: 'member' }).error!, /invalid pid/, 'a seat of this machine needs its pid');
 });
 
 test('identity: a 0.4.x room names its Claude "orch" (members.json and the session index): read as claude, written as claude only', () => {
@@ -397,7 +403,7 @@ test('identity: a 0.4.x room names its Claude "orch" (members.json and the sessi
   assert.deepEqual([ms.claude.name, ms.claude.role, ms.claude.job], ['claude', 'claude', 'j0400']);
   assert.deepEqual(identity.liveMembers(code), ['alice'], 'the room\'s Claude is not a person');
   assert.deepEqual(identity.lastSeat(sid), { code, name: 'claude', role: 'claude', address: `claude.${code}` });
-  const me = identity.resolveBySession(sid);
+  const me = identity.resolveBySession(sid)!;
   assert.deepEqual([me.name, me.role, me.address], ['claude', 'claude', `claude.${code}`]);
   // the next write holds only new names
   identity.setRoomClaude(code, { orphan_since: now });

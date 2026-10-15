@@ -25,7 +25,7 @@ test('text.clip counts code points and never splits a surrogate pair; oneLine', 
 
 test('config.envMs: unset, empty, junk, negative and 0 give the fallback; allowZero takes 0', () => {
   const k = 'SUB_HUMAN_TEST_ENVMS';
-  const at = v => { if (v === undefined) delete process.env[k]; else process.env[k] = v; return config.envMs(k, 7); };
+  const at = (v: string | undefined): number => { if (v === undefined) delete process.env[k]; else process.env[k] = v; return config.envMs(k, 7); };
   try {
     assert.equal(at(undefined), 7);
     assert.equal(at(''), 7);
@@ -61,9 +61,10 @@ test('lock: owner body, stale dead-pid and reused-pid locks are broken, a live o
   const L = path.join(dir, 'x.lock');
   const body = lock.withLock(L, () => fs.readFileSync(L, 'utf8'));
   const o = lock.parseOwner(body);
+  assert.ok(o);
   assert.equal(o.pid, process.pid);
   assert.equal(o.host, os.hostname());
-  assert.ok(Math.abs(o.start - lock.pidStart(process.pid)) <= config.LOCK_START_SLACK_S, 'start matches ps');
+  assert.ok(Math.abs(o.start! - lock.pidStart(process.pid)!) <= config.LOCK_START_SLACK_S, 'start matches ps');
   assert.equal(fs.existsSync(L), false, 'released');
 
   const dead = await h.deadPid();
@@ -77,7 +78,7 @@ test('lock: owner body, stale dead-pid and reused-pid locks are broken, a live o
   await h.sleep(100);
   fs.writeFileSync(L, `${sleeper.pid} ${os.hostname()} ${lock.pidStart(sleeper.pid)}`);
   const t0 = Date.now();
-  assert.throws(() => lock.withLock(L, () => 'ran', { timeoutMs: 200 }), e => e.code === 'LOCK');
+  assert.throws(() => lock.withLock(L, () => 'ran', { timeoutMs: 200 }), (e: Error & { code?: string }) => e.code === 'LOCK');
   assert.ok(Date.now() - t0 >= 200);
   assert.ok(fs.existsSync(L), 'a live owner keeps its lock');
   fs.unlinkSync(L);
@@ -97,7 +98,7 @@ test('lock: processes racing a planted stale lock never assign the same log id',
   const script = `require(${JSON.stringify(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'))}).arm();const r=require(${JSON.stringify(path.join(h.LIB, 'room.ts'))}).open(${JSON.stringify(path.basename(dir))},{dir:${JSON.stringify(dir)}});`
     + `const t=Number(process.argv[1]);while(Date.now()<t){}for(let i=0;i<15;i++)r.append({kind:'say',text:'x'+i},{via:'human',from:'alice'});`;
   const start = Date.now() + 500;
-  await Promise.all(Array.from({ length: 6 }, () => new Promise((resolve, reject) => {
+  await Promise.all(Array.from({ length: 6 }, () => new Promise<void>((resolve, reject) => {
     const c = spawn(process.execPath, ['-e', script, String(start)], { env: h.childEnv(), stdio: ['ignore', 'ignore', 'pipe'] });
     let err = '';
     c.stderr.on('data', d => { err += d; });

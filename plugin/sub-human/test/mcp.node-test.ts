@@ -5,53 +5,73 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import child_process, { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
 import * as identity from '../lib/identity.ts';
 import * as proposal from '../lib/proposal.ts';
 import * as guard from '../mod/core/guard.ts';
-let R = null; // the room under test
+import type { Room } from '../lib/room.ts';
+import type { Entry } from '../lib/room/types.ts';
+import type { ToolDefinition } from '../mcp/types.ts';
 
-const servers = new Set();
+/** A JSON-RPC line from the server, as these tests read it: each test reads the fields it expects to be there. */
+interface RpcMsg {
+  jsonrpc: '2.0';
+  id: number;
+  method: string;
+  params: unknown;
+  result: { tools: ToolDefinition[]; content: { type: string; text: string }[]; isError?: boolean; serverInfo: { name: string } };
+  error: { code: number; message: string };
+}
+/** An entry as the read tool returns it: a trust verdict in place of the signature material. */
+type ReadEntry = Entry & { trust?: string };
+
+let R: Room | null = null; // the room under test
+
+const servers = new Set<ChildProcess>();
 test.afterEach(() => { for (const c of servers) c.kill(); servers.clear(); });
 
-let mcpCwd; // the session's working directory, as the server sees it (process.cwd(): spawned there by Claude Code)
-function startMcp(env = {}, server = h.MCP) {
+let mcpCwd: string | undefined; // the session's working directory, as the server sees it (process.cwd(): spawned there by Claude Code)
+function startMcp(env: Record<string, string> = {}, server = h.MCP) {
   const child = spawn(process.execPath, [server], { env: h.childEnv(env), stdio: ['pipe', 'pipe', 'pipe'], ...(mcpCwd ? { cwd: mcpCwd } : {}) });
   servers.add(child);
-  const waiters = new Map();
+  const waiters = new Map<number, (m: RpcMsg) => void>();
   let buf = '', nextId = 1;
-  const replies = [];
+  const replies: RpcMsg[] = [];
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', d => {
     buf += d;
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {
-      const msg = JSON.parse(buf.slice(0, nl));
+      const msg: RpcMsg = JSON.parse(buf.slice(0, nl));
       buf = buf.slice(nl + 1);
       if (msg.method && msg.id != null) requests.push(msg);
       else if (msg.method) notes.push(msg);
-      else if (msg.id != null && waiters.has(msg.id)) { waiters.get(msg.id)(msg); waiters.delete(msg.id); }
+      else if (msg.id != null && waiters.has(msg.id)) { waiters.get(msg.id)!(msg); waiters.delete(msg.id); }
       else replies.push(msg);
     }
   });
-  const notes = [];
-  const requests = [];
-  const call = (method, params) => {
+  const notes: RpcMsg[] = [];
+  const requests: RpcMsg[] = [];
+  const call = (method: string, params?: unknown) => {
     const id = nextId++;
-    const p = new Promise(r => waiters.set(id, r));
+    const p = new Promise<RpcMsg>(r => waiters.set(id, r));
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
     return p;
   };
   const exited = new Promise(r => child.on('exit', code => r(code)));
   const close = () => { child.stdin.end(); return exited; };
-  const write = m => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n');
+  const write = (m: object) => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n');
   return { call, close, child, notes, requests, replies, write };
 }
 
-async function ready(env, server, capabilities = {}) {
-  const s = startMcp(env, server);
+/** A started server, initialized: its initialize reply and a tools/call helper added. */
+type Mcp = ReturnType<typeof startMcp> & { init: RpcMsg; tool: (name: string, args?: object) => Promise<RpcMsg> };
+
+async function ready(env?: Record<string, string>, server?: string, capabilities = {}) {
+  const s = startMcp(env, server) as Mcp;
   const init = await s.call('initialize', { protocolVersion: '2025-06-18', capabilities, clientInfo: { name: 't', version: '0' } });
   s.init = init;
   assert.equal(init.result.serverInfo.name, 'room');
@@ -59,8 +79,8 @@ async function ready(env, server, capabilities = {}) {
   s.tool = (name, args = {}) => s.call('tools/call', { name, arguments: args });
   return s;
 }
-const payload = r => JSON.parse(r.result.content[0].text);
-const errText = r => { assert.equal(r.result.isError, true, JSON.stringify(r)); return r.result.content[0].text; };
+const payload = <T = Entry>(r: RpcMsg): T => JSON.parse(r.result.content[0].text);
+const errText = (r: RpcMsg) => { assert.equal(r.result.isError, true, JSON.stringify(r)); return r.result.content[0].text; };
 
 test('mcp: tools/list has post, read, propose plus plug-in tools, no plan/watch/review; unknown methods and tools fail', async () => {
   h.freshHome();
@@ -71,11 +91,11 @@ test('mcp: tools/list has post, read, propose plus plug-in tools, no plan/watch/
   for (const n of ['watch', 'plan', 'review']) assert.ok(!names.includes(n), `${n} is gone`);
   if (fs.existsSync(path.join(h.PLUGIN, 'mcp', 'hold.ts'))) assert.ok(names.includes('hold'), 'hold plug-in loaded');
   assert.equal(new Set(names).size, names.length, 'no duplicate tool names');
-  assert.deepEqual(r.result.tools.find(t => t.name === 'post').inputSchema.properties.kind.enum, ['say', 'question', 'status']);
+  assert.deepEqual(r.result.tools.find(t => t.name === 'post')!.inputSchema.properties!.kind.enum, ['say', 'question', 'status']);
   // Schema budget, model-facing fields only (name, description, inputSchema; annotations and title are client
   // metadata). Descriptions are written for tool search, so the budget is the core three <= 1,800 and
   // all five <= 3,600 chars.
-  const facing = ts => JSON.stringify(ts.map(({ name, description, inputSchema }) => ({ name, description, inputSchema }))).length;
+  const facing = (ts: ToolDefinition[]) => JSON.stringify(ts.map(({ name, description, inputSchema }) => ({ name, description, inputSchema }))).length;
   const core = facing(r.result.tools.slice(0, 3));
   assert.ok(core <= 1800, `core tool schemas ${core} chars`);
   assert.ok(facing(r.result.tools) <= 3600, `all tool schemas ${facing(r.result.tools)} chars`);
@@ -90,7 +110,7 @@ test('mcp: every tool errors until the parent session joins, then works without 
   h.freshHome();
   const code = h.newRoom();
   const s = await ready();
-  for (const [name, args] of [['post', { kind: 'say', text: 'x' }], ['read', {}], ['propose', { text: 'x' }]]) {
+  for (const [name, args] of [['post', { kind: 'say', text: 'x' }], ['read', {}], ['propose', { text: 'x' }]] as [string, object][]) {
     assert.equal(errText(await s.tool(name, args)), 'not in a room; run /sub-human');
   }
   h.register('alice', 'member', process.pid, code);
@@ -156,13 +176,13 @@ test('mcp: read returns unseen entries (skipping own posts) then by id', async (
   const s = await ready();
   R.append({ kind: 'say', text: 'hi' }, { via: 'human', from: 'bob' });
   await s.tool('post', { kind: 'status', text: 'mine' });
-  const got = payload(await s.tool('read'));
+  const got = payload<ReadEntry[]>(await s.tool('read'));
   assert.deepEqual(got.map(e => e.text), ['hi']);
   assert.deepEqual([got[0].trust, got[0].sig, got[0].nonce, got[0].pubkey], ['verified', undefined, undefined, undefined], 'the model reads a trust verdict, not signature material');
   assert.deepEqual(payload(await s.tool('read')), []);
   R.append({ kind: 'say', text: 'bob here' }, { via: 'human', from: 'bob' });
-  assert.deepEqual(payload(await s.tool('read')).map(e => e.text), ['bob here']);
-  assert.deepEqual(payload(await s.tool('read', { ids: [3, 1] })).map(e => e.id), [3, 1]);
+  assert.deepEqual(payload<ReadEntry[]>(await s.tool('read')).map(e => e.text), ['bob here']);
+  assert.deepEqual(payload<ReadEntry[]>(await s.tool('read', { ids: [3, 1] })).map(e => e.id), [3, 1]);
   assert.match(errText(await s.tool('read', { ids: [0] })), /positive/);
   await s.close();
 });
@@ -181,20 +201,20 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   const text = '# Cursor paging\n\n1. add cursor param\n2. tests\n';
   const r = await s.tool('propose', { text });
   const msg = r.result.content[0].text;
-  const e = R.readAll().at(-1);
+  const e = R.readAll().at(-1)!;
   assert.equal(e.kind, 'proposal');
   assert.equal(e.via, 'agent');
   assert.equal(e.from, 'alice');
-  assert.match(e.hash, /^[0-9a-f]{12}$/);
+  assert.match(e.hash!, /^[0-9a-f]{12}$/);
   assert.deepEqual(e.approvers, ['alice', 'bob'], 'claude and the departed carol are not approvers');
   assert.equal(e.path, `plans/${e.hash}.md`, 'the entry holds a room-relative ref');
-  const file = path.join(identity.roomDir(code), e.path);
+  const file = path.join(identity.roomDir(code), e.path!);
   assert.equal(fs.readFileSync(file, 'utf8'), text);
   // no sub-human is on a session's PATH: the reply names the shim by its full path, which the guard allows and which runs
   const cmd = `${h.BIN} show ${e.hash}`;
   assert.ok(msg.includes(`Read it with \`${cmd}\``), msg);
   assert.equal(guard.bashVerdict(cmd, { home: identity.home(), pluginRoot: h.PLUGIN, cwd: h.PLUGIN }), null);
-  const shown = child_process.spawnSync(h.BIN, ['show', e.hash, '--room', code], { env: h.childEnv(), encoding: 'utf8' });
+  const shown = child_process.spawnSync(h.BIN, ['show', e.hash!, '--room', code], { env: h.childEnv(), encoding: 'utf8' });
   assert.equal(shown.stdout, text, shown.stderr);
   assert.ok(!msg.includes(file) && !msg.includes(identity.home()), 'no store path: the guard denies the session that path');
   assert.match(msg, new RegExp(`alice is an approver: call EnterPlanMode, then ExitPlanMode with plan "proposal ${e.hash}" now`));
@@ -211,7 +231,7 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   const f = path.join(mcpCwd, 'plan.md');
   fs.writeFileSync(f, '# other\nbody\n');
   const r2 = (await s.tool('propose', { path: f, approvers: ['@bob'] })).result.content[0].text;
-  const e2 = R.readAll().at(-1);
+  const e2 = R.readAll().at(-1)!;
   assert.deepEqual(e2.approvers, ['bob']);
   assert.equal(e2.hash, crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0, 12));
   assert.doesNotMatch(r2, /EnterPlanMode|AskUserQuestion/);
@@ -275,7 +295,7 @@ test('mcp: plug-ins get the ctx contract (request/response routing, progress, on
   const s = await ready({ SUB_HUMAN_DEBUG: '1' }, server, { elicitation: {} });
   const names = (await s.call('tools/list', {})).result.tools.map(t => t.name);
   assert.deepEqual(names, ['post', 'read', 'propose', 'ask', 'slow', 'anon', 'info'], 'broken task.ts skipped, core wins a clash');
-  assert.match(fs.readFileSync(path.join(process.env.SUB_HUMAN_HOME, 'mcp-debug.log'), 'utf8'), /plugin failed task\.ts/);
+  assert.match(fs.readFileSync(path.join(process.env.SUB_HUMAN_HOME!, 'mcp-debug.log'), 'utf8'), /plugin failed task\.ts/);
   // Not joined: plug-in tools error like core ones, except the anonymous ones.
   assert.equal(errText(await s.tool('ask')), 'not in a room; run /sub-human');
   assert.equal((await s.tool('anon')).result.content[0].text, 'anonymous');
@@ -302,10 +322,10 @@ test('mcp: plug-ins get the ctx contract (request/response routing, progress, on
   const id = 9001;
   s.write({ id, method: 'tools/call', params: { name: 'slow', arguments: {}, _meta: { progressToken: 7 } } });
   await h.until(() => s.notes.some(n => n.method === 'notifications/progress'));
-  assert.deepEqual(s.notes.find(n => n.method === 'notifications/progress').params, { progressToken: 7, progress: 1, message: 'holding alice' });
+  assert.deepEqual(s.notes.find(n => n.method === 'notifications/progress')!.params, { progressToken: 7, progress: 1, message: 'holding alice' });
   s.write({ method: 'notifications/cancelled', params: { requestId: id, reason: 'esc' } });
   await h.until(() => s.notes.some(n => n.method === 'test/cancelled'));
-  assert.deepEqual(s.notes.find(n => n.method === 'test/cancelled').params, { id, reason: 'esc' });
+  assert.deepEqual(s.notes.find(n => n.method === 'test/cancelled')!.params, { id, reason: 'esc' });
   await h.sleep(100);
   assert.equal(s.replies.filter(r => r.id === id).length, 0, 'no reply after cancel');
   assert.ok(code);

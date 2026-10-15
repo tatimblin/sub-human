@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.join(import.meta.dirname, '..');
-const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const MEMBER = 'skills/sub-human/member.md';
 const ROOM_CLAUDE_FILL = 'skills/sub-human/room-claude.md';
 const FACILITATE = 'skills/sub-human/facilitate.md';
@@ -17,15 +17,15 @@ const PREFIX = 'mcp__plugin_sub-human_room__';
 const PLACEHOLDERS = ['{NAME}', '{CODE}', '{OTHERS}', '{ADDR_EXAMPLE}', '{PLUGIN}'];
 
 // Five members, a long installed plugin path: the worst case the join block sees.
-function fill(t, { name = 'alice', code = 'vole-8126', others = 'bob, carol, dave, erin, claude' } = {}) {
+function fill(t: string, { name = 'alice', code = 'vole-8126', others = 'bob, carol, dave, erin, claude' } = {}) {
   const plugin = '/Users/someone/.claude/plugins/cache/sub-human/sub-human/0.2.0';
   return t.replaceAll('{NAME}', name).replaceAll('{CODE}', code).replaceAll('{OTHERS}', others)
     .replaceAll('{ADDR_EXAMPLE}', `bob.${code}`).replaceAll('{PLUGIN}', plugin);
 }
-function frontmatter(t) {
+function frontmatter(t: string) {
   const m = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(t);
   assert.ok(m, 'frontmatter present');
-  const fm = {};
+  const fm: Record<string, string> = {};
   for (const line of m[1].split('\n')) {
     const kv = /^([a-z-]+):\s*(.*)$/.exec(line);
     if (kv) fm[kv[1]] = kv[2];

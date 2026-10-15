@@ -5,15 +5,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { JoinReply, RunOutput } from '../mod/core/types.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
-const load = () => import(path.join(PLUGIN, 'mod', 'core', 'command.ts'));
-const ran = (o, exitCode = 0) => ({ exitCode, stdout: typeof o === 'string' ? o : JSON.stringify(o) + '\n', stderr: '' });
+const load = (): Promise<typeof import('../mod/core/command.ts')> => import(path.join(PLUGIN, 'mod', 'core', 'command.ts'));
+const ran = (o: unknown, exitCode = 0): RunOutput => ({ exitCode, stdout: typeof o === 'string' ? o : JSON.stringify(o) + '\n', stderr: '' });
 const NONCE = 'ab'.repeat(16);
 
 test('command: it answers what was typed here, and through Remote Control only what can hold no PIN; never the room\'s Claude, the SDK or a plugin', async () => {
   const { answersItself } = await load();
-  const run = (kind, args = '') => answersItself({ command: 'sub-human:sub-human', args, origin: { kind } }, { nonce: NONCE });
+  const run = (kind: string, args = '') => {
+    const e = { command: 'sub-human:sub-human', args, origin: { kind } };
+    return answersItself(e, { nonce: NONCE });
+  };
   assert.equal(run('composer'), true);
   assert.equal(run('composer', 'join dev vole-1234 4821'), true, 'here a PIN is safe: the answer adds no row');
   assert.equal(run('bridge', 'leave'), true);
@@ -28,7 +32,8 @@ test('command: mayHoldSecret is hooks/join.ts\'s rule for a hidden reply', async
   const src = fs.readFileSync(path.join(PLUGIN, 'hooks', 'join.ts'), 'utf8');
   assert.ok(src.includes("['join', 'invite', 'admit'].includes(args[0]) || args.some(a => DIGITS.test(a))"));
   assert.ok(src.includes('const DIGITS = /^[0-9]{3,10}$/;'));
-  for (const [args, want] of [['', false], ['help', false], ['leave', false], ['bob vole-1234', false], ['join x', true], ['invite --web', true], ['admit', true], ['bob 482', true], ['bob 48', false]]) {
+  const cases: [string, boolean][] = [['', false], ['help', false], ['leave', false], ['bob vole-1234', false], ['join x', true], ['invite --web', true], ['admit', true], ['bob 482', true], ['bob 48', false]];
+  for (const [args, want] of cases) {
     assert.equal(mayHoldSecret(args), want, args);
   }
 });
@@ -55,10 +60,10 @@ test('command: a reply is read as a join, a notice, or a failure (one line point
 
 test('command: here every reply is notices with an empty answer (no row, nothing for the model to repeat); through Remote Control only a shareable one is the output row', async () => {
   const { answerOf } = await load();
-  const help = { kind: 'say', lines: ['commands:', '  /sub-human …'], shareable: true };
+  const help = { kind: 'say', lines: ['commands:', '  /sub-human …'], shareable: true } as JoinReply; // no refused: answerOf never reads it
   assert.deepEqual(answerOf(help), { result: {}, logs: help.lines });
   assert.deepEqual(answerOf(help, { bridge: true }), { result: { text: 'commands:\n  /sub-human …' }, logs: [] });
-  const secret = { kind: 'say', lines: ['  /sub-human join me@box vole-1234 4821'], shareable: false };
+  const secret = { kind: 'say', lines: ['  /sub-human join me@box vole-1234 4821'], shareable: false } as JoinReply;
   assert.deepEqual(answerOf(secret), { result: {}, logs: secret.lines });
   const bridge = answerOf(secret, { bridge: true });
   assert.ok(!JSON.stringify(bridge.result).includes('4821'), 'the PIN never goes to the phone or the model');
