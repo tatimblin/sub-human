@@ -1,6 +1,6 @@
 // The remote protocol's parts: the line codec (lib/remote/protocol.ts), the
 // memory and pipe transports and their lookup (lib/remote/transports/*), the seeded flaky transport
-// (test/support/flaky.ts), and invites, link tokens and seat proofs (lib/remote/auth.ts).
+// (test/support/flaky.ts), and invites, link tokens and seat proofs (lib/remote/invites.ts, host-links.ts).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';

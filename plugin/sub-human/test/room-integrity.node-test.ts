@@ -1,5 +1,5 @@
 // Log integrity: forged chat lines, size caps, the tail-only append, the readAll cache, incremental chain
-// verification (log.idx) and readView (what a hook judges lanes against without parsing the whole log).
+// verification (from an in-memory checkpoint; the old log.idx is retired) and readView (what a hook judges lanes against without parsing the whole log).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

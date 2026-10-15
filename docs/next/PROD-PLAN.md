@@ -1,5 +1,7 @@
 # sub-human 1.0 — Productionizing remote rooms
 
+> **Superseded in part (October 2026):** the short-code PAKE (CPace) this plan prescribes was built and then removed; invites are now a 128-bit SECRET in the line with a 4-digit PIN checked online (protocol 3). See `CHANGELOG.md` "Invites (stage 7b)".
+
 Sources: the 10 plans and 3 evaluations in this folder.
 
 Verdict: all three evaluators ranked 09 (core hardening), 01 (SSH-first) and 04 (tailnet) as the top three. Each plan that depends on a public service (02, 03, 05, 07, 08) needs SSH to reach coworkers behind a corporate proxy. So the strongest option is to make SSH excellent, add a WebSocket listener and expose it through Tailscale, and add a self-deployed relay only if users ask for it.

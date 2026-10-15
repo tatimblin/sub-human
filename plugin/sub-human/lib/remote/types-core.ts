@@ -159,7 +159,8 @@ export interface OpResults {
 
 /** A request frame for one op: {id, op, params}, discriminated on op. */
 export type RequestFrame<O extends Op = Op> = { [K in O]: { id: FrameId; op: K; params: OpParams[K] } }[O];
-/** Any request, by its shape alone (an op this end may not serve, or another protocol's: lib/remote/enroll.ts). */
+/** Any request, by its shape alone (an op this end may not serve, or another protocol's: a 0.5.0-beta.15 joiner's PIN
+ * attempt, which lib/remote/listener.ts and `serve --enroll` answer with the skew message). */
 export interface AnyRequest { id: FrameId; op: string; params: object }
 /** A decoded frame shaped as a request (protocol.isRequest): op a string; id and params as the peer sent them. */
 export interface IncomingRequest {
