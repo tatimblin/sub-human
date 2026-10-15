@@ -54,7 +54,8 @@ import * as admission from './admission.ts';
 import * as sshkeys from './sshkeys.ts';
 import { RoomError } from '../room/validate.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
-import * as linkMod from './link.ts';
+import * as linkSocketMod from './link-socket.ts';
+import * as linkConnectMod from './link-connect.ts';
 import * as linksMod from '../room/links.ts';
 import * as roomMod from '../room.ts';
 import * as homeMod from '../home.ts';
@@ -96,7 +97,8 @@ export interface Outcome {
 }
 
 const sshT = (): typeof import('./transports/ssh.ts') => require('./transports/ssh.ts');
-const linkLib = () => linkMod;
+const linkSocket = () => linkSocketMod;
+const linkConnect = () => linkConnectMod;
 const links = () => linksMod;
 const roomOf = (code: string) => roomMod.open(code);
 const minutes = (ms: number): number => Math.round(ms / 60_000);
@@ -175,7 +177,7 @@ function hostInvite(code: string, { ssh = true, via, pipe = false, by = null, no
   const store = hostStore(code);
   if (pipe) { // a second home on this machine (tests, the demo)
     if (via !== undefined) throw new RoomError('INVALID', '--via is for an ssh invite');
-    const locator = linkLib().pipeLocator();
+    const locator = linkConnect().pipeLocator();
     const r = invites.mintShort(store, { kind: 'pipe', locator, by, now });
     const line = `/sub-human join ${locator} ${code} ${r.pin}`;
     return { ...r, short: true, locator, line, text: shortText({ code, how: 'from another sub-human folder on this machine', line, ref: r.ref }) };
@@ -293,7 +295,7 @@ function kick(code: string, name: string, opts: { file?: string } = {}): Ended {
  * listener's X25519 key the invite carries. null for a locator this machine cannot use.
  */
 function linkTransport({ inv, name, cur = null }: { inv: ParsedInvite; name: string; cur?: Link | null }): { transport: LinkSpec; request: string | null } | null {
-  let transport = linkLib().transportOf(inv.locator);
+  let transport = linkConnect().transportOf(inv.locator);
   if (!transport) return null;
   const prev: { kind?: string; user?: string; host?: string; port?: unknown; knownHosts?: string; alias?: string; mux?: boolean } = (cur && cur.transport) || {};
   let request: string | null = null;
@@ -329,7 +331,7 @@ function joinInvite({ inv, invite, pin, name }: { inv: ParsedInvite; invite: str
 
 function outcome(code: string, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: number } = {}): Outcome {
   const { sleepSync } = ioMod;
-  const l = linkLib();
+  const l = linkSocket();
   for (const until = Date.now() + waitMs; ; sleepSync(50)) {
     const st = l.status(code);
     const stopped = l.stopReason(st);

@@ -11,7 +11,7 @@ import * as helpersLib from '../helpers.ts';
 import * as roomClaude from '../../lib/room-claude.ts';
 import * as common from '../../hooks/context.ts';
 import * as membersLib from '../../lib/room/members.ts';
-import * as linkLib from '../../lib/remote/link.ts';
+import * as linkSocket from '../../lib/remote/link-socket.ts';
 import type { HookJson, HookRun } from './helpers.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { Member, Role } from '../../lib/room/types.ts';
@@ -168,7 +168,7 @@ test('budget: a join whose host never answers (ssh hangs) still replies, hidden,
   const code = 'vole-4321';
   t.after(() => {
     const kill = (pid: number) => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
-    const daemon = w.lib(() => linkLib.status(code)).pid;
+    const daemon = w.lib(() => linkSocket.status(code)).pid;
     if (daemon) kill(daemon);
     try { fs.readFileSync(pids, 'utf8').split('\n').filter(Boolean).forEach(p => kill(Number(p))); } catch { /* none ran */ }
   });
@@ -181,7 +181,7 @@ test('budget: a join whose host never answers (ssh hangs) still replies, hidden,
   assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, 'hidden: the prompt held a PIN');
   assert.match(r.json!.reason!, new RegExp(`still connecting to room ${code}`), r.json!.reason);
   assert.ok(!r.json!.reason!.includes('4829'), 'the PIN is not echoed');
-  assert.equal(w.lib(() => linkLib.status(code)).running, true, 'the link daemon keeps trying after the hook');
+  assert.equal(w.lib(() => linkSocket.status(code)).running, true, 'the link daemon keeps trying after the hook');
 });
 
 test('the default name: git user.name, else the local part of user.email, else $USER; a taken one says how to pick another', () => {

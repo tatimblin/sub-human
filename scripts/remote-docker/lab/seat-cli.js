@@ -153,13 +153,13 @@ const cmds = {
   linkinvite(name, invite, ...rest) {
     const seat = seatWith(name, rest);
     const inv = lib('remote/auth.ts').parseInvite(invite);
-    lib('room/links.ts').set(inv.code, { code: inv.code, transport: lib('remote/link.ts').transportOf(inv.locator), invite, created_at: new Date().toISOString() });
+    lib('room/links.ts').set(inv.code, { code: inv.code, transport: lib('remote/link-connect.ts').transportOf(inv.locator), invite, created_at: new Date().toISOString() });
     const r = expand(seat, `${name} ${inv.code}`);
     return { ok: joinedOk(r.json), out: reason(r.json) || '', ms: r.ms, code: inv.code, stderr: r.stderr };
   },
 
   sh1(code, dest) {
-    const locator = lib('remote/link.ts').sshLocator(dest);
+    const locator = lib('remote/link-connect.ts').sshLocator(dest);
     return { invite: lib('remote/auth.ts').mintInvite(lib('room/store.ts').open(code), { locator }).invite };
   },
 
@@ -272,13 +272,13 @@ const cmds = {
     let chain = null;
     try { chain = s.verifyChain(); } catch (e) { chain = { ok: false, error: e.message }; }
     let linkSt = null;
-    try { linkSt = s.isHost ? null : lib('remote/link.ts').status(code); } catch (e) { linkSt = { error: e.message }; }
+    try { linkSt = s.isHost ? null : lib('remote/link-socket.ts').status(code); } catch (e) { linkSt = { error: e.message }; }
     const homeSt = fs.existsSync(HOME) ? (fs.statSync(HOME).mode & 0o777).toString(8) : null;
     return { code, machine: lib('home.ts').machineId(), isHost: !!s.isHost, dir: s.dir, log: read('log.jsonl') || '', members: read('members.json'),
       entries, chain, link: linkSt, home: { path: HOME, mode: homeSt, files: walk(HOME) } };
   },
 
-  link(code) { return lib('remote/link.ts').status(code || load().code); },
+  link(code) { return lib('remote/link-socket.ts').status(code || load().code); },
 
   probe() {
     const usage = spawnSync(process.execPath, [CLI, '__lab_probe__'], { encoding: 'utf8', env: { ...process.env } });

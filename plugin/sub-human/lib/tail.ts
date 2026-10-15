@@ -72,7 +72,7 @@ import * as config from './config.ts';
 import { stageOf } from './consent/review.ts';
 import { createRequire } from 'node:module';
 import type { TailEvent, TailSeat } from './types-app.ts';
-import type { LinkStatus } from './remote/link.ts';
+import type { LinkStatus } from './remote/link-socket.ts';
 import type { Flush } from './remote/types-core.ts';
 import type { Clock, TimerHandle } from './clock.ts';
 import type { Delivery, Entry } from './room/types.ts';
@@ -678,7 +678,7 @@ function runTail({
     roomClaude: deps.roomClaude ? () => deps.roomClaude! : (() => { let o: RoomClaudeLib | undefined; return () => o || (o = require('./room-claude.ts') as RoomClaudeLib); })(),
     identity: deps.identity || (require('./identity.ts') as IdentityLib),
     proposal: deps.proposal || (require('./proposal.ts') as ProposalLib),
-    linkStatus: deps.linkStatus || ((code: string) => (require('./remote/link.ts') as typeof import('./remote/link.ts')).status(code)),
+    linkStatus: deps.linkStatus || ((code: string) => (require('./remote/link-socket.ts') as typeof import('./remote/link-socket.ts')).status(code)),
     handoff: deps.handoff ? () => deps.handoff! : (() => { let m: HandoffLib | undefined; return () => m || (m = require('./handoff.ts') as HandoffLib); })(),
     admission: deps.admission ? () => deps.admission! : (() => { let m: AdmissionLib | undefined; return () => m || (m = require('./remote/admission.ts') as AdmissionLib); })(),
     sweepDoors: deps.sweepDoors || ((code: string) => (require('./remote/enroll.ts') as typeof import('./remote/enroll.ts')).sweepDoors(code)),

@@ -7,7 +7,7 @@ import * as room from '../room.ts';
 import * as handoffLib from '../handoff.ts';
 import * as envelope from '../room/envelope.ts';
 import * as store from '../room/store.ts';
-import * as link from '../remote/link.ts';
+import * as linkConnect from '../remote/link-connect.ts';
 import { parse } from '../cli/args.ts';
 import { createRequire } from 'node:module';
 import { HELP_HINT, msgOf, refused, say } from './answer.ts';
@@ -28,10 +28,10 @@ export const handoff: Verb = (argv, { cur }) => {
     try { locator = webhost().webLocator(dest, cur.code); } catch (e) { return refused(msgOf(e)); }
   } else {
     if (via !== undefined && dest === undefined) return refused('--via goes with the ssh address the others reach the new host at: /sub-human handoff NAME USER@HOST --via JUMP');
-    locator = dest === undefined ? undefined : link.sshLocator(dest, via !== undefined ? { via } : {});
+    locator = dest === undefined ? undefined : linkConnect.sshLocator(dest, via !== undefined ? { via } : {});
   }
   if (dest !== undefined && !locator) {
-    return refused(via !== undefined && link.sshLocator(dest)
+    return refused(via !== undefined && linkConnect.sshLocator(dest)
       ? `--via "${via}" isn't a plain [USER@]HOST[:PORT] (several hops: comma-separated).`
       : `"${dest}" isn't a plain USER@HOST[:PORT] (or https://ADDRESS) the others can reach ${to}'s machine at.`);
   }

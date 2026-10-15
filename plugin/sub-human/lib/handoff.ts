@@ -111,9 +111,10 @@ const MACHINE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const err = (code: string, msg: string) => new RoomError(code, msg);
-const linkLib = (): typeof import('./remote/link.ts') => require('./remote/link.ts');
+const linkSocket = (): typeof import('./remote/link-socket.ts') => require('./remote/link-socket.ts');
+const linkConnect = (): typeof import('./remote/link-connect.ts') => require('./remote/link-connect.ts');
 const identity = () => identityMod;
-const transportOf = (locator: unknown) => (typeof locator === 'string' ? linkLib().transportOf(locator) : null);
+const transportOf = (locator: unknown) => (typeof locator === 'string' ? linkConnect().transportOf(locator) : null);
 // A next host reached over the web (wss/ws, lib/remote/transports/ws.ts): its invites pin its listener's X25519 key,
 // and the link file that follows one carries that key.
 // Over ssh its invites pin its sshd Ed25519 host key (lib/remote/sshkeys.ts hostKey; none when unreadable).
@@ -255,7 +256,7 @@ function afterMoved(s: Store, { job }: { job?: string | null } = {}): boolean {
   if (!f.transport) return false;
   links.set(s.code, { code: s.code, transport: f.transport, invite, ...(f.request ? { request: f.request } : {}), created_at: iso(Date.now()), moved: { epoch: d.epoch, host: d.to, locator: d.locator } });
   store.forget(s.code);
-  try { return linkLib().start(s.code); } catch { return false; }
+  try { return linkSocket().start(s.code); } catch { return false; }
 }
 
 // ---------- the link daemon of a mirror ----------
@@ -352,7 +353,7 @@ function accept(me: Pick<Identity, 'code' | 'name'>, { cwd, sign }: { cwd?: stri
   const a = pendingAsk(code, me.name);
   if (!a) return { ok: false, error: 'no handoff is waiting for you (it expired or was withdrawn)' };
   if (s.hostState().epoch + 1 !== a.epoch) return { ok: false, error: 'the room changed hosts since this ask' };
-  const locator: string = a.locator || linkLib().pipeLocator();
+  const locator: string = a.locator || linkConnect().pipeLocator();
   if (!transportOf(locator)) return { ok: false, error: `"${locator}" is not a locator this machine knows` };
   try { serveWeb(code, locator); } catch (e) { return { ok: false, error: `could not serve room ${code} over the web here: ${(e as Error).message}` }; }
   const invites = Object.fromEntries(mintAll(s, locator).map(x => [x.machine, x.invite]));
@@ -381,7 +382,7 @@ function refuse(me: Pick<Identity, 'code' | 'name'>): Answer {
 
 /** Stop this room's link daemon (it may have stopped itself on the 'moved' event) and wait for it to exit. */
 function stopDaemon(code: string): void {
-  const st = linkLib().status(code);
+  const st = linkSocket().status(code);
   if (!st.running) return;
   try { process.kill(st.pid, 'SIGTERM'); } catch { return; }
   for (const until = Date.now() + 3000; Date.now() < until && isAlive(st.pid); sleepSync(20));
@@ -419,7 +420,7 @@ interface Promoted { epoch: number, entry: Entry | undefined, invites: Minted[],
 function promote(code: string, { name, locator, force = false, cwd, now = Date.now() }: { name: string, locator?: string, force?: boolean, cwd?: string, now?: number }): Promoted {
   const s = store.open(code);
   if (s.isHost) throw err('INVALID', `this machine hosts room ${code} already`);
-  const st = linkLib().status(code);
+  const st = linkSocket().status(code);
   if (st.running && st.state === 'online') throw err('INVALID', `the host of room ${code} is reachable (the link is online): use a planned handoff, the host runs /sub-human handoff ${name}`);
   const gate = config.envMs('SUB_HUMAN_PROMOTE_OFFLINE_MS', config.PROMOTE_OFFLINE_MS, { allowZero: true });
   const down = now - (Date.parse(st.since || '') || now);
@@ -428,7 +429,7 @@ function promote(code: string, { name, locator, force = false, cwd, now = Date.n
   if (!m || m.left_at || m.machine !== machineId()) throw err('INVALID', `${name} isn't in room ${code} on this machine`);
   const full = s.validateChain();
   if (!full.ok || !s.lastId()) throw err('FORK', `this machine's copy of room ${code} is empty or does not chain; it cannot become the room`);
-  const loc: string = locator || linkLib().pipeLocator();
+  const loc: string = locator || linkConnect().pipeLocator();
   if (!transportOf(loc)) throw err('INVALID', `"${loc}" is not a locator this machine knows`);
   const h: HostState = s.hostState();
   const epoch = h.epoch + 1;
@@ -458,12 +459,12 @@ function demote(code: string, invite: string, pin?: string): { orphan: string | 
   if (!s.isHost) { // a member's machine follows the promoted room: its link re-pointed, its seats join again over it
     const cur = links.get(code);
     if (!cur) throw err('INVALID', `this machine has no copy of room ${code}`);
-    const st = linkLib().status(code);
+    const st = linkSocket().status(code);
     if (st.running) { try { process.kill(st.pid, 'SIGTERM'); } catch { /* gone */ } }
     const request: unknown = hosting().joinInvite({ inv, invite, pin, name }).request || null;
     links.set(code, { ...links.get(code)!, rebind: true, moved: { locator: inv.locator, host: 'the new host', at: iso(Date.now()) } }); // written just above
     for (const until = Date.now() + 2000; st.running && Date.now() < until && ioMod.isAlive(st.pid);) ioMod.sleepSync(20);
-    linkLib().start(code);
+    linkSocket().start(code);
     return { orphan: null, request, follower: true };
   }
   const o: Member | undefined = (s.members.read() as Members).claude;
@@ -476,7 +477,7 @@ function demote(code: string, invite: string, pin?: string): { orphan: string | 
   const request: unknown = hosting().joinInvite({ inv, invite, pin, name }).request || null;
   links.set(code, { ...links.get(code)!, moved }); // joinInvite wrote it
   store.forget(code);
-  linkLib().start(code);
+  linkSocket().start(code);
   return { orphan, request };
 }
 

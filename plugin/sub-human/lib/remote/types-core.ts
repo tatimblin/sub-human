@@ -335,7 +335,8 @@ export interface LinkTimings {
 /** A running link daemon (serveMirror). */
 export interface RunningLink {
   state(): LinkStateWord;
-  stop(reason: string): void;
+  /** stop for good with why (people's words) and its typed reason */
+  stop(why: string, reason?: Reason): void;
   wake(why?: string): Promise<void>;
   done: Promise<string>;
 }

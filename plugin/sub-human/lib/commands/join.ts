@@ -19,7 +19,8 @@
  */
 import * as identity from '../identity.ts';
 import * as seats from '../seats.ts';
-import * as link from '../remote/link.ts';
+import * as linkSocket from '../remote/link-socket.ts';
+import * as linkConnect from '../remote/link-connect.ts';
 import * as links from '../room/links.ts';
 import * as invites from '../remote/invites.ts';
 import * as joining from '../remote/joining.ts';
@@ -64,7 +65,7 @@ function nameFor(as: string | undefined, cwd: string): { name: string } | { erro
 /** Bare `/sub-human` in a room: who is here, and how to bring someone in (see the header). */
 function status(cur: Identity, cwd: string): Answer {
   const host = identity.isHost(cur.code);
-  if (!host) { try { link.start(cur.code); } catch { /* the doctor says why */ } } // its connection, if it stopped running
+  if (!host) { try { linkSocket.start(cur.code); } catch { /* the doctor says why */ } } // its connection, if it stopped running
   return say(`you're ${cur.name} in room ${cur.code}, ${seats.withWhom(cur.code, cur.name)} · `
     + `${host ? 'another machine: /sub-human invite · ' : ''}leave: /sub-human leave${seats.ensureRoomClaude(cur.code, cwd, cur.name)}`);
 }
@@ -110,7 +111,7 @@ function joinWeb(r: string[], flags: { as?: string; via?: string; home?: string 
   const n = nameFor(flags.as, ctx.cwd);
   if ('error' in n) return refused(n.error);
   const loc = wsT().locator(spec, m[1] === 'https');
-  const transport = loc && link.transportOf(loc);
+  const transport = loc && linkConnect.transportOf(loc);
   if (!transport) return refused(BAD);
   return then(joining.linkShort({ name: n.name, code, pin: r[1], transport, sid: ctx.sid }), ctx);
 }
@@ -140,13 +141,13 @@ export const join: Verb = (argv, ctx) => {
     if ('error' in n) return refused(n.error);
     if (local) {
       if (via !== undefined) return refused('--via goes with an ssh address');
-      const transport = link.transportOf(dest.startsWith('/') ? `pipe:${dest}` : dest);
+      const transport = linkConnect.transportOf(dest.startsWith('/') ? `pipe:${dest}` : dest);
       return transport ? then(joining.linkShort({ name: n.name, code, pin, transport, sid: ctx.sid }), ctx) : refused(`"${dest}" isn't a sub-human folder on this machine`);
     }
     if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
-    const loc = link.sshLocator(sshT().withUser(dest), via !== undefined ? { via } : {});
-    if (!loc) return refused(via !== undefined && link.sshLocator(dest) ? `--via "${via}" isn't a plain [USER@]HOST[:PORT] list` : `"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
-    const transport = link.transportOf(loc);
+    const loc = linkConnect.sshLocator(sshT().withUser(dest), via !== undefined ? { via } : {});
+    if (!loc) return refused(via !== undefined && linkConnect.sshLocator(dest) ? `--via "${via}" isn't a plain [USER@]HOST[:PORT] list` : `"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
+    const transport = linkConnect.transportOf(loc);
     if (!transport) return refused(`"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
     return then(joining.linkShort({ name: n.name, code, pin, transport, sid: ctx.sid }), ctx);
   }

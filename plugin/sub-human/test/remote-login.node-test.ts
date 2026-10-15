@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import type { TestContext } from 'node:test';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
-import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as hostLinks from '../lib/remote/host-links.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
@@ -35,9 +35,9 @@ const ID = 'abcdef012345';
 const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
 const kill = (pid: number | null | undefined) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
 const stopDaemon = (t: TestContext, m: Machine, code: string) => t.after(() => {
-  const d = m.lib(() => link.status(code));
+  const d = m.lib(() => linkSocket.status(code));
   if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }
-  fs.rmSync(path.dirname(link.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
+  fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
 });
 const roomLines = (m: Machine, code: string) => m.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text).join('\n');
 const links = (m: Machine, code: string) => m.lib(() => hostLinks.links(store.open(code)));
@@ -226,8 +226,8 @@ test('login e2e: join me@devbox ROOM links over the person\'s own ssh and takes 
   const rv = host.join(alice, 'kick bob');
   assert.match(rv.json!.reason!, new RegExp(`bob is out of room ${code}: it no longer reaches the room\\. It came over an ssh login to this account, which can join again`));
   assert.deepEqual(links(host, code), {});
-  await h.until(() => remote.lib(() => link.status(code)).state === 'stopped', 10_000);
-  assert.match(remote.lib(() => link.status(code)).reason!, /revoked/);
+  await h.until(() => remote.lib(() => linkSocket.status(code)).state === 'stopped', 10_000);
+  assert.match(remote.lib(() => linkSocket.status(code)).reason!, /revoked/);
   // that login can link again: a new link, and bob's seat joins again over it
   const again = remote.join(bob, `join me@devbox ${code} --as bob`);
   assert.equal(again.json!.decision, undefined, again.json!.reason);

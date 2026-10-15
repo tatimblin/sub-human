@@ -366,10 +366,10 @@ const kindOf = (spec: LinkSpec): string => (spec.kind === 'wss' || spec.kind ===
 
 /** The link file's invite after enrollment: an sh2 invite string with the admission secret (never shown to anyone). */
 function inviteFor(code: string, spec: LinkSpec, secret: string, key: string | null): string {
-  const link: typeof import('./link.ts') = require('./link.ts');
+  const linkConnect: typeof import('./link-connect.ts') = require('./link-connect.ts');
   // an ssh spec in a link file was parsed from a locator, so its destination makes one again
-  const loc = spec.kind === 'ssh' ? link.sshLocator(`${spec.user}@${spec.host}${spec.port ? `:${spec.port}` : ''}`, spec.via ? { via: spec.via } : {})!
-    : spec.kind === 'pipe' ? link.pipeLocator(spec.home) : (require('./transports/ws.ts') as typeof import('./transports/ws.ts')).urlOf(spec as WsSpec);
+  const loc = spec.kind === 'ssh' ? linkConnect.sshLocator(`${spec.user}@${spec.host}${spec.port ? `:${spec.port}` : ''}`, spec.via ? { via: spec.via } : {})!
+    : spec.kind === 'pipe' ? linkConnect.pipeLocator(spec.home) : (require('./transports/ws.ts') as typeof import('./transports/ws.ts')).urlOf(spec as WsSpec);
   return invites.formatInvite({ code, locator: loc, secret, hostKey: spec.kind === 'pipe' ? null : key });
 }
 

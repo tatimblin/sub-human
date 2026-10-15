@@ -17,7 +17,7 @@ import * as store from '../lib/room/store.ts';
 import * as identity from '../lib/identity.ts';
 import * as proposal from '../lib/proposal.ts';
 import * as rows from '../lib/rows.ts';
-import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
 import { isAlive } from '../lib/io.ts';
 import { Machine } from './support/two-homes.ts';
 import type { Proposal } from '../lib/types-app.ts';
@@ -53,8 +53,8 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   const joined = via.seated;
   assert.equal(joined.json!.systemMessage, undefined, joined.stderr);
   assert.match(joined.json!.hookSpecificOutput!.additionalContext!, /SUB-HUMAN: you are bob's Claude/);
-  const daemon = remote.lib(() => link.status(code));
-  t.after(() => { kill(childOf(daemon.pid)); kill(daemon.pid); fs.rmSync(path.dirname(link.socketPath(path.join(remote.home, 'rooms', code))), { recursive: true, force: true }); });
+  const daemon = remote.lib(() => linkSocket.status(code));
+  t.after(() => { kill(childOf(daemon.pid)); kill(daemon.pid); fs.rmSync(path.dirname(linkSocket.socketPath(path.join(remote.home, 'rooms', code))), { recursive: true, force: true }); });
   assert.deepEqual([daemon.running, daemon.state], [true, 'online']);
   const linkFile = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
   assert.deepEqual([typeof linkFile.token, linkFile.invite], ['string', undefined], 'the invite became the token');
@@ -103,7 +103,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   // the host's server dies: bob's @room posts are queued, nothing written anywhere yet; his tail says so once
   const server = childOf(daemon.pid);
   kill(server);
-  await h.until(() => remote.lib(() => link.status(code)).state === 'offline', 5000, 20);
+  await h.until(() => remote.lib(() => linkSocket.status(code)).state === 'offline', 5000, 20);
   const before = { host: host.log(code), mirror: remote.log(code) };
   assert.equal(host.say(alice, 'while you were away').json!.continue, false);
   for (const [i, text] of ['is anyone there', 'second', 'third'].entries()) {
@@ -125,7 +125,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   const across = remote.tail(bob, RETRY_MS / 1000 + 3); // bob's tail, from offline to back online
 
   // the daemon reconnects with {after, hash}: no gap, no duplicate, the queued posts in order, and bob posts again
-  await h.until(() => remote.lib(() => link.status(code)).state === 'online', RETRY_MS + 5000, 50);
+  await h.until(() => remote.lib(() => linkSocket.status(code)).state === 'online', RETRY_MS + 5000, 50);
   await h.until(() => remote.log(code) === host.log(code), 3000, 20);
   assert.deepEqual(texts(host.log(code)).slice(-4), ['while you were away', 'is anyone there', 'second', 'third']);
   assert.deepEqual(host.lib(() => (s => s.readAll().slice(-3).map(e => s.trust(e)))(store.open(code))), ['verified', 'verified', 'verified']);
@@ -163,9 +163,9 @@ test('remote e2e: an invite used already is refused at join with that reason, no
   host.join(alice, 'alice');
   const code = host.lib(() => store.listRooms()[0]);
   const cleanup = (m: Machine) => () => {
-    const st = m.lib(() => link.status(code));
+    const st = m.lib(() => linkSocket.status(code));
     if (st.pid) { kill(childOf(st.pid)); kill(st.pid); }
-    fs.rmSync(path.dirname(link.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
+    fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
   };
   t.after(cleanup(first));
   t.after(cleanup(third));

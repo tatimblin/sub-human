@@ -18,7 +18,7 @@ import * as identity from '../../lib/identity.ts';
 import * as room from '../../lib/room.ts';
 import * as rows from '../../lib/rows.ts';
 import * as proposal from '../../lib/proposal.ts';
-import * as link from '../../lib/remote/link.ts';
+import * as linkSocket from '../../lib/remote/link-socket.ts';
 import * as seatKey from '../seat-key.ts';
 import { whoami } from '../seat.ts';
 import { contextBlock, seatTitle } from '../context.ts';
@@ -54,7 +54,7 @@ function reseat(input: HookIn<'SessionStart'>): Identity | null {
   if (!last) return null;
   if (identity.roomClosing(last.code) || (last.role !== 'claude' && !identity.roomOpen(last.code))) return null;
   const hosted = identity.isHost(last.code);
-  if (!hosted && !link.start(last.code)) return null;
+  if (!hosted && !linkSocket.start(last.code)) return null;
   const r = identity.join({ code: last.code, name: last.name, role: last.role, pid, session_id: input.session_id, cwd: input.cwd });
   if (!r || !r.ok) return null;
   const pubkey = last.role === 'claude' ? undefined : seatKey.publicPem(last.code, last.name);

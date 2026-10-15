@@ -283,7 +283,7 @@ test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the ro
 });
 
 test('cli link CODE --forget: refused on a room hosted here, while the daemon runs, and for a live link without --force; then the copy is archived and the link removed', () => {
-  const stopped = (lastError: string) => ({ state: 'stopped', since: new Date().toISOString(), attempt: 0, lastError, rttMs: null, queued: 0, detail: 'stopped', at: new Date().toISOString() });
+  const stopped = (lastError: string, lastReason?: string) => ({ state: 'stopped', since: new Date().toISOString(), attempt: 0, lastError, ...(lastReason ? { lastReason } : {}), rttMs: null, queued: 0, detail: 'stopped', at: new Date().toISOString() });
   h.freshHome();
   const hosted = h.newRoom();
   store.createRoom(hosted); // newCode() may have made it already
@@ -314,7 +314,7 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   assert.ok(links.has(code) && fs.existsSync(s.logFile), 'nothing moved');
   assert.equal(cli(['link', code, '--reset', '--forget']).status, 2, 'one at a time');
 
-  links.writeState(code, stopped(linkMod.ROOM_CLOSED_REASON));
+  links.writeState(code, stopped(linkMod.ROOM_CLOSED_REASON, 'ROOM_CLOSED'));
   const r3 = cli(['link', code, '--forget']);
   assert.equal(r3.status, 0, r3.stderr);
   const m = r3.stdout.match(/^room \S+: forgotten; this machine's copy is kept at (.+)$/m);
@@ -345,7 +345,7 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   const seatless = h.newRoom();
   links.set(seatless, { code: seatless, transport: { kind: 'pipe', home: '/h' }, token: 't' });
   fs.mkdirSync(store.open(seatless).dir!, { recursive: true, mode: 0o700 });
-  links.writeState(seatless, stopped(linkMod.NO_SEAT_REASON));
+  links.writeState(seatless, stopped(linkMod.NO_SEAT_REASON, 'NO_SEAT'));
   assert.equal(cli(['link', seatless, '--forget']).status, 0);
   assert.equal(links.has(seatless), false);
   const other = h.newRoom();

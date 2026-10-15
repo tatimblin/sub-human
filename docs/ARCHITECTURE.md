@@ -533,6 +533,12 @@ Every internal the plugin relies on, from `lib/cc.ts` `CONTRACT`. `§` points in
 - `lib/cc.ts`: the single home for every Claude Code internal the plugin relies on.
 - `lib/cli/args.ts`: the one flag parser of scripts/sub-human and lib/cli/*.ts.
 - `lib/cli/doctor.ts`: `sub-human doctor`, what is wrong with this machine's sub-human and how to fix it, and `doctor --bundle`, the same as redacted JSON to attach to a bug report.
+- `lib/cli/doctor/check.ts`: what every part of `sub-human doctor` shares (lib/cli/doctor.ts): a check, the lazily loaded modules, and small file helpers.
+- `lib/cli/doctor/claude.ts`: doctor's Claude Code checks (lib/cli/doctor.ts).
+- `lib/cli/doctor/links.ts`: doctor's checks of this machine's links to rooms hosted elsewhere (lib/cli/doctor.ts), keyed on the typed reasons the link daemon records (lib/reasons.ts; the state file's lastReason), never on an error's words.
+- `lib/cli/doctor/listener.ts`: doctor's web listener checks (lib/cli/doctor.ts): the host's listener (lib/remote/listener.ts status, <home>/listen/state.json) and each room it serves.
+- `lib/cli/doctor/redact.ts`: `doctor --bundle` (lib/cli/doctor.ts): the report as redacted JSON to attach to a bug report.
+- `lib/cli/doctor/ssh.ts`: doctor's ssh checks (lib/cli/doctor.ts): the serve shim a host reached over ssh runs, the authorized_keys lines that name it, ssh itself, and what ssh's stderr means for a link (one classifier: lib/remote/transports/ssh.ts classify).
 - `lib/cli/handoff.ts`: the CLI bodies of moving a room's host (lib/handoff.ts), for scripts/sub-human.
 - `lib/cli/host.ts`: the host's and the joiner's setup commands of scripts/sub-human, in the person's own shell (the Bash guard refuses them to a model).
 - `lib/cli/listen.ts`: the host's web listener commands of scripts/sub-human, in the person's own shell (the Bash guard refuses them to a model).
@@ -560,15 +566,20 @@ Every internal the plugin relies on, from `lib/cc.ts` `CONTRACT`. `§` points in
 - `lib/io.ts`: small file and process helpers shared by every module.
 - `lib/lock.ts`: the one lockfile helper (room log, members.json, proposals, the task mirror, the row map).
 - `lib/proposal.ts`: proposals and the consent card. Every write goes through room.append().
+- `lib/reasons.ts`: the typed reason beside an error's code. A RoomError's code (INVALID, AUTH, OFFLINE, FORK, ...: lib/remote/protocol.ts CODES) says what kind of failure it is; its reason, when it has one, says exactly which, so code that decides (the link daemon's outbox, the mirror's "outcome unknown", doctor's fix lines, the join's answer) keys on a constant, never on the message's words.
 - `lib/remote/admission.ts`: the host person's consent to a machine that typed an invite's PIN.
-- `lib/remote/auth.ts`: invites and link tokens, on the host. An invite is single-use and turns into a link token at the first hello; the token is the link's credential from then on.
 - `lib/remote/bridge.ts`: a synchronous call from a hook's thread to asynchronous work on a worker thread, with a deadline.
 - `lib/remote/client.ts`: the asynchronous side of the protocol, one connection to a room's server over a transport.
 - `lib/remote/cpace.ts`: CPace (draft-irtf-cfrg-cpace-21) with the cipher suite CPACE-RISTR255-SHA512, initiator-responder mode, plus the draft's explicit key confirmation (section 10.4).
 - `lib/remote/enroll.ts`: the short invite's join. The host shows `/sub-human join you@box vole-8126 4829` (or a URL and the PIN); the 4-digit PIN is the whole secret, and it never travels: both ends run CPace (lib/remote/cpace.ts, ristretto255 + SHA-512, initiator-responder, explicit key confirmation) with it.
+- `lib/remote/host-links.ts`: the links a hosted room knows, on the host: the host-only kv document remote/links, keyed by link id, never streamed.
 - `lib/remote/hosting.ts`: the host's side of an invite, one step each, shared by the join hook (`/sub-human invite`, `/sub-human kick`: their output is a block reason, shown to the person and never to the model) and the CLI (lib/cli/host.ts).
+- `lib/remote/invites.ts`: a room's invites, on the host. An invite is single-use: its first hello redeems it for a link (lib/remote/host-links.ts create), whose token is the link's credential from then on.
 - `lib/remote/joining.ts`: the joiner's side of `/sub-human join …` (lib/commands/join.ts parses it): the link file, the link daemon's start and what the person reads next.
-- `lib/remote/link.ts`: the link daemon, one per machine and room (`scripts/sub-human link CODE`, started detached by the join hook, like the room's Claude starter).
+- `lib/remote/link-connect.ts`: how this machine reaches a room hosted elsewhere, from its link file (lib/room/links.ts): the transport an invite's locator names, the hello with the link's credential, and what a refused dial means.
+- `lib/remote/link-engine.ts`: the link daemon's connection logic as a pure state machine.
+- `lib/remote/link-socket.ts`: the link daemon's unix socket, both ends, and its control from a hook or the CLI.
+- `lib/remote/link.ts`: the link daemon, one per machine and room (`scripts/sub-human link CODE`, started detached by the join hook: lib/remote/link-socket.ts start).
 - `lib/remote/listener.ts`: the host's WebSocket listener daemon (`scripts/sub-human listen [--port 7420]`), one per home.
 - `lib/remote/noise.ts`: the end-to-end channel inside a WebSocket (lib/remote/transports/ws.ts): Noise_NK_25519_ChaChaPoly_SHA256 (https://noiseprotocol.org/noise.html, revision 34), built on node:crypto only: X25519 through crypto.diffieHellman on KeyObjects, ChaCha20-Poly1305 (12-byte nonce: 4 zero bytes and the 64-bit little-endian counter), SHA-256, and the spec's HKDF, which is RFC 5869 HKDF-SHA256 with salt = ck and no info (crypto.hkdfSync).
 - `lib/remote/outbox.ts`: the bounded @room outbox of a mirror. While the link is down, a person's @room post (already signed by the hook, so its nonce and ts are fixed) is kept here by the link daemon (lib/remote/link.ts, the file's one writer) and placed in order once the link is back.

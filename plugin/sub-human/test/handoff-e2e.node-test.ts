@@ -21,7 +21,8 @@ import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as identity from '../lib/identity.ts';
 import * as envelope from '../lib/room/envelope.ts';
-import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
+import * as linkConnect from '../lib/remote/link-connect.ts';
 import * as links from '../lib/room/links.ts';
 import * as handoff from '../lib/handoff.ts';
 import * as client from '../lib/remote/client.ts';
@@ -48,7 +49,7 @@ interface Stub { bin: string; calls: () => string[][] }
 type TestMachine = Machine & {
   stub: Stub;
   cli: (args: string[], extra?: Record<string, string>) => SpawnSyncReturns<string>;
-  status: (code: string) => ReturnType<typeof link.status>;
+  status: (code: string) => ReturnType<typeof linkSocket.status>;
   store: (code: string) => ReturnType<typeof store.open>;
   read: (code: string) => readonly Entry[];
 };
@@ -84,14 +85,14 @@ function machine(t: TestContext, name: string, job: string): TestMachine {
   const m = new Machine(t, name, { ...LINK_ENV, SUB_HUMAN_CLAUDE: stub.bin, TMPDIR: h.tmpDir(`sh-tmp-${name}-`, t) }) as TestMachine; // its extras set just below
   m.stub = stub;
   m.cli = (args, extra = {}) => spawnSync(process.execPath, [h.BIN, ...args], { env: m.env(null, extra), cwd: m.cwd, encoding: 'utf8', timeout: 30_000 });
-  m.status = code => m.lib(() => link.status(code));
+  m.status = code => m.lib(() => linkSocket.status(code));
   m.store = code => m.lib(() => store.open(code));
   m.read = code => m.lib(() => store.open(code).readAll());
   t.after(() => {
     for (const code of m.lib(() => store.listRooms())) {
       const st = m.status(code);
       if (st.pid) { kill(childOf(st.pid)); kill(st.pid); }
-      fs.rmSync(path.dirname(link.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
+      fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
     }
   });
   return m;
@@ -337,7 +338,7 @@ test('handoff e2e: over ssh (--via), each follower keeps its own link key and mu
   assert.equal(fs.readFileSync(path.join(dirC, 'known_hosts'), 'utf8'), `sub-human-${code} ${sshkeys.openssh(hostRaw!)}\n`);
   const reqC = (lc.request as string).split('.'); // shk1.CODE.REF.KEY.NAME: her key, not let in yet (no secret in it)
   assert.deepEqual([reqC[1], reqC[3], reqC[4]], [code, keyC.raw, 'carol']);
-  const cmd = C.lib(() => link.sshCommand(lc.transport as SshSpec, code, []));
+  const cmd = C.lib(() => linkConnect.sshCommand(lc.transport as SshSpec, code, []));
   for (const o of ['-i', keyC.file, 'ControlMaster=no', 'StrictHostKeyChecking=yes', `HostKeyAlias=sub-human-${code}`, '-J', 'jump.example']) assert.ok(cmd.includes(o), `${o} in ${cmd.join(' ')}`);
   // offline until bob lets her in; the reason says how (an invite from bob), and carries no request line to paste
   await until(() => /Over ssh bob has not let this machine in yet\. Ask bob for an invite/.test(C.status(code).reason || ''), 15_000, 50);

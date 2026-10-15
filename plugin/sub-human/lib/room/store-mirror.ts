@@ -58,7 +58,7 @@ import { problem } from './snapshot.ts';
 import { humanKey } from './trust.ts';
 import { createBridge } from '../remote/bridge.ts';
 import { proveSeat } from '../remote/host-links.ts';
-import { socketPaths, stopReason } from '../remote/link.ts';
+import { socketPaths, stopReason } from '../remote/link-socket.ts';
 import { unknownOutcome, UNKNOWN_OUTCOME } from '../remote/protocol.ts';
 import { SEAT_BEAT_MS } from '../config.ts';
 import type { LockOpts } from '../lock.ts';
@@ -73,7 +73,7 @@ type Bridge = { call(method: string, params: object, opts?: { deadlineMs?: numbe
 // any: a reply is the daemon's JSON over the wire, as each op shapes it (lib/remote/link.ts)
 type Reply = any;
 
-const HANDLER = path.join(import.meta.dirname, '..', 'remote', 'link.ts');
+const HANDLER = path.join(import.meta.dirname, '..', 'remote', 'link-socket.ts');
 const streamed = (key: string): boolean => key === 'members' || key === 'tasks' || /^presence\/[^/]+$/.test(key);
 const hostOnly = (what: string): RoomError => new RoomError('HOST_ONLY', `${what} runs only on the room's host`);
 

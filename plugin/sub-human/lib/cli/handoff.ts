@@ -26,7 +26,7 @@
 import * as identity from '../identity.ts';
 import * as store from '../room/store.ts';
 import * as handoff from '../handoff.ts';
-import * as link from '../remote/link.ts';
+import * as linkConnect from '../remote/link-connect.ts';
 import { parse } from './args.ts';
 import * as textMod from '../text.ts';
 import { createRequire } from 'node:module';
@@ -76,8 +76,8 @@ function locatorOf(flags: Flags<typeof LOCATOR_FLAGS>, die: CliIo['die'], code: 
     if (flags.via !== undefined) die('--via is for an ssh address (USER@HOST[:PORT] --via JUMP)');
     return undefined;
   }
-  const l = link.sshLocator(flags.ssh, flags.via !== undefined ? { via: flags.via } : {});
-  if (!l) die(link.sshLocator(flags.ssh) ? `--via needs a plain [USER@]HOST[:PORT] (comma-separated hops), not "${flags.via}"` : `--ssh needs a plain USER@HOST[:PORT], not "${flags.ssh}"`);
+  const l = linkConnect.sshLocator(flags.ssh, flags.via !== undefined ? { via: flags.via } : {});
+  if (!l) die(linkConnect.sshLocator(flags.ssh) ? `--via needs a plain [USER@]HOST[:PORT] (comma-separated hops), not "${flags.via}"` : `--ssh needs a plain USER@HOST[:PORT], not "${flags.ssh}"`);
   return l;
 }
 

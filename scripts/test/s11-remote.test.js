@@ -16,7 +16,7 @@ const { joinLineIn, admitCardState } = require('../lib/panes.js');
 const { Machine } = paths.pluginTest('support/two-homes.ts');
 const store = paths.pluginLib('room/store.ts');
 const proposal = paths.pluginLib('proposal.ts');
-const link = paths.pluginLib('remote/link.ts');
+const link = paths.pluginLib('remote/link-socket.ts');
 
 const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
 const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };

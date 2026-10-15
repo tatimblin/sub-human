@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import type { TestContext } from 'node:test';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
-import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as links from '../lib/room/links.ts';
 import * as listener from '../lib/remote/listener.ts';
 import * as invites from '../lib/remote/invites.ts';
@@ -34,9 +34,9 @@ function cleanup(t: TestContext, machines: Machine[], code: () => string) {
   t.after(() => {
     for (const m of machines) {
       m.lib(() => listener.stop());
-      const d = m.lib(() => link.status(code()));
+      const d = m.lib(() => linkSocket.status(code()));
       if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }
-      fs.rmSync(path.dirname(link.socketPath(path.join(m.home, 'rooms', code()))), { recursive: true, force: true });
+      fs.rmSync(path.dirname(linkSocket.socketPath(path.join(m.home, 'rooms', code()))), { recursive: true, force: true });
     }
   });
 }
@@ -135,7 +135,7 @@ test('handoff to a new host reached over the web: a ws locator, invites pinning 
   const minted = A.lib(() => handoff.hostDoc(store.open(code)));
   const forA = minted && minted.invites && Object.values(minted.invites)[0];
   if (forA) assert.equal(invites.parseInvite(forA)!.hostKey, bkey, 'the handoff invite pins the new host\'s key');
-  assert.ok(await h.until(() => A.lib(() => link.status(code)).state === 'online', 10_000, 50), JSON.stringify(A.lib(() => link.status(code))));
+  assert.ok(await h.until(() => A.lib(() => linkSocket.status(code)).state === 'online', 10_000, 50), JSON.stringify(A.lib(() => linkSocket.status(code))));
   const lf = A.lib(() => links.get(code))!;
   assert.deepEqual(lf.transport, { kind: 'ws', host: '127.0.0.1', port: bport, path: `/sub-human/${code}`, hostKey: bkey });
   assert.equal(B.lib(() => store.open(code).readAll()).find(e => e.kind === 'host_changed')!.locator, loc);

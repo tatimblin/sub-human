@@ -14,7 +14,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
-import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as listener from '../lib/remote/listener.ts';
 import * as wsT from '../lib/remote/transports/ws.ts';
 import { Machine } from './support/two-homes.ts';
@@ -52,16 +52,16 @@ async function rig(t: TestContext, hostEnv: Record<string, string> = {}, remoteE
   const code = host.lib(() => store.listRooms()[0]);
   t.after(() => {
     host.lib(() => listener.stop());
-    const d = remote.lib(() => link.status(code));
+    const d = remote.lib(() => linkSocket.status(code));
     if (d.pid) { kill(childOf(d.pid)); kill(d.pid); }
-    fs.rmSync(path.dirname(link.socketPath(path.join(remote.home, 'rooms', code))), { recursive: true, force: true });
+    fs.rmSync(path.dirname(linkSocket.socketPath(path.join(remote.home, 'rooms', code))), { recursive: true, force: true });
   });
   return { port, host, remote, alice, bob, code };
 }
 
 type Rig = Awaited<ReturnType<typeof rig>>;
 
-const linkState = (m: Machine, code: string) => m.lib(() => link.status(code).state);
+const linkState = (m: Machine, code: string) => m.lib(() => linkSocket.status(code).state);
 async function posts(t: TestContext, { host, remote, alice, bob, code }: Rig, text: string) {
   const r = remote.say(bob, text);
   assert.equal(r.json && r.json.continue, false, JSON.stringify(r.json) + r.stderr);

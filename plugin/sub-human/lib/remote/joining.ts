@@ -25,7 +25,8 @@
  *   noPin(dest, code) -> string        a pipe join without its PIN: the line the host sent has one
  */
 import * as identity from '../identity.ts';
-import * as link from './link.ts';
+import * as linkSocket from './link-socket.ts';
+import * as linkConnect from './link-connect.ts';
 import * as links from '../room/links.ts';
 import * as hosting from './hosting.ts';
 import { sleepSync } from '../io.ts';
@@ -54,7 +55,7 @@ const PIN_HINT = (dest: string, code: string) => `No PIN, so this went over your
 
 /** A daemon still dialing the old host: stop it, so the start that follows dials the link file's new one. */
 export function restartLink(code: string): void {
-  const st = link.status(code);
+  const st = linkSocket.status(code);
   if (!st.running) return;
   try { process.kill(st.pid, 'SIGTERM'); } catch { return; }
   // 1 s: with LINK_START_MS and LINK_JOIN_WAIT_MS this fits the hook's 10 s (hooks.json) with the node start to spare
@@ -62,7 +63,7 @@ export function restartLink(code: string): void {
 }
 
 // the locator a link's transport came from (with its jump hosts: else every re-join over a bastion reads as a move)
-const locatorOf = (t: LinkSpec | null | undefined): string | null => (t && t.kind === 'ssh' ? link.sshLocator(`${t.user}@${t.host}${t.port ? `:${t.port}` : ''}`, t.via ? { via: t.via } : {}) : t && t.kind === 'pipe' ? link.pipeLocator(t.home)
+const locatorOf = (t: LinkSpec | null | undefined): string | null => (t && t.kind === 'ssh' ? linkConnect.sshLocator(`${t.user}@${t.host}${t.port ? `:${t.port}` : ''}`, t.via ? { via: t.via } : {}) : t && t.kind === 'pipe' ? linkConnect.pipeLocator(t.home)
   : t && (t.kind === 'wss' || t.kind === 'ws') ? wsT().urlOf(t) : null);
 
 const sameLogin = (a: LinkSpec | undefined, b: SshSpec) => !!a && !!b && a.kind === 'ssh' && a.login === true && (['user', 'host', 'port', 'via', 'remoteHome'] as const).every(k => a[k] === b[k]); // a login link is ssh
@@ -82,7 +83,7 @@ export function linkShort({ name, code, pin, transport, sid }: { name: string; c
   if (cur) restartLink(code); // a pending join replaced, or the room's host moved: dial with the new file
   try { hosting.joinShort({ code, transport, pin, name, sid }); } catch (e) { return refuse(msgOf(e)); }
   if (cur) links.set(code, { ...links.get(code)!, rebind: true }); // a seat here joins again over the new link (joinShort wrote it)
-  if (!link.start(code)) return refuse(NO_START(code));
+  if (!linkSocket.start(code)) return refuse(NO_START(code));
   return stands(code, name, hosting.outcome(code), !!sid);
 }
 
@@ -95,14 +96,14 @@ export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
   if (identity.roomExists(code) && identity.isHost(code)) return refuse(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   const at = sshT().kind.describe(spec); // "ssh you@host … (your ssh login)"
-  const spent = (link.stopReason(link.status(code)) || {}).code === 'AUTH'; // kicked, or a host key changed: link anew
+  const spent = (linkSocket.stopReason(linkSocket.status(code)) || {}).code === 'AUTH'; // kicked, or a host key changed: link anew
   if (cur && cur.token && sameLogin(cur.transport, spec) && !spent) return take({ name, code, isDefault }); // linked this way already: just the seat
   if (cur) restartLink(code); // a link replaced (another way in, or a refused one): dial with the new file
   const mux = cur && cur.transport && cur.transport.kind === 'ssh' && cur.transport.mux === true && cur.transport.user === spec.user && cur.transport.host === spec.host && cur.transport.port === spec.port;
   try {
     links.set(code, { code, transport: { ...spec, ...(mux ? { mux: true } : {}) }, created_at: new Date().toISOString(), ...(cur ? { rebind: true } : {}) });
   } catch (e) { return refuse(msgOf(e)); }
-  if (!link.start(code)) return refuse(NO_START(code));
+  if (!linkSocket.start(code)) return refuse(NO_START(code));
   const o: Outcome = hosting.outcome(code);
   // no PIN is no invite: the person's own ssh login is the way in, so a refusal says where an invite line differs
   if (o.state === 'refused') return refuse(`could not reach room ${code} over ${at}: ${o.reason}. ${PIN_HINT(typed, code)}`);
@@ -125,13 +126,13 @@ export const pendingJoin = (): Link | null => pendingJoins()[0] || null;
 
 export function finishJoin(l: Link): Step {
   const code = l.code, name = String(l.join_as); // pendingJoin: a string
-  const why = link.stopReason(link.status(code));
+  const why = linkSocket.stopReason(linkSocket.status(code));
   if (why && !l.token) {
     try { const { join_as: _gone, join_sid: _sid, ...rest } = links.get(code) || l; links.set(code, rest); } catch { /* no credential left: nothing to keep */ }
     return refuse(`could not join room ${code}: ${why.reason}`);
   }
   if (l.token) return take({ name, code, pending: true });
-  if (!link.start(code)) return refuse(NO_START(code));
+  if (!linkSocket.start(code)) return refuse(NO_START(code));
   const o: Outcome = hosting.outcome(code, { waitMs: 2000 });
   if (o.state === 'linked') return take({ name, code, pending: true });
   return stands(code, name, o);
@@ -142,14 +143,14 @@ export function ensureLinked(code: string, name: string): Step | null {
   const pending = links.get(code);
   if (pending && !pending.token && (pending.pin !== undefined || pending.enroll || pending.awaiting)) {
     // a join not let in yet: never start it again after a refusal (that would spend another try)
-    const why = link.stopReason(link.status(code));
+    const why = linkSocket.stopReason(linkSocket.status(code));
     if (why) return refuse(`could not join ${code}: ${why.reason}`);
-    if (!link.start(code)) return refuse(NO_START(code));
+    if (!linkSocket.start(code)) return refuse(NO_START(code));
     const o: Outcome = hosting.outcome(code, { waitMs: 2000 });
     if (o.state !== 'linked') return stands(code, name, o);
   }
-  if (!link.start(code)) {
-    const why = link.stopReason(link.status(code));
+  if (!linkSocket.start(code)) {
+    const why = linkSocket.stopReason(linkSocket.status(code));
     return refuse(why ? `could not join ${code}: its connection stopped (${why.reason}). Run /sub-human doctor.` : NO_START(code));
   }
   return null;
@@ -170,8 +171,8 @@ export function pendingNews(sid: string | null | undefined): News | null {
   const l = pendingJoins().find(j => j.join_sid === sid);
   if (!l) return null;
   const code = l.code, name = String(l.join_as);
-  const st = link.status(code);
-  const stopped = link.stopReason(st);
+  const st = linkSocket.status(code);
+  const stopped = linkSocket.stopReason(st);
   if (stopped && !l.token) return { code, name, state: 'refused', text: `could not join room ${code}: ${stopped.reason}` };
   if (l.token && st.state === 'online') return { code, name, state: 'linked', text: hosting.joinText(code, name, { state: 'linked' }) };
   return { code, name, state: 'waiting', text: '' };

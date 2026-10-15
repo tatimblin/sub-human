@@ -13,6 +13,7 @@ import path from 'node:path';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
 import * as hostLinks from '../lib/remote/host-links.ts';
@@ -53,7 +54,7 @@ function rig(t: TestContext, n: number, { seg, oldHost, tamper, before }: RigOpt
     return c;
   };
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
-  t.after(() => fs.rmSync(path.dirname(link.socketPath(mirror.dir)), { recursive: true, force: true }));
+  t.after(() => fs.rmSync(path.dirname(linkSocket.socketPath(mirror.dir)), { recursive: true, force: true }));
   const logged: string[] = [];
   const start = () => link.serveMirror({ mirror, connect, log: m => { logged.push(m); }, retryMs: 30, retryMaxMs: 60, watch: false, seats: () => [] });
   const read = (f: string) => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } };

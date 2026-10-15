@@ -38,9 +38,13 @@
  *       its line fixes the arguments (scripts/sub-human serve also refuses --login under SSH_ORIGINAL_COMMAND)
  *   loginCommand(spec) -> string     the plain `ssh [-p P] [-J V] user@host` a person runs once by hand (a host key to
  *       accept, a password or MFA to check)
- *   loginFailure(stderr, spec, code) -> string | null   why a login link cannot work until the person acts (an unknown
- *       or changed host key, a refused login, no shim or no room on the host): the link daemon stops with it (AUTH)
- *       instead of redialing; null for anything that may pass (a timeout, a refused connection)
+ *   classify(stderr) -> {kind, ...} | null   what ssh's stderr says, in one place (the link daemon, loginProblem and
+ *       doctor read it): mfa, host-key, denied {publickey}, no-shim, old-host, no-plugin, no-room, not-hosted,
+ *       serve-refused {detail}, dns, refused, timeout; null for anything else
+ *   loginProblem(stderr, spec, code) -> {message, reason} | null   why a login link cannot work until the person acts
+ *       (an unknown or changed host key, a refused login, no shim or no room on the host: SSH_HOST_KEY, SSH_DENIED,
+ *       SSH_NO_SHIM, SSH_OLD_HOST, SSH_NO_ROOM): the link daemon stops with it (AUTH) instead of redialing; null for
+ *       anything that may pass (a timeout, a refused connection). loginFailure(stderr, spec, code): its message alone
  *   primeCommand(spec, code, {persist}?) -> [cmd, ...args]   the master: interactive (no BatchMode), -M -N -f
  *       -o ControlPersist=PERSIST (default 8h), the same link options and ControlPath
  *   enrollCommand(spec, code, {key, knownHosts, opts?}) -> [cmd, ...args]   a short code's enrollment (lib/remote/enroll.ts):
@@ -59,6 +63,7 @@ import CryptoMod from 'node:crypto';
 import FsMod from 'node:fs';
 import { createRequire } from 'node:module';
 import type { KindEntry, OpenCtx, SshDest, SshSpec, Transport } from '../types-rest.ts';
+import type { Reason } from '../../reasons.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -182,32 +187,52 @@ function loginSpec(text: string, { via, home, link = CryptoMod.randomBytes(6).to
 
 const loginCommand = (spec: SshSpec): string => ['ssh', ...(spec.port ? ['-p', String(spec.port)] : []), ...(spec.via ? ['-J', spec.via] : []), `${spec.user}@${spec.host}`].join(' ');
 
-function loginFailure(stderr: string, spec: SshSpec, code: string): string | null {
+/** What ssh's stderr says went wrong, in one place: the link daemon (lib/remote/link-connect.ts), loginFailure and
+ * doctor's hints read it. null: nothing this knows (the connection may still pass). */
+type SshProblem =
+  | { kind: 'mfa' | 'host-key' | 'dns' | 'refused' | 'timeout' | 'no-shim' | 'old-host' | 'no-plugin' | 'no-room' | 'not-hosted' }
+  | { kind: 'denied'; publickey: boolean }
+  | { kind: 'serve-refused'; detail: string };
+
+function classify(stderr: unknown): SshProblem | null {
   const s = String(stderr || '');
+  if (/keyboard-interactive|Verification code|one-time password|Duo two-factor/i.test(s) && !/publickey\)\.?\s*$/i.test(s.trim())) return { kind: 'mfa' };
+  if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED|No (?:\S+ )?host key is known/i.test(s)) return { kind: 'host-key' };
+  if (/Permission denied/i.test(s)) return { kind: 'denied', publickey: /Permission denied \(publickey/.test(s) };
+  if (/bin\/serve/.test(s) && /not found|No such file|Unknown command|can't open/i.test(s)) return { kind: 'no-shim' };
+  if (/^usage: sub-human serve --stdio CODE \[--link ID\]$/m.test(s)) return { kind: 'old-host' };
+  if (/sub-human: no (plugin install|node)/.test(s)) return { kind: 'no-plugin' };
+  const m = /^(no room "[^"]*"|room "[^"]*" is not hosted on this machine[^\n]*|sub-human serve --login: [^\n]*)$/m.exec(s);
+  if (m) return /^no room/.test(m[1]) ? { kind: 'no-room' } : /not hosted/.test(m[1]) ? { kind: 'not-hosted' } : { kind: 'serve-refused', detail: m[1] };
+  if (/Could not resolve hostname|Name or service not known|nodename nor servname/i.test(s)) return { kind: 'dns' };
+  if (/Connection refused/i.test(s)) return { kind: 'refused' };
+  if (/timed out|Operation timed out/i.test(s)) return { kind: 'timeout' };
+  return null;
+}
+
+/** Why a login link cannot work until the person acts, with its reason (lib/reasons.ts), from classify; null when it may pass. */
+function loginProblem(stderr: string, spec: SshSpec, code: string): { message: string; reason: Reason } | null {
   const where = `${spec.user}@${spec.host}`;
   const once = loginCommand(spec);
   const home = spec.remoteHome || '~/.sub-human';
   const { cliLine } = textMod;
-  if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED|No (?:\S+ )?host key is known/i.test(s)) {
-    return `ssh doesn't know ${where}'s host key yet (or it changed), and sub-human never answers ssh's questions. Run \`${once}\` once in a terminal, check and accept the key, then join again`;
+  const p = classify(stderr);
+  if (p && p.kind === 'mfa' && !/Permission denied/i.test(String(stderr || ''))) return null; // a prompt BatchMode refused: may pass once primed
+  switch (p && p.kind) {
+    case 'host-key': return { reason: 'SSH_HOST_KEY', message: `ssh doesn't know ${where}'s host key yet (or it changed), and sub-human never answers ssh's questions. Run \`${once}\` once in a terminal, check and accept the key, then join again` };
+    case 'denied': case 'mfa': return { reason: 'SSH_DENIED', message: `${where} refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password. Check that \`${once}\` logs in without one, then join again; behind MFA, run \`${cliLine(`prime ${code}`)}\` in a terminal first` };
+    case 'no-shim': return { reason: 'SSH_NO_SHIM', message: `${where} isn't set up for joining yet (no ${home}/bin/serve). On that machine, open the room in Claude Code (/sub-human), then join again${spec.remoteHome ? '' : '; if its sub-human folder is somewhere else, add --home PATH'}` };
+    case 'old-host': return { reason: 'SSH_OLD_HOST', message: `the sub-human on ${where} is too old for joining over an ssh login: update it there (/plugin update sub-human), or ask its host for an invite (/sub-human invite)` };
+    case 'no-plugin': return { reason: 'SSH_NO_SHIM', message: `${where} found no sub-human plugin or node to run: on that machine, start Claude Code once, then join again` };
+    case 'no-room': return { reason: 'SSH_NO_ROOM', message: `room ${code} isn't open on ${where} (nothing by that name in ${home}): check the room's name, or open it there first` };
+    case 'not-hosted': return { reason: 'SSH_NO_ROOM', message: `${where} only holds a copy of room ${code}; join the machine that hosts it` };
+    case 'serve-refused': return { reason: 'SSH_NO_ROOM', message: (p as { detail: string }).detail };
+    default: return null;
   }
-  if (/Permission denied/i.test(s)) {
-    return `${where} refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password. Check that \`${once}\` logs in without one, then join again; behind MFA, run \`${cliLine(`prime ${code}`)}\` in a terminal first`;
-  }
-  if (/bin\/serve/.test(s) && /not found|No such file|Unknown command|can't open/i.test(s)) {
-    return `${where} isn't set up for joining yet (no ${home}/bin/serve). On that machine, open the room in Claude Code (/sub-human), then join again${spec.remoteHome ? '' : '; if its sub-human folder is somewhere else, add --home PATH'}`;
-  }
-  if (/^usage: sub-human serve --stdio CODE \[--link ID\]$/m.test(s)) {
-    return `the sub-human on ${where} is too old for joining over an ssh login: update it there (/plugin update sub-human), or ask its host for an invite (/sub-human invite)`;
-  }
-  if (/sub-human: no (plugin install|node)/.test(s)) return `${where} found no sub-human plugin or node to run: on that machine, start Claude Code once, then join again`;
-  const m = /^(no room "[^"]*"|room "[^"]*" is not hosted on this machine[^\n]*|sub-human serve --login: [^\n]*)$/m.exec(s);
-  if (m) {
-    return /^no room/.test(m[1]) ? `room ${code} isn't open on ${where} (nothing by that name in ${home}): check the room's name, or open it there first`
-      : /not hosted/.test(m[1]) ? `${where} only holds a copy of room ${code}; join the machine that hosts it` : m[1];
-  }
-  return null;
 }
+
+/** loginProblem's words alone. */
+const loginFailure = (stderr: string, spec: SshSpec, code: string): string | null => loginProblem(stderr, spec, code)?.message ?? null;
 
 function primeCommand(spec: SshSpec, code: string, { persist = '8h', opts = String(process.env.SUB_HUMAN_SSH_OPTS || '').split(/\s+/).filter(Boolean) }: { persist?: string; opts?: string[] } = {}): string[] {
   if (!/^[0-9]{1,5}[smhd]?$/.test(persist)) throw new RoomError('INVALID', `--persist "${persist}" is not a time (e.g. 8h)`);
@@ -244,5 +269,5 @@ const kind: Required<KindEntry<SshSpec>> = {
 
 export {
   withUser, placeholder, dest, jump, parse, locator, command, enrollCommand, remoteCommand, loginSpec, loginCommand,
-  loginFailure, primeCommand, controlPath, kind,
+  loginFailure, loginProblem, classify, primeCommand, controlPath, kind,
 };

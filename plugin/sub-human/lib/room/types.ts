@@ -8,6 +8,7 @@
  */
 
 import type { KeyObject } from 'node:crypto';
+import type { Reason } from '../reasons.ts';
 import type nodeFs from 'node:fs';
 import type { LockOpts } from '../lock.ts';
 import type { LinkSpec } from '../remote/types-rest.ts';
@@ -492,6 +493,8 @@ export interface RoomStore {
   /** the log's snapshot (the subscribe stream's, plus the first id this store holds), null before any rotation */
   snapshot(): (SnapshotWire & { held: number }) | null;
   tailer(opts?: { fs?: TailerFs; after?: number }): Tailer;
+  /** FsRoomStore: what changes in the room (lib/room/watch.ts), for the host's streams; a store without it is polled. */
+  watch?(onChange: (change: { log: boolean; docs: ReadonlySet<string> } | null) => void): () => void;
   lineHash(id: number): string | null;
   validateChain(): ChainCheck;
   verifyChain(opts?: { fromOffset?: number; prev?: string }): ChainVerify;
@@ -592,7 +595,7 @@ export interface Link {
   pin?: string;
   enroll?: { pin: string; name: string; kind?: string; attempts?: number };
   awaiting?: { at: string; ref: string; check: string; expires_at: string };
-  refused?: { at: string; reason: string };
+  refused?: { at: string; reason: string; why?: string };
   request?: unknown;
   rebind?: unknown;
   join_as?: string;
@@ -611,6 +614,10 @@ export interface LinkStateRecord {
   since?: string;
   attempt?: number;
   lastError?: string | null;
+  /** the typed reason of lastError (lib/reasons.ts) */
+  lastReason?: string;
+  /** the code it stopped with (AUTH, PROTOCOL, FORK) */
+  lastCode?: string;
   prevError?: string;
   rttMs?: number | null;
   queued?: number;
@@ -625,6 +632,9 @@ export interface LinkState {
   since?: string;
   attempt?: number;
   lastError?: string;
+  /** lastError's typed reason (lib/reasons.ts): what doctor and the CLI key on */
+  lastReason?: Reason;
+  lastCode?: string;
   prevError?: string;
   rttMs?: number;
   queued?: number;

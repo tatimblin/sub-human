@@ -377,24 +377,27 @@ function linkCmd(args: readonly string[]) {
   const opened = room.open(code).store;
   if (opened.isHost) die(`this machine hosts room "${code}"; there is no connection to ${flags.forget ? 'forget' : 'start'}`, 1);
   const s = opened as MirrorRoomStore; // not the host: the room's mirror
-  const link: typeof import('../remote/link.ts') = require('../remote/link.ts');
-  if (!flags.reset && !flags.forget) return link.run({ code }).then(() => process.exit(0), (e: Error) => die(e.message, 1));
-  const st = link.status(code);
+  if (!flags.reset && !flags.forget) {
+    const link: typeof import('../remote/link.ts') = require('../remote/link.ts');
+    return link.run({ code }).then(() => process.exit(0), (e: Error) => die(e.message, 1));
+  }
+  const linkSocket: typeof import('../remote/link-socket.ts') = require('../remote/link-socket.ts');
+  const st = linkSocket.status(code);
   if (st.running && flags.forget) die(`the connection to room ${code} is running (pid ${st.pid}); it forgets the room only once stopped (kill ${st.pid}, then run this again)`, 1);
   if (st.running) die(`the connection to room ${code} is running (pid ${st.pid}); it copies the room afresh only once stopped (kill ${st.pid}, then run this again)`, 1);
   if (flags.forget) return forgetLink(code, s, !!flags.force);
   s.reset();
   const text: typeof import('../text.ts') = require('../text.ts');
-  if (!link.start(code)) die(`the connection to room ${code} did not start; ${text.cliLine('doctor')} says why`, 1);
+  if (!linkSocket.start(code)) die(`the connection to room ${code} did not start; ${text.cliLine('doctor')} says why`, 1);
   console.log(`room ${code}: copying it again from the host`);
 }
 
 // link CODE --forget: the copy moves before the link file goes, so no moment has a bare rooms/<code> (that opens as a
 // room hosted here: a fork of the room)
 function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
-  const link: typeof import('../remote/link.ts') = require('../remote/link.ts');
-  const why = (require('../room/link-state.ts') as typeof import('../room/link-state.ts')).read(code)?.lastError || '';
-  if (!force && !why.includes(link.ROOM_CLOSED_REASON) && !why.includes(link.NO_SEAT_REASON)) {
+  const st = (require('../room/link-state.ts') as typeof import('../room/link-state.ts')).read(code);
+  const why = st?.lastError || '';
+  if (!force && st?.lastReason !== 'ROOM_CLOSED' && st?.lastReason !== 'NO_SEAT') {
     die(`room ${code}: the connection did not stop because the room closed or no seat of this machine is left (${why || 'no reason on record'}); add --force to forget it anyway`, 1);
   }
   const store: typeof import('../room/store.ts') = require('../room/store.ts');

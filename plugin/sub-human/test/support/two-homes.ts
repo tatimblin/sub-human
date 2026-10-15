@@ -38,7 +38,7 @@ import * as invites from '../../lib/remote/invites.ts';
 import * as store from '../../lib/room/store.ts';
 import * as links from '../../lib/room/links.ts';
 import * as homeMod from '../../lib/home.ts';
-import * as link from '../../lib/remote/link.ts';
+import * as linkConnect from '../../lib/remote/link-connect.ts';
 import * as admission from '../../lib/remote/admission.ts';
 
 const PROBE = path.join(import.meta.dirname, 'worker-probe.ts');
@@ -96,7 +96,7 @@ class Machine {
   linkInvite(code: string, invite: string): void {
     const inv = invites.parseInvite(invite);
     if (!inv) throw new Error(`not an invite: ${invite}`);
-    const transport = link.transportOf(inv.locator);
+    const transport = linkConnect.transportOf(inv.locator);
     if (!transport) throw new Error(`no transport for ${inv.locator}`);
     this.lib(() => links.set(code, { code, transport, invite, created_at: new Date().toISOString() }));
   }

@@ -19,7 +19,7 @@ import type { FsRoomStore } from '../lib/room/store.ts';
 import type { FakeClock } from '../lib/clock.ts';
 import type { Entry, EntryInput, Via } from '../lib/room/types.ts';
 import type { Identity } from '../lib/identity.ts';
-import type * as linkMod from '../lib/remote/link.ts';
+import type * as linkMod from '../lib/remote/link-socket.ts';
 import type { TailEvent } from '../lib/types-app.ts';
 
 const FAST = {

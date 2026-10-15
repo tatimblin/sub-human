@@ -171,7 +171,7 @@ async function run({ out }) {
   const { Machine } = pluginTest('support/two-homes.ts'); // also gives this process a temp SUB_HUMAN_HOME
   const store = pluginLib('room/store.ts');
   const identity = pluginLib('identity.ts');
-  const link = pluginLib('remote/link.ts');
+  const link = { ...pluginLib('remote/link-socket.ts'), ...pluginLib('remote/link-connect.ts') };
   const envelope = pluginLib('room/envelope.ts');
   const client = pluginLib('remote/client.ts');
   const pipe = pluginLib('remote/transports/pipe.ts');
@@ -527,7 +527,7 @@ const manualState = () => JSON.parse(fs.readFileSync(path.join(MANUAL, 'state.js
 const opt = (args, flag, dflt) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : dflt; };
 /** Run fn with SUB_HUMAN_HOME set to a joiner's home (the plugin libs read it on every call). */
 const asJoiner = (j, fn) => { process.env.SUB_HUMAN_HOME = j.home; try { return fn(); } catch { return null; } };
-const linkOf = (st, j) => asJoiner(j, () => pluginLib('remote/link.ts').status(st.code));
+const linkOf = (st, j) => asJoiner(j, () => pluginLib('remote/link-socket.ts').status(st.code));
 
 async function up(args) {
   if (fs.existsSync(path.join(MANUAL, 'state.json'))) throw new Error(`already up (${MANUAL}); run down first`);

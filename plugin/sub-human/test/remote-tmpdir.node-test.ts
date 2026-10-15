@@ -8,7 +8,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
-import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
 import { Machine } from './support/two-homes.ts';
 
 const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
@@ -25,11 +25,11 @@ test('remote: a daemon started with one TMPDIR serves hooks running with another
 
   // the join hook starts the daemon: it gets daemonTmp
   await remote.joinVia(host, alice, bob);
-  const daemon = remote.lib(() => link.status(code));
+  const daemon = remote.lib(() => linkSocket.status(code));
   const mirrorDir = path.join(remote.home, 'rooms', code);
-  t.after(() => { kill(childOf(daemon.pid)); kill(daemon.pid); fs.rmSync(path.dirname(link.socketPath(mirrorDir)), { recursive: true, force: true }); });
+  t.after(() => { kill(childOf(daemon.pid)); kill(daemon.pid); fs.rmSync(path.dirname(linkSocket.socketPath(mirrorDir)), { recursive: true, force: true }); });
   assert.equal(daemon.running, true);
-  assert.equal(daemon.socket, link.socketPath(mirrorDir), 'the daemon records the socket it bound');
+  assert.equal(daemon.socket, linkSocket.socketPath(mirrorDir), 'the daemon records the socket it bound');
   assert.ok(!daemon.socket.startsWith(daemonTmp), daemon.socket);
   assert.equal(fs.statSync(daemon.socket).mode & 0o777, 0o600, 'the socket is 0600 (in a 0700 directory)');
   assert.equal(fs.statSync(path.dirname(daemon.socket)).mode & 0o777, 0o700);

@@ -13,6 +13,8 @@ import child_process from 'node:child_process';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as link from '../lib/remote/link.ts';
+import * as linkSocket from '../lib/remote/link-socket.ts';
+import * as linkConnect from '../lib/remote/link-connect.ts';
 import * as outbox from '../lib/remote/outbox.ts';
 import * as protocol from '../lib/remote/protocol.ts';
 import * as server from '../lib/remote/server.ts';
@@ -199,8 +201,8 @@ async function rig(t: TestContext, { serverCaps }: { serverCaps?: Client['server
     seats: () => [], writeState: rec => r.states.push(rec as LinkStateRecord), ...opts,
   });
   r.same = () => fs.existsSync(r.mirror.logFile) && fs.readFileSync(r.mirror.logFile, 'utf8') === fs.readFileSync(host.logFile, 'utf8');
-  r.hook = (op, params) => link.handle(op, { socket: link.socketPath(r.mirror.dir), params }) as Promise<HookReply>;
-  t.after(() => fs.rmSync(path.dirname(link.socketPath(r.mirror.dir)), { recursive: true, force: true }));
+  r.hook = (op, params) => linkSocket.handle(op, { socket: linkSocket.socketPath(r.mirror.dir), params }) as Promise<HookReply>;
+  t.after(() => fs.rmSync(path.dirname(linkSocket.socketPath(r.mirror.dir)), { recursive: true, force: true }));
   return r;
 }
 const ids = (file: string) => lines(file).map(l => JSON.parse(l).id);
@@ -521,7 +523,7 @@ test('mirror store: a deadline that passed after the op went out is "unknown", n
   h.freshHome(t);
   const code = h.newRoom();
   const dir = h.tmpDir('sh-mirror-u-', t);
-  const sock = link.socketPath(dir);
+  const sock = linkSocket.socketPath(dir);
   fs.mkdirSync(path.dirname(sock), { recursive: true, mode: 0o700 });
   t.after(() => fs.rmSync(path.dirname(sock), { recursive: true, force: true }));
   const reply: { mode: string | null } = { mode: null };
@@ -577,10 +579,10 @@ test('link: an ssh link with its own key and a token that ssh now refuses is AUT
   const denied = { stderr: () => 'host@devbox: Permission denied (publickey).\r\n' };
   const sshTo: SshSpec = { kind: 'ssh', user: 'host', host: 'devbox', key: '/k/id_ed25519' };
   const own = { token: 'tok', transport: sshTo } as Link; // the fields keyRefused reads (no code)
-  const e1 = await link.keyRefused(own, denied, off);
+  const e1 = await linkConnect.keyRefused(own, denied, off);
   assert.deepEqual([e1!.code, /revoked/.test(e1!.message)], ['AUTH', true]);
-  assert.equal(await link.keyRefused({ ...own, token: undefined, invite: 'sh2.x' }, denied, off), off, 'not admitted yet: keep trying');
-  assert.equal(await link.keyRefused({ ...own, transport: { ...sshTo, key: undefined } }, denied, off), off, 'the user\'s own keys: maybe an agent not loaded');
-  assert.equal(await link.keyRefused(own, { stderr: () => 'ssh: connect to host devbox port 22: Connection refused' }, off), off);
-  assert.equal(await link.keyRefused(own, Promise.resolve(denied), off).then(e => e!.code), 'AUTH', 'an async transport');
+  assert.equal(await linkConnect.keyRefused({ ...own, token: undefined, invite: 'sh2.x' }, denied, off), off, 'not admitted yet: keep trying');
+  assert.equal(await linkConnect.keyRefused({ ...own, transport: { ...sshTo, key: undefined } }, denied, off), off, 'the user\'s own keys: maybe an agent not loaded');
+  assert.equal(await linkConnect.keyRefused(own, { stderr: () => 'ssh: connect to host devbox port 22: Connection refused' }, off), off);
+  assert.equal(await linkConnect.keyRefused(own, Promise.resolve(denied), off).then(e => e!.code), 'AUTH', 'an async transport');
 });

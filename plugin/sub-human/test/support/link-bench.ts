@@ -12,7 +12,7 @@
  */
 import * as h from '../helpers.ts';
 import * as store from '../../lib/room/store.ts';
-import * as link from '../../lib/remote/link.ts';
+import * as linkSocket from '../../lib/remote/link-socket.ts';
 import { Machine, type MachineRun, type Seat } from './two-homes.ts';
 
 const arg = (name: string, fallback: number) => { const i = process.argv.indexOf(name); return i > 0 ? Number(process.argv[i + 1]) : fallback; };
@@ -31,7 +31,7 @@ const code = host.lib(() => store.listRooms()[0]);
 remote.linkInvite(code, host.inviteFor(code, remote)); // the link file (a bound invite, no card), then the seat over it
 const joined = remote.join(bob, `bob ${code}`);
 if (!joined.json?.hookSpecificOutput) throw new Error(`join: ${JSON.stringify(joined.json)} ${joined.stderr}`);
-const daemon = remote.lib(() => link.status(code)).pid;
+const daemon = remote.lib(() => linkSocket.status(code)).pid;
 process.on('exit', () => { try { if (daemon) process.kill(daemon); } catch { /* gone */ } });
 
 /** One signed post from a mirror in this process: its bridge is up after the first. */
