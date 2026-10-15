@@ -52,7 +52,7 @@ function cardState(p) {
   return opts.length ? { opts } : null;
 }
 
-/** The plan-approval dialog a room review opens in (hooks/consent.ts), or null: its option lines. */
+/** The plan-approval dialog a room review opens in (hooks/handlers/consent.ts), or null: its option lines. */
 function planState(p) {
   if (!/Would you like to proceed\?/.test(p) || !/Tell Claude what to change|No, keep planning/.test(p)) return null;
   const opts = [];

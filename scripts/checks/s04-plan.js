@@ -16,7 +16,7 @@ module.exports = {
       p1 ? `${x.fmt(p1)} approvers ${p1.approvers.join(',')}; plans/${p1.hash}.md ${fs.existsSync(path.join(roomDir, 'plans', `${p1.hash}.md`)) ? 'present' : 'missing'}` : 'no proposal');
     const ow = ask && x.entries('claude').find(e => e.timestamp > ask.at && metrics.trigger(e));
     det(`The room's Claude is woken by ${B}'s @claude line`, !!ow, ow ? `${metrics.trigger(ow)} at ${ow.timestamp.slice(11, 19)}` : 'no claude wake after it');
-    // the proposal opens in the native plan dialog (scrollable, hooks/consent.ts); the card is the fallback
+    // the proposal opens in the native plan dialog (scrollable, hooks/handlers/consent.ts); the card is the fallback
     let title = '';
     try { title = (fs.readFileSync(path.join(roomDir, 'plans', `${p1.hash}.md`), 'utf8').split('\n').map(l => l.replace(/^\s*(#{1,6}\s+|[-*+>]\s+)/, '').replace(/[*_`]/g, '').trim()).find(Boolean) || '').slice(0, 40); } catch { /* none */ }
     const firstPage = seat => x.caps('S4', seat).find(r => r.caption.startsWith('The room\'s Claude proposes'))?.step ?? 'last';

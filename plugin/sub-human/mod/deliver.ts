@@ -17,11 +17,14 @@
  */
 import {
   tailArgv, tailEnv, lineBuffer, parseEvent, route, restartDelay, nextFails, noticeDue, turnLedger, spawnWanted, logLines,
-  relayQueue, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS,
+  relayQueue, rewakePrompt, DELIVERY_ERROR_NOTICE, MOD_RESTART_TELL_FAILS, RELAY_AFTER_MS, REWAKE_TIMEOUT_MS,
 } from './core/deliver.ts';
-import { parseHello } from './core/seat.ts';
+import { parseHello, localHello, homeOf, sidIndex } from './core/seat.ts';
 import { answersItself, joinPayload, readReply, answerOf, CONFIRM_AFTER_MS } from './core/command.ts';
-import { shimArgv, shimEnv, SHIM_TIMEOUT_MS } from './core/shim.ts';
+import { shimArgv, shimEnv, toClassic, SHIM_TIMEOUT_MS } from './core/shim.ts';
+import { restoreNeeded } from './core/prefilter.ts';
+import { mergeClassic } from './core/prompt.ts';
+import { factsBook } from './core/facts.ts';
 import { asHello, asNonce, mintNonce } from './core/state.ts';
 import type { EngineInterface, On, SessionAppendArgs } from 'claude-code';
 import type { RelayIo, TailEvent, TailSeat } from './core/types.ts';
@@ -52,7 +55,15 @@ function nonceFor($: EngineInterface, sid: string): Promise<string | null> {
   return minting;
 }
 
-/** Run hooks/mod-hello.ts for sid and keep its answer in $.state (only a good answer replaces the last one). */
+/** What classic.PreToolUse needs and its event does not carry (mod/core/facts.ts): each main-loop classic event this
+ * module sees notes the session's transcript path and permission mode; tool.call stashes the call's agentId. Module
+ * state: a reload forgets it until the next event. */
+export const facts = factsBook();
+
+/** The session id whose lease this module process has written (mod-hello ran for it): join and at-room need one. */
+let leased: string | null = null;
+
+/** Run hooks/handlers/mod-hello.ts for sid and keep its answer in $.state (only a good answer replaces the last one). */
 async function sayHello($: EngineInterface, sid: string) {
   const root = $.plugin.root;
   const nonce = typeof sid === 'string' && sid ? await nonceFor($, sid) : null;
@@ -62,8 +73,33 @@ async function sayHello($: EngineInterface, sid: string) {
     timeoutMs: SHIM_TIMEOUT_MS,
   });
   const hello = run.exitCode === 0 ? parseHello(run.stdout, sid) : null;
-  if (hello) await $.state.set(HELLO, hello);
+  if (hello) { await $.state.set(HELLO, hello); leased = sid; }
   return hello;
+}
+
+/** The lease for sid (mod-hello writes it, with the nonce): before a join, which refuses a session without one. */
+async function ensureLease($: EngineInterface, sid: string) {
+  if (leased !== sid) await refresh($, sid);
+}
+
+/**
+ * At session start: mod-hello only when this session may have a seat (its session index exists, or this process knew
+ * a seat before: a /clear). Otherwise the hello is the module's own (localHello: the home from the environment, no seat),
+ * so a session that never joins starts no node; its lease is written when it first types /sub-human (ensureLease).
+ */
+async function startHello($: EngineInterface, sid: string) {
+  const prev = asHello((await $.state.get(HELLO)).value);
+  if (!(prev && prev.seat)) {
+    const userHome = (await $.env.get('HOME')) ?? null;
+    const home = homeOf(await $.env.get('SUB_HUMAN_HOME'), userHome);
+    const index = home && home.startsWith('/') ? sidIndex(home, sid) : null;
+    if (home && index && !(await $.fs.exists(index))) {
+      const real = await $.fs.stat(home, { resolve: true }).then(s => s.realPath, () => undefined);
+      await $.state.set(HELLO, localHello({ sid, home, realHome: typeof real === 'string' ? real : null, userHome, pluginRoot: $.plugin.root }));
+      return;
+    }
+  }
+  await refresh($, sid);
 }
 
 /** After a refresh failed: keep the last hello for the guard's home, but as no session's (prefilters run node). */
@@ -80,7 +116,7 @@ async function refresh($: EngineInterface, sid: string) {
 }
 
 
-/** A join the command.run hook took (hooks/join.ts said so): {sid, context}, for the expansion it lets run next, so
+/** A join the command.run hook took (hooks/handlers/join.ts said so): {sid, context}, for the expansion it lets run next, so
  * the join hook beneath does not run a second time. Module state, set only while that next(e) runs. */
 let joined: { sid: string; context: string } | null = null;
 
@@ -160,6 +196,18 @@ function submitWake($: EngineInterface, text: string, { appended = false, seen =
 
 /** A wake while a turn runs: appended and checked at the turn's end; submitted when it cannot be appended, or when
  * the turn ended before the row was stored (no turn's end would check it). */
+/**
+ * After a resume: hooks/handlers/row-rewake.ts, not awaited (it was an asyncRewake command hook). Its exit 2 is the row
+ * calls the resume lost: they go to the model as a wake (submitWake), shown to the person as one line. Never throws.
+ */
+async function rewake($: EngineInterface, e: { session_id?: string }) {
+  try {
+    const root = $.plugin.root;
+    const run = await $.process.run(shimArgv(root, 'row-rewake'), { stdin: JSON.stringify(e), env: shimEnv(e, root), timeoutMs: REWAKE_TIMEOUT_MS });
+    if (run.exitCode === 2 && String(run.stderr || '').trim()) await submitWake($, rewakePrompt(run.stderr));
+  } catch { /* the restore's context lists the same rows for the next prompt */ }
+}
+
 async function midTurnWake($: EngineInterface, text: string) {
   if (!(await appendRow($, text))) return submitWake($, text);
   // a clock that fails dates the row as never read: submitted again rather than lost
@@ -267,7 +315,8 @@ async function runChild($: EngineInterface, c: Child) {
 
 /** classic.PostToolUse / PostToolUseFailure: note when a main-loop tool call finished (no agent_id). Without a
  * time the last one stands: a wake then reads as unread and is submitted again rather than lost. */
-async function toolDone<E extends { readonly agent_id?: string }, R>($: EngineInterface, e: E, next: (e: E) => R | PromiseLike<R>): Promise<R> {
+async function toolDone<E extends { readonly agent_id?: string; readonly session_id?: string }, R>($: EngineInterface, e: E, next: (e: E) => R | PromiseLike<R>): Promise<R> {
+  facts.noteEvent(e);
   if (!e.agent_id) {
     try { turns.toolDone(await $.clock.now()); } catch { /* above */ }
   }
@@ -304,7 +353,7 @@ export function registerDeliver(on: On) {
     try {
       const sid = await $.session.id();
       await $.state.set(REVIEW, true);
-      await refresh($, sid);
+      await startHello($, sid).catch(() => refresh($, sid));
       const { value: hello } = await $.state.get(HELLO);
       if (spawnWanted(asHello(hello))) ensureChild($, sid);
     } catch { /* unknown: the guard keeps its string rules; the join or a SessionStart starts the child */ }
@@ -315,6 +364,7 @@ export function registerDeliver(on: On) {
   // output; a join that worked expands as before, its mechanics block handed to the expansion hook below
   on('command.run', { command: ['sub-human:sub-human', 'sub-human'] }, async ($, e, next) => {
     const sid = await $.session.id();
+    await ensureLease($, sid); // the join needs this session's lease, and the nonce it holds
     const nonce = asNonce((await $.state.get(NONCE)).value, sid);
     if (!answersItself(e, { roomClaude: !!(await $.env.get('SUB_HUMAN_ROOM')), nonce })) return next(e);
     const root = $.plugin.root;
@@ -337,30 +387,43 @@ export function registerDeliver(on: On) {
     const { result, logs } = answerOf(reply, { bridge: e.origin.kind === 'bridge' });
     for (const line of logs) $.ui.log(line);
     try { await refresh($, sid); } catch { /* the next refresh tries again */ }
-    try { ensureChild($, sid); } catch { /* next start tries again */ }
+    try { if (spawnWanted(asHello((await $.state.get(HELLO)).value))) ensureChild($, sid); } catch { /* next start tries again */ }
     return result;
   }).catch(($, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module
 
-  // after a join (hooks/join.ts beneath, or the one command.run above took): hello for the new seat; the child looks
+  // after a join (hooks/handlers/join.ts beneath, or the one command.run above took): hello for the new seat; the child looks
   // it up itself
   on('classic.UserPromptExpansion', { command_name: /^(sub-human:)?sub-human$/ }, async ($, e, next) => {
     const took = joined && joined.sid === e.session_id ? joined : null;
     if (took) joined = null;
+    else { try { await ensureLease($, e.session_id); } catch { /* the join beneath says what is missing */ } }
     const r = took ? { additionalContext: [took.context] } : await next(e);
     try { await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
-    try { ensureChild($, e.session_id); } catch { /* next start tries again */ }
+    try { if (spawnWanted(asHello((await $.state.get(HELLO)).value))) ensureChild($, e.session_id); } catch { /* next start tries again */ }
     return r;
   }).catch(($, e, next) => next(e)); // never in the join's way: what ran beneath stands, or runs
 
-  // a /clear (new session id), compact or resume: session-restore beneath rebinds the seat first
-  on('classic.SessionStart', { source: ['clear', 'compact', 'resume'] }, async ($, e, next) => {
-    const r = await next(e);
-    try { await $.state.set(REVIEW, true); await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
+  // a /clear (new session id), compact or resume: session-restore puts the seat back first (a /clear rebinds it to the
+  // new session id), unless this session surely has none; then the hello for that id, the tail child, and on resume
+  // the rows the resume lost (row-rewake, in the background: a wake once it answers)
+  on('classic.SessionStart', async ($, e, next) => {
+    facts.noteEvent(e);
+    let ours = {};
+    if (restoreNeeded(asHello((await $.state.get(HELLO)).value), e.session_id, e.source)) {
+      const root = $.plugin.root;
+      const run = await $.process.run(shimArgv(root, 'session-restore'), { stdin: JSON.stringify(e), env: shimEnv(e, root), timeoutMs: SHIM_TIMEOUT_MS });
+      ours = toClassic('SessionStart', run).result;
+      try { await $.state.set(REVIEW, true); await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
+      try {
+        const hello = asHello((await $.state.get(HELLO)).value);
+        if (e.source === 'resume' && hello && hello.seat) void rewake($, e);
+      } catch { /* the rows come with the next prompt (the restore's context) */ }
+    }
     try {
       const { value: hello } = await $.state.get(HELLO);
       if (spawnWanted(asHello(hello))) ensureChild($, e.session_id);
     } catch { /* the next session.start or join starts it */ }
-    return r;
+    return mergeClassic(ours, await next(e));
   }).catch(($, e, next) => next(e));
 
   on('session.end', ($, e, next) => {

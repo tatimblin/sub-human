@@ -1,5 +1,5 @@
 // One log, every consent view: lib/room/consent.ts fold feeds stateLine, lane(), the rows, proposal.matrix /
-// pendingFor and the consent gate (hooks/consent.ts Pre(AskUserQuestion)); they must give the same answers.
+// pendingFor and the consent gate (hooks/handlers/consent.ts Pre(AskUserQuestion)); they must give the same answers.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { World, decision, room } from './helpers.ts';

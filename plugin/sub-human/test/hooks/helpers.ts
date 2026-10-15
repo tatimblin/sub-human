@@ -105,7 +105,7 @@ class World {
   members(): Members { return this.lib(() => identity.readMembers(this.code)); }
   memberDir(name: string): string { return path.join(this.home, 'rooms', this.code, 'members', name); }
 
-  /** The hooks module's hello lease for session id sid (hooks/mod-hello.ts writes it on session.start; join needs it). */
+  /** The hooks module's hello lease for session id sid (hooks/handlers/mod-hello.ts writes it on session.start; join needs it). */
   modLease(sid: unknown): void { if (sid) this.lib(() => identity.writeModLease(sid)); }
 
   /**

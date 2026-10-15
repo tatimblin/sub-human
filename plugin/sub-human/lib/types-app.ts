@@ -63,7 +63,7 @@ export interface Card {
     options: { label: string, description: string, preview?: string }[];
   }[];
 }
-/** members/NAME/review: the plan-view review state (hooks/consent.ts writes it). */
+/** members/NAME/review: the plan-view review state (hooks/handlers/consent.ts writes it). */
 export interface Review {
   phase: 'entering' | 'shown' | 'exiting' | 'restore';
   mode?: string;
@@ -76,7 +76,7 @@ export interface Review {
   tool_use_id?: string | null;
   said?: string;
   resolved?: boolean;
-  /** closed while its dialog's tool_result was not on disk yet: the answer is read again later (hooks/consent.ts resolveShown) */
+  /** closed while its dialog's tool_result was not on disk yet: the answer is read again later (hooks/handlers/consent.ts resolveShown) */
   unread?: boolean;
   foreign?: boolean;
   card?: string;
@@ -89,9 +89,9 @@ export interface Confirm {
   title: string | null;
   at: number;
   asked?: number;
-  /** when Stop nudged the model to show a card it never showed (hooks/consent.ts unasked): once */
+  /** when Stop nudged the model to show a card it never showed (hooks/handlers/consent.ts unasked): once */
   nudged?: number;
-  /** when the card's no-answer close was told, or an interrupted card offered again (hooks/consent.ts reoffer): once */
+  /** when the card's no-answer close was told, or an interrupted card offered again (hooks/handlers/consent.ts reoffer): once */
   again?: number;
   /** when reoffer offered an interrupted card again: a Stop with no card asked since nudges once more (renudged) */
   reoffered?: number;

@@ -93,7 +93,7 @@ probe finds it and the scenario runs. You can also force things:
 | feature | detected by | used in |
 |---|---|---|
 | `shortCode` | `lib/remote/enroll.ts` (invites with a PIN over CPace) | every ssh join, security, short |
-| `hostSsh` | `hooks/join.ts` handles `--ssh` | p2-corporate |
+| `hostSsh` | `hooks/handlers/join.ts` handles `--ssh` | p2-corporate |
 | `revoke`, `handoff`, `doctor` | the CLI's usage lists `kick` (`revoke` before 0.5.0-beta.6), `handoff`, `doctor` | security, handoff, p1-friends |
 | `heartbeat` | protocol op `ping` (or `ping` in `link.ts`) | half-open |
 | `outbox` | `lib/remote/outbox.ts` (or `outbox` in `link.ts`) | p3-sleep |

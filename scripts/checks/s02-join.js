@@ -64,7 +64,7 @@ function remoteJoin(x, det, j) {
     lf ? `transport ${t.kind} to ${t.host}${t.port ? `:${t.port}` : ''}; token ${typeof lf.token === 'string' ? 'yes' : 'no'}; PIN ${lf.enroll ? 'still in the file' : 'dropped'}; known_hosts ${pinned.trim() === `${t.alias} ${hostKey}` ? 'pins devbox\'s host key' : hostKey ? 'does NOT pin devbox\'s host key' : `(no ${devbox}/ssh_host_ed25519_key.pub)`}`
       : `no ${path.join(rh, 'links', `${code}.json`)}`);
 
-  // the card: only the host person's own answer on it lets a machine in (hooks/consent.ts postAdmit), signed with A's seat key
+  // the card: only the host person's own answer on it lets a machine in (hooks/handlers/consent.ts postAdmit), signed with A's seat key
   const envelope = paths.pluginLib('room/envelope.ts');
   const recs = Object.values(readJson(path.join(x.roomDir, 'remote', 'invites.json'), {}) || {}).filter(r => r && r.admission && r.name === B);
   const rec = recs.at(-1);

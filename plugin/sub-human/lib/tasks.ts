@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/tasks.ts: the room's shared task list. The headless room Claude's own native task list
  * (CLAUDE_CODE_TASK_LIST_ID=sh-CODE) is the room's list. Members ask for changes with the `task` tool
  * (mcp/task.ts: a `task_req` log entry); the room's Claude applies them with native TaskCreate/TaskUpdate;
- * hooks/tasks.ts logs each applied change as a `task` entry and rewrites the room document `tasks` as fold() of
+ * hooks/handlers/tasks.ts logs each applied change as a `task` entry and rewrites the room document `tasks` as fold() of
  * those entries, and gates TaskCompleted. Rows and the CLI read only that document (tasks.json in the room
  * directory), never ~/.claude. Zero dependencies.
  *
@@ -38,7 +38,7 @@ import * as room from './room.ts';
 import type { Task, TaskReq } from './types-app.ts';
 import type { Entry, Members } from './room/types.ts';
 
-/** A task as it arrives to be cleaned (the mirror, a fold, hooks/tasks.ts's native task): loosely shaped. */
+/** A task as it arrives to be cleaned (the mirror, a fold, hooks/handlers/tasks.ts's native task): loosely shaped. */
 interface RawTask {
   id?: unknown;
   subject?: string;
@@ -69,7 +69,7 @@ const OPEN = new Set(['pending', 'in_progress']);
 
 /** The mirror is the room document `tasks` (lib/room/store.ts kv; tasks.json on disk). */
 const kvOf = (code: string) => room.open(code).store.kv;
-/** Run fn under the mirror's lock (hooks/tasks.ts: read the log, append, refold, as one step). */
+/** Run fn under the mirror's lock (hooks/handlers/tasks.ts: read the log, append, refold, as one step). */
 const withList = <T>(code: string, fn: () => T): T => kvOf(code).lock('tasks', fn);
 /** Claude Code's task store for a list id (read only; the plugin never writes there). */
 

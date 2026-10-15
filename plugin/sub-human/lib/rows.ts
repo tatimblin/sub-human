@@ -19,7 +19,7 @@
  *       (= readHolds(code, me.name), null = nothing held). No grace period: used by join / restore.
  * Lifecycle: a row lives as long as its viewer is in the room. A participant row does NOT end when its member
  *   leaves; it reads "left" and comes back to life on rejoin (mcp/hold.ts keeps holding). One live hold per
- *   (viewer, kind, name): hold.ts refuses a second with "STOP: duplicate row", and hooks/row-guard.ts
+ *   (viewer, kind, name): hold.ts refuses a second with "STOP: duplicate row", and hooks/handlers/row-guard.ts
  *   (PreToolUse Agent) denies the spawn itself when the row's hold is already live, so no dead copy appears.
  *   participantCall(name), roomCall(code, names)   the single Agent call lines
  *
@@ -181,7 +181,7 @@ function rowCalls(me: Me | null | undefined, members: MemberInput, { only = null
 
 /**
  * What a member_joined notice (scripts/sub-human tail) tells this seat about NAME's row, from the live holds file:
- * spawn only when the row is not running. A spawn of a running row is denied by hooks/row-guard.ts, which
+ * spawn only when the row is not running. A spawn of a running row is denied by hooks/handlers/row-guard.ts, which
  * Claude Code renders as a red error, so the notice prevents the attempt. '' for my own join.
  */
 function joinNote(me: Me | null | undefined, name: string | null | undefined, { held }: { held?: Holds | null } = {}): string {
@@ -279,7 +279,7 @@ function forgetRow(code: string, agentId: string): void {
   }
 }
 
-/** How often hooks/row-hold.ts blocked agentId's stop (rows/blocks-ID); setBlockCount(code, id, n). */
+/** How often hooks/handlers/row-hold.ts blocked agentId's stop (rows/blocks-ID); setBlockCount(code, id, n). */
 const blocksKey = (id: unknown) => `rows/blocks-${String(id).replace(/[^A-Za-z0-9_-]/g, '') || 'x'}`;
 const blockCount = (code: string, id: string): number => Number(kvOf(code).get(blocksKey(id), 0)) || 0;
 const setBlockCount = (code: string, id: string, n: unknown): void => kvOf(code).set(blocksKey(id), Number(n) || 0, { compact: true });

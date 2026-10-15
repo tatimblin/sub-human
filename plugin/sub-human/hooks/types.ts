@@ -23,7 +23,7 @@ export type AnyHookIn = Partial<BaseHookInput> & {
   source?: string;
 };
 
-/** UserPromptSubmit as hooks/prompt.ts hands it on: the payload plus what mod/prompt.ts adds (the prompt's origin and
+/** UserPromptSubmit as hooks/handlers/prompt.ts hands it on: the payload plus what mod/prompt.ts adds (the prompt's origin and
  * the session's nonce; at-room believes the origin only with the nonce). */
 export type PromptIn = HookIn<'UserPromptSubmit'> & { sub_human_origin?: unknown; sub_human_nonce?: unknown };
 

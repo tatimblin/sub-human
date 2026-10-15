@@ -1,4 +1,4 @@
-// hooks/prompt.ts: the one UserPromptSubmit process (at-room.ts handle, then consent.ts onPrompt) and how their
+// hooks/handlers/prompt.ts: the one UserPromptSubmit process (at-room.ts handle, then consent.ts onPrompt) and how their
 // outputs merge: a stopped prompt (@room post, refusal) goes out alone; otherwise one output with both contexts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ import type { Review } from '../../lib/types-app.ts';
 
 const NONCE = 'abcdef01'.repeat(4);
 const ev = (extra = {}) => ({ hook_event_name: 'UserPromptSubmit', sub_human_origin: 'composer', sub_human_nonce: NONCE, prompt_id: 'p1', ...extra });
-/** The module's lease for `as`'s session, holding the nonce ev() carries (hooks/mod-hello.ts writes the real one). */
+/** The module's lease for `as`'s session, holding the nonce ev() carries (hooks/handlers/mod-hello.ts writes the real one). */
 const lease = (w: World, as: string) => w.lib(() => identity.writeModLease(w.sid[as], { nonce: NONCE }));
 const ctxOut = (text: string): HookOutput => ({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } });
 

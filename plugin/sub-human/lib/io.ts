@@ -14,9 +14,9 @@
  *   isAlive(pid) -> bool                  the pid exists (EPERM counts as alive: it exists, owned by another user)
  *   sleepSync(ms)                         block this thread (for the sync lock and poll loops in hooks)
  *   readInput({strict = true}?) -> object the process's stdin JSON ({} when empty, or when stdin is a terminal).
- *                                         strict: a parse error throws; otherwise it gives {}. Hooks (through
- *                                         hooks/common.ts) and scripts/sub-human share it; the CLI must never load
- *                                         hooks/common.ts, which arms the human signer.
+ *                                         strict: a parse error throws; otherwise it gives {}. scripts/sub-human
+ *                                         reads with it (the hooks read stdin in hooks/run.ts); the CLI must never
+ *                                         load a hook handler that arms the human signer (at-room, consent, join).
  */
 
 import fs from 'node:fs';

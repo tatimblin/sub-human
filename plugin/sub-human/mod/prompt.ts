@@ -13,11 +13,11 @@
  */
 import {
   gateVerdict, GATE_FAILED, isAtRoom, isAtClaude, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
-  writesWorking, onRemote, receiptBook,
+  writesWorking, onRemote, receiptBook, unseatedRefusal,
 } from './core/prompt.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
-import { reviewOpenOf } from './core/prefilter.ts';
-import { delivering, setRemote, queueRelay, isRelay } from './deliver.ts';
+import { reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
+import { delivering, setRemote, queueRelay, isRelay, facts } from './deliver.ts';
 import { RELAY_CONTEXT } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
 import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
@@ -32,8 +32,28 @@ const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 const origins = originQueue();
 /** The @room receipts (stopReason) whose warning row session.append shows without "Operation stopped by hook: ". */
 const receipts = receiptBook();
-/** The last presence this module wrote or saw: 'working' skips the node start. Lost on reload: then written once. */
+/** The last presence this module wrote or saw for presenceSeat (the seat's address and session id): 'working' skips
+ * the node start. Another seat (a join, a /clear) starts over. Lost on reload: then written once. */
 let presence: string | null = null;
+let presenceSeat: string | null = null;
+
+/** presence, reset when the hello names another seat than the one it was written for. */
+function presenceOf(hello: Hello | null): string | null {
+  const key = hello && hello.seat ? `${hello.seat.addr}|${hello.sid}` : null;
+  if (key !== presenceSeat) { presenceSeat = key; presence = null; }
+  return presence;
+}
+
+/** node hooks/run.ts presence for this event (Working, Notification, StopFailure), not awaited: the one writer of a
+ * seat's presence document (hooks/handlers/presence.ts). */
+function writePresence($: EngineInterface, payload: Record<string, unknown>, sid: unknown) {
+  const root = $.plugin.root;
+  return $.process.run(shimArgv(root, 'presence'), {
+    stdin: JSON.stringify(payload),
+    env: shimEnv({ session_id: typeof sid === 'string' ? sid : undefined }, root),
+    timeoutMs: SHIM_TIMEOUT_MS,
+  });
+}
 
 /** The hello, or null before mod-hello answered. */
 async function helloOf($: EngineInterface): Promise<Hello | null> {
@@ -68,7 +88,7 @@ function sendRefusals($: EngineInterface) {
 /** Relays the model has already been given RELAY_CONTEXT for (by prompt.submit), so the classic hook adds none. */
 const contexted = new Set<string>();
 
-/** node hooks/prompt.ts with the classic payload (plus the origin), translated; its notices and report applied: a
+/** node hooks/handlers/prompt.ts with the classic payload (plus the origin), translated; its notices and report applied: a
  * notice is a $.ui.log line, or for a prompt typed through Remote Control a relay (mod/deliver.ts; the phone shows no
  * notice). An @room it did not handle (exit other than 0 or 2) is refused, and a person on Remote Control told. */
 async function runPrompt(
@@ -109,14 +129,10 @@ export function registerPrompt(on: On) {
     if (e.origin && TYPED_ORIGINS.includes(e.origin.kind)) {
       setRemote(onRemote(e.origin)); // the phone (bridge) or this terminal: where room lines must go
       const sid = await $.session.id();
-      if (writesWorking(e.origin, await helloOf($), presence)) {
+      const hello = await helloOf($);
+      if (writesWorking(e.origin, hello, presenceOf(hello))) {
         presence = 'working';
-        const root = $.plugin.root;
-        void $.process.run(shimArgv(root, 'presence'), {
-          stdin: JSON.stringify({ hook_event_name: 'Working', session_id: sid }),
-          env: shimEnv({ session_id: sid }, root),
-          timeoutMs: SHIM_TIMEOUT_MS,
-        }).catch(() => { presence = null; });
+        void writePresence($, { hook_event_name: 'Working', session_id: sid }, sid).catch(() => { presence = null; });
       }
       if (delivering(sid)) {
         // the held rows text rides once per change: on the first typed prompt after it changes, not on every prompt
@@ -131,16 +147,27 @@ export function registerPrompt(on: On) {
     try { return await next(down); } finally { origins.drop(item); sendRefusals($); }
   }).catch(($, e, next) => (next.called || !isAtRoom(e.text) ? next(e) : { drop: GATE_FAILED }));
 
-  on('classic.Notification', { notification_type: ['idle_prompt', 'permission_prompt'] }, ($, e, next) => {
+  // idle, waiting on the person, or stalled: written (not awaited) for a seat, or when unsure; the next typed prompt
+  // then writes "working" again
+  on('classic.Notification', { notification_type: ['idle_prompt', 'permission_prompt'] }, async ($, e, next) => {
+    facts.noteEvent(e);
+    const hello = await helloOf($);
+    presenceOf(hello);
     presence = e.notification_type;
+    if (seatedOrUnsure(hello, e.session_id)) void writePresence($, e, e.session_id).catch(() => { presence = null; });
     return next(e);
-  }).catch(($, e, next) => next(e)); // presence.ts beneath runs regardless
-  on('classic.StopFailure', ($, e, next) => {
+  }).catch(($, e, next) => next(e));
+  on('classic.StopFailure', async ($, e, next) => {
+    facts.noteEvent(e);
+    const hello = await helloOf($);
+    presenceOf(hello);
     presence = 'error';
+    if (seatedOrUnsure(hello, e.session_id)) void writePresence($, e, e.session_id).catch(() => { presence = null; });
     return next(e);
   }).catch(($, e, next) => next(e));
 
   on('classic.UserPromptSubmit', async ($, e, next) => {
+    facts.noteEvent(e);
     const hello = await helloOf($);
     const { value: titled } = await $.state.get(TITLED);
     // NAME.CODE as the session title is the seat's SendMessage address (cc CONTRACT session-title-address).
@@ -151,6 +178,11 @@ export function registerPrompt(on: On) {
     if (isRelay(e.prompt)) { // room lines for the person: no node, and the model's part as context it alone reads
       const ctx = contexted.has(e.prompt) ? {} : { additionalContext: [RELAY_CONTEXT] };
       return mergeClassic({ ...ctx, ...top }, await next(e));
+    }
+    const refused = unseatedRefusal(e, hello); // an @room with surely no seat: at-room's words, no node
+    if (refused) {
+      if (origins.take(e.prompt) === 'bridge') relay(refused.block);
+      return mergeClassic({ ...refused, ...top }, await next(e));
     }
     if (!needsNode(e, hello, { delivering: delivering(e.session_id), reviewFlag })) return mergeClassic(top, await next(e));
     const ours = await runPrompt($, e, origins.take(e.prompt), hello);

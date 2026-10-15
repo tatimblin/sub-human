@@ -12,7 +12,7 @@
  *       = place(toPayload(code, entry, opts), opts): validate() (validate.ts), then sign a via=human entry here,
  *       then place it. via "human" needs the
  *       seat's key: the process must have installed a signer (globalThis[SIGNER], set by hooks/seat-key.ts
- *       arm(), which every hook process runs; never the MCP server or the CLI). The payload then carries room,
+ *       arm(), which only the hook handlers that sign run; never the MCP server or the CLI). The payload then carries room,
  *       nonce, ts, sigv and sig (sig v2, lib/room/envelope.ts). No signer, or no key for (room, from) -> RoomError
  *       INVALID. Throws RoomError INVALID | RATE | AUTH | LOCK | NO_ROOM.
  *   place(payload, {system}) -> Entry

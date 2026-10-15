@@ -216,3 +216,12 @@ export function turnLedger() {
 
 /** Start the tail child unless the hello is sure the session has no seat. */
 export const spawnWanted = (hello: Hello | null | undefined) => !hello || !!hello.seat;
+
+/** row-rewake's budget (its asyncRewake command hook had 30 s: it waits for the seat up to REWAKE_WAIT_MS). */
+export const REWAKE_TIMEOUT_MS = 30_000;
+/** What the person sees of a rewake (the rest is for the model). */
+export const REWAKE_SHOWN = "sub-human: restoring this session's rows";
+
+/** row-rewake's stderr as a wake: one line the person sees (mod/render.ts draws a sub-human prompt without its "(for
+ * Claude)" lines), the row calls for the model. */
+export const rewakePrompt = (stderr: unknown): string => [REWAKE_SHOWN, ...String(stderr ?? '').trim().split('\n').map(l => `${FOR_CLAUDE} ${l}`)].join('\n');

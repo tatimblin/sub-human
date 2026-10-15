@@ -11,7 +11,7 @@
 // a re-spawn would duplicate the room row). On --resume the hold server is new, so every row is
 // listed. sessionTitle = the native address NAME.CODE (SendMessage / ListAgents reach the session by it:
 // cc CONTRACT session-title-address).
-// A plan-view review left behind (hooks/consent.ts; members/NAME/review.json) is closed here: after clear or
+// A plan-view review left behind (hooks/handlers/consent.ts; members/NAME/review.json) is closed here: after clear or
 // resume always, after compact only when it is older than REVIEW_STALE_MS. The session plan file gets the
 // person's own text back (lib/proposal.ts restoreStale) and the review state is cleared.
 import * as identity from '../../lib/identity.ts';
@@ -23,7 +23,7 @@ import * as seatKey from '../seat-key.ts';
 import { whoami } from '../seat.ts';
 import { contextBlock, seatTitle } from '../context.ts';
 import { out, logError } from '../reply.ts';
-import { write as presence } from './presence.ts';
+import * as launcher from '../launcher.ts';
 import type { HookIn } from '../types.ts';
 import type { Identity } from '../../lib/identity.ts';
 
@@ -69,7 +69,7 @@ export function handle(input: HookIn<'SessionStart'>) {
   try {
     proposal.restoreStale(me, { force: input.source === 'clear' || input.source === 'resume' });
   } catch (err) { logError(err, 'session-restore: review'); }
-  presence(me, 'working');
+  launcher.refresh(); // the row status line's launcher and the serve shim, for this seat's rows
   const text = contextBlock(me, `restored after ${input.source || 'start'}`, { rowsLead: rowsLead(me) });
   out({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: text, sessionTitle: seatTitle(me) } });
 }

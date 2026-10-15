@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as shim from '../lib/remote/shim.ts';
@@ -40,11 +41,13 @@ function fakeUser(t: TestContext) {
   return { user, installed, pointer, body, env };
 }
 
-test('guard: a dev-checkout CLI run and SessionStart on the real home leave the installed plugin\'s pointer alone', t => {
+test('guard: a dev-checkout CLI run and a seat taken on the real home leave the installed plugin\'s pointer alone', t => {
   const u = fakeUser(t);
   const before = fs.statSync(u.pointer).mtimeMs;
   for (const args of [['who'], ['tasks', '--json']]) spawnSync(process.execPath, [h.BIN, ...args], { env: u.env, encoding: 'utf8', timeout: 20_000 });
-  spawnSync(process.execPath, [path.join(h.PLUGIN, 'hooks', 'run.ts'), 'row-launcher'], { env: u.env, input: '{}', encoding: 'utf8', timeout: 20_000 });
+  // what a join or a restore runs (hooks/launcher.ts refresh)
+  const url = pathToFileURL(path.join(h.PLUGIN, 'hooks', 'launcher.ts')).href;
+  spawnSync(process.execPath, ['--input-type=module', '-e', `(await import(${JSON.stringify(url)})).refresh()`], { env: u.env, encoding: 'utf8', timeout: 20_000 });
   assert.equal(fs.readFileSync(u.pointer, 'utf8'), u.body, 'still the installed plugin');
   assert.equal(fs.statSync(u.pointer).mtimeMs, before, 'not even rewritten');
   assert.equal(fs.existsSync(path.join(u.user, '.sub-human', 'bin', 'serve')), false, 'no shim written either');

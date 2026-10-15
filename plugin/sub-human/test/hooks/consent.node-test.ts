@@ -1,4 +1,4 @@
-// hooks/consent.ts and lib/proposal.ts: the hash-gated card rewrite, what Post records and drops, decisions.
+// hooks/handlers/consent.ts and lib/proposal.ts: the hash-gated card rewrite, what Post records and drops, decisions.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -573,14 +573,19 @@ test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.ts): Stop always reports subHuman
   assert.equal(w.hook('consent', ev('Stop', null, { permission_mode: 'default' }), { as: 'bob' }).stdout, '');
 });
 
-test('hooks.json: Stop is the module\'s (mod/consent.ts); the room tools\' PreToolUse is the command hook alone, so every other PreToolUse hook sees them', async () => {
+test('hooks.json: consent is the module\'s (mod/consent.ts); its classic.PreToolUse always calls next(e), so every other PreToolUse hook sees each call', async () => {
   const hooks = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
-  assert.equal(hooks.Stop, undefined);
-  assert.ok(hooks.PreToolUse.some((g: { matcher: string; hooks: { command: string }[] }) => /hooks\/run\.ts" consent$/.test(g.hooks[0].command) && /\^mcp__plugin_sub-human_room__/.test(g.matcher)));
+  for (const ev of ['Stop', 'PreToolUse', 'PostToolUse', 'PermissionRequest']) assert.equal(hooks[ev], undefined, ev);
   const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts')) as typeof Register;
-  for (const ev of ['classic.Stop', 'tool.call']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/consent.ts'), ev);
-  // a module hook answering classic.PreToolUse without next(e) would skip every non-managed settings hook there
-  assert.ok(!MOD.some(h => h.event === 'classic.PreToolUse'), 'no module hook on classic.PreToolUse');
+  for (const ev of ['classic.Stop', 'tool.call', 'classic.PreToolUse', 'classic.PostToolUse', 'classic.PermissionRequest']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/consent.ts'), ev);
+  // a module hook answering classic.PreToolUse without next(e) would skip every non-managed settings hook there (cc
+  // CONTRACT classic-chain-order): each one's body calls next(e) on every path, ours merged above it
+  for (const f of ['consent.ts', 'rows.ts']) {
+    const src = fs.readFileSync(path.join(PLUGIN, 'mod', f), 'utf8');
+    const body = src.slice(src.indexOf("on('classic.PreToolUse'"), src.indexOf('}).catch(', src.indexOf("on('classic.PreToolUse'")));
+    assert.match(body, /return mergePre\([^;]*await next\(e\)\)/, f);
+    for (const ret of body.match(/return [^;]+;/g) || []) assert.match(ret, /next\(e\)/, `${f}: ${ret}`);
+  }
 });
 
 test('consent: a room tool call outside plan mode exits at once, loading nothing but its entry; in plan mode it loads the rest', t => {

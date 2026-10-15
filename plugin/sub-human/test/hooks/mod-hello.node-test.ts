@@ -1,4 +1,4 @@
-// hooks/mod-hello.ts's lease: the module's $.process children are claude's own, so the lease names the parent.
+// hooks/handlers/mod-hello.ts's lease: the module's $.process children are claude's own, so the lease names the parent.
 // (The printed hello is covered in test/mod-core.node-test.ts.)
 import test from 'node:test';
 import assert from 'node:assert/strict';

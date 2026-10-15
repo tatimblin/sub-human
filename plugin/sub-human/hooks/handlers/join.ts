@@ -41,7 +41,7 @@ import * as identity from '../../lib/identity.ts';
 import * as room from '../../lib/room.ts';
 import { whoami } from '../seat.ts';
 import { contextBlock } from '../context.ts';
-import { write as presence } from './presence.ts';
+import * as launcher from '../launcher.ts';
 import * as roomClaude from '../../lib/room-claude.ts';
 import * as seats from '../../lib/seats.ts';
 import * as auth from '../../lib/remote/auth.ts';
@@ -150,7 +150,7 @@ const TROUBLE = /could not start|the last start failed: /;
  * the bypass-permissions warning.
  */
 function success(me: Identity, lead: string, msg: string, input: JoinIn) {
-  presence(me, 'working');
+  launcher.refresh(); // the row status line's launcher and the serve shim, now that this session has rows
   const bypass = input.permission_mode === 'bypassPermissions' && me.role !== 'claude' ? BYPASS : '';
   const warn = bypass || TROUBLE.test(msg) ? `sub-human: ${msg}${bypass}` : null;
   const hso = { hookEventName: 'UserPromptExpansion', additionalContext: contextBlock(me, lead) };

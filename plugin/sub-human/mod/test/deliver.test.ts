@@ -44,7 +44,7 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
   const seen = {
     spawns: [] as any[], logs: [] as string[], prompts: [] as string[], submits: [] as string[], contexts: [] as any[],
     appends: [] as string[], appended: [] as string[],
-    scripts: [] as string[], classic: [] as any[], ended: [] as number[], release: () => {}, feed: (text: string) => {},
+    scripts: [] as string[], classic: [] as any[], ended: [] as number[], release: () => {}, feed: (text: string) => {}, presence: [] as any[],
   }
   let released = false
   const fed: string[] = []
@@ -55,6 +55,7 @@ function world(engine: any, on: any, { hello = OUT, pieces = [], gate = Promise.
   on('process.run', ($: any, e: any) => {
     const script = scriptOf(e)
     seen.scripts.push(script)
+    if (script === 'presence.ts') seen.presence.push(JSON.parse(e.init.stdin))
     if (script === 'prompt.ts') return ran(JSON.stringify({ subHuman: { reviewOpen: false } }))
     return ran(script === 'mod-hello.ts' ? JSON.stringify(hello) : '')
   })
@@ -387,25 +388,26 @@ test('a wake appended mid-turn that no later request carried is submitted at the
   seen.release()
 })
 
-test('a permission prompt, an idle prompt or a failed turn resets presence: the next typed prompt writes "working"', async ($, on) => {
+test('a permission prompt, an idle prompt or a failed turn writes its presence and resets it: the next typed prompt writes "working"', async ($, on) => {
   const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })] })
   on('classic.Notification', () => ({}))
   on('classic.StopFailure', () => ({}))
   await start($)
   await until(() => seen.spawns.length === 1)
   await new Promise(r => setTimeout(r, 50))
-  const working = () => seen.scripts.filter(x => x === 'presence.ts').length
+  // each presence run, by what it writes: the module is presence's one writer (node hooks/run.ts presence)
+  const writes = () => seen.presence.map((p: any) => p.notification_type || (p.error ? 'error' : p.hook_event_name))
   await typed($, 'one'); await typed($, 'two')
-  expect(working()).toBe(1)
-  await $.classic.Notification({ notification_type: 'permission_prompt', message: 'ok?' } as any)
+  expect(writes()).toEqual(['Working'])
+  await $.classic.Notification({ session_id: SID, notification_type: 'permission_prompt', message: 'ok?' } as any)
   await typed($, 'three')
-  expect(working()).toBe(2)
-  await $.classic.Notification({ notification_type: 'idle_prompt', message: 'waiting' } as any)
+  expect(writes()).toEqual(['Working', 'permission_prompt', 'Working'])
+  await $.classic.Notification({ session_id: SID, notification_type: 'idle_prompt', message: 'waiting' } as any)
   await typed($, 'four')
-  expect(working()).toBe(3)
-  await $.classic.StopFailure({ error: 'rate_limit' } as any)
+  expect(writes()).toEqual(['Working', 'permission_prompt', 'Working', 'idle_prompt', 'Working'])
+  await $.classic.StopFailure({ session_id: SID, error: 'rate_limit' } as any)
   await typed($, 'five'); await typed($, 'six')
-  expect(working()).toBe(4)
+  expect(writes()).toEqual(['Working', 'permission_prompt', 'Working', 'idle_prompt', 'Working', 'error', 'Working'])
   seen.release()
 })
 

@@ -76,6 +76,11 @@ export const NO_ORIGIN = GATE_FAILED;
 /** An @room typed in a session with no seat (at-room, and the module when it is sure there is none). */
 export const NOT_IN_ROOM = '✗ not posted: this session isn\'t in a room. Join one first: /sub-human';
 
+/** An @room in a session whose hello is this session's and has no seat: at-room's refusal, given without a node start
+ * (at-room would say the same: there is no seat to sign it with). null otherwise. */
+export const unseatedRefusal = (e: { session_id?: unknown; prompt?: unknown } | null | undefined, hello: Hello | null | undefined): ShimResult | null => (
+  e && hello && hello.sid === e.session_id && !hello.seat && isAtRoom(e.prompt) ? { block: NOT_IN_ROOM, suppressOriginalPrompt: true } : null);
+
 export const failClosed = (prompt: unknown, hello?: SeatedLike): ShimResult | null => (posts(prompt, hello)
   ? { block: isAtRoom(prompt) ? GATE_FAILED : GATE_FAILED.replace('@room', '@claude'), suppressOriginalPrompt: true } : null);
 
@@ -83,7 +88,7 @@ export const failClosed = (prompt: unknown, hello?: SeatedLike): ShimResult | nu
 export const shimFailed = (run: RunOutput | null | undefined) => !run || (run.exitCode !== 0 && run.exitCode !== 2);
 
 /**
- * classic.UserPromptSubmit: false only when the mod is sure hooks/prompt.ts would do nothing it needs: the hello is
+ * classic.UserPromptSubmit: false only when the mod is sure hooks/handlers/prompt.ts would do nothing it needs: the hello is
  * this session's, the prompt is not an @room (node signs the post or writes the refusal), and either the session has
  * no seat, or its seat is a member's (the room Claude's refusal of typed input is node's), the tail child delivers for it
  * (the digest, notices and row calls are the child's) and consent said no review is open.

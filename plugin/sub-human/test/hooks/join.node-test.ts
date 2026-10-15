@@ -552,11 +552,14 @@ test('NAME without CODE joins the only open room (one live seat is enough); seve
   assert.ok(r.json!.reason!.includes(first) && r.json!.reason!.includes(w.code), r.json!.reason);
 });
 
-test('join marks presence "working"', () => {
+test('join writes no presence (the module is its one writer, on the next typed prompt) and writes the row status launcher', () => {
   const w = new World({ claude: 'sleep' });
   w.pid.alice = process.pid; w.sid.alice = 'aaaaaaaa-0000-4000-8000-000000000014';
-  w.hook('join', expand(`alice ${w.code}`), { as: 'alice' });
-  assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice')).state, 'working');
+  const r = w.hook('join', expand(`alice ${w.code}`), { as: 'alice', env: { SUB_HUMAN_ALLOW_TMP_ROOT: '1' } });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice', null)), null);
+  // a seat has rows: the launcher the plugin's subagentStatusLine runs (hooks/launcher.ts), and the serve shim
+  assert.match(fs.readFileSync(path.join(w.home, 'bin', 'row-status'), 'utf8'), /agent-statusline/);
 });
 
 // ---------- the mechanics block (hooks/context.ts contextBlock) ----------

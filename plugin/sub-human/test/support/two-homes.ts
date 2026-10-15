@@ -8,7 +8,7 @@
  *     seat(name) -> {name, pid, sid}
  *     hook(handler, input, seat, {env}?) -> spawnSync result + json   hooks/run.ts <handler> as seat
  *     lease(seat)                     the hooks module's hello lease for the seat's session (with its nonce), as
- *                                     hooks/mod-hello.ts writes it; join and every prompt write it first
+ *                                     hooks/handlers/mod-hello.ts writes it; join and every prompt write it first
  *     join(seat, args), say(seat, text), plain(seat, text)          the join expansion; an @room post; a prompt
  *     invite1(code) -> string         an sh1 invite (no PIN) to a room hosted here, for a second home (internal: no
  *                                     command makes one; the robustness tests link with it)

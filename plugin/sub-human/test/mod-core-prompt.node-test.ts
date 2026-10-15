@@ -37,7 +37,7 @@ test('prompt: the origin hand-off gives a kind only to the prompt whose text it 
   assert.equal(q.take('@room two'), 'composer');
 });
 
-test('prompt: parse and parseClaude take the tag with one whitespace character after it (a newline too), as hooks/at-room.ts does', async () => {
+test('prompt: parse and parseClaude take the tag with one whitespace character after it (a newline too), as hooks/handlers/at-room.ts does', async () => {
   const p = await load();
   const rooms: [string, string | null][] = [['@room hi', 'hi'], ['@room', ''], ['@room\nhi', 'hi'], ['@Room hi', null], ['@room  x', ' x'], ['@roommate hi', null], ['room: hi', null], [' @room hi', null]];
   for (const [text, want] of rooms) {
@@ -77,7 +77,7 @@ test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the re
   const { receiptBook, STOP_FRAME } = await load();
   const book = receiptBook(2);
   const notice = (text: string) => ({ type: 'system', name: 'informational', content: [{ type: 'text', text }] });
-  // hooks/at-room.ts's receipts: the whole stop reason is matched, so an @room's and an @claude's never cross
+  // hooks/handlers/at-room.ts's receipts: the whole stop reason is matched, so an @room's and an @claude's never cross
   const SENT = "✓ sent to room otter-4821 (Claude wasn't asked)", WAKE = "✓ sent; the room's Claude will answer";
   assert.equal(book.rewrite(notice(`${STOP_FRAME}${SENT}`)), null, 'nothing waiting: the engine\'s words stay');
   book.expect(SENT);

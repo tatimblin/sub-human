@@ -1,10 +1,16 @@
 /**
- * plugin/sub-human/mod/core/seat.ts: what the module knows about its session, from hooks/mod-hello.ts, as pure
+ * plugin/sub-human/mod/core/seat.ts: what the module knows about its session, from hooks/handlers/mod-hello.ts, as pure
  * functions. The module keeps the parsed hello in $.state (sub-human/hello) so a hot reload keeps it.
  *
  *   parseHello(stdout, sid) -> hello | null
- *       hello = {sid, home, realHome, userHome, pluginRoot, seat: {name, code, role, addr} | null}. null when the
- *       output is not a hello (then the module "does not know" and every prefilter runs node).
+ *       hello = {sid, home, realHome, userHome, pluginRoot, seat: {name, code, role, addr} | null, restorable}. null
+ *       when the output is not a hello (then the module "does not know" and every prefilter runs node).
+ *   homeOf(subHumanHome, userHome) -> string | null   where the store lives: SUB_HUMAN_HOME, else ~/.sub-human (lib/home.ts
+ *       home() is this rule)
+ *   sidIndex(home, sid) -> path | null    the session index a seat of this session id has (<home>/sessions/by-sid/<sid>
+ *       .json, lib/identity.ts); none means no seat, so the module need not ask node at session start
+ *   localHello({sid, home, realHome, userHome, pluginRoot}) -> hello   what the module knows without node: the paths,
+ *       no seat, nothing to restore
  *   seated(hello) -> bool          a seat is known for this session
  *   parseAddr("bob.otter-4821") -> {name, code} | null     a seat's address (the session title), or null
  *   NAME_RE, CODE_RE, SID_SAFE     a seat name, a room code, a session id safe in a file name: owned here, lib/text.ts
@@ -35,7 +41,7 @@ function parseSeat(x: unknown): HelloSeat | null {
 }
 
 export function parseHello(stdout: unknown, sid: unknown): Hello | null {
-  let o: { home?: unknown; realHome?: unknown; userHome?: unknown; pluginRoot?: unknown; seat?: unknown } | null;
+  let o: { home?: unknown; realHome?: unknown; userHome?: unknown; pluginRoot?: unknown; seat?: unknown; restorable?: unknown } | null;
   try { o = JSON.parse(String(stdout || '').trim()); } catch { return null; }
   const home = o && typeof o === 'object' ? ABS(o.home) : null;
   if (!o || !home) return null;
@@ -46,7 +52,20 @@ export function parseHello(stdout: unknown, sid: unknown): Hello | null {
     userHome: ABS(o.userHome),
     pluginRoot: ABS(o.pluginRoot),
     seat: parseSeat(o.seat),
+    restorable: o.restorable === true,
   };
+}
+
+export function homeOf(subHumanHome: unknown, userHome: unknown): string | null {
+  if (typeof subHumanHome === 'string' && subHumanHome) return subHumanHome;
+  return typeof userHome === 'string' && userHome ? `${userHome.replace(/\/+$/, '')}/.sub-human` : null;
+}
+
+export const sidIndex = (home: unknown, sid: unknown): string | null => (ABS(home) && typeof sid === 'string' && SID_SAFE.test(sid)
+  ? `${String(home).replace(/\/+$/, '')}/sessions/by-sid/${sid}.json` : null);
+
+export function localHello({ sid, home, realHome, userHome, pluginRoot }: { sid: string; home: string; realHome?: string | null; userHome?: string | null; pluginRoot?: string | null }): Hello {
+  return { sid, home, realHome: ABS(realHome) || home, userHome: ABS(userHome), pluginRoot: ABS(pluginRoot), seat: null, restorable: false };
 }
 
 export const seated = (hello: Hello | { seat?: unknown } | null | undefined): boolean => !!(hello && hello.seat);

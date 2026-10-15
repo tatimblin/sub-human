@@ -631,7 +631,7 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
     note: 'TaskCreate accepts metadata.' },
   // §2 env
   { id: 'env-child-session', section: 2, stability: 'env', search: ['CLAUDE_CODE_CHILD_SESSION:"1",CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_PID:String(process.pid)'],
-    note: 'Hooks, Bash, statusLine and subagentStatusLine get CLAUDE_PID and CLAUDE_CODE_SESSION_ID (cc.ENV, sessionId, claudePid).' },
+    note: 'Hooks, Bash, statusLine and subagentStatusLine get CLAUDE_PID and CLAUDE_CODE_SESSION_ID (cc.ENV, sessionId, claudePid). The SessionEnd command hook\'s shell check reads both to start node only for a session with a lease or a seat (hooks.json).' },
   { id: 'env-mcp-session', section: 2, stability: 'env', search: 'CLAUDE_CODE_CHROME_MCP_ORG_DENIED:"1"',
     shape: 'CLAUDE_PROJECT_DIR:~??~(),CLAUDE_CODE_SESSION_ID:~(),CLAUDECODE:"1",...~.env,',
     note: 'MCP stdio servers get CLAUDE_CODE_SESSION_ID (fixed at spawn) but not CLAUDE_PID.' },
@@ -675,10 +675,10 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
   { id: 'plan-reject-text', section: 3, stability: 'incidental', search: ['To tell you how to proceed, the user said:\n', 'Note: The user\'s next message may contain a correction'],
     note: 'Fallback: the note sits between "the user said:\\n" and "\\n\\nNote: The user\'s next message".' },
   { id: 'plan-reject-remote', section: 3, stability: 'incidental', search: ['STOP what you are doing and wait for the user to tell you how to proceed', '"user-rejected"'],
-    note: 'Remote Control deny (observed 2.1.292): with a note ("Suggest edits") the terminal\'s shapes (userFeedback, "the user said:"); a bare deny says "STOP what you are doing…" with no userFeedback: cc.planFeedback null, nothing recorded. An ordinary message typed on the phone right after a bare Deny is attached to the deny as that note (observed live), so a note is never an objection by itself: it waits for the person\'s Send on the confirm card (hooks/consent.ts).' },
+    note: 'Remote Control deny (observed 2.1.292): with a note ("Suggest edits") the terminal\'s shapes (userFeedback, "the user said:"); a bare deny says "STOP what you are doing…" with no userFeedback: cc.planFeedback null, nothing recorded. An ordinary message typed on the phone right after a bare Deny is attached to the deny as that note (observed live), so a note is never an objection by itself: it waits for the person\'s Send on the confirm card (hooks/handlers/consent.ts).' },
   { id: 'auq-bridge-racer', section: 3, stability: 'incidental', search: 'Interrupting parked AskUserQuestion toolUseID=',
     shape: 'let ~=!!(~.bridgeCallbacks||~.channelCallbacks&&!~.tool.requiresUserInteraction?.());',
-    note: 'A tool with its own permission dialog (AskUserQuestion, the plan view) is raced by Remote Control when the session has bridge callbacks: the phone gets the card and its answer resolves the dialog, as the terminal\'s would; the tool_response is Claude Code\'s, never the model\'s. The confirm card for a review\'s note relies on it (hooks/consent.ts). A card can still auto-resolve after the askUserQuestionTimeout idle (afkTimeoutMs): then nothing is recorded and the note waits.' },
+    note: 'A tool with its own permission dialog (AskUserQuestion, the plan view) is raced by Remote Control when the session has bridge callbacks: the phone gets the card and its answer resolves the dialog, as the terminal\'s would; the tool_response is Claude Code\'s, never the model\'s. The confirm card for a review\'s note relies on it (hooks/handlers/consent.ts). A card can still auto-resolve after the askUserQuestionTimeout idle (afkTimeoutMs): then nothing is recorded and the note waits.' },
   { id: 'permission-denied-auto-only', section: 3, stability: 'incidental', search: 'decisionReason.classifier==="auto-mode"',
     note: 'PermissionDenied fires only for auto-mode classifier denials; no hook carries a user rejection note.' },
   { id: 'clear-context-setting', section: 3, stability: 'API', search: 'When true, the plan-approval dialog offers a "clear context" option. Defaults to false.',
@@ -731,8 +731,6 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
     note: 'Exact-name list vs unanchored regex (cc.matcherIsExact, cc.matcherMatches).' },
   { id: 'hook-if', section: 7, stability: 'API', search: 'Permission rule syntax to filter when this hook runs (e.g., "Bash(git *)")',
     note: '`if` uses permission-rule syntax; Task tools can only be filtered by bare name.' },
-  { id: 'hook-async', section: 7, stability: 'API', search: 'If true, hook runs in background and wakes the model on exit code 2',
-    note: 'Per-hook async/asyncRewake fields.' },
   { id: 'stop-additional-context', section: 7, stability: 'incidental', search: '{type:"hook_additional_context",content:',
     shape: ['case"Stop":case"SubagentStop":~.additionalContext=~.hookSpecificOutput.additionalContext', '.agentId?"SubagentStop":"Stop",~=~({type:"hook_additional_context",'],
     note: 'Stop hookSpecificOutput.additionalContext continues the turn with that text, like a block but without the red "Stop hook error" line or notification (only real blockingErrors get those).' },
@@ -741,7 +739,7 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
     shape: 'case"human":return ~===!0?{kind:"bridge"}:{kind:"composer"};case"plugin":return ~.asUser===!0?',
     note: 'prompt.submit origin "composer" is only the person\'s own Enter (and a --bg dispatch prompt); -p is "sdk", peers "peer" (also from $.session.send), notifications "task-notification". No hook sets it; seen for a --bg dispatch and a mid-turn peer (cc-2.1.292.md Function hooks S2, S6).' },
   { id: 'transcript-prompt-origin', section: 8, stability: 'incidental', search: ['{kind:"human"}', 'case"human":return'],
-    note: 'A typed prompt\'s transcript user entry has no origin or {kind:"human"} (also typed through Remote Control: prompt.submit reports that one as "bridge"); peers, notifications, channels and plugins carry their own kind. cc.lastHumanPrompt takes only the person\'s; hooks/consent.ts picks the proposal a review opens from it (cc-2.1.292.md Remote Control).' },
+    note: 'A typed prompt\'s transcript user entry has no origin or {kind:"human"} (also typed through Remote Control: prompt.submit reports that one as "bridge"); peers, notifications, channels and plugins carry their own kind. cc.lastHumanPrompt takes only the person\'s; hooks/handlers/consent.ts picks the proposal a review opens from it (cc-2.1.292.md Remote Control).' },
   { id: 'bridge-forwarded-rows', section: 8, stability: 'incidental', search: ['[remote-bridge] Sending ', 'attachment.type==="hook_system_message")return!0;if('],
     shape: 'if((~.type==="user"||~.type==="assistant")&&~.isVirtual)return!1;if(~.type==="attachment"){if(~.attachment.type==="hook_system_message")return!0;',
     note: 'Remote Control forwards user and assistant rows, a command hook\'s systemMessage (hook_system_message, shown as an assistant line) and a few system kinds, never a $.ui.log notice (system informational); an isMeta user row goes as isSynthetic (not shown there, as far as seen). A function hook\'s result has no systemMessage, so the module reaches the phone only through a turn: mod/deliver.ts relays room lines and an @room\'s refusal there as a prompt while the person types from Remote Control (cc-2.1.292.md Remote Control).' },
@@ -783,14 +781,14 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
     note: 'A module that passes $ to an imported function does not load (validate says the same): every $ call sits in the file that registers the hook, so mod/core/*.ts stays $-free (S1).' },
   { id: 'module-event-once', section: 10, stability: 'incidental', search: '" without a matcher"',
     shape: 'is registered twice${~?"":" without a matcher"}',
-    note: 'A hooks module registers an event at most once without a matcher (validate and the loader refuse a second): mod/deliver.ts owns session.start, the join and SessionStart (hello and the tail child), mod/prompt.ts owns prompt.submit (the gate, rows context, presence).' },
+    note: 'A hooks module registers an event at most once without a matcher (validate and the loader refuse a second): mod/deliver.ts owns session.start, the join and classic.SessionStart (hello, the restore, the tail child), mod/prompt.ts owns prompt.submit (the gate, rows context, presence), mod/rows.ts owns classic.SubagentStop.' },
   { id: 'modules-headless', section: 10, stability: 'env', search: 'in a tool server\'s daemon',
     shape: 'var ~=()=>!~()&&!~()&&~();var ~=()=>~()&&!~("hooks")&&!~();',
     note: 'Modules are off only diskless or in a tool server\'s daemon (then by policy, safe mode, --bare): they load in -p and in a --bg worker such as the room\'s Claude. A --bg dispatch prompt reaches prompt.submit as origin composer (S2).' },
   { id: 'classic-chain-order', section: 10, stability: 'incidental', search: ['function-hook chain`', 'isManaged:!0,budgetMs:0,async run('],
     shape: ['`classic.${~.hook_event_name} function-hook chain`', '[~,...~("classic.PreToolUse",~),~]',
       '{name:"core",isCore:!0,budgetMs:0,async run(~){let ~=~(~),~=await ~(~(~,{managedHooksExcluded:~(~)}),~.tool)'],
-    note: 'A classic.<Event> chain is [managed settings hooks, ...modules in load order, core], and core runs every other settings hook. A module that answers without next() therefore skips every non-managed settings hook for that call (its own plugin\'s, other plugins\' and the user\'s and project\'s command hooks) and the modules of plugins loaded after it; managed hooks and earlier-loaded modules still run (S1, S5; cc-2.1.292.md Review spikes, S-skip). sub-human answers without next() only where it blocks or stops a prompt (classic.UserPromptSubmit, TaskCompleted) and for the /sub-human expansion whose join its command.run hook already ran (classic.UserPromptExpansion: the join hook beneath must not run twice); it no longer answers PreToolUse.' },
+    note: 'A classic.<Event> chain is [managed settings hooks, ...modules in load order, core], and core runs every other settings hook. A module that answers without next() therefore skips every non-managed settings hook for that call (its own plugin\'s, other plugins\' and the user\'s and project\'s command hooks) and the modules of plugins loaded after it; managed hooks and earlier-loaded modules still run (S1, S5; cc-2.1.292.md Review spikes, S-skip). sub-human answers without next() only where it blocks or stops a prompt (classic.UserPromptSubmit, TaskCompleted) and for the /sub-human expansion whose join its command.run hook already ran (classic.UserPromptExpansion: the join hook beneath must not run twice). Its classic.PreToolUse hooks (mod/rows.ts, mod/consent.ts) call next(e) on every path and put their answer above it (mod/core/shim.ts mergePre).' },
   { id: 'prompt-submit-ups-order', section: 10, stability: 'incidental', search: 'the prompt was removed from the queue before it ran',
     shape: 'let ~=await ~(~.text,~.text===~?{managedHooksExcluded:!0}:{})',
     note: 'prompt.submit\'s core runs the UserPromptSubmit hooks: prompt.submit (module) -> classic.UserPromptSubmit (module) -> the command hook. A peer delivered mid-turn takes the same path, with turnId set (S6). mod/prompt.ts relies on it: classic.UserPromptSubmit runs inside prompt.submit\'s next(e), so prompt.submit hands it e.origin (the classic payload has none) in a module variable.' },
@@ -825,9 +823,9 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
   { id: 'session-append-notice-rewrite', section: 10, stability: 'incidental', search: 'session.append: a rewrite of row',
     shape: ['case"system":{if(!("content"in ~)||typeof ~.content!=="string")return ~;let ~=~([~.content],~).join(',
       'if(!~.fills)~.keep([~]);return ~(~),{message:~,uuid:~.uuid}', 'return ~.subtype==="local_command"?"command":"notice"'],
-    note: 'Every system row the engine adds (door "notice"), the stop\'s warning row included, passes session.append before it is kept, and a rewrite of its one text block is the row the screen draws and the transcript keeps (so --resume draws it too); its level stays (a warning: an amber ⏺). Seen live on 2.1.292: "Operation stopped by hook: ✓ sent" rewritten to "✓ sent" drew "⏺ ✓ sent" and was stored so. On 2.1.300 it was reported not to rewrite (the frame stayed): the receipt\'s words read as a delivery under the frame too (hooks/at-room.ts). The d.ts says only that the screen "may show the row just before its rewrite".' },
+    note: 'Every system row the engine adds (door "notice"), the stop\'s warning row included, passes session.append before it is kept, and a rewrite of its one text block is the row the screen draws and the transcript keeps (so --resume draws it too); its level stays (a warning: an amber ⏺). Seen live on 2.1.292: "Operation stopped by hook: ✓ sent" rewritten to "✓ sent" drew "⏺ ✓ sent" and was stored so. On 2.1.300 it was reported not to rewrite (the frame stayed): the receipt\'s words read as a delivery under the frame too (hooks/handlers/at-room.ts). The d.ts says only that the screen "may show the row just before its rewrite".' },
   { id: 'modules-switch-cache', section: 10, stability: 'incidental', search: ['cachedGrowthBookFeatures', '"tengu_plugin_hooks_modules"'],
-    note: 'Claude Code caches the hooks modules rollout switch in the global config\'s cachedGrowthBookFeatures (cc.modulesSwitch): false there explains a session with no module (hooks/join.ts noModule, doctor).' },
+    note: 'Claude Code caches the hooks modules rollout switch in the global config\'s cachedGrowthBookFeatures (cc.modulesSwitch): false there explains a session with no module (hooks/handlers/join.ts noModule, doctor).' },
   { id: 'fs-write-plain', section: 10, stability: 'incidental', search: '$.fs.write (',
     shape: 'await ~(~(~),{recursive:!0}),await ~(~,~.text,"utf8"),~(`$.fs.write (',
     note: '$.fs.write is mkdir -p plus writeFile: not atomic, no mode, no lock. The mod never writes room state.' },
@@ -923,7 +921,7 @@ function exeState(pid: unknown, { readlink = fs.readlinkSync, exists = fs.exists
 /**
  * The version of the Claude Code process pid runs, or null: its executable's path (exeState, symlinks resolved) when
  * the path names one (the cask's …/2.1.292/claude, the installer's versions/2.1.292), else `<that binary>
- * --version` while it still exists. Used only to word a refusal (hooks/join.ts noModule).
+ * --version` while it still exists. Used only to word a refusal (hooks/handlers/join.ts noModule).
  */
 function runningVersion(pid: unknown, { timeoutMs = 3000 }: { timeoutMs?: number } = {}): string | null {
   const st = exeState(pid, { timeoutMs });

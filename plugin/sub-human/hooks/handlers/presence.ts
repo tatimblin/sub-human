@@ -1,4 +1,5 @@
-// plugin/sub-human/hooks/handlers/presence.ts: Notification(idle_prompt|permission_prompt) and StopFailure: write this
+// plugin/sub-human/hooks/handlers/presence.ts: Notification(idle_prompt|permission_prompt), StopFailure and a typed
+// prompt ("Working"), each through the hooks module: write this
 // member's presence to presence/<name> = {state, at, detail?} (identity.writePresence, a room document). Row text
 // (lib/rows.ts) reads it; nothing goes to the room log, so presence never wakes anyone.
 //   idle_prompt        -> idle         the human is idle at their prompt
@@ -7,8 +8,8 @@
 //   Working            -> working      not a hook event: mod/prompt.ts runs this with {hook_event_name:
 //                                     "Working"} on the person's typed prompt, since the shim does not start
 //                                     node for every prompt
-// write(me, state, detail?) is the one writer: join.ts and session-restore.ts call it ("working"), and at-room.ts when
-// no origin came. Output: none (StopFailure ignores it).
+// The one writer of presence: only the hooks module runs it (mod/prompt.ts: a typed prompt, a notification, a failed
+// turn), and no other hook writes it. A seat just taken or put back has none until its person types. Output: none.
 import * as identity from '../../lib/identity.ts';
 import { whoami } from '../seat.ts';
 import type { HookIn } from '../types.ts';
@@ -20,7 +21,7 @@ type PresenceIn = Omit<HookIn<'Notification'> & HookIn<'StopFailure'>, 'hook_eve
 const BY_TYPE: Record<string, string | undefined> = { idle_prompt: 'idle', permission_prompt: 'permission' };
 
 /** Best-effort presence write for the resolved member. */
-export function write(me: Identity | null, state: string, detail?: string) {
+function write(me: Identity | null, state: string, detail?: string) {
   try { if (me) identity.writePresence(me.code, me.name, state, detail); } catch { /* best-effort */ }
 }
 

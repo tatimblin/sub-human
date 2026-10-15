@@ -20,7 +20,7 @@ import type { Handler, Reply } from './types.ts';
 
 export const HANDLERS: readonly string[] = Object.freeze([
   'join', 'session-end', 'mod-hello', 'prompt', 'at-room', 'consent', 'tasks', 'presence',
-  'row-guard', 'row-map', 'row-hold', 'row-rewake', 'row-launcher', 'session-restore',
+  'row-guard', 'row-map', 'row-hold', 'row-rewake', 'session-restore',
 ]);
 
 async function main(name: string | undefined): Promise<void> {

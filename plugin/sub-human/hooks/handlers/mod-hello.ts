@@ -1,8 +1,11 @@
-// plugin/sub-human/hooks/handlers/mod-hello.ts: the hooks module's hello: the module knows no store path of its own (the guard needs the home, the prefilters the
-// seat). Not a hooks.json entry: mod/deliver.ts runs it with $.process.run (HOOKS in mod/register.ts says when).
-// stdin: {session_id, nonce?}. Writes the module's lease for the session (lib/identity.ts writeModLease) with the
-// nonce at-room checks an origin against; the claude pid is our parent, since $.process children get no CLAUDE_PID
-// of this session. Prints {home, realHome, userHome, pluginRoot, seat: {name, code, role, addr} | null} on one line.
+// plugin/sub-human/hooks/handlers/mod-hello.ts: the hooks module's hello: what the module knows of this session's seat
+// (the guard needs the home, the prefilters the seat). Not a hooks.json entry: mod/deliver.ts runs it with
+// $.process.run (HOOKS in mod/register.ts says when: a session that may have a seat, and before a join). stdin:
+// {session_id, nonce?}. Writes the module's lease for the session (lib/identity.ts writeModLease) with the nonce at-room
+// checks an origin against; the claude pid is our parent (hooks/run.ts sets CLAUDE_PID to it). Prints {home, realHome,
+// userHome, pluginRoot, seat: {name, code, role, addr} | null, restorable} on one line; restorable: a SessionStart
+// restore has a seat to put this session back in (lib/identity.ts lastSeat of this session id, or a seat this claude
+// process holds: a /clear).
 // Loads lib/identity.ts only (no seat key). Failure: an unreadable payload still prints the home, seat null, no lease.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -31,7 +34,9 @@ function hello(input: HelloIn): Hello {
   try { if (sid) identity.writeModLease(sid, { pid: identity.claudePid() || process.ppid, nonce: input.nonce }); } catch (err) {
     process.stderr.write(`sub-human mod-hello: lease not written: ${err instanceof Error ? err.message : err}\n`);
   }
-  return { home, realHome: real(home), userHome: os.homedir(), pluginRoot: PLUGIN_ROOT, seat };
+  let restorable = !!seat;
+  try { restorable = restorable || !!(sid && identity.lastSeat(sid)) || !!identity.resolveByPid(identity.claudePid() || process.ppid); } catch { /* not known: false */ }
+  return { home, realHome: real(home), userHome: os.homedir(), pluginRoot: PLUGIN_ROOT, seat, restorable };
 }
 
 const answer = (input: HelloIn): Reply => ({ kind: 'classic', outputs: [hello(input)] });

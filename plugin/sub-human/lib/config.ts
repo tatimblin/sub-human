@@ -107,7 +107,7 @@ export const REWAKE_WAIT_MS = 3000;            // SUB_HUMAN_REWAKE_WAIT_MS (allo
 export const REWAKE_POLL_MS = 100;
 export const ROW_SPAWN_GRACE_MS = 60_000;      // a row spawned this recently may not hold yet: never re-listed
 
-// ---------- hooks module (mod/, hooks/mod-hello.ts) ----------
+// ---------- hooks module (mod/, hooks/handlers/mod-hello.ts) ----------
 // A lease not from the joining claude process counts this long after it was written (the pid match is the real check).
 export const MOD_LEASE_FRESH_MS = 120_000;
 // the tail child's restart backoff and the delivery-error notice's window: owned by mod/core (the module reads them too)
@@ -244,12 +244,12 @@ export const TASK_EVIDENCE_MAX = 2000;
 export const TASK_REQ_DETAIL_SHOWN = 200;      // a task_req entry's text shows this much of the detail
 export const TASK_REQ_EVIDENCE_SHOWN = 400;
 
-// ---------- consent (lib/room/consent.ts, lib/proposal.ts, lib/rows.ts, hooks/consent.ts, hooks/session-restore.ts) ----------
+// ---------- consent (lib/room/consent.ts, lib/proposal.ts, lib/rows.ts, hooks/handlers/consent.ts, hooks/handlers/session-restore.ts) ----------
 export const ROW_TITLE_MAX = 24;               // a proposal's title in a panel row ("✔ decided Cursor paging")
 export const REVIEW_LOCK_TIMEOUT_MS = 3000;    // members/NAME/review.json read-modify-write lock (hooks time out at 5-10 s)
 // Pre(ExitPlanMode) needs the model's own input from the transcript, which 2.1.292 may not have written yet
 // when the hook runs (and tool_input.plan is the plan file's text, empty before the review): poll this long. The
-// review's closing ExitPlanMode polls as long for the dialog's rejection line (hooks/consent.ts resolveShown).
+// review's closing ExitPlanMode polls as long for the dialog's rejection line (hooks/handlers/consent.ts resolveShown).
 export const EXIT_INPUT_WAIT_MS = 1500;        // SUB_HUMAN_EXIT_INPUT_WAIT_MS
 export const EXIT_INPUT_POLL_MS = 50;
 export const REVIEW_STALE_MS = 30 * 60 * 1000; // a plan-view review open this long is stuck: session-restore restores the plan file

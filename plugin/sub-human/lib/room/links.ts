@@ -18,7 +18,7 @@
  *              daemon then dropped invite, pin and rebind (lib/remote/link.ts), so no spent secret stays here
  *   request    an ssh link's key the host has not let in yet (a handoff's follower: lib/remote/hosting.ts
  *              linkTransport; no secret in it)
- *   join_as    the name the seat takes once the host lets a PIN join in (hooks/join.ts: a bare /sub-human takes it)
+ *   join_as    the name the seat takes once the host lets a PIN join in (hooks/handlers/join.ts: a bare /sub-human takes it)
  *   enroll     {pin, name, kind, attempts?}: a short invite's join (lib/remote/enroll.ts) not run yet: the 4-digit PIN
  *              the daemon runs CPace with, dropped once the host answered it (a wrong PIN, or it held)
  *   awaiting   {at, ref, check, expires_at}: the PIN held and the host person's card decides (no secret in it); the

@@ -2,7 +2,7 @@
 // The test's $ has no state noun, so what the module kept in $.state sub-human/hello is read through the guard:
 // a room tool is allowed (tool.check) only once the hello names a seat.
 import { test, expect } from 'claude-code/testing'
-import { OUT as HELLO, ran, session } from './support.ts'
+import { OUT as HELLO, ran, scriptOf, session } from './support.ts'
 
 const POST = 'mcp__plugin_sub-human_room__post'
 const OUT = { ...HELLO, realHome: '/private/u/.sub-human' }
@@ -49,27 +49,31 @@ test('a hello with no seat keeps the room tools behind the permission prompt', a
   expect(await verdict($)).toBe('ask')
 })
 
-test('the join (classic.UserPromptExpansion /sub-human) runs beneath first, then mod-hello for the new seat', async ($, on) => {
+test('the join (classic.UserPromptExpansion /sub-human): the lease first, the join beneath, then mod-hello for the new seat', async ($, on) => {
   const order: string[] = []
   world(on)
   on('process.run', ($, e: any) => { order.push('hello'); return ran(JSON.stringify(OUT)) })
   on('classic.UserPromptExpansion', () => { order.push('join'); return { additionalContext: ['joined'] } })
   const r = await $.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'sub-human', command_args: 'alice', prompt: '/sub-human alice', session_id: 'sid-join' } as any)
   expect(r.additionalContext).toEqual(['joined'])
-  expect(order).toEqual(['join', 'hello'])
+  // no hello for this session id yet: its lease (the join refuses a session without one), then the new seat's
+  expect(order).toEqual(['hello', 'join', 'hello'])
   expect(await verdict($)).toBe('allow')
+  // the same session again: the lease is written already
+  await $.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'sub-human', command_args: '', prompt: '/sub-human', session_id: 'sid-join' } as any)
+  expect(order).toEqual(['hello', 'join', 'hello', 'join', 'hello'])
   // another command: no hello
   await $.classic.UserPromptExpansion({ expansion_type: 'slash_command', command_name: 'review', command_args: '', prompt: '/review' } as any)
-  expect(order).toEqual(['join', 'hello', 'join'])
+  expect(order).toEqual(['hello', 'join', 'hello', 'join', 'hello', 'join'])
 })
 
-test('classic.SessionStart after /clear refreshes the seat for the new session id; startup does not', async ($, on) => {
-  const sids: string[] = []
-  on('process.run', ($, e: any) => { sids.push(JSON.parse(e.init.stdin).session_id); return ran(JSON.stringify(OUT)) })
+test('classic.SessionStart after /clear puts the seat back (session-restore) and says hello for the new session id; startup does neither', async ($, on) => {
+  const runs: string[] = []
+  on('process.run', ($, e: any) => { runs.push(`${scriptOf(e)} ${JSON.parse(e.init.stdin).session_id}`); return ran(scriptOf(e) === 'mod-hello.ts' ? JSON.stringify(OUT) : '') })
   on('classic.SessionStart', () => ({}))
   await $.classic.SessionStart({ source: 'startup', session_id: 'sid-a' } as any)
   await $.classic.SessionStart({ source: 'clear', session_id: 'sid-b' } as any)
-  expect(sids).toEqual(['sid-b'])
+  expect(runs).toEqual(['session-restore.ts sid-b', 'mod-hello.ts sid-b'])
 })
 
 test('a hello that fails does not get in the join\'s way', async ($, on) => {

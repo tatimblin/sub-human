@@ -79,10 +79,10 @@
  *                                        members document never held them), so they resolve here as host seats
  *
  * The hooks module's lease, <home>/sessions/mods/<sid>.json (atomic, 0600): this session's function hooks are
- * loaded and have said hello (hooks/mod-hello.ts writes it, join requires it, session-end deletes it). Fields:
+ * loaded and have said hello (hooks/handlers/mod-hello.ts writes it, join requires it, session-end deletes it). Fields:
  *   {session_id, pid, pid_start?, at, nonce?}   pid: the claude process the module runs in; pid_start: its
  *                                        start time (epoch s); at: ISO time written; nonce: the module's secret for
- *                                        the session (32 hex), which hooks/at-room.ts requires beside an origin.
+ *                                        the session (32 hex), which hooks/handlers/at-room.ts requires beside an origin.
  *                                        Keep it one small flat object.
  *   writeModLease(sid, {pid, nonce}) -> bool
  *   readModLease(sid) -> rec|null;  deleteModLease(sid) -> bool
@@ -109,6 +109,7 @@ import { readJson, writeJsonAtomic, isAlive } from './io.ts';
 import { home, roomDir, machineId } from './home.ts';
 import { pidStart } from './lock.ts';
 import { NAME_RE, CODE_RE, SID_SAFE as SID_RE } from './text.ts';
+import { sidIndex } from '../mod/core/seat.ts';
 import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS } from './config.ts';
 import {
   seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE, LEGACY_ROOM_CLAUDE, roomClaudeName,
@@ -204,7 +205,8 @@ import * as store from './room/store.ts';
 const roomExists = (code: unknown): boolean => store.roomExists(code);
 const byPidDir = (): string => path.join(home(), 'sessions', 'by-pid');
 const byPidFile = (pid: unknown): string => path.join(byPidDir(), `${Number(pid)}.json`);
-const bySidFile = (sid: string): string => path.join(home(), 'sessions', 'by-sid', `${sid}.json`);
+// the path is mod/core/seat.ts sidIndex's: the hooks module checks it for a seat without node
+const bySidFile = (sid: string): string => sidIndex(path.resolve(home()), sid) || path.join(home(), 'sessions', 'by-sid', `${sid}.json`);
 const modLeaseFile = (sid: string): string => path.join(home(), 'sessions', 'mods', `${sid}.json`);
 const address = (name: string, code: string): string => `${name}.${code}`;
 /** The room's members document (lib/room/store.ts members: read(), the ops join/leave/beat, update(fn) atomic). */

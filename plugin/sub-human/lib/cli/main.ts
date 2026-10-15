@@ -192,8 +192,8 @@ function tail(args: readonly string[]) {
 }
 
 // ---------- agent-statusline: dispatch to statusline/* ----------
-// lib/io.ts readInput, never hooks/common.ts: requiring that arms the seat-key signer (via=human writes), which
-// the CLI and the tail must never load.
+// lib/io.ts readInput, never a hook handler: the ones that sign arm the seat-key signer (via=human writes), which the
+// CLI and the tail must never load.
 
 /** statusline agentStatusline(input) -> text ({"id","content"} lines); whatever goes wrong, print nothing and exit 0. */
 function agentStatusline() {

@@ -8,8 +8,8 @@
 // Out: continue:false + "✓ sent" (the person's row stays, the model sees it next turn), or decision:block +
 // suppressOriginalPrompt (refused text never reaches the model). Failure: no origin, a bad nonce or no seat
 // refuses, and the person types it again. In the room's Claude, a typed prompt is refused (it takes no typed input); with
-// no origin it runs, so a reload never loses the room Claude's wakes. "working" presence is written here only when no
-// origin came (with one, mod/prompt.ts has written it).
+// no origin it runs, so a reload never loses the room Claude's wakes. It writes no presence: the module is its one writer
+// (mod/prompt.ts, through hooks/handlers/presence.ts).
 // A post the store refuses (RATE, AUTH, or OFFLINE in a room hosted elsewhere whose link daemon is gone) blocks the
 // prompt with the reason. In a room hosted elsewhere whose link is down, the daemon queues the signed post instead
 // (lib/remote/outbox.ts) and "⧗ queued" ends the prompt; it is sent, in order, when the link is back. A post sent
@@ -26,7 +26,6 @@ import * as seats from '../../lib/seats.ts';
 import * as seatKey from '../seat-key.ts';
 import { whoami } from '../seat.ts';
 import { out } from '../reply.ts';
-import { write as presence } from './presence.ts';
 import type { HookSpecificOutput, PromptIn } from '../types.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { TranscriptEntry } from '../../lib/cc.ts';
@@ -115,7 +114,6 @@ function handle(input: PromptIn): void {
     const refusal = roomClaudeRefusal(me, input, prompt, claimed);
     if (refusal) return block(refusal);
   }
-  if (me && claimed === null) presence(me, 'working');
   if (raw === null && (wake === null || !me)) return; // outside a room, @claude is an ordinary prompt
 
   // not in a room first: typing it again would not help there

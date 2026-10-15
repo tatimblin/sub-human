@@ -1,4 +1,4 @@
-// mod/core/command.ts in node: when the module answers /sub-human itself, what it hands hooks/join.ts, how it reads
+// mod/core/command.ts in node: when the module answers /sub-human itself, what it hands hooks/handlers/join.ts, how it reads
 // the reply, and how the reply goes out (an output row only when nothing secret can be in it). The wiring is in
 // mod/test/command.test.ts (npm run test:mods); join.ts's side of the reply is test/hooks/join.node-test.ts.
 import test from 'node:test';

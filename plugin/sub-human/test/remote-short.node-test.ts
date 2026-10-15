@@ -1,7 +1,7 @@
 // Invites end to end over the pipe transport, two homes on one machine (test/support/two-homes.ts): the host's
 // /sub-human invite --pipe shows `/sub-human join pipe:HOME ROOM 4829` to the person only; the joiner types it
 // (a hidden step: the model never sees the PIN); the link daemon runs CPace with the PIN (lib/remote/enroll.ts) and
-// then waits; the host's tail wakes the host seat's Claude, whose card (hooks/consent.ts) is the only way in: Let in
+// then waits; the host's tail wakes the host seat's Claude, whose card (hooks/handlers/consent.ts) is the only way in: Let in
 // links the machine (a bare /sub-human then takes the seat), Refuse stops it, an AFK card records nothing, and a
 // request nobody answers lapses. A wrong PIN costs a try with a room line, the fifth burns the invite; the PIN is
 // never in a log, a link file after the attempt, or what the model gets.

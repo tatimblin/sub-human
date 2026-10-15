@@ -1,7 +1,8 @@
 // Wiring: how many node processes the hooks module starts per event ($.process.run and $.process.spawn), for a session
-// with no seat and for a seated member. Run with `npm run test:mods`. Together with the hooks.json entries (each a node
-// start whenever its matcher matches) this is the node-start table in docs/ARCHITECTURE.md "Performance". The target:
-// a session with no seat starts no node on any event but /sub-human.
+// with no seat and for a seated member. Run with `npm run test:mods`. Together with the hooks.json entries (the
+// /sub-human expansion; SessionEnd, whose shell check starts node only for a session with a lease or a seat:
+// test/manifest.node-test.ts) this is the node-start table in docs/ARCHITECTURE.md "Performance". The target, held
+// here: a session with no seat starts no node on any event but /sub-human.
 import { test, expect } from 'claude-code/testing'
 import { SEAT, helloOf, ran, scriptOf, session, start } from './support.ts'
 
@@ -98,22 +99,39 @@ async function measure($: any, on: any, seat: any) {
   return counts
 }
 
-test('node starts per event: a session with no seat', async ($, on) => {
+test('node starts per event: a session with no seat starts none on any event but /sub-human', async ($, on) => {
   const counts = await measure($, on, null)
   expect(counts).toEqual({
-    'session start': 1, 'a plain prompt': 0, 'an @room': 1, 'Bash, Read, Write': 0, 'Agent (Explore)': 0, 'Agent (a row)': 0,
+    'session start': 0, 'a plain prompt': 0, 'an @room': 0, 'Bash, Read, Write': 0, 'Agent (Explore)': 0, 'Agent (a row)': 0,
     'SubagentStop (Explore)': 0, 'SubagentStop (a row)': 0, AskUserQuestion: 0, EnterPlanMode: 0, ExitPlanMode: 0,
     'a room MCP tool': 0, TaskCreate: 0, TaskCompleted: 0, 'turn end (Stop)': 0, 'Notification idle_prompt': 0, StopFailure: 0,
-    '/compact': 1, '/clear': 1, '--resume': 1, '/sub-human': 3, 'session end': 0,
+    '/compact': 0, '/clear': 0, '--resume': 0,
+    // the lease (mod-hello: the join refuses a session without one), the join, the hello for what the join did
+    '/sub-human': 3,
+    'session end': 0,
   })
 })
 
 test('node starts per event: a seated member (before its tail child reports the seat)', async ($, on) => {
   const counts = await measure($, on, SEAT)
   expect(counts).toEqual({
-    'session start': 2, 'a plain prompt': 2, 'an @room': 1, 'Bash, Read, Write': 0, 'Agent (Explore)': 0, 'Agent (a row)': 0,
-    'SubagentStop (Explore)': 0, 'SubagentStop (a row)': 0, AskUserQuestion: 0, EnterPlanMode: 0, ExitPlanMode: 0,
-    'a room MCP tool': 0, TaskCreate: 0, TaskCompleted: 0, 'turn end (Stop)': 1, 'Notification idle_prompt': 0, StopFailure: 0,
-    '/compact': 1, '/clear': 2, '--resume': 1, '/sub-human': 2, 'session end': 0,
+    'session start': 2, // mod-hello, the tail child
+    'a plain prompt': 2, // prompt.ts (no tail child has reported the seat yet), presence "working"
+    'an @room': 1, // prompt.ts: at-room signs the post
+    'Bash, Read, Write': 0, 'Agent (Explore)': 0,
+    'Agent (a row)': 2, // row-guard, row-map
+    'SubagentStop (Explore)': 0,
+    'SubagentStop (a row)': 1, // row-hold
+    AskUserQuestion: 2, EnterPlanMode: 2, // consent Pre and Post
+    ExitPlanMode: 2, // consent Pre and Post; PermissionRequest only while a review may be open (consent said none is)
+    'a room MCP tool': 0, // consent only while a review may be open
+    TaskCreate: 0, TaskCompleted: 0, // a member's own tasks
+    'turn end (Stop)': 0, // consent only while a review may be open
+    'Notification idle_prompt': 1, StopFailure: 1, // presence, not awaited
+    '/compact': 2, // session-restore, mod-hello
+    '/clear': 3, // session-restore, mod-hello, the tail child for the new session id
+    '--resume': 3, // session-restore, mod-hello, row-rewake (in the background)
+    '/sub-human': 2, // the join, mod-hello (the lease was written at session start)
+    'session end': 0,
   })
 })

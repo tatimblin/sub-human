@@ -46,13 +46,14 @@ function hooksSection() {
   for (const [event, groups] of Object.entries(cfg)) {
     for (const g of groups) {
       for (const h of g.hooks) {
-        const m = /hooks\/([\w.-]+\.[jt]s)/.exec(h.command || '');
+        // node hooks/run.ts HANDLER: the handler's file (hooks/handlers/HANDLER.ts)
+        const m = /hooks\/run\.ts"? ([\w-]+)$/.exec(h.command || '');
         const mode = h.asyncRewake ? 'asyncRewake' : h.async ? 'async' : '—';
-        rows.push([event, g.matcher ? code(g.matcher) : '(all)', m ? code(`hooks/${m[1]}`) : code(h.command), h.timeout != null ? `${h.timeout} s` : 'default', mode]);
+        rows.push([event, g.matcher ? code(g.matcher) : '(all)', m ? code(`hooks/handlers/${m[1]}.ts`) : code(h.command), h.timeout != null ? `${h.timeout} s` : 'default', mode]);
       }
     }
   }
-  return table(['Event', 'Matcher', 'Script', 'Timeout', 'Async'], rows);
+  return table(['Event', 'Matcher', 'Handler (hooks/run.ts)', 'Timeout', 'Async'], rows);
 }
 
 // ---------- function hooks ----------
