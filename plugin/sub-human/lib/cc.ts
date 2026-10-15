@@ -835,7 +835,7 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
     shape: ['function ~({command:~,args:~,cwd:~,env:~,hasInput:~}){let ~={...~(),...~},', 'hasInput:~?.stdin!==void 0}'],
     note: '$.process.run takes argv, stdin, env over the host env and a timeout. The child\'s parent is the claude process, but it gets no CLAUDE_PID or CLAUDE_CODE_SESSION_ID of this session (only whatever claude itself inherited), so shims pass the payload session_id (S3).' },
   { id: 'plugin-test-discovery', section: 10, stability: 'incidental', search: ['.isFile()&&/\\.test\\.tsx?$/.test(', 'Runs every *.test.ts and *.test.tsx under dir'],
-    note: '`claude plugin test` collects every *.test.ts(x) under the plugin; node tests stay *.test.js (S8).' },
+    note: '`claude plugin test` collects every *.test.ts(x) under the plugin (skipping node_modules and dot folders); the node tests are *.node-test.ts (S8).' },
   { id: 'plugin-test-off', section: 10, stability: 'env',
     search: ['hooks modules are turned off here (disableAllHooks, allowManagedHooksOnly or a policy)', 'hooks modules are turned off in this process: '],
     note: 'With modules off, `claude plugin test` exits 1 printing "claude plugin test: hooks modules are turned off ..."; npm test reads that as a skip (S8).' },

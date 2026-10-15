@@ -6,8 +6,9 @@
  *
  * Skips (exit 0, one line on stdout) when no `claude` binary is found, when it is older than 2.1.292 (no function
  * hooks), or when it says hooks modules are turned off here (cc CONTRACT plugin-test-off). Otherwise exits as
- * `claude plugin test` does. The tests live under mod/test/, never in plugin/sub-human/test or scripts/test,
- * where `node --test` (Node 24 strips types) would collect them.
+ * `claude plugin test` does. That command collects every *.test.ts(x) under the plugin (cc CONTRACT
+ * plugin-test-discovery), so the node tests in plugin/sub-human/test are named *.node-test.ts and only mod/test runs
+ * here; and the wiring tests live under mod/test/, never where `npm run test:plugin`'s *.node-test.ts glob looks.
  */
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
