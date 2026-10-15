@@ -6,7 +6,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import net from 'node:net';
+import net, { type AddressInfo } from 'node:net';
+import type { TestContext } from 'node:test';
 import * as h from './helpers.ts';
 import * as ts from '../lib/remote/tailscale.ts';
 import * as links from '../lib/room/links.ts';
@@ -15,9 +16,12 @@ import * as hosting from '../lib/remote/hosting.ts';
 const UP = '{"BackendState":"Running","Self":{"DNSName":"box.tail1a2b.ts.net.","Online":true}}';
 const ENABLE_URL = 'https://login.tailscale.com/f/serve?node=nABC123CNTRL';
 
+/** A refusal as tailscale.ts throws it: a RoomError's code. */
+type CodedErr = Error & { code?: string };
+
 /** A fake tailscale: `status` prints statusOut (exit statusCode); anything else runs serveBody (sh). Its pid file
  * shows whether the serve call was left running. */
-function fake(t, { statusOut = UP, statusCode = 0, serveBody }) {
+function fake(t: TestContext, { statusOut = UP, statusCode = 0, serveBody }: { statusOut?: string; statusCode?: number; serveBody?: string }) {
   const dir = h.tmpDir('sh-fake-ts-', t);
   const pidFile = path.join(dir, 'serve.pid');
   const bin = path.join(dir, 'tailscale');
@@ -29,12 +33,12 @@ function fake(t, { statusOut = UP, statusCode = 0, serveBody }) {
   return { bin, alive };
 }
 
-const serveIt = (bin, extra = {}) => ts.on({ bin, path: '/sub-human/vole-1234', port: 7420, ...extra });
+const serveIt = (bin: string, extra: { funnel?: boolean; timeoutMs?: number } = {}) => ts.on({ bin, path: '/sub-human/vole-1234', port: 7420, ...extra });
 
 test('tailscale on: "Serve is not enabled … To enable, visit: URL" and a hang: killed at the URL, a clear message with that URL', t => {
   const f = fake(t, { serveBody: `printf '\\nServe is not enabled on your tailnet.\\nTo enable, visit:\\n\\n         ${ENABLE_URL}\\n\\n'\nsleep 30` });
   const t0 = Date.now();
-  assert.throws(() => serveIt(f.bin, { timeoutMs: 8000 }), e => {
+  assert.throws(() => serveIt(f.bin, { timeoutMs: 8000 }), (e: CodedErr) => {
     assert.equal(e.code, 'INVALID');
     assert.equal(e.message, `Tailscale Serve isn't enabled on your tailnet yet. An admin turns it on once at ${ENABLE_URL} (or Admin console → DNS → HTTPS Certificates and Serve), then run /sub-human invite --web again.`);
     return true;
@@ -52,7 +56,7 @@ test('tailscale on: Funnel not enabled names Funnel and --public', t => {
 test('tailscale on: no answer and no URL within the deadline: killed, the same advice with the admin console', t => {
   const f = fake(t, { serveBody: 'sleep 30' });
   const t0 = Date.now();
-  assert.throws(() => serveIt(f.bin, { timeoutMs: 600 }), e => {
+  assert.throws(() => serveIt(f.bin, { timeoutMs: 600 }), (e: CodedErr) => {
     assert.equal(e.code, 'INVALID');
     assert.match(e.message, /^Tailscale Serve isn't enabled on your tailnet yet \(tailscale serve gave no answer within 1 s\)\. An admin turns it on once at https:\/\/login\.tailscale\.com\/admin\/dns .*run \/sub-human invite --web again\.$/);
     return true;
@@ -68,9 +72,9 @@ test('tailscale on: success (exit 0 with the --bg banner) returns the record', t
 
 test('tailscale on: tailscaled not running, or logged out: OFFLINE with what to do', t => {
   const down = fake(t, { serveBody: 'echo "failed to connect to local Tailscale daemon for /localapi/v0/serve-config; not running? Error: dial unix /var/run/tailscale/tailscaled.sock: connect: no such file or directory" >&2; exit 1' });
-  assert.throws(() => serveIt(down.bin), e => e.code === 'OFFLINE' && /^Tailscale isn't running on this machine: start the Tailscale app \(or tailscaled\) and log in, then run \/sub-human invite --web again/.test(e.message));
+  assert.throws(() => serveIt(down.bin), (e: CodedErr) => e.code === 'OFFLINE' && /^Tailscale isn't running on this machine: start the Tailscale app \(or tailscaled\) and log in, then run \/sub-human invite --web again/.test(e.message));
   const out = fake(t, { serveBody: 'echo "Logged out."; exit 1' });
-  assert.throws(() => serveIt(out.bin), e => e.code === 'OFFLINE' && /logged out on this machine: log in/.test(e.message));
+  assert.throws(() => serveIt(out.bin), (e: CodedErr) => e.code === 'OFFLINE' && /logged out on this machine: log in/.test(e.message));
   const other = fake(t, { serveBody: 'echo "invalid argument: bad thing" >&2; exit 2' });
   assert.throws(() => serveIt(other.bin), /tailscale serve refused: invalid argument: bad thing/);
 });
@@ -78,7 +82,7 @@ test('tailscale on: tailscaled not running, or logged out: OFFLINE with what to 
 test('tailscale self: logged out, stopped and not running read as such; up gives the MagicDNS name', t => {
   assert.deepEqual(ts.self(fake(t, {}).bin), { dnsName: 'box.tail1a2b.ts.net', online: true, backend: 'Running' });
   const loggedOut = fake(t, { statusOut: '{"BackendState":"NeedsLogin","Self":{"DNSName":""}}', statusCode: 1 });
-  assert.throws(() => ts.self(loggedOut.bin), e => e.code === 'OFFLINE' && /logged out on this machine/.test(e.message));
+  assert.throws(() => ts.self(loggedOut.bin), (e: CodedErr) => e.code === 'OFFLINE' && /logged out on this machine/.test(e.message));
   const stopped = fake(t, { statusOut: '{"BackendState":"Stopped","Self":{"DNSName":"box.ts.net."}}' });
   assert.throws(() => ts.self(stopped.bin), /Tailscale is stopped on this machine/);
   const none = fake(t, { statusOut: 'failed to connect to local Tailscale daemon for /localapi/v0/status; not running?', statusCode: 1 });
@@ -93,15 +97,15 @@ test('tailscale classify: the CLI\'s words', () => {
 });
 
 test('tailscale warm: one background HTTPS request to the served URL (the certificate is fetched before the first joiner); never waited for', async t => {
-  let hit = null;
+  let hit = null as Buffer | null; // set by the server's callback
   const srv = net.createServer(s => { s.once('data', d => { hit = d; s.destroy(); }); });
-  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  await new Promise<void>(r => srv.listen(0, '127.0.0.1', r));
   t.after(() => srv.close());
   const t0 = Date.now();
-  const pid = ts.warm(`https://127.0.0.1:${srv.address().port}/sub-human/vole-1234`, { timeoutMs: 3000 });
+  const pid = ts.warm(`https://127.0.0.1:${(srv.address() as AddressInfo).port}/sub-human/vole-1234`, { timeoutMs: 3000 });
   assert.ok(Number.isInteger(pid) && Date.now() - t0 < 1000, 'returns at once');
   assert.ok(await h.until(() => hit, 5000, 20), 'the request arrived');
-  assert.equal(hit[0], 0x16, 'a TLS ClientHello');
+  assert.equal(hit![0], 0x16, 'a TLS ClientHello');
   assert.equal(ts.warm('https://box.ts.net/x', { env: { SUB_HUMAN_TAILSCALE_WARM: '0' } }), null);
   assert.equal(ts.warm('https://box.ts.net/x"; rm -rf /'), null, 'a plain URL only');
 });

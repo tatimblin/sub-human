@@ -5,9 +5,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import net from 'node:net';
+import net, { type AddressInfo } from 'node:net';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import type { TestContext } from 'node:test';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as link from '../lib/remote/link.ts';
@@ -18,13 +19,18 @@ import * as handoff from '../lib/handoff.ts';
 import * as doctor from '../lib/cli/doctor.ts';
 import { Machine } from './support/two-homes.ts';
 import * as noiseLib from '../lib/remote/noise.ts';
+import type { WsSpec } from '../lib/remote/types-rest.ts';
+import type { HandoffAskDoc } from '../lib/types-app.ts';
+
+/** The card the consent hook's Pre rewrites AskUserQuestion's input to. */
+interface Card { questions: { question: string }[] }
 
 const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: '200', SUB_HUMAN_LINK_RETRY_MAX_MS: '600', SUB_HUMAN_LINK_IDLE_MS: '20000' };
-const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
-const freePort = () => new Promise(r => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
+const childOf = (pid: number | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
+const kill = (pid: number | null | undefined) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone */ } };
+const freePort = () => new Promise<number>(r => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = (s.address() as AddressInfo).port; s.close(() => r(p)); }); });
 
-function cleanup(t, machines, code) {
+function cleanup(t: TestContext, machines: Machine[], code: () => string) {
   t.after(() => {
     for (const m of machines) {
       m.lib(() => listener.stop());
@@ -36,7 +42,7 @@ function cleanup(t, machines, code) {
 }
 
 /** A fake tailscale that remembers the paths serve/funnel turned on and lists them in `serve status --json`. */
-function fakeTailscale(t) {
+function fakeTailscale(t: TestContext) {
   const bin = h.tmpDir('sh-fake-ts-', t);
   const served = path.join(bin, 'served');
   fs.writeFileSync(served, '');
@@ -58,7 +64,7 @@ test('doctor: the listener, a room\'s Tailscale path present or gone, Funnel\'s 
   const host = new Machine(t, 'host', { SUB_HUMAN_LISTEN_PORT: String(port), PATH: `${ts.bin}:${process.env.PATH}` });
   const remote = new Machine(t, 'remote', LINK_ENV);
   const alice = host.seat('alice'), bob = remote.seat('bob');
-  assert.equal(host.join(alice, 'alice').json.decision, undefined);
+  assert.equal(host.join(alice, 'alice').json!.decision, undefined);
   const code = host.lib(() => store.listRooms()[0]);
   cleanup(t, [host, remote], () => code);
   const checks = () => host.lib(() => doctor.checkListener({}));
@@ -88,16 +94,16 @@ test('doctor: the listener, a room\'s Tailscale path present or gone, Funnel\'s 
   host.lib(() => listener.stop());
   c = checks();
   assert.equal(c[0].status, 'fail');
-  assert.match(c[0].fix, /sub-human listen --start/);
+  assert.match(c[0].fix!, /sub-human listen --start/);
 
   // a joiner's wss link: doctor's hello goes over the WebSocket and the pinned Noise channel
   host.lib(() => listener.start({ port }));
   await remote.joinVia(host, alice, bob, { invite: `invite --url http://127.0.0.1:${port}` });
-  const lf = remote.lib(() => links.get(code));
+  const lf = remote.lib(() => links.get(code))!;
   const probe = await remote.lib(() => doctor.helloProbe(lf.transport, code, { timeoutMs: 5000 }));
   assert.equal(probe.ok, true, probe.error);
-  assert.ok(probe.reply && probe.reply.v >= 1);
-  const wrongKey = await remote.lib(() => doctor.helloProbe({ ...lf.transport, hostKey: noiseLib.generateKeyPair().pub.toString('base64url') }, code, { timeoutMs: 5000 }));
+  assert.ok(probe.reply && probe.reply.v! >= 1);
+  const wrongKey = await remote.lib(() => doctor.helloProbe({ ...lf.transport as WsSpec, hostKey: noiseLib.generateKeyPair().pub.toString('base64url') }, code, { timeoutMs: 5000 }));
   assert.equal(wrongKey.ok, false, 'another pinned key gets no answer');
 });
 
@@ -105,36 +111,36 @@ test('handoff to a new host reached over the web: a ws locator, invites pinning 
   const bport = await freePort();
   const A = new Machine(t, 'a', LINK_ENV), B = new Machine(t, 'b', { ...LINK_ENV, SUB_HUMAN_LISTEN_PORT: String(bport) });
   const alice = A.seat('alice'), bob = B.seat('bob');
-  assert.equal(A.join(alice, 'alice').json.decision, undefined);
+  assert.equal(A.join(alice, 'alice').json!.decision, undefined);
   const code = A.lib(() => store.listRooms()[0]);
   cleanup(t, [A, B], () => code);
   // bob joins over the pipe (any transport); alice asks him to host the room behind his web front
-  assert.equal((await B.joinVia(A, alice, bob)).seated.json.decision, undefined);
-  const asked = A.join(alice, `handoff bob http://127.0.0.1:${bport}`).json;
-  assert.match(asked.reason, /asked bob to host room/, JSON.stringify(asked));
+  assert.equal((await B.joinVia(A, alice, bob)).seated.json!.decision, undefined);
+  const asked = A.join(alice, `handoff bob http://127.0.0.1:${bport}`).json!;
+  assert.match(asked.reason!, /asked bob to host room/, JSON.stringify(asked));
   const loc = `ws://127.0.0.1:${bport}/sub-human/${code}`;
-  assert.equal(A.lib(() => handoff.hostDoc(store.open(code))).locator, loc);
+  assert.equal(A.lib(() => handoff.hostDoc(store.open(code)))!.locator, loc);
   assert.ok(await h.until(() => B.lib(() => store.open(code).kv.get(handoff.ASK_DOC)), 5000, 50));
-  const id = B.lib(() => store.open(code).kv.get(handoff.ASK_DOC)).id;
+  const id = B.lib(() => store.open(code).kv.get<HandoffAskDoc>(handoff.ASK_DOC))!.id;
   // bob's own answer on the card
   const pre = B.hook('consent', { hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: `handoff ${id}`, options: [] }] } }, bob);
-  const card = pre.json.hookSpecificOutput.updatedInput;
+  const card = pre.json!.hookSpecificOutput!.updatedInput as Card;
   const q = card.questions[0].question;
   const post = B.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: card, tool_response: { questions: card.questions, answers: { [q]: 'Host it here' } } }, bob);
-  assert.match(post.json.systemMessage, /is hosted on this machine now, and its Claude runs on your Claude account/, post.stderr);
+  assert.match(post.json!.systemMessage!, /is hosted on this machine now, and its Claude runs on your Claude account/, post.stderr);
 
   // B serves the room on its listener; the invite B minted for A pins B's listener key; A follows over ws
   const bkey = B.lib(() => listener.hostKey());
   assert.ok(B.lib(() => listener.status()).rooms[code], 'B serves the room over the web');
   const minted = A.lib(() => handoff.hostDoc(store.open(code)));
   const forA = minted && minted.invites && Object.values(minted.invites)[0];
-  if (forA) assert.equal(auth.parseInvite(forA).hostKey, bkey, 'the handoff invite pins the new host\'s key');
+  if (forA) assert.equal(auth.parseInvite(forA)!.hostKey, bkey, 'the handoff invite pins the new host\'s key');
   assert.ok(await h.until(() => A.lib(() => link.status(code)).state === 'online', 10_000, 50), JSON.stringify(A.lib(() => link.status(code))));
-  const lf = A.lib(() => links.get(code));
+  const lf = A.lib(() => links.get(code))!;
   assert.deepEqual(lf.transport, { kind: 'ws', host: '127.0.0.1', port: bport, path: `/sub-human/${code}`, hostKey: bkey });
-  assert.equal(B.lib(() => store.open(code).readAll()).find(e => e.kind === 'host_changed').locator, loc);
+  assert.equal(B.lib(() => store.open(code).readAll()).find(e => e.kind === 'host_changed')!.locator, loc);
   // alice posts through the new host, over ws
-  assert.equal(A.say(alice, 'over ws to the new host').json.continue, false);
-  assert.equal(B.lib(() => store.open(code).readAll()).at(-1).text, 'over ws to the new host');
+  assert.equal(A.say(alice, 'over ws to the new host').json!.continue, false);
+  assert.equal(B.lib(() => store.open(code).readAll()).at(-1)!.text, 'over ws to the new host');
   assert.ok(await h.until(() => A.log(code) === B.log(code), 5000, 50));
 });
