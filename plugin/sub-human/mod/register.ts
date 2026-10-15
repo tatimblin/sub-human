@@ -41,7 +41,7 @@ export const HOOKS = [
   { event: 'classic.PostToolUse', matcher: 'tool_name TaskCreate|TaskUpdate', file: 'mod/tasks.ts', does: 'node hooks/tasks.ts (the room task mirror) only for the room\'s Claude or an unknown seat' },
   { event: 'classic.TaskCompleted', matcher: '', file: 'mod/tasks.ts', does: 'node hooks/tasks.ts (the gate; exit 2 -> block) only for the room\'s Claude or an unknown seat; .catch blocks in the room\'s Claude' },
   { event: 'ui.render', matcher: 'UserMessage, origin peer|peer-send-message|plugin', file: 'mod/render.ts', does: 'draws another member\'s Claude as "bob\'s Claude: …" and a sub-human prompt as its chat lines, without "(for Claude)" lines' },
-  { event: 'session.send', matcher: '', file: 'mod/send.ts', does: 'a SendMessage to NAME.CODE of this room whose seat is on another machine (members.json machine is not this home\'s machine.json id; the native send reaches only this machine\'s sessions) is posted to the room instead, addressed to NAME, through the room server ($.mcp.call post), and answered delivered (or not, with the room\'s refusal); anything else, or a failure, passes on' },
+  { event: 'session.send', matcher: '', file: 'mod/send.ts', does: 'a SendMessage to NAME.CODE of this room whose seat is on another machine (its seat record\'s machine is not this home\'s machine id; the native send reaches only this machine\'s sessions) is posted to the room instead, addressed to NAME, through the room server ($.mcp.call post), and answered delivered (or not, with the room\'s refusal); anything else, or a failure, passes on' },
 ];
 
 export function register(on: On) {
