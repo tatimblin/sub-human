@@ -35,16 +35,28 @@ export interface RoomRow { text: string; dim: boolean }
 /** The longest a "(for Claude)" marker is drawn, in characters, "…" included. */
 export const FOR_CLAUDE_MARK_MAX = 72;
 
+/** Claude Code's frame around a plugin's prompt (cc CONTRACT plugin-prompt-frame): its head line, and the paragraph
+ * after the text, between turns or mid-turn ("while you were working"). */
+const FRAME_HEAD = /^The .{1,80} plugin sent a message(?: while you were working)?:$/;
+const FRAME_TAIL = /^This is how Claude Code surfaces (?:a prompt|prompts) a plugin submits /;
+
 /**
  * A sub-human prompt as the person sees it: its chat lines, and each run of "(for Claude)" lines (what only the model
  * acts on: a wake's head, the room's state) as one dim marker in its place, the first of them cut to
- * FOR_CLAUDE_MARK_MAX, with "(+N)" for the others (ctrl+o shows them whole). Nothing is hidden from the person, and
- * the model reads the prompt unchanged. null when no chat line is left (the engine draws the row itself).
+ * FOR_CLAUDE_MARK_MAX, with "(+N)" for the others (ctrl+o shows them whole). Claude Code's frame (a wake is
+ * submitted framed, cc CONTRACT plugin-prompt-frame) is left out. expanded (ctrl+o, or a row that fits its speaker
+ * label, which Claude Code also draws expanded): nothing is cut, the frame and every "(for Claude)" line are drawn
+ * whole and dim. The model reads the prompt unchanged. null when no chat line is left (the engine draws the row).
  */
-export function roomRows(text: unknown): RoomRow[] | null {
+export function roomRows(text: unknown, { expanded = false }: { expanded?: boolean } = {}): RoomRow[] | null {
   const rows: RoomRow[] = [];
   let run = 0;
-  for (const l of clean(text).split('\n').map(x => x.replace(/\s+$/, '')).filter(x => x.trim())) {
+  let tail = false;
+  const all = clean(text).split('\n').map(x => x.replace(/\s+$/, '')).filter(x => x.trim());
+  for (const [i, l] of all.entries()) {
+    const frame = (i === 0 && FRAME_HEAD.test(l)) || tail || (tail = FRAME_TAIL.test(l));
+    if (frame) { if (expanded) rows.push({ text: l, dim: true }); continue; }
+    if (expanded && l.startsWith(FOR_CLAUDE)) { rows.push({ text: l, dim: true }); continue; }
     if (!l.startsWith(FOR_CLAUDE)) { run = 0; rows.push({ text: l, dim: false }); continue; }
     if (run++) { rows[rows.length - 1] = { text: `${rows[rows.length - 1].text.replace(/ \(\+\d+\)$/, '')} (+${run - 1})`, dim: true }; continue; }
     rows.push({ text: l.length > FOR_CLAUDE_MARK_MAX ? `${l.slice(0, FOR_CLAUDE_MARK_MAX - 1).trimEnd()}…` : l, dim: true });
