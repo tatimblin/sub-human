@@ -67,6 +67,30 @@ test('Write: before mod-hello, a path through .sub-human is denied by its spelli
   expect(denied(await call($, { tool: 'Write', file_path: '/w/.sub-human-notes.md', content: 'x' }))).toBe(false)
 })
 
+test('Read, Grep, Glob: the secret directories are denied, by path, through a symlink, and for a search from the home; the rest runs', async ($, on) => {
+  const r = world(on)
+  await hello($)
+  expect(denied(await call($, { tool: 'Read', file_path: `${HOME}/keys/a/alice.key` }))).toBe(true)
+  expect(denied(await call($, { tool: 'Read', file_path: `${HOME}/listen/host-x25519.json` }))).toBe(true)
+  expect(denied(await call($, { tool: 'Read', file_path: '/tmp/link/links/abc-1234.json' }))).toBe(true)
+  expect(denied(await call($, { tool: 'Read', file_path: `${HOME}/rooms/a/log.jsonl` }))).toBe(false)
+  expect(denied(await call($, { tool: 'Grep', pattern: '.', path: `${HOME}/keys`, output_mode: 'content' }))).toBe(true)
+  expect(denied(await call($, { tool: 'Grep', pattern: '.', path: '/tmp/link/links' }))).toBe(true)
+  expect(denied(await call($, { tool: 'Grep', pattern: 'PRIVATE', path: '/u' }))).toBe(true)
+  expect(denied(await call($, { tool: 'Grep', pattern: 'x' }))).toBe(false) // the cwd, /w
+  expect(denied(await call($, { tool: 'Glob', pattern: '*', path: `${HOME}/links` }))).toBe(true)
+  expect(denied(await call($, { tool: 'Glob', pattern: 'keys/**', path: HOME }))).toBe(true)
+  expect(denied(await call($, { tool: 'Glob', pattern: '**/*.ts' }))).toBe(false)
+  expect(r).toEqual(['Read', 'Grep', 'Glob'])
+})
+
+test('Grep: before mod-hello, a search of ~/.sub-human is denied by its spelling', async ($, on) => {
+  world(on)
+  expect(denied(await call($, { tool: 'Grep', pattern: '.', path: '~/.sub-human/keys' }))).toBe(true)
+  expect(denied(await call($, { tool: 'Glob', pattern: '/u/.sub-human/links/*' }))).toBe(true)
+  expect(denied(await call($, { tool: 'Grep', pattern: '.', path: '/w' }))).toBe(false)
+})
+
 test('a guard that fails denies only a call that mentions sub-human', async ($, on) => {
   world(on, { cwd: false }) // a relative path needs the cwd: the hook throws
   await hello($)
