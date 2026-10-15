@@ -15,7 +15,7 @@
  *       rows, health; lib/tail.ts documents them), switching (or going silent) if the seat changes.
  *       Settle: entries are batched and written as ONE set of events (at most one wake) after
  *       SUB_HUMAN_SETTLE_MS (1500) of quiet or SUB_HUMAN_SETTLE_MAX_MS (5000) at most (the room's Claude: 3000 / 10000,
- *       SUB_HUMAN_ROOM_CLAUDE_SETTLE_MS / SUB_HUMAN_ROOM_CLAUDE_SETTLE_MAX_MS). Each entry is judged again against the log at
+ *       unless those two are set). Each entry is judged again against the log at
  *       send time (answered / decided entries are dropped). A member_left X is held
  *       SUB_HUMAN_LEAVE_MS (8000): if X rejoins in that time both notices are dropped.
  *       A member's chat is a group chat (room.chatLines, no ids): "bob: <exact words>", "bob's Claude: …",

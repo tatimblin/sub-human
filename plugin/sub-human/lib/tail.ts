@@ -177,14 +177,14 @@ function timings() {
     settleMaxMs,
     // The headless room Claude waits longer (nobody watches its latency), so a burst of answers, task requests or a
     // join lands as one turn, unless the member values are set explicitly.
-    roomClaudeSettleMs: envMs('SUB_HUMAN_ROOM_CLAUDE_SETTLE_MS', process.env.SUB_HUMAN_SETTLE_MS ? settleMs : config.ROOM_CLAUDE_SETTLE_MS),
-    roomClaudeSettleMaxMs: envMs('SUB_HUMAN_ROOM_CLAUDE_SETTLE_MAX_MS', process.env.SUB_HUMAN_SETTLE_MAX_MS ? settleMaxMs : config.ROOM_CLAUDE_SETTLE_MAX_MS),
+    roomClaudeSettleMs: process.env.SUB_HUMAN_SETTLE_MS ? settleMs : config.ROOM_CLAUDE_SETTLE_MS,
+    roomClaudeSettleMaxMs: process.env.SUB_HUMAN_SETTLE_MAX_MS ? settleMaxMs : config.ROOM_CLAUDE_SETTLE_MAX_MS,
     leaveMs: envMs('SUB_HUMAN_LEAVE_MS', config.LEAVE_SETTLE_MS),
     healthMs: envMs('SUB_HUMAN_TAIL_HEALTH_MS', config.TAIL_HEALTH_MS),
-    backoffMs: envMs('SUB_HUMAN_TAIL_BACKOFF_MS', config.TAIL_BACKOFF_MS),
-    backoffMaxMs: envMs('SUB_HUMAN_TAIL_BACKOFF_MAX_MS', config.TAIL_BACKOFF_MAX_MS),
-    errorLogMs: envMs('SUB_HUMAN_TAIL_ERROR_LOG_MS', config.TAIL_ERROR_LOG_MS),
-    stallMs: envMs('SUB_HUMAN_TAIL_STALL_MS', config.TAIL_STALL_MS),
+    backoffMs: config.TAIL_BACKOFF_MS,
+    backoffMaxMs: config.TAIL_BACKOFF_MAX_MS,
+    errorLogMs: config.TAIL_ERROR_LOG_MS,
+    stallMs: config.TAIL_STALL_MS,
   };
 }
 

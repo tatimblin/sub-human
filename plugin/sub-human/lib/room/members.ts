@@ -35,7 +35,7 @@ import { isAlive, validPid } from '../io.ts';
 import { pidStart } from '../lock.ts';
 import { machineId, isMine } from '../home.ts';
 import {
-  PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS, ROOM_CLAUDE_BIND_MS, ROOM_CLAUDE_CLAIM_MS, envMs,
+  PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS, ROOM_CLAUDE_BIND_MS, ROOM_CLAUDE_CLAIM_MS,
 } from '../config.ts';
 import { RoomError } from './validate.ts';
 import type { JoinResult, KvApi, Member, Members, MembersApi, Presence, PresenceInput, PresenceState, SeatRecord } from './types.ts';
@@ -146,7 +146,7 @@ function roomClaudePresence(o: SeatLike | null | undefined, now = Date.now()): '
   if (validPid(o.pid) && isMine(machineOf(o))) return seatAlive(o) ? 'live' : null;
   if (o.joined_at && o.job !== 'pending' && !o.spawn_error && leaseFresh(o, now)) return 'live';
   const since = now - Date.parse(String(o.spawned_at || 0));
-  if (o.job === 'pending') return since <= envMs('SUB_HUMAN_ROOM_CLAUDE_CLAIM_MS', ROOM_CLAUDE_CLAIM_MS) ? 'starting' : null;
+  if (o.job === 'pending') return since <= ROOM_CLAUDE_CLAIM_MS ? 'starting' : null;
   if (o.job) return since <= ROOM_CLAUDE_BIND_MS ? 'starting' : null;
   return null;
 }

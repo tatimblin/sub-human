@@ -44,8 +44,8 @@ export { envMs, timingEnv, TIMING_ENV_RE };
 export const SETTLE_MS = 1500;                 // SUB_HUMAN_SETTLE_MS
 export const SETTLE_MAX_MS = 5000;             // SUB_HUMAN_SETTLE_MAX_MS
 // The headless room Claude waits longer (nobody watches its latency), so a burst lands as one turn.
-export const ROOM_CLAUDE_SETTLE_MS = 3000;            // SUB_HUMAN_ROOM_CLAUDE_SETTLE_MS
-export const ROOM_CLAUDE_SETTLE_MAX_MS = 10_000;      // SUB_HUMAN_ROOM_CLAUDE_SETTLE_MAX_MS
+export const ROOM_CLAUDE_SETTLE_MS = 3000;
+export const ROOM_CLAUDE_SETTLE_MAX_MS = 10_000;
 // A member_left waits this long for a rejoin; a leave + rejoin inside it is no notice at all.
 export const LEAVE_SETTLE_MS = 8000;           // SUB_HUMAN_LEAVE_MS (tail, notices, rows, hold)
 export const UNSEATED_MS = 10_000;             // SUB_HUMAN_UNSEATED_MS: no seat yet, look it up this rarely
@@ -61,11 +61,11 @@ export const WATCH_POLL_MS = 500;              // `sub-human watch --follow` pol
 // off and carries on. Every TAIL_HEALTH_MS it checks the log's hash chain from its in-memory checkpoint and,
 // while it is the room's Claude, runs roomClaude.watchdog(code).
 export const TAIL_HEALTH_MS = 5000;            // SUB_HUMAN_TAIL_HEALTH_MS
-export const TAIL_BACKOFF_MS = 1000;           // SUB_HUMAN_TAIL_BACKOFF_MS: first retry delay after an error, doubled per failure
-export const TAIL_BACKOFF_MAX_MS = 30_000;     // SUB_HUMAN_TAIL_BACKOFF_MAX_MS
-export const TAIL_ERROR_LOG_MS = 60_000;       // SUB_HUMAN_TAIL_ERROR_LOG_MS: one stderr line per error site per this long
+export const TAIL_BACKOFF_MS = 1000;           // first retry delay after an error, doubled per failure
+export const TAIL_BACKOFF_MAX_MS = 30_000;
+export const TAIL_ERROR_LOG_MS = 60_000;       // one stderr line per error site per this long
 // Seated, the poll loop must have ticked within this long, or the next seat check restarts the session.
-export const TAIL_STALL_MS = 60_000;           // SUB_HUMAN_TAIL_STALL_MS
+export const TAIL_STALL_MS = 60_000;
 
 // ---------- locks (lib/lock.ts) ----------
 // Locks are held for milliseconds. A waiter gives up (throws LOCK) after the timeout: under the hooks' own timeouts
@@ -92,7 +92,7 @@ export const ROOM_CLAUDE_WATCH_POLL_MS = 5_000;       // the detached starter ch
 // ---------- room Claude lifecycle: spawn claim, watchdog, seat liveness (lib/room-claude.ts, lib/identity.ts) ----------
 // A {job:'pending'} spawn claim older than this is stale (its detached starter died or hung): the next
 // join claims again. Longer than a stop + a spawn (2 x SPAWN_TIMEOUT_MS) plus the job lookup.
-export const ROOM_CLAUDE_CLAIM_MS = 90_000;           // SUB_HUMAN_ROOM_CLAUDE_CLAIM_MS
+export const ROOM_CLAUDE_CLAIM_MS = 90_000;
 // roomClaude.watchdog reaps a room that has had no live member for this long (members that crashed leave no
 // SessionEnd, so no reaper was started for them).
 export const ROOM_CLAUDE_ORPHAN_MS = 60_000;          // SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS
@@ -122,7 +122,7 @@ export const LINK_CALL_END_MS = 1000;          // SessionEnd (5 s timeout)
 // The link daemon answers a hook's relayed op by this, inside LINK_CALL_MS, even when the host has not: a signed
 // @room post sent already then stays in the outbox under its nonce ("⧗ sending (slow link)"), and any other op
 // says its outcome is unknown, never "nothing was sent" (a slow link delivers the frame late; lib/remote/link.ts).
-export const LINK_RELAY_MS = 2000;             // SUB_HUMAN_LINK_RELAY_MS
+export const LINK_RELAY_MS = 2000;
 // One protocol frame (lib/remote/protocol.ts), bytes: a plan blob (PROPOSAL_FILE_MAX) in base64 fits.
 export const LINK_FRAME_MAX_BYTES = 1024 * 1024;
 // The link daemon (lib/remote/link.ts): the join hook waits this long for it to listen; a lost connection is
@@ -141,10 +141,10 @@ export const LINK_IDLE_MS = 60_000;            // SUB_HUMAN_LINK_IDLE_MS
 // A planned handoff (lib/handoff.ts): the ask waits this long for the target's card answer; the new host's
 // invites the old host hands out (also to a member that reconnects late) are kept this long; a manual promote
 // needs the link down at least PROMOTE_OFFLINE_MS (else --force).
-export const HANDOFF_ASK_MS = 10 * 60_000;     // SUB_HUMAN_HANDOFF_ASK_MS
+export const HANDOFF_ASK_MS = 10 * 60_000;
 export const HANDOFF_INVITE_MS = 24 * 60 * 60_000;
 export const HANDOFF_CALL_MS = 6000;           // the target's accept op (the old host appends, releases its room Claude): in a 10 s hook
-export const PROMOTE_OFFLINE_MS = 10 * 60_000; // SUB_HUMAN_PROMOTE_OFFLINE_MS
+export const PROMOTE_OFFLINE_MS = 10 * 60_000;
 // An sh2 invite (lib/remote/invites.ts): the host checks its PIN online only, INVITE_PIN_TRIES times, and the invite
 // burns at the last wrong one or INVITE_TTL_MS after it was minted (whichever is first), or on success.
 export const INVITE_TTL_MS = 15 * 60_000;
@@ -165,19 +165,19 @@ export const LINK_JOIN_WAIT_MS = 4000;
 export const LINK_PING_MS = 15_000;            // SUB_HUMAN_LINK_PING_MS
 export const LINK_PONG_MS = 5000;              // SUB_HUMAN_LINK_PONG_MS
 export const LINK_DEAD_MS = 10_000;            // SUB_HUMAN_LINK_DEAD_MS
-export const LINK_SILENT_MS = 45_000;          // SUB_HUMAN_LINK_SILENT_MS (server side: 3 pings missed)
+export const LINK_SILENT_MS = 45_000;          // server side: 3 pings missed
 // Wake from sleep: a timer that ticks every LINK_WAKE_TICK_MS and finds the wall clock moved more than
 // LINK_WAKE_GAP_MS past the tick (or away from the monotonic clock) means the machine slept: redial at once.
 export const LINK_WAKE_TICK_MS = 2000;         // SUB_HUMAN_LINK_WAKE_TICK_MS
 export const LINK_WAKE_GAP_MS = 5000;          // SUB_HUMAN_LINK_WAKE_GAP_MS
 // A changed set of network addresses (os.networkInterfaces, polled this often) redials at once too.
-export const LINK_NET_POLL_MS = 5000;          // SUB_HUMAN_LINK_NET_POLL_MS
+export const LINK_NET_POLL_MS = 5000;
 // The @room outbox (lib/remote/outbox.ts): while the link is down a person's @room post is queued, at most
 // LINK_OUTBOX_MAX posts, each for at most LINK_OUTBOX_AGE_MS. The host refuses a signature whose ts is more
 // than SIG_SKEW_MS (10 min, lib/room/envelope.ts) from its clock, and the daemon never re-signs, so a post
 // queued longer could never be placed: the age stays inside that window, with a minute for clock skew.
 export const LINK_OUTBOX_MAX = 50;
-export const LINK_OUTBOX_AGE_MS = 9 * 60_000;  // SUB_HUMAN_LINK_OUTBOX_AGE_MS
+export const LINK_OUTBOX_AGE_MS = 9 * 60_000;
 
 // ---------- rows (lib/rows.ts) ----------
 export const PRESENCE_STALE_MS = 6 * 60 * 60 * 1000;

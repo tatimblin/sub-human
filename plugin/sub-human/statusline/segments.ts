@@ -11,7 +11,7 @@
  *       A killed row reads "bob  (reconnecting)" inside a room, "bob  ⚠ row stopped" at top level ("bob  left"
  *       once bob has left). Other tasks keep their default. '' when not in a room; never throws.
  *   The seat comes from input.session_id (identity.resolveBySession), else identity.resolveSelf().
- *   Colour is off when NO_COLOR is set or SUB_HUMAN_COLOR=0.
+ *   Colour is off when NO_COLOR is set.
  */
 import * as identity from '../lib/identity.ts';
 import * as rows from '../lib/rows.ts';
@@ -24,7 +24,7 @@ interface PanelTask { id?: unknown; status?: unknown; description?: unknown }
 interface StatuslineIn { session_id?: unknown; tasks?: unknown }
 /** A row's record in the row map (lib/rows.ts readRowMap), or one found by description. */
 
-const useColor = (env: NodeJS.ProcessEnv = process.env) => !('NO_COLOR' in env) && env.SUB_HUMAN_COLOR !== '0';
+const useColor = (env: NodeJS.ProcessEnv = process.env) => !('NO_COLOR' in env);
 const dead = (t: PanelTask) => t.status === 'killed' || t.status === 'failed';
 
 function seatOf(input: StatuslineIn | null | undefined): Identity | null {

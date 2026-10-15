@@ -55,7 +55,7 @@
  *       seats is sent as the private 'handoff' event.
  *         ping       {pong: the host's ms}: the link daemon's heartbeat (lib/remote/link.ts). A session whose hello
  *                    carried caps {ping: true} and that then sends no frame for silentMs (LINK_SILENT_MS,
- *                    SUB_HUMAN_LINK_SILENT_MS) is closed: the peer is gone (a half-open link after a sleep)
+ *                    the server's LINK_SILENT_MS) is closed: the peer is gone (a half-open link after a sleep)
  *       After a write (join, leave, beat, append) every stream of the session is polled before the reply goes out,
  *       so a link that subscribed holds the write's lines and documents when its reply arrives (read-your-writes).
  *       An op that throws a RoomError (a protocol CODES code) answers {error: {code, message}} with the same

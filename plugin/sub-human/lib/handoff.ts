@@ -139,7 +139,7 @@ function followLink(code: string, locator: string | undefined, invite: unknown):
 function serveWeb(code: string, locator: string): void {
   if (isWeb(locator)) (require('./remote/webhost.ts') as typeof import('./remote/webhost.ts')).serveAt(code, locator);
 }
-const askMs = () => config.envMs('SUB_HUMAN_HANDOFF_ASK_MS', config.HANDOFF_ASK_MS);
+const askMs = () => config.HANDOFF_ASK_MS;
 const expired = (doc: { expires_at?: string } | null | undefined, now: number = Date.now()) => !(Date.parse((doc && doc.expires_at) as string) > now);
 
 // ---------- the old host ----------
@@ -422,7 +422,7 @@ function promote(code: string, { name, locator, force = false, cwd, now = Date.n
   if (s.isHost) throw err('INVALID', `this machine hosts room ${code} already`);
   const st = linkSocket().status(code);
   if (st.running && st.state === 'online') throw err('INVALID', `the host of room ${code} is reachable (the link is online): use a planned handoff, the host runs /sub-human handoff ${name}`);
-  const gate = config.envMs('SUB_HUMAN_PROMOTE_OFFLINE_MS', config.PROMOTE_OFFLINE_MS, { allowZero: true });
+  const gate = config.PROMOTE_OFFLINE_MS;
   const down = now - (Date.parse(st.since || '') || now);
   if (!force && down < gate) throw err('INVALID', `the link to room ${code}'s host has been down ${Math.round(down / 1000)} s; promote only after ${Math.round(gate / 60_000)} min (or --force)`);
   const m: Member | undefined = (s.members.read() as Members)[name];

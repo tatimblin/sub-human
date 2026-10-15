@@ -61,9 +61,7 @@
  *
  *   taskListId(code) -> "sh-CODE", tasksDir(code) -> <claude config>/tasks/sh-CODE (read only)
  * Env: SUB_HUMAN_CLAUDE (the claude binary; tests use a stub), SUB_HUMAN_PLUGIN_DIR (force --plugin-dir; "" = none),
- *   SUB_HUMAN_ROOM_CLAUDE_ARGS (a JSON array of extra flags, for probes, e.g. ["--setting-sources","project,local"]),
- *   SUB_HUMAN_REAP_GRACE_MS (default 10 s), SUB_HUMAN_REAP_WAIT_MS (default 20 s), SUB_HUMAN_ROOM_CLAUDE_CLAIM_MS,
- *   SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS.
+ *   SUB_HUMAN_REAP_GRACE_MS (default 10 s), SUB_HUMAN_REAP_WAIT_MS (default 20 s), SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS.
  * CLI: node lib/room-claude.ts cmd|spawn|reap [--claimed]|watchdog|release|start CODE [JSON|JOB]
  */
 import fs from 'node:fs';
@@ -118,7 +116,7 @@ const claudeBin = () => process.env.SUB_HUMAN_CLAUDE || 'claude';
 const taskListId = (code: string) => `sh-${code}`;
 const tasksDir = (code: string): string => cc.tasksDir(taskListId(code));
 const iso = (ms: number) => new Date(ms).toISOString();
-const claimMs = () => config.envMs('SUB_HUMAN_ROOM_CLAUDE_CLAIM_MS', config.ROOM_CLAUDE_CLAIM_MS);
+const claimMs = () => config.ROOM_CLAUDE_CLAIM_MS;
 const orphanMsDefault = () => config.envMs('SUB_HUMAN_ROOM_CLAUDE_ORPHAN_MS', config.ROOM_CLAUDE_ORPHAN_MS);
 
 /** The login basics plus the daemon's dispatch allowlist; USER/LOGNAME are needed to stay logged in. */
@@ -161,10 +159,6 @@ function spawnPlan({ code, cwd, home = identity.home(), pluginDir = pluginDirFor
   };
   const args = ['--bg', '-n', `claude.${code}`];
   if (pluginDir) args.push('--plugin-dir', pluginDir);
-  try {
-    const x = JSON.parse(process.env.SUB_HUMAN_ROOM_CLAUDE_ARGS || '[]');
-    if (Array.isArray(x)) args.push(...x.map(String));
-  } catch { /* ignored */ }
   args.push('--agent', AGENT, '--permission-mode', 'plan', '--settings', JSON.stringify(settings), '/sub-human');
   return { bin: claudeBin(), args, env: cleanEnv(env), cwd: cwd || process.cwd() };
 }
