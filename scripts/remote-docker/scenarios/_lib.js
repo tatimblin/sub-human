@@ -2,7 +2,7 @@
 /**
  * scripts/remote-docker/scenarios/_lib.js: helpers the scenarios share (not a scenario: the runner loads NN-*.js).
  *
- *   WAN / JUMP / PROXY / CORE(host)   ssh Host blocks for lab.joinOver: the devbox through toxiproxy (the WAN path),
+ *   WAN / JUMP / PROXY / CORE(host)   ssh Host blocks for lab.join: the devbox through toxiproxy (the WAN path),
  *                                     through the bastion (ProxyJump), through corp-proxy (ProxyCommand nc -X connect),
  *                                     or straight over the core network
  *   delivered(seat, name, text, ms) -> Promise<{ok, t}>   NAME's tail delivered a line holding text (t: ms epoch)

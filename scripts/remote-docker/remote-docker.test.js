@@ -1,9 +1,10 @@
 'use strict';
 // Opt-in (npm run test:remote-docker; not part of npm test): the sub-human lab's scenario suite (harness.js scenarios:
-// devbox, devbox-old 0.2.0, bastion, joiner-a, joiner-b, toxiproxy, corp-proxy, tls-front; README.md). Skipped
+// devbox, devbox-old 0.5.0-beta.15, bastion, joiner-a, joiner-b, toxiproxy, corp-proxy, tls-front; README.md). Skipped
 // when Docker is not running. Passes unless a scenario FAILED (PENDING: a feature not built yet; BUG: a known plugin
 // bug, fatal with LAB_STRICT=1). Evidence in LAB_OUT, else /tmp/sub-human-lab-<time>/. LAB_ONLY=id[,id] narrows it.
-// The older single-devbox run with this Mac as the joiner is npm run test:remote-docker:mac.
+// The older single-devbox run with this Mac as the joiner (npm run test:remote-docker:mac) is not ported to the PIN
+// join yet (Stage 7 removed the sh1 invite it used): harness.js run exits 2 saying so.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');

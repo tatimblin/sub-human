@@ -76,7 +76,8 @@ function remoteJoin(x, det, j) {
     rec ? `admission ${rec.kind} ${rec.admit} by ${rec.admitted_by}, label ${rec.label}; signature ${signed ? `verified against ${A}'s pinned key` : 'missing or not verified'}; ${x.fmt(line)}` : `no admission record for ${B} in remote/invites.json`);
 
   const host = (readJson(x.stateFile('S2', 'machine-host.json'), {}) || {}).id;
-  const hers = (readJson(path.join(rh, 'machine.json'), {}) || {}).id;
+  // her id in the room: the one the host derived from her home's machine key (machines.json), else her home's own
+  const hers = ((readJson(path.join(rh, 'machines.json'), {}) || {})[code]) || (readJson(path.join(rh, 'machine.json'), {}) || {}).id;
   const linked = log.find(e => e.kind === 'status' && e.from === 'room' && typeof e.text === 'string' && e.text.startsWith(`${B}'s machine (`) && /joined the room/.test(e.text));
   det(`${B}'s seat arrived over the link: member_joined ${B} carries her machine's id (not the host's), after her machine's link joined the room`,
     j && hers && j.machine === hers && j.machine !== host && linked && linked.id < j.id,

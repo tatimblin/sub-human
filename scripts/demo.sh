@@ -864,6 +864,7 @@ S11() { # remote: carol joins from a second home (another machine, on this one) 
   cp "$HOME2/rooms/$r/log.jsonl" "$SNAP_DIR/state/S11/mirror-log.jsonl" 2>/dev/null
   cp "$HOME2/rooms/$r/link.json" "$SNAP_DIR/state/S11/link-status.json" 2>/dev/null
   cp "$HOME2/machine.json" "$SNAP_DIR/state/S11/machine-carol.json" 2>/dev/null
+  cp "$HOME2/machines.json" "$SNAP_DIR/state/S11/machines-carol.json" 2>/dev/null # her id in each room (key-derived)
   cp "$SUB_HUMAN_HOME/machine.json" "$SNAP_DIR/state/S11/machine-host.json" 2>/dev/null
   # the link file holds the token: keep only its shape
   $LIB link-shape "$HOME2/links/$r.json" > "$SNAP_DIR/state/S11/link-file.json" 2>/dev/null

@@ -104,7 +104,9 @@ module.exports = {
       const post = a.seat.say('bob', 'after kick');
       const ls = a.seat.link(code);
       t.check("bob's link stops (AUTH, it does not redial) and his post is refused, not queued", st !== null && ls.code === 'AUTH' && !post.ok,
-        `${ls.state} ${ls.code || ''}: ${(ls.reason || '').slice(0, 80)}; post: ${(post.out || '').slice(0, 80)}`);
+        `${ls.state} ${ls.code || ''} ${ls.why || ''}: ${(ls.reason || '').slice(0, 80)}; post: ${(post.out || '').slice(0, 80)}`);
+      // the typed reason (link-socket status `why`): the host revoked the link, or ssh refused its revoked key
+      t.check('the stop carries its typed reason (LINK_REVOKED or KEY_REVOKED), not only words', ['LINK_REVOKED', 'KEY_REVOKED'].includes(ls.why), String(ls.why));
       const bea = b.seat.say('bea', 'bea after kick of bob');
       t.check("bea's link is untouched by bob's kick", bea.ok, bea.out || 'posted');
     } else t.pending('kick NAME removes the key, stops its serve and cuts the link', 'needs revoke');

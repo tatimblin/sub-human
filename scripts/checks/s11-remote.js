@@ -23,7 +23,8 @@ module.exports = {
     const trust = e => (e ? room.open(code).trust(e) : null);
 
     const hostId = (readJson(x.stateFile('S11', 'machine-host.json'), {}) || {}).id;
-    const carolId = (readJson(x.stateFile('S11', 'machine-carol.json'), {}) || {}).id;
+    // her id in the room is the one the host derived from her home's machine key (machines.json), else her home's own
+    const carolId = ((readJson(x.stateFile('S11', 'machines-carol.json'), {}) || {})[code]) || (readJson(x.stateFile('S11', 'machine-carol.json'), {}) || {}).id;
     const j = log.find(e => e.kind === 'member_joined' && e.from === 'carol');
     det('carol joins from a second home: member_joined carol (via system) pins her key, with her home\'s machine id, not the host\'s',
       j && j.via === 'system' && typeof j.pubkey === 'string' && j.machine && j.machine === carolId && j.machine !== hostId,

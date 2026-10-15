@@ -30,8 +30,8 @@ services:
     networks: [core]
 
   devbox-old:
-    # plugin 0.2.0 (git ref cb4d344, pre-registry), baked into the image by harness.js (lab.js buildOld); no mount
-    image: sub-human-lab-old:cb4d344
+    # plugin 0.5.0-beta.15 (git ref 7c97bdb, LAB_OLD_REF), baked into the image by harness.js (lab.js buildOld); no mount
+    image: sub-human-lab-old:${LAB_OLD_REF:-7c97bdb}
     init: true
     command: [devbox]
     hostname: devbox-old

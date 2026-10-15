@@ -4,7 +4,7 @@
  * scenario runner behind `harness.js scenarios`. README.md has the topology and the scenario list.
  *
  *   new Lab({log})
- *     up()              build (the 0.2.0 image from `git archive cb4d344` once), start, wait for every sshd and for
+ *     up()              build (the previous release's image from `git archive OLD_REF` once: 0.5.0-beta.15), start, wait for every sshd and for
  *                       toxiproxy, create the proxies, copy tls-front's CA root to the joiners, probe the features
  *     reset()           between scenarios: unpause, every sub-human process stopped, homes, keys, authorized_keys
  *                       and known_hosts wiped, toxiproxy reset, iptables flushed
@@ -14,16 +14,16 @@
  *     toxi(method, path, body)   the toxiproxy API
  *     keypair(svc, name) -> pubkey      ~/.ssh/NAME (ed25519) for the joiner user
  *     sshConfig(svc, name, hosts)       ~/.ssh/NAME.conf: one Host block per entry, then the shared defaults
- *     invite(code, {svc, dest}) / authorize(invite, pub, {svc}) on a devbox; trustOnBastion(pub)   (the sh1 path: a
- *                       0.2.0 end. devbox-old's own CLI; on the current devbox the plugin's lib through seat-cli, since
- *                       no command mints one any more)
+ *     trustOnBastion(pub)   the joiner's key on the bastion (a jump host's account)
+ *     restrict(code, linkId, pub, {svc})   the one-link forced-command line a host's admit writes, appended to the
+ *                       devbox account's authorized_keys (what a key let in for one other connection looks like)
  *     hostInvite(hostSeat, name, {dest, via}) -> {line, pin, text}   `/sub-human invite --ssh DEST [--via JUMP]`
  *     join(opts) -> Promise<{seat, name, invite, pin, linkId, conf, join, pub}>   a joiner over one ssh path: invite
  *                       --ssh on the host's seat, the line typed on the joiner (`/sub-human join DEST ROOM PIN [--via J]
  *                       --as NAME`: the PAKE through the enrollment door, the link's own key), the host's card (Let in),
- *                       the link online, then a bare `/sub-human` (the seat). sh1 (opts.sh1, or a 0.2.0 host):
- *                       joinOver: invite + authorize + the joiner's sh1 join (a 0.2.0 joiner's `/sub-human join NAME
- *                       INVITE`, else the link file it makes and `/sub-human NAME CODE`)
+ *                       the link online, then a bare `/sub-human` (the seat). The same on devbox-old (beta.15 has the
+ *                       PIN join): either end may be the previous release. A plugin without the PIN join (shortCode
+ *                       false) has no other way in any more: the join returns {pending: why}
  *     features             {hostSsh, revoke, heartbeat, outbox, autoRejoin, handoff, doctor, ws, urlPin,
  *                          versionRange, loginJoin, shortCode}: what the plugin in /plugin can do (seat-cli.js probe), overridable with
  *                          LAB_FEATURES=outbox=1,ws=0
@@ -46,7 +46,8 @@ const DIR = __dirname;
 const LAB = path.join(DIR, 'lab');
 const COMPOSE = path.join(LAB, 'compose.yml');
 const REPO = path.resolve(DIR, '..', '..');
-const OLD_REF = process.env.LAB_OLD_REF || 'cb4d344';
+// the previous release, for the 0.5 <-> 0.5 skew scenario: 0.5.0-beta.15 (master's release commit)
+const OLD_REF = process.env.LAB_OLD_REF || '7c97bdb';
 const OLD_IMAGE = `sub-human-lab-old:${OLD_REF}`;
 const PROJECT = process.env.LAB_PROJECT || 'sub-human-lab';
 const USERS = { devbox: 'host', 'devbox-old': 'host', 'joiner-a': 'joiner', 'joiner-b': 'joiner' };
@@ -105,10 +106,8 @@ class Lab {
     return {
       svc, user, home: subHome, cli,
       host: name => run('host', name),
-      join: (name, invite, ...opts) => run('join', name, invite, ...opts),
-      linkinvite: (name, invite, ...opts) => run('linkinvite', name, invite, ...opts),
-      sh1: (code, dest) => run('sh1', code, dest),
-      authorize: (invite, pub, file) => run('authorize', invite, pub, ...(file ? [file] : [])),
+      restrict: (code, linkId, pub, file) => run('restrict', code, linkId, pub, ...(file ? [file] : [])),
+      options: (code, name, value) => run('options', code, name, value),
       login: (name, dest, code, ...opts) => run('login', name, dest, code, ...opts),
       rejoin: (name, code) => run('rejoin', name, code),
       say: (name, text) => run('say', name, text),
@@ -138,7 +137,7 @@ class Lab {
 
   async untoxic(proxy, name) { try { await this.toxi('DELETE', `/proxies/${proxy}/toxics/${name}`); } catch { /* none */ } }
 
-  /** The 0.2.0 image, from `git archive OLD_REF plugin/sub-human` (built once per ref; the tag is the cache). */
+  /** The previous release's image (0.5.0-beta.15), from `git archive OLD_REF plugin/sub-human` (built once per ref; the tag is the cache). */
   buildOld({ force = false } = {}) {
     if (!force && sh('docker', ['image', 'inspect', OLD_IMAGE], { allowFail: true }).status === 0) return false;
     const ctx = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-lab-old-'));
@@ -217,19 +216,8 @@ class Lab {
     return file;
   }
 
-  invite(code, { svc = 'devbox', dest = 'host@devbox' } = {}) {
-    if (svc !== 'devbox-old') return this.seat(svc).sh1(code, dest).invite; // no command mints an sh1 invite any more
-    const r = this.seat(svc).cli(['invite', '--room', code, '--ssh', dest]);
-    if (r.status !== 0) throw new Error(`invite on ${svc}: ${r.stderr}`);
-    return r.stdout.trim();
-  }
-
-  authorize(invite, pub, { svc = 'devbox' } = {}) {
-    if (svc !== 'devbox-old') return this.seat(svc).authorize(invite, pub, '/home/host/.ssh/authorized_keys');
-    const r = this.seat(svc).cli(['authorize', invite, '-', '--file', '/home/host/.ssh/authorized_keys'], { input: pub + '\n' });
-    if (r.status !== 0) throw new Error(`authorize on ${svc}: ${r.stderr}`);
-    const m = /link ([0-9a-f]{12})/.exec(r.stderr + r.stdout);
-    return { linkId: m && m[1], out: (r.stderr + r.stdout).trim() };
+  restrict(code, linkId, pub, { svc = 'devbox' } = {}) {
+    return this.seat(svc).restrict(code, linkId, pub, '/home/host/.ssh/authorized_keys');
   }
 
   trustOnBastion(pub) {
@@ -244,22 +232,6 @@ class Lab {
     return { code: h.code, host, hostName: name, machine: h.machine };
   }
 
-  /**
-   * A joiner over one ssh path: its own key, config (hosts) and invite; authorized on the devbox (and on the bastion
-   * when via is 'bastion'; hostSvc/dest for devbox-old; user for a joiner on a devbox image). Returns {seat, name, invite, linkId, conf}.
-   */
-  joinOver({ svc, name, code, hosts, via, home, user = USERS[svc], hostSvc = 'devbox', dest = 'host@devbox', key = `id_${name}` }) {
-    const pub = this.keypair(svc, key, user);
-    const conf = this.sshConfig(svc, name, key, hosts, user);
-    if (via === 'bastion') this.trustOnBastion(pub);
-    const invite = this.invite(code, { svc: hostSvc, dest });
-    const { linkId } = this.authorize(invite, pub, { svc: hostSvc });
-    const seat = this.seat(svc, { user, ...(home ? { home } : {}) });
-    // a 0.2.0 joiner types the sh1 invite; the current plugin takes none, so the link file it would make, then the seat
-    const j = svc === 'devbox-old' ? seat.join(name, invite, '-F', conf) : seat.linkinvite(name, invite, '-F', conf);
-    return { seat, name, invite, linkId, conf, join: j, pub };
-  }
-
   /** `/sub-human invite --ssh DEST [--via JUMP]` in NAME's session on hostSeat: the line (no "/sub-human ") and its PIN. */
   hostInvite(hostSeat, name, { dest = 'host@devbox', via } = {}) {
     const r = hostSeat.expand(name, `invite --ssh ${dest}${via ? ` --via ${via}` : ''}`);
@@ -271,7 +243,8 @@ class Lab {
 
   async join(opts) {
     const { svc, name, code, hosts, via, viaFlag, home, host, hostName = 'alice', user = USERS[svc], hostSvc = 'devbox', dest = 'host@devbox', key = `id_${name}`, ms = 30_000 } = opts;
-    if (opts.sh1 || !this.features.shortCode || hostSvc !== 'devbox') return this.joinOver(opts);
+    const can = hostSvc === 'devbox' ? this.features.shortCode : features(this.oldProbe).shortCode;
+    if (!can) return { pending: `the plugin on ${hostSvc} has no PIN join, and the lab joins no other way (sh1 invites are gone)`, join: { ok: false } };
     const t0 = Date.now();
     const pub = this.keypair(svc, key, user);
     const conf = this.sshConfig(svc, name, key, hosts, user);
@@ -334,7 +307,7 @@ class Evidence {
     this.metrics = {};
   }
   secret(s, min = 8) { if (s && String(s).length >= min) this.secrets.add(String(s)); }
-  /** An invite's secret (sh1/sh2) and its PIN (only where it stands as the PIN: never a bare 4-digit number). */
+  /** An invite's secret (sh2) and its PIN (only where it stands as the PIN: never a bare 4-digit number). */
   invite(inv, pin) {
     if (inv) this.secret(String(inv).split('.')[3]);
     if (pin) this.pins = [...(this.pins || []), String(pin)];

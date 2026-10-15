@@ -71,6 +71,7 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   fs.mkdirSync(st, { recursive: true });
   fs.copyFileSync(path.join(remote.home, 'rooms', code, 'log.jsonl'), path.join(st, 'mirror-log.jsonl'));
   fs.copyFileSync(path.join(remote.home, 'machine.json'), path.join(st, 'machine-carol.json'));
+  fs.copyFileSync(path.join(remote.home, 'machines.json'), path.join(st, 'machines-carol.json'));
   fs.copyFileSync(path.join(host.home, 'machine.json'), path.join(st, 'machine-host.json'));
   const linkFile = path.join(remote.home, 'links', `${code}.json`);
   const shape = l => ({ mode: (fs.statSync(linkFile).mode & 0o777).toString(8), token: typeof l.token === 'string', invite: 'invite' in l, transport: l.transport });
