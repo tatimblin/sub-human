@@ -26,3 +26,4 @@ Roughly in the order it was written:
 - [REVIEW-PLAN.md](REVIEW-PLAN.md): the follow-up to the three-way review of the mods build (R0–R5: spikes, bugs, structure, dead code, comments and docs, hotspots and a short live run; done 2026-10-07).
 - [REMOTE-PLAN.md](REMOTE-PLAN.md): remote rooms, a room hosted on one machine and joined from others (PR1–PR6: keys in the log and sig v2, machine ids and host gates, the bridge, the protocol and server, the mirror and link daemon, docs and demo S11; done 2026-10-07 over the pipe transport, SSH next).
 - [TYPESCRIPT.md](TYPESCRIPT.md): the move of the runtime to TypeScript with no build step (A codemod, B six typed slices, C integration; 4079 → 0 strict errors; done 2026-10-10, 0.5.0-beta.8).
+- [short-invites.md](short-invites.md): the 4-digit PIN over CPace with the ssh enrollment door (0.5.0-beta.4 to beta.15); superseded in Stage 7b by the invite line (a 128-bit SECRET and a PIN checked online).

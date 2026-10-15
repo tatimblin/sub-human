@@ -1,5 +1,10 @@
 # Invites: a 4-digit PIN over CPace, and the host's card
 
+**Superseded in Stage 7b (after 0.5.0-beta.15).** The invite is now a pasted line with a 128-bit single-use SECRET and a
+tag of the host's key, and the PIN a second factor checked online; CPace, the vendored `@noble/curves`, the ssh
+enrollment door, per-link ssh keys and the plugin's known_hosts are deleted. Current design: `docs/ARCHITECTURE.md`
+(Joining; The PIN, the card and the key binding) and the README's threat model. Kept for the reasoning.
+
 Shipped in 0.5.0-beta.4 (a 6-digit code); since 0.5.0-beta.6 the only invite, with a 4-digit PIN and no name in the line. User-facing text: `plugin/sub-human/README.md` (Inviting, Joining, Threat model).
 
 ```

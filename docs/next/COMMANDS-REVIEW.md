@@ -6,6 +6,12 @@ git's `user.name` (else the email's local part, else `$USER`); `host`/`revoke`/`
 outright (no hidden aliases). The message style (rules 1 to 5 below) shipped in 0.5.0-beta.7: `/sub-human` answers in place
 of the command (command.run), so nothing reads "blocked by hook" (`docs/internals/cc-2.1.292.md`, "Command replies").
 
+**Reversed in Stage 7b (after 0.5.0-beta.15): the PIN is no longer the whole secret.** An invite is now a pasted line
+whose last word is a 128-bit single-use SECRET with a tag of the host's key, and the 4-digit PIN is told apart and checked
+online only (5 tries, throttled per invite and per source machine). The PIN-only invite needed CPace (a vendored curve
+library) and an ssh enrollment door in `authorized_keys`; both are gone. See CHANGELOG "Unreleased" and
+`docs/archive/short-invites.md`.
+
 Sources: four read-only reviews on 2026-10-10:
 - a newcomer walking through three setups;
 - the full command grammar;

@@ -52,14 +52,17 @@ Otherwise, have the host make an invite:
 /sub-human invite
 ```
 
-That prints a line with a 4-digit PIN. Send it to the other person and they paste it:
+That prints a line, and a 4-digit PIN to tell the other person apart from it (say it, or send it another way). They
+paste the line, then type the PIN when their machine asks:
 
 ```
-/sub-human join me@devbox vole-8126 4829
+/sub-human join me@devbox vole-8126 4f9k2m8q7r3t6v1w0x5y9z2a8b7c6d5e4f3g2h1
+/sub-human join 4829
 ```
 
 The host gets a prompt to let them in, and then they run `/sub-human` to take their seat. The invite works once, for
-15 minutes. Use `--web` or `--public` to invite over Tailscale instead of ssh.
+15 minutes. Over ssh it needs their own ssh login to your account; use `--web` or `--public` to invite over Tailscale
+instead.
 
 ## Other commands
 
