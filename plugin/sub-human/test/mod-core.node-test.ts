@@ -617,7 +617,7 @@ test('seat: the home and the session index the module checks without node are li
 test('prompt: an @room in a session surely without a seat is refused in at-room\'s words, without node', async () => {
   const p = await load('mod/core/prompt.ts');
   const unseated = { sid: 's1', seat: null } as Hello;
-  assert.deepEqual(p.unseatedRefusal({ session_id: 's1', prompt: '@room hi' }, unseated), { block: p.NOT_IN_ROOM, suppressOriginalPrompt: true });
+  assert.deepEqual(p.unseatedRefusal({ session_id: 's1', prompt: '@room hi' }, unseated), { preventContinuation: true, stopReason: p.NOT_IN_ROOM }, 'a stop: no "blocked by hook" frame, nothing put back in the input');
   assert.equal(p.unseatedRefusal({ session_id: 's1', prompt: '@claude hi' }, unseated), null, 'outside a room @claude is a prompt');
   assert.equal(p.unseatedRefusal({ session_id: 's2', prompt: '@room hi' }, unseated), null, 'not this session\'s hello: node decides');
   assert.equal(p.unseatedRefusal({ session_id: 's1', prompt: '@room hi' }, { sid: 's1', seat: { name: 'a', code: 'otter-4821', role: 'member', addr: 'a.otter-4821' } } as Hello), null);

@@ -65,7 +65,7 @@ test('an unseated session starts no node for a prompt: an @room there is refused
   await submit($, '@room hi')
   await submit($, '@claude hi') // outside a room an ordinary prompt
   expect(seen.scripts).toEqual(['mod-hello.ts'])
-  expect(seen.classic.at(-2)).toEqual({ block: "✗ not posted: this session isn't in a room. Join one first: /sub-human", suppressOriginalPrompt: true })
+  expect(seen.classic.at(-2)).toEqual({ preventContinuation: true, stopReason: "✗ not posted: this session isn't in a room. Join one first: /sub-human" })
   expect(seen.classic.at(-1).block).toBeUndefined()
 })
 

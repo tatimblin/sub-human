@@ -89,13 +89,14 @@ test('prompt: an open review in plan mode adds consent\'s exit line to at-room\'
   assert.doesNotMatch(ctx(q) || '', /ExitPlanMode/);
 });
 
-test('prompt: outside a room only the report is written; an @room there is refused (at-room\'s block)', () => {
+test('prompt: outside a room only the report is written; an @room there is refused (at-room\'s stop)', () => {
   const w = new World({}, { room: false });
   const r = w.hook('prompt', ev({ prompt: 'hello' }), { env: { CLAUDE_PID: undefined }, session: false });
   assert.deepEqual(r.json, { subHuman: { reviewOpen: false } });
   assert.equal(w.entries().length, 0);
   assert.equal(r.code, 0);
   const b = w.hook('prompt', ev({ prompt: '@room hi' }), { env: { CLAUDE_PID: undefined }, session: false });
-  assert.equal(b.json!.decision, 'block');
-  assert.match(b.json!.reason!, /isn't in a room/);
+  assert.equal(b.json!.decision, undefined);
+  assert.equal(b.json!.continue, false);
+  assert.match(b.json!.stopReason!, /isn't in a room/);
 });

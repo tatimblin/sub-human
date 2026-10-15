@@ -107,3 +107,15 @@ test('prompt: roomClaudeCommand refuses a command a person types into the room\'
   assert.equal(roomClaudeCommand('clear', { kind: 'sdk' }, 'otter-4821'), null, 'the launcher, not a person');
   assert.equal(roomClaudeCommand('clear', { kind: 'composer' }, undefined), null, 'a member\'s session');
 });
+
+test('prompt: a paste that starts the prompt is unwrapped before the tag is read (live: a pasted "@room …" went to the model)', async () => {
+  const { parse, parseClaude, isAtRoom, unwrapLead } = await load();
+  const pasted = '\n\n<pasted_content id="1">\n@room the long notes\nline two\n</pasted_content id="1">\n';
+  assert.equal(isAtRoom(pasted), true);
+  assert.equal(parse(pasted), 'the long notes\nline two');
+  assert.equal(parse(`${pasted}and after`), 'the long notes\nline twoand after', 'the text after the paste follows its body');
+  assert.equal(parseClaude('<pasted_content id="2">\n@claude plan it\n</pasted_content id="2">'), 'plan it');
+  assert.equal(parse('<pasted_content id="1">\nnot a tag @room\n</pasted_content id="1">'), null);
+  assert.equal(parse('hello <pasted_content id="1">\n@room x\n</pasted_content id="1">'), null, 'a paste later in the prompt is just words');
+  assert.deepEqual(unwrapLead('@room plain'), { text: '@room plain', unwrapped: false });
+});

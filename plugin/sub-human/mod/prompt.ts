@@ -183,8 +183,10 @@ export function registerPrompt(on: On) {
     }
     const refused = unseatedRefusal(e, hello); // an @room with surely no seat: at-room's words, no node
     if (refused) {
-      if (origins.take(e.prompt) === 'bridge') relay(refused.block);
-      return mergeClassic({ ...refused, ...top }, await next(e));
+      if (origins.take(e.prompt) === 'bridge') relay(refused.stopReason);
+      const merged = mergeClassic({ ...refused, ...top }, await next(e));
+      if (!merged.block) receipts.expect(merged.stopReason); // its warning row is the refusal alone, no frame
+      return merged;
     }
     if (!needsNode(e, hello, { delivering: delivering(e.session_id), reviewFlag })) return mergeClassic(top, await next(e));
     const ours = await runPrompt($, e, origins.take(e.prompt), hello);
