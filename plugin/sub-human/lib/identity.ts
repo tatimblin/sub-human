@@ -121,7 +121,7 @@ import { NAME_RE, CODE_RE, SID_SAFE as SID_RE } from './text.ts';
 import { sidIndex } from '../mod/core/seat.ts';
 import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS, SESSION_INDEX_TTL_MS } from './config.ts';
 import {
-  seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE,
+  seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE, LOG_V,
 } from './room/members.ts';
 import * as cc from './cc/env.ts';
 import type { JoinResult, Member, Members, MembersApi, PresenceState, Role, SeatRecord } from './room/types.ts';
@@ -167,6 +167,8 @@ interface JoinRequest {
   pid?: number | string | null;
   session_id?: string | null;
   cwd?: string | null;
+  /** what log a remote seat's code reads, as its join said (lib/remote/server.ts join; a local seat's is this code's) */
+  log_v?: number;
 }
 
 /** The room's Claude's record as updateRoomClaude patches it: undefined deletes a field. */
@@ -275,7 +277,7 @@ function localSeat({ name, role, machine, pid, session_id, cwd }: { name: string
   return { name, role, machine, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null };
 }
 
-function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd }: JoinRequest = {} as JoinRequest): JoinResult {
+function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd, log_v }: JoinRequest = {} as JoinRequest): JoinResult {
   if (!roomExists(code)) return fail(`no room "${code}"`);
   if (typeof name !== 'string' || !NAME_RE.test(name)) return fail(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
   if (!ROLES.includes(role)) return fail(`invalid role "${role}"`);
@@ -287,7 +289,10 @@ function join({ code, name, role, machine = machineIn(code), account, pid: pidAr
   if (session_id != null && (typeof session_id !== 'string' || !SID_RE.test(session_id))) return fail('invalid session_id');
 
   const seatRole = role as Role; // one of ROLES
-  const rec: SeatRecord = { ...(local ? localSeat({ name, role: seatRole, machine, pid, session_id, cwd }) : { name, role: seatRole, machine }), ...(account ? { account } : {}) };
+  // log_v: what this code reads (a seat of this machine), or what a remote seat's join said (lib/room/members.ts
+  // holdsRotation: a seat without it holds the log's rotation on its machine)
+  const reads = local ? LOG_V : typeof log_v === 'number' && Number.isInteger(log_v) && log_v > 0 && log_v < 100 ? log_v : undefined;
+  const rec: SeatRecord = { ...(local ? localSeat({ name, role: seatRole, machine, pid, session_id, cwd }) : { name, role: seatRole, machine }), ...(account ? { account } : {}), ...(reads ? { log_v: reads } : {}) };
   const r = membersOf(code).join(rec);
   if (r.ok) store.indexRoom(code); // it may be open from here on (lib/room/registry.ts)
   if (r.ok && local) {

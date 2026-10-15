@@ -6,6 +6,8 @@ Each release names the Claude Code versions it was tested on. Marketplace instal
 
 Hardening from the October 2026 review (branch `fix/stage0-hardening`).
 
+**Restart every session after you update.** This release keeps a room's log in segments. A session, a room's Claude or a `serve` still running 0.5.0-beta.15 or before reads a split log as broken (a few lines, then "hash chain breaks"). A log does not split while a seat or room Claude of an older version may still run on its machine: the room says so once ("this room's log is large and waits to split…"), and it splits after those sessions restart (`/exit`, then `claude`).
+
 ### Security
 - **An admitted machine joins as the one name on the host's card.** The link a Let in makes was not bound to that name: it could take any name no live seat held, and as many seats as it liked (each a member_joined the room's Claude answers). A bound link (an admission's name, a handoff's or promote's pre-bound seats) now joins only those names; another is `AUTH` before a seat is taken.
 - **A link's posts are bounded on the host.** A person's own posts over a link are limited to 30 a minute per seat (typing never meets it), new plans too, and a connection holds one subscribe stream (a second replaces the first); stage 7 turns these into one quota per op.

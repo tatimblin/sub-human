@@ -309,7 +309,7 @@ const OPS: OpHandlers = {
     return out;
   },
 
-  join(s, { name, role = 'member', pubkey, proof }) {
+  join(s, { name, role = 'member', pubkey, proof, log_v }) {
     if (role !== 'member') throw invalid('a link joins members only');
     if (!envelope.parseKey(pubkey)) throw invalid('join needs the seat\'s public key (Ed25519 SPKI PEM)');
     hostLinks.checkSeatProof(proof, { room: s.store.code, name, pubkey });
@@ -318,7 +318,7 @@ const OPS: OpHandlers = {
     if (!hostLinks.mayJoinAs(s.link, name)) throw authError(hostLinks.notBound(s.link!, name), 'NOT_BOUND');
     // a login link's seat is the host person's own (one person with the host's seats) only where the room says so
     const account = s.link!.login && options.loginSamePerson(s.store) ? machineIn(s.store.code) ?? undefined : undefined;
-    const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey, ...(account ? { account } : {}) });
+    const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey, ...(account ? { account } : {}), ...(typeof log_v === 'number' ? { log_v } : {}) });
     if (!r.ok) throw new RoomError(r.code || 'INVALID', r.error);
     s.link = hostLinks.bindSeat(s.store, s.link!.id, name);
     return r.rejoin ? { ok: true, rejoin: true } : { ok: true };

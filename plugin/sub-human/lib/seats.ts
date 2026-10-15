@@ -76,6 +76,8 @@ interface EnterOpts {
   session_id?: string | null;
   cwd?: string | null;
   pubkey?: string;
+  /** what log a remote seat's code reads, as its join said (lib/remote/server.ts) */
+  log_v?: number;
 }
 /** identity.join's answer; note: what the join line adds (the room's Claude starting, or why it could not). */
 type EnterResult = JoinResult & { note?: string };
@@ -103,12 +105,12 @@ function ensureRoomClaude(code: string, cwd: string | null | undefined, by: stri
   return ` · starting the room's Claude…${failed}`;
 }
 
-function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey }: EnterOpts): EnterResult {
+function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey, log_v }: EnterOpts): EnterResult {
   // the seat's earlier record ended with no leave: its "left" line goes before this join's "rejoined"
   if (identity.isHost(code)) sweep(code, { name });
   // a seat on the host is the host account's (elsewhere the host's server decides: a mirror's join sends no account)
   if (account === undefined && machine && machine === identity.machineIn(code) && identity.isHost(code)) account = machine;
-  const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd });
+  const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd, log_v });
   if (!r.ok) return r;
   if (!identity.isHost(code)) return { ...r, note: '' };
   keepWorkdir(code, cwd);

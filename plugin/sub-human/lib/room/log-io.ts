@@ -45,9 +45,10 @@
  *   verifyChain(dir, {fromOffset, prev}?)   incremental over the active segment from this process's own checkpoint
  *       (in memory; the snapshot vouches for the sealed lines: a segment is sealed only once it chains)
  * Writing:
- *   appendLocked(dir, place) -> Entry   under the log lock: read only the log's tail (newest first, then the
- *       snapshot's window), place({newest, prevLine}) -> {e, line}, write the line, then rotate when due
- *   appendVerbatim(dir, line)           a line as another machine stored it (the mirror's one writer); rotates too
+ *   appendLocked(dir, place, mayRotate?) -> Entry   under the log lock: read only the log's tail (newest first, then
+ *       the snapshot's window), place({newest, prevLine}) -> {e, line}, write the line, then rotate when due and
+ *       mayRotate() (fs-store.ts: no live seat of this machine runs code that reads only one log.jsonl) agrees
+ *   appendVerbatim(dir, line, mayRotate?)   a line as another machine stored it (the mirror's one writer); rotates too
  *   rotate(dir) -> bool                 seal the active segment now (false: nothing to seal, or it does not chain)
  *   install(dir, wire)                  a mirror's start from its host's snapshot: snapshot.json and a log.jsonl
  *                                       holding only the snapshot's line (RoomError PROTOCOL when a log is there)
@@ -778,7 +779,10 @@ function settle(dir: string): LogSnapshot | null {
   return snap;
 }
 
-function appendLocked(dir: string, place: (tail: { newest: Iterable<Entry>; prevLine: string }) => { e: Entry; line: string }): Entry {
+/** Whether a due rotation may run now (fs-store.ts rotationOk); called under the log lock, only when it is due. */
+type MayRotate = () => boolean;
+
+function appendLocked(dir: string, place: (tail: { newest: Iterable<Entry>; prevLine: string }) => { e: Entry; line: string }, mayRotate: MayRotate = () => true): Entry {
   const act = activeFile(dir);
   return withLock(act + '.lock', () => {
     const snap = settle(dir);
@@ -794,19 +798,19 @@ function appendLocked(dir: string, place: (tail: { newest: Iterable<Entry>; prev
       e = r.e;
       end = size + Buffer.byteLength(text);
     } finally { fs.closeSync(fd); }
-    if (end >= segmentMaxBytes()) { try { rotate(dir, true); } catch { /* sealed at the next append instead */ } }
+    if (end >= segmentMaxBytes() && mayRotate()) { try { rotate(dir, true); } catch { /* sealed at the next append instead */ } }
     return e;
   }, { ErrorClass: LockError });
 }
 
-function appendVerbatim(dir: string, line: string): void {
+function appendVerbatim(dir: string, line: string, mayRotate: MayRotate = () => true): void {
   const act = activeFile(dir);
   withLock(act + '.lock', () => {
     settle(dir);
     fs.appendFileSync(act, line + '\n', { mode: 0o600 });
     let size = 0;
     try { size = fs.statSync(act).size; } catch { /* gone */ }
-    if (size >= segmentMaxBytes()) { try { rotate(dir, true); } catch { /* the next line tries again */ } }
+    if (size >= segmentMaxBytes() && mayRotate()) { try { rotate(dir, true); } catch { /* the next line tries again */ } }
   }, { ErrorClass: LockError });
 }
 
