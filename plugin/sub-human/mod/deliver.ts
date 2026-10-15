@@ -348,6 +348,15 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
   }
 }
 
+/** An invite's line and PIN on this plugin's status line, under the prompt (Claude Code saves it in no transcript, as it
+ * does a notice), until the invite's life is over; a newer one replaces it. */
+let pinnedAt = 0;
+function pinStatus($: EngineInterface, { status, ms }: { status: string; ms: number }): void {
+  const mine = ++pinnedAt;
+  $.ui.status(status);
+  try { $.clock.after(ms, () => { if (mine === pinnedAt) $.ui.status(undefined); }); } catch { /* it stays until the next one replaces it */ }
+}
+
 export function registerDeliver(on: On) {
   on('session.start', async ($, e, next) => {
     try {
@@ -384,8 +393,9 @@ export function registerDeliver(on: On) {
         return r;
       } finally { joined = null; }
     }
-    const { result, logs } = answerOf(reply, { bridge: e.origin.kind === 'bridge' });
+    const { result, logs, status } = answerOf(reply, { bridge: e.origin.kind === 'bridge' });
     for (const line of logs) $.ui.log(line);
+    if (status) pinStatus($, status);
     try { await refresh($, sid); } catch { /* the next refresh tries again */ }
     try { if (spawnWanted(asHello((await $.state.get(HELLO)).value))) ensureChild($, sid); } catch { /* next start tries again */ }
     return result;

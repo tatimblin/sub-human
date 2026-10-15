@@ -49,6 +49,9 @@ export interface SubHumanReport {
   shareable?: boolean;
   joined?: boolean;
   reviewOpen?: boolean;
+  /** an invite's line and PIN for the module's status line (never saved in the transcript) and how long it stays;
+   * say then holds the text without them */
+  pinned?: { status: string; ms: number };
 }
 
 /** One JSON output line of a command hook. */
@@ -78,7 +81,7 @@ export interface HookOutput {
 export type Reply =
   | { kind: 'say'; text: string; module: boolean }
   | { kind: 'refused'; text: string; module: boolean }
-  | { kind: 'secret'; text: string; module: boolean; refused?: boolean }
+  | { kind: 'secret'; text: string; module: boolean; refused?: boolean; pinned?: { status: string; text: string; ms: number } }
   | { kind: 'joined'; context: string; say: string; warn?: string | null; module: boolean }
   | { kind: 'classic'; outputs?: object[]; exit?: number; stderr?: string };
 

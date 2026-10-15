@@ -111,11 +111,14 @@ function hostWeb(code: string, { tailscale = false, funnel = false, url, port, b
   const secret: typeof import('./invite-secret.ts') = require('./invite-secret.ts');
   const word = secret.encode(r.secret, secret.tagOf(r.secret, 'listener', hostKey));
   const line = `/sub-human join ${joinBase} ${word}`;
-  const text = (require('./hosting.ts') as typeof import('./hosting.ts')).inviteText({
+  const hosting: typeof import('./hosting.ts') = require('./hosting.ts');
+  const parts = {
     code, how: `over the web through ${how} to this machine's listener on 127.0.0.1:${lport}`, line, pin: r.pin, ref: r.ref,
     extra: [`Their machine checks this one's key (${hostKey.slice(0, 12)}…, named in the line) before it sends anything, so nothing in between can read along.`, ...notes],
-  });
-  return { pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, line, word, locator, hostKey, base: joinBase, mode, port: lport, text };
+  };
+  const text = hosting.inviteText(parts);
+  const pinned = hosting.invitePinned({ ...parts, expires_at: r.expires_at });
+  return { pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, line, word, locator, hostKey, base: joinBase, mode, port: lport, text, pinned };
 }
 
 function unhost(code: string): { removed: boolean; text: string } {

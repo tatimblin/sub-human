@@ -81,7 +81,7 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
   assert.match(out.json!.reason!, /tell them its PIN apart from the line \(say it, or send it another way\): \d{4}\n/);
   assert.ok(!new RegExp(`join \\S+ \\S+ ${word}[^\\n]*${pin}`).test(out.json!.reason!), 'the PIN is not on the line');
   assert.match(out.json!.reason!, /a card here asks you to let them in/);
-  assert.match(out.json!.reason!, /newer than 0\.5\.0-beta\.15/);
+  assert.match(out.json!.reason!, /They need sub-human \S+ or newer/);
 
   stopDaemon(t, remote, code);
   const typed = await typeLine(remote, bob, code, m.line, 'bob');

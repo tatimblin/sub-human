@@ -59,7 +59,7 @@ function toReply(a: Answer, input: JoinIn, module: boolean): Reply {
       const warn = bypass || TROUBLE.test(a.say) ? `sub-human: ${a.say}${bypass}` : null;
       return { kind: 'joined', context: contextBlock(a.me, a.lead), say: module ? `${a.say}${bypass}` : a.say, warn, module };
     }
-    case 'secret': return { kind: 'secret', text: a.text, refused: a.refused === true, module };
+    case 'secret': return { kind: 'secret', text: a.text, refused: a.refused === true, module, ...(a.pinned ? { pinned: a.pinned } : {}) };
     default: return { kind: a.kind, text: a.text, module };
   }
 }
