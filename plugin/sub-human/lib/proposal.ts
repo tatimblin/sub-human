@@ -9,15 +9,17 @@
  *   decision  via=system, from "room", {proposal_hash, refs: the answer ids, text "agreed: …" | "objected: …"}
  *             written once, when every approver has answered.
  *
- *   create(me, {text|path, approvers?}) -> {hash, approvers, path, entry, again}
+ *   create(me, {text|path, approvers?}) -> {hash, approvers, path, entry, again, retired}
  *       Stores the blob plans/<hash>.md (hash = sha256/12 of the bytes; lib/room/store.ts blobs) and appends
  *       `proposal` with path = that room-relative ref (older entries hold an absolute path). approvers
  *       default to the humans present (not room Claude, not left). An identical open proposal is not re-appended.
+ *       retired: the hashes of my undecided proposals with the same title that this one supersedes (the fold
+ *       retires them, lib/room/consent.ts: no longer pending, answers on them do not carry over).
  *       Throws ProposalError (message for the model) on bad input.
  *   Reading the log goes through lib/room/consent.ts fold (latest proposal per hash, the
  *   latest answer per person, an objection voids a signoff), the same fold stateLine, lane() and the rows read.
  *   proposals(entries) -> [p]      the latest proposal entry per hash, as {id, hash, approvers, path, from}
- *   pendingFor(me, entries?) -> [p] proposals naming me that I have not answered, undecided
+ *   pendingFor(me, entries?) -> [p] proposals naming me that I have not answered, undecided, not superseded
  *   card(p, code) -> {questions:[…]}     the AskUserQuestion input (Not yet first, Agree, Object)
  *   cardFor(ps, code) -> {questions:[…]} one question per proposal (at most 4)
  *   question(hash) -> "Agree to proposal <hash>?";  QUESTION_RE parses it back
@@ -26,22 +28,23 @@
  *   matrix(p, entries) -> {hash, approvers, answers:{name: {id, kind}|null}, agreed, objected, missing, complete, …}
  *   answer(me, p, {choice:'Agree'|'Object', notes?}) -> {entry}|{stale:true, why}
  *       under the proposal lock: appends the person's answer (signed, so any machine may write it). Idempotent:
- *       a person who already answered that hash (or a decided / unknown one) is stale; one answer per person.
+ *       a person who already answered that hash (or a decided / superseded / unknown one) is stale; one answer per person.
  *   decide(code, hash) -> Entry|null
  *       host only (identity.isHost; null elsewhere): under the proposal lock, appends the decision once every
- *       approver has answered. Idempotent: a decided, unknown or incomplete proposal appends nothing (null). The
+ *       approver has answered. Idempotent: a decided, superseded, unknown or incomplete proposal appends nothing (null). The
  *       consent hook calls it after each answer; the remote server will after placing one.
  *   title(code, hash, entry?) -> string  the stored plan's first line (else the entry's title text, else '')
  *   decision(hash, entries) -> Entry|null
  *   humans(code) -> [name]         members present who can approve
  *   viewable(p, code) -> bool      the plan dialog can show it: stored, <= VIEW_MAX chars, no control or bidi
  *                                  characters (the dialog withholds approval for those); else the card
- *   reminder(p, name) -> string    the re-ask wording (a review closed without an answer is fine to reopen)
+ *   reminder(p, name, {code, others}?) -> string   the re-ask wording (a review closed without an answer is fine to
+ *                                  reopen); others: the other pending proposals, listed as h6 "title"
  *   namedIn(ps, prompt, code) -> p|null   the pending proposal a person's words name (hash, else distinctive title / text words)
  *   proposeIntent(prompt) -> bool  the person's words ask their Claude to propose something ("propose to alice: …"):
  *                                  no review opens on such a prompt (hooks/consent.ts Pre(EnterPlanMode))
- *   choose(me, ps, prompt) -> p    store that pick (members/NAME/pick) and return it, else the oldest (hooks/consent.ts)
- *   picked(me, ps) -> p            Pre(EnterPlanMode): the stored pick when still among ps, else the oldest
+ *   choose(me, ps, prompt) -> p    store that pick (members/NAME/pick) and return it, else the newest (hooks/consent.ts)
+ *   picked(me, ps) -> p            Pre(EnterPlanMode): the stored pick when still among ps, else the newest
  *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
  * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
@@ -220,7 +223,7 @@ const proposeIntent = (prompt: string | null | undefined): boolean => PROPOSE_RE
 
 /**
  * members/NAME/pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/consent.ts reads it from
- * the transcript at Pre(EnterPlanMode), or a card call named). A review opens that one while pending, else the oldest.
+ * the transcript at Pre(EnterPlanMode), or a card call named). A review opens that one while pending, else the newest.
  */
 const pickKey = (me: Me) => `members/${me.name}/pick`;
 const readPick = (me: Me): { hash: string | null, at: number } | null => { try { return kvOf(me).get(pickKey(me), null); } catch { return null; } };
@@ -229,17 +232,27 @@ function choose(me: Me, ps: Proposal[], prompt: string | null | undefined): Prop
   if (prompt == null) return picked(me, ps);
   const hit = namedIn(ps, prompt, me.code);
   kvOf(me).set(pickKey(me), { hash: hit ? hit.hash : null, at: Date.now() }, { compact: true });
-  return hit || ps[0] || null;
+  return hit || ps.at(-1) || null;
 }
-/** The proposal a review opens among ps (pending, oldest first): the person's pick when it is one of them, else the oldest. */
+/** The proposal a review opens among ps (pending, oldest first): the person's pick when it is one of them, else the newest. */
 function picked(me: Me, ps: Proposal[]): Proposal | null {
   const pk = readPick(me);
-  return (pk && pk.hash && ps.find(p => p.hash === pk.hash)) || ps[0] || null;
+  return (pk && pk.hash && ps.find(p => p.hash === pk.hash)) || ps.at(-1) || null;
 }
 
 /** How the model opens proposal hash for its person: the plan view (the hooks fall back to the card). */
 const openCall = (hash: string) => `call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`;
-const reminder = (p: Pick<Proposal, 'hash'>, name: string) => `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}, unless ${name} asked you to propose something: then do that, and this waits.`;
+/** A proposal as a list item: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room to read it from). */
+function listed(code: string | undefined, p: Pick<Proposal, 'hash' | 'entry'>): string {
+  const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';
+  return t ? `${p.hash.slice(0, 6)} "${t}"` : p.hash.slice(0, 6);
+}
+/** others: the other proposals awaiting name, listed by short hash and title (code: the room their titles come from). */
+function reminder(p: Pick<Proposal, 'hash'>, name: string, { code, others = [] }: { code?: string, others?: Pick<Proposal, 'hash' | 'entry'>[] } = {}): string {
+  const base = `proposal ${p.hash} still awaits ${name}'s answer (an earlier review closed without an answer is fine). Now ${openCall(p.hash)}, unless ${name} asked you to propose something: then do that, and this waits.`;
+  if (!others.length) return base;
+  return `${base} (${others.length} more await ${name}'s answer: ${others.map(o => listed(code, o)).join(', ')}; the hooks open whichever ${name} names next, else the newest.)`;
+}
 
 // ---------- writing ----------
 function expand(p: string, cwd: string | undefined): string {
@@ -249,7 +262,7 @@ function expand(p: string, cwd: string | undefined): string {
 
 /** The propose tool's arguments (checked here, so unknown). */
 interface CreateArgs { text?: unknown, path?: unknown, approvers?: unknown }
-interface Created { hash: string, approvers: string[], path: string, entry: Entry | undefined, again: boolean }
+interface Created { hash: string, approvers: string[], path: string, entry: Entry | undefined, again: boolean, retired: string[] }
 
 function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd?: string } = {}): Created {
   if (!me || !me.code || !me.name) refuse('not in a room; run /sub-human');
@@ -289,13 +302,17 @@ function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd
   const stored = planPath(me.code, hash);
   const entries: Entry[] = r.readAll();
   const open = proposals(entries).find(p => p.hash === hash);
-  if (open && !decision(hash, entries) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
-    return { hash, approvers, path: stored, entry: entries.find(e => e.id === open.id), again: true };
+  const before = room.fold(entries).superseded;
+  if (open && !decision(hash, entries) && !before.has(hash) && open.approvers.length === approvers.length && approvers.every(a => open.approvers.includes(a))) {
+    return { hash, approvers, path: stored, entry: entries.find(e => e.id === open.id), again: true, retired: [] };
   }
   // the entry stores the room-relative ref; `path` returned is where the proposer can open it
   const entry: Entry = r.append({ kind: 'proposal', text: `proposal ${hash}: ${clip(titleOf(buf.toString('utf8')), TITLE_MAX)}`, hash, approvers, path: planRef(hash) },
     { via: 'agent', from: me.name });
-  return { hash, approvers, path: stored, entry, again: false };
+  // what this entry retired: superseded by it now and not before (lib/room/consent.ts); a retired proposal proposed
+  // again is appended anew (above), which brings it back
+  const retired = [...room.fold([...entries, entry]).superseded].filter(([old, by]) => by === hash && !before.has(old)).map(([old]) => old);
+  return { hash, approvers, path: stored, entry, again: false, retired };
 }
 
 function choiceOf(c: unknown): 'Agree' | 'Object' | 'Not yet' | null {
@@ -314,8 +331,8 @@ function answer(me: Me, p: Pick<Proposal, 'hash'>, a: { choice?: unknown, notes?
     const cur = f.proposals.get(p.hash);
     // Idempotent: one answer per person per proposal. A card and a plan view open at once, or a reopened card,
     // never record twice, and the decision's refs are exactly the answers the fold reads as current.
-    if (!cur || !cur.approvers.includes(me.name) || f.decisions.has(cur.hash) || f.answerOf(cur.hash, me.name)) {
-      return { stale: true, why: 'answered, decided or unknown' };
+    if (!cur || !cur.approvers.includes(me.name) || f.decisions.has(cur.hash) || f.superseded.has(cur.hash) || f.answerOf(cur.hash, me.name)) {
+      return { stale: true, why: 'answered, decided, superseded or unknown' };
     }
     const notes = typeof a.notes === 'string' && a.notes.trim() ? a.notes : undefined;
     const kind = choice === 'Agree' ? 'signoff' : 'objection';
@@ -332,7 +349,7 @@ function decide(code: string, hash: string): Entry | null {
     const entries: Entry[] = r.readAll();
     const f = room.fold(entries);
     const cur = f.proposals.get(hash);
-    if (!cur || f.decisions.has(hash)) return null;
+    if (!cur || f.decisions.has(hash) || f.superseded.has(hash)) return null;
     const m = matrix(cur, entries);
     if (!m.complete) return null;
     const text = m.objected.length

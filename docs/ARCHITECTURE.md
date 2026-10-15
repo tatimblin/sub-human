@@ -221,11 +221,11 @@ The tail batches push entries in a `Batcher` (`lib/tail.ts`): flush after `SETTL
 ```
 propose tool (via=agent)          ──► proposal {hash, approvers, path=plans/<hash>.md}
                                         │ push lane to each approver
-                                        │ the tail's reminder names only the one a review opens next (+ a count)
+                                        │ the tail's reminder names only the one a review opens next (the others listed as h6 "title")
 approver's Claude: EnterPlanMode ──► consent.ts Pre: allow silently, review.json {phase: entering, mode, hash}
                                       hash = what the person's latest prompt names (cc.lastHumanPrompt: their own words
                                       only; proposal.choose → members/<name>/pick: a hash, or words only its title / text
-                                      has, "Open v3"), else the earlier pick, else the oldest (never the model's choice)
+                                      has, "Open v3"), else the earlier pick, else the newest (never the model's choice)
                                       plan file path already known → back it up, write the proposal text now (Post: again)
                    ExitPlanMode  ──► consent.ts Pre: always ask with updatedInput.plan = that proposal's text, whatever
                                       the call carries (stale plan, hand-written copy, other hash, nothing; a blank plan

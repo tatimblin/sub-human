@@ -13,7 +13,9 @@
  *       skipping its own Claude's posts; at most 100, oldest first.
  *   propose({text|path, approvers?})   lib/proposal.create: stores plans/<hash>.md, appends `proposal`
  *       {hash, approvers, path}; approvers default to the humans present. Each approver answers a consent
- *       card (hooks/consent.ts); a proposer who is also an approver is told to open the card now.
+ *       card (hooks/consent.ts); a proposer who is also an approver is told to open the card now. A proposal
+ *       retires the proposer's earlier undecided one with the same title (lib/room/consent.ts), and says so; another
+ *       sender's pending one with the same title is warned about (both stay open).
  *
  * Plug-ins: ./hold.ts (rows) and ./task.ts (the room task list) are loaded when present; a missing or broken
  * one is logged and skipped. Each exports create(ctx) -> {tools, call(name, me, args, meta), stop?,
@@ -177,7 +179,7 @@ const CORE: ToolDefinition[] = [
     name: 'propose',
     title: 'Propose for agreement',
     description: 'Ask people in the sub-human room to agree to a plan or decision (exactly one of text or path). '
-      + 'Each approver answers it in the plan view in their own session; never report agreement until the room records it. Same content reopens the open proposal.',
+      + 'Each approver answers it in the plan view in their own session; never report agreement until the room records it. Same content reopens the open proposal; a revision with the same title replaces your earlier one.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -222,6 +224,13 @@ function propose(me: Me, args: ToolArgs) {
     throw e;
   }
   const lines = [`proposal ${r.hash} ${r.again ? 'is already open' : 'proposed'} to ${r.approvers.join(', ')}. Text: ${r.path}`];
+  const t = proposal.title(me.code, r.hash, r.entry);
+  if (r.retired.length) lines.push(`It replaces your earlier ${r.retired.map(h => `proposal ${h}`).join(', ')} (same title): no longer pending, and answers on it do not carry over.`);
+  // the same title from someone else is not a revision: both stay open, so say so (people can't tell them apart)
+  const f = room.fold(room.open(me.code).readAll());
+  const twins = t ? [...f.proposals.values()].filter(p => p.hash !== r.hash && p.from !== me.name && !f.decisions.has(p.hash)
+    && !f.superseded.has(p.hash) && proposal.title(me.code, p.hash, p.entry) === t) : [];
+  for (const p of twins) lines.push(`Warning: ${p.from}'s proposal ${p.hash} is also pending with the title "${t}"; both stay open. Give this one a distinct title if it is not the same question.`);
   lines.push('Each approver reads and answers it in the plan view in their own session. Never say anyone agreed until the room records it.');
   if (r.approvers.includes(me.name)) lines.push(`${me.name} is an approver: ${proposal.openCall(r.hash)} now so ${me.name} can read and answer it.`);
   return text(lines.join('\n'));

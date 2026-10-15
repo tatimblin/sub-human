@@ -9,10 +9,11 @@
  *                  Map order = log order of that latest entry
  *     F.answers    Map hash -> Map name -> {kind: 'signoff'|'objection', id, entry}   per person, the latest answer
  *     F.decisions  Map hash -> entry   the latest via=system decision per hash
+ *     F.superseded Map hash -> newer hash   undecided proposals a later one retired (below)
  *     F.matrix(hash, approvers?) -> {hash, approvers, answers: {name: {id, kind}|null}, signed: {name: id|null},
  *                  agreed, objected, missing (no answer), unsigned (no signoff), complete (everyone answered)}
- *     F.pending(name) -> [proposal]   undecided proposals naming name that name has not answered (log order)
- *     F.status(hash) -> {proposal, decision, matrix, state: 'open'|'agreed'|'blocked'}|null
+ *     F.pending(name) -> [proposal]   undecided, unretired proposals naming name that name has not answered (log order)
+ *     F.status(hash) -> {proposal, decision, matrix, state: 'open'|'agreed'|'blocked'|'superseded'}|null
  *
  * Semantics (one place):
  *   - Entries are read through normalize() (legacy plan_rev / plan_hash / concern / agree).
@@ -26,6 +27,10 @@
  *     signoff (and a later signoff replaces an objection). A legacy via=human `revoke` clears the answer.
  *   - A decision is as recorded: the latest via=system decision with that proposal_hash closes it.
  *     state: 'blocked' when an approver's current answer is an objection, else 'agreed'.
+ *   - A revision retires: a proposal entry retires every earlier undecided proposal with the same `from` and the
+ *     same title (the "proposal HASH: title" text), so it is no longer pending ('superseded'). Answers stay with
+ *     their hash: none carry over to the newer one. Another sender's proposal with the same title stays open. A
+ *     later entry for a retired hash (proposed again) brings it back.
  * Recording (lib/proposal.ts answer, then decide) is idempotent on top of this: one answer per person per hash,
  * so the fold's "latest" and the decision's refs agree for everything the hooks write.
  */
@@ -36,6 +41,9 @@ import type { Answer, Entry, Fold, Matrix, ProposalEntry, ProposalState } from '
 const HASH_RE = /^[0-9a-f]{12}$/;
 const isHash = (h: unknown): h is string => typeof h === 'string' && HASH_RE.test(h);
 const ANSWER_KINDS = new Set(['signoff', 'objection']);
+
+/** The title a proposal entry carries ("proposal HASH: title"), '' for none. */
+const titleOf = (e: Entry): string => { const m = /^proposal [0-9a-f]{6,64}:\s*(.+)/.exec(String(e.text ?? '')); return m ? m[1].trim() : ''; };
 
 const memo = new WeakMap<object, { key: string; f: Fold }>();
 
@@ -54,12 +62,20 @@ function compute(list: readonly (Entry | null | undefined)[]): Fold {
   const proposals = new Map<string, ProposalState>();
   const answers = new Map<string, Map<string, Answer>>();
   const decisions = new Map<string, Entry>();
+  const superseded = new Map<string, string>();
   for (const raw of list) {
     if (!raw) continue;
     const e = normalize(raw);
     if (e.kind === 'proposal') {
       if (!isHash(e.hash)) continue;
       proposals.delete(e.hash);
+      superseded.delete(e.hash);
+      const t = titleOf(e);
+      if (t) {
+        for (const p of proposals.values()) {
+          if (p.from === e.from && !decisions.has(p.hash) && !superseded.has(p.hash) && titleOf(p.entry) === t) superseded.set(p.hash, e.hash);
+        }
+      }
       const approvers = Array.isArray(e.approvers) ? e.approvers : [];
       proposals.set(e.hash, { id: e.id, hash: e.hash, from: e.from, approvers, path: e.path || null, entry: e as ProposalEntry });
       continue;
@@ -93,17 +109,17 @@ function compute(list: readonly (Entry | null | undefined)[]): Fold {
   }
 
   const pending = (name: string | null | undefined): ProposalState[] => (name ? [...proposals.values()].filter(p => p.approvers.includes(name)
-    && !decisions.has(p.hash) && !answerOf(p.hash, name)) : []);
+    && !decisions.has(p.hash) && !superseded.has(p.hash) && !answerOf(p.hash, name)) : []);
 
   function status(hash: string): ReturnType<Fold['status']> {
     const p = proposals.get(hash);
     if (!p) return null;
     const m = matrix(hash);
     const d = decisions.get(hash) || null;
-    return { proposal: p, decision: d, matrix: m, state: !d ? 'open' : m.objected.length ? 'blocked' : 'agreed' };
+    return { proposal: p, decision: d, matrix: m, state: !d ? (superseded.has(hash) ? 'superseded' : 'open') : m.objected.length ? 'blocked' : 'agreed' };
   }
 
-  return { proposals, answers, decisions, answerOf, matrix, pending, status };
+  return { proposals, answers, decisions, superseded, answerOf, matrix, pending, status };
 }
 
 export { fold, HASH_RE };
