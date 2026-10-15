@@ -113,7 +113,9 @@ let viaModule = false;
  * Classic: a block, its reason the text after "sub-human: " (Claude Code shows only the reason, never a systemMessage
  * beside it, and never to the model); suppress: the typed prompt is kept out of the conversation as well.
  */
+let replied = false;
 function reply(text: string, { refused = false, shareable = true, suppress = false } = {}) {
+  replied = true;
   const t = `${refused ? '✗ ' : ''}${text}`;
   if (viaModule) return out({ subHuman: { say: t, refused, shareable: shareable && !suppress } });
   return out({
@@ -300,7 +302,8 @@ function restartLink(code: string) {
   const st = link.status(code);
   if (!st.running) return;
   try { process.kill(st.pid, 'SIGTERM'); } catch { return; }
-  for (const until = Date.now() + 2000; Date.now() < until && identity.isAlive(st.pid);) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+  // 1 s: with LINK_START_MS and LINK_JOIN_WAIT_MS this fits the hook's 10 s (hooks.json) with the node start to spare
+  for (const until = Date.now() + 1000; Date.now() < until && identity.isAlive(st.pid);) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
 }
 
 // the locator a link's transport came from (with its jump hosts: else every re-join over a bastion reads as a move)
@@ -567,6 +570,14 @@ function noModule(pid: number | null): string {
   return 'sub-human\'s hooks module isn\'t running in this session (safe mode, --bare, a managed policy or an untrusted folder turns it off). Run /sub-human doctor.';
 }
 
+/** A throw anywhere below: still one reply, hidden when the prompt may carry a PIN (refuse was set first), so a
+ *  PIN-bearing prompt never reaches the model as a plain expansion. A reply already made stands. */
+function onError(err: unknown): void {
+  if (replied) return;
+  const m = err instanceof Error ? err.message : String(err);
+  refuse(`sub-human could not run that (${m.split('\n')[0].slice(0, 200)}). Run /sub-human doctor.`);
+}
+
 run((input: JoinIn) => {
   if (!COMMANDS.has(String(input.command_name))) return;
   const args = String(input.command_args || '').trim().split(/\s+/).filter(Boolean);
@@ -615,6 +626,11 @@ run((input: JoinIn) => {
     }
     default: {
       if (args.length > 2) return refuse(USAGE);
+      if (args.length === 1 && identity.CODE_RE.test(args[0])) { // `/sub-human vole-8126`: that room, as the default name
+        const name = identity.defaultName({ cwd });
+        if (!name) return refuse(`no name to join as (no git user.name or $USER): /sub-human NAME ${args[0]}`);
+        return take({ name, code: args[0], isDefault: true }, ctx);
+      }
       const [name, code] = args;
       if (!identity.NAME_RE.test(name)) return refuse(`"${name}" isn't a command or a name. ${USAGE}`);
       if (identity.RESERVED.includes(name.toLowerCase())) return refuse(`"${name}" is reserved; pick another name. ${USAGE}`);
@@ -622,6 +638,6 @@ run((input: JoinIn) => {
       return take({ name, code: code || (cur && cur.name === name ? cur.code : null) }, ctx);
     }
   }
-});
+}, onError);
 
 export { HELP };

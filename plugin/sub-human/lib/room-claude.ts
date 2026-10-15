@@ -421,7 +421,7 @@ function watchdog(code: string, { now = clock.now(), orphanMs = orphanMsDefault(
   if (!identity.roomExists(code)) return 'no-room';
   if (!identity.isHost(code)) return 'not-host';
   let state = 'no-claude' as WatchdogState; // set inside the update callback, which narrowing does not follow
-  identity.updateRoomClaude(code, (o: Member | null, members: Members): RoomClaudePatch | null => {
+  const judge = (o: Member | null, members: Members): RoomClaudePatch | null => {
     if (!o || o.stopped_at || (o.left_at && !o.job)) return null;
     if (o.closing) { state = 'closing'; return null; }
     const ms = Object.values(members).filter((m): m is Member => !!m && !!m.name && m.role !== 'claude');
@@ -434,7 +434,10 @@ function watchdog(code: string, { now = clock.now(), orphanMs = orphanMsDefault(
     if (now - since >= orphanMs) { state = 'reaping'; return { closing: iso(now), orphan_since: iso(since) }; }
     state = 'waiting';
     return o.orphan_since === iso(since) ? null : { orphan_since: iso(since) };
-  });
+  };
+  // judged on a plain read first: the tick that changes nothing (the usual one, every TAIL_HEALTH_MS) takes no lock
+  const seen = identity.readMembers(code) || {};
+  if (judge(seen.claude || null, seen)) identity.updateRoomClaude(code, judge);
   if (state === 'reaping') reaper(code, { claimed: true });
   return state;
 }
