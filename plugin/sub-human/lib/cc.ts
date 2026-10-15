@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/cc.ts: the single home for every Claude Code internal the plugin relies on.
  *
  * Source of truth: docs/internals/cc-2.1.281.md (a full read of the 2.1.281 binary; the § numbers point there)
- * and docs/internals/cc-2.1.292.md (what changed in 2.1.292, checked against that binary). Every export names
+ * and docs/internals/cc-2.1.292.md, cc-2.1.296.md (what changed in each, checked against that binary). Every export names
  * the literal string to search the binary for (`@cc`) and how stable the assumption is (`@stability`):
  *   API         documented hook/settings schema, a `.describe()` string, or an exported name
  *   env         a named env var or flag
@@ -29,7 +29,7 @@
  *   matcherIsExact(m, {toolEvent}), matcherMatches(m, name, {toolEvent})
  *   shapeRe(shape)                       a shape as a RegExp: `~` = one minified identifier, the rest literal
  *   CONTRACT                             [{id, search, shape?, stability, note}]
- *   PROBED_VERSION                       the Claude Code version CONTRACT was last checked against ('2.1.292')
+ *   PROBED_VERSION                       the Claude Code version CONTRACT was last checked against ('2.1.296')
  *   MIN_VERSION                          the oldest that can run the plugin (function hooks: '2.1.292')
  *   compareVersions(a, b) -> -1|0|1      numeric per dot-separated part; null for an unreadable one
  *   locateBinary({bin?, env?}) -> path|null   the binary to probe: bin, $CLAUDE_BIN, `claude` on PATH (symlinks
@@ -463,44 +463,45 @@ function jobs({ all = false, bin = process.env.SUB_HUMAN_CLAUDE || 'claude', env
 
 // ---------- daemon env allowlist ----------
 
-// The daemon's dispatch allowlist as 2.1.292 builds it (minified names of that build in brackets):
-// [qRr] = [zWe] + [dWn] + EXTRA_KEYS, where
-// [zWe] = CLAUDE_CONFIG_DIR, CLAUDE_INTERNAL_FC_OVERRIDES, MODEL_KEYS, CUSTOM_MODEL_KEYS, CLAUDE_CODE_SUBAGENT_MODEL_FORCE,
+// The daemon's dispatch allowlist as 2.1.296 builds it (minified names of that build in brackets):
+// [CNr] = [q6e] + [l5n] + EXTRA_KEYS, where
+// [q6e] = CLAUDE_CONFIG_DIR, CLAUDE_INTERNAL_FC_OVERRIDES, MODEL_KEYS, CUSTOM_MODEL_KEYS, CLAUDE_CODE_SUBAGENT_MODEL_FORCE,
 //         CLAUDE_CODE_CLIENT_DATA_URL, PROVIDER_KEYS, CLOUD_KEYS
-// [dWn] = PATH, CLAUDE_CODE_EXTRA_BODY, CLAUDE_CODE_HOST_CREDS_FILE, ENDPOINT_KEYS
+// [l5n] = PATH, CLAUDE_CODE_EXTRA_BODY, CLAUDE_CODE_HOST_CREDS_FILE, ENDPOINT_KEYS
 // The arrays below keep the binary's order: CONTRACT `daemon-env-allowlist` searches for them as JSON text.
-const MODEL_KEYS = [ // [oit]
+const MODEL_KEYS = [ // [eut]
   'ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_MODEL',
   ...['FABLE', 'HAIKU', 'OPUS', 'SONNET'].flatMap(f => [`ANTHROPIC_DEFAULT_${f}_MODEL`, `ANTHROPIC_DEFAULT_${f}_MODEL_DESCRIPTION`,
     `ANTHROPIC_DEFAULT_${f}_MODEL_NAME`, `ANTHROPIC_DEFAULT_${f}_MODEL_SUPPORTED_CAPABILITIES`]),
-  'ANTHROPIC_SMALL_FAST_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION', 'CLAUDE_CODE_SUBAGENT_MODEL',
+  'ANTHROPIC_SMALL_FAST_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION', 'CLAUDE_CODE_SUBAGENT_MODEL', 'CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL',
   'CLAUDE_CODE_3P_PROBE_WROTE_SONNET_DEFAULT', 'CLAUDE_CODE_3P_PROBE_WROTE_OPUS_DEFAULT', 'CLAUDE_CODE_3P_PROBE_WROTE_HAIKU_DEFAULT',
   'CLAUDE_CODE_3P_SEEDED_SONNET_DEFAULT', 'CLAUDE_CODE_3P_SEEDED_OPUS_DEFAULT',
 ];
-const CUSTOM_MODEL_KEYS = ['ANTHROPIC_CUSTOM_MODEL_OPTION', 'ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION', // [vLn]
+const CUSTOM_MODEL_KEYS = ['ANTHROPIC_CUSTOM_MODEL_OPTION', 'ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION', // [nWn]
   'ANTHROPIC_CUSTOM_MODEL_OPTION_NAME', 'ANTHROPIC_CUSTOM_MODEL_OPTION_SUPPORTED_CAPABILITIES'];
-const PROVIDER_KEYS = ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', // [O6]
+const PROVIDER_KEYS = ['CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', // [hV]
   'CLAUDE_CODE_USE_ANTHROPIC_AWS', 'CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD', 'CLAUDE_CODE_USE_MANTLE', 'CLAUDE_CODE_USE_GATEWAY',
   'ANTHROPIC_FOUNDRY_RESOURCE', 'ANTHROPIC_VERTEX_PROJECT_ID', 'ANTHROPIC_AWS_WORKSPACE_ID', 'ANTHROPIC_GOOGLE_CLOUD_PROJECT',
   'ANTHROPIC_GOOGLE_CLOUD_LOCATION', 'ANTHROPIC_GOOGLE_CLOUD_WORKSPACE_ID', 'CLOUD_ML_REGION'];
 const CLOUD_KEYS = ['AWS_REGION', 'AWS_DEFAULT_REGION', 'ANTHROPIC_BEDROCK_REGION_PREFIX', 'AWS_PROFILE', 'AWS_CONFIG_FILE',
   'AWS_SHARED_CREDENTIALS_FILE', 'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_PROJECT', 'GCLOUD_PROJECT',
   'CLAUDE_SECURESTORAGE_CONFIG_DIR', 'CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST', 'CLAUDE_CODE_HOST_GATEWAY_LINEAGE'];
-// [ILe]: every endpoint of [Mqe] and its companions
+// [uUe]: every endpoint and its companions
 const ENDPOINT_KEYS = ['ANTHROPIC_BASE_URL', '_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS',
   'ANTHROPIC_BEDROCK_BASE_URL', 'CLAUDE_CODE_SKIP_BEDROCK_AUTH', 'ANTHROPIC_VERTEX_BASE_URL', 'CLAUDE_CODE_SKIP_VERTEX_AUTH',
   'ANTHROPIC_FOUNDRY_BASE_URL', 'CLAUDE_CODE_SKIP_FOUNDRY_AUTH', 'ANTHROPIC_AWS_BASE_URL', 'CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH',
   'ANTHROPIC_GOOGLE_CLOUD_BASE_URL', 'CLAUDE_CODE_SKIP_ANTHROPIC_GOOGLE_CLOUD_AUTH', 'ANTHROPIC_BEDROCK_MANTLE_BASE_URL',
   'CLAUDE_CODE_SKIP_MANTLE_AUTH'];
-const EXTRA_KEYS = ['CLAUDE_CODE_DISABLE_PROACTIVITY', 'CLAUDE_CODE_AUTO_MODE_SERVER', 'CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS',
-  'CLAUDE_CODE_DISABLE_STRUCTURED_OUTPUTS', 'CLAUDE_CODE_AUTO_MODE_TIER', 'CLAUDE_BG_ISOLATION', 'CLAUDE_BG_SESSION_PERMISSION_RULES',
-  'CLAUDE_BG_MEMORY_TOGGLED_OFF', 'CLAUDE_BG_AUTO_MEMORY_OFF', 'CLAUDE_CODE_RESUME_SOURCE_ALIVE', 'CLAUDE_CODE_PLUGIN_DIRS'];
+const EXTRA_KEYS = ['CLAUDE_CODE_DISABLE_PROACTIVITY', 'CLAUDE_CODE_RESTRICT_PERSONAL_CONFIG', 'CLAUDE_CODE_AUTO_MODE_SERVER',
+  'CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS', 'CLAUDE_CODE_DISABLE_STRUCTURED_OUTPUTS', 'CLAUDE_CODE_AUTO_MODE_TIER', 'CLAUDE_BG_ISOLATION',
+  'CLAUDE_BG_SESSION_PERMISSION_RULES', 'CLAUDE_BG_MEMORY_TOGGLED_OFF', 'CLAUDE_BG_AUTO_MEMORY_OFF', 'CLAUDE_CODE_RESUME_SOURCE_ALIVE',
+  'CLAUDE_CODE_PLUGIN_DIRS'];
 
 /**
- * The env keys the bg daemon keeps from a `claude --bg` dispatch (zWe + dWn + EXTRA_KEYS above), exactly as
- * 2.1.292 builds it (2.1.292 added CLAUDE_CODE_CLIENT_DATA_URL, three CLAUDE_CODE_3P_* model keys,
+ * The env keys the bg daemon keeps from a `claude --bg` dispatch (q6e + l5n + EXTRA_KEYS above), exactly as
+ * 2.1.296 builds it (2.1.292 added CLAUDE_CODE_CLIENT_DATA_URL, three CLAUDE_CODE_3P_* model keys,
  * CLAUDE_CODE_DISABLE_PROACTIVITY, CLAUDE_CODE_DISABLE_STRUCTURED_OUTPUTS, CLAUDE_CODE_AUTO_MODE_TIER and
- * CLAUDE_BG_AUTO_MEMORY_OFF). Every other caller env key (CLAUDE_CODE_TASK_LIST_ID, SUB_HUMAN_*, HOME, ...) is dropped;
+ * CLAUDE_BG_AUTO_MEMORY_OFF; 2.1.296 CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL and CLAUDE_CODE_RESTRICT_PERSONAL_CONFIG). Every other caller env key (CLAUDE_CODE_TASK_LIST_ID, SUB_HUMAN_*, HOME, ...) is dropped;
  * the worker runs with the daemon's own process.env plus these. Auth secrets (ANTHROPIC_API_KEY, ...) are
  * not in it. Pass state to a bg job through argv (`--settings '{"env":{...}}'`) instead.
  * @cc daemon_bg_dispatch_ingest
@@ -563,8 +564,8 @@ const shapeRe = (shape: unknown): RegExp => new RegExp(String(shape).split('~').
 
 /**
  * Every Claude Code assumption the plugin makes. `search` is a literal string (or array: all must match) and
- * `shape` an optional code shape (or array; see shapeRe), both found in the 2.1.292 binary; scripts/probe-cc.js
- * checks them. `section` points into docs/internals/cc-2.1.281.md (changes in cc-2.1.292.md).
+ * `shape` an optional code shape (or array; see shapeRe), both found in the 2.1.296 binary; scripts/probe-cc.js
+ * checks them. `section` points into docs/internals/cc-2.1.281.md (changes in cc-2.1.292.md and cc-2.1.296.md).
  */
 const CONTRACT: readonly ContractEntry[] = Object.freeze([
   // §1 tasks
@@ -626,7 +627,7 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
     shape: 'if(~==="no"){if(!~&&!~)return null;return{behavior:"deny",feedback:',
     note: '"No, keep planning" returns deny with the typed feedback.' },
   { id: 'plan-reject-user-feedback', section: 3, stability: 'incidental', search: '?.feedbackIsFromUser&&',
-    shape: ['userFeedback:~.behavior==="ask"?~.userFeedback:void 0,toolResultRemedy:', 'userFeedback:~,toolResultRemedy:~,mcpMeta:'],
+    shape: ['userFeedback:~.behavior==="ask"?~.userFeedback:void 0,toolResultRemedy:', 'toolDenialUnanswered:~,userFeedback:~,toolResultRemedy:~,'],
     note: 'The rejected tool_result transcript entry carries top-level userFeedback (cc.planFeedback).' },
   { id: 'plan-reject-text', section: 3, stability: 'incidental', search: ['To tell you how to proceed, the user said:\n', 'Note: The user\'s next message may contain a correction'],
     note: 'Fallback: the note sits between "the user said:\\n" and "\\n\\nNote: The user\'s next message".' },
@@ -672,11 +673,12 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
     ],
     shape: ['new Set(["CLAUDE_CONFIG_DIR","CLAUDE_INTERNAL_FC_OVERRIDES",...~,"CLAUDE_CODE_CLIENT_DATA_URL",...~,"AWS_REGION",',
       `=new Set([...~,...~,${JSON.stringify(EXTRA_KEYS).slice(1)})`],
-    note: 'The pieces of the daemon allowlist (zWe + dWn + extras in 2.1.292) that DAEMON_ENV_ALLOW copies.' },
+    note: 'The pieces of the daemon allowlist (q6e + l5n + extras in 2.1.296) that DAEMON_ENV_ALLOW copies.' },
   { id: 'bg-worker-env', section: 5, stability: 'incidental', search: 'CLAUDE_CODE_SESSION_KIND:"bg",CLAUDE_BG_BACKEND:"daemon",FORCE_COLOR',
     note: 'Workers run with the daemon\'s own process.env plus the filtered dispatch env.' },
-  { id: 'bg-provider-env', section: 5, stability: 'incidental', search: 'stripped disallowed providerEnv key(s)',
-    note: 'Persisted providerEnv is filtered through p0e too.' },
+  { id: 'bg-provider-env', section: 5, stability: 'incidental',
+    search: ['ignored these saved environment entries in the job\'s state.json', 'not kept for background sessions'],
+    note: 'A job\'s persisted providerEnv (state.json) is filtered through the same base allowlist (q6e in 2.1.296); a dropped key is logged as "not kept for background sessions".' },
   // §7 hooks
   { id: 'matcher-rule', section: 7, stability: 'API', search: ['Invalid regex pattern in hook matcher', '/^[a-zA-Z0-9_|, -]+$/:/^[a-zA-Z0-9_|]+$/'],
     note: 'Exact-name list vs unanchored regex (cc.matcherIsExact, cc.matcherMatches).' },
@@ -702,8 +704,8 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
   { id: 'cross-session-inbound', section: 8, stability: 'API', search: 'Inbound cross-session peer messages (SendMessage from your other sessions)',
     note: 'crossSessionInbound accept|hold|refuse; the room\'s Claude sets accept.' },
   { id: 'harbor-kite-gate', section: 8, stability: 'env', search: '"tengu_harbor_kite",!0)',
-    shape: '{let ~=~.CLAUDE_CODE_HARBOR_KITE;if(~!==void 0)return ~(~);',
-    note: 'Cross-session messaging gate (default on).' },
+    shape: 'messagingBeyondOwnAgentsDisabled)return!1;let ~=~.CLAUDE_CODE_HARBOR_KITE;if(~!==void 0)return ~(~);',
+    note: 'Cross-session messaging gate (default on); since 2.1.296 the process\'s messagingBeyondOwnAgentsDisabled restriction (beside backgroundTasksDisabled) turns it off before CLAUDE_CODE_HARBOR_KITE is read.' },
   { id: 'pasted-content', section: 8, stability: 'incidental', search: ['<pasted_content id="', '</pasted_content id="'],
     note: 'Long pastes are wrapped in <pasted_content id="N"> (cc.PASTED_RE).' },
   { id: 'session-title-address', section: 8, stability: 'incidental',
@@ -793,7 +795,7 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
 ]);
 
 // ---------- the binary, for the probe and doctor ----------
-const PROBED_VERSION = '2.1.292';
+const PROBED_VERSION = '2.1.296';
 const MIN_VERSION = '2.1.292';
 
 function compareVersions(a: unknown, b: unknown): -1 | 0 | 1 | null {

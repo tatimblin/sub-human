@@ -1,6 +1,6 @@
 # Architecture
 
-How sub-human works today, for a new contributor or a fresh Claude session. User-facing behaviour is in [`plugin/sub-human/README.md`](../plugin/sub-human/README.md); the Claude Code internals behind it are in [`docs/internals/cc-2.1.281.md`](internals/cc-2.1.281.md), with the 2.1.292 changes in [`docs/internals/cc-2.1.292.md`](internals/cc-2.1.292.md). Sections marked *generated* are rewritten by `npm run docs` (`scripts/arch-doc.js`) from the code; edit the code, not the table. `npm test` fails when they are stale.
+How sub-human works today, for a new contributor or a fresh Claude session. User-facing behaviour is in [`plugin/sub-human/README.md`](../plugin/sub-human/README.md); the Claude Code internals behind it are in [`docs/internals/cc-2.1.281.md`](internals/cc-2.1.281.md), with the 2.1.292 and 2.1.296 changes in [`docs/internals/cc-2.1.292.md`](internals/cc-2.1.292.md) and [`cc-2.1.296.md`](internals/cc-2.1.296.md). Sections marked *generated* are rewritten by `npm run docs` (`scripts/arch-doc.js`) from the code; edit the code, not the table. `npm test` fails when they are stale.
 
 ## Purpose and design rules
 
@@ -411,7 +411,7 @@ One machine per room (its host), trusted collaborators: everyone on the host run
 
 ## Claude Code contract (generated)
 
-Every internal the plugin relies on, from `lib/cc.ts` `CONTRACT`. `§` points into [`docs/internals/cc-2.1.281.md`](internals/cc-2.1.281.md) (changes since: [`cc-2.1.292.md`](internals/cc-2.1.292.md)); each entry also carries the literal binary search strings, and optional code shapes (`~` for a minified identifier), that `npm run probe` checks.
+Every internal the plugin relies on, from `lib/cc.ts` `CONTRACT`. `§` points into [`docs/internals/cc-2.1.281.md`](internals/cc-2.1.281.md) (changes since: [`cc-2.1.292.md`](internals/cc-2.1.292.md), [`cc-2.1.296.md`](internals/cc-2.1.296.md)); each entry also carries the literal binary search strings, and optional code shapes (`~` for a minified identifier), that `npm run probe` checks.
 
 <!-- gen:cc-contract -->
 | Id | § | Stability | Note |
@@ -453,9 +453,9 @@ Every internal the plugin relies on, from `lib/cc.ts` `CONTRACT`. `§` points in
 | `bg-stop` | §5 | API | `claude stop <id>` (cc.stopCmd). |
 | `bg-logs` | §5 | API | `claude logs <id>` replays a bg session's screen; the demo's view of the room's Claude runs it. |
 | `daemon-env-filter` | §5 | env | The daemon keeps only allowlisted caller env keys (cc.DAEMON_ENV_ALLOW). |
-| `daemon-env-allowlist` | §5 | env | The pieces of the daemon allowlist (zWe + dWn + extras in 2.1.292) that DAEMON_ENV_ALLOW copies. |
+| `daemon-env-allowlist` | §5 | env | The pieces of the daemon allowlist (q6e + l5n + extras in 2.1.296) that DAEMON_ENV_ALLOW copies. |
 | `bg-worker-env` | §5 | incidental | Workers run with the daemon's own process.env plus the filtered dispatch env. |
-| `bg-provider-env` | §5 | incidental | Persisted providerEnv is filtered through p0e too. |
+| `bg-provider-env` | §5 | incidental | A job's persisted providerEnv (state.json) is filtered through the same base allowlist (q6e in 2.1.296); a dropped key is logged as "not kept for background sessions". |
 | `matcher-rule` | §7 | API | Exact-name list vs unanchored regex (cc.matcherIsExact, cc.matcherMatches). |
 | `hook-if` | §7 | API | `if` uses permission-rule syntax; Task tools can only be filtered by bare name. |
 | `hook-async` | §7 | API | Per-hook async/asyncRewake fields. |
@@ -465,7 +465,7 @@ Every internal the plugin relies on, from `lib/cc.ts` `CONTRACT`. `§` points in
 | `bridge-forwarded-rows` | §8 | incidental | Remote Control forwards user and assistant rows, a command hook's systemMessage (hook_system_message, shown as an assistant line) and a few system kinds, never a $.ui.log notice (system informational); an isMeta user row goes as isSynthetic (not shown there, as far as seen). A function hook's result has no systemMessage, so the module reaches the phone only through a turn: mod/deliver.ts relays room lines and an @room's refusal there as a prompt while the person types from Remote Control (cc-2.1.292.md Remote Control). |
 | `plugin-prompt-frame` | §8 | incidental | A plugin's $.prompt.submit between turns enters framed ("The <plugin> plugin sent a message: … This is how Claude Code surfaces a prompt a plugin submits between turns … Address the message above."), and the frame is the row Remote Control shows; asUser:true enters the text bare (the origin stays {kind:"plugin", name, asUser:true}, so cc.lastHumanPrompt still skips it). The relay submits asUser with only the room lines; what the model needs rides as context (cc-2.1.292.md Remote Control). |
 | `cross-session-inbound` | §8 | API | crossSessionInbound accept\|hold\|refuse; the room's Claude sets accept. |
-| `harbor-kite-gate` | §8 | env | Cross-session messaging gate (default on). |
+| `harbor-kite-gate` | §8 | env | Cross-session messaging gate (default on); since 2.1.296 the process's messagingBeyondOwnAgentsDisabled restriction (beside backgroundTasksDisabled) turns it off before CLAUDE_CODE_HARBOR_KITE is read. |
 | `pasted-content` | §8 | incidental | Long pastes are wrapped in <pasted_content id="N"> (cc.PASTED_RE). |
 | `session-title-address` | §8 | incidental | A hook's sessionTitle renames the session and writes the name to the session registry; ListAgents lists it and SendMessage `to` matches it exactly, so NAME.CODE is the address. Names are unique among live sessions: a second live session given the same name takes a suffixed one and is not reachable at NAME.CODE (cc-2.1.292.md Review spikes, S-title). |
 | `plugin-settings-allowlist` | §9 | API | Plugin settings.json keeps only agent and subagentStatusLine. |
