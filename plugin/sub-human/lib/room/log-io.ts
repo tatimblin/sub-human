@@ -1,8 +1,9 @@
 /**
- * plugin/sub-human/lib/room/log-io.ts: the bytes of a room log, in segments. Only lib/room/fs-store.ts imports this
- * file (test/store-bypass.node-test.ts checks it): every other module reads a log through a RoomStore. One JSON entry
- * per line, appended under <room>/log.jsonl.lock; nothing here knows what an entry means beyond its id, its prev (the
- * chain), its at and whether its kind is a chat kind (rules.ts CHAT_KINDS). Every call takes the room's directory.
+ * plugin/sub-human/lib/room/log-io.ts: the bytes of a room log, in segments (log.jsonl, log-NNNN.jsonl) and its snapshot.
+ * Only lib/room/fs-store.ts imports this file (test/store-bypass.node-test.ts checks it): every other module reads a
+ * log through a RoomStore. One JSON entry per line, appended under <room>/log.jsonl.lock; nothing here knows what an
+ * entry means beyond its id, its prev (the chain), its at and whether its kind is a chat kind (rules.ts CHAT_KINDS).
+ * Every call takes the room's directory.
  *
  * The files (<room>/):
  *   log.jsonl         the active segment: every append goes here. A room from before segments has only this file,

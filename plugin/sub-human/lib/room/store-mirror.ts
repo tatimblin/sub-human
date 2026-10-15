@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/lib/room/store-mirror.ts: MirrorRoomStore, the RoomStore of a room hosted on another machine:
- * it composes an FsRoomStore over a directory the link daemon (lib/remote/link.ts) keeps byte-identical to the
- * host's log, so every reader (readView, the snapshot, tailer, verifyChain, rows, digests) is that store's, unchanged. Only writes cross the
+ * it composes an FsRoomStore over a directory the link daemon (lib/remote/link.ts) keeps line for line the host's
+ * log, so every reader (readView, the snapshot, tailer, verifyChain, rows, digests) is that store's, unchanged. Only writes cross the
  * wire, as named ops through lib/remote/bridge.ts (a sync call from the hook's thread, with a deadline) to the
  * daemon's socket. The bridge (a worker thread) starts at the process's first op, so a hook that only reads
  * starts none. store.open(code) returns one for a code that lib/room/links.ts knows.
