@@ -396,4 +396,4 @@ function digest(entries: readonly Entry[] = [], ctx: { members?: Members | null;
   return text;
 }
 
-export { FOR_CLAUDE, line, tailLine, chatLines, fmt, who, stateLine, digest };
+export { FOR_CLAUDE, line, tailLine, chatLines, fmt, who, stateLine, digest, leftWhy };

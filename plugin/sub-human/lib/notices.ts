@@ -1,21 +1,22 @@
 /**
  * plugin/sub-human/lib/notices.ts: join / leave lines for every human in the room, as a group chat shows them:
- * "bob joined", "bob rejoined", "bob left" (no room code, no ids).
+ * "bob joined", "bob rejoined", "bob left (connection lost)" (no room code, no ids).
  *
  * Where a human sees them:
  *   1. at the moment, as a persistent line in their session: the hooks module's tail child (scripts/sub-human tail)
  *      sends them as `chat` events and mod/deliver.ts draws them with $.ui.log, no model turn (markShown).
- *   2. for a while after: the room row's text ("+bob joined", "−bob left"; lib/rows.ts rowText) and the room
+ *   2. for a while after: the room row's text ("+bob joined", "−bob left (session ended)"; lib/rows.ts rowText) and the room
  *      row view's progress line (mcp/hold.ts).
  *
  * Time comes from lib/clock.ts unless the caller passes `now` (ms), so tests drive it without sleeps.
  *
- *   joinLeave(entries, viewer, {now, settle}) -> [{id, kind, name, at, settled, rejoin}]
+ *   joinLeave(entries, viewer, {now, settle}) -> [{id, kind, name, at, settled, rejoin, why}]
  *       others' member_joined / member_left (never the room Claude's or viewer's own), in log order. A leave settles
  *       settleMs() (SUB_HUMAN_LEAVE_MS, LEAVE_SETTLE_MS = 8 s, the same as the tail's) after it; a leave
- *       followed by a rejoin within it is no notice, and neither is that rejoin.
- *   text(n) -> "bob joined" | "bob rejoined" | "bob left"
- *   rowSegment(entries, viewer, {now}) -> "+bob joined" | "−bob left" | ''   the newest settled notice of the
+ *       followed by a rejoin within it is no notice, and neither is that rejoin. why: a leave's " (REASON)" as the chat
+ *       line gives it (lib/room/render.ts leftWhy), else ''.
+ *   text(n) -> "bob joined" | "bob rejoined" | "bob left" | "bob left (connection lost)"
+ *   rowSegment(entries, viewer, {now}) -> "+bob joined" | "−bob left (connection lost)" | ''   the newest settled notice of the
  *       last ROW_MS (2 min)
  *   shown(code, name) -> Set(ids), markShown(code, name, ids, via, {now}?)   what was already shown to this member (a
  *       restarted tail child does not send it again), and how: via is required and is "mod" (the tail child;
@@ -26,6 +27,7 @@ import * as config from './config.ts';
 import { roomClaudeName } from './room/members.ts';
 import * as clock from './clock.ts';
 import * as room from './room.ts';
+import { leftWhy } from './room/render.ts';
 import type { Entry } from './room/types.ts';
 
 /** One join / leave notice (joinLeave). */
@@ -36,6 +38,8 @@ interface Notice {
   at: string;
   settled: boolean;
   rejoin: boolean;
+  /** a leave's reason as the chat line gives it (" (connection lost)"), else '' */
+  why: string;
 }
 
 const LEAVE_SETTLE_MS = config.LEAVE_SETTLE_MS;
@@ -57,11 +61,12 @@ function joinLeave(es: Entry[] | null | undefined, viewer: string | null | undef
     id: e.id, kind: e.kind, name: e.from, at: e.at,
     settled: e.kind === 'member_joined' || now - Date.parse(e.at) >= settle,
     rejoin: e.kind === 'member_joined' && /\brejoined\b/.test(String(e.text || '')),
+    why: e.kind === 'member_left' ? leftWhy(String(e.text || '')) : '',
   }));
 }
 
-function text(n: Pick<Notice, 'kind' | 'name' | 'rejoin'>): string {
-  if (n.kind === 'member_left') return `${n.name} left`;
+function text(n: Pick<Notice, 'kind' | 'name' | 'rejoin'> & { why?: string }): string {
+  if (n.kind === 'member_left') return `${n.name} left${n.why || ''}`;
   return `${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
 }
 
@@ -69,7 +74,7 @@ function rowSegment(es: Entry[] | null | undefined, viewer: string | null | unde
   const fresh = (x: Notice) => now - Date.parse(x.at) - (x.kind === 'member_left' ? settleMs() : 0) < ROW_MS;
   const n = joinLeave(es, viewer, { now }).filter(x => x.settled && fresh(x)).at(-1);
   if (!n) return '';
-  return n.kind === 'member_left' ? `−${n.name} left` : `+${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
+  return n.kind === 'member_left' ? `−${n.name} left${n.why}` : `+${n.name} ${n.rejoin ? 'rejoined' : 'joined'}`;
 }
 
 // ---------- what was already shown to a member ----------

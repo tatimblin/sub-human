@@ -68,6 +68,19 @@ test('notices.text and rowSegment: the one-line notice and the room row segment'
   assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 39_000 }), '−bob left');
 });
 
+test('notices.text and rowSegment: a leave carries the chat line\'s short reason (render.ts leftWhy)', () => {
+  assert.equal(notices.text({ kind: 'member_left', name: 'bob', why: ' (connection lost)' }), 'bob left (connection lost)');
+  const es = [mv(1, 'member_joined', 'bob', 0), mv(2, 'member_left', 'bob', 30, 'bob left (connection lost)')];
+  assert.equal(notices.joinLeave(es, 'alice', { now: T0 + 39_000 }).at(-1).why, ' (connection lost)');
+  assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 39_000 }), '−bob left (connection lost)');
+  es[1] = mv(2, 'member_left', 'bob', 30, 'bob left (prompt_input_exit)');
+  assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 39_000 }), '−bob left (session ended)', 'a SessionEnd token reads as the chat line does');
+  es[1] = mv(2, 'member_left', 'bob', 30, 'bob left (left)');
+  assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 39_000 }), '−bob left', '/sub-human leave adds nothing');
+  const t = rows.rowText(CODE, CODE, 'alice', { entries: [mv(1, 'member_left', 'bob', 0, 'bob left (session ended)')], members: MEMBERS, now: T0 + 12_000, taskSummary: '' });
+  assert.match(t, /^−bob left \(session ended\)/, 'the room row (panel and statusline)');
+});
+
 test('rows.rowText: the room row leads with a recent join', () => {
   const es = [mv(1, 'member_joined', 'alice', 0), mv(2, 'member_joined', 'bob', 10)];
   const t = rows.rowText(CODE, CODE, 'alice', { entries: es, members: MEMBERS, now: T0 + 12_000, taskSummary: '' });

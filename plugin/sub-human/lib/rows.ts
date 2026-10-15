@@ -30,7 +30,7 @@
  *       by its title (the stored plan's first line, clipped to ROW_TITLE_MAX; the 6-char hash when there is
  *       none): rows are for people, and no tool call is made from them. Segments that do not fit are dropped.
  *       name === code (or null): the member's room row, from viewer's seat: first a join / settled leave of the
- *         last 2 min ("+bob joined", "−bob left"; lib/notices.ts rowSegment), then "⚠ your answer needed Cursor paging",
+ *         last 2 min ("+bob joined", "−bob left (connection lost)"; lib/notices.ts rowSegment), then "⚠ your answer needed Cursor paging",
  *         "✓ agreed Cursor paging 1/2", "✖ objected", "✔ decided Cursor paging" ("✖ blocked …" when someone objected),
  *         "proposal Cursor paging 0/2", else "N here";
  *         then "✉ N for you", then lib/tasks.ts summary(code, viewer) ("tasks 3 open · #2 you · #4 bob").
@@ -440,7 +440,7 @@ function roomText(code: string, viewer: string | null | undefined, es: Entry[], 
   // (lib/room/link-state.ts indicator: "✕ offline 2m · 2 queued", "… connecting (3)", "⇄ online")
   const linkSeg: string = linkState.indicator(link, { now });
   if (linkSeg && link?.state !== 'online') parts.push(linkState.isDown(link) ? c.warn(linkSeg) : c.dim(linkSeg));
-  // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left" (lib/notices.ts)
+  // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left (session ended)" (lib/notices.ts)
   const move = notices.rowSegment(es, viewer, { now });
   if (move) parts.push(c.dim(move));
   const ps = proposals(es, code);
