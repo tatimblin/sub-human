@@ -20,15 +20,21 @@ import * as rows from '../lib/rows.ts';
 import * as link from '../lib/remote/link.ts';
 import { isAlive } from '../lib/io.ts';
 import { Machine } from './support/two-homes.ts';
+import type { Proposal } from '../lib/types-app.ts';
+
+/** proposal.create's seat (a Pick of Identity, not exported). */
+type ProposalMe = NonNullable<Parameters<typeof proposal.create>[0]>;
+/** A tail's NDJSON event, the fields read here (lib/tail.ts). */
+interface TailEvent { type: string; text?: string; lines?: string[] }
 
 const RETRY_MS = 4000; // the daemon's first retry after the server is killed: the window the OFFLINE checks run in
 const LINK_ENV = { SUB_HUMAN_LINK_RETRY_MS: String(RETRY_MS), SUB_HUMAN_LINK_RETRY_MAX_MS: String(RETRY_MS), SUB_HUMAN_LINK_IDLE_MS: '1500' };
 
-const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
-const kill = pid => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
-const texts = log => log.split('\n').filter(Boolean).map(l => JSON.parse(l).text);
+const childOf = (pid: number | null | undefined) => Number(spawnSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).stdout.trim().split('\n')[0]) || null;
+const kill = (pid: number | null | undefined) => { try { process.kill(pid as number, 'SIGKILL'); } catch { /* gone (or no pid: null and undefined throw too) */ } };
+const texts = (log: string): string[] => log.split('\n').filter(Boolean).map(l => JSON.parse(l).text);
 /** The text of a tail's NDJSON events of these types (lib/tail.ts). */
-const events = (out, types) => out.split('\n').filter(Boolean).map(l => JSON.parse(l))
+const events = (out: string, types: string[]) => out.split('\n').filter(Boolean).map((l): TailEvent => JSON.parse(l))
   .filter(ev => types.includes(ev.type)).map(ev => ev.text || (ev.lines || []).join('\n')).join('\n');
 
 test('remote e2e: host, join by invite over pipe, @room, signoff → decision, addressed post, presence, OFFLINE, resume, leave', async t => {
@@ -36,29 +42,29 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   const alice = host.seat('alice'), carol = host.seat('carol'), bob = remote.seat('bob');
 
   // the host's room, and an invite to it
-  assert.equal(host.join(alice, 'alice').json.decision, undefined);
+  assert.equal(host.join(alice, 'alice').json!.decision, undefined);
   const code = host.lib(() => store.listRooms()[0]);
   host.join(carol, `carol ${code}`);
   // bob links from the other home with the line and its PIN (a hidden step: the join hook starts his link daemon,
   // which runs the PAKE with the host), alice lets him in, and a bare /sub-human takes his seat
   const via = await remote.joinVia(host, alice, bob);
-  assert.equal(via.shown.json.decision, 'block', 'shown to the person, never to the model');
-  assert.match(via.typed.json.reason, /checked your PIN/, via.typed.stderr);
+  assert.equal(via.shown!.json!.decision, 'block', 'shown to the person, never to the model');
+  assert.match(via.typed.json!.reason!, /checked your PIN/, via.typed.stderr);
   const joined = via.seated;
-  assert.equal(joined.json.systemMessage, undefined, joined.stderr);
-  assert.match(joined.json.hookSpecificOutput.additionalContext, /SUB-HUMAN: you are bob's Claude/);
+  assert.equal(joined.json!.systemMessage, undefined, joined.stderr);
+  assert.match(joined.json!.hookSpecificOutput!.additionalContext!, /SUB-HUMAN: you are bob's Claude/);
   const daemon = remote.lib(() => link.status(code));
   t.after(() => { kill(childOf(daemon.pid)); kill(daemon.pid); fs.rmSync(path.dirname(link.socketPath(path.join(remote.home, 'rooms', code))), { recursive: true, force: true }); });
   assert.deepEqual([daemon.running, daemon.state], [true, 'online']);
   const linkFile = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
   assert.deepEqual([typeof linkFile.token, linkFile.invite], ['string', undefined], 'the invite became the token');
   assert.equal(fs.statSync(path.join(remote.home, 'links', `${code}.json`)).mode & 0o777, 0o600);
-  const hostJoin = host.lib(() => store.open(code).readAll()).find(e => e.kind === 'member_joined' && e.from === 'bob');
+  const hostJoin = host.lib(() => store.open(code).readAll()).find(e => e.kind === 'member_joined' && e.from === 'bob')!;
   assert.equal(hostJoin.machine, remote.lib(() => identity.machineId()));
 
   // bob's @room: placed on the host, verified there, back in his mirror byte for byte
-  assert.equal(remote.say(bob, 'hello from afar').json.continue, false);
-  const said = host.lib(() => store.open(code).readAll()).at(-1);
+  assert.equal(remote.say(bob, 'hello from afar').json!.continue, false);
+  const said = host.lib(() => store.open(code).readAll()).at(-1)!;
   assert.deepEqual([said.from, said.text, host.lib(() => store.humanTrust(said))], ['bob', 'hello from afar', 'verified']);
   assert.equal(remote.log(code), host.log(code), 'read-your-writes: the mirror held it when the hook returned');
 
@@ -67,13 +73,13 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.equal(remote.workers('prompt', { hook_event_name: 'UserPromptSubmit', prompt: '@room one more', sub_human_origin: 'composer', sub_human_nonce: bob.nonce }, bob), 1);
 
   // a proposal naming bob: its plan is prefetched, his card answer is signed there and decided here
-  const p = host.lib(() => proposal.create({ code, name: 'alice', role: 'member' }, { text: '# Ship the parser\n\n1. merge\n', approvers: ['bob'] }));
+  const p = host.lib(() => proposal.create({ code, name: 'alice', role: 'member' } as ProposalMe, { text: '# Ship the parser\n\n1. merge\n', approvers: ['bob'] }));
   await h.until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${p.hash}.md`)), 5000, 50);
-  const card = remote.lib(() => proposal.card({ hash: p.hash, approvers: ['bob'] }, code));
+  const card = remote.lib(() => proposal.card({ hash: p.hash, approvers: ['bob'] } as Proposal, code));
   assert.match(JSON.stringify(card), /Ship the parser/, 'the card shows the prefetched plan');
   const q = `Agree to proposal ${p.hash}?`;
   remote.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: {}, tool_response: { ...card, answers: { [q]: 'Agree' } } }, bob);
-  const decision = host.lib(() => store.open(code).readAll()).find(e => e.kind === 'decision');
+  const decision = host.lib(() => store.open(code).readAll()).find(e => e.kind === 'decision')!;
   assert.equal(decision.text, `agreed: bob (proposal ${p.hash})`);
   assert.equal(host.lib(() => store.humanTrust(store.open(code).readAll().find(e => e.kind === 'signoff'))), 'verified');
 
@@ -91,7 +97,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.match(host.lib(() => rows.rowText(code, 'bob', 'alice')), /idle/);
 
   // a second proposal for bob, prefetched before the link goes down
-  const p2 = host.lib(() => proposal.create({ code, name: 'alice', role: 'member' }, { text: '# Ship the lexer\n', approvers: ['bob'] }));
+  const p2 = host.lib(() => proposal.create({ code, name: 'alice', role: 'member' } as ProposalMe, { text: '# Ship the lexer\n', approvers: ['bob'] }));
   await h.until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${p2.hash}.md`)), 5000, 50);
 
   // the host's server dies: bob's @room posts are queued, nothing written anywhere yet; his tail says so once
@@ -99,21 +105,21 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   kill(server);
   await h.until(() => remote.lib(() => link.status(code)).state === 'offline', 5000, 20);
   const before = { host: host.log(code), mirror: remote.log(code) };
-  assert.equal(host.say(alice, 'while you were away').json.continue, false);
+  assert.equal(host.say(alice, 'while you were away').json!.continue, false);
   for (const [i, text] of ['is anyone there', 'second', 'third'].entries()) {
     const queued = remote.say(bob, text);
-    assert.equal(queued.json.continue, false, queued.stderr);
-    assert.equal(queued.json.stopReason, `⧗ queued: room ${code} is offline; this post goes out when the connection is back (${i + 1} waiting)`);
+    assert.equal(queued.json!.continue, false, queued.stderr);
+    assert.equal(queued.json!.stopReason, `⧗ queued: room ${code} is offline; this post goes out when the connection is back (${i + 1} waiting)`);
   }
   assert.equal(JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.state.json`), 'utf8')).queued, 3);
   assert.equal(fs.statSync(path.join(remote.home, 'rooms', code, 'outbox.json')).mode & 0o777, 0o600);
   // his card answer cannot reach the host either: he is told (systemMessage), the model hears nothing was recorded
   const q2 = `Agree to proposal ${p2.hash}?`;
-  const card2 = remote.lib(() => proposal.card({ hash: p2.hash, approvers: ['bob'] }, code));
+  const card2 = remote.lib(() => proposal.card({ hash: p2.hash, approvers: ['bob'] } as Proposal, code));
   const unsent = remote.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_input: {}, tool_response: { ...card2, answers: { [q2]: 'Agree' } } }, bob);
-  assert.match(unsent.json.systemMessage, new RegExp(`✗ your agreement to proposal ${p2.hash} was not recorded: .*offline`), unsent.stderr);
-  assert.match(unsent.json.hookSpecificOutput.additionalContext, new RegExp(`proposal ${p2.hash}: NOT recorded`));
-  assert.doesNotMatch(unsent.json.hookSpecificOutput.additionalContext, /Recorded\./);
+  assert.match(unsent.json!.systemMessage!, new RegExp(`✗ your agreement to proposal ${p2.hash} was not recorded: .*offline`), unsent.stderr);
+  assert.match(unsent.json!.hookSpecificOutput!.additionalContext!, new RegExp(`proposal ${p2.hash}: NOT recorded`));
+  assert.doesNotMatch(unsent.json!.hookSpecificOutput!.additionalContext!, /Recorded\./);
   assert.equal(remote.log(code), before.mirror);
   assert.doesNotMatch(host.log(code), /is anyone there/);
   const across = remote.tail(bob, RETRY_MS / 1000 + 3); // bob's tail, from offline to back online
@@ -125,17 +131,17 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.deepEqual(host.lib(() => store.open(code).readAll().slice(-3).map(e => store.humanTrust(e))), ['verified', 'verified', 'verified']);
   assert.equal(fs.existsSync(path.join(remote.home, 'rooms', code, 'outbox.json')), false, 'the outbox is empty');
   const notice = events(await across, ['health']);
-  assert.equal(notice.match(/is down \(/g).length, 1, notice);
+  assert.equal(notice.match(/is down \(/g)!.length, 1, notice);
   assert.match(notice, /the connection to room \S+ is down \(.*\); @room posts wait and go out when it's back/);
-  assert.equal(notice.match(/connection to the room is back/g).length, 1, notice);
+  assert.equal(notice.match(/connection to the room is back/g)!.length, 1, notice);
   assert.match(notice, /the connection to the room is back; @room posts go through again; 3 waiting @room post\(s\) sent/, 'one quiet line');
   assert.doesNotMatch(texts(host.log(code)).join('\n'), /bob (left|rejoined)/, 'no left/joined noise');
-  assert.equal(remote.say(bob, 'back again').json.continue, false);
+  assert.equal(remote.say(bob, 'back again').json!.continue, false);
   assert.equal(remote.log(code), host.log(code));
   for (const m of [host, remote]) assert.equal(m.lib(() => store.open(code).verifyChain()).ok, true);
 
   // nothing session-local of bob's is on the host
-  const hostFiles = fs.readdirSync(path.join(host.home, 'rooms', code), { recursive: true });
+  const hostFiles = fs.readdirSync(path.join(host.home, 'rooms', code), { recursive: true }) as string[];
   assert.deepEqual(hostFiles.filter(f => /bob/.test(f) && !/^presence/.test(f)), []);
   assert.ok(fs.readdirSync(path.join(remote.home, 'rooms', code)).some(f => /bob\.cursor$/.test(f)), 'his cursors are on his machine');
 
@@ -156,7 +162,7 @@ test('remote e2e: an invite used already is refused at join with that reason, no
   const alice = host.seat('alice'), bob = first.seat('bob'), carol = third.seat('carol');
   host.join(alice, 'alice');
   const code = host.lib(() => store.listRooms()[0]);
-  const cleanup = m => () => {
+  const cleanup = (m: Machine) => () => {
     const st = m.lib(() => link.status(code));
     if (st.pid) { kill(childOf(st.pid)); kill(st.pid); }
     fs.rmSync(path.dirname(link.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
@@ -164,12 +170,12 @@ test('remote e2e: an invite used already is refused at join with that reason, no
   t.after(cleanup(first));
   t.after(cleanup(third));
   const via = await first.joinVia(host, alice, bob);
-  assert.equal(via.seated.json.decision, undefined, 'the first machine uses it');
+  assert.equal(via.seated.json!.decision, undefined, 'the first machine uses it');
 
   const refused = third.join(carol, `${via.line} --as carol`);
-  assert.equal(refused.json.decision, 'block', refused.stderr);
-  assert.match(refused.json.reason, /no invite for room \S+ is open here/);
-  assert.doesNotMatch(refused.json.reason, /offline|hung up/);
-  assert.equal(refused.json.hookSpecificOutput.suppressOriginalPrompt, true, 'the PIN stays out of the conversation');
+  assert.equal(refused.json!.decision, 'block', refused.stderr);
+  assert.match(refused.json!.reason!, /no invite for room \S+ is open here/);
+  assert.doesNotMatch(refused.json!.reason!, /offline|hung up/);
+  assert.equal(refused.json!.hookSpecificOutput!.suppressOriginalPrompt, true, 'the PIN stays out of the conversation');
   assert.doesNotMatch(host.log(code), /carol/);
 });

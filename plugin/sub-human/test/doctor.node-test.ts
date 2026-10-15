@@ -15,20 +15,26 @@ import * as shim from '../lib/remote/shim.ts';
 import * as identity from '../lib/identity.ts';
 import * as linkMod from '../lib/remote/link.ts';
 import * as store from '../lib/room/store.ts';
+import type { Check, KeyLine, LinkReport, LinkStateView, Reach, Report } from '../lib/cli/types.ts';
+import type { AgentJob } from '../lib/cc.ts';
+import type { MirrorRoomStore } from '../lib/room/store-mirror.ts';
 
 const KEY_B64 = crypto.randomBytes(51).toString('base64').replace(/=+$/, '');
 const KEY = `ssh-ed25519 ${KEY_B64}`;
 const LINK_ID = 'a1b2c3d4e5f6';
 
-const run = (args, env) => spawnSync(h.BIN, ['doctor', ...args], { env: h.childEnv(env), encoding: 'utf8', timeout: 120_000 });
-const byId = (report, id) => report.checks.find(c => c.id === id);
+const run = (args: string[], env: NodeJS.ProcessEnv) => spawnSync(h.BIN, ['doctor', ...args], { env: h.childEnv(env), encoding: 'utf8', timeout: 120_000 });
+// every check a test looks up is in the report
+const byId = (report: Report, id: string): Check => report.checks.find(c => c.id === id)!;
+// the fields checkRoomClaudes reads off a job
+const job = (j: Partial<AgentJob>) => j as AgentJob;
 
 test('doctor: node floor, Remote Control, ssh hints and argument errors', () => {
   for (const v of ['24.3.0', '24.15.0', '25.0.0', '26.1.0']) assert.equal(doctor.checkNode(v).status, 'pass', v);
   for (const v of ['24.2.1', '24.0.0', '23.11.0']) assert.equal(doctor.checkNode(v).status, 'fail', v);
   const old = doctor.checkNode('22.11.0');
   assert.equal(old.status, 'fail');
-  assert.match(old.fix, /Node 24\.3\+/);
+  assert.match(old.fix!, /Node 24\.3\+/);
   assert.equal(doctor.checkRemoteControl({}, []).status, 'info');
   for (const env of [{ CLAUDE_CODE_USE_BEDROCK: '1' }, { CLAUDE_CODE_USE_VERTEX: 'true' }, { ANTHROPIC_API_KEY: 'sk-x' }]) {
     const c = doctor.checkRemoteControl(env, []);
@@ -39,15 +45,16 @@ test('doctor: node floor, Remote Control, ssh hints and argument errors', () => 
   assert.equal(doctor.checkRemoteControl({}, [{ env: { CLAUDE_CODE_USE_BEDROCK: '1' } }]).status, 'warn', 'from a settings file too');
   // the host lets the link's own key in (a new invite, its card), prime for MFA, --via for a bastion
   const denied = doctor.sshHint('alice@box: Permission denied (publickey).', { code: 'vole-1234' });
+  assert.ok(denied);
   assert.match(denied, /never let in, or the host removed it\. ask the host for a new invite \(\/sub-human invite\) and type the line it shows/);
   assert.match(denied, /sub-human prime vole-1234/);
   assert.doesNotMatch(denied, /authorize|shk1|ssh-agent|SUB_HUMAN_SSH_OPTS/, 'no sh1/sh2-era advice');
-  assert.match(doctor.sshHint('Permission denied (publickey).', { code: 'vole-1234', request: 'shk1.vole-1234.abc.KEY.bob' }), /has not let this machine in yet; ask the host for a new invite/);
-  assert.match(doctor.sshHint('Permission denied (publickey,keyboard-interactive).', { code: 'vole-1234' }), /interactive login \(MFA\): run node \S+\/scripts\/sub-human prime vole-1234 once in a terminal/);
-  assert.match(doctor.sshHint('Host key verification failed.', { transport: { knownHosts: '/x/known_hosts', via: 'jump' } }), /not the one its invite pinned.*\/sub-human invite --via jump/);
-  assert.match(doctor.sshHint('Host key verification failed.'), /host key/);
-  assert.match(doctor.sshHint('ssh: Could not resolve hostname box: nodename nor servname provided'), /does not resolve.*--via JUMP/);
-  assert.match(doctor.sshHint('ssh: connect to host box port 22: Operation timed out'), /does not answer.*\/sub-human invite --via JUMP/);
+  assert.match(doctor.sshHint('Permission denied (publickey).', { code: 'vole-1234', request: 'shk1.vole-1234.abc.KEY.bob' })!, /has not let this machine in yet; ask the host for a new invite/);
+  assert.match(doctor.sshHint('Permission denied (publickey,keyboard-interactive).', { code: 'vole-1234' })!, /interactive login \(MFA\): run node \S+\/scripts\/sub-human prime vole-1234 once in a terminal/);
+  assert.match(doctor.sshHint('Host key verification failed.', { transport: { knownHosts: '/x/known_hosts', via: 'jump' } })!, /not the one its invite pinned.*\/sub-human invite --via jump/);
+  assert.match(doctor.sshHint('Host key verification failed.')!, /host key/);
+  assert.match(doctor.sshHint('ssh: Could not resolve hostname box: nodename nor servname provided')!, /does not resolve.*--via JUMP/);
+  assert.match(doctor.sshHint('ssh: connect to host box port 22: Operation timed out')!, /does not answer.*\/sub-human invite --via JUMP/);
   assert.equal(doctor.sshHint('something else'), null);
   assert.throws(() => doctor.parseArgs(['--nope']), /usage: sub-human doctor/);
   assert.throws(() => doctor.parseArgs(['--timeout', 'x']), /--timeout/);
@@ -64,7 +71,7 @@ test('doctor: authorized_keys lines that bypass the shim are found (doctor --fix
     `command="SUB_HUMAN_HOME=${home} /opt/node/bin/node /cache/sub-human/0.2.0/bin/sub-human serve --stdio vole-1234 --link ${LINK_ID}",restrict ${KEY} sub-human:vole-1234:${LINK_ID}`,
   ].join('\n'));
   const scan = doctor.scanAuthorizedKeys(file);
-  assert.deepEqual(scan.lines.map(l => [l.shimmed, l.code, l.id]), [[true, 'vole-1234', 'aaaaaaaaaaaa'], [false, 'vole-1234', LINK_ID]]);
+  assert.deepEqual(scan.lines.map(l => [l.shimmed, (l as Extract<KeyLine, { code: string }>).code, (l as Extract<KeyLine, { code: string }>).id]), [[true, 'vole-1234', 'aaaaaaaaaaaa'], [false, 'vole-1234', LINK_ID]]);
   assert.deepEqual(doctor.scanAuthorizedKeys(file + '.none'), { file: file + '.none', exists: false, lines: [] });
 });
 
@@ -86,17 +93,17 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
 
   let r = run(['--json', '--timeout', '30000'], env);
   assert.equal(r.status, 1, r.stderr || r.stdout.slice(0, 400)); // the home is 0755
-  const rep = JSON.parse(r.stdout);
+  const rep: Report = JSON.parse(r.stdout);
   assert.equal(byId(rep, 'node').status, 'pass');
   assert.equal(byId(rep, 'home').status, 'fail');
-  assert.match(byId(rep, 'home').fix, /^node \S+\/scripts\/sub-human doctor --fix in a terminal/, 'the CLI by its path: none is on PATH');
+  assert.match(byId(rep, 'home').fix!, /^node \S+\/scripts\/sub-human doctor --fix in a terminal/, 'the CLI by its path: none is on PATH');
   const akc = byId(rep, 'authorized_keys');
   assert.equal(akc.status, 'warn');
-  assert.match(akc.fix, /^node \S+\/scripts\/sub-human doctor --fix$/, 'this home\'s line, in the child\'s ~/.ssh/authorized_keys');
+  assert.match(akc.fix!, /^node \S+\/scripts\/sub-human doctor --fix$/, 'this home\'s line, in the child\'s ~/.ssh/authorized_keys');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
   assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v2`));
-  assert.match(lc.fix, /Ask carolyn for an invite/, 'the room moved and this link never reached the new host');
+  assert.match(lc.fix!, /Ask carolyn for an invite/, 'the room moved and this link never reached the new host');
   assert.match(lc.detail, /the room moved to carolyn's machine; not reached from here yet/);
   assert.doesNotMatch(lc.detail, /epoch|BatchMode/);
   const clock = byId(rep, `clock:${code}`);
@@ -105,11 +112,11 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.ok(byId(rep, 'shim'), 'shim checked');
   assert.ok(byId(rep, 'remote_control'));
   const [l] = rep.links;
-  assert.equal(l.reach.ok, true);
-  assert.equal(l.reach.protocol.v, 2);
-  assert.deepEqual(l.reach.protocol.proto, { min: 1, max: 2 });
+  assert.equal(l.reach!.ok, true);
+  assert.equal(l.reach!.protocol!.v, 2);
+  assert.deepEqual(l.reach!.protocol!.proto, { min: 1, max: 2 });
   // the midpoint of a slow spawn can sit seconds from the moment the host answered: bound it loosely
-  assert.ok(Math.abs(l.reach.skewMs) < 60_000, `skew ${l.reach.skewMs}`);
+  assert.ok(Math.abs(l.reach!.skewMs!) < 60_000, `skew ${l.reach!.skewMs}`);
   assert.deepEqual(l.recent, [`2026-10-08T10:00:00.000Z sub-human link ${code}: offline: ssh exited 255`]);
 
   // the human-readable form (reading the link opened the store, which repairs the modes: open them again)
@@ -140,7 +147,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   const text = fs.readFileSync(out, 'utf8');
   const b = JSON.parse(text);
   assert.equal(b.kind, 'sub-human-doctor-bundle');
-  for (const secret of [home, hostHome, user, code, KEY_B64, links.get(code).token, 'carolyn']) assert.ok(!text.includes(secret), `the bundle holds ${secret}:\n${text}`);
+  for (const secret of [home, hostHome, user, code, KEY_B64, links.get(code)!.token!, 'carolyn']) assert.ok(!text.includes(secret), `the bundle holds ${secret}:\n${text}`);
   assert.equal(b.links[0].state.queued, 2);
   assert.equal(b.links[0].reach.ok, true);
   assert.match(b.authorized_keys.lines[0].key, /^ssh-ed25519 SHA256:[A-Za-z0-9+/]{12}$/);
@@ -169,9 +176,10 @@ test('doctor bundle: an allowlist, every free text redacted: ~ for $HOME, hashed
     authorizedKeys: { exists: true, lines: [{ shimmed: false, type: 'ssh-ed25519', key: KEY_B64, code: 'vole-1234', id: LINK_ID }] },
     probe: null,
   };
-  const b = doctor.bundle(report, { salt: 'fixed', env: { SUB_HUMAN_SETTLE_MS: '900', SECRET_THING: 'x' } });
+  // a hand-made report: no authorizedKeys.file, no reach.hint, which bundle never reads
+  const b = doctor.bundle(report as unknown as Report, { salt: 'fixed', env: { SUB_HUMAN_SETTLE_MS: '900', SECRET_THING: 'x' } });
   const text = JSON.stringify(b);
-  for (const s of [home, host, 'alice', 'vole-1234', KEY_B64, invite.split('.').at(-1), token, hex, '10.1.2.3', 'tristan@example.com', '/home/bob', '/Users/carol', os.hostname()]) {
+  for (const s of [home, host, 'alice', 'vole-1234', KEY_B64, invite.split('.').at(-1)!, token, hex, '10.1.2.3', 'tristan@example.com', '/home/bob', '/Users/carol', os.hostname()]) {
     assert.ok(!text.includes(s), `the bundle holds ${s}:\n${text}`);
   }
   assert.ok(text.includes('~/.ssh/authorized_keys'), 'paths under $HOME are ~');
@@ -179,12 +187,12 @@ test('doctor bundle: an allowlist, every free text redacted: ~ for $HOME, hashed
   const fp = 'SHA256:' + crypto.createHash('sha256').update(Buffer.from(KEY_B64, 'base64')).digest('base64').replace(/=+$/, '').slice(0, 12);
   assert.ok(text.includes(`ssh-ed25519 ${fp}`), 'a key becomes its fingerprint prefix');
   // one host hashes the same everywhere in a bundle, and differently with another salt
-  const hh = b.links[0].transport.host;
+  const hh = b.links[0].transport.host!;
   assert.match(hh, /^host-[0-9a-f]{8}$/);
-  assert.ok(b.checks[1].detail.includes(hh) && b.links[0].state.lastError.includes(hh), b.checks[1].detail);
-  assert.notEqual(doctor.bundle(report, { salt: 'other' }).links[0].transport.host, hh);
+  assert.ok(b.checks[1].detail.includes(hh) && b.links[0].state.lastError!.includes(hh), b.checks[1].detail);
+  assert.notEqual(doctor.bundle(report as unknown as Report, { salt: 'other' }).links[0].transport.host, hh);
   assert.deepEqual(b.config.env_overrides, { SUB_HUMAN_SETTLE_MS: 900 }, 'only the timing overrides, as numbers');
-  assert.equal(b.links[0].daemon.pid, undefined);
+  assert.equal((b.links[0].daemon as { pid?: number }).pid, undefined);
   assert.equal(b.links[0].room.startsWith('room-'), true);
   assert.equal(b.versions.plugin, '0.3.0');
   assert.equal(b.checks[1].status, 'fail');
@@ -219,27 +227,27 @@ test('doctor: a room whose claude job started but never took its seat (e.g. bloc
   assert.equal(c.id, `room-claude:${code}`);
   assert.equal(c.status, 'fail');
   assert.match(c.detail, /job job12345 was started \d+ s ago but never took its seat/);
-  assert.match(c.fix, /claude logs job12345 shows what it is doing and why it never took its seat/);
-  assert.doesNotMatch(c.fix, /refused/, 'nothing here knows its /sub-human was refused');
-  const [blocked] = doctor.checkRoomClaudes({ jobs: () => [{ id: 'job12345', state: 'blocked' }] });
+  assert.match(c.fix!, /claude logs job12345 shows what it is doing and why it never took its seat/);
+  assert.doesNotMatch(c.fix!, /refused/, 'nothing here knows its /sub-human was refused');
+  const [blocked] = doctor.checkRoomClaudes({ jobs: () => [job({ id: 'job12345', state: 'blocked' })] });
   assert.match(blocked.detail, /never took its seat; the job is blocked/);
-  assert.match(blocked.fix, /shows what it is doing and why it never took its seat/);
-  assert.doesNotMatch(blocked.fix, /refused/);
-  const [done] = doctor.checkRoomClaudes({ jobs: () => [{ id: 'job12345', state: 'done' }] });
-  assert.match(done.fix, /^the job ended its turn without taking its seat: claude logs job12345 shows why/);
-  assert.match(c.fix, /the bg daemon check says whether the daemon runs a Claude Code that was upgraded away/);
-  const [crashed] = doctor.checkRoomClaudes({ jobs: () => [{ id: 'job12345', state: 'failed' }] });
+  assert.match(blocked.fix!, /shows what it is doing and why it never took its seat/);
+  assert.doesNotMatch(blocked.fix!, /refused/);
+  const [done] = doctor.checkRoomClaudes({ jobs: () => [job({ id: 'job12345', state: 'done' })] });
+  assert.match(done.fix!, /^the job ended its turn without taking its seat: claude logs job12345 shows why/);
+  assert.match(c.fix!, /the bg daemon check says whether the daemon runs a Claude Code that was upgraded away/);
+  const [crashed] = doctor.checkRoomClaudes({ jobs: () => [job({ id: 'job12345', state: 'failed' })] });
   assert.match(crashed.detail, /never took its seat; the job is failed/);
-  assert.match(crashed.fix, /ended before its first turn/);
-  assert.doesNotMatch(crashed.fix, /refused/, 'a crash is not a refused /sub-human');
-  assert.match(crashed.fix, /the bg daemon check says whether .* and how to restart it/);
+  assert.match(crashed.fix!, /ended before its first turn/);
+  assert.doesNotMatch(crashed.fix!, /refused/, 'a crash is not a refused /sub-human');
+  assert.match(crashed.fix!, /the bg daemon check says whether .* and how to restart it/);
   identity.updateRoomClaude(code, () => ({ spawn_error: 'did not take its seat in 120 s (job job12345: failed)' }));
   assert.match(doctor.checkRoomClaudes({ jobs: () => null })[0].detail, /\(did not take its seat in 120 s \(job job12345: failed\)\)/);
   identity.updateRoomClaude(code, () => ({ job: null, spawn_error: 'job job12345 failed' }));
   const [failed] = doctor.checkRoomClaudes();
   assert.equal(failed.status, 'fail');
   assert.match(failed.detail, /its last start failed: job job12345 failed/);
-  assert.match(failed.fix, /the bg daemon check says whether the daemon runs a Claude Code that was upgraded away/);
+  assert.match(failed.fix!, /the bg daemon check says whether the daemon runs a Claude Code that was upgraded away/);
   identity.updateRoomClaude(code, () => ({ job: 'job12345', spawn_error: undefined }));
   identity.updateRoomClaude(code, () => ({ spawned_at: new Date().toISOString() }));
   assert.deepEqual(doctor.checkRoomClaudes({ jobs: () => null }), [], 'within the grace');
@@ -247,37 +255,39 @@ test('doctor: a room whose claude job started but never took its seat (e.g. bloc
   const [ok] = doctor.checkRoomClaudes();
   assert.deepEqual([ok.id, ok.status], [`room-claude:${code}`, 'pass'], 'bound here and live: a ✓ line');
   assert.match(ok.detail, new RegExp(`bound and live: job job12345, pid ${process.pid}`));
-  assert.match(doctor.format({ versions: { plugin: 'x', node: 'x', platform: 'x', arch: 'x' }, checks: [ok] }), /✓ room's Claude /);
+  assert.match(doctor.format({ versions: { plugin: 'x', node: 'x', platform: 'x', arch: 'x' }, checks: [ok] } as unknown as Report), /✓ room's Claude /);
   identity.updateRoomClaude(code, () => ({ pid: 999999 }));
   assert.deepEqual(doctor.checkRoomClaudes(), [], 'bound but its process gone: the watchdog acts, doctor stays quiet');
 });
 
 test('doctor: a link stopped on a spent invite says to ask the host for a new one (joining again would reuse it)', () => {
-  const d = state => ({ code: 'vole-1234', transport: { kind: 'pipe', describe: 'pipe /x' }, daemon: { running: false }, recent: [], moved: null, state });
+  // no credential: linkChecks never reads it
+  const d = (state: LinkStateView) => ({ code: 'vole-1234', transport: { kind: 'pipe', describe: 'pipe /x' }, daemon: { running: false }, recent: [], moved: null, state }) as Omit<LinkReport, 'credential'> as LinkReport;
   for (const why of ['this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one', 'this invite was used already (each invite works once); ask the host for a new one']) {
     const [c] = doctor.linkChecks(d({ state: 'stopped', lastError: why }));
-    assert.match(c.fix, /ask the host for a new invite \(\/sub-human invite there\) and type the line it shows/);
-    assert.doesNotMatch(c.fix, /join again|type \/sub-human in your session/);
+    assert.match(c.fix!, /ask the host for a new invite \(\/sub-human invite there\) and type the line it shows/);
+    assert.doesNotMatch(c.fix!, /join again|type \/sub-human in your session/);
   }
-  assert.match(doctor.linkChecks(d({ state: 'offline', lastError: 'no route' }))[0].fix, /type \/sub-human in your session to start it again/, 'a daemon that is only gone is restarted');
+  assert.match(doctor.linkChecks(d({ state: 'offline', lastError: 'no route' }))[0].fix!, /type \/sub-human in your session to start it again/, 'a daemon that is only gone is restarted');
 });
 
 test('doctor: a dormant link (the room closed, or no seat of this machine left) is info, never --reset; an offline one still fails', () => {
   // the daemon's own stop reasons, which doctor matches
   assert.equal(linkMod.ROOM_CLOSED_REASON, 'the room was closed');
   assert.equal(linkMod.NO_SEAT_REASON, 'no seat of this machine is left in the room');
-  const d = (state, reach) => ({ code: 'vole-1234', transport: { kind: 'pipe', describe: 'pipe /x' }, daemon: { running: false }, recent: [], moved: null, state, ...(reach ? { reach } : {}) });
-  const failed = { ok: false, ms: 3, error: 'the pipe command exited (1) before answering', skipped: false, stderr: '', hint: null, protocol: null, skewMs: null };
+  // no credential: linkChecks never reads it
+  const d = (state: LinkStateView, reach?: Reach) => ({ code: 'vole-1234', transport: { kind: 'pipe', describe: 'pipe /x' }, daemon: { running: false }, recent: [], moved: null, state, ...(reach ? { reach } : {}) }) as Omit<LinkReport, 'credential'> as LinkReport;
+  const failed: Reach = { ok: false, ms: 3, error: 'the pipe command exited (1) before answering', skipped: false, stderr: '', hint: null, protocol: null, skewMs: null };
   const [closed] = doctor.linkChecks(d({ state: 'stopped', lastError: linkMod.ROOM_CLOSED_REASON }));
   assert.equal(closed.status, 'info');
   // never pruned on its own: the host can open it again; forgetting it is the person's own command
-  assert.match(closed.fix, /^the room was closed; this machine's copy is kept\. If the host opens it again, \/sub-human reconnects; node \S+ link vole-1234 --forget in a terminal drops it for good$/);
-  assert.doesNotMatch(closed.fix, /--reset|\/sub-human invite/);
+  assert.match(closed.fix!, /^the room was closed; this machine's copy is kept\. If the host opens it again, \/sub-human reconnects; node \S+ link vole-1234 --forget in a terminal drops it for good$/);
+  assert.doesNotMatch(closed.fix!, /--reset|\/sub-human invite/);
   const [seatless] = doctor.linkChecks(d({ state: 'stopped', lastError: linkMod.NO_SEAT_REASON }));
   assert.equal(seatless.status, 'info');
   // the host may have closed the room since: /sub-human only while it is open, --forget when it is not wanted
-  assert.match(seatless.fix, /^the connection stopped when this machine's last seat left\. If the host still has the room open, type \/sub-human in your session to start it again; if you no longer want the room, node \S+ link vole-1234 --forget in a terminal drops it$/);
-  assert.doesNotMatch(seatless.fix, /--reset/);
+  assert.match(seatless.fix!, /^the connection stopped when this machine's last seat left\. If the host still has the room open, type \/sub-human in your session to start it again; if you no longer want the room, node \S+ link vole-1234 --forget in a terminal drops it$/);
+  assert.doesNotMatch(seatless.fix!, /--reset/);
   // known closed since (the mirror or the host's hello): the closed room's text
   const [shut] = doctor.linkChecks({ ...d({ state: 'stopped', lastError: linkMod.NO_SEAT_REASON }), closed: true });
   assert.equal(shut.status, 'info');
@@ -286,7 +296,7 @@ test('doctor: a dormant link (the room closed, or no seat of this machine left) 
   for (const why of [linkMod.ROOM_CLOSED_REASON, linkMod.NO_SEAT_REASON]) {
     const [c] = doctor.linkChecks(d({ state: 'stopped', lastError: why }, failed));
     assert.equal(c.status, 'info', `${why}: a failed hello does not make it fail`);
-    assert.doesNotMatch(c.fix, /--reset/);
+    assert.doesNotMatch(c.fix!, /--reset/);
   }
   assert.equal(doctor.linkChecks(d({ state: 'offline', lastError: 'no route' }, failed))[0].status, 'fail', 'an offline link the host does not answer');
 });
@@ -300,9 +310,9 @@ test('doctor: a seatless link gets a hello, whose closed (or the mirror\'s stopp
   const env = { ...process.env, PATH: path.join(home, 'bin') }; // no claude: the internals probe is not run
   const ak = path.join(home, 'authorized_keys');
   let rep = await doctor.diagnose({ timeoutMs: 20_000, authorizedKeys: ak, env });
-  assert.equal(rep.links[0].reach.ok, true, rep.links[0].reach.error);
+  assert.equal(rep.links[0].reach!.ok, true, rep.links[0].reach!.error);
   assert.equal(rep.links[0].closed, undefined, 'open on the host');
-  assert.match(byId(rep, `link:${code}`).fix, /If the host still has the room open, type \/sub-human/);
+  assert.match(byId(rep, `link:${code}`).fix!, /If the host still has the room open, type \/sub-human/);
   // the host closes the room: its hello says so
   process.env.SUB_HUMAN_HOME = hostHome;
   identity.setRoomClaude(code, { job: 'cafe0001', stopped_at: new Date().toISOString() });
@@ -311,11 +321,11 @@ test('doctor: a seatless link gets a hello, whose closed (or the mirror\'s stopp
   assert.equal(rep.links[0].closed, true);
   const c = byId(rep, `link:${code}`);
   assert.equal(c.status, 'info');
-  assert.match(c.fix, /^the room was closed; this machine's copy is kept/);
+  assert.match(c.fix!, /^the room was closed; this machine's copy is kept/);
   // --quick (no hello): the mirror's own record of the stop is enough
-  assert.doesNotMatch(byId(await doctor.diagnose({ quick: true, authorizedKeys: ak, env }), `link:${code}`).fix, /room was closed/);
-  store.open(code).applyDoc('members', { claude: { name: 'claude', role: 'claude', stopped_at: new Date().toISOString() } });
-  assert.match(byId(await doctor.diagnose({ quick: true, authorizedKeys: ak, env }), `link:${code}`).fix, /^the room was closed; this machine's copy is kept/);
+  assert.doesNotMatch(byId(await doctor.diagnose({ quick: true, authorizedKeys: ak, env }), `link:${code}`).fix!, /room was closed/);
+  (store.open(code) as MirrorRoomStore).applyDoc('members', { claude: { name: 'claude', role: 'claude', stopped_at: new Date().toISOString() } });
+  assert.match(byId(await doctor.diagnose({ quick: true, authorizedKeys: ak, env }), `link:${code}`).fix!, /^the room was closed; this machine's copy is kept/);
 });
 
 test('doctor: a dormant link gets no hello', async t => {
@@ -336,8 +346,8 @@ test('doctor: a dormant link gets no hello', async t => {
 
 test('doctor checkDaemon: a deleted executable fails, another version warns, not running or unreadable is info', () => {
   const up = (version = '2.1.296') => () => ({ running: true, pid: 4242, version });
-  const live = exe => () => ({ exe, deleted: false });
-  const c = (o) => doctor.checkDaemon({ version: '2.1.296', ...o });
+  const live = (exe: string) => () => ({ exe, deleted: false });
+  const c = (o: Partial<Parameters<typeof doctor.checkDaemon>[0]>) => doctor.checkDaemon({ version: '2.1.296', ...o });
   const unread = c({ status: () => null });
   assert.deepEqual([unread.id, unread.status, unread.detail], ['daemon', 'info', 'could not read `claude daemon status`']);
   assert.equal(c({ status: () => { throw new Error('x'); } }).status, 'info');
@@ -347,12 +357,12 @@ test('doctor checkDaemon: a deleted executable fails, another version warns, not
   const gone = c({ status: up(), exe: () => ({ exe: '/opt/homebrew/Caskroom/claude-code/2.1.292/claude', deleted: true }) });
   assert.equal(gone.status, 'fail');
   assert.match(gone.detail, /pid 4242, 2\.1\.296\) from \/opt\/homebrew\/Caskroom\/claude-code\/2\.1\.292\/claude, which was deleted since it started/);
-  assert.match(gone.fix, /^claude daemon stop --any --keep-workers in a terminal/);
-  assert.match(gone.fix, /the next `claude agents` or `claude --bg` starts a fresh daemon/);
+  assert.match(gone.fix!, /^claude daemon stop --any --keep-workers in a terminal/);
+  assert.match(gone.fix!, /the next `claude agents` or `claude --bg` starts a fresh daemon/);
   const older = c({ status: up('2.1.292'), exe: live('/usr/local/bin/claude') });
   assert.equal(older.status, 'warn');
   assert.match(older.detail, /2\.1\.292\) while `claude --version` says 2\.1\.296/);
-  assert.match(older.fix, /claude daemon stop --any --keep-workers/);
+  assert.match(older.fix!, /claude daemon stop --any --keep-workers/);
   const ok = c({ status: up(), exe: live('/usr/local/bin/claude') });
   assert.deepEqual([ok.status, ok.detail, ok.fix], ['pass', 'running (pid 4242, 2.1.296)', undefined]);
   assert.equal(c({ status: up(), exe: () => null }).status, 'pass', 'an unreadable executable is not a deleted one');
@@ -361,7 +371,7 @@ test('doctor checkDaemon: a deleted executable fails, another version warns, not
 
 test('doctor checkClaude: a probe that cannot run says so (a launcher, another version, nothing found), never "N of N changed"', t => {
   const dir = h.tmpDir('sh-claude-bin-', t);
-  const probeOf = (name, body, version = '2.1.998') => {
+  const probeOf = (name: string, body: string, version = '2.1.998') => {
     const bin = path.join(dir, name);
     fs.writeFileSync(bin, body, { mode: 0o755 });
     return doctor.checkClaude({ version, quick: false, env: { CLAUDE_BIN: bin, PATH: '' } });
