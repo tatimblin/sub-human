@@ -84,6 +84,7 @@ export const REAP_GRACE_MS = 10_000;           // SUB_HUMAN_REAP_GRACE_MS (allow
 export const REAP_WAIT_MS = 20_000;            // SUB_HUMAN_REAP_WAIT_MS (allowZero): wait for task 1 before `claude stop`
 export const REAP_POLL_MS = 500;
 export const ROOM_CLAUDE_BIND_MS = 120_000;           // a spawned room Claude that never bound in this long is spawned again
+export const ROOM_CLAUDE_WATCH_POLL_MS = 5_000;       // the detached starter checks its job this often until it binds (watchStart)
 
 // ---------- room Claude lifecycle: spawn claim, watchdog, seat liveness (lib/room-claude.ts, lib/identity.ts) ----------
 // A {job:'pending'} spawn claim older than this is stale (its detached starter died or hung): the next
