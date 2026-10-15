@@ -128,9 +128,11 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.equal(fs.statSync(home).mode & 0o777, 0o700);
   assert.equal(byId(fixed, 'shim').status, 'pass', byId(fixed, 'shim').detail);
 
-  // --bundle: a 0600 file, redacted
-  const out = path.join(h.tmpDir('sh-bundle-', t), 'b.json');
+  // --bundle: a 0600 file, redacted, its missing parent folders made (no ENOENT)
+  const out = path.join(h.tmpDir('sh-bundle-', t), 'new', 'sub', 'b.json');
+  assert.ok(!fs.existsSync(path.dirname(out)));
   r = run(['--bundle', out, '--timeout', '30000'], env);
+  assert.ok(fs.existsSync(out), r.stderr);
   assert.match(r.stdout, /^wrote .*b\.json: redacted/);
   assert.equal(fs.statSync(out).mode & 0o777, 0o600);
   const text = fs.readFileSync(out, 'utf8');
