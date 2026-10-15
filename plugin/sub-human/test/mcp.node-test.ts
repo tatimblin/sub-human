@@ -227,6 +227,7 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   identity.leave(code, 'carol');
   R = room.open(code);
   mcpCwd = h.tmpDir('sh-mcp-cwd-');
+  identity.join({ code, name: 'alice', role: 'member', pid: process.pid, session_id: `sess-alice-${process.pid}`, cwd: mcpCwd }); // the seat's cwd: the root of a path
   const s = await ready();
   const text = '# Cursor paging\n\n1. add cursor param\n2. tests\n';
   const r = await s.tool('propose', { text });
@@ -266,6 +267,9 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   assert.equal(e2.hash, crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex').slice(0, 12));
   assert.doesNotMatch(r2, /EnterPlanMode|AskUserQuestion/);
   fs.unlinkSync(f);
+  // never under the plugin's home, even inside the root (a home under the project)
+  const inHome = path.join(identity.home(), 'rooms', code, 'members.json');
+  assert.match(errText(await s.tool('propose', { path: inHome })), /under the working directory/);
   // Refusals.
   assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['zed'] })), /not in the room: zed/);
   assert.match(errText(await s.tool('propose', { text: 'x', approvers: ['claude'] })), /people/);
