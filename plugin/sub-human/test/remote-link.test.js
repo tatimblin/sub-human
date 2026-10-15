@@ -349,6 +349,58 @@ test('link: the daemon stops with no seat of this machine left, offline too (by 
   assert.equal(stopped, 'no seat of this machine is left in the room');
 });
 
+test('link: online, a seat whose lease lapsed during a pause but whose claude process lives keeps the daemon (issue #7); a dead or left one stops it; a late tick is a sleep, not idle', async t => {
+  const home = h.freshHome(t);
+  const code = 'vole-1234';
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  store.createRoom(code);
+  const mirror = store.open(code);
+  const seat = (extra = {}) => ({ bob: { name: 'bob', role: 'member', machine: identity.machineId(), joined_at: new Date().toISOString(), seen_at: new Date(0).toISOString(), ...extra } });
+  const index = s => writeJsonAtomic(path.join(home, 'sessions', 'by-pid', `${s.pid}.json`), { code, name: 'bob', role: 'member', pid: s.pid, pid_start: pidStart(s.pid), session_id: null, address: `bob.${code}` });
+  let stopped = null;
+  const watches = [];
+  t.after(() => watches.forEach(u => u())); // a failed assertion must not leave an interval keeping the run alive
+  const watch = (state, opts) => { const u = link.idleWatch({ state: () => state, stop: why => { stopped = why; } }, mirror, 150, opts); watches.push(u); return u; };
+
+  // (a) online after a pause: the host's document still shows bob's lease as lapsed, but bob's claude process lives
+  const sleeper = h.spawnSleeper(60);
+  index(sleeper);
+  mirror.applyDoc('members', seat());
+  let unwatch = watch('online');
+  await h.sleep(600);
+  assert.equal(stopped, null);
+  // (b) bob's session died: nothing holds the seat any more
+  process.kill(sleeper.pid, 'SIGKILL');
+  await h.until(() => stopped, 3000, 20);
+  unwatch();
+  assert.equal(stopped, link.NO_SEAT_REASON);
+
+  // (c) a live process, but the host shows the seat as left: the person joins again, the daemon stops
+  stopped = null;
+  const other = h.spawnSleeper(60);
+  index(other);
+  assert.deepEqual(identity.localSeats(code), ['bob']);
+  mirror.applyDoc('members', seat({ left_at: new Date().toISOString() }));
+  unwatch = watch('online');
+  await h.until(() => stopped, 3000, 20);
+  unwatch();
+  assert.equal(stopped, link.NO_SEAT_REASON);
+  other.kill('SIGKILL');
+
+  // (d) no seat, but a tick that comes far later than asked (the machine slept): the count restarts, no stop
+  stopped = null;
+  let clock = 1_000_000;
+  unwatch = watch('offline', { now: () => clock, gapMs: 5000 });
+  await h.sleep(400);
+  clock += 60_000;
+  await h.sleep(600);
+  assert.equal(stopped, null, 'the late tick is skipped, its time not counted');
+  clock += 150; // then idleMs of awake time with no seat stops it
+  await h.until(() => stopped, 3000, 20);
+  unwatch();
+  assert.equal(stopped, link.NO_SEAT_REASON);
+});
+
 test('tail: one line for a link that is not online, keyed fork, stopped or offline; none while it is online or connecting', () => {
   assert.equal(linkLine({ running: true, state: 'online' }, 'vole-1234'), null);
   assert.equal(linkLine({ running: true, state: 'connecting' }, 'vole-1234'), null);

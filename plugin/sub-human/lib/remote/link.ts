@@ -15,12 +15,15 @@
  *       caps {ping: true}), until it stops; also stops LINK_IDLE_MS
  *       (SUB_HUMAN_LINK_IDLE_MS) after this machine has no seat left in the room (idleWatch), and on SIGTERM,
  *       SIGINT or SIGHUP. SIGUSR2 redials now, as a wake does.
- *   idleWatch(link, mirror, idleMs) -> unwatch   stop the link once idleMs have passed with no seat of this
- *       machine in the room. Online, a seat is one the mirror's members document holds with a fresh lease;
- *       offline, the host's document is stale, so a seat is one a live claude process of this machine holds
- *       (identity.localSeats): a crashed or abandoned join never leaves a daemon retrying for ever. While the
- *       first connection is made it never stops, nor while the link file holds an invite younger than
- *       INVITE_TTL_MS (an sh2 join over ssh retries until the host admits its key; the hello then sends the PIN).
+ *   idleWatch(link, mirror, idleMs, {now?, gapMs?}) -> unwatch   stop the link once idleMs have passed with no
+ *       seat of this machine in the room. Online, a seat is one the mirror's members document holds, not left, with
+ *       a fresh lease or a live claude process of this machine (identity.localSeats: a lease that lapsed during a
+ *       sleep or a pause is renewed by keepSeats, not given up); offline, the host's document is stale, so a seat
+ *       is one a live claude process of this machine holds: a crashed or abandoned join never leaves a daemon
+ *       retrying for ever. While the first connection is made it never stops, nor while the link file holds an
+ *       invite younger than INVITE_TTL_MS (an sh2 join over ssh retries until the host admits its key; the hello
+ *       then sends the PIN). A tick more than gapMs (LINK_WAKE_GAP_MS) late is a sleep: it restarts the count and
+ *       is skipped, so suspended time never counts as idle.
  *   serveMirror({mirror, connect, log?, retryMs?, retryMaxMs?, timings?, clock?, random?, mono?, netSignature?, watch?,
  *       seats?, writeState?, outbox?}) -> Promise<Link>
  *       Listen on socketPath(mirror.dir) (one daemon per socket: LOCK when another one answers there), then dial:
@@ -866,25 +869,38 @@ async function loginRefused(l: Link, t: TransportLike | Promise<TransportLike>, 
   return why ? new RoomError('AUTH', why) : e;
 }
 
-function idleWatch(link: RunningLink, mirror: MirrorRoomStore, idleMs: number): () => void {
+function idleWatch(link: RunningLink, mirror: MirrorRoomStore, idleMs: number, {
+  now = Date.now,
+  gapMs = config.envMs('SUB_HUMAN_LINK_WAKE_GAP_MS', config.LINK_WAKE_GAP_MS),
+}: { now?: () => number; gapMs?: number } = {}): () => void {
   const { machineId } = homeMod;
   const { leaseFresh } = membersMod;
   const identity = identityMod;
-  const leased = () => Object.values(mirror.members.read()).some(m => m && m.machine === machineId() && !m.left_at && leaseFresh(m));
+  // a seat the host shows (not left) whose lease is fresh, or that a live claude process here holds: a lease that
+  // lapsed while this machine slept is keepSeats' to renew on the next connection, not a reason to stop
+  const held = () => {
+    let live: string[] | null = null;
+    return Object.values(mirror.members.read()).some(m => m && m.machine === machineId() && !m.left_at
+      && (leaseFresh(m) || (live ??= identity.localSeats(mirror.code)).includes(m.name)));
+  };
   // an invite not redeemed yet (an ssh join waits for the host to admit its key): kept trying for the invite's life
   const redeeming = () => {
     const l: Link | null = linksMod.get(mirror.code);
-    return !!l && !l.token && (typeof l.invite === 'string' || !!l.enroll) && Date.now() - Date.parse(l.created_at ?? '') < config.INVITE_TTL_MS;
+    return !!l && !l.token && (typeof l.invite === 'string' || !!l.enroll) && now() - Date.parse(l.created_at ?? '') < config.INVITE_TTL_MS;
   };
   const seated = () => {
     const s = link.state();
-    return s === 'connecting' || redeeming() || (s === 'online' ? leased() : identity.localSeats(mirror.code).length > 0);
+    return s === 'connecting' || redeeming() || (s === 'online' ? held() : identity.localSeats(mirror.code).length > 0);
   };
-  let since = Date.now();
+  const tickMs = Math.min(1000, idleMs);
+  let since = now(), lastTick = since;
   const t = setInterval(() => {
-    if (seated()) since = Date.now();
-    else if (Date.now() - since >= idleMs) link.stop(NO_SEAT_REASON);
-  }, Math.min(1000, idleMs));
+    const at = now(), late = at - lastTick - tickMs;
+    lastTick = at;
+    if (late > gapMs) since = at; // the machine slept (or the process was stopped): that time is not idle
+    else if (seated()) since = at;
+    else if (at - since >= idleMs) link.stop(NO_SEAT_REASON);
+  }, tickMs);
   return () => clearInterval(t);
 }
 
