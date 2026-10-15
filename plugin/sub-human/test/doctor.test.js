@@ -263,7 +263,8 @@ test('doctor: a dormant link (the room closed, or no seat of this machine left) 
   const failed = { ok: false, ms: 3, error: 'the pipe command exited (1) before answering', skipped: false, stderr: '', hint: null, protocol: null, skewMs: null };
   const [closed] = doctor.linkChecks(d({ state: 'stopped', lastError: linkMod.ROOM_CLOSED_REASON }));
   assert.equal(closed.status, 'info');
-  assert.equal(closed.fix, 'the room was closed; this machine\'s copy is kept, nothing to do');
+  // never pruned on its own: the host can open it again; forgetting it is the person's own command
+  assert.match(closed.fix, /^the room was closed; this machine's copy is kept\. If the host opens it again, \/sub-human reconnects; node \S+ link vole-1234 --forget in a terminal drops it for good$/);
   assert.doesNotMatch(closed.fix, /--reset|\/sub-human invite/);
   const [seatless] = doctor.linkChecks(d({ state: 'stopped', lastError: linkMod.NO_SEAT_REASON }));
   assert.equal(seatless.status, 'info');
