@@ -1,10 +1,14 @@
 /**
  * plugin/sub-human/mod/core/guard.ts: the store guard's verdicts as pure functions (no `$`, no node imports),
  * shared by the hooks module (mod/guard.ts) and the node tests (test/hooks/guard.node-test.ts, security.node-test.ts).
- * In: the tool input and ctx {home, realHome, userHome, pluginRoot, realPluginRoot, cwd, realCwd}, every field
- * optional (an unknown home leaves only the string rules). Out: a deny reason the model reads, or null.
- * It is a string check, so a determined command evades it; the seat key's signature on via=human and the log's
- * hash chain are what it cannot evade (lib/room/store.ts).
+ * In: the tool input and ctx {home, realHome, userHome, pluginRoot, realPluginRoot, cwd, realCwd, claudeDir, sid},
+ * every field optional (an unknown home leaves only the string rules). Out: a deny reason the model reads, or null.
+ * It is a lexical check of the command's words: it follows `cd`, expands ~, $HOME and braces, and matches glob words
+ * against the protected paths (the home; Claude Code's prompt history and this session's transcript, where an invite
+ * line and its PIN may be), and it denies a recursive or file-reading tool pointed at a directory above them. A model
+ * that builds a path at run time (a variable, an interpreter's string arithmetic, a symlink made first) still gets past
+ * it: what it cannot get past is the log's hash chain, and the seat key's signature only against a Claude that never
+ * read the key (README "What it protects against").
  */
 import type { GuardCtx } from './types.ts';
 
@@ -24,6 +28,8 @@ const READ_DOCTOR = /^\s*(?:[\w./~-]*\/)?sub-human\s+doctor(?:\s+(?:--quick|--js
 /** doctor that changes things: the person runs it. */
 const DOCTOR_WRITES = /(?:^|[\s;&|(`'"/])sub-human\s+doctor\b[^;&|\n]*--(?:fix|bundle)(?![\w-])/;
 const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
+/** Claude Code's prompt history, by name (before the hello says where Claude Code's directory is). */
+const HISTORY = /(?:^|[\/\s'"])\.claude\/history\.jsonl\b/;
 /** The CLI commands a person runs in their own shell: an invite, letting a machine in or out, the link daemon, the room server, the room's options, moving the room's host, the web listener. */
 const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|admit|kick|prime|listen|link|serve|options|handoff|promote|demote)(?![\w-])/;
 /** The host's serve shim asked to link a machine over an ssh login (`ssh you@host H/bin/serve --stdio CODE --link ID --login`),
@@ -71,11 +77,172 @@ function homeSpellings({ home, realHome, userHome }: GuardCtx = {}): string[] {
   return [...out];
 }
 
-/** bashVerdict reads ctx.cwd / realCwd for this command. */
+/** bashVerdict reads ctx.realCwd / realPluginRoot for this command (ctx.cwd it reads for every command it can). */
 export const needsCwd = (command: unknown) => {
   const cmd = typeof command === 'string' ? command : '';
   return RUNS_JS.test(cmd) && PLUGIN_CODE.test(cmd) && !NAMES_PLUGIN(cmd);
 };
+
+// ---------- Bash: the paths a command's words can reach ----------
+/** Tools that read files or walk a tree whatever their words say (a pattern, a code string): pointed at a directory
+ * above a protected path, they reach it. grep only with -r / -R / --recursive / -d recurse (else it reads the files
+ * its words name, which the path rules see). */
+const WALKERS = new Set(['rg', 'ag', 'ack', 'find', 'fd', 'fdfind', 'tar', 'bsdtar', 'zip', '7z', 'rsync', 'xargs', 'python', 'python3',
+  'node', 'nodejs', 'bun', 'deno', 'perl', 'ruby', 'php', 'eval', 'osascript', 'pax', 'cpio']);
+/** Shells: walkers only with -c (a script they run as code). cp and scp: only recursive. */
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'fish']);
+/** Tools whose plain words are paths they read (their words resolve against the cwd, or the last cd). */
+const READERS = new Set(['cat', 'tac', 'head', 'tail', 'less', 'more', 'bat', 'sed', 'awk', 'gawk', 'cut', 'sort', 'uniq', 'nl', 'xxd', 'od',
+  'hexdump', 'strings', 'base64', 'grep', 'egrep', 'fgrep', 'cp', 'mv', 'ln', 'scp', 'dd', 'diff', 'cmp', 'ssh-keygen', 'openssl',
+  'tee', 'jq', 'yq', 'wc', 'file', 'source', '.', 'vi', 'vim', 'nvim', 'nano', 'emacs', 'open', 'pbcopy', 'gzip', 'gunzip', 'bzip2',
+  'xz', 'zcat', 'unzip', 'ls', 'stat', 'md5', 'md5sum', 'shasum', 'sha256sum', 'install', 'rm', 'touch', 'chmod', 'truncate', ...WALKERS, ...SHELLS]);
+const WRAPPERS = new Set(['sudo', 'doas', 'env', 'command', 'builtin', 'exec', 'nice', 'nohup', 'time', 'timeout', 'stdbuf', 'caffeinate']);
+const GLOB_CHARS = /[*?[]/;
+/** Words that are paths inside other words (an interpreter's code, an option's value): absolute, ~ or $HOME ones. */
+const EMBEDDED = /(?:~|\$\{?HOME\}?)?\/[^\s'"`;|&()<>=,]*/g;
+
+/** {a,b} alternatives expanded (innermost first, at most max words). */
+export function braceExpand(word: string, max = 64): string[] {
+  const m = /\{([^{}]*,[^{}]*)\}/.exec(word);
+  if (!m) return [word];
+  const out: string[] = [];
+  for (const alt of m[1].split(',')) {
+    for (const w of braceExpand(word.slice(0, m.index) + alt + word.slice(m.index + m[0].length), max)) {
+      out.push(w);
+      if (out.length >= max) return out;
+    }
+  }
+  return out;
+}
+
+/** One glob segment as a test of a name (`*` and `?` match a leading dot too: a shell may be set to). */
+function segTest(seg: string): (name: string) => boolean {
+  if (!GLOB_CHARS.test(seg)) return name => name === seg;
+  let re = '';
+  for (let i = 0; i < seg.length; i++) {
+    const c = seg[i];
+    if (c === '*') re += '.*';
+    else if (c === '?') re += '.';
+    else if (c === '[') {
+      const j = seg.indexOf(']', i + 2);
+      if (j < 0) { re += '\\['; continue; }
+      let cls = seg.slice(i + 1, j);
+      if (cls[0] === '!') cls = '^' + cls.slice(1);
+      re += '[' + cls.replace(/\\/g, '\\\\') + ']';
+      i = j;
+    } else re += c.replace(/[.+^${}()|\\\]]/g, '\\$&');
+  }
+  try { const r = new RegExp('^' + re + '$', 's'); return n => r.test(n); } catch { return () => true; }
+}
+
+/**
+ * Whether the absolute word p (glob segments allowed) can name the protected path root or one under it ('under'), or
+ * one of root's ancestors ('above'); null: neither. A root segment '*' stands for any one name (a transcript's project
+ * directory).
+ */
+export function reach(p: string, root: string): 'under' | 'above' | null {
+  const ps = normalize(p).split('/').filter(Boolean), rs = root.split('/').filter(Boolean);
+  for (let i = 0; i < rs.length; i++) {
+    if (i >= ps.length) return 'above';
+    if (ps[i] === '**') return 'under';
+    if (rs[i] !== '*' && !segTest(ps[i])(rs[i])) return null;
+  }
+  return 'under';
+}
+
+/** A protected path and what to say about it. */
+interface Protected { root: string; why: string; above: string }
+const STORE_WHY = 'it touches the room store';
+const STORE_ABOVE = 'it searches or reads a directory above the room store, which holds the seat signing keys';
+const TALK_WHY = 'it reads Claude Code\'s prompt history or this session\'s transcript, where an invite line and its PIN can be';
+const TALK_ABOVE = 'it searches a directory above Claude Code\'s prompt history or this session\'s transcript, where an invite line and its PIN can be';
+
+/** The paths bashVerdict and the Read guard protect: each home spelling (and the real one), Claude Code's
+ * history.jsonl, and this session's transcript (projects/<any>/<sid>.jsonl and its subagents' directory). */
+export function protectedPaths(ctx: GuardCtx = {}): Protected[] {
+  const out: Protected[] = [];
+  for (const h of [ctx.home, ctx.realHome]) if (typeof h === 'string' && h.startsWith('/') && normalize(h).length >= 4) out.push({ root: normalize(h), why: STORE_WHY, above: STORE_ABOVE });
+  const cd = typeof ctx.claudeDir === 'string' && ctx.claudeDir.startsWith('/') ? normalize(ctx.claudeDir) : null;
+  if (cd && cd.length > 1) {
+    out.push({ root: `${cd}/history.jsonl`, why: TALK_WHY, above: TALK_ABOVE });
+    if (typeof ctx.sid === 'string' && /^[\w-]{8,}$/.test(ctx.sid)) {
+      out.push({ root: `${cd}/projects/*/${ctx.sid}.jsonl`, why: TALK_WHY, above: TALK_ABOVE });
+      out.push({ root: `${cd}/projects/*/${ctx.sid}`, why: TALK_WHY, above: TALK_ABOVE });
+    }
+  }
+  return out;
+}
+
+/** A word with ~, $HOME and ${HOME} expanded (userHome known), made absolute against base (a cwd, or a cd's word,
+ * which may be a glob), or null: not a path this can place. */
+function placeWord(w: string, base: string | null, userHome: string | null): string | null {
+  let x = w;
+  const tilde = /^(?:~|\$HOME|\$\{HOME\})(?=\/|$)/.exec(x);
+  if (tilde) { if (!userHome) return null; x = userHome + x.slice(tilde[0].length); }
+  if (x.startsWith('$')) return null; // another variable: not placed (SUB_HUMAN_HOME is a string rule)
+  if (x.startsWith('/')) return normalize(x);
+  if (!base) return null;
+  return normalize(base + '/' + x);
+}
+
+const unquote = (w: string): string => w.replace(/["'`\\]/g, '');
+const isRecursiveGrep = (args: string[]): boolean => args.some(a => /^-[a-zA-Z]*[rR]/.test(a) || a === '--recursive' || a === '--dereference-recursive' || /^--directories=recurse$/.test(a) || a === 'recurse');
+
+/** The reason a command reaches a protected path, or null (see the header: lexical, and it follows cd). */
+export function pathVerdict(cmd: string, ctx: GuardCtx = {}): string | null {
+  const prot = protectedPaths(ctx);
+  if (!prot.length) return null;
+  const userHome = typeof ctx.userHome === 'string' && ctx.userHome.startsWith('/') ? normalize(ctx.userHome) : null;
+  let base: string | null = typeof ctx.cwd === 'string' && ctx.cwd.startsWith('/') ? normalize(ctx.cwd) : null;
+  let walks = false;
+  const aboves: { p: Protected }[] = [];
+  const check = (word: string, at: string | null): string | null => {
+    for (const w of braceExpand(word)) {
+      const p = placeWord(w, at, userHome);
+      if (!p) continue;
+      for (const pr of prot) {
+        const r = reach(p, pr.root);
+        if (r === 'under') return pr.why;
+        if (r === 'above') aboves.push({ p: pr });
+      }
+    }
+    return null;
+  };
+  for (const seg of cmd.split(/\|\||&&|[;|&\n()]/)) {
+    const words = seg.trim().split(/\s+/).filter(Boolean).map(unquote).map(w => w.replace(/^\d*[<>]+&?/, '')).filter(Boolean);
+    let i = 0;
+    while (i < words.length && (/^\w+=/.test(words[i]) || WRAPPERS.has(words[i]) || /^-/.test(words[i]) && i > 0 && WRAPPERS.has(words[i - 1]))) i++;
+    if (i < words.length && words[i - 1] === 'timeout' && /^\d/.test(words[i])) i++;
+    const tool = (words[i] || '').split('/').pop() || '';
+    const args = words.slice(i + 1);
+    if (tool === 'cd' || tool === 'pushd') {
+      const target = args.find(a => !a.startsWith('-')) ?? '~';
+      const why = check(target, base); // a cd into the store is the store
+      if (why) return why;
+      base = placeWord(braceExpand(target)[0], base, userHome);
+      continue;
+    }
+    const walker = WALKERS.has(tool) || (SHELLS.has(tool) && args.includes('-c')) || (['grep', 'egrep', 'fgrep'].includes(tool) && isRecursiveGrep(args))
+      || (['cp', 'scp'].includes(tool) && args.some(a => /^-[a-zA-Z]*[rRa]/.test(a)));
+    if (walker) walks = true;
+    const reads = READERS.has(tool);
+    let plain = 0;
+    for (const a of args) {
+      const val = a.startsWith('-') ? (a.includes('=') ? a.slice(a.indexOf('=') + 1) : '') : a;
+      if (!val) continue;
+      if (!a.startsWith('-')) plain++;
+      if (!reads && !val.includes('/') && !GLOB_CHARS.test(val) && val !== '.' && val !== '..' && !/^~/.test(val)) continue;
+      const why = check(val, base);
+      if (why) return why;
+    }
+    // a walker with no path word (rg PATTERN, grep -r PATTERN, find -name X) walks where it stands
+    if (walker && base && (tool === 'find' ? !args.length || args[0].startsWith('-') : plain <= 1)) { const why = check('.', base); if (why) return why; }
+  }
+  // paths inside other words: an interpreter's code, a quoted string
+  for (const m of cmd.matchAll(EMBEDDED)) { const why = check(unquote(m[0]), base); if (why) return why; }
+  if (walks && aboves.length) return aboves[0].p.above;
+  return null;
+}
 
 /** 'deny reason' for a Bash command, or null. */
 export function bashVerdict(command: unknown, ctx: GuardCtx = {}): string | null {
@@ -91,6 +258,9 @@ export function bashVerdict(command: unknown, ctx: GuardCtx = {}): string | null
       if (!/[\w.-]/.test(cmd[i + h.length] || '')) return 'it touches the room store'; // not /home2 or .sub-humanoid
     }
   }
+  if (HISTORY.test(cmd)) return TALK_WHY;
+  const reached = pathVerdict(cmd, ctx);
+  if (reached) return reached;
   if (RUNS_JS.test(cmd) && PLUGIN_CODE.test(cmd)) {
     const roots = [ctx.pluginRoot, ctx.realPluginRoot].filter((r): r is string => typeof r === 'string' && r.startsWith('/')).map(normalize);
     const cwds = [ctx.cwd, ctx.realCwd].filter((c): c is string => typeof c === 'string' && c.startsWith('/')).map(normalize);
@@ -112,6 +282,7 @@ export const denyText = (why: string, root: unknown) => {
     return `ROOM-GUARD: sub-human ${why} (the shim, the home's modes, a bundle file), so they are the person's step: ${
       known ? `they run \`node ${root}/scripts/sub-human doctor --bundle\` (or --fix) ` : 'they run it '}in a terminal outside Claude Code. In a session, /sub-human doctor is the read-only check.`;
   }
+  if (why === TALK_WHY || why === TALK_ABOVE) return `ROOM-GUARD: the invite lines and PINs typed or shown in Claude Code are the people's own; a model never reads them. (Denied: ${why}.)`;
   return `${MSG} (Denied: ${why}.) Use the room MCP tools${known ? `, or \`${root}/scripts/sub-human read|digest|who|tasks|show\`` : ''}.`;
 };
 
@@ -165,11 +336,12 @@ export const WRITE_DENY = (tool: string, p: string | null) => `${MSG} (Denied: $
 // ---------- Read / Grep / Glob ----------
 /**
  * The home's secret directories: keys/ (the seat signing keys, and this home's machine key: with one, a model could
- * sign via=human entries that verify), listen/ (the web listener's Noise private key) and links/ (each link's token, a
- * pending invite's SECRET and PIN, and a web link's own Noise key). Everything else in the store stays readable.
+ * sign via=human entries that verify), listen/ (the web listener's Noise private key), links/ (each link's token, a
+ * pending invite's SECRET and PIN, and a web link's own Noise key) and sessions/ (the hooks module's lease with the
+ * session's nonce, sessions/mods/, and the session indexes). Everything else in the store stays readable.
  */
-export const SECRET_DIRS = ['keys', 'listen', 'links'];
-const SECRET_SEGMENT = /(?:^|\/)\.sub-human\/(?:keys|listen|links)(?:\/|$)/;
+export const SECRET_DIRS = ['keys', 'listen', 'links', 'sessions'];
+const SECRET_SEGMENT = /(?:^|\/)\.sub-human\/(?:keys|listen|links|sessions)(?:\/|$)/;
 const DOT_HOME_END = /(?:^|\/)\.sub-human\/?$/;
 const homesOf = (ctx: GuardCtx): string[] => [ctx.home, ctx.realHome].filter((r): r is string => typeof r === 'string' && r.startsWith('/')).map(normalize);
 const secretRoots = (ctx: GuardCtx): string[] => homesOf(ctx).flatMap(h => SECRET_DIRS.map(d => (h === '/' ? '' : h) + '/' + d));
@@ -180,6 +352,8 @@ const secretRoots = (ctx: GuardCtx): string[] => homesOf(ctx).flatMap(h => SECRE
  */
 export function readVerdict(candidates: unknown[], ctx: GuardCtx = {}, raw: unknown = ''): string | null {
   const cands = candidates.filter((c): c is string => typeof c === 'string' && !!c);
+  const talk = protectedPaths(ctx).filter(p => p.why === TALK_WHY);
+  if (cands.some(c => talk.some(t => reach(c, t.root) === 'under')) || HISTORY.test(String(raw || ''))) return 'it reads Claude Code\'s prompt history or this session\'s transcript';
   const roots = secretRoots(ctx);
   if (roots.length) return cands.some(c => roots.some(r => isUnder(c, r))) ? 'it reads a seat signing key or a link\'s secret' : null;
   return [...cands, String(raw || '')].some(c => SECRET_SEGMENT.test(c)) ? 'it reads a seat signing key or a link\'s secret (~/.sub-human)' : null;
@@ -197,6 +371,8 @@ export function searchVerdict(tool: string, candidates: unknown[], ctx: GuardCtx
   const cands = candidates.filter((c): c is string => typeof c === 'string' && !!c);
   const homes = homesOf(ctx);
   const above = (c: string, h: string) => c === '/' || isUnder(h, c);
+  const talk = protectedPaths(ctx).filter(p => p.why === TALK_WHY);
+  if (cands.some(c => talk.some(t => reach(c, t.root) !== null))) return TALK_ABOVE;
   if (homes.length) return cands.some(c => homes.some(h => above(normalize(c), h))) ? 'it searches the room store\'s home or a directory above it, which holds the seat signing keys' : null;
   return [...cands, String(raw || '')].some(c => DOT_HOME_END.test(c)) ? 'it searches the room store (~/.sub-human), which holds the seat signing keys' : null;
 }
@@ -214,7 +390,7 @@ export function searchTargets(tool: string, input: { path?: unknown; pattern?: u
   return [base, base ? base.replace(/\/$/, '') + '/' + prefix : prefix];
 }
 
-export const READ_DENY = (p: string | null, tool = 'Read') => `ROOM-GUARD: the seat signing keys and the links' secrets are the people's own; a model never reads or searches them. (Denied: ${tool} on ${p || 'the working directory'}.)`;
+export const READ_DENY = (p: string | null, tool = 'Read') => `ROOM-GUARD: the seat signing keys, the links' secrets and the invite lines and PINs typed here are the people's own; a model never reads or searches them. (Denied: ${tool} on ${p || 'the working directory'}.)`;
 
 // ---------- the room MCP tools ----------
 /** hold only from a row subagent (agentId), never a main thread; the rest allowed for a seated session. */

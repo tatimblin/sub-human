@@ -34,7 +34,7 @@ export interface HookJson {
 export interface HookJsonSpecific { additionalContext?: unknown; sessionTitle?: unknown; suppressOriginalPrompt?: unknown }
 
 /** What a shimmed hook reports to the module beside its output (hooks/types.ts SubHumanReport), as read. */
-export interface SubHumanReport { say?: unknown; refused?: unknown; shareable?: unknown; joined?: unknown; reviewOpen?: unknown }
+export interface SubHumanReport { say?: unknown; refused?: unknown; shareable?: unknown; joined?: unknown; reviewOpen?: unknown; pinned?: unknown }
 
 /** A prompt's origin as the pure functions read it (PromptOrigin: its kind, and a plugin's name). */
 export interface OriginLike { kind?: unknown; name?: unknown }
@@ -48,6 +48,10 @@ export interface GuardCtx {
   realPluginRoot?: string | null;
   cwd?: string | null;
   realCwd?: string | null;
+  /** Claude Code's directory (CLAUDE_CONFIG_DIR, else ~/.claude): its history.jsonl and this session's transcript */
+  claudeDir?: string | null;
+  /** this session's id: its transcript is projects/<any>/<sid>.jsonl */
+  sid?: string | null;
 }
 
 /** A tail child's seat event's seat, as parseEvent checks it: its name and code (lib/tail.ts sends role and addr too). */
@@ -83,5 +87,5 @@ declare module 'claude-code' {
 /** join.ts's reply, read (mod/core/command.ts readReply). */
 export type JoinReply =
   | { kind: 'joined'; context: string; lines: string[] }
-  | { kind: 'say'; lines: string[]; refused: boolean; shareable: boolean }
+  | { kind: 'say'; lines: string[]; refused: boolean; shareable: boolean; pinned?: { status: string; ms: number } }
   | { kind: 'failed'; lines: string[] };
