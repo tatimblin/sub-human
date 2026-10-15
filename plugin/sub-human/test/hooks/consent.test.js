@@ -559,6 +559,36 @@ test('plan file: the model rewrote the plan file during a review: the dialog sti
   assert.equal(fs.existsSync(file), false);
 });
 
+test('plan file: a review of a proposal made from the session plan file leaves it byte for byte', () => {
+  const { w, hash } = world();
+  const file = path.join(w.userHome, '.claude', 'plans', 'proposed.md');
+  fs.writeFileSync(file, TEXT); // the plan bob's session proposed: the file already holds the proposal's text
+  const tp = transcript(w, file);
+  enter(w, 'default', { transcript_path: tp });
+  assert.equal(review(w).backup, TEXT, 'a file that existed is backed up, even when it holds the proposal');
+  const pre = w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${hash}` }, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' });
+  assert.equal(decision(pre), 'ask');
+  assert.equal(review(w).backup, TEXT);
+  const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: TEXT, filePath: file } }), { as: 'bob' });
+  assert.match(ctx(post), /bob agreed to proposal/);
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.from, x.proposal_hash]), [['signoff', 'human', 'bob', hash]]);
+  assert.equal(fs.readFileSync(file, 'utf8'), TEXT, 'not deleted');
+  assert.equal(review(w), null);
+  // The path first known at Pre(ExitPlanMode) (no transcript at enter): the same.
+  const w2 = world();
+  const f2 = path.join(w2.w.userHome, '.claude', 'plans', 'late.md');
+  fs.writeFileSync(f2, TEXT);
+  enter(w2.w);
+  assert.equal(review(w2.w).file, undefined, 'no path yet');
+  const tp2 = transcript(w2.w, f2);
+  const pre2 = w2.w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: `proposal ${w2.hash}` }, tool_use_id: 'tu1', transcript_path: tp2 }), { as: 'bob' });
+  assert.equal(decision(pre2), 'ask');
+  assert.deepEqual([review(w2.w).file, review(w2.w).backup], [f2, TEXT]);
+  w2.w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'default', tool_input: {}, tool_use_id: 'tu1', tool_response: { plan: TEXT, filePath: f2 } }), { as: 'bob' });
+  assert.deepEqual(answers(w2.w).map(x => [x.kind, x.from, x.proposal_hash]), [['signoff', 'bob', w2.hash]]);
+  assert.equal(fs.readFileSync(f2, 'utf8'), TEXT, 'not deleted');
+});
+
 test('Post(ExitPlanMode) with no review shown for a pending proposal: the model is told nothing was recorded', () => {
   const { w, hash } = world();
   // No review at all (Pre cleared it, or a pre-fix hook): Claude Code's own empty dialog, then "Yes".

@@ -308,7 +308,6 @@ function showEarly(input: ConsentIn, me: Identity, st: Review) {
   if (!file || text == null || st.file) return;
   let backup: string | null = null;
   try { backup = fs.readFileSync(file, 'utf8'); } catch { /* none yet */ }
-  if (backup === text) backup = null;
   Object.assign(st, { file, backup, restored: false });
   writeReview(me, st);
   try { writeFileAtomic(file, text); } catch (err) {
@@ -345,7 +344,6 @@ function preExit(input: ConsentIn, me: Identity) {
   if (st.file === file && !st.restored) backup = st.backup; // showEarly already backed it up and wrote the text
   else if (file) {
     try { backup = fs.readFileSync(file, 'utf8'); } catch { /* none yet */ }
-    if (backup === text) backup = null; // left over from an earlier review: nothing of the person's to keep
   }
   // A plan of the model's own (not the proposal, not a stub) is never shown here: the model's input as sent, or
   // the plan Claude Code read from the file unless that is just what the file held before the review.
