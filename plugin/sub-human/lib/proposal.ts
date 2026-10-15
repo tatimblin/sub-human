@@ -79,6 +79,7 @@ import * as room from './room.ts';
 import { writeFileAtomic } from './io.ts';
 import { clip, oneLine } from './text.ts';
 import * as config from './config.ts';
+import * as cc from './cc.ts';
 import type { Card, Confirm, Proposal, Review } from './types-app.ts';
 import type { Entry, Matrix, Member, Members, ProposalState } from './room/types.ts';
 import type { Identity } from './identity.ts';
@@ -352,6 +353,18 @@ function expand(p: string, cwd: string | undefined): string {
   if (p === '~' || p.startsWith('~/')) p = path.join(os.homedir(), p.slice(1));
   return path.resolve(cwd || process.cwd(), p);
 }
+/** Where a proposal's path may point: the session's working directory and Claude Code's plan files. */
+function allowedRoots(cwd: string | undefined): string[] {
+  const roots = [cwd || process.cwd(), cc.plansDir()];
+  return roots.map(r => { try { return fs.realpathSync(r); } catch { return r; } });
+}
+/** abs is inside one of the allowed roots once every link is resolved (a model's propose({path}) reads nothing else:
+ *  the bytes are stored, streamed to every mirror and shown to the room). */
+function inside(abs: string, cwd: string | undefined): boolean {
+  let real: string;
+  try { real = fs.realpathSync(abs); } catch { return false; }
+  return allowedRoots(cwd).some(r => real === r || real.startsWith(r.endsWith(path.sep) ? r : r + path.sep));
+}
 
 /** The propose tool's arguments (checked here, so unknown). */
 interface CreateArgs { text?: unknown, path?: unknown, approvers?: unknown }
@@ -369,6 +382,7 @@ function create(me: Me | null | undefined, args: CreateArgs = {}, { cwd }: { cwd
     let st: fs.Stats;
     try { st = fs.statSync(abs); } catch { refuse(`no such file: ${abs}`); }
     if (!st.isFile()) refuse(`not a file: ${abs}`);
+    if (!inside(abs, cwd)) refuse(`a proposal's path must be under the working directory or Claude Code's plans (${abs} is not); pass the text instead`);
     if (st.size > FILE_MAX) refuse(`file too large (${st.size} bytes; max ${FILE_MAX})`);
     buf = fs.readFileSync(abs);
   } else {

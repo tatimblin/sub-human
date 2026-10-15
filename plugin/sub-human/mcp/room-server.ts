@@ -47,9 +47,10 @@ import path from 'node:path';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as proposal from '../lib/proposal.ts';
+import * as store from '../lib/room/store.ts';
 import { cliCmd } from '../lib/text.ts';
 import { createRequire } from 'node:module';
-import type { EntryInput } from '../lib/room/types.ts';
+import type { Entry, EntryInput } from '../lib/room/types.ts';
 import type { CallMeta, CallToolParams, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
 
 // loadPlugins() requires each plug-in by path (createRequire: require(esm) is synchronous).
@@ -80,6 +81,13 @@ const reply = (id: JsonRpcId | null, result: unknown) => send({ jsonrpc: '2.0', 
 const fail = (id: JsonRpcId | null, code: number, message: string) => send({ jsonrpc: '2.0', id, error: { code, message } });
 const text = (s: unknown, isError?: boolean): ToolResult => ({ content: [{ type: 'text', text: String(s) }], ...(isError ? { isError: true } : {}) });
 const json = (v: unknown) => text(JSON.stringify(v));
+/** An entry as the model reads it: without the signature material (sig, nonce, ts, room, pubkey: tokens it cannot
+ *  use) and, for a person's line, with `trust` (verified | legacy | unverified: not the person's words for certain). */
+function readable(e: Entry): Record<string, unknown> {
+  const { sig, nonce, ts, room: _room, pubkey, ...rest } = e as Entry & { ts?: unknown; room?: unknown; pubkey?: unknown };
+  const trust = e.via === 'human' ? store.humanTrust(e) : null;
+  return trust ? { ...rest, trust } : rest;
+}
 
 function log(...a: unknown[]) {
   if (process.env.SUB_HUMAN_DEBUG !== '1') return;
@@ -230,14 +238,14 @@ function read(me: Me, args: ToolArgs) {
   if (args.ids !== undefined) {
     const ids = Array.isArray(args.ids) ? args.ids : [args.ids];
     if (!ids.length || !ids.every(i => Number.isInteger(Number(i)) && Number(i) > 0)) return text('ids must be positive integers', true);
-    return json(room.open(me.code).readById(ids.map(Number)));
+    return json(room.open(me.code).readById(ids.map(Number)).map(readable));
   }
   const r = room.open(me.code);
   const cursor = `mcp-${me.name}`;
   const all = r.readAfter(r.getCursor(cursor));
   if (all.length) r.setCursor(cursor, all.at(-1)!.id);
   const unseen = all.filter((e: { from?: string; via?: string }) => !(e.from === me.name && e.via === 'agent'));
-  return json(unseen.length > READ_MAX ? unseen.slice(-READ_MAX) : unseen);
+  return json((unseen.length > READ_MAX ? unseen.slice(-READ_MAX) : unseen).map(readable));
 }
 
 function propose(me: Me, args: ToolArgs) {
