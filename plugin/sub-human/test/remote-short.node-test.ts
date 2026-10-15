@@ -185,7 +185,7 @@ test('an invite: a wrong PIN costs a try with a room line and is asked for again
   const ok = remote.join(bob, `join ${m.pin}`);
   assert.match(ok.json!.reason!, /checked your PIN/);
   const said = host.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text).join('\n');
-  assert.match(said, /bob on \S+ typed a wrong PIN for invite [0-9a-f]{12} \(4 tries left\)/);
+  assert.match(said, /a wrong PIN for invite [0-9a-f]{12} \(4 tries left; it asked to join as bob\)/);
   assert.ok(!said.includes(` ${wrong}`) && !said.includes(` ${m.pin}`));
 });
 

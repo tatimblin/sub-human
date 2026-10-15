@@ -115,7 +115,7 @@ test('the PIN online: none asked for (free), a wrong one costs a try and a room 
   const w1 = redeem(mallory, wrong)!;
   assert.deepEqual([w1.code, w1.reason], ['AUTH', 'PIN_WRONG']);
   assert.match(w1.message, /4 tries left/);
-  assert.match(String(w1.note), /carol on carols-mbp typed a wrong PIN for invite [0-9a-f]{12} \(4 tries left\)/);
+  assert.match(String(w1.note), /^a wrong PIN for invite [0-9a-f]{12} \(4 tries left; it asked to join as carol\)$/, 'no label: a room line every Claude reads carries nothing the joiner chose but a checked name');
   assert.equal(redeem(carol, r.pin)!.reason, 'PIN_THROTTLED', 'the invite takes no PIN for 2 s after a wrong one');
   assert.equal(recordOf(host, r.ref).tries, 4, 'a throttled PIN costs nothing');
   now += 2100;
@@ -230,4 +230,30 @@ test('machine-key: the host proof verifies only for its room and nonce', () => {
   assert.equal(machineKey.verifyHost(p, 'vole-1234', crypto.randomBytes(18).toString('base64url')), null);
   assert.equal(machineKey.verifyHost({ ...p, key: crypto.randomBytes(32).toString('base64url') }, 'vole-1234', nonce), null);
   assert.equal(machineKey.verifyHost(p, 'vole-1234', 'short'), null);
+});
+
+test('the PIN\'s backoff and the card\'s wait take their SUB_HUMAN_* overrides only under the tests; a label is cut short', t => {
+  const was = { T: process.env.SUB_HUMAN_TEST, B: process.env.SUB_HUMAN_PIN_BACKOFF_MS, A: process.env.SUB_HUMAN_ADMIT_TTL_MS };
+  t.after(() => {
+    for (const [k, v] of [['SUB_HUMAN_TEST', was.T], ['SUB_HUMAN_PIN_BACKOFF_MS', was.B], ['SUB_HUMAN_ADMIT_TTL_MS', was.A]] as const) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  });
+  process.env.SUB_HUMAN_PIN_BACKOFF_MS = '1';
+  process.env.SUB_HUMAN_ADMIT_TTL_MS = '1';
+  assert.equal(config.testMs('SUB_HUMAN_PIN_BACKOFF_MS', config.PIN_BACKOFF_MS), 1, 'under the tests');
+  delete process.env.SUB_HUMAN_TEST;
+  assert.equal(config.testMs('SUB_HUMAN_PIN_BACKOFF_MS', config.PIN_BACKOFF_MS), config.PIN_BACKOFF_MS, 'a person\'s env cannot make the backoff 1 ms');
+  // a wrong PIN outside the tests: the invite's wait is the real one
+  const { host } = hostRoom(t);
+  const r = mint(host);
+  const m = machine();
+  const now = Date.parse('2026-10-15T12:00:00Z');
+  const wrong = String((Number(r.pin) + 1) % 10_000).padStart(4, '0');
+  assert.throws(() => invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as: { name: 'carol', label: 'x'.repeat(64) }, pin: wrong, now }));
+  assert.equal(Date.parse(recordOf(host, r.ref).next_at!) - now, config.PIN_BACKOFF_MS);
+  try { invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as: { name: 'carol', label: 'x'.repeat(64) }, pin: r.pin, now: now + 60_000 }); } catch { /* waiting */ }
+  const adm = records(host)[invites.admissionSlot(r.id)] as AdmissionRecord;
+  assert.equal(adm.label, 'x'.repeat(24), 'the card and the room line show 24 characters of it');
+  assert.equal(Date.parse(adm.expires_at) - (now + 60_000), config.ADMIT_TTL_MS, 'the card\'s real wait');
 });

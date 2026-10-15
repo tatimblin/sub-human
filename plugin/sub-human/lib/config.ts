@@ -13,6 +13,14 @@
  *   flush, so it is ignored.
  */
 
+/**
+ * A timing the tests shorten that would weaken a guard if a person (or a steered model) set it: honoured only under
+ * the test preload (test/helpers.ts sets SUB_HUMAN_TEST=1 for every test process and its children), else fallback.
+ */
+function testMs(name: string, fallback: number): number {
+  return process.env.SUB_HUMAN_TEST === '1' ? envMs(name, fallback) : fallback;
+}
+
 function envMs(name: string, fallback: number, { allowZero = false }: { allowZero?: boolean } = {}): number {
   const raw = process.env[name];
   if (raw == null || String(raw).trim() === '') return fallback;
@@ -35,7 +43,7 @@ function timingEnv(src: Record<string, string | undefined> | null = process.env)
   return out;
 }
 
-export { envMs, timingEnv, TIMING_ENV_RE };
+export { envMs, testMs, timingEnv, TIMING_ENV_RE };
 
 
 // ---------- the room tail (scripts/sub-human tail, the hooks module's child) ----------
@@ -152,9 +160,9 @@ export const PROMOTE_OFFLINE_MS = 10 * 60_000;
 // held then waits ADMIT_TTL_MS for the host person's card (Let in / Refuse) before it lapses.
 export const INVITE_TTL_MS = 15 * 60_000;
 export const INVITE_PIN_TRIES = 5;
-export const PIN_BACKOFF_MS = 2000;              // SUB_HUMAN_PIN_BACKOFF_MS (tests)
+export const PIN_BACKOFF_MS = 2000;              // SUB_HUMAN_PIN_BACKOFF_MS, honoured under the tests only (testMs)
 export const SHORT_LIVE_MAX = 4;
-export const ADMIT_TTL_MS = 10 * 60_000;       // SUB_HUMAN_ADMIT_TTL_MS
+export const ADMIT_TTL_MS = 10 * 60_000;       // SUB_HUMAN_ADMIT_TTL_MS, honoured under the tests only (testMs)
 // The join hook waits this long for a fresh link's first hello (redeem or refusal) before it answers.
 export const LINK_JOIN_WAIT_MS = 4000;
 // The app-level heartbeat (op ping, to a server whose caps list it): a ping every LINK_PING_MS; no pong within

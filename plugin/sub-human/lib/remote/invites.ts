@@ -58,7 +58,7 @@
 import crypto from 'node:crypto';
 import { RoomError } from '../room/validate.ts';
 import { CODE_RE, NAME_RE } from '../text.ts';
-import { INVITE_TTL_MS, INVITE_PIN_TRIES, HANDOFF_INVITE_MS, SHORT_LIVE_MAX, ADMIT_TTL_MS, PIN_BACKOFF_MS, envMs } from '../config.ts';
+import { INVITE_TTL_MS, INVITE_PIN_TRIES, HANDOFF_INVITE_MS, SHORT_LIVE_MAX, ADMIT_TTL_MS, PIN_BACKOFF_MS, testMs } from '../config.ts';
 import * as hostLinks from './host-links.ts';
 import * as admission from './admission.ts';
 import * as secretMod from './invite-secret.ts';
@@ -78,6 +78,8 @@ const SHORT_PIN_RE = /^[0-9]{4}$/;
 const HOST_KEY_RE = /^[A-Za-z0-9_-]{43}$/; // 32 bytes, base64url
 const REF_RE = /^[0-9a-f]{12}$/;
 const LABEL_RE = /^[A-Za-z0-9._-]{1,64}$/;
+/** How much of a joiner's label a room line or the card shows. */
+const LABEL_SHOWN = 24;
 const INVITES_KEY = 'remote/invites';
 const SECRET_RE = /^[A-Za-z0-9_-]{16,128}$/;
 /** The other machines an admission remembers presenting its used invite (one room line each). */
@@ -135,7 +137,7 @@ const inviteOpen = (inv: unknown, now = Date.now()): inv is ShortInvite => {
 };
 
 /** The wait after the n-th wrong PIN (n >= 1): PIN_BACKOFF_MS, doubling. */
-const backoff = (n: number): number => envMs('SUB_HUMAN_PIN_BACKOFF_MS', PIN_BACKOFF_MS) * 2 ** Math.min(Math.max(0, n - 1), 10);
+const backoff = (n: number): number => testMs('SUB_HUMAN_PIN_BACKOFF_MS', PIN_BACKOFF_MS) * 2 ** Math.min(Math.max(0, n - 1), 10);
 
 /**
  * An invite line's PIN step and its redemption, inside the invites update (see the header). Returns the records to
@@ -171,9 +173,10 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
     return { next: { ...cur, [key]: { ...inv, burnt_at: iso(now) } }, err: authError('this invite expired (it lasts 15 minutes); ask the host for a new one', 'INVITE_EXPIRED') };
   }
   if (pin === undefined) return { err: authError(`the host's machine has this invite (${left(inv.tries)}): type the 4-digit PIN they told you`, 'PIN_NEEDED') };
-  if (!proven) return { err: new RoomError('PROTOCOL', 'a PIN goes only with this machine\'s key (sub-human 0.5.0-beta.16 or newer): update it (/plugin update sub-human)', 'SKEW') };
+  if (!proven) return { err: new RoomError('PROTOCOL', 'a PIN goes only with this machine\'s key, proved in this connection: a newer sub-human does that; update it (/plugin update sub-human)', 'SKEW') };
   if (!as || !NAME_RE.test(as.name)) return { err: new RoomError('INVALID', 'a PIN goes with the name to join as') };
-  const label = LABEL_RE.test(String(as.label)) ? as.label : 'a-machine';
+  // what the joiner says it is called: its charset only, and short, since a room line every Claude reads carries it
+  const label = LABEL_RE.test(String(as.label)) ? as.label.slice(0, LABEL_SHOWN) : 'a-machine';
   const src = (inv.sources || {})[proven];
   const wait = Math.max(inv.next_at ? Date.parse(inv.next_at) - now : 0, src ? Date.parse(src.next_at) - now : 0);
   if (wait > 0) return { err: authError(`too many PINs tried just now: wait ${Math.ceil(wait / 1000)} s, then type the PIN again`, 'PIN_THROTTLED') };
@@ -183,14 +186,14 @@ function redeemShort(cur: Invites, key: string, secret: string, inv: ShortInvite
     const rec: ShortInvite = { ...inv, tries, wrong, next_at: iso(now + backoff(wrong)), sources, ...(tries ? {} : { burnt_at: iso(now) }) };
     const next = { ...cur, [key]: rec };
     return tries
-      ? { next, err: authError(`wrong PIN (${left(tries)}). Check the digits with the host, then type it again`, 'PIN_WRONG', `${as.name} on ${label} typed a wrong PIN for invite ${ref} (${left(tries)})`) }
+      ? { next, err: authError(`wrong PIN (${left(tries)}). Check the digits with the host, then type it again`, 'PIN_WRONG', `a wrong PIN for invite ${ref} (${left(tries)}; it asked to join as ${as.name})`) }
       : { next, err: authError('wrong PIN, and that was the last try: this invite no longer works. Ask the host for a new one (/sub-human invite on their side)', 'PIN_LAST', `invite ${ref} burnt after its last wrong PIN`) };
   }
   const id = linkId || hostLinks.newLinkId();
   const joiner = { machine: proven, name: as.name, label, key: peerKey };
   const adm: AdmissionRecord = {
     v: 2, admission: true, from: ref, kind: inv.kind, by: inv.by || null, machine: proven, name: as.name, label,
-    key: peerKey, link: id, admit: 'asked', created_at: iso(now), expires_at: iso(now + envMs('SUB_HUMAN_ADMIT_TTL_MS', ADMIT_TTL_MS)),
+    key: peerKey, link: id, admit: 'asked', created_at: iso(now), expires_at: iso(now + testMs('SUB_HUMAN_ADMIT_TTL_MS', ADMIT_TTL_MS)),
   };
   const next = { ...cur, [key]: { ...inv, used_at: iso(now), link: id, enrolled: { at: iso(now), ...joiner } }, [admissionSlot(secret)]: adm };
   const waiting = Object.assign(new RoomError('OFFLINE', `${admission.WAITING}; the link keeps trying`, 'ADMIT_WAITING'), {
