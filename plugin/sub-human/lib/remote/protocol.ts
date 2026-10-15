@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/remote/protocol.ts: the wire protocol between a link (lib/remote/client.ts, on the
  * machine of a remote member) and a room's server (lib/remote/server.ts, on the host): the ops, the frame
  * shapes, the error codes and the line codec. Transport-agnostic (lib/remote/transports/*). Zero
- * dependencies beyond node:string_decoder and lib/config.ts.
+ * dependencies beyond node:string_decoder, lib/config.ts, lib/reasons.ts and RoomError.
  *
  * Frames, one JSON object per line (as mcp/room-server.ts speaks):
  *   request  {id, op, params}        reply {id, result} | {id, error: {code, message}}
@@ -22,17 +22,16 @@
  *   epoch                            hello and append may carry the mirror's host epoch (lib/handoff.ts); the hello
  *                                    reply carries the server's. A hello from a later epoch, or an append from another,
  *                                    is STALE (a host the room moved away from, or a copy not caught up)
- *   PROTO = {min: 1, max: 2}         the protocol versions this end speaks. hello carries {v, proto, client, caps}:
- *                                    v the version the client needs at least (1, or 2 for an sh2 invite: a host
- *                                    before 0.4 checks v === 1 and has no proto), proto its range, client its plugin
- *                                    version. The server answers {v, proto, server, caps, time}: time its clock (ms; additive,
- *                                    for the skew sub-human doctor reports), v = negotiate() of the two
- *                                    ranges (a hello without proto is the range [v, v]); no overlap is PROTOCOL with
- *                                    skewMessage(), which names the side that must update. v2: the sh2 invite and its PIN
+ *   PROTO = {min: 1, max: 2}         the protocol versions this end speaks. hello carries {proto, client, caps}: proto
+ *                                    its range, client its plugin version (a peer may also send v, the version it needs
+ *                                    at least, which the server honours). The server answers {v, proto, server, caps,
+ *                                    time}: time its clock (ms, for the skew sub-human doctor reports), v = negotiate()
+ *                                    of the two ranges; no overlap, or a hello with no proto, is PROTOCOL (reason SKEW)
+ *                                    with skewMessage(), which names the side that must update. v2: the sh2 invite and its PIN
  *   VERSION = PROTO.max              (kept for callers that name one version)
  *   PLUGIN_VERSION                   this plugin's version (.claude-plugin/plugin.json), '?' when unreadable
  *   negotiate(a, b) -> v | null      the highest version in both ranges {min, max}, null when they do not overlap
- *   rangeOf(params) -> {min, max} | null   a hello's range: its proto when well formed, else [v, v]
+ *   rangeOf(params) -> {min, max} | null   a hello's range: its proto when well formed, else null
  *   skewMessage({host, joiner}) -> string   {version, proto} each: "host runs sub-human 0.4.0 (protocol 3–4); you run
  *                                    0.3.0 (protocol 2). Update your plugin: /plugin update sub-human" (or "The host
  *                                    must update …" when the joiner is the newer side)
@@ -93,11 +92,10 @@ const PLUGIN_VERSION: string = (() => {
 
 const isVersion = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 1000;
 /** A hello's fields as they arrived: unchecked. */
-interface RangeFields { v?: unknown; proto?: { min?: unknown; max?: unknown } | null }
-/** @returns {{min: number, max: number} | null} */
-function rangeOf({ v, proto }: RangeFields = {}): ProtoRange | null {
-  if (proto && isVersion(proto.min) && isVersion(proto.max) && proto.min <= proto.max) return { min: proto.min, max: proto.max };
-  return isVersion(v) ? { min: v, max: v } : null;
+interface RangeFields { proto?: { min?: unknown; max?: unknown } | null }
+/** A hello's range, its proto when well formed; null otherwise (a hello with no proto is refused: PROTOCOL SKEW). */
+function rangeOf({ proto }: RangeFields = {}): ProtoRange | null {
+  return proto && isVersion(proto.min) && isVersion(proto.max) && proto.min <= proto.max ? { min: proto.min, max: proto.max } : null;
 }
 /** @returns {number | null} */
 function negotiate(a: ProtoRange, b: ProtoRange): number | null {

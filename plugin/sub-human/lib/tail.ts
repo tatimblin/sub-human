@@ -397,12 +397,9 @@ function errorLog(err: (s: string) => unknown, clock: Clock, everyMs: number): L
 // ---------- one seat's session ----------
 /** Where a seat's delivery starts: its saved cursor, else (its first run) its latest join, so nothing between the
  * join and the first lookup is lost, else the log's end. */
-function startCursor(rm: Pick<TailRoom, 'getCursor' | 'readView'>, saved: number, me: Identity, last: number): number {
+function startCursor(rm: Pick<TailRoom, 'readView'>, saved: number, me: Identity, last: number): number {
   const c = saved;
   if (c > 0 && c <= last) return c;
-  // 0.4.x kept the room's Claude's cursor as deliver-orch: an upgraded room resumes there, so no @claude is skipped
-  const old = me.role === 'claude' ? rm.getCursor('deliver-orch') : 0;
-  if (old > 0 && old <= last) return old;
   const joined = rm.readView({ after: Infinity }).filter(e => e.kind === 'member_joined' && e.from === me.name).at(-1);
   return joined ? joined.id : last;
 }

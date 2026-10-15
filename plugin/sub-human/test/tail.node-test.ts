@@ -261,15 +261,13 @@ test('tail: a steady trickle is cut into batches at the settle max; held ids kee
   assert.equal(cursor(code, 'alice'), 11);
 });
 
-test('tail: startCursor: the saved cursor, else (the room\'s Claude after a 0.4.x upgrade) deliver-orch, else the latest join', () => {
-  // a fake room with the two calls startCursor makes; its entry and the seats carry only the fields it reads
-  const rm = (cursors: Record<string, number>): Parameters<typeof tailLib.startCursor>[0] =>
-    ({ getCursor: k => cursors[k] || 0, readView: () => [{ id: 7, kind: 'member_joined', from: 'claude' } as Entry] });
+test('tail: startCursor: the saved cursor, else the latest join, else the log\'s end', () => {
+  // a fake room with the one call startCursor makes; its entry and the seats carry only the fields it reads
+  const rm: Parameters<typeof tailLib.startCursor>[0] = { readView: () => [{ id: 7, kind: 'member_joined', from: 'claude' } as Entry] };
   const claude = { name: 'claude', role: 'claude' } as Identity;
-  assert.equal(tailLib.startCursor(rm({ 'deliver-orch': 3 }), 5, claude, 9), 5, 'the session document\'s cursor');
-  assert.equal(tailLib.startCursor(rm({ 'deliver-orch': 3 }), 0, claude, 9), 3, 'resumes where the orch stopped');
-  assert.equal(tailLib.startCursor(rm({}), 0, claude, 9), 7, 'no cursor: its latest join');
-  assert.equal(tailLib.startCursor(rm({ 'deliver-orch': 3 }), 0, { name: 'bob', role: 'member' } as Identity, 9), 9, 'a member never reads it');
+  assert.equal(tailLib.startCursor(rm, 5, claude, 9), 5, 'the session document\'s cursor');
+  assert.equal(tailLib.startCursor(rm, 0, claude, 9), 7, 'no cursor: its latest join');
+  assert.equal(tailLib.startCursor(rm, 0, { name: 'bob', role: 'member' } as Identity, 9), 9, 'no join: the log\'s end');
 });
 
 test('tail: survives a restart via its cursor (no read from byte 0); switches when the session changes rooms', () => {

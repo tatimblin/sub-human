@@ -5,7 +5,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import * as h from './helpers.ts';
@@ -100,11 +99,9 @@ test('link: the socket path is short whatever the home; locators name a home, ne
   const old = process.env.TMPDIR;
   process.env.TMPDIR = h.tmpDir('sh-tmpdir-', t);
   try { assert.equal(link.socketPath(deep), p); } finally { if (old === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = old; }
-  // a hook tries the recorded path, the computed one, then 0.4.1's
-  const legacy = link.socketPaths('/h/rooms/vole-1234').at(-1)!;
-  assert.ok(legacy.startsWith(os.tmpdir()) && legacy.endsWith('/link.sock'), legacy);
-  assert.deepEqual(link.socketPaths('/h/rooms/vole-1234', { socket: '/r/link.sock' }), ['/r/link.sock', '/h/rooms/vole-1234/.link/link.sock', legacy]);
-  assert.equal(link.socketPaths('/h/rooms/vole-1234', { socket: 'rel.sock' }).length, 2, 'a relative recorded path is ignored');
+  // a hook tries the recorded path, then the computed one
+  assert.deepEqual(link.socketPaths('/h/rooms/vole-1234', { socket: '/r/link.sock' }), ['/r/link.sock', '/h/rooms/vole-1234/.link/link.sock']);
+  assert.deepEqual(link.socketPaths('/h/rooms/vole-1234', { socket: 'rel.sock' }), ['/h/rooms/vole-1234/.link/link.sock'], 'a relative recorded path is ignored');
   assert.equal(link.pipeLocator('/a/home'), 'pipe:/a/home');
   assert.deepEqual(link.transportOf('pipe:/a/home'), { kind: 'pipe', home: '/a/home' });
   for (const bad of ['pipe:relative', 'pipe:', '', 'tcp:host:22']) assert.equal(link.transportOf(bad), null, bad);
@@ -204,9 +201,6 @@ test('mirror: applyLine appends a host line only when it chains; applyDoc writes
   mirror.applyDoc('members', { bob: { name: 'bob' } });
   mirror.applyDoc('presence/bob', { state: 'idle' });
   assert.deepEqual([mirror.members.read(), mirror.kv.get('presence/bob')], [{ bob: { name: 'bob' } }, { state: 'idle' }]);
-  // a 0.4.x host's members document names its Claude "orch": the mirror reads it as claude
-  mirror.applyDoc('members', { orch: { name: 'orch', role: 'orch', job: 'j1' }, bob: { name: 'bob', role: 'member' } });
-  assert.deepEqual(mirror.members.read(), { bob: { name: 'bob', role: 'member' }, claude: { name: 'claude', role: 'claude', job: 'j1' } });
   mirror.applyDoc('members', { bob: { name: 'bob' } });
   mirror.applyDoc('presence/bob', null);
   assert.deepEqual(mirror.kv.list('presence/'), []);

@@ -259,7 +259,7 @@ export interface TrustCtx {
 
 // ---------- members ----------
 
-/** A seat's role: the room's Claude, or a person's session. 0.4.x's "orch" is read as claude (members.ts fromLegacy). */
+/** A seat's role: the room's Claude, or a person's session. */
 export type Role = 'member' | 'claude';
 
 /**

@@ -193,20 +193,6 @@ test('lane: only to=claude wakes the room Claude; "@claude" inside a post\'s tex
   assert.equal(roomLane(ALICE, agent('bob', 'say', { text: 'ping @alice' })), 'push');
 });
 
-test('lane: a 0.4.x log names the room Claude "orch": its own entries are its own, to=orch reaches it, and it shows as claude', () => {
-  fresh();
-  const own = legacy({ from: 'orch', via: 'agent', kind: 'say', text: 'planned' });
-  const toIt = legacy({ from: 'bob', via: 'agent', kind: 'question', text: 'which cursor?', to: 'orch' });
-  assert.equal(roomLane(ROOM_CLAUDE, own), 'none');
-  assert.equal(roomLane(ROOM_CLAUDE, toIt), 'push');
-  assert.equal(room.normalize(own).from, 'claude');
-  assert.equal(room.normalize(toIt).to, 'claude');
-  assert.match(room.line(own), /^#\d+ claude\[agent\] say "planned"$/);
-  assert.equal(room.who(own), 'claude', 'never "orch\'s Claude"');
-  assert.deepEqual(room.chatLines(own, { viewer: 'alice' }), ['claude: planned']);
-  assert.equal(R.readAll().find(e => e.id === own.id)!.from, 'orch', 'the log itself is never rewritten');
-});
-
 test('lane (P3 wakes): every person\'s words reach every member (a group chat), card answers and quiet decisions', () => {
   const code = fresh();
   h.register('alice', 'member', process.pid, code);

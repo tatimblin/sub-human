@@ -62,7 +62,7 @@ test('doctor: node floor, Remote Control, ssh hints and argument errors', () => 
   assert.deepEqual(doctor.parseArgs(['--bundle', 'f.json', '--quick']), { ...doctor.parseArgs([]), bundle: 'f.json', quick: true });
 });
 
-test('doctor: authorized_keys lines that bypass the shim are found (doctor --fix rewrites them)', t => {
+test('doctor: authorized_keys lines that bypass the shim are found', t => {
   const home = h.freshHome(t);
   const file = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
   fs.writeFileSync(file, [
@@ -75,7 +75,7 @@ test('doctor: authorized_keys lines that bypass the shim are found (doctor --fix
   assert.deepEqual(doctor.scanAuthorizedKeys(file + '.none'), { file: file + '.none', exists: false, lines: [] });
 });
 
-test('doctor CLI: a pipe link to a second home: state, last error, a hello with both protocol versions; home modes, old key lines; --fix', async t => {
+test('doctor CLI: a pipe link to a second home: state, last error, a hello with both protocol versions; home modes, an old key line; --fix', async t => {
   // the host: a room in its own home
   const hostHome = h.freshHome(t);
   const code = h.newRoom();
@@ -83,7 +83,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   const home = h.freshHome(t);
   const user = h.tmpDir('sh-user-', t);
   links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: 'tok-' + crypto.randomBytes(16).toString('hex'), created_at: new Date().toISOString(), moved: { epoch: 2, host: 'carolyn', locator: 'pipe:' + hostHome } });
-  fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'down', since: new Date(Date.now() - 120_000).toISOString(), attempt: 4, lastError: 'no route to host', queued: 2 }));
+  fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'offline', since: new Date(Date.now() - 120_000).toISOString(), attempt: 4, lastError: 'no route to host', queued: 2 }));
   fs.writeFileSync(links.logFile(code), `2026-10-08T10:00:00.000Z sub-human link ${code}: offline: ssh exited 255\n`);
   fs.chmodSync(home, 0o755);
   fs.mkdirSync(path.join(user, '.ssh'), { recursive: true });
@@ -99,7 +99,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(byId(rep, 'home').fix!, /^node \S+\/scripts\/sub-human doctor --fix in a terminal/, 'the CLI by its path: none is on PATH');
   const akc = byId(rep, 'authorized_keys');
   assert.equal(akc.status, 'warn');
-  assert.match(akc.fix!, /^node \S+\/scripts\/sub-human doctor --fix$/, 'this home\'s line, in the child\'s ~/.ssh/authorized_keys');
+  assert.match(akc.fix!, new RegExp(`^remove the sub-human:${code}:${LINK_ID} line from ~/\\.ssh/authorized_keys and invite that machine again`), 'this home\'s line, in the child\'s ~/.ssh/authorized_keys');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
   assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v2`));
@@ -126,12 +126,11 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(r.stdout, /✗ sub-human folder +.*\n +fix: node \S+\/scripts\/sub-human doctor --fix in a terminal/);
   assert.doesNotMatch(r.stdout, /host reachable/, '--quick says no hello');
 
-  // --fix: the modes, the shim and this home's old key line; the home check passes after it
+  // --fix: the modes and the shim (an old key line stays: the person removes it); the home check passes after it
   fs.chmodSync(home, 0o755);
   r = run(['--fix', '--quick', '--json'], env);
   assert.match(r.stdout, /^fixed: made .* 0700$/m);
-  assert.match(r.stdout, /^fixed: rewrote 1 older sub-human line\(s\) in ~\/\.ssh\/authorized_keys to run /m);
-  assert.equal(fs.readFileSync(ak, 'utf8'), `${shim.authorizedLine(code, LINK_ID, KEY, home)}\n`);
+  assert.doesNotMatch(r.stdout, /rewrote/);
   const fixed = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
   assert.equal(byId(fixed, 'home').status, 'pass');
   assert.equal(fs.statSync(home).mode & 0o777, 0o700);

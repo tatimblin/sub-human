@@ -44,8 +44,7 @@
  *     state      the one link vocabulary (lib/room/link-state.ts STATES), as the mirror's document `link` has it:
  *                'online' (hooks' writes cross now) | 'connecting' (dialling: the first connection, or a redial after
  *                a failure, a wake or a network change) | 'offline' (waiting to retry) | 'fork' | 'stopped' (both
- *                for good: `sub-human link --reset CODE` after a fork; a new join after stopped). Files written
- *                before 0.4.1 say 'up' / 'down'; link-state.ts reads those too
+ *                for good: `sub-human link --reset CODE` after a fork; a new join after stopped)
  *     since      ISO time this state began
  *     attempt    dials since the link was last online (0 while online)
  *     lastError  the current failure's message, or null (null while online)

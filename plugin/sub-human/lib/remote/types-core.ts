@@ -56,9 +56,9 @@ export interface SignedPayload {
 }
 
 export interface HelloParams {
-  /** The version the client needs at least (1, or 2 for an sh2 invite). */
+  /** The version the client needs at least (a beta's joiner sends it; this one does not). The server honours it. */
   v?: number;
-  /** The client's range; a hello without it is the range [v, v]. */
+  /** The client's range; a hello without it is refused (PROTOCOL SKEW). */
   proto?: ProtoRange;
   /** The client's plugin version. */
   client?: string;

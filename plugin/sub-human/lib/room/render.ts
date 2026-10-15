@@ -38,7 +38,7 @@
  */
 
 import { normalize } from './rules.ts';
-import { roomClaudeName, ROOM_CLAUDE } from './members.ts';
+import { ROOM_CLAUDE } from './members.ts';
 import { fold, proposals, answers, answered, decided, approversOf } from './consent.ts';
 import { NO_TRUST, unverified } from './trust.ts';
 import { oneLine } from '../text.ts';
@@ -75,7 +75,7 @@ const otherVia = (e: Entry): string | null => (e.via !== undefined && !KNOWN_VIA
 const who = (e: Entry): string => {
   if (e.via === 'system') return 'room';
   if (otherVia(e)) return otherVia(e)!;
-  const from = roomClaudeName(e.from); // 0.4.x logs name the room's Claude "orch"
+  const from = e.from;
   return e.via === 'agent' && from !== ROOM_CLAUDE ? `${from}'s Claude` : from;
 };
 
@@ -138,7 +138,7 @@ function line(e: Entry, { full = false, trust = NO_TRUST }: { full?: boolean; tr
 function chatWho(e: Entry, trust: Trust): string {
   if (e.via === 'system') return 'room';
   if (otherVia(e)) return otherVia(e)!;
-  if (roomClaudeName(e.from) === ROOM_CLAUDE) return ROOM_CLAUDE; // 0.4.x logs: "orch"
+  if (e.from === ROOM_CLAUDE) return ROOM_CLAUDE;
   if (e.via === 'agent') return `${e.from}'s Claude`;
   if (unverified(trust, e)) return `${e.from} ${UNVERIFIED}`;
   return e.drafted === 'agent' ? `${e.from} (Claude's wording)` : e.from;
@@ -364,7 +364,7 @@ function digestSections(entries: readonly Entry[] = [], { members = {}, code = n
 
   const closedBy = new Set<number>();
   for (const e of entries) {
-    if ((roomClaudeName(e.from) === ROOM_CLAUDE || e.kind === 'decision') && e.refs) e.refs.forEach(r => closedBy.add(r));
+    if ((e.from === ROOM_CLAUDE || e.kind === 'decision') && e.refs) e.refs.forEach(r => closedBy.add(r));
   }
   const open = entries.map(normalize)
     .filter(e => (e.kind === 'objection' || e.kind === 'question') && !closedBy.has(e.id))
@@ -429,7 +429,7 @@ const settleMs = () => envMs('SUB_HUMAN_LEAVE_MS', LEAVE_SETTLE_MS);
 const isMove = (e: Entry | null | undefined) => !!e && e.via === 'system' && (e.kind === 'member_joined' || e.kind === 'member_left');
 
 function joinLeave(es: readonly Entry[] | null | undefined, viewer: string | null | undefined, { now = clock.now(), settle = settleMs() } = {}): Notice[] {
-  const list = (es || []).filter(e => isMove(e) && e.from !== viewer && roomClaudeName(e.from) !== ROOM_CLAUDE); // 0.4.x: "orch"
+  const list = (es || []).filter(e => isMove(e) && e.from !== viewer && e.from !== ROOM_CLAUDE);
   const drop = new Set<number>();
   const next = new Map<string, Entry>(); // name -> its next join, walking back
   for (let i = list.length - 1; i >= 0; i--) {

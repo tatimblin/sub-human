@@ -28,8 +28,7 @@
  *                                 (RoomError INVALID for another state). false, writing nothing, for a seat that is
  *                                 absent or left. now: tests only (the host's clock otherwise).
  *   publicView(members) -> members   the document as other machines see it: LOCAL_FIELDS stripped
- *   fromLegacy(members) -> members   0.4.x names read as new ones (every store's members.read runs it)
- *   ROOM_CLAUDE ("claude"), LEGACY_ROOM_CLAUDE ("orch", read only), roomClaudeName(name), PRESENCE_STATES, LOCAL_FIELDS
+ *   ROOM_CLAUDE ("claude"), PRESENCE_STATES, LOCAL_FIELDS
  */
 
 import { isAlive, validPid } from '../io.ts';
@@ -53,24 +52,6 @@ type SeatLike = Partial<Member>;
 const PRESENCE_STATES: readonly PresenceState[] = ['working', 'idle', 'permission', 'error'];
 /** The room's Claude: its member name, role and SendMessage name (claude.CODE). */
 const ROOM_CLAUDE = 'claude';
-/** 0.4.x wrote the room's Claude as member and role "orch". Read only (fromLegacy, roomClaudeName); never written. */
-const LEGACY_ROOM_CLAUDE = 'orch';
-const roomClaudeName = <N,>(n: N): N | typeof ROOM_CLAUDE => (n === LEGACY_ROOM_CLAUDE ? ROOM_CLAUDE : n);
-
-/**
- * A members document as read, with 0.4.x names mapped (in place): the "orch" record becomes "claude" (unless a
- * "claude" record exists) and role "orch" becomes "claude". The next write of the document has only new names.
- */
-function fromLegacy<M extends Members | null | undefined>(ms: M): M {
-  if (!ms || typeof ms !== 'object') return ms;
-  const old: unknown = ms[LEGACY_ROOM_CLAUDE];
-  if (old !== undefined) {
-    delete ms[LEGACY_ROOM_CLAUDE];
-    if (old && typeof old === 'object' && !ms[ROOM_CLAUDE]) ms[ROOM_CLAUDE] = { ...(old as Member), name: ROOM_CLAUDE };
-  }
-  for (const m of Object.values(ms)) if (m && typeof m === 'object' && (m.role as string) === LEGACY_ROOM_CLAUDE) m.role = ROOM_CLAUDE;
-  return ms;
-}
 const LOCAL_FIELDS = ['pid', 'pid_start', 'session_id', 'cwd'] as const;
 const ROOM_CLAUDE_FIELDS = ['job', 'spawned_at', 'closing', 'by', 'job_session', 'claim'] as const; // kept across the room Claude's (re)bind
 
@@ -171,6 +152,6 @@ function roomClaudePresence(o: SeatLike | null | undefined, now = Date.now()): '
 }
 
 export {
-  PRESENCE_STATES, LOCAL_FIELDS, ROOM_CLAUDE, LEGACY_ROOM_CLAUDE, roomClaudeName, fromLegacy, seatAlive,
+  PRESENCE_STATES, LOCAL_FIELDS, ROOM_CLAUDE, seatAlive,
   roomClaudePresence, leaseFresh, startMatches, ops, publicView,
 };

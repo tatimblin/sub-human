@@ -73,22 +73,10 @@ test('link-state: the daemon\'s record as lib/remote/link.ts writes it (links.wr
   assert.deepEqual([ls.read(CODE)!.state, ls.read(CODE)!.lastError], ['stopped', 'AUTH: unknown token'], 'stopped is for good, daemon or not');
 });
 
-test('link-state: a record written before 0.4.1 (up / down, detail fork or stopped) reads in the one vocabulary', async t => {
-  linked(t);
-  const at = new Date().toISOString();
-  links.writeState(CODE, { state: 'up', since: at, attempt: 0, rttMs: 12, queued: 0, pid: process.pid, detail: 'online', at });
-  assert.equal(ls.read(CODE)!.state, 'online');
-  links.writeState(CODE, { state: 'down', since: at, attempt: 2, lastError: 'no route', pid: process.pid, detail: 'offline', at });
-  assert.deepEqual([ls.read(CODE)!.state, ls.read(CODE)!.lastError], ['offline', 'no route']);
-  links.writeState(CODE, { state: 'down', since: at, lastError: 'the host log was reset', pid: process.pid, detail: 'fork', at });
-  assert.equal(ls.read(CODE)!.state, 'fork');
-  links.writeState(CODE, { state: 'down', since: at, lastError: 'AUTH: unknown token', pid: process.pid, detail: 'stopped', at });
-  assert.equal(ls.read(CODE)!.state, 'stopped');
-  assert.deepEqual(['up', 'down', 'online', 'connecting', 'offline', 'fork', 'stopped', 'x'].map(s => ls.normalize(s)),
-    ['online', 'offline', 'online', 'connecting', 'offline', 'fork', 'stopped', 'offline']);
-  // deliberately an old record's word, outside LinkStateWord
-  assert.equal(ls.indicator({ state: 'up' } as unknown as LinkState), '⇄ online', 'the row reads an old record in the new words');
-  assert.equal(ls.isDown({ state: 'down', detail: 'stopped' } as unknown as LinkState), true); // deliberately old, with a detail
+test('link-state: normalize maps a word to the one vocabulary; a fork or stopped detail wins', () => {
+  assert.deepEqual(['online', 'connecting', 'offline', 'fork', 'stopped', 'up', 'x'].map(s => ls.normalize(s)),
+    ['online', 'connecting', 'offline', 'fork', 'stopped', 'offline', 'offline']);
+  assert.equal(ls.normalize('offline', 'stopped'), 'stopped');
 });
 
 test('link-state: indicator wording', () => {

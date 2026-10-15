@@ -208,7 +208,7 @@ class FsRoomStore implements RoomStore {
   setCursor(name: string, n: number): void { writeFileAtomic(this._cursorFile(name), String(n)); }
 
   // ----- members -----
-  _readMembers(): Members { try { return members.fromLegacy(readJson(this._membersFile, {}) || {}); } catch { return {}; } }
+  _readMembers(): Members { try { return readJson(this._membersFile, {}) || {}; } catch { return {}; } }
   _updateMembers(fn: (current: Members) => Members | null | undefined): Members | null {
     const file = this._membersFile;
     return withLock(file + '.lock', () => {

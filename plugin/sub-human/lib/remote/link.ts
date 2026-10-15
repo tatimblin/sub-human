@@ -86,9 +86,7 @@
  *                                  bytes, macOS), /tmp/sub-human-<uid>/<hash12(dir)>/link.sock. Each directory is
  *                                  0700, a real directory and ours: the daemon refuses any other, a hook skips it.
  *                                  The daemon records the path it bound in its document `link` (socket)
- *   socketPaths(dir, doc?) -> string[]   where a hook looks, in order: doc.socket, socketPath(dir), and 0.4.1's
- *                                  <os.tmpdir()>/sh-<hash8(dir)>/link.sock (a daemon that version started; a new
- *                                  daemon finding one answering there stops with LOCK)
+ *   socketPaths(dir, doc?) -> string[]   where a hook looks, in order: doc.socket, then socketPath(dir)
  *   handle(method, params) -> Promise<result>   the bridge handler, params {socket, params}: one op (RELAY) over the
  *                                  first socket (one path or socketPaths' list) that accepts the connection, the
  *                                  result as the wire has it; OFFLINE when no daemon is listening (nothing is started
@@ -121,7 +119,6 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
@@ -205,22 +202,16 @@ function socketPath(dir: string): string {
  * Never TMPDIR, which a daemon started by a listener, sshd or launchd and the session's hooks need not share. */
 const shortBase = (): string => `/tmp/sub-human-${typeof process.getuid === 'function' ? process.getuid() : 'u'}`;
 
-/** 0.4.1's path, <os.tmpdir()>/sh-<hash8>/link.sock: a daemon that version started still answers there. */
-function legacySocketPath(dir: string): string {
-  const h = crypto.createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 8);
-  return path.join(os.tmpdir(), `sh-${h}`, 'link.sock');
-}
-
 /**
  * Where a hook looks for the daemon, in order: the path the running daemon recorded in its document `link`
- * (`socket`), socketPath(dir), then 0.4.1's TMPDIR-dependent path. No duplicates.
+ * (`socket`), then socketPath(dir). No duplicates.
  * @param {string} dir   the mirror's directory
  * @param {{socket?: string} | null} [doc]   the mirror's document `link`
  * @returns {string[]}
  */
 function socketPaths(dir: string, doc?: { socket?: unknown } | null): string[] {
   const rec: string[] = doc && typeof doc.socket === 'string' && path.isAbsolute(doc.socket) ? [doc.socket] : [];
-  return [...new Set([...rec, socketPath(dir), legacySocketPath(dir)])];
+  return [...new Set([...rec, socketPath(dir)])];
 }
 
 /** A directory only this user can enter: a real directory (not a symlink), ours, no group or other bits. */
@@ -800,8 +791,6 @@ async function serveMirror({
     return dial(why);
   }
 
-  const legacy = legacySocketPath(mirror.dir); // a 0.4.1 daemon still running for this room keeps it
-  if (legacy !== sockFile && await answers(legacy)) throw new RoomError('LOCK', `a link daemon already listens on ${legacy}`);
   const srv = await listen(sockFile, sock => serveHook(sock, relay));
   setState('connecting');
   const first = dial();

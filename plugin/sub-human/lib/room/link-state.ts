@@ -11,8 +11,6 @@
  *   offline     not connected, retrying on its own (or its daemon is not running: the join hook restarts it)
  *   fork        for good: this copy no longer matches the host's log (`sub-human link --reset CODE`)
  *   stopped     for good: refused (AUTH, PROTOCOL), revoked, the room closed or moved with no way to follow
- * Older records said up / down (state file, before 0.4.1): LEGACY maps them (down with detail fork or stopped reads
- * as that).
  *
  * Sources, best first:
  *   links.readState(code)            the link daemon's record <home>/links/<code>.state.json {state, since, attempt,
@@ -25,7 +23,7 @@
  *   read(code) -> State | null       null when this machine has no link to CODE (a room hosted here, or none)
  *       State = {state: STATES, since?, attempt?, lastError?, prevError?, rttMs?, queued?, pid?, detail?, dead?,
  *                source: 'state-file'|'link-doc'}
- *   normalize(state, detail?) -> STATES member   an old or new word to the vocabulary (unknown: 'offline')
+ *   normalize(state, detail?) -> STATES member   a word of the vocabulary (detail fork or stopped wins; unknown: 'offline')
  *   indicator(st, {now}?) -> string  the compact segment: "⇄ online", "… connecting", "… connecting (3)",
  *       "✕ offline 2m · 2 queued", "✕ stopped", "✕ out of step: /sub-human doctor"; '' for null
  *   isDown(st) -> bool               connecting after a first failure, offline, fork or stopped: worth leading a row with
@@ -42,7 +40,6 @@ const require = createRequire(import.meta.url);
 
 
 const STATES = new Set<LinkStateWord>(['online', 'connecting', 'offline', 'fork', 'stopped']) as ReadonlySet<string>;
-const LEGACY: Record<string, LinkStateWord> = { up: 'online', down: 'offline' };
 const FOR_GOOD: ReadonlySet<string> = new Set<LinkStateWord>(['fork', 'stopped']);
 const isState = (s: unknown): s is LinkStateWord => STATES.has(s as string);
 
@@ -54,8 +51,7 @@ const clean = <O extends object>(o: O): O => Object.fromEntries(Object.entries(o
 
 function normalize(state: unknown, detail?: unknown): LinkStateWord {
   if (FOR_GOOD.has(detail as string)) return detail as LinkStateWord;
-  const s = LEGACY[state as string] || state;
-  return isState(s) ? s : 'offline';
+  return isState(state) ? state : 'offline';
 }
 
 /** The mirror's `link` document (lib/remote/link.ts status), or null when it cannot be read. */
@@ -77,7 +73,7 @@ function readLink(code: string): LinkState | null {
   const doc = linkDoc(code);
   let f = null;
   try { f = links.readState(code); } catch { f = null; }
-  if (f && typeof f === 'object' && (STATES.has(f.state as string) || (f.state as string) in LEGACY)) {
+  if (f && typeof f === 'object' && STATES.has(f.state as string)) {
     const pid = num(f.pid);
     const dead = pid ? !isAlive(pid) : !!(doc && doc.pid && !doc.running);
     const st: LinkState = clean({

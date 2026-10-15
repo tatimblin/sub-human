@@ -27,8 +27,7 @@
  *                                STALE (lib/handoff.ts writes host_changed)
  *   hostState(entries) -> {epoch, host?, machine?, locator?, id?}   the last host_changed entry, else epoch 0
  *   normalize(e)                 legacy display mapping (concern -> objection, agree -> signoff, plan_rev -> proposal
- *                                {hash}, plan_hash -> proposal_hash; 0.4.x's "orch" in from, to, by, owner ->
- *                                "claude"). The log itself is never rewritten.
+ *                                {hash}, plan_hash -> proposal_hash). The log itself is never rewritten.
  *   CHAT_KINDS                   say, status: the kinds a view may leave out (everything else decides state)
  *   blobRef(pathOrRef), checkKey(key), checkCursor(name)   the names a store's documents, blobs and cursors take
  */
@@ -38,7 +37,6 @@ import * as config from '../config.ts';
 import { hash12 } from '../text.ts';
 import { RoomError, validate } from './validate.ts';
 import * as envelope from './envelope.ts';
-import { roomClaudeName } from './members.ts';
 import { humanKey, publicKey } from './trust.ts';
 import type { Entry, EntryInput, HostState, Payload, PlaceOpts, TrustCtx, Validated, ValidateOpts } from './types.ts';
 
@@ -56,7 +54,6 @@ function normalize(e: Entry): Entry {
   else if (n.plan_hash && !n.proposal_hash) n.proposal_hash = n.plan_hash;
   delete n.plan_hash;
   if (n.to == null) n.to = 'room';
-  for (const k of ['from', 'to', 'by', 'owner'] as const) { const v = n[k]; if (typeof v === 'string') n[k] = roomClaudeName(v); } // 0.4.x "orch"
   return n;
 }
 

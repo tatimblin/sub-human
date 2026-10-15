@@ -1,13 +1,12 @@
 /**
  * plugin/sub-human/lib/cli/doctor.ts: `sub-human doctor`, what is wrong with this machine's sub-human and how to fix
  * it, and `doctor --bundle`, the same as redacted JSON to attach to a bug report. Read only, except --fix (the
- * shim refresh, the home's modes, this home's older authorized_keys lines) and the bundle file. scripts/sub-human dispatches here.
+ * shim refresh, the home's modes) and the bundle file. scripts/sub-human dispatches here.
  *
  *   sub-human doctor [--quick] [--fix] [--json] [--bundle [FILE]] [--authorized-keys FILE] [--timeout MS]
  *       --quick    skip the slow checks: the hello to each link's host and the Claude Code internals probe
- *       --fix      first refresh the serve shim and pointer (lib/remote/shim.ts refresh), repair the home's
- *                  modes (lib/home.ts repairModes) and rewrite this home's older authorized_keys lines to run the
- *                  shim (shim.migrateLines)
+ *       --fix      first refresh the serve shim and pointer (lib/remote/shim.ts refresh) and repair the home's
+ *                  modes (lib/home.ts repairModes)
  *       --json     the report as JSON (unredacted: it stays on this machine)
  *       --bundle   write the redacted bundle (default ./sub-human-doctor-<time>.json) and print its path
  *       --authorized-keys   the file to scan (default ~/.ssh/authorized_keys)
@@ -19,8 +18,8 @@
  *   node         Node 24.3 or newer
  *   home         the home and its store directories are 0700 and this user's
  *   shim         <home>/bin/serve is the current shim and <home>/bin/current names an existing plugin and node
- *   authorized_keys   sub-human lines that bypass the shim (an older `authorize` baked node and the versioned
- *                plugin path in); fix: `sub-human doctor --fix` (with that line's SUB_HUMAN_HOME) rewrites them
+ *   authorized_keys   sub-human lines that bypass the shim (written before 0.5: node and the versioned plugin path
+ *                baked in); fix: remove the line and invite that machine again
  *   ssh          ssh present (`ssh -V`), when a link or an authorized line needs it
  *   link:CODE    per link: transport, the daemon (running, pid), state (lib/room/link-state.ts), the last error
  *                (the state record, else the daemon's log), and unless --quick a hello to the host without a
@@ -219,9 +218,9 @@ function checkAuthorizedKeys(scan: AuthorizedKeysScan): Check {
   const old = scan.lines.filter(l => !l.ok);
   if (!old.length) return check('authorized_keys', 'pass', 'authorized_keys', `${scan.lines.length} sub-human line(s), all through the shim`);
   const fixes = old.map(l => (l.parse === false ? `edit the unreadable sub-human line by hand in ${tilde(scan.file)}`
-    : `${l.home === h ? '' : `SUB_HUMAN_HOME=${l.home} `}${cli(`doctor --fix${scan.file === path.join(os.homedir(), '.ssh', 'authorized_keys') ? '' : ` --authorized-keys ${tilde(scan.file)}`}`)}`));
+    : `remove the sub-human:${l.code}:${l.id} line from ${tilde(scan.file)}${l.home === h ? '' : ` (home ${tilde(l.home)})`} and invite that machine again (/sub-human invite)`));
   return check('authorized_keys', 'warn', 'authorized_keys',
-    `${old.length} of ${scan.lines.length} sub-human line(s) bypass the shim: they bake in a node and plugin path that break on an update`,
+    `${old.length} of ${scan.lines.length} sub-human line(s) bypass the shim (written before 0.5): they bake in a node and plugin path that break on an update`,
     [...new Set(fixes)].join('\n'));
 }
 
@@ -300,8 +299,7 @@ function helloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_HELLO_MS,
   } catch (e) { return Promise.resolve({ ok: false, ms: 0, error: (e as Error).message }); }
   if (!cmd && (spec.kind === 'wss' || spec.kind === 'ws')) return webHelloProbe(spec, code, { timeoutMs });
   if (!cmd) return Promise.resolve({ ok: false, ms: 0, skipped: true, error: `no reachability check for the ${spec.kind} transport` });
-  // v 1: the least this probe needs, so a host before 0.4 (which checks v === 1 and knows no proto) answers too
-  const params = { v: 1, proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.ts').machineId() };
+  const params = { proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.ts').machineId() };
   const argv = cmd.argv, childEnv = cmd.env;
   return new Promise<HelloProbe>(resolve => {
     const t0 = Date.now();
@@ -343,7 +341,7 @@ async function webHelloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_
     const reply = await Promise.race([new Promise<HelloReply | undefined>((ok, no) => {
       tr.onFrame(f => { if (f.id === 1) (f.error ? no(Object.assign(new Error(`${f.error.code}: ${f.error.message}`), { code: f.error.code })) : ok(f.result as HelloReply)); }); // as: the server's JSON, read defensively
       tr.onClose(() => no(new Error('the listener closed before answering')));
-      tr.send(protocol.request(1, 'hello', { v: 1, proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.ts').machineId() }));
+      tr.send(protocol.request(1, 'hello', { proto: protocol.PROTO, client: protocol.PLUGIN_VERSION, caps: {}, machine: lib('home.ts').machineId() }));
     }), deadline]);
     return { ok: true, ms: Date.now() - t0, t0, t1: Date.now(), reply };
   } catch (e) {
@@ -489,7 +487,7 @@ function linkChecks(d: LinkReport): Check[] {
     if (r.skipped) bits.push(r.error);
     else if (r.ok) {
       const p: Partial<NonNullable<Reach['protocol']>> = r.protocol || {};
-      const host = `${p.proto ? span(p.proto) : p.v} (sub-human ${p.server || 'before 0.4'})`;
+      const host = `${p.proto ? span(p.proto) : p.v} (sub-human ${p.server || '?'})`;
       bits.push(`host reachable in ${r.ms} ms; protocol here ${local}, host ${host}, speaking v${p.v}`);
     } else {
       bits.push(`host unreachable: ${r.error}`);
@@ -824,15 +822,6 @@ function applyFix(write: (s: string) => void, { authorizedKeys }: { authorizedKe
     const shim = lib('remote/shim.ts');
     const r = shim.refresh({ force: true });
     done.push(r ? `the serve shim and pointer name ${tilde(shim.pluginRoot())} and ${tilde(process.execPath)}` : `the plugin root ${tilde(shim.pluginRoot())} is under a temp dir: the shim was not written`);
-    // this home's older authorized_keys lines (node and the versioned plugin path baked in) run the shim instead
-    const file = authorizedKeys || path.join(os.homedir(), '.ssh', 'authorized_keys');
-    let text: string | null = null;
-    try { text = fs.readFileSync(file, 'utf8'); } catch { /* none */ }
-    const mig = text === null ? null : shim.migrateLines(text, h.home());
-    if (mig && mig.migrated) {
-      lib('io.ts').writeFileAtomic(fs.realpathSync(file), mig.text);
-      done.push(`rewrote ${mig.migrated} older sub-human line(s) in ${tilde(file)} to run ${tilde(shim.shimPath())}`);
-    }
   }
   for (const d of done) write(`fixed: ${d}\n`);
 }

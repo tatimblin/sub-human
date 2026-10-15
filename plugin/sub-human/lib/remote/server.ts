@@ -215,11 +215,11 @@ const OPS: OpHandlers = {
   hello(s, params) {
     const { machine, token, invite, pin, caps, epoch } = params;
     const theirs = protocol.rangeOf(params);
-    if (!theirs) throw new RoomError('PROTOCOL', 'hello names no protocol version');
-    const v = protocol.negotiate(s.proto, theirs);
     const client = typeof params.client === 'string' ? params.client.slice(0, 32) : null;
+    if (!theirs) throw new RoomError('PROTOCOL', `this hello names no protocol range (a sub-human before 0.5${client ? `: ${client}` : ''}): update it (/plugin update sub-human)`, 'SKEW');
+    const v = protocol.negotiate(s.proto, theirs);
     if (v === null || v < (Number.isInteger(params.v) ? params.v! : 1)) {
-      throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: { version: client, proto: theirs } }));
+      throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: { version: client, proto: theirs } }), 'SKEW');
     }
     if (typeof machine !== 'string' || !MACHINE_RE.test(machine)) throw invalid('hello needs this machine\'s id');
     const mine = epochOf(s.store);

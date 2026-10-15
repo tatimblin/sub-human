@@ -50,8 +50,8 @@
  *                                        tail's health tick and the hold server); leaseFresh(m, now?)
  *   liveMembers(code) -> [name]          the people's seats (not the room's Claude) that are seatAlive
  *   join({code, name, role, machine?, account?, pid, session_id, cwd}) -> {ok, error?, rejoin?}
- *       role is "claude" (the room's Claude) or "member". NAME_RE; reserved names (RESERVED) claude, orch (0.4.x's
- *       name for it), room, all, system, host, and every /sub-human verb (VERBS): only role claude may use
+ *       role is "claude" (the room's Claude) or "member". NAME_RE; reserved names (RESERVED) claude, room, all,
+ *       system, host, and every /sub-human verb (VERBS): only role claude may use
  *       "claude", and role claude must use it. members.join: a name held by a live seat of another holder
  *       (another pid, or another machine) is "name taken"; otherwise the name is (re)bound. The room's Claude record
  *       keeps its job / spawned_at across a (re)bind. machine defaults to this one; a seat of this machine needs
@@ -117,7 +117,7 @@ import { NAME_RE, CODE_RE, SID_SAFE as SID_RE } from './text.ts';
 import { sidIndex } from '../mod/core/seat.ts';
 import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS, SESSION_INDEX_TTL_MS } from './config.ts';
 import {
-  seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE, LEGACY_ROOM_CLAUDE, roomClaudeName,
+  seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE,
 } from './room/members.ts';
 import * as cc from './cc.ts';
 import type { JoinResult, Member, Members, MembersApi, PresenceState, Role, SeatRecord } from './room/types.ts';
@@ -171,7 +171,7 @@ type RoomClaudePatch = { [K in keyof Member]?: Member[K] | undefined };
 // lease is older than this, from a process that is gone, cannot join.
 // the room's own names, then every /sub-human verb, so `/sub-human doctor` is never a person called doctor
 const VERBS: readonly string[] = ['invite', 'join', 'kick', 'leave', 'doctor', 'help', 'admit', 'handoff', 'promote', 'demote'];
-const RESERVED: readonly string[] = [ROOM_CLAUDE, LEGACY_ROOM_CLAUDE, 'room', 'all', 'system', 'host', ...VERBS];
+const RESERVED: readonly string[] = [ROOM_CLAUDE, 'room', 'all', 'system', 'host', ...VERBS];
 const ROLES: readonly string[] = [ROOM_CLAUDE, 'member'];
 const ANIMALS = [
   'otter', 'badger', 'beaver', 'bison', 'camel', 'cheetah', 'condor', 'coyote',
@@ -333,7 +333,7 @@ const seat = (code: string, m: Member): Identity => ({ code, name: m.name, role:
  * session, a seat of this machine gets them from idx.
  */
 function indexedSeat(idx: SeatIndex): Member | undefined {
-  const m = readMembers(idx.code)[roomClaudeName(idx.name)]; // a 0.4.x index may name the seat "orch"
+  const m = readMembers(idx.code)[idx.name];
   if (!m || isHost(idx.code) || (m.machine || machineId()) !== machineId()) return m;
   return { ...m, pid: idx.pid, pid_start: idx.pid_start, session_id: idx.session_id };
 }
@@ -473,9 +473,8 @@ function lastSeat(sid: unknown): { code: string; name: string; role: Role; addre
   if (typeof sid !== 'string' || !SID_RE.test(sid)) return null;
   const rec: SeatIndex | null = readJson(bySidFile(sid));
   if (!rec || !roomExists(rec.code) || !NAME_RE.test(String(rec.name))) return null;
-  // a 0.4.x index names the room's Claude "orch" (name and role): read as claude
-  const name = roomClaudeName(rec.name);
-  const role: Role = rec.role === ROOM_CLAUDE || (rec.role as string) === LEGACY_ROOM_CLAUDE ? ROOM_CLAUDE : 'member';
+  const name = rec.name;
+  const role: Role = rec.role === ROOM_CLAUDE ? ROOM_CLAUDE : 'member';
   return { code: rec.code, name, role, address: address(name, rec.code) };
 }
 

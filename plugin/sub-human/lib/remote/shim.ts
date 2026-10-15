@@ -40,9 +40,6 @@
  *   enrollLine(code, key, homeDir?) -> string
  *                                    command="SUB_HUMAN_HOME=<home> <home>/bin/serve --enroll CODE --kind ssh",restrict <key>
  *                                    sub-human-enroll:CODE: a short code's enrollment door (lib/remote/enroll.ts)
- *   migrateLines(text, homeDir?) -> {text, migrated}
- *                                    rewrite the lines an older `authorize` wrote for this home (node and the
- *                                    versioned CLI baked in) to name the shim; other lines are kept as they are
  *   PLAIN_PATH_RE                    a path a forced command can carry plainly (no shell or sshd specials)
  */
 import fs from 'node:fs';
@@ -124,22 +121,7 @@ const authorizedLine = (code: string, linkId: string, key: string, h: string = h
 const enrollLine = (code: string, key: string, h: string = home()): string =>
   `command="SUB_HUMAN_HOME=${path.resolve(h)} ${shimPath(h)} --enroll ${code} --kind ssh",restrict ${key} sub-human-enroll:${code}`;
 
-// What an older `authorize` wrote: command="SUB_HUMAN_HOME=<home> <node> <bin> serve --stdio CODE --link ID",restrict <key> sub-human:CODE:ID
-const OLD_LINE_RE = /^command="SUB_HUMAN_HOME=(\S+) (\S+) (\S+) serve --stdio (\S+) --link ([0-9a-f]{12})",restrict (\S+ \S+) sub-human:(\S+):(\S+)$/;
-
-function migrateLines(text: string, h: string = home()): { text: string; migrated: number } {
-  const want = path.resolve(h);
-  let migrated = 0;
-  const lines = String(text).split('\n').map(l => {
-    const m = OLD_LINE_RE.exec(l);
-    if (!m || m[1] !== want || m[4] !== m[7] || m[5] !== m[8]) return l;
-    migrated++;
-    return authorizedLine(m[4], m[5], m[6], want);
-  });
-  return { text: lines.join('\n'), migrated };
-}
-
 export {
   shimPath, pointerPath, pluginRoot, cacheDirOf, shimBody, refresh, passive, forcedCommand, authorizedLine,
-  enrollLine, migrateLines, PLAIN_PATH_RE,
+  enrollLine, PLAIN_PATH_RE,
 };
