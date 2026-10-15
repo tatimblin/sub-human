@@ -23,7 +23,9 @@
  *   PermissionRequest(ExitPlanMode), exiting: restore the plan file, allow with setMode (no dialog); records nothing.
  *   Post(ExitPlanMode), shown: signoff via=human only for the proposal unedited; restore the file and the mode. A
  *     dialog no hook opened (the model wrote the text itself) records nothing, and the model is told.
- *   Stop / UserPromptSubmit / Pre(room tools): a review left open is resolved and the model told to exit it.
+ *   Stop / UserPromptSubmit / Pre(room tools): a review left open is resolved and the model told to exit it. The
+ *     answer is read only from the dialog's own tool_result: a handler that runs before that is on disk settles
+ *     nothing (unread), and the closing Pre/Post(ExitPlanMode) read it again, waiting for the line.
  * Pre/Post(AskUserQuestion), the handoff card (lib/handoff.ts): while the room's host asks this seat to host the room,
  * a card call that names the handoff shows the hooks' card ("Host room CODE on this machine?": the room's Claude then runs on
  * this person's model account, this machine must stay reachable); only the person's "Host it here" on the card as
@@ -242,19 +244,28 @@ const modelInput = (input: ConsentIn): { plan?: unknown } | null => {
   const v = cc.toolUseInput(lines(input), input.tool_use_id);
   return v && typeof v === 'object' ? v : null; // a tool_use's input is an object
 };
-/** modelInput, polling the transcript until the call's line is there (or EXIT_INPUT_WAIT_MS passed); null then. */
-function modelInputWait(input: ConsentIn) {
+/** read() over the transcript, polling until it gives a value (or EXIT_INPUT_WAIT_MS passed); null then. */
+function polled<T>(input: ConsentIn, read: () => T | null): T | null {
   const until = Date.now() + config.envMs('SUB_HUMAN_EXIT_INPUT_WAIT_MS', config.EXIT_INPUT_WAIT_MS);
   for (;;) {
-    const own = modelInput(input);
-    if (own || !input.tool_use_id || Date.now() >= until) return own;
+    const v = read();
+    if (v || Date.now() >= until) return v;
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, config.EXIT_INPUT_POLL_MS);
     input._lines = null; // read the tail again
   }
 }
+/** modelInput, polling the transcript until the call's line is there; null then. */
+const modelInputWait = (input: ConsentIn) => input.tool_use_id ? polled(input, () => modelInput(input)) : modelInput(input);
 const blank = (v: unknown) => v == null || (typeof v === 'string' && !v.trim());
-/** The person's "Tell Claude what to change" note for that dialog (structured userFeedback first); null when none (Esc). */
-const feedback = (input: ConsentIn, toolUseId: string | null | undefined): string | null => cc.planFeedback(lines(input), toolUseId);
+/**
+ * How that dialog closed (cc.planAnswer): {note} with the person's "Tell Claude what to change" note (structured
+ * userFeedback first), or note null (Esc); null while its tool_result is not on disk. wait: poll for it (the dialog
+ * has closed, the line may not be written yet).
+ */
+const answerOf = (input: ConsentIn, toolUseId: string | null | undefined, wait = false): { note: string | null } | null => {
+  const read = () => cc.planAnswer(lines(input), toolUseId);
+  return wait && toolUseId ? polled(input, read) : read();
+};
 
 /** How the model shows the person the confirm card for a waiting note (lib/proposal.ts). */
 const { confirmCall } = proposal;
@@ -263,11 +274,21 @@ const { confirmCall } = proposal;
  * The dialog closed: a note never counts on its own. "Tell Claude what to change", a phone deny with a note and a
  * phone message typed after a bare deny all reach the transcript alike, so the note waits (proposal confirm) for the
  * person's Send on the confirm card; returns the line for the model.
+ * The answer is read only from the dialog's own tool_result: until that is on disk (a hook that ran while the dialog
+ * was open, or before Claude Code wrote the line) nothing is settled (unread), and every later handler reads it again,
+ * the review's Post(ExitPlanMode) last (close: waits for the line, then a review with none closed without answering).
  */
-function resolveShown(input: ConsentIn, me: Identity, st: Review): string {
-  if (st.phase !== 'shown' || st.resolved) return st.said || '';
+function resolveShown(input: ConsentIn, me: Identity, st: Review, { wait = false, close = false } = {}): string {
+  if (st.resolved || !(st.phase === 'shown' || st.unread)) return st.said || '';
+  const seen = answerOf(input, st.tool_use_id, wait);
+  if (!seen && st.tool_use_id && !close) {
+    st.unread = true;
+    st.said = `${me.name}'s answer in the review of proposal ${st.hash} is not on record yet; nothing was recorded.`;
+    return st.said;
+  }
   st.resolved = true;
-  const note = feedback(input, st.tool_use_id);
+  delete st.unread;
+  const note = seen ? seen.note : null;
   const p = answerableFor(me).find(x => x.hash === st.hash);
   if (note == null || !note.trim()) st.said = `${me.name} closed the review of proposal ${st.hash} without answering; nothing was recorded.`;
   else if (!p) st.said = `proposal ${st.hash}: nothing recorded (already answered, decided or unknown).`;
@@ -346,7 +367,8 @@ function preExit(input: ConsentIn, me: Identity) {
   const st = readReview(me);
   if (!st) return;
   if (st.phase === 'shown' && st.tool_use_id && st.tool_use_id === input.tool_use_id) return ask(st, me); // the same call again
-  if (st.phase === 'shown') { resolveShown(input, me, st); st.phase = 'exiting'; return writeReview(me, st); }
+  // the closing call: the dialog has closed, so its tool_result is waited for
+  if (st.phase === 'shown' || st.unread) { resolveShown(input, me, st, { wait: true }); st.phase = 'exiting'; return writeReview(me, st); }
   if (st.phase !== 'entering') { st.phase = 'exiting'; return writeReview(me, st); }
   // The hook's review: the proposal Pre(EnterPlanMode) picked, whatever this call carries. The model's input
   // (a stale plan in the plan file, a hand-written copy, another hash, nothing) never decides what is shown.
@@ -447,7 +469,10 @@ function postExit(input: ConsentIn, me: Identity) {
     clearReview(me);
     return unshown(input, me, st.hash ? [st.hash] : []) || postPlan(input, me);
   }
+  // A handler that ran while the dialog was open (unread) set 'exiting': this Post is the dialog's own, a "Yes".
+  if (st.unread && st.tool_use_id && st.tool_use_id === input.tool_use_id) { st.phase = 'shown'; delete st.unread; delete st.said; }
   if (st.phase === 'exiting') {
+    resolveShown(input, me, st, { wait: true, close: true }); // unread until now: the note, if any, waits for Send
     restorePlan(st);
     clearReview(me);
     const card = st.card ? ` The plan view could not show proposal ${st.card}: call AskUserQuestion with "proposal ${st.card}" so ${me.name} answers on the card.` : '';
@@ -565,6 +590,7 @@ function prompt(input: ConsentIn, me: Identity) {
     writeReview(me, st);
     return c.context('UserPromptSubmit', `sub-human: ${said ? said + ' ' : ''}Before anything else, ${EXIT_HOW}; then continue.`);
   }
+  if (st.unread) resolveShown(input, me, st, { close: true }); // left plan mode another way: a note read only now still waits for Send
   restorePlan(st);
   clearReview(me);
 }

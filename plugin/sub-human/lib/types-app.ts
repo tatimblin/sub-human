@@ -76,6 +76,8 @@ export interface Review {
   tool_use_id?: string | null;
   said?: string;
   resolved?: boolean;
+  /** closed while its dialog's tool_result was not on disk yet: the answer is read again later (hooks/consent.ts resolveShown) */
+  unread?: boolean;
   foreign?: boolean;
   card?: string;
 }

@@ -243,7 +243,8 @@ export const TASK_REQ_EVIDENCE_SHOWN = 400;
 export const ROW_TITLE_MAX = 24;               // a proposal's title in a panel row ("✔ decided Cursor paging")
 export const REVIEW_LOCK_TIMEOUT_MS = 3000;    // members/NAME/review.json read-modify-write lock (hooks time out at 5-10 s)
 // Pre(ExitPlanMode) needs the model's own input from the transcript, which 2.1.292 may not have written yet
-// when the hook runs (and tool_input.plan is the plan file's text, empty before the review): poll this long.
+// when the hook runs (and tool_input.plan is the plan file's text, empty before the review): poll this long. The
+// review's closing ExitPlanMode polls as long for the dialog's rejection line (hooks/consent.ts resolveShown).
 export const EXIT_INPUT_WAIT_MS = 1500;        // SUB_HUMAN_EXIT_INPUT_WAIT_MS
 export const EXIT_INPUT_POLL_MS = 50;
 export const REVIEW_STALE_MS = 30 * 60 * 1000; // a plan-view review open this long is stuck: session-restore restores the plan file

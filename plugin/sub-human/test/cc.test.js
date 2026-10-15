@@ -99,6 +99,23 @@ test('planFeedback: structured userFeedback, text fallback, Esc and approval', (
   assert.equal(cc.planFeedback(lines, null), null);
 });
 
+test('planAnswer: null until the tool_result is on disk; then the note, or note null (Esc, approval); the 2.1.296 trial row', () => {
+  assert.equal(cc.planAnswer([toolUse('t1', {})], 't1'), null, 'the dialog still open');
+  assert.equal(cc.planAnswer([toolUse('t1', {}), rejected('t1', 'x')], null), null);
+  assert.deepEqual(cc.planAnswer([escaped('t2')], 't2'), { note: null });
+  assert.deepEqual(cc.planAnswer([approved('t3')], 't3'), { note: null });
+  // round 4, proposal 471cf694a6b9: bob's "Tell Claude what to change", as 2.1.296 wrote it
+  const note = 'Keep the old heading as a subtitle under the new one';
+  const content = `The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n${note}\n\nNote: The user's next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they'd prefer you to work, consider saving that to memory for future sessions.`;
+  const row = J({ parentUuid: 'c30cb4f4-638d-4681-91d5-6de50f162c19', isSidechain: false, type: 'user',
+    message: { role: 'user', content: [{ type: 'tool_result', content, is_error: true, tool_use_id: 'toolu_01HdxRtAHngcdhVfcMdMLXLZ' }] },
+    timestamp: '2026-10-15T05:26:27.696Z', toolUseResult: `Error: ${content}`, toolDenialKind: 'user-rejected', userFeedback: note,
+    sourceToolAssistantUUID: 'c30cb4f4-638d-4681-91d5-6de50f162c19', permissionDecision: { decision: 'reject', source: 'user_reject' }, version: '2.1.296' });
+  const lines = [toolUse('toolu_01HdxRtAHngcdhVfcMdMLXLZ', { plan: 'proposal 471cf694a6b9' }), row, J({ type: 'permission-mode', permissionMode: 'plan' })];
+  assert.deepEqual(cc.planAnswer(lines, 'toolu_01HdxRtAHngcdhVfcMdMLXLZ'), { note });
+  assert.equal(cc.planFeedback(lines, 'toolu_01HdxRtAHngcdhVfcMdMLXLZ'), note);
+});
+
 test('lastHumanPrompt: the newest prompt only when it is the person\'s (no origin, or kind human); tool results and meta rows skipped', () => {
   const user = (content, extra = {}) => J({ type: 'user', message: { role: 'user', content }, timestamp: '2026-10-08T10:00:00.000Z', ...extra });
   assert.deepEqual(cc.lastHumanPrompt([user('open v2'), user('Open v3')]), { text: 'Open v3', at: Date.parse('2026-10-08T10:00:00.000Z') });

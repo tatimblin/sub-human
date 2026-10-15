@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 const { World, PLUGIN, hso, decision, reason, ctx } = require('./helpers.js');
 
 const proposal = require(path.join(PLUGIN, 'lib', 'proposal.ts'));
@@ -358,6 +359,88 @@ test('review: a room tool call after "Tell Claude what to change" records the ob
   // bob's Send on the card: recorded once, byte-exact (via=human).
   confirm(w, hash, 'Send');
   assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]]);
+});
+
+/**
+ * The rejection line of the live round-4 trial (2.1.296, proposal 471cf694a6b9, bob's "Tell Claude what to change"),
+ * field for field, then the metadata rows Claude Code appends after it; for tool use `id`.
+ */
+function rejectionRows(id, note) {
+  const content = said(note);
+  return [
+    { parentUuid: 'c30cb4f4-638d-4681-91d5-6de50f162c19', isSidechain: false, promptId: '995c57e1-0420-4bcb-b79b-8b76a65d98ff', type: 'user',
+      message: { role: 'user', content: [{ type: 'tool_result', content, is_error: true, tool_use_id: id }] },
+      uuid: '31fdfd59-5dea-4d10-b027-25b1318a6a1d', timestamp: '2026-10-15T05:26:27.696Z', toolUseResult: `Error: ${content}`,
+      toolDenialKind: 'user-rejected', userFeedback: note, sourceToolAssistantUUID: 'c30cb4f4-638d-4681-91d5-6de50f162c19',
+      permissionDecision: { decision: 'reject', source: 'user_reject' }, userType: 'external', entrypoint: 'cli', version: '2.1.296' },
+    { type: 'last-prompt', lastPrompt: 'The sub-human plugin sent a message: …', leafUuid: '31fdfd59-5dea-4d10-b027-25b1318a6a1d' },
+    { type: 'custom-title', customTitle: 'bob.shrew-6338' },
+    { type: 'mode', mode: 'normal' },
+    { type: 'permission-mode', permissionMode: 'plan' },
+  ].map(l => JSON.stringify(l)).join('\n') + '\n';
+}
+
+test('review: a hook that runs while the dialog is open (no rejection line yet) settles nothing; the 2.1.296 note is read when the review closes and waits for Send', () => {
+  const { w, hash } = world();
+  const file = path.join(w.userHome, '.claude', 'plans', 'r4.md');
+  const note = 'Keep the old heading as a subtitle under the new one';
+  const tp = transcript(w, file, null, { id: 'tu1', input: { plan: `proposal ${hash}` } });
+  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' });
+  assert.equal(decision(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' })), 'ask');
+  // The dialog is still open: a prompt hook in plan mode reads no rejection line. Before, this settled the review as
+  // "closed without answering" and the note typed a moment later was never read.
+  const early = w.hook('consent', ev('UserPromptSubmit', null, { permission_mode: 'plan', prompt: 'x', transcript_path: tp }), { as: 'bob' });
+  assert.match(ctx(early), /bob's answer in the review of proposal [0-9a-f]{12} is not on record yet; nothing was recorded/);
+  assert.doesNotMatch(ctx(early), /without answering/);
+  assert.deepEqual([review(w).phase, review(w).unread], ['exiting', true]);
+  assert.equal(waiting(w), null);
+  // bob answers "Tell Claude what to change" with his note: the line as the trial wrote it.
+  fs.appendFileSync(tp, rejectionRows('tu1', note));
+  // The model's closing ExitPlanMode (it passes the plan back, as in the trial): no dialog, and the note is read now.
+  assert.equal(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: { plan: TEXT, planFilePath: file }, tool_use_id: 'tu2', transcript_path: tp }), { as: 'bob' }).stdout, '');
+  assert.equal(waiting(w).note, note, 'the note waits byte-exact (confirm)');
+  assert.equal(hso(w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'bob' })).decision.behavior, 'allow');
+  const post = w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: null, filePath: file }, transcript_path: tp }), { as: 'bob' });
+  assert.match(ctx(post), new RegExp(`bob closed the review of proposal ${hash} with a note; nothing is recorded yet\\. .*call AskUserQuestion with the question "objection ${hash}"`));
+  assert.deepEqual(answers(w), [], 'a note alone records nothing');
+  assert.equal(review(w), null);
+  // The card: bob's Send records the objection with his note.
+  confirm(w, hash, 'Send');
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.text]), [['objection', 'human', note]]);
+});
+
+test('review: the closing ExitPlanMode waits for a rejection line Claude Code has not written yet; Post reads it last; none at all is no answer', () => {
+  const { w, hash } = world();
+  const note = 'Keep the old heading as a subtitle under the new one';
+  const open = name => {
+    const file = path.join(w.userHome, '.claude', 'plans', `${name}.md`);
+    const tp = transcript(w, file, null, { id: 'tu1', input: { plan: `proposal ${hash}` } });
+    w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'auto', tool_input: {} }), { as: 'bob' });
+    assert.equal(decision(w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu1', transcript_path: tp }), { as: 'bob' })), 'ask');
+    return { file, tp };
+  };
+  const close = (tp, file, env) => {
+    w.hook('consent', ev('PreToolUse', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {}, tool_use_id: 'tu2', transcript_path: tp }), { as: 'bob', env });
+    w.hook('consent', ev('PermissionRequest', 'ExitPlanMode', { permission_mode: 'plan', tool_input: {} }), { as: 'bob' });
+    return ctx(w.hook('consent', ev('PostToolUse', 'ExitPlanMode', { permission_mode: 'auto', tool_input: {}, tool_use_id: 'tu2', tool_response: { plan: null, filePath: file }, transcript_path: tp }), { as: 'bob', env }));
+  };
+  // The line lands while Pre(ExitPlanMode) polls for it.
+  const a = open('late');
+  const rows = path.join(w.cwd, 'rows.jsonl');
+  fs.writeFileSync(rows, rejectionRows('tu1', note));
+  const writer = spawn('sh', ['-c', `sleep 0.3; cat "${rows}" >> "${a.tp}"`], { stdio: 'ignore' });
+  const late = close(a.tp, a.file, { SUB_HUMAN_EXIT_INPUT_WAIT_MS: '5000' });
+  assert.match(late, /with a note; nothing is recorded yet/);
+  assert.equal(waiting(w).note, note);
+  writer.kill();
+  confirm(w, hash, 'Discard');
+  // No line ever: Pre leaves it unread, Post settles it as closed without answering.
+  const b = open('none');
+  const none = close(b.tp, b.file, { SUB_HUMAN_EXIT_INPUT_WAIT_MS: '100' });
+  assert.match(none, /bob closed the review of proposal [0-9a-f]{12} without answering; nothing was recorded/);
+  assert.equal(waiting(w), null);
+  assert.equal(review(w), null);
+  assert.deepEqual(answers(w), []);
 });
 
 test('review: 2.1.292 runs Pre(ExitPlanMode) before the call\'s transcript line is written, with a blank plan: the only pending proposal is shown; the line is waited for', () => {
