@@ -21,18 +21,15 @@ import * as server from '../../lib/remote/server.ts';
 import * as client from '../../lib/remote/client.ts';
 import * as memory from '../../lib/remote/transports/memory.ts';
 
-const LIB = path.join(import.meta.dirname, '..', '..', 'lib');
 const NAMES = ['alice', 'bob', 'carol', 'dave'];
 const MACHINE = 'remote0machine01';
 
-/**
- * @param {string} code
- * @param {{dir: string}} opts
- * @returns {{mirror: object, stop(): void}}
- */
-function remoteStore(code, { dir }) {
+/** What the worker is started with. ready: 0 while starting, 1 online, 2 failed. */
+interface WorkerData { code: string; dir: string; home: string | undefined; ready: Int32Array }
+
+function remoteStore(code: string, { dir }: { dir: string }): { mirror: MirrorRoomStore; stop(): void } {
   const ready = new Int32Array(new SharedArrayBuffer(4));
-  const worker = new Worker(import.meta.filename, { workerData: { code, dir, home: process.env.SUB_HUMAN_HOME, ready } });
+  const worker = new Worker(import.meta.filename, { workerData: { code, dir, home: process.env.SUB_HUMAN_HOME, ready } satisfies WorkerData });
   worker.unref();
   Atomics.wait(ready, 0, 0, 10_000);
   if (Atomics.load(ready, 0) !== 1) throw new Error('the remote store\'s link did not come online');
@@ -42,7 +39,7 @@ function remoteStore(code, { dir }) {
   };
 }
 
-async function serveWorker({ code, dir, home, ready }) {
+async function serveWorker({ code, dir, home, ready }: WorkerData) {
   process.env.SUB_HUMAN_HOME = home; // the test's home: a preloaded test/helpers.ts gave this thread a fresh one
   store.createRoom(code);
   const host = store.open(code);
@@ -60,6 +57,6 @@ async function serveWorker({ code, dir, home, ready }) {
   Atomics.notify(ready, 0);
 }
 
-if (!isMainThread && workerData && workerData.ready) serveWorker(workerData);
+if (!isMainThread && workerData && workerData.ready) serveWorker(workerData as WorkerData);
 
 export { remoteStore, NAMES, MACHINE };

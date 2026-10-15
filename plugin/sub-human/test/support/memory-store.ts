@@ -9,29 +9,40 @@
  *       tests. isHost: false makes it mirror-shaped (the host gates: lib/room-claude.ts, lib/proposal.ts decide).
  *   members.join/leave/beat are lib/room/members.ts ops over this store's compare-and-set update, as FsRoomStore's.
  */
-import path from 'node:path';
 import * as store from '../../lib/room/store.ts';
 import * as config from '../../lib/config.ts';
 import * as envelope from '../../lib/room/envelope.ts';
 import * as members from '../../lib/room/members.ts';
+import type {
+  AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, KvApi, Members, MembersApi, Payload, PlaceOpts,
+  Placed, ReadViewOpts, RoomStore, Tailer,
+} from '../../lib/room/types.ts';
+import type { KeyObject } from 'node:crypto';
 
 const { RoomError, hash12, tag, blobRef, checkKey, checkCursor, CHAT_KINDS } = store;
-const clone = v => (v === undefined ? undefined : structuredClone(v));
-const parse = (l, s) => { try { return tag(JSON.parse(l), s); } catch { return null; } };
+const clone = <T,>(v: T): T => (v === undefined ? v : structuredClone(v));
+const parse = (l: string, s: RoomStore | null): Entry | null => { try { return tag(JSON.parse(l) as Entry, s); } catch { return null; } };
 
-class MemoryRoomStore {
-  constructor(code, { isHost = true } = {}) {
+class MemoryRoomStore implements RoomStore {
+  readonly code: string;
+  isHost: boolean;
+  /** the serialized log, one line per entry: open for tamper tests */
+  _lines: string[] = [];
+  _parsed: ({ line: string; e: Entry | null } | undefined)[] = []; // cache, re-parsed when a line changed (tamper tests)
+  _cursors = new Map<string, number>();
+  _members: { v: number; doc: Members } = { v: 0, doc: {} };
+  _blobs = new Map<string, Buffer>();
+  _kv = new Map<string, unknown>();
+  _checked = { count: 0, hash: hash12('') }; // the verifyChain checkpoint
+  members: MembersApi;
+  blobs: BlobsApi;
+  kv: KvApi;
+
+  constructor(code: string, { isHost = true }: { isHost?: boolean } = {}) {
     this.code = code;
     this.isHost = isHost;
-    this._lines = [];
-    this._parsed = []; // [{line, e}] cache, re-parsed when a line changed (tamper tests)
-    this._cursors = new Map();
-    this._members = { v: 0, doc: {} };
-    this._blobs = new Map();
-    this._kv = new Map();
-    this._checked = { count: 0, hash: hash12('') }; // the verifyChain checkpoint
     const self = this;
-    this.members = {
+    const base: Pick<MembersApi, 'read' | 'update'> = {
       read: () => members.fromLegacy(clone(self._members.doc)),
       // compare-and-set: fn sees a copy at version v; the write lands only if nobody wrote since (retry otherwise)
       update(fn) {
@@ -44,25 +55,26 @@ class MemoryRoomStore {
           return next;
         }
       },
-      ...members.ops(this),
     };
+    this.members = { ...base, ...members.ops(this) };
     this.blobs = {
       put(name, bytes) {
         if (blobRef(name) !== name) throw new RoomError('INVALID', `invalid blob name "${name}"`);
         self._blobs.set(name, Buffer.from(bytes));
         return name;
       },
-      get: ref => { const r = blobRef(ref); return r && self._blobs.has(r) ? Buffer.from(self._blobs.get(r)) : null; },
+      get: ref => { const r = blobRef(ref); const b = r ? self._blobs.get(r) : undefined; return b ? Buffer.from(b) : null; },
       has: ref => { const r = blobRef(ref); return !!r && self._blobs.has(r); },
       ref: blobRef,
       localPath: () => null,
     };
     this.kv = {
-      get: (key, fallback = null) => { checkKey(key); return self._kv.has(key) ? clone(self._kv.get(key)) : fallback; },
+      // kv documents are untyped JSON (KvApi: the caller names T)
+      get: <T,>(key: string, fallback: T | null = null): T | null => { checkKey(key); return self._kv.has(key) ? clone(self._kv.get(key) as T) : fallback; },
       set: (key, value) => { checkKey(key); self._kv.set(key, clone(value)); },
-      update(key, fn) {
+      update<T>(key: string, fn: (current: T | null) => T | null | undefined) {
         checkKey(key);
-        const next = fn(self._kv.has(key) ? clone(self._kv.get(key)) : null);
+        const next = fn(self._kv.has(key) ? clone(self._kv.get(key) as T) : null);
         if (next === undefined) return undefined;
         if (next === null) { self._kv.delete(key); return null; }
         self._kv.set(key, clone(next));
@@ -79,10 +91,10 @@ class MemoryRoomStore {
   }
 
   exists() { return true; }
-  lock(name, fn) { checkKey(name); return fn(); }
+  lock<R>(name: string, fn: () => R): R { checkKey(name); return fn(); }
 
-  readAll() {
-    const out = [];
+  readAll(): Entry[] {
+    const out: Entry[] = [];
     this._lines.forEach((l, i) => {
       let p = this._parsed[i];
       if (!p || p.line !== l) p = this._parsed[i] = { line: l, e: parse(l, this) };
@@ -91,33 +103,41 @@ class MemoryRoomStore {
     this._parsed.length = this._lines.length;
     return out;
   }
-  readById(ids) {
+  readById(ids: number | string | readonly (number | string)[]): Entry[] {
     const byId = new Map(this.readAll().map(e => [e.id, e]));
-    return (Array.isArray(ids) ? ids : [ids]).map(Number).filter(i => byId.has(i)).map(i => byId.get(i));
+    return (Array.isArray(ids) ? ids : [ids]).map(Number).flatMap(i => byId.get(i) || []);
   }
-  readAfter(id, f = () => true) { return this.readAll().filter(e => e.id > id && f(e)); }
-  since(id) { return this.readAfter(id); }
-  lastId() { const es = this.readAll(); return es.length ? es.at(-1).id || 0 : 0; }
+  readAfter(id: number, f: (e: Entry) => boolean = () => true) { return this.readAll().filter(e => e.id > id && f(e)); }
+  since(id: number) { return this.readAfter(id); }
+  lastId() { const es = this.readAll(); return es.at(-1)?.id || 0; }
 
-  readView({ after = 0 } = {}) {
+  readView({ after = 0 }: ReadViewOpts = {}): Entry[] {
     const all = this.readAll();
     if (!(after > 0)) return all;
     return all.filter(e => !CHAT_KINDS.has(e.kind) || e.id > after);
   }
 
-  append(entry, opts = {}) { return this.place(store.toPayload(this.code, entry, opts), opts); }
+  append(entry: EntryInput, opts: AppendOpts & { queue: true }): Placed;
+  append(entry: EntryInput, opts?: AppendOpts): Entry;
+  append(entry: EntryInput, opts?: AppendOpts): Entry {
+    // with no seat named, toPayload refuses (as FsRoomStore's append does): the tests pass from
+    return this.place(store.toPayload(this.code, entry, opts as AppendOpts), opts);
+  }
 
-  place(payload, opts = {}) {
+  place(payload: Payload, opts: PlaceOpts & { queue: true }): Placed;
+  place(payload: Payload, opts?: PlaceOpts): Entry;
+  place(payload: Payload, opts: PlaceOpts = {}): Entry {
     const p = store.admit(this.code, payload, opts);
-    const { e, line } = store.placeAfter(this, p, { newest: this.readAll().toReversed(), prevLine: this._lines.at(-1), now: Date.now() });
+    const { e, line } = store.placeAfter(this, p, { newest: this.readAll().toReversed(), prevLine: this._lines.at(-1) ?? '', now: Date.now() });
     this._lines.push(line);
     return e;
   }
 
-  pins() { return envelope.pinnedKeys(this.readAll()); }
-  hostState() { return store.hostState(this.readAll()); }
+  pins(): Map<string, KeyObject> { return envelope.pinnedKeys(this.readAll()); }
+  hostState(): HostState { return store.hostState(this.readAll()); }
+  setAside(): string | null { return null; }
 
-  watch(onEntry, { after = 0, intervalMs = config.FOLLOW_POLL_MS } = {}) {
+  watch(onEntry: (e: Entry) => void, { after = 0, intervalMs = config.FOLLOW_POLL_MS }: { after?: number; intervalMs?: number } = {}) {
     let seen = after, len = 0;
     const tick = () => {
       if (this._lines.length < len) { len = 0; seen = 0; }
@@ -130,29 +150,30 @@ class MemoryRoomStore {
     return () => clearInterval(t);
   }
 
-  tailer({ after } = {}) {
-    const idOf = l => (parse(l, null) || {}).id;
+  tailer({ after }: { after?: number } = {}): Tailer {
+    const idOf = (l: string) => parse(l, null)?.id ?? 0;
     let at = after === undefined ? this._lines.length : this._lines.findIndex(l => idOf(l) > after);
     if (at < 0) at = this._lines.length;
     const self = this;
     return {
+      get offset() { return at; },
       poll() {
         let reset = false;
         if (self._lines.length < at) { at = 0; reset = true; }
         const lines = self._lines.slice(at);
         at = self._lines.length;
-        return { entries: lines.map(l => parse(l, self)).filter(Boolean), lines, reset };
+        return { entries: lines.flatMap(l => parse(l, self) || []), lines, reset };
       },
     };
   }
 
-  lineHash(id) {
+  lineHash(id: number): string | null {
     if (id === 0) return hash12('');
-    const line = this._lines.find(l => (parse(l, null) || {}).id === id);
+    const line = this._lines.find(l => parse(l, null)?.id === id);
     return line === undefined ? null : hash12(line);
   }
 
-  validateChain() {
+  validateChain(): ChainCheck {
     let prev = '';
     for (let i = 0; i < this._lines.length; i++) {
       const e = parse(this._lines[i], null);
@@ -164,11 +185,12 @@ class MemoryRoomStore {
   }
 
   /** Incremental from the checkpoint (lines already checked); offsets here count lines. */
-  verifyChain({ save = true } = {}) {
+  verifyChain({ save = true }: { save?: boolean } = {}): ChainVerify {
     const cp = this._checked;
     const ok = cp.count <= this._lines.length && (cp.count === 0 || hash12(this._lines[cp.count - 1]) === cp.hash);
     const from = ok ? cp : { count: 0, hash: hash12('') };
-    let { count, hash } = from, bad = null, id = 0;
+    let { count, hash } = from, id = 0;
+    let bad: { badAt: number | null; line?: number } | null = null;
     for (let i = from.count; i < this._lines.length; i++) {
       const e = parse(this._lines[i], null);
       if (!e) { bad = { badAt: null, line: i + 1 }; break; }
@@ -180,8 +202,8 @@ class MemoryRoomStore {
     return bad ? { ...r, ...bad } : r;
   }
 
-  getCursor(name) { checkCursor(name); return this._cursors.get(name) || 0; }
-  setCursor(name, n) { checkCursor(name); this._cursors.set(name, Number(n) || 0); }
+  getCursor(name: string) { checkCursor(name); return this._cursors.get(name) || 0; }
+  setCursor(name: string, n: number) { checkCursor(name); this._cursors.set(name, Number(n) || 0); }
 }
 
 export { MemoryRoomStore };

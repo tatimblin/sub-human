@@ -10,8 +10,11 @@
  *   The returned transport also has .stats = {sent, dropped, duplicated, delayedMs}.
  */
 
+import type { DecodedFrame } from '../../lib/remote/types-core.ts';
+import type { Transport } from '../../lib/remote/types-rest.ts';
+
 /** mulberry32: a small seeded PRNG, uniform in [0, 1). */
-function prng(seed) {
+function prng(seed: number) {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6D2B79F5) >>> 0;
@@ -21,20 +24,18 @@ function prng(seed) {
   };
 }
 
-/**
- * @param {object} transport
- * @param {{seed: number, drop?: number, delayMs?: [number, number], dup?: number, cutAfter?: number}} opts
- * @returns {object}
- */
-function flaky(transport, { seed, drop = 0, delayMs = [0, 0], dup = 0, cutAfter = Infinity }) {
+interface FlakyOpts { seed: number; drop?: number; delayMs?: [number, number]; dup?: number; cutAfter?: number }
+interface FlakyStats { sent: number; dropped: number; duplicated: number; delayedMs: number }
+
+function flaky(transport: Transport, { seed, drop = 0, delayMs = [0, 0], dup = 0, cutAfter = Infinity }: FlakyOpts): Transport & { stats: FlakyStats } {
   const rand = prng(seed);
-  const stats = { sent: 0, dropped: 0, duplicated: 0, delayedMs: 0 };
-  const frameFns = [];
+  const stats: FlakyStats = { sent: 0, dropped: 0, duplicated: 0, delayedMs: 0 };
+  const frameFns: ((frame: DecodedFrame) => void)[] = [];
 
   /** A queue that keeps order: each job runs no earlier than the one before it, after its own random delay. */
   function lane() {
     let last = 0;
-    return job => {
+    return (job: () => void) => {
       const wait = delayMs[0] + rand() * (delayMs[1] - delayMs[0]);
       stats.delayedMs += wait;
       last = Math.max(last, Date.now() + wait);
@@ -42,9 +43,9 @@ function flaky(transport, { seed, drop = 0, delayMs = [0, 0], dup = 0, cutAfter 
     };
   }
   /** One direction: count, then drop, duplicate or deliver the frame in order; close after the cutAfter-th. */
-  function misbehave(deliver) {
+  function misbehave<F>(deliver: (frame: F) => void) {
     const later = lane();
-    return frame => {
+    return (frame: F) => {
       if (stats.sent >= cutAfter) return;
       stats.sent++;
       if (rand() < drop) stats.dropped++;
@@ -56,12 +57,12 @@ function flaky(transport, { seed, drop = 0, delayMs = [0, 0], dup = 0, cutAfter 
     };
   }
 
-  const outgoing = misbehave(frame => transport.send(frame));
-  transport.onFrame(misbehave(frame => { for (const fn of frameFns) fn(frame); }));
+  const outgoing = misbehave((frame: object) => transport.send(frame));
+  transport.onFrame(misbehave((frame: DecodedFrame) => { for (const fn of frameFns) fn(frame); }));
   return {
     stats,
     send: outgoing,
-    onFrame(fn) { frameFns.push(fn); },
+    onFrame(fn: (frame: DecodedFrame) => void) { frameFns.push(fn); },
     onClose: fn => transport.onClose(fn),
     close: () => transport.close(),
   };
