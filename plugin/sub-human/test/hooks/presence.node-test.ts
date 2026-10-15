@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { World, room } from './helpers.ts';
 
-const note = type => ({ hook_event_name: 'Notification', notification_type: type, message: 'Claude needs your attention' });
+const note = (type: string) => ({ hook_event_name: 'Notification', notification_type: type, message: 'Claude needs your attention' });
 
 test('presence: Notification idle_prompt / permission_prompt and StopFailure write the member presence file', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });

@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { World, PLUGIN } from './helpers.ts';
+import { World } from './helpers.ts';
 import { pidStart } from '../../lib/lock.ts';
 import * as identityLib from '../../lib/identity.ts';
 
