@@ -65,7 +65,8 @@ test('session-end: the last member leaving starts the detached reaper: closing, 
   const r = w.hook('session-end', fixture('session-end'), { as: 'alice', env: { SUB_HUMAN_CLAUDE: bin } });
   assert.equal(r.code, 0, r.stderr);
   assert.ok(await until(() => fs.existsSync(log)), 'claude stop ran');
-  assert.deepEqual(JSON.parse(fs.readFileSync(log, 'utf8').trim()), ['stop', 'feed0042']);
+  // the first call; the reaper then lists jobs for strays (stopStrays)
+  assert.deepEqual(JSON.parse(fs.readFileSync(log, 'utf8').split('\n')[0]), ['stop', 'feed0042']);
   // the reaper marks the room's Claude stopped and left just after `claude stop` returns
   assert.ok(await until(() => { const o = w.members().claude; return o.closing && o.left_at && o.stopped_at; }), 'claude marked closing, stopped, left');
   const st = w.entries().find(e => e.kind === 'status');
