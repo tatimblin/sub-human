@@ -124,3 +124,25 @@ test('ssh invite: someone in between (another host key shown) gets one try, noth
   const shut = remote.join(bob, `join me@127.0.0.1:2222 ${code} ${m[3]} --as bob`);
   assert.match(shut.json!.reason!, /could not join room \S+: the invite to room \S+ no longer works .*ask the host for a new one/);
 });
+
+test('ssh invite to this machine\'s own name: it says the name is a guess, and that Remote Login is off when it is; a given address gets neither', t => {
+  const R = rig(t);
+  if (!R) return t.skip('no ssh-keygen');
+  const { host, alice } = R;
+  const inv = (args: string, login: 'on' | 'off') => {
+    host.lease(alice);
+    const r = host.hook('join', { hook_event_name: 'UserPromptExpansion', command_name: 'sub-human', command_args: args }, alice, { env: { SUB_HUMAN_REMOTE_LOGIN: login, SUB_HUMAN_SSH_ADDR: undefined } });
+    assert.ok(hiddenBlock(r), r.stderr);
+    return r.json!.reason!;
+  };
+  const off = inv('invite', 'off');
+  assert.ok(shown(off), off);
+  assert.match(off, /is this machine's own name.*\/sub-human invite --ssh USER@HOST \(or set SUB_HUMAN_SSH_ADDR/);
+  assert.match(off, /Remote Login is off on this Mac|no ssh server is running on this machine/);
+  assert.match(off, /invite over the web: \/sub-human invite --web/);
+  const on = inv('invite', 'on');
+  assert.match(on, /is this machine's own name/);
+  assert.doesNotMatch(on, /Remote Login is off|no ssh server is running/);
+  const given = inv('invite --ssh me@127.0.0.1:2222', 'off');
+  assert.doesNotMatch(given, /this machine's own name|Remote Login is off|no ssh server is running/, 'an address the person gave may reach another sshd');
+});
