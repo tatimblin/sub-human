@@ -150,3 +150,59 @@ test('members.publicView: other machines never see a seat\'s pid, pid_start, ses
   assert.equal(ms.alice.pid, 42, 'the document itself is unchanged');
   assert.deepEqual(members.LOCAL_FIELDS, ['pid', 'pid_start', 'session_id', 'cwd']);
 });
+
+/** A seat on another machine (no pid: it lives by its lease) whose lease ran out ago ms before now. */
+function farSeat(code, mem, name, ago = config.SEAT_LEASE_MS + config.LEAVE_SETTLE_MS + 1000) {
+  assert.equal(seats.enter({ code, name, machine: 'far-away', pubkey: seatKey.publicPem(code, name) }).ok, true);
+  mem.members.update(ms => { ms[name].seen_at = new Date(Date.now() - ago).toISOString(); return ms; });
+}
+const moves = mem => mem.readAll().filter(e => e.kind === 'member_joined' || e.kind === 'member_left').map(e => e.text);
+
+test('seats.sweep: a remote seat whose lease ran out is logged left (connection lost) once and kept seated as lapsed', t => {
+  const { code, mem } = memoryRoom(t, { isHost: true });
+  farSeat(code, mem, 'bob', config.SEAT_LEASE_MS + 1000);
+  assert.deepEqual(seats.sweep(code), [], 'still within the settle');
+  mem.members.update(ms => { ms.bob.seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - config.LEAVE_SETTLE_MS - 1000).toISOString(); return ms; });
+  assert.deepEqual(seats.sweep(code), ['bob']);
+  const bob = mem.members.read().bob;
+  assert.deepEqual([!!bob.lapsed_at, bob.left_at], [true, undefined], 'lapsed, not left: its next beat renews it');
+  assert.equal(identity.liveMembers(code).includes('bob'), false);
+  assert.deepEqual(seats.sweep(code), [], 'a second sweep adds nothing');
+  assert.deepEqual(moves(mem), ['bob joined', 'bob left (connection lost)']);
+});
+
+test('seats.back: a lapsed seat is logged rejoined once; a seat that never lapsed logs nothing', t => {
+  const { code, mem } = memoryRoom(t, { isHost: true });
+  farSeat(code, mem, 'bob');
+  assert.equal(seats.back(code, 'bob'), false, 'not lapsed');
+  seats.sweep(code);
+  assert.equal(seats.back(code, 'bob'), true);
+  assert.equal(seats.back(code, 'bob'), false);
+  assert.equal(mem.members.read().bob.lapsed_at, undefined);
+  assert.deepEqual(moves(mem), ['bob joined', 'bob left (connection lost)', 'bob rejoined']);
+});
+
+test('seats.enter: a seat whose earlier record lapsed unswept is logged left before rejoined', t => {
+  const { code, mem } = memoryRoom(t, { isHost: true });
+  farSeat(code, mem, 'bob', config.SEAT_LEASE_MS + 1000); // past its lease, not yet past the settle
+  assert.equal(seats.enter({ code, name: 'bob', machine: 'far-away', pubkey: seatKey.publicPem(code, 'bob') }).rejoin, true);
+  assert.deepEqual(moves(mem), ['bob joined', 'bob left (connection lost)', 'bob rejoined']);
+  assert.equal(mem.members.read().bob.lapsed_at, undefined, 'the join wrote a fresh record');
+});
+
+test('seats.sweep: on a mirror-shaped store it does nothing (the host sweeps)', t => {
+  const { code, mem } = memoryRoom(t, { isHost: false });
+  farSeat(code, mem, 'bob');
+  assert.deepEqual(seats.sweep(code), []);
+  assert.deepEqual([mem.members.read().bob.lapsed_at, mem.readAll()], [undefined, []]);
+});
+
+test('seats.sweep: a local seat whose pid died exits (session ended)', t => {
+  const { code, mem } = memoryRoom(t, { isHost: true });
+  const dead = require('node:child_process').spawnSync(process.execPath, ['-e', '0']).pid;
+  assert.equal(seats.enter({ code, name: 'alice', pid: dead, session_id: 'sa', pubkey: seatKey.publicPem(code, 'alice') }).ok, true);
+  assert.deepEqual(seats.sweep(code), ['alice']);
+  assert.ok(mem.members.read().alice.left_at);
+  assert.deepEqual(moves(mem), ['alice joined', 'alice left (session ended)']);
+  assert.deepEqual(seats.sweep(code), []);
+});

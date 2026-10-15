@@ -2,13 +2,14 @@
  * plugin/sub-human/lib/room/members.ts: the members document's rules, shared by every RoomStore (as placeAfter is
  * for the log), so a seat is judged the same whichever machine holds the room. Zero dependencies beyond lib/.
  *
- * A seat record: {name, role, machine, joined_at, seen_at, left_at?}, plus the fields only the seat's own machine
+ * A seat record: {name, role, machine, joined_at, seen_at, left_at?, lapsed_at?}, plus the fields only the seat's own machine
  * can use (LOCAL_FIELDS: pid, pid_start, session_id, cwd). The room's Claude record also keeps its bookkeeping
  * (lib/room-claude.ts) across a (re)bind. A record with no machine is from before machine ids: this machine's.
  *
  *   seatAlive(m) -> bool          not left, and: a seat of this machine with a pid: that pid is alive with its start
  *                                 time matching pid_start (a seat with no pid_start, or a pid whose start ps cannot
  *                                 read, counts as matching); any other seat (another machine's, or no pid): its lease
+ *                                 (a lapsed seat, lapsed_at: lib/seats.ts sweep, is past its lease; a beat renews it)
  *   roomClaudePresence(o, now?) -> 'live' | 'starting' | null   the room's Claude record as people are told about it: never listed
  *                                 as present when it never ran or its start failed
  *   leaseFresh(m, now?) -> bool   seen_at younger than SEAT_LEASE_MS

@@ -128,7 +128,7 @@ function memberList(members: MemberInput): Member[] {
     : Object.entries(members).map(([k, v]) => Object.assign({ name: k }, v)); // a record's own name wins
   return list.filter((m): m is Member => !!m && typeof m.name === 'string' && NAME_RE.test(m.name));
 }
-const isActive = (m: Member | null | undefined) => !!m && !m.left_at;
+const isActive = (m: Member | null | undefined) => !!m && !m.left_at && !m.lapsed_at; // lapsed: lib/seats.ts sweep
 const isRoomClaude = (m: Member) => m.role === 'claude' || m.name === 'claude';
 function readMembers(code: string): Members { try { return identity.readMembers(code) || {}; } catch { return {}; } }
 
@@ -399,6 +399,7 @@ function participantText(code: string, name: string, viewer: string | null | und
   const m = ms.find(x => x.name === name);
   if (!m) return 'not in the room';
   if (m.left_at) return 'left';
+  if (m.lapsed_at) return 'connection lost';
   const parts: string[] = [];
   const p = latestFor(proposals(es, code), name);
   if (p) {

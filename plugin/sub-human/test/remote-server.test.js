@@ -111,6 +111,23 @@ test('remote (memory): hello with an invite gives a token once; join, beat, appe
   assert.deepEqual(await again.join(seat(code, 'alice')), { ok: true, rejoin: true });
 });
 
+test('remote (memory): a seat whose lease lapsed is logged left by the host\'s sweep; its next beat is ok and logs "rejoined"', async t => {
+  const { code, host } = hostRoom(t);
+  const seats = require(path.join(h.LIB, 'seats.ts'));
+  const config = require(path.join(h.LIB, 'config.ts'));
+  const c = await linked(t, host);
+  assert.deepEqual(await c.join(seat(code, 'alice')), { ok: true });
+  host.members.update(ms => { ms.alice.seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - config.LEAVE_SETTLE_MS - 1000).toISOString(); return ms; });
+  assert.deepEqual(seats.sweep(code), ['alice']);
+  assert.deepEqual(await c.beat('alice'), { ok: true });
+  const moves = host.readAll().filter(e => e.from === 'alice' && (e.kind === 'member_joined' || e.kind === 'member_left')).map(e => e.text);
+  assert.deepEqual(moves, ['alice joined', 'alice left (connection lost)', 'alice rejoined']);
+  assert.equal(identity.readMembers(code).alice.lapsed_at, undefined);
+  assert.ok(identity.liveMembers(code).includes('alice'));
+  assert.deepEqual(await c.beat('alice'), { ok: true });
+  assert.equal(host.readAll().filter(e => e.text === 'alice rejoined').length, 1, 'a beat of a seat that never lapsed logs nothing');
+});
+
 test('remote (memory): no token gets AUTH on every op but hello; a bad token, a bad, reused or foreign invite get AUTH; another version or op is PROTOCOL', async t => {
   const { code, host } = hostRoom(t);
   const anon = await client.connect(served(t, host), { machine: REMOTE });

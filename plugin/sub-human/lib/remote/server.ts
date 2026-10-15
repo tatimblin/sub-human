@@ -25,7 +25,7 @@
  *                    machine = the link's (no pid: the seat lives by its lease); a key other than the pinned one
  *                    is AUTH; bindSeat
  *         leave      seats.exit(), own seat only
- *         beat       store.members.beat(name, {presence?}), own seat only
+ *         beat       store.members.beat(name, {presence?}), own seat only; then seats.back (a lapsed seat rejoined)
  *         append     own `from` only; store.place() (validate, rate, replay, verify against the pinned key); a
  *                    signoff or objection is followed by lib/proposal.ts decide() (host only, idempotent). A system
  *                    kind from a link is AUTH (the host writes those)
@@ -226,7 +226,9 @@ const OPS: OpHandlers = {
 
   beat(s, { name, presence }) {
     own(s, name);
-    return { ok: s.store.members.beat(name, { presence }) };
+    const ok = s.store.members.beat(name, { presence });
+    if (ok) seats.back(s.store.code, name); // a seat that lapsed (seats.sweep) is back: "NAME rejoined"
+    return { ok };
   },
 
   append(s, { payload, epoch }) {

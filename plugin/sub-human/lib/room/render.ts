@@ -290,7 +290,7 @@ function stateLine(me: LaneViewer | null | undefined, entries: readonly Entry[] 
     parts.push(s);
   }
   if (open.length > shown.length) parts.push(`+${open.length - shown.length} more open`);
-  const away = Object.values(members || {}).filter(m => m && m.left_at && m.name !== name).map(m => m.name);
+  const away = Object.values(members || {}).filter(m => m && (m.left_at || m.lapsed_at) && m.name !== name).map(m => m.name);
   if (away.length) parts.push(`away: ${away.join(', ')}`);
   return `room now: ${parts.join(' · ')}`;
 }

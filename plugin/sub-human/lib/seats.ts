@@ -23,11 +23,20 @@
  *       before the append, the only step that can wait on a lock (SessionEnd has seconds; deadlineMs bounds a
  *       mirror's op). Idempotent: a seat absent or already left returns false and writes nothing. In a room
  *       hosted elsewhere a leave the link can't carry (offline, timed out) returns false: the seat lapses there.
+ *   sweep(code, {now?, name?}) -> [name]   on the host (elsewhere: []), the seats that ended with no leave: a local
+ *       seat whose pid died exits ("session ended"); any other seat whose lease is SEAT_LEASE_MS + LEAVE_SETTLE_MS old
+ *       (name: only that seat, as soon as it is not seatAlive) gets lapsed_at, and the one caller that set it logs
+ *       member_left "NAME left (connection lost)". A lapsed seat stays seated: its next beat renews it (lib/remote/link.ts
+ *       keepSeats) and back() logs it. The room's Claude, left seats and lapsed ones are not swept; a lapsed seat
+ *       whose lease is fresh again (a beat that did not run back) is given back. Returns the names it ended.
+ *   back(code, name) -> bool   on the host: clears lapsed_at and, when it was set, logs member_joined "NAME rejoined"
+ *       (the remote server runs it after each beat). false when the seat had not lapsed.
  */
 
 import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as roomClaude from './room-claude.ts';
+import * as config from './config.ts';
 import type { JoinResult, Member } from './room/types.ts';
 
 /** enter()'s seat: the join hook's, or the remote server's for a seat on another machine. */
@@ -68,6 +77,8 @@ function ensureRoomClaude(code: string, cwd: string | null | undefined, by: stri
 }
 
 function enter({ code, name, role = 'member', machine = identity.machineId(), pid, session_id, cwd, pubkey }: EnterOpts): EnterResult {
+  // the seat's earlier record ended with no leave: its "left" line goes before this join's "rejoined"
+  if (identity.isHost(code)) sweep(code, { name });
   const r: EnterResult = identity.join({ code, name, role, machine, pid, session_id, cwd });
   if (!r.ok) return r;
   if (!identity.isHost(code)) return { ...r, note: '' };
@@ -98,8 +109,55 @@ function exit(code: string, name: string, reason: string, { deadlineMs }: { dead
   return true;
 }
 
+const validPid = (pid: unknown): pid is number => Number.isInteger(pid) && (pid as number) > 0;
+const isLocal = (m: Member): boolean => validPid(m.pid) && (m.machine || identity.machineId()) === identity.machineId();
+
+function sweep(code: string, { now = Date.now(), name }: { now?: number; name?: string } = {}): string[] {
+  const s = room.open(code).store;
+  if (!s || !s.isHost) return [];
+  const after = config.SEAT_LEASE_MS + config.envMs('SUB_HUMAN_LEAVE_MS', config.LEAVE_SETTLE_MS);
+  // lapsed: the lease is past the settle (a named seat: not alive), and the seat is still neither left nor lapsed
+  const lapsed = (m: Member | undefined): m is Member => !!m && !m.left_at && !m.lapsed_at && !identity.seatAlive(m)
+    && (name !== undefined || !(now - Date.parse(String(m.seen_at)) < after));
+  const out: string[] = [];
+  for (const m of Object.values(s.members.read())) {
+    if (!m || !m.name || m.role === 'claude' || m.left_at || (name !== undefined && m.name !== name)) continue;
+    if (m.lapsed_at) { if (identity.seatAlive(m)) back(code, m.name); continue; }
+    if (identity.seatAlive(m)) continue;
+    if (isLocal(m)) { if (exit(code, m.name, 'session ended')) out.push(m.name); continue; }
+    let set = false;
+    s.members.update(ms => {
+      set = false; // update may run fn more than once
+      if (!lapsed(ms[m.name])) return null;
+      ms[m.name].lapsed_at = new Date(now).toISOString();
+      set = true;
+      return ms;
+    });
+    if (!set) continue;
+    room.open(code).append({ kind: 'member_left', text: `${m.name} left (connection lost)` }, asSystem(m.name));
+    out.push(m.name);
+  }
+  return out;
+}
+
+function back(code: string, name: string): boolean {
+  const s = room.open(code).store;
+  if (!s || !s.isHost) return false;
+  let was = false;
+  s.members.update(ms => {
+    was = false;
+    const m = ms[name];
+    if (!m || m.left_at || !m.lapsed_at) return null;
+    delete m.lapsed_at;
+    was = true;
+    return ms;
+  });
+  if (was) room.open(code).append({ kind: 'member_joined', text: `${name} rejoined` }, asSystem(name));
+  return was;
+}
+
 /** Test seam: the room's Claude starts through this object, which a test may stub (test/seats.test.js); an ES
  * module's own exports are read-only. */
 const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]) => roomClaude.startDetached(o) };
 
-export { enter, exit, ensureRoomClaude, seam };
+export { enter, exit, sweep, back, ensureRoomClaude, seam };
