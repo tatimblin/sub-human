@@ -66,6 +66,8 @@ export type EntryInput = {
   refs?: number[];
   hash?: string;
   approvers?: string[];
+  /** a proposal's seats that are one person (lib/proposal.ts create): groups of 2+ approvers */
+  same?: string[][];
   path?: string;
   proposal_hash?: string;
   normalized?: boolean;
@@ -121,6 +123,7 @@ export interface Validated {
   refs: number[] | undefined;
   hash: string | undefined;
   approvers: string[] | undefined;
+  same: string[][] | undefined;
   path: string | undefined;
   proposal_hash: string | undefined;
   normalized: boolean | undefined;
@@ -142,6 +145,7 @@ export interface EntryFields extends TaskFields {
   refs?: number[];
   hash?: string;
   approvers?: string[];
+  same?: string[][];
   path?: string;
   proposal_hash?: string;
   normalized?: boolean;
@@ -256,6 +260,12 @@ export interface Member {
   role: Role;
   /** null: this machine's id could not be read when the seat joined */
   machine?: string | null;
+  /**
+   * the person behind the seat, as the host knows it: the host's machine id for a seat of the host account (one on
+   * the host, or one over a login link, lib/seats.ts enter); none for an invite's seat. Seats with one account are
+   * one approver (lib/proposal.ts sameOf: the host's own seats only while there is one)
+   */
+  account?: string;
   joined_at?: string;
   seen_at?: string;
   left_at?: string;
@@ -286,6 +296,7 @@ export interface SeatRecord {
   name: string;
   role: Role;
   machine?: string | null;
+  account?: string;
   pid?: number;
   pid_start?: number;
   session_id?: string | null;
@@ -435,6 +446,8 @@ export interface ProposalState {
   hash: string;
   from: string;
   approvers: string[];
+  /** the approvers that are one person: groups of 2+, disjoint (consent.ts groupsOf) */
+  same: string[][];
   path: string | null;
   entry: ProposalEntry;
 }
@@ -457,6 +470,10 @@ export interface Matrix {
   missing: string[];
   unsigned: string[];
   complete: boolean;
+  /** a name listed in agreed / objected / missing -> the other seats of its person (only for a `same` group) */
+  also: Record<string, string[]>;
+  /** how many people the approvers are (a `same` group counts once) */
+  people: number;
 }
 
 /** fold().status(hash). */
@@ -474,9 +491,14 @@ export interface Fold {
   decisions: Map<string, Entry>;
   /** hash -> the newer hash that retired it (same sender, same title, while undecided) */
   superseded: Map<string, string>;
+  /** the answer that counts for name: the latest of its person's seats (a `same` group) */
   answerOf(hash: string, name: string): Answer | null;
+  /** name's own latest answer (one per seat: lib/proposal.ts answer) */
+  ownAnswer(hash: string, name: string): Answer | null;
   matrix(hash: string, approvers?: string[]): Matrix;
   pending(name: string | null | undefined): ProposalState[];
+  /** pending, except that another seat of name's person answering does not take a proposal out */
+  answerable(name: string | null | undefined): ProposalState[];
   status(hash: string): ProposalStatus | null;
 }
 

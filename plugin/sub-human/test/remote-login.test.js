@@ -153,6 +153,33 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
 });
 const protocol = () => require(path.join(h.LIB, 'remote', 'protocol.ts'));
 
+test('server: a seat that joins over a login link is the host account\'s (account = the host\'s machine id); an invite\'s seat has none', async t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const host = store.open(code);
+  const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'));
+  const { machineId } = require(path.join(h.LIB, 'home.ts'));
+  const seat = async (c, name) => {
+    const pubkey = seatKey.publicPem(code, name);
+    await c.join({ name, pubkey, proof: auth.proveSeat(seatKey.ensure(code, name), { room: code, name, pubkey }) });
+  };
+  const open = async (ctx, opts) => {
+    const [a, b] = memory.pair();
+    const srv = server.serve(b, { store: host, ...ctx });
+    t.after(() => srv.close());
+    const c = await client.connect(a, { machine: 'remote0machine01', ...opts });
+    t.after(() => c.close());
+    return c;
+  };
+  await seat(await open({ linkId: ID, login: true }, { login: true }), 'laptop');
+  const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });
+  const { token } = auth.redeemInvite(host, secret, { machine: 'remote0machine01' });
+  await seat(await open({}, { token }), 'guest');
+  const ms = host.members.read();
+  assert.deepEqual([ms.laptop.machine, ms.laptop.account], ['remote0machine01', machineId()]);
+  assert.deepEqual([ms.guest.machine, ms.guest.account], ['remote0machine01', undefined], 'the same machine, but over an invite');
+});
+
 test('serve CLI: --login needs --link, and is refused under SSH_ORIGINAL_COMMAND (a forced command), before any frame', t => {
   h.freshHome(t);
   const code = h.newRoom();

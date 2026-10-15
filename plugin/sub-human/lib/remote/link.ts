@@ -60,7 +60,8 @@
  *       or the host log reset) stops it, keeps the outbox, and logs loudly: `sub-human link --reset CODE`
  *       re-mirrors. AUTH or PROTOCOL at hello, or the room closed, stop it too.
  *       Every change is written to the mirror's document `link` {pid, state, since, reason?, code?, queued?,
- *       flush?: {at, sent, unsent: [{text, why}]}} and to links/<code>.state.json (lib/room/links.ts LinkState, for
+ *       flush?: {at, sent, unsent: [{text, why}]}, fields?: online, the entry fields the host's caps list} and
+ *       to links/<code>.state.json (lib/room/links.ts LinkState, for
  *       doctor, the room row and the statusline: attempt, lastError, rttMs, queued), both in the one vocabulary
  *       online | connecting | offline | fork | stopped (the state file says connecting while a redial of an offline
  *       link is under way); each dial and each time it is online is a line in the log.
@@ -493,7 +494,9 @@ async function serveMirror({
   function setState(s: LinkStateWord, why: string | null = null, code: string | null = null) {
     state = s;
     reason = why;
-    doc = { pid: process.pid, state, since: new Date(clock.now()).toISOString(), socket: sockFile, ...(why ? { reason: why } : {}), ...(code ? { code } : {}) };
+    // online: the entry fields this host accepts (protocol.ts FIELDS), which lib/proposal.ts create reads
+    const fields = s === 'online' && client && typeof client.fields === 'function' ? client.fields() : [];
+    doc = { pid: process.pid, state, since: new Date(clock.now()).toISOString(), socket: sockFile, ...(why ? { reason: why } : {}), ...(code ? { code } : {}), ...(fields.length ? { fields } : {}) };
     publish();
   }
 

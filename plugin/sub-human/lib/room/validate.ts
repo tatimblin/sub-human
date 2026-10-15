@@ -4,13 +4,15 @@
  * runs validate() before it signs, and place() runs it again on the payload before it takes the log lock.
  * Zero dependencies beyond lib/text.ts.
  *
- *   validate(entry, {via, from, system}) -> {via, kind, text, to, refs, hash, approvers, path, proposal_hash,
+ *   validate(entry, {via, from, system}) -> {via, kind, text, to, refs, hash, approvers, same, path, proposal_hash,
  *       normalized, edit_path, drafted, task, pubkey, machine, host}   throws RoomError INVALID with a message for the model
  *   RoomError(code, message)   code: INVALID | RATE | LOCK | NO_ROOM | AUTH (a signature, a replay or a pinned key refused)
  * Rules: via "agent" writes say question status proposal task_req; via "human" say signoff objection proposal;
  * via "system" decision member_joined member_left task status, and only with {system: true}.
  * Size caps (lib/config.ts): text <= ENTRY_TEXT_MAX_BYTES UTF-8 bytes, refs <= ENTRY_REFS_MAX, approvers and
  * blockedBy <= ENTRY_LIST_MAX, any other string field <= ENTRY_STR_MAX (JS .length) (narrower caps below win).
+ * A proposal may carry same (lib/proposal.ts create): disjoint groups of 2+ of its approvers that are one person,
+ * ENTRY_LIST_MAX names in all. A host lists 'same' in its caps (lib/remote/protocol.ts CAPS fields) once it accepts it.
  * member_joined may carry pubkey (the seat's Ed25519 SPKI PEM, which pins it: lib/room/envelope.ts) and machine.
  * host_changed (via system; lib/handoff.ts) moves the room's authority: {epoch (a positive integer, one more than the
  * last), host (the new host's seat name), machine (its machine id), locator (how members reach it: an invite's
@@ -37,7 +39,7 @@ const isTaskOp = (op: unknown): op is TaskOp => TASK_OPS.includes(op as string);
 const HASH_RE = /^[0-9a-f]{6,64}$/;
 const HOST_FIELDS = ['epoch', 'host', 'locator', 'accept', 'ask', 'promoted'];
 const TASK_FIELDS = ['op', 'task_id', 'subject', 'detail', 'evidence', 'owner', 'status', 'req', 'blockedBy'];
-const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'hash', 'approvers', 'path', 'proposal_hash', 'normalized',
+const ENTRY_FIELDS = new Set(['kind', 'text', 'to', 'refs', 'hash', 'approvers', 'same', 'path', 'proposal_hash', 'normalized',
   'edit_path', 'drafted', 'id', 'by', 'pubkey', 'machine', ...HOST_FIELDS, ...TASK_FIELDS]);
 const TASK_KINDS = ['task_req', 'task'];
 const PEM_RE = /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]{1,512}-----END PUBLIC KEY-----\n$/;
@@ -100,6 +102,7 @@ function validate(entry: EntryInput, opts: ValidateOpts): Validated {
     bad('approvers must be an array of names');
   }
   if (approvers !== undefined && approvers.length > ENTRY_LIST_MAX) bad(`too many approvers (${approvers.length}; the limit is ${ENTRY_LIST_MAX})`);
+  const same = sameField(kind, entry.same, approvers);
   for (const [k, v] of Object.entries(entry)) {
     if (k !== 'text' && typeof v === 'string' && v.length > ENTRY_STR_MAX) bad(`${k} is too long (the limit is ${ENTRY_STR_MAX} chars)`);
   }
@@ -118,7 +121,21 @@ function validate(entry: EntryInput, opts: ValidateOpts): Validated {
   const host = hostFields(kind, entry);
   if (pubkey !== undefined && (typeof pubkey !== 'string' || !PEM_RE.test(pubkey))) bad('pubkey must be a PEM public key');
   if (machine !== undefined && (typeof machine !== 'string' || !MACHINE_RE.test(machine))) bad('invalid machine id');
-  return { via, kind, text, to, refs, hash, approvers, path: ppath, proposal_hash, normalized, edit_path, drafted, task, pubkey, machine, host };
+  return { via, kind, text, to, refs, hash, approvers, same, path: ppath, proposal_hash, normalized, edit_path, drafted, task, pubkey, machine, host };
+}
+
+/** A proposal's same groups, checked: disjoint groups of 2+ of its approvers, ENTRY_LIST_MAX names in all. */
+function sameField(kind: string, same: unknown, approvers: string[] | undefined): string[][] | undefined {
+  if (same === undefined) return undefined;
+  if (kind !== 'proposal') bad('same is only for proposals');
+  if (!Array.isArray(same) || !same.every(g => Array.isArray(g) && g.length >= 2 && g.every(n => typeof n === 'string' && NAME_RE.test(n)))) {
+    bad('same must be an array of groups of 2 or more names');
+  }
+  const names = (same as string[][]).flat();
+  if (names.length > ENTRY_LIST_MAX) bad(`too many names in same (${names.length}; the limit is ${ENTRY_LIST_MAX})`);
+  if (new Set(names).size !== names.length) bad('same names a seat twice');
+  if (!names.every(n => approvers && approvers.includes(n))) bad('same names only approvers');
+  return same as string[][];
 }
 
 const PROOF_MAX = 4096; // a signed acceptance or request, as JSON

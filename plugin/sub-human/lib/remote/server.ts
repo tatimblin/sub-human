@@ -22,8 +22,9 @@
  *                    each a room line from the room, so the host sees them); neither: answered, but the session
  *                    stays unauthenticated
  *         join       {name, role: 'member', pubkey, proof}: auth.checkSeatProof, then lib/seats.ts enter() with
- *                    machine = the link's (no pid: the seat lives by its lease); a key other than the pinned one
- *                    is AUTH; bindSeat
+ *                    machine = the link's (no pid: the seat lives by its lease), and over a login link account =
+ *                    this machine's id (the host account's own seat: one person with the host's seats, lib/proposal.ts
+ *                    create); a key other than the pinned one is AUTH; bindSeat
  *         leave      seats.exit(), own seat only
  *         beat       store.members.beat(name, {presence?}), own seat only; then seats.back (a lapsed seat rejoined)
  *         append     own `from` only; store.place() (validate, rate, replay, verify against the pinned key); a
@@ -66,6 +67,7 @@ import * as handoff from '../handoff.ts';
 import * as members from '../room/members.ts';
 import * as envelope from '../room/envelope.ts';
 import { RoomError, hash12 } from '../room/store.ts';
+import { machineId } from '../home.ts';
 import { FOLLOW_POLL_MS, PROPOSAL_FILE_MAX, LINK_SILENT_MS, envMs } from '../config.ts';
 import type {
   CodedError, DecodedFrame, ErrorFrame, EventData, EventName, FrameId, IncomingRequest, LinkRecord, Op, OpParams, OpResults, ProtoRange,
@@ -212,7 +214,9 @@ const OPS: OpHandlers = {
     if (role !== 'member') throw invalid('a link joins members only');
     if (!envelope.parseKey(pubkey)) throw invalid('join needs the seat\'s public key (Ed25519 SPKI PEM)');
     auth.checkSeatProof(proof, { room: s.store.code, name, pubkey });
-    const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey }); // s.link: run() lets no op but hello in without it
+    // s.link: run() lets no op but hello in without it. A login link is the host account's own: its seat is that person's
+    const account = s.link!.login ? machineId() : undefined;
+    const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey, ...(account ? { account } : {}) });
     if (!r.ok) throw new RoomError(r.code || 'INVALID', r.error);
     s.link = auth.bindSeat(s.store, s.link!.id, name);
     return r.rejoin ? { ok: true, rejoin: true } : { ok: true };
