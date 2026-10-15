@@ -92,7 +92,7 @@ test('an invite over pipe: the host sees the line and the PIN apart; the line, t
   assert.equal(lf0.pin_wanted.left, 5);
   assert.equal(host.lib(() => admission.pending(code)).length, 0, 'the line alone makes no request');
   const bare0 = remote.join(bob, '');
-  assert.match(bare0.json!.reason!, /has your invite \(5 tries left\)\. Type the 4-digit PIN they told you: \/sub-human join PIN/, 'a bare /sub-human asks for the PIN, never takes a seat');
+  assert.match(bare0.json!.reason!, /has your invite \(5 PIN tries left\)\. Type the 4-digit PIN they told you: \/sub-human join PIN/, 'a bare /sub-human asks for the PIN, never takes a seat');
 
   const linked = remote.join(bob, `join ${pin}`);
   assert.ok(hiddenBlock(linked), linked.stderr);

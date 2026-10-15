@@ -102,6 +102,8 @@ export const named: Verb = (args, ctx) => {
   // a SECRET-shaped word is never echoed, nor taken for a name or a room: it belongs in an invite line
   if (args.some(a => SECRET_WORD.test(a))) return refused(`that looks like an invite line's SECRET: the whole line goes in as /sub-human join HOST ROOM SECRET. ${USAGE}`);
   if (PIN_WORD.test(name)) return refused(NOT_A_NAME(name));
+  if (code !== undefined && PIN_WORD.test(code)) return refused(`"${code}" looks like a PIN, not a room: a PIN goes in as /sub-human join PIN once an invite line asks for it`);
+  if (name.startsWith('-')) return refused(`"${name}" goes with join (/sub-human join HOST ROOM SECRET ${name} …). ${USAGE}`);
   if (!identity.NAME_RE.test(name)) return refused(`"${name}" isn't a command or a name. ${USAGE}`);
   if (identity.RESERVED.includes(name.toLowerCase())) return refused(`"${name}" is reserved; pick another name. ${USAGE}`);
   if (code !== undefined && !identity.CODE_RE.test(code)) return refused(`"${code}" isn't a room (like vole-8126). ${USAGE}`);

@@ -150,7 +150,7 @@ export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
 }
 
 /** A pipe join (a second sub-human folder on this machine) has no login path: the invite line has a SECRET. */
-export const noSecret = (dest: string, code: string): string => `that looks like an invite line without its SECRET: /sub-human join ${dest} ${code} SECRET (the long word the host sent with it).`;
+export const noSecret = (dest: string, code: string): string => `that looks like an invite line without its SECRET: /sub-human join ${dest} ${code} SECRET (the long word the host sent with it). If the host's line ended with a 4-digit PIN instead, it comes from an older sub-human on the host: ask them to update (/plugin update sub-human) and invite you again.`;
 
 /** The invite joins this machine started, waiting to take their seat (join_as), newest first. */
 function pendingJoins(): Link[] {

@@ -30,7 +30,7 @@
  *   sub-human read [N[,M] | --id N[,M]] [--json] [--room CODE]
  *       entries in full: by id, or this session's unseen entries (cursor read-<name>)
  *   sub-human digest [--room CODE]     the compaction digest (<= 9,500 chars)
- *   sub-human who                      this session's identity: "<name> (<role>) in <code>"
+ *   sub-human who [--room CODE]        this session's identity: "<name> (<role>) in <code>"; with --room, each person in that room
  *   sub-human show HASH [--room CODE]  a proposal's stored text (lib/proposal.ts read(code, hash), plans/<HASH>.md)
  *   sub-human tasks [--json] [--room CODE]
  *       the room's shared task list (lib/tasks.ts list(code), the room Claude's native list mirrored to
@@ -245,7 +245,16 @@ function show(args: readonly string[]) {
   process.stdout.write(text.endsWith('\n') ? text : text + '\n');
 }
 
-function who() {
+function who(args: readonly string[] = []) {
+  const { flags, rest } = parseFlags(args, { room: 1 });
+  if (rest.length) die('usage: sub-human who [--room CODE]');
+  if (flags.room !== undefined) { // the room's people: who is in it, by name and role
+    const { code } = openRoom(flags.room);
+    const ms = Object.values(identity.readMembers(code) || {}).filter(m => m && m.name && !m.left_at);
+    if (!ms.length) return console.log(`(nobody in room ${code})`);
+    for (const m of ms) console.log(`${m.name} (${m.role}${m.lapsed_at ? ', away' : ''}) in ${code}`);
+    return;
+  }
   const me = identity.resolveSelf();
   if (!me) die(NOT_IN_ROOM, 1);
   console.log(`${me.name} (${me.role}) in ${me.code}`);

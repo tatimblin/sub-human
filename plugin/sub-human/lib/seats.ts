@@ -138,7 +138,9 @@ function exit(code: string, name: string, reason: string, { deadlineMs }: { dead
   }
   if (!identity.isHost(code)) return true;
   try { if (!identity.liveMembers(code).length) roomClaude.reapDetached(code); } catch { /* the room Claude's watchdog closes it */ }
-  room.open(code).append({ kind: 'member_left', text: `${name} left (${reason})` }, asSystem(name));
+  // Claude Code's SessionEnd token ("prompt_input_exit", "logout", "other") is written in words, as render reads it
+  const why = reason === 'left' || /\s/.test(reason) ? reason : 'session ended';
+  room.open(code).append({ kind: 'member_left', text: `${name} left (${why})` }, asSystem(name));
   return true;
 }
 

@@ -237,7 +237,7 @@ test('protocol skew: no common version is PROTOCOL naming the side that must upd
     /host runs sub-human 0\.4\.0 \(protocol 3–4\); you run 0\.9\.0 \(protocol 5–6\)\. The host must update/);
   // a joiner that speaks only protocol 1 meets a host that dropped it: the message reaches it as the error it shows
   const r = await rawHello(t, host, { proto: { min: 1, max: 1 } }, { proto: { min: 2, max: 3 }, version: '0.5.0' });
-  assert.deepEqual([r.error!.code, r.error!.reason, /you run an unknown sub-human version \(protocol 1\)\. Update your plugin/.test(r.error!.message)], ['PROTOCOL', 'SKEW', true]);
+  assert.deepEqual([r.error!.code, r.error!.reason, /you run an older sub-human \(protocol 1\)\. Update your plugin/.test(r.error!.message)], ['PROTOCOL', 'SKEW', true]);
   // a reply outside this end's range is refused here too
   await fails(at({ proto: { min: 1, max: 1 } }, { proto: { min: 1, max: 1 } }).then(() => at({ proto: { min: protocol.PROTO.max + 1, max: protocol.PROTO.max + 1 } }, {})), /must update|Update your plugin/);
   // this version and 0.5.0-beta.15: protocol 3 against 1–2 settles on 2 both ways (a link made before keeps working)

@@ -380,7 +380,7 @@ function joinText(code: string, name: string, o: Outcome, { tells = false }: { t
   if (o.state === 'refused') return `could not join room ${code}: ${o.reason}`;
   if (o.state === 'pin') {
     const w = lf.pin_wanted || { at: '' };
-    const left = typeof w.left === 'number' ? ` (${w.left} ${w.left === 1 ? 'try' : 'tries'} left)` : '';
+    const left = typeof w.left === 'number' ? ` (${w.left} PIN ${w.left === 1 ? 'try' : 'tries'} left)` : '';
     return `${o.reason ? `${o.reason}` : `the host's machine has your invite${left}. Type the 4-digit PIN they told you`}: /sub-human join PIN`;
   }
   if (lf.awaiting) {

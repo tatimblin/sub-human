@@ -309,7 +309,7 @@ test('a web invite: a 0.5.0-beta.15 joiner\'s PIN attempt is told it must update
   const old = await ask(JSON.stringify({ id: 1, op: 'enroll.start', params: { v: 1, room: code } }));
   const e = JSON.parse(old.got[0]);
   assert.deepEqual([e.id, e.error.code, e.error.reason], [1, 'PROTOCOL', 'SKEW']);
-  assert.match(e.error.message, /^host runs sub-human \S+ \(protocol 1–3\); you run an unknown sub-human version \(protocol 1–2\) \(this needs protocol 3\)\. Update your plugin: \/plugin update sub-human$/);
+  assert.match(e.error.message, /^host runs sub-human \S+ \(protocol 1–3\); you run an older sub-human \(protocol 1–2\) \(this needs protocol 3\)\. Update your plugin: \/plugin update sub-human$/);
   const junk = await ask('hello');
   assert.match(junk.got[0], /not a key request/);
   const key = JSON.parse((await ask(JSON.stringify({ op: 'key', v: 3 }))).got[0]);

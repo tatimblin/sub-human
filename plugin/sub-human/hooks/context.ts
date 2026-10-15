@@ -54,7 +54,7 @@ function fillVars(me: Identity, ms = members(me.code)): Record<TemplateVar, stri
   const humans = live.filter(m => m.role !== 'claude').map(m => m.name);
   // the room's Claude only when it runs (or is starting): a stub or a failed start is not someone in the room
   const o = me.role === 'claude' ? null : roomClaudePresence(ms.find(m => m.role === 'claude'));
-  const others = o ? [...humans, o === 'live' ? 'claude' : 'claude (starting)'] : humans;
+  const others = o ? [...humans, o === 'live' ? 'claude' : 'claude [starting]'] : humans;
   const ex = humans[0] || (me.role === 'claude' ? 'NAME' : 'claude');
   return {
     NAME: me.name, CODE: me.code, OTHERS: others.length ? others.join(', ') : 'nobody yet',

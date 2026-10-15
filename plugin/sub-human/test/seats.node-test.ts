@@ -19,6 +19,14 @@ import * as seatKey from '../hooks/seat-key.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
 import { RoomError } from '../lib/room/validate.ts';
 import type { Members } from '../lib/room/types.ts';
+test('seats.exit: Claude Code\'s SessionEnd token is written in words (live: "bob left (prompt_input_exit)" in the log)', t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  h.register('bob', 'member', process.pid, code);
+  assert.equal(seats.exit(code, 'bob', 'prompt_input_exit'), true);
+  assert.equal(store.open(code).readAll().at(-1)!.text, 'bob left (session ended)');
+});
+
 import * as hostLinksForSeats from '../lib/remote/host-links.ts';
 /** A remote seat's link on the host (lib/remote/server.ts binds every remote seat to one; the sweep lets a seat no
  * link names leave). */

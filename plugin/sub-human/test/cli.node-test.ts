@@ -166,6 +166,10 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.equal(r.stdout, `alice (member) in ${code}\n`, 'nearest registered ancestor');
   r = cli(['who'], { CLAUDE_CODE_SESSION_ID: 'sbob' });
   assert.equal(r.stdout, `bob (member) in ${code}\n`, 'the session id wins');
+  // --room: that room's people (live: it was ignored)
+  r = cli(['who', '--room', code]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(r.stdout.trim().split('\n').sort(), [`alice (member) in ${code}`, `bob (member) in ${code}`]);
   R = room.open(code);
   say('bob', 'line one\n  line `two` $(x)');
   say('bob', 'second');
@@ -310,7 +314,7 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   links.writeState(code, stopped('AUTH: unknown link token'));
   const r2 = cli(['link', code, '--forget']);
   assert.equal(r2.status, 1);
-  assert.match(r2.stderr, /did not stop because the room closed or no seat of this machine is left \(AUTH: unknown link token\); add --force/);
+  assert.match(r2.stderr, /did not stop because the room closed, no seat of this machine is left or the host removed it \(AUTH: unknown link token\); add --force/);
   assert.ok(links.has(code) && fs.existsSync(s.logFile), 'nothing moved');
   assert.equal(cli(['link', code, '--reset', '--forget']).status, 2, 'one at a time');
 
