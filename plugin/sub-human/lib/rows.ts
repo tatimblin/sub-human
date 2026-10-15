@@ -69,6 +69,8 @@ import {
 import type { Holds, RowRec, Spawn, Task } from './types-app.ts';
 import type { Entry, LinkState, Member, Members } from './room/types.ts';
 import type { Identity } from './identity.ts';
+// the row agents' types are mod/core/rows.ts's (the module's row hooks read them too)
+import { PARTICIPANT, ROOM_AGENT } from '../mod/core/rows.ts';
 
 /** members as callers hand them over: readMembers(code) (by name) or a list. */
 type MemberInput = Members | Member[] | null | undefined;
@@ -106,8 +108,6 @@ interface RowOpts {
 /** The row map document rows/<session_id>. */
 interface RowMap { byAgent?: Record<string, RowRec> }
 
-const PARTICIPANT = 'sub-human:participant';
-const ROOM_AGENT = 'sub-human:room';
 const { NAME_RE, SID_SAFE, oneLine } = text;
 
 // ---------- small helpers ----------

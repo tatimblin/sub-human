@@ -72,6 +72,7 @@ import type { Clock, TimerHandle } from './clock.ts';
 import type { Entry } from './room/types.ts';
 import type { Identity } from './identity.ts';
 import type { Room } from './room.ts';
+import { FOR_CLAUDE } from '../mod/core/constants.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -153,7 +154,6 @@ interface FormatCtx {
 type Cursor = ReturnType<typeof cursorKeeper>;
 
 const { envMs } = config;
-const FOR_CLAUDE = '(for Claude)';
 const DOOR_SWEEP_MS = 30_000;
 const SPAWN_NOTE = /no row running|is not running/;
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);

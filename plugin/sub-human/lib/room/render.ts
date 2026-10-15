@@ -31,12 +31,12 @@ import { oneLine } from '../text.ts';
 import { fold } from './consent.ts';
 import { TAIL_MAX, TEXT_MAX, CHAT_WRAP, CHAT_MAX, DIGEST_CAP, CHAT_LINES_MAX, CHAT_NEST } from '../config.ts';
 import type { Entry, LaneViewer, Matrix, Members } from './types.ts';
+import { FOR_CLAUDE } from '../../mod/core/constants.ts';
 
 /** One digest line; id: the entry it shows, so the cap trims the oldest first. */
 interface DigestLine { id?: number; text: string }
 interface DigestSection { title: string | null; lines: DigestLine[] }
 
-const FOR_CLAUDE = '(for Claude)';
 const UNVERIFIED = '(unverified)';
 const NEST = CHAT_NEST; // "  │ ": every continuation line of a message, so none can pass as a line of its own
 

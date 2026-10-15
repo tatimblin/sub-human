@@ -3,7 +3,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import * as config from '../lib/config.ts';
 import type { TailEvent } from '../mod/core/types.ts';
 
 interface Core {
@@ -12,14 +11,6 @@ interface Core {
   'mod/core/prompt.ts': typeof import('../mod/core/prompt.ts');
 }
 const load = <K extends keyof Core>(rel: K): Promise<Core[K]> => import(path.join(import.meta.dirname, '..', rel));
-
-// mod/ imports no CommonJS, so it keeps its own copies; each is skipped until lib/config.ts names it.
-for (const key of ['MOD_RESTART_MS', 'MOD_RESTART_MAX_MS', 'MOD_RESTART_STEADY_MS', 'MOD_DELIVERY_ERROR_LOG_MS'] as const) {
-  test(`deliver: ${key} equals lib/config.ts`, { skip: !(key in config) && `lib/config.ts has no ${key}` }, async () => {
-    const d = await load('mod/core/deliver.ts');
-    assert.equal(d[key], config[key]);
-  });
-}
 
 test('deliver: the backoff doubles from MOD_RESTART_MS to MOD_RESTART_MAX_MS; a long run starts it over', async () => {
   const d = await load('mod/core/deliver.ts');

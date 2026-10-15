@@ -5,6 +5,8 @@
  * receipt's row without Claude Code's "Operation stopped by hook: " frame (receiptBook).
  * Failure: closed for an @room, and an @claude in a room (GATE_FAILED, failClosed): either let through would reach the model as the
  * person's words. Anything else unsure runs node.
+ * The tag parsers, TYPED_ORIGINS and the refusal wordings are owned here: hooks/handlers/at-room.ts imports them, so the
+ * module and node read a prompt the same way.
  */
 import type { Hello, OriginLike, RunOutput, ShimResult } from './types.ts';
 
@@ -17,16 +19,15 @@ type SeatedLike = Pick<Hello, 'seat'> | { seat?: unknown } | null | undefined;
  * through Remote Control). Only these may post @room. */
 export const TYPED_ORIGINS: readonly string[] = Object.freeze(['composer', 'sdk', 'bridge']);
 
-/** "@room TEXT" -> TEXT; anything else null. A copy of hooks/at-room.ts parse() (test/mod-core.node-test.ts
- * asserts they agree). */
+/** "@room TEXT" -> TEXT; anything else null (hooks/handlers/at-room.ts posts TEXT). */
 export function parse(prompt: unknown): string | null {
   if (typeof prompt !== 'string') return null;
   return tagged(prompt, /^@room(?=\s|$)/);
 }
 
 /** The text after a leading tag: the tag, then one whitespace character (a space, or the newline Ctrl+J
- * puts after it), dropped, or nothing. A copy of hooks/at-room.ts tagged. */
-function tagged(prompt: string, tag: RegExp): string | null {
+ * puts after it), dropped, or nothing. */
+export function tagged(prompt: string, tag: RegExp): string | null {
   const m = tag.exec(prompt);
   if (!m) return null;
   return prompt.slice(m[0].length).replace(/^\s/, '');
@@ -34,8 +35,8 @@ function tagged(prompt: string, tag: RegExp): string | null {
 
 export const isAtRoom = (text: unknown) => parse(text) !== null;
 
-/** "@claude TEXT" -> TEXT; anything else null. A copy of hooks/at-room.ts parseClaude() (test/mod-core.node-test.ts
- * asserts they agree). In a room it posts like @room and wakes the room's Claude; outside one it is a plain prompt. */
+/** "@claude TEXT" -> TEXT; anything else null. In a room it posts like @room and wakes the room's Claude; outside one
+ * it is a plain prompt. */
 export function parseClaude(prompt: unknown): string | null {
   if (typeof prompt !== 'string') return null;
   return tagged(prompt, /^@claude(?=\s|$)/);
@@ -67,9 +68,13 @@ export function onRemote(origin: OriginLike | null | undefined): boolean | undef
   return kind === 'composer' || kind === 'sdk' ? false : undefined;
 }
 
-/** The refusal when nobody could check who wrote an @room: at-room's NO_ORIGIN words, since the person does the same
- * thing either way (types it again). */
+/** The refusal when nobody could check who wrote an @room, here or in at-room (no origin, or one without the nonce): the
+ * person does the same thing either way (types it again). */
 export const GATE_FAILED = '✗ not posted: sub-human could not check who wrote this @room. Type it again.';
+/** at-room's name for it. */
+export const NO_ORIGIN = GATE_FAILED;
+/** An @room typed in a session with no seat (at-room, and the module when it is sure there is none). */
+export const NOT_IN_ROOM = '✗ not posted: this session isn\'t in a room. Join one first: /sub-human';
 
 export const failClosed = (prompt: unknown, hello?: SeatedLike): ShimResult | null => (posts(prompt, hello)
   ? { block: isAtRoom(prompt) ? GATE_FAILED : GATE_FAILED.replace('@room', '@claude'), suppressOriginalPrompt: true } : null);

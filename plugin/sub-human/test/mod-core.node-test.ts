@@ -8,10 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { World } from './hooks/helpers.ts';
-import * as text from '../lib/text.ts';
-import * as config from '../lib/config.ts';
 import * as room from '../lib/room.ts';
-import * as atRoom from '../hooks/at-room.ts';
 import * as tail from '../lib/tail.ts';
 import * as identity from '../lib/identity.ts';
 import type { Entry } from '../lib/room/types.ts';
@@ -35,17 +32,6 @@ interface Mods {
   'mod/register.ts': typeof import('../mod/register.ts');
 }
 const load = <K extends keyof Mods>(rel: K): Promise<Mods[K]> => import(path.join(PLUGIN, rel));
-
-// ---------- copies kept equal ----------
-test('mod/core copies of the CommonJS patterns and chat constants are equal to their sources', async () => {
-  const seat = await load('mod/core/seat.ts');
-  const chat = await load('mod/core/chat.ts');
-  assert.equal(seat.NAME_RE.source, text.NAME_RE.source);
-  assert.equal(seat.CODE_RE.source, text.CODE_RE.source);
-  assert.equal(chat.NEST, config.CHAT_NEST);
-  assert.equal(chat.CHAT_LINES_MAX, config.CHAT_LINES_MAX);
-  assert.equal(chat.FOR_CLAUDE, room.FOR_CLAUDE);
-});
 
 test('mod/ is pure: no node: or CommonJS imports, no dynamic import(), no seat key, no store writes', () => {
   const walk = (d: string): string[] => fs.readdirSync(d, { withFileTypes: true }).flatMap(x => x.isDirectory() ? walk(path.join(d, x.name)) : [path.join(d, x.name)]);
@@ -189,11 +175,8 @@ test('shim: subHuman (a hook run with SUB_HUMAN_SHIM=1) comes out beside the res
 });
 
 // ---------- prompt ----------
-test('prompt: parse is at-room\'s parse; the gate drops only an @room that no person typed', async () => {
+test('prompt: the gate drops only an @room that no person typed', async () => {
   const p = await load('mod/core/prompt.ts');
-  for (const s of ['@room hi', '@room', '@room  two', 'room:x', 'room: x', 'room:  x', '@roomx', ' @room x', 'hello', '', '/sub-human alice', 'Room: x', '@room\nmore'])
-    assert.equal(p.parse(s), atRoom.parse(s), JSON.stringify(s));
-  assert.deepEqual([...p.TYPED_ORIGINS], [...atRoom.TYPED_ORIGINS]);
   assert.equal(p.gateVerdict({ text: '@room x', origin: { kind: 'composer' } }, undefined), null);
   assert.equal(p.gateVerdict({ text: 'plain', origin: { kind: 'peer' } }, undefined), null);
   assert.match(p.gateVerdict({ text: '@room x', origin: { kind: 'peer' } }, undefined)!, /another Claude session/);
@@ -203,10 +186,8 @@ test('prompt: parse is at-room\'s parse; the gate drops only an @room that no pe
   assert.equal(p.isAtRoom('room'), false);
 });
 
-test('prompt: parseClaude is at-room\'s; a seated session gates an untyped @claude like an @room, an unseated one lets it through', async () => {
+test('prompt: a seated session gates an untyped @claude like an @room, an unseated one lets it through', async () => {
   const p = await load('mod/core/prompt.ts');
-  for (const s of ['@claude hi', '@claude', '@claude  two', '@claudex', ' @claude x', '@Claude x', 'claude: x', '@room @claude x', 'hi @claude', '', '@claude\nmore'])
-    assert.equal(p.parseClaude(s), atRoom.parseClaude(s), JSON.stringify(s));
   assert.equal(p.parseClaude('@room @claude x'), null, 'only a leading tag');
   assert.equal(p.parse('@room @claude x'), '@claude x', 'a plain @room post');
   // hellos as the core reads them: sid and seat only
@@ -218,7 +199,7 @@ test('prompt: parseClaude is at-room\'s; a seated session gates an untyped @clau
   assert.equal(p.gateVerdict(peer, null), null, 'no hello: at-room decides');
   assert.equal(p.gateVerdict({ ...peer, origin: { kind: 'composer' } }, seated), null);
   assert.equal(p.gateVerdict({ text: 'ask @claude', origin: { kind: 'peer' } }, seated), null);
-  assert.deepEqual(p.failClosed('@claude ship it', seated), { block: atRoom.NO_ORIGIN.replace('@room', '@claude'), suppressOriginalPrompt: true });
+  assert.deepEqual(p.failClosed('@claude ship it', seated), { block: p.NO_ORIGIN.replace('@room', '@claude'), suppressOriginalPrompt: true });
   assert.equal(p.failClosed('@claude ship it', unseated), null);
   assert.equal(p.failClosed('@claude ship it'), null);
   const e = (prompt: string) => ({ session_id: 's1', prompt });

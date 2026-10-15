@@ -3,7 +3,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import * as atRoom from '../hooks/at-room.ts';
 import type { Hello, HelloSeat, RunOutput } from '../mod/core/types.ts';
 
 const PLUGIN = path.join(import.meta.dirname, '..');
@@ -43,18 +42,15 @@ test('prompt: parse and parseClaude take the tag with one whitespace character a
   const rooms: [string, string | null][] = [['@room hi', 'hi'], ['@room', ''], ['@room\nhi', 'hi'], ['@Room hi', null], ['@room  x', ' x'], ['@roommate hi', null], ['room: hi', null], [' @room hi', null]];
   for (const [text, want] of rooms) {
     assert.equal(p.parse(text), want, JSON.stringify(text));
-    assert.equal(atRoom.parse(text), want, JSON.stringify(text));
   }
   const claudes: [string, string | null][] = [['@claude plan', 'plan'], ['@claude\nplan', 'plan'], ['@Claude', null], ['@claude', ''], ['@claudette', null]];
   for (const [text, want] of claudes) {
     assert.equal(p.parseClaude(text), want, JSON.stringify(text));
-    assert.equal(atRoom.parseClaude(text), want, JSON.stringify(text));
   }
 });
 
 test('prompt: an @room the shim could not handle is refused, never let through; one wording with at-room\'s', async () => {
   const p = await load();
-  assert.equal(p.GATE_FAILED, atRoom.NO_ORIGIN);
   assert.deepEqual(p.failClosed('@room ship it'), { block: p.GATE_FAILED, suppressOriginalPrompt: true });
   assert.equal(p.failClosed('room:ship it'), null, 'there is no room: tag');
   assert.equal(p.failClosed('ship it'), null);

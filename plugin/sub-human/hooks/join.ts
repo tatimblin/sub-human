@@ -58,6 +58,9 @@ import PathMod from 'node:path';
 import childProcess from 'node:child_process';
 import * as ccMod from '../lib/cc.ts';
 import { createRequire } from 'node:module';
+// the module's rules (mod/core): which prompt may hold a PIN, and the nonce check
+import { mayHoldSecret } from '../mod/core/command.ts';
+import { attested as leaseAttests } from '../mod/core/state.ts';
 import type { JoinIn } from './types.ts';
 import type { FlagSpec, Parsed } from '../lib/cli/types.ts';
 import type { Link, Member } from '../lib/room/types.ts';
@@ -103,7 +106,6 @@ const HELP = [
 const JOIN_USAGE = `usage: /sub-human join HOST ROOM PIN (the line from an invite). ${HELP_HINT}`;
 const INVITE_USAGE = `usage: /sub-human invite (an ssh line; --web for the web). ${HELP_HINT}`;
 const BYPASS = ' · ⚠ bypass-permissions mode: messages from other sessions can wait behind a dialog; restart in another mode to get them live';
-const DIGITS = /^[0-9]{3,10}$/;
 
 // Through the module (mod/command.ts): set once per prompt, before any reply, from an attested sub_human_via.
 let viaModule = false;
@@ -552,8 +554,7 @@ function dropJoinAs(code: string) {
 function attested(input: JoinIn): boolean {
   const sid = input.session_id;
   if (input.sub_human_via !== 'command.run' || typeof sid !== 'string' || typeof input.sub_human_nonce !== 'string') return false;
-  const lease = identity.readModLease(sid);
-  return !!lease && lease.session_id === sid && typeof lease.nonce === 'string' && lease.nonce === input.sub_human_nonce;
+  return leaseAttests(identity.readModLease(sid), sid, input.sub_human_nonce);
 }
 
 /**
@@ -583,7 +584,7 @@ run((input: JoinIn) => {
   if (!COMMANDS.has(String(input.command_name))) return;
   const args = String(input.command_args || '').trim().split(/\s+/).filter(Boolean);
   // Before anything else: a prompt that could carry a PIN is answered hidden, whatever goes wrong with it.
-  refuse = ['join', 'invite', 'admit'].includes(args[0]) || args.some(a => DIGITS.test(a)) ? hiddenRefusal : block;
+  refuse = mayHoldSecret(args.join(' ')) ? hiddenRefusal : block;
   viaModule = attested(input);
   // the module's $.process.run child has no CLAUDE_PID of this session: its parent is the claude process
   const pid = identity.claudePid() || (viaModule ? process.ppid : null);

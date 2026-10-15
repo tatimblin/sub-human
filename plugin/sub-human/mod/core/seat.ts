@@ -7,12 +7,17 @@
  *       output is not a hello (then the module "does not know" and every prefilter runs node).
  *   seated(hello) -> bool          a seat is known for this session
  *   parseAddr("bob.otter-4821") -> {name, code} | null     a seat's address (the session title), or null
- *   NAME_RE, CODE_RE               copies of lib/text.ts (test/mod-core.node-test.ts asserts they are equal)
+ *   NAME_RE, CODE_RE, SID_SAFE     a seat name, a room code, a session id safe in a file name: owned here, lib/text.ts
+ *                                  re-exports them
  */
 import type { Hello, HelloSeat } from './types.ts';
 
+/** A seat name: letters, digits, . _ -, 1-32. */
 export const NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
+/** A room code: "otter-4821". */
 export const CODE_RE = /^[a-z]+-\d{4}$/;
+/** A session id safe to use in a file name. */
+export const SID_SAFE = /^[A-Za-z0-9_-]{1,128}$/;
 const ABS = (v: unknown): string | null => typeof v === 'string' && v.startsWith('/') ? v : null;
 
 export function parseAddr(addr: unknown): { name: string; code: string } | null {

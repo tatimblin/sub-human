@@ -110,10 +110,8 @@ export const ROW_SPAWN_GRACE_MS = 60_000;      // a row spawned this recently ma
 // ---------- hooks module (mod/, hooks/mod-hello.ts) ----------
 // A lease not from the joining claude process counts this long after it was written (the pid match is the real check).
 export const MOD_LEASE_FRESH_MS = 120_000;
-export const MOD_RESTART_MS = 1000;            // the tail child restarts after this, doubling per failure
-export const MOD_RESTART_MAX_MS = 60_000;
-export const MOD_RESTART_STEADY_MS = 60_000;   // a child that ran this long starts the backoff over
-export const MOD_DELIVERY_ERROR_LOG_MS = 300_000; // the delivery-error notice shows at most once per this
+// the tail child's restart backoff and the delivery-error notice's window: owned by mod/core (the module reads them too)
+export { MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS } from '../mod/core/constants.ts';
 
 // ---------- remote rooms (lib/remote/bridge.ts) ----------
 // A hook's synchronous call over the link gives up (OFFLINE) after this, well inside the hook timeout.
@@ -214,8 +212,9 @@ export const ENTRY_REFS_MAX = 50;              // refs per entry (validate)
 export const ENTRY_STR_MAX = 4000;             // any other string field, JS .length (validate)
 export const ENTRY_LIST_MAX = 50;              // approvers / blockedBy entries (validate)
 export const LOG_LINE_MAX_BYTES = 64 * 1024;   // one serialized log line, UTF-8 bytes (append refuses longer)
-export const CHAT_LINES_MAX = 20;              // text lines shown per chat message; the rest is "[+N more lines: read(...)]"
-export const CHAT_NEST = '  │ ';              // the prefix of every continuation line of a chat message
+// text lines shown per chat message (the rest is "[+N more lines: read(...)]") and every continuation line's prefix:
+// owned by mod/core, which draws chat too
+export { CHAT_LINES_MAX, CHAT_NEST } from '../mod/core/constants.ts';
 
 // ---------- size caps (code points unless noted) ----------
 export const CONTEXT_CAP = 9500;               // hook additionalContext (the CLI caps SessionStart / prompt context at 10k)

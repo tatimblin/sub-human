@@ -26,24 +26,9 @@ import * as seats from '../lib/seats.ts';
 import type { HookSpecificOutput, PromptIn } from './types.ts';
 import type { Identity } from '../lib/identity.ts';
 import type { TranscriptEntry } from '../lib/cc.ts';
-
-function parse(prompt: string): string | null {
-  return tagged(prompt, /^@room(?=\s|$)/);
-}
-
-/** "@claude TEXT" -> TEXT (posted to=claude: a wake for the room's Claude); anything else null. A copy of
- * mod/core/prompt.ts parseClaude (test/mod-core.node-test.ts asserts they agree). */
-function parseClaude(prompt: string): string | null {
-  return tagged(prompt, /^@claude(?=\s|$)/);
-}
-
-/** The text after a leading tag: the tag, then one whitespace character (a space, or the newline Ctrl+J
- * puts after it), dropped, or nothing. A copy of mod/core/prompt.ts tagged. */
-function tagged(prompt: string, tag: RegExp): string | null {
-  const m = tag.exec(prompt);
-  if (!m) return null;
-  return prompt.slice(m[0].length).replace(/^\s/, '');
-}
+// how a prompt is read is the module's (mod/core): one parser, one list of typed origins, one wording per refusal
+import { parse, parseClaude, TYPED_ORIGINS, NO_ORIGIN, NOT_IN_ROOM } from '../mod/core/prompt.ts';
+import { attested as leaseAttests } from '../mod/core/state.ts';
 
 /** A person typing through Remote Control sees no block line there: a refusal also goes out as systemMessage, which
  * mod/prompt.ts relays to the phone (mod/deliver.ts relay). "✓ sent" stays a stop line only. */
@@ -59,10 +44,6 @@ const TAIL_BYTES = config.TRANSCRIPT_TAIL_BYTES;
 /** The last TAIL_BYTES of a JSONL transcript as parsed entries (oldest first); [] when unreadable. */
 const transcriptTail = (file: string | undefined): TranscriptEntry[] => cc.readEntries(file, { tailBytes: TAIL_BYTES });
 const contentText = cc.contentText;
-
-/** prompt.submit origins a person types from (mod/core/prompt.ts TYPED_ORIGINS; bridge is the person typing
- * through Remote Control). */
-const TYPED_ORIGINS = new Set(['composer', 'sdk', 'bridge']);
 
 /** The text of the last assistant turn before this prompt (all its text blocks), or ''. */
 function lastAssistantText(entries: TranscriptEntry[], promptId: string | undefined): string {
@@ -101,19 +82,15 @@ function firstPrompt(input: PromptIn): boolean {
 
 /** For a room Claude session: null when the prompt may run (anything not typed, the launch command), else the refusal. */
 function roomClaudeRefusal(me: Identity, input: PromptIn, prompt: string, origin: string | null): string | null {
-  if (origin === null || !TYPED_ORIGINS.has(origin)) return null;
+  if (origin === null || !TYPED_ORIGINS.includes(origin)) return null;
   return LAUNCH.test(prompt) && firstPrompt(input) ? null : roomClaudeHint(me);
 }
-
-/** The same words as the mod's GATE_FAILED (test/mod-core-prompt.node-test.ts): either way the person types it again. */
-const NO_ORIGIN = '✗ not posted: sub-human could not check who wrote this @room. Type it again.';
 
 /** True when the input carries this session's module nonce (its lease's): the origin beside it is the module's. */
 function attested(input: PromptIn): boolean {
   const sid = input.session_id;
   if (typeof sid !== 'string' || typeof input.sub_human_nonce !== 'string') return false;
-  const lease = identity.readModLease(sid);
-  return !!lease && lease.session_id === sid && typeof lease.nonce === 'string' && lease.nonce === input.sub_human_nonce;
+  return leaseAttests(identity.readModLease(sid), sid, input.sub_human_nonce);
 }
 
 /** The UserPromptSubmit handler: writes its one output (if any) through common.ts out(). hooks/prompt.ts calls it. */
@@ -134,10 +111,10 @@ function handle(input: PromptIn): void {
   if (raw === null && (wake === null || !me)) return; // outside a room, @claude is an ordinary prompt
 
   // not in a room first: typing it again would not help there
-  if (!me) return block('✗ not posted: this session isn\'t in a room. Join one first: /sub-human');
+  if (!me) return block(NOT_IN_ROOM);
   const origin = claimed !== null && attested(input) ? claimed : null;
   if (origin === null) return block(NO_ORIGIN.replace('@room', tag));
-  if (!TYPED_ORIGINS.has(origin)) {
+  if (!TYPED_ORIGINS.includes(origin)) {
     return block(`✗ not posted: this prompt wasn't typed by you (it came from "${origin.slice(0, 40)}"). Only your own typed ${tag} posts as your words.`);
   }
   // A long paste arrives wrapped in <pasted_content>: post the person's text, marked normalized.
@@ -170,7 +147,7 @@ function handle(input: PromptIn): void {
   out({ continue: false, stopReason: sent, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 }
 
-export { handle, parse, parseClaude, TYPED_ORIGINS, NO_ORIGIN };
+export { handle };
 
 // hooks/prompt.ts calls handle(); the direct run is for the tests and scripts/demo-lib.js synthetic-claude-prompt.
 if (import.meta.main) run(handle);

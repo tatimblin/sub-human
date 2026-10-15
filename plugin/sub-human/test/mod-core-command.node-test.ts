@@ -3,7 +3,6 @@
 // mod/test/command.test.ts (npm run test:mods); join.ts's side of the reply is test/hooks/join.node-test.ts.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import type { JoinReply, RunOutput } from '../mod/core/types.ts';
 
@@ -27,11 +26,8 @@ test('command: it answers what was typed here, and through Remote Control only w
   assert.equal(answersItself({ args: '', origin: { kind: 'composer' } }, { nonce: null }), false, 'no nonce: join.ts could not tell it is the module');
 });
 
-test('command: mayHoldSecret is hooks/join.ts\'s rule for a hidden reply', async () => {
+test('command: mayHoldSecret, the rule join answers hidden by', async () => {
   const { mayHoldSecret } = await load();
-  const src = fs.readFileSync(path.join(PLUGIN, 'hooks', 'join.ts'), 'utf8');
-  assert.ok(src.includes("['join', 'invite', 'admit'].includes(args[0]) || args.some(a => DIGITS.test(a))"));
-  assert.ok(src.includes('const DIGITS = /^[0-9]{3,10}$/;'));
   const cases: [string, boolean][] = [['', false], ['help', false], ['leave', false], ['bob vole-1234', false], ['join x', true], ['invite --web', true], ['admit', true], ['bob 482', true], ['bob 48', false]];
   for (const [args, want] of cases) {
     assert.equal(mayHoldSecret(args), want, args);

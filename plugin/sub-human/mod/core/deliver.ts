@@ -8,21 +8,15 @@
  * Failure: pull is at most once (PULL_DELIVERY): the tail's cursor moves when the line is written, so a mod lost
  * between that write and the append drops it; a malformed event parses to null and is ignored.
  */
-import { FOR_CLAUDE } from './chat.ts';
+import { FOR_CLAUDE, MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS } from './constants.ts';
 import { shimEnv } from './shim.ts';
 import type { DeliverAction, Hello, TailEvent } from './types.ts';
 
-// Equal to lib/config.ts's entries of the same name (test/mod-core-deliver.node-test.ts): mod/ imports no CommonJS.
-/** The tail child's first restart delay, doubled per failure in a row up to MOD_RESTART_MAX_MS. */
-export const MOD_RESTART_MS = 1000;
-export const MOD_RESTART_MAX_MS = 60_000;
-/** A child that ran this long before it exited was healthy: its restart starts the backoff over. */
-export const MOD_RESTART_STEADY_MS = 60_000;
+// the backoff and the notice's window are mod/core/constants.ts's (lib/config.ts re-exports them)
+export { MOD_RESTART_MS, MOD_RESTART_MAX_MS, MOD_RESTART_STEADY_MS, MOD_DELIVERY_ERROR_LOG_MS };
 /** The tail child's failures in a row before the person is told: a restart resumes from the child's cursor, so
  * one exit loses nothing; a child that keeps failing leaves the room unheard. */
 export const MOD_RESTART_TELL_FAILS = 3;
-/** At most one delivery-error notice per this long, however many failures it covers. */
-export const MOD_DELIVERY_ERROR_LOG_MS = 300_000;
 /** A relay waits this long after the hook that asked for it (a prompt cannot be submitted from inside one). */
 export const RELAY_AFTER_MS = 250;
 /** At most one relay per this long: lines that come sooner wait and go together (on top of the tail's settle). */
