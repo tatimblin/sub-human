@@ -307,15 +307,15 @@ function postHandoff(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
   const got = card.answerCard(handoff.card(a, me.code).questions[0], r, input.tool_input);
   if (got.kind === 'absent') return false;
   const say = (t: string, top?: HookOutput) => c.context('PostToolUse', t, top);
-  if (got.kind !== 'answer') return say(`Nothing was decided: the handoff card closed without ${me.name}'s answer. If ${me.name} asks, ${review.NEXT.handoff} again. ${review.SAY.done}`), true;
+  const S = review.SAY;
+  if (got.kind !== 'answer') return say(S.handoffNoAnswer(me.name)), true;
   if (got.label === handoff.NO) {
     const res = handoff.refuse(me);
-    return say(res.ok ? `${me.name} declined to host room ${me.code}; ${a.from} stays the host. ${review.SAY.done}`
-      : `${me.name} declined, but the host was not told (${res.error}); nothing moved. ${review.SAY.done}`), true;
+    return say(res.ok ? S.handoffDeclined(me.name, me.code, a.from) : S.handoffUntold(me.name, String(res.error))), true;
   }
   const res = handoff.accept(me, { cwd: input.cwd, sign: (p: Record<string, unknown>) => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name }) });
-  if (!res.ok) return say(`The room did NOT move: ${res.error}. ${me.name} has been told. ${review.SAY.done}`, { systemMessage: `sub-human: room ${me.code} did not move here: ${res.error}` }), true;
-  say(`Room ${me.code} is hosted on this machine now: ${me.name} agreed on the card, and the room's Claude starts here on ${me.name}'s Claude account. Post nothing about it (the room shows it). ${review.SAY.done}`,
+  if (!res.ok) return say(S.handoffFailed(me.name, String(res.error)), { systemMessage: `sub-human: room ${me.code} did not move here: ${res.error}` }), true;
+  say(S.handoffMoved(me.name, me.code),
     { systemMessage: `sub-human: room ${me.code} is hosted on this machine now, and its Claude runs on your Claude account. Keep this machine reachable for the others${res.note}` });
   return true;
 }
@@ -331,21 +331,20 @@ function postAdmit(input: ConsentIn, me: Identity, r: ToolResponse): boolean {
   const adm = admission();
   const req = adm.find(me.code, m[1]);
   const say = (t: string, top?: HookOutput) => c.context('PostToolUse', t, top);
-  if (!req) return say(`Nothing was done: no join request ${m[1]} in room ${me.code}. ${review.SAY.done}`), true;
+  const S = review.SAY;
+  if (!req) return say(S.admitUnknown(m[1], me.code)), true;
   const got = card.answerCard(adm.card(req, me.code).questions[0], r, input.tool_input);
-  if (got.kind !== 'answer') {
-    return say(`Nothing was decided: the join card closed without ${me.name}'s answer, and ${req.name} still waits. If ${me.name} asks, ${review.NEXT.admit(req.ref)} again. ${review.SAY.done}`), true;
-  }
+  if (got.kind !== 'answer') return say(S.admitNoAnswer(me.name, req.name, req.ref)), true;
   try {
     if (got.label === adm.REFUSE) {
       adm.refuse(me.code, req.ref, { by: me.name });
-      return say(`${me.name} refused ${req.name}; nothing got in. Post nothing about it (the room shows it). ${review.SAY.done}`), true;
+      return say(S.admitRefused(me.name, req.name)), true;
     }
     const res = adm.letIn(me.code, req.ref, { by: me.name, sign: p => envelope.sign(p, roomStore.humanKey(me.code, me.name), { room: me.code, from: me.name }) });
-    say(`${me.name} let ${req.name}'s machine into room ${me.code}. Post nothing about it (the room shows it). ${review.SAY.done}`, { systemMessage: `sub-human: ${res.text}` });
+    say(S.admitLetIn(me.name, req.name, me.code), { systemMessage: `sub-human: ${res.text}` });
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
-    say(`Nothing was done: ${why}. ${me.name} has been told. ${review.SAY.done}`, { systemMessage: `sub-human: ${req.name} was not let in: ${why}` });
+    say(S.admitFailed(me.name, why), { systemMessage: `sub-human: ${req.name} was not let in: ${why}` });
   }
   return true;
 }

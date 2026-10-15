@@ -117,7 +117,7 @@ export const NEXT = {
   /** entering: show the proposal the hooks picked */
   show: (h: string) => `call ExitPlanMode now with plan "proposal ${h}"`,
   /** shown / exiting: close the review */
-  exit: 'call ExitPlanMode now (no plan needed): the hooks close the review and restore the mode',
+  exit: 'call ExitPlanMode now (no plan needed; the hooks close the review)',
   /** restore: put the person's mode back */
   restore: (n: string, mode: string | undefined) => `call EnterPlanMode, then ExitPlanMode, to restore ${n}'s ${mode} mode (no dialogs)`,
   /** the fallback card */
@@ -146,7 +146,7 @@ export const SAY = {
   replaced: (n: string, old: string, h: string) => `sub-human: proposal ${old} was replaced by ${h}; opening ${h} for ${n}`,
   restoring: 'sub-human: restoring the mode after a room review',
   proposeFirst: (n: string) => `sub-human: no room review now: ${n} asked you to propose something, so do that. The proposal awaiting ${n} stays pending.`,
-  showOnly: (n: string, h: string) => `sub-human: this plan mode is only to show ${n} room proposal ${h}. Call ExitPlanMode now with plan "proposal ${h}"; the hooks put its text in the dialog, so plan nothing and write no file.`,
+  showOnly: (n: string, h: string) => `sub-human: this plan mode is only to show ${n} room proposal ${h}. Call ExitPlanMode now with plan "proposal ${h}"; plan nothing (the hooks show its text).`,
   exitNow: `sub-human: ${NEXT.exit}.`,
   /** the plan dialog's reason line: for the person, not the model */
   dialog: (n: string, h: string, from: string | null | undefined, mode: string | undefined) => `room proposal ${h}${from ? ` from ${from}` : ''}, for ${n} (PgUp/PgDn scroll). `
@@ -154,7 +154,7 @@ export const SAY = {
   planView: (n: string, h: string) => `Open it in the plan view instead: ${NEXT.open(h)}. The hooks show ${n} the full proposal.`,
   unread: (n: string, h: string) => `${n}'s answer in the review of proposal ${h} is not on record yet; nothing was recorded.`,
   closed: (n: string, h: string) => `${n} closed the review of proposal ${h} without answering; nothing was recorded.`,
-  noted: (n: string, h: string) => `${n} closed the review of proposal ${h} with a note; nothing is recorded yet. Once the review is closed, ${NEXT.note(h)} so ${n} can send or discard it. ${keepNote(n)}`,
+  noted: (n: string, h: string) => `${n} closed the review of proposal ${h} with a note; nothing is recorded yet. Once the review is closed, ${NEXT.note(h)} (Send or Discard). ${keepNote(n)}`,
   nothingToShow: (h: string | undefined) => `${h ? `proposal ${h}` : 'the room proposal'}: nothing to show (already answered, decided or unknown); nothing was recorded.`,
   reviewClosed: 'The room review is closed and the mode is restored; this was not a plan to carry out.',
   cardInstead: (n: string, h: string) => ` The plan view could not show proposal ${h}: ${NEXT.card(h)} so ${n} answers on the card.`,
@@ -169,16 +169,27 @@ export const SAY = {
   promptExit: (said: string) => `sub-human: ${said ? `${said} ` : ''}Before anything else, ${NEXT.exit}; then continue.`,
   // the note and its confirm card
   noteAsk: (n: string, h: string) => `room proposal ${h}: ${n}'s note, to send or discard`,
-  nudge: (n: string, h: string) => `sub-human: ${n}'s note on proposal ${h} is not recorded yet: ${NEXT.note(h)} so ${n} can send or discard it. ${keepNote(n)}`,
-  reoffer: (n: string, h: string, interrupted: boolean) => `sub-human: ${n}'s note on proposal ${h} is still not recorded. ${interrupted ? '' : 'Its card was never shown. '}${showNote(n, h, interrupted)} ${keepNote(n)}`,
-  renudge: (n: string, h: string) => `sub-human: ${n}'s note on proposal ${h} is still not recorded and its card was not shown again. ${showNote(n, h, true)} ${keepNote(n)}`,
-  noteNoAnswer: (n: string, h: string) => `Nothing was recorded: the card closed without ${n}'s answer, and the note waits. If ${n} asks, ${NEXT.note(h)} again. ${DONE}`,
+  nudge: (n: string, h: string) => `sub-human: ${n}'s note on proposal ${h} is not recorded yet: ${NEXT.note(h)} (Send or Discard). ${keepNote(n)}`,
+  reoffer: (n: string, h: string, interrupted: boolean) => `sub-human: ${n}'s note on proposal ${h} is still not recorded.${interrupted ? '' : ' Its card was never shown.'} ${showNote(n, h, interrupted)} ${keepNote(n)}`,
+  renudge: (n: string, h: string) => `sub-human: ${n}'s note on proposal ${h} is still not recorded and its card was not shown again. The Esc was no answer: ${NEXT.note(h)} now, before anything else. ${keepNote(n)}`,
+  noteNoAnswer: (n: string, h: string) => `Nothing was recorded: the card closed without ${n}'s answer; the note waits. If ${n} asks, ${NEXT.note(h)}. ${DONE}`,
   noteOther: (h: string) => `proposal ${h}: no Send/Discard answer; nothing was recorded and the note waits. ${DONE}`,
   discarded: (n: string, h: string) => `${n} discarded the note; nothing was recorded and proposal ${h} still awaits ${n}'s answer. ${DONE}`,
   // the fallback card
   cardNoAnswer: (n: string) => `Nothing was recorded: the card closed without ${n}'s answer. Reopening it later is fine. ${DONE}`,
   notYet: (n: string, h: string) => `proposal ${h}: ${n} has not decided; nothing was recorded. Do not ask again unless ${n} asks.`,
   noChoice: (h: string) => `proposal ${h}: no Agree/Object answer; nothing was recorded.`,
+  // the handoff card (lib/handoff.ts) and a join request's card (lib/remote/admission.ts)
+  handoffNoAnswer: (n: string) => `Nothing was decided: the handoff card closed without ${n}'s answer. If ${n} asks, ${NEXT.handoff}. ${DONE}`,
+  handoffDeclined: (n: string, code: string, host: string) => `${n} declined to host room ${code}; ${host} stays the host. ${DONE}`,
+  handoffUntold: (n: string, why: string) => `${n} declined, but the host was not told (${why}); nothing moved. ${DONE}`,
+  handoffFailed: (n: string, why: string) => `The room did NOT move: ${why}. ${n} has been told. ${DONE}`,
+  handoffMoved: (n: string, code: string) => `Room ${code} is hosted on this machine now (${n} agreed on the card); its Claude runs on ${n}'s Claude account. Post nothing about it. ${DONE}`,
+  admitUnknown: (ref: string, code: string) => `Nothing was done: no join request ${ref} in room ${code}. ${DONE}`,
+  admitNoAnswer: (n: string, who: string, ref: string) => `Nothing was decided: the join card closed without ${n}'s answer; ${who} still waits. If ${n} asks, ${NEXT.admit(ref)}. ${DONE}`,
+  admitRefused: (n: string, who: string) => `${n} refused ${who}; nothing got in. Post nothing about it. ${DONE}`,
+  admitLetIn: (n: string, who: string, code: string) => `${n} let ${who}'s machine into room ${code}. Post nothing about it. ${DONE}`,
+  admitFailed: (n: string, why: string) => `Nothing was done: ${why}. ${n} has been told. ${DONE}`,
 };
 
 /**
@@ -187,7 +198,7 @@ export const SAY = {
  */
 export function showNote(n: string, h: string, interrupted = false): string {
   return interrupted
-    ? `${n} pressed Esc on its card: an interruption, not a decline; the note is neither sent nor discarded. Show ${n} the card once more, now, before anything else: ${NEXT.note(h)}.`
+    ? `${n} pressed Esc on its card: no answer, not a decline. Show it again now, before anything else: ${NEXT.note(h)}.`
     : `Show ${n} the card now, before anything else: ${NEXT.note(h)}.`;
 }
 
