@@ -139,7 +139,7 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
   assert.equal(typeof c.token, 'string');
   assert.equal(c.link, ID);
   assert.deepEqual({ ...auth.links(host)[ID], token_sha256: '-', created_at: '-' }, { id: ID, token_sha256: '-', machine: 'remote0machine01', seats: [], created_at: '-', login: true });
-  assert.match(host.readAll().at(-1).text, /^a machine linked over your SSH login \(link abcdef012345\)$/);
+  assert.match(host.readAll().at(-1).text, /^a machine linked over your SSH login$/);
   // the id is taken now: a second login hello for it is refused; the token says hello as any link's
   await assert.rejects(dial({ linkId: ID, login: true }, { login: true }), authErr(/link abcdef012345 exists already/));
   const again = await dial({ linkId: ID, login: true }, { token: c.token });
@@ -178,7 +178,8 @@ test('login e2e: join me@devbox ROOM links over the person\'s own ssh and takes 
   const id = lf.transport.link;
   assert.deepEqual(Object.keys(links(host, code)), [id]);
   assert.deepEqual(links(host, code)[id].seats, ['bob']);
-  assert.ok(roomLines(host, code).includes(`a machine linked over your SSH login (link ${id})`), 'a link, not a join: no second joined line');
+  assert.match(roomLines(host, code), /^a machine linked over your SSH login$/m, 'a link, not a join: no second joined line');
+  assert.ok(!roomLines(host, code).includes(id), 'no internal id');
   assert.doesNotMatch(roomLines(host, code), /joined over your ssh login/);
   const argv = fs.readFileSync(sshLog, 'utf8').trim().split('\n').map(l => JSON.parse(l))[0];
   assert.ok(argv.includes('BatchMode=yes') && !argv.some(a => /StrictHostKeyChecking/.test(a)));

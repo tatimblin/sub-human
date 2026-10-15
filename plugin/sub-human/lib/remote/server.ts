@@ -123,7 +123,7 @@ function viaLogin(s: Session, machine: string): Credential {
     throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through a key that was let in for one other connection, and reaches only that one)` : ''}; join with an invite instead (/sub-human invite on the host)`);
   }
   const r = auth.loginLink(s.store, { id: s.linkId, machine }); // linkId: checked above
-  roomLine(s, `a machine linked over your SSH login (link ${s.linkId})`);
+  roomLine(s, 'a machine linked over your SSH login');
   return r;
 }
 
