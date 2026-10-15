@@ -517,6 +517,9 @@ test('quotas: the log counts a seat\'s posts by via; a link window drops what ha
   assert.equal(quota.fromLog(es, { from: 'bob', via: 'agent', windowMs: 60_000, now }), 29, 'the one older than the window is not counted');
   quota.checkLog(es, { from: 'bob', via: 'agent', op: 'append.agent', now });
   assert.throws(() => quota.checkLog([...es, { from: 'bob', via: 'agent', at: at(10) } as Entry], { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: CodedError) => e.reason === 'QUOTA' && /bob posted 30 times in 1 min/.test(e.message));
+  // the retry is when the oldest counted line leaves the window, not the window itself
+  const late = Array.from({ length: 30 }, () => ({ from: 'bob', via: 'agent', at: at(50_000) })) as Entry[];
+  assert.throws(() => quota.checkLog(late, { from: 'bob', via: 'agent', op: 'append.agent', now }), (e: CodedError) => /try again in 10 s/.test(e.message));
   const s = new MemoryRoomStore('otter-1234');
   const seatQ = config.LINK_QUOTAS.seat;
   for (let i = 0; i < seatQ.max; i++) quota.charge(s, 'abcdef012345', 'seat', { now });
