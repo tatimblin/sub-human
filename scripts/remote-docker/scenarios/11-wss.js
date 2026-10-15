@@ -1,27 +1,30 @@
 'use strict';
 // 1.1 wss: the host listens on 127.0.0.1:$LAB_WS_PORT (7420) in the devbox; tls-front plays Tailscale Serve/Funnel.
 // bob (joiner-a) types the line `/sub-human invite --url https://tls-front` shows, `/sub-human join
-// https://tls-front/sub-human/CODE PIN --as bob`; ben (joiner-b) does the same with HTTPS_PROXY=http://corp-proxy:3128 as
-// his only way out. The PIN's PAKE runs inside the WebSocket and pins the listener's key; alice's card lets each
-// machine in, and a bare /sub-human seats them. Posts flow, mirrors converge, a wrong PIN is refused, and Caddy (the
-// stand-in for Tailscale) sees only ciphertext: no PIN or post in its log.
+// https://tls-front/sub-human/CODE SECRET --as bob`, then the PIN when asked; ben (joiner-b) does the same with
+// HTTPS_PROXY=http://corp-proxy:3128 as his only way out. The listener's key is checked against the line, then Noise XK
+// with a key of the link's own; alice's card lets each machine in, and a bare /sub-human seats them. Posts flow,
+// mirrors converge, a wrong PIN is refused, and Caddy (the stand-in for Tailscale) sees only ciphertext: no PIN, SECRET
+// or post in its log. (Not run since Stage 7b.)
 // LAB_WS_LISTEN_CMD overrides the host's listener (default "listen --port {port}"), run detached as host on devbox.
 const { delivered, converge, waitState } = require('./_lib.js');
 
 const WS_PORT = Number(process.env.LAB_WS_PORT || 7420);
-const LINE_RE = /\/sub-human join (https:\/\/tls-front\/\S+) (\d{4})\n/;
+const LINE_RE = /\/sub-human (join https:\/\/tls-front\/\S+ ([0-9a-z]{39}))\n/;
+const PIN_RE = /apart from the line[^\n]*: (\d{4})\n/;
 
 function mint(t, host) {
   const r = host.expand('alice', 'invite --url https://tls-front');
   const out = (r.json && r.json.reason) || JSON.stringify(r.json || {}); // the block reason: the person's text
   const m = LINE_RE.exec(`${out}\n`) || [];
-  if (m[2]) t.ev.invite(null, m[2]);
-  return { url: m[1], pin: m[2] || '', out };
+  const p = PIN_RE.exec(`${out}\n`) || [];
+  if (m[1]) t.ev.invite(m[1], p[1]);
+  return { line: m[1], pin: p[1] || '', out };
 }
 
 module.exports = {
   id: 'wss',
-  title: '1.1: join by the https://tls-front/... URL + PIN line, also through corp-proxy; the card lets each in',
+  title: '1.1: join by the https://tls-front/... URL + SECRET line and the PIN apart, also through corp-proxy; the card lets each in',
   persona: 'P1 friends / P2 corporate (1.1)',
   requires: ['ws', 'urlPin'],
   budgetMs: 120_000,
@@ -38,16 +41,20 @@ module.exports = {
     const joins = [];
     for (const [svc, name, extra] of [['joiner-a', 'bob', {}], ['joiner-b', 'ben', { HTTPS_PROXY: 'http://corp-proxy:3128', https_proxy: 'http://corp-proxy:3128' }]]) {
       const inv = mint(t, host);
-      if (!t.check(`the host mints a URL + PIN for ${name} (no NAME, no #secret in the line)`, inv.url && inv.pin.length === 4 && !/#/.test(inv.url), inv.out.slice(0, 160))) continue;
+      if (!t.check(`the host mints a URL + SECRET line and a PIN apart for ${name} (no NAME, no #)`, inv.line && inv.pin.length === 4 && !/#/.test(inv.line), inv.out.slice(0, 160))) continue;
       const seat = lab.seat(svc, { env: { ...env, ...extra } });
-      const bad = seat.short(name, inv.url, '-', String((Number(inv.pin) + 1) % 1e4).padStart(4, '0'));
+      const typed = seat.short(name, inv.line);
+      const asked = typed.asked || await t.until(() => !!seat.linkfile(code).pin_wanted, 45_000, 250);
+      t.check(`${name}: the listener's key matches the line; the host asks for the PIN`, asked && typed.hidden, (typed.out || '').slice(0, 120));
+      const bad = seat.pin(name, String((Number(inv.pin) + 1) % 1e4).padStart(4, '0'));
       t.check(`${name}: a wrong PIN is refused, in a hidden step`, !bad.ok && bad.hidden && /wrong PIN/.test(bad.out || ''), (bad.out || '').slice(0, 120));
-      const l = seat.short(name, inv.url, '-', inv.pin);
+      await sleep(4500); // this machine's wait after a wrong PIN
+      const l = seat.pin(name, inv.pin);
       t.check(`${name}'s PIN holds over wss${extra.HTTPS_PROXY ? ' through corp-proxy' : ''}; alice's card asks`, l.waiting && l.hidden, (l.out || '').slice(0, 160));
       const card = host.admitcard('alice', 'Let in');
       t.check(`alice lets ${name} in on the card`, card.ok, (card.out || '').slice(0, 120));
       const up = await waitState(seat, code, 'online', 45_000);
-      t.check(`${name}'s link comes online (Noise_NK pinned to the vouched listener key)`, up !== null, `${up} ms`);
+      t.check(`${name}'s link comes online (Noise XK, bound to his link's own key)`, up !== null, `${up} ms`);
       const j = seat.expand(name, '');
       t.check(`${name} takes the seat with a bare /sub-human`, j.ok, j.out || `${j.ms} ms`);
       if (j.ok) joins.push({ seat, name });

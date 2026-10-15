@@ -11,8 +11,9 @@
  * State: $HOME/lab-seats<basename of SUB_HUMAN_HOME>.json, so one machine can hold two homes (two links to a room).
  *
  *   host NAME                     open a room here as NAME (`/sub-human NAME`): {code, machine, seat, out}
- *   restrict CODE LINK PUBKEY [FILE]   (on a host) the one-link forced-command line a host's admit writes for PUBKEY
- *                                 and link LINK, appended to FILE (default ~/.ssh/authorized_keys): {out}
+ *   restrict CODE LINK PUBKEY [FILE]   (on a host) the one-link forced-command line an admit wrote before protocol 3
+ *                                 (nothing writes one now) for PUBKEY and link LINK, appended to FILE (default
+ *                                 ~/.ssh/authorized_keys): what a key let in for one other connection looks like: {out}
  *   login NAME DEST CODE [SSH_OPT…]   `/sub-human join DEST CODE --as NAME`: a link over the person's own ssh login to
  *                                 DEST (no invite); SSH_OPT… become SUB_HUMAN_SSH_OPTS for this seat's hooks and so for
  *                                 the link daemon the join starts: {ok, out, ms, code}; ok: the seat joined
@@ -22,9 +23,13 @@
  *   prompt NAME TEXT              any typed prompt through the prompt hook (e.g. a slash-free command)
  *   expand NAME ARGS              any `/sub-human ARGS` through the join hook (invite --ssh, kick, handoff, …)
  *   leave NAME                    SessionEnd for NAME, then its seat process stops
- *   short NAME DEST CODE|- PIN [--via J] [SSH_OPT…]   `/sub-human join DEST [CODE] PIN [--via J] --as NAME` (an
- *                                 invite's line; '-' for a URL): {ok, waiting, out, hidden}: ok once the host checked
- *                                 the PIN
+ *   short NAME LINE [SSH_OPT…]    `/sub-human LINE --as NAME`: an invite's line as the host showed it, one argument
+ *                                 ("join DEST ROOM SECRET [--via J] [--home H]" or "join URL SECRET"; a 0.5.0-beta.15
+ *                                 host's "join DEST ROOM PIN"): {ok, asked, waiting, out, hidden}: asked once the host
+ *                                 asks for the PIN (protocol 3), waiting once it checked a PIN (beta.15: in one step)
+ *   pin NAME PIN                  `/sub-human join PIN`: the PIN the host asked for: {ok, waiting, out, hidden}
+ *   linkfile CODE                 this machine's link file, without its secrets: {exists, token, invite, pin,
+ *                                 pin_wanted, awaiting, refused, transport}
  *   admitcard NAME LABEL          NAME, on the host, answers the oldest join request's card ("Let in" / "Refuse"):
  *                                 {ok, question, out, ref, key, link}
  *   card NAME LABEL               NAME answers the handoff card the hooks build (consent.ts Pre, then Post with
@@ -116,6 +121,7 @@ const typed = (seat, prompt) => {
 };
 const joinedOk = j => !!(j && j.decision !== 'block' && j.hookSpecificOutput && j.hookSpecificOutput.additionalContext);
 const reason = j => j && (j.reason || j.systemMessage) || null;
+const hidden = j => !!(j && j.hookSpecificOutput && j.hookSpecificOutput.suppressOriginalPrompt);
 
 function walk(dir) {
   if (!fs.existsSync(dir)) return [];
@@ -143,10 +149,13 @@ const cmds = {
   },
 
   restrict(code, linkId, pub, file = path.join(USER_HOME, '.ssh', 'authorized_keys')) {
-    const sshkeys = lib('remote/sshkeys.ts');
-    const key = sshkeys.publicKey(pub);
-    const { shim, h } = lib('remote/hosting.ts').shimReady();
-    return { out: `${sshkeys.appendAuthorized(file, shim.authorizedLine(code, linkId, key, h), key)}: link ${linkId} of room ${code}` };
+    const key = String(pub).trim().split(/\s+/).slice(0, 2).join(' ');
+    const h = path.resolve(HOME);
+    const line = `command="SUB_HUMAN_HOME=${h} ${h}/bin/serve --stdio ${code} --link ${linkId}",restrict ${key} sub-human:${code}:${linkId}`;
+    lib('remote/shim.ts').refresh({ force: true });
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    fs.appendFileSync(file, line + '\n', { mode: 0o600 });
+    return { out: `added: link ${linkId} of room ${code}` };
   },
 
   options(code, name, value) {
@@ -160,14 +169,30 @@ const cmds = {
     return { ok: joinedOk(r.json), out: reason(r.json) || '', ms: r.ms, code, stderr: r.stderr };
   },
 
-  // `/sub-human join DEST [CODE] PIN [--via J] --as NAME`: an invite's line (DEST a URL: CODE is '-'); SSH_OPT… as for join
-  short(name, dest, code, pin, ...rest) {
-    const via = rest[0] === '--via' ? ` --via ${rest[1]}` : '';
-    const opts = via ? rest.slice(2) : rest;
-    const seat = seatWith(name, opts);
-    const r = expand(seat, `join ${dest}${code === '-' ? '' : ` ${code}`} ${pin}${via} --as ${name}`);
+  // `/sub-human LINE --as NAME`: an invite's line, one argument; SSH_OPT… as for login
+  short(name, line, ...rest) {
+    const seat = seatWith(name, rest);
+    const r = expand(seat, `${String(line).replace(/^\/sub-human /, '')} --as ${name}`);
     const out = reason(r.json) || '';
-    return { ok: /checked your PIN/.test(out) || /the host let you in/.test(out), waiting: /checked your PIN/.test(out), out, ms: r.ms, hidden: !!(r.json && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt), stderr: r.stderr };
+    const asked = /Type the 4-digit PIN they told you/.test(out), waiting = /checked your PIN/.test(out);
+    return { ok: asked || waiting || /the host let you in/.test(out) || /still connecting/.test(out), asked, waiting, out, ms: r.ms, hidden: hidden(r.json), stderr: r.stderr };
+  },
+
+  // `/sub-human join PIN`: the PIN the host's machine asked for
+  pin(name, pin) {
+    const seat = seatOf(name);
+    const r = expand(seat, `join ${pin}`);
+    const out = reason(r.json) || '';
+    return { ok: /checked your PIN/.test(out), waiting: /checked your PIN/.test(out), out, ms: r.ms, hidden: hidden(r.json), stderr: r.stderr };
+  },
+
+  linkfile(code) {
+    let l = null;
+    try { l = JSON.parse(fs.readFileSync(path.join(HOME, 'links', `${code}.json`), 'utf8')); } catch { return { exists: false }; }
+    return {
+      exists: true, token: typeof l.token === 'string', invite: typeof l.invite === 'string', pin: typeof l.pin === 'string',
+      pin_wanted: l.pin_wanted || null, awaiting: l.awaiting || null, refused: l.refused || null, transport: l.transport,
+    };
   },
 
   // NAME, on the host, answers the join request's card the hooks build (consent.ts Pre with "admit REF", then Post)
@@ -279,7 +304,11 @@ const cmds = {
       src: {
         // the invites: lib/remote/invites.ts, else (beta.15) lib/remote/auth.ts
         auth: { sh2: /\bsh2\b/.test(src('lib/remote/invites.ts') || src('lib/remote/auth.ts')), pin: /\bpin\b/i.test(src('lib/remote/invites.ts') || src('lib/remote/auth.ts')) },
-        join: { hostSsh: /host\s+--ssh|--ssh\b/.test(src(joinSrc())), urlPin: /https?:\/\//.test(src(joinSrc())) && /\bpin\b/i.test(src(joinSrc())), login: /\bloginSpec\b/.test(src(joinSrc())) },
+        join: (() => {
+          // the join's source: the command table (lib/commands, 0.5.0-beta.16+), else the join hook (beta.15)
+          const j = src(joinSrc()) + src('lib/commands/join.ts') + src('lib/commands/invite.ts');
+          return { hostSsh: /host\s+--ssh|--ssh\b/.test(j), urlPin: /https?:\/\//.test(j) && /\bpin\b/i.test(j), login: /\bloginSpec\b/.test(j), line: /\bjoin URL SECRET\b|\blinkLine\b/.test(j) };
+        })(),
         // a seat kept across an outage: the daemon renews this machine's seats on every reconnect (keepSeats/beat)
         // the daemon: lib/remote/link.ts with link-engine.ts and link-connect.ts (Stage 7), else link.ts alone
         link: (d => ({ rejoin: /rejoin|keepSeats|localSeats/i.test(d), outbox: /outbox/i.test(d), ping: /\bping\b/.test(d), wake: /\bwake\b/i.test(d) }))(['link.ts', 'link-engine.ts', 'link-connect.ts'].map(f => src(`lib/remote/${f}`)).join('\n')),
