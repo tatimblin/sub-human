@@ -304,6 +304,62 @@ test('room-claude: a superseded claim stops the job it made; a failed start reco
   assert.equal(roomClaude.needsSpawn(code), true, 'the next join retries');
 });
 
+test('room-claude: watchStart: a job the bg daemon failed records spawn_error, clears the job, tells the room once', async () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const room = require(path.join(h.LIB, 'room.ts'));
+  const notices = () => room.open(code).readAll().filter(e => e.kind === 'status' && /did not start/.test(e.text || ''));
+  identity.setRoomClaude(code, { job: 'cafe0001', spawned_at: new Date().toISOString() });
+  let n = 0;
+  const jobs = () => [{ id: 'cafe0001', state: ++n < 3 ? 'working' : 'failed' }];
+  assert.equal(await roomClaude.watchStart(code, 'cafe0001', { pollMs: 5, bindMs: 5000, jobs }), 'failed');
+  const o = identity.readMembers(code).claude;
+  assert.equal(o.job, null);
+  assert.equal(o.spawn_error, 'job cafe0001 failed');
+  assert.equal(notices().length, 1);
+  const e = notices()[0];
+  assert.deepEqual([e.via, e.to], ['system', 'room'], 'to everyone');
+  assert.match(e.text, /^the room's Claude did not start: job cafe0001 failed\. Run \/sub-human doctor; \/sub-human in the room starts it again$/);
+  assert.equal(roomClaude.needsSpawn(code), true, 'the next join retries');
+});
+
+test('room-claude: watchStart: no seat by the bind deadline records spawn_error, keeps the job (the next claim stops it)', async () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const room = require(path.join(h.LIB, 'room.ts'));
+  identity.setRoomClaude(code, { job: 'cafe0002', spawned_at: new Date().toISOString() });
+  const r = await roomClaude.watchStart(code, 'cafe0002', { pollMs: 5, bindMs: 50, jobs: () => [{ id: 'cafe0002', state: 'working' }] });
+  assert.equal(r, 'timeout');
+  const o = identity.readMembers(code).claude;
+  assert.equal(o.job, 'cafe0002');
+  assert.equal(o.spawn_error, 'did not take its seat in 0 s (job cafe0002: working)');
+  assert.equal(room.open(code).readAll().filter(e => e.kind === 'status' && /did not start/.test(e.text || '')).length, 1);
+  assert.equal(roomClaude.needsSpawn(code, Date.now() + 120_001), true);
+  assert.equal(roomClaude.claimSpawn(code, { now: Date.now() + 120_001 }).prevJob, 'cafe0002', 'stopped as prevJob');
+});
+
+test('room-claude: watchStart stays quiet when the room\'s Claude binds, the start is superseded, or the room closes', async () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const room = require(path.join(h.LIB, 'room.ts'));
+  const notices = () => room.open(code).readAll().filter(e => e.kind === 'status' && /did not start/.test(e.text || ''));
+  const jobs = () => [{ id: 'cafe0003', state: 'working' }];
+  identity.setRoomClaude(code, { job: 'cafe0003', spawned_at: new Date().toISOString() });
+  const bound = roomClaude.watchStart(code, 'cafe0003', { pollMs: 5, bindMs: 2000, jobs });
+  await h.sleep(30);
+  identity.join({ code, name: 'claude', role: 'claude', pid: process.pid, session_id: 'so' });
+  assert.equal(await bound, 'bound');
+  identity.setRoomClaude(code, { job: 'cafe0004', pid: null, spawned_at: new Date().toISOString() });
+  const superseded = roomClaude.watchStart(code, 'cafe0004', { pollMs: 5, bindMs: 2000, jobs });
+  await h.sleep(30);
+  identity.setRoomClaude(code, { job: 'cafe0005' });
+  assert.equal(await superseded, 'gone');
+  identity.setRoomClaude(code, { closing: new Date().toISOString() });
+  assert.equal(await roomClaude.watchStart(code, 'cafe0005', { pollMs: 5, bindMs: 50, jobs: () => [{ id: 'cafe0005', state: 'failed' }] }), 'gone');
+  assert.equal(notices().length, 0);
+  assert.equal(identity.readMembers(code).claude.spawn_error, undefined);
+});
+
 test('room-claude: a claim after a just-stopped job (dead pid, fresh lease) lets the new job take the seat', async () => {
   h.freshHome();
   const code = h.newRoom();

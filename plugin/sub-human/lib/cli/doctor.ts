@@ -27,8 +27,9 @@
  *                credential (the server answers it and nothing else) with a timeout: reachable, round trip, both
  *                sides' protocol versions, and over ssh whether BatchMode works (ssh's own error, classified)
  *   clock:CODE   skew against the host, when its hello reply carries a time (warn 2 min, fail SIG_SKEW_MS)
- *   room-claude:CODE  per open room hosted here: the room's Claude bound and its process live (pass); its job started over
- *                90 s ago but never bound its seat (fail)
+ *   room-claude:CODE  per open room hosted here: the room's Claude bound and its process live (pass); its last start
+ *                failed (spawn_error), or its job started over 90 s ago but never bound its seat (fail, with the job's
+ *                state from `claude agents --json --all`, e.g. failed when the bg daemon crashed it)
  *   claude       Claude Code's version against cc.MIN_VERSION and cc.PROBED_VERSION; when it differs from the
  *                probed one, unless --quick, the internals probe (cc.probe, ~3 s)
  *   hooks        settings that turn hooks off (disableAllHooks): the plugin then cannot seat anyone
@@ -48,7 +49,7 @@
  *                and IPs; invites, tokens, long hex and secrets cut; SSH public keys as a SHA256 fingerprint prefix
  *   helloProbe(spec, code, {timeoutMs, env}?) -> Promise<{ok, ms, reply?, error?, stderr?}>
  *   main(args) -> Promise<exitCode>;  parseArgs(args) -> options (lib/cli/args.ts; Error with the usage)
- *   for tests: checkNode(version?), checkRemoteControl(env, settings), checkListener({quick?}), checkRoomClaudes({now?}),
+ *   for tests: checkNode(version?), checkRemoteControl(env, settings), checkListener({quick?}), checkRoomClaudes({now?, jobs?}),
  *       scanAuthorizedKeys(file), linkChecks(linkReport) -> [check], sshHint(stderr, {code?, request?, transport?})
  */
 import fs from 'node:fs';
@@ -544,12 +545,17 @@ function checkRemoteControl(env: NodeJS.ProcessEnv, settings: Settings[]): Check
 // ---------- the report ----------
 const ROOM_CLAUDE_BIND_GRACE_MS = 90_000;
 
+const DAEMON_HINT = 'if Claude Code was upgraded since the bg daemon started, restart the daemon (stop its process; `claude agents` starts a new one)';
+const RESTART = (code: string) => `then /sub-human NAME ${code} (in the room) starts it again`;
+
 /**
- * Each open room hosted here: the room's Claude bound here and live is a pass; one whose job was started (more than
- * ROOM_CLAUDE_BIND_GRACE_MS ago) but never bound its seat: the job runs, its /sub-human was refused (e.g. "name taken"), so the room's Claude is not running. A fail, with the job's
- * log and the restart.
+ * Each open room hosted here: the room's Claude bound here and live is a pass. A fail: its last start failed
+ * (spawn_error, e.g. the bg daemon crashed the job before its first turn), or its job was started (more than
+ * ROOM_CLAUDE_BIND_GRACE_MS ago) but never bound its seat. The job's state (`claude agents --json --all`) tells the two
+ * kinds apart: one that ended crashed, one still running had its /sub-human refused (e.g. "name taken").
+ * jobs: the `claude agents` lookup (tests); called only for a job that never bound.
  */
-function checkRoomClaudes({ now = Date.now() } = {}): Check[] {
+function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc.ts').jobs({ all: true }) }: { now?: number, jobs?: () => import('../cc.ts').AgentJob[] | null } = {}): Check[] {
   const identity = lib('identity.ts');
   const out: Check[] = [];
   let codes: string[] = [];
@@ -557,7 +563,14 @@ function checkRoomClaudes({ now = Date.now() } = {}): Check[] {
   for (const code of codes) {
     let o;
     try { o = identity.readMembers(code).claude; } catch { continue; }
-    if (!o || !o.job || o.job === 'pending' || o.stopped_at || o.closing) continue;
+    if (!o || o.job === 'pending' || o.stopped_at || o.closing) continue;
+    if (!o.job) {
+      if (o.spawn_error && !o.left_at) {
+        out.push(check(`room-claude:${code}`, 'fail', `room's Claude ${code}`, `its last start failed: ${o.spawn_error}: the room's Claude is not running`,
+          `claude agents --all and the bg daemon's log say why; ${DAEMON_HINT}; ${RESTART(code)}`));
+      }
+      continue;
+    }
     const since = Date.parse(o.spawned_at || '') || now;
     const bound = !!o.pid && !o.left_at && (o.machine || identity.machineId()) === identity.machineId();
     if (bound && identity.seatAlive(Object.assign({ name: 'claude' }, o))) {
@@ -565,9 +578,15 @@ function checkRoomClaudes({ now = Date.now() } = {}): Check[] {
       continue;
     }
     if (bound || now - since < ROOM_CLAUDE_BIND_GRACE_MS) continue;
+    let state: string | null = null;
+    try { state = (jobs() || []).find(j => j.id === o.job)?.state || null; } catch { state = null; }
+    const ended = !!state && ['done', 'failed', 'stopped'].includes(state);
+    const why = o.spawn_error ? ` (${o.spawn_error})` : '';
     out.push(check(`room-claude:${code}`, 'fail', `room's Claude ${code}`,
-      `its job ${o.job} was started ${Math.round((now - since) / 1000)} s ago but never took its seat: the room's Claude is not running`,
-      `claude logs ${o.job} shows why its /sub-human was refused; then /sub-human NAME ${code} (in the room) starts it again`));
+      `its job ${o.job} was started ${Math.round((now - since) / 1000)} s ago but never took its seat${state ? `; the job is ${state}` : ''}${why}: the room's Claude is not running`,
+      ended
+        ? `the job ended before its first turn: claude logs ${o.job} and the bg daemon's log say why; ${DAEMON_HINT}; ${RESTART(code)}`
+        : `claude logs ${o.job} shows why its /sub-human was refused; ${DAEMON_HINT}; ${RESTART(code)}`));
   }
   return out;
 }

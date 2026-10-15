@@ -32,6 +32,11 @@
  *       "backgrounded · <job>" line (cc.parseDispatch), and records room Claude {job, job_session}. With a claim it
  *       records only while the claim is still current and the room is not closing; otherwise it stops the job
  *       it just made. A failure records {job: null, spawn_error} so the next join retries and can say why.
+ *   watchStart(code, job, {pollMs, bindMs, jobs}) -> 'bound'|'gone'|'failed'|'timeout'   the detached starter, after
+ *       spawn: `claude --bg` succeeding does not mean the room's Claude runs (the bg daemon can crash it before its first
+ *       turn). Every pollMs until it binds: a job `claude agents --json --all` lists as failed/stopped/done records
+ *       {job: null, spawn_error}; no pid by spawned_at + bindMs records spawn_error and keeps the job (the next claim
+ *       stops it as prevJob). Either posts a status entry to the room. Bound, closing, stopped or superseded: silent.
  *
  * Stopping:
  *   reap(code, {graceMs, waitMs, claimed}) -> 'cancelled' | 'stopped' | 'no-claude'   after the last member leaves:
@@ -96,6 +101,7 @@ type SpawnResult = { ok: true, job: string } | { ok: false, error: string };
 type Alive = (m: Member) => boolean;
 type ReapResult = 'cancelled' | 'stopped' | 'no-claude';
 type WatchdogState = 'live' | 'waiting' | 'reaping' | 'closing' | 'no-claude' | 'no-room' | 'not-host';
+type WatchResult = 'bound' | 'gone' | 'failed' | 'timeout';
 
 const PLUGIN_ROOT = path.join(import.meta.dirname, '..');
 const AGENT = 'sub-human:room-claude';
@@ -256,6 +262,48 @@ function spawn(opts: SpawnOpts): SpawnResult {
   return { ok: true, job: found.id };
 }
 
+/** The room's Claude record still waits on this job: not bound, not closing or stopped, not superseded. */
+const waitingOn = (o: Member | null | undefined, job: string): boolean =>
+  !!o && o.job === job && !o.pid && !o.closing && !o.stopped_at && !o.left_at;
+
+/** Tell the room its Claude did not start (a system status entry everyone sees). */
+function postNotStarted(code: string, reason: string): void {
+  const text = `the room's Claude did not start: ${reason}. Run /sub-human doctor; /sub-human in the room starts it again`;
+  try {
+    room.open(code).append({ kind: 'status', text }, { via: 'system', from: 'room', system: true });
+  } catch { /* room gone */ }
+}
+
+async function watchStart(code: string, job: string, {
+  pollMs = config.ROOM_CLAUDE_WATCH_POLL_MS,
+  bindMs = config.ROOM_CLAUDE_BIND_MS,
+  // --all: a failed job is left out without it
+  jobs = () => cc.jobs({ all: true, bin: claudeBin(), env: cleanEnv(), timeout: config.SPAWN_TIMEOUT_MS }),
+}: { pollMs?: number, bindMs?: number, jobs?: () => AgentJob[] | null } = {}): Promise<WatchResult> {
+  const read = (): Member | null => { try { return (identity.readMembers(code) as Members).claude || null; } catch { return null; } };
+  let deadline = 0; // from the first read: spawned_at + bindMs
+  for (;;) {
+    const o = read();
+    if (!o || !waitingOn(o, job)) return o && o.job === job && o.pid ? 'bound' : 'gone';
+    deadline ||= (Date.parse(o.spawned_at || '') || clock.now()) + bindMs;
+    await clock.sleep(Math.min(pollMs, Math.max(0, deadline - clock.now())));
+    if (!waitingOn(read(), job)) continue; // the top of the loop says which
+    const state = (jobs() || []).find(j => j.id === job)?.state || null;
+    const failed = !!state && ENDED.has(state);
+    if (!failed && clock.now() <= deadline) continue;
+    const reason = failed ? `job ${job} ${state}` : `did not take its seat in ${Math.round(bindMs / 1000)} s (job ${job}: ${state || 'not listed'})`;
+    let rec: Member | null = null;
+    try {
+      // a deadline keeps the job: the next claim stops it as prevJob (it may still be running)
+      rec = identity.updateRoomClaude(code, (c: Member | null): RoomClaudePatch | null => (!waitingOn(c, job) ? null
+        : failed ? { job: null, claim: undefined, spawn_error: reason } : { spawn_error: reason }));
+    } catch { rec = null; }
+    if (!rec) continue;
+    postNotStarted(code, reason);
+    return failed ? 'failed' : 'timeout';
+  }
+}
+
 function detached(args: string[], cwd?: string): number | undefined {
   const env = { ...process.env, SUB_HUMAN_HOME: identity.home() };
   let dir: string | undefined;
@@ -364,7 +412,7 @@ function watchdog(code: string, { now = clock.now(), orphanMs = orphanMsDefault(
 }
 
 export {
-  CLOSE_TEXT, PENDING, pluginDirFor, spawnPlan, command, needsSpawn, claimSpawn, spawn, startDetached, reap,
+  CLOSE_TEXT, PENDING, pluginDirFor, spawnPlan, command, needsSpawn, claimSpawn, spawn, watchStart, startDetached, reap,
   reapDetached, releaseDetached, watchdog, taskListId, tasksDir,
 };
 
@@ -380,6 +428,8 @@ if (import.meta.main) {
     const r = spawn({ code, cwd: o.cwd, claim: o.claim || null, prevJob: o.prevJob || null });
     process.stdout.write(JSON.stringify(r) + '\n');
     process.exitCode = r.ok ? 0 : 1;
+    // this helper outlives the join hook, so it watches the job until it binds (or tells the room it did not)
+    if (r.ok) watchStart(code, r.job).catch(() => { /* the bind deadline still respawns */ }); // no top-level await: tests require() this
   } else if (cmd === 'reap') reap(code, { claimed: extra === '--claimed' }).then(r => process.stdout.write(r + '\n'), e => die(e.message));
   else if (cmd === 'watchdog') process.stdout.write(watchdog(code) + '\n');
   else if (cmd === 'release') process.stdout.write((JOB_RE.test(String(extra)) && stopJob(extra) ? 'stopped' : 'not-stopped') + '\n');
