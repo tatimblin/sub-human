@@ -1,57 +1,63 @@
 /**
  * plugin/sub-human/lib/remote/hosting.ts: the host's side of an invite, one step each, shared by the join hook
  * (`/sub-human invite`, `/sub-human kick`: their output is a block reason, shown to the person and never to the
- * model) and the CLI (lib/cli/host.ts). The joiner's side is joinShort() below (the PAKE runs in the link daemon,
- * lib/remote/enroll.ts); the key material is lib/remote/sshkeys.ts.
+ * model) and the CLI (lib/cli/host.ts). The joiner's side is joinLine() and givePin() below; the dial is the link
+ * daemon's (lib/remote/link-connect.ts connectLink).
  *
- *   hostInvite(code, {ssh?, via?, pipe?, by?, now?}) -> {pin, ref, expires_at, short: true, locator, line, text}
- *       A short invite: the line the joiner types, `/sub-human join DEST ROOM PIN [--via J]`, the 4-digit PIN the
- *       whole secret (invites.mintShort). ssh (the default): true for this machine's own address (SUB_HUMAN_SSH_ADDR, else
- *       <user>@<hostname>), or "user@host[:port]"; via: a ProxyJump for the joiner ("bastion", "me@jump:2222"). Over ssh
- *       the PIN vouches for sshd's Ed25519 host key (sshkeys.hostKey), the stable serve shim must be writable
- *       (lib/remote/shim.ts refresh) and the enrollment door goes into authorized_keys (enroll.openDoor). pipe: a
- *       second home on this machine (`/sub-human join pipe:HOME ROOM PIN`; tests and the demo). by: the seat whose
- *       card admits the joiner (lib/remote/admission.ts). text: the copyable block for the person
+ *   hostInvite(code, {ssh?, via?, pipe?, by?, now?}) -> {pin, ref, expires_at, short: true, locator, line, word, text}
+ *       An invite line (protocol 3): `/sub-human join DEST ROOM SECRET [--via J] [--home H]`, and beside it a 4-digit
+ *       PIN the person tells apart (invites.mintInvite; SECRET: lib/remote/invite-secret.ts, its tag naming this home's
+ *       machine key). ssh (the default): true for this machine's own address (SUB_HUMAN_SSH_ADDR, else
+ *       <user>@<hostname>), or "user@host[:port]"; via: a ProxyJump for the joiner ("bastion", "me@jump:2222"); home:
+ *       added when this home is not ~/.sub-human. Over ssh the joiner's own ssh login to this account runs the stable
+ *       serve shim (lib/remote/shim.ts refresh: it must be writable); nothing is written to authorized_keys, and a
+ *       joiner without a login here is invited over the web instead (webhost.ts). pipe: a second home on this machine
+ *       (`/sub-human join pipe:HOME ROOM SECRET`; tests and the demo). by: the seat whose card admits the joiner
+ *       (lib/remote/admission.ts). text: the copyable block for the person, with the PIN apart from the line
+ *   inviteText({code, how, line, pin, ref, extra?}) -> string   that block (webhost.ts shows a web line with it)
  *   cancelInvite(code, ref?) -> {ref?, refs?, text}   burn one unused invite (a leaked one) by its ref; with no ref, the
  *       one open invite, or the list of them when there are several. One reserved for or used by a link ends that
  *       link (kick)
- *   kick(code, name, {file?}) -> {id, seats, keys, text}   end the link NAME joined over: its token stops working
- *       (hostLinks.revokeLink, which also burns an invite reserved for it), its authorized_keys lines go, its seats leave
- *       ("removed by the host"), its running `serve` processes are stopped, and a room line says so. A joiner still
- *       waiting for the card: its reserved link. A link made over this account's own ssh login (hostLinks.loginLink) has no
- *       key line: its token goes and its serve is stopped, and the text says that login can link again
- *   linkTransport({inv, name, cur?}) -> {transport, request} | null   the link transport for an sh2 invite (internal:
- *       a handoff's follower, lib/handoff.ts onMoved, afterMoved, demote): over ssh the link's own key (made once,
- *       kept), the invite's host key pinned (else the old pin for the same destination), mux from cur kept, and the
- *       request (no secret: it marks a key the new host has not let in); over ws/wss the pinned listener key. null for
- *       a locator this machine cannot use
- *   joinInvite({inv, invite, pin, name}) -> {code, request?}   the link file for an sh2 invite (demote: a machine
- *       follows a promoted room with the invite promote printed for it). RoomError INVALID for a locator this machine
+ *   kick(code, name, {file?}) -> {id, seats, keys, text}   end the link NAME joined over: its token (and key) stops
+ *       working (hostLinks.revokeLink, which also burns an invite reserved for it), its seats leave ("removed by the
+ *       host"), its running `serve` processes are stopped, and a room line says so. A link an admit let in before
+ *       protocol 3 also loses its authorized_keys line (keys: how many; nothing adds one any more). A joiner still
+ *       waiting for the card: its reserved link. A link made over this account's own ssh login (hostLinks.loginLink):
+ *       its token goes and its serve is stopped, and the text says that login can link again
+ *   linkTransport({inv, cur?}) -> LinkSpec | null   the link transport for an sh2 invite (internal: a handoff's
+ *       follower, lib/handoff.ts onMoved, afterMoved, demote): over ssh the person's own ssh login to the new host (a
+ *       login spec: its user, host, port and jump; mux and, for the same destination, the remote home kept from cur);
+ *       over ws/wss the pinned listener key and a fresh key of the link's own (XK). null for a locator this machine
  *       cannot use
- *   shimReady() -> {shim, h}   the stable serve shim written and the plain home path it carries (the card's admit);
- *       RoomError INVALID under a temp plugin root or a home path a forced command cannot carry
- *   outcome(code, {waitMs?}) -> {state: 'linked' | 'refused' | 'waiting', reason?}   the link daemon's first hello,
- *       watched for up to waitMs (LINK_JOIN_WAIT_MS): linked, refused (its reason: a wrong PIN, an expired invite, a
+ *   joinInvite({inv, invite, pin}) -> {code}   the link file for an sh2 invite (demote: a machine follows a promoted
+ *       room with the invite promote printed for it). RoomError INVALID for a locator this machine cannot use
+ *   shimReady() -> {shim, h}   the stable serve shim written and the plain home path it carries (an ssh login runs it);
+ *       RoomError INVALID under a temp plugin root or a home path ssh cannot carry
+ *   outcome(code, {waitMs?}) -> {state: 'linked' | 'pin' | 'refused' | 'waiting', reason?}   the link daemon's hellos,
+ *       watched for up to waitMs (LINK_JOIN_WAIT_MS): linked, pin (the host asks for the PIN, or the last one was wrong
+ *       or too soon: reason), refused (its reason: a burnt or expired invite, a host key the line does not name, a
  *       protocol skew), or waiting (the host's card not answered yet, or slow)
- *   joinShort({code, transport, pin, name, sid?}) -> {code}   a short invite's link file before the PAKE (the daemon
- *       runs it); join_as: the name the seat takes once the host lets this machine in (a bare /sub-human finishes the
- *       join); join_sid: the session that typed it, whose tail tells the person when that happened
- *       (lib/remote/joining.ts pendingNews)
+ *   joinLine({code, transport, word, name, sid?}) -> {code}   an invite line's link file before any dial: the transport
+ *       (a web one with a fresh key of the link's own), the SECRET word (invite) and join_as, the seat's name once the
+ *       host lets this machine in (a bare /sub-human finishes the join); join_sid: the session that typed it, whose
+ *       tail tells the person when that happened (lib/remote/joining.ts pendingNews)
+ *   givePin(code, pin) -> void   the PIN into that link file (dropped once the host answered it)
  *   joinText(code, name, outcome, {tells}?) -> string   what the joiner's person reads next; tells: this session's tail
- *       says when the host lets them in (the session that typed the PIN)
+ *       says when the host lets them in (the session that typed the line)
  *   remoteLogin() -> 'on' | 'off' | null   whether this machine takes ssh logins (macOS: Remote Login, launchctl;
  *       Linux: an sshd process or an active ssh socket unit); null when it cannot tell. SUB_HUMAN_REMOTE_LOGIN=on|off
  *       says it instead (tests). No network: an ssh invite then carries a hint when it is off
  */
 
 import os from 'node:os';
-import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as invites from './invites.ts';
 import * as hostLinks from './host-links.ts';
 import * as admission from './admission.ts';
 import * as sshkeys from './sshkeys.ts';
+import * as inviteSecret from './invite-secret.ts';
+import * as machineKey from './machine-key.ts';
 import { RoomError } from '../room/validate.ts';
 import { INVITE_TTL_MS, LINK_JOIN_WAIT_MS } from '../config.ts';
 import * as linkSocketMod from './link-socket.ts';
@@ -63,20 +69,21 @@ import * as seatsMod from '../seats.ts';
 import * as ioMod from '../io.ts';
 import * as configMod from '../config.ts';
 import { createRequire } from 'node:module';
-import type { LinkSpec, SshSpec } from './types-rest.ts';
+import type { LinkSpec } from './types-rest.ts';
 import type { InviteRecord, Invites, ParsedInvite, ShortInvite } from './types-core.ts';
 import type { Link, RoomStore } from '../room/types.ts';
 
 const require = createRequire(import.meta.url);
 
-/** A short invite as invites.mintShort makes it: the PIN, its ref and when it lapses. */
-type MintedShort = ReturnType<typeof invites.mintShort>;
-
-/** A short invite as hostInvite returns it. */
-export interface HostedInvite extends MintedShort {
+/** An invite line as hostInvite (and webhost.ts hostWeb) returns it: the PIN, its ref, when it lapses, the line. */
+export interface HostedInvite {
+  pin: string;
+  ref: string;
+  expires_at: string;
   short: true;
   locator: string;
-  hostKey?: string;
+  /** the SECRET word, as the line carries it */
+  word: string;
   line: string;
   text: string;
 }
@@ -90,9 +97,9 @@ export interface Ended {
   text: string;
 }
 
-/** The link daemon's first hello, as the joiner's person is told. */
+/** The link daemon's hellos, as the joiner's person is told. */
 export interface Outcome {
-  state: 'linked' | 'refused' | 'waiting';
+  state: 'linked' | 'pin' | 'refused' | 'waiting';
   reason?: string;
 }
 
@@ -107,7 +114,7 @@ const hostStore = (code: string): RoomStore => roomMod.hostStore(code);
 /** A line in the room from the room itself, best effort. */
 const roomLine = (code: string, text: string): void => roomMod.roomLine(roomOf(code), text);
 
-/** The stable serve shim (an ssh forced command names it); the home path it carries. */
+/** The stable serve shim (an ssh login runs it); the home path it carries. */
 function shimReady(): { shim: typeof import('./shim.ts'); h: string } {
   const shim: typeof import('./shim.ts') = require('./shim.ts');
   if (!shim.refresh({ force: true })) throw new RoomError('INVALID', `the plugin is installed under a temp folder (${shim.pluginRoot()}), which ssh would run from; install it normally (or set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow it)`);
@@ -155,21 +162,26 @@ function reachHints(dest: string, defaulted: boolean): string[] {
 }
 
 /**
- * The text a short invite is shown with: the one line the joiner types (the PIN is the whole secret), and what
- * happens next on this side (the card).
+ * The text an invite is shown with: the one line the joiner types, the PIN apart from it, and what happens next on
+ * this side (the card).
  */
-function shortText({ code, how, line, ref, extra = [] }: { code: string; how: string; line: string; ref: string; extra?: string[] }): string {
+function inviteText({ code, how, line, pin, ref, extra = [] }: { code: string; how: string; line: string; pin: string; ref: string; extra?: string[] }): string {
   return [
     `invite to room ${code} for one machine, ${how}. It works once, for ${minutes(INVITE_TTL_MS)} minutes; send them this line:`,
     '',
     `  ${line}`,
     '',
-    'The 4-digit PIN is the whole secret: send the line privately, or send it without the PIN and say the PIN. After 5 wrong PINs it stops working.',
-    'When they type it, a card here asks you to let them in; nothing gets in before you answer.',
+    `and tell them its PIN apart from the line (say it, or send it another way): ${pin}`,
+    'Their machine asks them for the PIN once this one has answered; the line alone gets nobody in, nor does the PIN. After 5 wrong PINs the invite stops working.',
+    'When they have typed both, a card here asks you to let them in; nothing gets in before you answer.',
     `Sent it to the wrong place? /sub-human invite --cancel ${ref} cancels just this invite.`,
     ...extra,
+    `They need a sub-human newer than 0.5.0-beta.15 (an older one says the PIN must be 4 digits): /plugin update sub-human.`,
   ].join('\n');
 }
+
+/** An invite line's SECRET word for this home's machine key (ssh, a pipe). */
+const machineWord = (secret: Buffer): string => inviteSecret.encode(secret, inviteSecret.tagOf(secret, 'machine', machineKey.publicKey()));
 
 function hostInvite(code: string, { ssh = true, via, pipe = false, by = null, now = Date.now() }: {
   ssh?: true | string; via?: string; pipe?: boolean; by?: string | null; now?: number;
@@ -178,9 +190,10 @@ function hostInvite(code: string, { ssh = true, via, pipe = false, by = null, no
   if (pipe) { // a second home on this machine (tests, the demo)
     if (via !== undefined) throw new RoomError('INVALID', '--via is for an ssh invite');
     const locator = linkConnect().pipeLocator();
-    const r = invites.mintShort(store, { kind: 'pipe', locator, by, now });
-    const line = `/sub-human join ${locator} ${code} ${r.pin}`;
-    return { ...r, short: true, locator, line, text: shortText({ code, how: 'from another sub-human folder on this machine', line, ref: r.ref }) };
+    const r = invites.mintInvite(store, { kind: 'pipe', locator, by, now });
+    const word = machineWord(r.secret);
+    const line = `/sub-human join ${locator} ${code} ${word}`;
+    return { pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, locator, word, line, text: inviteText({ code, how: 'from another sub-human folder on this machine', line, pin: r.pin, ref: r.ref }) };
   }
   const dest = ssh === true ? selfAddress() : String(ssh);
   if (sshT().placeholder(dest)) throw new RoomError('INVALID', `"${dest}" still has an example's placeholder: give the address the other machine reaches this one at (user@host, or set SUB_HUMAN_SSH_ADDR)`);
@@ -191,24 +204,17 @@ function hostInvite(code: string, { ssh = true, via, pipe = false, by = null, no
   if (!locator) {
     throw new RoomError('INVALID', sshT().dest(full) ? `--via "${via}" is not a plain [user@]host[:port]` : `"${dest}" is not a plain user@host[:port] or ssh alias${ssh === true ? ' (set SUB_HUMAN_SSH_ADDR, or give --ssh USER@HOST)' : ''}`);
   }
-  shimReady();
-  const hostKey = sshkeys.hostKey();
-  if (!hostKey) {
-    throw new RoomError('INVALID', 'an ssh invite needs this machine\'s ssh host key, and none is readable (/etc/ssh/ssh_host_ed25519_key.pub, or SUB_HUMAN_SSH_HOST_KEY). Someone who can ssh here can join without an invite (/sub-human join HOST ROOM), or invite over the web: /sub-human invite --web');
-  }
-  const file = path.resolve(sshkeys.authorizedKeysFile());
-  const r = invites.mintShort(store, { kind: 'ssh', locator, hostKey, by, doorFile: file, now });
-  try { (require('./enroll.ts') as typeof import('./enroll.ts')).openDoor(code, { file }); } catch (e) {
-    try { invites.burnInvite(store, r.ref); } catch { /* it lapses */ }
-    throw e;
-  }
-  const line = `/sub-human join ${dest} ${code} ${r.pin}${via ? ` --via ${via}` : ''}`;
+  const { h } = shimReady(); // their login runs <home>/bin/serve
+  const ownHome = path.resolve(h) === path.join(os.homedir(), '.sub-human'); // where their login looks by default
+  const r = invites.mintInvite(store, { kind: 'ssh', locator, by, now });
+  const word = machineWord(r.secret);
+  const line = `/sub-human join ${dest} ${code} ${word}${via ? ` --via ${via}` : ''}${ownHome ? '' : ` --home ${h}`}`;
   return {
-    ...r, short: true, locator, hostKey, line,
-    text: shortText({
-      code, how: `over ssh ${dest}${via ? ` via ${via}` : ''}`, line, ref: r.ref,
+    pin: r.pin, ref: r.ref, expires_at: r.expires_at, short: true, locator, word, line,
+    text: inviteText({
+      code, how: `over ssh ${dest}${via ? ` via ${via}` : ''}`, line, pin: r.pin, ref: r.ref,
       extra: [
-        `Their machine checks it reached this one (ssh host key ${sshkeys.fingerprint(hostKey)}) as part of the PIN check. Until you let them in they get nothing: while the invite is open, ssh here only checks PINs.`,
+        `Over ssh this needs their own ssh login to this account (${os.userInfo().username}), set up as for any ssh login: sub-human writes nothing to authorized_keys. No login here? Invite them over the web: /sub-human invite --web`,
         ...reachHints(dest, ssh === true && !process.env.SUB_HUMAN_SSH_ADDR),
       ],
     }),
@@ -234,7 +240,6 @@ function revokeInvite(code: string, store: RoomStore, ref: string, invite: Invit
     return { ...r, ref, text: `that invite ${invite.used_at ? 'was used already' : 'was being used'}; ${r.text}` };
   }
   const { state } = invites.burnInvite(store, ref);
-  try { (require('./enroll.ts') as typeof import('./enroll.ts')).sweepDoors(code); } catch { /* the tail sweeps it */ }
   if (state === 'burnt') roomLine(code, 'the host cancelled an unused invite: it no longer lets anyone in');
   const text = state === 'burnt'
     ? `cancelled the invite to room ${code} (${ref}): it lets no one in; everyone else stays`
@@ -245,7 +250,7 @@ function revokeInvite(code: string, store: RoomStore, ref: string, invite: Invit
 /** The open invites of the room: [{ref, expires_at}], oldest first. */
 function openInvites(store: RoomStore, now = Date.now()): { ref: string; expires_at: string }[] {
   return Object.entries((store.kv.get(invites.INVITES_KEY, null) || {}) as Invites)
-    .filter((e): e is [string, ShortInvite] => !!e[1] && !!e[1].short && invites.shortLive(e[1], now))
+    .filter((e): e is [string, ShortInvite] => invites.inviteOpen(e[1], now))
     .sort(([, a], [, b]) => a.created_at.localeCompare(b.created_at))
     .map(([k, i]) => ({ ref: k.slice(0, 12), expires_at: i.expires_at }));
 }
@@ -263,13 +268,14 @@ function cancelInvite(code: string, ref?: string | null, { file = sshkeys.author
   return revokeInvite(code, store, ref, found.invite, { file });
 }
 
-/** End link id of the room: its token, its key lines, its seats, its serve processes; a room line. */
+/** End link id of the room: its token, an older link's key line, its seats, its serve processes; a room line. */
 function endLink(code: string, store: RoomStore, id: string, { file = sshkeys.authorizedKeysFile() }: { file?: string } = {}): Ended {
   const r = hostLinks.revokeLink(store, id) || { link: null, invites: 0 };
+  // a link an admit let in before protocol 3 has a forced-command line for it (where its admission says, else the
+  // default file): it goes with the link. Nothing adds such a line any more
   const doors = new Set([path.resolve(file), ...admission.admissions(store, { all: true }).filter(a => a.link === id && a.door_file).map(a => path.resolve(a.door_file!))]);
   let keys = 0;
   for (const f of doors) keys += sshkeys.removeAuthorized(f, code, id);
-  try { (require('./enroll.ts') as typeof import('./enroll.ts')).sweepDoors(code); } catch { /* the tail sweeps it */ }
   spawnSync('pkill', ['-f', '--', `--stdio ${code} --link ${id}`], { stdio: 'ignore' });
   const seats = r.link ? r.link.seats || [] : [];
   const seatsLib = seatsMod;
@@ -288,46 +294,38 @@ function kick(code: string, name: string, opts: { file?: string } = {}): Ended {
 
 // ---------- the joiner ----------
 /**
- * The link file's transport for an sh2 invite, with what this machine adds to it. Over ssh: the link's own key
- * (sshkeys.linkKey in links.dirOf(code): made once, kept across a re-point), the host key the invite pins (a
- * known_hosts of the link's own; without one, the old pin is kept only for the same user@host[:port]), and mux (a
- * `sub-human prime` master) carried over from cur; request: the admit request for the invite's host. Over ws/wss: the
- * listener's X25519 key the invite carries. null for a locator this machine cannot use.
+ * The link file's transport for an sh2 invite (a handoff's follower, a demote). Over ssh: the person's own ssh login to
+ * the new host (a login spec; mux carried over from cur, and its remote home when cur reached the same destination).
+ * Over ws/wss: the listener's X25519 key the invite carries, and a fresh key of the link's own (XK). null for a
+ * locator this machine cannot use.
  */
-function linkTransport({ inv, name, cur = null }: { inv: ParsedInvite; name: string; cur?: Link | null }): { transport: LinkSpec; request: string | null } | null {
-  let transport = linkConnect().transportOf(inv.locator);
+function linkTransport({ inv, cur = null }: { inv: ParsedInvite; cur?: Link | null }): LinkSpec | null {
+  const transport = linkConnect().transportOf(inv.locator);
   if (!transport) return null;
-  const prev: { kind?: string; user?: string; host?: string; port?: unknown; knownHosts?: string; alias?: string; mux?: boolean } = (cur && cur.transport) || {};
-  let request: string | null = null;
+  const prev: { kind?: string; user?: string; host?: string; port?: unknown; mux?: boolean; remoteHome?: string } = (cur && cur.transport) || {};
   if (transport.kind === 'ssh') {
-    const dir = links().dirOf(inv.code);
-    const key = sshkeys.linkKey(dir, `sub-human:${inv.code}:${name}`);
-    let t: SshSpec = { ...transport, key: key.file };
-    const sameDest = prev.kind === 'ssh' && prev.user === t.user && prev.host === t.host && prev.port === t.port;
-    if (inv.hostKey) {
-      const alias = `sub-human-${inv.code}`;
-      const knownHosts = path.join(dir, 'known_hosts');
-      fs.writeFileSync(knownHosts, sshkeys.knownHostsLine(alias, inv.hostKey) + '\n', { mode: 0o600 });
-      t = { ...t, knownHosts, alias };
-    } else if (sameDest && prev.knownHosts && prev.alias) t = { ...t, knownHosts: prev.knownHosts, alias: prev.alias };
-    if (prev.mux === true) t = { ...t, mux: true };
-    transport = t;
-    request = sshkeys.formatRequest({ code: inv.code, ref: invites.inviteRef(inv.secret), key: key.raw, name });
+    const sameDest = prev.kind === 'ssh' && prev.user === transport.user && prev.host === transport.host && prev.port === transport.port;
+    const at = `${transport.user}@${transport.host}${transport.port ? `:${transport.port}` : ''}`;
+    const spec = sshT().loginSpec(at, { ...(transport.via ? { via: transport.via } : {}), ...(sameDest && prev.remoteHome ? { home: prev.remoteHome } : {}) });
+    if (!spec) return null;
+    return prev.mux === true ? { ...spec, mux: true } : spec;
   }
-  if (transport.kind === 'wss' || transport.kind === 'ws') { // the listener's X25519 key, pinned (transports/ws.ts)
+  if (transport.kind === 'wss' || transport.kind === 'ws') { // the listener's X25519 key, pinned; the link's own key (XK)
     if (!inv.hostKey) throw new RoomError('INVALID', 'this web invite pins no host key; ask the host for a new one');
-    transport = { ...transport, hostKey: inv.hostKey };
+    return { ...transport, hostKey: inv.hostKey, clientKey: linkConnect().linkKey(inv.code, { fresh: true }).pub.toString('base64url') };
   }
-  return { transport, request };
+  return transport;
 }
 
-function joinInvite({ inv, invite, pin, name }: { inv: ParsedInvite; invite: string; pin?: string; name: string }): { code: string; request: string | null } {
-  const lt = linkTransport({ inv, name, cur: links().get(inv.code) });
-  if (!lt) throw new RoomError('INVALID', `this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine cannot use`);
-  const { transport, request } = lt;
-  links().set(inv.code, { code: inv.code, transport, invite, pin, ...(request ? { request } : {}), created_at: new Date().toISOString() });
-  return { code: inv.code, request };
+function joinInvite({ inv, invite, pin }: { inv: ParsedInvite; invite: string; pin?: string }): { code: string } {
+  const transport = linkTransport({ inv, cur: links().get(inv.code) });
+  if (!transport) throw new RoomError('INVALID', `this invite reaches its room through "${inv.locator.split(':')[0]}", which this machine cannot use`);
+  links().set(inv.code, { code: inv.code, transport, invite, pin, created_at: new Date().toISOString() });
+  return { code: inv.code };
 }
+
+/** The PIN steps the host answered, from the link file and the daemon's stop (PIN_NEEDED, PIN_WRONG, PIN_THROTTLED). */
+const PIN_REASONS: ReadonlySet<string> = new Set(['PIN_NEEDED', 'PIN_WRONG', 'PIN_THROTTLED']);
 
 function outcome(code: string, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: number } = {}): Outcome {
   const { sleepSync } = ioMod;
@@ -335,10 +333,11 @@ function outcome(code: string, { waitMs = LINK_JOIN_WAIT_MS }: { waitMs?: number
   for (const until = Date.now() + waitMs; ; sleepSync(50)) {
     const st = l.status(code);
     const stopped = l.stopReason(st);
-    if (stopped) return { state: 'refused', reason: stopped.reason };
     const lf = links().get(code);
+    if (stopped && stopped.why && PIN_REASONS.has(stopped.why) && lf && lf.pin_wanted) return { state: 'pin', ...(stopped.why !== 'PIN_NEEDED' ? { reason: stopped.reason } : {}) };
+    if (stopped) return { state: 'refused', reason: stopped.reason };
     if (st.state === 'online' && lf && lf.token) return { state: 'linked' };
-    if (st.state === 'offline' && lf && (lf.request || lf.awaiting)) return { state: 'waiting', reason: st.reason };
+    if (st.state === 'offline' && lf && lf.awaiting) return { state: 'waiting', reason: st.reason };
     if (Date.now() >= until) return { state: 'waiting', reason: st.reason };
   }
 }
@@ -347,6 +346,11 @@ function joinText(code: string, name: string, o: Outcome, { tells = false }: { t
   const lf: Partial<Link> = links().get(code) || {};
   if (o.state === 'linked') return `the host let you in to room ${code}: type /sub-human to join it as ${name}`;
   if (o.state === 'refused') return `could not join room ${code}: ${o.reason}`;
+  if (o.state === 'pin') {
+    const w = lf.pin_wanted || { at: '' };
+    const left = typeof w.left === 'number' ? ` (${w.left} ${w.left === 1 ? 'try' : 'tries'} left)` : '';
+    return `${o.reason ? `${o.reason}` : `the host's machine has your invite${left}. Type the 4-digit PIN they told you`}: /sub-human join PIN`;
+  }
   if (lf.awaiting) {
     return `the host's machine checked your PIN. A card there now asks them to let you in as ${name} (${lf.awaiting.check}). `
       + (tells ? 'This session tells you when they do; then type /sub-human to join' : 'Once they do, type /sub-human to join')
@@ -355,19 +359,28 @@ function joinText(code: string, name: string, o: Outcome, { tells = false }: { t
   const t: { kind?: string; host?: string } = lf.transport || {};
   const cert = t.kind === 'wss' && /\.ts\.net$/i.test(String(t.host || '')) && !o.reason
     ? ' (Tailscale may be issuing a certificate: the first connection to a ts.net name can take ~20 s; it keeps trying)' : '';
-  return `still connecting to room ${code}${o.reason ? ` (${o.reason})` : cert}; ${tells ? 'this session tells you when the host lets you in, or ' : ''}type /sub-human in a moment`;
+  return `still connecting to room ${code}${o.reason ? ` (${o.reason})` : cert}; ${tells ? 'this session tells you when the host asks for the PIN or lets you in, or ' : ''}type /sub-human in a moment`;
 }
 
 /**
- * `/sub-human join DEST ROOM PIN` (or URL PIN): the link file for a short invite, before any attempt: the transport to
- * the host's door, the PIN (enroll, 0600, dropped once the host answered) and join_as, the seat's name. The daemon
- * runs the PAKE (lib/remote/enroll.ts enrollLink).
+ * `/sub-human join DEST ROOM SECRET` (or URL SECRET): the link file for an invite line, before any dial: the transport
+ * (a web one with a fresh key of the link's own), the SECRET word and join_as. The daemon dials (lib/remote/link-
+ * connect.ts connectLink): the host key the line names first, then the SECRET; the host asks for the PIN.
  */
-function joinShort({ code, transport, pin, name, sid }: { code: string; transport: LinkSpec; pin: string; name: string; sid?: string | null }): { code: string } {
-  links().set(code, { code, transport, enroll: { pin, name }, join_as: name, ...(sid ? { join_sid: sid } : {}), created_at: new Date().toISOString() });
+function joinLine({ code, transport, word, name, sid }: { code: string; transport: LinkSpec; word: string; name: string; sid?: string | null }): { code: string } {
+  const t: LinkSpec = transport.kind === 'wss' || transport.kind === 'ws'
+    ? { ...transport, clientKey: linkConnect().linkKey(code, { fresh: true }).pub.toString('base64url') } : transport;
+  links().set(code, { code, transport: t, invite: word, join_as: name, ...(sid ? { join_sid: sid } : {}), created_at: new Date().toISOString() });
   return { code };
 }
 
+/** The PIN, typed when the host asked for it: into the link file, until the host answered it. */
+function givePin(code: string, pin: string): void {
+  const l = links().get(code);
+  if (!l || typeof l.invite !== 'string') throw new RoomError('INVALID', `this machine has no invite to room ${code} waiting for a PIN`);
+  links().set(code, { ...l, pin });
+}
+
 export {
-  hostInvite, cancelInvite, kick, linkTransport, joinInvite, joinShort, outcome, joinText, shimReady, shortText, remoteLogin,
+  hostInvite, inviteText, cancelInvite, kick, linkTransport, joinInvite, joinLine, givePin, outcome, joinText, shimReady, remoteLogin,
 };

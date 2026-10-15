@@ -24,6 +24,8 @@
  *   decode(text) -> {secret, tag} | null   a word of the right length and alphabet, else null
  *   keyHolds(decoded, role, key) -> bool   the tag names this key (constant time)
  *   idOf(secret) -> string              the secret as the host's records name it (base64url, 22 characters)
+ *   admissionRef(secret) -> string      the ref (12 hex) of the join request its PIN makes on the host (invites.ts
+ *                                       admissionSlot), which the card and the joiner's screen both show
  *   ROLES                               'listener', 'machine'
  */
 import crypto from 'node:crypto';
@@ -71,6 +73,7 @@ function keyHolds(d: { secret: Buffer; tag: Buffer }, role: Role, key: unknown):
 }
 
 const idOf = (secret: Buffer): string => Buffer.from(secret).toString('base64url');
+const admissionRef = (secret: Buffer): string => crypto.createHash('sha256').update(`${idOf(secret)}/admission`).digest('hex').slice(0, 12);
 
-export { ALPHABET, SECRET_BYTES, TAG_BYTES, WORD_LEN, WORD_RE, ROLES, mint, tagOf, encode, decode, keyHolds, idOf };
+export { ALPHABET, SECRET_BYTES, TAG_BYTES, WORD_LEN, WORD_RE, ROLES, mint, tagOf, encode, decode, keyHolds, idOf, admissionRef };
 export type { Role };

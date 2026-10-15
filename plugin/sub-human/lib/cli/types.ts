@@ -91,7 +91,6 @@ export interface LinkReport {
   daemon: { running: boolean; pid?: number | null };
   state: LinkStateView;
   recent: string[];
-  request?: string;
   moved: { epoch?: number; host?: string; locator?: string; demoted: boolean; reached: boolean } | null;
   reach?: Reach;
   /** The room is known to be closed: the mirror's room Claude stopped, or the host's hello says so. */
@@ -103,11 +102,13 @@ export type KeyLine =
   | { ok: false; parse: false; raw: string; shimmed?: undefined; home?: undefined; type?: undefined; key?: undefined }
   | { ok: boolean; parse?: undefined; home: string; code: string; id: string; type: string; key: string; shimmed: boolean };
 
-/** scanAuthorizedKeys(file) -> {file, exists, lines} */
+/** scanAuthorizedKeys(file) -> {file, exists, lines, doors}: doors, the room codes of enrollment doors a 0.5.0-beta.15
+ * invite left (they only answer "update"; doctor --fix removes them) */
 export interface AuthorizedKeysScan {
   file: string;
   exists: boolean;
   lines: KeyLine[];
+  doors?: string[];
 }
 
 /** diagnose(opts) -> Report */

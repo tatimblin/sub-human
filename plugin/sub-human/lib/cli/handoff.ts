@@ -28,6 +28,7 @@ import fs from 'node:fs';
 import * as identity from '../identity.ts';
 import * as store from '../room/store.ts';
 import * as handoff from '../handoff.ts';
+import * as links from '../room/links.ts';
 import * as linkConnect from '../remote/link-connect.ts';
 import { parse } from './args.ts';
 import * as textMod from '../text.ts';
@@ -190,7 +191,8 @@ function demoteCmd(args: readonly string[], ctx: CliIo) {
   let r;
   try { r = handoff.demote(code, invite, pin); } catch (e) { die(`could not demote: ${(e as Error).message}`, 1); }
   out(`room ${code}: this machine follows its new host now${r.orphan ? `; its own log is kept in ${r.orphan}` : ''}.${r.follower ? ' Type /sub-human in your session to join it again.' : ''}`);
-  if (r.request) out('Over ssh the new host has not let this machine in yet: if it cannot connect, ask them for an invite (/sub-human invite there) and type the line it shows in your session.');
+  const t = (links.get(code) || {}).transport;
+  if (t && t.kind === 'ssh') out('Over ssh this machine reaches the new host through your own ssh login to it: if it cannot connect, ask them for an invite over the web (/sub-human invite --web there) and type the line it shows in your session.');
 }
 
 export { handoffCmd as handoff, promoteCmd as promote, demoteCmd as demote, FORK_RISK };

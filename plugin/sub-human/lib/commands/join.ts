@@ -11,9 +11,11 @@
  *             room; `/sub-human ROOM` (a room code alone): that room as the default name, never a person named after it.
  *             A word of digits is no name (it looks like a PIN)
  *   join      `/sub-human join …`: ROOM (a room code alone): that room on this machine, as `/sub-human ROOM`;
- *             HOST ROOM PIN or URL PIN: an invite (joining.linkShort: link only, never the seat in that step);
- *             HOST ROOM: over the person's own ssh login (joining.linkLogin; the seat once linked); a pipe HOST with
- *             no PIN is an invite line without its PIN
+ *             HOST ROOM SECRET or URL SECRET: an invite line (joining.linkLine: link only, never the seat in that
+ *             step; over ssh through the person's own ssh login, --via and --home as the line says); PIN (4 digits
+ *             alone): the PIN the host's machine asked for (joining.givePin; never the seat either); HOST ROOM: over
+ *             the person's own ssh login (joining.linkLogin; the seat once linked); a pipe HOST with no SECRET is an
+ *             invite line without its SECRET; a line whose SECRET is 4 digits comes from a host before protocol 3
  *   bindRoomClaude   the room Claude's own launch `/sub-human` (agent_type sub-human:room-claude + SUB_HUMAN_ROOM), or a
  *             debugging `/sub-human [ROOM]` in a room-claude agent session: binds the seat `claude`
  */
@@ -23,6 +25,7 @@ import * as linkSocket from '../remote/link-socket.ts';
 import * as linkConnect from '../remote/link-connect.ts';
 import * as links from '../room/links.ts';
 import * as invites from '../remote/invites.ts';
+import * as inviteSecret from '../remote/invite-secret.ts';
 import * as joining from '../remote/joining.ts';
 import { parse } from '../cli/args.ts';
 import { createRequire } from 'node:module';
@@ -35,10 +38,14 @@ const require = createRequire(import.meta.url);
 const wsT = (): typeof import('../remote/transports/ws.ts') => require('../remote/transports/ws.ts');
 const sshT = (): typeof import('../remote/transports/ssh.ts') => require('../remote/transports/ssh.ts');
 
-export const JOIN_USAGE = `usage: /sub-human join HOST ROOM PIN (the line from an invite). ${HELP_HINT}`;
+export const JOIN_USAGE = `usage: /sub-human join HOST ROOM SECRET (the line from an invite), then /sub-human join PIN when it asks. ${HELP_HINT}`;
+/** A line from a host before protocol 3: its last word is a 4-digit PIN, where an invite line has its SECRET. */
+const OLD_LINE = 'that invite line comes from an older sub-human on the host (a 4-digit PIN where the line\'s SECRET goes): ask the host to update (/plugin update sub-human) and invite you again';
+const NOT_WHOLE = 'the line\'s SECRET (its last long word) did not come through whole: paste the whole line the host sent you';
+const PIN_APART = 'type the line without the PIN: the host\'s machine asks for the PIN once it has answered (/sub-human join PIN)';
 const PIN_WORD = /^[0-9]{3,10}$/;
 const YOU_HINT = (d: string) => `"${d}" still has the example's placeholder: put your user name on that machine in place of ${d.split('@')[0]} (or just its ssh alias, e.g. dev)`;
-const NOT_A_NAME = (n: string) => (PIN_WORD.test(n) ? `"${n}" looks like a PIN, not a name: an invite's whole line is /sub-human join HOST ROOM PIN`
+const NOT_A_NAME = (n: string) => (PIN_WORD.test(n) ? `"${n}" looks like a PIN, not a name: a PIN goes in as /sub-human join PIN once an invite line asks for it`
   : `"${n}" isn't a name (letters, digits, . _ -, up to 32)`);
 
 /** The seat: lib/seats.ts take, as an answer. */
@@ -98,11 +105,21 @@ export const named: Verb = (args, ctx) => {
   return seat({ name, code: code || (ctx.cur && ctx.cur.name === name ? ctx.cur.code : null) }, ctx);
 };
 
-/** `/sub-human join URL PIN`: the web form of an invite. */
+/** An invite line's SECRET word, or why it is not one (an old line's PIN, a cut paste). */
+function secretOf(word: string | undefined): { word: string } | { error: string } {
+  if (word === undefined) return { error: JOIN_USAGE };
+  if (invites.SHORT_PIN_RE.test(word)) return { error: OLD_LINE };
+  const d = inviteSecret.decode(word);
+  return d ? { word: inviteSecret.encode(d.secret, d.tag) } : { error: NOT_WHOLE };
+}
+
+/** `/sub-human join URL SECRET`: the web form of an invite line. */
 function joinWeb(r: string[], flags: { as?: string; via?: string; home?: string }, ctx: Ctx): Answer {
-  if (r.length !== 2) return refused(r.length < 2 ? 'a web join needs the PIN the host sent with the address: /sub-human join URL PIN' : JOIN_USAGE);
+  if (r.length === 3 && PIN_WORD.test(r[2])) return refused(PIN_APART);
+  if (r.length !== 2) return refused(r.length < 2 ? 'a web join needs the SECRET the host sent with the address: /sub-human join URL SECRET' : JOIN_USAGE);
   if (flags.via !== undefined || flags.home !== undefined) return refused('--via and --home go with an ssh address, not a web one');
-  if (!invites.SHORT_PIN_RE.test(r[1])) return refused('the PIN is the 4 digits that came with the invite: /sub-human join URL PIN');
+  const w = secretOf(r[1]);
+  if ('error' in w) return refused(w.error);
   const BAD = 'that isn\'t a join address (https://HOST/…/sub-human/ROOM). Paste the whole line the host sent you.';
   const m = /^(https?):\/\/([^#\s]+)$/.exec(r[0]);
   const spec = m && wsT().parse(`//${m[2].replace(/\/+$/, '')}`);
@@ -113,7 +130,7 @@ function joinWeb(r: string[], flags: { as?: string; via?: string; home?: string 
   const loc = wsT().locator(spec, m[1] === 'https');
   const transport = loc && linkConnect.transportOf(loc);
   if (!transport) return refused(BAD);
-  return then(joining.linkShort({ name: n.name, code, pin: r[1], transport, sid: ctx.sid }), ctx);
+  return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid }), ctx);
 }
 
 export const join: Verb = (argv, ctx) => {
@@ -124,35 +141,42 @@ export const join: Verb = (argv, ctx) => {
   const r = p.rest;
   const { via, home } = p.flags;
   if (/^https?:\/\//.test(r[0] || '')) return joinWeb(r, p.flags, ctx);
+  if (r.length === 1 && invites.SHORT_PIN_RE.test(r[0])) { // `/sub-human join 4829`: the PIN an invite line's host asked for
+    if (via !== undefined || home !== undefined || p.flags.as !== undefined) return refused('the PIN goes alone: /sub-human join PIN (the name went with the line)');
+    return then(joining.givePin(r[0], ctx.sid), ctx);
+  }
   if (r.length === 1 && identity.CODE_RE.test(r[0])) { // `/sub-human join vole-8126`: that room on this machine
     if (via !== undefined || home !== undefined) return refused(`--via and --home go with the other machine's address: /sub-human join HOST ${r[0]}`);
     const n = nameFor(p.flags.as, ctx.cwd);
     if ('error' in n) return refused(n.error);
     return seat({ name: n.name, code: r[0], isDefault: p.flags.as === undefined }, ctx);
   }
-  if (r.length < 2 || r.length > 3) return refused(r.length === 1 ? `which room? ${JOIN_USAGE}` : JOIN_USAGE);
-  const [dest, code, pin] = r;
+  if (r.length === 4 && PIN_WORD.test(r[3])) return refused(PIN_APART);
+  if (r.length < 2 || r.length > 3) return refused(r.length === 1 ? (PIN_WORD.test(r[0]) ? 'a PIN is 4 digits: /sub-human join PIN' : `which room? ${JOIN_USAGE}`) : JOIN_USAGE);
+  const [dest, code, word] = r;
   if (!identity.CODE_RE.test(code)) return refused(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
   const local = /^pipe:\//.test(dest) || dest.startsWith('/'); // a second home on this machine (tests, the demo)
-  if (pin !== undefined) {
-    if (!invites.SHORT_PIN_RE.test(pin)) return refused('the PIN is the 4 digits that came with the invite: /sub-human join HOST ROOM PIN');
-    if (home !== undefined) return refused('--home goes with a join over your own ssh login (no PIN): /sub-human join HOST ROOM --home PATH');
+  if (word !== undefined) {
+    const w = secretOf(word);
+    if ('error' in w) return refused(w.error);
     const n = nameFor(p.flags.as, ctx.cwd);
     if ('error' in n) return refused(n.error);
     if (local) {
-      if (via !== undefined) return refused('--via goes with an ssh address');
+      if (via !== undefined || home !== undefined) return refused('--via and --home go with an ssh address');
       const transport = linkConnect.transportOf(dest.startsWith('/') ? `pipe:${dest}` : dest);
-      return transport ? then(joining.linkShort({ name: n.name, code, pin, transport, sid: ctx.sid }), ctx) : refused(`"${dest}" isn't a sub-human folder on this machine`);
+      return transport ? then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid }), ctx) : refused(`"${dest}" isn't a sub-human folder on this machine`);
     }
     if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
-    const loc = linkConnect.sshLocator(sshT().withUser(dest), via !== undefined ? { via } : {});
-    if (!loc) return refused(via !== undefined && linkConnect.sshLocator(dest) ? `--via "${via}" isn't a plain [USER@]HOST[:PORT] list` : `"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
-    const transport = linkConnect.transportOf(loc);
-    if (!transport) return refused(`"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
-    return then(joining.linkShort({ name: n.name, code, pin, transport, sid: ctx.sid }), ctx);
+    const full = sshT().withUser(dest);
+    if (!sshT().dest(full)) return refused(`"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
+    if (via !== undefined && !sshT().jump(via)) return refused(`--via "${via}" isn't a plain [USER@]HOST[:PORT] list`);
+    // over ssh an invite line goes through the person's own ssh login to the host (a login spec), as the line says
+    const transport = sshT().loginSpec(full, { ...(via !== undefined ? { via } : {}), ...(home !== undefined ? { home } : {}) });
+    if (!transport) return refused(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
+    return then(joining.linkLine({ name: n.name, code, word: w.word, transport, sid: ctx.sid }), ctx);
   }
-  // no PIN: over the person's own ssh login (a second home on this machine has none: the line lost its PIN)
-  if (local) return refused(joining.noPin(dest, code));
+  // no SECRET: over the person's own ssh login (a second home on this machine has none: the line lost its SECRET)
+  if (local) return refused(joining.noSecret(dest, code));
   if (sshT().placeholder(dest)) return refused(YOU_HINT(dest));
   if (!sshT().dest(sshT().withUser(dest))) return refused(`"${sshT().withUser(dest)}" isn't a plain USER@HOST[:PORT] or ssh alias. ${JOIN_USAGE}`);
   if (via !== undefined && !sshT().jump(via)) return refused(`--via "${via}" isn't a plain [USER@]HOST[:PORT] (several hops: comma-separated).`);

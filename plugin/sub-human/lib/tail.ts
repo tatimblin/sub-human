@@ -28,7 +28,7 @@
  *   flushLine(flush) -> text | null   what became of the @room posts queued while the link was down (the daemon's
  *       document `link` flush {sent, unsent: [{text, why}]}): appended to LINK_BACK, or alone when some were not sent
  *   deps (tests): openRoom(code) -> Room (lib/room.ts open), heartbeat(me) (identity.heartbeat), rows, session (lib/room/session.ts), roomClaude,
- *       linkStatus(code) (lib/remote/link.ts status), admission (lib/remote/admission.ts), sweepDoors(code),
+ *       linkStatus(code) (lib/remote/link.ts status), admission (lib/remote/admission.ts),
  *       sweepSeats(code) (lib/seats.ts sweep: on the host, every health tick), pendingNews(sid) (lib/remote/joining.ts:
  *       a join this session started with a PIN)
  *
@@ -52,16 +52,16 @@
  *                             link's linkLine each time it goes off (FORK, STOPPED or OFFLINE; nothing while it stays so)
  *                             and LINK_BACK ("the connection to the room is back; …", with flushLine) once it is online
  *                             again: one quiet line, no "left"/"joined" (the daemon renews the seat's lapsed lease)
- *   A short code's join request (lib/remote/admission.ts), on the host: a chat line for the person and a wake that
- *   tells Claude to open the card ("admit REF"), once per seat it is for; a request that lapsed is a health line; the
- *   enrollment door is swept (lib/remote/enroll.ts sweepDoors) every 30 s.
+ *   An invite's join request (lib/remote/admission.ts), on the host: a chat line for the person and a wake that
+ *   tells Claude to open the card ("admit REF"), once per seat it is for; a request that lapsed is a health line.
  *   A planned handoff (lib/handoff.ts): the ask waiting for this seat (its machine's mirror) is a chat line for the
  *   person and a wake that tells Claude to open the card, once; the asker gets a health line when the ask is
  *   declined or expires; host_changed is a chat line for every member. A session whose room changed kind (a
  *   mirror that became the host, or the reverse) is started again over the new store.
- * A session with no seat that started a join with a PIN (its link file's join_sid; the hooks module starts the tail for
- * it: mod-hello's pending) is looked up every resolveMs while the host's card has not answered, and gets one chat line
- * when it did: "the host let you in to room CODE: type /sub-human to join it as NAME", or why the join stopped.
+ * A session with no seat that started an invite join (its link file's join_sid; the hooks module starts the tail for
+ * it: mod-hello's pending) is looked up every resolveMs until the host let it in, and gets one chat line per answer:
+ * the host asks for the PIN (or again, after a wrong one), "the host let you in to room CODE: type /sub-human to join
+ * it as NAME", or why the join stopped.
  * A session never re-reads the log from byte 0: backlog from room.readView({after: cursor}), live entries from
  * room.tailer(). The health tick also renews the seat's lease (identity.heartbeat).
  */
@@ -116,9 +116,8 @@ interface TailDeps {
   linkStatus(code: string): LinkStatus;
   handoff: HandoffLib;
   admission: AdmissionLib;
-  sweepDoors(code: string): unknown;
   sweepSeats(code: string): unknown;
-  pendingNews(sid: string): { state: 'waiting' | 'linked' | 'refused'; code: string; text: string } | null;
+  pendingNews(sid: string): { state: 'waiting' | 'pin' | 'linked' | 'refused'; code: string; text: string } | null;
 }
 /** The deps as a session uses them: the lazily loaded modules behind a getter. */
 type Deps = Omit<TailDeps, 'roomClaude' | 'handoff' | 'admission'> & {
@@ -161,7 +160,6 @@ interface FormatCtx {
 type Cursor = ReturnType<typeof cursorKeeper>;
 
 const { envMs } = config;
-const DOOR_SWEEP_MS = 30_000;
 const STATE_KINDS = new Set(['proposal', 'signoff', 'objection', 'decision']);
 const isMove = (e: Entry) => e.kind === 'member_joined' || e.kind === 'member_left';
 
@@ -590,23 +588,21 @@ function startSession(me: Identity, ctx: Ctx): Session {
     askKey = key;
     emit([{ type: 'health', text: `room handoff: ${d.to} ${state === 'refused' ? 'declined to host' : 'did not answer the ask to host'} room ${s.code}; this machine stays the host` }]);
   }
-  // A short code's join request (lib/remote/admission.ts), on the host: this seat's card, opened by its Claude once; a
-  // request nobody answered lapses with a line. The enrollment door closes once no ssh code is open (every SWEEP_MS).
-  let doorsSwept = 0;
+  // An invite's join request (lib/remote/admission.ts), on the host: this seat's card, opened by its Claude once; a
+  // request nobody answered lapses with a line.
   function admitHealth() {
     const adm = deps.admission();
     for (const q of adm.lapse(s.code, { now: clock.now() })) {
-      emit([{ type: 'health', text: `room: ${adm.describe(q)} typed your PIN, but nobody let them in within ${Math.round((Date.parse(q.expires_at) - Date.parse(q.created_at)) / 60_000)} minutes; their join stopped` }]);
+      emit([{ type: 'health', text: `room: ${adm.describe(q)} typed your invite and its PIN, but nobody let them in within ${Math.round((Date.parse(q.expires_at) - Date.parse(q.created_at)) / 60_000)} minutes; their join stopped` }]);
     }
     for (const q of adm.pending(s.code, { now: clock.now() })) {
       if ((q.told || []).includes(me.name) || !adm.targets(s.code, q).includes(me.name)) continue;
       adm.markTold(s.code, q.ref, me.name);
       emit([
-        { type: 'chat', lines: [`room: ${adm.describe(q)} typed your PIN and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})`] },
-        { type: 'wake', text: `${FOR_CLAUDE} ${adm.describe(q)} typed the PIN of ${me.name}'s invite from another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
+        { type: 'chat', lines: [`room: ${adm.describe(q)} typed your invite and its PIN and wants to join; your Claude shows you a card (or: /sub-human admit ${q.ref})`] },
+        { type: 'wake', text: `${FOR_CLAUDE} ${adm.describe(q)} typed ${me.name}'s invite line and its PIN on another machine and asks to join room ${s.code}. Only ${me.name} can let them in: call AskUserQuestion with the question "admit ${q.ref}"; the hooks show the card. Don't answer for ${me.name} or post about it.` },
       ]);
     }
-    if (clock.now() - doorsSwept >= DOOR_SWEEP_MS) { doorsSwept = clock.now(); deps.sweepDoors(s.code); }
   }
   function health() {
     try { deps.heartbeat(me); } catch (e) { log('seat heartbeat', e); } // the seat's lease (identity.heartbeat)
@@ -681,7 +677,6 @@ function runTail({
     linkStatus: deps.linkStatus || ((code: string) => (require('./remote/link-socket.ts') as typeof import('./remote/link-socket.ts')).status(code)),
     handoff: deps.handoff ? () => deps.handoff! : (() => { let m: HandoffLib | undefined; return () => m || (m = require('./handoff.ts') as HandoffLib); })(),
     admission: deps.admission ? () => deps.admission! : (() => { let m: AdmissionLib | undefined; return () => m || (m = require('./remote/admission.ts') as AdmissionLib); })(),
-    sweepDoors: deps.sweepDoors || ((code: string) => (require('./remote/enroll.ts') as typeof import('./remote/enroll.ts')).sweepDoors(code)),
     sweepSeats: deps.sweepSeats || ((code: string) => (require('./seats.ts') as typeof import('./seats.ts')).sweep(code)),
     pendingNews: deps.pendingNews || ((s: string) => {
       // a cheap look first: the link files (most unseated tails have no pending join); the link code only when one is
@@ -703,7 +698,7 @@ function runTail({
     try { write(JSON.stringify(ev) + '\n', () => {}); } catch (e) { log('seat event', e); }
   };
   let sess: Session | null = null, timer: TimerHandle | null = null, stopped = false;
-  // a join this session started with a PIN: what became of it, said once per state (waiting: look again soon)
+  // an invite join this session started: what became of it, said once per state and text (waiting: look again soon)
   let told: string | null = null;
   const news = (): boolean => {
     if (!sid) return false;
@@ -711,7 +706,7 @@ function runTail({
     try { n = d.pendingNews(sid); } catch (e) { log('pending join', e); return false; }
     if (!n) return false;
     if (n.state === 'waiting') return true;
-    const key = `${n.code}/${n.state}`;
+    const key = `${n.code}/${n.state}/${n.text}`; // a PIN asked for again (wrong, too soon) is news again
     if (key === told) return false;
     told = key;
     const ev: TailEvent = { type: 'chat', lines: [n.text] };
