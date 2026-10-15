@@ -8,7 +8,7 @@
 // It is one log.jsonl, as a room from before segments: the first append seals it (lib/room/log-io.ts), so "cold"
 // in-process includes that one rotation. Then a fresh process times its first append and status line over the
 // segmented room (snapshot + active segment): the cold cost of every hook and status line from then on, budgeted
-// at COLD (generous: wall clock in a child).
+// at COLD (generous: wall clock in a child; the best of three).
 //
 // Skipped under SUB_HUMAN_TEST_THREAD_STORE (every store call would cross the bridge: another measurement) and with
 // SUB_HUMAN_SKIP_PERF=1 (a loaded machine: the numbers are wall clock). SUB_HUMAN_PERF_REPORT=1 prints the numbers.
@@ -114,9 +114,13 @@ test(`perf: an @room post and the status line over a ${N}-entry log stay in budg
     let a = t(); s.append({ kind: 'say', text: 'cold words' }, { via: 'human', from: 'alice' }); const append = t() - a;
     a = t(); agentStatusline(${JSON.stringify(panel)}, { env: { NO_COLOR: '1' } }); const statusline = t() - a;
     process.stdout.write(JSON.stringify({ append, statusline }));`;
-  const r = spawnSync(process.execPath, ['-e', src], { env: h.childEnv(), encoding: 'utf8' });
-  assert.equal(r.status, 0, r.stderr);
-  const fresh = JSON.parse(r.stdout) as { append: number; statusline: number };
+  // the best of three fresh processes: one sample of wall clock in a child is at the mercy of a busy machine
+  const runs = [0, 1, 2].map(() => {
+    const r = spawnSync(process.execPath, ['-e', src], { env: h.childEnv(), encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    return JSON.parse(r.stdout) as { append: number; statusline: number };
+  });
+  const fresh = { append: Math.min(...runs.map(x => x.append)), statusline: Math.min(...runs.map(x => x.statusline)) };
   if (process.env.SUB_HUMAN_PERF_REPORT === '1') {
     process.stderr.write(`perf N=${N} segmented, a fresh process: append cold ${fresh.append.toFixed(1)} ms; status line cold ${fresh.statusline.toFixed(1)} ms\n`);
   }
