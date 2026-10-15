@@ -32,6 +32,15 @@ Hardening from the October 2026 review (branch `fix/stage0-hardening`).
 - **Presence has one writer**, the module: a seat just taken or put back shows none until its person types (it showed "working"). An `@room` typed in a session with no seat is refused by the module itself, in the same words.
 - **After `--resume`**, the rows come back through a wake the module submits; the person sees one line, "restoring this session's rows".
 
+### Commands (stage 3)
+- **The joiner is told when the host let them in.** After `/sub-human join HOST ROOM PIN`, the session that typed it shows one dim line once the host's card answers: `the host let you in to room vole-8126: type /sub-human to join it as carol` (or why the join stopped). Before, they had to guess when to type `/sub-human`. The join still never takes the seat in the step that carries the PIN.
+- **A join line without its PIN says so.** `/sub-human join HOST ROOM` with no PIN is the join over your own ssh login, and now says it; a refused login adds that an invite's line ends with its 4-digit PIN. From a second sub-human folder (`pipe:`), which has no login path, it says the line lost its PIN.
+- **An invite to this machine's own name says it is a guess.** With no `--ssh` and no `SUB_HUMAN_SSH_ADDR`, the invite says it used this machine's host name (a `.local` name reaches the same local network only) and how to give another, and, when Remote Login is off (or no sshd runs), that the joiner's ssh will fail and `/sub-human invite --web` is the other way.
+- **`/sub-human join vole-8126` joins that room on this machine** (it asked "which room?"), as `/sub-human vole-8126` does; **`/sub-human help WORDS` shows help** (it was refused); **a word of digits is no name** (`/sub-human 4829` says it looks like a PIN).
+- **`sub-human` with an unknown command prints its usage one command group per line**, not as one 600-character line.
+- **SKILL.md's fallback no longer blames hooks being off** whenever the SUB-HUMAN block is missing: it names both causes (hooks off, or the hook failed before answering, which the terminal shows) and the next step for each.
+- **Inside:** `/sub-human` is a table of verbs (`lib/commands/`); the join hook only reads who asked and renders the one answer. The hidden rule for anything PIN-shaped is the router's, decided before any verb parses. Taking a seat is `lib/seats.ts` take, the joiner's link steps `lib/remote/joining.ts`.
+
 ### Tests
 - **The plugin's node tests are TypeScript** (`plugin/sub-human/test/**/*.node-test.ts`, checked by `npm run typecheck` through `tsconfig.test.json`), named so `claude plugin test` never collects them; new cases for unreadable hook stdin, the join's time budget, a mirror's first sync of a large log and of a host log with a corrupt line, a forged line in MCP `read`, and a model-supplied `planFilePath`.
 
