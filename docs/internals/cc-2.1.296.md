@@ -50,3 +50,14 @@ In 2.1.292 `claude plugin test` had no bottom for a plugin's own `$.session.appe
 ## Currently passing entries
 
 The other 74 CONTRACT entries and `daemon-env-names` pass unchanged at their 2.1.296 sites. `PROBED_VERSION` is now `2.1.296`; `MIN_VERSION` stays `2.1.292` (nothing the plugin needs is newer).
+
+## Live verification (October 2026, stage 8c)
+
+What four live runs on 2.1.296 showed about Claude Code, and what the plugin now does about it (the changelog's "Live verification fixes" lists the fixes):
+
+- **A `$.ui.log` notice is saved.** Each one lands in the session's transcript as a `system`/`informational` row, so a model that can read the transcript can read it. An invite's line and PIN therefore go to `$.ui.status` (the typings: a status line under the prompt that "leaves the transcript and the model untouched", one per plugin) for the invite's life; the notices say where they are. Not yet seen live: that `$.ui.status` is drawn whole at narrow widths.
+- **Prompts typed at Claude Code stay in `~/.claude/history.jsonl` and the transcript**, a `/sub-human join PIN` included. The guards deny a model reading either (Read, Grep, and a Bash command that names or globs them).
+- **A plugin prompt short enough for its speaker label comes to `ui.render` with `isExpanded: true`**, framed ("The sub-human plugin sent a message: …", CONTRACT `plugin-prompt-frame`). A render hook that passed every expanded row drew every wake raw; `mod/render.ts` now draws a room prompt expanded too, the frame dim.
+- **A UserPromptSubmit `decision: block` puts the prompt back in the input** and draws "UserPromptSubmit operation blocked by hook:". Refusals the person types again are a stop (`continue: false`) now, as the `✓ sent` receipt is (CONTRACT `ups-stop-frame`).
+- **`/clear` in the room's Claude ran** (its conversation cleared, the seat rebound). `command.run` fires for every slash command, built-ins included (the typings' own example is `compact`); the module answers a typed one there with the refusal. Not yet seen live on `/clear` itself.
+- **`idle_prompt` may never come**: every member showed "working" for minutes. The module writes "idle" at the end of a turn a typed prompt started.
