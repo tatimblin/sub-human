@@ -3,7 +3,8 @@
  * (<home>/rooms/<code>, or {dir}). lib/room/store.ts documents the interface; this is the only module that knows a
  * room's file names (test/store-bypass.node-test.ts) and the only one that imports log-io.ts (the log's bytes).
  *
- *   <room>/log.jsonl        the log (log-io.ts); log.idx its checkpoint; log.jsonl.lock the append lock
+ *   <room>/log.jsonl        the log's active segment (log-io.ts): log-NNNN.jsonl its sealed segments, snapshot.json
+ *                           what they hold in short; log.jsonl.lock the append lock (log-io.ts names these files)
  *   <room>/log.moved        a host_changed was placed here: place() reads the log's host before each line
  *                           (rules.ts checkHere: the old host's log takes no more lines). Without it, an append
  *                           reads only the log's tail.
@@ -18,8 +19,9 @@
  * time: an append does not recompute them, inside the log lock or out. trust is trustOver(this room's keys).
  *
  * For the mirror (lib/room/store-mirror.ts composes one of these over its directory; the link daemon is its one
- * writer): appendVerbatim(line) (a host line as the host stored it), reset(keys) (forget the log, its checkpoint,
- * the members document and the documents named).
+ * writer): appendVerbatim(line) (a host line as the host stored it), installSnapshot(wire) (a first sync that began
+ * from the host's snapshot), reset(keys) (forget the log, its segments and snapshot, the members document and the
+ * documents named). rotate() seals the active segment now (tests; an append rotates on its own when due).
  */
 
 import nodeFs from 'node:fs';
@@ -38,12 +40,10 @@ import type { KeyObject } from 'node:crypto';
 import type { LockOpts } from '../lock.ts';
 import type {
   AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, KvApi, KvUpdateOpts, Members, MembersApi,
-  Payload, Placed, PlaceOpts, ReadViewOpts, RoomStore, Tailer, TailerFs, Trust, TrustCtx,
+  Payload, Placed, PlaceOpts, ReadViewOpts, RoomStore, SnapshotWire, Tailer, TailerFs, Trust, TrustCtx,
 } from './types.ts';
 
 const fs = nodeFs;
-const LOG = 'log.jsonl';
-const IDX = 'log.idx';
 const MOVED = 'log.moved';
 const MEMBERS = 'members.json';
 
@@ -114,33 +114,35 @@ class FsRoomStore implements RoomStore {
     };
   }
   get dir(): string { return this._dir || roomDir(this.code); }
-  get logFile(): string { return path.join(this.dir, LOG); }
-  get _idxFile(): string { return path.join(this.dir, IDX); }
+  /** the active segment (tests write around the store through it) */
+  get logFile(): string { return logIo.activeFile(this.dir); }
   get _membersFile(): string { return path.join(this.dir, MEMBERS); }
   exists(): boolean { return fs.existsSync(this.dir); }
 
   // ----- reading -----
-  readAll(): readonly Entry[] { return logIo.readAll(this.logFile); }
+  readAll(): readonly Entry[] { return logIo.readAll(this.dir); }
   readById(ids: number | string | readonly (number | string)[]): Entry[] {
     const want = (Array.isArray(ids) ? ids : [ids]).map(Number);
     const byId = new Map(this.readAll().map(e => [e.id, e]));
     return want.filter(i => byId.has(i)).map(i => byId.get(i)!);
   }
   readAfter(seq: number, filterFn: (e: Entry) => boolean = () => true): Entry[] { return this.readAll().filter(e => e.id > seq && filterFn(e)); }
-  lastId(): number { return logIo.lastId(this.logFile); }
+  lastId(): number { return logIo.lastId(this.dir); }
   readView({ after = 0 }: ReadViewOpts = {}): readonly Entry[] {
-    return after > 0 ? logIo.readView(this.logFile, this._idxFile, { after }) : this.readAll();
+    return after > 0 ? logIo.readView(this.dir, { after }) : this.readAll();
   }
-  tailer(opts: { fs?: TailerFs; after?: number } = {}): Tailer { return logIo.tailer(this.logFile, opts); }
-  lineHash(id: number): string | null { return logIo.lineHash(this.logFile, id); }
-  validateChain(): ChainCheck { return logIo.validateChain(this.logFile); }
-  verifyChain(opts: { fromOffset?: number; prev?: string; save?: boolean | 'lazy' } = {}): ChainVerify {
-    return logIo.verifyChain(this.logFile, this._idxFile, opts);
-  }
+  recentFrom(): number { return logIo.recentFrom(this.dir); }
+  snapshot(): (SnapshotWire & { held: number }) | null { return logIo.snapshotOf(this.dir); }
+  tailer(opts: { fs?: TailerFs; after?: number } = {}): Tailer { return logIo.tailer(this.dir, opts); }
+  lineHash(id: number): string | null { return logIo.lineHash(this.dir, id); }
+  validateChain(): ChainCheck { return logIo.validateChain(this.dir); }
+  verifyChain(opts: { fromOffset?: number; prev?: string } = {}): ChainVerify { return logIo.verifyChain(this.dir, opts); }
+  /** Seal the active segment now (an append does it once the segment is due): false when there is nothing to seal. */
+  rotate(): boolean { return fs.existsSync(this.dir) && logIo.rotate(this.dir); }
 
   /** pins and host, carried forward over the non-chat entries the log gained since the last call. */
   _state(): Derived {
-    const { marked, rest } = logIo.nonChat(this.logFile, this._idxFile);
+    const { marked, rest } = logIo.nonChat(this.dir);
     let d = this._derived;
     if (d.n > marked.length || (d.n > 0 && marked[d.n - 1] !== d.last)) d = NONE; // rebuilt or rewritten: from the start
     if (d.n < marked.length) d = carry(d, marked, d.n);
@@ -166,7 +168,7 @@ class FsRoomStore implements RoomStore {
     const p = admit(this.code, payload, opts);
     fs.mkdirSync(d, { recursive: true, mode: 0o700 });
     const moved = path.join(d, MOVED);
-    return logIo.appendLocked(this.logFile, tail => {
+    return logIo.appendLocked(d, tail => {
       const host = p.kind === 'host_changed' || fs.existsSync(moved) ? this.hostState() : undefined;
       const r = placeAfter(p, { keys: this._keys, host, machine: machineId(), ...tail, now: Date.now() });
       if (r.e.kind === 'host_changed') fs.writeFileSync(moved, '', { mode: 0o600 });
@@ -175,11 +177,9 @@ class FsRoomStore implements RoomStore {
   }
 
   setAside(): string | null {
-    if (!fs.existsSync(this.logFile)) return null;
     const file = path.join(this.dir, `orphaned-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl`);
-    fs.renameSync(this.logFile, file);
-    for (const f of [this._idxFile, this._membersFile, path.join(this.dir, MOVED)]) fs.rmSync(f, { force: true });
-    logIo.forget(this.logFile);
+    if (!logIo.setAside(this.dir, file)) return null;
+    for (const f of [this._membersFile, path.join(this.dir, MOVED)]) fs.rmSync(f, { force: true });
     this._derived = NONE;
     return file;
   }
@@ -188,13 +188,16 @@ class FsRoomStore implements RoomStore {
   /** One line as the host stored it, at the end of the log (the mirror checked that it chains). */
   appendVerbatim(line: string): void {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
-    logIo.appendVerbatim(this.logFile, line);
+    logIo.appendVerbatim(this.dir, line);
   }
-  /** Forget everything synced: the log, its checkpoint, the members document, and the documents named. */
+  /** The host's snapshot as this log's start (the mirror checked it: lib/room/snapshot.ts problem); PROTOCOL when the
+   * log holds lines already. */
+  installSnapshot(wire: SnapshotWire): void { logIo.install(this.dir, wire); this._derived = NONE; }
+  /** Forget everything synced: the log, its segments and snapshot, the members document, and the documents named. */
   reset(docs: readonly string[] = []): void {
-    for (const f of [this.logFile, this._idxFile, this._membersFile]) fs.rmSync(f, { force: true });
+    logIo.remove(this.dir);
+    fs.rmSync(this._membersFile, { force: true });
     for (const key of docs) fs.rmSync(this._kvFile(key), { force: true });
-    logIo.forget(this.logFile);
     this._derived = NONE;
   }
 

@@ -402,6 +402,53 @@ export interface ChainVerify {
   error?: string;
 }
 
+/**
+ * What a placement reads of an entry it did not keep whole (lib/room/snapshot.ts window): enough for rules.ts
+ * scanTail's rate buckets and nonce replay check.
+ */
+export interface WindowItem {
+  id: number;
+  at: string;
+  from: string;
+  via?: string;
+  to?: string;
+  nonce?: string;
+}
+
+/**
+ * A log's snapshot as the wire carries it (lib/room/snapshot.ts; the subscribe stream's 'snapshot' event): the chain
+ * head after the sealed lines and what a reader needs of them. entries: every non-chat entry with id <= id, in order
+ * (the fold's input: proposals, answers, decisions, tasks, joins and leaves, host changes); window: the entries of
+ * the last WINDOW_MS before line (rate buckets and nonces); pins: name -> PEM, the first member_joined key per name;
+ * host: the last host_changed. pins and host are what entries give (a reader checks them, never trusts them).
+ */
+export interface SnapshotWire {
+  id: number;
+  hash: string;
+  /** the line with id `id`, verbatim (hash12(line) === hash) */
+  line: string;
+  /** how many lines the snapshot covers */
+  count: number;
+  entries: Entry[];
+  window: WindowItem[];
+  pins: Record<string, string>;
+  host: HostState;
+}
+
+/** <room>/snapshot.json: the wire form plus where this machine keeps the lines it covers (lib/room/log-io.ts). */
+export interface LogSnapshot extends SnapshotWire {
+  v: 1;
+  /** the sealed segments log-0001.jsonl .. log-<seg>.jsonl on this machine (0: none) */
+  seg: number;
+  /** [segment number, its first id, its last id] per sealed segment */
+  segs: [number, number, number][];
+  /** the first id whose line this machine holds (1; a mirror that began from the host's snapshot: that id + 1) */
+  held: number;
+  /** how many lines came before `held` (0; a mirror that began from the host's snapshot: that snapshot's count) */
+  base: number;
+  at: string;
+}
+
 /** The fs calls a tailer reads with (tests inject faults). */
 export type TailerFs = Pick<typeof nodeFs, 'statSync' | 'openSync' | 'readSync' | 'closeSync' | 'fstatSync'>;
 
@@ -440,10 +487,14 @@ export interface RoomStore {
   readAfter(id: number, filter?: (e: Entry) => boolean): Entry[];
   lastId(): number;
   readView(opts?: ReadViewOpts): readonly Entry[];
+  /** the id after which readView reads only the newest segment (the snapshot's id; 0: no snapshot, the whole log) */
+  recentFrom(): number;
+  /** the log's snapshot (the subscribe stream's, plus the first id this store holds), null before any rotation */
+  snapshot(): (SnapshotWire & { held: number }) | null;
   tailer(opts?: { fs?: TailerFs; after?: number }): Tailer;
   lineHash(id: number): string | null;
   validateChain(): ChainCheck;
-  verifyChain(opts?: { fromOffset?: number; prev?: string; save?: boolean | 'lazy' }): ChainVerify;
+  verifyChain(opts?: { fromOffset?: number; prev?: string }): ChainVerify;
   getCursor(reader: string): number;
   setCursor(reader: string, id: number): void;
   members: MembersApi;

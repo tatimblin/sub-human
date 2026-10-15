@@ -4,7 +4,8 @@
  *   trust.ts     whether a via=human entry is the person's (verify against keys passed in; no I/O)
  *   rules.ts     what a placement checks and stamps (toPayload, admit, placeAfter, scanTail, checkSigned, checkHere;
  *                pure), and the legacy display mapping (normalize)
- *   log-io.ts    the log's bytes (only fs-store.ts imports it)
+ *   log-io.ts    the log's bytes, in segments with a snapshot (only fs-store.ts imports it)
+ *   snapshot.ts  a log's snapshot: what the sealed lines give (pure; the mirror checks the host's with it)
  *   fs-store.ts  FsRoomStore: a room directory on this machine (the only module that knows its file names)
  *   registry.ts  which store a code opens (open, setBackend) and the rooms on this machine; keys.ts the seats' keys
  * plus store-mirror.ts (MirrorRoomStore, a room hosted elsewhere: it composes an FsRoomStore over its mirror
@@ -47,15 +48,21 @@
  *   readView({after}) -> readonly Entry[]   non-chat entries + entries with id > after: what a hook judges delivery
  *                                           against, the same answer as readAll() for the entries after `after`
  *                                           (after <= 0: readAll(); Infinity: non-chat only)
+ *   recentFrom() -> id                      the snapshot's id (0 before any rotation): readView({after: it}) reads
+ *                                           only the newest segment past the snapshot (room.ts readRecent)
+ *   snapshot() -> SnapshotWire & {held} | null   the log's snapshot (FsRoomStore: <room>/snapshot.json, written at
+ *                                           each rotation; lib/room/log-io.ts): what the subscribe stream sends a
+ *                                           new mirror instead of every line (lib/remote/server.ts); held: the first
+ *                                           id this store holds the line of
  *   tailer({fs, after}?) -> {poll() -> {entries, lines, reset}}   entries appended after the moment it was made
  *                                           (after: an id, from the first line after it instead); lines: the same
  *                                           lines as stored, verbatim (what the remote server streams). fs: test hook
  *   lineHash(id) -> string | null           hash12 of the stored line with that id (the next line's prev; id 0:
  *                                           hash12(''), the empty log), null when the log has no such line
  *   validateChain() -> {ok, count, badAt?, line?}   the whole prev chain
- *   verifyChain({fromOffset, prev, save}?) -> {ok, count, checked, offset, id, hash, from, badAt?, line?}
- *       incremental, from the checkpoint (FsRoomStore: <room>/log.idx), which it advances (save 'lazy': only every
- *       64 KiB or minute of log)
+ *   verifyChain({fromOffset, prev}?) -> {ok, count, checked, offset, id, hash, from, badAt?, line?}
+ *       incremental, from this process's checkpoint (in memory), which it advances over the newest segment (the
+ *       snapshot vouches for the sealed ones: a segment is sealed only once it chains)
  *   getCursor(reader) -> id, setCursor(reader, id)           per-reader positions
  *   isHost -> bool                          this machine holds the room (FsRoomStore: true). Only there do the
  *                                           room Claude's spawn, reap and watchdog and proposal decisions run.

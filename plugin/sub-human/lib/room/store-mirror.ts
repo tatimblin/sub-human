@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/lib/room/store-mirror.ts: MirrorRoomStore, the RoomStore of a room hosted on another machine:
  * it composes an FsRoomStore over a directory the link daemon (lib/remote/link.ts) keeps byte-identical to the
- * host's log, so every reader (readView, log.idx, tailer, verifyChain, rows, digests) is that store's, unchanged. Only writes cross the
+ * host's log, so every reader (readView, the snapshot, tailer, verifyChain, rows, digests) is that store's, unchanged. Only writes cross the
  * wire, as named ops through lib/remote/bridge.ts (a sync call from the hook's thread, with a deadline) to the
  * daemon's socket. The bridge (a worker thread) starts at the process's first op, so a hook that only reads
  * starts none. store.open(code) returns one for a code that lib/room/links.ts knows.
@@ -36,6 +36,11 @@
  * The daemon's writes (lib/remote/link.ts only; it is the mirror's one writer):
  *   applyLine(line)          append one host line verbatim; its prev must hash-chain to the mirror's last line
  *                            and its id follow it, else RoomError FORK and nothing is written
+ *   applySnapshot(wire)      a first sync that begins from the host's snapshot (the subscribe stream's 'snapshot'
+ *                            event, lib/remote/server.ts): checked first (lib/room/snapshot.ts problem: PROTOCOL for a
+ *                            malformed one, FORK for a head that does not hash or pins and host its entries do not
+ *                            give), then the mirror's log starts from it. The lines that follow must chain to its
+ *                            head (applyLine), else FORK: a snapshot is never repaired or merged
  *   applyDoc(key, value)     write a streamed document (members, presence/NAME, tasks) as the host sent it
  *                            (value null: the document is gone)
  *   applyBlob(ref, bytes)    the mirror's copy of a plan
@@ -48,6 +53,7 @@ import path from 'node:path';
 import { FsRoomStore } from './fs-store.ts';
 import { RoomError } from './validate.ts';
 import { blobRef, toPayload } from './rules.ts';
+import { problem } from './snapshot.ts';
 import { humanKey } from './trust.ts';
 import { createBridge } from '../remote/bridge.ts';
 import { proveSeat } from '../remote/auth.ts';
@@ -57,7 +63,7 @@ import { SEAT_BEAT_MS } from '../config.ts';
 import type { LockOpts } from '../lock.ts';
 import type {
   AppendOpts, BlobsApi, ChainCheck, ChainVerify, Entry, EntryInput, HostState, JoinResult, KvApi, Members, MembersApi,
-  Payload, Placed, PlaceOpts, PresenceInput, ReadViewOpts, RoomStore, SeatRecord, Tailer, TailerFs, Trust,
+  Payload, Placed, PlaceOpts, PresenceInput, ReadViewOpts, RoomStore, SeatRecord, SnapshotWire, Tailer, TailerFs, Trust,
 } from './types.ts';
 import type { KeyObject } from 'node:crypto';
 
@@ -115,10 +121,12 @@ class MirrorRoomStore implements RoomStore {
   readAfter(id: number, filter?: (e: Entry) => boolean): Entry[] { return this.local.readAfter(id, filter); }
   lastId(): number { return this.local.lastId(); }
   readView(opts?: ReadViewOpts): readonly Entry[] { return this.local.readView(opts); }
+  recentFrom(): number { return this.local.recentFrom(); }
+  snapshot(): (SnapshotWire & { held: number }) | null { return this.local.snapshot(); }
   tailer(opts?: { fs?: TailerFs; after?: number }): Tailer { return this.local.tailer(opts); }
   lineHash(id: number): string | null { return this.local.lineHash(id); }
   validateChain(): ChainCheck { return this.local.validateChain(); }
-  verifyChain(opts?: { fromOffset?: number; prev?: string; save?: boolean | 'lazy' }): ChainVerify { return this.local.verifyChain(opts); }
+  verifyChain(opts?: { fromOffset?: number; prev?: string }): ChainVerify { return this.local.verifyChain(opts); }
   getCursor(reader: string): number { return this.local.getCursor(reader); }
   setCursor(reader: string, id: number): void { this.local.setCursor(reader, id); }
   pins(): Map<string, KeyObject> { return this.local.pins(); }
@@ -201,6 +209,14 @@ class MirrorRoomStore implements RoomStore {
     }
     this.local.appendVerbatim(line);
     return e;
+  }
+
+  /** The host's snapshot as the start of an empty mirror (the first sync of a link to a host that sent one). */
+  applySnapshot(wire: SnapshotWire): void {
+    const p = problem(wire);
+    if (p) throw new RoomError(p.code, p.code === 'FORK' ? `${p.reason}; re-mirror with sub-human link --reset ${this.code}` : p.reason);
+    if (this.local.lastId() !== 0) throw new RoomError('PROTOCOL', `the host sent a snapshot to a mirror that holds lines already (room ${this.code})`);
+    this.local.installSnapshot(wire);
   }
 
   /** One streamed document into the mirror (members, presence/NAME, tasks). */

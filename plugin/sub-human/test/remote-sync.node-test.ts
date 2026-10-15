@@ -53,7 +53,7 @@ test('first sync: a 3000-line log reaches a new mirror whole and byte for byte, 
   assert.ok(synced, `synced ${r.mirror.lastId()} of ${N} lines; ${r.logged.join('\n')}`);
   assert.equal(r.mirrorLog(), r.hostLog(), 'byte-identical');
   assert.equal(l.state(), 'online');
-  assert.equal(r.mirror.verifyChain({ save: false }).ok, true);
+  assert.equal(r.mirror.verifyChain().ok, true);
   // a bound against a per-line cost that grows with the log (each line re-reading the mirror's file), not a benchmark
   assert.ok(ms < 30_000, `first sync of ${N} lines took ${ms} ms`);
 });

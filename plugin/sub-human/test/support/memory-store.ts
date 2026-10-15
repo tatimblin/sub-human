@@ -130,6 +130,9 @@ class MemoryRoomStore implements RoomStore {
     if (!(after > 0)) return all;
     return all.filter(e => !CHAT_KINDS.has(e.kind) || e.id > after);
   }
+  /** A memory log never rotates: no snapshot, and every read is of the whole log. */
+  recentFrom(): number { return 0; }
+  snapshot(): null { return null; }
 
   append(entry: EntryInput, opts: AppendOpts & { queue: true }): Placed;
   append(entry: EntryInput, opts?: AppendOpts): Entry;
@@ -188,7 +191,7 @@ class MemoryRoomStore implements RoomStore {
   }
 
   /** Incremental from the checkpoint (lines already checked); offsets here count lines. */
-  verifyChain({ save = true }: { save?: boolean | 'lazy' } = {}): ChainVerify {
+  verifyChain(_opts: { fromOffset?: number; prev?: string } = {}): ChainVerify {
     const cp = this._checked;
     const ok = cp.count <= this._lines.length && (cp.count === 0 || hash12(this._lines[cp.count - 1]) === cp.hash);
     const from = ok ? cp : { count: 0, hash: hash12('') };
@@ -200,7 +203,7 @@ class MemoryRoomStore implements RoomStore {
       if (e.prev !== undefined && e.prev !== hash) { bad = { badAt: e.id }; break; }
       hash = hash12(this._lines[i]); count++; id = e.id || id;
     }
-    if (save) this._checked = { count, hash };
+    this._checked = { count, hash };
     const r = { ok: !bad, count, checked: count - from.count, offset: count, id, hash, from: from.count };
     return bad ? { ...r, ...bad } : r;
   }

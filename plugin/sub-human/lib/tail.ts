@@ -542,7 +542,7 @@ function startSession(me: Identity, ctx: Ctx): Session {
     for (const e of entries) deliver(e);
   }
 
-  // Health: the hash chain from the log.idx checkpoint (one line per break), the link of a room hosted elsewhere
+  // Health: the hash chain from this process's checkpoint (one line per break), the link of a room hosted elsewhere
   // (one line each time it goes down), and the room Claude's watchdog.
   let breakKey: string | null = null, linkKey: string | null = null, flushKey: string | null | undefined, rowsSent: string | null | undefined;
   function sendRows() {
@@ -618,7 +618,7 @@ function startSession(me: Identity, ctx: Ctx): Session {
     if (rm.store && me.role !== 'claude') { try { handoffHealth(); } catch (e) { log('handoff', e); } }
     if (rm.store && rm.store.isHost && me.role !== 'claude') { try { admitHealth(); } catch (e) { log('admission', e); } }
     if (rm.store && !rm.store.isHost) linkHealth();
-    const r = rm.verifyChain({ save: 'lazy' }); // log.idx is written as it gets 64 KiB or a minute further, not every tick
+    const r = rm.verifyChain(); // the active segment's new lines only, from this process's checkpoint
     if (r.ok) breakKey = null;
     else {
       const key = `${r.offset}|${r.badAt}|${r.line}`;

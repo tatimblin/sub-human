@@ -56,7 +56,7 @@ export const WATCH_POLL_MS = 500;              // `sub-human watch --follow` pol
 
 // ---------- the tail loop's health (lib/tail.ts) ----------
 // The tail never exits on an error (each restart by the mod costs a backoff): it logs (rate-limited), backs
-// off and carries on. Every TAIL_HEALTH_MS it checks the log's hash chain from the log.idx checkpoint and,
+// off and carries on. Every TAIL_HEALTH_MS it checks the log's hash chain from its in-memory checkpoint and,
 // while it is the room's Claude, runs roomClaude.watchdog(code).
 export const TAIL_HEALTH_MS = 5000;            // SUB_HUMAN_TAIL_HEALTH_MS
 export const TAIL_BACKOFF_MS = 1000;           // SUB_HUMAN_TAIL_BACKOFF_MS: first retry delay after an error, doubled per failure
@@ -215,6 +215,19 @@ export const ENTRY_REFS_MAX = 50;              // refs per entry (validate)
 export const ENTRY_STR_MAX = 4000;             // any other string field, JS .length (validate)
 export const ENTRY_LIST_MAX = 50;              // approvers / blockedBy entries (validate)
 export const LOG_LINE_MAX_BYTES = 64 * 1024;   // one serialized log line, UTF-8 bytes (append refuses longer)
+// The log in segments (lib/room/log-io.ts): once the active segment, log.jsonl, holds this many bytes, the line that
+// crosses it seals it as log-NNNN.jsonl and writes snapshot.json. A reader starts from the snapshot and parses only the
+// active segment, so this bounds a cold reader's parse (about 5,000 lines; a few ms) and a rotation's own cost.
+export const SEGMENT_MAX_BYTES = 1024 * 1024;
+/** SEGMENT_MAX_BYTES, or SUB_HUMAN_SEGMENT_BYTES (tests rotate after a few lines), read at each append. */
+export function segmentMaxBytes(): number {
+  const n = Number(process.env.SUB_HUMAN_SEGMENT_BYTES);
+  return Number.isInteger(n) && n >= 256 ? n : SEGMENT_MAX_BYTES;
+}
+// What a snapshot keeps of its last lines for the next placement (rules.ts scanTail): every entry this close before
+// its last line (the rate window, and the nonce window of 2 * SIG_SKEW_MS), at most SNAPSHOT_WINDOW_MAX of them.
+export const SNAPSHOT_WINDOW_MAX = 20_000;
+
 // text lines shown per chat message (the rest is "[+N more lines: read(...)]") and every continuation line's prefix:
 // owned by mod/core, which draws chat too
 export { CHAT_LINES_MAX, CHAT_NEST } from '../mod/core/constants.ts';
