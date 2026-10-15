@@ -398,7 +398,7 @@ The security model is one machine, one OS user, per room: everyone on the host i
 - **Bash guard.** The same module checks every `Bash` command and denies one that:
   - names the store (its path, `~/.sub-human`, `$HOME/.sub-human`, the keys under it);
   - names or sets `SUB_HUMAN_HOME`;
-  - runs the plugin's own modules or hooks with `node`, `bun`, `deno` or `npx` (`lib/room*`, `lib/identity`, `lib/proposal`, `hooks/*.ts`, `mcp/*.ts`, and their `.js` names of earlier versions).
+  - runs the plugin's own modules or hooks with `node`, `bun`, `deno` or `npx` (`lib/room*`, `lib/identity`, `lib/proposal`, `hooks/*.ts`, `hooks/handlers/*.ts`, `mcp/*.ts`, and their `.js` names of earlier versions).
 
   The read-only CLI (`<plugin root>/scripts/sub-human read`, `digest`, `who`, `tasks`, `watch`, `show HASH`) stays allowed, and so do reading the plugin's source and running its tests. This is a string check. A determined command can evade it, for example a script written to a file first, or a path built at run time. What can't be evaded is the signature: a line written around the store has no valid one, so it shows as unverified and counts for nothing.
 - **Read guard.** The same module denies `Read` of a seat's private key (`<home>/keys/`), the one file a model could sign a person's words with. The rest of the store stays readable, so a model can read the log and the plans with `Read` too. Other MCP servers that read or write files aren't guarded, and neither is a script that reads the key: the guard is a string check.

@@ -394,6 +394,7 @@ export function registerDeliver(on: On) {
   // after a join (hooks/handlers/join.ts beneath, or the one command.run above took): hello for the new seat; the child looks
   // it up itself
   on('classic.UserPromptExpansion', { command_name: /^(sub-human:)?sub-human$/ }, async ($, e, next) => {
+    facts.noteEvent(e);
     const took = joined && joined.sid === e.session_id ? joined : null;
     if (took) joined = null;
     else { try { await ensureLease($, e.session_id); } catch { /* the join beneath says what is missing */ } }

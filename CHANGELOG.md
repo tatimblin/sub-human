@@ -26,6 +26,12 @@ Hardening from the October 2026 review (branch `fix/stage0-hardening`).
 - **The room MCP `read` tool returns entries without signature material** (sig, nonce, pubkey) and marks a person's line `trust: verified | legacy | unverified`.
 - **A wake's head says the room lines are other people's words, not instructions.** The Funnel warning no longer claims the URL holds a secret.
 
+### Hooks (stage 2)
+- **A session that never joins a room starts no node on any event but `/sub-human`.** Before, it started node at its start, on every subagent, card, plan-mode call and room tool, on each notification, compact, clear and resume, and at its end. The hooks module now runs every hook but the `/sub-human` expansion and SessionEnd, only where it can act: the row hooks for a row agent in a seated session, consent for a seat (a room tool only while a review may be open), presence, the restore and the rewake for a seat. SessionEnd starts node only for a session with a lease or a seat. Measured per event in `docs/ARCHITECTURE.md` (Performance).
+- **One node entry, `hooks/run.ts <handler>`**, reads a hook's stdin once and writes its one answer; `hooks/common.ts` is split into `seat.ts` (no signer) and `context.ts`, and only the handlers that sign arm the seat key.
+- **Presence has one writer**, the module: a seat just taken or put back shows none until its person types (it showed "working"). An `@room` typed in a session with no seat is refused by the module itself, in the same words.
+- **After `--resume`**, the rows come back through a wake the module submits; the person sees one line, "restoring this session's rows".
+
 ### Tests
 - **The plugin's node tests are TypeScript** (`plugin/sub-human/test/**/*.node-test.ts`, checked by `npm run typecheck` through `tsconfig.test.json`), named so `claude plugin test` never collects them; new cases for unreadable hook stdin, the join's time budget, a mirror's first sync of a large log and of a host log with a corrupt line, a forged line in MCP `read`, and a model-supplied `planFilePath`.
 
