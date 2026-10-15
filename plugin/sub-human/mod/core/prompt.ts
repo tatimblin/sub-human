@@ -19,6 +19,19 @@ type SeatedLike = Pick<Hello, 'seat'> | { seat?: unknown } | null | undefined;
  * through Remote Control). Only these may post @room. */
 export const TYPED_ORIGINS: readonly string[] = Object.freeze(['composer', 'sdk', 'bridge']);
 
+/**
+ * A slash command a person typed into the room's Claude (code: its room, from SUB_HUMAN_ROOM): the refusal its
+ * command.run answers in place of running it (/clear would wipe its conversation and rebind its seat), or null. Its own
+ * launch (/sub-human, through the SDK) and every other origin run.
+ */
+export function roomClaudeCommand(command: unknown, origin: { kind?: unknown } | null | undefined, code: unknown): string | null {
+  if (typeof code !== 'string' || !code) return null;
+  const kind = origin && origin.kind;
+  if (kind !== 'composer' && kind !== 'bridge') return null;
+  if (command === 'sub-human' || command === 'sub-human:sub-human') return null; // at-room's own refusal answers it
+  return `✗ the room's Claude takes no typed input, commands included; type @claude in your own session, or ask your Claude to message claude.${code}`;
+}
+
 /** "@room TEXT" -> TEXT; anything else null (hooks/handlers/at-room.ts posts TEXT). */
 export function parse(prompt: unknown): string | null {
   if (typeof prompt !== 'string') return null;

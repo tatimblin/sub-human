@@ -13,7 +13,7 @@
  */
 import {
   gateVerdict, GATE_FAILED, isAtRoom, isAtClaude, needsNode, originQueue, originKind, mergeClassic, TYPED_ORIGINS, titleFor, failClosed, shimFailed,
-  writesWorking, onRemote, receiptBook, unseatedRefusal,
+  writesWorking, onRemote, receiptBook, unseatedRefusal, roomClaudeCommand,
 } from './core/prompt.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
@@ -116,6 +116,12 @@ async function runPrompt(
 }
 
 export function registerPrompt(on: On) {
+  // the room's Claude: a slash command a person types there is answered with the refusal, never run
+  on('command.run', async ($, e, next) => {
+    const why = roomClaudeCommand(e.command, e.origin, await $.env.get('SUB_HUMAN_ROOM'));
+    return why ? { text: why } : next(e);
+  }).catch(($, e, next) => next(e)); // unsure: the command runs, as without the module
+
   on('prompt.submit', async ($, e, next) => {
     // A relay this module submits: room lines for the person, never a post (its first line may read "room: …"). The
     // model gets what it needs as context, which the phone does not show.

@@ -98,3 +98,12 @@ test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the re
   assert.equal(book.rewrite(null), null);
   assert.equal(book.rewrite({ type: 'system', content: [{ type: 'text', text: `${STOP_FRAME}b` }, { type: 'text', text: 'x' }] }), null, 'one text block only');
 });
+
+test('prompt: roomClaudeCommand refuses a command a person types into the room\'s Claude (/clear too); its launch and other origins run', async () => {
+  const { roomClaudeCommand } = await load();
+  assert.match(roomClaudeCommand('clear', { kind: 'composer' }, 'otter-4821')!, /^✗ the room's Claude takes no typed input, commands included; .*claude\.otter-4821$/);
+  assert.ok(roomClaudeCommand('compact', { kind: 'bridge' }, 'otter-4821'));
+  assert.equal(roomClaudeCommand('sub-human', { kind: 'composer' }, 'otter-4821'), null, 'its launch: at-room answers a typed one');
+  assert.equal(roomClaudeCommand('clear', { kind: 'sdk' }, 'otter-4821'), null, 'the launcher, not a person');
+  assert.equal(roomClaudeCommand('clear', { kind: 'composer' }, undefined), null, 'a member\'s session');
+});

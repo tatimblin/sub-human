@@ -108,3 +108,18 @@ test('in the room\'s Claude (SUB_HUMAN_ROOM set) the launch /sub-human is the cl
   await typed($, '')
   expect([seen.joins.length, seen.ran]).toEqual([0, 1])
 })
+
+test('the room\'s Claude: a typed /clear is answered with the refusal and never runs', async ($, on) => {
+  const seen = world($, on, { room: 'otter-4821' })
+  await start($)
+  const r: any = await $.command.run({ command: 'clear', args: '', origin: { kind: 'composer' } } as any)
+  expect(r.text).toMatch(/the room's Claude takes no typed input, commands included/)
+  expect(seen.ran).toBe(0)
+})
+
+test('a member\'s session: /clear runs as usual', async ($, on) => {
+  const seen = world($, on)
+  await start($)
+  await $.command.run({ command: 'clear', args: '', origin: { kind: 'composer' } } as any)
+  expect(seen.ran).toBe(1)
+})
