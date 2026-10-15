@@ -346,8 +346,8 @@ test('prefilter: consent and the task hooks are skipped only when sure', async (
 });
 
 // ---------- chat ----------
-test('chat: a peer message is "NAME\'s Claude: …" with nested continuation lines; room lines drop (for Claude)', async () => {
-  const { peerLines, roomLines, NEST } = await load('mod/core/chat.ts');
+test('chat: a peer message is "NAME\'s Claude: …" with nested continuation lines; room lines show (for Claude) as a dim marker', async () => {
+  const { peerLines, roomRows, NEST } = await load('mod/core/chat.ts');
   assert.deepEqual(peerLines('bob.otter-4821', '  done\n\nnext: tests  \n'), ["bob's Claude: done", `${NEST}next: tests`]);
   assert.deepEqual(peerLines('bob.otter-4821', ''), ["bob's Claude"]);
   assert.equal(peerLines('Some session', 'hi'), null);
@@ -358,15 +358,25 @@ test('chat: a peer message is "NAME\'s Claude: …" with nested continuation lin
   assert.equal(out.length, 21);
   assert.equal(out.at(-1), `${NEST}[+5 more lines: ctrl+o]`);
   assert.deepEqual(peerLines('bob.otter-4821', 'a‮b\u0007c\r\nd'), ["bob's Claude: abc", `${NEST}d`]);
-  assert.deepEqual(roomLines('bob: hi\n  │ more\n(for Claude) room now: no proposals\ncarol joined'), ['bob: hi', '  │ more', 'carol joined']);
-  assert.equal(roomLines('(for Claude) x'), null);
+  const plain = (t: string) => ({ text: t, dim: false });
+  assert.deepEqual(roomRows('bob: hi\n  │ more\n(for Claude) room now: no proposals\ncarol joined'),
+    [plain('bob: hi'), plain('  │ more'), { text: '(for Claude) room now: no proposals', dim: true }, plain('carol joined')]);
+  assert.equal(roomRows('(for Claude) x'), null, 'nothing but lines for Claude: the engine draws the row');
+  // a run is one marker, its first line cut, "(+N)" for the rest
+  const long = `(for Claude) ${'x'.repeat(100)}`;
+  const rows = roomRows(`${long}\n(for Claude) b\n(for Claude) c\nbob: hi`)!;
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].dim, true);
+  assert.match(rows[0].text, /^\(for Claude\) x+… \(\+2\)$/);
+  assert.ok(rows[0].text.length <= 72 + ' (+2)'.length);
+  assert.deepEqual(rows[1], plain('bob: hi'));
 });
 
 test('chat: the room\'s own chatLines come through roomLines unchanged', async () => {
-  const { roomLines } = await load('mod/core/chat.ts');
+  const { roomRows } = await load('mod/core/chat.ts');
   const e = { id: 7, from: 'bob', via: 'human', kind: 'say', to: 'room', text: 'sure\nonce we agree' } as Entry; // no at: chatLines does not read it
   const lines = room.chatLines(e, { viewer: 'alice' });
-  assert.deepEqual(roomLines(lines.join('\n')), lines);
+  assert.deepEqual(roomRows(lines.join('\n'))!.map(r => r.text), lines);
 });
 
 // ---------- guard ----------
