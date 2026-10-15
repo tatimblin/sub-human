@@ -1,9 +1,9 @@
 // Links over the person's own ssh login (`/sub-human join USER@HOST ROOM`): no invite, PIN or admit. Unit: the
 // ssh command (BatchMode, the person's own ssh config and known_hosts, the shim named on the host), loginFailure's
 // reasons, the server's login hello (only a `serve --login` session mints a link; a forced-command one never does).
-// End to end over two homes (test/support/two-homes.ts) with a fake `ssh` on PATH standing in for sshd: it runs the
-// remote command in the host user's login shell, or, like an authorized_keys line, a forced command with
-// SSH_ORIGINAL_COMMAND set. Checked: the join links and seats in one step, the room hears it, kick ends it; an
+// End to end over two homes (test/support/two-homes.ts) with a fake `ssh` on PATH standing in for sshd
+// (test/support/fake-ssh.ts): it runs the remote command in the host user's login shell, or, like an authorized_keys
+// line, a forced command with SSH_ORIGINAL_COMMAND set. Checked: the join links and seats in one step, the room hears it, kick ends it; an
 // unknown host key, a missing shim and a restricted key each stop the join with what to do, and mint no link.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,6 +23,7 @@ import * as memory from '../lib/remote/transports/memory.ts';
 import * as ssh from '../lib/remote/transports/ssh.ts';
 import * as shim from '../lib/remote/shim.ts';
 import { Machine } from './support/two-homes.ts';
+import { fakeSsh } from './support/fake-ssh.ts';
 import * as protocolLib from '../lib/remote/protocol.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import { machineIn } from '../lib/home.ts';
@@ -45,30 +46,6 @@ const stopDaemon = (t: TestContext, m: Machine, code: string) => t.after(() => {
 });
 const roomLines = (m: Machine, code: string) => m.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text).join('\n');
 const links = (m: Machine, code: string) => m.lib(() => hostLinks.links(store.open(code)));
-
-/** A fake `ssh` in its own dir: logs its argv, then plays sshd for the host user (FAKE_SSH_HOME): FAKE_SSH_FAIL
- * (hostkey | denied) fails as ssh does in BatchMode; FAKE_SSH_FORCED runs that forced command with
- * SSH_ORIGINAL_COMMAND, as an authorized_keys command="…" line does; else the remote command in a login shell. */
-function fakeSsh(t: TestContext) {
-  const dir = h.tmpDir('sh-fakessh-', t);
-  fs.writeFileSync(path.join(dir, 'ssh'), `#!${process.execPath}
-const fs = require('node:fs');
-const args = process.argv.slice(2);
-if (args[0] === '-G') { process.stdout.write('user me\\nhostname devbox.internal\\nport 22\\n'); process.exit(0); } // ssh -G ALIAS: the config, nothing connects
-if (process.env.FAKE_SSH_LOG) fs.appendFileSync(process.env.FAKE_SSH_LOG, JSON.stringify(args) + '\\n');
-const fail = process.env.FAKE_SSH_FAIL;
-if (fail === 'hostkey') { process.stderr.write('No ED25519 host key is known for devbox and you have requested strict checking.\\nHost key verification failed.\\n'); process.exit(255); }
-if (fail === 'denied') { process.stderr.write('me@devbox: Permission denied (publickey).\\n'); process.exit(255); }
-const remote = args.slice(args.indexOf('--') + 2).join(' ');
-const env = { ...process.env, HOME: process.env.FAKE_SSH_HOME };
-delete env.SUB_HUMAN_HOME;
-let cmd = remote;
-if (process.env.FAKE_SSH_FORCED) { env.SSH_ORIGINAL_COMMAND = remote; cmd = process.env.FAKE_SSH_FORCED; }
-const c = require('node:child_process').spawn('/bin/sh', ['-c', cmd], { stdio: 'inherit', env, cwd: env.HOME });
-c.on('exit', code => process.exit(code === null ? 255 : code));
-`, { mode: 0o755 });
-  return dir;
-}
 
 /** The host (alice in a room it hosts, its shim written by that join) and a joiner whose ssh is the fake. */
 function setup(t: TestContext, fake: Record<string, string> = {}, { defaultHome = true } = {}) {
@@ -340,15 +317,15 @@ test('login e2e: an unknown host key fails at once with the exact ssh to run onc
   const d = b.remote.join(b.bob, `join me@devbox ${b.code} --as bob`);
   stopDaemon(t, b.remote, b.code);
   assert.match(d.json!.reason!, /me@devbox refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password/);
-  // no PIN is the login path, said so: a person who lost an invite line's PIN learns where it goes
-  assert.match(d.json!.reason!, new RegExp(`No PIN, so this went over your own ssh login; if the host sent you an invite, its line ends with a 4-digit PIN: /sub-human join me@devbox ${b.code} PIN$`));
+  // no SECRET is the login path, said so: a person who lost an invite line's SECRET learns where it goes
+  assert.match(d.json!.reason!, new RegExp(`No invite, so this went over your own ssh login; if the host sent you an invite line, it ends with a long SECRET: /sub-human join me@devbox ${b.code} SECRET$`));
 });
 
 test('login e2e: a key restricted to another link (its forced command) cannot use the login path, nor can a pass-through forced command', t => {
   const s = setup(t);
-  // the line `admit` writes for another link: its arguments are fixed, so --login never reaches serve
+  // the line an admit wrote for another link before protocol 3: its arguments are fixed, so --login never reaches serve
   const other = '0123456789ab';
-  const forced = (host: Machine) => shim.forcedCommand(s.code, other, host.home);
+  const forced = (host: Machine) => `SUB_HUMAN_HOME=${host.home} ${shim.shimPath(host.home)} --stdio ${s.code} --link ${other}`;
   const r1 = new Machine(t, 'restricted', { ...LINK_ENV, PATH: `${fakeSsh(t)}:${process.env.PATH}`, FAKE_SSH_HOME: s.host.user, FAKE_SSH_FORCED: forced(s.host) });
   const carol = r1.seat('carol');
   const j1 = r1.join(carol, `join me@devbox ${s.code} --as carol`);
@@ -369,7 +346,8 @@ test('login join: the argument forms are told apart; bad parts are refused befor
   const { remote, bob, code } = setup(t);
   const bad = (args: string, re: RegExp) => { const r = remote.join(bob, args); assert.equal(r.json!.decision, 'block', args); assert.match(r.json!.reason!, re, args); };
   bad(`join me@devbox --as bob`, /which room/);
-  bad(`join me@devbox ${code} extra --as bob`, /the PIN is the 4 digits/);
+  bad(`join me@devbox ${code} extra --as bob`, /the line's SECRET \(its last long word\) did not come through whole/);
+  bad(`join me@devbox ${code} 4829 --as bob`, /that invite line comes from an older sub-human on the host \(a 4-digit PIN where the line's SECRET goes\): ask the host to update/);
   bad(`join me@devbox not-a-code --as bob`, /"not-a-code" isn't a room/);
   bad(`join -oProxyCommand=x@y ${code} --as bob`, /isn't a plain USER@HOST/);
   bad(`join me@devbox ${code} --as bob --via -oX`, /--via "-oX" isn't a plain/);

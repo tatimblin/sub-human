@@ -131,7 +131,7 @@ const inviteOpen = (inv: unknown, now = Date.now()): inv is ShortInvite => {
 };
 
 /** The wait after the n-th wrong PIN (n >= 1): PIN_BACKOFF_MS, doubling. */
-const backoff = (n: number): number => PIN_BACKOFF_MS * 2 ** Math.min(Math.max(0, n - 1), 10);
+const backoff = (n: number): number => envMs('SUB_HUMAN_PIN_BACKOFF_MS', PIN_BACKOFF_MS) * 2 ** Math.min(Math.max(0, n - 1), 10);
 
 /**
  * An invite line's PIN step and its redemption, inside the invites update (see the header). Returns the records to

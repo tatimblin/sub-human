@@ -152,7 +152,7 @@ export const PROMOTE_OFFLINE_MS = 10 * 60_000;
 // held then waits ADMIT_TTL_MS for the host person's card (Let in / Refuse) before it lapses.
 export const INVITE_TTL_MS = 15 * 60_000;
 export const INVITE_PIN_TRIES = 5;
-export const PIN_BACKOFF_MS = 2000;
+export const PIN_BACKOFF_MS = 2000;              // SUB_HUMAN_PIN_BACKOFF_MS (tests)
 export const SHORT_LIVE_MAX = 4;
 export const ADMIT_TTL_MS = 10 * 60_000;       // SUB_HUMAN_ADMIT_TTL_MS
 // The join hook waits this long for a fresh link's first hello (redeem or refusal) before it answers.

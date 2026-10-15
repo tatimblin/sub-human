@@ -45,11 +45,13 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.equal(host.join(alice, 'alice').json!.decision, undefined);
   const code = host.lib(() => store.listRooms()[0]);
   host.join(carol, `carol ${code}`);
-  // bob links from the other home with the line and its PIN (a hidden step: the join hook starts his link daemon,
-  // which runs the PAKE with the host), alice lets him in, and a bare /sub-human takes his seat
+  // bob links from the other home with the line (a hidden step: the join hook starts his link daemon, which checks
+  // the host's key against the line and shows the host the SECRET), then the PIN the host asked for (hidden too),
+  // alice lets him in, and a bare /sub-human takes his seat
   const via = await remote.joinVia(host, alice, bob);
   assert.equal(via.shown!.json!.decision, 'block', 'shown to the person, never to the model');
-  assert.match(via.typed.json!.reason!, /checked your PIN/, via.typed.stderr);
+  assert.match(via.typed.json!.reason!, /has your invite \(5 tries left\)\. Type the 4-digit PIN they told you: \/sub-human join PIN/, via.typed.stderr);
+  assert.match(via.gave.json!.reason!, /checked your PIN/, via.gave.stderr);
   const joined = via.seated;
   assert.equal(joined.json!.systemMessage, undefined, joined.stderr);
   assert.match(joined.json!.hookSpecificOutput!.additionalContext!, /SUB-HUMAN: you are bob's Claude/);
@@ -177,8 +179,8 @@ test('remote e2e: an invite used already is refused at join with that reason, no
 
   const refused = third.join(carol, `${via.line} --as carol`);
   assert.equal(refused.json!.decision, 'block', refused.stderr);
-  assert.match(refused.json!.reason!, /no invite for room \S+ is open here/);
+  assert.match(refused.json!.reason!, /this invite was used already \(each invite works once\)/);
   assert.doesNotMatch(refused.json!.reason!, /offline|hung up/);
-  assert.equal(refused.json!.hookSpecificOutput!.suppressOriginalPrompt, true, 'the PIN stays out of the conversation');
+  assert.equal(refused.json!.hookSpecificOutput!.suppressOriginalPrompt, true, 'the SECRET stays out of the conversation');
   assert.doesNotMatch(host.log(code), /carol/);
 });

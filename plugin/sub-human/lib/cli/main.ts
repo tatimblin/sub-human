@@ -454,7 +454,8 @@ const USAGE = [
   '  moving:     handoff NAME | promote CODE | demote CODE [--from FILE] (INVITE PIN on stdin)',
   '  room:       options CODE [login-same-person on|off]',
   '  checks:     doctor [--fix] [--bundle [FILE]]',
-  '  internal:   tail | serve --stdio CODE [--link ID [--login]] [--via ws [--peer KEY]] | agent-statusline',
+  '  internal:   tail | serve --stdio CODE [--link ID [--login]] | agent-statusline',
+  '              serve --stdio CODE --via ws [--peer KEY] (the web listener\'s child)',
 ].join('\n');
 const doctor: Command = args => (require('./doctor.ts') as typeof import('./doctor.ts')).main(args).then(c => process.exit(c), (e: Error) => die(e.message, 2));
 const cmds: Record<string, Command> = { doctor, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, options: optionsCmd, 'agent-statusline': agentStatusline };
