@@ -164,7 +164,7 @@ function back(code: string, name: string): boolean {
   return was;
 }
 
-/** Test seam: the room's Claude starts through this object, which a test may stub (test/seats.test.js); an ES
+/** Test seam: the room's Claude starts through this object, which a test may stub (test/seats.node-test.ts); an ES
  * module's own exports are read-only. */
 const seam = { startDetached: (o: Parameters<typeof roomClaude.startDetached>[0]) => roomClaude.startDetached(o) };
 

@@ -6,7 +6,7 @@
  * (cc CONTRACT module-dollar-local); mod/core/*.ts is pure and tested in node.
  *
  *   HOOKS     every hook the module registers, {event, matcher, file, does}: the one place each hook's behaviour is
- *             described. scripts/arch-doc.js renders it; test/mod-core.test.js checks it against validate.
+ *             described. scripts/arch-doc.js renders it; test/mod-core.node-test.ts checks it against validate.
  */
 import { registerGuard } from './guard.ts';
 import { registerRender } from './render.ts';

@@ -59,7 +59,7 @@ export function registerGuard(on: On) {
   });
 
   // the list is mod/core/guard.ts WRITE_TOOLS, written out: validate reads a matcher only as a literal
-  // (test/mod-core.test.js checks the two agree)
+  // (test/mod-core.node-test.ts checks the two agree)
   on('tool.call', { tool: ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'] }, async ($, e, next) => {
     const p = writeTarget(e);
     if (!p) return next(e);

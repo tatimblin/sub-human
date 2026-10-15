@@ -1,5 +1,5 @@
 // Wiring: the prompt gate and the UserPromptSubmit shim (mod/prompt.ts). Run with `npm run test:mods`.
-// The gate's table and the prefilter are tested in node (test/mod-core.test.js, test/hooks/security.test.js); this
+// The gate's table and the prefilter are tested in node (test/mod-core.node-test.ts, test/hooks/security.node-test.ts); this
 // checks the hooks: a peer @room is dropped before anything beneath runs, an unseated prompt starts no node, a
 // seated one runs hooks/prompt.ts with the origin in its stdin, and the shim's answer and notices reach the session.
 import { test, expect, mock } from 'claude-code/testing'

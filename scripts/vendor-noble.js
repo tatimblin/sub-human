@@ -9,7 +9,7 @@
  * Each tarball must match the sha512 integrity npm publishes (pinned below), or nothing is written. Only the import
  * closure of curves/ed25519.js is copied, byte for byte, except that a bare `@noble/hashes/X` import becomes the
  * relative path of the vendored copy (no node_modules in the plugin). MANIFEST.json records, per file, the sha256 of
- * the vendored bytes and of the upstream bytes, and the rewrites; test/vendor-noble.test.js checks both, so an edit
+ * the vendored bytes and of the upstream bytes, and the rewrites; test/vendor-noble.node-test.ts checks both, so an edit
  * by hand fails the tests. No dependency is installed.
  */
 const fs = require('node:fs');

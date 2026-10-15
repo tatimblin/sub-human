@@ -65,7 +65,7 @@ function linkDoc(code: string): LinkStatus | null {
 
 const NOT_RUNNING = 'the link daemon is not running';
 
-/** Test seam: read() calls through this object, which a test may stub (test/link-state.test.js); an ES module's own
+/** Test seam: read() calls through this object, which a test may stub (test/link-state.node-test.ts); an ES module's own
  * exports are read-only. */
 const seam = { read: (code: string): LinkState | null => readLink(code) };
 const read = (code: string): LinkState | null => seam.read(code);

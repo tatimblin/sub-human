@@ -1,6 +1,6 @@
 /**
  * plugin/sub-human/mod/core/guard.ts: the store guard's verdicts as pure functions (no `$`, no node imports),
- * shared by the hooks module (mod/guard.ts) and the node tests (test/hooks/guard.test.js, security.test.js).
+ * shared by the hooks module (mod/guard.ts) and the node tests (test/hooks/guard.node-test.ts, security.node-test.ts).
  * In: the tool input and ctx {home, realHome, userHome, pluginRoot, realPluginRoot, cwd, realCwd}, every field
  * optional (an unknown home leaves only the string rules). Out: a deny reason the model reads, or null.
  * It is a string check, so a determined command evades it; the seat key's signature on via=human and the log's

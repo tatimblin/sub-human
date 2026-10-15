@@ -7,7 +7,7 @@
  *       output is not a hello (then the module "does not know" and every prefilter runs node).
  *   seated(hello) -> bool          a seat is known for this session
  *   parseAddr("bob.otter-4821") -> {name, code} | null     a seat's address (the session title), or null
- *   NAME_RE, CODE_RE               copies of lib/text.ts (test/mod-core.test.js asserts they are equal)
+ *   NAME_RE, CODE_RE               copies of lib/text.ts (test/mod-core.node-test.ts asserts they are equal)
  */
 import type { Hello, HelloSeat } from './types.ts';
 

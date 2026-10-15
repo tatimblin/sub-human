@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/remote/server.ts: one connection to a hosted room. `scripts/sub-human serve --stdio CODE`
  * runs one per connection on the host (spawned by the client's pipe transport, or by an SSH forced command); the store contract test runs one on a worker thread over the memory transport. It serves the host's
  * FsRoomStore (isHost) and shares the room's file locks with the host's own hooks, which never go through it.
- * It never loads the signer (test/hooks/security.test.js): a via=human payload arrives signed by the remote
+ * It never loads the signer (test/hooks/security.node-test.ts): a via=human payload arrives signed by the remote
  * hook and is verified against the key pinned in the log (lib/room/envelope.ts), then placed (store.place).
  *
  *   serve(transport, {store, log?, linkId?, login?, silentMs?, proto?, version?}) -> {close(), revoked()}   proto / version: this end's

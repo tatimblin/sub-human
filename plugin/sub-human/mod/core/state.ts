@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/mod/core/state.ts: the $.state values the hooks module keeps, and how a read value is taken.
  * Each file still writes its own references ({ plugin: 'sub-human', key: '…' } in a const of that file): claude
- * plugin validate lists state reads and writes only from literals there. test/mod-core.test.js checks that every
+ * plugin validate lists state reads and writes only from literals there. test/mod-core.node-test.ts checks that every
  * such literal names a key in KEYS and that KEYS is what types/index.d.ts declares.
  *
  *   KEYS                         the key names under plugin 'sub-human'

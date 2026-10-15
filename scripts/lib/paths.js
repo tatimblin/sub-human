@@ -8,7 +8,7 @@
  *   projectsDir()     the projects/ folder of $CLAUDE_CONFIG_DIR or ~/.claude
  *   seatProjectDir(seat)  a demo seat's transcript folder (seats work in /tmp/sh-demo/SEAT = /private/tmp/…)
  *   pluginLib(name)   require plugin/sub-human/lib/<name> (e.g. 'room.ts' for validateChain)
- *   pluginTest(name)  require plugin/sub-human/test/<name> (scripts tests only: 'support/two-homes.js' for S11)
+ *   pluginTest(name)  require plugin/sub-human/test/<name> (scripts tests only: 'support/two-homes.ts' for S11)
  *
  * If the plugin moves one of these, fix it here.
  */

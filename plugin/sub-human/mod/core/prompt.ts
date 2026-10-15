@@ -17,7 +17,7 @@ type SeatedLike = Pick<Hello, 'seat'> | { seat?: unknown } | null | undefined;
  * through Remote Control). Only these may post @room. */
 export const TYPED_ORIGINS: readonly string[] = Object.freeze(['composer', 'sdk', 'bridge']);
 
-/** "@room TEXT" -> TEXT; anything else null. A copy of hooks/at-room.ts parse() (test/mod-core.test.js
+/** "@room TEXT" -> TEXT; anything else null. A copy of hooks/at-room.ts parse() (test/mod-core.node-test.ts
  * asserts they agree). */
 export function parse(prompt: unknown): string | null {
   if (typeof prompt !== 'string') return null;
@@ -34,7 +34,7 @@ function tagged(prompt: string, tag: RegExp): string | null {
 
 export const isAtRoom = (text: unknown) => parse(text) !== null;
 
-/** "@claude TEXT" -> TEXT; anything else null. A copy of hooks/at-room.ts parseClaude() (test/mod-core.test.js
+/** "@claude TEXT" -> TEXT; anything else null. A copy of hooks/at-room.ts parseClaude() (test/mod-core.node-test.ts
  * asserts they agree). In a room it posts like @room and wakes the room's Claude; outside one it is a plain prompt. */
 export function parseClaude(prompt: unknown): string | null {
   if (typeof prompt !== 'string') return null;

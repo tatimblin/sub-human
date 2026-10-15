@@ -20,7 +20,7 @@ import type { JoinReply, HookJson, HookJsonSpecific, OriginLike, RunOutput, SubH
 /** The command as command.run names it (a plugin skill's name, or its bare form). */
 export const COMMANDS = Object.freeze(['sub-human:sub-human', 'sub-human']);
 
-/** A copy of hooks/join.ts's rule (test/mod-core-command.test.js asserts they agree): `join`, `invite` and `admit`,
+/** A copy of hooks/join.ts's rule (test/mod-core-command.node-test.ts asserts they agree): `join`, `invite` and `admit`,
  * and any word of 3-10 digits, may carry a PIN. */
 const SECRET_VERBS = ['join', 'invite', 'admit'];
 const DIGITS = /^[0-9]{3,10}$/;

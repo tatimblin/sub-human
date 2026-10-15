@@ -8,7 +8,7 @@
  *   toxiproxy            in front of devbox:22, published on 127.0.0.1 (a port Docker picks): cut the link, add
  *                        latency.
  *   joiner (this Mac)    a temp SUB_HUMAN_HOME; bob joins with the real hooks as child processes
- *                        (plugin test/support/two-homes.js); his link daemon runs `ssh` with a throwaway key
+ *                        (plugin test/support/two-homes.ts); his link daemon runs `ssh` with a throwaway key
  *                        (SUB_HUMAN_SSH_OPTS: -F /dev/null, -i, a temp known_hosts) through toxiproxy into devbox,
  *                        where the authorized_keys forced command (`sub-human authorize`) runs `serve --link`.
  * Nothing touches this Mac's sshd, ~/.ssh or ~/.sub-human. No real Claude runs in `run`.
@@ -168,7 +168,7 @@ async function run({ out }) {
   const ev = new Evidence(out);
   const mtimeBefore = realHomeMtime();
   const before = running();
-  const { Machine } = pluginTest('support/two-homes.js'); // also gives this process a temp SUB_HUMAN_HOME
+  const { Machine } = pluginTest('support/two-homes.ts'); // also gives this process a temp SUB_HUMAN_HOME
   const store = pluginLib('room/store.ts');
   const identity = pluginLib('identity.ts');
   const link = pluginLib('remote/link.ts');

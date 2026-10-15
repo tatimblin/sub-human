@@ -1,0 +1,14 @@
+{
+  // npm run typecheck, second pass: the plugin's node tests (plugin/sub-human/test, ESM .ts run by node --test with
+  // type stripping). The runtime's settings, plus the test files; the runtime is checked again through their imports.
+  "extends": "./tsconfig.json",
+  "include": [
+    "plugin/sub-human/test",
+    "plugin/sub-human/types",
+    "typings/claude-code-tools"
+  ],
+  "exclude": [
+    "plugin/sub-human/lib/vendor",
+    "plugin/sub-human/test/fixtures"
+  ]
+}
