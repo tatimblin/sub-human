@@ -11,6 +11,7 @@ import * as helpersLib from '../helpers.ts';
 import * as roomClaude from '../../lib/room-claude.ts';
 import * as common from '../../hooks/common.ts';
 import * as membersLib from '../../lib/room/members.ts';
+import * as linkLib from '../../lib/remote/link.ts';
 import type { HookJson, HookRun } from './helpers.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { Member, Role } from '../../lib/room/types.ts';
@@ -155,6 +156,31 @@ test('SECURITY: a PIN-shaped prompt the hook throws on is still answered hidden 
   assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, 'the typed prompt stays out of the conversation');
   assert.match(r.json!.reason!, /^sub-human: ✗ /, 'a refusal with the failure, not a bare exit 1');
   assert.ok(!r.json!.reason!.includes('4829') && !r.json!.reason!.includes('me@far'), 'nothing typed is echoed');
+});
+
+test('budget: a join whose host never answers (ssh hangs) still replies, hidden, inside the hook\'s 10 s; the link keeps trying', t => {
+  const w = new World({ alice: 'act' }, { t });
+  w.pid.me = process.ppid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000017';
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-hangssh-'));
+  const pids = path.join(bin, 'pids');
+  // connects nowhere and says nothing (each run notes its pid, so the test can stop it; 15 s at most regardless)
+  fs.writeFileSync(path.join(bin, 'ssh'), `#!/bin/sh\necho $$ >> '${pids}'\nexec sleep 15\n`, { mode: 0o755 });
+  const code = 'vole-4321';
+  t.after(() => {
+    const kill = (pid: number) => { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } };
+    const daemon = w.lib(() => linkLib.status(code)).pid;
+    if (daemon) kill(daemon);
+    try { fs.readFileSync(pids, 'utf8').split('\n').filter(Boolean).forEach(p => kill(Number(p))); } catch { /* none ran */ }
+  });
+  const t0 = Date.now();
+  const r = w.hook('join', expand(`join me@devbox ${code} 4829`), { as: 'me', env: { PATH: `${bin}:${process.env.PATH}` } });
+  const ms = Date.now() - t0;
+  assert.equal(r.code, 0, r.stderr);
+  assert.ok(ms < 9000, `the join took ${ms} ms of its 10 s`);
+  assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, 'hidden: the prompt held a PIN');
+  assert.match(r.json!.reason!, new RegExp(`still connecting to room ${code}`), r.json!.reason);
+  assert.ok(!r.json!.reason!.includes('4829'), 'the PIN is not echoed');
+  assert.equal(w.lib(() => linkLib.status(code)).running, true, 'the link daemon keeps trying after the hook');
 });
 
 test('the default name: git user.name, else the local part of user.email, else $USER; a taken one says how to pick another', () => {

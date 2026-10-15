@@ -8,6 +8,8 @@ import { spawn, execFileSync, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import * as h from './helpers.ts';
 import * as cc from '../lib/cc.ts';
+import * as config from '../lib/config.ts';
+import { SHIM_TIMEOUT_MS } from '../mod/core/shim.ts';
 import type { ToolDefinition } from '../mcp/types.ts';
 
 /** hooks/hooks.json, as these lints read it. */
@@ -129,6 +131,23 @@ test('hooks.json: every blocking hook has a timeout (<= 10 s, row-rewake aside);
     assert.ok(hook.timeout <= 60, 'Claude Code caps hook budgets at 60 s');
   }
   for (const g of hooks.SessionEnd) for (const hk of g.hooks) assert.ok(hk.timeout >= 3, `SessionEnd gets 1.5 s unless timeout is set (got ${hk.timeout})`);
+});
+
+test('budgets: the join\'s waits fit its hook timeout, and every lock gives up before the hook it runs in is killed', () => {
+  const timeoutOf = (script: string) => Math.min(...[...allHooks()].filter(x => scriptOf(x.hook.command) === `hooks/${script}`).map(x => x.hook.timeout));
+  const join = timeoutOf('join.ts') * 1000;
+  assert.equal(join, SHIM_TIMEOUT_MS, 'the module runs join.ts under the same budget');
+  // a re-join over a new link: stop the old daemon (1 s, hooks/join.ts restartLink), start the new one, wait for its
+  // first answer; with a second for node's start and the store, it ends before the hook is killed
+  const NODE_START_MS = 1000, RESTART_MS = 1000;
+  const waits = RESTART_MS + config.LINK_START_MS + config.LINK_JOIN_WAIT_MS + NODE_START_MS;
+  assert.ok(waits <= join - 1000, `the join's waits (${waits} ms) leave under a second of its ${join} ms`);
+  // a wedged lock is reported (LOCK) by the hook, never cut off by its timeout (SessionEnd: the shortest)
+  const shortest = Math.min(...[...allHooks()].map(x => x.hook.timeout)) * 1000;
+  for (const [name, ms] of Object.entries({ LOCK_TIMEOUT_MS: config.LOCK_TIMEOUT_MS, ROWS_LOCK_TIMEOUT_MS: config.ROWS_LOCK_TIMEOUT_MS, REVIEW_LOCK_TIMEOUT_MS: config.REVIEW_LOCK_TIMEOUT_MS })) {
+    assert.ok(ms < shortest, `${name} ${ms} ms, under the shortest hook timeout (${shortest} ms)`);
+  }
+  assert.ok(config.LINK_CALL_END_MS < timeoutOf('session-end.ts') * 1000);
 });
 
 test('hooks.json: async only on hooks whose output nothing reads', () => {
