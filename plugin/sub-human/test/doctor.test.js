@@ -219,19 +219,19 @@ test('doctor: a room whose claude job started but never took its seat (e.g. refu
   assert.equal(c.status, 'fail');
   assert.match(c.detail, /job job12345 was started \d+ s ago but never took its seat/);
   assert.match(c.fix, /claude logs job12345/);
-  assert.match(c.fix, /restart the daemon/);
+  assert.match(c.fix, /the bg daemon check says whether the daemon runs a Claude Code that was upgraded away/);
   const [crashed] = doctor.checkRoomClaudes({ jobs: () => [{ id: 'job12345', state: 'failed' }] });
   assert.match(crashed.detail, /never took its seat; the job is failed/);
   assert.match(crashed.fix, /ended before its first turn/);
   assert.doesNotMatch(crashed.fix, /refused/, 'a crash is not a refused /sub-human');
-  assert.match(crashed.fix, /if Claude Code was upgraded since the bg daemon started, restart the daemon/);
+  assert.match(crashed.fix, /the bg daemon check says whether .* and how to restart it/);
   identity.updateRoomClaude(code, () => ({ spawn_error: 'did not take its seat in 120 s (job job12345: failed)' }));
   assert.match(doctor.checkRoomClaudes({ jobs: () => null })[0].detail, /\(did not take its seat in 120 s \(job job12345: failed\)\)/);
   identity.updateRoomClaude(code, () => ({ job: null, spawn_error: 'job job12345 failed' }));
   const [failed] = doctor.checkRoomClaudes();
   assert.equal(failed.status, 'fail');
   assert.match(failed.detail, /its last start failed: job job12345 failed/);
-  assert.match(failed.fix, /restart the daemon/);
+  assert.match(failed.fix, /the bg daemon check says whether the daemon runs a Claude Code that was upgraded away/);
   identity.updateRoomClaude(code, () => ({ job: 'job12345', spawn_error: undefined }));
   identity.updateRoomClaude(code, () => ({ spawned_at: new Date().toISOString() }));
   assert.deepEqual(doctor.checkRoomClaudes({ jobs: () => null }), [], 'within the grace');
@@ -288,6 +288,34 @@ test('doctor: a dormant link gets no hello', async t => {
   const [l] = rep.links;
   assert.equal(l.reach, undefined, 'no hello');
   assert.equal(byId(rep, `link:${code}`).status, 'info');
+  assert.equal(byId(rep, 'daemon').status, 'info', 'no claude: the daemon status is unreadable');
+  const quick = await doctor.diagnose({ quick: true, authorizedKeys: path.join(gone, 'authorized_keys'), env });
+  assert.match(byId(quick, 'daemon').detail, /could not read `claude daemon status`/, '--quick checks the daemon too');
+});
+
+test('doctor checkDaemon: a deleted executable fails, another version warns, not running or unreadable is info', () => {
+  const up = (version = '2.1.296') => () => ({ running: true, pid: 4242, version });
+  const live = exe => () => ({ exe, deleted: false });
+  const c = (o) => doctor.checkDaemon({ version: '2.1.296', ...o });
+  const unread = c({ status: () => null });
+  assert.deepEqual([unread.id, unread.status, unread.detail], ['daemon', 'info', 'could not read `claude daemon status`']);
+  assert.equal(c({ status: () => { throw new Error('x'); } }).status, 'info');
+  const off = c({ status: () => ({ running: false, pid: null, version: null }) });
+  assert.equal(off.status, 'info');
+  assert.match(off.detail, /^not running/);
+  const gone = c({ status: up(), exe: () => ({ exe: '/opt/homebrew/Caskroom/claude-code/2.1.292/claude', deleted: true }) });
+  assert.equal(gone.status, 'fail');
+  assert.match(gone.detail, /pid 4242, 2\.1\.296\) from \/opt\/homebrew\/Caskroom\/claude-code\/2\.1\.292\/claude, which was deleted since it started/);
+  assert.match(gone.fix, /^claude daemon stop --any --keep-workers in a terminal/);
+  assert.match(gone.fix, /the next `claude agents` or `claude --bg` starts a fresh daemon/);
+  const older = c({ status: up('2.1.292'), exe: live('/usr/local/bin/claude') });
+  assert.equal(older.status, 'warn');
+  assert.match(older.detail, /2\.1\.292\) while `claude --version` says 2\.1\.296/);
+  assert.match(older.fix, /claude daemon stop --any --keep-workers/);
+  const ok = c({ status: up(), exe: live('/usr/local/bin/claude') });
+  assert.deepEqual([ok.status, ok.detail, ok.fix], ['pass', 'running (pid 4242, 2.1.296)', undefined]);
+  assert.equal(c({ status: up(), exe: () => null }).status, 'pass', 'an unreadable executable is not a deleted one');
+  assert.equal(doctor.checkDaemon({ version: null, status: up('2.1.292'), exe: live('claude') }).status, 'pass', 'no `claude --version`: nothing to compare');
 });
 
 test('doctor checkClaude: a probe that cannot run says so (a launcher, another version, nothing found), never "N of N changed"', t => {
