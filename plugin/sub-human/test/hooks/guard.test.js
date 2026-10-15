@@ -67,6 +67,20 @@ test('guard: the deny text says the store is reached through sub-human and names
   assert.match(g.WRITE_DENY('Write', '/x'), /reached only through sub-human/);
 });
 
+test('guard: doctor --bundle / --fix in a session gets its own reason: a person\'s step, in a terminal, not the store wording', () => {
+  for (const cmd of ['sub-human doctor --bundle', '/p/scripts/sub-human doctor --bundle /tmp/x.json', 'sub-human doctor --quick --fix']) {
+    const why = g.bashVerdict(cmd);
+    assert.equal(why, g.DOCTOR_WHY, cmd);
+    const t = g.denyText(why, '/p');
+    assert.match(t, /^ROOM-GUARD: sub-human doctor --fix and --bundle change or write files/);
+    assert.doesNotMatch(t, /reached only through sub-human|room MCP/);
+    assert.ok(t.includes("the person's step: they run `node /p/scripts/sub-human doctor --bundle` (or --fix) in a terminal outside Claude Code"), t);
+    assert.match(t, /\/sub-human doctor is the read-only check/);
+  }
+  assert.match(g.denyText(g.DOCTOR_WHY, undefined), /person's step: they run it in a terminal outside Claude Code/);
+  assert.equal(g.bashVerdict('sub-human doctor --quick'), null, 'the read-only doctor stays allowed');
+});
+
 test('guard: a write through a symlink into the home is denied, also into a directory not made yet', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
   const link = path.join(w.cwd, 'innocent');
