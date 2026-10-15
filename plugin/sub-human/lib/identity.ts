@@ -27,7 +27,8 @@
  *                                        whose pid is not alive with its recorded start time: lib/gc.ts
  *   isHost(code) -> bool                 this machine holds the room (its store's isHost): the room Claude's spawn, reap
  *                                        and watchdog and proposal decisions run only here
- *   machineId() -> string                this machine's id (lib/home.ts), a seat record's `machine`
+ *   machineId() -> string                this machine's id (lib/home.ts), a seat record's `machine`; machineIn(code) its id in
+ *                                        a room joined over a link, isMine(id) any of them (lib/home.ts)
  *
  * Members (the room's members document, lib/room/store.ts members; seats change through its named ops join,
  * leave and beat, whose rules are lib/room/members.ts):
@@ -111,7 +112,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { readJson, writeJsonAtomic, isAlive, validPid } from './io.ts';
-import { home, roomDir, machineId } from './home.ts';
+import { home, roomDir, machineId, machineIn, isMine } from './home.ts';
 import { pidStart, pidStarts } from './lock.ts';
 import { NAME_RE, CODE_RE, SID_SAFE as SID_RE } from './text.ts';
 import { sidIndex } from '../mod/core/seat.ts';
@@ -271,13 +272,13 @@ function localSeat({ name, role, machine, pid, session_id, cwd }: { name: string
   return { name, role, machine, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null };
 }
 
-function join({ code, name, role, machine = machineId(), account, pid: pidArg, session_id, cwd }: JoinRequest = {} as JoinRequest): JoinResult {
+function join({ code, name, role, machine = machineIn(code), account, pid: pidArg, session_id, cwd }: JoinRequest = {} as JoinRequest): JoinResult {
   if (!roomExists(code)) return fail(`no room "${code}"`);
   if (typeof name !== 'string' || !NAME_RE.test(name)) return fail(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
   if (!ROLES.includes(role)) return fail(`invalid role "${role}"`);
   if (RESERVED.includes(name.toLowerCase()) && !(name === ROOM_CLAUDE && role === ROOM_CLAUDE)) return fail(`"${name}" is reserved`);
   if (role === ROOM_CLAUDE && name !== ROOM_CLAUDE) return fail(`the room's Claude joins as "${ROOM_CLAUDE}"`);
-  const local = machine === machineId();
+  const local = isMine(machine);
   const pid = Number(pidArg);
   if (local && !validPid(pid)) return fail(`invalid pid "${pid}"`);
   if (session_id != null && (typeof session_id !== 'string' || !SID_RE.test(session_id))) return fail('invalid session_id');
@@ -334,7 +335,7 @@ const seat = (code: string, m: Member): Identity => ({ code, name: m.name, role:
  */
 function indexedSeat(idx: SeatIndex): Member | undefined {
   const m = readMembers(idx.code)[idx.name];
-  if (!m || isHost(idx.code) || (m.machine || machineId()) !== machineId()) return m;
+  if (!m || isHost(idx.code) || !isMine(m.machine || machineId())) return m;
   return { ...m, pid: idx.pid, pid_start: idx.pid_start, session_id: idx.session_id };
 }
 
@@ -460,8 +461,8 @@ function adoptLocalSeats(code: string): string[] {
     names.length = 0;
     for (const r of recs) {
       const m = ms[r.name];
-      if (!m || m.left_at || (m.machine && m.machine !== machineId())) continue;
-      ms[r.name] = { ...m, machine: machineId(), pid: r.pid, ...(r.pid_start != null ? { pid_start: r.pid_start } : {}), session_id: r.session_id || null };
+      if (!m || m.left_at || (m.machine && !isMine(m.machine))) continue;
+      ms[r.name] = { ...m, machine: m.machine || machineIn(code), pid: r.pid, ...(r.pid_start != null ? { pid_start: r.pid_start } : {}), session_id: r.session_id || null };
       names.push(r.name);
     }
     return names.length ? ms : null;
@@ -527,8 +528,7 @@ function allMembers(): { code: string; ms: Members }[] {
   const gone = store.indexedRooms().filter(c => !roomExists(c)).concat(all.filter(r => closedForGood(r.ms)).map(r => r.code));
   if (gone.length) { try { store.unindexRooms(gone); } catch { /* the next look drops them */ } }
   const open = all.filter(r => !closedForGood(r.ms));
-  const here = machineId();
-  pidStarts(open.flatMap(({ ms }) => Object.values(ms)).filter(m => m && !m.left_at && validPid(m.pid) && (m.machine || here) === here && isAlive(m.pid)).map(m => m.pid as number));
+  pidStarts(open.flatMap(({ ms }) => Object.values(ms)).filter(m => m && !m.left_at && validPid(m.pid) && (!m.machine || isMine(m.machine)) && isAlive(m.pid)).map(m => m.pid as number));
   return open;
 }
 
@@ -586,7 +586,7 @@ function writePresence(code: string, name: string, state: string, detail?: strin
 
 export {
   NAME_RE, CODE_RE, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
-  roomDir, machineId, newCode, roomExists, isHost, openRooms, orphanRooms, roomOpen, roomClosing, address,
+  roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
   leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, localSeats, adoptLocalSeats,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, pruneSessionIndexes, writePresence,

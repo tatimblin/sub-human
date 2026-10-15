@@ -63,8 +63,10 @@ export interface HelloParams {
   /** The client's plugin version. */
   client?: string;
   caps?: { ping?: boolean };
-  /** This machine's id (home.machineId). */
+  /** This machine's id in the room as it knows it (home.machineIn): what an invite's binding is checked against. */
   machine: string;
+  /** Its machine key's proof (lib/remote/machine-key.ts): the host records the id the key gives, not the reported one. */
+  machine_key?: { key: string; ts: number; sig: string };
   token?: string;
   invite?: string;
   pin?: string;
@@ -117,6 +119,8 @@ export interface HelloResult {
   token?: string;
   /** The room was closed (its Claude stopped); absent while it is open, and from an older host. */
   closed?: boolean;
+  /** This machine's id in the room as the host records it for the link (lib/remote/host-links.ts); additive. */
+  machine?: string;
 }
 export interface OkResult { ok: boolean }
 export interface JoinResult { ok: true; rejoin?: true }

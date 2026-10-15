@@ -28,7 +28,7 @@ import * as roomWatch from './watch.ts';
 import type { Change } from './watch.ts';
 import nodeFs from 'node:fs';
 import path from 'node:path';
-import { roomDir, machineId } from '../home.ts';
+import { roomDir, machineIn } from '../home.ts';
 import { withLock } from '../lock.ts';
 import { writeFileAtomic, writeJsonAtomic, readJson } from '../io.ts';
 import { RoomError } from './validate.ts';
@@ -174,7 +174,7 @@ class FsRoomStore implements RoomStore {
     const moved = path.join(d, MOVED);
     return logIo.appendLocked(d, tail => {
       const host = p.kind === 'host_changed' || fs.existsSync(moved) ? this.hostState() : undefined;
-      const r = placeAfter(p, { keys: this._keys, host, machine: machineId(), ...tail, now: Date.now() });
+      const r = placeAfter(p, { keys: this._keys, host, machine: machineIn(this.code), ...tail, now: Date.now() });
       if (r.e.kind === 'host_changed') fs.writeFileSync(moved, '', { mode: 0o600 });
       return r;
     });

@@ -389,7 +389,7 @@ async function enrollLink(code: string): Promise<void> {
   const sshkeys = sshkeysMod();
   const linkKey = spec.kind === 'ssh' ? sshkeys.linkKey(dir, `sub-human:${code}:${l.enroll.name}`) : null;
   // no machine id readable: '', which the host refuses as not well formed
-  const joiner = { name: l.enroll.name, machine: (require('../home.ts') as typeof import('../home.ts')).machineId() ?? '', label: joinerLabel(), key: linkKey ? linkKey.raw : null };
+  const joiner = { name: l.enroll.name, machine: (require('../home.ts') as typeof import('../home.ts')).machineIn(code) ?? '', label: joinerLabel(), key: linkKey ? linkKey.raw : null };
   const { transport, sawKey } = await openTransport(spec, code, { dir });
   const checkKey = (vouched: string | null): void => {
     if (spec.kind === 'ssh') {

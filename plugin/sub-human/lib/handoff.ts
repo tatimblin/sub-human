@@ -76,7 +76,7 @@ import * as members from './room/members.ts';
 import * as invites from './remote/invites.ts';
 import * as hostLinks from './remote/host-links.ts';
 import { RoomError } from './room/validate.ts';
-import { machineId } from './home.ts';
+import { machineId, machineIn, isMine } from './home.ts';
 import { isAlive, sleepSync } from './io.ts';
 import * as config from './config.ts';
 import * as identityMod from './identity.ts';
@@ -149,7 +149,7 @@ function ask(code: string, { from, to, locator, sign, now = Date.now() }: { from
   if (movedAway(s)) throw err('STALE', `room ${code} moved to another machine already`);
   const m: Member | undefined = (s.members.read() as Members)[to];
   if (!m || m.left_at || m.role === 'claude') throw err('INVALID', `${to} is not in room ${code}`);
-  if ((m.machine || machineId()) === machineId()) throw err('INVALID', `${to} is on this machine; a handoff moves the room to another machine`);
+  if (isMine(m.machine || machineId())) throw err('INVALID', `${to} is on this machine; a handoff moves the room to another machine`);
   if (!members.seatAlive(m)) throw err('OFFLINE', `${to} is not online; a handoff needs their answer`);
   const linksNow: Record<string, LinkRec | null> = s.kv.get(hostLinks.LINKS_KEY) || {};
   const linked = Object.values(linksNow).some(l => l && l.machine === m.machine && (l.seats || []).includes(to));
@@ -166,7 +166,7 @@ const hostDoc = (s: Store): HandoffDoc | null => { try { return s.kv.get(HOST_DO
 
 function movedAway(s: Store): boolean {
   const h: HostState = typeof s.hostState === 'function' ? s.hostState() : { epoch: 0 };
-  return !!h.machine && h.machine !== machineId();
+  return !!h.machine && !isMine(h.machine);
 }
 
 /** The ask as the target's machine sees it: no signatures, no invites. */
@@ -249,7 +249,7 @@ function serverRefuse(s: Store, link: LinkRec, { id }: { id?: string } = {}, now
 function afterMoved(s: Store, { job }: { job?: string | null } = {}): boolean {
   if (job) { try { (require('./room-claude.ts') as typeof import('./room-claude.ts')).releaseDetached(s.code, job); } catch { /* the job ends with its session */ } }
   const d = hostDoc(s);
-  const me = machineId();
+  const me = machineIn(s.code);
   const invite = d && d.invites && me ? d.invites[me] : null;
   if (!d || !invite || !d.locator) return false;
   const f = followLink(s.code, d.locator, invite);
@@ -271,7 +271,7 @@ function onMoved(mirror: Store, data: MovedEventData | null | undefined): { self
   if (!data || h.epoch !== data.epoch || h.machine !== data.machine) {
     return { reason: `the host said room ${code} moved, but this machine hasn't received that yet` };
   }
-  if (data.machine === machineId()) return { self: true, stop: true, reason: `this machine hosts room ${code} now` };
+  if (isMine(data.machine)) return { self: true, stop: true, reason: `this machine hosts room ${code} now` };
   const how = `ask ${data.host} for an invite (/sub-human invite, there) and type the line it shows here`;
   if (!data.invite) return { stop: true, reason: `room ${code} moved to ${data.host}'s machine, and no invite came for this machine; ${how}` };
   const cur: Partial<Link> = links.get(code) || {};
@@ -326,7 +326,7 @@ function card(a: Pick<HandoffAsk, 'id' | 'from'>, code: string): Card {
 function machinesOf(s: Store): Map<string, string[]> {
   const by = new Map<string, string[]>();
   for (const m of Object.values(s.members.read() as Members)) {
-    if (!m || !m.name || m.left_at || m.role === 'claude' || !m.machine || m.machine === machineId()) continue;
+    if (!m || !m.name || m.left_at || m.role === 'claude' || !m.machine || isMine(m.machine)) continue;
     const seats = by.get(m.machine) || [];
     if (!by.has(m.machine)) by.set(m.machine, seats);
     seats.push(m.name);
@@ -392,7 +392,7 @@ function takeOver(code: string, { by, cwd, epoch, entry }: { by: string, cwd?: s
   const mirror = store.open(code);
   if (!entry) {
     const h: HostState = mirror.hostState();
-    if (h.machine !== machineId() || (epoch && h.epoch !== epoch)) throw err('FORK', `this copy of room ${code} does not hold the line that moves it here`);
+    if (!isMine(h.machine) || (epoch && h.epoch !== epoch)) throw err('FORK', `this copy of room ${code} does not hold the line that moves it here`);
   }
   const v = mirror.verifyChain();
   if (!v.ok) throw err('FORK', `this copy of room ${code} does not chain at ${v.badAt != null ? `#${v.badAt}` : `line ${v.line}`}`);
@@ -426,7 +426,7 @@ function promote(code: string, { name, locator, force = false, cwd, now = Date.n
   const down = now - (Date.parse(st.since || '') || now);
   if (!force && down < gate) throw err('INVALID', `the link to room ${code}'s host has been down ${Math.round(down / 1000)} s; promote only after ${Math.round(gate / 60_000)} min (or --force)`);
   const m: Member | undefined = (s.members.read() as Members)[name];
-  if (!m || m.left_at || m.machine !== machineId()) throw err('INVALID', `${name} isn't in room ${code} on this machine`);
+  if (!m || m.left_at || !isMine(m.machine)) throw err('INVALID', `${name} isn't in room ${code} on this machine`);
   const full = s.validateChain();
   if (!full.ok || !s.lastId()) throw err('FORK', `this machine's copy of room ${code} is empty or does not chain; it cannot become the room`);
   const loc: string = locator || linkConnect().pipeLocator();
@@ -436,7 +436,7 @@ function promote(code: string, { name, locator, force = false, cwd, now = Date.n
   const last: number = s.lastId();
   const machines = machinesOf(s);
   const entry: EntryInput = {
-    kind: 'host_changed', epoch, host: name, machine: machineId() ?? undefined, locator: loc, promoted: true,
+    kind: 'host_changed', epoch, host: name, machine: machineIn(code) ?? undefined, locator: loc, promoted: true,
     text: `${name} made this machine the host of room ${code}: the old host was unreachable, and anything it wrote after #${last} isn't in the room`,
   };
   serveWeb(code, loc);

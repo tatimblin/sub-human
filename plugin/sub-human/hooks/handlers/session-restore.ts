@@ -58,7 +58,7 @@ function reseat(input: HookIn<'SessionStart'>): Identity | null {
   const r = identity.join({ code: last.code, name: last.name, role: last.role, pid, session_id: input.session_id, cwd: input.cwd });
   if (!r || !r.ok) return null;
   const pubkey = last.role === 'claude' ? undefined : seatKey.publicPem(last.code, last.name);
-  const machine = identity.machineId(); // null: unreadable; the entry then names none (validate refuses null)
+  const machine = identity.machineIn(last.code); // null: unreadable; the entry then names none (validate refuses null)
   if (hosted) room.open(last.code).append({ kind: 'member_joined', text: `${last.name} rejoined (resumed)`, pubkey, ...(machine ? { machine } : {}) }, { via: 'system', from: last.name, system: true });
   return { ...last, pid, session_id: input.session_id ?? null };
 }

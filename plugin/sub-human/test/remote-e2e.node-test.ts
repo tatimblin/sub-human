@@ -60,7 +60,10 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   assert.deepEqual([typeof linkFile.token, linkFile.invite], ['string', undefined], 'the invite became the token');
   assert.equal(fs.statSync(path.join(remote.home, 'links', `${code}.json`)).mode & 0o777, 0o600);
   const hostJoin = host.lib(() => store.open(code).readAll()).find(e => e.kind === 'member_joined' && e.from === 'bob')!;
-  assert.equal(hostJoin.machine, remote.lib(() => identity.machineId()));
+  // the host derived bob's machine id from his home's machine key, and his home keeps it for this room
+  assert.equal(hostJoin.machine, remote.lib(() => identity.machineIn(code)));
+  assert.match(hostJoin.machine!, /^k[0-9a-f]{15}$/);
+  assert.notEqual(hostJoin.machine, remote.lib(() => identity.machineId()), 'not the id bob\'s home reported');
 
   // bob's @room: placed on the host, verified there, back in his mirror byte for byte
   assert.equal(remote.say(bob, 'hello from afar').json!.continue, false);

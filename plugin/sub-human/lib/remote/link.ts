@@ -524,14 +524,14 @@ function idleWatch(link: RunningLink, mirror: MirrorRoomStore, idleMs: number, {
   now = Date.now,
   gapMs = config.envMs('SUB_HUMAN_LINK_WAKE_GAP_MS', config.LINK_WAKE_GAP_MS),
 }: { now?: () => number; gapMs?: number } = {}): () => void {
-  const { machineId } = homeMod;
+  const { isMine } = homeMod;
   const { leaseFresh } = membersMod;
   const identity = identityMod;
   // a seat the host shows (not left) whose lease is fresh, or that a live claude process here holds: a lease that
   // lapsed while this machine slept is keepSeats' to renew on the next connection, not a reason to stop
   const held = () => {
     let live: string[] | null = null;
-    return Object.values(mirror.members.read()).some(m => m && m.machine === machineId() && !m.left_at
+    return Object.values(mirror.members.read()).some(m => m && isMine(m.machine) && !m.left_at
       && (leaseFresh(m) || (live ??= identity.localSeats(mirror.code)).includes(m.name)));
   };
   // an invite not redeemed yet (an ssh join waits for the host to admit its key): kept trying for the invite's life

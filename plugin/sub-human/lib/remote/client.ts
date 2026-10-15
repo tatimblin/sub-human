@@ -16,7 +16,8 @@
  *       helloMs (default deadlineMs) bounds the hello alone: a transport such as ssh connects before it answers.
  *       A refused hello closes the transport and rejects.
  *   Client
- *     token, link, room, serverCaps, v (the version in use), serverVersion (the host's plugin version)
+ *     token, link, room, serverCaps, v (the version in use), serverVersion (the host's plugin version), machine (this
+ *     machine's id in the room as the host records it, null from a host that sends none)
  *     request(op, params, {ms}?) -> Promise<result>   one op as the wire has it (the link daemon relays its hooks' ops
  *         so); ms: its own deadline instead of deadlineMs (the daemon waits longer for an @room post sent already)
  *     join({name, role?, pubkey, proof}) -> Promise<{ok, rejoin?}>
@@ -65,13 +66,15 @@ interface Pending {
 }
 
 /** The server's answer to hello (types-core HelloResult), read defensively: what a host may leave out is optional. */
-type HelloReply = Pick<HelloResult, 'v' | 'link' | 'room'> & Partial<Pick<HelloResult, 'proto' | 'server' | 'token' | 'epoch'>> & {
+type HelloReply = Pick<HelloResult, 'v' | 'link' | 'room'> & Partial<Pick<HelloResult, 'proto' | 'server' | 'token' | 'epoch' | 'machine'>> & {
   caps: ServerCaps | null;
 };
 
 export interface ConnectOpts {
   /** this machine's id (home.machineId; null when it could not be read: the host refuses the hello) */
   machine: string | null;
+  /** this home's machine key's proof (lib/remote/machine-key.ts): the host derives the machine's id from it */
+  machineKey?: { key: string; ts: number; sig: string };
   token?: string;
   invite?: string;
   pin?: string;
@@ -98,6 +101,8 @@ class Client {
   room: string | null;
   serverCaps: ServerCaps | null;
   epoch: number | null;
+  /** this machine's id in the room as the host records it (its hello's reply; null from a host that sends none) */
+  machine: string | null = null;
   declare v: number;
   declare serverVersion: string | null;
 
@@ -193,7 +198,7 @@ class Client {
 
 /** transport: {send(frame), onFrame(fn), onClose(fn), close()}, or a Promise of one */
 async function connect(transport: Transport | Promise<Transport>, opts: ConnectOpts): Promise<Client> {
-  const { machine, token, invite, pin, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
+  const { machine, machineKey, token, invite, pin, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
   const proto: ProtoRange = opts.proto || protocol.PROTO, version: string = opts.version || protocol.PLUGIN_VERSION;
   const c = new Client(await transport, { deadlineMs });
   const cred: { invite?: string; pin?: string; token?: string; login?: boolean } = invite !== undefined ? { invite, ...(pin !== undefined ? { pin } : {}) } : token !== undefined ? { token } : login === true ? { login: true } : {};
@@ -201,13 +206,13 @@ async function connect(transport: Transport | Promise<Transport>, opts: ConnectO
   const need = Math.max(proto.min, pin !== undefined ? 2 : 1);
   const me = { version, proto };
   try {
-    const r: HelloReply = await c._request('hello', { proto, client: version, caps, machine, ...cred, ...(Number.isInteger(epoch) ? { epoch } : {}) }, ++c.seq, helloMs);
+    const r: HelloReply = await c._request('hello', { proto, client: version, caps, machine, ...(machineKey ? { machine_key: machineKey } : {}), ...cred, ...(Number.isInteger(epoch) ? { epoch } : {}) }, ++c.seq, helloMs);
     const theirs = protocol.rangeOf({ proto: r.proto });
     if (!theirs || r.v < proto.min || r.v > proto.max || r.v < need) {
       throw new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: r.server, proto: theirs || { min: r.v, max: r.v } }, joiner: me }), 'SKEW');
     }
     if (cred.login && !r.token) throw new RoomError('PROTOCOL', `the host's sub-human (${r.server || 'an unknown version'}) makes no link over an ssh login; update it there, or join with an invite`, 'SKEW');
-    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null, epoch: Number.isInteger(r.epoch) ? r.epoch : 0 });
+    Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null, epoch: Number.isInteger(r.epoch) ? r.epoch : 0, machine: typeof r.machine === 'string' && r.machine ? r.machine : null });
   } catch (e) {
     c.close();
     throw e;

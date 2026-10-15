@@ -103,11 +103,11 @@ function ensureRoomClaude(code: string, cwd: string | null | undefined, by: stri
   return ` · starting the room's Claude…${failed}`;
 }
 
-function enter({ code, name, role = 'member', machine = identity.machineId(), account, pid, session_id, cwd, pubkey }: EnterOpts): EnterResult {
+function enter({ code, name, role = 'member', machine = identity.machineIn(code), account, pid, session_id, cwd, pubkey }: EnterOpts): EnterResult {
   // the seat's earlier record ended with no leave: its "left" line goes before this join's "rejoined"
   if (identity.isHost(code)) sweep(code, { name });
   // a seat on the host is the host account's (elsewhere the host's server decides: a mirror's join sends no account)
-  if (account === undefined && machine && machine === identity.machineId() && identity.isHost(code)) account = machine;
+  if (account === undefined && machine && machine === identity.machineIn(code) && identity.isHost(code)) account = machine;
   const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd });
   if (!r.ok) return r;
   if (!identity.isHost(code)) return { ...r, note: '' };
@@ -138,7 +138,7 @@ function exit(code: string, name: string, reason: string, { deadlineMs }: { dead
   return true;
 }
 
-const isLocal = (m: Member): boolean => validPid(m.pid) && (m.machine || identity.machineId()) === identity.machineId();
+const isLocal = (m: Member): boolean => validPid(m.pid) && identity.isMine(m.machine || identity.machineId());
 
 function sweep(code: string, { now = Date.now(), name }: { now?: number; name?: string } = {}): string[] {
   const s = room.open(code).store;

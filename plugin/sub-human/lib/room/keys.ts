@@ -7,6 +7,7 @@
  *   localKey(name, code) -> KeyObject|null   <code>/<name>.pub, cached until the file changes
  *   hasLocalKey(name, code) -> bool     the file exists (readable or not): the seat has a key, so its unsigned words
  *                                       are never legacy
+ *   machineKeyFile() -> <home>/keys/machine.json   this home's machine key (lib/remote/machine-key.ts), beside the seats'
  */
 
 import fs from 'node:fs';
@@ -43,4 +44,6 @@ function hasLocalKey(name: string, c: string): boolean {
   try { return fs.existsSync(pubPath(name, c)); } catch { return true; } // an unsafe name: never legacy
 }
 
-export { keyDir, pubPath, localKey, hasLocalKey };
+const machineKeyFile = (): string => path.join(home(), 'keys', 'machine.json');
+
+export { keyDir, pubPath, localKey, hasLocalKey, machineKeyFile };

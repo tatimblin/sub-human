@@ -33,7 +33,7 @@
 
 import { isAlive, validPid } from '../io.ts';
 import { pidStart } from '../lock.ts';
-import { machineId } from '../home.ts';
+import { machineId, isMine } from '../home.ts';
 import {
   PRESENCE_DETAIL_MAX, PID_START_SLACK_S, SEAT_BEAT_MS, SEAT_LEASE_MS, ROOM_CLAUDE_BIND_MS, ROOM_CLAUDE_CLAIM_MS, envMs,
 } from '../config.ts';
@@ -66,7 +66,7 @@ function startMatches(m: SeatLike): boolean {
 const leaseFresh = (m: SeatLike | null | undefined, now = Date.now()): boolean => { const t = Date.parse(String(m && m.seen_at)); return Number.isFinite(t) && now - t < SEAT_LEASE_MS; };
 function seatAlive(m: SeatLike | null | undefined): boolean { // unary: callers pass it to filter/some
   if (!m || !m.name || m.left_at) return false;
-  if (validPid(m.pid) && machineOf(m) === machineId()) return isAlive(m.pid) && startMatches(m);
+  if (validPid(m.pid) && isMine(machineOf(m))) return isAlive(m.pid) && startMatches(m);
   return leaseFresh(m);
 }
 
@@ -143,7 +143,7 @@ function publicView(members: Members | null | undefined): Members {
  */
 function roomClaudePresence(o: SeatLike | null | undefined, now = Date.now()): 'live' | 'starting' | null {
   if (!o || o.left_at || o.stopped_at || o.closing) return null;
-  if (validPid(o.pid) && machineOf(o) === machineId()) return seatAlive(o) ? 'live' : null;
+  if (validPid(o.pid) && isMine(machineOf(o))) return seatAlive(o) ? 'live' : null;
   if (o.joined_at && o.job !== 'pending' && !o.spawn_error && leaseFresh(o, now)) return 'live';
   const since = now - Date.parse(String(o.spawned_at || 0));
   if (o.job === 'pending') return since <= envMs('SUB_HUMAN_ROOM_CLAUDE_CLAIM_MS', ROOM_CLAUDE_CLAIM_MS) ? 'starting' : null;

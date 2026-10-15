@@ -24,8 +24,8 @@ const READ_DOCTOR = /^\s*(?:[\w./~-]*\/)?sub-human\s+doctor(?:\s+(?:--quick|--js
 /** doctor that changes things: the person runs it. */
 const DOCTOR_WRITES = /(?:^|[\s;&|(`'"/])sub-human\s+doctor\b[^;&|\n]*--(?:fix|bundle)(?![\w-])/;
 const ENV_NAMES = /\bSUB_HUMAN_HOME\b/;
-/** The CLI commands a person runs in their own shell: an invite, letting a machine in or out, the link daemon, the room server, moving the room's host, the web listener. */
-const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|admit|kick|prime|listen|link|serve|handoff|promote|demote)(?![\w-])/;
+/** The CLI commands a person runs in their own shell: an invite, letting a machine in or out, the link daemon, the room server, the room's options, moving the room's host, the web listener. */
+const PERSON_CLI = /(?:^|[\s;&|(`'"/])sub-human\s+(?:invite|admit|kick|prime|listen|link|serve|options|handoff|promote|demote)(?![\w-])/;
 /** The host's serve shim asked to link a machine over an ssh login (`ssh you@host H/bin/serve --stdio CODE --link ID --login`),
  *  under any home path: a person's step (/sub-human join USER@HOST ROOM), as `sub-human serve` is. */
 const LOGIN_SERVE = /\bserve\b[^;&|\n]*--stdio\b[^;&|\n]*--login(?![\w-])/;

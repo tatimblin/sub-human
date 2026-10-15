@@ -67,6 +67,7 @@ import * as protocol from './protocol.ts';
 import * as invites from './invites.ts';
 import * as hostLinks from './host-links.ts';
 import * as quota from './quota.ts';
+import * as machineKey from './machine-key.ts';
 import * as seats from '../seats.ts';
 import * as proposal from '../proposal.ts';
 import * as handoff from '../handoff.ts';
@@ -75,7 +76,8 @@ import * as envelope from '../room/envelope.ts';
 import * as room from '../room.ts';
 import { RoomError, hash12 } from '../room/store.ts';
 import type { Reason } from '../reasons.ts';
-import { machineId } from '../home.ts';
+import { machineIn } from '../home.ts';
+import * as options from '../room/options.ts';
 import {
   FOLLOW_POLL_MS, REPLAY_BATCH, PROPOSAL_FILE_MAX, LINK_SILENT_MS, LINK_FRAME_MAX_BYTES,
 } from '../config.ts';
@@ -108,13 +110,13 @@ function own(s: Session, name: string | undefined): void {
   if (!hostLinks.mayWriteAs(s.link, name as string)) throw authError(`${name} has not joined over this link`, 'NOT_JOINED');
 }
 
-function redeem(s: Session, invite: unknown, machine: string, pin: unknown): Credential {
+function redeem(s: Session, invite: unknown, machine: string, pin: unknown, proven: string | null): Credential {
   const { store, linkId } = s;
   const inv = invites.parseInvite(invite);
   if (!inv || inv.code !== store.code) throw authError(`not an invite to room ${store.code}`, 'INVITE_UNKNOWN');
   let r: ReturnType<typeof invites.redeemInvite>;
   try {
-    r = invites.redeemInvite(store, inv.secret, { machine, pin, ...(linkId ? { linkId } : {}) });
+    r = invites.redeemInvite(store, inv.secret, { machine, pin, proven, ...(linkId ? { linkId } : {}) });
   } catch (e) {
     if ((e as CodedError).note) roomLine(s, (e as CodedError).note!);
     throw e;
@@ -129,11 +131,11 @@ function redeem(s: Session, invite: unknown, machine: string, pin: unknown): Cre
 const roomLine = (s: Session, text: string): void => room.roomLine(s.store, text, msg => s.log(`sub-human serve: ${msg}`));
 
 /** hello {login: true}: a new link for a connection over the host account's own ssh login (Session.login), else AUTH. */
-function viaLogin(s: Session, machine: string): Credential {
+function viaLogin(s: Session, machine: string, proven: string | null): Credential {
   if (!s.login || !s.linkId) {
     throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through a key that was let in for one other connection, and reaches only that one)` : ''}; join with an invite instead (/sub-human invite on the host)`, 'LOGIN_ONLY');
   }
-  const r = hostLinks.loginLink(s.store, { id: s.linkId, machine }); // linkId: checked above
+  const r = hostLinks.loginLink(s.store, { id: s.linkId, machine, proven }); // linkId: checked above
   roomLine(s, 'a machine linked over your SSH login');
   return r;
 }
@@ -255,12 +257,14 @@ const OPS: OpHandlers = {
     }
     s.link = null;
     s.v = v;
-    const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin) : token !== undefined ? known(s.store, token, s.linkId)
-      : params.login === true ? viaLogin(s, machine) : { link: null };
+    const proven = machineKey.verify(params.machine_key, s.store.code); // the id its machine key gives (else only reported)
+    const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin, proven) : token !== undefined ? known(s.store, token, s.linkId)
+      : params.login === true ? viaLogin(s, machine, proven) : { link: null };
     s.link = r.link;
     if (caps && caps.ping === true) s.expireSilent();
     // time: the host's clock (ms), so a joiner (sub-human doctor) can measure the skew that SIG_SKEW_MS bounds; additive
     const out: OpResults['hello'] = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null, epoch: mine, time: Date.now() };
+    if (r.link) out.machine = r.link.machine; // additive: this machine's id in the room, as the host records it
     if (r.token) out.token = r.token;
     if (stopped(s.store.members.read())) out.closed = true; // additive: an older host says nothing
     return out;
@@ -273,7 +277,8 @@ const OPS: OpHandlers = {
     // s.link: run() lets no op but hello in without it. A bound link (the card let one name in; a handoff's seats) joins
     // its own seats only, before any seat is taken. A login link is the host account's own: its seat is that person's
     if (!hostLinks.mayJoinAs(s.link, name)) throw authError(hostLinks.notBound(s.link!, name), 'NOT_BOUND');
-    const account = s.link!.login ? machineId() : undefined;
+    // a login link's seat is the host person's own (one person with the host's seats) only where the room says so
+    const account = s.link!.login && options.loginSamePerson(s.store) ? machineIn(s.store.code) ?? undefined : undefined;
     const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey, ...(account ? { account } : {}) });
     if (!r.ok) throw new RoomError(r.code || 'INVALID', r.error);
     s.link = hostLinks.bindSeat(s.store, s.link!.id, name);

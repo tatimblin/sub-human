@@ -90,14 +90,17 @@
  *       shim, authorized_keys lines that bypass it, ssh, each link (state, last error, a hello to its host with
  *       both protocol versions, clock skew), Claude Code against the internals, hooks, Remote Control. --bundle
  *       writes the same, redacted, for a bug report. Exit 1 when a check fails.
+ *   sub-human options CODE [NAME on|off]
+ *       A room hosted here: its options (lib/room/options.ts), printed, or one set. login-same-person: a seat that
+ *       joins over this account's own ssh login is the host person's own for consent (default off: its own person).
  *   sub-human handoff NAME [--room CODE] [--as SEAT] [--ssh USER@HOST[:PORT]] | handoff --status [--room CODE]
  *   sub-human promote CODE [--as SEAT] [--ssh USER@HOST[:PORT]] [--force] --confirm CODE
- *   sub-human demote CODE INVITE PIN
+ *   sub-human demote CODE [--from FILE]   (the invite line and its PIN on stdin, or in FILE: never in argv)
  *       Moving the room's host (lib/handoff.ts; the bodies are lib/cli/handoff.ts): a planned handoff to a member on
  *       another machine (their card decides), the manual promote of this machine's copy when the host is gone for
  *       good (it can fork the room), and each other machine's way to follow it with the invite promote printed for
  *       it (the old host's own lines kept aside as orphaned).
- *   Run invite, admit, kick, prime, listen, link, serve, handoff, promote and demote in your own shell: the Bash guard
+ *   Run invite, admit, kick, prime, listen, link, serve, options, handoff, promote and demote in your own shell: the Bash guard
  *   refuses them to a model. doctor without --fix or --bundle is read only.
  */
 
@@ -411,6 +414,17 @@ function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
   console.log(archive ? `room ${code}: forgotten; this machine's copy is kept at ${archive}` : `room ${code}: forgotten (this machine had no copy of it)`);
 }
 
+// ---------- options CODE [NAME on|off]: lib/room/options.ts ----------
+function optionsCmd(args: readonly string[]) {
+  const [code, name, value, ...more] = args;
+  if (!code || more.length || (name !== undefined && value !== 'on' && value !== 'off')) die('usage: sub-human options CODE [login-same-person on|off]');
+  if (!identity.roomExists(code)) die(`no room ${code} on this machine`, 1);
+  const opts: typeof import('../room/options.ts') = require('../room/options.ts');
+  const s = room.open(code).store;
+  const cur = name === undefined ? opts.get(s) : opts.set(s, name, value === 'on');
+  for (const n of opts.NAMES) console.log(`${n}: ${cur[n] ? 'on' : 'off'}`);
+}
+
 type Command = (args: readonly string[]) => unknown;
 
 /** What an unknown command prints: one command per line, grouped (the header above has each in full). */
@@ -422,12 +436,13 @@ const USAGE = [
   '              invite --stop | invite --cancel [REF]',
   '              admit [REF] | kick NAME | listen [--port P] [--start | --stop | --status]',
   '  joiner:     prime ROOM | link CODE [--reset | --forget [--force]]',
-  '  moving:     handoff NAME | promote CODE | demote CODE INVITE PIN',
+  '  moving:     handoff NAME | promote CODE | demote CODE [--from FILE] (INVITE PIN on stdin)',
+  '  room:       options CODE [login-same-person on|off]',
   '  checks:     doctor [--fix] [--bundle [FILE]]',
   '  internal:   tail | serve --stdio CODE [--link ID [--login]] | agent-statusline',
 ].join('\n');
 const doctor: Command = args => (require('./doctor.ts') as typeof import('./doctor.ts')).main(args).then(c => process.exit(c), (e: Error) => die(e.message, 2));
-const cmds: Record<string, Command> = { doctor, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, 'agent-statusline': agentStatusline };
+const cmds: Record<string, Command> = { doctor, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, options: optionsCmd, 'agent-statusline': agentStatusline };
 // lib/cli/*: each returns the exit code
 const viaCli = (fn: 'invite' | 'admit' | 'kick' | 'prime'): Command => a => process.exit((require('./host.ts') as typeof import('./host.ts'))[fn](a));
 Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick'), prime: viaCli('prime') });

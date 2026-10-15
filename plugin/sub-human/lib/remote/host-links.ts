@@ -6,9 +6,13 @@
  * as its seat key. "Write as yourself": a link writes only as the seats that joined over it, and joins a seat only
  * with a proof signed by that seat's key. (The joiner's own registry of links is lib/room/links.ts.)
  *
- *   create(store, {id, machine, seats, bound?, login?, label?, now?}) -> {token, link}   records {id, token_sha256,
- *       machine, seats, created_at, bound?, login?, label?}; the token is returned once
- *   loginLink(store, {id, machine, now?}) -> {token, link}   a link for a connection that arrived over the host account's
+ *   create(store, {id, machine, seats, bound?, login?, label?, check?, now?}) -> {token, link}   records {id,
+ *       token_sha256, machine, seats, created_at, bound?, login?, label?}; the token is returned once. machine: the id
+ *       the host derived from the joiner's machine key (lib/remote/machine-key.ts; the reported id is then only the
+ *       label), or a bound invite's (the machine it was minted for, across a handoff); with check (an id only reported:
+ *       a joiner that presents no key, a 0.5 beta's) it may be neither this host's (home.isMine) nor another link's
+ *       (AUTH MACHINE_TAKEN)
+ *   loginLink(store, {id, machine, proven?, now?}) -> {token, link}   proven: the id the joiner's machine key gives   a link for a connection that arrived over the host account's
  *       own ssh login (`serve --login`, lib/remote/server.ts): no invite, since whoever can run commands as this
  *       account may mint one anyway. Seats [], login: true, under the id the joiner chose (its serve's --link, so kick
  *       finds the process). AUTH for an id the room knows already
@@ -32,6 +36,7 @@ import crypto from 'node:crypto';
 import { RoomError } from '../room/validate.ts';
 import * as envelope from '../room/envelope.ts';
 import * as invites from './invites.ts';
+import { isMine } from '../home.ts';
 import type { KeyObject } from 'node:crypto';
 import type { AuthStore, LinkRecord, Links, SignedPayload } from './types-core.ts';
 
@@ -44,10 +49,11 @@ const newLinkId = (): string => crypto.randomBytes(6).toString('hex');
 const sha256 = (s: unknown): string => crypto.createHash('sha256').update(String(s)).digest('hex');
 const iso = (now: number): string => new Date(now).toISOString();
 
-function create(store: AuthStore, { id, machine, seats, bound = false, login = false, label, now = Date.now() }: {
-  id: string; machine: string; seats: string[]; bound?: boolean; login?: boolean; label?: string; admission?: boolean; now?: number;
+function create(store: AuthStore, { id, machine, seats, bound = false, login = false, label, check = false, now = Date.now() }: {
+  id: string; machine: string; seats: string[]; bound?: boolean; login?: boolean; label?: string; check?: boolean; now?: number;
 }): { token: string; link: LinkRecord } {
   const token = crypto.randomBytes(24).toString('base64url');
+  if (check) taken(store, machine, id);
   const link: LinkRecord = {
     id, token_sha256: sha256(token), machine, seats: [...seats], created_at: iso(now),
     ...(bound ? { bound: true as const } : {}), ...(login ? { login: true as const } : {}), ...(label && label !== machine ? { label } : {}),
@@ -59,11 +65,11 @@ function create(store: AuthStore, { id, machine, seats, bound = false, login = f
   return { token, link };
 }
 
-function loginLink(store: AuthStore, { id, machine, now = Date.now() }: { id: string; machine: string; now?: number }): { token: string; link: LinkRecord } {
+function loginLink(store: AuthStore, { id, machine, proven = null, now = Date.now() }: { id: string; machine: string; proven?: string | null; now?: number }): { token: string; link: LinkRecord } {
   if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room links machines to it');
   if (!LINK_ID_RE.test(String(id))) throw new RoomError('INVALID', 'a login link needs its id (12 hex)');
   if (linkKnown(store, id)) throw new RoomError('AUTH', `link ${id} exists already in room ${store.code}; it says hello with its token (join again for a new link)`);
-  return create(store, { id, machine, seats: [], login: true, now });
+  return create(store, { id, machine: proven || machine, seats: [], login: true, label: machine, check: !proven, now });
 }
 
 function linkKnown(store: AuthStore, id: unknown): boolean {
@@ -111,6 +117,12 @@ function revokeLink(store: AuthStore, id: string, { now = Date.now() }: { now?: 
 }
 
 const links = (store: AuthStore): Links => store.kv.get(LINKS_KEY, null) || {};
+
+/** A reported machine id (a joiner that derives none: a 0.5 beta's) may not be this host's own or another link's. */
+function taken(store: AuthStore, machine: string, id: string): void {
+  const other = Object.values(links(store)).some(l => l && l.id !== id && l.machine === machine);
+  if (other || isMine(machine)) throw new RoomError('AUTH', `this machine reports the id of another one in room ${store.code} (${other ? 'a linked machine' : 'the host'}); join from your own sub-human home`, 'MACHINE_TAKEN');
+}
 
 const proveSeat = (key: KeyObject, { room, name, pubkey }: SeatRef): SignedPayload => envelope.sign({ kind: 'join', pubkey }, key, { room, from: name });
 

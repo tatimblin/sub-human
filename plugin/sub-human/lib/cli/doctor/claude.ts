@@ -135,7 +135,7 @@ function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc.ts').jobs({ a
       continue;
     }
     const since = Date.parse(o.spawned_at || '') || now;
-    const bound = !!o.pid && !o.left_at && (o.machine || identity.machineId()) === identity.machineId();
+    const bound = !!o.pid && !o.left_at && identity.isMine(o.machine || identity.machineId());
     if (bound && identity.seatAlive(Object.assign({ name: 'claude' }, o))) {
       out.push(check(`room-claude:${code}`, 'pass', `room's Claude ${code}`, `bound and live: job ${o.job}, pid ${o.pid}`));
       continue;

@@ -140,9 +140,9 @@ const find = (code: string, ref: string): AdmissionRequest | null => admissions(
 
 function targets(code: string, req: AdmissionRequest): string[] {
   const identity: typeof import('../identity.ts') = require('../identity.ts');
-  const { machineId }: typeof import('../home.ts') = require('../home.ts');
+  const { isMine }: typeof import('../home.ts') = require('../home.ts');
   const here = Object.values(identity.readMembers(code) || {})
-    .filter(m => !!m && !!m.name && !m.left_at && m.role !== 'claude' && (!m.machine || m.machine === machineId())).map(m => m.name);
+    .filter(m => !!m && !!m.name && !m.left_at && m.role !== 'claude' && (!m.machine || isMine(m.machine))).map(m => m.name);
   return req.by && here.includes(req.by) ? [req.by] : here;
 }
 

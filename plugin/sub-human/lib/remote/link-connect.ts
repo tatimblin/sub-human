@@ -8,7 +8,9 @@
  *       or the invite once (with its PIN for an sh2 one), or {login: true} for a login link; a short code's
  *       enrollment runs first when the link file holds one (lib/remote/enroll.ts enrollLink). A token the hello gave
  *       replaces the invite and its PIN in the link file, so a redial never sends the PIN again; an invite the host
- *       refused (AUTH) is scrubbed with its PIN (refused: {at, reason}). caps {ping: true}
+ *       refused (AUTH) is scrubbed with its PIN (refused: {at, reason}). caps {ping: true}. The hello carries this home's
+ *       machine key's proof (lib/remote/machine-key.ts): the host records the machine id the key gives and the reply
+ *       says it; it is kept (home.ts setMachineIn) and every later hello reports it (home.ts machineIn)
  *   keyRefused(linkFile, transport, err) -> Promise<err'>   a dial of an ssh link with its own key and a token that ssh
  *       refused (classify: denied, publickey: the host revoked the key, `/sub-human kick`) is AUTH KEY_REVOKED, so the
  *       daemon stops; before the token (the host has not let it in yet) it stays OFFLINE; anything else is err
@@ -45,6 +47,7 @@ const transports = (): typeof import('./transports/index.ts') => require('./tran
 const ssh = (): typeof import('./transports/ssh.ts') => require('./transports/ssh.ts');
 const clientMod = (): typeof import('./client.ts') => require('./client.ts');
 const enrollMod = (): typeof import('./enroll.ts') => require('./enroll.ts');
+const machineKeyMod = (): typeof import('./machine-key.ts') => require('./machine-key.ts');
 
 const pipeLocator = (h: string = homeMod.home()): string => `pipe:${h}`;
 const sshLocator = (dest: string, opts?: { via?: string }): string | null => ssh().locator(dest, opts);
@@ -77,7 +80,8 @@ async function connectLink(code: string): Promise<Client> {
   if (!transports().get(kind)) throw new RoomError('PROTOCOL', `unknown transport "${kind}" (${transports().kinds().join(', ')})`);
   const cred = l.token ? { token: l.token } : login ? { login: true } : { invite: l.invite, ...(typeof l.pin === 'string' ? { pin: l.pin } : {}) };
   const epoch = storeMod.open(code).hostState().epoch;
-  const opts = { machine: homeMod.machineId(), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...cred };
+  // machine: this machine's id in the room (the host's, once it said one); machineKey: the proof the host derives it from
+  const opts = { machine: homeMod.machineIn(code), machineKey: machineKeyMod().proof(code), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...cred };
   const t = transports().open(l.transport, { code });
   let c: Client;
   try { c = await clientMod().connect(t, opts); } catch (err) {
@@ -87,6 +91,7 @@ async function connectLink(code: string): Promise<Client> {
     if (!l.token && !login && e && e.code === 'AUTH') scrubRefused(code, e.message, e.reason);
     throw login ? await loginRefused(l, t, e, code) : await keyRefused(l, t, e);
   }
+  if (c.machine && c.machine !== homeMod.machineIn(code)) homeMod.setMachineIn(code, c.machine);
   if (!l.token) {
     const { invite, pin, awaiting, ...rest } = l; // an sh2 invite's PIN is spent with it
     linksMod.set(code, { ...rest, token: c.token!, ...(rest.moved ? { moved: { ...rest.moved, reached_at: new Date().toISOString() } } : {}) }); // c.token: hello gives one for an invite or a login

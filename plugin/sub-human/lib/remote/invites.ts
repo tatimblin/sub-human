@@ -13,7 +13,9 @@
  *       its existing authenticated link, so it needs no PIN. pin true (a promote's, handed out by hand): the same record
  *       with pin_sha256 = sha256(secret:pin) (6 digits, never in the invite), INVITE_TTL_MS and INVITE_PIN_TRIES.
  *       hostKey: a ws/wss next host's listener key, pinned in the invite
- *   redeemInvite(store, secret, {machine, pin?, linkId?, now?}) -> {token, link, handoff, admission?}
+ *   redeemInvite(store, secret, {machine, pin?, linkId?, proven?, now?}) -> {token, link, handoff, admission?}   machine:
+ *       the id the hello reports (an invite's binding is checked against it); proven: the id the joiner's machine key
+ *       gives (lib/remote/machine-key.ts), which an admission's link records (host-links.ts create)
  *       marks the invite used and makes its link (host-links.ts create). An unknown, used or burnt invite is AUTH with
  *       its reason (INVITE_UNKNOWN, INVITE_USED, INVITE_BURNT, ...). A bound invite redeems only on its machine
  *       (INVITE_OTHER_MACHINE), before expires_at, and with its PIN when it has one (checked here, online, by the host
@@ -106,8 +108,8 @@ function checkBound(inv: BoundInvite, secret: string, pin: unknown, now: number)
   return { next: { ...inv, tries }, err: authError(msg, typeof pin === 'string' ? 'PIN_WRONG' : 'PIN_NEEDED', `a wrong PIN for an invite (${left(tries)})`) };
 }
 
-function redeemInvite(store: AuthStore, secret: string, { machine, linkId, pin, now = Date.now() }: {
-  machine: string; linkId?: string; pin?: unknown; now?: number;
+function redeemInvite(store: AuthStore, secret: string, { machine, linkId, pin, proven = null, now = Date.now() }: {
+  machine: string; linkId?: string; pin?: unknown; proven?: string | null; now?: number;
 }): Redeemed {
   const key = sha256(secret);
   let link = null as { id: string; seats: string[]; bound: boolean; machine: string } | null; // (as: set in the update)
@@ -119,7 +121,7 @@ function redeemInvite(store: AuthStore, secret: string, { machine, linkId, pin, 
       adm = inv;
       const r = admission.check(inv, { machine, linkId, now });
       if (r.err) { err = r.err; return r.next ? { ...cur, [key]: r.next } : undefined; }
-      link = { id: inv.link, seats: [inv.name], bound: true, machine }; // the card let one name in: that seat and no other
+      link = { id: inv.link, seats: [inv.name], bound: true, machine: proven || machine }; // the card let one name in: that seat and no other
       return { ...cur, [key]: { ...inv, used_at: iso(now) } };
     }
     if (inv && inv.burnt_at) throw authError('this invite no longer works (too many wrong PINs, expired, or cancelled); ask the host for a new one', 'INVITE_BURNT');
@@ -137,7 +139,8 @@ function redeemInvite(store: AuthStore, secret: string, { machine, linkId, pin, 
   });
   if (err) throw err;
   const l = link!; // the update ran without err
-  const made = hostLinks.create(store, { id: l.id, machine: l.machine, seats: l.seats, bound: l.bound, label: machine, admission: !!adm, now });
+  // an admission's machine: the one its joiner's machine key proves, else the reported one, checked
+  const made = hostLinks.create(store, { id: l.id, machine: l.machine, seats: l.seats, bound: l.bound, label: machine, check: !!adm && !proven, now });
   return { ...made, handoff, ...(adm ? { admission: adm } : {}) };
 }
 
