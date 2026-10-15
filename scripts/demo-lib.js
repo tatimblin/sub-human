@@ -67,9 +67,9 @@
  *                                                  end_turn after log entry ID and 6 s of quiet
  *   demo-lib.js wait-job-gone [--timeout S]       wait until `claude agents --json` no longer lists the room's Claude job
  *   demo-lib.js claude-transcript                   print the room's Claude session's transcript path
- *   demo-lib.js synthetic-gate <id>               run hooks/tasks.ts as the room Claude's TaskCompleted for task <id> over the
+ *   demo-lib.js synthetic-gate <id>               run hooks/run.ts tasks as the room Claude's TaskCompleted for task <id> over the
  *                                                  real log; print {status, stderr} (exit 2 = refused)
- *   demo-lib.js synthetic-claude-prompt             run hooks/at-room.ts as the room Claude's UserPromptSubmit (shim stdin) for a
+ *   demo-lib.js synthetic-claude-prompt             run hooks/run.ts at-room as the room Claude's UserPromptSubmit (shim stdin) for a
  *                                                  typed "hi" (CLAUDE_PID = the room Claude's pid); print its output
  *   demo-lib.js prune-index <index.json> <scene>…   drop those scenes' captures (before they run again)
  *   demo-lib.js plan-run <run.json> --all "S1 S2 …" [--fresh] [--seats "A B"] [--remote "NAME=HOME"] <scene>…   write
@@ -619,9 +619,9 @@ async function waitJobGone(o, T) {
   }));
 }
 
-/** Run a plugin hook script as the room Claude's own hook would, over the real room: the child's {status, stdout, stderr}. */
-function runAsRoomClaude(script, input, roomClaude, env = {}) {
-  const r = spawnSync(process.execPath, [path.join(paths.PLUGIN, 'hooks', script)], {
+/** Run a plugin hook handler (hooks/run.ts HANDLER) as the room Claude's own hook would, over the real room: the child's {status, stdout, stderr}. */
+function runAsRoomClaude(handler, input, roomClaude, env = {}) {
+  const r = spawnSync(process.execPath, [path.join(paths.PLUGIN, 'hooks', 'run.ts'), handler], {
     input: JSON.stringify(input), encoding: 'utf8',
     env: { PATH: process.env.PATH, HOME: process.env.HOME, SUB_HUMAN_HOME: HOME_DIR(), CLAUDE_PID: String(roomClaude.pid || ''), CLAUDE_PLUGIN_ROOT: paths.PLUGIN, ...env },
   });
@@ -631,7 +631,7 @@ function runAsRoomClaude(script, input, roomClaude, env = {}) {
 async function syntheticGate(o) {
   const roomClaude = roomClaudeMember();
   const input = { hook_event_name: 'TaskCompleted', session_id: roomClaude.session_id, task_id: String(o._[0]), task_subject: '' };
-  const r = runAsRoomClaude('tasks.ts', input, roomClaude, { CLAUDE_CODE_TASK_LIST_ID: paths.taskListId(roomCode()) });
+  const r = runAsRoomClaude('tasks', input, roomClaude, { CLAUDE_CODE_TASK_LIST_ID: paths.taskListId(roomCode()) });
   print(JSON.stringify({ input, ...r, logMax: Math.max(0, ...readLog(roomCode()).map(e => e.id)) }, null, 1));
   return 0;
 }
@@ -640,7 +640,7 @@ async function syntheticRoomClaudePrompt() {
   const roomClaude = roomClaudeMember();
   // as the mod's shim hands a typed prompt over
   const input = { hook_event_name: 'UserPromptSubmit', session_id: roomClaude.session_id, transcript_path: roomClaudeTranscript() || '', cwd: process.cwd(), prompt: 'hi', prompt_id: 'synthetic-1', permission_mode: 'plan', sub_human_origin: 'composer' };
-  const r = runAsRoomClaude('at-room.ts', input, roomClaude);
+  const r = runAsRoomClaude('at-room', input, roomClaude);
   print(JSON.stringify({ input: { prompt: input.prompt, session_id: input.session_id, pid: roomClaude.pid }, ...r }, null, 1));
   return 0;
 }

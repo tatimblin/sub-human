@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "v=$(node -v 2>/dev/null); case \"$v\" in v24.[3-9]*|v24.[1-9][0-9]*|v2[5-9].*|v[3-9][0-9].*|v[1-9][0-9][0-9]*) ;; *) echo \"sub-human needs Node 24.3 or newer on the PATH that Claude Code was started with, and found $([ -n \"$v\" ] && echo \"node $v\" || echo 'none (node: command not found)'). Install it (https://nodejs.org, or nvm, fnm or mise) and restart claude from a shell where node -v works.\" >&2; exit 2;; esac; exec node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/join.ts\"",
+            "command": "v=$(node -v 2>/dev/null); case \"$v\" in v24.[3-9]*|v24.[1-9][0-9]*|v2[5-9].*|v[3-9][0-9].*|v[1-9][0-9][0-9]*) ;; *) echo \"sub-human needs Node 24.3 or newer on the PATH that Claude Code was started with, and found $([ -n \"$v\" ] && echo \"node $v\" || echo 'none (node: command not found)'). Install it (https://nodejs.org, or nvm, fnm or mise) and restart claude from a shell where node -v works.\" >&2; exit 2;; esac; exec node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" join",
             "timeout": 10
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/row-guard.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" row-guard",
             "timeout": 10
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" consent",
             "timeout": 10
           }
         ]
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/row-map.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" row-map",
             "timeout": 10
           }
         ]
@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" consent",
             "timeout": 10
           }
         ]
@@ -62,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/consent.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" consent",
             "timeout": 10
           }
         ]
@@ -73,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/row-hold.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" row-hold",
             "timeout": 10
           }
         ]
@@ -85,7 +85,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/row-launcher.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" row-launcher",
             "async": true,
             "timeout": 10
           }
@@ -96,7 +96,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/session-restore.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" session-restore",
             "timeout": 10
           }
         ]
@@ -106,7 +106,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/row-rewake.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" row-rewake",
             "asyncRewake": true,
             "rewakeSummary": "sub-human: restoring rows",
             "timeout": 30
@@ -119,7 +119,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/session-end.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" session-end",
             "timeout": 5
           }
         ]
@@ -131,7 +131,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/presence.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" presence",
             "async": true,
             "timeout": 10
           }
@@ -143,7 +143,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/presence.ts\"",
+            "command": "node --import \"${CLAUDE_PLUGIN_ROOT}/hooks/compile-cache.js\" \"${CLAUDE_PLUGIN_ROOT}/hooks/run.ts\" presence",
             "async": true,
             "timeout": 10
           }

@@ -32,7 +32,7 @@ export function registerConsent(on: On) {
   on('classic.Stop', async ($, e, next) => {
     if (!(await needed($, e.session_id))) return next(e);
     const root = $.plugin.root;
-    const run = await $.process.run(shimArgv(root, 'consent.ts'), {
+    const run = await $.process.run(shimArgv(root, 'consent'), {
       stdin: JSON.stringify(e),
       env: { ...shimEnv(e, root), ...SHIM_MODE },
       timeoutMs: SHIM_TIMEOUT_MS,

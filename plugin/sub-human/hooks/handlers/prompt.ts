@@ -1,8 +1,8 @@
-#!/usr/bin/env node
-// UserPromptSubmit: one process for both prompt handlers (one node start per prompt instead of two):
-//   1. hooks/at-room.ts handle(): an @room post (continue:false + "✓ sent"), a refusal (decision:block), and
+// plugin/sub-human/hooks/handlers/prompt.ts: UserPromptSubmit: one process for both prompt handlers (one node start
+// per prompt instead of two):
+//   1. hooks/handlers/at-room.ts handle(): an @room post (continue:false + "✓ sent"), a refusal (decision:block), and
 //      "working" presence;
-//   2. hooks/consent.ts onPrompt(): a plan-view review left open by Esc is resolved (the person's note recorded)
+//   2. hooks/handlers/consent.ts onPrompt(): a plan-view review left open by Esc is resolved (the person's note recorded)
 //      and, still in plan mode, the model is told to exit it first (additionalContext).
 // Both run on the same input, in that order, each guarded: a throw in one is logged and the other still runs.
 // Merging (what Claude Code did with the two hooks' outputs): when at-room stops the prompt (decision "block":
@@ -13,10 +13,10 @@
 // neither had any. Exit 1 (Claude Code shows stderr to the person) only when a handler threw and nothing is output.
 // It runs only through mod/prompt.ts (the classic.UserPromptSubmit shim; no hooks.json entry), which adds
 // sub_human_origin to its stdin. Its output also carries consent's subHuman {reviewOpen} for the mod.
-import * as c from './common.ts';
+import { capture, logError, out } from '../reply.ts';
 import * as atRoom from './at-room.ts';
 import * as consent from './consent.ts';
-import type { HookOutput, HookSpecificOutput } from './types.ts';
+import type { HookOutput, HookSpecificOutput, Reply } from '../types.ts';
 
 const EVENT = 'UserPromptSubmit';
 const stops = (o: HookOutput | null | undefined) => !!o && (o.decision === 'block' || o.continue === false);
@@ -46,27 +46,24 @@ function merge(outputs: (HookOutput | null | undefined)[]): HookOutput | null {
   return merged;
 }
 
-function main() {
-  let input: Parameters<typeof atRoom.handle>[0];
-  try { input = c.readInput(); } catch (err) { c.logError(err, 'prompt'); process.exitCode = 1; return; }
+export function handle(input: Parameters<typeof atRoom.handle>[0]): Reply | null {
   const outputs: HookOutput[] = [];
   let failed = false;
   const handlers: [string, () => void][] = [['at-room', () => atRoom.handle(input)], ['consent', () => consent.onPrompt(input)]];
   for (const [where, fn] of handlers) {
-    const r = c.capture(fn);
-    if (r.error) { c.logError(r.error, where); failed = true; }
+    const r = capture(fn);
+    if (r.error) { logError(r.error, where); failed = true; }
     outputs.push(...r.outputs);
   }
   let o = merge(outputs);
   // Tell the mod whether a room review is still on record (mod/consent.ts flag); after a failure it stays unsure.
   if (!failed) {
     let open: boolean | undefined;
-    try { open = consent.reviewOpen(input); } catch (err) { c.logError(err, 'consent'); }
+    try { open = consent.reviewOpen(input); } catch (err) { logError(err, 'consent'); }
     if (open !== undefined) o = { ...(o || {}), subHuman: { reviewOpen: open } };
   }
-  if (o) c.out(o);
-  else if (failed) process.exitCode = 1;
+  if (o) out(o);
+  return !o && failed ? { kind: 'classic', exit: 1 } : null;
 }
 
 export { merge };
-if (import.meta.main) main();

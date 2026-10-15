@@ -6,7 +6,7 @@
  *
  *   new Machine(t?, name, env?)   env: extra variables for every child (e.g. SUB_HUMAN_LINK_RETRY_MS)
  *     seat(name) -> {name, pid, sid}
- *     hook(script, input, seat, {env}?) -> spawnSync result + json   hooks/<script>.ts as seat
+ *     hook(handler, input, seat, {env}?) -> spawnSync result + json   hooks/run.ts <handler> as seat
  *     lease(seat)                     the hooks module's hello lease for the seat's session (with its nonce), as
  *                                     hooks/mod-hello.ts writes it; join and every prompt write it first
  *     join(seat, args), say(seat, text), plain(seat, text)          the join expansion; an @room post; a prompt
@@ -15,6 +15,7 @@
  *     linkInvite1(code, invite)       this machine's link file for that invite (what a 0.4 sh1 join wrote); then
  *                                     join(seat, `NAME CODE`) takes the seat over it
  *     joinVia(host, hostSeat, seat, {as?, line?, invite?}) -> Promise<{shown, line, code, pin, typed, admitted, seated}>
+ *                                     (once seated, it waits until the seat resolves here: the mirror's members)
  *                                     the whole join from a second home: `/sub-human invite --pipe` (or invite: other
  *                                     invite args, e.g. `invite --url U`) on the host, unless line is given; the line
  *                                     typed here (a hidden step), the host's `/sub-human admit REF`, the link online,
@@ -76,7 +77,7 @@ class Machine {
   }
 
   hook(script: string, input: HookInput, seat: Seat, { env }: { env?: Env } = {}): MachineRun {
-    const r = spawnSync(process.execPath, [path.join(h.PLUGIN, 'hooks', `${script}.ts`)], {
+    const r = spawnSync(process.execPath, [path.join(h.PLUGIN, 'hooks', 'run.ts'), script], {
       input: JSON.stringify({ ...input, session_id: seat.sid, cwd: this.cwd }), env: this.env(seat, env), encoding: 'utf8', cwd: this.cwd, timeout: 30_000,
     });
     return { ...r, json: r.stdout.trim() ? JSON.parse(r.stdout) : null };
@@ -111,6 +112,9 @@ class Machine {
     const linked = await h.until(() => this.lib(() => (links.get(code) || {}).token), ms, 50);
     if (!linked) throw new Error(`the link never came up: ${JSON.stringify(this.lib(() => links.get(code)))}`);
     const seated = this.join(seat, '');
+    // the seat is the host's to record: this home's mirror shows it once the members document streams back, and
+    // until then a hook here cannot resolve it (a prompt typed that fast reads "not in a room")
+    if (seated.json && !seated.json.decision) await h.until(() => this.lib(() => identity.resolveBySession(seat.sid)), ms, 50);
     return { shown, line: typedLine, code, pin, typed, admitted, seated };
   }
   plain(seat: Seat, text: string): MachineRun {

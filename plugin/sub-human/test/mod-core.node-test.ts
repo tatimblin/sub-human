@@ -147,9 +147,9 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
       { result: { preventContinuation: true, stopReason: "✓ sent; the room's Claude will answer" } }],
   ];
   for (const [what, event, run, want] of T) assert.deepEqual(toClassic(event, run), want, what);
-  assert.deepEqual(shimEnv({ session_id: 's1' }, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: 's1' });
-  assert.deepEqual(shimEnv({}, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '' });
-  assert.deepEqual(shimArgv('/p', 'prompt.ts'), ['node', '--import', '/p/hooks/compile-cache.js', '/p/hooks/prompt.ts']);
+  assert.deepEqual(shimEnv({ session_id: 's1' }, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', SUB_HUMAN_VIA: 'module', CLAUDE_CODE_SESSION_ID: 's1' });
+  assert.deepEqual(shimEnv({}, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', SUB_HUMAN_VIA: 'module' });
+  assert.deepEqual(shimArgv('/p', 'prompt'), ['node', '--import', '/p/hooks/compile-cache.js', '/p/hooks/run.ts', 'prompt']);
 });
 
 test('shim: a real hook\'s output translates (at-room posting through prompt.ts)', async t => {

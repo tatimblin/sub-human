@@ -1,5 +1,4 @@
-#!/usr/bin/env node
-// SessionStart (every source): write the launcher the plugin's settings.json `subagentStatusLine` runs.
+// plugin/sub-human/hooks/handlers/row-launcher.ts: SessionStart (every source): write the launcher the plugin's settings.json `subagentStatusLine` runs.
 // ${CLAUDE_PLUGIN_ROOT} is empty in settings.json (docs/internals/cc-2.1.281.md §9), so the setting names a
 // fixed path instead:
 //   "${SUB_HUMAN_HOME:-$HOME/.sub-human}/bin/row-status"
@@ -22,8 +21,8 @@
 // so a dev checkout (--plugin-dir) never takes the pointer from the installed plugin while that one exists.
 import fs from 'node:fs';
 import path from 'node:path';
-import * as identity from '../lib/identity.ts';
-import { writeFileAtomic, writeJsonAtomic, readJson } from '../lib/io.ts';
+import * as identity from '../../lib/identity.ts';
+import { writeFileAtomic, writeJsonAtomic, readJson } from '../../lib/io.ts';
 
 const LAUNCHER = 'row-status';
 const ROOTS = 'roots.json';
@@ -33,8 +32,8 @@ const binDir = () => path.join(identity.home(), 'bin');
 function launcherPath() { return path.join(binDir(), LAUNCHER); }
 const rootsPath = () => path.join(binDir(), ROOTS);
 
-import { isTempPath as isTempRoot, allowTmpRoot as allowTmp } from '../lib/home.ts';
-import * as shim from '../lib/remote/shim.ts';
+import { isTempPath as isTempRoot, allowTmpRoot as allowTmp } from '../../lib/home.ts';
+import * as shim from '../../lib/remote/shim.ts';
 
 const q = (s: string) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 const cliOf = (root: string) => path.join(root, 'scripts', 'sub-human');
@@ -62,7 +61,7 @@ function orderRoots(rec: RootsRec | null): string[] {
  * Record root and rewrite the launcher. Returns the launcher path, or null when root was refused (a temp root
  * without SUB_HUMAN_ALLOW_TMP_ROOT=1); a refused root changes nothing.
  */
-function writeLauncher(root = process.env.CLAUDE_PLUGIN_ROOT || path.join(import.meta.dirname, '..'), { now = Date.now(), env = process.env } = {}) {
+function writeLauncher(root = process.env.CLAUDE_PLUGIN_ROOT || path.join(import.meta.dirname, '..', '..'), { now = Date.now(), env = process.env } = {}) {
   root = path.resolve(root);
   const temp = isTempRoot(root);
   if (temp && !allowTmp(env)) return null;
@@ -83,8 +82,8 @@ function writeLauncher(root = process.env.CLAUDE_PLUGIN_ROOT || path.join(import
 
 export { launcherBody, isTempRoot };
 
-if (import.meta.main) {
-  try { fs.readFileSync(0, 'utf8'); } catch { /* stdin unused */ }
+/** stdin is unused; nothing goes out but stderr. */
+export function handle() {
   try {
     if (!writeLauncher()) process.stderr.write('sub-human row-launcher: plugin root is under a temp dir; not used for the row status line (set SUB_HUMAN_ALLOW_TMP_ROOT=1 to allow)\n');
   } catch (e) { process.stderr.write(`sub-human row-launcher error: ${e instanceof Error && e.stack || e}\n`); /* rows fall back to their default text */ }

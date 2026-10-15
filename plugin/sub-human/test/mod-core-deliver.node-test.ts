@@ -33,8 +33,7 @@ test('deliver: the delivery-error notice is due once per window', async () => {
 
 test('deliver: the tail child gets the env a shimmed hook gets', async () => {
   const d = await load('mod/core/deliver.ts');
-  const { shimEnv } = await load('mod/core/shim.ts');
-  assert.deepEqual(d.tailEnv('sid-1', '/p'), shimEnv({ session_id: 'sid-1' }, '/p'));
+  assert.deepEqual(d.tailEnv('sid-1', '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: 'sid-1' }, 'a hook\'s env, without SUB_HUMAN_VIA');
   assert.deepEqual(d.tailEnv('', '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '' }, 'no session id: none passed');
   assert.deepEqual(d.tailEnv(null, undefined), { CLAUDE_PLUGIN_ROOT: '', CLAUDE_PID: '' });
 });

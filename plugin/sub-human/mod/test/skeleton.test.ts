@@ -13,7 +13,7 @@ function world(on: any, sid = 'sid-test') {
 }
 const verdict = async ($: any) => (await $.tool.check({ tool: POST, input: { text: 'hi' } })).decision
 
-test('session.start runs hooks/mod-hello.ts with the payload session id and keeps the hello in $.state', async ($, on) => {
+test('session.start runs hooks/run.ts mod-hello with the payload session id and keeps the hello in $.state', async ($, on) => {
   const runs: any[] = []
   world(on)
   on('process.run', ($, e: any) => { runs.push(e); return ran(JSON.stringify(OUT) + '\n') })
@@ -24,13 +24,14 @@ test('session.start runs hooks/mod-hello.ts with the payload session id and keep
   expect(runs[0].argv[0]).toBe('node')
   expect(runs[0].argv[1]).toBe('--import')
   expect(runs[0].argv[2]).toMatch(/\/hooks\/compile-cache\.js$/)
-  expect(runs[0].argv[3]).toMatch(/\/hooks\/mod-hello\.ts$/)
+  expect(runs[0].argv[3]).toMatch(/\/hooks\/run\.ts$/)
+  expect(runs[0].argv[4]).toBe('mod-hello')
   const stdin = JSON.parse(runs[0].init.stdin)
   expect(stdin.session_id).toBe(sid)
   expect(stdin.nonce).toMatch(/^[0-9a-f]{32}$/) // the lease keeps it; at-room checks an origin against it
   expect(runs[0].init.env.CLAUDE_CODE_SESSION_ID).toBe(sid)
   expect(runs[0].init.env.CLAUDE_PID).toBe('')
-  expect(runs[0].init.env.CLAUDE_PLUGIN_ROOT).toBe(runs[0].argv[3].replace(/\/hooks\/mod-hello\.ts$/, ''))
+  expect(runs[0].init.env.CLAUDE_PLUGIN_ROOT).toBe(runs[0].argv[3].replace(/\/hooks\/run\.ts$/, ''))
   expect(await verdict($)).toBe('allow')
 })
 

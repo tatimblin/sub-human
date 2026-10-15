@@ -1,5 +1,4 @@
-#!/usr/bin/env node
-// The hooks module's hello: the module knows no store path of its own (the guard needs the home, the prefilters the
+// plugin/sub-human/hooks/handlers/mod-hello.ts: the hooks module's hello: the module knows no store path of its own (the guard needs the home, the prefilters the
 // seat). Not a hooks.json entry: mod/deliver.ts runs it with $.process.run (HOOKS in mod/register.ts says when).
 // stdin: {session_id, nonce?}. Writes the module's lease for the session (lib/identity.ts writeModLease) with the
 // nonce at-room checks an origin against; the claude pid is our parent, since $.process children get no CLAUDE_PID
@@ -8,9 +7,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readInput } from '../lib/io.ts';
-import * as identity from '../lib/identity.ts';
-import type { Identity } from '../lib/identity.ts';
+import * as identity from '../../lib/identity.ts';
+import type { Identity } from '../../lib/identity.ts';
+import type { Reply } from '../types.ts';
 import type { PluginState } from 'claude-code';
 
 /** stdin: the session id and the module's nonce for it (mod/deliver.ts sayHello). */
@@ -18,7 +17,7 @@ interface HelloIn { session_id?: unknown; nonce?: unknown }
 /** What the module reads back (mod/core/seat.ts parseHello adds the session id): types/index.d.ts SubHumanHello. */
 type Hello = Omit<PluginState['sub-human']['hello'], 'sid'>;
 
-const PLUGIN_ROOT = path.join(import.meta.dirname, '..');
+const PLUGIN_ROOT = path.join(import.meta.dirname, '..', '..');
 const real = (p: string) => { try { return fs.realpathSync(p); } catch { return p; } };
 
 function hello(input: HelloIn): Hello {
@@ -35,10 +34,9 @@ function hello(input: HelloIn): Hello {
   return { home, realHome: real(home), userHome: os.homedir(), pluginRoot: PLUGIN_ROOT, seat };
 }
 
-if (import.meta.main) {
-  let input: HelloIn = {};
-  try { input = readInput({ strict: false }) || {}; } catch { input = {}; }
-  process.stdout.write(JSON.stringify(hello(input)) + '\n');
-}
+const answer = (input: HelloIn): Reply => ({ kind: 'classic', outputs: [hello(input)] });
+export const handle = (input: HelloIn): Reply => answer(input);
+/** A payload it cannot read: still the home, seat null, no lease. */
+export const fail = (): Reply => answer({});
 
 export { hello };

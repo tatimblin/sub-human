@@ -9,7 +9,7 @@ import { World, fixture, hso, identity, room, sleeper, withHome, PLUGIN, baseEnv
 import { pidStart } from '../../lib/lock.ts';
 import * as helpersLib from '../helpers.ts';
 import * as roomClaude from '../../lib/room-claude.ts';
-import * as common from '../../hooks/common.ts';
+import * as common from '../../hooks/context.ts';
 import * as membersLib from '../../lib/room/members.ts';
 import * as linkLib from '../../lib/remote/link.ts';
 import type { HookJson, HookRun } from './helpers.ts';
@@ -301,7 +301,7 @@ test('two concurrent joins start one claude: the second sees the pending claim',
   const run = (who: string) => new Promise<HookJson>(res => {
     w.modLease(w.sid[who]);
     const env = baseEnv({ SUB_HUMAN_HOME: w.home, HOME: w.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, SUB_HUMAN_CLAUDE: bin, SUB_HUMAN_PLUGIN_DIR: '', CLAUDE_PID: String(w.pid[who]) });
-    const p = sp(process.execPath, [path.join(HOOKS, 'join.ts')], { env, cwd: w.cwd });
+    const p = sp(process.execPath, [path.join(HOOKS, 'run.ts'), 'join'], { env, cwd: w.cwd });
     let out = '';
     p.stdout.on('data', d => { out += d; });
     p.on('close', () => res(JSON.parse(out)));
@@ -559,7 +559,7 @@ test('join marks presence "working"', () => {
   assert.equal(w.lib(() => room.open(w.code).store.kv.get('presence/alice')).state, 'working');
 });
 
-// ---------- the mechanics block (common.ts contextBlock) ----------
+// ---------- the mechanics block (hooks/context.ts contextBlock) ----------
 
 /** contextBlock in-process, with templates from `root` (a stub plugin root) and a 5-member room. */
 function blockFor(role: Role, root: string) {

@@ -35,7 +35,7 @@ const DOT_HOME = /(?:^|[^\w.-])\.sub-human(?![\w-])/;
 const RUNS_JS = /(?:^|[\s;&|(`'"/])(?:node|nodejs|bun|deno|npx|tsx|ts-node)(?=[\s;&|)`'"]|$)/;
 /** The plugin's modules that write the store or hold the seat key (test/ files are not matched): .ts, and .js
  * for the names they had before the TypeScript migration. */
-const PLUGIN_CODE = /(?<!test\/)(?<![\w-])(?:lib\/(?:room|identity|proposal|consent|tasks|rows|notices|claude|io|lock|seats|remote|handoff|cli)(?![\w-])|hooks\/[\w-]+\.(?:[cm]?js|ts)\b|hooks\/(?:at-room|prompt|consent|join|seat-key|common|tasks|presence|session-end|session-restore|mod-hello|row-[\w-]+)(?![\w.-])|mcp\/[\w-]+(?:\.(?:[cm]?js|ts))?(?![\w-]))/;
+const PLUGIN_CODE = /(?<!test\/)(?<![\w-])(?:lib\/(?:room|identity|proposal|consent|tasks|rows|notices|claude|io|lock|seats|remote|handoff|cli)(?![\w-])|hooks\/(?:handlers\/)?[\w-]+\.(?:[cm]?js|ts)\b|hooks\/(?:handlers\/)?(?:run|reply|seat|context|at-room|prompt|consent|join|seat-key|common|tasks|presence|session-end|session-restore|mod-hello|row-[\w-]+)(?![\w.-])|mcp\/[\w-]+(?:\.(?:[cm]?js|ts))?(?![\w-]))/;
 /** Names the plugin outright, so the cwd need not be read. */
 const NAMES_PLUGIN = (cmd: string) => /sub-human/.test(cmd) || /lib\/room(?![\w-])/.test(cmd);
 

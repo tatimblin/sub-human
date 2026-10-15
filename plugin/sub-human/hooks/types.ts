@@ -62,6 +62,33 @@ export interface HookOutput {
   subHuman?: SubHumanReport;
 }
 
+/**
+ * What a handler answers (hooks/run.ts renders it at the edge: hooks/reply.ts render). The first four are the /sub-human
+ * join's; module: the hooks module ran it (join.ts checked the nonce), so the answer goes back as {subHuman}, which the
+ * module draws itself; else Claude Code ran the hooks.json entry and reads it as a classic block or expansion.
+ *   say      what the person asked for (help, who is here, done); shareable: it may be the command's output row
+ *   refused  a refusal of a prompt that holds no secret ("✗ " before it)
+ *   secret   only the person may read it (an invite, anything a PIN-shaped prompt gets): the typed prompt is kept out of
+ *            the conversation as well; refused (default true) puts "✗ " before it
+ *   joined   a seat taken: context is the mechanics block for the model, say the line for the person, warn what a
+ *            classic answer shows as a systemMessage (the room's Claude did not start, bypass-permissions mode)
+ *   classic  any other hook's answer as a command hook gives it: its JSON lines, exit code (2 blocks) and stderr
+ * Stage 3's command table returns the first four from each verb.
+ */
+export type Reply =
+  | { kind: 'say'; text: string; module: boolean }
+  | { kind: 'refused'; text: string; module: boolean }
+  | { kind: 'secret'; text: string; module: boolean; refused?: boolean }
+  | { kind: 'joined'; context: string; say: string; warn?: string | null; module: boolean }
+  | { kind: 'classic'; outputs?: object[]; exit?: number; stderr?: string };
+
+/** A hooks/handlers/<name>.ts module, as hooks/run.ts loads it. handle: the answer (or out() lines and nothing);
+ * fail: the answer after a throw, or a stdin that does not parse (raw is what came); without it the hook exits 1. */
+export interface Handler {
+  handle(input: never, raw: string): Reply | null | void | Promise<Reply | null | void>;
+  fail?(err: unknown, input: never, raw: string): Reply | null | void;
+}
+
 /** A card option and question, as AskUserQuestion takes them and as a call's input or response may carry them
  * (untrusted: each field checked). */
 export interface CardOption { label?: unknown; description?: unknown; preview?: unknown }

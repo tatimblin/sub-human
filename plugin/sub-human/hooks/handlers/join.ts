@@ -1,5 +1,4 @@
-#!/usr/bin/env node
-// UserPromptExpansion(sub-human:sub-human): every /sub-human command, run before the model and in place of it. The
+// plugin/sub-human/hooks/handlers/join.ts: UserPromptExpansion(sub-human:sub-human): every /sub-human command, run before the model and in place of it. The
 // model never chooses an identity. The commands (HELP below has them all):
 //   /sub-human                  in a room: a short status, starting the room's Claude again if it failed or ended
 //                               (and, after a re-pointed link, the seat joined again over it); not in a room: finish a join the host has let in (a link file's join_as), else
@@ -31,43 +30,47 @@
 // as "blocked by hook", and a join that worked also carries the mechanics block (the module then lets the command
 // expand and hands that block to the model). Without the module (classic: Claude Code runs this hooks.json hook itself)
 // a reply is a block, drawn "UserPromptExpansion operation blocked by hook: sub-human: …".
-// Out: a join that worked is the mechanics block (common.ts contextBlock) plus a one-line confirmation for the person
+// Out: a join that worked is the mechanics block (hooks/context.ts contextBlock) plus a one-line confirmation for the person
 // (module) or a systemMessage only when something in it is a warning (classic); the title comes on the next prompt
 // (mod/prompt.ts). Everything else is a reply: no model turn. A PIN must never reach the model, so every `join`,
 // `invite` and `admit` prompt, and any prompt with a word of digits, is answered with hidden(): the typed prompt is
 // suppressed from the conversation, whatever form it turns out to be or whatever is wrong with it.
 // For the same reason a join that carries a PIN never takes the seat in that step (the seat's mechanics block would
 // go to the model with the prompt): once the host lets this machine in, a bare /sub-human (no PIN) takes it.
-import { identity, room, out, run, whoami, presence, contextBlock } from './common.ts';
-import * as roomClaude from '../lib/room-claude.ts';
-import * as seats from '../lib/seats.ts';
-import * as auth from '../lib/remote/auth.ts';
-import * as link from '../lib/remote/link.ts';
-import * as links from '../lib/room/links.ts';
-import * as hosting from '../lib/remote/hosting.ts';
-const wsT = (): typeof import('../lib/remote/transports/ws.ts') => require('../lib/remote/transports/ws.ts');
-const sshT = (): typeof import('../lib/remote/transports/ssh.ts') => require('../lib/remote/transports/ssh.ts');
-const parseArgs = <const S extends FlagSpec>(argv: string[], spec: S): Parsed<S> => (require('../lib/cli/args.ts') as typeof import('../lib/cli/args.ts')).parse(argv, spec);
-import * as seatKey from './seat-key.ts';
-import * as handoff from '../lib/handoff.ts';
-import * as envelope from '../lib/room/envelope.ts';
-import * as store from '../lib/room/store.ts';
-import { roomClaudePresence } from '../lib/room/members.ts';
-import * as textMod from '../lib/text.ts';
+import * as identity from '../../lib/identity.ts';
+import * as room from '../../lib/room.ts';
+import { whoami } from '../seat.ts';
+import { contextBlock } from '../context.ts';
+import { write as presence } from './presence.ts';
+import * as roomClaude from '../../lib/room-claude.ts';
+import * as seats from '../../lib/seats.ts';
+import * as auth from '../../lib/remote/auth.ts';
+import * as link from '../../lib/remote/link.ts';
+import * as links from '../../lib/room/links.ts';
+import * as hosting from '../../lib/remote/hosting.ts';
+const wsT = (): typeof import('../../lib/remote/transports/ws.ts') => require('../../lib/remote/transports/ws.ts');
+const sshT = (): typeof import('../../lib/remote/transports/ssh.ts') => require('../../lib/remote/transports/ssh.ts');
+const parseArgs = <const S extends FlagSpec>(argv: string[], spec: S): Parsed<S> => (require('../../lib/cli/args.ts') as typeof import('../../lib/cli/args.ts')).parse(argv, spec);
+import * as seatKey from '../seat-key.ts';
+import * as handoff from '../../lib/handoff.ts';
+import * as envelope from '../../lib/room/envelope.ts';
+import * as store from '../../lib/room/store.ts';
+import { roomClaudePresence } from '../../lib/room/members.ts';
+import * as textMod from '../../lib/text.ts';
 import PathMod from 'node:path';
 import childProcess from 'node:child_process';
-import * as ccMod from '../lib/cc.ts';
+import * as ccMod from '../../lib/cc.ts';
 import { createRequire } from 'node:module';
 // the module's rules (mod/core): which prompt may hold a PIN, and the nonce check
-import { mayHoldSecret } from '../mod/core/command.ts';
-import { attested as leaseAttests } from '../mod/core/state.ts';
-import type { JoinIn } from './types.ts';
-import type { FlagSpec, Parsed } from '../lib/cli/types.ts';
-import type { Link, Member } from '../lib/room/types.ts';
-import type { LinkSpec, SshSpec } from '../lib/remote/types-rest.ts';
-import type { Outcome } from '../lib/remote/hosting.ts';
-import type { Signer } from '../lib/remote/admission.ts';
-import type { Identity } from '../lib/identity.ts';
+import { mayHoldSecret } from '../../mod/core/command.ts';
+import { attested as leaseAttests } from '../../mod/core/state.ts';
+import type { JoinIn, Reply } from '../types.ts';
+import type { FlagSpec, Parsed } from '../../lib/cli/types.ts';
+import type { Link, Member } from '../../lib/room/types.ts';
+import type { LinkSpec, SshSpec } from '../../lib/remote/types-rest.ts';
+import type { Outcome } from '../../lib/remote/hosting.ts';
+import type { Signer } from '../../lib/remote/admission.ts';
+import type { Identity } from '../../lib/identity.ts';
 
 /** The seat a command asks to take: code null for the one open room, else a new one. */
 interface Wanted { name: string; code: string | null; isDefault?: boolean; pending?: boolean }
@@ -77,7 +80,9 @@ interface Base { pid: number; session_id: string | undefined; cwd: string }
 interface TakeCtx { input: JoinIn; base: Base; cur: Identity | null; cwd: string }
 
 const require = createRequire(import.meta.url);
-const webhost = (): typeof import('../lib/remote/webhost.ts') => require('../lib/remote/webhost.ts');
+// it signs (an admission answered with /sub-human admit, signed with the seat key): the seat-key signer, in this process only
+seatKey.arm();
+const webhost = (): typeof import('../../lib/remote/webhost.ts') => require('../../lib/remote/webhost.ts');
 
 const COMMANDS = new Set(['sub-human:sub-human', 'sub-human']);
 const ROOM_CLAUDE_AGENT = 'sub-human:room-claude';
@@ -110,25 +115,20 @@ const BYPASS = ' · ⚠ bypass-permissions mode: messages from other sessions ca
 // Through the module (mod/command.ts): set once per prompt, before any reply, from an attested sub_human_via.
 let viaModule = false;
 /**
- * The one reply to this prompt. Through the module: {subHuman: {say, refused, shareable}} (the module shows it; shareable:
- * no secret and nothing typed in it, so it may be the command's output, which Remote Control and the model also see).
- * Classic: a block, its reason the text after "sub-human: " (Claude Code shows only the reason, never a systemMessage
- * beside it, and never to the model); suppress: the typed prompt is kept out of the conversation as well.
+ * The one reply to this prompt, a Reply (hooks/types.ts) that hooks/run.ts renders: through the module {subHuman: {say,
+ * refused, shareable}} (the module shows it; shareable: no secret and nothing typed in it, so it may be the command's
+ * output, which Remote Control and the model also see); classic, a block, its reason the text after "sub-human: " (Claude
+ * Code shows only the reason, never a systemMessage beside it, and never to the model). suppress (a secret): the typed
+ * prompt is kept out of the conversation as well.
  */
-let replied = false;
-function reply(text: string, { refused = false, shareable = true, suppress = false } = {}) {
-  replied = true;
-  const t = `${refused ? '✗ ' : ''}${text}`;
-  if (viaModule) return out({ subHuman: { say: t, refused, shareable: shareable && !suppress } });
-  return out({
-    decision: 'block', reason: `sub-human: ${t}`,
-    ...(suppress ? { hookSpecificOutput: { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true } } : {}),
-  });
+let answer: Reply | null = null;
+function reply(text: string, { refused = false, suppress = false } = {}): void {
+  answer = suppress ? { kind: 'secret', text, refused, module: viaModule }
+    : { kind: refused ? 'refused' : 'say', text, module: viaModule };
 }
 /** A refusal of a prompt that holds no secret. */
 const block = (reason: string) => reply(reason, { refused: true });
-/** What only the person may read (an invite, a PIN they typed): never the model's, the typed prompt hidden too.
- * shareable: the text itself holds no secret and echoes nothing typed (still kept off the model with the prompt). */
+/** What only the person may read (an invite, a PIN they typed): never the model's, the typed prompt hidden too. */
 const hidden = (text: string, { refused = true } = {}) => reply(text, { refused, suppress: true });
 /** Not a refusal: what the person asked for (help, who is here, an invite, done). */
 const notice = (text: string, { secret = false } = {}) => reply(text, { suppress: secret || refuse === hiddenRefusal });
@@ -136,7 +136,7 @@ const hiddenRefusal = (r: string) => hidden(r);
 // How this prompt's refusals go out: hidden() when it could carry a PIN (set once per prompt, before any parsing).
 // Hidden until then: a prompt whose stdin cannot be read may hold a PIN too (onError answers with this).
 let refuse: (msg: string) => void = hiddenRefusal;
-const fail = (msg: string): null => { refuse(msg); return null; };
+const failWith = (msg: string): null => { refuse(msg); return null; };
 /** A caught error's message (what a refusal says). */
 const msgOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -154,8 +154,7 @@ function success(me: Identity, lead: string, msg: string, input: JoinIn) {
   const bypass = input.permission_mode === 'bypassPermissions' && me.role !== 'claude' ? BYPASS : '';
   const warn = bypass || TROUBLE.test(msg) ? `sub-human: ${msg}${bypass}` : null;
   const hso = { hookEventName: 'UserPromptExpansion', additionalContext: contextBlock(me, lead) };
-  if (viaModule) return out({ hookSpecificOutput: hso, subHuman: { say: `${msg}${bypass}`, joined: true, shareable: true } });
-  out({ ...(warn ? { systemMessage: warn } : {}), hookSpecificOutput: hso });
+  answer = { kind: 'joined', context: hso.additionalContext, say: viaModule ? `${msg}${bypass}` : msg, warn, module: viaModule };
 }
 
 /** Close rooms where only the room's Claude is left once they have been orphaned long enough (best effort; host only). */
@@ -223,7 +222,7 @@ function admit(cur: Identity | null, argv: string[]) {
   if (!cur) return; // hostOnly refused it
   if (argv.length > 1 || (argv[0] && !/^[0-9a-f]{6,12}$/.test(argv[0]))) return refuse(`usage: /sub-human admit (who is waiting), then /sub-human admit ID from that list. ${HELP_HINT}`);
   try {
-    const adm: typeof import('../lib/remote/admission.ts') = require('../lib/remote/admission.ts');
+    const adm: typeof import('../../lib/remote/admission.ts') = require('../../lib/remote/admission.ts');
     if (!argv.length) {
       const reqs = adm.pending(cur.code);
       return notice(reqs.length ? `waiting to join room ${cur.code}: ${reqs.map(q => `${adm.describe(q)}: let them in with /sub-human admit ${q.ref}`).join('; ')}` : `nobody is waiting to join room ${cur.code}.`);
@@ -257,7 +256,7 @@ function doctor(argv: string[]) {
   if (argv.includes('--fix') || argv.includes('--bundle')) return refuse(`${argv.includes('--fix') ? '--fix' : '--bundle'} changes or writes files, so it runs in a terminal outside Claude Code: ${cliLine(`doctor ${argv.join(' ')}`)}`);
   if (argv.length) return refuse(`usage: /sub-human doctor. ${HELP_HINT}`);
   const path = PathMod;
-  const r = childProcess.spawnSync(process.execPath, [path.join(import.meta.dirname, '..', 'scripts', 'sub-human'), 'doctor', '--quick'], {
+  const r = childProcess.spawnSync(process.execPath, [path.join(import.meta.dirname, '..', '..', 'scripts', 'sub-human'), 'doctor', '--quick'], {
     encoding: 'utf8', timeout: 8000, env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
   });
   const text = `${r.stdout || ''}${r.stderr || ''}`.trim();
@@ -316,11 +315,11 @@ const locatorOf = (t: LinkSpec | null | undefined): string | null => (t && t.kin
 /** A name typed with --as: checked; else the default name. null after a refuse(). */
 function nameFor(as: string | undefined, cwd: string): string | null {
   if (as !== undefined) {
-    if (!identity.NAME_RE.test(as)) return fail(`"${as}" isn't a name (letters, digits, . _ -, up to 32)`);
-    if (identity.RESERVED.includes(as.toLowerCase())) return fail(`"${as}" is reserved; pick another name`);
+    if (!identity.NAME_RE.test(as)) return failWith(`"${as}" isn't a name (letters, digits, . _ -, up to 32)`);
+    if (identity.RESERVED.includes(as.toLowerCase())) return failWith(`"${as}" is reserved; pick another name`);
     return as;
   }
-  return identity.defaultName({ cwd }) || fail('no name to join as (no git user.name or $USER): add --as NAME');
+  return identity.defaultName({ cwd }) || failWith('no name to join as (no git user.name or $USER): add --as NAME');
 }
 
 /**
@@ -330,44 +329,44 @@ function nameFor(as: string | undefined, cwd: string): string | null {
  */
 function join(argv: string[], cwd: string): Wanted | null {
   const p = parseArgs(argv, { as: 1, via: 1, home: 1 });
-  if (p.error) return fail(`${p.error}. ${JOIN_USAGE}`);
+  if (p.error) return failWith(`${p.error}. ${JOIN_USAGE}`);
   const flag = p.rest.find(a => a.startsWith('--'));
-  if (flag) return fail(`"${flag}" isn't a join option. ${JOIN_USAGE}`);
+  if (flag) return failWith(`"${flag}" isn't a join option. ${JOIN_USAGE}`);
   const r = p.rest;
   const { via, home } = p.flags;
   if (/^https?:\/\//.test(r[0] || '')) {
-    if (r.length !== 2) return fail(r.length < 2 ? 'a web join needs the PIN the host sent with the address: /sub-human join URL PIN' : JOIN_USAGE);
-    if (via !== undefined || home !== undefined) return fail('--via and --home go with an ssh address, not a web one');
-    if (!auth.SHORT_PIN_RE.test(r[1])) return fail('the PIN is the 4 digits that came with the invite: /sub-human join URL PIN');
+    if (r.length !== 2) return failWith(r.length < 2 ? 'a web join needs the PIN the host sent with the address: /sub-human join URL PIN' : JOIN_USAGE);
+    if (via !== undefined || home !== undefined) return failWith('--via and --home go with an ssh address, not a web one');
+    if (!auth.SHORT_PIN_RE.test(r[1])) return failWith('the PIN is the 4 digits that came with the invite: /sub-human join URL PIN');
     const m = /^(https?):\/\/([^#\s]+)$/.exec(r[0]);
     const spec = m && wsT().parse(`//${m[2].replace(/\/+$/, '')}`);
     const code = spec && spec.path.split('/').filter(Boolean).pop();
-    if (!spec || !code || !identity.CODE_RE.test(code)) return fail('that isn\'t a join address (https://HOST/…/sub-human/ROOM). Paste the whole line the host sent you.');
+    if (!spec || !code || !identity.CODE_RE.test(code)) return failWith('that isn\'t a join address (https://HOST/…/sub-human/ROOM). Paste the whole line the host sent you.');
     const name = nameFor(p.flags.as, cwd);
     if (!name) return null;
     const loc = wsT().locator(spec, m[1] === 'https');
     const transport = loc && link.transportOf(loc);
-    if (!transport) return fail('that isn\'t a join address (https://HOST/…/sub-human/ROOM). Paste the whole line the host sent you.');
+    if (!transport) return failWith('that isn\'t a join address (https://HOST/…/sub-human/ROOM). Paste the whole line the host sent you.');
     return linkShort({ name, code, pin: r[1], transport });
   }
-  if (r.length < 2 || r.length > 3) return fail(r.length === 1 ? `which room? ${JOIN_USAGE}` : JOIN_USAGE);
+  if (r.length < 2 || r.length > 3) return failWith(r.length === 1 ? `which room? ${JOIN_USAGE}` : JOIN_USAGE);
   const [dest, code, pin] = r;
-  if (!identity.CODE_RE.test(code)) return fail(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
+  if (!identity.CODE_RE.test(code)) return failWith(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
   if (pin !== undefined) {
-    if (!auth.SHORT_PIN_RE.test(pin)) return fail('the PIN is the 4 digits that came with the invite: /sub-human join HOST ROOM PIN');
-    if (home !== undefined) return fail('--home goes with a join over your own ssh login (no PIN): /sub-human join HOST ROOM --home PATH');
+    if (!auth.SHORT_PIN_RE.test(pin)) return failWith('the PIN is the 4 digits that came with the invite: /sub-human join HOST ROOM PIN');
+    if (home !== undefined) return failWith('--home goes with a join over your own ssh login (no PIN): /sub-human join HOST ROOM --home PATH');
     const name = nameFor(p.flags.as, cwd);
     if (!name) return null;
     if (/^pipe:\//.test(dest) || dest.startsWith('/')) { // a second home on this machine (tests, the demo)
-      if (via !== undefined) return fail('--via goes with an ssh address');
+      if (via !== undefined) return failWith('--via goes with an ssh address');
       const transport = link.transportOf(dest.startsWith('/') ? `pipe:${dest}` : dest);
-      return transport ? linkShort({ name, code, pin, transport }) : fail(`"${dest}" isn't a sub-human folder on this machine`);
+      return transport ? linkShort({ name, code, pin, transport }) : failWith(`"${dest}" isn't a sub-human folder on this machine`);
     }
-    if (sshT().placeholder(dest)) return fail(YOU_HINT(dest));
+    if (sshT().placeholder(dest)) return failWith(YOU_HINT(dest));
     const loc = link.sshLocator(sshT().withUser(dest), via !== undefined ? { via } : {});
-    if (!loc) return fail(via !== undefined && link.sshLocator(dest) ? `--via "${via}" isn't a plain [USER@]HOST[:PORT] list` : `"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
+    if (!loc) return failWith(via !== undefined && link.sshLocator(dest) ? `--via "${via}" isn't a plain [USER@]HOST[:PORT] list` : `"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
     const transport = link.transportOf(loc);
-    if (!transport) return fail(`"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
+    if (!transport) return failWith(`"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias`);
     return linkShort({ name, code, pin, transport });
   }
   return linkLogin({ dest, code, via, home, as: p.flags.as, cwd });
@@ -381,16 +380,16 @@ function joinReply(code: string, name: string, o: Outcome) {
 
 /** An invite's PIN: link only, the PAKE in the link daemon; always a hidden reply. */
 function linkShort({ name, code, pin, transport }: { name: string; code: string; pin: string; transport: LinkSpec }): null {
-  if (identity.roomExists(code) && identity.isHost(code)) return fail(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
+  if (identity.roomExists(code) && identity.isHost(code)) return failWith(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   if (cur && cur.token && locatorOf(cur.transport) === locatorOf(transport)) {
     notice(`this machine is in room ${code} already; /sub-human ${name} ${code} takes your place there.`);
     return null;
   }
   if (cur) restartLink(code); // a pending join replaced, or the room's host moved: dial with the new file
-  try { hosting.joinShort({ code, transport, pin, name }); } catch (e) { return fail(msgOf(e)); }
+  try { hosting.joinShort({ code, transport, pin, name }); } catch (e) { return failWith(msgOf(e)); }
   if (cur) links.set(code, { ...links.get(code)!, rebind: true }); // a seat here joins again over the new link (joinShort wrote it)
-  if (!link.start(code)) return fail(NO_START(code));
+  if (!link.start(code)) return failWith(NO_START(code));
   joinReply(code, name, hosting.outcome(code));
   return null;
 }
@@ -400,15 +399,15 @@ function linkShort({ name, code, pin, transport }: { name: string; code: string;
 function linkLogin({ dest: typed, code, via, home, as, cwd }: {
   dest: string; code: string; via: string | undefined; home: string | undefined; as: string | undefined; cwd: string;
 }): Wanted | null {
-  if (sshT().placeholder(typed)) return fail(YOU_HINT(typed));
+  if (sshT().placeholder(typed)) return failWith(YOU_HINT(typed));
   const dest = sshT().withUser(typed);
-  if (!sshT().dest(dest)) return fail(`"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias. ${JOIN_USAGE}`);
-  if (via !== undefined && !sshT().jump(via)) return fail(`--via "${via}" isn't a plain [USER@]HOST[:PORT] (several hops: comma-separated).`);
+  if (!sshT().dest(dest)) return failWith(`"${dest}" isn't a plain USER@HOST[:PORT] or ssh alias. ${JOIN_USAGE}`);
+  if (via !== undefined && !sshT().jump(via)) return failWith(`--via "${via}" isn't a plain [USER@]HOST[:PORT] (several hops: comma-separated).`);
   const spec = sshT().loginSpec(dest, { via, home });
-  if (!spec) return fail(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
+  if (!spec) return failWith(`--home "${home}" isn't a plain absolute path (the sub-human folder on that machine, e.g. /home/you/.sub-human).`);
   const name = nameFor(as, cwd);
   if (!name) return null;
-  if (identity.roomExists(code) && identity.isHost(code)) return fail(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
+  if (identity.roomExists(code) && identity.isHost(code)) return failWith(`room ${code} is hosted on this machine; join it with /sub-human ${name} ${code}.`);
   const cur: Link | null = links.get(code);
   const at = sshT().kind.describe(spec); // "ssh you@host … (your ssh login)"
   const spent = (link.stopReason(link.status(code)) || {}).code === 'AUTH'; // kicked, or a host key changed: link anew
@@ -417,10 +416,10 @@ function linkLogin({ dest: typed, code, via, home, as, cwd }: {
   const mux = cur && cur.transport && cur.transport.kind === 'ssh' && cur.transport.mux === true && cur.transport.user === spec.user && cur.transport.host === spec.host && cur.transport.port === spec.port;
   try {
     links.set(code, { code, transport: { ...spec, ...(mux ? { mux: true } : {}) }, created_at: new Date().toISOString(), ...(cur ? { rebind: true } : {}) });
-  } catch (e) { return fail(msgOf(e)); }
-  if (!link.start(code)) return fail(NO_START(code));
+  } catch (e) { return failWith(msgOf(e)); }
+  if (!link.start(code)) return failWith(NO_START(code));
   const o: Outcome = hosting.outcome(code);
-  if (o.state === 'refused') return fail(`could not reach room ${code} over ${at}: ${o.reason}`);
+  if (o.state === 'refused') return failWith(`could not reach room ${code} over ${at}: ${o.reason}`);
   if (o.state !== 'linked') {
     notice(`still connecting to room ${code} over ${at}${o.reason ? ` (${o.reason})` : ''}. Type /sub-human ${name} ${code} in a moment; if it doesn't come up, /sub-human doctor says why.`);
     return null;
@@ -441,10 +440,10 @@ function finishJoin(l: Link): Wanted | null {
   const why = link.stopReason(link.status(code));
   if (why && !l.token) {
     try { const { join_as: _gone, ...rest } = links.get(code) || l; links.set(code, rest); } catch { /* no credential left: nothing to keep */ }
-    return fail(`could not join room ${code}: ${why.reason}`);
+    return failWith(`could not join room ${code}: ${why.reason}`);
   }
   if (l.token) return { name, code, pending: true };
-  if (!link.start(code)) return fail(NO_START(code));
+  if (!link.start(code)) return failWith(NO_START(code));
   const o: Outcome = hosting.outcome(code, { waitMs: 2000 });
   if (o.state === 'linked') return { name, code, pending: true };
   joinReply(code, name, o);
@@ -456,7 +455,7 @@ function pickRoom(): { code: string | null } | null {
   sweep();
   const open: string[] = identity.openRooms();
   if (open.length <= 1) return { code: open[0] || null };
-  return fail(`${open.length} rooms are open (${open.join(', ')}); say which: /sub-human NAME ROOM.`);
+  return failWith(`${open.length} rooms are open (${open.join(', ')}); say which: /sub-human NAME ROOM.`);
 }
 
 /** Who else is in the room, for a line: "with bob, carol", or how many beyond three; the people only (the room's
@@ -533,7 +532,7 @@ function take({ name, code, isDefault = false }: Wanted, { input, base, cur, cwd
   dropJoinAs(code);
   if (identity.isHost(code)) {
     try { webhost().ensure(code); } catch { /* best effort */ } // the listener after a reboot
-    try { (require('../lib/remote/shim.ts') as typeof import('../lib/remote/shim.ts')).refresh(); } catch { /* best effort */ } // the serve shim a login link runs
+    try { (require('../../lib/remote/shim.ts') as typeof import('../../lib/remote/shim.ts')).refresh(); } catch { /* best effort */ } // the serve shim a login link runs
   }
   const me: Identity = { code, name, role: 'member', pid: base.pid, session_id: input.session_id || null, address: identity.address(name, code) };
   const msg = created
@@ -572,15 +571,23 @@ function noModule(pid: number | null): string {
   return 'sub-human\'s hooks module isn\'t running in this session (safe mode, --bare, a managed policy or an untrusted folder turns it off). Run /sub-human doctor.';
 }
 
-/** A throw anywhere below: still one reply, hidden when the prompt may carry a PIN (refuse was set first), so a
- *  PIN-bearing prompt never reaches the model as a plain expansion. A reply already made stands. */
-function onError(err: unknown): void {
-  if (replied) return;
+/** A throw anywhere below, or a stdin that does not parse: still one reply, hidden when the prompt may carry a PIN
+ *  (refuse was set first, and is hidden until then), so a PIN-bearing prompt never reaches the model as a plain
+ *  expansion. A reply already made stands. */
+export function fail(err: unknown): Reply | null {
+  if (answer) return answer;
   const m = err instanceof Error ? err.message : String(err);
   refuse(`sub-human could not run that (${m.split('\n')[0].slice(0, 200)}). Run /sub-human doctor.`);
+  return answer;
 }
 
-run((input: JoinIn) => {
+export function handle(input: JoinIn): Reply | null {
+  answer = null;
+  body(input);
+  return answer;
+}
+
+function body(input: JoinIn): void {
   if (!COMMANDS.has(String(input.command_name))) return;
   const args = String(input.command_args || '').trim().split(/\s+/).filter(Boolean);
   // Before anything else: a prompt that could carry a PIN is answered hidden, whatever goes wrong with it.
@@ -640,6 +647,6 @@ run((input: JoinIn) => {
       return take({ name, code: code || (cur && cur.name === name ? cur.code : null) }, ctx);
     }
   }
-}, onError);
+}
 
 export { HELP };

@@ -76,7 +76,11 @@ export const tailArgv = (root: unknown) => ['node', `${root}/scripts/sub-human`,
 
 // The same env a shimmed hook gets (an empty CLAUDE_PID: a child of the mod inherits whatever claude inherited,
 // cc CONTRACT process-run-stdin); a child with no session id looks its seat up by nothing rather than by ''.
-export const tailEnv = (sid: unknown, root: unknown) => shimEnv(typeof sid === 'string' && sid ? { session_id: sid } : {}, root);
+export const tailEnv = (sid: unknown, root: unknown) => {
+  // the tail is no hook: it finds its seat by CLAUDE_CODE_SESSION_ID (lib/identity.ts resolveSelf), not by its parent
+  const { SUB_HUMAN_VIA: _via, ...env } = shimEnv(typeof sid === 'string' && sid ? { session_id: sid } : {}, root);
+  return env;
+};
 
 /** {push(text) -> [line]}: whole lines out of the pieces $.process.spawn streams. */
 export function lineBuffer() {

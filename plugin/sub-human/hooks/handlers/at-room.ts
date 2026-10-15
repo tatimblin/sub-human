@@ -1,8 +1,7 @@
-#!/usr/bin/env node
-// UserPromptSubmit: "@room TEXT" posts the human's exact words (via human, signed with the seat key)
+// plugin/sub-human/hooks/handlers/at-room.ts: UserPromptSubmit: "@room TEXT" posts the human's exact words (via human, signed with the seat key)
 // and ends the prompt, so no model turn runs and nothing is paraphrased. "@claude TEXT" posts the same way with
 // to=claude, which wakes the room's Claude; outside a room it is an ordinary prompt and passes through untouched.
-// Only a leading tag counts: "@room @claude TEXT" is a plain post, and a tag later in the text is just words. No hooks.json entry: hooks/prompt.ts runs
+// Only a leading tag counts: "@room @claude TEXT" is a plain post, and a tag later in the text is just words. No hooks.json entry: hooks/handlers/prompt.ts runs
 // handle(input) under mod/prompt.ts's shim. In: the payload plus `sub_human_origin` and `sub_human_nonce`. An origin
 // counts only with this session's lease nonce, and only a typed one (composer, sdk, bridge; cc CONTRACT
 // prompt-origin-composer) may post: anything that can run node can claim an origin, only a lease reader the nonce.
@@ -18,17 +17,25 @@
 // copy is the post), and a deadline whose outcome is unknown is "⧗ not confirmed", never "not posted". Typed through Remote Control (origin bridge), a refusal is also the
 // systemMessage, which the module relays to the phone (a block line does not show there); "✓ sent" is not (the phone
 // shows the person's own row, and a relay costs a model turn).
-import { identity, room, out, run, whoami, presence } from './common.ts';
-import { oneLine } from '../lib/text.ts';
-import * as config from '../lib/config.ts';
-import * as cc from '../lib/cc.ts';
-import * as seats from '../lib/seats.ts';
-import type { HookSpecificOutput, PromptIn } from './types.ts';
-import type { Identity } from '../lib/identity.ts';
-import type { TranscriptEntry } from '../lib/cc.ts';
+import * as identity from '../../lib/identity.ts';
+import * as room from '../../lib/room.ts';
+import { oneLine } from '../../lib/text.ts';
+import * as config from '../../lib/config.ts';
+import * as cc from '../../lib/cc.ts';
+import * as seats from '../../lib/seats.ts';
+import * as seatKey from '../seat-key.ts';
+import { whoami } from '../seat.ts';
+import { out } from '../reply.ts';
+import { write as presence } from './presence.ts';
+import type { HookSpecificOutput, PromptIn } from '../types.ts';
+import type { Identity } from '../../lib/identity.ts';
+import type { TranscriptEntry } from '../../lib/cc.ts';
 // how a prompt is read is the module's (mod/core): one parser, one list of typed origins, one wording per refusal
-import { parse, parseClaude, TYPED_ORIGINS, NO_ORIGIN, NOT_IN_ROOM } from '../mod/core/prompt.ts';
-import { attested as leaseAttests } from '../mod/core/state.ts';
+import { parse, parseClaude, TYPED_ORIGINS, NO_ORIGIN, NOT_IN_ROOM } from '../../mod/core/prompt.ts';
+import { attested as leaseAttests } from '../../mod/core/state.ts';
+
+// it signs the person's own words (via=human): the seat-key signer, in this process only (hooks/seat-key.ts)
+seatKey.arm();
 
 /** A person typing through Remote Control sees no block line there: a refusal also goes out as systemMessage, which
  * mod/prompt.ts relays to the phone (mod/deliver.ts relay). "✓ sent" stays a stop line only. */
@@ -93,7 +100,8 @@ function attested(input: PromptIn): boolean {
   return leaseAttests(identity.readModLease(sid), sid, input.sub_human_nonce);
 }
 
-/** The UserPromptSubmit handler: writes its one output (if any) through common.ts out(). hooks/prompt.ts calls it. */
+/** The UserPromptSubmit handler: writes its one output (if any) through hooks/reply.ts out(). hooks/handlers/prompt.ts
+ * calls it. */
 function handle(input: PromptIn): void {
   const prompt = typeof input.prompt === 'string' ? input.prompt : '';
   // The origin the shim says the prompt came from (prompt.submit e.origin.kind), or null; it posts only attested.
@@ -147,7 +155,6 @@ function handle(input: PromptIn): void {
   out({ continue: false, stopReason: sent, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } });
 }
 
+// hooks/handlers/prompt.ts calls handle(); `hooks/run.ts at-room` is for the tests and scripts/demo-lib.js
+// synthetic-claude-prompt.
 export { handle };
-
-// hooks/prompt.ts calls handle(); the direct run is for the tests and scripts/demo-lib.js synthetic-claude-prompt.
-if (import.meta.main) run(handle);

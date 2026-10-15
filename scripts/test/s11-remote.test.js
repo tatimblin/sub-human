@@ -55,7 +55,8 @@ test('S11: carol from a second home passes every check over real evidence; a bro
     fs.rmSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true, force: true });
     for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   });
-  assert.equal(remote.say(carol, DEMO.carol11).json.continue, false);
+  const said = remote.say(carol, DEMO.carol11);
+  assert.equal(said.json.continue, false, `${JSON.stringify(said.json)} ${said.stderr}`);
   await remote.tail(carol, 1); // her delivery cursor (deliver-carol), as her session's tail child keeps
   const p = host.lib(() => proposal.create({ code, name: 'alice', role: 'member' }, { text: '# Carol reviews the parser tests\n', approvers: ['carol'] }));
   assert.ok(await until(() => fs.existsSync(path.join(remote.home, 'rooms', code, 'plans', `${p.hash}.md`)), 5000));

@@ -108,8 +108,8 @@ function tmpDir(prefix = 'sub-human-test-', t?: TestContext): string {
 // ---- env -----------------------------------------------------------------------------------------
 const stripClaude = (env: NodeJS.ProcessEnv) => { for (const k of Object.keys(env)) if (k.startsWith('CLAUDE')) delete env[k]; return env; };
 stripClaude(process.env);
-// via=human appends need the seat signer that hooks/common.ts installs in every hook process
-// (hooks/seat-key.ts). A test process is trusted the same way; required lazily, so preloading loads no lib/.
+// via=human appends need the seat signer that the hook handlers that sign install (at-room, consent, join:
+// hooks/seat-key.ts arm). A test process is trusted the same way; required lazily, so preloading loads no lib/.
 (globalThis as unknown as Record<symbol, unknown>)[Symbol.for('sub-human.human-signer')] =
   (code: string, name: string) => (require(path.join(PLUGIN, 'hooks', 'seat-key.ts')) as typeof SeatKeyLib).ensure(code, name);
 

@@ -56,7 +56,7 @@ function nonceFor($: EngineInterface, sid: string): Promise<string | null> {
 async function sayHello($: EngineInterface, sid: string) {
   const root = $.plugin.root;
   const nonce = typeof sid === 'string' && sid ? await nonceFor($, sid) : null;
-  const run = await $.process.run(shimArgv(root, 'mod-hello.ts'), {
+  const run = await $.process.run(shimArgv(root, 'mod-hello'), {
     stdin: JSON.stringify(nonce ? { session_id: sid, nonce } : { session_id: sid }),
     env: shimEnv({ session_id: sid }, root),
     timeoutMs: SHIM_TIMEOUT_MS,
@@ -318,7 +318,7 @@ export function registerDeliver(on: On) {
     const nonce = asNonce((await $.state.get(NONCE)).value, sid);
     if (!answersItself(e, { roomClaude: !!(await $.env.get('SUB_HUMAN_ROOM')), nonce })) return next(e);
     const root = $.plugin.root;
-    const run = await $.process.run(shimArgv(root, 'join.ts'), {
+    const run = await $.process.run(shimArgv(root, 'join'), {
       stdin: JSON.stringify(joinPayload({ sid, cwd: await $.session.cwd(), args: e.args, nonce })),
       env: shimEnv({ session_id: sid }, root),
       timeoutMs: SHIM_TIMEOUT_MS,

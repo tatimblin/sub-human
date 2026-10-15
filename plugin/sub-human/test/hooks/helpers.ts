@@ -109,7 +109,7 @@ class World {
   modLease(sid: unknown): void { if (sid) this.lib(() => identity.writeModLease(sid)); }
 
   /**
-   * Run hook `name` with stdin `input`, as identity `as` (sets CLAUDE_PID and session_id). For join, the session's
+   * Run hook `name` (hooks/run.ts name: hooks/handlers/name.ts) with stdin `input`, as identity `as` (sets CLAUDE_PID and session_id). For join, the session's
    * hello lease is written first, as the hooks module does on session.start (modLease: false leaves it out).
    */
   hook(name: string, input: HookInput, { as, env = {}, session = true, modLease = true }: { as?: string; env?: Record<string, string | undefined>; session?: boolean; modLease?: boolean } = {}): HookRun {
@@ -122,7 +122,7 @@ class World {
     }
     for (const k of Object.keys(env)) if (env[k] === undefined) delete e[k];
     if (name === 'join' && modLease) this.modLease(inp.session_id);
-    const r = spawnSync(process.execPath, [path.join(HOOKS, name + '.ts')], {
+    const r = spawnSync(process.execPath, [path.join(HOOKS, 'run.ts'), name], {
       input: JSON.stringify(inp), env: e, encoding: 'utf8', cwd: this.cwd, timeout: 30_000,
     });
     let json: HookJson | null = null;

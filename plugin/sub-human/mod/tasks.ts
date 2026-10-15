@@ -33,7 +33,7 @@ async function runTasks(
 ): Promise<ShimResult | null> {
   if (!tasksNeeded(await helloOf($), e.session_id, await roomEnvOf($))) return null;
   const root = $.plugin.root;
-  const run = await $.process.run(shimArgv(root, 'tasks.ts'), {
+  const run = await $.process.run(shimArgv(root, 'tasks'), {
     stdin: JSON.stringify(e),
     env: shimEnv(e, root),
     timeoutMs: SHIM_TIMEOUT_MS,

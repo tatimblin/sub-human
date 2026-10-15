@@ -576,14 +576,14 @@ test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.ts): Stop always reports subHuman
 test('hooks.json: Stop is the module\'s (mod/consent.ts); the room tools\' PreToolUse is the command hook alone, so every other PreToolUse hook sees them', async () => {
   const hooks = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'hooks', 'hooks.json'), 'utf8')).hooks;
   assert.equal(hooks.Stop, undefined);
-  assert.ok(hooks.PreToolUse.some((g: { matcher: string; hooks: { command: string }[] }) => /hooks\/consent\.ts/.test(g.hooks[0].command) && /\^mcp__plugin_sub-human_room__/.test(g.matcher)));
+  assert.ok(hooks.PreToolUse.some((g: { matcher: string; hooks: { command: string }[] }) => /hooks\/run\.ts" consent$/.test(g.hooks[0].command) && /\^mcp__plugin_sub-human_room__/.test(g.matcher)));
   const { HOOKS: MOD } = await import(path.join(PLUGIN, 'mod', 'register.ts')) as typeof Register;
   for (const ev of ['classic.Stop', 'tool.call']) assert.ok(MOD.some(h => h.event === ev && h.file === 'mod/consent.ts'), ev);
   // a module hook answering classic.PreToolUse without next(e) would skip every non-managed settings hook there
   assert.ok(!MOD.some(h => h.event === 'classic.PreToolUse'), 'no module hook on classic.PreToolUse');
 });
 
-test('consent: a room tool call outside plan mode exits at once, loading nothing but lib/io.ts; in plan mode it loads the rest', t => {
+test('consent: a room tool call outside plan mode exits at once, loading nothing but its entry; in plan mode it loads the rest', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-consent-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const preload = path.join(dir, 'loaded.js');
@@ -603,9 +603,9 @@ test('consent: a room tool call outside plan mode exits at once, loading nothing
   for (const mode of ['default', 'acceptEdits', 'auto', 'bypassPermissions', undefined]) {
     const q = run(mode);
     assert.equal(q.stdout, '', String(mode));
-    assert.deepEqual(q.loaded.sort(), ['hooks/consent.ts', 'lib/io.ts'], String(mode));
+    assert.deepEqual(q.loaded.sort(), ['hooks/handlers/consent.ts', 'hooks/reply.ts', 'hooks/run.ts'], String(mode));
   }
-  assert.ok(run('plan').loaded.includes('hooks/common.ts'), 'plan mode: the review check runs');
+  assert.ok(run('plan').loaded.includes('hooks/seat.ts'), 'plan mode: the review check runs');
 });
 
 // ---------- the transcript race: the model's call is not on disk yet, and Claude Code dropped plan ----------

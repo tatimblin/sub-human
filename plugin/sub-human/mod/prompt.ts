@@ -78,7 +78,7 @@ async function runPrompt(
   const { value: kept } = await $.state.get(NONCE);
   const nonce = asNonce(kept, e.session_id);
   const attested = origin ? { sub_human_origin: origin, ...(nonce ? { sub_human_nonce: nonce } : {}) } : {};
-  const run = await $.process.run(shimArgv(root, 'prompt.ts'), {
+  const run = await $.process.run(shimArgv(root, 'prompt'), {
     stdin: JSON.stringify({ ...e, ...attested }),
     env: shimEnv(e, root),
     timeoutMs: SHIM_TIMEOUT_MS,
@@ -112,7 +112,7 @@ export function registerPrompt(on: On) {
       if (writesWorking(e.origin, await helloOf($), presence)) {
         presence = 'working';
         const root = $.plugin.root;
-        void $.process.run(shimArgv(root, 'presence.ts'), {
+        void $.process.run(shimArgv(root, 'presence'), {
           stdin: JSON.stringify({ hook_event_name: 'Working', session_id: sid }),
           env: shimEnv({ session_id: sid }, root),
           timeoutMs: SHIM_TIMEOUT_MS,

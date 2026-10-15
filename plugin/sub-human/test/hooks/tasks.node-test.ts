@@ -37,7 +37,7 @@ function world() {
 
 test('gate: stdin it cannot read for a TaskCompleted fails closed (exit 2); for a mirror event it is exit 1', () => {
   const w = world();
-  const run = (raw: string) => spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', 'tasks.ts')], {
+  const run = (raw: string) => spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', 'run.ts'), 'tasks'], {
     input: raw, encoding: 'utf8', cwd: w.cwd, env: baseEnv({ SUB_HUMAN_HOME: w.home, HOME: w.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, CLAUDE_PID: String(w.pid.claude) }),
   });
   const gate = run('{"hook_event_name":"TaskCompleted","agent_type":"sub-human:room-claude","task_id":"2" oops');

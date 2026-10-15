@@ -44,7 +44,7 @@ test('guard: a dev-checkout CLI run and SessionStart on the real home leave the 
   const u = fakeUser(t);
   const before = fs.statSync(u.pointer).mtimeMs;
   for (const args of [['who'], ['tasks', '--json']]) spawnSync(process.execPath, [h.BIN, ...args], { env: u.env, encoding: 'utf8', timeout: 20_000 });
-  spawnSync(process.execPath, [path.join(h.PLUGIN, 'hooks', 'row-launcher.ts')], { env: u.env, input: '{}', encoding: 'utf8', timeout: 20_000 });
+  spawnSync(process.execPath, [path.join(h.PLUGIN, 'hooks', 'run.ts'), 'row-launcher'], { env: u.env, input: '{}', encoding: 'utf8', timeout: 20_000 });
   assert.equal(fs.readFileSync(u.pointer, 'utf8'), u.body, 'still the installed plugin');
   assert.equal(fs.statSync(u.pointer).mtimeMs, before, 'not even rewritten');
   assert.equal(fs.existsSync(path.join(u.user, '.sub-human', 'bin', 'serve')), false, 'no shim written either');
