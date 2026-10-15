@@ -288,7 +288,7 @@ function whyOffline(code: string, message: string): string {
   const login = l.transport && l.transport.kind === 'ssh' && l.transport.login === true
     ? `Over ssh this machine follows through your own ssh login to ${l.moved.host}'s machine; without one, ` : '';
   return `room ${code} moved to ${l.moved.host}'s machine, which this machine can't reach yet (${message}). ${login}`
-    + `${login ? 'ask' : 'Ask'} ${l.moved.host} for an invite (/sub-human invite --web there) and type the line it shows here`;
+    + `${login ? 'ask' : 'Ask'} ${l.moved.host} for an invite (/sub-human invite${login ? ' --web' : ''} there) and type the line it shows here`;
 }
 
 // ---------- the target ----------

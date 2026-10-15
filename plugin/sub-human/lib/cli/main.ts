@@ -371,7 +371,7 @@ function serve(args: readonly string[]) {
 // first frame gets the skew message, so that sub-human says to update instead of "the invite no longer works".
 function serveEnroll() {
   const protocol: typeof import('../remote/protocol.ts') = require('../remote/protocol.ts');
-  const msg = protocol.skewMessage({ host: { version: protocol.PLUGIN_VERSION, proto: protocol.PROTO }, joiner: { version: null, proto: { min: 1, max: 2 } } });
+  const msg = protocol.skewMessage({ host: { version: protocol.PLUGIN_VERSION, proto: protocol.PROTO }, joiner: { version: null, proto: { min: 1, max: 2 } }, need: 3 });
   const dec = protocol.decoder();
   let answered = false;
   process.stdin.on('data', d => {

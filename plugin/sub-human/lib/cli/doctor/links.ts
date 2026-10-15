@@ -98,7 +98,9 @@ async function webHelloProbe(spec: LinkSpec, code: string, { timeoutMs = DOCTOR_
   let t: Transport | null = null;
   const deadline = new Promise<never>((_, no) => setTimeout(() => no(new Error(`no answer within ${timeoutMs} ms`)), timeoutMs).unref());
   try {
-    const tr: Transport = await Promise.race([lib('remote/transports/index.ts').open(spec, { code }), deadline]);
+    // a web link made under protocol 3 proves its own Noise key (XK); the hello alone needs no token
+    const own = (spec.kind === 'ws' || spec.kind === 'wss') && spec.clientKey ? lib('remote/link-connect.ts').linkKey(code) : undefined;
+    const tr: Transport = await Promise.race([lib('remote/transports/index.ts').open(spec, { code, ...(own ? { clientKey: own } : {}) }), deadline]);
     t = tr;
     const reply = await Promise.race([new Promise<HelloReply | undefined>((ok, no) => {
       tr.onFrame(f => { if (f.id === 1) (f.error ? no(Object.assign(new Error(`${f.error.code}: ${f.error.message}`), { code: f.error.code })) : ok(f.result as HelloReply)); }); // as: the server's JSON, read defensively

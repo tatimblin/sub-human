@@ -270,7 +270,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     const id = frame && frame.id !== undefined ? frame.id : null;
     if (frame && frame.op === 'key') conn.send(JSON.stringify({ v: 3, key: hostKey() }));
     else if (frame && frame.op === 'enroll.start') {
-      const msg = protocol.skewMessage({ host: { version: protocol.PLUGIN_VERSION, proto: protocol.PROTO }, joiner: { version: null, proto: { min: 1, max: 2 } } });
+      const msg = protocol.skewMessage({ host: { version: protocol.PLUGIN_VERSION, proto: protocol.PROTO }, joiner: { version: null, proto: { min: 1, max: 2 } }, need: 3 });
       conn.send(protocol.encode(protocol.error(id, 'PROTOCOL', msg, 'SKEW')).trimEnd());
       log(`an older joiner's PIN attempt from ${who}: told to update`);
     } else {

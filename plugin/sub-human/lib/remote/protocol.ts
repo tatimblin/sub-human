@@ -38,9 +38,11 @@
  *   PLUGIN_VERSION                   this plugin's version (.claude-plugin/plugin.json), '?' when unreadable
  *   negotiate(a, b) -> v | null      the highest version in both ranges {min, max}, null when they do not overlap
  *   rangeOf(params) -> {min, max} | null   a hello's range: its proto when well formed, else null
- *   skewMessage({host, joiner}) -> string   {version, proto} each: "host runs sub-human 0.4.0 (protocol 3–4); you run
- *                                    0.3.0 (protocol 2). Update your plugin: /plugin update sub-human" (or "The host
- *                                    must update …" when the joiner is the newer side)
+ *   skewMessage({host, joiner, need?}) -> string   {version, proto} each: "host runs sub-human 0.4.0 (protocol 3–4);
+ *                                    you run 0.3.0 (protocol 2). Update your plugin: /plugin update sub-human" (or "The
+ *                                    host must update …" when the joiner is the newer side). need: the version what was
+ *                                    asked needs (an invite line: 3), so ranges that overlap below it still name the
+ *                                    side that lacks it
  *   CAPS                             what this end serves: {ops: OPS, fields: FIELDS, snapshot: true}
  *   snapshot                         a first sync from the host's snapshot instead of every line (additive, gated by
  *                                    caps, not by v): a mirror with an empty log asks subscribe {after: 0, hash,
@@ -111,11 +113,13 @@ function negotiate(a: ProtoRange, b: ProtoRange): number | null {
 const span = (r: ProtoRange): string => (r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`);
 const runs = (who: string, x: PeerVersion): string => `${who} ${x.version && x.version !== '?' ? `sub-human ${x.version}` : 'an unknown sub-human version'} (protocol ${span(x.proto)})`;
 /** @returns {string} */
-function skewMessage({ host, joiner }: { host: PeerVersion; joiner: PeerVersion }): string {
-  const fix = joiner.proto.max < host.proto.min
+function skewMessage({ host, joiner, need }: { host: PeerVersion; joiner: PeerVersion; need?: number }): string {
+  const joinerBehind = need !== undefined ? joiner.proto.max < need : joiner.proto.max < host.proto.min;
+  const fix = joinerBehind
     ? 'Update your plugin: /plugin update sub-human'
     : 'The host must update: ask them to run /plugin update sub-human';
-  return `${runs('host runs', host)}; ${runs('you run', joiner).replace(/^you run sub-human /, 'you run ')}. ${fix}`;
+  const what = need !== undefined ? ` (this needs protocol ${need})` : '';
+  return `${runs('host runs', host)}; ${runs('you run', joiner).replace(/^you run sub-human /, 'you run ')}${what}. ${fix}`;
 }
 const OPS: Op[] = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping', 'handoff.accept', 'handoff.refuse'];
 const EVENTS: EventName[] = ['entry', 'doc', 'end', 'handoff', 'moved', 'snapshot'];

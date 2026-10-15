@@ -11,7 +11,6 @@ import * as h from './helpers.ts';
 import * as doctor from '../lib/cli/doctor.ts';
 import * as links from '../lib/room/links.ts';
 import * as linkState from '../lib/room/link-state.ts';
-import * as shim from '../lib/remote/shim.ts';
 import * as identity from '../lib/identity.ts';
 import * as linkMod from '../lib/remote/link.ts';
 import * as store from '../lib/room/store.ts';
@@ -43,13 +42,13 @@ test('doctor: node floor, Remote Control, ssh hints and argument errors', () => 
   }
   assert.equal(doctor.checkRemoteControl({ CLAUDE_CODE_USE_BEDROCK: '0' }, []).status, 'info', '0 is off');
   assert.equal(doctor.checkRemoteControl({}, [{ env: { CLAUDE_CODE_USE_BEDROCK: '1' } }]).status, 'warn', 'from a settings file too');
-  // the host lets the link's own key in (a new invite, its card), prime for MFA, --via for a bastion
+  // ssh refused: a login of the person's own (or a web invite); an older link's own key: removed by the host; prime for MFA
   const denied = doctor.sshHint('alice@box: Permission denied (publickey).', { code: 'vole-1234' });
   assert.ok(denied);
-  assert.match(denied, /never let in, or the host removed it\. ask the host for a new invite \(\/sub-human invite\) and type the line it shows/);
+  assert.match(denied, /refused your ssh login: joining over ssh needs a login of your own there .* ask the host for an invite over the web \(\/sub-human invite --web\)/);
   assert.match(denied, /sub-human prime vole-1234/);
-  assert.doesNotMatch(denied, /authorize|shk1|ssh-agent|SUB_HUMAN_SSH_OPTS/, 'no sh1/sh2-era advice');
-  assert.match(doctor.sshHint('Permission denied (publickey).', { code: 'vole-1234', request: 'shk1.vole-1234.abc.KEY.bob' })!, /has not let this machine in yet; ask the host for a new invite/);
+  assert.doesNotMatch(denied, /authorize\b|shk1|ssh-agent|SUB_HUMAN_SSH_OPTS|let in/, 'no sh1/sh2-era or admit-a-key advice');
+  assert.match(doctor.sshHint('Permission denied (publickey).', { code: 'vole-1234', transport: { key: '/x/id_ed25519' } })!, /refused this link's own key \(an older sub-human let it in\): the host removed it\. ask the host for a new invite/);
   assert.match(doctor.sshHint('Permission denied (publickey,keyboard-interactive).', { code: 'vole-1234' })!, /interactive login \(MFA\): run node \S+\/scripts\/sub-human prime vole-1234 once in a terminal/);
   assert.match(doctor.sshHint('Host key verification failed.', { transport: { knownHosts: '/x/known_hosts', via: 'jump' } })!, /not the one its invite pinned.*\/sub-human invite --via jump/);
   assert.match(doctor.sshHint('Host key verification failed.')!, /host key/);
@@ -67,11 +66,17 @@ test('doctor: authorized_keys lines that bypass the shim are found', t => {
   const file = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
   fs.writeFileSync(file, [
     'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIother someone@else',
-    shim.authorizedLine('vole-1234', 'aaaaaaaaaaaa', KEY, home),
+    `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --stdio vole-1234 --link aaaaaaaaaaaa",restrict ${KEY} sub-human:vole-1234:aaaaaaaaaaaa`,
+    `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --enroll vole-5678 --kind ssh",restrict ${KEY} sub-human-enroll:vole-5678`,
     `command="SUB_HUMAN_HOME=${home} /opt/node/bin/node /cache/sub-human/0.2.0/bin/sub-human serve --stdio vole-1234 --link ${LINK_ID}",restrict ${KEY} sub-human:vole-1234:${LINK_ID}`,
   ].join('\n'));
   const scan = doctor.scanAuthorizedKeys(file);
   assert.deepEqual(scan.lines.map(l => [l.shimmed, (l as Extract<KeyLine, { code: string }>).code, (l as Extract<KeyLine, { code: string }>).id]), [[true, 'vole-1234', 'aaaaaaaaaaaa'], [false, 'vole-1234', LINK_ID]]);
+  assert.deepEqual(scan.doors, ['vole-5678'], 'a door a 0.5.0-beta.15 invite left');
+  const c = doctor.checkAuthorizedKeys(scan);
+  assert.equal(c.status, 'warn');
+  assert.match(c.detail, /1 enrollment door line\(s\) an older sub-human's ssh invite left \(room vole-5678\)/);
+  assert.match(c.fix!, /doctor --fix in a terminal \(it removes them\)/);
   assert.deepEqual(doctor.scanAuthorizedKeys(file + '.none'), { file: file + '.none', exists: false, lines: [] });
 });
 
@@ -102,7 +107,7 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(akc.fix!, new RegExp(`^remove the sub-human:${code}:${LINK_ID} line from ~/\\.ssh/authorized_keys and invite that machine again`), 'this home\'s line, in the child\'s ~/.ssh/authorized_keys');
   const lc = byId(rep, `link:${code}`);
   assert.equal(lc.status, 'warn', lc.detail);
-  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 1-2 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v2`));
+  assert.match(lc.detail, new RegExp(`^pipe ${hostHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · daemon not running · ✕ offline 2m · 2 queued · last error: no route to host · the room moved to [^·]* · host reachable in \\d+ ms; protocol here 1-3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), host 1-3 \\(sub-human \\d+\\.\\d+\\.\\d+(?:-[0-9a-z.]+)?\\), speaking v3`));
   assert.match(lc.fix!, /Ask carolyn for an invite/, 'the room moved and this link never reached the new host');
   assert.match(lc.detail, /the room moved to carolyn's machine; not reached from here yet/);
   assert.doesNotMatch(lc.detail, /epoch|BatchMode/);
@@ -113,8 +118,8 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.ok(byId(rep, 'remote_control'));
   const [l] = rep.links;
   assert.equal(l.reach!.ok, true);
-  assert.equal(l.reach!.protocol!.v, 2);
-  assert.deepEqual(l.reach!.protocol!.proto, { min: 1, max: 2 });
+  assert.equal(l.reach!.protocol!.v, 3);
+  assert.deepEqual(l.reach!.protocol!.proto, { min: 1, max: 3 });
   // the midpoint of a slow spawn can sit seconds from the moment the host answered: bound it loosely
   assert.ok(Math.abs(l.reach!.skewMs!) < 60_000, `skew ${l.reach!.skewMs}`);
   assert.deepEqual(l.recent, [`2026-10-08T10:00:00.000Z sub-human link ${code}: offline: ssh exited 255`]);
@@ -126,10 +131,15 @@ test('doctor CLI: a pipe link to a second home: state, last error, a hello with 
   assert.match(r.stdout, /✗ sub-human folder +.*\n +fix: node \S+\/scripts\/sub-human doctor --fix in a terminal/);
   assert.doesNotMatch(r.stdout, /host reachable/, '--quick says no hello');
 
-  // --fix: the modes and the shim (an old key line stays: the person removes it); the home check passes after it
+  // --fix: the modes, the shim and a leftover door (an old link's key line stays: kicking that link takes it out); the
+  // home check passes after it
   fs.chmodSync(home, 0o755);
+  const door = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --enroll ${code} --kind ssh",restrict ${KEY} sub-human-enroll:${code}`;
+  fs.appendFileSync(ak, `${door}\n`);
   r = run(['--fix', '--quick', '--json'], env);
   assert.match(r.stdout, /^fixed: made .* 0700$/m);
+  assert.match(r.stdout, /^fixed: removed 1 enrollment door line\(s\) an older sub-human left in ~\/\.ssh\/authorized_keys$/m);
+  assert.ok(!fs.readFileSync(ak, 'utf8').includes(door) && fs.readFileSync(ak, 'utf8').includes(`sub-human:${code}:${LINK_ID}`));
   assert.doesNotMatch(r.stdout, /rewrote/);
   const fixed = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
   assert.equal(byId(fixed, 'home').status, 'pass');

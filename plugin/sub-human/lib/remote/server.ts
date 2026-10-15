@@ -138,8 +138,9 @@ function redeem(s: Session, invite: unknown, machine: string, pin: unknown, prov
   let secret: string;
   const opts = { machine, pin, proven, peerKey: s.peer, as: asked, ...(s.login ? { newId: linkId! } : linkId ? { reserved: linkId } : {}) }; // login: a linkId (serve checks)
   if (word) { // an invite line's SECRET (protocol 3)
-    if ((s.v ?? 0) < 3) throw new RoomError('PROTOCOL', 'an invite line of this kind needs protocol 3 on both sides: update sub-human (/plugin update sub-human)', 'SKEW');
-    if (s.via === 'ws' && !s.peer) throw new RoomError('PROTOCOL', 'an invite line over the web needs protocol 3\'s handshake (a key of the link\'s own): update sub-human (/plugin update sub-human)', 'SKEW');
+    const skew = () => new RoomError('PROTOCOL', protocol.skewMessage({ host: { version: s.version, proto: s.proto }, joiner: s.peerVersion || { version: null, proto: { min: 1, max: s.v ?? 1 } }, need: 3 }), 'SKEW');
+    if ((s.v ?? 0) < 3) throw skew();
+    if (s.via === 'ws' && !s.peer) throw skew(); // over the web protocol 3 is XK, a key of the link's own: NK is an older joiner's
     secret = inviteSecret.idOf(word.secret);
   } else {
     const inv = invites.parseInvite(invite);
@@ -291,6 +292,7 @@ const OPS: OpHandlers = {
     }
     s.link = null;
     s.v = v;
+    s.peerVersion = { version: client, proto: theirs };
     const proven = machineKey.verify(params.machine_key, s.store.code); // the id its machine key gives (else only reported)
     // nonce: the host home's machine key proves itself first, so a joiner sends an invite line's secret only after
     const host = v >= 3 && typeof nonce === 'string' && machineKey.NONCE_RE.test(nonce) ? machineKey.hostProof(s.store.code, nonce) : null;
@@ -402,6 +404,8 @@ class Session {
   via: 'ws' | null;
   /** the Noise key the web connection proved (XK); null for NK, ssh and a pipe */
   peer: string | null;
+  /** the peer's plugin version and range, as its hello said (for a skew message) */
+  peerVersion: { version: string | null; proto: ProtoRange } | null = null;
   store: RoomStore;
   log: Log;
   linkId: string | null;

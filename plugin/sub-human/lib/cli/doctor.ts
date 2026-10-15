@@ -174,6 +174,6 @@ async function main(args: readonly string[], { write = (s: string) => { process.
 }
 
 export {
-  diagnose, format, bundle, redactor, helloProbe, checkListener, checkRoomClaudes, linkChecks, scanAuthorizedKeys,
+  diagnose, format, bundle, redactor, helloProbe, checkListener, checkRoomClaudes, linkChecks, scanAuthorizedKeys, checkAuthorizedKeys,
   checkNode, checkRemoteControl, checkClaude, checkDaemon, sshHint, main, parseArgs, DOCTOR_HELLO_MS,
 };

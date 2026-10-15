@@ -100,7 +100,7 @@ test('ssh and pipe: the host proves its machine key over the joiner\'s nonce fir
 });
 
 test('the PIN online: none asked for (free), a wrong one costs a try and a room line, the right one waits for the card; the throttle per invite and per source', async t => {
-  const { code, host } = hostRoom(t);
+  const { host } = hostRoom(t);
   const r = mint(host);
   const carol = machine(), mallory = machine();
   const as = { name: 'carol', label: 'carols-mbp' };

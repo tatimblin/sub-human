@@ -36,6 +36,7 @@ interface Libs {
   'remote/sshkeys.ts': typeof import('../../remote/sshkeys.ts');
   'remote/protocol.ts': typeof import('../../remote/protocol.ts');
   'remote/link-socket.ts': typeof import('../../remote/link-socket.ts');
+  'remote/link-connect.ts': typeof import('../../remote/link-connect.ts');
   'remote/listener.ts': typeof import('../../remote/listener.ts');
   'remote/tailscale.ts': typeof import('../../remote/tailscale.ts');
   'remote/transports/index.ts': typeof import('../../remote/transports/index.ts');
