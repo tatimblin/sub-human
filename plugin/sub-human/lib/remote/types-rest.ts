@@ -1,6 +1,6 @@
 /**
- * plugin/sub-human/lib/remote/types-rest.ts: the shared types of the transports, the invites (enroll, admission,
- * hosting, webhost) and the listener. Types only: nothing here exists at run time. The protocol frames and the host's
+ * plugin/sub-human/lib/remote/types-rest.ts: the shared types of the transports, the invites (admission, hosting,
+ * webhost) and the listener. Types only: nothing here exists at run time. The protocol frames and the host's
  * invite records are lib/remote/types-core.ts's.
  */
 
@@ -27,9 +27,11 @@ export interface LineTransport {
   end(): void;
 }
 
-/** What a kind is opened with: the room the link daemon connects to, if any. */
+/** What a kind is opened with: the room the link daemon connects to, if any, and the link's own Noise key (a web link
+ * made under protocol 3: XK proves it). */
 export interface OpenCtx {
   code?: string;
+  clientKey?: import('./noise.ts').KeyPair;
 }
 
 /** A transport spec: its kind, and what that kind needs. */
@@ -82,6 +84,9 @@ export interface WsSpec extends SpecBase, WsAddr {
   kind: 'ws' | 'wss';
   /** the pinned X25519 public key, base64url */
   hostKey?: string;
+  /** the link's own X25519 public key, base64url (its pair in the link's folder): XK proves it on every connection;
+   * absent from a link made under protocol 2 (NK) */
+  clientKey?: string;
 }
 
 /** What a locator parses to and a link file keeps (lib/room/types.ts Link.transport): the built-in kinds but memory,
@@ -102,7 +107,7 @@ export interface Refusal {
   message: string;
 }
 
-/** Message 1's payload. */
+/** Message 1's payload: v 3 for XK, 1 for NK (a link made under protocol 2). */
 export interface WsHello {
   v: number;
   room: string;

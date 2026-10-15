@@ -22,12 +22,18 @@
  *   epoch                            hello and append may carry the mirror's host epoch (lib/handoff.ts); the hello
  *                                    reply carries the server's. A hello from a later epoch, or an append from another,
  *                                    is STALE (a host the room moved away from, or a copy not caught up)
- *   PROTO = {min: 1, max: 2}         the protocol versions this end speaks. hello carries {proto, client, caps}: proto
+ *   PROTO = {min: 1, max: 3}         the protocol versions this end speaks. hello carries {proto, client, caps}: proto
  *                                    its range, client its plugin version (a peer may also send v, the version it needs
  *                                    at least, which the server honours). The server answers {v, proto, server, caps,
  *                                    time}: time its clock (ms, for the skew sub-human doctor reports), v = negotiate()
  *                                    of the two ranges; no overlap, or a hello with no proto, is PROTOCOL (reason SKEW)
- *                                    with skewMessage(), which names the side that must update. v2: the sh2 invite and its PIN
+ *                                    with skewMessage(), which names the side that must update. v2: the sh2 invite and
+ *                                    its PIN. v3: an invite line's SECRET word in hello's invite and its PIN (checked
+ *                                    online, lib/remote/invites.ts), as {name, label}, nonce -> the reply's host (the
+ *                                    host home's machine key over the nonce), and over the web Noise XK with a key of
+ *                                    the link's own (lib/remote/transports/ws.ts). A link made under v2 (a token, NK)
+ *                                    keeps working at v2 or v3 until it is invited again or revoked; a v3 invite is
+ *                                    refused below v3 (PROTOCOL SKEW)
  *   VERSION = PROTO.max              (kept for callers that name one version)
  *   PLUGIN_VERSION                   this plugin's version (.claude-plugin/plugin.json), '?' when unreadable
  *   negotiate(a, b) -> v | null      the highest version in both ranges {min, max}, null when they do not overlap
@@ -84,7 +90,7 @@ import type {
   ErrorFrame, EventData, EventFrame, DecodedFrame, Caps, IncomingRequest,
 } from './types-core.ts';
 
-const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 1, max: 2 });
+const PROTO: Readonly<ProtoRange> = Object.freeze({ min: 1, max: 3 });
 const VERSION = PROTO.max;
 const PLUGIN_VERSION: string = (() => {
   try { return String(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')).version || '?'); } catch { return '?'; }

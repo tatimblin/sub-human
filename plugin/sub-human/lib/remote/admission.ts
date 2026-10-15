@@ -1,17 +1,19 @@
 /**
- * plugin/sub-human/lib/remote/admission.ts: the host person's consent to a machine that typed an invite's PIN. The PIN
- * proved only that the joiner knows it (lib/remote/enroll.ts); nothing gets in until a person on the host answers "Let
- * in" on the card their own Claude Code shows (hooks/handlers/consent.ts, like the handoff card: only the answer on the card as
- * the hooks built it counts, never the model's), or runs `sub-human admit REF` in a shell (headless hosts), or types
- * `/sub-human admit REF`. Then, over ssh, the joiner's link key gets the forced-command line for its one link
- * (lib/remote/shim.ts authorizedLine), and the joiner's link redeems its admission secret (check, below, from
- * lib/remote/invites.ts redeemInvite). The room's tail on the host wakes the seat's Claude to open the card once
- * (lib/tail.ts); a request nobody answers lapses after ADMIT_TTL_MS.
+ * plugin/sub-human/lib/remote/admission.ts: the host person's consent to a machine that typed an invite line and its
+ * PIN. The line and the PIN proved only that the joiner holds both (lib/remote/invites.ts); nothing gets in until a
+ * person on the host answers "Let in" on the card their own Claude Code shows (hooks/handlers/consent.ts, like the
+ * handoff card: only the answer on the card as the hooks built it counts, never the model's), or runs `sub-human admit
+ * REF` in a shell (headless hosts), or types `/sub-human admit REF`. Then the joiner's link redeems its invite (check,
+ * below, from lib/remote/invites.ts redeemInvite): on the machine its key proved, and over the web with the Noise key
+ * its PIN's connection proved. Nothing is written outside the room's own store (no authorized_keys line). The room's
+ * tail on the host wakes the seat's Claude to open the card once (lib/tail.ts); a request nobody answers lapses after
+ * ADMIT_TTL_MS.
  *
- * The records (kept in the host document remote/invites, keyed by the admission secret's sha256, like an invite):
- *   check(record, {machine, linkId?, now}) -> {err, next?}   may it redeem: once let in, on its machine, before
+ * The records (kept in the host document remote/invites, under invites.admissionSlot(secret)):
+ *   check(record, {machine, linkId?, peerKey?, now}) -> {err, next?}   may it redeem: once let in, on its machine (the
+ *       id its machine key proves), on its link (a login session's --link), with its key (a web one), before
  *       admitted_until (OFFLINE ADMIT_WAITING before the person answered; AUTH ADMIT_REFUSED / ADMIT_LAPSED /
- *       ADMIT_REVOKED / ADMIT_LATE / INVITE_USED after)
+ *       ADMIT_REVOKED / ADMIT_LATE / INVITE_USED / INVITE_OTHER_MACHINE / INVITE_OTHER_LINK / KEY_MISMATCH after)
  *   admissions(store, {now?, all?}) -> [{slot, ref, ...record}]   the requests waiting (all: every one), oldest first
  *   decide(store, ref, {decision: 'let-in' | 'refused', by?, sig?, now?}) -> record   the person's answer
  *   lapseAdmissions(store, {now?}) -> [record]   burn the requests nobody answered in ADMIT_TTL_MS
@@ -22,19 +24,17 @@
  *   find(code, ref) -> request | null         any request of the room with that ref (answered or not)
  *   targets(code, req) -> [name]              whose card asks: req.by when that seat is in the room on this machine,
  *                                              else every person seated here
- *   describe(req) -> "carol (SHA256:…) on carols-mbp"   for ssh the link key's fingerprint, else "request 3f9c2a"
+ *   describe(req) -> "carol (request 3f9c2a) on carols-mbp"   the request's check: the joiner's screen shows the same
  *   question(req, code) -> string             the card's question (it names the ref)
  *   card(req, code) -> AskUserQuestion input  LET_IN / REFUSE
  *   letIn(code, ref, {by?, sign?, now?}) -> {id, text}   the person's yes: the record let in (signed with their seat key
- *                                              when sign is given), over ssh the key line written to the door's
- *                                              authorized_keys file, a room line
+ *                                              when sign is given), a room line
  *   refuse(code, ref, {by?, now?}) -> {text}  the person's no: burnt, a room line
  *   markTold(code, ref, name)                 the tail woke name's Claude for it
  *   lapse(code, {now?}) -> [request]          requests past their time, burnt now (the tail tells the host)
  *   LET_IN, REFUSE
  */
 
-import path from 'node:path';
 import { INVITES_KEY } from './invites.ts';
 import { RoomError } from '../room/validate.ts';
 import { HANDOFF_INVITE_MS } from '../config.ts';
@@ -55,7 +55,7 @@ const WAITING = 'waiting for the host to let this machine in';
 
 // ---------- the records (in the host document remote/invites, beside the invites: lib/remote/invites.ts) ----------
 /** An admission record's redemption (lib/remote/invites.ts redeemInvite): {err, next?} (err null: it may redeem). */
-function check(inv: AdmissionRecord, { machine, linkId, now }: { machine: string; linkId?: string; now: number }): { next?: AdmissionRecord; err: CodedError | null } {
+function check(inv: AdmissionRecord, { machine, linkId, peerKey = null, now }: { machine: string; linkId?: string; peerKey?: string | null; now: number }): { next?: AdmissionRecord; err: CodedError | null } {
   const no = (msg: string, reason: ConstructorParameters<typeof RoomError>[2]) => new RoomError('AUTH', msg, reason);
   if (inv.used_at) return { err: no('this machine\'s join was used already; ask the host for a new invite', 'INVITE_USED') };
   if (inv.admit === 'refused') return { err: no('the host refused to let this machine in', 'ADMIT_REFUSED') };
@@ -65,6 +65,8 @@ function check(inv: AdmissionRecord, { machine, linkId, now }: { machine: string
   }
   if (inv.machine !== machine) return { err: no('this join is for another machine', 'INVITE_OTHER_MACHINE') };
   if (linkId !== undefined && inv.link !== linkId) return { err: no('this join is for another connection', 'INVITE_OTHER_LINK') };
+  // a web joiner's PIN came over a connection that proved its link's Noise key: only that key redeems it
+  if (inv.kind === 'ws' && inv.key && inv.key !== peerKey) return { err: no('this join was let in for another key (its link file\'s); type the invite line again on the machine that typed it', 'KEY_MISMATCH') };
   if (inv.admit !== 'let-in') {
     if (now > Date.parse(inv.expires_at)) return { err: no('the host did not let this machine in in time; ask them for a new invite', 'ADMIT_LAPSED') }; // lapseAdmissions burns it, with a line
     return { err: new RoomError('OFFLINE', `${WAITING}; the link keeps trying`, 'ADMIT_WAITING') };
@@ -146,8 +148,8 @@ function targets(code: string, req: AdmissionRequest): string[] {
   return req.by && here.includes(req.by) ? [req.by] : here;
 }
 
-const sshkeysMod = (): typeof import('./sshkeys.ts') => require('./sshkeys.ts');
-const fp = (req: AdmissionRequest): string => (req.key ? sshkeysMod().fingerprint(req.key) : `request ${req.ref.slice(0, 6)}`);
+/** What the card and the joiner's screen both show, to compare: the request's ref. */
+const fp = (req: AdmissionRequest): string => `request ${req.ref.slice(0, 6)}`;
 const describe = (req: AdmissionRequest): string => `${req.name} (${fp(req)}) on ${req.label || 'another machine'}`;
 const question = (req: AdmissionRequest, code: string): string => `Let ${describe(req)} join room ${code}? (admit ${req.ref})`;
 
@@ -158,7 +160,7 @@ function card(req: AdmissionRequest, code: string): Card {
       header: 'Join',
       multiSelect: false,
       options: [
-        { label: LET_IN, description: `${req.name} typed your PIN from another machine (names are what they say; ${fp(req)} is what their screen shows). Let in: that machine joins room ${code} and can post only as the people it brings. Undo any time: /sub-human kick ${req.name}.` },
+        { label: LET_IN, description: `${req.name} typed your invite line and its PIN on another machine (the name is what they say; ${fp(req)} is what their screen shows). Let in: that machine joins room ${code} as ${req.name} only. Undo any time: /sub-human kick ${req.name}.` },
         { label: REFUSE, description: 'Nothing gets in; their join stops. The invite is used up either way.' },
       ],
     }],
@@ -173,22 +175,9 @@ function letIn(code: string, ref: string, { by = null, sign = null, now = Date.n
   const req = find(code, ref);
   if (!req) throw new RoomError('INVALID', `room ${code} has no join request ${ref} (/sub-human admit lists them)`);
   const sig = sign ? sign({ kind: 'admit', ref: req.ref, link: req.link, key: req.key || null, machine: req.machine }) : null;
-  let file: string | null = null;
-  if (req.kind === 'ssh' && req.admit === 'asked') {
-    // the key line first, then the record: a failed write leaves the request waiting, not let in without a key
-    const sshkeys = sshkeysMod();
-    const { shim, h } = (require('./hosting.ts') as typeof import('./hosting.ts')).shimReady();
-    const key = sshkeys.openssh(req.key!); // an ssh request carries the joiner's link key (enroll.ts joinerOf)
-    file = path.resolve(req.door_file || sshkeys.authorizedKeysFile());
-    sshkeys.appendAuthorized(file, shim.authorizedLine(code, req.link, key, h), key);
-  }
-  let rec: AdmissionRequest;
-  try { rec = decide(store, req.ref, { decision: 'let-in', by, sig, now }); } catch (e) {
-    if (file && req.admit === 'asked') sshkeysMod().removeAuthorized(file, code, req.link);
-    throw e;
-  }
+  const rec = decide(store, req.ref, { decision: 'let-in', by, sig, now });
   roomLib().roomLine(store, `${by || 'the host'} let ${describe(rec)} in; undo with: /sub-human kick ${rec.name}`);
-  return { id: rec.link, text: `let in: ${describe(rec)} joins room ${code} within seconds${file ? ` (their key opens only this room, nothing else on this machine)` : ''}. Undo: /sub-human kick ${rec.name}` };
+  return { id: rec.link, text: `let in: ${describe(rec)} joins room ${code} within seconds, as ${rec.name} only. Undo: /sub-human kick ${rec.name}` };
 }
 
 function refuse(code: string, ref: string, { by = null, now = Date.now() }: { by?: string | null; now?: number } = {}): { text: string } {

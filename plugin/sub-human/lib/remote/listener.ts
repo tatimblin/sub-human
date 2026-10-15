@@ -1,22 +1,25 @@
 /**
  * plugin/sub-human/lib/remote/listener.ts: the host's WebSocket listener daemon (`scripts/sub-human listen [--port
  * 7420]`), one per home. It binds 127.0.0.1 only; a TLS front (Tailscale Serve or Funnel, the lab's Caddy, a
- * person's own reverse proxy) is the only way in from elsewhere. A WebSocket whose first message is TEXT is a short code's
- * attempt (lib/remote/enroll.ts): for a room this home serves, `<home>/bin/serve --enroll CODE --kind ws` runs the PAKE
- * over its text frames (a pre-auth slot until it exits). For each other WebSocket it runs the Noise_NK handshake
- * as the responder with the host's static X25519 key (lib/remote/transports/ws.ts serverChannel), checks the room
- * the joiner names is one this home serves over ws, and only then spawns `<home>/bin/serve --stdio CODE` (the stable
- * shim, lib/remote/shim.ts) for that one connection, piping decrypted bytes to its stdin and its stdout back. It never
+ * person's own reverse proxy) is the only way in from elsewhere. A WebSocket whose first message is TEXT asks for the
+ * host's public key ({"op": "key"}, answered {"v": 3, "key"} and closed: an invite line's first dial checks it against
+ * the line's tag before anything secret goes), or is a 0.5.0-beta.15 joiner's PIN attempt ({"op": "enroll.start"},
+ * answered with protocol.skewMessage: that joiner must update). For each other WebSocket it runs the Noise handshake as
+ * the responder with the host's static X25519 key (lib/remote/transports/ws.ts serverChannel: XK, or NK for a link
+ * made under protocol 2), checks the room the joiner names is one this home serves over ws, and only then spawns
+ * `<home>/bin/serve --stdio CODE --via ws [--peer KEY]` (the stable shim, lib/remote/shim.ts; KEY: the link's own
+ * Noise key XK proved) for that one connection, piping decrypted bytes to its stdin and its stdout back. It never
  * runs lib/remote/server.ts in-process (the store lock busy-waits; one wait would stall every connection), parses no
  * protocol frame, and never sees a secret in clear outside the child's pipes. The child authenticates the hello
- * (an invite and its PIN, or a link token) as for any transport.
+ * (an invite line and its PIN, or a link token and its key) as for any transport.
  *
  *   keyFile() -> <home>/listen/host-x25519.json   the host's static Noise key (0600): a random X25519 key of its own,
  *       made once per home (lib/remote/noise.ts loadOrCreateStatic). It is neither derived from nor signed by any
  *       other key: node:crypto cannot turn an Ed25519 seat key into an X25519 one without hand-written field
  *       arithmetic, and keeping roles apart means a leak of one never opens the other. The invite pins it directly,
  *       so no binding to the machine id is needed; it lives in the same home, so it follows that machine identity
- *   hostKey() -> string            its public key, base64url (43 chars): the sh2 invite's host-key field for ws/wss
+ *   hostKey() -> string            its public key, base64url (43 chars): what an invite line's tag names for the web
+ *                                  (role 'listener'), and the sh2 invite's host-key field for ws/wss
  *   stateFile() -> <home>/listen/state.json   the shared state (0600) doctor and the hooks read:
  *       {pid, port, started_at, rooms: {CODE: {path, url, mode: 'tailscale' | 'funnel' | 'url', tailscale?: {bin,
  *       https, path}, at}}, conns}. rooms is what this home serves over ws; a room not in it is refused at the handshake
@@ -54,6 +57,7 @@ import type { AddressInfo } from 'node:net';
 import type { ListenState, Refusal, ServedRoom } from './types-rest.ts';
 import type { KeyPair } from './noise.ts';
 import type { DecodedFrame } from './types-core.ts';
+import type { Duplex } from 'node:stream';
 import type { Conn } from './ws.ts';
 
 
@@ -213,10 +217,10 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
       if (!(read().rooms || {})[code] || !roomLive(code)) return { code: 'OFFLINE', message: `room ${code} is not open for joins over the web here (the host can run /sub-human invite --web or --url again)` };
       return null;
     };
-    let ch: { duplex: import('node:stream').Duplex; hello: { room: string } }, first: { data: Buffer; binary: boolean };
+    let ch: { duplex: Duplex; hello: { room: string }; peer: Buffer | null }, first: { data: Buffer; binary: boolean };
     try {
       first = await wsT.firstAny(conn, HANDSHAKE_MS);
-      if (!first.binary) return enrollConn(conn, first.data, { refusal, who }); // a short code: text frames, lib/remote/enroll.ts
+      if (!first.binary) return textConn(conn, first.data, who); // a key request, or an older joiner's PIN attempt
       ch = await wsT.serverChannel(conn, { s, timeoutMs: HANDSHAKE_MS, m1: first.data, check: hello => refusal(hello.room) });
     } catch (e) {
       preauth--;
@@ -226,9 +230,10 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
     }
     preauth--;
     const code = ch.hello.room;
+    const args = ['--stdio', code, '--via', 'ws', ...(ch.peer ? ['--peer', ch.peer.toString('base64url')] : [])];
     let child: ChildProcessWithoutNullStreams;
     try {
-      child = spawn(shimCmd(), ['--stdio', code], { env: { ...process.env, SUB_HUMAN_HOME: home() }, stdio: ['pipe', 'pipe', 'pipe'] });
+      child = spawn(shimCmd(), args, { env: { ...process.env, SUB_HUMAN_HOME: home() }, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e) {
       log(`room ${code}: could not start serve: ${(e as Error).message}`);
       ch.duplex.destroy();
@@ -236,7 +241,7 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
       return;
     }
     children.add(child);
-    log(`room ${code}: a connection from ${who}; serve pid ${child.pid}`);
+    log(`room ${code}: a connection from ${who}${ch.peer ? ` (key ${ch.peer.toString('base64url').slice(0, 12)}…)` : ' (protocol 2)'}; serve pid ${child.pid}`);
     publishConns();
     child.stdout.pipe(ch.duplex);
     ch.duplex.pipe(child.stdin);
@@ -254,51 +259,27 @@ async function run({ port = defaultPort(), log = (msg: string): unknown => proce
   }
 
   /**
-   * A short code's attempt (its first message is text): `<home>/bin/serve --enroll CODE --kind ws` for this one
-   * connection, each text message one line of its stdin and each line it writes one text message. Nothing else is
-   * parsed here; the child runs the PAKE and counts the tries. It holds a pre-auth slot until it exits.
+   * A TEXT first message: {"op": "key"} gets this listener's public key (an invite line's first dial checks it against
+   * the line's tag before it sends anything secret); a 0.5.0-beta.15 joiner's {"op": "enroll.start"} gets the skew
+   * message (it must update); anything else a refusal. Each holds its pre-auth slot only until it is answered.
    */
-  function enrollConn(conn: Conn, data: Buffer, { refusal, who }: { refusal: (code: string) => Refusal | null; who: unknown }): void {
+  function textConn(conn: Conn, data: Buffer, who: unknown): void {
     const protocol: typeof import('./protocol.ts') = require('./protocol.ts');
     let frame: DecodedFrame | null = null; // parsed JSON, checked below
     try { frame = JSON.parse(data.toString('utf8')); } catch { /* refused below */ }
-    const code = frame && frame.params && frame.params.room;
-    const no: Refusal | null = !frame || frame.op !== 'enroll.start' || typeof code !== 'string' ? { code: 'PROTOCOL', message: 'a text message that is not an enrollment' } : refusal(code);
-    const release = () => { preauth--; conns--; publishConns(); };
-    if (no) {
-      conn.send(protocol.encode(protocol.error(frame && frame.id !== undefined ? frame.id : null, no.code, no.message)).trimEnd());
-      conn.close(4404, 'refused');
-      log(`refused an enrollment from ${who}: ${no.message}`);
-      return release();
+    const id = frame && frame.id !== undefined ? frame.id : null;
+    if (frame && frame.op === 'key') conn.send(JSON.stringify({ v: 3, key: hostKey() }));
+    else if (frame && frame.op === 'enroll.start') {
+      const msg = protocol.skewMessage({ host: { version: protocol.PLUGIN_VERSION, proto: protocol.PROTO }, joiner: { version: null, proto: { min: 1, max: 2 } } });
+      conn.send(protocol.encode(protocol.error(id, 'PROTOCOL', msg, 'SKEW')).trimEnd());
+      log(`an older joiner's PIN attempt from ${who}: told to update`);
+    } else {
+      conn.send(protocol.encode(protocol.error(id, 'PROTOCOL', 'a text message that is not a key request')).trimEnd());
+      log(`refused a text message from ${who}`);
     }
-    let child: ChildProcessWithoutNullStreams;
-    try {
-      child = spawn(shimCmd(), ['--enroll', code as string, '--kind', 'ws'], { env: { ...process.env, SUB_HUMAN_HOME: home() }, stdio: ['pipe', 'pipe', 'pipe'] });
-    } catch (e) {
-      log(`room ${code}: could not start the enrollment: ${(e as Error).message}`);
-      conn.close(1011, 'no enrollment');
-      return release();
-    }
-    children.add(child);
-    log(`room ${code}: a short-code attempt from ${who}; enroll pid ${child.pid}`);
-    publishConns();
-    const dec = protocol.decoder();
-    child.stdin.on('error', () => {});
-    child.stdin.write(`${data.toString('utf8').replace(/\n/g, '')}\n`);
-    child.stdout.on('data', (d: Buffer) => { for (const f of dec.push(d)) conn.send(JSON.stringify(f)); });
-    child.stderr.on('data', (d: Buffer) => { for (const l of String(d).split('\n').filter(Boolean)) log(`room ${code} enroll ${child.pid}: ${l}`); });
-    conn.on('message', (m, binary) => {
-      if (binary || m.length > 16 * 1024) { conn.close(1003, 'text frames only'); return; }
-      child.stdin.write(`${m.toString('utf8').replace(/\n/g, '')}\n`);
-    });
-    conn.on('close', () => { child.stdin.end(); setTimeout(() => { try { child.kill(); } catch { /* gone */ } }, 2000).unref(); });
-    child.on('exit', (c, sig) => {
-      children.delete(child);
-      log(`room ${code}: enroll ${child.pid} exited (${sig || c})`);
-      setTimeout(() => { if (conn.state === 'open') conn.close(1000, 'done'); }, 50);
-      release();
-    });
-    return undefined;
+    setTimeout(() => { if (conn.state === 'open') conn.close(1000, 'done'); }, 50);
+    preauth--;
+    conns--;
   }
 
   const srv = await ws.createServer({

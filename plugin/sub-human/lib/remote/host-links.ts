@@ -6,8 +6,10 @@
  * as its seat key. "Write as yourself": a link writes only as the seats that joined over it, and joins a seat only
  * with a proof signed by that seat's key. (The joiner's own registry of links is lib/room/links.ts.)
  *
- *   create(store, {id, machine, seats, bound?, login?, label?, check?, now?}) -> {token, link}   records {id,
- *       token_sha256, machine, seats, created_at, bound?, login?, label?}; the token is returned once. machine: the id
+ *   create(store, {id, machine, seats, bound?, login?, label?, key?, check?, now?}) -> {token, link}   records {id,
+ *       token_sha256, machine, seats, created_at, bound?, login?, label?, key?}; the token is returned once. key: the
+ *       Noise key a web link proved when it was made (XK): every later hello over it must prove the same one
+ *       (keyHolds). machine: the id
  *       the host derived from the joiner's machine key (lib/remote/machine-key.ts; the reported id is then only the
  *       label), or a bound invite's (the machine it was minted for, across a handoff); with check (an id only reported:
  *       a joiner that presents no key, a 0.5 beta's) it may be neither this host's (home.isMine) nor another link's
@@ -17,6 +19,8 @@
  *       account may mint one anyway. Seats [], login: true, under the id the joiner chose (its serve's --link, so kick
  *       finds the process). AUTH for an id the room knows already
  *   verifyToken(store, token) -> link | null
+ *   keyHolds(link, peer) -> bool              a link with a key is reached only over a connection that proved it;
+ *                                             one without (ssh, a pipe, a web link made under protocol 2) by its token
  *   bindSeat(store, linkId, name) -> link     name joined over this link (AUTH for an unknown link, NOT_BOUND for a
  *       bound link and another name)
  *   mayWriteAs(link, name) -> bool            name is one of link.seats
@@ -49,14 +53,15 @@ const newLinkId = (): string => crypto.randomBytes(6).toString('hex');
 const sha256 = (s: unknown): string => crypto.createHash('sha256').update(String(s)).digest('hex');
 const iso = (now: number): string => new Date(now).toISOString();
 
-function create(store: AuthStore, { id, machine, seats, bound = false, login = false, label, check = false, now = Date.now() }: {
-  id: string; machine: string; seats: string[]; bound?: boolean; login?: boolean; label?: string; check?: boolean; now?: number;
+function create(store: AuthStore, { id, machine, seats, bound = false, login = false, label, key = null, check = false, now = Date.now() }: {
+  id: string; machine: string; seats: string[]; bound?: boolean; login?: boolean; label?: string; key?: string | null; check?: boolean; now?: number;
 }): { token: string; link: LinkRecord } {
   const token = crypto.randomBytes(24).toString('base64url');
   if (check) taken(store, machine, id);
   const link: LinkRecord = {
     id, token_sha256: sha256(token), machine, seats: [...seats], created_at: iso(now),
     ...(bound ? { bound: true as const } : {}), ...(login ? { login: true as const } : {}), ...(label && label !== machine ? { label } : {}),
+    ...(key ? { key } : {}),
   };
   store.kv.update(LINKS_KEY, (cur: Links | null) => {
     if (cur && cur[id]) throw new RoomError('AUTH', `link ${id} exists already in room ${store.code}; it says hello with its token (join again for a new link)`);
@@ -82,6 +87,9 @@ function verifyToken(store: AuthStore, token: unknown): LinkRecord | null {
   const digest = sha256(token);
   return Object.values(links(store)).find(l => l.token_sha256 === digest) || null;
 }
+
+/** A link bound to a key (made over the web under protocol 3) is reached only with that key; any other by its token. */
+const keyHolds = (link: Pick<LinkRecord, 'key'>, peer: string | null | undefined): boolean => !link.key || link.key === peer;
 
 function bindSeat(store: AuthStore, linkId: string, name: string): LinkRecord {
   const next = store.kv.update(LINKS_KEY, (cur: Links | null) => {
@@ -133,6 +141,6 @@ function checkSeatProof(proof: SignedPayload | null | undefined, { room, name, p
 }
 
 export {
-  LINKS_KEY, LINK_ID_RE, newLinkId, create, loginLink, linkKnown, verifyToken, bindSeat, mayWriteAs, notBound, mayJoinAs,
+  LINKS_KEY, LINK_ID_RE, newLinkId, create, loginLink, linkKnown, verifyToken, keyHolds, bindSeat, mayWriteAs, notBound, mayJoinAs,
   revokeLink, links, proveSeat, checkSeatProof,
 };

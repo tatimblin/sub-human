@@ -145,16 +145,15 @@ export const HANDOFF_ASK_MS = 10 * 60_000;
 export const HANDOFF_INVITE_MS = 24 * 60 * 60_000;
 export const HANDOFF_CALL_MS = 6000;           // the target's accept op (the old host appends, releases its room Claude): in a 10 s hook
 export const PROMOTE_OFFLINE_MS = 10 * 60_000;
-// An sh2 invite (lib/remote/invites.ts): the host checks its PIN online only, INVITE_PIN_TRIES times, and the invite
-// burns at the last wrong one or INVITE_TTL_MS after it was minted (whichever is first), or on success.
+// An invite (lib/remote/invites.ts): the host checks its PIN online only, INVITE_PIN_TRIES times, and the invite burns
+// at the last wrong one or INVITE_TTL_MS after it was minted (whichever is first), or on success. An invite line's PIN
+// (protocol 3) is throttled too: after the n-th wrong one the invite takes no PIN for PIN_BACKOFF_MS * 2^(n-1) (2, 4, 8,
+// 16 s), and the machine that typed it waits one step longer. At most SHORT_LIVE_MAX open per room. The joiner whose PIN
+// held then waits ADMIT_TTL_MS for the host person's card (Let in / Refuse) before it lapses.
 export const INVITE_TTL_MS = 15 * 60_000;
 export const INVITE_PIN_TRIES = 5;
-// A short invite (a 4-digit PIN, lib/remote/enroll.ts): the same 15 minutes and 5 tries, counted when the host
-// answers an attempt (an attempt abandoned after that still costs its try). At most SHORT_LIVE_MAX open per room;
-// ENROLL_MS bounds one attempt. The joiner's key then waits ADMIT_TTL_MS for the host person's card (Let in /
-// Refuse) before it lapses.
+export const PIN_BACKOFF_MS = 2000;
 export const SHORT_LIVE_MAX = 4;
-export const ENROLL_MS = 20_000;               // SUB_HUMAN_ENROLL_MS
 export const ADMIT_TTL_MS = 10 * 60_000;       // SUB_HUMAN_ADMIT_TTL_MS
 // The join hook waits this long for a fresh link's first hello (redeem or refusal) before it answers.
 export const LINK_JOIN_WAIT_MS = 4000;
