@@ -29,7 +29,8 @@
  *       document `link` flush {sent, unsent: [{text, why}]}): appended to LINK_BACK, or alone when some were not sent
  *   deps (tests): openRoom(code) -> Room (lib/room.ts open), heartbeat(me) (identity.heartbeat), rows, notices, roomClaude,
  *       linkStatus(code) (lib/remote/link.ts status), admission (lib/remote/admission.ts), sweepDoors(code),
- *       sweepSeats(code) (lib/seats.ts sweep: on the host, every health tick)
+ *       sweepSeats(code) (lib/seats.ts sweep: on the host, every health tick), pendingNews(sid) (lib/remote/joining.ts:
+ *       a join this session started with a PIN)
  *
  * It writes one JSON event per line, which the mod routes. It reads from the cursor deliver-NAME (first run: from
  * the seat's join) and sees the push and pull lanes. Events:
@@ -56,6 +57,9 @@
  *   person and a wake that tells Claude to open the card, once; the asker gets a health line when the ask is
  *   declined or expires; host_changed is a chat line for every member. A session whose room changed kind (a
  *   mirror that became the host, or the reverse) is started again over the new store.
+ * A session with no seat that started a join with a PIN (its link file's join_sid; the hooks module starts the tail for
+ * it: mod-hello's pending) is looked up every resolveMs while the host's card has not answered, and gets one chat line
+ * when it did: "the host let you in to room CODE: type /sub-human to join it as NAME", or why the join stopped.
  * A session never re-reads the log from byte 0: backlog from room.readView({after: cursor}), live entries from
  * room.tailer(). The health tick also renews the seat's lease (identity.heartbeat).
  */
@@ -112,6 +116,7 @@ interface TailDeps {
   admission: AdmissionLib;
   sweepDoors(code: string): unknown;
   sweepSeats(code: string): unknown;
+  pendingNews(sid: string): { state: 'waiting' | 'linked' | 'refused'; code: string; text: string } | null;
 }
 /** The deps as a session uses them: the lazily loaded modules behind a getter. */
 type Deps = Omit<TailDeps, 'roomClaude' | 'handoff' | 'admission'> & {
@@ -707,6 +712,12 @@ function runTail({
     admission: deps.admission ? () => deps.admission! : (() => { let m: AdmissionLib | undefined; return () => m || (m = require('./remote/admission.ts') as AdmissionLib); })(),
     sweepDoors: deps.sweepDoors || ((code: string) => (require('./remote/enroll.ts') as typeof import('./remote/enroll.ts')).sweepDoors(code)),
     sweepSeats: deps.sweepSeats || ((code: string) => (require('./seats.ts') as typeof import('./seats.ts')).sweep(code)),
+    pendingNews: deps.pendingNews || ((s: string) => {
+      // a cheap look first: the link files (most unseated tails have no pending join); the link code only when one is
+      const links = require('./room/links.ts') as typeof import('./room/links.ts');
+      if (!links.list().some(c => { const l = links.get(c); return !!l && l.join_sid === s; })) return null;
+      return (require('./remote/joining.ts') as typeof import('./remote/joining.ts')).pendingNews(s);
+    }),
   };
   const log = errorLog(err, clock, tm.errorLogMs);
   const ctx: Ctx = { clock, fs, write, log, t: tm, deps: d, sid };
@@ -721,6 +732,21 @@ function runTail({
     try { write(JSON.stringify(ev) + '\n', () => {}); } catch (e) { log('seat event', e); }
   };
   let sess: Session | null = null, timer: TimerHandle | null = null, stopped = false;
+  // a join this session started with a PIN: what became of it, said once per state (waiting: look again soon)
+  let told: string | null = null;
+  const news = (): boolean => {
+    if (!sid) return false;
+    let n: ReturnType<TailDeps['pendingNews']> = null;
+    try { n = d.pendingNews(sid); } catch (e) { log('pending join', e); return false; }
+    if (!n) return false;
+    if (n.state === 'waiting') return true;
+    const key = `${n.code}/${n.state}`;
+    if (key === told) return false;
+    told = key;
+    const ev: TailEvent = { type: 'chat', lines: [n.text] };
+    try { write(JSON.stringify(ev) + '\n', () => {}); } catch (e) { log('pending join', e); }
+    return false;
+  };
 
   function stopSess() {
     if (!sess) return;
@@ -744,7 +770,8 @@ function runTail({
         sendSeat(sess ? me : null);
       }
     }
-    if (!stopped) timer = clock.setTimeout(check, sess || me ? tm.resolveMs : tm.unseatedMs);
+    const waiting = !failed && !me && !sess && news();
+    if (!stopped) timer = clock.setTimeout(check, sess || me || waiting ? tm.resolveMs : tm.unseatedMs);
   }
 
   const stop = () => { stopped = true; clock.clearTimeout(timer); stopSess(); };

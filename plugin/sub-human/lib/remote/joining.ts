@@ -19,9 +19,9 @@
  *       started again after a refusal, a stopped link says why; null when the link runs
  *   dropJoinAs(code)                   the seat a pending join waited for is taken: its link file no longer says so
  *   restartLink(code)                  a daemon still dialing the old host is stopped (1 s at most)
- *   pendingNews(sid) -> {code, name, state, text} | null   a join this session started with a PIN that is no longer
- *       waiting: 'linked' (the host let this machine in: type /sub-human) or 'refused' (its reason); null while it
- *       waits or when there is none. The seatless session's tail (lib/tail.ts) says it once
+ *   pendingNews(sid) -> {code, name, state, text} | null   the join this session started with a PIN: 'waiting' (the
+ *       host's card has not answered), 'linked' (the host let this machine in: text says to type /sub-human) or
+ *       'refused' (text: its reason); null when there is none. The seatless session's tail (lib/tail.ts) says it once
  *   noPin(dest, code) -> string        a pipe join without its PIN: the line the host sent has one
  */
 import * as identity from '../identity.ts';
@@ -162,8 +162,8 @@ export function dropJoinAs(code: string): void {
   } catch { /* a stale join_as only names the seat again */ }
 }
 
-/** What a seatless session's tail says about the join it started with a PIN (see the header). */
-export interface News { code: string; name: string; state: 'linked' | 'refused'; text: string }
+/** What a seatless session's tail says about the join it started with a PIN (see the header); waiting: nothing yet. */
+export interface News { code: string; name: string; state: 'waiting' | 'linked' | 'refused'; text: string }
 
 export function pendingNews(sid: string | null | undefined): News | null {
   if (!sid) return null;
@@ -174,5 +174,5 @@ export function pendingNews(sid: string | null | undefined): News | null {
   const stopped = link.stopReason(st);
   if (stopped && !l.token) return { code, name, state: 'refused', text: `could not join room ${code}: ${stopped.reason}` };
   if (l.token && st.state === 'online') return { code, name, state: 'linked', text: hosting.joinText(code, name, { state: 'linked' }) };
-  return null;
+  return { code, name, state: 'waiting', text: '' };
 }
