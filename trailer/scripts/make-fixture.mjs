@@ -41,7 +41,9 @@ const bullet = (text, color = WHITE) => `${fg(color, '⏺')} ${text}`;
 const result = text => `${fg(GRAY, '  ⎿  ')}${text}`;
 const code = s => fg(CODE, s);
 const roomRow = (who, text) => `${fg(GRAY, '⏺')} ${fg(GRAY, 'sub-human: ')}${bold(who + ':')} ${text}`;
-const hookSent = () => bullet(fg(YELLOW, 'Operation stopped by hook: ✓ sent'), YELLOW);
+// an @room's receipt (wake: an @claude's), as the stop's warning row draws it (plugin hooks/at-room.ts)
+const SENT = `✓ sent to room ${ROOM} (Claude wasn't asked)`, WOKE = "✓ sent; the room's Claude will answer";
+const hookSent = (wake = false) => bullet(fg(YELLOW, `Operation stopped by hook: ${wake ? WOKE : SENT}`), YELLOW);
 
 const SPIN = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
 
@@ -275,7 +277,7 @@ marker('S4', 'plan', "bob asks the room's Claude to plan cursor paging");
 type('bob', "@claude let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first", 34);
 submit('bob');
 wait(400);
-S.bob.transcript.push('', hookSent());
+S.bob.transcript.push('', hookSent(true));
 S.alice.transcript.push('', roomRow('bob', `${fg(ORANGE, '@claude')} let's plan cursor paging for GET /tasks: ?limit&after, opaque cursor, newest first`));
 all();
 claudeLog.push(`${fg(GRAY, '←')} bob: @claude let's plan cursor paging for GET /tasks`);

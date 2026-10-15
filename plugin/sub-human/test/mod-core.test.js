@@ -105,8 +105,8 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
   const T = [
     // [what, event, run, expected {result, systemMessage?}]
     ['at-room ✓ sent', 'UserPromptSubmit',
-      ok({ continue: false, stopReason: '✓ sent', hookSpecificOutput: { hookEventName: 'UserPromptSubmit', sessionTitle: 'alice.otter-4821' } }),
-      { result: { preventContinuation: true, stopReason: '✓ sent', sessionTitle: 'alice.otter-4821' } }],
+      ok({ continue: false, stopReason: "✓ sent to room otter-4821 (Claude wasn't asked)", hookSpecificOutput: { hookEventName: 'UserPromptSubmit', sessionTitle: 'alice.otter-4821' } }),
+      { result: { preventContinuation: true, stopReason: "✓ sent to room otter-4821 (Claude wasn't asked)", sessionTitle: 'alice.otter-4821' } }],
     ['at-room refusal', 'UserPromptSubmit',
       ok({ decision: 'block', reason: '✗ not posted: x', hookSpecificOutput: { hookEventName: 'UserPromptSubmit', suppressOriginalPrompt: true } }),
       { result: { block: '✗ not posted: x', suppressOriginalPrompt: true } }],
@@ -136,8 +136,8 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
     ['a field the event does not read is dropped', 'Stop',
       ok({ hookSpecificOutput: { hookEventName: 'Stop', additionalContext: 'x', sessionTitle: 't', suppressOriginalPrompt: true } }),
       { result: { additionalContext: ['x'] } }],
-    ['a log line before the JSON', 'UserPromptSubmit', ok('warming up\n{"continue":false,"stopReason":"✓ sent"}'),
-      { result: { preventContinuation: true, stopReason: '✓ sent' } }],
+    ['a log line before the JSON', 'UserPromptSubmit', ok('warming up\n{"continue":false,"stopReason":"✓ sent; the room\u0027s Claude will answer"}'),
+      { result: { preventContinuation: true, stopReason: "✓ sent; the room's Claude will answer" } }],
   ];
   for (const [what, event, run, want] of T) assert.deepEqual(toClassic(event, run), want, what);
   assert.deepEqual(shimEnv({ session_id: 's1' }, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', CLAUDE_CODE_SESSION_ID: 's1' });
@@ -306,8 +306,8 @@ test('prompt: the origin queue hands prompt.submit\'s origin to the classic hook
   assert.equal(q.take('neither'), null, 'two waiting and no text match: unsure');
   q.drop(a); q.drop(b); q.drop(b);
   assert.equal(q.size, 0);
-  assert.deepEqual(mergeClassic({ preventContinuation: true, stopReason: '✓ sent', sessionTitle: 'a.b' }, { additionalContext: ['theirs'], sessionTitle: 'x' }),
-    { preventContinuation: true, stopReason: '✓ sent', sessionTitle: 'a.b', additionalContext: ['theirs'] });
+  assert.deepEqual(mergeClassic({ preventContinuation: true, stopReason: "✓ sent to room otter-4821 (Claude wasn't asked)", sessionTitle: 'a.b' }, { additionalContext: ['theirs'], sessionTitle: 'x' }),
+    { preventContinuation: true, stopReason: "✓ sent to room otter-4821 (Claude wasn't asked)", sessionTitle: 'a.b', additionalContext: ['theirs'] });
   assert.deepEqual(mergeClassic({ additionalContext: ['ours'] }, { additionalContext: ['theirs'], block: 'no' }), { additionalContext: ['ours', 'theirs'], block: 'no' });
   assert.deepEqual(mergeClassic({ block: 'mine', suppressOriginalPrompt: true }, {}), { block: 'mine', suppressOriginalPrompt: true });
   assert.deepEqual(mergeClassic({}, undefined), {});

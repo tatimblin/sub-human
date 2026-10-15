@@ -11,8 +11,9 @@ module.exports = {
     const anyA = log.find(y => y.kind === 'say' && y.from === A && y.via === 'human');
     det(`${A}'s @room text byte-exact, via=human`, !!e, e ? `#${e.id} === typed (${Buffer.byteLength(e.text)} bytes)` : `first ${A} say: ${x.fmt(anyA)}`);
     const t = x.cap('S3', A) || '';
-    const rc = e && /^⏺ ✓ sent\s*$/m.test(t);
-    det('One receipt line "⏺ ✓ sent" (no room code, no id); no "Operation stopped by hook", no "blocked by hook"', rc && !/stopped by hook|blocked by hook/.test(t) && !/✓ posted|as #\d/.test(t), rc ? `receipt for #${e.id} in ${x.capName('S3', A)}` : `no receipt in ${x.capName('S3', A)}`);
+    const receipt = `⏺ ✓ sent to room ${code} (Claude wasn't asked)`;
+    const rc = e && t.split('\n').some(l => l.trimEnd() === receipt);
+    det(`One receipt line "${receipt}" (no id); no "Operation stopped by hook", no "blocked by hook"`, rc && !/stopped by hook|blocked by hook/.test(t) && !/✓ posted|as #\d/.test(t), rc ? `receipt for #${e.id} in ${x.capName('S3', A)}` : `no receipt in ${x.capName('S3', A)}`);
     const turn = x.noModelTurn(A, e);
     det(`${A}'s @room ran no model turn`, turn.pass, turn.evidence);
     // a person's words to the room are group chat: bob sees them as a row, his Claude gets a copy, no wake
