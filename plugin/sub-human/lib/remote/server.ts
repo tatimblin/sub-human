@@ -20,7 +20,8 @@
  *                    protocol.skewMessage (which side must update); verifyToken, or redeemInvite with the hello's
  *                    pin for an sh2 invite (the token is returned once; a wrong PIN, the last try and the link are
  *                    each a room line from the room, so the host sees them); neither: answered, but the session
- *                    stays unauthenticated
+ *                    stays unauthenticated. The reply says closed: true once the room's Claude was stopped (the
+ *                    room closed), for sub-human doctor on a link that stopped before it
  *         join       {name, role: 'member', pubkey, proof}: auth.checkSeatProof, then lib/seats.ts enter() with
  *                    machine = the link's (no pid: the seat lives by its lease), and over a login link account =
  *                    this machine's id (the host account's own seat: one person with the host's seats, lib/proposal.ts
@@ -207,6 +208,7 @@ const OPS: OpHandlers = {
     // time: the host's clock (ms), so a joiner (sub-human doctor) can measure the skew that SIG_SKEW_MS bounds; additive
     const out: OpResults['hello'] = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null, epoch: mine, time: Date.now() };
     if (r.token) out.token = r.token;
+    if (stopped(s.store.members.read())) out.closed = true; // additive: an older host says nothing
     return out;
   },
 

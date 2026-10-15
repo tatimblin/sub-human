@@ -275,14 +275,50 @@ test('doctor: a dormant link (the room closed, or no seat of this machine left) 
   assert.doesNotMatch(closed.fix, /--reset|\/sub-human invite/);
   const [seatless] = doctor.linkChecks(d({ state: 'stopped', lastError: linkMod.NO_SEAT_REASON }));
   assert.equal(seatless.status, 'info');
-  assert.match(seatless.fix, /type \/sub-human in your session to start it again/);
+  // the host may have closed the room since: /sub-human only while it is open, --forget when it is not wanted
+  assert.match(seatless.fix, /^the connection stopped when this machine's last seat left\. If the host still has the room open, type \/sub-human in your session to start it again; if you no longer want the room, node \S+ link vole-1234 --forget in a terminal drops it$/);
   assert.doesNotMatch(seatless.fix, /--reset/);
+  // known closed since (the mirror or the host's hello): the closed room's text
+  const [shut] = doctor.linkChecks({ ...d({ state: 'stopped', lastError: linkMod.NO_SEAT_REASON }), closed: true });
+  assert.equal(shut.status, 'info');
+  assert.equal(shut.fix, closed.fix);
+  assert.match(shut.detail, /the host has closed the room since/);
   for (const why of [linkMod.ROOM_CLOSED_REASON, linkMod.NO_SEAT_REASON]) {
     const [c] = doctor.linkChecks(d({ state: 'stopped', lastError: why }, failed));
     assert.equal(c.status, 'info', `${why}: a failed hello does not make it fail`);
     assert.doesNotMatch(c.fix, /--reset/);
   }
   assert.equal(doctor.linkChecks(d({ state: 'offline', lastError: 'no route' }, failed))[0].status, 'fail', 'an offline link the host does not answer');
+});
+
+test('doctor: a seatless link gets a hello, whose closed (or the mirror\'s stopped room Claude) picks the closed-room fix', async t => {
+  const linkMod = require(path.join(h.LIB, 'remote', 'link.ts'));
+  const identity = require(path.join(h.LIB, 'identity.ts'));
+  const store = require(path.join(h.LIB, 'room', 'store.ts'));
+  const hostHome = h.freshHome(t);
+  const code = h.newRoom();
+  const home = h.freshHome(t);
+  links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, token: 'tok-x', created_at: new Date().toISOString() });
+  fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'stopped', since: new Date().toISOString(), lastError: linkMod.NO_SEAT_REASON }));
+  const env = { ...process.env, PATH: path.join(home, 'bin') }; // no claude: the internals probe is not run
+  const ak = path.join(home, 'authorized_keys');
+  let rep = await doctor.diagnose({ timeoutMs: 20_000, authorizedKeys: ak, env });
+  assert.equal(rep.links[0].reach.ok, true, rep.links[0].reach.error);
+  assert.equal(rep.links[0].closed, undefined, 'open on the host');
+  assert.match(byId(rep, `link:${code}`).fix, /If the host still has the room open, type \/sub-human/);
+  // the host closes the room: its hello says so
+  process.env.SUB_HUMAN_HOME = hostHome;
+  identity.setRoomClaude(code, { job: 'cafe0001', stopped_at: new Date().toISOString() });
+  process.env.SUB_HUMAN_HOME = home;
+  rep = await doctor.diagnose({ timeoutMs: 20_000, authorizedKeys: ak, env });
+  assert.equal(rep.links[0].closed, true);
+  const c = byId(rep, `link:${code}`);
+  assert.equal(c.status, 'info');
+  assert.match(c.fix, /^the room was closed; this machine's copy is kept/);
+  // --quick (no hello): the mirror's own record of the stop is enough
+  assert.doesNotMatch(byId(await doctor.diagnose({ quick: true, authorizedKeys: ak, env }), `link:${code}`).fix, /room was closed/);
+  store.open(code).applyDoc('members', { claude: { name: 'claude', role: 'claude', stopped_at: new Date().toISOString() } });
+  assert.match(byId(await doctor.diagnose({ quick: true, authorizedKeys: ak, env }), `link:${code}`).fix, /^the room was closed; this machine's copy is kept/);
 });
 
 test('doctor: a dormant link gets no hello', async t => {

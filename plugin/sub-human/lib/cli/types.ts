@@ -92,6 +92,8 @@ export interface LinkReport {
   request?: string;
   moved: { epoch?: number; host?: string; locator?: string; demoted: boolean; reached: boolean } | null;
   reach?: Reach;
+  /** The room is known to be closed: the mirror's room Claude stopped, or the host's hello says so. */
+  closed?: true;
 }
 
 /** One sub-human line of authorized_keys: unreadable, or parsed. */
