@@ -23,12 +23,14 @@
  *     leave(name, reason) -> Promise<{ok}>
  *     beat(name, {presence?}) -> Promise<{ok}>
  *     append(payload) -> Promise<entry>
- *     subscribe(after, hash, onEvent) -> {ready: Promise, stop()}   onEvent({ev, data}) for every entry, doc and
- *         end event (protocol.ts); ready rejects on a refused subscribe (FORK, AUTH, …) and the stream is
+ *     subscribe(after, hash, onEvent, {snapshot}?) -> {ready: Promise, stop()}   onEvent({ev, data}) for every entry,
+ *         doc, snapshot and end event (protocol.ts); snapshot: true asks for the host's snapshot first (after 0, and
+ *         only of a server that snapshots()); ready rejects on a refused subscribe (FORK, AUTH, …) and the stream is
  *         dropped. A transport that closes ends it with {ev: 'end', data: {reason: 'OFFLINE'}}. stop() stops
  *         delivering (the server's stream ends with the transport)
  *     blobGet(ref) -> Promise<Buffer | null>, blobPut(name, bytes) -> Promise<ref>
  *     supports(op) -> bool         the server's hello caps list op (an old server's do not list 'ping')
+ *     snapshots() -> bool         the server's hello caps say snapshot: true (an old server's do not)
  *     fields() -> [field]          the entry fields the server's hello caps list (protocol.ts FIELDS; an old server's: none)
  *     ping(ms?) -> Promise<{pong, rttMs}>   one heartbeat (protocol.ts ping); OFFLINE when no pong within ms
  *         (default deadlineMs). The link daemon pings only when supports('ping') and says hello with caps {ping: true}
@@ -53,6 +55,7 @@ import type { Transport } from './types-rest.ts';
 interface ServerCaps {
   ops?: unknown;
   fields?: unknown;
+  snapshot?: unknown;
 }
 
 interface Pending {
@@ -156,10 +159,10 @@ class Client {
   /** The entry as the server stored it. */
   async append(payload: object): Promise<Entry> { return (await this._request('append', { payload })).entry; }
 
-  subscribe(after: number, hash: string | null, onEvent: (e: StreamEvent) => void): { ready: Promise<unknown>; stop(): void } {
+  subscribe(after: number, hash: string | null, onEvent: (e: StreamEvent) => void, { snapshot = false }: { snapshot?: boolean } = {}): { ready: Promise<unknown>; stop(): void } {
     const id = ++this.seq;
     this.streams.set(id, onEvent);
-    const ready = this._request('subscribe', { after, hash }, id).catch(e => { this.streams.delete(id); throw e; });
+    const ready = this._request('subscribe', snapshot ? { after, hash, snapshot: true } : { after, hash }, id).catch(e => { this.streams.delete(id); throw e; });
     return { ready, stop: () => { this.streams.delete(id); } };
   }
 
@@ -178,6 +181,7 @@ class Client {
   }
 
   supports(op: string): boolean { return !!this.serverCaps && Array.isArray(this.serverCaps.ops) && this.serverCaps.ops.includes(op); }
+  snapshots(): boolean { return !!this.serverCaps && this.serverCaps.snapshot === true; }
   fields(): string[] { const f = this.serverCaps && this.serverCaps.fields; return Array.isArray(f) ? f.filter((x): x is string => typeof x === 'string') : []; }
   async ping(ms: number = this.deadlineMs): Promise<{ pong: unknown; rttMs: number }> {
     const t0 = Date.now();

@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/remote/link.ts: the link daemon, one per machine and room (`scripts/sub-human link CODE`,
  * started detached by the join hook, like the room's Claude starter). It holds the one connection to the host
  * (lib/remote/client.ts over the transport in the link file, lib/room/links.ts), keeps the mirror
- * (lib/room/store-mirror.ts applyLine / applyDoc / applyBlob) byte-identical to the host's log, prefetches every
+ * (lib/room/store-mirror.ts applyLine / applySnapshot / applyDoc / applyBlob) line for line the host's log, prefetches every
  * proposal's plan, and serves the hooks of this machine on a unix socket: a hook's bridge worker
  * (lib/remote/bridge.ts, handler = this file's handle) relays one op and gets one reply. It never loads the
  * signer. Loading this file loads no store (handle runs on every writing hook's bridge worker; the daemon's
@@ -27,7 +27,9 @@
  *   serveMirror({mirror, connect, log?, retryMs?, retryMaxMs?, timings?, clock?, random?, mono?, netSignature?, watch?,
  *       seats?, writeState?, outbox?}) -> Promise<Link>
  *       Listen on socketPath(mirror.dir) (one daemon per socket: LOCK when another one answers there), then dial:
- *       connect() -> Promise<Client> (hello done), subscribe {after: the mirror's last id, hash: that line's hash12},
+ *       connect() -> Promise<Client> (hello done), subscribe {after: the mirror's last id, hash: that line's hash12;
+ *       an empty mirror also asks snapshot: true of a host whose caps offer it: the host's snapshot then arrives first
+ *       (applySnapshot checks it; the lines after it must chain to its head, else FORK), not every line},
  *       renew the lease of every live seat of this machine (seats(), default identity.localSeats: a `beat`, so a
  *       seat whose lease lapsed on the host during an outage is back with no "left"/"joined" lines; one the host
  *       shows as left is logged: the person joins again), send the outbox, and only then is the link online.
@@ -57,7 +59,7 @@
  *       connection; a post the host already holds is answered "placed already" (its nonce) and counts as sent;
  *       one that waited longer than LINK_OUTBOX_AGE_MS or that the host refuses is dropped and reported in the
  *       document `link` (flush). FORK (the host's line `after` is not the mirror's, a line that does not chain,
- *       or the host log reset) stops it, keeps the outbox, and logs loudly: `sub-human link --reset CODE`
+ *       a snapshot whose head or pins do not hold, or the host log reset) stops it, keeps the outbox, and logs loudly: `sub-human link --reset CODE`
  *       re-mirrors. AUTH or PROTOCOL at hello, or the room closed, stop it too.
  *       Every change is written to the mirror's document `link` {pid, state, since, reason?, code?, queued?,
  *       flush?: {at, sent, unsent: [{text, why}]}, fields?: online, the entry fields the host's caps list} and
@@ -449,6 +451,10 @@ function netWatch({ onChange, pollMs, clock = realClock, signature = netSignatur
   return () => clock.clearInterval(t);
 }
 
+/** A snapshot whose head the mirror holds already (two first syncs overlapped while a link was swapped). */
+function heldHead(mirror: MirrorRoomStore, snap: { id?: unknown; hash?: unknown } | null): boolean {
+  return !!snap && Number.isInteger(snap.id) && (snap.id as number) <= mirror.lastId() && mirror.lineHash(snap.id as number) === snap.hash;
+}
 /** A host line the mirror holds already (the same id and bytes): two streams overlap while a link is swapped. */
 function held(mirror: MirrorRoomStore, line: string): boolean {
   let id: unknown;
@@ -632,6 +638,8 @@ async function serveMirror({
     hb = clock.setTimeout(tick, T.pingMs);
   }
 
+  /** Every proposal's plan a snapshot names (as each line's are fetched as it arrives). */
+  function prefetchAll(c: Client, es: readonly Entry[]) { for (const e of es) prefetch(c, e); }
   function prefetch(c: Client, e: Entry) {
     if (e.kind !== 'proposal' || !e.hash) return;
     const ref = mirror.blobs.ref(e.path) || `plans/${e.hash}.md`;
@@ -652,6 +660,7 @@ async function serveMirror({
     if (STOPPED.has(state)) return;
     try {
       if (ev === 'entry') { if (!held(mirror, data)) prefetch(c, mirror.applyLine(data)); }
+      else if (ev === 'snapshot') { if (!heldHead(mirror, data)) { mirror.applySnapshot(data); prefetchAll(c, data.entries); } }
       else if (ev === 'doc') applyDoc(data);
       else if (ev === 'handoff') handoff().onAsk(mirror, data);
       else if (ev === 'moved') moved(data);
@@ -745,7 +754,9 @@ async function serveMirror({
         c = await connect();
         const after = mirror.lastId();
         const conn = c;
-        if (!STOPPED.has(state)) await c.subscribe(after, mirror.lineHash(after), ev => onEvent(conn, ev)).ready;
+        // an empty mirror starts from the host's snapshot when the host offers one (caps), else from every line
+        const snapshot = after === 0 && c.snapshots();
+        if (!STOPPED.has(state)) await c.subscribe(after, mirror.lineHash(after), ev => onEvent(conn, ev), { snapshot }).ready;
         if (!STOPPED.has(state)) await keepSeats(c);
         if (!STOPPED.has(state)) await flush(c);
         if (STOPPED.has(state)) { c.close(); return; }

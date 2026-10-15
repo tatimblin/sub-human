@@ -11,7 +11,7 @@
  * field it relies on (lib/remote/server.ts); the types document the protocol, not a validation.
  */
 
-import type { Entry, LinkStateWord, Payload, PresenceInput, RoomStore } from '../room/types.ts';
+import type { Entry, LinkStateWord, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
 
 // ---------- the wire protocol ----------
 
@@ -34,7 +34,12 @@ export type WireCode =
   | 'INVALID' | 'RATE' | 'LOCK' | 'NO_ROOM' | 'OFFLINE' | 'HOST_ONLY' | 'AUTH' | 'FORK' | 'PROTOCOL' | 'STALE';
 
 /** What an end serves (protocol.CAPS), in a hello reply. */
-export interface Caps { ops: readonly string[]; fields?: readonly string[] }
+export interface Caps {
+  ops: readonly string[];
+  fields?: readonly string[];
+  /** the host sends a new mirror its log's snapshot when asked (subscribe {after: 0, snapshot: true}); additive */
+  snapshot?: boolean;
+}
 
 /** A signed room payload as lib/room/envelope.ts makes it: kind, from, room and the sig v2 fields, plus the kind's own. */
 export interface SignedPayload {
@@ -72,7 +77,8 @@ export interface BeatParams { name: string; presence?: PresenceInput }
 export interface AppendParams { payload: Payload; epoch?: number }
 /** What a hook hands the link daemon for an append: {queue: true} marks an @room post the outbox may keep. */
 export interface RelayAppendParams extends AppendParams { queue?: boolean }
-export interface SubscribeParams { after: number; hash: string | null }
+/** snapshot: an empty mirror asks for the host's snapshot first (only of a host whose caps say snapshot: true). */
+export interface SubscribeParams { after: number; hash: string | null; snapshot?: boolean }
 export interface BlobGetParams { ref: string }
 export interface BlobPutParams { name: string; bytes: string }
 export type PingParams = Record<string, never>;
@@ -172,6 +178,7 @@ export interface EventData {
   end: EndEventData;
   handoff: HandoffAsk;
   moved: MovedEventData;
+  snapshot: SnapshotWire;
 }
 export type EventName = keyof EventData;
 /** A subscribe stream's event: {id, ev, data}, discriminated on ev. */
