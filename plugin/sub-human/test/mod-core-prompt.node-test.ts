@@ -81,7 +81,7 @@ test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the re
   const book = receiptBook(2);
   const notice = (text: string) => ({ type: 'system', name: 'informational', content: [{ type: 'text', text }] });
   // hooks/handlers/at-room.ts's receipts: the whole stop reason is matched, so an @room's and an @claude's never cross
-  const SENT = "✓ sent to room otter-4821 (Claude wasn't asked)", WAKE = "✓ sent; the room's Claude will answer";
+  const SENT = "✓ sent to room otter-4821 (Claude wasn't asked)", WAKE = "✓ sent; the room's Claude was woken";
   assert.equal(book.rewrite(notice(`${STOP_FRAME}${SENT}`)), null, 'nothing waiting: the engine\'s words stay');
   book.expect(SENT);
   assert.equal(book.rewrite(notice(`${STOP_FRAME}${WAKE}`)), null, 'another receipt');

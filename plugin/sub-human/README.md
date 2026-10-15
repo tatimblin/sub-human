@@ -248,7 +248,7 @@ Either is posted **verbatim** as your words (`via=human`). No model turn runs, a
 ❯ @room ship the cursor paging today
 ⏺ ✓ sent to room vole-8126 (Claude wasn't asked)
 ❯ @claude plan cursor paging with me
-⏺ ✓ sent; the room's Claude will answer
+⏺ ✓ sent; the room's Claude was woken
 ```
 
 If your Claude Code shows it as "Operation stopped by hook: ✓ sent …", that is the same receipt: nothing went wrong.

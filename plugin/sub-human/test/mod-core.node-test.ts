@@ -147,8 +147,8 @@ test('shim: the stdout -> ClassicResult table covers every output shape the hook
     ['a field the event does not read is dropped', 'Stop',
       ok({ hookSpecificOutput: { hookEventName: 'Stop', additionalContext: 'x', sessionTitle: 't', suppressOriginalPrompt: true } }),
       { result: { additionalContext: ['x'] } }],
-    ['a log line before the JSON', 'UserPromptSubmit', ok('warming up\n{"continue":false,"stopReason":"✓ sent; the room\u0027s Claude will answer"}'),
-      { result: { preventContinuation: true, stopReason: "✓ sent; the room's Claude will answer" } }],
+    ['a log line before the JSON', 'UserPromptSubmit', ok('warming up\n{"continue":false,"stopReason":"✓ sent; the room\u0027s Claude was woken"}'),
+      { result: { preventContinuation: true, stopReason: "✓ sent; the room's Claude was woken" } }],
   ];
   for (const [what, event, run, want] of T) assert.deepEqual(toClassic(event, run), want, what);
   assert.deepEqual(shimEnv({ session_id: 's1' }, '/p'), { CLAUDE_PLUGIN_ROOT: '/p', CLAUDE_PID: '', SUB_HUMAN_VIA: 'module', CLAUDE_CODE_SESSION_ID: 's1' });

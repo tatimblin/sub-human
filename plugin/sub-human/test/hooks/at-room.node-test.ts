@@ -173,7 +173,7 @@ test('a receipt is a one-line stop (continue:false), so the module shows its war
 
 test('@claude: only a leading tag posts the words to=claude (the wake); "@room @claude", a mid-text tag and other prompts are not wakes', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
-  assert.equal(posted(atRoom(w, submit('@claude let us plan cursor paging'), { as: 'alice' })), "✓ sent; the room's Claude will answer");
+  assert.equal(posted(atRoom(w, submit('@claude let us plan cursor paging'), { as: 'alice' })), "✓ sent; the room's Claude was woken");
   posted(atRoom(w, submit('@room @claude this is a plain post'), { as: 'alice' }));
   posted(atRoom(w, submit('@room ask @claude later'), { as: 'alice' }));
   for (const p of ['please ask @claude', '@claudette hi', '@Claude hi', ' @claude hi', 'claude: hi', '@orch hi']) { // no 0.4.x alias
@@ -202,7 +202,7 @@ test('@claude on the host with no room\'s Claude running starts it (a stopped on
   assert.equal(w.members().claude, undefined, '@room starts nothing');
   const r = atRoom(w, submit('@claude add a task: test'), { as: 'alice', env });
   posted(r);
-  assert.match(r.json!.stopReason!, /^✓ sent; the room's Claude will answer · starting the room's Claude…$/);
+  assert.match(r.json!.stopReason!, /^✓ sent; the room's Claude was woken · starting the room's Claude…$/);
   assert.ok(['pending', '0b500131'].includes(w.members().claude!.job!), 'claimed');
   const end = Date.now() + 8000;
   while (!bg() && Date.now() < end) await new Promise(res => setTimeout(res, 30));
