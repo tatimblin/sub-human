@@ -734,6 +734,29 @@ test('supersede: alice re-proposes with the same title: the old one is not pendi
   assert.deepEqual([again.hash, again.retired], [old.hash, [rev.hash]]);
 });
 
+test('supersede: bob names a replaced proposal: the review opens its latest revision and says so, not the newest', () => {
+  const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
+  const alice = { code: w.code, name: 'alice', role: 'member' };
+  const v1 = w.lib(() => proposal.create(alice, { text: '# Rate limits\n\n100 a minute', approvers: ['bob'] })).hash;
+  const v2 = w.lib(() => proposal.create(alice, { text: '# Rate limits\n\n80 a minute', approvers: ['bob'] })).hash;
+  const v3 = w.lib(() => proposal.create(alice, { text: '# Rate limits\n\n60 a minute, burst 10', approvers: ['bob'] })).hash;
+  const other = w.lib(() => proposal.create(alice, { text: '# Ship Monday\n\nv3', approvers: ['bob'] })).hash;
+  const ps = w.lib(() => proposal.pendingFor({ code: w.code, name: 'bob' }));
+  assert.deepEqual(ps.map(p => p.hash), [v3, other]);
+  const was = w.lib(() => proposal.replacedIn(ps, `open ${v1.slice(0, 8)}`, w.code));
+  assert.deepEqual([was.old, was.p.hash], [v1, v3], 'followed through v2 to the latest revision');
+  assert.equal(w.lib(() => proposal.replacedIn(ps, `open ${v3}`, w.code)), null, 'a pending hash is not a replaced one');
+  assert.equal(w.lib(() => proposal.replacedIn(ps, 'open abcdef012345', w.code)), null, 'an unknown hash');
+  const file = path.join(w.userHome, '.claude', 'plans', 'adaptive-shimmying-clover.md');
+  fs.writeFileSync(file, HELLO);
+  const tp = transcript(w, file);
+  say(w, `open proposal ${v2}`, tp);
+  const pre = w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
+  assert.equal(decision(pre), 'allow');
+  assert.equal(reason(pre), `sub-human: proposal ${v2} was replaced by ${v3}; opening ${v3} for bob`);
+  assert.equal(review(w).hash, v3, 'not the newest pending one');
+});
+
 test('supersede: a different sender with the same title is not a revision: both stay pending', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep', carol: 'sleep' });
   const alice = { code: w.code, name: 'alice', role: 'member' }, bob = { code: w.code, name: 'bob', role: 'member' };

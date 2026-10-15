@@ -27,7 +27,7 @@ module.exports = {
     const taskEntries = log.filter(e => e.kind === 'task').length;
     const tj = readJson(path.join(roomDir, 'tasks.json'), null);
     if (taskEntries) det('<room>/tasks.json stays', Array.isArray(tj), tj ? `${tj.length} task(s) kept (${taskEntries} task entries in the log)` : `missing (${taskEntries} task entries in the log)`);
-    const ln = new RegExp(`^\\s*(⏺ )?(sub-human: )?${esc(A)} left\\s*$`, 'm').exec(readText(x.stateFile('S10', `notice-${B}.txt`)) || '');
+    const ln = new RegExp(`^\\s*(⏺ )?(sub-human: )?${esc(A)} left(?: \\([^()]*\\))?\\s*$`, 'm').exec(readText(x.stateFile('S10', `notice-${B}.txt`)) || '');
     const via = la && x.shownVia(B, la.id);
     const early = la && lb && Date.parse(lb.at) - Date.parse(la.at) < 8000;
     det(`${B} sees the chat line "${A} left" once the leave settled (8 s)`, ln && via === 'mod' && !early,

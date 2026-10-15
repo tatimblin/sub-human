@@ -158,7 +158,13 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   assert.equal(e.path, `plans/${e.hash}.md`, 'the entry holds a room-relative ref');
   const file = path.join(identity.roomDir(code), e.path);
   assert.equal(fs.readFileSync(file, 'utf8'), text);
-  assert.ok(msg.includes(`Read it with \`sub-human show ${e.hash}\``), 'the reply names the read-only CLI, which the guard allows');
+  // no sub-human is on a session's PATH: the reply names the shim by its full path, which the guard allows and which runs
+  const cmd = `${h.BIN} show ${e.hash}`;
+  assert.ok(msg.includes(`Read it with \`${cmd}\``), msg);
+  const guard = require(path.join(h.PLUGIN, 'mod', 'core', 'guard.ts'));
+  assert.equal(guard.bashVerdict(cmd, { home: identity.home(), pluginRoot: h.PLUGIN, cwd: h.PLUGIN }), null);
+  const shown = require('node:child_process').spawnSync(h.BIN, ['show', e.hash, '--room', code], { env: h.childEnv(), encoding: 'utf8' });
+  assert.equal(shown.stdout, text, shown.stderr);
   assert.ok(!msg.includes(file) && !msg.includes(identity.home()), 'no store path: the guard denies the session that path');
   assert.match(msg, new RegExp(`alice is an approver: call EnterPlanMode, then ExitPlanMode with plan "proposal ${e.hash}" now`));
   assert.doesNotMatch(msg, /#\d/, 'no entry ids for a Claude to repeat');

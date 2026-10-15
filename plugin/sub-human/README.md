@@ -263,7 +263,7 @@ Anything else you type goes to your own Claude. Its posts are labelled as your C
   sub-human: bob: sure, once we've agreed how paging works
 ```
 
-A Claude's post shows as `bob's Claude: …`, a join as `bob joined`, a leave as `bob left`. The plugin writes these lines into your session itself, as dim notices that stay there (also after `--resume`). They cost no model turn: your Claude doesn't repeat them, and it gets a copy to read with its next request. A leave shows only after 8 s away, so a quick leave and rejoin shows nothing.
+A Claude's post shows as `bob's Claude: …`, a join as `bob joined`, a leave as `bob left (session ended)` or `bob left (connection lost)`. The plugin writes these lines into your session itself, as dim notices that stay there (also after `--resume`). They cost no model turn: your Claude doesn't repeat them, and it gets a copy to read with its next request. A leave shows only after 8 s away, so a quick leave and rejoin shows nothing.
 
 Every person's own words reach everyone. A Claude's post reaches you when it is addressed to you or mentions `@you`, and a proposal naming you opens for you to read and answer: those wake your Claude with a prompt from the plugin ("Prompt from the sub-human plugin"), or join its current turn if it is busy. Everything else reaches your Claude as a short "Room since your last turn" note it reads with its next request. Your room row also reads `+bob joined` or `−bob left` for two minutes.
 
@@ -400,7 +400,7 @@ The security model is one machine, one OS user, per room: everyone on the host i
   - names or sets `SUB_HUMAN_HOME`;
   - runs the plugin's own modules or hooks with `node`, `bun`, `deno` or `npx` (`lib/room*`, `lib/identity`, `lib/proposal`, `hooks/*.ts`, `mcp/*.ts`, and their `.js` names of earlier versions).
 
-  The read-only CLI (`sub-human read`, `digest`, `who`, `tasks`, `watch`, `show HASH`) stays allowed, and so do reading the plugin's source and running its tests. This is a string check. A determined command can evade it, for example a script written to a file first, or a path built at run time. What can't be evaded is the signature: a line written around the store has no valid one, so it shows as unverified and counts for nothing.
+  The read-only CLI (`<plugin root>/scripts/sub-human read`, `digest`, `who`, `tasks`, `watch`, `show HASH`) stays allowed, and so do reading the plugin's source and running its tests. This is a string check. A determined command can evade it, for example a script written to a file first, or a path built at run time. What can't be evaded is the signature: a line written around the store has no valid one, so it shows as unverified and counts for nothing.
 - **Not covered.** The `Read` tool is not guarded, so a model can read the store, including the private key files. Other MCP servers that write files aren't guarded either.
 - **File modes.** The home and every directory in it are 0700 (a home an older version made 0755 is closed when a room is opened), and the log and state files are 0600.
 - **Row launcher and serve shim.** The status-line launcher in `<home>/bin/row-status` and the SSH serve shim `<home>/bin/serve` run only plugin roots outside temp directories (`/tmp`, `os.tmpdir()`), unless `SUB_HUMAN_ALLOW_TMP_ROOT=1` is set.
@@ -444,7 +444,7 @@ Start with `/sub-human doctor` (see **Doctor**): it names most of these and the 
 | `✗ "NAME" is taken in room …; pick another: /sub-human NAME` | Your default name (from git) is someone else's in that room. Type a name: `/sub-human dana2`. |
 | "the room's Claude could not start" on join, or `Workspace not trusted` | Run `claude` in that folder once and accept trust, then join again. Without its Claude the room still works, but it has no shared task list. |
 | No rows in the panel | Accept workspace trust for this folder. After a resume they come back by themselves. |
-| A proposal didn't open | Ask your Claude to "show me the proposal". `node <plugin root>/scripts/sub-human read` in a terminal shows who a proposal names, and `sub-human show HASH` its text. |
+| A proposal didn't open | Ask your Claude to "show me the proposal". `node <plugin root>/scripts/sub-human read` in a terminal shows who a proposal names, and `node <plugin root>/scripts/sub-human show HASH` its text. `sub-human` is not on the PATH, in a terminal or in a session, so your Claude runs it by the full path that the proposal's reply gives. |
 | `✗ sub-human needs Claude Code 2.1.292 or newer, and this is …` | Update Claude Code (`claude update`) and restart it. |
 | `✗ sub-human's hooks module isn't running in this session (…)` | `/sub-human doctor` (it still runs) checks the usual causes: a settings file with `disableAllHooks` or `allowManagedHooksOnly`, or Claude Code's hooks-modules switch off. Start `claude` without `--bare` or safe mode, in a folder you trust. |
 | `the connection to room … stopped (…)` | The link stopped for good: the host refused or revoked it, or the room closed. The reason says what to do (usually a new invite from the host: `/sub-human invite` there). A closed room reconnects with `/sub-human` if the host opens it again; `sub-human link CODE --forget` drops it for good. |

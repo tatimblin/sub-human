@@ -82,7 +82,7 @@ export function bashVerdict(command: unknown, ctx: GuardCtx = {}): string | null
   const cmd = typeof command === 'string' ? command : '';
   if (!cmd.trim()) return null;
   if (READ_CLI.test(cmd) || READ_DOCTOR.test(cmd)) return null;
-  if (DOCTOR_WRITES.test(cmd)) return 'doctor --fix and --bundle change or write files: the person runs them in a terminal outside Claude Code; in a session, /sub-human doctor is the read-only check';
+  if (DOCTOR_WRITES.test(cmd)) return DOCTOR_WHY;
   if (PERSON_CLI.test(cmd) || LOGIN_SERVE.test(cmd)) return 'it makes an invite, lets a machine in or out, or speaks for the room\'s connection: the person does that in their own session (/sub-human invite, admit, kick or handoff) or in a terminal outside Claude Code, never with !, which would put an invite and its PIN into this conversation';
   if (ENV_NAMES.test(cmd)) return 'it names the store location variable (SUB_HUMAN_HOME)';
   if (DOT_HOME.test(cmd)) return 'it touches the room store (~/.sub-human)';
@@ -100,10 +100,20 @@ export function bashVerdict(command: unknown, ctx: GuardCtx = {}): string | null
   return null;
 }
 
+/** bashVerdict's reason for doctor --fix / --bundle: denyText gives it its own text (the store is not what it is about). */
+export const DOCTOR_WHY = 'doctor --fix and --bundle change or write files';
+
 /** The deny text. root (the plugin root, when known): name the read-only CLI by its path; it lives in scripts/, which is
- *  not on the Bash tool's PATH (a top-level bin/ would be, but claude.ai org sync rejects a plugin that has one). */
-export const denyText = (why: string, root: unknown) => `${MSG} (Denied: ${why}.) Use the room MCP tools${
-  typeof root === 'string' && root.startsWith('/') ? `, or \`${root}/scripts/sub-human read|digest|who|tasks|show\`` : ''}.`;
+ *  not on the Bash tool's PATH (a top-level bin/ would be, but claude.ai org sync rejects a plugin that has one).
+ *  doctor --fix / --bundle: a person's step, run in a terminal (by the same path), never the store's wording. */
+export const denyText = (why: string, root: unknown) => {
+  const known = typeof root === 'string' && root.startsWith('/');
+  if (why === DOCTOR_WHY) {
+    return `ROOM-GUARD: sub-human ${why} (the shim, the home's modes, a bundle file), so they are the person's step: ${
+      known ? `they run \`node ${root}/scripts/sub-human doctor --bundle\` (or --fix) ` : 'they run it '}in a terminal outside Claude Code. In a session, /sub-human doctor is the read-only check.`;
+  }
+  return `${MSG} (Denied: ${why}.) Use the room MCP tools${known ? `, or \`${root}/scripts/sub-human read|digest|who|tasks|show\`` : ''}.`;
+};
 
 // ---------- Write / Edit / MultiEdit / NotebookEdit ----------
 /** The path the tool input names, or null. */
