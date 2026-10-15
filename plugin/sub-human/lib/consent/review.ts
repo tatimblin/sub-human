@@ -22,9 +22,12 @@
  * A note whose proposal is no longer the seat's to answer is dropped wherever it is met.
  *
  * Events (each carries its facts; ctx {name, now}):
- *   enter      Pre(EnterPlanMode)       mode, reviewable, pending (viewable), said, named, replaced, kept, propose, plan
+ *   enter      Pre(EnterPlanMode)       mode, reviewable, pending (viewable), said, named, replaced, kept, propose, proposedSince, plan
  *   entered    Post(EnterPlanMode)      plan
- *   exit       Pre(ExitPlanMode)        toolUseId, answer?, target?, shown, text, plan, callPlan, ownPlan
+ *   exit       Pre(ExitPlanMode)        toolUseId, answer?, target?, shown, text, plan, callPlan, ownPlan, mode?, stub?
+ *              stub: the proposal a "proposal HASH" plan names when no review was opened (plan mode entered by hand,
+ *              or EnterPlanMode skipped): live, it opens the review here (keepMode: the person chose plan mode, so no
+ *              restore); not this seat's to answer, the call is denied, never a bare plan view of the stub
  *   permission PermissionRequest(ExitPlanMode)
  *   exited     Post(ExitPlanMode)       toolUseId, mode, response, answer?, target?, pending, plan, callNames, reviewable, proposed
  *   stop       Stop                     mode, active, answer?, target?, live
@@ -72,10 +75,14 @@ export interface Said { text: string; at: number }
 
 export type Event =
   | { type: 'enter'; mode: string | undefined; reviewable: boolean; pending: Pending[]; said: Said | null; named: string | null;
-      replaced: { old: string; hash: string } | null; kept: { hash: string | null; at: number } | null; propose: boolean; plan: PlanFile }
+      replaced: { old: string; hash: string } | null; kept: { hash: string | null; at: number } | null; propose: boolean; plan: PlanFile;
+      /** a pending proposal of this seat's own made since the person's latest prompt (the propose tool ran): the ask
+       * to propose is spent, and that proposal is the one to review */
+      proposedSince?: string | null }
   | { type: 'entered'; plan: PlanFile }
   | { type: 'exit'; toolUseId: string | null; answer?: Answer | null; target?: Target | null; shown: { hash: string; from: string | null } | null;
-      text: string | null; plan: PlanFile; callPlan: unknown; ownPlan: unknown }
+      text: string | null; plan: PlanFile; callPlan: unknown; ownPlan: unknown; mode?: string | undefined;
+      stub?: { hash: string; live: boolean } | null }
   | { type: 'permission' }
   | { type: 'exited'; toolUseId: string | null; mode: string | undefined; answer?: Answer | null; target?: Target | null;
       response: { plan: unknown; edited: boolean; isAgent: boolean; filePath: unknown }; callPlan: unknown;
@@ -151,6 +158,8 @@ export const SAY = {
   proposeFirst: (n: string) => `sub-human: no room review now: ${n} asked you to propose something, so do that. The proposal awaiting ${n} stays pending.`,
   showOnly: (n: string, h: string) => `sub-human: this plan mode is only to show ${n} room proposal ${h}. Call ExitPlanMode now with plan "proposal ${h}"; plan nothing (the hooks show its text).`,
   exitNow: `sub-human: ${NEXT.exit}.`,
+  noReviewOpen: (n: string, h: string) => `sub-human: proposal ${h} is not ${n}'s to answer now (already answered, decided or unknown); nothing was shown and nothing is recorded. Plan nothing for it.`,
+  stubPlan: (n: string, h: string) => `Nothing recorded for proposal ${h}: that plan was only its name, not a review ${n} answered. ${NEXT.open(h)} to show it.`,
   /** the plan dialog's reason line: for the person, not the model */
   dialog: (n: string, h: string, from: string | null | undefined, mode: string | undefined) => `room proposal ${h}${from ? ` from ${from}` : ''}, for ${n} (PgUp/PgDn scroll). `
     + `Agree: "${KEEP[String(mode)] || 'Yes'}" keeps your mode. Object: "Tell Claude what to change" + why. Esc: decide later.`,
@@ -297,6 +306,9 @@ function unshown(ev: Extract<Event, { type: 'exited' }>, ctx: Ctx, hashes: strin
 function ownPlan(ev: Extract<Event, { type: 'exited' }>, ctx: Ctx): { effects: Effect[]; say: Say | null } {
   const plan = ev.response.plan;
   if (ev.response.isAgent || typeof plan !== 'string' || !plan.trim()) return { effects: [], say: null };
+  // "proposal HASH" with no review: not the person's plan, and not an answer (the dialog showed only the name)
+  const named = /^\s*(?:the room )?proposal\s+([0-9a-f]{6,12})\s*\.?\s*$/i.exec(plan);
+  if (named) return { effects: [], say: { to: 'context', parts: [SAY.stubPlan(ctx.name, named[1])] } };
   const h = hash12(Buffer.from(plan, 'utf8'));
   if (!ev.response.edited && ev.pending.some(p => p.hash === h && p.from === ctx.name)) {
     return { effects: [{ do: 'answer', hash: h, choice: 'Agree' }], say: { to: 'context', parts: [{ answer: h }] } };
@@ -319,16 +331,18 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
       // a review left behind: its backup goes back before a new one is taken
       const [old, effects] = r ? restore(r) : [r, [] as Effect[]];
       const said = ev.said;
-      // The person asked their Claude to propose something: no review (a hash they named still opens one).
-      if (said && ev.propose && !ev.pending.some(p => said.text.includes(p.hash.slice(0, 6)))) {
+      // The person asked their Claude to propose something: no review (a hash they named still opens one). Once the
+      // propose tool made that proposal (proposedSince), the ask is spent: the proposal opens like any other
+      const since = ev.proposedSince ? ev.pending.find(q => q.hash === ev.proposedSince) : undefined;
+      if (said && ev.propose && !since && !ev.pending.some(p => said.text.includes(p.hash.slice(0, 6)))) {
         return { state: { ...state, review: old }, effects, say: ctxSay(SAY.proposeFirst(n)) };
       }
       // The person's pick, else the newest: never the model's choice. A pick made after their latest prompt stands.
       const fresh = !!said && !(ev.kept && ev.kept.at > said.at);
       const newest = ev.pending[ev.pending.length - 1];
       const byHash = (h: string | null | undefined) => (h ? ev.pending.find(p => p.hash === h) : undefined);
-      const p = (fresh ? byHash(ev.named) : byHash(ev.kept && ev.kept.hash)) || newest;
-      if (fresh) effects.push({ do: 'pick', hash: byHash(ev.named) ? ev.named : null });
+      const p = (fresh ? byHash(ev.named) || since : byHash(ev.kept && ev.kept.hash)) || newest;
+      if (fresh) effects.push({ do: 'pick', hash: byHash(ev.named) ? ev.named : since ? since.hash : null });
       const was = fresh && ev.replaced && ev.replaced.hash === p.hash ? ev.replaced : null;
       let review: Review = { phase: 'entering', mode: ev.mode, at: ctx.now, hash: p.hash, from: p.from || null };
       const note = state.note && state.note.hash === p.hash ? null : state.note; // reviewed again: its note is superseded
@@ -359,7 +373,15 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
     }
 
     case 'exit': {
-      if (!r) return none(state);
+      if (!r) {
+        // No review opened (plan mode by hand, or EnterPlanMode skipped), yet the plan is a proposal's name: open its
+        // review here, or deny the call; a bare plan view of "proposal HASH" never records anything
+        if (!ev.stub) return none(state);
+        if (!ev.stub.live) return { state, effects: [], say: { to: 'deny', parts: [SAY.noReviewOpen(n, ev.stub.hash)] } };
+        if (!ev.shown || !ev.plan.file || ev.text == null) return { state, effects: [], say: { to: 'deny', parts: [SAY.cardInstead(n, ev.stub.hash).trim()] } };
+        const opened: Review = { phase: 'entering', mode: ev.mode, keepMode: true, at: ctx.now, hash: ev.shown.hash, from: ev.shown.from || null };
+        return reduce({ ...state, review: opened }, ev, ctx);
+      }
       if (r.phase === 'shown' && r.tool_use_id && r.tool_use_id === ev.toolUseId) { // the same call again
         return { state, effects: [], say: { to: 'ask', text: SAY.dialog(n, r.hash || '', r.from, r.mode), show: { plan: r.hash || '' } } };
       }
@@ -440,7 +462,7 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
       else { effects.push({ do: 'answer', hash: h, choice: 'Agree' }); line = [{ ifRecorded: SAY.recorded }, { answer: h }]; }
       const [back, e] = restore(cur);
       effects.push(...e);
-      if (ev.mode && ev.mode !== cur.mode) {
+      if (ev.mode && ev.mode !== cur.mode && !cur.keepMode) {
         const { said: _s, ...rest } = back;
         return { state: { ...state, review: { ...rest, phase: 'restore' } }, effects, say: ctxSay(...line, SAY.modeChanged(n, cur.mode), ...foreign) };
       }

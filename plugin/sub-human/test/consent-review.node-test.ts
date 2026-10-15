@@ -288,6 +288,41 @@ test('exited with no review shown: the model is told nothing was recorded; the p
   assert.match((post({}).say as { parts: string[] }).parts[0], /call the room propose tool with \{text: <the plan>\}/);
 });
 
+test('G (live verify): the proposer who is also an approver: once the propose tool made the proposal, the review opens on it', () => {
+  const mine = [{ hash: OTHER, from: 'alice', viewable: true }, { hash: H, from: 'bob', viewable: true }];
+  const said = { text: 'Propose this to the room with the propose tool, title \'Readme pass\'', at: 10 };
+  const enter = (e: Partial<Extract<Event, { type: 'enter' }>>) => review.reduce({ review: null, note: null }, { ...EVENTS.enter, pending: mine, said, propose: true, ...e } as Event, ctx);
+  assert.equal(enter({}).state.review, null, 'before the proposal exists: propose first');
+  const opened = enter({ proposedSince: H });
+  assert.deepEqual([opened.state.review!.phase, opened.state.review!.hash, opened.say!.to], ['entering', H, 'allow']);
+  assert.deepEqual(opened.effects[0], { do: 'pick', hash: H }, 'the proposal just made is the pick');
+  assert.equal(opened.state.review!.mode, 'default', 'the mode before plan mode, to put back');
+});
+
+test('H (live verify): plan mode by hand, no EnterPlanMode: an ExitPlanMode whose plan is "proposal HASH" opens the review there; never a bare view', () => {
+  const exit = (e: Partial<Extract<Event, { type: 'exit' }>>) => review.reduce({ review: null, note: null },
+    { ...EVENTS.exit, answer: null, mode: 'plan', stub: { hash: H, live: true }, ...e } as Event, ctx);
+  const shown = exit({});
+  assert.deepEqual(shape(shown), ['shown', 'ask', 'save,writePlan']);
+  assert.deepEqual((shown.say as { show: unknown }).show, { plan: H }, 'the proposal\'s text, not the stub');
+  assert.equal(shown.state.review!.keepMode, true);
+  // the Yes then records Agree and leaves the mode as the dialog set it (the person chose plan mode)
+  const yes = review.reduce(shown.state, { ...EVENTS.exited, toolUseId: 'tu2', mode: 'auto' }, ctx);
+  assert.deepEqual(shape(yes), ['none', 'context', 'answer,restorePlan']);
+  // not this seat's to answer: denied, no dialog; no text to show: denied with the card instead
+  const stale = exit({ stub: { hash: H, live: false }, shown: null, text: null });
+  assert.equal(stale.say!.to, 'deny');
+  assert.match(review.textOf((stale.say as { parts: review.Part[] }).parts, () => '', false), /nothing was shown and nothing is recorded/);
+  const noText = exit({ text: null });
+  assert.equal(noText.say!.to, 'deny');
+  assert.match(review.textOf((noText.say as { parts: review.Part[] }).parts, () => '', false), /call AskUserQuestion with "proposal /);
+  // no stub: Claude Code's own plan mode, as before
+  assert.deepEqual(shape(exit({ stub: null })), ['none', null, '']);
+  // Post with no review and the stub as the plan: nothing recorded, never "propose your plan"
+  const post = review.reduce({ review: null, note: null }, { ...EVENTS.exited, response: { ...EVENTS.exited.response, plan: `proposal ${H}` }, pending: [] }, ctx);
+  assert.match(review.textOf((post.say as { parts: review.Part[] }).parts, () => '', false), /^Nothing recorded for proposal [0-9a-f]{12}: that plan was only its name/);
+});
+
 test('ask: a join request, then the handoff, then a waiting note, then the proposals the call names', () => {
   const ask = (e: Partial<Extract<Event, { type: 'ask' }>>, note: Confirm | null = null) => review.reduce({ review: null, note }, { ...EVENTS.ask, ...e } as Event, ctx);
   assert.deepEqual(ask({ admit: 'abcdefabcdef', handoff: true }).say, { to: 'ask', text: '', show: { admit: 'abcdefabcdef' } });

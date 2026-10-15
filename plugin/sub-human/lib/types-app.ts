@@ -93,6 +93,8 @@ export interface Review {
   unread?: boolean;
   foreign?: boolean;
   card?: string;
+  /** opened at ExitPlanMode in a plan mode the person chose (no EnterPlanMode of the review's): no mode to restore */
+  keepMode?: boolean;
 }
 /** Where a review's note stands (lib/consent/review.ts): waiting (its card never shown), nudged (Stop asked for the card
  * once), asked (the card was shown; no Post yet), reoffered (an interrupted card offered again at the next prompt),

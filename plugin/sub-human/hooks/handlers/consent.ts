@@ -362,18 +362,49 @@ function preEnter(input: ConsentIn, me: Identity) {
     const said = cc.lastHumanPrompt(lines(input));
     const replaced = said ? proposal.replacedIn(ps, said.text, me.code) : null;
     const hit = said ? proposal.namedIn(ps, said.text, me.code) || (replaced && replaced.p) : null;
+    const propose = !!said && proposal.proposeIntent(said.text);
     return { type: 'enter', ...base, pending: pendingOf(me, ps), said, named: hit ? hit.hash : null,
       replaced: replaced ? { old: replaced.old, hash: replaced.p.hash } : null, kept: proposal.readPick(me),
-      propose: !!said && proposal.proposeIntent(said.text), plan: planOf(input) };
+      propose, plan: planOf(input), proposedSince: propose && said ? ownSince(me, ps, said.at) : null };
   });
 }
+
+/** The newest pending proposal this seat made itself after `at` (its log line's time): the propose tool ran since. */
+function ownSince(me: Identity, ps: Proposal[], at: number): string | null {
+  const mine = ps.filter(p => p.from === me.name);
+  if (!mine.length) return null;
+  const rm = c.room.open(me.code);
+  const times = new Map(rm.readById(mine.map(p => p.id)).map(e => [e.id, Date.parse(e.at)]));
+  const hit = mine.filter(p => (times.get(p.id) || 0) > at).at(-1);
+  return hit ? hit.hash : null;
+}
+
+/** "proposal HASH" (the stub the model is told to pass), as a plan's whole text: the hash, or null. */
+const stubHash = (t: unknown): string | null => {
+  const m = typeof t === 'string' ? /^\s*(?:the room )?proposal\s+([0-9a-f]{6,12})\s*\.?\s*$/i.exec(t) : null;
+  return m ? m[1] : null;
+};
 
 function preExit(input: ConsentIn, me: Identity) {
   step(input, me, st => {
     const r = st.review;
     const ev = { type: 'exit' as const, toolUseId: input.tool_use_id || null, ...answerFacts(input, me, r, 'exit'),
-      shown: null, text: null, plan: { file: null, text: null }, callPlan: undefined, ownPlan: undefined };
-    if (!r || r.phase !== 'entering') return ev;
+      shown: null, text: null, plan: { file: null, text: null }, callPlan: undefined, ownPlan: undefined, mode: input.permission_mode, stub: null };
+    if (!r) {
+      // no review opened (plan mode by hand, EnterPlanMode skipped), and the plan is a proposal's name: its review
+      // opens here (lib/consent/review.ts exit with stub), else the call is denied: never a bare view of the name
+      const ti: ConsentToolInput = input.tool_input || {};
+      const plan = planOf(input);
+      const own = modelInput(input);
+      const word = stubHash(ti.plan) || stubHash(plan.text) || stubHash(own && own.plan);
+      if (!word) return ev;
+      // the mode is plan already (the person's); a dialog whose Yes clears the context is still no place for a review
+      const p = !ccEnv.clearContextOnPlanAccept(input.cwd) ? proposal.pendingFor(me).filter(x => proposal.viewable(x, me.code)).find(x => x.hash.startsWith(word)) : undefined;
+      if (!p) return { ...ev, stub: { hash: word, live: false } };
+      return { ...ev, stub: { hash: p.hash, live: true }, shown: { hash: p.hash, from: p.from || null }, text: proposal.read(me.code, p.hash),
+        plan, callPlan: ti.plan, ownPlan: own && own.plan };
+    }
+    if (r.phase !== 'entering') return ev;
     const p = proposal.pendingFor(me).filter(x => proposal.viewable(x, me.code)).find(x => x.hash === r.hash);
     const ti: ConsentToolInput = input.tool_input || {};
     // A blank plan: the call's transcript line may not be written yet (2.1.292 runs this hook first), so wait for it.
