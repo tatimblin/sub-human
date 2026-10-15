@@ -259,6 +259,8 @@ export interface Member {
   joined_at?: string;
   seen_at?: string;
   left_at?: string;
+  /** its lease ran out with no leave (lib/seats.ts sweep): still seated, not present; its next beat brings it back */
+  lapsed_at?: string;
   pid?: number | null;
   pid_start?: number;
   session_id?: string | null;

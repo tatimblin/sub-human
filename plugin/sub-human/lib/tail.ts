@@ -26,7 +26,8 @@
  *   flushLine(flush) -> text | null   what became of the @room posts queued while the link was down (the daemon's
  *       document `link` flush {sent, unsent: [{text, why}]}): appended to LINK_BACK, or alone when some were not sent
  *   deps (tests): openRoom(code) -> Room (lib/room.ts open), heartbeat(me) (identity.heartbeat), rows, notices, roomClaude,
- *       linkStatus(code) (lib/remote/link.ts status), admission (lib/remote/admission.ts), sweepDoors(code)
+ *       linkStatus(code) (lib/remote/link.ts status), admission (lib/remote/admission.ts), sweepDoors(code),
+ *       sweepSeats(code) (lib/seats.ts sweep: on the host, every health tick)
  *
  * It writes one JSON event per line, which the mod routes. It reads from the cursor deliver-NAME (first run: from
  * the seat's join) and sees the push and pull lanes. Events:
@@ -107,6 +108,7 @@ interface TailDeps {
   handoff: HandoffLib;
   admission: AdmissionLib;
   sweepDoors(code: string): unknown;
+  sweepSeats(code: string): unknown;
 }
 /** The deps as a session uses them: the lazily loaded modules behind a getter. */
 type Deps = Omit<TailDeps, 'roomClaude' | 'handoff' | 'admission'> & {
@@ -635,6 +637,8 @@ function startSession(me: Identity, ctx: Ctx): Session {
         emit([{ type: 'health', text: msg }]);
       }
     }
+    // seats that ended with no leave (a dead pid, a lease run out) are logged as left, before the watchdog counts them
+    if (rm.store && rm.store.isHost) { try { deps.sweepSeats(s.code); } catch (e) { log('seat sweep', e); } }
     if (me.role === 'claude') deps.roomClaude().watchdog(s.code);
   }
 
@@ -689,6 +693,7 @@ function runTail({
     handoff: deps.handoff ? () => deps.handoff! : (() => { let m: HandoffLib | undefined; return () => m || (m = require('./handoff.ts') as HandoffLib); })(),
     admission: deps.admission ? () => deps.admission! : (() => { let m: AdmissionLib | undefined; return () => m || (m = require('./remote/admission.ts') as AdmissionLib); })(),
     sweepDoors: deps.sweepDoors || ((code: string) => (require('./remote/enroll.ts') as typeof import('./remote/enroll.ts')).sweepDoors(code)),
+    sweepSeats: deps.sweepSeats || ((code: string) => (require('./seats.ts') as typeof import('./seats.ts')).sweep(code)),
   };
   const log = errorLog(err, clock, tm.errorLogMs);
   const ctx: Ctx = { clock, fs, write, log, t: tm, deps: d, sid };

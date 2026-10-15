@@ -38,6 +38,23 @@ test('notices.joinLeave: others only, leaves settle after 8 s, a quick leave + r
   assert.deepEqual(notices.joinLeave(es, 'bob', { now: T0 + 200_000 }).map(n => n.id), [1], 'bob sees only alice');
 });
 
+test('notices.joinLeave: a seat whose lease lapsed (lib/seats.ts sweep) and that beat again soon after is no notice', t => {
+  const seats = require(path.join(h.LIB, 'seats.ts'));
+  const config = require(path.join(h.LIB, 'config.ts'));
+  const seatKey = require(path.join(h.PLUGIN, 'hooks', 'seat-key.ts'));
+  h.freshHome(t);
+  const code = h.newRoom();
+  t.mock.method(seats.seam, 'startDetached', () => 1);
+  assert.equal(seats.enter({ code, name: 'bob', machine: 'far-away', pubkey: seatKey.publicPem(code, 'bob') }).ok, true);
+  const s = room.open(code).store;
+  s.members.update(ms => { ms.bob.seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - config.LEAVE_SETTLE_MS - 1000).toISOString(); return ms; });
+  assert.deepEqual(seats.sweep(code), ['bob']);
+  assert.equal(seats.back(code, 'bob'), true);
+  const es = room.open(code).readAll();
+  assert.deepEqual(es.filter(e => e.from === 'bob').map(e => e.text), ['bob joined', 'bob left (connection lost)', 'bob rejoined']);
+  assert.deepEqual(notices.joinLeave(es, 'alice', { now: Date.now() + 60_000, settle: 8000 }).map(n => n.name + ' ' + n.kind), ['bob member_joined'], 'only the first join');
+});
+
 test('notices.text and rowSegment: the one-line notice and the room row segment', () => {
   assert.equal(notices.text({ kind: 'member_joined', name: 'bob' }), 'bob joined');
   assert.equal(notices.text({ kind: 'member_joined', name: 'bob', rejoin: true }), 'bob rejoined');

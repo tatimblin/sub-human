@@ -408,6 +408,22 @@ test('tail: the health tick renews the seat lease (identity.heartbeat)', () => {
   assert.ok(beats.length >= 2 && beats.every(b => b === `${code}/alice`), beats.join(','));
 });
 
+test('tail: on the host the health tick sweeps the seats (lib/seats.ts sweep); a room hosted elsewhere never does', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  sys(code, 'member_joined', 'alice');
+  const swept = [];
+  const t = startTail({ deps: { sweepSeats: c => swept.push(c) } });
+  t.advance(FAST.healthMs * 2 + 100);
+  assert.ok(swept.length >= 2 && swept.every(c => c === code), swept.join(','));
+  t.stop();
+  const mswept = [];
+  const remote = c => { const r = room.open(c); return { ...r, store: { ...r.store, isHost: false } }; };
+  const m = startTail({ deps: { openRoom: remote, linkStatus: () => ({ running: true, state: 'online' }), sweepSeats: c => mswept.push(c) } });
+  m.advance(FAST.healthMs * 2 + 100);
+  assert.deepEqual(mswept, []);
+});
+
 // ---------- the events as the mod routes them ----------
 const startNd = startTail;
 
