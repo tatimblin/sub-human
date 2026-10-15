@@ -4,6 +4,7 @@
 // listener daemons all run it. Under the plugin's "type": "module" an extensionless file is ESM, and node strips no
 // types from it, so it stays this plain shim: the compile cache on (node 24), then the TypeScript body.
 import module from 'node:module';
+import { cacheDir } from '../lib/cache-dir.js';
 
-module.enableCompileCache?.();
+module.enableCompileCache?.(cacheDir());
 import('../lib/cli/main.ts').then(m => m.main(process.argv.slice(2)));
