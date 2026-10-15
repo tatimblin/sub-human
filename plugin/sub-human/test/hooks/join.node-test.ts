@@ -221,7 +221,7 @@ test('every verb is a reserved name: /sub-human doctor or help is never a person
   for (const v of ['invite', 'join', 'kick', 'leave', 'doctor', 'help', 'admit', 'handoff']) assert.ok(identity.RESERVED.includes(v), v);
   const w = new World({ claude: 'sleep', alice: 'act' });
   const h = w.hook('join', expand('help'), { as: 'alice' });
-  assert.match(h.json!.reason!, /\/sub-human invite .*\n[\s\S]*\/sub-human join HOST ROOM PIN/);
+  assert.match(h.json!.reason!, /\/sub-human invite .*\n[\s\S]*\/sub-human join HOST ROOM SECRET[\s\S]*\/sub-human join PIN /);
   assert.equal(w.members().help, undefined);
   for (const name of ['kick', 'leave', 'doctor']) {
     const r = w.hook('join', expand(`${name} vole-1234`), { as: 'alice' });

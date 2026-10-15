@@ -219,8 +219,8 @@ test('SKILL.md: user-invoked only, and hold is not pre-allowed', () => {
   const fm = frontmatter(path.join(PLUGIN, 'skills', 'sub-human', 'SKILL.md'));
   assert.match(fm, /^disable-model-invocation: true$/m);
   assert.doesNotMatch(fm, /room__hold/);
-  assert.match(fm, /^description: .*\/sub-human \(as your git name\), \/sub-human invite .*\/sub-human join HOST ROOM \[PIN\]/m);
-  assert.match(fm, /^argument-hint: "\[invite \| join HOST ROOM \[PIN\] \| help\]"$/m, 'the three common shapes only');
+  assert.match(fm, /^description: .*\/sub-human \(as your git name\), \/sub-human invite .*\/sub-human join HOST ROOM SECRET/m);
+  assert.match(fm, /^argument-hint: "\[invite \| join HOST ROOM SECRET \| join PIN \| help\]"$/m, 'the common shapes only');
 });
 
 test('manifests: plugin.json carries the version; the marketplace entry does not repeat it', () => {
