@@ -39,6 +39,8 @@
  *       NAME's thread: their own words, their Claude's posts (labelled "NAME's Claude"), their answers,
  *       their joins/leaves, and entries addressed to them. The room Claude's posts are labelled
  *       "claude". Follows live when stdout is a terminal (or with --follow).
+ *   sub-human verify CODE             a room's log checked (lib/cli/doctor/rooms.ts): its hash chain over every segment
+ *       and every person's line against the keys the room pins; exit 1 when the chain breaks or a line does not verify
  *   sub-human agent-statusline
  *       Claude Code's subagentStatusLine command (statusline/*). Never fails: on any error it prints
  *       nothing and exits 0.
@@ -459,12 +461,22 @@ const USAGE = [
   '  joiner:     prime ROOM | link CODE [--reset | --forget [--force]]',
   '  moving:     handoff NAME | promote CODE | demote CODE [--from FILE] (INVITE PIN on stdin)',
   '  room:       options CODE [login-same-person on|off]',
-  '  checks:     doctor [--fix] [--bundle [FILE]]',
+  '  checks:     doctor [--fix] [--bundle [FILE]] | verify CODE',
   '  internal:   tail | serve --stdio CODE [--link ID [--login]] | agent-statusline',
   '              serve --stdio CODE --via ws [--peer KEY] (the web listener\'s child)',
 ].join('\n');
 const doctor: Command = args => (require('./doctor.ts') as typeof import('./doctor.ts')).main(args).then(c => process.exit(c), (e: Error) => die(e.message, 2));
-const cmds: Record<string, Command> = { doctor, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, options: optionsCmd, 'agent-statusline': agentStatusline };
+/** verify CODE: a room's log checked (doctor/rooms.ts): its hash chain and every person's line; exit 1 when either fails. */
+const verify: Command = args => {
+  const code = args[0];
+  if (!code || args.length > 1) die('usage: sub-human verify CODE');
+  if (!identity.roomExists(code)) die(`no room ${code} on this machine`, 1);
+  const r: typeof import('./doctor/rooms.ts') = require('./doctor/rooms.ts');
+  const v = r.verifyRoom(code);
+  console.log(`room ${code}: ${r.verifyText(v)}`);
+  process.exit(v.chain.ok && !v.unverified.length ? 0 : 1);
+};
+const cmds: Record<string, Command> = { doctor, verify, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, options: optionsCmd, 'agent-statusline': agentStatusline };
 // lib/cli/*: each returns the exit code
 const viaCli = (fn: 'invite' | 'admit' | 'kick' | 'prime'): Command => a => process.exit((require('./host.ts') as typeof import('./host.ts'))[fn](a));
 Object.assign(cmds, { invite: viaCli('invite'), admit: viaCli('admit'), kick: viaCli('kick'), prime: viaCli('prime') });

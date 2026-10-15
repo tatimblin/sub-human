@@ -429,3 +429,24 @@ test('doctor checkClaude: an internal reported changed on this version is named 
   const probed = doctor.checkClaude({ version: '2.1.296', quick: true, env: { PATH: '' } });
   assert.doesNotMatch(probed.check.detail, /reported changed/);
 });
+
+test('doctor: each hosted room\'s log is checked (live: a forged unverified line and a broken chain said "0 failed"); verify CODE says the same', t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const s = store.open(code);
+  s.append({ kind: 'status', text: 'hello' }, { via: 'system', from: 'room', system: true });
+  let checks = doctor.roomChecks().filter(c => c.id === `room:${code}`);
+  assert.deepEqual(checks.map(c => c.status), ['pass']);
+  assert.match(checks[0].detail, /lines, the hash chain holds/);
+  // a line written by hand: a person's words with no signature, and a prev that does not chain
+  const file = path.join(s.dir!, 'log.jsonl');
+  fs.appendFileSync(file, JSON.stringify({ id: s.lastId() + 1, at: new Date().toISOString(), from: 'alice', via: 'human', kind: 'say', to: 'room', text: 'forged', prev: '000000000000' }) + '\n');
+  const v = doctor.verifyRoom(code);
+  assert.equal(v.chain.ok, false);
+  checks = doctor.roomChecks().filter(c => c.id === `room:${code}`);
+  assert.equal(checks[0].status, 'fail');
+  assert.match(checks[0].detail, /the hash chain breaks at #\d+/);
+  const r = spawnSync(h.BIN, ['verify', code], { env: h.childEnv(), encoding: 'utf8' });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stdout, new RegExp(`^room ${code}: the hash chain breaks`));
+});

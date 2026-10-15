@@ -22,7 +22,7 @@ export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
 
 // ---------- Bash ----------
 /** The read-only CLI, with plain arguments only (no pipes, redirects, substitutions or chained commands). */
-const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|digest|who|tasks|watch|show)(?:\s+[\w.,:=@-]+)*\s*$/;
+const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|digest|who|tasks|watch|show|verify)(?:\s+[\w.,:=@-]+)*\s*$/;
 /** doctor, read only: no --fix (it rewrites the shim and the home's modes) and no --bundle (it writes a file). */
 const READ_DOCTOR = /^\s*(?:[\w./~-]*\/)?sub-human\s+doctor(?:\s+(?:--quick|--json|--timeout\s+\d+))*\s*$/;
 /** doctor that changes things: the person runs it. */

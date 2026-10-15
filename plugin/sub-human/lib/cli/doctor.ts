@@ -19,7 +19,8 @@
  *
  * Checks, each {id, status: pass|warn|fail|info, title, detail, fix?}, in this order:
  *   plugin, node (24.3 or newer), home (the home and its store directories are 0700 and this user's): here
- *   shim, authorized_keys, ssh: doctor/ssh.ts;  link:CODE, clock:CODE: doctor/links.ts
+ *   shim, authorized_keys, ssh: doctor/ssh.ts;  link:CODE, clock:CODE: doctor/links.ts;  room:CODE (each hosted room's
+ *   log: its hash chain and every person's line verified): doctor/rooms.ts
  *   room-claude:CODE, claude, daemon, hooks, remote_control: doctor/claude.ts;  listener, web:CODE: doctor/listener.ts
  *
  *   diagnose(opts) -> Promise<Report>   Report = {generated_at, versions, checks, links, authorizedKeys}
@@ -35,6 +36,7 @@ import { lib, cli, check, tilde, PLUGIN_ROOT, DOCTOR_HELLO_MS } from './doctor/c
 import { checkShim, scanAuthorizedKeys, checkAuthorizedKeys, sshVersion, checkSsh, sshHint } from './doctor/ssh.ts';
 import { diagnoseLink, linkChecks, helloProbe } from './doctor/links.ts';
 import { checkListener } from './doctor/listener.ts';
+import { roomChecks, verifyRoom, verifyText } from './doctor/rooms.ts';
 import { claudeVersion, checkClaude, checkDaemon, checkRoomClaudes, settingsFiles, checkHooks, checkRemoteControl } from './doctor/claude.ts';
 import { bundle, redactor } from './doctor/redact.ts';
 import type { CheckStatus, DoctorOptions, Report } from './types.ts';
@@ -88,8 +90,9 @@ async function diagnose({ quick = false, timeoutMs = DOCTOR_HELLO_MS, authorized
   const sshV = sshVersion();
   checks.push(checkSsh({ needed: sshLinks, version: sshV }));
   const links = await Promise.all(codes.map(code => diagnoseLink(code, { quick, timeoutMs, env })));
-  if (!codes.length) checks.push(check('links', 'info', 'connections', 'none: every room this machine is in is hosted here'));
+  if (!codes.length) checks.push(check('links', 'info', 'connections', 'none to a room hosted on another machine'));
   for (const d of links) checks.push(...linkChecks(d));
+  checks.push(...roomChecks());
   checks.push(...checkRoomClaudes());
   const cv = claudeVersion(env);
   const cl = checkClaude({ version: cv, quick, env });
@@ -175,5 +178,5 @@ async function main(args: readonly string[], { write = (s: string) => { process.
 
 export {
   diagnose, format, bundle, redactor, helloProbe, checkListener, checkRoomClaudes, linkChecks, scanAuthorizedKeys, checkAuthorizedKeys,
-  checkNode, checkRemoteControl, checkClaude, checkDaemon, sshHint, main, parseArgs, DOCTOR_HELLO_MS,
+  checkNode, checkRemoteControl, checkClaude, checkDaemon, sshHint, main, parseArgs, DOCTOR_HELLO_MS, roomChecks, verifyRoom, verifyText,
 };
