@@ -4,6 +4,8 @@ Source: `/opt/homebrew/Caskroom/claude-code@latest/2.1.296/claude` (`VERSION:"2.
 
 On 2.1.296, 4 of the 79 probe checks (78 CONTRACT entries plus the derived `daemon-env-names`) failed. 2 were code that moved around a field we do not read, and 2 changed behaviour. None needed a plugin code change beyond `cc.DAEMON_ENV_ALLOW`. With the anchors below the probe passes 79/79, and 81/81 with the two [bg daemon](#the-bg-daemon-daemon-status-daemon-upgrade-exit-new) entries added since.
 
+> (Since: Stage 2 removed `hook-async` (its use, an async hooks.json entry, went), and `daemon-env-names` folded into `daemon-env-allowlist`: the probe counts 79 entries, 79/79 on 2.1.296.)
+
 ## Per entry
 
 **(a)** = same behaviour, only minified names or formatting moved; **(b)** = behaviour changed; **(c)** = removed.
@@ -27,6 +29,8 @@ On 2.1.296, 4 of the 79 probe checks (78 CONTRACT entries plus the derived `daem
 Still not on the list: `HOME`, `USER`, `CLAUDE_CODE_TASK_LIST_ID`, `CLAUDE_CODE_ENABLE_TODO_TOOLS`, any `SUB_HUMAN_*`, and auth secrets.
 
 **Fix.** `cc.MODEL_KEYS` and `cc.EXTRA_KEYS` copy the two new keys in the binary's order, so `cc.DAEMON_ENV_ALLOW` (and through `cc.daemonEnv`, the room's Claude spawn env) forwards them as the daemon would. `cc.test.js` checks both are in the allowlist.
+
+> (Moved: the key arrays are now the `contains` groups of `daemon-env-allowlist` in `lib/cc/contract.json`, checked as a shape (each array holds its names, more allowed) rather than as exact JSON, and `DAEMON_ENV_ALLOW` is built from them in `lib/cc/bg.ts`; the derived `daemon-env-names` check folded into that entry.)
 
 ## The bg daemon: `daemon-status`, `daemon-upgrade-exit` (new)
 
