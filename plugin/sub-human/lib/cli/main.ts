@@ -400,6 +400,20 @@ function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
 }
 
 type Command = (args: readonly string[]) => unknown;
+
+/** What an unknown command prints: one command per line, grouped (the header above has each in full). */
+const USAGE = [
+  'usage: sub-human COMMAND',
+  '  the room:   read [--id N,M] | digest | show HASH | who | tasks [--json] | watch NAME',
+  '  host:       invite [--ssh [USER@HOST]] [--via JUMP]',
+  '              invite --web | --public | --url URL',
+  '              invite --stop | invite --cancel [REF]',
+  '              admit [REF] | kick NAME | listen [--port P] [--start | --stop | --status]',
+  '  joiner:     prime ROOM | link CODE [--reset | --forget [--force]]',
+  '  moving:     handoff NAME | promote CODE | demote CODE INVITE PIN',
+  '  checks:     doctor [--fix] [--bundle [FILE]]',
+  '  internal:   tail | serve --stdio CODE [--link ID [--login]] | agent-statusline',
+].join('\n');
 const doctor: Command = args => (require('./doctor.ts') as typeof import('./doctor.ts')).main(args).then(c => process.exit(c), (e: Error) => die(e.message, 2));
 const cmds: Record<string, Command> = { doctor, tail, read, digest, show, who, tasks: tasksCmd, watch, serve, link: linkCmd, 'agent-statusline': agentStatusline };
 // lib/cli/*: each returns the exit code
@@ -419,7 +433,7 @@ function main([cmd, ...args]: string[] = process.argv.slice(2)) {
     try { if (fs.existsSync(identity.home())) (require('../remote/shim.ts') as typeof import('../remote/shim.ts')).refresh(); } catch { /* best effort */ }
   }
   try {
-    (cmds[cmd] || (() => die('usage: sub-human tail | read [--id N,M] | digest | show HASH | who | tasks [--json] | watch NAME | serve --stdio CODE [--link ID [--login]] | link CODE [--reset | --forget [--force]] | invite [--ssh [USER@HOST]] [--via JUMP] | invite --web|--public|--url URL | invite --stop | invite --cancel [REF] | admit [REF] | kick NAME | prime ROOM | listen [--port P] [--start|--stop|--status] | handoff NAME | promote CODE | demote CODE INVITE PIN | doctor [--bundle [FILE]] | agent-statusline')))(args);
+    (cmds[cmd] || (() => die(USAGE)))(args);
   } catch (e) {
     die((e as Error).message, 2);
   }
