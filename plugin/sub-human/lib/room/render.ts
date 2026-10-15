@@ -9,7 +9,8 @@
  *     under the sender with CHAT_NEST ("  │ "), at most CHAT_LINES_MAX text lines (below). With entries (the log
  *     so far) an answer or decision names its proposal by title and short hash: 'bob agreed to "Ship v3 Monday"
  *     (3fa2c1)', 'room: "Ship v3 Monday" (3fa2c1) agreed (bob)', 'room: "Ship v3 Monday" (3fa2c1) not agreed: changes
- *     requested by bob: keep status'; a proposal that retires an earlier one adds 'replaces "Ship v3" (9c01de)'
+ *     requested by bob: keep status'; a proposal that retires an earlier one adds 'replaces "Ship v3" (9c01de)'.
+ *     A leave keeps its reason: "bob left (connection lost)", "bob left (session ended)"
  *   fmt(e)                   full text for `sub-human read`, body lines nested the same way;
  *     who(e) ("alice" | "alice's Claude" | "room")
  *   stateLine(me, entries, {members, ids}) -> "room now: proposal 3fa2c1 waiting on bob · objected: dave · you: answer needed ·
@@ -199,6 +200,18 @@ function decisionText(n: Entry, entries: readonly Entry[] | undefined): string {
   return `${label} not agreed: changes requested by ${by.join(' · ')}${m[2] ? ` · agreed: ${m[2]}` : ''}`;
 }
 
+/**
+ * Why a member left, from the log text "bob left (REASON)" (lib/seats.ts exit), as the chat line shows it: a reason
+ * in words stays (" (connection lost)", " (session ended)", " (removed by the host)"); Claude Code's own SessionEnd
+ * token ("prompt_input_exit", "other", "logout") reads " (session ended)"; "left" (/sub-human leave) and none add nothing.
+ */
+function leftWhy(t: string): string {
+  const m = /\bleft \(([^()\n]{1,60})\)\s*$/.exec(t);
+  const why = m ? oneLine(safeText(m[1])) : '';
+  if (!why || why === 'left') return '';
+  return ` (${/\s/.test(why) ? why : 'session ended'})`;
+}
+
 /** The human-facing sentence for an entry (may span lines). entries: the log so far, to name a proposal by title. */
 function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[] | undefined): { head: string; text: string } {
   const n = normalize(e);
@@ -207,7 +220,7 @@ function chatBody(e: Entry, viewer: string | undefined, entries: readonly Entry[
   const about = () => proposalLabel(n.proposal_hash, entries) || 'the proposal';
   switch (n.kind) {
     case 'member_joined': return { head: `${n.from} ${/\brejoined\b/.test(t) ? 'rejoined' : 'joined'}`, text: '' };
-    case 'member_left': return { head: `${n.from} left`, text: '' };
+    case 'member_left': return { head: `${n.from} left${leftWhy(t)}`, text: '' };
     case 'proposal': {
       // the short hash tells revisions apart; a revision names what it replaces (its earlier one, retired)
       const h = n.hash ? ` (${String(n.hash).slice(0, 6)})` : '';

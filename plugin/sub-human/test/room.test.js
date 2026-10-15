@@ -291,7 +291,14 @@ test('chatLines: group-chat lines with no ids, exact words, multi-line and long 
   assert.deepEqual(C(R.append({ kind: 'say', text: 'mine, drafted', drafted: 'agent' }, { via: 'human', from: 'carol' })), ["carol (Claude's wording): mine, drafted"]);
   assert.deepEqual(C(sys('member_joined', { text: 'bob joined' }, 'bob')), ['bob joined']);
   assert.deepEqual(C(sys('member_joined', { text: 'bob rejoined (resumed)' }, 'bob')), ['bob rejoined']);
-  assert.deepEqual(C(sys('member_left', { text: 'bob left (prompt_input_exit)' }, 'bob')), ['bob left']);
+  // a leave keeps the log's reason; Claude Code's own SessionEnd token reads as words
+  assert.deepEqual(C(sys('member_left', { text: 'bob left (prompt_input_exit)' }, 'bob')), ['bob left (session ended)']);
+  assert.deepEqual(C(sys('member_left', { text: 'bob left (connection lost)' }, 'bob')), ['bob left (connection lost)']);
+  assert.deepEqual(C(sys('member_left', { text: 'bob left (session ended)' }, 'bob')), ['bob left (session ended)']);
+  assert.deepEqual(C(sys('member_left', { text: 'bob left (removed by the host)' }, 'bob')), ['bob left (removed by the host)']);
+  assert.deepEqual(C(sys('member_left', { text: 'bob left (left)' }, 'bob')), ['bob left'], '/sub-human leave: nothing to add');
+  assert.deepEqual(C(sys('member_left', { text: 'bob left' }, 'bob')), ['bob left']);
+  assert.deepEqual(C(sys('member_left', { text: 'bob left (a\u001b[2Jb c)' }, 'bob')), ['bob left (a\ufffd[2Jb c)'], 'no control reaches the pane');
   assert.deepEqual(C(R.append({ kind: 'proposal', text: `proposal ${H1}: cursor paging`, hash: H1, approvers: ['alice'] }, { via: 'agent', from: 'claude' })), ['claude proposed: cursor paging (aaaaaa)']);
   assert.deepEqual(C(R.append({ kind: 'objection', proposal_hash: H1, text: 'add the 400 test' }, { via: 'human', from: 'bob' })), ['bob objected to the proposal: add the 400 test']);
   assert.deepEqual(C(R.append({ kind: 'signoff', proposal_hash: H1 }, { via: 'human', from: 'bob' })), ['bob agreed to the proposal']);
