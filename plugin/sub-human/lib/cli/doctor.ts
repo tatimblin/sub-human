@@ -585,8 +585,10 @@ const RESTART = (code: string) => `then /sub-human NAME ${code} (in the room) st
 /**
  * Each open room hosted here: the room's Claude bound here and live is a pass. A fail: its last start failed
  * (spawn_error, e.g. the bg daemon crashed the job before its first turn), or its job was started (more than
- * ROOM_CLAUDE_BIND_GRACE_MS ago) but never bound its seat. The job's state (`claude agents --json --all`) tells the two
- * kinds apart: one that ended crashed, one still running had its /sub-human refused (e.g. "name taken").
+ * ROOM_CLAUDE_BIND_GRACE_MS ago) but never bound its seat. The job's state (`claude agents --json --all`) tells the
+ * kinds apart: failed or stopped crashed before its first turn, done ended its turn without binding, and one still
+ * running never took its seat for a reason only its log shows (blocked on a prompt, a refused /sub-human: nothing here
+ * records which).
  * jobs: the `claude agents` lookup (tests); called only for a job that never bound.
  */
 function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc.ts').jobs({ all: true }) }: { now?: number, jobs?: () => import('../cc.ts').AgentJob[] | null } = {}): Check[] {
@@ -618,9 +620,11 @@ function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc.ts').jobs({ a
     const why = o.spawn_error ? ` (${o.spawn_error})` : '';
     out.push(check(`room-claude:${code}`, 'fail', `room's Claude ${code}`,
       `its job ${o.job} was started ${Math.round((now - since) / 1000)} s ago but never took its seat${state ? `; the job is ${state}` : ''}${why}: the room's Claude is not running`,
-      ended
-        ? `the job ended before its first turn: claude logs ${o.job} and the bg daemon's log say why; ${DAEMON_HINT}; ${RESTART(code)}`
-        : `claude logs ${o.job} shows why its /sub-human was refused; ${DAEMON_HINT}; ${RESTART(code)}`));
+      state === 'done'
+        ? `the job ended its turn without taking its seat: claude logs ${o.job} shows why; ${DAEMON_HINT}; ${RESTART(code)}`
+        : ended
+          ? `the job ended before its first turn: claude logs ${o.job} and the bg daemon's log say why; ${DAEMON_HINT}; ${RESTART(code)}`
+          : `claude logs ${o.job} shows what it is doing and why it never took its seat; ${DAEMON_HINT}; ${RESTART(code)}`));
   }
   return out;
 }

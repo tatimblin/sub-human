@@ -208,7 +208,7 @@ test('doctor redactor: each rule alone', () => {
   assert.equal(doctor.redactor({ home: '/home/zed', shHome: '/home/zed/.sub-human' })('/home/zed/.sub-human/x'), '~/.sub-human/x');
 });
 
-test('doctor: a room whose claude job started but never took its seat (e.g. refused "name taken") fails, with the job\'s log', t => {
+test('doctor: a room whose claude job started but never took its seat (e.g. blocked) fails, with the job\'s log', t => {
   h.freshHome(t);
   const identity = require(path.join(h.LIB, 'identity.ts'));
   const { code } = h.register('alice', 'member', process.pid);
@@ -218,7 +218,14 @@ test('doctor: a room whose claude job started but never took its seat (e.g. refu
   assert.equal(c.id, `room-claude:${code}`);
   assert.equal(c.status, 'fail');
   assert.match(c.detail, /job job12345 was started \d+ s ago but never took its seat/);
-  assert.match(c.fix, /claude logs job12345/);
+  assert.match(c.fix, /claude logs job12345 shows what it is doing and why it never took its seat/);
+  assert.doesNotMatch(c.fix, /refused/, 'nothing here knows its /sub-human was refused');
+  const [blocked] = doctor.checkRoomClaudes({ jobs: () => [{ id: 'job12345', state: 'blocked' }] });
+  assert.match(blocked.detail, /never took its seat; the job is blocked/);
+  assert.match(blocked.fix, /shows what it is doing and why it never took its seat/);
+  assert.doesNotMatch(blocked.fix, /refused/);
+  const [done] = doctor.checkRoomClaudes({ jobs: () => [{ id: 'job12345', state: 'done' }] });
+  assert.match(done.fix, /^the job ended its turn without taking its seat: claude logs job12345 shows why/);
   assert.match(c.fix, /the bg daemon check says whether the daemon runs a Claude Code that was upgraded away/);
   const [crashed] = doctor.checkRoomClaudes({ jobs: () => [{ id: 'job12345', state: 'failed' }] });
   assert.match(crashed.detail, /never took its seat; the job is failed/);
