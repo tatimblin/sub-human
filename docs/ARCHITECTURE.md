@@ -743,7 +743,18 @@ The warm append reads back only the active segment and the snapshot's window; th
 | status line every 5 s (Claude Code's rate while rows show) | 0.6–0.8 | 0 | 0.6–0.8 | 0 |
 | **total** | **1.1–1.3** | 2 | **1.0–1.2** | 10 per host tail |
 
-The only idle `ps` is the host tail's seat sweep: `ps -o lstart= -p PID` per local seat (`lib/lock.ts` pidStart, cached 30 s), not the batched `pidStarts`. Tail and hold together cost 0.4–0.5 % per seat and stay flat from 1 to 5 seats. The total is just over budget because of the status line, which is Claude Code starting a node process every 5 s; a hub would not remove that cost. Not measured: the room's Claude's own tail, a seat in a room hosted elsewhere (its link daemon), the host's per-link `serve`, and real sessions.
+At stage 8 the only idle `ps` was the host tail's seat sweep: `ps -o lstart= -p PID` per local seat (`lib/lock.ts` pidStart, cached 30 s), not the batched `pidStarts`; the review fix pass removed it (below). Tail and hold together cost 0.4–0.5 % per seat and stay flat from 1 to 5 seats. The total is just over budget because of the status line, which is Claude Code starting a node process every 5 s; a hub would not remove that cost. Not measured: the room's Claude's own tail, a seat in a room hosted elsewhere (its link daemon), the host's per-link `serve`, and real sessions.
+
+**After the review fix pass (stage 8b), the same scripts on the same machine.** The seat sweep reads every local seat's start time with one `pidStarts` call and keeps it while `kill(pid, 0)` finds the pid (at most 10 minutes; a pid seen gone is dropped, so a reuse is read again), and the status line's entry no longer loads `lib/tail.ts`, `lib/proposal.ts` with the consent reducer, or `lib/room/watch.ts` (42 plugin modules, now 38; no remote code before or after).
+
+| Per seat | 1 seat: CPU % | 1 seat: `ps`/min | 5 seats: CPU % per seat | 5 seats: `ps`/min |
+|---|---|---|---|---|
+| room tail | 0.28 | **0** (was 2) | 0.22–0.25 | **0** (was 10 per tail) |
+| room MCP server with its holds | 0.22 | 0 | 0.17–0.23 | 0 |
+| status line, one refresh (a fresh `node`; 100 in a row, per refresh) | 46 ms CPU, 42 ms wall (was 50 and 44; a bare `node -e ''` is 24 and 25) | 0 | the same | 0 |
+| status line every 5 s | about 0.9 by the 100-run figure (0.6–0.8 by stage 8's 20-run median at 10 ms resolution, unchanged) | 0 | the same | 0 |
+
+**Stage 9 (hub): not built.** Tail and hold cost 0.4–0.5 % of a core per seat, flat from 1 to 5 seats, and no `ps` runs while idle any more; the rest is the status line, which is Claude Code starting a fresh `node` every 5 s while rows show, and half of each refresh is node's own start. A hub would not remove that process; it would add a long-lived host process (with the lock busy-wait the plan says to retire first) to save the 0.4–0.5 % per seat that tail and hold cost now.
 
 ## Testing
 

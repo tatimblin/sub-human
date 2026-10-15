@@ -263,3 +263,17 @@ test('tailer: more than 4 rotations behind, it reads on from where it was (no re
   assert.equal(got.reset, false, 'no start over');
   assert.deepEqual(got.entries.map(e => e.id), ids(120, from + 1), 'every line once, in order');
 });
+
+test('a person\'s signed line replayed after two rotations, and after a lost snapshot.json is rebuilt, is refused', t => {
+  const { s } = room(t, 1024);
+  sys(s, 'member_joined', 'alice', { pubkey: seatKey.publicPem(s.code, 'alice') });
+  const signed = say(s, 'alice', 'my own words');
+  const { id: _i, at: _a, prev: _p, ...payload } = signed as Entry & Record<string, unknown>;
+  for (let i = 0; i < 25; i++) note(s, `grow ${i} ${'z'.repeat(80)}`);
+  const sealed = fs.readdirSync(s.dir!).filter(n => /^log-\d{4}\.jsonl$/.test(n)).length;
+  assert.ok(sealed >= 2, `rotated ${sealed} times`);
+  const refused = (st: RoomStore) => assert.throws(() => st.place(payload as never), (e: Error & { code?: string }) => e.code === 'AUTH' && /nonce/.test(e.message));
+  refused(s);
+  fs.rmSync(path.join(s.dir!, 'snapshot.json'));
+  refused(store.open(s.code, { dir: s.dir }));
+});
