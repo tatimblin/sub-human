@@ -17,16 +17,22 @@ import * as seats from '../lib/seats.ts';
 import * as config from '../lib/config.ts';
 import * as seatKey from '../hooks/seat-key.ts';
 import * as hold from '../mcp/hold.ts';
-let R = null; // the room under test
+import type { Room } from '../lib/room.ts';
+import type { FakeClock } from '../lib/clock.ts';
+import type { Entry, Member, Members } from '../lib/room/types.ts';
+import type { Me, ToolResult } from '../mcp/types.ts';
+let R!: Room; // the room under test (set per test)
+/** notices.text's argument; the tests leave rejoin out where it is false. */
+type NoticeIn = Parameters<typeof notices.text>[0];
 
 const CODE = 'stoat-3644';
 const T0 = Date.parse('2026-10-05T10:00:00.000Z');
-const at = s => new Date(T0 + s * 1000).toISOString();
-const mv = (id, kind, from, s, text) => ({ id, at: at(s), from, via: 'system', kind, to: 'room', text: text || `${from} ${kind === 'member_left' ? 'left' : 'joined'}` });
-const MEMBERS = { claude: { name: 'claude', role: 'claude' }, alice: { name: 'alice', role: 'member' }, bob: { name: 'bob', role: 'member' } };
+const at = (s: number) => new Date(T0 + s * 1000).toISOString();
+const mv = (id: number, kind: string, from: string, s: number, text?: string): Entry => ({ id, at: at(s), from, via: 'system', kind, to: 'room', text: text || `${from} ${kind === 'member_left' ? 'left' : 'joined'}` });
+const MEMBERS: Members = { claude: { name: 'claude', role: 'claude' }, alice: { name: 'alice', role: 'member' }, bob: { name: 'bob', role: 'member' } };
 
 test('notices.joinLeave: others only, leaves settle after 8 s, a quick leave + rejoin is no notice', () => {
-  const es = [
+  const es: Entry[] = [
     mv(1, 'member_joined', 'alice', 0), mv(2, 'member_joined', 'claude', 1), mv(3, 'member_joined', 'bob', 10),
     { id: 4, at: at(11), from: 'bob', via: 'human', kind: 'say', text: 'hi' },
     mv(5, 'member_left', 'bob', 20), mv(6, 'member_joined', 'bob', 25, 'bob rejoined'), // back in 5 s: nothing
@@ -37,7 +43,7 @@ test('notices.joinLeave: others only, leaves settle after 8 s, a quick leave + r
   assert.deepEqual(ns.map(n => [n.id, n.kind, n.settled, n.rejoin]), [
     [3, 'member_joined', true, false], [7, 'member_left', true, false], [8, 'member_joined', true, true], [9, 'member_left', false, false],
   ], 'own join, the room\'s Claude, a say and the 5 s round trip are left out; #9 is still settling');
-  assert.equal(notices.joinLeave(es, 'alice', { now: T0 + 108_000, settle: 8000 }).at(-1).settled, true);
+  assert.equal(notices.joinLeave(es, 'alice', { now: T0 + 108_000, settle: 8000 }).at(-1)!.settled, true);
   assert.deepEqual(notices.joinLeave(es, 'bob', { now: T0 + 200_000 }).map(n => n.id), [1], 'bob sees only alice');
 });
 
@@ -56,9 +62,9 @@ test('notices.joinLeave: a seat whose lease lapsed (lib/seats.ts sweep) and that
 });
 
 test('notices.text and rowSegment: the one-line notice and the room row segment', () => {
-  assert.equal(notices.text({ kind: 'member_joined', name: 'bob' }), 'bob joined');
+  assert.equal(notices.text({ kind: 'member_joined', name: 'bob' } as NoticeIn), 'bob joined');
   assert.equal(notices.text({ kind: 'member_joined', name: 'bob', rejoin: true }), 'bob rejoined');
-  assert.equal(notices.text({ kind: 'member_left', name: 'bob' }), 'bob left');
+  assert.equal(notices.text({ kind: 'member_left', name: 'bob' } as NoticeIn), 'bob left');
   const es = [mv(1, 'member_joined', 'bob', 0)];
   assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 5_000 }), '+bob joined');
   assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 130_000 }), '', 'gone after 2 minutes');
@@ -69,9 +75,9 @@ test('notices.text and rowSegment: the one-line notice and the room row segment'
 });
 
 test('notices.text and rowSegment: a leave carries the chat line\'s short reason (render.ts leftWhy)', () => {
-  assert.equal(notices.text({ kind: 'member_left', name: 'bob', why: ' (connection lost)' }), 'bob left (connection lost)');
+  assert.equal(notices.text({ kind: 'member_left', name: 'bob', why: ' (connection lost)' } as NoticeIn), 'bob left (connection lost)');
   const es = [mv(1, 'member_joined', 'bob', 0), mv(2, 'member_left', 'bob', 30, 'bob left (connection lost)')];
-  assert.equal(notices.joinLeave(es, 'alice', { now: T0 + 39_000 }).at(-1).why, ' (connection lost)');
+  assert.equal(notices.joinLeave(es, 'alice', { now: T0 + 39_000 }).at(-1)!.why, ' (connection lost)');
   assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 39_000 }), '−bob left (connection lost)');
   es[1] = mv(2, 'member_left', 'bob', 30, 'bob left (prompt_input_exit)');
   assert.equal(notices.rowSegment(es, 'alice', { now: T0 + 39_000 }), '−bob left (session ended)', 'a SessionEnd token reads as the chat line does');
@@ -97,6 +103,7 @@ test('notices shown / markShown: ids merge and sort; via is required', () => {
   assert.deepEqual([...notices.shown(code, 'alice')], [3, 5, 7]);
   notices.markShown(code, 'alice', [9], 'mod', { now: T0 });
   assert.equal(room.open(code).store.kv.get('rows/notices-alice').log.at(-1).at, at(0), 'markShown stamps the given time');
+  // @ts-expect-error deliberate: no via, to see it refused
   assert.throws(() => notices.markShown(code, 'alice', [6]), /via/);
   assert.throws(() => notices.markShown(code, 'alice', [6], 'model'), /via/);
   assert.throws(() => notices.markShown(code, 'alice', [6], 'monitor'), /via/, 'the Monitor is gone');
@@ -109,27 +116,27 @@ test('hold {room}: joins and settled leaves show as notices on the progress line
   const old = Object.fromEntries(Object.keys(ENV).map(k => [k, process.env[k]]));
   Object.assign(process.env, ENV);
   t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: T0 });
-  const tick = ms => t.mock.timers.tick(ms);
-  const until = (cond, ms) => { for (let i = 0; i < ms && !cond(); i += 20) tick(20); return cond(); };
+  const tick = (ms: number) => t.mock.timers.tick(ms);
+  const until = (cond: () => boolean, ms: number) => { for (let i = 0; i < ms && !cond(); i += 20) tick(20); return cond(); };
   try {
   process.env.SUB_HUMAN_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-notice-hold-'));
   const dir = path.join(process.env.SUB_HUMAN_HOME, 'rooms', CODE);
   fs.mkdirSync(dir, { recursive: true });
-  const ms = { claude: { name: 'claude', role: 'claude' }, alice: { name: 'alice', role: 'member' }, bob: { name: 'bob', role: 'member' } };
+  const ms: Record<'claude' | 'alice' | 'bob', Member> = { claude: { name: 'claude', role: 'claude' }, alice: { name: 'alice', role: 'member' }, bob: { name: 'bob', role: 'member' } };
   const save = () => fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
   save();
   let id = 0;
-  const add = (from, kind, text) => fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: ++id, at: new Date().toISOString(), from, via: 'system', kind, to: 'room', text }) + '\n');
+  const add = (from: string, kind: string, text: string) => fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify({ id: ++id, at: new Date().toISOString(), from, via: 'system', kind, to: 'room', text }) + '\n');
   add('alice', 'member_joined', 'alice joined');
-  const progress = []; // the room hold's line only (bob's row streams his own thread)
-  const me = { code: CODE, name: 'alice', role: 'member' };
-  let who = me;
-  const plug = hold.create({ identity, whoami: () => who, progress: (k, n, m) => { if (k === 'r') progress.push(m); }, onCancel: () => {}, log: () => {}, text: s => ({ content: [{ type: 'text', text: s }] }) });
+  const progress: string[] = []; // the room hold's line only (bob's row streams his own thread)
+  const me = { code: CODE, name: 'alice', role: 'member' } as Me; // the fields hold reads
+  let who: Me | null = me;
+  const plug = hold.create({ identity, whoami: () => who, progress: (k, n, m) => { if (k === 'r') progress.push(m!); }, onCancel: () => {}, log: () => {}, text: s => ({ content: [{ type: 'text', text: s as string }] }) });
   // bob's row is already held, so the room hold does not return JOINED for him
-  const ended = [];
+  const ended: ToolResult[] = [];
   const b = plug.call('hold', me, { member: 'bob' }, { id: 1, progressToken: 'b' });
   const r = plug.call('hold', me, { room: CODE }, { id: 2, progressToken: 'r' });
-  for (const p of [b, r]) p.then(x => ended.push(x));
+  for (const p of [b, r]) (p as Promise<ToolResult>).then(x => ended.push(x)); // a hold call answers with a Promise
   tick(60);
   add('bob', 'member_joined', 'bob joined');
   assert.ok(until(() => progress.some(m => m.startsWith('bob joined')), 2000), progress.join('\n'));
@@ -162,20 +169,28 @@ const FAST = {
   resolveMs: 100, unseatedMs: 100, pollMs: 50, settleMs: 300, settleMaxMs: 1000, roomClaudeSettleMs: 300, roomClaudeSettleMaxMs: 1000,
   leaveMs: 600, healthMs: 5000, backoffMs: 200, backoffMaxMs: 1000, errorLogMs: 60_000, stallMs: 5000,
 };
+interface TailHarness {
+  clock: FakeClock;
+  raw: string;
+  handle: ReturnType<typeof tailLib.runTail>;
+  readonly out: string;
+  advance(ms: number): void;
+  until(cond: () => boolean, ms: number): boolean;
+}
 function startTail() {
   const clock = createFake({ now: Date.now() });
-  const t = { clock, raw: '' };
+  const t = { clock, raw: '' } as TailHarness;
   t.handle = tailLib.runTail({
     clock, lookup: () => identity.resolveByPid(process.pid), timings: FAST,
     write: (s, done) => { t.raw += s; done(); }, err: () => {},
   });
   // the chat lines it sent, one per line
-  Object.defineProperty(t, 'out', { get: () => t.raw.split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(x => x.type === 'chat').flatMap(x => x.lines).map(l => l + '\n').join('') });
+  Object.defineProperty(t, 'out', { get: () => t.raw.split('\n').filter(Boolean).map(l => JSON.parse(l) as { type: string; lines: string[] }).filter(x => x.type === 'chat').flatMap(x => x.lines).map(l => l + '\n').join('') });
   t.advance = ms => clock.advance(ms);
   t.until = (cond, ms) => { for (let i = 0; i < ms && !cond(); i += 50) clock.advance(50); return cond(); };
   return t;
 }
-const sys = (kind, from, text) => R.append({ kind, text: text || `${from} ${kind}` }, { via: 'system', from, system: true });
+const sys = (kind: string, from: string, text?: string) => R.append({ kind, text: text || `${from} ${kind}` }, { via: 'system', from, system: true });
 
 test('tail (member): a join and a settled leave are chat events; a quick round trip sends nothing', () => {
   h.freshHome();

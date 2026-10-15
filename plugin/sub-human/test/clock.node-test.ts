@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import path from 'node:path';
 import * as clock from '../lib/clock.ts';
 
 test('clock: the real clock is Date.now and real timers', async () => {
@@ -18,7 +17,7 @@ test('clock: the real clock is Date.now and real timers', async () => {
 
 test('clock: fake advance fires due timers in order (due time, then creation)', () => {
   const c = clock.createFake({ now: 1000 });
-  const log = [];
+  const log: [string, number][] = [];
   c.setTimeout(() => log.push(['b', c.now()]), 50);
   c.setTimeout(() => log.push(['a', c.now()]), 10);
   c.setTimeout(() => log.push(['b2', c.now()]), 50);
@@ -37,7 +36,7 @@ test('clock: fake advance fires due timers in order (due time, then creation)', 
 
 test('clock: fake timers scheduled by a callback fire inside the same advance; clear cancels', () => {
   const c = clock.createFake();
-  const log = [];
+  const log: string[] = [];
   c.setTimeout(() => { log.push('x'); c.setTimeout(() => log.push('y'), 10); }, 10);
   const k = c.setTimeout(() => log.push('never'), 15);
   c.clearTimeout(k);
@@ -52,7 +51,7 @@ test('clock: fake timers scheduled by a callback fire inside the same advance; c
 
 test('clock: fake intervals repeat until cleared; handles accept unref/refresh and numeric ids', () => {
   const c = clock.createFake();
-  const at = [];
+  const at: number[] = [];
   const h = c.setInterval(() => at.push(c.now()), 100);
   assert.equal(h.unref(), h);
   c.advance(350);
@@ -72,7 +71,7 @@ test('clock: fake intervals repeat until cleared; handles accept unref/refresh a
 
 test('clock: fake sleep + advanceAsync drives an async polling loop without real waiting', async () => {
   const c = clock.createFake();
-  const seen = [];
+  const seen: number[] = [];
   let stop = false;
   const loop = (async () => {
     while (!stop) { seen.push(c.now()); await c.sleep(250); }

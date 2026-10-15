@@ -10,52 +10,59 @@ import * as identity from '../lib/identity.ts';
 import * as rows from '../lib/rows.ts';
 import * as hold from '../mcp/hold.ts';
 import * as seatKey from '../hooks/seat-key.ts';
+import type { JsonRpcId, Me, ProgressToken, ToolArgs, ToolResult } from '../mcp/types.ts';
+import type { Member } from '../lib/room/types.ts';
 
-const PLUGIN = path.join(import.meta.dirname, '..');
 Object.assign(process.env, {
   SUB_HUMAN_HOLD_BEAT_MS: '150', SUB_HUMAN_HOLD_POLL_MS: '20', SUB_HUMAN_HOLD_GRACE_MS: '250',
   SUB_HUMAN_HOLD_RESPAWN_MS: '60', SUB_HUMAN_HOLD_WHO_MS: '20',
 });
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-const textOf = r => r && r.content && r.content[0] && r.content[0].text;
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+// the calls under test answer with text; a missing one fails the assertion that reads it
+const textOf = (r: ToolResult | null | undefined): string => (r && r.content && r.content[0] && r.content[0].text) as string;
+
+type HoldCtx = Parameters<typeof hold.create>[0];
+/** The fake seat: only the fields hold reads (the full Me also carries session_id, pid, address). */
+type FakeMe = Pick<Me, 'code' | 'name' | 'role'>;
+interface Progress { token: ProgressToken | null | undefined; n: number; message: string }
 
 /** A room written by hand, and a fake room-server ctx for seat `self`. */
-function setup(names, self) {
+function setup(names: string[], self: string) {
   process.env.SUB_HUMAN_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-hold-'));
   const code = 'marmot-2509';
   const dir = path.join(process.env.SUB_HUMAN_HOME, 'rooms', code);
   fs.mkdirSync(dir, { recursive: true });
-  const ms = {};
+  const ms: Record<string, Partial<Member>> = {};
   for (const n of names) ms[n] = { name: n, role: n === 'claude' ? 'claude' : 'member', joined_at: new Date().toISOString() };
   const save = () => fs.writeFileSync(path.join(dir, 'members.json'), JSON.stringify(ms));
   save();
   let id = 0;
   // signed as the at-room hook signs a person's post (hooks/seat-key.ts), so it reads as theirs, not "(unverified)"
-  const add = (from, kind, extra = {}) => {
-    const e = { id: ++id, at: new Date().toISOString(), from, via: 'human', kind, text: `${kind} ${id}`, to: 'room', ...extra };
+  const add = (from: string, kind: string, extra: Record<string, unknown> = {}) => {
+    const e: Record<string, unknown> = { id: ++id, at: new Date().toISOString(), from, via: 'human', kind, text: `${kind} ${id}`, to: 'room', ...extra };
     if (e.via === 'human') { e.room = code; e.sig = crypto.sign(null, Buffer.from(JSON.stringify(e)), seatKey.ensure(code, from)).toString('base64'); }
     fs.appendFileSync(path.join(dir, 'log.jsonl'), JSON.stringify(e) + '\n');
   };
-  let me = { code, name: self, role: self === 'claude' ? 'claude' : 'member' };
-  const progress = [];
-  const cancels = new Map();
-  const ctx = {
-    identity, whoami: () => me, progress: (token, n, message) => progress.push({ token, n, message }),
-    onCancel: (rid, fn) => cancels.set(rid, fn), text: (s, isError) => ({ content: [{ type: 'text', text: s }], ...(isError ? { isError: true } : {}) }),
+  let me: FakeMe | null = { code, name: self, role: self === 'claude' ? 'claude' : 'member' };
+  const progress: Progress[] = [];
+  const cancels = new Map<JsonRpcId, (reason?: unknown) => void>();
+  const ctx: HoldCtx = {
+    identity, whoami: () => me as Me | null, progress: (token, n, message) => progress.push({ token, n, message: message as string }), // hold always sends one
+    onCancel: (rid, fn) => cancels.set(rid, fn), text: (s, isError) => ({ content: [{ type: 'text', text: s as string }], ...(isError ? { isError: true } : {}) }),
     log: () => {},
   };
   const plug = hold.create(ctx);
   let rid = 0;
-  const call = args => { const meta = { id: ++rid, progressToken: `t${rid}` }; return { id: rid, p: Promise.resolve(plug.call('hold', me, args, meta)) }; };
+  const call = (args: ToolArgs) => { const meta = { id: ++rid, progressToken: `t${rid}` }; return { id: rid, p: Promise.resolve(plug.call('hold', me as Me | null, args, meta)) }; };
   return {
-    code, dir, ms, save, add, progress, plug, call, cancel: r => cancels.get(r)(),
+    code, dir, ms, save, add, progress, plug, call, cancel: (r: JsonRpcId) => cancels.get(r)!(),
     leaveMe: () => { me = null; },
-    join: n => { ms[n] = { name: n, role: 'member', joined_at: new Date().toISOString() }; save(); },
-    leave: n => { ms[n].left_at = new Date().toISOString(); save(); },
+    join: (n: string) => { ms[n] = { name: n, role: 'member', joined_at: new Date().toISOString() }; save(); },
+    leave: (n: string) => { ms[n].left_at = new Date().toISOString(); save(); },
   };
 }
-const pending = async (p, ms = 80) => (await Promise.race([p.then(() => 'done'), sleep(ms).then(() => 'pending')])) === 'pending';
+const pending = async (p: Promise<unknown>, ms = 80) => (await Promise.race([p.then(() => 'done'), sleep(ms).then(() => 'pending')])) === 'pending';
 
 test('hold: tool definition and argument errors', async () => {
   const w = setup(['claude', 'alice'], 'claude');
@@ -63,10 +70,10 @@ test('hold: tool definition and argument errors', async () => {
   assert.equal(w.plug.call('nope', null, {}, {}), null);
   const bad = await w.call({}).p;
   assert.match(textOf(bad), /hold needs/);
-  assert.equal(bad.isError, true, 'a call without member or room is refused as an error');
+  assert.equal(bad!.isError, true, 'a call without member or room is refused as an error');
   const stop = await w.call({ member: 'zed' }).p;
   assert.match(textOf(stop), /^STOP: zed is not in room/);
-  assert.equal(stop.isError, undefined, 'a STOP is an answer for the row, not an error');
+  assert.equal(stop!.isError, undefined, 'a STOP is an answer for the row, not an error');
   assert.match(textOf(await w.call({ member: 'claude' }).p), /^STOP: that is you/);
   assert.match(textOf(await w.call({ member: '../x' }).p), /^STOP/);
   assert.match(textOf(await w.call({ room: 'otter-1111' }).p), /^STOP: you are in room marmot-2509/);
@@ -85,18 +92,18 @@ test('hold {member}: blocks with progress, streams the thread, refuses a duplica
   w.add('bob', 'say');                       // not alice's thread
   w.add('claude', 'question', { via: 'agent', to: 'alice' });
   await sleep(80);
-  assert.match(w.progress.at(-1).message, /^claude \(to alice\): question 3/);
+  assert.match(w.progress.at(-1)!.message, /^claude \(to alice\): question 3/);
   assert.ok(!w.progress.some(p => /^bob/.test(p.message)), 'other threads are not streamed');
   const n = w.progress.length;
   await sleep(250);
   assert.ok(w.progress.length > n, 'heartbeat keeps the idle timeout away');
   assert.match(textOf(await w.call({ member: 'alice' }).p), /^STOP: duplicate row: alice's row is already open/, 'one row per member');
-  assert.deepEqual(rows.readHolds(w.code, 'claude').members, ['alice']);
+  assert.deepEqual(rows.readHolds(w.code, 'claude')!.members, ['alice']);
   w.add('alice', 'member_left', { via: 'system' });
   w.leave('alice');
   assert.ok(await pending(a.p, 200), 'the row outlives the leave (it reads "left")');
-  assert.match(w.progress.at(-1).message, /^alice left/);
-  assert.deepEqual(rows.readHolds(w.code, 'claude').members, ['alice']);
+  assert.match(w.progress.at(-1)!.message, /^alice left/);
+  assert.deepEqual(rows.readHolds(w.code, 'claude')!.members, ['alice']);
 });
 
 test('hold: duplicate holds are refused for both kinds; the first one stays', async () => {
@@ -123,7 +130,7 @@ test('hold: leave + rejoin keeps one hold per member, announces nothing, and spa
   assert.ok(await pending(r1.p, 500), 'no JOINED for a member whose row is still held (well past the grace period)');
   assert.ok(await pending(b1.p), 'the same row is live again');
   assert.match(textOf(await w.call({ member: 'bob' }).p), /^STOP: duplicate row/);
-  assert.deepEqual(rows.readHolds(w.code, 'alice').members, ['bob']);
+  assert.deepEqual(rows.readHolds(w.code, 'alice')!.members, ['bob']);
   // A row spawned for a member who already left still holds (reads "left") instead of finishing at once.
   w.leave('bob');
   w.cancel(b1.id);
@@ -212,25 +219,25 @@ test('hold {room}: after JOINED the room row still reads as running while it re-
   try {
     // seat "erin": earlier tests' hold servers still tick for "alice" and share SUB_HUMAN_HOME lookups
     const w = setup(['claude', 'erin', 'bob'], 'erin');
-    const me = { code: w.code, name: 'erin', role: 'member' };
+    const me = { code: w.code, name: 'erin', role: 'member' } as Me; // the fields joinNote and rowsNeeded read
     const r1 = w.call({ room: w.code });
     w.call({ member: 'bob' });
     await sleep(40);
-    assert.equal(rows.readHolds(w.code, 'erin').room, true);
+    assert.equal(rows.readHolds(w.code, 'erin')!.room, true);
     w.join('carol');
     assert.equal(textOf(await r1.p), 'JOINED carol');
-    const h = rows.readHolds(w.code, 'erin');
+    const h = rows.readHolds(w.code, 'erin')!;
     assert.equal(h.room, true, 'between the return and the re-call');
     assert.match(rows.joinNote(me, 'carol'), /your room row adds carol by itself; make NO Agent call/);
     assert.deepEqual(rows.rowsNeeded(w.code, me, { held: h }), []);
     w.call({ member: 'carol' });
     await sleep(350);
-    assert.equal(rows.readHolds(w.code, 'erin').room, false, 'never re-called within the gap: not running');
+    assert.equal(rows.readHolds(w.code, 'erin')!.room, false, 'never re-called within the gap: not running');
     const r2 = w.call({ room: w.code });
     assert.ok(await pending(r2.p, 40));
-    assert.equal(rows.readHolds(w.code, 'erin').room, true);
+    assert.equal(rows.readHolds(w.code, 'erin')!.room, true);
     w.cancel(r2.id);
-    assert.equal(rows.readHolds(w.code, 'erin').room, false, 'an Esc-killed room row is not running');
+    assert.equal(rows.readHolds(w.code, 'erin')!.room, false, 'an Esc-killed room row is not running');
   } finally { delete process.env.SUB_HUMAN_HOLD_ROOM_GAP_MS; }
 });
 
@@ -256,7 +263,7 @@ test('hold: a post marked provisional (old logs) shows at once, like any other',
   assert.ok(await pending(a.p));
   w.add('alice', 'say', { provisional: true }); // #1
   await sleep(100);
-  assert.match(w.progress.at(-1).message, /^alice: say 1/);
+  assert.match(w.progress.at(-1)!.message, /^alice: say 1/);
   w.leaveMe();
   await a.p;
 });

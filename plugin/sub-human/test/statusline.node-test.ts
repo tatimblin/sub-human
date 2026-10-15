@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import * as identity from '../lib/identity.ts';
 import * as rows from '../lib/rows.ts';
 import * as segments from '../statusline/segments.ts';
@@ -16,12 +16,12 @@ for (const k of Object.keys(process.env)) if (k.startsWith('CLAUDE')) delete pro
 const { agentStatusline } = index;
 
 const H = 'b7ca39aa0011';
-const sleepers = [];
+const sleepers: ChildProcess[] = [];
 process.on('exit', () => { for (const p of sleepers) { try { p.kill('SIGKILL'); } catch { /* gone */ } } });
 const sleeper = () => { const p = spawn('sleep', ['600'], { stdio: 'ignore' }); p.unref(); sleepers.push(p); return p.pid; };
 
 /** A fresh home and room; seats join through identity (session ids sid-<name>); the log is written by hand. */
-function world(names, { selfName } = {}) {
+function world(names: string[], { selfName }: { selfName?: string } = {}) {
   process.env.SUB_HUMAN_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-sl-'));
   const code = identity.newCode();
   for (const name of names) {
@@ -30,21 +30,22 @@ function world(names, { selfName } = {}) {
   }
   const file = path.join(identity.roomDir(code), 'log.jsonl');
   let id = 0;
-  const add = (from, kind, extra = {}) => {
+  const add = (from: string, kind: string, extra: Record<string, unknown> = {}) => {
     id++;
     fs.appendFileSync(file, JSON.stringify({ id, at: new Date().toISOString(), from, via: 'human', kind, text: 'x', to: 'room', ...extra }) + '\n');
     return id;
   };
-  return { code, add, sys: (kind, extra) => add('claude', kind, { via: 'system', ...extra }) };
+  return { code, add, sys: (kind: string, extra?: Record<string, unknown>) => add('claude', kind, { via: 'system', ...extra }) };
 }
 const env = { NO_COLOR: '1' };
 
-const prop = approvers => ({ via: 'human', hash: H, approvers, path: `plans/${H}.md` });
+const prop = (approvers: string[]) => ({ via: 'human', hash: H, approvers, path: `plans/${H}.md` });
 
 test('statusline: only the agent-panel rows remain (no main status line)', () => {
   assert.deepEqual(Object.keys(index), ['agentStatusline']);
-  assert.equal(segments.statusline, undefined);
-  assert.equal(segments.state, undefined);
+  // the removed exports, looked up by name to prove they are gone
+  assert.equal((segments as Record<string, unknown>).statusline, undefined);
+  assert.equal((segments as Record<string, unknown>).state, undefined);
 });
 
 test('agentStatusline: claude rows by the row map, else by description; other tasks untouched; killed rows', () => {

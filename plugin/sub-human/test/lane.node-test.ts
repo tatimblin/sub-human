@@ -2,28 +2,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import path from 'node:path';
 import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
 import * as identity from '../lib/identity.ts';
+import type { Room } from '../lib/room.ts';
+import type { FsRoomStore } from '../lib/room/store.ts';
+import type { Entry, EntryInput, Lane, LaneViewer } from '../lib/room/types.ts';
 
-let R = null; // the current test's room
+let R!: Room; // the current test's room (set by fresh())
 function fresh() {
   h.freshHome();
   R = room.open(h.newRoom());
   return R.code;
 }
 /** A line as an older version wrote it (a kind or field append() no longer takes), straight into the log. */
-function legacy(fields) {
+function legacy(fields: Record<string, unknown>): Entry {
   const e = { id: R.lastId() + 1, at: new Date().toISOString(), ...fields };
-  fs.appendFileSync(R.store.logFile, JSON.stringify(e) + '\n');
-  return e;
+  fs.appendFileSync((R.store as FsRoomStore).logFile, JSON.stringify(e) + '\n');
+  return e as Entry;
 }
 const H1 = 'aaaaaaaaaaaa', H2 = 'bbbbbbbbbbbb';
-const sys = (kind, extra = {}, from = 'claude') => R.append({ kind, text: `${kind}`, ...extra }, { via: 'system', from, system: true });
-const human = (from, kind, extra = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'human', from });
-const agent = (from, kind, extra = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'agent', from });
-const ALICE = { name: 'alice', role: 'member' }, ROOM_CLAUDE = { name: 'claude', role: 'claude' };
+const sys = (kind: string, extra: Partial<EntryInput> = {}, from = 'claude') => R.append({ kind, text: `${kind}`, ...extra }, { via: 'system', from, system: true });
+const human = (from: string, kind: string, extra: Partial<EntryInput> = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'human', from });
+const agent = (from: string, kind: string, extra: Partial<EntryInput> = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'agent', from });
+const ALICE: LaneViewer = { name: 'alice', role: 'member' }, ROOM_CLAUDE: LaneViewer = { name: 'claude', role: 'claude' };
 
 // The logged #22 from vole-8126 (B #2): the 240-char line cut exactly the clause that mattered.
 const E22 = {
@@ -89,14 +91,14 @@ test('digest: human entries carry full text up to 2,000 chars, then the cut mark
   assert.ok(!/…"/.test(d));
 });
 
-const prop = (from, hash, approvers, via = 'agent') => R.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via, from });
-const answer = (from, kind, hash, extra = {}) => R.append({ kind, proposal_hash: hash, ...extra }, { via: 'human', from });
-const taskReq = (from, op, extra = {}) => R.append({ kind: 'task_req', op, ...extra }, { via: 'agent', from });
-const task = (extra = {}) => R.append({ kind: 'task', op: 'update', ...extra }, { via: 'system', from: 'claude', system: true });
+const prop = (from: string, hash: string, approvers: string[], via: 'agent' | 'human' = 'agent') => R.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via, from });
+const answer = (from: string, kind: string, hash: string, extra: Partial<EntryInput> = {}) => R.append({ kind, proposal_hash: hash, ...extra }, { via: 'human', from });
+const taskReq = (from: string, op: string, extra: Partial<EntryInput> = {}) => R.append({ kind: 'task_req', op, ...extra }, { via: 'agent', from });
+const task = (extra: Partial<EntryInput> = {}) => R.append({ kind: 'task', op: 'update', ...extra }, { via: 'system', from: 'claude', system: true });
 
 test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)', () => {
   fresh();
-  const L = (e, es) => room.lane(ALICE, e, es);
+  const L = (e: Entry, es?: readonly Entry[]) => room.lane(ALICE, e, es);
   const own = human('alice', 'say');                                       // #1
   const words = human('bob', 'say');                                       // #2 others' human words
   const chatter = agent('bob', 'status');                                  // #3
@@ -118,7 +120,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
   const claimed = task({ task_id: 3, owner: 'alice', status: 'in_progress', req: 18 }); // #19 I asked: pull
   const bobsTask = task({ task_id: 4, owner: 'bob', status: 'in_progress', req: 16 }); // #20 pull
   const ownAnswer = answer('alice', 'objection', H1, { text: 'clamp, do not 400' }); // #21 own: none
-  const want = [
+  const want: [Entry, Lane][] = [
     [own, 'none'], [words, 'push'], [chatter, 'pull'], [toMe, 'push'], [at, 'push'], [atOther, 'pull'], [roomClaudeRoom, 'pull'],
     [p1, 'push'], [pBob, 'pull'], [join, 'pull'], [sign, 'pull'], [dec2, 'push'], [dec1, 'push'], [ownJoin, 'none'],
     [retract, 'none'], [req, 'pull'], [assigned, 'push'], [myReq, 'none'], [claimed, 'push'], [bobsTask, 'pull'], [ownAnswer, 'none'],
@@ -148,7 +150,7 @@ test('lane: member push/pull/none table (vole-8126 shapes + proposals + tasks)',
 
 test('lane: room Claude push is to=claude (a leading @claude tag), objections on its proposals, task_req; the rest (decisions too) is pull', () => {
   fresh();
-  const L = (e, es) => room.lane(ROOM_CLAUDE, e, es);
+  const L = (e: Entry, es?: readonly Entry[]) => room.lane(ROOM_CLAUDE, e, es);
   const mine = prop('claude', H1, ['alice', 'bob']);                        // #1 own: none
   const theirs = prop('bob', H2, ['alice'], 'human');                      // #2 pull
   const words = human('alice', 'say');                                     // #3 human chatter: pull
@@ -163,7 +165,7 @@ test('lane: room Claude push is to=claude (a leading @claude tag), objections on
   const req = taskReq('bob', 'add', { subject: 'parser tests' });          // #12 push
   const t = task({ task_id: 2, owner: 'bob', status: 'pending', req: 12 }); // #13 its own mirror: pull
   const ownPost = agent('claude', 'say');                                    // #14 none
-  const want = [[mine, 'none'], [theirs, 'pull'], [words, 'pull'], [atRoomClaude, 'push'], [toRoomClaude, 'push'], [chatter, 'pull'],
+  const want: [Entry, Lane][] = [[mine, 'none'], [theirs, 'pull'], [words, 'pull'], [atRoomClaude, 'push'], [toRoomClaude, 'push'], [chatter, 'pull'],
     [left, 'pull'], [joined, 'pull'], [s1, 'pull'], [o2, 'push'], [dec, 'pull'], [req, 'push'], [t, 'pull'], [ownPost, 'none']];
   for (const [e, l] of want) assert.equal(L(e), l, `#${e.id} without entries`);
   const all = R.readAll();
@@ -177,7 +179,7 @@ test('lane: room Claude push is to=claude (a leading @claude tag), objections on
 
 test('lane: only to=claude wakes the room Claude; "@claude" inside a post\'s text (an "@room @claude …" post, a mid-text mention) does not', () => {
   fresh();
-  const L = e => room.lane(ROOM_CLAUDE, e);
+  const L = (e: Entry) => room.lane(ROOM_CLAUDE, e);
   const roomTagged = human('bob', 'say', { text: '@claude let us plan cursor paging' }); // what "@room @claude let us plan…" posts
   const mid = human('bob', 'say', { text: 'ask @claude later' });                       // "@room ask @claude later"
   const agentMention = agent('alice', 'say', { text: '@claude can you plan this?' });
@@ -200,7 +202,7 @@ test('lane: a 0.4.x log names the room Claude "orch": its own entries are its ow
   assert.match(room.line(own), /^#\d+ claude\[agent\] say "planned"$/);
   assert.equal(room.who(own), 'claude', 'never "orch\'s Claude"');
   assert.deepEqual(room.chatLines(own, { viewer: 'alice' }), ['claude: planned']);
-  assert.equal(R.readAll().find(e => e.id === own.id).from, 'orch', 'the log itself is never rewritten');
+  assert.equal(R.readAll().find(e => e.id === own.id)!.from, 'orch', 'the log itself is never rewritten');
 });
 
 test('lane (P3 wakes): every person\'s words reach every member (a group chat), card answers and quiet decisions', () => {
@@ -211,7 +213,7 @@ test('lane (P3 wakes): every person\'s words reach every member (a group chat), 
   const atBob = human('carol', 'say', { text: '@claude @bob take a look' });
   const plain = human('bob', 'say', { text: 'alice, can you take the parser tests?' });
   const email = human('bob', 'say', { text: 'mail ops@claude.example' });
-  for (const [e, l] of [[atRoomClaude, 'push'], [atBob, 'push'], [plain, 'push'], [email, 'push']]) assert.equal(room.lane(ALICE, e), l, `#${e.id}`);
+  for (const [e, l] of [[atRoomClaude, 'push'], [atBob, 'push'], [plain, 'push'], [email, 'push']] as [Entry, Lane][]) assert.equal(room.lane(ALICE, e), l, `#${e.id}`);
   assert.equal(room.lane(BOB, atBob), 'push', 'bob is named');
   assert.equal(room.lane(ROOM_CLAUDE, atRoomClaude), 'push');
   // Round 1: alice agrees, bob objects last; round 2: alice agrees, bob agrees last. The room's Claude proposed.
@@ -224,7 +226,7 @@ test('lane (P3 wakes): every person\'s words reach every member (a group chat), 
   const s2 = answer('bob', 'signoff', H2);
   const d2 = sys('decision', { proposal_hash: H2, text: 'agreed: alice, bob', refs: [a2.id, s2.id] }, 'room');
   const all = R.readAll();
-  const L = (me, e) => room.lane(me, e, all);
+  const L = (me: LaneViewer, e: Entry) => room.lane(me, e, all);
   assert.deepEqual([a1, o1, a2, s2].map(e => L(ALICE, e)), ['none', 'pull', 'none', 'pull'], 'answers never wake another approver');
   assert.deepEqual([a1, o1, a2, s2].map(e => L(ROOM_CLAUDE, e)), ['pull', 'push', 'pull', 'pull'], 'only an objection wakes the proposer');
   assert.equal(L(ALICE, d1), 'pull', 'an objected decision: nothing for a non-proposer');

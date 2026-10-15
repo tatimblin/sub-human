@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import * as h from './helpers.ts';
@@ -15,21 +15,43 @@ import * as store from '../lib/room/store.ts';
 import * as links from '../lib/room/links.ts';
 import * as linkMod from '../lib/remote/link.ts';
 import { roomsDir } from '../lib/home.ts';
-let R = null; // the room under test
+import type { Room } from '../lib/room.ts';
+import type { FsRoomStore } from '../lib/room/store.ts';
+import type { EntryInput, Via } from '../lib/room/types.ts';
+let R!: Room; // the room under test
 
 // tail looks its seat up by CLAUDE_PID when it has no session id (no ps walk).
 const FAST = { CLAUDE_PID: String(process.pid), SUB_HUMAN_RESOLVE_MS: '100', SUB_HUMAN_UNSEATED_MS: '100', SUB_HUMAN_POLL_MS: '50', SUB_HUMAN_SETTLE_MS: '300', SUB_HUMAN_SETTLE_MAX_MS: '1000', SUB_HUMAN_LEAVE_MS: '600' };
-const children = new Set();
+const children = new Set<ChildProcess>();
 test.afterEach(() => { for (const c of children) c.kill(); children.clear(); });
 
-function startTail(env = {}) {
+/** One line of the tail's stdout: a chat batch (its lines) or a wake (its text). */
+interface TailEvent { type: string; lines: string[]; text: string }
+interface TailRun {
+  child: ChildProcessWithoutNullStreams;
+  out: string;
+  exited: Promise<number | null>;
+  events(): TailEvent[];
+  of(type: string): TailEvent[];
+  lines(): string[];
+  text(): string;
+  chat(): string[];
+  forClaude(): string[];
+  entries(): string[];
+  ids(): number[];
+  batches(): number;
+  until(needle: string, ms?: number): Promise<void>;
+  stop(): Promise<void>;
+}
+
+function startTail(env: Record<string, string> = {}): TailRun {
   const child = spawn(h.BIN, ['tail', '/plugin/root', '/project/dir'], { env: h.childEnv({ ...FAST, ...env }) });
   children.add(child);
-  const t = { child, out: '', exited: new Promise(r => child.on('exit', code => r(code))) };
+  const t = { child, out: '', exited: new Promise<number | null>(r => child.on('exit', code => r(code))) } as TailRun;
   child.stdout.on('data', d => { t.out += d; });
   // one JSON event per line; lines(): what the batches show (each chat event's lines, then its wake's)
   t.events = () => t.out.split('\n').filter(Boolean).map(l => JSON.parse(l));
-  t.of = type => t.events().filter(x => x.type === type);
+  t.of = (type: string) => t.events().filter(x => x.type === type);
   t.lines = () => t.events().flatMap(x => (x.type === 'chat' ? x.lines : x.type === 'wake' ? x.text.split('\n') : []));
   t.text = () => t.lines().map(l => l + '\n').join('');
   t.chat = () => t.lines().filter(l => !l.startsWith('(for Claude)'));
@@ -37,19 +59,18 @@ function startTail(env = {}) {
   t.entries = () => t.lines().filter(l => /^#\d+ /.test(l));
   t.ids = () => t.entries().map(l => Number(l.split(' ')[0].slice(1)));
   t.batches = () => t.lines().filter(l => l.startsWith('room now: ')).length;
-  t.until = async (needle, ms = 5000) => {
+  t.until = async (needle: string, ms = 5000) => {
     await h.until(() => t.text().includes(needle), ms);
     assert.ok(t.text().includes(needle), `tail never printed ${needle}; got:\n${t.out}`);
   };
   t.stop = async () => { child.kill(); await t.exited; children.delete(child); };
   return t;
 }
-const cli = (args, env = {}) => spawnSync(h.BIN, args, { env: h.childEnv(env), encoding: 'utf8' });
-const say = (from, text, extra = {}, via = 'human') => R.append({ kind: 'say', text, ...extra }, { via, from });
-const sys = (kind, from, extra = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true });
+const cli = (args: string[], env: Record<string, string> = {}) => spawnSync(h.BIN, args, { env: h.childEnv(env), encoding: 'utf8' });
+const say = (from: string, text: string, extra: Partial<EntryInput> = {}, via: Via = 'human') => R.append({ kind: 'say', text, ...extra }, { via, from });
+const sys = (kind: string, from: string, extra: Partial<EntryInput> = {}) => R.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true });
 
-const H1 = 'abcdef012345', H2 = 'bbbbbbbbbbbb';
-const prop = (from, hash, approvers) => R.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via: 'agent', from });
+const prop = (from: string, hash: string, approvers: string[]) => R.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via: 'agent', from });
 
 // The tail's batching, settle, leave hold, cursor restart, room switch and error recovery are tested
 // in-process on a fake clock (test/tail.node-test.ts). These are the real-time smoke tests of the binary.
@@ -211,12 +232,12 @@ test('cli tasks: the room list from lib/tasks.ts list(code), plain and --json', 
     { id: '3', subject: 'docs', status: 'pending', owner: null, blockedBy: ['2'] },
     { id: '1', subject: `room ${code} open`, status: 'in_progress', owner: 'room', metadata: { _internal: true } },
   ];
-  fs.writeFileSync(path.join(R.store.dir, 'tasks.json'), JSON.stringify(list));
+  fs.writeFileSync(path.join(R.store.dir!, 'tasks.json'), JSON.stringify(list));
   r = cli(['tasks']);
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, '#2  in_progress  bob  parser tests\n#3  pending      -    docs  (blocked by #2)\n');
   r = cli(['tasks', '--json', '--room', code]);
-  assert.deepEqual(JSON.parse(r.stdout).map(t => t.id), ['2', '3']);
+  assert.deepEqual(JSON.parse(r.stdout).map((t: { id: string }) => t.id), ['2', '3']);
   assert.equal(cli(['tasks', '--room', 'nope-0000']).status, 1);
 });
 
@@ -240,13 +261,13 @@ test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the ro
   assert.equal(r.status, 0, r.stderr);
   const heads = r.stdout.split('\n').filter(l => /^#\d+ /.test(l));
   assert.deepEqual(heads.map(l => Number(l.split(' ')[0].slice(1))), [1, 2, 3, 6, 9, 10, 11], r.stdout);
-  const whoOf = id => heads.find(l => l.startsWith(`#${id} `)).split(/\s{2,}/)[1];
+  const whoOf = (id: number) => heads.find(l => l.startsWith(`#${id} `))!.split(/\s{2,}/)[1];
   assert.equal(whoOf(1), 'room');
   assert.equal(whoOf(2), 'bob');
   assert.equal(whoOf(3), "bob's Claude");
   assert.equal(whoOf(6), 'claude');
   assert.equal(whoOf(9), 'bob');
-  assert.match(heads.find(l => l.startsWith('#9 ')), /objection {2}proposal abcdef$/);
+  assert.match(heads.find(l => l.startsWith('#9 '))!, /objection {2}proposal abcdef$/);
   assert.ok(r.stdout.includes('    too broad\n      keep it small\n'), 'text verbatim, indented');
   assert.ok(!r.stdout.includes('\x1b['), 'no color when not a terminal');
   // the room Claude's own thread labels it claude
@@ -258,7 +279,7 @@ test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the ro
 });
 
 test('cli link CODE --forget: refused on a room hosted here, while the daemon runs, and for a live link without --force; then the copy is archived and the link removed', () => {
-  const stopped = lastError => ({ state: 'stopped', since: new Date().toISOString(), attempt: 0, lastError, rttMs: null, queued: 0, detail: 'stopped', at: new Date().toISOString() });
+  const stopped = (lastError: string) => ({ state: 'stopped', since: new Date().toISOString(), attempt: 0, lastError, rttMs: null, queued: 0, detail: 'stopped', at: new Date().toISOString() });
   h.freshHome();
   const hosted = h.newRoom();
   store.createRoom(hosted); // newCode() may have made it already
@@ -270,11 +291,11 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
 
   const code = h.newRoom();
   links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
-  const s = store.open(code);
+  const s = store.open(code) as FsRoomStore; // a room on disk: the fs store, with its logFile
   assert.equal(s.isHost, false);
-  fs.mkdirSync(s.dir, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(s.dir!, { recursive: true, mode: 0o700 });
   fs.writeFileSync(s.logFile, '{"id":1}\n');
-  fs.writeFileSync(path.join(s.dir, 'outbox.json'), '[]');
+  fs.writeFileSync(path.join(s.dir!, 'outbox.json'), '[]');
   // the daemon runs: its document `link` names a live pid
   s.kv.set('link', { pid: process.pid, state: 'online', since: new Date().toISOString() });
   const r1 = cli(['link', code, '--forget']);
@@ -302,7 +323,7 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   assert.ok(!fs.existsSync(path.join(archive, path.basename(s.logFile))));
   assert.equal(links.has(code), false);
   assert.equal(fs.existsSync(links.dirOf(code)), false);
-  assert.equal(fs.existsSync(s.dir), false);
+  assert.equal(fs.existsSync(s.dir!), false);
   store.forget(code); // this process's cache (the CLI dropped its own)
   assert.equal(store.roomExists(code), false);
   assert.deepEqual(store.listRooms(), [hosted], 'no listing sees the archive, and nothing opens it as a room hosted here');
@@ -319,7 +340,7 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   // a seatless stop forgets too; --force any link, here one with no copy on disk
   const seatless = h.newRoom();
   links.set(seatless, { code: seatless, transport: { kind: 'pipe', home: '/h' }, token: 't' });
-  fs.mkdirSync(store.open(seatless).dir, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(store.open(seatless).dir!, { recursive: true, mode: 0o700 });
   links.writeState(seatless, stopped(linkMod.NO_SEAT_REASON));
   assert.equal(cli(['link', seatless, '--forget']).status, 0);
   assert.equal(links.has(seatless), false);
