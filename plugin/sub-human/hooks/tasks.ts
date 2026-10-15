@@ -20,7 +20,7 @@
  */
 
 import fs from 'node:fs';
-import { readInput, resolveSeat } from './common.ts';
+import { resolveSeat } from './common.ts';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as tasks from '../lib/tasks.ts';
@@ -198,10 +198,22 @@ function gateHook(code: string, input: TasksIn) {
 
 let input: TasksIn = {};
 let code: string | null = null;
+let raw = '';
+try { raw = fs.readFileSync(0, 'utf8'); } catch { /* no stdin */ }
 try {
-  input = readInput();
+  input = raw.trim() ? (JSON.parse(raw) || {}) : {};
   code = roomClaudeRoom(input);
-} catch { code = null; }
+} catch (err) {
+  // the gate fails closed: an input it cannot read for a TaskCompleted blocks (exit 2), as a failure inside it does
+  code = null;
+  if (/"TaskCompleted"/.test(raw)) {
+    process.stderr.write(`sub-human task gate failed closed: ${err instanceof Error ? err.message : err}\n`);
+    process.exitCode = 2;
+  } else {
+    process.stderr.write(`sub-human tasks: ${err instanceof Error ? err.message : err}\n`);
+    process.exitCode = 1;
+  }
+}
 if (code) {
   try {
     if (input.hook_event_name === 'TaskCompleted') gateHook(code, input);

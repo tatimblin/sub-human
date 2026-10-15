@@ -29,6 +29,21 @@ function world() {
   return w;
 }
 
+test('gate: stdin it cannot read for a TaskCompleted fails closed (exit 2); for a mirror event it is exit 1', () => {
+  const w = world();
+  const { spawnSync } = require('node:child_process');
+  const { baseEnv } = require('./helpers.js');
+  const run = raw => spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', 'tasks.ts')], {
+    input: raw, encoding: 'utf8', cwd: w.cwd, env: baseEnv({ SUB_HUMAN_HOME: w.home, HOME: w.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, CLAUDE_PID: String(w.pid.claude) }),
+  });
+  const gate = run('{"hook_event_name":"TaskCompleted","agent_type":"sub-human:room-claude","task_id":"2" oops');
+  assert.equal(gate.status, 2, gate.stderr);
+  assert.match(gate.stderr, /failed closed/);
+  const mirror = run('{"hook_event_name":"PostToolUse","tool_name":"TaskUpdate" oops');
+  assert.equal(mirror.status, 1, mirror.stderr);
+  assert.equal(run('').status, 0, 'empty stdin: nothing to do');
+});
+
 test('mirror: creates and updates land in tasks.json with a task entry; the room task is left out', () => {
   const w = world();
   let r = w.run(create(1, `room ${w.code} open`));
