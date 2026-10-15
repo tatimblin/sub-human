@@ -259,6 +259,8 @@ export interface LinkRecord {
   seats: string[];
   created_at: string;
   login?: true;
+  /** the seats are fixed: the one name the host's card let in, or a handoff's pre-bound seats; join refuses another */
+  bound?: true;
 }
 /** The host document remote/links. */
 export type Links = Record<string, LinkRecord>;

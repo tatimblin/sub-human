@@ -216,7 +216,9 @@ const OPS: OpHandlers = {
     if (role !== 'member') throw invalid('a link joins members only');
     if (!envelope.parseKey(pubkey)) throw invalid('join needs the seat\'s public key (Ed25519 SPKI PEM)');
     auth.checkSeatProof(proof, { room: s.store.code, name, pubkey });
-    // s.link: run() lets no op but hello in without it. A login link is the host account's own: its seat is that person's
+    // s.link: run() lets no op but hello in without it. A bound link (the card let one name in; a handoff's seats) joins
+    // its own seats only, before any seat is taken. A login link is the host account's own: its seat is that person's
+    if (!auth.mayJoinAs(s.link, name)) throw authError(auth.notBound(s.link!, name));
     const account = s.link!.login ? machineId() : undefined;
     const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey, ...(account ? { account } : {}) });
     if (!r.ok) throw new RoomError(r.code || 'INVALID', r.error);
