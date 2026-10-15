@@ -28,17 +28,21 @@ import type { Identity } from '../lib/identity.ts';
 import type { TranscriptEntry } from '../lib/cc.ts';
 
 function parse(prompt: string): string | null {
-  if (prompt.startsWith('@room ')) return prompt.slice('@room '.length);
-  if (prompt === '@room') return '';
-  return null;
+  return tagged(prompt, /^@room(?=\s|$)/);
 }
 
 /** "@claude TEXT" -> TEXT (posted to=claude: a wake for the room's Claude); anything else null. A copy of
  * mod/core/prompt.ts parseClaude (test/mod-core.test.js asserts they agree). */
 function parseClaude(prompt: string): string | null {
-  if (prompt.startsWith('@claude ')) return prompt.slice('@claude '.length);
-  if (prompt === '@claude') return '';
-  return null;
+  return tagged(prompt, /^@claude(?=\s|$)/);
+}
+
+/** The text after a leading tag: the tag, then one whitespace character (a space, or the newline Ctrl+J
+ * puts after it), dropped, or nothing. A copy of mod/core/prompt.ts tagged. */
+function tagged(prompt: string, tag: RegExp): string | null {
+  const m = tag.exec(prompt);
+  if (!m) return null;
+  return prompt.slice(m[0].length).replace(/^\s/, '');
 }
 
 /** A person typing through Remote Control sees no block line there: a refusal also goes out as systemMessage, which

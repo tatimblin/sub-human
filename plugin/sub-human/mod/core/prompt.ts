@@ -21,9 +21,15 @@ export const TYPED_ORIGINS: readonly string[] = Object.freeze(['composer', 'sdk'
  * asserts they agree). */
 export function parse(prompt: unknown): string | null {
   if (typeof prompt !== 'string') return null;
-  if (prompt.startsWith('@room ')) return prompt.slice('@room '.length);
-  if (prompt === '@room') return '';
-  return null;
+  return tagged(prompt, /^@room(?=\s|$)/);
+}
+
+/** The text after a leading tag: the tag, then one whitespace character (a space, or the newline Ctrl+J
+ * puts after it), dropped, or nothing. A copy of hooks/at-room.ts tagged. */
+function tagged(prompt: string, tag: RegExp): string | null {
+  const m = tag.exec(prompt);
+  if (!m) return null;
+  return prompt.slice(m[0].length).replace(/^\s/, '');
 }
 
 export const isAtRoom = (text: unknown) => parse(text) !== null;
@@ -32,9 +38,7 @@ export const isAtRoom = (text: unknown) => parse(text) !== null;
  * asserts they agree). In a room it posts like @room and wakes the room's Claude; outside one it is a plain prompt. */
 export function parseClaude(prompt: unknown): string | null {
   if (typeof prompt !== 'string') return null;
-  if (prompt.startsWith('@claude ')) return prompt.slice('@claude '.length);
-  if (prompt === '@claude') return '';
-  return null;
+  return tagged(prompt, /^@claude(?=\s|$)/);
 }
 
 export const isAtClaude = (text: unknown) => parseClaude(text) !== null;
