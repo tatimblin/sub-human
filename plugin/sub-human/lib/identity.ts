@@ -18,6 +18,9 @@
  *                                        started) leaves the index. The start times of every live local pid it judges come from one
  *                                        ps call (lib/lock.ts pidStarts), not one per seat. No room Claude seat is needed: the first member opens it. A room
  *                                        where only the room's Claude is left is not open (see orphanRooms).
+ *   closedForGood(members) -> bool       every person's seat left (one whose session crashed has not) and the room's
+ *                                        Claude stopped or never started: only a join reopens it (lib/gc.ts sets aside
+ *                                        only such a room)
  *   orphanRooms() -> [code]              rooms not closing whose room Claude is not stopped but which have no live member
  *                                        (join sweeps these through roomClaude.watchdog)
  *   roomOpen(code) -> bool               not closing and has any live seat, the room's Claude included (a resume may
@@ -586,7 +589,7 @@ function writePresence(code: string, name: string, state: string, detail?: strin
 
 export {
   NAME_RE, CODE_RE, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
-  roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, orphanRooms, roomOpen, roomClosing, address,
+  roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, closedForGood, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
   leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, localSeats, adoptLocalSeats,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, pruneSessionIndexes, writePresence,

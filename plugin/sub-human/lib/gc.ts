@@ -1,17 +1,21 @@
 /**
  * plugin/sub-human/lib/gc.ts: what a home stops keeping, so it does not grow with every room and session ever made.
  * It never touches the log of a room that may be open: an open room's segments and snapshot are the store's
- * (lib/room/log-io.ts), and a room is deleted here only whole, once closed and untouched for ROOM_GC_MS.
+ * (lib/room/log-io.ts). A room goes only whole, once closed for good and untouched for ROOM_GC_MS, and first only
+ * aside (renamed, not deleted): the folder set aside is deleted after a further ROOM_GC_MS.
  *
  *   sweep({now?, budgetMs?, force?, keep?}) -> {rooms, aside, sessions} | null   at most once per GC_EVERY_MS per
  *       home (<home>/gc.json; null: not due; force: now), stopping once it has run budgetMs (GC_BUDGET_MS); the next
  *       sweep goes on from the room it stopped at. keep: a room code never deleted (the one a join is about to take).
- *       rooms     a room directory on this machine, host's or mirror's, is deleted with its seat keys
- *                 (lib/room/store.ts removeRoom) when no link record names it (a mirror's link goes with `sub-human
- *                 link --forget`), it is not closing, no seat in it is alive (a person's, or the room's Claude's: a
- *                 job not stopped counts as alive), and nothing in its directory changed for ROOM_GC_MS
- *                 (SUB_HUMAN_ROOM_GC_MS; 30 days)
- *       aside     the folders `link --forget` set aside (rooms/CODE.forgotten-TIME), after the same time
+ *       rooms     a room directory on this machine, host's or mirror's, is set aside with its seat keys
+ *                 (lib/room/store.ts setAsideRoom: rooms/CODE.gc-TIME, keys/CODE.gc-TIME) when it is closed for good
+ *                 (lib/identity.ts closedForGood: every person's seat has left, a seat whose session crashed has not;
+ *                 the room's Claude stopped or never started), no link record names it (this machine's, lib/room/
+ *                 links.ts: a mirror's link goes with `sub-human link --forget`; nor the host's records of the
+ *                 machines linked to it, the room's remote/links document), and nothing in its directory changed
+ *                 for ROOM_GC_MS (SUB_HUMAN_ROOM_GC_MS; 30 days)
+ *       aside     the folders set aside (`link --forget`'s rooms/CODE.forgotten-TIME, GC's rooms/CODE.gc-TIME with
+ *                 keys/CODE.gc-TIME), deleted ROOM_GC_MS after they were set aside
  *       sessions  lib/identity.ts pruneSessionIndexes (by-sid and by-pid records of ended sessions, SESSION_INDEX_TTL_MS)
  *   sweepRows(code, {now?}) -> n   the room's agent -> row maps of sessions that ended without clearing them
  *       (lib/rows.ts pruneRowMaps, ROWS_TTL_MS)
@@ -26,7 +30,6 @@ import * as identity from './identity.ts';
 import { home } from './home.ts';
 import { readJson, writeJsonAtomic } from './io.ts';
 import { GC_BUDGET_MS, GC_EVERY_MS, ROOM_GC_MS, envMs } from './config.ts';
-import type { Members } from './room/types.ts';
 
 const require = createRequire(import.meta.url);
 // lib/rows.ts loads the consent fold and the tasks: only a join that sweeps a room's rows needs it
@@ -36,14 +39,12 @@ const rows = (): typeof import('./rows.ts') => require('./rows.ts');
 interface GcState { at: string; after?: string }
 const stateFile = (): string => path.join(home(), 'gc.json');
 
-/** No seat alive and no room Claude that may still run (lib/identity.ts roomClaudeActive's rule). */
-function idle(ms: Members): boolean {
-  for (const m of Object.values(ms)) {
-    if (!m) continue;
-    if (identity.seatAlive(m)) return false;
-    if (m.role === 'claude' && !m.stopped_at && !m.left_at && !!m.job) return false;
-  }
-  return !(ms.claude && ms.claude.closing);
+/** The host's records of the machines linked to this room (lib/remote/host-links.ts LINKS_KEY; not imported: GC
+ *  runs at every join and should not load the remote code). */
+const HOST_LINKS_KEY = 'remote/links';
+function hostLinked(code: string): boolean {
+  const recs = store.open(code).kv.get<Record<string, unknown>>(HOST_LINKS_KEY);
+  return !!recs && typeof recs === 'object' && Object.keys(recs).length > 0;
 }
 
 function sweep({ now = Date.now(), budgetMs = GC_BUDGET_MS, force = false, keep = null }: { now?: number; budgetMs?: number; force?: boolean; keep?: string | null } = {}): { rooms: string[]; aside: string[]; sessions: number } | null {
@@ -65,8 +66,9 @@ function sweep({ now = Date.now(), budgetMs = GC_BUDGET_MS, force = false, keep 
     try {
       if (code === keep || links.has(code)) continue;
       if (now - store.lastChange(code) < ttl) continue;
-      if (!idle(identity.readMembers(code))) continue;
-      store.removeRoom(code);
+      if (!identity.closedForGood(identity.readMembers(code))) continue;
+      if (hostLinked(code)) continue;
+      store.setAsideRoom(code, now);
       out.rooms.push(code);
     } catch { /* unreadable now: the next sweep looks again */ }
   }
