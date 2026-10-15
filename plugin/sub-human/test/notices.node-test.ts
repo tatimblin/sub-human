@@ -22,6 +22,10 @@ import type { Room } from '../lib/room.ts';
 import type { FakeClock } from '../lib/clock.ts';
 import type { Entry, Member, Members } from '../lib/room/types.ts';
 import type { Me, ToolResult } from '../mcp/types.ts';
+import * as hostLinksForSeats from '../lib/remote/host-links.ts';
+/** A remote seat's link on the host (lib/remote/server.ts binds every remote seat to one; the sweep lets a seat no
+ * link names leave). */
+const linkFor = (code: string, name: string) => hostLinksForSeats.create(room.open(code).store, { id: hostLinksForSeats.newLinkId(), machine: 'far-away', seats: [name] });
 let R!: Room; // the room under test (set per test)
 /** The join / leave notices as these tests use them: render.ts's, and the shown ones in the seat's session document. */
 const notices = {
@@ -58,6 +62,7 @@ test('notices.joinLeave: a seat whose lease lapsed (lib/seats.ts sweep) and that
   h.freshHome(t);
   const code = h.newRoom();
   t.mock.method(seats.seam, 'startDetached', () => 1);
+  if (!Object.values(hostLinksForSeats.links(room.open(code).store)).some(k => k.seats.includes('bob'))) linkFor(code, 'bob');
   assert.equal(seats.enter({ code, name: 'bob', machine: 'far-away', pubkey: seatKey.publicPem(code, 'bob') }).ok, true);
   const s = room.open(code).store;
   s.members.update(ms => { ms.bob.seen_at = new Date(Date.now() - config.SEAT_LEASE_MS - config.LEAVE_SETTLE_MS - 1000).toISOString(); return ms; });

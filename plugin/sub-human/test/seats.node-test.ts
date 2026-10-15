@@ -19,6 +19,10 @@ import * as seatKey from '../hooks/seat-key.ts';
 import { MemoryRoomStore } from './support/memory-store.ts';
 import { RoomError } from '../lib/room/validate.ts';
 import type { Members } from '../lib/room/types.ts';
+import * as hostLinksForSeats from '../lib/remote/host-links.ts';
+/** A remote seat's link on the host (lib/remote/server.ts binds every remote seat to one; the sweep lets a seat no
+ * link names leave). */
+const linkFor = (code: string, name: string) => hostLinksForSeats.create(store.open(code), { id: hostLinksForSeats.newLinkId(), machine: 'far-away', seats: [name] });
 
 const H = 'abcdef012345';
 
@@ -67,6 +71,7 @@ test('seats: the room\'s Claude runs in the room\'s working directory (the first
   seats.enter({ code, name: 'carol', pid: process.pid, session_id: 'sc', cwd: '/elsewhere', pubkey: seatKey.publicPem(code, 'carol') });
   identity.updateRoomClaude(code, () => ({ stopped_at: new Date().toISOString() })); // the room's Claude is gone: the next join starts one
   // the remote server's enter: a seat of another machine, no cwd, in a process whose cwd is not the project
+  if (!Object.values(hostLinksForSeats.links(store.open(code))).some(k => k.seats.includes('bob'))) linkFor(code, 'bob');
   assert.equal(seats.enter({ code, name: 'bob', machine: 'far-away', pubkey: seatKey.publicPem(code, 'bob') }).ok, true);
   assert.notEqual(process.cwd(), '/work/project');
   assert.deepEqual(started, ['/work/project', '/work/project']);
@@ -155,6 +160,7 @@ test('members.publicView: other machines never see a seat\'s pid, pid_start, ses
 
 /** A seat on another machine (no pid: it lives by its lease) whose lease ran out ago ms before now. */
 function farSeat(code: string, mem: MemoryRoomStore, name: string, ago = config.SEAT_LEASE_MS + config.LEAVE_SETTLE_MS + 1000) {
+  if (!Object.values(hostLinksForSeats.links(store.open(code))).some(k => k.seats.includes(name))) linkFor(code, name);
   assert.equal(seats.enter({ code, name, machine: 'far-away', pubkey: seatKey.publicPem(code, name) }).ok, true);
   mem.members.update(ms => { ms[name].seen_at = new Date(Date.now() - ago).toISOString(); return ms; });
 }
@@ -187,6 +193,7 @@ test('seats.back: a lapsed seat is logged rejoined once; a seat that never lapse
 test('seats.enter: a seat whose earlier record lapsed unswept is logged left before rejoined', t => {
   const { code, mem } = memoryRoom(t, { isHost: true });
   farSeat(code, mem, 'bob', config.SEAT_LEASE_MS + 1000); // past its lease, not yet past the settle
+  if (!Object.values(hostLinksForSeats.links(store.open(code))).some(k => k.seats.includes('bob'))) linkFor(code, 'bob');
   assert.equal(seats.enter({ code, name: 'bob', machine: 'far-away', pubkey: seatKey.publicPem(code, 'bob') }).rejoin, true);
   assert.deepEqual(moves(mem), ['bob joined', 'bob left (connection lost)', 'bob rejoined']);
   assert.equal(mem.members.read().bob.lapsed_at, undefined, 'the join wrote a fresh record');
