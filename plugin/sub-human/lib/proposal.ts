@@ -60,8 +60,9 @@
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
  * A review's note waiting for the person's Send (the room document members/NAME/confirm): readConfirm, writeConfirm,
  *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question,
- *   confirmCall(hash) -> how the model opens that card, showConfirm(name, hash) -> the line telling it to open the card
- *   now, before anything else (hooks/consent.ts reoffer and lib/tail.ts remindersText say the same); repeatsNote(c,
+ *   confirmCall(hash) -> how the model opens that card, showConfirm(name, hash, interrupted?) -> the line telling it to
+ *   open the card now, before anything else, and after an Esc that the Esc was no answer (hooks/consent.ts reoffer and
+ *   lib/tail.ts remindersText say the same); repeatsNote(c,
  *   text) -> bool: a post carries that note (case, spacing and quote marks aside; a note under 12 chars only when
  *   equal), so posting it would relay it twice.
  */
@@ -292,8 +293,14 @@ function picked(me: Me, ps: Proposal[]): Proposal | null {
 const openCall = (hash: string) => `call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`;
 /** How the model shows the person the confirm card for a waiting note (hooks/consent.ts builds it). */
 const confirmCall = (hash: string) => `call AskUserQuestion with the question "objection ${hash}"`;
-/** The model is to show that card now: one wording for every line that says so on the same prompt, so none is softer. */
-const showConfirm = (name: string, hash: string) => `Show ${name} the card now, before you answer or do anything else: ${confirmCall(hash)}, so ${name} can send or discard the note.`;
+/**
+ * The model is to show that card now: one wording for every line that says so on the same prompt, so none is softer.
+ * interrupted: the card was shown and closed with no answer (Confirm.asked, no Post: the person pressed Esc), which
+ * the model sees as the person declining; it is said to be neither, and the card due once more.
+ */
+const showConfirm = (name: string, hash: string, interrupted = false) => interrupted
+  ? `${name} pressed Esc on its card: an interruption, not a choice, though it reads as declined. The note is neither sent nor discarded. Show ${name} the card once more, now, before you answer or do anything else: ${confirmCall(hash)}, so ${name} can Send or Discard it.`
+  : `Show ${name} the card now, before you answer or do anything else: ${confirmCall(hash)}, so ${name} can send or discard the note.`;
 /** A proposal as a list item: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room to read it from). */
 function listed(code: string | undefined, p: Pick<Proposal, 'hash' | 'entry'>): string {
   const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';

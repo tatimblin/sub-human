@@ -358,11 +358,12 @@ function remindersText(me: Identity, rm: Pick<TailRoom, 'readView'>, { proposal 
   const p = proposal.picked(me, ps)!; // ps is not empty
   // A note of the person's waits on it (hooks/consent.ts): reopening the review would drop the note, so point at the
   // confirm card instead. Until its no-answer close was told or the card offered again (again), the prompt may also
-  // carry consent's reoffer: this line then says the same (showConfirm), never a softer "if asked" beside it.
+  // carry consent's reoffer: this line then says the same (showConfirm), never a softer "if asked" beside it. A card
+  // shown (asked) and not yet offered again was interrupted (an answer or a told close sets again).
   const cf = proposal.readConfirm(me);
   if (cf && cf.hash === p.hash) {
     return cf.again ? `proposal ${p.hash}: ${me.name}'s note waits to be sent or discarded; if ${me.name} asks, ${proposal.confirmCall(p.hash)}. Don't reopen the review (that drops the note).`
-      : `proposal ${p.hash}: ${me.name}'s note is not recorded yet. ${proposal.showConfirm(me.name, p.hash)} Don't reopen the review (that drops the note).`;
+      : `proposal ${p.hash}: ${me.name}'s note is not recorded yet. ${proposal.showConfirm(me.name, p.hash, !!cf.asked)} Don't reopen the review (that drops the note).`;
   }
   const entryOf = (hash: string) => es.find(e => e.kind === 'proposal' && e.hash === hash); // the title when no plan is stored
   return proposal.reminder(p, me.name, { code: me.code, others: ps.filter(x => x !== p).map(x => ({ ...x, entry: x.entry || entryOf(x.hash) })) });

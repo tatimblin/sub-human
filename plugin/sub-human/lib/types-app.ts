@@ -91,6 +91,9 @@ export interface Confirm {
   nudged?: number;
   /** when the card's no-answer close was told, or an interrupted card offered again (hooks/consent.ts reoffer): once */
   again?: number;
+  /** when reoffer offered an interrupted card again: a Stop with no card asked since nudges once more (renudged) */
+  reoffered?: number;
+  renudged?: number;
 }
 
 // ---------- lib/handoff.ts ----------
