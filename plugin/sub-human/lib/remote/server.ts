@@ -9,26 +9,30 @@
  *       protocol range and plugin version (default protocol.PROTO, PLUGIN_VERSION; tests fake older and newer peers)
  *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
  *       (lib/remote/invites.ts); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
- *       SSH forced command the host's admit writes): only that link's token, or the invite reserved for it,
+ *       SSH forced command the host's admit writes): only that link's token, or the admission reserved for it,
  *       is accepted; any other is AUTH (and such an invite stays unused). login (`serve --stdio CODE --link ID --login`,
  *       run over the host account's own ssh login, never by a forced command: their lines fix the arguments, and the
  *       CLI refuses --login under SSH_ORIGINAL_COMMAND): the connection is trusted as a process of the account owner,
  *       so a hello {login: true} with no token records link ID (hostLinks.loginLink) and returns its token, with a room
  *       line; without login such a hello is AUTH. store is the room's store as store.open(code)
  *       gives it in this process: seats and decide reach the room through that too. Ops:
- *         hello      version: the highest common one of the two ranges (protocol.negotiate), else PROTOCOL with
- *                    protocol.skewMessage (which side must update); verifyToken, or redeemInvite with the hello's
- *                    pin for an sh2 invite (the token is returned once; a wrong PIN, the last try and the link are
- *                    each a room line from the room, so the host sees them); neither: answered, but the session
- *                    stays unauthenticated. The reply says closed: true once the room's Claude was stopped (the
- *                    room closed), for sub-human doctor on a link that stopped before it
+ *         hello      version: the highest common one of the two proto ranges (protocol.negotiate; a hello with none, or
+ *                    no overlap, is PROTOCOL SKEW with protocol.skewMessage: which side must update); verifyToken, or
+ *                    redeemInvite with the hello's pin for a promote's invite (the token is returned once; a wrong
+ *                    PIN, the last try and the link are each a room line from the room, so the host sees them), or
+ *                    loginLink; neither: answered, but the session stays unauthenticated. A new link's machine id is
+ *                    the one the hello's machine_key proves (lib/remote/machine-key.ts), else the reported one
+ *                    (lib/remote/host-links.ts). The reply says the link's machine id, and closed: true once the
+ *                    room's Claude was stopped (the room closed), for sub-human doctor on a link that stopped before it
  *         join       {name, role: 'member', pubkey, proof}: hostLinks.checkSeatProof, then lib/seats.ts enter() with
- *                    machine = the link's (no pid: the seat lives by its lease), and over a login link account =
- *                    this machine's id (the host account's own seat: one person with the host's seats, lib/proposal.ts
- *                    create); a key other than the pinned one is AUTH; bindSeat
+ *                    machine = the link's (no pid: the seat lives by its lease), and over a login link, when the room's
+ *                    option login-same-person is on (lib/room/options.ts), account = this machine's id in the room (the
+ *                    host account's own seat: one person with the host's seats, lib/proposal.ts create); a key other
+ *                    than the pinned one is AUTH; bindSeat
  *         leave      seats.exit(), own seat only
  *         beat       store.members.beat(name, {presence?}), own seat only; then seats.back (a lapsed seat rejoined)
- *         append     own `from` only; store.place() (validate, rate, replay, verify against the pinned key); a
+ *         append     own `from` only; the seat's quota (append.human / append.agent, counted in the log);
+ *                    store.place() (validate, rate, replay, verify against the pinned key); a
  *                    signoff or objection is followed by lib/proposal.ts decide() (host only, idempotent). A system
  *                    kind from a link is AUTH (the host writes those)
  *         subscribe  {after, hash, snapshot?}: hash12 of the host's line `after` must equal hash (store.lineHash),
@@ -39,10 +43,13 @@
  *                    'doc' for members (lib/room/members.ts publicView), presence/NAME and tasks when they
  *                    change (all three at the start), 'end' {reason: 'closed'} when the room's Claude is stopped
  *                    or {reason: 'FORK'} when the host log is reset, or {reason: 'AUTH', message} when the
- *                    host revoked the link (revoked(), on the serve's SIGTERM). Polls every FOLLOW_POLL_MS until the
- *                    transport closes
+ *                    host revoked the link (revoked(), on the serve's SIGTERM). It follows the room's watch
+ *                    (store.watch, lib/room/watch.ts: fs.watch and a FOLLOW_SLOW_MS poll; a store without one is polled
+ *                    every FOLLOW_POLL_MS), reads a changed document alone, and sends a replay REPLAY_BATCH lines per
+ *                    turn, waiting for the transport to drain (transport.writable), until the transport closes
  *         blob.get   store.blobs.get(ref), base64;  blob.put  {name, bytes}: name must be plans/<hash12>.md of
- *                    the bytes (content-addressed, at most PROPOSAL_FILE_MAX), written once
+ *                    the bytes (content-addressed, at most PROPOSAL_FILE_MAX), written once; a new one counts against
+ *                    the link's blob.put quota
  *         handoff.accept  {id, accept, locator, invites}: lib/handoff.ts serverAccept (the ask's target seat of this
  *                    link, its signed acceptance; host_changed appended); after the reply, afterMoved (the room's Claude job
  *                    stopped, this machine a mirror of the new host)
@@ -54,12 +61,15 @@
  *       link's machine's invite to the new host) and end {reason: 'moved'}. A pending ask for one of the link's
  *       seats is sent as the private 'handoff' event.
  *         ping       {pong: the host's ms}: the link daemon's heartbeat (lib/remote/link.ts). A session whose hello
- *                    carried caps {ping: true} and that then sends no frame for silentMs (LINK_SILENT_MS,
- *                    the server's LINK_SILENT_MS) is closed: the peer is gone (a half-open link after a sleep)
- *       After a write (join, leave, beat, append) every stream of the session is polled before the reply goes out,
+ *                    carried caps {ping: true} and that then sends no frame for silentMs (LINK_SILENT_MS) is closed:
+ *                    the peer is gone (a half-open link after a sleep)
+ *       Quotas (lib/config.ts LINK_QUOTAS, lib/remote/quota.ts): before each op, its count: hello per connection (and
+ *       per link once it has one), join and leave (seat), subscribe and a new blob.put per link in the host document
+ *       remote/quota, beat, blob.get, ping and handoff.* per connection; over one is RATE QUOTA.
+ *       After a write (join, leave, beat, append) every stream of the session is ticked before the reply goes out,
  *       so a link that subscribed holds the write's lines and documents when its reply arrives (read-your-writes).
- *       An op that throws a RoomError (a protocol CODES code) answers {error: {code, message}} with the same
- *       code; any other error is INVALID with the message and is logged. A frame that is not a request is
+ *       An op that throws a RoomError (a protocol CODES code) answers {error: {code, message, reason?}} with the same
+ *       code and typed reason (lib/reasons.ts); any other error is INVALID with the message and is logged. A frame that is not a request is
  *       answered PROTOCOL. close() ends the streams and the transport.
  */
 
