@@ -12,9 +12,13 @@ import * as roomClaude from '../../lib/room-claude.ts';
 import * as common from '../../hooks/context.ts';
 import * as membersLib from '../../lib/room/members.ts';
 import * as linkSocket from '../../lib/remote/link-socket.ts';
+import * as inviteSecret from '../../lib/remote/invite-secret.ts';
 import type { HookJson, HookRun } from './helpers.ts';
 import type { Identity } from '../../lib/identity.ts';
 import type { Member, Role } from '../../lib/room/types.ts';
+
+/** An invite line's SECRET word (lib/remote/invite-secret.ts): well formed, naming no host this test has. */
+const SECRET = inviteSecret.encode(Buffer.alloc(16, 1), Buffer.alloc(8, 2));
 
 /** One run of the stub claude, as it logs it. */
 interface StubCall { argv: string[]; env: Record<string, string>; cwd: string }
@@ -150,12 +154,12 @@ test('SECURITY: a PIN-shaped prompt the hook throws on is still answered hidden 
   const w = new World({ alice: 'act' });
   w.pid.me = process.ppid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000016';
   fs.writeFileSync(path.join(w.home, 'links'), 'not a directory'); // the link registry cannot be written: the join flow throws
-  const r = w.hook('join', expand('join me@far vole-1234 4829'), { as: 'me' });
+  const r = w.hook('join', expand(`join me@far vole-1234 ${SECRET}`), { as: 'me' });
   assert.equal(r.code, 0, r.stderr);
   assert.equal(r.json!.decision, 'block');
   assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, 'the typed prompt stays out of the conversation');
   assert.match(r.json!.reason!, /^sub-human: ✗ /, 'a refusal with the failure, not a bare exit 1');
-  assert.ok(!r.json!.reason!.includes('4829') && !r.json!.reason!.includes('me@far'), 'nothing typed is echoed');
+  assert.ok(!r.json!.reason!.includes(SECRET) && !r.json!.reason!.includes('me@far'), 'nothing typed is echoed');
 });
 
 test('budget: a join whose host never answers (ssh hangs) still replies, hidden, inside the hook\'s 10 s; the link keeps trying', t => {
@@ -174,13 +178,13 @@ test('budget: a join whose host never answers (ssh hangs) still replies, hidden,
   });
   const t0 = Date.now();
   // the real store (not test:thread-store's preload): the link daemon this join starts must be a production one
-  const r = w.hook('join', expand(`join me@devbox ${code} 4829`), { as: 'me', env: { PATH: `${bin}:${process.env.PATH}`, SUB_HUMAN_TEST_THREAD_STORE: undefined } });
+  const r = w.hook('join', expand(`join me@devbox ${code} ${SECRET}`), { as: 'me', env: { PATH: `${bin}:${process.env.PATH}`, SUB_HUMAN_TEST_THREAD_STORE: undefined } });
   const ms = Date.now() - t0;
   assert.equal(r.code, 0, r.stderr);
   assert.ok(ms < 9000, `the join took ${ms} ms of its 10 s`);
-  assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, 'hidden: the prompt held a PIN');
+  assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, 'hidden: the prompt held a SECRET');
   assert.match(r.json!.reason!, new RegExp(`still connecting to room ${code}`), r.json!.reason);
-  assert.ok(!r.json!.reason!.includes('4829'), 'the PIN is not echoed');
+  assert.ok(!r.json!.reason!.includes(SECRET), 'the SECRET is not echoed');
   assert.equal(w.lib(() => linkSocket.status(code)).running, true, 'the link daemon keeps trying after the hook');
 });
 
@@ -433,18 +437,20 @@ test('failures block with a reason and log nothing', () => {
   assert.match(r.json!.reason!, /is closing/);
 });
 
-test('/sub-human invite: an invite line for my room, shown to me only (a hidden block), a new PIN each call; no NAME in it', () => {
+test('/sub-human invite: an invite line for my room, shown to me only (a hidden block), its PIN apart, both new each call; no NAME in it', () => {
   const w = new World({ claude: 'sleep', alice: 'sleep' });
   w.pid.me = process.pid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000011';
   assert.match(w.hook('join', expand('invite --pipe'), { as: 'me' }).json!.reason!, /join a room first/);
   const shown = w.hook('join', expand('invite --pipe'), { as: 'alice' }).json!;
   assert.equal(shown.decision, 'block');
   assert.deepEqual([shown.systemMessage, shown.hookSpecificOutput], [undefined, { hookEventName: 'UserPromptExpansion', suppressOriginalPrompt: true }]);
-  const m = new RegExp(`\n  /sub-human join pipe:${w.home.replace(/[.]/g, '\\.')} ${w.code} (\\d{4})\n`).exec(shown.reason!);
+  const m = new RegExp(`\n  /sub-human join pipe:${w.home.replace(/[.]/g, '\\.')} ${w.code} ([0-9a-z]{39})\n`).exec(shown.reason!);
   assert.ok(m, shown.reason);
-  assert.match(shown.reason!, /The 4-digit PIN is the whole secret/);
+  const pin = /tell them its PIN apart from the line \(say it, or send it another way\): (\d{4})\n/.exec(shown.reason!);
+  assert.ok(pin, shown.reason);
+  assert.match(shown.reason!, /the line alone gets nobody in, nor does the PIN/);
   assert.match(shown.reason!, /\/sub-human invite --cancel [0-9a-f]{12}/);
-  assert.notEqual(new RegExp(`${w.code} (\\d{4})`).exec(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json!.reason!)![1], m[1], 'a new one each time');
+  assert.notEqual(new RegExp(`${w.code} ([0-9a-z]{39})`).exec(w.hook('join', expand('invite --pipe'), { as: 'alice' }).json!.reason!)![1], m[1], 'a new one each time');
   for (const [args, re] of [['invite --frobnicate', /usage: \/sub-human invite/], ['invite --pipe --web', /pick one/], ['invite --ssh NAME@box', /placeholder/], ['invite --ssh USER@box', /placeholder/]] as const) {
     const r = w.hook('join', expand(args), { as: 'alice' }).json!;
     assert.match(r.reason!, re, args);
@@ -464,24 +470,32 @@ test('SECURITY: every join, invite and admit prompt (and any with a word of digi
   const w = new World({ claude: 'sleep', alice: 'act' });
   w.pid.me = process.ppid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000012';
   const hiddenReply = (r: HookRun) => r.json && r.json.decision === 'block' && r.json.hookSpecificOutput && r.json.hookSpecificOutput.suppressOriginalPrompt === true;
+  const S = SECRET;
   const cases: [string, RegExp][] = [
-    ['join dev vole-1234 48291', /the PIN is the 4 digits/], // 5 digits
-    ['join dev vole-1234 482', /the PIN is the 4 digits/],
-    ['join dev vole-1234 4829123', /the PIN is the 4 digits/], // 7 digits
-    ['join dev vole-1234 4829 --home /h', /--home goes with a join over your own ssh login/],
-    ['join dev vole-1234 4829 --frob', /"--frob" isn't a join option/],
-    ['join dev vole-1234 4829 extra', /usage: \/sub-human join/],
-    ['join https://box/sub-human/vole-1234 48291', /the PIN is the 4 digits/],
-    ['join https://box/sub-human/vole-1234', /needs the PIN/],
-    ['join https://box/sub-human/vole-1234 4829 --via j', /--via and --home go with an ssh address/],
-    ['join https://box/x/4829 4829', /isn't a join address.*Paste the whole line the host sent you/],
-    ['join YOU@box vole-1234 4829', /placeholder/],
+    ['join dev vole-1234 48291', /the line's SECRET \(its last long word\) did not come through whole/], // not a SECRET
+    ['join dev vole-1234 482', /did not come through whole/],
+    ['join dev vole-1234 4829', /that invite line comes from an older sub-human on the host/], // a 0.5.0-beta.15 line
+    [`join dev vole-1234 ${S} 4829`, /type the line without the PIN: the host's machine asks for the PIN once it has answered/],
+    [`join dev vole-1234 ${S.slice(0, 30)}`, /did not come through whole/],
+    [`join dev vole-1234 ${S} --home rel`, /--home "rel" isn't a plain absolute path/],
+    [`join dev vole-1234 ${S} --frob`, /"--frob" isn't a join option/],
+    [`join dev vole-1234 ${S} extra x`, /usage: \/sub-human join/],
+    ['join https://box/sub-human/vole-1234 48291', /did not come through whole/],
+    ['join https://box/sub-human/vole-1234', /needs the SECRET/],
+    [`join https://box/sub-human/vole-1234 ${S} 4829`, /type the line without the PIN/],
+    [`join https://box/sub-human/vole-1234 ${S} --via j`, /--via and --home go with an ssh address/],
+    [`join https://box/x/4829 ${S}`, /isn't a join address.*Paste the whole line the host sent you/],
+    [`join YOU@box vole-1234 ${S}`, /placeholder/],
     ['join dev 4829', /"4829" isn't a room/],
     ['join dev', /which room/],
-    ['join 4829', /which room/],
-    ['join pipe:/nowhere vole-1234 4829 --as b@d', /"b@d" isn't a name/],
+    ['join 4829', /no invite here is waiting for a PIN: type the invite line first/],
+    ['join 4829 --as bob', /the PIN goes alone/],
+    ['join 48291', /a PIN is 4 digits/],
+    [`join pipe:/nowhere vole-1234 ${S} --as b@d`, /"b@d" isn't a name/],
     ['join dev vole-1234 --as help', /reserved/],
-    ['dev vole-1234 4829', /usage/], // "join" left out
+    [`dev vole-1234 ${S}`, /usage/], // "join" left out
+    [`bob ${S}`, /that looks like an invite line's SECRET/],
+    [S, /that looks like an invite line's SECRET/],
     ['invite 4829', /join a room first/],
     ['admit 4829', /join a room first/],
     ['admit', /join a room first|waiting|hosted on another machine/],
@@ -493,11 +507,12 @@ test('SECURITY: every join, invite and admit prompt (and any with a word of digi
     assert.match(r.json!.reason!, re, args);
     assert.equal(r.json!.systemMessage, undefined, `${args}: nothing for Remote Control to carry off`);
   }
-  // a mistyped PIN never lands anywhere the model reads, nor in the reply
-  for (const pin of ['48291', '4829123']) assert.ok(!w.hook('join', expand(`join dev vole-1234 ${pin}`), { as: 'me' }).json!.reason!.includes(pin));
+  // a mistyped PIN or SECRET never lands anywhere the model reads, nor in the reply
+  for (const word of ['48291', '4829123', S.slice(0, 30)]) assert.ok(!w.hook('join', expand(`join dev vole-1234 ${word}`), { as: 'me' }).json!.reason!.includes(word));
+  for (const word of ['48291', '4829']) assert.ok(!w.hook('join', expand(`join ${word}`), { as: 'me' }).json!.reason!.includes(word));
   assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
   // without the hooks module's lease, a join is still hidden
-  const nl = w.hook('join', expand('join dev vole-1234 4829'), { as: 'me', modLease: false });
+  const nl = w.hook('join', expand(`join dev vole-1234 ${S}`), { as: 'me', modLease: false });
   assert.ok(hiddenReply(nl), nl.stdout);
 });
 
@@ -694,11 +709,12 @@ test('SECURITY through the module: an invite and anything a PIN may be typed in 
   const w = new World({ claude: 'sleep', alice: 'sleep' });
   const inv = viaModule(w, 'alice', 'invite --pipe').json!.subHuman!;
   assert.equal(inv.shareable, false);
-  assert.match(inv.say!, new RegExp(`/sub-human join pipe:\\S+ ${w.code} \\d{4}`));
-  for (const args of ['join dev vole-1234 48291', 'join dev vole-1234 4829 --frob', `x ${w.code} 4829`, 'admit']) {
+  assert.match(inv.say!, new RegExp(`/sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}`));
+  assert.match(inv.say!, /apart from the line \(say it, or send it another way\): \d{4}/);
+  for (const args of ['join dev vole-1234 48291', `join dev vole-1234 ${SECRET} --frob`, `x ${w.code} 4829`, `x ${SECRET}`, 'join 4829', 'admit']) {
     const r = viaModule(w, 'me', args).json!.subHuman!;
     assert.equal(r.shareable, false, args);
-    assert.ok(!/48291/.test(r.say!), args);
+    assert.ok(!/48291/.test(r.say!) && !r.say!.includes(SECRET), args);
   }
   // a payload that says "command.run" without this session's nonce is no module: classic, which needs CLAUDE_PID
   const forged = viaModule(w, 'eve', 'help', { nonce: 'cd'.repeat(16), leaseNonce: 'ab'.repeat(16) }).json!;
@@ -764,18 +780,18 @@ test('a word of digits is no name: /sub-human 4829 says it looks like a PIN, hid
   for (const args of ['4829', 'join otter-1234 --as 4829']) {
     const r = w.hook('join', expand(args), { as: 'me' });
     assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, args);
-    assert.match(r.json!.reason!, /"4829" looks like a PIN, not a name: an invite's whole line is \/sub-human join HOST ROOM PIN/, args);
+    assert.match(r.json!.reason!, /"4829" looks like a PIN, not a name: a PIN goes in as \/sub-human join PIN once an invite line asks for it/, args);
   }
   assert.equal(fs.existsSync(path.join(w.home, 'rooms')) && fs.readdirSync(path.join(w.home, 'rooms')).length, false, 'no room opened');
 });
 
-test('an invite line without its PIN: a second sub-human folder has no login path, so it says the PIN is missing', () => {
+test('an invite line without its SECRET: a second sub-human folder has no login path, so it says the SECRET is missing', () => {
   const w = new World({ alice: 'act' });
   w.pid.me = process.ppid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000020';
   for (const dest of ['pipe:/some/home', '/some/home']) {
     const r = w.hook('join', expand(`join ${dest} vole-1234 --as bob`), { as: 'me' });
     assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, dest);
-    assert.match(r.json!.reason!, new RegExp(`that looks like an invite line without its PIN: /sub-human join ${dest} vole-1234 PIN`), dest);
+    assert.match(r.json!.reason!, new RegExp(`that looks like an invite line without its SECRET: /sub-human join ${dest} vole-1234 SECRET`), dest);
   }
   assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
 });

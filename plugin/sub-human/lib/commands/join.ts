@@ -28,6 +28,7 @@ import * as invites from '../remote/invites.ts';
 import * as inviteSecret from '../remote/invite-secret.ts';
 import * as joining from '../remote/joining.ts';
 import { parse } from '../cli/args.ts';
+import { SECRET_WORD } from '../../mod/core/command.ts';
 import { createRequire } from 'node:module';
 import { HELP_HINT, USAGE, refused, say } from './answer.ts';
 import type { Answer, Ctx, Verb } from './types.ts';
@@ -98,6 +99,8 @@ export const named: Verb = (args, ctx) => {
     return seat({ name, code: args[0], isDefault: true }, ctx);
   }
   const [name, code] = args;
+  // a SECRET-shaped word is never echoed, nor taken for a name or a room: it belongs in an invite line
+  if (args.some(a => SECRET_WORD.test(a))) return refused(`that looks like an invite line's SECRET: the whole line goes in as /sub-human join HOST ROOM SECRET. ${USAGE}`);
   if (PIN_WORD.test(name)) return refused(NOT_A_NAME(name));
   if (!identity.NAME_RE.test(name)) return refused(`"${name}" isn't a command or a name. ${USAGE}`);
   if (identity.RESERVED.includes(name.toLowerCase())) return refused(`"${name}" is reserved; pick another name. ${USAGE}`);

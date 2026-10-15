@@ -73,7 +73,8 @@ test('commands: leave, kick, admit, invite and handoff', t => {
   const inv = run(w, 'invite --pipe', { seat: 'alice' });
   assert.equal(inv.kind, 'secret');
   assert.equal((inv as { refused?: boolean }).refused, false, 'an invite is no refusal');
-  assert.match(text(inv), new RegExp(`/sub-human join pipe:\\S+ ${w.code} \\d{4}`));
+  assert.match(text(inv), new RegExp(`/sub-human join pipe:\\S+ ${w.code} [0-9a-z]{39}\n`));
+  assert.match(text(inv), /its PIN apart from the line \(say it, or send it another way\): \d{4}\n/);
   assert.match(text(run(w, 'invite --pipe --web', { seat: 'alice' })), /pick one way at a time/);
   assert.match(text(run(w, 'admit zz', { seat: 'alice' })), /usage: \/sub-human admit/);
   assert.match(text(run(w, 'handoff')), /join a room first/);
@@ -95,7 +96,7 @@ test('commands: NAME [ROOM], ROOM, join ROOM and the bare command take a seat; a
   assert.match(text(as('b@d')), /"b@d" isn't a command or a name/);
   assert.match(text(as('bob otter')), /"otter" isn't a room/);
   assert.match(text(as('a b c')), /^usage: \/sub-human \[NAME\]/);
-  assert.deepEqual(as('4829'), { kind: 'secret', text: '"4829" looks like a PIN, not a name: an invite\'s whole line is /sub-human join HOST ROOM PIN', refused: true });
+  assert.deepEqual(as('4829'), { kind: 'secret', text: '"4829" looks like a PIN, not a name: a PIN goes in as /sub-human join PIN once an invite line asks for it', refused: true });
   const j = as(`join ${w.code} --as bob`);
   assert.equal(j.kind, 'joined', text(j));
   assert.match(text(j), new RegExp(`^joined ${w.code} as bob, with alice`));
