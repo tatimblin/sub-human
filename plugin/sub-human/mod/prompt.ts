@@ -17,7 +17,7 @@ import {
 } from './core/prompt.ts';
 import { shimArgv, shimEnv, toClassic, asNotice, SHIM_TIMEOUT_MS } from './core/shim.ts';
 import { reviewOpenOf, seatedOrUnsure } from './core/prefilter.ts';
-import { delivering, setRemote, queueRelay, isRelay, facts } from './deliver.ts';
+import { delivering, setRemote, queueRelay, isRelay, facts, presence } from './deliver.ts';
 import { RELAY_CONTEXT } from './core/deliver.ts';
 import { asHello, asNonce } from './core/state.ts';
 import type { ClassicHookInputs, EngineInterface, On } from 'claude-code';
@@ -32,16 +32,12 @@ const NONCE = { plugin: 'sub-human', key: 'nonce' } as const;
 const origins = originQueue();
 /** The @room receipts (stopReason) whose warning row session.append shows without "Operation stopped by hook: ". */
 const receipts = receiptBook();
-/** The last presence this module wrote or saw for presenceSeat (the seat's address and session id): 'working' skips
- * the node start. Another seat (a join, a /clear) starts over. Lost on reload: then written once. */
-let presence: string | null = null;
-let presenceSeat: string | null = null;
-
-/** presence, reset when the hello names another seat than the one it was written for. */
+/** presence.last, reset when the hello names another seat than the one it was written for (mod/deliver.ts presence:
+ * its turn.complete writes "idle" after a "working" turn). */
 function presenceOf(hello: Hello | null): string | null {
   const key = hello && hello.seat ? `${hello.seat.addr}|${hello.sid}` : null;
-  if (key !== presenceSeat) { presenceSeat = key; presence = null; }
-  return presence;
+  if (key !== presence.seat) { presence.seat = key; presence.last = null; }
+  return presence.last;
 }
 
 /** node hooks/run.ts presence for this event (Working, Notification, StopFailure), not awaited: the one writer of a
@@ -137,8 +133,8 @@ export function registerPrompt(on: On) {
       const sid = await $.session.id();
       const hello = await helloOf($);
       if (writesWorking(e.origin, hello, presenceOf(hello))) {
-        presence = 'working';
-        void writePresence($, { hook_event_name: 'Working', session_id: sid }, sid).catch(() => { presence = null; });
+        presence.last = 'working';
+        void writePresence($, { hook_event_name: 'Working', session_id: sid }, sid).catch(() => { presence.last = null; });
       }
       if (delivering(sid)) {
         // the held rows text rides once per change: on the first typed prompt after it changes, not on every prompt
@@ -159,16 +155,16 @@ export function registerPrompt(on: On) {
     facts.noteEvent(e);
     const hello = await helloOf($);
     presenceOf(hello);
-    presence = e.notification_type;
-    if (seatedOrUnsure(hello, e.session_id)) void writePresence($, e, e.session_id).catch(() => { presence = null; });
+    presence.last = e.notification_type;
+    if (seatedOrUnsure(hello, e.session_id)) void writePresence($, e, e.session_id).catch(() => { presence.last = null; });
     return next(e);
   }).catch(($, e, next) => next(e));
   on('classic.StopFailure', async ($, e, next) => {
     facts.noteEvent(e);
     const hello = await helloOf($);
     presenceOf(hello);
-    presence = 'error';
-    if (seatedOrUnsure(hello, e.session_id)) void writePresence($, e, e.session_id).catch(() => { presence = null; });
+    presence.last = 'error';
+    if (seatedOrUnsure(hello, e.session_id)) void writePresence($, e, e.session_id).catch(() => { presence.last = null; });
     return next(e);
   }).catch(($, e, next) => next(e));
 

@@ -339,6 +339,25 @@ test('session.end stops the child: nothing restarts it, and the session no longe
   expect(seen.logs).toEqual([]) // a child stopped on purpose is no delivery error
 })
 
+test('presence: a typed prompt writes "working", the end of its turn "idle" (an idle_prompt may never come); a wake\'s turn writes neither', async ($, on) => {
+  const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })] })
+  await start($)
+  await until(() => seen.spawns.length === 1)
+  await new Promise(r => setTimeout(r, 50))
+  await typed($, 'first')
+  await until(() => seen.presence.length === 1)
+  expect(seen.presence[0].hook_event_name).toBe('Working')
+  await $.turn.start({ turnId: 't1' } as any).catch(() => {})
+  await $.turn.complete({ turnId: 't1', answer: 'done' } as any).catch(() => {})
+  await until(() => seen.presence.length === 2)
+  expect(seen.presence[1].hook_event_name).toBe('TurnEnd')
+  await $.turn.start({ turnId: 't2' } as any).catch(() => {})
+  await $.turn.complete({ turnId: 't2', answer: 'done' } as any).catch(() => {})
+  await new Promise(r => setTimeout(r, 30))
+  expect(seen.presence.length).toBe(2)
+  seen.release()
+})
+
 test('a /sub-human leave stops the child: the hello says no seat, nothing restarts it', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   const hello: any = { ...OUT }

@@ -8,6 +8,8 @@
 //   Working            -> working      not a hook event: mod/prompt.ts runs this with {hook_event_name:
 //                                     "Working"} on the person's typed prompt, since the shim does not start
 //                                     node for every prompt
+//   TurnEnd            -> idle         not a hook event: mod/deliver.ts runs this at turn.complete after a
+//                                     "working" turn (idle_prompt may never come)
 // The one writer of presence: only the hooks module runs it (mod/prompt.ts: a typed prompt, a notification, a failed
 // turn), and no other hook writes it. A seat just taken or put back has none until its person types. Output: none.
 import * as identity from '../../lib/identity.ts';
@@ -29,6 +31,7 @@ export function handle(input: PresenceIn) {
   const me = whoami(input);
   if (!me) return;
   if (input.hook_event_name === 'Working') return write(me, 'working');
+  if (input.hook_event_name === 'TurnEnd') return write(me, 'idle');
   if (input.hook_event_name === 'StopFailure') {
     const e = input.error;
     const err = e && typeof e === 'object' ? (e as { type?: unknown }).type || (e as { code?: unknown }).code : e;
