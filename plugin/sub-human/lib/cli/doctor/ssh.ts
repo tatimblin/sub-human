@@ -40,8 +40,8 @@ function checkShim({ needed }: { needed: boolean }): Check {
   const stale = root && path.resolve(root) !== path.resolve(shim.pluginRoot());
   if (!problems.length) {
     return check('shim', stale ? 'warn' : 'pass', 'serve shim',
-      stale ? `runs ${tilde(root)}, not this install (${tilde(shim.pluginRoot())})` : `runs ${tilde(root)} with ${tilde(node)}`,
-      stale ? 'start Claude Code once on this machine (it refreshes it), or run ' + cli('doctor --fix') + ' in a terminal' : undefined);
+      stale ? `runs ${tilde(root)} (sub-human ${shim.versionOf(root) || '?'}), not this install (${tilde(shim.pluginRoot())}, sub-human ${shim.versionOf(shim.pluginRoot()) || '?'})` : `runs ${tilde(root)} with ${tilde(node)}`,
+      stale ? `to serve from this install, run ${cli('doctor --fix')} in a terminal (it points the shim here); a newer install takes it by itself at its next join` : undefined);
   }
   return check('shim', 'fail', 'serve shim', problems.join('; '), 'start Claude Code once on this machine (it rewrites it), or run ' + cli('doctor --fix') + ' in a terminal');
 }

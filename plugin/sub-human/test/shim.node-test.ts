@@ -72,3 +72,29 @@ test('the shim over the real plugin reaches `sub-human serve`', t => {
   assert.match(r.stderr, /no room "vole-1234"/);
 });
 
+
+test('passive: a dev root newer than the recorded one takes the pointer; an older or equal one leaves it (live: bin/current stayed on an older --plugin-dir)', t => {
+  assert.equal(shim.newer('0.5.0-beta.16', '0.5.0-beta.15'), true);
+  assert.equal(shim.newer('0.5.0-beta.15', '0.5.0-beta.16'), false);
+  assert.equal(shim.newer('0.5.0', '0.5.0-beta.16'), true, 'a release over its prereleases');
+  assert.equal(shim.newer('0.5.0-beta.16', '0.5.0'), false);
+  assert.equal(shim.newer('0.6.0-beta.1', '0.5.9'), true);
+  assert.equal(shim.newer('0.5.0-beta.15', '0.5.0-beta.15'), false);
+  assert.equal(shim.newer(null, '0.5.0'), false);
+  h.freshHome(t);
+  const mk = (v: string) => {
+    const r = h.tmpDir('sh-root-', t);
+    fs.mkdirSync(path.join(r, '.claude-plugin'), { recursive: true });
+    fs.writeFileSync(path.join(r, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'sub-human', version: v }));
+    fs.mkdirSync(path.join(r, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(r, 'scripts', 'sub-human'), '#!/bin/sh\n', { mode: 0o755 });
+    return r;
+  };
+  const old = mk('0.5.0-beta.15'), cur = mk('0.5.0-beta.16');
+  const env = { ...process.env, SUB_HUMAN_ALLOW_TMP_ROOT: '1' };
+  shim.refresh({ root: old, env, force: true });
+  assert.equal(shim.passive(cur), true, 'newer: it may write');
+  shim.refresh({ root: cur, env });
+  assert.equal(fs.readFileSync(shim.pointerPath(), 'utf8').split('\n')[0], path.resolve(cur));
+  assert.equal(shim.passive(old), false, 'the older one leaves it');
+});
