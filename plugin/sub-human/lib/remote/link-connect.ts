@@ -143,9 +143,12 @@ async function connectLink(code: string): Promise<Client> {
     if (!key || !secretMod().keyHolds(word, 'machine', key)) throw mismatch('the host\'s machine key');
   } : undefined;
   const sentPin = !!word && typeof l.pin === 'string';
-  const cred = l.token ? { token: l.token } : login ? { login: true }
+  // an invite before the login: an invite line over ssh rides the person's own login, and still goes through its PIN
+  // and the host person's card (a login link would be the account owner's, with neither)
+  const cred = l.token ? { token: l.token }
     : word ? { invite: l.invite, ...(sentPin ? { pin: l.pin } : {}), ...(l.join_as ? { as: { name: l.join_as, label: joinerLabel() } } : {}) }
-    : { invite: l.invite, ...(typeof l.pin === 'string' ? { pin: l.pin } : {}) };
+    : typeof l.invite === 'string' ? { invite: l.invite, ...(typeof l.pin === 'string' ? { pin: l.pin } : {}) }
+    : { login: true };
   const epoch = storeMod.open(code).hostState().epoch;
   // machine: this machine's id in the room (the host's, once it said one); machineKey: the proof the host derives it from
   const opts = { machine: homeMod.machineIn(code), machineKey: machineKeyMod().proof(code), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...(checkHost ? { checkHost } : {}), ...cred };
@@ -158,7 +161,7 @@ async function connectLink(code: string): Promise<Client> {
     if (word && e && keepAnswer(code, e, word, sentPin)) throw e;
     // the host refused the invite (a wrong PIN, burnt, used, expired): it and its PIN are spent here too, so the link
     // file keeps no secret in clear (a new join writes a fresh one)
-    if (!l.token && !login && e && e.code === 'AUTH') scrubRefused(code, e.message, e.reason);
+    if (!l.token && typeof l.invite === 'string' && e && e.code === 'AUTH') scrubRefused(code, e.message, e.reason);
     throw login ? await loginRefused(l, t, e, code) : await keyRefused(l, t, e);
   }
   if (c.machine && c.machine !== homeMod.machineIn(code)) homeMod.setMachineIn(code, c.machine);
