@@ -2,6 +2,21 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.0-beta.14 (2026-10-14), private beta
+
+Tested on Claude Code 2.1.296 with Node 24, on macOS.
+
+### Fixes
+- **An interrupted objection card comes back once.** A confirm card closed with Esc left the note waiting unseen. The next prompt now asks the model to show the card again, once, and says that an Esc is an interruption, not a decline. If the model still does not show it, the Stop nudges once more. The tail's reminder uses the same words, so a prompt never carries both a firm and a soft line. (#6)
+- **No objection posted twice.** The room server refuses a post that repeats a person's objection note while it waits for their Send, or after they sent it in the last 10 minutes. (#6)
+- **The show command by its full path.** No `sub-human` is on a session's PATH, so propose's reply names `<plugin root>/scripts/sub-human show HASH`. The README says the same. (#6)
+- **A replaced proposal opens its latest revision and says so.** Naming a superseded hash opens the newest revision with "proposal OLD was replaced by NEW; opening NEW".
+- **A leave keeps its reason in the chat line**, for example "connection lost", "session ended" or "removed by the host".
+- **The in-session doctor `--fix`/`--bundle` denial gives its own reason** and names the terminal command by the shim's path.
+- **A room Claude that ended without taking its seat is stopped**, and so is any stray `claude.CODE` job, so two room Claudes no longer run at once. Doctor says what a never-bound job is doing instead of saying it was refused. (#1)
+- **Doctor's fix for a seatless link covers a room closed since.** It names `link CODE --forget`, and `link CODE --forget` on an unknown code says "no room CODE on this machine". (#5)
+- **Login-link seats count with the room owner's seat.** A seat joined over the host account's own ssh login counts as one approver with the seat of the person who opened the room, even when other people have seats on the host. (#6)
+
 ## 0.5.0-beta.13 (2026-10-14), private beta
 
 Tested on Claude Code 2.1.296 with Node 24, on macOS.
