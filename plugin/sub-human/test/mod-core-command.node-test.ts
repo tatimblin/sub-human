@@ -34,6 +34,18 @@ test('command: mayHoldSecret, the rule join answers hidden by', async () => {
   }
 });
 
+test('command: a word shaped like an invite line\'s SECRET is hidden wherever it is typed, a paste that lost a character too', async () => {
+  const { mayHoldSecret, hasPinWord, SECRET_WORD } = await load();
+  const secret = await import(path.join(PLUGIN, 'lib', 'remote', 'invite-secret.ts')) as typeof import('../lib/remote/invite-secret.ts');
+  const word = secret.encode(secret.mint(), Buffer.alloc(8, 7));
+  assert.match(word, SECRET_WORD);
+  for (const args of [word, `bob ${word}`, `devbox vole-1234 ${word}`, word.toUpperCase(), word.slice(1), `${word}x`]) {
+    assert.equal(mayHoldSecret(args), true, args);
+    assert.equal(hasPinWord(args), true, args);
+  }
+  for (const args of ['bob vole-1234', 'a-very-long-name-with-dashes-in-it vole-1234', 'abcdefghij']) assert.equal(mayHoldSecret(args), false, args);
+});
+
 test('command: the payload is the UserPromptExpansion join.ts reads, marked as the module\'s', async () => {
   const { joinPayload } = await load();
   const p = joinPayload({ sid: 's1', cwd: '/w', args: 'invite', nonce: NONCE });
