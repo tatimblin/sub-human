@@ -51,9 +51,19 @@ test('guard table', () => {
     ['Bash', { command: `echo x >> ${H}/rooms/log.jsonl` }, true, 'deny'],
     ['Bash', { command: `node -e "require('${path.join(H, '..')}/x/sub-human/lib/room.ts')"` }, true, 'deny'],
     ['Bash', { command: 'sub-human read' }, true, undefined],
+    ['Bash', { command: `sub-human show abcdef012345 --room ${w.code}` }, true, undefined],
+    ['Bash', { command: `ls ${H}/rooms/${w.code}/plans` }, true, 'deny'],
     ['Bash', { command: 'npm test' }, false, undefined],
   ];
   for (const [tool, input, seated, want] of T) assert.equal(decide(tool, input, { w, seated }), want, `${tool} ${JSON.stringify(input)} seated=${seated}`);
+});
+
+test('guard: the deny text says the store is reached through sub-human and names show', () => {
+  const t = g.denyText('it touches the room store (~/.sub-human)', '/p');
+  assert.match(t, /the room store is reached only through sub-human\./);
+  assert.doesNotMatch(t, /written only by/, 'a read is denied too: the wording is not about writes');
+  assert.ok(t.includes('`/p/scripts/sub-human read|digest|who|tasks|show`'));
+  assert.match(g.WRITE_DENY('Write', '/x'), /reached only through sub-human/);
 });
 
 test('guard: a write through a symlink into the home is denied, also into a directory not made yet', () => {

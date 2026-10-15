@@ -11,14 +11,14 @@ import type { GuardCtx } from './types.ts';
 export const MCP_PREFIX = 'mcp__plugin_sub-human_room__';
 export const HOLD = MCP_PREFIX + 'hold';
 export const WRITE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
-const MSG = 'ROOM-GUARD: the room store is written only by sub-human itself. Post with the room MCP tools; read with the room MCP read tool.';
+const MSG = 'ROOM-GUARD: the room store is reached only through sub-human. Post with the room MCP tools; read with the room MCP read tool.';
 export const HOLD_DENY = 'sub-human: hold is for row agents only (sub-human:participant / sub-human:room); never call it yourself. Spawn the row agents listed under ROWS instead.';
 export const ROOM_ALLOW = 'sub-human: room tool for a joined session.';
 export const FAILED = 'ROOM-GUARD: guard failed; denied to be safe.';
 
 // ---------- Bash ----------
 /** The read-only CLI, with plain arguments only (no pipes, redirects, substitutions or chained commands). */
-const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|digest|who|tasks|watch)(?:\s+[\w.,:=@-]+)*\s*$/;
+const READ_CLI = /^\s*(?:[\w./~-]*\/)?sub-human\s+(?:read|digest|who|tasks|watch|show)(?:\s+[\w.,:=@-]+)*\s*$/;
 /** doctor, read only: no --fix (it rewrites the shim and the home's modes) and no --bundle (it writes a file). */
 const READ_DOCTOR = /^\s*(?:[\w./~-]*\/)?sub-human\s+doctor(?:\s+(?:--quick|--json|--timeout\s+\d+))*\s*$/;
 /** doctor that changes things: the person runs it. */
@@ -103,7 +103,7 @@ export function bashVerdict(command: unknown, ctx: GuardCtx = {}): string | null
 /** The deny text. root (the plugin root, when known): name the read-only CLI by its path; it lives in scripts/, which is
  *  not on the Bash tool's PATH (a top-level bin/ would be, but claude.ai org sync rejects a plugin that has one). */
 export const denyText = (why: string, root: unknown) => `${MSG} (Denied: ${why}.) Use the room MCP tools${
-  typeof root === 'string' && root.startsWith('/') ? `, or \`${root}/scripts/sub-human read|digest|who|tasks\`` : ''}.`;
+  typeof root === 'string' && root.startsWith('/') ? `, or \`${root}/scripts/sub-human read|digest|who|tasks|show\`` : ''}.`;
 
 // ---------- Write / Edit / MultiEdit / NotebookEdit ----------
 /** The path the tool input names, or null. */

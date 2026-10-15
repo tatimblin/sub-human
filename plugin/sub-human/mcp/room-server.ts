@@ -221,7 +221,7 @@ function propose(me: Me, args: ToolArgs) {
     if (e instanceof proposal.ProposalError) return text(`refused: ${e.message}`, true);
     throw e;
   }
-  const lines = [`proposal ${r.hash} ${r.again ? 'is already open' : 'proposed'} to ${r.approvers.join(', ')}. Text: ${r.path}`];
+  const lines = [`proposal ${r.hash} ${r.again ? 'is already open' : 'proposed'} to ${r.approvers.join(', ')}. Read it with \`sub-human show ${r.hash}\`.`];
   lines.push('Each approver reads and answers it in the plan view in their own session. Never say anyone agreed until the room records it.');
   if (r.approvers.includes(me.name)) lines.push(`${me.name} is an approver: ${proposal.openCall(r.hash)} now so ${me.name} can read and answer it.`);
   return text(lines.join('\n'));

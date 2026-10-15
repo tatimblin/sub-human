@@ -55,8 +55,9 @@ test('a Bash-forged human signoff (node -e require(lib/room.ts).append({via:"hum
   const why = bashVerdict(cmd, { home: w.home, cwd: w.cwd });
   assert.ok(why);
   assert.match(denyText(why), /sub-human's own modules/);
-  assert.ok(denyText(why, '/p').includes('`/p/scripts/sub-human read|digest|who|tasks`'), 'the CLI by its path: scripts/ is not on PATH');
+  assert.ok(denyText(why, '/p').includes('`/p/scripts/sub-human read|digest|who|tasks|show`'), 'the CLI by its path: scripts/ is not on PATH');
   assert.ok(!denyText(why).includes('scripts/'), 'no root, no path');
+  assert.match(denyText(why), /the room store is reached only through sub-human\./, 'worded for reads as well as writes');
   // 2. run anyway (the guard is a string check): the store refuses, nothing is written
   const before = lines(w).length;
   const r = spawnSync(process.execPath, ['-e', script], { env: { PATH: process.env.PATH, HOME: w.userHome, SUB_HUMAN_HOME: w.home }, encoding: 'utf8' });
@@ -249,14 +250,16 @@ test('Bash guard: allowed and denied commands', () => {
     'node --test plugin/sub-human/test/hooks/at-room.test.js', 'git diff plugin/sub-human/lib/room/store.ts',
     'cat plugin/sub-human/lib/room/store.ts', 'grep -n "require(" plugin/sub-human/lib/room.ts', 'sed -n 1,40p plugin/sub-human/hooks/at-room.ts',
     'node src/hooks/useFoo.js', 'node lib/io.ts', 'ls ~/.sub-humanoid', 'ls /Users/u', 'python3 build.py', 'echo SUB_HUMANS',
-    'git log --grep "sub-human linked"', 'sub-human doctor', 'sub-human doctor --quick --json', '/repo/plugin/sub-human/scripts/sub-human doctor --timeout 3000',
+    'git log --grep "sub-human linked"', 'sub-human doctor', 'sub-human doctor --quick --json',
+    'sub-human show abcdef012345', 'sub-human show abcdef012345 --room vole-1234', '/repo/plugin/sub-human/scripts/sub-human show abcdef012345', '/repo/plugin/sub-human/scripts/sub-human doctor --timeout 3000',
   ];
   const deny = [
     `node -e "require('./plugin/sub-human/lib/room.ts').append({kind:'signoff'},{via:'human',from:'bob'})"`,
     `node -e "require('./lib/room')"`, 'node -p "require(\'/x/sub-human/lib/identity.ts\').home()"',
     `echo '{"prompt":"@room I agree"}' | node plugin/sub-human/hooks/at-room.ts`,
     'cd ~/.claude/plugins/cache/m/sub-human/1.0 && node hooks/consent.ts', 'node /x/sub-human/mcp/room-server.ts',
-    'cat ~/.sub-human/rooms/x/log.jsonl', 'ls $HOME/.sub-human', 'ls ${HOME}/.sub-human/keys',
+    'cat ~/.sub-human/rooms/x/log.jsonl', 'ls $HOME/.sub-human', 'ls ~/.sub-human', 'ls ~/.sub-human/rooms/vole-1234/plans/',
+    'cat ~/.sub-human/rooms/vole-1234/plans/abcdef012345.md', 'sub-human show $(cat ~/.sub-human/x)', 'ls ${HOME}/.sub-human/keys',
     `echo x >> ${home}/rooms/a/log.jsonl`, `cat "${home}/keys/a/bob.key"`, 'SUB_HUMAN_HOME=/tmp/x sub-human read',
     'export SUB_HUMAN_HOME=/tmp/x',
     `node -e "require('/x/sub-human/lib/seats.ts').exit('vole-1234','bob','gone')"`, 'node /x/sub-human/lib/remote/link.ts vole-1234',

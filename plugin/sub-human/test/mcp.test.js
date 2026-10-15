@@ -158,7 +158,8 @@ test('mcp: propose stores plans/<hash>.md, appends proposal {hash, approvers, pa
   assert.equal(e.path, `plans/${e.hash}.md`, 'the entry holds a room-relative ref');
   const file = path.join(identity.roomDir(code), e.path);
   assert.equal(fs.readFileSync(file, 'utf8'), text);
-  assert.ok(msg.includes(file), 'the reply names a file the proposer can open');
+  assert.ok(msg.includes(`Read it with \`sub-human show ${e.hash}\``), 'the reply names the read-only CLI, which the guard allows');
+  assert.ok(!msg.includes(file) && !msg.includes(identity.home()), 'no store path: the guard denies the session that path');
   assert.match(msg, new RegExp(`alice is an approver: call EnterPlanMode, then ExitPlanMode with plan "proposal ${e.hash}" now`));
   assert.doesNotMatch(msg, /#\d/, 'no entry ids for a Claude to repeat');
   // The same proposal again is not re-appended.
