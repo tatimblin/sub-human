@@ -315,7 +315,8 @@ function digestSections(entries: readonly Entry[] = [], { members = {}, code = n
 
   const planLines: DigestLine[] = [];
   const props = proposals(entries);
-  const undecided = props.filter(p => !decided(p.hash, entries));
+  const retired = fold(entries).superseded; // a revision's earlier one is not waiting on anyone (lib/room/consent.ts pending)
+  const undecided = props.filter(p => !decided(p.hash, entries) && !retired.has(p.hash));
   for (const p of undecided.length ? undecided : props.slice(-1)) {
     const m = answers(p.hash, approversOf(p), entries);
     const dec = decided(p.hash, entries);

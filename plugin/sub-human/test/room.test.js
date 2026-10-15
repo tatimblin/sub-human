@@ -252,6 +252,17 @@ test('room: digest has members, plan + matrix, open items, decisions; capped at 
   sleeper.kill();
 });
 
+test('room: digest skips a proposal its proposer revised (superseded), as pending() does', () => {
+  fresh();
+  const H3 = 'cccccccccccc', H4 = 'dddddddddddd';
+  R.append({ kind: 'proposal', text: `proposal ${H3}: Rate limits`, hash: H3, approvers: ['bob'] }, { via: 'agent', from: 'alice' });
+  R.append({ kind: 'proposal', text: `proposal ${H4}: Rate limits`, hash: H4, approvers: ['bob'] }, { via: 'agent', from: 'alice' });
+  const d = R.digest();
+  assert.match(d, /proposal=dddddddddddd /);
+  assert.doesNotMatch(d, /proposal=cccccccccccc/, 'the superseded one is not listed as waiting');
+  assert.equal((d.match(/waiting on: bob/g) || []).length, 1);
+});
+
 test('room: legacy entries (agree, concern, no via) still read, render and append after', () => {
   fresh();
   fs.mkdirSync(R.store.dir, { recursive: true });
