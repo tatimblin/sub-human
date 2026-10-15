@@ -169,6 +169,19 @@ test('mcp: a post that repeats the person\'s objection note is refused, waiting 
   await s.close();
 });
 
+test('mcp: the seat is the one its session id names (CLAUDE_CODE_SESSION_ID); an id that names none (a /clear since) falls back to the parent pid', async () => {
+  h.freshHome();
+  const { code } = h.register('alice'); // this process: the server's parent
+  const bob = h.spawnSleeper();
+  identity.join({ code, name: 'bob', role: 'member', pid: bob.pid, session_id: 'sid-bob-1' });
+  const s = await ready({ CLAUDE_CODE_SESSION_ID: 'sid-bob-1' });
+  assert.equal(payload(await s.tool('post', { kind: 'say', text: 'from bob\'s session' })).from, 'bob', 'the session id wins over the parent');
+  await s.close();
+  const old = await ready({ CLAUDE_CODE_SESSION_ID: 'sid-before-clear' });
+  assert.equal(payload(await old.tool('post', { kind: 'say', text: 'after a /clear' })).from, 'alice', 'no seat holds that id: the parent pid');
+  await old.close();
+});
+
 test('mcp: read returns unseen entries (skipping own posts) then by id, one rendered line each', async () => {
   h.freshHome();
   const { code } = h.register('alice');
