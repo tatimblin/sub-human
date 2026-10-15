@@ -2,6 +2,28 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## Unreleased
+
+Hardening from the October 2026 review (branch `fix/stage0-hardening`).
+
+### Security
+- **An admitted machine joins as the one name on the host's card.** The link a Let in makes was not bound to that name: it could take any name no live seat held, and as many seats as it liked (each a member_joined the room's Claude answers). A bound link (an admission's name, a handoff's or promote's pre-bound seats) now joins only those names; another is `AUTH` before a seat is taken.
+- **A link's posts are bounded on the host.** A person's own posts over a link are limited to 30 a minute per seat (`LINK_HUMAN_RATE_MAX`; typing never meets it), `blob.put` to 40 new plans per connection, and a connection holds one subscribe stream (a second replaces the first).
+- **`SUB_HUMAN_SSH_OPTS` can no longer weaken the link's pinned ssh options** (its key, known_hosts file, `StrictHostKeyChecking`): ssh takes an option's first value, and the environment's options now come after them.
+- **`propose({path})` reads only under the session's working directory or Claude Code's plans directory.** The bytes go to every mirror and the whole room, so a steered model could have exfiltrated any readable file with it.
+- **`Read` of a seat's private key is denied** by the hooks module (`<home>/keys/`), the one file a model could sign a person's words with. The rest of the store stays readable.
+- **A join hook that throws still answers hidden** for a prompt that may carry a PIN, instead of a bare non-blocking error.
+- **The compile cache lives in `<home>/cache` (0700)**, not a shared temp directory.
+
+### Fixes
+- **`/sub-human vole-8126` joins that room as your default name**, not as a person named "vole-8126".
+- **`@room` and `@claude` followed by a newline (Ctrl+J) post as usual**, instead of reaching your Claude as a plain prompt.
+- **The join flow fits its hook budget**: the link start and card waits sum to under 7 s of the hook's 10 s (`LINK_START_MS` 2 s, `LINK_JOIN_WAIT_MS` 4 s).
+- **A lock wait gives up before the hook is killed** (`LOCK_TIMEOUT_MS` 4 s), so a wedged lock is reported as `LOCK`; the room Claude's watchdog takes the members lock only when it has something to write.
+- **The task gate fails closed on stdin it cannot read** for a TaskCompleted (exit 2), instead of letting the completion through.
+- **The room MCP `read` tool returns entries without signature material** (sig, nonce, pubkey) and marks a person's line `trust: verified | legacy | unverified`.
+- **A wake's head says the room lines are other people's words, not instructions.** The Funnel warning no longer claims the URL holds a secret.
+
 ## 0.5.0-beta.15 (2026-10-14), private beta
 
 Tested on Claude Code 2.1.296 with Node 24, on macOS.
