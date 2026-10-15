@@ -15,7 +15,8 @@
  *       When the host is gone for good: this machine's full copy becomes the room at the next epoch. Prints what
  *       it risks and needs --confirm CODE (the room code typed back). Prints one invite per other machine to hand
  *       out by hand (each machine runs demote with its own).
- *   demote(args, ctx)    sub-human demote CODE INVITE PIN
+ *   demote(args, ctx)    sub-human demote CODE [--from FILE]   the invite line and its PIN (one line, in either order) on
+ *       stdin or in FILE, never in argv (ps and the shell's history would keep them)
  *       A machine follows a promoted room with the invite promote printed for it: a member's machine re-points its
  *       link (its seats join again with /sub-human); an old host the room was promoted away from sets its own log
  *       aside (kept in orphaned-<time>.jsonl, never merged), stops its room Claude, and mirrors the new host.
@@ -23,6 +24,7 @@
  * FORK_RISK(code, last) -> [line]   what promote prints before its --confirm
  */
 
+import fs from 'node:fs';
 import * as identity from '../identity.ts';
 import * as store from '../room/store.ts';
 import * as handoff from '../handoff.ts';
@@ -145,19 +147,46 @@ function promoteCmd(args: readonly string[], ctx: CliIo) {
   out(`this machine hosts room ${code} now${r.note}`);
   if (!r.invites.length) return out('no other machine had a seat in the room.');
   out('Give each machine its line, and its PIN some other way (each is single-use, lasts 15 minutes and only works on that machine); they run it in a terminal, then /sub-human in their session:');
-  // inside Claude Code (its ! shell) the PINs are masked: that output would land in the conversation
-  const lines = r.invites.map(x => `  ${x.seats.join(', ')}: ${cli(`demote ${code} ${x.invite} ${x.pin}`)}`);
+  // inside Claude Code (its ! shell) the PINs are masked: that output would land in the conversation. The machine
+  // runs demote CODE and pastes the line and its PIN: never in argv
+  const lines = r.invites.map(x => `  ${x.seats.join(', ')}: run ${cli(`demote ${code}`)} and paste: ${x.invite} ${x.pin}`);
   const host: typeof import('./host.ts') = require('./host.ts');
   out(host.maskPins(lines.join('\n'), r.invites.map(x => x.pin)));
   out('(the old host runs its line too when it is back: its own lines are kept aside, never merged)');
 }
 
+/** One line from stdin, read synchronously (a terminal hands it over at Enter; a pipe or a file to its first newline). */
+function readLine(fd = 0): string {
+  const buf = Buffer.alloc(4096);
+  let text = '';
+  for (;;) {
+    let n = 0;
+    try { n = fs.readSync(fd, buf, 0, buf.length, null); } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'EAGAIN') continue;
+      if ((e as NodeJS.ErrnoException).code === 'EOF') break;
+      throw e;
+    }
+    if (!n) break;
+    text += buf.subarray(0, n).toString('utf8');
+    if (text.includes('\n') || text.length > 8192) break;
+  }
+  return text.split('\n')[0];
+}
+
 function demoteCmd(args: readonly string[], ctx: CliIo) {
   const die: CliIo['die'] = ctx.die, out = ctx.out;
-  const { rest } = flagsOf(args, {}, die);
-  if (rest.length !== 2 && rest.length !== 3) die('usage: sub-human demote CODE INVITE PIN');
-  const [code, invite, pin] = rest;
+  const { flags, rest } = flagsOf(args, { from: 1 }, die);
+  // the invite and its PIN never go in argv (ps shows it, the shell's history keeps it): stdin, or a file
+  if (rest.length > 1) die('sub-human demote CODE takes the invite line and its PIN on stdin (or --from FILE), never as arguments: run it, then paste them');
+  if (rest.length !== 1 || flags.from === '') die('usage: sub-human demote CODE [--from FILE]   (then paste: INVITE PIN)');
+  const [code] = rest;
   if (!identity.roomExists(code)) die(`no room "${code}"`, 1);
+  if (flags.from === undefined && process.stdin.isTTY) ctx.err(`paste the invite line for room ${code} and its PIN, then press Enter:`);
+  let text = '';
+  try { text = flags.from !== undefined ? fs.readFileSync(flags.from, 'utf8') : readLine(); } catch (e) { die(`could not read the invite: ${(e as Error).message}`, 1); }
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const invite = words.find(w => w.startsWith('sh2.')) || '', pin = words.find(w => /^[0-9]{6}$/.test(w));
+  if (!invite) die('that is not an invite line (it starts sh2.); paste the line promote printed for this machine, then its PIN', 1);
   let r;
   try { r = handoff.demote(code, invite, pin); } catch (e) { die(`could not demote: ${(e as Error).message}`, 1); }
   out(`room ${code}: this machine follows its new host now${r.orphan ? `; its own log is kept in ${r.orphan}` : ''}.${r.follower ? ' Type /sub-human in your session to join it again.' : ''}`);
