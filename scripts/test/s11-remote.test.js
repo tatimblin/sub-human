@@ -39,7 +39,7 @@ test('panes: the line /sub-human invite showed, also when the pane wrapped it; t
 test('S11: carol from a second home passes every check over real evidence; a broken mirror, a leaked file or an invite left in the link file fail', async t => {
   const env = { CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, SUB_HUMAN_HOME: process.env.SUB_HUMAN_HOME };
   process.env.CLAUDE_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-s11-claude-')); // no real transcripts
-  const host = new Machine(t, 'host'), remote = new Machine(t, 'remote', { SUB_HUMAN_LINK_IDLE_MS: '1000' });
+  const host = new Machine(t, 'host'), remote = new Machine(t, 'remote', { SUB_HUMAN_LINK_IDLE_MS: '3000' }); // short, so the daemon exits once carol leaves; not so short that a loaded run's daemon idles out between the host's Let in and her /sub-human
   const alice = host.seat('alice'), bob = host.seat('bob'), carol = remote.seat('carol');
   host.join(alice, 'alice');
   const code = host.lib(() => store.listRooms()[0]);
@@ -47,6 +47,7 @@ test('S11: carol from a second home passes every check over real evidence; a bro
   const via = await remote.joinVia(host, alice, carol);
   const shown = via.shown.json.reason;
   const joined = via.seated.json;
+  assert.equal(joined.decision, undefined, JSON.stringify(joined));
   assert.equal(joined.systemMessage, undefined, 'a join that works prints no line');
   const daemon = remote.lib(() => link.status(code));
   t.after(() => {
