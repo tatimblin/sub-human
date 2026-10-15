@@ -40,7 +40,9 @@ function machine() {
   const kp = crypto.generateKeyPairSync('ed25519');
   const key = kp.publicKey.export({ format: 'jwk' }).x!;
   const proof = (room: string) => { const ts = Date.now(); return { key, ts, sig: crypto.sign(null, Buffer.from(`sub-human machine:${room}:${ts}`), kp.privateKey).toString('base64url') }; };
-  return { key, id: machineKey.idOf(key), proof };
+  // over the host's challenge (machine-key.ts proofFor): what an invite line's hello carries
+  const proofFor = (room: string, challenge: string) => ({ key, ts: Date.now(), sig: crypto.sign(null, Buffer.from(`sub-human machine v2:${room}:${challenge}`), kp.privateKey).toString('base64url') });
+  return { key, id: machineKey.idOf(key), proof, proofFor };
 }
 
 /** An invite line to the room: its SECRET word (tagged for this home's machine key, as ssh and pipe lines are). */
@@ -55,7 +57,7 @@ function dial(t: TestContext, host: RoomStore, m: ReturnType<typeof machine>, op
   const [a, b] = memory.pair();
   const srv = server.serve(b, { store: host, ...serveOpts });
   t.after(() => srv.close());
-  return client.connect(a, { machine: m.id, machineKey: m.proof(host.code), ...opts });
+  return client.connect(a, { machine: m.id, machineKey: m.proof(host.code), signMachine: (ch: string) => m.proofFor(host.code, ch), ...opts });
 }
 const refused = async (p: Promise<unknown>): Promise<CodedError> => { try { await p; } catch (e) { return e as CodedError; } throw new Error('it was not refused'); };
 
@@ -196,6 +198,28 @@ test('over the web: the admission is bound to the Noise key the PIN\'s connectio
   assert.equal((await refused(dial(t, host, carol, { invite: r2.word, as }, web(null)))).reason, 'SKEW');
   assert.equal((await refused(dial(t, host, carol, { invite: r2.word, as, proto: { min: 1, max: 2 } }))).reason, 'SKEW');
   assert.equal(recordOf(host, r2.ref).tries, 5);
+});
+
+test('machine-key: an invite line\'s machine proof is bound to the session\'s challenge; a proof from another session, or a ts-only one, proves nothing', async t => {
+  const { host } = hostRoom(t);
+  const r = mint(host, 'ws');
+  const carol = machine();
+  const web = { via: 'ws' as const, peer: crypto.randomBytes(32).toString('base64url') };
+  const as = { name: 'carol', label: 'carols-mbp' };
+  // a proof carol signed for one session's challenge, replayed by someone who saw it (a former host) in a new session
+  let seen: { key: string; ts: number; sig: string } | null = null;
+  const e1 = await refused(dial(t, host, carol, { invite: r.word, as, signMachine: (ch: string) => (seen = carol.proofFor(host.code, ch)) }, web));
+  assert.equal(e1.reason, 'PIN_NEEDED');
+  const replay = await refused(dial(t, host, carol, { invite: r.word, pin: r.pin, as, signMachine: () => seen! }, web));
+  assert.equal(replay.reason, 'SKEW', 'no proven machine: a PIN goes only with a key proved in this session');
+  // the old proof over room:ts alone (what a 10-minute window let a former host replay) proves nothing for a line
+  const tsOnly = await refused(dial(t, host, carol, { invite: r.word, pin: r.pin, as, signMachine: undefined }, web));
+  assert.equal(tsOnly.reason, 'SKEW');
+  assert.equal(recordOf(host, r.ref).tries, 5, 'neither cost a try');
+  assert.equal(machineKey.verifyFor(carol.proofFor(host.code, 'a'.repeat(24)), host.code, 'b'.repeat(24)), null);
+  assert.equal(machineKey.verifyFor(carol.proofFor(host.code, 'a'.repeat(24)), host.code, 'a'.repeat(24)), carol.id);
+  // the joiner itself, in its own session: the PIN holds
+  assert.equal((await refused(dial(t, host, carol, { invite: r.word, pin: r.pin, as }, web))).reason, 'ADMIT_WAITING');
 });
 
 test('machine-key: the host proof verifies only for its room and nonce', () => {

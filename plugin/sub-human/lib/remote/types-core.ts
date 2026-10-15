@@ -130,6 +130,9 @@ export interface HelloResult {
   /** protocol 3, for a hello with a nonce: the host home's machine key and its signature over the nonce
    * (lib/remote/machine-key.ts hostProof), which an invite line's tag names over ssh and a pipe */
   host?: { key: string; sig: string };
+  /** protocol 3: a fresh random word this session's next hello signs its machine key over (machine-key.ts proofFor),
+   * so a proof is good for one hello of one session, not for any hello within the clock skew */
+  challenge?: string;
 }
 export interface OkResult { ok: boolean }
 export interface JoinResult { ok: true; rejoin?: true }

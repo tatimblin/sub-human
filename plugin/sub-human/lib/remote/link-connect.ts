@@ -153,7 +153,9 @@ async function connectLink(code: string): Promise<Client> {
     : { login: true };
   const epoch = storeMod.open(code).hostState().epoch;
   // machine: this machine's id in the room (the host's, once it said one); machineKey: the proof the host derives it from
-  const opts = { machine: homeMod.machineIn(code), machineKey: machineKeyMod().proof(code), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...(checkHost ? { checkHost } : {}), ...cred };
+  // an invite line's hello proves the machine key over the host's challenge (a proof good in that session only)
+  const signMachine = word ? (challenge: string) => machineKeyMod().proofFor(code, challenge) : undefined;
+  const opts = { machine: homeMod.machineIn(code), machineKey: machineKeyMod().proof(code), helloMs: config.LINK_HELLO_MS, caps: { ping: true }, epoch, ...(checkHost ? { checkHost } : {}), ...(signMachine ? { signMachine } : {}), ...cred };
   const own = isWeb(l.transport) && l.transport.clientKey ? linkKey(code) : undefined; // XK: this link's own key
   const t = transports().open(l.transport, { code, ...(own ? { clientKey: own } : {}) });
   let c: Client;

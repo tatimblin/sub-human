@@ -82,6 +82,7 @@
  *       answered PROTOCOL. close() ends the streams and the transport.
  */
 
+import crypto from 'node:crypto';
 import * as protocol from './protocol.ts';
 import * as invites from './invites.ts';
 import * as hostLinks from './host-links.ts';
@@ -293,7 +294,11 @@ const OPS: OpHandlers = {
     s.link = null;
     s.v = v;
     s.peerVersion = { version: client, proto: theirs };
-    const proven = machineKey.verify(params.machine_key, s.store.code); // the id its machine key gives (else only reported)
+    // the id its machine key gives (else only reported): over the challenge this session's hello before handed out
+    // (an invite line's hello must be so bound: a proof a former host saw is no good in another session), else, for a
+    // token's or a login's hello, a fresh ts
+    const bound = machineKey.verifyFor(params.machine_key, s.store.code, s.challenge);
+    const proven = bound || (inviteSecret.decode(invite) ? null : machineKey.verify(params.machine_key, s.store.code));
     // nonce: the host home's machine key proves itself first, so a joiner sends an invite line's secret only after
     const host = v >= 3 && typeof nonce === 'string' && machineKey.NONCE_RE.test(nonce) ? machineKey.hostProof(s.store.code, nonce) : null;
     const r: Credential = invite !== undefined ? redeem(s, invite, machine, pin, proven, as) : token !== undefined ? known(s, token)
@@ -304,6 +309,9 @@ const OPS: OpHandlers = {
     const out: OpResults['hello'] = { v, proto: s.proto, server: s.version, caps: protocol.CAPS, room: s.store.code, link: r.link ? r.link.id : null, epoch: mine, time: Date.now() };
     if (r.link) out.machine = r.link.machine; // additive: this machine's id in the room, as the host records it
     if (host) out.host = host;
+    // a fresh challenge for this session's next hello (a refused hello keeps the one the joiner holds)
+    s.challenge = v >= 3 ? crypto.randomBytes(18).toString('base64url') : null;
+    if (s.challenge) out.challenge = s.challenge;
     if (r.token) out.token = r.token;
     if (stopped(s.store.members.read())) out.closed = true; // additive: an older host says nothing
     return out;
@@ -419,6 +427,8 @@ class Session {
   silentMs: number;
   heard: number;
   silence: NodeJS.Timeout | null;
+  /** the challenge the last hello's reply handed out: the next hello's machine proof signs it (machine-key.ts proofFor) */
+  challenge: string | null = null;
   constructor(transport: Transport, store: RoomStore, log: Log, linkId: string | null | undefined, silentMs: number, {
     proto = protocol.PROTO, version = protocol.PLUGIN_VERSION, login = false, via = null, peer = null,
   }: { proto?: ProtoRange; version?: string; login?: boolean; via?: 'ws' | null; peer?: string | null } = {}) {

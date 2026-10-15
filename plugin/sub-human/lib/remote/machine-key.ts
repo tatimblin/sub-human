@@ -8,7 +8,11 @@
  *   proof(room, now?) -> {key, ts, sig}   key: the raw public key (base64url), sig: Ed25519 over
  *       "sub-human machine:<room>:<ts>" (the link daemon's hello, lib/remote/link-connect.ts)
  *   verify(proof, room, now?) -> id | null   the id the proof is for, when it verifies and ts is within SIG_SKEW_MS
- *       (lib/remote/server.ts hello)
+ *       (lib/remote/server.ts hello: a token's or a login's hello, where the id decides nothing a replay could take)
+ *   proofFor(room, challenge) -> {key, ts, sig}   sig over "sub-human machine v2:<room>:<challenge>": the host's
+ *       challenge from the hello before (protocol 3), so the proof is good for that session's next hello alone
+ *   verifyFor(proof, room, challenge) -> id | null   the id, when the proof is over this challenge (an invite line's
+ *       hello: a proof a former host or anyone in between saw cannot be replayed to another session)
  *   idOf(key) -> 'k' + 15 hex of sha256(key)   never like a home's own 16-hex id (lib/home.ts machineId)
  *   publicKey() -> string                 the raw public key (base64url): what an invite line's tag names over ssh and
  *       a pipe (lib/remote/invite-secret.ts, role 'machine')
@@ -56,6 +60,19 @@ function proof(room: string, now = Date.now()): Proof {
   return { key: pub, ts: now, sig: crypto.sign(null, message(room, now), priv).toString('base64url') };
 }
 
+const boundMessage = (room: string, challenge: string): Buffer => Buffer.from(`sub-human machine v2:${room}:${challenge}`);
+function proofFor(room: string, challenge: string, now = Date.now()): Proof {
+  const { priv, pub } = load();
+  return { key: pub, ts: now, sig: crypto.sign(null, boundMessage(room, challenge), priv).toString('base64url') };
+}
+function verifyFor(p: unknown, room: string, challenge: string | null | undefined): string | null {
+  const x = p as Partial<Proof> | null | undefined;
+  if (!challenge || !x || typeof x.key !== 'string' || !KEY_RE.test(x.key) || typeof x.sig !== 'string') return null;
+  try {
+    return crypto.verify(null, boundMessage(room, challenge), pubObj(x.key), Buffer.from(x.sig, 'base64url')) ? idOf(x.key) : null;
+  } catch { return null; }
+}
+
 const hostMessage = (room: string, nonce: string): Buffer => Buffer.from(`sub-human host v3:${room}:${nonce}`);
 const NONCE_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const publicKey = (): string => load().pub;
@@ -81,5 +98,5 @@ function verify(p: unknown, room: string, now = Date.now()): string | null {
   } catch { return null; }
 }
 
-export { proof, verify, idOf, publicKey, hostProof, verifyHost, NONCE_RE };
+export { proof, verify, proofFor, verifyFor, idOf, publicKey, hostProof, verifyHost, NONCE_RE };
 export type { Proof as MachineProof };

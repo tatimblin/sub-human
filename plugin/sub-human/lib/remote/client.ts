@@ -12,7 +12,9 @@
  *       for. checkHost(host) (an invite line over ssh or a pipe, protocol 3): a first hello carries only a fresh nonce,
  *       checkHost reads the reply's host proof (the host's machine key over that nonce: it throws to stop, so the secret
  *       never goes to a host the line does not name), and a second hello carries the credential; a host that gives no
- *       proof is older (PROTOCOL SKEW). login: true (no token, no invite): a link over the
+ *       proof is older (PROTOCOL SKEW). signMachine(challenge): with an invite, the first hello is made over the web
+ *       too, and the second's machine proof signs the challenge its reply handed out (lib/remote/machine-key.ts
+ *       proofFor), so a proof is good in that one session only. login: true (no token, no invite): a link over the
  *       host account's own ssh login (lib/remote/server.ts); a host that returns no token for it is PROTOCOL. proto / version: fakes for the skew tests.
  *       epoch: the mirror's host epoch (lib/handoff.ts), sent in the hello; the server's is client.epoch (0 from a
  *       server that sends none).
@@ -85,6 +87,9 @@ export interface ConnectOpts {
   pin?: string;
   /** protocol 3: the seat an invite line's PIN asks for, and this machine's short name */
   as?: { name: string; label: string };
+  /** protocol 3: signs this machine's key over the host's challenge (machine-key.ts proofFor); with an invite the
+   *  credential then goes in a second hello whose proof is so bound (see the header) */
+  signMachine?: (challenge: string) => { key: string; ts: number; sig: string };
   /** protocol 3: the host proves its machine key over a nonce before the credential goes (see the header) */
   checkHost?: (host: { key: string; sig: string } | null, nonce: string) => void;
   login?: boolean;
@@ -207,7 +212,7 @@ class Client {
 
 /** transport: {send(frame), onFrame(fn), onClose(fn), close()}, or a Promise of one */
 async function connect(transport: Transport | Promise<Transport>, opts: ConnectOpts): Promise<Client> {
-  const { machine, machineKey, token, invite, pin, as, checkHost, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
+  const { machine, machineKey, signMachine, token, invite, pin, as, checkHost, login, epoch, caps = {}, deadlineMs = LINK_CALL_MS, helloMs = deadlineMs } = opts;
   const proto: ProtoRange = opts.proto || protocol.PROTO, version: string = opts.version || protocol.PLUGIN_VERSION;
   const c = new Client(await transport, { deadlineMs });
   const cred: { invite?: string; pin?: string; as?: { name: string; label: string }; token?: string; login?: boolean } = invite !== undefined
@@ -222,13 +227,17 @@ async function connect(transport: Transport | Promise<Transport>, opts: ConnectO
   };
   const inRange = (r: HelloReply): boolean => !!protocol.rangeOf({ proto: r.proto }) && r.v >= proto.min && r.v <= proto.max && r.v >= need;
   try {
-    if (checkHost) { // the host proves its key first; the secret goes only in the second hello
-      const nonce = crypto.randomBytes(18).toString('base64url');
-      const first: HelloReply & { host?: { key: string; sig: string } } = await c._request('hello', { ...base, nonce }, ++c.seq, helloMs);
+    let bound: { machine_key: { key: string; ts: number; sig: string } } | Record<string, never> = {};
+    if (checkHost || (signMachine && cred.invite !== undefined)) {
+      // a first hello with no credential: the host proves its key (checkHost) and hands out a challenge; the secret
+      // goes only in the second hello, its machine proof over that challenge
+      const nonce = checkHost ? crypto.randomBytes(18).toString('base64url') : undefined;
+      const first: HelloReply & { host?: { key: string; sig: string }; challenge?: string } = await c._request('hello', { ...base, ...(nonce ? { nonce } : {}) }, ++c.seq, helloMs);
       if (!inRange(first)) throw skew(first);
-      checkHost(first.host && typeof first.host === 'object' ? first.host : null, nonce);
+      if (checkHost) checkHost(first.host && typeof first.host === 'object' ? first.host : null, nonce!);
+      if (signMachine && typeof first.challenge === 'string') bound = { machine_key: signMachine(first.challenge) };
     }
-    const r: HelloReply = await c._request('hello', { ...base, ...cred }, ++c.seq, helloMs);
+    const r: HelloReply = await c._request('hello', { ...base, ...bound, ...cred }, ++c.seq, helloMs);
     if (!inRange(r)) throw skew(r);
     if (cred.login && !r.token) throw new RoomError('PROTOCOL', `the host's sub-human (${r.server || 'an unknown version'}) makes no link over an ssh login; update it there, or join with an invite`, 'SKEW');
     Object.assign(c, { token: r.token || token || null, link: r.link, room: r.room, serverCaps: r.caps, v: r.v, serverVersion: r.server || null, epoch: Number.isInteger(r.epoch) ? r.epoch : 0, machine: typeof r.machine === 'string' && r.machine ? r.machine : null });
