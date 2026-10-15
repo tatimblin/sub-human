@@ -109,3 +109,29 @@ test('lock: processes racing a planted stale lock never assign the same log id',
   assert.equal(new Set(ids).size, 90, 'no duplicate ids');
   assert.deepEqual(ids, ids.slice().sort((a, b) => a - b));
 });
+
+test('lock: a pid\'s start time stays cached while kill(pid, 0) finds it (no ps every 30 s); a pid seen gone is dropped', async t => {
+  const bin = h.tmpDir('sh-ps-', t);
+  const count = path.join(bin, 'count');
+  fs.writeFileSync(path.join(bin, 'ps'), `#!/bin/sh\necho x >> "${count}"\nexec /bin/ps "$@"\n`, { mode: 0o755 });
+  const was = process.env.PATH;
+  process.env.PATH = `${bin}:${was}`;
+  const realNow = Date.now;
+  t.after(() => { process.env.PATH = was; Date.now = realNow; });
+  const calls = () => { try { return fs.readFileSync(count, 'utf8').split('\n').filter(Boolean).length; } catch { return 0; } };
+  const a = spawn('sleep', ['30'], { stdio: 'ignore' }), b = spawn('sleep', ['30'], { stdio: 'ignore' });
+  t.after(() => { a.kill(); b.kill(); });
+  lock.pidStarts([a.pid!, b.pid!]);
+  assert.equal(calls(), 1, 'one ps for both');
+  const ta = lock.pidStart(a.pid), tb = lock.pidStart(b.pid);
+  assert.ok(ta && tb);
+  Date.now = () => realNow() + 5 * 60_000; // five minutes on: the old 30 s cache would have run ps twice more
+  assert.equal(lock.pidStart(a.pid), ta);
+  lock.pidStarts([a.pid!, b.pid!]);
+  assert.equal(calls(), 1, 'still alive: no ps');
+  Date.now = realNow;
+  a.kill('SIGKILL');
+  await h.until(() => !io.isAlive(a.pid!), 3000, 10);
+  assert.equal(lock.pidStart(a.pid), null, 'gone: dropped, and ps finds nothing');
+  assert.equal(calls(), 2);
+});
