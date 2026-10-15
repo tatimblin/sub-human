@@ -49,7 +49,8 @@
  * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
  * A review's note waiting for the person's Send (the room document members/NAME/confirm): readConfirm, writeConfirm,
- *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question.
+ *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question,
+ *   confirmCall(hash) -> how the model opens that card.
  */
 
 import fs from 'node:fs';
@@ -242,6 +243,8 @@ function picked(me: Me, ps: Proposal[]): Proposal | null {
 
 /** How the model opens proposal hash for its person: the plan view (the hooks fall back to the card). */
 const openCall = (hash: string) => `call EnterPlanMode, then ExitPlanMode with plan "proposal ${hash}"`;
+/** How the model shows the person the confirm card for a waiting note (hooks/consent.ts builds it). */
+const confirmCall = (hash: string) => `call AskUserQuestion with the question "objection ${hash}"`;
 /** A proposal as a list item: `3fa2c1 "Ship v3 Monday"` (the short hash alone without a title or a room to read it from). */
 function listed(code: string | undefined, p: Pick<Proposal, 'hash' | 'entry'>): string {
   const t = code ? clip(title(code, p.hash, p.entry).replace(/\s+/g, ' ').trim(), TITLE_MAX) : '';
@@ -435,6 +438,6 @@ function confirmCard(c: Confirm): Card {
 export {
   QUESTION_RE, ProposalError, readReview, writeReview, clearReview, withReview, restorePlan, restoreStale,
   readConfirm, writeConfirm, clearConfirm, confirmCard, confirmQuestion, namedIn, choose, picked, readPick,
-  proposeIntent, create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, matrix, answer,
+  proposeIntent, create, proposals, pendingFor, card, cardFor, question, preview, viewable, openCall, confirmCall, matrix, answer,
   decide, decision, humans, reminder, read, hash12, title,
 };

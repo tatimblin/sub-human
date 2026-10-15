@@ -87,6 +87,8 @@ export interface Confirm {
   title: string | null;
   at: number;
   asked?: number;
+  /** when the card's no-answer close was told, or an interrupted card offered again (hooks/consent.ts reoffer): once */
+  again?: number;
 }
 
 // ---------- lib/handoff.ts ----------

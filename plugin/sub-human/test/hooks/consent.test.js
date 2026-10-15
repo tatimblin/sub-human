@@ -923,10 +923,45 @@ test('confirm: Stop nudges once when the card was never shown; shim mode reports
   assert.match(ctx(first), new RegExp(`bob's note on proposal ${v3} is not recorded yet: call AskUserQuestion with the question "objection ${v3}"`));
   const again = stop();
   assert.equal(ctx(again), undefined, 'once');
-  assert.equal(again.json.subHuman.reviewOpen, false);
+  assert.equal(again.json.subHuman.reviewOpen, true, 'the next prompt offers it again (reoffer)');
   assert.ok(waiting(w), 'still waiting for bob');
   // bob opens the review again: the old note is superseded.
   w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: {}, transcript_path: tp }), { as: 'bob' });
   assert.equal(waiting(w), null);
   assert.deepEqual(answers(w), []);
+});
+
+/** bob's next prompt, through consent's UserPromptSubmit (no review open), in shim mode (subHuman {reviewOpen}). */
+const promptOf = (w, tp) => w.hook('consent', ev('UserPromptSubmit', null, { permission_mode: 'default', prompt: 'ok', transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } });
+const REOFFER = v3 => `sub-human: bob's note on proposal ${v3} is still not recorded: its card closed before bob answered. Before anything else, call AskUserQuestion with the question "objection ${v3}" so bob can send or discard it. Don't post the note or answer for bob.`;
+
+test('confirm: a card interrupted before bob answered (Pre, no Post) is offered again once, at the next prompt', () => {
+  const { w, v3, tp } = deniedOnPhone('open rate limiting');
+  assert.equal(decision(w.hook('consent', preAsk({ questions: [{ question: `objection ${v3}` }] }), { as: 'bob' })), 'ask');
+  // no Post: bob pressed Esc on the card. Shim mode reports it open, so the module still runs node for the prompt.
+  const stop = w.hook('consent', ev('Stop', null, { permission_mode: 'default', stop_hook_active: false, transcript_path: tp }), { as: 'bob', env: { SUB_HUMAN_SHIM: '1' } });
+  assert.equal(ctx(stop), undefined, 'the card was shown: no Stop nudge');
+  assert.equal(stop.json.subHuman.reviewOpen, true);
+  const first = promptOf(w, tp);
+  assert.equal(ctx(first), REOFFER(v3));
+  assert.equal(first.stdout.split('is still not recorded').length, 2, 'exactly once');
+  assert.equal(first.json.subHuman.reviewOpen, false);
+  const second = promptOf(w, tp);
+  assert.equal(ctx(second), undefined, 'once');
+  assert.equal(waiting(w).note, 'open rate limiting', 'the note still waits');
+  assert.deepEqual(answers(w), []);
+  // offered again and shown: Send still records it
+  confirm(w, v3, 'Send');
+  assert.deepEqual(answers(w).map(x => [x.kind, x.from, x.text]), [['objection', 'bob', 'open rate limiting']]);
+});
+
+test('confirm: a card that closed with a Post (AFK, no Send/Discard) is not offered again: the model was told', () => {
+  const { w, v3, tp } = deniedOnPhone('open rate limiting');
+  confirm(w, v3, 'Send', { resp: { afkTimeoutMs: 60000 } });
+  const p = promptOf(w, tp);
+  assert.equal(ctx(p), undefined);
+  assert.equal(p.json.subHuman.reviewOpen, false);
+  confirm(w, v3, 'not now');
+  assert.equal(ctx(promptOf(w, tp)), undefined);
+  assert.equal(waiting(w).note, 'open rate limiting');
 });

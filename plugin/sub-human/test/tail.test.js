@@ -576,3 +576,17 @@ test('remindersText: the one a review opens next (the newest unless named), the 
   assert.doesNotMatch(tailLib.remindersText(me, room.open(code)), /dddddd/);
   assert.equal(tailLib.remindersText({ ...me, role: 'claude' }, room.open(code)), null);
 });
+
+test('remindersText: a note of mine waiting on the picked proposal points at the confirm card, not a new review', () => {
+  h.freshHome();
+  const { code } = h.register('alice');
+  const me = { code, name: 'alice', role: 'member' };
+  inRoom(code, r => r.append({ kind: 'proposal', text: 'proposal dddddddddddd: Ship v3 Monday', hash: 'dddddddddddd', approvers: ['alice'] }, { via: 'agent', from: 'bob' }));
+  const proposal = require(path.join(h.LIB, 'proposal.ts'));
+  // a note on another proposal: the ordinary reminder
+  proposal.writeConfirm(me, { hash: 'aaaaaaaaaaaa', note: 'open rate limiting', from: 'bob', title: null, at: Date.now() });
+  assert.match(tailLib.remindersText(me, room.open(code)), /^proposal dddddddddddd still awaits alice's answer/);
+  proposal.writeConfirm(me, { hash: 'dddddddddddd', note: 'open rate limiting', from: 'bob', title: 'Ship v3 Monday', at: Date.now() });
+  assert.equal(tailLib.remindersText(me, room.open(code)),
+    'proposal dddddddddddd: alice\'s note waits to be sent or discarded; if alice asks, call AskUserQuestion with the question "objection dddddddddddd". Don\'t reopen the review (that drops the note).');
+});
