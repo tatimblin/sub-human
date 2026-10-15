@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { World, fixture, identity } from './helpers.ts';
 
-const until = async (fn, ms = 5000) => { const end = Date.now() + ms; while (Date.now() < end) { if (fn()) return true; await new Promise(r => setTimeout(r, 50)); } return false; };
+const until = async (fn: () => unknown, ms = 5000) => { const end = Date.now() + ms; while (Date.now() < end) { if (fn()) return true; await new Promise(r => setTimeout(r, 50)); } return false; };
 
 test('session-end: logs member_left and marks the member left; reasons clear and resume are skipped', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
@@ -17,9 +17,9 @@ test('session-end: logs member_left and marks the member left; reasons clear and
 
   r = w.hook('session-end', fixture('session-end'), { as: 'alice' });
   assert.equal(r.code, 0, r.stderr);
-  const e = w.entries().at(-1);
+  const e = w.entries().at(-1)!;
   assert.deepEqual([e.kind, e.from, e.via], ['member_left', 'alice', 'system']);
-  assert.match(e.text, /prompt_input_exit/);
+  assert.match(e.text!, /prompt_input_exit/);
   assert.ok(w.members().alice.left_at);
   // a second end (already left) logs nothing
   w.hook('session-end', fixture('session-end'), { as: 'alice' });
@@ -29,7 +29,7 @@ test('session-end: logs member_left and marks the member left; reasons clear and
 
 test('session-end: deletes the session\'s hello lease on every reason, seated or not', () => {
   const w = new World({ claude: 'sleep', alice: 'act' });
-  const lease = s => path.join(w.home, 'sessions', 'mods', `${s}.json`);
+  const lease = (s: string) => path.join(w.home, 'sessions', 'mods', `${s}.json`);
   for (const reason of ['clear', 'prompt_input_exit']) {
     w.modLease(w.sid.alice);
     assert.ok(fs.existsSync(lease(w.sid.alice)));
@@ -68,7 +68,7 @@ test('session-end: the last member leaving starts the detached reaper: closing, 
   assert.deepEqual(JSON.parse(fs.readFileSync(log, 'utf8').split('\n')[0]), ['stop', 'feed0042']);
   // the reaper marks the room's Claude stopped and left just after `claude stop` returns
   assert.ok(await until(() => { const o = w.members().claude; return o.closing && o.left_at && o.stopped_at; }), 'claude marked closing, stopped, left');
-  const st = w.entries().find(e => e.kind === 'status');
+  const st = w.entries().find(e => e.kind === 'status')!;
   assert.deepEqual([st.to, st.via, st.text], ['claude', 'system', 'room closed: complete task 1']);
   assert.deepEqual(w.lib(() => identity.openRooms()), []);
 });

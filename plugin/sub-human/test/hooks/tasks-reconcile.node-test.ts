@@ -4,28 +4,34 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { World, PLUGIN } from './helpers.ts';
+import { World } from './helpers.ts';
+import type { HookInput } from './helpers.ts';
 import * as tasks from '../../lib/tasks.ts';
 
-const create = (id, subject, extra = {}) => ({
+const create = (id: number, subject: string, extra = {}) => ({
   hook_event_name: 'PostToolUse', agent_type: 'sub-human:room-claude', tool_name: 'TaskCreate',
   tool_input: { subject, description: subject, ...extra }, tool_response: { task: { id: String(id), subject } },
 });
-const update = (id, input) => ({
+const update = (id: number, input: Record<string, unknown>) => ({
   hook_event_name: 'PostToolUse', agent_type: 'sub-human:room-claude', tool_name: 'TaskUpdate',
   tool_input: { taskId: String(id), ...input }, tool_response: { success: true, taskId: String(id), updatedFields: Object.keys(input) },
 });
-const completed = (id, subject) => ({ hook_event_name: 'TaskCompleted', agent_type: 'sub-human:room-claude', task_id: String(id), task_subject: subject });
+const completed = (id: number, subject: string) => ({ hook_event_name: 'TaskCompleted', agent_type: 'sub-human:room-claude', task_id: String(id), task_subject: subject });
+
+/** A native task file as Claude Code writes it (only id is needed to place it). */
+type NativeTask = { id: string } & Record<string, unknown>;
 
 function world() {
   const w = new World({ claude: 'sleep', bob: 'sleep' });
-  w.native = path.join(w.userHome, '.claude', 'tasks', `sh-${w.code}`);
-  fs.mkdirSync(w.native, { recursive: true });
-  w.writeNative = t => fs.writeFileSync(path.join(w.native, `${t.id}.json`), JSON.stringify(t));
-  w.run = (input, as = 'claude') => w.hook('tasks', input, { as, env: { CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}` } });
-  w.list = () => w.lib(() => tasks.list(w.code));
-  w.taskEntries = () => w.entries().filter(e => e.kind === 'task');
-  return w;
+  const native = path.join(w.userHome, '.claude', 'tasks', `sh-${w.code}`);
+  fs.mkdirSync(native, { recursive: true });
+  return Object.assign(w, {
+    native,
+    writeNative: (t: NativeTask) => fs.writeFileSync(path.join(native, `${t.id}.json`), JSON.stringify(t)),
+    run: (input: HookInput, as = 'claude') => w.hook('tasks', input, { as, env: { CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}` } }),
+    list: () => w.lib(() => tasks.list(w.code)),
+    taskEntries: () => w.entries().filter(e => e.kind === 'task'),
+  });
 }
 
 test('reconcile: a TaskCreate whose mirror run was dropped is restored by the next run', () => {

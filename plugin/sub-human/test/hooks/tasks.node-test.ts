@@ -5,33 +5,39 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { World, PLUGIN, room, baseEnv } from './helpers.ts';
+import { World, PLUGIN, baseEnv } from './helpers.ts';
+import type { HookInput } from './helpers.ts';
 import * as tasks from '../../lib/tasks.ts';
 
-const create = (id, subject, extra = {}) => ({
+const create = (id: number, subject: string, extra = {}) => ({
   hook_event_name: 'PostToolUse', agent_type: 'sub-human:room-claude', tool_name: 'TaskCreate',
   tool_input: { subject, description: subject, ...extra }, tool_response: { task: { id: String(id), subject } },
 });
-const update = (id, input, resp = {}) => ({
+const update = (id: number, input: Record<string, unknown>, resp = {}): HookInput => ({
   hook_event_name: 'PostToolUse', agent_type: 'sub-human:room-claude', tool_name: 'TaskUpdate',
   tool_input: { taskId: String(id), ...input }, tool_response: { success: true, taskId: String(id), updatedFields: Object.keys(input), ...resp },
 });
-const completed = (id, subject) => ({ hook_event_name: 'TaskCompleted', agent_type: 'sub-human:room-claude', task_id: String(id), task_subject: subject, task_description: subject });
+const completed = (id: number, subject: string) => ({ hook_event_name: 'TaskCompleted', agent_type: 'sub-human:room-claude', task_id: String(id), task_subject: subject, task_description: subject });
+
+/** A native task file as Claude Code writes it (only id is needed to place it). */
+type NativeTask = { id: string } & Record<string, unknown>;
 
 function world() {
   const w = new World({ claude: 'sleep', alice: 'sleep', bob: 'sleep' });
-  w.native = path.join(w.userHome, '.claude', 'tasks', `sh-${w.code}`);
-  fs.mkdirSync(w.native, { recursive: true });
-  w.writeNative = t => fs.writeFileSync(path.join(w.native, `${t.id}.json`), JSON.stringify(t));
-  w.run = (input, as = 'claude') => w.hook('tasks', input, { as, env: { CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}` } });
-  w.list = () => w.lib(() => tasks.list(w.code));
-  w.taskEntries = () => w.entries().filter(e => e.kind === 'task');
-  return w;
+  const native = path.join(w.userHome, '.claude', 'tasks', `sh-${w.code}`);
+  fs.mkdirSync(native, { recursive: true });
+  return Object.assign(w, {
+    native,
+    writeNative: (t: NativeTask) => fs.writeFileSync(path.join(native, `${t.id}.json`), JSON.stringify(t)),
+    run: (input: HookInput, as = 'claude') => w.hook('tasks', input, { as, env: { CLAUDE_CODE_TASK_LIST_ID: `sh-${w.code}` } }),
+    list: () => w.lib(() => tasks.list(w.code)),
+    taskEntries: () => w.entries().filter(e => e.kind === 'task'),
+  });
 }
 
 test('gate: stdin it cannot read for a TaskCompleted fails closed (exit 2); for a mirror event it is exit 1', () => {
   const w = world();
-  const run = raw => spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', 'tasks.ts')], {
+  const run = (raw: string) => spawnSync(process.execPath, [path.join(PLUGIN, 'hooks', 'tasks.ts')], {
     input: raw, encoding: 'utf8', cwd: w.cwd, env: baseEnv({ SUB_HUMAN_HOME: w.home, HOME: w.userHome, CLAUDE_PLUGIN_ROOT: PLUGIN, CLAUDE_PID: String(w.pid.claude) }),
   });
   const gate = run('{"hook_event_name":"TaskCompleted","agent_type":"sub-human:room-claude","task_id":"2" oops');
@@ -66,13 +72,13 @@ test('mirror: creates and updates land in tasks.json with a task entry; the room
   w.run(update(2, { description: 'cover edges, green', metadata: { req: 9 } }));
   assert.equal(w.taskEntries().length, 4);
   w.run(update(2, { status: 'completed' }, { statusChange: { from: 'in_progress', to: 'completed' } }));
-  const last = w.taskEntries().at(-1);
+  const last = w.taskEntries().at(-1)!;
   assert.deepEqual([last.op, last.status, last.req], ['done', 'completed', undefined]);
   assert.equal(w.list()[0].status, 'completed');
   // delete removes it
   w.run(update(2, { status: 'deleted' }));
   assert.deepEqual(w.list(), []);
-  assert.equal(w.taskEntries().at(-1).op, 'delete');
+  assert.equal(w.taskEntries().at(-1)!.op, 'delete');
 });
 
 test('mirror: skips a refused update (success:false), _internal tasks and non-claude sessions', () => {
@@ -102,7 +108,7 @@ test('mirror: an update with no earlier mirror entry reads the native task file'
   const r = w.run(update(6, { status: 'in_progress' }));
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(w.list(), [{ id: '6', subject: 'from disk', status: 'in_progress', owner: 'alice', blockedBy: ['2'] }]);
-  assert.equal(w.taskEntries().at(-1).req, 3);
+  assert.equal(w.taskEntries().at(-1)!.req, 3);
   // the native store is only read
   assert.deepEqual(fs.readdirSync(w.native), ['6.json']);
 });
@@ -152,16 +158,16 @@ test('claude detection before binding: SUB_HUMAN_ROOM + agent_type', () => {
 test('mirror: the req link comes from metadata (no description tag), then the task file, then the legacy tag', () => {
   const w = world();
   w.run(create(2, 'parser tests', { description: 'cover edges', metadata: { req: 7, by: 'bob' } }));
-  assert.equal(w.taskEntries().at(-1).req, 7);
+  assert.equal(w.taskEntries().at(-1)!.req, 7);
   // a status-only call: the task file's metadata (merged by an earlier call) supplies the req
   w.writeNative({ id: '2', subject: 'parser tests', description: 'cover edges', status: 'in_progress', owner: 'bob', metadata: { req: 12, by: 'bob' } });
   w.run(update(2, { owner: 'bob', status: 'in_progress' }));
-  assert.equal(w.taskEntries().at(-1).req, 12);
+  assert.equal(w.taskEntries().at(-1)!.req, 12);
   w.run(update(2, { status: 'completed', metadata: { req: '15' } }, { statusChange: { from: 'in_progress', to: 'completed' } }));
-  assert.deepEqual([w.taskEntries().at(-1).op, w.taskEntries().at(-1).req], ['done', 15]);
+  assert.deepEqual([w.taskEntries().at(-1)!.op, w.taskEntries().at(-1)!.req], ['done', 15]);
   // a task written before metadata: the description tag still links it
   w.run(create(3, 'old', { description: 'x (req #4 by alice)' }));
-  assert.equal(w.taskEntries().at(-1).req, 4);
+  assert.equal(w.taskEntries().at(-1)!.req, 4);
 });
 
 test('mirror: tasks.json is a pure fold of the task entries; deleting it and refolding gives the same file', () => {
