@@ -2,6 +2,18 @@
 
 Each release names the Claude Code versions it was tested on. Marketplace installs update only when `version` in `plugin/sub-human/.claude-plugin/plugin.json` changes; run `/plugin marketplace update sub-human`, or turn on auto-update for the marketplace in `/plugin`.
 
+## 0.5.0-beta.15 (2026-10-14), private beta
+
+Tested on Claude Code 2.1.296 with Node 24, on macOS.
+
+### Fixes
+- **A review's note is not lost.** A hook that ran before Claude Code wrote the plan dialog's rejection line settled the review as closed without answering, so a "Tell Claude what to change" note never reached its confirm card and was relayed as a plain say. A review now settles only from that line: the closing ExitPlanMode waits for it, and the Post reads it last.
+- **A bare `/sub-human` while seated restarts the room's Claude.** The notice's "/sub-human in the room starts it again" now holds for a seat already in the room, not only a new join; nothing starts while a job is live or starting.
+- **Leave notices say why.** The room row (panel and statusline) and the room hold's progress line carry the chat line's reason, for example "−bob left (session ended)".
+
+### Internals
+- The hooks module's deliver tests cover both append paths of the Claude Code 2.1.296 test kit, and the store seam test allows the module's members read.
+
 ## 0.5.0-beta.14 (2026-10-14), private beta
 
 Tested on Claude Code 2.1.296 with Node 24, on macOS.
