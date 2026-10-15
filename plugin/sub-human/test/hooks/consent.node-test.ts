@@ -234,6 +234,21 @@ test('review: EnterPlanMode is let through only for a pending proposal and a rev
   assert.equal(decision(card('plan')), 'ask');
 });
 
+test('review: a planFilePath the model put in EnterPlanMode\'s input is ignored; the plan file is the transcript\'s', () => {
+  const { w, hash } = world();
+  const text = '# Rename fetchUser\n\n1. rename\n2. alias\n';
+  const file = path.join(w.userHome, '.claude', 'plans', 'snug-rocket.md');
+  const victim = path.join(w.cwd, 'victim.txt');
+  fs.writeFileSync(victim, 'not a plan\n');
+  const tp = transcript(w, file);
+  w.hook('consent', ev('PreToolUse', 'EnterPlanMode', { permission_mode: 'default', tool_input: { planFilePath: victim } }), { as: 'bob' });
+  const post = w.hook('consent', ev('PostToolUse', 'EnterPlanMode', { permission_mode: 'plan', tool_input: { planFilePath: victim }, tool_response: {}, transcript_path: tp }), { as: 'bob' });
+  assert.match(ctx(post)!, new RegExp(`only to show bob room proposal ${hash}`));
+  assert.equal(fs.readFileSync(victim, 'utf8'), 'not a plan\n', 'a path the model chose is never written');
+  assert.equal(fs.readFileSync(file, 'utf8'), text, 'the session\'s plan file (its plan_mode attachment) shows the proposal');
+  assert.equal(review(w)!.file, file);
+});
+
 test('review: the dialog shows the canonical text from the plan file; a person\'s "Yes" records Agree and restores the file', () => {
   const { w, hash } = world();
   const text = '# Rename fetchUser\n\n1. rename\n2. alias\n';
