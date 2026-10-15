@@ -25,6 +25,9 @@
  *   planFile(lines, toolInput?), planFeedback(lines, toolUseId), toolUseInput(lines, toolUseId)
  *   contentText(content), PASTED_RE, unwrapPasted(text)
  *   JOB_RE, parseDispatch(text), parseAgentsJson(text), jobs(opts), agentsCmd(all), stopCmd(id)
+ *   parseDaemonStatus(text), daemonStatus(opts)   `claude daemon status`: {running, pid, version}
+ *   exeState(pid, {readlink?, ps?, exists?}) -> {exe, deleted}|null   the executable a process runs, and whether it
+ *                                        was deleted since (an upgrade): /proc/PID/exe on Linux, `ps -o comm=` elsewhere
  *   DAEMON_ENV_ALLOW, daemonEnv(env)
  *   matcherIsExact(m, {toolEvent}), matcherMatches(m, name, {toolEvent})
  *   shapeRe(shape)                       a shape as a RegExp: `~` = one minified identifier, the rest literal
@@ -35,7 +38,7 @@
  *   locateBinary({bin?, env?}) -> path|null   the binary to probe: bin, $CLAUDE_BIN, `claude` on PATH (symlinks
  *                                        resolved), else the newest /opt/homebrew/Caskroom/claude-code*\/<v>/claude
  *   binaryVersion(buf) -> string|null    the VERSION:"…" literal in the binary
- *   runningVersion(pid) -> string|null   the version the Claude Code process pid runs (its executable's path, else --version)
+ *   runningVersion(pid) -> string|null   the version the Claude Code process pid runs (exeState's path, else --version)
  *   globalConfigFile(env), modulesSwitch(env) -> bool|undefined   the hooks modules switch Claude Code last cached
  *   probe(buf, {entries?, envNames?}) -> [{id, stability, ok, missing, note}]   every entry's search strings and
  *       shapes checked against the binary (scripts/probe-cc.js, `sub-human doctor`); envNames adds the derived
@@ -461,6 +464,37 @@ function jobs({ all = false, bin = process.env.SUB_HUMAN_CLAUDE || 'claude', env
   return parseAgentsJson(r.stdout);
 }
 
+/** `claude daemon status` as parseDaemonStatus reads it: running with its pid and version, or not running. */
+interface DaemonStatus { running: boolean; pid: number | null; version: string | null }
+
+/**
+ * Parse `claude daemon status` stdout: "pid:     N" and "version: X" lines while the bg daemon runs, else "not
+ * running" (and exit 1). {running, pid, version} (pid or version null when its line is missing or unreadable), or
+ * null when the text is neither.
+ * @cc Show daemon pid, version, uptime
+ * @stability incidental
+ */
+function parseDaemonStatus(text: unknown): DaemonStatus | null {
+  const t = String(text || '');
+  const pid = /^pid:\s+(\d+)\s*$/m.exec(t);
+  const version = /^version:\s+(\S+)\s*$/m.exec(t);
+  if (pid || version) return { running: true, pid: pid && Number(pid[1]) > 0 ? Number(pid[1]) : null, version: version ? version[1] : null };
+  return /^not running\b/m.test(t) ? { running: false, pid: null, version: null } : null;
+}
+
+/**
+ * Run `claude daemon status` and parse it (parseDaemonStatus): its exit status is not checked, as "not running"
+ * exits 1. null when the command cannot be spawned or prints something else. Options as jobs() (no `all`).
+ * @cc Show daemon pid, version, uptime
+ * @stability incidental
+ */
+function daemonStatus({ bin = process.env.SUB_HUMAN_CLAUDE || 'claude', env = process.env, timeout = 15_000, run = spawnSync }: Omit<JobsOpts, 'all'> = {}): DaemonStatus | null {
+  let r;
+  try { r = run(bin, ['daemon', 'status'], { env, encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'pipe'] }); } catch { return null; }
+  if (!r || r.error) return null;
+  return parseDaemonStatus(r.stdout);
+}
+
 // ---------- daemon env allowlist ----------
 
 // The daemon's dispatch allowlist as 2.1.296 builds it (minified names of that build in brackets):
@@ -674,6 +708,10 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
     shape: ['new Set(["CLAUDE_CONFIG_DIR","CLAUDE_INTERNAL_FC_OVERRIDES",...~,"CLAUDE_CODE_CLIENT_DATA_URL",...~,"AWS_REGION",',
       `=new Set([...~,...~,${JSON.stringify(EXTRA_KEYS).slice(1)})`],
     note: 'The pieces of the daemon allowlist (q6e + l5n + extras in 2.1.296) that DAEMON_ENV_ALLOW copies.' },
+  { id: 'daemon-status', section: 5, stability: 'incidental', search: ['Show daemon pid, version, uptime', '`pid:     ${', '`version: ${'],
+    note: '`claude daemon status` prints "pid:     N" and "version: X" while the bg daemon runs, else "not running" and exits 1 (cc.daemonStatus; doctor\'s daemon check, cc-2.1.296.md).' },
+  { id: 'daemon-upgrade-exit', section: 5, stability: 'incidental', search: ['exiting for upgrade', '; upgrade polling disabled'],
+    note: 'The daemon polls its own binary and, when it was deleted or replaced, exits or restarts for the upgrade (deferred while workers are busy, up to a cap). It does not poll in some modes, nor when it cannot resolve the binary at start ("upgrade polling disabled"): such a daemon keeps running a deleted binary, which doctor\'s daemon check flags (cc-2.1.296.md).' },
   { id: 'bg-worker-env', section: 5, stability: 'incidental', search: 'CLAUDE_CODE_SESSION_KIND:"bg",CLAUDE_BG_BACKEND:"daemon",FORCE_COLOR',
     note: 'Workers run with the daemon\'s own process.env plus the filtered dispatch env.' },
   { id: 'bg-provider-env', section: 5, stability: 'incidental',
@@ -846,23 +884,46 @@ function binaryVersion(buf: Buffer): string | null {
   return v ? v[1] : null;
 }
 
+/** exeState() options: stand-ins for the system calls (tests). */
+interface ExeStateOpts {
+  readlink?: (p: string) => string;
+  ps?: (pid: number) => string | null;
+  exists?: (p: string) => boolean;
+  timeoutMs?: number;
+}
+
 /**
- * The version of the Claude Code process pid runs, or null: its executable's path (/proc/PID/exe on Linux, `ps -o
- * comm=` elsewhere, symlinks resolved) when the path names one (the cask's …/2.1.292/claude, the installer's
- * versions/2.1.292), else `<that binary> --version`. Used only to word a refusal (hooks/join.ts noModule).
+ * The executable process pid runs, and whether it was deleted since it started (an upgrade replaced it), or null
+ * (no such process, nothing readable). Linux: /proc/PID/exe, whose link reads "<path> (deleted)" then. Elsewhere
+ * (macOS): `ps -o comm=`, deleted when that is an absolute path that no longer exists; a bare name (started
+ * through PATH) says nothing, so deleted is false.
+ */
+function exeState(pid: unknown, { readlink = fs.readlinkSync, exists = fs.existsSync, timeoutMs = 3000,
+  ps = (p: number) => String(spawnSync('ps', ['-o', 'comm=', '-p', String(p)], { encoding: 'utf8', timeout: timeoutMs }).stdout || '') }: ExeStateOpts = {}): { exe: string; deleted: boolean } | null {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  let link: string | null = null;
+  try { link = String(readlink(`/proc/${n}/exe`)); } catch { /* not Linux, or no such process */ }
+  if (link) return link.endsWith(' (deleted)') ? { exe: link.slice(0, -' (deleted)'.length), deleted: true } : { exe: link, deleted: false };
+  let exe: string | null;
+  try { exe = String(ps(n) || '').trim() || null; } catch { exe = null; }
+  if (!exe) return null;
+  return { exe, deleted: path.isAbsolute(exe) && !exists(exe) };
+}
+
+/**
+ * The version of the Claude Code process pid runs, or null: its executable's path (exeState, symlinks resolved) when
+ * the path names one (the cask's …/2.1.292/claude, the installer's versions/2.1.292), else `<that binary>
+ * --version` while it still exists. Used only to word a refusal (hooks/join.ts noModule).
  */
 function runningVersion(pid: unknown, { timeoutMs = 3000 }: { timeoutMs?: number } = {}): string | null {
-  if (!Number.isInteger(Number(pid)) || Number(pid) <= 0) return null;
-  let exe: string | null = null;
-  try { exe = fs.readlinkSync(`/proc/${pid}/exe`); } catch {
-    const r = spawnSync('ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8', timeout: timeoutMs });
-    exe = String(r.stdout || '').trim() || null;
-  }
-  if (!exe) return null;
+  const st = exeState(pid, { timeoutMs });
+  if (!st) return null;
+  let exe = st.exe;
   try { exe = fs.realpathSync(exe); } catch { /* as ps gave it */ }
   const inPath = /(?:^|\/)(\d+\.\d+\.\d+)(?:\/|$)/.exec(exe);
   if (inPath) return inPath[1];
-  if (!path.isAbsolute(exe)) return null;
+  if (!path.isAbsolute(exe) || st.deleted) return null;
   const r = spawnSync(exe, ['--version'], { encoding: 'utf8', timeout: timeoutMs });
   const m = /(\d+\.\d+\.\d+)/.exec(String(r.stdout || ''));
   return m ? m[1] : null;
@@ -929,8 +990,8 @@ export {
   ENV, sessionId, claudePid, taskListId, configDir, sanitizeId, tasksDir, taskFile, userSettingsFiles,
   clearContextOnPlanAccept, readLines, readEntries, parseLines, planFile, planFeedback, toolUseInput,
   lastHumanPrompt, contentText, SAID, NOTE, PASTED_RE, unwrapPasted, JOB_RE, parseDispatch, agentsCmd, stopCmd,
-  parseAgentsJson, jobs, DAEMON_ENV_ALLOW, daemonEnv, matcherIsExact, matcherMatches, shapeRe, CONTRACT,
+  parseAgentsJson, jobs, parseDaemonStatus, daemonStatus, exeState, DAEMON_ENV_ALLOW, daemonEnv, matcherIsExact, matcherMatches, shapeRe, CONTRACT,
   PROBED_VERSION, MIN_VERSION, compareVersions, locateBinary, binaryVersion, probe, runningVersion, globalConfigFile,
   modulesSwitch,
 };
-export type { TranscriptEntry, TranscriptLine, ContentBlock, AgentJob, ContractEntry, ProbeResult, JobsOpts };
+export type { TranscriptEntry, TranscriptLine, ContentBlock, AgentJob, ContractEntry, ProbeResult, JobsOpts, DaemonStatus, ExeStateOpts };

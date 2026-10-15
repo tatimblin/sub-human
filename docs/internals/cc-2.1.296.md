@@ -2,7 +2,7 @@
 
 Source: `/opt/homebrew/Caskroom/claude-code@latest/2.1.296/claude` (`VERSION:"2.1.296"`), read as latin1 text with `grep -a` plus a context extractor. This note is a delta against [`cc-2.1.292.md`](cc-2.1.292.md), which is itself a delta against [`cc-2.1.281.md`](cc-2.1.281.md); the § numbers are that note's sections, and everything not listed here still reads as 2.1.292 left it.
 
-On 2.1.296, 4 of the 79 probe checks (78 CONTRACT entries plus the derived `daemon-env-names`) failed. 2 were code that moved around a field we do not read, and 2 changed behaviour. None needed a plugin code change beyond `cc.DAEMON_ENV_ALLOW`. With the anchors below the probe passes 79/79.
+On 2.1.296, 4 of the 79 probe checks (78 CONTRACT entries plus the derived `daemon-env-names`) failed. 2 were code that moved around a field we do not read, and 2 changed behaviour. None needed a plugin code change beyond `cc.DAEMON_ENV_ALLOW`. With the anchors below the probe passes 79/79, and 81/81 with the two [bg daemon](#the-bg-daemon-daemon-status-daemon-upgrade-exit-new) entries added since.
 
 ## Per entry
 
@@ -27,6 +27,17 @@ On 2.1.296, 4 of the 79 probe checks (78 CONTRACT entries plus the derived `daem
 Still not on the list: `HOME`, `USER`, `CLAUDE_CODE_TASK_LIST_ID`, `CLAUDE_CODE_ENABLE_TODO_TOOLS`, any `SUB_HUMAN_*`, and auth secrets.
 
 **Fix.** `cc.MODEL_KEYS` and `cc.EXTRA_KEYS` copy the two new keys in the binary's order, so `cc.DAEMON_ENV_ALLOW` (and through `cc.daemonEnv`, the room's Claude spawn env) forwards them as the daemon would. `cc.test.js` checks both are in the allowlist.
+
+## The bg daemon: `daemon-status`, `daemon-upgrade-exit` (new)
+
+Issue #5: a host's bg daemon kept running a `claude` binary that an upgrade had deleted, and crashed every room's Claude it started, while doctor was green. Two new entries (§5) back doctor's `daemon` check:
+
+- `daemon-status`. `claude daemon status` (help: `Show daemon pid, version, uptime`) prints `` K(`pid:     ${y.pid}`),K(`version: ${y.version}`),K(`uptime:  ${L}s`),… `` while the daemon runs; otherwise `K("not running")`, a `bg sessions:` summary, and exit 1 (`de(1)`). It starts nothing. `cc.parseDaemonStatus` reads the two lines, `cc.daemonStatus` runs it (exit status not checked).
+- `daemon-upgrade-exit`. The supervisor polls its own binary. When it is gone it logs `` `binary at ${le} was deleted (was ${oe.target}) \u2014 exiting for upgrade` `` (replaced: `… changed (…) \u2014 self-restarting for upgrade`), deferring while workers are busy up to a cap (`busy-worker upgrade defer cap reached`). The poll is skipped in some modes, and when the binary's identity cannot be resolved at start: `` `binary identity unresolvable at ${le}; upgrade polling disabled` ``. A daemon in that state keeps the deleted binary, which is what the issue saw.
+
+`claude daemon stop` takes `--any` (also stop a transient, non-service daemon, which is how `claude agents` starts it) and `--keep-workers` (leave detached sessions running); after a stop it prints ``note: the next `claude agents` or `claude --bg` will start a new one``. Doctor's fix line is that command; `doctor --fix` never runs it.
+
+How doctor tells the executable was deleted (`cc.exeState`): on Linux `/proc/PID/exe` reads `<path> (deleted)`; on macOS `ps -o comm=` gives the path the daemon was started with (`/opt/homebrew/Caskroom/claude-code@latest/2.1.296/claude` here), and a missing absolute path means deleted. A bare `claude` (started through PATH) says nothing, so it is not flagged. A daemon whose version differs from `claude --version` but whose binary still exists is a warn.
 
 ## Currently passing entries
 

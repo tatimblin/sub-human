@@ -174,6 +174,47 @@ test('jobs() runs agents --json through an injected runner', () => {
   assert.deepEqual(cc.agentsCmd(), ['agents', '--json']);
 });
 
+// `claude daemon status` as 2.1.296 prints it (running: exit 0; not running: exit 1)
+const DAEMON_UP = 'pid:     51234\nversion: 2.1.296\nuptime:  812s\norigin:  transient\nconfig:  /Users/a/.claude/daemon.json\nlog:     /Users/a/.claude/daemon.log\n';
+const DAEMON_DOWN = 'not running\n\nbg sessions:\n  sock dir:     /tmp/cc-daemon-501/38281156\n  control.sock: unreachable (connect ENOENT)\n';
+
+test('parseDaemonStatus / daemonStatus: pid and version, not running, anything else null', () => {
+  assert.deepEqual(cc.parseDaemonStatus(DAEMON_UP), { running: true, pid: 51234, version: '2.1.296' });
+  assert.deepEqual(cc.parseDaemonStatus(DAEMON_DOWN), { running: false, pid: null, version: null });
+  assert.deepEqual(cc.parseDaemonStatus('version: 2.1.296\n'), { running: true, pid: null, version: '2.1.296' });
+  assert.equal(cc.parseDaemonStatus(''), null);
+  assert.equal(cc.parseDaemonStatus('Usage: claude daemon [subcommand]'), null);
+  const calls = [];
+  const run = (bin, args) => { calls.push([bin, args]); return { status: 0, stdout: DAEMON_UP }; };
+  assert.equal(cc.daemonStatus({ bin: 'cl', run }).pid, 51234);
+  assert.deepEqual(calls[0], ['cl', ['daemon', 'status']]);
+  assert.equal(cc.daemonStatus({ run: () => ({ status: 1, stdout: DAEMON_DOWN }) }).running, false, 'exit 1 is "not running", not an error');
+  assert.equal(cc.daemonStatus({ run: () => ({ error: new Error('ENOENT'), status: null, stdout: '' }) }), null);
+  assert.equal(cc.daemonStatus({ run: () => { throw new Error('x'); } }), null);
+  assert.equal(cc.daemonStatus({ run: () => ({ status: 0, stdout: 'unknown command' }) }), null);
+});
+
+test('exeState: /proc/PID/exe " (deleted)" on Linux; elsewhere ps -o comm=, deleted when an absolute path is gone', () => {
+  const noProc = () => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); };
+  const never = () => { throw new Error('not called'); };
+  // Linux
+  assert.deepEqual(cc.exeState(42, { readlink: () => '/home/u/.local/share/claude/versions/2.1.292 (deleted)', ps: never }),
+    { exe: '/home/u/.local/share/claude/versions/2.1.292', deleted: true });
+  assert.deepEqual(cc.exeState(42, { readlink: () => '/home/u/.local/share/claude/versions/2.1.296', ps: never }),
+    { exe: '/home/u/.local/share/claude/versions/2.1.296', deleted: false });
+  // macOS: no /proc
+  const cask = '/opt/homebrew/Caskroom/claude-code@latest/2.1.292/claude';
+  assert.deepEqual(cc.exeState(42, { readlink: noProc, ps: () => `${cask}\n`, exists: () => false }), { exe: cask, deleted: true });
+  assert.deepEqual(cc.exeState(42, { readlink: noProc, ps: () => `${cask}\n`, exists: p => p === cask }), { exe: cask, deleted: false });
+  assert.deepEqual(cc.exeState(42, { readlink: noProc, ps: () => 'claude\n', exists: () => false }), { exe: 'claude', deleted: false }, 'a bare name says nothing');
+  assert.equal(cc.exeState(42, { readlink: noProc, ps: () => '' }), null, 'no such process');
+  assert.equal(cc.exeState(42, { readlink: noProc, ps: () => { throw new Error('x'); } }), null);
+  for (const bad of [0, -1, 'x', null, 1.5]) assert.equal(cc.exeState(bad, { readlink: never, ps: never }), null);
+  // a live process of this test run: its executable exists
+  const self = cc.exeState(process.pid);
+  assert.equal(self.deleted, false);
+});
+
 test('DAEMON_ENV_ALLOW and daemonEnv', () => {
   for (const k of ['PATH', 'CLAUDE_CONFIG_DIR', 'ANTHROPIC_MODEL', 'CLAUDE_CODE_USE_BEDROCK', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_PLUGIN_DIRS',
     // added to the daemon's allowlist in 2.1.292
