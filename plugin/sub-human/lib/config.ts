@@ -209,6 +209,17 @@ export const RATE_HUMAN_MAX = 300;             // via=human entries per seat per
 export const LINK_HUMAN_RATE_MAX = 30;          // via=human entries per seat per RATE_WINDOW_MS, over a link
 export const LINK_BLOBS_MAX = 40;               // blob.put per connection (a proposal's plan each; the daemon reconnects)
 
+// ---------- what a home stops keeping (lib/gc.ts; it runs from the join path) ----------
+// A closed room (no seat alive, no link to it, its room Claude stopped) nobody touched in this long is deleted, with its
+// seat keys; so are the folders `sub-human link --forget` set aside. A session index (sessions/by-sid, by-pid) not
+// written in this long whose process is gone, and a session's agent -> row map (rooms/CODE/rows/<session>) whose newest
+// row is this old, go too.
+export const ROOM_GC_MS = 30 * 24 * 60 * 60_000;      // SUB_HUMAN_ROOM_GC_MS
+export const SESSION_INDEX_TTL_MS = 30 * 24 * 60 * 60_000;
+export const ROWS_TTL_MS = 7 * 24 * 60 * 60_000;
+export const GC_EVERY_MS = 6 * 60 * 60_000;           // at most one sweep of the home this often (<home>/gc.json)
+export const GC_BUDGET_MS = 250;                      // a sweep stops when it has run this long; the next one goes on
+
 // ---------- room log integrity (lib/room/{store,validate,render}.js) ----------
 export const ENTRY_TEXT_MAX_BYTES = 16 * 1024; // an entry's text, UTF-8 bytes (validate)
 export const ENTRY_REFS_MAX = 50;              // refs per entry (validate)

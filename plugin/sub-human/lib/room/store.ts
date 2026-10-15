@@ -86,7 +86,8 @@
  *   exists() -> bool
  *
  * Rooms (registry.ts): open(code, {dir}?), forget(code), setBackend(factory|null), roomExists(code), createRoom(code),
- *   listRooms(), trustOf(e) (an entry judged by the store of the room it names: the fallback for a caller that does
+ *   listRooms(), the open-rooms index (indexedRooms, indexRoom, unindexRooms), lastChange(code), removeRoom(code),
+ *   asideRooms(), removeAside(name) (lib/gc.ts), trustOf(e) (an entry judged by the store of the room it names: the fallback for a caller that does
  *   not have the store it read e from).
  * Keys (keys.ts, trust.ts): keyDir(code), pubPath(name, code), SIGNER, humanKey(code, name), publicKey(name, store).
  * Rules (rules.ts): toPayload, admit, placeAfter, hostState, normalize, blobRef, checkKey, checkCursor, CHAT_KINDS, hash12.
@@ -102,7 +103,10 @@ const publicKey = (name: string, s: Pick<RoomStore, 'code' | 'pins'>): KeyObject
   code: s.code, pins: () => s.pins(), localKey: n => keys.localKey(n, s.code), hasLocalKey: n => keys.hasLocalKey(n, s.code),
 });
 
-export { open, forget, setBackend, roomExists, createRoom, listRooms, trustOf } from './registry.ts';
+export {
+  open, forget, setBackend, roomExists, createRoom, listRooms, trustOf, indexedRooms, indexRoom, unindexRooms, lastChange,
+  removeRoom, asideRooms, removeAside,
+} from './registry.ts';
 export { FsRoomStore } from './fs-store.ts';
 export {
   RoomError, toPayload, admit, placeAfter, hostState, normalize, blobRef, checkKey, checkCursor, CHAT_KINDS, hash12,

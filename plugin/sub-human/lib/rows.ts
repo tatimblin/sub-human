@@ -66,7 +66,7 @@ import * as text from './text.ts';
 import * as proposal from './proposal.ts';
 import * as linkState from './room/link-state.ts';
 import {
-  ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS,
+  ROW_MAX, ROW_TITLE_MAX, PRESENCE_STALE_MS, HOLDS_STALE_MS, MISSING_GRACE_MS, ROWS_LOCK_TIMEOUT_MS, ROWS_LOCK_STALE_MS, ROWS_TTL_MS,
 } from './config.ts';
 import type { Holds, RowRec, Spawn, Task } from './types-app.ts';
 import type { Entry, LinkState, Member, Members } from './room/types.ts';
@@ -294,6 +294,24 @@ function sessionRowMap(code: string, sid: string | null | undefined): Record<str
   return (m && m.byAgent && typeof m.byAgent === 'object') ? m.byAgent : {};
 }
 
+/**
+ * Drop the agent -> row maps of sessions that ended without clearing them: a map whose newest row is ROWS_TTL_MS old
+ * and whose session holds no live seat (identity.resolveBySession). lib/gc.ts sweepRows, at a join. Returns how many.
+ */
+function pruneRowMaps(code: string, now: number = Date.now()): number {
+  const kv = kvOf(code);
+  let n = 0;
+  for (const k of sessionKeys(code)) {
+    const m: RowMap | null = kv.get(k, null);
+    const ats = m && m.byAgent && typeof m.byAgent === 'object' ? Object.values(m.byAgent).map(r => Date.parse(String(r && r.at))).filter(Number.isFinite) : [];
+    if (ats.length && now - Math.max(...ats) < ROWS_TTL_MS) continue;
+    if (identity.resolveBySession(k.slice('rows/'.length))) continue; // a live seat's session: its rows stay
+    kv.delete(k);
+    n++;
+  }
+  return n;
+}
+
 function forgetRow(code: string, agentId: string): void {
   const kv = kvOf(code);
   for (const k of sessionKeys(code)) {
@@ -516,6 +534,6 @@ const rowLine = (label: string, text: string | null | undefined): string => (tex
 
 export {
   PARTICIPANT, ROOM_AGENT, ROW_MAX, rowCalls, rowsNeeded, joinNote, participantCall, roomCall, parseSpawn, rowText,
-  rowLine, readLog, fit, recordRow, forgetRow, readRowMap, sessionRowMap, blockCount, setBlockCount, writeHolds,
+  rowLine, readLog, fit, recordRow, forgetRow, pruneRowMaps, readRowMap, sessionRowMap, blockCount, setBlockCount, writeHolds,
   readHolds, missingRows,
 };

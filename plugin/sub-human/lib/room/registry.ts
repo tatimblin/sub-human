@@ -10,15 +10,30 @@
  *   roomExists(code)             a room directory or a link
  *   createRoom(code) -> bool     private and exclusive: false when it exists already
  *   listRooms() -> [code]        every room directory (mirrors are directories too)
+ *   indexedRooms() -> [code]     the rooms that may be open: <home>/open-rooms.json, kept at open (createRoom), at
+ *       every seat's join (indexRoom, lib/identity.ts join) and at close (unindexRooms: lib/identity.ts drops a room once
+ *       it is closed for good, every seat left and its room Claude stopped; lib/gc.ts a room it deletes). A home from
+ *       before the index builds it once from every room directory. lib/identity.ts openRooms judges only these, not
+ *       every room ever made.
+ *   indexRoom(code), unindexRooms([code])
+ *   lastChange(code) -> ms       the newest mtime among the room directory and its entries (0: no directory)
+ *   removeRoom(code)             the room's directory and its seat keys (<home>/keys/<code>) deleted, and unindexed
+ *                                (lib/gc.ts only, for a closed room nobody touched in ROOM_GC_MS)
+ *   asideRooms() -> [{name, at}] the folders `sub-human link --forget` set aside (rooms/CODE.forgotten-TIME), by mtime;
+ *   removeAside(name)            delete one
  *   trustOf(e) -> HumanTrust|null   an entry judged by the store of the room it names (e.room, which every signed
  *       entry carries); an entry of no named room is judged with trust.ts NO_TRUST (never verified). A caller that
  *       read e from a store passes that store's trust instead (RoomStore.trust): this is the fallback.
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import { home, roomsDir, roomDir, repairModes } from '../home.ts';
+import { withLock } from '../lock.ts';
+import { readJson, writeJsonAtomic } from '../io.ts';
 import { CODE_RE } from '../text.ts';
+import { keyDir } from './keys.ts';
 import { FsRoomStore } from './fs-store.ts';
 import { NO_TRUST } from './trust.ts';
 import type { Entry, HumanTrust, RoomStore } from './types.ts';
@@ -50,9 +65,68 @@ const roomExists = (c: unknown): boolean => typeof c === 'string' && CODE_RE.tes
 function createRoom(c: string): boolean {
   fs.mkdirSync(roomsDir(), { recursive: true, mode: 0o700 }); // the home and rooms/ too when new: private
   repairModes();
-  try { fs.mkdirSync(roomDir(c), { mode: 0o700 }); return true; } catch (e) { if (errCode(e) === 'EEXIST') return false; throw e; }
+  try { fs.mkdirSync(roomDir(c), { mode: 0o700 }); } catch (e) { if (errCode(e) === 'EEXIST') return false; throw e; }
+  indexRoom(c);
+  return true;
 }
 const listRooms = (): string[] => { try { return fs.readdirSync(roomsDir()).filter(c => CODE_RE.test(c)); } catch { return []; } };
+
+// ---------- the open-rooms index ----------
+/** <home>/open-rooms.json: {v: 1, rooms: {code: when it was indexed}}. */
+interface RoomIndex { v: 1; rooms: Record<string, string> }
+const indexFile = (): string => path.join(home(), 'open-rooms.json');
+const readIndex = (): RoomIndex | null => {
+  const x = readJson(indexFile()) as RoomIndex | null;
+  return x && x.v === 1 && x.rooms && typeof x.rooms === 'object' && !Array.isArray(x.rooms) ? x : null;
+};
+/** Change the index under its lock (built from every room directory when there is none yet). fn: false writes nothing. */
+function updateIndex(fn: (rooms: Record<string, string>) => boolean): Record<string, string> {
+  fs.mkdirSync(home(), { recursive: true, mode: 0o700 });
+  return withLock(indexFile() + '.lock', () => {
+    const cur = readIndex();
+    const rooms = cur ? { ...cur.rooms } : Object.fromEntries(listRooms().map(c => [c, new Date().toISOString()]));
+    if (fn(rooms) || !cur) writeJsonAtomic(indexFile(), { v: 1, rooms }, { compact: true });
+    return rooms;
+  });
+}
+function indexedRooms(): string[] {
+  const cur = readIndex();
+  return Object.keys(cur ? cur.rooms : updateIndex(() => false)).filter(c => CODE_RE.test(c)).sort();
+}
+function indexRoom(c: string): void {
+  if (!CODE_RE.test(c) || (readIndex()?.rooms || {})[c]) return;
+  updateIndex(rooms => { if (rooms[c]) return false; rooms[c] = new Date().toISOString(); return true; });
+}
+function unindexRooms(codes: readonly string[]): void {
+  if (!codes.length) return;
+  updateIndex(rooms => { let n = 0; for (const c of codes) if (rooms[c]) { delete rooms[c]; n++; } return n > 0; });
+}
+
+// ---------- deleting a closed room (lib/gc.ts) ----------
+function lastChange(c: string): number {
+  const d = roomDir(c);
+  let t: number;
+  try { t = fs.statSync(d).mtimeMs; } catch { return 0; }
+  let names: string[] = [];
+  try { names = fs.readdirSync(d); } catch { /* unreadable: the directory's own */ }
+  for (const n of names) { try { t = Math.max(t, fs.statSync(path.join(d, n)).mtimeMs); } catch { /* gone meanwhile */ } }
+  return t;
+}
+function removeRoom(c: string): void {
+  fs.rmSync(roomDir(c), { recursive: true, force: true });
+  fs.rmSync(keyDir(c), { recursive: true, force: true });
+  unindexRooms([c]);
+  forget(c);
+}
+const ASIDE_RE = /^[a-z]+-\d{4}\.forgotten-[0-9TZ-]+$/;
+function asideRooms(): { name: string; at: number }[] {
+  let names: string[] = [];
+  try { names = fs.readdirSync(roomsDir()); } catch { return []; }
+  const out: { name: string; at: number }[] = [];
+  for (const name of names.filter(n => ASIDE_RE.test(n))) { try { out.push({ name, at: fs.statSync(path.join(roomsDir(), name)).mtimeMs }); } catch { /* gone */ } }
+  return out;
+}
+function removeAside(name: string): void { if (ASIDE_RE.test(name)) fs.rmSync(path.join(roomsDir(), name), { recursive: true, force: true }); }
 
 function trustOf(e: Entry | null | undefined): HumanTrust | null {
   if (!e || e.via !== 'human') return null;
@@ -60,4 +134,7 @@ function trustOf(e: Entry | null | undefined): HumanTrust | null {
   try { return open(e.room).trust(e); } catch { return NO_TRUST(e); }
 }
 
-export { open, forget, setBackend, roomExists, createRoom, listRooms, trustOf };
+export {
+  open, forget, setBackend, roomExists, createRoom, listRooms, trustOf, indexedRooms, indexRoom, unindexRooms, lastChange,
+  removeRoom, asideRooms, removeAside,
+};

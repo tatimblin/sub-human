@@ -12,7 +12,10 @@
  *   newCode() -> string                  "otter-4821": a fresh room, created with an exclusive mkdir
  *   roomExists(code) -> bool
  *   openRooms() -> [code]                rooms with >= 1 live member seat (role member) that are not closing,
- *                                        newest first. The start times of every live local pid it judges come from one
+ *                                        newest first, judged among the rooms the open-rooms index names (lib/room/store.ts
+ *                                        indexedRooms: kept at open, join and close), not every room ever made; a room
+ *                                        found closed for good (every seat left, its room Claude stopped or never
+ *                                        started) leaves the index. The start times of every live local pid it judges come from one
  *                                        ps call (lib/lock.ts pidStarts), not one per seat. No room Claude seat is needed: the first member opens it. A room
  *                                        where only the room's Claude is left is not open (see orphanRooms).
  *   orphanRooms() -> [code]              rooms not closing whose room Claude is not stopped but which have no live member
@@ -20,6 +23,8 @@
  *   roomOpen(code) -> bool               not closing and has any live seat, the room's Claude included (a resume may
  *                                        rejoin a room whose room Claude is waiting out the reap grace)
  *   roomClosing(code) -> bool            members claude.closing is set (the reaper is shutting the room down)
+ *   pruneSessionIndexes(now?, ttlMs?) -> n   by-sid and by-pid index records not written in ttlMs (SESSION_INDEX_TTL_MS)
+ *                                        whose pid is not alive with its recorded start time: lib/gc.ts
  *   isHost(code) -> bool                 this machine holds the room (its store's isHost): the room Claude's spawn, reap
  *                                        and watchdog and proposal decisions run only here
  *   machineId() -> string                this machine's id (lib/home.ts), a seat record's `machine`
@@ -110,7 +115,7 @@ import { home, roomDir, machineId } from './home.ts';
 import { pidStart, pidStarts } from './lock.ts';
 import { NAME_RE, CODE_RE, SID_SAFE as SID_RE } from './text.ts';
 import { sidIndex } from '../mod/core/seat.ts';
-import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS } from './config.ts';
+import { SEAT_BEAT_MS, MOD_LEASE_FRESH_MS, SESSION_INDEX_TTL_MS } from './config.ts';
 import {
   seatAlive, leaseFresh, startMatches, PRESENCE_STATES, ROOM_CLAUDE, LEGACY_ROOM_CLAUDE, roomClaudeName,
 } from './room/members.ts';
@@ -280,6 +285,7 @@ function join({ code, name, role, machine = machineId(), account, pid: pidArg, s
   const seatRole = role as Role; // one of ROLES
   const rec: SeatRecord = { ...(local ? localSeat({ name, role: seatRole, machine, pid, session_id, cwd }) : { name, role: seatRole, machine }), ...(account ? { account } : {}) };
   const r = membersOf(code).join(rec);
+  if (r.ok) store.indexRoom(code); // it may be open from here on (lib/room/registry.ts)
   if (r.ok && local) {
     retirePrevious(code, name, pid);
     writeIndexes(code, rec);
@@ -393,6 +399,26 @@ function deleteModLease(sid: unknown): boolean {
 }
 
 /** Delete leases whose process is gone; a lease with no pid (or unreadable) once it is past the fresh window. */
+function pruneSessionIndexes(now = Date.now(), ttlMs = SESSION_INDEX_TTL_MS): number {
+  let n = 0;
+  for (const dir of [byPidDir(), path.join(home(), 'sessions', 'by-sid')]) {
+    let names: string[];
+    try { names = fs.readdirSync(dir); } catch { continue; }
+    for (const f of names) {
+      if (!f.endsWith('.json')) continue;
+      const file = path.join(dir, f);
+      let old = false;
+      try { old = now - fs.statSync(file).mtimeMs >= ttlMs; } catch { continue; }
+      if (!old) continue;
+      const rec: SeatIndex | null = readJson(file);
+      if (rec && validPid(rec.pid) && seatAlive({ ...rec, machine: machineId() } as Member)) continue; // a live session's
+      rm(file);
+      n++;
+    }
+  }
+  return n;
+}
+
 function pruneModLeases(now = Date.now()): number {
   const dir = path.join(home(), 'sessions', 'mods');
   let names: string[];
@@ -490,14 +516,21 @@ const isMember = (m: Member | null | undefined): m is Member => !!m && m.role !=
 const liveMembers = (code: string): string[] => Object.values(readMembers(code)).filter(m => isMember(m) && seatAlive(m)).map(m => m.name);
 const roomClosing = (code: string): boolean => { const o = readMembers(code).claude; return !!(o && o.closing); };
 
-const roomCodes = (): string[] => store.listRooms();
+/** Closed for good: no person's seat that has not left, and no room Claude that may still run. Only a join reopens it. */
+const closedForGood = (ms: Members): boolean => !Object.values(ms).some(m => !!m && (isMember(m) ? !m.left_at : roomClaudeActive(m)));
 
-/** Every room's members document, with the start times of their live local pids read by one ps call. */
+/**
+ * The indexed rooms' members documents, with the start times of their live local pids read by one ps call. A room
+ * closed for good, or whose directory and link are gone, leaves the index.
+ */
 function allMembers(): { code: string; ms: Members }[] {
-  const all = roomCodes().map(code => ({ code, ms: readMembers(code) }));
+  const all = store.indexedRooms().filter(roomExists).map(code => ({ code, ms: readMembers(code) }));
+  const gone = store.indexedRooms().filter(c => !roomExists(c)).concat(all.filter(r => closedForGood(r.ms)).map(r => r.code));
+  if (gone.length) { try { store.unindexRooms(gone); } catch { /* the next look drops them */ } }
+  const open = all.filter(r => !closedForGood(r.ms));
   const here = machineId();
-  pidStarts(all.flatMap(({ ms }) => Object.values(ms)).filter(m => m && !m.left_at && validPid(m.pid) && (m.machine || here) === here && isAlive(m.pid)).map(m => m.pid as number));
-  return all;
+  pidStarts(open.flatMap(({ ms }) => Object.values(ms)).filter(m => m && !m.left_at && validPid(m.pid) && (m.machine || here) === here && isAlive(m.pid)).map(m => m.pid as number));
+  return open;
 }
 
 function openRooms(): string[] {
@@ -557,6 +590,6 @@ export {
   roomDir, machineId, newCode, roomExists, isHost, openRooms, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
   leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, localSeats, adoptLocalSeats,
-  MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, writePresence,
+  MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, pruneSessionIndexes, writePresence,
 };
 export type { Identity, SeatIndex, ModLease, JoinRequest, RoomClaudePatch };
