@@ -363,6 +363,8 @@ function linkCmd(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { reset: 0, forget: 0, force: 0 });
   const code = rest[0];
   if (!code || (flags.reset && flags.forget)) die('usage: sub-human link CODE [--reset | --forget [--force]]');
+  // first: room.open on a code this machine does not know is a room hosted here, which it is not (forgotten already)
+  if (!identity.roomExists(code)) die(`no room ${code} on this machine`, 1);
   const opened = room.open(code).store;
   if (opened.isHost) die(`this machine hosts room "${code}"; there is no connection to ${flags.forget ? 'forget' : 'start'}`, 1);
   const s = opened as MirrorRoomStore; // not the host: the room's mirror

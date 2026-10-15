@@ -11,15 +11,17 @@ const identity = require(path.join(h.LIB, 'identity.ts'));
 const roomClaude = require(path.join(h.LIB, 'room-claude.ts'));
 
 /** A stub claude: appends {argv, env, cwd} to calls.jsonl; `--bg` prints the backgrounded line; `agents --json`
- * prints `agents` (a JSON array) when given, else nothing (cc.jobs() then fails and the parsed id is used). */
-function stubClaude({ out = 'backgrounded · 0b500131 · claude.x', agents = null } = {}) {
+ * prints `agents` (a JSON array) when given, else nothing (cc.jobs() then fails and the parsed id is used);
+ * `before`, when given, is what it prints until the first `--bg`. */
+function stubClaude({ out = 'backgrounded · 0b500131 · claude.x', agents = null, before = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sh-stub-'));
   const log = path.join(dir, 'calls.jsonl');
   const bin = path.join(dir, 'claude');
+  const bg = path.join(dir, 'bg');
   fs.writeFileSync(bin, `#!${process.execPath}\n` +
     `require('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify({argv: process.argv.slice(2), env: process.env, cwd: process.cwd()}) + '\\n');\n` +
-    `if (process.argv.includes('--bg')) console.log(${JSON.stringify(out)});\n` +
-    (agents ? `if (process.argv[2] === 'agents') console.log(${JSON.stringify(JSON.stringify(agents))});\n` : ''));
+    `if (process.argv.includes('--bg')) { require('fs').writeFileSync(${JSON.stringify(bg)}, ''); console.log(${JSON.stringify(out)}); }\n` +
+    (agents ? `if (process.argv[2] === 'agents') console.log(${before ? `require('fs').existsSync(${JSON.stringify(bg)}) ? ${JSON.stringify(JSON.stringify(agents))} : ${JSON.stringify(JSON.stringify(before))}` : JSON.stringify(JSON.stringify(agents))});\n` : ''));
   fs.chmodSync(bin, 0o755);
   const calls = () => { try { return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch { return []; } };
   return { bin, calls, dir };
@@ -167,7 +169,7 @@ test('room-claude: reap waits the grace, marks closing, tells the room\'s Claude
     assert.equal(await p, 'stopped');
     const dt = Date.now() - t0;
     assert.ok(dt < 3000, `stopped once task 1 completed (${dt} ms), not at the 20 s cap`);
-    assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'cafe1234']]);
+    assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'cafe1234'], ['agents', '--json', '--all']], 'then looks for strays');
     assert.equal(s.calls()[0].env.CLAUDE_PID, undefined, 'clean env for stop');
     assert.equal(s.calls()[0].env.CLAUDE_CONFIG_DIR, cfg, 'stop reaches the same daemon (CLAUDE_CONFIG_DIR is on the allowlist)');
     const rec = identity.readMembers(code).claude;
@@ -197,7 +199,7 @@ test('room-claude: reap stops at the wait cap when task 1 stays open; a rejoin i
     const [a, b] = await Promise.all([roomClaude.reap(code, { graceMs: 20, waitMs: 400, pollMs: 50 }), roomClaude.reap(code, { graceMs: 120, waitMs: 400 })]);
     assert.ok(Date.now() - t0 >= 400, 'waited the cap');
     assert.deepEqual([a, b], ['stopped', 'no-claude']);
-    assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'beef0001']]);
+    assert.deepEqual(s.calls().map(c => c.argv).filter(a => a[0] === 'stop'), [['stop', 'beef0001']]);
   });
   alice.kill();
 });
@@ -270,7 +272,14 @@ test('room-claude: spawn with a claim stops the previous job first, finds the jo
     { id: 'bbbb1111', kind: 'background', name: `claude.${code}`, state: 'working', startedAt: 2, sessionId: 'bbbb1111-full' },
     { pid: 5, kind: 'interactive', name: `claude.${code}`, sessionId: 'i' },
   ];
-  const s = stubClaude({ out: 'something else entirely', agents });
+  // before the launch: the old job and a stray the record lost (done, its process alive); bbbb1111 comes with --bg
+  const before = [
+    { id: 'dead0001', kind: 'background', name: `claude.${code}`, state: 'working', startedAt: 0 },
+    { id: 'cccc2222', pid: 7, kind: 'background', name: `claude.${code}`, state: 'done', status: 'idle', startedAt: 0 },
+    { id: 'eeee3333', kind: 'background', name: `claude.${code}`, state: 'failed', startedAt: 0 },
+    { id: 'ffff4444', pid: 8, kind: 'background', name: 'claude.other-0000', state: 'working', startedAt: 0 },
+  ];
+  const s = stubClaude({ out: 'something else entirely', agents, before });
   // a room Claude that was spawned long ago and never bound: needs a respawn, and its job must be stopped
   identity.setRoomClaude(code, { job: 'dead0001', spawned_at: new Date(Date.now() - 10 * 60_000).toISOString() });
   const c = roomClaude.claimSpawn(code, { by: 'alice' });
@@ -278,8 +287,9 @@ test('room-claude: spawn with a claim stops the previous job first, finds the jo
   const r = withEnv({ SUB_HUMAN_CLAUDE: s.bin, SUB_HUMAN_PLUGIN_DIR: '' }, () => roomClaude.spawn({ code, cwd: os.tmpdir(), ...c }));
   assert.deepEqual(r, { ok: true, job: 'bbbb1111' }, 'no backgrounded line: the job comes from agents --json');
   const argv = s.calls().map(x => x.argv[0]);
-  assert.deepEqual(argv, ['stop', '--bg', 'agents'], 'stop the old job before the respawn');
+  assert.deepEqual(argv, ['stop', 'agents', 'stop', '--bg', 'agents'], 'stop the old job and the stray before the respawn');
   assert.deepEqual(s.calls()[0].argv, ['stop', 'dead0001']);
+  assert.deepEqual(s.calls()[2].argv, ['stop', 'cccc2222'], 'the live stray only: not prevJob again, an ended job or another room');
   const o = identity.readMembers(code).claude;
   assert.deepEqual([o.job, o.job_session, o.claim, o.by], ['bbbb1111', 'bbbb1111-full', undefined, 'alice']);
 });
@@ -312,7 +322,9 @@ test('room-claude: watchStart: a job the bg daemon failed records spawn_error, c
   identity.setRoomClaude(code, { job: 'cafe0001', spawned_at: new Date().toISOString() });
   let n = 0;
   const jobs = () => [{ id: 'cafe0001', state: ++n < 3 ? 'working' : 'failed' }];
-  assert.equal(await roomClaude.watchStart(code, 'cafe0001', { pollMs: 5, bindMs: 5000, jobs }), 'failed');
+  const stopped = [];
+  assert.equal(await roomClaude.watchStart(code, 'cafe0001', { pollMs: 5, bindMs: 5000, jobs, stop: j => stopped.push(j) }), 'failed');
+  assert.deepEqual(stopped, ['cafe0001']);
   const o = identity.readMembers(code).claude;
   assert.equal(o.job, null);
   assert.equal(o.spawn_error, 'job cafe0001 failed');
@@ -321,6 +333,45 @@ test('room-claude: watchStart: a job the bg daemon failed records spawn_error, c
   assert.deepEqual([e.via, e.to], ['system', 'room'], 'to everyone');
   assert.match(e.text, /^the room's Claude did not start: job cafe0001 failed\. Run \/sub-human doctor; \/sub-human in the room starts it again$/);
   assert.equal(roomClaude.needsSpawn(code), true, 'the next join retries');
+});
+
+test('room-claude: watchStart: a job done without binding (its process alive) is stopped, cleared and named as such', async () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const room = require(path.join(h.LIB, 'room.ts'));
+  identity.setRoomClaude(code, { job: 'cafe0009', spawned_at: new Date().toISOString() });
+  const stopped = [];
+  const jobs = () => [{ id: 'cafe0009', pid: 4242, state: 'done', status: 'idle' }];
+  assert.equal(await roomClaude.watchStart(code, 'cafe0009', { pollMs: 5, bindMs: 5000, jobs, stop: j => stopped.push(j) }), 'failed');
+  assert.deepEqual(stopped, ['cafe0009'], 'stopped before the record forgets it');
+  const o = identity.readMembers(code).claude;
+  assert.deepEqual([o.job, o.spawn_error], [null, 'job cafe0009 ended without taking its seat']);
+  const e = room.open(code).readAll().filter(x => x.kind === 'status' && /did not start/.test(x.text || ''));
+  assert.equal(e.length, 1);
+  assert.match(e[0].text, /^the room's Claude did not start: job cafe0009 ended without taking its seat\. Run \/sub-human doctor/);
+  // a bound room Claude idling between turns also lists as done: it is never stopped
+  identity.setRoomClaude(code, { job: 'cafe0010', spawned_at: new Date().toISOString() });
+  identity.join({ code, name: 'claude', role: 'claude', pid: process.pid, session_id: 'so' });
+  assert.equal(await roomClaude.watchStart(code, 'cafe0010', { pollMs: 5, bindMs: 50, jobs: () => [{ id: 'cafe0010', state: 'done' }], stop: j => stopped.push(j) }), 'bound');
+  assert.deepEqual(stopped, ['cafe0009']);
+});
+
+test('room-claude: stopStrays stops every live claude.CODE job but the kept ones', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const s = stubClaude();
+  const list = [
+    { id: 'aaaa0001', pid: 1, kind: 'background', name: `claude.${code}`, state: 'done', status: 'idle' },
+    { id: 'aaaa0002', kind: 'background', name: `claude.${code}`, state: 'blocked' },
+    { id: 'aaaa0003', kind: 'background', name: `claude.${code}`, state: 'stopped' },
+    { id: 'aaaa0004', pid: 2, kind: 'background', name: `claude.${code}`, state: 'working' },
+    { id: 'aaaa0005', pid: 3, kind: 'interactive', name: `claude.${code}` },
+    { id: 'aaaa0006', pid: 4, kind: 'background', name: 'claude.other-0001', state: 'working' },
+  ];
+  const r = withEnv({ SUB_HUMAN_CLAUDE: s.bin }, () => roomClaude.stopStrays(code, ['aaaa0004'], list));
+  assert.deepEqual(r, ['aaaa0001', 'aaaa0002']);
+  assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'aaaa0001'], ['stop', 'aaaa0002']]);
+  assert.deepEqual(withEnv({ SUB_HUMAN_CLAUDE: s.bin }, () => roomClaude.stopStrays(code, [], null)), [], 'no listing: nothing');
 });
 
 test('room-claude: watchStart: no seat by the bind deadline records spawn_error, keeps the job (the next claim stops it)', async () => {
@@ -460,7 +511,7 @@ test('room-claude: crash-all-members (SIGKILL) -> the watchdog reaps the room\'s
     assert.ok(await h.until(() => !identity.isAlive(reaperPid), 120_000), 'the reaper exited');
     assert.ok(identity.readMembers(code).claude.stopped_at, 'reaper finished');
   });
-  assert.deepEqual(s.calls().map(c => c.argv), [['stop', 'dead00ff']]);
+  assert.deepEqual(s.calls().map(c => c.argv).filter(a => a[0] === 'stop'), [['stop', 'dead00ff']]);
   const rec = identity.readMembers(code).claude;
   assert.ok(rec.closing && rec.left_at);
   const room = require(path.join(h.LIB, 'room.ts'));

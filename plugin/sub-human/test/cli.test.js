@@ -308,6 +308,15 @@ test('cli link CODE --forget: refused on a room hosted here, while the daemon ru
   store.forget(code); // this process's cache (the CLI dropped its own)
   assert.equal(store.roomExists(code), false);
   assert.deepEqual(store.listRooms(), [hosted], 'no listing sees the archive, and nothing opens it as a room hosted here');
+  // forgotten already, or never known: no room, not "this machine hosts room"
+  for (const c of [code, 'nope-0000']) {
+    for (const args of [['link', c, '--forget'], ['link', c, '--forget', '--force'], ['link', c]]) {
+      const r = cli(args);
+      assert.equal(r.status, 1, args.join(' '));
+      assert.equal(r.stderr.trim(), `no room ${c} on this machine`, args.join(' '));
+    }
+  }
+  assert.equal(store.roomExists(code), false, 'nothing was created');
 
   // a seatless stop forgets too; --force any link, here one with no copy on disk
   const seatless = h.newRoom();

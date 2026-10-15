@@ -26,8 +26,11 @@
  *                (the state record, else the daemon's log), and unless --quick a hello to the host without a
  *                credential (the server answers it and nothing else) with a timeout: reachable, round trip, both
  *                sides' protocol versions, and over ssh whether BatchMode works (ssh's own error, classified).
- *                A dormant link (stopped: the room closed, or no seat of this machine is left) is info and gets no hello;
- *                a closed one's fix: /sub-human reconnects if the host opens it again, `link CODE --forget` drops it
+ *                A dormant link (stopped: the room closed, or no seat of this machine is left) is info; a closed one
+ *                gets no hello, and its fix: /sub-human reconnects if the host opens it again, `link CODE --forget`
+ *                drops it. A seatless one's room may have closed since: the mirror (its room Claude stopped) or the
+ *                host's hello (closed: true) says so, and the closed fix applies; else /sub-human reconnects only
+ *                while the host has the room open, and `link CODE --forget` drops a room no longer wanted
  *   clock:CODE   skew against the host, when its hello reply carries a time (warn 2 min, fail SIG_SKEW_MS)
  *   room-claude:CODE  per open room hosted here: the room's Claude bound and its process live (pass); its last start
  *                failed (spawn_error), or its job started over 90 s ago but never bound its seat (fail, with the job's
@@ -427,7 +430,10 @@ async function diagnoseLink(code: string, { quick, timeoutMs, env }: { quick: bo
     ...(!l.token && typeof l.request === 'string' ? { request: l.request } : {}),
     // the room's host moved (lib/handoff.ts): the link file was re-pointed at the new host; reached once a token came
     moved: l.moved ? { epoch: l.moved.epoch, host: l.moved.host, locator: l.moved.locator, demoted: !!l.moved.demoted, reached: !!l.moved.reached_at } : null };
-  if (!quick && !dormant(st)) { // a dormant link's host has no room for it: no hello
+  const quiet = dormant(st);
+  // the mirror's last word: the host stopped the room's Claude (it closed the room) before this link stopped
+  try { if (lib('identity.ts').readMembers(code).claude?.stopped_at) out.closed = true; } catch { /* no mirror */ }
+  if (!quick && quiet !== 'closed') { // a closed room's host has nothing for it: no hello; a seatless one's may say it closed
     const r: HelloProbe = spec ? await helloProbe(spec, code, { timeoutMs, env }) : { ok: false, ms: 0, skipped: true, error: 'the link file names no transport' };
     const reply: HelloReply = r.reply || {};
     const hostTime = replyTime(reply);
@@ -437,6 +443,7 @@ async function diagnoseLink(code: string, { quick, timeoutMs, env }: { quick: bo
       protocol: r.ok ? { v: reply.v, proto: reply.proto || null, server: typeof reply.server === 'string' ? reply.server : null } : null,
       skewMs: r.ok && hostTime !== null ? Math.round(hostTime - (r.t0! + r.t1!) / 2) : null, // an answer carries t0 and t1
     };
+    if (r.ok && reply.closed === true) out.closed = true;
   }
   return out;
 }
@@ -456,8 +463,12 @@ function linkChecks(d: LinkReport): Check[] {
   let status: CheckStatus = d.state.state === 'online' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
   let fix: string | undefined;
   const quiet = dormant(d.state);
-  if (quiet === 'closed') fix = `the room was closed; this machine's copy is kept. If the host opens it again, /sub-human reconnects; ${cli(`link ${d.code} --forget`)} in a terminal drops it for good`;
-  else if (quiet === 'no-seat') fix = 'the connection is not running: type /sub-human in your session to start it again';
+  if (quiet === 'no-seat' && d.closed) bits.push('the host has closed the room since');
+  if (quiet === 'closed' || (quiet === 'no-seat' && d.closed)) fix = `the room was closed; this machine's copy is kept. If the host opens it again, /sub-human reconnects; ${cli(`link ${d.code} --forget`)} in a terminal drops it for good`;
+  else if (quiet === 'no-seat') {
+    // the host may have closed the room since this machine's last seat left: /sub-human would dial a closed room
+    fix = `the connection stopped when this machine's last seat left. If the host still has the room open, type /sub-human in your session to start it again; if you no longer want the room, ${cli(`link ${d.code} --forget`)} in a terminal drops it`;
+  }
   else if (d.state.state === 'fork') fix = `this machine's copy no longer matches the host's: run ${cli(`link --reset ${d.code}`)} in a terminal (it copies the room afresh; anything not sent is kept aside)`;
   else if (d.moved && !d.moved.reached && d.state.state !== 'online') {
     const who = d.moved.host || 'its host';
@@ -585,8 +596,10 @@ const RESTART = (code: string) => `then /sub-human NAME ${code} (in the room) st
 /**
  * Each open room hosted here: the room's Claude bound here and live is a pass. A fail: its last start failed
  * (spawn_error, e.g. the bg daemon crashed the job before its first turn), or its job was started (more than
- * ROOM_CLAUDE_BIND_GRACE_MS ago) but never bound its seat. The job's state (`claude agents --json --all`) tells the two
- * kinds apart: one that ended crashed, one still running had its /sub-human refused (e.g. "name taken").
+ * ROOM_CLAUDE_BIND_GRACE_MS ago) but never bound its seat. The job's state (`claude agents --json --all`) tells the
+ * kinds apart: failed or stopped crashed before its first turn, done ended its turn without binding, and one still
+ * running never took its seat for a reason only its log shows (blocked on a prompt, a refused /sub-human: nothing here
+ * records which).
  * jobs: the `claude agents` lookup (tests); called only for a job that never bound.
  */
 function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc.ts').jobs({ all: true }) }: { now?: number, jobs?: () => import('../cc.ts').AgentJob[] | null } = {}): Check[] {
@@ -618,9 +631,11 @@ function checkRoomClaudes({ now = Date.now(), jobs = () => lib('cc.ts').jobs({ a
     const why = o.spawn_error ? ` (${o.spawn_error})` : '';
     out.push(check(`room-claude:${code}`, 'fail', `room's Claude ${code}`,
       `its job ${o.job} was started ${Math.round((now - since) / 1000)} s ago but never took its seat${state ? `; the job is ${state}` : ''}${why}: the room's Claude is not running`,
-      ended
-        ? `the job ended before its first turn: claude logs ${o.job} and the bg daemon's log say why; ${DAEMON_HINT}; ${RESTART(code)}`
-        : `claude logs ${o.job} shows why its /sub-human was refused; ${DAEMON_HINT}; ${RESTART(code)}`));
+      state === 'done'
+        ? `the job ended its turn without taking its seat: claude logs ${o.job} shows why; ${DAEMON_HINT}; ${RESTART(code)}`
+        : ended
+          ? `the job ended before its first turn: claude logs ${o.job} and the bg daemon's log say why; ${DAEMON_HINT}; ${RESTART(code)}`
+          : `claude logs ${o.job} shows what it is doing and why it never took its seat; ${DAEMON_HINT}; ${RESTART(code)}`));
   }
   return out;
 }

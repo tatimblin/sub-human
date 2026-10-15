@@ -108,6 +108,8 @@ export interface HelloResult {
   time: number;
   /** Once, for a redeemed invite or a login link. */
   token?: string;
+  /** The room was closed (its Claude stopped); absent while it is open, and from an older host. */
+  closed?: boolean;
 }
 export interface OkResult { ok: boolean }
 export interface JoinResult { ok: true; rejoin?: true }

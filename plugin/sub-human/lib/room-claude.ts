@@ -31,18 +31,22 @@
  *       finds the job in `claude agents --json` (name claude.CODE; cc.jobs), falling back to the id in the
  *       "backgrounded · <job>" line (cc.parseDispatch), and records room Claude {job, job_session}. With a claim it
  *       records only while the claim is still current and the room is not closing; otherwise it stops the job
- *       it just made. A failure records {job: null, spawn_error} so the next join retries and can say why.
+ *       it just made. A failure records {job: null, spawn_error} so the next join retries and can say why. With
+ *       a current claim it first stops any other live claude.CODE job (stopStrays): one the record lost must not
+ *       run beside the new one.
  *   watchStart(code, job, {pollMs, bindMs, jobs}) -> 'bound'|'gone'|'failed'|'timeout'   the detached starter, after
  *       spawn: `claude --bg` succeeding does not mean the room's Claude runs (the bg daemon can crash it before its first
  *       turn). Every pollMs until it binds: a job `claude agents --json --all` lists as failed/stopped/done records
- *       {job: null, spawn_error}; no pid by spawned_at + bindMs records spawn_error and keeps the job (the next claim
+ *       {job: null, spawn_error} and stops the job (a done job that ended its turn without binding keeps its process:
+ *       state done, status idle); no pid by spawned_at + bindMs records spawn_error and keeps the job (the next claim
  *       stops it as prevJob). Either posts a status entry to the room. Bound, closing, stopped or superseded: silent.
  *
  * Stopping:
  *   reap(code, {graceMs, waitMs, claimed}) -> 'cancelled' | 'stopped' | 'no-claude'   after the last member leaves:
  *       wait graceMs (a quick rejoin cancels); claim members.json claude.closing under the lock (only one reaper
  *       wins); append a to=claude status "room closed: complete task 1" (the room Claude's tail child wakes it); wait up to
- *       waitMs for task 1 to complete (or the list to be cleaned up); `claude stop <job>`; mark the room's Claude left.
+ *       waitMs for task 1 to complete (or the list to be cleaned up); `claude stop <job>` and any other live
+ *       claude.CODE job (stopStrays); mark the room's Claude left.
  *       claimed: the caller already set closing (watchdog): no grace, no claim. We never delete under ~/.claude.
  *   reapDetached(code, {claimed}?)   `node lib/room-claude.ts reap CODE [--claimed]`, detached, output ignored
  *   releaseDetached(code, job)   `node lib/room-claude.ts release CODE JOB`, detached: `claude stop JOB` and nothing else (a
@@ -225,10 +229,28 @@ function stopJob(job: string | null | undefined): boolean {
   return r.status === 0;
 }
 
+/**
+ * Stop every live job named claude.CODE that keep does not hold: a job the record lost (a leak) would otherwise run
+ * beside the room's Claude under the same name. Live: it has a process (a done job can keep one) or has not ended.
+ */
+function stopStrays(code: string, keep: (string | null | undefined)[] = [],
+  list: AgentJob[] | null = cc.jobs({ all: true, bin: claudeBin(), env: cleanEnv(), timeout: config.SPAWN_TIMEOUT_MS })): string[] {
+  const name = `claude.${code}`;
+  const strays = (list || []).filter(j => !!j.id && j.kind !== 'interactive' && j.name === name && !keep.includes(j.id)
+    && (!!j.pid || !ENDED.has(j.state ?? ''))).map(j => j.id as string);
+  for (const id of strays) stopJob(id);
+  return strays;
+}
+
 function spawn(opts: SpawnOpts): SpawnResult {
   const { code, claim = null, prevJob = null } = opts;
   const plan = spawnPlan(opts);
   if (prevJob) stopJob(prevJob); // a respawn never leaves the old job running beside the new one
+  if (claim) {
+    // nor one the record lost; only while this claim is current (a stale starter must not stop the new job)
+    const o = (() => { try { return (identity.readMembers(code) as Members).claude || null; } catch { return null; } })();
+    if (o && o.claim === claim && !o.closing) stopStrays(code, [prevJob]);
+  }
   const r = spawnSync(plan.bin, plan.args, {
     cwd: plan.cwd, env: plan.env, encoding: 'utf8', timeout: config.SPAWN_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -279,7 +301,8 @@ async function watchStart(code: string, job: string, {
   bindMs = config.ROOM_CLAUDE_BIND_MS,
   // --all: a failed job is left out without it
   jobs = () => cc.jobs({ all: true, bin: claudeBin(), env: cleanEnv(), timeout: config.SPAWN_TIMEOUT_MS }),
-}: { pollMs?: number, bindMs?: number, jobs?: () => AgentJob[] | null } = {}): Promise<WatchResult> {
+  stop = stopJob,
+}: { pollMs?: number, bindMs?: number, jobs?: () => AgentJob[] | null, stop?: (job: string) => unknown } = {}): Promise<WatchResult> {
   const read = (): Member | null => { try { return (identity.readMembers(code) as Members).claude || null; } catch { return null; } };
   let deadline = 0; // from the first read: spawned_at + bindMs
   for (;;) {
@@ -291,7 +314,8 @@ async function watchStart(code: string, job: string, {
     const state = (jobs() || []).find(j => j.id === job)?.state || null;
     const failed = !!state && ENDED.has(state);
     if (!failed && clock.now() <= deadline) continue;
-    const reason = failed ? `job ${job} ${state}` : `did not take its seat in ${Math.round(bindMs / 1000)} s (job ${job}: ${state || 'not listed'})`;
+    const reason = state === 'done' ? `job ${job} ended without taking its seat`
+      : failed ? `job ${job} ${state}` : `did not take its seat in ${Math.round(bindMs / 1000)} s (job ${job}: ${state || 'not listed'})`;
     let rec: Member | null = null;
     try {
       // a deadline keeps the job: the next claim stops it as prevJob (it may still be running)
@@ -299,6 +323,9 @@ async function watchStart(code: string, job: string, {
         : failed ? { job: null, claim: undefined, spawn_error: reason } : { spawn_error: reason }));
     } catch { rec = null; }
     if (!rec) continue;
+    // the record no longer holds an ended job, so stop it now: a done job can keep its process (state done, status
+    // idle), and the next claim would have no prevJob to stop. After the update, which is what checks it never bound.
+    if (failed) stop(job);
     postNotStarted(code, reason);
     return failed ? 'failed' : 'timeout';
   }
@@ -369,6 +396,7 @@ async function reap(code: string, {
   let job = (identity.readMembers(code) as Members).claude?.job || o.job;
   if (job === PENDING && (identity.readMembers(code) as Members).claude?.pid) job = findJob(code)?.id; // bound, starter died
   stopJob(job);
+  stopStrays(code, [job]); // a job the record lost would outlive the room
   identity.setRoomClaude(code, { stopped_at: new Date().toISOString() });
   try { identity.leave(code, 'claude', {}); } catch { /* already left */ }
   return 'stopped';
@@ -412,7 +440,7 @@ function watchdog(code: string, { now = clock.now(), orphanMs = orphanMsDefault(
 }
 
 export {
-  CLOSE_TEXT, PENDING, pluginDirFor, spawnPlan, command, needsSpawn, claimSpawn, spawn, watchStart, startDetached, reap,
+  CLOSE_TEXT, PENDING, pluginDirFor, spawnPlan, command, needsSpawn, claimSpawn, spawn, stopStrays, watchStart, startDetached, reap,
   reapDetached, releaseDetached, watchdog, taskListId, tasksDir,
 };
 
