@@ -22,7 +22,8 @@
  *   userSettingsFiles(cwd, env)          the settings files the plugin reads showClearContextOnPlanAccept from
  *   clearContextOnPlanAccept(cwd, env)   true when any of them sets it
  *   readLines(file, {tailBytes}), readEntries(file, {tailBytes}), parseLines(lines)
- *   planFile(lines, toolInput?), planFeedback(lines, toolUseId), toolUseInput(lines, toolUseId)
+ *   planFile(lines, toolInput?), planAnswer(lines, toolUseId) -> {note}|null (null: no tool_result on disk yet),
+ *   planFeedback(lines, toolUseId), toolUseInput(lines, toolUseId)
  *   contentText(content), PASTED_RE, unwrapPasted(text)
  *   JOB_RE, parseDispatch(text), parseAgentsJson(text), jobs(opts), agentsCmd(all), stopCmd(id)
  *   parseDaemonStatus(text), daemonStatus(opts)   `claude daemon status`: {running, pid, version}
@@ -295,20 +296,23 @@ const SAID = 'the user said:\n';
 const NOTE = '\n\nNote: The user\'s next message';
 
 /**
- * The person's "No, keep planning" / "Tell Claude what to change" note for tool use toolUseId, or null
- * (no rejection on disk yet, not an error result, or rejected with no note, e.g. Esc). Prefers the
- * structured top-level `userFeedback` field on the tool_result entry; falls back to the text after
- * "the user said:\n" (cut at the "Note: The user's next message" suffix).
+ * How the dialog of tool use toolUseId closed, as far as the transcript has it: null while its tool_result is not
+ * on disk (the dialog still open, or the line not written yet), else {note}: the person's "No, keep planning" /
+ * "Tell Claude what to change" note, or null (approved: not an error result; or rejected with no note, e.g. Esc).
+ * Prefers the structured top-level `userFeedback` field on the tool_result entry; falls back to the text after
+ * "the user said:\n" (cut at the "Note: The user's next message" suffix). On 2.1.296 the entry also carries
+ * toolUseResult "Error: <the text>", toolDenialKind "user-rejected" and permissionDecision {decision "reject",
+ * source "user_reject"}, none of which is read.
  * Remote Control (the phone; observed on 2.1.292) answers the same dialog with the same shapes, so its note is
  * read the same way: "Suggest edits" / deny with a note is an is_error tool_result, toolDenialKind
  * "user-rejected", userFeedback "<note>", content "The user doesn't want to proceed with this tool use. The tool
  * use was rejected (…). To tell you how to proceed, the user said:\n<note>\n\nNote: The user's next message may
  * contain a correction or preference. …"; a bare deny has no userFeedback and reads "… STOP what you are doing
- * and wait for the user to tell you how to proceed.\n\nNote: …" (null here: closed without answering).
+ * and wait for the user to tell you how to proceed.\n\nNote: …" (note null here: closed without answering).
  * @cc ?.feedbackIsFromUser&&
  * @stability incidental
  */
-function planFeedback(lines: readonly TranscriptLine[], toolUseId: string | null | undefined): string | null {
+function planAnswer(lines: readonly TranscriptLine[], toolUseId: string | null | undefined): { note: string | null } | null {
   if (!toolUseId) return null;
   for (let k = lines.length - 1; k >= 0; k--) {
     if (!lineHas(lines[k], toolUseId, 'tool_result')) continue;
@@ -316,17 +320,20 @@ function planFeedback(lines: readonly TranscriptLine[], toolUseId: string | null
     const msg = e && e.message;
     const block = (msg && Array.isArray(msg.content) ? msg.content as (ContentBlock | null)[] : []).find(b => b && b.type === 'tool_result' && b.tool_use_id === toolUseId);
     if (!block) continue;
-    if (!block.is_error) return null;
-    if (typeof e!.userFeedback === 'string') return e!.userFeedback; // e is set: block came from its message
+    if (!block.is_error) return { note: null };
+    if (typeof e!.userFeedback === 'string') return { note: e!.userFeedback }; // e is set: block came from its message
     const t = contentText(block.content);
     const at = t.indexOf(SAID);
-    if (at < 0) return null;
+    if (at < 0) return { note: null };
     const rest = t.slice(at + SAID.length);
     const end = rest.lastIndexOf(NOTE);
-    return end >= 0 ? rest.slice(0, end) : rest;
+    return { note: end >= 0 ? rest.slice(0, end) : rest };
   }
   return null;
 }
+
+/** planAnswer's note alone: null also while the tool_result is not on disk. */
+const planFeedback = (lines: readonly TranscriptLine[], toolUseId: string | null | undefined): string | null => planAnswer(lines, toolUseId)?.note ?? null;
 
 /**
  * The input the model itself sent for tool use toolUseId (from the assistant tool_use block), or null.
@@ -662,7 +669,7 @@ const CONTRACT: readonly ContractEntry[] = Object.freeze([
     note: '"No, keep planning" returns deny with the typed feedback.' },
   { id: 'plan-reject-user-feedback', section: 3, stability: 'incidental', search: '?.feedbackIsFromUser&&',
     shape: ['userFeedback:~.behavior==="ask"?~.userFeedback:void 0,toolResultRemedy:', 'toolDenialUnanswered:~,userFeedback:~,toolResultRemedy:~,'],
-    note: 'The rejected tool_result transcript entry carries top-level userFeedback (cc.planFeedback).' },
+    note: 'The rejected tool_result transcript entry carries top-level userFeedback (cc.planAnswer, cc.planFeedback).' },
   { id: 'plan-reject-text', section: 3, stability: 'incidental', search: ['To tell you how to proceed, the user said:\n', 'Note: The user\'s next message may contain a correction'],
     note: 'Fallback: the note sits between "the user said:\\n" and "\\n\\nNote: The user\'s next message".' },
   { id: 'plan-reject-remote', section: 3, stability: 'incidental', search: ['STOP what you are doing and wait for the user to tell you how to proceed', '"user-rejected"'],
@@ -988,7 +995,7 @@ function probe(buf: Buffer, { entries = CONTRACT, envNames = true }: { entries?:
 
 export {
   ENV, sessionId, claudePid, taskListId, configDir, sanitizeId, tasksDir, taskFile, userSettingsFiles,
-  clearContextOnPlanAccept, readLines, readEntries, parseLines, planFile, planFeedback, toolUseInput,
+  clearContextOnPlanAccept, readLines, readEntries, parseLines, planFile, planAnswer, planFeedback, toolUseInput,
   lastHumanPrompt, contentText, SAID, NOTE, PASTED_RE, unwrapPasted, JOB_RE, parseDispatch, agentsCmd, stopCmd,
   parseAgentsJson, jobs, parseDaemonStatus, daemonStatus, exeState, DAEMON_ENV_ALLOW, daemonEnv, matcherIsExact, matcherMatches, shapeRe, CONTRACT,
   PROBED_VERSION, MIN_VERSION, compareVersions, locateBinary, binaryVersion, probe, runningVersion, globalConfigFile,
