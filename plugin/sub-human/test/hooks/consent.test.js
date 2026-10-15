@@ -149,8 +149,29 @@ test('consent: Post(ExitPlanMode) offers to propose once, never denies; a subage
   assert.equal(hso(r).permissionDecision, undefined);
   assert.match(ctx(r), new RegExp(`propose tool with \\{path: ${JSON.stringify(file).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}`));
   assert.equal(w.hook('consent', ev({ isAgent: true }), { as: 'alice' }).stdout, '');
-  w.lib(() => proposal.create({ code: w.code, name: 'alice' }, { path: file }));
+  const { hash } = w.lib(() => proposal.create({ code: w.code, name: 'alice' }, { path: file }));
+  assert.equal(ctx(w.hook('consent', ev(), { as: 'alice' })), `alice agreed to proposal ${hash}.`, 'pending for alice: her approval is her signoff');
   assert.equal(w.hook('consent', ev(), { as: 'alice' }).stdout, '', 'already proposed (same sha256/12)');
+});
+
+test('consent: approving my own pending proposal, unedited, in my own plan mode is my signoff; an edited one records nothing', () => {
+  const run = edited => {
+    const w = new World({ alice: 'act', bob: 'sleep' });
+    const plan = '# Plan\n\n1. paging\n';
+    const file = path.join(w.userHome, '.claude', 'plans', 'own-plan.md');
+    fs.writeFileSync(file, plan);
+    const { hash } = w.lib(() => proposal.create({ code: w.code, name: 'bob', role: 'member' }, { path: file, approvers: ['bob', 'alice'] }));
+    const r = w.hook('consent', { hook_event_name: 'PostToolUse', tool_name: 'ExitPlanMode', permission_mode: 'default', tool_input: {},
+      tool_response: { plan, isAgent: false, filePath: file, ...(edited ? { planWasEdited: true } : {}) } }, { as: 'bob' });
+    return { w, hash, r };
+  };
+  const { w, hash, r } = run(false);
+  assert.deepEqual(answers(w).map(x => [x.kind, x.via, x.from, x.proposal_hash]), [['signoff', 'human', 'bob', hash]]);
+  assert.equal(ctx(r), `bob agreed to proposal ${hash}.`);
+  assert.deepEqual(decisions(w), [], 'alice has not answered');
+  const e = run(true);
+  assert.deepEqual(answers(e.w), []);
+  assert.doesNotMatch(ctx(e.r) || '', /agreed/);
 });
 
 // ---------- the review in the native plan dialog ----------
