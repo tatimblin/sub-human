@@ -1,4 +1,4 @@
-// Join / leave lines (lib/notices.ts) and where they surface: the tail child's chat events (scripts/sub-human
+// Join / leave lines (lib/room/render.ts joinLeave, noticeText, rowSegment; shown ones in lib/room/session.ts) and where they surface: the tail child's chat events (scripts/sub-human
 // tail), the room row text (lib/rows.ts) and the room hold's progress line (mcp/hold.ts). Nothing here sleeps:
 // the tail runs on a fake clock and the hold on node:test's mock timers.
 import test from 'node:test';
@@ -7,7 +7,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as h from './helpers.ts';
-import * as notices from '../lib/notices.ts';
+import * as render from '../lib/room/render.ts';
+import * as session from '../lib/room/session.ts';
 import * as rows from '../lib/rows.ts';
 import * as room from '../lib/room.ts';
 import * as identity from '../lib/identity.ts';
@@ -22,8 +23,14 @@ import type { FakeClock } from '../lib/clock.ts';
 import type { Entry, Member, Members } from '../lib/room/types.ts';
 import type { Me, ToolResult } from '../mcp/types.ts';
 let R!: Room; // the room under test (set per test)
-/** notices.text's argument; the tests leave rejoin out where it is false. */
-type NoticeIn = Parameters<typeof notices.text>[0];
+/** The join / leave notices as these tests use them: render.ts's, and the shown ones in the seat's session document. */
+const notices = {
+  joinLeave: render.joinLeave, text: render.noticeText, rowSegment: render.rowSegment,
+  shown: (code: string, name: string) => session.shown(room.open(code).store, name),
+  markShown: (code: string, name: string, ids: number[], via: string, opts?: { now?: number }) => session.markShown(room.open(code).store, name, ids, via, opts),
+};
+/** noticeText's argument; the tests leave rejoin out where it is false. */
+type NoticeIn = Parameters<typeof render.noticeText>[0];
 
 const CODE = 'stoat-3644';
 const T0 = Date.parse('2026-10-05T10:00:00.000Z');
@@ -102,15 +109,43 @@ test('notices shown / markShown: ids merge and sort; via is required', () => {
   notices.markShown(code, 'alice', [7, 3], 'mod');
   assert.deepEqual([...notices.shown(code, 'alice')], [3, 5, 7]);
   notices.markShown(code, 'alice', [9], 'mod', { now: T0 });
-  assert.equal(room.open(code).store.kv.get('rows/notices-alice').log.at(-1).at, at(0), 'markShown stamps the given time');
+  assert.equal(session.read(room.open(code).store, 'alice').shown!.log.at(-1)!.at, at(0), 'markShown stamps the given time');
   // @ts-expect-error deliberate: no via, to see it refused
-  assert.throws(() => notices.markShown(code, 'alice', [6]), /via/);
+  assert.throws(() => session.markShown(room.open(code).store, 'alice', [6]), /via/);
   assert.throws(() => notices.markShown(code, 'alice', [6], 'model'), /via/);
   assert.throws(() => notices.markShown(code, 'alice', [6], 'monitor'), /via/, 'the Monitor is gone');
 });
 
 // ---------- the room hold's progress line ----------
 // mcp/hold.ts polls on the global timers and Date, so node:test's mock timers drive it: no real waiting.
+test('session document: one per seat; a seat an earlier sub-human kept in separate documents keeps them, migrated by the first write', () => {
+  h.freshHome();
+  const code = h.newRoom();
+  const s = room.open(code).store;
+  // what 0.5.0-beta.15 kept per seat
+  s.setCursor('deliver-alice', 41);
+  s.kv.set('rows/notices-alice', { shown: [3, 5], log: [{ id: 5, via: 'mod', at: at(0) }] });
+  s.kv.set('members/alice/review', { phase: 'shown', hash: 'abcdef012345', at: T0 });
+  s.kv.set('members/alice/confirm', { hash: 'abcdef012345', note: 'wait', from: 'bob', title: 'x', at: T0 });
+  s.kv.set('members/alice/pick', { hash: 'abcdef012345', at: T0 });
+  s.kv.set('rows/holds-alice', { pid: process.pid, at: at(0), members: ['bob'], room: true });
+  const old = session.read(s, 'alice');
+  assert.deepEqual([old.cursor, old.shown!.ids, old.review!.phase, old.confirm!.note, old.pick!.hash, old.holds!.members], [41, [3, 5], 'shown', 'wait', 'abcdef012345', ['bob']]);
+  assert.deepEqual([...notices.shown(code, 'alice')], [3, 5], 'nothing shown twice after an upgrade');
+  // the first write keeps every field, and from then on the document is the one place
+  session.put(s, 'alice', 'cursor', 42);
+  s.kv.delete('members/alice/review');
+  const now = session.read(s, 'alice');
+  assert.deepEqual([now.cursor, now.review!.phase, now.confirm!.note], [42, 'shown', 'wait']);
+  session.put(s, 'alice', 'review', undefined);
+  assert.equal(session.read(s, 'alice').review, undefined, 'a cleared field stays cleared (the older document is not read again)');
+  assert.equal(session.read(s, 'bob').cursor, undefined, 'another seat: its own document');
+  // blocks: per row agent, the newest kept
+  session.setBlocks(s, 'alice', 'a1', 2);
+  assert.equal(session.blocks(s, 'alice', 'a1'), 2);
+  assert.equal(session.blocks(s, 'bob', 'a1'), 0);
+});
+
 test('hold {room}: joins and settled leaves show as notices on the progress line; a quick round trip shows nothing', async t => {
   const ENV = { SUB_HUMAN_HOLD_POLL_MS: '20', SUB_HUMAN_HOLD_GRACE_MS: '100000', SUB_HUMAN_HOLD_WHO_MS: '20', SUB_HUMAN_LEAVE_MS: '300' };
   const old = Object.fromEntries(Object.keys(ENV).map(k => [k, process.env[k]]));

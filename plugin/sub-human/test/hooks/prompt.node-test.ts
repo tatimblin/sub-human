@@ -4,11 +4,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { World, PLUGIN, HOOKS, room, hso, ctx, identity } from './helpers.ts';
+import { World, PLUGIN, HOOKS, hso, ctx, identity } from './helpers.ts';
 import { merge } from '../../hooks/handlers/prompt.ts';
 import type { HookOutput } from '../../hooks/types.ts';
 import type * as Register from '../../mod/register.ts';
 import type { Review } from '../../lib/types-app.ts';
+import * as proposal from '../../lib/proposal.ts';
 
 const NONCE = 'abcdef01'.repeat(4);
 const ev = (extra = {}) => ({ hook_event_name: 'UserPromptSubmit', sub_human_origin: 'composer', sub_human_nonce: NONCE, prompt_id: 'p1', ...extra });
@@ -48,7 +49,7 @@ test('prompt: consent\'s subHuman {reviewOpen} rides on the one output (only the
   const r = w.hook('prompt', ev({ prompt: 'hi', permission_mode: 'default' }), shim);
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.json!.subHuman, { reviewOpen: false });
-  w.lib(() => room.open(w.code).store.kv.set('members/bob/review', { phase: 'shown', mode: 'auto', at: Date.now(), hash: 'abcdef012345' }));
+  w.lib(() => proposal.writeReview({ code: w.code, name: 'bob' }, { phase: 'shown', mode: 'auto', at: Date.now(), hash: 'abcdef012345' }));
   const p = w.hook('prompt', ev({ prompt: 'still here', permission_mode: 'plan' }), shim);
   assert.deepEqual(p.json!.subHuman, { reviewOpen: true });
   assert.match(ctx(p)!, /ExitPlanMode/);
@@ -63,8 +64,9 @@ test('prompt: consent\'s subHuman {reviewOpen} rides on the one output (only the
 
 test('prompt: an open review in plan mode adds consent\'s exit line to at-room\'s context; an @room post stops alone, the review still resolved', () => {
   const w = new World({ claude: 'sleep', alice: 'act', bob: 'sleep' });
-  const setReview = (st: Review) => w.lib(() => room.open(w.code).store.kv.set('members/bob/review', st));
-  const getReview = () => w.lib(() => room.open(w.code).store.kv.get<Review>('members/bob/review'));
+  const bob = { code: w.code, name: 'bob' };
+  const setReview = (st: Review) => w.lib(() => proposal.writeReview(bob, st));
+  const getReview = () => w.lib(() => proposal.readReview(bob));
   lease(w, 'bob');
   setReview({ phase: 'shown', mode: 'auto', at: Date.now(), hash: 'abcdef012345' });
   const r = w.hook('prompt', ev({ prompt: 'hi', permission_mode: 'plan' }), { as: 'bob' });

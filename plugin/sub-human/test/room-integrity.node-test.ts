@@ -10,7 +10,7 @@ import * as room from '../lib/room.ts';
 import * as config from '../lib/config.ts';
 import * as consent from '../lib/room/consent.ts';
 import { lane } from '../lib/room/deliver.ts';
-import * as notices from '../lib/notices.ts';
+import { joinLeave } from '../lib/room/render.ts';
 import type { Room } from '../lib/room.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
 import type { Entry, EntryInput, Via } from '../lib/room/types.ts';
@@ -242,7 +242,7 @@ test('readView: lanes, proposals and notices judged against the view match readA
         assert.equal(lane(me, e, view, R.trust), lane(me, e, all, R.trust), `lane ${me.name} #${e.id} (${e.kind}) after ${after}`);
       }
       assert.equal(R.stateLine(me, view), R.stateLine(me, all));
-      assert.deepEqual(notices.joinLeave(view, me.name), notices.joinLeave(all, me.name));
+      assert.deepEqual(joinLeave(view, me.name), joinLeave(all, me.name));
     }
     assert.deepEqual(consent.proposals(view, R.trust), consent.proposals(all, R.trust));
   }

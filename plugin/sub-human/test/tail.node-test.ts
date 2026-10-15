@@ -12,7 +12,7 @@ import * as rows from '../lib/rows.ts';
 import * as config from '../lib/config.ts';
 import { createFake } from '../lib/clock.ts';
 import * as tailLib from '../lib/tail.ts';
-import * as notices from '../lib/notices.ts';
+import * as session from '../lib/room/session.ts';
 import * as proposal from '../lib/proposal.ts';
 import type { Room } from '../lib/room.ts';
 import type { FsRoomStore } from '../lib/room/store.ts';
@@ -94,7 +94,8 @@ function startTail({ timings = {}, lookup = () => identity.resolveByPid(process.
 const inRoom = <T>(code: string, f: (r: Room) => T): T => f(room.open(code));
 const say = (code: string, from: string, text: string, extra: Partial<EntryInput> = {}, via: Via = 'human') => inRoom(code, r => r.append({ kind: 'say', text, ...extra }, { via, from }));
 const sys = (code: string, kind: string, from: string, extra: Partial<EntryInput> = {}) => inRoom(code, r => r.append({ kind, text: `${from} ${kind}`, ...extra }, { via: 'system', from, system: true }));
-const cursor = (code: string, name: string) => inRoom(code, r => r.getCursor(`deliver-${name}`));
+const cursor = (code: string, name: string) => inRoom(code, r => session.get(r.store, name, 'cursor') || 0);
+const shown = (code: string, name: string) => inRoom(code, r => session.shown(r.store, name));
 const H1 = 'abcdef012345', H2 = 'bbbbbbbbbbbb';
 const prop = (code: string, from: string, hash: string, approvers: string[]) => inRoom(code, r => r.append({ kind: 'proposal', text: `${from} proposes`, hash, approvers }, { via: 'agent', from }));
 
@@ -151,7 +152,7 @@ test('tail: silent before join, then the member push lane, settled into one batc
   assert.ok(t.forClaude()[1].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)} waiting on alice · you: answer needed (`), t.forClaude()[1]);
   assert.ok(t.forClaude()[1].includes(`"proposal ${H2}"`), 'the card call carries the full hash');
   assert.equal(cursor(code, 'alice'), 19);
-  assert.ok(notices.shown(code, 'alice').has(12), 'the join is recorded as shown (a restarted child does not repeat it)');
+  assert.ok(shown(code, 'alice').has(12), 'the join is recorded as shown (a restarted child does not repeat it)');
   assert.deepEqual(t.errs, []);
 });
 
@@ -265,10 +266,10 @@ test('tail: startCursor: the saved cursor, else (the room\'s Claude after a 0.4.
   const rm = (cursors: Record<string, number>): Parameters<typeof tailLib.startCursor>[0] =>
     ({ getCursor: k => cursors[k] || 0, readView: () => [{ id: 7, kind: 'member_joined', from: 'claude' } as Entry] });
   const claude = { name: 'claude', role: 'claude' } as Identity;
-  assert.equal(tailLib.startCursor(rm({ 'deliver-claude': 5, 'deliver-orch': 3 }), 'deliver-claude', claude, 9), 5);
-  assert.equal(tailLib.startCursor(rm({ 'deliver-orch': 3 }), 'deliver-claude', claude, 9), 3, 'resumes where the orch stopped');
-  assert.equal(tailLib.startCursor(rm({}), 'deliver-claude', claude, 9), 7, 'no cursor: its latest join');
-  assert.equal(tailLib.startCursor(rm({ 'deliver-orch': 3 }), 'deliver-bob', { name: 'bob', role: 'member' } as Identity, 9), 9, 'a member never reads it');
+  assert.equal(tailLib.startCursor(rm({ 'deliver-orch': 3 }), 5, claude, 9), 5, 'the session document\'s cursor');
+  assert.equal(tailLib.startCursor(rm({ 'deliver-orch': 3 }), 0, claude, 9), 3, 'resumes where the orch stopped');
+  assert.equal(tailLib.startCursor(rm({}), 0, claude, 9), 7, 'no cursor: its latest join');
+  assert.equal(tailLib.startCursor(rm({ 'deliver-orch': 3 }), 0, { name: 'bob', role: 'member' } as Identity, 9), 9, 'a member never reads it');
 });
 
 test('tail: survives a restart via its cursor (no read from byte 0); switches when the session changes rooms', () => {
@@ -494,8 +495,8 @@ test('tail: a member batch is chat + pull, a line to me is a wake; it says its s
   const wake = t.of('wake')[0].text.split('\n');
   assert.deepEqual(wake.slice(0, 4), ['bob: @alice can you look?', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`, 'claude proposed: claude proposes (bbbbbb)']);
   assert.ok(wake[4].startsWith(`(for Claude) room now: proposal ${H2.slice(0, 6)}`), wake[3]);
-  assert.equal(inRoom(code, r => r.getCursor('deliver-alice')), 7);
-  assert.ok(notices.shown(code, 'alice').has(2), 'the join is recorded as shown');
+  assert.equal(cursor(code, 'alice'), 7);
+  assert.ok(shown(code, 'alice').has(2), 'the join is recorded as shown');
   t.stop();
   assert.deepEqual(t.errs, []);
 });

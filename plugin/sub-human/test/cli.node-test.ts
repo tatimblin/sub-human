@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import * as h from './helpers.ts';
 import * as room from '../lib/room.ts';
+import * as session from '../lib/room/session.ts';
 import * as identity from '../lib/identity.ts';
 import * as proposal from '../lib/proposal.ts';
 import * as textMod from '../lib/text.ts';
@@ -90,7 +91,7 @@ test('cli tail (smoke): silent before join, then one settled block; resumes from
   assert.deepEqual(a.lines(), ['bob: bob says hi', "bob's Claude (to you): q for alice", `(for Claude) to answer bob's Claude: SendMessage bob.${code}`], a.out);
   assert.deepEqual([a.of('chat').length, a.of('wake').length], [1, 1], 'one burst: one chat, one wake');
   // The cursor is saved once stdout drained; stopping before then replays #4 (at-least-once), so wait for it.
-  assert.equal(await h.until(() => R.getCursor('deliver-alice') === 4, 3000), true, 'the cursor reached #4');
+  assert.equal(await h.until(() => session.get(R.store, 'alice', 'cursor') === 4, 3000), true, 'the cursor reached #4');
   await a.stop();
   say('bob', 'posted in the gap');                       // #5: nobody is watching
   const b = startTail();

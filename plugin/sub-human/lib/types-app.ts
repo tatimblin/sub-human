@@ -9,8 +9,21 @@
 import type { Entry, HostProof, ProposalState } from './room/types.ts';
 import type { HandoffAsk } from './remote/types-core.ts';
 
+// ---------- lib/room/session.ts ----------
+/** A seat's session document, members/NAME/session (lib/room/session.ts documents each field). */
+export interface SessionDoc {
+  v: 1;
+  cursor?: number;
+  shown?: { ids: number[]; log: { id: number; via: string; at: string }[] };
+  review?: Review;
+  confirm?: Confirm;
+  pick?: { hash: string | null; at: number };
+  holds?: Holds;
+  blocks?: Record<string, number>;
+}
+
 // ---------- lib/rows.ts ----------
-/** rows/holds-NAME as readHolds returns it (mcp/hold.ts writes it). */
+/** A seat's holds as readHolds returns them (mcp/hold.ts writes them to its session document). */
 export interface Holds {
   pid: number;
   at: string;

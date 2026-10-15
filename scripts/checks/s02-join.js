@@ -17,7 +17,7 @@ module.exports = {
     const want = new RegExp(`^⏺ sub-human: joined ${code} as ${B}, with ${A} · @room to talk, @claude to ask the room's Claude`);
     det(`${B}'s join shows one line, "sub-human: joined CODE as ${B}, with ${A} · …", and no "blocked by hook" frame`, jn.notices.length === 1 && want.test(jn.notices[0]) && !jn.frame,
       `${jn.notices.length} join line(s)${jn.notices.length ? `: ${jn.notices.map(l => `"${l}"`).join('; ')}` : ''}; hook frame ${jn.frame ? `"${jn.frame}"` : 'none'} in ${x.capName('S2', B, 'last')}`);
-    const ha = x.st('S2', 'last', `holds-${A}.json`, {}), hb = x.st('S2', 'last', `holds-${B}.json`, {}), ho = x.st('S2', 'last', 'holds-claude.json', {});
+    const ha = x.holdsAt('S2', 'last', A), hb = x.holdsAt('S2', 'last', B), ho = x.holdsAt('S2', 'last', 'claude');
     det(`Rows: ${B} nested in ${A}'s room row, ${A} in ${B}'s, both in the room's Claude's`, ha.room && (ha.members || []).includes(B) && hb.room && (hb.members || []).includes(A) && [A, B].every(n => (ho.members || []).includes(n)),
       `holds-${A} ${JSON.stringify({ room: ha.room, members: ha.members })}; holds-${B} ${JSON.stringify({ room: hb.room, members: hb.members })}; holds-claude ${JSON.stringify(ho.members)}`);
     const br = panelRows(x.cap('S2', B, 'last'));
@@ -32,7 +32,7 @@ module.exports = {
     const jl = new RegExp(`^\\s*(⏺ )?(sub-human: )?${esc(B)} joined\\s*$`, 'm').exec(jt);
     const via = j && x.shownVia(A, j.id);
     det(`${A} sees the chat line "${B} joined" (a lasting line, no room code, no ids)`, jl && via === 'mod',
-      `${jl ? `"${jl[0].trim()}" in ${A}'s pane (state/S2/notice-${A}.txt)` : `not seen in ${A}'s pane`}; rows/notices-${A}.json: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
+      `${jl ? `"${jl[0].trim()}" in ${A}'s pane (state/S2/notice-${A}.txt)` : `not seen in ${A}'s pane`}; ${A}'s session document: #${j ? j.id : '?'} shown via ${via || 'nothing'}`);
     const arow = panelRows(x.cap('S2', A, 'last')).find(r => r.label === code);
     det(`${A}'s room row reads "+${B} joined"`, !!(arow && arow.text.includes(`+${B} joined`)), arow ? arow.line : `no ${code} row in ${x.capName('S2', A, 'last')}`);
     // a join is group chat: the person sees the row, the model gets a copy, nothing wakes it

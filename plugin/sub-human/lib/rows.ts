@@ -1,7 +1,7 @@
 /**
  * plugin/sub-human/lib/rows.ts: participant rows in the agent panel.
- * CommonJS, zero dependencies. Reads the room log, members and presence; writes only the rows/* documents
- * (lib/room/store.ts kv).
+ * Reads the room log, members and presence; writes only the rows/* documents (lib/room/store.ts kv) and the holds and
+ * blocks of a seat's session document (lib/room/session.ts).
  *
  * Spawning (text for the model; join.ts, session-restore.ts and the role text append it, never hand-copy):
  *   rowCalls(me, members, {only}?) -> string
@@ -30,7 +30,7 @@
  *       by its title (the stored plan's first line, clipped to ROW_TITLE_MAX; the 6-char hash when there is
  *       none): rows are for people, and no tool call is made from them. Segments that do not fit are dropped.
  *       name === code (or null): the member's room row, from viewer's seat: first a join / settled leave of the
- *         last 2 min ("+bob joined", "−bob left (connection lost)"; lib/notices.ts rowSegment), then "⚠ your answer needed Cursor paging",
+ *         last 2 min ("+bob joined", "−bob left (connection lost)"; lib/room/render.ts rowSegment), then "⚠ your answer needed Cursor paging",
  *         "✓ agreed Cursor paging 1/2", "✖ objected", "✔ decided Cursor paging" ("✖ blocked …" when someone objected),
  *         "proposal Cursor paging 0/2", else "N here";
  *         then "✉ N for you", then lib/tasks.ts summary(code, viewer) ("tasks 3 open · #2 you · #4 bob").
@@ -46,9 +46,10 @@
  *   parseSpawn(toolInput, members, code) -> {kind: 'participant'|'room', name}|null
  *   recordRow(code, sessionId, agentId, rec), forgetRow(code, agentId), readRowMap(code) -> {agentId: rec}
  *       readRowMap merges every session's map in the room: /clear changes session_id, agent ids don't.
- *       sessionRowMap(code, sid) -> one session's; blockCount(code, id) / setBlockCount(code, id, n): row-hold.ts
+ *       sessionRowMap(code, sid) -> one session's; blockCount(code, name, id) / setBlockCount(code, name, id, n):
+ *       row-hold.ts (the seat's session document's blocks)
  *   Hold liveness (written by mcp/hold.ts): writeHolds(code, name, {members, room, roomUntil}), readHolds(code, name)
- *       rows/holds-<name> = {pid, at, members: [names], room: bool, roomUntil?}; readHolds folds
+ *       the seat's session document's holds = {pid, at, members: [names], room: bool, roomUntil?}; readHolds folds
  *       roomUntil into room (a room hold between its JOINED return and the re-call is still running).
  *   missingRows(code, me, {now}) -> [names]   active members whose row has no live hold (after a grace period)
  *
@@ -58,7 +59,8 @@
 import * as identity from './identity.ts';
 import * as room from './room.ts';
 import * as tasks from './tasks.ts';
-import * as notices from './notices.ts';
+import * as session from './room/session.ts';
+import { rowSegment } from './room/render.ts';
 import { isAlive } from './io.ts';
 import * as text from './text.ts';
 import * as proposal from './proposal.ts';
@@ -141,6 +143,7 @@ function ago(iso: string, now: number = Date.now()): string {
 
 /** The room's small documents (lib/room/store.ts kv). */
 const kvOf = (code: string) => room.open(code).store.kv;
+const storeOf = (code: string) => room.open(code).store;
 /** The room log (lib/room/store.ts readAll: cached, parses only appended bytes), entries with an id. */
 function readLog(code: string): readonly Entry[] {
   try { return room.open(code).readAll(); } catch { return []; }
@@ -254,7 +257,7 @@ function parseSpawn(input: unknown, members: MemberInput, code?: string | null):
 
 // ---------- the agent -> row map ----------
 const mapKey = (sid: unknown) => `rows/${SID_SAFE.test(String(sid)) ? sid : 'unknown'}`;
-const NOT_A_MAP = /^rows\/(holds|notices|blocks)-/;
+const NOT_A_MAP = /^rows\/(holds|notices|blocks)-/; // an earlier sub-human's per-seat documents (lib/room/session.ts now)
 
 /** The row map's lock: wait up to ROWS_LOCK_TIMEOUT_MS, then throw (the hook logs it); never write unlocked. */
 const LOCK = { compact: true, timeoutMs: ROWS_LOCK_TIMEOUT_MS, staleMs: ROWS_LOCK_STALE_MS };
@@ -298,17 +301,15 @@ function forgetRow(code: string, agentId: string): void {
   }
 }
 
-/** How often hooks/handlers/row-hold.ts blocked agentId's stop (rows/blocks-ID); setBlockCount(code, id, n). */
-const blocksKey = (id: unknown) => `rows/blocks-${String(id).replace(/[^A-Za-z0-9_-]/g, '') || 'x'}`;
-const blockCount = (code: string, id: string): number => Number(kvOf(code).get(blocksKey(id), 0)) || 0;
-const setBlockCount = (code: string, id: string, n: unknown): void => kvOf(code).set(blocksKey(id), Number(n) || 0, { compact: true });
+/** How often hooks/handlers/row-hold.ts blocked agentId's stop (the seat's session document); setBlockCount(code, name, id, n). */
+const blockCount = (code: string, name: string, id: string): number => session.blocks(storeOf(code), name, id);
+const setBlockCount = (code: string, name: string, id: string, n: unknown): void => session.setBlocks(storeOf(code), name, id, Number(n) || 0);
 
 // ---------- hold liveness (mcp/hold.ts writes, the status line reads) ----------
-const holdsKey = (name: string) => `rows/holds-${name}`;
 function writeHolds(code: string, name: string, { members = [], room = false, roomUntil = 0 }: { members?: string[], room?: boolean, roomUntil?: number } = {}): void {
   const rec: Holds = { pid: process.pid, at: new Date().toISOString(), members: [...new Set(members)].sort(), room: !!room };
   if (!room && roomUntil) rec.roomUntil = new Date(roomUntil).toISOString();
-  try { kvOf(code).set(holdsKey(name), rec, { compact: true }); } catch { /* best effort */ }
+  try { session.put(storeOf(code), name, 'holds', rec); } catch { /* best effort */ }
 }
 /**
  * The live holds of NAME's hold server, or null. `room` stays true until `roomUntil`: a room hold that just
@@ -317,7 +318,7 @@ function writeHolds(code: string, name: string, { members = [], room = false, ro
  */
 function readHolds(code: string, name: string, now: number = Date.now()): Holds | null {
   let h: Holds | null = null; // as writeHolds wrote it (members is checked: an older writer)
-  try { h = kvOf(code).get(holdsKey(name), null); } catch { h = null; }
+  try { h = session.get(storeOf(code), name, 'holds') || null; } catch { h = null; }
   if (!h || !isAlive(h.pid) || now - Date.parse(h.at) > HOLDS_STALE_MS) return null;
   const members = Array.isArray(h.members) ? h.members : [];
   return { ...h, members, room: !!h.room || (!!h.roomUntil && now < Date.parse(h.roomUntil)) };
@@ -458,8 +459,8 @@ function roomText(code: string, viewer: string | null | undefined, es: readonly 
   // (lib/room/link-state.ts indicator: "✕ offline 2m · 2 queued", "… connecting (3)", "⇄ online")
   const linkSeg: string = linkState.indicator(link, { now });
   if (linkSeg && link?.state !== 'online') parts.push(linkState.isDown(link) ? c.warn(linkSeg) : c.dim(linkSeg));
-  // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left (session ended)" (lib/notices.ts)
-  const move = notices.rowSegment(es, viewer, { now });
+  // a join or (settled) leave of the last 2 minutes leads the row: "+bob joined", "−bob left (session ended)" (lib/room/render.ts)
+  const move = rowSegment(es, viewer, { now });
   if (move) parts.push(c.dim(move));
   const ps = proposals(es, code);
   const need = viewer ? awaiting(ps, viewer) : [];

@@ -108,31 +108,31 @@ test('session-restore: a review left open (plan file still the proposal) is rest
   const bob = { code: w.code, name: 'bob', role: 'member' };
   const hash = w.lib(() => proposal.create(bob, { text, approvers: ['alice'] })).hash;
   const file = path.join(w.userHome, '.claude', 'plans', 'stuck.md');
-  const st = path.join(w.memberDir('alice'), 'review.json');
+  const alice = { code: w.code, name: 'alice', role: 'member' };
+  const open = () => !!w.lib(() => proposal.readReview(alice)); // her session document's review
   const leave = (extra = {}) => {
     fs.writeFileSync(file, text);
-    fs.mkdirSync(path.dirname(st), { recursive: true });
-    fs.writeFileSync(st, JSON.stringify({ phase: 'shown', mode: 'default', at: Date.now(), hash, file, backup: 'alice\'s plan\n', restored: false, ...extra }));
+    w.lib(() => proposal.writeReview(alice, { phase: 'shown', mode: 'default', at: Date.now(), hash, file, backup: 'alice\'s plan\n', restored: false, ...extra }));
   };
   leave();
   w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'alice' });
-  assert.ok(fs.existsSync(st), 'a fresh review survives compaction');
+  assert.ok(open(), 'a fresh review survives compaction');
   assert.equal(fs.readFileSync(file, 'utf8'), text);
   leave({ at: Date.now() - 2 * 60 * 60 * 1000 });
   w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact' }, { as: 'alice' });
-  assert.equal(fs.existsSync(st), false, 'a stale one is cleared');
+  assert.equal(open(), false, 'a stale one is cleared');
   assert.equal(fs.readFileSync(file, 'utf8'), 'alice\'s plan\n', 'and the person\'s plan is back');
   // After /clear: always; a plan file the person rewrote since is left alone.
   leave();
   fs.writeFileSync(file, 'alice wrote this since\n');
   w.hook('session-restore', { ...fixture('session-start-clear'), session_id: NEW_SID }, { as: 'alice', session: false });
-  assert.equal(fs.existsSync(st), false);
+  assert.equal(open(), false);
   assert.equal(fs.readFileSync(file, 'utf8'), 'alice wrote this since\n');
   // No backup (the file did not exist before): the proposal's copy is removed.
   leave({ backup: null });
   w.hook('session-restore', { ...fixture('session-start-clear'), source: 'compact', session_id: NEW_SID }, { as: 'alice', session: false });
-  assert.ok(fs.existsSync(st), 'compact, fresh: kept');
+  assert.ok(open(), 'compact, fresh: kept');
   w.hook('session-restore', { ...fixture('session-start-clear'), source: 'clear', session_id: NEW_SID }, { as: 'alice', session: false });
   assert.equal(fs.existsSync(file), false);
-  assert.equal(fs.existsSync(st), false);
+  assert.equal(open(), false);
 });

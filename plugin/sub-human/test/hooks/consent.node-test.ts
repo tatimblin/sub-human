@@ -197,8 +197,9 @@ function transcript(w: World, planFile: string | null, result?: Record<string, u
 }
 const said = (text: string) => `The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n${text}\n\nNote: The user's next message may contain a correction or preference. Pay close attention — if they explain what went wrong or how they'd prefer you to work, consider saving that to memory for future sessions.`;
 const ev = (event: string, tool?: string | null, extra: HookInput = {}): HookInput => ({ hook_event_name: event, ...(tool ? { tool_name: tool } : {}), ...extra });
-const review = (w: World): Review | null => { try { return JSON.parse(fs.readFileSync(path.join(w.memberDir('bob'), 'review.json'), 'utf8')); } catch { return null; } };
-/** The note waiting for the person's Send (members/NAME/confirm), or null. */
+/** bob's review state (his session document's review), or null. */
+const review = (w: World): Review | null => w.lib(() => proposal.readReview({ code: w.code, name: 'bob', role: 'member' } as Seat));
+/** The note waiting for the person's Send (the session document's confirm), or null. */
 const waiting = (w: World, name = 'bob') => w.lib(() => proposal.readConfirm({ code: w.code, name, role: 'member' } as Seat));
 /**
  * The confirm card for a waiting note: the model's AskUserQuestion naming `objection <hash>` (Pre asks with the
@@ -523,7 +524,7 @@ test('review: no plan path closes the review silently and falls back to the card
   assert.equal(review(w), null);
 });
 
-test('review: the note comes from the structured userFeedback field; the backup is in review.json before the overwrite', () => {
+test('review: the note comes from the structured userFeedback field; the backup is in the review state before the overwrite', () => {
   const { w, hash } = world();
   const file = path.join(w.userHome, '.claude', 'plans', 'fb.md');
   fs.writeFileSync(file, 'bob\'s own plan\n');
@@ -558,7 +559,7 @@ test('shim mode (SUB_HUMAN_SHIM=1, mod/consent.ts): Stop always reports subHuman
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.json, { subHuman: { reviewOpen: false } });
   // a review still in restore: the nudge, and the report says it is open
-  w.lib(() => roomLib.open(w.code).store.kv.set('members/bob/review', { phase: 'restore', mode: 'default', at: Date.now() }));
+  w.lib(() => proposal.writeReview({ code: w.code, name: 'bob', role: 'member' } as Seat, { phase: 'restore', mode: 'default', at: Date.now() }));
   r = stop({ permission_mode: 'auto' });
   assert.match(ctx(r)!, /restore bob's default mode/);
   assert.deepEqual(r.json!.subHuman, { reviewOpen: true });

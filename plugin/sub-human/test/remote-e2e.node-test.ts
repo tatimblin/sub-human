@@ -143,7 +143,7 @@ test('remote e2e: host, join by invite over pipe, @room, signoff → decision, a
   // nothing session-local of bob's is on the host
   const hostFiles = fs.readdirSync(path.join(host.home, 'rooms', code), { recursive: true }) as string[];
   assert.deepEqual(hostFiles.filter(f => /bob/.test(f) && !/^presence/.test(f)), []);
-  assert.ok(fs.readdirSync(path.join(remote.home, 'rooms', code)).some(f => /bob\.cursor$/.test(f)), 'his cursors are on his machine');
+  assert.ok((fs.readdirSync(path.join(remote.home, 'rooms', code), { recursive: true }) as string[]).some(f => /^members[/\\]bob[/\\]session\.json$/.test(f)), 'his session document (his delivery cursor) is on his machine');
 
   // bob's session ends: the host logs it; his daemon (and the server it spawned) exit on their own
   remote.hook('session-end', { hook_event_name: 'SessionEnd', reason: 'logout' }, bob);

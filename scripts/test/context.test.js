@@ -8,10 +8,10 @@ const { context } = require('../checks/context.js');
 
 // the API the scene modules read (checks/context.js composes it from captures, transcripts, log and cost)
 const API = [
-  'DEMO', 'A', 'B', 'remote', 'rowsDir', 'screens', 'home', 'home2', 'code', 'roomDir', 'log', 'members', 'roomClaudeSid', 'job', 'index', 'props', 'runStart',
-  'caps', 'cap', 'capName', 'span', 'stateDir', 'st', 'stText', 'nativeTasks', 'stateFile',
+  'DEMO', 'A', 'B', 'remote', 'rowsDir', 'sessionOf', 'screens', 'home', 'home2', 'code', 'roomDir', 'log', 'members', 'roomClaudeSid', 'job', 'index', 'props', 'runStart',
+  'caps', 'cap', 'capName', 'span', 'stateDir', 'st', 'stText', 'nativeTasks', 'stateFile', 'holdsAt',
   'seatFiles', 'entries', 'inSpan', 'toolUses', 'assistantIds', 'peerIn', 'wakeIn', 'chatIn', 'pullIn', 'chatTurn', 'roomClaudeTurns', 'textOf',
-  'byKind', 'fmt', 'logIn', 'replyAfter', 'shownVia', 'noModelTurn', 'rowUserText', 'rowReply', 'chainOk', 'cost',
+  'byKind', 'fmt', 'logIn', 'replyAfter', 'shownLog', 'shownVia', 'noModelTurn', 'rowUserText', 'rowReply', 'chainOk', 'cost',
 ];
 
 function fixture() {
@@ -55,8 +55,16 @@ test('context: captures, state, log and transcripts helpers over a small run', (
   assert.deepEqual(x.logIn(x.span('S2')).map(e => e.id), [2]);
   assert.deepEqual(x.props.map(e => e.id), [2]);
   assert.equal(x.fmt(x.byKind('proposal')[0]), '#2 claude system proposal abcdef: plan');
-  assert.equal(x.shownVia('bob', 1), 'mod');
+  assert.equal(x.shownVia('bob', 1), 'mod', 'a run before the session document: rows/notices-NAME.json');
   assert.equal(x.shownVia('alice', 1), null);
+  // the seat's session document (members/NAME/session.json) is read first
+  fs.mkdirSync(path.join(home, 'rooms', 'otter-0001', 'members', 'alice'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'rooms', 'otter-0001', 'members', 'alice', 'session.json'), JSON.stringify({ v: 1, cursor: 2, shown: { ids: [1], log: [{ id: 1, via: 'mod', at: t(6) }] } }));
+  assert.equal(x.shownVia('alice', 1), 'mod');
+  assert.equal(x.sessionOf('alice').cursor, 2);
+  fs.writeFileSync(path.join(screens, 'state', 'S1', '2', 'session-claude.json'), JSON.stringify({ v: 1, holds: { members: ['alice'] } }));
+  assert.deepEqual(x.holdsAt('S1', 'last', 'claude').members, ['alice']);
+  assert.deepEqual(x.holdsAt('S1', 'last', 'bob'), {}, 'none saved');
   assert.deepEqual(x.inSpan([{ timestamp: t(20) }, { timestamp: t(50) }], x.span('S2')), [{ timestamp: t(20) }]);
   assert.match(x.cost(), /^≈ \$0\.00 /);
 });

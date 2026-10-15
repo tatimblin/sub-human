@@ -13,7 +13,7 @@ module.exports = {
     const room = paths.pluginLib('room.ts');
     const e = log.find(y => y.kind === 'say' && y.from === 'alice' && y.via === 'human' && y.text === DEMO.multi9b);
     const anyA = x.logIn(s).find(y => y.kind === 'say' && y.from === 'alice');
-    const trust = e ? room.humanTrust(e) : null;
+    const trust = e ? room.trustOf(e) : null;
     det('alice\'s three-line @room text byte-exact (real newlines), via=human, signed', !!e && trust === 'verified',
       e ? `#${e.id} === typed (${Buffer.byteLength(e.text)} bytes, ${e.text.split('\n').length} lines); sig ${trust}` : `alice's say in S9b: ${x.fmt(anyA)}`);
 

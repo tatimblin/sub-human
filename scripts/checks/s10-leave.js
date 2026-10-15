@@ -31,17 +31,16 @@ module.exports = {
     const via = la && x.shownVia(B, la.id);
     const early = la && lb && Date.parse(lb.at) - Date.parse(la.at) < 8000;
     det(`${B} sees the chat line "${A} left" once the leave settled (8 s)`, ln && via === 'mod' && !early,
-      `${ln ? `"${ln[0]}" in ${B}'s pane (state/S10/notice-${B}.txt)` : `not seen in ${B}'s pane`}; rows/notices-${B}.json: #${la ? la.id : '?'} shown via ${via || 'nothing'}; ${B} left ${la && lb ? ((Date.parse(lb.at) - Date.parse(la.at)) / 1000).toFixed(1) : '?'} s after ${A}`);
+      `${ln ? `"${ln[0]}" in ${B}'s pane (state/S10/notice-${B}.txt)` : `not seen in ${B}'s pane`}; ${B}'s session document: #${la ? la.id : '?'} shown via ${via || 'nothing'}; ${B} left ${la && lb ? ((Date.parse(lb.at) - Date.parse(la.at)) / 1000).toFixed(1) : '?'} s after ${A}`);
 
     // every human saw a join/leave notice
     const moves = log.filter(e => (e.kind === 'member_joined' || e.kind === 'member_left') && e.via === 'system' && e.from !== 'claude');
     const per = [A, B].map(n => {
-      const rec = readJson(path.join(x.rowsDir(n), `notices-${n}.json`), {});
-      const lg = Array.isArray(rec.log) ? rec.log : [];
+      const lg = x.shownLog(n);
       const items = lg.map(y => { const e = log.find(z => z.id === y.id); return `#${y.id} ${e ? `${e.from} ${e.kind === 'member_left' ? 'left' : 'joined'}` : '?'} via ${y.via}`; });
       return { n, lg, items };
     });
-    det('Each human saw a join/leave notice (rows/notices-NAME.json: what was shown, and how)', per.every(p => p.lg.length > 0),
+    det('Each human saw a join/leave notice (the session document\'s shown: what was shown, and how)', per.every(p => p.lg.length > 0),
       per.map(p => `${p.n}: ${p.items.join(', ') || 'none'}`).join('; ') + `; ${moves.length} joins/leaves of members in the log`);
 
     // no entry ids in what people see: the members' panes outside the agent panel. A room task's number (#3) is no

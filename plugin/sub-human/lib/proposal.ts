@@ -58,11 +58,12 @@
  *   choose(me, ps, prompt) -> p    store that pick (namedIn, else replacedIn's p; members/NAME/pick) and return it,
  *                                  else the newest (hooks/handlers/consent.ts)
  *   picked(me, ps) -> p            Pre(EnterPlanMode): the stored pick when still among ps, else the newest
- *   readPick(me), writePick(me, hash|null)   members/NAME/pick as stored
+ *   readPick(me), writePick(me, hash|null)   the seat's session document's pick (lib/room/session.ts) as stored
  *   read(code, hash) -> string|null  the stored plan (the room blob plans/<hash>.md)
- * The plan-view review state (the room document members/NAME/review): readReview, writeReview, clearReview, withReview(me, fn)
+ * The plan-view review state (the session document's review, lib/room/session.ts): readReview, writeReview, clearReview,
+ *   withReview(me, fn)
  *   (the lock), restorePlan(st), restoreStale(me, {force, now}) (session-restore: a review left behind).
- * A review's note waiting for the person's Send (the room document members/NAME/confirm): readConfirm, writeConfirm,
+ * A review's note waiting for the person's Send (the session document's confirm): readConfirm, writeConfirm,
  *   clearConfirm; confirmCard(c) -> the AskUserQuestion input (Send, Discard), confirmQuestion(c) its question,
  *   confirmCall(hash) -> how the model opens that card, showConfirm(name, hash, interrupted?) -> the line telling it to
  *   open the card now, before anything else, and after an Esc that the Esc was no answer (lib/consent/review.ts NEXT
@@ -76,6 +77,7 @@ import os from 'node:os';
 import path from 'node:path';
 import * as identity from './identity.ts';
 import * as room from './room.ts';
+import * as session from './room/session.ts';
 import { writeFileAtomic } from './io.ts';
 import { clip, oneLine } from './text.ts';
 import * as config from './config.ts';
@@ -120,6 +122,7 @@ function store(code: string, buf: Buffer): string {
 
 const entriesOf = (me: Me, entries: readonly Entry[] | null | undefined): readonly Entry[] => entries || room.open(me.code).readAll();
 const kvOf = (me: Me) => room.open(me.code).store.kv;
+const storeOf = (me: Me) => room.open(me.code).store;
 
 function humans(code: string): string[] {
   return Object.values((identity.readMembers(code) || {}) as Members)
@@ -306,11 +309,10 @@ const PROPOSE_RE = new RegExp('^\\s*(?:@\\S+\\s+)?(?:(?:ok(?:ay)?|now|so|please|
 const proposeIntent = (prompt: string | null | undefined): boolean => PROPOSE_RE.test(String(prompt || ''));
 
 /**
- * members/NAME/pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/handlers/consent.ts reads it from
+ * The session's pick: {hash|null, at}, the proposal the person's latest prompt named (hooks/handlers/consent.ts reads it from
  * the transcript at Pre(EnterPlanMode), or a card call named). A review opens that one while pending, else the newest.
  */
-const pickKey = (me: Me) => `members/${me.name}/pick`;
-const readPick = (me: Me): { hash: string | null, at: number } | null => { try { return kvOf(me).get(pickKey(me), null); } catch { return null; } };
+const readPick = (me: Me): { hash: string | null, at: number } | null => { try { return session.get(storeOf(me), me.name, 'pick') || null; } catch { return null; } };
 /** Record what prompt names among ps (null when nothing) and return the proposal a review opens next; prompt null (not the person's words): the earlier pick stands. */
 function choose(me: Me, ps: Proposal[], prompt: string | null | undefined): Proposal | null {
   if (prompt == null) return picked(me, ps);
@@ -319,7 +321,7 @@ function choose(me: Me, ps: Proposal[], prompt: string | null | undefined): Prop
   return hit || ps.at(-1) || null;
 }
 /** Record the person's pick (null: their words named none); hooks/handlers/consent.ts's pick effect. */
-const writePick = (me: Me, hash: string | null): void => kvOf(me).set(pickKey(me), { hash, at: Date.now() }, { compact: true });
+const writePick = (me: Me, hash: string | null): void => session.put(storeOf(me), me.name, 'pick', { hash, at: Date.now() });
 /** The proposal a review opens among ps (pending, oldest first): the person's pick when it is one of them, else the newest. */
 function picked(me: Me, ps: Proposal[]): Proposal | null {
   const pk = readPick(me);
@@ -471,17 +473,17 @@ function decide(code: string, hash: string): Entry | null {
 
 // ---------- the plan-view review state (hooks/handlers/consent.ts, hooks/handlers/session-restore.ts) ----------
 /**
- * members/NAME/review: {phase, mode, at, hash?, from?, file?, backup?, restored?, tool_use_id?, …}.
+ * The session's review: {phase, mode, at, hash?, from?, file?, backup?, restored?, tool_use_id?, …}.
  * `backup` is the session plan file's text before the review overwrote it, even when that is the proposal's own
  * text (null only when there was no file: the one the review created is removed on close), recorded BEFORE the
  * overwrite, so a crash between the two never loses the person's own plan.
  */
-const reviewKey = (me: Me) => `members/${me.name}/review`;
-const readReview = (me: Me): Review | null => kvOf(me).get(reviewKey(me), null);
-const writeReview = (me: Me, st: Review): void => kvOf(me).set(reviewKey(me), st, { compact: true });
-function clearReview(me: Me): void { kvOf(me).delete(reviewKey(me)); }
-/** Every read-modify-write of the review state runs under this lock (hooks of one session can overlap). */
-const withReview = <T>(me: Me, fn: () => T): T => kvOf(me).lock(reviewKey(me), fn, { timeoutMs: config.REVIEW_LOCK_TIMEOUT_MS });
+const readReview = (me: Me): Review | null => session.get(storeOf(me), me.name, 'review') || null;
+const writeReview = (me: Me, st: Review): void => session.put(storeOf(me), me.name, 'review', st);
+function clearReview(me: Me): void { session.put(storeOf(me), me.name, 'review', undefined); }
+/** Every read-modify-write of the review state runs under this lock (hooks of one session can overlap). Its own lock,
+ * not the session document's: each write inside takes that one. */
+const withReview = <T>(me: Me, fn: () => T): T => kvOf(me).lock(`members/${me.name}/review`, fn, { timeoutMs: config.REVIEW_LOCK_TIMEOUT_MS });
 
 /** Put the session plan file back as it was before the review (atomically); marks st.restored. */
 function restorePlan(st: Review | null | undefined): void {
@@ -517,15 +519,14 @@ function restoreStale(me: Me | null | undefined, { force = false, now = Date.now
 
 // ---------- a review's note, waiting for the person's Send (hooks/handlers/consent.ts) ----------
 /**
- * members/NAME/confirm: {hash, note, from, title, at, stage} (lib/consent/review.ts: where its card stands). A plan review rejected with a note ("Tell Claude what
+ * The session's confirm: {hash, note, from, title, at, stage} (lib/consent/review.ts: where its card stands). A plan review rejected with a note ("Tell Claude what
  * to change", a phone deny with a note or "Suggest edits": Claude Code writes them alike, and a phone message typed
  * after a bare deny lands there too) records nothing by itself: the note waits here until the person answers the
  * confirm card. One per person: a newer note replaces it.
  */
-const confirmKey = (me: Me) => `members/${me.name}/confirm`;
-const readConfirm = (me: Me): Confirm | null => { try { return kvOf(me).get(confirmKey(me), null); } catch { return null; } };
-const writeConfirm = (me: Me, c: Confirm): void => kvOf(me).set(confirmKey(me), c, { compact: true });
-function clearConfirm(me: Me): void { try { kvOf(me).delete(confirmKey(me)); } catch { /* none */ } }
+const readConfirm = (me: Me): Confirm | null => { try { return session.get(storeOf(me), me.name, 'confirm') || null; } catch { return null; } };
+const writeConfirm = (me: Me, c: Confirm): void => session.put(storeOf(me), me.name, 'confirm', c);
+function clearConfirm(me: Me): void { try { session.put(storeOf(me), me.name, 'confirm', undefined); } catch { /* none */ } }
 
 const CONFIRM_NOTE_MAX = 300;
 const CONFIRM_TITLE_MAX = 80;
