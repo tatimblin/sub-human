@@ -188,7 +188,7 @@ function placeAfter(p: Payload, { keys, host, machine, newest, prevLine, now }: 
     const who = p.via === 'human' ? p.from : `${p.from}'s Claude`;
     throw new RoomError('RATE', `rate limit: ${who} posted ${rateMax(p)} times${to} in the last minute; wait before posting again`);
   }
-  if (t.replayed) throw auth('this signed entry was placed already (its nonce is in the log)');
+  if (t.replayed) throw new RoomError('AUTH', 'this signed entry was placed already (its nonce is in the log)', 'PLACED_ALREADY');
   if (p.via === 'human') checkSigned(p, keys, now);
   checkPin(p, keys);
   const { sig, ...rest } = p;

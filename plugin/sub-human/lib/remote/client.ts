@@ -2,7 +2,7 @@
  * plugin/sub-human/lib/remote/client.ts: the asynchronous side of the protocol, one connection to a room's
  * server over a transport. The link daemon (lib/remote/link.ts) holds one per room; the protocol tests drive
  * one directly. Hooks never use it: they call the daemon through lib/remote/bridge.ts. It never loads the
- * signer: a via=human payload, and a join's seat proof (lib/remote/auth.ts proveSeat), reach it already
+ * signer: a via=human payload, and a join's seat proof (lib/remote/host-links.ts proveSeat), reach it already
  * signed.
  *
  *   connect(transport, {machine, token?, invite?, pin?, login?, epoch?, caps?, deadlineMs?, helloMs?, proto?, version?}) -> Promise<Client>
@@ -38,9 +38,9 @@
  *     drain(ms?) -> Promise          resolves once no call waits for a reply (or after ms, default deadlineMs): the
  *         link daemon closes a replaced connection only then, so a hook's op in flight on it is answered
  *     close()
- *   A reply with error rejects with RoomError(code, message), the code as the server sent it. A call with no
- *   reply within deadlineMs (default LINK_CALL_MS) rejects OFFLINE (its message says the outcome is unknown: the frame
- *   went out and may still land) and its late reply is dropped; a transport
+ *   A reply with error rejects with RoomError(code, message, reason?), the code and reason as the server sent them. A call
+ *   with no reply within deadlineMs (default LINK_CALL_MS) rejects OFFLINE with reason UNKNOWN_OUTCOME (the frame went out
+ *   and may still land) and its late reply is dropped; a transport
  *   that closed rejects every pending call with OFFLINE. Nothing is retried.
  */
 
@@ -120,7 +120,7 @@ class Client {
     if (!p) return; // abandoned at its deadline, or not ours
     this.pending.delete(f.id as number);
     clearTimeout(p.timer);
-    if (f.error) p.reject(new RoomError(f.error.code, f.error.message));
+    if (f.error) p.reject(protocol.toError(f.error));
     else p.resolve(f.result);
   }
 
@@ -146,7 +146,7 @@ class Client {
   _request(op: string, params: object, id: number = ++this.seq, ms: number = this.deadlineMs): Promise<unknown> {
     if (this.closed) return Promise.reject(offline('the link is closed'));
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(offline(`${op}: no answer within ${ms} ms; ${protocol.UNKNOWN_OUTCOME}`)); }, ms);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new RoomError('OFFLINE', `${op}: no answer within ${ms} ms; ${protocol.UNKNOWN_OUTCOME}`, 'UNKNOWN_OUTCOME')); }, ms);
       this.pending.set(id, { resolve, reject, timer });
       this.transport.send(protocol.request(id, op, params));
     });

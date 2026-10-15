@@ -1,0 +1,126 @@
+/**
+ * plugin/sub-human/lib/remote/host-links.ts: the links a hosted room knows, on the host: the host-only kv document
+ * remote/links, keyed by link id, never streamed. A link is made once (an invite redeemed, lib/remote/invites.ts; or a
+ * connection over the host account's own ssh login) and is then the credential its machine says hello with: the host
+ * keeps sha256(token) only; the joiner keeps the token in clear in its link file (lib/room/links.ts), the same trust
+ * as its seat key. "Write as yourself": a link writes only as the seats that joined over it, and joins a seat only
+ * with a proof signed by that seat's key. (The joiner's own registry of links is lib/room/links.ts.)
+ *
+ *   create(store, {id, machine, seats, bound?, login?, label?, now?}) -> {token, link}   records {id, token_sha256,
+ *       machine, seats, created_at, bound?, login?, label?}; the token is returned once
+ *   loginLink(store, {id, machine, now?}) -> {token, link}   a link for a connection that arrived over the host account's
+ *       own ssh login (`serve --login`, lib/remote/server.ts): no invite, since whoever can run commands as this
+ *       account may mint one anyway. Seats [], login: true, under the id the joiner chose (its serve's --link, so kick
+ *       finds the process). AUTH for an id the room knows already
+ *   verifyToken(store, token) -> link | null
+ *   bindSeat(store, linkId, name) -> link     name joined over this link (AUTH for an unknown link, NOT_BOUND for a
+ *       bound link and another name)
+ *   mayWriteAs(link, name) -> bool            name is one of link.seats
+ *   mayJoinAs(link, name) -> bool             a bound link (the card let one name in; a handoff's seats) joins only those;
+ *                                             notBound(link, name) says why not
+ *   revokeLink(store, id, {now?}) -> {link, invites} | null   forget link id (its token stops working) and burn every
+ *       invite reserved for it; null when nothing had that id
+ *   links(store) -> {id: link};  linkKnown(store, id) -> bool (a link, or an invite's reserved link, with that id)
+ *   newLinkId() -> 12 hex;  LINK_ID_RE /^[0-9a-f]{12}$/;  LINKS_KEY 'remote/links'
+ *   proveSeat(key, {room, name, pubkey}) -> proof   the joining hook's half (it holds the seat's private key):
+ *       {kind: 'join', pubkey} signed (sig v2) for room and name
+ *   checkSeatProof(proof, {room, name, pubkey})    the server's half: AUTH unless proof is a fresh join proof for this
+ *       room, name and pubkey that verifies against pubkey, so a link cannot take a seat with a public key alone
+ */
+
+import crypto from 'node:crypto';
+import { RoomError } from '../room/validate.ts';
+import * as envelope from '../room/envelope.ts';
+import * as invites from './invites.ts';
+import type { KeyObject } from 'node:crypto';
+import type { AuthStore, LinkRecord, Links, SignedPayload } from './types-core.ts';
+
+/** A seat a proof is for. */
+interface SeatRef { room: string; name: string; pubkey: string }
+
+const LINKS_KEY = 'remote/links';
+const LINK_ID_RE = /^[0-9a-f]{12}$/;
+const newLinkId = (): string => crypto.randomBytes(6).toString('hex');
+const sha256 = (s: unknown): string => crypto.createHash('sha256').update(String(s)).digest('hex');
+const iso = (now: number): string => new Date(now).toISOString();
+
+function create(store: AuthStore, { id, machine, seats, bound = false, login = false, label, now = Date.now() }: {
+  id: string; machine: string; seats: string[]; bound?: boolean; login?: boolean; label?: string; admission?: boolean; now?: number;
+}): { token: string; link: LinkRecord } {
+  const token = crypto.randomBytes(24).toString('base64url');
+  const link: LinkRecord = {
+    id, token_sha256: sha256(token), machine, seats: [...seats], created_at: iso(now),
+    ...(bound ? { bound: true as const } : {}), ...(login ? { login: true as const } : {}), ...(label && label !== machine ? { label } : {}),
+  };
+  store.kv.update(LINKS_KEY, (cur: Links | null) => {
+    if (cur && cur[id]) throw new RoomError('AUTH', `link ${id} exists already in room ${store.code}; it says hello with its token (join again for a new link)`);
+    return { ...cur, [id]: link };
+  });
+  return { token, link };
+}
+
+function loginLink(store: AuthStore, { id, machine, now = Date.now() }: { id: string; machine: string; now?: number }): { token: string; link: LinkRecord } {
+  if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room links machines to it');
+  if (!LINK_ID_RE.test(String(id))) throw new RoomError('INVALID', 'a login link needs its id (12 hex)');
+  if (linkKnown(store, id)) throw new RoomError('AUTH', `link ${id} exists already in room ${store.code}; it says hello with its token (join again for a new link)`);
+  return create(store, { id, machine, seats: [], login: true, now });
+}
+
+function linkKnown(store: AuthStore, id: unknown): boolean {
+  if (typeof id !== 'string' || !LINK_ID_RE.test(id)) return false;
+  return !!links(store)[id] || invites.reserves(store, id);
+}
+
+function verifyToken(store: AuthStore, token: unknown): LinkRecord | null {
+  if (typeof token !== 'string' || !token) return null;
+  const digest = sha256(token);
+  return Object.values(links(store)).find(l => l.token_sha256 === digest) || null;
+}
+
+function bindSeat(store: AuthStore, linkId: string, name: string): LinkRecord {
+  const next = store.kv.update(LINKS_KEY, (cur: Links | null) => {
+    const link = cur && cur[linkId];
+    if (!link) throw new RoomError('AUTH', `no link ${linkId} in room ${store.code}`, 'LINK_REVOKED');
+    if (link.seats.includes(name)) return undefined;
+    if (link.bound) throw new RoomError('AUTH', notBound(link, name), 'NOT_BOUND');
+    return { ...cur, [linkId]: { ...link, seats: [...link.seats, name] } };
+  });
+  return (next || (store.kv.get(LINKS_KEY) as Links))[linkId];
+}
+
+const mayWriteAs = (link: { seats?: unknown } | null | undefined, name: string): boolean => !!link && Array.isArray(link.seats) && link.seats.includes(name);
+
+/** Why a bound link may not take `name`: the host let it in for its seats alone. */
+const notBound = (link: Pick<LinkRecord, 'seats'>, name: string): string =>
+  `this connection was let in as ${link.seats.join(', ')}, not ${name}; join as that name (/sub-human ${link.seats[0] || 'NAME'}), or ask the host for a new invite`;
+/** A link may join `name`: its own seats when bound, any name otherwise (a login link is the account's own). */
+const mayJoinAs = (link: Pick<LinkRecord, 'seats' | 'bound'> | null | undefined, name: string): boolean => !!link && (!link.bound || link.seats.includes(name));
+
+function revokeLink(store: AuthStore, id: string, { now = Date.now() }: { now?: number } = {}): { link: LinkRecord | null; invites: number } | null {
+  if (!store.isHost) throw new RoomError('HOST_ONLY', 'only the host of a room revokes its links');
+  let link = null as LinkRecord | null; // (as: set in the update)
+  store.kv.update(LINKS_KEY, (cur: Links | null) => {
+    if (!cur || !cur[id]) return undefined;
+    link = cur[id];
+    const next = { ...cur };
+    delete next[id];
+    return next;
+  });
+  const n = invites.burnFor(store, id, { now });
+  return link || n ? { link, invites: n } : null;
+}
+
+const links = (store: AuthStore): Links => store.kv.get(LINKS_KEY, null) || {};
+
+const proveSeat = (key: KeyObject, { room, name, pubkey }: SeatRef): SignedPayload => envelope.sign({ kind: 'join', pubkey }, key, { room, from: name });
+
+function checkSeatProof(proof: SignedPayload | null | undefined, { room, name, pubkey }: SeatRef): void {
+  const ok = !!proof && proof.kind === 'join' && proof.room === room && proof.from === name && proof.pubkey === pubkey
+    && envelope.isV2(proof) && envelope.freshTs(proof) && envelope.verify(proof, envelope.parseKey(pubkey));
+  if (!ok) throw new RoomError('AUTH', `a join needs a fresh proof signed by ${name}'s own key`);
+}
+
+export {
+  LINKS_KEY, LINK_ID_RE, newLinkId, create, loginLink, linkKnown, verifyToken, bindSeat, mayWriteAs, notBound, mayJoinAs,
+  revokeLink, links, proveSeat, checkSeatProof,
+};

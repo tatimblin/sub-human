@@ -14,7 +14,7 @@ import * as store from '../lib/room/store.ts';
 import * as link from '../lib/remote/link.ts';
 import * as links from '../lib/room/links.ts';
 import * as listener from '../lib/remote/listener.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as invites from '../lib/remote/invites.ts';
 import * as handoff from '../lib/handoff.ts';
 import * as doctor from '../lib/cli/doctor.ts';
 import { Machine } from './support/two-homes.ts';
@@ -134,7 +134,7 @@ test('handoff to a new host reached over the web: a ws locator, invites pinning 
   assert.ok(B.lib(() => listener.status()).rooms[code], 'B serves the room over the web');
   const minted = A.lib(() => handoff.hostDoc(store.open(code)));
   const forA = minted && minted.invites && Object.values(minted.invites)[0];
-  if (forA) assert.equal(auth.parseInvite(forA)!.hostKey, bkey, 'the handoff invite pins the new host\'s key');
+  if (forA) assert.equal(invites.parseInvite(forA)!.hostKey, bkey, 'the handoff invite pins the new host\'s key');
   assert.ok(await h.until(() => A.lib(() => link.status(code)).state === 'online', 10_000, 50), JSON.stringify(A.lib(() => link.status(code))));
   const lf = A.lib(() => links.get(code))!;
   assert.deepEqual(lf.transport, { kind: 'ws', host: '127.0.0.1', port: bport, path: `/sub-human/${code}`, hostKey: bkey });

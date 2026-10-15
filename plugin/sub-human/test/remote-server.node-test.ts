@@ -14,7 +14,8 @@ import * as identity from '../lib/identity.ts';
 import * as protocol from '../lib/remote/protocol.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as invites from '../lib/remote/invites.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
 import * as pipe from '../lib/remote/transports/pipe.ts';
 import * as seatKey from '../hooks/seat-key.ts';
@@ -53,15 +54,15 @@ function served(t: TestContext, host: RoomStore, wrap: (tr: Transport) => Transp
   return wrap(a);
 }
 async function linked(t: TestContext, host: RoomStore, opts: Partial<ConnectOpts> = {}) {
-  const { invite } = auth.mintInvite(host, { locator: 'pipe:test' });
-  const c = await client.connect(served(t, host), { machine: REMOTE, invite, ...opts });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: opts.machine ?? REMOTE, seats: [] });
+  const c = await client.connect(served(t, host), { machine: REMOTE, token, ...opts });
   t.after(() => c.close());
   return c;
 }
 /** What the remote join hook sends: the seat's public key and a proof signed by its private key. */
 function seat(code: string, name: string, key = seatKey.ensure(code, name)) {
   const pubkey = seatKey.publicPem(code, name);
-  return { name, pubkey, proof: auth.proveSeat(key, { room: code, name, pubkey }) };
+  return { name, pubkey, proof: hostLinks.proveSeat(key, { room: code, name, pubkey }) };
 }
 const signed = (code: string, name: string, entry: EntryInput) => store.toPayload(code, entry, { via: 'human', from: name });
 const rejects = (p: Promise<unknown>, code: string) => assert.rejects(p, (e: CodedError) => e.code === code, `expected ${code}`);
@@ -157,10 +158,10 @@ test('remote (memory): no token gets AUTH on every op but hello; a bad token, a 
 
   const hello = (opts: Partial<ConnectOpts>) => client.connect(served(t, host), { machine: REMOTE, ...opts });
   await rejects(hello({ token: 'not-a-token' }), 'AUTH');
-  const { invite } = auth.mintInvite(host, { locator: 'pipe:test' });
-  const [pre, c, loc, secret] = invite.split('.');
-  await rejects(hello({ invite: [pre, c, loc, secret.replace(/^./, ch => (ch === 'A' ? 'B' : 'A'))].join('.') }), 'AUTH');
-  await rejects(hello({ invite: [pre, 'vole-1234', loc, secret].join('.') }), 'AUTH');
+  const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
+  const [pre, c, loc, secret, key] = invite.split('.');
+  await rejects(hello({ invite: [pre, c, loc, secret.replace(/^./, (ch: string) => (ch === 'A' ? 'B' : 'A')), key].join('.') }), 'AUTH');
+  await rejects(hello({ invite: [pre, 'vole-1234', loc, secret, key].join('.') }), 'AUTH');
   (await hello({ invite })).close();
   await rejects(hello({ invite }), 'AUTH');
 
@@ -276,14 +277,14 @@ test('remote (memory): a link writes only as the seats it joined: another `from`
   await b.leave('bob', 'gone');
   const fresh = crypto.generateKeyPairSync('ed25519');
   const pubkey = fresh.publicKey.export({ type: 'spki', format: 'pem' }) as string;
-  await rejects(a.join({ name: 'bob', pubkey, proof: auth.proveSeat(fresh.privateKey, { room: code, name: 'bob', pubkey }) }), 'AUTH');
+  await rejects(a.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(fresh.privateKey, { room: code, name: 'bob', pubkey }) }), 'AUTH');
   assert.ok(identity.readMembers(code).bob.left_at);
   assert.equal(logLines(code).length, before + 1, 'only bob\'s own member_left was written');
 });
 
 test('remote (memory): a bound link (the card let one name in; a handoff\'s seats) joins its own seats only: another name, or a second seat, is AUTH', async t => {
   const { code, host } = hostRoom(t);
-  const { invite } = auth.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: ['carol'] });
+  const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: ['carol'] });
   const c = await client.connect(served(t, host), { machine: REMOTE, invite });
   t.after(() => c.close());
   const before = logLines(code).length;
@@ -293,8 +294,8 @@ test('remote (memory): a bound link (the card let one name in; a handoff\'s seat
   assert.deepEqual(await c.join(seat(code, 'carol')), { ok: true });
   assert.deepEqual(await c.join(seat(code, 'carol')), { ok: true, rejoin: true });
   await rejects(c.append(signed(code, 'bob', { kind: 'say', text: 'as bob' })), 'AUTH');
-  assert.deepEqual(auth.links(host)[c.link!].seats, ['carol']);
-  // an unbound link (an sh1 invite, a login) still picks its name at join time
+  assert.deepEqual(hostLinks.links(host)[c.link!].seats, ['carol']);
+  // an unbound link (a login's, an invite that binds no seat) still picks its name at join time
   const open = await linked(t, host);
   assert.deepEqual(await open.join(seat(code, 'erin')), { ok: true });
 });
@@ -380,7 +381,7 @@ test('remote (memory): over a flaky link a dropped frame is OFFLINE at the deadl
 
 test('remote (pipe): `sub-human serve --stdio CODE` as a child serves the host home; it exits when the link closes', async t => {
   const { code, host } = hostRoom(t);
-  const { invite } = auth.mintInvite(host, { locator: 'pipe:test' });
+  const { invite } = invites.mintFor(host, { locator: 'pipe:test', machine: REMOTE, seats: [] });
   const tr = pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code], { env: h.childEnv() });
   let closed = false;
   tr.onClose(() => { closed = true; });
@@ -400,39 +401,27 @@ test('remote (pipe): `sub-human serve --stdio CODE` as a child serves the host h
   assert.equal(closed, true);
 });
 
-test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) takes only that link\'s token or the invite reserved for it', async t => {
+test('remote (pipe): `serve --stdio CODE --link ID` (the SSH forced command) takes only that link\'s token; an invite over it stays unused', async t => {
   const { code, host } = hostRoom(t);
   const serveAs = (id?: string) => pipe.spawn(process.execPath, [h.BIN, 'serve', '--stdio', code, ...(id ? ['--link', id] : [])], { env: h.childEnv() });
-  const a = auth.mintInvite(host, { locator: 'ssh:me@far' });
-  const b = auth.mintInvite(host, { locator: 'ssh:me@far' });
-  const idA = auth.reserveLink(host, a.secret);
-  assert.equal(auth.reserveLink(host, a.secret), idA, 'reserved once');
-  const idB = auth.reserveLink(host, b.secret);
-  assert.notEqual(idA, idB);
-  assert.equal(auth.linkKnown(host, idA), true);
-  assert.equal(auth.linkKnown(host, 'ffffffffffff'), false);
-  // invite b over link A's forced command: AUTH, and b stays unused
-  await rejects(client.connect(serveAs(idA), { machine: REMOTE, invite: b.invite }), 'AUTH');
-  const ca = await client.connect(serveAs(idA), { machine: REMOTE, invite: a.invite });
-  assert.equal(ca.link, idA, 'the invite redeems to the link it was reserved for');
-  ca.close();
-  const cb = await client.connect(serveAs(idB), { machine: REMOTE, invite: b.invite });
-  assert.equal(cb.link, idB);
-  cb.close();
+  const a = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: REMOTE, seats: [] });
+  const b = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'other0machine001', seats: [] });
+  assert.equal(hostLinks.linkKnown(host, a.link.id), true);
+  assert.equal(hostLinks.linkKnown(host, 'ffffffffffff'), false);
   // a token presented over another link's forced command: AUTH; over its own: in
-  await rejects(client.connect(serveAs(idB), { machine: REMOTE, token: ca.token! }), 'AUTH');
-  const again = await client.connect(serveAs(idA), { machine: REMOTE, token: ca.token! });
-  assert.equal(again.link, idA);
-  again.close();
-  // an invite never reserved, over a forced command: AUTH
-  const c = auth.mintInvite(host, { locator: 'ssh:me@far' });
-  await rejects(client.connect(serveAs(idA), { machine: REMOTE, invite: c.invite }), 'AUTH');
-  assert.equal(auth.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
+  await rejects(client.connect(serveAs(b.link.id), { machine: REMOTE, token: a.token }), 'AUTH');
+  const ca = await client.connect(serveAs(a.link.id), { machine: REMOTE, token: a.token });
+  assert.equal(ca.link, a.link.id);
+  ca.close();
+  // an invite not reserved for that link, over its forced command: AUTH, and it stays unused
+  const c = invites.mintFor(host, { locator: 'ssh:me@far', machine: REMOTE, seats: [] });
+  await assert.rejects(client.connect(serveAs(a.link.id), { machine: REMOTE, invite: c.invite }), (e: CodedError) => e.code === 'AUTH' && e.reason === 'INVITE_OTHER_LINK');
+  assert.equal(invites.redeemInvite(host, c.secret, { machine: REMOTE }).link.id.length, 12, 'and stays unused');
 });
 
 test('the forced-command line a host writes for a link: the stable shim, restrict, no versioned path; appended once, one key one link', t => {
   const { code } = hostRoom(t);
-  assert.deepEqual(auth.parseInvite(auth.mintInvite(store.open(code), { locator: 'ssh:host@127.0.0.1:2222' }).invite)!.locator, 'ssh:host@127.0.0.1:2222');
+  assert.deepEqual(invites.parseInvite(invites.mintFor(store.open(code), { locator: 'ssh:host@127.0.0.1:2222', machine: REMOTE, seats: [] }).invite)!.locator, 'ssh:host@127.0.0.1:2222');
   const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv2YxFcmD0qVf1aW0gk1oQfWb3m9e1bJ1l3xq3fQnHk';
   assert.equal(sshkeys.publicKey(`${KEY} me@laptop "quoted" $(id)\n`), KEY, 'the key\'s own comment is dropped');
   for (const bad of [`command="sh" ${KEY}`, `${KEY}\n${KEY}`, 'not a key']) assert.equal(sshkeys.publicKey(bad), null, bad);

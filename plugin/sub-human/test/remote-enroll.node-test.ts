@@ -13,7 +13,9 @@ import { spawnSync } from 'node:child_process';
 import type { TestContext } from 'node:test';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as invites from '../lib/remote/invites.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
+import * as admission from '../lib/remote/admission.ts';
 import * as enroll from '../lib/remote/enroll.ts';
 import * as cpace from '../lib/remote/cpace.ts';
 import * as sshkeys from '../lib/remote/sshkeys.ts';
@@ -39,8 +41,8 @@ function hostRoom(t: TestContext) {
   const code = h.newRoom();
   return { code, host: store.open(code) };
 }
-const invites = (host: RoomStore) => host.kv.get<Invites>(auth.INVITES_KEY, null) || {};
-const shortOf = (host: RoomStore, ref: string) => Object.entries(invites(host)).find(([k]) => k.startsWith(ref))![1] as ShortInvite;
+const records = (host: RoomStore) => host.kv.get<Invites>(invites.INVITES_KEY, null) || {};
+const shortOf = (host: RoomStore, ref: string) => Object.entries(records(host)).find(([k]) => k.startsWith(ref))![1] as ShortInvite;
 
 /** One attempt: the host's serveEnroll on one end of a memory pair; returns {joined: Promise, served: Promise}. */
 function attempt(host: RoomStore, { kind = 'ws', pin, joiner = JOINER, checkKey }: { kind?: string; pin: string; joiner?: Joiner; checkKey?: (key: string | null) => void }) {
@@ -70,7 +72,7 @@ function startParams(code: string, pin: string, kind = 'ws', joiner: Joiner = JO
 
 test('enroll: the right code gets the joiner a sealed admission secret and the vouched key; the host an admission waiting for its person', async t => {
   const { host } = hostRoom(t);
-  const r = auth.mintShort(host, { kind: 'ws', locator: 'wss://box/sub-human/x', hostKey: HOSTKEY, by: 'alice' });
+  const r = invites.mintShort(host, { kind: 'ws', locator: 'wss://box/sub-human/x', hostKey: HOSTKEY, by: 'alice' });
   const { joined, served } = attempt(host, { pin: r.pin });
   const got = await joined;
   assert.equal(await served, 'enrolled');
@@ -78,25 +80,25 @@ test('enroll: the right code gets the joiner a sealed admission secret and the v
   assert.match(got.secret, /^[A-Za-z0-9_-]{22}$/);
   const inv = shortOf(host, r.ref);
   assert.ok(inv.used_at && !('prs' in inv), 'the invite is used and its code forgotten');
-  const adm = auth.admissions(host);
+  const adm = admission.admissions(host);
   assert.equal(adm.length, 1);
   assert.deepEqual([adm[0].name, adm[0].machine, adm[0].label, adm[0].admit, adm[0].by, adm[0].link], ['carol', JOINER.machine, 'carols-mbp', 'asked', 'alice', got.link]);
   assert.equal(adm[0].ref, got.ref);
   // the secret redeems nothing before the host person answers, then only on that machine
-  assert.throws(() => auth.redeemInvite(host, got.secret, { machine: JOINER.machine }), (e: CodedErr) => e.code === 'OFFLINE' && /waiting for the host to let this machine in/.test(e.message));
-  auth.decideAdmission(host, got.ref, { decision: 'let-in', by: 'alice' });
-  assert.throws(() => auth.redeemInvite(host, got.secret, { machine: 'someoneelse00001' }), (e: CodedErr) => e.code === 'AUTH' && /another machine/.test(e.message));
-  const red = auth.redeemInvite(host, got.secret, { machine: JOINER.machine });
+  assert.throws(() => invites.redeemInvite(host, got.secret, { machine: JOINER.machine }), (e: CodedErr) => e.code === 'OFFLINE' && /waiting for the host to let this machine in/.test(e.message));
+  admission.decide(host, got.ref, { decision: 'let-in', by: 'alice' });
+  assert.throws(() => invites.redeemInvite(host, got.secret, { machine: 'someoneelse00001' }), (e: CodedErr) => e.code === 'AUTH' && /another machine/.test(e.message));
+  const red = invites.redeemInvite(host, got.secret, { machine: JOINER.machine });
   assert.equal(red.link.id, got.link);
   assert.deepEqual([red.link.seats, red.link.bound], [['carol'], true], 'the link is bound to the one name the card let in');
-  assert.ok(auth.mayJoinAs(red.link, 'carol') && !auth.mayJoinAs(red.link, 'bob'));
-  assert.throws(() => auth.bindSeat(host, red.link.id, 'bob'), (e: CodedErr) => e.code === 'AUTH' && /let in as carol, not bob/.test(e.message));
-  assert.throws(() => auth.redeemInvite(host, got.secret, { machine: JOINER.machine }), (e: CodedErr) => e.code === 'AUTH' && /used already/.test(e.message));
+  assert.ok(hostLinks.mayJoinAs(red.link, 'carol') && !hostLinks.mayJoinAs(red.link, 'bob'));
+  assert.throws(() => hostLinks.bindSeat(host, red.link.id, 'bob'), (e: CodedErr) => e.code === 'AUTH' && /let in as carol, not bob/.test(e.message));
+  assert.throws(() => invites.redeemInvite(host, got.secret, { machine: JOINER.machine }), (e: CodedErr) => e.code === 'AUTH' && /used already/.test(e.message));
 });
 
 test('enroll: a wrong PIN costs one try (room line, tries left), the fifth burns; an attempt abandoned after the host answered still costs its try', async t => {
   const { code, host } = hostRoom(t);
-  const r = auth.mintShort(host, { kind: 'ws', locator: 'wss://box/x', hostKey: HOSTKEY });
+  const r = invites.mintShort(host, { kind: 'ws', locator: 'wss://box/x', hostKey: HOSTKEY });
   const wrong = r.pin === '0000' ? '0001' : '0000';
   const one = attempt(host, { pin: wrong });
   await assert.rejects(one.joined, (e: CodedErr) => e.code === 'AUTH' && /^wrong PIN \(4 tries left\)/.test(e.message) && e.spent === true);
@@ -124,7 +126,7 @@ test('enroll: a wrong PIN costs one try (room line, tries left), the fifth burns
 
 test('enroll: key confirmation both ways: a host tag that does not check is a wrong PIN, and so is a joiner tag', async t => {
   const { code, host } = hostRoom(t);
-  const r = auth.mintShort(host, { kind: 'ws', locator: 'wss://box/x', hostKey: HOSTKEY });
+  const r = invites.mintShort(host, { kind: 'ws', locator: 'wss://box/x', hostKey: HOSTKEY });
   // the joiner's side: a tampered Tb (a relay that changes the vouched key, say) never matches
   const [a, b] = memory.pair();
   const served = enroll.serveEnroll(b, { store: host, kind: 'ws' });
@@ -142,7 +144,7 @@ test('enroll: key confirmation both ways: a host tag that does not check is a wr
   const m4 = await p.next();
   assert.equal(m4.error!.code, 'AUTH');
   assert.match(m4.error!.message, /^wrong PIN \(3 tries left\)/);
-  assert.equal(auth.admissions(host).length, 0, 'nothing waits for the host person');
+  assert.equal(admission.admissions(host).length, 0, 'nothing waits for the host person');
 });
 
 test('enroll: someone posing as the host gets one guess and never the joiner\'s tag; a vouched key the joiner cannot match stops it first', async t => {
@@ -164,7 +166,7 @@ test('enroll: someone posing as the host gets one guess and never the joiner\'s 
   assert.deepEqual(seen, ['enroll.start', 'enroll.fail'], 'no enroll.finish, so no Ta to test more guesses against offline');
   // the right code, but the vouched key is not the one ssh saw: the joiner stops before its tag goes out
   const { host } = hostRoom(t);
-  const r = auth.mintShort(host, { kind: 'ssh', locator: 'ssh:me@box', hostKey: HOSTKEY });
+  const r = invites.mintShort(host, { kind: 'ssh', locator: 'ssh:me@box', hostKey: HOSTKEY });
   const sent: (string | undefined)[] = [];
   const [c, d] = memory.pair();
   const served = enroll.serveEnroll(d, { store: host, kind: 'ssh' });
@@ -173,12 +175,12 @@ test('enroll: someone posing as the host gets one guess and never the joiner\'s 
   await assert.rejects(enroll.joinEnroll({ code: host.code, kind: 'ssh', pin: r.pin, joiner: { ...JOINER, key }, transport: watch, checkKey: () => { throw Object.assign(new Error('the ssh server that answered is not the one that holds your PIN'), { code: 'AUTH' }); } }), /not the one that holds your PIN/);
   await served;
   assert.deepEqual(sent, ['enroll.start']);
-  assert.equal(auth.admissions(host).length, 0);
+  assert.equal(admission.admissions(host).length, 0);
 });
 
 test('enroll: several open codes: an attempt is charged on each, a success refunds the others; at most SHORT_LIVE_MAX open', async t => {
   const { host } = hostRoom(t);
-  const mint = () => auth.mintShort(host, { kind: 'ws', locator: 'wss://box/x', hostKey: HOSTKEY });
+  const mint = () => invites.mintShort(host, { kind: 'ws', locator: 'wss://box/x', hostKey: HOSTKEY });
   const a = mint(), b = mint();
   const wrong = ['0000', '0001', '0002'].find(x => x !== a.pin && x !== b.pin);
   await attempt(host, { pin: wrong! }).joined.catch(() => {});
@@ -190,14 +192,14 @@ test('enroll: several open codes: an attempt is charged on each, a success refun
   assert.throws(mint, (e: CodedErr) => e.code === 'INVALID' && /4 short invites .* are open already/.test(e.message));
   // a code of another transport is never tried: an ssh code over the web door finds none open
   const { host: h2 } = hostRoom(t);
-  const s = auth.mintShort(h2, { kind: 'ssh', locator: 'ssh:me@box', hostKey: HOSTKEY });
+  const s = invites.mintShort(h2, { kind: 'ssh', locator: 'ssh:me@box', hostKey: HOSTKEY });
   await assert.rejects(attempt(h2, { pin: s.pin, kind: 'ws' }).joined, (e: CodedErr) => /no invite for room .* is open here/.test(e.message));
   assert.equal(shortOf(h2, s.ref).tries, 5);
 });
 
 test('enroll: the door answers nothing but the PAKE: no hello, no room op, no second start, no other room; the CLI serves no room ops', async t => {
   const { code, host } = hostRoom(t);
-  auth.mintShort(host, { kind: 'ssh', locator: 'ssh:me@box', hostKey: HOSTKEY });
+  invites.mintShort(host, { kind: 'ssh', locator: 'ssh:me@box', hostKey: HOSTKEY });
   for (const [op, params] of [['hello', { v: 2, machine: 'x' }], ['append', { payload: {} }], ['subscribe', { after: 0 }], ['enroll.finish', { i: 0, ta: '' }]] as [string, object][]) {
     const p = raw(host, 'ssh');
     p.send(1, op, params);
@@ -230,7 +232,7 @@ test('enroll: the door line is in authorized_keys while an ssh code is live, and
   const { code, host } = hostRoom(t);
   const file = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
   fs.writeFileSync(file, 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOtherKeyOtherKeyOtherKeyOtherKeyOtherKey me@else\n', { mode: 0o600 });
-  const r = auth.mintShort(host, { kind: 'ssh', locator: 'ssh:me@box', hostKey: HOSTKEY, doorFile: file });
+  const r = invites.mintShort(host, { kind: 'ssh', locator: 'ssh:me@box', hostKey: HOSTKEY, doorFile: file });
   enroll.openDoor(code, { file });
   const door = () => fs.readFileSync(file, 'utf8').split('\n').filter(l => l.endsWith(` sub-human-enroll:${code}`));
   assert.equal(door().length, 1);
@@ -243,11 +245,11 @@ test('enroll: the door line is in authorized_keys while an ssh code is live, and
   assert.equal(door().length, 0);
   assert.match(fs.readFileSync(file, 'utf8'), /me@else/, 'other lines stay');
   // burnt (revoked): gone too
-  const r2 = auth.mintShort(host, { kind: 'ssh', locator: 'ssh:me@box', hostKey: HOSTKEY, doorFile: file });
+  const r2 = invites.mintShort(host, { kind: 'ssh', locator: 'ssh:me@box', hostKey: HOSTKEY, doorFile: file });
   enroll.openDoor(code, { file });
-  auth.burnInvite(host, r2.ref);
+  invites.burnInvite(host, r2.ref);
   assert.equal(enroll.sweepDoors(code), 0, 'r is still live (only the clock above moved)');
-  auth.burnInvite(host, r.ref);
+  invites.burnInvite(host, r.ref);
   assert.equal(enroll.sweepDoors(code), 1, 'none live: gone');
 });
 

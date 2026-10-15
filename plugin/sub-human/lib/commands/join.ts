@@ -21,7 +21,7 @@ import * as identity from '../identity.ts';
 import * as seats from '../seats.ts';
 import * as link from '../remote/link.ts';
 import * as links from '../room/links.ts';
-import * as auth from '../remote/auth.ts';
+import * as invites from '../remote/invites.ts';
 import * as joining from '../remote/joining.ts';
 import { parse } from '../cli/args.ts';
 import { createRequire } from 'node:module';
@@ -101,7 +101,7 @@ export const named: Verb = (args, ctx) => {
 function joinWeb(r: string[], flags: { as?: string; via?: string; home?: string }, ctx: Ctx): Answer {
   if (r.length !== 2) return refused(r.length < 2 ? 'a web join needs the PIN the host sent with the address: /sub-human join URL PIN' : JOIN_USAGE);
   if (flags.via !== undefined || flags.home !== undefined) return refused('--via and --home go with an ssh address, not a web one');
-  if (!auth.SHORT_PIN_RE.test(r[1])) return refused('the PIN is the 4 digits that came with the invite: /sub-human join URL PIN');
+  if (!invites.SHORT_PIN_RE.test(r[1])) return refused('the PIN is the 4 digits that came with the invite: /sub-human join URL PIN');
   const BAD = 'that isn\'t a join address (https://HOST/…/sub-human/ROOM). Paste the whole line the host sent you.';
   const m = /^(https?):\/\/([^#\s]+)$/.exec(r[0]);
   const spec = m && wsT().parse(`//${m[2].replace(/\/+$/, '')}`);
@@ -134,7 +134,7 @@ export const join: Verb = (argv, ctx) => {
   if (!identity.CODE_RE.test(code)) return refused(`"${code}" isn't a room (like vole-8126). ${JOIN_USAGE}`);
   const local = /^pipe:\//.test(dest) || dest.startsWith('/'); // a second home on this machine (tests, the demo)
   if (pin !== undefined) {
-    if (!auth.SHORT_PIN_RE.test(pin)) return refused('the PIN is the 4 digits that came with the invite: /sub-human join HOST ROOM PIN');
+    if (!invites.SHORT_PIN_RE.test(pin)) return refused('the PIN is the 4 digits that came with the invite: /sub-human join HOST ROOM PIN');
     if (home !== undefined) return refused('--home goes with a join over your own ssh login (no PIN): /sub-human join HOST ROOM --home PATH');
     const n = nameFor(p.flags.as, ctx.cwd);
     if ('error' in n) return refused(n.error);

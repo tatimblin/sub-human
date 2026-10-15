@@ -8,12 +8,12 @@
  *   serve(transport, {store, log?, linkId?, login?, silentMs?, proto?, version?}) -> {close(), revoked()}   proto / version: this end's
  *       protocol range and plugin version (default protocol.PROTO, PLUGIN_VERSION; tests fake older and newer peers)
  *       A Session over one transport (lib/remote/transports/*): unauthenticated until hello {token | invite}
- *       (lib/remote/auth.ts); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
+ *       (lib/remote/invites.ts); every other op before that is AUTH. linkId (`serve --stdio CODE --link ID`, the
  *       SSH forced command the host's admit writes): only that link's token, or the invite reserved for it,
  *       is accepted; any other is AUTH (and such an invite stays unused). login (`serve --stdio CODE --link ID --login`,
  *       run over the host account's own ssh login, never by a forced command: their lines fix the arguments, and the
  *       CLI refuses --login under SSH_ORIGINAL_COMMAND): the connection is trusted as a process of the account owner,
- *       so a hello {login: true} with no token records link ID (auth.loginLink) and returns its token, with a room
+ *       so a hello {login: true} with no token records link ID (hostLinks.loginLink) and returns its token, with a room
  *       line; without login such a hello is AUTH. store is the room's store as store.open(code)
  *       gives it in this process: seats and decide reach the room through that too. Ops:
  *         hello      version: the highest common one of the two ranges (protocol.negotiate), else PROTOCOL with
@@ -22,7 +22,7 @@
  *                    each a room line from the room, so the host sees them); neither: answered, but the session
  *                    stays unauthenticated. The reply says closed: true once the room's Claude was stopped (the
  *                    room closed), for sub-human doctor on a link that stopped before it
- *         join       {name, role: 'member', pubkey, proof}: auth.checkSeatProof, then lib/seats.ts enter() with
+ *         join       {name, role: 'member', pubkey, proof}: hostLinks.checkSeatProof, then lib/seats.ts enter() with
  *                    machine = the link's (no pid: the seat lives by its lease), and over a login link account =
  *                    this machine's id (the host account's own seat: one person with the host's seats, lib/proposal.ts
  *                    create); a key other than the pinned one is AUTH; bindSeat
@@ -64,7 +64,8 @@
  */
 
 import * as protocol from './protocol.ts';
-import * as auth from './auth.ts';
+import * as invites from './invites.ts';
+import * as hostLinks from './host-links.ts';
 import * as seats from '../seats.ts';
 import * as proposal from '../proposal.ts';
 import * as handoff from '../handoff.ts';
@@ -114,23 +115,23 @@ function humanRate(s: Session, from: string, now = Date.now()): void {
 }
 
 function own(s: Session, name: string | undefined): void {
-  if (!auth.mayWriteAs(s.link, name as string)) throw authError(`${name} has not joined over this link`);
+  if (!hostLinks.mayWriteAs(s.link, name as string)) throw authError(`${name} has not joined over this link`);
 }
 
 function redeem(s: Session, invite: unknown, machine: string, pin: unknown): Credential {
   const { store, linkId } = s;
-  const inv = auth.parseInvite(invite);
+  const inv = invites.parseInvite(invite);
   if (!inv || inv.code !== store.code) throw authError(`not an invite to room ${store.code}`);
-  let r: ReturnType<typeof auth.redeemInvite>;
+  let r: ReturnType<typeof invites.redeemInvite>;
   try {
-    r = auth.redeemInvite(store, inv.secret, { machine, pin, ...(linkId ? { linkId } : {}) });
+    r = invites.redeemInvite(store, inv.secret, { machine, pin, ...(linkId ? { linkId } : {}) });
   } catch (e) {
     if ((e as CodedError).note) roomLine(s, (e as CodedError).note!);
     throw e;
   }
   if (r.admission) roomLine(s, `${r.admission.name}'s machine (${r.admission.label || machine}) joined the room, let in by ${r.admission.admitted_by || 'the host'}; undo with: /sub-human kick ${r.admission.name}`);
   else if (r.handoff) roomLine(s, `a machine (${machine}) followed the room here with the invite its handoff gave it (link ${r.link.id})`);
-  else if (inv.v === 2) roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id})`);
+  else roomLine(s, `a machine (${machine}) linked to the room with an invite and its PIN (link ${r.link.id})`);
   return r;
 }
 
@@ -142,13 +143,13 @@ function viaLogin(s: Session, machine: string): Credential {
   if (!s.login || !s.linkId) {
     throw authError(`this connection did not arrive over the host account's own ssh login${s.linkId ? ` (it came through a key that was let in for one other connection, and reaches only that one)` : ''}; join with an invite instead (/sub-human invite on the host)`);
   }
-  const r = auth.loginLink(s.store, { id: s.linkId, machine }); // linkId: checked above
+  const r = hostLinks.loginLink(s.store, { id: s.linkId, machine }); // linkId: checked above
   roomLine(s, 'a machine linked over your SSH login');
   return r;
 }
 
 function known(store: RoomStore, token: unknown, linkId: string | null): Credential {
-  const link = auth.verifyToken(store, token);
+  const link = hostLinks.verifyToken(store, token);
   if (!link) throw authError('unknown link token; ask the host for a new invite');
   if (linkId && link.id !== linkId) throw authError(`this token is not link ${linkId}'s`);
   return { link };
@@ -241,14 +242,14 @@ const OPS: OpHandlers = {
   join(s, { name, role = 'member', pubkey, proof }) {
     if (role !== 'member') throw invalid('a link joins members only');
     if (!envelope.parseKey(pubkey)) throw invalid('join needs the seat\'s public key (Ed25519 SPKI PEM)');
-    auth.checkSeatProof(proof, { room: s.store.code, name, pubkey });
+    hostLinks.checkSeatProof(proof, { room: s.store.code, name, pubkey });
     // s.link: run() lets no op but hello in without it. A bound link (the card let one name in; a handoff's seats) joins
     // its own seats only, before any seat is taken. A login link is the host account's own: its seat is that person's
-    if (!auth.mayJoinAs(s.link, name)) throw authError(auth.notBound(s.link!, name));
+    if (!hostLinks.mayJoinAs(s.link, name)) throw authError(hostLinks.notBound(s.link!, name));
     const account = s.link!.login ? machineId() : undefined;
     const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey, ...(account ? { account } : {}) });
     if (!r.ok) throw new RoomError(r.code || 'INVALID', r.error);
-    s.link = auth.bindSeat(s.store, s.link!.id, name);
+    s.link = hostLinks.bindSeat(s.store, s.link!.id, name);
     return r.rejoin ? { ok: true, rejoin: true } : { ok: true };
   },
 
@@ -403,7 +404,7 @@ class Session {
 
   failure(f: IncomingRequest, err: unknown): ErrorFrame {
     const e = err as CodedError | null | undefined; // anything an op threw
-    if (e && WIRE_CODES.has(e.code!)) return protocol.error(f.id, e.code!, e.message);
+    if (e && WIRE_CODES.has(e.code!)) return protocol.error(f.id, e.code!, e.message, e.reason);
     this.log(`sub-human serve: ${f.op}: ${e && e.stack || e}`);
     return protocol.error(f.id, 'INVALID', (e && e.message) || String(e));
   }
@@ -412,7 +413,7 @@ class Session {
    * so the daemon stops with the reason instead of redialing a key that no longer gets in (`/sub-human kick`
    * stops this serve with SIGTERM: scripts/sub-human serve calls this first). */
   revoked(): boolean {
-    if (!this.link || (this.store.kv.get(auth.LINKS_KEY, null) || {})[this.link.id]) return false;
+    if (!this.link || (this.store.kv.get(hostLinks.LINKS_KEY, null) || {})[this.link.id]) return false;
     for (const st of [...this.streams]) st.end('AUTH', `the host revoked this link (${this.link.id}); ask them for a new invite`);
     return true;
   }

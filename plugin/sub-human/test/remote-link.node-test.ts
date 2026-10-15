@@ -12,7 +12,7 @@ import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as links from '../lib/room/links.ts';
 import * as link from '../lib/remote/link.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
@@ -223,8 +223,7 @@ test('link: a mirror that is not the host\'s prefix is a FORK: the daemon stops 
   const mirror = new MirrorRoomStore(code, { dir: h.tmpDir('sh-mirror-', t) });
   t.after(() => fs.rmSync(path.dirname(link.socketPath(mirror.dir)), { recursive: true, force: true }));
   mirror.applyLine(JSON.stringify({ id: 1, at: new Date().toISOString(), from: 'room', via: 'system', kind: 'status', to: 'room', text: 'not the host\'s', prev: store.hash12('') }));
-  const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });
-  const { token } = auth.redeemInvite(host, secret, { machine: 'm1' });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'm1', seats: [] });
   const sessions: ReturnType<typeof server.serve>[] = [];
   const connect = () => {
     const [a, b] = memory.pair();

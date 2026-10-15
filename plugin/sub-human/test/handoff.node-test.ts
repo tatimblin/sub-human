@@ -12,7 +12,8 @@ import * as envelope from '../lib/room/envelope.ts';
 import { validate } from '../lib/room/validate.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as invites from '../lib/remote/invites.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
 import * as memory from '../lib/remote/transports/memory.ts';
 import * as handoff from '../lib/handoff.ts';
 import * as seatKey from '../hooks/seat-key.ts';
@@ -41,15 +42,15 @@ function served(t: TestContext, host: RoomStore) {
   return a;
 }
 async function linked(t: TestContext, host: RoomStore, opts: Partial<ConnectOpts> = {}) {
-  const { invite } = auth.mintInvite(host, { locator: 'pipe:test' });
-  const c = await client.connect(served(t, host), { machine: REMOTE, invite, ...opts });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: opts.machine ?? REMOTE, seats: [] });
+  const c = await client.connect(served(t, host), { machine: REMOTE, token, ...opts });
   t.after(() => c.close());
   return c;
 }
 async function joinBob(c: Client, code: string) {
   const key = seatKey.ensure(code, 'bob');
   const pubkey = seatKey.publicPem(code, 'bob');
-  await c.join({ name: 'bob', pubkey, proof: auth.proveSeat(key, { room: code, name: 'bob', pubkey }) });
+  await c.join({ name: 'bob', pubkey, proof: hostLinks.proveSeat(key, { room: code, name: 'bob', pubkey }) });
   return key;
 }
 const events = (c: Client) => {
@@ -121,11 +122,11 @@ test('handoff: the ask reaches the target\'s link only; a signed acceptance move
 
   const sign = (p: object) => envelope.sign(p, key, { room: code, from: 'bob' });
   const proof = sign({ kind: 'host_accept', id: d.id, epoch: 1, locator: 'pipe:/bobs/home' });
-  const invites = { [OTHER]: auth.formatInvite({ code, locator: 'pipe:/bobs/home', secret: 'S'.repeat(32) }) };
-  await rejects(c.request('handoff.accept', { id: d.id, accept: { ...proof, epoch: 2 }, invites }), 'AUTH', /bob's yes, signed with their own key/);
-  await rejects(other.request('handoff.accept', { id: d.id, accept: proof, invites }), 'AUTH', /not joined over this link/);
-  await rejects(c.request('handoff.accept', { id: d.id, accept: proof, invites: { [OTHER]: 'sh1.nope' } }), 'INVALID');
-  const r = await c.request('handoff.accept', { id: d.id, accept: proof, invites }) as HandoffAcceptResult;
+  const given = { [OTHER]: invites.formatInvite({ code, locator: 'pipe:/bobs/home', secret: 'S'.repeat(32) }) };
+  await rejects(c.request('handoff.accept', { id: d.id, accept: { ...proof, epoch: 2 }, invites: given }), 'AUTH', /bob's yes, signed with their own key/);
+  await rejects(other.request('handoff.accept', { id: d.id, accept: proof, invites: given }), 'AUTH', /not joined over this link/);
+  await rejects(c.request('handoff.accept', { id: d.id, accept: proof, invites: { [OTHER]: 'sh2.nope' } }), 'INVALID');
+  const r = await c.request('handoff.accept', { id: d.id, accept: proof, invites: given }) as HandoffAcceptResult;
   assert.equal(r.epoch, 1);
   const e = host.readAll().at(-1)!;
   assert.deepEqual([e.kind, e.from, e.host, e.machine, e.epoch, e.locator], ['host_changed', 'alice', 'bob', REMOTE, 1, 'pipe:/bobs/home']);
@@ -137,11 +138,11 @@ test('handoff: the ask reaches the target\'s link only; a signed acceptance move
   await h.until(() => carol.got.some(x => x.ev === 'end'), 3000, 20);
   const seq = (x: { got: StreamEvent[] }) => x.got.filter(y => y.ev !== 'doc').map(y => y.ev === 'entry' ? JSON.parse(y.data).kind : y.ev);
   assert.deepEqual(seq(carol).slice(-3), ['host_changed', 'moved', 'end']);
-  assert.equal((carol.got.find(x => x.ev === 'moved') as StreamEvent<'moved'>).data.invite, invites[OTHER], 'carol\'s machine gets its own invite, privately');
+  assert.equal((carol.got.find(x => x.ev === 'moved') as StreamEvent<'moved'>).data.invite, given[OTHER], 'carol\'s machine gets its own invite, privately');
   assert.deepEqual(bob.got.find(x => x.ev === 'end')!.data, { reason: 'moved' });
   assert.deepEqual([(bob.got.find(x => x.ev === 'moved')!.data as MovedEventData).machine, (bob.got.find(x => x.ev === 'moved')!.data as MovedEventData).invite], [REMOTE, null]);
   // a host the room moved away from still says hello and streams, and refuses every write
-  await rejects(c.request('handoff.accept', { id: d.id, accept: proof, invites }), 'STALE');
+  await rejects(c.request('handoff.accept', { id: d.id, accept: proof, invites: given }), 'STALE');
   await rejects(c.beat('bob'), 'STALE');
   const late = events(c);
   await late.ready;
@@ -170,7 +171,7 @@ test('demote: an sh2 invite without its PIN is refused before anything changes (
   const code = h.newRoom();
   h.register('alice');
   const before = store.open(code).readAll().length;
-  const invite = auth.formatInvite({ v: 2, code, locator: 'pipe:/elsewhere', secret: 'B'.repeat(22) });
+  const invite = invites.formatInvite({ code, locator: 'pipe:/elsewhere', secret: 'B'.repeat(22) });
   assert.throws(() => handoff.demote(code, invite), (e: Error & { code?: string }) => e.code === 'INVALID' && /6-digit PIN/.test(e.message));
   assert.throws(() => handoff.demote(code, invite, '12'), (e: Error & { code?: string }) => e.code === 'INVALID');
   assert.equal(store.open(code).isHost, true, 'still the host: nothing set aside');

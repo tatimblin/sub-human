@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as link from '../lib/remote/link.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as invites from '../lib/remote/invites.ts';
 import * as sshkeys from '../lib/remote/sshkeys.ts';
 import * as admission from '../lib/remote/admission.ts';
 import { Machine } from './support/two-homes.ts';
@@ -115,11 +115,11 @@ test('ssh invite: someone in between (another host key shown) gets one try, noth
   const lf = JSON.parse(fs.readFileSync(path.join(remote.home, 'links', `${code}.json`), 'utf8'));
   assert.equal('enroll' in lf, false, 'the PIN is dropped');
   assert.equal(host.lib(() => admission.pending(code)).length, 0, 'nothing waits for the host person');
-  const inv = Object.values(host.lib(() => store.open(code).kv.get(auth.INVITES_KEY)) as Invites)[0] as ShortInvite;
+  const inv = Object.values(host.lib(() => store.open(code).kv.get(invites.INVITES_KEY)) as Invites)[0] as ShortInvite;
   assert.equal(inv.tries, 4, 'one try spent');
   assert.equal(doorLines(ak, code).length, 1, 'the door stays while the code is open');
   // the host cancels that invite: the door goes, and a join to it says so at once (no retrying a shut door)
-  for (const k of Object.keys(host.lib(() => store.open(code).kv.get(auth.INVITES_KEY)) as Invites)) host.join(alice, `invite --cancel ${k.slice(0, 12)}`);
+  for (const k of Object.keys(host.lib(() => store.open(code).kv.get(invites.INVITES_KEY)) as Invites)) host.join(alice, `invite --cancel ${k.slice(0, 12)}`);
   assert.equal(doorLines(ak, code).length, 0, 'no invite open: no door');
   const shut = remote.join(bob, `join me@127.0.0.1:2222 ${code} ${m[3]} --as bob`);
   assert.match(shut.json!.reason!, /could not join room \S+: the invite to room \S+ no longer works .*ask the host for a new one/);

@@ -143,7 +143,7 @@ export const HANDOFF_ASK_MS = 10 * 60_000;     // SUB_HUMAN_HANDOFF_ASK_MS
 export const HANDOFF_INVITE_MS = 24 * 60 * 60_000;
 export const HANDOFF_CALL_MS = 6000;           // the target's accept op (the old host appends, releases its room Claude): in a 10 s hook
 export const PROMOTE_OFFLINE_MS = 10 * 60_000; // SUB_HUMAN_PROMOTE_OFFLINE_MS
-// An sh2 invite (lib/remote/auth.ts): the host checks its PIN online only, INVITE_PIN_TRIES times, and the invite
+// An sh2 invite (lib/remote/invites.ts): the host checks its PIN online only, INVITE_PIN_TRIES times, and the invite
 // burns at the last wrong one or INVITE_TTL_MS after it was minted (whichever is first), or on success.
 export const INVITE_TTL_MS = 15 * 60_000;
 export const INVITE_PIN_TRIES = 5;

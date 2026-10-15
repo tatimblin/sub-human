@@ -11,9 +11,9 @@
  *       loaded on the worker at the first call (a load error fails the call). call() posts {id, method, params}, then
  *       Atomics.wait()s on a SharedArrayBuffer counter the worker bumps after each reply, and takes the reply
  *       with receiveMessageOnPort(). Params and results are structured clones. A handler that throws or rejects
- *       rethrows here as RoomError (its string code, else INVALID). Past deadlineMs (default LINK_CALL_MS;
- *       SessionEnd passes LINK_CALL_END_MS): RoomError OFFLINE with unknown: true (the handler may have sent it on, so
- *       its outcome is unknown); the call is abandoned (its late reply is
+ *       rethrows here as RoomError (its string code, else INVALID, with its reason and unknown flag). Past deadlineMs
+ *       (default LINK_CALL_MS; SessionEnd passes LINK_CALL_END_MS): RoomError OFFLINE, reason UNKNOWN_OUTCOME (the
+ *       handler may have sent it on, so its outcome is unknown); the call is abandoned (its late reply is
  *       dropped) and nothing is retried. The worker and its port are unref'd, so a hook exits when its body
  *       returns; close() ends the worker now.
  *   Deadlock rule: the thread that calls never serves the handler's work. While call() waits, the calling
@@ -27,6 +27,7 @@ import { Worker, MessageChannel, isMainThread, workerData, receiveMessageOnPort 
 import type { MessagePort } from 'node:worker_threads';
 import * as config from '../config.ts';
 import { RoomError } from '../room/validate.ts';
+import { isReason } from '../reasons.ts';
 import { createRequire } from 'node:module';
 import type { CodedError } from './types-core.ts';
 
@@ -44,7 +45,7 @@ interface Call {
 interface Reply {
   id: number;
   result?: unknown;
-  error?: { code: string | undefined; message: string };
+  error?: { code: string | undefined; message: string; reason?: string; unknown?: boolean };
 }
 /** A handler module: handle(method, params) -> result | Promise<result>. */
 type Handle = (method: string, params: unknown) => unknown;
@@ -71,7 +72,7 @@ function createBridge({ handler, deadlineMs = config.LINK_CALL_MS }: { handler: 
       const got = receiveMessageOnPort(port) as { message: Reply } | undefined;
       if (got) { if (got.message.id === id) return settle(got.message); continue; } // an abandoned call's reply
       const left = until - Date.now();
-      if (left <= 0) throw Object.assign(new RoomError('OFFLINE', `${method}: no answer within ${ms} ms`), { unknown: true }); // sent, or not
+      if (left <= 0) throw new RoomError('OFFLINE', `${method}: no answer within ${ms} ms`, 'UNKNOWN_OUTCOME'); // sent, or not
       Atomics.wait(replies, 0, seen, left);
     }
   }
@@ -80,14 +81,21 @@ function createBridge({ handler, deadlineMs = config.LINK_CALL_MS }: { handler: 
 }
 
 function settle({ result, error }: Reply): unknown {
-  if (error) throw new RoomError(error.code || 'INVALID', error.message);
+  if (error) {
+    const e = new RoomError(error.code || 'INVALID', error.message, isReason(error.reason) ? error.reason : null);
+    if (error.unknown === true) e.unknown = true;
+    throw e;
+  }
   return result;
 }
 
 // ---------- the worker ----------
 const failure = (id: number, err: unknown): Reply => {
   const e = err as CodedError | null | undefined; // anything thrown: read with care
-  return { id, error: { code: e && typeof e.code === 'string' ? e.code : undefined, message: String((e && e.message) || e) } };
+  return { id, error: {
+    code: e && typeof e.code === 'string' ? e.code : undefined, message: String((e && e.message) || e),
+    ...(isReason(e && e.reason) ? { reason: e!.reason } : {}), ...(e && e.unknown === true ? { unknown: true } : {}),
+  } };
 };
 
 function serve({ handler, replies, port }: { handler: string; replies: Int32Array; port: MessagePort }): void {

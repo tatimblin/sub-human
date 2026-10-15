@@ -16,7 +16,7 @@ import { Worker, isMainThread, workerData } from 'node:worker_threads';
 import { MirrorRoomStore } from '../../lib/room/store-mirror.ts';
 import { socketPath, serveMirror } from '../../lib/remote/link.ts';
 import * as store from '../../lib/room/store.ts';
-import * as auth from '../../lib/remote/auth.ts';
+import * as hostLinks from '../../lib/remote/host-links.ts';
 import * as server from '../../lib/remote/server.ts';
 import * as client from '../../lib/remote/client.ts';
 import * as memory from '../../lib/remote/transports/memory.ts';
@@ -43,9 +43,8 @@ async function serveWorker({ code, dir, home, ready }: WorkerData) {
   process.env.SUB_HUMAN_HOME = home; // the test's home: a preloaded test/helpers.ts gave this thread a fresh one
   store.createRoom(code);
   const host = store.open(code);
-  const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });
-  const { token, link: l } = auth.redeemInvite(host, secret, { machine: MACHINE });
-  for (const name of NAMES) auth.bindSeat(host, l.id, name);
+  const { token, link: l } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: MACHINE, seats: [] });
+  for (const name of NAMES) hostLinks.bindSeat(host, l.id, name);
   const connect = () => {
     const [a, b] = memory.pair();
     server.serve(b, { store: host });

@@ -125,6 +125,8 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import * as protocol from './protocol.ts';
 import { RoomError } from '../room/validate.ts';
+import { isReason, reasonOf } from '../reasons.ts';
+import type { Reason } from '../reasons.ts';
 import { isAlive, sleepSync } from '../io.ts';
 import { hash12 } from '../text.ts';
 import * as config from '../config.ts';
@@ -270,7 +272,7 @@ function relayOnce(socket: string, method: string, params: object): Promise<unkn
       const [f] = dec.push(chunk) as ReplyFrame[]; // the daemon answers with one reply
       if (!f) return;
       conn.end();
-      if (f.error) reject(new RoomError(f.error.code, f.error.message));
+      if (f.error) reject(protocol.toError(f.error));
       else resolve(f.result);
     });
     conn.on('error', (e: NodeJS.ErrnoException) => reject(Object.assign(new RoomError('OFFLINE', `the link daemon is not running (${e.code || e.message})`), connected ? {} : { notListening: true })));
@@ -293,9 +295,9 @@ function status(code: string): LinkStatus {
  * @param {{state?: string, reason?: string, code?: string} | null} st
  * @returns {{code: string, reason: string} | null}
  */
-function stopReason(st: LinkDoc | null | undefined): { code: string; reason: string } | null {
+function stopReason(st: LinkDoc | null | undefined): { code: string; reason: string; why: Reason | null } | null {
   if (!st || !STOPPED.has(st.state) || !st.reason) return null;
-  return { code: st.code || (st.state === 'fork' ? 'FORK' : 'OFFLINE'), reason: st.reason };
+  return { code: st.code || (st.state === 'fork' ? 'FORK' : 'OFFLINE'), reason: st.reason, why: isReason(st.why) ? st.why : null };
 }
 
 /**
@@ -367,7 +369,7 @@ async function answer(f: DecodedFrame | ErrorFrame, relay: Relay): Promise<Reply
     return protocol.reply(f.id, await relay(f.op, f.params));
   } catch (err) {
     const e = err as CodedError;
-    return protocol.error(g.id ?? null, (protocol.CODES as Record<string, string | undefined>)[e.code!] ? e.code! : 'INVALID', e.message);
+    return protocol.error(g.id ?? null, (protocol.CODES as Record<string, string | undefined>)[e.code!] ? e.code! : 'INVALID', e.message, e.reason);
   }
 }
 
@@ -461,7 +463,8 @@ function held(mirror: MirrorRoomStore, line: string): boolean {
   try { id = JSON.parse(line).id; } catch { return false; }
   return Number.isInteger(id) && (id as number) <= mirror.lastId() && mirror.lineHash(id as number) === hash12(line);
 }
-const PLACED_ALREADY = /placed already/; // lib/room/store.ts: its nonce is in the log, so an earlier try landed
+/** lib/room/rules.ts: its nonce is in the log, so an earlier try landed. */
+const placedAlready = (e: unknown): boolean => reasonOf(e) === 'PLACED_ALREADY';
 const clip = (s: string, n = 200): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const FATAL: Set<unknown> = new Set(['FORK', 'AUTH', 'PROTOCOL']);
 
@@ -530,7 +533,7 @@ async function serveMirror({
   function answerBy(req: Promise<unknown>, op: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const t = clock.setTimeout(() => reject(new RoomError('OFFLINE',
-        `${op}: no answer from the host within ${T.relayMs} ms (a slow link); ${protocol.UNKNOWN_OUTCOME}`)), T.relayMs);
+        `${op}: no answer from the host within ${T.relayMs} ms (a slow link); ${protocol.UNKNOWN_OUTCOME}`, 'UNKNOWN_OUTCOME')), T.relayMs);
       req.then(r => { clock.clearTimeout(t); resolve(r); }, e => { clock.clearTimeout(t); reject(e); });
     });
   }
@@ -560,7 +563,7 @@ async function serveMirror({
         if (box.remove(payload.nonce)) { log('slow link: the @room post that was in flight landed'); publish(); }
       }, (e: CodedError) => {
         if (!slow) { clock.clearTimeout(t); reject(e); return; }
-        if (PLACED_ALREADY.test(e.message)) { if (box.remove(payload.nonce)) publish(); return; }
+        if (placedAlready(e)) { if (box.remove(payload.nonce)) publish(); return; }
         if (e.code === 'OFFLINE' && (c.closed || c !== client)) return; // kept: the next connection sends it again
         if (!box.remove(payload.nonce)) return;
         const why = e.code === 'OFFLINE' ? 'the host never answered' : e.message;
@@ -728,7 +731,7 @@ async function serveMirror({
       } catch (err) {
         const e = err as CodedError;
         if (e.code === 'OFFLINE' || e.code === 'LOCK') { note(); throw e; }
-        if (PLACED_ALREADY.test(e.message)) sent++;
+        if (placedAlready(e)) sent++;
         else drop(x, e.message);
       }
       box.remove(x.payload.nonce); // by nonce: a slow post's late answer may have taken it out meanwhile

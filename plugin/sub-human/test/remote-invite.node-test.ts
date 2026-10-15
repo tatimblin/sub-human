@@ -13,7 +13,7 @@ import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as sshkeys from '../lib/remote/sshkeys.ts';
 import { Machine, type MachineRun } from './support/two-homes.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as invites from '../lib/remote/invites.ts';
 import * as links from '../lib/room/links.ts';
 import type { Invites } from '../lib/remote/types-core.ts';
 import type { SshSpec } from '../lib/remote/types-rest.ts';
@@ -56,7 +56,7 @@ test('invite over ssh: the door in authorized_keys, the line with --via and no N
   assert.ok(hiddenBlock(al), al.stderr);
   assert.match(al.json!.reason!, new RegExp(`\n  /sub-human join devbox ${code} \\d{4}\n`));
   assert.match(al.json!.reason!, /over ssh devbox\./);
-  const locs = Object.values(host.lib(() => store.open(code).kv.get<Invites>(auth.INVITES_KEY)) || {}).map(i => (i as { locator?: string }).locator); // an admission record has none
+  const locs = Object.values(host.lib(() => store.open(code).kv.get<Invites>(invites.INVITES_KEY)) || {}).map(i => (i as { locator?: string }).locator); // an admission record has none
   assert.ok(locs.includes('ssh:dev@devbox'), JSON.stringify(locs));
   host.join(alice, `invite --cancel ${/invite --cancel ([0-9a-f]{12})/.exec(al.json!.reason!)![1]}`);
 

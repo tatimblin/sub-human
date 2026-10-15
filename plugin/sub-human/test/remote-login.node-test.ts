@@ -14,7 +14,7 @@ import type { TestContext } from 'node:test';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as link from '../lib/remote/link.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
 import * as server from '../lib/remote/server.ts';
 import * as client from '../lib/remote/client.ts';
 import type { Client, ConnectOpts } from '../lib/remote/client.ts';
@@ -40,7 +40,7 @@ const stopDaemon = (t: TestContext, m: Machine, code: string) => t.after(() => {
   fs.rmSync(path.dirname(link.socketPath(path.join(m.home, 'rooms', code))), { recursive: true, force: true });
 });
 const roomLines = (m: Machine, code: string) => m.lib(() => store.open(code).readAll()).filter(e => e.from === 'room').map(e => e.text).join('\n');
-const links = (m: Machine, code: string) => m.lib(() => auth.links(store.open(code)));
+const links = (m: Machine, code: string) => m.lib(() => hostLinks.links(store.open(code)));
 
 /** A fake `ssh` in its own dir: logs its argv, then plays sshd for the host user (FAKE_SSH_HOME): FAKE_SSH_FAIL
  * (hostkey | denied) fails as ssh does in BatchMode; FAKE_SSH_FORCED runs that forced command with
@@ -140,11 +140,11 @@ test('server: a hello {login} makes a link only in a `serve --login` session, un
   // an authorized_keys line's session (--link, no --login): its key reaches that link only
   await assert.rejects(dial({ linkId: ID }, { login: true }), authErr(/did not arrive over the host account's own ssh login \(it came through a key that was let in for one other connection/));
   await assert.rejects(dial({}, { login: true }), authErr(/did not arrive over the host account's own ssh login/));
-  assert.deepEqual(auth.links(host), {}, 'nothing minted');
+  assert.deepEqual(hostLinks.links(host), {}, 'nothing minted');
   const c = await dial({ linkId: ID, login: true }, { login: true });
   assert.equal(typeof c.token, 'string');
   assert.equal(c.link, ID);
-  assert.deepEqual({ ...auth.links(host)[ID], token_sha256: '-', created_at: '-' }, { id: ID, token_sha256: '-', machine: 'remote0machine01', seats: [], created_at: '-', login: true });
+  assert.deepEqual({ ...hostLinks.links(host)[ID], token_sha256: '-', created_at: '-' }, { id: ID, token_sha256: '-', machine: 'remote0machine01', seats: [], created_at: '-', login: true });
   assert.match(host.readAll().at(-1)!.text!, /^a machine linked over your SSH login$/);
   // the id is taken now: a second login hello for it is refused; the token says hello as any link's
   await assert.rejects(dial({ linkId: ID, login: true }, { login: true }), authErr(/link abcdef012345 exists already/));
@@ -165,7 +165,7 @@ test('server: a seat that joins over a login link is the host account\'s (accoun
   const host = store.open(code);
   const seat = async (c: Client, name: string) => {
     const pubkey = seatKey.publicPem(code, name);
-    await c.join({ name, pubkey, proof: auth.proveSeat(seatKey.ensure(code, name), { room: code, name, pubkey }) });
+    await c.join({ name, pubkey, proof: hostLinks.proveSeat(seatKey.ensure(code, name), { room: code, name, pubkey }) });
   };
   const open = async (ctx: { linkId?: string; login?: boolean }, opts: Omit<ConnectOpts, 'machine'>) => {
     const [a, b] = memory.pair();
@@ -176,8 +176,7 @@ test('server: a seat that joins over a login link is the host account\'s (accoun
     return c;
   };
   await seat(await open({ linkId: ID, login: true }, { login: true }), 'laptop');
-  const { secret } = auth.mintInvite(host, { locator: 'pipe:/test' });
-  const { token } = auth.redeemInvite(host, secret, { machine: 'remote0machine01' });
+  const { token } = hostLinks.create(host, { id: hostLinks.newLinkId(), machine: 'remote0machine01', seats: [] });
   await seat(await open({}, { token }), 'guest');
   const ms = host.members.read();
   assert.deepEqual([ms.laptop.machine, ms.laptop.account], ['remote0machine01', machineId()]);

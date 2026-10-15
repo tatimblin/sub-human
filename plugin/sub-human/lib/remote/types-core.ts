@@ -4,13 +4,14 @@
  *
  *   wire protocol (lib/remote/protocol.ts)   frames (RequestFrame, ReplyFrame, EventFrame: discriminated on op / ev),
  *                                            each op's params (OpParams) and result (OpResults), each event's data
- *   host records (lib/remote/auth.ts)        InviteRecord (sh1, sh2 PIN, handoff, short, admission), LinkRecord
+ *   host records (lib/remote/invites.ts, host-links.ts, admission.ts)   InviteRecord (bound, short, admission), LinkRecord
  *   the link daemon (lib/remote/link.ts)     its document `link`, its timings, a running link
  *
  * Request params are what a conforming peer sends. They arrive as parsed JSON, so the server still checks each
  * field it relies on (lib/remote/server.ts); the types document the protocol, not a validation.
  */
 
+import type { Reason } from '../reasons.ts';
 import type { Entry, LinkStateWord, Payload, PresenceInput, RoomStore, SnapshotWire } from '../room/types.ts';
 
 // ---------- the wire protocol ----------
@@ -155,7 +156,8 @@ export interface IncomingRequest {
 /** A reply: result or error (the other key absent, so `f.error ? … : f.result` reads either). id: the request's,
  * absent when the request had none (JSON drops an undefined id). */
 export interface ResultFrame<R = unknown> { id?: FrameId; result: R; error?: undefined }
-export interface WireError { code: string; message: string }
+/** reason: lib/reasons.ts, beside the code (absent from a peer before reasons). */
+export interface WireError { code: string; message: string; reason?: string }
 export interface ErrorFrame { id?: FrameId; error: WireError; result?: undefined }
 export type ReplyFrame<R = unknown> = ResultFrame<R> | ErrorFrame;
 
@@ -209,27 +211,27 @@ export interface DecodedFrame {
 /** One side as skewMessage names it: its plugin version (null or '?' unknown) and range. */
 export interface PeerVersion { version?: string | null; proto: ProtoRange }
 
-// ---------- the host's records (lib/remote/auth.ts) ----------
+// ---------- the host's records (lib/remote/invites.ts, host-links.ts, admission.ts) ----------
 
 /** Lifecycle fields any invite record may carry. */
 interface InviteLife {
   created_at: string;
-  /** The link id reserved for it (reserveLink) or that it redeemed to. */
+  /** The link id it redeemed to (an admission's: the one its enrollment reserved, the door's forced command names). */
   link?: string;
   used_at?: string;
   burnt_at?: string;
 }
-/** An sh1 invite (internal: a 0.2.0 joiner's way in, and the tests'). */
-export interface Sh1Invite extends InviteLife { v?: undefined; prs?: undefined; short?: undefined; admission?: undefined; handoff?: undefined; machine?: undefined; seats?: undefined }
-/** An sh2 invite with a PIN (a promote's, handed out by hand). */
-export interface PinInvite extends InviteLife {
-  v: 2; handoff?: undefined; admission?: undefined; short?: undefined; prs?: undefined;
-  machine: string; seats: string[]; expires_at: string; tries: number; pin_sha256: string;
-}
-/** A handoff's sh2 invite for one machine (lib/handoff.ts): no PIN. */
-export interface HandoffInvite extends InviteLife {
-  v: 2; handoff: true; admission?: undefined; short?: undefined; prs?: undefined;
+/**
+ * A bound invite (lib/remote/invites.ts mintFor): for one machine, its seats pre-bound, until expires_at. A handoff's
+ * (handoff: true) needs no PIN: the room's next host carries it to that machine over its authenticated link. A
+ * promote's, handed out by hand, needs its 6-digit PIN (pin_sha256 = sha256(secret:pin), tries left). One shape.
+ */
+export interface BoundInvite extends InviteLife {
+  v: 2; admission?: undefined; short?: undefined; prs?: undefined;
   machine: string; seats: string[]; expires_at: string;
+  handoff?: true;
+  pin_sha256?: string;
+  tries?: number;
 }
 export type ShortKind = 'ssh' | 'ws' | 'pipe';
 /** The joiner a short invite enrolled (lib/remote/enroll.ts). */
@@ -254,7 +256,7 @@ export interface AdmissionRecord extends InviteLife {
   told?: string[];
 }
 /** One record of the host document remote/invites, keyed by sha256(secret). */
-export type InviteRecord = Sh1Invite | PinInvite | HandoffInvite | ShortInvite | AdmissionRecord;
+export type InviteRecord = BoundInvite | ShortInvite | AdmissionRecord;
 /** The host document remote/invites. */
 export type Invites = Record<string, InviteRecord>;
 
@@ -268,21 +270,25 @@ export interface LinkRecord {
   login?: true;
   /** the seats are fixed: the one name the host's card let in, or a handoff's pre-bound seats; join refuses another */
   bound?: true;
+  /** the machine id the joiner reported, when the host recorded another (lib/remote/host-links.ts machineFor): a label */
+  label?: string;
 }
 /** The host document remote/links. */
 export type Links = Record<string, LinkRecord>;
 
-/** A parsed sh1 or sh2 invite. */
-export interface ParsedInvite { v: 1 | 2; code: string; locator: string; secret: string; hostKey: string | null }
+/** A parsed sh2 invite. */
+export interface ParsedInvite { v: 2; code: string; locator: string; secret: string; hostKey: string | null }
 
 // ---------- the store, as the remote code uses it ----------
 
-/** The store auth.ts reads and writes (lib/room/store.ts FsRoomStore, or a mirror's): its code, role and documents. */
+/** The store invites.ts, host-links.ts and admission.ts read and write (lib/room/store.ts FsRoomStore, or a mirror's): its code, role and documents. */
 export type AuthStore = Pick<RoomStore, 'code' | 'isHost' | 'kv'>;
 
 /** A RoomError as it is thrown and caught: the code, and what callers attach. */
 export interface CodedError extends Error {
   code?: string;
+  /** lib/reasons.ts: which failure exactly */
+  reason?: Reason;
   note?: string | null;
   /** lib/remote/link.ts: no daemon answers on the socket */
   notListening?: boolean;
@@ -305,6 +311,8 @@ export interface LinkDoc {
   socket?: string;
   reason?: string;
   code?: string;
+  /** the typed reason it stopped or went offline (lib/reasons.ts) */
+  why?: string;
   queued?: number;
   flush?: Flush;
   /** online: the entry fields the host's hello listed (protocol.ts FIELDS), which this machine may write */

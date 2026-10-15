@@ -332,7 +332,7 @@ function serve(args: readonly string[]) {
   if (flags.enroll !== undefined) return serveEnroll(flags.enroll, flags, rest);
   const code = rest[0];
   if (!flags.stdio || !code || rest.length > 1) die('usage: sub-human serve --stdio CODE [--link ID [--login]]');
-  const { LINK_ID_RE }: typeof import('../remote/auth.ts') = require('../remote/auth.ts');
+  const { LINK_ID_RE }: typeof import('../remote/host-links.ts') = require('../remote/host-links.ts');
   if (flags.link !== undefined && !LINK_ID_RE.test(flags.link)) die(`bad link id "${flags.link}"`);
   if (flags.login && flags.link === undefined) die('sub-human serve --login: names no --link ID');
   // sshd sets SSH_ORIGINAL_COMMAND only when a forced command runs (an authorized_keys command="…" or ForceCommand): a

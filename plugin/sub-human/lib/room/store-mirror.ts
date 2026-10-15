@@ -19,7 +19,7 @@
  *                            (lib/remote/outbox.ts); the signed payload is returned with queued: n and no id. Online, a post the host
  *                            has not answered in time comes back queued: n, slow: true (in flight, kept under
  *                            its nonce: the late copy is the post).
- *   members.join(rec)        op `join` with the seat's public key and a proof (lib/remote/auth.ts proveSeat), both
+ *   members.join(rec)        op `join` with the seat's public key and a proof (lib/remote/host-links.ts proveSeat), both
  *                            from the hook's signer; the host logs member_joined. Any RoomError comes back as
  *                            {ok: false, error, code}
  *   members.leave(name, {reason, deadlineMs}?)   op `leave`; the host logs "NAME left (reason)"
@@ -52,11 +52,12 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { FsRoomStore } from './fs-store.ts';
 import { RoomError } from './validate.ts';
+import { reasonOf } from '../reasons.ts';
 import { blobRef, toPayload } from './rules.ts';
 import { problem } from './snapshot.ts';
 import { humanKey } from './trust.ts';
 import { createBridge } from '../remote/bridge.ts';
-import { proveSeat } from '../remote/auth.ts';
+import { proveSeat } from '../remote/host-links.ts';
 import { socketPaths, stopReason } from '../remote/link.ts';
 import { unknownOutcome, UNKNOWN_OUTCOME } from '../remote/protocol.ts';
 import { SEAT_BEAT_MS } from '../config.ts';
@@ -163,11 +164,11 @@ class MirrorRoomStore implements RoomStore {
     } catch (e) {
       if ((e as RoomError).code !== 'OFFLINE') throw e;
       if (unknownOutcome(e)) { // it went out: never "nothing was sent" (a slow link lands it later)
-        throw Object.assign(new RoomError('OFFLINE', `room ${this.code}: no answer from the host in time (a slow link); ${UNKNOWN_OUTCOME}`), { unknown: true });
+        throw new RoomError('OFFLINE', `room ${this.code}: no answer from the host in time (a slow link); ${UNKNOWN_OUTCOME}`, 'UNKNOWN_OUTCOME');
       }
       const why = stopReason(this.local.kv.get('link')); // the daemon stopped for good (an invite refused, a fork): say why
-      if (why) throw new RoomError(why.code, `the link to room ${this.code} stopped: ${why.reason}; nothing was sent`);
-      throw new RoomError('OFFLINE', `room ${this.code} is offline (${(e as Error).message}); nothing was sent`);
+      if (why) throw new RoomError(why.code, `the link to room ${this.code} stopped: ${why.reason}; nothing was sent`, why.why);
+      throw new RoomError('OFFLINE', `room ${this.code} is offline (${(e as Error).message}); nothing was sent`, reasonOf(e) || 'NOT_SENT');
     }
   }
 

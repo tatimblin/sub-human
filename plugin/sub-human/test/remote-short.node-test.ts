@@ -14,7 +14,8 @@ import { spawnSync } from 'node:child_process';
 import * as h from './helpers.ts';
 import * as store from '../lib/room/store.ts';
 import * as link from '../lib/remote/link.ts';
-import * as auth from '../lib/remote/auth.ts';
+import * as invites from '../lib/remote/invites.ts';
+import * as hostLinks from '../lib/remote/host-links.ts';
 import * as admission from '../lib/remote/admission.ts';
 import { Machine } from './support/two-homes.ts';
 import type { MachineRun, Seat } from './support/two-homes.ts';
@@ -93,7 +94,7 @@ test('an invite over pipe: the host sees one line; join links in a hidden step; 
   assert.equal(reqs[0].ref, lf.awaiting.ref);
   await sleep(600);
   assert.notEqual(remote.lib(() => link.status(code)).state, 'online');
-  assert.equal(host.lib(() => Object.keys(auth.links(store.open(code)))).length, 0, 'no link yet');
+  assert.equal(host.lib(() => Object.keys(hostLinks.links(store.open(code)))).length, 0, 'no link yet');
 
   // the host's tail wakes alice's Claude to open the card, once
   const ev = (await host.tail(alice, 1.5)).split('\n').filter(Boolean).map(l => JSON.parse(l));
@@ -130,7 +131,7 @@ test('an invite over pipe: the host sees one line; join links in a hidden step; 
   assert.equal(admitted.admit, 'let-in');
   assert.ok(admitted.admit_sig && (admitted.admit_sig as { from?: string }).from === 'alice', 'the answer is signed with alice\'s seat key');
   for (const f of [host.log(code), remote.log(code), fs.readFileSync(path.join(remote.home, 'links', `${code}.log`), 'utf8')]) assert.ok(!f.includes(` ${pin}`), 'the PIN is in no log');
-  const inv = host.lib(() => store.open(code).kv.get(auth.INVITES_KEY));
+  const inv = host.lib(() => store.open(code).kv.get(invites.INVITES_KEY));
   assert.ok(!JSON.stringify(inv).includes(`"prs":"${pin}"`), 'the host forgot the PIN once it was used');
 });
 
@@ -208,7 +209,7 @@ test('invite --cancel: an unknown ref is refused; an open invite is cancelled; c
   const inv = host.lib(() => hosting.hostInvite(code, { pipe: true }));
   const r = host.lib(() => hosting.cancelInvite(code, inv.ref));
   assert.match(r.text, /^cancelled the invite to room .* it lets no one in/);
-  assert.ok(host.lib(() => auth.findInvite(store.open(code), inv.ref))!.invite.burnt_at);
+  assert.ok(host.lib(() => invites.findInvite(store.open(code), inv.ref))!.invite.burnt_at);
   assert.match(host.lib(() => hosting.cancelInvite(code, inv.ref)).text, /no longer worked already/);
   assert.match(host.lib(() => hosting.cancelInvite(code)).text, /has no open invite; nothing to cancel/);
 });
