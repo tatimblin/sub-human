@@ -87,6 +87,8 @@ export interface Confirm {
   title: string | null;
   at: number;
   asked?: number;
+  /** when Stop nudged the model to show a card it never showed (hooks/consent.ts unasked): once */
+  nudged?: number;
   /** when the card's no-answer close was told, or an interrupted card offered again (hooks/consent.ts reoffer): once */
   again?: number;
 }

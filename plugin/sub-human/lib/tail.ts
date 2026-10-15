@@ -19,7 +19,8 @@
  *   missingRowsText(me, sid, {now}?) -> text | null   the Agent calls for this seat's rows that run nowhere
  *   remindersText(me, rm) -> text | null     lib/proposal.ts reminder() for the proposal a review opens next (the
  *                                            person's pick, else the newest), the others awaiting me listed as
- *                                            h6 "title" (members); a note of mine waiting on it: the confirm card instead
+ *                                            h6 "title" (members); a note of mine waiting on it: the confirm card instead,
+ *                                            to show now (consent's reoffer says the same) until it was offered again
  *   linkLine(status, code) -> {key, text} | null   the one line for a room link that is not online (lib/remote/link.ts
  *       status; the words are lib/room/link-state.ts STATES): key 'fork' (the mirror no longer matches the host's
  *       log; queued @room posts are kept, not sent), 'stopped' (for good: refused, revoked, the room closed) or
@@ -91,7 +92,7 @@ type Pending<T> = T & { at: number };
 
 type RowsLib = Pick<typeof import('./rows.ts'), 'joinNote' | 'missingRows' | 'rowsNeeded' | 'readHolds' | 'sessionRowMap' | 'rowCalls'>;
 type IdentityLib = Pick<typeof import('./identity.ts'), 'readMembers' | 'heartbeat'>;
-type ProposalLib = Pick<typeof import('./proposal.ts'), 'pendingFor' | 'picked' | 'reminder' | 'readConfirm' | 'confirmCall'>;
+type ProposalLib = Pick<typeof import('./proposal.ts'), 'pendingFor' | 'picked' | 'reminder' | 'readConfirm' | 'confirmCall' | 'showConfirm'>;
 type NoticesLib = Pick<typeof import('./notices.ts'), 'shown' | 'markShown'>;
 type RoomClaudeLib = Pick<typeof import('./room-claude.ts'), 'watchdog'>;
 type HandoffLib = Pick<typeof import('./handoff.ts'), 'pendingAsk' | 'markTold' | 'hostDoc'>;
@@ -356,9 +357,13 @@ function remindersText(me: Identity, rm: Pick<TailRoom, 'readView'>, { proposal 
   // hooks will not show, and the person can name another.
   const p = proposal.picked(me, ps)!; // ps is not empty
   // A note of the person's waits on it (hooks/consent.ts): reopening the review would drop the note, so point at the
-  // confirm card instead.
+  // confirm card instead. Until its no-answer close was told or the card offered again (again), the prompt may also
+  // carry consent's reoffer: this line then says the same (showConfirm), never a softer "if asked" beside it.
   const cf = proposal.readConfirm(me);
-  if (cf && cf.hash === p.hash) return `proposal ${p.hash}: ${me.name}'s note waits to be sent or discarded; if ${me.name} asks, ${proposal.confirmCall(p.hash)}. Don't reopen the review (that drops the note).`;
+  if (cf && cf.hash === p.hash) {
+    return cf.again ? `proposal ${p.hash}: ${me.name}'s note waits to be sent or discarded; if ${me.name} asks, ${proposal.confirmCall(p.hash)}. Don't reopen the review (that drops the note).`
+      : `proposal ${p.hash}: ${me.name}'s note is not recorded yet. ${proposal.showConfirm(me.name, p.hash)} Don't reopen the review (that drops the note).`;
+  }
   const entryOf = (hash: string) => es.find(e => e.kind === 'proposal' && e.hash === hash); // the title when no plan is stored
   return proposal.reminder(p, me.name, { code: me.code, others: ps.filter(x => x !== p).map(x => ({ ...x, entry: x.entry || entryOf(x.hash) })) });
 }

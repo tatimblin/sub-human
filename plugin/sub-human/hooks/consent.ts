@@ -35,7 +35,8 @@
  * Pre/Post(AskUserQuestion): the confirm card for a waiting note (only the person's Send on the card as built records
  * the objection with the note, byte-exact; Discard drops it; AFK or no answer keeps it), else the card fallback;
  * "Not yet", AFK, stale hashes record nothing. Stop nudges once when a waiting note's card was never shown; a card shown
- * and interrupted (no Post) is offered again once, at the next prompt (reoffer). An answer is
+ * and interrupted (no Post), or still not shown after the nudge, is offered again once, at the next prompt (reoffer),
+ * with the tail's reminder for it saying the same (lib/proposal.ts showConfirm). An answer is
  * lib/proposal.ts answer, then decide (a no-op on a machine that does not hold the room; its host decides). An
  * answer the room refuses (OFFLINE, AUTH) is never lost silently: a systemMessage tells the person, the context
  * the model. Post(ExitPlanMode) for the person's own plan offers to propose it; when it is, unedited, a pending
@@ -493,9 +494,9 @@ function stop(input: ConsentIn, me: Identity) {
  * the line after the review closed). Once only: a card shown and left unanswered is the person's to reopen. */
 function unasked(me: Identity) {
   const cf: Confirm | null = proposal.readConfirm(me);
-  if (!cf || cf.asked) return;
+  if (!cf || cf.asked || cf.nudged) return;
   if (!pendingFor(me).some(p => p.hash === cf.hash)) return proposal.clearConfirm(me);
-  proposal.writeConfirm(me, { ...cf, asked: Date.now() });
+  proposal.writeConfirm(me, { ...cf, nudged: Date.now() }); // not asked: no card was shown
   c.context('Stop', `sub-human: ${me.name}'s note on proposal ${cf.hash} is not recorded yet: ${confirmCall(cf.hash)} so ${me.name} can send or discard it. Don't post the note or answer for ${me.name}.`);
 }
 
@@ -515,15 +516,17 @@ function preRoomTool(input: ConsentIn, me: Identity) {
 
 /**
  * UserPromptSubmit with no review open: a waiting note whose confirm card was shown (asked) and closed with no Post
- * (the person interrupted it, so no hook said a word): the note would wait unseen. Offer it again, once (again).
+ * (the person interrupted it, so no hook said a word), or never shown though Stop nudged (nudged): the note would
+ * wait unseen. Offer it again, once (again). The tail's reminder on this prompt says the same (proposal.showConfirm).
  */
-const reofferDue = (cf: Confirm | null): cf is Confirm => !!(cf && cf.asked && !cf.again);
+const reofferDue = (cf: Confirm | null): cf is Confirm => !!(cf && (cf.asked || cf.nudged) && !cf.again);
 function reoffer(me: Identity) {
   const cf: Confirm | null = proposal.readConfirm(me);
   if (!reofferDue(cf)) return;
   if (!pendingFor(me).some(p => p.hash === cf.hash)) return proposal.clearConfirm(me);
   proposal.writeConfirm(me, { ...cf, again: Date.now() });
-  c.context('UserPromptSubmit', `sub-human: ${me.name}'s note on proposal ${cf.hash} is still not recorded: its card closed before ${me.name} answered. Before anything else, ${confirmCall(cf.hash)} so ${me.name} can send or discard it. Don't post the note or answer for ${me.name}.`);
+  const why = cf.asked ? `its card closed before ${me.name} answered` : `its card was never shown`;
+  c.context('UserPromptSubmit', `sub-human: ${me.name}'s note on proposal ${cf.hash} is still not recorded: ${why}. ${proposal.showConfirm(me.name, cf.hash)} Don't post the note or answer for ${me.name}.`);
 }
 
 /** UserPromptSubmit: a review left open by Esc (no hook fires then). Still in plan mode: exit it first. */
@@ -733,7 +736,7 @@ function reviewOpen(input: ConsentIn): boolean {
   if (!me) return false;
   if (readReview(me)) return true;
   const cf: Confirm | null = proposal.readConfirm(me);
-  return !!(cf && !cf.asked) || reofferDue(cf);
+  return !!(cf && !cf.asked && !cf.nudged) || reofferDue(cf);
 }
 
 /**
