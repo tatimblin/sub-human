@@ -161,6 +161,10 @@ test('five wrong PINs burn the invite; the right one after that is refused; a 0.
   assert.match(String(last!.note), /burnt after its last wrong PIN/);
   const m = machine();
   assert.throws(() => invites.redeemInvite(host, r.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: r.pin, now }), (e: CodedError) => e.reason === 'INVITE_BURNT');
+  // no try left but no burnt_at (a record whose last wrong PIN was not marked): the right PIN is refused all the same
+  const z = mint(host);
+  host.kv.update(invites.INVITES_KEY, (cur: Invites | null) => { const k = crypto.createHash('sha256').update(z.id).digest('hex'); return { ...cur, [k]: { ...(cur![k] as ShortInvite), tries: 0 } }; });
+  assert.throws(() => invites.redeemInvite(host, z.id, { machine: m.id, proven: m.id, as: { name: 'x', label: 'x' }, pin: z.pin, now: Date.now() }), (e: CodedError) => e.reason === 'INVITE_BURNT');
   // a record a 0.5.0-beta.15 host left (v 3, its PIN in clear): never redeemed
   const old = crypto.randomBytes(16).toString('base64url');
   host.kv.update(invites.INVITES_KEY, (cur: Invites | null) => ({ ...cur, [crypto.createHash('sha256').update(old).digest('hex')]: { v: 3, short: true, kind: 'ssh', locator: 'ssh:me@box', host_key: null, by: null, door_file: null, created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString(), tries: 5, prs: '1234' } as ShortInvite }));
