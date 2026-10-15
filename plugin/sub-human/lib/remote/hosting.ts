@@ -20,7 +20,9 @@
  *       link (kick)
  *   kick(code, name, {file?}) -> {id, seats, keys, text}   end the link NAME joined over: its token (and key) stops
  *       working (hostLinks.revokeLink, which also burns an invite reserved for it), its seats leave ("removed by the
- *       host"), its running `serve` processes are stopped, and a room line says so. A link an admit let in before
+ *       host"), and a room line says so. Every live `serve` of the link sees its record go (lib/remote/server.ts held:
+ *       the stream ends AUTH LINK_REVOKED, every op is refused, the connection closes), whatever its argv; one that
+ *       names `--link ID` (ssh) is also sent SIGTERM. A link an admit let in before
  *       protocol 3 also loses its authorized_keys line (keys: how many; nothing adds one any more). A joiner still
  *       waiting for the card: its reserved link. A link made over this account's own ssh login (hostLinks.loginLink):
  *       its token goes and its serve is stopped, and the text says that login can link again

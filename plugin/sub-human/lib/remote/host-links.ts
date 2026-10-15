@@ -26,8 +26,11 @@
  *   mayWriteAs(link, name) -> bool            name is one of link.seats
  *   mayJoinAs(link, name) -> bool             a bound link (the card let one name in; a handoff's seats) joins only those;
  *                                             notBound(link, name) says why not
+ *   unbindSeat(store, linkId, name)           undo a bindSeat whose seat was then refused (lib/remote/server.ts join)
  *   revokeLink(store, id, {now?}) -> {link, invites} | null   forget link id (its token stops working) and burn every
- *       invite reserved for it; null when nothing had that id
+ *       invite reserved for it; null when nothing had that id. The token's digest is kept in the host-only document
+ *       remote/revoked (the newest REVOKED_KEEP), so a hello with it is AUTH LINK_REVOKED, not an unknown token
+ *   wasRevoked(store, token) -> bool          the token is one of a link the host revoked (kick)
  *   links(store) -> {id: link};  linkKnown(store, id) -> bool (a link, or an invite's reserved link, with that id)
  *   newLinkId() -> 12 hex;  LINK_ID_RE /^[0-9a-f]{12}$/;  LINKS_KEY 'remote/links'
  *   proveSeat(key, {room, name, pubkey}) -> proof   the joining hook's half (it holds the seat's private key):
@@ -48,6 +51,8 @@ import type { AuthStore, LinkRecord, Links, SignedPayload } from './types-core.t
 interface SeatRef { room: string; name: string; pubkey: string }
 
 const LINKS_KEY = 'remote/links';
+const REVOKED_KEY = 'remote/revoked';
+const REVOKED_KEEP = 200;
 const LINK_ID_RE = /^[0-9a-f]{12}$/;
 const newLinkId = (): string => crypto.randomBytes(6).toString('hex');
 const sha256 = (s: unknown): string => crypto.createHash('sha256').update(String(s)).digest('hex');
@@ -102,6 +107,14 @@ function bindSeat(store: AuthStore, linkId: string, name: string): LinkRecord {
   return (next || (store.kv.get(LINKS_KEY) as Links))[linkId];
 }
 
+function unbindSeat(store: AuthStore, linkId: string, name: string): void {
+  store.kv.update(LINKS_KEY, (cur: Links | null) => {
+    const link = cur && cur[linkId];
+    if (!link || !link.seats.includes(name)) return undefined;
+    return { ...cur, [linkId]: { ...link, seats: link.seats.filter(n => n !== name) } };
+  });
+}
+
 const mayWriteAs = (link: { seats?: unknown } | null | undefined, name: string): boolean => !!link && Array.isArray(link.seats) && link.seats.includes(name);
 
 /** Why a bound link may not take `name`: the host let it in for its seats alone. */
@@ -121,7 +134,21 @@ function revokeLink(store: AuthStore, id: string, { now = Date.now() }: { now?: 
     return next;
   });
   const n = invites.burnFor(store, id, { now });
+  const gone = link as LinkRecord | null;
+  if (gone) {
+    store.kv.update(REVOKED_KEY, (cur: Record<string, { token_sha256: string; at: string }> | null) => {
+      const all = Object.entries({ ...cur, [id]: { token_sha256: gone.token_sha256, at: iso(now) } });
+      return Object.fromEntries(all.slice(-REVOKED_KEEP));
+    });
+  }
   return link || n ? { link, invites: n } : null;
+}
+
+function wasRevoked(store: AuthStore, token: unknown): boolean {
+  if (typeof token !== 'string' || !token) return false;
+  const digest = sha256(token);
+  const all = (store.kv.get(REVOKED_KEY, null) || {}) as Record<string, { token_sha256?: string }>;
+  return Object.values(all).some(r => r && r.token_sha256 === digest);
 }
 
 const links = (store: AuthStore): Links => store.kv.get(LINKS_KEY, null) || {};
@@ -141,6 +168,6 @@ function checkSeatProof(proof: SignedPayload | null | undefined, { room, name, p
 }
 
 export {
-  LINKS_KEY, LINK_ID_RE, newLinkId, create, loginLink, linkKnown, verifyToken, keyHolds, bindSeat, mayWriteAs, notBound, mayJoinAs,
-  revokeLink, links, proveSeat, checkSeatProof,
+  LINKS_KEY, REVOKED_KEY, LINK_ID_RE, newLinkId, create, loginLink, linkKnown, verifyToken, keyHolds, bindSeat, unbindSeat, mayWriteAs,
+  notBound, mayJoinAs, revokeLink, wasRevoked, links, proveSeat, checkSeatProof,
 };

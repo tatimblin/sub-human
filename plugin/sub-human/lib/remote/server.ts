@@ -33,11 +33,14 @@
  *                    (lib/remote/machine-key.ts), else the reported one (lib/remote/host-links.ts). The reply says the
  *                    link's machine id, and closed: true once the room's Claude was stopped (the room closed), for
  *                    sub-human doctor on a link that stopped before it
- *         join       {name, role: 'member', pubkey, proof}: hostLinks.checkSeatProof, then lib/seats.ts enter() with
+ *       Every op but hello reads the link's record again: gone (a kick, in any process) is AUTH LINK_REVOKED, the
+ *       streams end and the connection closes. A hello with a revoked link's token is AUTH LINK_REVOKED (host-links.ts
+ *       wasRevoked), not TOKEN_UNKNOWN.
+ *         join       {name, role: 'member', pubkey, proof}: hostLinks.checkSeatProof, bindSeat, then lib/seats.ts enter() with
  *                    machine = the link's (no pid: the seat lives by its lease), and over a login link, when the room's
  *                    option login-same-person is on (lib/room/options.ts), account = this machine's id in the room (the
  *                    host account's own seat: one person with the host's seats, lib/proposal.ts create); a key other
- *                    than the pinned one is AUTH; bindSeat
+ *                    than the pinned one is AUTH; a refused seat gives the binding back (no seat without a link)
  *         leave      seats.exit(), own seat only
  *         beat       store.members.beat(name, {presence?}), own seat only; then seats.back (a lapsed seat rejoined)
  *         append     own `from` only; the seat's quota (append.human / append.agent, counted in the log);
@@ -52,7 +55,8 @@
  *                    'doc' for members (lib/room/members.ts publicView), presence/NAME and tasks when they
  *                    change (all three at the start), 'end' {reason: 'closed'} when the room's Claude is stopped
  *                    or {reason: 'FORK'} when the host log is reset, or {reason: 'AUTH', message} when the
- *                    host revoked the link (revoked(), on the serve's SIGTERM). It follows the room's watch
+ *                    host revoked the link (the link's record gone, seen on the watch or at the next op: held(); and
+ *                    revoked(), on the serve's SIGTERM). It follows the room's watch
  *                    (store.watch, lib/room/watch.ts: fs.watch and a FOLLOW_SLOW_MS poll; a store without one is polled
  *                    every FOLLOW_POLL_MS), reads a changed document alone, and sends a replay REPLAY_BATCH lines per
  *                    turn, waiting for the transport to drain (transport.writable), until the transport closes
@@ -176,8 +180,12 @@ function viaLogin(s: Session, machine: string, proven: string | null): Credentia
   return r;
 }
 
+/** What a revoked link's machine is told, at hello and when its connection ends. */
+const revokedText = (code: string): string => `the host removed this machine from room ${code} (/sub-human kick); ask them for a new invite`;
+
 function known(s: Session, token: unknown): Credential {
   const link = hostLinks.verifyToken(s.store, token);
+  if (!link && hostLinks.wasRevoked(s.store, token)) throw authError(revokedText(s.store.code), 'LINK_REVOKED');
   if (!link) throw authError('unknown link token; ask the host for a new invite', 'TOKEN_UNKNOWN');
   if (s.linkId && link.id !== s.linkId) throw authError(`this token is not link ${s.linkId}'s`, 'TOKEN_UNKNOWN');
   // a web link made under protocol 3 is its Noise key: its token alone, or another key, gets nowhere
@@ -235,6 +243,8 @@ function stream(s: Session, id: FrameId | undefined, after: number, snap: Snapsh
     if (queue.length) draining = setImmediate(drain);
   }
   function tick(change: Change | null, now = false): void {
+    // the link's record gone (a kick, in any process): the stream ends AUTH and the connection closes (s.held)
+    if ((!change || change.docs.has(hostLinks.LINKS_KEY)) && !s.held()) return;
     let moved = !change || change.log;
     if (!change || change.log) {
       const { lines, entries, reset } = tailer.poll();
@@ -328,9 +338,18 @@ const OPS: OpHandlers = {
     if (!hostLinks.mayJoinAs(s.link, name)) throw authError(hostLinks.notBound(s.link!, name), 'NOT_BOUND');
     // a login link's seat is the host person's own (one person with the host's seats) only where the room says so
     const account = s.link!.login && options.loginSamePerson(s.store) ? machineIn(s.store.code) ?? undefined : undefined;
-    const r = seats.enter({ code: s.store.code, name, machine: s.link!.machine, pubkey, ...(account ? { account } : {}), ...(typeof log_v === 'number' ? { log_v } : {}) });
-    if (!r.ok) throw new RoomError(r.code || 'INVALID', r.error);
+    // bound first: a link revoked meanwhile is AUTH LINK_REVOKED before any seat exists (no seat with no link); a seat
+    // then refused gives the binding back
+    const had = s.link!.seats.includes(name);
     s.link = hostLinks.bindSeat(s.store, s.link!.id, name);
+    let r: ReturnType<typeof seats.enter>;
+    try {
+      r = seats.enter({ code: s.store.code, name, machine: s.link.machine, pubkey, ...(account ? { account } : {}), ...(typeof log_v === 'number' ? { log_v } : {}) });
+    } catch (e) { if (!had) hostLinks.unbindSeat(s.store, s.link.id, name); throw e; }
+    if (!r.ok) {
+      if (!had) { hostLinks.unbindSeat(s.store, s.link.id, name); s.held(); }
+      throw new RoomError(r.code || 'INVALID', r.error);
+    }
     return r.rejoin ? { ok: true, rejoin: true } : { ok: true };
   },
 
@@ -486,6 +505,8 @@ class Session {
   run({ id, op, params }: IncomingRequest): unknown {
     if (!Object.hasOwn(OPS, op)) throw new RoomError('PROTOCOL', `unknown op "${op}"`);
     if (op !== 'hello' && !this.link) throw authError('say hello with this link\'s token first');
+    // every op reads the link's record again: one the host revoked (a kick, in another process) gets nothing more
+    if (op !== 'hello' && !this.held()) throw authError(revokedText(this.store.code), 'LINK_REVOKED');
     if (!WHILE_MOVED.has(op) && handoff.movedAway(this.store)) {
       const h = this.store.hostState!(); // movedAway: only a store with hostState moves
       throw stale(`room ${this.store.code} moved to ${h.host}'s machine; this machine takes no more messages for it`);
@@ -521,8 +542,29 @@ class Session {
    * stops this serve with SIGTERM: scripts/sub-human serve calls this first). */
   revoked(): boolean {
     if (!this.link || (this.store.kv.get(hostLinks.LINKS_KEY, null) || {})[this.link.id]) return false;
-    for (const st of [...this.streams]) st.end('AUTH', `the host revoked this link (${this.link.id}); ask them for a new invite`);
+    this.endRevoked();
     return true;
+  }
+
+  /** The session's link as the host's record has it now (a seat bound since, in another connection), true; false when
+   * the record is gone: the streams end AUTH with the reason and the connection closes a moment later (whatever
+   * process the kick ran in: pipe and web serves name no link in their argv). No link yet: true. */
+  held(): boolean {
+    if (!this.link) return true;
+    const cur = hostLinks.links(this.store)[this.link.id];
+    if (cur) { this.link = cur; return true; }
+    if (handoff.movedAway(this.store)) return true; // a demote clears the links with the room: the stream says 'moved'
+    this.endRevoked();
+    return false;
+  }
+
+  revokedEnded = false;
+  endRevoked(): void {
+    if (this.revokedEnded) return;
+    this.revokedEnded = true;
+    for (const st of [...this.streams]) st.end('AUTH', revokedText(this.store.code));
+    // the reply that says so goes out first; then nothing is left for this connection
+    setTimeout(() => { this.stop(); this.transport.close(); }, 200).unref();
   }
 
   /** A web session closes unless a hello made it a link within ms (anyone can complete a Noise handshake). */
