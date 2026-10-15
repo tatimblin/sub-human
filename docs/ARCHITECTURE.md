@@ -520,7 +520,7 @@ Every internal the plugin relies on, from `lib/cc.ts` `CONTRACT`. `§` points in
 - `lib/identity.ts`: where rooms live, who is in them, and which Claude session is asking.
 - `lib/io.ts`: small file and process helpers shared by every module.
 - `lib/lock.ts`: the one lockfile helper (room log, members.json, proposals, the task mirror, the row map).
-- `lib/notices.ts`: join / leave lines for every human in the room, as a group chat shows them: "bob joined", "bob rejoined", "bob left" (no room code, no ids).
+- `lib/notices.ts`: join / leave lines for every human in the room, as a group chat shows them: "bob joined", "bob rejoined", "bob left (connection lost)" (no room code, no ids).
 - `lib/proposal.ts`: proposals and the consent card. Every write goes through room.append().
 - `lib/remote/admission.ts`: the host person's consent to a machine that typed an invite's PIN.
 - `lib/remote/auth.ts`: invites and link tokens, on the host. An invite is single-use and turns into a link token at the first hello; the token is the link's credential from then on.

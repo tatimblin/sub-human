@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // UserPromptExpansion(sub-human:sub-human): every /sub-human command, run before the model and in place of it. The
 // model never chooses an identity. The commands (HELP below has them all):
-//   /sub-human                  in a room: a short status (and, after a re-pointed link, the seat joined again over
-//                               it); not in a room: finish a join the host has let in (a link file's join_as), else
+//   /sub-human                  in a room: a short status, starting the room's Claude again if it failed or ended
+//                               (and, after a re-pointed link, the seat joined again over it); not in a room: finish a join the host has let in (a link file's join_as), else
 //                               join the one open room, or open one, as the default name
 //   /sub-human NAME [ROOM]      join ROOM (else the one open room, else a new one) as NAME, leaving any other room
 //   /sub-human invite …         (host) an invite line and its PIN (lib/remote/hosting.ts hostInvite, webhost.ts
@@ -462,12 +462,15 @@ function withWhom(code: string, name: string): string {
   return names.length > 3 ? `${names.length} others here` : `with ${here}`;
 }
 
-/** Bare `/sub-human` in a room: who is here, and how to bring someone in; a connection that stopped running starts again. */
-function status(cur: Identity) {
+/**
+ * Bare `/sub-human` in a room: who is here, and how to bring someone in; a connection that stopped running starts again,
+ * and so does a room's Claude that failed to start or ended (seats.ensureRoomClaude: host only, never a live one).
+ */
+function status(cur: Identity, cwd: string) {
   const host = identity.isHost(cur.code);
   if (!host) { try { link.start(cur.code); } catch { /* the doctor says why */ } } // its connection, if it stopped running
   return notice(`you're ${cur.name} in room ${cur.code}, ${withWhom(cur.code, cur.name)} · `
-    + `${host ? 'another machine: /sub-human invite · ' : ''}leave: /sub-human leave`);
+    + `${host ? 'another machine: /sub-human invite · ' : ''}leave: /sub-human leave${seats.ensureRoomClaude(cur.code, cwd, cur.name)}`);
 }
 
 /**
@@ -589,7 +592,7 @@ run((input: JoinIn) => {
     case undefined: {
       if (cur) {
         const l = identity.isHost(cur.code) ? null : links.get(cur.code);
-        return l && l.rebind ? take({ name: cur.name, code: cur.code }, ctx) : status(cur);
+        return l && l.rebind ? take({ name: cur.name, code: cur.code }, ctx) : status(cur, cwd);
       }
       const l = pendingJoin();
       if (l) {

@@ -119,7 +119,7 @@ test('bare /sub-human: not in a room, it opens one as the default name (git user
   // seated: the status, no model turn
   r = plain.hook('join', expand(''), { as: 'me', env: NO_GIT });
   assert.equal(r.json.decision, 'block');
-  assert.match(r.json.reason, new RegExp(`^sub-human: you're dana in room ${code}, nobody else here yet · another machine: /sub-human invite · leave: /sub-human leave$`));
+  assert.match(r.json.reason, new RegExp(`^sub-human: you're dana in room ${code}, nobody else here yet · another machine: /sub-human invite · leave: /sub-human leave( · starting the room's Claude….*)?$`));
 });
 
 test('the default name: git user.name, else the local part of user.email, else $USER; a taken one says how to pick another', () => {
@@ -202,6 +202,22 @@ test('joining a room with no live claude restarts it; a failed start is retried 
   assert.equal(bgCalls(s).length, 1);
   const r3 = w.hook('join', expand(`bob ${w.code}`), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
   assert.equal(r3.json.systemMessage, undefined, 'a job that has not bound yet is not restarted');
+});
+
+test('a seated bare /sub-human restarts a room Claude that failed to start, and leaves a starting one alone', async () => {
+  const w = new World({ alice: 'sleep' });
+  w.pid.bob = process.pid; w.sid.bob = 'aaaaaaaa-0000-4000-8000-000000000017';
+  w.hook('join', expand(`bob ${w.code}`), { as: 'bob' }); // SUB_HUMAN_CLAUDE=/usr/bin/false
+  assert.ok(await until(() => w.members().claude.spawn_error), 'the starter records the failure');
+  const s = stub(w.code);
+  const r = w.hook('join', expand(''), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
+  assert.equal(r.json.decision, 'block', 'still the status, no model turn');
+  assert.match(r.json.reason, new RegExp(`^sub-human: you're bob in room ${w.code}, with alice · .* · starting the room's Claude… \\(the last start failed: .+\\)$`));
+  assert.ok(await until(() => w.members().claude.job === '0b500131'));
+  assert.equal(bgCalls(s).length, 1);
+  const r2 = w.hook('join', expand(''), { as: 'bob', env: { SUB_HUMAN_CLAUDE: s.bin } });
+  assert.doesNotMatch(r2.json.reason, /starting the room's Claude/, 'a job that has not bound yet is not restarted');
+  assert.equal(bgCalls(s).length, 1);
 });
 
 test('two concurrent joins start one claude: the second sees the pending claim', async () => {
