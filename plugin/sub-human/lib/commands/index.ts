@@ -12,6 +12,7 @@
  *       Then: OPEN verbs (help, doctor) run without the hooks module; every other needs this session's lease
  *       (identity.modLeaseOk: the module's guard, prompt gate and delivery run), else noModule() says why. The room
  *       Claude's agent session binds its seat (join.ts bindRoomClaude); a room Claude's seat takes no other command.
+ *   hide(args, answer) -> Answer   that rule, for run() and the tests
  *   TABLE     '' (bare), join, invite, admit, kick, leave, handoff; any other first word is a NAME or a ROOM
  *             (join.ts named). OPEN: help (any words after it), doctor
  *   noModule(pid) -> string   why this session has no hooks module, in words the person can act on: an old Claude Code
@@ -64,10 +65,12 @@ function route(args: string[], s: Session): Answer {
   return v ? v(rest, ctx) : named(args, ctx);
 }
 
-export function run(args: string[], s: Session): Answer {
-  // Before anything else: a prompt that could carry a PIN is answered hidden, whatever goes wrong with it.
+export const run = (args: string[], s: Session): Answer => hide(args, route(args, s));
+
+/** The hidden rule (see the header), applied to what a verb answered for args. */
+export function hide(args: string[], a: Answer): Answer {
+  // decided from the prompt alone: a prompt that could carry a PIN is answered hidden, whatever went wrong with it
   const hidden = mayHoldSecret(args.join(' '));
-  const a = route(args, s);
   if (a.kind === 'joined') {
     if (!hasPinWord(args.join(' '))) return a;
     return secret(`${a.say} · type /sub-human to bring the room to your Claude`);

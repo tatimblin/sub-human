@@ -50,7 +50,7 @@ const refuse = (text: string): Step => say(text, true);
 const msgOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export const NO_START = (code: string) => `the connection to room ${code} did not start. Run /sub-human doctor.`;
-const PIN_HINT = (dest: string, code: string) => `If the host sent you an invite, its line ends with a 4-digit PIN: /sub-human join ${dest} ${code} PIN`;
+const PIN_HINT = (dest: string, code: string) => `No PIN, so this went over your own ssh login; if the host sent you an invite, its line ends with a 4-digit PIN: /sub-human join ${dest} ${code} PIN`;
 
 /** A daemon still dialing the old host: stop it, so the start that follows dials the link file's new one. */
 export function restartLink(code: string): void {
@@ -105,9 +105,9 @@ export function linkLogin({ dest: typed, code, via, home, name, isDefault }: {
   if (!link.start(code)) return refuse(NO_START(code));
   const o: Outcome = hosting.outcome(code);
   // no PIN is no invite: the person's own ssh login is the way in, so a refusal says where an invite line differs
-  if (o.state === 'refused') return refuse(`could not join room ${code} over your own ssh login (no PIN, so no invite): ${at}: ${o.reason}. ${PIN_HINT(typed, code)}`);
+  if (o.state === 'refused') return refuse(`could not reach room ${code} over ${at}: ${o.reason}. ${PIN_HINT(typed, code)}`);
   if (o.state !== 'linked') {
-    return say(`joining room ${code} over your own ssh login (no PIN, so no invite): still connecting over ${at}${o.reason ? ` (${o.reason})` : ''}. Type /sub-human ${name} ${code} in a moment; if it doesn't come up, /sub-human doctor says why. ${PIN_HINT(typed, code)}`);
+    return say(`still connecting to room ${code} over ${at}${o.reason ? ` (${o.reason})` : ''}: no PIN, so no invite. Type /sub-human ${name} ${code} in a moment; if it doesn't come up, /sub-human doctor says why.`);
   }
   return take({ name, code, isDefault });
 }

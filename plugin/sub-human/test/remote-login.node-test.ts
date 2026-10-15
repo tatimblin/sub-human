@@ -300,6 +300,8 @@ test('login e2e: an unknown host key fails at once with the exact ssh to run onc
   const d = b.remote.join(b.bob, `join me@devbox ${b.code} --as bob`);
   stopDaemon(t, b.remote, b.code);
   assert.match(d.json!.reason!, /me@devbox refused your ssh login: sub-human logs in with your ssh keys or agent only, never a password/);
+  // no PIN is the login path, said so: a person who lost an invite line's PIN learns where it goes
+  assert.match(d.json!.reason!, new RegExp(`No PIN, so this went over your own ssh login; if the host sent you an invite, its line ends with a 4-digit PIN: /sub-human join me@devbox ${b.code} PIN$`));
 });
 
 test('login e2e: a key restricted to another link (its forced command) cannot use the login path, nor can a pass-through forced command', t => {

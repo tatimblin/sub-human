@@ -723,3 +723,59 @@ test('the block lists the room\'s Claude only while it runs or is starting: neve
   const text = withHome(w.home, () => common.contextBlock({ code: w.code, name: 'alice', role: 'member' } as Identity, 'rejoined'));
   assert.match(text, new RegExp(`room ${w.code} \\(with bob\\)`), text.slice(0, 120));
 });
+
+test('/sub-human help WORDS shows the list (it was refused), without the module too', () => {
+  const w = new World({ claude: 'sleep', alice: 'act' });
+  for (const args of ['help', 'help join', 'help me please']) {
+    const r = w.hook('join', expand(args), { as: 'alice', modLease: false });
+    assert.equal(r.json!.decision, 'block', args);
+    assert.match(r.json!.reason!, /^sub-human: commands:\n {2}\/sub-human /, args);
+    assert.equal(r.json!.hookSpecificOutput, undefined, `${args}: no secret in it`);
+  }
+  // a word of digits after help: the same list, hidden (it may be a PIN)
+  const pin = w.hook('join', expand('help 4829'), { as: 'alice' });
+  assert.match(pin.json!.reason!, /^sub-human: commands:/);
+  assert.equal(pin.json!.hookSpecificOutput!.suppressOriginalPrompt, true);
+});
+
+test('/sub-human join ROOM joins that room on this machine (the default name, or --as); join with no room still asks which', () => {
+  const w = new World({ alice: 'act' });
+  w.pid.me = process.ppid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000017';
+  spawnSync('git', ['init', '-q', w.cwd]);
+  spawnSync('git', ['-C', w.cwd, 'config', 'user.name', 'Dana Scully']);
+  const r = w.hook('join', expand(`join ${w.code}`), { as: 'me', env: NO_GIT });
+  assert.equal(r.json!.decision, undefined, r.stdout);
+  assert.match(hso(r).additionalContext!, new RegExp(`^SUB-HUMAN: you are dana's Claude in room ${w.code}`));
+  assert.ok(w.members().dana, 'joined as dana');
+  w.pid.you = process.pid; w.sid.you = 'aaaaaaaa-0000-4000-8000-000000000018';
+  const as = w.hook('join', expand(`join ${w.code} --as erin`), { as: 'you' });
+  assert.equal(as.json!.decision, undefined, as.stdout);
+  assert.ok(w.members().erin, 'joined as erin');
+  const none = w.hook('join', expand('join otter-0000 --as fay'), { as: 'you' });
+  assert.match(none.json!.reason!, /there's no room otter-0000 on this machine/);
+  assert.equal(none.json!.hookSpecificOutput!.suppressOriginalPrompt, true, 'a join prompt is hidden, whatever it is');
+  assert.match(w.hook('join', expand(`join ${w.code} --via j`), { as: 'you' }).json!.reason!, /--via and --home go with the other machine's address/);
+  assert.match(w.hook('join', expand('join dev'), { as: 'you' }).json!.reason!, /which room/);
+});
+
+test('a word of digits is no name: /sub-human 4829 says it looks like a PIN, hidden, and nothing is written', () => {
+  const w = new World({}, { room: false });
+  w.pid.me = process.pid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000019';
+  for (const args of ['4829', 'join otter-1234 --as 4829']) {
+    const r = w.hook('join', expand(args), { as: 'me' });
+    assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, args);
+    assert.match(r.json!.reason!, /"4829" looks like a PIN, not a name: an invite's whole line is \/sub-human join HOST ROOM PIN/, args);
+  }
+  assert.equal(fs.existsSync(path.join(w.home, 'rooms')) && fs.readdirSync(path.join(w.home, 'rooms')).length, false, 'no room opened');
+});
+
+test('an invite line without its PIN: a second sub-human folder has no login path, so it says the PIN is missing', () => {
+  const w = new World({ alice: 'act' });
+  w.pid.me = process.ppid; w.sid.me = 'aaaaaaaa-0000-4000-8000-000000000020';
+  for (const dest of ['pipe:/some/home', '/some/home']) {
+    const r = w.hook('join', expand(`join ${dest} vole-1234 --as bob`), { as: 'me' });
+    assert.equal(r.json!.hookSpecificOutput!.suppressOriginalPrompt, true, dest);
+    assert.match(r.json!.reason!, new RegExp(`that looks like an invite line without its PIN: /sub-human join ${dest} vole-1234 PIN`), dest);
+  }
+  assert.deepEqual(fs.readdirSync(w.home).filter(d => d === 'links'), [], 'no link written');
+});
