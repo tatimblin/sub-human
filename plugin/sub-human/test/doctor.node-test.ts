@@ -80,6 +80,26 @@ test('doctor: authorized_keys lines that bypass the shim are found', t => {
   assert.deepEqual(doctor.scanAuthorizedKeys(file + '.none'), { file: file + '.none', exists: false, lines: [] });
 });
 
+test('doctor: a door line of another sub-human home is reported as not this home\'s, and --fix leaves it (live: the real ~/.sub-human\'s rooms)', async t => {
+  const home = h.freshHome(t);
+  const file = path.join(h.tmpDir('sh-ak-', t), 'authorized_keys');
+  const other = `command="SUB_HUMAN_HOME=/Users/someone/.sub-human /Users/someone/.sub-human/bin/serve --enroll orca-5212 --kind ssh",restrict ${KEY} sub-human-enroll:orca-5212`;
+  const mine = `command="SUB_HUMAN_HOME=${home} ${home}/bin/serve --enroll vole-5678 --kind ssh",restrict ${KEY} sub-human-enroll:vole-5678`;
+  fs.writeFileSync(file, `${other}\n${mine}\n`);
+  const scan = doctor.scanAuthorizedKeys(file);
+  assert.deepEqual([scan.doors, scan.otherDoors], [['vole-5678'], ['orca-5212']]);
+  const c = doctor.checkAuthorizedKeys(scan);
+  assert.match(c.detail, /room vole-5678\): they only tell an old joiner to update \(and a line of another sub-human folder's, room orca-5212: not this home's, not touched\)/);
+  let out = '';
+  await doctor.main(['--fix', '--quick', '--json', '--authorized-keys', file], { write: (x: string) => { out += x; } });
+  assert.equal(fs.readFileSync(file, 'utf8'), `${other}\n`, 'only this home\'s door went');
+  assert.match(out, /removed 1 enrollment door line/);
+  // only another home's: info, nothing to fix here
+  const c2 = doctor.checkAuthorizedKeys(doctor.scanAuthorizedKeys(file));
+  assert.equal(c2.status, 'info');
+  assert.match(c2.detail, /no sub-human lines of this home \(and a line of another sub-human folder's, room orca-5212/);
+});
+
 test('doctor CLI: a pipe link to a second home: state, last error, a hello with both protocol versions; home modes, an old key line; --fix', async t => {
   // the host: a room in its own home
   const hostHome = h.freshHome(t);
