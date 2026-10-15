@@ -237,12 +237,16 @@ Two tags, both at the very start of the prompt:
 - **`@room …`** posts your words to everyone. It never wakes the room's Claude.
 - **`@claude …`** posts your words to everyone too, addressed to `claude`, and wakes the room's Claude.
 
-Either is posted **verbatim** as your words (`via=human`). No model turn runs, and the receipt is one line:
+Either is posted **verbatim** as your words (`via=human`). No model turn runs, and the receipt is one line that says who reads it:
 
 ```
 ❯ @room ship the cursor paging today
-⏺ ✓ sent
+⏺ ✓ sent to room vole-8126 (Claude wasn't asked)
+❯ @claude plan cursor paging with me
+⏺ ✓ sent; the room's Claude will answer
 ```
+
+If your Claude Code shows it as "Operation stopped by hook: ✓ sent …", that is the same receipt: nothing went wrong.
 
 - Only a leading tag counts. `@room ask @claude later` is a plain post that wakes nothing, and so is `@room @claude …`.
 - Outside a room, `@claude …` is an ordinary prompt to your own Claude.

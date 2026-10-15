@@ -7,6 +7,8 @@ import { SEAT, OUT, ran, scriptOf, session, start } from './support.ts'
 
 const SID = 'sid-p'
 const NONCE = /^[0-9a-f]{32}$/
+/** An @room's receipt (hooks/at-room.ts): the stop reason the shim answers with. */
+const SENT = `✓ sent to room ${SEAT.code} (Claude wasn't asked)`
 
 /**
  * The engine beneath the plugin: a session, mod-hello answering `hello`, hooks/prompt.ts answering `prompt`, and a
@@ -87,12 +89,12 @@ test('a seated prompt runs hooks/prompt.ts with the origin, the session env and 
 })
 
 test('a typed @room posts through node: ✓ sent stops the prompt; sdk and bridge count as typed', async ($, on) => {
-  const seen = world($, on, { prompt: JSON.stringify({ continue: false, stopReason: '✓ sent' }) })
+  const seen = world($, on, { prompt: JSON.stringify({ continue: false, stopReason: SENT }) })
   await start($)
   for (const kind of ['composer', 'sdk', 'bridge']) await submit($, '@room ship it', kind)
   expect(seen.stdin.map((s: any) => s.sub_human_origin)).toEqual(['composer', 'sdk', 'bridge'])
   expect(seen.classic[0].preventContinuation).toBe(true)
-  expect(seen.classic[0].stopReason).toBe('✓ sent')
+  expect(seen.classic[0].stopReason).toBe(SENT)
 })
 
 // The test kit has no bottom for session.append in 2.1.292 (a test's answer without next is skipped, and next has no
@@ -111,16 +113,16 @@ function rows(on: any) {
 }
 
 test('an @room receipt shows as itself: its stop\'s warning row loses "Operation stopped by hook: ", no other row does', async ($, on) => {
-  const seen = world($, on, { prompt: JSON.stringify({ continue: false, stopReason: '✓ sent' }) })
+  const seen = world($, on, { prompt: JSON.stringify({ continue: false, stopReason: SENT }) })
   const append = rows(on)
   await start($)
-  expect(await append($, 'Operation stopped by hook: ✓ sent')).toBe('Operation stopped by hook: ✓ sent') // nothing posted yet
+  expect(await append($, `Operation stopped by hook: ${SENT}`)).toBe(`Operation stopped by hook: ${SENT}`) // nothing posted yet
   await submit($, '@room ship it')
-  expect(seen.classic[0].stopReason).toBe('✓ sent')
-  expect(await append($, 'Operation stopped by hook: ✓ sent', 'user', 'note')).toBe('Operation stopped by hook: ✓ sent') // the model's copy
+  expect(seen.classic[0].stopReason).toBe(SENT)
+  expect(await append($, `Operation stopped by hook: ${SENT}`, 'user', 'note')).toBe(`Operation stopped by hook: ${SENT}`) // the model's copy
   expect(await append($, 'Operation stopped by hook: another plugin')).toBe('Operation stopped by hook: another plugin')
-  expect(await append($, 'Operation stopped by hook: ✓ sent')).toBe('✓ sent')
-  expect(await append($, 'Operation stopped by hook: ✓ sent')).toBe('Operation stopped by hook: ✓ sent') // once per stop
+  expect(await append($, `Operation stopped by hook: ${SENT}`)).toBe(SENT)
+  expect(await append($, `Operation stopped by hook: ${SENT}`)).toBe(`Operation stopped by hook: ${SENT}`) // once per stop
 })
 
 test('a refused @room (a block) leaves no receipt waiting', async ($, on) => {
@@ -273,7 +275,7 @@ test('an @room typed through Remote Control: a refusal is relayed as a prompt of
 })
 
 test('an @room typed through Remote Control that posted ("✓ sent", no systemMessage) relays nothing: no model turn', async ($, on) => {
-  const sent = { continue: false, stopReason: '✓ sent', subHuman: { reviewOpen: false }, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } }
+  const sent = { continue: false, stopReason: SENT, subHuman: { reviewOpen: false }, hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } }
   const seen = world($, on, { prompt: JSON.stringify(sent) })
   const clock = mock.clock(on, { now: 0 })
   await start($)

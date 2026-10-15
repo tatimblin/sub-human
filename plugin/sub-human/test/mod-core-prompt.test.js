@@ -67,13 +67,15 @@ test('prompt: receiptBook keeps only an @room stop\'s own warning row, as the re
   const { receiptBook, STOP_FRAME } = await load();
   const book = receiptBook(2);
   const notice = text => ({ type: 'system', name: 'informational', content: [{ type: 'text', text }] });
-  assert.equal(book.rewrite(notice(`${STOP_FRAME}✓ sent`)), null, 'nothing waiting: the engine\'s words stay');
-  book.expect('✓ sent');
-  assert.equal(book.rewrite(notice(`${STOP_FRAME}✓ sent (Claude's wording)`)), null, 'another receipt');
-  assert.equal(book.rewrite({ type: 'user', isMeta: true, content: [{ type: 'text', text: `${STOP_FRAME}✓ sent` }] }), null, 'the model\'s copy is left alone');
-  assert.equal(book.rewrite(notice('✓ sent')), null, 'no frame');
-  assert.deepEqual(book.rewrite(notice(`${STOP_FRAME}✓ sent`)), notice('✓ sent'));
-  assert.equal(book.rewrite(notice(`${STOP_FRAME}✓ sent`)), null, 'once');
+  // hooks/at-room.ts's receipts: the whole stop reason is matched, so an @room's and an @claude's never cross
+  const SENT = "✓ sent to room otter-4821 (Claude wasn't asked)", WAKE = "✓ sent; the room's Claude will answer";
+  assert.equal(book.rewrite(notice(`${STOP_FRAME}${SENT}`)), null, 'nothing waiting: the engine\'s words stay');
+  book.expect(SENT);
+  assert.equal(book.rewrite(notice(`${STOP_FRAME}${WAKE}`)), null, 'another receipt');
+  assert.equal(book.rewrite({ type: 'user', isMeta: true, content: [{ type: 'text', text: `${STOP_FRAME}${SENT}` }] }), null, 'the model\'s copy is left alone');
+  assert.equal(book.rewrite(notice(SENT)), null, 'no frame');
+  assert.deepEqual(book.rewrite(notice(`${STOP_FRAME}${SENT}`)), notice(SENT));
+  assert.equal(book.rewrite(notice(`${STOP_FRAME}${SENT}`)), null, 'once');
   book.expect('a'); book.expect('b'); book.expect('c');
   assert.equal(book.size, 2, 'a stop whose row never came is forgotten');
   assert.equal(book.rewrite(notice(`${STOP_FRAME}a`)), null);
