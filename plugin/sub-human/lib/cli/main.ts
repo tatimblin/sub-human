@@ -34,7 +34,7 @@
  *   sub-human show HASH [--room CODE]  a proposal's stored text (lib/proposal.ts read(code, hash), plans/<HASH>.md)
  *   sub-human tasks [--json] [--room CODE]
  *       the room's shared task list (lib/tasks.ts list(code), the room Claude's native list mirrored to
- *       the room document `tasks`): "#2 in_progress  bob  parser tests". --json prints the array.
+ *       the room document `tasks`): "#2  in progress  bob  parser tests" (the rows' words: open, in progress, done). --json prints the array.
  *   sub-human watch NAME [--room CODE] [--follow|--no-follow]
  *       NAME's thread: their own words, their Claude's posts (labelled "NAME's Claude"), their answers,
  *       their joins/leaves, and entries addressed to them. The room Claude's posts are labelled
@@ -272,12 +272,14 @@ function tasksCmd(args: readonly string[]) {
   list = list.filter(t => t && !(t.metadata && t.metadata._internal));
   if (flags.json) return console.log(JSON.stringify(list));
   if (!list.length) return console.log(`(no tasks in room ${code})`);
-  const w = Math.max(...list.map(t => String(t.status || '').length));
+  // the rows' words (lib/tasks.ts summary: "tasks 3 open"): open, in progress, done
+  const word = (s: unknown) => ({ pending: 'open', in_progress: 'in progress', completed: 'done' } as Record<string, string>)[String(s)] || String(s || '');
+  const w = Math.max(...list.map(t => word(t.status).length));
   const o = Math.max(...list.map(t => String(t.owner || '-').length));
   for (const t of list) {
     const blocked = Array.isArray(t.blockedBy) && t.blockedBy.length ? `  (blocked by ${t.blockedBy.map((b: string | number) => '#' + b).join(',')})` : '';
     const subject = String(t.subject ?? '').replace(/\s+/g, ' ');
-    console.log(`#${t.id}  ${String(t.status || '').padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${blocked}`);
+    console.log(`#${t.id}  ${word(t.status).padEnd(w)}  ${String(t.owner || '-').padEnd(o)}  ${subject}${blocked}`);
   }
 }
 

@@ -450,3 +450,18 @@ test('doctor: each hosted room\'s log is checked (live: a forged unverified line
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stdout, new RegExp(`^room ${code}: the hash chain breaks`));
 });
+
+test('doctor: a link the host ended is not dialed (live: "reachable, speaking v3" for a revoked link)', async t => {
+  const hostHome = h.freshHome(t);
+  const code = h.newRoom();
+  h.freshHome(t);
+  links.set(code, { code, transport: { kind: 'pipe', home: hostHome }, refused: { at: new Date().toISOString(), reason: 'the host removed this machine', why: 'LINK_REVOKED' }, created_at: new Date().toISOString() });
+  fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'stopped', since: new Date().toISOString(), lastError: 'the host removed this machine from room x (/sub-human kick)', lastReason: 'LINK_REVOKED' }));
+  const rep = await doctor.diagnose({ timeoutMs: 5000 });
+  const d = rep.links.find(l => l.code === code)!;
+  assert.equal(d.reach, undefined, 'no hello');
+  const c = byId(rep, `link:${code}`);
+  assert.match(c.detail, /the host ended this machine's link: not dialed/);
+  assert.doesNotMatch(c.detail, /speaking v/);
+  assert.match(c.fix!, /ask the host for a new invite/);
+});

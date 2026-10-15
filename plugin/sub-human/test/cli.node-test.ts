@@ -243,7 +243,7 @@ test('cli tasks: the room list from lib/tasks.ts list(code), plain and --json', 
   fs.writeFileSync(path.join(R.store.dir!, 'tasks.json'), JSON.stringify(list));
   r = cli(['tasks']);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(r.stdout, '#2  in_progress  bob  parser tests\n#3  pending      -    docs  (blocked by #2)\n');
+  assert.equal(r.stdout, '#2  in progress  bob  parser tests\n#3  open         -    docs  (blocked by #2)\n', 'the rows\' words: open, in progress, done');
   r = cli(['tasks', '--json', '--room', code]);
   assert.deepEqual(JSON.parse(r.stdout).map((t: { id: string }) => t.id), ['2', '3']);
   assert.equal(cli(['tasks', '--room', 'nope-0000']).status, 1);
