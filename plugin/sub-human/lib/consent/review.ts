@@ -329,7 +329,9 @@ export function reduce(state: State, ev: Event, ctx: Ctx): Step {
       const was = fresh && ev.replaced && ev.replaced.hash === p.hash ? ev.replaced : null;
       let review: Review = { phase: 'entering', mode: ev.mode, at: ctx.now, hash: p.hash, from: p.from || null };
       const note = state.note && state.note.hash === p.hash ? null : state.note; // reviewed again: its note is superseded
-      const [shown, early] = showEarly(review, ev.plan);
+      // the file as it will be once the left-behind review's restore has run (the facts were read before it)
+      const now = r && r.file && r.file === ev.plan.file && !r.restored ? { file: r.file, text: typeof r.backup === 'string' ? r.backup : null } : ev.plan;
+      const [shown, early] = showEarly(review, now);
       review = shown;
       return { state: { review, note }, effects: [...effects, ...early],
         say: { to: 'allow', text: was ? SAY.replaced(n, was.old, p.hash) : SAY.opening(n, p.hash) } };

@@ -213,6 +213,11 @@ test('enter / entered: the plan file is backed up (saved) before the proposal is
   assert.deepEqual(review.reduce(s.state, EVENTS.entered, ctx).effects, [], 'written at Pre already');
   const none = review.reduce({ review: null, note: null }, { ...EVENTS.enter, plan: { file: null, text: null } } as Event, ctx);
   assert.deepEqual(none.effects, [], 'no path known yet: Post(EnterPlanMode) or Pre(ExitPlanMode) does it');
+  // a review left behind on the same file: its backup goes back first, and is the new review's backup too
+  const left: Review = { ...REVIEWS.shown!, backup: 'the person\'s plan' };
+  const again = review.reduce({ review: left, note: null }, { ...EVENTS.enter, plan: { file: plan.file, text: TEXT } }, ctx);
+  assert.deepEqual(again.effects.slice(0, 2), [{ do: 'restorePlan', file: plan.file, backup: 'the person\'s plan' }, { do: 'save', review: again.state.review }]);
+  assert.equal(again.state.review!.backup, 'the person\'s plan');
   const failed = review.reduce(s.state, { type: 'planFailed', early: true }, ctx);
   assert.deepEqual([failed.state.review!.phase, 'file' in failed.state.review!], ['entering', false], 'a failed early write is forgotten');
 });
