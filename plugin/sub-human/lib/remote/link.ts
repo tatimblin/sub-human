@@ -69,6 +69,8 @@
  *       the mirror holds at that moment, so a copy that already took a host_changed is never sent back to the old
  *       host's epoch.
  *       Link = {state() -> string, stop(reason), wake(why?) -> Promise (redial now), done: Promise<reason>}
+ *   ROOM_CLOSED_REASON, NO_SEAT_REASON   the lastError of a link stopped because the room closed or no seat of this
+ *                                  machine is left: a dormant link, which doctor shows as info and does not dial
  *   linkTimings(over?) -> {retryMs, retryMaxMs, pingMs, pongMs, deadMs, wakeTickMs, wakeGapMs, netPollMs, relayMs}
  *   nextDelay(prev, base, cap, random?) -> ms;  wakeWatch({onWake, tickMs, gapMs, clock?, mono?}) -> unwatch;
  *   netWatch({onChange, pollMs, clock?, signature?}) -> unwatch;  netSignature(ifaces?) -> string
@@ -174,6 +176,9 @@ const outboxMod = (): typeof import('./outbox.ts') => require('./outbox.ts');
 const clientMod = (): typeof import('./client.ts') => require('./client.ts');
 const enrollMod = (): typeof import('./enroll.ts') => require('./enroll.ts');
 const STOPPED: Set<unknown> = new Set(['fork', 'stopped']);
+/** Why a link stopped for good with nothing wrong: lib/cli/doctor.ts matches them (a dormant link). */
+const ROOM_CLOSED_REASON = 'the room was closed';
+const NO_SEAT_REASON = 'no seat of this machine is left in the room';
 const hash12 = (data: string): string => crypto.createHash('sha256').update(data).digest('hex').slice(0, 12); // lib/room/store.ts's, without loading a store
 
 // ---------- the hook's side ----------
@@ -645,7 +650,7 @@ async function serveMirror({
       else if (ev === 'handoff') handoff().onAsk(mirror, data);
       else if (ev === 'moved') moved(data);
       else if (ev === 'end' && c === client) {
-        if (data.reason === 'closed') stop('stopped', 'the room was closed');
+        if (data.reason === 'closed') stop('stopped', ROOM_CLOSED_REASON);
         else if (data.reason === 'moved') {
           if (movedHere) return; // this machine is the new host: the accepting hook's reply is still to come on c
           client = null;
@@ -878,7 +883,7 @@ function idleWatch(link: RunningLink, mirror: MirrorRoomStore, idleMs: number): 
   let since = Date.now();
   const t = setInterval(() => {
     if (seated()) since = Date.now();
-    else if (Date.now() - since >= idleMs) link.stop('no seat of this machine is left in the room');
+    else if (Date.now() - since >= idleMs) link.stop(NO_SEAT_REASON);
   }, Math.min(1000, idleMs));
   return () => clearInterval(t);
 }
@@ -907,6 +912,7 @@ async function run({ code, log = msg => process.stderr.write(`${new Date().toISO
 
 export {
   run, serveMirror, idleWatch, socketPath, socketPaths, handle, status, stopReason, start, pipeLocator, sshLocator,
-  transportOf, sshCommand, linkTimings, nextDelay, wakeWatch, netWatch, netSignature, keyRefused,
+  transportOf, sshCommand, linkTimings, nextDelay, wakeWatch, netWatch, netSignature, keyRefused, ROOM_CLOSED_REASON,
+  NO_SEAT_REASON,
 };
 export type { LinkStatus };

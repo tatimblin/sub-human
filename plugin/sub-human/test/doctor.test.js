@@ -237,3 +237,61 @@ test('doctor: a link stopped on a spent invite says to ask the host for a new on
   }
   assert.match(doctor.linkChecks(d({ state: 'offline', lastError: 'no route' }))[0].fix, /type \/sub-human in your session to start it again/, 'a daemon that is only gone is restarted');
 });
+
+test('doctor: a dormant link (the room closed, or no seat of this machine left) is info, never --reset; an offline one still fails', () => {
+  const linkMod = require(path.join(h.LIB, 'remote', 'link.ts'));
+  // the daemon's own stop reasons, which doctor matches
+  assert.equal(linkMod.ROOM_CLOSED_REASON, 'the room was closed');
+  assert.equal(linkMod.NO_SEAT_REASON, 'no seat of this machine is left in the room');
+  const d = (state, reach) => ({ code: 'vole-1234', transport: { kind: 'pipe', describe: 'pipe /x' }, daemon: { running: false }, recent: [], moved: null, state, ...(reach ? { reach } : {}) });
+  const failed = { ok: false, ms: 3, error: 'the pipe command exited (1) before answering', skipped: false, stderr: '', hint: null, protocol: null, skewMs: null };
+  const [closed] = doctor.linkChecks(d({ state: 'stopped', lastError: linkMod.ROOM_CLOSED_REASON }));
+  assert.equal(closed.status, 'info');
+  assert.equal(closed.fix, 'the room was closed; this machine\'s copy is kept, nothing to do');
+  assert.doesNotMatch(closed.fix, /--reset|\/sub-human invite/);
+  const [seatless] = doctor.linkChecks(d({ state: 'stopped', lastError: linkMod.NO_SEAT_REASON }));
+  assert.equal(seatless.status, 'info');
+  assert.match(seatless.fix, /type \/sub-human in your session to start it again/);
+  assert.doesNotMatch(seatless.fix, /--reset/);
+  for (const why of [linkMod.ROOM_CLOSED_REASON, linkMod.NO_SEAT_REASON]) {
+    const [c] = doctor.linkChecks(d({ state: 'stopped', lastError: why }, failed));
+    assert.equal(c.status, 'info', `${why}: a failed hello does not make it fail`);
+    assert.doesNotMatch(c.fix, /--reset/);
+  }
+  assert.equal(doctor.linkChecks(d({ state: 'offline', lastError: 'no route' }, failed))[0].status, 'fail', 'an offline link the host does not answer');
+});
+
+test('doctor: a dormant link gets no hello', async t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const gone = path.join(h.tmpDir('sh-gone-', t), 'nohome');
+  links.set(code, { code, transport: { kind: 'pipe', home: gone }, token: 'tok-x', created_at: new Date().toISOString() });
+  fs.writeFileSync(linkState.stateFile(code), JSON.stringify({ state: 'stopped', since: new Date().toISOString(), lastError: 'the room was closed' }));
+  const env = { ...process.env, PATH: path.join(gone, 'bin') }; // no claude: the internals probe is not run
+  const rep = await doctor.diagnose({ timeoutMs: 5000, authorizedKeys: path.join(gone, 'authorized_keys'), env });
+  const [l] = rep.links;
+  assert.equal(l.reach, undefined, 'no hello');
+  assert.equal(byId(rep, `link:${code}`).status, 'info');
+});
+
+test('doctor checkClaude: a probe that cannot run says so (a launcher, another version, nothing found), never "N of N changed"', t => {
+  const dir = h.tmpDir('sh-claude-bin-', t);
+  const probeOf = (name, body, version = '2.1.998') => {
+    const bin = path.join(dir, name);
+    fs.writeFileSync(bin, body, { mode: 0o755 });
+    return doctor.checkClaude({ version, quick: false, env: { CLAUDE_BIN: bin, PATH: '' } });
+  };
+  const launcher = probeOf('launcher', '#!/bin/sh\nexec /opt/claude/bin/claude "$@"\n');
+  assert.equal(launcher.check.status, 'info');
+  assert.match(launcher.check.detail, /internals probe could not run: .*launcher is not the Claude Code binary \(a launcher script\?\); set CLAUDE_BIN to it/);
+  assert.equal(launcher.probe, null);
+  const other = probeOf('other', 'x VERSION:"2.1.999" y');
+  assert.equal(other.check.status, 'info');
+  assert.match(other.check.detail, /could not run: .*other is 2\.1\.999 while `claude --version` says 2\.1\.998/);
+  assert.equal(other.probe, null);
+  const empty = probeOf('empty', 'x VERSION:"2.1.998" y');
+  assert.equal(empty.check.status, 'info', empty.check.detail);
+  assert.match(empty.check.detail, /could not run: none of the \d+ internals was found/);
+  assert.doesNotMatch(empty.check.detail, /changed/);
+  assert.equal(empty.probe, null);
+});
