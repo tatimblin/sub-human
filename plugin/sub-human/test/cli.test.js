@@ -181,6 +181,18 @@ test('cli show HASH: a proposal\'s stored text, this session\'s room or --room; 
   assert.equal(cli(['show', '../../keys/x']).status, 1, 'not a hash: never a path');
   assert.equal(cli(['show']).status, 2);
   assert.equal(cli(['show', hash, '--room', 'nope-0000']).status, 1);
+  // what a session is told to run (propose's reply, lib/text.ts cliCmd): the shim by its full path, no PATH lookup
+  const textMod = require(path.join(h.LIB, 'text.ts'));
+  const was = process.env.CLAUDE_PLUGIN_ROOT;
+  process.env.CLAUDE_PLUGIN_ROOT = h.PLUGIN;
+  let cmd, spaced;
+  try { cmd = textMod.cliCmd(`show ${hash}`); process.env.CLAUDE_PLUGIN_ROOT = '/a b/it\'s'; spaced = textMod.cliCmd('show x'); } finally {
+    if (was === undefined) delete process.env.CLAUDE_PLUGIN_ROOT; else process.env.CLAUDE_PLUGIN_ROOT = was;
+  }
+  assert.equal(cmd, `${h.BIN} show ${hash}`);
+  assert.equal(spaced, `'/a b/it'\\''s/scripts/sub-human' show x`, 'a root a shell would split is quoted');
+  r = spawnSync('/bin/sh', ['-c', cmd], { env: h.childEnv(), encoding: 'utf8' });
+  assert.equal(r.stdout, text, r.stderr);
 });
 
 // ---------- tasks / watch NAME ----------

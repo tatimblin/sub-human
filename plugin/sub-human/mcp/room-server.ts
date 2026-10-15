@@ -13,8 +13,9 @@
  *       skipping its own Claude's posts; at most 100, oldest first.
  *   propose({text|path, approvers?})   lib/proposal.create: stores plans/<hash>.md, appends `proposal`
  *       {hash, approvers, path}; approvers default to the humans present. Each approver answers a consent
- *       card (hooks/consent.ts); a proposer who is also an approver is told to open the card now. A proposal
- *       retires the proposer's earlier undecided one with the same title (lib/room/consent.ts), and says so; another
+ *       card (hooks/consent.ts); a proposer who is also an approver is told to open the card now. The reply
+ *       names the read-only `show` by the shim's full path (lib/text.ts cliCmd): no `sub-human` is on a session's
+ *       PATH. A proposal retires the proposer's earlier undecided one with the same title (lib/room/consent.ts), and says so; another
  *       sender's pending one with the same title is warned about (both stay open).
  *
  * Plug-ins: ./hold.ts (rows) and ./task.ts (the room task list) are loaded when present; a missing or broken
@@ -45,6 +46,7 @@ import path from 'node:path';
 import * as identity from '../lib/identity.ts';
 import * as room from '../lib/room.ts';
 import * as proposal from '../lib/proposal.ts';
+import { cliCmd } from '../lib/text.ts';
 import { createRequire } from 'node:module';
 import type { EntryInput } from '../lib/room/types.ts';
 import type { CallMeta, CallToolParams, JsonRpcId, JsonRpcIncoming, JsonRpcOutgoing, Me, OutgoingRequest, PluginApi, PluginContext, ProgressToken, ToolArgs, ToolDefinition, ToolResult } from './types.ts';
@@ -223,7 +225,7 @@ function propose(me: Me, args: ToolArgs) {
     if (e instanceof proposal.ProposalError) return text(`refused: ${e.message}`, true);
     throw e;
   }
-  const lines = [`proposal ${r.hash} ${r.again ? 'is already open' : 'proposed'} to ${r.approvers.join(', ')}. Read it with \`sub-human show ${r.hash}\`.`];
+  const lines = [`proposal ${r.hash} ${r.again ? 'is already open' : 'proposed'} to ${r.approvers.join(', ')}. Read it with \`${cliCmd(`show ${r.hash}`)}\`.`];
   const t = proposal.title(me.code, r.hash, r.entry);
   if (r.retired.length) lines.push(`It replaces your earlier ${r.retired.map(h => `proposal ${h}`).join(', ')} (same title): no longer pending, and answers on it do not carry over.`);
   // the same title from someone else is not a revision: both stay open, so say so (people can't tell them apart)

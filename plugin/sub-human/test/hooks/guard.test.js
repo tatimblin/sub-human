@@ -52,6 +52,7 @@ test('guard table', () => {
     ['Bash', { command: `node -e "require('${path.join(H, '..')}/x/sub-human/lib/room.ts')"` }, true, 'deny'],
     ['Bash', { command: 'sub-human read' }, true, undefined],
     ['Bash', { command: `sub-human show abcdef012345 --room ${w.code}` }, true, undefined],
+    ['Bash', { command: `${path.join(PLUGIN, 'scripts', 'sub-human')} show abcdef012345` }, true, undefined], // what propose's reply names (lib/text.ts cliCmd)
     ['Bash', { command: `ls ${H}/rooms/${w.code}/plans` }, true, 'deny'],
     ['Bash', { command: 'npm test' }, false, undefined],
   ];

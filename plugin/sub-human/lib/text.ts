@@ -10,6 +10,9 @@
  *   cliLine(args) -> string  the shell line that runs this plugin's CLI, `node <plugin root>/scripts/sub-human ARGS`
  *                            (~ for the home folder): what a message prints when only a shell can do it, since no
  *                            `sub-human` is on PATH
+ *   cliCmd(args) -> string   the same CLI as a Bash tool command, `<plugin root>/scripts/sub-human ARGS` (absolute, the
+ *                            shim runs itself): what a session's Claude is told to run; the store guard's read-only
+ *                            CLI rule (mod/core/guard.ts READ_CLI) allows that spelling
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -36,4 +39,10 @@ function cliLine(args = ''): string {
   return `node ${q}/scripts/sub-human${args ? ` ${args}` : ''}`;
 }
 
-export { clip, oneLine, cliLine, NAME_RE, CODE_RE, SID_SAFE };
+function cliCmd(args = ''): string {
+  const shim = path.join(process.env.CLAUDE_PLUGIN_ROOT || path.join(import.meta.dirname, '..'), 'scripts', 'sub-human');
+  const q = /[^\w@%+=:,./~-]/.test(shim) ? `'${shim.replace(/'/g, "'\\''")}'` : shim;
+  return `${q}${args ? ` ${args}` : ''}`;
+}
+
+export { clip, oneLine, cliLine, cliCmd, NAME_RE, CODE_RE, SID_SAFE };
