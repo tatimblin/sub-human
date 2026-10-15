@@ -339,6 +339,36 @@ test('session.end stops the child: nothing restarts it, and the session no longe
   expect(seen.logs).toEqual([]) // a child stopped on purpose is no delivery error
 })
 
+test('a /sub-human leave stops the child: the hello says no seat, nothing restarts it', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const hello: any = { ...OUT }
+  const seen = world($, on, { hello, pieces: [line({ type: 'seat', seat: SEAT })] })
+  on('command.run', () => ({ text: undefined }))
+  on('env.get', () => ({ value: undefined }))
+  on('session.cwd', () => ({ value: '/w' }))
+  await start($)
+  await until(() => seen.spawns.length === 1)
+  await new Promise(r => setTimeout(r, 50))
+  hello.seat = null // what mod-hello says once the leave took the seat
+  await $.command.run({ command: 'sub-human:sub-human', args: 'leave', origin: { kind: 'composer' } } as any)
+  seen.release()
+  await clock.advance(120_000)
+  expect(seen.spawns.length).toBe(1)
+})
+
+test('classic.SessionStart before session.start, in a session with no seat: no tail child', async ($, on) => {
+  const seen = world($, on, { hello: { ...OUT, seat: null } })
+  on('classic.SessionStart', () => ({}))
+  on('fs.exists', () => ({ value: false })) // no session index: surely no seat
+  on('env.get', ($: any, e: any) => ({ value: e.name === 'HOME' ? '/u' : undefined }))
+  on('fs.stat', ($: any, e: any) => ({ value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, realPath: e.path } }))
+  await $.classic.SessionStart({ session_id: SID, cwd: '/w', transcript_path: '/t.jsonl', source: 'startup' } as any)
+  await start($)
+  await new Promise(r => setTimeout(r, 50))
+  expect(seen.spawns.length).toBe(0)
+  seen.release()
+})
+
 test('a /clear (a new session id) stops the old child and starts one for the new id', async ($, on) => {
   const seen = world($, on, { pieces: [line({ type: 'seat', seat: SEAT })] })
   on('classic.SessionStart', () => ({}))

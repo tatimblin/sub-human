@@ -104,11 +104,17 @@ export function needsNode(
 }
 
 /** The session title (members; the room's Claude keeps its launch name), once per {sid, addr}: a /clear or a room switch
- * titles again. */
+ * titles again. After a leave (no seat now, the session titled NAME.CODE) the title is NAME alone: the address goes
+ * with the seat, so no Claude sends to a session that left. */
 export function titleFor(hello: Hello | null | undefined, sid: unknown, titled: unknown): string | null {
-  if (!hello || !hello.seat || hello.seat.role === 'claude' || typeof sid !== 'string' || hello.sid !== sid) return null;
-  const addr = hello.seat.addr;
+  if (!hello || typeof sid !== 'string' || hello.sid !== sid) return null;
   const t = titled && typeof titled === 'object' ? titled as { sid?: unknown; addr?: unknown } : null;
+  if (!hello.seat) {
+    const was = t && t.sid === sid && typeof t.addr === 'string' ? /^([A-Za-z0-9._-]{1,32})\.[a-z]+-\d{4}$/.exec(t.addr) : null;
+    return was ? was[1] : null;
+  }
+  if (hello.seat.role === 'claude') return null;
+  const addr = hello.seat.addr;
   return t && t.sid === sid && t.addr === addr ? null : addr;
 }
 

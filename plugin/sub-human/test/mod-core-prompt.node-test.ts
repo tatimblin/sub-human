@@ -22,6 +22,9 @@ test('prompt: titleFor titles once per session id and address, so a room switch 
   assert.equal(titleFor({ sid: 's1', seat: seat('otter-4821', 'claude') } as Hello, 's1', undefined), null, 'the room\'s Claude keeps its launch name');
   assert.equal(titleFor({ sid: 's1', seat: null } as Hello, 's1', undefined), null);
   assert.equal(titleFor(null, 's1', undefined), null);
+  // after a /sub-human leave the address goes: the title is the name alone, once
+  assert.equal(titleFor({ sid: 's1', seat: null } as Hello, 's1', { sid: 's1', addr: 'alice.otter-4821' }), 'alice');
+  assert.equal(titleFor({ sid: 's1', seat: null } as Hello, 's1', { sid: 's1', addr: 'alice' }), null);
 });
 
 test('prompt: the origin hand-off gives a kind only to the prompt whose text it was pushed with', async () => {

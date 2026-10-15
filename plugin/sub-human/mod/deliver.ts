@@ -267,6 +267,13 @@ function stopChild(sid?: string) {
   try { if (c.stream) void c.stream.return(undefined).catch(() => {}); } catch { /* already gone */ }
 }
 
+/** The child as the hello wants it: started (or kept) for a seat or a join waiting for its card; stopped once the
+ * hello is sure the session has none (a /sub-human leave, a join refused). */
+function childFor($: EngineInterface, sid: string, hello: ReturnType<typeof asHello>) {
+  if (spawnWanted(hello)) ensureChild($, sid);
+  else stopChild(sid);
+}
+
 /** Start the child for sid unless it already runs for it; stops one for another session id. */
 function ensureChild($: EngineInterface, sid: unknown) {
   if (typeof sid !== 'string' || !sid) return;
@@ -336,7 +343,12 @@ async function apply($: EngineInterface, c: Child, ev: TailEvent | null) {
   const actions = route(ev, { turnRunning: turns.running !== null, role, rows, remote: remote && role === 'member' });
   for (const a of actions) {
     switch (a.do) {
-      case 'seat': c.seat = a.seat; break;
+      case 'seat': {
+        c.seat = a.seat;
+        // no seat: once the hello says this session has none and waits for no join, the tail has nothing to deliver
+        if (!a.seat) { const h = asHello((await $.state.get(HELLO)).value); if (h && h.sid === c.sid && !spawnWanted(h)) stopChild(c.sid); }
+        break;
+      }
       case 'log': $.ui.log(a.text); break;
       case 'append': if (!(await appendRow($, a.text))) await noteError($); break; // refused or failed: lost
       case 'hold-rows': await $.state.set(ROWS, a.text); break;
@@ -397,7 +409,7 @@ export function registerDeliver(on: On) {
     for (const line of logs) $.ui.log(line);
     if (status) pinStatus($, status);
     try { await refresh($, sid); } catch { /* the next refresh tries again */ }
-    try { if (spawnWanted(asHello((await $.state.get(HELLO)).value))) ensureChild($, sid); } catch { /* next start tries again */ }
+    try { childFor($, sid, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
     return result;
   }).catch(($, e, next) => next(e)); // unsure: the classic hook beneath answers, as without the module
 
@@ -410,7 +422,7 @@ export function registerDeliver(on: On) {
     else { try { await ensureLease($, e.session_id); } catch { /* the join beneath says what is missing */ } }
     const r = took ? { additionalContext: [took.context] } : await next(e);
     try { await refresh($, e.session_id); } catch { /* the next refresh tries again */ }
-    try { if (spawnWanted(asHello((await $.state.get(HELLO)).value))) ensureChild($, e.session_id); } catch { /* next start tries again */ }
+    try { childFor($, e.session_id, asHello((await $.state.get(HELLO)).value)); } catch { /* next start tries again */ }
     return r;
   }).catch(($, e, next) => next(e)); // never in the join's way: what ran beneath stands, or runs
 
@@ -431,8 +443,11 @@ export function registerDeliver(on: On) {
       } catch { /* the rows come with the next prompt (the restore's context) */ }
     }
     try {
-      const { value: hello } = await $.state.get(HELLO);
-      if (spawnWanted(asHello(hello))) ensureChild($, e.session_id);
+      // this session's hello first: one not said yet (classic.SessionStart can run before session.start's) is no seat
+      // to start a tail for, only a hello not known
+      let hello = asHello((await $.state.get(HELLO)).value);
+      if (!hello || hello.sid !== e.session_id) { await startHello($, e.session_id).catch(() => {}); hello = asHello((await $.state.get(HELLO)).value); }
+      childFor($, e.session_id, hello);
     } catch { /* the next session.start or join starts it */ }
     return mergeClassic(ours, await next(e));
   }).catch(($, e, next) => next(e));
