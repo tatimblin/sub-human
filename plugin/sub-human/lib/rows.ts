@@ -86,6 +86,10 @@ interface RowProposal {
   decided: number;
   agreed: number;
   objectors: string[];
+  /** a listed objector -> the other seats of that person (lib/room/consent.ts matrix also) */
+  also: Record<string, string[]>;
+  /** how many people the approvers are: a person in two seats counts once */
+  people: number;
   superseded: boolean;
   name: string;
 }
@@ -336,8 +340,8 @@ function fit(parts: (string | null | undefined | false)[]): string {
 
 /**
  * Proposals in log order (of their latest entry), from lib/room/consent.ts fold: {id, hash, approvers, verdict: {name:
- * {kind, id}} (approvers' current answers), decided (decision id or 0), agreed (count), objectors, superseded (a
- * revision retired it), name (title)}.
+ * {kind, id}} (approvers' current answers: a person's seats share one), decided (decision id or 0), agreed (count of
+ * people), objectors (one seat per person), also, people (count), superseded (a revision retired it), name (title)}.
  */
 function proposals(es: Entry[], code: string | null | undefined): RowProposal[] {
   const f = room.fold(es);
@@ -347,7 +351,7 @@ function proposals(es: Entry[], code: string | null | undefined): RowProposal[] 
     for (const n of fp.approvers) if (m.answers[n]) verdict[n] = m.answers[n];
     const d = f.decisions.get(fp.hash);
     return { id: fp.id, hash: fp.hash, from: fp.from, approvers: fp.approvers, verdict, decided: d ? d.id : 0,
-      agreed: m.agreed.length, objectors: m.objected, superseded: f.superseded.has(fp.hash), name: label(code, fp) };
+      agreed: m.agreed.length, objectors: m.objected, also: m.also, people: m.people, superseded: f.superseded.has(fp.hash), name: label(code, fp) };
   });
 }
 /** What a row calls a proposal: its title (lib/proposal.ts title), clipped; the short hash when it has none. */
@@ -446,12 +450,14 @@ function roomText(code: string, viewer: string | null | undefined, es: Entry[], 
     parts.push(c.warn(`⚠ your answer needed ${need[need.length - 1].name}${need.length > 1 ? ` +${need.length - 1}` : ''}`));
   } else if (p) {
     const v = viewer && p.verdict[viewer];
-    const n = `${p.agreed}/${p.approvers.length}`;
+    const n = `${p.agreed}/${p.people}`;
     if (p.decided) parts.push(decidedText(p, c));
     else if (v && v.kind === 'signoff') parts.push(c.ok(`✓ agreed ${p.name} ${n}`));
     else if (v && v.kind === 'objection') parts.push(c.warn('✖ objected'));
     else parts.push(`proposal ${p.name} ${n}`);
-    if (!p.decided && p.objectors.some(x => x !== viewer)) parts.push(c.warn(`✖ ${plural(p.objectors.filter(x => x !== viewer).length, 'objection')}`));
+    // another person's objections: the viewer's own (from any of their seats) is the "✖ objected" above
+    const others = p.objectors.filter(x => x !== viewer && !(p.also[x] || []).includes(String(viewer)));
+    if (!p.decided && others.length) parts.push(c.warn(`✖ ${plural(others.length, 'objection')}`));
   } else {
     parts.push(c.dim(`${ms.filter(m => isActive(m) && !isRoomClaude(m)).length} here`));
   }

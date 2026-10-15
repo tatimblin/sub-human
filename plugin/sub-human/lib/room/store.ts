@@ -315,6 +315,7 @@ function fieldsOf(v: Validated, from: string): Payload {
   if (v.refs && v.refs.length) p.refs = v.refs;
   if (v.hash) p.hash = v.hash;
   if (v.approvers) p.approvers = v.approvers;
+  if (v.same) p.same = v.same;
   if (v.path) p.path = v.path;
   if (v.proposal_hash) p.proposal_hash = v.proposal_hash;
   if (v.task) {

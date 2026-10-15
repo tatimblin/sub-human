@@ -33,7 +33,11 @@
  *   skewMessage({host, joiner}) -> string   {version, proto} each: "host runs sub-human 0.4.0 (protocol 3–4); you run
  *                                    0.3.0 (protocol 2). Update your plugin: /plugin update sub-human" (or "The host
  *                                    must update …" when the joiner is the newer side)
- *   CAPS                             what this end serves: {ops: OPS}
+ *   CAPS                             what this end serves: {ops: OPS, fields: FIELDS}
+ *   FIELDS                           entry fields this end's validate accepts that an older host refuses (lib/room/validate.ts):
+ *                                    'same' (a proposal's seats that are one person). Gated by caps: a mirror writes one
+ *                                    only while its host's hello listed it (the link daemon's document `link` fields,
+ *                                    lib/proposal.ts create); an old host's hello lists none
  *   OPS                              hello join leave beat append subscribe blob.get blob.put ping handoff.accept
  *                                    handoff.refuse (caps-gated: a target sends them only to a server that lists them)
  *   ping                             the app-level heartbeat: request {op: 'ping'} -> reply {pong: <host ms>} (the
@@ -94,7 +98,8 @@ function skewMessage({ host, joiner }: { host: PeerVersion; joiner: PeerVersion 
 }
 const OPS: Op[] = ['hello', 'join', 'leave', 'beat', 'append', 'subscribe', 'blob.get', 'blob.put', 'ping', 'handoff.accept', 'handoff.refuse'];
 const EVENTS: EventName[] = ['entry', 'doc', 'end', 'handoff', 'moved'];
-const CAPS: Readonly<Caps> = Object.freeze({ ops: OPS });
+const FIELDS: string[] = ['same'];
+const CAPS: Readonly<Caps> = Object.freeze({ ops: OPS, fields: FIELDS });
 const CODES: Readonly<{ [C in WireCode]: C }> = Object.freeze({
   INVALID: 'INVALID', RATE: 'RATE', LOCK: 'LOCK', NO_ROOM: 'NO_ROOM',
   OFFLINE: 'OFFLINE', HOST_ONLY: 'HOST_ONLY', AUTH: 'AUTH', FORK: 'FORK', PROTOCOL: 'PROTOCOL', STALE: 'STALE',
@@ -155,6 +160,6 @@ const isReply = (f: unknown): f is ResultFrame | ErrorFrame => !!f && (f as Fiel
 const isEvent = (f: unknown): f is EventFrame => !!f && typeof (f as Fields)!.ev === 'string';
 
 export {
-  PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, CAPS, CODES, UNKNOWN_OUTCOME,
+  PROTO, VERSION, PLUGIN_VERSION, rangeOf, negotiate, skewMessage, OPS, EVENTS, FIELDS, CAPS, CODES, UNKNOWN_OUTCOME,
   unknownOutcome, request, reply, error, event, encode, decoder, isRequest, isReply, isEvent,
 };

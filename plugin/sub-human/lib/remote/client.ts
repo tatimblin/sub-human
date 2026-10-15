@@ -29,6 +29,7 @@
  *         delivering (the server's stream ends with the transport)
  *     blobGet(ref) -> Promise<Buffer | null>, blobPut(name, bytes) -> Promise<ref>
  *     supports(op) -> bool         the server's hello caps list op (an old server's do not list 'ping')
+ *     fields() -> [field]          the entry fields the server's hello caps list (protocol.ts FIELDS; an old server's: none)
  *     ping(ms?) -> Promise<{pong, rttMs}>   one heartbeat (protocol.ts ping); OFFLINE when no pong within ms
  *         (default deadlineMs). The link daemon pings only when supports('ping') and says hello with caps {ping: true}
  *     closed                        true once the transport closed
@@ -51,6 +52,7 @@ import type { Transport } from './types-rest.ts';
 /** The server's caps, from its hello. */
 interface ServerCaps {
   ops?: unknown;
+  fields?: unknown;
 }
 
 interface Pending {
@@ -176,6 +178,7 @@ class Client {
   }
 
   supports(op: string): boolean { return !!this.serverCaps && Array.isArray(this.serverCaps.ops) && this.serverCaps.ops.includes(op); }
+  fields(): string[] { const f = this.serverCaps && this.serverCaps.fields; return Array.isArray(f) ? f.filter((x): x is string => typeof x === 'string') : []; }
   async ping(ms: number = this.deadlineMs): Promise<{ pong: unknown; rttMs: number }> {
     const t0 = Date.now();
     const r = await this._request('ping', {}, undefined, ms);

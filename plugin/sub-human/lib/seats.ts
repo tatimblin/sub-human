@@ -6,14 +6,18 @@
  * room hosted elsewhere (a mirror, lib/room/store-mirror.ts) the seat op is all there is: the host's server runs
  * the rest of the sequence for it.
  *
- *   enter({code, name, role?, machine?, pid?, session_id?, cwd?, pubkey}) -> {ok, rejoin?, error?, code?, note?}
+ *   enter({code, name, role?, machine?, account?, pid?, session_id?, cwd?, pubkey}) -> {ok, rejoin?, error?, code?, note?}
  *       identity.join (members.join, a named op of lib/room/store.ts; then this machine's session indexes) →
  *       on the host: the room's working directory, the first time (a local seat's cwd: where the room's Claude runs, also
  *       when a seat on another machine starts it) → member_joined via system with pubkey and machine (the key is
  *       pinned at first sight, lib/room/envelope.ts; a key other than the pinned one is refused and the seat given
  *       back: {ok: false, error, code: 'AUTH'}) → ensureRoomClaude.
  *       role: member (default). machine: this one (default); pid, session_id and cwd belong to a seat of this
- *       machine and stay out of what the host streams (lib/room/members.ts publicView).
+ *       machine and stay out of what the host streams (lib/room/members.ts publicView). account: the person behind
+ *       the seat (the remote server's, for a login link: the host's machine id); a seat on the host itself defaults
+ *       to the host's machine id, so the host account's seat here and its seats over login links are one approver
+ *       (while only one seat is on the host: several people may share it; lib/proposal.ts sameOf). An invite's
+ *       seat has none: it is its own person, even from the same machine.
  *   ensureRoomClaude(code, cwd?, by) -> string   start the room's Claude (detached) when it has none running: lib/room-claude.ts
  *       claimSpawn (host only) + startDetached in cwd, else the room's working directory. '' or the short
  *       systemMessage suffix the join hook shows.
@@ -45,6 +49,7 @@ interface EnterOpts {
   name: string;
   role?: string;
   machine?: string | null;
+  account?: string;
   pid?: number | null;
   session_id?: string | null;
   cwd?: string | null;
@@ -76,10 +81,12 @@ function ensureRoomClaude(code: string, cwd: string | null | undefined, by: stri
   return ` · starting the room's Claude…${failed}`;
 }
 
-function enter({ code, name, role = 'member', machine = identity.machineId(), pid, session_id, cwd, pubkey }: EnterOpts): EnterResult {
+function enter({ code, name, role = 'member', machine = identity.machineId(), account, pid, session_id, cwd, pubkey }: EnterOpts): EnterResult {
   // the seat's earlier record ended with no leave: its "left" line goes before this join's "rejoined"
   if (identity.isHost(code)) sweep(code, { name });
-  const r: EnterResult = identity.join({ code, name, role, machine, pid, session_id, cwd });
+  // a seat on the host is the host account's (elsewhere the host's server decides: a mirror's join sends no account)
+  if (account === undefined && machine && machine === identity.machineId() && identity.isHost(code)) account = machine;
+  const r: EnterResult = identity.join({ code, name, role, machine, account, pid, session_id, cwd });
   if (!r.ok) return r;
   if (!identity.isHost(code)) return { ...r, note: '' };
   keepWorkdir(code, cwd);

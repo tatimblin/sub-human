@@ -44,7 +44,7 @@
  *   heartbeat(me, now?) -> bool          renew me's lease, seen_at (members.beat, at most every SEAT_BEAT_MS; the
  *                                        tail's health tick and the hold server); leaseFresh(m, now?)
  *   liveMembers(code) -> [name]          the people's seats (not the room's Claude) that are seatAlive
- *   join({code, name, role, machine?, pid, session_id, cwd}) -> {ok, error?, rejoin?}
+ *   join({code, name, role, machine?, account?, pid, session_id, cwd}) -> {ok, error?, rejoin?}
  *       role is "claude" (the room's Claude) or "member". NAME_RE; reserved names (RESERVED) claude, orch (0.4.x's
  *       name for it), room, all, system, host, and every /sub-human verb (VERBS): only role claude may use
  *       "claude", and role claude must use it. members.join: a name held by a live seat of another holder
@@ -152,6 +152,8 @@ interface JoinRequest {
   name: string;
   role: string;
   machine?: string | null;
+  /** the person behind the seat (lib/seats.ts enter); kept on the record, never sent by a mirror */
+  account?: string;
   pid?: number | string | null;
   session_id?: string | null;
   cwd?: string | null;
@@ -263,7 +265,7 @@ function localSeat({ name, role, machine, pid, session_id, cwd }: { name: string
   return { name, role, machine, pid, ...(start != null ? { pid_start: start } : {}), session_id: session_id || null, cwd: cwd || null };
 }
 
-function join({ code, name, role, machine = machineId(), pid: pidArg, session_id, cwd }: JoinRequest = {} as JoinRequest): JoinResult {
+function join({ code, name, role, machine = machineId(), account, pid: pidArg, session_id, cwd }: JoinRequest = {} as JoinRequest): JoinResult {
   if (!roomExists(code)) return fail(`no room "${code}"`);
   if (typeof name !== 'string' || !NAME_RE.test(name)) return fail(`invalid name "${name}" (letters, digits, . _ -, up to 32)`);
   if (!ROLES.includes(role)) return fail(`invalid role "${role}"`);
@@ -275,7 +277,7 @@ function join({ code, name, role, machine = machineId(), pid: pidArg, session_id
   if (session_id != null && (typeof session_id !== 'string' || !SID_RE.test(session_id))) return fail('invalid session_id');
 
   const seatRole = role as Role; // one of ROLES
-  const rec: SeatRecord = local ? localSeat({ name, role: seatRole, machine, pid, session_id, cwd }) : { name, role: seatRole, machine };
+  const rec: SeatRecord = { ...(local ? localSeat({ name, role: seatRole, machine, pid, session_id, cwd }) : { name, role: seatRole, machine }), ...(account ? { account } : {}) };
   const r = membersOf(code).join(rec);
   if (r.ok && local) {
     retirePrevious(code, name, pid);
