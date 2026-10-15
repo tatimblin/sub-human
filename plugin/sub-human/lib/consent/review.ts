@@ -166,7 +166,8 @@ export const SAY = {
   planView: (n: string, h: string) => `Open it in the plan view instead: ${NEXT.open(h)}. The hooks show ${n} the full proposal.`,
   unread: (n: string, h: string) => `${n}'s answer in the review of proposal ${h} is not on record yet; nothing was recorded.`,
   closed: (n: string, h: string) => `${n} closed the review of proposal ${h} without answering; nothing was recorded.`,
-  noted: (n: string, h: string) => `${n} left a note on ${h}, unrecorded. Once the review closes, ${NEXT.note(h)}. ${keepNote(n)}`,
+  /** said once the dialog closed with a note (live, a model told the person it was recorded before the card) */
+  noted: (n: string, h: string) => `Nothing is recorded yet: ${n}'s note on ${h} waits for Send or Discard on its card. Next, ${NEXT.note(h)}.`,
   nothingToShow: (h: string | undefined) => `${h ? `proposal ${h}` : 'the room proposal'}: nothing to show (already answered, decided or unknown); nothing was recorded.`,
   reviewClosed: 'The room review is closed and the mode is restored; this was not a plan to carry out.',
   cardInstead: (n: string, h: string) => ` The plan view could not show proposal ${h}: ${NEXT.card(h)} so ${n} answers on the card.`,
