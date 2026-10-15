@@ -180,6 +180,11 @@ test('ssh: a ProxyJump rides the locator (?via=), as plain as the destination; t
   assert.ok(!prime.includes('BatchMode=yes'), 'the person answers the MFA prompt once');
   assert.ok(prime.includes(`ControlPath=${cp}`) && prime.includes('HostKeyAlias=sub-human-vole-1234'));
   assert.throws(() => ssh.primeCommand(spec, 'vole-1234', { persist: '8h; id' }), (e: CodedError) => e.code === 'INVALID');
+  // the primed master too: SUB_HUMAN_SSH_OPTS after every pinned option, and before the destination
+  const primeOpts = ssh.primeCommand(spec, 'vole-1234', { opts: ['-o', 'StrictHostKeyChecking=no', '-o', `ControlPath=/tmp/elsewhere`] });
+  assert.ok(primeOpts.indexOf('StrictHostKeyChecking=yes') < primeOpts.indexOf('StrictHostKeyChecking=no'), primeOpts.join(' '));
+  assert.ok(primeOpts.indexOf(`ControlPath=${cp}`) < primeOpts.indexOf('ControlPath=/tmp/elsewhere'), primeOpts.join(' '));
+  assert.ok(primeOpts.indexOf('StrictHostKeyChecking=no') < primeOpts.indexOf('--'), 'options before the destination');
   for (const bad of [{ key: '-oProxyCommand=x' }, { knownHosts: 'relative' }, { knownHosts: '/k/kh', alias: 'a b' }, { via: '-x' }]) {
     assert.throws(() => ssh.command({ ...spec, ...bad }, 'vole-1234', []), (e: CodedError) => e.code === 'INVALID', JSON.stringify(bad));
   }
