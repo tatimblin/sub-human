@@ -83,10 +83,16 @@ test('readLines: whole file, tail with a cut first line dropped, missing file', 
   assert.deepEqual(cc.parseLines(['{"x":1}', '{torn', { y: 2 }]), [{ x: 1 }, { y: 2 }]);
 });
 
-test('planFile: tool input first, else the latest plan_mode attachment', () => {
+test("planFile: the latest plan_mode attachment; ExitPlanMode's input only as that path or under the plans dir", () => {
   const lines = [planAttach('/p/old.md'), J({ type: 'attachment', attachment: { type: 'plan_mode_exit', planFilePath: '/p/exit.md' } }), planAttach('/p/new.md'), '{"torn'];
   assert.equal(cc.planFile(lines), '/p/new.md');
-  assert.equal(cc.planFile(lines, { planFilePath: '/p/input.md' }), '/p/input.md');
+  // ExitPlanMode's planFilePath counts only as the attachment's own path or one under the plans dir: never a model's pick
+  assert.equal(cc.planFile(lines, { planFilePath: '/p/new.md' }), '/p/new.md');
+  assert.equal(cc.planFile(lines, { planFilePath: '/p/input.md' }), '/p/new.md');
+  const plans = cc.plansDir();
+  assert.equal(cc.planFile(lines, { planFilePath: `${plans}/input.md` }), `${plans}/input.md`);
+  assert.equal(cc.planFile(lines, { planFilePath: `${plans}/../settings.json` }), '/p/new.md');
+  assert.equal(cc.planFile([], { planFilePath: '/etc/passwd' }), null);
   assert.equal(cc.planFile(lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)), '/p/new.md');
   assert.equal(cc.planFile([]), null);
 });
