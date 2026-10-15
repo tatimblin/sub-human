@@ -158,7 +158,7 @@ test('cli: who / read / digest resolve by session id, then ancestry', () => {
   assert.ok(r.stdout.length <= room.DIGEST_CAP + 1);
   assert.equal(cli(['digest', '--room', 'nope-0000']).status, 1);
   assert.equal(cli(['post', 'hello']).status, 2, 'there is no post command');
-  assert.match(cli(['nope']).stderr, /usage: sub-human tail \| read .*\| digest \| show HASH \| who \| tasks \[--json\] \| watch NAME \| serve --stdio CODE \[--link ID \[--login\]\] \| link CODE \[--reset\] \| invite \[--ssh \[USER@HOST\]\] \[--via JUMP\] \| .*invite --cancel \[REF\] \| admit \[REF\] \| kick NAME \| prime ROOM .*\| agent-statusline$/m);
+  assert.match(cli(['nope']).stderr, /usage: sub-human tail \| read .*\| digest \| show HASH \| who \| tasks \[--json\] \| watch NAME \| serve --stdio CODE \[--link ID \[--login\]\] \| link CODE \[--reset \| --forget \[--force\]\] \| invite \[--ssh \[USER@HOST\]\] \[--via JUMP\] \| .*invite --cancel \[REF\] \| admit \[REF\] \| kick NAME \| prime ROOM .*\| agent-statusline$/m);
   for (const gone of ['plan', 'statusline', 'host', 'unhost', 'revoke', 'authorize']) assert.equal(cli([gone]).status, 2, `${gone} is dropped`);
   bob.kill();
 });
@@ -240,5 +240,77 @@ test('cli watch NAME: their words, their Claude, sign-offs, joins/leaves, the ro
   assert.match(o, /^#7 \S+ {2}claude {2}say/m);
   assert.match(cli(['watch', 'zed']).stdout, /nothing from or to zed/);
   assert.equal(cli(['watch']).status, 2);
+});
+
+test('cli link CODE --forget: refused on a room hosted here, while the daemon runs, and for a live link without --force; then the copy is archived and the link removed', () => {
+  const fs = require('node:fs');
+  const store = require(path.join(h.LIB, 'room', 'store.ts'));
+  const links = require(path.join(h.LIB, 'room', 'links.ts'));
+  const linkMod = require(path.join(h.LIB, 'remote', 'link.ts'));
+  const { roomsDir } = require(path.join(h.LIB, 'home.ts'));
+  const stopped = lastError => ({ state: 'stopped', since: new Date().toISOString(), attempt: 0, lastError, rttMs: null, queued: 0, detail: 'stopped', at: new Date().toISOString() });
+  h.freshHome();
+  const hosted = h.newRoom();
+  store.createRoom(hosted); // newCode() may have made it already
+  assert.ok(store.roomExists(hosted) && store.open(hosted).isHost);
+  const r0 = cli(['link', hosted, '--forget']);
+  assert.equal(r0.status, 1);
+  assert.match(r0.stderr, /this machine hosts room .*; there is no connection to forget/);
+  assert.ok(store.roomExists(hosted), 'a room hosted here is untouched');
+
+  const code = h.newRoom();
+  links.set(code, { code, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  const s = store.open(code);
+  assert.equal(s.isHost, false);
+  fs.mkdirSync(s.dir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(s.logFile, '{"id":1}\n');
+  fs.writeFileSync(path.join(s.dir, 'outbox.json'), '[]');
+  // the daemon runs: its document `link` names a live pid
+  s.kv.set('link', { pid: process.pid, state: 'online', since: new Date().toISOString() });
+  const r1 = cli(['link', code, '--forget']);
+  assert.equal(r1.status, 1);
+  assert.match(r1.stderr, new RegExp(`the connection to room ${code} is running \\(pid ${process.pid}\\); it forgets the room only once stopped`));
+  s.kv.delete('link');
+  // stopped for another reason: only --force forgets it
+  links.writeState(code, stopped('AUTH: unknown link token'));
+  const r2 = cli(['link', code, '--forget']);
+  assert.equal(r2.status, 1);
+  assert.match(r2.stderr, /did not stop because the room closed or no seat of this machine is left \(AUTH: unknown link token\); add --force/);
+  assert.ok(links.has(code) && fs.existsSync(s.logFile), 'nothing moved');
+  assert.equal(cli(['link', code, '--reset', '--forget']).status, 2, 'one at a time');
+
+  links.writeState(code, stopped(linkMod.ROOM_CLOSED_REASON));
+  const r3 = cli(['link', code, '--forget']);
+  assert.equal(r3.status, 0, r3.stderr);
+  const m = r3.stdout.match(/^room \S+: forgotten; this machine's copy is kept at (.+)$/m);
+  assert.ok(m, r3.stdout);
+  const archive = m[1];
+  assert.equal(path.dirname(archive), roomsDir());
+  assert.match(path.basename(archive), new RegExp(`^${code}\\.forgotten-`));
+  assert.ok(fs.existsSync(path.join(archive, 'outbox.json')), 'unsent posts are kept');
+  assert.equal(fs.readdirSync(archive).filter(f => /^orphaned-.*\.jsonl$/.test(f)).length, 1, 'the log is set aside');
+  assert.ok(!fs.existsSync(path.join(archive, path.basename(s.logFile))));
+  assert.equal(links.has(code), false);
+  assert.equal(fs.existsSync(links.dirOf(code)), false);
+  assert.equal(fs.existsSync(s.dir), false);
+  store.forget(code); // this process's cache (the CLI dropped its own)
+  assert.equal(store.roomExists(code), false);
+  assert.deepEqual(store.listRooms(), [hosted], 'no listing sees the archive, and nothing opens it as a room hosted here');
+
+  // a seatless stop forgets too; --force any link, here one with no copy on disk
+  const seatless = h.newRoom();
+  links.set(seatless, { code: seatless, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  fs.mkdirSync(store.open(seatless).dir, { recursive: true, mode: 0o700 });
+  links.writeState(seatless, stopped(linkMod.NO_SEAT_REASON));
+  assert.equal(cli(['link', seatless, '--forget']).status, 0);
+  assert.equal(links.has(seatless), false);
+  const other = h.newRoom();
+  links.set(other, { code: other, transport: { kind: 'pipe', home: '/h' }, token: 't' });
+  fs.rmSync(path.join(roomsDir(), other), { recursive: true, force: true }); // newCode() reserved it
+  const r4 = cli(['link', other, '--forget', '--force']);
+  assert.equal(r4.status, 0, r4.stderr);
+  assert.match(r4.stdout, /forgotten \(this machine had no copy of it\)/);
+  assert.equal(links.has(other), false);
+  assert.equal(store.roomExists(other), false);
 });
 

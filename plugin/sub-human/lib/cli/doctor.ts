@@ -26,7 +26,8 @@
  *                (the state record, else the daemon's log), and unless --quick a hello to the host without a
  *                credential (the server answers it and nothing else) with a timeout: reachable, round trip, both
  *                sides' protocol versions, and over ssh whether BatchMode works (ssh's own error, classified).
- *                A dormant link (stopped: the room closed, or no seat of this machine is left) is info and gets no hello
+ *                A dormant link (stopped: the room closed, or no seat of this machine is left) is info and gets no hello;
+ *                a closed one's fix: /sub-human reconnects if the host opens it again, `link CODE --forget` drops it
  *   clock:CODE   skew against the host, when its hello reply carries a time (warn 2 min, fail SIG_SKEW_MS)
  *   room-claude:CODE  per open room hosted here: the room's Claude bound and its process live (pass); its last start
  *                failed (spawn_error), or its job started over 90 s ago but never bound its seat (fail, with the job's
@@ -451,7 +452,7 @@ function linkChecks(d: LinkReport): Check[] {
   let status: CheckStatus = d.state.state === 'online' ? 'pass' : d.state.state === 'fork' ? 'fail' : 'warn';
   let fix: string | undefined;
   const quiet = dormant(d.state);
-  if (quiet === 'closed') fix = 'the room was closed; this machine\'s copy is kept, nothing to do';
+  if (quiet === 'closed') fix = `the room was closed; this machine's copy is kept. If the host opens it again, /sub-human reconnects; ${cli(`link ${d.code} --forget`)} in a terminal drops it for good`;
   else if (quiet === 'no-seat') fix = 'the connection is not running: type /sub-human in your session to start it again';
   else if (d.state.state === 'fork') fix = `this machine's copy no longer matches the host's: run ${cli(`link --reset ${d.code}`)} in a terminal (it copies the room afresh; anything not sent is kept aside)`;
   else if (d.moved && !d.moved.reached && d.state.state !== 'online') {
