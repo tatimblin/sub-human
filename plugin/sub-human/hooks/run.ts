@@ -10,7 +10,8 @@
  * parent, the claude process ($.process.run children get no CLAUDE_PID of their session: cc CONTRACT process-run-stdin),
  * as Claude Code's own command hooks have it. join keeps its own rule (it believes the parent only with the nonce).
  * Failure: a stdin that does not parse, or a throw, is answered by the handler's fail() (raw is what came), else exit 1;
- * the error is logged to stderr (Claude Code shows it to the person only) unless fail() said why on stderr itself. The
+ * the error is logged to stderr (Claude Code shows it to the person only) unless fail() said why on stderr itself. A
+ * handler that fails to load is caught the same way (no fail(): exit 1). The
  * out() lines a handler wrote before it threw still go out. An unknown handler is exit 1.
  */
 import fs from 'node:fs';
@@ -40,16 +41,20 @@ async function main(name: string | undefined): Promise<void> {
     } catch (err) { parseError = err; }
   }
   if (process.env.SUB_HUMAN_VIA === 'module' && !process.env.CLAUDE_PID && name !== 'join') process.env.CLAUDE_PID = String(process.ppid);
-  const handler: Handler = await import(`./handlers/${name}.ts`);
-  const got = await captureAsync(() => {
+  // the import inside the capture: a handler that fails to load is logged like a throw, and exits 1 (a gate's caller
+  // fails closed on any exit but 0 and 2: mod/tasks.ts)
+  let handler: Handler | null = null;
+  const got = await captureAsync(async () => {
+    handler = await import(`./handlers/${name}.ts`) as Handler;
     if (parseError) throw parseError;
     return handler.handle(input as never, raw);
   });
   let reply: Reply | null | void = got.value;
   let exit = 0;
   if (got.error) {
-    try { reply = handler.fail ? handler.fail(got.error, input as never, raw) : null; } catch (err) { logError(err, `${name} fail`); reply = null; }
-    if (!handler.fail) exit = 1;
+    const h = handler as Handler | null;
+    try { reply = h && h.fail ? h.fail(got.error, input as never, raw) : null; } catch (err) { logError(err, `${name} fail`); reply = null; }
+    if (!h || !h.fail) exit = 1;
     // a fail() that says why on stderr is the report (the task gate's block reason); otherwise the error is logged
     if (!(reply && reply.kind === 'classic' && reply.stderr)) logError(got.error, name);
   }

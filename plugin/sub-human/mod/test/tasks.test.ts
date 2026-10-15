@@ -70,6 +70,15 @@ test('no seat but SUB_HUMAN_ROOM set (a room Claude before its join): tasks.ts r
   expect(seen.tasks.length).toBe(1)
 })
 
+test('the gate: an exit other than 0 or 2 (a crash, a load error) blocks with the retry text; the mirror\'s does not', async ($, on) => {
+  const seen = world(on, { exitCode: 1, stderr: 'SyntaxError: Unexpected token' })
+  await start($)
+  await created($)
+  const r: any = await completed($)
+  expect(r.block).toMatch(/failed closed.*retry/)
+  expect(seen.beneath).toEqual(['post TaskCreate'])
+})
+
 test('the gate fails closed in the room\'s Claude\'s session', async ($, on) => {
   world(on, { fail: true })
   await start($)
