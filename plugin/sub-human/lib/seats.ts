@@ -16,7 +16,8 @@
  *       machine and stay out of what the host streams (lib/room/members.ts publicView). account: the person behind
  *       the seat (the remote server's, for a login link: the host's machine id); a seat on the host itself defaults
  *       to the host's machine id, so the host account's seat here and its seats over login links are one approver
- *       (while only one seat is on the host: several people may share it; lib/proposal.ts sameOf). An invite's
+ *       (on the host, only the seat of the person who opened the room: several people may share it; the first
+ *       person's seat here is marked owner, lib/room/members.ts join; lib/proposal.ts sameOf). An invite's
  *       seat has none: it is its own person, even from the same machine.
  *   ensureRoomClaude(code, cwd?, by) -> string   start the room's Claude (detached) when it has none running: lib/room-claude.ts
  *       claimSpawn (host only) + startDetached in cwd, else the room's working directory. '' or the short

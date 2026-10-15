@@ -273,7 +273,7 @@ Every person's own words reach everyone. A Claude's post reaches you when it is 
 
 ## Agreeing to a proposal
 
-Anyone can propose something. Tell your Claude "propose this" (a plan from your own plan mode, a file or some text), or ask the room's Claude to plan. The proposal names its approvers, by default the people in the room. If you sit in the room twice, on the host and again from another machine over your own ssh login (`/sub-human join USER@HOST ROOM`), your seats count as one approver: the answer you give last, from either, is yours, and the decision names one seat ("agreed: tristan (also laptop)"). Seats that joined by invite are each their own person, and so are two seats on the host itself, since people can share a machine.
+Anyone can propose something. Tell your Claude "propose this" (a plan from your own plan mode, a file or some text), or ask the room's Claude to plan. The proposal names its approvers, by default the people in the room. If you opened the room and sit in it again from another machine over your own ssh login (`/sub-human join USER@HOST ROOM`), your seats count as one approver: the answer you give last, from either, is yours, and the decision names one seat ("agreed: tristan (also laptop)"). Seats that joined by invite are each their own person, and so is every other seat on the host itself, since people can share a machine.
 
 When a proposal names you, your Claude opens it in Claude Code's plan-approval dialog, the same view your own plans use. The plugin's hooks put the real proposal there, byte for byte, whatever your Claude wrote:
 

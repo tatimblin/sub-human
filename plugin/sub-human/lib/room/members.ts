@@ -18,6 +18,9 @@
  *     join(rec) -> {ok, rejoin?, error?}   rec = {name, role, machine, ...LOCAL_FIELDS}. A name held by a live seat
  *                                 of another holder (another machine, or another pid) is "name taken"; otherwise
  *                                 the seat is (re)bound: rec, joined_at = seen_at = now, the room Claude's bookkeeping kept.
+ *                                 owner: the first person's seat on the host (account = machine) in a room with no
+ *                                 other person's seat yet, the one who opened it; kept across that seat's rebind on
+ *                                 the host (lib/proposal.ts sameOf: a login link's seats are that person's)
  *     leave(name) -> bool         sets left_at and deletes presence/<name> (a mirror gets the deletion); false when
  *                                 there is no such seat or it left already
  *     beat(name, {presence?, now?}) -> bool   renews seen_at (at most every SEAT_BEAT_MS) and, with presence
@@ -95,6 +98,9 @@ function joinFold(ms: Members, rec: SeatRecord, code: string, now: number): { ne
   if (cur && !sameHolder(cur, rec) && seatAlive(cur)) return { next: null, result: { ok: false, error: `name taken: "${rec.name}" is already in ${code}` } };
   const keep: Partial<Member> = {};
   if (rec.role === 'claude' && cur) for (const k of ROOM_CLAUDE_FIELDS) if (cur[k] != null) Object.assign(keep, { [k]: cur[k] });
+  // the room's opener: its seat on the host, the first person's (a room from before this field has none)
+  const onHost = rec.role !== 'claude' && !!rec.account && rec.machine === rec.account;
+  if (onHost && (cur ? cur.owner && cur.account === rec.account : !Object.values(ms).some(m => m && m.role !== 'claude'))) keep.owner = true;
   const at = new Date(now).toISOString();
   ms[rec.name] = { ...rec, joined_at: at, seen_at: at, ...keep };
   return { next: ms, result: cur ? { ok: true, rejoin: true } : { ok: true } };

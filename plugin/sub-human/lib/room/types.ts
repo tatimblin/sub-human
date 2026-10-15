@@ -263,9 +263,11 @@ export interface Member {
   /**
    * the person behind the seat, as the host knows it: the host's machine id for a seat of the host account (one on
    * the host, or one over a login link, lib/seats.ts enter); none for an invite's seat. Seats with one account are
-   * one approver (lib/proposal.ts sameOf: the host's own seats only while there is one)
+   * one approver (lib/proposal.ts sameOf: the room owner's seat and the login links' seats; never two seats on the host)
    */
   account?: string;
+  /** the seat of the person who opened the room, on the host (lib/room/members.ts join; none in older rooms) */
+  owner?: boolean;
   joined_at?: string;
   seen_at?: string;
   left_at?: string;

@@ -1,7 +1,8 @@
 'use strict';
 // One person in two seats (lib/room/consent.ts `same` groups, lib/proposal.ts create): seats with one account are one
 // approver. The fold counts the newest answer of any seat for the group (a revoke clears it); create groups the
-// approvers by account, never an invite's seat, nor the host's own seats when several people share the host; validate
+// approvers by account, never an invite's seat, and of the host's own seats only the room owner's (who opened it,
+// else in an older room the earliest-joined), which a login link's seats join; members.join marks the owner; validate
 // caps `same`; a mirror writes it only when its host's caps list it; the decision names one seat per person.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -108,18 +109,54 @@ test('create: the approvers are grouped by account; an invite\'s seat never merg
   assert.deepEqual(proposal.pendingFor(me('tristan')), []);
 });
 
-test('create: several seats on the host may be several people: they never merge, nor does a login seat with them', t => {
+test('create: several seats on the host are several people: login seats are the owner\'s (who opened the room) only', t => {
   const HOST = machineId();
   const code = seated(t, {
     alice: { machine: HOST, account: HOST },
-    bob: { machine: HOST, account: HOST },
-    phone: { machine: 'phone0machine01', account: HOST },
-    tablet: { machine: 'tablet0machine1', account: HOST },
+    tristan: { machine: HOST, account: HOST, owner: true },
+    laptop: { machine: 'laptop0machine1', account: HOST },
   });
   const r = proposal.create({ code, name: 'alice' }, { text: '# Ship v3\n' });
-  assert.deepEqual(r.entry.same, [['phone', 'tablet']], 'the login seats are one person; the host\'s two are their own');
-  const one = proposal.create({ code, name: 'alice' }, { text: '# Ship v4\n', approvers: ['alice', 'bob'] });
-  assert.equal(one.entry.same, undefined, 'no group, no field');
+  assert.deepEqual([r.approvers, r.entry.same], [['alice', 'tristan', 'laptop'], [['tristan', 'laptop']]], 'alice stays her own');
+  const m = consent.fold(room.open(code).readAll()).matrix(r.hash);
+  assert.deepEqual([m.people, m.missing], [2, ['alice', 'tristan']]);
+  const one = proposal.create({ code, name: 'alice' }, { text: '# Ship v4\n', approvers: ['alice', 'tristan'] });
+  assert.equal(one.entry.same, undefined, 'two plain seats on the host never merge: no group, no field');
+  const two = proposal.create({ code, name: 'alice' }, { text: '# Ship v5\n', approvers: ['alice', 'laptop'] });
+  assert.equal(two.entry.same, undefined, 'a host seat that is not the owner is not grouped with a login seat');
+});
+
+test('create: a room from before the owner field: the earliest-joined host seat present is the owner', t => {
+  const HOST = machineId();
+  const code = seated(t, {
+    alice: { machine: HOST, account: HOST, joined_at: '2026-01-02T00:00:00.000Z' },
+    tristan: { machine: HOST, account: HOST, joined_at: '2026-01-01T00:00:00.000Z' },
+    gone: { machine: HOST, account: HOST, joined_at: '2025-12-31T00:00:00.000Z', left_at: '2026-01-01T00:00:00.000Z' },
+    phone: { machine: 'phone0machine01', account: HOST },
+    tablet: { machine: 'tablet0machine1', account: HOST },
+    guest: { machine: 'phone0machine01' },
+  });
+  const r = proposal.create({ code, name: 'alice' }, { text: '# Ship v3\n' });
+  assert.deepEqual(r.entry.same, [['tristan', 'phone', 'tablet']], 'an invite seat from the same machine stays its own');
+});
+
+test('members.join: the first person\'s seat on the host is the owner, kept across a rejoin; later seats are not', t => {
+  h.freshHome(t);
+  const code = h.newRoom();
+  const s = store.open(code);
+  const HOST = machineId();
+  assert.equal(s.members.join({ name: 'claude', role: 'claude', machine: HOST }).ok, true, 'the room\'s Claude is no one\'s');
+  s.members.join({ name: 'tristan', role: 'member', machine: HOST, account: HOST });
+  s.members.join({ name: 'alice', role: 'member', machine: HOST, account: HOST });
+  s.members.join({ name: 'laptop', role: 'member', machine: 'laptop0machine1', account: HOST });
+  s.members.join({ name: 'tristan', role: 'member', machine: HOST, account: HOST });
+  const ms = s.members.read();
+  assert.deepEqual(['claude', 'tristan', 'alice', 'laptop'].map(n => !!ms[n].owner), [false, true, false, false]);
+  h.freshHome(t);
+  const c2 = h.newRoom();
+  store.open(c2).members.join({ name: 'guest', role: 'member', machine: 'far0machine0001' });
+  store.open(c2).members.join({ name: 'bob', role: 'member', machine: HOST, account: HOST });
+  assert.equal(store.open(c2).members.read().bob.owner, undefined, 'a person was there first');
 });
 
 test('create: a mirror writes same only while its host\'s caps list it (the link document\'s fields)', t => {
