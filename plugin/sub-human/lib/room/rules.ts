@@ -217,7 +217,12 @@ function blobRef(p: unknown): string | null {
 const CURSOR_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const checkCursor = (name: string): string => { if (!CURSOR_RE.test(name)) throw new RoomError('INVALID', `invalid cursor name "${name}"`); return name; };
 
+/** The room line a log that waits to split says (lib/room/fs-store.ts): it asks people to act, so it is a notice for
+ * every member (lib/room/deliver.ts), not context. */
+const ROTATION_HELD_TEXT = 'this room\'s log is large and waits to split into segments: a session or the room\'s Claude on the host still runs an older sub-human (one from before segmented logs), which would read a split log as broken. Restart those sessions (/exit, then claude) once everyone has updated.';
+
 export {
+  ROTATION_HELD_TEXT,
   RoomError, CHAT_KINDS, KEY_SEG, BLOB_RE, normalize, fieldsOf, toPayload, admit, scanTail, checkSigned, checkPin, checkHere,
   hostState, hostStep, placeAfter, checkKey, blobRef, checkCursor, hash12,
 };

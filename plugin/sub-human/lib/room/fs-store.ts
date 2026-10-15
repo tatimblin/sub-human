@@ -37,7 +37,7 @@ import * as members from './members.ts';
 import * as logIo from './log-io.ts';
 import * as keys from './keys.ts';
 import { trustOver } from './trust.ts';
-import { admit, blobRef, checkCursor, checkKey, hostStep, KEY_SEG, BLOB_RE, placeAfter, toPayload } from './rules.ts';
+import { admit, blobRef, checkCursor, checkKey, hostStep, KEY_SEG, BLOB_RE, placeAfter, toPayload, ROTATION_HELD_TEXT } from './rules.ts';
 import type { KeyObject } from 'node:crypto';
 import type { LockOpts } from '../lock.ts';
 import type {
@@ -52,7 +52,6 @@ const roomWatch = (): typeof import('./watch.ts') => require('./watch.ts');
 const MOVED = 'log.moved';
 /** The kv document that says the room heard its log is waiting on older sessions (heldOnce); gone at the next rotation. */
 const ROTATION_HELD = 'log/rotation-held';
-const ROTATION_HELD_TEXT = 'this room\'s log is large and waits to split into segments: a session or the room\'s Claude on the host still runs an older sub-human (0.5.0-beta.15 or before), which would read a split log as broken. Restart those sessions (/exit, then claude) once everyone has updated.';
 const MEMBERS = 'members.json';
 
 /** pins and host as of `n` marked entries (the last of them `last`): carried forward as the marked list grows. */
