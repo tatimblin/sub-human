@@ -18,6 +18,13 @@ function decide(tool, input, { w, seated = false, hello = true, agentId } = {}) 
   const ctx = hello ? { home: w.home, realHome: real(w.home), userHome: w.userHome, pluginRoot: PLUGIN } : {};
   if (tool.startsWith(g.MCP_PREFIX)) { const v = g.roomToolVerdict({ tool, agentId }, seated); return v ? v.decision : undefined; }
   if (tool === 'Bash') return g.bashVerdict(input.command, { ...ctx, cwd: w.cwd, realCwd: real(w.cwd) }) ? 'deny' : undefined;
+  if (tool === 'Read') {
+    const p = g.writeTarget(input);
+    const abs = g.absTarget(p, { cwd: w.cwd, userHome: ctx.userHome });
+    let placed;
+    for (const a of abs ? g.ancestors(abs) : []) { const r = real(a); if (r) { placed = path.join(r, abs.slice(a.length)); break; } }
+    return g.readVerdict(abs ? [abs, placed] : [], ctx, p) ? 'deny' : undefined;
+  }
   if (g.WRITE_TOOLS.includes(tool)) {
     const p = g.writeTarget(input);
     const abs = g.absTarget(p, { cwd: w.cwd, userHome: ctx.userHome });
@@ -97,6 +104,21 @@ test('guard: the default home ~/.sub-human is protected, by its path and before 
   assert.equal(decide('Write', { file_path: path.join(w.userHome, '.sub-human', 'rooms', 'x'), content: 'x' }, { w: dflt }), 'deny');
   assert.equal(decide('Write', { file_path: '~/.sub-human/rooms/x', content: 'x' }, { w, hello: false }), 'deny');
   assert.equal(decide('Bash', { command: 'cat ~/.sub-human/rooms/x/log.jsonl' }, { w, hello: false }), 'deny');
+});
+
+test('guard: Read of a seat signing key is denied (by path, through a symlink, before mod-hello by its spelling); the rest of the store reads', () => {
+  const w = new World({ claude: 'sleep', alice: 'act' });
+  const key = path.join(w.home, 'keys', w.code, 'alice.key');
+  assert.equal(decide('Read', { file_path: key }, { w }), 'deny');
+  assert.equal(decide('Read', { file_path: path.join(w.home, 'keys', w.code, 'alice.pub') }, { w }), 'deny');
+  const link = path.join(w.cwd, 'innocent');
+  fs.symlinkSync(w.home, link);
+  assert.equal(decide('Read', { file_path: path.join(link, 'keys', w.code, 'alice.key') }, { w }), 'deny');
+  assert.equal(decide('Read', { file_path: '~/.sub-human/keys/x/y.key' }, { w, hello: false }), 'deny');
+  assert.equal(decide('Read', { file_path: path.join(w.home, 'rooms', w.code, 'log.jsonl') }, { w }), undefined, 'the log stays readable');
+  assert.equal(decide('Read', { file_path: path.join(w.home, 'rooms', w.code, 'plans', 'x.md') }, { w }), undefined);
+  assert.equal(decide('Read', { file_path: path.join(w.cwd, 'keys', 'mine.key') }, { w }), undefined, 'a keys directory elsewhere is not the store');
+  assert.match(g.READ_DENY(key), /seat signing keys/);
 });
 
 test('guard: hold is allowed for row subagents only', () => {

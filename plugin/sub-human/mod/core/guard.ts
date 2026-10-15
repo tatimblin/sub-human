@@ -162,6 +162,21 @@ export function writeVerdict(candidates: unknown[], ctx: GuardCtx = {}, raw: unk
 
 export const WRITE_DENY = (tool: string, p: string | null) => `${MSG} (Denied: ${tool} on ${p}.)`;
 
+// ---------- Read ----------
+const KEYS_SEGMENT = /(?:^|\/)\.sub-human\/keys(?:\/|$)/;
+/**
+ * 'deny reason' for a Read whose target is any of candidates and lies under the home's keys directory (the seat
+ * signing keys: with one, a model could sign via=human entries that verify), or null. Everything else in the store
+ * stays readable. Before mod-hello answered, a path through ".sub-human/keys" counts.
+ */
+export function readVerdict(candidates: unknown[], ctx: GuardCtx = {}, raw: unknown = ''): string | null {
+  const cands = candidates.filter((c): c is string => typeof c === 'string' && !!c);
+  const roots = [ctx.home, ctx.realHome].filter((r): r is string => typeof r === 'string' && r.startsWith('/')).map(r => normalize(r) + '/keys');
+  if (roots.length) return cands.some(c => roots.some(r => isUnder(c, r))) ? 'it reads a seat signing key' : null;
+  return [...cands, String(raw || '')].some(c => KEYS_SEGMENT.test(c)) ? 'it reads a seat signing key (~/.sub-human/keys)' : null;
+}
+export const READ_DENY = (p: string | null) => `ROOM-GUARD: the seat signing keys are the people's own; a model never reads them. (Denied: Read on ${p}.)`;
+
 // ---------- the room MCP tools ----------
 /** hold only from a row subagent (agentId), never a main thread; the rest allowed for a seated session. */
 export function roomToolVerdict(

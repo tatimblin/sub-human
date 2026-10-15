@@ -8,7 +8,7 @@
  */
 import {
   bashVerdict, needsCwd, denyText, writeTarget, absTarget, ancestors, writeVerdict, WRITE_DENY,
-  roomToolVerdict, failClosed, HOLD_DENY, FAILED,
+  roomToolVerdict, failClosed, HOLD_DENY, FAILED, readVerdict, READ_DENY,
 } from './core/guard.ts';
 import { seated } from './core/seat.ts';
 import { asHello } from './core/state.ts';
@@ -72,6 +72,19 @@ export function registerGuard(on: On) {
     if (next.called) return next(e);
     if (writeVerdict([], {}, writeTarget(e) || '')) return { deny: WRITE_DENY(e.tool, writeTarget(e)) };
     return failClosed(e) ? { deny: FAILED } : next(e);
+  });
+
+  on('tool.call', { tool: 'Read' }, async ($, e, next) => {
+    const p = writeTarget(e);
+    if (!p) return next(e);
+    const h = await helloOf($);
+    const cwd = p.startsWith('/') || p.startsWith('~') ? undefined : await $.session.cwd();
+    const abs = absTarget(p, { cwd, userHome: h.userHome });
+    const candidates = abs ? [abs, await placed($, abs)] : [];
+    return readVerdict(candidates, h, p) ? { deny: READ_DENY(p) } : next(e);
+  }).catch(($, e, next) => {
+    if (next.called) return next(e);
+    return readVerdict([], {}, writeTarget(e) || '') ? { deny: READ_DENY(writeTarget(e)) } : next(e);
   });
 
   on('tool.call', { tool: 'mcp__plugin_sub-human_room__hold' }, ($, e, next) => (e.agentId ? next(e) : { deny: HOLD_DENY }))
