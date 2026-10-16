@@ -171,6 +171,8 @@ class HoldServer {
   saveSeat() {
     const seat = this.seat;
     if (!seat) return;
+    // a room this machine no longer has (`link --forget`): write nothing there, ever again (item 9 R1)
+    if (typeof this.ctx.identity.roomExists === 'function' && !this.ctx.identity.roomExists(seat.code)) { this.seat = null; return; }
     const ended = this.roomEnded.get(seat.code);
     rows.writeHolds(seat.code, seat.name, {
       members: this.memberHolds(seat.code).map(h => h.name),

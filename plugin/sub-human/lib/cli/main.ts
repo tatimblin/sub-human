@@ -407,6 +407,9 @@ function linkCmd(args: readonly string[]) {
   const { flags, rest } = parseFlags(args, { reset: 0, forget: 0, force: 0 });
   const code = rest[0];
   if (!code || (flags.reset && flags.forget)) die('usage: sub-human link CODE [--reset | --forget [--force]]');
+  // a folder a process still holding a forgotten room's seat wrote (no link, no members, no log): never a room hosted
+  // here; --forget sets it aside (item 9 R1)
+  if (flags.forget && (require('../room/store.ts') as typeof import('../room/store.ts')).isLeftover(code)) return forgetLeftover(code);
   // first: room.open on a code this machine does not know is a room hosted here, which it is not (forgotten already)
   if (!identity.roomExists(code)) die(`no room ${code} on this machine`, 1);
   const opened = room.open(code).store;
@@ -445,7 +448,19 @@ function forgetLink(code: string, s: MirrorRoomStore, force: boolean) {
   try { fs.renameSync(s.dir, archive); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; archive = null; }
   links.remove(code);
   store.forget(code);
+  // every local seat there ends: a session, hold server or tail still running for it resolves none and writes nothing
+  identity.dropSeatIndexes(code);
   console.log(archive ? `room ${code}: forgotten; this machine's copy is kept at ${archive}` : `room ${code}: forgotten (this machine had no copy of it)`);
+}
+
+/** link CODE --forget on a leftover folder: set aside as a forgotten copy is, and no seat names the room any more. */
+function forgetLeftover(code: string) {
+  const { roomsDir, roomDir } = require('../home.ts') as typeof import('../home.ts');
+  const archive = path.join(roomsDir(), `${code}.forgotten-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+  fs.renameSync(roomDir(code), archive);
+  (require('../room/store.ts') as typeof import('../room/store.ts')).forget(code);
+  identity.dropSeatIndexes(code);
+  console.log(`room ${code}: a leftover folder (no log, no connection: something still running wrote it after the room was forgotten) is set aside at ${archive}; this machine has no room ${code}`);
 }
 
 // ---------- options CODE [NAME on|off]: lib/room/options.ts ----------

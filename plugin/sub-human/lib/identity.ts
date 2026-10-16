@@ -87,6 +87,7 @@
  *                                        in sid (lib/cc/transcript.ts continuedIn; CONTRACT session-fork-continued-in)
  *   adoptFork(from, {pid, session_id, cwd}) -> JoinResult   move that seat to this process and session (no leave, no
  *                                        log line: the person never left); the old session's indexes are dropped
+ *   dropSeatIndexes(code) -> n           this machine's session indexes naming code removed (`link CODE --forget`)
  *   localSeats(code) -> [name]           this machine's seats in code that a live claude process holds, by the
  *                                        session indexes (resolveByPid): what a mirror knows while its link is down
  *   claudePid() -> int|null              CLAUDE_PID from the environment (hooks run with it set; lib/cc/env.ts)
@@ -462,6 +463,22 @@ function pruneModLeases(now = Date.now()): number {
   return n;
 }
 
+/** This machine's session indexes (by-pid, by-sid) that name room code, removed: `link CODE --forget` ends every
+ * local seat there, so a hold server, tail or hook still running for it resolves no seat and writes nothing. */
+function dropSeatIndexes(code: string): number {
+  let n = 0;
+  for (const dir of [byPidDir(), path.join(home(), 'sessions', 'by-sid')]) {
+    let names: string[];
+    try { names = fs.readdirSync(dir); } catch { continue; }
+    for (const f of names) {
+      if (!f.endsWith('.json')) continue;
+      const rec: SeatIndex | null = readJson(path.join(dir, f));
+      if (rec && rec.code === code) { rm(path.join(dir, f)); n++; }
+    }
+  }
+  return n;
+}
+
 function localSeats(code: string): string[] {
   let files: string[];
   try { files = fs.readdirSync(byPidDir()); } catch { return []; }
@@ -664,7 +681,7 @@ export {
   NAME_RE, CODE_RE, RESERVED, VERBS, ROOM_CLAUDE, ANIMALS, PRESENCE_STATES, normalizeName, defaultName, home,
   roomDir, machineId, machineIn, isMine, newCode, roomExists, isHost, openRooms, closedForGood, orphanRooms, roomOpen, roomClosing, address,
   readMembers, join, leave, rebindSession, updateRoomClaude, liveMembers, seatAlive, heartbeat,
-  leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, forkParent, adoptFork, localSeats, adoptLocalSeats,
+  leaseFresh, isAlive, claudePid, resolveByPid, resolveBySession, resolveSelf, lastSeat, forkParent, adoptFork, localSeats, adoptLocalSeats, dropSeatIndexes,
   MOD_LEASE_FRESH_MS, writeModLease, readModLease, modLeaseOk, deleteModLease, pruneModLeases, pruneSessionIndexes, writePresence,
 };
 export type { Identity, SeatIndex, ModLease, JoinRequest, RoomClaudePatch, ForkParent };

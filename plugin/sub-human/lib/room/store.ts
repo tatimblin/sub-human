@@ -85,7 +85,7 @@
  *   lock(name, fn, opts?)                   a room-wide mutex (the proposal answer lock)
  *   exists() -> bool
  *
- * Rooms (registry.ts): open(code, {dir}?), forget(code), setBackend(factory|null), roomExists(code), createRoom(code),
+ * Rooms (registry.ts): open(code, {dir}?), forget(code), setBackend(factory|null), roomExists(code), isLeftover(code), createRoom(code),
  *   listRooms(), the open-rooms index (indexedRooms, indexRoom, unindexRooms), lastChange(code), setAsideRoom(code),
  *   asideRooms(), removeAside(name) (lib/gc.ts), trustOf(e) (an entry judged by the store of the room it names: the fallback for a caller that does
  *   not have the store it read e from).
@@ -104,7 +104,7 @@ const publicKey = (name: string, s: Pick<RoomStore, 'code' | 'pins'>): KeyObject
 });
 
 export {
-  open, forget, setBackend, roomExists, createRoom, listRooms, trustOf, indexedRooms, indexRoom, unindexRooms, lastChange,
+  open, forget, setBackend, roomExists, isLeftover, createRoom, listRooms, trustOf, indexedRooms, indexRoom, unindexRooms, lastChange,
   setAsideRoom, asideRooms, removeAside,
 } from './registry.ts';
 export { FsRoomStore } from './fs-store.ts';

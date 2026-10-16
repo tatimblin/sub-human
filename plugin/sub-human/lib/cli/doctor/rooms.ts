@@ -6,7 +6,8 @@
  *
  *   verifyRoom(code) -> RoomVerify   {code, count, chain: {ok, badAt?, line?}, unverified: [id], legacy: n}
  *   roomChecks() -> [Check]          room:CODE per hosted room: pass; fail when the chain breaks or a person's line
- *                                    does not verify (a line written outside the plugin, or a key that is not theirs)
+ *                                    does not verify (a line written outside the plugin, or a key that is not theirs);
+ *                                    a leftover folder (registry isLeftover) warns with `link CODE --forget`
  *   verifyText(v) -> string          one room's verdict, for the CLI
  */
 import { check, cli } from './check.ts';
@@ -49,6 +50,11 @@ export function roomChecks(): Check[] {
   for (const code of codes) {
     let v: RoomVerify;
     try {
+      // a folder something wrote after its room was forgotten: no room at all (item 9 R1)
+      if (store().isLeftover(code)) {
+        out.push(check(`room:${code}`, 'warn', `room ${code}`, 'a leftover folder with no log and no connection, not a room hosted here', `set it aside: ${cli(`link ${code} --forget`)}`));
+        continue;
+      }
       if (!store().open(code).isHost) continue;
       v = verifyRoom(code);
     } catch (e) {

@@ -121,6 +121,17 @@ class FsRoomStore implements RoomStore {
     };
   }
   get dir(): string { return this._dir || roomDir(this.code); }
+  /**
+   * A write into a room this machine does not have (its folder set aside by `link --forget`, or never made here):
+   * refused, so a process still holding the old seat (a hold server, a tail, a beat) cannot bring back a bare
+   * rooms/<code> that reads as a room hosted here (item 9 R1). A store over a given dir, a mirror's (its link file
+   * exists) and a room createRoom made write as before.
+   */
+  _mustExist(): void {
+    if (this._dir || fs.existsSync(this.dir)) return;
+    if ((require('./links.ts') as typeof import('./links.ts')).has(this.code)) return;
+    throw new RoomError('NO_ROOM', `no room ${this.code} on this machine`);
+  }
   /** the active segment (tests write around the store through it) */
   get logFile(): string { return logIo.activeFile(this.dir); }
   get _membersFile(): string { return path.join(this.dir, MEMBERS); }
@@ -175,6 +186,7 @@ class FsRoomStore implements RoomStore {
   place(payload: Payload, opts: PlaceOpts = {}): Placed {
     const d = this.dir; // NO_ROOM / invalid code before anything else
     const p = admit(this.code, payload, opts);
+    this._mustExist();
     fs.mkdirSync(d, { recursive: true, mode: 0o700 });
     const moved = path.join(d, MOVED);
     let held = false, due = false;
@@ -242,12 +254,13 @@ class FsRoomStore implements RoomStore {
   _cursorFile(name: string): string { return path.join(this.dir, `${checkCursor(name)}.cursor`); }
   getCursor(name: string): number { try { return Number(fs.readFileSync(this._cursorFile(name), 'utf8')) || 0; } catch { return 0; } }
   /** Atomic (write + rename), so a concurrent reader never sees an empty file. */
-  setCursor(name: string, n: number): void { writeFileAtomic(this._cursorFile(name), String(n)); }
+  setCursor(name: string, n: number): void { this._mustExist(); writeFileAtomic(this._cursorFile(name), String(n)); }
 
   // ----- members -----
   _readMembers(): Members { try { return readJson(this._membersFile, {}) || {}; } catch { return {}; } }
   _updateMembers(fn: (current: Members) => Members | null | undefined): Members | null {
     const file = this._membersFile;
+    this._mustExist();
     return withLock(file + '.lock', () => {
       const next = fn(this._readMembers());
       if (!next) return null;
@@ -259,6 +272,7 @@ class FsRoomStore implements RoomStore {
   // ----- blobs -----
   _blobPut(name: string, bytes: string | Uint8Array): string {
     if (!BLOB_RE.test(String(name))) throw new RoomError('INVALID', `invalid blob name "${name}"`);
+    this._mustExist();
     writeFileAtomic(path.join(this.dir, name), bytes);
     return name;
   }
@@ -270,10 +284,11 @@ class FsRoomStore implements RoomStore {
 
   // ----- kv -----
   _kvFile(key: string): string { return path.join(this.dir, `${checkKey(key)}.json`); }
-  _kvSet(key: string, value: unknown, { compact = false }: { compact?: boolean } = {}): void { writeJsonAtomic(this._kvFile(key), value, { compact }); }
+  _kvSet(key: string, value: unknown, { compact = false }: { compact?: boolean } = {}): void { this._mustExist(); writeJsonAtomic(this._kvFile(key), value, { compact }); }
   // any: a kv document is JSON from disk (KvApi)
   _kvUpdate<T = any>(key: string, fn: (current: T | null) => T | null | undefined, { compact = false, timeoutMs, staleMs }: KvUpdateOpts = {}): T | null | undefined {
     const file = this._kvFile(key);
+    this._mustExist();
     const lockOpts: LockOpts = {};
     if (timeoutMs !== undefined) lockOpts.timeoutMs = timeoutMs;
     if (staleMs !== undefined) lockOpts.staleMs = staleMs;
